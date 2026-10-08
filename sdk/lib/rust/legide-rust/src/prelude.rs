@@ -225,56 +225,53 @@ pub const CmResourceTypeInterrupt: u8 = 2;
 pub const CmResourceTypeMemory: u8 = 3;
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
-pub const APC_LEVEL: u32 = 1; // ntkrnl-sys/src/hal_bindgen_amd64.rs
-pub const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1; // ntdll-sys/src/bindgen_amd64.rs
-pub const CM_RESOURCE_PORT_16_BIT_DECODE: u32 = 16; // ntdll-sys/src/bindgen_amd64.rs
-pub const CM_RESOURCE_PORT_IO: u32 = 1; // ntdll-sys/src/bindgen_amd64.rs
-pub const CmResourceShareDeviceExclusive: u8 = 1; // pcix-rust/src/glue.rs
+pub const APC_LEVEL: u32 = 1; // atapi-rust/src/prelude.rs
+pub const CM_RESOURCE_INTERRUPT_LATCHED: u32 = 1; // atapi-rust/src/types_amd64.rs
+pub const CM_RESOURCE_PORT_16_BIT_DECODE: u32 = 16; // atapi-rust/src/types_amd64.rs
+pub const CM_RESOURCE_PORT_IO: u32 = 1; // atapi-rust/src/types_amd64.rs
+pub const CmResourceShareDeviceExclusive: u8 = 1; // pciidex-rust/src/prelude.rs
 pub const IDE_COMMAND_ATAPI_IDENTIFY: u32 = 161; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_COMMAND_IDENTIFY: u32 = 236; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_DC_DISABLE_INTERRUPTS: u32 = 2; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_DC_RESET_CONTROLLER: u32 = 4; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_STATUS_BUSY: u32 = 128; // atapi-legacy-rust/src/types_amd64.rs
-pub const IDE_STATUS_DEVICE_FAULT: u32 = 32; // storahci-rust/src/types_amd64.rs
+pub const IDE_STATUS_DEVICE_FAULT: u32 = 32; // atapi-rust/src/prelude.rs
 pub const IDE_STATUS_DRQ: u32 = 8; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_STATUS_ERROR: u32 = 1; // atapi-legacy-rust/src/types_amd64.rs
-pub const IsNEC_98: u32 = 0; // ntdll-sys/src/bindgen_amd64.rs
-pub const KEY_ALL_ACCESS: u32 = 983103; // ntdll-sys/src/bindgen_amd64.rs
-pub const MAX_IDE_DEVICE: u32 = 2; // pciidex-legacy-rust/src/types_amd64.rs
-pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // ntkrnl-sys/src/mm.rs
-pub const OBJ_CASE_INSENSITIVE: u32 = 64; // ntdll-sys/src/bindgen_amd64.rs
-pub const OBJ_KERNEL_HANDLE: u32 = 512; // ntdll-sys/src/bindgen_amd64.rs
-pub const PagedPool: POOL_TYPE = 1; // ks-rust/src/image.rs
+pub const InterfaceTypeUndefined: _INTERFACE_TYPE = _INTERFACE_TYPE_InterfaceTypeUndefined; // island enum
+pub const IsNEC_98: u32 = 0; // atapi-rust/src/prelude.rs
+pub const Isa: _INTERFACE_TYPE = _INTERFACE_TYPE_Isa; // island enum
+pub const KEY_ALL_ACCESS: u32 = 983103; // atapi-rust/src/prelude.rs
+pub const MAX_IDE_DEVICE: u32 = 2; // atapi-rust/src/prelude.rs
+pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // atapi-rust/src/prelude.rs
+pub const OBJ_CASE_INSENSITIVE: u32 = 64; // atapi-rust/src/prelude.rs
+pub const OBJ_KERNEL_HANDLE: u32 = 512; // atapi-rust/src/prelude.rs
+pub const PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE: u32 = 4294963199; // atapi-rust/src/types_amd64.rs
+pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // atapi-rust/src/prelude.rs
+pub const PagedPool: POOL_TYPE = 1; // atapi-rust/src/prelude.rs
 pub const REG_DWORD: u32 = 4; // advapi32-sys/src/bindgen_amd64.rs
-pub const RTL_QUERY_REGISTRY_DIRECT: u32 = 32; // ntdll-sys/src/bindgen_amd64.rs
-pub const RTL_QUERY_REGISTRY_REQUIRED: u32 = 4; // ntdll-sys/src/bindgen_amd64.rs
-pub const RTL_REGISTRY_ABSOLUTE: u32 = 0; // ntdll-sys/src/bindgen_amd64.rs
-pub const RTL_REGISTRY_HANDLE: u32 = 1073741824; // ntdll-sys/src/bindgen_amd64.rs
-pub const STATUS_CANCELLED: NTSTATUS = 0xC000_0120u32 as NTSTATUS; // msfs-rust/src/glue.rs
-pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS; // msfs-rust/src/glue.rs
+pub const RTL_QUERY_REGISTRY_DIRECT: u32 = 32; // atapi-rust/src/types_amd64.rs
+pub const RTL_QUERY_REGISTRY_REQUIRED: u32 = 4; // atapi-rust/src/types_amd64.rs
+pub const RTL_REGISTRY_ABSOLUTE: u32 = 0; // atapi-rust/src/types_amd64.rs
+pub const RTL_REGISTRY_HANDLE: u32 = 1073741824; // atapi-rust/src/types_amd64.rs
+pub const STATUS_CANCELLED: NTSTATUS = 0xC000_0120u32 as NTSTATUS; // atapi-rust/src/prelude.rs
+pub const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS; // atapi-rust/src/prelude.rs
 pub const STATUS_NOT_FOUND: i32 = 0xC0000225_u32 as i32; // ntdll-sys/src/constants.rs
-pub const STATUS_REVISION_MISMATCH: i32 = 0xC0000059_u32 as i32; // ntdll-sys/src/constants.rs
-pub const STATUS_SUCCESS: i32 = 0; // network/src/lib.rs
-pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC000_0001u32 as NTSTATUS; // msfs-rust/src/glue.rs
-extern "C" {
-    pub fn DbgPrint(fmt: *const core::ffi::c_char, ...) -> u32; // arm64input-cargo/src/main.rs
-}
+pub const STATUS_REVISION_MISMATCH: i32 = 0xC0000059_u32 as i32; // atapi-rust/src/prelude.rs
+pub const STATUS_SUCCESS: i32 = 0; // atapi-rust/src/prelude.rs
+pub const STATUS_UNSUCCESSFUL: NTSTATUS = 0xC000_0001u32 as NTSTATUS; // atapi-rust/src/prelude.rs
 extern "system" {
-    pub fn KeGetCurrentIrql() -> u8; fn ClassModeSense( DeviceObject: PDEVICE_OBJECT, buffer: *mut i8, bufferSize: u32, pageCode: u8, ) -> u32; // disk-rust/src/disk.rs
-    pub fn PciIdeXInitialize( DriverObject: PDRIVER_OBJECT, RegistryPath: PUNICODE_STRING, HwGetControllerProperties: PCONTROLLER_PROPERTIES, ExtensionSize: ULONG, ) -> NTSTATUS; // pciidex-legacy-rust/src/types_amd64.rs
-    pub fn READ_PORT_BUFFER_USHORT(Port: *mut u16, Buffer: *mut u16, Count: u32); // scsiport-rust/src/inlines.rs
-    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PCHAR); // ntdll-sys/src/bindgen_amd64.rs
+    pub fn PciIdeXInitialize( DriverObject: PDRIVER_OBJECT, RegistryPath: PUNICODE_STRING, HwGetControllerProperties: PCONTROLLER_PROPERTIES, ExtensionSize: ULONG, ) -> NTSTATUS; // atapi-rust/src/types_amd64.rs
+    pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
 }
 // ==== end port resolve ====
-pub use win32macros_rust::{ARRAYSIZE, ASSERT, C_ASSERT, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, PAGE_ROUND_UP, PRIMARYLANGID, RGB, RTL_CONSTANT_STRING, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, wide_bytes};
-pub use strsafe_rust::{RtlStringCbPrintfW, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
-pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
+pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
+pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
 pub const CHANNEL_PC98_RESOURCE_COUNT: u32 = 0xC; // clang, legide.c
 pub const CHANNEL_PCAT_RESOURCE_COUNT: u32 = 3; // clang, legide.c
-pub const PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE: u32 = 0xFFFFEFFF; // clang, legide.c
-pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // clang, legide.c
 // ==== end port facts ====
 
 // ==== port local types: types the module's .c files define, laid out by c2rust (generated -- `rustconv port resolve`) ====
@@ -312,3 +309,10 @@ macro_rules! ATA_WRITE {
 #[allow(unused_imports)]
 pub(crate) use ATA_WRITE;
 // ==== end port macros ====
+
+// ==== port resolve: substrate helpers (generated) ====
+pub use ntkrnl_sys::driver_ddk::DbgPrint;
+pub use ntkrnl_sys::inline::mm::ExAllocatePoolZero;
+pub use ntkrnl_sys::ke::KeGetCurrentIrql;
+pub use ntkrnl_sys::portio::READ_PORT_BUFFER_USHORT;
+// ==== end substrate helpers ====

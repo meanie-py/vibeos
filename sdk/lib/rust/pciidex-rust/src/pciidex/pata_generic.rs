@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Channel, ExAllocatePoolZero, IoConnectInterrupt, IoCreateController, IoDisconnectInterrupt, IoGetConfigurationInformation, KeInitializeDpc, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCONFIGURATION_INFORMATION, PDMA_ADAPTER, PDMA_OPERATIONS, PHYSICAL_ADDRESS, PKSERVICE_ROUTINE, Spare, Timing};
+use ntkrnl_sys::ddk::{IoConnectInterrupt, IoCreateController, IoDisconnectInterrupt, IoGetConfigurationInformation, KeInitializeDpc, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCONFIGURATION_INFORMATION, PDMA_ADAPTER, PDMA_OPERATIONS, PHYSICAL_ADDRESS, PKSERVICE_ROUTINE};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -241,16 +241,12 @@ pub unsafe extern "C" fn AtaSelectTimings(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn SataSetTransferMode(
-    Controller: PATA_CONTROLLER,
-    Channel: ULONG,
-    DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+pub unsafe extern "C" fn SataSetTransferMode(Controller: PATA_CONTROLLER, Channel: ULONG, DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     UNREFERENCED_PARAMETER!(Controller);
     UNREFERENCED_PARAMETER!(Channel);
     UNREFERENCED_PARAMETER!(DeviceList);
 
-    NOTHING;
+    let _ = (Controller, Channel, DeviceList);
 }
 
 unsafe extern "C" fn AtaAcpiFindModeForCycleTime(
@@ -302,19 +298,8 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
     mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
 ) {
     let mut CurrentMode: PIDE_ACPI_TIMING_MODE_BLOCK = &raw mut (*ChanData).CurrentTimingMode;
-    let mut NewMode: IDE_ACPI_TIMING_MODE_BLOCK = IDE_ACPI_TIMING_MODE_BLOCK {
-        Drive: [
-            IDE_ACPI_TIMING_MODE_DRIVE {
-                PioSpeed: 0,
-                DmaSpeed: 0,
-            },
-            IDE_ACPI_TIMING_MODE_DRIVE {
-                PioSpeed: 0,
-                DmaSpeed: 0,
-            },
-        ],
-        ModeFlags: 0,
-    };
+    // C: `IDE_ACPI_TIMING_MODE_BLOCK NewMode;` -- every field is assigned below.
+    let mut NewMode: IDE_ACPI_TIMING_MODE_BLOCK = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut i: ULONG = 0;
 
@@ -340,7 +325,7 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
             );
 
             HasUltraDMA = ((*CurrentMode).ModeFlags
-                & IDE_ACPI_TIMING_MODE_FLAG_UDMA(i)
+                & IDE_ACPI_TIMING_MODE_FLAG_UDMA!(i)
                 != 0) as BOOLEAN;
 
             AtaAcpiFindModeForCycleTime(
@@ -358,9 +343,9 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
             );
 
             if (*Device).DmaMode >= UDMA_MODE!(0) {
-                NewMode.ModeFlags |= IDE_ACPI_TIMING_MODE_FLAG_UDMA(i);
+                NewMode.ModeFlags |= IDE_ACPI_TIMING_MODE_FLAG_UDMA!(i);
             } else {
-                NewMode.ModeFlags &= !IDE_ACPI_TIMING_MODE_FLAG_UDMA(i);
+                NewMode.ModeFlags &= !IDE_ACPI_TIMING_MODE_FLAG_UDMA!(i);
             }
         }
 
@@ -425,7 +410,7 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
     );
 
     Status = AtaAcpiSetTimingMode(
-        (*(*ChanData).PdoExt).Common.Self,
+        (*(*ChanData).__bindgen_anon_1.PdoExt).Common.Self_,
         &raw mut NewMode,
         if !(*DeviceList.offset(0 as isize)).is_null() {
             (**DeviceList.offset(0 as isize)).IdentifyDeviceData
@@ -460,7 +445,7 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
         return;
     }
 
-    AtaAcpiGetTimingMode((*(*ChanData).PdoExt).Common.Self, CurrentMode);
+    AtaAcpiGetTimingMode((*(*ChanData).__bindgen_anon_1.PdoExt).Common.Self_, CurrentMode);
 }
 
 unsafe extern "C" fn PciIdeBiosSetTransferMode(
@@ -503,11 +488,7 @@ unsafe extern "C" fn PciIdeBiosSetTransferMode(
     }
 }
 
-unsafe extern "C" fn PciIdeGenericSetTransferMode(
-    Controller: PATA_CONTROLLER,
-    Channel: ULONG,
-    DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn PciIdeGenericSetTransferMode(Controller: PATA_CONTROLLER, Channel: ULONG, DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
 
     if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_ACPI_GTM != 0 {
@@ -567,9 +548,9 @@ unsafe extern "C" fn PciIdeFreeMemory(ChannelContext: PVOID) {
 
     PrdTablePhysicalAddress.QuadPart = ((*ChanData).PrdTablePhysicalAddress) as _;
 
-    ((*DmaOperations).FreeCommonBuffer)(
+    ((*DmaOperations).FreeCommonBuffer.unwrap_unchecked())(
         DmaAdapter,
-        (core::mem::size_of::<*mut _PCIIDE_PRD_TABLE_ENTRY>() * (*ChanData).__bindgen_anon_1.MaximumPhysicalPages as usize) as ULONG,
+        (core::mem::size_of::<_PCIIDE_PRD_TABLE_ENTRY>() * ((*ChanData).__bindgen_anon_1.MaximumPhysicalPages) as usize) as ULONG,
         PrdTablePhysicalAddress,
         (*ChanData).PrdTable as PVOID,
         TRUE,
@@ -585,11 +566,11 @@ unsafe extern "C" fn PciIdeAllocateMemory(ChannelContext: PVOID) -> NTSTATUS {
 
     PAGED_CODE!();
 
-    BlockSize = (core::mem::size_of::<PPCIIDE_PRD_TABLE_ENTRY>() as ULONG)
+    BlockSize = (core::mem::size_of::<_PCIIDE_PRD_TABLE_ENTRY>() as ULONG)
         .wrapping_mul((*ChanData).__bindgen_anon_1.MaximumPhysicalPages as ULONG);
     (*ChanData).PrdTable = (*DmaOperations)
         .AllocateCommonBuffer
-        .expect("non-null function pointer")(
+        .unwrap_unchecked()(
         (*ChanData).__bindgen_anon_1.DmaAdapter,
         BlockSize,
         &raw mut LogicalAddress,
@@ -626,7 +607,7 @@ unsafe extern "C" fn PciIdeAllocateMemory(ChannelContext: PVOID) -> NTSTATUS {
 }
 
 unsafe extern "C" fn PciIdeIsDmaStatusValid(mut DmaStatus: u8) -> i32 {
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,
@@ -643,9 +624,9 @@ unsafe extern "C" fn PciIdeIsDmaStatusValid(mut DmaStatus: u8) -> i32 {
         };
     }
     if (DmaStatus as u32) & (PCIIDE_DMA_STATUS_RESERVED1 | PCIIDE_DMA_STATUS_RESERVED2) != 0 {
-        return (FALSE) as _;
+        return (FALSE as i32);
     }
-    return (TRUE) as _;
+    return (TRUE as i32);
 }
 
 unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) -> BOOLEAN {
@@ -653,13 +634,13 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
 
     PAGED_CODE!();
 
-    if (*Controller).Pci.Command as ::core::ffi::c_int & PCI_ENABLE_BUS_MASTER == 0 {
+    if (*Controller).Pci.Command as ::core::ffi::c_int & (PCI_ENABLE_BUS_MASTER as i32) == 0 {
         INFO!(b"PCI bus mastering disabled\n\0" as *const u8 as *const ::core::ffi::c_char);
         return FALSE;
     }
 
-    if ((*Controller).Pci.BaseClass as ::core::ffi::c_int) as u32 == PCI_CLASS_MASS_STORAGE_CTLR
-        && (*Controller).Pci.ProgIf as ::core::ffi::c_int & PCIIDE_PROGIF_DMA_CAPABLE == 0
+    if (*Controller).Pci.BaseClass as ::core::ffi::c_int == (PCI_CLASS_MASS_STORAGE_CTLR as i32)
+        && (*Controller).Pci.ProgIf as ::core::ffi::c_int & (PCIIDE_PROGIF_DMA_CAPABLE as i32) == 0
     {
         INFO!(b"Non DMA capable controller detected\n\0" as *const u8 as *const ::core::ffi::c_char);
         return FALSE;
@@ -683,7 +664,7 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
             let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[i as usize] as PCHANNEL_DATA_PATA;
 
             if (*Controller).AccessRange[PCIIDE_DMA_IO_BAR as usize].Flags & RANGE_IS_MAPPED as ULONG != 0 {
-                (*ChanData).ChanInfo |= CHANNEL_FLAG_MRES_DMA;
+                (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_MRES_DMA;
             }
 
             if !IS_PRIMARY_CHANNEL!(ChanData) {
@@ -706,14 +687,14 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
         let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[i as usize] as PCHANNEL_DATA_PATA;
         let mut DmaStatus: UCHAR = 0;
 
-        if !((*ChanData).TransferModeSupported & !PIO_ALL as ULONG == 0) {
+        if !((*ChanData).__bindgen_anon_1.TransferModeSupported & !PIO_ALL as ULONG == 0) {
             DmaStatus = ATA_READ!(
                 (*ChanData).Regs.Dma.offset(PCIIDE_DMA_STATUS as isize),
                 ChanData,
                 MRES_DMA,
             );
             if PciIdeIsDmaStatusValid(DmaStatus) == 0 {
-                (*ChanData).TransferModeSupported &= PIO_ALL;
+                (*ChanData).__bindgen_anon_1.TransferModeSupported &= PIO_ALL;
             } else {
                 INFO!(
                     b"CH %lu: %p DMA 0x%02X\n\0" as *const u8 as *const ::core::ffi::c_char,
@@ -723,16 +704,16 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
                 );
 
                 if i == 0 && (*Controller).MaxChannels > 1 {
-                    if DmaStatus as ::core::ffi::c_int & PCIIDE_DMA_STATUS_SIMPLEX != 0 {
+                    if DmaStatus as ::core::ffi::c_int & (PCIIDE_DMA_STATUS_SIMPLEX as i32) != 0 {
                         (*Controller).Flags |= CTRL_FLAG_IS_SIMPLEX;
                     }
                 }
 
-                if DmaStatus as ::core::ffi::c_int & PCIIDE_DMA_STATUS_DRIVE0_DMA_CAPABLE != 0 {
-                    (*ChanData).ChanInfo |= CHANNEL_FLAG_DRIVE0_DMA_CAPABLE;
+                if DmaStatus as ::core::ffi::c_int & (PCIIDE_DMA_STATUS_DRIVE0_DMA_CAPABLE as i32) != 0 {
+                    (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_DRIVE0_DMA_CAPABLE;
                 }
-                if DmaStatus as ::core::ffi::c_int & PCIIDE_DMA_STATUS_DRIVE1_DMA_CAPABLE != 0 {
-                    (*ChanData).ChanInfo |= CHANNEL_FLAG_DRIVE1_DMA_CAPABLE;
+                if DmaStatus as ::core::ffi::c_int & (PCIIDE_DMA_STATUS_DRIVE1_DMA_CAPABLE as i32) != 0 {
+                    (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_DRIVE1_DMA_CAPABLE;
                 }
             }
         }
@@ -802,7 +783,7 @@ unsafe extern "C" fn PciIdeAssignNativeResources(
     PciIdeInitTaskFileIoResources(
         ChanData,
         (CommandPortBase as ULONG_PTR) as _,
-        ((ControlPortBase as ULONG_PTR).wrapping_add((PCIIDE_CONTROL_IO_BAR_OFFSET) as _)) as _,
+        ((ControlPortBase as ULONG_PTR).wrapping_add((PCIIDE_CONTROL_IO_BAR_OFFSET as ULONG_PTR))) as _,
         1,
     );
 
@@ -911,7 +892,7 @@ unsafe extern "C" fn PciIdeAssignLegacyResources(
 pub unsafe extern "C" fn PciIdeParseResources(
     ChanData: *mut CHANNEL_DATA_PATA,
     ResourcesTranslated: *mut CM_RESOURCE_LIST,
-) -> i32 {
+) -> NTSTATUS {
     let Controller = (*ChanData).__bindgen_anon_1.Controller;
     let Status: i32;
 
@@ -975,7 +956,7 @@ pub unsafe extern "C" fn PciIdeGetChannelState(
 
     if !(*Controller).__bindgen_anon_1.ChannelEnableBits.is_null() {
         if (*Controller).Flags & CTRL_FLAG_USE_TEST_FUNCTION != 0 {
-            return (*Controller).__bindgen_anon_1.ChannelEnabledTest.expect("non-null function pointer")(
+            return (*Controller).__bindgen_anon_1.ChannelEnabledTest.unwrap_unchecked()(
                 Controller,
                 Channel,
             );
@@ -998,10 +979,7 @@ pub unsafe extern "C" fn PciIdeGetChannelState(
     return ChannelStateUnknown;
 }
 
-unsafe extern "C" fn PataEnableInterrupts(
-    mut ChannelContext: *mut core::ffi::c_void,
-    mut Enable: i32,
-) {
+unsafe extern "C" fn PataEnableInterrupts(mut ChannelContext: PVOID, mut Enable: BOOLEAN) {
     let mut ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let mut Control: u8;
 
@@ -1015,16 +993,16 @@ unsafe extern "C" fn PataEnableInterrupts(
         },
     );
 
-    Control = IDE_DC_ALWAYS;
+    Control = (IDE_DC_ALWAYS as u8);
     if Enable != 0 {
-        Control |= (IDE_DC_REENABLE_CONTROLLER) as u8;
+        Control |= (IDE_DC_REENABLE_CONTROLLER as u8);
     } else {
-        Control |= (IDE_DC_DISABLE_INTERRUPTS) as u8;
+        Control |= (IDE_DC_DISABLE_INTERRUPTS as u8);
     }
 
     #[cfg(target_arch = "x86")]
     {
-        if (*ChanData).ChanInfo & CHANNEL_FLAG_CBUS != 0 {
+        if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_CBUS != 0 {
             WRITE_PORT_UCHAR(
                 PC98_ATA_BANK as *mut u8,
                 1,
@@ -1032,11 +1010,11 @@ unsafe extern "C" fn PataEnableInterrupts(
             ATA_WRITE!(
                 (*ChanData).Regs.__bindgen_anon_6.Control,
                 Control,
-                ChanData as *mut core::ffi::c_void,
+                ChanData as *mut CHANNEL_DATA_PATA,
                 MRES_CTRL,
             );
 
-            if !(*ChanData).CheckInterrupt.is_null() {
+            if !(*ChanData).CheckInterrupt.is_none() {
                 (((*ChanData).CheckInterrupt).unwrap_unchecked())((ChanData as *mut core::ffi::c_void).cast());
             }
             (((*ChanData).ReadStatus).unwrap_unchecked())((ChanData as *mut core::ffi::c_void).cast());
@@ -1052,11 +1030,11 @@ unsafe extern "C" fn PataEnableInterrupts(
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_6.Control,
         Control,
-        ChanData as *mut core::ffi::c_void,
+        ChanData as *mut CHANNEL_DATA_PATA,
         MRES_CTRL,
     );
 
-    if !(*ChanData).CheckInterrupt.is_null() {
+    if !(*ChanData).CheckInterrupt.is_none() {
         (((*ChanData).CheckInterrupt).unwrap_unchecked())((ChanData as *mut core::ffi::c_void).cast());
     }
     (((*ChanData).ReadStatus).unwrap_unchecked())((ChanData as *mut core::ffi::c_void).cast());
@@ -1064,20 +1042,20 @@ unsafe extern "C" fn PataEnableInterrupts(
     if !(*ChanData).Regs.Dma.is_null() {
         let mut Status: u8 = ATA_READ!(
             (*ChanData).Regs.Dma.add(PCIIDE_DMA_STATUS as usize),
-            ChanData as *mut core::ffi::c_void,
+            ChanData as *mut CHANNEL_DATA_PATA,
             MRES_DMA,
         );
 
         ATA_WRITE!(
             (*ChanData).Regs.Dma.add(PCIIDE_DMA_STATUS as usize),
             Status,
-            ChanData as *mut core::ffi::c_void,
+            ChanData as *mut CHANNEL_DATA_PATA,
             MRES_DMA,
         );
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::c_void) -> i32 {
+pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::c_void) -> NTSTATUS {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut InterruptDesc: *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR;
@@ -1104,14 +1082,14 @@ pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::
         ChanData as *mut core::ffi::c_void,
         core::ptr::null_mut(),
         (*(*InterruptDesc)).u.Interrupt.Vector,
-        ((*(*InterruptDesc)).u.Interrupt.Level) as u8,
-        ((*(*InterruptDesc)).u.Interrupt.Level) as u8,
-        if (*(*InterruptDesc)).Flags as u32 & CM_RESOURCE_INTERRUPT_LATCHED != 0 {
+        ((*(*InterruptDesc)).u.Interrupt.Level) as KIRQL,
+        ((*(*InterruptDesc)).u.Interrupt.Level) as KIRQL,
+        if (*(*InterruptDesc)).Flags & (CM_RESOURCE_INTERRUPT_LATCHED as u16) != 0 {
             Latched
         } else {
             LevelSensitive
         },
-        ((*(*InterruptDesc)).ShareDisposition == CmResourceShareShared) as u8,
+        (((*(*InterruptDesc)).ShareDisposition) as u32 == CmResourceShareShared) as u8,
         (*(*InterruptDesc)).u.Interrupt.Affinity,
         FALSE,
     );
@@ -1123,10 +1101,7 @@ pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::
     return STATUS_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PciIdeAttachChannel(
-    ChannelContext: *mut core::ffi::c_void,
-    Attach: u8,
-) -> i32 {
+pub unsafe extern "C" fn PciIdeAttachChannel(ChannelContext: PVOID, Attach: BOOLEAN) -> NTSTATUS {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
 
     PAGED_CODE!();
@@ -1137,9 +1112,9 @@ pub unsafe extern "C" fn PciIdeAttachChannel(
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeCreateChannelData(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
     HwExtensionSize: u32,
-) -> i32 {
+) -> NTSTATUS {
     let mut ChanData: *mut CHANNEL_DATA_PATA;
     let mut i: u32;
     let mut Size: u32;
@@ -1147,32 +1122,32 @@ pub unsafe extern "C" fn PciIdeCreateChannelData(
     Size = core::mem::offset_of!(CHANNEL_DATA_PATA, HwExt) as u32 + HwExtensionSize;
     ChanData = ExAllocatePoolZero(
         NonPagedPool,
-        ((Size * (*(*Controller)).MaxChannels) as usize) as _,
+        (Size * (*Controller).MaxChannels) as usize,
         TAG_PCIIDEX,
     ) as *mut CHANNEL_DATA_PATA;
     if ChanData.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    (*(*Controller)).ChanDataBlock = ChanData as *mut core::ffi::c_void;
-    (*(*Controller)).ChannelBitmap = NUM_TO_BITMAP!((*(*Controller)).MaxChannels);
+    (*Controller).ChanDataBlock = ChanData as *mut core::ffi::c_void;
+    (*Controller).ChannelBitmap = NUM_TO_BITMAP!((*Controller).MaxChannels);
 
     i = 0;
-    while i < (*(*Controller)).MaxChannels {
-        (*(*Controller)).Channels[i as usize] = ChanData as *mut core::ffi::c_void;
+    while i < (*Controller).MaxChannels {
+        (*Controller).Channels[i as usize] = ChanData as *mut core::ffi::c_void;
 
         (*ChanData).__bindgen_anon_1.Channel = i;
-        (*ChanData).__bindgen_anon_1.Controller = Controller as *mut _ATA_CONTROLLER;
+        (*ChanData).__bindgen_anon_1.Controller = Controller;
 
         (*ChanData).__bindgen_anon_1.ChanInfo = CHANNEL_FLAG_IO32;
         (*ChanData).__bindgen_anon_1.AllocateMemory = Some(PciIdeAllocateMemory);
         (*ChanData).__bindgen_anon_1.FreeMemory = Some(PciIdeFreeMemory);
-        (*ChanData).__bindgen_anon_1.EnableInterrupts = Some(PataEnableInterrupts as _);
+        (*ChanData).__bindgen_anon_1.EnableInterrupts = Some(PataEnableInterrupts as unsafe extern "C" fn(*mut core::ffi::c_void, u8));
         (*ChanData).__bindgen_anon_1.PreparePrdTable = Some(PciIdePreparePrdTable);
-        (*ChanData).__bindgen_anon_1.PrepareIo = Some(PataPrepareIo as _);
-        (*ChanData).__bindgen_anon_1.StartIo = Some(PataStartIo as _);
-        (*ChanData).LoadTaskFile = Some(PataLoadTaskFile as PCHANNEL_LOAD_TASK_FILE);
-        (*ChanData).SaveTaskFile = Some(PataSaveTaskFile as PCHANNEL_SAVE_TASK_FILE);
+        (*ChanData).__bindgen_anon_1.PrepareIo = Some(PataPrepareIo);
+        (*ChanData).__bindgen_anon_1.StartIo = Some(PataStartIo as unsafe extern "C" fn(*mut core::ffi::c_void, *mut _ATA_DEVICE_REQUEST) -> u8);
+        (*ChanData).LoadTaskFile = Some(PataLoadTaskFile);
+        (*ChanData).SaveTaskFile = Some(PataSaveTaskFile);
         (*ChanData).ReadStatus = Some(PataReadStatus);
         (*ChanData).__bindgen_anon_1.SetTransferMode = Some(PciIdeGenericSetTransferMode);
         (*ChanData).__bindgen_anon_1.TransferModeSupported =
@@ -1192,42 +1167,42 @@ pub unsafe extern "C" fn PciIdeCreateChannelData(
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeGetControllerProperties(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut i: ULONG;
 
     PAGED_CODE!();
 
-    (*(*Controller)).MaxChannels = MAX_IDE_CHANNEL;
+    (*Controller).MaxChannels = MAX_IDE_CHANNEL;
 
-    match ((*(*Controller)).Pci.VendorID) as u32 {
+    match ((*Controller).Pci.VendorID) as u32 {
         PCI_VEN_ATI => {
-            Status = AtiGetControllerProperties((Controller).cast());
+            Status = AtiGetControllerProperties(Controller);
         }
         PCI_VEN_AMD | PCI_VEN_NVIDIA => {
-            Status = AmdGetControllerProperties((Controller).cast());
+            Status = AmdGetControllerProperties(Controller);
         }
         PCI_VEN_CMD => {
-            Status = CmdGetControllerProperties((Controller).cast());
+            Status = CmdGetControllerProperties(Controller);
             if Status == STATUS_NO_MATCH {
                 Status = Sil680GetControllerProperties(Controller);
             }
         }
         PCI_VEN_INTEL => {
-            Status = IntelGetControllerProperties((Controller).cast());
+            Status = IntelGetControllerProperties(Controller);
         }
         PCI_VEN_PC_TECH => {
-            Status = PcTechGetControllerProperties((Controller).cast());
+            Status = PcTechGetControllerProperties(Controller);
         }
         PCI_VEN_SERVERWORKS => {
-            Status = SvwPataGetControllerProperties((Controller).cast());
+            Status = SvwPataGetControllerProperties(Controller);
             if Status == STATUS_NO_MATCH {
-                Status = SvwSataGetControllerProperties((Controller).cast());
+                Status = SvwSataGetControllerProperties(Controller);
             }
         }
         PCI_VEN_TOSHIBA => {
-            Status = ToshibaGetControllerProperties((Controller).cast());
+            Status = ToshibaGetControllerProperties(Controller);
         }
         PCI_VEN_VIA => {
             Status = ViaGetControllerProperties(Controller);
@@ -1238,9 +1213,9 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
     }
 
     if Status == STATUS_NO_MATCH {
-        if (((*(*Controller)).Pci.BaseClass) as u32 != PCI_CLASS_MASS_STORAGE_CTLR)
-            || (((*(*Controller)).Pci.SubClass) as u32 != PCI_SUBCLASS_MSC_IDE_CTLR
-                && ((*(*Controller)).Pci.SubClass) as u32 != PCI_SUBCLASS_MSC_RAID_CTLR)
+        if ((*Controller).Pci.BaseClass != (PCI_CLASS_MASS_STORAGE_CTLR as u8))
+            || ((*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_IDE_CTLR as u8)
+                && (*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_RAID_CTLR as u8))
         {
             return Status;
         }
@@ -1251,9 +1226,9 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
         }
 
         i = 0;
-        while i < (*(*Controller)).MaxChannels {
-            let ChanData: *mut PCHANNEL_DATA_PATA = ((*(*Controller)).Channels[i as usize]).cast();
-            (*(*ChanData)).__bindgen_anon_1.ChanInfo &= !CHANNEL_FLAG_IO32;
+        while i < (*Controller).MaxChannels {
+            let ChanData: PCHANNEL_DATA_PATA = ((*Controller).Channels[i as usize]).cast();
+            (*ChanData).__bindgen_anon_1.ChanInfo &= !CHANNEL_FLAG_IO32;
             i = i.wrapping_add(1);
         }
     }
@@ -1262,34 +1237,34 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
         return Status;
     }
 
-    if ((*(*Controller)).Pci.BaseClass) as u32 == PCI_CLASS_MASS_STORAGE_CTLR
-        && ((*(*Controller)).Pci.SubClass) as u32 == PCI_SUBCLASS_MSC_IDE_CTLR
+    if (*Controller).Pci.BaseClass == (PCI_CLASS_MASS_STORAGE_CTLR as u8)
+        && (*Controller).Pci.SubClass == (PCI_SUBCLASS_MSC_IDE_CTLR as u8)
     {
-        if ((*(*Controller)).Pci.ProgIf as u32 & PCIIDE_PROGIF_PRIMARY_CHANNEL_NATIVE_MODE) == 0
-            || ((*(*Controller)).Pci.ProgIf as u32 & PCIIDE_PROGIF_SECONDARY_CHANNEL_NATIVE_MODE) == 0
+        if (*Controller).Pci.ProgIf & (PCIIDE_PROGIF_PRIMARY_CHANNEL_NATIVE_MODE as u8) == 0
+            || (*Controller).Pci.ProgIf & (PCIIDE_PROGIF_SECONDARY_CHANNEL_NATIVE_MODE as u8) == 0
         {
-            (*(*Controller)).Flags &= !CTRL_FLAG_NATIVE_PCI;
+            (*Controller).Flags &= !CTRL_FLAG_NATIVE_PCI;
         }
     }
 
-    if (*(*Controller)).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
-        if (*(*Controller)).InterruptDesc.Type != CmResourceTypeInterrupt {
+    if (*Controller).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
+        if (*Controller).InterruptDesc.Type != CmResourceTypeInterrupt {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
     }
 
-    if PciIdeControllerInitDma((Controller).cast()) == 0 {
+    if PciIdeControllerInitDma(Controller) == 0 {
         i = 0;
-        while i < (*(*Controller)).MaxChannels {
-            let ChanData: *mut PCHANNEL_DATA_PATA = ((*(*Controller)).Channels[i as usize]).cast();
-            (*(*ChanData)).__bindgen_anon_1.TransferModeSupported &= PIO_ALL;
+        while i < (*Controller).MaxChannels {
+            let ChanData: PCHANNEL_DATA_PATA = ((*Controller).Channels[i as usize]).cast();
+            (*ChanData).__bindgen_anon_1.TransferModeSupported &= PIO_ALL;
             i = i.wrapping_add(1);
         }
     }
 
-    if (*(*Controller)).Flags & CTRL_FLAG_IS_SIMPLEX != 0 {
-        (*(*Controller)).HwSyncObject = IoCreateController(0);
-        if (*(*Controller)).HwSyncObject.is_null() {
+    if (*Controller).Flags & CTRL_FLAG_IS_SIMPLEX != 0 {
+        (*Controller).HwSyncObject = IoCreateController(0);
+        if (*Controller).HwSyncObject.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;
         }
     }

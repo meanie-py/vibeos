@@ -557,13 +557,6 @@ use core::sync::atomic::{AtomicI32, Ordering};
 // ============================ data symbols ============================
 #[no_mangle] pub static mut SharedSystemTime: LARGE_INTEGER = unsafe { core::mem::zeroed() };
 
-// SharedUserData — C macro for the fixed-VA KUSER_SHARED_DATA, not a real export. ServiceTransferRequest
-// reads it for timestamps. On i386 the C-macro symbol is provided elsewhere (and the ref was fold-hidden);
-// on amd64 provide the fixed kernel VA (0xFFFFF78000000000). arm64 handled at its own link.
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle] pub static mut SharedUserData: *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA =
-    0xFFFFF78000000000usize as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
-
 /// utils.c ClasspDeviceCopyOffloadProperty — StorageDeviceCopyOffloadProperty
 /// query handler. This was a hand-written link-gap stub that answered every
 /// standard query STATUS_NOT_SUPPORTED, claiming that was what the C gives a

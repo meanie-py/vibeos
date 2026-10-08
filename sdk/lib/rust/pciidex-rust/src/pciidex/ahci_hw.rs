@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DeviceNumber, KeStallExecutionProcessor, Mask, PortNumber};
+use ntkrnl_sys::ddk::KeStallExecutionProcessor;
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaAhciPollRegister(
@@ -33,15 +33,12 @@ unsafe extern "C" fn AtaAhciPollRegister(
     return FALSE;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciEnableInterrupts(
-    ChannelContext: *mut core::ffi::c_void,
-    Enable: u8,
-) {
+pub unsafe extern "C" fn AtaAhciEnableInterrupts(ChannelContext: PVOID, Enable: BOOLEAN) {
     let ChanData: *mut CHANNEL_DATA_AHCI = ChannelContext as *mut CHANNEL_DATA_AHCI;
 
     INFO!(
         b"CH %lu: %sble interrupts\n\0".as_ptr() as *const i8,
-        (*ChanData).__bindgen_anon_1.Channel,
+        (*ChanData).Channel,
         if Enable != 0 {
             b"Ena\0".as_ptr() as *const i8
         } else {
@@ -52,7 +49,7 @@ pub unsafe extern "C" fn AtaAhciEnableInterrupts(
     AHCI_PORT_WRITE((*ChanData).IoBase, PxSataError, 0xFFFFFFFF);
     AHCI_PORT_WRITE((*ChanData).IoBase, PxInterruptStatus, 0xFFFFFFFF);
     AHCI_HBA_WRITE(
-        (*(*ChanData).__bindgen_anon_1.Controller).IoBase,
+        ((*(*ChanData).__bindgen_anon_1.Controller).IoBase).cast(),
         HbaInterruptStatus,
         1 << (*ChanData).__bindgen_anon_1.Channel,
     );
@@ -71,7 +68,7 @@ pub unsafe extern "C" fn AtaAhciEnableInterrupts(
 unsafe extern "C" fn AtaAhciIsHbaHotRemoved(mut ChanData: PCHANNEL_DATA_AHCI) -> BOOLEAN {
     let mut Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut WasRemoved: BOOLEAN = 0;
-    WasRemoved = (AHCI_HBA_READ((*Controller).IoBase, HbaAhciVersion)
+    WasRemoved = (AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaAhciVersion)
         == 0xFFFFFFFF) as BOOLEAN;
     if WasRemoved != 0 {
     }
@@ -476,14 +473,14 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
         {
             INFO!(
                 b"CH %lu: Internal request timed out\n\0".as_ptr() as *const i8,
-                (*ChanData).__bindgen_anon_1.Channel,
+                (*ChanData).Channel,
             );
 
             AtaAhciStopCommandListProcessAndWait(ChanData);
             AtaAhciPerformCommandListOverride(ChanData);
             AtaAhciStartCommandListProcess(ChanData);
 
-            SrbStatus = (SRB_STATUS_TIMEOUT) as u8;
+            SrbStatus = (SRB_STATUS_TIMEOUT as u8);
             break 'done;
         }
 
@@ -493,10 +490,10 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
             if AtaAhciStopCommandListProcessAndWait(ChanData) == 0 {
                 INFO!(
                     b"CH %lu: Failed to stop the command list DMA engine\n\0".as_ptr() as *const i8,
-                    (*ChanData).__bindgen_anon_1.Channel,
+                    (*ChanData).Channel,
                 );
 
-                SrbStatus = (SRB_STATUS_TIMEOUT) as u8;
+                SrbStatus = (SRB_STATUS_TIMEOUT as u8);
                 break 'done;
             }
 
@@ -504,11 +501,11 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
             if (TaskFileData & (IDE_STATUS_BUSY | IDE_STATUS_DRQ)) != 0 {
                 INFO!(
                     b"CH %lu: Busy TFD %08lx\n\0".as_ptr() as *const i8,
-                    (*ChanData).__bindgen_anon_1.Channel,
+                    (*ChanData).Channel,
                     TaskFileData,
                 );
 
-                SrbStatus = (SRB_STATUS_TIMEOUT) as u8;
+                SrbStatus = (SRB_STATUS_TIMEOUT as u8);
                 break 'done;
             }
 
@@ -520,22 +517,22 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
 
             AtaAhciStartCommandListProcess(ChanData);
 
-            SrbStatus = (SRB_STATUS_ERROR) as u8;
+            SrbStatus = (SRB_STATUS_ERROR as u8);
             break 'done;
         }
 
-        SrbStatus = (SRB_STATUS_SUCCESS) as u8;
+        SrbStatus = (SRB_STATUS_SUCCESS as u8);
     }
 
-    if (SrbStatus) as u32 == SRB_STATUS_SUCCESS {
+    if SrbStatus == (SRB_STATUS_SUCCESS as u8) {
         TRACE!(
             b"CH %lu: Completed internal request\n\0".as_ptr() as *const i8,
-            (*ChanData).__bindgen_anon_1.Channel,
+            (*ChanData).Channel,
         );
     } else {
         INFO!(
             b"CH %lu: Internal request failed %02x\n\0".as_ptr() as *const i8,
-            (*ChanData).__bindgen_anon_1.Channel,
+            (*ChanData).Channel,
             SrbStatus,
         );
     }
@@ -543,7 +540,7 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
     AHCI_PORT_WRITE((*ChanData).IoBase, PxSataError, 0xFFFFFFFF);
     AHCI_PORT_WRITE((*ChanData).IoBase, PxInterruptStatus, 0xFFFFFFFF);
     AHCI_HBA_WRITE(
-        (*(*ChanData).__bindgen_anon_1.Controller).IoBase,
+        ((*(*ChanData).__bindgen_anon_1.Controller).IoBase).cast(),
         HbaInterruptStatus,
         1 << (*ChanData).__bindgen_anon_1.Channel,
     );
@@ -565,16 +562,16 @@ unsafe extern "C" fn AtaAhciSendResetFis(
         H2dFis as *mut _ as *mut core::ffi::c_void,
         core::mem::size_of::<AHCI_FIS_HOST_TO_DEVICE>(),
     );
-    (*H2dFis).Type = (AHCI_FIS_REGISTER_HOST_TO_DEVICE) as u8;
+    (*H2dFis).Type = (AHCI_FIS_REGISTER_HOST_TO_DEVICE as u8);
     (*H2dFis).Flags = PortNumber;
-    (*H2dFis).Control = IDE_DC_ALWAYS;
+    (*H2dFis).Control = (IDE_DC_ALWAYS as u8);
 
     (*CommandHeader).PrdByteCount = 0;
     (*CommandHeader).Control = ((core::mem::size_of::<AHCI_FIS_HOST_TO_DEVICE>() / core::mem::size_of::<ULONG>())
         | ((PortNumber as usize) << AHCI_COMMAND_HEADER_PMP_SHIFT)) as ULONG;
 
     if AssertSRST != 0 {
-        (*H2dFis).Control |= (IDE_DC_RESET_CONTROLLER) as u8;
+        (*H2dFis).Control |= (IDE_DC_RESET_CONTROLLER as u8);
         (*CommandHeader).Control |= AHCI_COMMAND_HEADER_RESET | AHCI_COMMAND_HEADER_CLEAR_BUSY_UPON_OK;
     }
 
@@ -672,7 +669,7 @@ unsafe extern "C" fn AtaAhciPmpDisableSilXmitEarlyAck(
         129,
         &raw mut Value,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         return FALSE;
     }
     if Value & 1 != 0 {
@@ -683,7 +680,7 @@ unsafe extern "C" fn AtaAhciPmpDisableSilXmitEarlyAck(
             129,
             Value,
         );
-        if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+        if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
             return FALSE;
         }
     }
@@ -707,7 +704,7 @@ unsafe extern "C" fn AtaAhciPmpIdentifyPmp(
         (PmpProductId) as USHORT,
         &mut ProductId,
     );
-    if (SrbStatus) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus != (SRB_STATUS_SUCCESS as u8) {
         return FALSE;
     }
 
@@ -717,7 +714,7 @@ unsafe extern "C" fn AtaAhciPmpIdentifyPmp(
         (PmpRevisionInfo) as USHORT,
         &mut RevisionInfo,
     );
-    if (SrbStatus) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus != (SRB_STATUS_SUCCESS as u8) {
         return FALSE;
     }
 
@@ -727,7 +724,7 @@ unsafe extern "C" fn AtaAhciPmpIdentifyPmp(
         (PmpPortInfo) as USHORT,
         &mut PortCount,
     );
-    if (SrbStatus) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus != (SRB_STATUS_SUCCESS as u8) {
         return FALSE;
     }
 
@@ -794,13 +791,13 @@ unsafe extern "C" fn AtaAhciPmpDetect(
         TRUE,
         1000,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         INFO!(
             b"CH %lu: Soft reset failed %02x\n\0".as_ptr() as *const i8,
             (*ChanData).Channel,
             SrbStatus,
         );
-        if (SrbStatus as ::core::ffi::c_int) as u32 == SRB_STATUS_TIMEOUT {
+        if SrbStatus as ::core::ffi::c_int == (SRB_STATUS_TIMEOUT as i32) {
             *CheckForPmp = FALSE;
             INFO!(
                 b"CH %lu: Seems to have no PMP device\n\0".as_ptr() as *const i8,
@@ -816,13 +813,13 @@ unsafe extern "C" fn AtaAhciPmpDetect(
         FALSE,
         2000,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         INFO!(
             b"CH %lu: Soft reset failed %02x\n\0".as_ptr() as *const i8,
             (*ChanData).Channel,
             SrbStatus,
         );
-        if (SrbStatus as ::core::ffi::c_int) as u32 == SRB_STATUS_TIMEOUT {
+        if SrbStatus as ::core::ffi::c_int == (SRB_STATUS_TIMEOUT as i32) {
             *CheckForPmp = FALSE;
             INFO!(
                 b"CH %lu: Seems to have no PMP device\n\0".as_ptr() as *const i8,
@@ -901,14 +898,12 @@ unsafe extern "C" fn AtaAhciPhyCheckConnection(
     return ConnectionStatus;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciEnumerateChannel(
-    ChannelContext: *mut core::ffi::c_void,
-) -> u32 {
+pub unsafe extern "C" fn AtaAhciEnumerateChannel(ChannelContext: PVOID) -> ULONG {
     let ChanData: *mut CHANNEL_DATA_AHCI = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let mut RetryCount: u32;
-    let mut PortCount: u32;
-    let mut ConnectionStatus: ATA_CONNECTION_STATUS;
-    let mut CheckForPmp: u8 = (TRUE) as _;
+    let mut PortCount: u32 = core::mem::zeroed();
+    let mut ConnectionStatus: ATA_CONNECTION_STATUS = core::mem::zeroed();
+    let mut CheckForPmp: i32 = (TRUE as i32);
 
     if AtaAhciIsHbaHotRemoved(ChanData) != 0 {
         return 0;
@@ -916,11 +911,11 @@ pub unsafe extern "C" fn AtaAhciEnumerateChannel(
 
     AtaChanEnableInterruptsSync((ChanData).cast(), FALSE);
 
-    ((*(*ChanData).__bindgen_anon_1.PortNotification)(
+    (((*ChanData).__bindgen_anon_1.PortNotification).unwrap_unchecked())(
         AtaResetDetected,
         (*ChanData).__bindgen_anon_1.PortContext,
-        0xFFFFFFFF,
-    ));
+        0xFFFFFFFFu32, // a variadic argument: C's `0xFFFFFFFF` is an unsigned int
+    );
 
     RetryCount = 3;
     while RetryCount > 0 {
@@ -938,10 +933,10 @@ pub unsafe extern "C" fn AtaAhciEnumerateChannel(
         {
             INFO!(
                 b"CH %lu: Trying to detect PMP\n\0".as_ptr() as *const i8,
-                (*ChanData).__bindgen_anon_1.Channel,
+                (*ChanData).Channel,
             );
 
-            ConnectionStatus = AtaAhciPmpDetect(ChanData, &mut CheckForPmp);
+            ConnectionStatus = AtaAhciPmpDetect(ChanData, &mut CheckForPmp as *mut i32 as *mut u8);
             if ConnectionStatus == CONN_STATUS_FAILURE {
                 RetryCount = RetryCount.wrapping_sub(1);
                 continue;
@@ -950,7 +945,7 @@ pub unsafe extern "C" fn AtaAhciEnumerateChannel(
             if ConnectionStatus == CONN_STATUS_DEV_UNKNOWN {
                 INFO!(
                     b"CH %lu: Discovered a Port Multiplier\n\0".as_ptr() as *const i8,
-                    (*ChanData).__bindgen_anon_1.Channel,
+                    (*ChanData).Channel,
                 );
 
                 (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_IS_PMP;
@@ -999,7 +994,7 @@ unsafe extern "C" fn AtaAhciPmpCheckSendComReset(
         (ATA_SERROR) as USHORT,
         0xFFFFFFFF,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         return FALSE;
     }
     SataControl = AHCI_PXCTL_DET_RESET;
@@ -1009,7 +1004,7 @@ unsafe extern "C" fn AtaAhciPmpCheckSendComReset(
         (ATA_SCONTROL) as USHORT,
         SataControl,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         return FALSE;
     }
     KeStallExecutionProcessor(1000);
@@ -1021,7 +1016,7 @@ unsafe extern "C" fn AtaAhciPmpCheckSendComReset(
         (ATA_SCONTROL) as USHORT,
         SataControl,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         return FALSE;
     }
     SrbStatus = AtaAhciPmpWrite(
@@ -1030,7 +1025,7 @@ unsafe extern "C" fn AtaAhciPmpCheckSendComReset(
         (ATA_SERROR) as USHORT,
         0xFFFFFFFF,
     );
-    if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+    if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         return FALSE;
     }
     return TRUE;
@@ -1051,10 +1046,10 @@ unsafe extern "C" fn AtaAhciPmpPhyCheckDevicePresence(
             (ATA_SSTATUS) as USHORT,
             &raw mut SataStatus,
         );
-        if (SrbStatus) as u32 == SRB_STATUS_ERROR {
+        if SrbStatus == (SRB_STATUS_ERROR as u8) {
             i = i.wrapping_add(1);
             continue;
-        } else if (SrbStatus) as u32 != SRB_STATUS_SUCCESS {
+        } else if SrbStatus != (SRB_STATUS_SUCCESS as u8) {
             return CONN_STATUS_FAILURE;
         }
         if (SataStatus & AHCI_PXSSTS_DET_MASK) != AHCI_PXSSTS_DET_NO_DEVICE {
@@ -1093,10 +1088,10 @@ unsafe extern "C" fn AtaAhciPmpPhyWaitForReady(
             (ATA_SSTATUS) as USHORT,
             &raw mut SataStatus,
         );
-        if (SrbStatus as ::core::ffi::c_int) as u32 == SRB_STATUS_ERROR {
+        if SrbStatus as ::core::ffi::c_int == (SRB_STATUS_ERROR as i32) {
             i = i.wrapping_add(1);
             continue;
-        } else if (SrbStatus as ::core::ffi::c_int) as u32 != SRB_STATUS_SUCCESS {
+        } else if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
             return CONN_STATUS_FAILURE;
         }
         if SataStatus & AHCI_PXSSTS_DET_MASK == AHCI_PXSSTS_DET_PHY_OK {
@@ -1132,7 +1127,7 @@ unsafe extern "C" fn AtaPmpCheckConnection(
         PortNumber,
     );
 
-    (*ChanData).__bindgen_anon_1.PortNotification(
+    ((*ChanData).__bindgen_anon_1.PortNotification.unwrap_unchecked())(
         AtaResetDetected,
         (*ChanData).__bindgen_anon_1.PortContext,
         1 << PortNumber,
@@ -1155,10 +1150,7 @@ unsafe extern "C" fn AtaPmpCheckConnection(
     return CONN_STATUS_DEV_UNKNOWN;
 }
 
-unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(
-    ChanData: PCHANNEL_DATA_AHCI,
-    PortNumber: ULONG,
-) -> ATA_CONNECTION_STATUS {
+unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(ChanData: PCHANNEL_DATA_AHCI, PortNumber: ULONG) -> ATA_CONNECTION_STATUS {
     let mut ConnectionStatus: ATA_CONNECTION_STATUS;
     let mut SrbStatus: UCHAR = 0;
 
@@ -1184,9 +1176,9 @@ unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(
                 (ATA_SERROR) as USHORT,
                 0xFFFFFFFF,
             );
-            if (SrbStatus as i32) as u32 == SRB_STATUS_ERROR {
+            if SrbStatus as i32 == (SRB_STATUS_ERROR as i32) {
                 continue;
-            } else if (SrbStatus as i32) as u32 != SRB_STATUS_SUCCESS {
+            } else if SrbStatus as i32 != (SRB_STATUS_SUCCESS as i32) {
                 break 'failure;
             }
 
@@ -1196,9 +1188,9 @@ unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(
                 TRUE,
                 1000,
             );
-            if (SrbStatus as i32) as u32 == SRB_STATUS_ERROR {
+            if SrbStatus as i32 == (SRB_STATUS_ERROR as i32) {
                 continue;
-            } else if (SrbStatus as i32) as u32 != SRB_STATUS_SUCCESS {
+            } else if SrbStatus as i32 != (SRB_STATUS_SUCCESS as i32) {
                 break 'failure;
             }
 
@@ -1210,9 +1202,9 @@ unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(
                 FALSE,
                 1000,
             );
-            if (SrbStatus as i32) as u32 == SRB_STATUS_ERROR {
+            if SrbStatus as i32 == (SRB_STATUS_ERROR as i32) {
                 continue;
-            } else if (SrbStatus as i32) as u32 != SRB_STATUS_SUCCESS {
+            } else if SrbStatus as i32 != (SRB_STATUS_SUCCESS as i32) {
                 break 'failure;
             }
         }
@@ -1238,10 +1230,7 @@ unsafe extern "C" fn AtaAhciPmpIdentifyDeviceBehindPmp(
     return CONN_STATUS_FAILURE;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciIdentifyDevice(
-    ChannelContext: *mut core::ffi::c_void,
-    DeviceNumber: u32,
-) -> i32 {
+pub unsafe extern "C" fn AtaAhciIdentifyDevice(ChannelContext: PVOID, DeviceNumber: ULONG) -> ATA_CONNECTION_STATUS {
     let ChanData: *mut CHANNEL_DATA_AHCI = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let Signature: u32;
 
@@ -1259,7 +1248,7 @@ pub unsafe extern "C" fn AtaAhciIdentifyDevice(
         }
 
         if (ConnectionStatus) as u32 != CONN_STATUS_DEV_UNKNOWN {
-            return ConnectionStatus;
+            return (ConnectionStatus) as ATA_CONNECTION_STATUS;
         }
     } else {
     }
@@ -1273,11 +1262,11 @@ pub unsafe extern "C" fn AtaAhciIdentifyDevice(
 
     if (Signature & AHCI_PXSIG_MASK) == (AHCI_PXSIG_ATAPI & AHCI_PXSIG_MASK) {
         AtaAhciAtapiLedControl(ChanData, TRUE);
-        return (CONN_STATUS_DEV_ATAPI) as i32;
+        return ((CONN_STATUS_DEV_ATAPI)) as ATA_CONNECTION_STATUS;
     }
 
     AtaAhciAtapiLedControl(ChanData, FALSE);
-    return (CONN_STATUS_DEV_ATA) as i32;
+    return ((CONN_STATUS_DEV_ATA)) as ATA_CONNECTION_STATUS;
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaAhciStopDma(ChanData: PCHANNEL_DATA_AHCI) {
@@ -1286,11 +1275,9 @@ pub unsafe extern "C" fn AtaAhciStopDma(ChanData: PCHANNEL_DATA_AHCI) {
     AtaAhciStopFisReceiveProcessAndWait(ChanData);
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciResetChannel(
-    ChannelContext: *mut core::ffi::c_void,
-) {
+pub unsafe extern "C" fn AtaAhciResetChannel(ChannelContext: PVOID) {
     /* The channel reset is done unconditionally in AtaAhciEnumerateChannel() */
-    NOTHING;
+    let _ = ChannelContext;
 }
 
 unsafe extern "C" fn AtaAhciSaveReceivedFisArea(
@@ -1418,7 +1405,7 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
                 (_BitScanForward(&mut FailedSlot, (*ChanData).__bindgen_anon_1.ActiveQueuedSlotsBitmap)
                     != 0) as u8,
             );
-            Request = *((*ChanData).__bindgen_anon_1.Slots).add(FailedSlot as usize);
+            Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
             break 'done;
         }
 
@@ -1441,9 +1428,9 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
             (_BitScanForward(&mut FailedSlot, SlotsBitmap) != 0) as u8,
         );
 
-        Request = *((*ChanData).__bindgen_anon_1.Slots).add(FailedSlot as usize);
+        Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
 
-        (*Request).SrbStatus = (SRB_STATUS_ERROR) as u8;
+        (*Request).SrbStatus = (SRB_STATUS_ERROR as u8);
         (*Request).Output.__bindgen_anon_1.Status = ((TaskFileData & AHCI_PXTFD_STATUS_MASK)) as u8;
         (*Request).Output.__bindgen_anon_2.Error = ((TaskFileData & AHCI_PXTFD_ERROR_MASK) >> AHCI_PXTFD_ERROR_SHIFT) as u8;
 
@@ -1454,7 +1441,7 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
         }
     }
 
-    ((*(*ChanData).__bindgen_anon_1.PortNotification))(AtaRequestFailed, (*ChanData).__bindgen_anon_1.PortContext, Request);
+    ((*ChanData).__bindgen_anon_1.PortNotification.unwrap_unchecked())(AtaRequestFailed, (*ChanData).__bindgen_anon_1.PortContext, Request);
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaAhciHandlePortStateChange(
@@ -1489,7 +1476,7 @@ pub unsafe extern "C" fn AtaAhciHandlePortStateChange(
         }
 
         ((*ChanData).__bindgen_anon_1.PortNotification)
-            .expect("non-null function pointer")(
+            .unwrap_unchecked()(
                 AtaBusChangeDetected,
                 (*ChanData).__bindgen_anon_1.PortContext,
             );
@@ -1497,21 +1484,21 @@ pub unsafe extern "C" fn AtaAhciHandlePortStateChange(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaAhciDowngradeInterfaceSpeed(
-    ChanData: *mut PCHANNEL_DATA_AHCI,
-) -> i32 {
+    ChanData: PCHANNEL_DATA_AHCI,
+) -> BOOLEAN {
     let mut SataSpeed: u32;
     let mut SataControl: u32;
 
-    SataSpeed = AHCI_PORT_READ((*(*ChanData)).IoBase, PxSataStatus) & AHCI_PXSSTS_SPD_MASK;
+    SataSpeed = AHCI_PORT_READ((*ChanData).IoBase, PxSataStatus) & AHCI_PXSSTS_SPD_MASK;
     if SataSpeed != AHCI_PXSSTS_SPD_SATA1 {
-        SataControl = AHCI_PORT_READ((*(*ChanData)).IoBase, PxSataControl);
+        SataControl = AHCI_PORT_READ((*ChanData).IoBase, PxSataControl);
 
         if (SataControl & AHCI_PXCTL_SPD_MASK) != AHCI_PXCTL_SPD_LIMIT_NONE {
             SataControl &= !AHCI_PXCTL_SPD_MASK;
             SataControl |= SataSpeed - AHCI_PXCTL_SPD_LIMIT_LEVEL;
 
-            AHCI_PORT_WRITE((*(*ChanData)).IoBase, PxSataControl, SataControl);
-            return (TRUE) as _;
+            AHCI_PORT_WRITE((*ChanData).IoBase, PxSataControl, SataControl);
+            return TRUE;
         }
     }
 
@@ -1520,12 +1507,12 @@ pub unsafe extern "C" fn AtaAhciDowngradeInterfaceSpeed(
         (*ChanData).Channel,
         SataSpeed,
     );
-    return (FALSE) as _;
+    return FALSE;
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaAhciChannelGetMaximumDeviceCount(
     ChannelContext: *mut core::ffi::c_void,
-) -> u32 {
+) -> ULONG {
     let ChanData: *mut CHANNEL_DATA_AHCI = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
 

@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::Channel;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -65,11 +64,7 @@ pub const SIL_CLK_X2: u32 = 0x20;
 
 pub const SIL_CLK_DISABLED: u32 = 0x30;
 
-unsafe extern "C" fn Sil680SetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn Sil680SetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     unsafe {
         let mut i: ULONG;
         let mut SlowestPioMode: ULONG;
@@ -218,18 +213,18 @@ unsafe extern "C" fn Sil680CheckInterrupt(ChanData: PCHANNEL_DATA_PATA) -> BOOLE
     let Status: UCHAR;
 
     Status = PciRead8(Controller, SIL_REG_STATUS!((*ChanData).__bindgen_anon_1.Channel));
-    return ((Status & SIL_STATUS_INTR as UCHAR) != 0) as BOOLEAN;
+    return ((Status & (SIL_STATUS_INTR as u8)) != 0) as BOOLEAN;
 }
 #[no_mangle]
 pub unsafe extern "C" fn Sil680GetControllerProperties(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut i: ULONG;
 
     PAGED_CODE!();
 
-    if ((*(*Controller)).Pci.VendorID) as u32 != PCI_DEV_SIL0680 {
+    if (*Controller).Pci.VendorID != (PCI_DEV_SIL0680 as u16) {
         return STATUS_NO_MATCH;
     }
 
@@ -239,23 +234,23 @@ pub unsafe extern "C" fn Sil680GetControllerProperties(
     }
 
     i = 0;
-    while i < (*(*Controller)).MaxChannels {
-        let ChanData: *mut PCHANNEL_DATA_PATA = ((*(*Controller)).Channels[i as usize]).cast();
+    while i < (*Controller).MaxChannels {
+        let ChanData: PCHANNEL_DATA_PATA = ((*Controller).Channels[i as usize]).cast();
         let mut Config: UCHAR;
 
-        (*(*ChanData)).CheckInterrupt = Some(Sil680CheckInterrupt);
-        (*(*ChanData)).__bindgen_anon_1.SetTransferMode = Some(Sil680SetTransferMode);
-        (*(*ChanData)).__bindgen_anon_1.TransferModeSupported = PIO_ALL
+        (*ChanData).CheckInterrupt = Some(Sil680CheckInterrupt);
+        (*ChanData).__bindgen_anon_1.SetTransferMode = Some(Sil680SetTransferMode);
+        (*ChanData).__bindgen_anon_1.TransferModeSupported = PIO_ALL
             | MWDMA_ALL
             | UDMA_MODES!(0, 6);
 
-        Config = PciRead8((Controller).cast(), SIL_REG_CFG!(i));
-        if (Config as u32) & SIL_CFG_CABLE_80 == 0 {
+        Config = PciRead8(Controller, SIL_REG_CFG!(i));
+        if Config & (SIL_CFG_CABLE_80 as u8) == 0 {
             INFO!(
                 b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as *const i8,
                 (*ChanData).Channel,
             );
-            (*(*ChanData)).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
+            (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
         }
 
         i = i.wrapping_add(1);

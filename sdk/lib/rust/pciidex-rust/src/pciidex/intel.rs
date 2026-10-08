@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{BusNumber, Channel, HalGetBusDataByOffset, PCI_SLOT_NUMBER, PPCI_COMMON_HEADER};
+use ntkrnl_sys::ddk::{HalGetBusDataByOffset, PCI_SLOT_NUMBER, PPCI_COMMON_HEADER};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -544,7 +544,6 @@ pub const PXB_REG_CONFIG: u8 = 0x40;
 pub const PXB_CONFIG_BUF_RESTREAM: u16 = 0x0040;
 pub const PXB_CONFIG_PCI_BUS_LOCK: u16 = 0x4000;
 
-pub const PIIX_REG_IDETIM: u8 = 0x40;
 pub const MPIIX_REG_IDETIM: u8 = 0x6C;
 
 pub const PIIX_IDETIM_RCT_MASK: u16 = 0x0300;
@@ -556,7 +555,6 @@ pub const PIIX_IDETIM_IDE: u16 = 0x8000;
 
 pub const PIIX_REG_SIDETIM: u8 = 0x44;
 pub const PIIX_REG_UDMACTL: u8 = 0x48;
-pub const PIIX_REG_UDMATIM: u8 = 0x4A;
 pub const PIIX_UDMATIM_CT_MASK: u8 = 0x33;
 pub const PIIX_REG_CONFIG: u8 = 0x54;
 pub const PIIX_CONFIG_KEEP_MASK: u16 = 0x0FF0;
@@ -581,18 +579,13 @@ pub const TYPE_ICH: u16 = 4 | HW_FLAGS_HAS_UDMA_REG | HW_FLAGS_HAS_CFG_REG;
 pub const TYPE_SATA: u16 = 5;
 pub const TYPE_SCH: u16 = 6;
 
-#[repr(C)]
-pub struct INTEL_CONTROLLER_INFO {
-    pub DeviceID: u16,
-    pub Type: u16,
-}
 pub type PINTEL_CONTROLLER_INFO = *mut INTEL_CONTROLLER_INFO;
 
 #[repr(C)]
 pub struct INTEL_HW_EXTENSION {
     pub Register: u32,
     pub CurrentTiming: u16,
-    pub Device: [INTEL_HW_EXTENSION_Device; (MAX_IDE_DEVICE) as _],
+    pub Device: [INTEL_HW_EXTENSION_Device; (MAX_IDE_DEVICE as usize)],
 }
 
 #[repr(C)]
@@ -677,11 +670,7 @@ unsafe extern "C" fn IntelPiixChooseDeviceSpeed(
     (*Device).DmaMode = Mode;
 }
 
-unsafe extern "C" fn IntelPiixSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn IntelPiixSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
     let mut IdeTimReg: USHORT = 0;
     let mut IdeConfigReg: USHORT = 0;
@@ -694,12 +683,12 @@ unsafe extern "C" fn IntelPiixSetTransferMode(
     IdeUdmaTimReg = 0 as UCHAR;
     IdeConfigReg = 0 as USHORT;
 
-    IdeTimReg = PciRead16(Controller, PIIX_REG_IDETIM(Channel));
+    IdeTimReg = PciRead16(Controller, PIIX_REG_IDETIM!(Channel));
     IdeSlaveTimReg = PciRead8(Controller, (PIIX_REG_SIDETIM) as ULONG);
-    if (*ChanData).HwFlags & (HW_FLAGS_HAS_UDMA_REG) as _ != 0 {
+    if (*ChanData).HwFlags & (HW_FLAGS_HAS_UDMA_REG) as u32 != 0 {
         IdeUdmaCtrlReg = PciRead8(Controller, (PIIX_REG_UDMACTL) as ULONG);
-        IdeUdmaTimReg = PciRead8(Controller, PIIX_REG_UDMATIM(Channel));
-        if (*ChanData).HwFlags & (HW_FLAGS_HAS_CFG_REG) as _ != 0 {
+        IdeUdmaTimReg = PciRead8(Controller, PIIX_REG_UDMATIM!(Channel));
+        if (*ChanData).HwFlags & (HW_FLAGS_HAS_CFG_REG as u32) != 0 {
             IdeConfigReg = PciRead16(Controller, (PIIX_REG_CONFIG) as ULONG);
         }
     }
@@ -715,11 +704,11 @@ unsafe extern "C" fn IntelPiixSetTransferMode(
         IdeConfigReg,
     );
 
-    IdeTimReg = (IdeTimReg as i32 & ((PIIX_IDETIM_IDE | PIIX_IDETIM_RSV_MASK)) as _) as USHORT;
+    IdeTimReg = (IdeTimReg as i32 & ((PIIX_IDETIM_IDE | PIIX_IDETIM_RSV_MASK)) as i32) as USHORT;
     IdeSlaveTimReg = (IdeSlaveTimReg as i32 & (!PIIX_SIDETIM_ISPRCT_MASK!(Channel)) as i32) as UCHAR;
     IdeUdmaCtrlReg = (IdeUdmaCtrlReg as i32 & (!PIIX_UDMACTL_EN_MASK!(Channel)) as i32) as UCHAR;
-    IdeUdmaTimReg = (IdeUdmaTimReg as i32 & (!PIIX_UDMATIM_CT_MASK) as _) as UCHAR;
-    IdeConfigReg = (IdeConfigReg as i32 & (PIIX_CONFIG_KEEP_MASK) as _) as USHORT;
+    IdeUdmaTimReg = (IdeUdmaTimReg as i32 & (!PIIX_UDMATIM_CT_MASK) as i32) as UCHAR;
+    IdeConfigReg = (IdeConfigReg as i32 & (PIIX_CONFIG_KEEP_MASK as i32)) as USHORT;
 
     i = 0;
     while i < MAX_IDE_DEVICE {
@@ -776,7 +765,7 @@ unsafe extern "C" fn IntelPiixSetTransferMode(
                         IntelClockSettings[TimingMode as usize][1],
                     )) as UCHAR;
 
-                IdeTimReg = (IdeTimReg as i32 | (PIIX_IDETIM_SITRE) as _) as USHORT;
+                IdeTimReg = (IdeTimReg as i32 | (PIIX_IDETIM_SITRE as i32)) as USHORT;
             }
 
             IdeTimReg = (IdeTimReg as i32
@@ -796,12 +785,12 @@ unsafe extern "C" fn IntelPiixSetTransferMode(
     }
 
     PciWrite8(Controller, (PIIX_REG_SIDETIM) as ULONG, IdeSlaveTimReg);
-    PciWrite16(Controller, PIIX_REG_IDETIM(Channel), IdeTimReg);
-    if (*ChanData).HwFlags & (HW_FLAGS_HAS_UDMA_REG) as _ != 0 {
+    PciWrite16(Controller, PIIX_REG_IDETIM!(Channel), IdeTimReg);
+    if (*ChanData).HwFlags & (HW_FLAGS_HAS_UDMA_REG) as u32 != 0 {
         PciWrite8(Controller, (PIIX_REG_UDMACTL) as ULONG, IdeUdmaCtrlReg);
-        PciWrite8(Controller, PIIX_REG_UDMATIM(Channel), IdeUdmaTimReg);
-        if (*ChanData).HwFlags & (HW_FLAGS_HAS_CFG_REG) as _ != 0 {
-            IdeConfigReg = (IdeConfigReg as i32 | (PIIX_CONFIG_WR_PING_PONG) as _) as USHORT;
+        PciWrite8(Controller, PIIX_REG_UDMATIM!(Channel), IdeUdmaTimReg);
+        if (*ChanData).HwFlags & (HW_FLAGS_HAS_CFG_REG as u32) != 0 {
+            IdeConfigReg = (IdeConfigReg as i32 | (PIIX_CONFIG_WR_PING_PONG as i32)) as USHORT;
 
             PciWrite16(Controller, (PIIX_REG_CONFIG) as ULONG, IdeConfigReg);
         }
@@ -819,11 +808,7 @@ unsafe extern "C" fn IntelPiixSetTransferMode(
     );
 }
 
-unsafe extern "C" fn IntelSchSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn IntelSchSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut i: ULONG = 0;
     i = 0;
     while i < MAX_IDE_DEVICE {
@@ -856,10 +841,7 @@ unsafe extern "C" fn IntelSchSetTransferMode(
     }
 }
 
-unsafe extern "C" fn IntelPiixLegacyPrepareIo(
-    mut ChannelContext: PVOID,
-    mut Request: PATA_DEVICE_REQUEST,
-) {
+unsafe extern "C" fn IntelPiixLegacyPrepareIo(mut ChannelContext: PVOID, mut Request: PATA_DEVICE_REQUEST) {
     let mut ChanData: PCHANNEL_DATA_PATA = ChannelContext as PCHANNEL_DATA_PATA;
     let mut HwExt: PINTEL_HW_EXTENSION = ((*ChanData).HwExt).as_mut_ptr() as PINTEL_HW_EXTENSION;
     let mut Index: ULONG = if (*Request).Flags & REQUEST_FLAG_PROGRAM_DMA != 0 {
@@ -873,7 +855,7 @@ unsafe extern "C" fn IntelPiixLegacyPrepareIo(
         (*HwExt).CurrentTiming = NewTimingReg;
         PciWrite16((*ChanData).__bindgen_anon_1.Controller, (*HwExt).Register, NewTimingReg);
     }
-    PataPrepareIo(ChanData as PVOID, (Request).cast());
+    PataPrepareIo(ChanData as PVOID, Request);
 }
 
 unsafe extern "C" fn IntelPiixLegacyComputeIdeTiming(
@@ -905,11 +887,7 @@ unsafe extern "C" fn IntelPiixLegacyComputeIdeTiming(
     return IdeTimReg;
 }
 
-unsafe extern "C" fn IntelPiixLegacySetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn IntelPiixLegacySetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
     let mut HwExt: PINTEL_HW_EXTENSION = &raw mut (*ChanData).HwExt as *mut PUCHAR as PVOID as PINTEL_HW_EXTENSION;
     let mut IdeTimReg: USHORT = 0;
@@ -945,25 +923,20 @@ unsafe extern "C" fn IntelPiixLegacySetTransferMode(
     (*HwExt).CurrentTiming = 0;
 }
 
-unsafe extern "C" fn IntelPciBridgeErrataMatch(
-    mut Context: PVOID,
-    mut BusNumber: ULONG,
-    mut PciSlot: PCI_SLOT_NUMBER,
-    mut PciConfig: PPCI_COMMON_HEADER,
-) -> BOOLEAN {
+unsafe extern "C" fn IntelPciBridgeErrataMatch(mut Context: PVOID, mut BusNumber: ULONG, mut PciSlot: PCI_SLOT_NUMBER, mut PciConfig: PPCI_COMMON_HEADER) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(Context);
     PAGED_CODE!();
-    if ((*PciConfig).VendorID as ::core::ffi::c_int) as u32 != PCI_VEN_INTEL {
+    if (*PciConfig).VendorID as ::core::ffi::c_int != (PCI_VEN_INTEL as i32) {
         return FALSE;
     }
-    if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450KX) as _
-        && ((*PciConfig).RevisionID as ::core::ffi::c_int) < (BRIDGE_450KX_REV_B0) as _
+    if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450KX as i32)
+        && ((*PciConfig).RevisionID as ::core::ffi::c_int) < (BRIDGE_450KX_REV_B0 as i32)
     {
         return TRUE;
     }
-    if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450NX) as _ {
+    if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450NX as i32) {
         let mut ConfigReg: USHORT = 0;
-        if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_B0) as _ {
+        if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_B0 as i32) {
             return TRUE;
         }
         HalGetBusDataByOffset(
@@ -971,20 +944,20 @@ unsafe extern "C" fn IntelPciBridgeErrataMatch(
             BusNumber,
             PciSlot.u.AsULONG,
             &raw mut ConfigReg as PVOID,
-            (PXB_REG_CONFIG) as _,
+            (PXB_REG_CONFIG) as ULONG,
             ::core::mem::size_of::<USHORT>() as ULONG,
         );
         INFO!(
             b"PXB CFG: %04X\n\0" as *const u8 as *const ::core::ffi::c_char,
             ConfigReg,
         );
-        if (*PciConfig).RevisionID as ::core::ffi::c_int != (BRIDGE_450NX_REV_B1) as _
-            && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_PCI_BUS_LOCK) as _ != 0
+        if (*PciConfig).RevisionID as ::core::ffi::c_int != (BRIDGE_450NX_REV_B1 as i32)
+            && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_PCI_BUS_LOCK as i32) != 0
         {
             return TRUE;
         }
-        if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_C0) as _
-            && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_BUF_RESTREAM) as _ != 0
+        if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_C0 as i32)
+            && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_BUF_RESTREAM as i32) != 0
         {
             return TRUE;
         }
@@ -1005,12 +978,12 @@ unsafe extern "C" fn IntelInitChannel(
         TYPE_MPIIX | TYPE_PIIX => {
             let mut HwExt: PINTEL_HW_EXTENSION =
                 &raw mut (*ChanData).HwExt as *mut PUCHAR as PVOID as PINTEL_HW_EXTENSION;
-            if (*ControllerInfo).Type as ::core::ffi::c_int == (TYPE_MPIIX) as _ {
+            if (*ControllerInfo).Type as ::core::ffi::c_int == (TYPE_MPIIX as i32) {
                 (*HwExt).Register = MPIIX_REG_IDETIM as ULONG;
             } else {
-                (*HwExt).Register = PIIX_REG_IDETIM((*ChanData).Channel) as ULONG;
+                (*HwExt).Register = PIIX_REG_IDETIM!((*ChanData).__bindgen_anon_1.Channel) as ULONG;
             }
-            (*ChanData).SetTransferMode = Some(
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(
                 IntelPiixLegacySetTransferMode
                     as unsafe extern "C" fn(
                         PATA_CONTROLLER,
@@ -1018,12 +991,12 @@ unsafe extern "C" fn IntelInitChannel(
                         *mut PCHANNEL_DEVICE_CONFIG,
                     ) -> (),
             ) as PCHANNEL_SET_MODE_EX;
-            (*ChanData).PrepareIo = Some(
+            (*ChanData).__bindgen_anon_1.PrepareIo = Some(
                 IntelPiixLegacyPrepareIo as unsafe extern "C" fn(PVOID, PATA_DEVICE_REQUEST) -> (),
             ) as PCHANNEL_PREPARE_IO;
         }
         TYPE_PIIX3 | TYPE_PIIX4 | TYPE_ICH => {
-            (*ChanData).SetTransferMode = Some(
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(
                 IntelPiixSetTransferMode
                     as unsafe extern "C" fn(
                         PATA_CONTROLLER,
@@ -1033,7 +1006,7 @@ unsafe extern "C" fn IntelInitChannel(
             ) as PCHANNEL_SET_MODE_EX;
         }
         TYPE_SCH => {
-            (*ChanData).SetTransferMode = Some(
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(
                 IntelSchSetTransferMode
                     as unsafe extern "C" fn(
                         PATA_CONTROLLER,
@@ -1043,7 +1016,7 @@ unsafe extern "C" fn IntelInitChannel(
             ) as PCHANNEL_SET_MODE_EX;
         }
         _ => {
-            (*ChanData).SetTransferMode = Some(
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(
                 SataSetTransferMode
                     as unsafe extern "C" fn(
                         PATA_CONTROLLER,
@@ -1067,15 +1040,15 @@ unsafe extern "C" fn IntelInitChannel(
         TYPE_ICH => {
             SupportedMode = (PIO_ALL | MWDMA_MODE2 | UDMA_MODES!(0, 5)) as ULONG;
 
-            if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH_82801AA) as _
-                || (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH0_82801AB) as _
+            if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH_82801AA as i32)
+                || (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH0_82801AB as i32)
             {
                 if (*Controller).Pci.RevisionID as ::core::ffi::c_int == 0 {
                     SupportedMode = PIO_ALL as ULONG;
                 } else {
                     SupportedMode &= !(UDMA_MODE5 as ULONG);
 
-                    if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH0_82801AB) as _ {
+                    if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_ICH0_82801AB as i32) {
                         SupportedMode &= !((UDMA_MODE3 | UDMA_MODE4) as ULONG);
                     }
                 }
@@ -1083,7 +1056,7 @@ unsafe extern "C" fn IntelInitChannel(
 
             if SupportedMode & (UDMA_80C_ALL as ULONG) != 0 {
                 let mut IdeConfigReg: USHORT = PciRead16(Controller, PIIX_REG_CONFIG as ULONG);
-                if IdeConfigReg as ::core::ffi::c_int & PIIX_CONFIG_CR!((*ChanData).Channel) == 0 {
+                if IdeConfigReg as ::core::ffi::c_int & PIIX_CONFIG_CR!((*ChanData).__bindgen_anon_1.Channel) == 0 {
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable\n\0" as *const u8 as *const ::core::ffi::c_char,
                         (*ChanData).Channel,
@@ -1098,7 +1071,7 @@ unsafe extern "C" fn IntelInitChannel(
             SupportedMode = (PIO_ALL | MWDMA_ALL | UDMA_MODES!(0, 5)) as ULONG;
 
             PciRead(
-                (Controller).cast(),
+                Controller,
                 &raw mut DeviceTimingReg as PVOID,
                 SCH_REG_DTIM!(0) as ULONG,
                 ::core::mem::size_of::<[ULONG; 2]>() as ULONG,
@@ -1125,7 +1098,7 @@ unsafe extern "C" fn IntelInitChannel(
         }
     }
 
-    (*ChanData).TransferModeSupported = SupportedMode;
+    (*ChanData).__bindgen_anon_1.TransferModeSupported = SupportedMode;
 }
 #[no_mangle]
 pub unsafe extern "C" fn IntelGetControllerProperties(
@@ -1165,7 +1138,7 @@ pub unsafe extern "C" fn IntelGetControllerProperties(
         ExtensionSize = 0;
     }
 
-    Status = PciIdeCreateChannelData((Controller).cast(), ExtensionSize);
+    Status = PciIdeCreateChannelData(Controller, ExtensionSize);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
@@ -1184,10 +1157,10 @@ pub unsafe extern "C" fn IntelGetControllerProperties(
         TYPE_SATA => {}
         _ => {}
     }
-    HwFlags = ((*ControllerInfo).Type) as u32;
+    HwFlags = ((*ControllerInfo).Type) as _;
 
     if PciFindDevice(Some(IntelPciBridgeErrataMatch), core::ptr::null_mut()) != 0 {
-        HwFlags |= (HW_FLAGS_DISABLE_DMA) as u32;
+        HwFlags |= (HW_FLAGS_DISABLE_DMA as u32);
     }
 
     i = 0;
@@ -1198,7 +1171,7 @@ pub unsafe extern "C" fn IntelGetControllerProperties(
 
         IntelInitChannel(Controller, ControllerInfo, ChanData);
 
-        if HwFlags & (HW_FLAGS_DISABLE_DMA) as u32 != 0 {
+        if HwFlags & (HW_FLAGS_DISABLE_DMA as u32) != 0 {
             (*ChanData).__bindgen_anon_1.TransferModeSupported &= PIO_ALL;
         }
         i = i.wrapping_add(1);

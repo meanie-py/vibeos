@@ -3,7 +3,7 @@ use ntkrnl_sys::ddk::PCM_RESOURCE_LIST;
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn PataGetControllerProperties(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
     ResourcesTranslated: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
     let mut ChanData: *mut CHANNEL_DATA_PATA;
@@ -11,17 +11,17 @@ pub unsafe extern "C" fn PataGetControllerProperties(
 
     PAGED_CODE!();
 
-    (*(*Controller)).MaxChannels = 1;
-    (*(*Controller)).ChannelBitmap = 0x1;
-    (*(*Controller)).Flags &= !CTRL_FLAG_NATIVE_PCI;
-    (*(*Controller)).Flags |= CTRL_FLAG_MANUAL_RES;
+    (*Controller).MaxChannels = 1;
+    (*Controller).ChannelBitmap = 0x1;
+    (*Controller).Flags &= !CTRL_FLAG_NATIVE_PCI;
+    (*Controller).Flags |= CTRL_FLAG_MANUAL_RES;
 
     Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
 
-    ChanData = (*(*Controller)).Channels[0 as usize] as *mut CHANNEL_DATA_PATA;
+    ChanData = (*Controller).Channels[0 as usize] as *mut CHANNEL_DATA_PATA;
     (*ChanData).__bindgen_anon_1.ChanInfo &= !CHANNEL_FLAG_IO32;
     (*ChanData).__bindgen_anon_1.TransferModeSupported = PIO_ALL;
 
@@ -39,10 +39,10 @@ pub unsafe extern "C" fn PataGetControllerProperties(
             Value = READ_PORT_UCHAR(PC98_ATA_BANK as *mut UCHAR);
             WRITE_PORT_UCHAR(
                 PC98_ATA_BANK as *mut UCHAR,
-                Value ^ (PC98_ATA_BANK_32BIT_PORT) as u8,
+                Value ^ (PC98_ATA_BANK_32BIT_PORT as u8),
             );
             Result = READ_PORT_UCHAR(PC98_ATA_BANK as *mut UCHAR);
-            if ((Result ^ Value) as u32 & PC98_ATA_BANK_32BIT_PORT) != 0 {
+            if (Result ^ Value) & (PC98_ATA_BANK_32BIT_PORT as u8) != 0 {
                 (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_IO32;
             }
         }

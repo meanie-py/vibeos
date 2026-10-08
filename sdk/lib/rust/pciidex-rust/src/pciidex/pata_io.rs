@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Interrupt, KeAcquireInterruptSpinLock, KeInsertQueueDpc, KeReleaseInterruptSpinLock, PKINTERRUPT, SCATTER_GATHER_LIST};
+use ntkrnl_sys::ddk::{KeAcquireInterruptSpinLock, KeInsertQueueDpc, KeReleaseInterruptSpinLock, PKINTERRUPT, SCATTER_GATHER_LIST};
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn AtaWriteBlock16(
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn AtaReadBlock32(
 pub unsafe extern "C" fn AtaReadPortUchar(
     Port: *mut u8,
     MmioFlags: u32,
-) -> u8 {
+) -> UCHAR {
     if MmioFlags != 0 {
         return READ_REGISTER_UCHAR(Port);
     } else {
@@ -89,36 +89,33 @@ pub unsafe extern "C" fn AtaWritePortUlong(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataSaveTaskFile(
-    ChanData: *mut PCHANNEL_DATA_PATA,
-    Request: *mut PATA_DEVICE_REQUEST,
-) {
-    let TaskFile: *mut PATA_TASKFILE = (&raw mut (*(*Request)).Output).cast();
+pub unsafe extern "C" fn PataSaveTaskFile(ChanData: PCHANNEL_DATA_PATA, Request: PATA_DEVICE_REQUEST) {
+    let TaskFile: PATA_TASKFILE = &raw mut (*Request).Output;
 
-    (*(*TaskFile)).__bindgen_anon_2.Error = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_1.Error, ChanData, MRES_TF);
-    (*(*TaskFile)).SectorCount = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_2.SectorCount, ChanData, MRES_TF);
-    (*(*TaskFile)).LowLba = ATA_READ!((*(*ChanData)).Regs.LbaLow, ChanData, MRES_TF);
-    (*(*TaskFile)).MidLba = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_3.LbaMid, ChanData, MRES_TF);
-    (*(*TaskFile)).HighLba = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_4.LbaHigh, ChanData, MRES_TF);
-    (*(*TaskFile)).DriveSelect = ATA_READ!((*(*ChanData)).Regs.Device, ChanData, MRES_TF);
-    (*(*TaskFile)).__bindgen_anon_1.Command = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_5.Command, ChanData, MRES_TF);
+    (*TaskFile).__bindgen_anon_2.Error = ATA_READ!((*ChanData).Regs.__bindgen_anon_1.Error, ChanData, MRES_TF);
+    (*TaskFile).SectorCount = ATA_READ!((*ChanData).Regs.__bindgen_anon_2.SectorCount, ChanData, MRES_TF);
+    (*TaskFile).LowLba = ATA_READ!((*ChanData).Regs.LbaLow, ChanData, MRES_TF);
+    (*TaskFile).MidLba = ATA_READ!((*ChanData).Regs.__bindgen_anon_3.LbaMid, ChanData, MRES_TF);
+    (*TaskFile).HighLba = ATA_READ!((*ChanData).Regs.__bindgen_anon_4.LbaHigh, ChanData, MRES_TF);
+    (*TaskFile).DriveSelect = ATA_READ!((*ChanData).Regs.Device, ChanData, MRES_TF);
+    (*TaskFile).__bindgen_anon_1.Command = ATA_READ!((*ChanData).Regs.__bindgen_anon_5.Command, ChanData, MRES_TF);
 
-    if (*(*Request)).Flags & REQUEST_FLAG_LBA48 != 0 {
-        let Control: u8 = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_6.Control, ChanData, MRES_CTRL) | IDE_DC_ALWAYS;
+    if (*Request).Flags & REQUEST_FLAG_LBA48 != 0 {
+        let Control: u8 = ATA_READ!((*ChanData).Regs.__bindgen_anon_6.Control, ChanData, MRES_CTRL) | (IDE_DC_ALWAYS as u8);
 
-        ATA_WRITE!((*(*ChanData)).Regs.__bindgen_anon_6.Control, Control | (IDE_HIGH_ORDER_BYTE) as u8, ChanData, MRES_CTRL);
+        ATA_WRITE!((*ChanData).Regs.__bindgen_anon_6.Control, Control | (IDE_HIGH_ORDER_BYTE as u8), ChanData, MRES_CTRL);
 
-        (*(*TaskFile)).FeatureEx = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_1.Features, ChanData, MRES_TF);
-        (*(*TaskFile)).SectorCountEx = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_2.SectorCount, ChanData, MRES_TF);
-        (*(*TaskFile)).LowLbaEx = ATA_READ!((*(*ChanData)).Regs.LbaLow, ChanData, MRES_TF);
-        (*(*TaskFile)).MidLbaEx = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_3.LbaMid, ChanData, MRES_TF);
-        (*(*TaskFile)).HighLbaEx = ATA_READ!((*(*ChanData)).Regs.__bindgen_anon_4.LbaHigh, ChanData, MRES_TF);
+        (*TaskFile).FeatureEx = ATA_READ!((*ChanData).Regs.__bindgen_anon_1.Features, ChanData, MRES_TF);
+        (*TaskFile).SectorCountEx = ATA_READ!((*ChanData).Regs.__bindgen_anon_2.SectorCount, ChanData, MRES_TF);
+        (*TaskFile).LowLbaEx = ATA_READ!((*ChanData).Regs.LbaLow, ChanData, MRES_TF);
+        (*TaskFile).MidLbaEx = ATA_READ!((*ChanData).Regs.__bindgen_anon_3.LbaMid, ChanData, MRES_TF);
+        (*TaskFile).HighLbaEx = ATA_READ!((*ChanData).Regs.__bindgen_anon_4.LbaHigh, ChanData, MRES_TF);
 
-        ATA_WRITE!((*(*ChanData)).Regs.__bindgen_anon_6.Control, Control, ChanData, MRES_CTRL);
+        ATA_WRITE!((*ChanData).Regs.__bindgen_anon_6.Control, Control, ChanData, MRES_CTRL);
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataReadStatus(ChanData: *mut CHANNEL_DATA_PATA) -> u8 {
+pub unsafe extern "C" fn PataReadStatus(ChanData: PCHANNEL_DATA_PATA) -> UCHAR {
     return ATA_READ!((*ChanData).Regs.__bindgen_anon_1.Error, ChanData, MRES_TF);
 }
 
@@ -131,15 +128,15 @@ unsafe extern "C" fn PataCompleteCommand(
 
     (*Request).SrbStatus = SrbStatus;
 
-    if (SrbStatus as i32) as u32 != SRB_STATUS_SUCCESS && (SrbStatus as i32) as u32 != SRB_STATUS_DATA_OVERRUN {
+    if SrbStatus as i32 != (SRB_STATUS_SUCCESS as i32) && SrbStatus as i32 != (SRB_STATUS_DATA_OVERRUN as i32) {
         if (*(*Request).Device).TransportFlags & DEVICE_IS_ATAPI == 0
             || (*Request).Flags & REQUEST_FLAG_SAVE_TASK_FILE != 0
         {
-            (*ChanData).SaveTaskFile.expect("non-null function pointer")(ChanData, Request);
+            (*ChanData).SaveTaskFile.unwrap_unchecked()(ChanData, Request);
             (*Request).Flags |= REQUEST_FLAG_HAS_TASK_FILE;
         } else {
             (*Request).Output.__bindgen_anon_1.Status = IdeStatus;
-            (*Request).Output.Error = ATA_READ!(
+            (*Request).Output.__bindgen_anon_2.Error = ATA_READ!(
                 (*ChanData).Regs.__bindgen_anon_1.Error,
                 ChanData,
                 MRES_TF,
@@ -147,9 +144,8 @@ unsafe extern "C" fn PataCompleteCommand(
         }
 
         (*ChanData)
-            .__bindgen_anon_1
-            .PortNotification
-            .expect("non-null function pointer")(
+            .__bindgen_anon_1.PortNotification
+            .unwrap_unchecked()(
             AtaRequestFailed,
             (*ChanData).__bindgen_anon_1.PortContext,
             Request,
@@ -160,14 +156,13 @@ unsafe extern "C" fn PataCompleteCommand(
     (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap &= !(1 << PATA_CHANNEL_SLOT);
 
     if (*Request).Flags & REQUEST_FLAG_SAVE_TASK_FILE != 0 {
-        (*ChanData).SaveTaskFile.expect("non-null function pointer")(ChanData, Request);
+        (*ChanData).SaveTaskFile.unwrap_unchecked()(ChanData, Request);
         (*Request).Flags |= REQUEST_FLAG_HAS_TASK_FILE;
     }
 
     (*ChanData)
-        .__bindgen_anon_1
-        .PortNotification
-        .expect("non-null function pointer")(
+        .__bindgen_anon_1.PortNotification
+        .unwrap_unchecked()(
         AtaRequestComplete,
         (*ChanData).__bindgen_anon_1.PortContext,
         1 << PATA_CHANNEL_SLOT,
@@ -176,7 +171,7 @@ unsafe extern "C" fn PataCompleteCommand(
 
 unsafe extern "C" fn PciIdeDmaReadStatus(ChanData: PCHANNEL_DATA_PATA) -> UCHAR {
     return ATA_READ!(
-        (*ChanData).Regs.Dma.add((PCIIDE_DMA_STATUS) as _),
+        (*ChanData).Regs.Dma.add((PCIIDE_DMA_STATUS as usize)),
         ChanData,
         MRES_DMA,
     );
@@ -187,7 +182,7 @@ unsafe extern "C" fn PciIdeDmaPrepare(mut ChanData: PCHANNEL_DATA_PATA) {
 
     ATA_WRITE!(
         IoBase.offset(PCIIDE_DMA_COMMAND as isize),
-        (PCIIDE_DMA_COMMAND_STOP) as u8,
+        (PCIIDE_DMA_COMMAND_STOP as u8),
         ChanData,
         MRES_DMA,
     );
@@ -214,11 +209,11 @@ unsafe extern "C" fn PciIdeDmaStart(
 
     /* Transfer direction */
     if (*Request).Flags & REQUEST_FLAG_DATA_IN != 0 {
-        Command = (PCIIDE_DMA_COMMAND_WRITE_TO_SYSTEM_MEMORY) as u8;
+        Command = (PCIIDE_DMA_COMMAND_WRITE_TO_SYSTEM_MEMORY as u8);
     } else {
-        Command = (PCIIDE_DMA_COMMAND_READ_FROM_SYSTEM_MEMORY) as u8;
+        Command = (PCIIDE_DMA_COMMAND_READ_FROM_SYSTEM_MEMORY as u8);
     }
-    Command = (Command as ::core::ffi::c_int | (PCIIDE_DMA_COMMAND_START) as i32) as UCHAR;
+    Command = (Command as ::core::ffi::c_int | (PCIIDE_DMA_COMMAND_START as i32)) as UCHAR;
 
     /* Begin transaction */
     ATA_WRITE!(
@@ -233,20 +228,20 @@ pub unsafe extern "C" fn PciIdeDmaStop(ChanData: *mut CHANNEL_DATA_PATA) {
     let IoBase: *mut u8 = (*ChanData).Regs.Dma;
 
     ATA_READ!(
-        IoBase.add((PCIIDE_DMA_STATUS) as _),
+        IoBase.add((PCIIDE_DMA_STATUS as usize)),
         ChanData,
         MRES_DMA,
     );
 
     ATA_WRITE!(
-        IoBase.add((PCIIDE_DMA_COMMAND) as _),
-        (PCIIDE_DMA_COMMAND_STOP) as u8,
+        IoBase.add((PCIIDE_DMA_COMMAND as usize)),
+        (PCIIDE_DMA_COMMAND_STOP as u8),
         ChanData,
         MRES_DMA,
     );
     ATA_WRITE!(
-        IoBase.add((PCIIDE_DMA_STATUS) as _),
-        (PCIIDE_DMA_STATUS_INTERRUPT) as u8,
+        IoBase.add((PCIIDE_DMA_STATUS as usize)),
+        (PCIIDE_DMA_STATUS_INTERRUPT as u8),
         ChanData,
         MRES_DMA,
     );
@@ -273,7 +268,7 @@ unsafe extern "C" fn PataChangeInterruptMode(
 
     if (*Request).Flags & REQUEST_FLAG_POLL != 0 {
         (*ChanData).IsPollingActive = TRUE;
-        Control = (IDE_DC_DISABLE_INTERRUPTS) as u8;
+        Control = (IDE_DC_DISABLE_INTERRUPTS as u8);
     } else {
         (*ChanData).IsPollingActive = FALSE;
         Control = 0;
@@ -281,14 +276,14 @@ unsafe extern "C" fn PataChangeInterruptMode(
 
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_6.Control,
-        Control | IDE_DC_ALWAYS,
+        Control | (IDE_DC_ALWAYS as u8),
         ChanData,
         MRES_CTRL,
     );
 
     ATA_IO_WAIT!();
 
-    if (*(*ChanData).__bindgen_anon_1.Controller).Pci.VendorID as u32 == PCI_VEN_VIA {
+    if (*(*ChanData).__bindgen_anon_1.Controller).Pci.VendorID == (PCI_VEN_VIA as u16) {
         ATA_SELECT_DEVICE(ChanData, (DEV_NUMBER!(Device)) as UCHAR, (*Device).DeviceSelect);
         ATA_WAIT(
             ChanData,
@@ -303,7 +298,7 @@ unsafe extern "C" fn PataSendCdb(
     ChanData: PCHANNEL_DATA_PATA,
     Request: PATA_DEVICE_REQUEST,
 ) {
-    if (*ChanData).ChanInfo & CHANNEL_FLAG_IO32 != 0 {
+    if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_IO32 != 0 {
         ATA_WRITE_BLOCK_32!(
             (*ChanData).Regs.Data as *mut u32,
             ((*Request).__bindgen_anon_2.Cdb).as_mut_ptr() as *mut u32,
@@ -327,7 +322,7 @@ unsafe extern "C" fn PataPioDataIn(mut ChanData: PCHANNEL_DATA_PATA, mut ByteCou
     ByteCount = min(ByteCount, (*ChanData).BytesToTransfer);
 
     if ByteCount & (core::mem::size_of::<u32>() as u32).wrapping_sub(1 as u32) == 0
-        && ((*ChanData).ChanInfo & CHANNEL_FLAG_IO32) != 0
+        && ((*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_IO32) != 0
     {
         ATA_READ_BLOCK_32!(
             (*ChanData).Regs.Data as *mut u32,
@@ -346,8 +341,10 @@ unsafe extern "C" fn PataPioDataIn(mut ChanData: PCHANNEL_DATA_PATA, mut ByteCou
         );
 
         if ByteCount & (core::mem::size_of::<u16>() as u32).wrapping_sub(1 as u32) != 0 {
-            DECLSPEC_ALIGN(2);
-            let mut LocalBuffer: [u8; 2 as usize] = [0; 2 as usize];
+            // DECLSPEC_ALIGN(2) UCHAR LocalBuffer[2]: the 16-bit port I/O below needs the C's
+            // alignment, so the bytes live in a u16 and are viewed through it.
+            let mut LocalBufferStorage: [u16; 1] = [0];
+            let LocalBuffer: &mut [u8; 2] = &mut *(LocalBufferStorage.as_mut_ptr() as *mut [u8; 2]);
             let mut BufferEnd: *mut u8 = core::ptr::null_mut();
 
             ATA_READ_BLOCK_16!(
@@ -374,7 +371,7 @@ unsafe extern "C" fn PataPioDataOut(
     ByteCount = min(ByteCount, (*ChanData).BytesToTransfer);
 
     if (ByteCount as usize & (core::mem::size_of::<ULONG>() - 1)) == 0
-        && ((*ChanData).ChanInfo & CHANNEL_FLAG_IO32) != 0
+        && ((*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_IO32) != 0
     {
         ATA_WRITE_BLOCK_32!(
             (*ChanData).Regs.Data as PULONG,
@@ -393,8 +390,10 @@ unsafe extern "C" fn PataPioDataOut(
         );
 
         if (ByteCount as usize & (core::mem::size_of::<USHORT>() - 1)) != 0 {
-            let _ = DECLSPEC_ALIGN(2);
-            let mut LocalBuffer: [UCHAR; 2] = [0; 2];
+            // DECLSPEC_ALIGN(2) UCHAR LocalBuffer[2]: the 16-bit port I/O below needs the C's
+            // alignment, so the bytes live in a u16 and are viewed through it.
+            let mut LocalBufferStorage: [u16; 1] = [0];
+            let LocalBuffer: &mut [UCHAR; 2] = &mut *(LocalBufferStorage.as_mut_ptr() as *mut [UCHAR; 2]);
             let mut BufferEnd: PUCHAR;
 
             BufferEnd = (*ChanData)
@@ -431,8 +430,8 @@ unsafe extern "C" fn PataProcessAtapiRequest(
         ChanData,
         MRES_TF,
     );
-    InterruptReason &= (ATAPI_INT_REASON_MASK) as u8;
-    InterruptReason |= IdeStatus & (IDE_STATUS_DRQ) as u8;
+    InterruptReason &= (ATAPI_INT_REASON_MASK as u8);
+    InterruptReason |= IdeStatus & (IDE_STATUS_DRQ as u8);
 
     if InterruptReason == ATAPI_INT_REASON_COD
         || InterruptReason == ATAPI_INT_REASON_IO
@@ -459,14 +458,14 @@ unsafe extern "C" fn PataProcessAtapiRequest(
             ChanData,
             MRES_TF,
         );
-        InterruptReason &= (ATAPI_INT_REASON_MASK) as u8;
-        InterruptReason |= IdeStatus & (IDE_STATUS_DRQ) as u8;
+        InterruptReason &= (ATAPI_INT_REASON_MASK as u8);
+        InterruptReason |= IdeStatus & (IDE_STATUS_DRQ as u8);
     }
 
     match (InterruptReason) as u32 {
         ATAPI_INT_REASON_AWAIT_CDB => {
             if (*ChanData).CommandFlags & CMD_FLAG_AWAIT_CDB == 0 {
-                SrbStatus = (SRB_STATUS_BUS_RESET) as u8;
+                SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 (*ChanData).CommandFlags &= !CMD_FLAG_AWAIT_CDB;
                 PataSendCdb(ChanData, Request);
@@ -474,7 +473,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                     (*ChanData).CommandFlags |= CMD_FLAG_DMA_TRANSFER;
                     PciIdeDmaStart(ChanData, Request);
                 }
-                SrbStatus = (SRB_STATUS_PENDING) as u8;
+                SrbStatus = (SRB_STATUS_PENDING as u8);
             }
         }
         ATAPI_INT_REASON_DATA_IN => {
@@ -482,7 +481,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 & (CMD_FLAG_DATA_OUT | CMD_FLAG_AWAIT_CDB)
                 != 0
             {
-                SrbStatus = (SRB_STATUS_BUS_RESET) as u8;
+                SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 ByteCount = ATA_READ!(
                     (*ChanData).Regs.__bindgen_anon_3.ByteCountLow,
@@ -496,7 +495,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 ) as ULONG)
                     << 8;
                 PataPioDataIn(ChanData, ByteCount);
-                SrbStatus = (SRB_STATUS_PENDING) as u8;
+                SrbStatus = (SRB_STATUS_PENDING as u8);
             }
         }
         ATAPI_INT_REASON_DATA_OUT => {
@@ -504,7 +503,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 & (CMD_FLAG_DATA_IN | CMD_FLAG_AWAIT_CDB)
                 != 0
             {
-                SrbStatus = (SRB_STATUS_BUS_RESET) as u8;
+                SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 ByteCount = ATA_READ!(
                     (*ChanData).Regs.__bindgen_anon_3.ByteCountLow,
@@ -518,37 +517,37 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 ) as ULONG)
                     << 8;
                 PataPioDataOut(ChanData, ByteCount);
-                SrbStatus = (SRB_STATUS_PENDING) as u8;
+                SrbStatus = (SRB_STATUS_PENDING as u8);
             }
         }
         ATAPI_INT_REASON_STATUS_NEC => {
             if (*(*Request).Device).TransportFlags & DEVICE_IS_NEC_CDR260 == 0 {
-                SrbStatus = (SRB_STATUS_BUS_RESET) as u8;
+                SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
-                    SrbStatus = (SRB_STATUS_ERROR) as u8;
+                    SrbStatus = (SRB_STATUS_ERROR as u8);
                 } else if (*ChanData).BytesToTransfer != 0 {
                     (*Request).DataTransferLength =
                         (*Request).DataTransferLength.wrapping_sub((*ChanData).BytesToTransfer);
-                    SrbStatus = (SRB_STATUS_DATA_OVERRUN) as u8;
+                    SrbStatus = (SRB_STATUS_DATA_OVERRUN as u8);
                 } else {
-                    SrbStatus = (SRB_STATUS_SUCCESS) as u8;
+                    SrbStatus = (SRB_STATUS_SUCCESS as u8);
                 }
             }
         }
         ATAPI_INT_REASON_STATUS => {
             if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
-                SrbStatus = (SRB_STATUS_ERROR) as u8;
+                SrbStatus = (SRB_STATUS_ERROR as u8);
             } else if (*ChanData).BytesToTransfer != 0 {
                 (*Request).DataTransferLength =
                     (*Request).DataTransferLength.wrapping_sub((*ChanData).BytesToTransfer);
-                SrbStatus = (SRB_STATUS_DATA_OVERRUN) as u8;
+                SrbStatus = (SRB_STATUS_DATA_OVERRUN as u8);
             } else {
-                SrbStatus = (SRB_STATUS_SUCCESS) as u8;
+                SrbStatus = (SRB_STATUS_SUCCESS as u8);
             }
         }
         _ => {
-            SrbStatus = (SRB_STATUS_BUS_RESET) as u8;
+            SrbStatus = (SRB_STATUS_BUS_RESET as u8);
         }
     }
 
@@ -560,30 +559,30 @@ unsafe extern "C" fn PataProcessAtaRequest(
     mut Request: PATA_DEVICE_REQUEST,
     mut IdeStatus: UCHAR,
 ) -> UCHAR {
-    if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as ::core::ffi::c_int != 0 {
-        if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int != 0 {
-            return (SRB_STATUS_BUS_RESET) as u8;
+    if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as i32 != 0 {
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
-            return (SRB_STATUS_ERROR) as u8;
+            return (SRB_STATUS_ERROR) as UCHAR;
         }
     }
     if (*ChanData).CommandFlags & (CMD_FLAG_DATA_IN | CMD_FLAG_DATA_OUT) as ULONG == 0 {
         if ((IsNEC_98) != 0) {
             IdeStatus &= (!IDE_STATUS_DRQ) as u8;
         }
-        if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int != 0 {
-            return (SRB_STATUS_BUS_RESET) as u8;
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
-            return (SRB_STATUS_SUCCESS) as u8;
+            return (SRB_STATUS_SUCCESS) as UCHAR;
         }
     }
     if (*ChanData).CommandFlags & CMD_FLAG_DATA_IN as ULONG != 0 {
-        if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int == 0 {
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) == 0 {
             if IdeStatus as ::core::ffi::c_int == 0
-                && (((*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as ::core::ffi::c_int) as u32 == IDE_COMMAND_ATAPI_IDENTIFY
-                    || ((*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as ::core::ffi::c_int) as u32 == IDE_COMMAND_IDENTIFY)
+                && ((*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as ::core::ffi::c_int == (IDE_COMMAND_ATAPI_IDENTIFY as i32)
+                    || (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as ::core::ffi::c_int == (IDE_COMMAND_IDENTIFY as i32))
             {
-                return (SRB_STATUS_ERROR) as u8;
+                return (SRB_STATUS_ERROR) as UCHAR;
             } else {
                 static mut WarningsGiven: SIZE_T = 0;
                 let fresh = WarningsGiven;
@@ -600,14 +599,14 @@ unsafe extern "C" fn PataProcessAtaRequest(
                     (IDE_STATUS_DRQ) as UCHAR,
                     (IDE_STATUS_DRQ) as UCHAR,
                 );
-                if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int == 0 {
-                    return (SRB_STATUS_BUS_RESET) as u8;
+                if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) == 0 {
+                    return (SRB_STATUS_BUS_RESET) as UCHAR;
                 }
             }
         }
         PataPioDataIn(ChanData, (*ChanData).DrqByteCount);
         if (*ChanData).BytesToTransfer != 0 {
-            return (SRB_STATUS_PENDING) as u8;
+            return (SRB_STATUS_PENDING) as UCHAR;
         }
         IdeStatus = ATA_WAIT(
             ChanData,
@@ -615,26 +614,26 @@ unsafe extern "C" fn PataProcessAtaRequest(
             (IDE_STATUS_BUSY | IDE_STATUS_DRQ) as UCHAR,
             0,
         );
-        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_BUSY | IDE_STATUS_DRQ) as ::core::ffi::c_int != 0 {
-            return (SRB_STATUS_BUS_RESET) as u8;
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_BUSY | IDE_STATUS_DRQ) as i32 != 0 {
+            return (SRB_STATUS_BUS_RESET) as UCHAR;
         }
-        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as ::core::ffi::c_int != 0 {
-            return (SRB_STATUS_ERROR) as u8;
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as i32 != 0 {
+            return (SRB_STATUS_ERROR) as UCHAR;
         }
-        return (SRB_STATUS_SUCCESS) as u8;
+        return (SRB_STATUS_SUCCESS) as UCHAR;
     }
     if (*ChanData).BytesToTransfer == 0 {
-        if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int != 0 {
-            return (SRB_STATUS_BUS_RESET) as u8;
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
-            return (SRB_STATUS_SUCCESS) as u8;
+            return (SRB_STATUS_SUCCESS) as UCHAR;
         }
     }
-    if IdeStatus as ::core::ffi::c_int & IDE_STATUS_DRQ as ::core::ffi::c_int == 0 {
-        return (SRB_STATUS_BUS_RESET) as u8;
+    if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) == 0 {
+        return (SRB_STATUS_BUS_RESET) as UCHAR;
     }
     PataPioDataOut(ChanData, (*ChanData).DrqByteCount);
-    return (SRB_STATUS_PENDING) as u8;
+    return (SRB_STATUS_PENDING) as UCHAR;
 }
 
 unsafe extern "C" fn PataProcessRequest(
@@ -642,17 +641,17 @@ unsafe extern "C" fn PataProcessRequest(
     IdeStatus: UCHAR,
     DmaStatus: UCHAR,
 ) -> BOOLEAN {
-    let Request: PATA_DEVICE_REQUEST = *(*ChanData).__bindgen_anon_1.Slots.add(PATA_CHANNEL_SLOT);
+    let Request: PATA_DEVICE_REQUEST = *(*ChanData).__bindgen_anon_1.Slots.add((PATA_CHANNEL_SLOT as usize));
     let mut SrbStatus: UCHAR;
 
     match (*ChanData).CommandFlags & CMD_FLAG_TRANSFER_MASK {
         CMD_FLAG_DMA_TRANSFER => {
-            if (DmaStatus & PCIIDE_DMA_STATUS_ERROR as u8) != 0
-                || (IdeStatus & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0
+            if (DmaStatus & (PCIIDE_DMA_STATUS_ERROR as u8)) != 0
+                || (IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8)) != 0
             {
-                SrbStatus = (SRB_STATUS_ERROR) as u8;
+                SrbStatus = (SRB_STATUS_ERROR as u8);
             } else {
-                SrbStatus = (SRB_STATUS_SUCCESS) as u8;
+                SrbStatus = (SRB_STATUS_SUCCESS as u8);
             }
         }
         CMD_FLAG_ATA_PIO_TRANSFER => {
@@ -666,7 +665,7 @@ unsafe extern "C" fn PataProcessRequest(
         }
     }
 
-    if (SrbStatus) as u32 == SRB_STATUS_PENDING {
+    if SrbStatus == (SRB_STATUS_PENDING as u8) {
         return FALSE;
     }
 
@@ -674,76 +673,73 @@ unsafe extern "C" fn PataProcessRequest(
     return TRUE;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataLoadTaskFile(
-    ChanData: *mut PCHANNEL_DATA_PATA,
-    Request: *mut PATA_DEVICE_REQUEST,
-) {
-    if (*(*Request)).Flags & REQUEST_FLAG_LBA48 != 0 {
+pub unsafe extern "C" fn PataLoadTaskFile(ChanData: PCHANNEL_DATA_PATA, Request: PATA_DEVICE_REQUEST) {
+    if (*Request).Flags & REQUEST_FLAG_LBA48 != 0 {
         ATA_WRITE!(
-            (*(*ChanData)).Regs.__bindgen_anon_1.Features,
-            (*(*Request)).__bindgen_anon_2.TaskFile.FeatureEx,
+            (*ChanData).Regs.__bindgen_anon_1.Features,
+            (*Request).__bindgen_anon_2.TaskFile.FeatureEx,
             ChanData,
             MRES_TF,
         );
         ATA_WRITE!(
-            (*(*ChanData)).Regs.__bindgen_anon_2.SectorCount,
-            (*(*Request)).__bindgen_anon_2.TaskFile.SectorCountEx,
+            (*ChanData).Regs.__bindgen_anon_2.SectorCount,
+            (*Request).__bindgen_anon_2.TaskFile.SectorCountEx,
             ChanData,
             MRES_TF,
         );
         ATA_WRITE!(
-            (*(*ChanData)).Regs.LbaLow,
-            (*(*Request)).__bindgen_anon_2.TaskFile.LowLbaEx,
+            (*ChanData).Regs.LbaLow,
+            (*Request).__bindgen_anon_2.TaskFile.LowLbaEx,
             ChanData,
             MRES_TF,
         );
         ATA_WRITE!(
-            (*(*ChanData)).Regs.__bindgen_anon_3.LbaMid,
-            (*(*Request)).__bindgen_anon_2.TaskFile.MidLbaEx,
+            (*ChanData).Regs.__bindgen_anon_3.LbaMid,
+            (*Request).__bindgen_anon_2.TaskFile.MidLbaEx,
             ChanData,
             MRES_TF,
         );
         ATA_WRITE!(
-            (*(*ChanData)).Regs.__bindgen_anon_4.LbaHigh,
-            (*(*Request)).__bindgen_anon_2.TaskFile.HighLbaEx,
+            (*ChanData).Regs.__bindgen_anon_4.LbaHigh,
+            (*Request).__bindgen_anon_2.TaskFile.HighLbaEx,
             ChanData,
             MRES_TF,
         );
     }
     ATA_WRITE!(
-        (*(*ChanData)).Regs.__bindgen_anon_1.Features,
-        (*(*Request)).__bindgen_anon_2.TaskFile.__bindgen_anon_2.Feature,
+        (*ChanData).Regs.__bindgen_anon_1.Features,
+        (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_2.Feature,
         ChanData,
         MRES_TF,
     );
     ATA_WRITE!(
-        (*(*ChanData)).Regs.__bindgen_anon_2.SectorCount,
-        (*(*Request)).__bindgen_anon_2.TaskFile.SectorCount,
+        (*ChanData).Regs.__bindgen_anon_2.SectorCount,
+        (*Request).__bindgen_anon_2.TaskFile.SectorCount,
         ChanData,
         MRES_TF,
     );
     ATA_WRITE!(
-        (*(*ChanData)).Regs.LbaLow,
-        (*(*Request)).__bindgen_anon_2.TaskFile.LowLba,
+        (*ChanData).Regs.LbaLow,
+        (*Request).__bindgen_anon_2.TaskFile.LowLba,
         ChanData,
         MRES_TF,
     );
     ATA_WRITE!(
-        (*(*ChanData)).Regs.__bindgen_anon_3.LbaMid,
-        (*(*Request)).__bindgen_anon_2.TaskFile.MidLba,
+        (*ChanData).Regs.__bindgen_anon_3.LbaMid,
+        (*Request).__bindgen_anon_2.TaskFile.MidLba,
         ChanData,
         MRES_TF,
     );
     ATA_WRITE!(
-        (*(*ChanData)).Regs.__bindgen_anon_4.LbaHigh,
-        (*(*Request)).__bindgen_anon_2.TaskFile.HighLba,
+        (*ChanData).Regs.__bindgen_anon_4.LbaHigh,
+        (*Request).__bindgen_anon_2.TaskFile.HighLba,
         ChanData,
         MRES_TF,
     );
-    if (*(*Request)).Flags & REQUEST_FLAG_SET_DEVICE_REGISTER != 0 {
+    if (*Request).Flags & REQUEST_FLAG_SET_DEVICE_REGISTER != 0 {
         ATA_WRITE!(
-            (*(*ChanData)).Regs.Device,
-            (*(*Request)).__bindgen_anon_2.TaskFile.DriveSelect,
+            (*ChanData).Regs.Device,
+            (*Request).__bindgen_anon_2.TaskFile.DriveSelect,
             ChanData,
             MRES_TF,
         );
@@ -766,10 +762,10 @@ unsafe extern "C" fn PataExecutePacketCommand(
 
     if (*Request).Flags & REQUEST_FLAG_DMA != 0 {
         ByteCount = 0;
-        Features = (IDE_FEATURE_DMA) as u8;
+        Features = (IDE_FEATURE_DMA as u8);
     } else {
         ByteCount = min((*ChanData).BytesToTransfer, ATAPI_MAX_DRQ_DATA_BLOCK) as USHORT;
-        Features = IDE_FEATURE_PIO;
+        Features = (IDE_FEATURE_PIO as u8);
     }
 
     ATA_WRITE!(
@@ -792,7 +788,7 @@ unsafe extern "C" fn PataExecutePacketCommand(
     );
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_5.Command,
-        (IDE_COMMAND_ATAPI_PACKET) as u8,
+        (IDE_COMMAND_ATAPI_PACKET as u8),
         ChanData,
         MRES_TF,
     );
@@ -818,7 +814,7 @@ unsafe extern "C" fn PataExecuteAtaCommand(
         PciIdeDmaStart(ChanData, Request);
     }
 
-    (*ChanData).LoadTaskFile.expect("non-null function pointer")(ChanData, Request);
+    (*ChanData).LoadTaskFile.unwrap_unchecked()(ChanData, Request);
 
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_5.Command,
@@ -853,10 +849,7 @@ unsafe extern "C" fn PataExecuteAtaCommand(
     return FALSE;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataStartIo(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-) -> i32 {
+pub unsafe extern "C" fn PataStartIo(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST) -> BOOLEAN {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let Device: *mut ATA_IO_CONTEXT_COMMON = (*Request).Device;
     let mut IdeStatus: u8;
@@ -869,7 +862,7 @@ pub unsafe extern "C" fn PataStartIo(
     IdeStatus = ATA_WAIT(ChanData, ATA_TIME_BUSY_SELECT, (IDE_STATUS_BUSY) as UCHAR, 0);
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         PataCompleteCommand(ChanData, IdeStatus, (SRB_STATUS_SELECTION_TIMEOUT) as UCHAR);
-        return (TRUE) as _;
+        return ((TRUE as i32)) as BOOLEAN;
     }
 
     if ((*Request).Flags & REQUEST_FLAG_POLL != 0) as i32 != (*ChanData).IsPollingActive as i32 {
@@ -884,13 +877,13 @@ pub unsafe extern "C" fn PataStartIo(
 
     if (*Request).Flags & REQUEST_FLAG_POLL != 0 {
         KeInsertQueueDpc(&raw mut (*ChanData).PollingTimerDpc, core::ptr::null_mut(), core::ptr::null_mut());
-        return (FALSE) as _;
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
     (*ChanData).CommandFlags |= CMD_FLAG_AWAIT_INTERRUPT;
 
     if IsPollingNeeded == 0 {
-        return (FALSE) as _;
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
     ATA_IO_WAIT!();
@@ -898,37 +891,30 @@ pub unsafe extern "C" fn PataStartIo(
     IdeStatus = ATA_WAIT(ChanData, ATA_TIME_BUSY_NORMAL, (IDE_STATUS_BUSY) as UCHAR, 0);
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         PataCompleteCommand(ChanData, IdeStatus, (SRB_STATUS_BUS_RESET) as UCHAR);
-        return (TRUE) as _;
+        return ((TRUE as i32)) as BOOLEAN;
     }
 
     return (PataProcessRequest(ChanData, IdeStatus, 0)) as _;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataPrepareIo(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut PATA_DEVICE_REQUEST,
-) {
+pub unsafe extern "C" fn PataPrepareIo(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST) {
     let ChanData = ChannelContext as *mut CHANNEL_DATA_PATA;
 
     if IsNEC_98 != 0 {
-        (*(*Request)).Flags |= REQUEST_FLAG_POLL;
+        (*Request).Flags |= REQUEST_FLAG_POLL;
     }
 
-    (*ChanData).BytesToTransfer = (*(*Request)).DataTransferLength;
-    (*ChanData).DataBuffer = ((*(*Request)).DataBuffer).cast();
+    (*ChanData).BytesToTransfer = (*Request).DataTransferLength;
+    (*ChanData).DataBuffer = ((*Request).DataBuffer).cast();
 }
 #[no_mangle]
-pub unsafe extern "C" fn PciIdePreparePrdTable(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-    SgList: *mut SCATTER_GATHER_LIST,
-) {
+pub unsafe extern "C" fn PciIdePreparePrdTable(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST, SgList: *mut SCATTER_GATHER_LIST) {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let mut PrdTableEntry: *mut PCIIDE_PRD_TABLE_ENTRY;
     let mut i: u32;
     let mut DescriptorNumber: u32 = 0;
 
-    DBG_UNREFERENCED_LOCAL_VARIABLE(&mut DescriptorNumber);
+    DBG_UNREFERENCED_LOCAL_VARIABLE!(&mut DescriptorNumber);
 
     ASSUME!((*SgList).NumberOfElements > 0);
 
@@ -936,8 +922,8 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(
 
     i = 0;
     while i < (*SgList).NumberOfElements {
-        let mut Address: u32 = (*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.LowPart;
-        let mut Length: u32 = (*(*SgList).Elements.as_ptr().offset(i as isize)).Length;
+        let mut Address: u32 = (*SgList).Elements[i as usize].Address.__bindgen_anon_1.LowPart;
+        let mut Length: u32 = (*SgList).Elements[i as usize].Length;
 
         ASSUME!(Length != 0);
 
@@ -945,7 +931,7 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(
             let mut TransferLength: u32;
 
             TransferLength = PCIIDE_PRD_LIMIT - (Address & (PCIIDE_PRD_LIMIT - 1));
-            TransferLength = min(TransferLength, Length);
+            TransferLength = if TransferLength < Length { TransferLength } else { Length };
 
             DescriptorNumber += 1;
 
@@ -966,30 +952,23 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(
 
     KeFlushIoBuffers(
         (*Request).Mdl,
-        ((*Request).Flags & REQUEST_FLAG_DATA_IN) != 0,
+        (((*Request).Flags & REQUEST_FLAG_DATA_IN) != 0) as u8,
         TRUE,
     );
 
     PciIdeDmaPrepare(ChanData);
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataAllocateSlot(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut core::ffi::c_void,
-    Allocate: i32,
-) -> i32 {
+pub unsafe extern "C" fn PataAllocateSlot(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST, Allocate: BOOLEAN) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(ChannelContext);
     UNREFERENCED_PARAMETER!(Request);
     UNREFERENCED_PARAMETER!(Allocate);
 
-    return (TRUE) as _;
+    return ((TRUE as i32)) as BOOLEAN;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PciIdeChannelIsr(
-    Interrupt: PKINTERRUPT,
-    Context: *mut core::ffi::c_void,
-) -> i32 {
+pub unsafe extern "system" fn PciIdeChannelIsr(Interrupt: *mut _KINTERRUPT, Context: PVOID) -> BOOLEAN {
     let ChanData: *mut CHANNEL_DATA_PATA = Context as *mut CHANNEL_DATA_PATA;
     let IdeStatus: u8;
     let DmaStatus: u8;
@@ -997,73 +976,72 @@ pub unsafe extern "system" fn PciIdeChannelIsr(
 
     UNREFERENCED_PARAMETER!(Interrupt);
 
-    if !(*ChanData).CheckInterrupt.is_null() && (*ChanData).CheckInterrupt(ChanData) == 0 {
-        return (FALSE) as _;
+    if !(*ChanData).CheckInterrupt.is_none()
+        && ((*ChanData).CheckInterrupt.unwrap_unchecked())(ChanData) == 0
+    {
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
     DmaStatus = PciIdeDmaReadStatus(ChanData);
-    if DmaStatus as i32 & PCIIDE_DMA_STATUS_INTERRUPT != 0 {
+    if DmaStatus as i32 & (PCIIDE_DMA_STATUS_INTERRUPT as i32) != 0 {
         if (*ChanData).CommandFlags & CMD_FLAG_TRANSFER_MASK == CMD_FLAG_DMA_TRANSFER {
             PciIdeDmaStop(ChanData);
         } else {
             PciIdeDmaClearInterrupt(ChanData, DmaStatus);
         }
-        WasCleared = (TRUE) as _;
+        WasCleared = (TRUE as i32);
     } else {
         if (*ChanData).CommandFlags & CMD_FLAG_TRANSFER_MASK == CMD_FLAG_DMA_TRANSFER {
-            return (FALSE) as _;
+            return ((FALSE as i32)) as BOOLEAN;
         }
-        WasCleared = (FALSE) as _;
+        WasCleared = (FALSE as i32);
     }
 
-    IdeStatus = (*ChanData).ReadStatus(ChanData);
+    IdeStatus = ((*ChanData).ReadStatus.unwrap_unchecked())(ChanData);
 
-    if (*ChanData).ActiveSlotsBitmap & (1 << PATA_CHANNEL_SLOT) == 0
+    if (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap & (1 << PATA_CHANNEL_SLOT) == 0
         || (*ChanData).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT == 0
-        || IdeStatus as i32 & IDE_STATUS_BUSY != 0
+        || IdeStatus as i32 & (IDE_STATUS_BUSY as i32) != 0
     {
         if WasCleared != 0 {
         }
-        return WasCleared;
+        return (WasCleared) as BOOLEAN;
     }
 
     PataProcessRequest(ChanData, IdeStatus, DmaStatus);
-    return (TRUE) as _;
+    return ((TRUE as i32)) as BOOLEAN;
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PataChannelIsr(
-    Interrupt: PKINTERRUPT,
-    Context: *mut core::ffi::c_void,
-) -> i32 {
-    let ChanData: *mut PCHANNEL_DATA_PATA = Context as *mut PCHANNEL_DATA_PATA;
+pub unsafe extern "system" fn PataChannelIsr(Interrupt: *mut _KINTERRUPT, Context: PVOID) -> BOOLEAN {
+    let ChanData: PCHANNEL_DATA_PATA = Context as PCHANNEL_DATA_PATA;
     let mut IdeStatus: u8;
 
     UNREFERENCED_PARAMETER!(Interrupt);
 
-    if (*(*ChanData)).CheckInterrupt.is_some()
-        && !((*(*ChanData)).CheckInterrupt.expect("non-null function pointer")((ChanData).cast()) != 0)
+    if (*ChanData).CheckInterrupt.is_some()
+        && !((*ChanData).CheckInterrupt.unwrap_unchecked()(ChanData) != 0)
     {
-        return (FALSE) as _;
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
-    IdeStatus = (*(*ChanData)).ReadStatus.expect("non-null function pointer")((ChanData).cast());
+    IdeStatus = (*ChanData).ReadStatus.unwrap_unchecked()(ChanData);
 
-    if (*(*ChanData)).__bindgen_anon_1.ActiveSlotsBitmap & ((1 as u32) << PATA_CHANNEL_SLOT) == 0
-        || (*(*ChanData)).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT == 0
-        || (IdeStatus as u32 & IDE_STATUS_BUSY) != 0
+    if (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap & ((1 as u32) << PATA_CHANNEL_SLOT) == 0
+        || (*ChanData).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT == 0
+        || (IdeStatus as i32 & (IDE_STATUS_BUSY as i32)) != 0
     {
-        return (FALSE) as _;
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
-    PataProcessRequest((ChanData).cast(), IdeStatus, 0);
-    return (TRUE) as _;
+    PataProcessRequest(ChanData, IdeStatus, 0);
+    return ((TRUE as i32)) as BOOLEAN;
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeCheckInterrupt(ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
     let DmaStatus: UCHAR = PciIdeDmaReadStatus(ChanData);
 
-    return ((DmaStatus as u32 & PCIIDE_DMA_STATUS_INTERRUPT != 0) as i32) as u8;
+    return ((DmaStatus as i32 & (PCIIDE_DMA_STATUS_INTERRUPT as i32) != 0)) as BOOLEAN;
 }
 
 unsafe extern "C" fn PataPoll(mut ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
@@ -1077,7 +1055,7 @@ unsafe extern "C" fn PataPoll(mut ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
             (IDE_STATUS_BUSY) as UCHAR,
             0,
         );
-        if IdeStatus as ::core::ffi::c_int & IDE_STATUS_BUSY as ::core::ffi::c_int != 0 {
+        if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_BUSY as i32) != 0 {
             break;
         }
         IsRequestCompleted = PataProcessRequest(ChanData, IdeStatus, 0);
@@ -1089,13 +1067,8 @@ unsafe extern "C" fn PataPoll(mut ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PataPollingTimerDpc(
-    Dpc: PKDPC,
-    DeferredContext: *mut core::ffi::c_void,
-    SystemArgument1: *mut core::ffi::c_void,
-    SystemArgument2: *mut core::ffi::c_void,
-) {
-    let ChanData: *mut PCHANNEL_DATA_PATA = DeferredContext as *mut PCHANNEL_DATA_PATA;
+pub unsafe extern "system" fn PataPollingTimerDpc(Dpc: *mut _KDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID) {
+    let ChanData: PCHANNEL_DATA_PATA = DeferredContext as PCHANNEL_DATA_PATA;
     let mut OldIrql: KIRQL;
     let mut IsRequestCompleted: i32;
 
@@ -1103,19 +1076,19 @@ pub unsafe extern "system" fn PataPollingTimerDpc(
     UNREFERENCED_PARAMETER!(SystemArgument1);
     UNREFERENCED_PARAMETER!(SystemArgument2);
 
-    OldIrql = KeAcquireInterruptSpinLock((*(*ChanData)).__bindgen_anon_1.InterruptObject);
+    OldIrql = KeAcquireInterruptSpinLock((*ChanData).__bindgen_anon_1.InterruptObject);
 
-    if !((*(*ChanData)).__bindgen_anon_1.ActiveSlotsBitmap & (1 << PATA_CHANNEL_SLOT) != 0)
-        || ((*(*ChanData)).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT) != 0
+    if !((*ChanData).__bindgen_anon_1.ActiveSlotsBitmap & (1 << PATA_CHANNEL_SLOT) != 0)
+        || ((*ChanData).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT) != 0
     {
-        IsRequestCompleted = (FALSE) as _;
+        IsRequestCompleted = (FALSE as i32);
     } else {
-        IsRequestCompleted = (PataPoll((ChanData).cast())) as _;
+        IsRequestCompleted = (PataPoll(ChanData)) as _;
     }
 
-    KeReleaseInterruptSpinLock((*(*ChanData)).__bindgen_anon_1.InterruptObject, OldIrql);
+    KeReleaseInterruptSpinLock((*ChanData).__bindgen_anon_1.InterruptObject, OldIrql);
 
     if IsRequestCompleted == 0 {
-        KeInsertQueueDpc(&raw mut (*(*ChanData)).PollingTimerDpc, core::ptr::null_mut(), core::ptr::null_mut());
+        KeInsertQueueDpc(&raw mut (*ChanData).PollingTimerDpc, core::ptr::null_mut(), core::ptr::null_mut());
     }
 }

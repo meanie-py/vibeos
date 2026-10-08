@@ -1,9 +1,23 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{BusNumber, Channel, HalGetBusDataByOffset, HalSetBusDataByOffset, PCI_SLOT_NUMBER, PPCI_COMMON_HEADER};
+use ntkrnl_sys::ddk::{HalGetBusDataByOffset, HalSetBusDataByOffset, PCI_SLOT_NUMBER, PPCI_COMMON_HEADER};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_162 {
+    pub Value: UCHAR,
+    pub CycleTime: ULONG,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_163 {
+    pub Value: UCHAR,
+    pub CycleTime: ULONG,
+}
+
 static mut SvwPioTimings: [C2RustUnnamed_162; 5] = [
     C2RustUnnamed_162 {
         Value: 0x5d as UCHAR,
@@ -137,11 +151,7 @@ unsafe extern "C" fn SvwChooseDeviceSpeed(
     (*Device).DmaMode = Mode;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SvwSetTransferMode(
-    Controller: PATA_CONTROLLER,
-    Channel: ULONG,
-    DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+pub unsafe extern "C" fn SvwSetTransferMode(Controller: PATA_CONTROLLER, Channel: ULONG, DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut PioModeReg: USHORT;
     let mut UdmaModeReg: USHORT;
     let mut UdmaEnableReg: UCHAR;
@@ -149,7 +159,7 @@ pub unsafe extern "C" fn SvwSetTransferMode(
     let mut PioTimReg: ULONG;
     let mut DmaTimReg: ULONG;
 
-    if ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_OSB4_IDE {
+    if (*Controller).Pci.DeviceID != (PCI_DEV_OSB4_IDE as u16) {
         PioModeReg = PciRead16(Controller, SVW_REG_PIO_MODE);
     } else {
         PioModeReg = 0;
@@ -222,7 +232,7 @@ pub unsafe extern "C" fn SvwSetTransferMode(
 
     PciWrite32(Controller, SVW_REG_PIO_TIMING, PioTimReg);
 
-    if ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_OSB4_IDE {
+    if (*Controller).Pci.DeviceID != (PCI_DEV_OSB4_IDE as u16) {
         PciWrite16(Controller, SVW_REG_PIO_MODE, PioModeReg);
     }
 
@@ -256,21 +266,16 @@ pub unsafe extern "C" fn SvwHasUdmaCable(
         || ((UdmaModeReg & 0x70) > 0x20)) as u8;
 }
 
-unsafe extern "C" fn SvwOsb4PciBridgeInit(
-    mut Context: PVOID,
-    mut BusNumber: ULONG,
-    mut PciSlot: PCI_SLOT_NUMBER,
-    mut PciConfig: PPCI_COMMON_HEADER,
-) -> BOOLEAN {
+unsafe extern "C" fn SvwOsb4PciBridgeInit(mut Context: PVOID, mut BusNumber: ULONG, mut PciSlot: PCI_SLOT_NUMBER, mut PciConfig: PPCI_COMMON_HEADER) -> BOOLEAN {
     let mut Value: ULONG = 0;
     UNREFERENCED_PARAMETER!(Context);
-    if ((*PciConfig).VendorID as ::core::ffi::c_int) as u32 != PCI_VEN_SERVERWORKS
-        || ((*PciConfig).DeviceID as ::core::ffi::c_int) as u32 != PCI_DEV_OSB4_BRIDGE
+    if (*PciConfig).VendorID as ::core::ffi::c_int != (PCI_VEN_SERVERWORKS as i32)
+        || (*PciConfig).DeviceID as ::core::ffi::c_int != (PCI_DEV_OSB4_BRIDGE as i32)
     {
         return FALSE;
     }
     HalGetBusDataByOffset(
-        PCIConfiguration as BUS_DATA_TYPE,
+        PCIConfiguration,
         BusNumber,
         PciSlot.u.AsULONG,
         &raw mut Value as PVOID,
@@ -280,7 +285,7 @@ unsafe extern "C" fn SvwOsb4PciBridgeInit(
     Value &= !(0x00002000 as ::core::ffi::c_int) as ULONG;
     Value |= 0x00004000 as ULONG;
     HalSetBusDataByOffset(
-        PCIConfiguration as BUS_DATA_TYPE,
+        PCIConfiguration,
         BusNumber,
         PciSlot.u.AsULONG,
         &raw mut Value as PVOID,
@@ -291,7 +296,7 @@ unsafe extern "C" fn SvwOsb4PciBridgeInit(
 }
 
 unsafe extern "C" fn SvwPataControllerStart(mut Controller: PATA_CONTROLLER) {
-    if ((*Controller).Pci.DeviceID as ::core::ffi::c_int) as u32 == PCI_DEV_OSB4_IDE {
+    if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_OSB4_IDE as i32) {
         PciFindDevice(
             Some(
                 SvwOsb4PciBridgeInit
@@ -311,9 +316,9 @@ unsafe extern "C" fn SvwPataControllerStart(mut Controller: PATA_CONTROLLER) {
         UdmaCtrlReg = (UdmaCtrlReg as ::core::ffi::c_int
             & (!(SVW_UDMA_CTRL_DISABLE | SVW_UDMA_CTRL_MODE_MASK)) as i32) as UCHAR;
         if (*ChanData).TransferModeSupported & UDMA_MODE5 != 0 {
-            UdmaCtrlReg = (UdmaCtrlReg as ::core::ffi::c_int | (SVW_UDMA_CTRL_MODE_UDMA5) as i32) as UCHAR;
+            UdmaCtrlReg = (UdmaCtrlReg as ::core::ffi::c_int | (SVW_UDMA_CTRL_MODE_UDMA5 as i32)) as UCHAR;
         } else {
-            UdmaCtrlReg = (UdmaCtrlReg as ::core::ffi::c_int | (SVW_UDMA_CTRL_MODE_UDMA4) as i32) as UCHAR;
+            UdmaCtrlReg = (UdmaCtrlReg as ::core::ffi::c_int | (SVW_UDMA_CTRL_MODE_UDMA4 as i32)) as UCHAR;
         }
         PciWrite8(Controller, SVW_REG_UDMA_CONTROL, UdmaCtrlReg);
     };
@@ -359,7 +364,7 @@ pub unsafe extern "C" fn SvwPataGetControllerProperties(
         }
     }
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }

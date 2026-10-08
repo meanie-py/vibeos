@@ -410,6 +410,7 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
 
     findings = []
     current_function = None
+    prev_insn = ""
 
     for line in result.stdout.splitlines():
         # Match function labels like "0046b350 <_IopAcquireFileObjectLock@16>:"
@@ -446,7 +447,11 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
             ud2_match = re.search(r"^\s+([0-9a-f]+):\s+0f 0b\s+ud2", line)
             if ud2_match:
                 addr = ud2_match.group(1)
-                expected = any(e in current_function for e in EXPECTED_UD2)
+                # `int $0x29` is __fastfail (RtlFailFast: a corrupt LIST_ENTRY, a failed
+                # /GS check). It never returns, so the compiler ends the path with ud2 --
+                # a deliberate stop, as in the C header inlines, not a signature fold.
+                fastfail = re.search(r"\bint\s+\$0x29\b", prev_insn) is not None
+                expected = fastfail or any(e in current_function for e in EXPECTED_UD2)
                 known_cgu = any(e in current_function for e in KNOWN_CGU_UD2)
                 findings.append(
                     {
@@ -456,6 +461,8 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
                         "known_cgu": known_cgu,
                     }
                 )
+            if re.match(r"^\s+[0-9a-f]+:", line):
+                prev_insn = line
 
     return findings
 

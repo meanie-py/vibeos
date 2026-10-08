@@ -30,22 +30,22 @@ pub unsafe extern "C" fn AtiGetControllerProperties(
 
     PAGED_CODE!();
 
-    if ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_IXP200_IDE
-        && ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_IXP300_IDE
-        && ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_IXP400_IDE
-        && ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_IXP600_IDE
-        && ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_IXP700_IDE
+    if (*Controller).Pci.DeviceID != (PCI_DEV_IXP200_IDE as u16)
+        && (*Controller).Pci.DeviceID != (PCI_DEV_IXP300_IDE as u16)
+        && (*Controller).Pci.DeviceID != (PCI_DEV_IXP400_IDE as u16)
+        && (*Controller).Pci.DeviceID != (PCI_DEV_IXP600_IDE as u16)
+        && (*Controller).Pci.DeviceID != (PCI_DEV_IXP700_IDE as u16)
     {
         return STATUS_NO_MATCH;
     }
 
     (*Controller).__bindgen_anon_1.ChannelEnableBits = AtiEnableBits.as_ptr();
 
-    if ((*Controller).Pci.DeviceID) as u32 == PCI_DEV_IXP600_IDE {
+    if (*Controller).Pci.DeviceID == (PCI_DEV_IXP600_IDE as u16) {
         (*Controller).MaxChannels = 1;
     }
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn AtiGetControllerProperties(
             | MWDMA_ALL
             | UDMA_MODES!(0, 5);
 
-        if ((*Controller).Pci.DeviceID) as u32 == PCI_DEV_IXP200_IDE {
+        if (*Controller).Pci.DeviceID == (PCI_DEV_IXP200_IDE as u16) {
             (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_MODE5;
         }
 

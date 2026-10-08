@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::Channel;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -34,11 +33,7 @@ pub const PICCOLO_PIO_MASK: u32 = 0xFFFFE088;
 pub const PICCOLO_DMA_MASK: u32 = 0xFFFFE088;
 pub const PICCOLO_UDMA_MASK: u32 = 0x78FFE088;
 
-unsafe extern "C" fn ToshibaSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn ToshibaSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut i: ULONG = 0;
     UNREFERENCED_PARAMETER!(Channel);
     i = 0;
@@ -80,17 +75,17 @@ pub unsafe extern "C" fn ToshibaGetControllerProperties(
 
     PAGED_CODE!();
 
-    if ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_PICCOLO_1 &&
-        ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_PICCOLO_2 &&
-        ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_PICCOLO_3 &&
-        ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_PICCOLO_5
+    if (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_1 as u16) &&
+        (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_2 as u16) &&
+        (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_3 as u16) &&
+        (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_5 as u16)
     {
         return STATUS_NO_MATCH;
     }
 
     (*Controller).MaxChannels = 1;
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }

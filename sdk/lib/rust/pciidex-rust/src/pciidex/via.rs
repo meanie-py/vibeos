@@ -1,9 +1,31 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{BusNumber, Channel, PCI_SLOT_NUMBER, PPCI_COMMON_HEADER, PortNumber, Timing};
+use ntkrnl_sys::ddk::{PCI_SLOT_NUMBER, PPCI_COMMON_HEADER};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_163 {
+    pub DeviceID: USHORT,
+    pub MinimumRevisionID: UCHAR,
+    pub Flags: UCHAR,
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_162 {
+    pub DefaultValue: UCHAR,
+    pub Data: [UCHAR; 7],
+}
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_164 {
+    pub DeviceID: USHORT,
+    pub Flags: USHORT,
+}
+
 static mut ViaControllerList: [C2RustUnnamed_164; 17] = [
     C2RustUnnamed_164 {
         DeviceID: PCI_DEV_VT82C576M_IDE as USHORT,
@@ -240,19 +262,15 @@ pub unsafe extern "C" fn ViaClampTimings(Timing: PATA_TIMING) {
     (*Timing).DataActive = (CLAMP_TIMING((*Timing).DataActive, 1, 16) as i32 - 1) as ATATIM;
 }
 
-unsafe extern "C" fn ViaSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn ViaSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
-    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE) as _] = [ATA_TIMING {
+    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE as usize)] = [ATA_TIMING {
         AddressSetup: 0,
         CmdActive: 0,
         CmdRecovery: 0,
         DataActive: 0,
         DataRecovery: 0,
-    }; (MAX_IDE_DEVICE) as _];
+    }; (MAX_IDE_DEVICE as usize)];
     let mut i: ULONG = 0;
     let mut DriveTimReg: ULONG = 0;
     let mut UdmaTimReg: ULONG = 0;
@@ -277,7 +295,7 @@ unsafe extern "C" fn ViaSetTransferMode(
     DriveTimReg = PciRead32(Controller, (VIA_REG_DRIVE_TIMING) as ULONG);
     PortTimReg = PciRead8(Controller, VIA_REG_PORT_TIMING!(Channel));
 
-    if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA) as _ {
+    if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA as u32) {
         UdmaTimReg = PciRead32(Controller, (VIA_REG_UDMA_CTRL) as ULONG);
     }
 
@@ -286,10 +304,10 @@ unsafe extern "C" fn ViaSetTransferMode(
         let mut Device: PCHANNEL_DEVICE_CONFIG = *DeviceList.offset(i as isize);
         let mut Timing: PATA_TIMING = (&raw mut DeviceTimings as *mut ATA_TIMING).offset(i as isize) as PATA_TIMING;
         let DeviceIndex: ULONG = (Channel << 1).wrapping_add(i);
-        let Shift: ULONG = (3).wrapping_sub(DeviceIndex) << 3;
+        let Shift: ULONG = (3u32).wrapping_sub(DeviceIndex) << 3;
         let mut Value: ULONG = 0;
 
-        if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA) as _ {
+        if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA as u32) {
             if !Device.is_null() && (*Device).DmaMode >= UDMA_MODE!(0) {
                 let mut ModeIndex: ULONG = (*Device).DmaMode.wrapping_sub(UDMA_MODE!(0));
                 Value = ViaUdmaTimings[GET_TYPE!((*ChanData).HwFlags) as usize].Data[ModeIndex as usize] as ULONG;
@@ -297,11 +315,11 @@ unsafe extern "C" fn ViaSetTransferMode(
                 Value = ViaUdmaTimings[GET_TYPE!((*ChanData).HwFlags) as usize].DefaultValue as ULONG;
             }
 
-            if i != 0 && GET_TYPE!((*ChanData).HwFlags) == (TYPE_66) as _ {
-                Value |= (VIA_UDMA_CLOCK_UDMA66) as _;
+            if i != 0 && GET_TYPE!((*ChanData).HwFlags) == (TYPE_66 as u32) {
+                Value |= (VIA_UDMA_CLOCK_UDMA66 as u32);
             }
 
-            UdmaTimReg &= (!(VIA_UDMA_CLEAR_MASK << Shift)) as _;
+            UdmaTimReg &= !(VIA_UDMA_CLEAR_MASK << Shift) as ULONG;
             UdmaTimReg |= Value << Shift;
         }
 
@@ -312,7 +330,7 @@ unsafe extern "C" fn ViaSetTransferMode(
 
         ViaClampTimings(Timing);
 
-        Value = (((*Timing).DataActive << 4) | (*Timing).DataRecovery) as _;
+        Value = (((*Timing).DataActive << 4) | (*Timing).DataRecovery) as ULONG;
         DriveTimReg &= !(0xFF << Shift);
         DriveTimReg |= Value << Shift;
 
@@ -324,7 +342,7 @@ unsafe extern "C" fn ViaSetTransferMode(
     PciWrite8(Controller, VIA_REG_PORT_TIMING!(Channel), PortTimReg);
     PciWrite32(Controller, (VIA_REG_DRIVE_TIMING) as ULONG, DriveTimReg);
 
-    if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA) as _ {
+    if GET_TYPE!((*ChanData).HwFlags) != (TYPE_MWDMA as u32) {
         PciWrite32(Controller, (VIA_REG_UDMA_CTRL) as ULONG, UdmaTimReg);
     }
 
@@ -338,14 +356,10 @@ unsafe extern "C" fn ViaSetTransferMode(
     );
 }
 
-unsafe extern "C" fn ViaSataSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn ViaSataSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut SataControl: UCHAR = PciRead8(Controller, (VT6421A_REG_SATA_CTRL) as ULONG);
     let mut i: ULONG = 0;
-    if SataControl as ::core::ffi::c_int & (VT6421A_FIFO_WATERMARK_64DW) as ::core::ffi::c_int == 0 {
+    if SataControl as ::core::ffi::c_int & (VT6421A_FIFO_WATERMARK_64DW as i32) == 0 {
         i = 0;
         while i < MAX_IDE_DEVICE {
             let mut Device: PCHANNEL_DEVICE_CONFIG = *DeviceList.offset(i as isize);
@@ -357,7 +371,7 @@ unsafe extern "C" fn ViaSataSetTransferMode(
                 ) == 0
                 {
                     SataControl =
-                        (SataControl as ::core::ffi::c_int | (VT6421A_FIFO_WATERMARK_64DW) as ::core::ffi::c_int) as UCHAR;
+                        (SataControl as ::core::ffi::c_int | (VT6421A_FIFO_WATERMARK_64DW as i32)) as UCHAR;
                     PciWrite8(Controller, (VT6421A_REG_SATA_CTRL) as ULONG, SataControl);
                     break;
                 }
@@ -368,18 +382,14 @@ unsafe extern "C" fn ViaSataSetTransferMode(
     SataSetTransferMode(Controller as PATA_CONTROLLER, Channel, DeviceList);
 }
 
-unsafe extern "C" fn Via6421SetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
-    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE) as _] = [ATA_TIMING {
+unsafe extern "C" fn Via6421SetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
+    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE as usize)] = [ATA_TIMING {
         AddressSetup: 0,
         CmdActive: 0,
         CmdRecovery: 0,
         DataActive: 0,
         DataRecovery: 0,
-    }; (MAX_IDE_DEVICE) as _];
+    }; (MAX_IDE_DEVICE as usize)];
     let mut i: ULONG = 0;
 
     UNREFERENCED_PARAMETER!(Channel);
@@ -399,17 +409,17 @@ unsafe extern "C" fn Via6421SetTransferMode(
         let mut UdmaTimReg: UCHAR = 0;
 
         UdmaTimReg = PciRead8(Controller, VT6421A_REG_UDMA_CTRL!(i));
-        UdmaTimReg = (UdmaTimReg as ::core::ffi::c_int & (VIA_UDMA_CABLE_BITS) as _) as UCHAR;
+        UdmaTimReg = (UdmaTimReg as ::core::ffi::c_int & (VIA_UDMA_CABLE_BITS as i32)) as UCHAR;
         if !Device.is_null()
             && (*Device).DmaMode >= UDMA_MODE!(0)
         {
             UdmaTimReg = (UdmaTimReg as ::core::ffi::c_int
-                | ViaUdmaTimings[TYPE_133].Data[(*Device)
+                | ViaUdmaTimings[(TYPE_133) as usize].Data[(*Device)
                     .DmaMode
                     .wrapping_sub(UDMA_MODE!(0))
                     as usize] as ::core::ffi::c_int) as UCHAR;
         } else {
-            UdmaTimReg = (UdmaTimReg as ::core::ffi::c_int | (VT6421A_UDMA_SLOW) as _) as UCHAR;
+            UdmaTimReg = (UdmaTimReg as ::core::ffi::c_int | (VT6421A_UDMA_SLOW as i32)) as UCHAR;
         }
         PciWrite8(Controller, VT6421A_REG_UDMA_CTRL!(i), UdmaTimReg);
 
@@ -430,17 +440,12 @@ unsafe extern "C" fn Via6421SetTransferMode(
 
 unsafe extern "C" fn ViaGetSerrOffset(Controller: PATA_CONTROLLER) -> ULONG {
     if (*Controller).Pci.DeviceID == PCI_DEV_VT8237S_SATA_RAID {
-        return (VIA_REG_SERROR_VT8237) as _;
+        return (VIA_REG_SERROR_VT8237) as ULONG;
     }
-    return (VIA_REG_SERROR) as _;
+    return (VIA_REG_SERROR) as ULONG;
 }
 
-unsafe extern "C" fn ViaScrReadPci(
-    ChanData: PCHANNEL_DATA_PATA,
-    Register: SATA_SCR_REGISTER,
-    PortNumber: ULONG,
-    Result: PULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn ViaScrReadPci(ChanData: PCHANNEL_DATA_PATA, Register: SATA_SCR_REGISTER, PortNumber: ULONG, Result: PULONG) -> BOOLEAN {
     let Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut Value: ULONG;
     let Offset: ULONG = 2 * (*ChanData).__bindgen_anon_1.Channel + PortNumber;
@@ -497,14 +502,9 @@ unsafe extern "C" fn ViaScrReadPci(
     return TRUE;
 }
 
-unsafe extern "C" fn ViaScrWritePci(
-    mut ChanData: PCHANNEL_DATA_PATA,
-    mut Register: SATA_SCR_REGISTER,
-    mut PortNumber: ULONG,
-    mut Value: ULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn ViaScrWritePci(mut ChanData: PCHANNEL_DATA_PATA, mut Register: SATA_SCR_REGISTER, mut PortNumber: ULONG, mut Value: ULONG) -> BOOLEAN {
     let mut Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
-    let mut Offset: ULONG = 2u32
+    let mut Offset: ULONG = (2 as ULONG)
         .wrapping_mul((*ChanData).__bindgen_anon_1.Channel)
         .wrapping_add(PortNumber);
     match Register as ::core::ffi::c_uint {
@@ -545,12 +545,7 @@ unsafe extern "C" fn ViaScrWritePci(
     return TRUE;
 }
 
-unsafe extern "C" fn ViaScrReadIoPort(
-    ChanData: PCHANNEL_DATA_PATA,
-    Register: SATA_SCR_REGISTER,
-    PortNumber: ULONG,
-    Result: PULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn ViaScrReadIoPort(ChanData: PCHANNEL_DATA_PATA, Register: SATA_SCR_REGISTER, PortNumber: ULONG, Result: PULONG) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(PortNumber);
 
     if Register as u32 > ATA_SCONTROL {
@@ -563,12 +558,7 @@ unsafe extern "C" fn ViaScrReadIoPort(
     return TRUE;
 }
 
-unsafe extern "C" fn ViaScrWriteIoPort(
-    ChanData: PCHANNEL_DATA_PATA,
-    Register: SATA_SCR_REGISTER,
-    PortNumber: ULONG,
-    Value: ULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn ViaScrWriteIoPort(ChanData: PCHANNEL_DATA_PATA, Register: SATA_SCR_REGISTER, PortNumber: ULONG, Value: ULONG) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(PortNumber);
 
     if Register as u32 > ATA_SCONTROL {
@@ -644,7 +634,7 @@ unsafe extern "C" fn Via6421GetControllerProperties(mut Controller: PATA_CONTROL
     (*Controller).MaxChannels = 3;
     (*Controller).Flags |= CTRL_FLAG_MANUAL_RES;
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
@@ -718,7 +708,7 @@ unsafe extern "C" fn ViaCx700GetControllerProperties(
 
     PAGED_CODE!();
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
@@ -759,7 +749,7 @@ unsafe extern "C" fn ViaCx700GetControllerProperties(
                     ) -> BOOLEAN,
             ) as PCHANNEL_WRITE_SCR;
         } else {
-            (*ChanData).HwFlags |= TYPE_133 as ULONG;
+            (*ChanData).HwFlags |= (TYPE_133 as u32);
             (*ChanData).__bindgen_anon_1.SetTransferMode = Some(
                 ViaSetTransferMode
                     as unsafe extern "C" fn(
@@ -794,92 +784,87 @@ unsafe extern "C" fn Via6410ControllerStart(Controller: PATA_CONTROLLER) {
     PciWrite8(Controller, (VIA_REG_ENABLE_CTRL) as ULONG, Value);
 }
 
-unsafe extern "C" fn ViaQuerySouthBridgeInformation(
-    mut Context: PVOID,
-    mut BusNumber: ULONG,
-    mut PciSlot: PCI_SLOT_NUMBER,
-    mut PciConfig: PPCI_COMMON_HEADER,
-) -> BOOLEAN {
+unsafe extern "C" fn ViaQuerySouthBridgeInformation(mut Context: PVOID, mut BusNumber: ULONG, mut PciSlot: PCI_SLOT_NUMBER, mut PciConfig: PPCI_COMMON_HEADER) -> BOOLEAN {
     let mut HwFlags: PULONG = Context as PULONG;
     let mut i: ULONG = 0;
     #[link_section = "PAGECONS"]
-    static mut ViaBridgeList: [ViaBridgeEntry; 16] = [
-        ViaBridgeEntry {
+    static mut ViaBridgeList: [C2RustUnnamed_163; 16] = [
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C586 as USHORT,
             MinimumRevisionID: 0x20 as UCHAR,
             Flags: TYPE_33 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C586 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_MWDMA as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C596A as USHORT,
             MinimumRevisionID: 0x10 as UCHAR,
             Flags: (TYPE_66 | HW_FLAGS_HAS_UDMA_CLOCK) as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C596A as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_33 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C686A as USHORT,
             MinimumRevisionID: 0x40 as UCHAR,
             Flags: TYPE_100 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT82C686A as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: (TYPE_66 | HW_FLAGS_HAS_UDMA_CLOCK) as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8231 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_100 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8233 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_100 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8233A as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8233C as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_100 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8235 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8237 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8237A as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8237S as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8251 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
         },
-        ViaBridgeEntry {
+        C2RustUnnamed_163 {
             DeviceID: PCI_DEV_BRIDGE_VT8261 as USHORT,
             MinimumRevisionID: 0 as UCHAR,
             Flags: TYPE_133 as UCHAR,
@@ -888,13 +873,13 @@ unsafe extern "C" fn ViaQuerySouthBridgeInformation(
     UNREFERENCED_PARAMETER!(BusNumber);
     UNREFERENCED_PARAMETER!(PciSlot);
     PAGED_CODE!();
-    if (*PciConfig).VendorID as ::core::ffi::c_int as u32 != PCI_VEN_VIA {
+    if (*PciConfig).VendorID as ::core::ffi::c_int != (PCI_VEN_VIA as i32) {
         return FALSE as BOOLEAN;
     }
     i = 0 as ULONG;
     while (i as usize)
-        < (::core::mem::size_of::<[ViaBridgeEntry; 16]>() as usize)
-            .wrapping_div(::core::mem::size_of::<ViaBridgeEntry>() as usize)
+        < (::core::mem::size_of::<[C2RustUnnamed_163; 16]>() as usize)
+            .wrapping_div(::core::mem::size_of::<C2RustUnnamed_163>() as usize)
     {
         if (*PciConfig).DeviceID as ::core::ffi::c_int
             == ViaBridgeList[i as usize].DeviceID as ::core::ffi::c_int
@@ -924,8 +909,8 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
 
     PAGED_CODE!();
 
-    if HwFlags & (HW_FLAGS_CHECK_BRIDGE) as _ != 0 {
-        if ((PciFindDevice(Some(ViaQuerySouthBridgeInformation), &mut HwFlags as *mut ULONG as *mut c_void)) == 0) {
+    if HwFlags & (HW_FLAGS_CHECK_BRIDGE as u32) != 0 {
+        if ((PciFindDevice(Some(ViaQuerySouthBridgeInformation), (&raw mut HwFlags).cast())) == 0) {
             return STATUS_NO_MATCH;
         }
     }
@@ -935,10 +920,10 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
     }
 
     if (*Controller).Pci.DeviceID != PCI_DEV_VT6415_IDE {
-        (*Controller).__bindgen_anon_1.ChannelEnableBits = &ViaPataEnableBits as *const _;
+        (*Controller).__bindgen_anon_1.ChannelEnableBits = ViaPataEnableBits.as_ptr();
     }
 
-    if GET_TYPE!(HwFlags) != (TYPE_MWDMA) as _ {
+    if GET_TYPE!(HwFlags) != (TYPE_MWDMA as u32) {
         UdmaTimReg = PciRead32(Controller, (VIA_REG_UDMA_CTRL) as ULONG);
     }
 
@@ -966,8 +951,8 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
                         (*ChanData).Channel,
                     );
                     (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
-                    (*ChanData).HwFlags &= (!HW_FLAGS_TYPE_MASK) as _;
-                    (*ChanData).HwFlags |= (TYPE_33) as _;
+                    (*ChanData).HwFlags &= !(HW_FLAGS_TYPE_MASK as u32);
+                    (*ChanData).HwFlags |= (TYPE_33 as u32);
                 }
             }
             TYPE_100 => {
@@ -1023,10 +1008,10 @@ unsafe extern "C" fn ViaSataGetControllerProperties(
             SataSetTransferMode
                 as unsafe extern "C" fn(PATA_CONTROLLER, ULONG, *mut PCHANNEL_DEVICE_CONFIG) -> (),
         ) as PCHANNEL_SET_MODE_EX;
-        if HwFlags & (HW_FLAGS_SINGLE_PORT as ULONG) != 0 {
+        if HwFlags & (HW_FLAGS_SINGLE_PORT as u32) != 0 {
             (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_NO_SLAVE;
         }
-        if HwFlags & (HW_FLAGS_PCI_SCR as ULONG) != 0 {
+        if HwFlags & (HW_FLAGS_PCI_SCR as u32) != 0 {
             (*ChanData).ScrRead = Some(
                 ViaScrReadPci
                     as unsafe extern "C" fn(
@@ -1052,26 +1037,26 @@ unsafe extern "C" fn ViaSataGetControllerProperties(
 }
 #[no_mangle]
 pub unsafe extern "C" fn ViaGetControllerProperties(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut i: ULONG;
-    let mut HwFlags: ULONG;
+    let mut HwFlags: ULONG = 0;
 
     PAGED_CODE!();
 
-    if (*(*Controller)).Pci.DeviceID == PCI_DEV_VT6421A_RAID {
-        return Via6421GetControllerProperties((Controller).cast());
-    } else if (*(*Controller)).Pci.DeviceID == PCI_DEV_CX700M2_IDE_SATA
-        || (*(*Controller)).Pci.DeviceID == PCI_DEV_CX700M2_IDE_SATA_RAID
+    if (*Controller).Pci.DeviceID == PCI_DEV_VT6421A_RAID {
+        return Via6421GetControllerProperties(Controller);
+    } else if (*Controller).Pci.DeviceID == PCI_DEV_CX700M2_IDE_SATA
+        || (*Controller).Pci.DeviceID == PCI_DEV_CX700M2_IDE_SATA_RAID
     {
-        return ViaCx700GetControllerProperties((Controller).cast());
+        return ViaCx700GetControllerProperties(Controller);
     }
 
     i = 0;
     while i < RTL_NUMBER_OF!(ViaControllerList) {
         HwFlags = ViaControllerList[i as usize].Flags as ULONG;
-        if (*(*Controller)).Pci.DeviceID == ViaControllerList[i as usize].DeviceID {
+        if (*Controller).Pci.DeviceID == ViaControllerList[i as usize].DeviceID {
             break;
         }
         i = i.wrapping_add(1);
@@ -1080,8 +1065,8 @@ pub unsafe extern "C" fn ViaGetControllerProperties(
         return STATUS_NO_MATCH;
     }
 
-    if HwFlags & (HW_FLAGS_SINGLE_CHAN) as _ != 0 {
-        (*(*Controller)).MaxChannels = 1;
+    if HwFlags & (HW_FLAGS_SINGLE_CHAN as u32) != 0 {
+        (*Controller).MaxChannels = 1;
     }
 
     Status = PciIdeCreateChannelData(Controller, 0);
@@ -1089,9 +1074,9 @@ pub unsafe extern "C" fn ViaGetControllerProperties(
         return Status;
     }
 
-    if GET_TYPE!(HwFlags) == (TYPE_SATA) as _ {
-        return ViaSataGetControllerProperties((Controller).cast(), HwFlags);
+    if GET_TYPE!(HwFlags as ULONG) as u32 == (TYPE_SATA as u32) {
+        return ViaSataGetControllerProperties(Controller, HwFlags);
     }
 
-    return ViaPataGetControllerProperties((Controller).cast(), HwFlags);
+    return ViaPataGetControllerProperties(Controller, HwFlags);
 }

@@ -318,6 +318,8 @@ members = [
     "partmgr-rust",
     "fs_rec-rust",
     "pciidex-legacy-rust",
+    "pciidex-rust",
+    "legide-rust",
     "scsiport-rust",
     "atapi-legacy-rust",
     "atapi-rust",

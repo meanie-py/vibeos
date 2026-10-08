@@ -54,15 +54,6 @@ use crate::CONTAINING_RECORD;
 const TRUE: BOOLEAN = 1;
 const FALSE: BOOLEAN = 0;
 
-// On amd64/arm64 KeQuerySystemTime is a header inline reading KI_USER_SHARED_DATA at its
-// fixed kernel VA (0xFFFFF78000000000), via the `SharedUserData` symbol. That symbol is a
-// C macro, not a real export, so provide it here (mirrors classpnp-rust's shim). On i386
-// KeQuerySystemTime is a real ntoskrnl export and this is unused.
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-pub static mut SharedUserData: *mut _KUSER_SHARED_DATA =
-    0xFFFFF78000000000usize as *mut _KUSER_SHARED_DATA;
-
 // arm64: KeGetCurrentIrql resolves via the ntkrnl_sys inline, which references
 // KeGetCurrentPrcb — not exported on arm64. Forward it to the register-reading inline
 // (distinct IR name), as classpnp-rust does.

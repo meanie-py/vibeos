@@ -2,24 +2,20 @@
 spec2def(pciidex.sys pciidex.spec ADD_IMPORTLIB)
 
 # ============================================================================
-# pciidex.sys — Rust cohabitation flip (fdo/miniport/pciidex/pdo/power.c -> Rust)
+# pciidex.sys — Rust cohabitation flip (upstream's 2026 rewrite -> pciidex-rust)
 # ============================================================================
-# The PCI IDE bus extension is translated to Rust (pciidex-legacy-rust, kept on disk per
-# the never-delete rule). DriverEntry + the pciidex.spec PciIdeX* exports come from
-# libpciidex_legacy_rust.a; the IDE/PnP DDK types come from the per-driver bindgen substrate
-# (pciidex-legacy-rust/src/types_*.rs). cmake keeps the MODULE link (set_module_type +
-# spec2def .def + add_importlibs(ntoskrnl hal)). pciidex-rust builds on PLAIN STABLE
-# rustc: its three C-variadic entry points (the ntstrsafe wrappers + the exported
-# PciIdeXDebugPrint) cannot be DEFINED in stable Rust (`c_variadic`, rust-lang#44930),
-# so they are 3-line trampolines in rust_varargs_shim.c that call the fixed-arity `*_v`
-# twins in the crate — all logic stays in Rust, and RUSTC_BOOTSTRAP is gone (2026-07-12).
-# Standard per-arch RUST_TARGET, i386 no-SSE RUSTFLAGS.
-# PARKED SUCCESSOR (2026-10-06): upstream's rewrite (core + chipset/ + software AHCI) is
-# translated in sdk/lib/rust/pciidex-rust (rustconv port) but does not compile yet; until it
-# does, pciidex.sys keeps building from the pre-rewrite translation, pciidex-legacy-rust.
+# The PCI IDE bus extension as upstream rewrote it after the fork: the controller/channel
+# FDO+PDO core (fdo/pdo/pciidex/miniport/power/acpi.c) plus the chipset/ layer (per-vendor
+# PATA quirks and a software AHCI HBA driver, ahci_generic/ahci_hw/ahci_io). All of it is
+# translated to Rust in sdk/lib/rust/pciidex-rust (rustconv port, sealed DeepSeek). The
+# translation of the PRE-rewrite pciidex is parked as pciidex-legacy-rust (never-delete).
+# The pciidex.spec exports (PciIdeXInitialize/GetBusData/SetBusData/GetBusLocation and the
+# varargs PciIdeXDebugPrint) come from the Rust #[no_mangle] symbols, except that
+# PciIdeXDebugPrint is DEFINED by a 3-line trampoline in rust_varargs_shim.c (stable Rust
+# cannot define a C-variadic fn) that calls PciIdeXDebugPrint_v in the crate.
 set(PCIIDEX_RUST_WORKSPACE_DIR "${CMAKE_SOURCE_DIR}/sdk/lib/rust")
-rust_storage_target(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target" pciidex-legacy-rust)
-set(PCIIDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpciidex_legacy_rust.a")
+rust_storage_target(PCIIDEX_RUST_TARGET_DIR "${CMAKE_CURRENT_BINARY_DIR}/rust-pciidex-target" pciidex-rust)
+set(PCIIDEX_RUST_LIB "${CMAKE_CURRENT_BINARY_DIR}/libpciidex_rust.a")
 if(ARCH STREQUAL "i386")
     set(PCIIDEX_RUST_TARGET "i686-pc-windows-gnu")
     set(PCIIDEX_RUST_RUSTFLAGS "-C target-feature=-sse,-sse2")
@@ -30,36 +26,58 @@ elseif(ARCH STREQUAL "arm64")
     set(PCIIDEX_RUST_TARGET "aarch64-pc-windows-gnullvm")
     set(PCIIDEX_RUST_RUSTFLAGS "")
 endif()
-rust_crate_sources(PCIIDEX_RUST_SRCS "${PCIIDEX_RUST_WORKSPACE_DIR}" pciidex-legacy-rust)
+rust_crate_sources(PCIIDEX_RUST_SRCS "${PCIIDEX_RUST_WORKSPACE_DIR}" pciidex-rust)
 add_custom_command(
     OUTPUT ${PCIIDEX_RUST_LIB}
     COMMAND ${CMAKE_COMMAND} -E env
         CARGO_TARGET_DIR=${PCIIDEX_RUST_TARGET_DIR}
         RUSTFLAGS=${PCIIDEX_RUST_RUSTFLAGS}
         cargo build --release --target ${PCIIDEX_RUST_TARGET}
-            -p pciidex-legacy-rust
+            -p pciidex-rust
             --manifest-path ${PCIIDEX_RUST_WORKSPACE_DIR}/Cargo.toml
     COMMAND ${CMAKE_COMMAND} -E copy
-        ${PCIIDEX_RUST_TARGET_DIR}/${PCIIDEX_RUST_TARGET}/release/libpciidex_legacy_rust.a
+        ${PCIIDEX_RUST_TARGET_DIR}/${PCIIDEX_RUST_TARGET}/release/libpciidex_rust.a
         ${PCIIDEX_RUST_LIB}
     DEPENDS ${PCIIDEX_RUST_SRCS}
-            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-legacy-rust/Cargo.toml
+            ${PCIIDEX_RUST_WORKSPACE_DIR}/pciidex-rust/Cargo.toml
     WORKING_DIRECTORY ${PCIIDEX_RUST_WORKSPACE_DIR}
-    COMMENT "Building pciidex-legacy-rust (${PCIIDEX_RUST_TARGET})"
+    COMMENT "Building pciidex-rust (${PCIIDEX_RUST_TARGET})"
     VERBATIM)
 add_custom_target(rust_pciidex DEPENDS ${PCIIDEX_RUST_LIB})
 
-# Upstream (post-fork) rewrote pciidex around a new chipset/ quirks layer
-# (chipset/*.c: ahci_generic/ahci_hw/ahci_io/amd/ati/cmd/intel/pata_generic/
-# pata_hw/pata_io/pata_legacy/pctech/sil680/svw_pata/svw_sata/toshiba/via) plus
-# a new acpi.c, calling back into fdo.c/pciidex.c internals we have translated
-# to Rust. There is no Rust twin and no wiring for the new chipset framework in
-# pciidex-rust, so — mirroring the atapi SATL precedent — this stays UNBUILT
-# dead C on disk as a future translation target rather than being linked in
-# half-integrated. See FLAGS in the merge report.
+# C bodies replaced by Rust — kept on disk as the translation reference.
+# list(APPEND SOURCE
+#     chipset/ahci_generic.c
+#     chipset/ahci_hw.c
+#     chipset/ahci_io.c
+#     chipset/amd.c
+#     chipset/ati.c
+#     chipset/cmd.c
+#     chipset/intel.c
+#     chipset/pata_generic.c
+#     chipset/pata_hw.c
+#     chipset/pata_io.c
+#     chipset/pctech.c
+#     chipset/sil680.c
+#     chipset/svw_pata.c
+#     chipset/svw_sata.c
+#     chipset/toshiba.c
+#     chipset/via.c
+#     acpi.c
+#     fdo.c
+#     miniport.c
+#     pciidex.c
+#     pdo.c
+#     power.c)
+# i386 only, under -DATA_DETECT_LEGACY_DEVICES (in the crate: `#[cfg(target_arch = "x86")]`):
+# if(ARCH STREQUAL "i386")
+# list(APPEND SOURCE chipset/pata_legacy.c)
+# endif()
 
-# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
+# ${SOURCE} is empty while the list above stays commented; it is spelled here so
+# `profile_derive --flipped-sources` can re-audit the C the Rust replaced.
 add_library(pciidex MODULE
+    ${SOURCE}
     rust_cohab_stub.c
     rust_varargs_shim.c
     pciidex.rc

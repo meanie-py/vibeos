@@ -941,16 +941,33 @@ def glob_ties(crate_src: Path, modules_dir: Path, sys_src: Path) -> dict[str, li
     the next run and add it back on the one after. The -sys crate's declaration wins, the
     one every other arch already resolves to.
     """
-    # A name the prelude already spells out is settled there (a second explicit import is E0252).
+    # A name the prelude already IMPORTS or DEFINES is settled there (a second explicit import
+    # is E0252). Only those: a name the prelude merely CALLS -- pciidex's ATA_IO_WAIT macro
+    # calling KeStallExecutionProcessor -- is a use, and ambiguous like any other.
     prelude = crate_src / "prelude.rs"
     settled: set[str] = set()
+    used: set[str] = set()
     if prelude.is_file():
         text = prelude.read_text(errors="replace")
         m = re.search(re.escape(SUBSTRATE_BEGIN) + r".*?" + re.escape(SUBSTRATE_END), text, re.S)
-        settled = set(
-            re.findall(r"\b[A-Za-z_]\w*\b", text[: m.start()] + text[m.end() :] if m else text)
+        rest = text[: m.start()] + text[m.end() :] if m else text
+        for imp in re.finditer(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+([^;]+);", rest):
+            body = imp.group(1)
+            names = re.findall(r"\{([^}]*)\}", body)
+            parts = names[0].split(",") if names else [body.rsplit("::", 1)[-1]]
+            for part in parts:
+                word = part.strip().split(" as ")[-1].strip()
+                if word and word != "*":
+                    settled.add(word)
+        settled |= set(
+            re.findall(
+                r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+                r"(?:fn|const|static(?:\s+mut)?|struct|union|enum|type|trait)\s+([A-Za-z_]\w*)",
+                rest,
+            )
         )
-    used: set[str] = set()
+        settled |= set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", rest))
+        used |= set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", rest))
     for rs in sorted(modules_dir.glob("*.rs")):
         text = rs.read_text(errors="replace")
         explicit = {

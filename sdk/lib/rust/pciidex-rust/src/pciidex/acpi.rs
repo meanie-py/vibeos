@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolUninitialized, ExAllocatePoolZero, _KWAIT_REASON_Executive, IoAllocateIrp, IoGetAttachedDeviceReference, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoAllocateIrp, IoGetAttachedDeviceReference, KEVENT, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaAcpiEvaluateObject(
@@ -27,7 +27,7 @@ unsafe extern "C" fn AtaAcpiEvaluateObject(
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_NOT_SUPPORTED;
 
         IoStack = IoGetNextIrpStackLocation(Irp);
-        (*IoStack).MajorFunction = (IRP_MJ_DEVICE_CONTROL) as u8;
+        (*IoStack).MajorFunction = (IRP_MJ_DEVICE_CONTROL as u8);
         (*IoStack).Parameters.DeviceIoControl.IoControlCode = IOCTL_ACPI_ASYNC_EVAL_METHOD;
         (*IoStack).Parameters.DeviceIoControl.InputBufferLength = InputBufferLength;
         (*IoStack).Parameters.DeviceIoControl.OutputBufferLength = OutputBufferLength;
@@ -47,7 +47,7 @@ unsafe extern "C" fn AtaAcpiEvaluateObject(
             KeWaitForSingleObject(
                 &mut Event as *mut _ as PVOID,
                 _KWAIT_REASON_Executive,
-                (0i32) as i8,
+                (0i32) as KPROCESSOR_MODE,
                 FALSE,
                 core::ptr::null_mut(),
             );
@@ -77,17 +77,17 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
     mut DeviceObject: PDEVICE_OBJECT,
     mut TimingMode: PIDE_ACPI_TIMING_MODE_BLOCK,
 ) -> BOOLEAN {
-    let mut Buffer: [UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) +
-                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>())) as usize] = [0; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) +
-                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>())) as usize];
+    let mut Buffer: [UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) as usize +
+                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize] = [0; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) as usize +
+                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize];
     let mut InputBuffer: ACPI_EVAL_INPUT_BUFFER = { let mut __lit: ACPI_EVAL_INPUT_BUFFER = core::mem::zeroed(); __lit.Signature = 0; __lit.__bindgen_anon_1.MethodNameAsUlong = 0; __lit };
     let mut Status: NTSTATUS = 0;
     let mut OutputBuffer: PACPI_EVAL_OUTPUT_BUFFER = Buffer.as_mut_ptr() as PACPI_EVAL_OUTPUT_BUFFER;
 
     RtlZeroMemory!(
         Buffer.as_mut_ptr() as *mut core::ffi::c_void,
-        core::mem::size_of::<[UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) +
-                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>(),
+        core::mem::size_of::<[UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) as usize +
+                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>(),
     );
 
     InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 'M' as u32 | ('T' as u32) << 8 | ('G' as u32) << 16 | ('_' as u32) << 24;
@@ -98,26 +98,26 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
         &mut InputBuffer as *mut ACPI_EVAL_INPUT_BUFFER as PVOID,
         core::mem::size_of::<ACPI_EVAL_INPUT_BUFFER>() as ULONG,
         OutputBuffer,
-        core::mem::size_of::<[UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) +
-                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>() as ULONG,
+        core::mem::size_of::<[UCHAR; (FIELD_OFFSET!(ACPI_EVAL_OUTPUT_BUFFER, Argument) as usize +
+                 ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>() as ULONG,
     );
 
     if !NT_SUCCESS!(Status) {
         return FALSE;
     }
 
-    if (*OutputBuffer).Argument[0].DataLength < core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>() as ULONG {
+    if ((*OutputBuffer).Argument[0].DataLength as usize) < core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>() {
         return FALSE;
     }
 
-    if (*OutputBuffer).Argument[0].Type != ACPI_METHOD_ARGUMENT_BUFFER {
+    if (*OutputBuffer).Argument[0].Type != ACPI_METHOD_ARGUMENT_BUFFER as USHORT {
         return FALSE;
     }
 
     RtlCopyMemory!(
         TimingMode as *mut core::ffi::c_void,
-        (*OutputBuffer).Argument[0].Data.as_ptr() as *const core::ffi::c_void,
-        core::mem::size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>(),
+        (*OutputBuffer).Argument[0].__bindgen_anon_1.Data.as_ptr() as *const core::ffi::c_void,
+        core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>(),
     );
 
     return TRUE;
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn AtaAcpiSetTimingMode(
         );
 
         Argument = ACPI_METHOD_NEXT_ARGUMENT!(Argument);
-        (*Argument).Type = (ACPI_METHOD_ARGUMENT_BUFFER) as u16;
+        (*Argument).Type = (ACPI_METHOD_ARGUMENT_BUFFER as u16);
         (*Argument).DataLength = core::mem::size_of::<IDENTIFY_DEVICE_DATA>() as USHORT;
         if !IdBlock1.is_null() {
             RtlCopyMemory!(
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn AtaAcpiSetTimingMode(
         }
 
         Argument = ACPI_METHOD_NEXT_ARGUMENT!(Argument);
-        (*Argument).Type = (ACPI_METHOD_ARGUMENT_BUFFER) as u16;
+        (*Argument).Type = (ACPI_METHOD_ARGUMENT_BUFFER as u16);
         (*Argument).DataLength = core::mem::size_of::<IDENTIFY_DEVICE_DATA>() as USHORT;
         if !IdBlock2.is_null() {
             RtlCopyMemory!(
@@ -247,7 +247,7 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
     while RetryCount < 2 {
         OutputBuffer = ExAllocatePoolZero(
             NonPagedPool,
-            (OutputSize as usize) as _,
+            OutputSize as usize,
             TAG_PCIIDEX,
         ) as PACPI_EVAL_OUTPUT_BUFFER;
         if OutputBuffer.is_null() {
@@ -277,7 +277,7 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
             break 'cleanup;
         }
 
-        if ((*OutputBuffer).Argument[0].Type) as u32 != ACPI_METHOD_ARGUMENT_BUFFER {
+        if (*OutputBuffer).Argument[0].Type != (ACPI_METHOD_ARGUMENT_BUFFER as u16) {
             break 'cleanup;
         }
 

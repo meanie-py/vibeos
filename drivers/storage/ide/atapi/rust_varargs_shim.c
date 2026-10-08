@@ -12,7 +12,8 @@
 int                vibeos_va_arg_i32(void *app) { return va_arg(*(va_list *)app, int); }
 unsigned int       vibeos_va_arg_u32(void *app) { return va_arg(*(va_list *)app, unsigned int); }
 long long          vibeos_va_arg_i64(void *app) { return va_arg(*(va_list *)app, long long); }
-unsigned long long vibeos_va_arg_u64(void *app) { return va_arg(*(va_list *)app, unsigned long long); }
+unsigned long long vibeos_va_arg_u64(void *app)
+                   { return va_arg(*(va_list *)app, unsigned long long); }
 double             vibeos_va_arg_f64(void *app) { return va_arg(*(va_list *)app, double); }
 void *             vibeos_va_arg_ptr(void *app) { return va_arg(*(va_list *)app, void *); }
 

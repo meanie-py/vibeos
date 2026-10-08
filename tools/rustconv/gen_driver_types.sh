@@ -280,7 +280,7 @@ case "$DRIVER" in
                -DDLL_EXPORT_VERSION=0x502 )
     ;;
   pciidex)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/pciidex/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from drivers/storage/ide/pciidex/CMakeLists.txt
     # (25 compiled TU(s), 84 headers in the include closure, 74 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
@@ -298,7 +298,14 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_user\.h'
                   --allowlist-file '.*[/\\]scsi\.h'
                   --allowlist-file '.*[/\\]wdmguid\.h'
-                  --allowlist-file '.*pciidex[/\\].*\.h' )
+                  --allowlist-file '.*pciidex[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ahci\.h'
+                  --allowlist-file '.*[/\\]guiddef\.h'
+                  --allowlist-file '.*[/\\]ntddk\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]pata\.h'
+                  --allowlist-file '.*[/\\]pciidex\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
     EXTRA_INC=( -I"${SRC}/drivers/storage/ide/pciidex" -I"${SRC}/build-i386/drivers/storage/ide/pciidex" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
@@ -2495,7 +2502,7 @@ case "$DRIVER" in
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/netapi32-rust/src}"
     ;;
   legide)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-06 from drivers/storage/ide/legide/CMakeLists.txt
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from drivers/storage/ide/legide/CMakeLists.txt
     # (2 compiled TU(s), 70 headers in the include closure, 0 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
@@ -2506,7 +2513,9 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file '.*[/\\]ata\.h' --allowlist-file '.*[/\\]ide\.h'
                   --allowlist-file '.*[/\\]reactos[/\\]drivers[/\\]ata[/\\]ata_shared\.h'
                   --allowlist-file '.*[/\\]scsi\.h'
-                  --allowlist-file '.*legide[/\\].*\.h' )
+                  --allowlist-file '.*legide[/\\].*\.h'
+                  --allowlist-file '.*[/\\]ntddk\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h' )
     EXTRA_INC=( -I"${SRC}/drivers/storage/ide/legide" -I"${SRC}/build-i386/drivers/storage/ide/legide" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.

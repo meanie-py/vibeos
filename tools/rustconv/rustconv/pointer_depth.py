@@ -56,6 +56,8 @@ class CFunctionDecls:
     ret: tuple[str, int] | None
     #: pointer typedefs the C itself takes `sizeof` of (`sizeof(PVOID)` is meant).
     sizeof_types: frozenset[str] = frozenset()
+    #: the C takes `sizeof` of a spelled-out pointer type (`sizeof(T *)`) somewhere in it.
+    sizeof_raw_pointer: bool = False
 
 
 def _split_commas(text: str) -> list[str]:
@@ -109,7 +111,12 @@ def c_declarations(
     sized = frozenset(
         t for t in re.findall(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)", body) if t in types
     )
-    return CFunctionDecls(names, ret, sized)
+    raw = re.search(r"\bsizeof\s*\(\s*(?:const\s+)?[A-Za-z_]\w*\s*\*", body) is not None
+    # `sizeof(p)` / `sizeof p` of a pointer VARIABLE means a pointer size too.
+    for v in re.findall(r"\bsizeof\s*(?:\(\s*([A-Za-z_]\w*)\s*\)|\s([A-Za-z_]\w*)\b)", body):
+        typ, depth = names.get(v[0] or v[1], ("", 0))
+        raw = raw or depth > 0 or typ in types
+    return CFunctionDecls(names, ret, sized, raw)
 
 
 def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:
@@ -167,8 +174,26 @@ def repair(
                 if targets and t in targets and t in types and t not in c.sizeof_types
             }
         )
-        if not wrong and ret_typ is None and not sized:
+        # The raw-pointer spelling of the same misreading: acpi.c's `sizeof(*TimingMode)` came
+        # back as `size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>()` and sized an ACPI output
+        # buffer 8 bytes short of the struct it receives. Only where the C never takes the
+        # size of ANY pointer type, so a deliberate pointer size is never touched.
+        raw_sized = (
+            sorted(
+                set(re.findall(r"\bsize_of::<\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*>", body))
+                - {"c_void", "core", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize"}
+            )
+            if not c.sizeof_types and not c.sizeof_raw_pointer
+            else []
+        )
+        if not wrong and ret_typ is None and not sized and not raw_sized:
             continue
+        for typ in raw_sized:
+            body = re.sub(
+                rf"\bsize_of::<\s*\*(?:mut|const)\s+{re.escape(typ)}\s*>",
+                f"size_of::<{typ}>",
+                body,
+            )
         for typ in sized:
             assert targets is not None  # `sized` is empty without them
             body = re.sub(
@@ -196,6 +221,7 @@ def repair(
             last = end
             what = sorted(wrong) + (["-> return"] if ret_typ else [])
             what += [f"size_of::<{t}>" for t in sized]
+            what += [f"size_of::<*mut {t}>" for t in raw_sized]
             fixes.append(f"{name}: {', '.join(what)}")
     out.append(rust[last:])
     return "".join(out), fixes

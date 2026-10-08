@@ -1,9 +1,10 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Channel, ExAllocatePoolUninitialized, IoGetDeviceProperty, PCCHAR, va_list};
+use ntkrnl_sys::ddk::{IoGetDeviceProperty, PCCHAR, va_list};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut PciIdeDebug: ULONG = 0 as ULONG;
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeXChannelState(
@@ -15,7 +16,7 @@ pub unsafe extern "C" fn PciIdeXChannelState(
     PAGED_CODE!();
 
     MiniportChannelEnabled = (*FdoExtension).Properties.PciIdeChannelEnabled;
-    if MiniportChannelEnabled.is_some() {
+    if !MiniportChannelEnabled.is_none() {
         return (MiniportChannelEnabled.unwrap_unchecked())(
             (*FdoExtension).MiniControllerExtension.as_ptr() as *mut core::ffi::c_void,
             Channel,
@@ -73,7 +74,7 @@ pub unsafe extern "system" fn PciIdeXGetBusData(
     );
     Controller = &raw mut (*FdoExt).Controller as PATA_CONTROLLER;
 
-    BytesRead = (*Controller).GetBusData.expect("non-null function pointer")(
+    BytesRead = (*Controller).GetBusData.unwrap_unchecked()(
         (*Controller).BusInterfaceContext,
         PCI_WHICHSPACE_CONFIG,
         Buffer,
@@ -101,7 +102,7 @@ pub unsafe extern "system" fn PciIdeXSetBusData(
     let mut i: ULONG;
     let mut BytesWritten: ULONG;
     let mut CurrentBuffer: *mut u8;
-    let mut OldIrql: KIRQL;
+    let mut OldIrql: KIRQL = 0;
     let mut Status: NTSTATUS;
 
     let info_fmt = b"PciIdeXSetBusData(%p %p %p 0x%lx 0x%lx)\n\0".as_ptr() as *const i8;
@@ -128,43 +129,43 @@ pub unsafe extern "system" fn PciIdeXSetBusData(
 
     // Labeled block to allow goto-like break
     let _: () = {
-        KeAcquireSpinLock((lock_ptr).cast(), old_irql_ptr);
+        KeAcquireSpinLock(lock_ptr, old_irql_ptr);
 
         Status = PciIdeXGetBusData(DeviceExtension, Buffer, ConfigDataOffset, BufferLength);
         if !NT_SUCCESS!(Status) {
             // goto Cleanup
-            return; // break out of block, continue after block
-        }
-
-        i = 0;
-        while i < BufferLength {
-            let idx = i as usize;
-            let data_mask_byte = *((DataMask as *const u8).add(idx)) as i32;
-            let buffer_byte = *((Buffer as *const u8).add(idx)) as i32;
-            let current_byte = *CurrentBuffer.add(idx) as i32;
-            let result = (current_byte & !data_mask_byte) | (data_mask_byte & buffer_byte);
-            *CurrentBuffer.add(idx) = result as u8;
-            i = i.wrapping_add(1);
-        }
-
-        let set_bus_data_fn = (*Controller).SetBusData;
-        BytesWritten = (set_bus_data_fn.unwrap_unchecked())(
-            (*Controller).BusInterfaceContext,
-            PCI_WHICHSPACE_CONFIG,
-            CurrentBuffer as *mut c_void,
-            ConfigDataOffset,
-            BufferLength,
-        );
-
-        if BytesWritten != BufferLength {
-            Status = STATUS_UNSUCCESSFUL;
+            Status = Status; // break out of block, continue after block
         } else {
-            Status = STATUS_SUCCESS;
+            i = 0;
+            while i < BufferLength {
+                let idx = i as usize;
+                let data_mask_byte = *((DataMask as *const u8).add(idx)) as i32;
+                let buffer_byte = *((Buffer as *const u8).add(idx)) as i32;
+                let current_byte = *CurrentBuffer.add(idx) as i32;
+                let result = (current_byte & !data_mask_byte) | (data_mask_byte & buffer_byte);
+                *CurrentBuffer.add(idx) = result as u8;
+                i = i.wrapping_add(1);
+            }
+
+            let set_bus_data_fn = (*Controller).SetBusData;
+            BytesWritten = (set_bus_data_fn.unwrap_unchecked())(
+                (*Controller).BusInterfaceContext,
+                PCI_WHICHSPACE_CONFIG,
+                CurrentBuffer as *mut c_void,
+                ConfigDataOffset,
+                BufferLength,
+            );
+
+            if BytesWritten != BufferLength {
+                Status = STATUS_UNSUCCESSFUL;
+            } else {
+                Status = STATUS_SUCCESS;
+            }
         }
     };
 
     // Cleanup:
-    KeReleaseSpinLock((lock_ptr).cast(), OldIrql);
+    KeReleaseSpinLock(lock_ptr, OldIrql);
 
     if CurrentBuffer != LocalBuffer.as_mut_ptr() {
         ExFreePoolWithTag((CurrentBuffer).cast(), TAG_PCIIDEX);
@@ -179,7 +180,7 @@ pub unsafe extern "system" fn PciIdexGetBusLocation(
     BusLocation: *mut u32,
 ) -> i32 {
     let mut FdoExt: *mut FDO_DEVICE_EXTENSION;
-    let mut Length: u32;
+    let mut Length: u32 = core::mem::zeroed();
     let mut Status: i32;
 
     FdoExt = CONTAINING_RECORD!(

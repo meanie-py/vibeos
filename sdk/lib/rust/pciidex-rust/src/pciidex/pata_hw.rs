@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DeviceNumber, KeStallExecutionProcessor};
+use ntkrnl_sys::ddk::KeStallExecutionProcessor;
 use core::ffi::c_void;
 
 unsafe extern "C" fn PataIsDevicePresent(
@@ -14,7 +14,7 @@ unsafe extern "C" fn PataIsDevicePresent(
         (IDE_DRIVE_SELECT | ((DeviceNumber & 1) << 4)) as UCHAR,
     );
 
-    IdeStatus = (*ChanData).ReadStatus.expect("non-null function pointer")(ChanData);
+    IdeStatus = (*ChanData).ReadStatus.unwrap_unchecked()(ChanData);
     INFO!(
         b"CH %lu: Device %lu status %02x\n\0".as_ptr() as *const i8,
         (*ChanData).Channel,
@@ -84,14 +84,14 @@ unsafe extern "C" fn PataIsDevicePresent(
 unsafe extern "C" fn PataIssueSoftwareReset(ChanData: *mut CHANNEL_DATA_PATA) {
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_6.Control,
-        (IDE_DC_RESET_CONTROLLER | (IDE_DC_ALWAYS) as _) as u8,
+        (IDE_DC_RESET_CONTROLLER | IDE_DC_ALWAYS) as u8,
         ChanData,
         MRES_CTRL,
     );
     KeStallExecutionProcessor(20);
     ATA_WRITE!(
         (*ChanData).Regs.__bindgen_anon_6.Control,
-        (IDE_DC_DISABLE_INTERRUPTS | (IDE_DC_ALWAYS) as _) as u8,
+        (IDE_DC_DISABLE_INTERRUPTS | IDE_DC_ALWAYS) as u8,
         ChanData,
         MRES_CTRL,
     );
@@ -100,13 +100,13 @@ unsafe extern "C" fn PataIssueSoftwareReset(ChanData: *mut CHANNEL_DATA_PATA) {
 
 unsafe extern "C" fn PataDrainDeviceBuffer(ChanData: PCHANNEL_DATA_PATA) {
     let mut i: ULONG;
-    let mut LocalBuffer: USHORT;
+    let mut LocalBuffer: USHORT = core::mem::zeroed();
 
     i = 0;
     while i < ATA_MAX_TRANSFER_LENGTH / core::mem::size_of::<USHORT>() as ULONG {
-        let IdeStatus: UCHAR = (*ChanData).ReadStatus.expect("non-null function pointer")(ChanData);
+        let IdeStatus: UCHAR = (*ChanData).ReadStatus.unwrap_unchecked()(ChanData);
 
-        if IdeStatus as i32 & IDE_STATUS_DRQ == 0 {
+        if IdeStatus as i32 & (IDE_STATUS_DRQ as i32) == 0 {
             break;
         }
 
@@ -132,7 +132,7 @@ unsafe extern "C" fn PataDrainDeviceBuffer(ChanData: PCHANNEL_DATA_PATA) {
 #[no_mangle]
 pub unsafe extern "C" fn PataChannelGetMaximumDeviceCount(
     ChannelContext: *mut core::ffi::c_void,
-) -> u32 {
+) -> ULONG {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
 
     #[cfg(target_arch = "x86")]
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn PataChannelGetMaximumDeviceCount(
     };
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataResetChannel(ChannelContext: *mut core::ffi::c_void) {
+pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let mut i: u32;
     let mut DeviceNumber: u32;
@@ -179,7 +179,7 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: *mut core::ffi::c_void
 
     DeviceNumber = 0;
     while DeviceNumber < DeviceCount {
-        let mut IdeStatus: u8;
+        let mut IdeStatus: u8 = core::mem::zeroed();
 
         if (DeviceNumber % 2) != 0 {
             if !(DeviceBitmap & (1 << DeviceNumber)) != 0 {
@@ -213,7 +213,7 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: *mut core::ffi::c_void
 
         i = 0;
         while i < ATA_TIME_BUSY_RESET {
-            IdeStatus = (*ChanData).ReadStatus.expect("non-null function pointer")(ChanData);
+            IdeStatus = (*ChanData).ReadStatus.unwrap_unchecked()(ChanData);
             if IdeStatus == 0xFF {
                 break;
             }
@@ -242,15 +242,12 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: *mut core::ffi::c_void
     AtaChanEnableInterruptsSync((ChanData).cast(), TRUE);
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataIdentifyDevice(
-    ChannelContext: *mut core::ffi::c_void,
-    DeviceNumber: u32,
-) -> i32 {
+pub unsafe extern "C" fn PataIdentifyDevice(ChannelContext: PVOID, DeviceNumber: ULONG) -> ATA_CONNECTION_STATUS {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let mut IdeStatus: u8;
 
     if PataIsDevicePresent(ChanData, DeviceNumber) == 0 {
-        return (CONN_STATUS_NO_DEVICE) as i32;
+        return ((CONN_STATUS_NO_DEVICE)) as ATA_CONNECTION_STATUS;
     }
 
     IdeStatus = ATA_WAIT(
@@ -260,13 +257,13 @@ pub unsafe extern "C" fn PataIdentifyDevice(
         0,
     );
     if (IdeStatus as u32) & (IDE_STATUS_BUSY | IDE_STATUS_DRQ) != 0 {
-        return (CONN_STATUS_FAILURE) as i32;
+        return ((CONN_STATUS_FAILURE)) as ATA_CONNECTION_STATUS;
     }
 
-    return (CONN_STATUS_DEV_UNKNOWN) as i32;
+    return ((CONN_STATUS_DEV_UNKNOWN)) as ATA_CONNECTION_STATUS;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PataEnumerateChannel(ChannelContext: *mut core::ffi::c_void) -> u32 {
+pub unsafe extern "C" fn PataEnumerateChannel(ChannelContext: PVOID) -> ULONG {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     return PataChannelGetMaximumDeviceCount(ChanData as *mut core::ffi::c_void);
 }

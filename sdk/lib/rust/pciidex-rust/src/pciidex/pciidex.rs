@@ -10,11 +10,12 @@ pub static RUSTCONV_WSTR_6D9E94643474: [u16; 22] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, BusNumber, DeviceNumber, ExInitializeFastMutex, _KWAIT_REASON_Executive, FunctionNumber, GUID, HalGetBusDataByOffset, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAllocateIrp, IoAttachDeviceToDeviceStackSafe, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, IoInvalidateDeviceState, KEVENT, KTIMER, KeInitializeEvent, KeInitializeSpinLock, KeInitializeTimer, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, PPCI_COMMON_HEADER, PUNICODE_STRING, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwCreateDirectoryObject};
+use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, _KWAIT_REASON_Executive, GUID, HalGetBusDataByOffset, _IO_STATUS_BLOCK, IoAllocateDriverObjectExtension, IoAllocateIrp, IoAttachDeviceToDeviceStackSafe, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoGetAttachedDeviceReference, IoGetDriverObjectExtension, IoInvalidateDeviceState, KEVENT, KTIMER, KeInitializeEvent, KeInitializeTimer, KeSetTimer, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, PPCI_COMMON_HEADER, PUNICODE_STRING, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwCreateDirectoryObject};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut GUID_BUS_INTERFACE_STANDARD: GUID = _GUID {
     Data1: 0x496b8280 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0x6f25 as ::core::ffi::c_ushort,
@@ -31,6 +32,7 @@ pub static mut GUID_BUS_INTERFACE_STANDARD: GUID = _GUID {
     ],
 };
 
+#[no_mangle]
 pub static mut PciIdeControllerNumber: ULONG = 0 as ULONG;
 #[no_mangle]
 pub unsafe extern "C" fn PciFindDevice(
@@ -54,8 +56,8 @@ pub unsafe extern "C" fn PciFindDevice(
                 let mut BytesRead: ULONG;
 
                 PciSlot.u.AsULONG = 0;
-                PciSlot.u.bits.DeviceNumber = DeviceNumber as _;
-                PciSlot.u.bits.FunctionNumber = FunctionNumber as _;
+                PciSlot.u.bits.set_DeviceNumber((DeviceNumber) as _);
+                PciSlot.u.bits.set_FunctionNumber((FunctionNumber) as _);
 
                 BytesRead = HalGetBusDataByOffset(
                     PCIConfiguration,
@@ -66,7 +68,7 @@ pub unsafe extern "C" fn PciFindDevice(
                     core::mem::size_of_val(&Buffer) as ULONG,
                 );
                 if BytesRead != core::mem::size_of_val(&Buffer) as ULONG
-                    || ((*PciConfig).VendorID) as u32 == PCI_INVALID_VENDORID
+                    || (*PciConfig).VendorID == (PCI_INVALID_VENDORID as u16)
                     || (*PciConfig).VendorID == 0
                 {
                     if FunctionNumber == 0 {
@@ -96,13 +98,13 @@ pub unsafe extern "C" fn PciFindDevice(
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciRead(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
     Buffer: *mut core::ffi::c_void,
     ConfigDataOffset: u32,
     BufferLength: u32,
 ) {
-    (((*(*Controller)).GetBusData).unwrap_unchecked())(
-        (*(*Controller)).BusInterfaceContext,
+    (((*Controller).GetBusData).unwrap_unchecked())(
+        (*Controller).BusInterfaceContext,
         PCI_WHICHSPACE_CONFIG,
         Buffer,
         ConfigDataOffset,
@@ -111,13 +113,13 @@ pub unsafe extern "C" fn PciRead(
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciWrite(
-    Controller: *mut PATA_CONTROLLER,
+    Controller: PATA_CONTROLLER,
     Buffer: *mut core::ffi::c_void,
     ConfigDataOffset: u32,
     BufferLength: u32,
 ) {
-    (((*(*Controller)).SetBusData).unwrap_unchecked())(
-        (*(*Controller)).BusInterfaceContext,
+    (((*Controller).SetBusData).unwrap_unchecked())(
+        (*Controller).BusInterfaceContext,
         PCI_WHICHSPACE_CONFIG,
         Buffer,
         ConfigDataOffset,
@@ -129,14 +131,14 @@ pub unsafe extern "C" fn AtaSleep() {
     let mut Timer: KTIMER = core::mem::zeroed();
     let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
 
-    DueTime.QuadPart = ((PORT_TIMER_TICK_MS as i64) * -10000i64) as _;
+    DueTime.QuadPart = (PORT_TIMER_TICK_MS as i64) * -10000i64; // C: `* -10000LL`
 
     KeInitializeTimer(&mut Timer);
     KeSetTimer(&mut Timer, DueTime, core::ptr::null_mut());
     KeWaitForSingleObject(
         &mut Timer as *mut KTIMER as *mut core::ffi::c_void,
         _KWAIT_REASON_Executive,
-        (0i32) as i8,
+        (0i32) as KPROCESSOR_MODE,
         FALSE,
         core::ptr::null_mut(),
     );
@@ -156,7 +158,7 @@ pub unsafe extern "system" fn PciIdeXDispatchWmi(
         Status = IoCallDriver((*FdoExtension).Common.__bindgen_anon_1.LowerDeviceObject, Irp);
     } else {
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
-        IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
     }
 
     return Status;
@@ -164,10 +166,9 @@ pub unsafe extern "system" fn PciIdeXDispatchWmi(
 
 #[no_mangle]
 pub unsafe extern "system" fn PciIdeXUnload(DriverObject: PDRIVER_OBJECT) {
-    if (KeGetCurrentIrql() as i32) as u32 > DISPATCH_LEVEL {
+    if KeGetCurrentIrql() as i32 > (DISPATCH_LEVEL as i32) {
         // PAGED_CODE assertion
     }
-    NOTHING;
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeXPnpRepeatRequest(
@@ -227,7 +228,7 @@ pub unsafe extern "C" fn PciIdeXPnpRepeatRequest(
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!(Event) as *mut core::ffi::c_void,
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -303,15 +304,11 @@ pub unsafe extern "C" fn PciIdeXPnpQueryPnpDeviceState(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PciIdeXPdoCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
+pub unsafe extern "system" fn PciIdeXPdoCompletionRoutine(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP, Context: PVOID) -> NTSTATUS {
     UNREFERENCED_PARAMETER!(DeviceObject);
 
     if (*Irp).PendingReturned != 0 {
-        KeSetEvent((Context).cast(), (IO_NO_INCREMENT) as i32, FALSE);
+        KeSetEvent((Context).cast(), (IO_NO_INCREMENT) as KPRIORITY, FALSE);
     }
 
     return STATUS_MORE_PROCESSING_REQUIRED;
@@ -361,9 +358,9 @@ unsafe extern "C" fn PciIdeXPnpQueryInterface(
     Status = IoCallDriver((*CommonExt).__bindgen_anon_1.LowerDeviceObject, Irp);
     if Status == STATUS_PENDING {
         KeWaitForSingleObject(
-            &mut Event as *mut KEVENT as *mut core::ffi::c_void,
+            (&raw mut Event).cast(),
             _KWAIT_REASON_Executive,
-            (0i32) as i8,
+            (0i32) as KPROCESSOR_MODE,
             FALSE,
             core::ptr::null_mut(),
         );
@@ -576,9 +573,9 @@ pub unsafe extern "system" fn PciIdeXInitialize(
 
     Status = IoAllocateDriverObjectExtension(
         DriverObject,
-        DriverObject,
-        core::mem::size_of::<PPCIIDEX_DRIVER_EXTENSION>() as u32,
-        &mut DriverExtension as *mut PPCIIDEX_DRIVER_EXTENSION as *mut core::ffi::c_void,
+        DriverObject as PVOID, // the C's client identification address: the driver object
+        core::mem::size_of::<_PCIIDEX_DRIVER_EXTENSION>() as u32,
+        &mut DriverExtension as *mut PPCIIDEX_DRIVER_EXTENSION as *mut PVOID,
     );
     if !NT_SUCCESS!(Status) {
         return Status;
@@ -586,7 +583,7 @@ pub unsafe extern "system" fn PciIdeXInitialize(
 
     RtlZeroMemory!(
         DriverExtension as *mut core::ffi::c_void,
-        core::mem::size_of::<PPCIIDEX_DRIVER_EXTENSION>(),
+        core::mem::size_of::<_PCIIDEX_DRIVER_EXTENSION>(),
     );
     (*DriverExtension).MiniControllerExtensionSize = ExtensionSize;
     (*DriverExtension).HwGetControllerProperties = HwGetControllerProperties;
@@ -607,7 +604,7 @@ pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,

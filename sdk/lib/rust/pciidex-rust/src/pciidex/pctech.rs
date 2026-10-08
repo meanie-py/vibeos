@@ -23,11 +23,11 @@ pub unsafe extern "C" fn PcTechGetControllerProperties(
 
     PAGED_CODE!();
 
-    if ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_RZ1000 && ((*Controller).Pci.DeviceID) as u32 != PCI_DEV_RZ1001 {
+    if (*Controller).Pci.DeviceID != (PCI_DEV_RZ1000 as u16) && (*Controller).Pci.DeviceID != (PCI_DEV_RZ1001 as u16) {
         return STATUS_NO_MATCH;
     }
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }

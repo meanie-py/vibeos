@@ -14,7 +14,7 @@ pub static RUSTCONV_WSTR_D1C33AAC335D: [u16; 16] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DRIVER_INITIALIZE, DeviceNumber, ExAllocatePoolZero, HalGetInterruptVector, HalTranslateBusAddress, IoGetConfigurationInformation, IoReportDetectedDevice, IoReportResourceForDetection, Isa, KAFFINITY, KeStallExecutionProcessor, Level, Mask, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PHYSICAL_ADDRESS, PUNICODE_STRING, RTL_QUERY_REGISTRY_TABLE, RtlQueryRegistryValues, RtlWriteRegistryValue, Spare, ZwClose, ZwOpenKey};
+use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, HalGetInterruptVector, HalTranslateBusAddress, IoGetConfigurationInformation, IoReportDetectedDevice, IoReportResourceForDetection, KAFFINITY, KeStallExecutionProcessor, MmMapIoSpace, MmUnmapIoSpace, _OBJECT_ATTRIBUTES, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PCONFIGURATION_INFORMATION, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PHYSICAL_ADDRESS, PUNICODE_STRING, RTL_QUERY_REGISTRY_TABLE, RtlQueryRegistryValues, RtlWriteRegistryValue, ZwClose, ZwOpenKey};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -49,12 +49,12 @@ unsafe extern "C" fn AtaWait(
     Mask: UCHAR,
     Value: UCHAR,
 ) -> UCHAR {
-    let mut IdeStatus: UCHAR;
+    let mut IdeStatus: UCHAR = core::mem::zeroed();
     let mut i: ULONG;
 
     i = 0;
     while i < Timeout {
-        IdeStatus = ATA_READ!((*Registers).Status);
+        IdeStatus = ATA_READ!((*Registers).__bindgen_anon_5.Status);
         if (IdeStatus & Mask) == Value {
             break;
         }
@@ -97,7 +97,7 @@ unsafe extern "C" fn AtaLegacyIdentifyDevice(
         (IDE_STATUS_BUSY) as UCHAR,
         0,
     );
-    if IdeStatus & (IDE_STATUS_BUSY as UCHAR) != 0 {
+    if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         DPRINT!("Timeout, status 0x%02x\n", IdeStatus);
         return FALSE;
     }
@@ -117,20 +117,20 @@ unsafe extern "C" fn AtaLegacyIdentifyDevice(
         (IDE_STATUS_BUSY) as UCHAR,
         0,
     );
-    if IdeStatus & (IDE_STATUS_BUSY as UCHAR) != 0 {
+    if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         DPRINT!("Timeout, status 0x%02x\n", IdeStatus);
         return FALSE;
     }
-    if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as UCHAR) != 0 {
+    if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
         DPRINT!(
             "Command 0x%02x aborted, status 0x%02x, error 0x%02x\n",
             Command,
             IdeStatus,
-            ATA_READ!((*Registers).Error),
+            ATA_READ!((*Registers).__bindgen_anon_1.Error),
         );
         return FALSE;
     }
-    if IdeStatus & (IDE_STATUS_DRQ as UCHAR) == 0 {
+    if IdeStatus & (IDE_STATUS_DRQ as u8) == 0 {
         DPRINT1!("DRQ not set, status 0x%02x\n", IdeStatus);
         return FALSE;
     }
@@ -143,7 +143,7 @@ unsafe extern "C" fn AtaLegacyIdentifyDevice(
         (IDE_STATUS_BUSY | IDE_STATUS_DRQ) as UCHAR,
         0,
     );
-    if IdeStatus & ((IDE_STATUS_BUSY | IDE_STATUS_DRQ) as UCHAR) != 0 {
+    if IdeStatus & ((IDE_STATUS_BUSY | IDE_STATUS_DRQ) as u8) != 0 {
         DPRINT1!("DRQ not cleared, status 0x%02x\n", IdeStatus);
         return FALSE;
     }
@@ -158,9 +158,9 @@ unsafe extern "C" fn AtaLegacyPerformSoftwareReset(
     let mut IdeStatus: UCHAR;
     let mut i: ULONG;
 
-    ATA_WRITE!((*Registers).__bindgen_anon_6.Control, (IDE_DC_RESET_CONTROLLER) as u8);
+    ATA_WRITE!((*Registers).__bindgen_anon_6.Control, (IDE_DC_RESET_CONTROLLER as u8));
     KeStallExecutionProcessor(20);
-    ATA_WRITE!((*Registers).__bindgen_anon_6.Control, (IDE_DC_DISABLE_INTERRUPTS) as u8);
+    ATA_WRITE!((*Registers).__bindgen_anon_6.Control, (IDE_DC_DISABLE_INTERRUPTS as u8));
     KeStallExecutionProcessor(20);
 
     if (DeviceNumber & 1) != 0 {
@@ -194,7 +194,7 @@ unsafe extern "C" fn AtaLegacyPerformSoftwareReset(
         (IDE_STATUS_BUSY) as UCHAR,
         0,
     );
-    if IdeStatus & (IDE_STATUS_BUSY as UCHAR) != 0 {
+    if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         DPRINT1!("Timeout, status 0x%02x\n", IdeStatus);
         return FALSE;
     }
@@ -216,7 +216,7 @@ unsafe extern "C" fn AtaLegacyFindAtaDevice(
     );
     ATA_IO_WAIT!();
 
-    IdeStatus = ATA_READ!((*Registers).__bindgen_anon_1.Error);
+    IdeStatus = ATA_READ!((*Registers).__bindgen_anon_5.Status);
     if IdeStatus == 0xFF || IdeStatus == 0x7F {
         return FALSE;
     }
@@ -240,11 +240,11 @@ unsafe extern "C" fn AtaLegacyFindAtaDevice(
         (IDE_STATUS_BUSY) as UCHAR,
         0,
     );
-    if IdeStatus & (IDE_STATUS_BUSY as UCHAR) != 0 {
+    if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
         DPRINT1!("Device is busy, attempting to recover %02x\n", IdeStatus);
 
         if AtaLegacyPerformSoftwareReset(Registers, DeviceNumber) == 0 {
-            DPRINT1!("Failed to reset device %02x\n", ATA_READ!((*Registers).__bindgen_anon_1.Error));
+            DPRINT1!("Failed to reset device %02x\n", ATA_READ!((*Registers).__bindgen_anon_5.Status));
             return FALSE;
         }
     }
@@ -302,7 +302,7 @@ unsafe extern "C" fn AtaLegacyMakeInterruptResource(
 ) {
     (*Descriptor).Type = CmResourceTypeInterrupt;
     (*Descriptor).ShareDisposition = CmResourceShareDeviceExclusive;
-    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED) as u16;
+    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED as u16);
     (*Descriptor).u.Interrupt.Level = Level;
     (*Descriptor).u.Interrupt.Vector = Level;
     (*Descriptor).u.Interrupt.Affinity = -(1 as i32) as KAFFINITY;
@@ -324,7 +324,7 @@ unsafe extern "C" fn AtaLegacyChannelBuildResources(
         if (*ConfigInfo).AtDiskPrimaryAddressClaimed != 0
             || (*ConfigInfo).AtDiskSecondaryAddressClaimed != 0
         {
-            return (FALSE) as _;
+            return (FALSE as i32);
         }
 
         AtaLegacyMakePortResource(Descriptor, 0x640, 1);
@@ -350,13 +350,13 @@ unsafe extern "C" fn AtaLegacyChannelBuildResources(
         if (*LegacyChannel).IoBase == 0x1F0
             && (*ConfigInfo).AtDiskPrimaryAddressClaimed != 0
         {
-            return (FALSE) as _;
+            return (FALSE as i32);
         }
 
         if (*LegacyChannel).IoBase == 0x170
             && (*ConfigInfo).AtDiskSecondaryAddressClaimed != 0
         {
-            return (FALSE) as _;
+            return (FALSE as i32);
         }
 
         AtaLegacyMakePortResource(Descriptor, (*LegacyChannel).IoBase, 8);
@@ -370,7 +370,7 @@ unsafe extern "C" fn AtaLegacyChannelBuildResources(
         AtaLegacyMakeInterruptResource(Descriptor, (*LegacyChannel).Irq);
     }
 
-    return (TRUE) as _;
+    return (TRUE as i32);
 }
 
 unsafe extern "C" fn AtaLegacyChannelTranslateResources(
@@ -379,7 +379,7 @@ unsafe extern "C" fn AtaLegacyChannelTranslateResources(
     ControlPortBase: PUCHAR,
 ) {
     let mut Descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
-    let mut Irql: KIRQL;
+    let mut Irql: KIRQL = core::mem::zeroed();
 
     Descriptor = &raw mut (*ResourceList).List[0]
         .PartialResourceList
@@ -455,14 +455,14 @@ unsafe extern "C" fn AtaLegacyClaimHardwareResources(
     );
 
     if IsNEC_98 != 0 {
-        return (TRUE) as _;
+        return (TRUE as i32);
     }
 
     if !NT_SUCCESS!(Status) || ConflictDetected != 0 {
-        return (FALSE) as _;
+        return (FALSE as i32);
     }
 
-    return (TRUE) as _;
+    return (TRUE as i32);
 }
 
 unsafe extern "C" fn AtaLegacyReleaseHardwareResources(DriverObject: PDRIVER_OBJECT) {
@@ -564,7 +564,7 @@ unsafe extern "C" fn AtaLegacyDetectChannel(
         Registers.Device = (Registers.Data as usize)
             .wrapping_add((6 as usize).wrapping_mul(Spare as usize))
             as *mut u8;
-        Registers.__bindgen_anon_1.Status = (Registers.Data as usize)
+        Registers.__bindgen_anon_5.Status = (Registers.Data as usize)
             .wrapping_add((7 as usize).wrapping_mul(Spare as usize))
             as *mut u8;
 
@@ -584,7 +584,7 @@ unsafe extern "C" fn AtaLegacyDetectChannel(
         PhysicalDeviceObject = core::ptr::null_mut();
         Status = IoReportDetectedDevice(
             DriverObject,
-            InterfaceTypeUndefined as u32,
+            (InterfaceTypeUndefined) as INTERFACE_TYPE,
             (-(1 as i32)) as ULONG,
             (-(1 as i32)) as ULONG,
             ResourceList,
@@ -604,7 +604,9 @@ unsafe extern "C" fn AtaLegacyDetectChannel(
             Status = PciIdeXInitialize(
                 DriverObject,
                 core::ptr::null_mut(),
-                ControllerInferface as PVOID,
+                // ReactOS-specific overload: the C passes the interface buffer (as PVOID)
+                // through the HwGetControllerProperties slot when the signature asks for it.
+                core::mem::transmute::<PVOID, PCONTROLLER_PROPERTIES>(ControllerInferface as PVOID),
                 PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE as ULONG,
             );
             if !NT_SUCCESS!(Status) {
@@ -674,7 +676,7 @@ unsafe extern "C" fn AtaOpenRegistryKey(
 ) -> NTSTATUS {
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,

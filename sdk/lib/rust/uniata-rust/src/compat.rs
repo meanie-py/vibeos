@@ -29,19 +29,11 @@ pub const PCI_MAX_FUNCTION: ULONG = 8;
 #[cfg(not(target_arch = "x86"))]
 pub use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 
-// amd64/arm64 cohab link traps:
-//  * SharedUserData is a #define to a const VA (KI_USER_SHARED_DATA) in the DDK, not a
-//    symbol — but the inline KeQuerySystemTime/UniataNanoSleep read it as an extern
-//    `static SharedUserData: *mut KUSER_SHARED_DATA`. Define the symbol once here: a
-//    global whose stored value is that VA (the inline loads it, then derefs).
-//  * RtlUshort/UlongByteSwap are exported by ntoskrnl on i386 but are FORCEINLINE-only
-//    on amd64/arm64 — provide the trivial implementations.
+// amd64/arm64 cohab link trap: RtlUshort/UlongByteSwap are exported by ntoskrnl on i386
+// but are FORCEINLINE-only on amd64/arm64 — provide the trivial implementations.
 // These are NON-pub on purpose: #[no_mangle] emits the linker symbol (resolving the
 // ddk extern decls the modules already call) while keeping the names OUT of the crate
 // glob — making them pub would collide with ntkrnl_sys::ddk::* (E0659).
-#[cfg(not(target_arch = "x86"))]
-#[no_mangle]
-static SharedUserData: ULONG_PTR = ntkrnl_sys::mm::KI_USER_SHARED_DATA as ULONG_PTR;
 
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]

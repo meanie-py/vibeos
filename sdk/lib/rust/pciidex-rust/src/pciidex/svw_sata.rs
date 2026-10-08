@@ -1,9 +1,15 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::PortNumber;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_158 {
+    pub DeviceID: USHORT,
+    pub Flags: USHORT,
+}
+
 static mut SvwSataControllerList: [C2RustUnnamed_158; 7] = [
     C2RustUnnamed_158 {
         DeviceID: PCI_DEV_K2_SATA as USHORT,
@@ -56,12 +62,7 @@ pub struct SvwSataControllerEntry {
     pub Flags: u16,
 }
 
-unsafe extern "C" fn SvwSataScrRead(
-    ChanData: PCHANNEL_DATA_PATA,
-    Register: SATA_SCR_REGISTER,
-    PortNumber: ULONG,
-    Result: PULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn SvwSataScrRead(ChanData: PCHANNEL_DATA_PATA, Register: SATA_SCR_REGISTER, PortNumber: ULONG, Result: PULONG) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(PortNumber);
 
     if Register as u32 > ATA_SCONTROL {
@@ -74,12 +75,7 @@ unsafe extern "C" fn SvwSataScrRead(
     return TRUE;
 }
 
-unsafe extern "C" fn SvwSataScrWrite(
-    ChanData: PCHANNEL_DATA_PATA,
-    Register: SATA_SCR_REGISTER,
-    PortNumber: ULONG,
-    Value: ULONG,
-) -> BOOLEAN {
+unsafe extern "C" fn SvwSataScrWrite(ChanData: PCHANNEL_DATA_PATA, Register: SATA_SCR_REGISTER, PortNumber: ULONG, Value: ULONG) -> BOOLEAN {
     UNREFERENCED_PARAMETER!(PortNumber);
 
     if Register as ::core::ffi::c_uint > ATA_SCONTROL as ::core::ffi::c_uint {
@@ -105,7 +101,7 @@ unsafe extern "C" fn SvwSataGetIoBarIndex(Controller: PATA_CONTROLLER) -> ULONG 
 
 unsafe extern "C" fn SvwSataCheckInterrupt(mut ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
     let mut Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
-    let mut IoBase: PUCHAR = (*Controller).AccessRange[SvwSataGetIoBarIndex(Controller) as usize].IoBase as PUCHAR;
+    let mut IoBase: PUCHAR = ((*Controller).AccessRange[SvwSataGetIoBarIndex(Controller) as usize].IoBase).cast();
     let mut InterruptStatus: ULONG = 0;
     InterruptStatus = READ_REGISTER_ULONG((IoBase.add(0x1F80 as usize)) as PULONG);
     return ((InterruptStatus & ((1 as ULONG) << (*ChanData).__bindgen_anon_1.Channel)) != 0) as BOOLEAN;
@@ -115,10 +111,7 @@ unsafe extern "C" fn SvwSataReadStatus(ChanData: PCHANNEL_DATA_PATA) -> UCHAR {
     return READ_REGISTER_ULONG((*ChanData).Regs.__bindgen_anon_1.Error as *mut ULONG) as UCHAR;
 }
 
-unsafe extern "C" fn SvwSataLoadTaskFile(
-    ChanData: PCHANNEL_DATA_PATA,
-    Request: PATA_DEVICE_REQUEST,
-) {
+unsafe extern "C" fn SvwSataLoadTaskFile(ChanData: PCHANNEL_DATA_PATA, Request: PATA_DEVICE_REQUEST) {
     let mut Features: USHORT;
     let mut SectorCount: USHORT;
     let mut LbaLow: USHORT;
@@ -155,10 +148,7 @@ unsafe extern "C" fn SvwSataLoadTaskFile(
     }
 }
 
-unsafe extern "C" fn SvwSataSaveTaskFile(
-    ChanData: PCHANNEL_DATA_PATA,
-    Request: PATA_DEVICE_REQUEST,
-) {
+unsafe extern "C" fn SvwSataSaveTaskFile(ChanData: PCHANNEL_DATA_PATA, Request: PATA_DEVICE_REQUEST) {
     let TaskFile: PATA_TASKFILE = &raw mut (*Request).Output;
     let mut Error: USHORT;
     let mut SectorCount: USHORT;
@@ -217,7 +207,7 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut i: ULONG;
-    let mut HwFlags: ULONG;
+    let mut HwFlags: ULONG = core::mem::zeroed();
     let mut IoBase: PUCHAR;
 
     PAGED_CODE!();
@@ -235,7 +225,7 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
         return STATUS_NO_MATCH;
     }
 
-    if HwFlags & (HW_FLAGS_8_PORTS) as _ != 0 {
+    if HwFlags & (HW_FLAGS_8_PORTS as u32) != 0 {
         (*Controller).MaxChannels = 8;
     } else {
         (*Controller).MaxChannels = 4;
@@ -243,7 +233,7 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
 
     (*Controller).Flags |= CTRL_FLAG_MANUAL_RES;
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
@@ -268,7 +258,7 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
         (*ChanData).__bindgen_anon_1.TransferModeSupported = SATA_ALL;
         (*ChanData).__bindgen_anon_1.SetTransferMode = Some(SataSetTransferMode);
 
-        if HwFlags & (HW_FLAGS_NO_ATAPI_DMA) as _ != 0 {
+        if HwFlags & (HW_FLAGS_NO_ATAPI_DMA as u32) != 0 {
             (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_NO_ATAPI_DMA;
         }
 

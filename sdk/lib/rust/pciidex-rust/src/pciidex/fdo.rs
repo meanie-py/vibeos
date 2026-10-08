@@ -7,11 +7,12 @@ pub static RUSTCONV_WSTR_734FD9E774CE: [u16; 36] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{BusNumber, CM_RESOURCE_TYPE, Channel, DEVICE_RELATIONS, ExAcquireFastMutex, ExAllocatePoolUninitialized, ExReleaseFastMutex, IoCreateDevice, IoDeleteController, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, MmMapIoSpace, MmUnmapIoSpace, PCI_COMMON_HEADER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDEVICE_RELATIONS, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKINTERRUPT, PPCI_COMMON_HEADER, PTRANSLATOR_INTERFACE, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{CM_RESOURCE_TYPE, DEVICE_RELATIONS, ExAcquireFastMutex, ExReleaseFastMutex, IoCreateDevice, IoDeleteController, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, MmMapIoSpace, MmUnmapIoSpace, PCI_COMMON_HEADER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_OBJECT, PDEVICE_RELATIONS, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PKINTERRUPT, PPCI_COMMON_HEADER, PTRANSLATOR_INTERFACE, RtlInitUnicodeString};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut GUID_TRANSLATOR_INTERFACE_STANDARD: GUID = _GUID {
     Data1: 0x6c154a92 as ::core::ffi::c_int as ::core::ffi::c_uint,
     Data2: 0xaacf as ::core::ffi::c_ushort,
@@ -30,26 +31,23 @@ pub static mut GUID_TRANSLATOR_INTERFACE_STANDARD: GUID = _GUID {
 
 unsafe extern "C" fn AtaCtrlCallStartController(Controller: PATA_CONTROLLER) {
     let mut OldIrql: KIRQL = 0;
-    KeAcquireSpinLock((&raw mut (*Controller).Lock).cast(), &raw mut OldIrql);
-    ((*Controller).Start)(Controller);
-    KeReleaseSpinLock((&raw mut (*Controller).Lock).cast(), OldIrql);
+    KeAcquireSpinLock(&raw mut (*Controller).Lock, &raw mut OldIrql);
+    (((*Controller).Start).unwrap_unchecked())(Controller);
+    KeReleaseSpinLock(&raw mut (*Controller).Lock, OldIrql);
 }
 
 unsafe extern "C" fn AtaCtrlCallStopController(Controller: PATA_CONTROLLER) {
     let mut OldIrql: KIRQL = 0;
-    KeAcquireSpinLock((&raw mut (*Controller).Lock).cast(), &raw mut OldIrql);
-    (*Controller).Stop.expect("non-null function pointer")(Controller);
-    KeReleaseSpinLock((&raw mut (*Controller).Lock).cast(), OldIrql);
+    KeAcquireSpinLock(&raw mut (*Controller).Lock, &raw mut OldIrql);
+    (*Controller).Stop.unwrap_unchecked()(Controller);
+    KeReleaseSpinLock(&raw mut (*Controller).Lock, OldIrql);
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlAttachChannel(
-    ChannelContext: *mut core::ffi::c_void,
-    Attach: u8,
-) -> i32 {
+pub unsafe extern "C" fn AtaCtrlAttachChannel(ChannelContext: PVOID, Attach: BOOLEAN) -> NTSTATUS {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).Controller;
 
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,
@@ -84,14 +82,11 @@ pub unsafe extern "C" fn AtaChanEnableInterruptsSync(
     }
 
     OldIrql = KeAcquireInterruptSpinLock(InterruptObject);
-    ((*ChanData).EnableInterrupts)(ChanData as *mut core::ffi::c_void, Enable);
+    (((*ChanData).EnableInterrupts).unwrap_unchecked())(ChanData as *mut core::ffi::c_void, Enable);
     KeReleaseInterruptSpinLock(InterruptObject, OldIrql);
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlSetTransferMode(
-    ChannelContext: *mut core::ffi::c_void,
-    DeviceList: *mut *mut CHANNEL_DEVICE_CONFIG,
-) {
+pub unsafe extern "C" fn AtaCtrlSetTransferMode(ChannelContext: PVOID, DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).Controller;
     let mut OldIrql: KIRQL = 0;
@@ -117,7 +112,8 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(
             (*Device).SupportedModes &= PIO_ALL;
         }
 
-        if InitSafeBootMode == 1 {
+        // C reads the ntoskrnl DATA export directly; a driver goes through its import slot.
+        if InitSafeBootModeValue() == 1 {
             if ((*ChanData).ChanInfo & CHANNEL_FLAG_PIO_VIA_DMA) == 0 && (*Device).IsFixedDisk == 0 {
                 (*Device).SupportedModes &= PIO_ALL;
             }
@@ -138,7 +134,7 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(
         i = i.wrapping_add(1);
     }
 
-    KeAcquireSpinLock((&raw mut (*Controller).Lock).cast(), &raw mut OldIrql);
+    KeAcquireSpinLock(&raw mut (*Controller).Lock, &raw mut OldIrql);
 
     if DiscoveredNewDevice != 0 && ((*ChanData).ChanInfo & CHANNEL_FLAG_HAS_ACPI_GTM) != 0 {
         let PataData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
@@ -159,18 +155,14 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(
         );
     }
 
-    ((*ChanData).SetTransferMode)(Controller, (*ChanData).Channel, DeviceList);
+    ((*ChanData).SetTransferMode.unwrap_unchecked())(Controller, (*ChanData).Channel, DeviceList);
 
-    KeReleaseSpinLock((&raw mut (*Controller).Lock).cast(), OldIrql);
+    KeReleaseSpinLock(&raw mut (*Controller).Lock, OldIrql);
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlSetDeviceData(
-    ChannelContext: *mut core::ffi::c_void,
-    DeviceObject: PDEVICE_OBJECT,
-    IdentifyDeviceData: *mut core::ffi::c_void,
-) {
-    let ChanData: *mut PCHANNEL_DATA_COMMON = ChannelContext as *mut PCHANNEL_DATA_COMMON;
-    let Controller: *mut PATA_CONTROLLER = ((*(*ChanData)).Controller).cast();
+pub unsafe extern "C" fn AtaCtrlSetDeviceData(ChannelContext: PVOID, DeviceObject: PDEVICE_OBJECT, IdentifyDeviceData: PIDENTIFY_DEVICE_DATA) {
+    let ChanData: PCHANNEL_DATA_COMMON = ChannelContext as PCHANNEL_DATA_COMMON;
+    let Controller: *mut PATA_CONTROLLER = ((*ChanData).Controller).cast();
 
     PAGED_CODE!();
 
@@ -181,10 +173,7 @@ pub unsafe extern "C" fn AtaCtrlSetDeviceData(
     AtaAcpiSetDeviceData(DeviceObject, (IdentifyDeviceData).cast());
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlGetInitTaskFile(
-    ChannelContext: *mut core::ffi::c_void,
-    DeviceObject: PDEVICE_OBJECT,
-) -> *mut core::ffi::c_void {
+pub unsafe extern "C" fn AtaCtrlGetInitTaskFile(ChannelContext: PVOID, DeviceObject: PDEVICE_OBJECT) -> PVOID {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).Controller;
 
@@ -199,32 +188,27 @@ pub unsafe extern "C" fn AtaCtrlGetInitTaskFile(
     return core::ptr::null_mut();
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlDowngradeInterfaceSpeed(
-    ChannelContext: *mut core::ffi::c_void,
-) -> i32 {
+pub unsafe extern "C" fn AtaCtrlDowngradeInterfaceSpeed(ChannelContext: PVOID) -> BOOLEAN {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).Controller;
 
     PAGED_CODE!();
 
     if (*Controller).Flags & CTRL_FLAG_IS_AHCI != 0 {
-        return AtaAhciDowngradeInterfaceSpeed((ChannelContext).cast());
+        return (AtaAhciDowngradeInterfaceSpeed((ChannelContext).cast())) as _;
     }
 
-    return (FALSE) as _;
+    return ((FALSE as i32)) as BOOLEAN;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaCtrlAbortChannel(
-    ChannelContext: *mut core::ffi::c_void,
-    DisableInterrupts: u8,
-) {
+pub unsafe extern "C" fn AtaCtrlAbortChannel(ChannelContext: PVOID, DisableInterrupts: BOOLEAN) {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
 
     (*ChanData).ActiveSlotsBitmap = 0;
     (*ChanData).ActiveQueuedSlotsBitmap = 0;
 
     if DisableInterrupts != 0 {
-        (*ChanData).EnableInterrupts.expect("non-null function pointer")(ChanData as *mut core::ffi::c_void, FALSE);
+        (*ChanData).EnableInterrupts.unwrap_unchecked()(ChanData as *mut core::ffi::c_void, FALSE);
 
         if (*(*ChanData).Controller).Flags & CTRL_FLAG_IS_AHCI != 0 {
             let IoBase: *mut core::ffi::c_void = (*(ChanData as *mut CHANNEL_DATA_AHCI)).IoBase;
@@ -273,7 +257,7 @@ pub unsafe extern "C" fn AtaCtrlPciMapBar(
         PhysicalAddress.QuadPart = (*Controller).AccessRange[Index as usize].IoBase as usize as i64;
         (*Controller).AccessRange[Index as usize].IoBase = MmMapIoSpace(
             PhysicalAddress,
-            ((*Controller).AccessRange[Index as usize].Length) as _,
+            ((*Controller).AccessRange[Index as usize].Length) as SIZE_T,
             MmNonCached,
         );
     }
@@ -285,7 +269,7 @@ unsafe extern "C" fn AtaCtrlPciGetNextBarIndex(
     mut PciData: PPCI_COMMON_HEADER,
     mut Bar: PULONG,
 ) -> BOOLEAN {
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > DISPATCH_LEVEL {
+    if KeGetCurrentIrql() as ::core::ffi::c_int > (DISPATCH_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
             KeGetCurrentIrql() as ::core::ffi::c_int,
@@ -425,7 +409,7 @@ unsafe extern "C" fn AtaCtrlPciSaveData(
     mut Controller: PATA_CONTROLLER,
     mut PciData: PPCI_COMMON_HEADER,
 ) {
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,
@@ -464,7 +448,7 @@ unsafe extern "C" fn AtaCtrlPciCollectInformation(
 
     PAGED_CODE!();
 
-    BytesRead = ((*Controller).GetBusData)(
+    BytesRead = ((*Controller).GetBusData.unwrap_unchecked())(
         (*Controller).BusInterfaceContext,
         PCI_WHICHSPACE_CONFIG,
         &raw mut Buffer as *mut UCHAR as PVOID,
@@ -495,7 +479,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     (*Controller).Flags |= CTRL_FLAG_NATIVE_PCI;
     (*Controller).QueueDepth = 1;
     (*Controller).AlignmentRequirement = ATA_MIN_BUFFER_ALIGNMENT;
-    (*Controller).AttachChannel = Some(PciIdeAttachChannel as unsafe extern "C" fn(*mut core::ffi::c_void, u8) -> NTSTATUS);
+    (*Controller).AttachChannel = Some(PciIdeAttachChannel);
     (*Controller).FreeResources = None;
     (*Controller).Start = None;
     (*Controller).Stop = None;
@@ -520,7 +504,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
 
     Status = AhciGetControllerProperties(Controller);
     if Status == STATUS_NO_MATCH {
-        Status = PciIdeGetControllerProperties((Controller).cast());
+        Status = PciIdeGetControllerProperties(Controller);
     }
 
     if !NT_SUCCESS!(Status) {
@@ -545,7 +529,7 @@ unsafe extern "C" fn PciIdeXFdoFreeResources(FdoExtension: PFDO_DEVICE_EXTENSION
     }
 
     if (*Controller).FreeResources.is_some() {
-        (*Controller).FreeResources.expect("non-null function pointer")(Controller);
+        (*Controller).FreeResources.unwrap_unchecked()(Controller);
     }
 
     (*Controller).InterruptObject = core::ptr::null_mut();
@@ -557,7 +541,7 @@ unsafe extern "C" fn PciIdeXFdoFreeResources(FdoExtension: PFDO_DEVICE_EXTENSION
         {
             MmUnmapIoSpace(
                 (*Controller).AccessRange[i as usize].IoBase,
-                ((*Controller).AccessRange[i as usize].Length) as _,
+                ((*Controller).AccessRange[i as usize].Length) as SIZE_T,
             );
         }
         (*Controller).AccessRange[i as usize].Flags = 0;
@@ -618,9 +602,9 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
     mut ChannelNumber: ULONG,
 ) -> PPDO_DEVICE_EXTENSION {
     let mut Status: NTSTATUS;
-    let mut DeviceName: _UNICODE_STRING;
-    let mut DeviceNameBuffer: [u16; 37];
-    let mut Pdo: PDEVICE_OBJECT;
+    let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
+    let mut DeviceNameBuffer: [u16; 37] = core::mem::zeroed();
+    let mut Pdo: PDEVICE_OBJECT = core::mem::zeroed();
     let mut PdoExtension: PPDO_DEVICE_EXTENSION;
     let mut Alignment: ULONG;
     static mut PdoNumber: ULONG = 0;
@@ -647,7 +631,7 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
 
     Status = IoCreateDevice(
         (*(*FdoExtension).Common.Self_).DriverObject,
-        core::mem::size_of::<PPDO_DEVICE_EXTENSION>() as ULONG,
+        core::mem::size_of::<_PDO_DEVICE_EXTENSION>() as ULONG,
         &mut DeviceName,
         FILE_DEVICE_CONTROLLER,
         FILE_DEVICE_SECURE_OPEN,
@@ -673,7 +657,7 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
 
     RtlZeroMemory!(
         PdoExtension as *mut core::ffi::c_void,
-        core::mem::size_of::<PPDO_DEVICE_EXTENSION>() as usize,
+        core::mem::size_of::<_PDO_DEVICE_EXTENSION>() as usize,
     );
     (*PdoExtension).Common.Self_ = Pdo;
     (*PdoExtension).Common.__bindgen_anon_1.FdoExt = (FdoExtension).cast();
@@ -719,7 +703,7 @@ unsafe extern "C" fn PciIdeXFdoQueryBusRelations(
 
     PAGED_CODE!();
 
-    Size = FIELD_OFFSET!(DEVICE_RELATIONS, Objects[MAX_CHANNELS]);
+    Size = (FIELD_OFFSET!(DEVICE_RELATIONS, Objects[MAX_CHANNELS])) as u32;
     DeviceRelations = (ExAllocatePoolUninitialized(PagedPool, (Size) as _, TAG_PCIIDEX)).cast();
     if DeviceRelations.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -805,7 +789,7 @@ unsafe extern "C" fn PciIdeXFdoQueryBusRelations(
         (*DeviceRelations).Count = (*DeviceRelations).Count.wrapping_add(1);
         *(&raw mut (*DeviceRelations).Objects as *mut PDEVICE_OBJECT).offset(fresh_count as isize) =
             (*PdoExt).Common.Self_;
-        ObReferenceObject((*PdoExt).Common.Self_);
+        ObReferenceObject(((*PdoExt).Common.Self_).cast());
         ListEntry = (*ListEntry).Flink;
     }
 
@@ -819,7 +803,7 @@ unsafe extern "C" fn PciIdeXFdoQueryInterface(
     mut FdoExtension: PFDO_DEVICE_EXTENSION,
     mut IoStack: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) as u32 > DISPATCH_LEVEL {
+    if KeGetCurrentIrql() as i32 > (DISPATCH_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,
@@ -842,11 +826,11 @@ unsafe extern "C" fn PciIdeXFdoQueryInterface(
         {
             return STATUS_NOT_SUPPORTED;
         }
-        ResourceType = PtrToUlong(
+        ResourceType = PtrToUlong!(
             (*IoStack).Parameters.QueryInterface.InterfaceSpecificData
                 as *const core::ffi::c_void,
         ) as CM_RESOURCE_TYPE;
-        if ResourceType != (CmResourceTypeInterrupt) as _ {
+        if ResourceType != (CmResourceTypeInterrupt as i32) {
             return STATUS_NOT_SUPPORTED;
         }
         TranslatorInterface =
@@ -886,7 +870,7 @@ unsafe extern "C" fn PciIdeXFdoQueryId(
 
                     Buffer = (ExAllocatePoolUninitialized(
                         PagedPool,
-                        (core::mem::size_of::<[u16; 10]>()) as _,
+                        core::mem::size_of::<[u16; 10]>(),
                         TAG_PCIIDEX,
                     )).cast();
                     if Buffer.is_null() {
@@ -916,7 +900,7 @@ unsafe extern "C" fn PciIdeXFdoQueryId(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
 
     IoReleaseRemoveLock(&mut (*FdoExt).Common.RemoveLock, (Irp).cast());
     return Status;
@@ -932,7 +916,7 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
     Status = IoAcquireRemoveLock(&mut (*FdoExtension).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
         return Status;
     }
 
@@ -945,14 +929,14 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
             ))) == 0) {
                 Status = STATUS_UNSUCCESSFUL;
                 (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-                IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+                IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
                 IoReleaseRemoveLock(&mut (*FdoExtension).Common.RemoveLock, (Irp).cast());
                 return Status;
             }
             Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
             if !NT_SUCCESS!(Status) {
                 (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-                IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+                IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
                 IoReleaseRemoveLock(&mut (*FdoExtension).Common.RemoveLock, (Irp).cast());
                 return Status;
             }
@@ -986,12 +970,12 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
         }
 
         IRP_MN_QUERY_DEVICE_RELATIONS => {
-            if (*IoStack).Parameters.QueryDeviceRelations.Type != BusRelations as DEVICE_RELATION_TYPE {
+            if (*IoStack).Parameters.QueryDeviceRelations.Type != BusRelations {
             } else {
                 Status = PciIdeXFdoQueryBusRelations(FdoExtension, Irp);
                 if !NT_SUCCESS!(Status) {
                     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-                    IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+                    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
                     IoReleaseRemoveLock(&mut (*FdoExtension).Common.RemoveLock, (Irp).cast());
                     return Status;
                 }

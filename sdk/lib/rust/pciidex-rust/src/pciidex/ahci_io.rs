@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Destination, Interrupt, PKINTERRUPT, PULONG64, SCATTER_GATHER_LIST};
+use ntkrnl_sys::ddk::{PKINTERRUPT, PULONG64, SCATTER_GATHER_LIST};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -14,30 +14,30 @@ unsafe extern "C" fn AtaAhciBeginHostToDeviceFis(
 ) {
     RtlZeroMemory!(Fis as *mut core::ffi::c_void, core::mem::size_of::<AHCI_FIS_HOST_TO_DEVICE>());
 
-    (*Fis).Type = (AHCI_FIS_REGISTER_HOST_TO_DEVICE) as u8;
+    (*Fis).Type = (AHCI_FIS_REGISTER_HOST_TO_DEVICE as u8);
     (*Fis).Flags = (UPDATE_COMMAND | DEV_NUMBER!((*Request).Device)) as u8;
 
     if (*Request).Flags & REQUEST_FLAG_SET_DEVICE_REGISTER != 0 {
         (*Fis).Device = (*Request).__bindgen_anon_2.TaskFile.DriveSelect;
     } else {
-        (*Fis).Device = (IDE_DRIVE_SELECT) as u8;
+        (*Fis).Device = (IDE_DRIVE_SELECT as u8);
     }
 
-    (*Fis).Control = IDE_DC_ALWAYS;
+    (*Fis).Control = (IDE_DC_ALWAYS as u8);
 }
 
 unsafe extern "C" fn AtaAhciBuildPacketCommandFis(
     mut Request: *mut ATA_DEVICE_REQUEST,
     mut Fis: *mut AHCI_FIS_HOST_TO_DEVICE,
 ) {
-    (*Fis).Command = (IDE_COMMAND_ATAPI_PACKET) as u8;
+    (*Fis).Command = (IDE_COMMAND_ATAPI_PACKET as u8);
     if (*Request).Flags & REQUEST_FLAG_DMA != 0 {
         if (*(*Request).Device).TransportFlags & DEVICE_NEED_DMA_DIRECTION != 0
             && (*Request).Flags & REQUEST_FLAG_DATA_IN != 0
         {
             (*Fis).Features = (IDE_FEATURE_DMA | IDE_FEATURE_DMADIR) as u8;
         } else {
-            (*Fis).Features = (IDE_FEATURE_DMA) as u8;
+            (*Fis).Features = (IDE_FEATURE_DMA as u8);
         }
     } else {
         let mut ByteCount: USHORT = 0;
@@ -104,10 +104,7 @@ unsafe extern "C" fn AtaAhciTransferACMDRegion(
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciStartIo(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-) -> i32 {
+pub unsafe extern "C" fn AtaAhciStartIo(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST) -> BOOLEAN {
     let ChanData = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let IoBase = (*ChanData).IoBase;
     let mut IssueSlot: u32;
@@ -134,13 +131,10 @@ pub unsafe extern "C" fn AtaAhciStartIo(
     }
 
     AHCI_PORT_WRITE(IoBase, PxCommandIssue, IssueSlot);
-    return (FALSE) as _;
+    return ((FALSE as i32)) as BOOLEAN;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciPrepareIo(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-) {
+pub unsafe extern "C" fn AtaAhciPrepareIo(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST) {
     let ChanData = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let CommandTable: *mut AHCI_COMMAND_TABLE;
     let CommandHeader: *mut AHCI_COMMAND_HEADER;
@@ -184,29 +178,25 @@ pub unsafe extern "C" fn AtaAhciPrepareIo(
 
     KeFlushIoBuffers(
         (*Request).Mdl,
-        ((*Request).Flags & REQUEST_FLAG_DATA_IN != 0) as i32,
+        (((*Request).Flags & REQUEST_FLAG_DATA_IN != 0) as i32) as u8,
         TRUE,
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciPreparePrdTable(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-    SgList: *mut SCATTER_GATHER_LIST,
-) {
+pub unsafe extern "C" fn AtaAhciPreparePrdTable(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST, SgList: *mut SCATTER_GATHER_LIST) {
     let ChanData = ChannelContext as *mut CHANNEL_DATA_AHCI;
     let mut PrdTableEntry: *mut AHCI_PRD_TABLE_ENTRY;
     let mut i: u32;
-    let Is64BitDma: u8 = ((*(*ChanData).__bindgen_anon_1.Controller).AhciCapabilities & AHCI_CAP_S64A != 0) as u8;
+    let Is64BitDma: u8 = ((*((*ChanData).__bindgen_anon_1.Controller)).AhciCapabilities & AHCI_CAP_S64A != 0) as u8;
 
     ASSUME!((*SgList).NumberOfElements > 0);
 
-    PrdTableEntry = (*(*(*ChanData).CommandTable.as_ptr().offset((*Request).Slot as isize))).PrdTable.as_ptr();
+    PrdTableEntry = (*(*(*ChanData).CommandTable.as_ptr().offset((*Request).Slot as isize))).PrdTable.as_ptr() as *mut AHCI_PRD_TABLE_ENTRY;
 
     i = 0;
     while i < (*SgList).NumberOfElements {
         (*PrdTableEntry).DataBaseLow = (*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.LowPart;
-        (*PrdTableEntry).DataBaseHigh = (*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.HighPart;
+        (*PrdTableEntry).DataBaseHigh = ((*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.HighPart) as u32;
         (*PrdTableEntry).ByteCount = (*(*SgList).Elements.as_ptr().offset(i as isize)).Length - 1;
 
         PrdTableEntry = PrdTableEntry.offset(1);
@@ -217,11 +207,7 @@ pub unsafe extern "C" fn AtaAhciPreparePrdTable(
     (*PrdTableEntry).ByteCount |= AHCI_PRD_INTERRUPT_ON_COMPLETION;
 }
 #[no_mangle]
-pub unsafe extern "C" fn AtaAhciAllocateSlot(
-    ChannelContext: *mut core::ffi::c_void,
-    Request: *mut ATA_DEVICE_REQUEST,
-    Allocate: i32,
-) -> i32 {
+pub unsafe extern "C" fn AtaAhciAllocateSlot(ChannelContext: PVOID, Request: PATA_DEVICE_REQUEST, Allocate: BOOLEAN) -> BOOLEAN {
     let ChanData: *mut CHANNEL_DATA_AHCI = ChannelContext as *mut CHANNEL_DATA_AHCI;
 
     if Allocate != 0 {
@@ -232,7 +218,7 @@ pub unsafe extern "C" fn AtaAhciAllocateSlot(
                 && ((*ChanData).LastPmpDeviceNumber as u32
                     != DEV_NUMBER!((*Request).Device) as u32)
             {
-                return (FALSE) as _;
+                return ((FALSE as i32)) as BOOLEAN;
             }
 
             (*ChanData).LastPmpDeviceNumber = DEV_NUMBER!((*Request).Device) as u8;
@@ -245,7 +231,7 @@ pub unsafe extern "C" fn AtaAhciAllocateSlot(
         }
     }
 
-    return (TRUE) as _;
+    return ((TRUE as i32)) as BOOLEAN;
 }
 
 unsafe extern "C" fn AtaAhciPortCompleteCommands(
@@ -261,7 +247,7 @@ unsafe extern "C" fn AtaAhciPortCompleteCommands(
 
         Request = *(*ChanData).__bindgen_anon_1.Slots.offset(Slot as isize);
 
-        SrbStatus = (SRB_STATUS_SUCCESS) as u8;
+        SrbStatus = (SRB_STATUS_SUCCESS as u8);
 
         if (*Request).Flags & REQUEST_FLAG_NCQ == 0
             && (*Request).Flags & (REQUEST_FLAG_DATA_IN | REQUEST_FLAG_DATA_OUT) != 0
@@ -272,7 +258,7 @@ unsafe extern "C" fn AtaAhciPortCompleteCommands(
 
             if (*CommandHeader).PrdByteCount < (*Request).DataTransferLength {
                 (*Request).DataTransferLength = (*CommandHeader).PrdByteCount;
-                SrbStatus = (SRB_STATUS_DATA_OVERRUN) as u8;
+                SrbStatus = (SRB_STATUS_DATA_OVERRUN as u8);
             }
         }
 
@@ -312,11 +298,13 @@ unsafe extern "C" fn AtaAhciPortHandleInterrupt(mut ChanData: PCHANNEL_DATA_AHCI
         (*ChanData).__bindgen_anon_1.ActiveQueuedSlotsBitmap &= !CommandsCompleted;
 
         AtaAhciPortCompleteCommands(ChanData, CommandsCompleted);
-        ((*ChanData).__bindgen_anon_1.PortNotification)(
-            AtaRequestComplete,
-            (*ChanData).__bindgen_anon_1.PortContext,
-            CommandsCompleted,
-        );
+        if let Some(notification) = (*ChanData).__bindgen_anon_1.PortNotification {
+            notification(
+                AtaRequestComplete,
+                (*ChanData).__bindgen_anon_1.PortContext,
+                CommandsCompleted,
+            );
+        }
     }
 
     if InterruptStatus & AHCI_PXIRQ_SDBS != 0 {
@@ -325,11 +313,13 @@ unsafe extern "C" fn AtaAhciPortHandleInterrupt(mut ChanData: PCHANNEL_DATA_AHCI
         if Message != 0 {
             AHCI_PORT_WRITE((*ChanData).IoBase, PxSataNotification, Message);
 
-            ((*ChanData).__bindgen_anon_1.PortNotification)(
-                AtaAsyncNotificationDetected,
-                (*ChanData).__bindgen_anon_1.PortContext,
-                0x1,
-            );
+            if let Some(notification) = (*ChanData).__bindgen_anon_1.PortNotification {
+                notification(
+                    AtaAsyncNotificationDetected,
+                    (*ChanData).__bindgen_anon_1.PortContext,
+                    0x1,
+                );
+            }
         }
     }
 
@@ -343,10 +333,7 @@ unsafe extern "C" fn AtaAhciPortHandleInterrupt(mut ChanData: PCHANNEL_DATA_AHCI
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaAhciHbaIsr(
-    Interrupt: PKINTERRUPT,
-    Context: *mut core::ffi::c_void,
-) -> i32 {
+pub unsafe extern "system" fn AtaAhciHbaIsr(Interrupt: *mut _KINTERRUPT, Context: PVOID) -> BOOLEAN {
     let Controller: *mut ATA_CONTROLLER = Context as *mut ATA_CONTROLLER;
     let mut Port: u32 = 0;
     let mut InterruptStatus: u32;
@@ -354,7 +341,7 @@ pub unsafe extern "system" fn AtaAhciHbaIsr(
 
     InterruptStatus = AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaInterruptStatus);
     if InterruptStatus == 0 {
-        return (FALSE) as _;
+        return ((FALSE as i32)) as BOOLEAN;
     }
 
     PortInterruptBitmap = InterruptStatus & (*Controller).ChannelBitmap;
@@ -366,5 +353,5 @@ pub unsafe extern "system" fn AtaAhciHbaIsr(
 
     AHCI_HBA_WRITE(((*Controller).IoBase).cast(), HbaInterruptStatus, InterruptStatus);
 
-    return (TRUE) as _;
+    return ((TRUE as i32)) as BOOLEAN;
 }

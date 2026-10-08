@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Channel, ExAllocatePoolZero, Timing};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -192,7 +191,7 @@ unsafe extern "C" fn CmdPackTimings(
     mut Active: ATATIM,
     mut Recovery: ATATIM,
 ) -> UCHAR {
-    if ((*Controller).Pci.DeviceID as ::core::ffi::c_int) as u32 == PCI_DEV_PCI0640 {
+    if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_PCI0640 as i32) {
         if Active as ::core::ffi::c_int >= 16 {
             Active = 0 as ATATIM;
         } else if (Active as ::core::ffi::c_int) < 2 {
@@ -227,27 +226,23 @@ unsafe extern "C" fn CmdPackTimings(
         | Recovery as ::core::ffi::c_int) as UCHAR;
 }
 
-unsafe extern "C" fn CmdSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn CmdSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
     let mut HwExt: PCMD_HW_EXTENSION = (*Controller).HwExt as PCMD_HW_EXTENSION;
-    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE) as _] = [_ATA_TIMING {
+    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE as usize)] = [_ATA_TIMING {
         AddressSetup: 0,
         CmdActive: 0,
         CmdRecovery: 0,
         DataActive: 0,
         DataRecovery: 0,
-    }; (MAX_IDE_DEVICE) as _];
+    }; (MAX_IDE_DEVICE as usize)];
     let mut i: ULONG = 0;
     let mut TimingFlags: ULONG = 0;
     let mut Value: UCHAR = 0;
     TimingFlags = 0;
     if Channel != 0 {
         TimingFlags |= SHARED_ADDR_TIMINGS;
-        if ((*Controller).Pci.DeviceID as ::core::ffi::c_int) as u32 == PCI_DEV_PCI0640 {
+        if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_PCI0640 as i32) {
             TimingFlags |= SHARED_DATA_TIMINGS;
         }
     }
@@ -334,7 +329,7 @@ unsafe extern "C" fn CmdSetTransferMode(
                 Value,
             );
             Value = CmdPackTimings(Controller, (*Timing).DataActive, (*Timing).DataRecovery);
-            if ((*Controller).Pci.DeviceID as ::core::ffi::c_int) as u32 == PCI_DEV_PCI0640
+            if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_PCI0640 as i32)
                 && Channel != 0
             {
                 Register = CMD_REG_DRWTIM23;
@@ -373,10 +368,7 @@ unsafe extern "C" fn CmdSetTransferMode(
     }
 }
 
-unsafe extern "C" fn CmdChannelEnabledTest(
-    Controller: PATA_CONTROLLER,
-    Channel: ULONG,
-) -> IDE_CHANNEL_STATE {
+unsafe extern "C" fn CmdChannelEnabledTest(Controller: PATA_CONTROLLER, Channel: ULONG) -> IDE_CHANNEL_STATE {
     let ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
     let mut Control: UCHAR;
 
@@ -385,15 +377,15 @@ unsafe extern "C" fn CmdChannelEnabledTest(
     }
 
     Control = PciRead8(Controller, CMD_REG_CNTRL);
-    if (Control as i32 & CMD_CNTRL_CHAN_EN!(Channel)) != 0 {
+    if (Control as i32 & CMD_CNTRL_CHAN_EN!(Channel) as i32) != 0 {
         return ChannelEnabled;
     }
 
     return ChannelDisabled;
 }
 
-unsafe extern "C" fn CmdCheckInterruptMrdMode(ChanData: *mut CHANNEL_DATA_PATA) -> BOOLEAN {
-    let Controller: *mut ATA_CONTROLLER = (*ChanData).Controller;
+unsafe extern "C" fn CmdCheckInterruptMrdMode(ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
+    let Controller: *mut ATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut Control: UCHAR;
     let InterruptMask: UCHAR;
 
@@ -407,14 +399,14 @@ unsafe extern "C" fn CmdCheckInterruptMrdMode(ChanData: *mut CHANNEL_DATA_PATA) 
         Control = PciRead8(Controller, CMD_REG_MRDMODE);
     }
 
-    InterruptMask = CMD_MRDMODE_INTR!((*ChanData).Channel);
+    InterruptMask = CMD_MRDMODE_INTR!((*ChanData).__bindgen_anon_1.Channel);
     if Control & InterruptMask == 0 {
         return FALSE;
     }
 
     Control &= (!(CMD_MRDMODE_INTR!(0) | CMD_MRDMODE_INTR!(1))) as u8;
     Control |= InterruptMask;
-    Control |= (CMD_MRDMODE_READ_MULTIPLE) as u8;
+    Control |= (CMD_MRDMODE_READ_MULTIPLE as u8);
 
     if !(*ChanData).Regs.Dma.is_null() {
         ATA_WRITE!(
@@ -431,13 +423,13 @@ unsafe extern "C" fn CmdCheckInterruptMrdMode(ChanData: *mut CHANNEL_DATA_PATA) 
 }
 
 unsafe extern "C" fn CmdCheckInterruptPci(ChanData: PCHANNEL_DATA_PATA) -> BOOLEAN {
-    let Controller: PATA_CONTROLLER = (*ChanData).Controller;
+    let Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut Status: UCHAR;
     let mut InterruptMask: UCHAR;
     let mut Register: ULONG;
 
-    InterruptMask = CMD_CFR_INTR!((*ChanData).Channel);
-    Register = if (*ChanData).Channel == 0 {
+    InterruptMask = CMD_CFR_INTR!((*ChanData).__bindgen_anon_1.Channel);
+    Register = if (*ChanData).__bindgen_anon_1.Channel == 0 {
         CMD_REG_CFR
     } else {
         CMD_REG_ARTTIM23
@@ -452,7 +444,7 @@ unsafe extern "C" fn CmdControllerStart(mut Controller: PATA_CONTROLLER) {
     let mut i: ULONG = 0;
     let mut Control: UCHAR = 0;
     PciWrite8(Controller, CMD_REG_CMDTIM, 0);
-    if ((*Controller).Pci.DeviceID as ::core::ffi::c_int) as u32 == PCI_DEV_PCI0640 {
+    if (*Controller).Pci.DeviceID as ::core::ffi::c_int == (PCI_DEV_PCI0640 as i32) {
         i = 0;
         while (i as usize)
             < (::core::mem::size_of::<[ULONG; 2]>() as usize)
@@ -472,7 +464,7 @@ unsafe extern "C" fn CmdControllerStart(mut Controller: PATA_CONTROLLER) {
         Control = (Control as ::core::ffi::c_int
             & (!(CMD_MRDMODE_INTR_CH0_BLOCK | CMD_MRDMODE_INTR_CH1_BLOCK)) as i32)
             as UCHAR;
-        Control = (Control as ::core::ffi::c_int | (CMD_MRDMODE_READ_MULTIPLE) as i32) as UCHAR;
+        Control = (Control as ::core::ffi::c_int | (CMD_MRDMODE_READ_MULTIPLE as i32)) as UCHAR;
         PciWrite8(Controller, CMD_REG_MRDMODE, Control);
     };
 }
@@ -542,14 +534,14 @@ pub unsafe extern "C" fn CmdGetControllerProperties(
     (*Controller).Flags |= CTRL_FLAG_USE_TEST_FUNCTION;
     (*Controller).__bindgen_anon_1.ChannelEnabledTest = Some(CmdChannelEnabledTest);
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
 
     (*Controller).HwExt = ExAllocatePoolZero(
         NonPagedPool,
-        (core::mem::size_of::<CMD_HW_EXTENSION>()) as _,
+        core::mem::size_of::<CMD_HW_EXTENSION>(),
         TAG_PCIIDEX,
     );
     if (*Controller).HwExt.is_null() {
@@ -562,20 +554,20 @@ pub unsafe extern "C" fn CmdGetControllerProperties(
 
         (*ChanData).HwFlags = HwFlags;
         (*ChanData).CheckInterrupt = CheckInterrupt;
-        (*ChanData).SetTransferMode = CmdSetTransferMode;
-        (*ChanData).TransferModeSupported = SupportedMode;
+        (*ChanData).__bindgen_anon_1.SetTransferMode = Some(CmdSetTransferMode);
+        (*ChanData).__bindgen_anon_1.TransferModeSupported = SupportedMode;
 
-        if ((*Controller).Pci.DeviceID) as u32 == PCI_DEV_PCI0640 {
-            (*ChanData).ChanInfo &= !CHANNEL_FLAG_IO32;
+        if (*Controller).Pci.DeviceID == (PCI_DEV_PCI0640 as u16) {
+            (*ChanData).__bindgen_anon_1.ChanInfo &= !CHANNEL_FLAG_IO32;
         } else {
-            if (*ChanData).TransferModeSupported & UDMA_80C_ALL != 0 {
+            if (*ChanData).__bindgen_anon_1.TransferModeSupported & UDMA_80C_ALL != 0 {
                 let BmControl: UCHAR = PciRead8(Controller, CMD_REG_BMIDECSR);
                 if BmControl & CMD_BMIDECSR_CR!(i) == 0 {
                     INFO!(
                         b"CH %lu: BIOS detected 40-conductor cable\n\0".as_ptr() as *const i8,
                         (*ChanData).Channel,
                     );
-                    (*ChanData).TransferModeSupported &= !UDMA_80C_ALL;
+                    (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }
             }
         }

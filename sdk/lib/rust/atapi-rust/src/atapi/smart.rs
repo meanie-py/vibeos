@@ -75,7 +75,7 @@ pub unsafe extern "C" fn AtaReqSmartIoControl(
     };
 
     if (*Srb).DataTransferLength
-        < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<*mut SENDCMDINPARAMS>() - 1) as u32
+        < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<SENDCMDINPARAMS>() - 1) as u32
     {
         return (SRB_STATUS_INVALID_REQUEST) as u8;
     }
@@ -128,14 +128,14 @@ pub unsafe extern "C" fn AtaReqSmartIoControl(
 
     if (*Request).Flags & (REQUEST_FLAG_DATA_IN | REQUEST_FLAG_SAVE_TASK_FILE) != 0 {
         if (*Srb).DataTransferLength
-            < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<*mut SENDCMDOUTPARAMS>() - 1 + (*Request).DataTransferLength as usize) as u32
+            < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<SENDCMDOUTPARAMS>() - 1 + (*Request).DataTransferLength as usize) as u32
         {
             return (SRB_STATUS_INVALID_REQUEST) as u8;
         }
         (*Request).DataBuffer = (*Buffer.CmdOut).bBuffer.as_mut_ptr() as *mut core::ffi::c_void;
     } else if (*Request).Flags & REQUEST_FLAG_DATA_OUT != 0 {
         if (*Srb).DataTransferLength
-            < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<*mut SENDCMDINPARAMS>() - 1 + (*Request).DataTransferLength as usize) as u32
+            < (core::mem::size_of::<SRB_IO_CONTROL>() + core::mem::size_of::<SENDCMDINPARAMS>() - 1 + (*Request).DataTransferLength as usize) as u32
         {
             return (SRB_STATUS_INVALID_REQUEST) as u8;
         }

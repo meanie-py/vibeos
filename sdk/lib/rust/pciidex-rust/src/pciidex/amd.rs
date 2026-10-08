@@ -1,9 +1,16 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{Channel, Timing};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_158 {
+    pub VendorID: USHORT,
+    pub DeviceID: USHORT,
+    pub Flags: USHORT,
+}
+
 static mut AmdControllerList: [C2RustUnnamed_158; 35] = [
     C2RustUnnamed_158 {
         VendorID: PCI_VEN_AMD as USHORT,
@@ -298,7 +305,7 @@ pub struct AmdControllerEntry {
 }
 
 unsafe extern "C" fn AmdGetPciConfigIoBase(Controller: PATA_CONTROLLER) -> ULONG {
-    if ((*Controller).Pci.VendorID as ::core::ffi::c_int) as u32 == PCI_VEN_AMD {
+    if (*Controller).Pci.VendorID as ::core::ffi::c_int == (PCI_VEN_AMD as i32) {
         return AMD_CONFIG_BASE;
     }
     return NV_CONFIG_BASE;
@@ -314,13 +321,13 @@ unsafe extern "C" fn AmdEnablePostedWriteBuffer(
     let mut ConfigReg: UCHAR = 0;
     let mut i: ULONG = 0;
     ConfigReg = PciRead8(Controller, AMD_REG_CONFIG_PREFETCH!(IoBase));
-    if (*ChanData).HwFlags & (HW_FLAGS_NO_PREFETCH) as _ != 0 {
+    if (*ChanData).HwFlags & (HW_FLAGS_NO_PREFETCH as u32) != 0 {
         ConfigReg = (ConfigReg as ::core::ffi::c_int
             & (!(AMD_CONFIG_PREFETCH!(0)
                 | AMD_CONFIG_PREFETCH!(1))) as i32)
             as UCHAR;
     } else {
-        ConfigReg = (ConfigReg as ::core::ffi::c_int | AMD_CONFIG_PREFETCH!(Channel)) as UCHAR;
+        ConfigReg = (ConfigReg as ::core::ffi::c_int | AMD_CONFIG_PREFETCH!(Channel) as i32) as UCHAR;
         i = 0;
         while i < MAX_IDE_DEVICE {
             let mut Device: PCHANNEL_DEVICE_CONFIG = *DeviceList.offset(i as isize);
@@ -337,20 +344,16 @@ unsafe extern "C" fn AmdEnablePostedWriteBuffer(
     PciWrite8(Controller, AMD_REG_CONFIG_PREFETCH!(IoBase), ConfigReg);
 }
 
-unsafe extern "C" fn AmdSetTransferMode(
-    mut Controller: PATA_CONTROLLER,
-    mut Channel: ULONG,
-    mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG,
-) {
+unsafe extern "C" fn AmdSetTransferMode(mut Controller: PATA_CONTROLLER, mut Channel: ULONG, mut DeviceList: *mut PCHANNEL_DEVICE_CONFIG) {
     let mut ChanData: PCHANNEL_DATA_PATA = (*Controller).Channels[Channel as usize] as PCHANNEL_DATA_PATA;
     let IoBase: ULONG = AmdGetPciConfigIoBase(Controller);
-    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE) as _] = [ATA_TIMING {
+    let mut DeviceTimings: [ATA_TIMING; (MAX_IDE_DEVICE as usize)] = [ATA_TIMING {
         AddressSetup: 0,
         CmdActive: 0,
         CmdRecovery: 0,
         DataActive: 0,
         DataRecovery: 0,
-    }; (MAX_IDE_DEVICE) as _];
+    }; (MAX_IDE_DEVICE as usize)];
     let mut i: ULONG;
     let mut DriveTimReg: ULONG;
     let mut PortTimReg: ULONG;
@@ -437,7 +440,7 @@ unsafe extern "C" fn AmdControllerStart(mut Controller: PATA_CONTROLLER) {
 }
 
 unsafe extern "C" fn NvHasUdmaCable(mut UdmaTimReg: USHORT, mut Drive: ULONG) -> BOOLEAN {
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as ::core::ffi::c_int > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
             KeGetCurrentIrql() as ::core::ffi::c_int,
@@ -453,17 +456,17 @@ unsafe extern "C" fn NvHasUdmaCable(mut UdmaTimReg: USHORT, mut Drive: ULONG) ->
         } else {
         };
     }
-    if ((UdmaTimReg as ::core::ffi::c_int)
+    if (UdmaTimReg as ::core::ffi::c_int)
         << (1 as ULONG).wrapping_sub(Drive).wrapping_mul(8 as ULONG)
-        & AMD_UDMA_EN as ::core::ffi::c_int) as u32
-        != AMD_UDMA_EN
+        & (AMD_UDMA_EN as i32)
+        != (AMD_UDMA_EN as i32)
     {
         return FALSE;
     }
     return ((UdmaTimReg as ::core::ffi::c_int)
         << (1 as ULONG).wrapping_sub(Drive).wrapping_mul(8 as ULONG)
         & 0x7
-        & AMD_UDMA_TIME!(4) as ::core::ffi::c_int
+        & AMD_UDMA_TIME!(4)
         != 0) as ::core::ffi::c_int as BOOLEAN;
 }
 #[no_mangle]
@@ -472,7 +475,7 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut i: ULONG;
-    let mut HwFlags: ULONG;
+    let mut HwFlags: ULONG = core::mem::zeroed();
     let mut SupportedMode: ULONG;
 
     PAGED_CODE!();
@@ -492,27 +495,27 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
         return STATUS_NO_MATCH;
     }
 
-    Status = PciIdeCreateChannelData((Controller).cast(), 0);
+    Status = PciIdeCreateChannelData(Controller, 0);
     if !NT_SUCCESS!(Status) {
         return Status;
     }
 
-    if HwFlags & (HW_FLAGS_SATA) as _ != 0 {
+    if HwFlags & (HW_FLAGS_SATA as u32) != 0 {
         SupportedMode = SATA_ALL;
     } else {
         SupportedMode = PIO_ALL | MWDMA_ALL | UDMA_ALL;
 
-        if HwFlags & (HW_FLAGS_CHECK_SYSBOARD) as _ != 0 {
+        if HwFlags & (HW_FLAGS_CHECK_SYSBOARD as u32) != 0 {
             if (*Controller).Pci.SubSystemID == PCI_SUBSYSTEM_AMD_SERENADE {
                 SupportedMode &= !UDMA_MODE6;
             }
-        } else if HwFlags & (HW_FLAGS_UDMA5) as _ != 0 {
+        } else if HwFlags & (HW_FLAGS_UDMA5 as u32) != 0 {
             SupportedMode &= !UDMA_MODE6;
-        } else if HwFlags & (HW_FLAGS_UDMA4) as _ != 0 {
+        } else if HwFlags & (HW_FLAGS_UDMA4 as u32) != 0 {
             SupportedMode &= !UDMA_MODES!(5, 6);
         }
 
-        if ((*Controller).Pci.VendorID) as u32 == PCI_VEN_AMD {
+        if (*Controller).Pci.VendorID == (PCI_VEN_AMD as u16) {
             (*Controller).__bindgen_anon_1.ChannelEnableBits = &AmdEnableBits as *const ATA_PCI_ENABLE_BITS;
             (*Controller).Start = Some(AmdControllerStart as unsafe extern "C" fn(*mut ATA_CONTROLLER));
         } else {
@@ -525,23 +528,23 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
         let ChanData: *mut CHANNEL_DATA_PATA = ((*Controller).Channels[i as usize]).cast();
 
         (*ChanData).HwFlags = HwFlags;
-        (*ChanData).TransferModeSupported = SupportedMode;
+        (*ChanData).__bindgen_anon_1.TransferModeSupported = SupportedMode;
 
-        if HwFlags & (HW_FLAGS_SATA) as _ != 0 {
-            (*ChanData).ChanInfo |= CHANNEL_FLAG_NO_SLAVE;
-            (*ChanData).SetTransferMode = Some(SataSetTransferMode as unsafe extern "C" fn(*mut ATA_CONTROLLER, ULONG, *mut CHANNEL_DEVICE_CONFIG));
+        if HwFlags & (HW_FLAGS_SATA as u32) != 0 {
+            (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_NO_SLAVE;
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(SataSetTransferMode);
         } else {
-            (*ChanData).SetTransferMode = Some(AmdSetTransferMode as unsafe extern "C" fn(*mut ATA_CONTROLLER, ULONG, *mut CHANNEL_DEVICE_CONFIG));
+            (*ChanData).__bindgen_anon_1.SetTransferMode = Some(AmdSetTransferMode);
 
-            if ((*Controller).Pci.VendorID) as u32 == PCI_VEN_AMD {
+            if (*Controller).Pci.VendorID == (PCI_VEN_AMD as u16) {
                 let ConfigReg: UCHAR = PciRead8(
                     Controller,
                     AMD_REG_CONFIG_CR!(AMD_CONFIG_BASE),
                 );
 
-                if ConfigReg & AMD_REG_CONFIG_CR!(i) == 0 {
+                if ConfigReg as u32 & AMD_REG_CONFIG_CR!(i) == 0 {
                     INFO!("CH %lu: BIOS detected 40-conductor cable\n", i);
-                    (*ChanData).TransferModeSupported &= !UDMA_80C_ALL;
+                    (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }
             } else {
                 let UdmaTimReg: USHORT = PciRead16(
@@ -556,7 +559,7 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
                         "CH %lu: BIOS hasn't selected mode faster than UDMA 2, assume 40-conductor cable\n",
                         (*ChanData).Channel,
                     );
-                    (*ChanData).TransferModeSupported &= !UDMA_80C_ALL;
+                    (*ChanData).__bindgen_anon_1.TransferModeSupported &= !UDMA_80C_ALL;
                 }
             }
         }

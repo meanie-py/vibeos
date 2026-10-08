@@ -1,9 +1,16 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolZero, HalGetBusDataByOffset, IoConnectInterrupt, IoDisconnectInterrupt, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, KeStallExecutionProcessor, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PDMA_ADAPTER, PDMA_OPERATIONS, PHYSICAL_ADDRESS, PPCI_COMMON_HEADER};
+use ntkrnl_sys::ddk::{HalGetBusDataByOffset, IoConnectInterrupt, IoDisconnectInterrupt, KeAcquireInterruptSpinLock, KeReleaseInterruptSpinLock, KeStallExecutionProcessor, PCI_COMMON_HEADER, PCI_SLOT_NUMBER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PDMA_ADAPTER, PDMA_OPERATIONS, PHYSICAL_ADDRESS, PPCI_COMMON_HEADER};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct C2RustUnnamed_164 {
+    pub VendorID: USHORT,
+    pub DeviceID: USHORT,
+}
+
 static mut AhciControllerList: [C2RustUnnamed_164; 2] = [
     C2RustUnnamed_164 {
         VendorID: PCI_VEN_NVIDIA as USHORT,
@@ -23,7 +30,7 @@ pub struct AhciControllerListEntry {
 
 unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATUS {
     let mut ChanData: PCHANNEL_DATA_AHCI = ChannelContext as PCHANNEL_DATA_AHCI;
-    let mut DmaOperations: PDMA_OPERATIONS = (*(*ChanData).DmaAdapter).DmaOperations;
+    let mut DmaOperations: PDMA_OPERATIONS = (*(*ChanData).__bindgen_anon_1.DmaAdapter).DmaOperations;
     let mut i: ULONG = 0;
     let mut j: ULONG = 0;
     let mut SlotNumber: ULONG = 0;
@@ -39,21 +46,21 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
 
     PAGED_CODE!();
 
-    CommandSlots = (*(*ChanData).Controller).QueueDepth;
+    CommandSlots = (*(*ChanData).__bindgen_anon_1.Controller).QueueDepth;
     CommandListSize = (FIELD_OFFSET!(AHCI_COMMAND_LIST, CommandHeader[CommandSlots as usize]) as usize) as ULONG;
     BlockSize = CommandListSize.wrapping_add((AHCI_COMMAND_LIST_ALIGNMENT - 1) as ULONG);
 
-    if (*ChanData).ChanInfo & CHANNEL_FLAG_HAS_FBS == 0 {
+    if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_FBS == 0 {
         BlockSize = BlockSize.wrapping_add(core::mem::size_of::<AHCI_RECEIVED_FIS>() as ULONG);
         BlockSize = BlockSize.wrapping_add(
-            ALIGN_UP_BY(CommandListSize, AHCI_RECEIVED_FIS_ALIGNMENT).wrapping_sub(CommandListSize),
+            (ALIGN_UP_BY((CommandListSize) as _, (AHCI_RECEIVED_FIS_ALIGNMENT) as _).wrapping_sub((CommandListSize) as _)) as _,
         );
     }
 
     Buffer = (*DmaOperations)
         .AllocateCommonBuffer
-        .expect("non-null function pointer")(
-        (*ChanData).DmaAdapter,
+        .unwrap_unchecked()(
+        (*ChanData).__bindgen_anon_1.DmaAdapter,
         BlockSize,
         &raw mut PhysicalAddress,
         TRUE,
@@ -70,31 +77,31 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
     BufferVa = Buffer as ULONG_PTR;
     BufferPa = (PhysicalAddress.QuadPart) as u64;
 
-    BufferVa = ALIGN_UP_BY(BufferVa, AHCI_COMMAND_LIST_ALIGNMENT);
-    BufferPa = ALIGN_UP_BY(BufferPa, AHCI_COMMAND_LIST_ALIGNMENT);
+    BufferVa = (ALIGN_UP_BY((BufferVa) as _, (AHCI_COMMAND_LIST_ALIGNMENT) as _)) as _;
+    BufferPa = (ALIGN_UP_BY((BufferPa) as _, (AHCI_COMMAND_LIST_ALIGNMENT) as _)) as _;
     (*ChanData).CommandList = BufferVa as PVOID as PAHCI_COMMAND_LIST;
     (*ChanData).Mem.CommandListPhys = BufferPa;
     BufferVa = BufferVa.wrapping_add(CommandListSize as ULONG_PTR);
     BufferPa = BufferPa.wrapping_add(CommandListSize as ULONG64);
 
-    if (*ChanData).ChanInfo & CHANNEL_FLAG_HAS_FBS == 0 {
-        BufferVa = ALIGN_UP_BY(BufferVa, AHCI_RECEIVED_FIS_ALIGNMENT);
-        BufferPa = ALIGN_UP_BY(BufferPa, AHCI_RECEIVED_FIS_ALIGNMENT);
+    if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_FBS == 0 {
+        BufferVa = (ALIGN_UP_BY((BufferVa) as _, (AHCI_RECEIVED_FIS_ALIGNMENT) as _)) as _;
+        BufferPa = (ALIGN_UP_BY((BufferPa) as _, (AHCI_RECEIVED_FIS_ALIGNMENT) as _)) as _;
         (*ChanData).ReceivedFis = BufferVa as PVOID as PAHCI_RECEIVED_FIS;
         (*ChanData).Mem.ReceivedFisPhys = BufferPa;
         BufferVa = BufferVa.wrapping_add(core::mem::size_of::<AHCI_RECEIVED_FIS>() as ULONG_PTR);
         BufferPa = BufferPa.wrapping_add(core::mem::size_of::<AHCI_RECEIVED_FIS>() as ULONG64);
     }
 
-    if (*ChanData).ChanInfo & CHANNEL_FLAG_HAS_FBS != 0 {
+    if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_FBS != 0 {
         BlockSize = PAGE_SIZE;
 
         C_ASSERT!(PAGE_SIZE % AHCI_RECEIVED_FIS_FBS_ALIGNMENT == 0);
 
         Buffer = (*DmaOperations)
             .AllocateCommonBuffer
-            .expect("non-null function pointer")(
-            (*ChanData).DmaAdapter,
+            .unwrap_unchecked()(
+            (*ChanData).__bindgen_anon_1.DmaAdapter,
             BlockSize,
             &raw mut PhysicalAddress,
             TRUE,
@@ -114,10 +121,10 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
         (*ChanData).Mem.ReceivedFisPhys = BufferPa;
     }
 
-    if (*ChanData).ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
+    if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
     }
 
-    CommandTableLength = (FIELD_OFFSET!(AHCI_COMMAND_TABLE, PrdTable[(*ChanData).MaximumPhysicalPages as usize]) as usize) as ULONG;
+    CommandTableLength = (FIELD_OFFSET!(AHCI_COMMAND_TABLE, PrdTable[(*ChanData).__bindgen_anon_1.MaximumPhysicalPages as usize]) as usize) as ULONG;
 
     CommandTablesPerPage = PAGE_SIZE / (CommandTableLength + (AHCI_COMMAND_TABLE_ALIGNMENT - 1));
 
@@ -131,8 +138,8 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
 
         Buffer = (*DmaOperations)
             .AllocateCommonBuffer
-            .expect("non-null function pointer")(
-            (*ChanData).DmaAdapter,
+            .unwrap_unchecked()(
+            (*ChanData).__bindgen_anon_1.DmaAdapter,
             BlockSize,
             &raw mut PhysicalAddress,
             TRUE,
@@ -153,10 +160,10 @@ unsafe extern "C" fn AtaAhciAllocateMemory(mut ChannelContext: PVOID) -> NTSTATU
         while j < TableCount {
             let mut CommandHeader: PAHCI_COMMAND_HEADER;
 
-            BufferVa = ALIGN_UP_BY(BufferVa, AHCI_COMMAND_TABLE_ALIGNMENT);
-            BufferPa = ALIGN_UP_BY(BufferPa, AHCI_COMMAND_TABLE_ALIGNMENT);
+            BufferVa = (ALIGN_UP_BY((BufferVa) as _, (AHCI_COMMAND_TABLE_ALIGNMENT as usize))) as _;
+            BufferPa = (ALIGN_UP_BY((BufferPa) as _, (AHCI_COMMAND_TABLE_ALIGNMENT as usize))) as _;
 
-            if (*ChanData).ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
+            if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0 {
             }
 
             (*ChanData).CommandTable[SlotNumber as usize] = BufferVa as PAHCI_COMMAND_TABLE;
@@ -187,7 +194,7 @@ unsafe extern "C" fn AtaAhciFreeMemory(mut ChannelContext: PVOID) {
     PAGED_CODE!();
 
     if !(*ChanData).Mem.CommandListOriginal.is_null() {
-        (*DmaOperations).FreeCommonBuffer.expect("non-null function pointer")(
+        (*DmaOperations).FreeCommonBuffer.unwrap_unchecked()(
             DmaAdapter,
             (*ChanData).Mem.CommandListSize,
             (*ChanData).Mem.CommandListPhysOriginal,
@@ -198,7 +205,7 @@ unsafe extern "C" fn AtaAhciFreeMemory(mut ChannelContext: PVOID) {
     }
 
     if !(*ChanData).Mem.ReceivedFisOriginal.is_null() {
-        (*DmaOperations).FreeCommonBuffer.expect("non-null function pointer")(
+        (*DmaOperations).FreeCommonBuffer.unwrap_unchecked()(
             DmaAdapter,
             PAGE_SIZE,
             (*ChanData).Mem.ReceivedFisPhysOriginal,
@@ -211,7 +218,7 @@ unsafe extern "C" fn AtaAhciFreeMemory(mut ChannelContext: PVOID) {
     i = 0;
     while i < AHCI_MAX_COMMAND_SLOTS {
         if !(*ChanData).Mem.CommandTableOriginal[i as usize].is_null() {
-            (*DmaOperations).FreeCommonBuffer.expect("non-null function pointer")(
+            (*DmaOperations).FreeCommonBuffer.unwrap_unchecked()(
                 DmaAdapter,
                 (*ChanData).Mem.CommandTableSize[i as usize],
                 (*ChanData).Mem.CommandTablePhysOriginal[i as usize],
@@ -230,7 +237,7 @@ unsafe extern "C" fn AtaAhciIsVbox() -> i32 {
     let mut BytesRead: u32 = 0;
     let mut Slot: PCI_SLOT_NUMBER = PCI_SLOT_NUMBER { u: core::mem::zeroed() };
 
-    if (KeGetCurrentIrql() as i32) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as i32 > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
             KeGetCurrentIrql() as i32,
@@ -247,15 +254,15 @@ unsafe extern "C" fn AtaAhciIsVbox() -> i32 {
     }
 
     Slot.u.AsULONG = 0;
-    Slot.u.bits.DeviceNumber = 4;
-    Slot.u.bits.FunctionNumber = 0;
+    Slot.u.bits.set_DeviceNumber((4) as _);
+    Slot.u.bits.set_FunctionNumber((0) as _);
 
     BytesRead = HalGetBusDataByOffset(
         PCIConfiguration,
         0,
         Slot.u.AsULONG,
         core::ptr::addr_of_mut!(Buffer) as *mut core::ffi::c_void,
-        (FIELD_OFFSET!(PCI_COMMON_HEADER, VendorID)) as u32,
+        (FIELD_OFFSET!(PCI_COMMON_HEADER, VendorID)) as ULONG,
         core::mem::size_of_val(&Buffer) as u32,
     );
 
@@ -336,21 +343,21 @@ unsafe extern "C" fn AtaAhciCreateChannelData(Controller: PATA_CONTROLLER) -> NT
 
         (*Controller).Channels[i as usize] = ChanData as PVOID;
 
-        (*ChanData).Channel = i;
-        (*ChanData).Controller = Controller;
+        (*ChanData).__bindgen_anon_1.Channel = i;
+        (*ChanData).__bindgen_anon_1.Controller = Controller;
 
-        (*ChanData).AllocateMemory = AtaAhciAllocateMemory;
-        (*ChanData).FreeMemory = AtaAhciFreeMemory;
-        (*ChanData).EnableInterrupts = AtaAhciEnableInterrupts;
-        (*ChanData).PreparePrdTable = AtaAhciPreparePrdTable;
-        (*ChanData).PrepareIo = AtaAhciPrepareIo;
-        (*ChanData).StartIo = AtaAhciStartIo;
-        (*ChanData).SetTransferMode = SataSetTransferMode;
-        (*ChanData).TransferModeSupported = SATA_ALL;
+        (*ChanData).__bindgen_anon_1.AllocateMemory = Some(AtaAhciAllocateMemory);
+        (*ChanData).__bindgen_anon_1.FreeMemory = Some(AtaAhciFreeMemory);
+        (*ChanData).__bindgen_anon_1.EnableInterrupts = Some(AtaAhciEnableInterrupts);
+        (*ChanData).__bindgen_anon_1.PreparePrdTable = Some(AtaAhciPreparePrdTable);
+        (*ChanData).__bindgen_anon_1.PrepareIo = Some(AtaAhciPrepareIo);
+        (*ChanData).__bindgen_anon_1.StartIo = Some(AtaAhciStartIo as unsafe extern "C" fn(PVOID, PATA_DEVICE_REQUEST) -> BOOLEAN);
+        (*ChanData).__bindgen_anon_1.SetTransferMode = Some(SataSetTransferMode);
+        (*ChanData).__bindgen_anon_1.TransferModeSupported = SATA_ALL;
 
-        (*ChanData).IoBase = AHCI_PORT_BASE!((*Controller).IoBase, i);
+        (*ChanData).IoBase = AHCI_PORT_BASE!((*Controller).IoBase, i) as PVOID;
 
-        ((*ChanData).EnableInterrupts)(ChanData as PVOID, FALSE);
+        (((*ChanData).__bindgen_anon_1.EnableInterrupts).unwrap_unchecked())(ChanData as PVOID, FALSE);
 
         CmdStatus = AHCI_PORT_READ((*ChanData).IoBase, PxCmdStatus);
         if (CmdStatus & AHCI_PXCMD_ST) != 0 {
@@ -358,14 +365,14 @@ unsafe extern "C" fn AtaAhciCreateChannelData(Controller: PATA_CONTROLLER) -> NT
             AHCI_PORT_WRITE((*ChanData).IoBase, PxCmdStatus, CmdStatus);
         }
 
-        (*ChanData).ChanInfo = CHANNEL_FLAG_PIO_VIA_DMA;
+        (*ChanData).__bindgen_anon_1.ChanInfo = CHANNEL_FLAG_PIO_VIA_DMA;
 
         if ((*Controller).AhciCapabilities & AHCI_CAP_S64A) != 0 {
-            (*ChanData).ChanInfo |= CHANNEL_FLAG_64_BIT_DMA;
+            (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_64_BIT_DMA;
         }
 
         if ((*Controller).AhciCapabilities & AHCI_CAP_SNCQ) != 0 {
-            (*ChanData).ChanInfo |= CHANNEL_FLAG_HAS_NCQ;
+            (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_HAS_NCQ;
         }
 
         if ((*Controller).AhciCapabilities & AHCI_CAP_SPM) != 0
@@ -373,12 +380,12 @@ unsafe extern "C" fn AtaAhciCreateChannelData(Controller: PATA_CONTROLLER) -> NT
             && (CmdStatus & AHCI_PXCMD_FBSCP) != 0
         {
             INFO!("CH %lu: FBS supported\n", (*ChanData).Channel);
-            (*ChanData).ChanInfo |= CHANNEL_FLAG_HAS_FBS;
+            (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_HAS_FBS;
         }
 
         if AtaAhciIsPortRemovable((*Controller).AhciCapabilities, CmdStatus) != 0 {
             INFO!("CH %lu: Port is external\n", (*ChanData).Channel);
-            (*ChanData).ChanInfo |= CHANNEL_FLAG_IS_EXTERNAL;
+            (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_IS_EXTERNAL;
         }
 
         ChanData = ChanData.offset(1);
@@ -392,8 +399,17 @@ unsafe extern "C" fn AtaAhciGetAbar(mut Controller: PATA_CONTROLLER) -> PVOID {
     let mut Abar: PVOID = core::ptr::null_mut();
     let mut i: ULONG = 0;
     let mut Index: ULONG = 0;
+    // ahci_generic.c's table is an anonymous `static const struct { USHORT VendorID;
+    // USHORT DeviceID; ULONG Index; }`; this is that struct, named for Rust.
+    #[derive(Copy, Clone)]
+    #[repr(C)]
+    struct AbarLocation {
+        VendorID: USHORT,
+        DeviceID: USHORT,
+        Index: ULONG,
+    }
     static mut AbarLocations: [AbarLocation; 1] = [AbarLocation {
-        VendorID: PCI_VEN_CAVIUM,
+        VendorID: PCI_VEN_CAVIUM as USHORT,
         DeviceID: 0xA01C,
         Index: 0,
     }];
@@ -403,7 +419,7 @@ unsafe extern "C" fn AtaAhciGetAbar(mut Controller: PATA_CONTROLLER) -> PVOID {
     Index = 5;
 
     i = 0;
-    while (i as usize) < RTL_NUMBER_OF!(AbarLocations) {
+    while (i as usize) < RTL_NUMBER_OF!(AbarLocations) as usize {
         if (*Controller).Pci.VendorID == AbarLocations[i as usize].VendorID
             && (*Controller).Pci.DeviceID == AbarLocations[i as usize].DeviceID
         {
@@ -425,10 +441,7 @@ unsafe extern "C" fn AtaAhciGetAbar(mut Controller: PATA_CONTROLLER) -> PVOID {
     return Abar;
 }
 
-unsafe extern "C" fn AtaAhciAttachChannel(
-    mut ChannelContext: PVOID,
-    mut Attach: BOOLEAN,
-) -> NTSTATUS {
+unsafe extern "C" fn AtaAhciAttachChannel(mut ChannelContext: PVOID, mut Attach: BOOLEAN) -> NTSTATUS {
     let mut ChanData: PCHANNEL_DATA_AHCI = ChannelContext as PCHANNEL_DATA_AHCI;
     PAGED_CODE!();
     if !(Attach != 0) {
@@ -486,7 +499,7 @@ unsafe extern "C" fn AtaAhciHbaFreeResouces(mut Controller: PATA_CONTROLLER) {
 unsafe extern "C" fn AhciControllerIsSubClassCheckNeeded(
     mut Controller: PATA_CONTROLLER,
 ) -> BOOLEAN {
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as ::core::ffi::c_int > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
             KeGetCurrentIrql() as ::core::ffi::c_int,
@@ -502,14 +515,14 @@ unsafe extern "C" fn AhciControllerIsSubClassCheckNeeded(
         } else {
         };
     }
-    if ((*Controller).Pci.VendorID as ::core::ffi::c_int) as u32 == PCI_VEN_INTEL {
+    if (*Controller).Pci.VendorID as ::core::ffi::c_int == (PCI_VEN_INTEL as i32) {
         if (*Controller).Pci.DeviceID as ::core::ffi::c_int == 0x2652
             || (*Controller).Pci.DeviceID as ::core::ffi::c_int == 0x2653
         {
             return TRUE;
         }
     }
-    if ((*Controller).Pci.VendorID as ::core::ffi::c_int) as u32 == PCI_VEN_VIA
+    if (*Controller).Pci.VendorID as ::core::ffi::c_int == (PCI_VEN_VIA as i32)
         && (*Controller).Pci.DeviceID as ::core::ffi::c_int == 0x3349
     {
         return TRUE;
@@ -523,13 +536,13 @@ unsafe extern "C" fn AhciMatchController(Controller: PATA_CONTROLLER) -> BOOLEAN
     PAGED_CODE!();
 
     if AhciControllerIsSubClassCheckNeeded(Controller) != 0 {
-        if ((*Controller).Pci.SubClass) as u32 != PCI_SUBCLASS_MSC_AHCI_CTLR {
+        if (*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_AHCI_CTLR as u8) {
             return FALSE;
         }
     }
 
     i = 0;
-    while (i as usize) < RTL_NUMBER_OF!(AhciControllerList) {
+    while i < RTL_NUMBER_OF!(AhciControllerList) {
         if (*Controller).Pci.VendorID == AhciControllerList[i as usize].VendorID
             && (*Controller).Pci.DeviceID == AhciControllerList[i as usize].DeviceID
         {
@@ -538,8 +551,8 @@ unsafe extern "C" fn AhciMatchController(Controller: PATA_CONTROLLER) -> BOOLEAN
         i = i.wrapping_add(1);
     }
 
-    if ((*Controller).Pci.BaseClass) as u32 == PCI_CLASS_MASS_STORAGE_CTLR
-        && ((*Controller).Pci.SubClass) as u32 == PCI_SUBCLASS_MSC_AHCI_CTLR
+    if (*Controller).Pci.BaseClass == (PCI_CLASS_MASS_STORAGE_CTLR as u8)
+        && (*Controller).Pci.SubClass == (PCI_SUBCLASS_MSC_AHCI_CTLR as u8)
     {
         return TRUE;
     }
@@ -571,12 +584,12 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
     }
 
     (*Controller).Flags |= CTRL_FLAG_IS_AHCI | CTRL_FLAG_SATA_HBA_ACPI;
-    (*Controller).Start = Some(AtaAhciHbaStart as unsafe extern "C" fn(PATA_CONTROLLER) -> ());
-    (*Controller).Stop = Some(AtaAhciHbaStop as unsafe extern "C" fn(PATA_CONTROLLER) -> ());
+    (*Controller).Start = Some(AtaAhciHbaStart);
+    (*Controller).Stop = Some(AtaAhciHbaStop);
     (*Controller).FreeResources =
-        Some(AtaAhciHbaFreeResouces as unsafe extern "C" fn(PATA_CONTROLLER) -> ());
+        Some(AtaAhciHbaFreeResouces);
     (*Controller).AttachChannel =
-        Some(AtaAhciAttachChannel as unsafe extern "C" fn(PVOID, BOOLEAN) -> NTSTATUS);
+        Some(AtaAhciAttachChannel);
 
     GlobalControl = AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaGlobalControl);
     GlobalControl |= AHCI_GHC_AE;
@@ -660,12 +673,12 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
         (*InterruptDesc).u.Interrupt.Vector,
         (*InterruptDesc).u.Interrupt.Level as KIRQL,
         (*InterruptDesc).u.Interrupt.Level as KIRQL,
-        if (*InterruptDesc).Flags as u32 & CM_RESOURCE_INTERRUPT_LATCHED != 0 {
-            KINTERRUPT_MODE::Latched
+        if (*InterruptDesc).Flags & (CM_RESOURCE_INTERRUPT_LATCHED as u16) != 0 {
+            Latched
         } else {
-            KINTERRUPT_MODE::LevelSensitive
+            LevelSensitive
         },
-        ((*InterruptDesc).ShareDisposition == CmResourceShareShared) as BOOLEAN,
+        (((*InterruptDesc).ShareDisposition) as u32 == CmResourceShareShared) as BOOLEAN,
         (*InterruptDesc).u.Interrupt.Affinity,
         FALSE,
     );

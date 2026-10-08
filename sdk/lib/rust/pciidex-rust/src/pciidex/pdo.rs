@@ -24,11 +24,12 @@ pub static RUSTCONV_WSTR_F3C6A8F2AC47: [u16; 4] = [0x0025u16, 0x006C, 0x0075, 0x
 pub static RUSTCONV_WSTR_FD751CC90415: [u16; 5] = [0x0050u16, 0x0049, 0x0049, 0x0058, 0x0000];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_CAPABILITIES, DEVICE_DESCRIPTION, ExAcquireFastMutex, ExAllocatePoolUninitialized, ExAllocatePoolZero, ExReleaseFastMutex, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, IoDeleteDevice, IoGetDmaAdapter, Isa, KAFFINITY, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP};
+use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_RESOURCE_LIST, DEVICE_CAPABILITIES, DEVICE_DESCRIPTION, ExAcquireFastMutex, ExReleaseFastMutex, IO_RESOURCE_DESCRIPTOR, IO_RESOURCE_REQUIREMENTS_LIST, IoDeleteDevice, IoGetDmaAdapter, KAFFINITY, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDMA_ADAPTER, PIO_RESOURCE_DESCRIPTOR, PIO_RESOURCE_REQUIREMENTS_LIST, PIO_STACK_LOCATION, PIRP};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
+#[no_mangle]
 pub static mut GUID_PCIIDE_INTERFACE_ROS: GUID = _GUID {
     Data1: 0xd677fbcf as ::core::ffi::c_uint,
     Data2: 0xabed as ::core::ffi::c_ushort,
@@ -46,7 +47,7 @@ pub static mut GUID_PCIIDE_INTERFACE_ROS: GUID = _GUID {
 };
 
 unsafe extern "C" fn PciIdeXPdoFreeDmaResources(mut ChanData: PCHANNEL_DATA_COMMON) {
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as ::core::ffi::c_int > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
             KeGetCurrentIrql() as ::core::ffi::c_int,
@@ -63,10 +64,10 @@ unsafe extern "C" fn PciIdeXPdoFreeDmaResources(mut ChanData: PCHANNEL_DATA_COMM
         };
     }
     if !(*ChanData).DmaAdapter.is_null() {
-        (*ChanData).FreeMemory.expect("non-null function pointer")(ChanData as PVOID);
+        (*ChanData).FreeMemory.unwrap_unchecked()(ChanData as PVOID);
         (*(*(*ChanData).DmaAdapter).DmaOperations)
             .PutDmaAdapter
-            .expect("non-null function pointer")((*ChanData).DmaAdapter);
+            .unwrap_unchecked()((*ChanData).DmaAdapter);
         (*ChanData).DmaAdapter = ::core::ptr::null_mut::<_DMA_ADAPTER>();
     }
 }
@@ -83,7 +84,7 @@ unsafe extern "C" fn PciIdeXPdoGetDmaAdapter(
     DeviceDescription.Master = TRUE;
     DeviceDescription.ScatterGather = TRUE;
     DeviceDescription.Dma32BitAddresses = ((*ChanData).ChanInfo & CHANNEL_FLAG_64_BIT_DMA == 0) as i32 as u8;
-    DeviceDescription.InterfaceType = PCIBus as _;
+    DeviceDescription.InterfaceType = PCIBus;
     DeviceDescription.MaximumLength = (*ChanData).MaximumTransferLength;
 
     return IoGetDmaAdapter(
@@ -104,7 +105,7 @@ unsafe extern "C" fn PciIdeXPdoInitDma(
         return FALSE;
     }
 
-    Status = ((*ChanData).AllocateMemory)(ChanData);
+    Status = (((*ChanData).AllocateMemory).unwrap_unchecked())((ChanData).cast());
     if !NT_SUCCESS!(Status) {
         PciIdeXPdoFreeDmaResources(ChanData);
         return FALSE;
@@ -238,7 +239,7 @@ pub unsafe extern "C" fn PciIdeXPdoRemoveDevice(
     Status = STATUS_SUCCESS;
     if !Irp.is_null() {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
     }
 
     if WasRemoved == 0 {
@@ -250,7 +251,7 @@ pub unsafe extern "C" fn PciIdeXPdoRemoveDevice(
 unsafe extern "C" fn PciIdeXPdoQueryStopRemoveDevice(
     mut PdoExtension: PPDO_DEVICE_EXTENSION,
 ) -> NTSTATUS {
-    if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
+    if KeGetCurrentIrql() as ::core::ffi::c_int > (APC_LEVEL as i32) {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,
             KeGetCurrentIrql() as ::core::ffi::c_int,
@@ -285,7 +286,7 @@ unsafe extern "C" fn PciIdeXPdoQueryTargetDeviceRelations(
 
     DeviceRelations = ExAllocatePoolUninitialized(
         PagedPool,
-        (core::mem::size_of::<DEVICE_RELATIONS>()) as _,
+        core::mem::size_of::<DEVICE_RELATIONS>(),
         TAG_PCIIDEX,
     ) as PDEVICE_RELATIONS;
     if DeviceRelations.is_null() {
@@ -295,7 +296,7 @@ unsafe extern "C" fn PciIdeXPdoQueryTargetDeviceRelations(
     (*DeviceRelations).Count = 1;
     *((*DeviceRelations).Objects.as_mut_ptr().add(0)) =
         (*PdoExtension).Common.Self_;
-    ObReferenceObject((*PdoExtension).Common.Self_);
+    ObReferenceObject(((*PdoExtension).Common.Self_).cast());
 
     (*Irp).IoStatus.Information = DeviceRelations as ULONG_PTR;
     return STATUS_SUCCESS;
@@ -335,7 +336,7 @@ unsafe extern "C" fn PciIdeXPdoQueryCapabilities(
     DeviceCapabilities = (*IoStack).Parameters.DeviceCapabilities.Capabilities;
     *DeviceCapabilities = ParentCapabilities;
 
-    (*DeviceCapabilities).UniqueID = FALSE as BOOLEAN;
+    (*DeviceCapabilities).set_UniqueID((FALSE) as _);
     (*DeviceCapabilities).Address = (*PdoExtension).Channel;
 
     FdoExt = ((*PdoExtension).Common.__bindgen_anon_1.FdoExt).cast();
@@ -403,7 +404,7 @@ unsafe extern "C" fn PciIdeXPdoQueryResources(
     AppendSecondaryResources = ((*Controller).MaxChannels == 1) as BOOLEAN;
 
     ListSize = (FIELD_OFFSET!(CM_RESOURCE_LIST, List[0].PartialResourceList.PartialDescriptors)
-        + core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() * (PCIIDE_LEGACY_RESOURCE_COUNT) as _) as ULONG;
+        + (core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() * (PCIIDE_LEGACY_RESOURCE_COUNT as usize)) as i32) as ULONG;
     if AppendSecondaryResources != 0 {
         ListSize = (ListSize as usize
             + core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() * 2) as ULONG;
@@ -452,7 +453,7 @@ unsafe extern "C" fn PciIdeXPdoQueryResources(
 
     (*Descriptor).Type = CmResourceTypeInterrupt;
     (*Descriptor).ShareDisposition = CmResourceShareDeviceExclusive;
-    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED) as u16;
+    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED as u16);
     (*Descriptor).u.Interrupt.Level = InterruptVector;
     (*Descriptor).u.Interrupt.Vector = InterruptVector;
     (*Descriptor).u.Interrupt.Affinity = (0 as KAFFINITY).wrapping_sub(1);
@@ -498,7 +499,7 @@ unsafe extern "C" fn PciIdeXPdoQueryResourceRequirements(
     AppendSecondaryResources = ((*Controller).MaxChannels == 1) as BOOLEAN;
 
     ListSize = (FIELD_OFFSET!(IO_RESOURCE_REQUIREMENTS_LIST, List[0].Descriptors)
-        + core::mem::size_of::<IO_RESOURCE_DESCRIPTOR>() * (PCIIDE_LEGACY_RESOURCE_COUNT) as _) as ULONG;
+        + (core::mem::size_of::<IO_RESOURCE_DESCRIPTOR>() * (PCIIDE_LEGACY_RESOURCE_COUNT as usize)) as i32) as ULONG;
     if AppendSecondaryResources != 0 {
         ListSize = (ListSize as usize
             + core::mem::size_of::<IO_RESOURCE_DESCRIPTOR>() * 2) as ULONG;
@@ -506,7 +507,7 @@ unsafe extern "C" fn PciIdeXPdoQueryResourceRequirements(
 
     RequirementsList = ExAllocatePoolZero(
         PagedPool,
-        (ListSize as usize) as _,
+        ListSize as usize,
         TAG_PCIIDEX,
     ) as PIO_RESOURCE_REQUIREMENTS_LIST;
     if RequirementsList.is_null() {
@@ -556,8 +557,8 @@ unsafe extern "C" fn PciIdeXPdoQueryResourceRequirements(
     PciIdeXMakePortRequirement(fresh, ControlPortBase, PCIIDE_LEGACY_CONTROL_IO_RANGE_LENGTH);
 
     (*Descriptor).Type = CmResourceTypeInterrupt;
-    (*Descriptor).ShareDisposition = CmResourceShareShared as _;
-    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED) as u16;
+    (*Descriptor).ShareDisposition = (CmResourceShareShared) as u8;
+    (*Descriptor).Flags = (CM_RESOURCE_INTERRUPT_LATCHED as u16);
     (*Descriptor).u.Interrupt.MinimumVector = InterruptVector;
     (*Descriptor).u.Interrupt.MaximumVector = InterruptVector;
 
@@ -632,7 +633,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
 
             Buffer = ExAllocatePoolUninitialized(
                 PagedPool,
-                (core::mem::size_of::<[u16; 18]>()) as _,
+                core::mem::size_of::<[u16; 18]>(),
                 TAG_PCIIDEX,
             ) as PWCHAR;
             if Buffer.is_null() {
@@ -650,18 +651,18 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
 
         BusQueryHardwareIDs => {
             let mut FdoExtension: PFDO_DEVICE_EXTENSION;
-            let mut IdStart: PWCHAR;
+            let mut IdStart: PWCHAR = core::ptr::null_mut();
 
-            DBG_UNREFERENCED_LOCAL_VARIABLE(IdStart);
+            DBG_UNREFERENCED_LOCAL_VARIABLE!(IdStart);
 
             CharCount = core::mem::size_of::<[u8; 13]>()
                 + core::mem::size_of::<[u8; 21]>()
-                + RTL_NUMBER_OF!(IdeCompatibleId)
-                + core::mem::size_of::<ANSI_NULL>();
+                + RTL_NUMBER_OF!(IdeCompatibleId) as usize
+                + core::mem::size_of::<u8>();
 
             Buffer = ExAllocatePoolUninitialized(
                 PagedPool,
-                (CharCount * core::mem::size_of::<u16>()) as _,
+                CharCount * core::mem::size_of::<u16>(),
                 TAG_PCIIDEX,
             ) as PWCHAR;
             if Buffer.is_null() {
@@ -700,7 +701,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                             0,
                             RUSTCONV_WSTR_C10F74EBA383.as_ptr(),
                             VendorString,
-                            (*FdoExtension).Controller.Pci.DeviceID,
+                            (*FdoExtension).Controller.Pci.DeviceID as core::ffi::c_uint,
                         );
                     }
                 } else {
@@ -711,8 +712,8 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                         &mut Remaining,
                         0,
                         RUSTCONV_WSTR_5473B84409F2.as_ptr(),
-                        (*FdoExtension).Controller.Pci.VendorID,
-                        (*FdoExtension).Controller.Pci.DeviceID,
+                        (*FdoExtension).Controller.Pci.VendorID as core::ffi::c_uint,
+                        (*FdoExtension).Controller.Pci.DeviceID as core::ffi::c_uint,
                     );
                 }
 
@@ -758,7 +759,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
         BusQueryCompatibleIDs => {
             Buffer = ExAllocatePoolUninitialized(
                 PagedPool,
-                (core::mem::size_of::<[u16; 9]>() + core::mem::size_of::<UNICODE_NULL>()) as _,
+                core::mem::size_of::<[u16; 9]>() + core::mem::size_of_val(&UNICODE_NULL),
                 TAG_PCIIDEX,
             ) as PWCHAR;
             if Buffer.is_null() {
@@ -782,7 +783,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
 
             Buffer = ExAllocatePoolUninitialized(
                 PagedPool,
-                (CharCount * core::mem::size_of::<u16>()) as _,
+                CharCount * core::mem::size_of::<u16>(),
                 TAG_PCIIDEX,
             ) as PWCHAR;
             if Buffer.is_null() {
@@ -827,7 +828,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
 
             Buffer = (ExAllocatePoolUninitialized(
                 PagedPool,
-                (CharCount * core::mem::size_of::<u16>()) as _,
+                CharCount * core::mem::size_of::<u16>(),
                 TAG_PCIIDEX,
             )).cast();
             if Buffer.is_null() {
@@ -851,7 +852,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
 
             Buffer = (ExAllocatePoolUninitialized(
                 PagedPool,
-                (CharCount * core::mem::size_of::<u16>()) as _,
+                CharCount * core::mem::size_of::<u16>(),
                 TAG_PCIIDEX,
             )).cast();
             if Buffer.is_null() {
@@ -897,7 +898,7 @@ unsafe extern "C" fn PciIdeXQueryPciIdeInterface(
         return (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
-    if ((*IoStack).Parameters.QueryInterface.Version as i32) as u32 != PCIIDEX_INTERFACE_VERSION {
+    if (*IoStack).Parameters.QueryInterface.Version as i32 != (PCIIDEX_INTERFACE_VERSION as i32) {
         return (*Irp).IoStatus.__bindgen_anon_1.Status;
     }
 
@@ -985,9 +986,9 @@ unsafe extern "C" fn PciIdeXPdoQueryInterface(
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
     if IsEqualGUIDAligned(
-        &(*IoStack).Parameters.QueryInterface.InterfaceType as *const _ as *const GUID,
+        (*IoStack).Parameters.QueryInterface.InterfaceType,
         &GUID_PCIIDE_INTERFACE_ROS,
-    ) {
+    ) != false {
         Status = PciIdeXQueryPciIdeInterface(PdoExtension, Irp, IoStack);
     } else {
         Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
@@ -1008,7 +1009,7 @@ unsafe extern "C" fn PciIdeXPdoDispatchPnp(
     Status = IoAcquireRemoveLock(&mut (*PdoExtension).Common.RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
 
         return Status;
     }
@@ -1074,7 +1075,7 @@ unsafe extern "C" fn PciIdeXPdoDispatchPnp(
     }
 
     (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-    IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
 
     IoReleaseRemoveLock(&mut (*PdoExtension).Common.RemoveLock, (Irp).cast());
 
@@ -1082,10 +1083,7 @@ unsafe extern "C" fn PciIdeXPdoDispatchPnp(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PciIdeXDispatchPnp(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn PciIdeXDispatchPnp(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     PAGED_CODE!();
 
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {

@@ -748,8 +748,10 @@ _SYS_ITEM_RE = re.compile(
     r"(?:fn|const|static(?:\s+mut)?|struct|union|enum|type|trait)\s+([A-Za-z_]\w*)",
     re.M,
 )
+# `use path::{a, b};` or, when the header names one item, the brace-less `use path::a;`
+# (sil680.rs's `use ntkrnl_sys::ddk::Channel;` -- a field name -- was never pruned).
 _EXPLICIT_SYS_USE_RE = re.compile(
-    r"^use\s+((?:ntkrnl_sys|ntdll_sys)(?:::\w+)*)::\{([^}]*)\}\s*;[ \t]*\n?", re.M
+    r"^use\s+((?:ntkrnl_sys|ntdll_sys)(?:::\w+)*)::(?:\{([^}]*)\}|(\w+))\s*;[ \t]*\n?", re.M
 )
 
 
@@ -842,7 +844,7 @@ def drop_unknown_substrate_imports(src: str, workspace: Path) -> tuple[str, list
     dropped: list[str] = []
 
     def repl(m: re.Match) -> str:
-        path, items = m.group(1), m.group(2)
+        path, items = m.group(1), m.group(2) if m.group(2) is not None else m.group(3)
         known = _module_names(workspace, path) or _sys_names(workspace, path.split("::")[0])
         if not known:
             return m.group(0)
@@ -857,6 +859,8 @@ def drop_unknown_substrate_imports(src: str, workspace: Path) -> tuple[str, list
                 dropped.append(name)
         if not keep:
             return ""
+        if len(keep) == len([i for i in items.split(",") if i.strip()]):
+            return m.group(0)  # nothing dropped: leave the line exactly as written
         return f"use {path}::{{{', '.join(keep)}}};\n"
 
     return _EXPLICIT_SYS_USE_RE.sub(repl, src), dropped
@@ -1351,6 +1355,12 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     imports: list[str] = []
     for name in sorted(words & owners.keys()):
         if name in local or name in already or name in provided:
+            continue
+        # c2rust numbers its anonymous types per transpile: a sibling's `C2RustUnnamed_163`
+        # is a different struct that happens to share the counter (pciidex's via.rs got
+        # svw_pata's timing struct for its bridge table). `port resolve` takes the right one
+        # from the module's own TU.
+        if name.startswith("C2RustUnnamed"):
             continue
         mods = owners[name]
         if len(mods) > 1:

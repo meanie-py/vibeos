@@ -876,7 +876,8 @@ unsafe extern "C" fn AtaReqCompleteModeSense(
             (*ModeHeader.Header6).DeviceSpecificParameter =
                 ((*ModeHeader.Header6).DeviceSpecificParameter as i32 | (MODE_DSP_FUA_SUPPORTED) as i32) as UCHAR;
         }
-        Buffer = Buffer.offset(core::mem::size_of::<*mut PMODE_PARAMETER_HEADER>() as isize);
+        // C: `Buffer += sizeof(*ModeHeader.Header6);` -- once (the model wrote a second,
+        // pointer-sized advance that skipped 8 bytes of the mode data).
         Buffer = Buffer.offset(core::mem::size_of::<_MODE_PARAMETER_HEADER>() as isize);
     } else {
         if IsWriteProtected != 0 {
@@ -1159,7 +1160,7 @@ unsafe extern "C" fn AtaReqScsiReportLuns(
 
     RtlZeroMemory!(
         LunList as *mut core::ffi::c_void,
-        core::mem::size_of::<*mut _LUN_LIST>(),
+        core::mem::size_of::<_LUN_LIST>(),
     );
 
     (*LunList).LunListLength[0] =

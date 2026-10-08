@@ -23,7 +23,7 @@ unsafe extern "C" fn PciIdeXPdoDispatchPower(
     }
 
     PoStartNextPowerIrp(Irp);
-    IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+    IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
     return Status;
 }
 
@@ -37,17 +37,14 @@ unsafe extern "C" fn PciIdeXFdoDispatchPower(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn PciIdeXDispatchPower(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn PciIdeXDispatchPower(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     let CommonExt = (*DeviceObject).DeviceExtension as *mut COMMON_DEVICE_EXTENSION;
     let mut Status: NTSTATUS;
 
     Status = IoAcquireRemoveLock(&mut (*CommonExt).RemoveLock, (Irp).cast());
     if !NT_SUCCESS!(Status) {
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
-        IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
+        IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
 
         return Status;
     }

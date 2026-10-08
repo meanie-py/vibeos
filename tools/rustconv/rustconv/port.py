@@ -1628,6 +1628,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
     found = _resolve_local_types(state, prelude, type_gaps)
+    _resolve_anonymous_types(state)
     align_definition_abis(state)
     align_definition_returns(state)
     island_found = _resolve_island_types(load_state(stem), type_gaps - found)
@@ -1661,8 +1662,18 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
     if substrate:
         print(f"resolve: {len(substrate)} header helper(s) imported from ntkrnl-sys")
-        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning.
+    if kernel_sys is not None:
+        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning. Plus
+        # every function the prelude DEFINES: a wrapper there (KeInitializeSpinLock over the
+        # island's lock type) is the binding, and a module's `ddk::{..}` pin of the same name
+        # bypassed it straight to the bindgen extern -- pciidex.sys's undefined symbol.
         ported = {n for n, per in substrate.items() if any(v is not None for v in per.values())}
+        ported |= set(
+            re.findall(
+                r"(?m)^pub\s+(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?fn\s+(\w+)",
+                prelude.read_text(),
+            )
+        )
         unpinned = prelude_resolve.unpin_substrate(modules_dir, ported, "ntkrnl_sys")
         if unpinned:
             print(
@@ -1861,6 +1872,15 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             if name not in abis:
                 print(f"resolve: {name}: clang reported no plain cdecl/stdcall type; hand-port it")
                 continue
+            # A `va_list` parameter is `core::ffi::VaList`, which is `c_variadic` -- nightly.
+            # Declaring it would make the crate unbuildable on stable; a caller forwards its
+            # list through the module's C shim instead (pciidex's vibeos_vDbgPrintEx).
+            if "VaList" in sig:
+                print(
+                    f"resolve: {name}: takes a va_list (not declarable on stable); use the C shim"
+                )
+                todo.discard(name)
+                continue
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
@@ -1983,8 +2003,27 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
     headers = " ".join(
         h.read_text(errors="replace") for h in (REPO / state["module_dir"]).rglob("*.h")
     )
-    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
+    # `NAME(` is a prototype; `TYPEDEF NAME;` declares through a function typedef, which is
+    # how pciidex.h declares every callback (`CHANNEL_START_IO AtaAhciStartIo;`).
+    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*[(;]", headers)}
+    # A `static` CALLBACK has no prototype anywhere: its own definition is the authority, and
+    # an exact type is what a fn-pointer slot needs (pciidex's PataEnableInterrupts took
+    # `Enable: i32` where the C says BOOLEAN, and could not be stored).
+    statics = (callbacks & wanted) - todo
     proto: dict[str, str] = {}
+    for tu in state["tus"]:
+        if not statics:
+            break
+        text = (REPO / tu).read_text(errors="replace")
+        mine = {n for n in statics if re.search(rf"(?m)^{re.escape(n)}\s*\(", text)}
+        if not mine:
+            continue
+        try:
+            found = c2rust_anchor.definition_signatures(REPO / tu, mine)
+        except c2rust_anchor.C2RustError:
+            continue
+        proto.update(found)
+        statics -= set(found)
     for tu in state["tus"]:
         if not todo:
             break
@@ -2124,6 +2163,79 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     return set(items)
 
 
+_ANON_NAME = re.compile(r"\bC2RustUnnamed\w*")
+_ANON_IMPORT = re.compile(r"(?m)^use crate::[\w:]+::C2RustUnnamed\w*;[^\n]*\n")
+
+
+def _literal_fields(code: str, name: str) -> frozenset[str]:
+    """The field names `code`'s struct literals of `name` spell (`name { a: .., b: .. }`)."""
+    out: set[str] = set()
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\{{", code):
+        depth, i, top = 0, m.end() - 1, []
+        while i < len(code):
+            c = code[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            top.append(c if depth == 1 else " ")
+            i += 1
+        out |= set(re.findall(r"(?:^|[{,])\s*(\w+)\s*:(?!:)", "".join(top)))
+    return frozenset(out)
+
+
+def _resolve_anonymous_types(state: dict) -> dict[str, list[str]]:
+    """Each module's missing `C2RustUnnamed_N` types, from ITS OWN TU's c2rust output.
+
+    The translation can use one (a function-local `static const struct {..} T[]` is
+    `[C2RustUnnamed_163; 16]` in the anchor it was shown) without defining it, and the
+    file-scope harvest only carries types for file-scope tables. These names are numbered
+    per transpile, so a sibling's same-named type is a different struct: an import of one
+    (which in-crate import resolution used to add) is removed, never trusted. Returns
+    `{module file: [names written]}`.
+    """
+    from . import c2rust_anchor
+
+    written: dict[str, list[str]] = {}
+    for tu in state["tus"]:
+        path = _tu_output(state, tu)
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        code = re.sub(r"//[^\n]*", "", text)
+        defined = set(
+            re.findall(r"(?m)^\s*(?:pub\s+)?(?:struct|union|enum|type)\s+(C2RustUnnamed\w*)", code)
+        )
+        missing = set(_ANON_NAME.findall(code)) - defined
+        if not missing:
+            continue
+        fields = {n: _literal_fields(code, n) for n in missing}
+        try:
+            agreed, differs = c2rust_anchor.anonymous_types(REPO / tu, fields)
+        except c2rust_anchor.C2RustError as e:
+            print(f"resolve: anonymous types of {tu}: {str(e).splitlines()[0][:120]}")
+            continue
+        for name, why in sorted(differs.items()):
+            print(f"resolve: {path.name}: no single {Path(tu).name} type for {name} ({why})")
+        new = _ANON_IMPORT.sub("", text)
+        blocks = [agreed[n] for n in sorted(agreed) if n not in defined]
+        if blocks:
+            # After the leading `use`/attribute lines, so the module's header stays first.
+            head = re.match(r"(?:(?:use |#!\[|//)[^\n]*\n|\n)*", new)
+            at = head.end() if head else 0
+            new = new[:at] + "\n".join(f"{b}\n" for b in blocks) + "\n" + new[at:]
+            written[path.name] = sorted(agreed)
+        if new != text:
+            path.write_text(new)
+    for fname, names in sorted(written.items()):
+        print(
+            f"resolve: {fname}: {len(names)} anonymous type(s) from its own TU: {', '.join(names)}"
+        )
+    return written
+
+
 def drop_model_type_twins(modules: Path, names: set[str]) -> dict[str, list[str]]:
     """Remove a translated module's own `struct`/`union`/`type` for a name the prelude now
     takes from c2rust -- the compiler-exact layout wins, as it already does for statics.
@@ -2261,6 +2373,39 @@ def _seed_item_bank(stem: str, macros: dict, thinking: str, item_path) -> None:
                 item_path(name).write_text(item)
 
 
+def _drop_invented_macro_consts(modules: Path, defs: dict) -> set[str]:
+    """Function-like C macros a module re-made as a `const`, removed; returns their names.
+
+    The C has only `#define PIIX_REG_UDMATIM(Channel) (0x4A + (Channel))`, yet intel.rs came
+    back with `pub const PIIX_REG_UDMATIM: u8 = 0x4A;` -- the value for channel 0, invented --
+    beside calls `PIIX_REG_UDMATIM(Channel)`. The name then resolves, so it is not among the
+    names this stage ports, and the calls fail as E0618 forever. A `const` of a name the C
+    defines ONLY with parameters is never right; the macro port replaces it.
+    """
+    dropped: set[str] = set()
+    for rs in sorted(modules.glob("*.rs")):
+        text = rs.read_text()
+        new = text
+        for m in list(_CONST_ITEM.finditer(text)):
+            name = m.group("name")
+            d = defs.get(name)
+            if d is None or d.params is None or d.kind != "macro":
+                continue
+            if not re.search(rf"\b{re.escape(name)}\s*\(", text):
+                continue
+            new = new.replace(m.group(0), "", 1)
+            dropped.add(name)
+        if new != text:
+            rs.write_text(new)
+            print(f"macros: {rs.name}: invented const(s) for function-like macros dropped")
+    return dropped
+
+
+_CONST_ITEM = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>[A-Za-z_]\w*)\s*:[^=;]+=[^;]*;[^\n]*\n"
+)
+
+
 def stage_macros(
     stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
 ) -> None:
@@ -2293,6 +2438,7 @@ def stage_macros(
             for rs in (crate / "src" / stem).glob("*.rs")
         )
     }
+    called |= _drop_invented_macro_consts(crate / "src" / stem, defs)
     wanted = called | local_macros.existing(prelude)
     hand = local_macros.hand_ported(prelude)
     macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
@@ -2353,6 +2499,19 @@ def stage_macros(
             item_path(name).write_text(item)
         ported.update(fresh)
         print(f"macros: bought for ${usd:.4f}, reply kept in {raw}")
+    # A reply calls a macro the prompt did not list as in scope -- one the prelude gained
+    # later -- as a function: pata.h's NUM_TO_BITMAP came back as `RTL_BITS_OF(ULONG)` (46
+    # errors in pciidex). The banked text stays as bought; the `!` is applied on every render,
+    # the same rewrite integrate gives the module bodies.
+    from .crate_integrate import fix_macro_calls
+
+    rust_macros = local_macros.in_scope_macros(prelude) | {
+        n for n in ported if macros[n].kind == "macro"
+    }
+    ported = {
+        n: fix_macro_calls(text, rust_macros, {n} if macros[n].kind == "fn" else set())[0]
+        for n, text in ported.items()
+    }
     changed = local_macros.write_block(prelude, local_macros.render(ported, macros))
     _record(state, "macros", started, ported=len(ported), usd=round(usd, 4), changed=changed)
     print(f"macros: {len(ported)} in the prelude; run `port integrate {stem}` to fix call sites")
