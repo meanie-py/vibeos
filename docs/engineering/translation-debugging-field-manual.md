@@ -11222,6 +11222,18 @@ boot, `PTE=…447` (AttrIndx 1) with `OPC=0xB83F6AB4` — a plain `str`; after, 
 `PTE=…4C3` (AttrIndx 0) with `OPC=0x88DFFE85` — `ldar`, absorbed and the run passes. So the
 whole class collapsed to the one case that is *supposed* to happen.
 
+### Calibrating against interrupt ARRIVAL measures TCG latency, not the clock
+Symptom: `QueryPerformanceCounter`/`clock()` drift against system time by a different amount
+every boot (Wine ucrtbase misc.c:1355 had `clock()` 0.5-3 s short over a few seconds). Cause:
+the APIC HAL's QPC is the raw TSC at a rate `HalpInitializeTsc` derived from four 1/1024 s RTC
+interrupts. Under TCG an interrupt is delivered late whenever the host is busy, a late tick
+inflates its sample by up to 1.5x, and a 3 ms window cannot average that out: one image
+calibrated 4.23 to 7.95 GHz against a 4.20 GHz TSC. Fix: measure against something you READ,
+not something that interrupts you. `tsc.rs` polls a PIT channel-2 one-shot for 50 ms (Linux's
+`pit_calibrate_tsc`) and got 4.2023-4.2031 GHz on every boot of both x86 arches; the boot log
+prints `[HAL] TSC ... kHz` with the RTC estimate beside it. Any other "count ticks between
+interrupts" calibration in the tree has the same weakness under TCG.
+
 ### Real hardware: what QEMU's TCG does not model
 Every one of these passed smoke ×N and failed on the first physical board (Raspberry Pi 4,
 2026-09-25/26). On arm64, a green QEMU run is necessary and nowhere near sufficient.

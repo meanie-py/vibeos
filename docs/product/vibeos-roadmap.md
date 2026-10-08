@@ -826,9 +826,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
   staged beside them. The two agree failure for failure, so none of these is a Rust
   regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
-  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is down to ONE failure as of 2026-10-07:
-  misc.c:1355, `clock()` ~0.8-3 s below its window measured from the process creation time
-  (TCG start-up latency or the clock base, not yet split). Its earlier deaths and failures
+  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is CLEAN as of 2026-10-07. Its last failure, misc.c:1355
+  (`clock()` 0.5-3 s below the system-time window), was the HAL: QPC on the APIC HAL is the
+  raw TSC at a rate calibrated from four 1/1024 s RTC interrupts, and under TCG a late tick
+  inflates a sample by up to 1.5x (4.23-7.95 GHz across boots of one image). `tsc.rs` now
+  measures against a polled PIT channel-2 one-shot over 50 ms -- 4.2023-4.2031 GHz on every
+  boot, i386 and amd64 -- and logs `[HAL] TSC ... kHz` with the RTC estimate beside it. Its earlier deaths and failures
   are all FIXED: the `log10(INFINITY)` hang (cnt-rust's `log10`/`pow`/`fmod` were ports of
   upstream's placeholder C -- `pow(2, 0.5) == 0` shipped on every arch -- and are the `libm`
   crate's now, x87 asm on no-SSE i386; `tools/payloads/matherrs` traces Wine's test per call),
@@ -844,7 +847,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
   `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
   where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
+  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` RUNS as of 2026-10-07 (it died at its first
+  call, 0xC0000008: since sdk/include/ucrt left the tree it compiled against msvcrt's
+  headers and linked msvcrt's startup through `libgcc` -> libwinpthread, so its `stdout`
+  was msvcrt's FILE handed to ucrtbase's `setvbuf`). 18 subtests, 15 clean; `round` (-0.0
+  lost its sign) and `setjmp`'s `Esp` (Windows stores esp past the return address) FIXED.
+  OPEN: `exp` 4 -- i386 `exp(NaN)` keeps the payload where Microsoft's returns the
+  canonical NaN for some inputs (exp.c's `_M_IX86` rows; no rule derivable from six points
+  without Microsoft's libm). `setjmp` 28 -- 23 are `_setjmp3` seeing `fs:[0] == -1`: no
+  user thread on i386 has a top-level SEH frame, because kernel32's `BaseProcessStartup`/
+  `BaseThreadStartup` and vcstartup's `__scrt_common_main_seh` are dummy-PSEH, so
+  `UnhandledExceptionFilter` never runs either (needs a decision: a real frame brings the
+  hard-error dialog to every crash); 5 are the test's own -- a clang `skip()` that falls
+  through into the next `case`, and a `_SEH2_FINALLY` compiled dead.
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
