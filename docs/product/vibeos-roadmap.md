@@ -1630,8 +1630,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     (`fCurrentShellFolder.Release()` on a freed folder). `CDefView_OnCreate_body` released
     `pdt` and `ppf2` explicitly AND through their CComPtr guards, so every view creation cost
     its folder one reference. Found with a gdb probe logging each AddRef/Release of the folder.
-  - OPEN: with that fixed, browseui warns `Unexpected RefCount > 0 (1)` for the view at close.
-    The double `pdt` release (the view's own IDropTarget) had been hiding a +1 leak on CDefView.
+  - FIXED (2026-10-07): with that fixed, browseui warned `Unexpected RefCount > 0 (1)` for the
+    view at close, so every folder window leaked its CDefView. `OnNCCreate` AddRefs the view
+    for the window's lifetime and `OnFinalMessage` releases it, but the port's `AtlWindow`
+    impl never overrode `atl_on_final_message`, whose trait default was empty. The hook is now
+    required. amd64 appstorm: 0 warnings (was 4), all 5 folder views freed, 43/43
+    (run 20261007-223230-inn5gugc).
   - FIXED: the i386 Control Panel "hang" was a thread busy loading applets while boot-time
     `setup -mini` was still installing devices (7.8s to answer). appstorm now waits for setup
     to exit and gives a slow window 60s, sampling its PC; on amd64 and i386 explorer-folder,
@@ -1650,8 +1654,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - FIXED: registration crashed csrss in `winsrv!ConSrvGetConsole` (0xF4):
     `GetThreadConsoleDesktop` read `ServerData[1]` (basesrv's slot) instead of
     `CONSRV_SERVERDLL_INDEX` (2). amd64 now logs `registration done`.
-  - amd64, OPEN: dxdiag faults in `RtlFreeHeap`; explorer raises `0xc06d007f` (a delay-load
-    import that does not resolve; arm64 too).
+  - NOT REPRODUCING (2026-10-07), amd64: dxdiag faults in `RtlFreeHeap` (fixed, see the
+    `GlobalSize` entry below); explorer raises `0xc06d007f` (a delay-load import that does not
+    resolve; arm64 too). No `c06d007f` in any of the 150 newest payload serials on disk, which
+    include 53 appstorm sweeps (48 arm64, 3 amd64, 2 i386). Reopen on any recurrence.
   - FIXED: amd64 bugchecks under long GUI runs: 0x1E `c000009a` from a pool allocation, and
     0x1E `c0000005` in win32k (`REGION_Delete(NULL)` from `IntSelectClipRgn` and
     `VIS_ComputeVisibleRegion`). All one bug. `NtUserFindExistingCursorIcon` had a stray
