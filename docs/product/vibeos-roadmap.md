@@ -609,17 +609,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   st=...` with the real status instead of bugchecking.
 
 - **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
-  2026-10-08). The arm64 HAL found PCI config space by probing QEMU virt's two ECAM addresses
-  on every machine, and on the Pi 5 the low one (0x3F00_0000) is RAM. pci.sys, bound to the
-  hive's `Root\*PNP0A03`, enumerated those bytes as ~100 devices (`VEN_706F` = "op",
-  `SUBSYS_72656666` = "reff"), writing command registers and BAR probes into that RAM, and
-  umpnpmgr spawned `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held
-  the UART at ~10.6 KB/s. The HAL now takes the ECAM base from the MCFG and treats the
-  Raspberry Pi firmware's MCFG as no ECAM, as the loader already did. Settled desktop after
-  the fix: serial 1.5 KB/s, 0 install requests, ping 120/120. Found by logging the device ID on
-  each `InstallDevice` (umpnpmgr `install.rs`). Still owed, smaller: each real device without
-  a `Class` value is installed twice at boot and newdev fails it with error 259 (QEMU too); the
-  per-thread `[PS]` trace; and the mount retries against the Pico's empty disk (~390 a minute).
+  2026-10-08). The arm64 HAL fell back to probing QEMU virt's fixed ECAM addresses whenever it
+  found no MCFG, and took any first word other than 0xFFFF as a host bridge. On the Pi 5
+  the MCFG (OEM RPIFDN, 92 bytes) has its signature zeroed somewhere between freeldr's read and
+  the HAL's (nothing in our tree writes it; the firmware at ExitBootServices is the suspect),
+  so the board has "no MCFG" by the time the HAL looks. Then 0x3F00_0000 (RAM; the old HAL) or 0x40_1000_0000 (`ecam.rs`, landed from
+  the pcie lane the same day) answered. pci.sys, bound to the hive's `Root\*PNP0A03`,
+  enumerated those bytes as ~100 devices (`VEN_706F` = "op", `SUBSYS_72656666` = "reff"),
+  writing command registers and BAR probes into whatever was there, and umpnpmgr spawned
+  `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
+  ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
+  after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
+  umpnpmgr's `Installing: %S` print. Still owed, smaller: each real device without a `Class`
+  value is installed twice at boot and newdev fails it with error 259 (QEMU too), which costs
+  ~12% of pings for the first minute; and the per-thread `[PS]` trace.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as
