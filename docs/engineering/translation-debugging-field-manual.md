@@ -5267,6 +5267,27 @@ two reviewed two-stage reads (header then body, size pinned from the kernel copy
 low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
 across a syscall and a worker it calls.
 
+**A non-raising RANGE probe is not a touch-test, and `scan_safe_probe_deref` gates it.** win32k
+and ks.sys validate a user pointer with `SafeProbeForRead`/`SafeProbeForWrite` (ks.sys's mirror
+is `KsSafeProbeForRead`) — the NON-raising cousins of `ProbeForRead`: they return a status, and
+they only check the range is below `MmUserProbeAddress` and aligned. They deliberately do NOT
+touch the page (under DUMMY_PSEH a touch-test would itself fault), so the probe proves WHERE the
+buffer is, never that it STAYS mapped. A raw dereference after one — `rc = *(prc as *const
+RECTL)`, a `copy_nonoverlapping` from it — is the same any-process BUGCHECK 0x1E as never probing
+at all, where the C's shared `_SEH2_TRY` over probe-and-copy returned a status. This is the class
+behind `NtUserScrollDC`, `NtUserSetSysColors` and `NtGdiGetDIBits`; the fix is the same
+fault-tolerant copy as above (`KmProtectedCopyMemory`/`safe_copy_raw`/`capture_from_user`),
+keeping the probe for its range check. `tools/scan_safe_probe_deref.py` (`vibeos-cli check`, gated
+at ZERO) flags a bare-identifier pointer passed to a `*SafeProbeFor{Read,Write}` call and then
+touched raw, reusing `scan_raw_user_access`'s `_walk` for the access patterns, the capture-shadow
+rule (`let bmi = pbmiSafe` after the safe copy ends tracking) and the kernel-arm skip (an
+`if mode != KernelMode`/`Mode == 0` arm is trusted). Writing it turned up a FOURTH instance the
+win32k fixes missed: ks.sys's `KsFastPropertyHandler` copied the user `Property` raw on its
+UserMode arm after only a `KsSafeProbeForRead` (the KernelMode arm's raw copy is correct), fixed
+by routing it through `safe_copy_raw` like the rest of that file. What it cannot see: a probe and
+a touch split across two functions, a validator not spelled `*SafeProbeFor*` (name it the house
+way or the scanner is blind to it), and a `.read()`-method or by-value `f(*p)` touch.
+
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
 debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
