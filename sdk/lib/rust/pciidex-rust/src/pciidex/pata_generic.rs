@@ -740,7 +740,9 @@ pub unsafe extern "C" fn PciIdeInitTaskFileIoResources(
     (*Registers).__bindgen_anon_3.LbaMid = ((CommandPortBase + 4 * CommandBlockSpare as usize) as *mut core::ffi::c_void).cast();
     (*Registers).__bindgen_anon_4.LbaHigh = ((CommandPortBase + 5 * CommandBlockSpare as usize) as *mut core::ffi::c_void).cast();
     (*Registers).Device = ((CommandPortBase + 6 * CommandBlockSpare as usize) as *mut core::ffi::c_void).cast();
-    (*Registers).__bindgen_anon_1.Error = ((CommandPortBase + 7 * CommandBlockSpare as usize) as *mut core::ffi::c_void).cast();
+    // C: `Registers->Status` -- the Command/Status union (the model wrote `Error` a second time,
+    // so every command byte went to I/O port 0 and Features landed on the command register).
+    (*Registers).__bindgen_anon_5.Status = ((CommandPortBase + 7 * CommandBlockSpare as usize) as *mut core::ffi::c_void).cast();
 
     (*Registers).__bindgen_anon_6.Control = (ControlPortBase as *mut core::ffi::c_void).cast();
 }

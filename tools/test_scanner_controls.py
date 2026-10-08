@@ -2019,6 +2019,19 @@ unsafe fn load(n: u32) -> HGLOBAL {
 }
 """
 
+# scan_raw_bitfield. Seeded from atapi's AtaReqInformationalExceptionsControlModePage
+# (2026-10-08): the page code passed as the WIDTH of a 1-byte bitfield unit, a panic.
+_RAWBF_BAD = """\
+unsafe fn page(p: *mut MODE_INFO_EXCEPTIONS) {
+    (*p)._bitfield_1.set(0, 0x1C, 0x1C);
+}
+"""
+_RAWBF_GOOD = """\
+unsafe fn page(p: *mut MODE_INFO_EXCEPTIONS) {
+    (*p).set_PageCode(0x1C);
+}
+"""
+
 # scan_let_shadow. Seeded from freeldr EnumerateHarddisks (2026-10-04): C `DiskCount++`
 # became a nested `let _DiskCount`, so the BIOS disk count stayed 0.
 _SHADOW_BAD = """\
@@ -2092,6 +2105,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"olepicture.rs": _GMEM_BAD},
         good={"olepicture.rs": _GMEM_GOOD},
+    ),
+    Control(
+        name="scan_raw_bitfield",
+        script="tools/scan_raw_bitfield.py",
+        argv=["--lint"],
+        bad={"satl.rs": _RAWBF_BAD},
+        good={"satl.rs": _RAWBF_GOOD},
     ),
     Control(
         name="scan_let_shadow",

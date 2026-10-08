@@ -783,6 +783,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A C bitfield reached by bit index (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
+    # accessor: atapi passed a page code as the width (a panic), the ARM3 session code swapped
+    # Initialized and DeletePending at all four sites.
+    srb = repo / "tools" / "scan_raw_bitfield.py"
+    specs.append(
+        (
+            "scan_raw_bitfield",
+            [py, str(srb), "--lint"] if srb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A const named after a winerror.h code whose value is another code's. oleaut32's
     # TYPE_E_CANTLOADLIBRARY held TYPE_E_AMBIGUOUSNAME's value; nothing else judges a
     # const whose comment does not admit a guess.

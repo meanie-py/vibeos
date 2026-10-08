@@ -20,8 +20,11 @@ from typing import Protocol
 
 
 class _Decls(Protocol):
-    bitwise_not: bool
-    logical_nots: frozenset[str]
+    # Read-only, so a frozen dataclass (pointer_depth.CFunctionDecls) satisfies it.
+    @property
+    def bitwise_not(self) -> bool: ...
+    @property
+    def logical_nots(self) -> frozenset[str]: ...
 
 
 _SITE = re.compile(r"!\s*\(")

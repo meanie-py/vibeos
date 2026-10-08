@@ -10,18 +10,21 @@ pub type size_t = usize;
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// reactos/debug.h DPRINT/DPRINT1/UNIMPLEMENTED — no-op MACROS, never out-of-line
-// fns (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py
-// rewrites C's bare `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it.
+// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns (field manual
+// §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py rewrites C's bare
+// `UNIMPLEMENTED;` to `UNIMPLEMENTED!()`, so the prelude must have it. DPRINT1 PRINTS in this
+// DBG=1 tree: it is win32macros-rust's.
 #[macro_export] macro_rules! DPRINT  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! DPRINT1 { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! UNIMPLEMENTED_ONCE { ($($arg:tt)*) => {{}}; }
-pub use crate::{DPRINT, DPRINT1, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
+pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
+pub use win32macros_rust::DPRINT1;
 // The module's own debug.h channels (ERR/WARN/INFO/TRACE, printf-shaped). Macros, never
-// out-of-line fns, for the same reason as DPRINT above.
-#[macro_export] macro_rules! ERR { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN { ($($arg:tt)*) => {{}}; }
+// out-of-line fns, for the same reason as DPRINT above. debug.h defines DEBUG_WARN and
+// DEBUG_ERR under DBG, so in this DBG=1 tree ERR and WARN print, as DPRINT1's "(file:line) "
+// format; INFO and TRACE are compiled out upstream too.
+#[macro_export] macro_rules! ERR { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
+#[macro_export] macro_rules! WARN { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
 #[macro_export] macro_rules! INFO { ($($arg:tt)*) => {{}}; }
 #[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
 pub use crate::{ERR, INFO, TRACE, WARN};
@@ -136,7 +139,9 @@ pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID
 // NT_VERIFY(exp) is `((exp) ? TRUE : FALSE)` in a free build: the expression is evaluated.
 #[macro_export] macro_rules! NT_VERIFY { ($e:expr $(,)?) => { ($e) }; }
 // ntbasedef.h: UNREACHABLE is `__builtin_unreachable()`, so reaching it is UB in C too.
-#[macro_export] macro_rules! UNREACHABLE { () => { core::hint::unreachable_unchecked() }; }
+#[macro_export] macro_rules! UNREACHABLE {
+    () => { core::hint::unreachable_unchecked() }; // nolint: assert-to-ub (__builtin_unreachable)
+}
 pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
 
 // HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).

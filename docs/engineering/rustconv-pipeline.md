@@ -894,6 +894,24 @@ the tools on the way:
   two replies dropped `DECLSPEC_ALIGN` without aligning anything. Those were fixed by hand
   (`port hand`).
 
+**First boot (amd64, 2026-10-08).** `./vibeos-cli build --arch amd64 --ata-stack` boots to the
+desktop on pciidex + atapi with no uniata at all (6,376 ATA completions in one smoke). Getting
+there took a chain of defects that all compiled and that `port check` now reports:
+- a logical `!` read as bitwise (QBR reported zero channels);
+- pattern bindings that matched every PnP ID query;
+- a flexible array indexed past `[1]` (a panic);
+- a pointer-typedef depth error (0x1E);
+- union members re-slotted onto a neighbour, in three places: `union_slot`, so commands went
+  to port 0 and Error was read as Status;
+- a `continue` that skipped its loop's step: `loop_step`;
+- a dropped `goto CompleteIrp` that forwarded START_DEVICE twice;
+- bitfields set by guessed bit index: `scan_raw_bitfield`, a panic on the CD's mode page.
+
+The VM's disk and CD sit on the PIIX *secondary* channel under OVMF, which sets IDETIM decode
+only for the channel it found an ATAPI device on. So the channel-state check skipping the
+primary is correct, not a bug. Measure `PciRead32(0x40)` and the raw status ports before
+suspecting the HAL. i386 (legide) and arm64 are next.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

@@ -420,6 +420,8 @@ unsafe extern "C" fn AtaFdoEnumeratePort(mut ChanExt: PATAPORT_CHANNEL_EXTENSION
         if DevExt.is_null() {
             DevExt = (AtaPdoCreateDevice((ChanExt).cast(), AtaScsiAddress)).cast();
             if DevExt.is_null() {
+                // C `continue` in a `for` still runs `++i`; without it this retried index i forever.
+                i = i.wrapping_add(1);
                 continue;
             }
             AtaGetRegistryKey(

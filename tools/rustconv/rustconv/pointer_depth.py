@@ -24,6 +24,7 @@ SCSI mode-page lengths from it. Inside a function whose C never writes `sizeof(P
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
@@ -62,6 +63,11 @@ class CFunctionDecls:
     bitwise_not: bool = False
     #: the operands of the C's logical `!( .. )`, whitespace removed; see logical_not.py.
     logical_nots: frozenset[str] = frozenset()
+    #: every identifier the C body spells (members included, also as a macro argument such as
+    #: `CONTAINING_RECORD(.., PortEntry)`); see union_slot.py.
+    identifiers: frozenset[str] = frozenset()
+    #: how often the C WRITES each member (`.M = `, `->M |= `), as sorted `(name, count)` pairs.
+    member_uses: tuple[tuple[str, int], ...] = ()
 
 
 def _split_commas(text: str) -> list[str]:
@@ -131,7 +137,11 @@ def c_declarations(
             if depth == 0:
                 break
         nots.add(re.sub(r"\s+", "", code[m.end() : i]))
-    return CFunctionDecls(names, ret, sized, raw, "~" in code, frozenset(nots))
+    idents = frozenset(re.findall(r"[A-Za-z_]\w*", code))
+    uses = Counter(re.findall(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)", code))
+    return CFunctionDecls(
+        names, ret, sized, raw, "~" in code, frozenset(nots), idents, tuple(sorted(uses.items()))
+    )
 
 
 def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:
@@ -186,7 +196,10 @@ def repair(
             {
                 t
                 for t in re.findall(r"\bsize_of::<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)", body)
-                if targets and t in targets and t in types and t not in c.sizeof_types
+                if targets
+                and t in targets
+                and t in types
+                and t not in c.sizeof_types
                 # An array OF the pointer type in the same body makes it an element type, so its
                 # size is meant: atapi's RTL_NUMBER_OF over a `PCSTR[]` is
                 # `size_of::<[PCSTR; 4]>() / size_of::<PCSTR>()`, and the macro hides the C's

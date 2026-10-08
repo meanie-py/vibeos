@@ -569,7 +569,7 @@ pub const SCH_DTIM_USD: u32 = 0x80000000;
 pub const HW_FLAGS_TYPE_MASK: u16 = 0x000F;
 pub const HW_FLAGS_DISABLE_DMA: u16 = 0x0010;
 pub const HW_FLAGS_HAS_CFG_REG: u16 = 0x0080;
-pub const HW_FLAGS_HAS_UDMA_REG: u16 = 0x8000;
+pub const HW_FLAGS_HAS_UDMA_REG: u16 = 0x8000; // nolint: const-contradiction (intel.c-local flag)
 
 pub const TYPE_MPIIX: u16 = 0;
 pub const TYPE_PIIX: u16 = 1;

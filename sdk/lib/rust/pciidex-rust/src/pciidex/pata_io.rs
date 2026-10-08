@@ -116,7 +116,8 @@ pub unsafe extern "C" fn PataSaveTaskFile(ChanData: PCHANNEL_DATA_PATA, Request:
 }
 #[no_mangle]
 pub unsafe extern "C" fn PataReadStatus(ChanData: PCHANNEL_DATA_PATA) -> UCHAR {
-    return ATA_READ!((*ChanData).Regs.__bindgen_anon_1.Error, ChanData, MRES_TF);
+    // C: `Regs.Status` -- the model took the Error/Features slot (port base+1).
+    return ATA_READ!((*ChanData).Regs.__bindgen_anon_5.Status, ChanData, MRES_TF);
 }
 
 unsafe extern "C" fn PataCompleteCommand(

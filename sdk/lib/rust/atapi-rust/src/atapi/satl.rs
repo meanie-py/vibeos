@@ -813,13 +813,17 @@ unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
 ) -> ULONG {
     let PageData: PMODE_INFO_EXCEPTIONS = Buffer as PMODE_INFO_EXCEPTIONS;
 
-    (*PageData)._bitfield_1.set(0, (MODE_PAGE_FAULT_REPORTING as u32) as u8, (MODE_PAGE_FAULT_REPORTING as u32) as u64);
+    // C: `PageData->PageCode = ...`. The model called the raw bitfield-unit `set` with the page
+    // code as the bit WIDTH (28 bits of a 1-byte unit): an index-out-of-bounds panic.
+    (*PageData).set_PageCode(MODE_PAGE_FAULT_REPORTING as UCHAR);
     (*PageData).PageLength =
         (core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_INFO_EXCEPTIONS, PageLength)) as UCHAR;
 
-    (*PageData)._bitfield_2.set(0, 6, 6);
+    (*PageData).set_ReportMethod(6);
 
+    // Diverges from the C, which returns (and sizes PageLength by) `sizeof(PageData)`, the
+    // POINTER: 8 or 4 bytes for a 12-byte page, so the next page overlapped this one.
     return core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as ULONG;
 }
 

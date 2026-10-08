@@ -103,12 +103,13 @@ unsafe extern "C" fn SvwSataCheckInterrupt(mut ChanData: PCHANNEL_DATA_PATA) -> 
     let mut Controller: PATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
     let mut IoBase: PUCHAR = ((*Controller).AccessRange[SvwSataGetIoBarIndex(Controller) as usize].IoBase).cast();
     let mut InterruptStatus: ULONG = 0;
-    InterruptStatus = READ_REGISTER_ULONG((IoBase.add(0x1F80 as usize)) as PULONG);
+    InterruptStatus = READ_REGISTER_ULONG((IoBase.add(0x1F80 as usize)) as PULONG); // nolint: magic-offset (ServerWorks MMIO register, as the C)
     return ((InterruptStatus & ((1 as ULONG) << (*ChanData).__bindgen_anon_1.Channel)) != 0) as BOOLEAN;
 }
 
 unsafe extern "C" fn SvwSataReadStatus(ChanData: PCHANNEL_DATA_PATA) -> UCHAR {
-    return READ_REGISTER_ULONG((*ChanData).Regs.__bindgen_anon_1.Error as *mut ULONG) as UCHAR;
+    // C: `Regs.Status` -- the model took the Error/Features slot (port base+1).
+    return READ_REGISTER_ULONG((*ChanData).Regs.__bindgen_anon_5.Status as *mut ULONG) as UCHAR;
 }
 
 unsafe extern "C" fn SvwSataLoadTaskFile(ChanData: PCHANNEL_DATA_PATA, Request: PATA_DEVICE_REQUEST) {
@@ -244,12 +245,12 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
     }
 
     WRITE_REGISTER_ULONG(
-        IoBase.offset(0x80 as isize) as PULONG,
-        READ_REGISTER_ULONG(IoBase.offset(0x80 as isize) as PULONG) & !0x00040000,
+        IoBase.offset(0x80 as isize) as PULONG, // nolint: magic-offset (ServerWorks MMIO register, as the C)
+        READ_REGISTER_ULONG(IoBase.offset(0x80 as isize) as PULONG) & !0x00040000, // nolint: magic-offset (ServerWorks MMIO register, as the C)
     );
 
-    WRITE_REGISTER_ULONG(IoBase.offset(0x44 as isize) as PULONG, 0xFFFFFFFF);
-    WRITE_REGISTER_ULONG(IoBase.offset(0x88 as isize) as PULONG, 0);
+    WRITE_REGISTER_ULONG(IoBase.offset(0x44 as isize) as PULONG, 0xFFFFFFFF); // nolint: magic-offset (ServerWorks MMIO register, as the C)
+    WRITE_REGISTER_ULONG(IoBase.offset(0x88 as isize) as PULONG, 0); // nolint: magic-offset (ServerWorks MMIO register, as the C)
 
     i = 0;
     while i < (*Controller).MaxChannels {

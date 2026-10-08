@@ -134,8 +134,10 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(ChannelContext: PVOID, DeviceLis
         i = i.wrapping_add(1);
     }
 
-    KeAcquireSpinLock(&raw mut (*Controller).Lock, &raw mut OldIrql);
-
+    // Diverges from the C, which evaluates _STM while holding Controller->Lock: the ACPI
+    // evaluation sends an IRP and waits for it, and a wait under a spin lock (DISPATCH_LEVEL)
+    // bugchecks or deadlocks on any machine whose ACPI has _GTM. _STM still runs before the
+    // controller's transfer timings are programmed, the order the C's comment requires.
     if DiscoveredNewDevice != 0 && ((*ChanData).ChanInfo & CHANNEL_FLAG_HAS_ACPI_GTM) != 0 {
         let PataData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
 
@@ -154,6 +156,8 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(ChannelContext: PVOID, DeviceLis
             },
         );
     }
+
+    KeAcquireSpinLock(&raw mut (*Controller).Lock, &raw mut OldIrql);
 
     ((*ChanData).SetTransferMode.unwrap_unchecked())(Controller, (*ChanData).Channel, DeviceList);
 
@@ -945,6 +949,13 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
                 (FdoExtension).cast(),
                 (*IoStack).Parameters.StartDevice.AllocatedResourcesTranslated,
             );
+            // C: `goto CompleteIrp`. Falling out of the match sent the IRP, which
+            // IoForwardIrpSynchronously had already taken through the lower stack, down a second
+            // time, and dropped the start status.
+            (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
+            IoCompleteRequest(Irp, (IO_NO_INCREMENT as i8));
+            IoReleaseRemoveLock(&mut (*FdoExtension).Common.RemoveLock, (Irp).cast());
+            return Status;
         }
 
         IRP_MN_STOP_DEVICE => {

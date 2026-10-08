@@ -236,7 +236,9 @@ unsafe fn MiDereferenceSessionFinal() {
 
     old_irql = MiAcquireExpansionLock();
 
-    (*session_global).u.Flags._bitfield_1.set(0, 1, 1);
+    // C: `u.Flags.DeletePending = 1`. Every session-flag access here used raw bit indices with
+    // Initialized (bit 0) and DeletePending (bit 1) swapped; the named accessors fix the class.
+    (*session_global).u.Flags.set_DeletePending(1);
 
     if (*session_global).AttachCount != 0 {
         KeInitializeEvent(
@@ -455,7 +457,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
 
     MiReleasePfnLock(old_irql);
 
-    (*MmSessionSpace).Vm.Flags._bitfield_1.set(0, 1, 1);
+    (*MmSessionSpace).Vm.Flags.set_SessionSpace(1);
     (*MmSessionSpace).Vm.MinimumWorkingSetSize = 20;
     (*MmSessionSpace).Vm.MaximumWorkingSetSize = 384;
     (*working_set_list).LastEntry = 20;
@@ -702,7 +704,7 @@ pub unsafe extern "system" fn MmSessionCreate(session_id: *mut ULONG) -> NTSTATU
 
     KeLeaveCriticalRegion();
 
-    (*MmSessionSpace).u.Flags._bitfield_1.set(1, 1, 1);
+    (*MmSessionSpace).u.Flags.set_Initialized(1);
     (*(process as *mut _EPROCESS)).__bindgen_anon_2.Flags |= 0x00010000u32;
     status
 }
@@ -747,7 +749,7 @@ pub unsafe extern "system" fn MmAttachSession(
 
     old_irql = MiAcquireExpansionLock();
 
-    if (*entry_session).u.Flags._bitfield_1.get(0, 1) != 0 {
+    if (*entry_session).u.Flags.DeletePending() != 0 {
         MiReleaseExpansionLock(old_irql);
         return STATUS_PROCESS_IS_TERMINATING;
     }
@@ -788,7 +790,7 @@ pub unsafe extern "system" fn MmDetachSession(session_entry: PVOID, apc_state: P
 
     (*entry_session).AttachCount -= 1;
 
-    delete_pending = if (*entry_session).u.Flags._bitfield_1.get(0, 1) != 0
+    delete_pending = if (*entry_session).u.Flags.DeletePending() != 0
         && (*entry_session).AttachCount == 0
     {
         1u8

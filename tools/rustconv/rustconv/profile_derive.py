@@ -3768,7 +3768,9 @@ pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID
 // NT_VERIFY(exp) is `((exp) ? TRUE : FALSE)` in a free build: the expression is evaluated.
 #[macro_export] macro_rules! NT_VERIFY { ($e:expr $(,)?) => { ($e) }; }
 // ntbasedef.h: UNREACHABLE is `__builtin_unreachable()`, so reaching it is UB in C too.
-#[macro_export] macro_rules! UNREACHABLE { () => { core::hint::unreachable_unchecked() }; }
+#[macro_export] macro_rules! UNREACHABLE {
+    () => { core::hint::unreachable_unchecked() }; // nolint: assert-to-ub (__builtin_unreachable)
+}
 pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
 
 // HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).

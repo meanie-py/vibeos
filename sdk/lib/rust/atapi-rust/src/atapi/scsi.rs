@@ -308,9 +308,11 @@ pub unsafe extern "C" fn AtaReqSetFixedSenseData(
         &mut SenseData as *mut SENSE_DATA as *mut core::ffi::c_void,
         core::mem::size_of::<SENSE_DATA>(),
     );
-    SenseData._bitfield_1.set(0, 1, 1);
-    SenseData._bitfield_1.set(1, 7, (SCSI_SENSE_ERRORCODE_FIXED_CURRENT as u32) as u64);
-    SenseData._bitfield_2.set(0, 4, (SenseCode.SenseKey as u32) as u64);
+    // Named setters: the hand-placed `_bitfield_1.set(0, 1, ..)` put Valid in bit 0 and the
+    // error code in bits 1-7, where SENSE_DATA has ErrorCode:7 then Valid:1.
+    SenseData.set_Valid(1);
+    SenseData.set_ErrorCode(SCSI_SENSE_ERRORCODE_FIXED_CURRENT as UCHAR);
+    SenseData.set_SenseKey(SenseCode.SenseKey as UCHAR);
     SenseData.AdditionalSenseCode = SenseCode.AdditionalSenseCode;
     SenseData.AdditionalSenseCodeQualifier = SenseCode.AdditionalSenseCodeQualifier;
     SenseData.AdditionalSenseLength = (core::mem::size_of::<SENSE_DATA>()

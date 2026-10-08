@@ -291,8 +291,10 @@ pub unsafe extern "C" fn AtaPortSelectTimings(
         Config[i as usize].MinSwDmaCycleTime = (*DevExt).MinimumSingleWordDmaCycleTime;
         Config[i as usize].MinMwDmaCycleTime = (*DevExt).MinimumMultiWordDmaCycleTime;
         Config[i as usize].IsFixedDisk = !IS_ATAPI!(&(*DevExt).Device) as BOOLEAN;
-        Config[i as usize].IoReadySupported = !!(*DevExt).__bindgen_anon_1.IdentifyDeviceData.Capabilities.IordySupported() as BOOLEAN;
-        Config[i as usize].IsNewDevice = !((*DevExt).Device.DeviceFlags & DEVICE_PNP_STARTED) as BOOLEAN;
+        Config[i as usize].IoReadySupported = ((*DevExt).__bindgen_anon_1.IdentifyDeviceData.Capabilities.IordySupported() != 0) as BOOLEAN;
+        // C logical `!`: the bitwise `!(Flags & 0x400) as BOOLEAN` kept the low byte of the
+        // complement, 0xFF for every flag value, so every device was "new" to the timing code.
+        Config[i as usize].IsNewDevice = (((*DevExt).Device.DeviceFlags & DEVICE_PNP_STARTED) == 0) as BOOLEAN;
         Config[i as usize].FriendlyName = ((*DevExt).FriendlyName).as_ptr();
 
         i = i.wrapping_add(1);

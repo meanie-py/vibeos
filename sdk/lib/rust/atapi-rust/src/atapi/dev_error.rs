@@ -435,20 +435,19 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
             SenseCode.AdditionalSenseCodeQualifier = (*LogPage).ASCQ;
             (*FailedRequest).SrbStatus = AtaReqSetFixedSenseData((*FailedRequest).Srb, SenseCode);
 
+            // ACS-4 "Final LBA In Error", log-page bytes 17-22 (newer than the
+            // GP_LOG_NCQ_COMMAND_ERROR struct, so spelled as offsets as in the C).
+            // Diverges from the C, which shifts byte 22 by 48: a 48-bit LBA's sixth byte is
+            // bits 40-47, so the C reported every LBA past 2^40 wrong.
+            let b = LogPage as *const u8;
             AtaReqSetLbaInformation(
                 (*FailedRequest).Srb,
-                ((*((LogPage as *const u8).add(17 as usize)) as u64)
-                    << (0 as u32))
-                    | ((*((LogPage as *const u8).add(18 as usize)) as u64)
-                        << (8 as u32))
-                    | ((*((LogPage as *const u8).add(19 as usize)) as u64)
-                        << (16 as u32))
-                    | ((*((LogPage as *const u8).add(20 as usize)) as u64)
-                        << (24 as u32))
-                    | ((*((LogPage as *const u8).add(21 as usize)) as u64)
-                        << (32 as u32))
-                    | ((*((LogPage as *const u8).add(22 as usize)) as u64)
-                        << (48 as u32)),
+                ((*b.add(17) as u64) << 0) // nolint: magic-offset (ACS-4 Final LBA In Error)
+                    | ((*b.add(18) as u64) << 8) // nolint: magic-offset (ACS-4 Final LBA In Error)
+                    | ((*b.add(19) as u64) << 16) // nolint: magic-offset (ACS-4 Final LBA In Error)
+                    | ((*b.add(20) as u64) << 24) // nolint: magic-offset (ACS-4 Final LBA In Error)
+                    | ((*b.add(21) as u64) << 32) // nolint: magic-offset (ACS-4 Final LBA In Error)
+                    | ((*b.add(22) as u64) << 40), // nolint: magic-offset (ACS-4 Final LBA In Error)
             );
         } else if AtaDeviceRequestSenseNeededExt(DevExt, FailedRequest) != 0 {
             Status = AtaDeviceSendRequestSenseExt(PortData, DevExt);

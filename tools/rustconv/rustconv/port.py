@@ -42,8 +42,10 @@ from . import (
     flex_index,
     local_macros,
     logical_not,
+    loop_step,
     pointer_depth,
     prelude_resolve,
+    union_slot,
     variadic_shim,
 )
 from . import profile_derive as pd
@@ -174,7 +176,9 @@ def _undefined_pattern_constants(src: Path, modules_dir: Path, sys_src: Path | N
     wanted = {n for n in _pattern_idents(modules_dir) if prelude_resolve.looks_constant(n)}
     if not wanted:
         return set()
-    files = list(src.rglob("*.rs")) + (list(sys_src.glob("*.rs")) if sys_src else [])
+    from tools.source_walk import source_files  # repo-root package: imported at use
+
+    files = list(source_files(src, "*.rs")) + (list(sys_src.glob("*.rs")) if sys_src else [])
     defined: set[str] = set()
     for f in files:
         text = f.read_text(errors="replace")
@@ -3300,11 +3304,39 @@ def stage_check(stem: str) -> dict:
                 f"check {arch}: UNDERCOUNT -- a failed glob import hides every unresolved-name "
                 f"error; fix it first (`port integrate` swaps substrate globs): {', '.join(globs)}"
             )
+    # A C `for` lowered to `while` must repeat the step before every `continue`; a path that
+    # never writes the loop variable retries the same index forever (atapi's enumerator).
+    stuck = [
+        f"{f.relative_to(REPO)}:{h.line} (no `{h.step}`)"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        for h in loop_step.scan(f.read_text(errors="replace"))
+    ]
+    for line in stuck:
+        print(f"check: continue skips the loop step -- {line}")
+    # A union member written under its neighbour's name compiles (same type) and is silent:
+    # pciidex's task-file block sent every command to port 0 and read Error as Status.
+    _, decls = _pointer_decls(state)
+    reslots = [
+        f"{f.relative_to(REPO)}:{h.line} {h.fn} `.{h.member}`"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        if not f.name.startswith("types_")
+        for h in union_slot.scan(f.read_text(errors="replace"), decls)
+    ]
+    for line in reslots:
+        print(f"check: union member the C never writes there -- {line}")
+    for r in result.values():
+        r["loop_skips"] = len(stuck)
+        r["union_reslots"] = len(reslots)
+        if stuck or reslots:
+            r["rc"] = 101
     _record(
         state,
         "check",
         started,
-        **{a: {k: r[k] for k in ("rc", "errors", "untranslated")} for a, r in result.items()},
+        **{
+            a: {k: r[k] for k in ("rc", "errors", "untranslated", "loop_skips", "union_reslots")}
+            for a, r in result.items()
+        },
     )
     return result
 

@@ -24,7 +24,7 @@ pub const ATAPORT_TAG: u32 = 0x50656449 /* 'PedI' */ as u32;
 
 pub const IDE_DRIVE_SELECT: u32 = 0xA0;
 
-pub const ATA_TIME_BUSY_SELECT: u32 = 3000;
+pub const ATA_TIME_BUSY_SELECT: u32 = 3000; // nolint: const-contradiction (legide.c: 30 ms; freeldr hwidep.h has its own 20 ms)
 
 pub const ATA_TIME_BUSY_IDENTIFY: u32 = 500000;
 
@@ -131,7 +131,7 @@ unsafe extern "C" fn AtaLegacyIdentifyDevice(
         return FALSE;
     }
     if IdeStatus & (IDE_STATUS_DRQ as u8) == 0 {
-        DPRINT1!("DRQ not set, status 0x%02x\n", IdeStatus);
+        DPRINT1!("DRQ not set, status 0x%02x\n", IdeStatus as c_uint);
         return FALSE;
     }
 
@@ -144,7 +144,7 @@ unsafe extern "C" fn AtaLegacyIdentifyDevice(
         0,
     );
     if IdeStatus & ((IDE_STATUS_BUSY | IDE_STATUS_DRQ) as u8) != 0 {
-        DPRINT1!("DRQ not cleared, status 0x%02x\n", IdeStatus);
+        DPRINT1!("DRQ not cleared, status 0x%02x\n", IdeStatus as c_uint);
         return FALSE;
     }
 
@@ -195,7 +195,7 @@ unsafe extern "C" fn AtaLegacyPerformSoftwareReset(
         0,
     );
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
-        DPRINT1!("Timeout, status 0x%02x\n", IdeStatus);
+        DPRINT1!("Timeout, status 0x%02x\n", IdeStatus as c_uint);
         return FALSE;
     }
 
@@ -241,10 +241,10 @@ unsafe extern "C" fn AtaLegacyFindAtaDevice(
         0,
     );
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
-        DPRINT1!("Device is busy, attempting to recover %02x\n", IdeStatus);
+        DPRINT1!("Device is busy, attempting to recover %02x\n", IdeStatus as c_uint);
 
         if AtaLegacyPerformSoftwareReset(Registers, DeviceNumber) == 0 {
-            DPRINT1!("Failed to reset device %02x\n", ATA_READ!((*Registers).__bindgen_anon_5.Status));
+            DPRINT1!("Failed to reset device %02x\n", ATA_READ!((*Registers).__bindgen_anon_5.Status) as c_uint);
             return FALSE;
         }
     }
