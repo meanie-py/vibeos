@@ -7,8 +7,8 @@
 //! virt machine has one frame when it runs a GICv2 (ours does). The Pi 4's GIC-400
 //! has none, and a GICv3 (Graviton's) delivers MSIs through an ITS instead (its.rs).
 //!
-//! Vectors are handed out first-come and never returned: the PnP manager does not
-//! release a device's message resources yet, so neither does this.
+//! SPIs are handed out lowest-free and come back when the PnP manager releases the
+//! device's resources (HalVibeosMessageRelease).
 
 #![cfg(target_arch = "aarch64")]
 
@@ -16,6 +16,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, rd, XSDT_PA};
+use super::bits::Bits;
 
 unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
@@ -42,7 +43,8 @@ const ABSENT: u64 = u64::MAX;
 static FRAME_PA: AtomicU64 = AtomicU64::new(UNPROBED);
 static SPI_BASE: AtomicU32 = AtomicU32::new(0);
 static SPI_COUNT: AtomicU32 = AtomicU32::new(0);
-static SPI_NEXT: AtomicU32 = AtomicU32::new(0);
+/// Which of the frame's SPIs are handed out (at most 988: INTIDs 32-1019).
+static SPIS: Bits<16> = Bits::new();
 
 /// Find the frame once. Runs at PnP time, so MmMapIoSpace is up.
 unsafe fn probe() -> Option<u64> {
@@ -112,32 +114,44 @@ unsafe fn probe() -> Option<u64> {
     Some(pa)
 }
 
-/// Did this INTID come from the frame? Those are edge-triggered by construction.
+/// Is this INTID one of the frame's? Those are edge-triggered by construction.
 pub(crate) fn owns(intid: u32) -> bool {
-    FRAME_PA.load(Ordering::Acquire) != ABSENT
-        && intid >= SPI_BASE.load(Ordering::Relaxed)
-        && intid < SPI_BASE.load(Ordering::Relaxed) + SPI_NEXT.load(Ordering::Relaxed)
+    let base = SPI_BASE.load(Ordering::Relaxed);
+    FRAME_PA.load(Ordering::Acquire) != ABSENT && intid >= base && intid < base + SPI_COUNT.load(Ordering::Relaxed)
 }
 
 pub(crate) unsafe fn message_capacity() -> u32 {
     if probe().is_none() {
         return 0;
     }
-    SPI_COUNT.load(Ordering::Relaxed).saturating_sub(SPI_NEXT.load(Ordering::Relaxed))
+    let count = SPI_COUNT.load(Ordering::Relaxed);
+    count - SPIS.count(count)
 }
 
-pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
+/// The next free SPI. Every SPI is routed to CPU0 on a GICv2 (ITARGETSR = 1), so a
+/// request that leaves CPU0 out cannot be honoured; it is said so, not silently moved.
+pub(crate) unsafe fn allocate_message_vector(requested: ddk::KAFFINITY) -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
     probe()?;
-    let count = SPI_COUNT.load(Ordering::Relaxed);
-    let n = SPI_NEXT
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < count).then_some(n + 1))
-        .ok()?;
+    let n = SPIS.claim(SPI_COUNT.load(Ordering::Relaxed))?;
+    let intid = SPI_BASE.load(Ordering::Relaxed) + n;
+    if requested & 1 == 0 {
+        DbgPrint(b"[HAL] GICv2m: INTID %u asked for CPUs %llx, but every SPI goes to CPU0\n\0".as_ptr(), intid, requested as u64);
+    }
     // Every device SPI runs at the one DIRQL, as HalGetInterruptVector reports.
-    Some((SPI_BASE.load(Ordering::Relaxed) + n, super::clock::DEVICE_IRQL, 1))
+    Some((intid, super::clock::DEVICE_IRQL, 1))
+}
+
+/// Return an SPI to the frame, its line off.
+pub(crate) unsafe fn release_message_vector(intid: u32) -> bool {
+    if !owns(intid) || !SPIS.release(intid - SPI_BASE.load(Ordering::Relaxed)) {
+        return false;
+    }
+    super::clock::disable_gic_interrupt(intid);
+    true
 }
 
 /// MSI_SETSPI_NS takes the INTID itself as the data, whoever writes it.
 pub(crate) unsafe fn message_target(intid: u32, _requester: u32) -> Option<(u64, u32)> {
     let pa = probe()?;
-    owns(intid).then_some((pa + MSI_SETSPI_NS as u64, intid))
+    (owns(intid) && SPIS.is_set(intid - SPI_BASE.load(Ordering::Relaxed))).then_some((pa + MSI_SETSPI_NS as u64, intid))
 }

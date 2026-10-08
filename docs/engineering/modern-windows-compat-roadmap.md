@@ -72,10 +72,19 @@ stub first). Real subsystem work, not stubs:
    brings up every ITS the MADT lists, uses a two-level device table where the ITS can,
    and spreads each device's messages across the CPUs (one collection per CPU); the
    IORT walk follows a root complex through an SMMU, which the HAL puts in bypass at
-   boot since no driver programs an IOMMU. Owed: plain MSI (capability 05h), freeing
-   vectors and events on removal, `CONNECT_MESSAGE_BASED_PASSIVE`, honouring a
-   driver's requested affinity (MOVI), PCI segments other than 0, and driving an SMMU
-   for real (isolation) rather than bypassing it.
+   boot since no driver programs an IOMMU. Since 2026-10-08: a device's `Affinity
+   Policy` (DevicePolicy, AssignmentSetOverride) rides on its message requirements and
+   the HAL places each message on a processor it allows, on all three arches (proved
+   by `--tripwire NVME_AFFINITY=<mask>`); arm64 `KeConnectInterrupt` enables on the
+   interrupt object's processor, as x86's does, and an ITS LPI enabled elsewhere is
+   moved there (MOVI). The PnP manager gives message vectors back to the HAL when a
+   device is removed or a translation is abandoned (ITS: DISCARD, then the device
+   unmapped), and pci.sys turns MSI/MSI-X off at STOP and REMOVE. A device with MSI
+   but no MSI-X gets one MSI message. Owed: multi-message MSI (an aligned block of
+   data values), `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
+   handling itself over a DIRQL interrupt), the arm64 HAL's PCI config space beyond
+   QEMU's bus 0 (MCFG, every bus, segments other than 0), and driving an SMMU for real
+   (isolation) rather than bypassing it.
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.

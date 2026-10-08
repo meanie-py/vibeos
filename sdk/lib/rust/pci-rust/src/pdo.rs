@@ -1839,13 +1839,14 @@ pub unsafe extern "system" fn PdoPnpControl(
         IRP_MN_START_DEVICE => {
             Status = PdoStartDevice(DeviceObject, Irp, IrpSp);
         }
+        IRP_MN_STOP_DEVICE | IRP_MN_REMOVE_DEVICE | IRP_MN_SURPRISE_REMOVAL => {
+            crate::msix::disable((*DeviceObject).DeviceExtension as crate::shared::PPDO_DEVICE_EXTENSION);
+            Status = STATUS_SUCCESS;
+        }
         IRP_MN_QUERY_STOP_DEVICE
         | IRP_MN_CANCEL_STOP_DEVICE
-        | IRP_MN_STOP_DEVICE
         | IRP_MN_QUERY_REMOVE_DEVICE
-        | IRP_MN_CANCEL_REMOVE_DEVICE
-        | IRP_MN_REMOVE_DEVICE
-        | IRP_MN_SURPRISE_REMOVAL => {
+        | IRP_MN_CANCEL_REMOVE_DEVICE => {
             Status = STATUS_SUCCESS;
         }
         IRP_MN_QUERY_INTERFACE => {
