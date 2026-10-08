@@ -1425,6 +1425,12 @@ amd64-bios boots failed paging reads with `STATUS_IN_PAGE_ERROR` (C0000006) in 1
 and none in 16 runs after the shims forwarded to the real exports. The failure mechanism was
 not pinned down. Check: `objdump -p <driver>.sys | grep <name>` must show an IMPORT, and
 `objdump -d` of a shim must show a `jmp` to that import, not `xor eax,eax; ret`.
+`tools/scan_export_shadows.py` (in `vibeos-cli check`) finds the class from source: a
+kernel-mode driver crate defining a name ntoskrnl.spec or hal.spec exports, or the internal
+name an export forwards to (the column classpnp's stubs were named after). Its first run also
+found kdgdb defining its own `KdComPortInUse`, a HAL *data* export, so the HAL never learned
+the debug port was taken, and four drivers whose empty `RtlAssert` hid every failed ASSERT.
+A data export must be imported through `#[link(kind = "raw-dylib")]`, never defined.
 
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
