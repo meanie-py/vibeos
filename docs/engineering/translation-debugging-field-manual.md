@@ -535,6 +535,20 @@ that would otherwise be free. Where a prelude must declare it anyway (a shared b
 import), the declaration has to be checked against the definition by hand, because rustc treats
 them as unrelated items.
 
+**Same class, by-value aggregate: fastfat listed every file as 01/01/1601.** `dirctrl.rs`
+declared `FatFatTimeToNtTime(.., time: FAT_TIME, ..)` and passed `Dirent.LastWriteTime.Time`;
+the crate's own definition takes the 4-byte `FAT_TIME_STAMP` (time *and* date), as the C does.
+The callee read the missing date half as zero, `RtlTimeFieldsToTime` rejected month 0, and the
+time came back 0: 1601. Writes were fine, which is what located it on the read side. Importing
+`crate::timesup::*` instead of re-declaring turned up 11 more call sites that only typed through
+the loose declarations, plus a cousin: `dirsup.rs` had **invented a local `FAT_TIME_STAMP`**
+(Date before Time, an extra byte, 6 bytes), so its `size_of` zeroing cleared 2 bytes past the
+stamp and an access-date update stored the time of day. **Never define a local stand-in for a
+type `crate::types` already has.** Scale on 2026-10-08: 13,141 self-re-declarations across 104
+crates (`tools/fix_extern_to_use.py` converts only ntoskrnl's). Arity is not the signal: once
+comments are stripped, fastfat had no arity mismatch at all. `test_xhci.py::test_usb_stick_dir_dates`
+pins the dates.
+
 **Sibling case, and it is a SEQUENCING rule rather than a typing one: a global's definition
 may only cross the cohab boundary in the same commit as its WRITER.** msvcrt's
 `msvcrt_tls_index` is written once by `DllMain` at DLL_PROCESS_ATTACH and read by every

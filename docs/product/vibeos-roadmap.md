@@ -594,13 +594,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
-  mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
-  `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
-  right. Every file shows it, the Ventoy stick's and the RAM disk's (`X:`) too. Writing is
-  fine: a file VibeOS copied to the stick has its real time when Linux reads it. So the fault
-  is on the read side: fastfat's directory query or cmd's formatting. Not yet narrowed, nor
-  whether QEMU shows it.
+- **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
+  query passed only the time half of the FAT stamp to its time converter, so the date read as
+  zero. `test_xhci.py::test_usb_stick_dir_dates` covers it. Owed from the same hunt: the crate
+  re-declares its own functions in `extern` blocks hundreds of times (13,141 across 104 crates),
+  which hides type mismatches from rustc; converting them to `crate::` imports, as was done here
+  for timesup, is the fix. Field manual, "An `extern` declaration for a symbol YOUR OWN CRATE
+  defines". Also owed: a file VibeOS wrote from the **Pi 4** (`REDIR.TXT` on the bench stick)
+  carries the date 08/05/2097. The same write path stamps the right year in QEMU, so suspect
+  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
