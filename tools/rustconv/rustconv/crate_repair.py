@@ -5188,8 +5188,18 @@ def harvest_field_types(sources: Mapping[str, bytes]) -> dict[str, frozenset[str
 
 def _local_field_types(crate_dir: Path) -> dict[str, frozenset[str]]:
     """``harvest_field_types`` over the crate's own sources (the islands it declares)."""
+    # Imported here, with crate_integrate's fallback: rustconv also runs with cwd
+    # tools/rustconv, where `tools.` is not importable.
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
     return harvest_field_types(
-        {p.as_posix(): p.read_bytes() for p in sorted((crate_dir / "src").rglob("*.rs"))}
+        {p.as_posix(): p.read_bytes() for p in sorted(source_files(crate_dir / "src"))}
     )
 
 
