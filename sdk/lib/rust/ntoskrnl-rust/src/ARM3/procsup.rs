@@ -500,12 +500,29 @@ pub unsafe extern "system" fn MmCreatePeb(
         (*Peb).SessionId = MmGetSessionId(Process);
     }
 
+    // C: `_SEH2_TRY { NtHeaders = RtlImageNtHeader(..); } _SEH2_EXCEPT { detach;
+    // return STATUS_INVALID_IMAGE_PROTECT; }`. The headers are read through the new
+    // process's view of the image, so this is the first touch of a page that must come
+    // in from the image FILE, and that read can fail: an amd64 modrun boot bugchecked
+    // 0x1E (c0000006, STATUS_IN_PAGE_ERROR) in RtlpImageNtHeaderEx here. Touch the
+    // header page through the protected copy first, and use a captured copy after.
+    if ntkrnl_sys::probe::read_back((*Peb).ImageBaseAddress as *const u16).is_err() {
+        KeDetachProcess();
+        return STATUS_INVALID_IMAGE_PROTECT;
+    }
     let NtHeaders = RtlImageNtHeader((*Peb).ImageBaseAddress);
     if NtHeaders.is_null() {
         KeDetachProcess();
         return STATUS_INVALID_IMAGE_PROTECT;
     }
-    let Characteristics = (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).FileHeader.Characteristics;
+    let Nt: _IMAGE_NT_HEADERS = match ntkrnl_sys::probe::read_back(NtHeaders as *const _IMAGE_NT_HEADERS) {
+        Ok(h) => h,
+        Err(_) => {
+            KeDetachProcess();
+            return STATUS_INVALID_IMAGE_PROTECT;
+        }
+    };
+    let Characteristics = Nt.FileHeader.Characteristics;
 
     if !NtHeaders.is_null() {
         let ImageConfigData = RtlImageDirectoryEntryToData(
@@ -548,15 +565,15 @@ pub unsafe extern "system" fn MmCreatePeb(
             }
         }
 
-        (*Peb).ImageSubsystem = (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Subsystem as u32;
-        (*Peb).ImageSubsystemMajorVersion = (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.MajorSubsystemVersion as u32;
-        (*Peb).ImageSubsystemMinorVersion = (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.MinorSubsystemVersion as u32;
+        (*Peb).ImageSubsystem = Nt.OptionalHeader.Subsystem as u32;
+        (*Peb).ImageSubsystemMajorVersion = Nt.OptionalHeader.MajorSubsystemVersion as u32;
+        (*Peb).ImageSubsystemMinorVersion = Nt.OptionalHeader.MinorSubsystemVersion as u32;
 
-        if (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue != 0 {
-            (*Peb).OSMajorVersion = ((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue & 0xFF) as ULONG;
-            (*Peb).OSMinorVersion = (((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue >> 8) & 0xFF) as ULONG;
-            (*Peb).OSBuildNumber = (((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue >> 16) & 0x3FFF) as USHORT;
-            (*Peb).OSPlatformId = (((*(NtHeaders as *mut _IMAGE_NT_HEADERS)).OptionalHeader.Win32VersionValue >> 30) ^ 2) as ULONG;
+        if Nt.OptionalHeader.Win32VersionValue != 0 {
+            (*Peb).OSMajorVersion = (Nt.OptionalHeader.Win32VersionValue & 0xFF) as ULONG;
+            (*Peb).OSMinorVersion = ((Nt.OptionalHeader.Win32VersionValue >> 8) & 0xFF) as ULONG;
+            (*Peb).OSBuildNumber = ((Nt.OptionalHeader.Win32VersionValue >> 16) & 0x3FFF) as USHORT;
+            (*Peb).OSPlatformId = ((Nt.OptionalHeader.Win32VersionValue >> 30) ^ 2) as ULONG;
 
             if !ImageConfigData.is_null() && ConfigCSDVersion != 0 {
                 (*Peb).OSCSDVersion = ConfigCSDVersion as _;
@@ -579,7 +596,7 @@ pub unsafe extern "system" fn MmCreatePeb(
     // The 32-bit ntdll map + LdrSystemDllInitBlock population happen in user
     // mode (wow64.dll), not here. See docs/engineering/wow64-plan.md Phase C/E.
     #[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
-    if (*(NtHeaders as *mut _IMAGE_NT_HEADERS)).FileHeader.Machine == 0x014c /* IMAGE_FILE_MACHINE_I386 */ {
+    if Nt.FileHeader.Machine == 0x014c /* IMAGE_FILE_MACHINE_I386 */ {
         use ntkrnl_sys::ddk::{_PEB32, _WOW64_PROCESS};
         let mut Peb32Base: ULONG_PTR = 0;
         Status = MiCreatePebOrTebCapped(
