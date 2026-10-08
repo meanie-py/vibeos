@@ -550,6 +550,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
                     }
                 }
             }
+            // The client hung up and everything it sent has been echoed: close our
+            // side too. Left in CLOSE-WAIT the socket stays open forever and never
+            // listens again, so each boot answered exactly one connection.
+            if s.state() == tcp::State::CloseWait && !s.can_recv() && s.send_queue() == 0 {
+                s.close();
+            }
         }
 
         // Sleep until smoltcp's next deadline. A pending timer caps the wait at
