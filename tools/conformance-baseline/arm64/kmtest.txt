@@ -107,6 +107,14 @@ HalPortIo NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 HalSystemInfo OK pass=0 fail=2 skip=1 exit=0
     assert HalSystemInfo.c:52
     assert HalSystemInfo.c:53
+IoCreateFile OK pass=106 fail=7 skip=1 exit=0
+    assert IoCreateFile.c:124
+    assert IoCreateFile.c:187
+    assert IoCreateFile.c:255
+    assert IoCreateFile.c:316
+    assert IoCreateFile.c:566
+    assert IoCreateFile_user.c:31
+    assert IoCreateFile_user.c:41
 IoDeviceInterface OK pass=2 fail=0 skip=40 exit=0
 IoEvent OK pass=92 fail=0 skip=0 exit=0
 IoFilesystem OK pass=358 fail=3 skip=0 exit=0
@@ -269,6 +277,24 @@ SeInheritance OK pass=704433 fail=14 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
+TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
+    assert TcpIp_user.c:117
+    assert connect.c:222
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
+ZwAllocateVirtualMemory OK pass=1252 fail=14 skip=0 exit=0
+    assert ZwAllocateVirtualMemory.c:126
+    assert ZwAllocateVirtualMemory.c:128
+    assert ZwAllocateVirtualMemory.c:129
+    assert ZwAllocateVirtualMemory.c:138
+    assert ZwAllocateVirtualMemory.c:147
+    assert ZwAllocateVirtualMemory.c:248
+    assert ZwAllocateVirtualMemory.c:251
+    assert ZwAllocateVirtualMemory.c:505
+    assert ZwAllocateVirtualMemory.c:509
 ZwCreateSection OK pass=281 fail=48 skip=1 exit=0
     assert ZwCreateSection.c:102
     assert ZwCreateSection.c:103

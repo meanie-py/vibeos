@@ -221,6 +221,14 @@ SeInheritance OK pass=704433 fail=14 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
+TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
+    assert TcpIp_user.c:117
+    assert connect.c:222
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
 ZwAllocateVirtualMemory OK pass=849 fail=2 skip=0 exit=0
     assert ZwAllocateVirtualMemory.c:147
 ZwCreateSection OK pass=4 fail=3 skip=2 exit=0
