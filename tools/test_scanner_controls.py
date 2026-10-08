@@ -1858,6 +1858,61 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# scan_export_shadows. classpnp, 2026-10-07: `#[no_mangle] RtlInterlockedPopEntrySList`
+# returning NULL beat the importlib, so every transfer-packet free list dropped its
+# entries. The name is the FORWARD TARGET of `ExpInterlockedPopEntrySList`, not the
+# export itself — the column the scanner must read. The GOOD tree keeps a marked
+# header inline, a name the kernel does not export, and a crate without ntkrnl-sys.
+_EXPORT_SHADOW_SPECS = {
+    "ntoskrnl/ntoskrnl.spec": (
+        "@ stdcall -arch=x86_64,arm64 ExpInterlockedPopEntrySList(ptr ptr)"
+        " RtlInterlockedPopEntrySList\n"
+        "@ stdcall KeInitializeSpinLock(ptr)\n"
+    ),
+    "hal/hal.spec": "@ extern KdComPortInUse\n",
+    "ntkrnl-sys/Cargo.toml": '[package]\nname = "ntkrnl-sys"\nversion = "0.1.0"\n',
+    "ntkrnl-sys/src/lib.rs": "",
+}
+_EXPORT_SHADOW_DRV_CARGO = """\
+[package]
+name = "drv-rust"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+"""
+_EXPORT_SHADOW_BAD = {
+    **_EXPORT_SHADOW_SPECS,
+    "drv-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO,
+    "drv-rust/src/lib.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RtlInterlockedPopEntrySList(_h: PVOID) -> PVOID { null_mut() }
+""",
+}
+_EXPORT_SHADOW_GOOD = {
+    **_EXPORT_SHADOW_SPECS,
+    "drv-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO,
+    "drv-rust/src/lib.rs": """\
+// nolint: export-shadow (wdm.h FORCEINLINE; the driver is expected to carry it)
+#[no_mangle]
+pub unsafe extern "C" fn KeInitializeSpinLock(l: *mut usize) { *l = 0; }
+#[no_mangle]
+pub unsafe extern "system" fn DrvPopEntry(_h: PVOID) -> PVOID { null_mut() }
+""",
+    "user-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO.replace("drv-rust", "user-rust").replace(
+        '[dependencies]\nntkrnl-sys = { path = "../ntkrnl-sys" }\n', ""
+    ),
+    "user-rust/src/lib.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RtlInterlockedPopEntrySList(_h: PVOID) -> PVOID { null_mut() }
+""",
+}
+
+
 # dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
 # logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
 # `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
@@ -2250,6 +2305,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad=_DUP_BAD,
         good=_DUP_GOOD,
+    ),
+    Control(
+        name="scan_export_shadows",
+        script="tools/scan_export_shadows.py",
+        argv=["--lint"],
+        bad=_EXPORT_SHADOW_BAD,
+        good=_EXPORT_SHADOW_GOOD,
     ),
     Control(
         name="scan_cfg_vs_c",

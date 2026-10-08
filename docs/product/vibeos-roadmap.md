@@ -993,6 +993,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
     read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
+    part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
+    runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
+    (e.g. research@6b775b9b9c99, which then landed unchanged). Cause: the arm64 HAL's
+    `ExTryToAcquireFastMutex` (`hal-rust/src/arm64/halstubs.rs`) stored `OldIrql` before the
+    compare-exchange, so a failed try overwrote the HOLDER's saved IRQL with APC_LEVEL and the
+    holder's release left it at APC_LEVEL (lines 57/59/76/78/133/283, every run). i386 forwards
+    to ntoskrnl's correct `Exi*`. Fix: store it only on success, as the C does. After: 3/3
+    rounds with no regression, pass 209-215 (runs 20261008-010705-u8wibif3,
+    20261008-011551-njv_6fyb, 20261008-011852-d36dvtvt). The baseline (204) was never raised,
+    so a later timing-only drop no longer fails the ratchet.
+  - **arm64: a new thread is not blocked on its mutex within 50 ms** (OPEN, found 2026-10-08).
+    The rest of `TestFastMutexConcurrent` (ExFastMutex lines 283-315) still fails 4-10
+    assertions per run: after `PsCreateSystemThread` and a 50 ms wait, the new thread has not
+    reached `ExAcquireFastMutex` (Count 0, not -1). It happens on ONE vCPU (the gate boots
+    without `-smp`), so it is not cross-CPU placement; i386 passes the same test 246/250.
+    Suspects: how soon a readied thread runs on arm64 without a DISPATCH software interrupt,
+    or the wait's timeout expiring early. Raise the ExFastMutex baseline once this is fixed.
+  - **SMP `KiIdleSummary` bits are never cleared** (OPEN, found 2026-10-08). The C only clears
+    them in its `#ifndef CONFIG_SMP` fast path (`thrdschd.c:310-322`), and the Rust copied that,
+    so after boot every CPU reads as idle forever and `KiSelectNextProcessor` ignores real
+    idleness: a readied thread goes to its ideal processor even when that one is busy and
+    another sits in WFI. Same class on the DPC side: `KiInsertQueueDpc` skips the wake IPI for
+    "idle" CPUs, which here halt rather than poll. Drafted fix (NT's rule): in the SMP path of
+    `KiDeferredReadyThread`, when the chosen PRCB is in the summary with no NextThread and
+    CurrentThread == IdleThread, clear its bit, make the thread Standby/NextThread and IPI;
+    and clear the bit when the arm64 idle loop takes a thread off its own ready list. Not
+    landed: it did not explain the 1-vCPU flake above and needs `-smp N` evidence first.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU

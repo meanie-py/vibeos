@@ -1289,6 +1289,19 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A kernel-mode driver defining a name ntoskrnl/HAL exports (or the internal name an
+    # export forwards to) runs its own copy instead of the kernel's. classpnp's no-op
+    # RtlInterlocked*EntrySList stubs dropped every transfer packet this way for four
+    # months. The baseline is the reviewed set (header inlines, real algorithms); a NEW
+    # definition fails. See the tool docstring.
+    ses = repo / "tools" / "scan_export_shadows.py"
+    specs.append(
+        (
+            "scan_export_shadows",
+            [py, str(ses), "--lint"] if ses.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Leaked IRQL raise / spinlock acquire on an early-exit path — an early
     # `return`/`?` between a `KeRaiseIrql`/`KeAcquireSpinLock` and its matching
     # lower/release. We translate C's manual balance verbatim, so a goto-cleanup
