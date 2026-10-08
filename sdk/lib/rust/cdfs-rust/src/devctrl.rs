@@ -18,7 +18,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -42,7 +41,7 @@ pub unsafe extern "C" fn CdCommonDevControl(
     let IrpSp: PIO_STACK_LOCATION;
     let NextIrpSp: PIO_STACK_LOCATION;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
@@ -103,9 +102,9 @@ pub unsafe extern "system" fn CdDevCtrlCompletionRoutine(
     if (*Irp).PendingReturned != 0 {
         IoMarkIrpPending(Irp);
     }
-    return STATUS_SUCCESS;
     let _ = DeviceObject;
     let _ = Contxt;
+    return STATUS_SUCCESS;
 }
 
 

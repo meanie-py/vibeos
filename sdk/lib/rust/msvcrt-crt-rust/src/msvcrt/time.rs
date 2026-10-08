@@ -288,10 +288,10 @@ pub unsafe extern "C" fn _tzset() {
         if WideCharToMultiByte(
             CP_ACP,
             0,
-            tzi.StandardName.as_ptr(),
+            (*&raw const tzi).StandardName.as_ptr(),
             -1,
             MSVCRT__tzname[0],
-            core::mem::size_of_val(&tzname_std) as c_int,
+            core::mem::size_of_val(&*&raw const tzname_std) as c_int,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(error),
         ) == 0
@@ -302,10 +302,10 @@ pub unsafe extern "C" fn _tzset() {
         if WideCharToMultiByte(
             CP_ACP,
             0,
-            tzi.DaylightName.as_ptr(),
+            (*&raw const tzi).DaylightName.as_ptr(),
             -1,
             MSVCRT__tzname[1],
-            core::mem::size_of_val(&tzname_dst) as c_int,
+            core::mem::size_of_val(&*&raw const tzname_dst) as c_int,
             core::ptr::null_mut(),
             core::ptr::addr_of_mut!(error),
         ) == 0
@@ -929,7 +929,7 @@ pub unsafe extern "C" fn __p__dstbias() -> *mut __msvcrt_long {
 
 #[no_mangle]
 pub unsafe extern "C" fn __p__timezone() -> *mut __msvcrt_long {
-    &mut MSVCRT___timezone
+    &raw mut MSVCRT___timezone
 }
 
 #[no_mangle]
@@ -943,10 +943,10 @@ pub unsafe extern "C" fn _get_tzname(
 
     match index {
         0 => {
-            timezone = tzname_std.as_mut_ptr();
+            timezone = (&raw mut tzname_std).cast::<c_char>();
         }
         1 => {
-            timezone = tzname_dst.as_mut_ptr();
+            timezone = (&raw mut tzname_dst).cast::<c_char>();
         }
         _ => {
             *_errno() = (EINVAL) as i32;
@@ -977,7 +977,7 @@ pub unsafe extern "C" fn _get_tzname(
 
 #[no_mangle]
 pub unsafe extern "C" fn __p__tzname() -> *mut *mut i8 {
-    MSVCRT__tzname.as_mut_ptr()
+    (&raw mut MSVCRT__tzname).cast::<*mut i8>()
 }
 unsafe extern "C" fn strftime_nstr(
     str: *mut STRFTIME_CHAR,

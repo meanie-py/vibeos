@@ -1271,7 +1271,13 @@ pub unsafe extern "system" fn PathIsRootAW(lpszPath: LPCVOID) -> BOOL {
 unsafe fn PathIsExeA(lpszPath: LPCSTR) -> BOOL {
     let lpsz_extension = PathGetExtensionA(lpszPath);
     // {"exe","com","pif","cmd","bat","scf","scr",NULL}
-    const EXTS: [&[u8]; 7] = [b"exe", b"com", b"pif", b"cmd", b"bat", b"scf", b"scr"];
+    // [[u8; 3]; 7], not [&[u8]; 7]: a slice ERASES the length, so `e[0..2]` below could
+    // not be proven in bounds and LLVM emitted a panic block per index with the length it
+    // inferred on that path -- panic(0,0), panic(1,1), panic(2,2). The 1-element one is
+    // indistinguishable in the object from a real bindgen [T; 1] flexible array. Keeping
+    // the length in the type makes all three checks disappear; every extension here is
+    // exactly three characters, which is what the C relies on too.
+    const EXTS: [[u8; 3]; 7] = [*b"exe", *b"com", *b"pif", *b"cmd", *b"bat", *b"scf", *b"scr"];
     for e in EXTS.iter() {
         // narrow case-insensitive compare via lstrcmpiA against a stack ANSI string.
         let mut buf = [0i8; 4];

@@ -414,6 +414,23 @@ members = [
     "wowx64-cargo",
     "usetup-rust",
     "diskpart-rust",
+    "appwiz-rust",
+    "timedate-rust",
+    "powercfg-rust",
+    "joy-rust",
+    "hotplug-rust",
+    "hdwwiz-rust",
+    "access-rust",
+    "ncpa-rust",
+    "telephon-rust",
+    "odbccp32i-rust",
+    "openglcfg-rust",
+    "wined3dcfg-rust",
+    "console-rust",
+    "input-rust",
+    "main-rust",
+    "mmsys-rust",
+    "usrmgr-rust",
 ]
 resolver = "2"
 

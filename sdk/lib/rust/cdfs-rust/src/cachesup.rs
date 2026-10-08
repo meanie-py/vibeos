@@ -170,7 +170,6 @@ extern "system" {
     fn ObDereferenceObject(Object: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -310,7 +309,7 @@ pub unsafe extern "C" fn CdCreateInternalStream(
                         CdUpdateDirentName(IrpContext, &mut Dirent, 0);
 
                         if Dirent.CdFileName.FileName.Buffer
-                            != CdUnicodeSelfArray.as_ptr() as *mut u16
+                            != (&raw const CdUnicodeSelfArray).cast::<u16>() as *mut u16
                         {
                             raise_status = STATUS_FILE_CORRUPT_ERROR;
                             break;
@@ -447,7 +446,7 @@ pub unsafe extern "C" fn CdCompleteMdl(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
     let FileObject: PFILE_OBJECT;
     FileObject = (*IoGetCurrentIrpStackLocation(Irp)).FileObject;
     CcMdlReadComplete(FileObject, (*Irp).MdlAddress);
@@ -468,7 +467,7 @@ pub unsafe extern "C" fn CdPurgeVolume(
     let mut RemovedFcb: BOOLEAN = 0;
 
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
         ASSERT_EXCLUSIVE_VCB(Vcb);
         CdFspClose(Vcb);
         CdAcquireAllFiles(IrpContext, Vcb);

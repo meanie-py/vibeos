@@ -26,8 +26,8 @@ ___longjmp_nounwind:
     mov esi, [edx + JbEsi]
 
     // Restore stack (buffer contains callee stack pointer)
+    // JbEsp is already past _setjmp's return address.
     mov esp, [edx + JbEsp]
-    add esp, 4
 
     // Jump to the saved instruction pointer
     jmp dword ptr [edx + JbEip]

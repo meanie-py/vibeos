@@ -57,6 +57,7 @@ import contextlib
 import fcntl
 import json
 import os
+import re
 import shutil
 import subprocess
 import time
@@ -1030,6 +1031,174 @@ def _is_deterministic(stage: str) -> bool:
     return stage.startswith(DETERMINISTIC_STAGES)
 
 
+# ── A RED STAGE THAT NOTHING IN THE BATCH COULD HAVE CAUSED ────────────────────────────
+#
+# 2026-09-13. `warnings-burndown` submitted 42 files of ntoskrnl/cdfs/fastfat/disk
+# CONSTANTS and was rejected DIFFTEST_FAIL. The failing sub-stage was
+# `msvcrt-difftest --test perf`, reporting towlower 10.8x slower than the C. The batch
+# contained no msvcrt file at all, and the base check had already passed, so the lane was
+# convicted of a regression it could not physically have introduced -- and every lane
+# behind it re-paid a full three-arch gate to rediscover the same thing.
+#
+# This is the headline rule from the land-verification work, applied to the adjudicator:
+# DOES THE THING YOU CONSULTED HAVE AUTHORITY OVER THE QUESTION YOU ARE ASKING. "The gate
+# went red" has no authority over "is this lane at fault" when the red is in a harness the
+# batch cannot reach.
+#
+# NARROW BY CONSTRUCTION, three ways, because this sits on the merge train for every lane:
+#
+#   1. It is NOT a widening of INCONCLUSIVE. That set's membership is untouched; this is a
+#      separate path with its own classification, and its precondition is a file-set test
+#      rather than a classification name. Conformance's standing constraint is that
+#      INCONCLUSIVE must not grow loose, and a named test with an explicit precondition is
+#      the opposite of that.
+#   2. UNKNOWN MEANS GUILTY. Every derivation below returns None when it cannot answer, and
+#      None declines the excuse. A harness we cannot map, a salient we cannot parse, a git
+#      call that fails -- all fall through to the existing reject path. The only direction
+#      this can err is toward the status quo.
+#   3. The closure is OVER-approximated (every transitive path-dep, plus whole C directories)
+#      so that "disjoint" is a strong claim. Under-approximating is the dangerous direction:
+#      it would excuse a lane that really did break something.
+#
+# The loop-breaker is deliberate and explicit (see `_unrelated_excuses`): a submission may be
+# excused this way twice, and the third time it is judged on the evidence. Without a bound,
+# a genuinely broken batch whose breakage happens to live outside its own diff -- which is
+# exactly what a bad *generated* artifact looks like -- would sit queued forever.
+
+_MAX_UNRELATED_EXCUSES = 2
+
+# `✗ msvcrt-difftest(exit 1)` inside the difftest stage's salient line.
+_FAILED_SUBSTAGE = re.compile(r"[✗x]\s*([A-Za-z0-9_.:-]+)\(exit\b")
+_CARGO_PATH_DEP = re.compile(r'path\s*=\s*"([^"]+)"')
+# A repo-relative directory named as a string literal in a harness build.rs.
+_BUILD_RS_DIR = re.compile(
+    r'"((?:dll|drivers|ntoskrnl|hal|base|win32ss|boot|sdk)/[A-Za-z0-9_/.-]+)"'
+)
+
+
+def _failed_substages(salient: str) -> list[str] | None:
+    """The sub-stages named as failing inside a stage's salient line.
+
+    None when the line carries no parseable failure -- we then know only that the stage is
+    red, which is not enough to say what it is red ABOUT."""
+    names = _FAILED_SUBSTAGE.findall(salient or "")
+    return names or None
+
+
+def _harness_closure(repo: Path, harness: str) -> set[str] | None:
+    """Repo-relative path prefixes a difftest harness's verdict can depend on.
+
+    None when the harness is not a crate we can locate -- `drift:consts` and friends are
+    sub-stages of the difftest driver itself, not crates, and we must not pretend to know
+    their reach."""
+    root = repo / "sdk/lib/rust" / harness
+    if not (root / "Cargo.toml").is_file():
+        return None
+    seen: set[str] = set()
+    stack = [root]
+    while stack:
+        crate = stack.pop()
+        rel = crate.relative_to(repo).as_posix()
+        if rel in seen:
+            continue
+        seen.add(rel)
+        toml = crate / "Cargo.toml"
+        if not toml.is_file():
+            continue
+        try:
+            text = toml.read_text(errors="replace")
+        except OSError:
+            return None  # cannot enumerate the closure -> cannot claim disjoint
+        for dep in _CARGO_PATH_DEP.findall(text):
+            target = (crate / dep).resolve()
+            try:
+                target.relative_to(repo)
+            except ValueError:
+                continue  # outside the repo; nothing in a batch can touch it
+            if (target / "Cargo.toml").is_file():
+                stack.append(target)
+        build_rs = crate / "build.rs"
+        if build_rs.is_file():
+            try:
+                seen.update(_BUILD_RS_DIR.findall(build_rs.read_text(errors="replace")))
+            except OSError:
+                return None
+    return seen
+
+
+def _batch_paths(wt: Path, tip: str) -> set[str] | None:
+    """Every path the batch changes relative to origin/master. None if git cannot say."""
+    out = git(wt, "diff", "--name-only", "origin/master", tip, check=False)
+    if not out:
+        return None
+    return {line.strip() for line in out.splitlines() if line.strip()}
+
+
+def _touches(paths: set[str], closure: set[str]) -> bool:
+    """Does any changed path fall inside any member of the closure?
+
+    Prefix match on a path BOUNDARY -- `sdk/lib/rust/msvcrt-sys` must not swallow
+    `sdk/lib/rust/msvcrt-sys-extra`, and a bare `str.startswith` would."""
+    return any(p == c or p.startswith(c.rstrip("/") + "/") for p in paths for c in closure)
+
+
+def unrelated_red(repo: Path, wt: Path, tip: str, verdict: GateVerdict) -> str:
+    """'' unless the gate's red is provably outside everything this batch changed.
+
+    Returns the human-readable reason when, and only when, every failing stage is one we
+    can map to a source closure AND that closure is disjoint from the batch's diff."""
+    failing = [n for n, s in verdict.stages.items() if s == "fail"]
+    if not failing or failing != ["difftest"]:
+        # Scoped to difftest on purpose. It is the only stage whose sub-results name a
+        # crate, and therefore the only one whose reach is derivable today. A build or lint
+        # red is global by nature and must keep rejecting.
+        return ""
+    subs = _failed_substages(verdict.salient)
+    if not subs:
+        return ""
+    closure: set[str] = set()
+    for harness in subs:
+        part = _harness_closure(repo, harness)
+        if part is None:
+            return ""  # unknown reach -> guilty
+        closure |= part
+    paths = _batch_paths(wt, tip)
+    if paths is None or _touches(paths, closure):
+        return ""
+    return (
+        f"the only red is difftest/{', '.join(subs)}, whose source closure "
+        f"({len(closure)} path(s)) contains NONE of the {len(paths)} file(s) this batch "
+        f"changes. A harness the batch cannot reach has no authority over whether the "
+        f"batch is at fault"
+    )
+
+
+def _excuse_path(repo: Path, sub: Submission) -> Path:
+    return queue_dir(repo) / "unrelated" / f"{sub.seq}.json"
+
+
+def _unrelated_excuses(repo: Path, sub: Submission, *, bump: bool = False) -> int:
+    """How many times this submission has been excused for an unrelated red.
+
+    Persisted per SUBMISSION (seq), not per batch: batches re-form every drain, so a
+    per-batch counter would reset itself and never bound anything."""
+    path = _excuse_path(repo, sub)
+    try:
+        count = int(json.loads(path.read_text()).get("count", 0))
+    except (OSError, ValueError, AttributeError):
+        count = 0
+    if bump:
+        count += 1
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"count": count, "lane": sub.lane, "tip": sub.tip}))
+        except OSError:
+            # Cannot persist -> cannot bound the loop -> do not grant the excuse. Failing
+            # closed here is what keeps the bound real rather than advisory.
+            return _MAX_UNRELATED_EXCUSES + 1
+    return count
+
+
 def inert_only_batch(wt: Path) -> list[str]:
     """Paths this batch would add to master that something might actually RUN ([] = none).
 
@@ -1322,6 +1491,7 @@ def land_subset(
     *,
     retries: int = 2,
     base: BaseCheck | None = None,
+    depth: int = 0,
 ) -> None:
     """Gate `subs` as one batch; on red, split and recurse.
 
@@ -1337,7 +1507,15 @@ def land_subset(
         return
     res, subs = prepared
     judge_car(
-        repo, wt, subs, res, gate_car(wt, log, retries=retries), log, retries=retries, base=base
+        repo,
+        wt,
+        subs,
+        res,
+        gate_car(wt, log, retries=retries),
+        log,
+        retries=retries,
+        base=base,
+        depth=depth,
     )
 
 
@@ -1417,9 +1595,19 @@ def judge_car(
     *,
     retries: int = 2,
     base: BaseCheck,
+    depth: int = 0,
 ) -> None:
     """Act on a car's verdict: push a green one, requeue an inconclusive one, and split a
-    red one until the culprit is alone."""
+    red one until the culprit is alone.
+
+    `depth` is how deep into that split we are, and it exists for ONE consumer:
+    `unrelated_red`'s excuse may only be spent where a conviction would otherwise happen
+    (see below). The split recursion itself does not need it -- each level re-enters and
+    halves again -- so a refactor that reads only the recursion will correctly conclude it
+    is dead and delete it. It is not: dropping it silently turns the whole-batch excuse
+    into a no-op, which is a false CONVICTION of an innocent batch and exactly the failure
+    the excuse exists to prevent. A default of 0 suits every direct caller (a whole car,
+    pipelined or not); only the split passes depth + 1."""
     ok, classification = verdict.ok, verdict.classification
     artifact, salient = verdict.artifact, verdict.salient
     if ok:
@@ -1476,6 +1664,36 @@ def judge_car(
             f"{salient or 'environment failure'}. {len(subs)} submission(s) stay QUEUED; "
             f"nothing was rejected. Artifact: {artifact or '(none)'}"
         )
+    # WHERE the excuse may be spent. Granting it for an intermediate sub-batch would abort
+    # the split -- the two halves run in sequence with no handler, so raising inside the first
+    # means the second is never gated and a guilty sibling stays queued behind an innocent
+    # one. So it applies only where a CONVICTION would otherwise happen: the whole batch
+    # (depth 0, nothing to isolate -- no member can be responsible, so splitting cannot
+    # attribute it either) or a lone submission (the split is already finished). An
+    # intermediate sub-batch splits further instead, which costs a gate but keeps the train
+    # moving and still protects the lone lane at the bottom.
+    decisive = depth == 0 or len(subs) == 1
+    unrelated = unrelated_red(repo, wt, res.tip, verdict) if decisive else ""
+    if unrelated:
+        # Spend an excuse per submission, and only grant it while EVERY submission in the
+        # batch still has one. A batch is excused as a unit, so the bound has to hold for the
+        # unit: if one member has exhausted its excuses, the batch is judged on the evidence
+        # and the split will isolate it as usual.
+        spent = [s for s in subs if _unrelated_excuses(repo, s) >= _MAX_UNRELATED_EXCUSES]
+        if spent:
+            log(
+                f"queue: unrelated-red excuse EXHAUSTED for {', '.join(s.lane for s in spent)}"
+                f" — judging on the evidence"
+            )
+        else:
+            for s in subs:
+                _unrelated_excuses(repo, s, bump=True)
+            raise Inconclusive(
+                f"the gate is red but not about this batch: {unrelated}. "
+                f"{len(subs)} submission(s) stay QUEUED; nothing was rejected. This excuse is "
+                f"bounded — after {_MAX_UNRELATED_EXCUSES} the batch is judged on the evidence "
+                f"regardless. Artifact: {artifact or '(none)'}"
+            )
     if len(subs) == 1:
         sub = subs[0]
         # GUILTY OR FRAMED? A lone red submission is only the culprit if the BASE is green.
@@ -1552,8 +1770,8 @@ def judge_car(
         return
     mid = len(subs) // 2
     log(f"queue: red batch of {len(subs)} — splitting {mid}/{len(subs) - mid} to find the culprit")
-    land_subset(repo, wt, subs[:mid], log, retries=retries, base=base)
-    land_subset(repo, wt, subs[mid:], log, retries=retries, base=base)
+    land_subset(repo, wt, subs[:mid], log, retries=retries, base=base, depth=depth + 1)
+    land_subset(repo, wt, subs[mid:], log, retries=retries, base=base, depth=depth + 1)
 
 
 def _landed_exactly(repo: Path, tip: str) -> bool:

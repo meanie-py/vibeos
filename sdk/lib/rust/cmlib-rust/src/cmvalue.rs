@@ -37,7 +37,7 @@ pub unsafe extern "system" fn CmpCopyCell(
     DestinationHive: *mut _HHIVE,
     StorageType: HSTORAGE_TYPE,
 ) -> HCELL_INDEX {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let SourceData = HvGetCell(SourceHive, SourceCell);
     let DataSize = HvGetCellSize(SourceHive, SourceData);
@@ -61,8 +61,7 @@ pub unsafe extern "system" fn CmpCopyCell(
 }
 
 use crate::glue::{
-    CmpIsKeyValueSmall, HvAllocateCell, HvFreeCell, HvMarkCellDirty, ASSERT, PAGED_CODE,
-};
+    CmpIsKeyValueSmall, HvAllocateCell, HvFreeCell, HvMarkCellDirty, ASSERT, };
 
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG not converted (preprocessor macro without constant value)
@@ -75,7 +74,7 @@ pub unsafe extern "system" fn CmpMarkValueDataDirty(
     Value: *const CM_KEY_VALUE,
 ) -> i32 {
     let mut KeySize: u32 = 0;
-    PAGED_CODE();
+    PAGED_CODE!();
     if (*Value).Data != HCELL_NIL {
         if CmpIsKeyValueSmall(core::ptr::addr_of_mut!(KeySize), (*Value).DataLength) {
             return 1i32;
@@ -175,7 +174,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
     _value_cell: HCELL_INDEX,
     data_cell: *mut HCELL_INDEX,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
     ASSERT(data_size > 0x4 /* CM_KEY_VALUE_SMALL */);
 
     let _ = (&hive, data_size);
@@ -210,7 +209,7 @@ pub unsafe extern "system" fn CmpRemoveValueFromList(
     let mut NewCell: HCELL_INDEX = 0;
 
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // ASSERT((((LONG)Index) >= 0) && (Index <= ChildList->Count));
     // (omitted due to NDEBUG)
@@ -326,7 +325,7 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
 
 #[no_mangle]
 pub unsafe extern "system" fn CmpFreeValue(Hive: *mut _HHIVE, Cell: HCELL_INDEX) -> BOOLEAN {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Get the cell data */
     let Value = HvGetCell(Hive, Cell) as PCM_KEY_VALUE;
@@ -359,7 +358,7 @@ pub unsafe extern "system" fn CmpGetValueData(
     BufferAllocated: *mut u8,
     CellToRelease: *mut HCELL_INDEX,
 ) -> u8 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Sanity check */
     ASSERT((*Value).Signature == CM_KEY_VALUE_SIGNATURE);
@@ -402,7 +401,7 @@ pub unsafe extern "system" fn CmpAddValueToList(
     let mut ChildCount: u32;
     let Length: u32;
     let mut i: u32;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Sanity check */
     ASSERT(Index <= (*ChildList).Count);
@@ -492,7 +491,7 @@ pub unsafe extern "system" fn CmpCopyValue(
     let mut DataSize: u32 = 0;
     let IsSmall: bool;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Get the actual source data */
     Value = HvGetCell(SourceHive, SourceValueCell) as PCM_KEY_VALUE;

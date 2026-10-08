@@ -10,7 +10,11 @@ use crate::win32::*;
 pub static __wine_dbch_shell: &'static str = "shell";
 #[no_mangle]
 pub unsafe extern "C" fn SHELL_GetShellExtensionRegCLSID(hKey: HKEY, KeyName: PCWSTR, pClsId: *mut CLSID) -> HRESULT {
-    if SHCLSIDFromStringW(KeyName, pClsId.cast()) >= 0 {
+    // SUCCEEDED() casts to the signed HRESULT. SHCLSIDFromStringW returns a DWORD, so
+    // the uncast `>= 0` was always true: every key name "parsed", the CLSID came back
+    // unset, and a handler registered under a NAMED key (CLSID in its default value)
+    // was never looked up.
+    if (SHCLSIDFromStringW(KeyName, pClsId.cast()) as HRESULT) >= 0 {
         return S_OK;
     }
     let mut buf: [u16; 42 as usize] = [0u16; 42 as usize];

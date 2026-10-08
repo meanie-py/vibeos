@@ -22,10 +22,10 @@ from pathlib import Path
 import pytest
 
 from rustconv.profile_derive import (
-    resolve_sys_crate,
     DerivedProfile,
     Finding,
     ProfileDeriveError,
+    _interface_include_index,
     build_include_env,
     derive,
     emit_profile,
@@ -35,13 +35,13 @@ from rustconv.profile_derive import (
     header_symbols,
     is_shim_tu,
     parse_cmakelists,
+    resolve_sys_crate,
     scaffold_crate,
     scan_includes,
     scan_preamble,
     to_json,
     uncomment_flipped_source_lists,
     walk_includes,
-    _interface_include_index,
 )
 
 # ---------------------------------------------------------------------------
@@ -359,6 +359,18 @@ def test_case_label_in_a_dead_reactos_branch_is_not_audited(tmp_path):
     assert "WIDGET_MODE_FAST" in {c.ident for c in consts}
 
 
+def test_a_macro_call_in_a_case_label_audits_its_arguments_not_its_name(tmp_path):
+    """inetcpl: `case MAKEWPARAM(IDOK, BN_CLICKED):` -- MAKEWPARAM is no constant."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "cmd.c",
+        '#include "precomp.h"\nint c(int w){ switch (w) {\n'
+        "    case MAKEWPARAM(WIDGET_MODE_FAST, WIDGET_MODE_SLOW): return 1;\n} return 0; }\n",
+    )
+    consts = find_switch_constants([_mod(tmp_path) / "cmd.c"], root)
+    assert {c.ident for c in consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
+
+
 def test_case_labels_hidden_behind_a_function_like_macro_are_audited(tmp_path):
     """msvcrt's errno.c: all 39 arms are `ERR_CASE(x)` / `ERR_MAPS(x, y)`, no literal `case`.
 
@@ -544,6 +556,17 @@ def test_header_symbols_classifies_macro_kinds(tmp_path):
     assert syms["E_ONE"][0] == "enum"
     # the targeted (single-alternation) fast path must agree with the full scan
     assert header_symbols(h, frozenset({"LIT", "FN"})).keys() == {"LIT", "FN"}
+
+
+def test_header_symbols_owns_a_cxx_const(tmp_path):
+    # browseui's internettoolbar.h: a legal C++ case label that neither the macro nor the enum
+    # scan saw, so the module was blocked on a false SWITCH_CONST_UNOWNED.
+    h = _write(tmp_path / "itb.h", "static const int gViewsCommandID = FCIDM_SHVIEW_AUTOARRANGE;\n")
+    assert header_symbols(h, frozenset({"gViewsCommandID"}))["gViewsCommandID"] == (
+        "cxx-const",
+        "FCIDM_SHVIEW_AUTOARRANGE",
+    )
+    assert header_symbols(h)["gViewsCommandID"][0] == "cxx-const"
 
 
 def test_targeted_scan_is_not_fooled_by_a_prefix_identifier(tmp_path):
@@ -931,6 +954,38 @@ class TestGeneratorBaseIncludes:
         dp = derive(_mod(tmp_path), root)
         assert any("sdk/include/wine" in e for e in dp.late_inc), dp.late_inc
         assert not any("sdk/include/wine" in e for e in dp.extra_inc)
+
+    def test_an_isystem_dir_is_read_like_an_I_dir(self, tmp_path: Path):
+        """CMake spells an INTERFACE library's include dirs `-isystem <dir>`. Reading only
+        `-I` lost browseui's atl_classes (sdk/lib/atl) and derive could not find atlstr.h."""
+        import json
+
+        from rustconv.profile_derive import load_compile_db
+
+        root = _basic_module(tmp_path)
+        (root / "sdk/lib/atl").mkdir(parents=True, exist_ok=True)
+        build = tmp_path / "build-i386"
+        build.mkdir(exist_ok=True)
+        build.joinpath("compile_commands.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "directory": "/tmp/vibeos/build-i386",
+                        "file": f"/tmp/vibeos/dll/win32/widget/{stem}.c",
+                        "command": "clang -I/tmp/vibeos/dll/win32/widget -isystem "
+                        "/tmp/vibeos/sdk/lib/atl -isystem/tmp/vibeos/sdk/include "
+                        f"-c /tmp/vibeos/dll/win32/widget/{stem}.c",
+                    }
+                    for stem in ("main", "helper")
+                ]
+            )
+        )
+        module = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+        db = load_compile_db(root, module, "i386")
+        assert db is not None
+        incs = [str(p) for p in db.include_dirs]
+        assert any(p.endswith("sdk/lib/atl") for p in incs), incs
+        assert any(p.endswith("sdk/include") for p in incs), incs
 
     def test_a_dir_the_generator_already_passes_is_not_re_emitted(self, tmp_path: Path):
         root = _basic_module(tmp_path)

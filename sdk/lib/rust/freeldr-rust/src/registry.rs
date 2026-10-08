@@ -793,7 +793,12 @@ pub unsafe extern "C" fn RegEnumValue(
 
     ValueListCell = HvGetCell(Hive, VlList) as PCELL_DATA;
 
-    ValueCell = HvGetCell(Hive, (*ValueListCell).u.KeyList[Index as usize]) as PCM_KEY_VALUE;
+    // KeyList is a C flexible array (`HCELL_INDEX KeyList[ANYSIZE_ARRAY]`, cmlib/cmdata.h:205)
+    // holding the key's ValueList.Count cells. bindgen's [_; 1] panicked -- in the boot
+    // loader -- enumerating any key's second value. Constant index 0 is checked at
+    // compile time.
+    let value_index = *(&raw const (*ValueListCell).u.KeyList[0]).add(Index as usize);
+    ValueCell = HvGetCell(Hive, value_index) as PCM_KEY_VALUE;
 
     if ((*ValueCell).Flags & VALUE_COMP_NAME) != 0 {
         let vc_namelen = core::ptr::addr_of!((*ValueCell).NameLength).read_unaligned();
@@ -829,7 +834,7 @@ pub unsafe extern "C" fn RegEnumValue(
 
     RepGetValueData(Hive, ValueCell, Type, Data, DataSize);
 
-    HvReleaseCell(Hive, (*ValueListCell).u.KeyList[Index as usize]);
+    HvReleaseCell(Hive, value_index);
     HvReleaseCell(Hive, VlList);
     HvReleaseCell(Hive, HKEY_TO_HCI(Key));
 

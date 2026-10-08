@@ -192,7 +192,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
             );
         }
     }
-    if PcipSavedAssignSlotResources.is_none() {
+    if (*&raw const PcipSavedAssignSlotResources).is_none() {
         RtlAssert(
             b"PcipSavedAssignSlotResources\0".as_ptr() as *const i8 as PVOID,
             b"drivers/bus/pcix/hookhal.c\0".as_ptr()
@@ -386,7 +386,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciHookHal() {
-    if PcipSavedAssignSlotResources.is_some() {
+    if (*&raw const PcipSavedAssignSlotResources).is_some() {
         RtlAssert(
             b"PcipSavedAssignSlotResources == NULL\0".as_ptr() as *const i8 as PVOID,
             b"hookhal.c\0".as_ptr() as *const i8 as PVOID,
@@ -394,7 +394,7 @@ pub unsafe extern "system" fn PciHookHal() {
             core::ptr::null_mut::<i8>(),
         );
     }
-    if PcipSavedTranslateBusAddress.is_some() {
+    if (*&raw const PcipSavedTranslateBusAddress).is_some() {
         RtlAssert(
             b"PcipSavedTranslateBusAddress == NULL\0".as_ptr() as *const i8 as PVOID,
             b"hookhal.c\0".as_ptr() as *const i8 as PVOID,

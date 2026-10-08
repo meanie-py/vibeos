@@ -2083,7 +2083,7 @@ unsafe fn VARIANT_DecScale(
         Hi32: 0,
         __bindgen_anon_2: tagDEC__bindgen_ty_2 { Lo64: 0 },
     };
-    if core::ptr::read_volatile(&scaleFactor.__bindgen_anon_2.__bindgen_anon_1.Lo32) == 0 {
+    if core::ptr::read_volatile(&raw const scaleFactor.__bindgen_anon_2.__bindgen_anon_1.Lo32) == 0 {
         scaleFactor.__bindgen_anon_2.__bindgen_anon_1.Lo32 = 10u32;
     }
 
@@ -2112,7 +2112,7 @@ unsafe fn VARIANT_DecScale(
 
     // Multiply up to match scales
     while i > 0 {
-        let res = VarDecMul(&dec_temp, &scaleFactor, pDecOut);
+        let res = VarDecMul(&dec_temp, &raw const scaleFactor, pDecOut);
         if res >= 0 {
             // SUCCEEDED
             dec_temp = *pDecOut;

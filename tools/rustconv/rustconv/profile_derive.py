@@ -409,7 +409,7 @@ class ConstOwner:
 
     ident: str
     owner: Path | None
-    owner_kind: str  # header | tu-local | sys-crate | UNOWNED
+    owner_kind: str  # header | cxx-const | tu-local | sys-crate | UNOWNED
     definition: str | None
     macro_kind: str  # literal | expression | function-like | enum | n/a
     allowlisted: bool = False
@@ -1725,6 +1725,15 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
                 v = inner.pop()
                 inner.extend(v.children)
                 if v.type == "identifier":
+                    # `case MAKEWPARAM(IDOK, BN_CLICKED):` -- the callee is a function-like
+                    # macro, not a constant an arm could bind; its ARGUMENTS are the arms.
+                    parent = v.parent
+                    if (
+                        parent is not None
+                        and parent.type == "call_expression"
+                        and parent.child_by_field_name("function") == v
+                    ):
+                        continue
                     text = src[v.start_byte : v.end_byte].decode("utf-8", "replace")
                     found.append(SwitchConst(text, key, v.start_point[0] + 1))
         found.extend(_macro_switch_constants(src, key, parser))
@@ -2151,6 +2160,22 @@ def _strip_c_comments(text: str) -> str:
     return _C_COMMENT_RE.sub(lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
 
 
+# A C++ namespace-scope integral constant: `static const int gViewsCommandID = FCIDM_X;`. It is
+# a legal case label in C++ and owned by the header just as a `#define` would be, but neither
+# the macro nor the enum scan sees it, so it was reported UNOWNED and blocked the module.
+_CXX_CONST_RE = (
+    r"^[ \t]*(?:static[ \t]+)?(?:constexpr|const)[ \t]+(?:(?:unsigned|signed)[ \t]+)?"
+    r"[A-Za-z_][\w:]*[ \t]+({name})[ \t]*=[ \t]*([^;\n]+);"
+)
+
+
+def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
+    return {
+        m.group(1): ("cxx-const", m.group(2).strip())
+        for m in re.finditer(_CXX_CONST_RE.format(name=alt), text, re.M)
+    }
+
+
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
     """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
 
@@ -2184,6 +2209,8 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
+        for name, kind in _cxx_consts(text, alt).items():
+            out.setdefault(name, kind)
         return out
     for m in _DEFINE_RE.finditer(text):
         name, sep, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
@@ -2196,6 +2223,8 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
             mm = re.match(r"\s*([A-Za-z_]\w*)", member)
             if mm:
                 out.setdefault(mm.group(1), ("enum", member.strip()))
+    for name, kind in _cxx_consts(text, r"[A-Za-z_]\w*").items():
+        out.setdefault(name, kind)
     return out
 
 
@@ -2364,10 +2393,11 @@ def own_constants(
                 hit = (path, syms[ident])
                 break
         if hit is not None:
+            # bindgen reads headers as C, so a C++ const never reaches the island: the header
+            # owns it, but the translation has to carry it (see SWITCH_CONST_CXX).
+            kind = "cxx-const" if hit[1][0] == "cxx-const" else "header"
             owners.append(
-                ConstOwner(
-                    ident, hit[0], "header", hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src
-                )
+                ConstOwner(ident, hit[0], kind, hit[1][1], hit[1][0], in_sys=in_sys, sys_source=src)
             )
         elif ident in tu_local:
             kind, body = tu_local[ident]
@@ -2548,11 +2578,22 @@ def load_compile_db(repo_root: Path, module: CMakeModule, arch: str) -> CompileD
             continue  # no -o to attribute by: fall back to the source location
         files.add(local)
         mine |= defines
-        for t in cmd.split():
+        # `-isystem` is how CMake spells an INTERFACE library's include dirs, so reading only
+        # `-I` lost every one of them: browseui's `atl_classes` (sdk/lib/atl) went missing and
+        # derive could not find atlstr.h. Both the joined and the separated spelling occur.
+        toks = cmd.split()
+        for i, t in enumerate(toks):
             if t.startswith("-I"):
-                p = Path(t[2:].replace(canon, str(repo_root)))
-                if p not in incs:
-                    incs.append(p)
+                raw = t[2:] or (toks[i + 1] if i + 1 < len(toks) else "")
+            elif t.startswith("-isystem"):
+                raw = t[len("-isystem") :] or (toks[i + 1] if i + 1 < len(toks) else "")
+            else:
+                continue
+            if not raw or raw.startswith("-"):
+                continue
+            p = Path(raw.replace(canon, str(repo_root)))
+            if p not in incs:
+                incs.append(p)
     if not files:
         return None
     return CompileDb(
@@ -3014,6 +3055,16 @@ def derive(
                     "everything (§9.112). Find its owner and add it to the wrapper.",
                 )
             )
+        elif o.owner_kind == "cxx-const" and not o.in_sys:
+            findings.append(
+                Finding(
+                    "warn",
+                    "SWITCH_CONST_CXX",
+                    f"`{o.ident}` is a C++ const in {o.owner.name if o.owner else '?'} "
+                    f"(= {o.definition}) — bindgen reads headers as C and never emits it, so "
+                    "the translation must carry it as a Rust const with that value",
+                )
+            )
         elif o.owner_kind == "tu-local":
             findings.append(
                 Finding(
@@ -3260,6 +3311,20 @@ def _hdr_regex_dir(dirname: str) -> str:
 _OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*pub _address: u8,\s*\}")
 
 
+TCHAR_FAMILY = (
+    "TCHAR",
+    "PTCHAR",
+    "TBYTE",
+    "PTBYTE",
+    "LPTSTR",
+    "LPCTSTR",
+    "PTSTR",
+    "PCTSTR",
+    "LPTCH",
+    "PTCH",
+)
+
+
 def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str]:
     """Struct tags the kernel -sys crate leaves opaque that this module needs WHOLE.
 
@@ -3368,6 +3433,16 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append("        ;;")
         out.append("    esac")
     unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
+    if m.is_usermode and m.unicode:
+        # ntdll-sys is built WITHOUT UNICODE, so its glob says `TCHAR = c_char`, and a module
+        # header's `TCHAR szPath[MAX_PATH]` field inherits it: half the bytes the C has
+        # (desk's _ICON_PATH, then the control panels' buffers). Unblocked, the island emits
+        # the family from its own -DUNICODE compile; the prelude covers the locals.
+        out.append(
+            "    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's."
+        )
+        out.append('    UNBLOCK="' + " ".join([*unblock, *TCHAR_FAMILY]) + '"')
+        unblock = []
     if unblock:
         out.append(
             "    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header "
@@ -3487,7 +3562,8 @@ def emit_report(dp: DerivedProfile) -> str:
         where = used_at.get(o.ident, [])
         site = f"{where[0].tu}:{where[0].line}" if where else "?"
         owner = o.owner.name if o.owner else o.owner_kind
-        mark = "✓" if (o.allowlisted or o.owner_kind in ("sys-crate", "tu-local")) else "✗"
+        carried = o.owner_kind in ("sys-crate", "tu-local", "cxx-const")
+        mark = "✓" if (o.allowlisted or carried) else "✗"
         how = "-sys glob" if o.in_sys else ("island" if o.allowlisted else o.owner_kind)
         L.append(f"  {mark} {o.ident:38s} {owner:24s} [{o.macro_kind}] via {how:10s} {site}")
     L.append("")

@@ -6,12 +6,14 @@ retry for every one of them.
 """
 
 from pathlib import Path
+
 import pytest
+
 from rustconv.call_seal import CallSealError, seal_calls, unseal_calls
 from rustconv.dead_regions import (
-    never_compiled_lines,
     dead_region_spans,
     dummy_pseh_except_spans,
+    never_compiled_lines,
     pinned_int_macros,
     preprocessor_conditional_spans,
 )
@@ -353,9 +355,9 @@ def test_sibling_header_pins_a_bare_if_macro():
 
 def test_sibling_header_macros_drop_conflicting_definitions():
     """Two headers, two values, no answer -- a guess here would mark live code dead."""
-    from rustconv.dead_regions import sibling_header_int_macros
-
     import tempfile
+
+    from rustconv.dead_regions import sibling_header_int_macros
 
     with tempfile.TemporaryDirectory() as tmp:
         folder = Path(tmp)
@@ -364,3 +366,13 @@ def test_sibling_header_macros_drop_conflicting_definitions():
         pinned = sibling_header_int_macros(folder / "x.cpp")
     assert "WOBBLE" not in pinned
     assert pinned["STEADY"] == 7
+
+
+def test_a_bare_pinned_macro_is_a_truth_test():
+    """timedate.c: `#if DBG` opens one definition header and `#else` the other."""
+    src = "#if DBG\nVOID FooDbg(int x)\n#else\nVOID Foo(int x)\n#endif\n{\n}\n"
+    assert never_compiled_lines(src, {"DBG": 1}) == {4}
+    assert never_compiled_lines(src, {"DBG": 0}) == {2}
+    assert never_compiled_lines(src) == set()
+    assert never_compiled_lines("#if !DBG\nint a;\n#endif\n", {"DBG": 1}) == {2}
+    assert never_compiled_lines("#ifdef DBG\nint a;\n#endif\n", {"DBG": 0}) == set()

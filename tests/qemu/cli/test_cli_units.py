@@ -1255,6 +1255,43 @@ def test_symbolicate_pc_passes_reloc_for_i386_only(tmp_path):
     assert "--reloc" not in out_arm64, out_arm64
 
 
+_ADDR2SYM = Path(__file__).resolve().parents[3] / "qemu" / "addr2sym.sh"
+
+
+def _addr2sym(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["bash", str(_ADDR2SYM), *args], capture_output=True, text=True, timeout=30
+    )
+
+
+def test_addr2sym_index_resolves_against_the_named_tsv(tmp_path):
+    # A farm archive's crash must be read against ITS kernel's index. Without
+    # --index, the RtlRangeList 0x1E resolved against a later build's index and
+    # named fsrtl oplock code for two days; the archived index said
+    # RtlDeleteOwnersRanges at every one of 15 hits.
+    tsv = tmp_path / "symbols-arm64-mp.tsv"
+    tsv.write_text("00528000\tOther\t-\n00528034\tRtlDeleteOwnersRanges\tlib.rs:276\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), "0x528068")
+    assert cp.returncode == 0, cp.stderr
+    assert "RtlDeleteOwnersRanges+52" in cp.stdout
+
+
+@pytest.mark.parametrize(
+    "args",
+    [("--tsv", "x", "0x528068"), ("ntoskrnl+0x10",)],
+    ids=["unknown-flag", "non-hex-address"],
+)
+def test_addr2sym_refuses_what_it_cannot_parse(tmp_path, args):
+    # Both used to print a plausible symbol from the default index: an unknown
+    # flag fell through and was looked up as an address. A real index is passed
+    # so the refusal cannot come from a missing index instead.
+    tsv = tmp_path / "symbols.tsv"
+    tsv.write_text("00000000\tBase\t-\n")
+    cp = _addr2sym("arm64", "--index", str(tsv), *args)
+    assert cp.returncode != 0
+    assert cp.stdout == ""
+
+
 def test_symbolicate_pc_keeps_a_plausible_offset(tmp_path):
     tool = tmp_path / "qemu" / "addr2sym.sh"
     tool.parent.mkdir(parents=True)
@@ -8304,6 +8341,22 @@ def test_faulting_module_offset_beats_a_guessed_reloc():
     assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
 
 
+def test_faulting_module_offset_only_from_a_pc_parameter():
+    # 0xF4's P4 is a message string; the banner resolved it and triage printed an
+    # anonymous constant as the fault (arm64 modrun, 2026-10-08).
+    f4 = (
+        "*** BUGCHECK: 0x000000F4 (0x0000000000000003, 0xfffffa00062e1970, "
+        "0xfffffa00062e1bd0, 0xfffff800422df6b0)\n***   P4 = ntoskrnl.exe+0x14D6B0\n"
+    )
+    assert triage.faulting_module_offset(f4) is None
+    # 0x1E names P2; a resolved P3 is a stack address, not the fault
+    p3 = (
+        "*** BUGCHECK: 0x0000001E (0x1, 0x0, 0xfffff80042193788, 0x0)\n"
+        "***   P3 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(p3) is None
+
+
 def test_faulting_module_offset_takes_the_LAST_bugcheck():
     """Same rule as faulting_pc: the crash being triaged is the one the boot died
     on, not the first the log happens to mention."""
@@ -8580,20 +8633,17 @@ def test_ladder_all_pass_is_clean():
     assert ladder_mod.summary(_ladder_log()).startswith(f"{n}/{n} guests PASS")
 
 
-def test_ladder_gui32_pass_code_is_600e_and_600d_is_an_upgrade():
-    """gui32 is the GDI/draw rung and reports its own verdict code. Asserting a
-    blanket 0x600D would make the check permanently red for a healthy boot --
-    which is how a gate gets disabled. So it is GRADED on 0x600E (drew, readback
-    mismatched). But 0x600D is Gui32.c's GUI32_PASS -- drew AND read it back --
-    and this test used to demand that be red; once desktop readback started
-    working, that turned the rung red for improving. It is accepted as a named
-    upgrade (ladder.ALSO_ACCEPTED); a real error code still fails."""
+def test_ladder_gui32_is_graded_on_the_full_pass():
+    """gui32 is the GDI/draw rung. It was graded on its soft pass 0x600E (drew,
+    readback mismatched) while arm64 could not read back a 32-bit guest's draw;
+    with that fixed on both hosts, 0x600E is a regression and fails the rung."""
     from tests.qemu.cli import ladder as ladder_mod
 
-    assert ladder_mod.LADDER["gui32"] == 0x600E
+    assert ladder_mod.LADDER["gui32"] == 0x600D
     assert ladder_mod.check(_ladder_log({"gui32": 0x600D})) is None
-    bad = ladder_mod.check(_ladder_log({"gui32": 0xBAD1}))
-    assert bad is not None and "gui32" in bad["salient"][0]
+    for code in (0x600E, 0xBAD1):
+        bad = ladder_mod.check(_ladder_log({"gui32": code}))
+        assert bad is not None and "gui32" in bad["salient"][0]
 
 
 def test_ladder_catches_the_selfmod32_amd64_regression():
@@ -8949,6 +8999,27 @@ def test_an_assertion_glued_onto_the_previous_line_is_still_seen():
         "IoDeviceObject_drv.c:198",
         "IoDeviceObject_drv.c:206",
         "NpfsFileInfo.c:57",
+    }
+
+
+def test_a_cpp_kmtest_keeps_its_assertion_identities():
+    """Upstream made ObTypes a .cpp (synced 2026-09-21). A `.c`-only pattern kept
+    parsing its counts but dropped all 12 of its failing identities, so the
+    ratchet stopped seeing which ObTypes assertions failed. Verbatim lines from
+    an arm64 sweep, 2026-10-08."""
+    P = _parser()
+    log = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed:",
+        "ObTypes.cpp:269: Test failed: ObjectType->TypeInfo.ValidAccessMask = 0x001f0003,"
+        " expected 0x001f000f\nObTypes.cpp:80: Test failed: ObOpenObjectByName failed for"
+        " '\\ObjectTypes\\FilterConnectionPort': c0000034\nIoDeviceObject_drv.c:206: Test failed:",
+    )
+    results, _, _ = P.parse(log)
+    assert results[0]["asserts"] == {
+        "IoDeviceObject_drv.c:198",
+        "IoDeviceObject_drv.c:206",
+        "ObTypes.cpp:269",
+        "ObTypes.cpp:80",
     }
 
 
@@ -9657,8 +9728,88 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(working + test.format(8, 0))
     assert bad and bad["classification"] == "NVME_BOUNCED"
     assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_LOSE_COMPLETION=3")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_RESET"
+    reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
+    assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
+    port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
+    assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_nvme_fail_start_must_hand_its_messages_back(monkeypatch):
+    """No boot removes a device, so the release path runs only under the tripwire;
+    the verdict must see every step, not just the failed START."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_FAIL_START=1")
+    failed = "[NVME] controller 0: tripwire: failing START after connecting\n"
+    bad = smoke_mod._nvme_check(failed)
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert any("disconnected" in s for s in bad["salient"])
+    steps = failed + (
+        "[NVME] controller 0: interrupts disconnected\n"
+        "(pci-rust/src/msix.rs:1) MSI-X disabled for 1b36:0010\n"
+    )
+    bad = smoke_mod._nvme_check(steps)
+    assert bad and any("back to the HAL" in s for s in bad["salient"])
+    bad = smoke_mod._nvme_check(steps + "[PNP] message interrupts: 1 back to the HAL, 1 refused\n")
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert (
+        smoke_mod._nvme_check(steps + "[PNP] message interrupts: 2 back to the HAL, 0 refused\n")
+        is None
+    )
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
+
+
+def test_xhci_boot_must_interrupt_the_way_asked(monkeypatch):
+    """A controller left on its line still enumerates, and the desktop needs no USB,
+    so only the verdict can tell a broken message path from a working one."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_TRIPWIRE", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msix")
+    running = "[XHCI] controller running: xHCI 1.00, 16 slots\n"
+    bad = smoke_mod._xhci_check("[EXPLORER] _tWinMain entered\n")
+    assert bad and bad["classification"] == "XHCI_NOT_ENGAGED"
+    bad = smoke_mod._xhci_check(running)
+    assert bad and bad["classification"] == "XHCI_NO_TRANSFERS"
+    kbd = "[DA] START USB\\Vid_0627&Pid_0001\\3&b8aad27b&1 -> 0x0\n"
+    bad = smoke_mod._xhci_check(running + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msix = (
+        "(pci-rust/src/msix.rs:1) MSI-X enabled for 1b36:000d: 1 of 16 table entries\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msix + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msi")
+    bad = smoke_mod._xhci_check(running + msix + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msi = (
+        "(pci-rust/src/msix.rs:1) MSI enabled for 1b36:000d: 4 message(s), data 0x50\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET XHCI_MSI_MESSAGES=8")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_MSI_BLOCK_SHORT"
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "XHCI_MSI_MESSAGES=4")
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "line")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_LINE"
+    assert smoke_mod._xhci_check(running + kbd) is None
+    monkeypatch.delenv("VIBEOS_QEMU_XHCI_MSI")
+    assert smoke_mod._xhci_check("") is None
 
 
 def test_arm64_boot_must_serve_its_virtio_mmio_scratch_disk():
@@ -10707,6 +10858,41 @@ def test_payload_borrowed_binary_is_rebuilt_by_its_owner(tmp_path, monkeypatch):
     assert exe.read_text().strip() == "built"
 
 
+def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypatch):
+    """appstorm64 stages the AMD64 appstorm onto arm64 media (`build_arch: amd64`).
+    Judging the owner's arm64 output instead would stage a stale x86-64 binary."""
+    import os
+
+    pc = _load_payload_compile()
+    payloads = tmp_path / "tools" / "payloads"
+    owner = payloads / "runner"
+    owner.mkdir(parents=True)
+    (owner / "payload.yaml").write_text(
+        "name: runner\nbinaries:\n"
+        "  - src: tools/payloads/runner/run-{arch}.exe\n    dest: run.exe\n"
+    )
+    (owner / "build.sh").write_text('echo built > "$(dirname "$0")/run-$1.exe"\n')
+    fresh = owner / "run-arm64.exe"
+    fresh.write_text("fresh")
+    exe = owner / "run-amd64.exe"
+    exe.write_text("old")
+    os.utime(exe, (1, 1))  # older than build.sh: stale
+    user = payloads / "guest"
+    user.mkdir(parents=True)
+    (user / "payload.yaml").write_text(
+        "name: guest\nbinaries:\n  - src: tools/payloads/runner/run-{arch}.exe\n"
+        "    build_arch: amd64\n    dest: run.exe\n"
+    )
+    monkeypatch.setattr(pc, "PAYLOADS_DIR", payloads)
+    monkeypatch.setattr(pc, "REPO", tmp_path)
+
+    assert pc.borrowed_builds("guest", "arm64") == [("runner", "amd64")]
+    assert pc.ensure_built(["guest"], "arm64") == ["runner"]
+    assert exe.read_text().strip() == "built"
+    assert fresh.read_text() == "fresh"
+    assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
@@ -11214,3 +11400,48 @@ def test_a_host_launch_failure_does_not_cancel_the_payload_runs():
     assert smoke_mod._guest_reached_desktop([ok, launch, ok])
     assert not smoke_mod._guest_reached_desktop([ok, hang, ok])
     assert not smoke_mod._guest_reached_desktop([launch, launch])
+
+
+def test_payload_vm_lifetime_covers_the_declared_drain():
+    """appstorm64 declares a 7200s drain; the 30-min QEMU cap SIGTERMed its VM mid-sweep."""
+    assert smoke_mod._payload_vm_lifetime(600, 7200, environ={}) == 600 + 7200 + 300
+    # A short payload keeps the cap already in force, never less.
+    assert smoke_mod._payload_vm_lifetime(600, 30, environ={}) == 30 * 60
+    assert (
+        smoke_mod._payload_vm_lifetime(600, 30, environ={"VIBEOS_QEMU_MAX_LIFETIME": "5000"})
+        == 5000
+    )
+
+
+def test_payload_vm_memory_sizes_compare_numerically():
+    """appstorm64 declares vm_memory: 2G; the largest declared size wins, compared as MiB."""
+    assert smoke_mod._mem_mb("2G") == 2048
+    assert smoke_mod._mem_mb("1536M") == 1536
+    assert max("1536M", "2G", "", key=smoke_mod._mem_mb) == "2G"
+
+
+def test_qemu_memory_override_is_validated(monkeypatch):
+    from tests.qemu import vm as vm_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "2G")
+    assert vm_mod.get_arch_config("arm64").memory == "2G"
+    monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "lots")
+    with pytest.raises(ValueError):
+        vm_mod.get_arch_config("arm64")
+
+
+def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
+    # A BUGCHECK in the payload VM must name itself (and be symbolicated now, against the
+    # build that booted), not hide behind "payload suite FAILED" / the net stage's NET_FLAKE.
+    from . import triage as triage_mod
+
+    (tmp_path / "amd64-uefi_serial.log").write_text(
+        "PathName: X:\\\n\n*** BUGCHECK: 0x0000001E (0xffffffffc0000006, 0xfffff800004ef96e, "
+        "0xfffff880759b3680, 0x0000000000000000)\n***   P2 = ntoskrnl.exe+0xEF96E\n"
+    )
+    monkeypatch.setattr(triage_mod, "symbolicate_pc", lambda repo, arch, text: "MmCreatePeb+0x1")
+    crash = smoke_mod._payload_crash(Path("."), "amd64", tmp_path)
+    assert crash is not None and crash["classification"] == "BUGCHECK"
+    assert crash["salient"][-1] == "MmCreatePeb+0x1"
+    (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
+    assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None

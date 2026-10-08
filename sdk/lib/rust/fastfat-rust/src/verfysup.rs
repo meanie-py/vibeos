@@ -22,7 +22,6 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 use crate::ddk_shims::FsRtlIsNtstatusExpected;
 
 extern "system" {
-    fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
@@ -99,8 +98,6 @@ extern "system" {
 pub const BugCheckFileId: u32 = /* FAT_BUG_CHECK_VERFYSUP */ 0;
 pub const Dbg: u32 = /* DEBUG_TRACE_VERFYSUP */ 0;
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/06_FatResetFcb.rs ----
-extern "system" {
-}
 
 const VCB_STATE_FLAG_REMOVABLE_MEDIA: u32 = 0x02;
 const FCB_STATE_PAGING_FILE: u32 = 0x04;
@@ -115,7 +112,7 @@ pub unsafe extern "system" fn FatResetFcb(
 ) {
     let IsRealPagingFile: u8;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     let _ = IrpContext;
 
     if FlagOn(((*(*Fcb).Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) == 0 &&
@@ -149,8 +146,6 @@ pub unsafe extern "system" fn FatResetFcb(
 }
 
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/07_FatMatchFileSize.rs ----
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatMatchFileSize(
@@ -274,8 +269,6 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
 }
 
 // ---- re-stitched from bank: 20260612-145724-verfysup.c/11_FatDeferredCleanVolume.rs ----
-extern "system" {
-}
 
 // fsrtltypes.h value; a wrong copy of these flags leaks a bogus top-level IRP that
 // FatCommonWrite then dereferences (see resrcsup.rs FSRTL_CACHE_TOP_LEVEL_IRP).
@@ -499,7 +492,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
 ) {
     let mut DevMarkedForVerify: i32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, c"FatVerifyVcb, Vcb = %p\n".as_ptr() as *const i8, Vcb);
 
@@ -543,7 +536,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
 ) {
     let mut CurrentFcb: *mut FCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatVerifyFcb, Vcb = %p\n\0".as_ptr() as *const i8, Fcb as *const c_void);
 
@@ -781,7 +774,7 @@ pub unsafe extern "system" fn FatCheckDirtyBit(
 pub unsafe extern "system" fn FatVerifyOperationIsLegal(
     IrpContext: *mut IRP_CONTEXT,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let irp: *mut IRP = (*IrpContext).OriginatingIrp;
 
@@ -818,7 +811,7 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let real_device = (*(*Vcb).Vpb).RealDevice;
     let flags = (*real_device).Flags;

@@ -418,7 +418,7 @@ pub unsafe extern "C" fn msvcrt_init_args() {
 
     MSVCRT__acmdln = _strdup(GetCommandLineA());
     MSVCRT__wcmdln = _wcsdup(GetCommandLineW());
-    initial_wargv = cmdline_to_argv(GetCommandLineW(), &mut initial_argc);
+    initial_wargv = cmdline_to_argv(GetCommandLineW(), &raw mut initial_argc);
     MSVCRT___argc = initial_argc;
     MSVCRT___wargv = initial_wargv;
     MSVCRT___argv = build_argv(initial_wargv);

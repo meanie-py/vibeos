@@ -2375,9 +2375,20 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
 
         MmLockAddressSpace(AddressSpace);
         if Status < 0 {
-            if Status == STATUS_END_OF_FILE {
-                return STATUS_INVALID_FILE_FOR_SECTION;
+            // The C passes STATUS_NO_MEMORY through: MmAccessFault answers it by
+            // rebalancing memory and retrying the fault. The translation tested
+            // STATUS_END_OF_FILE here instead, so a page-in that only lacked a free
+            // page under load became a hard STATUS_IN_PAGE_ERROR -- an amd64 modrun
+            // boot bugchecked 0x1E on it, reading a new process's image header.
+            if Status == STATUS_NO_MEMORY {
+                return Status;
             }
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                c"[MM] Failed to page data in! st=%08lx off=%I64x fo=%p\n".as_ptr(),
+                Status,
+                Offset.QuadPart,
+                (*Segment).FileObject,
+            );
             return STATUS_IN_PAGE_ERROR;
         }
         return STATUS_MM_RESTART_OPERATION;

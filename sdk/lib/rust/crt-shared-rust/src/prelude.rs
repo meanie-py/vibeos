@@ -182,8 +182,10 @@ macro_rules! MSVCRT_CHECK_PMT {
 /// `ARRAY_SIZE(x.as_mut_ptr())`); this is what caught them.
 #[macro_export]
 macro_rules! ARRAY_SIZE {
+    // Through `addr_of!`, as file.rs's copy does: `($a).len()` auto-refs its argument, and
+    // on a `static mut` table that is the shared reference `static_mut_refs` warns about.
     ($a:expr) => {
-        ($a).len()
+        (*core::ptr::addr_of!($a)).len()
     };
 }
 #[macro_export]

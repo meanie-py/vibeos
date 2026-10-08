@@ -181,9 +181,7 @@ pub unsafe extern "C" fn IopFreeDeviceNode(
         ExFreePool((*DeviceNode).ResourceList as *mut core::ffi::c_void);
     }
 
-    if !(*DeviceNode).ResourceListTranslated.is_null() {
-        ExFreePool((*DeviceNode).ResourceListTranslated as *mut core::ffi::c_void);
-    }
+    crate::pnpres::IopDiscardTranslatedResources(DeviceNode);
 
     if !(*DeviceNode).ResourceRequirements.is_null() {
         ExFreePool((*DeviceNode).ResourceRequirements as *mut core::ffi::c_void);

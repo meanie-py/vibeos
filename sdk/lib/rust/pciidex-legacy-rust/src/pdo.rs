@@ -1306,7 +1306,7 @@ pub unsafe extern "C" fn PciIdeXGetControllerVendorId(FdoExtension: PFDO_DEVICE_
 }
 #[no_mangle]
 pub unsafe extern "C" fn PciIdeXGetControllerDeviceId(FdoExtension: PFDO_DEVICE_EXTENSION) -> PCWSTR {
-    /* PAGED_CODE() */
+    /* PAGED_CODE!() */
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as PCSTR,

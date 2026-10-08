@@ -220,7 +220,6 @@ use core::ffi::c_void;
 #[no_mangle] pub unsafe extern "C" fn FREE_POOL(Ptr: PVOID) { if !Ptr.is_null() { ExFreePool(Ptr); } }
 #[no_mangle] pub unsafe extern "C" fn TEST_FLAG(Flags: u32, Bit: u32) -> u8 { ((Flags & Bit) != 0) as u8 }
 #[no_mangle] pub unsafe extern "system" fn NT_ASSERT(_cond: u8) {}
-#[no_mangle] pub unsafe extern "system" fn PAGED_CODE() {}
 #[no_mangle] pub unsafe extern "system" fn ASSERT_PDO(_pdo: PVOID) {}
 #[no_mangle] pub unsafe extern "C" fn SRB_STATUS(st: u8) -> u8 { st & 0x3f }
 #[no_mangle] pub unsafe extern "C" fn Int64ShrlMod32(v: u64, sh: u32) -> u64 { v >> sh }

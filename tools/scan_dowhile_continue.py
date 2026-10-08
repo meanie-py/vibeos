@@ -26,6 +26,17 @@ or carry `// nolint: dowhile-continue (why)` on the `loop {` line.
 
 Findings are keyed by file and enclosing function, not line, so they survive edits.
 
+THE SIBLING IN A MACRO. A `for (init; cond; step)` lowered to `while cond { body; step }`
+has the same defect: C runs `step` on `continue`, Rust jumps past it. Written by hand that
+is ambiguous (a C `while` with a trailing update is faithful), but inside a `macro_rules!`
+it is not: a loop macro that splices its caller's `$body` and THEN advances is a lowered
+`for` by construction, and every caller that writes `continue` spins. kernel32's and
+ole32's wine `LIST_FOR_EACH_ENTRY!` were both this shape (2026-10-08) -- kernel32's
+UpdateResource hung on the second resource it added -- and ole32 had already hand-rolled
+one walk around the macro rather than fix it. So a macro whose `while`/`loop` has anything
+after a `$metavar` statement is flagged with no C reading needed; the fix is to advance at
+the TOP of the loop, behind a first-pass flag, or before the body when `next` is cached.
+
 Usage:
     python3 tools/scan_dowhile_continue.py [--lint] [paths...]
 """
@@ -113,6 +124,52 @@ def scan_text(raw: str) -> list[tuple[int, str, int]]:
     return out
 
 
+MACRO_RE = re.compile(r"\bmacro_rules!\s*(\w+)\s*\{")
+MACRO_LOOP_RE = re.compile(r"\b(?:while\b[^{;]*|loop\s*)\{")
+SPLICE_RE = re.compile(r"(?m)^\s*\$(\w+)\s*;?\s*$")
+
+
+def scan_macros(raw: str) -> list[tuple[int, str]]:
+    """(line, macro name) for each loop macro that advances AFTER splicing `$body`."""
+    text = COMMENT_RE.sub(_blank, raw)
+    text = STRING_RE.sub(_blank, text)
+    text = CHAR_RE.sub(_blank, text)
+    out = []
+    for m in MACRO_RE.finditer(text):
+        end = _match_brace(text, m.end() - 1)
+        if end < 0:
+            continue
+        macro = text[m.end() : end]
+        for lm in MACRO_LOOP_RE.finditer(macro):
+            o = lm.end() - 1
+            c = _match_brace(macro, o)
+            if c < 0:
+                continue
+            body = macro[o + 1 : c]
+            # Only the loop's OWN statements: blank nested blocks (an `if` holding the
+            # advance at the top is the fix, and must not read as "after the body").
+            flat = list(body)
+            i = 0
+            while i < len(body):
+                if body[i] == "{":
+                    e = _match_brace(body, i)
+                    if e < 0:
+                        break
+                    for q in range(i + 1, e):
+                        flat[q] = " "
+                    i = e + 1
+                else:
+                    i += 1
+            flat_s = "".join(flat)
+            splice = None
+            for sm in SPLICE_RE.finditer(flat_s):
+                splice = sm
+            if splice and flat_s[splice.end() :].strip():
+                out.append((text.count("\n", 0, m.start()) + 1, m.group(1)))
+                break
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -132,6 +189,19 @@ def main() -> int:
             rel = f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f
             findings.append((str(rel), line, fn, count))
 
+    macro_findings = []
+    for f in files:
+        for line, name in scan_macros(f.read_text(errors="replace")):
+            rel = f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f
+            macro_findings.append((str(rel), line, name))
+    for rel, line, name in macro_findings:
+        if args.lint:
+            print(f"{rel}: macro {name}: loop advances after the spliced body; `continue` skips it")
+        else:
+            print(
+                f"{rel}:{line}: macro {name}: a `continue` in the caller's body skips the advance"
+            )
+
     for rel, line, fn, count in findings:
         if args.lint:
             print(f"{rel}: fn {fn}: loop ends in a do-while condition that `continue` skips")
@@ -139,7 +209,7 @@ def main() -> int:
             print(
                 f"{rel}:{line}: fn {fn}: {count} continue(s) skip the trailing `if .. {{ break; }}`"
             )
-    return 1 if findings else 0
+    return 1 if findings or macro_findings else 0
 
 
 if __name__ == "__main__":

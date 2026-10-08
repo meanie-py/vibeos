@@ -46,24 +46,20 @@ import subprocess
 import time
 from pathlib import Path
 
-# guest -> the exit code that means PASS. gui32 reports 0x600e (it is the
-# GDI/draw rung and has its own verdict code); everything else uses 0x600d.
-# These are the arches' SHARED ladder — the parity claim is that the same
-# guest passes on a JIT host and on a native compat-mode host, whose arrival
-# paths share nothing below wow64.dll. arm64-only extras (fexprobe,
-# wow64probe) are reported when seen but are not required, so this table stays
-# the definition of parity rather than of "whatever arm64 happens to stage".
-# A verdict BETTER than the one a rung is graded on. gui32's 0x600E means "drew,
-# but GetPixel readback mismatched" -- the soft pass it earned when desktop
-# readback did not work. Once readback started working it exited 0x600D, a full
-# PASS, and an exact-match grade failed the rung for improving: LADDER_FAIL
-# "gui32.exe exit = 0x600d (want 0x600e)" on a tree whose gui32 log said
-# "PASS: 32-bit GDI drew on the host desktop and read it back". Its source never
-# changed; the OS got better. The graded value stays 0x600E so an arch where
-# readback still mismatches stays green; this names the upgrade.
-ALSO_ACCEPTED: dict[str, frozenset[int]] = {
-    "gui32": frozenset({0x600D}),
-}
+# guest -> the exit code that means PASS. These are the arches' SHARED ladder —
+# the parity claim is that the same guest passes on a JIT host and on a native
+# compat-mode host, whose arrival paths share nothing below wow64.dll. arm64-only
+# extras (fexprobe, wow64probe) are reported when seen but are not required, so
+# this table stays the definition of parity rather than of "whatever arm64
+# happens to stage".
+# gui32 was graded on 0x600E ("drew, but GetPixel readback mismatched") while
+# arm64 never read back what it drew: the arm64 syscall path read TEB64's GDI
+# batch count, so a 32-bit guest's batched PatBlt was still unflushed when
+# GetPixel ran (trap.rs GdiBatchCountOf). Both hosts read back now, so the rung
+# is graded on the full pass and a mismatch is red again.
+# A verdict BETTER than the one a rung is graded on: a named upgrade, so a rung
+# never fails for improving (gui32 did, once, while it was graded on 0x600E).
+ALSO_ACCEPTED: dict[str, frozenset[int]] = {}
 
 
 def verdict_ok(guest: str, got: int, want: int) -> bool:
@@ -73,7 +69,7 @@ def verdict_ok(guest: str, got: int, want: int) -> bool:
 
 LADDER: dict[str, int] = {
     "hello32": 0x600D,
-    "gui32": 0x600E,
+    "gui32": 0x600D,
     "win32": 0x600D,
     "file32": 0x600D,
     "async32": 0x600D,

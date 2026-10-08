@@ -258,39 +258,9 @@ PUBLIC KiUserExceptionDispatcher
 
 RaiseException:
 
-#ifdef _USE_DUMMY_PSEH
-    /* DUMMY_PSEH: SEH handlers are dead code, so no handler will ever catch
-     * exceptions. For continuable exceptions (e.g. DBG_PRINTEXCEPTION_C),
-     * swallow the exception by resuming execution. This simulates the effect
-     * of _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER) catching the exception and
-     * falling through after the TRY/EXCEPT block. */
-    lea rax, [rsp + CONTEXT_FRAME_LENGTH] /* ExceptionRecord */
-    test dword ptr [rax + ErExceptionFlags], EXCEPTION_NONCONTINUABLE
-    jnz _DummyPseh_RaiseSecondChance
-
-    /* Don't swallow NT error/warning statuses (hardware exceptions like
-     * ACCESS_VIOLATION 0xC0000005). These re-execute the faulting instruction
-     * on ZwContinue, causing an infinite loop. Only swallow "software"
-     * exceptions with codes below 0xC0000000 (e.g. DBG_PRINTEXCEPTION_C
-     * 0x40010006, RPC_S_SERVER_UNAVAILABLE 0x6BA). */
-    cmp dword ptr [rax + ErExceptionCode], HEX(C0000000)
-    jae _DummyPseh_RaiseSecondChance
-
-    /* Continuable software exception - swallow it by resuming execution.
-     * For STATUS_BREAKPOINT (0x80000003): KiDispatchException decremented
-     * Rip by 1 to point at the int3 byte. We must skip it (+1) to avoid
-     * re-executing the breakpoint in an infinite loop. */
-    cmp dword ptr [rax + ErExceptionCode], HEX(80000003)
-    jne _DummyPseh_NoBreakpointAdjust
-    inc qword ptr [rsp + CxRip]
-_DummyPseh_NoBreakpointAdjust:
-    lea rcx, [rsp] /* ContextRecord */
-    mov dl, 0 /* TestAlert */
-    call ZwContinue
-    jmp Exit
-
-_DummyPseh_RaiseSecondChance:
-#endif
+    /* No handler took it: raise it second chance, as Windows does. Do not resume
+     * here -- every Win32 thread runs under kernel32's top-level __except, and a
+     * resumed int3 or guard-page fault just hides the bug. */
 
     /* Raise the exception */
     lea rcx, [rsp + CONTEXT_FRAME_LENGTH] /* ExceptionRecord */

@@ -423,7 +423,7 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
 | 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). Next: its interrupts, then GEM and I217. The Pi 5's GEM is not in its firmware's ACPI tables at all (`docs/engineering/pi5-acpi/dsdt.dsl`), so it needs describing before a driver can find it |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). **Pi 5 GEM works** (2026-10-08: the HAL synthesizes `VIBEOS\RP1GEM` because the firmware's ACPI omits it; netstack's `gem.rs`, polled; 1 Gb/s link, DHCP, ping, 1 MiB TCP echo intact at 60 KiB/s, the same as GENET). Its MAC is the board's own, from the VideoCore mailbox. Owed on the GEM: interrupts (RP1 source 6 is not routed under UEFI: `MSIX_CFG(6)` is 0). Next: interrupts for both, then I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
 
@@ -594,29 +594,69 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
-  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
-  probe creates with a password, a wrong or empty password and an unknown user all fail
-  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
-  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
-  token builder returns that status; the next suspect is `CreateLogonSession` ->
-  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
-  logon failed the same way before the msv1_0 no-op-goto fix.
-- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
-  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
-  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
-  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
-  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
-  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
-  `farm` of modrun boots to catch the writer.
+- **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
+  SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
+  lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now
+  runs without its xfail.
+- **amd64: one BUGCHECK 0x1E (c0000006) creating a process** (FIX LANDED, NOT YET REPRODUCED,
+  2026-10-08; seen once in eight `modrun` boots, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`).
+  Symbolicated against the kernel that booted (flake-farm `kernels/2d34ef08c870`), the fault is
+  `PspCreateProcess -> MmCreatePeb -> RtlImageNtHeader`, an in-page error on the new image's
+  header; the earlier "MiAllocatePagesForMdl" came from symbolicating a later build. The
+  translated `MmNotPresentFaultSectionView` turned a page-in's STATUS_NO_MEMORY (which
+  MmAccessFault retries) into STATUS_IN_PAGE_ERROR, and MmCreatePeb had dropped the C's SEH
+  around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
+  st=...` with the real status instead of bugchecking.
 
-- **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
-  mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
-  `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were
-  right. Every file shows it, the Ventoy stick's and the RAM disk's (`X:`) too. Writing is
-  fine: a file VibeOS copied to the stick has its real time when Linux reads it. So the fault
-  is on the read side: fastfat's directory query or cmd's formatting. Not yet narrowed, nor
-  whether QEMU shows it.
+- **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
+  2026-10-08). The arm64 HAL fell back to probing QEMU virt's fixed ECAM addresses whenever it
+  found no MCFG, and took any first word other than 0xFFFF as a host bridge. On the Pi 5
+  the MCFG (OEM RPIFDN, 92 bytes) has its signature zeroed somewhere between freeldr's read and
+  the HAL's (nothing in our tree writes it; the firmware at ExitBootServices is the suspect),
+  so the board has "no MCFG" by the time the HAL looks. Then 0x3F00_0000 (RAM; the old HAL) or 0x40_1000_0000 (`ecam.rs`, landed from
+  the pcie lane the same day) answered. pci.sys, bound to the hive's `Root\*PNP0A03`,
+  enumerated those bytes as ~100 devices (`VEN_706F` = "op", `SUBSYS_72656666` = "reff"),
+  writing command registers and BAR probes into whatever was there, and umpnpmgr spawned
+  `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
+  ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
+  after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
+  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
+  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+- **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
+  quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
+  - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
+    GEM driver does nothing about LPI. Lost requests came one every 2.5 s in bursts every
+    ~14 s; a capture on a second LAN host showed every one on the wire, and a per-sequence
+    trace showed none reached the driver, with the GEM counting no FCS, buffer or overrun
+    error. `gem.rs` now clears the advertisement: 360/360 from two hosts at once.
+  - **Self-tests aimed at QEMU's slirp.** `settest` programmed a default route via
+    10.0.2.2, so the board ARPed for it every second, and smoltcp rate-limits neighbor
+    discovery for the whole interface; the ICMP, DNS and TDI datagram self-tests and the
+    engine's boot ping targeted 10.0.2.x too and failed on every Pi 5 boot. They now use the
+    lease's gateway and DNS server (`netcfg::gateway`, `dns0`), which are the same addresses
+    under slirp; the TCP connects that need the harness's 10.0.2.100 listener run only on
+    slirp (`netcfg::on_slirp`). QEMU arm64-net suite: 15 passed, 1 skipped.
+  - **Console chatter.** Per-thread and per-process breadcrumbs (`[PS]`, `[MM] InitProcAS`,
+    `[IRQL-CHK]`, `[APC]`) now print only under the `PROCTRACE` boot option; classpnp's
+    `TracePrint` limits each repeating warning (the Pico's empty disk polled every second)
+    to its first 8 occurrences, then every 1000th. Settled desktop: 0 B/s.
+  Owed: the GEM's transmitter goes idle after almost every frame (130 restarts for 211
+  frames sent), so each reply waits for the next `reap_tx` instead of leaving at once (fine
+  at ping rates, a throughput cap); GEM interrupts would fix both. The Pi 4's GENET drives the
+  same PHY and does not touch EEE either: measure it before changing it. `stortest.exe`
+  opens every volume each 2 s for two minutes on a board whose test volume it cannot find,
+  and each open of an unmountable volume (the SD's ext4 root, the empty Pico) retries every
+  file system.
+
+- **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
+  query passed only the time half of the FAT stamp to its time converter, so the date read as
+  zero. `test_xhci.py::test_usb_stick_dir_dates` covers it. Owed from the same hunt: the crate
+  re-declares its own functions in `extern` blocks hundreds of times (13,141 across 104 crates),
+  which hides type mismatches from rustc; converting them to `crate::` imports, as was done here
+  for timesup, is the fix. Field manual, "An `extern` declaration for a symbol YOUR OWN CRATE
+  defines". Also owed: a file VibeOS wrote from the **Pi 4** (`REDIR.TXT` on the bench stick)
+  carries the date 08/05/2097. The same write path stamps the right year in QEMU, so suspect
+  the Pi 4's clock (no RTC; whatever UEFI hands over) before fastfat.
 
 - **arm64: keystrokes sent through QMP to the default virtio keyboard do not reach the
   desktop's windows** (OPEN, 2026-10-06, seen while gating nvme.sys). On a quiet arm64 boot,
@@ -647,6 +687,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   can start a native arm64 child (system32 hides only foreign DLLs from it now, as Windows on
   ARM hides nothing), and TerminateProcess ends a spinning guest of either width. Nothing in
   the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
+- **Stock x86-64 apps run under FEX on arm64** (2026-10-08). The `appstorm64` payload sweeps the
+  stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
+  x86-64 process. Later the same day rapps and iexplore pass too (an unstaged rsaenh), and
+  control.exe and the applets turned out slow, not hung, once appstorm could sample x86-64
+  threads. Owed: a full sweep on a quiet host, an x86-64-only taskmgr close deadlock (a sent
+  message never dispatched, 1 in 6 runs), per-syscall cost under FEX, and memory (an exhausted
+  machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
+  paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
+- **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
+  `usercall.rs`) checked TEB64's GDI batch count, so a 32-bit guest's batched PatBlt was still
+  unflushed when GetPixel ran (the C `KiWow64GdiBatchCount` fix was in the cohab-flipped
+  `trap.c`). gui32 is graded on its full pass (`0x600D`) on both hosts now.
 - **arm64: a software raise that a handler CONTINUES never returns** (OPEN, 2026-10-06, wowx64
   lane). The arm64 `RtlRaiseException` (rtl-diag `exception.rs`) hands the dispatcher a context
   captured mid-body of itself, so `ZwContinue` after a vectored handler's
@@ -691,10 +743,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   was first logged as "the SD card's first write blocks" (`9208546a69b0`), then as a CSR
   wait; both were wrong, and the serial log had the panic all along. Regression:
   `test_xhci.py::test_usb_stick_cmd_redirection`. **Still owed:**
-  `tools/scan_flex_array_panic.py` would have caught this, but it reports 99 of 218 crates
+  `tools/scan_flex_array_panic.py` would have caught this, but it reports ~100 crates
   "NOT BUILT", among them smss-csrss-rust, ntoskrnl, win32k and hal. Cargo-linked
-  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never
-  reads, so the boot path has no coverage.
+  modules build in `sdk/lib/rust/target/<crate>-<arch>-cargo-link/`, which it never read.
+  **Closed 2026-10-08:** the gated reader now reads every cargo-linked image the build
+  graph declares, and its first pass found ten more of this class on the boot path (see
+  the flexible-array entry below).
 - **Explorer crashed on Enter in a Start menu with nothing selected** (FIXED 2026-10-06,
   an upstream ReactOS defect). Ctrl+Esc opens the menu with no hot item, and
   `CMenuBand::_MenuItemSelect(MPOS_EXECUTE)` calls through a NULL `m_hotBar`; the Rust now
@@ -840,41 +894,43 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `RtlRaiseException` never had one, which is what showed it was not load-bearing; both
   nets are gone, and smoke ×3 plus `appstorm` on i386 and amd64 (43/43 each) show no
   second-chance deaths. An unhandled `RaiseException` now ends the process at the raise,
-  as on Windows: read the `[KI-EXC] ... second chance` line. STILL OWED: the sibling net
-  in `KiUserExceptionDispatcher` (`dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`)
-  resumes kernel-delivered continuable exceptions below 0xC0000000, chiefly a user-mode
-  `int3` with no debugger, which Windows would kill.
-- **Wine's ucrtbase conformance suite: the failures the all-Rust ucrtbase SHARES with
-  Microsoft's C** (OPEN, 2026-10-03; i386). `tools/payloads/ucrtwine` runs
-  `ucrtbase_winetest` + `ucrtbase_apitest` in the guest; `tools/payloads/ucrtwineab` runs
-  the same binaries against the pre-takeover ucrtbase.dll (`24089de2c88`, Microsoft's C)
-  staged beside them. The two agree failure for failure, so none of these is a Rust
-  regression, but each is owed: `file` 10 failures of 120 (identical on both; was an AV
-  while the sweep ran it from the read-only CDFS); `misc` (198,593 checks) is down to ONE failure as of 2026-10-07:
-  misc.c:1355, `clock()` ~0.8-3 s below its window measured from the process creation time
-  (TCG start-up latency or the clock base, not yet split). Its earlier deaths and failures
-  are all FIXED: the `log10(INFINITY)` hang (cnt-rust's `log10`/`pow`/`fmod` were ports of
-  upstream's placeholder C -- `pow(2, 0.5) == 0` shipped on every arch -- and are the `libm`
-  crate's now, x87 asm on no-SSE i386; `tools/payloads/matherrs` traces Wine's test per call),
-  the math-errno checks (cnt-rust reports through `__cnt_math_error` at Wine's `math_error`
-  points; `matherrs` is 304 checks, 0 failed on all three arches), misc.c:363
-  (`_EM_AMBIGUOUS`, the i386 `_control87` in fenv.rs), and misc.c:1126/1127 (gone by
-  2026-10-07; not re-bisected). `cpp` is 33 checks, 0 failed (FIXED 2026-10-07): it HUNG in
-  ntdll's `InterlockedPushEntrySList` -- the slist crate's i386 `cmpxchg8b` let LLVM put the
-  header pointer in ebx, which its own `xchg` then overwrote, so the CAS compared against the
-  entry and spun (also in ks.sys; `tools/scan_xchg_ebx_deref.py` now gates the class on every
-  i386 build) -- and then failed `__unDName`'s four ref-qualifier rows, the `#ifdef _UCRT`
-  arms the translation had pinned off for ucrtbase too. `string` fails two `mbstowcs` UTF-8 checks
-  (string.c:831/835) -- ROOT-CAUSED, expected: kernel32 exports `IsValidLocaleName` only at
-  `-version=0x600+` and this build is NT 5.2, so ucrtbase takes its downlevel locale path,
-  where ".UTF-8" is not a code page and `en_US.UTF-8` resolves by LCID to ANSI 1252 (UCRT
-  on Server 2003 does the same; kernel32 itself converts CP_UTF8 correctly); `ucrtbase_apitest` dies on an invalid handle (0xC0000008).
-  `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
-  an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
-  language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the
-  OS failed with 1815, and %TEMP% sat on the read-only boot image. Only ucrtbase
-  divergence found: the i386 `_invoke_watson` report-fault stub wrote CONTEXT out of
-  order (fixed the same day).
+  as on Windows: read the `[KI-EXC] ... second chance` line. Its sibling net in
+  `KiUserExceptionDispatcher` (`dll/ntdll/dispatch/{i386,amd64,arm64}/dispatch.S`), which
+  resumed kernel-delivered continuable exceptions below 0xC0000000 (chiefly a user-mode
+  `int3` with no debugger, which Windows kills), is gone too (2026-10-08); smoke on all
+  three arches logs no second-chance exception.
+- **Wine's ucrtbase conformance suite + ucrtbase apitest** (FIXED, 2026-10-08; i386 -- the
+  rostests corpus builds on i386 only). `tools/payloads/ucrtwine` runs both in the guest:
+  **26 subtests, 0 failures** (`misc` 198,593 checks, `string` 787,359). `ucrtwineab` runs
+  them against Microsoft's C ucrtbase (`24089de2c88`), which failed the same rows ours did --
+  so every last one was the OS or the harness, not the Rust CRT. The fixes, oldest first:
+  `log10(INFINITY)` hang and `pow`/`fmod` (cnt-rust ported upstream's placeholder C; now the
+  `libm` crate, x87 asm on no-SSE i386); math-errno reporting at Wine's `math_error` points;
+  `_EM_AMBIGUOUS` in the i386 `_control87`; kernel32 `FindResourceA` asking for
+  LANG_CHINESE (every ANSI resource lookup failed 1815) and %TEMP% on the read-only image
+  (`thread`); `_invoke_watson`'s CONTEXT order; the slist `cmpxchg8b`/ebx alias (`cpp` hung;
+  `tools/scan_xchg_ebx_deref.py` gates the class); `__unDName`'s `_UCRT` ref-qualifier arms;
+  `clock()` -- the APIC HAL calibrated the TSC from four RTC interrupts, which TCG latency
+  inflated up to 1.5x, now a polled 50 ms PIT one-shot (`[HAL] TSC ... kHz`); the apitest
+  building against msvcrt's headers and startup (0xC0000008 at its first call); `round(-0.0)`;
+  `setjmp`'s stored `Esp`; no top-level SEH frame on any Win32 thread (kernel32 now runs the
+  start routine under `RtlSehTryExcept` + `UnhandledExceptionFilter`; `sehtest` covers it);
+  i386 `exp(NaN)` canonicalising when the high word has no payload, as Windows does (fit to
+  exp.c's ten `_M_IX86` rows, `exp` only); `setjmp.c`'s clang `skip()` falling through into the
+  next `case`, and its `__finally` compiled dead (that TU now builds with real SEH); then
+  `_seh_longjmp_unwind` handing scope handlers the jmp_buf's Ebp rather than
+  `registration + 0x10` -- the same address in an MSVC frame, not in a clang-realigned one
+  (field manual); kernel32 `IsValidLocale` calling LOCALE_NEUTRAL/USER_DEFAULT/SYSTEM_DEFAULT
+  valid, which made ucrtbase's downlevel `IsValidLocaleName` accept every name, so
+  `en_US.UTF-8` came out ANSI 1252; ucrtbase's `__acrt_MultiByteToWideChar`/
+  `__acrt_WideCharToMultiByte` passing MB_PRECOMPOSED etc. through for CP_UTF8 (Windows
+  rejects them; UCRT's own wrapper masks them), which left LC_CTYPE at "C"; and the apitest
+  sweep runner starting children with stdin = INVALID_HANDLE_VALUE, which pins fd 0 so
+  `fclose(stdin)` cannot free it (`file` 91/97/170/175).
+  Expected skips, not failures: `file`'s seven `.utf8` locales and `setjmp`'s two clang
+  skips. A bare ".utf8" with no language is refused on this NT 5.2 build because UCRT's
+  downlevel path (no `CompareStringEx`) parses no UTF-8 code page; Microsoft's UCRT does the
+  same downlevel, and a language-tagged `en_US.UTF-8` works.
   Owner: ucrt-rust lane.
 - **arm64 ucrtbase forwards `_clearfp`/`_control87`/`_controlfp`/`_statusfp` to msvcrt.dll**
   (FIXED 2026-10-03: ucrt-rust `fpctrl_arm64.rs`, graded by `tools/payloads/fpctrl` against
@@ -1020,23 +1076,62 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     rounds with no regression, pass 209-215 (runs 20261008-010705-u8wibif3,
     20261008-011551-njv_6fyb, 20261008-011852-d36dvtvt). The baseline (204) was never raised,
     so a later timing-only drop no longer fails the ratchet.
-  - **arm64: a new thread is not blocked on its mutex within 50 ms** (OPEN, found 2026-10-08).
-    The rest of `TestFastMutexConcurrent` (ExFastMutex lines 283-315) still fails 4-10
-    assertions per run: after `PsCreateSystemThread` and a 50 ms wait, the new thread has not
-    reached `ExAcquireFastMutex` (Count 0, not -1). It happens on ONE vCPU (the gate boots
-    without `-smp`), so it is not cross-CPU placement; i386 passes the same test 246/250.
-    Suspects: how soon a readied thread runs on arm64 without a DISPATCH software interrupt,
-    or the wait's timeout expiring early. Raise the ExFastMutex baseline once this is fixed.
-  - **SMP `KiIdleSummary` bits are never cleared** (OPEN, found 2026-10-08). The C only clears
-    them in its `#ifndef CONFIG_SMP` fast path (`thrdschd.c:310-322`), and the Rust copied that,
-    so after boot every CPU reads as idle forever and `KiSelectNextProcessor` ignores real
-    idleness: a readied thread goes to its ideal processor even when that one is busy and
-    another sits in WFI. Same class on the DPC side: `KiInsertQueueDpc` skips the wake IPI for
-    "idle" CPUs, which here halt rather than poll. Drafted fix (NT's rule): in the SMP path of
-    `KiDeferredReadyThread`, when the chosen PRCB is in the summary with no NextThread and
-    CurrentThread == IdleThread, clear its bit, make the thread Standby/NextThread and IPI;
-    and clear the bit when the arm64 idle loop takes a thread off its own ready list. Not
-    landed: it did not explain the 1-vCPU flake above and needs `-smp N` evidence first.
+  - **arm64: a new thread is not blocked on its mutex within 50 ms** (FIXED 2026-10-08,
+    9573606b304). `TestFastMutexConcurrent` (ExFastMutex :283-:315) lost its 50 ms races on
+    one vCPU: the new thread sat Ready for the whole wait because livecd setup.exe's COM
+    registration (33-42 s of priority-8 user mode) was still running. kmtest-sweep now waits
+    for setup.exe to exit; arm64 ExFastMutex 219/0 and the baseline is raised.
+  - **SMP `KiIdleSummary` bits are never cleared** (FIXED 2026-10-08). The C only clears them
+    in its `#ifndef CONFIG_SMP` path (`thrdschd.c:310-322`) and the Rust copied that, so after
+    boot every CPU read as idle forever: `KiSelectNextProcessor` sent a readied thread to its
+    ideal processor even when that one was busy and another sat in WFI/hlt. Fix (NT's rule):
+    `KiDeferredReadyThread` clears the bit when it hands an idle processor a thread, and the
+    arm64 idle loop clears it when it takes work off its own ready list. Same class on the DPC
+    side: `KiInsertQueueDpc` skipped the wake IPI for "idle" CPUs, trusting them to poll, but
+    ours halt and never set `Sleeping`; the IPI is now always sent for a remote high-importance
+    DPC. Exposed the AP TTBR0 bug below, and kmtest `KeEvent`'s one-CPU assumptions (see
+    the `-smp 2` baseline entry).
+  - **arm64 APs ran System threads on the trampoline's identity map** (FIXED 2026-10-08). An
+    AP leaves the HAL trampoline (`hal-rust/src/arm64/mpboot.rs`) with TTBR0 = a temporary
+    identity map, and `KiSwapProcess` only reloads TTBR0 when the process changes; every
+    System thread shares the idle process's directory, so nothing ever replaced it. A System
+    thread touching a user-half VA on CPU1 (the ntdll view `PsLocateSystemDll` maps into
+    System) took a level-0 translation fault the pager could never satisfy: `FAULT LOOP`,
+    then `PspInitializeSystemDll FAILED subcode=7`, BugCheck 0x6B. Latent on master because
+    threads rarely ran there; with the idle-summary fix it hit 3 of 4 arm64 `-smp 2` boots.
+    Fix: `KiSystemStartupBootStack` installs the idle process's directory in TTBR0/TTBR1 on
+    each AP. After: 3/3 arm64 `-smp 2` smokes green (20261008-104247-pcb01hej).
+  - **arm64 `-smp 2`: a CPU woken by IPI_DPC stopped requesting its own DPCs** (FIXED
+    2026-10-08). kmtest `KeDpc` 316/0 -> 36/70 on master at `-smp 2` (`DpcCount = 0`, the
+    re-insert returns FALSE: the queued DPC never ran). `KiIpiServiceRoutine` sets
+    `DpcInterruptRequested` for every IPI_DPC, and `KiDeferredReadyThread` sends one just to
+    wake a CPU for a readied thread; arm64's `KiDispatchSoftwareIntArm64` only cleared the flag
+    inside `KiRetireDeviceDpcs`, which it skips on an empty queue. The flag stuck at 1, so
+    every later local `KeInsertQueueDpc` pended nothing and DPCs waited for the idle loop. The
+    gate boots one vCPU (no IPIs), so nothing caught it. Fix: clear it on the empty-queue
+    path. After: KeDpc back to 316/0 (run 20261008-113025-wj76_5zu).
+  - **`-smp 2` kmtest rows "below the smp2 baseline" were mostly a stale baseline** (CLOSED
+    2026-10-08; the entry that called them master regressions was wrong). The
+    `kmtest-smp2.txt` files date from 2026-08-01. arm64 `ZwCreateSection` 281/48,
+    `NtSystemDebugControl` 22/20, `MmMdl` 569 and i386 `MmMdl` 587 equal the 1-vCPU
+    baselines' banked values, explained there (`/MININT` livecd boot since 10-03;
+    ZwCreateSection grew from 10 to 329 asserts). Re-banked with `--only`. What was real:
+    - `KeEvent` asserts one-CPU preemption order in two places; both threads of the
+      scheduling section are pinned to processor 0, and `TestEventConcurrent` waits for
+      each waiter to be `Waiting` rather than merely signalled (`KeEvent.c`, commented).
+      arm64 and amd64 `-smp 2` back to 42601/0.
+    - i386 `KeDpc` 316/0 -> 36/70: the same stuck `DpcInterruptRequested` as arm64, in
+      `KiDispatchInterrupt`. Fixed; 316/0.
+    - **i386 APs ran with CR0.WP clear** (FIXED): kernel-mode writes ignored read-only
+      PTEs on every CPU but the boot one. `KeStartAllProcessors` precedes `KeInitSystem`
+      in Phase 1, so APs copied the boot CPU's CR0 before `KiSetCR0Bits` set WP, and the
+      C sets it only on the CPU it runs on. kmtest `ZwMapViewOfSection` :492 (a write to
+      a PAGE_READONLY view raised no access violation) failed on 3 of 3 i386 `-smp 2`
+      sweeps, with or without the idle-summary fix. `KiInitMachineDependent` now sets it
+      inside its per-processor affinity loop.
+    Left as timing noise (one sample each): amd64 `ExResource` (its :480/:518/:620 are
+    already `assert?` in the 1-vCPU baseline) and i386 `PsQuota` (nonpaged quota off by 24
+    bytes in 1 of 2 sweeps); `IoDeviceObject` +-1 is the known flicker.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -1212,21 +1307,40 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   plus terminator exceeds the caller's capacity. Not covered by any apitest (no rostest
   calls the alias path), so verified by the settled contract + the shipping sibling's
   mechanism + boot; a guest round-trip test is owed if the path ever regresses.
-- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
-  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
-  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
-  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
-  and the device start then tears down through `DeviceClaimRelease(Release)` ->
-  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
-  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
-  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
-  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
-  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
-  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
-  driver just created reads past it. Not a context-size mismatch: the three
-  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
-  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
-  earlier on the new failure path. x64 lane.
+- **cdrom FeatureProfileList: the correct value takes the boot down — FIXED** (2026-10-08).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` instead of cdrom.h's 0x0000
+  because the correct value bugchecked: with 0x0000 QEMU's DVD-ROM is correctly identified
+  as MMC, so the device start runs `DeviceSetRawReadInfo` + `DeviceGetMmcSupportInfo`'s
+  TYPE_ONE probe, and the teardown that follows corrupted the pool (amd64/i386 0x19
+  BAD_POOL_HEADER at the next free, arm64 hang; special pool escalated it to 0x1E in
+  `ExReturnPoolQuota`). 0x0003 masked it by never exercising that path. The roadmap's two
+  open questions resolved into **two independent frees**, not one read-past:
+  (1) **The real pool corruption was a double-free in `DeviceSetRawReadInfo`.** The C
+  `FREE_POOL` is a free-AND-null macro (`ExFreePool(p); p = NULL`); the translation rendered
+  it as a by-value `fn` that cannot null the caller's local, AND added a spurious
+  `FREE_POOL(buffer)` in the success branch that the C does not have (the C success branch
+  is a bare `break`, init.c:2537, with one FnExit free). So FnExit freed the same pointer
+  again. Fixed: removed the spurious success-branch free, null `buffer` after the fail-path
+  free. The free-list dump showed one pointer freed twice back to back.
+  (2) The `FxRequest::Release` read-past (the `--tripwire SPECIALPOOL=CDRO` fault at
+  `wdf01000.sys+0x197FE`) was real but **special-pool-only** and orthogonal; see the
+  SPECIALPOOL entry below. With both fixed, `FeatureProfileList` is restored to 0x0000 and
+  all three arches boot to desktop (gate smoke i386/amd64/arm64 green; conformance i386/amd64
+  green — the only gate red was the unrelated non-deterministic arm64 ExFastMutex ratchet
+  flake). Landed `8f224096404`. The broader class — `FREE_POOL` as a non-nulling fn across
+  cdrom-rust/classpnp — was then AUDITED across the storage stack (2026-10-08, cdrom-rust +
+  classpnp-rust + disk-rust, $0 static scan): per function, group `FREE_POOL` calls by exact
+  freed lvalue and flag any same-pointer pair with no `return`/`break`/`continue`/reassignment/
+  null between them (the `DeviceSetRawReadInfo` signature). Result: **zero remaining real
+  instances.** cdrom-rust and disk-rust clean; classpnp-rust's 52 raw hits (mostly
+  `ClassDeviceControl`'s `'switch: loop { match ioctl {…} }`) are all mutually-exclusive match
+  arms / loop edges (`break 'switch`, `continue 'retry`) / value-reads-before-free — triaged,
+  none real. `DeviceSetRawReadInfo` was the sole instance anywhere, because the translator
+  reproduces the C's control flow faithfully: each branch frees then leaves its path, so the
+  "second free" the C's null-guard neutralised is never reached on the same path. The
+  `macro_rules!`-that-nulls migration was therefore considered and **rejected** — it would
+  churn ~100 call sites (`FREE_POOL!` form, cast-stripping, assignable-lvalue requirement) for
+  no live bug. Documented in the field manual with the detection heuristic; CLOSED.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -1299,9 +1413,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot
-  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
-  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
-  APIC error LVT where the C unmasks it.
+  path.** Decided (2026-10-08): the cdrom `DeviceEvtIoInCallerContext` shadow concern is moot — the
+  C body is dead-on-disk (cdrom.c is in the flip's replaced list, not compiled), and `nm`
+  shows exactly one definition of the symbol (the Rust `#[no_mangle]`); no
+  `--allow-multiple-definition` in the cdrom CMake. The APIC error-LVT divergence was a real
+  dropped-mutation bug: the C mutates one LvtEntry template, the LINT1/NMI step clears
+  `Mask`, and the error-LVT step inherits it (unmasked, "Enable error LVTR"); the Rust
+  rebuilt the value and wrongly set the mask bit. Fixed to match C (`a25b78d8675`).
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
@@ -1443,14 +1561,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   into the slot. See the field manual, "A self-consistent pair of DERIVED values cannot
   detect its own staleness".
 
-- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. OPEN, 2026-09-26.** It
-  faults (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
-  only behind `retValue == 1 &&`, but clang hoists the load of `this+0x6a` above the check
+- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. FIXED, 2026-10-08.** It
+  faulted (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
+  only behind `retValue == 1 &&`, but clang hoisted the load of `this+0x6a` above the check
   (it treats `this` as dereferenceable), so after `FinalRelease` deleted the object it
-  reads freed memory. Harmless on a normal pool (the value is discarded), fatal under
-  special pool because the freed page is unmapped. Not a corruption and not new. Until the
-  hoist is suppressed for that TU, arm special pool by TAG on i386, not `*`, or every
-  wildcard run stops here and reads as a new bug.
+  read freed memory. Harmless on a normal pool (the value is discarded), fatal under
+  special pool because the freed page is unmapped. Fixed in
+  `vendor/wdf/shared/core/fxrequest.cpp` (`8f224096404`): capture `m_Completed` into a local
+  before the `__super` Release, alongside the sibling `IsReserved()`/`IsAllocatedFromIo()`/
+  `IsCanComplete()` flags the function already copies there — value-identical, and the
+  post-free read is gone. `wdf.patch` regenerated to match. Direct `SPECIALPOOL=*` i386
+  confirmation is owed (not in the gate); the amd64 special-pool run that pinned the double-
+  free is now unblocked of this read.
 
 - **The ucrt Tier 2 case generator reads the WRONG headers, and drops what they lack
   without a word. OPEN, owed** (2026-09-26). `gen_ucrt_tier2_cases.ast_functions` parses
@@ -1991,18 +2113,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   characterised.
 
 - **`CmUnloadKey` removes a hive from the hive-file list AFTER closing its files and
-  unlinking it, reading an already-invalidated `LinkData` node. OPEN** (2026-09-22).
-  `config-rust/src/cmapi.rs` has `CmpUnlockRegistry(); CmpCloseHiveFiles(CmHive);
-  CmpRemoveFromHiveFileList(CmHive);` — the exact pre-fix order upstream corrected in
-  `396019984c9` ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491),
-  which is one of the 7 commits we are currently behind. Upstream's symptom is a hive that stays
-  listed under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after being unloaded, seen in
-  1st-stage setup with `\Registry\Machine\USetup_Software`; the deduced `LinkName` can be read
-  from an invalidated `KeyNode.Flags`, so `KEY_COMP_NAME` is misread and the constructed path is
-  garbage. Note the full upstream fix is NOT just the two-line reorder: it caches the path in a
-  new `CMHIVE::HiveRootPath` member (a struct layout change, Vista+ semantics) and rewrites
-  `cmhvlist.c`. Found by the bug-oracle sweep while measuring how far behind upstream we are —
-  the newest 7 commits already contained a live hit against our Rust.
+  unlinking it, reading an already-invalidated `LinkData` node. FIXED 2026-09-26** (opened
+  2026-09-22; entry was stale — the fix landed four days after it was written and the entry was
+  never updated. Re-derived from the live tree 2026-10-08). Upstream's `396019984c9`
+  ("[NTOS:CONFIG] Fix CmpRemoveFromHiveFileList() management", #9564, CORE-6491) was ported
+  IN FULL, not just the two-line reorder:
+  - **The reorder** (`4490bf2afb3`, on master): `cmapi.rs` `CmUnloadKey` now runs
+    `CmpRemoveFromHiveFileList(CmHive)` BEFORE `CmpCloseHiveFiles(CmHive)` (cmapi.rs:1927/1929),
+    so the read happens while the node is still valid.
+  - **The cached-path member**: `CMHIVE::HiveRootPath: UNICODE_STRING` exists in the bindgen
+    layout (the Vista+ struct change); `CmpAddToHiveFileList` captures the path into it
+    (`cmhvlist.rs:339`), and `CmpRemoveFromHiveFileList` deletes the hivelist value via that
+    cached `HiveRootPath` (`cmhvlist.rs:361/391`) rather than re-deriving a `LinkName` from the
+    unlinked node. The in-code comment there documents the exact UAF this avoids.
+  Net: the invalidated-node read is gone by construction (the path no longer depends on node
+  validity at all), so the original symptom — `\Registry\Machine\USetup_Software` left listed
+  under `HKLM\SYSTEM\CurrentControlSet\Control\hivelist` after a clean unload — cannot recur.
+  Docs-only closure; no code change was needed.
 
 - **`NtUserScrollDC` probes three user RECTs and then dereferences them raw — BUGCHECK 0x1E.
   FIXED 2026-09-23**, verified by boot: `user32_apitest ScrollDC` now exits **code=0**, a clean
@@ -4672,7 +4799,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   touched. A verdict that depends on which artifacts a worktree happens to carry is the same
   shape as the AGENTS.md §7-8 fleet-isolation rule about resolving generated artifacts from
   siblings — the sweep should name its corpus, not discover it.
-- **49 more bindgen flexible-array bounds checks are live in built objects — OPEN** (2026-09-06).
+- **Bindgen flexible-array bounds checks in built objects — CLEAN and GATED on all three
+  arches, staticlibs and the cargo-linked boot path** (2026-09-06; closed 2026-10-08).
   Found by generalising the cmlib fix above into `tools/scan_flex_array_panic.py`, which reads
   the i386 disassembly and keeps only `panic_bounds_check` sites whose pushed ARRAY LENGTH is 1
   — the bindgen `[T; 1]` shape — while leaving real fixed arrays alone. The method validated
@@ -4696,11 +4824,26 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   **That ratio is the point: the tool finds the SHAPE, not the bug.** Two discriminators, in
   order — does the C over-allocate, and is the declared length a LITERAL `1` or a named
   arch-dependent constant? Read the declaration before touching a site.
-  Not wired into the gate yet, deliberately: **89 of the 200 declared staticlib crates are not
-  built for i386**, so a baseline captured today would bless whatever happens to be missing.
-  The tool reports those as NOT BUILT (no coverage) rather than skipping them. Wiring it wants
-  the coverage gap closed first, or an explicit per-arch corpus like the one `scan_ud2` still
-  lacks.
+  **Status 2026-10-08.** Every staticlib site is graded: nine fixed by the
+  `warnings-burndown` lane (two in kernel32, ks, lsasrv, msafd, msgina, msv1_0, shell32's
+  `PathIsExeA`, plus the ninth the gate itself found, shell32's `SHTestTokenPrivilegeW`), and the genuine
+  one-element tables recorded in `tools/flex_array_allowlist.txt`, which a stale entry fails.
+  The reader is a `vibeos-cli build` stage, strict in the gate, on **all three arches**:
+  amd64 passes the length in `edx` and arm64 in `w1`, and reading i386 alone had missed a
+  whole crate -- `diskpart-rust` panicked on any disk with two partitions (20 sites, fixed).
+  64-bit adds one false-positive shape, a BRANCH-DERIVED constant on a slice (`cmp $1, %len;
+  je panic(1, 1)`), graded in the allowlist. **The cargo-linked images are read too** -- the
+  boot path (ntoskrnl, win32k, winsrv, ntdll, freeldr, ...), linked PEs declared by
+  `build.ninja`, whose &Location resolves by address. Their first read found TEN real sites,
+  all fixed: win32k's `TTPOLYCURVE.apfx` in both glyph-outline paths and `GLYPHSET.ranges`
+  in `ftGetFontUnicodeRanges` (KERNEL mode: any multi-point curve or multi-range font was a
+  bugcheck), `IopEnumerateDetectedDevices`'s `PartialDescriptors[Count - 1]` (kernel, device
+  enumeration), winsrv's `CONSOLE_STATE_INFO.ConsoleTitle` twice (csrss: starting a console
+  from a shortcut, or opening its Properties), freeldr's `KeyList` (the boot loader, any
+  key's second value), framebuf's `VIDEO_CLUT` (every palette), classpnp's
+  `SrbExDataOffset` and `SlabAllocationBitMap`, and mlang's `GLYPHSET` read. The correct
+  checks (`KeNodeBlock[1]`, kdbg's one-row table, vendored zlib-rs/smoltcp slices, ...) are
+  graded in the allowlist.
 - **cmlib `CmpSelectLeaf` panicked on any multi-leaf index root — FIXED** (2026-09-06).
   It wrote `*RootCell` through `addr_of_mut!((*IndexKey).List[i])` at three sites
   (i = SubKeyIndex, +1, -1). An array index inside a raw-ref still emits a bounds check, and
@@ -5286,6 +5429,50 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     `20261004-073303-11khe67v`, `20261004-171841-f8gc6gdx`. Failing asserts are the
     timeout/thread ones (`KeEvent.c:201/205/207/223`). Counted with the 2026-10-05 parser,
     which no longer mistakes serial interleaving for regressions.
+    **Likely the second load source (2026-10-08, inferred, NOT yet measured for KeEvent):**
+    livecd setup.exe's COM registration burst, which runs after PnP goes quiet and so
+    overlapped the sweep despite `QUIET`. It is proven for arm64 ExFastMutex (next bullet).
+    kmtest-sweep now waits for setup.exe to exit. If KeEvent drops again in a sweep whose
+    serial shows `[KMTEST-SWEEP] setup.exe exited`, this hypothesis is wrong.
+  - **arm64 `ExFastMutex` floor drift (204 -> 202/203, red for every lane on 2026-10-07) —
+    ROOT-CAUSED and FIXED 2026-10-08, now 219/0.** Two causes. (1) A real HAL bug:
+    `ExAcquireFastMutex`/`ExTryToAcquireFastMutex` (hal-rust arm64) stored `OldIrql` before
+    owning the mutex, so a blocked waiter or a failed try overwrote the holder's saved IRQL
+    and the release lowered to the wrong level. That was the "real arm64 divergence" fail=10
+    noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
+    test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
+    paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
+    ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
+    `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
+    `u.List.NextEntry` (bit 32 amd64 / 28 arm64 / 12 i386), reading 0. A private helper
+    `mmpte_list_next_entry` also had the wrong shift on i386 and arm64; it is gone, and every
+    site now uses `MMPTE::{set_,}list_next_entry`. (2) 0x1A/0x401: the `VadType` packing above.
+    (3) `ExIsProcessorFeaturePresent` indexed `KUSER_SHARED_DATA` from its start rather than
+    `ProcessorFeatures[]`, so every feature query returned clock bytes. `PF_PAE_ENABLED` read
+    `InterruptTime`, and the i386 test walked PTEs as PAE into an unmapped page. pcix also
+    calls it. (4) `MM_HIGHEST_VAD_ADDRESS` equalled `MM_HIGHEST_USER_ADDRESS` on all three
+    arches, since 03-13; the C is 16 pages lower. PEB/TEB and other VADs could therefore land
+    in the top band, and a request there got CONFLICTING_ADDRESSES instead of
+    INVALID_ADDRESS. Both tests now in the sweep: MapLocked 16743/0 on every arch;
+    MmReservedMapping 231/0 amd64, 84/0 arm64, and 187/44 on i386, where the 44 are the
+    test's own `<< 32` expectation for a 32-bit PTE and upstream's C fails them too.
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
+    all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
+    (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
+    Upstream's C captures `Next` first; that fix arrived in #9248 alongside the test
+    (`TestDeleteOwnersRanges`), after the June port. It faulted only when the freed block was
+    reused before the read. arm64 FaultVA `0x11FFFFFA80004241` is a heap pointer read one byte
+    off, plus 0x28. All 15 archived hits (10-06 to 10-08), resolved against their own
+    `kernels_dir` index, land on the same list-walk load. The earlier "fsrtl oplock" reading
+    was a symbolication error: the crash builds' addresses had been looked up in a LATER
+    build's index. `addr2sym.sh` silently treated an unknown flag as an address and fell back
+    to the live index; it now has `--index <tsv>` and refuses unknown options. A sweep for the
+    same shape found two more: the same use-after-free in both of `FsRtlUninitializeOplock`'s
+    walks (upstream oplock.c has it too), and a `CONTAINING_RECORD` of the wrong cursor in
+    mountmgr's associated-device removal (also upstream). The 10-06 onset is unexplained; it
+    is presumably pool-reuse timing. Verified by one green sweep per arch; the evidence is the
+    code and the 15/15 hits, not that one sweep.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.
@@ -6152,6 +6339,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+  **2026-10-08: the `MmMapLockedPagesSpecifyCache` face was NOT this bug.** Its 0x401 had its
+  own cause: `MiMapLockedPagesInUserSpace` hand-packed `VadType` at bit 0 (it is bit 52 on
+  64-bit), so `MiUnmapLockedPagesInUserSpace` refused the VAD and never unmapped, and process
+  teardown deleted PTEs it did not own. Fixed and un-quarantined (see below). The page-reuse
+  hunt above stays open; drop the task #7 face from its evidence.
 
   **Tripwire site pinned down (2026-07-26), with the ordering trap that would have made it
   always-NULL.** The free site is `mm/freelist.rs:391 MmDereferencePage` — the

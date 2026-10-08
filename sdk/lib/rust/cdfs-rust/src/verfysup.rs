@@ -70,7 +70,6 @@ extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
@@ -325,7 +324,7 @@ pub unsafe extern "C" fn CdMarkDevForVerifyIfVcbMounted(Vcb: *mut VCB) -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         let mut Status: i32 = STATUS_SUCCESS;
         let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -452,7 +451,7 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
     let RealDevice: *mut DEVICE_OBJECT = (*(*Vcb).Vpb).RealDevice;
     let Irp: *mut IRP;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Check that the fileobject has not been cleaned up.
     if !IrpContext.is_null() {

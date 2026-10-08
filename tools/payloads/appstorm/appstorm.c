@@ -55,6 +55,15 @@ static const app_t apps[] = {
     { "cpl-appwiz", "control.exe", "appwiz.cpl" },    { "cpl-ncpa", "control.exe", "ncpa.cpl" },
     { "cpl-access", "control.exe", "access.cpl" },    { "cpl-powercfg", "control.exe", "powercfg.cpl" },
     { "cpl-inetcpl", "control.exe", "inetcpl.cpl" },  { "cpl-joy", "control.exe", "joy.cpl" },
+    /* The rest of dll/cpl, all Rust since 2026-10-08 (rustconv port, Haiku 5.5). input and
+     * console build as win32dll modules (input.dll, console.dll). Not here: telephon.cpl
+     * hands off to tapi32's internalConfig, a `-stub` in this tree, and odbccp32i.cpl
+     * answers CPL_GETCOUNT with 0 (it only forwards CPL_DBLCLK to odbccp32.dll) -- neither
+     * can open a window, in C or in Rust. */
+    { "cpl-input", "control.exe", "input.dll" },      { "cpl-usrmgr", "control.exe", "usrmgr.cpl" },
+    { "cpl-hdwwiz", "control.exe", "hdwwiz.cpl" },    { "cpl-openglcfg", "control.exe", "openglcfg.cpl" },
+    { "cpl-wined3dcfg", "control.exe", "wined3dcfg.cpl" }, { "cpl-console", "control.exe", "console.dll" },
+    { "cpl-hotplug", "rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll" },
 };
 
 #define MAXW 64
@@ -486,6 +495,59 @@ static int wanted(const char *name)
  * message box from the app at any step, the app dying, or the shell dying fails it. */
 typedef struct { const char *name; int (*run)(const char *name); } scenario_t;
 
+/* The machine a process's main image was built for: the Machine field of the PE header at
+ * PEB->ImageBaseAddress, read across processes, or 0 if it cannot be read. Every app is
+ * launched by name, so the machine it ran as is decided by where the loader found it: an
+ * x86-64 appstorm on arm64 finds sysamd64's copy only through the guest's system32 redirect,
+ * and without this check a missed redirect would run the NATIVE app and score it as an x86-64
+ * pass. (Not ProcessImageInformation: the kernel answers that for the current process only.) */
+typedef struct {
+    LONG ExitStatus; PVOID PebBaseAddress; ULONG_PTR AffinityMask; LONG BasePriority;
+    ULONG_PTR UniqueProcessId, InheritedFromUniqueProcessId;
+} storm_basic_info_t;
+LONG NTAPI NtQueryInformationProcess(HANDLE, ULONG, PVOID, ULONG, PULONG);
+static USHORT image_machine(HANDLE process)
+{
+    storm_basic_info_t info;
+    PVOID base = NULL;
+    IMAGE_DOS_HEADER dos;
+    USHORT machine = 0;
+    SIZE_T got;
+    if (NtQueryInformationProcess(process, 0 /* ProcessBasicInformation */, &info, sizeof info, NULL) < 0)
+        return 0;
+    /* PEB.ImageBaseAddress follows InheritedAddressSpace..Mutant: two pointers in. */
+    if (!ReadProcessMemory(process, (BYTE *)info.PebBaseAddress + 2 * sizeof(PVOID), &base, sizeof base, &got)
+        || !ReadProcessMemory(process, base, &dos, sizeof dos, &got) || dos.e_magic != IMAGE_DOS_SIGNATURE
+        || !ReadProcessMemory(process, (BYTE *)base + dos.e_lfanew + 4, &machine, sizeof machine, &got))
+        return 0;
+    return machine;
+}
+static USHORT own_machine;
+
+/* Every launch and close wait is multiplied by this. 6 when appstorm is an EMULATED guest --
+ * its machine differs from the shell's (an x86-64 appstorm beside arm64's native explorer) --
+ * since each app it starts is JIT-translated from cold and every syscall crosses the CPU layer.
+ * Applets that open in ~15s natively took 40-80s under FEX on arm64 on a quiet host and past
+ * 90s on a loaded one (sysdm's logo alone is two GetPixel syscalls per pixel), and a dialog that
+ * arrived after the wait was scored against the NEXT entry. The sampler showed every one busy,
+ * none stuck. Only the waits stretch; every pass criterion is the same. */
+static DWORD slow = 1;
+
+static void note_emulation(void)
+{
+    DWORD pid = 0;
+    HANDLE h;
+    USHORT shell = 0;
+    GetWindowThreadProcessId(GetShellWindow(), &pid);
+    if (pid && (h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid))) {
+        shell = image_machine(h);
+        CloseHandle(h);
+    }
+    if (shell && own_machine && shell != own_machine)
+        slow = 6;
+    SAY("shell machine=0x%x: waits x%lu\n", shell, slow);
+}
+
 /* Exit code of a finished process, or -1 while it runs; a crash is scored like main()'s. */
 static int crashed_code(DWORD rc)
 {
@@ -533,6 +595,20 @@ static int app_path(const char *exe, char *out)
     return ok;
 }
 
+/* Where to launch `exe` from: the system directory's copy first, then the search path, then
+ * App Paths. notepad, regedit, explorer and iexplore also (or only) live in %windir%, and a
+ * plain SearchPath picks that copy. It is the same binary natively, but for an x86-64 appstorm
+ * on arm64 the system directory is the one an x86-64 process sees redirected to sysamd64:
+ * the %windir% copy is the NATIVE build, and launching it scored native apps as x86-64 runs. */
+static int find_app(const char *exe, char *out)
+{
+    char sys[MAX_PATH];
+    if (GetSystemDirectoryA(sys, MAX_PATH) && snprintf(out, MAX_PATH, "%s\\%s", sys, exe) < MAX_PATH
+        && GetFileAttributesA(out) != INVALID_FILE_ATTRIBUTES)
+        return 1;
+    return SearchPathA(NULL, exe, NULL, MAX_PATH, out, NULL) || app_path(exe, out);
+}
+
 /* notepad: type text, File > Save As, name a file on the scratch volume, OK. The Pi crashed
  * notepad here, and the dialog is shell32 end to end (DefView lists the folder, the combo
  * autocompletes against the filesystem), so it reaches code no launch-and-close does. */
@@ -551,7 +627,7 @@ static int scn_notepad_save(const char *name)
     WIN32_FILE_ATTRIBUTE_DATA fa;
     int saved = 0;
 
-    if (!SearchPathA(NULL, "notepad.exe", NULL, MAX_PATH, path, NULL)) {
+    if (!find_app("notepad.exe", path)) {
         SAY("scenario %s ABSENT\n", name);
         return -1;
     }
@@ -573,7 +649,7 @@ static int scn_notepad_save(const char *name)
         return 0;
     }
     WaitForInputIdle(pi.hProcess, 20000);
-    if (!(main = wait_window(pi.dwProcessId, L"Notepad", NULL, 30000, pi.hProcess))) {
+    if (!(main = wait_window(pi.dwProcessId, L"Notepad", NULL, 30000 * slow, pi.hProcess))) {
         why = "no notepad window";
         goto out;
     }
@@ -585,7 +661,7 @@ static int scn_notepad_save(const char *name)
     SendMessageW(edit, EM_SETMODIFY, TRUE, 0);
     SAY("  %s: typed, sending File > Save As\n", name);
     PostMessageW(main, WM_COMMAND, NP_CMD_SAVE_AS, 0);
-    if (!(dlg = wait_window(pi.dwProcessId, L"#32770", NULL, 30000, pi.hProcess))) {
+    if (!(dlg = wait_window(pi.dwProcessId, L"#32770", NULL, 30000 * slow, pi.hProcess))) {
         why = WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0 ? "died opening Save As" : "no Save As dialog";
         goto out;
     }
@@ -605,7 +681,7 @@ static int scn_notepad_save(const char *name)
     SAY("  %s: file name %s, pressing OK\n", name, target);
     PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)ok);
     t0 = GetTickCount();
-    while (GetTickCount() - t0 < 30000 && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+    while (GetTickCount() - t0 < 30000 * slow && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
         if (!IsWindow(dlg) && GetFileAttributesExA(target, GetFileExInfoStandard, &fa)) {
             saved = 1;
             break;
@@ -631,7 +707,7 @@ out:
     if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
         if (!why)
             PostMessageW(main, WM_CLOSE, 0, 0);
-        if (why || WaitForSingleObject(pi.hProcess, 10000) == WAIT_TIMEOUT) {
+        if (why || WaitForSingleObject(pi.hProcess, 10000 * slow) == WAIT_TIMEOUT) {
             if (!why) {
                 why = "would not close after saving";
                 dump_process(pi.dwProcessId);
@@ -660,6 +736,11 @@ static const scenario_t scenarios[] = {
 
 int main(void)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     int pass = 0, fail = 0, absent = 0;
     WCHAR sysdir[MAX_PATH], windir[MAX_PATH];
     GetSystemDirectoryW(sysdir, MAX_PATH);
@@ -669,18 +750,20 @@ int main(void)
         Sleep(2000);
     SAY("setup %s after %lus\n", setup_running() ? "STILL RUNNING, proceeding" : "done",
         (GetTickCount() - t0) / 1000);
-    SAY("start apps=%u\n", (unsigned)(sizeof apps / sizeof apps[0]));
+    own_machine = image_machine(GetCurrentProcess());
+    SAY("start apps=%u machine=0x%x\n", (unsigned)(sizeof apps / sizeof apps[0]), own_machine);
     fs_raise_check(windir) ? pass++ : fail++;
     fmtmsg_check() ? pass++ : fail++;
     shell_note();
     SAY("shell tray=%p\n", (void *)shell_tray);
+    note_emulation();
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
         const app_t *a = &apps[k];
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
         if (!wanted(a->name))
             continue;
-        if (!SearchPathA(NULL, a->exe, NULL, MAX_PATH, path, NULL) && !app_path(a->exe, path)) {
+        if (!find_app(a->exe, path)) {
             SAY("app %s ABSENT (%s)\n", a->name, a->exe);
             absent++;
             continue;
@@ -714,6 +797,11 @@ int main(void)
             fail++;
             continue;
         }
+        /* The same machine as appstorm itself, on every host: see image_machine. */
+        USHORT machine = image_machine(pi.hProcess);
+        int same_machine = machine && machine == own_machine;
+        if (!same_machine)
+            SAY("  launched as machine 0x%x, appstorm is 0x%x\n", machine, own_machine);
         launch_root = pi.dwProcessId;
         family[0] = launch_root;
         nfamily = 1;
@@ -727,7 +815,7 @@ int main(void)
          * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
         /* grow_family on every poll: with no window yet nothing else does, and appwiz's
          * rundll32 exits within seconds, orphaning the rapps it started. */
-        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000) {
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000 * slow) {
             grow_family();
             Sleep(250);
         }
@@ -832,7 +920,7 @@ int main(void)
             HANDLE h = j ? OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION,
                                        FALSE, pids[j]) : pi.hProcess;
             if (!h) continue;
-            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
+            if (WaitForSingleObject(h, 10000 * slow) == WAIT_TIMEOUT) {
                 SAY("  close timeout pid=%lu, threads:\n", pids[j]);
                 /* Every top-level window the process owns NOW: a modal box the close raised
                  * (a "save changes?" prompt) was created after the snapshot above. */
@@ -888,12 +976,17 @@ int main(void)
         int shell = shell_check(a->name);
         /* An app that ignores WM_CLOSE is a failure, not a pass: every app on every arch
          * timing out on close (a lost PostMessage) scored PASS here until this counted. */
-        int good = ok && !hung && !errbox && !crashed && shell && !strcmp(close, "OK");
+        int good = ok && !hung && !errbox && !crashed && shell && same_machine && !strcmp(close, "OK");
         /* ms: launch to verdict. The serial log has no clock, and a run that hit the drain
          * deadline could not say which app ate the time. */
-        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s ms=%lu\n",
+        /* availMB: free physical memory once the app has gone, so a sweep that runs the
+         * machine out (an x86-64 sweep under FEX on a 1 GB arm64 VM did) shows the trend --
+         * steady means pressure, falling app after app means each one leaks. */
+        MEMORYSTATUSEX ms = { sizeof ms };
+        GlobalMemoryStatusEx(&ms);
+        SAY("app %s %s windows=%d first=\"%s\" hung=%d errbox=%d close=%s exit=0x%lx shell=%s machine=0x%x ms=%lu availMB=%lu\n",
             a->name, good ? "PASS" : "FAIL", got.n, first, hung, errbox, close, rc, shell ? "OK" : "DIED",
-            GetTickCount() - app_t0);
+            machine, GetTickCount() - app_t0, (unsigned long)(ms.ullAvailPhys >> 20));
         good ? pass++ : fail++;
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);

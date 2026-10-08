@@ -438,6 +438,94 @@ do not re-probe them.**
   roadmap's own framing (the trampoline as the substrate for generating crate-split's
   cross-crate decls) and it wants a quiet fleet: 12 worktrees were active on 2026-07-25.
 
+## 2026-10-08 — census by RISK, not by count
+
+`tools/rust_warning_census.py <build full.log>...` reads the warnings out of
+`vibeos-cli build` logs and sorts every site into **UB** (undefined or miscompiles),
+**LOGIC** (the code plainly does something its author did not intend), **NOISE**, or
+**UNCLASSIFIED** (a lint nobody ranked yet -- never defaulted to noise). Pass one log per
+arch; a site seen on several is one site. It reports coverage, because a warm build's log
+only carries the crates it recompiled. `--tier UB`, `--lint <name>` list the sites.
+
+Fresh arm64 + i386 logs, before this pass: **5,773 sites -- 192 UB, 2,461 LOGIC, 3,120
+NOISE**. The raw count is dominated by three buckets (`unnecessary_transmutes` 1,782,
+`clashing_extern_declarations` 1,358, `unused_assignments` 1,048); outside them, about 40
+sites were worth a human read, and they were read against the C:
+
+- **Fixed, real:** pcix's `swprintf` format was a pointer into a dead temporary
+  (`dangling_pointers_from_temporaries`); shell32's `SHELL_GetShellExtensionRegCLSID` tested
+  an uncast DWORD `>= 0` for `SUCCEEDED()`, so it never consulted a key's default value; five
+  structs built by `MaybeUninit::uninit().assume_init()` (`invalid_value`, UB on integer
+  fields -- cdrom, shell32 x3, wkssvc); scsiport dropped both `KeFlushIoBuffers` calls, and
+  cdfs and disk shimmed it as empty on every arch -- the header makes it a `dsb sy` on arm64,
+  so DMA reads were unordered on real hardware (fastfat was already right, via a C capture);
+  wshtcpip's 11 `deref_nullptr` FIELD_OFFSETs became `offset_of!` (the toolchain timebomb);
+  secur32 and gdi32 rebuilt pointers from integers (`integer_to_ptr_transmutes`).
+- **Residue, deleted:** six `unused_must_use` statements computing and discarding a
+  condition. Each was graded first, because a discarded `!NT_SUCCESS(status)` can be a lost
+  `goto` -- and two were (netapi32, scsiport), but each sat last in its success block, so
+  falling through reached the label's cleanup anyway. The rest were dropped `ASSERT`s and
+  `FAILED_UNEXPECTEDLY` traces. Also fastfat's `static PAGED_CODE: ()` extern and an lsasrv
+  `drop(None::<()>)`.
+- **Graded faithful, left:** `RtlRaiseStatus` really does end in a self-call, as the C does
+  (reached only when `ZwRaiseException` fails) -- item-level allow with the reason;
+  kernel32's `Result > 0xFFFFFFFF` is the same dead check in path.c:1521; disk's
+  `if !"msg".as_ptr().is_null()` is `NT_ASSERT(!"msg")`, i.e. assert-false, now spelled so.
+
+**Owed** (tracked here until done): the `clashing_extern` Phase 2 below; `unused_assignments` 1,048 (some are lost writes -- grade, don't bulk-allow); 13
+`path_statements` that are `STUB;` / `UNIMPLEMENTED;` debug macros translated as constants.
+(The flexible-array reader's cargo-linked corpus, owed when this was written, closed the same
+day: ten boot-path sites fixed -- roadmap.)
+
+**Closed later the same day:**
+
+- **`PAGED_CODE()`** is a `macro_rules!` in all 12 crates that used it (acpi, cdfs, cdrom,
+  classpnp, cmlib, disk, fastfat, fs_rec, partmgr, pciidex-legacy, pcix, scsiport). Before,
+  59 files declared it `extern` and called it out of line, resolved by whichever crate in the
+  image exported a `#[no_mangle]` no-op (fastfat's 29 declarations had no definition in
+  fastfat at all), and the rest had local empty fns. `scan_macro_fn_shadow` now owns the
+  class through `DDK_MACROS`: an empty fn or an `extern` declaration of a DDK macro name is
+  a finding with no `macro_rules!` in the crate needed. Against the old tree it reports 68.
+- **`unreachable_code` (19).** All were read; 14 were dead tails (after `return`, after a
+  noreturn `ExitProcess`/`ExitThread`/`FatBugCheck`, or after a `while(TRUE)` whose every exit
+  is a `try_leave`, which is just as dead in cdfs's C) and are removed. The rest:
+  - kernel32 `LIST_FOR_EACH_ENTRY!` ran the caller's `$body` and THEN advanced, so a
+    `continue` spun on one entry forever: `add_resource_dir_entry` / `add_resource_data_entry`
+    `continue` past every entry that sorts first, so UpdateResource hung on its second
+    resource. ole32's `LIST_FOR_EACH_ENTRY!` and `_SAFE` had the same shape (datacache
+    already hand-rolled one walk around it). All three advance first now, and
+    `scan_dowhile_continue` flags any loop macro that advances after its spliced body.
+  - cdrom `RequestHandleMountQuerySuggestedLinkName` returned `STATUS_NOT_FOUND` before its
+    body, a bring-up short-circuit from `370a754c85a`, so no CD-ROM ever got its stored drive
+    letter back. The C body is live, minus an invented early `BUFFER_OVERFLOW` that returned
+    before writing the `NameLength` the caller sizes its retry from.
+  - msafd `WSPSendDisconnect` and `WSPCancelBlockingCall` were `unimplemented!()` (a panic in
+    the calling process) where the C is `UNIMPLEMENTED; return 0;`.
+  - pcix `ario_ApplyBrokenVideoHack`'s `loop {}` stays: it is the pre-#9502 arbiter stub
+    already tracked in the roadmap ("pcix-rust predates upstream's arbiters").
+
+- **`static_mut_refs` 159 -> 0** (clean builds, all three arches) across 17 crates. Each
+  site took rustc's migration: `&mut X` / `&X` became `&raw mut X` / `&raw const X`,
+  `X.as_ptr()` became a typed cast of `&raw const X`, and a method or bitfield accessor
+  became `(*&raw const X).m()` or `(*&raw mut X).m()` (mut only for `set_*` / `add` /
+  `remove_all`). crt-shared's `ARRAY_SIZE!` goes through `addr_of!` like msvcrt file.rs's
+  copy. That leaves the UB tier empty.
+
+**Newly owed from that sweep:**
+
+- The same skipped-advance shape written by hand: a `while` whose last statement is the
+  step and which `continue`s without re-running it. A prototype finds 62 such loops (shell32's
+  19 `cpp_com_string_cb_printf_w` copies, pci `PdoQueryResources`, se token filtering, kdbg,
+  ...). Unlike the macro case each needs the C beside it, since a C `while` with a trailing
+  update is faithful and only a C `for` is a bug. Spot checks (win32k `ProcessTimers`, cc
+  `CcRosFlushDirtyPages`) were both fine, because they advance before every `continue`.
+- `UNREFERENCED_PARAMETER` as an empty fn: 42 sites. Same class as PAGED_CODE, but
+  `scan_macro_fn_shadow` only sees the copies in crates that also define the macro.
+- msafd `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are still the old stubs.rs bodies
+  (`return 0` / `unimplemented!()`), but upstream has since given both real bodies in
+  `dll/win32/msafd/misc/dllmain.c` and neither is ported. This is an upstream-sync gap,
+  not a warning: port them from dllmain.c.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class

@@ -427,12 +427,12 @@ unsafe fn taskbar_on_init_dialog(this: *mut CTaskBarSettingsPage) {
     CheckDlgButton(
         hwnd,
         IDC_TASKBARPROP_HIDE,
-        if g_TaskbarSettings.sr.AutoHide() != 0 { BST_CHECKED } else { BST_UNCHECKED },
+        if (*&raw const g_TaskbarSettings).sr.AutoHide() != 0 { BST_CHECKED } else { BST_UNCHECKED },
     );
     CheckDlgButton(
         hwnd,
         IDC_TASKBARPROP_ONTOP,
-        if g_TaskbarSettings.sr.AlwaysOnTop() != 0 { BST_CHECKED } else { BST_UNCHECKED },
+        if (*&raw const g_TaskbarSettings).sr.AlwaysOnTop() != 0 { BST_CHECKED } else { BST_UNCHECKED },
     );
     CheckDlgButton(
         hwnd,

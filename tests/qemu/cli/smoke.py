@@ -426,6 +426,7 @@ def _boot_vm(
                 or _ahci_check(text)
                 or _gic_check(text)
                 or _nvme_check(text)
+                or _xhci_check(text)
                 or _virtio_mmio_check(text, arch)
             )
             if smp_fail is not None:
@@ -674,6 +675,7 @@ def _payload_stage(
     # separately and add the longest drain.
     boot_budget = 600
     drain = 0.0
+    vm_memory = ""
     try:
         import yaml as _yaml
 
@@ -683,6 +685,8 @@ def _payload_stage(
                 _spec = _yaml.safe_load(_spec_path.read_text()) or {}
                 _test = _spec.get("test", {}) or {}
                 drain = max(drain, float(_test.get("launch_drain_secs", 30)))
+                # The largest declared guest RAM wins (vm.py get_arch_config).
+                vm_memory = max(vm_memory, str(_test.get("vm_memory", "")), key=_mem_mb)
                 if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
     except ImportError:
@@ -718,7 +722,12 @@ def _payload_stage(
             capture_output=True,
             text=True,
             timeout=outer_timeout,
-            env={**os.environ, "VIBEOS_ARTIFACT_DIR": str(payload_dir)},
+            env={
+                **os.environ,
+                "VIBEOS_ARTIFACT_DIR": str(payload_dir),
+                "VIBEOS_QEMU_MAX_LIFETIME": str(_payload_vm_lifetime(boot_budget, drain)),
+                **({"VIBEOS_QEMU_MEMORY": vm_memory} if vm_memory else {}),
+            },
         )
     except subprocess.TimeoutExpired:
         run.add(
@@ -739,12 +748,16 @@ def _payload_stage(
     if proc.returncode == 0:
         run.add(Stage(stage, status="ok", detail=summary.strip("= ")))
     else:
+        crash = _payload_crash(repo, arch, payload_dir)
+        if crash and run.classification in ("", "NET_FLAKE"):
+            run.classification = crash["classification"]
         run.add(
             Stage(
                 stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) FAILED",
                 salient=[
+                    *(crash["salient"] if crash else []),
                     summary.strip("= "),
                     f"repro: pytest tests/qemu/test_payload.py --arch {pytest_arch} "
                     f"--payload {payloads}",
@@ -752,6 +765,42 @@ def _payload_stage(
                 ],
             )
         )
+
+
+def _payload_crash(repo: Path, arch: str, payload_dir: Path) -> dict | None:
+    """Triage a guest crash in the payload VM's serial, the way a boot's is.
+
+    The payload suite boots its own VM, so a BUGCHECK there used to surface only as "payload
+    suite FAILED" (and the run took the net stage's NET_FLAKE label). Symbolicating it later is
+    worse than not at all: a 2026-10-07 modrun 0x1E was read against a kernel rebuilt hours
+    after the boot and named a function the fault was never in. Here, inside the smoke run,
+    the build dir still holds the kernel that booted (smoke refuses stale media)."""
+    for log in sorted(payload_dir.glob("*_serial.log")):
+        text = log.read_text(errors="replace")
+        tri = triage.classify(text, reached=True, fail_marker=None, debugcon=None)
+        if tri["classification"] in ("BUGCHECK", "RUST_PANIC", "KNOWN_FLAKE"):
+            sym = triage.symbolicate_pc(repo, arch, text)
+            if sym:
+                tri["salient"].append(sym)
+            return tri
+    return None
+
+
+def _mem_mb(size: str) -> int:
+    """A qemu -m size (2G, 1536M) in MiB; empty is 0."""
+    if not size:
+        return 0
+    return int(size[:-1]) * (1024 if size[-1] in "Gg" else 1)
+
+
+def _payload_vm_lifetime(boot_budget: float, drain: float, environ=os.environ) -> int:
+    """The QEMU lifetime cap for a payload boot: the boot budget plus the longest declared
+    drain, with five minutes' margin, and never below the cap already in force. The cap
+    (vm.py MAX_VM_LIFETIME_SECONDS, 30 min) is what the reaper enforces, so a payload that
+    declares a longer drain (appstorm64, 7200s) had its VM SIGTERMed mid-sweep while the pytest
+    timeout, sized from the same drain, was still hours away."""
+    floor = int(environ.get("VIBEOS_QEMU_MAX_LIFETIME", 30 * 60))
+    return max(floor, int(boot_budget + drain) + 300)
 
 
 # uniata-rust prints this from AhciDetect (id_sata.rs) once it has mapped the
@@ -815,6 +864,13 @@ def nvme_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_NVME", "").strip() == "1"
 
 
+# nvme-rust's self-test reports the resets its reads met (pnp.rs `self_test`): with
+# the NVME_LOSE_COMPLETION tripwire one completion is thrown away, its command hangs,
+# and the controller must be reset and the read retried.
+_NVME_RESET = re.compile(r"\[NVME\] controller 0: self-test: [1-9]\d* reset\(s\)")
+# The PnP manager prints this as it starts each device: with --nvme-bridge, QEMU's
+# PCIe root port (1b36:000c), which pci.sys then drives as the controller's bus.
+_ROOT_PORT_STARTED = "[DA] START PCI\\VEN_1B36&DEV_000C"
 # ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
@@ -825,6 +881,113 @@ _NVME_SELF_TEST = re.compile(
     r"\[NVME\] controller 0: self-test: read \d+ KiB .*?up to (\d+) commands in flight"
     r".*?(\d+) commands by DMA to the caller's pages"
 )
+
+
+# usbxhci prints this once the controller runs...
+_XHCI_RUNNING = "[XHCI] controller running"
+# ...and the PnP manager this as it starts QEMU's usb-kbd, which takes control
+# transfers to enumerate, and every transfer completes by interrupt (usbxhci has no
+# transfer poll).
+_USB_KEYBOARD_STARTED = "[DA] START USB\\Vid_0627&Pid_0001"
+# usbport, when it took a message over the line (usbport-rust pnp.rs ParseResources).
+_USBPORT_MESSAGE = "[USBPORT] interrupt: message vector"
+# pci.sys, when it enabled QEMU's xHCI (1b36:000d) for messages (pci-rust msix.rs).
+_XHCI_MSIX_ENABLED = "MSI-X enabled for 1b36:000d"
+_XHCI_MSI_ENABLED = re.compile(r"MSI enabled for 1b36:000d: (\d+) message\(s\)")
+
+
+def _xhci_check(text: str) -> dict | None:
+    """Prove an `--xhci` boot ran the controller on the interrupts asked for. The
+    desktop needs no USB, and a controller left on its line still enumerates, so a
+    message path broken anywhere along pci.sys -> PnP -> HAL -> usbport would look
+    like a working boot; and a message that never arrives hangs only USB."""
+    mode = os.environ.get("VIBEOS_QEMU_XHCI_MSI", "").strip()
+    if not mode:
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "MSI" in ln or "[USBPORT] interrupt" in ln][
+        -4:
+    ]
+    if _XHCI_RUNNING not in text:
+        return {
+            "classification": "XHCI_NOT_ENGAGED",
+            "salient": [f"--xhci boot, but usbxhci never printed `{_XHCI_RUNNING}`", *lines],
+        }
+    if _USB_KEYBOARD_STARTED not in text:
+        return {
+            "classification": "XHCI_NO_TRANSFERS",
+            "salient": [
+                "the USB keyboard never started: its enumeration's control transfers "
+                f"never completed, so the controller's {mode} interrupts are not arriving",
+                *lines,
+            ],
+        }
+    message = _USBPORT_MESSAGE in text
+    if mode == "line":
+        if message:
+            return {
+                "classification": "XHCI_NOT_LINE",
+                "salient": ["--xhci line, but usbport connected a message", *lines],
+            }
+        return None
+    block = _XHCI_MSI_ENABLED.search(text)
+    enabled = _XHCI_MSIX_ENABLED in text if mode == "msix" else block is not None
+    if not message or not enabled:
+        return {
+            "classification": "XHCI_NOT_MSI",
+            "salient": [f"--xhci {mode}, but the controller did not interrupt by {mode}", *lines],
+        }
+    wanted = re.search(
+        r"XHCI_MSI_MESSAGES=(?:0x)?([0-9a-fA-F]+)", os.environ.get("VIBEOS_TRIPWIRE", "")
+    )
+    if mode == "msi" and block and wanted and int(block[1]) != int(wanted[1], 16):
+        return {
+            "classification": "XHCI_MSI_BLOCK_SHORT",
+            "salient": [
+                f"XHCI_MSI_MESSAGES asked for an MSI block of {int(wanted[1], 16)}, "
+                f"but pci.sys enabled {block[1]}",
+                *lines,
+            ],
+        }
+    return None
+
+
+# With the NVME_FAIL_START tripwire nvme.sys connects its messages and fails START.
+# The PnP manager then removes the device: pci.sys turns MSI-X off (msix.rs
+# `disable`) and the vectors go back to the HAL (pnpres.rs IopReleaseMessageInterrupts).
+_NVME_FAILED_START = "[NVME] controller 0: tripwire: failing START"
+_NVME_DISCONNECTED = "[NVME] controller 0: interrupts disconnected"
+_NVME_MSIX_OFF = "MSI-X disabled for 1b36:0010"
+_MESSAGES_RELEASED = re.compile(
+    r"\[PNP\] message interrupts: ([1-9]\d*) back to the HAL, 0 refused"
+)
+
+
+def _nvme_release_check(text: str) -> dict | None:
+    """Prove a device's message interrupts are given back when it goes away. Nothing
+    in a boot removes a device, so this path never runs otherwise, and a vector never
+    returned (or returned while the device still sends to it) shows no symptom until
+    a later device gets it."""
+    lines = [
+        ln.strip()
+        for ln in text.splitlines()
+        if "[NVME]" in ln or "MSI-X" in ln or "[PNP] message" in ln or "released" in ln
+    ][-8:]
+    for needle, what in (
+        (_NVME_FAILED_START, "nvme.sys never failed its START for the tripwire"),
+        (_NVME_DISCONNECTED, "nvme.sys never disconnected its interrupts"),
+        (_NVME_MSIX_OFF, "pci.sys never turned the controller's MSI-X off at REMOVE"),
+    ):
+        if needle not in text:
+            return {"classification": "NVME_NOT_RELEASED", "salient": [what, *lines]}
+    if not _MESSAGES_RELEASED.search(text):
+        return {
+            "classification": "NVME_NOT_RELEASED",
+            "salient": [
+                "the PnP manager never gave the device's message vectors back to the HAL",
+                *lines,
+            ],
+        }
+    return None
 
 
 # hal-rust arm64/gic3.rs prints this once clock init has mapped the GICv3...
@@ -891,6 +1054,8 @@ def _nvme_check(text: str) -> dict | None:
     the ITS under --gic 3)."""
     if not nvme_requested():
         return None
+    if "NVME_FAIL_START" in os.environ.get("VIBEOS_TRIPWIRE", ""):
+        return _nvme_release_check(text)
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
     if _NVME_PUBLISHED not in text:
         return {
@@ -946,6 +1111,27 @@ def _nvme_check(text: str) -> dict | None:
                 "nvme.sys's self-test read went through the bounce buffer, not by DMA "
                 "to the reader's pages (nvme.rs `dma_ready` refused its MDL)",
                 *lines,
+            ],
+        }
+    if "NVME_LOSE_COMPLETION=" in os.environ.get("VIBEOS_TRIPWIRE", "") and not _NVME_RESET.search(
+        text
+    ):
+        return {
+            "classification": "NVME_NOT_RESET",
+            "salient": [
+                "the NVME_LOSE_COMPLETION tripwire threw a completion away, but nvme.sys "
+                "never reported resetting the controller for it",
+                *lines,
+            ],
+        }
+    bridged = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() == "1"
+    if bridged and _ROOT_PORT_STARTED not in text:
+        return {
+            "classification": "NVME_NOT_BEHIND_BRIDGE",
+            "salient": [
+                "--nvme-bridge boot, but the PnP manager never started the root port "
+                f"(`{_ROOT_PORT_STARTED}`): the controller cannot have been behind it",
+                *[ln.strip() for ln in text.splitlines() if "[HAL] PCI" in ln][-4:],
             ],
         }
     return None
@@ -1130,6 +1316,22 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMMU"] = "1"
         run.add(Stage("smmu", status="warn", detail="SMMUv3 in front of PCI"))
 
+    # xHCI channel: the USB rig's controller on the interrupts asked for (vm.py
+    # xhci_interrupts), and every boot must then show them working (_xhci_check).
+    if getattr(args, "xhci", None):
+        os.environ["VIBEOS_QEMU_XHCI"] = "1"
+        os.environ["VIBEOS_QEMU_XHCI_MSI"] = args.xhci
+        run.add(Stage("xhci", status="warn", detail=f"xHCI rig on {args.xhci}"))
+
+    # NVMe behind a root port (arm64): the config space, the bridge's own pci.sys
+    # and the requester ID of a device off the root bus.
+    if getattr(args, "nvme_bridge", False):
+        if arch != "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("nvme", status="fail", detail="--nvme-bridge is arm64-only"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "1"
+        args.nvme = True
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).
     if nvme_default_on(args):

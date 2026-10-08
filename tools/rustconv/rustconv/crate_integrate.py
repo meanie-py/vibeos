@@ -466,6 +466,29 @@ def provided_names(crate: Path) -> set[str]:
 _MACRO_CACHE: dict[Path, frozenset[str]] = {}
 
 
+def _shared_crate_macros(workspace: Path, ident: str) -> set[str]:
+    """`#[macro_export]` names a workspace crate (by its Rust identifier) defines."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
+    src = workspace / ident.replace("_", "-") / "src"
+    if not src.is_dir():
+        return set()
+    out: set[str] = set()
+    for p in source_files(src, "*.rs"):
+        out |= set(
+            re.findall(
+                r"#\[macro_export\]\s*macro_rules!\s*([A-Za-z_]\w*)", p.read_text(errors="replace")
+            )
+        )
+    return out
+
+
 def prelude_macros(crate: Path) -> set[str]:
     """Names the crate's prelude provides as `macro_rules!`, not as functions.
 
@@ -482,7 +505,15 @@ def prelude_macros(crate: Path) -> set[str]:
     found: frozenset[str] = frozenset()
     if prelude.is_file():
         text = prelude.read_text(errors="replace")
-        found = frozenset(_RE_MACRO_RULES.findall(text))
+        names = set(_RE_MACRO_RULES.findall(text))
+        # ...and the macros it RE-EXPORTS from a shared crate (`pub use win32macros_rust::{
+        # IntToPtr, ZeroMemory, ..}`): a call the model spelled `IntToPtr(x)` needs its `!` just
+        # the same, and reading only local `macro_rules!` left access/wined3dcfg calling a macro
+        # as a function (E0423).
+        for m in re.finditer(r"pub use (\w+)(?:::\w+)*::\{([^}]*)\}", text):
+            listed = {n.strip() for n in m.group(2).split(",") if n.strip()}
+            names |= listed & _shared_crate_macros(crate.parent, m.group(1))
+        found = frozenset(names)
     _MACRO_CACHE[crate] = found
     return set(found)
 

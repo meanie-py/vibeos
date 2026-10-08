@@ -54,6 +54,7 @@ pub mod endpoint;
 pub mod iface;
 pub mod ioctl;
 pub mod iso;
+pub mod msi;
 pub mod pnp;
 pub mod power;
 pub mod queue;

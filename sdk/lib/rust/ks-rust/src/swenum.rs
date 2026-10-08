@@ -916,7 +916,11 @@ pub unsafe extern "C" fn KspInstallInterface(
 
     Index = 0;
     while Index < Length {
-        let c = (*InstallInterface).ReferenceString[Index];
+        // ReferenceString is a C flexible array (`WCHAR ReferenceString[1]`,
+        // ddk/swenum.h:18) in an IOCTL input buffer the caller sizes to the real
+        // string, so bindgen's [WCHAR; 1] bounds-checks this scan and panics at the
+        // second character. Constant index 0 is checked at compile time.
+        let c = *(&raw const (*InstallInterface).ReferenceString[0]).add(Index);
         if c <= ' ' as u16 || c > '~' as u16 || c == ',' as u16 || c == '\\' as u16 || c == '/' as u16 {
             return STATUS_INVALID_PARAMETER;
         }

@@ -194,9 +194,101 @@ static int TestBadPrintBuffer(void)
 }
 #endif
 
+/* The top-level __except every Win32 thread starts under: kernel32's
+ * BaseProcessStartup/BaseThreadStartup wrap the start routine in
+ * __except(UnhandledExceptionFilter(...)), which calls the filter an app set
+ * with SetUnhandledExceptionFilter and, on EXCEPTION_EXECUTE_HANDLER, exits
+ * with the exception code. The first Rust translation kept only the __try, so
+ * an unhandled fault skipped all of that and csrss ended the process as 0x80.
+ * A child re-runs this exe with "crash", installs a filter, and faults with no
+ * handler of its own; the parent wants the access-violation exit code. */
+typedef long (__stdcall *TOP_LEVEL_FILTER)(SEH_POINTERS *);
+TOP_LEVEL_FILTER __stdcall SetUnhandledExceptionFilter(TOP_LEVEL_FILTER Filter);
+unsigned int __stdcall SetErrorMode(unsigned int Mode);
+char *__stdcall GetCommandLineA(void);
+unsigned long __stdcall GetModuleFileNameA(void *Module, char *Name, unsigned long Size);
+typedef struct {
+    unsigned long cb;
+    char *lpReserved, *lpDesktop, *lpTitle;
+    unsigned long dwX, dwY, dwXSize, dwYSize, dwXCountChars, dwYCountChars;
+    unsigned long dwFillAttribute, dwFlags;
+    unsigned short wShowWindow, cbReserved2;
+    unsigned char *lpReserved2;
+    void *hStdInput, *hStdOutput, *hStdError;
+} SEH_STARTUPINFOA;
+typedef struct {
+    void *hProcess, *hThread;
+    unsigned long dwProcessId, dwThreadId;
+} SEH_PROCESS_INFORMATION;
+int __stdcall CreateProcessA(const char *App, char *CmdLine, void *ProcAttr, void *ThreadAttr,
+                             int Inherit, unsigned long Flags, void *Env, const char *Dir,
+                             SEH_STARTUPINFOA *Si, SEH_PROCESS_INFORMATION *Pi);
+unsigned long __stdcall WaitForSingleObject(void *Handle, unsigned long Ms);
+int __stdcall GetExitCodeProcess(void *Process, unsigned long *Code);
+int __stdcall CloseHandle(void *Handle);
+
+#define SEM_NOGPFAULTERRORBOX 0x0002
+
+static long __stdcall ChildTopLevelFilter(SEH_POINTERS *p)
+{
+    DbgPrint("[SEH-USER] top-level filter: child saw code=0x%lx\n", p->Record->Code);
+    return 1; /* EXCEPTION_EXECUTE_HANDLER: exit with the exception code */
+}
+
+static int IsCrashChild(void)
+{
+    const char *c = GetCommandLineA();
+    for (; *c; c++)
+        if (c[0] == ' ' && c[1] == 'c' && c[2] == 'r' && c[3] == 'a' && c[4] == 's' &&
+            c[5] == 'h' && (c[6] == 0 || c[6] == ' '))
+            return 1;
+    return 0;
+}
+
+static void RunCrashChild(void)
+{
+    SetErrorMode(SEM_NOGPFAULTERRORBOX); /* belt and braces: never a fault box */
+    SetUnhandledExceptionFilter(ChildTopLevelFilter);
+    FaultingWrite((volatile int *)0); /* no __try anywhere on this stack */
+}
+
+static int TestTopLevelFilter(void)
+{
+    char cmd[300];
+    unsigned long n, code = 0, wait;
+    SEH_STARTUPINFOA si = { 0 };
+    SEH_PROCESS_INFORMATION pi = { 0 };
+    const char *arg = " crash";
+    int ok;
+
+    n = GetModuleFileNameA(0, cmd + 1, sizeof(cmd) - 16);
+    cmd[0] = '"';
+    cmd[n + 1] = '"';
+    for (n += 2; *arg; arg++)
+        cmd[n++] = *arg;
+    cmd[n] = 0;
+    si.cb = sizeof(si);
+    if (!CreateProcessA(0, cmd, 0, 0, 0, 0, 0, 0, &si, &pi)) {
+        DbgPrint("[SEH-USER] top-level filter: CreateProcess failed (FAIL)\n");
+        return 0;
+    }
+    wait = WaitForSingleObject(pi.hProcess, 60000);
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+    ok = wait == 0 && code == (unsigned long)STATUS_ACCESS_VIOLATION;
+    DbgPrint("[SEH-USER] top-level filter: child exit=0x%lx (%s)\n", code, ok ? "PASS" : "FAIL");
+    return ok;
+}
+
 int main(void)
 {
     int pass = 1;
+
+    if (IsCrashChild()) {
+        RunCrashChild();
+        return 2; /* only if the fault did not happen */
+    }
 
     DbgPrint("[SEH-USER] user-mode SEH self-test starting (GetVersion=0x%lx)\n",
              GetVersion());
@@ -206,6 +298,7 @@ int main(void)
     pass &= TestHardwareFault();   /* the real hardware→userland roundtrip */
     pass &= TestUnimplementedStub();
     pass &= TestBadPtrProbes();
+    pass &= TestTopLevelFilter();
 #ifdef __x86_64__
     pass &= TestBadPrintBuffer();
 #endif

@@ -17,6 +17,17 @@
 #   faces are on record for unrelated batches (569 in queue-batch ...944931159437
 #   at 01:34, 575 in most others) with fail=0 every time; a ucrtbase batch that
 #   touched no kernel code was rejected for the 569 face. The floor is the low face.
+# 2026-10-08, by HAND (rows only, per-arch samples all identical): banked a month of
+#   unbanked gains -- ExHardError 24/6 -> 30/0, IoVolume 1 -> 7 (ExResource stays 845 on purpose,
+#   c92ea2a: 879 minus the 34 checks its race can cost),
+#   ObSecurity 694 -> 695, RtlRangeList -> 5xx and the rest below. And ObTypes is now a
+#   .cpp (upstream, synced 2026-09-21): the parser only matched `<file>.c:<line>`, so its
+#   identities had silently vanished from every sweep since. The row now carries the
+#   ObTypes.cpp identities -- a rename plus two newly-passing asserts, not new failures.
+#   MmMdl (594 seen) deliberately NOT raised -- it tracks free system VA (c8228e5).
+# 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
+#   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
+#   sweep list).
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -38,7 +49,7 @@ ExDoubleList OK pass=130 fail=16 skip=0 exit=0
     assert ExDoubleList.c:91
     assert ExDoubleList.c:99
 ExFastMutex OK pass=126 fail=0 skip=3 exit=0
-ExHardError OK pass=24 fail=6 skip=0 exit=0
+ExHardError OK pass=30 fail=0 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
 ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
@@ -80,6 +91,15 @@ FsRtlTunnel OK pass=108 fail=0 skip=0 exit=0
 HalPortIo OK pass=6 fail=0 skip=0 exit=0
 HalSystemInfo OK pass=88 fail=1 skip=0 exit=0
     assert HalSystemInfo.c:143
+IoCreateFile OK pass=45 fail=8 skip=1 exit=0
+    assert IoCreateFile.c:530
+    assert IoCreateFile.c:54
+    assert IoCreateFile.c:55
+    assert IoCreateFile.c:67
+    assert IoCreateFile.c:837
+    assert IoCreateFile.c:838
+    assert IoCreateFile_user.c:31
+    assert IoCreateFile_user.c:41
 IoDeviceInterface OK pass=8 fail=0 skip=40 exit=0
 IoEvent OK pass=92 fail=0 skip=0 exit=0
 IoFilesystem OK pass=162 fail=142 skip=1 exit=0
@@ -96,7 +116,7 @@ IoFilesystem OK pass=162 fail=142 skip=1 exit=0
 IoInterrupt OK pass=1095 fail=0 skip=0 exit=0
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
-IoVolume OK pass=1 fail=0 skip=0 exit=0
+IoVolume OK pass=7 fail=0 skip=0 exit=0
 KdSystemDebugControl OK pass=40 fail=2 skip=0 exit=0
     assert KdSystemDebugControl.c:108
     assert KdSystemDebugControl.c:135
@@ -111,7 +131,9 @@ KeIrql OK pass=131 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=569 fail=0 skip=0 exit=0
+MmReservedMapping OK pass=231 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003
@@ -157,24 +179,22 @@ NpfsVolumeInfo OK pass=63 fail=0 skip=0 exit=0
 ObHandle OK pass=351 fail=0 skip=0 exit=0
 ObQuery OK pass=19 fail=0 skip=0 exit=0
 ObReference OK pass=2205 fail=0 skip=0 exit=0
-ObSecurity OK pass=694 fail=15 skip=0 exit=0
+ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
-    assert ObSecurity.c:189
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=765 fail=17 skip=4 exit=0
-    assert ObTypes.c:198
-    assert ObTypes.c:202
-    assert ObTypes.c:209
-    assert ObTypes.c:212
-    assert ObTypes.c:214
-    assert ObTypes.c:219
-    assert ObTypes.c:221
-    assert ObTypes.c:231
-    assert ObTypes.c:232
-    assert ObTypes.c:233
-    assert ObTypes.c:27
-    assert ObTypes.c:28
+ObTypes OK pass=767 fail=15 skip=4 exit=0
+    assert ObTypes.cpp:269
+    assert ObTypes.cpp:276
+    assert ObTypes.cpp:279
+    assert ObTypes.cpp:281
+    assert ObTypes.cpp:288
+    assert ObTypes.cpp:290
+    assert ObTypes.cpp:301
+    assert ObTypes.cpp:302
+    assert ObTypes.cpp:303
+    assert ObTypes.cpp:80
+    assert ObTypes.cpp:81
 PsNotify OK pass=24 fail=0 skip=0 exit=0
 PsQuota OK pass=12 fail=0 skip=0 exit=0
 RtlAvlTreeKM OK pass=139 fail=0 skip=0 exit=0
@@ -182,7 +202,7 @@ RtlExceptionKM OK pass=33 fail=0 skip=0 exit=0
 RtlIntSafeKM OK pass=188 fail=0 skip=0 exit=0
 RtlIsValidOemCharacter OK pass=354 fail=0 skip=0 exit=0
 RtlMemoryKM OK pass=1084 fail=0 skip=1 exit=0
-RtlRangeList OK pass=240 fail=0 skip=0 exit=0
+RtlRangeList OK pass=538 fail=0 skip=0 exit=0
 RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTreeKM OK pass=139 fail=0 skip=0 exit=0
 RtlStackKM OK pass=35 fail=11 skip=0 exit=0
@@ -207,6 +227,14 @@ SeInheritance OK pass=704433 fail=14 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
+TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
+    assert TcpIp_user.c:117
+    assert connect.c:222
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
 ZwAllocateVirtualMemory OK pass=1256 fail=11 skip=0 exit=0
     assert ZwAllocateVirtualMemory.c:126
     assert ZwAllocateVirtualMemory.c:128

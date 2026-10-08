@@ -26,7 +26,6 @@ extern "system" {
     fn DeviceGetConfigurationWithAlloc( Device: PDEVICE_OBJECT, Buffer: *mut *mut core::ffi::c_void, BufferSize: *mut ULONG, Feature: u32, RequestType: u32, ) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoControlCode: u32, LowerPdo: PDEVICE_OBJECT, );
@@ -57,7 +56,7 @@ const IOCTL_STORAGE_POWER_ACTIVE: u32 = 0x002D1C88;
 const IOCTL_STORAGE_POWER_IDLE: u32 = 0x002D1C8C;
 #[no_mangle]
 pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut tempStatus: NTSTATUS = STATUS_SUCCESS;
@@ -222,7 +221,7 @@ pub unsafe extern "C" fn DeviceGetZPODDEnabledFromRegistry() -> u32 {
         Buffer: &WSTR[0] as *const u16 as *mut u16,
     };
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     status = WdfDriverOpenParametersRegistryKey(
         WdfGetDriver(),
@@ -533,7 +532,7 @@ pub unsafe extern "C" fn DeviceMarkActive(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let zpoddInfo = (*DeviceExtension).ZeroPowerODDInfo;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (*DeviceExtension).IsActive != IsActive {
         if IsActive == FALSE && !zpoddInfo.is_null() {

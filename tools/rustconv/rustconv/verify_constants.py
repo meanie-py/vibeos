@@ -443,6 +443,11 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
         reactos_root / "sdk/include/ndk/cmtypes.h",
         reactos_root / "sdk/include/ndk/iotypes.h",
         reactos_root / "sdk/include/reactos/drivers/ntddrdsk.h",
+        # RM_API_NUMBER: the lsass <-> kernel SRM command protocol. It starts at 1, and
+        # se-rust's dispatch matched 0/1/2 with the names as comments, so every lsass
+        # RmCreateLogonSession ran the DELETE handler and LogonUser always failed
+        # STATUS_NO_SUCH_LOGON_SESSION (2026-10-08, modrun's logon suite).
+        reactos_root / "sdk/include/reactos/srmp.h",
         # I/O error-log message codes (IO_ERR_* / IO_WARNING_* / IO_RECOVERED_*).
         # These are typed NTSTATUS and handed to IoWriteErrorLogEntry, so a wrong
         # value writes the WRONG message into the system event log. Added

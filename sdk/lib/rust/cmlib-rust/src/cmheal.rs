@@ -18,7 +18,6 @@ use crate::glue::{HvGetCell, HvReleaseCell, HCELL_NIL, HBOOT_TYPE_SELF_HEAL, CM_
 
 unsafe extern "C" {
     // conditionally compiled in original (#if !defined(CMLIB_HOST) && !defined(_BLDR_)) pub static mut CmpSelfHeal: u8;   // BOOLEAN pub static mut CmpBootType: u32;  // ULONG
-    fn PAGED_CODE();
 }
 // HvMarkCellDirty is NTAPI = __stdcall on i386 (`_HvMarkCellDirty@12`, callee-pops).
 // Must be `extern "system"`, NOT `extern "C"` — see the cmcheck.rs note (cdecl
@@ -55,7 +54,7 @@ unsafe extern "C" {
 // self-healing is possible for this hive.
 #[no_mangle]
 pub unsafe extern "system" fn CmIsSelfHealEnabled(FixHive: u8) -> u8 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if FixHive != 0 {
         return 1;
@@ -81,7 +80,7 @@ pub unsafe extern "system" fn CmpRepairParentKey(
     let KeyNode: PCM_KEY_NODE;
     let mut ParentRepaired: BOOLEAN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // ASSERT(TargetKey != HCELL_NIL);
 
@@ -136,7 +135,7 @@ pub unsafe extern "system" fn CmpRepairParentNode(
     CellData: PCELL_DATA,
     FixHive: i32,
 ) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
     if CmIsSelfHealEnabled(FixHive as u8) == 0 {
         // DPRINT removed
         return 0;
@@ -393,7 +392,7 @@ unsafe fn CmpRemoveSubkeyInRoot(
     let mut Leaf: PCM_KEY_INDEX = core::ptr::null_mut();
     let mut LeafCell: HCELL_INDEX = HCELL_NIL;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT((!RootIndex.is_null()) as i32);
 

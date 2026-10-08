@@ -15,7 +15,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN) -> u8;
@@ -134,7 +133,7 @@ pub unsafe extern "C" fn CdCommonDirControl(
         let mut Fcb: *mut FCB = core::ptr::null_mut();
         let mut Ccb: *mut CCB = core::ptr::null_mut();
 
-        PAGED_CODE();
+        PAGED_CODE!();
 
         if CdDecodeFileObject(
             IrpContext,
@@ -517,9 +516,8 @@ pub unsafe extern "C" fn CdQueryDirectory(
                     }
                 } // end of while(true)
 
-                // After the loop, set DoCcbUpdate and break normally to finally.
-                DoCcbUpdate = 1;
-                break;
+                // The C's `DoCcbUpdate = TRUE;` after its while(TRUE) is dead there too:
+                // every exit from that loop is a try_leave, each setting it first.
             } // end of 'outer_finally loop
         },
         |_, _| {
@@ -557,7 +555,7 @@ pub unsafe extern "C" fn CdNotifyChangeDirectory(
     const IRP_CONTEXT_FLAG_WAIT: u32 = 0x00000004; // FIXED 2026-07-06: cdfs flag mismatch (verified vs cdstruc.h); WAIT=0x02 collided w/ MORE_PROCESSING and != the 0x04 CdAcquireResource checks -> WAIT flag never took -> every cdfs resource acquire ran non-blocking -> CANT_WAIT raise -> 0x1E under DUMMY_PSEH  // nolint: const-contradiction (cdfs's own flag set, cdstruc.h:1215)
     const SL_WATCH_TREE: u32 = 0x00000001;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
 
@@ -865,7 +863,7 @@ pub unsafe extern "C" fn CdEnumerateIndex(
     FileContext: *mut FILE_ENUM_CONTEXT,
     ReturnNextEntry: i32,
 ) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut PreviousDirent: *mut DIRENT = core::ptr::null_mut();
     let mut ThisDirent: *mut DIRENT;

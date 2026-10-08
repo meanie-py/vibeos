@@ -108,6 +108,18 @@ def test_rejected_output_is_kept_for_forensics_and_never_replayed(tmp_path, monk
     assert cache.get("f", BODY, FACT_ENVELOPE) is None
 
 
+def test_a_multi_line_reject_reason_stays_out_of_the_body(tmp_path, monkeypatch):
+    """hotplug: the audit message spanned two lines and its second leaked into the body."""
+    cache = _cache(tmp_path, monkeypatch)
+    cache.put_rejected("f", "unsafe fn f() {}", "line one\n        line two -- reason")
+    assert cache.get_rejected("f") == "unsafe fn f() {}"
+    # A file written by the old, broken header still reads back clean.
+    (cache.dir / "__rejected__" / "f.rs").write_text(
+        "// REJECTED by the deterministic audit\n// line one\n   line two\n\nunsafe fn f() {}"
+    )
+    assert cache.get_rejected("f") == "unsafe fn f() {}"
+
+
 def test_a_changed_c_body_may_be_bought_again(tmp_path, monkeypatch):
     # setuplib SetupMoveFile: banked from a body the scanner had cut at `_SEH2_TRY`
     cache = _cache(tmp_path, monkeypatch)

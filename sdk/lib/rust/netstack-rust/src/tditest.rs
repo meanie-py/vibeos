@@ -415,6 +415,11 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     // the FIRST socket matching (addr, port), so whichever of the three was connected
     // first swallowed the others' replies and they timed out looking like a transport
     // bug. Never point two consumers at one guestfwd.
+    if !crate::netcfg::on_slirp() {
+        nsprint!("[NETSTACK] TDI self-test: CONNECT skipped (the host echo exists only on QEMU's network)\n");
+        cleanup2(addr_obj, conn_obj, conn_h, addr_h);
+        return;
+    }
     let mut remote = TaIp::new([10, 0, 2, 100], 9998);
     let mut info: tdi::TDI_CONNECTION_INFORMATION = zeroed();
     info.RemoteAddress = &mut remote as *mut _ as *mut core::ffi::c_void;

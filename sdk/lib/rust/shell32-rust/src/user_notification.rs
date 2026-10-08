@@ -796,7 +796,6 @@ pub unsafe fn CUserNotification_Show_body(this: *mut CUserNotification, pqc: *mu
             this as LONG_PTR,
         );
         if (*this).m_hWorkerWnd.is_null() {
-            ((E_FAIL) < 0);
             return E_FAIL;
         }
 

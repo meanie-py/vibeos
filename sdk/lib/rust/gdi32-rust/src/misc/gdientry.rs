@@ -115,10 +115,12 @@ fn ddmiscellaneous2callbackssize() -> DWORD {
 }
 
 // Store a Rust fn (or pointer) into a bindgen `Option<extern fn>` / LPVOID struct field,
-// mirroring the C `(LPxxx) SomeFunc` casts. Target type is inferred from the LHS.
+// mirroring the C `(LPxxx) SomeFunc` casts. Target type is inferred from the LHS. Through
+// a POINTER, not `usize`: transmuting an integer into an LPVOID field makes a pointer
+// with no provenance, which the cast this mirrors never did.
 macro_rules! cbcast {
     ($f:expr) => {
-        core::mem::transmute($f as usize)
+        core::mem::transmute($f as *const ())
     };
 }
 

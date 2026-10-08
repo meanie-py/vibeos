@@ -153,8 +153,16 @@ unsafe fn MiMapLockedPagesInUserSpace(
     }
 
     RtlZeroMemory(Vad as PVOID, core::mem::size_of::<_MMVAD_LONG>());
-    (*Vad).u2.VadFlags2 = core::mem::transmute(1u32 << 0);
-    (*Vad).u.VadFlags = core::mem::transmute(((VadDevicePhysicalMemory as ULONG_PTR) << 0) | ((MM_READWRITE as ULONG_PTR) << 7) | (1 as ULONG_PTR) << 12);
+    // Through the bindgen setters, never a hand-packed integer: VadType sits ABOVE the
+    // CommitCharge field (bit 52 on 64-bit, bit 20 on i386) and LongVad is bit 28 of
+    // VadFlags2. Packing them at bit 0 left VadType reading VadNone, so
+    // MiUnmapLockedPagesInUserSpace refused the VAD and returned WITHOUT unmapping; process
+    // teardown then deleted PTEs whose pages it never owned (BUGCHECK 0x1A/0x401, kmtest
+    // MmMapLockedPagesSpecifyCache).
+    (*Vad).u2.VadFlags2.set_LongVad(1);
+    (*Vad).u.VadFlags.set_VadType(VadDevicePhysicalMemory as _);
+    (*Vad).u.VadFlags.set_Protection(MM_READWRITE as _);
+    (*Vad).u.VadFlags.set_PrivateMemory(1);
 
     if BaseAddress.is_null() {
         MmLockAddressSpace(core::ptr::addr_of_mut!((*Process).Vm) as PVOID);
@@ -1089,11 +1097,11 @@ pub unsafe extern "system" fn MmMapLockedPagesWithReservedMapping(
         KeBugCheckEx(SYSTEM_PTE_MISUSE, 0x100, MappingAddress as ULONG_PTR, PoolTag as ULONG_PTR, (*PointerPte.add(1)).Long as ULONG_PTR);
     }
 
-    if mmpte_list_next_entry(&*PointerPte) < 3 {
+    if (*PointerPte).list_next_entry() < 3 {
         KeBugCheckEx(SYSTEM_PTE_MISUSE, 0x101, MappingAddress as ULONG_PTR, PoolTag as ULONG_PTR, 0);
     }
 
-    if (mmpte_list_next_entry(&*PointerPte) as PFN_COUNT) - 2 < PageCount {
+    if ((*PointerPte).list_next_entry() as PFN_COUNT) - 2 < PageCount {
         return core::ptr::null_mut();
     }
     PointerPte = PointerPte.add(2);
@@ -1154,7 +1162,7 @@ pub unsafe extern "system" fn MmUnmapReservedMapping(
         KeBugCheckEx(SYSTEM_PTE_MISUSE, 0x102, BaseAddress as ULONG_PTR, PoolTag as ULONG_PTR, (*PointerPte.add(1)).Long as ULONG_PTR);
     }
 
-    if mmpte_list_next_entry(&*PointerPte) < 3 {
+    if (*PointerPte).list_next_entry() < 3 {
         KeBugCheckEx(SYSTEM_PTE_MISUSE, 0x103, BaseAddress as ULONG_PTR, PoolTag as ULONG_PTR, 0);
     }
 

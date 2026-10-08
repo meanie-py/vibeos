@@ -167,3 +167,56 @@ refuses a WoW64 process's remote thread into any 64-bit process.
 
 **Owed:** nothing in the thread/process matrix. `NtCreateThreadEx` is still not in the service
 table; the build fails the day it lands without an intercept (above).
+
+**Stock x86-64 programs (2026-10-08, payload `appstorm64`).** Every guest above is one we wrote.
+`VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64` stages appstorm's
+x86-64 build as the StartUp program, plus the stock amd64 build of every app and applet it
+launches, with their import closure, into sysamd64 (`guest_sets` in its payload.yaml, computed
+by `wow64-closure.py --emit-roots`). appstorm checks each launched process's PE machine against
+its own, so a native app cannot be scored as an x86-64 pass. That check caught the first run
+doing exactly that: notepad, regedit and explorer also live in `%windir%`, outside the redirect.
+Run `20261008-011853-dqktsbut-smoke-arm64`: **25 of the 40 apps pass as x86-64 processes**
+(notepad, calc, regedit, taskmgr, cmd, mspaint, wordpad, charmap, the three games, winver, clipbrd,
+sndvol32, magnify, osk, eventvwr, devmgmt, servman, msconfig, dxdiag, mplay32, sndrec32, and
+explorer opening a folder and My Computer). Getting there fixed:
+
+- win32k gave a system-class window (ScrollBar...) the NATIVE user32's proc, because the first
+  user32 fills the global client-proc tables. An amd64 user32 shares the native one's base but
+  not its layout. `win32k-rust/src/pfnclient.rs` keeps per-process tables for a user32 whose
+  procs differ.
+- Two arm64 kernel bits that x86 hardware maintains. The Access Flag: a page the working-set
+  trimmer aged faulted forever (`trap.rs ki_set_access_flag`). The dirty bit: a written page
+  made read-only paged out as clean and came back from the file, i.e. an unbound IAT
+  (`PTE_SOFTWARE_DIRTY`). See the field manual's arm64 fault-loop entries. Neither is FEX-specific;
+  x86-64 guests were simply the first workload big enough to make the trimmer run.
+- Modules loaded through the registry, which no import walk sees: winmm's `Drivers32` is derived
+  from `hivesft.inf`, and the rest are listed in the payload (each one found from wowx64's refusal
+  log, which is now never capped). Also the amd64 side-by-side assemblies (comctl32 v5/v6,
+  gdiplus), whose absence failed every activation context.
+
+**Then (2026-10-08, later).** The fifteen that failed, run on their own (`APPSTORM_ONLY`):
+
+- rapps and iexplore: both reach https, and secur32's schannel opens its crypto provider by the
+  `Image Path` rsaenh writes into the registry at self-registration (`rsaenh.rgs`). No INF names
+  it, so `wow64-closure.py` cannot derive it; it is a listed root now. Both then PASS (rapps
+  completes its database download in ~110 s).
+- appstorm's sampler can read an x86-64 guest thread now. A guest `NtGetContextThread` on another
+  thread (`thread.rs RemoteGuestContext`) answers for a thread parked in a syscall, from the guest
+  rsp and service each thread publishes in its wowx64 record for the duration of the syscall:
+  rip is the stub's return address at [rsp]. A thread running guest code is refused, not guessed.
+  (`stackdump.h` also had to learn to read a stack shallower than its 8 KB buffer.)
+- control.exe and the applets were never hung: every one the sampler caught was busy, mostly in
+  icon loading, class registration and, for sysdm, a logo built with two GetPixel syscalls per
+  pixel. They open in 40-80 s on a quiet host, so appstorm, when it is itself the emulated
+  process (its machine differs from the shell's), multiplies its waits by 6. Criteria unchanged.
+
+In isolation that took the fifteen from 4 passes to 9-10 per run, the misses all timing. A full
+sweep on a host saturated by integration builds (`20261008-114135-_w0p3rum-smoke-arm64`, mspaint
+164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; taskmgr's close
+DEADLOCK, x86-64 only (1 of 6 x86-64 runs, 0 of 30 native): `EndLocalThread` loops
+`WaitForSingleObject(500)` + `PeekMessage` while the perf thread sits in
+`SendMessageW(SB_SETTEXT)` to it, and the sent message is never dispatched; per-syscall cost under
+FEX, which is what every slow applet is paying; memory (a 1 GB VM leaves ~30 MB before the sweep,
+so the payload asks for 2 GB; ~1 MB per x86-64 app is kept; exhaustion bugchecks 0x7A instead of
+failing the allocation); the guest user32 reading native procs from `gpsi` (pfnclient.rs); and
+remote `NtSetContextThread` on a guest thread.

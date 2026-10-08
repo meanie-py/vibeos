@@ -398,9 +398,9 @@ pub unsafe extern "system" fn DriverEntry(
 
     Status = FatGetCompatibilityModeValue(&mut ValueName, &mut Value);
     if NT_SUCCESS(Status) && (Value & 1) != 0 {
-        FatData.set_ChicagoMode(0); // FALSE
+        (*&raw mut FatData).set_ChicagoMode(0); // FALSE
     } else {
-        FatData.set_ChicagoMode(1); // TRUE
+        (*&raw mut FatData).set_ChicagoMode(1); // TRUE
     }
 
     // Registry: CodePageInvariance
@@ -410,9 +410,9 @@ pub unsafe extern "system" fn DriverEntry(
 
     Status = FatGetCompatibilityModeValue(&mut ValueName, &mut Value);
     if NT_SUCCESS(Status) && (Value & 1) != 0 {
-        FatData.set_CodePageInvariant(0); // FALSE
+        (*&raw mut FatData).set_CodePageInvariant(0); // FALSE
     } else {
-        FatData.set_CodePageInvariant(1); // TRUE
+        (*&raw mut FatData).set_CodePageInvariant(1); // TRUE
     }
 
     ExInitializeResourceLite(&raw mut FatData.Resource);
@@ -454,7 +454,7 @@ pub unsafe extern "system" fn DriverEntry(
     IoRegisterFileSystem(FatCdromFileSystemDeviceObject);
     ObReferenceObject(FatCdromFileSystemDeviceObject as PVOID);
 
-    FatData.set_FujitsuFMR(FatIsFujitsuFMR() as BOOLEAN);
+    (*&raw mut FatData).set_FujitsuFMR(FatIsFujitsuFMR() as BOOLEAN);
 
     STATUS_SUCCESS
 }
