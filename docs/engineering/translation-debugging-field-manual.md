@@ -1354,6 +1354,23 @@ args), consume args by value (`let _ = $arg;`; `&$arg` is E0793 on a packed fiel
 **not** type-bind the parameters, because the per-module extern decls it replaces routinely
 disagree with each other. Then fix the ABI mismatches you uncovered — they are real.
 
+### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
+Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
+routine, e.g. `ExReturnPoolQuota`); the free-list dump shows one pointer freed twice back to
+back. Cause: a C free-and-null macro — classpnp/cdrom `FREE_POOL` is
+`#define FREE_POOL(p) { ExFreePool(p); p = NULL; }` — was translated as
+`extern "C" fn FREE_POOL(ptr: *mut c_void)`. A fn takes the pointer by value and **cannot null
+the caller's local**, so the macro's NULL side effect is dropped. Any site that frees in a
+branch/loop and then again at a cleanup label double-frees, because the C relied on that NULL
+to make the second `if (p) FREE_POOL(p)` a no-op. cdrom's `DeviceSetRawReadInfo` hit it (and
+the translation compounded it by *adding* a `FREE_POOL(buffer)` in a success branch where the
+C just `break`s to a single FnExit free). Fix at the site: null the local after each free,
+matching the macro (`p = core::ptr::null_mut();`); fix generally: make `FREE_POOL` a
+`macro_rules!` that nulls, but note call sites passing `p as *mut c_void` can't be nulled
+through the cast, so the macro must take the bare variable. Same shape as the no-op-macro-as-fn
+entries above: a C macro's *semantics* (here a side effect, there lazy arg evaluation) do not
+survive being made a fn — check for side effects on the arguments before lowering a macro to a fn.
+
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
 itself → **infinite self-recursion**. The PC parks on a literal `jmp .` and the serial log is

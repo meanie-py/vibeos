@@ -1160,21 +1160,30 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   plus terminator exceeds the caller's capacity. Not covered by any apitest (no rostest
   calls the alias path), so verified by the settled contract + the shipping sibling's
   mechanism + boot; a guest round-trip test is owed if the path ever regresses.
-- **cdrom FeatureProfileList: the correct value takes the boot down — OPEN** (2026-10-04).
-  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` (an LLM "example value";
-  cdrom.h says 0x0000). Correcting it (body-audit medium pass) made QEMU's DVD-ROM fail
-  `DeviceGetMmcSupportInfo`'s TYPE_ONE probe (it answers with more than the one feature),
-  and the device start then tears down through `DeviceClaimRelease(Release)` ->
-  `WdfObjectDelete` -> `FxRequest::Release`, which reads past its object: amd64/i386
-  BUGCHECK 0x19 at the next free, arm64 hang. `--tripwire "SPECIALPOOL=CDRO"` (KMDF tags a
-  driver's objects with its service name) faults at the read: `wdf01000.sys+0x197FE`
-  under `cdrom-rust init.rs:313`. Bisected to the constant alone (the commit's registry
-  reads and CREATE context are innocent). The constant is held at 0x0003 with a comment;
-  owed: why start fails on a TYPE_ALL-style answer, and why releasing a request the
-  driver just created reads past it. Not a context-size mismatch: the three
-  `CDROM_REQUEST_CONTEXT` type infos all use `size_of::<CDROM_REQUEST_CONTEXT>()`, and the
-  same `DeviceClaimRelease` claims successfully on every boot, so suspect an object freed
-  earlier on the new failure path. x64 lane.
+- **cdrom FeatureProfileList: the correct value takes the boot down — FIXED** (2026-10-08).
+  `cdrom-rust/src/init.rs` held `FeatureProfileList = 0x0003` instead of cdrom.h's 0x0000
+  because the correct value bugchecked: with 0x0000 QEMU's DVD-ROM is correctly identified
+  as MMC, so the device start runs `DeviceSetRawReadInfo` + `DeviceGetMmcSupportInfo`'s
+  TYPE_ONE probe, and the teardown that follows corrupted the pool (amd64/i386 0x19
+  BAD_POOL_HEADER at the next free, arm64 hang; special pool escalated it to 0x1E in
+  `ExReturnPoolQuota`). 0x0003 masked it by never exercising that path. The roadmap's two
+  open questions resolved into **two independent frees**, not one read-past:
+  (1) **The real pool corruption was a double-free in `DeviceSetRawReadInfo`.** The C
+  `FREE_POOL` is a free-AND-null macro (`ExFreePool(p); p = NULL`); the translation rendered
+  it as a by-value `fn` that cannot null the caller's local, AND added a spurious
+  `FREE_POOL(buffer)` in the success branch that the C does not have (the C success branch
+  is a bare `break`, init.c:2537, with one FnExit free). So FnExit freed the same pointer
+  again. Fixed: removed the spurious success-branch free, null `buffer` after the fail-path
+  free. The free-list dump showed one pointer freed twice back to back.
+  (2) The `FxRequest::Release` read-past (the `--tripwire SPECIALPOOL=CDRO` fault at
+  `wdf01000.sys+0x197FE`) was real but **special-pool-only** and orthogonal; see the
+  SPECIALPOOL entry below. With both fixed, `FeatureProfileList` is restored to 0x0000 and
+  all three arches boot to desktop (gate smoke i386/amd64/arm64 green; conformance i386/amd64
+  green — the only gate red was the unrelated non-deterministic arm64 ExFastMutex ratchet
+  flake). Landed `8f224096404`. The broader class — `FREE_POOL` as a non-nulling fn across
+  cdrom-rust — is latent at other free-in-branch-plus-exit sites; `DeviceSetRawReadInfo` was
+  the only one on the boot path, the rest are owed (a `macro_rules!` that nulls, or a
+  per-site audit).
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -1247,9 +1256,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot
-  path.** Still to decide: cdrom carries a live C-glue `DeviceEvtIoInCallerContext` that may
-  shadow the Rust one under `--allow-multiple-definition` (check `nm`); the Rust masks the
-  APIC error LVT where the C unmasks it.
+  path.** Decided (2026-10-08): the cdrom `DeviceEvtIoInCallerContext` shadow concern is moot — the
+  C body is dead-on-disk (cdrom.c is in the flip's replaced list, not compiled), and `nm`
+  shows exactly one definition of the symbol (the Rust `#[no_mangle]`); no
+  `--allow-multiple-definition` in the cdrom CMake. The APIC error-LVT divergence was a real
+  dropped-mutation bug: the C mutates one LvtEntry template, the LINT1/NMI step clears
+  `Mask`, and the error-LVT step inherits it (unmasked, "Enable error LVTR"); the Rust
+  rebuilt the value and wrongly set the mask bit. Fixed to match C (`a25b78d8675`).
   **ntkrnl-sys was stale against the post-merge headers — FIXED** (2026-09-27): regenerated
   the kernel and HAL islands. Nine structs had drifted: `KPRCB` (upstream `144fe39589b`'s
   `StartCycles`/`CycleTime`), `EJOB`/`PS_JOB_TOKEN_FILTER` (Rust still had the leaked
@@ -1391,14 +1404,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   into the slot. See the field manual, "A self-consistent pair of DERIVED values cannot
   detect its own staleness".
 
-- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. OPEN, 2026-09-26.** It
-  faults (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
-  only behind `retValue == 1 &&`, but clang hoists the load of `this+0x6a` above the check
+- **`SPECIALPOOL=*` cannot get an i386 boot past `wdf01000.sys`. FIXED, 2026-10-08.** It
+  faulted (0x50, READ) in vendored KMDF `FxRequest::Release`: the source reads `m_Completed`
+  only behind `retValue == 1 &&`, but clang hoisted the load of `this+0x6a` above the check
   (it treats `this` as dereferenceable), so after `FinalRelease` deleted the object it
-  reads freed memory. Harmless on a normal pool (the value is discarded), fatal under
-  special pool because the freed page is unmapped. Not a corruption and not new. Until the
-  hoist is suppressed for that TU, arm special pool by TAG on i386, not `*`, or every
-  wildcard run stops here and reads as a new bug.
+  read freed memory. Harmless on a normal pool (the value is discarded), fatal under
+  special pool because the freed page is unmapped. Fixed in
+  `vendor/wdf/shared/core/fxrequest.cpp` (`8f224096404`): capture `m_Completed` into a local
+  before the `__super` Release, alongside the sibling `IsReserved()`/`IsAllocatedFromIo()`/
+  `IsCanComplete()` flags the function already copies there — value-identical, and the
+  post-free read is gone. `wdf.patch` regenerated to match. Direct `SPECIALPOOL=*` i386
+  confirmation is owed (not in the gate); the amd64 special-pool run that pinned the double-
+  free is now unblocked of this read.
 
 - **The ucrt Tier 2 case generator reads the WRONG headers, and drops what they lack
   without a word. OPEN, owed** (2026-09-26). `gen_ucrt_tier2_cases.ast_functions` parses
