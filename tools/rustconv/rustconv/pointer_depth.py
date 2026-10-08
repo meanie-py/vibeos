@@ -185,6 +185,11 @@ def repair(
                 t
                 for t in re.findall(r"\bsize_of::<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)", body)
                 if targets and t in targets and t in types and t not in c.sizeof_types
+                # An array OF the pointer type in the same body makes it an element type, so its
+                # size is meant: atapi's RTL_NUMBER_OF over a `PCSTR[]` is
+                # `size_of::<[PCSTR; 4]>() / size_of::<PCSTR>()`, and the macro hides the C's
+                # sizeof from the guard above.
+                and not re.search(rf"\[\s*{re.escape(t)}\s*;", body)
             }
         )
         # The raw-pointer spelling of the same misreading: acpi.c's `sizeof(*TimingMode)` came
@@ -195,6 +200,7 @@ def repair(
             sorted(
                 set(re.findall(r"\bsize_of::<\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*>", body))
                 - {"c_void", "core", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize"}
+                - set(re.findall(r"\[\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*;", body))
             )
             if not c.sizeof_types and not c.sizeof_raw_pointer
             else []

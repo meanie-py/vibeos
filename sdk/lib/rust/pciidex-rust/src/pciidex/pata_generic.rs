@@ -1058,16 +1058,16 @@ unsafe extern "C" fn PataEnableInterrupts(mut ChannelContext: PVOID, mut Enable:
 pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::c_void) -> NTSTATUS {
     let ChanData: *mut CHANNEL_DATA_PATA = ChannelContext as *mut CHANNEL_DATA_PATA;
     let Controller: *mut ATA_CONTROLLER = (*ChanData).__bindgen_anon_1.Controller;
-    let mut InterruptDesc: *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let mut InterruptDesc: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     let mut IsrHandler: PKSERVICE_ROUTINE;
     let Status: i32;
 
     PAGED_CODE!();
 
     if (*Controller).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
-        InterruptDesc = &raw mut (*Controller).InterruptDesc as *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+        InterruptDesc = &raw mut (*Controller).InterruptDesc as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     } else {
-        InterruptDesc = &raw mut (*ChanData).__bindgen_anon_1.InterruptDesc as *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+        InterruptDesc = &raw mut (*ChanData).__bindgen_anon_1.InterruptDesc as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     }
 
     if !(*ChanData).Regs.Dma.is_null() {
@@ -1081,16 +1081,16 @@ pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::
         IsrHandler,
         ChanData as *mut core::ffi::c_void,
         core::ptr::null_mut(),
-        (*(*InterruptDesc)).u.Interrupt.Vector,
-        ((*(*InterruptDesc)).u.Interrupt.Level) as KIRQL,
-        ((*(*InterruptDesc)).u.Interrupt.Level) as KIRQL,
-        if (*(*InterruptDesc)).Flags & (CM_RESOURCE_INTERRUPT_LATCHED as u16) != 0 {
+        (*InterruptDesc).u.Interrupt.Vector,
+        ((*InterruptDesc).u.Interrupt.Level) as KIRQL,
+        ((*InterruptDesc).u.Interrupt.Level) as KIRQL,
+        if (*InterruptDesc).Flags & (CM_RESOURCE_INTERRUPT_LATCHED as u16) != 0 {
             Latched
         } else {
             LevelSensitive
         },
-        (((*(*InterruptDesc)).ShareDisposition) as u32 == CmResourceShareShared) as u8,
-        (*(*InterruptDesc)).u.Interrupt.Affinity,
+        (((*InterruptDesc).ShareDisposition) as u32 == CmResourceShareShared) as u8,
+        (*InterruptDesc).u.Interrupt.Affinity,
         FALSE,
     );
 

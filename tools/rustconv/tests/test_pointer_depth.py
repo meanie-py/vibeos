@@ -62,3 +62,14 @@ def test_size_of_a_raw_pointer_is_the_pointee_unless_the_c_measures_a_pointer():
         c2 = c.replace("Alloc(sizeof(*Foo));", meant)
         decls = {"Get": pd.c_declarations("Get", [("PFOO", "Foo")], c2, TYPES)}
         assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust
+
+
+def test_an_element_size_of_a_pointer_array_is_kept():
+    # atapi: RTL_NUMBER_OF(PCSTR[]) is size_of::<[PCSTR; 4]>() / size_of::<PCSTR>(); the
+    # macro hides the C's sizeof(arr[0]), so the array of PFOO is the witness.
+    rust = RUST.replace(
+        "Alloc(core::mem::size_of::<PFOO>());",
+        "Alloc(core::mem::size_of::<[PFOO; 4]>() / core::mem::size_of::<PFOO>());",
+    )
+    fixed, _ = pd.repair(rust, _decls(), TYPES, TARGETS)
+    assert "size_of::<[PFOO; 4]>() / core::mem::size_of::<PFOO>()" in fixed

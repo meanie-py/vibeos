@@ -1244,14 +1244,30 @@ def stage_headers(
     return spent
 
 
+def _island_texts(crate: Path) -> list[str]:
+    """Each arch's island WITH the -sys bindgen it globs: a kernel island's
+    `PCM_PARTIAL_RESOURCE_DESCRIPTOR` is ntkrnl-sys's, and pciidex's
+    `InterruptDesc: *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR` (a pointer to the pointer) went
+    unrepaired and faulted the --ata-stack boot in PciIdeConnectInterrupt (0x1E)."""
+    sys_src = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    out = []
+    for island in sorted((crate / "src").glob("types_*.rs")):
+        text = island.read_text(errors="replace")
+        arch = island.stem.removeprefix("types_")
+        if sys_src is not None:
+            for extra in (sys_src / f"bindgen_{arch}.rs", sys_src / "bindgen_common.rs"):
+                if extra.is_file():
+                    text += "\n" + extra.read_text(errors="replace")
+        out.append(text)
+    return out
+
+
 def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunctionDecls]]:
     """The island's pointer typedefs, and what each C function declares with them."""
     from .scanner import scan_file
 
     crate = _crate_dir(state)
-    types = pointer_depth.pointer_typedefs(
-        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
-    )
+    types = pointer_depth.pointer_typedefs(_island_texts(crate))
     decls: dict[str, pointer_depth.CFunctionDecls] = {}
     for unit in _units(state):
         path = REPO / unit
@@ -1346,9 +1362,7 @@ def stage_integrate(stem: str) -> None:
     unprovided: dict[str, list[str]] = {}
     changed = 0
     ptr_types, decls = _pointer_decls(state)
-    ptr_targets = pointer_depth.pointer_targets(
-        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
-    )
+    ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []
     flex_fields, _ = flex_index.field_shapes()
     for path in sorted((crate / "src" / stem).glob("*.rs")):
