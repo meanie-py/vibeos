@@ -649,7 +649,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
 - **Stock x86-64 apps run under FEX on arm64** (2026-10-08). The `appstorm64` payload sweeps the
   stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
-  x86-64 process. Owed: rapps, iexplore, control.exe and the applets, plus memory (an exhausted
+  x86-64 process. Later the same day rapps and iexplore pass too (an unstaged rsaenh), and
+  control.exe and the applets turned out slow, not hung, once appstorm could sample x86-64
+  threads. Owed: a full sweep on a quiet host, an x86-64-only taskmgr close deadlock (a sent
+  message never dispatched, 1 in 6 runs), per-syscall cost under FEX, and memory (an exhausted
   machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
   paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
 - **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
