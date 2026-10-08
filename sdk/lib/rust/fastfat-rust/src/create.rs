@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatNtTimeToFatTime};
 use ntkrnl_sys::ddk::PRTL_SPLAY_LINKS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -95,7 +97,6 @@ extern "system" {
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut DCB);
     fn FatResetExceptionState(irp_context: *mut IRP_CONTEXT);
     fn FatGetDirentFromFcbOrDcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB, allow_deleted: u32, dirent: *mut *mut DIRENT, bcb: *mut *mut Bcb);
-    fn FatNtTimeToFatTime( irp_context: *mut IRP_CONTEXT, nt_time: *mut LARGE_INTEGER, precise: BOOLEAN, fat_time: *mut FAT_TIME, fat_date: *mut FAT_DATE, ) -> BOOLEAN;
     fn FatIsIoRangeValid(vcb: *mut VCB, alloc_size: LARGE_INTEGER, low_size: u32) -> BOOLEAN;
     fn FatSetDirtyBcb( irp_context: *mut IRP_CONTEXT, bcb: *mut Bcb, vcb: *mut VCB, set_archive: BOOLEAN, );
     fn FatDeleteEa( irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, ea_handle: u16, oem_name: *mut OEM_STRING, );
@@ -3857,7 +3858,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             irp_context,
             &mut (*fcb).LastWriteTime,
             1,
-            &mut (*dirent).LastWriteTime.Time,
+            &mut (*dirent).LastWriteTime,
             core::ptr::null_mut(),
         );
 

@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
 use ntkrnl_sys::ddk::PRTL_SPLAY_LINKS;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -61,8 +63,6 @@ extern "system" {
     fn SetFlag(flags: *mut u32, bits: u32);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, Time: u32, MSec: u8, ) -> LARGE_INTEGER;
-    fn FatFatDateToNtTime( IrpContext: *mut IRP_CONTEXT, Date: u16, ) -> LARGE_INTEGER;
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
     static mut FatData: FAT_DATA;
     static FatJanOne1980: LARGE_INTEGER;
@@ -1020,7 +1020,7 @@ pub unsafe extern "system" fn FatCreateFcb(
 
         (**p_fcb).LastWriteTime = FatFatTimeToNtTime(
             IrpContext,
-            core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime))),
+            core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime)),
             0u8,
         );
 
@@ -1040,7 +1040,7 @@ pub unsafe extern "system" fn FatCreateFcb(
             if (Dirent as *const u16).offset(9).read() != 0 {
                 (**p_fcb).LastAccessTime = FatFatDateToNtTime(
                     IrpContext,
-                    core::mem::transmute::<_, u16>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate))),
+                    core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate)),
                 );
             } else {
                 (**p_fcb).LastAccessTime = fat_system_jan_one_1980;
@@ -1049,7 +1049,7 @@ pub unsafe extern "system" fn FatCreateFcb(
             if (Dirent as *const u16).offset(8).read() != 0 {
                 (**p_fcb).CreationTime = FatFatTimeToNtTime(
                     IrpContext,
-                    core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime))),
+                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime)),
                     (*Dirent).CreationMSec,
                 );
             } else {
@@ -1231,7 +1231,7 @@ pub unsafe extern "system" fn FatCreateDcb(
         (**p_Dcb).DirentOffsetWithinDirectory = DirentOffsetWithinDirectory;
 
         (**p_Dcb).DirentFatFlags = (*Dirent).Attributes;
-        (**p_Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime))), 0);
+        (**p_Dcb).LastWriteTime = FatFatTimeToNtTime(IrpContext, core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime)), 0);
 
         let fat_data = &mut *core::ptr::addr_of_mut!(FatData);
         if fat_data.ChicagoMode() != 0 {
@@ -1241,14 +1241,14 @@ pub unsafe extern "system" fn FatCreateDcb(
                 ExLocalTimeToSystemTime(core::ptr::addr_of!(FatJanOne1980), core::ptr::addr_of_mut!(fat_system_jan_one_1980));
             }
             if *dirent_as_u16.add(9) != 0 {
-                (**p_Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, core::mem::transmute::<_, u16>(core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate))));
+                (**p_Dcb).LastAccessTime = FatFatDateToNtTime(IrpContext, core::ptr::read(core::ptr::addr_of!((*Dirent).LastAccessDate)));
             } else {
                 (**p_Dcb).LastAccessTime = fat_system_jan_one_1980;
             }
             if *dirent_as_u16.add(8) != 0 {
                 (**p_Dcb).CreationTime = FatFatTimeToNtTime(
                     IrpContext,
-                    core::mem::transmute::<_, u32>(core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime))),
+                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime)),
                     (*Dirent).CreationMSec,
                 );
             } else {

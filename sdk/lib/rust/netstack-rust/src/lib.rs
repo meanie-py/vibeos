@@ -22,6 +22,7 @@ pub mod e1000;
 // A NIC only ACPI describes (the Pi 4's GENET): netstack binds to it as its PnP
 // function driver (pnp.rs) and drives it directly (genet.rs).
 pub mod pnp;
+pub mod gem;
 pub mod genet;
 // M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). x86 (i386 +
 // amd64) — both share the working x86 HAL HalGetInterruptVector + IOAPIC routing.

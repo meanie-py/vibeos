@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ex::*;
@@ -17,8 +19,6 @@ use ntkrnl_sys::ddk::{_UNICODE_STRING};
 extern "system" {
     static mut FatData: FAT_DATA;
     static FatJanOne1980: ntkrnl_sys::ddk::LARGE_INTEGER;
-    fn FatFatTimeToNtTime( IrpContext: *mut IRP_CONTEXT, time: FAT_TIME, centi: u8, ) -> ntkrnl_sys::ddk::LARGE_INTEGER;
-    fn FatFatDateToNtTime( IrpContext: *mut IRP_CONTEXT, date: u16, ) -> ntkrnl_sys::ddk::LARGE_INTEGER;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     static Fat8QMdot3QM: [u16; 12];
     static Dbg: u32;
@@ -866,7 +866,7 @@ pub unsafe extern "system" fn FatGetDirTimes(
     //
     (*DirInfo).LastWriteTime = FatFatTimeToNtTime(
         IrpContext as *mut IRP_CONTEXT,
-        core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime.Time)),
+        core::ptr::read(core::ptr::addr_of!((*Dirent).LastWriteTime)),
         0u8,
     );
 
@@ -893,7 +893,7 @@ pub unsafe extern "system" fn FatGetDirTimes(
             if *((Dirent as *const u16).add(8)) != 0 {
                 (*DirInfo).CreationTime = FatFatTimeToNtTime(
                     IrpContext as *mut IRP_CONTEXT,
-                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime.Time)),
+                    core::ptr::read(core::ptr::addr_of!((*Dirent).CreationTime)),
                     (*Dirent).CreationMSec,
                 );
             } else {

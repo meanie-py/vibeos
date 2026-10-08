@@ -546,6 +546,20 @@ that would otherwise be free. Where a prelude must declare it anyway (a shared b
 import), the declaration has to be checked against the definition by hand, because rustc treats
 them as unrelated items.
 
+**Same class, by-value aggregate: fastfat listed every file as 01/01/1601.** `dirctrl.rs`
+declared `FatFatTimeToNtTime(.., time: FAT_TIME, ..)` and passed `Dirent.LastWriteTime.Time`;
+the crate's own definition takes the 4-byte `FAT_TIME_STAMP` (time *and* date), as the C does.
+The callee read the missing date half as zero, `RtlTimeFieldsToTime` rejected month 0, and the
+time came back 0: 1601. Writes were fine, which is what located it on the read side. Importing
+`crate::timesup::*` instead of re-declaring turned up 11 more call sites that only typed through
+the loose declarations, plus a cousin: `dirsup.rs` had **invented a local `FAT_TIME_STAMP`**
+(Date before Time, an extra byte, 6 bytes), so its `size_of` zeroing cleared 2 bytes past the
+stamp and an access-date update stored the time of day. **Never define a local stand-in for a
+type `crate::types` already has.** Scale on 2026-10-08: 13,141 self-re-declarations across 104
+crates (`tools/fix_extern_to_use.py` converts only ntoskrnl's). Arity is not the signal: once
+comments are stripped, fastfat had no arity mismatch at all. `test_xhci.py::test_usb_stick_dir_dates`
+pins the dates.
+
 **Sibling case, and it is a SEQUENCING rule rather than a typing one: a global's definition
 may only cross the cohab boundary in the same commit as its WRITER.** msvcrt's
 `msvcrt_tls_index` is written once by `DllMain` at DLL_PROCESS_ATTACH and read by every
@@ -1243,6 +1257,25 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A list walk that reads `Flink` after freeing the entry
+
+**Symptom:** an intermittent access violation inside a list walk, at a load like
+`[entry+0x28]`, with a non-canonical or misaligned pointer, e.g. arm64 FaultVA
+`0x11FFFFFA80004241`. It hit kmtest RtlRangeList on all three arches about one sweep in five.
+Most runs pass because freed pool still holds the old link.
+
+**Cause:** `RemoveEntryList(Entry); Free(Container); Entry = (*Entry).Flink;`. The advance
+reads freed memory, and faults only when the block was reused first. `IoCompleteRequest` counts
+as a free here, because the IRP can be gone once it returns. Upstream C carries this shape in
+places (`FsRtlUninitializeOplock`'s walks), and a port can predate the place upstream fixed it
+(`RtlDeleteOwnersRanges`, fixed upstream in #9248).
+
+**Fix:** capture `let next = (*entry).Flink;` at the top of the loop body, or pop from the
+head (`while !IsListEmpty { RemoveHeadList }`). To triage, look in each loop for an advance
+`X = (*X).Flink` preceded by a free or completion of the containing record, with no `break` or
+`return` in between. The 2026-10-08 scan of `sdk/lib/rust` found 3 real hits in 13
+candidates. The rest freed a different object, or stepped to `Blink` before the free.
 
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
@@ -9957,7 +9990,7 @@ cannot support.** Count what you *transformed* and reconcile it against what you
 ### A symbolicator resolves against SOME binary — make sure it is the one that booted
 **Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
 constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
-entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+entirely. **Three independent causes, and all lie quietly** because *some* symbol always sorts
 below any address:
 
 1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
@@ -9969,6 +10002,13 @@ below any address:
 2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
    runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
    wrong pushes every lookup below the first real function.
+
+3. **Wrong build.** A crash from a farm archive was compiled at another commit, so resolve it
+   against the index of the kernel that booted: `addr2sym.sh <arch> --index
+   <manifest.json kernels_dir>/symbols-<arch>[-mp].tsv`. Against this tree's index, the
+   RtlRangeList use-after-free spent two days attributed to fsrtl oplock code. Every hit's
+   own index said `RtlDeleteOwnersRanges`. A symbol name that moves between builds while
+   the offset stays put is the tell.
 
 **Don't guess the base at all when the banner already resolved it.** The bugcheck prints
 `***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just
@@ -11427,6 +11467,19 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   handoff, then halve the window that flips 0 to 0x100. Five boots found it. Do not trust
   firmware ECAM on boards that are not SBSA: the loader keeps an MCFG quirk list
   (`freeldr-rust/src/arm64_serial_acpi.rs`) the way Linux's `pci_mcfg.c` does.
+- **A pin the firmware never configured has its pad's output disabled.** Symptom: the Pi 5's
+  GEM came up, but no PHY answered on MDIO after the driver pulsed the PHY's reset line (RP1
+  GPIO 32). The pulse never left the chip: RP1 pads come out of reset with output-disable set
+  (bit 7, `0xd6`), and only Linux's pinctrl clears it (`0x56`), so a reset sequence copied from
+  the device tree does nothing under UEFI. Fix: clear the pad's OD bit (and set IE) before
+  driving the pin (`netstack-rust/src/gem.rs` `reset_phy`). Read the pad, the function select and
+  the RIO bits on both sides before guessing.
+- **A Cadence GEM can go idle with a frame queued.** If the TX DMA reads the next descriptor
+  while it is still CPU-owned, it stops, and a TSTART written as it finished the previous frame
+  is ignored; the frame then waits for the next send. The log shows `TSR` 0x21 (used bit read,
+  complete) with `TGO` clear and a CPU-released descriptor at the consumer index. Fix: from the
+  poll path, re-issue TSTART whenever frames are outstanding and `TGO` is clear, as Linux's
+  `macb_tx_restart` does.
 - **A UART print inside a trap costs ~90 ms per KB at 115200 baud.** QEMU's UART is instant, so
   per-fault diagnostics are free there. FEX takes ~1,200 alignment faults per ladder boot by
   design (unaligned `STLR`/`LDAR` on an A72, which has no LSE2; QEMU raises them too), and the

@@ -4,6 +4,7 @@ and with VIBEOS_QEMU_USB_DISK=1 a USB stick read and written from the desktop.""
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -143,6 +144,65 @@ def _stick_file(image: Path, name: str) -> bytes | None:
             ["mcopy", "-n", "-i", f"{raw}@@1M", f"::/{name}", str(out)], capture_output=True
         )
         return out.read_bytes() if r.returncode == 0 else None
+
+
+def _stick_file_year(image: Path, name: str) -> str:
+    """The year mtools gives `name`'s FAT time stamp: what a correct `dir` shows."""
+    with tempfile.TemporaryDirectory() as td:
+        raw = Path(td) / "stick.raw"
+        subprocess.run(
+            ["qemu-img", "convert", "-U", "-O", "raw", str(image), str(raw)],
+            check=True,
+            capture_output=True,
+        )
+        r = subprocess.run(
+            ["mdir", "-i", f"{raw}@@1M", f"::/{name}"], check=True, capture_output=True, text=True
+        )
+    match = re.search(r"\b((?:19|20)\d\d)-\d\d-\d\d\b", r.stdout)
+    assert match, r.stdout
+    return match.group(1)
+
+
+def test_usb_stick_dir_dates(vm: QemuVM) -> None:
+    """`dir` shows real dates, both for a file the host made and for one the guest
+    just wrote (QEMU's clock is the host's, so that one carries this year).
+    fastfat's directory query once handed the time-to-NT converter only the time
+    half of the FAT stamp, so the date read as zero, the conversion failed, and
+    every file listed as 01/01/1601."""
+    if os.environ.get("VIBEOS_QEMU_USB_DISK") != "1":
+        pytest.skip("requires VIBEOS_QEMU_USB_DISK=1 (the stick)")
+    serial = vm._boot_output + vm.serial_output(timeout=1)
+    images = [vm.scratch_path.parent / "usbdisk.qcow2", vm.scratch_path.parent / "usbdisk-ss.qcow2"]
+    years = [_stick_file_year(image, USB_STICK_FILE) for image in images]
+    this_year = time.localtime().tm_year
+    _tap(vm, ["meta_l", "r"])
+    time.sleep(3)
+    _type(
+        vm,
+        "cmd /c "
+        + " & ".join(
+            f"echo DATED>{d}:\\DATED.TXT & dir {d}:\\{USB_STICK_FILE} {d}:\\DATED.TXT>{d}:\\DIR.TXT"
+            for d in _STICK_LETTERS
+        ),
+    )
+    _tap(vm, ["ret"])
+    listed: list[bytes | None] = [None, None]
+    deadline = time.monotonic() + 60
+    while time.monotonic() < deadline and None in listed:
+        serial += vm.serial_output(timeout=2)
+        assert not any(marker in serial for marker in _FATAL_MARKERS), serial[-4000:]
+        listed = [_stick_file(image, "DIR.TXT") for image in images]
+    assert None not in listed, f"DIR.TXT on (hub, SuperSpeed): {listed!r}\n{serial[-6000:]}"
+    for text, year in zip(listed, years, strict=True):
+        assert text is not None
+        lines = text.decode(errors="replace").splitlines()
+        host_made = next((ln for ln in lines if USB_STICK_FILE in ln), "")
+        assert f"/{year}" in host_made, f"want a {year} date for {USB_STICK_FILE}:\n{text!r}"
+        guest_made = next((ln for ln in lines if "DATED.TXT" in ln), "")
+        # The year can turn over between the write and this check.
+        assert any(f"/{y}" in guest_made for y in (this_year, this_year - 1)), (
+            f"want a {this_year} date for DATED.TXT:\n{text!r}"
+        )
 
 
 def test_usb_stick_read_and_write(vm: QemuVM) -> None:

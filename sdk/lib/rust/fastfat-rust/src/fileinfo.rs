@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatNtTimeToFatTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
@@ -142,7 +144,6 @@ extern "system" {
     fn UNREFERENCED_PARAMETER(param: *mut ());
     fn NT_ASSERT(condition: i32);
     fn ClearFlag(flags: *mut u32, flag: u32);
-    fn FatNtTimeToFatTime( irp_ctx: *mut IRP_CONTEXT, nt_time: *const LARGE_INTEGER, date_only: u8, fat_time: *mut FAT_TIME_STAMP, fat_ms: *mut u8, ) -> u8;
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -738,7 +739,7 @@ unsafe extern "system" fn FatSetBasicInfo(
 
             if FatNtTimeToFatTime(
                 IrpContext,
-                core::ptr::addr_of!(LargeCreationTime),
+                core::ptr::addr_of_mut!(LargeCreationTime),
                 0u8, // FALSE
                 core::ptr::addr_of_mut!(CreationTime),
                 core::ptr::addr_of_mut!(CreationMSec),
@@ -766,7 +767,7 @@ unsafe extern "system" fn FatSetBasicInfo(
 
             if FatNtTimeToFatTime(
                 IrpContext,
-                core::ptr::addr_of!(LargeLastAccessTime),
+                core::ptr::addr_of_mut!(LargeLastAccessTime),
                 1u8, // TRUE
                 core::ptr::addr_of_mut!(LastAccessTime),
                 core::ptr::null_mut(),
@@ -799,7 +800,7 @@ unsafe extern "system" fn FatSetBasicInfo(
 
                 if FatNtTimeToFatTime(
                     IrpContext,
-                    core::ptr::addr_of!(LargeLastWriteTime),
+                    core::ptr::addr_of_mut!(LargeLastWriteTime),
                     1u8, // TRUE
                     core::ptr::addr_of_mut!(LastWriteTime),
                     core::ptr::null_mut(),
