@@ -3490,10 +3490,6 @@ pub unsafe extern "C" fn ClasspFailurePredictionPeriodMissed(
     missedPeriod
 }
 
-extern "system" {
-    
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

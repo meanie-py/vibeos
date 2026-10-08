@@ -25,7 +25,7 @@ pub static mut s_alloactions: [s_alloactions_entry; 32] = [s_alloactions_entry {
 unsafe fn find_thread_slot() -> i32 {
     let thread = (*NtCurrentTeb()).ClientId.UniqueThread;
     let mut i: i32 = 0;
-    while (i as usize) < s_alloactions.len() {
+    while (i as usize) < (*&raw const s_alloactions).len() {
         if s_alloactions[i as usize].thread == thread {
             return i;
         }
@@ -41,7 +41,7 @@ unsafe fn get_thread_slot() -> i32 {
     }
 
     let thread = (*NtCurrentTeb()).ClientId.UniqueThread;
-    let count = (core::mem::size_of_val(&s_alloactions) / core::mem::size_of_val(&s_alloactions[0])) as i32;
+    let count = (core::mem::size_of_val(&*&raw const s_alloactions) / core::mem::size_of::<s_alloactions_entry>()) as i32;
     let mut i = 0;
     while i < count {
         if s_alloactions[i as usize].thread.is_null() {

@@ -1855,7 +1855,7 @@ pub unsafe extern "system" fn PciQueryDeviceRelations(
     DeviceExtension: PPCI_FDO_EXTENSION,
     pDeviceRelations: &mut PDEVICE_RELATIONS,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ntkrnl_sys::ASSERT!((*DeviceExtension).DeviceState == PciStarted as u8);
 

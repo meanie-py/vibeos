@@ -1,6 +1,7 @@
 //! ARM64 HAL translation modules.
 
 pub mod acpi;
+pub mod bits;
 pub mod clock;
 pub mod dma;
 pub mod gic3;

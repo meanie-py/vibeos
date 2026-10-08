@@ -24,7 +24,6 @@ extern "system" {
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> u8;
     fn FatExceptionFilter(IrpContext: *mut core::ffi::c_void, ExceptionInformation: *mut core::ffi::c_void) -> i32;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut IRP, ExceptionCode: i32) -> NTSTATUS;
-    fn PAGED_CODE();
 }
 extern "system" {
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
@@ -117,7 +116,7 @@ pub unsafe extern "system" fn FatFsdCleanup(
     let mut IrpContext: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut TopLevel: u8 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if FatDeviceIsFatFsdo(VolumeDeviceObject) != 0 {
         (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;

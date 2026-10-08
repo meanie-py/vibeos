@@ -1906,7 +1906,7 @@ unsafe fn tb_refresh_toolbar_metrics(tb: *mut CNotifyToolbar, b_force_refresh: B
         tbm.dwMask = TBMF_BARPAD | TBMF_BUTTONSPACING | TBMF_PAD;
         tbm.cxPad = 1;
         tbm.cyPad = 1;
-        if g_TaskbarSettings.UseCompactTrayIcons() == 0 {
+        if (*&raw const g_TaskbarSettings).UseCompactTrayIcons() == 0 {
             tbm.cxPad = GetSystemMetrics(SM_CXSMICON as i32) / 2;
             tbm.cyPad = GetSystemMetrics(SM_CYSMICON as i32) / 2;
         }
@@ -2230,7 +2230,7 @@ unsafe fn sp_get_size(this: *mut CSysPagerWnd, is_horizontal: BOOL, size: *mut S
     let columns: i32;
     let mut cy_button = GetSystemMetrics(SM_CYSMICON as i32) + 2;
     let mut cx_button = GetSystemMetrics(SM_CXSMICON as i32) + 2;
-    if g_TaskbarSettings.UseCompactTrayIcons() == 0 {
+    if (*&raw const g_TaskbarSettings).UseCompactTrayIcons() == 0 {
         cy_button = MulDiv(GetSystemMetrics(SM_CYSMICON as i32), 3, 2);
         cx_button = MulDiv(GetSystemMetrics(SM_CXSMICON as i32), 3, 2);
     }
@@ -2238,7 +2238,7 @@ unsafe fn sp_get_size(this: *mut CSysPagerWnd, is_horizontal: BOOL, size: *mut S
         tb_get_visible_button_count(core::ptr::addr_of_mut!((*this).Toolbar));
 
     if is_horizontal != 0 {
-        if g_TaskbarSettings.UseCompactTrayIcons() == 0 {
+        if (*&raw const g_TaskbarSettings).UseCompactTrayIcons() == 0 {
             rows = ((*size).cy / MulDiv(cy_button, 3, 2)).max(1);
         } else {
             rows = ((*size).cy / cy_button).max(1);

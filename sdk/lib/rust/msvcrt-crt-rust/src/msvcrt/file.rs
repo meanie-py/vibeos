@@ -146,12 +146,12 @@ macro_rules! ARRAY_SIZE {
 // hand callers a FILE the rest of this file never locks or flushes.
 macro_rules! stdin {
     () => {
-        MSVCRT__iob.as_mut_ptr().add(0)
+        (&raw mut MSVCRT__iob).cast::<FILE>().add(0)
     };
 }
 macro_rules! stdout {
     () => {
-        MSVCRT__iob.as_mut_ptr().add(1)
+        (&raw mut MSVCRT__iob).cast::<FILE>().add(1)
     };
 }
 macro_rules! stderr {
@@ -443,7 +443,7 @@ unsafe extern "C" fn ioinfo_set_unicode(info: *mut ioinfo, unicode: BOOL) {
     }
 }
 unsafe extern "C" fn iob_get_file(i: i32) -> *mut FILE {
-    MSVCRT__iob.as_mut_ptr().offset(i as isize)
+    (&raw mut MSVCRT__iob).cast::<FILE>().offset(i as isize)
 }
 unsafe extern "C" fn file_get_cs(f: *mut FILE) -> *mut CRITICAL_SECTION {
     if f < iob_get_file(0) || f >= iob_get_file((_IOB_ENTRIES) as i32) {
@@ -881,7 +881,7 @@ pub unsafe extern "C" fn msvcrt_init_io() {
         while i < count as i32 {
             if (*wxflag_ptr & WX_OPEN) != 0 && GetFileType(*handle_ptr) != FILE_TYPE_UNKNOWN {
                 fdinfo = get_ioinfo_alloc_fd(i);
-                if fdinfo != &mut MSVCRT___badioinfo as *mut ioinfo {
+                if fdinfo != &raw mut MSVCRT___badioinfo as *mut ioinfo {
                     msvcrt_set_fd(fdinfo, *handle_ptr, *wxflag_ptr as i32);
                 }
                 release_ioinfo(fdinfo);
@@ -2448,7 +2448,7 @@ unsafe extern "C" fn check_bom(h: HANDLE, mut oflags: i32, seek: BOOL) -> i32 {
     if ReadFile(
         h,
         bom.as_mut_ptr() as *mut core::ffi::c_void,
-        core::mem::size_of_val(&utf8_bom) as u32,
+        core::mem::size_of_val(&*&raw const utf8_bom) as u32,
         &mut r,
         core::ptr::null_mut(),
     ) == 0
@@ -2456,19 +2456,19 @@ unsafe extern "C" fn check_bom(h: HANDLE, mut oflags: i32, seek: BOOL) -> i32 {
         return oflags;
     }
 
-    if r == core::mem::size_of_val(&utf8_bom) as u32
+    if r == core::mem::size_of_val(&*&raw const utf8_bom) as u32
         && memcmp(
             bom.as_ptr() as *const core::ffi::c_void,
-            utf8_bom.as_ptr() as *const core::ffi::c_void,
-            core::mem::size_of_val(&utf8_bom),
+            (&raw const utf8_bom).cast::<u8>() as *const core::ffi::c_void,
+            core::mem::size_of_val(&*&raw const utf8_bom),
         ) == 0
     {
         oflags = (oflags & (!(_O_WTEXT | _O_U16TEXT)) as i32) | (_O_U8TEXT) as i32;
-    } else if r >= core::mem::size_of_val(&utf16_bom) as u32
+    } else if r >= core::mem::size_of_val(&*&raw const utf16_bom) as u32
         && memcmp(
             bom.as_ptr() as *const core::ffi::c_void,
-            utf16_bom.as_ptr() as *const core::ffi::c_void,
-            core::mem::size_of_val(&utf16_bom),
+            (&raw const utf16_bom).cast::<u8>() as *const core::ffi::c_void,
+            core::mem::size_of_val(&*&raw const utf16_bom),
         ) == 0
     {
         if seek != 0 && r > 2 {
@@ -2628,18 +2628,18 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 let mut written = 0;
                 let mut tmp: DWORD = 0;
 
-                while written != core::mem::size_of_val(&utf8_bom) as u32
+                while written != core::mem::size_of_val(&*&raw const utf8_bom) as u32
                     && WriteFile(
                         hand,
-                        (utf8_bom.as_ptr() as *const u8).add(written as usize) as *const _,
-                        (core::mem::size_of_val(&utf8_bom) as u32 - written),
+                        ((&raw const utf8_bom).cast::<u8>() as *const u8).add(written as usize) as *const _,
+                        (core::mem::size_of_val(&*&raw const utf8_bom) as u32 - written),
                         &mut tmp,
                         core::ptr::null_mut(),
                     ) != 0
                 {
                     written += tmp;
                 }
-                if written != core::mem::size_of_val(&utf8_bom) as u32 {
+                if written != core::mem::size_of_val(&*&raw const utf8_bom) as u32 {
                     CloseHandle(hand);
                     msvcrt_set_errno((GetLastError()) as i32);
                     return *_errno();
@@ -2648,18 +2648,18 @@ pub unsafe extern "C" fn _wsopen_dispatch(
                 let mut written = 0;
                 let mut tmp: DWORD = 0;
 
-                while written != core::mem::size_of_val(&utf16_bom) as u32
+                while written != core::mem::size_of_val(&*&raw const utf16_bom) as u32
                     && WriteFile(
                         hand,
-                        (utf16_bom.as_ptr() as *const u8).add(written as usize) as *const _,
-                        (core::mem::size_of_val(&utf16_bom) as u32 - written),
+                        ((&raw const utf16_bom).cast::<u8>() as *const u8).add(written as usize) as *const _,
+                        (core::mem::size_of_val(&*&raw const utf16_bom) as u32 - written),
                         &mut tmp,
                         core::ptr::null_mut(),
                     ) != 0
                 {
                     written += tmp;
                 }
-                if written != core::mem::size_of_val(&utf16_bom) as u32 {
+                if written != core::mem::size_of_val(&*&raw const utf16_bom) as u32 {
                     CloseHandle(hand);
                     msvcrt_set_errno((GetLastError()) as i32);
                     return *_errno();
@@ -5379,7 +5379,7 @@ pub unsafe extern "C" fn vwprintf_s(
     format: *const wchar_t,
     valist: va_list,
 ) -> i32 {
-    vfwprintf_s(MSVCRT__iob.as_mut_ptr().offset(1), format, valist)
+    vfwprintf_s((&raw mut MSVCRT__iob).cast::<FILE>().offset(1), format, valist)
 }
 
 

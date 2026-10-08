@@ -1370,9 +1370,6 @@ unsafe extern "system" fn ShutdownDialogProc(
 
         _ => return 0 as INT_PTR,
     }
-
-    // Fallback return (should be unreachable due to earlier returns)
-    1 as INT_PTR
 }
 #[no_mangle]
 pub unsafe extern "C" fn ShutdownDialog(

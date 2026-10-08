@@ -42,7 +42,6 @@ pub struct FAT_CALLOUT_PARAMETERS {
 type Bcb = BCB;
 
 extern "system" {
-    fn PAGED_CODE();
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
     fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
@@ -310,7 +309,7 @@ pub unsafe extern "system" fn FatFsdCreate(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatCommonCreateCallout(CalloutParameters: *mut FAT_CALLOUT_PARAMETERS) {
-    PAGED_CODE();
+    PAGED_CODE!();
     (*CalloutParameters).IrpStatus = FatCommonCreate((*CalloutParameters).__bindgen_anon_1.Create.IrpContext, (*CalloutParameters).__bindgen_anon_1.Create.Irp);
 }
 
@@ -322,7 +321,7 @@ pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     let mut CalloutParameters: FAT_CALLOUT_PARAMETERS = core::mem::zeroed();
     let mut status: NTSTATUS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     CalloutParameters.__bindgen_anon_1.Create.IrpContext = IrpContext;
     CalloutParameters.__bindgen_anon_1.Create.Irp = Irp;
@@ -937,7 +936,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     }
                 }
 
-                if FatData.ChicagoMode() != 0 {
+                if (*&raw const FatData).ChicagoMode() != 0 {
                     if FatIsNameLongUnicodeValid(IrpContext, &FinalName as *const _ as *mut _, 0, 0, 0) == 0 {
                         Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                         break 'main_try;
@@ -1675,7 +1674,7 @@ pub unsafe extern "system" fn FatOpenVolume(
 
     let ShareAccess: u32 = ShareAccess as u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     DebugTrace(1, 0 /* Dbg */, b"FatOpenVolume...\n\0".as_ptr() as *const i8);
 
     let p_Status = core::ptr::addr_of_mut!(Status);
@@ -2742,11 +2741,8 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 _ => {
                     DebugTrace(0, (Dbg) as i32, b"Illegal Create Disposition\n\0".as_ptr() as *const i8);
                     FatBugCheck(CreateDisposition, 0, 0);
-                    // unreachable
                 }
             }
-
-            break 'try_block;
         }
 
         // try_exit code
@@ -2912,7 +2908,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         &mut CreateLfn,
     );
 
-    if FatData.ChicagoMode() == 0 {
+    if (*&raw const FatData).ChicagoMode() == 0 {
         AllLowerComponent = 0;
         AllLowerExtension = 0;
         CreateLfn = 0;
@@ -3353,7 +3349,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         &mut CreateLfn,
     );
     RealUnicodeName = UnicodeName;
-    if FatData.ChicagoMode() == 0 {
+    if (*&raw const FatData).ChicagoMode() == 0 {
         AllLowerComponent = 0;
         AllLowerExtension = 0;
         CreateLfn = 0;
@@ -3866,7 +3862,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             core::ptr::null_mut(),
         );
 
-        if FatData.ChicagoMode() != 0 {
+        if (*&raw const FatData).ChicagoMode() != 0 {
             (*dirent).LastAccessDate = core::ptr::read(&(*dirent).LastWriteTime.Date);
         }
 
@@ -4072,7 +4068,7 @@ pub unsafe extern "system" fn FatCheckShareAccess(
     DesiredAccess: PACCESS_MASK,
     ShareAccess: ULONG,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // NTDDI_VERSION >= NTDDI_VISTA block (unconditionally included; in practice always true for modern targets)
     if NodeType(FcbOrDcb as *const c_void) == FAT_NTC_FCB

@@ -199,6 +199,13 @@ unsafe fn HalpMadtAddProcessor(ApicId: ULONG, ProcessorId: ULONG, Flags: ULONG) 
     HalpApicInfoTable.ProcessorCount += 1;
 }
 
+/// The local APIC ID of NT processor `processor` (MADT entry order, boot processor
+/// first), as parsed.
+pub(crate) unsafe fn lapic_id(processor: u32) -> Option<u8> {
+    let base = (&raw const HalpStaticProcessorIdentity).cast::<PROCESSOR_IDENTITY>();
+    (processor < HalpApicInfoTable.ProcessorCount).then(|| (*base.add(processor as usize)).LapicId)
+}
+
 unsafe fn HalpMadtAddIoApic(IoApic: *const ACPI_MADT_IO_APIC) {
     let io_id = core::ptr::addr_of!((*IoApic).Id).read_unaligned() as usize;
     let io_address = core::ptr::addr_of!((*IoApic).Address).read_unaligned();

@@ -229,6 +229,62 @@ unsafe fn IopFindDmaResource(
 
 /// `CM_RESOURCE_INTERRUPT_MESSAGE` (cmtypes.h).
 const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 0x0002;
+// IRQ_DEVICE_POLICY (iotypes.h).
+const IRQ_POLICY_ONE_CLOSE_PROCESSOR: i32 = 2;
+const IRQ_POLICY_SPECIFIED_PROCESSORS: i32 = 4;
+
+unsafe extern "system" {
+    fn HalVibeosMessageAllocate(Token: ULONG, Requested: KAFFINITY, Irql: *mut KIRQL, Affinity: *mut KAFFINITY) -> ULONG;
+    fn HalVibeosMessageRelease(Vector: ULONG) -> BOOLEAN;
+}
+
+/// The processors a message may be delivered to, from the requirement's affinity
+/// policy (which pci.sys fills in from the device's `Affinity Policy` key). With no
+/// NUMA nodes every processor is "close", so one close processor is the boot
+/// processor and the all-close and machine-default policies are every processor.
+unsafe fn message_affinity(IoDesc: PIO_RESOURCE_DESCRIPTOR) -> KAFFINITY {
+    let targeted = (*IoDesc).u.Interrupt.TargetedProcessors;
+    match (*IoDesc).u.Interrupt.AffinityPolicy as i32 {
+        IRQ_POLICY_SPECIFIED_PROCESSORS if targeted != 0 => targeted,
+        IRQ_POLICY_ONE_CLOSE_PROCESSOR => 1,
+        _ => !0,
+    }
+}
+
+/// Give the HAL back every message vector in a translated resource list, zeroing each
+/// so a list released once (at REMOVE) and freed later releases nothing twice.
+pub unsafe fn IopReleaseMessageInterrupts(List: PCM_RESOURCE_LIST) {
+    if List.is_null() {
+        return;
+    }
+    let mut full = core::ptr::addr_of_mut!((*List).List[0]);
+    for _ in 0..(*List).Count {
+        let partial = core::ptr::addr_of_mut!((*full).PartialResourceList);
+        let first = core::ptr::addr_of_mut!((*partial).PartialDescriptors[0]);
+        for k in 0..(*partial).Count as usize {
+            let d = first.add(k);
+            if (*d).Type == 2 && (*d).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0 && (*d).u.Interrupt.Vector != 0 {
+                HalVibeosMessageRelease((*d).u.Interrupt.Vector);
+                (*d).u.Interrupt.Vector = 0;
+            }
+        }
+        full = CmiGetNextResourceDescriptor(full);
+    }
+}
+
+/// Drop a device's translated resources: message vectors back to the HAL, the list
+/// freed. Every path that abandons a translation comes here; the C nulled the field
+/// (and, on a failed translation, freed it but nulled ResourceList instead), leaking
+/// the list or leaving it dangling.
+pub unsafe fn IopDiscardTranslatedResources(DeviceNode: PDEVICE_NODE) {
+    let list = (*DeviceNode).ResourceListTranslated;
+    if list.is_null() {
+        return;
+    }
+    IopReleaseMessageInterrupts(list);
+    ExFreePool(list as PVOID);
+    (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+}
 
 unsafe fn IopFindInterruptResource(
     IoDesc: PIO_RESOURCE_DESCRIPTOR,
@@ -247,7 +303,7 @@ unsafe fn IopFindInterruptResource(
     if ((*IoDesc).Flags & CM_RESOURCE_INTERRUPT_MESSAGE) != 0 {
         (*CmDesc).u.Interrupt.Vector = (*IoDesc).u.Interrupt.MinimumVector;
         (*CmDesc).u.Interrupt.Level = 1 << 16;
-        (*CmDesc).u.Interrupt.Affinity = !0;
+        (*CmDesc).u.Interrupt.Affinity = message_affinity(IoDesc);
         return 1u8;
     }
 
@@ -948,12 +1004,15 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
     if (*DeviceNode).ResourceList.is_null() {
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return STATUS_SUCCESS;
     }
 
     ListSize = PnpDetermineResourceListSize((*DeviceNode).ResourceList);
 
+    // A device translated before (assigned again after a failed start) gives its
+    // last translation's message vectors back first.
+    IopDiscardTranslatedResources(DeviceNode);
     (*DeviceNode).ResourceListTranslated =
         ExAllocatePool(PagedPool, ListSize as _) as PCM_RESOURCE_LIST;
     if (*DeviceNode).ResourceListTranslated.is_null() {
@@ -1005,16 +1064,32 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                         Status = 0xC0000001u32 as i32;
                         ExFreePool((*DeviceNode).ResourceList as PVOID);
                         (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        if !(*DeviceNode).ResourceListTranslated.is_null() {
-                            ExFreePool((*DeviceNode).ResourceListTranslated as PVOID);
-                            (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        }
+                        IopDiscardTranslatedResources(DeviceNode);
                         return Status;
                     }
 
                     if AddressSpace == 0 {
                         (*DescriptorRaw).Flags = 0x0000; // CM_RESOURCE_PORT_MEMORY
                         (*DescriptorTranslated).Flags = 0x0000;
+                    }
+                }
+                2 if (*DescriptorRaw).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0 => {
+                    // A message token: the HAL hands out a vector and the CPU it is
+                    // delivered to, from the processors the raw descriptor allows.
+                    let mut Irql: KIRQL = 0;
+                    (*DescriptorTranslated).u.Interrupt.Vector = HalVibeosMessageAllocate(
+                        (*DescriptorRaw).u.Interrupt.Vector,
+                        (*DescriptorRaw).u.Interrupt.Affinity,
+                        &mut Irql,
+                        core::ptr::addr_of_mut!((*DescriptorTranslated).u.Interrupt.Affinity),
+                    );
+                    (*DescriptorTranslated).u.Interrupt.Level = Irql as ULONG;
+                    if (*DescriptorTranslated).u.Interrupt.Vector == 0 {
+                        Status = 0xC0000001u32 as i32;
+                        ExFreePool((*DeviceNode).ResourceList as PVOID);
+                        (*DeviceNode).ResourceList = core::ptr::null_mut();
+                        IopDiscardTranslatedResources(DeviceNode);
+                        return Status;
                     }
                 }
                 2 => { // CmResourceTypeInterrupt
@@ -1037,10 +1112,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                         Status = 0xC0000001u32 as i32;
                         ExFreePool((*DeviceNode).ResourceList as PVOID);
                         (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        if !(*DeviceNode).ResourceListTranslated.is_null() {
-                            ExFreePool((*DeviceNode).ResourceListTranslated as PVOID);
-                            (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        }
+                        IopDiscardTranslatedResources(DeviceNode);
                         return Status;
                     }
                 }
@@ -1057,10 +1129,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                         Status = 0xC0000001u32 as i32;
                         ExFreePool((*DeviceNode).ResourceList as PVOID);
                         (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        if !(*DeviceNode).ResourceListTranslated.is_null() {
-                            ExFreePool((*DeviceNode).ResourceListTranslated as PVOID);
-                            (*DeviceNode).ResourceList = core::ptr::null_mut();
-                        }
+                        IopDiscardTranslatedResources(DeviceNode);
                         return Status;
                     }
 
@@ -1074,10 +1143,7 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                     Status = STATUS_NOT_IMPLEMENTED;
                     ExFreePool((*DeviceNode).ResourceList as PVOID);
                     (*DeviceNode).ResourceList = core::ptr::null_mut();
-                    if !(*DeviceNode).ResourceListTranslated.is_null() {
-                        ExFreePool((*DeviceNode).ResourceListTranslated as PVOID);
-                        (*DeviceNode).ResourceList = core::ptr::null_mut();
-                    }
+                    IopDiscardTranslatedResources(DeviceNode);
                     return Status;
                 }
             }
@@ -1101,13 +1167,13 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
         }
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return Status;
     }
 
     if (*DeviceNode).BootResources.is_null() && (*DeviceNode).ResourceRequirements.is_null() {
         (*DeviceNode).ResourceList = core::ptr::null_mut();
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         PiSetDevNodeState(DeviceNode, 0x304);
         (*DeviceNode).Flags |= 0x00000100; // DNF_NO_RESOURCE_REQUIRED
 
@@ -1124,7 +1190,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
                 ExFreePool((*DeviceNode).ResourceList as PVOID);
                 (*DeviceNode).ResourceList = core::ptr::null_mut();
             }
-            (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+            IopDiscardTranslatedResources(DeviceNode);
             return Status;
         }
 
@@ -1153,7 +1219,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
                 ExFreePool((*DeviceNode).ResourceList as PVOID);
                 (*DeviceNode).ResourceList = core::ptr::null_mut();
             }
-            (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+            IopDiscardTranslatedResources(DeviceNode);
             return Status;
         }
 
@@ -1163,7 +1229,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
                 ExFreePool((*DeviceNode).ResourceList as PVOID);
                 (*DeviceNode).ResourceList = core::ptr::null_mut();
             }
-            (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+            IopDiscardTranslatedResources(DeviceNode);
             return Status;
         }
 
@@ -1173,7 +1239,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
                 ExFreePool((*DeviceNode).ResourceList as PVOID);
                 (*DeviceNode).ResourceList = core::ptr::null_mut();
             }
-            (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+            IopDiscardTranslatedResources(DeviceNode);
             return Status;
         }
 
@@ -1195,7 +1261,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
         }
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return Status;
     }
 
@@ -1211,7 +1277,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
         }
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return Status;
     }
 
@@ -1223,7 +1289,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
         }
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return Status;
     }
 
@@ -1233,7 +1299,7 @@ pub unsafe extern "system" fn IopAssignDeviceResources(DeviceNode: PDEVICE_NODE)
             ExFreePool((*DeviceNode).ResourceList as PVOID);
             (*DeviceNode).ResourceList = core::ptr::null_mut();
         }
-        (*DeviceNode).ResourceListTranslated = core::ptr::null_mut();
+        IopDiscardTranslatedResources(DeviceNode);
         return Status;
     }
 

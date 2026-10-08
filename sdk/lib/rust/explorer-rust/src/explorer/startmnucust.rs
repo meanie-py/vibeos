@@ -396,11 +396,11 @@ unsafe extern "system" fn CustomSetAdvanced(entry: *const CustomEntry, bValue: B
 }
 
 unsafe extern "system" fn CustomGetSmallStartMenu(_entry: *const CustomEntry) -> BOOL {
-    g_TaskbarSettings.sr.SmSmallIcons() as BOOL
+    (*&raw const g_TaskbarSettings).sr.SmSmallIcons() as BOOL
 }
 
 unsafe extern "system" fn CustomSetSmallStartMenu(_entry: *const CustomEntry, bValue: BOOL) {
-    g_TaskbarSettings.sr.set_SmSmallIcons(bValue as DWORD);
+    (*&raw mut g_TaskbarSettings).sr.set_SmSmallIcons(bValue as DWORD);
 }
 
 /// `s_CustomEntries[]` (file-static). Rebuilt per use — same fn pointers + wide

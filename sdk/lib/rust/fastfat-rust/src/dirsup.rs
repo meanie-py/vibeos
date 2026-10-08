@@ -32,7 +32,6 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FatConstructDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
     fn FatConstructDotDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
-    fn PAGED_CODE();
     fn FlagOn(state: u32, mask: u32) -> u32;
     fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn FatDirectoryKey(dcb: *mut core::ffi::c_void) -> u64;
@@ -427,7 +426,7 @@ pub unsafe extern "system" fn FatInitializeDirectoryDirent(
     let mut Buffer: *mut DIRENT = core::ptr::null_mut();
     let mut DontCare: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS as u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, (Dbg as i32) as u32, b"FatInitializeDirectoryDirent\n\0".as_ptr() as *const i8, 0i32);
     DebugTrace(0, (Dbg as i32) as u32, b"  Dcb = %p\n\0".as_ptr() as *const i8, Dcb);
@@ -474,7 +473,7 @@ pub unsafe extern "system" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CC
     let mut Status: NTSTATUS;
     let mut i: u16;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatTunnelFcbOrDcb\n\0".as_ptr() as *const i8, 0);
 
@@ -691,7 +690,7 @@ pub unsafe extern "system" fn FatLfnDirentExists(
     let mut result: i32 = 0;
     let mut flags: u32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ccb.__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate = *Lfn;
     ccb.ContainsWildCards = 0;
@@ -1241,7 +1240,7 @@ pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
 ) -> () {
     let mut DontCare: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -1387,7 +1386,7 @@ pub unsafe extern "system" fn FatConstructDirent(
     ZeroAndSetTimeFields: BOOLEAN,
     SetCreationTime: *const i64, // PLARGE_INTEGER
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatConstructDirent\n\0" as *const u8 as *const i8, 0);
     DebugTrace(
@@ -1587,7 +1586,7 @@ pub unsafe extern "system" fn FatConstructLabelDirent(
     Dirent: *mut DIRENT,
     Label: *mut OEM_STRING,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatConstructLabelDirent\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"  Dirent             = %p\n\0".as_ptr() as *const i8, Dirent);
@@ -1620,7 +1619,7 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
     let mut DirentBcb: *mut BCB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(((*Fcb).FcbCondition == FcbGood) as i32);
 
@@ -2055,7 +2054,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut TotalBytesAllocated: u32 = 0;
 
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // NT_ASSERT( FatVcbAcquiredExclusive(IrpContext, Dcb->Vcb) );
     NT_ASSERT((FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb)) as i32);

@@ -1258,6 +1258,25 @@ cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and ch
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
 
+### A list walk that reads `Flink` after freeing the entry
+
+**Symptom:** an intermittent access violation inside a list walk, at a load like
+`[entry+0x28]`, with a non-canonical or misaligned pointer, e.g. arm64 FaultVA
+`0x11FFFFFA80004241`. It hit kmtest RtlRangeList on all three arches about one sweep in five.
+Most runs pass because freed pool still holds the old link.
+
+**Cause:** `RemoveEntryList(Entry); Free(Container); Entry = (*Entry).Flink;`. The advance
+reads freed memory, and faults only when the block was reused first. `IoCompleteRequest` counts
+as a free here, because the IRP can be gone once it returns. Upstream C carries this shape in
+places (`FsRtlUninitializeOplock`'s walks), and a port can predate the place upstream fixed it
+(`RtlDeleteOwnersRanges`, fixed upstream in #9248).
+
+**Fix:** capture `let next = (*entry).Flink;` at the top of the loop body, or pop from the
+head (`while !IsListEmpty { RemoveHeadList }`). To triage, look in each loop for an advance
+`X = (*X).Flink` preceded by a free or completion of the containing record, with no `break` or
+`return` in between. The 2026-10-08 scan of `sdk/lib/rust` found 3 real hits in 13
+candidates. The rest freed a different object, or stepped to `Blink` before the free.
+
 ### A C byte count kept as the element count of a `u16` copy moves twice the bytes
 **Symptom.** A string copy that over-reads its source and over-writes its destination by
 exactly its own length. It is silent until the over-read crosses an unmapped page. On arm64,
@@ -1387,6 +1406,23 @@ innocent code.** Fix: make it a `macro_rules!` (the faithful shape — C never e
 args), consume args by value (`let _ = $arg;`; `&$arg` is E0793 on a packed field), and do
 **not** type-bind the parameters, because the per-module extern decls it replaces routinely
 disagree with each other. Then fix the ABI mismatches you uncovered — they are real.
+
+### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
+Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
+routine, e.g. `ExReturnPoolQuota`); the free-list dump shows one pointer freed twice back to
+back. Cause: a C free-and-null macro — classpnp/cdrom `FREE_POOL` is
+`#define FREE_POOL(p) { ExFreePool(p); p = NULL; }` — was translated as
+`extern "C" fn FREE_POOL(ptr: *mut c_void)`. A fn takes the pointer by value and **cannot null
+the caller's local**, so the macro's NULL side effect is dropped. Any site that frees in a
+branch/loop and then again at a cleanup label double-frees, because the C relied on that NULL
+to make the second `if (p) FREE_POOL(p)` a no-op. cdrom's `DeviceSetRawReadInfo` hit it (and
+the translation compounded it by *adding* a `FREE_POOL(buffer)` in a success branch where the
+C just `break`s to a single FnExit free). Fix at the site: null the local after each free,
+matching the macro (`p = core::ptr::null_mut();`); fix generally: make `FREE_POOL` a
+`macro_rules!` that nulls, but note call sites passing `p as *mut c_void` can't be nulled
+through the cast, so the macro must take the bare variable. Same shape as the no-op-macro-as-fn
+entries above: a C macro's *semantics* (here a side effect, there lazy arg evaluation) do not
+survive being made a fn — check for side effects on the arguments before lowering a macro to a fn.
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
@@ -2800,6 +2836,18 @@ signal** (the ambiguity rule already drops multi-enum names). Two deliberate bli
 review by hand: `TAG_*` pool tags (byte order, above) and untagged inline literals at call
 sites (`KeInitializeEvent(e, 1, 0)` with no comment) — `scan_inline_flag_literals` only catches
 the commented ones. **Prefer bindgen enums over local consts in new translations.**
+
+**A `match` over a C `switch` whose arms are literals with the case names as comments** is the
+same class one level up, and the arms are usually shifted together. se-rust's SRM command server
+matched `0 => audit // RmAuditSetCommand`, `1 => create`, `2 => delete`; `RM_API_NUMBER` starts
+at 1, so every lsass RmCreateLogonSession ran the DELETE handler and LogonUser with the right
+password always failed STATUS_NO_SUCH_LOGON_SESSION (1312), from February until 2026-10-08.
+The LPC type tests in the same loop were shifted too (`== 5 // LPC_CONNECTION_REQUEST`;
+5 is LPC_PORT_CLOSED). `scan_inline_flag_literals` now pairs arm comments, a comment alone
+under a block opener or over a lone literal, and `A || B` lists; its first sweep with those
+found two more (kernel32 raising exception code 0 for DBG_CONTROL_C, a cdrom size minimum
+of 4 for 2). Its catalog is a curated header list: a protocol enum outside it (srmp.h was)
+resolves to nothing and the comment is silently skipped. Match on the bindgen constants.
 
 ### The same-named constant with a DIFFERENT value per driver
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
@@ -6931,6 +6979,21 @@ faulting ones, because the invariant is "kmtest drivers have real SEH". **The ne
 is the valuable half:** it exonerated `MmMapLockedPagesSpecifyCache`. **When a test harness and
 the kernel disagree, suspect the harness first if the harness is younger.**
 
+### i386: a scope handler's ebp is `registration + 0x10`, not the function's frame pointer
+- **Symptom:** under real SEH, a `__finally` passed by `longjmp` (or by any unwinder that is
+  not `_except_handler3` itself) "never runs": its store to a local is missing, and some
+  unrelated nearby local (here the jmp_buf) is quietly corrupted instead.
+- **Cause:** EH3/EH4 handlers and filters run with `ebp = &node->_ebp`, the address just
+  past the registration node; that is what `_except_handler3` passes. In an MSVC frame that
+  IS the frame pointer, so code that passes a saved frame pointer (the C
+  `_seh_longjmp_unwind` uses `jmp_buf.Ebp`) looks correct. clang realigns the stack of
+  some SEH functions (`andl $-4, %esp`, locals addressed from esi), and its funclet
+  then computes its base as `ebp_in - K` from the node. Given the real frame pointer, the
+  funclet ran against the wrong base (ucrtbase_apitest setjmp.c:363).
+- **Fix:** derive the handler ebp from the registration (`&frame->_ebp`, as Wine does for
+  `_local_unwind2` and the filter calls), never from a separately saved frame pointer.
+  Done in crt-shared-rust's `_seh_longjmp_unwind`/`4` and vcruntime's `_seh_longjmp_unwind.s`.
+
 ### PSEH hand-lowering recipe
 For FS-driver translations, `_SEH2_TRY`/`_FINALLY`/`_EXCEPT` lower to a `'seh:` labelled block
 returning `Result`, with the finally path on both exits. `try_return` must actually branch.
@@ -9971,7 +10034,7 @@ cannot support.** Count what you *transformed* and reconcile it against what you
 ### A symbolicator resolves against SOME binary — make sure it is the one that booted
 **Symptom:** a bugcheck PC resolves to a function that makes no sense at the crash site, or to a
 constant (`KTRAP_FRAME_LENGTH+13864` — an ABSOLUTE symbol 13KB away), or the tool declines
-entirely. **Two independent causes, and both lie quietly** because *some* symbol always sorts
+entirely. **Three independent causes, and all lie quietly** because *some* symbol always sorts
 below any address:
 
 1. **Wrong binary.** `ntkrnlmp.exe` is a SEPARATE image from `ntoskrnl.exe` with its own layout
@@ -9983,6 +10046,13 @@ below any address:
 2. **Wrong relocation.** The index holds file VAs (`RVA + PE ImageBase`, `0x400000` here), so a
    runtime PC needs `runtime_base - ImageBase` subtracted, not `runtime_base`. Getting this
    wrong pushes every lookup below the first real function.
+
+3. **Wrong build.** A crash from a farm archive was compiled at another commit, so resolve it
+   against the index of the kernel that booted: `addr2sym.sh <arch> --index
+   <manifest.json kernels_dir>/symbols-<arch>[-mp].tsv`. Against this tree's index, the
+   RtlRangeList use-after-free spent two days attributed to fsrtl oplock code. Every hit's
+   own index said `RtlDeleteOwnersRanges`. A symbol name that moves between builds while
+   the offset stays put is the tell.
 
 **Don't guess the base at all when the banner already resolved it.** The bugcheck prints
 `***   P2 = ntoskrnl.exe+0x3788` — that offset IS the RVA, so the index address is just
@@ -11226,6 +11296,34 @@ contract; any caller that just changed a mapping another CPU may hold is a bug.
 watchdog chased that for hours. What broke it was splitting failing boots from passing ones
 on a single fact (`[UEXC]` after `[REGSTRESS] start`: every failure, no pass), then probing
 the corrupt page itself: a page that is ALL zero is lost memory, not an overwrite.
+
+### A `FAULT LOOP` with a valid PTE: the AP never left its boot TTBR0
+**Symptom** (arm64 `-smp 2`): `*** FAULT LOOP (FATAL): the pager reported success on the
+same fault` on a user-half VA while the faulting thread is a System thread, then
+`PspInitializeSystemDll FAILED subcode=7` and BugCheck 0x6B. In the `[FAULTLOOP]` dump the
+PDE/PTE read through the self-map are valid, but `AT(VA)` reports a **level-0** fault and
+**TTBR0 != TTBR1**.
+
+**Cause:** an AP leaves the HAL trampoline with TTBR0 = its temporary identity map.
+`KiSwapProcess` reloads TTBR0 only when the process changes, and every System thread shares
+the idle process's directory, so nothing ever replaced it. The pager checks the System
+process's tables, the hardware walks the identity map, and the fault can never be satisfied.
+It stayed latent while threads rarely ran on the AP; fixing `KiIdleSummary` (threads now go to
+the idle CPU) took it from never to 3 of 4 boots.
+
+**Fix:** `KiSystemStartupBootStack` installs the idle process's directory in TTBR0 and TTBR1
+on each AP, as `KiSwapProcess` would.
+
+### A DPC queued on a CPU never runs until it idles: `DpcInterruptRequested` stuck at 1
+**Symptom** (arm64 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
+and the re-insert returns FALSE; the DPC sits queued until that CPU next reaches its idle loop.
+**Cause:** every IPI_DPC sets `Prcb->DpcInterruptRequested`, including the ones
+`KiDeferredReadyThread` sends only to wake a CPU for a thread. The arm64 soft-interrupt body
+cleared it only when it retired a non-empty queue, so a wake with nothing queued left it set,
+and `KeInsertQueueDpc` skips requesting an interrupt while it is set. **Fix:** clear it on the
+empty-queue path too. Any per-PRCB "request pending" flag needs a clear on every path that
+services the request, not just the path that finds work. **Tell:** `KiSwapProcess` sets both registers to the
+same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
 
 ### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
 **Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network

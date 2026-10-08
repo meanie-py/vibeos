@@ -554,7 +554,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ClassUnload(DriverObject: PDRIVER_OBJECT) {
-    PAGED_CODE();
+    PAGED_CODE!();
     NT_ASSERT(((*DriverObject).DeviceObject.is_null() as i32) as u8);
     let driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY()) as *mut CLASS_DRIVER_EXTENSION;
     if driverExtension.is_null() {
@@ -2653,16 +2653,6 @@ pub unsafe extern "system" fn ClassIoComplete(
     status
 }
 
-extern "system" {
-    
-    
-    
-    
-    
-    
-    
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

@@ -46,7 +46,7 @@ pub unsafe extern "system" fn PciGetResizableBarCapability(PdoExtension: PPCI_PD
     let mut SizeMask: ULONG = 0;
     let mut BarIndex: ULONG;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     core::ptr::write_bytes(State, 0, 1);
 
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn PciAddResizableBarRequirements(
     let Smallest: ULONGLONG;
     let SizeMask: ULONG;
     let mut Count: ULONG;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Only a memory BAR asking for less than 4GB is offered other sizes */
     if BarIndex >= PCI_RBAR_MAX_ENTRIES || (*Limit).Type as u32 != CmResourceTypeMemory {

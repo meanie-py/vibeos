@@ -47,7 +47,6 @@ unsafe fn NT_ERROR(status: NTSTATUS) -> i32 {
 
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, flags: u32, message: *const i8, ...); } extern "system" {
-    fn PAGED_CODE();
     fn FatPrePostIrp(IrpContext: PIRP_CONTEXT, Irp: PIRP);
     fn BooleanFlagOn(flags: u32, flag: u32) -> BOOLEAN;
     fn ClearFlag(flags: *mut u32, flag: u32);
@@ -256,7 +255,7 @@ pub unsafe extern "system" fn FatStackOverflowRead(
     const FAT_NTC_VCB: u32 = 0x0501; // placeholder
     const STATUS_FILE_DELETED: i32 = 0xC0000123_u32 as i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
 
@@ -329,7 +328,7 @@ pub unsafe extern "system" fn FatPostStackOverflowRead(
     let resource: PERESOURCE;
     let vcb: PVCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     DebugTrace(
         0,
         Dbg,

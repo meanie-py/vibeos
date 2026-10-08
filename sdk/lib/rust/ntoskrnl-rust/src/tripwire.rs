@@ -26,6 +26,10 @@
 //!   QUIET               not read by the kernel: winlogon skips its boot-time
 //!                       test ladder (see VibeTripwireRead, and winlogon's
 //!                       QuietBootRequested). Conformance boots set it.
+//!   NVME_AFFINITY=<hex> not read by the kernel: nvme.sys writes it as its device's
+//!                       interrupt Affinity Policy (IrqPolicySpecifiedProcessors),
+//!                       the way an INF would, so a boot proves pci.sys, the PnP
+//!                       manager and the HAL honour a requested processor set.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
 //!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
@@ -304,6 +308,8 @@ unsafe fn apply_token(tok: &[u8]) {
         // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because
         // FEX takes access violations and alignment faults by design).
         UEXC_VERBOSE = true;
+    } else if token_val(tok, b"NVME_AFFINITY").is_some() {
+        // For nvme.sys, through the registry copy, like QUIET.
     } else if tok == b"QUIET" {
         // For user mode, not the kernel: winlogon reads it back through
         // VibeTripwireRead's registry copy. Recognized here only so it doesn't

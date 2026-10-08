@@ -11,7 +11,6 @@ use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertA
     FlagOn, ClearFlag, Add2Ptr, CdRaiseStatus};
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
@@ -83,7 +82,7 @@ pub unsafe extern "C" fn CdInsertPrefix(
     ParentFcb: *mut FCB,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         let mut PrefixEntry: *mut PREFIX_ENTRY = core::ptr::addr_of_mut!((*Fcb).FileNamePrefix);
         
@@ -168,7 +167,7 @@ pub unsafe extern "C" fn CdRemovePrefix(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
@@ -346,7 +345,7 @@ pub unsafe extern "C" fn CdFindNameLink(
     let mut Comparison: FSRTL_COMPARISON_RESULT;
     let mut Node: *mut NAME_LINK;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut Links: PRTL_SPLAY_LINKS = *RootNode;
 
@@ -388,7 +387,7 @@ pub unsafe extern "C" fn CdInsertNameLink(
     let mut Comparison: FSRTL_COMPARISON_RESULT;
     let mut Node: *mut NAME_LINK;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     core::ptr::addr_of_mut!((*NameLink).Links).as_mut().unwrap(); // constraining MIR type, but effectively just getting a pointer
     RtlInitializeSplayLinks(core::ptr::addr_of_mut!((*NameLink).Links));

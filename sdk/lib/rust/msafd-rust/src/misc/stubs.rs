@@ -5,7 +5,8 @@ use core::ffi::c_void;
 pub unsafe extern "system" fn WSPCancelBlockingCall(
     lpErrno: LPINT,
 ) -> INT {
-    unimplemented!("WSPCancelBlockingCall");
+    // C: `UNIMPLEMENTED; return 0;` -- a debug print, never the panic `unimplemented!()` is.
+    0
 }
 #[no_mangle]
 pub unsafe extern "system" fn WSPGetQOSByName(

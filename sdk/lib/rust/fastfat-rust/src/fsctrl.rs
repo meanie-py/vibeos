@@ -57,7 +57,6 @@ extern "system" {
     fn KeCancelTimer(Timer: *mut KEVENT) -> u8;
     fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> u8;
-    fn PAGED_CODE();
     fn NT_ASSERT(condition: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
@@ -993,7 +992,7 @@ pub unsafe extern "system" fn FatIsMediaWriteProtected(
     let mut iosb: _IO_STATUS_BLOCK = core::mem::MaybeUninit::zeroed().assume_init();
     let mut status: i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     // UNREFERENCED_PARAMETER( IrpContext );
     let _unused = IrpContext;
 
@@ -1038,7 +1037,7 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
     let FsControlCode: u32;
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     FsControlCode = (*IrpSp).Parameters.FileSystemControl.FsControlCode;
 
@@ -1111,7 +1110,7 @@ pub unsafe extern "system" fn FatOplockRequest(
     let mut OutputBufferLength: ULONG;
     let TypeOfOpen: TYPE_OF_OPEN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     FsControlCode = (*IrpSp).Parameters.FileSystemControl.FsControlCode;
 
@@ -1988,7 +1987,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
     let Vcb: *mut VCB;
     let mut Result: BOOLEAN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     Vcb = (*FcbOrDcb).Vcb;
 
@@ -2457,7 +2456,7 @@ pub unsafe extern "system" fn FatSearchBufferForLabel(
     let mut OemString: OEM_STRING = unsafe { core::mem::zeroed() };
     let mut UnicodeString: _UNICODE_STRING = unsafe { core::mem::zeroed() };
 
-    PAGED_CODE();
+    PAGED_CODE!();
     // UNREFERENCED_PARAMETER( IrpContext )
     let _ = IrpContext;
 
@@ -2583,7 +2582,7 @@ pub unsafe extern "system" fn FatVerifyLookupFatEntry(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
 

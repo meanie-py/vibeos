@@ -27106,6 +27106,15 @@ pub unsafe extern "system" fn ConvertDefaultLocale(mut lcid: LCID) -> LCID {
 
 #[no_mangle]
 pub unsafe extern "system" fn IsValidLocale(lcid: LCID, flags: DWORD) -> BOOL {
+    // The C looks the LANGID up as a resource language, and LANG_NEUTRAL (0) matches the
+    // loader's any-language fallback, so it called LOCALE_NEUTRAL, LOCALE_USER_DEFAULT
+    // and LOCALE_SYSTEM_DEFAULT valid. Windows says all three are not (winetests
+    // kernel32/locale.c, beside RtlLcidToLocaleName). It mattered: ucrtbase's downlevel
+    // IsValidLocaleName is IsValidLocale(LocaleNameToLCID(name)), and an unknown name
+    // maps to 0, so every name "existed" and "en_US.UTF-8" came out as ANSI 1252.
+    if lcid == LOCALE_NEUTRAL || lcid == LOCALE_USER_DEFAULT || lcid == LOCALE_SYSTEM_DEFAULT {
+        return 0;
+    }
     (FindResourceExW(
         kernel32_handle,
         6usize as LPWSTR,

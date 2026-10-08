@@ -358,9 +358,6 @@ pub unsafe extern "system" fn ClassBuildRequest(Fdo: PDEVICE_OBJECT, Irp: PIRP) 
     STATUS_SUCCESS
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

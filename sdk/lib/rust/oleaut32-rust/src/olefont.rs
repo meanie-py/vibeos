@@ -343,7 +343,7 @@ pub unsafe extern "system" fn OleCreateFontIndirect(
         ];
 
         fd.cbSizeofstruct = core::mem::size_of::<FONTDESC>() as u32;
-        fd.lpstrName = fname.as_mut_ptr();
+        fd.lpstrName = (&raw mut fname).cast::<u16>();
         // C: fd.cySize.s.Lo / .Hi — `s` is CY's named struct arm (NONAMELESSUNION);
         // bindgen names the anonymous union member `__bindgen_anon_1`.
         fd.cySize.__bindgen_anon_1.Lo = 80000;
@@ -601,13 +601,13 @@ fn OLEFontImpl_Release(iface: *mut IFont) -> ULONG {
     ref_0 = InterlockedDecrement(&mut (*this).ref_) as ULONG;
 
     if ref_0 == 0 {
-        let fontlist_refs: ULONG = InterlockedDecrement(&mut ifont_cnt) as ULONG;
+        let fontlist_refs: ULONG = InterlockedDecrement(&raw mut ifont_cnt) as ULONG;
 
         if fontlist_refs == 0 {
             let mut item: *mut HFONTItem;
             let mut cursor2: *mut HFONTItem;
 
-            EnterCriticalSection(&mut OLEFontImpl_csHFONTLIST);
+            EnterCriticalSection(&raw mut OLEFontImpl_csHFONTLIST);
             
             item = (OLEFontImpl_hFontList.next as *mut u8).offset(
                 -(core::mem::offset_of!(HFONTItem, entry) as isize)
@@ -624,7 +624,7 @@ fn OLEFontImpl_Release(iface: *mut IFont) -> ULONG {
                 ) as *mut HFONTItem;
             }
             
-            LeaveCriticalSection(&mut OLEFontImpl_csHFONTLIST);
+            LeaveCriticalSection(&raw mut OLEFontImpl_csHFONTLIST);
             delete_dc();
         } else {
             dec_int_ref((*this).gdiFont);
@@ -2891,7 +2891,7 @@ unsafe extern "C" fn OLEFontImpl_Construct(fontDesc: *const FONTDESC) -> *mut OL
         return core::ptr::null_mut();
     }
 
-    InterlockedIncrement(&mut ifont_cnt);
+    InterlockedIncrement(&raw mut ifont_cnt);
 
     TRACE!(b"returning %p\n\0".as_ptr() as *const i8, newObject);
     newObject

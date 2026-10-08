@@ -5,7 +5,9 @@ there: the loader's MADT/DBG2/SPCR/MCFG reader (which decides the GIC, the conso
 the ECAM a board boots with) and the HAL's IORT reader (which decides the DeviceID an
 ITS sees for each PCI device, and whether its DMA crosses an SMMU). A wrong answer from
 either looks like a dead device on hardware nobody here has, so their known-answer
-tests run on every check-tooling instead of whenever someone remembers.
+tests run on every check-tooling instead of whenever someone remembers. The HAL's
+message-vector bitmaps ride along: pure too, and a slot handed out twice is two
+devices sharing an interrupt.
 """
 
 import os
@@ -19,6 +21,7 @@ REPO = Path(__file__).resolve().parents[1]
 MODULES = [
     "sdk/lib/rust/freeldr-rust/src/arm64_serial_acpi.rs",
     "sdk/lib/rust/hal-rust/src/arm64/iort.rs",
+    "sdk/lib/rust/hal-rust/src/arm64/bits.rs",
 ]
 
 

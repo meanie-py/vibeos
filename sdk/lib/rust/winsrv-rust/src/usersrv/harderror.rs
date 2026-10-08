@@ -736,7 +736,7 @@ unsafe fn UserpFormatMessages(
         }
     }
 
-    if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
+    if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
         let ExceptionCode: u32 = CopyParameters[0] as u32;
 
         Status = RtlFindMessage(
@@ -809,7 +809,7 @@ unsafe fn UserpFormatMessages(
         ) as usize;
         cszBuffer *= core::mem::size_of::<u16>();
 
-        if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
+        if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
             if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
                 cszBuffer += core::mem::size_of::<u16>() + g_OKTerminateU.Length as usize;
             }
@@ -859,7 +859,7 @@ unsafe fn UserpFormatMessages(
             CopyParameters[3],
         );
 
-        if (*Message).Status == (0xC0000374u32 as i32) - 0x40000000 {
+        if (*Message).Status == STATUS_UNHANDLED_EXCEPTION {
             if (*Message).ValidResponseOptions == OptionOk || (*Message).ValidResponseOptions == OptionOkCancel {
                 RtlStringCbPrintfExW(
                     pszBuffer,
@@ -1090,6 +1090,13 @@ unsafe fn UserpLogHardError(
     ElfDeregisterEventSource(hEventLog);
     }
 }
+
+// ntstatus.h. The translation wrote `0xC0000374 - 0x40000000` (= 0x80000374, a status nothing
+// raises) in all three places the C tests this, so an unhandled exception's message was
+// formatted with the raw "The exception %s ..." text and `%s` pointed at the exception
+// CODE: any application crash with a hard-error popup took csrss, and so the system, down
+// (BUGCHECK 0xF4 on arm64 after lsass crashed, 2026-10-08).
+const STATUS_UNHANDLED_EXCEPTION: NTSTATUS = 0xC0000144u32 as NTSTATUS;
 
 #[no_mangle]
 pub unsafe extern "system" fn UserServerHardError(

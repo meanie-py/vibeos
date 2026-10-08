@@ -461,14 +461,14 @@ pub unsafe extern "system" fn OHCI_OpenInterruptEndpoint(
     DPRINT_OHCI(
         b"OHCI_OpenInterruptEndpoint: InitTD. Index[PeriodIdx] - %x, ScheduleOffset - %x\n\0"
             .as_ptr() as *const i8,
-        *Index.as_ptr().offset(PeriodIdx as isize) as ULONG,
+        *(&raw const Index).cast::<UCHAR>().offset(PeriodIdx as isize) as ULONG,
         ScheduleOffset,
     );
 
     (*OhciEndpoint).HeadED = (core::ptr::addr_of_mut!((*OhciExtension).IntStaticED)
         as *mut OHCI_STATIC_ED)
         .offset(
-            (*Index.as_ptr().offset(PeriodIdx as isize) as ULONG).wrapping_add(ScheduleOffset)
+            (*(&raw const Index).cast::<UCHAR>().offset(PeriodIdx as isize) as ULONG).wrapping_add(ScheduleOffset)
                 as isize,
         ) as POHCI_STATIC_ED;
 

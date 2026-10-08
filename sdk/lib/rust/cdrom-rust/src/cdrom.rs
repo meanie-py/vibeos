@@ -214,7 +214,6 @@ unsafe extern "C" {
     fn DEVICE_TYPE_FROM_CTL_CODE(io_control_code: u32) -> u32;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn DeviceCreateWellKnownName(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
@@ -606,7 +605,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     let mut devicePropertySize: u32 = 0;
     let mut devicePropertyType: u32 = DEVPROP_TYPE_EMPTY;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     driverExtension = DriverGetExtension(Driver);
 
@@ -1087,7 +1086,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
 #[no_mangle]
 pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let device = Device as *mut core::ffi::c_void;
     let format = b"WDFDEVICE %p cleanup: The device is about to be destroyed.\n\0".as_ptr() as *const i8;
@@ -1124,7 +1123,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION; // NULL initially
 
     // PAGED_CODE(); remains as a call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // TracePrint with varargs; we pass the format string and pointer
     TracePrint!(
@@ -1441,7 +1440,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
     FileObjectContext: *mut FILE_OBJECT_CONTEXT,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
-    PAGED_CODE();
+    PAGED_CODE!();
     TracePrint!(
         4, // TRACE_LEVEL_INFORMATION
         0x1, // TRACE_FLAG_INIT
@@ -2973,7 +2972,7 @@ pub unsafe extern "system" fn ReadWriteWorkItemRoutine(WorkItem: WDFWORKITEM) {
     let mut readWriteRequestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     deviceExtension = WdfObjectGetTypedContext(
         WdfWorkItemGetParentObject(WorkItem),
@@ -3127,7 +3126,7 @@ pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
     let mut information: usize = 0;
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut completeRequest: i32 = 1;
-    PAGED_CODE();
+    PAGED_CODE!();
     WDF_REQUEST_PARAMETERS_INIT(&mut requestParameters);
     WdfRequestGetParameters(Request, &mut requestParameters);
     NormalizeIoctl(&mut requestParameters);

@@ -456,9 +456,8 @@ unsafe extern "C" {
     // amd64 must NOT wire this: its kernel owns IDT[0xE1] (KiIpiInterrupt).
     #[cfg(target_arch = "x86")]
     fn HalpIpiInterrupt();
-    // Serial flavor banner (i386): variadic cdecl, resolved via the ntoskrnl
-    // import lib — proves in every boot log that the APIC HAL is live.
-    #[cfg(target_arch = "x86")]
+    // Variadic cdecl, resolved via the ntoskrnl import lib: the i386 serial flavor
+    // banner, and where each message vector goes.
     fn DbgPrint(fmt: *const u8, ...) -> u32;
 }
 
@@ -791,10 +790,12 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
         | ((APIC_TGM_LEVEL as ULONG) << 15);
     apic_write(APIC_LINT1, lint1);
 
-    // Error LVT — Fixed, masked at template (mask still set).
-    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG)
-        | ((APIC_MT_FIXED as ULONG) << 8)
-        | (1 << 16);
+    // Error LVT — Fixed, UNMASKED ("Enable error LVTR", apic.c:353-356). The C mutates one
+    // LvtEntry template in place: the LINT1/NMI step just above set Mask = 0, and the error
+    // step only rewrites Vector + MessageType, so the error LVT inherits the cleared mask and
+    // is written enabled. This value is rebuilt from scratch, so it must omit the mask bit to
+    // match; an earlier translation OR'd in (1 << 16) and left the error LVT masked.
+    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG) | ((APIC_MT_FIXED as ULONG) << 8);
     apic_write(APIC_ERRLVTR, err_lvt);
 
     // Set IRQL from PCR.
@@ -884,6 +885,10 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 // ---------------------------------------------------------------------------
 
 static mut MessageVectors: [bool; 256] = [false; 256];
+/// The processor each message vector is delivered to, chosen when it is handed out.
+static mut MessageCpu: [u8; 256] = [0; 256];
+/// Counts message vectors handed out; each takes the next allowed processor in turn.
+static MessageRotor: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 fn is_message_vector(vector: ULONG) -> bool {
     vector < 256 && unsafe { MessageVectors[vector as usize] }
@@ -916,26 +921,51 @@ pub(crate) unsafe fn message_capacity() -> u32 {
     n
 }
 
-pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
+/// A free vector, delivered to the next processor in turn of those `requested` that
+/// are running (all of them when it names none). The affinity reported is that one
+/// processor, so the I/O manager connects the vector in that processor's IDT only.
+pub(crate) unsafe fn allocate_message_vector(requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
     let mut got = None;
     free_device_vectors(|vector, irql| {
         got = Some((vector, irql));
         false
     });
     let (vector, irql) = got?;
+    let online = HalpDefaultInterruptAffinity;
+    let allowed = if online & requested != 0 { online & requested } else { online };
+    let mut rest = allowed;
+    for _ in 0..MessageRotor.fetch_add(1, core::sync::atomic::Ordering::Relaxed) % allowed.count_ones().max(1) {
+        rest &= rest - 1;
+    }
+    let cpu = if rest == 0 { 0 } else { rest.trailing_zeros() };
     HalpVectorToIndex[vector as usize] = APIC_RESERVED_VECTOR;
     MessageVectors[vector as usize] = true;
-    Some((vector as u32, irql, HalpDefaultInterruptAffinity))
+    MessageCpu[vector as usize] = cpu as u8;
+    DbgPrint(b"[HAL] APIC: message vector %u at IRQL %u -> CPU%u\n\0".as_ptr(), vector as u32, irql as u32, cpu as u32);
+    Some((vector as u32, irql, 1 << cpu))
+}
+
+/// Give a message vector back to the free pool.
+pub(crate) unsafe fn release_message_vector(vector: u32) -> bool {
+    if !is_message_vector(vector) {
+        return false;
+    }
+    MessageVectors[vector as usize] = false;
+    HalpVectorToIndex[vector as usize] = APIC_FREE_VECTOR;
+    true
 }
 
 /// Address 0xFEE0_0000 with the destination APIC ID in bits 19:12 (physical
 /// mode, no redirection hint); data = the vector, fixed delivery, edge. The
-/// destination is this processor, as HalEnableSystemInterrupt does for a line.
+/// destination is the processor the vector was handed out for.
 pub(crate) unsafe fn message_target(vector: u32, _requester: u32) -> Option<(u64, u32)> {
     if !is_message_vector(vector) {
         return None;
     }
-    let dest = (apic_read(APIC_ID) >> 24) as u64;
+    let dest = match super::madt::lapic_id(MessageCpu[vector as usize] as u32) {
+        Some(id) => id as u64,
+        None => (apic_read(APIC_ID) >> 24) as u64,
+    };
     Some((0xFEE0_0000 | (dest << 12), vector))
 }
 

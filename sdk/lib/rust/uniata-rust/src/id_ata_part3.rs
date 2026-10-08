@@ -3721,7 +3721,7 @@ pub unsafe extern "system" fn DriverEntry(
             RegistryPath as PVOID,
             core::mem::size_of::<UNICODE_STRING>(),
         );
-        SavedRegPath.Buffer = SavedRegPathBuffer.as_mut_ptr() as PWCHAR;
+        SavedRegPath.Buffer = (&raw mut SavedRegPathBuffer).cast::<WCHAR>() as PWCHAR;
         SavedRegPath.Length = min_u32((*RegistryPath).Length as ULONG, 255 * core::mem::size_of::<WCHAR>() as ULONG) as USHORT;
         SavedRegPath.MaximumLength = (255 * core::mem::size_of::<WCHAR>()) as USHORT;
         RtlCopyMemory(

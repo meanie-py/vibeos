@@ -133,4 +133,4 @@ pub static mut MSVCRT__wctype: [WORD; 257] = [
 // hit on locale.c, data.c and dir.c — a private static links clean, so the C copies would
 // simply have stayed live with nothing anywhere reporting it. Tracked as task #43.
 #[no_mangle]
-pub static mut MSVCRT__pwctype: *mut WORD = unsafe { MSVCRT__wctype.as_mut_ptr().add(1) };
+pub static mut MSVCRT__pwctype: *mut WORD = unsafe { (&raw mut MSVCRT__wctype).cast::<WORD>().add(1) };

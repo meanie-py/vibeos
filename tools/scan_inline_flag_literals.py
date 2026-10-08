@@ -61,6 +61,7 @@ _SUFFIX_RE = re.compile(r"(u8|u16|u32|u64|usize|i8|i16|i32|i64|isize)$")
 # The parenthetical is a SINGLE paren group ([^()]*): the greedy `.*` used to make
 # `// NonPagedPoolNx (512) + CacheAligned (4)` parse as name=NonPagedPoolNx with one
 # giant parenthetical — an arithmetic-prose comment misread as an annotation (FP).
+_LONE_LIT_RE = re.compile(r"^-?(?:0x[0-9a-fA-F_]+|\d[\d_]*)\w*\s*[,;]?$")
 _NAME_SEG_RE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(?:\([^()]*\))?\s*$")
 # Per-line suppression an agent adds after verifying a FP, e.g.
 #   PALETTE_AllocPalette(0x4 /* PAL_BITFIELDS */ ...)  // nolint: inline-literal (checked)
@@ -150,7 +151,7 @@ def comment_names(text):
     elif body.startswith("//"):
         body = body[2:]
     names = []
-    for seg in body.split("|"):
+    for seg in re.split(r"\|\|?", body):  # `A | B` (a mask) or `A || B` (alternatives)
         m = _NAME_SEG_RE.match(seg)
         if not m:
             return []  # any non-clean segment => treat whole comment as prose
@@ -195,6 +196,26 @@ def scan_file(path, catalog):
             continue
         cline = c.start_point[0]
         line_src = lines[cline].decode("utf8", "replace").strip()
+        opener = False
+        if line_src.startswith(("//", "/*")):
+            # A comment alone on its line annotates either the lone literal BELOW it (a
+            # block's value: `// DBG_CONTROL_C` / `0`, kernel32's console handler raised
+            # exception code 0) or the block opener ABOVE it, as rustconv writes a C
+            # condition: `if Type == 5 {` / `// LPC_CONNECTION_REQUEST` (se-rust's SRM
+            # loop had three, and 5 is LPC_PORT_CLOSED).
+            nxt = (
+                lines[cline + 1].decode("utf8", "replace").strip() if cline + 1 < len(lines) else ""
+            )
+            prev = (
+                lines[cline - 1].decode("utf8", "replace").split("//")[0].rstrip() if cline else ""
+            )
+            if _LONE_LIT_RE.match(nxt):
+                cline += 1
+                line_src = nxt
+            elif prev.endswith("{"):
+                cline -= 1
+                line_src = prev.strip()
+                opener = True
         if len(names) >= 2:
             # |-list: pair positionally with the literals on the comment's line,
             # in source order, that sit before the comment (e.g. `A | B // N1 | N2`).
@@ -218,9 +239,11 @@ def scan_file(path, catalog):
             # (trailing `0x4 /* N */`, or leading `/* N */ 0x4`), same line only.
             name = names[0]
             before = [L for L in lits if L.end_byte <= c.start_byte and L.start_point[0] == cline]
-            after = [
-                L for L in lits if L.start_byte >= c.end_byte and L.start_point[0] == c.end_point[0]
-            ]
+            after = [L for L in lits if L.start_byte >= c.end_byte and L.start_point[0] == cline]
+            if opener:
+                # `if f(..) == 0 {` / `// ERROR_X` names what the block DOES, not the 0:
+                # a zero in an opener is a boolean test (rtl-heap's RtlFreeHeap check).
+                before = [L for L in before if 0 not in lit_values(L, src)]
             side = before or after
             # If the correct value appears ANYWHERE among the line's candidates, the
             # flag is present and correct — don't be fooled by a nearer `0` in

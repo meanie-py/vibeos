@@ -597,22 +597,31 @@ pub unsafe extern "C" fn _except_handler4_common(
     return _EXCEPTION_DISPOSITION_ExceptionContinueSearch as i32;
 }
 
+/// The ebp a scope handler of `frame` runs with: the address just past the EH3/EH4
+/// registration node, which is what `_except_handler3`/`4` hand it. The C passes the
+/// jmp_buf's saved `Ebp` instead. In an MSVC frame the two are the same address, but
+/// clang realigns the stack of some SEH functions and then addresses their locals from
+/// `node + 0x10`, not from the frame pointer. Handed the frame pointer, such a
+/// function's `__finally` ran against the wrong base and stored its locals into the
+/// middle of the caller's jmp_buf (ucrtbase_apitest setjmp.c:363).
+unsafe fn scope_handler_ebp(frame: *mut MSVCRT_EXCEPTION_FRAME) -> *mut core::ffi::c_void {
+    core::ptr::addr_of_mut!((*frame)._ebp) as *mut core::ffi::c_void
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn _seh_longjmp_unwind(jmp: *mut _JUMP_BUFFER) {
-    msvcrt_local_unwind2(
-        (*jmp).Registration as *mut MSVCRT_EXCEPTION_FRAME,
-        (*jmp).TryLevel as i32,
-        (*jmp).Ebp as *mut core::ffi::c_void,
-    );
+    let frame = (*jmp).Registration as *mut MSVCRT_EXCEPTION_FRAME;
+    msvcrt_local_unwind2(frame, (*jmp).TryLevel as i32, scope_handler_ebp(frame));
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn _seh_longjmp_unwind4(jmp: *mut _JUMP_BUFFER) {
+    let frame = (*jmp).Registration as *mut MSVCRT_EXCEPTION_FRAME;
     msvcrt_local_unwind4(
         core::ptr::addr_of_mut!((*jmp).Cookie) as *mut ULONG,
-        (*jmp).Registration as *mut MSVCRT_EXCEPTION_FRAME,
+        frame,
         (*jmp).TryLevel as i32,
-        (*jmp).Ebp as *mut core::ffi::c_void,
+        scope_handler_ebp(frame),
     );
 }
 #[no_mangle]

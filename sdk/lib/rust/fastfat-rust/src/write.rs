@@ -98,8 +98,6 @@ pub unsafe extern "system" fn FatDeferredFlushDpc(
 // ---- re-stitched from bank: 20260612-151345-write.c/03_FatDeferredFlush.rs ----
 const FSRTL_FSP_TOP_LEVEL_IRP: PIRP = 1 as PIRP;
 
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatDeferredFlush(Parameter: *mut core::ffi::c_void) {

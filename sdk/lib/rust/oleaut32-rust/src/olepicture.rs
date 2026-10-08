@@ -3942,7 +3942,7 @@ unsafe extern "C" fn OLEPictureImpl_LoadWICSource(
     let mut has_alpha: BOOL = FALSE;
 
     hr = WICConvertBitmapSource(
-        &GUID_WICPixelFormat32bppBGRA,
+        &raw const GUID_WICPixelFormat32bppBGRA,
         src,
         &mut real_source,
     );
@@ -4088,10 +4088,10 @@ unsafe extern "C" fn OLEPictureImpl_LoadWICDecoder(
     let initresult = CoInitialize(core::ptr::null_mut());
 
     hr = CoCreateInstance(
-        &CLSID_WICImagingFactory,
+        &raw const CLSID_WICImagingFactory,
         core::ptr::null_mut(),
         CLSCTX_INPROC_SERVER,
-        &IID_IWICImagingFactory,
+        &raw const IID_IWICImagingFactory,
         &mut factory as *mut _ as *mut LPVOID,
     );
 
@@ -4108,7 +4108,7 @@ unsafe extern "C" fn OLEPictureImpl_LoadWICDecoder(
                 decoder_clsid,
                 core::ptr::null_mut(),
                 CLSCTX_INPROC_SERVER,
-                &IID_IWICBitmapDecoder,
+                &raw const IID_IWICBitmapDecoder,
                 &mut decoder as *mut _ as *mut LPVOID,
             );
 
@@ -4470,16 +4470,16 @@ fn OLEPictureImpl_Load(
 
     match magic as i32 {
         0x4947 => {
-            hr = OLEPictureImpl_LoadWICDecoder(This, &CLSID_WICGifDecoder, xbuf, xread);
+            hr = OLEPictureImpl_LoadWICDecoder(This, &raw const CLSID_WICGifDecoder, xbuf, xread);
         }
         0xd8ff => {
-            hr = OLEPictureImpl_LoadWICDecoder(This, &CLSID_WICJpegDecoder, xbuf, xread);
+            hr = OLEPictureImpl_LoadWICDecoder(This, &raw const CLSID_WICJpegDecoder, xbuf, xread);
         }
         0x4d42 => {
-            hr = OLEPictureImpl_LoadWICDecoder(This, &CLSID_WICBmpDecoder, xbuf, xread);
+            hr = OLEPictureImpl_LoadWICDecoder(This, &raw const CLSID_WICBmpDecoder, xbuf, xread);
         }
         0x5089 => {
-            hr = OLEPictureImpl_LoadWICDecoder(This, &CLSID_WICPngDecoder, xbuf, xread);
+            hr = OLEPictureImpl_LoadWICDecoder(This, &raw const CLSID_WICPngDecoder, xbuf, xread);
         }
         0xcdd7 => {
             hr = OLEPictureImpl_LoadAPM(This, xbuf, xread);

@@ -20,7 +20,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, IoAllocateMdl, IoCreateDevice, IoForwardIrpSynchronously, IoFreeMdl,
     IoOpenDeviceRegistryKey, KeInitializeDpc, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject,
-    MmBuildMdlForNonPagedPool, MmMapIoSpace, ZwClose, ZwCreateKey, ZwSetValueKey, _MEMORY_CACHING_TYPE_MmNonCached,
+    MmBuildMdlForNonPagedPool, MmMapIoSpace, ZwClose, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey,
+    _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _MEMORY_CACHING_TYPE_MmNonCached,
     HANDLE, IO_CONNECT_INTERRUPT_PARAMETERS, KEVENT, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT,
     PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_INTERRUPT_MESSAGE_INFO, PIO_STACK_LOCATION, PIRP, PMDL,
     PVOID, ULONG, UNICODE_STRING,
@@ -104,7 +105,12 @@ const CONNECT_MESSAGE_BASED: ULONG = 3;
 const MESSAGES_WANTED: u32 = 2;
 const PLUGPLAY_REGKEY_DEVICE: ULONG = 1;
 const KEY_ALL_ACCESS: ULONG = 0xF003F;
+const REG_SZ: ULONG = 1;
+const REG_BINARY: ULONG = 3;
 const REG_DWORD: ULONG = 4;
+const KEY_READ: u32 = 0x20019;
+/// IRQ_DEVICE_POLICY's IrqPolicySpecifiedProcessors.
+const IRQ_POLICY_SPECIFIED_PROCESSORS: u32 = 4;
 const OBJ_CASE_INSENSITIVE_KERNEL_HANDLE: ULONG = 0x240;
 const CM_RESOURCE_TYPE_MEMORY_LARGE: u8 = 7;
 const CM_RESOURCE_MEMORY_LARGE_40: u16 = 0x0200;
@@ -250,6 +256,43 @@ unsafe fn set_dword(key: HANDLE, name: &[u16], value: u32) {
     ZwSetValueKey(key, &mut name, 0, REG_DWORD, (&raw mut v).cast(), 4);
 }
 
+/// The test rig's `NVME_AFFINITY=<hex mask>` tripwire token, which the kernel
+/// publishes as `VibeTripwire` under CurrentControlSet\Control: the processors this
+/// boot's NVMe messages should go to, as an INF's Affinity Policy would say.
+unsafe fn tripwire_affinity() -> Option<u64> {
+    let mut name = unicode(utf16!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control"));
+    let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    oa.ObjectName = &mut name;
+    oa.Attributes = OBJ_CASE_INSENSITIVE_KERNEL_HANDLE;
+    let mut key: HANDLE = null_mut();
+    if ZwOpenKey(&mut key, KEY_READ, &mut oa) < 0 {
+        return None;
+    }
+    let mut value = unicode(utf16!("VibeTripwire"));
+    // KEY_VALUE_PARTIAL_INFORMATION: TitleIndex, Type, DataLength, then the string.
+    let mut buf = [0u32; 3 + 128];
+    let mut got: ULONG = 0;
+    let status = ZwQueryValueKey(
+        key,
+        &mut value,
+        _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation,
+        buf.as_mut_ptr().cast(),
+        size_of::<[u32; 3 + 128]>() as ULONG,
+        &mut got,
+    );
+    ZwClose(key);
+    if status < 0 || buf[1] != REG_SZ {
+        return None;
+    }
+    let chars = core::slice::from_raw_parts(buf.as_ptr().add(3) as *const u16, (buf[2] as usize / 2).min(256));
+    let mut tokens = chars.split(|&c| c == b' ' as u16 || c == b';' as u16 || c == 0);
+    let token = tokens.find(|t| t.starts_with(utf16!("NVME_AFFINITY=")))?;
+    let digits = &token[utf16!("NVME_AFFINITY=").len()..];
+    let digits = digits.strip_prefix(utf16!("0x")).unwrap_or(digits);
+    digits.iter().try_fold(0u64, |acc, &c| Some(acc << 4 | char::from_u32(c as u32)?.to_digit(16)? as u64)).filter(|&m| m != 0)
+}
+
 /// Ask pci.sys for MSI-X the Windows way: `MSISupported` under the device key's
 /// Interrupt Management\MessageSignaledInterruptProperties, which an INF's HKR
 /// AddReg would write (stornvme's does). Done here because there is no INF; the
@@ -265,6 +308,16 @@ unsafe fn opt_in_to_msix(pdo: PDEVICE_OBJECT) {
             set_dword(props, utf16!("MSISupported"), 1);
             set_dword(props, utf16!("MessageNumberLimit"), MESSAGES_WANTED);
             ZwClose(props);
+        }
+        if let Some(mask) = tripwire_affinity() {
+            if let Some(policy) = create_key(management, utf16!("Affinity Policy")) {
+                set_dword(policy, utf16!("DevicePolicy"), IRQ_POLICY_SPECIFIED_PROCESSORS);
+                let mut name = unicode(utf16!("AssignmentSetOverride"));
+                let mut set = mask as usize; // a KAFFINITY's bytes, as Windows stores it
+                ZwSetValueKey(policy, &mut name, 0, REG_BINARY, (&raw mut set).cast(), size_of::<usize>() as ULONG);
+                ZwClose(policy);
+                nvprint!("affinity policy from the tripwire: messages on processors {:#x}\n", mask);
+            }
         }
         ZwClose(management);
     }
