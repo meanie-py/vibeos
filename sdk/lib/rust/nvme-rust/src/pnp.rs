@@ -36,6 +36,7 @@ use crate::nvme::{self, dma_ready, now_us, Controller, Identity, Irq, Namespace,
 unsafe extern "system" {
     // ntoskrnl export (iomgr-rust irq.rs); Vista-era, so not in the pre-Vista bindings.
     fn IoConnectInterruptEx(Parameters: *mut IO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS;
+    fn IoDisconnectInterruptEx(Parameters: *mut ntkrnl_sys::ddk::IO_DISCONNECT_INTERRUPT_PARAMETERS);
 }
 use crate::print::nvprint;
 
@@ -268,7 +269,9 @@ unsafe fn messages_wanted() -> u32 {
 /// - `NVME_AFFINITY`: the processors this boot's NVMe messages should go to, as an
 ///   INF's Affinity Policy would say;
 /// - `NVME_LOSE_COMPLETION`: the I/O completion (counted from 1) the engine throws
-///   away, so its command hangs and the controller is reset.
+///   away, so its command hangs and the controller is reset;
+/// - `NVME_FAIL_START`: START connects the interrupts, then disconnects them and
+///   fails, so the device is removed and its messages go back to the HAL.
 unsafe fn tripwire_value(key: &[u16]) -> Option<u64> {
     let mut name = unicode(utf16!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control"));
     let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -378,7 +381,7 @@ unsafe fn fdo_dispatch(fdo: &mut Fdo, irp: PIRP) -> NTSTATUS {
             pass_down(fdo, irp)
         }
         (IRP_MJ_PNP, minor) => {
-            if minor == IRP_MN_REMOVE_DEVICE {
+            if minor == IRP_MN_REMOVE_DEVICE && fdo.controller.is_some() {
                 nvprint!("controller {}: removal is not supported; it stays running\n", fdo.number);
             }
             pass_down(fdo, irp)
@@ -501,6 +504,25 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     Some(count)
 }
 
+/// Undo `connect`: the messages, or the pin. A START that fails must, before the
+/// PnP manager hands the vectors back to the HAL for another device.
+unsafe fn disconnect(fdo: &mut Fdo) {
+    let mut p: ntkrnl_sys::ddk::IO_DISCONNECT_INTERRUPT_PARAMETERS = core::mem::zeroed();
+    if !fdo.messages.is_null() {
+        p.Version = CONNECT_MESSAGE_BASED;
+        p.ConnectionContext.InterruptMessageTable = fdo.messages;
+        fdo.messages = null_mut();
+    } else if !fdo.irq.interrupt.is_null() {
+        p.Version = CONNECT_LINE_BASED;
+        p.ConnectionContext.InterruptObject = fdo.irq.interrupt;
+        fdo.irq.interrupt = null_mut();
+    } else {
+        return;
+    }
+    IoDisconnectInterruptEx(&mut p);
+    nvprint!("controller {}: interrupts disconnected\n", fdo.number);
+}
+
 /// Map the registers, bring the controller up, and publish its namespaces.
 unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     fdo.number = NEXT_CONTROLLER.fetch_add(1, Ordering::Relaxed);
@@ -534,6 +556,14 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
             *t = e.TargetProcessorSet as u64;
         }
     }
+    if tripwire_value(utf16!("NVME_FAIL_START")).is_some() {
+        // So a rig sees a device's messages handed back: the PnP manager removes a
+        // device whose START failed, pci.sys turns its messages off, and the HAL
+        // takes the vectors back.
+        nvprint!("controller {}: tripwire: failing START after connecting\n", n);
+        disconnect(fdo);
+        return STATUS_ADAPTER_HARDWARE_ERROR;
+    }
     if let Some(lose) = tripwire_value(utf16!("NVME_LOSE_COMPLETION")) {
         nvme::LOSE_COMPLETION.store(lose as u32, Ordering::Relaxed);
         nvprint!("controller {}: tripwire: I/O completion {} will be thrown away\n", n, lose);
@@ -544,6 +574,7 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         Ok(c) => c,
         Err(e) => {
             nvprint!("controller {}: bring-up failed: {:?}\n", n, e);
+            disconnect(fdo);
             return STATUS_ADAPTER_HARDWARE_ERROR;
         }
     };

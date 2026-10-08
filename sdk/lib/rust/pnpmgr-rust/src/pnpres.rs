@@ -235,6 +235,7 @@ const IRQ_POLICY_SPECIFIED_PROCESSORS: i32 = 4;
 
 unsafe extern "system" {
     fn HalVibeosMessageAllocate(Token: ULONG, Requested: KAFFINITY, Irql: *mut KIRQL, Affinity: *mut KAFFINITY) -> ULONG;
+    fn HalVibeosMessageAllocateBlock(Count: *mut ULONG, Requested: KAFFINITY, Irql: *mut KIRQL, Affinity: *mut KAFFINITY) -> ULONG;
     fn HalVibeosMessageRelease(Vector: ULONG) -> BOOLEAN;
 }
 
@@ -258,17 +259,29 @@ pub unsafe fn IopReleaseMessageInterrupts(List: PCM_RESOURCE_LIST) {
         return;
     }
     let mut full = core::ptr::addr_of_mut!((*List).List[0]);
+    let (mut released, mut refused) = (0u32, 0u32);
     for _ in 0..(*List).Count {
         let partial = core::ptr::addr_of_mut!((*full).PartialResourceList);
         let first = core::ptr::addr_of_mut!((*partial).PartialDescriptors[0]);
         for k in 0..(*partial).Count as usize {
             let d = first.add(k);
             if (*d).Type == 2 && (*d).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0 && (*d).u.Interrupt.Vector != 0 {
-                HalVibeosMessageRelease((*d).u.Interrupt.Vector);
+                if HalVibeosMessageRelease((*d).u.Interrupt.Vector) != 0 {
+                    released += 1;
+                } else {
+                    refused += 1;
+                }
                 (*d).u.Interrupt.Vector = 0;
             }
         }
         full = CmiGetNextResourceDescriptor(full);
+    }
+    if released + refused > 0 {
+        crate::dbg_print!(
+            b"[PNP] message interrupts: %u back to the HAL, %u refused\r\n\0",
+            released,
+            refused
+        );
     }
 }
 
@@ -296,13 +309,17 @@ unsafe fn IopFindInterruptResource(
     ntkrnl_sys::ASSERT!((*IoDesc).Type == 2); // CmResourceTypeInterrupt
 
     // A message-signaled interrupt is not a line to arbitrate: its vector is a
-    // token (pci.sys asks for message k as CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN - k)
-    // that the HAL turns into a real vector at translation. Raw form, per
-    // cmtypes.h's MessageInterrupt.Raw: MessageCount in the high half of the slot
-    // a line keeps its Level in.
+    // token that the HAL turns into a real vector at translation. pci.sys asks for
+    // MSI-X message k as CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN - k, and for an MSI
+    // block of N, as Windows does, with one requirement spanning TOKEN - (N - 1) to
+    // TOKEN. Raw form, per cmtypes.h's MessageInterrupt.Raw: MessageCount in the
+    // high half of the slot a line keeps its Level in.
     if ((*IoDesc).Flags & CM_RESOURCE_INTERRUPT_MESSAGE) != 0 {
-        (*CmDesc).u.Interrupt.Vector = (*IoDesc).u.Interrupt.MinimumVector;
-        (*CmDesc).u.Interrupt.Level = 1 << 16;
+        let min = (*IoDesc).u.Interrupt.MinimumVector;
+        let max = (*IoDesc).u.Interrupt.MaximumVector;
+        let count = if max > min { max - min + 1 } else { 1 };
+        (*CmDesc).u.Interrupt.Vector = if count > 1 { max } else { min };
+        (*CmDesc).u.Interrupt.Level = count << 16;
         (*CmDesc).u.Interrupt.Affinity = message_affinity(IoDesc);
         return 1u8;
     }
@@ -1076,13 +1093,30 @@ unsafe fn IopTranslateDeviceResources(DeviceNode: PDEVICE_NODE) -> NTSTATUS {
                 2 if (*DescriptorRaw).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0 => {
                     // A message token: the HAL hands out a vector and the CPU it is
                     // delivered to, from the processors the raw descriptor allows.
+                    // An MSI block may come back smaller than asked; the raw count
+                    // then says what the device got, for pci.sys to enable and the
+                    // I/O manager to connect.
                     let mut Irql: KIRQL = 0;
-                    (*DescriptorTranslated).u.Interrupt.Vector = HalVibeosMessageAllocate(
-                        (*DescriptorRaw).u.Interrupt.Vector,
-                        (*DescriptorRaw).u.Interrupt.Affinity,
-                        &mut Irql,
-                        core::ptr::addr_of_mut!((*DescriptorTranslated).u.Interrupt.Affinity),
-                    );
+                    let mut count = (*DescriptorRaw).u.Interrupt.Level >> 16;
+                    (*DescriptorTranslated).u.Interrupt.Vector = if count > 1 {
+                        let vector = HalVibeosMessageAllocateBlock(
+                            &mut count,
+                            (*DescriptorRaw).u.Interrupt.Affinity,
+                            &mut Irql,
+                            core::ptr::addr_of_mut!((*DescriptorTranslated).u.Interrupt.Affinity),
+                        );
+                        if vector != 0 {
+                            (*DescriptorRaw).u.Interrupt.Level = count << 16;
+                        }
+                        vector
+                    } else {
+                        HalVibeosMessageAllocate(
+                            (*DescriptorRaw).u.Interrupt.Vector,
+                            (*DescriptorRaw).u.Interrupt.Affinity,
+                            &mut Irql,
+                            core::ptr::addr_of_mut!((*DescriptorTranslated).u.Interrupt.Affinity),
+                        )
+                    };
                     (*DescriptorTranslated).u.Interrupt.Level = Irql as ULONG;
                     if (*DescriptorTranslated).u.Interrupt.Vector == 0 {
                         Status = 0xC0000001u32 as i32;

@@ -33,6 +33,12 @@
 //!   NVME_LOSE_COMPLETION=<hex>  not read by the kernel: nvme.sys throws its n-th
 //!                       I/O completion away, so the command hangs and the
 //!                       controller-reset path runs.
+//!   NVME_FAIL_START=1   not read by the kernel: nvme.sys connects its messages, then
+//!                       fails START, so the PnP manager removes the device and its
+//!                       message vectors go back to the HAL.
+//!   XHCI_MSI_MESSAGES=<hex>  not read by the kernel: usbport asks pci.sys for this
+//!                       many messages for an xHCI controller instead of one, so
+//!                       a rig with MSI-X off proves a multiple-message MSI block.
 //!   RUSTPANIC_SELFTEST=1  deliberate Rust panic!() at arm time — proves the
 //!                       shared panic handler (panic-common): expect the
 //!                       "*** RUST PANIC in ntoskrnl …" report + backtrace,
@@ -311,8 +317,12 @@ unsafe fn apply_token(tok: &[u8]) {
         // cap in ke/arm64/stubs.rs `uexc_should_print` (which exists because
         // FEX takes access violations and alignment faults by design).
         UEXC_VERBOSE = true;
-    } else if token_val(tok, b"NVME_AFFINITY").is_some() || token_val(tok, b"NVME_LOSE_COMPLETION").is_some() {
-        // For nvme.sys, through the registry copy, like QUIET.
+    } else if token_val(tok, b"NVME_AFFINITY").is_some()
+        || token_val(tok, b"NVME_LOSE_COMPLETION").is_some()
+        || token_val(tok, b"NVME_FAIL_START").is_some()
+        || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
+    {
+        // For nvme.sys and usbport, through the registry copy, like QUIET.
     } else if tok == b"QUIET" {
         // For user mode, not the kernel: winlogon reads it back through
         // VibeTripwireRead's registry copy. Recognized here only so it doesn't
