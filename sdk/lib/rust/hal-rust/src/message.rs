@@ -6,14 +6,18 @@
 //!      a line: message k asks for raw vector `CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN - k`.
 //!      Distinct tokens keep the PnP manager's match-by-vector bookkeeping from
 //!      folding two messages into one resource.
-//!   2. The PnP manager translates each through `HalGetInterruptVector`, which spots
-//!      the token range and routes here instead of to a line: [`allocate`] hands out a
-//!      vector the CPU can take a message on, and its IRQL.
+//!   2. The PnP manager translates each through [`HalVibeosMessageAllocate`], which
+//!      hands out a vector the CPU can take a message on, its IRQL, and the one CPU it
+//!      is delivered to, chosen from the processors the device's affinity policy
+//!      allows. (`HalGetInterruptVector` spots a token too, and allocates with no
+//!      preference.)
 //!   3. At START pci.sys asks [`HalVibeosMessageTarget`] for the address/data pair that
 //!      raises that vector, naming the device that will write it, and writes the pair
 //!      into the device's MSI-X table.
 //!   4. `IoConnectInterruptEx(CONNECT_MESSAGE_BASED)` connects each translated vector
 //!      like any other.
+//!   5. When the device is removed the PnP manager gives each vector back through
+//!      [`HalVibeosMessageRelease`].
 //!
 //! Windows keeps steps 2-3 behind a private HAL interface; ours are two vibeos-named
 //! exports, the HalVibeos* convention for HAL entry points with no Windows original.
@@ -25,7 +29,7 @@
 //! arm64 GICv2 without a v2m frame (the Pi 4's GIC-400) have none, so
 //! [`HalVibeosMessageCapacity`] reports 0 and pci.sys never asks.
 
-use ntkrnl_sys::ddk::{BOOLEAN, PKAFFINITY, PKIRQL, ULONG};
+use ntkrnl_sys::ddk::{BOOLEAN, KAFFINITY, PKAFFINITY, PKIRQL, ULONG};
 
 /// `CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN` (cmtypes.h).
 pub const MESSAGE_TOKEN: u32 = 0xFFFF_FFFE;
@@ -42,7 +46,7 @@ pub fn is_message_token(vector: u32) -> bool {
 
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic))]
 mod imp {
-    pub(super) use crate::x86::apic::{message_capacity, message_target, allocate_message_vector};
+    pub(super) use crate::x86::apic::{allocate_message_vector, message_capacity, message_target, release_message_vector};
 }
 
 /// The GIC the firmware described decides: an ITS on a GICv3, a v2m frame on a GICv2.
@@ -56,8 +60,11 @@ mod imp {
     pub(super) unsafe fn message_target(vector: u32, requester: u32) -> Option<(u64, u32)> {
         unsafe { if gic3::present() { its::message_target(vector, requester) } else { v2m::message_target(vector, requester) } }
     }
-    pub(super) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
-        unsafe { if gic3::present() { its::allocate_message_vector() } else { v2m::allocate_message_vector() } }
+    pub(super) unsafe fn allocate_message_vector(requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
+        unsafe { if gic3::present() { its::allocate_message_vector(requested) } else { v2m::allocate_message_vector(requested) } }
+    }
+    pub(super) unsafe fn release_message_vector(vector: u32) -> bool {
+        unsafe { if gic3::present() { its::release_message_vector(vector) } else { v2m::release_message_vector(vector) } }
     }
 }
 
@@ -71,15 +78,22 @@ mod imp {
     pub(super) unsafe fn message_target(_vector: u32, _requester: u32) -> Option<(u64, u32)> {
         None
     }
-    pub(super) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
+    pub(super) unsafe fn allocate_message_vector(_requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
         None
+    }
+    pub(super) unsafe fn release_message_vector(_vector: u32) -> bool {
+        false
     }
 }
 
 /// `HalGetInterruptVector` for a message token: a fresh vector, or 0 (the "no vector"
 /// answer every caller already checks) when the controller is out of them.
 pub unsafe fn allocate(irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
-    match unsafe { imp::allocate_message_vector() } {
+    unsafe { allocate_for(!0, irql, affinity) }
+}
+
+unsafe fn allocate_for(requested: KAFFINITY, irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
+    match unsafe { imp::allocate_message_vector(requested) } {
         Some((vector, level, mask)) => {
             unsafe {
                 if !irql.is_null() {
@@ -93,6 +107,31 @@ pub unsafe fn allocate(irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
         }
         None => 0,
     }
+}
+
+/// Translate message token `Token` for a device that may take it on the processors in
+/// `Requested` (its affinity policy's set; all ones for no preference): a vector, its
+/// IRQL, and the single processor it is delivered to. 0 when `Token` is not a message
+/// token or the controller has no vector left.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosMessageAllocate(
+    Token: ULONG,
+    Requested: KAFFINITY,
+    Irql: PKIRQL,
+    Affinity: PKAFFINITY,
+) -> ULONG {
+    if !is_message_token(Token) {
+        return 0;
+    }
+    unsafe { allocate_for(Requested, Irql, Affinity) }
+}
+
+/// Give back a vector [`HalVibeosMessageAllocate`] handed out: the device it was for
+/// is gone. Its interrupt is disabled and the vector may be handed out again. FALSE
+/// for a vector that was not handed out.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosMessageRelease(Vector: ULONG) -> BOOLEAN {
+    unsafe { imp::release_message_vector(Vector) as BOOLEAN }
 }
 
 /// How many more message vectors this HAL can hand out (0: no MSI support at all).

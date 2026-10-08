@@ -21,6 +21,8 @@
 @ stdcall -arch=arm64 HalpEnterInterruptIrql(long)
 @ stdcall -arch=arm64 HalpExitInterruptIrql(long)
 @ stdcall HalVibeosMessageCapacity()
+@ stdcall HalVibeosMessageAllocate(long ptr ptr ptr)
+@ stdcall HalVibeosMessageRelease(long)
 @ stdcall HalVibeosMessageTarget(long long ptr ptr)
 @ stdcall -arch=arm64 HalVibeosQuiesceIrqlTripwire()
 @ stdcall HalDisableSystemInterrupt(long long)

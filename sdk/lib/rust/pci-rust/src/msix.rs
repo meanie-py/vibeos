@@ -1,11 +1,14 @@
-//! MSI-X for child devices: asking for the messages, and pointing them at the CPU.
+//! MSI-X and MSI for child devices: asking for the messages, pointing them at the
+//! CPU, and turning them off when the device stops.
 //!
 //! Windows' rules, kept: a device gets message interrupts only when its driver opts in
 //! with `MSISupported=1` under its device key's
 //! `Interrupt Management\MessageSignaledInterruptProperties` (what an INF's HKR AddReg
 //! writes; `MessageNumberLimit` caps the count), and the driver then connects them with
 //! `IoConnectInterruptEx(CONNECT_MESSAGE_BASED)`. Everyone else keeps the line
-//! interrupt, so no existing driver sees a resource list it did not ask for.
+//! interrupt, so no existing driver sees a resource list it did not ask for. Where the
+//! messages go is the device's `Interrupt Management\Affinity Policy` (DevicePolicy,
+//! AssignmentSetOverride), carried on each message requirement for the HAL to honour.
 //!
 //! Where it diverges, and why: ReactOS asks for resource requirements when the device
 //! is enumerated, before its driver's AddDevice could have written that opt-in, so the
@@ -16,8 +19,12 @@
 //! The pieces the requirements list cannot carry come from the HAL (see hal-rust's
 //! message.rs): whether it can route messages at all, and the address/data that
 //! raises each translated vector, which START writes into the device's MSI-X table.
-//! MSI (capability 05h, one contiguous block of vectors) is not handled; every
-//! device we drive has MSI-X.
+//!
+//! A device without MSI-X but with MSI (capability 05h) gets one message. MSI's
+//! multiple messages are one block of data values the device varies the low bits
+//! of, which needs a contiguous, aligned block from the HAL (an aligned run of
+//! EventIDs on an ITS, of vectors on an APIC); that is owed, and one message is what
+//! a device with MSI must accept.
 
 use core::mem::size_of;
 use core::ptr::addr_of_mut;
@@ -52,7 +59,16 @@ unsafe extern "system" {
 const BUS_DATA_TYPE_PCIConfiguration: BUS_DATA_TYPE = 4;
 const PCI_STATUS_CAPABILITIES_LIST: u16 = 0x0010;
 const PCI_CAPABILITIES_POINTER: usize = 0x34;
+const PCI_CAPABILITY_ID_MSI: u8 = 0x05;
 const PCI_CAPABILITY_ID_MSIX: u8 = 0x11;
+// MSI capability: Message Control at +2, Message Address at +4; with 64-bit addresses
+// the upper half at +8 and Message Data at +0xC, else Message Data at +8.
+const MSI_CONTROL: usize = 2;
+const MSI_ADDRESS: usize = 4;
+const MSI_CONTROL_ENABLE: u16 = 0x0001;
+const MSI_CONTROL_MULTIPLE_ENABLE: u16 = 0x0070;
+const MSI_CONTROL_64BIT: u16 = 0x0080;
+const MSI_CONTROL_PER_VECTOR_MASK: u16 = 0x0100;
 // MSI-X capability: Message Control at +2, Table Offset/BIR at +4.
 const MSIX_CONTROL: usize = 2;
 const MSIX_TABLE: usize = 4;
@@ -93,16 +109,16 @@ unsafe fn read_config(ext: PPDO_DEVICE_EXTENSION, buf: &mut [u8; 256]) -> bool {
     ) == 256
 }
 
-unsafe fn write_config_u16(ext: PPDO_DEVICE_EXTENSION, offset: usize, value: u16) {
+unsafe fn write_config<T: Copy>(ext: PPDO_DEVICE_EXTENSION, offset: usize, value: T) {
     let dev = (*ext).PciDevice;
     let mut v = value;
     HalSetBusDataByOffset(
         BUS_DATA_TYPE_PCIConfiguration,
         (*dev).BusNumber,
         (*dev).SlotNumber.u.AsULONG,
-        &mut v as *mut u16 as PVOID,
+        &mut v as *mut T as PVOID,
         offset as ULONG,
-        2,
+        size_of::<T>() as ULONG,
     );
 }
 
@@ -113,8 +129,8 @@ fn le32(cfg: &[u8; 256], off: usize) -> u32 {
     u32::from_le_bytes([cfg[off], cfg[off + 1], cfg[off + 2], cfg[off + 3]])
 }
 
-/// Walk the capability list of a type-0 header for MSI-X.
-fn find_msix(cfg: &[u8; 256]) -> Option<Msix> {
+/// Walk the capability list of a type-0 header for capability `id`.
+fn find_capability(cfg: &[u8; 256], id: u8) -> Option<usize> {
     if cfg[0x0E] & 0x7F != 0 || le16(cfg, 0x06) & PCI_STATUS_CAPABILITIES_LIST == 0 {
         return None;
     }
@@ -124,28 +140,37 @@ fn find_msix(cfg: &[u8; 256]) -> Option<Msix> {
         if off < 0x40 || off > 0xF4 {
             return None;
         }
-        if cfg[off] == PCI_CAPABILITY_ID_MSIX {
-            let table = le32(cfg, off + MSIX_TABLE);
-            return Some(Msix {
-                cap: off,
-                entries: (le16(cfg, off + MSIX_CONTROL) & 0x7FF) as u32 + 1,
-                bir: (table & 7) as usize,
-                table_offset: table & !7,
-            });
+        if cfg[off] == id {
+            return Some(off);
         }
         off = (cfg[off + 1] & 0xFC) as usize;
     }
     None
 }
 
-/// The driver's opt-in: `Some(limit)` when MSISupported=1 (limit = MessageNumberLimit,
-/// or u32::MAX when absent), `None` otherwise.
-unsafe fn opted_in(pdo: PDEVICE_OBJECT) -> Option<u32> {
+fn find_msix(cfg: &[u8; 256]) -> Option<Msix> {
+    let off = find_capability(cfg, PCI_CAPABILITY_ID_MSIX)?;
+    let table = le32(cfg, off + MSIX_TABLE);
+    Some(Msix {
+        cap: off,
+        entries: (le16(cfg, off + MSIX_CONTROL) & 0x7FF) as u32 + 1,
+        bir: (table & 7) as usize,
+        table_offset: table & !7,
+    })
+}
+
+/// The MSI capability's offset, for a device without MSI-X (which wins when a device
+/// has both, as on Windows).
+fn find_msi(cfg: &[u8; 256]) -> Option<usize> {
+    find_capability(cfg, PCI_CAPABILITY_ID_MSIX).is_none().then(|| find_capability(cfg, PCI_CAPABILITY_ID_MSI)).flatten()
+}
+
+/// Open `path` under the device's hardware key.
+unsafe fn open_device_subkey(pdo: PDEVICE_OBJECT, path: &[u16]) -> Option<HANDLE> {
     let mut device_key: HANDLE = core::ptr::null_mut();
     if IoOpenDeviceRegistryKey(pdo, PLUGPLAY_REGKEY_DEVICE, KEY_READ, &mut device_key) < 0 {
         return None;
     }
-    let path: &[u16] = utf16!("Interrupt Management\\MessageSignaledInterruptProperties");
     let mut name: UNICODE_STRING = core::mem::zeroed();
     name.Buffer = path.as_ptr() as *mut u16;
     name.Length = (path.len() * 2) as u16;
@@ -158,16 +183,41 @@ unsafe fn opted_in(pdo: PDEVICE_OBJECT) -> Option<u32> {
     let mut key: HANDLE = core::ptr::null_mut();
     let status = ZwOpenKey(&mut key, KEY_READ, &mut oa);
     ZwClose(device_key);
-    if status < 0 {
-        return None;
-    }
+    (status >= 0).then_some(key)
+}
+
+/// The driver's opt-in: `Some(limit)` when MSISupported=1 (limit = MessageNumberLimit,
+/// or u32::MAX when absent), `None` otherwise.
+unsafe fn opted_in(pdo: PDEVICE_OBJECT) -> Option<u32> {
+    let key = open_device_subkey(pdo, utf16!("Interrupt Management\\MessageSignaledInterruptProperties"))?;
     let supported = query_dword(key, utf16!("MSISupported"));
     let limit = query_dword(key, utf16!("MessageNumberLimit"));
     ZwClose(key);
     (supported == Some(1)).then(|| limit.filter(|&l| l > 0).unwrap_or(u32::MAX))
 }
 
+/// The device's interrupt affinity policy: (IRQ_DEVICE_POLICY, AssignmentSetOverride).
+/// No key is IrqPolicyMachineDefault.
+unsafe fn affinity_policy(pdo: PDEVICE_OBJECT) -> (i32, KAFFINITY) {
+    let Some(key) = open_device_subkey(pdo, utf16!("Interrupt Management\\Affinity Policy")) else {
+        return (0, 0);
+    };
+    let policy = query_dword(key, utf16!("DevicePolicy")).unwrap_or(0) as i32;
+    // REG_BINARY on Windows (a KAFFINITY's bytes); a DWORD or QWORD says the same.
+    let set = query_value(key, utf16!("AssignmentSetOverride"))
+        .filter(|&(ty, len, _)| matches!(ty, 3 | 4 | 11) && (len == 4 || len == 8))
+        .map(|(_, _, v)| v as KAFFINITY)
+        .unwrap_or(0);
+    ZwClose(key);
+    (policy, set)
+}
+
 unsafe fn query_dword(key: HANDLE, value: &[u16]) -> Option<u32> {
+    query_value(key, value).and_then(|(ty, len, v)| (ty == 4 /* REG_DWORD */ && len == 4).then_some(v as u32))
+}
+
+/// A value of at most 8 bytes: (type, length, the bytes as a little-endian integer).
+unsafe fn query_value(key: HANDLE, value: &[u16]) -> Option<(u32, u32, u64)> {
     let mut name: UNICODE_STRING = core::mem::zeroed();
     name.Buffer = value.as_ptr() as *mut u16;
     name.Length = (value.len() * 2) as u16;
@@ -183,7 +233,11 @@ unsafe fn query_dword(key: HANDLE, value: &[u16]) -> Option<u32> {
         size_of::<[u32; 8]>() as ULONG,
         &mut got,
     );
-    (status >= 0 && buf[1] == 4 /* REG_DWORD */ && buf[2] == 4).then_some(buf[3])
+    if status < 0 || buf[2] > 8 {
+        return None;
+    }
+    let high = if buf[2] > 4 { buf[4] as u64 } else { 0 };
+    Some((buf[1], buf[2], buf[3] as u64 | high << 32))
 }
 
 /// IRP_MN_FILTER_RESOURCE_REQUIREMENTS at the PDO: append one message requirement per
@@ -221,17 +275,29 @@ pub unsafe fn filter_requirements(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp
         DPRINT1!("MSI-X: slot %#x: config space unreadable\n", slot);
         return status;
     }
-    let Some(msix) = find_msix(&cfg) else {
-        DPRINT1!("MSI-X: slot %#x: opted in, but the device has no MSI-X capability\n", slot);
-        return status;
+    let entries = match (find_msix(&cfg), find_msi(&cfg)) {
+        (Some(msix), _) => msix.entries,
+        (None, Some(_)) => 1,
+        (None, None) => {
+            DPRINT1!("MSI-X: slot %#x: opted in, but the device has neither MSI-X nor MSI\n", slot);
+            return status;
+        }
     };
     let capacity = HalVibeosMessageCapacity();
-    let count = msix.entries.min(limit).min(capacity);
+    let count = entries.min(limit).min(capacity);
     if count == 0 {
         DPRINT1!("MSI-X: slot %#x: the HAL cannot route messages (capacity %u)\n", slot, capacity);
         return status;
     }
-    DPRINT1!("MSI-X: slot %#x: requesting %u of %u table entries\n", slot, count, msix.entries);
+    let (policy, targeted) = affinity_policy(DeviceObject);
+    if find_msix(&cfg).is_some() {
+        DPRINT1!("MSI-X: slot %#x: requesting %u of %u table entries\n", slot, count, entries);
+    } else {
+        DPRINT1!("MSI: slot %#x: requesting one message\n", slot);
+    }
+    if policy != 0 {
+        DPRINT1!("MSI-X: slot %#x: affinity policy %u, processors %p\n", slot, policy as u32, targeted as PVOID);
+    }
 
     let old_size = (*incoming).ListSize as usize;
     let new_size = old_size + count as usize * size_of::<IO_RESOURCE_DESCRIPTOR>();
@@ -251,6 +317,8 @@ pub unsafe fn filter_requirements(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp
         (*d).Flags = CM_RESOURCE_INTERRUPT_LATCHED | CM_RESOURCE_INTERRUPT_MESSAGE;
         (*d).u.Interrupt.MinimumVector = MESSAGE_TOKEN - k as u32;
         (*d).u.Interrupt.MaximumVector = MESSAGE_TOKEN - k as u32;
+        (*d).u.Interrupt.AffinityPolicy = policy as _;
+        (*d).u.Interrupt.TargetedProcessors = targeted;
     }
     (*list).Count += count;
     // The list we replace is ours (QUERY_RESOURCE_REQUIREMENTS allocated it) or an
@@ -298,7 +366,14 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     if !read_config(ext, &mut cfg) {
         return;
     }
+    // The requester ID the device's writes carry: a GICv3 ITS translates by it.
+    let dev = (*ext).PciDevice;
+    let slot = (*dev).SlotNumber.u.AsULONG;
+    let requester = ((*dev).BusNumber & 0xFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
     let Some(msix) = find_msix(&cfg) else {
+        if let Some(cap) = find_msi(&cfg) {
+            program_msi(ext, &cfg, cap, requester, (0..n).map(|i| (rd.add(i), td.add(i))));
+        }
         return;
     };
     let Some(bar) = bar_base(&cfg, msix.bir) else {
@@ -321,10 +396,6 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     if table.is_null() {
         return;
     }
-    // The requester ID the device's writes carry: a GICv3 ITS translates by it.
-    let dev = (*ext).PciDevice;
-    let slot = (*dev).SlotNumber.u.AsULONG;
-    let requester = ((*dev).BusNumber & 0xFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
     let mut programmed = 0u32;
     for i in 0..n {
         let r = rd.add(i);
@@ -349,7 +420,7 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
         return;
     }
     let control = le16(&cfg, msix.cap + MSIX_CONTROL);
-    write_config_u16(ext, msix.cap + MSIX_CONTROL, (control | MSIX_CONTROL_ENABLE) & !MSIX_CONTROL_FUNCTION_MASK);
+    write_config(ext, msix.cap + MSIX_CONTROL, (control | MSIX_CONTROL_ENABLE) & !MSIX_CONTROL_FUNCTION_MASK);
     DPRINT1!(
         "MSI-X enabled for %04x:%04x: %u of %u table entries\n",
         le16(&cfg, 0) as u32,
@@ -357,4 +428,74 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
         programmed,
         msix.entries
     );
+}
+
+/// MSI: the one message (raw token entry 0) into the capability, and enable it with
+/// one message (Multiple Message Enable = 0).
+unsafe fn program_msi(
+    ext: PPDO_DEVICE_EXTENSION,
+    cfg: &[u8; 256],
+    cap: usize,
+    requester: u32,
+    mut descriptors: impl Iterator<Item = (PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR)>,
+) {
+    let Some((_, t)) = descriptors.find(|&(r, _)| {
+        (*r).Type == CmResourceTypeInterrupt
+            && (*r).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0
+            && (*r).u.Interrupt.Vector == MESSAGE_TOKEN
+    }) else {
+        return;
+    };
+    let mut address = 0u64;
+    let mut data: ULONG = 0;
+    if HalVibeosMessageTarget((*t).u.Interrupt.Vector, requester, &mut address, &mut data) == 0 {
+        return;
+    }
+    let control = le16(cfg, cap + MSI_CONTROL);
+    let wide = control & MSI_CONTROL_64BIT != 0;
+    if !wide && address >> 32 != 0 {
+        DPRINT1!(
+            "MSI: %04x:%04x takes 32-bit addresses only, and its message goes to %p - not enabled\n",
+            le16(cfg, 0) as u32,
+            le16(cfg, 2) as u32,
+            address as PVOID
+        );
+        return;
+    }
+    write_config(ext, cap + MSI_ADDRESS, address as u32);
+    let data_at = if wide {
+        write_config(ext, cap + MSI_ADDRESS + 4, (address >> 32) as u32);
+        cap + 0x0C
+    } else {
+        cap + 0x08
+    };
+    write_config(ext, data_at, data as u16);
+    if control & MSI_CONTROL_PER_VECTOR_MASK != 0 {
+        write_config(ext, data_at + 4, 0u32); // Mask Bits: message 0 unmasked
+    }
+    write_config(ext, cap + MSI_CONTROL, (control & !MSI_CONTROL_MULTIPLE_ENABLE) | MSI_CONTROL_ENABLE);
+    DPRINT1!("MSI enabled for %04x:%04x: one message\n", le16(cfg, 0) as u32, le16(cfg, 2) as u32);
+}
+
+/// STOP, REMOVE, SURPRISE_REMOVAL: messages off, before the PnP manager hands the
+/// vectors back to the HAL for another device. A device left enabled keeps writing
+/// its old address/data, which then raise someone else's interrupt.
+pub unsafe fn disable(ext: PPDO_DEVICE_EXTENSION) {
+    let mut cfg = [0u8; 256];
+    if !read_config(ext, &mut cfg) {
+        return;
+    }
+    if let Some(msix) = find_msix(&cfg) {
+        let control = le16(&cfg, msix.cap + MSIX_CONTROL);
+        if control & MSIX_CONTROL_ENABLE != 0 {
+            write_config(ext, msix.cap + MSIX_CONTROL, control & !MSIX_CONTROL_ENABLE);
+            DPRINT1!("MSI-X disabled for %04x:%04x\n", le16(&cfg, 0) as u32, le16(&cfg, 2) as u32);
+        }
+    } else if let Some(cap) = find_msi(&cfg) {
+        let control = le16(&cfg, cap + MSI_CONTROL);
+        if control & MSI_CONTROL_ENABLE != 0 {
+            write_config(ext, cap + MSI_CONTROL, control & !MSI_CONTROL_ENABLE);
+            DPRINT1!("MSI disabled for %04x:%04x\n", le16(&cfg, 0) as u32, le16(&cfg, 2) as u32);
+        }
+    }
 }
