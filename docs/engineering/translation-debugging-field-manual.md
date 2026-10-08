@@ -11429,6 +11429,14 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   Reproduce NIC-less in QEMU with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"` (a NIC
   nothing drives). Not `-nic none`: that renumbers PCI, the efivars boot entry then names the
   wrong device, and the firmware drops to the Shell.
+- **Probing a fixed address for a device finds one on any board with RAM there.** Symptom:
+  the Pi 5 installs ~100 PCI devices whose IDs are ASCII (`VEN_706F`, `SUBSYS_72656666`),
+  floods serial with `rundll32` spawns, and loses 10-30% of pings. Cause: the arm64 HAL
+  located ECAM by reading QEMU virt's two fixed bases and accepting any vendor word other than
+  0xFFFF; on the Pi 5, 0x3F00_0000 is RAM, so pci.sys enumerated (and wrote config cycles into)
+  ordinary memory. Fix: take the base from the firmware table (MCFG), honouring the same
+  OEM quirk list the loader uses. A "not all-ones" probe only proves absence on a bus that
+  returns all-ones; never use one to prove presence at an address you did not read from a table.
 - **An SError reported at `_enable` happened somewhere else, maybe in the loader.**
   Symptom: BUGCHECK 0x80, ESR EC=0x2F (`0xBE000011`), the PC on `_enable+4` in
   `KiSystemStartupBootStack`, every boot of the Pi 5. Cause: `_enable` is `daifclr #0xF`,

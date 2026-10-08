@@ -610,23 +610,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
   `farm` of modrun boots to catch the writer.
 
-- **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
-  saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
-  115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
-  devices it finds no driver for (`DevInstallW failed with error 259`, ~180 in one window), and
-  every spawn prints the full `[PS] PspCreateProcess`/`PspUserThreadStartup` trace, alongside
-  repeated `[FASTFAT] FatMountVolume` lines. A print on real hardware blocks its CPU until the
-  UART drains (field manual, "A UART print inside a trap costs"). The GEM itself counts no receive
-  errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
-  Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
-  shown: that the console is what drops the frames. Two fixes owed either way: stop the install
-  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
-  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
-  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
-  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
-  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
-  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
-  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
+- **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
+  2026-10-08). The arm64 HAL found PCI config space by probing QEMU virt's two ECAM addresses
+  on every machine, and on the Pi 5 the low one (0x3F00_0000) is RAM. pci.sys, bound to the
+  hive's `Root\*PNP0A03`, enumerated those bytes as ~100 devices (`VEN_706F` = "op",
+  `SUBSYS_72656666` = "reff"), writing command registers and BAR probes into that RAM, and
+  umpnpmgr spawned `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held
+  the UART at ~10.6 KB/s. The HAL now takes the ECAM base from the MCFG and treats the
+  Raspberry Pi firmware's MCFG as no ECAM, as the loader already did. Settled desktop after
+  the fix: serial 1.5 KB/s, 0 install requests, ping 120/120. Found by logging the device ID on
+  each `InstallDevice` (umpnpmgr `install.rs`). Still owed, smaller: each real device without
+  a `Class` value is installed twice at boot and newdev fails it with error 259 (QEMU too); the
+  per-thread `[PS]` trace; and the mount retries against the Pico's empty disk (~390 a minute).
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as

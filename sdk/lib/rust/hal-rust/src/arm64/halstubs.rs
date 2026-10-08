@@ -452,18 +452,19 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 }
 
 // ============================================================================
-// PCI configuration space (ECAM) — QEMU `virt` Generic PCIe (GPEX) host bridge.
+// PCI configuration space (ECAM), from the ACPI MCFG.
 // ============================================================================
 //
-// QEMU `-M virt` exposes PCIe config space as a flat ECAM (Enhanced
-// Configuration Access Mechanism) MMIO window. Its base depends on the
-// machine's `highmem-ecam` setting:
-//   * high ECAM: 0x40_1000_0000, 256 MB (buses 0..=255)  — default on aarch64
-//   * low  ECAM: 0x0000_3F00_0000, 16 MB (buses 0..=15)
-// We probe both: map a bus-0 window and read the host-bridge VID/DID at 00:00.0;
-// whichever base reports a present vendor (low 16 bits != 0xFFFF) is the live
-// ECAM. Mapping a wrong/unbacked base reads back all-ones on QEMU, so the probe
-// is side-effect free.
+// The ECAM (Enhanced Configuration Access Mechanism) window's base is whatever
+// the MCFG says for segment 0; on QEMU `virt` that is 0x40_1000_0000 (high ECAM)
+// or 0x3F00_0000 (low). It must come from the table, never from probing those
+// addresses: a probe treats any first word other than 0xFFFF as a host bridge,
+// and on the Pi 5 0x3F00_0000 is ordinary RAM. pci.sys (bound to the arm64
+// hive's Root\*PNP0A03) then enumerated whatever bytes lay there as ~100 PCI
+// devices with IDs like VEN_706F ("op") and SUBSYS_72656666 ("reff"), wrote
+// command registers and BARs into that RAM, and umpnpmgr spawned a newdev
+// install for every phantom. A quirked MCFG (the Raspberry Pi firmware's) means
+// no ECAM, as it does in the loader.
 //
 // The only HAL bus-data consumer on arm64 today is netstack's `find_virtio_net`,
 // which scans bus 0 exclusively (QEMU keeps the NIC there) — so a single 1 MB
@@ -476,8 +477,6 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 //   bits 0..4 = device, bits 5..7 = function.
 
 const PCI_CONFIGURATION: ddk::BUS_DATA_TYPE = 4; // _BUS_DATA_TYPE_PCIConfiguration
-const ECAM_HIGH_BASE: u64 = 0x40_1000_0000;
-const ECAM_LOW_BASE: u64 = 0x0000_3F00_0000;
 const ECAM_BUS_SIZE: usize = 0x10_0000; // 1 MB = 256 functions * 4 KB
 const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
 
@@ -493,7 +492,7 @@ fn phys(v: u64) -> ddk::PHYSICAL_ADDRESS {
     ddk::PHYSICAL_ADDRESS { QuadPart: v as i64 }
 }
 
-/// Lazily map + probe the bus-0 ECAM window. Returns the mapped VA, or null when
+/// Lazily map the bus-0 ECAM window the MCFG names. Returns the mapped VA, or null when
 /// no PCIe ECAM is present (e.g. a non-virt machine).
 unsafe fn ecam_bus0_va() -> *mut u8 {
     let cached = ECAM_BUS0_VA.load(Ordering::Acquire);
@@ -503,23 +502,21 @@ unsafe fn ecam_bus0_va() -> *mut u8 {
     if cached != 0 {
         return cached as *mut u8;
     }
-    for &base in &[ECAM_HIGH_BASE, ECAM_LOW_BASE] {
+    let base = super::acpi::mcfg_bus0_base();
+    DbgPrint(
+        b"[HAL] PCI ECAM from MCFG: %llx (0 = none)\n\0".as_ptr(),
+        base.unwrap_or(0),
+    );
+    if let Some(base) = base {
         let va = ddk::MmMapIoSpace(
             phys(base),
             ECAM_BUS_SIZE as _,
             ddk::_MEMORY_CACHING_TYPE_MmNonCached as _,
         ) as *mut u8;
-        if va.is_null() {
-            continue;
-        }
-        // Host bridge sits at 00:00.0 in either layout; a present vendor id
-        // confirms this base is the live ECAM.
-        let vid_did = core::ptr::read_volatile(va as *const u32);
-        if (vid_did & 0xFFFF) != 0xFFFF {
+        if !va.is_null() {
             ECAM_BUS0_VA.store(va as usize, Ordering::Release);
             return va;
         }
-        ddk::MmUnmapIoSpace(va as ddk::PVOID, ECAM_BUS_SIZE as _);
     }
     ECAM_BUS0_VA.store(ECAM_VA_NONE, Ordering::Release);
     core::ptr::null_mut()
