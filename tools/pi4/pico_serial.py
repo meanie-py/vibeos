@@ -28,6 +28,11 @@ from pico_devbox.auth import read_token_file
 from pico_devbox.serial import SerialConsole
 
 SEND_POLL_S = 0.05
+IDLE_RECYCLE_S = 120.0
+
+
+class IdleConsole(Exception):
+    """No byte for IDLE_RECYCLE_S: reconnect in case the connection is half-open."""
 
 
 class Capture:
@@ -56,8 +61,15 @@ class Capture:
         tmp.replace(self.bench / "serial-current.json")
 
     async def pump_output(self, console: SerialConsole) -> None:
+        # A reconnect can come up half-open: accepted, then silent for good. One
+        # did for 11 hours while status still said connected, and a whole boot's
+        # output was lost. So a quiet console is recycled; the Pico keeps the
+        # newest 128 KiB while no client is attached, so nothing is lost.
         while True:
-            data = await console.read()
+            try:
+                data = await asyncio.wait_for(console.read(), IDLE_RECYCLE_S)
+            except TimeoutError:
+                raise IdleConsole from None
             self.log.write(data)
             self.log.flush()
 
@@ -93,6 +105,9 @@ class Capture:
                     finally:
                         for task in tasks:
                             task.cancel()
+            except IdleConsole:
+                self.connected, delay = False, 1.0
+                continue  # reconnect at once; a failure after this backs off from 1 s
             except DevBoxError:
                 # A wrong token will not fix itself by retrying.
                 self.connected = False
