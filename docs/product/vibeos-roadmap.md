@@ -862,12 +862,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   lost its sign) and `setjmp`'s `Esp` (Windows stores esp past the return address) FIXED.
   OPEN: `exp` 4 -- i386 `exp(NaN)` keeps the payload where Microsoft's returns the
   canonical NaN for some inputs (exp.c's `_M_IX86` rows; no rule derivable from six points
-  without Microsoft's libm). `setjmp` 28 -- 23 are `_setjmp3` seeing `fs:[0] == -1`: no
-  user thread on i386 has a top-level SEH frame, because kernel32's `BaseProcessStartup`/
-  `BaseThreadStartup` and vcstartup's `__scrt_common_main_seh` are dummy-PSEH, so
-  `UnhandledExceptionFilter` never runs either (needs a decision: a real frame brings the
-  hard-error dialog to every crash); 5 are the test's own -- a clang `skip()` that falls
-  through into the next `case`, and a `_SEH2_FINALLY` compiled dead.
+  without Microsoft's libm). `setjmp` 5 -- the test's own: a clang `skip()` that falls through into
+  the next `case`, and a `_SEH2_FINALLY` compiled dead. The other 23 (`_setjmp3` seeing
+  `fs:[0] == -1`) are FIXED (2026-10-08): no Win32 thread on ANY arch had a top-level SEH
+  frame, because kernel32's `BaseProcessStartup`/`BaseThreadStartup` kept only the `__try`
+  of their `__except(UnhandledExceptionFilter(...))`. They now run the start routine under
+  ntdll's `RtlSehTryExcept`, so `UnhandledExceptionFilter`, `SetUnhandledExceptionFilter`,
+  AeDebug and the fault box work, and an unhandled exception exits with its exception code
+  instead of csrss's 0x80. The i386 frame carries MSVC's EH3 `ScopeTable`/`TryLevel` so
+  `_setjmp3` reads TryLevel 0. Test runners that spawn processes set
+  `SEM_NOGPFAULTERRORBOX` (inherited), so a crashing child exits instead of waiting on a
+  dialog; `sehtest`'s `top-level filter` check covers it on every boot.
   `environ`, `printf` (1,950), `scanf` and `thread` (60) are clean on both. `thread` was
   an AV at EIP 0 until two fixes the same day: kernel32's `FindResourceA` asked for
   language 4 (LANG_CHINESE) instead of LANG_NEUTRAL, so EVERY ANSI resource lookup in the

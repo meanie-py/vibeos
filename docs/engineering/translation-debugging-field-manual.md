@@ -5309,6 +5309,18 @@ a fault. They now walk `VirtualQuery` regions (committed, not GUARD/NOACCESS, gr
 access), which also stops them consuming a stack guard page the way Windows' probe does.
 `sehtest`'s `bad-ptr-probes` covers them on every boot, all three arches.
 
+**At the top of a thread the same drop removes a whole SUBSYSTEM.** kernel32's
+`BaseProcessStartup`/`BaseThreadStartup` are `__try { start() } __except
+(UnhandledExceptionFilter(...)) { ExitProcess(code) }`; the translation kept the body and
+left the except arm as unreachable code after `ExitThread`. Symptom: every unhandled user
+exception, on every arch, ends as an anonymous exit 0x80 (csrss terminating the client at
+second chance) with no `Unhandled exception` banner; `SetUnhandledExceptionFilter`
+callbacks, AeDebug and `SEM_NOGPFAULTERRORBOX` silently do nothing; on i386 `fs:[0]` is -1
+in `main`, which `_setjmp3` reports. Fix: run the start routine under ntdll's
+`RtlSehTryExcept` (`client/except.rs` `run_under_top_level_handler`). Unattended runners
+must then set `SEM_NOGPFAULTERRORBOX` (children inherit it) or a crash waits on the fault
+box. `sehtest`'s `top-level filter` check covers it on every boot, all three arches.
+
 **The MIRROR CASE, which the scanner structurally cannot see: the probe survived and the
 HANDLER did not.** `MiDoPoolCopy` / `MiDoMappedCopy` (`ARM3/virtual.rs`, four probe sites) still
 call `ProbeForWrite` — so "did it dereference a user pointer where its C validated one"

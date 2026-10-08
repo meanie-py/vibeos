@@ -62,6 +62,11 @@ static LONG CALLBACK storm_unhandled(EXCEPTION_POINTERS *ep)
 
 int main(int argc, char **argv)
 {
+    /* An unhandled exception now reaches UnhandledExceptionFilter, whose fault box
+     * would leave a crashing child waiting on a dialog nobody answers. This mode is
+     * inherited by every process spawned from here, which then exits with its
+     * exception code instead -- as an unattended run on Windows does. */
+    SetErrorMode(SetErrorMode(0) | SEM_NOGPFAULTERRORBOX);
     char self[MAX_PATH], cmdline[MAX_PATH + 16];
     unsigned iterations = DEFAULT_ITERATIONS, i;
     unsigned spawned = 0, failed = 0, timeouts = 0, excok = 0, excbad = 0;
