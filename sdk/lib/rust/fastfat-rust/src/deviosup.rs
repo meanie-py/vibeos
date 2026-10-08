@@ -41,7 +41,6 @@ extern "system" {
     static mut FatData: FAT_DATA;
     static IRP_PAGING_IO: u32;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
@@ -346,8 +345,6 @@ pub unsafe extern "system" fn FatPagingFileCompletionRoutineCatch(
     crate::glue::STATUS_MORE_PROCESSING_REQUIRED
 }
 // ---- re-stitched from bank: 20260612-152050-deviosup.c/05_FatSingleNonAlignedSync.rs ----
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatSingleNonAlignedSync(
@@ -364,7 +361,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     #[cfg(not(reactos))]
     let mut is_a_write: bool = false;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -941,7 +938,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
 ) -> i32 {
     let mut StartingVbo = StartingVbo;
     let mut ByteCount = ByteCount;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // UNREFERENCED_PARAMETER(StreamFlags)
     let _ = StreamFlags;
@@ -1209,7 +1206,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
     let mut SavedUserBuffer: *mut c_void = core::ptr::null_mut();
 
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, (Dbg) as i32, b"FatNonCachedNonAlignedRead\n\0".as_ptr() as *const i8, 0usize);
     DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as usize);
@@ -1941,7 +1938,7 @@ pub unsafe extern "system" fn FatMapUserBuffer(
     Irp: *mut IRP,
 ) -> *mut core::ffi::c_void {
     let _ = IrpContext;
-    PAGED_CODE();
+    PAGED_CODE!();
     let irp = &*(Irp as *mut _IRP);
     if irp.MdlAddress.is_null() {
         return irp.UserBuffer;

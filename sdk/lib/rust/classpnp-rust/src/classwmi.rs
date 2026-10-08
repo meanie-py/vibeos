@@ -929,10 +929,6 @@ pub unsafe extern "system" fn ClassWmiFireEvent(
     status
 }
 
-extern "system" {
-    
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

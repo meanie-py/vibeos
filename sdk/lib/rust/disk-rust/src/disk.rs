@@ -54,7 +54,6 @@ extern "C" {
     fn RtlStringCchPrintfW( pszDest: *mut u16, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
-    fn PAGED_CODE();
     fn CHECK_IRQL();
     fn max(a: usize, b: usize) -> usize;
     fn IsListEmpty(ListHead: *mut LIST_ENTRY) -> BOOLEAN;
@@ -556,8 +555,6 @@ extern "C" {
 
 
 // Forward declarations for unknown externals
-unsafe extern "system" {
-}
 
 // Constants
 use ntkrnl_sys::ddk::ULONG_PTR; // per-arch: u64 on amd64/arm64, u32 on i386 (matches IoStatus.Information)
@@ -9948,7 +9945,7 @@ pub unsafe extern "C" fn DiskIoctlEnableFailurePrediction(
     let mut status: i32 = STATUS_SUCCESS;
     let enablePrediction: *mut STORAGE_FAILURE_PREDICTION_CONFIG;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     CHECK_IRQL();
 
     // TracePrint first call: %p %p -> two pointer arguments

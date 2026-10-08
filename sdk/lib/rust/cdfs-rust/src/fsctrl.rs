@@ -95,7 +95,6 @@ extern "C" {
     fn _SEH2_AbnormalTermination() -> BOOLEAN;
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn FsRtlDismountComplete(TargetDeviceObject: *mut DEVICE_OBJECT, Status: NTSTATUS);
@@ -401,7 +400,7 @@ pub unsafe extern "C" fn CdCommonFsControl(
     Irp: *mut IRP,
 ) -> NTSTATUS {
     let irp_sp = IoGetCurrentIrpStackLocation(Irp);
-    PAGED_CODE();
+    PAGED_CODE!();
     let minor = (*irp_sp).MinorFunction;
 
     let status: NTSTATUS;
@@ -1007,7 +1006,7 @@ pub unsafe extern "C" fn CdDismountVolume(
     let mut Fcb: *mut FCB = core::ptr::null_mut();
     let mut Ccb: *mut CCB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb) != UserVolumeOpen {
         CdCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
@@ -1130,7 +1129,7 @@ pub unsafe extern "C" fn CdAllowExtendedDasdIo(irp_context: *mut IRP_CONTEXT, ir
     let mut ccb: *mut CCB = core::ptr::null_mut();
     let status: i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let pfcb: *mut *mut FCB = core::ptr::addr_of_mut!(fcb);
     let pccb: *mut *mut CCB = core::ptr::addr_of_mut!(ccb);
@@ -1335,7 +1334,7 @@ pub unsafe extern "C" fn CdIsRemount(
     OldVcb: *mut *mut VCB,
 ) -> i32 {
     // PAGED_CODE(); (macro call)
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // UNREFERENCED_PARAMETER(IrpContext)
     let _ = IrpContext;

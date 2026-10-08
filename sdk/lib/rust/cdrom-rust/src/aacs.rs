@@ -19,7 +19,6 @@ unsafe extern "C" {
     fn REVERSE_SHORT(p: *mut u16);
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 
 const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)
@@ -55,7 +54,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut transferSize: u32 = core::mem::size_of::<READ_DVD_STRUCTURES_HEADER>() as u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -401,7 +400,7 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut input: *mut AACS_SEND_CERTIFICATE = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -488,7 +487,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
     let mut input: *mut DVD_SESSION_ID = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -814,7 +813,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
     let mut input: *mut u8 = core::ptr::null_mut();
     let mut output_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -1294,7 +1293,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
         let mut input: *mut AACS_READ_BINDING_NONCE = core::ptr::null_mut();
         let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-        PAGED_CODE();
+        PAGED_CODE!();
 
         *DataLength = 0;
 

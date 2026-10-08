@@ -65,7 +65,6 @@ extern "system" {
     fn NT_ASSERT(condition: u8);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> u8;
-    fn PAGED_CODE();
 }
 
 // ---- file-scope preamble (translated) ----
@@ -256,7 +255,7 @@ pub unsafe extern "system" fn FatCloseWorker(
     DeviceObject: PDEVICE_OBJECT,
     Context: *mut core::ffi::c_void,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     let _ = DeviceObject;
     FsRtlEnterFileSystem();
     FatFspClose((Context).cast());
@@ -709,7 +708,6 @@ pub unsafe extern "system" fn FatCommonClose(
             }
             _ => {
                 FatBugCheck(TypeOfOpen, 0, 0);
-                unreachable!();
             }
         }
 

@@ -81,7 +81,6 @@ unsafe extern "system" fn DefaultConsoleCtrlHandler(Event: DWORD) -> BOOL {
     }
 
     ExitProcess(CONTROL_C_EXIT as UINT);
-    return 1;
 }
 
 #[no_mangle]
@@ -195,7 +194,6 @@ pub unsafe extern "system" fn ConsoleControlDispatcher(
     RtlLeaveCriticalSection(&raw mut ConsoleLock);
 
     ExitThread(nExitCode);
-    return 0; // STATUS_SUCCESS
 }
 #[no_mangle]
 pub unsafe extern "C" fn InitializeCtrlHandling() {

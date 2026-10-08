@@ -74,7 +74,6 @@ extern "C" {
 
 // DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
 // UNREFERENCED_PARAMETER expand to nothing in a retail build).
-#[inline(always)] fn PAGED_CODE() {}
 #[inline(always)] fn NT_ASSERT(_cond: bool) {}
 #[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
 #[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
@@ -180,7 +179,7 @@ pub unsafe extern "C" fn CdAddInitialAllocation(
     DataLength: i64,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
         let _ = IrpContext;
         ASSERT_IRP_CONTEXT(IrpContext as *const IRP_CONTEXT);
         ASSERT_FCB(Fcb);
@@ -207,7 +206,7 @@ pub unsafe extern "C" fn CdTruncateAllocation(
 ) {
     let McbEntryOffset: u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
@@ -225,7 +224,7 @@ pub unsafe extern "C" fn CdInitializeMcb(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
@@ -241,7 +240,7 @@ pub unsafe extern "C" fn CdUninitializeMcb(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
@@ -260,7 +259,7 @@ pub unsafe extern "C" fn CdFindMcbEntry(
 ) -> u32 {
     let _ = IrpContext;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
@@ -351,7 +350,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
     let mut DirContext: DIRENT_ENUM_CONTEXT = core::mem::zeroed();
     let mut Dirent: DIRENT = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);

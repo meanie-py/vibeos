@@ -18,7 +18,6 @@ extern "C" {
     static SeExports: *mut SE_EXPORTS;
 }
 extern "system" {
-    fn PAGED_CODE();
     fn SeReleaseSubjectContext(SubjectContext: *mut SECURITY_SUBJECT_CONTEXT);
 }
 
@@ -53,10 +52,9 @@ pub unsafe extern "system" fn FatCheckFileAccess(
     unsafe extern "system" {
         } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
         fn DebugUnwind(fn_name: usize);
-        fn PAGED_CODE();
     }
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut result: i32 = 1; // TRUE
     let p_result = core::ptr::addr_of_mut!(result);
@@ -245,7 +243,7 @@ pub unsafe extern "system" fn FatCreateRestrictEveryoneToken(
     }
     let mut Status: i32 = 0; // STATUS_SUCCESS
     let mut SidsToDisable: TOKEN_GROUPS = core::mem::zeroed();
-    PAGED_CODE();
+    PAGED_CODE!();
     *RestrictedToken = core::ptr::null_mut();
     SidsToDisable.GroupCount = 1;
     SidsToDisable.Groups[0].Attributes = 0;

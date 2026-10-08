@@ -645,9 +645,6 @@ pub unsafe fn DbgGetAdditionalSenseCodeQualifierStr(srb: PSTORAGE_REQUEST_BLOCK_
     ad_sense_code_qual_str
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

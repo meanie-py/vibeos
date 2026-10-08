@@ -44,7 +44,6 @@ extern "C" {
     fn WordAlign(Value: u32) -> u32;
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdConvertBigToLittleEndian( IrpContext: *mut IRP_CONTEXT, DiskName: *const u8, DiskNameLen: u32, Buffer: *mut u8, );
@@ -362,7 +361,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryFromRawPathEntry(
 ) -> u8 {
     const STATUS_DISK_CORRUPT_ERROR: i32 = 0xC0000032u32 as i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let RawPathEntry: *mut RAW_PATH_ENTRY = CdRawPathEntry(IrpContext, PathContext);
     let RemainingDataLength: u32;
@@ -421,7 +420,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     let mut Length: u32;
     let Status: i32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Check for self entry (length 1 and first byte zero)
     if (*PathEntry).DirName.read() == 0 && (*PathEntry).DirNameLen == 1 {

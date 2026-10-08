@@ -48,7 +48,7 @@
 
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, ASSERT, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, ASSERT, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
 use core::ffi::c_void;
 
 extern "system" {
@@ -1615,7 +1615,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
     let mut RootPointer: PHCELL_INDEX = core::ptr::null_mut();
     let Type: u32;
     let IsCompressed: bool;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     /* Get the key node */
     KeyNode = HvGetCell(Hive, Child) as PCM_KEY_NODE;

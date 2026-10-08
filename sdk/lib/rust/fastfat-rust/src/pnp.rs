@@ -19,7 +19,6 @@ extern "system" {
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
-    fn PAGED_CODE();
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: PVCB, arg3: *mut core::ffi::c_void) -> NTSTATUS;
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
@@ -102,7 +101,7 @@ pub unsafe extern "system" fn FatCommonPnp(
     Irp: PIRP,
 ) -> NTSTATUS {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         SetFlag(
             &raw mut (*IrpContext).Flags as *mut u32,
@@ -394,7 +393,7 @@ pub unsafe extern "system" fn FatPnpCancelRemove(
     Irp: PIRP,
     Vcb: PVCB
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     FatAcquireExclusiveVcb(IrpContext, Vcb);
     FatReleaseGlobal(IrpContext);
