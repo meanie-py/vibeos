@@ -1129,9 +1129,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       a PAGE_READONLY view raised no access violation) failed on 3 of 3 i386 `-smp 2`
       sweeps, with or without the idle-summary fix. `KiInitMachineDependent` now sets it
       inside its per-processor affinity loop.
-    Left as timing noise (one sample each): amd64 `ExResource` (its :480/:518/:620 are
-    already `assert?` in the 1-vCPU baseline) and i386 `PsQuota` (nonpaged quota off by 24
-    bytes in 1 of 2 sweeps); `IoDeviceObject` +-1 is the known flicker.
+    - **amd64 idle CPUs slept through IPI_DPC** (FIXED): the rows first written off as
+      timing (amd64 `ExResource` :480/:620, plus a knock-on :301) were a whole-guest
+      slowdown. amd64 `-smp 2` swept in 775 s against 250 s at one vCPU and reached the
+      sweep at +423 s against +105 s; sampling both vCPUs over gdb found a halted idle CPU
+      with a `NextThread` already assigned in over half the samples. amd64 sends IPI_DPC
+      as the DISPATCH soft vector 0x2F, and on amd64 IRQL is the APIC TPR, so a target
+      idling at DISPATCH_LEVEL held it pending and slept until the clock tick. `KiIpiSend`
+      now also rings 0xE1. After: sweep 234 s, starting at +109 s; ExResource back to its
+      banked 879/2; `-smp 2` smoke green (run 20261008-174402-8rgmbt0d).
+    - **i386 `PsQuota` was the kmtest harness charging quota mid-test** (FIXED):
+      `KmtRunKernelTest` starts its user-callback thread and issues `RUN_TEST` at once;
+      that thread's parked `AWAIT_REQ` IOCTL is METHOD_BUFFERED, so its system buffer is a
+      quota allocation (12-byte packet + 4-byte process pointer + 8-byte header = the 24
+      bytes PsQuota saw). On one CPU it parks after the test, on two during it. The
+      kmtest driver's `RUN_TEST` now waits (bounded, 5 s) for the callback thread to park.
+      i386 `-smp 2` PsQuota 12/0 (run 20261008-174152-p1jx1zfg).
+    - **`IoDeviceObject` "+-1 flicker" was an unterminated registry path** (FIXED; not SMP,
+      it flipped at one vCPU on every arch): `IopUnloadDriver` passed the counted service
+      name to `RtlQueryRegistryValues` as a PWSTR, and DriverEntry's RegistryPath had no
+      terminator, so `:300` depended on the pool WCHAR after it (a gdb probe caught
+      `NtOpenKey` opening `...KMTEST-IODEVICEOBJECT` plus garbage). Both sites fixed; the
+      terminator sits outside `MaximumLength` (`:191`). 185/4 on all three arches; the
+      1-vCPU rows and arm64 smp2 (stale 180/9) re-banked, `assert? :300` removed.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
