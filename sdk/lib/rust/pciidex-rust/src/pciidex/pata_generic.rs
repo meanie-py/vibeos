@@ -810,9 +810,9 @@ unsafe extern "C" fn PciIdeAssignLegacyResources(
     while i < (*ResourcesTranslated).List[0].PartialResourceList.Count {
         let mut Desc: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
-        Desc = &mut (*ResourcesTranslated).List[0]
+        Desc = &mut (*core::ptr::addr_of_mut!((*ResourcesTranslated).List[0]
             .PartialResourceList
-            .PartialDescriptors[i as usize];
+            .PartialDescriptors[0]).add(i as usize));
 
         match (*Desc).Type {
             CmResourceTypePort | CmResourceTypeMemory => {

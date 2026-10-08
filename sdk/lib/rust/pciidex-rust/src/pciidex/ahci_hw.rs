@@ -555,7 +555,7 @@ unsafe extern "C" fn AtaAhciSendResetFis(
     TimeOutMs: ULONG,
 ) -> UCHAR {
     let CommandTable: PAHCI_COMMAND_TABLE = (*ChanData).CommandTable[AHCI_INTERNAL_SLOT as usize];
-    let CommandHeader: PAHCI_COMMAND_HEADER = &mut (*(*ChanData).CommandList).CommandHeader[AHCI_INTERNAL_SLOT as usize];
+    let CommandHeader: PAHCI_COMMAND_HEADER = &mut (*core::ptr::addr_of_mut!((*(*ChanData).CommandList).CommandHeader[0]).add(AHCI_INTERNAL_SLOT as usize));
     let H2dFis: PAHCI_FIS_HOST_TO_DEVICE = &mut (*CommandTable).__bindgen_anon_1.HostToDeviceFis;
 
     RtlZeroMemory!(

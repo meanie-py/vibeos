@@ -39,6 +39,7 @@ from pathlib import Path
 
 from . import (
     crate_integrate,
+    flex_index,
     local_macros,
     logical_not,
     pointer_depth,
@@ -1349,6 +1350,7 @@ def stage_integrate(stem: str) -> None:
         p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
     )
     depth_fixed: list[str] = []
+    flex_fields, _ = flex_index.field_shapes()
     for path in sorted((crate / "src" / stem).glob("*.rs")):
         report = crate_integrate.integrate_path(path, crate)
         changed += report.changed
@@ -1358,6 +1360,12 @@ def stage_integrate(stem: str) -> None:
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
+        # C indexes a trailing `T Arr[1]` past its declared length; Rust's bounds check on the
+        # bindgen `[T; 1]` panics instead (pciidex's resource walk, on the PIIX3's second
+        # descriptor, was the --ata-stack boot's first Rust panic).
+        new, flexed = flex_index.rewrite(new, flex_fields)
+        if flexed:
+            print(f"integrate: {path.stem}: {flexed} flexible-array index(es) made unchecked")
         if new != text:
             path.write_text(new)
             changed += 1

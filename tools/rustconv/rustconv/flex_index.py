@@ -90,6 +90,15 @@ def _place_start(text: str, dot: int) -> int:
         if c == ":" and i >= 2 and text[i - 2] == ":":
             i -= 2
             continue
+        # A chain rustfmt broke across lines (`(*R).List[0]\n    .PartialResourceList\n
+        # .PartialDescriptors[i]`, pciidex's resource walk): whitespace before a `.` is still
+        # inside the place.
+        if c.isspace() and i < len(text) and text[i] == ".":
+            j = i - 1
+            while j > 0 and text[j - 1].isspace():
+                j -= 1
+            i = j
+            continue
         break
     return i
 

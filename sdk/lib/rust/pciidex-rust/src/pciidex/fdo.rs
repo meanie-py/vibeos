@@ -308,9 +308,9 @@ unsafe extern "C" fn AtaCtrlPciAssignResources(
     i = 0;
     while i < (*ResourcesTranslated).List[0 as usize].PartialResourceList.Count {
         let mut Desc: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
-        Desc = &mut (*ResourcesTranslated).List[0 as usize]
+        Desc = &mut (*core::ptr::addr_of_mut!((*ResourcesTranslated).List[0 as usize]
             .PartialResourceList
-            .PartialDescriptors[i as usize];
+            .PartialDescriptors[0]).add(i as usize));
         if (*Desc).Type == CmResourceTypeInterrupt {
             RtlCopyMemory!(
                 &mut (*Controller).InterruptDesc as *mut _ as *mut core::ffi::c_void,
@@ -329,9 +329,9 @@ unsafe extern "C" fn AtaCtrlPciAssignResources(
         let mut CurrBar: ULONG = 0;
         let mut NextBar: ULONG = 0;
 
-        Desc = &mut (*ResourcesTranslated).List[0 as usize]
+        Desc = &mut (*core::ptr::addr_of_mut!((*ResourcesTranslated).List[0 as usize]
             .PartialResourceList
-            .PartialDescriptors[i as usize];
+            .PartialDescriptors[0]).add(i as usize));
         if (*Desc).Type != CmResourceTypePort && (*Desc).Type != CmResourceTypeMemory {
             i = i.wrapping_add(1);
             continue;

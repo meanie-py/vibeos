@@ -922,8 +922,8 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(ChannelContext: PVOID, Request: P
 
     i = 0;
     while i < (*SgList).NumberOfElements {
-        let mut Address: u32 = (*SgList).Elements[i as usize].Address.__bindgen_anon_1.LowPart;
-        let mut Length: u32 = (*SgList).Elements[i as usize].Length;
+        let mut Address: u32 = (*core::ptr::addr_of!((*SgList).Elements[0]).add(i as usize)).Address.__bindgen_anon_1.LowPart;
+        let mut Length: u32 = (*core::ptr::addr_of!((*SgList).Elements[0]).add(i as usize)).Length;
 
         ASSUME!(Length != 0);
 
