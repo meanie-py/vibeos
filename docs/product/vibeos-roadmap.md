@@ -604,7 +604,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
   Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
   shown: that the console is what drops the frames. Two fixes owed either way: stop the install
-  retry loop, and gate the per-thread `[PS]` tracing.
+  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
+  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
+  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
+  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
+  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
+  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
+  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as
