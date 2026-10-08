@@ -731,7 +731,13 @@ def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
             out.append(line)
             continue
 
+        # Never inside a block comment -- including the `/* 'PedI' */` this fold writes, which a
+        # second integrate folded again into `/* 0x50656449 /* 'PedI' */ */` (legide).
+        blocks = [b.span() for b in re.finditer(r"/\*.*?\*/", code)]
+
         def repl(m: re.Match) -> str:
+            if any(lo <= m.start() < hi for lo, hi in blocks):
+                return m.group(0)
             value = 0
             for ch in m.group(1):
                 value = (value << 8) | ord(ch)
