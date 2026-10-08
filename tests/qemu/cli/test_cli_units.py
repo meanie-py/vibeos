@@ -8304,6 +8304,22 @@ def test_faulting_module_offset_beats_a_guessed_reloc():
     assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
 
 
+def test_faulting_module_offset_only_from_a_pc_parameter():
+    # 0xF4's P4 is a message string; the banner resolved it and triage printed an
+    # anonymous constant as the fault (arm64 modrun, 2026-10-08).
+    f4 = (
+        "*** BUGCHECK: 0x000000F4 (0x0000000000000003, 0xfffffa00062e1970, "
+        "0xfffffa00062e1bd0, 0xfffff800422df6b0)\n***   P4 = ntoskrnl.exe+0x14D6B0\n"
+    )
+    assert triage.faulting_module_offset(f4) is None
+    # 0x1E names P2; a resolved P3 is a stack address, not the fault
+    p3 = (
+        "*** BUGCHECK: 0x0000001E (0x1, 0x0, 0xfffff80042193788, 0x0)\n"
+        "***   P3 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(p3) is None
+
+
 def test_faulting_module_offset_takes_the_LAST_bugcheck():
     """Same rule as faulting_pc: the crash being triaged is the one the boot died
     on, not the first the log happens to mention."""
