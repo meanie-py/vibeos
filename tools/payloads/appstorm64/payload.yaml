@@ -1,0 +1,117 @@
+# appstorm64 — appstorm's whole sweep as an x86-64 GUEST on arm64: the stock amd64 build of
+# every app and applet, run under FEX (wowx64). arm64 only, and only on VIBEOS_FEX=1 media.
+#   tools/payloads/appstorm/build.sh amd64   (rebuilt automatically when stale)
+#   VIBEOS_FEX=1 VIBEOS_PAYLOAD=appstorm64 ./vibeos-cli build --arch arm64   (needs build-amd64)
+#   ./vibeos-cli smoke --arch arm64 --payload appstorm64
+# appstorm-amd64.exe autostarts from the StartUp folder as an x86-64 process, so every app it
+# launches by name resolves through the guest's system32 -> sysamd64 redirect to the amd64
+# copy staged below. appstorm checks each launched process's machine against its own, so an
+# app that ran native instead is a FAIL, not a pass.
+name: appstorm64
+description: appstorm's app and applet sweep, every app the stock amd64 build, under FEX on arm64
+arches: [arm64]
+
+build_hint: "tools/payloads/appstorm/build.sh amd64"
+
+binaries:
+  - src: tools/payloads/appstorm/appstorm-{arch}.exe
+    build_arch: amd64
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/appstorm.exe
+  # The amd64 side-by-side assemblies. An x86-64 process's activation context asks for
+  # processorArchitecture amd64, and the arm64 media carries only arm64 assemblies, so every
+  # comctl32 v6 / gdiplus activation in a guest failed ("CreateActCtxW failed ... err=2").
+  # winsxs is outside system32, so these are found by their own names, not by the redirect.
+  - src: dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest
+    dest: winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef.manifest
+  - src: build-amd64/dll/win32/comctl32/comctl32.dll
+    dest: winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_5.82.2600.2982_none_deadbeef/comctl32.dll
+  - src: dll/win32/comctl32/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest
+    dest: winsxs/manifests/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef.manifest
+  - src: build-amd64/dll/win32/comctl32/comctl32.dll
+    dest: winsxs/amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.2600.2982_none_deadbeef/comctl32.dll
+  - src: dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest
+    dest: winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef.manifest
+  - src: build-amd64/dll/win32/gdiplus/gdiplus.dll
+    dest: winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.0.14393.0_none_deadbeef/gdiplus.dll
+  - src: dll/win32/gdiplus/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest
+    dest: winsxs/manifests/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef.manifest
+  - src: build-amd64/dll/win32/gdiplus/gdiplus.dll
+    dest: winsxs/amd64_microsoft.windows.gdiplus_6595b64144ccf1df_1.1.7601.23038_none_deadbeef/gdiplus.dll
+
+# The apps and applets appstorm launches, plus everything they import, out of build-amd64.
+# rundll32 hosts every applet control.exe opens. The .cpl files and the modules at the END of
+# the list are loaded by name at run time, so no import walk finds them:
+#   apphelp     kernel32's app-compat check at every process create
+#   schannel    secur32's TLS provider (rapps's database download is https)
+#   actxprxy    the COM proxy iexplore marshals its browser object through
+#   mshtml      ieframe's document object
+#   rosbrand    shell32's About-box branding, named by a string literal in shell32
+#   dpwsockx    dxdiag's DirectPlay provider
+#   batt bthci  device-class property pages devmgmt loads from the class keys
+# wowx64 logs every module it refuses an x86-64 guest ("a foreign-machine DLL in system32:
+# NOT FOUND"); that is how each of these was found. winmm's Drivers32 set is derived by
+# tools/fex/wow64-closure.py instead.
+guest_sets:
+  - build_dir: build-amd64
+    dest: sysamd64
+    roots:
+      - base/applications/notepad/notepad.exe
+      - base/applications/calc/calc.exe
+      - base/applications/regedit/regedit.exe
+      - base/applications/taskmgr/taskmgr.exe
+      - base/shell/cmd/cmd.exe
+      - base/applications/mspaint/mspaint.exe
+      - base/applications/wordpad/wordpad.exe
+      - base/applications/charmap/charmap.exe
+      - base/applications/games/winmine/winmine.exe
+      - base/applications/games/solitaire/sol.exe
+      - base/applications/games/spider/spider.exe
+      - base/applications/winver/winver.exe
+      - base/applications/clipbrd/clipbrd.exe
+      - base/applications/sndvol32/sndvol32.exe
+      - base/applications/magnify/magnify.exe
+      - base/applications/osk/osk.exe
+      - base/applications/mscutils/eventvwr/eventvwr.exe
+      - base/applications/mscutils/devmgmt/devmgmt.exe
+      - base/applications/mscutils/servman/servman.exe
+      - base/applications/msconfig/msconfig.exe
+      - base/applications/dxdiag/dxdiag.exe
+      - base/applications/rapps/rapps.exe
+      - base/applications/mplay32/mplay32.exe
+      - base/applications/sndrec32/sndrec32.exe
+      - base/shell/explorer/explorer.exe
+      - base/applications/iexplore/iexplore.exe
+      - base/applications/control/control.exe
+      - base/system/rundll32/rundll32.exe
+      - dll/cpl/desk/desk.cpl
+      - dll/cpl/sysdm/sysdm.cpl
+      - dll/cpl/timedate/timedate.cpl
+      - dll/cpl/intl/intl.cpl
+      - dll/cpl/main/main.cpl
+      - dll/cpl/mmsys/mmsys.cpl
+      - dll/cpl/appwiz/appwiz.cpl
+      - dll/cpl/ncpa/ncpa.cpl
+      - dll/cpl/access/access.cpl
+      - dll/cpl/powercfg/powercfg.cpl
+      - dll/cpl/inetcpl/inetcpl.cpl
+      - dll/cpl/joy/joy.cpl
+      - dll/appcompat/apphelp/apphelp.dll
+      - dll/win32/schannel/schannel.dll
+      - dll/win32/actxprxy/actxprxy.dll
+      - dll/win32/mshtml/mshtml.dll
+      - dll/branding/rosbrand/rosbrand.dll
+      - dll/directx/wine/dpwsockx/dpwsockx.dll
+      - dll/win32/batt/batt.dll
+      - dll/win32/bthci/bthci.dll
+
+test:
+  launch_marker: "[APPSTORM] done"
+  shot_prefix: "[APPSTORM] shot "
+  pass_marker: "[APPSTORM] done VERDICT=PASS"
+  launch_drain_secs: 7200
+  # 1G (the arm64 default) runs out: the FEX guests already resident (x86 Doom and the
+  # ladder) leave ~30MB free before the sweep starts, the livecd has no pagefile, and each
+  # x86-64 app keeps ~1MB more (appstorm's availMB column). Owed: that per-app drift, and a
+  # kernel that bugchecks 0x7A on an exhausted machine rather than failing the allocation.
+  vm_memory: 2G

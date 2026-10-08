@@ -667,8 +667,30 @@ pub fn MI_MAKE_CLEAN_PAGE(pte: *mut MMPTE) {
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
         { (*pte).Long &= !(1 << 6); }
         #[cfg(target_arch = "aarch64")]
-        { (*pte).Long |= 1 << 7; }
+        { (*pte).Long = ((*pte).Long | 1 << 7) & !(PTE_SOFTWARE_DIRTY as ULONG_PTR); }
     }
+}
+
+/// arm64: a sticky software dirty bit (HARDWARE_PTE.OsAvailable, bit 57, which
+/// the MMU ignores). arm64 has no hardware dirty bit: "dirty" is NotDirty (AP[2],
+/// bit 7) clear, i.e. hardware-WRITABLE, so a page made read-only after it was
+/// written reads clean. x86 keeps its Dirty bit across a protection change.
+/// RosMm's `MmSetPageProtect` (arm64/page.rs) sets this when it reprotects a
+/// dirty page, and every dirty test (`MI_PTE_IS_DIRTY`) reads it. Without it the
+/// loader's bound IAT -- written, then made read-only -- was paged out as
+/// clean and read back from the file under memory pressure: native processes
+/// called through unbound slots (IMAGE_IMPORT_BY_NAME RVAs, PC 0xAA462) and
+/// csrss's death bugchecked 0xF4.
+#[cfg(target_arch = "aarch64")]
+pub const PTE_SOFTWARE_DIRTY: u64 = 1 << 57;
+
+/// Was the page this valid PTE maps written since it was last cleaned?
+#[inline]
+pub fn MI_PTE_IS_DIRTY(long: u64) -> bool {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    { (long & (1 << 6)) != 0 }
+    #[cfg(target_arch = "aarch64")]
+    { (long & (1 << 7)) == 0 || (long & PTE_SOFTWARE_DIRTY) != 0 }
 }
 
 #[inline]

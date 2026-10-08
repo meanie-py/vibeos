@@ -121,6 +121,25 @@ pub unsafe extern "system" fn NtUserInitializeClientPfnArrays(
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if ClientPfnInit != 0 {
+        // The global tables are set. A user32 of another build (an x86-64 guest
+        // on arm64) keeps its own: see pfnclient.rs.
+        let mut a: [usize; core::mem::size_of::<PFNCLIENT>() / core::mem::size_of::<usize>()] =
+            core::mem::zeroed();
+        let mut w = a;
+        if !crate::copy::capture_from_user(
+            a.as_mut_ptr() as *mut core::ffi::c_void,
+            pfnClientA as *const core::ffi::c_void,
+            core::mem::size_of_val(&a),
+        ) || !crate::copy::capture_from_user(
+            w.as_mut_ptr() as *mut core::ffi::c_void,
+            pfnClientW as *const core::ffi::c_void,
+            core::mem::size_of_val(&w),
+        ) {
+            return STATUS_ACCESS_VIOLATION;
+        }
+        UserEnterExclusive();
+        Status = crate::pfnclient::remember(&a, &w);
+        UserLeave();
         return Status;
     }
 
