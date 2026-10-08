@@ -108,3 +108,47 @@ fn f() {
     q_lits, q_comments = S.collect(root)
     assert sorted(r_lits) == [n.start_byte for n in q_lits]
     assert sorted(r_comments) == [n.start_byte for n in q_comments]
+
+
+# ── comment placement (2026-10-08) ─────────────────────────────────────────────
+# Each case is a shape that shipped wrong with the constant's name sitting beside it.
+_CAT = {
+    "RmAuditSetCommand": 1,
+    "RmCreateLogonSession": 2,
+    "LPC_CONNECTION_REQUEST": 10,
+    "LPC_PORT_CLOSED": 5,
+    "LPC_CLIENT_DIED": 6,
+    "DBG_CONTROL_C": 0x40010005,
+    "ERROR_INVALID_PARAMETER": 87,
+}
+
+
+def _scan(tmp_path, body):
+    f = tmp_path / "x.rs"
+    f.write_text("fn f() {\n" + body + "\n}\n")
+    return sorted((name, lv) for _ln, lv, name, _want, _src in S.scan_file(f, _CAT))
+
+
+def test_match_arm_names_an_enum_member(tmp_path):
+    # se-rust's SRM dispatch: RM_API_NUMBER starts at 1, the arms said 0/1.
+    body = "match n {\n0 => a(), // RmAuditSetCommand\n1 => b(), // RmCreateLogonSession\n_ => c(),\n}"
+    assert _scan(tmp_path, body) == [("RmAuditSetCommand", 0), ("RmCreateLogonSession", 1)]
+
+
+def test_comment_alone_under_a_block_opener(tmp_path):
+    body = "if t == 5 {\n// LPC_CONNECTION_REQUEST\nx();\n}\nif t == 4 || t == 3 {\n// LPC_PORT_CLOSED || LPC_CLIENT_DIED\nbreak;\n}"
+    assert _scan(tmp_path, body) == [
+        ("LPC_CLIENT_DIED", 3), ("LPC_CONNECTION_REQUEST", 5), ("LPC_PORT_CLOSED", 4)
+    ]  # fmt: skip
+
+
+def test_comment_alone_over_a_lone_literal(tmp_path):
+    # kernel32's console handler raised exception code 0 for DBG_CONTROL_C.
+    body = "let c = if n == 0 {\n// DBG_CONTROL_C\n0\n} else { 1 };"
+    assert _scan(tmp_path, body) == [("DBG_CONTROL_C", 0)]
+
+
+def test_opener_zero_is_a_boolean_test(tmp_path):
+    # rtl-heap: the comment names what the block does, not the `== 0`.
+    body = "if free(p) == 0u8 {\n/* ERROR_INVALID_PARAMETER */\nset_error();\n}"
+    assert _scan(tmp_path, body) == []

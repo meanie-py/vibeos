@@ -19,6 +19,3 @@ cases:
       - 'probe done'
   - id: accepts
     expect: ['logon right-password type=2 ok=1 err=0']
-    xfail: >-
-      the right password fails with 1312: msv1_0 returns STATUS_NO_SUCH_LOGON_SESSION after
-      the password check passes (roadmap: Known bugs, "LogonUserW never succeeds")
