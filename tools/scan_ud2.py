@@ -270,6 +270,7 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
     findings = []
     current_function = None
     prev_call_target = None
+    prev_fastfail = False
     known = KNOWN_DRIVER_UD2.get(path.name, set())
     for line in result.stdout.splitlines():
         func_match = re.match(r"^([0-9a-f]+)\s+<(.+)>:", line)
@@ -288,6 +289,8 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
             hit = bool(m)
             addr = m.group(1) if m else ""
         if not hit:
+            if re.match(r"^\s*[0-9a-f]+:", line):
+                prev_fastfail = re.search(r"\bint\s+\$0x29\b", line) is not None
             cm = re.search(r"\b(?:call\w*|bl)\s+.*<(.+?)>", line)
             if cm:
                 prev_call_target = cm.group(1)
@@ -306,6 +309,9 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
             or any(e in fn for e in DRIVER_INTRINSIC_SKIP)
             or _is_mangled(fn)
             or (prev_call_target and any(n in prev_call_target for n in NORETURN_CALLEES))
+            # `int $0x29` is __fastfail (RtlFailFast, the LIST_ENTRY integrity check): it
+            # never returns, so the path ends in ud2 by design.
+            or prev_fastfail
         )
         known_hit = any(k in fn for k in known)
         findings.append(

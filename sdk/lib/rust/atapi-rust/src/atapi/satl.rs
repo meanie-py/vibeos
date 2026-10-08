@@ -624,9 +624,7 @@ unsafe extern "C" fn AtaReqScsiVerify(
     return SRB_STATUS_PENDING as UCHAR;
 }
 
-unsafe extern "C" fn AtaReqCompleteReadCapacity(
-    mut Request: PATA_DEVICE_REQUEST,
-) -> ATA_COMPLETION_ACTION {
+unsafe extern "C" fn AtaReqCompleteReadCapacity(mut Request: PATA_DEVICE_REQUEST) -> ATA_COMPLETION_ACTION {
     let mut DevExt: PATAPORT_DEVICE_EXTENSION;
     let mut Srb: PSCSI_REQUEST_BLOCK = (*Request).Srb;
     let mut Length: ULONG;
@@ -825,9 +823,7 @@ unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
     return core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as ULONG;
 }
 
-unsafe extern "C" fn AtaReqCompleteModeSense(
-    mut Request: PATA_DEVICE_REQUEST,
-) -> ATA_COMPLETION_ACTION {
+unsafe extern "C" fn AtaReqCompleteModeSense(mut Request: PATA_DEVICE_REQUEST) -> ATA_COMPLETION_ACTION {
     let mut DevExt: PATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut PageCode: UCHAR = 0;
     let mut ModeDataLength: USHORT = 0;
@@ -1572,9 +1568,7 @@ unsafe extern "C" fn AtaReqSetAtaStatusSenseData(
         ((*Request).SrbStatus as ::core::ffi::c_int | SRB_STATUS_AUTOSENSE_VALID as ::core::ffi::c_int) as UCHAR;
 }
 
-unsafe extern "C" fn AtaReqCompleteAtaPassThrough(
-    Request: PATA_DEVICE_REQUEST,
-) -> ATA_COMPLETION_ACTION {
+unsafe extern "C" fn AtaReqCompleteAtaPassThrough(Request: PATA_DEVICE_REQUEST) -> ATA_COMPLETION_ACTION {
     let Cdb: PCDB = ((*(*Request).Srb).Cdb).as_mut_ptr() as PCDB;
 
     if (*Request).Flags & REQUEST_FLAG_HAS_TASK_FILE == 0 {

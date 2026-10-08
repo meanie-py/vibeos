@@ -872,10 +872,7 @@ unsafe extern "C" fn AtaFdoDeviceControl(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaDispatchDeviceControl(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaDispatchDeviceControl(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {
         return AtaFdoDeviceControl(((*DeviceObject).DeviceExtension).cast(), Irp);
     } else {

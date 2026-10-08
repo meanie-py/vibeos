@@ -34,9 +34,7 @@ unsafe extern "C" fn AtaTaskFileToIdeRegs(
     (*IdeRegs).bDriveHeadReg = (*TaskFile).DriveSelect;
 }
 
-unsafe extern "C" fn AtaReqCompleteSmartIoControl(
-    mut Request: PATA_DEVICE_REQUEST,
-) -> ATA_COMPLETION_ACTION {
+unsafe extern "C" fn AtaReqCompleteSmartIoControl(mut Request: PATA_DEVICE_REQUEST) -> ATA_COMPLETION_ACTION {
     let mut CmdOut: PSENDCMDOUTPARAMS = core::ptr::null_mut();
     CmdOut = ((*(*Request).Srb).DataBuffer as *mut u8)
         .offset(core::mem::size_of::<SRB_IO_CONTROL>() as isize)

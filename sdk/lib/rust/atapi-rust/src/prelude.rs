@@ -248,7 +248,10 @@ pub const ATA_MAX_LBA_28: ULONG64 = 0x0FFFFFFF; // freeldr-rust/src/hwide.rs
 pub const ATA_MAX_SECTORS_PER_IO: u32 = 256; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_BUFFER_ALIGNMENT: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
+pub const BusQueryCompatibleIDs: _BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE_BusQueryCompatibleIDs; // island enum
 pub const BusQueryDeviceID: _BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE_BusQueryDeviceID; // island enum
+pub const BusQueryHardwareIDs: _BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE_BusQueryHardwareIDs; // island enum
+pub const BusQueryInstanceID: _BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE_BusQueryInstanceID; // island enum
 pub const BusRelations: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_BusRelations; // island enum
 pub const BusTypeAta: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeAta; // island enum
 pub const BusTypeSata: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeSata; // island enum
@@ -279,10 +282,13 @@ pub const DIRECT_ACCESS_DEVICE: u32 = 0; // atapi-legacy-rust/src/types_amd64.rs
 pub const DISPATCH_LEVEL: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_DEVICE_INITIALIZING: u32 = 128; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DO_DIRECT_IO: u32 = 16; // ntkrnl-sys/src/hal_bindgen_amd64.rs
-pub const DO_IS_FDO: u32 = 2147483648; // pciidex-rust/src/types_amd64.rs
+pub const DO_IS_FDO: u32 = 2147483648; // pciidex-rust/src/prelude.rs
 pub const DO_POWER_INRUSH: u32 = 16384; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const DevicePowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_DevicePowerState; // island enum
 pub const DeviceTextDescription: _DEVICE_TEXT_TYPE = _DEVICE_TEXT_TYPE_DeviceTextDescription; // island enum
+pub const DeviceTextLocationInformation: _DEVICE_TEXT_TYPE = _DEVICE_TEXT_TYPE_DeviceTextLocationInformation; // island enum
+pub const DeviceUsageTypeDumpFile: _DEVICE_USAGE_NOTIFICATION_TYPE = _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeDumpFile; // island enum
+pub const DeviceUsageTypeHibernation: _DEVICE_USAGE_NOTIFICATION_TYPE = _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypeHibernation; // island enum
 pub const DeviceUsageTypePaging: _DEVICE_USAGE_NOTIFICATION_TYPE = _DEVICE_USAGE_NOTIFICATION_TYPE_DeviceUsageTypePaging; // island enum
 pub const EVENT_CODE_BAD_STATE: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_BAD_STATE; // island enum
 pub const EVENT_CODE_CRC_ERROR: _ATA_ERROR_LOG_VALUE = _ATA_ERROR_LOG_VALUE_EVENT_CODE_CRC_ERROR; // island enum
@@ -376,10 +382,10 @@ pub const IrpNotWmi: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpNotWmi
 pub const IrpProcessed: _SYSCTL_IRP_DISPOSITION = _SYSCTL_IRP_DISPOSITION_IrpProcessed; // island enum
 pub const IsNEC_98: u32 = 0; // legide-rust/src/prelude.rs
 pub const KEY_ALL_ACCESS: u32 = 983103; // legide-rust/src/prelude.rs
-pub const KEY_READ: DWORD = 0x20019; // diskpart-rust/src/prelude.rs
+pub const KEY_READ: u32 = 131097; // ntdll-sys/src/bindgen_amd64.rs
 pub const KeepObject: _IO_ALLOCATION_ACTION = _IO_ALLOCATION_ACTION_KeepObject; // island enum
 pub const KeyValuePartialInformation: u32 = 2; // config-rust/src/cmsysini.rs
-pub const MAXULONG: u32 = 4294967295; // ntdll-sys/src/bindgen_amd64.rs
+pub const MAXULONG: u32 = 4294967295; // legide-rust/src/types_amd64.rs
 pub const MAX_IDE_DEVICE: u32 = 2; // legide-rust/src/prelude.rs
 pub const MAX_SLOTS: usize = 16; // usbxhci-rust/src/controller.rs
 pub const MODE_DSP_FUA_SUPPORTED: u32 = 16; // atapi-legacy-rust/src/types_amd64.rs
@@ -390,16 +396,16 @@ pub const MODE_PAGE_ERROR_RECOVERY: u32 = 1; // atapi-legacy-rust/src/types_amd6
 pub const MODE_PAGE_FAULT_REPORTING: u32 = 28; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_SENSE_RETURN_ALL: u32 = 63; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_SENSE_SAVED_VALUES: u32 = 192; // atapi-legacy-rust/src/types_amd64.rs
-pub const MWDMA_ALL: u32 = 1792; // pciidex-rust/src/types_amd64.rs
+pub const MWDMA_ALL: u32 = 1792; // pciidex-rust/src/prelude.rs
 pub const MmCached: _MEMORY_CACHING_TYPE = _MEMORY_CACHING_TYPE_MmCached; // island enum
 pub const MmNonCached: MEMORY_CACHING_TYPE = 0; // legide-rust/src/prelude.rs
 pub const NonPagedPool: POOL_TYPE = 0; // msfs-rust/src/glue.rs
 pub const OBJ_CASE_INSENSITIVE: u32 = 64; // diskpart-rust/src/prelude.rs
 pub const OBJ_KERNEL_HANDLE: u32 = 512; // legide-rust/src/prelude.rs
-pub const OBJ_PERMANENT: u32 = 16; // ntdll-sys/src/bindgen_amd64.rs
+pub const OBJ_PERMANENT: u32 = 16; // legide-rust/src/types_amd64.rs
 pub const PAGE_SIZE: u32 = 4096; // ntdll-sys/src/bindgen_amd64.rs
 pub const PCIIDEX_INTERFACE_VERSION: u32 = 1; // legide-rust/src/prelude.rs
-pub const PIO_ALL: u32 = 31; // pciidex-rust/src/types_amd64.rs
+pub const PIO_ALL: u32 = 31; // pciidex-rust/src/prelude.rs
 pub const PIO_MODE0: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const PIO_MODE1: u32 = 2; // legide-rust/src/types_amd64.rs
 pub const PIO_MODE2: u32 = 4; // legide-rust/src/types_amd64.rs
@@ -536,13 +542,16 @@ pub const STATUS_WMI_INSTANCE_NOT_FOUND: i32 = 0xC0000296u32 as i32; // classpnp
 pub const STORAGE_ADDRESS_TYPE_BTL8: u32 = 0; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_ALL: u32 = 7; // cdrom-rust/src/types_amd64.rs
 pub const STORAGE_EVENT_NOTIFICATION_VERSION_V1: u32 = 1; // cdrom-rust/src/types_amd64.rs
-pub const SWDMA_ALL: u32 = 224; // pciidex-rust/src/types_amd64.rs
+pub const SWDMA_ALL: u32 = 224; // pciidex-rust/src/prelude.rs
+pub const StorageAccessAlignmentProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageAccessAlignmentProperty; // island enum
 pub const StorageAdapterProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageAdapterProperty; // island enum
 pub const StorageDeviceProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageDeviceProperty; // island enum
+pub const StorageDeviceSeekPenaltyProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageDeviceSeekPenaltyProperty; // island enum
+pub const StorageDeviceTrimProperty: _STORAGE_PROPERTY_ID = _STORAGE_PROPERTY_ID_StorageDeviceTrimProperty; // island enum
 pub const SystemPowerState: _POWER_STATE_TYPE = _POWER_STATE_TYPE_SystemPowerState; // island enum
 pub const THREAD_ALL_ACCESS: u32 = 2032639; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const TargetDeviceRelation: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_TargetDeviceRelation; // island enum
-pub const UDMA_ALL: u32 = 260096; // pciidex-rust/src/types_amd64.rs
+pub const UDMA_ALL: u32 = 260096; // pciidex-rust/src/prelude.rs
 pub const VPD_BLOCK_DEVICE_CHARACTERISTICS: u32 = 177; // atapi-legacy-rust/src/types_amd64.rs
 pub const VPD_BLOCK_LIMITS: u32 = 176; // atapi-legacy-rust/src/types_amd64.rs
 pub const VPD_DEVICE_IDENTIFIERS: u32 = 131; // atapi-legacy-rust/src/types_amd64.rs
@@ -567,8 +576,8 @@ extern "system" {
     pub fn KeClearEvent(Event: PRKEVENT); // ntkrnl-sys/src/bindgen_amd64.rs
     pub fn KeSetEvent(Event: PRKEVENT, Increment: KPRIORITY, Wait: BOOLEAN) -> LONG; // ntkrnl-sys/src/bindgen_amd64.rs
     pub fn PoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS; // hal-rust/src/arm64/pnpdd.rs
-    pub fn PoRequestPowerIrp(DeviceObject: PDEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, CompletionFunction: PREQUEST_POWER_COMPLETE, Context: PVOID, pIrp: *mut PIRP,) -> NTSTATUS; // po-rust/src/power.rs
-    pub fn PoSetPowerState( DeviceObject: PDEVICE_OBJECT, Type: ULONG, State: POWER_STATE, ) -> POWER_STATE; // acpi-rust/src/buspdo.rs
+    pub fn PoRequestPowerIrp( DeviceObject: *mut _DEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, CompletionFunction: PREQUEST_POWER_COMPLETE, Context: PVOID, Irp: *mut *mut _IRP, ) -> NTSTATUS; // pciidex-rust/src/types_amd64.rs
+    pub fn PoSetPowerState( DeviceObject: *mut _DEVICE_OBJECT, Type: POWER_STATE_TYPE, State: POWER_STATE, ) -> POWER_STATE; // pciidex-rust/src/types_amd64.rs
     pub fn PoStartNextPowerIrp(Irp: PIRP); // hal-rust/src/arm64/pnpdd.rs
     pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
 }
@@ -586,6 +595,7 @@ pub const IOCTL_SCSI_GET_INQUIRY_DATA: u32 = 0x4100C; // clang, ioctl.c
 pub const IOCTL_SCSI_MINIPORT: u32 = 0x4D008; // clang, ioctl.c
 pub const IOCTL_SCSI_PASS_THROUGH: u32 = 0x4D004; // clang, ioctl.c
 pub const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x4D014; // clang, ioctl.c
+pub const IOCTL_SCSI_RESCAN_BUS: u32 = 0x4101C; // clang, ioctl.c
 pub const IO_ERR_CONTROLLER_ERROR: NTSTATUS = 0xC004000B_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_PARITY: NTSTATUS = 0xC0040005_u32 as NTSTATUS; // clang, dev_error.c
 pub const IO_ERR_TIMEOUT: NTSTATUS = 0xC0040009_u32 as NTSTATUS; // clang, dev_error.c
@@ -1032,10 +1042,13 @@ pub use ntkrnl_sys::inline::common::InitializeListHead;
 pub use ntkrnl_sys::inline::common::InitializeSListHead;
 pub use ntkrnl_sys::inline::common::InsertTailList;
 pub use ntkrnl_sys::inline::ex::InterlockedPushEntrySList;
+pub use ntkrnl_sys::ddk::IoAcquireRemoveLockEx;
 pub use ntkrnl_sys::inline::common::IoAdjustPagingPathCount;
 pub use ntkrnl_sys::driver_ddk::IoCallDriver;
 pub use ntkrnl_sys::driver_ddk::IoCompleteRequest;
 pub use ntkrnl_sys::inline::common::IoInitializeRemoveLock;
+pub use ntkrnl_sys::ddk::IoReleaseRemoveLockAndWaitEx;
+pub use ntkrnl_sys::ddk::IoReleaseRemoveLockEx;
 pub use ntkrnl_sys::inline::common::IsListEmpty;
 pub use ntkrnl_sys::ke::KeGetCurrentIrql;
 #[cfg(target_arch = "x86")]

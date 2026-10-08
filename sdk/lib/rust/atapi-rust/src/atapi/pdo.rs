@@ -145,11 +145,7 @@ unsafe extern "C" fn AtaPdoQueryStopRemoveDevice(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaPdoCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: PVOID,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaPdoCompletionRoutine(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP, Context: PVOID) -> NTSTATUS {
     UNREFERENCED_PARAMETER!(DeviceObject);
 
     if (*Irp).PendingReturned != 0 {
@@ -644,10 +640,7 @@ unsafe extern "C" fn AtaPdoPnp(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaDispatchPnp(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaDispatchPnp(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     PAGED_CODE!();
 
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {

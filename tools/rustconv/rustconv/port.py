@@ -144,6 +144,47 @@ def switch_facts(dp: pd.DerivedProfile) -> list[str]:
     )
 
 
+_ARM = re.compile(r"(?m)^\s*\|?\s*([A-Za-z_][\w\s|]*?)\s*=>")
+
+
+def _pattern_idents(modules_dir: Path) -> set[str]:
+    """Bare identifiers used as `match` arm patterns (`Name =>`, `A | B =>`) in the crate.
+
+    Such a name is either a constant or a catch-all binding, and rustc only warns about the
+    latter. Offered to `island_enum_aliases`, which aliases exactly the ones that are a
+    unique enumerator of one enum on every arch and ignores the rest.
+    """
+    out: set[str] = set()
+    for rs in modules_dir.glob("*.rs"):
+        text = rs.read_text(errors="replace")
+        for pattern in _ARM.findall(text):
+            out |= {
+                n.strip()
+                for n in pattern.split("|")
+                if re.fullmatch(r"[A-Za-z_]\w*", n.strip())
+                and n.strip() != "_"
+                and not n.strip().islower()
+            }
+    return out
+
+
+def _undefined_pattern_constants(src: Path, modules_dir: Path, sys_src: Path | None) -> set[str]:
+    """Upper-case match-arm identifiers that no `const`/`static` or prelude import defines."""
+    wanted = {n for n in _pattern_idents(modules_dir) if prelude_resolve.looks_constant(n)}
+    if not wanted:
+        return set()
+    files = list(src.rglob("*.rs")) + (list(sys_src.glob("*.rs")) if sys_src else [])
+    defined: set[str] = set()
+    for f in files:
+        text = f.read_text(errors="replace")
+        defined |= set(re.findall(r"\b(?:const|static(?:\s+mut)?)\s+([A-Z_][A-Z0-9_]*)\b", text))
+        defined |= set(re.findall(r"\bas\s+([A-Z_][A-Z0-9_]*)\s*[,;}]", text))
+        for m in re.finditer(r"\buse\s+[\w:]+::\{([^}]*)\}", text):
+            defined |= {w.strip().split(" as ")[-1].strip() for w in m.group(1).split(",")}
+        defined |= set(re.findall(r"\buse\s+[\w:]+::([A-Z_][A-Z0-9_]*)\s*;", text))
+    return wanted - defined
+
+
 def _seed_switch_facts(state: dict, prelude: Path) -> None:
     names = state.get("switch_facts", [])
     if not names or not prelude.is_file():
@@ -1561,7 +1602,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
         # `DONE` bare, and the first arm caught every command.
-        case_enums = set(load_state(stem).get("switch_enums", [])) - set(copied)
+        # The Rust says the same thing directly, and is the only witness when derive's C audit
+        # recorded nothing: pciidex's switch_enums was EMPTY, so `BusQueryDeviceID =>` bound
+        # every IRP_MN_QUERY_ID and each ID query answered with the device ID -- the channel
+        # PDO never matched the CriticalDeviceDatabase and the --ata-stack boot hit 0x6B.
+        case_enums = (
+            set(load_state(stem).get("switch_enums", [])) | _pattern_idents(modules_dir)
+        ) - set(copied)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
         copied.update(aliases)
         todo -= set(aliases)
@@ -1638,6 +1685,14 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         + type_names
     )
     _seed_switch_facts(state, prelude)
+    # A constant used only as a match pattern is never "unresolved" either -- it binds. atapi's
+    # `IOCTL_SCSI_RESCAN_BUS =>` (a CTL_CODE macro nothing defined) caught every IOCTL the FDO
+    # does not handle, rescanning the bus instead of passing the IRP down.
+    loose = _undefined_pattern_constants(crate / "src", modules_dir, island_sys)
+    if loose:
+        still = _resolve_facts(state, prelude, sorted(loose))
+        for name in still:
+            print(f"resolve: `{name} =>` binds everything and clang could not evaluate it")
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
@@ -3179,7 +3234,17 @@ def stage_check(stem: str) -> dict:
     for arch, diags in _check_json(stem, state["crate"]).items():
         per_file: dict[str, int] = {}
         untranslated = 0
+        catch_all = 0
         for d in diags:
+            # In a translated C `switch`, an unreachable arm means an earlier arm's "constant"
+            # is a BINDING that matches everything (pciidex's `BusQueryDeviceID =>` answered
+            # every ID query with the device ID). rustc only warns; it is a defect.
+            if (d.get("code") or {}).get("code") == "unreachable_patterns":
+                catch_all += 1
+                primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
+                where = primary["file_name"] if primary else "<no span>"
+                per_file[where] = per_file.get(where, 0) + 1
+                continue
             if not cr.is_error_diagnostic(d):
                 continue
             primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
@@ -3200,6 +3265,11 @@ def stage_check(stem: str) -> dict:
             "masked_by": globs,
         }
         print(f"check {arch}: errors={errors} (+{untranslated} module(s) not translated yet)")
+        if catch_all:
+            print(
+                f"check {arch}: {catch_all} of them are unreachable match arms -- an earlier "
+                "arm binds everything (an enumerator `port resolve` did not alias)"
+            )
         if globs:
             # rustc stops reporting unresolved names once a glob import fails: the name might
             # have come from that glob. inicache's invented `use ntdll_sys::nt::tier1::*;`

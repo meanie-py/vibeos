@@ -220,10 +220,7 @@ pub unsafe extern "C" fn AtaPortCheckDevicePowerState(
 
     return Status;
 }
-unsafe extern "C" fn AtaPdoQueuePowerIrp(
-    DevExt: PATAPORT_DEVICE_EXTENSION,
-    Irp: PIRP,
-) {
+unsafe extern "C" fn AtaPdoQueuePowerIrp(DevExt: PATAPORT_DEVICE_EXTENSION, Irp: PIRP) {
     let mut OldLevel: KIRQL = 0;
 
     KeAcquireSpinLock(
@@ -242,11 +239,7 @@ unsafe extern "C" fn AtaPdoQueuePowerIrp(
     AtaDeviceQueueEvent((*DevExt).Device.PortData, (DevExt).cast(), ACTION_DEVICE_POWER);
 }
 
-unsafe extern "system" fn AtaPdoPowerUpCompletionRoutine(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    Context: *mut core::ffi::c_void,
-) -> NTSTATUS {
+unsafe extern "system" fn AtaPdoPowerUpCompletionRoutine(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, Context: PVOID) -> NTSTATUS {
     let DevExt: *mut ATAPORT_DEVICE_EXTENSION = Context as *mut ATAPORT_DEVICE_EXTENSION;
     let Status: NTSTATUS;
 
@@ -268,10 +261,7 @@ unsafe extern "system" fn AtaPdoPowerUpCompletionRoutine(
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-unsafe extern "C" fn AtaPdoPowerSetDevicePowerState(
-    mut DevExt: PATAPORT_DEVICE_EXTENSION,
-    mut Irp: PIRP,
-) -> NTSTATUS {
+unsafe extern "C" fn AtaPdoPowerSetDevicePowerState(mut DevExt: PATAPORT_DEVICE_EXTENSION, mut Irp: PIRP) -> NTSTATUS {
     let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
     let mut NewState: DEVICE_POWER_STATE = (PowerDeviceD0) as _;
     IoStack = IoGetCurrentIrpStackLocation(Irp);
@@ -296,13 +286,7 @@ unsafe extern "C" fn AtaPdoPowerSetDevicePowerState(
     return STATUS_PENDING;
 }
 
-unsafe extern "system" fn AtaPdoPowerSetSysStateWithDevStateComplete(
-    DeviceObject: PDEVICE_OBJECT,
-    MinorFunction: u8,
-    PowerState: POWER_STATE,
-    Context: *mut core::ffi::c_void,
-    IoStatus: PIO_STATUS_BLOCK,
-) {
+unsafe extern "system" fn AtaPdoPowerSetSysStateWithDevStateComplete(DeviceObject: PDEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, Context: PVOID, IoStatus: PIO_STATUS_BLOCK) {
     let DevExt = (*DeviceObject).DeviceExtension as *mut ATAPORT_DEVICE_EXTENSION;
     let Irp = Context as PIRP;
 
@@ -320,10 +304,7 @@ unsafe extern "system" fn AtaPdoPowerSetSysStateWithDevStateComplete(
     );
 }
 
-unsafe extern "C" fn AtaPdoPowerGetDevStateForSysState(
-    SystemState: SYSTEM_POWER_STATE,
-    DeviceState: PDEVICE_POWER_STATE,
-) {
+unsafe extern "C" fn AtaPdoPowerGetDevStateForSysState(SystemState: SYSTEM_POWER_STATE, DeviceState: PDEVICE_POWER_STATE) {
     if SystemState == PowerSystemWorking {
         *DeviceState = (PowerDeviceD0) as _;
     } else {
@@ -331,10 +312,7 @@ unsafe extern "C" fn AtaPdoPowerGetDevStateForSysState(
     }
 }
 
-unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(
-    mut DevExt: PATAPORT_DEVICE_EXTENSION,
-    mut Irp: PIRP,
-) -> NTSTATUS {
+unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(mut DevExt: PATAPORT_DEVICE_EXTENSION, mut Irp: PIRP) -> NTSTATUS {
     let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
     let mut Status: NTSTATUS = 0;
     let mut NewPowerState: POWER_STATE = POWER_STATE {
@@ -418,10 +396,7 @@ unsafe extern "C" fn AtaFdoPower(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaDispatchPower(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaDispatchPower(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {
         return AtaFdoPower(((*DeviceObject).DeviceExtension).cast(), Irp);
     } else {

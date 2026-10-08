@@ -415,12 +415,7 @@ unsafe extern "C" fn AtaReqStartIo(Request: PATA_DEVICE_REQUEST) {
     }
 }
 
-unsafe extern "system" fn AtaReqPreparePrdTable(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    SgList: PSCATTER_GATHER_LIST,
-    Context: PVOID,
-) {
+unsafe extern "system" fn AtaReqPreparePrdTable(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, SgList: PSCATTER_GATHER_LIST, Context: PVOID) {
     let Request: PATA_DEVICE_REQUEST = Context as PATA_DEVICE_REQUEST;
     let Device: PATAPORT_IO_CONTEXT = (*Request).Device as PATAPORT_IO_CONTEXT;
     let PortData: PATAPORT_PORT_DATA = (*Device).PortData as PATAPORT_PORT_DATA;
@@ -588,12 +583,7 @@ pub unsafe extern "C" fn AtaReqSendRequest(Request: PATA_DEVICE_REQUEST) {
     AtaReqStartCompletionDpc(Request);
 }
 
-unsafe extern "system" fn AtaReqCallSendRequestSerialized(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    MapRegisterBase: *mut core::ffi::c_void,
-    Context: *mut core::ffi::c_void,
-) -> IO_ALLOCATION_ACTION {
+unsafe extern "system" fn AtaReqCallSendRequestSerialized(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, MapRegisterBase: PVOID, Context: PVOID) -> IO_ALLOCATION_ACTION {
     let Request: PATA_DEVICE_REQUEST = Context as PATA_DEVICE_REQUEST;
 
     UNREFERENCED_PARAMETER!(DeviceObject);
@@ -605,12 +595,7 @@ unsafe extern "system" fn AtaReqCallSendRequestSerialized(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaReqCompletionDpc(
-    Dpc: PKDPC,
-    DeferredContext: *mut core::ffi::c_void,
-    SystemArgument1: *mut core::ffi::c_void,
-    SystemArgument2: *mut core::ffi::c_void,
-) {
+pub unsafe extern "system" fn AtaReqCompletionDpc(Dpc: *mut _KDPC, DeferredContext: PVOID, SystemArgument1: PVOID, SystemArgument2: PVOID) {
     let mut CurrentEntry: PSLIST_ENTRY;
     let mut NextEntry: PSLIST_ENTRY;
 
@@ -850,10 +835,7 @@ unsafe extern "C" fn AtaReqDeviceQueueRemoveEntry(
     RemoveEntryList(&raw mut (*QueueEntry).ListEntry);
 }
 
-unsafe extern "system" fn AtaReqDeviceQueueCancelIo(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) {
+unsafe extern "system" fn AtaReqDeviceQueueCancelIo(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) {
     let mut Device: PATAPORT_IO_CONTEXT;
     let mut OldLevel: KIRQL = core::mem::zeroed();
     let mut Srb: PSCSI_REQUEST_BLOCK;
@@ -1430,10 +1412,7 @@ unsafe extern "C" fn AtaFdoDispatchScsi(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaDispatchScsi(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaDispatchScsi(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {
         return AtaFdoDispatchScsi(((*DeviceObject).DeviceExtension).cast(), Irp);
     } else {

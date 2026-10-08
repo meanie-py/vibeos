@@ -28,14 +28,7 @@ static mut AtapWmiGuidList: [WMIGUIDREGINFO; 1] = unsafe {
         Flags: 0 as ULONG,
     }]
 };
-unsafe extern "system" fn AtaQueryWmiRegInfo(
-    mut DeviceObject: PDEVICE_OBJECT,
-    mut RegFlags: PULONG,
-    mut InstanceName: PUNICODE_STRING,
-    mut RegistryPath: *mut PUNICODE_STRING,
-    mut MofResourceName: PUNICODE_STRING,
-    mut Pdo: *mut PDEVICE_OBJECT,
-) -> NTSTATUS {
+unsafe extern "system" fn AtaQueryWmiRegInfo(mut DeviceObject: PDEVICE_OBJECT, mut RegFlags: PULONG, mut InstanceName: PUNICODE_STRING, mut RegistryPath: *mut PUNICODE_STRING, mut MofResourceName: PUNICODE_STRING, mut Pdo: *mut PDEVICE_OBJECT) -> NTSTATUS {
     let mut DevExt: PATAPORT_DEVICE_EXTENSION =
         (*DeviceObject).DeviceExtension as PATAPORT_DEVICE_EXTENSION;
     if (KeGetCurrentIrql() as ::core::ffi::c_int) as u32 > APC_LEVEL {
@@ -59,16 +52,7 @@ unsafe extern "system" fn AtaQueryWmiRegInfo(
     *Pdo = (*DevExt).Common.Self_;
     return STATUS_SUCCESS;
 }
-unsafe extern "system" fn AtaQueryWmiDataBlock(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-    GuidIndex: u32,
-    InstanceIndex: u32,
-    InstanceCount: u32,
-    InstanceLengthArray: *mut u32,
-    BufferAvail: u32,
-    Buffer: *mut u8,
-) -> i32 {
+unsafe extern "system" fn AtaQueryWmiDataBlock(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, GuidIndex: ULONG, InstanceIndex: ULONG, InstanceCount: ULONG, InstanceLengthArray: PULONG, BufferAvail: ULONG, Buffer: PUCHAR) -> NTSTATUS {
     let mut DevExt: *mut _ATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut Status: i32 = 0;
     let mut AtaScsiAddress: ATA_SCSI_ADDRESS = { let mut __lit: ATA_SCSI_ADDRESS = core::mem::zeroed(); __lit.__bindgen_anon_1.Lun = 0; __lit.__bindgen_anon_1.TargetId = 0; __lit.__bindgen_anon_1.PathId = 0; __lit.__bindgen_anon_1.IsValid = 0; __lit };
@@ -162,14 +146,15 @@ unsafe extern "C" fn AtaPdoWmi(
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
         }
 
-        _ => {
-            ASSERT!(FALSE);
+        IrpForward | IrpNotWmi => {
             Status = STATUS_NOT_SUPPORTED;
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
         }
 
-        IrpForward | IrpNotWmi => {
+        // The C's `default:` sits before the last case; a Rust `_` must come last.
+        _ => {
+            ASSERT!(FALSE);
             Status = STATUS_NOT_SUPPORTED;
             (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
             IoCompleteRequest(Irp, (IO_NO_INCREMENT) as CCHAR);
@@ -191,10 +176,7 @@ unsafe extern "C" fn AtaFdoWmi(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AtaDispatchWmi(
-    DeviceObject: PDEVICE_OBJECT,
-    Irp: PIRP,
-) -> NTSTATUS {
+pub unsafe extern "system" fn AtaDispatchWmi(DeviceObject: *mut _DEVICE_OBJECT, Irp: *mut _IRP) -> NTSTATUS {
     PAGED_CODE!();
 
     if IS_FDO!((*DeviceObject).DeviceExtension) != false {

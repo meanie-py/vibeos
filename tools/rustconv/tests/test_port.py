@@ -239,9 +239,9 @@ def test_a_dry_run_estimates_every_tu_at_cost_cap_zero(tmp_path, monkeypatch):
 
 
 def test_base_header_case_constants_are_recorded_not_blocking():
-    from rustconv import profile_derive as pd
-
     from types import SimpleNamespace
+
+    from rustconv import profile_derive as pd
 
     dp = SimpleNamespace(
         errors=[
@@ -445,3 +445,20 @@ def test_definition_signatures_read_a_static_function_from_its_own_definition(mo
         "fn PataEnableInterrupts(ChannelContext: PVOID, Enable: BOOLEAN);"
     )
     assert sigs["PataStartIo"] == "fn PataStartIo(c: PVOID, r: PATA_DEVICE_REQUEST) -> BOOLEAN;"
+
+
+def test_a_constant_used_only_as_a_match_pattern_is_found(tmp_path):
+    # `BusQueryDeviceID =>` and atapi's `IOCTL_SCSI_RESCAN_BUS =>` were bindings that matched
+    # everything: a name used only as a pattern is never "unresolved", so resolve never saw it.
+    src = tmp_path / "src"
+    mods = src / "m"
+    mods.mkdir(parents=True)
+    (src / "prelude.rs").write_text("pub const IOCTL_KNOWN: u32 = 1;\n")
+    (mods / "a.rs").write_text(
+        "fn f(c: u32) {\n    match c {\n        IOCTL_KNOWN => {}\n"
+        "        IOCTL_A | IOCTL_B => {}\n        BusQueryDeviceID => {}\n"
+        "        _ => {}\n    }\n}\n"
+    )
+    found = port._pattern_idents(mods)
+    assert found == {"IOCTL_KNOWN", "IOCTL_A", "IOCTL_B", "BusQueryDeviceID"}
+    assert port._undefined_pattern_constants(src, mods, None) == {"IOCTL_A", "IOCTL_B"}
