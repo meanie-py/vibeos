@@ -1370,6 +1370,17 @@ matching the macro (`p = core::ptr::null_mut();`); fix generally: make `FREE_POO
 through the cast, so the macro must take the bare variable. Same shape as the no-op-macro-as-fn
 entries above: a C macro's *semantics* (here a side effect, there lazy arg evaluation) do not
 survive being made a fn — check for side effects on the arguments before lowering a macro to a fn.
+Scope of the class (audited 2026-10-08, cdrom-rust + classpnp-rust + disk-rust, $0): it is far
+rarer than it looks. `DeviceSetRawReadInfo` was the *only* real instance in the whole storage
+stack. Detection heuristic (cheap static scan): within each fn, group `FREE_POOL`/`FREE_POOL!`
+calls by their exact freed lvalue and flag a same-pointer pair only when NO
+`return`/`break`/`continue`/reassignment/null-set sits between them. Nearly every raw hit is a
+false positive — the translator mirrors the C control flow, so the two frees live in
+mutually-exclusive `match` arms, on either side of a `break 'switch`/`continue 'retry`, or the
+"use after free" is a pointer-*value* compare evaluated before the free. classpnp's
+`ClassDeviceControl` alone threw 52 such false hits. The blanket `macro_rules!`-that-nulls
+migration was considered and rejected: ~100 call sites would need the `FREE_POOL!` form, cast
+stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't migrate.
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function

@@ -1181,9 +1181,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   all three arches boot to desktop (gate smoke i386/amd64/arm64 green; conformance i386/amd64
   green — the only gate red was the unrelated non-deterministic arm64 ExFastMutex ratchet
   flake). Landed `8f224096404`. The broader class — `FREE_POOL` as a non-nulling fn across
-  cdrom-rust — is latent at other free-in-branch-plus-exit sites; `DeviceSetRawReadInfo` was
-  the only one on the boot path, the rest are owed (a `macro_rules!` that nulls, or a
-  per-site audit).
+  cdrom-rust/classpnp — was then AUDITED across the storage stack (2026-10-08, cdrom-rust +
+  classpnp-rust + disk-rust, $0 static scan): per function, group `FREE_POOL` calls by exact
+  freed lvalue and flag any same-pointer pair with no `return`/`break`/`continue`/reassignment/
+  null between them (the `DeviceSetRawReadInfo` signature). Result: **zero remaining real
+  instances.** cdrom-rust and disk-rust clean; classpnp-rust's 52 raw hits (mostly
+  `ClassDeviceControl`'s `'switch: loop { match ioctl {…} }`) are all mutually-exclusive match
+  arms / loop edges (`break 'switch`, `continue 'retry`) / value-reads-before-free — triaged,
+  none real. `DeviceSetRawReadInfo` was the sole instance anywhere, because the translator
+  reproduces the C's control flow faithfully: each branch frees then leaves its path, so the
+  "second free" the C's null-guard neutralised is never reached on the same path. The
+  `macro_rules!`-that-nulls migration was therefore considered and **rejected** — it would
+  churn ~100 call sites (`FREE_POOL!` form, cast-stripping, assignable-lvalue requirement) for
+  no live bug. Documented in the field manual with the detection heuristic; CLOSED.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
