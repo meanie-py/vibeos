@@ -80,6 +80,23 @@ pub static mut KiIdleSummary: KAFFINITY = 0;
 #[no_mangle]
 pub static mut KiIdleSummary_SMT: KAFFINITY = 0;
 
+/// Drop `SetMember` from `KiIdleSummary`: that processor has work now.
+///
+/// Divergence from the C, which on SMP only ever SETS idle bits (its sole clear
+/// is the `#ifndef CONFIG_SMP` path in KiDeferredReadyThread). After boot every
+/// CPU read as idle forever, so KiSelectNextProcessor's idle preference was
+/// always the whole affinity: a readied thread went to its ideal processor even
+/// while that one was busy and another sat in WFI/hlt, and two readiers could
+/// pick the same idle CPU. NT clears the bit when it hands an idle processor a
+/// thread; so do we, plus where the arm64 idle loop takes work on its own.
+#[cfg(feature = "smp")]
+#[inline]
+pub unsafe fn ki_idle_summary_clear(SetMember: KAFFINITY) {
+    use core::sync::atomic::{AtomicUsize, Ordering};
+    (*(core::ptr::addr_of_mut!(KiIdleSummary) as *const AtomicUsize))
+        .fetch_and(!(SetMember as usize), Ordering::SeqCst);
+}
+
 extern "C" {
     static mut PsPrioritySeparation: ULONG;
 }
@@ -465,6 +482,13 @@ unsafe fn KiDeferredReadyThreadImpl(Thread: PKTHREAD) {
 
             *kt_State(Thread) = Standby;
             (*Prcb).NextThread = Thread;
+
+            // Claiming an idle processor: it is no longer idle for the next
+            // readier's KiSelectNextProcessor.
+            #[cfg(feature = "smp")]
+            if NextThread == (*Prcb).IdleThread {
+                ki_idle_summary_clear((*Prcb).SetMember);
+            }
 
             KiReleasePrcbLock(Prcb);
 
