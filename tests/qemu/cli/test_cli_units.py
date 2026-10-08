@@ -8952,6 +8952,27 @@ def test_an_assertion_glued_onto_the_previous_line_is_still_seen():
     }
 
 
+def test_a_cpp_kmtest_keeps_its_assertion_identities():
+    """Upstream made ObTypes a .cpp (synced 2026-09-21). A `.c`-only pattern kept
+    parsing its counts but dropped all 12 of its failing identities, so the
+    ratchet stopped seeing which ObTypes assertions failed. Verbatim lines from
+    an arm64 sweep, 2026-10-08."""
+    P = _parser()
+    log = _SWEEP.replace(
+        "IoDeviceObject_drv.c:206: Test failed:",
+        "ObTypes.cpp:269: Test failed: ObjectType->TypeInfo.ValidAccessMask = 0x001f0003,"
+        " expected 0x001f000f\nObTypes.cpp:80: Test failed: ObOpenObjectByName failed for"
+        " '\\ObjectTypes\\FilterConnectionPort': c0000034\nIoDeviceObject_drv.c:206: Test failed:",
+    )
+    results, _, _ = P.parse(log)
+    assert results[0]["asserts"] == {
+        "IoDeviceObject_drv.c:198",
+        "IoDeviceObject_drv.c:206",
+        "ObTypes.cpp:269",
+        "ObTypes.cpp:80",
+    }
+
+
 def _round_trip(P, text):
     import tempfile
 

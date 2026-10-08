@@ -45,6 +45,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import re
 import signal
@@ -139,6 +140,29 @@ def main(argv: list[str]) -> int:
     ap.add_argument("--auto", action="store_true", help="probe every quarantined test")
     ap.add_argument("--max-boots", type=int, default=8)
     args = ap.parse_args(argv)
+
+    # One probe per worktree at a time, whatever the arch. Every probe boot rebuilds
+    # the media, and the build's freshness guard counts ALL THREE sweep lists as build
+    # source: a second probe rewriting its own arch's list makes the first one's next
+    # build fail BUILD_INCOMPLETE ("build source changed since build"). Three parallel
+    # --auto probes (2026-10-08) cost arm64 its whole run that way.
+    git_dir = subprocess.run(
+        ["git", "rev-parse", "--absolute-git-dir"],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    # Held for the life of the process, so no context manager.
+    lock = open(Path(git_dir) / "conformance-probe.lock", "w")  # noqa: SIM115
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        sys.exit(
+            "[probe] another conformance_probe is running in this worktree; probes "
+            "cannot share one (each rewrites a sweep list the other's build checks). "
+            "Run the arches one after another."
+        )
 
     path = LIST.with_name(LIST.name.format(arch=args.arch))
     original = path.read_text()

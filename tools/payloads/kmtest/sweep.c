@@ -21,20 +21,25 @@ ULONG __cdecl DbgPrint(const char *Format, ...);
 
 #define PER_TEST_TIMEOUT_MS (180u * 1000u)
 
-static int setup_running(void)
+static DWORD setup_pid(void)
 {
     PROCESSENTRY32 pe = { sizeof pe };
     HANDLE snap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    int found = 0;
+    DWORD pid = 0;
     if (snap == INVALID_HANDLE_VALUE)
         return 0;
     if (Process32First(snap, &pe))
         do {
             if (!_stricmp(pe.szExeFile, "setup.exe"))
-                found = 1;
-        } while (!found && Process32Next(snap, &pe));
+                pid = pe.th32ProcessID;
+        } while (!pid && Process32Next(snap, &pe));
     CloseHandle(snap);
-    return found;
+    return pid;
+}
+
+static int setup_running(void)
+{
+    return setup_pid() != 0;
 }
 
 static DWORD plugplay_state(void)
@@ -75,6 +80,35 @@ static void wait_for_pnp_quiet(void)
     DWORD w = wait_pnp(180000);
     DbgPrint("[KMTEST-SWEEP] PnP installs %s (waited ~%lus)\n",
              w == WAIT_OBJECT_0 ? "quiet" : "STILL PENDING, proceeding",
+             (GetTickCount() - t0) / 1000);
+}
+
+/* PnP going quiet is not setup finishing: InstallLiveCD then starts the network and registers
+ * every COM component, another 33-42s of CPU-bound user mode at priority 8. Inside that burst
+ * ExFastMutex lost all three of its 50 ms "new thread blocks on the mutex" races on every arm64
+ * sweep: the CPU was never idle, and the thread that ran instead of the Ready test thread was
+ * setup.exe's (measured per-thread, [FMUTEX-RAN]). So wait for setup.exe itself to exit. */
+static void wait_for_setup_exit(void)
+{
+    DWORD pid = setup_pid(), t0 = GetTickCount(), w;
+    HANDLE h;
+
+    if (!pid)
+    {
+        DbgPrint("[KMTEST-SWEEP] setup not running - no setup gate\n");
+        return;
+    }
+    h = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (!h)
+    {
+        DbgPrint("[KMTEST-SWEEP] WARN: cannot open setup.exe pid %lu (err %lu) - no setup gate\n",
+                 pid, GetLastError());
+        return;
+    }
+    w = WaitForSingleObject(h, 300000);
+    CloseHandle(h);
+    DbgPrint("[KMTEST-SWEEP] setup.exe %s (waited ~%lus)\n",
+             w == WAIT_OBJECT_0 ? "exited" : "STILL RUNNING, proceeding",
              (GetTickCount() - t0) / 1000);
 }
 
@@ -151,6 +185,7 @@ int main(void)
     }
 
     wait_for_pnp_quiet();
+    wait_for_setup_exit();
 
     DbgPrint("[KMTEST-SWEEP] start list=%s\n", listpath);
 

@@ -5324,6 +5324,31 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     `20261004-073303-11khe67v`, `20261004-171841-f8gc6gdx`. Failing asserts are the
     timeout/thread ones (`KeEvent.c:201/205/207/223`). Counted with the 2026-10-05 parser,
     which no longer mistakes serial interleaving for regressions.
+    **Likely the second load source (2026-10-08, inferred, NOT yet measured for KeEvent):**
+    livecd setup.exe's COM registration burst, which runs after PnP goes quiet and so
+    overlapped the sweep despite `QUIET`. It is proven for arm64 ExFastMutex (next bullet).
+    kmtest-sweep now waits for setup.exe to exit. If KeEvent drops again in a sweep whose
+    serial shows `[KMTEST-SWEEP] setup.exe exited`, this hypothesis is wrong.
+  - **arm64 `ExFastMutex` floor drift (204 -> 202/203, red for every lane on 2026-10-07) —
+    ROOT-CAUSED and FIXED 2026-10-08, now 219/0.** Two causes. (1) A real HAL bug:
+    `ExAcquireFastMutex`/`ExTryToAcquireFastMutex` (hal-rust arm64) stored `OldIrql` before
+    owning the mutex, so a blocked waiter or a failed try overwrote the holder's saved IRQL
+    and the release lowered to the wrong level. That was the "real arm64 divergence" fail=10
+    noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
+    test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
+    paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — OPEN, intermittent, all three arches,
+    since 2026-10-06.** About 14 archived hits: `fails/auto/*-conformance-*-A_bugcheck_0x0000001E`
+    whose last `[KMTEST:BEGIN]` is RtlRangeList, plus 1 of 5 amd64 sweeps on 2026-10-08. It kills
+    the sweep, so every test after it loses its verdict. amd64 (`20261008-024024-fz8qe3my`): the
+    exception address is `ntoskrnl+0x185E58`, inside `fsrtl_rust::oplock::
+    FsRtlAcknowledgeOplockBreak`, on its NULL-oplock path. The same offset appears across four
+    master builds. The index matches the PE exports. The faulting thread's stack holds the
+    test's own data (`MyUserData2`, its `ok()` strings), so it is the test thread, not a
+    bystander. But nothing the test calls reaches oplock code: its exports resolve correctly,
+    and `RtlFindRange`/`RtlIsRangeAvailable` match the NDK signatures. Next step is dynamic:
+    loop RtlRangeList alone (`conformance_probe --candidates RtlRangeList`, repeated), then
+    `--tripwire SPECIALPOOL=*` or a GDB break on that PC, and get a real backtrace.
   - **`NpfsConnect` on arm64 — an UNDOCUMENTED intermittent, found 2026-09-13.** Did not recur
     in the 9-sweep soak, so it is rarer than the other two. `pass 679 -> 678, fail 0 -> 1` on
     `20260913-022245-fw6sw4_g-conformance-arm64`.

@@ -30,6 +30,17 @@
 #     waiter behind. :298/:304 were already banked failures on master; with more
 #     running in the guest, WHICH step loses the race now varies from sweep to sweep
 #     (six full-media sweeps: 204-208, a different subset each time).
+# 2026-10-08, by HAND (rows only, per-arch samples all identical): banked a month of
+#   unbanked gains -- ExHardError 24/6 -> 30/0, IoVolume 1 -> 7 (ExResource stays 845 on purpose,
+#   c92ea2a: 879 minus the 34 checks its race can cost),
+#   ObSecurity 694 -> 695, RtlRangeList -> 5xx and the rest below. And ObTypes is now a
+#   .cpp (upstream, synced 2026-09-21): the parser only matched `<file>.c:<line>`, so its
+#   identities had silently vanished from every sweep since. The row now carries the
+#   ObTypes.cpp identities -- a rename plus two newly-passing asserts, not new failures.
+#   ExFastMutex 204/10 -> 219/0, and its :283-:315 bistable marks are retired: :57-:133
+#   and :283/:304 were a real HAL bug (ExAcquire/ExTryToAcquireFastMutex stored OldIrql
+#   before owning the mutex), and :294/:298 were setup.exe's COM registration burst
+#   starving the 50 ms races; kmtest-sweep now waits for setup.exe to exit.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -50,19 +61,8 @@ ExDoubleList OK pass=130 fail=16 skip=0 exit=0
     assert ExDoubleList.c:90
     assert ExDoubleList.c:91
     assert ExDoubleList.c:99
-ExFastMutex OK pass=204 fail=10 skip=2 exit=0
-    assert ExFastMutex.c:133
-    assert? ExFastMutex.c:283
-    assert? ExFastMutex.c:294
-    assert? ExFastMutex.c:298
-    assert? ExFastMutex.c:304
-    assert? ExFastMutex.c:310
-    assert? ExFastMutex.c:315
-    assert ExFastMutex.c:57
-    assert ExFastMutex.c:59
-    assert ExFastMutex.c:76
-    assert ExFastMutex.c:78
-ExHardError OK pass=24 fail=6 skip=0 exit=0
+ExFastMutex OK pass=219 fail=0 skip=2 exit=0
+ExHardError OK pass=30 fail=0 skip=0 exit=0
 ExInterlocked OK pass=180 fail=0 skip=0 exit=0
 ExPools OK pass=17 fail=1 skip=0 exit=0
     assert ExPools.c:210
@@ -107,19 +107,26 @@ HalPortIo NO-END pass=0 fail=0 skip=0 exit=1 errors=1
 HalSystemInfo OK pass=0 fail=2 skip=1 exit=0
     assert HalSystemInfo.c:52
     assert HalSystemInfo.c:53
+IoCreateFile OK pass=106 fail=7 skip=1 exit=0
+    assert IoCreateFile.c:124
+    assert IoCreateFile.c:187
+    assert IoCreateFile.c:255
+    assert IoCreateFile.c:316
+    assert IoCreateFile.c:566
+    assert IoCreateFile_user.c:31
+    assert IoCreateFile_user.c:41
 IoDeviceInterface OK pass=2 fail=0 skip=40 exit=0
 IoEvent OK pass=92 fail=0 skip=0 exit=0
-IoFilesystem OK pass=318 fail=4 skip=1 exit=0
+IoFilesystem OK pass=358 fail=3 skip=0 exit=0
     assert IoFilesystem.c:198
     assert IoFilesystem.c:242
     assert IoFilesystem.c:251
-    assert IoFilesystem.c:760
 IoInterrupt OK pass=1093 fail=2 skip=0 exit=0
     assert IoInterrupt.c:129
     assert IoInterrupt.c:130
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
-IoVolume OK pass=1 fail=0 skip=0 exit=0
+IoVolume OK pass=7 fail=0 skip=0 exit=0
 KdSystemDebugControl OK pass=40 fail=2 skip=0 exit=0
     assert KdSystemDebugControl.c:108
     assert KdSystemDebugControl.c:135
@@ -203,24 +210,22 @@ NpfsVolumeInfo OK pass=63 fail=0 skip=0 exit=0
 ObHandle OK pass=351 fail=0 skip=0 exit=0
 ObQuery OK pass=19 fail=0 skip=0 exit=0
 ObReference OK pass=2205 fail=0 skip=0 exit=0
-ObSecurity OK pass=694 fail=15 skip=0 exit=0
+ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
-    assert ObSecurity.c:189
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=765 fail=17 skip=4 exit=0
-    assert ObTypes.c:198
-    assert ObTypes.c:202
-    assert ObTypes.c:209
-    assert ObTypes.c:212
-    assert ObTypes.c:214
-    assert ObTypes.c:219
-    assert ObTypes.c:221
-    assert ObTypes.c:231
-    assert ObTypes.c:232
-    assert ObTypes.c:233
-    assert ObTypes.c:27
-    assert ObTypes.c:28
+ObTypes OK pass=767 fail=15 skip=4 exit=0
+    assert ObTypes.cpp:269
+    assert ObTypes.cpp:276
+    assert ObTypes.cpp:279
+    assert ObTypes.cpp:281
+    assert ObTypes.cpp:288
+    assert ObTypes.cpp:290
+    assert ObTypes.cpp:301
+    assert ObTypes.cpp:302
+    assert ObTypes.cpp:303
+    assert ObTypes.cpp:80
+    assert ObTypes.cpp:81
 PsNotify OK pass=24 fail=0 skip=0 exit=0
 PsQuota OK pass=12 fail=0 skip=0 exit=0
 RtlAvlTreeKM OK pass=139 fail=0 skip=0 exit=0
@@ -231,7 +236,7 @@ RtlMemoryKM OK pass=1081 fail=3 skip=1 exit=0
     assert RtlMemory.c:235
     assert RtlMemory.c:254
     assert RtlMemory.c:277
-RtlRangeList OK pass=240 fail=0 skip=0 exit=0
+RtlRangeList OK pass=538 fail=0 skip=0 exit=0
 RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTreeKM OK pass=139 fail=0 skip=0 exit=0
 RtlStackKM OK pass=13 fail=27 skip=0 exit=0
@@ -264,9 +269,7 @@ RtlStackKM OK pass=13 fail=27 skip=0 exit=0
     assert RtlStack.c:99
 RtlStrSafeKM OK pass=33 fail=0 skip=0 exit=0
 RtlUnicodeStringKM OK pass=16 fail=0 skip=0 exit=0
-SeInheritance OK pass=704431 fail=16 skip=0 exit=0
-    assert SeInheritance.c:486
-    assert SeInheritance.c:512
+SeInheritance OK pass=704433 fail=14 skip=0 exit=0
     assert SeInheritance.c:532
     assert SeInheritance.c:556
     assert SeInheritance.c:801
@@ -274,6 +277,24 @@ SeInheritance OK pass=704431 fail=16 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
+TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
+    assert TcpIp_user.c:117
+    assert connect.c:222
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
+ZwAllocateVirtualMemory OK pass=1252 fail=14 skip=0 exit=0
+    assert ZwAllocateVirtualMemory.c:126
+    assert ZwAllocateVirtualMemory.c:128
+    assert ZwAllocateVirtualMemory.c:129
+    assert ZwAllocateVirtualMemory.c:138
+    assert ZwAllocateVirtualMemory.c:147
+    assert ZwAllocateVirtualMemory.c:248
+    assert ZwAllocateVirtualMemory.c:251
+    assert ZwAllocateVirtualMemory.c:505
+    assert ZwAllocateVirtualMemory.c:509
 ZwCreateSection OK pass=281 fail=48 skip=1 exit=0
     assert ZwCreateSection.c:102
     assert ZwCreateSection.c:103
@@ -364,7 +385,7 @@ IoReadWrite OK pass=16192 fail=151 skip=0 exit=0
     assert IoReadWrite_user.c:83
     assert IoReadWrite_user.c:84
     assert IoReadWrite_user.c:85
-NtCreateSection OK pass=81 fail=48 skip=0 exit=0
+NtCreateSection OK pass=138 fail=38 skip=0 exit=0
     assert NtCreateSection_drv.c:477
     assert NtCreateSection_user.c:110
     assert NtCreateSection_user.c:116
@@ -376,40 +397,27 @@ NtCreateSection OK pass=81 fail=48 skip=0 exit=0
     assert NtCreateSection_user.c:150
     assert NtCreateSection_user.c:153
     assert NtCreateSection_user.c:155
-    assert NtCreateSection_user.c:177
-    assert NtCreateSection_user.c:182
-    assert NtCreateSection_user.c:188
-    assert NtCreateSection_user.c:193
-    assert NtCreateSection_user.c:196
-    assert NtCreateSection_user.c:198
-    assert NtCreateSection_user.c:200
-    assert NtCreateSection_user.c:206
     assert NtCreateSection_user.c:211
     assert NtCreateSection_user.c:217
     assert NtCreateSection_user.c:222
     assert NtCreateSection_user.c:225
     assert NtCreateSection_user.c:227
-    assert NtCreateSection_user.c:229
     assert NtCreateSection_user.c:269
     assert NtCreateSection_user.c:275
     assert NtCreateSection_user.c:280
     assert NtCreateSection_user.c:283
     assert NtCreateSection_user.c:285
     assert NtCreateSection_user.c:38
-    assert NtCreateSection_user.c:47
     assert NtCreateSection_user.c:52
     assert NtCreateSection_user.c:58
     assert NtCreateSection_user.c:63
     assert NtCreateSection_user.c:66
     assert NtCreateSection_user.c:68
-    assert NtCreateSection_user.c:70
-    assert NtCreateSection_user.c:76
     assert NtCreateSection_user.c:81
     assert NtCreateSection_user.c:87
     assert NtCreateSection_user.c:92
     assert NtCreateSection_user.c:95
     assert NtCreateSection_user.c:97
-    assert NtCreateSection_user.c:99
 NtSystemDebugControl OK pass=22 fail=20 skip=0 exit=0
     assert NtSystemDebugControl.c:118
     assert NtSystemDebugControl.c:165
@@ -423,7 +431,7 @@ RtlMemory OK pass=1081 fail=3 skip=1 exit=0
     assert RtlMemory.c:277
 RtlRegistry OK pass=210 fail=0 skip=0 exit=0
 RtlSplayTree OK pass=139 fail=0 skip=0 exit=0
-RtlStack OK pass=15 fail=25 skip=0 exit=0
+RtlStack OK pass=16 fail=24 skip=0 exit=0
     assert RtlStack.c:100
     assert RtlStack.c:101
     assert RtlStack.c:105
@@ -437,7 +445,6 @@ RtlStack OK pass=15 fail=25 skip=0 exit=0
     assert RtlStack.c:46
     assert RtlStack.c:47
     assert RtlStack.c:48
-    assert RtlStack.c:52
     assert RtlStack.c:53
     assert RtlStack.c:55
     assert RtlStack.c:56
