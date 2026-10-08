@@ -15,7 +15,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn ASSERT_IRP_CONTEXT(p: PIRP_CONTEXT);

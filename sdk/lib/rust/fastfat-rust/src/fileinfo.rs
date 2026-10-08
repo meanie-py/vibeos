@@ -203,8 +203,6 @@ pub const BugCheckFileId: u32 = FAT_BUG_CHECK_FILEINFO;
 pub const Dbg: u32 = DEBUG_TRACE_FILEINFO;
 
 // ==== recovered from stitcher-drop: 01_FatQueryBasicInfo.rs ====
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryBasicInfo(
@@ -265,8 +263,6 @@ pub unsafe extern "system" fn FatQueryBasicInfo(
 const FCB_STATE_DELETE_ON_CLOSE: u32 = 1; // placeholder
 const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 
-extern "system" {
-}
 
 unsafe extern "system" fn FatQueryStandardInfo(
     IrpContext: *mut IRP_CONTEXT,
@@ -312,8 +308,6 @@ unsafe extern "system" fn FatQueryStandardInfo(
 }
 
 // ==== recovered from stitcher-drop: 03_FatQueryInternalInfo.rs ====
-extern "system" {
-}
 
 
 #[no_mangle]
@@ -342,8 +336,6 @@ pub unsafe extern "system" fn FatQueryInternalInfo(
 
 // ==== recovered from stitcher-drop: 04_FatQueryEaInfo.rs ====
 // Forward declarations for unknown functions
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryEaInfo(
@@ -382,8 +374,6 @@ pub unsafe extern "system" fn FatQueryEaInfo(
 }
 
 // ==== recovered from stitcher-drop: 05_FatQueryPositionInfo.rs ====
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryPositionInfo(
@@ -404,8 +394,6 @@ pub unsafe extern "system" fn FatQueryPositionInfo(
 // ==== recovered from stitcher-drop: 06_FatQueryNameInfo.rs ====
 const CCB_FLAG_OPENED_BY_SHORTNAME: u32 = 0x0800; // placeholder for the actual flag value
 
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatQueryNameInfo(
@@ -516,8 +504,6 @@ pub unsafe extern "system" fn FatQueryNameInfo(
 
 
 // ==== recovered from stitcher-drop: 07_FatQueryShortNameInfo.rs ====
-extern "system" {
-}
 
 unsafe extern "system" fn FatQueryShortNameInfo(
     IrpContext: *mut IRP_CONTEXT,
@@ -573,8 +559,6 @@ unsafe extern "system" fn FatQueryShortNameInfo(
 
 // ==== recovered from stitcher-drop: 08_FatQueryNetworkInfo.rs ====
 // Forward declarations for functions/globals/constants not in the import list
-extern "system" {
-}
 
 const FCB_STATE_TEMPORARY: u32 = 0x20;
 
@@ -639,8 +623,6 @@ pub unsafe extern "system" fn FatQueryNetworkInfo(
 
 // ==== recovered from stitcher-drop: 09_FatSetBasicInfo.rs ====
 // Forward declarations for unknown extern functions
-extern "system" {
-}
 
 // Constants for flags and attributes (guessed standard values)
 const CCB_FLAG_USER_SET_CREATION: u32 = 0x40;
@@ -658,8 +640,6 @@ const TWO_SECONDS: i64 = 20000000;
 const ALMOST_TWO_SECONDS: i64 = TWO_SECONDS - 1;
 
 // Global references (assumed extern)
-extern "system" {
-}
 
 unsafe extern "system" fn FatSetBasicInfo(
     IrpContext: *mut IRP_CONTEXT,
@@ -988,8 +968,6 @@ unsafe extern "system" fn FatSetBasicInfo(
 }
 
 // ==== recovered from stitcher-drop: 10_FatSetDispositionInfo.rs ====
-extern "system" {
-}
 
 const FILE_FLOPPY_DISKETTE: u32 = 0x04;
 const FAT_LARGE_ZERO: LARGE_INTEGER = LARGE_INTEGER { QuadPart: 0 };
@@ -1162,8 +1140,6 @@ pub unsafe extern "system" fn FatSetDispositionInfo(
 }
 
 // ==== recovered from stitcher-drop: 11_FatSetPositionInfo.rs ====
-extern "system" {
-}
 
 const FO_NO_INTERMEDIATE_BUFFERING: u32 = 8;
 
@@ -1224,8 +1200,6 @@ pub unsafe extern "system" fn FatSetPositionInfo(
 }
 
 // ==== recovered from stitcher-drop: 12_FatSetAllocationInfo.rs ====
-extern "system" {
-}
 
 const STATUS_PURGE_FAILED: i32 = 0xC0000435_u32 as i32; // placeholder
 const STATUS_USER_MAPPED_FILE: i32 = 0xC0000243_u32 as i32; // placeholder
@@ -1590,8 +1564,6 @@ pub unsafe extern "system" fn FatSetValidDataLengthInfo(
 }
 
 // ==== recovered from stitcher-drop: 14_FatRenameEAs.rs ====
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn FatRenameEAs(
@@ -3304,7 +3276,6 @@ unsafe extern "system" fn FatDeleteFile(
 ) {
     // Forward declarations for unknown gap functions/macros
     extern "system" {
-        fn PAGED_CODE();
         fn FatBugCheck(a: u32, b: u32, c: u32);
         fn FatCreateFcb(
             IrpContext: *mut IRP_CONTEXT,
@@ -3346,7 +3317,7 @@ unsafe extern "system" fn FatDeleteFile(
     const FCB_STATE_DELETE_ON_CLOSE: u32 = 0x01;
     const FAT_NTC_FCB: u32 = 0x0502;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut Links: *mut LIST_ENTRY = (*TargetDcb).Specific.Dcb.as_mut().ParentDcbQueue.Flink;
     let queue_end = core::ptr::addr_of_mut!((*TargetDcb).Specific.Dcb.as_mut().ParentDcbQueue) as *mut LIST_ENTRY;

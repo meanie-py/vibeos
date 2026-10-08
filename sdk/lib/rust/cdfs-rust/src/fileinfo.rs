@@ -67,7 +67,6 @@ extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
@@ -378,7 +377,7 @@ pub unsafe extern "C" fn CdCommonSetInfo(
 
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     TypeOfOpen = CdDecodeFileObject(IrpContext, (*IrpSp).FileObject, &mut Fcb, &mut Ccb);
 
@@ -704,7 +703,7 @@ pub unsafe extern "C" fn CdQueryEaInfo(
     Buffer: *mut FILE_EA_INFORMATION,
     Length: *mut u32,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
     UNREFERENCED_PARAMETER(Fcb as *mut core::ffi::c_void);
     (*Buffer).EaSize = 0;
@@ -730,7 +729,7 @@ pub unsafe extern "C" fn CdQueryNameInfo(
 ) -> i32 {
     unsafe {
         // PAGED_CODE() macro
-        PAGED_CODE();
+        PAGED_CODE!();
 
         // UNREFERENCED_PARAMETER(IrpContext)
         let _ = irp_context;
@@ -786,7 +785,7 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
     let mut ShortNameBuffer: [u16; 12] = [0; 12]; // BYTE_COUNT_8_DOT_3 / 2
     let mut ShortNameLength: u16 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     (*Buffer).FileNameLength = 0;
 

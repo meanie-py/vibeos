@@ -2291,8 +2291,9 @@ unsafe fn DataCache_Draw(
         return E_INVALIDARG;
     }
 
-    // Hand-rolled walk (not LIST_FOR_EACH_ENTRY!): the C body uses `continue`, and the
-    // macro's link-advance sits AFTER the body, so a `continue` there would spin forever.
+    // Hand-rolled walk (not LIST_FOR_EACH_ENTRY!), from when the macro's link-advance sat
+    // AFTER the body and the C body's `continue` would have spun forever there. The macro now
+    // advances on `continue`; this walk advances before each one by hand.
     let head = addr_of_mut!((*This).cache_list);
     let mut current = (*head).next;
 

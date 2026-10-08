@@ -48,7 +48,6 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
 extern "system" {
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
-    fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(_: *const core::ffi::c_void);
     fn NT_ASSERT(cond: i32);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
@@ -195,14 +194,11 @@ const FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64 = -1;
 // ==== recovered (stitcher-drop): FatFreeStringBuffer ====
 #[no_mangle]
 pub unsafe extern "system" fn FatFreeStringBuffer(String: *mut core::ffi::c_void) {
-    extern "system" {
-        fn PAGED_CODE();
-    }
     let mut High: usize = 0;
     let mut Low: usize = 0;
     let LocalString: *mut STRING = String as *mut STRING;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if !(*LocalString).Buffer.is_null() {
         IoGetStackLimits(&mut Low as *mut usize as *mut _, &mut High as *mut usize as *mut _);
@@ -652,7 +648,7 @@ pub unsafe extern "system" fn FatDeleteVcb(
 ) {
     let mut Fcb: PFCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1i32, Dbg, b"FatDeleteVcb, Vcb = %p\n\0".as_ptr() as *const i8, Vcb);
 
@@ -1452,7 +1448,7 @@ pub unsafe extern "system" fn FatCreateCcb(
 
     let Ccb: *mut CCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -1481,7 +1477,7 @@ pub unsafe extern "system" fn FatCreateCcb(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
-    PAGED_CODE();
+    PAGED_CODE!();
     if ((*Ccb).Flags & CCB_FLAG_FREE_UNICODE) != 0 {
         let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
         NT_ASSERT(if (*ccb_inner).UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
@@ -1675,7 +1671,7 @@ pub unsafe extern "system" fn FatCreateIrpContext(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONTEXT) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatDeleteIrpContext, IrpContext = %p\n\0".as_ptr() as *const i8, IrpContext);
 
@@ -1706,7 +1702,7 @@ pub unsafe extern "system" fn FatGetNextFcbBottomUp(
 ) -> *mut FCB {
     let mut NextFcb: *mut FCB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(
@@ -1741,7 +1737,7 @@ pub unsafe extern "system" fn FatGetNextFcbTopDown(
     mut Fcb: *mut FCB,
     TerminationFcb: *mut FCB,
 ) -> *mut FCB {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
 
     let valid = if FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) != 0
@@ -1972,7 +1968,7 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
     let mut LongOemName: *mut OEM_STRING = null_mut();
     let mut LongUniName: *mut _UNICODE_STRING = null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT((((*ShortName).Buffer).is_null() as u8) as i32);
 
@@ -2153,7 +2149,6 @@ pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
 ) {
     // Gap function declarations
     unsafe extern "system" {
-        fn PAGED_CODE();
         fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
         fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
         fn FatReleaseDirectoryFileMutex(Vcb: *mut VCB);
@@ -2163,7 +2158,7 @@ pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
         static FCB_LOOKUP_ALLOCATIONSIZE_HINT: i64;
     }
 
-    PAGED_CODE();
+    PAGED_CODE!();
     // Macro UNREFERENCED_PARAMETER(IrpContext)
     let _ = IrpContext;
 
@@ -2266,7 +2261,7 @@ pub unsafe extern "system" fn FatIsHandleCountZero(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) -> u8 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut Fcb: *mut FCB;
     Fcb = (*Vcb).RootDcb;

@@ -115,7 +115,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         // FAST_FAIL_FATAL_APP_EXIT
         core::arch::asm!("brk #0xf003", in("x0") 7u64, options(noreturn));
     }
-    let _ = info;
     #[cfg(not(target_arch = "aarch64"))]
     loop {}
 }

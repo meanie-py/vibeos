@@ -10,10 +10,6 @@ use core::ffi::c_void;
 use crate::types::{SCSI_PHYSICAL_ADDRESS};
 
 // NTAPI = stdcall on i386 — extern "system" resolves per-arch.
-extern "system" {
-}
-extern "system" {
-}
 
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortConvertUlongToPhysicalAddress(

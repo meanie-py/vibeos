@@ -22,7 +22,7 @@
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CELL_DATA, CmpAllocate, CmpFree, CmpLazyFlush, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, HV_HIVE_CELL_PAIR, PHV_TRACK_CELL_REF, HV_TRACK_CELL_REF, RtlSetBits, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE};
-use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, PAGED_CODE, HCELL_NIL, HBLOCK_SIZE};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HvGetCellBlock, HCELL_NIL, HBLOCK_SIZE};
 use core::ffi::c_void;
 use crate::hivelock::{HvpLockHiveExclusive, HvpLockHiveShared};
 
@@ -486,7 +486,7 @@ pub unsafe extern "system" fn HvTrackCellRef(
     const TAG_CM: u32 = u32::from_be_bytes(*b"  MC");
     const HCELL_NIL: HCELL_INDEX = 0xFFFFFFFF;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ntkrnl_sys::ASSERT!(!CellRef.is_null());
     ntkrnl_sys::ASSERT!(!Hive.is_null());

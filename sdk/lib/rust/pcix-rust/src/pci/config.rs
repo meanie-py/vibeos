@@ -33,8 +33,6 @@ extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
 // RtlAssert is NTAPI (stdcall on i386, _RtlAssert@16).
-extern "system" {
-}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

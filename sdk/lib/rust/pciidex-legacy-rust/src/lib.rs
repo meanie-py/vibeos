@@ -3,6 +3,13 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(clippy::all)]
 
+// PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
+// a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
+// optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
+macro_rules! PAGED_CODE {
+    () => {};
+}
+
 // pciidex.sys — Rust translation of the PCI IDE bus extension (drivers/storage/ide/
 // pciidex). staticlib -> libpciidex_rust.a, cohab-linked into the cmake pciidex.sys with
 // the 5 .c commented out + spec2def kept. EXPORT driver: PciIdeXInitialize/GetBusData/

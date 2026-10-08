@@ -150,12 +150,21 @@ macro_rules! LIST_FOR_EACH_ENTRY {
     ($elem:ident, $list:expr, $ty:ty, $field:ident, $body:block) => {{
         let head: *mut $crate::wine_list::list = $list;
         let mut cur = (*head).next;
-        while cur != head {
+        // The C `for` increment runs on `continue` as well, so it leads the loop instead of
+        // trailing `$body`: after the body, a `continue` skipped it and re-ran the same node.
+        let mut advance = false;
+        loop {
+            if advance {
+                cur = (*cur).next;
+            }
+            advance = true;
+            if cur == head {
+                break;
+            }
             #[allow(unused_variables)]
             let $elem: *mut $ty =
                 $crate::wine_list::list_entry::<$ty>(cur, core::mem::offset_of!($ty, $field));
             $body
-            cur = (*cur).next;
         }
     }};
 }
@@ -181,8 +190,10 @@ macro_rules! LIST_FOR_EACH_ENTRY_SAFE {
             #[allow(unused_variables)]
             let $elem: *mut $ty =
                 $crate::wine_list::list_entry::<$ty>(cur, core::mem::offset_of!($ty, $field));
-            $body
+            // Advance BEFORE the body (next is already cached), so a `continue` in it cannot
+            // skip the step and re-run the same node.
             cur = next;
+            $body
         }
     }};
 }

@@ -420,8 +420,6 @@ pub unsafe fn SafeZeroMemory(IrpContext: *mut IRP_CONTEXT, At: *mut core::ffi::c
 use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
     PSINGLE_LIST_ENTRY, _EVENT_TYPE_SynchronizationEvent, ULONG_PTR};
 
-// ntddk.h PAGED_CODE() — retail no-op (paging-IRQL assert only under DBG).
-#[no_mangle] pub extern "C" fn PAGED_CODE() {}
 
 // wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
 #[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
