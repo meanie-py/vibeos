@@ -13,7 +13,7 @@ mkdir -p "$PI4_BENCH"
 live() {
     local p
     p=$(cat "$PIDF" 2>/dev/null) || return 1
-    tr '\0' '\n' <"/proc/$p/cmdline" 2>/dev/null | grep -qx "$PI4_PICO_HOST" && echo "$p"
+    { tr '\0' '\n' <"/proc/$p/cmdline"; } 2>/dev/null | grep -qx "$PI4_PICO_HOST" && echo "$p"
 }
 
 case "${1:-status}" in
@@ -26,7 +26,14 @@ case "${1:-status}" in
         p=$(live) || { echo "pi5-serial: listener died; see $PI4_BENCH/pico-serial.log" >&2; exit 1; }
         echo "serial listener: $p ($PI4_PICO_HOST)"
         ;;
-    down) if p=$(live); then kill "$p" && echo "stopped serial listener ($p)"; fi ;;
+    down)
+        if p=$(live); then
+            kill "$p"
+            # Wait for it to exit, or a following `up` finds it still live and keeps it.
+            for _ in $(seq 50); do kill -0 "$p" 2>/dev/null || break; sleep 0.1; done
+            echo "stopped serial listener ($p)"
+        fi
+        ;;
     status)
         if p=$(live); then echo "serial listener: $p ($PI4_PICO_HOST)"; else echo "serial listener: down"; fi
         cat "$PI4_BENCH/serial-current.json" 2>/dev/null; echo

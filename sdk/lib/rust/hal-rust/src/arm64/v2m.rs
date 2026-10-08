@@ -5,8 +5,7 @@
 //! triggered. Each frame owns a contiguous run of SPIs, advertised either in the
 //! ACPI MADT's GIC MSI Frame entry or in the frame's own MSI_TYPER register. QEMU's
 //! virt machine has one frame when it runs a GICv2 (ours does). The Pi 4's GIC-400
-//! has none, and Graviton's GICv3 delivers MSIs through an ITS instead, a separate
-//! backend still owed.
+//! has none, and a GICv3 (Graviton's) delivers MSIs through an ITS instead (its.rs).
 //!
 //! Vectors are handed out first-come and never returned: the PnP manager does not
 //! release a device's message resources yet, so neither does this.
@@ -137,8 +136,8 @@ pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, ddk::KIRQL, ddk::
     Some((SPI_BASE.load(Ordering::Relaxed) + n, super::clock::DEVICE_IRQL, 1))
 }
 
-/// MSI_SETSPI_NS takes the INTID itself as the data.
-pub(crate) unsafe fn message_target(intid: u32) -> Option<(u64, u32)> {
+/// MSI_SETSPI_NS takes the INTID itself as the data, whoever writes it.
+pub(crate) unsafe fn message_target(intid: u32, _requester: u32) -> Option<(u64, u32)> {
     let pa = probe()?;
     owns(intid).then_some((pa + MSI_SETSPI_NS as u64, intid))
 }

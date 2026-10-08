@@ -32,14 +32,14 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
         DPRINT!(b"Clean()\n\0".as_ptr() as *const i8);
 
         if CurrentDisk.is_null() {
-            ConResPuts(StdOut, (IDS_SELECT_NO_DISK) as UINT);
+            ConResPuts(StdOut, IDS_SELECT_NO_DISK);
             return EXIT_SUCCESS;
         }
 
         if (((*CurrentDisk).BiosFound) as i32 == TRUE) &&
             ((*CurrentDisk).BiosDiskNumber == 0)
         {
-            ConResPuts(StdOut, (IDS_CLEAN_SYSTEM) as UINT);
+            ConResPuts(StdOut, IDS_CLEAN_SYSTEM);
             return EXIT_SUCCESS;
         }
 
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                 b"Failed to open the disk! (Status 0x%08lx)\n\0".as_ptr() as *const i8,
                 Status,
             );
-            ConResPuts(StdOut, (IDS_CLEAN_FAIL) as UINT);
+            ConResPuts(StdOut, IDS_CLEAN_FAIL);
             break 'done;
         }
 
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                         b"Failed to write MB! (Status 0x%08lx)\n\0".as_ptr() as *const i8,
                         Status,
                     );
-                    ConResPuts(StdOut, (IDS_CLEAN_FAIL) as UINT);
+                    ConResPuts(StdOut, IDS_CLEAN_FAIL);
                     break 'done;
                 }
 
@@ -226,7 +226,7 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                         b"Failed to write the last part! (Status 0x%08lx)\n\0".as_ptr() as *const i8,
                         Status,
                     );
-                    ConResPuts(StdOut, (IDS_CLEAN_FAIL) as UINT);
+                    ConResPuts(StdOut, IDS_CLEAN_FAIL);
                     break 'done;
                 }
             }
@@ -250,7 +250,7 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                     b"Failed to write the first MB! (Status 0x%08lx)\n\0".as_ptr() as *const i8,
                     Status,
                 );
-                ConResPuts(StdOut, (IDS_CLEAN_FAIL) as UINT);
+                ConResPuts(StdOut, IDS_CLEAN_FAIL);
                 break 'done;
             }
 
@@ -275,12 +275,12 @@ pub unsafe extern "C" fn clean_main(argc: INT, argv: *mut PWSTR) -> EXIT_CODE {
                     b"Failed to write the last MB! (Status 0x%08lx)\n\0".as_ptr() as *const i8,
                     Status,
                 );
-                ConResPuts(StdOut, (IDS_CLEAN_FAIL) as UINT);
+                ConResPuts(StdOut, IDS_CLEAN_FAIL);
                 break 'done;
             }
         }
 
-        ConResPuts(StdOut, (IDS_CLEAN_SUCCESS) as UINT);
+        ConResPuts(StdOut, IDS_CLEAN_SUCCESS);
     }
 
     if !FileHandle.is_null() {

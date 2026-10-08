@@ -382,7 +382,14 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
         return STATUS_UNKNOWN_REVISION;
     }
 
-    if Header.Control & SE_SELF_RELATIVE == 0 {
+    // Decide self-relative from THIS first read. The absolute copy below re-reads
+    // Control, and a racing caller that flips SE_SELF_RELATIVE between the two reads
+    // could otherwise make us copy the absolute struct (raw pointer fields) and then
+    // rebase them as self-relative offsets -- a wild kernel address later handed to
+    // RtlValidSid. Pin the branch here; the getters below read copy #2 consistently.
+    let self_relative = Header.Control & SE_SELF_RELATIVE != 0;
+
+    if !self_relative {
         // Absolute: the header is the larger struct of pointers.
         if let Err(s) = safe_copy_from_user(
             core::ptr::addr_of_mut!(Header) as PVOID,
@@ -398,7 +405,6 @@ pub unsafe extern "system" fn SeCaptureSecurityDescriptor(
     // The getters resolve self-relative offsets against the descriptor they are
     // given; move those results from the local copy onto the caller's descriptor.
     let header_base = core::ptr::addr_of_mut!(Header) as usize;
-    let self_relative = Header.Control & SE_SELF_RELATIVE != 0;
     let rebase = move |p: usize| -> usize {
         if p == 0 || !self_relative {
             p

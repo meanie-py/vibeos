@@ -282,19 +282,28 @@ def test_a_zero_argument_function_is_not_a_placeholder():
     assert consensus("NtClose", [stub])[0] is None
 
 
-def test_declared_outside_externs_sees_every_block_but_its_own(tmp_path):
-    # appwiz: the tree-consensus block already declared RegQueryValueExW, and the externs pass
-    # declared it again because `hand_written_names` skips every generated block (E0428).
-    p = tmp_path / "prelude.rs"
-    p.write_text(
-        "// ==== port resolve: tree consensus (generated) ====\n"
-        'extern "system" {\n    pub fn RegQueryValueExW(h: HKEY) -> LSTATUS;\n}\n'
-        "// ==== end port resolve ====\n"
-        f"{pr.EXTERNS_BEGIN}\n"
-        'extern "system" {\n    pub fn HeapFree(h: HANDLE) -> BOOL;\n}\n'
-        f"{pr.EXTERNS_END}\n"
-        "pub unsafe fn strcmpW(a: *const u16, b: *const u16) -> c_int { 0 }\n"
+def test_same_name_different_arity_is_not_consensus():
+    # diskpart's command handler and setuplib's partlist function share a name and an ABI;
+    # the shorter text used to win and usetup called setuplib's with diskpart's signature.
+    a = F("pub fn SelectPartition(argc: INT, argv: *mut PWSTR) -> EXIT_CODE;", '"C"', "d.rs")
+    b = F(
+        "pub fn SelectPartition(List: PPARTLIST, DiskNumber: ULONG, PartitionNumber: ULONG,) "
+        "-> PPARTENTRY;",
+        '"C"',
+        "s.rs",
     )
-    names = pr.declared_outside_externs(p)
-    assert {"RegQueryValueExW", "strcmpW"} <= names
-    assert "HeapFree" not in names
+    pick, why = consensus("SelectPartition", [a, b])
+    assert pick is None and why.startswith("signature disagreement")
+    assert pr._arity('pub fn g(cb: Option<unsafe extern "C" fn(a: i32, b: i32)>, ...);') == 2
+
+
+def test_clang_param_count_reads_past_the_calling_convention():
+    from rustconv.sdk_facts import param_count
+
+    assert param_count("PPARTLIST (*)(void) __attribute__((stdcall))") == 0
+    assert (
+        param_count("BOOLEAN (*)(PPARTLIST, PPARTENTRY, PPARTENTRY *) __attribute__((stdcall))")
+        == 3
+    )
+    assert param_count("void (*)(SHORT, SHORT, LPCSTR, ...)") == 4
+    assert param_count("int (*)(int (*)(int, int), char)") == 2

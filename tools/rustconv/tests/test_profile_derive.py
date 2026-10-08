@@ -838,6 +838,10 @@ def test_kernel_scaffold_depends_on_ntkrnl_sys(tmp_path):
     cargo = (out / "Cargo.toml").read_text()
     assert 'features = ["kernel"]' in cargo and "ntkrnl-sys" in cargo
     assert "USERMODE=0" in emit_profile(dp)
+    # A kernel DPRINT1 prints too: win32macros' (DbgPrint is cdecl in ntoskrnl as in
+    # ntdll), never a local no-op that drops every diagnostic.
+    assert "win32macros-rust" in cargo
+    assert "macro_rules! DPRINT1" not in (out / "src/prelude.rs").read_text()
 
 
 # --------------------------------------------------------------------------- #

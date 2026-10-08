@@ -442,10 +442,10 @@ def identifier_aliases(repo_root: Path, source: Path) -> dict[str, str]:
     translation calls `GetModuleHandle` as the C spells it, and only the preprocessor of the
     real build knows which function that is (diskpart: 22 calls left unresolved).
     """
-    # `compile_argv`, not the TU's own entry: a cohab flip removes the TU from the build, and
-    # an own-entry-only lookup then answered `{}` without a word -- appwiz's re-resolve after
-    # its flip dropped every A/W alias (RegQueryValueEx, GetWindowLongPtr, ...) it had just
-    # written, and the crate stopped compiling.
+    # compile_argv, not the TU's own entry: after a cohab flip a TU HAS no entry, and this
+    # returned {} without a word -- every A/W-spelled definition in usetup's console.c
+    # (WriteConsole, ReadConsoleInput, PeekConsoleInput) was then dropped as a dead branch
+    # by the next `port replay`, the very failure the aliases exist to prevent.
     per_arch: list[dict[str, str]] = []
     commands = 0
     for arch in _ARCHES:

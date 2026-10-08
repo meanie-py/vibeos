@@ -858,6 +858,16 @@ PUBLIC KiSystemCallEntry64
     mov rax, gs:[PcUserRsp]
     mov [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_Rsp], rax
 
+    /* And the selectors: `syscall` pushes no machine frame, so without these
+     * the frame keeps whatever the last trap at this stack slot left there.
+     * For a WoW64 thread that is 32-bit compat mode (an interrupt taken in the
+     * guest), and every CONTEXT built from this frame -- the one a user APC is
+     * delivered with -- then NtContinued back into compat mode, running the
+     * 64-bit return address truncated to 32 bits. 64-bit `syscall` comes only
+     * from 64-bit user mode (compat mode has its own entry). */
+    mov word ptr [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_SegCs], (KGDT64_R3_CODE or RPL_MASK)
+    mov word ptr [rsp + MAX_SYSCALL_PARAM_SIZE + KTRAP_FRAME_SegSs], (KGDT64_R3_DATA or RPL_MASK)
+
     /* Set sane segments */
     mov ax, (KGDT64_R3_DATA or RPL_MASK)
     mov ds, ax

@@ -18,34 +18,34 @@ pub static RUSTCONV_WSTR_D877BF4E5023: [u16; 2] = [0x0072u16, 0x0000];
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn ShowHeader() {
-    let mut szComputerName: [u16; (MAX_STRING_SIZE) as usize] = [0; (MAX_STRING_SIZE) as usize];
-    let mut comp_size: u32 = (MAX_STRING_SIZE) as u32;
+    let mut szComputerName: [u16; (MAX_STRING_SIZE) as _] = [0; (MAX_STRING_SIZE) as _];
+    let mut comp_size: u32 = MAX_STRING_SIZE;
 
     GetComputerNameW(szComputerName.as_mut_ptr(), &mut comp_size);
 
     ConPuts(StdOut, RUSTCONV_WSTR_A138E0184120.as_ptr());
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPuts(StdOut, (IDS_APP_HEADER) as UINT);
+    ConResPuts(StdOut, IDS_APP_HEADER);
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    ConResPuts(StdOut, (IDS_APP_LICENSE) as UINT);
-    ConResPrintf(StdOut, (IDS_APP_CURR_COMPUTER) as u32, szComputerName.as_mut_ptr());
+    ConResPuts(StdOut, IDS_APP_LICENSE);
+    ConResPrintf(StdOut, IDS_APP_CURR_COMPUTER, szComputerName.as_mut_ptr());
 }
 #[no_mangle]
 pub unsafe extern "C" fn RunScript(filename: LPCWSTR) -> EXIT_CODE {
     let mut script: *mut FILE = core::ptr::null_mut();
-    let mut tmp_string: [u16; (MAX_STRING_SIZE) as usize] = [0; (MAX_STRING_SIZE) as usize];
+    let mut tmp_string: [u16; (MAX_STRING_SIZE) as _] = [0; (MAX_STRING_SIZE) as _];
     let mut Result: EXIT_CODE;
 
     script = _wfopen(filename, RUSTCONV_WSTR_D877BF4E5023.as_ptr());
     if script.is_null() {
-        ConResPrintf(StdErr, (IDS_ERROR_MSG_NO_SCRIPT) as u32, filename);
+        ConResPrintf(StdErr, IDS_ERROR_MSG_NO_SCRIPT, filename);
         return (FALSE) as EXIT_CODE;
     }
 
     while !fgetws(
         tmp_string.as_mut_ptr(),
-        MAX_STRING_SIZE,
+        (MAX_STRING_SIZE) as i32,
         script,
     )
     .is_null()
@@ -81,7 +81,7 @@ pub unsafe extern "C" fn wmain(
 
     K32LoadStringW(
         GetModuleHandle(core::ptr::null_mut()),
-        (IDS_APP_HEADER) as u32,
+        IDS_APP_HEADER,
         appTitle.as_mut_ptr(),
         (ARRAYSIZE!(appTitle)) as i32,
     );
@@ -103,13 +103,13 @@ pub unsafe extern "C" fn wmain(
             {
                 tmpBuffer = (*argv.add(index as usize)).add(1);
             } else {
-                ConResPrintf(StdErr, (IDS_ERROR_MSG_BAD_ARG) as u32, *argv.add(index as usize));
+                ConResPrintf(StdErr, IDS_ERROR_MSG_BAD_ARG, *argv.add(index as usize));
                 result = (EXIT_SYNTAX) as i32;
                 break;
             }
 
             if _wcsicmp(tmpBuffer, RUSTCONV_WSTR_1B9E0FE7B740.as_ptr()) == 0 {
-                ConResPuts(StdOut, (IDS_APP_USAGE) as UINT);
+                ConResPuts(StdOut, IDS_APP_USAGE);
                 result = (EXIT_SUCCESS) as i32;
                 break;
             } else if _wcsicmp(tmpBuffer, RUSTCONV_WSTR_52E9E3ADD38B.as_ptr()) == 0 {
@@ -127,7 +127,7 @@ pub unsafe extern "C" fn wmain(
                     }
                 }
             } else {
-                ConResPrintf(StdErr, (IDS_ERROR_MSG_BAD_ARG) as u32, tmpBuffer);
+                ConResPrintf(StdErr, IDS_ERROR_MSG_BAD_ARG, tmpBuffer);
                 result = (EXIT_SYNTAX) as i32;
                 break;
             }
@@ -147,10 +147,10 @@ pub unsafe extern "C" fn wmain(
                 if (result) as u32 != EXIT_SUCCESS {
                     // goto done
                 } else {
-                    ConResPuts(StdOut, (IDS_APP_LEAVING) as UINT);
+                    ConResPuts(StdOut, IDS_APP_LEAVING);
                 }
             } else {
-                ConResPrintf(StdErr, (IDS_ERROR_MSG_NO_SCRIPT) as u32, script);
+                ConResPrintf(StdErr, IDS_ERROR_MSG_NO_SCRIPT, script);
                 result = (EXIT_SYNTAX) as i32;
             }
         } else {
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn wmain(
     }
 
     if (result) as u32 == EXIT_SUCCESS {
-        ConResPuts(StdOut, (IDS_APP_LEAVING) as UINT);
+        ConResPuts(StdOut, IDS_APP_LEAVING);
     }
 
     DestroyVolumeList();

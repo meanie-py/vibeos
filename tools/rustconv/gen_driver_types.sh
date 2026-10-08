@@ -2913,6 +2913,9 @@ open(final, "w").write("".join(out))
   # for every driver whose headers have none. See the tool.
   python3 "$(dirname "$0")/bindgen_ms_anon_members.py" "$FINAL" "${DRIVER_DIR}"/*.h \
     "${SRC}"/sdk/include/reactos/drivers/ata/*.h
+  # bindgen drops the `L` of a `#define X L"..."` and emits a NARROW byte string; put the
+  # UTF-16 back wherever the tree's C defines that name wide with the same text. See the tool.
+  python3 "$(dirname "$0")/widen_island_constants.py" --repo "$SRC" "$FINAL"
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
   # used in u32 contexts (IN_ADDR.s_addr masks, DeviceIoControl ioctl codes, DWORD timeouts) —

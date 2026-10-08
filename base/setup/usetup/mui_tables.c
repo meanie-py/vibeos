@@ -1,13 +1,13 @@
 /*
- * The MUI language tables: localized UI text, DATA only. usetup's code is Rust
- * (sdk/lib/rust/usetup-rust, `rustconv port`), including mui.c's ResourceList index,
- * which names these tables as extern statics. They are the lang/<xx-YY>.h definitions
- * muilanguages.h pulls in, under the same LANGUAGE_* guards, and nothing else: including
- * muilanguages.h itself would define ResourceList a second time.
+ * The MUI language tables: localized UI text, DATA only. NOT COMPILED: this TU is the
+ * INPUT to `rustconv port data usetup mui_tables.c`, which turns every table it defines
+ * into Rust statics (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/, one file per
+ * lang/<xx-YY>.h) from clang's AST of this TU, every string checked byte for byte against
+ * clang's evaluated literal. Edit a lang/*.h, then re-run that command.
  *
- * Kept as C deliberately for now (~70,000 lines of string tables across 30 languages; a
- * c2rust rendering would be several times that as u16 arrays and adds nothing over the C).
- * Owed: move them to a resource the Rust reads, tracked in rust-port-status.md.
+ * It is the lang/<xx-YY>.h definitions muilanguages.h pulls in, under the same LANGUAGE_*
+ * guards, and nothing else: including muilanguages.h itself would define ResourceList a
+ * second time (mui.c's, which is Rust and names these tables as extern statics).
  */
 #include "usetup.h"
 

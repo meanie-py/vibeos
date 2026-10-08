@@ -59,7 +59,9 @@ set(_wow64_ladder
     # belongs in the unconditional set so a REGRESSION can red it. Its old
     # reason for being opt-in -- it could BUGCHECK the machine -- died with the
     # dropped _SEH2_EXCEPT that caused it.
-    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe)
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/spawn32.exe
+    # apc32: user APCs into 32-bit code, and per-thread cleanup.
+    ${REACTOS_SOURCE_DIR}/build-fex-hello/apc32.exe)
 
 # Best-effort robustness extras. Their pass criterion is "still running after
 # 8-10s", which ladder.py explicitly does NOT check, so a missing one must not

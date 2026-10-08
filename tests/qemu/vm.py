@@ -347,6 +347,17 @@ def smp_count() -> int | None:
     return int(n)
 
 
+def gic_version() -> int:
+    """The GIC arm64's virt machine gets: 2 (the default, as on the Pi 4) or 3
+    (VIBEOS_QEMU_GIC=3: GICv3 with an ITS, as on Graviton)."""
+    raw = os.environ.get("VIBEOS_QEMU_GIC", "").strip()
+    if raw in ("", "2"):
+        return 2
+    if raw == "3":
+        return 3
+    raise ValueError(f"VIBEOS_QEMU_GIC must be 2 or 3 (got {raw!r})")
+
+
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
@@ -731,9 +742,13 @@ class Arm64Config(ArchConfig):
     )
 
     def hostile_machine_args(self) -> list[str]:
-        """machine_args with the arm64 hostile hazards (a76, el2) applied."""
+        """machine_args with the GIC choice and the arm64 hostile hazards (a76, el2)
+        applied."""
         hazards = hostile_hazards()
         machine = list(self.machine_args)
+        if gic_version() == 3:
+            # virt's ITS is on by default with a GICv3; say so, so it cannot go quietly.
+            machine[machine.index("-M") + 1] += ",gic-version=3,its=on"
         if "el2" in hazards:
             machine[machine.index("-M") + 1] += ",virtualization=on"
         if "a76" in hazards:

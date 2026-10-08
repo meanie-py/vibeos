@@ -1486,7 +1486,7 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
         }
     }
 
-    // Map the GICv2 (QEMU virt: GICD @ 0x08000000, GICC @ 0x08010000) to kernel
+    // Map the GIC (QEMU virt: GICD @ 0x08000000, GICC @ 0x08010000) to kernel
     // VA and start the periodic ARM generic-timer clock interrupt.  Must run
     // after MmInitSystem(1) (so MmMapIoSpace works) and before the first process
     // switch (SMSS) — the clock ISR runs in arbitrary process context and user
@@ -1501,10 +1501,11 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             fn HalInitializeClockArm64(GicDistVa: PVOID, GicCpuVa: PVOID);
         }
         // Both bases come from the ACPI MADT via the loader block; a board whose
-        // firmware describes no GICv2 gets no clock rather than a clock pointed
+        // firmware describes no GIC gets no clock rather than a clock pointed
         // at whatever happens to live at QEMU virt's addresses.
         let GicdPhysical = (*LoaderBlock).u.Arm.Arm64GicDistributorBase;
         let GiccPhysical = (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase;
+        let GicrPhysical = (*LoaderBlock).u.Arm.Arm64GicRedistributorBase;
         if GicdPhysical != 0 && GiccPhysical != 0 {
             let mut Phys: LARGE_INTEGER = core::mem::zeroed();
             Phys.QuadPart = GicdPhysical as i64;
@@ -1514,8 +1515,19 @@ pub unsafe extern "system" fn Phase1InitializationDiscard(Context: PVOID) {
             if !GicDistVa.is_null() && !GicCpuVa.is_null() {
                 HalInitializeClockArm64(GicDistVa, GicCpuVa);
             }
+        } else if GicdPhysical != 0 && GicrPhysical != 0 {
+            // GICv3: the CPU interface is system registers, so there is no GICC
+            // to map. The distributor is a full 64 KiB frame (GICD_IROUTER is at
+            // 0x6000); the HAL maps the redistributors itself from the loader
+            // block it was handed at HalInitSystem.
+            let mut Phys: LARGE_INTEGER = core::mem::zeroed();
+            Phys.QuadPart = GicdPhysical as i64;
+            let GicDistVa = MmMapIoSpace(Phys, 0x1_0000, MmNonCached);
+            if !GicDistVa.is_null() {
+                HalInitializeClockArm64(GicDistVa, core::ptr::null_mut());
+            }
         } else {
-            uart_trace!("[PHASE1] no GICv2 in ACPI MADT - system clock not started");
+            uart_trace!("[PHASE1] no GIC in ACPI MADT - system clock not started");
         }
     }
 

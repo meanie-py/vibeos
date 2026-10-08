@@ -216,15 +216,14 @@ pub const VOLUME_TYPE_REMOVABLE: _VOLUME_TYPE = _VOLUME_TYPE_VOLUME_TYPE_REMOVAB
 pub const VOLUME_TYPE_UNKNOWN: _VOLUME_TYPE = _VOLUME_TYPE_VOLUME_TYPE_UNKNOWN; // island enum
 extern "C" {
     pub fn ConPrintf(Stream: *mut CON_STREAM, szStr: *const u16, ...) -> i32; // conutils-rust/src/conutils/outstream.rs
-    pub fn ConPuts(Stream: *mut CON_STREAM, szText: *const u16) -> i32; // conutils-rust/src/conutils/screen.rs
+    pub fn ConPuts(Stream: *mut CON_STREAM, szStr: *const u16,) -> i32; // conutils-rust/src/conutils/outstream.rs
     pub fn ConResPrintf(Stream: *mut CON_STREAM, uID: u32, ...) -> i32; // conutils-rust/src/conutils/outstream.rs
-    pub fn DbgPrint(fmt: *const core::ffi::c_char, ...) -> u32; // arm64input-cargo/src/main.rs
     pub fn _swprintf(buf: *mut WCHAR, fmt: *const WCHAR, ...) -> c_int; // rtl-actctx/src/shim.rs
     pub fn _wcsicmp(s1: *const u16, s2: *const u16) -> i32; // inflib-rust/src/infcore.rs
     pub fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32; // kernel32-rust/src/client/vdm.rs
     pub fn _wcstoi64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> i64; // cnt-rust/src/cabi/generated.rs
     pub fn _wcstoui64(nptr: *const u16, endptr: *mut *mut u16, base: i32) -> u64; // cnt-rust/src/cabi/generated.rs
-    pub fn _wtoi(s: *const u16) -> c_int; // advapi32-rust/src/prelude.rs
+    pub fn _wtoi(s: *const u16) -> i32; // userinit-rust/src/preamble.rs
     pub fn fclose(stream: *mut FILE) -> c_int; // dnsrslvr-rust/src/prelude.rs
     pub fn towupper(c: c_int) -> c_int; // dnsapi-rust/src/prelude.rs
     pub fn wcscat(dst: *mut u16, src: *const u16) -> *mut u16; // advapi32-rust/src/wine/cred.rs
@@ -245,7 +244,6 @@ extern "system" {
     pub fn GetVolumeInformationW( arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD, arg4: PDWORD, arg5: PDWORD, arg6: PDWORD, arg7: LPWSTR, arg8: DWORD, ) -> BOOL; // aclui-rust/src/types_amd64.rs
     pub fn GetVolumePathNamesForVolumeNameW( arg1: LPCWSTR, arg2: LPWSTR, arg3: DWORD, arg4: PDWORD, ) -> BOOL; // aclui-rust/src/types_amd64.rs
     pub fn K32LoadStringW(hInstance: HINSTANCE, uID: u32, lpBuffer: PWSTR, cchBufferMax: i32) -> i32; // conutils-rust/src/conutils/pager.rs
-    pub fn LoadStringW(instance: HINSTANCE, id: UINT, buffer: LPWSTR, capacity: INT) -> INT; // shell32-rust/src/cfs_folder.rs
     pub fn NtClose(Handle: HANDLE) -> NTSTATUS; // inflib-rust/src/infrosgen.rs
     pub fn NtDeviceIoControlFile( FileHandle: HANDLE, Event: HANDLE, ApcRoutine: PIO_APC_ROUTINE, ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, IoControlCode: ULONG, InputBuffer: PVOID, InputBufferLength: ULONG, OutputBuffer: PVOID, OutputBufferLength: ULONG, ) -> NTSTATUS; // ntdll-sys/src/bindgen_amd64.rs
     pub fn NtFsControlFile( FileHandle: HANDLE, Event: HANDLE, ApcRoutine: PIO_APC_ROUTINE, ApcContext: PVOID, IoStatusBlock: PIO_STATUS_BLOCK, FsControlCode: ULONG, InputBuffer: PVOID, InputBufferLength: ULONG, OutputBuffer: PVOID, OutputBufferLength: ULONG, ) -> NTSTATUS; // ntdll-sys/src/bindgen_amd64.rs
@@ -267,177 +265,10 @@ extern "system" {
     pub fn SetConsoleTitleW(lpConsoleTitle: LPCWSTR) -> BOOL; // winsrv-sys/src/bindgen_amd64.rs
 }
 // ==== end port resolve ====
-pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
+pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
-pub const IDS_ACTIVE_ALREADY: i32 = 0x3EA; // clang, active.c
-pub const IDS_ACTIVE_FAIL: i32 = 0x3E8; // clang, active.c
-pub const IDS_ACTIVE_NO_MBR: i32 = 0x3EB; // clang, active.c
-pub const IDS_ACTIVE_SUCCESS: i32 = 0x3E9; // clang, active.c
-pub const IDS_APP_CURR_COMPUTER: i32 = 3; // clang, diskpart.c
-pub const IDS_APP_HEADER: i32 = 0; // clang, diskpart.c
-pub const IDS_APP_LEAVING: i32 = 4; // clang, diskpart.c
-pub const IDS_APP_LICENSE: i32 = 2; // clang, diskpart.c
-pub const IDS_APP_PROMPT: i32 = 5; // clang, interpreter.c
-pub const IDS_APP_USAGE: i32 = 1; // clang, diskpart.c
-pub const IDS_ASSIGN_ALREADY_ASSIGNED: i32 = 0x3FE; // clang, assign.c
-pub const IDS_ASSIGN_FAIL: i32 = 0x3FC; // clang, assign.c
-pub const IDS_ASSIGN_INVALID_LETTER: i32 = 0x3FF; // clang, assign.c
-pub const IDS_ASSIGN_NO_MORE_LETTER: i32 = 0x400; // clang, assign.c
-pub const IDS_ASSIGN_SUCCESS: i32 = 0x3FD; // clang, assign.c
-pub const IDS_ASSIGN_SYSTEM_VOLUME: i32 = 0x401; // clang, assign.c
-pub const IDS_AUTOMOUNT_DISABLED: i32 = 0x3F3; // clang, automount.c
-pub const IDS_AUTOMOUNT_ENABLED: i32 = 0x3F2; // clang, automount.c
-pub const IDS_AUTOMOUNT_SCRUBBED: i32 = 0x3F4; // clang, automount.c
-pub const IDS_BUSTYPE_OTHER: i32 = 0x1401; // clang, misc.c
-pub const IDS_BUSTYPE_UNKNOWN: i32 = 0x13EC; // clang, misc.c
-pub const IDS_CLEAN_FAIL: i32 = 0x406; // clang, clean.c
-pub const IDS_CLEAN_SUCCESS: i32 = 0x407; // clang, clean.c
-pub const IDS_CLEAN_SYSTEM: i32 = 0x408; // clang, clean.c
-pub const IDS_CONVERT_GPT_ALREADY: i32 = 0x410; // clang, convert.c
-pub const IDS_CONVERT_GPT_NOT_EMPTY: i32 = 0x411; // clang, convert.c
-pub const IDS_CONVERT_GPT_SUCCESS: i32 = 0x412; // clang, convert.c
-pub const IDS_CONVERT_MBR_ALREADY: i32 = 0x413; // clang, convert.c
-pub const IDS_CONVERT_MBR_NOT_EMPTY: i32 = 0x414; // clang, convert.c
-pub const IDS_CONVERT_MBR_SUCCESS: i32 = 0x415; // clang, convert.c
-pub const IDS_CREATE_PARTITION_FAIL: i32 = 0x41A; // clang, create.c
-pub const IDS_CREATE_PARTITION_INVALID_STYLE: i32 = 0x41C; // clang, create.c
-pub const IDS_CREATE_PARTITION_SUCCESS: i32 = 0x41B; // clang, create.c
-pub const IDS_DELETE_PARTITION_FAIL: i32 = 0x42E; // clang, delete.c
-pub const IDS_DELETE_PARTITION_SUCCESS: i32 = 0x42F; // clang, delete.c
-pub const IDS_DELETE_PARTITION_SYSTEM: i32 = 0x430; // clang, delete.c
-pub const IDS_DETAIL_DISK_DESCRIPTION: i32 = 0x452; // clang, detail.c
-pub const IDS_DETAIL_DISK_ID: i32 = 0x453; // clang, detail.c
-pub const IDS_DETAIL_DISK_STATUS: i32 = 0x455; // clang, detail.c
-pub const IDS_DETAIL_DISK_TYPE: i32 = 0x454; // clang, detail.c
-pub const IDS_DETAIL_INFO_BOOT_DSK: i32 = 0x45C; // clang, detail.c
-pub const IDS_DETAIL_INFO_LUN_ID: i32 = 0x458; // clang, detail.c
-pub const IDS_DETAIL_INFO_PATH: i32 = 0x456; // clang, detail.c
-pub const IDS_DETAIL_INFO_TARGET: i32 = 0x457; // clang, detail.c
-pub const IDS_DETAIL_NO_DISKS: i32 = 0x471; // clang, detail.c
-pub const IDS_DETAIL_NO_VOLUME: i32 = 0x472; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_ACTIVE: i32 = 0x46D; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_ATTRIBUTE: i32 = 0x470; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_HIDDEN: i32 = 0x46C; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_NUMBER: i32 = 0x46A; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_OFFSET: i32 = 0x46E; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_REQUIRED: i32 = 0x46F; // clang, detail.c
-pub const IDS_DETAIL_PARTITION_TYPE: i32 = 0x46B; // clang, detail.c
-pub const IDS_ERROR_INVALID_ARGS: i32 = 0x138A; // clang, assign.c
-pub const IDS_ERROR_MSG_BAD_ARG: i32 = 0x1389; // clang, diskpart.c
-pub const IDS_ERROR_MSG_NO_SCRIPT: i32 = 0x1388; // clang, diskpart.c
-pub const IDS_FILESYSTEMS_CLUSTERSIZE: i32 = 0x495; // clang, filesystems.c
-pub const IDS_FILESYSTEMS_CURRENT: i32 = 0x492; // clang, filesystems.c
-pub const IDS_FILESYSTEMS_DEFAULT: i32 = 0x497; // clang, filesystems.c
-pub const IDS_FILESYSTEMS_FORMATTING: i32 = 0x493; // clang, filesystems.c
-pub const IDS_FILESYSTEMS_SERIAL_NUMBER: i32 = 0x496; // clang, filesystems.c
-pub const IDS_FILESYSTEMS_TYPE: i32 = 0x494; // clang, filesystems.c
-pub const IDS_FORMAT_FAIL: i32 = 0x49C; // clang, format.c
-pub const IDS_FORMAT_PROGRESS: i32 = 0x49E; // clang, format.c
-pub const IDS_FORMAT_SUCCESS: i32 = 0x49D; // clang, format.c
-pub const IDS_GPT_FAIL: i32 = 0x4A6; // clang, gpt.c
-pub const IDS_GPT_SUCCESS: i32 = 0x4A7; // clang, gpt.c
-pub const IDS_HELP_ACTIVE: i32 = 0x3A; // clang, interpreter.c
-pub const IDS_HELP_ASSIGN: i32 = 0x3C; // clang, interpreter.c
-pub const IDS_HELP_AUTOMOUNT: i32 = 0x3F; // clang, interpreter.c
-pub const IDS_HELP_CLEAN: i32 = 0x41; // clang, interpreter.c
-pub const IDS_HELP_CONVERT: i32 = 0x43; // clang, interpreter.c
-pub const IDS_HELP_CONVERT_GPT: i32 = 0x44; // clang, interpreter.c
-pub const IDS_HELP_CONVERT_MBR: i32 = 0x45; // clang, interpreter.c
-pub const IDS_HELP_CREATE: i32 = 0x46; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION: i32 = 0x47; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION_EFI: i32 = 0x48; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION_EXTENDED: i32 = 0x49; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION_LOGICAL: i32 = 0x4A; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION_MSR: i32 = 0x4B; // clang, interpreter.c
-pub const IDS_HELP_CREATE_PARTITION_PRIMARY: i32 = 0x4C; // clang, interpreter.c
-pub const IDS_HELP_DELETE: i32 = 0x4F; // clang, interpreter.c
-pub const IDS_HELP_DELETE_PARTITION: i32 = 0x51; // clang, interpreter.c
-pub const IDS_HELP_DETAIL: i32 = 0x54; // clang, interpreter.c
-pub const IDS_HELP_DETAIL_DISK: i32 = 0x55; // clang, interpreter.c
-pub const IDS_HELP_DETAIL_PARTITION: i32 = 0x56; // clang, interpreter.c
-pub const IDS_HELP_DETAIL_VOLUME: i32 = 0x57; // clang, interpreter.c
-pub const IDS_HELP_EXIT: i32 = 0x58; // clang, interpreter.c
-pub const IDS_HELP_FILESYSTEMS: i32 = 0x5B; // clang, interpreter.c
-pub const IDS_HELP_FORMAT: i32 = 0x5C; // clang, interpreter.c
-pub const IDS_HELP_FORMAT_STRING: i32 = 0x4B0; // clang, help.c
-pub const IDS_HELP_GPT: i32 = 0x5D; // clang, interpreter.c
-pub const IDS_HELP_HELP: i32 = 0x5E; // clang, interpreter.c
-pub const IDS_HELP_INACTIVE: i32 = 0x60; // clang, interpreter.c
-pub const IDS_HELP_LIST: i32 = 0x61; // clang, interpreter.c
-pub const IDS_HELP_LIST_DISK: i32 = 0x62; // clang, interpreter.c
-pub const IDS_HELP_LIST_PARTITION: i32 = 0x63; // clang, interpreter.c
-pub const IDS_HELP_LIST_VOLUME: i32 = 0x64; // clang, interpreter.c
-pub const IDS_HELP_REM: i32 = 0x6A; // clang, interpreter.c
-pub const IDS_HELP_REMOVE: i32 = 0x6B; // clang, interpreter.c
-pub const IDS_HELP_RESCAN: i32 = 0x6D; // clang, interpreter.c
-pub const IDS_HELP_SELECT: i32 = 0x70; // clang, interpreter.c
-pub const IDS_HELP_SELECT_DISK: i32 = 0x71; // clang, interpreter.c
-pub const IDS_HELP_SELECT_PARTITION: i32 = 0x72; // clang, interpreter.c
-pub const IDS_HELP_SELECT_VOLUME: i32 = 0x73; // clang, interpreter.c
-pub const IDS_HELP_SETID: i32 = 0x75; // clang, interpreter.c
-pub const IDS_HELP_UNIQUEID: i32 = 0x77; // clang, interpreter.c
-pub const IDS_HELP_UNIQUEID_DISK: i32 = 0x78; // clang, interpreter.c
-pub const IDS_INACTIVE_ALREADY: i32 = 0x4BC; // clang, inactive.c
-pub const IDS_INACTIVE_FAIL: i32 = 0x4BA; // clang, inactive.c
-pub const IDS_INACTIVE_NO_MBR: i32 = 0x4BD; // clang, inactive.c
-pub const IDS_INACTIVE_SUCCESS: i32 = 0x4BB; // clang, inactive.c
-pub const IDS_INFO_BOOT: i32 = 0x27; // clang, list.c
-pub const IDS_INFO_SYSTEM: i32 = 0x28; // clang, list.c
-pub const IDS_LIST_DISK_FORMAT: i32 = 0xCE6; // clang, list.c
-pub const IDS_LIST_DISK_HEAD: i32 = 0xCE4; // clang, detail.c
-pub const IDS_LIST_DISK_LINE: i32 = 0xCE5; // clang, detail.c
-pub const IDS_LIST_PARTITION_FORMAT: i32 = 0xCE9; // clang, list.c
-pub const IDS_LIST_PARTITION_HEAD: i32 = 0xCE7; // clang, list.c
-pub const IDS_LIST_PARTITION_LINE: i32 = 0xCE8; // clang, list.c
-pub const IDS_LIST_PARTITION_NONE: i32 = 0xCEB; // clang, list.c
-pub const IDS_LIST_PARTITION_NO_DISK: i32 = 0xCEA; // clang, list.c
-pub const IDS_LIST_VOLUME_FORMAT: i32 = 0xCEE; // clang, list.c
-pub const IDS_LIST_VOLUME_HEAD: i32 = 0xCEC; // clang, detail.c
-pub const IDS_LIST_VOLUME_LINE: i32 = 0xCED; // clang, detail.c
-pub const IDS_PARTITION_TYPE_EXTENDED: i32 = 0x1450; // clang, list.c
-pub const IDS_PARTITION_TYPE_LOGICAL: i32 = 0x1451; // clang, list.c
-pub const IDS_PARTITION_TYPE_PRIMARY: i32 = 0x1452; // clang, list.c
-pub const IDS_PARTITION_TYPE_RESERVED: i32 = 0x1453; // clang, list.c
-pub const IDS_PARTITION_TYPE_SYSTEM: i32 = 0x1454; // clang, list.c
-pub const IDS_PARTITION_TYPE_UNKNOWN: i32 = 0x1455; // clang, list.c
-pub const IDS_PARTITION_TYPE_UNUSED: i32 = 0x1456; // clang, list.c
-pub const IDS_REMOVE_FAIL: i32 = 0xFA0; // clang, remove.c
-pub const IDS_REMOVE_NO_LETTER: i32 = 0xFA2; // clang, remove.c
-pub const IDS_REMOVE_SUCCESS: i32 = 0xFA1; // clang, remove.c
-pub const IDS_REMOVE_WRONG_LETTER: i32 = 0xFA3; // clang, remove.c
-pub const IDS_RESCAN_END: i32 = 0x1005; // clang, rescan.c
-pub const IDS_RESCAN_START: i32 = 0x1004; // clang, rescan.c
-pub const IDS_SELECT_DISK: i32 = 0x1131; // clang, select.c
-pub const IDS_SELECT_DISK_ENUM_FINISHED: i32 = 0x1134; // clang, select.c
-pub const IDS_SELECT_DISK_ENUM_NO_START: i32 = 0x1133; // clang, select.c
-pub const IDS_SELECT_DISK_INVALID: i32 = 0x1132; // clang, select.c
-pub const IDS_SELECT_NO_DISK: i32 = 0x1130; // clang, active.c
-pub const IDS_SELECT_NO_PARTITION: i32 = 0x1135; // clang, active.c
-pub const IDS_SELECT_NO_VOLUME: i32 = 0x1139; // clang, assign.c
-pub const IDS_SELECT_PARTITION: i32 = 0x1136; // clang, select.c
-pub const IDS_SELECT_PARTITION_INVALID: i32 = 0x1138; // clang, select.c
-pub const IDS_SELECT_PARTITION_NO_DISK: i32 = 0x1137; // clang, detail.c
-pub const IDS_SELECT_VOLUME: i32 = 0x113A; // clang, select.c
-pub const IDS_SELECT_VOLUME_INVALID: i32 = 0x113B; // clang, select.c
-pub const IDS_SETID_FAIL: i32 = 0x1162; // clang, setid.c
-pub const IDS_SETID_INVALID_FORMAT: i32 = 0x1164; // clang, setid.c
-pub const IDS_SETID_INVALID_TYPE: i32 = 0x1165; // clang, setid.c
-pub const IDS_SETID_SUCCESS: i32 = 0x1163; // clang, setid.c
-pub const IDS_STATUS_NO: i32 = 0x20; // clang, detail.c
-pub const IDS_STATUS_ONLINE: i32 = 0x24; // clang, detail.c
-pub const IDS_STATUS_YES: i32 = 0x1F; // clang, detail.c
-pub const IDS_UNIQUID_DISK_INVALID_STYLE: i32 = 0x1194; // clang, uniqueid.c
-pub const IDS_UNIT_B: i32 = 0x1490; // clang, list.c
-pub const IDS_UNIT_GB: i32 = 0x148D; // clang, list.c
-pub const IDS_UNIT_KB: i32 = 0x148F; // clang, list.c
-pub const IDS_UNIT_MB: i32 = 0x148E; // clang, list.c
-pub const IDS_UNIT_TB: i32 = 0x148C; // clang, list.c
-pub const IDS_VOLUME_TYPE_DVD: i32 = 0x1482; // clang, list.c
-pub const IDS_VOLUME_TYPE_PARTITION: i32 = 0x1483; // clang, list.c
-pub const IDS_VOLUME_TYPE_REMOVABLE: i32 = 0x1484; // clang, list.c
-pub const IDS_VOLUME_TYPE_UNKNOWN: i32 = 0x1485; // clang, list.c
 pub const IOCTL_DISK_CREATE_DISK: i32 = 0x7C058; // clang, convert.c
 pub const IOCTL_DISK_GET_DRIVE_LAYOUT_EX: i32 = 0x70050; // clang, partlist.c
 pub const IOCTL_DISK_SET_DRIVE_LAYOUT_EX: i32 = 0x7C054; // clang, partlist.c
@@ -445,8 +276,6 @@ pub const IOCTL_MOUNTMGR_CREATE_POINT: ULONG = 0x6DC000; // clang, mountmgr.c
 pub const IOCTL_MOUNTMGR_QUERY_AUTO_MOUNT: ULONG = 0x6D003C; // clang, mountmgr.c
 pub const IOCTL_MOUNTMGR_SCRUB_REGISTRY: ULONG = 0x6DC038; // clang, mountmgr.c
 pub const IOCTL_MOUNTMGR_SET_AUTO_MOUNT: ULONG = 0x6DC040; // clang, mountmgr.c
-pub const MAX_ARGS_COUNT: i32 = 0x100; // clang, interpreter.c
-pub const MAX_STRING_SIZE: i32 = 0x400; // clang, diskpart.c
 pub const MSG_COMMAND_ACTIVE: DWORD = 0x40002710; // clang, interpreter.c
 pub const MSG_COMMAND_ASSIGN: DWORD = 0x40002712; // clang, interpreter.c
 pub const MSG_COMMAND_AUTOMOUNT: DWORD = 0x40002715; // clang, interpreter.c
@@ -479,15 +308,6 @@ pub const MSG_COMMAND_SELECT_PARTITION: DWORD = 0x40002740; // clang, interprete
 pub const MSG_COMMAND_SELECT_VOLUME: DWORD = 0x40002741; // clang, interpreter.c
 pub const MSG_COMMAND_SETID: DWORD = 0x40002743; // clang, interpreter.c
 pub const MSG_COMMAND_UNIQUEID_DISK: DWORD = 0x40002745; // clang, interpreter.c
-pub const MSG_NONE: i32 = 0; // clang, help.c
-pub const SIZE_10GB: u64 = 0x280000000; // clang, list.c
-pub const SIZE_10KB: u64 = 0x2800; // clang, filesystems.c
-pub const SIZE_10MB: u64 = 0xA00000; // clang, filesystems.c
-pub const SIZE_10TB: u64 = 0xA0000000000; // clang, list.c
-pub const SIZE_1GB: u64 = 0x40000000; // clang, list.c
-pub const SIZE_1KB: u64 = 0x400; // clang, filesystems.c
-pub const SIZE_1MB: u64 = 0x100000; // clang, filesystems.c
-pub const SIZE_1TB: u64 = 0x10000000000; // clang, list.c
 // ==== end port facts ====
 
 // ==== port local types: types the module's .c files define, laid out by c2rust (generated -- `rustconv port resolve`) ====
@@ -514,6 +334,7 @@ extern "system" {
     pub fn SystemFunction036(_: PVOID, _: ULONG) -> BOOLEAN; // misc.c
 }
 pub use crate::prelude::GetModuleHandleW as GetModuleHandle; // sdk alias
+pub use crate::prelude::K32LoadStringW as LoadStringW; // sdk alias
 pub use crate::prelude::SystemFunction036 as RtlGenRandom; // sdk alias
 pub use crate::prelude::wsprintfW as wsprintf; // sdk alias
 // ==== end port externs ====

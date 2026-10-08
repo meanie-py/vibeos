@@ -1035,3 +1035,154 @@ void Wow64pInstallUserCallbackTable(void)
     DbgPrint("[WOW64CB] PEB64 KernelCallbackTable -> wow64 bridge (%p), guest dispatcher %p\n",
              (PVOID)Wow64pUserCallbackTable, Wow64pKiUserCallbackDispatcher32);
 }
+
+/* ---- user-mode APCs into 32-bit code -------------------------------------
+ *
+ * QueueUserAPC, a ReadFileEx/WriteFileEx completion routine, a waitable-timer
+ * completion routine: each hands the kernel a 32-bit routine, and the kernel
+ * delivers every user APC through the NATIVE KiUserApcDispatcher, which would
+ * call it as native code. So, as on Windows (and Wine's wow64), the services
+ * that queue one (wow64_manual.c) hand the kernel Wow64ApcRoutine instead, with
+ * the guest's routine and context packed into the 64-bit NormalContext --
+ * routine high, context low; both are 32-bit. The two system arguments pass
+ * through: they are the guest's own (an IO_STATUS_BLOCK32 pointer, a timer
+ * value, QueueUserAPC's arguments).
+ *
+ * Delivered, it runs the guest's OWN KiUserApcDispatcher in a nested simulate,
+ * on an i386 APC frame built below the guest's Esp, as the i386 kernel's
+ * KiInitializeUserApc would: [routine][context][arg1][arg2][CONTEXT][SEH]
+ * (dll/ntdll/dispatch/i386/dispatch.S). It ends in the guest's
+ * NtContinue(&Frame->Context, TRUE), which the NtContinue marshaller brings to
+ * Wow64pCompleteGuestApc: the guest goes back to where the APC found it -- parked
+ * on the syscall the APC interrupted -- and the native NtContinue of the
+ * context the kernel delivered the APC with abandons the nested run's native
+ * frames and finishes that syscall, delivering any further APC first. This is
+ * the 32-bit form of wowx64's apc.rs.
+ */
+#define WOW64_TLS_INCPUSIMULATION 2 /* wow64.c: set once the guest owns the thread */
+#define WOW64_TLS_APCLIST         7 /* Windows' slot name; the chain below */
+
+NTSTATUS WINAPI NtContinue(PVOID Context, BOOLEAN TestAlert);
+NTSTATUS WINAPI NtQueueApcThread(HANDLE Thread, PVOID ApcRoutine, PVOID NormalContext,
+                                 PVOID SystemArgument1, PVOID SystemArgument2);
+extern PVOID Wow64pKiUserApcDispatcher32; /* guest ntdll32 export */
+
+typedef struct _WOW64_APC_FRAME {
+    struct _WOW64_APC_FRAME *Prev;
+    ULONG GuestContext;          /* the CONTEXT the guest dispatcher NtContinues to */
+    PVOID Native;                /* the CONTEXT the kernel delivered the APC with */
+    WOW64_CB_CONTEXT Saved;      /* the guest as the APC found it */
+    ULONGLONG SavedDispatchRsp;  /* amd64: CpuArea+8, clobbered by nesting */
+} WOW64_APC_FRAME;
+
+static PVOID *Wow64pTlsSlot(ULONG Index)
+{
+    return (PVOID *)((PBYTE)NtCurrentTeb() + WOW64_TEB_TLSSLOTS_OFFSET + Index * sizeof(PVOID));
+}
+
+/* The NormalRoutine every guest APC is queued with. `Native` is the 4th
+ * argument both native dispatchers pass: the CONTEXT they resume afterwards. */
+VOID WINAPI Wow64ApcRoutine(ULONG_PTR Packed, ULONG_PTR Arg1, ULONG_PTR Arg2, PVOID Native)
+{
+    ULONG Routine = (ULONG)(Packed >> 32), Context = (ULONG)Packed;
+    ULONG CAS = (ULONG)((sizeof(WOW64_CB_CONTEXT) + 3) & ~3u), E, i;
+    WOW64_APC_FRAME Frame;
+    WOW64_CB_CONTEXT Run;
+
+    if (!*Wow64pTlsSlot(WOW64_TLS_INCPUSIMULATION))
+    {
+        /* A thread that has not entered the guest yet: an APC queued to a new
+         * suspended thread, delivered by the native loader's thread-init
+         * NtTestAlert. Queue it again and resume WITHOUT testing for alerts
+         * (returning would NtContinue with TestAlert and deliver it straight
+         * back here); the guest loader's own NtTestAlert, once this thread has
+         * guest state, delivers it where it can run. */
+        NTSTATUS St = NtQueueApcThread((HANDLE)(LONG_PTR)-2, (PVOID)Wow64ApcRoutine,
+                                       (PVOID)Packed, (PVOID)Arg1, (PVOID)Arg2);
+        if (St < 0)
+            DbgPrint("[WOW64] guest APC %08lx before guest entry: requeue failed %08lx\n",
+                     Routine, St);
+        NtContinue(Native, FALSE);
+        NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBADA1);
+    }
+    if (!Wow64pKiUserApcDispatcher32 || !Wow64pBTCpuGetContext ||
+        !Wow64pBTCpuSetContext || !Wow64pBTCpuSimulate)
+    {
+        DbgPrint("[WOW64] guest APC %08lx with no guest dispatcher - dropped\n", Routine);
+        return;
+    }
+
+    Frame.Saved.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
+    Wow64pBTCpuGetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL, &Frame.Saved);
+#ifdef _M_AMD64
+    {
+        ULONGLONG *Slot = Wow64pCpuDispatchRspSlot();
+        Frame.SavedDispatchRsp = Slot ? *Slot : 0;
+    }
+#else
+    Frame.SavedDispatchRsp = 0;
+#endif
+
+    E = (Frame.Saved.Esp - (16 + CAS + 8)) & ~15u;
+    *(ULONG *)(ULONG_PTR)(E + 0)  = Routine;
+    *(ULONG *)(ULONG_PTR)(E + 4)  = Context;
+    *(ULONG *)(ULONG_PTR)(E + 8)  = (ULONG)Arg1;
+    *(ULONG *)(ULONG_PTR)(E + 12) = (ULONG)Arg2;
+    for (i = 0; i < sizeof(WOW64_CB_CONTEXT); i++)
+        *(PBYTE)(ULONG_PTR)(E + 16 + i) = ((const BYTE *)&Frame.Saved)[i];
+    *(ULONG *)(ULONG_PTR)(E + 16 + CAS) = 0;     /* SEH scratch (dispatcher writes) */
+    *(ULONG *)(ULONG_PTR)(E + 16 + CAS + 4) = 0;
+
+    Frame.GuestContext = E + 16;
+    Frame.Native = Native;
+    Frame.Prev = (WOW64_APC_FRAME *)*Wow64pTlsSlot(WOW64_TLS_APCLIST);
+    *Wow64pTlsSlot(WOW64_TLS_APCLIST) = &Frame;
+
+    if (Wow64TraceSyscalls)
+        DbgPrint("[WOW64] guest APC %08lx(%08lx, %08lx, %08lx) frame %08lx\n",
+                 Routine, Context, (ULONG)Arg1, (ULONG)Arg2, E);
+
+    Run = Frame.Saved;
+    Run.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
+    Run.Eip = (ULONG)(ULONG_PTR)Wow64pKiUserApcDispatcher32;
+    Run.Esp = E;
+    Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL, &Run);
+    Wow64pBTCpuSimulate(); /* exits via the guest's NtContinue -> Wow64pCompleteGuestApc */
+
+    DbgPrint("[WOW64] FATAL: guest APC %08lx returned without NtContinue\n", Routine);
+    NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBADA2);
+}
+
+/*
+ * The guest's NtContinue(Context, TestAlert), from the NtContinue marshaller.
+ * Returns 0 if Context is not the end of a guest APC we started; otherwise it
+ * does not return.
+ */
+int Wow64pCompleteGuestApc(ULONG Context32, BOOLEAN TestAlert)
+{
+    WOW64_APC_FRAME *Frame = (WOW64_APC_FRAME *)*Wow64pTlsSlot(WOW64_TLS_APCLIST);
+    NTSTATUS St;
+
+    if (!Frame || Frame->GuestContext != Context32)
+        return 0;
+    *Wow64pTlsSlot(WOW64_TLS_APCLIST) = Frame->Prev;
+
+    /* Back to where the APC found the guest -- not to the frame's CONTEXT -- so
+     * the next APC of the same drain reads the interrupted state. */
+    Frame->Saved.ContextFlags = WOW64_CB_CONTEXT_FULL | WOW64_CB_CONTEXT_EXTENDED;
+    Wow64pBTCpuSetContext((HANDLE)(LONG_PTR)-2, WOW64_CURRENT_PROCESS, NULL, &Frame->Saved);
+#ifdef _M_AMD64
+    /* As for a callback: the interrupted syscall still owes its normal return
+     * fixup, and the nesting moved the dispatcher RSP. */
+    Wow64pClearCpuResumeFlag();
+    {
+        ULONGLONG *Slot = Wow64pCpuDispatchRspSlot();
+        if (Slot && Frame->SavedDispatchRsp)
+            *Slot = Frame->SavedDispatchRsp;
+    }
+#endif
+    St = NtContinue(Frame->Native, TestAlert);
+    DbgPrint("[WOW64] FATAL: NtContinue out of a guest APC => %08lx\n", St);
+    NtTerminateProcess(WOW64_CURRENT_PROCESS, 0xBADA3);
+    return 1;
+}

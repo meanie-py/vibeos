@@ -118,6 +118,52 @@ def test_a_banked_hand_function_survives_a_replay(tmp_path, monkeypatch):
     assert "args: ..." not in (mods / "f.rs").read_text()
 
 
+def test_a_c_variadic_hand_port_is_banked_as_one_piece(tmp_path, monkeypatch):
+    # The extern decl, the va_entry! mod and the comments above each are one hand item: a
+    # replay must put all three back over the one bought `args: ...` function.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    state = {"stem": "m", "crate": "m-rust", "stages": []}
+    (tmp_path / "state" / "m").mkdir(parents=True)
+    (tmp_path / "state" / "m" / "state.json").write_text(json.dumps(state))
+    mods = tmp_path / "sdk" / "lib" / "rust" / "m-rust" / "src" / "m"
+    mods.mkdir(parents=True)
+    bought = 'fn A() {}\n\n#[no_mangle]\npub unsafe extern "C" fn P(fmt: PCSTR, args: ...) {}\n'
+    hand = (
+        'extern "C" {\n    /// declared so callers pass varargs\n'
+        "    pub fn P(fmt: PCSTR, ...);\n}\n\n"
+        "// defined through the naked thunk\nmod P_export {\n    use super::*;\n"
+        "    varargs_rust::va_entry!(P => |a| -> () {\n        x(a.get(0));\n    });\n}"
+    )
+    (mods / "f.rs").write_text(
+        bought.replace('#[no_mangle]\npub unsafe extern "C" fn P(fmt: PCSTR, args: ...) {}', hand)
+    )
+    port.stage_hand("m", ["f.rs:P"])
+    banked = json.loads((tmp_path / "state" / "m" / "hand" / "f.P.json").read_text())
+    assert banked["text"] == hand
+    (mods / "f.rs").write_text(bought)
+    assert port.apply_hand("m") == 1
+    assert (mods / "f.rs").read_text() == "fn A() {}\n\n" + hand + "\n"
+
+
+def test_hand_span_finds_an_import_renamed_in_rust_only():
+    text = (
+        "fn A() {}\n\n"
+        '#[cfg(target_arch = "x86")]\nextern "C" {\n    #[link_name = "Tag"]\n'
+        "    static Tag_dll: u8;\n}\n"
+        '#[cfg(target_arch = "x86_64")]\nextern "C" {\n    #[link_name = "__imp_Tag"]\n'
+        "    static Tag_imp: *const u8;\n}\n"
+    )
+    lo, hi = port.hand_span(text, "Tag", where="t")
+    assert text[lo:hi] == text[len("fn A() {}\n\n") :].rstrip("\n")
+
+
+def test_hand_span_refuses_pieces_with_other_code_between():
+    text = 'extern "C" {\n    fn P(...);\n}\nfn Other() {}\nmod P_export {\n}\n'
+    with pytest.raises(port.PortError, match="other code between"):
+        port.hand_span(text, "P", where="t")
+
+
 def test_a_defined_callback_gets_the_c_calling_convention(tmp_path, monkeypatch):
     from rustconv import sdk_facts
 

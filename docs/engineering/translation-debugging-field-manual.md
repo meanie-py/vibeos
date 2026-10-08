@@ -399,6 +399,16 @@ the same file had 46 parameters where the model's spelling merely disagreed with
 mapping and the model was **right** (`size_t`/`usize`, `threadmbcinfo *`/`pthreadmbcinfo`).
 Locals are not covered — grep `\*mut <ptr typedef>` after a flip.
 
+**Driver modules repeat it at scale, with a double deref to match.** atapi's
+`PATAPORT_PORT_DATA PortData` came back as `PortData: *mut PATAPORT_PORT_DATA` on params, locals
+AND returns, and every field access as `(*(*PortData)).Worker` — 169 sites in atapi, 125 in
+pciidex, all in the paid bank, all compiling, all reading the struct's first word as a pointer.
+crate-repair's `raw_pointer_field` rule makes the same shape out of a `p.F` on a double pointer,
+so the repair loop cannot see it either. `port integrate` now runs `pointer_depth.py`: per C
+function, a name the C declares `T x` (no star, `T` a pointer typedef in the island) and the
+Rust declares `*mut T` loses one level — declaration, `(*(*x))` and the `as *mut T` assigned
+to it. `T *x` out-parameters are left alone.
+
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
 `@KfRaiseIrql@4`), by **hal on arm64** (halstubs), and by **neither on amd64** — so routing a
@@ -1029,6 +1039,15 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **LLVM COFF-i386 rejects `push offset <label>`** ("unsupported relocation type"); the
   `mov reg, offset` encoding works. Worse, bare `push <label>` is a silent **memory** push.
   Materialise into a provably-dead scratch register, then push it.
+- **On i386 `ebx` is an ordinary `reg`: never `xchg` it around an instruction whose pointer
+  operand is `in(reg)`.** Only x86_64 reserves rbx. The slist crate's i386 `cmpxchg8b` did
+  `xchg {new_lo}, ebx` / `lock cmpxchg8b [{addr}]`, LLVM put `addr` in ebx, and the swap
+  replaced the header pointer with the entry being pushed. Symptom: `InterlockedPushEntrySList`
+  spins forever at 100% (or "succeeds" into the entry with the list unchanged); Wine's
+  ucrtbase cpp test hung in `__std_type_info_name`. Shipped in ntdll.dll and ks.sys; ntoskrnl,
+  built from the same source, allocated differently and was fine. Fix: pin the pointer to a
+  fixed register (`in("edi") addr`, `[edi]` in the template). `scan_xchg_ebx_deref` gates it on
+  every i386 build.
 - **Verify an asm translation by disasm-diffing against the original `.obj`**, not by smoke —
   SEH/setjmp/CRT paths are barely exercised by a boot. `objdump -d` both (don't extract from a
   *thin* archive; objdump the on-disk `.obj`). Any diff beyond annotated reloc workarounds is
@@ -1383,6 +1402,19 @@ there an importlib entry" — grep the spec line for `-private` before deleting 
 mentions its own name in an `extern` block is always this bug** — and note the shape survives
 `cargo check`, `clippy` and code review, and is only visible post-link.
 
+**The quiet version is a stub that links and returns nothing.** Instead of a loop, the shim
+satisfies an unresolved name with `{ core::ptr::null_mut() }`. That boots, so nothing flags it.
+classpnp carried `RtlInterlockedPushEntrySList`/`PopEntrySList` stubs from 2026-06-10 to
+2026-10-07: ntkrnl-sys binds the SList pair to those `Rtl` names, which only exist inside
+ntoskrnl (drivers must import `ExpInterlocked*` on 64-bit, FASTCALL `Interlocked*` on i386,
+`ntoskrnl.spec:175-176,327-328`). Every free-list push dropped its packet and every pop came
+back empty, so each disk request allocated a fresh transfer packet and SRB and leaked them,
+including through ntkrnl-sys's inline lookaside helpers. The symptom was not "out of memory":
+amd64-bios boots failed paging reads with `STATUS_IN_PAGE_ERROR` (C0000006) in 15 of 80 runs,
+and none in 16 runs after the shims forwarded to the real exports. The failure mechanism was
+not pinned down. Check: `objdump -p <driver>.sys | grep <name>` must show an IMPORT, and
+`objdump -d` of a shim must show a `jmp` to that import, not `xor eax,eax; ret`.
+
 ### captures(none)-class hardening that is still worth doing
 - **Stale/hoisted load through a `static mut` table across a foreign call** — a by-handle
   lookup wrongly rejects an object; a `DbgPrint` between the reads "fixes" it. `read_volatile`
@@ -1705,7 +1737,12 @@ types.
   "Cannot open winsta". Build a real UTF-16 twin via a `const fn`. The sibling bug is
   `size_of_val()` on that narrow const returning N instead of N*2 → an undersized
   UNICODE_STRING `MaximumLength` → truncation → 0xc000021a → BUGCHECK 0x4C. Use the wide twin
-  in **both** the append and the size math.
+  in **both** the append and the size math. For `gen_driver_types.sh` islands this is now
+  mechanized: `widen_island_constants.py` rewrites each such constant to `&[u16; N]` when the
+  tree `#define`s that name `L"<same text>"` exactly once (1,116 constants across 246 islands
+  on 2026-10-07; shell32's `drive.rs` was passing the narrow `TOOLTIPS_CLASSW` to
+  `CreateWindowExW`). The `-sys` crates' own generators (ntkrnl-sys, ntdll-sys, win32k-sys, …)
+  do not run it yet.
 - **`--allowlist-file` matches where an item is DEFINED, not where it is REACHED.** An umbrella
   header that is a pure `#include` manifold contributes nothing by being allowlisted, and the
   failure is asymmetric in the worst way: bindgen still emits a STRUCT the allowlist reaches as
@@ -5226,6 +5263,46 @@ lists), a capture made by a primitive other than `read_back` (`safe_copy_from_us
 local, then its buffer field used raw), and a method call — those are caught only by reading. A
 write INTO a user buffer the caller pinned with EngSecureMem/MmSecureVirtualMemory first
 (NtGdiGetDIBitsInternal) is safe and carries a nolint.
+
+**The double-fetch is the same hazard in TIME, and SMP is what makes it bite.** Capturing a
+user value ONCE and using the copy is only half enforced by the rule above; the other half is
+never capturing the SAME address TWICE. Two `read_back`/`safe_copy_from_user` of one user
+pointer take two independent snapshots, and a thread on another CPU changes the value between
+them, so a length validated on the first read no longer bounds the copy sized by the second.
+`tools/scan_double_fetch.py` (`vibeos-cli check`, baseline-gated) flags a source read twice on
+one control-flow path, and the quieting rules it needs are instructive: sibling `match`/`if-else`
+arms and a branch that `break`/`return`s before the second read are mutually exclusive (not a
+re-read); a source POINTER advanced between the reads (`p = p.add(i)`) addresses different memory
+each time (a streaming copy); and the source normaliser must strip a trailing `as T` only at
+paren depth 0, or `(*(p as *const S)).a` and `.b` collapse to one key. The real one it caught:
+`SeCaptureSecurityDescriptor` read the SD header, branched on `Control & SE_SELF_RELATIVE`, then
+re-read Control from the absolute struct — a racing flip made it copy absolute pointer fields and
+then rebase them as self-relative offsets, a wild address handed to `RtlValidSid`. Fixed by
+pinning the self-relative decision and the header scalars from the first read. The baseline holds
+two reviewed two-stage reads (header then body, size pinned from the kernel copy) and one owed
+low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
+across a syscall and a worker it calls.
+
+**A non-raising RANGE probe is not a touch-test, and `scan_safe_probe_deref` gates it.** win32k
+and ks.sys validate a user pointer with `SafeProbeForRead`/`SafeProbeForWrite` (ks.sys's mirror
+is `KsSafeProbeForRead`) — the NON-raising cousins of `ProbeForRead`: they return a status, and
+they only check the range is below `MmUserProbeAddress` and aligned. They deliberately do NOT
+touch the page (under DUMMY_PSEH a touch-test would itself fault), so the probe proves WHERE the
+buffer is, never that it STAYS mapped. A raw dereference after one — `rc = *(prc as *const
+RECTL)`, a `copy_nonoverlapping` from it — is the same any-process BUGCHECK 0x1E as never probing
+at all, where the C's shared `_SEH2_TRY` over probe-and-copy returned a status. This is the class
+behind `NtUserScrollDC`, `NtUserSetSysColors` and `NtGdiGetDIBits`; the fix is the same
+fault-tolerant copy as above (`KmProtectedCopyMemory`/`safe_copy_raw`/`capture_from_user`),
+keeping the probe for its range check. `tools/scan_safe_probe_deref.py` (`vibeos-cli check`, gated
+at ZERO) flags a bare-identifier pointer passed to a `*SafeProbeFor{Read,Write}` call and then
+touched raw, reusing `scan_raw_user_access`'s `_walk` for the access patterns, the capture-shadow
+rule (`let bmi = pbmiSafe` after the safe copy ends tracking) and the kernel-arm skip (an
+`if mode != KernelMode`/`Mode == 0` arm is trusted). Writing it turned up a FOURTH instance the
+win32k fixes missed: ks.sys's `KsFastPropertyHandler` copied the user `Property` raw on its
+UserMode arm after only a `KsSafeProbeForRead` (the KernelMode arm's raw copy is correct), fixed
+by routing it through `safe_copy_raw` like the rest of that file. What it cannot see: a probe and
+a touch split across two functions, a validator not spelled `*SafeProbeFor*` (name it the house
+way or the scanner is blind to it), and a `.read()`-method or by-value `f(*p)` touch.
 
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
@@ -10953,6 +11030,19 @@ budget. Do not "fix" this by lowering the boot marker; the marker is what proves
 came up. Recompute the scale from a stashed UP value, not from the current one, or a config
 reused across a retry loop multiplies each time.
 
+### On a GICv3, every IPI of the early-SMP window is lost until the distributor is enabled
+**Symptom:** arm64 `--gic 3 --smp 4` hangs right after `KeStartAllProcessors: 4 processor(s)
+online` with `[IPI] KeIpiGenericCall stuck in arrival: ... TargetSet=e`. Every AP printed
+`[GIC] CPUn percpu (GICv3): ... awake=1 SRE=1 SGI0 enabled=1`, so each redistributor was found,
+woken and had the IPI enabled. **Cause:** a GICv3 distributor's group enables (GICD_CTLR
+EnableGrp1/ARE) gate SGIs and PPIs as well as SPIs, even though SGIs and PPIs live in the
+redistributors. UEFI leaves the distributor disabled at ExitBootServices, and the BSP turns
+it on only at clock init (Phase 1), well after the AP self-test IPI. The GICv2 path never hit
+this because each AP's per-CPU init already wrote GICD_CTLR. **Fix:** per-CPU init enables
+the distributor (idempotent, through the loader's identity map of its first page), and the
+BSP's affinity is recorded at HalInitSystem, so an early IPI to it pends instead of having
+no route (`hal-rust arm64/gic3.rs`).
+
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU
 re-HLTs with runnable threads parked on its own `DeferredReadyListHead`** → `KeGuardedMutex`
@@ -12264,6 +12354,30 @@ Two lessons beyond the fix:
   NtContinues back to the faulting instruction, so a handler that merely returns
   `EXCEPTION_CONTINUE_SEARCH` turns the crash into a livelock (31,511 iterations). Guard, log,
   and fix the cause.
+
+### A WoW64 thread NtContinues a native context into 32-bit compat mode
+Symptom: amd64 only. A 32-bit guest faults executing at a 32-bit address that is the LOW half
+of a native ntdll address (`eip=b7002919` for `0x7FFB7002919`), with `ebx/esi/edi/ebp` equal to
+the native registers of some earlier 64-bit context; first seen when a user APC (resumed with
+`NtContinue` of the context the kernel delivered it with) returned.
+
+Cause: `KiSystemCallEntry64` (ke/amd64/trap.S) built the trap frame without `SegCs`/`SegSs` --
+`syscall` pushes no machine frame -- so the frame kept whatever the last trap at that kernel
+stack slot left. In a WoW64 thread that is the compat code selector from an interrupt taken in
+guest code, and `KeContextToTrapFrame` turns any CS other than 64-bit user CS into compat CS, so
+a CONTEXT built from a syscall frame resumed as 32-bit code. A native process never takes a trap
+in compat mode, so it never showed. Fix: the entry stores the 64-bit user selectors.
+
+### A guest routine in the x86-64 MAIN IMAGE was run as arm64 code
+Symptom: an x86-64 guest's waitable-timer completion routine (apc64 rung 8) dies with
+`c000001d` at the routine's own address, under the native `KiUserApcDispatcher`; QueueUserAPC
+and ReadFileEx routines work.
+
+Cause: wowx64's `IsGuestCode` called anything in the NATIVE loader's module list native, and
+the x86-64 main image is in that list (the native loader maps it). QueueUserAPC hides this --
+kernel32 wraps the routine in its own `BaseDispatchApc`, which lives in a sysamd64 DLL -- but
+SetWaitableTimer passes the exe's routine straight through. Fix: native means in the native list
+AND an arm64 image.
 
 ### A WoW64 process's fixed TLS slots must be RESERVED, or the first `TlsAlloc` takes slot 1
 Symptom: every 32-bit guest crashes early in libwow64fex's rpmalloc (`heap_get_page_generic`)

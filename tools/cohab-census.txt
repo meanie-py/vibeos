@@ -92,6 +92,7 @@ base/setup/usetup/CMakeLists.txt	1	# fslist.c # replaced by Rust (sdk/lib/rust/u
 base/setup/usetup/CMakeLists.txt	1	# genlist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/genlist.rs)
 base/setup/usetup/CMakeLists.txt	1	# keytrans.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/keytrans.rs)
 base/setup/usetup/CMakeLists.txt	1	# mui.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui.rs)
+base/setup/usetup/CMakeLists.txt	1	# mui_tables.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/mui_tables/mod.rs, generated: port data)
 base/setup/usetup/CMakeLists.txt	1	# partlist.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/partlist.rs)
 base/setup/usetup/CMakeLists.txt	1	# progress.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/progress.rs)
 base/setup/usetup/CMakeLists.txt	1	# spapisup/cabinet.c # replaced by Rust (sdk/lib/rust/usetup-rust/src/usetup/cabinet.rs)
