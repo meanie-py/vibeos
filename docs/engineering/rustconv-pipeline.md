@@ -656,7 +656,21 @@ decides a byte from clang run with the TU's own compile command -- which declara
 - Output is generated on all three arches and must be identical; each extern table's
   length is checked against the island's `extern` declaration (how the crate's code reaches
   it), and is a `#[no_mangle] pub static mut`. A NULL is `null()` / `null_mut()` through the
-  typedef chain. Unions, bit-fields, designated initializers and wide literals refuse.
+  typedef chain.
+- Since 2026-10-08 also: **designated initializers** (clang's JSON is the semantic form, in
+  field order with implicit zeros); **unions**, through the member clang names, and anonymous
+  members as bindgen's `__bindgen_anon_N: Parent__bindgen_ty_N`; **bit-fields**, packed into
+  `__BindgenBitfieldUnit::new([..])` from the offsets the island's bindgen accessors state
+  (`get_const::<OFF, WIDTH>`), so the island is the layout oracle and an island without the
+  struct refuses; **wide literals** as `wstr!("...")` (UTF-16 built by a const fn, checked
+  unit for unit against clang); and `char`/`WCHAR` arrays initialized by a string. Helpers sit
+  in a private `data_port` module: a C table named `w` or `n` must not meet a helper's local.
+- **A filler bug, found while adding these:** when an array has a filler, clang's JSON puts the
+  explicit elements INSIDE `array_filler` (after the filler) and omits `inner`, so
+  `int x[4] = {1, 2}` was rendered as four zeros. usetup's tables were unaffected (none is
+  partially initialized; regenerating changed no value). The test that pins the new shapes
+  generates against a real bindgen island, compiles with rustc and RUNS the result,
+  asserting every value the C states -- the compile step alone caught two helper-scope bugs.
 - `port data` writes `src/<stem>/<tu>/` (one file per header), wires lib.rs and comments the
   TU out of the CMakeLists. The TU stays on disk as the generator's INPUT; flipped, it
   borrows a sibling's compile command.
@@ -665,6 +679,40 @@ usetup's `mui_tables.c`: 959 tables from 30 lang headers (~70K lines of C, five 
 became 31 files and 14.7K lines, 0 errors on the first `cargo check` on every arch, with no
 numeric fallbacks. Checked independently of the generator: all 6,443 distinct strings the
 C object's `.rdata` holds are present, NUL-terminated, in each arch's Rust-linked usetup.exe.
+
+### Runtime: the pre-flip C as the oracle, `modrun` in the guest (2026-10-07)
+
+    python -m rustconv.c_oracle base/system/diskpart      # writes c_oracle.cmake: diskpart_c
+    $EDITOR tools/payloads/modrun/suites/diskpart.yaml     # commands + expectations
+    VIBEOS_PAYLOAD=modrun ./vibeos-cli build --arch amd64
+    ./vibeos-cli smoke --arch amd64 --payload modrun       # grades on the host
+    python3 tools/payloads/modrun/modrun.py grade <payload/*_serial.log> --arch amd64-uefi
+
+- **The oracle.** A flip leaves the C on disk and comments it out (`# x.c  # replaced by Rust`).
+  `c_oracle` replays every command that configures the flipped target against `<target>_c`
+  with those TUs restored and the Rust pieces dropped, into `c_oracle.cmake`
+  (`EXCLUDE_FROM_ALL`, never shipped). A target that links the flipped one gets a twin too,
+  so a probe exe linked to `setuplib_static` comes in a C build for free. Works for any of
+  the ~86 flipped modules; `--check` reports a stale oracle.
+- **The runner.** `modrun.exe` (Startup folder) runs each case's variants -- reference first
+  -- with the same stdin, pipes their output to the serial, and judges nothing. `modrun.py`
+  diffs the variants (after the suite's `normalize` rules), checks `expect` substrings and
+  exit codes, and reports XFAIL/XPASS for known bugs. A new check is a YAML edit.
+- **Probes.** A library has no command line: write a small exe that drives its entry points
+  and prints values, never addresses (`base/setup/lib/modrun_probe.c`), give it a CMake target
+  that links the library's static archive, and `c_oracle` makes its C twin. An API reached
+  only through a service (msv1_0 via lsass) gets a plain-C probe in `modrun/probes/` and an
+  expectations-only suite.
+- **Traps met building it.** vfatlib's vendored dosfstools defines its own `exit()`
+  (`NtTerminateProcess`), so an exe linking it never runs msvcrt's exit and loses its last
+  stdio buffer: probes `fflush`. `closure-prune` deleted the oracle exes before arm64's
+  ramdisk step until payload ninja targets became prune roots (`compile.py ninja_targets`).
+- **What it found on its first three modules**: partmgr's GET_DRIVE_LAYOUT_EX copied 192x past
+  the caller's buffer (BUGCHECK 0x19), kernel32 FindNextVolumeW and setuplib's partition list
+  indexed flexible arrays (panics), diskpart's MBR sector struct was unpacked, setuplib's
+  `goto Quit` was a no-op, msv1_0's failed-check `goto done`s were no-ops (lsass crashed on an
+  unknown user). Each class got a gate: `scan_typed_byte_copy`, `rustconv.flex_index`,
+  `scan_pack_drift`, `scan_noop_goto`.
 
 ### `port headers`: header inline functions as units of the crate (2026-10-06)
 

@@ -387,6 +387,26 @@ def test_payload_launched(vm: QemuVM, arch: str, payload: str, spec: dict[str, A
             f"--payload {payload} finished but its output lacks {pass_marker!r}: "
             f"{verdict.strip()!r}"
         )
+    # A payload graded on the HOST (modrun diffs the Rust against its C oracle): the guest
+    # only reports, so a new check is a spec edit, never a rebuilt image.
+    grader = t.get("grader")
+    if grader:
+        report, failures = _load_grader(grader).grade(output, arch)
+        print(f"\n[payload] {payload} grader:\n" + "\n".join(report), flush=True)
+        assert not failures, f"--payload {payload}: {len(failures)} failed:\n" + "\n".join(failures)
+
+
+def _load_grader(path: str) -> Any:
+    import importlib.util
+    import sys
+
+    file = PROJECT_DIR / path
+    spec = importlib.util.spec_from_file_location(f"payload_grader_{file.stem}", file)
+    assert spec is not None and spec.loader is not None, f"grader {path!r} is not a python file"
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def test_payload_renders(

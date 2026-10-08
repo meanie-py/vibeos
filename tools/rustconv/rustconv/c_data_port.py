@@ -30,9 +30,15 @@ against the crate island's `extern` declaration of it, which is how the crate's 
 already reaches it. A C `static` stays module-private in spirit (`pub(super)`), visible to
 the sibling tables that point at it.
 
-Not handled, loudly: wide literals, unions, bit-fields, designated initializers with gaps
-clang does not fill, and any initializer kind not listed in `_render`. Each is a
-`DataPortError` naming the declaration, never a silent zero.
+Also handled (2026-10-08): designated initializers (clang's JSON is the SEMANTIC form,
+already in field order with implicit zeros); unions, through the member clang says the
+initializer names, and anonymous struct/union members as bindgen's `__bindgen_anon_N` of type
+`Parent__bindgen_ty_N`; bit-fields, packed into `__BindgenBitfieldUnit::new([..])` from the
+offsets the island's own bindgen accessors state; wide literals as `wstr!("...")`, checked
+unit for unit; and `char`/`WCHAR` arrays initialized by a string. Not handled, loudly: an
+anonymous member initialized as a union's active member, a bit-field struct the island does
+not define, and any initializer kind not listed in `_render`. Each is a `DataPortError`
+naming the declaration, never a silent zero.
 """
 
 from __future__ import annotations
@@ -145,32 +151,73 @@ def enum_constants(ast: dict) -> dict[str, tuple[int, str]]:
     return out
 
 
-def records(ast: dict) -> dict[str, list[tuple[str, str]]]:
-    """typedef or struct name -> its fields (name, qualType), in declaration order."""
-    by_id: dict[str, list[tuple[str, str]]] = {}
-    named: dict[str, str] = {}
-    out: dict[str, list[tuple[str, str]]] = {}
+@dataclass
+class CField:
+    name: str | None  # None: an anonymous struct/union member
+    qual: str
+    bits: int | None = None  # a bit-field's width
+
+
+@dataclass
+class Rec:
+    kind: str  # "struct" | "union"
+    fields: list[CField]
+    rust: str | None = None  # bindgen's name, for an anonymous record (`A__bindgen_ty_1`)
+
+
+def records(ast: dict) -> dict[str, Rec]:
+    """Every struct and union by the names an initializer's qualType can use: its typedef,
+    `struct X`/`union X`, and for an anonymous member's record the qualType clang gives it
+    (`union A::(anonymous at f.c:4:28)`), together with bindgen's name for that record
+    (`A__bindgen_ty_1`: the parent's name, then the anonymous records in declaration order)."""
+    by_id: dict[str, dict] = {}
+    names: dict[str, str] = {}  # record id -> bindgen's name, for top-level records
+    aliases: dict[str, str] = {}  # typedef name -> record id
     for d in ast.get("inner", []):
         if d.get("kind") == "RecordDecl" and d.get("completeDefinition"):
-            fields = []
-            for f in d.get("inner", []):
-                if f.get("kind") != "FieldDecl":
-                    continue
-                if f.get("isBitfield"):
-                    fields = None
-                    break
-                fields.append((f.get("name", ""), f["type"]["qualType"]))
-            if fields is not None and d.get("tagUsed") == "struct":
-                by_id[d["id"]] = fields
-                if d.get("name"):
-                    named[f"struct {d['name']}"] = d["id"]
+            by_id[d["id"]] = d
+            if d.get("name"):
+                names.setdefault(d["id"], d["name"])
         elif d.get("kind") == "TypedefDecl":
-            ids = re.findall(r'"decl":\s*\{"id":\s*"(0x[0-9a-f]+)"', json.dumps(d.get("inner", [])))
+            inner = json.dumps(d.get("inner", []))
+            owned = re.search(r'"ownedTagDecl":\s*\{"id":\s*"(0x[0-9a-f]+)"', inner)
+            if owned and owned.group(1) not in names:
+                names[owned.group(1)] = d["name"]  # an anonymous struct: bindgen names it so
+            ids = re.findall(r'"decl":\s*\{"id":\s*"(0x[0-9a-f]+)"', inner)
             if ids:
-                named[d["name"]] = ids[0]
-    for name, rid in named.items():
-        if rid in by_id:
-            out[name] = by_id[rid]
+                aliases[d["name"]] = ids[0]
+    out: dict[str, Rec] = {}
+
+    def walk(rec: dict, rust: str) -> Rec:
+        fields: list[CField] = []
+        nested = 0
+        last: Rec | None = None  # the anonymous record the next field's type names
+        for f in rec.get("inner", []):
+            k = f.get("kind")
+            if k == "RecordDecl" and f.get("completeDefinition") and not f.get("name"):
+                nested += 1
+                last = walk(f, f"{rust}__bindgen_ty_{nested}")
+                last.rust = f"{rust}__bindgen_ty_{nested}"
+            elif k == "FieldDecl":
+                q = f["type"]["qualType"]
+                if last is not None and ("(anonymous" in q or "(unnamed" in q):
+                    out[q] = last  # clang spells the member's type this way, exactly
+                bits = (
+                    int(f["inner"][0]["value"]) if f.get("isBitfield") and f.get("inner") else None
+                )
+                fields.append(CField(f.get("name") or None, q, bits))
+        return Rec(rec.get("tagUsed", "struct"), fields)
+
+    for rid, d in by_id.items():
+        rust = names.get(rid)
+        if rust:
+            r = walk(d, rust)
+            out[rust] = r
+            out[f"{d.get('tagUsed', 'struct')} {rust}"] = r
+    for alias, rid in aliases.items():
+        rust = names.get(rid)
+        if rust in out:
+            out.setdefault(alias, out[rust])
     return out
 
 
@@ -216,11 +263,72 @@ def c_unescape(body: bytes) -> bytes:
 
 
 def _clang_string_value(node: dict) -> bytes:
-    """clang's evaluated value of a StringLiteral (printed with C escapes)."""
+    """clang's evaluated value of a narrow StringLiteral (printed with C escapes)."""
     v = node["value"]
     if not (v.startswith('"') and v.endswith('"')):
-        raise DataPortError(f"wide or prefixed string literal not handled: {v[:40]}")
+        raise DataPortError(f"prefixed string literal where a narrow one was expected: {v[:40]}")
     return c_unescape(v[1:-1].encode("latin-1"))
+
+
+def wide_units(body: str) -> list[int]:
+    """The code units a wide literal's body denotes, as clang prints or a source spells it:
+    an escape is one unit (`\\351`, `\\x263A`), `\\u`/`\\U` a code point, text its UTF-16."""
+    out: list[int] = []
+    i = 0
+    while i < len(body):
+        c = body[i]
+        if c != "\\":
+            out += _utf16(ord(c))
+            i += 1
+            continue
+        e = body[i + 1]
+        if e == "x":
+            j = i + 2
+            while j < len(body) and body[j] in "0123456789abcdefABCDEF":
+                j += 1
+            out.append(int(body[i + 2 : j], 16) & 0xFFFF)
+            i = j
+        elif e in "01234567":
+            j = i + 1
+            while j < len(body) and j < i + 4 and body[j] in "01234567":
+                j += 1
+            out.append(int(body[i + 1 : j], 8))
+            i = j
+        elif e in "uU":
+            n = 4 if e == "u" else 8
+            out += _utf16(int(body[i + 2 : i + 2 + n], 16))
+            i += 2 + n
+        elif e in _SIMPLE_ESC:
+            out.append(_SIMPLE_ESC[e])
+            i += 2
+        else:
+            raise DataPortError(f"unknown escape \\{e} in a C wide literal")
+    return out
+
+
+def _utf16(cp: int) -> list[int]:
+    if cp < 0x10000:
+        return [cp]
+    cp -= 0x10000
+    return [0xD800 | (cp >> 10), 0xDC00 | (cp & 0x3FF)]
+
+
+def _rust_str(units: list[int]) -> str | None:
+    """The Rust `"..."` whose UTF-16 is `units`, or None when they are not valid UTF-16 (an
+    unpaired surrogate): printable ASCII as itself, everything else `\\u{..}`."""
+    try:
+        text = bytes(b for u in units for b in u.to_bytes(2, "little")).decode("utf-16-le")
+    except UnicodeDecodeError:
+        return None
+    out = []
+    for ch in text:
+        if ch in '"\\':
+            out.append("\\" + ch)
+        elif 0x20 <= ord(ch) < 0x7F:
+            out.append(ch)
+        else:
+            out.append(f"\\u{{{ord(ch):x}}}")
+    return '"' + "".join(out) + '"'
 
 
 _STR_TOKEN = re.compile(rb'"(?:[^"\\\n]|\\.)*"')
@@ -310,12 +418,14 @@ class Ctx:
     """What rendering one TU needs to know beyond the node in hand."""
 
     sources: dict[str, bytes]
-    records: dict[str, list[tuple[str, str]]]
+    records: dict[str, Rec]
     island_consts: dict[str, int]
     string_macros: dict[str, bytes]
     utf8_files: set[str]
     refs: set[str] = field(default_factory=set)  # every object the initializer points at
     where: str = ""
+    island: str = ""  # the crate island's text: bindgen's spelling of bit-field units
+    helpers: set[str] = field(default_factory=set)  # const helpers the output needs
 
     def text(self, node: dict) -> tuple[str | None, bytes]:
         r = node.get("range", {})
@@ -380,6 +490,8 @@ def clang_int(node: dict) -> int:
     k = n.get("kind")
     if k in ("IntegerLiteral", "CharacterLiteral"):
         return int(n["value"])
+    if k == "ImplicitValueInitExpr":  # a member a designated initializer left out: C's zero
+        return 0
     if k == "UnaryOperator":
         v = clang_int(n["inner"][0])
         return {"-": -v, "~": ~v, "+": v, "!": int(not v)}[n["opcode"]]
@@ -426,6 +538,10 @@ def _render(node: dict, qual: str, ctx: Ctx, indent: str) -> str:
     if "NullToPointer" in casts:
         return _zero(qual)
     if ik == "StringLiteral":
+        if re.fullmatch(r".+?\s*\[\d+\]", qual.strip()):
+            return _render_string_array(inner, qual, ctx)  # `char s[8] = "abc"`
+        if inner["value"].startswith(('L"', 'u"')):
+            return _render_wide(inner, qual, ctx)
         return _render_string(inner, qual, ctx)
     if ik in ("DeclRefExpr", "UnaryOperator") and (
         "ArrayToPointerDecay" in casts or inner.get("opcode") == "&"
@@ -514,7 +630,111 @@ def _render_string(lit: dict, qual: str, ctx: Ctx) -> str:
         ),
         want,
     )
+    ctx.helpers.add("cstr_cat")
     return f"cstr_cat!({', '.join(pieces)}).as_ptr() as {rt}"
+
+
+def _wide_value(lit: dict) -> list[int]:
+    v = lit["value"]
+    if not (v[:2] in ('L"', 'u"') and v.endswith('"')):
+        raise DataPortError(f"string literal prefix not handled: {v[:40]}")
+    units = wide_units(v[2:-1])
+    return units[:-1] if units and units[-1] == 0 else units
+
+
+def _wide_spelling(lit: dict, ctx: Ctx, want: list[int]) -> str:
+    """`wstr!("...")` spelled from the source's L"..." pieces when they denote exactly
+    clang's units, else from clang's units (still a `wstr!` when they are valid UTF-16)."""
+    f, raw = ctx.text(lit)
+    pieces = []
+    if f is not None:
+        for m in _TOKEN.finditer(raw):
+            tok = m.group(0)
+            if tok.isspace() or tok.startswith((b"/*", b"//")):
+                continue
+            if tok in (b"L", b"u") or tok.startswith(b'"'):
+                pieces.append(tok)
+                continue
+            pieces = []
+            break
+    text = b"".join(pieces).replace(b'L"', b'"').replace(b'u"', b'"')
+    bodies = re.findall(rb'"((?:[^"\\]|\\.)*)"', text)
+    try:
+        spelled = [u for b in bodies for u in wide_units(b.decode("utf-8"))] if bodies else None
+    except (UnicodeDecodeError, DataPortError):
+        spelled = None
+    rust = _rust_str(want)
+    if rust is None:
+        return "&[" + ", ".join(f"0x{u:04x}u16" for u in [*want, 0]) + "]"
+    _check_wide(ctx, rust, want)
+    del spelled  # the spelling decides nothing a Rust `\u{..}` cannot say; checked below
+    return f"wstr!({rust})"
+
+
+def _check_wide(ctx: Ctx, rust: str, want: list[int]) -> None:
+    got = list(_rust_str_value(rust).encode("utf-16-le"))
+    units = [got[i] | got[i + 1] << 8 for i in range(0, len(got), 2)]
+    if units != want:
+        raise DataPortError(
+            f"{ctx.where}: the Rust wide literal spells {units[:20]}, clang {want[:20]}"
+        )
+
+
+def _rust_str_value(rust: str) -> str:
+    body, out, i = rust[1:-1], [], 0
+    while i < len(body):
+        if body[i] == "\\":
+            if body[i + 1] == "u":
+                j = body.index("}", i)
+                out.append(chr(int(body[i + 3 : j], 16)))
+                i = j + 1
+                continue
+            out.append(body[i + 1])
+            i += 2
+        else:
+            out.append(body[i])
+            i += 1
+    return "".join(out)
+
+
+def _render_wide(lit: dict, qual: str, ctx: Ctx) -> str:
+    want = _wide_value(lit)
+    spelled = _wide_spelling(lit, ctx, want)
+    ctx.helpers.add("wstr")
+    return f"{spelled}.as_ptr() as {rust_type(qual)}"
+
+
+def _render_string_array(lit: dict, qual: str, ctx: Ctx) -> str:
+    """A char or WCHAR ARRAY initialized by a string: the units, zero-padded to the length
+    (C drops the NUL when the string exactly fills the array)."""
+    m = re.fullmatch(r"(.+?)\s*\[(\d+)\]", qual.strip())
+    assert m is not None  # _render routed only an array type here
+    elem, n = m.group(1), int(m.group(2))
+    rt = rust_type(desugar(elem))
+    if lit["value"].startswith(('L"', 'u"')):
+        units = _wide_value(lit)
+        if len(units) > n:
+            raise DataPortError(f"{ctx.where}: {len(units)} units for {qual}")
+        rust = _rust_str(units)
+        if rust is None:
+            vals = [*units, *[0] * (n - len(units))]
+            return "[" + ", ".join(f"0x{u:04x}" for u in vals) + "]"
+        _check_wide(ctx, rust, units)
+        ctx.helpers.add("wstr")
+        return f"data_port::wstr_units::<{n}>({rust})"
+    data = _clang_string_value(lit)
+    if data.endswith(b"\0") and len(data) > n:
+        data = data[:-1]
+    if len(data) > n:
+        raise DataPortError(f"{ctx.where}: {len(data)} bytes for {qual}")
+    lit_rs = rust_byte_string(data, prefix="b")
+    ctx.helpers.add("cstr_array")
+    arr = f"data_port::cstr_array::<{n}>({lit_rs})"
+    return (
+        arr
+        if rt in ("u8", "UCHAR", "BYTE")
+        else f"unsafe {{ core::mem::transmute::<[u8; {n}], [{rust_type(elem)}; {n}]>({arr}) }}"
+    )
 
 
 def _check_spelling(ctx: Ctx, got: bytes, want: bytes) -> None:
@@ -525,17 +745,28 @@ def _check_spelling(ctx: Ctx, got: bytes, want: bytes) -> None:
         )
 
 
+def _list_items(node: dict) -> tuple[list[dict], dict | None]:
+    """An InitListExpr's elements and its filler. clang's JSON prints the explicit elements
+    INSIDE `array_filler`, after the filler, and omits `inner` -- reading only `inner` made
+    `int x[4] = {1, 2}` come out as four zeros."""
+    if "array_filler" in node and "inner" not in node:
+        fill = node["array_filler"]
+        return fill[1:], fill[0]
+    return node.get("inner", []), (node.get("array_filler") or [None])[0]
+
+
 def _render_list(node: dict, qual: str, ctx: Ctx, indent: str) -> str:
     q = qual.strip()
     arr = re.fullmatch(r"(.+?)\s*\[(\d+)\]", q)
-    inner = node.get("inner", [])
+    inner, filler = _list_items(node)
     if arr:
         elem, n = arr.group(1), int(arr.group(2))
         items = [_render(c, elem, ctx, indent + "    ") for c in inner]
         if len(items) < n:
-            if "array_filler" not in node and len(items) != n:
+            if filler is None:
                 raise DataPortError(f"{ctx.where}: {len(items)} of {n} elements and no filler")
-            items += [_zero(elem)] * (n - len(items))
+            pad = _render(filler, elem, ctx, indent + "    ")
+            items += [pad] * (n - len(items))
         if "[" in elem:
             body = ",\n".join(f"{indent}    {it}" for it in items)
             return f"[\n{body},\n{indent}]"
@@ -548,24 +779,112 @@ def _render_list(node: dict, qual: str, ctx: Ctx, indent: str) -> str:
         body = "".join(f"{indent}    {it},\n" for it in items)
         return f"[\n{body}{indent}]"
     name = re.sub(r"^(?:const|volatile)\s+", "", q)
-    fields = ctx.records.get(name) or ctx.records.get(f"struct {name}")
-    if fields is None:
+    rec = ctx.records.get(q) or ctx.records.get(name) or ctx.records.get(f"struct {name}")
+    if rec is None:
+        raise DataPortError(f"{ctx.where}: {q} is not a struct or union this tool can see")
+    if any(c.get("kind") == "DesignatedInitExpr" for c in inner):
+        # The JSON is clang's SEMANTIC form, already in field order; a designator here would
+        # mean the syntactic one, which this reader does not interpret.
+        raise DataPortError(f"{ctx.where}: a syntactic designated initializer in {q}")
+    rust_name = rec.rust or rust_type(name)
+    if rec.kind == "union":
+        if not inner:
+            return _zero(q)
+        member = node.get("field", {}).get("name")
+        mtype = node.get("field", {}).get("type", {}).get("qualType")
+        if not member or mtype is None:
+            raise DataPortError(f"{ctx.where}: union {q} initialized through an anonymous member")
+        return f"{rust_name} {{ {member}: {_render(inner[0], mtype, ctx, indent + '    ')} }}"
+    if len(inner) > len(rec.fields):
         raise DataPortError(
-            f"{ctx.where}: {q} is not a struct this tool can see (union? bit-field?)"
+            f"{ctx.where}: {len(inner)} initializers for {len(rec.fields)} fields of {q}"
         )
-    if node.get("field") or any(c.get("kind") == "DesignatedInitExpr" for c in inner):
-        raise DataPortError(f"{ctx.where}: designated initializer in {q}")
-    if len(inner) > len(fields):
+    vals: list[tuple[str, str]] = []
+    bits: dict[str, int] = {}
+    anon = 0
+    for i, f in enumerate(rec.fields):
+        node_i = inner[i] if i < len(inner) else None
+        if f.bits is not None:
+            bits[f.name or ""] = clang_int(node_i) if node_i is not None else 0
+            continue
+        rname = f.name
+        if rname is None:
+            anon += 1
+            rname = f"__bindgen_anon_{anon}"
+        v = _render(node_i, f.qual, ctx, indent + "    ") if node_i is not None else _zero(f.qual)
+        vals.append((rname, v))
+    if bits:
+        vals = _with_bitfields(rust_name, rec, vals, bits, ctx)
+    return f"{rust_name} {{ " + ", ".join(f"{n}: {v}" for n, v in vals) + " }"
+
+
+def _with_bitfields(
+    rust_name: str, rec: Rec, vals: list[tuple[str, str]], bits: dict[str, int], ctx: Ctx
+) -> list[tuple[str, str]]:
+    """The struct's fields in bindgen's order, its bit-field units packed from the values.
+
+    bindgen groups bit-fields into `_bitfield_N: __BindgenBitfieldUnit<[u8; K]>` units (with
+    `_bitfield_align_N` and padding beside them) and says where each one lives in its
+    accessor: `self._bitfield_1.get_const::<OFFSETusize, WIDTHu8>()`. That accessor IS the
+    layout, so it is read from the island rather than re-derived from C's rules."""
+    m = re.search(rf"pub struct {re.escape(rust_name)} \{{(.*?)\n\}}", ctx.island, re.S)
+    impl = re.search(rf"impl {re.escape(rust_name)} \{{(.*?)\n\}}\n", ctx.island, re.S)
+    if m is None or impl is None:
         raise DataPortError(
-            f"{ctx.where}: {len(inner)} initializers for {len(fields)} fields of {q}"
+            f"{ctx.where}: {rust_name} has bit-fields and the crate island does not define it "
+            "(its bindgen accessors are what say how the fields pack)"
         )
-    vals = [_render(c, ft, ctx, indent + "    ") for c, (_, ft) in zip(inner, fields, strict=False)]
-    vals += [_zero(ft) for _, ft in fields[len(vals) :]]
-    return (
-        f"{rust_type(name)} {{ "
-        + ", ".join(f"{fname}: {v}" for (fname, _), v in zip(fields, vals, strict=True))
-        + " }"
-    )
+    where: dict[str, tuple[int, int, int]] = {}
+    for a in re.finditer(
+        r"pub fn (\w+)\(&self\)[^{]*\{[^}]*?self\._bitfield_(\d+)\.get"
+        r"(?:_const::<(\d+)usize, (\d+)u8>\(\)|\((\d+)usize, (\d+)u8\))",
+        impl.group(1),
+        re.S,
+    ):
+        where[a.group(1)] = (
+            int(a.group(2)),
+            int(a.group(3) or a.group(5)),
+            int(a.group(4) or a.group(6)),
+        )
+    units: dict[int, int] = {}
+    for name, value in bits.items():
+        if name not in where:
+            raise DataPortError(
+                f"{ctx.where}: no bindgen accessor for bit-field {rust_name}.{name}"
+            )
+        unit, off, width = where[name]
+        units[unit] = units.get(unit, 0) | ((value & ((1 << width) - 1)) << off)
+    by_name = dict(vals)
+    out: list[tuple[str, str]] = []
+    for fm in re.finditer(r"pub (\w+)\s*:\s*([^,\n]+),", m.group(1)):
+        fname, ftype = fm.group(1), fm.group(2).strip()
+        u = re.fullmatch(r"_bitfield_(\d+)", fname)
+        if u:
+            sm = re.search(r"\[u8;\s*(\d+)", ftype)
+            if sm is None:
+                raise DataPortError(f"{ctx.where}: bindgen unit {rust_name}.{fname} is {ftype}")
+            size = int(sm.group(1))
+            data = units.get(int(u.group(1)), 0).to_bytes(size, "little")
+            shown = ", ".join(
+                f"{n}={bits[n]}" for n, w in where.items() if w[0] == int(u.group(1)) and n in bits
+            )
+            out.append(
+                (
+                    fname,
+                    f"__BindgenBitfieldUnit::new([{', '.join(map(str, data))}]) /* {shown} */",
+                )
+            )
+        elif fname.startswith("_bitfield_align_"):
+            out.append((fname, "[]"))
+        elif fname.startswith("__bindgen_padding_"):
+            out.append((fname, "unsafe { core::mem::zeroed() }"))
+        elif fname in by_name:
+            out.append((fname, by_name[fname]))
+        else:
+            raise DataPortError(
+                f"{ctx.where}: island field {rust_name}.{fname} has no C initializer"
+            )
+    return out
 
 
 # --------------------------------------------------------------------------------------
@@ -582,6 +901,7 @@ class Table:
     length: int | None
     init: str
     refs: set[str]
+    helpers: set[str] = field(default_factory=set)
 
 
 def _island_consts(crate_src: Path, arch: str) -> dict[str, int]:
@@ -624,7 +944,9 @@ def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
         for m in ma._STRING_MACRO.finditer(ma._preprocess_defines(argv))
         if re.fullmatch(r'"(?:[^"\\]|\\.)*"', m.group(2).strip())
     }
+    island = crate_src / f"types_{arch}.rs"
     ctx = Ctx({}, records(ast), _island_consts(crate_src, arch), macros, set())
+    ctx.island = island.read_text() if island.is_file() else ""
     out: list[Table] = []
     for d in ast.get("inner", []):
         if d.get("kind") != "VarDecl" or not d.get("init"):
@@ -640,6 +962,7 @@ def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
             pass
         ctx.where = f"{Path(f).name}: {d['name']}"
         ctx.refs = set()
+        ctx.helpers = set()
         qual = d["type"]["qualType"]
         init = _render(d["inner"][0], qual, ctx, "")
         arr = re.fullmatch(r"(.+?)\s*\[(\d+)\]", qual.strip())
@@ -653,6 +976,7 @@ def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
                 int(arr.group(2)) if arr else None,
                 init,
                 set(ctx.refs),
+                set(ctx.helpers),
             )
         )
     lengths = _island_lengths(crate_src, arch)
@@ -665,7 +989,11 @@ def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
     return out
 
 
-CSTR_CAT = """\
+# Each helper is a macro (textual scope: emitted at the top of mod.rs, before every table
+# and `mod` line that uses it) and/or const fns, which live in a private `data_port` module:
+# a C table named `w` or `n` must not meet a helper's local of the same name.
+HELPER_MACROS = {
+    "cstr_cat": """\
 /// C string-literal concatenation through a string MACRO (`" ReactOS " KERNEL_VERSION_STR
 /// " Setup "`): a C compiler pastes the pieces; Rust's `concat!` takes only literals, and
 /// the macro's value is generated per build and per arch, so it is joined here, at compile
@@ -674,46 +1002,129 @@ CSTR_CAT = """\
 macro_rules! cstr_cat {
     ($($part:expr),+ $(,)?) => {{
         const PARTS: &[&[u8]] = &[$($part),+];
-        const LEN: usize = cstr_cat_len(PARTS);
-        const BYTES: [u8; LEN] = cstr_cat_join::<LEN>(PARTS);
+        const LEN: usize = data_port::cstr_cat_len(PARTS);
+        const BYTES: [u8; LEN] = data_port::cstr_cat_join::<LEN>(PARTS);
         &BYTES
     }};
 }
-
-const fn cstr_piece(p: &[u8]) -> usize {
-    if !p.is_empty() && p[p.len() - 1] == 0 {
-        p.len() - 1
-    } else {
-        p.len()
-    }
+""",
+    "wstr": """\
+/// A C wide literal (`L"..."`) as Rust: the UTF-16 of a `str`, NUL-terminated, built at
+/// compile time. `data_port::wstr_units::<N>` is the same zero-padded into a `WCHAR s[N]`.
+macro_rules! wstr {
+    ($s:expr) => {{
+        const S: &str = $s;
+        const N: usize = data_port::wstr_len(S);
+        const W: [u16; N] = data_port::wstr_units::<N>(S);
+        &W
+    }};
+}
+""",
 }
 
-pub(super) const fn cstr_cat_len(parts: &[&[u8]]) -> usize {
-    let mut n = 1;
-    let mut i = 0;
-    while i < parts.len() {
-        n += cstr_piece(parts[i]);
-        i += 1;
-    }
-    n
-}
-
-pub(super) const fn cstr_cat_join<const N: usize>(parts: &[&[u8]]) -> [u8; N] {
-    let mut out = [0u8; N];
-    let (mut i, mut o) = (0, 0);
-    while i < parts.len() {
-        let p = parts[i];
-        let mut j = 0;
-        while j < cstr_piece(p) {
-            out[o] = p[j];
-            o += 1;
-            j += 1;
+HELPER_FNS = {
+    "cstr_cat": """\
+    const fn cstr_piece(p: &[u8]) -> usize {
+        if !p.is_empty() && p[p.len() - 1] == 0 {
+            p.len() - 1
+        } else {
+            p.len()
         }
-        i += 1;
     }
-    out
+
+    pub(super) const fn cstr_cat_len(parts: &[&[u8]]) -> usize {
+        let mut n = 1;
+        let mut i = 0;
+        while i < parts.len() {
+            n += cstr_piece(parts[i]);
+            i += 1;
+        }
+        n
+    }
+
+    pub(super) const fn cstr_cat_join<const N: usize>(parts: &[&[u8]]) -> [u8; N] {
+        let mut out = [0u8; N];
+        let (mut i, mut o) = (0, 0);
+        while i < parts.len() {
+            let p = parts[i];
+            let mut j = 0;
+            while j < cstr_piece(p) {
+                out[o] = p[j];
+                o += 1;
+                j += 1;
+            }
+            i += 1;
+        }
+        out
+    }
+""",
+    "wstr": """\
+    pub(super) const fn wstr_len(s: &str) -> usize {
+        let b = s.as_bytes();
+        let (mut i, mut n) = (0, 1);
+        while i < b.len() {
+            let c = b[i];
+            let w = if c < 0x80 { 1 } else if c < 0xE0 { 2 } else if c < 0xF0 { 3 } else { 4 };
+            n += if w == 4 { 2 } else { 1 };
+            i += w;
+        }
+        n
+    }
+
+    pub(super) const fn wstr_units<const N: usize>(s: &str) -> [u16; N] {
+        let b = s.as_bytes();
+        let mut out = [0u16; N];
+        let (mut i, mut o) = (0, 0);
+        while i < b.len() {
+            let c = b[i] as u32;
+            let (cp, w) = if c < 0x80 {
+                (c, 1)
+            } else if c < 0xE0 {
+                (((c & 0x1F) << 6) | (b[i + 1] as u32 & 0x3F), 2)
+            } else if c < 0xF0 {
+                (((c & 0x0F) << 12) | ((b[i + 1] as u32 & 0x3F) << 6) | (b[i + 2] as u32 & 0x3F), 3)
+            } else {
+                let v = ((c & 0x07) << 18)
+                    | ((b[i + 1] as u32 & 0x3F) << 12)
+                    | ((b[i + 2] as u32 & 0x3F) << 6)
+                    | (b[i + 3] as u32 & 0x3F);
+                (v, 4)
+            };
+            if cp >= 0x10000 {
+                out[o] = (0xD800 | ((cp - 0x10000) >> 10)) as u16;
+                out[o + 1] = (0xDC00 | ((cp - 0x10000) & 0x3FF)) as u16;
+                o += 2;
+            } else {
+                out[o] = cp as u16;
+                o += 1;
+            }
+            i += w;
+        }
+        out
+    }
+""",
+    "cstr_array": """\
+    /// A C `char s[N] = "..."`: the bytes zero-padded to N (a string that fills the array
+    /// exactly has no NUL, as in C).
+    pub(super) const fn cstr_array<const N: usize>(s: &[u8]) -> [u8; N] {
+        let mut out = [0u8; N];
+        let mut i = 0;
+        while i < s.len() && i < N {
+            out[i] = s[i];
+            i += 1;
+        }
+        out
+    }
+""",
 }
-"""
+
+
+def helpers_text(used: set[str]) -> str:
+    if not used:
+        return ""
+    macros = "".join(HELPER_MACROS[h] + "\n" for h in sorted(used) if h in HELPER_MACROS)
+    fns = "\n".join(HELPER_FNS[h] for h in sorted(used) if h in HELPER_FNS)
+    return macros + "mod data_port {\n" + fns + "}\n"
 
 
 def module_name(header: str) -> str:
@@ -734,22 +1145,32 @@ def render_module(tu: Path, tabs: list[Table], repo: Path) -> dict[str, str]:
     files: dict[str, str] = {}
     mods = []
     rel_tu = tu.resolve().relative_to(repo)
-    uses_cat = any("cstr_cat!" in t.init for t in tabs)
+    helpers = set().union(*(t.helpers for t in tabs)) if tabs else set()
     for f, ts in sorted(by_file.items()):
         is_tu = Path(f).resolve() == tu.resolve()
         rel = Path(f).resolve().relative_to(repo)
         own = {t.name for t in ts}
         sib = sorted(set().union(*(t.refs for t in ts)) - own)
-        if not is_tu and any("cstr_cat!" in t.init for t in ts):
-            sib = sorted({*sib, "cstr_cat_join", "cstr_cat_len"})
+        if not is_tu and set().union(*(t.helpers for t in ts)):
+            sib = sorted({*sib, "data_port"})
         head = (
             f"//! `{rel}`'s tables, generated by `rustconv data-port {rel_tu}` from clang's\n"
             "//! AST of the TU's own compile command. Do not hand-edit: re-run the generator.\n\n"
             "#![allow(clippy::all)]\n"
             "#[allow(unused_imports)]\nuse crate::prelude::*;\n"
-            + (f"use super::{{{', '.join(sib)}}};\n" if sib and not is_tu else "")
+            + (
+                (
+                    f"use super::{sib[0]};\n"
+                    if len(sib) == 1
+                    else f"use super::{{{', '.join(sib)}}};\n"
+                )
+                if sib and not is_tu
+                else ""
+            )
             + "\n"
         )
+        if is_tu and helpers:
+            head += helpers_text(helpers) + "\n"  # before the first table that expands one
         body = []
         for t in ts:
             vis = (
@@ -765,9 +1186,8 @@ def render_module(tu: Path, tabs: list[Table], repo: Path) -> dict[str, str]:
     top = files.get("mod.rs") or (
         f"//! `{rel_tu}` as Rust: its data tables, generated by `rustconv data-port` from\n"
         "//! clang's AST of the TU's own compile command. Do not hand-edit: re-run it.\n\n"
+        + (helpers_text(helpers) if helpers else "")
     )
-    if uses_cat:
-        top += "\n" + CSTR_CAT  # textual scope: before the `mod` lines that use it
     top += "\n" + "".join(f"mod {m};\n" for m in mods)
     if mods:
         top += "\n#[allow(unused_imports)]\n" + "".join(f"pub(super) use {m}::*;\n" for m in mods)

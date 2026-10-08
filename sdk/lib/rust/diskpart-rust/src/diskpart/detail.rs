@@ -22,7 +22,7 @@ unsafe extern "C" fn IsDiskInVolume(
 
     i = 0;
     while i < (*(*VolumeEntry).pExtents).NumberOfDiskExtents {
-        if (*(*VolumeEntry).pExtents).Extents[i as usize].DiskNumber
+        if (*core::ptr::addr_of!((*(*VolumeEntry).pExtents).Extents[0]).add(i as usize)).DiskNumber
             == (*DiskEntry).DiskNumber
         {
             return TRUE;

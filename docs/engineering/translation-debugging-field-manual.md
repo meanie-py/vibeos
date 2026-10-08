@@ -1262,6 +1262,15 @@ offset: `&Dst[Len / sizeof(WCHAR)]` is `dst.add(len / 2) as *mut u8`.
 `scan_wide_byte_copy` gates the cast form (baseline empty). It only trusts an explicit cast,
 because both pointers share one `T`, and an uncast `.Buffer` is too often ANSI. An uncast
 `u16` field pair still needs reading against the C.
+**Any element type, and `as *const _` hides it.** partmgr's `FdoIoctlDiskGetDriveLayoutEx`
+copied `copy_nonoverlapping(layoutEx as *const _, SystemBuffer as *mut _, size)`: `_` inferred
+`DRIVE_LAYOUT_INFORMATION_EX` (192 bytes), so every `IOCTL_DISK_GET_DRIVE_LAYOUT_EX` wrote
+size × 192 bytes (~117 KB) through a 624-byte system buffer: BUGCHECK 0x19 `BAD_POOL_HEADER`
+next to an `IOBU` block. Smoke never sends that IOCTL; the first program that did (diskpart,
+under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $6; lea
+(%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
+non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
+count or one multiplied by `size_of` (baseline empty).
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -1566,6 +1575,12 @@ typedefs. Every header after it in setuplib's wrapper was bindgen'd under pack(1
 among them. The tell was rustc E0793 ("reference to packed field") on a struct nobody packs.
 `scan_preamble` now never carries a packing include or `#pragma pack` into a wrapper; count
 `repr(C, packed)` in a fresh island against the C's own pshpack regions.
+**A sector layout read through it reads PAST the sector.** diskpart's `partlist.c` declares
+`PARTITION` and `PARTITION_SECTOR` under `pshpack1`; the port made them plain `repr(C)`, so the
+partition table moved from byte 446 to 448 and `Magic` was read at 512..514 of a 512-byte
+heap buffer. No disk ever had `0xAA55` there, so every disk listed as unpartitioned ("There are
+no partitions on this disk", all space free). The `modrun` C oracle showed it as a one-line
+diff; the debug trace differed by one missing `Use megabyte alignment!` line.
 
 ### A macro translated from the wrong side of an `#ifdef`
 **Symptom.** Values built through one helper are corrupt in a way that looks like two fields
@@ -1786,6 +1801,14 @@ bindgen models C `T arr[ANYSIZE_ARRAY]`/`arr[1]` as `[T; 1]`, so Rust `arr[i]` f
 bounds-checks and panic-aborts, while the C intentionally over-allocates. **Always
 `arr.as_mut_ptr().add(i)`** (for a `static mut`, `FOO.as_mut_ptr().add(i)` — `addr_of_mut!(FOO)
 .add(i)` strides by the whole array). For a `[T; 0]` extern the panic is unconditional.
+**Rewrite a crate mechanically: `python -m rustconv.flex_index <crate> [--ambiguous]`.** A field
+is flexible when a bindgen struct ends with it as `[T; 1]`; each `p.F[i]` becomes
+`(*addr_of!(p.F[0]).add(i))` (`addr_of_mut!` when written). A name that is also a real array
+somewhere (`PartitionEntry`, `cStreamName`) gets a form that only TYPE-CHECKS for a `[T; 1]`;
+rustc rejects it on a real array and `--reject file:line ...` turns those back. kernel32's
+`FindNextVolumeW` (`MountPoints[(*data).Size]`) killed every diskpart at startup, the C one
+too, and setuplib's partition list panicked on a disk's second layout entry; both were found
+by the `modrun` payload, and the tool fixed 33 sites across kernel32/setuplib/diskpart.
 Three faces, all seen live:
 - **Kernel:** enumeration processes [0] then dies; csrss silently dies at i=1 → BUGCHECK 0x4C.
   Watch `DEVICE_RELATIONS.Objects`, `CM_RESOURCE_LIST`, `IO_RESOURCE_REQUIREMENTS_LIST`,
@@ -6157,6 +6180,21 @@ suspect call kept it failing; eighty made it green.
   macro is inlined rather than called, the inlining is a translation of its BODY — diff the
   body, not the name.** The general tell: an inlined predicate that is *simpler* than the C
   macro it replaces.
+
+### A `goto` became a labeled block that only breaks out of itself
+**Symptom:** a path the C exits early carries on. setuplib's `ArcPathToNtPath("ramdisk(0)")`
+failed ("adapter doesn't have a controller") where the C returns `\Device\Ramdisk0`; msv1_0's
+`LsaApLogonUserEx2` went on after a failed `SamValidateUser`: a `LogonUserW` naming an unknown
+user crashed lsass (`KI-EXC ... c0000005` in LSASS.EXE, then exit 0x80; gone with the fix, so
+probably the NULL `UserInfo` the failure leaves); the registry's `CmpLoadHiveThread` recorded
+a hive whose alternate write had failed.
+**Cause:** `goto Quit;` was spelled `'quit: { break 'quit; }`. `break 'x` leaves the block
+labeled 'x, so the block is a no-op and control falls into the code the C jumped over.
+Many copies are harmless vestiges (the translator ALSO restructured into if/else), which is
+why the live ones survived review: 23 sites in 9 crates, 2 live, 15 vestiges, 6 inside
+comments.
+**Fix:** move the label so the block spans the skipped code (`'quit: { ...; if c { break
+'quit; } ...skipped... }`), or delete a vestige. `scan_noop_goto` gates it (baseline empty).
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no

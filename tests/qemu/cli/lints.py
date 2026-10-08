@@ -1086,6 +1086,42 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Its general form: the byte count kept as the element count of a copy typed as a
+    # STRUCT, often through `as *const _`. partmgr's IOCTL_DISK_GET_DRIVE_LAYOUT_EX copied
+    # size * 192 bytes into the caller's buffer; diskpart's first query bugchecked 0x19
+    # (found by the modrun payload). Baseline EMPTY.
+    stb = repo / "tools" / "scan_typed_byte_copy.py"
+    specs.append(
+        (
+            "scan_typed_byte_copy",
+            [py, str(stb), "--lint"] if stb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A C `goto` translated as `'x: { break 'x; }` -- a block that jumps to its own end, so
+    # control falls into the code the C skipped. setuplib's ParseArcName did it for
+    # `ramdisk(0)` and no ramdisk ARC path resolved (found by the modrun payload). Baseline:
+    # the 23 sites found 2026-10-07, each a vestige or a live bug still to be read.
+    sng = repo / "tools" / "scan_noop_goto.py"
+    specs.append(
+        (
+            "scan_noop_goto",
+            [py, str(sng), "--lint"] if sng.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A struct the C declares under pshpack that its Rust port lays out unpacked. diskpart read
+    # the MBR magic from past the sector (no disk looked partitioned); setuplib's boot sectors
+    # shifted every BPB field. Baseline: freeldr's PNP_DOCK_INFO and ACPI_BIOS_DATA, whose
+    # field offsets are identical either way (only trailing padding differs).
+    spd = repo / "tools" / "scan_pack_drift.py"
+    specs.append(
+        (
+            "scan_pack_drift",
+            [py, str(spd), "--lint"] if spd.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A UTF-16 literal spelled as a byte string (`b"L\0i\0b\0..."`) and cast to a wide
     # pointer has alignment 1; any link change can move it to an odd address, which
     # ProbeForRead(.., sizeof(WCHAR)) rejects. ws2_32's L"LibraryPath" did exactly that

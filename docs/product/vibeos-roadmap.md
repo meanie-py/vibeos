@@ -594,6 +594,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
+  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
+  probe creates with a password, a wrong or empty password and an unknown user all fail
+  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
+  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
+  token builder returns that status; the next suspect is `CreateLogonSession` ->
+  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
+  logon failed the same way before the msv1_0 no-op-goto fix.
+- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
+  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
+  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
+  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
+  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
+  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
+  `farm` of modrun boots to catch the writer.
+
 - **FAT file dates show as 01/01/1601 in `dir`** (OPEN, 2026-10-07, Pi 5). A FAT image made by
   mtools, its HELLO.TXT dated 2026-10-07 21:54 (`mdir` agrees), listed in VibeOS cmd as
   `01/01/1601 12:00 AM`: a zero FILETIME. The volume label, serial, size and contents were

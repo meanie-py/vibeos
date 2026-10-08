@@ -61,6 +61,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_c_signatures.py"),
     (".", ".", "tools/test_scan_wide_literals.py"),
     (".", ".", "tools/test_scan_unaligned_wide.py"),
+    (".", ".", "tools/test_scan_pack_drift.py"),
     # The apitest sweep's parser. Its failure mode is FALSE GREEN, not a crash --
     # it shipped scoring `afd_apitest send` OK on the boot whose BUGCHECK that
     # subtest caused, because the subtest printed a clean summary before taking
@@ -72,6 +73,8 @@ _PYTEST_SUITES = [
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
+    # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.
+    (".", ".", "tools/payloads/modrun/test_modrun.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
     # being named and documented as seconds, so a chatty payload spent a declared
     # 7200s in 12-28 minutes. Nothing could see it: the boot still "worked", it

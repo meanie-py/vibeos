@@ -407,7 +407,7 @@ pub unsafe extern "system" fn OleCreateStaticFromData(
     }
 
     // C: every failure below is a `goto end` into the shared cleanup block.
-    // (The raw translation emitted `'end: { break 'end; }` — a labelled block that
+    // (The raw translation emitted a self-breaking 'end block — a labelled block that
     // breaks out of ITSELF, i.e. a no-op that let execution fall straight through to
     // the next COM call with a NULL/unset interface pointer. Real single-exit block
     // here.)

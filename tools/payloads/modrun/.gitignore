@@ -1,0 +1,4 @@
+modrun-*.exe
+modrun-*.txt
+__pycache__/
+probes/*.exe
