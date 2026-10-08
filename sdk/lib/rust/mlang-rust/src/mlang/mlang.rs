@@ -2752,8 +2752,11 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontUnicodeRanges(
                 break;
             }
             let pUr = &mut *pUranges.offset(i as isize);
-            pUr.wcFrom = (*gs).ranges[i as usize].wcLow;
-            pUr.wcTo = (*gs).ranges[i as usize].wcLow + (*gs).ranges[i as usize].cGlyphs;
+            // `ranges` is a C flexible array (`WCRANGE ranges[1]`, psdk/wingdi.h:2906)
+            // holding cRanges entries; bindgen's [_; 1] panicked on the second.
+            let r = &*(&raw const (*gs).ranges[0]).add(i as usize);
+            pUr.wcFrom = r.wcLow;
+            pUr.wcTo = r.wcLow + r.cGlyphs;
             i += 1;
         }
         *puiRanges = i;

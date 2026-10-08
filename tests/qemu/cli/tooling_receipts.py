@@ -58,6 +58,7 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_migrate_debug_assert.py",
     "pytest:tools/test_retarget_cargo_depfile.py",
     "pytest:tools/test_rust_module_tree.py",
+    "pytest:tools/test_rust_warning_census.py",
     "pytest:tools/test_scan_arg_side_effects.py",
     "pytest:tools/test_scan_dropped_asserts.py",
     "pytest:tools/test_scan_flex_array_panic.py",

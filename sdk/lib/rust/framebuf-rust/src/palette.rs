@@ -109,20 +109,26 @@ pub unsafe extern "C" fn IntSetPalette(
         core::mem::size_of::<u32>() * cColors as usize ,
     );
 
+    // LookupTable is a C flexible array (`LookupTable[1]`, psdk/ntddvdeo.h) in a buffer
+    // EngAllocMem'd for cColors entries above. bindgen's [_; 1] panicked on the FIRST
+    // iteration of both walks below -- they run downward from cColors - 1 -- so every
+    // palette of more than one colour took the display driver down. Constant index 0 is
+    // checked at compile time.
+    let lut = &raw mut (*pClut).LookupTable[0];
     if (*(dhpdev as *mut PDEV)).PaletteShift != 0 {
         let mut idx = cColors;
         while idx > 0 {
             idx -= 1;
-            (*pClut).LookupTable[idx as usize].RgbArray.Red >>= (*(dhpdev as *mut PDEV)).PaletteShift;
-            (*pClut).LookupTable[idx as usize].RgbArray.Green >>= (*(dhpdev as *mut PDEV)).PaletteShift;
-            (*pClut).LookupTable[idx as usize].RgbArray.Blue >>= (*(dhpdev as *mut PDEV)).PaletteShift;
-            (*pClut).LookupTable[idx as usize].RgbArray.Unused = 0;
+            (*lut.add(idx as usize)).RgbArray.Red >>= (*(dhpdev as *mut PDEV)).PaletteShift;
+            (*lut.add(idx as usize)).RgbArray.Green >>= (*(dhpdev as *mut PDEV)).PaletteShift;
+            (*lut.add(idx as usize)).RgbArray.Blue >>= (*(dhpdev as *mut PDEV)).PaletteShift;
+            (*lut.add(idx as usize)).RgbArray.Unused = 0;
         }
     } else {
         let mut idx = cColors;
         while idx > 0 {
             idx -= 1;
-            (*pClut).LookupTable[idx as usize].RgbArray.Unused = 0;
+            (*lut.add(idx as usize)).RgbArray.Unused = 0;
         }
     }
 

@@ -1674,10 +1674,24 @@ def _sacred_analysis(run: Run, repo: Path, arch: str, script: Path):
 def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
-    scan_ud2 + sacred primitives + scan_self_recursive. All three are POST-LINK
-    miscompile detectors: they read the emitted code, because the defects they
-    catch are invisible in the source (an ABI mismatch that LLVM turned into a
-    `ud2`; a Rust `memcpy` that LLVM lowered into a call to itself).
+    scan_ud2 + sacred primitives + scan_self_recursive + scan_flex_array_panic +
+    scan_export_thunks + scan_xchg_ebx_deref. All six are POST-LINK detectors:
+    they read the emitted code, because the defects they catch are invisible in
+    the source (an ABI mismatch that LLVM turned into a `ud2`; a Rust `memcpy`
+    that LLVM lowered into a call to itself; a bindgen `[T; 1]` whose bounds
+    check panics on element 2 of a C flexible array; an export that became a
+    jump into the DLL that forwards it back; inline asm whose pointer operand
+    LLVM put in the very register the asm swaps out). In each case the Rust or C
+    reads as correct and only the emitted code says otherwise.
+
+    Two of the six are graded on ONE arch each, for reasons of encoding rather
+    than of scope -- the defect class is arch-independent, but only one arch
+    emits the evidence the reader needs. Those say so as a SKIP WITH A REASON on
+    the others; a reader that cannot see is never silently a pass. Before you add
+    a third, check that the other arches really cannot answer:
+    scan_flex_array_panic was i386-only on exactly that reasoning, and the 64-bit
+    arches turned out to load the same length as an immediate into a register --
+    and to carry code the i386 binary does not contain at all.
     """
     py = sys.executable
     build_dir = repo / f"build-{arch}"
@@ -1686,6 +1700,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_ud2", status="skip", detail="no binary"))
         run.add(Stage("sacred_primitives", status="skip", detail="no binary"))
         run.add(Stage("scan_self_recursive", status="skip", detail="no binary"))
+        run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
         return
@@ -1721,6 +1736,23 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         repo,
         "scan_self_recursive",
         [py, str(selfrec), "--check", str(build_dir)] if selfrec.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
+    # A bounds check against a length of 1 on a bindgen flexible array: the C
+    # over-allocates past a trailing `T x[1]`, bindgen believes the 1, and every
+    # element after the first panics. Graded on EVERY arch: the length is a push on
+    # i386 and an immediate into a register elsewhere, and the 64-bit corpus is not the
+    # i386 one (other crates, `#[cfg(target_arch)]` bodies) -- reading i386 alone is how
+    # a whole crate's worth of sites went unseen. Sites graded as genuine 1-element
+    # arrays live in tools/flex_array_allowlist.txt, scoped per arch; a stale entry
+    # fails this stage too, because it means the site was fixed or the reader went blind.
+    flexarr = repo / "tools" / "scan_flex_array_panic.py"
+    _lint_stage(
+        run,
+        repo,
+        "scan_flex_array_panic",
+        [py, str(flexarr), "--lint", "--arch", arch] if flexarr.is_file() else ["MISSING"],
         strict=strict,
         by_exit_code=True,
     )

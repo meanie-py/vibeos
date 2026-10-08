@@ -4648,6 +4648,11 @@ unsafe fn IntGetBitmapGlyphWithCache(
     BitmapGlyph
 }
 
+// `apfx` is a C flexible array (`POINTFX apfx[1]`, psdk/wingdi.h:3160): each TTPOLYCURVE
+// in the caller's GetGlyphOutline buffer carries `cpfx` points. Taking
+// `addr_of_mut!((*ppc).apfx[cpfx])` still bounds-checks the index against bindgen's 1, so
+// every curve of more than one point was a panic -- in KERNEL mode, a bugcheck from any
+// GGO_NATIVE or GGO_BEZIER outline. Constant index 0 is checked at compile time.
 unsafe fn get_native_glyph_outline(outline: *mut FT_Outline, buflen: core::ffi::c_uint, buf: *mut core::ffi::c_char) -> core::ffi::c_uint {
     let mut pph: *mut TTPOLYGONHEADER;
     let mut ppc: *mut TTPOLYCURVE;
@@ -4691,7 +4696,7 @@ unsafe fn get_native_glyph_outline(outline: *mut FT_Outline, buflen: core::ffi::
                 if !buf.is_null() {
                     FTVectorToPOINTFX(
                         (*outline).points.offset(point as isize),
-                        core::ptr::addr_of_mut!((*ppc).apfx[cpfx as usize]),
+                        (&raw mut (*ppc).apfx[0]).add(cpfx as usize),
                     );
                 }
                 cpfx += 1;
@@ -4709,7 +4714,7 @@ unsafe fn get_native_glyph_outline(outline: *mut FT_Outline, buflen: core::ffi::
                 if !buf.is_null() {
                     FTVectorToPOINTFX(
                         (*outline).points.offset(first_pt as isize),
-                        core::ptr::addr_of_mut!((*ppc).apfx[cpfx as usize]),
+                        (&raw mut (*ppc).apfx[0]).add(cpfx as usize),
                     );
                 }
                 cpfx += 1;
@@ -4719,7 +4724,7 @@ unsafe fn get_native_glyph_outline(outline: *mut FT_Outline, buflen: core::ffi::
                 if !buf.is_null() {
                     FTVectorToPOINTFX(
                         (*outline).points.offset(point as isize),
-                        core::ptr::addr_of_mut!((*ppc).apfx[cpfx as usize]),
+                        (&raw mut (*ppc).apfx[0]).add(cpfx as usize),
                     );
                 }
                 cpfx += 1;
@@ -4779,7 +4784,7 @@ unsafe fn get_bezier_glyph_outline(outline: *mut FT_Outline, _buflen: u32, buf: 
                     if !buf.is_null() {
                         FTVectorToPOINTFX(
                             core::ptr::addr_of_mut!(*(*outline).points.add(point as usize)),
-                            core::ptr::addr_of_mut!((*ppc).apfx[cpfx as usize]),
+                            (&raw mut (*ppc).apfx[0]).add(cpfx as usize),
                         );
                     }
                     cpfx += 1;
@@ -4813,15 +4818,15 @@ unsafe fn get_bezier_glyph_outline(outline: *mut FT_Outline, _buflen: u32, buf: 
                     if !buf.is_null() {
                         FTVectorToPOINTFX(
                             core::ptr::addr_of_mut!(cubic_control[1]),
-                            core::ptr::addr_of_mut!((*ppc).apfx[cpfx as usize]),
+                            (&raw mut (*ppc).apfx[0]).add(cpfx as usize),
                         );
                         FTVectorToPOINTFX(
                             core::ptr::addr_of_mut!(cubic_control[2]),
-                            core::ptr::addr_of_mut!((*ppc).apfx[(cpfx + 1) as usize]),
+                            (&raw mut (*ppc).apfx[0]).add((cpfx + 1) as usize),
                         );
                         FTVectorToPOINTFX(
                             core::ptr::addr_of_mut!(cubic_control[3]),
-                            core::ptr::addr_of_mut!((*ppc).apfx[(cpfx + 2) as usize]),
+                            (&raw mut (*ppc).apfx[0]).add((cpfx + 2) as usize),
                         );
                     }
                     cpfx += 3;
@@ -6058,6 +6063,11 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
             (*glyphset).cGlyphsSupported = 0;
         }
 
+        // `ranges` is a C flexible array (`WCRANGE ranges[1]`, psdk/wingdi.h:2906) in a
+        // caller buffer sized from the cRanges this function first returned. bindgen's
+        // [_; 1] bounds-checked every range after the first -- in KERNEL mode, so any font
+        // with two Unicode ranges made GetFontUnicodeRanges a bugcheck. Constant index 0
+        // is checked at compile time.
         num_ranges = 1;
         while glyph_code != 0 {
             if char_code < char_code_prev {
@@ -6067,12 +6077,12 @@ unsafe fn ftGetFontUnicodeRanges_impl(Font: PFONTGDI, glyphset: PGLYPHSET) -> DW
             if char_code - char_code_prev > 1 {
                 num_ranges += 1;
                 if !glyphset.is_null() {
-                    (*glyphset).ranges[(num_ranges - 1) as usize].wcLow = char_code as USHORT;
-                    (*glyphset).ranges[(num_ranges - 1) as usize].cGlyphs = 1;
+                    (*(&raw mut (*glyphset).ranges[0]).add((num_ranges - 1) as usize)).wcLow = char_code as USHORT;
+                    (*(&raw mut (*glyphset).ranges[0]).add((num_ranges - 1) as usize)).cGlyphs = 1;
                     (*glyphset).cGlyphsSupported += 1;
                 }
             } else if !glyphset.is_null() {
-                (*glyphset).ranges[(num_ranges - 1) as usize].cGlyphs += 1;
+                (*(&raw mut (*glyphset).ranges[0]).add((num_ranges - 1) as usize)).cGlyphs += 1;
                 (*glyphset).cGlyphsSupported += 1;
             }
             char_code_prev = char_code;

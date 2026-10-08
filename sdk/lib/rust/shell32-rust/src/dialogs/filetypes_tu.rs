@@ -1125,7 +1125,7 @@ unsafe extern "C" fn NewExtDlg_OnInitDialog(hwndDlg: HWND, pNewExt: PNEWEXT_DIAL
     return TRUE;
 }
 unsafe extern "C" fn NewExtDlg_OnOK(hwndDlg: HWND, pNewExt: *mut NEWEXT_DIALOG) -> BOOL {
-    let mut find: LV_FINDINFO = core::mem::MaybeUninit::uninit().assume_init();
+    let mut find: LV_FINDINFO = core::mem::zeroed();
     let mut iItem: i32;
 
     GetDlgItemTextW(hwndDlg, IDC_NEWEXT_EDIT as ::core::ffi::c_int, (*pNewExt).szExt.as_mut_ptr(), ((*pNewExt).szExt).len() as ::core::ffi::c_int);
@@ -1152,7 +1152,7 @@ unsafe extern "C" fn NewExtDlg_OnOK(hwndDlg: HWND, pNewExt: *mut NEWEXT_DIALOG) 
     iItem = ListView_FindItem((*pNewExt).hwndLV, -(1 as i32), &find);
     if iItem >= 0 as i32 {
         let mut szFileType: [u16; TYPENAME_CCHMAX as usize] = [0u16; TYPENAME_CCHMAX as usize];
-        let mut item: LV_ITEM = core::mem::MaybeUninit::uninit().assume_init();
+        let mut item: LV_ITEM = core::mem::zeroed();
         ZeroMemory(core::ptr::addr_of_mut!(item) as *mut core::ffi::c_void, core::mem::size_of::<LV_ITEM>());
         item.mask = LVIF_TEXT;
         item.pszText = szFileType.as_mut_ptr();

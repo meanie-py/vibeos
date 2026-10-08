@@ -4034,7 +4034,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
         ScratchBuffer_BeginUse(DeviceExtension);
 
         // Zero out the CDB
-        let mut cdb: CDB = core::mem::MaybeUninit::uninit().assume_init();
+        let mut cdb: CDB = core::mem::zeroed();
         core::ptr::write_bytes(&mut cdb as *mut CDB as *mut u8, 0, core::mem::size_of::<CDB>());
 
         // Fill CDB fields from input buffer

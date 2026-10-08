@@ -1015,7 +1015,6 @@ pub unsafe fn CFileSysEnum__AddFindResult_body(this: *mut CFileSysEnum, sParentD
     }
 
     if !pidl.is_null() && CFileSysEnum_AddToEnumList_body(this, pidl) == 0 {
-        ((E_FAIL) < 0);
         return E_FAIL;
     }
 
@@ -1064,7 +1063,6 @@ pub unsafe fn CFileSysEnum_Initialize_body(this: *mut CFileSysEnum, sPathTarget:
         let dwError = GetLastError();
         if dwError != ERROR_NO_MORE_FILES {
             hr = HRESULT_FROM_WIN32(dwError as LONG);
-            ((hr) < 0);
         }
     }
 

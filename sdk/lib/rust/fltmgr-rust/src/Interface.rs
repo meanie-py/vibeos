@@ -545,7 +545,6 @@ unsafe fn FltpDetachFromFileSystemDevice(mut DeviceObject: PDEVICE_OBJECT) -> LO
     }
 
     DeviceExtension = (*AttachedDevice).DeviceExtension as PFLTMGR_DEVICE_EXTENSION;
-    !DeviceExtension.is_null();
 
     /* Detach the device from the chain and delete the object */
     IoDetachDevice(DeviceObject);
