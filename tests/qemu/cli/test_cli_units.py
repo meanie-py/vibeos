@@ -11295,3 +11295,20 @@ def test_qemu_memory_override_is_validated(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "lots")
     with pytest.raises(ValueError):
         vm_mod.get_arch_config("arm64")
+
+
+def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
+    # A BUGCHECK in the payload VM must name itself (and be symbolicated now, against the
+    # build that booted), not hide behind "payload suite FAILED" / the net stage's NET_FLAKE.
+    from . import triage as triage_mod
+
+    (tmp_path / "amd64-uefi_serial.log").write_text(
+        "PathName: X:\\\n\n*** BUGCHECK: 0x0000001E (0xffffffffc0000006, 0xfffff800004ef96e, "
+        "0xfffff880759b3680, 0x0000000000000000)\n***   P2 = ntoskrnl.exe+0xEF96E\n"
+    )
+    monkeypatch.setattr(triage_mod, "symbolicate_pc", lambda repo, arch, text: "MmCreatePeb+0x1")
+    crash = smoke_mod._payload_crash(Path("."), "amd64", tmp_path)
+    assert crash is not None and crash["classification"] == "BUGCHECK"
+    assert crash["salient"][-1] == "MmCreatePeb+0x1"
+    (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
+    assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None

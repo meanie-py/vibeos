@@ -131,12 +131,17 @@ def _scan(tmp_path, body):
 
 def test_match_arm_names_an_enum_member(tmp_path):
     # se-rust's SRM dispatch: RM_API_NUMBER starts at 1, the arms said 0/1.
-    body = "match n {\n0 => a(), // RmAuditSetCommand\n1 => b(), // RmCreateLogonSession\n_ => c(),\n}"
+    body = (
+        "match n {\n0 => a(), // RmAuditSetCommand\n1 => b(), // RmCreateLogonSession\n_ => c(),\n}"
+    )
     assert _scan(tmp_path, body) == [("RmAuditSetCommand", 0), ("RmCreateLogonSession", 1)]
 
 
 def test_comment_alone_under_a_block_opener(tmp_path):
-    body = "if t == 5 {\n// LPC_CONNECTION_REQUEST\nx();\n}\nif t == 4 || t == 3 {\n// LPC_PORT_CLOSED || LPC_CLIENT_DIED\nbreak;\n}"
+    body = (
+        "if t == 5 {\n// LPC_CONNECTION_REQUEST\nx();\n}\n"
+        "if t == 4 || t == 3 {\n// LPC_PORT_CLOSED || LPC_CLIENT_DIED\nbreak;\n}"
+    )
     assert _scan(tmp_path, body) == [
         ("LPC_CLIENT_DIED", 3), ("LPC_CONNECTION_REQUEST", 5), ("LPC_PORT_CLOSED", 4)
     ]  # fmt: skip

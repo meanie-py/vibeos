@@ -203,8 +203,12 @@ def scan_file(path, catalog):
             # exception code 0) or the block opener ABOVE it, as rustconv writes a C
             # condition: `if Type == 5 {` / `// LPC_CONNECTION_REQUEST` (se-rust's SRM
             # loop had three, and 5 is LPC_PORT_CLOSED).
-            nxt = lines[cline + 1].decode("utf8", "replace").strip() if cline + 1 < len(lines) else ""
-            prev = lines[cline - 1].decode("utf8", "replace").split("//")[0].rstrip() if cline else ""
+            nxt = (
+                lines[cline + 1].decode("utf8", "replace").strip() if cline + 1 < len(lines) else ""
+            )
+            prev = (
+                lines[cline - 1].decode("utf8", "replace").split("//")[0].rstrip() if cline else ""
+            )
             if _LONE_LIT_RE.match(nxt):
                 cline += 1
                 line_src = nxt

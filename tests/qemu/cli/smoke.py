@@ -747,12 +747,16 @@ def _payload_stage(
     if proc.returncode == 0:
         run.add(Stage(stage, status="ok", detail=summary.strip("= ")))
     else:
+        crash = _payload_crash(repo, arch, payload_dir)
+        if crash and run.classification in ("", "NET_FLAKE"):
+            run.classification = crash["classification"]
         run.add(
             Stage(
                 stage,
                 status="fail",
                 detail=f"payload suite ({payloads}) FAILED",
                 salient=[
+                    *(crash["salient"] if crash else []),
                     summary.strip("= "),
                     f"repro: pytest tests/qemu/test_payload.py --arch {pytest_arch} "
                     f"--payload {payloads}",
@@ -760,6 +764,25 @@ def _payload_stage(
                 ],
             )
         )
+
+
+def _payload_crash(repo: Path, arch: str, payload_dir: Path) -> dict | None:
+    """Triage a guest crash in the payload VM's serial, the way a boot's is.
+
+    The payload suite boots its own VM, so a BUGCHECK there used to surface only as "payload
+    suite FAILED" (and the run took the net stage's NET_FLAKE label). Symbolicating it later is
+    worse than not at all: a 2026-10-07 modrun 0x1E was read against a kernel rebuilt hours
+    after the boot and named a function the fault was never in. Here, inside the smoke run,
+    the build dir still holds the kernel that booted (smoke refuses stale media)."""
+    for log in sorted(payload_dir.glob("*_serial.log")):
+        text = log.read_text(errors="replace")
+        tri = triage.classify(text, reached=True, fail_marker=None, debugcon=None)
+        if tri["classification"] in ("BUGCHECK", "RUST_PANIC", "KNOWN_FLAKE"):
+            sym = triage.symbolicate_pc(repo, arch, text)
+            if sym:
+                tri["salient"].append(sym)
+            return tri
+    return None
 
 
 def _mem_mb(size: str) -> int:
