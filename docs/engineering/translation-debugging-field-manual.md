@@ -11338,12 +11338,23 @@ the idle CPU) took it from never to 3 of 4 boots.
 **Fix:** `KiSystemStartupBootStack` installs the idle process's directory in TTBR0 and TTBR1
 on each AP, as `KiSwapProcess` would.
 
+### A kernel write to a read-only page succeeds, but only on an AP: CR0.WP never set there
+**Symptom** (i386 `-smp 2`): kmtest `ZwMapViewOfSection` :492 writes to a PAGE_READONLY
+view under SEH and gets no access violation, every sweep; it passes on one vCPU.
+**Cause:** without CR0.WP, supervisor writes ignore the PTE's R/W bit. `KiSetCR0Bits` runs
+from `KiInitMachineDependent` (`KeInitSystem`), once, on the current CPU, and Phase 1 calls
+`KeStartAllProcessors` BEFORE `KeInitSystem`, so the APs copied a CR0 that did not have WP
+yet. The C has the same order. **Fix:** set it inside `KiInitMachineDependent`'s
+per-processor affinity loop. **Generalize:** any per-CPU control-register or MSR setup done
+in a Phase 1 routine that runs on one CPU is an AP gap; check where the AP's copy came from.
+
 ### A DPC queued on a CPU never runs until it idles: `DpcInterruptRequested` stuck at 1
-**Symptom** (arm64 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
+**Symptom** (arm64 and i386 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
 and the re-insert returns FALSE; the DPC sits queued until that CPU next reaches its idle loop.
 **Cause:** every IPI_DPC sets `Prcb->DpcInterruptRequested`, including the ones
 `KiDeferredReadyThread` sends only to wake a CPU for a thread. The arm64 soft-interrupt body
-cleared it only when it retired a non-empty queue, so a wake with nothing queued left it set,
+(and i386's `KiDispatchInterrupt`) cleared it only when it retired a non-empty queue, so a
+wake with nothing queued left it set,
 and `KeInsertQueueDpc` skips requesting an interrupt while it is set. **Fix:** clear it on the
 empty-queue path too. Any per-PRCB "request pending" flag needs a clear on every path that
 services the request, not just the path that finds work. **Tell:** `KiSwapProcess` sets both registers to the
