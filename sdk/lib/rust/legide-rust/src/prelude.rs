@@ -50,6 +50,10 @@ pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
 pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
     ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
 }
+#[inline]
+pub unsafe fn KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::inline::ke::KeInitializeSpinLock(SpinLock.cast())
+}
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
     IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,

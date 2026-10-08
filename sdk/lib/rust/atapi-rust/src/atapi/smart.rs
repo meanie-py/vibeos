@@ -157,7 +157,7 @@ pub unsafe extern "C" fn AtaPdoHandleMiniportIdentify(
         CmdIn: PSENDCMDINPARAMS,
         CmdOut: PSENDCMDOUTPARAMS,
     }
-    let mut Buffer: _PARAMS;
+    let mut Buffer: _PARAMS = core::mem::zeroed();
 
     PAGED_CODE!();
 
@@ -165,7 +165,7 @@ pub unsafe extern "C" fn AtaPdoHandleMiniportIdentify(
         < ((core::mem::size_of::<SRB_IO_CONTROL>()
             + core::mem::size_of::<SENDCMDOUTPARAMS>()
             - 1
-            + (IDENTIFY_BUFFER_SIZE) as _)) as _
+            + (IDENTIFY_BUFFER_SIZE) as usize)) as u32
     {
         (*Srb).SrbStatus = (SRB_STATUS_INVALID_REQUEST) as u8;
         return STATUS_BUFFER_TOO_SMALL;

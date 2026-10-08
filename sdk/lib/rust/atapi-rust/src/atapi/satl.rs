@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{PMDL, RtlUlongByteSwap, RtlUlonglongByteSwap};
+use ntkrnl_sys::ddk::{PMDL};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -542,7 +542,7 @@ unsafe extern "C" fn AtaReqScsiReadWrite(
         }
 
         if (*DevExt).Device.DeviceFlags & DEVICE_PIO_ONLY == 0
-            && SRB_GET_FLAGS!(Srb) & (SRB_FLAG_PIO_RETRY) as _ == 0
+            && SRB_GET_FLAGS!(Srb) & (SRB_FLAG_PIO_RETRY) as ULONG_PTR == 0
         {
             (*Request).Flags |= REQUEST_DMA_FLAGS;
         } else if (*DevExt).Device.__bindgen_anon_1.MultiSectorCount != 0 {
@@ -636,7 +636,7 @@ unsafe extern "C" fn AtaReqCompleteReadCapacity(
     AtaDeviceSetAddressingMode(DevExt);
 
     if (*DevExt).Device.TotalSectors == 1 {
-        let mut SenseCode: SCSI_SENSE_CODE;
+        let mut SenseCode: SCSI_SENSE_CODE = core::mem::zeroed();
 
         SenseCode.SrbStatus = (SRB_STATUS_ERROR) as u8;
         SenseCode.SenseKey = (SCSI_SENSE_NOT_READY) as u8;
@@ -652,9 +652,9 @@ unsafe extern "C" fn AtaReqCompleteReadCapacity(
         let mut MaximumLba: ULONG;
 
         MaximumLba = min(
-            ((*DevExt).Device.TotalSectors.wrapping_sub(1)) as T,
-            MAXULONG,
-        );
+            (*DevExt).Device.TotalSectors.wrapping_sub(1),
+            MAXULONG as ULONG64,
+        ) as ULONG;
 
         CapacityData = (*DevExt).Device.LocalBuffer as PREAD_CAPACITY_DATA;
         (*CapacityData).LogicalBlockAddress = RtlUlongByteSwap(MaximumLba);
@@ -663,7 +663,7 @@ unsafe extern "C" fn AtaReqCompleteReadCapacity(
         Length = core::mem::size_of::<READ_CAPACITY_DATA>() as ULONG;
     } else {
         let mut CapacityData: PREAD_CAPACITY16_DATA;
-        let mut LogicalPerPhysicalExponent: ULONG;
+        let mut LogicalPerPhysicalExponent: ULONG = core::mem::zeroed();
         let mut LogicalSectorsPerPhysicalSector: ULONG;
         let mut LogicalSectorAlignment: ULONG;
         let mut LowestAlignedBlock: ULONG;
@@ -744,7 +744,7 @@ unsafe extern "C" fn AtaReqControlModePage(
     let PageData: PMODE_CONTROL_PAGE = Buffer as PMODE_CONTROL_PAGE;
 
     (*PageData).set_PageCode((MODE_PAGE_CONTROL) as _);
-    (*PageData).PageLength = (core::mem::size_of::<PMODE_CONTROL_PAGE>() as usize)
+    (*PageData).PageLength = (core::mem::size_of::<_MODE_CONTROL_PAGE>() as usize)
         .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_CONTROL_PAGE, PageLength)) as UCHAR;
 
     (*PageData).set_QERR((0) as _);
@@ -753,7 +753,7 @@ unsafe extern "C" fn AtaReqControlModePage(
     (*PageData).BusyTimeoutPeriod[1] = 0xFF;
     (*PageData).set_D_SENSE((((*DevExt).Device.DeviceFlags & DEVICE_DESCRIPTOR_SENSE != 0) as UCHAR) as _);
 
-    return core::mem::size_of::<PMODE_CONTROL_PAGE>() as ULONG;
+    return core::mem::size_of::<_MODE_CONTROL_PAGE>() as ULONG;
 }
 
 unsafe extern "C" fn AtaReqControlExtensionModePage(
@@ -766,10 +766,10 @@ unsafe extern "C" fn AtaReqControlExtensionModePage(
     (*PageData).SubPageCode = 0x00;
     (*PageData).set_PageCode((MODE_PAGE_CONTROL) as _);
     (*PageData).PageLength[1] =
-        (core::mem::size_of::<PMODE_CONTROL_EXTENSION_PAGE>() as usize)
+        (core::mem::size_of::<_MODE_CONTROL_EXTENSION_PAGE>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_CONTROL_EXTENSION_PAGE, PageLength)) as UCHAR;
 
-    return core::mem::size_of::<PMODE_CONTROL_EXTENSION_PAGE>() as ULONG;
+    return core::mem::size_of::<_MODE_CONTROL_EXTENSION_PAGE>() as ULONG;
 }
 
 unsafe extern "C" fn AtaReqRwErrorRecoveryModePage(
@@ -780,12 +780,12 @@ unsafe extern "C" fn AtaReqRwErrorRecoveryModePage(
 
     (*PageData).set_PageCode((MODE_PAGE_ERROR_RECOVERY) as u8);
     (*PageData).PageLength =
-        (core::mem::size_of::<PMODE_READ_WRITE_RECOVERY_PAGE>() as usize)
+        (core::mem::size_of::<_MODE_READ_WRITE_RECOVERY_PAGE>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_READ_WRITE_RECOVERY_PAGE, PageLength)) as UCHAR;
 
     (*PageData).set_AWRE(1);
 
-    return core::mem::size_of::<PMODE_READ_WRITE_RECOVERY_PAGE>() as ULONG;
+    return core::mem::size_of::<_MODE_READ_WRITE_RECOVERY_PAGE>() as ULONG;
 }
 
 unsafe extern "C" fn AtaReqCachingModePage(
@@ -795,7 +795,7 @@ unsafe extern "C" fn AtaReqCachingModePage(
     let PageData: PMODE_CACHING_PAGE_SPC5 = Buffer as PMODE_CACHING_PAGE_SPC5;
 
     (*PageData).set_PageCode((MODE_PAGE_CACHING) as _);
-    (*PageData).PageLength = (core::mem::size_of::<PMODE_CACHING_PAGE_SPC5>()
+    (*PageData).PageLength = (core::mem::size_of::<_MODE_CACHING_PAGE_SPC5>()
         - RTL_SIZEOF_THROUGH_FIELD!(MODE_CACHING_PAGE_SPC5, PageLength)) as UCHAR;
 
     if AtaDevIsVolatileWriteCacheEnabled(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
@@ -806,7 +806,7 @@ unsafe extern "C" fn AtaReqCachingModePage(
         (*PageData).set_DisableReadAHead((1) as _);
     }
 
-    return core::mem::size_of::<PMODE_CACHING_PAGE_SPC5>() as ULONG;
+    return core::mem::size_of::<_MODE_CACHING_PAGE_SPC5>() as ULONG;
 }
 
 unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
@@ -815,12 +815,12 @@ unsafe extern "C" fn AtaReqInformationalExceptionsControlModePage(
 ) -> ULONG {
     let PageData: PMODE_INFO_EXCEPTIONS = Buffer as PMODE_INFO_EXCEPTIONS;
 
-    (*PageData)._bitfield_1.set(0, (MODE_PAGE_FAULT_REPORTING as u32) as u8);
+    (*PageData)._bitfield_1.set(0, (MODE_PAGE_FAULT_REPORTING as u32) as u8, (MODE_PAGE_FAULT_REPORTING as u32) as u64);
     (*PageData).PageLength =
         (core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as usize)
             .wrapping_sub(RTL_SIZEOF_THROUGH_FIELD!(MODE_INFO_EXCEPTIONS, PageLength)) as UCHAR;
 
-    (*PageData)._bitfield_2.set(0, 6);
+    (*PageData)._bitfield_2.set(0, 6, 6);
 
     return core::mem::size_of::<MODE_INFO_EXCEPTIONS>() as ULONG;
 }
@@ -877,7 +877,7 @@ unsafe extern "C" fn AtaReqCompleteModeSense(
                 ((*ModeHeader.Header6).DeviceSpecificParameter as i32 | (MODE_DSP_FUA_SUPPORTED) as i32) as UCHAR;
         }
         Buffer = Buffer.offset(core::mem::size_of::<*mut PMODE_PARAMETER_HEADER>() as isize);
-        Buffer = Buffer.offset(core::mem::size_of::<PMODE_PARAMETER_HEADER>() as isize);
+        Buffer = Buffer.offset(core::mem::size_of::<_MODE_PARAMETER_HEADER>() as isize);
     } else {
         if IsWriteProtected != 0 {
             (*ModeHeader.Header10).DeviceSpecificParameter =
@@ -887,7 +887,7 @@ unsafe extern "C" fn AtaReqCompleteModeSense(
             (*ModeHeader.Header10).DeviceSpecificParameter =
                 ((*ModeHeader.Header10).DeviceSpecificParameter as i32 | (MODE_DSP_FUA_SUPPORTED) as i32) as UCHAR;
         }
-        Buffer = Buffer.offset(core::mem::size_of::<PMODE_PARAMETER_HEADER10>() as isize);
+        Buffer = Buffer.offset(core::mem::size_of::<_MODE_PARAMETER_HEADER10>() as isize);
     }
 
     if (*Cdb).MODE_SENSE.Dbd() == 0 {
@@ -1155,7 +1155,7 @@ unsafe extern "C" fn AtaReqScsiReportLuns(
     }
 
     LunList = (*DevExt).Device.LocalBuffer as PLUN_LIST;
-    LunListLength = RTL_FIELD_SIZE!(LUN_LIST, Lun[0]) as ULONG;
+    LunListLength = RTL_FIELD_SIZE!(LUN_LIST, Lun) as ULONG;
 
     RtlZeroMemory!(
         LunList as *mut core::ffi::c_void,
@@ -1273,7 +1273,7 @@ unsafe extern "C" fn AtaReqScsiInquiryDeviceIdentifiers(
         RTL_SIZEOF_THROUGH_FIELD!(VPD_IDENTIFICATION_PAGE, PageLength) as UCHAR,
     );
 
-    Descriptor = (&mut (*DeviceIdentificationPage).Descriptors[0])
+    Descriptor = (*DeviceIdentificationPage).Descriptors.as_mut_ptr()
         as *mut _ as PVPD_IDENTIFICATION_DESCRIPTOR;
 
     if AtaDevHasWorldWideName(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
@@ -1284,7 +1284,7 @@ unsafe extern "C" fn AtaReqScsiInquiryDeviceIdentifiers(
 
         AtaCopyIdStringUnsafe(
             (*Descriptor).Identifier.as_mut_ptr(),
-            (*DevExt).__bindgen_anon_1.IdentifyDeviceData.WorldWideName.as_mut_ptr() as PUCHAR,
+            core::ptr::addr_of_mut!((*DevExt).__bindgen_anon_1.IdentifyDeviceData.WorldWideName) as PUCHAR,
             RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, WorldWideName) as ULONG,
         );
     } else {
@@ -1296,7 +1296,7 @@ unsafe extern "C" fn AtaReqScsiInquiryDeviceIdentifiers(
             + RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, ModelNumber) as UCHAR
             + RTL_FIELD_SIZE!(IDENTIFY_DEVICE_DATA, SerialNumber) as UCHAR;
 
-        Identifier = (*Descriptor).Identifier[0..].as_mut_ptr();
+        Identifier = (*Descriptor).Identifier.as_mut_ptr();
 
         RtlCopyMemory!(
             Identifier as *mut core::ffi::c_void,
@@ -1378,11 +1378,11 @@ unsafe extern "C" fn AtaReqScsiInquiryLogicalBlockProvisioning(
 
     if AtaDevHasTrimFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
         if AtaDevHasDratFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-            (*LogicalBlockProvisioningPage)._bitfield_2.set_ANC_SUP(1);
+            (*LogicalBlockProvisioningPage).set_ANC_SUP(1);
         }
 
         if AtaDevHasRzatFunction(&raw mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData) != 0 {
-            (*LogicalBlockProvisioningPage)._bitfield_2.set_LBPRZ(1);
+            (*LogicalBlockProvisioningPage).set_LBPRZ(1);
         }
     }
 
@@ -1404,7 +1404,7 @@ unsafe extern "C" fn AtaReqScsiInquiry(
         }
         return AtaReqCopySatlBuffer(
             Request,
-            &mut (*DevExt).InquiryData as PVOID,
+            core::ptr::addr_of_mut!((*DevExt).InquiryData) as PVOID,
             core::mem::size_of::<INQUIRYDATA>() as ULONG,
         ) as UCHAR;
     }
@@ -1553,7 +1553,7 @@ unsafe extern "C" fn AtaReqSetAtaStatusSenseData(
     (*Descriptor).Header.AdditionalLength = 0x0C as UCHAR;
     (*Descriptor).Error = (*TaskFile).__bindgen_anon_2.Error;
     (*Descriptor).Device = (*TaskFile).DriveSelect;
-    (*Descriptor).__bindgen_anon_1.Status = (*TaskFile).__bindgen_anon_1.Status;
+    (*Descriptor).Status = (*TaskFile).__bindgen_anon_1.Status;
     (*Descriptor).SectorCount7_0 = (*TaskFile).SectorCount;
     (*Descriptor).LbaLow7_0 = (*TaskFile).LowLba;
     (*Descriptor).LbaMid7_0 = (*TaskFile).MidLba;
@@ -1784,7 +1784,7 @@ unsafe extern "C" fn AtaReqPreparePacketCommand(
     if (*Srb).SrbFlags & SRB_FLAGS_UNSPECIFIED_DIRECTION != 0
         && AtaPacketCommandUseDma((*Srb).Cdb[0 as usize]) != 0
         && (*DevExt).Device.DeviceFlags & DEVICE_PIO_ONLY == 0
-        && SRB_GET_FLAGS!(Srb) & (SRB_FLAG_PIO_RETRY) as _ == 0
+        && SRB_GET_FLAGS!(Srb) & (SRB_FLAG_PIO_RETRY) as ULONG_PTR == 0
     {
         (*Request).Flags |= REQUEST_DMA_FLAGS;
     }

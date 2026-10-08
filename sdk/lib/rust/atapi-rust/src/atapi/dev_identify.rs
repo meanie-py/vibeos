@@ -152,7 +152,7 @@ unsafe extern "C" fn AtaDeviceSendInquiry(
     );
     Cdb = &raw mut (*Request).__bindgen_anon_2.Cdb as PCDB;
     (*Cdb).CDB6INQUIRY.OperationCode = (SCSIOP_INQUIRY) as u8;
-    (*Cdb).CDB6INQUIRY.set_LogicalUnitNumber((*DevExt).Device.AtaScsiAddress.Lun);
+    (*Cdb).CDB6INQUIRY.set_LogicalUnitNumber((*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.Lun);
     (*Cdb).CDB6INQUIRY.AllocationLength = (INQUIRYDATABUFFERSIZE) as u8;
 
     Status = AtaPortSendRequest(PortData, DevExt);
@@ -161,7 +161,7 @@ unsafe extern "C" fn AtaDeviceSendInquiry(
     }
 
     if !NT_SUCCESS!(Status) {
-        if (*DevExt).Device.AtaScsiAddress.Lun == 0
+        if (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.Lun == 0
             && AtaDeviceIsXboxDrive(DevExt) != 0
         {
             (*DevExt).Device.DeviceFlags |= DEVICE_CACHE_INQUIRY;
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn AtaPortIdentifyDevice(
 
     ConnectionStatus = (*PortData).IdentifyDevice.unwrap_unchecked()(
         (*PortData).ChannelContext,
-        ((*DevExt).Device.AtaScsiAddress.TargetId) as _,
+        ((*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId) as _,
     );
 
     _InterlockedAnd(&mut (*PortData).InterruptFlags, (!PORT_INT_FLAG_IGNORE_LINK_IRQ) as i32);

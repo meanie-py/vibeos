@@ -1,7 +1,7 @@
 /* Cohabitation placeholder TU for the atapi.sys kernelmodedriver MODULE.
  *
  * atapi.sys is upstream's 2026 ATA port driver (atapi/fdo/pdo/enum/satl/scsi/ioctl/
- * portstate/dev_*/smart/wmi.c), translated to Rust in sdk/lib/rust/atapi-rust and linked
+ * portstate/dev_xxx/smart/wmi.c), translated to Rust in sdk/lib/rust/atapi-rust and linked
  * as libatapi_rust.a. The .c files stay on disk, out of the build. DriverEntry and every
  * dispatch routine come from the Rust; this stub is the only C the MODULE compiles.
  *

@@ -50,6 +50,10 @@ pub unsafe fn KeAcquireSpinLockAtDpcLevel(SpinLock: PKSPIN_LOCK) {
 pub unsafe fn KeReleaseSpinLockFromDpcLevel(SpinLock: PKSPIN_LOCK) {
     ntkrnl_sys::ke::KeReleaseSpinLockFromDpcLevel(SpinLock.cast())
 }
+#[inline]
+pub unsafe fn KeInitializeSpinLock(SpinLock: PKSPIN_LOCK) {
+    ntkrnl_sys::inline::ke::KeInitializeSpinLock(SpinLock.cast())
+}
 pub use ntkrnl_sys::inline::tier1::{
     IoCopyCurrentIrpStackLocationToNext, IoGetCurrentIrpStackLocation, IoGetNextIrpStackLocation,
     IoMarkIrpPending, IoSetCancelRoutine, IoSetCompletionRoutine, IoSetNextIrpStackLocation,
@@ -108,7 +112,7 @@ pub use ntkrnl_sys::interlocked::{
 /// wdm.h: `IoAcquireRemoveLockEx(RemoveLock, Tag, __FILE__, __LINE__, sizeof(IO_REMOVE_LOCK))`.
 #[inline]
 pub unsafe fn IoAcquireRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) -> NTSTATUS {
-    IoAcquireRemoveLockEx(
+    crate::types::IoAcquireRemoveLockEx(
         RemoveLock,
         Tag,
         concat!(file!(), "\0").as_ptr() as PCSTR,
@@ -119,12 +123,12 @@ pub unsafe fn IoAcquireRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) -> NT
 /// wdm.h: `IoReleaseRemoveLockEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
 #[inline]
 pub unsafe fn IoReleaseRemoveLock(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
-    IoReleaseRemoveLockEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+    crate::types::IoReleaseRemoveLockEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
 }
 /// wdm.h: `IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, sizeof(IO_REMOVE_LOCK))`.
 #[inline]
 pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID) {
-    IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
+    crate::types::IoReleaseRemoveLockAndWaitEx(RemoveLock, Tag, core::mem::size_of::<IO_REMOVE_LOCK>() as ULONG)
 }
 
 // PAGED_CODE() asserts IRQL < DISPATCH_LEVEL in checked builds and is empty otherwise.
@@ -244,6 +248,7 @@ pub const ATA_MAX_LBA_28: ULONG64 = 0x0FFFFFFF; // freeldr-rust/src/hwide.rs
 pub const ATA_MAX_SECTORS_PER_IO: u32 = 256; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_BUFFER_ALIGNMENT: u32 = 1; // legide-rust/src/types_amd64.rs
 pub const ATA_MIN_SECTOR_SIZE: u32 = 512; // legide-rust/src/types_amd64.rs
+pub const BusQueryDeviceID: _BUS_QUERY_ID_TYPE = _BUS_QUERY_ID_TYPE_BusQueryDeviceID; // island enum
 pub const BusRelations: _DEVICE_RELATION_TYPE = _DEVICE_RELATION_TYPE_BusRelations; // island enum
 pub const BusTypeAta: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeAta; // island enum
 pub const BusTypeSata: _STORAGE_BUS_TYPE = _STORAGE_BUS_TYPE_BusTypeSata; // island enum
@@ -349,8 +354,10 @@ pub const IDE_STATUS_ERROR: u32 = 1; // atapi-legacy-rust/src/types_amd64.rs
 pub const IDE_STATUS_INDEX: u32 = 2; // atapi-legacy-rust/src/types_amd64.rs
 pub const ID_CMD: u32 = 236; // cdrom-rust/src/types_amd64.rs
 pub const INQUIRYDATABUFFERSIZE: u32 = 36; // atapi-legacy-rust/src/types_amd64.rs
+pub const IOCTL_SCSI_GET_ADDRESS: u32 = 0x00041018; // classpnp-rust/src/glue.rs
 pub const IOCTL_SCSI_GET_CAPABILITIES: u32 = 0x0004_1010; // scsidisk-rust/src/lib.rs
 pub const IOCTL_STORAGE_EVENT_NOTIFICATION: u32 = 0x002D1C90; // classpnp-rust/src/glue.rs
+pub const IOCTL_STORAGE_MANAGE_DATA_SET_ATTRIBUTES: u32 = 0x002D9404; // classpnp-rust/src/glue.rs
 pub const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D_1400; // diskpart-rust/src/prelude.rs
 pub const IO_DISK_INCREMENT: u32 = 1; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 pub const IO_NO_INCREMENT: u32 = 0; // ntkrnl-sys/src/hal_bindgen_amd64.rs
@@ -550,14 +557,6 @@ pub const WMIREG_ACTION_DEREGISTER: u32 = 2; // ntkrnl-sys/src/hal_bindgen_amd64
 pub const WMIREG_ACTION_REGISTER: u32 = 1; // classpnp-rust/src/glue.rs
 pub const WMIREG_FLAG_INSTANCE_PDO: u32 = 32; // classpnp-rust/src/types_amd64.rs
 extern "C" {
-    pub fn DbgPrint(fmt: *const core::ffi::c_char, ...) -> u32; // arm64input-cargo/src/main.rs
-    pub fn GetIRPMinorFunctionString(minor: u8) -> *const i8; // scsiport-rust/src/pdo.rs
-    pub fn InitializeListHead(ListHead: PLIST_ENTRY); // winlogon-sys/src/bindgen_amd64.rs
-    pub fn IsListEmpty(ListHead: *const LIST_ENTRY) -> BOOLEAN; // winlogon-sys/src/bindgen_amd64.rs
-    pub fn PushEntryList(ListHead: *mut SINGLE_LIST_ENTRY, Entry: *mut SINGLE_LIST_ENTRY); // cdfs-rust/src/strucsup.rs
-    pub fn RemoveEntryList(Entry: PLIST_ENTRY) -> BOOLEAN; // winlogon-sys/src/bindgen_amd64.rs
-    pub fn RemoveHeadList(ListHead: PLIST_ENTRY) -> PLIST_ENTRY; // winlogon-sys/src/bindgen_amd64.rs
-    pub fn RtlULongAdd(ul1: u32, ul2: u32, result: *mut u32) -> NTSTATUS; // cdrom-rust/src/ddk_shims.rs
     pub fn SptiHandleScsiPassthru( DeviceObject: PDEVICE_OBJECT, Irp: PIRP, MaximumTransferLength: ULONG, MaximumPhysicalPages: ULONG, ) -> NTSTATUS; // usbstor-rust/src/disk.rs
     pub fn strcmp(a: *const c_char, b: *const c_char) -> c_int; // browser-rust/src/prelude.rs
     pub fn strlen(s: *const i8) -> usize; // advapi32-rust/src/prelude.rs
@@ -565,18 +564,13 @@ extern "C" {
 }
 extern "system" {
     pub fn ExFreePoolWithTag(P: PVOID, Tag: ULONG); // freeldr-rust/src/heap.rs
-    pub fn InitializeSListHead(ListHead: PSLIST_HEADER); // aclui-rust/src/types_amd64.rs
-    pub fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS; // fastfat-rust/src/flush.rs
-    pub fn IoCompleteRequest(Irp: PIRP, PriorityBoost: CCHAR); // hal-rust/src/x86/halpnpdd.rs
     pub fn KeClearEvent(Event: PRKEVENT); // ntkrnl-sys/src/bindgen_amd64.rs
     pub fn KeSetEvent(Event: PRKEVENT, Increment: KPRIORITY, Wait: BOOLEAN) -> LONG; // ntkrnl-sys/src/bindgen_amd64.rs
-    pub fn ObDereferenceObject(Object: PVOID); // fastfat-rust/src/create.rs
     pub fn PoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS; // hal-rust/src/arm64/pnpdd.rs
     pub fn PoRequestPowerIrp(DeviceObject: PDEVICE_OBJECT, MinorFunction: UCHAR, PowerState: POWER_STATE, CompletionFunction: PREQUEST_POWER_COMPLETE, Context: PVOID, pIrp: *mut PIRP,) -> NTSTATUS; // po-rust/src/power.rs
     pub fn PoSetPowerState( DeviceObject: PDEVICE_OBJECT, Type: ULONG, State: POWER_STATE, ) -> POWER_STATE; // acpi-rust/src/buspdo.rs
     pub fn PoStartNextPowerIrp(Irp: PIRP); // hal-rust/src/arm64/pnpdd.rs
     pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
-    pub fn _InterlockedExchange(Target: *mut i32, Value: i32) -> i32; // disk-rust/src/ddk_shims.rs
 }
 // ==== end port resolve ====
 pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
@@ -589,6 +583,7 @@ pub const ATA_DEVICE_REQUEST_SIGNATURE: u32 = 0x72415441; // clang, fdo.c
 pub const IOCTL_ATA_PASS_THROUGH: u32 = 0x4D02C; // clang, ioctl.c
 pub const IOCTL_ATA_PASS_THROUGH_DIRECT: u32 = 0x4D030; // clang, ioctl.c
 pub const IOCTL_SCSI_GET_INQUIRY_DATA: u32 = 0x4100C; // clang, ioctl.c
+pub const IOCTL_SCSI_MINIPORT: u32 = 0x4D008; // clang, ioctl.c
 pub const IOCTL_SCSI_PASS_THROUGH: u32 = 0x4D004; // clang, ioctl.c
 pub const IOCTL_SCSI_PASS_THROUGH_DIRECT: u32 = 0x4D014; // clang, ioctl.c
 pub const IO_ERR_CONTROLLER_ERROR: NTSTATUS = 0xC004000B_u32 as NTSTATUS; // clang, dev_error.c
@@ -733,7 +728,6 @@ pub use crate::atapi::dev_error::AtaPortDeviceProcessError;
 pub use crate::atapi::dev_power::AtaPortDeviceProcessPowerChange;
 pub use crate::atapi::dev_identify::AtaPortIdentifyDevice;
 pub use crate::atapi::scsi::AtaPortIoTimer;
-pub use crate::atapi::portstate::AtaPortNotification;
 pub use crate::atapi::dev_timings::AtaPortSelectTimings;
 pub use crate::atapi::portstate::AtaPortSendRequest;
 pub use crate::atapi::portstate::AtaPortSignalWorkerThread;
@@ -766,16 +760,51 @@ pub use crate::atapi::atapi::AtapDriverRegistryPath;
 pub use crate::atapi::atapi::AtapInPEMode;
 // ==== end cross-TU definitions ====
 
-// ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
-// drivers/storage/ide/atapi/atapi.h:326: #define ASSERT_REQUEST(Request) ASSERT((Request) && (Request)->Signature == ATA_DEVICE_REQUEST_SIGNATURE)
+// ==== hand-ported macros: `port macros` leaves an item defined outside its block alone ====
+// atapi.h:326 `ASSERT((Request) && (Request)->Signature == ATA_DEVICE_REQUEST_SIGNATURE)` --
+// a pointer's truth is "not NULL".
 #[allow(unused_macros)]
 macro_rules! ASSERT_REQUEST {
     ($Request:expr $(,)?) => {
-        ASSERT!((($Request) && (*($Request)).Signature == ATA_DEVICE_REQUEST_SIGNATURE))
+        ASSERT!((!($Request).is_null() && (*($Request)).Signature == ATA_DEVICE_REQUEST_SIGNATURE))
     };
 }
 #[allow(unused_imports)]
 pub(crate) use ASSERT_REQUEST;
+// atapi.h:179 `(0xFFFFFFFF >> (RTL_BITS_OF(ULONG) - (num)))` -- unsigned int arithmetic in C,
+// whatever width `num` arrives in.
+#[allow(unused_macros)]
+macro_rules! NUM_TO_BITMAP {
+    ($num:expr $(,)?) => {
+        (0xFFFFFFFFu32 >> ((RTL_BITS_OF!(ULONG) as u32) - (($num) as u32)))
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use NUM_TO_BITMAP;
+// atapi.h:232/235 -- the flags are or'ed into / masked out of a pointer-wide value: C widens
+// `Flags` to ULONG_PTR before `~`, so the complement covers the high half too.
+#[allow(unused_macros)]
+macro_rules! SRB_SET_FLAGS {
+    ($Srb:expr, $Flags:expr $(,)?) => {{
+        (*($Srb)).SrbExtension =
+            (((*($Srb)).SrbExtension as ULONG_PTR) | (($Flags) as ULONG_PTR)) as PVOID;
+        (*($Srb)).SrbExtension
+    }};
+}
+#[allow(unused_imports)]
+pub(crate) use SRB_SET_FLAGS;
+#[allow(unused_macros)]
+macro_rules! SRB_CLEAR_FLAGS {
+    ($Srb:expr, $Flags:expr $(,)?) => {{
+        (*($Srb)).SrbExtension =
+            (((*($Srb)).SrbExtension as ULONG_PTR) & !(($Flags) as ULONG_PTR)) as PVOID;
+        (*($Srb)).SrbExtension
+    }};
+}
+#[allow(unused_imports)]
+pub(crate) use SRB_CLEAR_FLAGS;
+
+// ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
 // drivers/storage/ide/atapi/atapi.h:165: #define ASSUME(cond) do { ASSERT(cond); __assume(cond); } while (0)
 #[allow(unused_macros)]
 macro_rules! ASSUME {
@@ -970,15 +999,6 @@ macro_rules! IS_FDO {
 }
 #[allow(unused_imports)]
 pub(crate) use IS_FDO;
-// drivers/storage/ide/atapi/atapi.h:179: #define NUM_TO_BITMAP(num) (0xFFFFFFFF >> (RTL_BITS_OF(ULONG) - (num)))
-#[allow(unused_macros)]
-macro_rules! NUM_TO_BITMAP {
-    ($num:expr $(,)?) => {
-        (0xFFFFFFFFu32 >> (RTL_BITS_OF!(ULONG) - ($num)))
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use NUM_TO_BITMAP;
 // drivers/storage/ide/atapi/atapi.h:310: #define QUEUE_ENTRY_FROM_IRP(Irp) ((PREQUEST_QUEUE_ENTRY)&(((PIRP)(Irp))->Tail.Overlay.DriverContext[0]))
 #[allow(unused_macros)]
 macro_rules! QUEUE_ENTRY_FROM_IRP {
@@ -988,18 +1008,6 @@ macro_rules! QUEUE_ENTRY_FROM_IRP {
 }
 #[allow(unused_imports)]
 pub(crate) use QUEUE_ENTRY_FROM_IRP;
-// drivers/storage/ide/atapi/atapi.h:235: #define SRB_CLEAR_FLAGS(Srb, Flags) ((Srb)->SrbExtension = (PVOID)((ULONG_PTR)(Srb)->SrbExtension & ~(Flags)))
-#[allow(unused_macros)]
-macro_rules! SRB_CLEAR_FLAGS {
-    ($Srb:expr, $Flags:expr $(,)?) => {
-        {
-            (*($Srb)).SrbExtension = ((((*($Srb)).SrbExtension as ULONG_PTR) & !($Flags)) as PVOID);
-            (*($Srb)).SrbExtension
-        }
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use SRB_CLEAR_FLAGS;
 // drivers/storage/ide/atapi/atapi.h:238: #define SRB_GET_FLAGS(Srb) ((ULONG_PTR)(Srb)->SrbExtension)
 #[allow(unused_macros)]
 macro_rules! SRB_GET_FLAGS {
@@ -1009,35 +1017,62 @@ macro_rules! SRB_GET_FLAGS {
 }
 #[allow(unused_imports)]
 pub(crate) use SRB_GET_FLAGS;
-// drivers/storage/ide/atapi/atapi.h:232: #define SRB_SET_FLAGS(Srb, Flags) ((Srb)->SrbExtension = (PVOID)((ULONG_PTR)(Srb)->SrbExtension | (Flags)))
-#[allow(unused_macros)]
-macro_rules! SRB_SET_FLAGS {
-    ($Srb:expr, $Flags:expr $(,)?) => {
-        {
-            (*($Srb)).SrbExtension = ((((*($Srb)).SrbExtension as ULONG_PTR) | ($Flags)) as PVOID);
-            (*($Srb)).SrbExtension
-        }
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use SRB_SET_FLAGS;
 // ==== end port macros ====
 
 // ==== port resolve: substrate helpers (generated) ====
 pub use ntkrnl_sys::mm::ADDRESS_AND_SIZE_TO_SPAN_PAGES;
+pub use ntkrnl_sys::inline::mm::ExAllocatePoolUninitialized;
+pub use ntkrnl_sys::inline::mm::ExAllocatePoolZero;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::ExInterlockedFlushSList;
 #[cfg(not(target_arch = "x86"))]
 pub use ntkrnl_sys::inline::ex::ExInterlockedFlushSList;
+pub use ntkrnl_sys::inline::common::GetIRPMinorFunctionString;
+pub use ntkrnl_sys::inline::common::InitializeListHead;
+pub use ntkrnl_sys::inline::common::InitializeSListHead;
 pub use ntkrnl_sys::inline::common::InsertTailList;
-pub use ntkrnl_sys::interlocked::InterlockedPushEntrySList;
+pub use ntkrnl_sys::inline::ex::InterlockedPushEntrySList;
 pub use ntkrnl_sys::inline::common::IoAdjustPagingPathCount;
+pub use ntkrnl_sys::driver_ddk::IoCallDriver;
+pub use ntkrnl_sys::driver_ddk::IoCompleteRequest;
 pub use ntkrnl_sys::inline::common::IoInitializeRemoveLock;
+pub use ntkrnl_sys::inline::common::IsListEmpty;
+pub use ntkrnl_sys::ke::KeGetCurrentIrql;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::KeQuerySystemTime;
 #[cfg(not(target_arch = "x86"))]
 pub use ntkrnl_sys::inline::ke::KeQuerySystemTime;
 pub use ntkrnl_sys::inline::mm::MmGetMdlByteCount;
 pub use ntkrnl_sys::inline::mm::MmGetMdlVirtualAddress;
 pub use ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe;
+pub use ntkrnl_sys::ob::ObDereferenceObject;
 pub use ntkrnl_sys::inline::tier1::ObReferenceObject;
 pub use ntkrnl_sys::inline::common::PoSetDeviceBusy;
+pub use ntkrnl_sys::inline::common::PopEntryList;
+pub use ntkrnl_sys::inline::common::PushEntryList;
 pub use ntkrnl_sys::inline::common::RTL_CONSTANT_OBJECT_ATTRIBUTES;
+pub use ntkrnl_sys::inline::common::RemoveEntryList;
+pub use ntkrnl_sys::inline::common::RemoveHeadList;
 pub use ntkrnl_sys::inline::common::RtlEqualMemory;
+pub use ntkrnl_sys::inline::common::RtlULongAdd;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::RtlUlongByteSwap;
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::common::RtlUlongByteSwap;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::RtlUlonglongByteSwap;
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::common::RtlUlonglongByteSwap;
+#[cfg(target_arch = "x86")]
+pub use ntkrnl_sys::ddk::RtlUshortByteSwap;
+#[cfg(not(target_arch = "x86"))]
+pub use ntkrnl_sys::inline::common::RtlUshortByteSwap;
+pub use ntkrnl_sys::inline::ke::_InterlockedExchange;
 // ==== end substrate helpers ====
+
+// ==== port resolve: INITGUID storage (generated) ====
+#[no_mangle]
+pub static GUID_DEVINTERFACE_STORAGEPORT: GUID = GUID { Data1: 0x2accfe60, Data2: 0xc130, Data3: 0x11d2, Data4: [0xb0, 0x82, 0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b] };
+#[no_mangle]
+pub static GUID_PCIIDE_INTERFACE_ROS: GUID = GUID { Data1: 0xD677FBCF, Data2: 0xABED, Data3: 0x47C8, Data4: [0x80, 0xA3, 0xE4, 0x34, 0x7E, 0xA4, 0x96, 0x47] };
+// ==== end INITGUID storage ====

@@ -19,7 +19,7 @@ pub static RUSTCONV_WSTR_604F52A85CB9: [u16; 12] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, GUID, _IO_STATUS_BLOCK, IoAllocateIrp, IoAllocateWorkItem, IoAttachDeviceToDeviceStack, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoInvalidateDeviceState, IoOpenDeviceRegistryKey, IoQueueWorkItem, KEVENT, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, RtlCopyUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString, STORAGE_EVENT_NOTIFICATION, _KWAIT_REASON_Suspended, ZwClose, ZwCreateDirectoryObject, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, GUID, _IO_STATUS_BLOCK, IoAllocateIrp, IoAllocateWorkItem, IoAttachDeviceToDeviceStack, IoBuildDeviceIoControlRequest, IoBuildSynchronousFsdRequest, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoForwardIrpSynchronously, IoFreeIrp, IoFreeWorkItem, IoGetAttachedDeviceReference, IoInvalidateDeviceState, IoOpenDeviceRegistryKey, IoQueueWorkItem, KEVENT, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeDpc, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDRIVER_OBJECT, PHANDLE, PIO_STACK_LOCATION, PIO_WORKITEM, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, PUNICODE_STRING, RtlCopyUnicodeString, RtlFreeUnicodeString, RtlInitUnicodeString, STORAGE_EVENT_NOTIFICATION, _KWAIT_REASON_Suspended, ZwClose, ZwCreateDirectoryObject, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn AtaPnpRepeatRequest(
     Irp: PIRP,
     DeviceCapabilities: PDEVICE_CAPABILITIES,
 ) -> NTSTATUS {
-    let FdoExt = (*CommonExt).__bindgen_anon_1.FdoExt;
+    let FdoExt: PATAPORT_COMMON_EXTENSION = (*CommonExt).__bindgen_anon_1.FdoExt as _;
     let mut TopDeviceObject: PDEVICE_OBJECT;
     let mut IoStack: PIO_STACK_LOCATION;
     let mut SubStack: PIO_STACK_LOCATION;
@@ -714,7 +714,7 @@ pub unsafe extern "system" fn AtaAddChannel(
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
     let mut ChanExt: *mut ATAPORT_CHANNEL_EXTENSION = core::ptr::null_mut();
     let mut DeviceNameBuffer: [u16; 25] = [0; 25];
-    DECLARE_PAGED_WSTRING!(FdoFormat, RUSTCONV_WSTR_01D8877A5F07.as_ptr());
+    DECLARE_PAGED_WSTRING!(FdoFormat, RUSTCONV_WSTR_01D8877A5F07);
     static mut AtapFdoNumber: u32 = 0;
 
     PAGED_CODE!();
@@ -722,7 +722,7 @@ pub unsafe extern "system" fn AtaAddChannel(
     Status = RtlStringCbPrintfW!(
         DeviceNameBuffer.as_mut_ptr(),
         core::mem::size_of::<[u16; 25]>(),
-        FdoFormat,
+        FdoFormat.as_ptr(),
         AtapFdoNumber,
     );
 

@@ -4,20 +4,10 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-#[derive(Copy, Clone)]
-#[repr(C)]
-pub struct C2RustUnnamed_100 {
-    pub Alignment: ULONGLONG,
-    pub Region: ULONGLONG,
-}
-
+// C: a zero-initialized global. c2rust spelled the zero through amd64's SLIST_HEADER layout
+// (Alignment/Region), which i386 and arm64 do not share; zero is zero on all three.
 #[no_mangle]
-pub static mut AtapCompletionQueueList: SLIST_HEADER = _SLIST_HEADER {
-    c2rust_unnamed: C2RustUnnamed_100 {
-        Alignment: 0,
-        Region: 0,
-    },
-};
+pub static mut AtapCompletionQueueList: SLIST_HEADER = unsafe { core::mem::zeroed() };
 
 #[no_mangle]
 pub static mut AtapCompletionDpc: KDPC = _KDPC {
@@ -120,10 +110,10 @@ unsafe extern "C" fn AtaReqRequeueRequest(
         return (COMPLETE_IRP) as i32;
     }
     if (SrbStatus as i32) as u32 == SRB_STATUS_INSUFFICIENT_RESOURCES {
-        if SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_LOW_MEM_RETRY) as _ != 0 {
+        if SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_LOW_MEM_RETRY) as ULONG_PTR != 0 {
             return (COMPLETE_IRP) as i32;
         }
-        SRB_SET_FLAGS!((*Request).Srb, (SRB_FLAG_LOW_MEM_RETRY) as _);
+        SRB_SET_FLAGS!((*Request).Srb, SRB_FLAG_LOW_MEM_RETRY);
     }
     if AtaReqDeviceQueueAddSrb(Device, (*Request).Srb) != STATUS_PENDING {
         *ResultSrbStatus = (*(*Request).Srb).SrbStatus as UCHAR;
@@ -146,7 +136,7 @@ unsafe extern "C" fn AtaReqPortQueueListDispatchNextRequest(
     Entry = RemoveHeadList(&raw mut (*PortData).PortQueueList);
 
     Request = CONTAINING_RECORD!(Entry, ATA_DEVICE_REQUEST, __bindgen_anon_1.PortEntry);
-    ASSERT_REQUEST!(!Request.is_null());
+    ASSERT_REQUEST!(Request);
 
     Device = (*Request).Device as PATAPORT_IO_CONTEXT;
 
@@ -318,9 +308,9 @@ pub unsafe extern "C" fn AtaReqSetFixedSenseData(
         &mut SenseData as *mut SENSE_DATA as *mut core::ffi::c_void,
         core::mem::size_of::<SENSE_DATA>(),
     );
-    SenseData._bitfield_1.set(0, 1);
-    SenseData._bitfield_1.set(1, (SCSI_SENSE_ERRORCODE_FIXED_CURRENT as u32) as u8);
-    SenseData._bitfield_2.set(0, (SenseCode.SenseKey as u32) as u8);
+    SenseData._bitfield_1.set(0, 1, 1);
+    SenseData._bitfield_1.set(1, 7, (SCSI_SENSE_ERRORCODE_FIXED_CURRENT as u32) as u64);
+    SenseData._bitfield_2.set(0, 4, (SenseCode.SenseKey as u32) as u64);
     SenseData.AdditionalSenseCode = SenseCode.AdditionalSenseCode;
     SenseData.AdditionalSenseCodeQualifier = SenseCode.AdditionalSenseCodeQualifier;
     SenseData.AdditionalSenseLength = (core::mem::size_of::<SENSE_DATA>()
@@ -636,7 +626,7 @@ pub unsafe extern "system" fn AtaReqCompletionDpc(
         NextEntry = (*CurrentEntry).Next;
 
         Request = CONTAINING_RECORD!(CurrentEntry, ATA_DEVICE_REQUEST, __bindgen_anon_1.CompletionEntry);
-        ASSERT_REQUEST!((!(Request).is_null()));
+        ASSERT_REQUEST!(Request);
 
         AtaReqCompleteRequest(Request);
 
@@ -645,7 +635,7 @@ pub unsafe extern "system" fn AtaReqCompletionDpc(
 }
 #[no_mangle]
 pub unsafe extern "C" fn AtaReqStartCompletionDpc(Request: PATA_DEVICE_REQUEST) {
-    ASSERT_REQUEST!((!(Request).is_null()));
+    ASSERT_REQUEST!(Request);
 
     InterlockedPushEntrySList((&raw mut AtapCompletionQueueList).cast(), (&raw mut (*Request).__bindgen_anon_1.CompletionEntry).cast());
     KeInsertQueueDpc(&mut AtapCompletionDpc, core::ptr::null_mut(), core::ptr::null_mut());
@@ -691,7 +681,7 @@ unsafe extern "C" fn AtaReqAllocateSlot(
 
     SlotsBitmap = (*PortData).FreeSlotsBitmap;
 
-    SlotMask = !(0xFFFFFFFF >> (MAX_SLOTS - (((*PortData).LastUsedSlot + 1)) as _));
+    SlotMask = !(0xFFFFFFFFu32 >> (MAX_SLOTS as u32 - (((*PortData).LastUsedSlot + 1)) as u32));
     if SlotsBitmap & SlotMask == 0 {
         SlotMask = 0xFFFFFFFF;
     }
@@ -700,7 +690,7 @@ unsafe extern "C" fn AtaReqAllocateSlot(
         return FALSE;
     }
 
-    if (*PortData).AllocateSlot((*PortData).ChannelContext, Request, TRUE) == 0 {
+    if ((*PortData).AllocateSlot.unwrap_unchecked())((*PortData).ChannelContext, Request, TRUE) == 0 {
         return FALSE;
     }
 
@@ -773,7 +763,7 @@ unsafe extern "C" fn AtaReqTranslateRequest(
     (*Request).DataBuffer = (*Srb).DataBuffer;
     (*Request).DataTransferLength = (*Srb).DataTransferLength;
     (*Request).Irp = (*Srb).OriginalRequest as PIRP;
-    (*Request).Mdl = (*(*(*Srb).OriginalRequest as PIRP)).MdlAddress as PMDL;
+    (*Request).Mdl = (*((*Srb).OriginalRequest as PIRP)).MdlAddress;
     (*Request).TimeOut = (*Srb).TimeOutValue;
     (*Request).Complete = None;
     (*Request).Flags = 0;
@@ -840,7 +830,7 @@ unsafe extern "C" fn AtaReqRemovePortRequest(
     Entry = (*PortData).PortQueueList.Flink as PLIST_ENTRY;
     while Entry != &raw mut (*PortData).PortQueueList {
         Request = CONTAINING_RECORD!(Entry, ATA_DEVICE_REQUEST, __bindgen_anon_1.PortEntry);
-        ASSERT_REQUEST!((*Request).Device != Device as PATA_IO_CONTEXT_COMMON);
+        ASSERT_REQUEST!(Request);
         if (*Request).Device != Device as PATA_IO_CONTEXT_COMMON {
             Entry = (*Entry).Flink as PLIST_ENTRY;
         } else {
@@ -970,7 +960,7 @@ unsafe extern "C" fn AtaReqAllocateRequestFromTag(
     ASSERT!((*Device).FreeRequestsBitmap & ((1 as ULONG) << Tag) != 0);
     (*Device).FreeRequestsBitmap &= !((1 as ULONG) << Tag);
     Request = (*Device).Requests.offset(Tag as isize);
-    ASSERT_REQUEST!(Request != core::ptr::null_mut());
+    ASSERT_REQUEST!(Request);
     (*Request).Tag = (1 as ULONG) << Tag;
     return Request;
 }
@@ -1198,7 +1188,7 @@ pub unsafe extern "C" fn AtaReqFlushDeviceQueue(Device: PATAPORT_IO_CONTEXT) {
         AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
         Irp = IRP_FROM_QUEUE_ENTRY!(QueueEntry);
-        if !IoSetCancelRoutine(Irp, None) {
+        if IoSetCancelRoutine(Irp, None).is_some() {
             InitializeListHead(&mut (*QueueEntry).ListEntry);
             Entry = (*Entry).Flink;
             continue;
@@ -1456,7 +1446,7 @@ pub unsafe extern "system" fn AtaPortIoTimer(
     DeviceObject: PDEVICE_OBJECT,
     Context: *mut core::ffi::c_void,
 ) {
-    let PortData: *mut ntkrnl_sys::PATAPORT_PORT_DATA = Context as *mut _;
+    let PortData: PATAPORT_PORT_DATA = Context as _;
     let mut Slot: u32 = 0;
     let mut ActiveTimersBitmap: u32;
 

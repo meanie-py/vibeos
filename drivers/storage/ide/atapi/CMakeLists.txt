@@ -59,7 +59,7 @@ add_custom_target(rust_atapi DEPENDS ${ATAPI_RUST_LIB})
 #     wmi.c)
 
 # ${SOURCE} is empty while the list above stays commented (see pciidex/CMakeLists.txt).
-add_library(atapi MODULE ${SOURCE} rust_cohab_stub.c atapi.rc)
+add_library(atapi MODULE ${SOURCE} rust_cohab_stub.c rust_varargs_shim.c atapi.rc)
 
 if(STACK_PROTECTOR)
     target_sources(atapi PRIVATE $<TARGET_OBJECTS:gcc_ssp_nt>)

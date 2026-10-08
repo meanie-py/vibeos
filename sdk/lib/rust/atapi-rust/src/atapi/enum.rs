@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DEVICE_RELATIONS, ExAllocatePoolUninitialized, _KWAIT_REASON_Executive, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_RELATIONS, PIRP, RtlUshortByteSwap};
+use ntkrnl_sys::ddk::{DEVICE_RELATIONS, _KWAIT_REASON_Executive, KeWaitForSingleObject, LARGE_INTEGER, PDEVICE_RELATIONS, PIRP};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -331,22 +331,22 @@ unsafe extern "C" fn AtaPdoInit(
         AtaCreateStandardInquiryData(DevExt);
     }
 
-    if (*DevExt).Device.AtaScsiAddress.Lun as i32 == 0 as i32 {
+    if (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.Lun as i32 == 0 as i32 {
         AtaSetRegistryKey(
             ChanExt,
-            (*DevExt).Device.AtaScsiAddress.TargetId,
+            (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId,
             (DD_ATA_REG_ATA_DEVICE_TYPE).as_ptr(),
             (*DevExt).DeviceType,
         );
         AtaSetRegistryKey(
             ChanExt,
-            (*DevExt).Device.AtaScsiAddress.TargetId,
+            (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId,
             (DD_ATA_REG_SCSI_DEVICE_TYPE).as_ptr(),
             (*DevExt).InquiryData.DeviceType() as u32,
         );
         AtaGetRegistryKey(
             ChanExt,
-            (*DevExt).Device.AtaScsiAddress.TargetId,
+            (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId,
             (DD_ATA_REG_XFER_MODE_ALLOWED).as_ptr(),
             &raw mut (*DevExt).TransferModeUserAllowedMask,
             MAXULONG,
@@ -558,10 +558,10 @@ pub unsafe extern "C" fn AtaFdoQueryBusRelations(
             break;
         }
         (*DevExt).NotPresent = TRUE;
-        if (*DevExt).Device.AtaScsiAddress.Lun == 0 {
+        if (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.Lun == 0 {
             AtaGetRegistryKey(
                 ChanExt,
-                (*DevExt).Device.AtaScsiAddress.TargetId,
+                (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId,
                 (DD_ATA_REG_XFER_MODE_ALLOWED).as_ptr(),
                 core::ptr::addr_of_mut!((*DevExt).TransferModeUserAllowedMask),
                 MAXULONG,

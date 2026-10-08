@@ -15,7 +15,7 @@ pub static RUSTCONV_WSTR_499DA777F3BC: [u16; 20] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDetachDevice, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoInitializeTimer, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoStartTimer, IoStopTimer, KeInitializeDpc, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, MmAllocateContiguousMemorySpecifyCache, MmAllocateMappingAddress, MmFreeContiguousMemorySpecifyCache, MmFreeMappingAddress, MmGetPhysicalAddress, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByHandle, PCM_RESOURCE_LIST, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PopEntryList, PsCreateSystemThread, RtlFreeUnicodeString, RtlInitUnicodeString, ZwClose};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, IoCreateSymbolicLink, IoDeleteDevice, IoDeleteSymbolicLink, IoDetachDevice, IoForwardIrpSynchronously, IoGetConfigurationInformation, IoInitializeTimer, IoRegisterDeviceInterface, IoSetDeviceInterfaceState, IoStartTimer, IoStopTimer, KeInitializeDpc, KeInitializeEvent, KeWaitForSingleObject, MmAllocateContiguousMemorySpecifyCache, MmAllocateMappingAddress, MmFreeContiguousMemorySpecifyCache, MmFreeMappingAddress, MmGetPhysicalAddress, _EVENT_TYPE_NotificationEvent, _OBJECT_ATTRIBUTES, ObReferenceObjectByHandle, PCM_RESOURCE_LIST, PHYSICAL_ADDRESS, PIO_STACK_LOCATION, PIRP, PsCreateSystemThread, RtlFreeUnicodeString, RtlInitUnicodeString, ZwClose};
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -310,7 +310,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
     (*PortData).ChannelObject = ChannelInterface.ChannelObject;
 
     (*PortData).InterruptFlags = (PORT_INT_FLAG_IS_IO_ACTIVE) as i32;
-    (*PortData).FreeSlotsBitmap = NUM_TO_BITMAP!(((*PortData).QueueDepth) as _);
+    (*PortData).FreeSlotsBitmap = NUM_TO_BITMAP!((*PortData).QueueDepth);
     (*PortData).MaxSlotsBitmap = (*PortData).FreeSlotsBitmap;
     (*PortData).LastUsedSlot = (RTL_BITS_OF!(ULONG) - 1) as _;
 
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         return Status;
     }
 
-    AtaSetPortRegistryKey((ChanExt).cast(), DD_ATA_REG_MAX_TARGET_ID, (*PortData).MaxTargetId);
+    AtaSetPortRegistryKey((ChanExt).cast(), DD_ATA_REG_MAX_TARGET_ID.as_ptr(), (*PortData).MaxTargetId);
 
     Status = IoRegisterDeviceInterface(
         (*ChanExt).Pdo,

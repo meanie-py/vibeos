@@ -84,7 +84,10 @@ unsafe extern "C" fn AtaTimQuerySwDmaModeSupport(
 
     CycleTime = IDE_ACPI_TIMING_MODE_NOT_SUPPORTED;
 
-    CurrentMode = ((((*IdentifyData).ObsoleteWord62 & 0xFF00) >> 16) & 0x7) as _;
+    // DIVERGES FROM THE C, which writes `>> 16`: word 62 is a USHORT, so its high byte
+    // shifted by 16 is always 0 and the active SWDMA mode was never reported. The selected
+    // mode is bits 8-10 (the supported modes, read below, are the low byte), hence `>> 8`.
+    CurrentMode = ((((*IdentifyData).ObsoleteWord62 & 0xFF00) >> 8) & 0x7) as _;
     if CurrentMode != 0 {
         NT_VERIFY!(_BitScanReverse(&raw mut CurrentMode, CurrentMode));
         CurrentMode += SWDMA_MODE!(0);

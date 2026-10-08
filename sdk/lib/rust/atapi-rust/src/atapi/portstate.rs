@@ -11,7 +11,7 @@ unsafe extern "C" fn AtaPortQueueEvent(
     if Action & (ACTION_PORT_RESET | ACTION_DEVICE_ERROR) != 0 {
         if Action & ACTION_DEVICE_ERROR != 0 {
             if !FailedRequest.is_null() {
-                ASSERT_REQUEST!((!(FailedRequest).is_null()));
+                ASSERT_REQUEST!(FailedRequest);
 
                 DevExt = CONTAINING_RECORD!((*FailedRequest).Device, ATAPORT_DEVICE_EXTENSION, Device);
 
@@ -102,7 +102,7 @@ unsafe extern "C" fn AtaPortFindDeviceForAction(
     while !Entry.is_null() {
         DevExt = CONTAINING_RECORD!(Entry, ATAPORT_DEVICE_EXTENSION, ListEntry);
 
-        if ((*DevExt).Device.AtaScsiAddress.PathId) as u32 != (*PortData).PortNumber {
+        if ((*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.PathId) as u32 != (*PortData).PortNumber {
             Entry = (*Entry).Next;
             continue;
         }
@@ -153,12 +153,7 @@ unsafe extern "C" fn AtaPortOnResetNotification(
     let mut ChanExt: PATAPORT_CHANNEL_EXTENSION =
         ::core::ptr::null_mut::<ATAPORT_CHANNEL_EXTENSION>();
     let mut AtaScsiAddress: ATA_SCSI_ADDRESS = ATA_SCSI_ADDRESS {
-        c2rust_unnamed: C2RustUnnamed_165 {
-            Lun: 0,
-            TargetId: 0,
-            PathId: 0,
-            IsValid: 0,
-        },
+        AsULONG: 0,
     };
     let mut DevExt: PATAPORT_DEVICE_EXTENSION =
         ::core::ptr::null_mut::<ATAPORT_DEVICE_EXTENSION>();
@@ -214,7 +209,7 @@ unsafe extern "C" fn AtaPortOnRequestComplete(
         CommandsCompleted &= !((1 << Slot) as ULONG);
 
         Request = (*PortData).Slots[Slot as usize];
-        ASSERT_REQUEST!((!(Request).is_null()));
+        ASSERT_REQUEST!(Request);
 
         InterlockedPushEntrySList((&raw mut AtapCompletionQueueList).cast(), (&raw mut (*Request).__bindgen_anon_1.CompletionEntry).cast());
     }
@@ -230,7 +225,7 @@ unsafe extern "C" fn AtaPortMarkDeviceFailed(
     if (*DevExt).Worker.ResetRetryCount >= 4 {
         (*DevExt).Worker.Flags |= DEV_WORKER_FLAG_REMOVED;
         (*PortData).Worker.BadDeviceBitmap |= 1
-            << (*DevExt).Device.AtaScsiAddress.TargetId as ULONG;
+            << (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as ULONG;
     }
 }
 
@@ -332,7 +327,7 @@ unsafe extern "C" fn AtaPortEnumerateDevice(
     }
 
     if (*PortData).Worker.BadDeviceBitmap
-        & ((1) << (*DevExt).Device.AtaScsiAddress.TargetId as ULONG)
+        & ((1) << (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as ULONG)
         != 0
     {
         (*DevExt).Worker.EnumStatus = (DEV_STATUS_NO_DEVICE) as i32;
@@ -440,7 +435,7 @@ unsafe extern "C" fn AtaPortGetNextEvent(
 ) -> BOOLEAN {
     let mut OldIrql: KIRQL;
     let mut i: ULONG;
-    let mut EventIndex: ULONG;
+    let mut EventIndex: ULONG = core::mem::zeroed();
     let mut Success: BOOLEAN;
 
     OldIrql = KeAcquireInterruptSpinLock((*PortData).InterruptObject);
@@ -474,7 +469,7 @@ unsafe extern "C" fn AtaPortGetNextEvent(
                 == 0)
             {
                 Request = (*PortData).Slots[i as usize];
-                ASSERT_REQUEST!(!Request.is_null());
+                ASSERT_REQUEST!(Request);
 
                 (*Request).SrbStatus = SRB_STATUS_BUSY as UCHAR;
                 (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = REQUEST_STATE_REQUEUE as UCHAR;
@@ -567,13 +562,8 @@ unsafe extern "C" fn AtaPortWaitForIdle(PortData: PATAPORT_PORT_DATA) {
 unsafe extern "C" fn AtaPortEnterStateMachine(mut PortData: PATAPORT_PORT_DATA) {
     let mut ChanExt: PATAPORT_CHANNEL_EXTENSION =
         ::core::ptr::null_mut::<_ATAPORT_CHANNEL_EXTENSION>();
-    let mut AtaScsiAddress: ATA_SCSI_ADDRESS = _ATA_SCSI_ADDRESS {
-        c2rust_unnamed: _C2RustUnnamed_165 {
-            Lun: 0,
-            TargetId: 0,
-            PathId: 0,
-            IsValid: 0,
-        },
+    let mut AtaScsiAddress: ATA_SCSI_ADDRESS = ATA_SCSI_ADDRESS {
+        AsULONG: 0,
     };
     ChanExt = CONTAINING_RECORD!(PortData, ATAPORT_CHANNEL_EXTENSION, PortData);
     AtaScsiAddress.AsULONG = 0;
@@ -694,14 +684,14 @@ pub unsafe extern "system" fn AtaPortWorkerThread(StartContext: *mut core::ffi::
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn AtaPortNotification(
+pub unsafe extern "C" fn AtaPortNotification_v(
     NotificationType: PORT_NOTIFICATION_TYPE,
     PortContext: PVOID,
-    mut args: ...
+    ap_list: *mut ::core::ffi::c_void,
 ) {
     let PortData: PATAPORT_PORT_DATA = PortContext as PATAPORT_PORT_DATA;
-    let mut ap: ::core::ffi::VaListImpl;
-    ap = args.clone();
+    let mut ap: varargs_rust::VaArgs;
+    ap = varargs_rust::VaArgs::from_ptr(ap_list);
 
     match NotificationType as ::core::ffi::c_uint {
         0 => {
@@ -745,6 +735,9 @@ pub unsafe extern "C" fn AtaPortNotification(
         }
     }
 }
+
+// `AtaPortNotification` itself (C-variadic) is the island's declaration of the trampoline in
+// drivers/storage/ide/atapi/rust_varargs_shim.c, which `va_start`s and calls the twin above.
 #[no_mangle]
 pub unsafe extern "C" fn AtaPortCompleteInternalRequest(
     Request: *mut ATA_DEVICE_REQUEST,
@@ -849,7 +842,7 @@ pub unsafe extern "C" fn AtaPortTimeout(
     let mut DevExt: *mut ATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
 
     Request = (*PortData).Slots[Slot as usize];
-    ASSERT_REQUEST!(!Request.is_null());
+    ASSERT_REQUEST!(Request);
 
     DevExt = CONTAINING_RECORD!(
         (*Request).Device,

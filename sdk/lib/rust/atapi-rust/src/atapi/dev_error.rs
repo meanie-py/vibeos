@@ -74,7 +74,7 @@ unsafe extern "C" fn AtaDeviceHandleRequestSense(
         RtlCopyMemory!(
             (*Srb).SenseInfoBuffer as *mut core::ffi::c_void,
             (*DevExt).Device.LocalBuffer as *const core::ffi::c_void,
-            min((*Srb).SenseInfoBufferLength, (ATA_LOCAL_BUFFER_SIZE) as T) as usize,
+            min((*Srb).SenseInfoBufferLength, (ATA_LOCAL_BUFFER_SIZE) as u8) as usize,
         );
 
         (*Srb).ScsiStatus = (SCSISTAT_CHECK_CONDITION) as u8;
@@ -107,7 +107,7 @@ unsafe extern "C" fn AtaDeviceSendRequestSense(
     let Status: NTSTATUS;
     let Cdb: PCDB;
 
-    ASSERT_REQUEST!(!FailedRequest.is_null());
+    ASSERT_REQUEST!(FailedRequest);
 
     (*Request).Flags = REQUEST_FLAG_DATA_IN |
                        REQUEST_FLAG_PACKET_COMMAND |
@@ -117,8 +117,8 @@ unsafe extern "C" fn AtaDeviceSendRequestSense(
 
     Cdb = &raw mut (*Request).__bindgen_anon_2.Cdb as *mut UCHAR as PCDB;
     (*Cdb).CDB6INQUIRY.OperationCode = (SCSIOP_REQUEST_SENSE) as u8;
-    (*Cdb).CDB6INQUIRY._bitfield_1.set_LogicalUnitNumber(0);
-    (*Cdb).CDB6INQUIRY._bitfield_1.set_Reserved1(0);
+    (*Cdb).CDB6INQUIRY.set_LogicalUnitNumber(0);
+    (*Cdb).CDB6INQUIRY.set_Reserved1(0);
     (*Cdb).CDB6INQUIRY.PageCode = 0;
     (*Cdb).CDB6INQUIRY.IReserved = 0;
     (*Cdb).CDB6INQUIRY.AllocationLength = (*Request).DataTransferLength as UCHAR;
@@ -313,7 +313,7 @@ unsafe extern "C" fn AtaDeviceAnalyzeDmaError(
         return;
     }
 
-    if (*PortData).DowngradeInterfaceSpeed((*PortData).ChannelContext) != 0 {
+    if ((*PortData).DowngradeInterfaceSpeed.unwrap_unchecked())((*PortData).ChannelContext) != 0 {
         AtaDeviceLogEvent(DevExt, EVENT_CODE_DOWNSHIFT);
         return;
     }
@@ -327,11 +327,11 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     let mut RetryCount: SIZE_T;
     let mut OldIrql: KIRQL;
 
-    ASSERT_REQUEST!((!(Request).is_null()));
+    ASSERT_REQUEST!(Request);
 
     SrbStatus = (SRB_STATUS!((*Request).SrbStatus)) as u8;
 
-    RetryCount = SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_RETRY_COUNT_MASK) as _;
+    RetryCount = (SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_RETRY_COUNT_MASK) as ULONG_PTR) as _;
     RetryCount = RetryCount.wrapping_add(1);
     SRB_CLEAR_FLAGS!((*Request).Srb, SRB_FLAG_RETRY_COUNT_MASK);
     SRB_SET_FLAGS!((*Request).Srb, RetryCount);
@@ -341,7 +341,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
         match (SrbStatus) as u32 {
             SRB_STATUS_BUS_RESET | SRB_STATUS_TIMEOUT => {
                 if (*PortData).PortFlags & PORT_FLAG_PIO_VIA_DMA == 0 {
-                    SRB_SET_FLAGS!((*Request).Srb, (SRB_FLAG_PIO_RETRY) as _);
+                    SRB_SET_FLAGS!((*Request).Srb, SRB_FLAG_PIO_RETRY);
                 }
                 SrbStatus = (SRB_STATUS_BUSY) as u8;
             }
@@ -415,11 +415,11 @@ unsafe extern "C" fn AtaDeviceNcqRecovery(
         }
 
         FailedRequest = (*PortData).Slots[(*LogPage).NcqTag() as usize];
-        ASSERT_REQUEST!((!(FailedRequest).is_null()));
+        ASSERT_REQUEST!(FailedRequest);
         (*PortData).Worker.FailedRequest = FailedRequest;
 
         (*FailedRequest).SrbStatus = (SRB_STATUS_ERROR) as u8;
-        (*FailedRequest).Output.__bindgen_anon_1.Status = (*LogPage).__bindgen_anon_1.Status;
+        (*FailedRequest).Output.__bindgen_anon_1.Status = (*LogPage).Status;
         (*FailedRequest).Output.__bindgen_anon_2.Error = (*LogPage).Error;
         if ((*FailedRequest).Flags & (REQUEST_FLAG_SAVE_TASK_FILE as u32)) != 0 {
             AtaDeviceSaveLogPageTaskFile(LogPage, FailedRequest);
@@ -515,7 +515,7 @@ pub unsafe extern "C" fn AtaPortDeviceProcessError(
     let FailedRequest: *mut ATA_DEVICE_REQUEST = (*PortData).Worker.FailedRequest;
     let Status: NTSTATUS;
 
-    ASSERT_REQUEST!(!FailedRequest.is_null());
+    ASSERT_REQUEST!(FailedRequest);
 
     if (*FailedRequest).Flags & REQUEST_FLAG_NCQ != 0 {
         Status = AtaDeviceNcqRecovery(PortData, DevExt);

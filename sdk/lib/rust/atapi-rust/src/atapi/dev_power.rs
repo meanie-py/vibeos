@@ -64,7 +64,7 @@ pub unsafe extern "C" fn AtaDeviceGetFlushCacheCommand(
 }
 
 unsafe extern "C" fn AtaDeviceCompletePowerIrp(
-    DevExt: *mut ATA_PORT_DEVICE_EXTENSION,
+    DevExt: *mut ATAPORT_DEVICE_EXTENSION,
     Irp: PIRP,
 ) {
     let mut PowerState: POWER_STATE = POWER_STATE {
@@ -72,7 +72,7 @@ unsafe extern "C" fn AtaDeviceCompletePowerIrp(
     };
     PowerState.DeviceState = (*DevExt).Common.DevicePowerState;
     PoSetPowerState(
-        (*DevExt).Common.Self,
+        (*DevExt).Common.Self_,
         DevicePowerState,
         PowerState,
     );
@@ -136,8 +136,8 @@ pub unsafe extern "C" fn AtaPortDeviceProcessPowerChange(
     let mut Entry: PLIST_ENTRY;
     let mut PowerIrp: PIRP;
     let mut IoStack: PIO_STACK_LOCATION;
-    let mut NewState: DevicePowerState;
-    let mut OldLevel: KIRQL;
+    let mut NewState: DEVICE_POWER_STATE;
+    let mut OldLevel: KIRQL = 0;
     let mut Status: NTSTATUS;
 
     KeAcquireSpinLock((&raw mut (*DevExt).Device.QueueLock).cast(), &raw mut OldLevel);
@@ -321,7 +321,7 @@ unsafe extern "system" fn AtaPdoPowerSetSysStateWithDevStateComplete(
 }
 
 unsafe extern "C" fn AtaPdoPowerGetDevStateForSysState(
-    SystemState: SystemPowerState,
+    SystemState: SYSTEM_POWER_STATE,
     DeviceState: PDEVICE_POWER_STATE,
 ) {
     if SystemState == PowerSystemWorking {
@@ -340,7 +340,7 @@ unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(
     let mut NewPowerState: POWER_STATE = POWER_STATE {
         SystemState: PowerSystemWorking,
     };
-    let mut NewSystemState: SystemPowerState = PowerSystemWorking;
+    let mut NewSystemState: SYSTEM_POWER_STATE = PowerSystemWorking;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     NewSystemState = (*IoStack).Parameters.Power.State.SystemState;

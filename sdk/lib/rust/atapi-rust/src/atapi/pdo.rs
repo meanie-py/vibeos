@@ -27,7 +27,7 @@ pub static RUSTCONV_WSTR_FA5668E0AE70: [u16; 14] = [
 ];
 
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, ExAllocatePoolUninitialized, ExAllocatePoolZero, _KWAIT_REASON_Executive, IoCreateDevice, IoDeleteDevice, KeInitializeEvent, KeInitializeSpinLock, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlInitUnicodeString};
+use ntkrnl_sys::ddk::{DEVICE_CAPABILITIES, _KWAIT_REASON_Executive, IoCreateDevice, IoDeleteDevice, KeInitializeEvent, KeWaitForSingleObject, _EVENT_TYPE_NotificationEvent, PCSTR, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PIO_STACK_LOCATION, PIRP, RtlInitUnicodeString};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaPdoStartDevice(
@@ -243,11 +243,11 @@ unsafe extern "C" fn AtaPdoQueryId(
     let mut LocalBuffer: [CHAR; (ATAPORT_FN_FIELD + ATAPORT_RN_FIELD) as _] = [0; (ATAPORT_FN_FIELD + ATAPORT_RN_FIELD) as _];
     let mut Status: NTSTATUS;
     let mut Buffer: PWCHAR;
-    let mut End: PWCHAR;
+    let mut End: PWCHAR = core::mem::zeroed();
     let mut DeviceType: PCSTR;
     let mut GenericType: PCSTR;
     let mut CharCount: size_t;
-    let mut Remaining: size_t;
+    let mut Remaining: size_t = core::mem::zeroed();
 
     PAGED_CODE!();
 
@@ -257,8 +257,8 @@ unsafe extern "C" fn AtaPdoQueryId(
 
             CharCount = (core::mem::size_of::<[u8; 5]>() - 1)
                 + strlen(DeviceType)
-                + (ATAPORT_FN_FIELD) as _
-                + (ATAPORT_RN_FIELD) as _
+                + (ATAPORT_FN_FIELD) as size_t
+                + (ATAPORT_RN_FIELD) as size_t
                 + core::mem::size_of_val(&ANSI_NULL);
 
             Buffer = (ExAllocatePoolUninitialized(
@@ -299,7 +299,7 @@ unsafe extern "C" fn AtaPdoQueryId(
         }
 
         BusQueryHardwareIDs => {
-            let mut IdStart: PWCHAR;
+            let mut IdStart: PWCHAR = core::mem::zeroed();
 
             DBG_UNREFERENCED_LOCAL_VARIABLE!(IdStart);
 
@@ -309,8 +309,8 @@ unsafe extern "C" fn AtaPdoQueryId(
             CharCount = strlen(DeviceType) * 2
                 + strlen(GenericType)
                 + (core::mem::size_of::<[u8; 5]>() - 1) * 3
-                + (ATAPORT_FN_FIELD * 4) as _
-                + (ATAPORT_RN_FIELD * 3) as _
+                + (ATAPORT_FN_FIELD * 4) as size_t
+                + (ATAPORT_RN_FIELD * 3) as size_t
                 + 5 * core::mem::size_of_val(&ANSI_NULL)
                 + core::mem::size_of_val(&ANSI_NULL);
 
@@ -693,7 +693,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         Buffer: core::ptr::null_mut(),
     };
     let mut DevExt: PATAPORT_DEVICE_EXTENSION;
-    let mut Pdo: PDEVICE_OBJECT;
+    let mut Pdo: PDEVICE_OBJECT = core::mem::zeroed();
     let mut DeviceNameBuffer: [u16; 36] = [0; 36];
     let mut i: u32;
     static mut PdoFormat: *const u16 = RUSTCONV_WSTR_6BE0C8F6E502.as_ptr();
@@ -714,7 +714,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
 
     Status = IoCreateDevice(
         (*(*ChanExt).Common.Self_).DriverObject,
-        core::mem::size_of::<PATAPORT_DEVICE_EXTENSION>() as u32,
+        core::mem::size_of::<_ATAPORT_DEVICE_EXTENSION>() as u32,
         &mut DeviceName,
         FILE_DEVICE_MASS_STORAGE,
         FILE_DEVICE_SECURE_OPEN,
@@ -740,7 +740,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
 
     RtlZeroMemory!(
         DevExt as *mut core::ffi::c_void,
-        core::mem::size_of::<PATAPORT_DEVICE_EXTENSION>(),
+        core::mem::size_of::<_ATAPORT_DEVICE_EXTENSION>(),
     );
     AtaPnpInitializeCommonExtension(
         &mut (*DevExt).Common,
@@ -779,7 +779,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
 
     (*DevExt).Device.DeviceFlags |= DEVICE_PIO_ONLY;
 
-    (*DevExt).Device.FreeRequestsBitmap = NUM_TO_BITMAP!(((*PortData).QueueDepth) as _);
+    (*DevExt).Device.FreeRequestsBitmap = NUM_TO_BITMAP!(((*PortData).QueueDepth) as u32);
     (*DevExt).Device.MaxRequestsBitmap = (*DevExt).Device.FreeRequestsBitmap;
 
     (*DevExt).Device.Requests = ExAllocatePoolZero(

@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ntkrnl_sys::ddk::{ExAllocatePoolZero, _KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoInvalidateDeviceRelations, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_SEEK_PENALTY_DESCRIPTOR, PDEVICE_TRIM_DESCRIPTOR, PIO_STACK_LOCATION, PIRP, PSTORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, STORAGE_DEVICE_DESCRIPTOR};
+use ntkrnl_sys::ddk::{_KWAIT_REASON_Executive, _IO_STATUS_BLOCK, IoBuildSynchronousFsdRequest, IoInvalidateDeviceRelations, KEVENT, KeInitializeEvent, KeWaitForSingleObject, LARGE_INTEGER, _EVENT_TYPE_NotificationEvent, PDEVICE_OBJECT, PDEVICE_SEEK_PENALTY_DESCRIPTOR, PDEVICE_TRIM_DESCRIPTOR, PIO_STACK_LOCATION, PIRP, PSTORAGE_ACCESS_ALIGNMENT_DESCRIPTOR, PSTORAGE_ADAPTER_DESCRIPTOR, PSTORAGE_DESCRIPTOR_HEADER, PSTORAGE_DEVICE_DESCRIPTOR, PSTORAGE_PROPERTY_QUERY, STORAGE_DEVICE_DESCRIPTOR};
 use core::ffi::c_void;
 
 unsafe extern "C" fn AtaCheckPropertyQuery(
@@ -173,7 +173,7 @@ unsafe extern "C" fn AtaPdoQueryStorageAccessAlignmentProperty(
         .wrapping_mul(AtaDevLogicalSectorAlignment(&mut (*DevExt).__bindgen_anon_1.IdentifyDeviceData));
 
     (*Irp).IoStatus.Information =
-        core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as usize as u64;
+        core::mem::size_of::<STORAGE_ACCESS_ALIGNMENT_DESCRIPTOR>() as ULONG_PTR;
     return STATUS_SUCCESS;
 }
 
@@ -282,7 +282,7 @@ unsafe extern "C" fn AtaPdoHandleGetScsiAddress(
     let mut ChanExt: PATAPORT_CHANNEL_EXTENSION = core::ptr::null_mut();
     let mut ScsiAddress: PSCSI_ADDRESS = core::ptr::null_mut();
     let mut AtaScsiAddress: ATA_SCSI_ADDRESS = ATA_SCSI_ADDRESS {
-        c2rust_unnamed: ATA_SCSI_ADDRESS__bindgen_ty_1 {
+        c2rust_unnamed: _ATA_SCSI_ADDRESS__bindgen_ty_1 {
             Lun: 0,
             TargetId: 0,
             PathId: 0,
@@ -351,9 +351,9 @@ unsafe extern "C" fn AtaPdoSendHbaControl(
     (*Srb).Function = (SRB_FUNCTION_IO_CONTROL) as u8;
     (*Srb).Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as USHORT;
 
-    (*Srb).TargetId = (*DevExt).Device.AtaScsiAddress.TargetId;
-    (*Srb).Lun = (*DevExt).Device.AtaScsiAddress.Lun;
-    (*Srb).PathId = (*DevExt).Device.AtaScsiAddress.PathId;
+    (*Srb).TargetId = (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId;
+    (*Srb).Lun = (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.Lun;
+    (*Srb).PathId = (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.PathId;
 
     (*Srb).TimeOutValue = (*SrbControl).Timeout;
 
@@ -594,8 +594,8 @@ unsafe extern "C" fn AtaFdoQueryStorageAdapterProperty(
     }
     (*AdapterDescriptor).BusMajorVersion = 1;
     (*AdapterDescriptor).BusMinorVersion = 0;
-    (*AdapterDescriptor).SrbType = SRB_TYPE_SCSI_REQUEST_BLOCK;
-    (*AdapterDescriptor).AddressType = STORAGE_ADDRESS_TYPE_BTL8;
+    // SrbType / AddressType: the C sets them under `#if (NTDDI_VERSION >= NTDDI_WIN8)`, and
+    // this tree builds below it -- the descriptor has no such fields here.
 
     (*Irp).IoStatus.Information = (core::mem::size_of::<STORAGE_ADAPTER_DESCRIPTOR>() as usize) as _;
     return STATUS_SUCCESS;
