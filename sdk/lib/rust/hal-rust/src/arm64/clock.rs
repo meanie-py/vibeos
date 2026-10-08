@@ -1,4 +1,8 @@
-//! ARM64 periodic clock interrupt — GICv2 + ARM generic (virtual) timer.
+//! ARM64 periodic clock interrupt — GIC + ARM generic (virtual) timer.
+//!
+//! This module drives a GICv2 itself and hands every GIC operation to gic3.rs when
+//! the firmware described a GICv3 instead (redistributors in the MADT). The IRQL ↔
+//! priority map below is shared by both.
 //!
 //! Wires the EL1 **virtual** timer (INTID/PPI 27 on the QEMU `virt` GICv2) as
 //! the NT periodic system clock so `KeUpdateSystemTime` is invoked ~every 10ms
@@ -115,6 +119,12 @@ pub(crate) unsafe fn update_pmr(old_irql: u8, new_irql: u8) {
     if old_irql <= SOFT_IRQL_MAX && new_irql <= SOFT_IRQL_MAX {
         return;
     }
+    if super::gic3::present() {
+        if super::gic3::live() {
+            super::gic3::set_pmr(gic_priority(new_irql));
+        }
+        return;
+    }
     let gicc = GICC_BASE.load(Ordering::Relaxed);
     if gicc != 0 {
         mmio_write(gicc, GICC_PMR, gic_priority(new_irql) as u32);
@@ -197,6 +207,9 @@ extern "system" {
 
 /// Configure an SPI edge-triggered. Call with the line disabled.
 pub(crate) unsafe fn set_gic_edge(intid: u32) {
+    if super::gic3::present() {
+        return super::gic3::set_edge(intid);
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     let id = intid as usize;
     if gicd == 0 || !(32..1020).contains(&id) {
@@ -214,6 +227,9 @@ pub(crate) unsafe fn set_gic_edge(intid: u32) {
 /// priority derived from its IRQL, routed to CPU0, then set-enable. No-op
 /// until the GIC is mapped (clock init).
 pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8, level: bool) {
+    if super::gic3::present() {
+        return super::gic3::enable(intid, gic_priority(irql), level);
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || intid as usize >= 1020 {
         return;
@@ -247,6 +263,9 @@ pub(crate) unsafe fn enable_gic_interrupt(intid: u32, irql: u8, level: bool) {
 
 /// Disable (clear-enable) a device interrupt line in the GIC distributor.
 pub(crate) unsafe fn disable_gic_interrupt(intid: u32) {
+    if super::gic3::present() {
+        return super::gic3::disable(intid);
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || intid as usize >= 1020 {
         return;
@@ -279,6 +298,9 @@ pub(crate) unsafe fn gic_ensure_early_bases(loader_block: ddk::PLOADER_PARAMETER
     if loader_block.is_null() {
         return;
     }
+    if super::gic3::present() {
+        return super::gic3::ensure_early_bases();
+    }
     let gicd = (*loader_block).u.Arm.Arm64GicDistributorBase as usize;
     let gicc = (*loader_block).u.Arm.Arm64GicCpuInterfaceBase as usize;
     // Zero means firmware described no GICv2; seeding zero would be a no-op
@@ -297,6 +319,13 @@ pub(crate) unsafe fn gic_ensure_early_bases(loader_block: ddk::PLOADER_PARAMETER
 /// (PMR from the current soft IRQL, then enable). Called on the BSP by
 /// HalInitializeClockArm64 and on each AP by HalInitializeProcessor.
 pub(crate) unsafe fn gic_percpu_init() -> bool {
+    if super::gic3::present() {
+        return super::gic3::percpu_init(
+            SGI_IPI_INTID,
+            gic_priority(IPI_LEVEL),
+            gic_priority(super::halstubs::KeGetCurrentIrql()),
+        );
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     let gicc = GICC_BASE.load(Ordering::SeqCst);
     if gicd == 0 || gicc == 0 {
@@ -337,6 +366,9 @@ pub(crate) unsafe fn gic_percpu_init() -> bool {
 /// packet/request stores before the doorbell so the receiver cannot observe
 /// a stale request block.
 pub(crate) unsafe fn gic_send_sgi(targets: u64) {
+    if super::gic3::present() {
+        return super::gic3::send_sgi(SGI_IPI_INTID, targets);
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 {
         // Fail loud: a dropped IPI is a silent sender hang (TargetSet never
@@ -365,18 +397,23 @@ pub(crate) unsafe fn gic_send_sgi(targets: u64) {
 #[cfg(feature = "smp")]
 unsafe fn vtimer_percpu_arm(interval: u64) {
     let gicd = GICD_BASE.load(Ordering::SeqCst);
-    if gicd == 0 {
+    if super::gic3::present() {
+        if !super::gic3::enable_private(VTIMER_INTID, gic_priority(CLOCK_LEVEL)) {
+            return;
+        }
+    } else if gicd == 0 {
         return;
-    }
-    core::ptr::write_volatile(
+    } else {
+        core::ptr::write_volatile(
         (gicd + GICD_IPRIORITYR + VTIMER_INTID as usize) as *mut u8,
         gic_priority(CLOCK_LEVEL),
-    );
-    mmio_write(
-        gicd,
-        GICD_ISENABLER + (VTIMER_INTID as usize / 32) * 4,
-        1u32 << (VTIMER_INTID % 32),
-    );
+        );
+        mmio_write(
+            gicd,
+            GICD_ISENABLER + (VTIMER_INTID as usize / 32) * 4,
+            1u32 << (VTIMER_INTID % 32),
+        );
+    }
     vtimer_rearm(interval);
     // One-shot by construction (armed flag gates the caller). IRQ context;
     // DbgPrint on arm64 is the polled UART — safe here.
@@ -450,6 +487,23 @@ unsafe fn report_unhandled(intid: u32) {
 /// the two failure modes a dead device interrupt collapses into.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalSelfTestGicSpiArm64(intid: u32) {
+    if super::gic3::present() {
+        if super::gic3::distributor() == 0 || !(32..1020).contains(&intid) {
+            DbgPrint(b"[GIC] selftest: GIC unmapped or INTID %u not an SPI\n\0".as_ptr(), intid);
+            return;
+        }
+        let (enabled, prio, route) = super::gic3::describe_spi(intid);
+        DbgPrint(
+            b"[GIC] selftest INTID %u: enabled=%u prio=%02x route=%llx -> set-pending\n\0".as_ptr(),
+            intid,
+            enabled,
+            prio,
+            route,
+        );
+        SELFTEST_INTID.store(intid, Ordering::SeqCst);
+        super::gic3::pend(intid);
+        return;
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     if gicd == 0 || !(32..1020).contains(&(intid as usize)) {
         DbgPrint(b"[GIC] selftest: GIC unmapped or INTID %u not an SPI\n\0".as_ptr(), intid);
@@ -473,6 +527,21 @@ pub unsafe extern "system" fn HalSelfTestGicSpiArm64(intid: u32) {
 /// Callable on demand (debugger `call`, test hooks, crash paths).
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDumpGicArm64() {
+    if super::gic3::present() {
+        if !super::gic3::live() || super::gic3::distributor() == 0 {
+            DbgPrint(b"[GIC] not initialized\n\0".as_ptr());
+            return;
+        }
+        super::gic3::dump();
+        dump_counters(|id| {
+            if id < 32 {
+                super::gic3::private_priority(id)
+            } else {
+                super::gic3::describe_spi(id).1
+            }
+        });
+        return;
+    }
     let gicd = GICD_BASE.load(Ordering::SeqCst);
     let gicc = GICC_BASE.load(Ordering::SeqCst);
     if gicd == 0 || gicc == 0 {
@@ -504,6 +573,11 @@ pub unsafe extern "system" fn HalDumpGicArm64() {
             mmio_read(gicd, GICD_ISACTIVER + bank * 4),
         );
     }
+    dump_counters(|id| core::ptr::read_volatile((gicd + GICD_IPRIORITYR + id as usize) as *const u8) as u32);
+}
+
+/// The delivery counters, with each line's priority as `priority` reads it.
+unsafe fn dump_counters(priority: impl Fn(u32) -> u32) {
     for id in 0..TRACE_SLOTS {
         let n = IRQ_COUNTS[id].load(Ordering::Relaxed);
         if n != 0 {
@@ -511,14 +585,14 @@ pub unsafe extern "system" fn HalDumpGicArm64() {
                 b"[GIC] INTID %u: %u delivered, prio=%02x\n\0".as_ptr(),
                 id as u32,
                 n,
-                core::ptr::read_volatile((gicd + GICD_IPRIORITYR + id) as *const u8) as u32,
+                priority(id as u32),
             );
         }
     }
     let other = IRQ_COUNT_OTHER.load(Ordering::Relaxed);
     let spurious = IRQ_SPURIOUS.load(Ordering::Relaxed);
     if other != 0 || spurious != 0 {
-        DbgPrint(b"[GIC] INTID>=64: %u delivered; spurious: %u\n\0".as_ptr(), other, spurious);
+        DbgPrint(b"[GIC] INTID>=64 (LPIs included): %u delivered; spurious: %u\n\0".as_ptr(), other, spurious);
     }
 }
 
@@ -568,6 +642,9 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
 ) {
     let gicd = gic_dist as usize;
     let gicc = gic_cpu as usize;
+    if super::gic3::present() && gicd != 0 {
+        return clock_init_gic3(gicd);
+    }
     if gicd == 0 || gicc == 0 {
         return;
     }
@@ -620,6 +697,32 @@ pub unsafe extern "system" fn HalInitializeClockArm64(
     }
 }
 
+/// HalInitializeClockArm64 on a GICv3: the same steps through gic3.rs. The vtimer
+/// PPI is in this CPU's redistributor, which percpu_init has to find first.
+unsafe fn clock_init_gic3(gicd: usize) {
+    if !super::gic3::init(gicd) {
+        return;
+    }
+    super::gic3::percpu_init(
+        SGI_IPI_INTID,
+        gic_priority(IPI_LEVEL),
+        gic_priority(super::halstubs::KeGetCurrentIrql()),
+    );
+    super::gic3::enable_private(VTIMER_INTID, gic_priority(CLOCK_LEVEL));
+    let freq = read_cntfrq();
+    let interval = if freq == 0 { 0 } else { freq / TICK_HZ };
+    TIMER_INTERVAL.store(interval, Ordering::SeqCst);
+    if interval != 0 {
+        vtimer_rearm(interval);
+        super::halstubs::halp_cpu_state()
+            .vtimer_armed
+            .store(1, Ordering::SeqCst);
+    }
+    // Kick the APs so each arms its own vtimer (see the GICv2 path below).
+    #[cfg(feature = "smp")]
+    super::gic3::send_sgi_to_others(SGI_IPI_INTID);
+}
+
 /// Drop-guard that decrements this CPU's interrupt-context depth on every
 /// exit path out of `HalClockInterruptArm64` (early returns included).
 struct DepthGuard;
@@ -639,8 +742,9 @@ impl Drop for DepthGuard {
 /// and advances the NT system clock via `KeUpdateSystemTime`, then EOIs.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi::c_void) {
+    let v3 = super::gic3::present();
     let gicc = GICC_BASE.load(Ordering::SeqCst);
-    if gicc == 0 {
+    if if v3 { !super::gic3::live() } else { gicc == 0 } {
         // Clock not initialized yet — nothing to acknowledge.
         return;
     }
@@ -672,11 +776,13 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
         }
     }
 
-    let iar = mmio_read(gicc, GICC_IAR);
-    let intid = iar & 0x3FF;
+    // GICv2: the IAR carries the source CPU of an SGI above the INTID, and EOI must
+    // write it back whole. GICv3: just the INTID, 24 bits wide for LPIs.
+    let iar = if v3 { super::gic3::acknowledge() } else { mmio_read(gicc, GICC_IAR) };
+    let intid = if v3 { iar } else { iar & 0x3FF };
 
     // Spurious (1020-1023): no EOI required.
-    if intid >= GIC_SPURIOUS_MIN {
+    if (GIC_SPURIOUS_MIN..1024).contains(&intid) {
         IRQ_SPURIOUS.fetch_add(1, Ordering::Relaxed);
         return;
     }
@@ -754,5 +860,9 @@ pub unsafe extern "system" fn HalClockInterruptArm64(trap_frame: *mut core::ffi:
     }
 
     // EOI (write the acknowledged IAR value back).
-    mmio_write(gicc, GICC_EOIR, iar);
+    if v3 {
+        super::gic3::end_of_interrupt(iar);
+    } else {
+        mmio_write(gicc, GICC_EOIR, iar);
+    }
 }

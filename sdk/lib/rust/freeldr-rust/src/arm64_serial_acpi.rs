@@ -81,6 +81,12 @@ struct SubHeader {
 
 const MADT_GICC: u8 = 11;
 const MADT_GICD: u8 = 12;
+/// ACPI_MADT_GENERIC_REDISTRIBUTOR: one discovery range of GICv3 redistributors.
+const MADT_GICR: u8 = 14;
+/// ACPI_MADT_GENERIC_REDISTRIBUTOR.BaseAddress and .Length.
+const GICR_BASE_OFFSET: usize = 4;
+const GICR_LENGTH_OFFSET: usize = 12;
+const GICR_MIN_LENGTH: usize = GICR_LENGTH_OFFSET + 4;
 /// ACPI_MADT_GENERIC_INTERRUPT.BaseAddress — the GICC MMIO base.
 const GICC_BASE_OFFSET: usize = 32;
 /// Through BaseAddress inclusive; shorter records cannot carry it.
@@ -251,10 +257,26 @@ pub unsafe fn spcr_io_from_xsdt(address: u64) -> Option<u16> {
     walk_xsdt(address, spcr_io_port)
 }
 
-/// GICv2 distributor and CPU-interface bases from a MADT. Returns None unless
-/// BOTH are present: the early-SMP path needs the pair, and half a GIC is worse
-/// than none (it would program a distributor nothing can acknowledge).
-pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
+/// The interrupt controller a MADT describes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Gic {
+    /// Distributor and memory-mapped CPU interface.
+    V2 { gicd: u64, gicc: u64 },
+    /// Distributor and the first redistributor discovery range: the CPU interface
+    /// is system registers, so there is no GICC base to carry.
+    V3 { gicd: u64, gicr: u64, gicr_length: u32 },
+}
+
+/// The GIC a MADT describes. A redistributor range means GICv3 or later, whatever
+/// else the table says: a GICv3 with GICv2 compatibility may also report a CPU
+/// interface base, but driving it that way would bypass the affinity routing its
+/// firmware already turned on. Otherwise BOTH v2 bases are required: the early-SMP
+/// path needs the pair, and half a GIC is worse than none (it would program a
+/// distributor nothing can acknowledge).
+///
+/// Firmware that gives GICv3 redistributors only per core, in each GICC record,
+/// reports no GIC here; nothing we boot on does that yet.
+pub fn gic(data: &[u8]) -> Option<Gic> {
     if !valid_table(data) {
         return None;
     }
@@ -265,6 +287,7 @@ pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
     let mut offset = MADT_RECORDS_OFFSET;
     let mut gicd = 0u64;
     let mut gicc = 0u64;
+    let mut gicr = (0u64, 0u32);
     while offset < data.len() {
         let sub = read::<SubHeader>(data, offset)?;
         let length = sub.length as usize;
@@ -281,19 +304,33 @@ pub fn gic_bases(data: &[u8]) -> Option<(u64, u64)> {
             MADT_GICD if gicd == 0 && length >= GICD_MIN_LENGTH => {
                 gicd = read::<u64>(record, GICD_BASE_OFFSET)?;
             }
+            MADT_GICR if gicr.0 == 0 && length >= GICR_MIN_LENGTH => {
+                gicr = (read::<u64>(record, GICR_BASE_OFFSET)?, read::<u32>(record, GICR_LENGTH_OFFSET)?);
+            }
             _ => {}
         }
         offset += length;
     }
     // Page-aligned MMIO is what the loader can identity-map a page of.
-    if gicd == 0 || gicc == 0 || gicd & 0xFFF != 0 || gicc & 0xFFF != 0 {
+    if gicd == 0 || gicd & 0xFFF != 0 {
         return None;
     }
-    Some((gicd, gicc))
+    if gicr.0 != 0 {
+        // Redistributor frames are 64 KiB pages; a range shorter than one frame
+        // (RD_base + SGI_base, 128 KiB) holds none.
+        if gicr.0 & 0xFFFF != 0 || gicr.1 < 0x2_0000 {
+            return None;
+        }
+        return Some(Gic::V3 { gicd, gicr: gicr.0, gicr_length: gicr.1 });
+    }
+    if gicc == 0 || gicc & 0xFFF != 0 {
+        return None;
+    }
+    Some(Gic::V2 { gicd, gicc })
 }
 
-/// Walk the XSDT for the MADT and return its GICv2 bases.
-pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
+/// Walk the XSDT for the MADT and return the GIC it describes.
+pub unsafe fn gic_from_xsdt(address: u64) -> Option<Gic> {
     let table = table_at(address)?;
     if table.get(..4)? != b"XSDT" {
         return None;
@@ -305,8 +342,8 @@ pub unsafe fn gic_from_xsdt(address: u64) -> Option<(u64, u64)> {
     for entry in entries.chunks_exact(size_of::<u64>()) {
         let address = read::<u64>(entry, 0)?;
         if let Some(child) = table_at(address) {
-            if let Some(bases) = gic_bases(child) {
-                return Some(bases);
+            if let Some(gic) = gic(child) {
+                return Some(gic);
             }
         }
     }
@@ -477,31 +514,59 @@ mod tests {
 
     #[test]
     fn pi_style_madt() {
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2000, 80)), Some((0xFF84_1000, 0xFF84_2000)));
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2000, 80)), Some(Gic::V2 { gicd: 0xFF84_1000, gicc: 0xFF84_2000 }));
+    }
+
+    /// QEMU virt at gic-version=3: CPU interface base 0 in every GICC, and one
+    /// redistributor range after the distributor.
+    fn madt_v3(gicr: u64, length: u32) -> Vec<u8> {
+        let mut data = madt(0x0800_0000, 0, 80);
+        let mut rec = vec![0u8; 16];
+        rec[0] = MADT_GICR;
+        rec[1] = 16;
+        rec[GICR_BASE_OFFSET..GICR_BASE_OFFSET + 8].copy_from_slice(&gicr.to_le_bytes());
+        rec[GICR_LENGTH_OFFSET..GICR_LENGTH_OFFSET + 4].copy_from_slice(&length.to_le_bytes());
+        data.extend_from_slice(&rec);
+        let total = data.len() as u32;
+        data[offset_of!(Header, length)..offset_of!(Header, length) + 4]
+            .copy_from_slice(&total.to_le_bytes());
+        checksum(&mut data);
+        data
+    }
+
+    #[test]
+    fn qemu_gicv3_madt() {
+        assert_eq!(
+            gic(&madt_v3(0x080A_0000, 0xF6_0000)),
+            Some(Gic::V3 { gicd: 0x0800_0000, gicr: 0x080A_0000, gicr_length: 0xF6_0000 })
+        );
+        // Not 64 KiB aligned, or too short to hold one frame: no GIC at all.
+        assert_eq!(gic(&madt_v3(0x080A_1000, 0xF6_0000)), None);
+        assert_eq!(gic(&madt_v3(0x080A_0000, 0x1_0000)), None);
     }
 
     #[test]
     fn madt_rejects_partial_unaligned_and_truncated() {
-        // GICv3 reports no CPU interface: absent, not half a GIC.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0, 80)), None);
+        // No CPU interface and no redistributors: absent, not half a GIC.
+        assert_eq!(gic(&madt(0xFF84_1000, 0, 80)), None);
         // A GICC too short to carry BaseAddress leaves the pair incomplete.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2000, 32)), None);
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2000, 32)), None);
         // Not page-aligned: the loader could not identity-map a page of it.
-        assert_eq!(gic_bases(&madt(0xFF84_1000, 0xFF84_2004, 80)), None);
+        assert_eq!(gic(&madt(0xFF84_1000, 0xFF84_2004, 80)), None);
         let full = madt(0xFF84_1000, 0xFF84_2000, 80);
         for len in 0..full.len() {
-            assert_eq!(gic_bases(&full[..len]), None);
+            assert_eq!(gic(&full[..len]), None);
         }
         // A zero-length subrecord must terminate the walk, not spin on it.
         let mut zero = full.clone();
         zero[MADT_RECORDS_OFFSET + 1] = 0;
         checksum(&mut zero);
-        assert_eq!(gic_bases(&zero), None);
+        assert_eq!(gic(&zero), None);
         // Right layout, wrong table: only a MADT may answer.
         let mut wrong = full;
         wrong[..4].copy_from_slice(b"SRAT");
         checksum(&mut wrong);
-        assert_eq!(gic_bases(&wrong), None);
+        assert_eq!(gic(&wrong), None);
     }
 
     #[test]
