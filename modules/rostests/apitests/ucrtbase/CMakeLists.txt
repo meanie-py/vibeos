@@ -41,6 +41,16 @@ elseif(ARCH STREQUAL "amd64")
     )
 endif()
 
+# The setjmp test checks that longjmp runs the __finally blocks it unwinds through. Under the
+# default _USE_DUMMY_PSEH those blocks are dead code, so the check could only fail. Give
+# that one TU real SEH the way the delayimp tests do: _USE_NATIVE_SEH plus the
+# -windows-msvc retarget, without which clang will not lower an i386 frame-based __try.
+if(ARCH STREQUAL "i386")
+    set_source_files_properties(../crt/setjmp.c PROPERTIES
+        COMPILE_DEFINITIONS _USE_NATIVE_SEH
+        COMPILE_OPTIONS "--target=i686-pc-windows-msvc;-fasync-exceptions")
+endif()
+
 add_executable(ucrtbase_apitest ${SOURCE} ${ucrtbase_apitest_asm})
 set_module_type(ucrtbase_apitest win32cui)
 target_compile_definitions(ucrtbase_apitest PRIVATE USE_WINE_TODOS _UCRT TEST_UCRTBASE TEST_DLL_NAME="ucrtbase.dll")

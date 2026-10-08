@@ -6917,6 +6917,21 @@ faulting ones, because the invariant is "kmtest drivers have real SEH". **The ne
 is the valuable half:** it exonerated `MmMapLockedPagesSpecifyCache`. **When a test harness and
 the kernel disagree, suspect the harness first if the harness is younger.**
 
+### i386: a scope handler's ebp is `registration + 0x10`, not the function's frame pointer
+- **Symptom:** under real SEH, a `__finally` passed by `longjmp` (or by any unwinder that is
+  not `_except_handler3` itself) "never runs": its store to a local is missing, and some
+  unrelated nearby local (here the jmp_buf) is quietly corrupted instead.
+- **Cause:** EH3/EH4 handlers and filters run with `ebp = &node->_ebp`, the address just
+  past the registration node; that is what `_except_handler3` passes. In an MSVC frame that
+  IS the frame pointer, so code that passes a saved frame pointer (the C
+  `_seh_longjmp_unwind` uses `jmp_buf.Ebp`) looks correct. clang realigns the stack of
+  some SEH functions (`andl $-4, %esp`, locals addressed from esi), and its funclet
+  then computes its base as `ebp_in - K` from the node. Given the real frame pointer, the
+  funclet ran against the wrong base (ucrtbase_apitest setjmp.c:363).
+- **Fix:** derive the handler ebp from the registration (`&frame->_ebp`, as Wine does for
+  `_local_unwind2` and the filter calls), never from a separately saved frame pointer.
+  Done in crt-shared-rust's `_seh_longjmp_unwind`/`4` and vcruntime's `_seh_longjmp_unwind.s`.
+
 ### PSEH hand-lowering recipe
 For FS-driver translations, `_SEH2_TRY`/`_FINALLY`/`_EXCEPT` lower to a `'seh:` labelled block
 returning `Result`, with the finally path on both exits. `try_return` must actually branch.

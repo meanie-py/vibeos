@@ -220,30 +220,9 @@ RaiseException:
     pop ebx
     pop ecx
 
-#if defined(_USE_DUMMY_PSEH) || defined(_USE_PSEH_CLANG)
-    /* Safety net: For continuable software exceptions (e.g. RPC_S_SERVER_UNAVAILABLE)
-     * that escape all SEH handlers, swallow the exception by resuming execution.
-     * With PSEH_CLANG, real handlers catch most exceptions; this only fires
-     * for exceptions in code without _SEH2_TRY blocks. */
-    test dword ptr [ebx+EXCEPTION_RECORD_EXCEPTION_FLAGS], EXCEPTION_NONCONTINUABLE
-    jnz _DummyPseh_RaiseSecondChance
-
-    /* Don't swallow NT error/warning statuses (hardware exceptions like
-     * ACCESS_VIOLATION 0xC0000005). These re-execute the faulting instruction
-     * on ZwContinue, causing an infinite loop. Only swallow "software"
-     * exceptions with codes below 0xC0000000 (e.g. RPC_S_SERVER_UNAVAILABLE
-     * 0x6BA, C++ exception 0xE06D7363). */
-    cmp dword ptr [ebx+EXCEPTION_RECORD_EXCEPTION_CODE], HEX(C0000000)
-    jae _DummyPseh_RaiseSecondChance
-
-    /* Continuable software exception — swallow it by resuming execution */
-    push 0
-    push ecx
-    call _ZwContinue@8
-    jmp Exit
-
-_DummyPseh_RaiseSecondChance:
-#endif
+    /* No handler took it: raise it second chance, as Windows does. Do not resume
+     * here -- every Win32 thread runs under kernel32's top-level __except, and a
+     * resumed int3 or guard-page fault just hides the bug. */
     /* Raise the exception */
     push 0
     push ecx
