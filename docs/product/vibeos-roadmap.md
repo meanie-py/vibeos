@@ -608,23 +608,45 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
   st=...` with the real status instead of bugchecking.
 
-- **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
-  saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
-  115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
-  devices it finds no driver for (`DevInstallW failed with error 259`, ~180 in one window), and
-  every spawn prints the full `[PS] PspCreateProcess`/`PspUserThreadStartup` trace, alongside
-  repeated `[FASTFAT] FatMountVolume` lines. A print on real hardware blocks its CPU until the
-  UART drains (field manual, "A UART print inside a trap costs"). The GEM itself counts no receive
-  errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
-  Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
-  shown: that the console is what drops the frames. Two fixes owed either way: stop the install
-  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
-  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
-  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
-  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
-  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
-  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
-  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
+- **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
+  2026-10-08). The arm64 HAL fell back to probing QEMU virt's fixed ECAM addresses whenever it
+  found no MCFG, and took any first word other than 0xFFFF as a host bridge. On the Pi 5
+  the MCFG (OEM RPIFDN, 92 bytes) has its signature zeroed somewhere between freeldr's read and
+  the HAL's (nothing in our tree writes it; the firmware at ExitBootServices is the suspect),
+  so the board has "no MCFG" by the time the HAL looks. Then 0x3F00_0000 (RAM; the old HAL) or 0x40_1000_0000 (`ecam.rs`, landed from
+  the pcie lane the same day) answered. pci.sys, bound to the hive's `Root\*PNP0A03`,
+  enumerated those bytes as ~100 devices (`VEN_706F` = "op", `SUBSYS_72656666` = "reff"),
+  writing command registers and BAR probes into whatever was there, and umpnpmgr spawned
+  `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
+  ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
+  after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
+  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
+  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+- **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
+  quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
+  - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
+    GEM driver does nothing about LPI. Lost requests came one every 2.5 s in bursts every
+    ~14 s; a capture on a second LAN host showed every one on the wire, and a per-sequence
+    trace showed none reached the driver, with the GEM counting no FCS, buffer or overrun
+    error. `gem.rs` now clears the advertisement: 360/360 from two hosts at once.
+  - **Self-tests aimed at QEMU's slirp.** `settest` programmed a default route via
+    10.0.2.2, so the board ARPed for it every second, and smoltcp rate-limits neighbor
+    discovery for the whole interface; the ICMP, DNS and TDI datagram self-tests and the
+    engine's boot ping targeted 10.0.2.x too and failed on every Pi 5 boot. They now use the
+    lease's gateway and DNS server (`netcfg::gateway`, `dns0`), which are the same addresses
+    under slirp; the TCP connects that need the harness's 10.0.2.100 listener run only on
+    slirp (`netcfg::on_slirp`). QEMU arm64-net suite: 15 passed, 1 skipped.
+  - **Console chatter.** Per-thread and per-process breadcrumbs (`[PS]`, `[MM] InitProcAS`,
+    `[IRQL-CHK]`, `[APC]`) now print only under the `PROCTRACE` boot option; classpnp's
+    `TracePrint` limits each repeating warning (the Pico's empty disk polled every second)
+    to its first 8 occurrences, then every 1000th. Settled desktop: 0 B/s.
+  Owed: the GEM's transmitter goes idle after almost every frame (130 restarts for 211
+  frames sent), so each reply waits for the next `reap_tx` instead of leaving at once (fine
+  at ping rates, a throughput cap); GEM interrupts would fix both. The Pi 4's GENET drives the
+  same PHY and does not touch EEE either: measure it before changing it. `stortest.exe`
+  opens every volume each 2 s for two minutes on a board whose test volume it cannot find,
+  and each open of an unmountable volume (the SD's ext4 root, the empty Pico) retries every
+  file system.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as

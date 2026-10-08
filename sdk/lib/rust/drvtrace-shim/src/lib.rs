@@ -16,6 +16,45 @@
 
 const TRACE_LEVEL_WARNING: u32 = 3; // ETW: 1=critical 2=error 3=warning
 
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+
+/// Repeat limiter, keyed by format string. Some warnings are steady state, not
+/// events: classpnp's media-change poll of an empty removable disk (the Pi 5's
+/// Pico before it serves an image) fails every second with "Device not ready" and
+/// a sense breakdown, ~435 lines a minute forever, and at 115200 baud each line
+/// holds its CPU until the UART drains. Each message prints its first
+/// `REPEAT_FREE` occurrences, then every `REPEAT_EVERY`th with the count, so a
+/// first failure is never silent and a stuck one still shows it is alive.
+const REPEAT_FREE: u32 = 8;
+const REPEAT_EVERY: u32 = 1000;
+const REPEAT_SLOTS: usize = 64;
+static REPEAT_KEY: [AtomicUsize; REPEAT_SLOTS] = [const { AtomicUsize::new(0) }; REPEAT_SLOTS];
+static REPEAT_COUNT: [AtomicU32; REPEAT_SLOTS] = [const { AtomicU32::new(0) }; REPEAT_SLOTS];
+
+/// Whether occurrence `n` (0 = unlimited) is printed.
+fn shown(n: u32) -> bool {
+    n <= REPEAT_FREE || n % REPEAT_EVERY == 0
+}
+
+/// This occurrence's number for `fmt` (1-based), or 0 when the table is full
+/// (then nothing is limited).
+fn occurrence(fmt: *const i8) -> u32 {
+    let key = fmt as usize;
+    for i in 0..REPEAT_SLOTS {
+        let k = REPEAT_KEY[i].load(Ordering::Acquire);
+        let mine = k == key
+            || (k == 0
+                && match REPEAT_KEY[i].compare_exchange(0, key, Ordering::AcqRel, Ordering::Acquire) {
+                    Ok(_) => true,
+                    Err(won) => won == key,
+                });
+        if mine {
+            return REPEAT_COUNT[i].fetch_add(1, Ordering::Relaxed).wrapping_add(1);
+        }
+    }
+    0
+}
+
 /// classpnp/disk WPP TracePrint: error/warning levels reach the debug serial so
 /// failure paths are not silent. Stable rustc cannot DEFINE a C-variadic, so the
 /// trailing slots are declared as fixed parameters and replayed as the va_list
@@ -35,6 +74,10 @@ pub unsafe extern "C" fn TracePrint(
         unsafe extern "C" {
             fn DbgPrint(Format: *const i8, ...) -> u32;
         }
+        let n = occurrence(fmt);
+        if !shown(n) {
+            return;
+        }
         // Format here rather than passing `fmt` on to DbgPrint, so the prefix and
         // the message stay one call and cannot interleave with another CPU's.
         let mut buf: [i8; 512] = [0; 512];
@@ -43,7 +86,14 @@ pub unsafe extern "C" fn TracePrint(
             fmt,
             &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
         );
-        DbgPrint(c"[CLASSPNP] %s".as_ptr(), buf.as_ptr());
+        if n > REPEAT_FREE {
+            DbgPrint(c"[CLASSPNP] (x%u) %s".as_ptr(), n, buf.as_ptr());
+        } else {
+            DbgPrint(c"[CLASSPNP] %s".as_ptr(), buf.as_ptr());
+            if n == REPEAT_FREE {
+                DbgPrint(c"[CLASSPNP] (the line above repeats; from now on every %uth is shown)\n".as_ptr(), REPEAT_EVERY);
+            }
+        }
     }
 }
 
@@ -79,3 +129,17 @@ dprint_noop!(
 /// serial.sys TRACE_ (ReactOS debug.h, __noop in retail).
 #[no_mangle]
 pub unsafe extern "C" fn TRACE_(_component: u32, _fmt: *const i8) {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_format_is_limited_on_its_own() {
+        let (a, b) = (c"a".as_ptr(), c"b".as_ptr());
+        let shown_a = (0..3000).filter(|_| shown(occurrence(a))).count();
+        assert_eq!(shown_a, REPEAT_FREE as usize + 3); // 1..=8, then 1000, 2000, 3000
+        assert_eq!(occurrence(b), 1);
+        assert!(shown(0), "a full table limits nothing");
+    }
+}

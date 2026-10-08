@@ -2494,6 +2494,44 @@ mod ke_i386_exports {
 // Was: ntoskrnl/arm64_uart.c (now retired).
 // ============================================================================
 
+// ============================================================================
+// Process/thread lifecycle tracing: the boot option PROCTRACE.
+//
+// Thread creation and startup, process creation, address-space setup and the first
+// user APC each printed raw-UART breadcrumbs from arm64 bring-up, ~20 lines per
+// thread for the life of the system. On the Pi 5 they were most of the serial output
+// after the desktop came up (the [PS] trace alone was 71% of the first minute), and at
+// 115200 baud a print holds its CPU until the UART drains, which cost pings. They are
+// now off unless the boot options say PROCTRACE. ps-rust sets this flag at
+// PsInitSystem phase 0 (ps-rust/src/trace.rs, which also keeps the lines tools read).
+// ============================================================================
+
+#[no_mangle]
+pub static VibeProcTrace: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+#[inline]
+pub fn proc_trace_enabled() -> bool {
+    VibeProcTrace.load(core::sync::atomic::Ordering::Relaxed)
+}
+
+/// ARM64_UART_TRACE under PROCTRACE only.
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn ARM64_PROC_TRACE(msg: *const u8) {
+    if proc_trace_enabled() {
+        ARM64_UART_TRACE(msg);
+    }
+}
+
+/// ARM64_UART_TRACE_HEX under PROCTRACE only.
+#[no_mangle]
+#[inline(never)]
+pub unsafe extern "C" fn ARM64_PROC_TRACE_HEX(prefix: *const u8, val: ntkrnl_sys::base::ULONG_PTR) {
+    if proc_trace_enabled() {
+        ARM64_UART_TRACE_HEX(prefix, val);
+    }
+}
+
 #[no_mangle]
 #[inline(never)]
 pub unsafe extern "C" fn ARM64_UART_TRACE(msg: *const u8) {
