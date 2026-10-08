@@ -594,21 +594,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **LogonUserW never succeeds: the right password fails with 1312** (OPEN, 2026-10-07, found
-  by the `modrun` payload's `logon` suite, kept visible there as an `xfail`). On a user the
-  probe creates with a password, a wrong or empty password and an unknown user all fail
-  correctly with 1326, but the right one makes msv1_0's `LsaApLogonUserEx2` return
-  `STATUS_NO_SUCH_LOGON_SESSION` (c000005f, lsasrv `authpackage.rs:1985`). Neither profile or
-  token builder returns that status; the next suspect is `CreateLogonSession` ->
-  `LsapRmCreateLogonSession` -> the kernel's SRM. Pre-existing: the passwordless Administrator
-  logon failed the same way before the msv1_0 no-op-goto fix.
-- **amd64: one BUGCHECK 0x1E (c0000006) in `MiAllocatePagesForMdl`** (OPEN, seen once in eight
-  `modrun` boots, 2026-10-07, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`, a boot
-  that also carried temporary DbgPrints in ntdll's and msvcrt's exit paths) while
-  Rust diskpart walked volumes, right after scsiport rejected `IOCTL_VOLUME_GET_VOLUME_DISK_
-  EXTENTS` on the CD-ROM. The faulting access was to the MDL itself, so it is a victim; the
-  same boot steps passed four other times. Arm special pool (`--tripwire SPECIALPOOL=*`) on a
-  `farm` of modrun boots to catch the writer.
+- **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
+  SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
+  lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now
+  runs without its xfail.
+- **amd64: one BUGCHECK 0x1E (c0000006) creating a process** (FIX LANDED, NOT YET REPRODUCED,
+  2026-10-08; seen once in eight `modrun` boots, `/tmp/vibeos-cli/20261007-225948-ecqnwhgp-smoke-amd64`).
+  Symbolicated against the kernel that booted (flake-farm `kernels/2d34ef08c870`), the fault is
+  `PspCreateProcess -> MmCreatePeb -> RtlImageNtHeader`, an in-page error on the new image's
+  header; the earlier "MiAllocatePagesForMdl" came from symbolicating a later build. The
+  translated `MmNotPresentFaultSectionView` turned a page-in's STATUS_NO_MEMORY (which
+  MmAccessFault retries) into STATUS_IN_PAGE_ERROR, and MmCreatePeb had dropped the C's SEH
+  around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
+  st=...` with the real status instead of bugchecking.
 
 - **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
   saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of

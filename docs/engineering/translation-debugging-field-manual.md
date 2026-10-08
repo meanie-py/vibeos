@@ -2837,6 +2837,18 @@ review by hand: `TAG_*` pool tags (byte order, above) and untagged inline litera
 sites (`KeInitializeEvent(e, 1, 0)` with no comment) — `scan_inline_flag_literals` only catches
 the commented ones. **Prefer bindgen enums over local consts in new translations.**
 
+**A `match` over a C `switch` whose arms are literals with the case names as comments** is the
+same class one level up, and the arms are usually shifted together. se-rust's SRM command server
+matched `0 => audit // RmAuditSetCommand`, `1 => create`, `2 => delete`; `RM_API_NUMBER` starts
+at 1, so every lsass RmCreateLogonSession ran the DELETE handler and LogonUser with the right
+password always failed STATUS_NO_SUCH_LOGON_SESSION (1312), from February until 2026-10-08.
+The LPC type tests in the same loop were shifted too (`== 5 // LPC_CONNECTION_REQUEST`;
+5 is LPC_PORT_CLOSED). `scan_inline_flag_literals` now pairs arm comments, a comment alone
+under a block opener or over a lone literal, and `A || B` lists; its first sweep with those
+found two more (kernel32 raising exception code 0 for DBG_CONTROL_C, a cdrom size minimum
+of 4 for 2). Its catalog is a curated header list: a protocol enum outside it (srmp.h was)
+resolves to nothing and the comment is silently skipped. Match on the bindgen constants.
+
 ### The same-named constant with a DIFFERENT value per driver
 Cross-driver value bleed: cdfs and fastfat both define a WAIT flag, with different values. A
 "known" constant is only known *within its module*.

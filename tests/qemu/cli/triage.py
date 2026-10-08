@@ -331,6 +331,9 @@ _BUGCHECK_PARAMS = re.compile(
 #   0x7E SYSTEM_THREAD_EXCEPTION        P3 = exception-record address (best effort)
 #   0x0A IRQL_NOT_LESS_OR_EQUAL         P4 = address that referenced memory
 _PC_PARAM_BY_CODE = {0x1E: 2, 0x50: 3, 0x8E: 3, 0x7E: 3, 0x0A: 4}
+# Stop codes whose four parameters carry no code address (CRITICAL_OBJECT_TERMINATION,
+# CRITICAL_PROCESS_DIED).
+_NO_PC_CODES = {0xF4, 0xEF}
 
 # No function is a megabyte long. A symbol match reported at a larger offset is
 # not a near miss, it is the index's last symbol matching an address that lies
@@ -366,7 +369,7 @@ _RELOC_BY_ARCH = {"i386": "0x800c3000", "i386-uefi": "0x800c3000"}
 # wrong: it is right there on the next line. Until this was used, every arm64
 # bugcheck declined to symbolicate, and the one that mattered — a -smp 1 0x1E —
 # needed hand-computing to reach `KiSynchronousExceptionEntry+4`.
-_MODULE_OFFSET = re.compile(r"^\*\*\*\s+P\d\s*=\s*(\S+?)\+0x([0-9a-fA-F]+)\s*$", re.MULTILINE)
+_MODULE_OFFSET = re.compile(r"^\*\*\*\s+P(\d)\s*=\s*(\S+?)\+0x([0-9a-fA-F]+)\s*$", re.MULTILINE)
 _PE_IMAGE_BASE = 0x400000
 
 _KERNEL_BASE = re.compile(r"\[KRNLBASE\] ntoskrnl runtime base=(?:0x)?([0-9a-fA-F]+)")
@@ -389,7 +392,23 @@ def faulting_module_offset(serial: str) -> tuple[str, int] | None:
     hits = _MODULE_OFFSET.findall(serial)
     if not hits:
         return None
-    module, rva = hits[-1]
+    pidx, module, rva = hits[-1]
+    # The kernel resolves EVERY parameter that lands in a module, not just a PC. For a
+    # code whose contract names the PC parameter, only that one is a fault location; a
+    # code whose parameters hold no code address at all (0xF4: process object, image
+    # name, message string) has nothing to symbolicate -- resolving its P4 named an
+    # anonymous string constant as the "faulting" function.
+    bc = _BUGCHECK_PARAMS.findall(serial)
+    if bc:
+        try:
+            code = int(bc[-1][0], 16)
+        except ValueError:
+            code = None
+        if code in _NO_PC_CODES:
+            return None
+        want = _PC_PARAM_BY_CODE.get(code) if code is not None else None
+        if want is not None and int(pidx) != want:
+            return None
     return module, int(rva, 16)
 
 
