@@ -791,10 +791,12 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
         | ((APIC_TGM_LEVEL as ULONG) << 15);
     apic_write(APIC_LINT1, lint1);
 
-    // Error LVT — Fixed, masked at template (mask still set).
-    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG)
-        | ((APIC_MT_FIXED as ULONG) << 8)
-        | (1 << 16);
+    // Error LVT — Fixed, UNMASKED ("Enable error LVTR", apic.c:353-356). The C mutates one
+    // LvtEntry template in place: the LINT1/NMI step just above set Mask = 0, and the error
+    // step only rewrites Vector + MessageType, so the error LVT inherits the cleared mask and
+    // is written enabled. This value is rebuilt from scratch, so it must omit the mask bit to
+    // match; an earlier translation OR'd in (1 << 16) and left the error LVT masked.
+    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG) | ((APIC_MT_FIXED as ULONG) << 8);
     apic_write(APIC_ERRLVTR, err_lvt);
 
     // Set IRQL from PCR.
