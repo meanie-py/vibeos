@@ -28,6 +28,8 @@ import sys
 from functools import cache
 from pathlib import Path
 
+from tools.source_walk import source_files
+
 REPO = Path(__file__).resolve().parents[3]
 RUST = REPO / "sdk" / "lib" / "rust"
 _STRUCT = re.compile(r"pub struct (\w+)\s*\{(.*?)\n\}", re.S)
@@ -46,9 +48,7 @@ def field_shapes(root: Path = RUST) -> tuple[frozenset[str], frozenset[str]]:
     """
     flex: set[str] = set()
     longer: set[str] = set()
-    for path in root.rglob("*.rs"):
-        if "/target/" in str(path):
-            continue
+    for path in source_files(root, "*.rs"):
         text = path.read_text(errors="replace")
         if "pub struct" not in text:
             continue
@@ -212,11 +212,7 @@ def run(paths: list[Path], *, check: bool = False, ambiguous_too: bool = False) 
     fields, ambiguous = field_shapes()
     total = 0
     for root in paths:
-        files = (
-            [root]
-            if root.is_file()
-            else sorted(p for p in root.rglob("*.rs") if "/target/" not in str(p))
-        )
+        files = [root] if root.is_file() else sorted(source_files(root, "*.rs"))
         for f in files:
             text = f.read_text()
             new, n = rewrite(text, fields)

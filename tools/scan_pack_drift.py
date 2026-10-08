@@ -25,6 +25,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO))
+from tools.source_walk import source_files, source_walk  # noqa: E402
+
+_SKIP = ("vendor", "sdk/lib/rust/target")
 _FLIP = re.compile(r"#\s*\S+\.(?:c|cpp)\s+#\s*replaced by Rust \((sdk/lib/rust/[\w.-]+)")
 _REGION = re.compile(r'#include\s*[<"]pshpack(\d)\.h[>"](.*?)#include\s*[<"]poppack\.h[>"]', re.S)
 _TYPEDEF = re.compile(r"typedef\s+struct\s+(\w+)?\s*\{.*?\}\s*(\w+)", re.S)
@@ -34,10 +38,11 @@ _COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
 
 def module_crates() -> dict[Path, set[Path]]:
     out: dict[Path, set[Path]] = {}
-    for cml in REPO.glob("**/CMakeLists.txt"):
-        rel = cml.relative_to(REPO).parts
-        if rel[0].startswith(("build-", ".")) or rel[0] in ("vendor", "output-MinGW-i386"):
+    for parent, dirs, files in source_walk(REPO, exclude_prefixes=_SKIP):
+        dirs[:] = [d for d in dirs if not d.startswith((".", "build-", "output-"))]
+        if "CMakeLists.txt" not in files:
             continue
+        cml = parent / "CMakeLists.txt"
         text = cml.read_text(errors="replace")
         for m in _FLIP.finditer(text):
             crate = REPO / m.group(1)
@@ -48,9 +53,7 @@ def module_crates() -> dict[Path, set[Path]]:
 
 def packed_structs(module: Path) -> list[tuple[str, int, set[str]]]:
     found = []
-    for f in sorted(module.rglob("*")):
-        if f.suffix not in (".c", ".h") or not f.is_file():
-            continue
+    for f in sorted([*source_files(module, "*.c"), *source_files(module, "*.h")]):
         text = _COMMENT.sub("", f.read_text(errors="replace"))
         for region in _REGION.finditer(text):
             for s in _TYPEDEF.finditer(region.group(2)):
@@ -69,8 +72,8 @@ def scan() -> list[str]:
         rust = "\n".join(
             p.read_text(errors="replace")
             for c in crates
-            for p in c.rglob("*.rs")
-            if "/target/" not in str(p) and not p.name.startswith(("bindgen_", "island_"))
+            for p in source_files(c, "*.rs")
+            if not p.name.startswith(("bindgen_", "island_"))
         )
         for fname, pack, names in structs:
             for name in sorted(names):
