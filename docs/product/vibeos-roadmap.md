@@ -1067,10 +1067,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     arm64 idle loop clears it when it takes work off its own ready list. Same class on the DPC
     side: `KiInsertQueueDpc` skipped the wake IPI for "idle" CPUs, trusting them to poll, but
     ours halt and never set `Sleeping`; the IPI is now always sent for a remote high-importance
-    DPC. Exposed the AP TTBR0 bug below. Side effect at `-smp 2`: kmtest `KeEvent`'s
-    scheduling section assumes one CPU (the boosted waiter "will always win" by preempting
-    the setter) and now loses the race on the idle CPU, fail 18-30 -> 1095-1496 on arm64. The
-    test is upstream and unmodified; the smp2 row is not gated.
+    DPC. Exposed the AP TTBR0 bug below, and kmtest `KeEvent`'s one-CPU assumptions (see
+    the `-smp 2` baseline entry).
   - **arm64 APs ran System threads on the trampoline's identity map** (FIXED 2026-10-08). An
     AP leaves the HAL trampoline (`hal-rust/src/arm64/mpboot.rs`) with TTBR0 = a temporary
     identity map, and `KiSwapProcess` only reloads TTBR0 when the process changes; every
@@ -1090,11 +1088,28 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     every later local `KeInsertQueueDpc` pended nothing and DPCs waited for the idle loop. The
     gate boots one vCPU (no IPIs), so nothing caught it. Fix: clear it on the empty-queue
     path. After: KeDpc back to 316/0 (run 20261008-113025-wj76_5zu).
-  - **arm64 `-smp 2` kmtest rows still below the smp2 baseline** (OPEN, found 2026-10-08).
-    Present on master 3663e3d838 and unchanged by the fixes above (run
-    20261008-111030-nw1pwlqr): `ZwCreateSection` fail 3 -> 48, `NtSystemDebugControl` 36/6 ->
-    22/20, `MmMdl` 575 -> 569. `KeEvent` at `-smp 2` is now nondeterministic (fail 1095 and
-    1496 in two runs) for the reason given in the KiIdleSummary entry above.
+  - **`-smp 2` kmtest rows "below the smp2 baseline" were mostly a stale baseline** (CLOSED
+    2026-10-08; the entry that called them master regressions was wrong). The
+    `kmtest-smp2.txt` files date from 2026-08-01. arm64 `ZwCreateSection` 281/48,
+    `NtSystemDebugControl` 22/20, `MmMdl` 569 and i386 `MmMdl` 587 equal the 1-vCPU
+    baselines' banked values, explained there (`/MININT` livecd boot since 10-03;
+    ZwCreateSection grew from 10 to 329 asserts). Re-banked with `--only`. What was real:
+    - `KeEvent` asserts one-CPU preemption order in two places; both threads of the
+      scheduling section are pinned to processor 0, and `TestEventConcurrent` waits for
+      each waiter to be `Waiting` rather than merely signalled (`KeEvent.c`, commented).
+      arm64 and amd64 `-smp 2` back to 42601/0.
+    - i386 `KeDpc` 316/0 -> 36/70: the same stuck `DpcInterruptRequested` as arm64, in
+      `KiDispatchInterrupt`. Fixed; 316/0.
+    - **i386 APs ran with CR0.WP clear** (FIXED): kernel-mode writes ignored read-only
+      PTEs on every CPU but the boot one. `KeStartAllProcessors` precedes `KeInitSystem`
+      in Phase 1, so APs copied the boot CPU's CR0 before `KiSetCR0Bits` set WP, and the
+      C sets it only on the CPU it runs on. kmtest `ZwMapViewOfSection` :492 (a write to
+      a PAGE_READONLY view raised no access violation) failed on 3 of 3 i386 `-smp 2`
+      sweeps, with or without the idle-summary fix. `KiInitMachineDependent` now sets it
+      inside its per-processor affinity loop.
+    Left as timing noise (one sample each): amd64 `ExResource` (its :480/:518/:620 are
+    already `assert?` in the 1-vCPU baseline) and i386 `PsQuota` (nonpaged quota off by 24
+    bytes in 1 of 2 sweeps); `IoDeviceObject` +-1 is the known flicker.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
