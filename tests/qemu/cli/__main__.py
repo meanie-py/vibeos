@@ -307,6 +307,14 @@ def build_parser() -> argparse.ArgumentParser:
         "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
     )
     s.add_argument(
+        "--gic",
+        type=int,
+        choices=(2, 3),
+        help="arm64 only: the virt machine's GIC (VIBEOS_QEMU_GIC). 3 boots a GICv3 "
+        "with an ITS, as Graviton has; the boot FAILS (GIC_NOT_V3) unless the HAL "
+        "drives it as one, and with --nvme (GIC_NO_ITS) unless MSI-X goes through the ITS",
+    )
+    s.add_argument(
         "--nvme",
         action="store_true",
         help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "

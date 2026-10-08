@@ -115,6 +115,10 @@ _PYTEST_SUITES = [
     # The double-fetch lint's quieting rules (sibling arms, early-exit branch,
     # advanced source, inner-cast normalisation) each over- or under-fired once.
     (".", ".", "tools/test_scan_double_fetch.py"),
+    # The safe-probe-deref lint: a range probe validates a user pointer that is then
+    # touched raw. Its quieting rules (fault-tolerant copy, trusted kernel arm,
+    # capture-shadow, field-of-capture) share _walk with scan_raw_user_access.
+    (".", ".", "tools/test_scan_safe_probe_deref.py"),
     (".", ".", "tools/test_scan_ptr_typedef_indirection.py"),
     (".", ".", "tools/test_lint_facts.py"),
     (".", ".", "tools/test_cargo_link_context.py"),

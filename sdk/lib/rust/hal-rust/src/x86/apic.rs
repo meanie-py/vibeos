@@ -931,7 +931,7 @@ pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)
 /// Address 0xFEE0_0000 with the destination APIC ID in bits 19:12 (physical
 /// mode, no redirection hint); data = the vector, fixed delivery, edge. The
 /// destination is this processor, as HalEnableSystemInterrupt does for a line.
-pub(crate) unsafe fn message_target(vector: u32) -> Option<(u64, u32)> {
+pub(crate) unsafe fn message_target(vector: u32, _requester: u32) -> Option<(u64, u32)> {
     if !is_message_vector(vector) {
         return None;
     }

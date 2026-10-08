@@ -5267,6 +5267,27 @@ two reviewed two-stage reads (header then body, size pinned from the kernel copy
 low-severity init-time case; a NEW same-path pair fails. What it cannot see: two fetches split
 across a syscall and a worker it calls.
 
+**A non-raising RANGE probe is not a touch-test, and `scan_safe_probe_deref` gates it.** win32k
+and ks.sys validate a user pointer with `SafeProbeForRead`/`SafeProbeForWrite` (ks.sys's mirror
+is `KsSafeProbeForRead`) — the NON-raising cousins of `ProbeForRead`: they return a status, and
+they only check the range is below `MmUserProbeAddress` and aligned. They deliberately do NOT
+touch the page (under DUMMY_PSEH a touch-test would itself fault), so the probe proves WHERE the
+buffer is, never that it STAYS mapped. A raw dereference after one — `rc = *(prc as *const
+RECTL)`, a `copy_nonoverlapping` from it — is the same any-process BUGCHECK 0x1E as never probing
+at all, where the C's shared `_SEH2_TRY` over probe-and-copy returned a status. This is the class
+behind `NtUserScrollDC`, `NtUserSetSysColors` and `NtGdiGetDIBits`; the fix is the same
+fault-tolerant copy as above (`KmProtectedCopyMemory`/`safe_copy_raw`/`capture_from_user`),
+keeping the probe for its range check. `tools/scan_safe_probe_deref.py` (`vibeos-cli check`, gated
+at ZERO) flags a bare-identifier pointer passed to a `*SafeProbeFor{Read,Write}` call and then
+touched raw, reusing `scan_raw_user_access`'s `_walk` for the access patterns, the capture-shadow
+rule (`let bmi = pbmiSafe` after the safe copy ends tracking) and the kernel-arm skip (an
+`if mode != KernelMode`/`Mode == 0` arm is trusted). Writing it turned up a FOURTH instance the
+win32k fixes missed: ks.sys's `KsFastPropertyHandler` copied the user `Property` raw on its
+UserMode arm after only a `KsSafeProbeForRead` (the KernelMode arm's raw copy is correct), fixed
+by routing it through `safe_copy_raw` like the rest of that file. What it cannot see: a probe and
+a touch split across two functions, a validator not spelled `*SafeProbeFor*` (name it the house
+way or the scanner is blind to it), and a `.read()`-method or by-value `f(*p)` touch.
+
 **Syscalls are not the only door, and the scanner only watches syscalls.** `int 2d` hands the
 kernel a user pointer in a register, which arrives as `ExceptionInformation[1]`. KdpStub's
 debugger-less echo of `BREAKPOINT_PRINT` to the UART, which is our addition with no C to drop
@@ -5819,6 +5840,12 @@ suspect call kept it failing; eighty made it green.
   an inheritance mechanism with a trait, every virtual the original called through needs a
   hook, not just the ones your first class happened to use** — the missing one costs nothing
   to add and is invisible once dropped.
+  A hook that HAS a do-nothing default drops the same way at the other end. `OnFinalMessage`
+  got one (ATL's base is empty), and CDefView's port never overrode it, so the `Release`
+  balancing `OnNCCreate`'s `AddRef` never ran and every folder view leaked (browseui:
+  `Unexpected RefCount > 0 (1)` at close). Found by logging each AddRef/Release with
+  `RtlCaptureStackBackTrace` and netting them by call site. **Make a virtual's hook
+  REQUIRED when any class overrides it**, so a port has to say "nothing" out loud.
 - **`delete this` gets a deallocator the model INVENTED, because the allocator is invisible to
   it.** shellrecyclebin has five textually identical `delete this;` — one per hand-rolled COM
   class `Release()` — and the C++ COM path lowered them five different ways, none correct:
@@ -10986,6 +11013,19 @@ catches a wedge, so a genuine MP hang still fails in ~120s instead of burning th
 budget. Do not "fix" this by lowering the boot marker; the marker is what proves the desktop
 came up. Recompute the scale from a stashed UP value, not from the current one, or a config
 reused across a retry loop multiplies each time.
+
+### On a GICv3, every IPI of the early-SMP window is lost until the distributor is enabled
+**Symptom:** arm64 `--gic 3 --smp 4` hangs right after `KeStartAllProcessors: 4 processor(s)
+online` with `[IPI] KeIpiGenericCall stuck in arrival: ... TargetSet=e`. Every AP printed
+`[GIC] CPUn percpu (GICv3): ... awake=1 SRE=1 SGI0 enabled=1`, so each redistributor was found,
+woken and had the IPI enabled. **Cause:** a GICv3 distributor's group enables (GICD_CTLR
+EnableGrp1/ARE) gate SGIs and PPIs as well as SPIs, even though SGIs and PPIs live in the
+redistributors. UEFI leaves the distributor disabled at ExitBootServices, and the BSP turns
+it on only at clock init (Phase 1), well after the AP self-test IPI. The GICv2 path never hit
+this because each AP's per-CPU init already wrote GICD_CTLR. **Fix:** per-CPU init enables
+the distributor (idempotent, through the loader's identity map of its first page), and the
+BSP's affinity is recorded at HalInitSystem, so an early IPI to it pends instead of having
+no route (`hal-rust arm64/gic3.rs`).
 
 ### Dropped `#ifdef CONFIG_SMP` blocks are TIME BOMBS, not dead code `[§9.95]`
 `KiRetireDpcList`'s SMP-only deferred-ready drain was dropped in translation, so **an idle CPU

@@ -449,6 +449,7 @@ def command(args, repo: Path) -> int:
             os.environ.get(key)
             for key in (
                 "VIBEOS_QEMU_RR",
+                "VIBEOS_QEMU_GIC",
                 "VIBEOS_QEMU_USB_DISK",
                 "VIBEOS_QEMU_NVME",
                 "VIBEOS_QEMU_XHCI",
@@ -456,7 +457,7 @@ def command(args, repo: Path) -> int:
             )
         ):
             raise CheckpointError(
-                "Unset RR, USB_DISK, NVME, XHCI and EXTRA_ARGS for checkpoint commands"
+                "Unset RR, GIC, USB_DISK, NVME, XHCI and EXTRA_ARGS for checkpoint commands"
             )
         if args.checkpoint_verb == "capture":
             if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", args.name):
