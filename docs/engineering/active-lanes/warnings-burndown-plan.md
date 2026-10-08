@@ -526,6 +526,28 @@ day: ten boot-path sites fixed -- roadmap.)
   `dll/win32/msafd/misc/dllmain.c` and neither is ported. This is an upstream-sync gap,
   not a warning: port them from dllmain.c.
 
+**`unused_assignments` is ranked by the C, not by the warning (2026-10-08).**
+`tools/rank_unused_assignments.py <clean full.log ×3>` pairs every site with its C write
+(same callee, literal, or same-key ordinal; refuses when the counts differ, e.g. a hoisted
+Rust call) and runs a structured liveness over the C function: branches, loops to a fixed
+point, `switch` fall-through, `goto`, `#if` arms. `UNREFERENCED_PARAMETER(x)` is not a read,
+`list_for_each(x, ..)` writes its cursor, and reads that exist only through `&x` or only
+inside DPRINT/ASSERT get their own verdicts. Of the 1,025 sites:
+
+| verdict | n | meaning |
+|---|---:|---|
+| `C_READS` | 14 | the C reads it and the Rust does not: read each one |
+| `C_READS_ADDR` | 2 | the C reads it only by passing `&x` |
+| `C_READS_DEBUG` | 7 | only an ASSERT/DPRINT reads it |
+| `NO_MATCH` / `NO_C_FN` | 66 / 92 | no confident pairing: read by hand (uniata 39, cdrom 27, cdfs 17, atapi 16) |
+| `C_DEAD` / `C_NO_INIT` | 526 / 318 | the C has the same dead store, or no initializer at all: harmless |
+
+The first `C_READS` read was a real divergence (cdrom
+`RequestSynchronizeProcessWithSerialQueue` returns early on `isBlocked`, where the C
+falls through with `fCallSyncCallback = FALSE`). **Owed:** the 23 `C_READS*` by hand, then
+the 158 unpaired ones, then the 844 harmless ones in bulk. Removing a dead initializer lets
+rustc's definite-init check prove each site.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class
