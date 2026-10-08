@@ -41,6 +41,9 @@
 #   and :283/:304 were a real HAL bug (ExAcquire/ExTryToAcquireFastMutex stored OldIrql
 #   before owning the mutex), and :294/:298 were setup.exe's COM registration burst
 #   starving the 50 ms races; kmtest-sweep now waits for setup.exe to exit.
+# 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
+#   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
+#   sweep list).
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -141,7 +144,9 @@ KeIrql OK pass=128 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=569 fail=0 skip=0 exit=0
+MmReservedMapping OK pass=84 fail=0 skip=0 exit=0
 MmSection OK pass=292 fail=39 skip=12 exit=0
     assert MmSection.c:277
     assert MmSection.c:302

@@ -2238,6 +2238,19 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   silently disables the feature it gates.
 - **Hand-rolled accessors over a union's byte view with two fields TRANSPOSED** fails only
   3 boots in 4 — a transposition is a *value* bug, so it only shows when the two differ.
+- **A bitfield struct filled by `transmute` of a hand-shifted integer** puts each field where
+  the translator guessed, not where the header does. `MMVAD_FLAGS.VadType` was packed at bit
+  0, but on 64-bit it sits above a 51-bit `CommitCharge`, at bit 52. The VAD read back as
+  `VadNone`, its unmap path refused it, and teardown later hit `MiDeletePte` 0x401 on PTEs it
+  never owned. A writer and a reader that encode the same field differently fail the same
+  way: `MmAllocateMappingAddress` stored a raw count, and the map path decoded it as
+  `u.List.NextEntry`. **Fix:** use bindgen's `set_<Field>()` or the shared `MMPTE` accessor,
+  never a shift, and grep for other private copies of an accessor before trusting one.
+- **A pointer to a struct indexed as bytes from its start** reads a different field.
+  `ExIsProcessorFeaturePresent` did `(SharedUserData as *const u8).add(feature)` for
+  `ProcessorFeatures[feature]`, which sits at offset 0x274, so every query returned bytes of
+  the clock. Index the field; a raw offset is only right when the pointer is byte-typed and
+  the offset is the field's own.
 - **`OriginalPte` is triple-duty in this port** (proto-template protection for active pages,
   and `RmapListHead` for ROS PFNs, which overlay it in the C union). A one-slot offset shift in
   hand-rolled `NextLRU`/`PreviousLRU`/`RmapListHead` accessors (they missed an embedded `Wsle`)
