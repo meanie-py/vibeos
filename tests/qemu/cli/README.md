@@ -124,6 +124,18 @@ all included), then auto-triage on failure.
   driver knows about an IOMMU). With `--gic 3 --nvme` the ITS's DeviceIDs then come through
   the SMMU's own IORT mapping.
 
+- **`--nvme --tripwire NVME_LOSE_COMPLETION=<n>`** has nvme.sys throw its n-th I/O
+  completion away, so that command hangs, and FAILS the boot (`NVME_NOT_RESET`) unless
+  the driver reset the controller 30 s later, failed the command back and the retry
+  succeeded (`NVME_AFFINITY=<mask>` likewise sets the controller's interrupt Affinity
+  Policy, which the HAL must honour).
+
+- **`--nvme-bridge`** (arm64, implies `--nvme`) puts that controller behind a PCIe root
+  port, on bus 1 (`VIBEOS_QEMU_NVME_BRIDGE=1`), as a server's devices are, and FAILS the
+  boot (`NVME_NOT_BEHIND_BRIDGE`) unless the PnP manager started the root port as well as
+  the `--nvme` checks passing: config space past bus 0 (the HAL's ECAM from the MCFG),
+  pci.sys driving the bridge's bus, and the requester ID of a device off the root bus.
+
 - **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
   controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the

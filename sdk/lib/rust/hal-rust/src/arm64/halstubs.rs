@@ -261,7 +261,7 @@ pub unsafe extern "system" fn HalAllocateCrashDumpRegisters(
     core::ptr::null_mut()
 }
 
-/// The resources of a bus-0 PCI function, for legacy (non-PnP) drivers — SCSIPORT's
+/// The resources of a PCI function, for legacy (non-PnP) drivers — SCSIPORT's
 /// PCI scan asks for every adapter it matches, and gave up on arm64 while this was a
 /// stub. The same answer the x86 HAL gives (HalpAssignPCISlotResources): every
 /// implemented BAR where firmware placed it, sized, plus the interrupt InterruptLine
@@ -299,11 +299,9 @@ pub unsafe extern "system" fn HalAssignSlotResources(
     if AllocatedResources.is_null() {
         return STATUS_NOT_SUPPORTED;
     }
-    let va = ecam_bus0_va();
-    if va.is_null() || BusNumber != 0 {
+    let Some(cfg) = super::ecam::function(BusNumber, SlotNumber) else {
         return STATUS_NOT_FOUND;
-    }
-    let cfg = ecam_fn_ptr(va, SlotNumber);
+    };
     let rd = |off: usize| core::ptr::read_volatile(cfg.add(off) as *const u32);
     let wr = |off: usize, v: u32| core::ptr::write_volatile(cfg.add(off) as *mut u32, v);
     if rd(0) & 0xFFFF == 0xFFFF {
@@ -452,87 +450,18 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 }
 
 // ============================================================================
-// PCI configuration space (ECAM) — QEMU `virt` Generic PCIe (GPEX) host bridge.
+// PCI configuration space: ECAM, from the MCFG (ecam.rs). BusNumber is a
+// PCI_SEGMENT_BUS_NUMBER, so any bus of any segment the MCFG lists is reachable.
+// SlotNumber is the PCI_SLOT_NUMBER packing: bits 0..4 device, 5..7 function.
 // ============================================================================
-//
-// QEMU `-M virt` exposes PCIe config space as a flat ECAM (Enhanced
-// Configuration Access Mechanism) MMIO window. Its base depends on the
-// machine's `highmem-ecam` setting:
-//   * high ECAM: 0x40_1000_0000, 256 MB (buses 0..=255)  — default on aarch64
-//   * low  ECAM: 0x0000_3F00_0000, 16 MB (buses 0..=15)
-// We probe both: map a bus-0 window and read the host-bridge VID/DID at 00:00.0;
-// whichever base reports a present vendor (low 16 bits != 0xFFFF) is the live
-// ECAM. Mapping a wrong/unbacked base reads back all-ones on QEMU, so the probe
-// is side-effect free.
-//
-// The only HAL bus-data consumer on arm64 today is netstack's `find_virtio_net`,
-// which scans bus 0 exclusively (QEMU keeps the NIC there) — so a single 1 MB
-// bus-0 ECAM window is sufficient. Any access with BusNumber != 0, or when no
-// ECAM is present, reads back as "device not present" (all-ones).
-//
-// ECAM address layout within the bus window:
-//   offset = (device << 15) | (function << 12) | register   (4 KB per function)
-// `SlotNumber` is the kernel PCI_SLOT_NUMBER packing used by the caller:
-//   bits 0..4 = device, bits 5..7 = function.
 
 const PCI_CONFIGURATION: ddk::BUS_DATA_TYPE = 4; // _BUS_DATA_TYPE_PCIConfiguration
-const ECAM_HIGH_BASE: u64 = 0x40_1000_0000;
-const ECAM_LOW_BASE: u64 = 0x0000_3F00_0000;
-const ECAM_BUS_SIZE: usize = 0x10_0000; // 1 MB = 256 functions * 4 KB
-const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
-
-// Cached mapped VA of the bus-0 ECAM window:
-//   0          = not yet probed
-//   usize::MAX = probed, no ECAM present
-//   otherwise  = mapped kernel VA
-static ECAM_BUS0_VA: AtomicUsize = AtomicUsize::new(0);
-const ECAM_VA_NONE: usize = usize::MAX;
 
 #[inline]
 fn phys(v: u64) -> ddk::PHYSICAL_ADDRESS {
     ddk::PHYSICAL_ADDRESS { QuadPart: v as i64 }
 }
-
-/// Lazily map + probe the bus-0 ECAM window. Returns the mapped VA, or null when
-/// no PCIe ECAM is present (e.g. a non-virt machine).
-unsafe fn ecam_bus0_va() -> *mut u8 {
-    let cached = ECAM_BUS0_VA.load(Ordering::Acquire);
-    if cached == ECAM_VA_NONE {
-        return core::ptr::null_mut();
-    }
-    if cached != 0 {
-        return cached as *mut u8;
-    }
-    for &base in &[ECAM_HIGH_BASE, ECAM_LOW_BASE] {
-        let va = ddk::MmMapIoSpace(
-            phys(base),
-            ECAM_BUS_SIZE as _,
-            ddk::_MEMORY_CACHING_TYPE_MmNonCached as _,
-        ) as *mut u8;
-        if va.is_null() {
-            continue;
-        }
-        // Host bridge sits at 00:00.0 in either layout; a present vendor id
-        // confirms this base is the live ECAM.
-        let vid_did = core::ptr::read_volatile(va as *const u32);
-        if (vid_did & 0xFFFF) != 0xFFFF {
-            ECAM_BUS0_VA.store(va as usize, Ordering::Release);
-            return va;
-        }
-        ddk::MmUnmapIoSpace(va as ddk::PVOID, ECAM_BUS_SIZE as _);
-    }
-    ECAM_BUS0_VA.store(ECAM_VA_NONE, Ordering::Release);
-    core::ptr::null_mut()
-}
-
-/// Byte pointer to (device, function) config space within the bus-0 window.
-#[inline]
-unsafe fn ecam_fn_ptr(va: *mut u8, slot_number: ddk::ULONG) -> *mut u8 {
-    let device = slot_number & 0x1F;
-    let function = (slot_number >> 5) & 0x7;
-    let win = (device << 15) | (function << 12);
-    va.add(win as usize)
-}
+const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
 
 /// Shared read for HalGetBusData / HalGetBusDataByOffset. Copies `Length` bytes
 /// of config space at `Offset` into `Buffer`; absent device / no ECAM yields
@@ -549,12 +478,10 @@ unsafe fn ecam_read(
         return 0;
     }
     let dst = buffer as *mut u8;
-    let va = ecam_bus0_va();
-    if va.is_null() || bus_number != 0 {
+    let Some(src) = super::ecam::function(bus_number, slot_number) else {
         core::ptr::write_bytes(dst, 0xFF, length as usize);
         return length;
-    }
-    let src = ecam_fn_ptr(va, slot_number);
+    };
     let mut copied = 0u32;
     for i in 0..length {
         let reg = offset + i;
@@ -579,11 +506,9 @@ unsafe fn ecam_write(
     if bus_data_type != PCI_CONFIGURATION || buffer.is_null() || length == 0 {
         return 0;
     }
-    let va = ecam_bus0_va();
-    if va.is_null() || bus_number != 0 {
+    let Some(dst) = super::ecam::function(bus_number, slot_number) else {
         return 0;
-    }
-    let dst = ecam_fn_ptr(va, slot_number);
+    };
     let src = buffer as *const u8;
     let mut copied = 0u32;
     for i in 0..length {
@@ -704,7 +629,7 @@ pub unsafe extern "system" fn HalQueryDisplayParameters(
 }
 
 /// QEMU virt PL031 RTC: DR register at +0x00 holds seconds since the Unix
-/// epoch (UTC). Lazily mapped, same pattern as `ecam_bus0_va`.
+/// epoch (UTC). Lazily mapped on first use.
 const PL031_BASE: u64 = 0x0901_0000;
 static PL031_VA: AtomicUsize = AtomicUsize::new(0);
 const PL031_VA_NONE: usize = usize::MAX;

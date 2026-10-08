@@ -146,7 +146,8 @@ pub unsafe extern "system" fn HalVibeosMessageCapacity() -> ULONG {
 /// a message token's translation. FALSE for any other vector.
 ///
 /// `RequesterId` is the PCI requester ID (bus << 8 | device << 3 | function) of the
-/// device that will write it, or [`REQUESTER_UNKNOWN`]. The first ask for a vector
+/// device that will write it, with its PCI segment in bits 31:16, or
+/// [`REQUESTER_UNKNOWN`]. The first ask for a vector
 /// must name it where the backend translates per device (the ITS); later asks get the
 /// same pair back without it.
 #[unsafe(no_mangle)]
