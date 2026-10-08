@@ -146,7 +146,12 @@ RtlRegistryKM
 # AV — pool corruption on free). Passes on amd64. Exercises the `splaytree` Rust
 # crate — REAL-BUG candidate (i386-specific splay corruption), not DUMMY_PSEH.
 # Repro: SPECIALPOOL=* to catch the corrupting store. Triage owed.
-#RtlSplayTreeKM
+# UN-QUARANTINED 2026-10-08: root-caused and fixed -- not splay corruption. The generictable
+# crate sized each node as size_of(SplayLinks)+size_of(ListEntry) = 20 on i386, but writes the
+# user data at offset_of!(TableEntryHeader, user_data) = 24 (LONGLONG UserData is 8-aligned;
+# the C allocates FIELD_OFFSET = 24). Every insert overran its pool block by 4 bytes. 64-bit
+# never saw it because both come to 40 there. 139/0.
+RtlSplayTreeKM
 # QUARANTINED 2026-07-17: the RtlWalkFrameChain(NULL) NULL-store guard (rtlk-rust libsupp.rs) DID
 # clear the first fault — but on i386 a SECOND, previously-masked fault remains: BUGCHECK 0x1E
 # (0xc0000005 at ntoskrnl.exe 0x8058dc75, fault addr 0xf7190894 — a bad frame-walk deref, NOT NULL).
@@ -177,7 +182,13 @@ SeQueryInfoToken
 # (TerminateProcess can't reap it), driver keeps the result buffer registered, and every
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
-#SeTokenFiltering
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. SepPerformTokenFiltering's group-disable
+# loop did `continue` without advancing after disabling a matched group, so it re-matched the
+# same group forever at PASSIVE_LEVEL -- the in-kernel wedge above. The C has the same bug
+# (`GroupsInToken--`, copied from the privilege loop where the entry IS removed) but never
+# hangs, because its RtlEqualSid compares `&...Sid`, the pointers' addresses, and so never
+# matches. se-rust tokenlif.rs now advances. 11/0 on all three arches.
+SeTokenFiltering
 # QUARANTINED 2026-07-12 (i386 auto-grind): BUGCHECK at ntoskrnl.exe+0x14E4. Passes on amd64. Triage owed (live GDB; offline i386 index is symbol-poor).
 # UN-QUARANTINED 2026-07-25 by the native-SEH/-fasync-exceptions fix (f4d0455be86,
 # d3b1c045c5d). The note above is kept as the audit trail of what it used to do.
@@ -230,6 +241,16 @@ RtlAvlTree
 # calls-only (no async exceptions) so the in-body AV escapes. As a UM process it self-
 # crashes (exit 128) WITHOUT a kernel BUGCHECK and the sweep continues clean — the good
 # harness-robustness outcome. Expected-fail (same class as RtlExceptionKM); not an OS bug.
+# RE-TRIAGED 2026-10-08 -- still a TOOLCHAIN limit, but now a precise one. Every assertion
+# runs fine up to the final KMT_USER_MODE stack-overflow block, and the KERNEL is right:
+# MiCheckForUserStackOverflow raises STATUS_STACK_OVERFLOW (c00000fd) exactly as Windows
+# does. The test's own __except never sees it, because clang emitted the i386 SEH try-level
+# stores for that block as `movl $7,0x248(%esi); movl $-1,0x248(%esi)` BACK TO BACK, before
+# the `while(1)` loop (kmtest_.exe 0x40af33/0x40af3e). x86-32 WinEH numbers states only around
+# calls, and the loop contains none (a 1K _alloca is an inline `sub esp`), so the loop runs at
+# try-level -1 and _except_handler3 rightly finds no enclosing __try. amd64/arm64 use
+# IP-range scope tables and do not have this. The 33 shared assertions are covered on i386
+# by RtlExceptionKM, which passes. Keep quarantined: the NO-END discards all of its results.
 #RtlException
 RtlIntSafe
 RtlMemory

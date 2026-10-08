@@ -156,7 +156,13 @@ SeQueryInfoToken
 # (TerminateProcess can't reap it), driver keeps the result buffer registered, and every
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
-#SeTokenFiltering
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. SepPerformTokenFiltering's group-disable
+# loop did `continue` without advancing after disabling a matched group, so it re-matched the
+# same group forever at PASSIVE_LEVEL -- the in-kernel wedge above. The C has the same bug
+# (`GroupsInToken--`, copied from the privilege loop where the entry IS removed) but never
+# hangs, because its RtlEqualSid compares `&...Sid`, the pointers' addresses, and so never
+# matches. se-rust tokenlif.rs now advances. 11/0 on all three arches.
+SeTokenFiltering
 ZwAllocateVirtualMemory
 ZwCreateSection
 ZwMapViewOfSection
@@ -235,7 +241,16 @@ RtlAvlTree
 # KiUserExceptionDispatcher / RtlDispatchException finding and running a table-based
 # handler), NOT in the toolchain and NOT in the test. arm64's dispatch does this
 # correctly, which makes arm64 the working oracle to diff against.
-#RtlException
+# UN-QUARANTINED 2026-10-08: root-caused and fixed, and it was STACK, not dispatch logic.
+# The death is in the final stack-overflow block: the kernel raises STATUS_STACK_OVERFLOW
+# correctly with 0x1c40 bytes of handler budget (measured, [KI-EXC] STACK_OVERFLOW dispatch),
+# but ntdll's dispatch nests RtlpUnwindInternal twice (search pass, then RtlUnwindEx's unwind
+# pass) and each frame was 0xa88 -- two CONTEXTs, one a needless temporary -- with
+# RtlVirtualUnwind at 0x508 from an inlined epilog-unwind CONTEXT copy. It ran off the
+# guaranteed page inside RtlVirtualUnwind (the "fault in a DLL" above) and the exception
+# became undeliverable. rtl-except amd64 unwind.rs now copies through pointers and keeps
+# RtlpTryToUnwindEpilog out of line. 34/0 -- arm64 is 33/1, AV where STACK_OVERFLOW is due.
+RtlException
 RtlIntSafe
 RtlMemory
 RtlRegistry
