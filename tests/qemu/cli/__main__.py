@@ -322,6 +322,25 @@ def build_parser() -> argparse.ArgumentParser:
         "passing DMA through; with --gic 3 the ITS's DeviceIDs then come through the SMMU",
     )
     s.add_argument(
+        "--cpu",
+        help="arm64 only: the QEMU -cpu model in place of cortex-a72 (VIBEOS_QEMU_CPU), "
+        "e.g. neoverse-n1 (Graviton2), neoverse-v1 (Graviton3), neoverse-n2 (closest to "
+        "Graviton4)",
+    )
+    s.add_argument(
+        "--headless",
+        action="store_true",
+        help="arm64 only: no display device, so UEFI hands over no GOP framebuffer, as on "
+        "a server (VIBEOS_QEMU_HEADLESS=1). The desktop marker still comes over serial",
+    )
+    s.add_argument(
+        "--boot-nvme",
+        action="store_true",
+        help="arm64 only: boot from an NVMe namespace holding the boot image, as an EC2 "
+        "instance boots from its NVMe root volume (VIBEOS_QEMU_BOOT_NVME=1). The boot FAILS "
+        "(NVME_BOOT_DISK_NOT_SEEN) unless nvme.sys also publishes that namespace as a disk",
+    )
+    s.add_argument(
         "--xhci",
         nargs="?",
         const="msix",

@@ -152,6 +152,9 @@ pub unsafe extern "C" fn UefiConsKbHit() -> u8 {
 #[cfg_attr(feature = "uefi", no_mangle)]
 pub unsafe extern "C" fn UefiConsGetCh() -> i32 {
     let mut KeyOutput: UCHAR = 0;
+    // Say so before blocking: on a headless machine (a server with no display or
+    // keyboard) nobody will press one, and otherwise the boot just goes silent.
+    crate::frldr::dbgcon_str(b"[FLDR] waiting for a key on the UEFI console\r\n");
 
     if ExtendedKey != 0 {
         ExtendedKey = 0u8;

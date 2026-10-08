@@ -29,8 +29,35 @@
 >   the HAL publishes a root bus per segment past 0 and pci.sys follows bridges
 >   (`smoke --arch arm64 --nvme-bridge`: NVMe behind a root port). Graviton's layout,
 >   and any segment past 0, is untested.
-> - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses; the serial
->   console's UART type is unverified.
+> - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses. EC2's
+>   Graviton console is not a PL011: it is Amazon's 16550-compatible PCI UART
+>   (1d0f:8250), which the SPCR names at an MMIO address with byte access (FreeBSD
+>   D19507, from an a1 instance). Since 2026-10-08 the loader, kernel and KD drive
+>   whichever UART the SPCR/DBG2 describes, PL011 or a 16550 in memory space
+>   (`ARM_LOADER_BLOCK.MachineType` carries its register model). Host-tested only:
+>   QEMU's virt machine cannot present a firmware-enabled MMIO 16550.
+>
+> **What QEMU proves before hardware (2026-10-08):**
+>
+> - `--cpu neoverse-n1|neoverse-v1|neoverse-n2` (Graviton2/3, closest to 4) with
+>   `--gic 3 --nvme --smp 4`: desktop.
+> - `--headless` (no display, as a server): desktop, after four fixes the loader and
+>   display needed (field manual, "A UEFI boot with no display hangs in the loader");
+>   arm64vid runs the desktop on a frame in memory.
+> - `--boot-nvme`: UEFI boots the image from an NVMe namespace, the way EC2 boots
+>   an instance from its EBS root volume, and nvme.sys publishes that volume.
+> - `--smp 16` with 16 GiB on Neoverse-N1: desktop. `--smp 64`: QEMU's UEFI never
+>   leaves its boot manager under TCG (15 minutes serial-silent, before any of our
+>   code runs); `--smp 32` is the largest tried.
+> - `--smmu --tripwire SMMU=TRANSLATE`: the HAL drives the SMMUv3 for real (an
+>   identity map of RAM and MSI doorbells, a stream table entry per device), and
+>   `NVME_BAD_DMA=<hex>` shows a stray DMA reported as a fault. Bypass stays the
+>   default, as on Windows without DMA remapping.
+>
+> **Still unanswerable without the instance:** Graviton's ACPI tables (dump them
+> from a Linux instance first: they become host-test fixtures), firmware-left LPI
+> state, PCI segment layout, SMMU state at handoff, and whether the 16550 driver
+> matches the real UART.
 >
 > The rest of this document is kept for its history, not as the plan.
 

@@ -364,6 +364,27 @@ def smmu_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
 
 
+def cpu_model() -> str | None:
+    """VIBEOS_QEMU_CPU (arm64): the `-cpu` model in place of cortex-a72, e.g.
+    neoverse-n1 (Graviton2), neoverse-v1 (Graviton3) or neoverse-n2 (closest to
+    Graviton4)."""
+    return os.environ.get("VIBEOS_QEMU_CPU", "").strip() or None
+
+
+def boot_nvme() -> bool:
+    """VIBEOS_QEMU_BOOT_NVME=1 (arm64): the boot image is an NVMe namespace, not a
+    virtio disk, which is how an EC2 instance boots (UEFI loads the OS from an NVMe
+    EBS volume). It sits at slot 2, where the virtio disk was, so the boot path
+    saved in efivars still names it."""
+    return os.environ.get("VIBEOS_QEMU_BOOT_NVME", "").strip() in ("1", "true", "yes")
+
+
+def headless() -> bool:
+    """VIBEOS_QEMU_HEADLESS=1 (arm64): no display device, so UEFI has no GOP to hand
+    over, as on a server (Graviton bare metal has none)."""
+    return os.environ.get("VIBEOS_QEMU_HEADLESS", "").strip() in ("1", "true", "yes")
+
+
 def xhci_interrupts() -> str:
     """VIBEOS_QEMU_XHCI_MSI: how the xHCI rig's controller interrupts. `msix` (QEMU's
     default), `msi` (MSI-X off, so a plain MSI capability with a multiple-message
@@ -777,6 +798,8 @@ class Arm64Config(ArchConfig):
             machine[machine.index("-M") + 1] += ",virtualization=on"
         if "a76" in hazards:
             machine[machine.index("-cpu") + 1] = "cortex-a76"
+        if cpu_model():
+            machine[machine.index("-cpu") + 1] = cpu_model()
         return machine
 
     def hostile_memory(self) -> str:
@@ -807,10 +830,21 @@ class Arm64Config(ArchConfig):
             f"if=pflash,format=raw,file={uefi_fw},readonly=on",
             "-drive",
             f"if=pflash,format=qcow2,file={efivars}",
-            "-drive",
-            f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
-            "-device",
-            "ramfb",
+            *(
+                [
+                    "-drive",
+                    # QEMU's NVMe wants a writable backend; snapshot keeps the image clean.
+                    f"file={boot_img},format=raw,if=none,id=bootnvme,snapshot=on,file.locking=off",
+                    "-device",
+                    "nvme,serial=VIBEOSBOOT0,drive=bootnvme,addr=0x2,bootindex=0",
+                ]
+                if boot_nvme()
+                else [
+                    "-drive",
+                    f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
+                ]
+            ),
+            *([] if headless() else ["-device", "ramfb"]),
             "-display",
             "none",
         ]
@@ -1736,6 +1770,12 @@ class QemuVM:
             config._up_boot_timeout,  # type: ignore[attr-defined]
             smp_count(),
         )
+        # More vCPUs than host CPUs (a Graviton-sized -smp 64 on a 24-thread host):
+        # every vCPU's firmware idle loop competes for the same threads, and UEFI's
+        # boot manager goes serial-silent for minutes on a healthy boot. The
+        # watchdog stays for every boot the host can actually run in parallel.
+        if self.config.hang_silence_seconds and (smp_count() or 1) > (os.cpu_count() or 1):
+            self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 900.0)
         self.work_dir = work_dir
         self.work_dir.mkdir(parents=True, exist_ok=True)
         # A fixed per-arch path lets concurrent pytest boots overwrite each

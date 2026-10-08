@@ -19,8 +19,48 @@ extern "system" {
 const PL011_FR_INDEX: usize = 0x18 / 4;
 /// UARTFR.TXFF - set while the transmit FIFO is full.
 const PL011_FR_TXFF: u32 = 1 << 5;
+/// UARTFR.RXFE - set while the receive FIFO is empty.
+const PL011_FR_RXFE: u32 = 1 << 4;
 
-/// Write one byte to the debug PL011, waiting for room in the TX FIFO.
+/// The console UART's register model, from the loader (ARM_LOADER_BLOCK.MachineType
+/// on arm64; freeldr's arm64_serial_acpi.rs `Uart::encode`): 0 a PL011, else a
+/// 16550 in memory space with its register shift in bits 11:8 and access width in
+/// bytes in bits 19:16. EC2's Graviton console is the latter (Amazon's PCI UART).
+pub static ARM64_UART_KIND: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+pub const UART_KIND_NS16550: u32 = 1;
+// 16550 registers, by number: THR/RBR at 0, LSR at 5.
+const NS16550_LSR: usize = 5;
+const NS16550_LSR_DR: u32 = 1 << 0;
+const NS16550_LSR_THRE: u32 = 1 << 5;
+
+/// A 16550 register `n`, read with the access width the loader found.
+#[inline(always)]
+unsafe fn ns16550_read(base: *mut u8, kind: u32, n: usize) -> u32 {
+    let at = base.add(n << ((kind >> 8) & 0xF));
+    if (kind >> 16) & 0xF == 4 { core::ptr::read_volatile(at as *const u32) } else { core::ptr::read_volatile(at) as u32 }
+}
+
+#[inline(always)]
+unsafe fn ns16550_write(base: *mut u8, kind: u32, n: usize, v: u8) {
+    let at = base.add(n << ((kind >> 8) & 0xF));
+    if (kind >> 16) & 0xF == 4 { core::ptr::write_volatile(at as *mut u32, v as u32) } else { core::ptr::write_volatile(at, v) }
+}
+
+/// One received byte from the console UART, if one is waiting.
+pub unsafe fn uart_getc(base: *mut u32) -> Option<u8> {
+    if base.is_null() {
+        return None;
+    }
+    let kind = ARM64_UART_KIND.load(core::sync::atomic::Ordering::Relaxed);
+    if kind & 0xFF == UART_KIND_NS16550 {
+        let b = base as *mut u8;
+        return (ns16550_read(b, kind, NS16550_LSR) & NS16550_LSR_DR != 0).then(|| ns16550_read(b, kind, 0) as u8);
+    }
+    (core::ptr::read_volatile(base.add(PL011_FR_INDEX)) & PL011_FR_RXFE == 0)
+        .then(|| core::ptr::read_volatile(base) as u8)
+}
+
+/// Write one byte to the debug UART, waiting for room in the TX FIFO.
 ///
 /// The wait is not optional on real hardware. QEMU's PL011 drains instantly, so
 /// unsynchronised `write_volatile` never lost a byte there; a physical PL011 at
@@ -33,6 +73,20 @@ const PL011_FR_TXFF: u32 = 1 << 5;
 #[inline(always)]
 pub unsafe fn uart_putc(base: *mut u32, c: u8) {
     if base.is_null() {
+        return;
+    }
+    let kind = ARM64_UART_KIND.load(core::sync::atomic::Ordering::Relaxed);
+    if kind & 0xFF == UART_KIND_NS16550 {
+        let b = base as *mut u8;
+        let mut spins = 0u32;
+        while ns16550_read(b, kind, NS16550_LSR) & NS16550_LSR_THRE == 0 {
+            spins += 1;
+            if spins > 1_000_000 {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        ns16550_write(b, kind, 0, c);
         return;
     }
     let flags = base.add(PL011_FR_INDEX) as *const u32;

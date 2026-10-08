@@ -86,13 +86,15 @@ pub unsafe extern "C" fn EfiEntry(
             if let Some(output) = (*conout).OutputString {
                 output(
                     conout,
-                    crate::wide!("[freeldr] No supported PL011 UART in ACPI SPCR/DBG2; cannot continue.\r\n\0") as *mut u16,
+                    crate::wide!("[freeldr] No supported console UART (PL011 or MMIO 16550) in ACPI SPCR/DBG2; cannot continue.\r\n\0") as *mut u16,
                 );
             }
             return EFI_UNSUPPORTED;
         }
-        dbgcon_str(b"[freeldr] ACPI PL011 base=0x");
+        dbgcon_str(b"[freeldr] ACPI console UART base=0x");
         dbgcon_hex64(crate::arm64_debug::uart_base() as u64);
+        dbgcon_str(b" kind=0x");
+        dbgcon_hex64(crate::arm64_debug::uart_kind() as u64);
         dbgcon_str(b"\r\n");
     }
 

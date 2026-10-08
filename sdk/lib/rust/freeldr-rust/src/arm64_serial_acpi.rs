@@ -2,7 +2,9 @@
 //! actbl.h, actbl1.h (DBG2), and actbl3.h (SPCR). Keep parsing independent of
 //! firmware pointers so captured hardware tables can be tested on the host.
 //!
-//! arm64 reads a PL011 MMIO base (DBG2/SPCR, plus the GIC from the MADT).
+//! arm64 reads the console UART from DBG2/SPCR: a PL011, or a 16550-family UART in
+//! memory space, which is what an EC2 Graviton instance has (Amazon's virtual PCI
+//! UART, 1d0f:8250, byte registers; FreeBSD D19507), and the GIC from the MADT.
 //! x86 reads a 16550-family I/O-port base from SPCR: real PCs without a legacy
 //! COM1 describe their console UART there (Intel AMT serial-over-LAN, a BMC, a
 //! PCIe serial card), at an address nothing else would guess.
@@ -122,6 +124,62 @@ fn pl011(subtype: u16) -> bool {
     matches!(subtype, PL011 | SBSA_32 | SBSA_GENERIC)
 }
 
+/// A console UART's register model, as the kernel is told it
+/// (ARM_LOADER_BLOCK.MachineType: see [`Uart::encode`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UartKind {
+    /// ARM PrimeCell PL011 (and the SBSA UARTs, its subset): 32-bit registers.
+    Pl011,
+    /// 16550 family in memory space: register n at `n << shift`, accessed `width`
+    /// bytes at a time (1 or 4).
+    Ns16550 { shift: u8, width: u8 },
+}
+
+/// The console UART: its physical base and register model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Uart {
+    pub base: u64,
+    pub kind: UartKind,
+}
+
+/// ARM_LOADER_BLOCK.MachineType on arm64 (otherwise unused there): bits 7:0 the
+/// UART kind (0 PL011, 1 16550), 11:8 the 16550's register shift, 19:16 its access
+/// width in bytes; bit 31 says QEMU virt's fw_cfg is at its fixed address.
+pub const MACHINE_UART_NS16550: u32 = 1;
+pub const MACHINE_QEMU_FW_CFG: u32 = 1 << 31;
+
+impl Uart {
+    pub fn encode(self) -> u32 {
+        match self.kind {
+            UartKind::Pl011 => 0,
+            UartKind::Ns16550 { shift, width } => MACHINE_UART_NS16550 | (shift as u32) << 8 | (width as u32) << 16,
+        }
+    }
+}
+
+/// A 16550 in memory space: the access size decides both how a register is read
+/// and how far apart registers sit, as Linux's SPCR earlycon does (byte access:
+/// `mmio`, registers packed; dword: `mmio32`, a register every 4 bytes). An
+/// undefined access size falls back to the register's bit width.
+fn ns16550(address: Address) -> Option<UartKind> {
+    if address.space != 0 || address.bit_offset != 0 || address.address == 0 {
+        return None;
+    }
+    let width: u8 = match (address.access, address.width) {
+        (1, _) | (0, 8) => 1,
+        (3, _) | (0, 32) => 4,
+        _ => return None,
+    };
+    if address.address % width as u64 != 0 {
+        return None;
+    }
+    Some(UartKind::Ns16550 { shift: width.trailing_zeros() as u8, width })
+}
+
+fn is_ns16550(subtype: u16) -> bool {
+    matches!(subtype as u8, NS16550 | NS16450 | NS16550_GAS) && subtype <= 0xFF
+}
+
 fn mmio(address: Address) -> Option<u64> {
     // System memory, no bit shift, a 32-bit-capable register interface.
     if address.space != 0
@@ -136,6 +194,11 @@ fn mmio(address: Address) -> Option<u64> {
 }
 
 pub fn serial_base(data: &[u8]) -> Option<u64> {
+    serial_uart(data).map(|u| u.base)
+}
+
+/// The console UART a DBG2 or SPCR describes.
+pub fn serial_uart(data: &[u8]) -> Option<Uart> {
     if !valid_table(data) {
         return None;
     }
@@ -143,10 +206,14 @@ pub fn serial_base(data: &[u8]) -> Option<u64> {
     match &header.signature {
         b"SPCR" => {
             let spcr = read::<SpcrPrefix>(data, 0)?;
-            if !pl011(spcr.interface as u16) {
-                return None;
+            if pl011(spcr.interface as u16) {
+                return mmio(spcr.address).map(|base| Uart { base, kind: UartKind::Pl011 });
             }
-            mmio(spcr.address)
+            if is_ns16550(spcr.interface as u16) {
+                let address = spcr.address;
+                return ns16550(address).map(|kind| Uart { base: address.address, kind });
+            }
+            None
         }
         b"DBG2" => {
             let dbg = read::<Dbg2>(data, 0)?;
@@ -161,7 +228,7 @@ pub fn serial_base(data: &[u8]) -> Option<u64> {
                     return None;
                 }
                 let record = data.get(offset..offset.checked_add(length)?)?;
-                if dev.port_type == SERIAL_PORT && pl011(dev.subtype) && dev.register_count != 0 {
+                if dev.port_type == SERIAL_PORT && dev.register_count != 0 {
                     if (dev.address_offset as usize) < size_of::<Device>()
                         || (dev.size_offset as usize) < size_of::<Device>()
                     {
@@ -170,9 +237,14 @@ pub fn serial_base(data: &[u8]) -> Option<u64> {
                     let address = read::<Address>(record, dev.address_offset as usize)?;
                     let size = read::<u32>(record, dev.size_offset as usize)?;
                     // PL011 FR at 0x18 must fit as well as DR at zero.
-                    if size >= 0x1c {
+                    if pl011(dev.subtype) && size >= 0x1c {
                         if let Some(base) = mmio(address) {
-                            return Some(base);
+                            return Some(Uart { base, kind: UartKind::Pl011 });
+                        }
+                    }
+                    if is_ns16550(dev.subtype) {
+                        if let Some(kind) = ns16550(address) {
+                            return Some(Uart { base: address.address, kind });
                         }
                     }
                 }
@@ -220,8 +292,36 @@ unsafe fn walk_xsdt<T>(address: u64, probe: impl Fn(&[u8]) -> Option<T>) -> Opti
     None
 }
 
-pub unsafe fn from_xsdt(address: u64) -> Option<u64> {
-    walk_xsdt(address, serial_base)
+/// The console UART: the SPCR's (the table that names the console), else a
+/// DBG2 debug port's. Real firmware has one SPCR; a test rig that adds another
+/// (`-acpitable`, which QEMU lists after its own) means it, so the last wins.
+pub unsafe fn from_xsdt(address: u64) -> Option<Uart> {
+    let table = table_at(address)?;
+    if table.get(..4)? != b"XSDT" {
+        return None;
+    }
+    let entries = table.get(size_of::<Header>()..)?;
+    if entries.len() % size_of::<u64>() != 0 {
+        return None;
+    }
+    let mut spcr = None;
+    let mut dbg2 = None;
+    for entry in entries.chunks_exact(size_of::<u64>()) {
+        let Some(child) = table_at(read::<u64>(entry, 0)?) else { continue };
+        let Some(uart) = serial_uart(child) else { continue };
+        if child.get(..4)? == b"SPCR" {
+            spcr = Some(uart);
+        } else if dbg2.is_none() {
+            dbg2 = Some(uart);
+        }
+    }
+    spcr.or(dbg2)
+}
+
+/// Whether any console table describes QEMU virt's PL011, whichever UART won:
+/// then QEMU's fw_cfg sits at its fixed address too (the tripwire channel).
+pub unsafe fn qemu_virt_from_xsdt(address: u64) -> bool {
+    walk_xsdt(address, |t| (serial_uart(t)? == Uart { base: 0x0900_0000, kind: UartKind::Pl011 }).then_some(())).is_some()
 }
 
 // SPCR interface types for the 16550 family (ACPI SPCR rev 2 / DBG2 serial
@@ -463,7 +563,9 @@ mod tests {
         data[0] ^= 1;
         assert_eq!(serial_base(&data), None);
         data = original;
-        data[size_of::<Dbg2>() + offset_of!(Device, subtype)] = 0;
+        // 0x0F, ARM DCC: a debug port, but no UART we drive. (Subtype 0 would not
+        // do: that is a full 16550.)
+        data[size_of::<Dbg2>() + offset_of!(Device, subtype)] = 0x0F;
         checksum(&mut data);
         assert_eq!(serial_base(&data), None);
     }
@@ -598,6 +700,36 @@ mod tests {
         data[44..52].copy_from_slice(&address.to_le_bytes());
         checksum(&mut data);
         data
+    }
+
+    #[test]
+    fn spcr_16550_in_memory_space() {
+        // EC2 Graviton's: Amazon's PCI UART at 0x90A0000, byte access.
+        let mut ec2 = spcr(NS16550, 0, 0x090A_0000);
+        ec2[43] = 1;
+        checksum(&mut ec2);
+        let uart = serial_uart(&ec2).unwrap();
+        assert_eq!(uart, Uart { base: 0x090A_0000, kind: UartKind::Ns16550 { shift: 0, width: 1 } });
+        assert_eq!(uart.encode(), MACHINE_UART_NS16550 | 1 << 16);
+        // An SBSA-style 32-bit 16550 (Linux `mmio32`): registers 4 bytes apart.
+        let mut wide = spcr(NS16550_GAS, 0, 0x1C02_0000);
+        wide[41] = 32;
+        wide[43] = 3;
+        checksum(&mut wide);
+        assert_eq!(serial_uart(&wide).unwrap().kind, UartKind::Ns16550 { shift: 2, width: 4 });
+        // Undefined access size: the register width decides.
+        assert_eq!(serial_uart(&spcr(NS16450, 0, 0x1000)).unwrap().kind, UartKind::Ns16550 { shift: 0, width: 1 });
+        // Port I/O is the x86 path's, and a dword UART must be dword-aligned.
+        assert_eq!(serial_uart(&spcr(NS16550, SYSTEM_IO, 0x3f8)), None);
+        wide[44] = 2;
+        checksum(&mut wide);
+        assert_eq!(serial_uart(&wide), None);
+        // The PL011 path is unchanged.
+        let mut pl = spcr(PL011 as u8, 0, 0x0900_0000);
+        pl[43] = 3;
+        checksum(&mut pl);
+        assert_eq!(serial_uart(&pl), Some(Uart { base: 0x0900_0000, kind: UartKind::Pl011 }));
+        assert_eq!(Uart { base: 0, kind: UartKind::Pl011 }.encode(), 0);
     }
 
     #[test]

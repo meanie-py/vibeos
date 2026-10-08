@@ -153,6 +153,10 @@ const MDL_IO_SPACE: i16 = 0x0800;
 /// completion is consumed and thrown away, as if the controller had never posted
 /// it, so its command hangs and the reset path runs. 0: off.
 pub static LOSE_COMPLETION: AtomicU32 = AtomicU32::new(0);
+/// The test rig's `NVME_BAD_DMA=<hex>` (pnp.rs reads it): bring-up sends one more
+/// Identify whose data goes to this address, which is not memory, so a translating
+/// SMMU can be seen to fault it. 0: off.
+pub static BAD_DMA: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 static REAPED: AtomicU32 = AtomicU32::new(0);
 
 // The fields are read by Debug, in the log lines; dead-code analysis does not see that.
@@ -792,6 +796,14 @@ impl Controller {
         };
         c.enable()?;
         c.identity = c.identify_controller()?;
+        let bad = BAD_DMA.load(Ordering::Relaxed);
+        if bad != 0 {
+            let cmd = Command::new(ADMIN_IDENTIFY, 0).prp(bad, 0).dw(10, CNS_CONTROLLER);
+            match c.admin_command("tripwire identify", cmd) {
+                Ok(_) => nvprint!("tripwire: an Identify to {:#x} completed\n", bad),
+                Err(e) => nvprint!("tripwire: an Identify to {:#x} failed: {:?}\n", bad, e),
+            }
+        }
         // MDTS (byte 77): the largest transfer, in units of the minimum page size.
         let mdts = *c.identify.add(77);
         if mdts != 0 && (PAGE << mdts) < c.max_transfer {
