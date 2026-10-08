@@ -13164,6 +13164,16 @@ builds ONE media and boots it for smoke, the ladder AND conformance, so a media-
 would turn the gate's ladder lane off without a word. On 2026-10-03 amd64 measured: 4 quiet
 rounds, 0 misses; 10 loud rounds, a miss in 8 and 3 NpfsReadWrite failures.
 
+**Second source, same class: livecd `setup -mini`.** After PnP goes quiet, syssetup's
+InstallLiveCD starts the network and registers every COM component: 33–42 s of CPU-bound user
+mode at priority 8. On arm64 that lost all three of ExFastMutex's 50 ms "new thread blocks on the
+mutex" races on every sweep. `[FMUTEX-WAIT]`/`[FMUTEX-RAN]` (ExFastMutex.c) settled it. The test
+thread sat **Ready** for the whole wait with `idle 0`, and the per-thread CPU diff named
+setup.exe as the thread that ran: +50 000 µs, the full window. The preempted setup thread
+re-queues at the head and spends the rest of its foreground quantum first, which is Windows
+behaviour, not a scheduler bug. kmtest-sweep now waits for setup.exe to exit, which costs
+9–15 s. Before blaming the scheduler for a timing miss, diff per-thread CPU across the window.
+
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15
 tests error (not fail) with the same 600 s number, first test included**, means the fixture never
