@@ -1423,6 +1423,17 @@ matching the macro (`p = core::ptr::null_mut();`); fix generally: make `FREE_POO
 through the cast, so the macro must take the bare variable. Same shape as the no-op-macro-as-fn
 entries above: a C macro's *semantics* (here a side effect, there lazy arg evaluation) do not
 survive being made a fn — check for side effects on the arguments before lowering a macro to a fn.
+Scope of the class (audited 2026-10-08, cdrom-rust + classpnp-rust + disk-rust, $0): it is far
+rarer than it looks. `DeviceSetRawReadInfo` was the *only* real instance in the whole storage
+stack. Detection heuristic (cheap static scan): within each fn, group `FREE_POOL`/`FREE_POOL!`
+calls by their exact freed lvalue and flag a same-pointer pair only when NO
+`return`/`break`/`continue`/reassignment/null-set sits between them. Nearly every raw hit is a
+false positive — the translator mirrors the C control flow, so the two frees live in
+mutually-exclusive `match` arms, on either side of a `break 'switch`/`continue 'retry`, or the
+"use after free" is a pointer-*value* compare evaluated before the free. classpnp's
+`ClassDeviceControl` alone threw 52 such false hits. The blanket `macro_rules!`-that-nulls
+migration was considered and rejected: ~100 call sites would need the `FREE_POOL!` form, cast
+stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't migrate.
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
@@ -2255,6 +2266,19 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   silently disables the feature it gates.
 - **Hand-rolled accessors over a union's byte view with two fields TRANSPOSED** fails only
   3 boots in 4 — a transposition is a *value* bug, so it only shows when the two differ.
+- **A bitfield struct filled by `transmute` of a hand-shifted integer** puts each field where
+  the translator guessed, not where the header does. `MMVAD_FLAGS.VadType` was packed at bit
+  0, but on 64-bit it sits above a 51-bit `CommitCharge`, at bit 52. The VAD read back as
+  `VadNone`, its unmap path refused it, and teardown later hit `MiDeletePte` 0x401 on PTEs it
+  never owned. A writer and a reader that encode the same field differently fail the same
+  way: `MmAllocateMappingAddress` stored a raw count, and the map path decoded it as
+  `u.List.NextEntry`. **Fix:** use bindgen's `set_<Field>()` or the shared `MMPTE` accessor,
+  never a shift, and grep for other private copies of an accessor before trusting one.
+- **A pointer to a struct indexed as bytes from its start** reads a different field.
+  `ExIsProcessorFeaturePresent` did `(SharedUserData as *const u8).add(feature)` for
+  `ProcessorFeatures[feature]`, which sits at offset 0x274, so every query returned bytes of
+  the clock. Index the field; a raw offset is only right when the pointer is byte-typed and
+  the offset is the field's own.
 - **`OriginalPte` is triple-duty in this port** (proto-template protection for active pages,
   and `RmapListHead` for ROS PFNs, which overlay it in the C union). A one-slot offset shift in
   hand-rolled `NextLRU`/`PreviousLRU`/`RmapListHead` accessors (they missed an embedded `Wsle`)

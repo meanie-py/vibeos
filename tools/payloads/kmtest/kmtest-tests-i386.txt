@@ -93,7 +93,12 @@ MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
-#MmReservedMapping
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. 0xDA/0x101 was MmAllocateMappingAddress
+# storing the size as a raw PTE value while the map path decoded it as u.List.NextEntry (bit
+# 32/28/12), so it read 0. The i386 kmtest_drv fault was ExIsProcessorFeaturePresent indexing
+# KUSER_SHARED_DATA from its start, so PF_PAE_ENABLED read InterruptTime noise. Probe OK on
+# all arches, then two full sweeps agreed (row banked in kmtest.txt).
+MmReservedMapping
 NpfsConnect
 NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
@@ -203,7 +208,14 @@ IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
 # Triage owed.
-#MmMapLockedPagesSpecifyCache
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. The 0x1A/0x401 (earlier 0x1000) was
+# MiMapLockedPagesInUserSpace hand-packing VadFlags with VadType at bit 0 (it is bit 52 on
+# 64-bit, after CommitCharge): VadType read VadNone, MiUnmapLockedPagesInUserSpace refused
+# the VAD and returned WITHOUT unmapping, and process teardown deleted PTEs it never owned.
+# Its last failing assert (_drv.c:190, CONFLICTING vs INVALID_ADDRESS) was
+# MM_HIGHEST_VAD_ADDRESS equal to the highest user address instead of 16 pages below it.
+# Probe OK on all arches, then two full sweeps agreed (row banked in kmtest.txt).
+MmMapLockedPagesSpecifyCache
 # QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50 PAGE_FAULT_IN_NONPAGED_AREA
 # (read at fffff880045ae040) — NtCreateSection param-capture/validation path
 # (candidate: unprobed SECTION params under DUMMY_PSEH). Triage owed.

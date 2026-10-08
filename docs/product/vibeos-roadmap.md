@@ -662,7 +662,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the thread/process matrix is owed; see `../engineering/wow64-x64-guest-design.md`.
 - **Stock x86-64 apps run under FEX on arm64** (2026-10-08). The `appstorm64` payload sweeps the
   stock amd64 build of ~40 apps and applets as x86-64 guests. 25 pass, each verified to be an
-  x86-64 process. Owed: rapps, iexplore, control.exe and the applets, plus memory (an exhausted
+  x86-64 process. Later the same day rapps and iexplore pass too (an unstaged rsaenh), and
+  control.exe and the applets turned out slow, not hung, once appstorm could sample x86-64
+  threads. Owed: a full sweep on a quiet host, an x86-64-only taskmgr close deadlock (a sent
+  message never dispatched, 1 in 6 runs), per-syscall cost under FEX, and memory (an exhausted
   machine bugchecks 0x7A). See `../engineering/wow64-x64-guest-design.md`. Two arm64 kernel
   paging bugs it found are fixed: Access-Flag livelock, and written pages paged out as clean.
 - **gui32 read back nothing on arm64 — FIXED 2026-10-08.** The arm64 syscall path (`trap.rs`,
@@ -1283,9 +1286,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   all three arches boot to desktop (gate smoke i386/amd64/arm64 green; conformance i386/amd64
   green — the only gate red was the unrelated non-deterministic arm64 ExFastMutex ratchet
   flake). Landed `8f224096404`. The broader class — `FREE_POOL` as a non-nulling fn across
-  cdrom-rust — is latent at other free-in-branch-plus-exit sites; `DeviceSetRawReadInfo` was
-  the only one on the boot path, the rest are owed (a `macro_rules!` that nulls, or a
-  per-site audit).
+  cdrom-rust/classpnp — was then AUDITED across the storage stack (2026-10-08, cdrom-rust +
+  classpnp-rust + disk-rust, $0 static scan): per function, group `FREE_POOL` calls by exact
+  freed lvalue and flag any same-pointer pair with no `return`/`break`/`continue`/reassignment/
+  null between them (the `DeviceSetRawReadInfo` signature). Result: **zero remaining real
+  instances.** cdrom-rust and disk-rust clean; classpnp-rust's 52 raw hits (mostly
+  `ClassDeviceControl`'s `'switch: loop { match ioctl {…} }`) are all mutually-exclusive match
+  arms / loop edges (`break 'switch`, `continue 'retry`) / value-reads-before-free — triaged,
+  none real. `DeviceSetRawReadInfo` was the sole instance anywhere, because the translator
+  reproduces the C's control flow faithfully: each branch frees then leaves its path, so the
+  "second free" the C's null-guard neutralised is never reached on the same path. The
+  `macro_rules!`-that-nulls migration was therefore considered and **rejected** — it would
+  churn ~100 call sites (`FREE_POOL!` form, cast-stripping, assignable-lvalue requirement) for
+  no live bug. Documented in the field manual with the detection heuristic; CLOSED.
 - **Pre-seal translations lost statements: `rustconv body-audit` leads — OPEN** (2026-09-26,
   updated 2026-09-27). Crates translated before call sealing (fastfat, cdrom and the other
   early DeepSeek lanes) were never checked for dropped calls. `rustconv body-audit --all`
@@ -5382,6 +5395,21 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
+    ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
+    `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
+    `u.List.NextEntry` (bit 32 amd64 / 28 arm64 / 12 i386), reading 0. A private helper
+    `mmpte_list_next_entry` also had the wrong shift on i386 and arm64; it is gone, and every
+    site now uses `MMPTE::{set_,}list_next_entry`. (2) 0x1A/0x401: the `VadType` packing above.
+    (3) `ExIsProcessorFeaturePresent` indexed `KUSER_SHARED_DATA` from its start rather than
+    `ProcessorFeatures[]`, so every feature query returned clock bytes. `PF_PAE_ENABLED` read
+    `InterruptTime`, and the i386 test walked PTEs as PAE into an unmapped page. pcix also
+    calls it. (4) `MM_HIGHEST_VAD_ADDRESS` equalled `MM_HIGHEST_USER_ADDRESS` on all three
+    arches, since 03-13; the C is 16 pages lower. PEB/TEB and other VADs could therefore land
+    in the top band, and a request there got CONFLICTING_ADDRESSES instead of
+    INVALID_ADDRESS. Both tests now in the sweep: MapLocked 16743/0 on every arch;
+    MmReservedMapping 231/0 amd64, 84/0 arm64, and 187/44 on i386, where the 44 are the
+    test's own `<< 32` expectation for a 32-bit PTE and upstream's C fails them too.
   - **Conformance BUGCHECK 0x1E inside `RtlRangeList` — ROOT-CAUSED/FIXED 2026-10-08,
     all three arches.** A use-after-free in the Rust `RtlDeleteOwnersRanges`
     (`rtl-rangelist`): it read `(*Entry).Flink` after `RtlpFreeMemory` had freed that entry.
@@ -6264,6 +6292,11 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   result: it eliminates MiDeletePte as the reuse path. Owed next step: a "free-while-mapped" tripwire at the RosMM page-free site
   (assert `MmGetRmapListHeadPage(pfn)==NULL`) to catch the premature free. Section tests stay
   ACTIVE (the canary). Field manual §9.97 (method + full evidence); task #19.
+  **2026-10-08: the `MmMapLockedPagesSpecifyCache` face was NOT this bug.** Its 0x401 had its
+  own cause: `MiMapLockedPagesInUserSpace` hand-packed `VadType` at bit 0 (it is bit 52 on
+  64-bit), so `MiUnmapLockedPagesInUserSpace` refused the VAD and never unmapped, and process
+  teardown deleted PTEs it did not own. Fixed and un-quarantined (see below). The page-reuse
+  hunt above stays open; drop the task #7 face from its evidence.
 
   **Tripwire site pinned down (2026-07-26), with the ordering trap that would have made it
   always-NULL.** The free site is `mm/freelist.rs:391 MmDereferencePage` — the

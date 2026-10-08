@@ -22,11 +22,13 @@
 >   nvme.sys on ITS-translated MSI-X behind an SMMUv3. Any SMMU the IORT lists is put in
 >   bypass at boot, since no driver programs one. The boot log prints the IORT's shape
 >   and where each segment's requester 0 lands, so the first Graviton serial log answers
->   the layout questions. Unmeasured there: PCI segments other than 0 (pci.sys and the
->   ECAM read only segment 0), and whether firmware leaves LPIs on in a redistributor
->   (that CPU is then passed over; if it is CPU0, nvme.sys falls back to INTx).
-> - **PCIe config space:** the arm64 HAL's ECAM reads bus 0 of one segment only;
->   Graviton's layout is unmeasured.
+>   the layout questions. Unmeasured there: whether firmware leaves LPIs on in a
+>   redistributor (that CPU is then passed over; if it is CPU0, nvme.sys falls back to
+>   INTx).
+> - **PCIe config space:** from the MCFG since 2026-10-08, every bus of every segment;
+>   the HAL publishes a root bus per segment past 0 and pci.sys follows bridges
+>   (`smoke --arch arm64 --nvme-bridge`: NVMe behind a root port). Graviton's layout,
+>   and any segment past 0, is untested.
 > - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses; the serial
 >   console's UART type is unverified.
 >

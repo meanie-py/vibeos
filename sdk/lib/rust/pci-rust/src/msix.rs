@@ -366,10 +366,11 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     if !read_config(ext, &mut cfg) {
         return;
     }
-    // The requester ID the device's writes carry: a GICv3 ITS translates by it.
+    // The requester ID the device's writes carry (a GICv3 ITS translates by it), with
+    // its PCI segment above it: BusNumber is a PCI_SEGMENT_BUS_NUMBER.
     let dev = (*ext).PciDevice;
     let slot = (*dev).SlotNumber.u.AsULONG;
-    let requester = ((*dev).BusNumber & 0xFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
+    let requester = ((*dev).BusNumber & 0xFF_FFFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
     let Some(msix) = find_msix(&cfg) else {
         if let Some(cap) = find_msi(&cfg) {
             program_msi(ext, &cfg, cap, requester, (0..n).map(|i| (rd.add(i), td.add(i))));

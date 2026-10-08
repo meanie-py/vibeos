@@ -25,6 +25,9 @@
 #   identities had silently vanished from every sweep since. The row now carries the
 #   ObTypes.cpp identities -- a rename plus two newly-passing asserts, not new failures.
 #   MmMdl (594 seen) deliberately NOT raised -- it tracks free system VA (c8228e5).
+# 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
+#   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
+#   sweep list).
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -128,7 +131,9 @@ KeIrql OK pass=131 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=323 fail=0 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=569 fail=0 skip=0 exit=0
+MmReservedMapping OK pass=231 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003

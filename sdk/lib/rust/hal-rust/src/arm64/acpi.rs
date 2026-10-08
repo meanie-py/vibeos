@@ -80,47 +80,6 @@ pub(crate) unsafe fn for_each_table(xsdt_pa: u64, mut f: impl FnMut(&[u8; 4], *c
     true
 }
 
-/// MCFG OEM IDs whose table must not be read as ECAM: "RPIFDN" is the Raspberry Pi
-/// UEFI firmware, whose MCFG points inside the Broadcom PCIe controller's register
-/// block (not ECAM-compliant; reads return 0xDEADDEAD and raise SError). The loader
-/// keeps the same list (freeldr-rust `arm64_serial_acpi::MCFG_QUIRKS`) and reports
-/// such a machine as having no PCI; keep the two in step.
-const MCFG_QUIRKS: &[[u8; 6]] = &[*b"RPIFDN"];
-
-/// The physical base of segment 0's ECAM window from the ACPI MCFG, i.e. the
-/// address of bus 0, device 0, function 0. None when there is no MCFG, the MCFG
-/// is quirked, or segment 0's allocation does not cover bus 0.
-pub(crate) unsafe fn mcfg_bus0_base() -> Option<u64> {
-    let xsdt = XSDT_PA.load(Ordering::Relaxed);
-    if xsdt == 0 {
-        return None;
-    }
-    let mut found = None;
-    for_each_table(xsdt, |sig, t, len| {
-        if found.is_some() || *sig != *b"MCFG" || len < 44 {
-            return;
-        }
-        let oem = rd::<[u8; 6]>(t, 10);
-        if MCFG_QUIRKS.contains(&oem) {
-            return;
-        }
-        // 36-byte header, 8 reserved, then 16-byte allocations:
-        // base u64, segment u16, start bus u8, end bus u8, reserved u32.
-        let mut off = 44;
-        while off + 16 <= len {
-            let base = rd::<u64>(t, off);
-            let segment = rd::<u16>(t, off + 8);
-            let (start, end) = (rd::<u8>(t, off + 10), rd::<u8>(t, off + 11));
-            if segment == 0 && base != 0 && start == 0 && start <= end {
-                found = Some(base);
-                return;
-            }
-            off += 16;
-        }
-    });
-    found
-}
-
 // ---------------------------------------------------------------------------
 // XHC0: a generic xHCI controller (_HID PNP0D10) described only by ACPI.
 //

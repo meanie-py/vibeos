@@ -92,8 +92,6 @@ const MAX_DEVICES: usize = 64;
 const MAX_ITS: usize = 4;
 const MAX_CPUS: u32 = 64;
 const NO_REQUESTER: u32 = u32::MAX;
-/// Requester IDs are on PCI segment 0: the only one pci.sys enumerates.
-const SEGMENT: u32 = 0;
 
 // ACPI.
 const MADT_RECORDS: usize = 44;
@@ -564,9 +562,12 @@ unsafe fn probe() -> bool {
     }
 }
 
-/// Where a requester's MSIs go: (ITS index, DeviceID). The IORT says; with no IORT at
-/// all the requester ID is the DeviceID at the first ITS, which is what QEMU does.
+/// Where a requester's MSIs go: (ITS index, DeviceID). `requester` is pci.sys's: the
+/// PCI segment in bits 31:16 above the requester ID. The IORT says, from the root
+/// complex of that segment; with no IORT at all the requester ID is the DeviceID at
+/// the first ITS, which is what QEMU does.
 unsafe fn route(requester: u32) -> Option<(usize, u32)> {
+    let (segment, rid) = (requester >> 16, requester & 0xFFFF);
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     let mut answer: Option<Result<iort::Route, iort::Error>> = None;
     if xsdt != 0 {
@@ -575,11 +576,11 @@ unsafe fn route(requester: u32) -> Option<(usize, u32)> {
                 return;
             }
             let bytes = core::slice::from_raw_parts(t, len);
-            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, SEGMENT, requester)));
+            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, segment, rid)));
         });
     }
     let (its_id, device) = match answer {
-        None => (its(0).id, requester),
+        None => (its(0).id, rid),
         Some(Ok(r)) => (r.its, r.device_id),
         Some(Err(e)) => {
             report_route_error(requester, e);

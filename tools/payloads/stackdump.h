@@ -71,8 +71,15 @@ static void dump_thread(DWORD pid, DWORD tid)
 #endif
     static ULONG_PTR stack[1024];
     SIZE_T got_bytes = 0;
-    if (got)
-        ReadProcessMemory(ph, (LPCVOID)sp, stack, sizeof stack, &got_bytes);
+    /* In 512-byte steps, keeping what reads: one read of the whole buffer fails outright when
+     * the stack's top is nearer than sizeof stack, which hid every frame of a thread parked
+     * near the top of a small stack (an x86-64 guest thread's, under wowx64). */
+    while (got && got_bytes < sizeof stack) {
+        SIZE_T n = 0;
+        if (!ReadProcessMemory(ph, (LPCVOID)(sp + got_bytes), (char *)stack + got_bytes, 512, &n) || n != 512)
+            break;
+        got_bytes += 512;
+    }
     ResumeThread(th);
     CloseHandle(th);
     CloseHandle(ph);
