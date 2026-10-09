@@ -108,15 +108,11 @@ pub unsafe extern "system" fn ExAllocatePoolZero(
 pub unsafe extern "system" fn BooleanFlagOn(Flags: ULONG, SingleFlag: ULONG) -> BOOLEAN {
     if (Flags & SingleFlag) != 0 { 1 } else { 0 }
 }
-// RtlAssert — debug-only ntoskrnl helper, inert in retail; cdecl (`_RtlAssert`) per the
-// translation's declarations. No-op so the symbol resolves.
-// CC = ntkrnl-sys bindgen_i386 decl class (callers import THAT decl; a mismatched
-// shim def in the same crate folds every such call to ud2 — the 2026-07-18 i386
-// driver-fleet bomb class).
-#[no_mangle]
-pub unsafe extern "system" fn RtlAssert(
-    _failed_assertion: PVOID, _file_name: PVOID, _line_number: ULONG, _message: *mut ntkrnl_sys::ddk::CHAR,
-) {
+// RtlAssert is ntoskrnl's export: it prints the failed assertion and returns. An
+// empty local definition here won the link and made every failed ASSERT in this
+// driver vanish (scan_export_shadows).
+extern "system" {
+    pub fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut ntkrnl_sys::ddk::CHAR);
 }
 // UsbBuildGetStatusRequest — usbdlib.h FORCEINLINE macro building a GET_STATUS URB. Faithful
 // to the macro: set UrbHeader.Function/Length + the UrbControlGetStatusRequest fields.

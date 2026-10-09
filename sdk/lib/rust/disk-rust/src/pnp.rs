@@ -379,7 +379,7 @@ pub unsafe extern "system" fn DiskInitFdo(Fdo: PDEVICE_OBJECT) -> NTSTATUS {
 
     ClassScanForSpecial(
         fdo_extension,
-        DiskBadControllers.as_ptr() as *mut CLASSPNP_SCAN_FOR_SPECIAL_INFO,
+        (&raw const DiskBadControllers).cast::<CLASSPNP_SCAN_FOR_SPECIAL_INFO>() as *mut CLASSPNP_SCAN_FOR_SPECIAL_INFO,
         Some(DiskSetSpecialHacks),
     );
 

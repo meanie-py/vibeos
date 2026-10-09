@@ -88,14 +88,25 @@ macro_rules! LIST_ENTRY {
 }
 
 /// wine list.h `LIST_FOR_EACH_ENTRY(elem, list, type, field) { body }`.
-/// Faithful expansion of the for-loop; `$body` is the loop body block.
+/// Expands the C `for` loop. Its increment must run on `continue` too, so it sits at the
+/// TOP of a `loop` rather than after `$body` in a `while`: there, a `continue` in the body
+/// skipped the advance and spun on the same entry forever -- add_resource_dir_entry and
+/// add_resource_data_entry both `continue` past every entry that sorts before the new one,
+/// so UpdateResource hung on the second resource it added.
 macro_rules! LIST_FOR_EACH_ENTRY {
     ($elem:ident, $head:expr, $ty:ty, $field:ident, $body:block) => {{
         let __head: *mut list = ($head) as *const list as *mut list;
         $elem = LIST_ENTRY!((*__head).next, $ty, $field);
-        while &mut (*$elem).$field as *mut list != __head {
+        let mut __advance = false;
+        loop {
+            if __advance {
+                $elem = LIST_ENTRY!((*$elem).$field.next, $ty, $field);
+            }
+            __advance = true;
+            if &mut (*$elem).$field as *mut list == __head {
+                break;
+            }
             $body
-            $elem = LIST_ENTRY!((*$elem).$field.next, $ty, $field);
         }
     }};
 }

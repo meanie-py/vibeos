@@ -64,19 +64,7 @@ pub unsafe extern "system" fn BaseThreadStartup(
     lpStartAddress: LPTHREAD_START_ROUTINE,
     lpParameter: LPVOID,
 ) {
-    // SEH try block
-    let __try_result: i32;
-    let __exception_code: u32;
-    let __exception_info: *mut EXCEPTION_POINTERS;
-
-    // Simulate SEH try-except
-    __try_result = 0;
-    __exception_code = 0;
-    __exception_info = core::ptr::null_mut();
-
-    // Try block
-    {
-        // Attempt to call the Thread Start Address
+    crate::client::except::run_under_top_level_handler(move || {
         // Legacy check which is still used today for Win32 threads
         if (*NtCurrentTeb()).NtTib.__bindgen_anon_1.Version == (30 << 8) {
             // This registers the termination port with CSRSS
@@ -86,23 +74,8 @@ pub unsafe extern "system" fn BaseThreadStartup(
         }
 
         // Get the exit code from the Thread Start
-        ExitThread(lpStartAddress.expect("non-null function pointer")(lpParameter));
-    }
-
-    // Except block - UnhandledExceptionFilter
-    // Note: In real SEH, this would be handled by the exception handler
-    // For faithful translation, we simulate the except block
-    // The except filter is: UnhandledExceptionFilter(_SEH2_GetExceptionInformation())
-    // If it returns EXCEPTION_EXECUTE_HANDLER (1), execute the handler
-
-    // Get the Exit code from the SEH Handler
-    if BaseRunningInServerProcess == 0 {
-        // Kill the whole process, usually
-        ExitProcess(__exception_code);
-    } else {
-        // If running inside CSRSS, kill just this thread
-        ExitThread(__exception_code);
-    }
+        ExitThread(lpStartAddress.expect("non-null function pointer")(lpParameter))
+    })
 }
 
 #[no_mangle]

@@ -40,7 +40,9 @@ extern "system" {
     fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOLEAN;
     fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT);
     // hal-rust message.rs: the address/data that raises a message vector.
-    fn HalVibeosMessageTarget(Vector: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
+    /// `RequesterId` u32::MAX: unknown here; pci.sys bound each vector to its device
+    /// when it programmed the table, which happened at START, before this.
+    fn HalVibeosMessageTarget(Vector: ULONG, RequesterId: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
 }
 
 const TAG_IO_INTERRUPT: ULONG = 0x6E696F49;
@@ -220,6 +222,11 @@ const TAG_IO_MESSAGE: ULONG = u32::from_le_bytes(*b"IoMs");
 /// The translated interrupt descriptors the PnP manager assigned to `Pdo`, or an
 /// empty slice when it has none (not a PnP device, or not started).
 unsafe fn assigned_interrupts<'a>(Pdo: PDEVICE_OBJECT) -> &'a [CM_PARTIAL_RESOURCE_DESCRIPTOR] {
+    assigned(Pdo, true)
+}
+
+/// The device's assigned resources, translated or raw.
+unsafe fn assigned<'a>(Pdo: PDEVICE_OBJECT, translated: bool) -> &'a [CM_PARTIAL_RESOURCE_DESCRIPTOR] {
     if Pdo.is_null() {
         return &[];
     }
@@ -227,7 +234,8 @@ unsafe fn assigned_interrupts<'a>(Pdo: PDEVICE_OBJECT) -> &'a [CM_PARTIAL_RESOUR
     if ext.is_null() || (*ext).DeviceNode.is_null() {
         return &[];
     }
-    let list = (*(*ext).DeviceNode).ResourceListTranslated;
+    let node = (*ext).DeviceNode;
+    let list = if translated { (*node).ResourceListTranslated } else { (*node).ResourceList };
     // PCI devices get exactly one full descriptor; anything else is not ours to guess at.
     if list.is_null() || (*list).Count != 1 {
         return &[];
@@ -237,6 +245,19 @@ unsafe fn assigned_interrupts<'a>(Pdo: PDEVICE_OBJECT) -> &'a [CM_PARTIAL_RESOUR
         core::ptr::addr_of!((*partial).PartialDescriptors[0]),
         (*partial).Count as usize,
     )
+}
+
+/// Every message the device was assigned, in order, as (vector, IRQL, affinity). An
+/// MSI block is one descriptor whose raw twin carries its MessageCount; its message k
+/// is the translated vector + k (the HAL hands a block out as consecutive vectors).
+unsafe fn assigned_messages(Pdo: PDEVICE_OBJECT) -> impl Iterator<Item = (ULONG, KIRQL, KAFFINITY)> {
+    let translated = assigned(Pdo, true);
+    let raw = assigned(Pdo, false);
+    translated.iter().enumerate().filter(|(_, d)| is_interrupt(d, true)).flat_map(move |(i, d)| {
+        let count = raw.get(i).map_or(1, |r| (r.u.Interrupt.Level >> 16).max(1));
+        let (vector, irql, affinity) = (d.u.Interrupt.Vector, d.u.Interrupt.Level as KIRQL, d.u.Interrupt.Affinity);
+        (0..count).map(move |k| (vector + k, irql, affinity))
+    })
 }
 
 fn is_interrupt(d: &CM_PARTIAL_RESOURCE_DESCRIPTOR, message: bool) -> bool {
@@ -316,8 +337,7 @@ unsafe fn IopDisconnectMessages(Table: PIO_INTERRUPT_MESSAGE_INFO) {
 /// Version is rewritten to CONNECT_LINE_BASED to say so, as on Windows.
 unsafe fn IopConnectInterruptExMessageBased(Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS {
     let p = &mut (*Parameters).__bindgen_anon_1.MessageBased;
-    let assigned = assigned_interrupts(p.PhysicalDeviceObject);
-    let count = assigned.iter().filter(|d| is_interrupt(d, true)).count();
+    let count = assigned_messages(p.PhysicalDeviceObject).count();
     if count == 0 {
         if p.FallBackServiceRoutine.is_none() {
             return STATUS_NOT_FOUND;
@@ -348,30 +368,25 @@ unsafe fn IopConnectInterruptExMessageBased(Parameters: PIO_CONNECT_INTERRUPT_PA
     let table = block as PIO_INTERRUPT_MESSAGE_INFO;
     let entries = core::ptr::addr_of_mut!((*table).MessageInfo) as *mut IO_INTERRUPT_MESSAGE_INFO_ENTRY;
     let trampolines = block.add(trampolines_at) as *mut MessageTrampoline;
-    let unified = assigned
-        .iter()
-        .filter(|d| is_interrupt(d, true))
-        .map(|d| d.u.Interrupt.Level as KIRQL)
-        .max()
-        .unwrap_or(0);
+    let unified = assigned_messages(p.PhysicalDeviceObject).map(|(_, irql, _)| irql).max().unwrap_or(0);
     (*table).UnifiedIrql = unified;
     (*table).MessageCount = count as ULONG;
 
     // Message IDs follow the order the messages were assigned in, which is the
-    // MSI-X table order pci.sys requested them in.
-    for (id, d) in assigned.iter().filter(|d| is_interrupt(d, true)).enumerate() {
+    // MSI-X table order pci.sys requested them in (or an MSI block's own order).
+    for (id, (vector, irql, affinity)) in assigned_messages(p.PhysicalDeviceObject).enumerate() {
         let t = trampolines.add(id);
         (*t).routine = p.MessageServiceRoutine;
         (*t).context = p.ServiceContext;
         (*t).message_id = id as ULONG;
         let e = &mut *entries.add(id);
-        e.Vector = d.u.Interrupt.Vector;
-        e.Irql = d.u.Interrupt.Level as KIRQL;
-        e.TargetProcessorSet = d.u.Interrupt.Affinity;
+        e.Vector = vector;
+        e.Irql = irql;
+        e.TargetProcessorSet = affinity;
         e.Mode = LATCHED;
         e.Polarity = 0; // InterruptPolarityUnknown
         let mut address = 0u64;
-        if HalVibeosMessageTarget(e.Vector, &mut address, &mut e.MessageData) != 0 {
+        if HalVibeosMessageTarget(e.Vector, u32::MAX, &mut address, &mut e.MessageData) != 0 {
             e.MessageAddress.QuadPart = address as i64;
         }
         let status = IoConnectInterrupt(

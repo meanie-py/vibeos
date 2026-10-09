@@ -18,7 +18,6 @@ use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
 use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA, _TRACK_MODE_TYPE_XAForm2 as XAForm2, _TRACK_MODE_TYPE_YellowMode2 as YellowMode2};
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn NT_ASSERT(condition: i32);
@@ -437,7 +436,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
     let mut trying_yellowbook_mode2: i32 = 0;
     let mut track_mode: TRACK_MODE_TYPE = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (*(*irp_context).Irp).MdlAddress.is_null() {
         CdCreateUserMdl(irp_context, byte_count, 1, IoWriteAccess);
@@ -902,7 +901,7 @@ pub unsafe extern "fastcall" fn CdPerformDevIoCtrl(
     OverrideVerify: u8,
     Iosb: *mut _IO_STATUS_BLOCK,
 ) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
     CdPerformDevIoCtrlEx(
         IrpContext as *mut c_void,
         IoControlCode,
@@ -929,7 +928,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrl(
     OverrideVerify: u8,
     Iosb: *mut _IO_STATUS_BLOCK,
 ) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
     CdPerformDevIoCtrlEx(
         IrpContext as *mut c_void,
         IoControlCode,
@@ -968,7 +967,7 @@ pub unsafe extern "C" fn CdPrepareBuffers(
     let mut DiskOffset: i64 = 0;
     let mut CurrentByteCount: u32 = RemainingByteCount;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *RunCount = 0;
     *ThisByteCount = 0;
@@ -1406,7 +1405,7 @@ pub unsafe extern "C" fn CdReadDirDataThroughCache(
     let mut Result: u8 = 0;
 
     // PAGED_CODE() expansion
-    PAGED_CODE(); // C source: PAGED_CODE() (DBG-only assert); grind fabricated RtlRaiseStatus(0xC0000185=STATUS_IO_DEVICE_ERROR)
+    PAGED_CODE!(); // C source: PAGED_CODE() (DBG-only assert); grind fabricated RtlRaiseStatus(0xC0000185=STATUS_IO_DEVICE_ERROR)
 
     CdAcquireCacheForRead(IrpContext);
 
@@ -1755,7 +1754,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     let mut ThisRawRead = RawReads;
 
     // PAGED_CODE() call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Initialize MasterIrp
     MasterIrp = (*IrpContext).Irp;
@@ -1863,7 +1862,7 @@ pub unsafe extern "C" fn CdSingleAsync(
     Run: *mut IO_RUN,
     Fcb: *mut FCB,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (SafeNodeType(Fcb) == CDFS_NTC_FCB_INDEX)
         && !(*(*Fcb).Vcb).SectorCacheBuffer.is_null()
@@ -2096,7 +2095,7 @@ pub unsafe extern "C" fn CdReadAudioSystemFile(
     const LOCAL_BUF_SIZE: usize = core::mem::offset_of!(RAW_DIRENT, FileId) + 12;
     let mut LocalBuffer: [u8; LOCAL_BUF_SIZE] = [0u8; LOCAL_BUF_SIZE];
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if SafeNodeType(Fcb) == CDFS_NTC_FCB_PATH_TABLE {
         NT_ASSERT((StartingOffset == 0) as i32);

@@ -217,12 +217,12 @@ pub unsafe extern "system" fn RtlpAllocateDebugInfo() -> PRTL_CRITICAL_SECTION_D
 pub unsafe extern "system" fn RtlpFreeDebugInfo(DebugInfo: PRTL_CRITICAL_SECTION_DEBUG) {
     let EntryId: usize;
 
-    if (DebugInfo as *const RTL_CRITICAL_SECTION_DEBUG >= RtlpStaticDebugInfo.as_ptr()) &&
+    if (DebugInfo as *const RTL_CRITICAL_SECTION_DEBUG >= (&raw const RtlpStaticDebugInfo).cast::<RTL_CRITICAL_SECTION_DEBUG>()) &&
        (DebugInfo as *const RTL_CRITICAL_SECTION_DEBUG <= &RtlpStaticDebugInfo[(MAX_STATIC_CS_DEBUG_OBJECTS - 1) as usize] as *const RTL_CRITICAL_SECTION_DEBUG)
     {
         RtlZeroMemory(DebugInfo as *mut _, core::mem::size_of::<RTL_CRITICAL_SECTION_DEBUG>() as _);
 
-        EntryId = (DebugInfo as usize - RtlpStaticDebugInfo.as_ptr() as usize) / core::mem::size_of::<RTL_CRITICAL_SECTION_DEBUG>();
+        EntryId = (DebugInfo as usize - (&raw const RtlpStaticDebugInfo).cast::<RTL_CRITICAL_SECTION_DEBUG>() as usize) / core::mem::size_of::<RTL_CRITICAL_SECTION_DEBUG>();
         RtlpDebugInfoFreeList[EntryId] = 0u8;
     }
     else if (*DebugInfo).__bindgen_anon_1.__bindgen_anon_1.Flags == 0

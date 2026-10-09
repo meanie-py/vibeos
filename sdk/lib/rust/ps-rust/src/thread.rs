@@ -62,9 +62,9 @@ extern "system" {
 }
 
 #[cfg(target_arch = "aarch64")]
+use crate::trace::{ARM64_UART_TRACE, ARM64_UART_TRACE_HEX};
+#[cfg(target_arch = "aarch64")]
 extern "C" {
-    fn ARM64_UART_TRACE(msg: PCSTR);
-    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
 }
 
 type PACCESS_TOKEN = PVOID;
@@ -225,7 +225,7 @@ unsafe extern "system" fn PspUserThreadStartup(StartRoutine: PKSTART_ROUTINE, St
 
     #[cfg(target_arch = "aarch64")]
     {
-        ARM64_UART_TRACE(b"[PS] PspUserThreadStartup: returning\r\n\0".as_ptr() as PCSTR);
+        crate::trace::milestone(b"[PS] PspUserThreadStartup: returning\r\n\0".as_ptr() as PCSTR);
     }
 
     while (*SharedUserData).Cookie == 0 {

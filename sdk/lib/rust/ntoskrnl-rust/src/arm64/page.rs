@@ -380,6 +380,14 @@ pub unsafe extern "system" fn MmSetPageProtect(
 
     // Copy Accessed bit from old PTE
     TempPte.Long |= (*PointerPte).Long & PTE_ACCESSED;
+    // ...and the page's dirtiness, which i386/amd64 copy as their Dirty bit. Here
+    // it is hardware writability, so a read-only protection would erase it: keep
+    // it in the sticky software bit instead (helpers.rs PTE_SOFTWARE_DIRTY).
+    if (*PointerPte).valid()
+        && crate::ARM3::helpers::MI_PTE_IS_DIRTY((*PointerPte).Long as u64)
+    {
+        TempPte.Long |= crate::ARM3::helpers::PTE_SOFTWARE_DIRTY as ULONG_PTR;
+    }
 
     OldPte.Long = InterlockedExchangePte(PointerPte, TempPte.Long);
 
@@ -408,7 +416,9 @@ pub unsafe extern "system" fn MmSetDirtyBit(
     if Dirty != 0 {
         (*PointerPte).Long &= !(1u64 << 7) as ULONG_PTR; // NotDirty = 0
     } else {
-        (*PointerPte).Long |= (1u64 << 7) as ULONG_PTR;  // NotDirty = 1
+        // NotDirty = 1, and the sticky software dirty bit goes with it.
+        (*PointerPte).Long = ((*PointerPte).Long | (1u64 << 7) as ULONG_PTR)
+            & !(crate::ARM3::helpers::PTE_SOFTWARE_DIRTY as ULONG_PTR);
     }
 
     if Dirty == 0 {
@@ -710,8 +720,8 @@ unsafe fn MmDeleteVirtualMappingEx(
         if OldPte.Long != 0 {
             if !WasDirty.is_null() {
                 *WasDirty = if OldPte.valid() {
-                    // ARM64: NotDirty bit is bit 7 — dirty when NotDirty==0
-                    ((OldPte.Long >> 7) & 1 == 0) as BOOLEAN
+                    // NotDirty (bit 7) clear, or the sticky software dirty bit.
+                    crate::ARM3::helpers::MI_PTE_IS_DIRTY(OldPte.Long as u64) as BOOLEAN
                 } else {
                     0u8
                 };
@@ -999,7 +1009,9 @@ pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
 
     MiReleaseSystemPtes(SystemPte, 1, SystemPteSpace);
 
-    PagePuts(b"[MM] MiArchCreateProcessAddressSpace done\r\n");
+    if crate::shim_exports::proc_trace_enabled() {
+        PagePuts(b"[MM] MiArchCreateProcessAddressSpace done\r\n");
+    }
 
     1u8
 }

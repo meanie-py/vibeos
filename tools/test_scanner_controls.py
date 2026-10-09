@@ -490,6 +490,17 @@ pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
 }
 """
 
+# A KEYWORD before the `!` once read as a macro bang (`if!`), hiding every `if !x != 0`:
+# usetup's PrepareCopyPage always quit and powercfg's Pos_InitData always failed.
+_BITWISE_NOT_KEYWORD_BAD = """\
+pub unsafe fn prepare(success: u8) -> u32 {
+    if !success != 0 {
+        return 1;
+    }
+    0
+}
+"""
+
 # The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
 # them a scanner that simply matched every `!` would still pass its negative control.
 _BITWISE_NOT_GOOD = """\
@@ -722,6 +733,63 @@ pub unsafe fn f(name: *const UNICODE_STRING, dst: *mut u8, BytesConverted: u32) 
 }
 pub unsafe fn g(a: *const ANSI_STRING, out: *mut i8) {
     core::ptr::copy_nonoverlapping((*a).Buffer, out, (*a).Length as usize);
+}
+"""
+
+# scan_typed_byte_copy. Seeded from partmgr's FdoIoctlDiskGetDriveLayoutEx (2026-10-07):
+# `as *const _` inferred the struct from the source, so the byte count became a struct
+# count. GOOD: the fixed byte copy, a double cast that ends in u8, an element count, and an
+# uncast struct copy whose `...Size` names an entry count.
+_TYPEDBYTE_BAD = """\
+pub unsafe fn f(Irp: PIRP, size: usize) {
+    let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
+    core::ptr::copy_nonoverlapping(
+        layoutEx as *const _,
+        (*Irp).AssociatedIrp.SystemBuffer as *mut _,
+        size,
+    );
+}
+pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, n: usize) {
+    core::ptr::copy_nonoverlapping(a, b, n * core::mem::size_of::<ENTRY>());
+}
+"""
+_TYPEDBYTE_GOOD = """\
+pub unsafe fn f(Irp: PIRP, size: usize, h: *const HDR, out: *mut u8) {
+    let mut layoutEx: *mut _DRIVE_LAYOUT_INFORMATION_EX = core::ptr::null_mut();
+    core::ptr::copy_nonoverlapping(
+        layoutEx as *const u8,
+        (*Irp).AssociatedIrp.SystemBuffer as *mut u8,
+        size,
+    );
+    core::ptr::copy_nonoverlapping(h as *const HDR as *const u8, out, (*h).HeaderSize as usize);
+}
+pub unsafe fn g(a: *const ENTRY, b: *mut ENTRY, OldListSize: u32) {
+    core::ptr::copy_nonoverlapping(a, b, OldListSize as usize);
+}
+"""
+
+# scan_noop_goto. Seeded from setuplib's ParseArcName (2026-10-07): `goto Quit;` became a
+# labeled block holding only its own break. GOOD: the label spans the skipped code.
+_NOOPGOTO_BAD = """\
+pub unsafe fn f(ramdisk: bool) -> i32 {
+    if ramdisk {
+        'quit: {
+            break 'quit;
+        }
+    }
+    parse_controller()
+}
+"""
+_NOOPGOTO_GOOD = """\
+// The fix replaced `'quit: { break 'quit; }` with a block that spans the parse.
+pub unsafe fn f(ramdisk: bool) -> i32 {
+    'quit: {
+        if ramdisk {
+            break 'quit;
+        }
+        parse_controller();
+    }
+    0
 }
 """
 
@@ -1858,6 +1926,61 @@ pub unsafe extern "system" fn KeGetPcr() -> usize { 0 }
 }
 
 
+# scan_export_shadows. classpnp, 2026-10-07: `#[no_mangle] RtlInterlockedPopEntrySList`
+# returning NULL beat the importlib, so every transfer-packet free list dropped its
+# entries. The name is the FORWARD TARGET of `ExpInterlockedPopEntrySList`, not the
+# export itself — the column the scanner must read. The GOOD tree keeps a marked
+# header inline, a name the kernel does not export, and a crate without ntkrnl-sys.
+_EXPORT_SHADOW_SPECS = {
+    "ntoskrnl/ntoskrnl.spec": (
+        "@ stdcall -arch=x86_64,arm64 ExpInterlockedPopEntrySList(ptr ptr)"
+        " RtlInterlockedPopEntrySList\n"
+        "@ stdcall KeInitializeSpinLock(ptr)\n"
+    ),
+    "hal/hal.spec": "@ extern KdComPortInUse\n",
+    "ntkrnl-sys/Cargo.toml": '[package]\nname = "ntkrnl-sys"\nversion = "0.1.0"\n',
+    "ntkrnl-sys/src/lib.rs": "",
+}
+_EXPORT_SHADOW_DRV_CARGO = """\
+[package]
+name = "drv-rust"
+version = "0.1.0"
+
+[lib]
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[dependencies]
+ntkrnl-sys = { path = "../ntkrnl-sys" }
+"""
+_EXPORT_SHADOW_BAD = {
+    **_EXPORT_SHADOW_SPECS,
+    "drv-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO,
+    "drv-rust/src/lib.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RtlInterlockedPopEntrySList(_h: PVOID) -> PVOID { null_mut() }
+""",
+}
+_EXPORT_SHADOW_GOOD = {
+    **_EXPORT_SHADOW_SPECS,
+    "drv-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO,
+    "drv-rust/src/lib.rs": """\
+// nolint: export-shadow (wdm.h FORCEINLINE; the driver is expected to carry it)
+#[no_mangle]
+pub unsafe extern "C" fn KeInitializeSpinLock(l: *mut usize) { *l = 0; }
+#[no_mangle]
+pub unsafe extern "system" fn DrvPopEntry(_h: PVOID) -> PVOID { null_mut() }
+""",
+    "user-rust/Cargo.toml": _EXPORT_SHADOW_DRV_CARGO.replace("drv-rust", "user-rust").replace(
+        '[dependencies]\nntkrnl-sys = { path = "../ntkrnl-sys" }\n', ""
+    ),
+    "user-rust/src/lib.rs": """\
+#[no_mangle]
+pub unsafe extern "system" fn RtlInterlockedPopEntrySList(_h: PVOID) -> PVOID { null_mut() }
+""",
+}
+
+
 # dhcpcsvc, 2026-10-04: `(*ip).name` is a `[c_char; 256]`, passed by value to a variadic
 # logger. i386 pushes the bytes, so `%s` dereferenced "nets". The good side keeps the
 # `.as_ptr()` fix and a same-named POINTER field, which a name-only match would flag.
@@ -2252,6 +2375,13 @@ CONTROLS: list[Control] = [
         good=_DUP_GOOD,
     ),
     Control(
+        name="scan_export_shadows",
+        script="tools/scan_export_shadows.py",
+        argv=["--lint"],
+        bad=_EXPORT_SHADOW_BAD,
+        good=_EXPORT_SHADOW_GOOD,
+    ),
+    Control(
         name="scan_cfg_vs_c",
         script="tools/scan_cfg_vs_c.py",
         argv=["--lint"],
@@ -2352,6 +2482,20 @@ CONTROLS: list[Control] = [
         good={"good.rs": _WIDEBYTE_GOOD},
     ),
     Control(
+        name="scan_typed_byte_copy",
+        script="tools/scan_typed_byte_copy.py",
+        argv=["--lint"],
+        bad={"bad.rs": _TYPEDBYTE_BAD},
+        good={"good.rs": _TYPEDBYTE_GOOD},
+    ),
+    Control(
+        name="scan_noop_goto",
+        script="tools/scan_noop_goto.py",
+        argv=["--lint"],
+        bad={"bad.rs": _NOOPGOTO_BAD},
+        good={"good.rs": _NOOPGOTO_GOOD},
+    ),
+    Control(
         name="scan_irql_balance",
         script="tools/scan_irql_balance.py",
         argv=["--lint"],
@@ -2400,6 +2544,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_pack_drift": (
+        "it maps every flipped module to its crate through the tree's own CMakeLists flip "
+        "comments, so a fixture directory has no module to resolve. Driven directly in "
+        "tools/test_scan_pack_drift.py against a temporary repo: it must flag diskpart's "
+        "unpacked PARTITION_SECTOR and must not flag a packed one or a struct outside a "
+        "pshpack region."
+    ),
     "scan_ptr_typedef_indirection": (
         "its pairing is body_audit's -- every module whose CMakeLists links a Rust crate, its "
         "flipped-out TUs (from the build's compiled-TU set) against its crates' sources -- so a "
@@ -3047,3 +3198,14 @@ def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
         },
     )
     assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"
+
+
+def test_bitwise_not_after_a_keyword_is_flagged():
+    """`if !x != 0` once read as the macro `if!` and was never flagged (usetup, powercfg)."""
+    from tools.scan_bitwise_not_bool import scan_line
+
+    for line in _BITWISE_NOT_KEYWORD_BAD.splitlines():
+        if "!success" in line:
+            assert scan_line(line)
+    assert not scan_line("    if success == 0 {")
+    assert not scan_line("    assert!(x != 0);")

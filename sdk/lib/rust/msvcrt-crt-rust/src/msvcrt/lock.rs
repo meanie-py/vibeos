@@ -39,7 +39,7 @@ unsafe extern "C" fn msvcrt_mlock_set_entry_initialized(locknum: i32, initialize
 }
 unsafe extern "C" fn msvcrt_initialize_mlock(locknum: i32) {
     InitializeCriticalSectionEx(
-        core::ptr::addr_of_mut!((*lock_table.as_mut_ptr().offset(locknum as isize)).crit),
+        core::ptr::addr_of_mut!((*(&raw mut lock_table).cast::<LOCKTABLEENTRY>().offset(locknum as isize)).crit),
         0,
         RTL_CRITICAL_SECTION_FLAG_FORCE_DEBUG_INFO,
     );

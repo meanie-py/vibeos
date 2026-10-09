@@ -1940,8 +1940,13 @@ unsafe extern "system" fn IopSendRemoveDevice(DeviceObject: PDEVICE_OBJECT) {
     PiIrpSendRemoveCheckVpb(DeviceObject, IRP_MN_REMOVE_DEVICE);
 
     if !(*DeviceNode).ResourceList.is_null() {
+        // The device is gone: its message vectors go back to the HAL with the rest
+        // of its resources.
+        crate::pnpres::IopReleaseMessageInterrupts((*DeviceNode).ResourceListTranslated);
         (*(*DeviceNode).ResourceList).Count = 0;
-        (*(*DeviceNode).ResourceListTranslated).Count = 0;
+        if !(*DeviceNode).ResourceListTranslated.is_null() {
+            (*(*DeviceNode).ResourceListTranslated).Count = 0;
+        }
         IopUpdateResourceMapForPnPDevice(DeviceNode);
     }
 

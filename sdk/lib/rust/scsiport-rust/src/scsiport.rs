@@ -2550,15 +2550,7 @@ unsafe fn SpiCreatePortConfig(
         } else {
             return STATUS_SUCCESS;
         }
-
-        // The loop only reaches this point via continue; otherwise returns above.
-        // This break is unreachable, but we need to break out if for some reason control falls through.
-        break;
     }
-
-    // This point is unreachable because the loop always returns.
-    // Return STATUS_DEVICE_DOES_NOT_EXIST just in case.
-    STATUS_DEVICE_DOES_NOT_EXIST
 }
 
 // scsiport.c:2634-3014. Walks every value under the device node's registry key and

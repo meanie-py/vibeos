@@ -18,6 +18,13 @@
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
+// PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
+// a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
+// optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
+macro_rules! PAGED_CODE {
+    () => {};
+}
+
 // Standalone `#![no_std]` cohab staticlib (same as cnt-rust-lib / hal-rust):
 // it needs its own panic handler + eh_personality. When linked into ntoskrnl
 // alongside kernel-rust these duplicate that runtime's copies and are absorbed
@@ -52,8 +59,6 @@ pub extern "C" fn rust_eh_personality() {}
 // that import them directly; those emit no symbol, so there is no clash.)
 #[unsafe(no_mangle)]
 pub extern "C" fn ASSERT(_cond: i32) {}
-#[unsafe(no_mangle)]
-pub extern "C" fn PAGED_CODE() {}
 
 mod glue;
 mod hivesum;

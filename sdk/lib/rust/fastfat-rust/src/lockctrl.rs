@@ -29,7 +29,6 @@ extern "system" {
     fn FsRtlAreThereWaitingFileLocks( FileLock: PFILE_LOCK, ) -> BOOLEAN;
     fn FatOplockComplete( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
     fn FatReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn PAGED_CODE();
     fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
@@ -360,7 +359,7 @@ pub unsafe extern "system" fn FatCommonLockControl(
 
     let mut OplockPostIrp: BOOLEAN = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 

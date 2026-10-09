@@ -1444,7 +1444,7 @@ pub unsafe extern "system" fn RtlpDphProcessStartupInitialization() -> NTSTATUS 
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(RtlpDphTargetDllsUnicode),
-        RtlpDphTargetDlls.as_mut_ptr(),
+        (&raw mut RtlpDphTargetDlls).cast::<WCHAR>(),
     );
     Status = RtlpDphTargetDllsLogicInitialize();
 

@@ -58,6 +58,10 @@ unsafe impl AtlWindow for CDesktopBrowser {
     }
     // No `atl_window_proc` override: CDesktopBrowser declares no `GetWindowProc`, unlike
     // CDefView, so the trait default (the base procedure) is the faithful answer.
+
+    /// CDesktopBrowser declares no `OnFinalMessage`; ATL's base one is empty.
+    #[inline]
+    unsafe fn atl_on_final_message(_this: *mut Self, _hWnd: HWND) {}
 }
 
 /// CDesktopBrowser.cpp:113 `BEGIN_MSG_MAP(CBaseBar)` — all twelve entries, in source order.

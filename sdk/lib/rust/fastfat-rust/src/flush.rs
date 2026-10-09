@@ -19,7 +19,6 @@ use crate::types::{_IRP_CONTEXT};
 extern "system" {
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
@@ -161,7 +160,7 @@ pub unsafe extern "system" fn FatFsdFlushBuffers(
     let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: u8;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     DebugTrace(
         1,
         Dbg,
@@ -421,7 +420,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
     let mut ClearWriteThroughOnExit: BOOLEAN = 0;
     let mut ClearWaitOnExit: BOOLEAN = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
 
@@ -866,7 +865,7 @@ pub unsafe extern "system" fn FatFlushFatEntries(
     Cluster: u32,
     Count: u32,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut ByteCount: u32 = 0;
     let mut FileOffset: LARGE_INTEGER = unsafe { core::mem::zeroed() };

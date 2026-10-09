@@ -371,18 +371,8 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
             RemoveFromWsList(WsList, EntryVA);
 
             // Dirtify the page if needed
-            #[cfg(target_arch = "aarch64")]
-            {
-                // ARM64: NotDirty bit (bit 7) — if clear, page is dirty
-                if ((*PointerPte).Long & (1 << 7)) == 0 {
-                    (*Pfn).set_modified(true);
-                }
-            }
-            #[cfg(not(target_arch = "aarch64"))]
-            {
-                if ((*PointerPte).Long & PTE_DIRTY) != 0 {
-                    (*Pfn).set_modified(true);
-                }
+            if MI_PTE_IS_DIRTY((*PointerPte).Long as u64) {
+                (*Pfn).set_modified(true);
             }
 
             MI_MAKE_TRANSITION_PTE(&mut *PointerPte, Page, Protection as ULONG);

@@ -50,7 +50,9 @@ HalSystemInfo
 # address, doesn't resolve in the ntoskrnl index). So NOT the §9.93 noreturn-mis-walk class — it's
 # the async-SEH structural class (task #18): the test faults inside __try and mingw native SEH is
 # calls-only (no -fasync-exceptions), so the in-body fault escapes. Same family as RtlExceptionKM.
-#IoCreateFile
+# UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
+# agreed (row banked in kmtest.txt). The history above is the audit trail.
+IoCreateFile
 IoDeviceInterface
 IoEvent
 # QUARANTINED 2026-07-10 (amd64 sweep 2): BUGCHECK 0x1E — AV in
@@ -115,7 +117,12 @@ MmSection
 # QUARANTINED 2026-07-10 (amd64 sweep 4): BUGCHECK 0xDA SYSTEM_PTE_MISUSE subcode
 # 0x101, P3=tag 'KmRM' — MmAllocateMappingAddress/MmFreeMappingAddress reserved-mapping
 # path (Rust mdlsup.rs). Triage owed; quest doc has details.
-#MmReservedMapping
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. 0xDA/0x101 was MmAllocateMappingAddress
+# storing the size as a raw PTE value while the map path decoded it as u.List.NextEntry (bit
+# 32/28/12), so it read 0. The i386 kmtest_drv fault was ExIsProcessorFeaturePresent indexing
+# KUSER_SHARED_DATA from its start, so PF_PAE_ENABLED read InterruptTime noise. Probe OK on
+# all arches, then two full sweeps agreed (row banked in kmtest.txt).
+MmReservedMapping
 NpfsConnect
 NpfsCreate
 # QUARANTINED 2026-07-10 (amd64 sweep 5): BUGCHECK 0x19 BAD_POOL_HEADER subcode 5
@@ -197,7 +204,9 @@ SeQueryInfoToken
 # whole chain (MiInsertStandbyListAtFront, MiDecrementShareCount, MI_IS_PFN_DELETED) is FAITHFUL,
 # so the guard is a correct detector of an already-corrupt PFN — same physical-page-reuse root as
 # task #19. Static diffing is exhausted; needs the §9.98 dynamic poison-on-free experiment.
-#ZwAllocateVirtualMemory
+# UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
+# agreed (row banked in kmtest.txt). The history above is the audit trail.
+ZwAllocateVirtualMemory
 ZwCreateSection
 # UN-QUARANTINED 2026-07-17 (§9.96 root fix): the GDB-pinned translation-fault storm
 # (RtlCompareMemory on a mapped view, FAR=0x4e0000, DFSC 0x07, PTE=pfn|0x441 = malformed 0b01
@@ -224,7 +233,14 @@ IoReadWrite
 # QUARANTINED 2026-07-11 (amd64 sweep 12): BUGCHECK 0x1000 (PFN_LIST_CORRUPT-class,
 # P1=0x401) — MmMapLockedPagesSpecifyCache PTE/PFN accounting in the Rust MDL-map path.
 # Triage owed.
-#MmMapLockedPagesSpecifyCache
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. The 0x1A/0x401 (earlier 0x1000) was
+# MiMapLockedPagesInUserSpace hand-packing VadFlags with VadType at bit 0 (it is bit 52 on
+# 64-bit, after CommitCharge): VadType read VadNone, MiUnmapLockedPagesInUserSpace refused
+# the VAD and returned WITHOUT unmapping, and process teardown deleted PTEs it never owned.
+# Its last failing assert (_drv.c:190, CONFLICTING vs INVALID_ADDRESS) was
+# MM_HIGHEST_VAD_ADDRESS equal to the highest user address instead of 16 pages below it.
+# Probe OK on all arches, then two full sweeps agreed (row banked in kmtest.txt).
+MmMapLockedPagesSpecifyCache
 # QUARANTINED 2026-07-11 (amd64 sweep 13): BUGCHECK 0x50. 2026-07-18 RE-TRIAGED (two layers):
 # LAYER 1 (FIXED): Rust NtCreateSection did a raw `*maximum_size` deref of the user MaximumSize
 # pointer WITHOUT the C's ProbeForReadLargeInteger (section.rs:2132) — the test passes a bad kernel
@@ -284,5 +300,7 @@ TcpIpTdi
 # SET_RESULTBUFFER 0x5 (kmtest.c:334). First real observation — earlier sweeps never reached
 # it un-masked. Triage owed (GDB: break the hang on the tcpip/afd connect path; no faulting
 # PC — it's a hang, not a crash). Quarantining it un-masks RtlCaptureContextUM's real result.
-#TcpIpConnect
+# UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
+# agreed (row banked in kmtest.txt). The history above is the audit trail.
+TcpIpConnect
 RtlCaptureContextUM

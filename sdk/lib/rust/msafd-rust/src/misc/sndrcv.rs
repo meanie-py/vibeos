@@ -986,7 +986,8 @@ pub unsafe extern "system" fn WSPSendDisconnect(
     lpOutboundDisconnectData: LPWSABUF,
     lpErrno: LPINT,
 ) -> INT {
-    unimplemented!();
+    // C: `UNIMPLEMENTED; return 0;`. UNIMPLEMENTED is a debug print; `unimplemented!()`
+    // here was a panic that took down any process whose socket was shut down this way.
     0
 }
 

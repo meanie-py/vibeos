@@ -1,4 +1,6 @@
 use ntkrnl_sys::globals::*;
+// The real definitions, so the compiler checks every call against them.
+use crate::timesup::{FatGetCurrentFatTime, FatNtTimeToFatTime};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
@@ -30,7 +32,6 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
     fn FatConstructDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
     fn FatConstructDotDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
-    fn PAGED_CODE();
     fn FlagOn(state: u32, mask: u32) -> u32;
     fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn FatDirectoryKey(dcb: *mut core::ffi::c_void) -> u64;
@@ -38,7 +39,6 @@ extern "system" {
     fn FatPinMappedData( irp_context: *mut IRP_CONTEXT, dcb: *mut DCB, byte_offset: u32, length: u32, bcb: *mut *mut BCB, );
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32) -> !;
     fn FatReadDirectoryFile( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Wait: i32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Status: *mut i32 ) -> ();
-    fn FatGetCurrentFatTime(IrpContext: *mut IRP_CONTEXT) -> LARGE_INTEGER;
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
     fn FatMarkFcbCondition(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Condition: u32, Value: u32);
@@ -49,7 +49,6 @@ extern "system" {
     fn ExLocalTimeToSystemTime(LocalTime: *const LARGE_INTEGER, SystemTime: *mut LARGE_INTEGER);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatNotifyReportChange( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FcbOrDcb: *mut FCB, NotifyFilter: u32, Action: u32, );
-    fn FatNtTimeToFatTime( IrpContext: *mut IRP_CONTEXT, NtTime: *const LARGE_INTEGER, UpdateDate: u8, FatTime: *mut FAT_TIME_STAMP, ConvertedDay: *mut u16, ) -> u8;
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, Context: *mut core::ffi::c_void, CompletionRoutine: *mut core::ffi::c_void, PostIrpRoutine: *mut core::ffi::c_void, ) -> u32;
     fn FsRtlIsNtstatusExpected(NtStatus: i32) -> u8;
@@ -113,13 +112,6 @@ const FILE_NOTIFY_CHANGE_SIZE: u32 = 8;
 const FILE_ACTION_MODIFIED: u32 = 0x03;
 const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x2;
 
-#[repr(C)]
-struct FAT_TIME_STAMP {
-    Date: u16,
-    Time: u16,
-    TimeMs: u8,
-    // ... likely more fields, but zero-init works for this translation
-}
 
 // NOTE: FatData is the real global FAT_DATA (imported from crate::types).
 // ChicagoMode is a packed bitfield in that struct — it MUST be read via the
@@ -144,6 +136,10 @@ const STATUS_END_OF_FILE: NTSTATUS = (0xC0000011_u32 as i32) as u32; // likely v
 // call smashed 4 bytes of the caller's frame — and create.rs is the file-OPEN
 // path, which on arm64 runs against a FAT system volume on every open.
 use crate::types::VBO;
+// The real 4-byte stamp (Time, then Date). A local stand-in here once had them
+// swapped plus a byte, so zeroing one cleared 2 bytes past it and an access-date
+// update stored the time of day.
+use crate::types::FAT_TIME_STAMP;
 type BOOLEAN = u8;
 type NTSTATUS = u32;
 type ULONG = u32;
@@ -430,7 +426,7 @@ pub unsafe extern "system" fn FatInitializeDirectoryDirent(
     let mut Buffer: *mut DIRENT = core::ptr::null_mut();
     let mut DontCare: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS as u32;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, (Dbg as i32) as u32, b"FatInitializeDirectoryDirent\n\0".as_ptr() as *const i8, 0i32);
     DebugTrace(0, (Dbg as i32) as u32, b"  Dcb = %p\n\0".as_ptr() as *const i8, Dcb);
@@ -477,7 +473,7 @@ pub unsafe extern "system" fn FatTunnelFcbOrDcb(FcbOrDcb: *mut FCB, Ccb: *mut CC
     let mut Status: NTSTATUS;
     let mut i: u16;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatTunnelFcbOrDcb\n\0".as_ptr() as *const i8, 0);
 
@@ -694,7 +690,7 @@ pub unsafe extern "system" fn FatLfnDirentExists(
     let mut result: i32 = 0;
     let mut flags: u32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ccb.__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate = *Lfn;
     ccb.ContainsWildCards = 0;
@@ -1244,7 +1240,7 @@ pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
 ) -> () {
     let mut DontCare: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -1390,7 +1386,7 @@ pub unsafe extern "system" fn FatConstructDirent(
     ZeroAndSetTimeFields: BOOLEAN,
     SetCreationTime: *const i64, // PLARGE_INTEGER
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatConstructDirent\n\0" as *const u8 as *const i8, 0);
     DebugTrace(
@@ -1433,19 +1429,19 @@ pub unsafe extern "system" fn FatConstructDirent(
             if SetCreationTime.is_null()
                 || FatNtTimeToFatTime(
                     IrpContext,
-                    SetCreationTime as *const LARGE_INTEGER,
+                    SetCreationTime as *mut LARGE_INTEGER,
                     0u8,
                     core::ptr::addr_of_mut!((*Dirent).CreationTime) as *mut FAT_TIME_STAMP,
-                    core::ptr::addr_of_mut!((*Dirent).CreationMSec) as *mut u16,
+                    core::ptr::addr_of_mut!((*Dirent).CreationMSec),
                 ) == 0
             {
                 SaveTime = Time;
                 if FatNtTimeToFatTime(
                     IrpContext,
-                    &mut SaveTime as *mut i64 as *const LARGE_INTEGER,
+                    &mut SaveTime as *mut i64 as *mut LARGE_INTEGER,
                     0u8,
                     core::ptr::addr_of_mut!((*Dirent).CreationTime) as *mut FAT_TIME_STAMP,
-                    core::ptr::addr_of_mut!((*Dirent).CreationMSec) as *mut u16,
+                    core::ptr::addr_of_mut!((*Dirent).CreationMSec),
                 ) == 0
                 {
                     RtlZeroMemory(
@@ -1460,10 +1456,10 @@ pub unsafe extern "system" fn FatConstructDirent(
         if ZeroAndSetTimeFields != 0 {
             if FatNtTimeToFatTime(
                 IrpContext,
-                &Time as *const i64 as *const LARGE_INTEGER,
+                &Time as *const i64 as *mut LARGE_INTEGER,
                 1u8,
                 core::ptr::addr_of_mut!((*Dirent).LastWriteTime) as *mut FAT_TIME_STAMP,
-                core::ptr::null_mut::<u16>(),
+                core::ptr::null_mut(),
             ) == 0
             {
                 DebugTrace(0, Dbg, b"Current time invalid.\n\0" as *const u8 as *const i8, 0);
@@ -1590,7 +1586,7 @@ pub unsafe extern "system" fn FatConstructLabelDirent(
     Dirent: *mut DIRENT,
     Label: *mut OEM_STRING,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatConstructLabelDirent\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"  Dirent             = %p\n\0".as_ptr() as *const i8, Dirent);
@@ -1606,7 +1602,7 @@ pub unsafe extern "system" fn FatConstructLabelDirent(
     let fill_len = (11 - label_length as usize) as usize;
     core::ptr::write_bytes(dirent_filename_ptr.add(label_length as usize), b' ', fill_len);
 
-    *(core::ptr::addr_of_mut!((*Dirent).LastWriteTime) as *mut u32) = FatGetCurrentFatTime(IrpContext).__bindgen_anon_1.LowPart;
+    core::ptr::write_unaligned(core::ptr::addr_of_mut!((*Dirent).LastWriteTime), FatGetCurrentFatTime(IrpContext));
     (*Dirent).Attributes = FAT_DIRENT_ATTR_VOLUME_ID;
     *(*Dirent).__bindgen_anon_1.ExtendedAttributes.as_mut() = 0;
     (*Dirent).FileSize = 0;
@@ -1623,7 +1619,7 @@ pub unsafe extern "system" fn FatSetFileSizeInDirent(
     let mut Dirent: *mut DIRENT = core::ptr::null_mut();
     let mut DirentBcb: *mut BCB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(((*Fcb).FcbCondition == FcbGood) as i32);
 
@@ -1775,10 +1771,10 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
                     if UpdateLastWriteTime != 0 || UpdateLastAccessTime != 0 {
                         FatNtTimeToFatTime(
                             IrpContext,
-                            core::ptr::addr_of!(CurrentTime) as *const LARGE_INTEGER,
+                            core::ptr::addr_of!(CurrentTime) as *mut LARGE_INTEGER,
                             1u8, // TRUE
                             core::ptr::addr_of_mut!(CurrentFatTime),
-                            core::ptr::null_mut::<u16>(),
+                            core::ptr::null_mut(),
                         );
                     }
 
@@ -1791,10 +1787,10 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
 
                     if UpdateLastWriteTime != 0 {
                         (*FcbOrDcb).LastWriteTime = CurrentTime;
-                        // CurrentFatTime (local FAT_TIME_STAMP) → (*Dirent).LastWriteTime (types_arch FAT_TIME_STAMP)
-                        // both are repr(C) 4-byte structs
-                        *(core::ptr::addr_of_mut!((*Dirent).LastWriteTime) as *mut u32) =
-                            *(core::ptr::addr_of!(CurrentFatTime) as *const u32);
+                        core::ptr::write_unaligned(
+                            core::ptr::addr_of_mut!((*Dirent).LastWriteTime),
+                            core::ptr::read(core::ptr::addr_of!(CurrentFatTime)),
+                        );
                         NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_WRITE;
                         UpdateDirent = 1;
                     }
@@ -1806,8 +1802,10 @@ pub unsafe extern "system" fn FatUpdateDirentFromFcb(
                             core::ptr::addr_of!((*FcbOrDcb).LastAccessTime),
                             core::ptr::addr_of_mut!((*FcbOrDcb).LastAccessTime),
                         );
-                        // CurrentFatTime.Date (u16) → (*Dirent).LastAccessDate (FAT_DATE bitfield, 2 bytes)
-                        *(core::ptr::addr_of_mut!((*Dirent).LastAccessDate) as *mut u16) = CurrentFatTime.Date;
+                        core::ptr::write_unaligned(
+                            core::ptr::addr_of_mut!((*Dirent).LastAccessDate),
+                            core::ptr::read(core::ptr::addr_of!(CurrentFatTime.Date)),
+                        );
                         NotifyFilter |= FILE_NOTIFY_CHANGE_LAST_ACCESS;
                         UpdateDirent = 1;
                     }
@@ -2056,7 +2054,7 @@ pub unsafe extern "system" fn FatDefragDirectory(
     let mut TotalBytesAllocated: u32 = 0;
 
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // NT_ASSERT( FatVcbAcquiredExclusive(IrpContext, Dcb->Vcb) );
     NT_ASSERT((FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb)) as i32);

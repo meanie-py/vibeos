@@ -183,6 +183,7 @@ pub unsafe extern "system" fn HalInitSystem(
 ) -> ddk::BOOLEAN {
     unsafe {
         if BootPhase == 0 {
+            super::gic3::record_platform(LoaderBlock);
             super::pnpdd::register(LoaderBlock);
             HalpCurrentTimeIncrement = 100000;
             HalpNextTimeIncrement = 100000;
@@ -260,7 +261,7 @@ pub unsafe extern "system" fn HalAllocateCrashDumpRegisters(
     core::ptr::null_mut()
 }
 
-/// The resources of a bus-0 PCI function, for legacy (non-PnP) drivers — SCSIPORT's
+/// The resources of a PCI function, for legacy (non-PnP) drivers — SCSIPORT's
 /// PCI scan asks for every adapter it matches, and gave up on arm64 while this was a
 /// stub. The same answer the x86 HAL gives (HalpAssignPCISlotResources): every
 /// implemented BAR where firmware placed it, sized, plus the interrupt InterruptLine
@@ -298,11 +299,9 @@ pub unsafe extern "system" fn HalAssignSlotResources(
     if AllocatedResources.is_null() {
         return STATUS_NOT_SUPPORTED;
     }
-    let va = ecam_bus0_va();
-    if va.is_null() || BusNumber != 0 {
+    let Some(cfg) = super::ecam::function(BusNumber, SlotNumber) else {
         return STATUS_NOT_FOUND;
-    }
-    let cfg = ecam_fn_ptr(va, SlotNumber);
+    };
     let rd = |off: usize| core::ptr::read_volatile(cfg.add(off) as *const u32);
     let wr = |off: usize, v: u32| core::ptr::write_volatile(cfg.add(off) as *mut u32, v);
     if rd(0) & 0xFFFF == 0xFFFF {
@@ -414,6 +413,9 @@ pub unsafe extern "system" fn HalClearSoftwareInterrupt(Request: ddk::KIRQL) {}
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalDisableSystemInterrupt(Vector: ddk::ULONG, Irql: ddk::KIRQL) {
+    if super::its::owns(Vector as u32) {
+        return super::its::disable(Vector as u32);
+    }
     // Clear-enable the device's GIC line (Vector == GIC INTID).
     super::clock::disable_gic_interrupt(Vector as u32);
 }
@@ -431,6 +433,10 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
     // CPU interface; the connected ISR is then dispatched by KiIrqHandler →
     // HalClockInterruptArm64 → KiDispatchInterruptArm64. Returns FALSE for an
     // out-of-range / special INTID so KeConnectInterrupt rolls back cleanly.
+    // An LPI from the ITS has no line at all: its enable is a byte in memory.
+    if super::its::owns(Vector as u32) {
+        return super::its::enable(Vector as u32, Irql) as ddk::BOOLEAN;
+    }
     if Vector as usize >= 1020 {
         return FALSE;
     }
@@ -444,87 +450,18 @@ pub unsafe extern "system" fn HalEnableSystemInterrupt(
 }
 
 // ============================================================================
-// PCI configuration space (ECAM) — QEMU `virt` Generic PCIe (GPEX) host bridge.
+// PCI configuration space: ECAM, from the MCFG (ecam.rs). BusNumber is a
+// PCI_SEGMENT_BUS_NUMBER, so any bus of any segment the MCFG lists is reachable.
+// SlotNumber is the PCI_SLOT_NUMBER packing: bits 0..4 device, 5..7 function.
 // ============================================================================
-//
-// QEMU `-M virt` exposes PCIe config space as a flat ECAM (Enhanced
-// Configuration Access Mechanism) MMIO window. Its base depends on the
-// machine's `highmem-ecam` setting:
-//   * high ECAM: 0x40_1000_0000, 256 MB (buses 0..=255)  — default on aarch64
-//   * low  ECAM: 0x0000_3F00_0000, 16 MB (buses 0..=15)
-// We probe both: map a bus-0 window and read the host-bridge VID/DID at 00:00.0;
-// whichever base reports a present vendor (low 16 bits != 0xFFFF) is the live
-// ECAM. Mapping a wrong/unbacked base reads back all-ones on QEMU, so the probe
-// is side-effect free.
-//
-// The only HAL bus-data consumer on arm64 today is netstack's `find_virtio_net`,
-// which scans bus 0 exclusively (QEMU keeps the NIC there) — so a single 1 MB
-// bus-0 ECAM window is sufficient. Any access with BusNumber != 0, or when no
-// ECAM is present, reads back as "device not present" (all-ones).
-//
-// ECAM address layout within the bus window:
-//   offset = (device << 15) | (function << 12) | register   (4 KB per function)
-// `SlotNumber` is the kernel PCI_SLOT_NUMBER packing used by the caller:
-//   bits 0..4 = device, bits 5..7 = function.
 
 const PCI_CONFIGURATION: ddk::BUS_DATA_TYPE = 4; // _BUS_DATA_TYPE_PCIConfiguration
-const ECAM_HIGH_BASE: u64 = 0x40_1000_0000;
-const ECAM_LOW_BASE: u64 = 0x0000_3F00_0000;
-const ECAM_BUS_SIZE: usize = 0x10_0000; // 1 MB = 256 functions * 4 KB
-const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
-
-// Cached mapped VA of the bus-0 ECAM window:
-//   0          = not yet probed
-//   usize::MAX = probed, no ECAM present
-//   otherwise  = mapped kernel VA
-static ECAM_BUS0_VA: AtomicUsize = AtomicUsize::new(0);
-const ECAM_VA_NONE: usize = usize::MAX;
 
 #[inline]
 fn phys(v: u64) -> ddk::PHYSICAL_ADDRESS {
     ddk::PHYSICAL_ADDRESS { QuadPart: v as i64 }
 }
-
-/// Lazily map + probe the bus-0 ECAM window. Returns the mapped VA, or null when
-/// no PCIe ECAM is present (e.g. a non-virt machine).
-unsafe fn ecam_bus0_va() -> *mut u8 {
-    let cached = ECAM_BUS0_VA.load(Ordering::Acquire);
-    if cached == ECAM_VA_NONE {
-        return core::ptr::null_mut();
-    }
-    if cached != 0 {
-        return cached as *mut u8;
-    }
-    for &base in &[ECAM_HIGH_BASE, ECAM_LOW_BASE] {
-        let va = ddk::MmMapIoSpace(
-            phys(base),
-            ECAM_BUS_SIZE as _,
-            ddk::_MEMORY_CACHING_TYPE_MmNonCached as _,
-        ) as *mut u8;
-        if va.is_null() {
-            continue;
-        }
-        // Host bridge sits at 00:00.0 in either layout; a present vendor id
-        // confirms this base is the live ECAM.
-        let vid_did = core::ptr::read_volatile(va as *const u32);
-        if (vid_did & 0xFFFF) != 0xFFFF {
-            ECAM_BUS0_VA.store(va as usize, Ordering::Release);
-            return va;
-        }
-        ddk::MmUnmapIoSpace(va as ddk::PVOID, ECAM_BUS_SIZE as _);
-    }
-    ECAM_BUS0_VA.store(ECAM_VA_NONE, Ordering::Release);
-    core::ptr::null_mut()
-}
-
-/// Byte pointer to (device, function) config space within the bus-0 window.
-#[inline]
-unsafe fn ecam_fn_ptr(va: *mut u8, slot_number: ddk::ULONG) -> *mut u8 {
-    let device = slot_number & 0x1F;
-    let function = (slot_number >> 5) & 0x7;
-    let win = (device << 15) | (function << 12);
-    va.add(win as usize)
-}
+const ECAM_FN_SIZE: u32 = 0x1000; // 4 KB per function (extended config space)
 
 /// Shared read for HalGetBusData / HalGetBusDataByOffset. Copies `Length` bytes
 /// of config space at `Offset` into `Buffer`; absent device / no ECAM yields
@@ -541,12 +478,10 @@ unsafe fn ecam_read(
         return 0;
     }
     let dst = buffer as *mut u8;
-    let va = ecam_bus0_va();
-    if va.is_null() || bus_number != 0 {
+    let Some(src) = super::ecam::function(bus_number, slot_number) else {
         core::ptr::write_bytes(dst, 0xFF, length as usize);
         return length;
-    }
-    let src = ecam_fn_ptr(va, slot_number);
+    };
     let mut copied = 0u32;
     for i in 0..length {
         let reg = offset + i;
@@ -571,11 +506,9 @@ unsafe fn ecam_write(
     if bus_data_type != PCI_CONFIGURATION || buffer.is_null() || length == 0 {
         return 0;
     }
-    let va = ecam_bus0_va();
-    if va.is_null() || bus_number != 0 {
+    let Some(dst) = super::ecam::function(bus_number, slot_number) else {
         return 0;
-    }
-    let dst = ecam_fn_ptr(va, slot_number);
+    };
     let src = buffer as *const u8;
     let mut copied = 0u32;
     for i in 0..length {
@@ -696,7 +629,7 @@ pub unsafe extern "system" fn HalQueryDisplayParameters(
 }
 
 /// QEMU virt PL031 RTC: DR register at +0x00 holds seconds since the Unix
-/// epoch (UTC). Lazily mapped, same pattern as `ecam_bus0_va`.
+/// epoch (UTC). Lazily mapped on first use.
 const PL031_BASE: u64 = 0x0901_0000;
 static PL031_VA: AtomicUsize = AtomicUsize::new(0);
 const PL031_VA_NONE: usize = usize::MAX;
@@ -1522,10 +1455,16 @@ pub unsafe extern "system" fn KeTryToAcquireQueuedSpinLockRaiseToSynch(
 }
 
 #[unsafe(no_mangle)]
+// OldIrql belongs to the OWNER, here as in ExTryToAcquireFastMutex below: store it
+// only once the mutex is ours, as ex.h's _ExAcquireFastMutex does. Storing it before
+// ExAcquireFastMutexUnsafe let a BLOCKED waiter overwrite the holder's saved IRQL, so
+// the holder's release lowered to the waiter's level (kmtest ExFastMutex :304 read a
+// PASSIVE waiter's IRQL in the APC_LEVEL owner's slot).
 pub unsafe extern "system" fn ExAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) {
     unsafe {
-        (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
         ddk::ExAcquireFastMutexUnsafe(FastMutex);
+        (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
     }
 }
 
@@ -1540,14 +1479,20 @@ pub unsafe extern "system" fn ExReleaseFastMutex(FastMutex: ddk::PFAST_MUTEX) {
 
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn ExTryToAcquireFastMutex(FastMutex: ddk::PFAST_MUTEX) -> ddk::BOOLEAN {
+    // OldIrql belongs to the OWNER: store it only once the mutex is ours, as the C
+    // `_ExTryToAcquireFastMutex` does. Writing it before the compare-exchange let
+    // every failed try overwrite the holder's saved IRQL with APC_LEVEL, so the
+    // holder's release "restored" APC_LEVEL and left the thread there (kmtest
+    // ExFastMutex lines 57/59/76/78/133/283, every arm64 run).
     unsafe {
-        (*FastMutex).OldIrql = KfRaiseIrql(APC_LEVEL) as ddk::ULONG;
+        let OldIrql = KfRaiseIrql(APC_LEVEL);
         if interlocked_compare_exchange(&raw mut (*FastMutex).Count, 0, 1) == 1 {
             (*FastMutex).Owner = ddk::KeGetCurrentThread();
-            return TRUE;
+            (*FastMutex).OldIrql = OldIrql as ddk::ULONG;
+            return TRUE; // nolint: irql-balance (acquired: stays at APC_LEVEL until ExReleaseFastMutex)
         }
 
-        KfLowerIrql((*FastMutex).OldIrql as ddk::KIRQL);
+        KfLowerIrql(OldIrql);
     }
 
     FALSE

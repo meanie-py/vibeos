@@ -499,7 +499,7 @@ pub unsafe extern "system" fn BasepSxsCloseHandles(Handles: PBASE_MSG_SXS_HANDLE
 }
 
 // ---------------------------------------------------------------------------
-// BaseProcessStartup (DECLSPEC_NORETURN; under DUMMY_PSEH only the TRY survives)
+// BaseProcessStartup (DECLSPEC_NORETURN)
 // ---------------------------------------------------------------------------
 #[no_mangle]
 pub unsafe extern "system" fn BaseProcessStartup(
@@ -515,8 +515,10 @@ pub unsafe extern "system" fn BaseProcessStartup(
         core::mem::size_of::<PPROCESS_START_ROUTINE>() as ULONG,
     );
 
-    /* Call the Start Routine — diverges via ExitThread (-> !) */
-    ExitThread((lpStartAddress.unwrap())())
+    /* Call the Start Routine under the real top-level __try/__except */
+    crate::client::except::run_under_top_level_handler(move || {
+        ExitThread((lpStartAddress.unwrap())())
+    })
 }
 
 // ---------------------------------------------------------------------------

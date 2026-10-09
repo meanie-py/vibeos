@@ -16,7 +16,9 @@ VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
 `pi5 boot` took 2m48s from SSH stage to desktop. Since 2026-10-06/07 both of RP1's
 xHCI controllers (XHC0, XHC1) run under `usbxhci.sys`, so every USB port works and the
 Pico's keyboard and mouse with them, and the card slot (SDC0) runs under the Pi 4's
-`sdhc.sys`, at ~11 MB/s. The two controllers share one level-triggered SPI (261),
+`sdhc.sys`, at ~11 MB/s. Since 2026-10-08 the Ethernet works too (`gem.rs`, polled: 1 Gb/s
+link, DHCP, ping, TCP). The Pico's remote disk reads as a drive too, once the host
+serves it an image (`tools/pi5/pico.sh serve-image`; see `pi4-bench.md`). The two controllers share one level-triggered SPI (261),
 which needed shared-vector chaining in the arm64 kernel (`ke/arm64/stubs.rs`).
 
 ## How a build gets there: the Linux stager and tryboot
@@ -106,7 +108,16 @@ _HID <id>`):
   register at 0x10_7D51_7C04, which by its `_DSM` is the 3.3 V/1.8 V signalling switch.
 - `SDC1` (BRCM5D12, compatible 80860F16: generic SDHCI) at 0x10_0110_0000, INTID 306:
   the Wi-Fi's SDIO host (child `WLAN`). The HAL tells the two apart by that child.
-- No Ethernet: RP1's GEM is not described.
+- No Ethernet: RP1's GEM is not described. The HAL publishes it anyway, as
+  `VIBEOS\RP1GEM` at PBAR + 0x100000 on `PINT` (`find_rp1_gem`), and netstack drives it
+  (`gem.rs`). What the firmware leaves, logged on every boot (`[NETSTACK] gem: RP1 at`):
+  the Ethernet clocks on, GPIO 32 (the PHY's reset) unassigned with its pad's output
+  disabled, `MSIX_CFG(6)` off, and no station address in the GEM. So the driver drives the
+  reset itself and asks the VideoCore firmware for the board's MAC (mailbox at
+  0x10_7C01_3880, property tag GET_BOARD_MAC_ADDRESS), the one Linux uses: VibeOS and the
+  stager then share the bench board's DHCP lease (192.168.1.248 on 2026-10-08), and the
+  stager still resolves as `vibeos-pi5` after a VibeOS boot. If the mailbox fails, the log
+  says so and the driver falls back to `02:56:42:50:35:01`.
 
 The MCFG (OEM `RPIFDN`/`RPI5`) is not generic ECAM. It names bus 0 at 0x10_0010_8000,
 inside the Broadcom controller's registers, and the first read there returns 0xDEADDEAD

@@ -450,9 +450,18 @@ pub unsafe extern "C" fn BasepGetVolumeNameFromReparsePoint(
     /* Copy the link target */
     RtlCopyMemory(
         lpszVolumeName as PVOID,
-        &(*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.PathBuffer
-            [(*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameOffset as usize
-                / core::mem::size_of::<WCHAR>()] as *const WCHAR as PVOID,
+        // PathBuffer is a C flexible array (`WCHAR PathBuffer[1]`, ndk/iotypes.h:1260)
+        // that bindgen renders as [WCHAR; 1], and the buffer above is allocated
+        // MAXIMUM_REPARSE_DATA_BUFFER_SIZE. Indexing it with the runtime
+        // SubstituteNameOffset bounds-checks against 1 and panics for any offset
+        // past the first character. Constant index 0 is checked at compile time,
+        // so `&raw const ...[0]` yields the element pointer with no panic branch.
+        (&raw const (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.PathBuffer[0])
+            .add(
+                (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameOffset
+                    as usize
+                    / core::mem::size_of::<WCHAR>(),
+            ) as PVOID,
         (*ReparseBuffer).__bindgen_anon_1.MountPointReparseBuffer.SubstituteNameLength as SIZE_T,
     );
     /* Make it DOS valid */

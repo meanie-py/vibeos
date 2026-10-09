@@ -67,7 +67,11 @@ unsafe fn LsapDeregisterLogonProcess(
         );
     }
 
-    RemoveHeadList(&raw mut (*LogonContext).Entry as *mut _);
+    // The C calls RemoveHeadList(&LogonContext->Entry), which unlinks the entry AFTER this
+    // context -- the list head itself when this is the only one -- and leaves the context
+    // being freed on LsapLogonContextList. The next deregistration walked freed memory and
+    // lsass died (arm64 modrun, two LogonUserW clients in a row). Unlink the context itself.
+    RemoveEntryList(&raw mut (*LogonContext).Entry as *mut _);
     NtClose((*LogonContext).ClientProcessHandle);
     NtClose((*LogonContext).ConnectionHandle);
     RtlFreeHeap(RtlGetProcessHeap(), 0, LogonContext as PVOID);

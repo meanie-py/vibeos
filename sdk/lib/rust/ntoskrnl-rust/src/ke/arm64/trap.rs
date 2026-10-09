@@ -4,6 +4,19 @@ use crate::ke::ke_defs::*;
 extern "C" {
     static mut KeGdiFlushUserBatch: ntkrnl_sys::ddk::PGDI_BATCHFLUSH_ROUTINE;
 }
+
+/// The GdiBatchCount the CURRENT process's gdi32 increments: TEB64's for a
+/// native process (an x86-64 guest under wowx64 included -- it is not WoW64),
+/// TEB32's for a WoW64 guest, whose 32-bit gdi32 batches into its own TEB.
+/// Reading TEB64's there never flushed a 32-bit PatBlt before the next win32k
+/// call, so gui32's GetPixel read the screen from before it drew. The C
+/// (trap.c KiWow64GdiBatchCount) had this; the translation lost it.
+pub(crate) unsafe fn GdiBatchCountOf(Teb: *const ntkrnl_sys::ddk::_TEB) -> *mut ULONG {
+    match ntkrnl_sys::wow64::teb32_of_current(Teb) {
+        Some(Teb32) => core::ptr::addr_of_mut!((*Teb32).GdiBatchCount),
+        None => core::ptr::addr_of!((*Teb).GdiBatchCount) as *mut ULONG,
+    }
+}
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -251,8 +264,8 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
     // DispatchCall:
     if TableIndex == 1 && ((*TrapFrame).Spsr & 0xF) == 0 {
         let Teb = (*Thread).Teb;
-        if !Teb.is_null() && MmIsAddressValid(core::ptr::addr_of!((*Teb).GdiBatchCount) as PVOID) != 0 &&
-           (*Teb).GdiBatchCount != 0
+        if !Teb.is_null() && MmIsAddressValid(GdiBatchCountOf(Teb as *const _) as PVOID) != 0 &&
+           *GdiBatchCountOf(Teb as *const _) != 0
         {
             if let Some(GdiFlush) = KeGdiFlushUserBatch {
                 GdiFlush();
@@ -625,6 +638,49 @@ unsafe fn ki_at_s1e1r(va: u64) -> u64 {
     par
 }
 
+/// An Access Flag fault (DFSC/IFSC 0x08-0x0B, level in the low two bits): set AF
+/// on the descriptor that raised it, and say whether to just retry.
+///
+/// arm64 runs without hardware AF management, so AF is the accessed bit, and the
+/// working-set trimmer (wslist.rs `TrimWsList`) clears it to age a page --
+/// harmless on x86, where the CPU sets the bit again on the next touch. Here the
+/// next touch faults instead, on a page that is still VALID, and every Mm path
+/// that sees a valid PTE (ARM3's `MmArmAccessFault`, RosMm's
+/// `MmNotPresentFaultSectionView`) answers "spurious, retry" without setting the
+/// flag. The retry faulted the same instruction forever: about 25 x86-64 guests
+/// into an appstorm64 sweep, memory pressure started trimming, a thread in ntdll
+/// livelocked the single CPU at EL0 (ESR 0x8200000b), and the system went silent.
+/// Fixing it here, the one place that knows the fault is an AF fault, covers
+/// every Mm path at once. A compare-exchange, so a descriptor that changed under
+/// us (unmapped, re-pointed) is left alone and the retry takes the fault Mm
+/// owns; no TLB flush, because a descriptor that raises an AF fault is never
+/// cached.
+unsafe fn ki_set_access_flag(va: u64, fsc: ULONG) -> bool {
+    const SELF_MAP: u64 = 0xFFFF_F680_0000_0000; // nolint: magic-offset (the arm64 self-map base, as the [FAULTLOOP] and [ALIGN] diagnostics use it)
+    const VALID: u64 = 1;
+    const AF: u64 = 1 << 10;
+    let self_map = |a: u64| SELF_MAP.wrapping_add(((a >> 12) & 0xF_FFFF_FFFF) << 3);
+    // Level 3 is the PTE (one step through the self-map), level 0 the PXE (four).
+    let mut desc = va;
+    for _ in 0..(4 - (fsc & 3)) {
+        desc = self_map(desc);
+    }
+    let entry = &*(desc as *const core::sync::atomic::AtomicU64);
+    let old = entry.load(core::sync::atomic::Ordering::Acquire);
+    if old & VALID == 0 {
+        return false;
+    }
+    if old & AF == 0 {
+        let _ = entry.compare_exchange(
+            old,
+            old | AF,
+            core::sync::atomic::Ordering::AcqRel,
+            core::sync::atomic::Ordering::Relaxed,
+        );
+    }
+    true
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn KiSynchronousExceptionHandler(
     TrapFrame: PKTRAP_FRAME,
@@ -678,6 +734,12 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                 let opc = core::ptr::read_volatile(pc as *const u32);
                 TrapPuts(b" OPC="); TrapPutHex32(opc);
                 TrapPuts(b"\r\n");
+            }
+
+            if (DFSC & 0x3C) == 0x08
+                && ki_set_access_flag((*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress, DFSC)
+            {
+                return;
             }
 
             if (DFSC & 0x3C) == 0x04 ||
@@ -775,6 +837,9 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             //   bugchecks with the frame and the stack — a crash we can read,
             //   instead of a hang we cannot.
             let FaultVa = (*TrapFrame).__bindgen_anon_2.__bindgen_anon_1.FaultAddress as ULONG_PTR;
+            if (IFSC & 0x3C) == 0x08 && ki_set_access_flag(FaultVa as u64, IFSC) {
+                return;
+            }
             let NeverRetriable = EC == 0x21
                 && (FaultVa < MmUserProbeAddress || (IFSC & 0x3C) == 0x0C);
 

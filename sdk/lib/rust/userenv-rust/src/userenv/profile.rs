@@ -1873,9 +1873,6 @@ pub unsafe extern "system" fn GetProfileType(pdwFlags: PDWORD) -> BOOL {
 
         return bResult;
     }
-
-
-    bResult
 }
 
 #[no_mangle]

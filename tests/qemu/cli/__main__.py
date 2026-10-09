@@ -307,11 +307,45 @@ def build_parser() -> argparse.ArgumentParser:
         "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
     )
     s.add_argument(
+        "--gic",
+        type=int,
+        choices=(2, 3),
+        help="arm64 only: the virt machine's GIC (VIBEOS_QEMU_GIC). 3 boots a GICv3 "
+        "with an ITS, as Graviton has; the boot FAILS (GIC_NOT_V3) unless the HAL "
+        "drives it as one, and with --nvme (GIC_NO_ITS) unless an ITS came up for MSI-X",
+    )
+    s.add_argument(
+        "--smmu",
+        action="store_true",
+        help="arm64 only: put an SMMUv3 in front of the PCI root complex (VIBEOS_QEMU_SMMU=1). "
+        "The boot FAILS (SMMU_NOT_BYPASSED) unless the HAL found it in the IORT and left it "
+        "passing DMA through; with --gic 3 the ITS's DeviceIDs then come through the SMMU",
+    )
+    s.add_argument(
+        "--xhci",
+        nargs="?",
+        const="msix",
+        choices=("msix", "msi", "line"),
+        help="attach the xHCI rig's controller, USB keyboard and mouse (VIBEOS_QEMU_XHCI=1), "
+        "interrupting by MSI-X (the default), plain MSI or its line (VIBEOS_QEMU_XHCI_MSI). "
+        "The boot FAILS (XHCI_*) unless the keyboard enumerated, which takes working "
+        "transfer interrupts, and they came the way asked. With --tripwire "
+        "XHCI_MSI_MESSAGES=<n> and `msi`, the controller gets an MSI block of n",
+    )
+    s.add_argument(
         "--nvme",
         action="store_true",
         help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "
         "every arch). The boot FAILS (NVME_NOT_ENGAGED) unless nvme.sys publishes the "
         "namespace as a disk; tests/qemu/test_nvme.py then drives it from the desktop",
+    )
+    s.add_argument(
+        "--nvme-bridge",
+        action="store_true",
+        help="arm64 only, implies --nvme: put the NVMe controller behind a PCIe root port, "
+        "on bus 1 (VIBEOS_QEMU_NVME_BRIDGE=1), as a server's devices are. The boot FAILS "
+        "(NVME_NOT_BEHIND_BRIDGE) unless pci.sys started on the root port and the controller "
+        "behind it came up",
     )
     s.add_argument(
         "--no-net",

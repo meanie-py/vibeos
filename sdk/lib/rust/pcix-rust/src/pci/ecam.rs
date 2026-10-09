@@ -86,7 +86,7 @@ unsafe fn PciEcamParseWindow(Value: PKEY_VALUE_PARTIAL_INFORMATION) -> BOOLEAN {
     let Start: ULONGLONG;
     let End: ULONGLONG;
     let Buses: ULONGLONG;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (*Value).Type != REG_RESOURCE_REQUIREMENTS_LIST
         || ((*Value).DataLength as usize) < core::mem::size_of::<ntkrnl_sys::ddk::IO_RESOURCE_REQUIREMENTS_LIST>()
@@ -129,7 +129,7 @@ unsafe fn PciEcamQueryWindow() -> NTSTATUS {
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS = 0;
     let mut Size: ULONG = 0;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if PciOpenKey(
         win32macros_rust::wide_bytes!(b"\\\0R\0e\0g\0i\0s\0t\0r\0y\0\\\0M\0a\0c\0h\0i\0n\0e\0\\\0S\0y\0s\0t\0e\0m\0\\\0C\0u\0r\0r\0e\0n\0t\0C\0o\0n\0t\0r\0o\0l\0S\0e\0t\0\\\0C\0o\0n\0t\0r\0o\0l\0\\\0A\0r\0b\0i\0t\0e\0r\0s\0\\\0R\0e\0s\0e\0r\0v\0e\0d\0R\0e\0s\0o\0u\0r\0c\0e\0s\0\0\0") as PWCHAR,
@@ -209,7 +209,7 @@ unsafe fn PciEcamIsAmdK8() -> BOOLEAN {
 /* Mappings are kept for the life of the driver since config access can happen at any IRQL */
 unsafe fn PciEcamMapBus(Bus: ULONG) -> PUCHAR {
     let mut Address: PHYSICAL_ADDRESS = core::mem::zeroed();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if Bus >= PciEcamWindowBuses {
         return core::ptr::null_mut();
@@ -235,7 +235,7 @@ unsafe fn PciEcamMapBus(Bus: ULONG) -> PUCHAR {
 
 unsafe fn PciEcamDiscardWindow() {
     let mut Bus: ULONG = 0;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     while Bus < PciEcamWindowBuses {
         if !PciEcamBusView[Bus as usize].is_null() {
@@ -308,7 +308,7 @@ unsafe fn PciEcamVerifyBus(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS {
     let mut LegacyIds: ULONG;
     let mut EcamIds: ULONG;
     let mut Matched: ULONG;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     Slot.u.AsULONG = 0;
     Matched = 0;
@@ -356,7 +356,7 @@ unsafe fn PciEcamVerifyBus(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS {
 #[no_mangle]
 pub unsafe extern "system" fn PciInitializeEcam(FdoExtension: PPCI_FDO_EXTENSION) {
     let mut Status: NTSTATUS;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if PciEcamWindowQueried == 0 {
         PciEcamWindowQueried = 1;

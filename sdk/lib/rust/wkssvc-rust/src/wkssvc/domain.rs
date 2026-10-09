@@ -2,7 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 unsafe extern "C" fn NetpSetPrimaryDomain(lpWorkgroupName: *const u16) -> u32 {
     let mut ObjectAttributes: LSA_OBJECT_ATTRIBUTES =
-        core::mem::MaybeUninit::uninit().assume_init();
+        core::mem::zeroed();
     ZeroMemory(
         core::ptr::addr_of_mut!(ObjectAttributes) as *mut core::ffi::c_void,
         core::mem::size_of::<LSA_OBJECT_ATTRIBUTES>(),

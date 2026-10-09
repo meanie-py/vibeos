@@ -115,6 +115,54 @@ unsafe fn rdtsc() -> u64 {
 }
 
 #[inline(always)]
+unsafe fn port_in(port: u16) -> u8 {
+    let v: u8;
+    core::arch::asm!("in al, dx", in("dx") port, out("al") v, options(nomem, nostack, preserves_flags));
+    v
+}
+
+#[inline(always)]
+unsafe fn port_out(port: u16, v: u8) {
+    core::arch::asm!("out dx, al", in("dx") port, in("al") v, options(nomem, nostack, preserves_flags));
+}
+
+/// TSC rate measured against a POLLED PIT channel-2 one-shot (~50 ms), as Linux's
+/// `pit_calibrate_tsc` does. The RTC-interrupt calibration below samples four ticks of
+/// 1/1024 s; under QEMU TCG a late tick inflates one sample by up to 1.5x, and three
+/// boots of one image calibrated 4.23, 4.71 and 5.63 GHz against a ~4.07 GHz TSC. QPC
+/// is the raw TSC at this rate, so clock() ran 4-28% slow against system time (Wine's
+/// ucrtbase misc.c:1355). Reading the 8254 involves no interrupt, so nothing can arrive
+/// late, and 50 ms makes a few cycles of read latency at either end irrelevant.
+/// `None` if the counter never reaches terminal count.
+unsafe fn calibrate_tsc_pit() -> Option<u64> {
+    const PIT_HZ: u64 = 1_193_182;
+    const TICKS: u16 = 59_659; // 50 ms
+    // Port 0x61: bit 0 gates channel 2, bit 1 drives the speaker (keep it off), bit 5
+    // reads channel 2's OUT.
+    let p61 = port_in(0x61);
+    port_out(0x61, (p61 & !0x02) | 0x01);
+    port_out(0x43, 0xB0); // channel 2, lobyte/hibyte, mode 0 (interrupt on terminal count)
+    port_out(0x42, (TICKS & 0xff) as u8);
+    port_out(0x42, (TICKS >> 8) as u8);
+    let start = rdtsc();
+    let mut end = start;
+    let mut done = false;
+    // Bounded: 2^24 polls is seconds even under TCG, never a hang.
+    for _ in 0..(1u32 << 24) {
+        if port_in(0x61) & 0x20 != 0 {
+            end = rdtsc();
+            done = true;
+            break;
+        }
+    }
+    port_out(0x61, p61);
+    if !done || end <= start {
+        return None;
+    }
+    Some((end - start) * PIT_HZ / TICKS as u64)
+}
+
+#[inline(always)]
 unsafe fn write_msr(msr: u32, value: u64) {
     let lo = value as u32;
     let hi = (value >> 32) as u32;
@@ -303,6 +351,34 @@ pub unsafe extern "system" fn HalpInitializeTsc() {
             (NUM_SAMPLES - 1) as ULONG,
             (&raw const TscCalibrationArray) as *const u64,
         ) as i64;
+
+    // Prefer the polled PIT measurement (see calibrate_tsc_pit); the RTC regression is
+    // the fallback, and both are named so a bad clock rate is visible in the boot log --
+    // QPC on the APIC HAL is the raw TSC at this rate.
+    {
+        unsafe extern "C" {
+            fn DbgPrint(Format: *const u8, ...) -> i32;
+        }
+        let rtc_khz = (HalpCpuClockFrequency.QuadPart / 1000) as u32;
+        match calibrate_tsc_pit() {
+            Some(hz) => {
+                HalpCpuClockFrequency.QuadPart = hz as i64;
+                DbgPrint(
+                    b"[HAL] TSC %u kHz (PIT, 50 ms); RTC 4-tick estimate was %u kHz\n\0".as_ptr(),
+                    (hz / 1000) as u32,
+                    rtc_khz,
+                );
+            }
+            None => {
+                DbgPrint(
+                    b"[HAL] TSC %u kHz from the RTC estimate: PIT channel 2 never reached \
+                      terminal count, so QPC may drift\n\0"
+                        .as_ptr(),
+                    rtc_khz,
+                );
+            }
+        }
+    }
 
     // Restore flags.
     write_eflags(flags);

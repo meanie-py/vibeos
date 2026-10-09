@@ -3,8 +3,10 @@
 //! netstack finds its PCI NICs (virtio-net, e1000) itself, as a non-PnP
 //! system-start driver. A platform NIC has no PCI header to scan: the arm64
 //! HAL's PnP root (hal-rust/src/arm64/pnpdd.rs) reads it from the ACPI tables
-//! and publishes it as a device, `ACPI\BCM6E4E` for the Raspberry Pi 4's GENET,
-//! and the critical device database names netstack as its service. So the PnP
+//! and publishes it as a device, `ACPI\BCM6E4E` for the Raspberry Pi 4's GENET
+//! or `VIBEOS\RP1GEM` for the Pi 5's Cadence GEM (which the HAL synthesizes,
+//! the firmware's tables leaving it out), and the critical device database
+//! names netstack as its service. So the PnP
 //! manager calls `add_device` here, then sends IRP_MN_START_DEVICE with the
 //! register window as a translated resource; this module records it and wakes
 //! the engine worker, which waits for it when no PCI NIC exists (`wait`).
@@ -14,7 +16,7 @@
 //! never see PnP or power IRPs: tdidev's dispatcher routes those here.
 
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicPtr, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
 
 use ntkrnl_sys::ddk::{
     IoAttachDeviceToDeviceStack, IoCreateDevice, IoForwardIrpSynchronously, IoGetDeviceProperty, KeInitializeEvent,
@@ -40,12 +42,22 @@ const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000_000Eu32 as NTSTATUS;
 const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC000_0182u32 as NTSTATUS;
 const DEVICE_PROPERTY_HARDWARE_ID: i32 = 1; // DevicePropertyHardwareID
 
-/// The hardware IDs the engine has a backend for (genet.rs).
-const GENET_HARDWARE_ID: &str = "ACPI\\BCM6E4E";
+/// The hardware IDs the engine has a backend for: genet.rs and gem.rs.
+const BACKENDS: [(&str, NicKind); 2] = [("ACPI\\BCM6E4E", NicKind::Genet), ("VIBEOS\\RP1GEM", NicKind::Gem)];
+
+#[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
+pub enum NicKind {
+    /// The Raspberry Pi 4's Broadcom GENET v5.
+    Genet = 1,
+    /// The Raspberry Pi 5's Cadence GEM, inside RP1.
+    Gem = 2,
+}
 
 /// The platform NIC's register window, as the PnP manager assigned it.
 #[derive(Clone, Copy)]
 pub struct PlatformNic {
+    pub kind: NicKind,
     pub mmio: u64,
     pub mmio_len: u64,
 }
@@ -55,6 +67,7 @@ static FDO: AtomicPtr<ntkrnl_sys::ddk::DEVICE_OBJECT> = AtomicPtr::new(null_mut(
 static LOWER: AtomicPtr<ntkrnl_sys::ddk::DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 static MMIO: AtomicU64 = AtomicU64::new(0);
 static MMIO_LEN: AtomicU64 = AtomicU64::new(0);
+static KIND: AtomicU8 = AtomicU8::new(0);
 /// Signalled when AddDevice attaches, and when START_DEVICE has recorded the
 /// resources.
 static mut ATTACHED: KEVENT = unsafe { core::mem::zeroed() };
@@ -96,7 +109,11 @@ pub fn wait() -> Option<PlatformNic> {
         return None;
     }
     let mmio = MMIO.load(Ordering::Acquire);
-    (mmio != 0).then(|| PlatformNic { mmio, mmio_len: MMIO_LEN.load(Ordering::Acquire) })
+    let kind = match KIND.load(Ordering::Acquire) {
+        k if k == NicKind::Gem as u8 => NicKind::Gem,
+        _ => NicKind::Genet,
+    };
+    (mmio != 0).then(|| PlatformNic { kind, mmio, mmio_len: MMIO_LEN.load(Ordering::Acquire) })
 }
 
 unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT) -> NTSTATUS {
@@ -105,8 +122,8 @@ unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT
         nsprint!("[NETSTACK] PnP: a second platform NIC was ignored\n");
         return STATUS_NO_SUCH_DEVICE;
     }
-    // The critical device database is what routes devices here, but the engine
-    // has exactly one platform backend: refuse anything it cannot drive.
+    // The critical device database is what routes devices here, but refuse
+    // anything the engine has no backend for.
     let mut ids = [0u16; 128];
     let mut got: ULONG = 0;
     let status = IoGetDeviceProperty(
@@ -116,11 +133,12 @@ unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT
         ids.as_mut_ptr().cast(),
         &mut got,
     );
-    let first = ids.iter().take_while(|&&c| c != 0).map(|&c| c as u8);
-    if status < 0 || !first.eq(GENET_HARDWARE_ID.bytes()) {
-        nsprint!("[NETSTACK] PnP: device is not a GENET (hardware ID query {:#010x}); not attaching\n", status as u32);
+    let first = || ids.iter().take_while(|&&c| c != 0).map(|&c| c as u8);
+    let Some(&(_, kind)) = BACKENDS.iter().find(|(id, _)| status >= 0 && first().eq(id.bytes())) else {
+        nsprint!("[NETSTACK] PnP: no backend for this device (hardware ID query {:#010x}); not attaching\n", status as u32);
         return STATUS_NO_SUCH_DEVICE;
-    }
+    };
+    KIND.store(kind as u8, Ordering::Release);
     let mut fdo: PDEVICE_OBJECT = null_mut();
     let status = IoCreateDevice(driver, 0, null_mut(), FILE_DEVICE_PHYSICAL_NETCARD, 0, 0, &mut fdo);
     if status < 0 {

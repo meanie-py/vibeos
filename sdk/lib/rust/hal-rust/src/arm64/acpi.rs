@@ -496,6 +496,48 @@ pub(crate) unsafe fn find_sdhc_pi5() -> Option<AcpiDevice> {
     find_device(&[SDHC5_HID_STRING], |body| find(body, b"WLAN").is_none())
 }
 
+/// RP1's Ethernet MAC (a Cadence GEM, rev 0x00070109) sits 0x100000 into RP1's
+/// peripheral window, on the same shared interrupt as RP1's xHCIs.
+const RP1_GEM_OFFSET: u64 = 0x10_0000;
+const RP1_GEM_LEN: u64 = 0x4000;
+/// What worproject's `RP1B._STA` treats as "PBAR never patched": RP1 absent.
+const RP1_PBAR_UNSET: u64 = 0xABCD_EF01_2345_6789;
+
+/// The value of `Name (<name>, Integer)` declared anywhere in `aml`.
+fn named_integer(aml: &[u8], name: &[u8; 4]) -> Option<u64> {
+    let mut decl = [0x08, 0, 0, 0, 0];
+    decl[1..].copy_from_slice(name);
+    integer(aml, find(aml, &decl)? + 5).map(|(v, _)| v)
+}
+
+/// The Raspberry Pi 5's Ethernet, which its firmware's tables leave out:
+/// worproject's DSDT declares RP1 (`RP1B`, an ACPI0004 container with the
+/// window base `PBAR` and interrupt `PINT`) but only its two xHCIs. RP1's layout
+/// is fixed, so the GEM is published from the same two names. Level-triggered
+/// and shared, as the xHCIs are: RP1 raises one line for all of its sources.
+pub(crate) unsafe fn find_rp1_gem() -> Option<AcpiDevice> {
+    let mut found = None;
+    for_each_definition_block(|aml| {
+        if find(aml, b"RP1B").is_none() {
+            return false;
+        }
+        if let (Some(pbar), Some(pint)) = (named_integer(aml, b"PBAR"), named_integer(aml, b"PINT")) {
+            if pbar != 0 && pbar != RP1_PBAR_UNSET && pint != 0 {
+                found = Some(AcpiDevice {
+                    mmio: pbar + RP1_GEM_OFFSET,
+                    mmio_len: RP1_GEM_LEN,
+                    gsiv: pint as u32,
+                    edge: false,
+                    cfg: 0,
+                    uid: 0,
+                });
+            }
+        }
+        found.is_some()
+    });
+    found
+}
+
 fn any(_: &[u8]) -> bool {
     true
 }

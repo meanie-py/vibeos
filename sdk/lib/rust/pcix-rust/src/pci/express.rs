@@ -109,7 +109,7 @@ pub unsafe extern "system" fn PciGetExpressCapabilities(PdoExtension: PPCI_PDO_E
     let ParentFdo: PPCI_FDO_EXTENSION;
     let ParentBridge: PPCI_PDO_EXTENSION;
     let Offset: UCHAR;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     (*PdoExtension).ExpressCapabilityPtr = 0;
     (*PdoExtension).ExpressDeviceType = 0;

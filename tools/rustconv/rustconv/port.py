@@ -37,7 +37,14 @@ import sys
 import time
 from pathlib import Path
 
-from . import crate_integrate, local_macros, pointer_depth, prelude_resolve
+from . import (
+    crate_integrate,
+    local_macros,
+    pointer_depth,
+    prelude_resolve,
+    sizeof_restore,
+    variadic_shim,
+)
 from . import profile_derive as pd
 
 REPO = Path(__file__).resolve().parents[3]
@@ -103,7 +110,28 @@ def upsert_profile_arm(script: str, arm: str, label: str) -> str:
     return script[: default.start()] + arm.rstrip("\n") + "\n" + script[default.start() :]
 
 
+def require_built(module_dir: Path) -> None:
+    """Refuse a module its parent CMakeLists never `add_subdirectory()`s.
+
+    liccpa is `#add_subdirectory(liccpa)#disabled in trunk`: derive, island and scaffold all
+    ran clean over it, and only translate stopped -- on "no compile command", a message that
+    sends you to rebuild a tree that will never compile it.
+    """
+    parent = module_dir.resolve().parent / "CMakeLists.txt"
+    if not parent.is_file():
+        return
+    live = re.sub(r"#[^\n]*", "", parent.read_text(errors="replace"))
+    if re.search(rf"\badd_subdirectory\(\s*{re.escape(module_dir.resolve().name)}\s*\)", live):
+        return
+    if re.search(r"\badd_subdirectory\(", live):
+        raise PortError(
+            f"{module_dir}: {parent} does not add_subdirectory() it -- the build never "
+            "compiles this module, so there is nothing to replace"
+        )
+
+
 def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.DerivedProfile:
+    require_built(module_dir)
     try:
         dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target)
     except pd.ProfileDeriveError as e:
@@ -426,11 +454,81 @@ def set_expand_macros(stem: str, tus: list[str]) -> list[str]:
     return state["expand_macros"]
 
 
+# Literal suffixes allowed: ntddstor.h writes GUID_DEVINTERFACE_STORAGEPORT's Data1 `0x2accfe60L`.
 _DEFINE_GUID_RE = re.compile(
-    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,\s*(0x[0-9A-Fa-f]+)\s*,"
-    r"\s*(0x[0-9A-Fa-f]+)\s*,((?:\s*0x[0-9A-Fa-f]+\s*,?){8})\)",
+    r"^\s*DEFINE_GUID\(\s*(\w+)\s*,\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,"
+    r"\s*(0x[0-9A-Fa-f]+)[uUlL]*\s*,((?:\s*0x[0-9A-Fa-f]+[uUlL]*\s*,?){8})\)",
     re.M,
 )
+GUID_BEGIN = "// ==== port resolve: INITGUID storage (generated) ===="
+GUID_END = "// ==== end INITGUID storage ===="
+
+
+def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, list[str]]:
+    """The prelude block DEFINING each GUID the crate references, when the module's C does.
+
+    A header that includes <initguid.h> (atapi.h, pciidex.h) makes every TU define storage
+    for each DEFINE_GUID it sees; the island declares them `extern`, so the translation's
+    references compile and are undefined at link (atapi: GUID_DEVINTERFACE_STORAGEPORT,
+    GUID_PCIIDE_INTERFACE_ROS). Values come from the tree's DEFINE_GUID lines, one value per
+    name or refused; a GUID a translated module already defines is left to it.
+    Returns (block, refused names).
+    """
+    module_dir = REPO / state["module_dir"]
+    c_texts = [p.read_text(errors="replace") for p in module_dir.glob("*.[ch]")]
+    if not any(
+        re.search(r"#\s*include\s*<initguid\.h>|#\s*define\s+INITGUID\b", t) for t in c_texts
+    ):
+        return "", []
+    declared: set[str] = set()
+    for island in (crate / "src").glob("types_*.rs"):
+        declared |= set(
+            re.findall(r"^\s*pub static (\w+): GUID;", island.read_text(errors="replace"), re.M)
+        )
+    body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
+    own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
+    want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    out: dict[str, str] = {}
+    refused: list[str] = []
+    for name in sorted(want):
+        files = subprocess.run(
+            ["git", "grep", "-l", f"DEFINE_GUID({name},", "--", "*.h"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        values = set()
+        for f in files:
+            for m in _DEFINE_GUID_RE.finditer((REPO / f).read_text(errors="replace")):
+                if m.group(1) == name:
+                    d4 = ", ".join(re.findall(r"0x[0-9A-Fa-f]+", m.group(5)))
+                    values.add((m.group(2), m.group(3), m.group(4), d4))
+        if len(values) != 1:
+            refused.append(name)
+            continue
+        d1, d2, d3, d4 = values.pop()
+        out[name] = (
+            f"#[no_mangle]\npub static {name}: GUID = GUID {{ Data1: {d1}, Data2: {d2}, "
+            f"Data3: {d3}, Data4: [{d4}] }};"
+        )
+    if not out:
+        return "", refused
+    return GUID_BEGIN + "\n" + "\n".join(
+        out[n] for n in sorted(out)
+    ) + "\n" + GUID_END + "\n", refused
+
+
+def write_guid_block(prelude: Path, block: str) -> bool:
+    text = prelude.read_text()
+    m = re.search(re.escape(GUID_BEGIN) + r".*?" + re.escape(GUID_END) + r"\n?", text, re.S)
+    if not block and not m:
+        return False
+    new = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n\n" + block
+    if new == text:
+        return False
+    prelude.write_text(new)
+    return True
 
 
 def initguid_module(c_path: Path) -> str | None:
@@ -933,6 +1031,23 @@ def stage_data(stem: str, tu_arg: str) -> None:
     print(f"data: {tu.name} -> {out.relative_to(REPO)} ({len(files)} files, {lines} lines)")
 
 
+def stage_oracle(stem: str) -> None:
+    """The module's pre-flip C as an opt-in `<target>_c` (c_oracle.py): what modrun runs the
+    Rust against. Re-run after the CMakeLists changes; `python -m rustconv.c_oracle --check`
+    reports staleness."""
+    from . import c_oracle
+
+    module = REPO / load_state(stem)["module_dir"]
+    try:
+        current = c_oracle.write(module)
+    except c_oracle.OracleError as e:
+        raise PortError(f"oracle: {e}") from e
+    print(
+        f"oracle: {(module / c_oracle.ORACLE_FILE).relative_to(REPO)} "
+        + ("current" if current else "written")
+    )
+
+
 def _tokens(log: str) -> tuple[int, int, int]:
     """(functions bought, input tokens, output tokens) from a translate log.
 
@@ -1126,6 +1241,306 @@ def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunc
     return types, decls
 
 
+def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
+    """C-variadic definitions -> a Rust `_v` twin + a generated C trampoline (variadic_shim).
+
+    The shim is regenerated from EVERY twin in the crate each run (not just this run's new
+    ones). Fails loud when a twin has no variadic C definition of the same arity, or a
+    parameter has no ABI-identical primitive C spelling: a twin without its trampoline links
+    nothing under the original name, and every caller is a silent unresolved import.
+    """
+    done: list[str] = []
+    refused: dict[str, str] = {}
+    all_twins: dict[str, tuple[list[tuple[str, str]], str]] = {}
+    for path in sorted((crate / "src" / stem).glob("*.rs")):
+        rw = variadic_shim.rewrite(path.read_text())
+        refused.update(rw.refused)
+        if rw.names:
+            path.write_text(rw.text)
+            done += rw.names
+        all_twins.update(variadic_shim.twins(path.read_text()))
+    for name, why in refused.items():
+        print(f"integrate: variadic {name} left as is: {why}")
+    if not all_twins:
+        return done, refused
+    units = [REPO / u for u in _units(state) if (REPO / u).is_file()]
+    sys_src = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    maps = variadic_shim.alias_maps(
+        [
+            [
+                p.read_text(errors="replace")
+                for p in (
+                    crate / "src" / f"types_{suffix}.rs",
+                    *(
+                        (sys_src / f"bindgen_{suffix}.rs", sys_src / "bindgen_common.rs")
+                        if sys_src is not None
+                        else ()
+                    ),
+                )
+                if p.is_file()
+            ]
+            for suffix in ("i386", "amd64", "arm64")
+        ]
+    )
+    entries: dict[str, tuple[str, str]] = {}
+    for name, (params, ret) in sorted(all_twins.items()):
+        tu = next(
+            (
+                u
+                for u in units
+                if variadic_shim.c_variadic_arity(u.read_text(errors="replace"), name) is not None
+            ),
+            None,
+        )
+        if tu is None:
+            raise SystemExit(f"integrate: {name}_v has no C definition of {name} with `...`")
+        arity = variadic_shim.c_variadic_arity(tu.read_text(errors="replace"), name)
+        if arity != len(params):
+            raise SystemExit(
+                f"integrate: {name}_v takes {len(params)} fixed parameter(s), the C {arity}"
+            )
+        try:
+            entries[name] = (str(tu), variadic_shim.c_trampoline(name, params, ret, maps))
+        except ValueError as e:
+            raise SystemExit(f"integrate: cannot spell {name}'s trampoline: {e}") from e
+    shim = variadic_shim.write_shim(REPO / state["module_dir"], entries)
+    variadic_shim.ensure_dependency(crate / "Cargo.toml")
+    print(
+        f"integrate: {len(entries)} C-variadic entry point(s) -> `_v` twin + "
+        f"{shim.relative_to(REPO)}: {', '.join(sorted(entries))}"
+        + (f" ({len(done)} rewritten this run)" if done else "")
+    )
+    print("integrate: the shim must be in the module's cohab CMake source list")
+    return done, refused
+
+
+# One-line scalar consts only: a c2rust-laid `[WCHAR; 24]` table (`unsafe { transmute(..) }`,
+# spanning lines and holding `;`) is a different TYPE from the island's `&[u16; N]` literal
+# and is the module's own storage, not a shadow.
+_TOP_CONST = re.compile(
+    r"^(?:pub(?:\([^)]*\))?\s+)?const\s+([A-Za-z_]\w*)\s*:\s*(?!\[)[^=\n]+=\s*(?!unsafe\b)([^;\n{]+);[^\n]*\n",
+    re.M,
+)
+
+
+def _island_consts(src: Path) -> dict[str, str]:
+    """`pub const NAME = VALUE` the island (clang-exact, from the module's own headers)
+    defines identically on every arch."""
+    per = [
+        dict(re.findall(r"^pub const (\w+): [^=]+= ([^;]+);", p.read_text(errors="replace"), re.M))
+        for p in sorted(src.glob("types_*.rs"))
+    ]
+    if not per:
+        return {}
+    return {k: v for k, v in per[0].items() if all(d.get(k) == v for d in per[1:])}
+
+
+def _drop_island_shadows(path: Path, island: dict[str, str]) -> list[str]:
+    """A TOP-LEVEL `const` in a translated module that the island also defines.
+
+    The island is the header as clang read it; a module-level copy can only shadow it, and
+    the model writes them from memory: timedate's preamble carried `IDC_CPLICON = 1000`,
+    `IDS_CPLNAME = 100`, `IDS_CPLDESCRIPTION = 101` ("Assumed values") over resource.h's 1,
+    1001, 1002 -- the applet lost its icon, name and description. Dropped so the island's
+    value is the one in scope; a differing value is reported."""
+    text = path.read_text()
+    out: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        name, value = m.group(1), m.group(2).strip()
+        if name not in island:
+            return m.group(0)
+        norm = lambda v: re.sub(r"\s|_|(?:as\s+\w+)|(?:u|i)(?:8|16|32|64|size)\b", "", v)  # noqa: E731
+        same = norm(value) == norm(island[name])
+        out.append(name if same else f"{name} (was {value}, island {island[name]})")
+        return ""
+
+    new = _TOP_CONST.sub(repl, text)
+    if new != text:
+        path.write_text(new)
+    return out
+
+
+_COUNT_OF_PTR = re.compile(
+    r"\b(ARRAYSIZE|_countof|RTL_NUMBER_OF)!\(\s*core::ptr::addr_of_mut!\(([^()]*(?:\([^()]*\)[^()]*)*)\)(?:\s+as\s+[\w:*]+)?\s*\)"
+)
+
+
+_LOCAL_CONST = re.compile(
+    r"(?m)^(?P<head>(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>[A-Za-z_]\w*)\s*:\s*(?P<ty>[\w:]+)\s*=\s*)"
+    r"(?P<val>-?\(?\s*-?(?:0[xX][0-9a-fA-F_]+|[0-9][0-9_]*)(?:[iu](?:8|16|32|64|size))?\s*\)?(?:\s+as\s+[\w:]+)*)\s*;"
+)
+
+
+def _verify_local_defines(path: Path, c_file: Path) -> list[str]:
+    """A module-level integer `const` the C `#define`s in its own TU, checked against clang.
+
+    The preamble writes a TU's own constants from MEMORY: usrmgr's
+    `#define VALID_GENERAL_FLAGS (UF_PASSWD_CANT_CHANGE | ... | UF_LOCKOUT)` came back as
+    `0x0001_0242` with a comment calling UF_LOCKOUT 0x200 (it is 0x10), so unchecking
+    "Account is locked out" never unlocked. The seal never sees file-scope `#define` bodies.
+    clang evaluates the name in the TU on every arch; a different value is replaced."""
+    from . import sdk_facts
+    from .macro_authority import MacroAuthorityError
+
+    c_text = c_file.read_text(errors="replace")
+    defined = set(re.findall(r"(?m)^\s*#\s*define\s+([A-Za-z_]\w*)\s+\S", c_text))
+    text = path.read_text()
+    found = {m.group("name"): m for m in _LOCAL_CONST.finditer(text) if m.group("name") in defined}
+    if not found:
+        return []
+    try:
+        res = sdk_facts.resolve(REPO, c_file, sorted(found))
+    except MacroAuthorityError:
+        return []
+    out: list[str] = []
+    for fact in res.facts:
+        m = found[fact.name]
+        lit = re.search(r"-?\s*(0[xX][0-9a-fA-F_]+|[0-9][0-9_]*)", m.group("val"))
+        if lit is None:
+            continue
+        neg = m.group("val").lstrip("(").lstrip().startswith("-")
+        have = int(lit.group(1).replace("_", ""), 0) * (-1 if neg else 1)
+        # Equal as values, or as the same 32-bit pattern (`-1` vs `0xFFFFFFFF` for a DWORD).
+        if have == fact.value or (have & 0xFFFFFFFF) == (fact.value & 0xFFFFFFFF):
+            continue
+        new_val = f"{fact.value:#x}" if fact.value >= 0 else str(fact.value)
+        text = text.replace(m.group(0), f"{m.group('head')}{new_val} as {m.group('ty')};", 1)
+        out.append(f"{fact.name} {m.group('val').strip()} -> {new_val}")
+    if out:
+        path.write_text(text)
+    return out
+
+
+_ADDR_OF_FIELD = re.compile(
+    r"core::ptr::addr_of(?:_mut)?!\(\(\*(?P<var>[A-Za-z_]\w*)\)\.(?P<field>[A-Za-z_]\w*)\)"
+    r"(?P<casts>(?:\s+as\s+\*(?:const|mut)\s+(?:WCHAR|u16|c_char|i8|u8|CHAR))"
+    r"(?:\s+as\s+[\w:]+)*)"
+)
+_PTR_TYPE = re.compile(r"^(?:\*(?:const|mut)\s|L?P(?:C)?(?:W)?STR$|L?P(?:C)?TSTR$|PWCHAR$|PCHAR$)")
+
+
+def _struct_fields(src: Path) -> dict[str, dict[str, str]]:
+    """struct -> field -> declared type text, across the crate (islands and modules)."""
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from tools.source_walk import source_files
+
+    out: dict[str, dict[str, str]] = {}
+    for p in source_files(src, "*.rs"):
+        for m in re.finditer(r"pub struct (\w+)\s*\{([^}]*)\}", p.read_text(errors="replace")):
+            out.setdefault(m.group(1), {}).update(
+                {f: t.strip() for f, t in re.findall(r"pub (\w+)\s*:\s*([^,\n]+),", m.group(2))}
+            )
+    return out
+
+
+def _pointer_field_not_address(path: Path, src: Path) -> list[str]:
+    """`addr_of!((*p).f) as *const WCHAR` where `f` is itself a POINTER (`PWSTR`), not an array.
+
+    For an array field the address IS the string; for a pointer field it is the address of
+    the pointer, read as UTF-16 garbage. mmsys's ShowSoundScheme did both in adjacent lines --
+    `APP_MAP.szName` is `WCHAR[MAX_PATH]`, `LABEL_MAP.szName` a `PWSTR` -- so every sound
+    label showed the pointer's bytes. The variable's declared type names the struct; only a
+    field whose declared type is a pointer is rewritten to its value."""
+    if str(REPO) not in sys.path:
+        sys.path.insert(0, str(REPO))
+    from tools.source_walk import source_files
+
+    text = path.read_text()
+    if "addr_of" not in text:
+        return []
+    fields = _struct_fields(src)
+    aliases: dict[str, str] = {}
+    for p in source_files(src, "*.rs"):
+        for a, t in re.findall(
+            r"pub type (\w+)\s*=\s*\*mut\s+(\w+)\s*;", p.read_text(errors="replace")
+        ):
+            aliases[a] = t
+    decl = re.compile(r"\b(?:let\s+mut\s+|let\s+|mut\s+)?(\w+)\s*:\s*(?:\*mut\s+)?(\w+)\s*[=,)]")
+    fn_starts = [
+        m.start()
+        for m in re.finditer(r"(?m)^\s*(?:pub\s+)?(?:unsafe\s+)?(?:extern\s+\"\w+\"\s+)?fn\s", text)
+    ]
+    out: list[str] = []
+
+    def var_type(var: str, at: int) -> str | None:
+        # Scoped to the ENCLOSING function: mmsys declares `pMap` as PAPP_MAP in FindApp
+        # and as PLABEL_MAP elsewhere, and a file-wide table picked the wrong one.
+        start = max((f for f in fn_starts if f <= at), default=0)
+        hits = [t for v, t in decl.findall(text[start:at]) if v == var]
+        return hits[-1] if hits else None
+
+    def repl(m: re.Match[str]) -> str:
+        ty = var_type(m.group("var"), m.start())
+        struct = aliases.get(ty or "", ty)
+        while struct in aliases:
+            struct = aliases[struct]
+        ftype = fields.get(struct or "", {}).get(m.group("field"))
+        if ftype is None or not _PTR_TYPE.search(ftype):
+            return m.group(0)
+        out.append(f"{m.group('var')}.{m.group('field')}")
+        return f"((*{m.group('var')}).{m.group('field')}){m.group('casts')}"
+
+    new = _ADDR_OF_FIELD.sub(repl, text)
+    if new != text:
+        path.write_text(new)
+    return out
+
+
+def _count_the_array(path: Path) -> int:
+    """`ARRAYSIZE!(addr_of_mut!(x) [as LPWSTR])` -> `ARRAYSIZE!(x)`.
+
+    C's `ARRAYSIZE(x)` names the ARRAY; the model, having spelled every other use of the
+    buffer as a pointer, passed the pointer too, and `.len()` of a raw pointer does not
+    exist (console's font.rs, four sites). The element count is a property of the array,
+    which is what the C measured."""
+    text = path.read_text()
+    new, n = _COUNT_OF_PTR.subn(lambda m: f"{m.group(1)}!({m.group(2)})", text)
+    if n:
+        path.write_text(new)
+    return n
+
+
+def _module_fn_macros(state: dict) -> set[str]:
+    from .macro_authority import function_like_macros
+
+    out: set[str] = set()
+    for tu in state["tus"]:
+        try:
+            out |= function_like_macros(REPO, (REPO / tu).resolve())
+        except Exception:  # no compile command: nothing is dropped
+            continue
+    return out
+
+
+def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
+    """Remove a module's own `extern` declaration of a name the C preprocessor says is a
+    function-like MACRO. hotplug's eject.rs declared `fn ListView_InsertColumn(..)` and
+    `fn ListView_SetColumnWidth(..)` -- macros over SendMessage that no DLL exports -- and it
+    compiled, then failed at link (`undefined symbol _ListView_InsertColumn@12`). Without the
+    declaration the call is unresolved, and `port macros` lowers the real macro."""
+    text = path.read_text()
+    dropped: list[str] = []
+    out: list[str] = []
+    depth_extern = False
+    for line in text.split("\n"):
+        if re.match(r'\s*(?:pub\s+)?(?:unsafe\s+)?extern\s+"[^"]+"\s*\{', line):
+            depth_extern = True
+        elif depth_extern and re.match(r"\s*\}", line):
+            depth_extern = False
+        m = re.match(
+            r"\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+([A-Za-z_]\w*)\s*\(.*\)[^;{]*;\s*(?://.*)?$", line
+        )
+        if depth_extern and m and m.group(1) in fn_macros:
+            dropped.append(m.group(1))
+            continue
+        out.append(line)
+    if dropped:
+        path.write_text("\n".join(out))
+    return dropped
+
+
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -1137,19 +1552,70 @@ def stage_integrate(stem: str) -> None:
     unprovided: dict[str, list[str]] = {}
     changed = 0
     ptr_types, decls = _pointer_decls(state)
+    ptr_targets = pointer_depth.pointer_targets(
+        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
+    )
     depth_fixed: list[str] = []
+    crate_types = sizeof_restore.crate_types(crate / "src")
+    fn_macros = _module_fn_macros(state)
+    island_consts = _island_consts(crate / "src")
     for path in sorted((crate / "src" / stem).glob("*.rs")):
+        shadow = _drop_island_shadows(path, island_consts)
+        if shadow:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: const(s) redeclaring the island's dropped: "
+                + "; ".join(shadow)
+            )
+        derefd = _pointer_field_not_address(path, crate / "src")
+        if derefd:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: pointer field passed by VALUE, not its address: "
+                + ", ".join(derefd)
+            )
+        counted = _count_the_array(path)
+        if counted:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: {counted} element count(s) taken of the array, "
+                "not a pointer to it"
+            )
+        dropped = _drop_macro_externs(path, fn_macros)
+        if dropped:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: extern decl(s) for C macros dropped: {', '.join(dropped)}"
+            )
         report = crate_integrate.integrate_path(path, crate)
         changed += report.changed
         if report.kept_unprovided:
             unprovided[path.stem] = report.kept_unprovided
         print(f"integrate: {report.summary()}")
+        c_file = REPO / state["module_dir"] / f"{path.stem}.c"
+        if c_file.is_file():
+            corrected = _verify_local_defines(path, c_file)
+            if corrected:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: #define value(s) corrected from clang: "
+                    + "; ".join(corrected)
+                )
+        if c_file.is_file():
+            text = path.read_text()
+            new, restored = sizeof_restore.restore(text, c_file, crate_types)
+            if restored:
+                path.write_text(new)
+                changed += 1
+                print(f"integrate: {path.stem}: dropped sizeof put back: {'; '.join(restored)}")
         text = path.read_text()
-        new, fixes = pointer_depth.repair(text, decls, ptr_types)
+        new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         if new != text:
             path.write_text(new)
             changed += 1
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+    variadic, variadic_refused = _variadic_twins(state, crate, stem)
+    changed += bool(variadic)
     if depth_fixed:
         print(
             f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "
@@ -1164,6 +1630,8 @@ def stage_integrate(stem: str) -> None:
         changed=changed,
         unprovided=unprovided,
         pointer_depth=depth_fixed,
+        variadic=variadic,
+        variadic_refused=variadic_refused,
     )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
@@ -1189,8 +1657,221 @@ def _c_defined_names(tus: list[Path]) -> set[str]:
     return out
 
 
+def _static_lib_functions(module_dir: Path, names: set[str]) -> set[str]:
+    """Which of `names` a static library in the module's `target_link_libraries` defines in C
+    (atapi links sptilib for SptiHandleAtaPassthru/SptiHandleScsiPassthru)."""
+    from .crate_fix import c_function_text
+
+    cmake = module_dir / "CMakeLists.txt"
+    if not names or not cmake.is_file():
+        return set()
+    libs = {
+        w
+        for m in re.finditer(r"target_link_libraries\(\s*\S+\s+([^)]*)\)", cmake.read_text())
+        for w in m.group(1).split()
+        if re.fullmatch(r"[A-Za-z_][\w-]*", w)
+    }
+    found: set[str] = set()
+    cache: dict = {}
+    for lib in sorted(libs):
+        hits = subprocess.run(
+            ["git", "grep", "-l", f"add_library({lib}\\b", "--", "*CMakeLists.txt"],
+            cwd=REPO,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        for cm in hits:
+            for c in sorted((REPO / cm).parent.glob("*.c")):
+                found |= {n for n in names - found if c_function_text(c, n, cache)}
+    return found
+
+
+_RUST_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
+
+
+_TCHAR_BEGIN = "// ==== port resolve: UNICODE TCHAR family (generated) ===="
+_TCHAR_END = "// ==== end UNICODE TCHAR family ===="
+_TCHAR_TYPES = {
+    "TCHAR": "WCHAR",
+    "PTCHAR": "*mut WCHAR",
+    "TBYTE": "WCHAR",
+    "PTBYTE": "*mut WCHAR",
+    "LPTSTR": "LPWSTR",
+    "LPCTSTR": "LPCWSTR",
+    "PTSTR": "LPWSTR",
+    "PCTSTR": "LPCWSTR",
+    "LPTCH": "LPWSTR",
+    "PTCH": "LPWSTR",
+}
+
+
+_WINE_BEGIN = "// ==== port resolve: wine debug channels (generated) ===="
+_WINE_END = "// ==== end wine debug channels ===="
+
+
+def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
+    """wine/debug.h's `WINE_DEFAULT_DEBUG_CHANNEL(ch)` / `WINE_DECLARE_DEBUG_CHANNEL(ch)`:
+    `static struct __wine_debug_channel __wine_dbch_ch = { (unsigned char)~0, "ch" }` and,
+    for the default, `__wine_dbch___default = &__wine_dbch_ch`. Statics in a HEADER, so no
+    translated function carries them and the island has only an `extern` -- usrmgr linked
+    with `undefined symbol ___wine_dbch___default` on i386, as appwiz had (by hand)."""
+    module_dir = REPO / state["module_dir"]
+    default: str | None = None
+    declared: list[str] = []
+    for f in sorted([*module_dir.rglob("*.c"), *module_dir.rglob("*.h")]):
+        text = re.sub(r"/\*.*?\*/|//[^\n]*", "", f.read_text(errors="replace"), flags=re.S)
+        for m in re.finditer(r"\bWINE_(DEFAULT|DECLARE)_DEBUG_CHANNEL\(\s*(\w+)\s*\)", text):
+            if m.group(1) == "DEFAULT":
+                default = default or m.group(2)
+            if m.group(2) not in declared:
+                declared.append(m.group(2))
+    text = prelude.read_text()
+    pat = re.compile(re.escape(_WINE_BEGIN) + r".*?" + re.escape(_WINE_END) + r"\n", re.S)
+    outside = pat.sub("", text)
+    src = "\n".join(
+        p.read_text(errors="replace") for p in (prelude.parent / state["stem"]).glob("*.rs")
+    )
+    lines: list[str] = []
+    for ch in declared:
+        name = f"__wine_dbch_{ch}"
+        needed = name in src or (ch == default and "__wine_dbch___default" in src)
+        if not needed or re.search(rf"\bstatic\s+(?:mut\s+)?{name}\b", outside + src):
+            continue
+        raw = ch.encode()[:14] + b"\0" * (15 - len(ch.encode()[:14]))
+        lit = "".join(f"\\x{b:02x}" for b in raw)
+        lines.append(
+            f"pub static mut {name}: __wine_debug_channel = __wine_debug_channel {{\n"
+            f"    flags: !0u8, // (unsigned char)~0\n"
+            "    name: unsafe { ::core::mem::transmute::<[u8; 15], [::core::ffi::c_char; 15]>"
+            f'(*b"{lit}") }},\n'
+            "};"
+        )
+    if (
+        default
+        and "__wine_dbch___default" in src
+        and not re.search(r"\bstatic\s+(?:mut\s+)?__wine_dbch___default\b", outside)
+    ):
+        lines.append(
+            "pub static mut __wine_dbch___default: *mut __wine_debug_channel =\n"
+            f"    unsafe {{ &raw mut __wine_dbch_{default} }};"
+        )
+    block = "\n".join([_WINE_BEGIN, *lines, _WINE_END]) + "\n" if lines else ""
+    new = (
+        pat.sub(lambda _m: block, text)
+        if pat.search(text)
+        else (text.rstrip("\n") + "\n\n" + block if block else text)
+    )
+    if new != text:
+        prelude.write_text(new)
+    return [ln.split()[3].rstrip(":") for ln in lines]
+
+
+def _unicode_tchar(state: dict, prelude: Path) -> bool:
+    """A UNICODE module's TCHAR is WCHAR; ntdll-sys (built without UNICODE) exports
+    `TCHAR = c_char`, and a prelude that only globs it gave 27 control-panel buffers HALF
+    the bytes the C has -- `RegEnumValueW` told 128 WCHARs into a 128-byte array. Written
+    when every TU's real compile command carries -DUNICODE; a name the prelude already
+    defines by hand is left to it."""
+    from .macro_authority import compile_argv
+
+    unicode = bool(state["tus"]) and all(
+        "-DUNICODE" in (compile_argv(REPO, "amd64", (REPO / t).resolve()) or [])
+        for t in state["tus"]
+    )
+    text = prelude.read_text()
+    pat = re.compile(re.escape(_TCHAR_BEGIN) + r".*?" + re.escape(_TCHAR_END) + r"\n", re.S)
+    outside = pat.sub("", text)
+    hand = set(re.findall(r"^\s*pub type (\w+)", outside, re.M))
+    block = ""
+    if unicode:
+        lines = [f"pub type {n} = {t};" for n, t in _TCHAR_TYPES.items() if n not in hand]
+        if lines:
+            block = "\n".join([_TCHAR_BEGIN, *lines, _TCHAR_END]) + "\n"
+    new = (
+        pat.sub(lambda _m: block, text)
+        if pat.search(text)
+        else (text.rstrip("\n") + "\n\n" + block if block else text)
+    )
+    if new != text:
+        prelude.write_text(new)
+    return bool(block)
+
+
+def _arch_link_names(state: dict, prelude: Path) -> list[str]:
+    """Give each prelude extern that the preprocessor ALIASES on some arches only a
+    `#[cfg_attr(target_arch = .., link_name = ..)]` for those arches (macro_authority.
+    arch_only_aliases): i386's `GetWindowLongPtrW` is `GetWindowLongW`."""
+    from .macro_authority import arch_only_aliases
+
+    aliases: dict[str, dict[str, str]] = {}
+    for tu in state["tus"]:
+        try:
+            aliases.update(arch_only_aliases(REPO, (REPO / tu).resolve()))
+        except Exception:  # reported by the identifier-alias pass already
+            continue
+    text = prelude.read_text()
+    done: list[str] = []
+    lines = text.split("\n")
+    out: list[str] = []
+    for line in lines:
+        m = re.match(r"(\s*)pub fn ([A-Za-z_]\w*)\s*\(", line)
+        # A hand-written declaration that already names its link symbol is left alone
+        # (appwiz's `#[cfg(target_arch = "x86")]` pair predates this).
+        if (
+            m
+            and m.group(2) in aliases
+            and not any("link_name" in o and "cfg_attr" not in o for o in out[-3:])
+        ):
+            ind, name = m.group(1), m.group(2)
+            for arch, target in sorted(aliases[name].items()):
+                attr = (
+                    f'{ind}#[cfg_attr(target_arch = "{_RUST_ARCH[arch]}", link_name = "{target}")]'
+                )
+                if not (out and attr in out[-3:]):
+                    out.append(attr)
+            done.append(name)
+        out.append(line)
+    new = "\n".join(out)
+    if new != text:
+        prelude.write_text(new)
+    return sorted(set(done))
+
+
 def stage_resolve(stem: str, max_passes: int = 4) -> None:
-    """Fill the prelude with what the tree already agrees on (prelude_resolve.py)."""
+    """Fill the prelude with what the tree already agrees on (prelude_resolve.py).
+
+    Run to a fixed point (bounded): rustc emits the `unreachable pattern ... matches any
+    value` warning -- the only sign of a C `case` constant that became a catch-all binding --
+    only when the crate has NO errors, and a resolve round rewrites the extern block midway,
+    so the round that would have seen it never did. input's TVN_SELCHANGED was found only
+    by a reviewer: OK/Apply on its settings page never saved.
+    """
+    workspace = REPO / "sdk" / "lib" / "rust"
+    seen: set[str] = set()
+    # Each round can uncover only the NEXT catch-all arm (the earlier one hid it), so a
+    # long switch needs several; the loop stops as soon as a round uncovers nothing new.
+    for _round in range(8):
+        _stage_resolve_once(stem, max_passes, extra=seen)
+        state = load_state(stem)
+        left = set(
+            prelude_resolve.unresolved(
+                state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
+            )
+        )
+        # Plus the catch-all arms no warning names (a LAST-arm binding; see _undefined_arm_names).
+        left |= _undefined_arm_names(
+            state, prelude_resolve._visible_value_names(workspace, state["crate"])
+        )
+        if not left or left <= seen:
+            return
+        seen |= left
+        print(f"resolve: another round for what the last one uncovered: {', '.join(sorted(left))}")
+
+
+def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None = None) -> None:
+    """One resolve round (see stage_resolve). `extra`: names an earlier round's final check
+    uncovered, offered from the first pass -- this round's own first check cannot see them."""
     state = load_state(stem)
     started = time.time()
     crate = _crate_dir(state)
@@ -1224,6 +1905,14 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     # `CmResourceTypePort: u32` beside its own `u8`, and advapi32's `FALSE: BOOL`.
     hand = prelude_resolve.hand_written_names(prelude)
     shared |= hand
+    # ...and never a name `port macros` lowered from the SDK header itself: the lowering is
+    # the C's own expansion (`HKEY_CURRENT_USER` sign-extended through LONG_PTR on 64-bit),
+    # a consensus copy (`0x8000_0001usize as HKEY`) only a neighbour's guess -- and both
+    # together are E0428.
+    from . import sdk_macros
+
+    _sdk = sdk_macros.existing_items(prelude)
+    shared |= sdk_macros.existing(prelude) | _sdk["type"] | _sdk["value"]
     # ...and never a FORCEINLINE helper ntdll-sys already implements in Rust (inlines.rs,
     # re-exported through `ntdll_sys::nt`, which the island globs): diskpart got
     # winlogon-sys's bindgen `extern` InitializeListHead/IsListEmpty/RemoveEntryList/
@@ -1232,6 +1921,11 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         inl = workspace / "ntdll-sys" / "src" / "inlines.rs"
         if inl.is_file():
             shared |= set(re.findall(r"^pub (?:unsafe )?fn (\w+)", inl.read_text(), re.M))
+    # ...and never a name the ISLAND defines: main's prelude carried shell32's
+    # `PSN_APPLY: UINT` over the island's `PSN_APPLY: i32`, its `match` arms then disagreed
+    # (PSN_RESET still came from the island), and crate-repair stacked `as i32) as u32` forty
+    # deep alternating between them. The island is the module's own header.
+    shared |= _island_constants(state)
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
@@ -1260,6 +1954,15 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
     siblings = prelude_resolve.existing_siblings(prelude)
     modules_dir = crate / "src" / stem
+    # Each kept import is re-checked against the module it names: a definition renamed since
+    # (integrate's C-variadic `F` -> `F_v`) leaves `pub use crate::m::F;` pointing at m's own
+    # glob import of F -- E0603 "private function import" -- and nothing else revisits it.
+    live = prelude_resolve.sibling_definitions(set(siblings), modules_dir)
+    stale = {n for n, mod in siblings.items() if mod not in {m for m, _ in live.get(n, [])}}
+    if stale:
+        siblings = {n: m for n, m in siblings.items() if n not in stale}
+        prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
+        print(f"resolve: dropped {len(stale)} stale sibling import(s): {', '.join(sorted(stale))}")
     island_sys = prelude_resolve.island_substrate(crate / "src", workspace)
     kernel_sys = (
         island_sys if island_sys is not None and island_sys.parent.name == "ntkrnl-sys" else None
@@ -1268,6 +1971,13 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         n: {} for n in prelude_resolve.existing_substrate(prelude)
     }
     substrate_why: dict[str, str] = {}
+    # Names the crate calls that no import library exports on every arch: header inlines the
+    # island declares as externs. They resolve, so the unresolved list never asks for them --
+    # the link does. Offered to the substrate alongside the unresolved names.
+    exported = prelude_resolve.module_exports(REPO / state["module_dir"], REPO)
+    link_wanted: set[str] = set()
+    if kernel_sys is not None and exported is not None:
+        link_wanted = prelude_resolve.called_names(modules_dir) - exported
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
@@ -1276,7 +1986,7 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
         )
-        names = set(wanted)
+        names = set(wanted) | (set(extra or ()) if n == 1 else set())
         seen_names |= names
         types_only = {k for k, ns in wanted.items() if ns == {"type"}}
         # A copy of the wrong KIND for a name wanted only as a type is what caused the gap.
@@ -1309,19 +2019,32 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         # and MmGetMdlVirtualAddress (C macros, never asked) all live in ntkrnl-sys.
         if kernel_sys is not None:
             found_sub, sub_why = prelude_resolve.substrate_helpers(
-                (names - shared) | set(substrate), kernel_sys, "ntkrnl_sys"
+                # A name that became hand-written (or a sibling's) since the block was last
+                # written leaves it: re-offering the old block unfiltered was an E0255.
+                (names | set(substrate) | link_wanted) - shared - set(siblings),
+                kernel_sys,
+                "ntkrnl_sys",
             )
             wired += len(set(found_sub) - set(substrate))
             substrate = found_sub
             substrate_why = {k: v for k, v in sub_why.items() if k in names}
             for name in substrate:
                 copied.pop(name, None)
+            ties = prelude_resolve.glob_ties(crate / "src", modules_dir, kernel_sys)
             prelude_resolve.write_substrate(
-                prelude, prelude_resolve.render_substrate(substrate, "ntkrnl_sys")
+                prelude,
+                prelude_resolve.render_substrate(
+                    prelude_resolve.with_glob_ties(substrate, ties), "ntkrnl_sys"
+                ),
             )
             names -= set(substrate)
         res.pending = sorted(names & pending)
-        todo = names - pending - set(copied) - c_macros - shared - id_aliases
+        # An identifier alias of a FUNCTION is _resolve_externs' (the A/W switch); one of a
+        # CONSTANT (`#define TVN_SELCHANGED TVN_SELCHANGEDW`) goes on to the clang-evaluated
+        # facts. Subtracting every alias dropped input's TVN_SELCHANGED silently -- a bare
+        # name in a `match` arm, so the first arm caught every WM_NOTIFY and OK never saved.
+        fn_aliases = {n for n in id_aliases if not prelude_resolve.looks_constant(n)}
+        todo = names - pending - set(copied) - c_macros - shared - fn_aliases
         # Plus every enum member a C `case` label names (derive's SWITCH_CONST_ENUM_PREFIXED):
         # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
@@ -1427,6 +2150,17 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
     res.undefined = [n for n in res.undefined if n not in found]
     res.conflicting = {k: v for k, v in res.conflicting.items() if k not in found}
     res.copied = copied
+    chans = _wine_debug_channels(state, prelude)
+    if chans:
+        print(f"resolve: wine debug channel storage written: {', '.join(chans)}")
+    if _unicode_tchar(state, prelude):
+        print("resolve: UNICODE module -- TCHAR family is WCHAR (ntdll-sys's glob says c_char)")
+    linked = _arch_link_names(state, prelude)
+    if linked:
+        print(
+            f"resolve: {len(linked)} extern(s) link to another name on some arches: "
+            + ", ".join(linked)
+        )
     _record(
         state,
         "resolve",
@@ -1440,6 +2174,44 @@ def stage_resolve(stem: str, max_passes: int = 4) -> None:
         print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
     if substrate:
         print(f"resolve: {len(substrate)} header helper(s) imported from ntkrnl-sys")
+        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning.
+        ported = {n for n, per in substrate.items() if any(v is not None for v in per.values())}
+        unpinned = prelude_resolve.unpin_substrate(modules_dir, ported, "ntkrnl_sys")
+        if unpinned:
+            print(
+                f"resolve: {sum(unpinned.values())} per-file pin(s) of the bindgen extern dropped "
+                f"in favour of the prelude's helper ({', '.join(sorted(unpinned))})"
+            )
+    guid_block, guid_refused = initguid_storage(state, crate, modules_dir)
+    write_guid_block(prelude, guid_block)
+    if guid_block:
+        print(f"resolve: {guid_block.count('pub static')} INITGUID GUID(s) given storage")
+    if guid_refused:
+        refused = ", ".join(guid_refused)
+        print(f"resolve: GUIDs with no single DEFINE_GUID value in the tree: {refused}")
+    if link_wanted:
+        # Declared as an extern (by the island or a consensus copy), exported by nothing the
+        # module imports, and not ported by the substrate either: these fail at LINK. Loud
+        # here, where the fix (a port in ntkrnl-sys/src/inline) is still cheap to name.
+        declared = {k for k, v in copied.items() if v.kind == "fn"}
+        for island in (crate / "src").glob("types_*.rs"):
+            declared |= set(
+                re.findall(
+                    r"^\s*pub\s+fn\s+([A-Za-z_]\w*)\b[^{;=]*;",
+                    island.read_text(errors="replace"),
+                    re.M,
+                )
+            )
+        gaps = (link_wanted & declared) - set(substrate) - shared - set(siblings)
+        # ...minus what the crate defines itself (atapi.h prototypes AtaAddChannel, so the
+        # island declares it) and what a static library the module links defines in C.
+        gaps -= set(prelude_resolve.sibling_definitions(gaps, modules_dir))
+        gaps = sorted(gaps - _static_lib_functions(REPO / state["module_dir"], gaps))
+        if gaps:
+            print(
+                f"resolve: {len(gaps)} called name(s) no import library exports on every arch "
+                f"and ntkrnl-sys does not port -- these will not link: {', '.join(gaps)}"
+            )
     if substrate_why:
         print(
             "resolve: ntkrnl-sys defines these but cannot provide them: "
@@ -1582,12 +2354,43 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             macros = function_like_macros(REPO, REPO / tu)
         except MacroAuthorityError:
             continue
+        from . import sdk_macros
+
+        try:
+            deep = sdk_macros.object_expansions(REPO, REPO / tu, pending - set(known))
+        except sdk_macros.LowerError:
+            deep = {}
         for name in pending:
-            target = known.get(name)
-            if target and target not in macros and target != name:
+            target = known.get(name) or deep.get(name)
+            if (
+                target
+                and re.fullmatch(r"[A-Za-z_]\w*", target)
+                and target not in macros
+                and target != name
+            ):
                 sdk_alias[name] = target
+    # A target a SHARED crate provides is re-exported from it under the alias: openglcfg's
+    # `StringCchCopy` is strsafe-rust's `StringCchCopyW`, never an extern (strsafe is header
+    # code no DLL exports).
+    shared_paths = {
+        n: (f"{ident}::{module}" if module else ident)
+        for (ident, module), names in prelude_resolve.shared_provides(
+            REPO / "sdk" / "lib" / "rust"
+        ).items()
+        for n in names
+    }
+    for name, target in sorted(sdk_alias.items()):
+        if target in shared_paths:
+            sigs[name] = (
+                "use",
+                f"pub use {shared_paths[target]}::{target} as {name};",
+                "sdk alias",
+            )
+    sdk_alias = {n: t for n, t in sdk_alias.items() if t not in shared_paths}
     # A target already declared (hand-written or consensus) is aliased, not declared again.
-    todo = (todo - set(sdk_alias)) | {t for t in sdk_alias.values() if t not in declared}
+    todo = (todo - set(sdk_alias) - set(sigs)) | {
+        t for t in sdk_alias.values() if t not in declared
+    }
     for tu in state["tus"]:
         if not todo:
             break
@@ -2002,6 +2805,66 @@ def _seed_item_bank(stem: str, macros: dict, thinking: str, item_path) -> None:
                 item_path(name).write_text(item)
 
 
+def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -> None:
+    """SDK header macros the crate CALLS, lowered from the TUs' own preprocessor ($0).
+
+    See sdk_macros.py. A name rustc cannot resolve and the crate spells as a call
+    (`PropSheet_Changed(..)` or `PropSheet_Changed!(..)`) is offered; one the preprocessor
+    says is not a function-like macro is simply not lowered, and what the lowering refuses is
+    listed for a hand port.
+    """
+    from . import sdk_macros
+
+    sources = "\n".join(
+        rs.read_text(errors="replace") for rs in (crate / "src" / state["stem"]).glob("*.rs")
+    )
+    called = {n for n in unresolved if re.search(rf"\b{re.escape(n)}\s*!?\s*\(", sources)}
+    wanted = called | sdk_macros.existing(prelude)
+    kinds = prelude_resolve.unresolved(
+        state["crate"],
+        RUST_TARGETS["amd64"],
+        REPO / "sdk" / "lib" / "rust",
+        STATE_ROOT / state["stem"] / "target-amd64",
+    )
+    had = sdk_macros.existing_items(prelude)
+    want_types = {n for n, ns in kinds.items() if "type" in ns} | had["type"]
+    want_values = {n for n, ns in kinds.items() if ns == {"value"}} - called | had["value"]
+    hand = local_macros.hand_ported(prelude) - sdk_macros.existing(prelude)
+    hand -= had["type"] | had["value"]
+    # ...but a name ALSO defined outside every generated block stays hand-owned: the
+    # scaffold's `pub const NULL` once landed in this block too (mmsys, E0428), and then
+    # subtracting the block's own names above handed NULL back to the lowering.
+    hand |= sdk_macros.outside_block_names(prelude)
+    # A name a SHARED crate provides (win32macros-rust's LOWORD/MAKELONG/UlongToPtr) is never
+    # lowered per crate: a local copy makes `refresh_shared_crates` drop the shared re-export,
+    # and the duplicate then perpetuates itself on every replay.
+    hand |= set().union(*prelude_resolve.shared_provides(REPO / "sdk" / "lib" / "rust").values())
+    wanted -= hand
+    tus = [REPO / t for t in state["tus"]]
+    lowered, refused = sdk_macros.lower_for_crate(REPO, tus, crate / "src", wanted)
+    items, item_refused = sdk_macros.object_items(
+        REPO, tus, crate / "src", want_values - hand, want_types - hand
+    )
+    refused.update(item_refused)
+    if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
+        print(
+            f"macros: {len(lowered)} SDK header macro(s) and {len(items)} type/pointer "
+            f"constant(s) lowered ($0): {', '.join(sorted({*lowered, *items}))}"
+        )
+    pasting = {n for n, why in refused.items() if why.startswith("token pasting")}
+    widen = sdk_macros.widening_macros(REPO, tus, pasting)
+    for rs in sorted((crate / "src" / state["stem"]).glob("*.rs")):
+        text = rs.read_text()
+        new, n = sdk_macros.widen_call_sites(text, widen)
+        if n:
+            rs.write_text(new)
+            print(f"macros: {rs.stem}: {n} TEXT-style literal(s) widened to UTF-16 ($0)")
+    for name in widen:
+        refused.pop(name, None)
+    for name, why in sorted(refused.items()):
+        print(f"macros: SDK macro {name} NOT lowered, hand-port it: {why}")
+
+
 def stage_macros(
     stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
 ) -> None:
@@ -2034,8 +2897,10 @@ def stage_macros(
             for rs in (crate / "src" / stem).glob("*.rs")
         )
     }
+    _sdk_macros(state, crate, prelude, names - set(defs))
     wanted = called | local_macros.existing(prelude)
-    macros = local_macros.closure(wanted, defs)
+    hand = local_macros.hand_ported(prelude)
+    macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
@@ -2133,7 +2998,9 @@ def _repair(stem: str, crate: str) -> str:
     return session.status
 
 
-def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> None:
+def stage_replay(
+    stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1, model: str = "deepseek"
+) -> None:
     """Rebuild the crate from everything already bought, in order, for $0.
 
     translate (bank) -> resolve -> macros (bank) -> integrate -> crate-repair -> resolve ->
@@ -2159,23 +3026,35 @@ def stage_replay(stem: str, *, fix_cap: float = 0.0, fix_rounds: int = 1) -> Non
     state = load_state(stem)
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     stage_resolve(stem)
+    # Macros again: rustc names an unresolved macro only once the errors in front of it are
+    # gone, so the first pass misses what repair uncovers (access's `IntToPtr`). The bank
+    # and the SDK lowering are $0; this pass buys nothing new.
+    stage_macros(stem, model=model, cost_cap=0.0, dry_run=False)
+    stage_integrate(stem)
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
     # Before fix, so fix never pays to repair a function the hand bank replaces.
     apply_hand(stem)
     stage_fix(
         stem,
-        model="deepseek",
+        model=model,
         cost_cap=fix_cap,
         rounds=fix_rounds,
         thinking="off",
         concurrency=8,
     )
     apply_hand(stem)
+    # A hand body can name what nothing bought did (wined3dcfg's InitSettings calls
+    # RegCloseKey): resolve after it, or the replay ends with that name unresolved.
+    stage_resolve(stem)
     # Once more, AFTER the hand bank: a hand body is written against the prelude of its day,
     # and the prelude moves (strsafe-rust began providing RtlStringCchPrintfA as a macro, and
     # usetup's 12 banked call sites still called it as a function). Repair is deterministic
     # and idempotent, so a body that needs nothing is left byte-identical.
     print(f"replay: crate-repair {_repair(stem, state['crate'])}")
+    # And resolve once more: rustc names an unresolved constant only when nothing in front
+    # of it halts the check, so the fixes above can UNCOVER names (main's WHEEL_PAGESCROLL,
+    # clang-evaluable all along, surfaced only after fix round 2).
+    stage_resolve(stem)
     stage_check(stem)
     print(f"replay: {(time.time() - started) / 60:.1f} min")
 
@@ -2758,6 +3637,29 @@ def stage_check(stem: str) -> dict:
                 continue
             per_file[where] = per_file.get(where, 0) + 1
         globs = _masking_glob(diags)
+        # A C `case` constant that became a catch-all BINDING compiles with a warning only,
+        # and is the one defect here that is a silent wrong answer (input's TVN_SELCHANGED
+        # swallowed every WM_NOTIFY: OK never saved). Counted as an error so "clean" means it.
+        catch: set[str] = set()
+        suspects: set[str] = set()
+        for d in diags:
+            catch |= prelude_resolve.pattern_bindings(d)
+            suspects |= prelude_resolve._shared_value_patterns(d)
+        visible = prelude_resolve._visible_value_names(
+            REPO / "sdk" / "lib" / "rust", state["crate"]
+        )
+        if suspects:
+            catch |= suspects - visible
+        # And statically: a bare UPPER_CASE arm that names nothing visible. A catch-all that is
+        # the LAST arm leaves no arm unreachable, so rustc says nothing at all -- usrmgr's
+        # `LVN_ENDLABELEDIT =>` sent every list-view notification to the label-edit handler.
+        catch |= _undefined_arm_names(state, visible)
+        if catch:
+            per_file["<catch-all match arm>"] = len(catch)
+            print(
+                f"check {arch}: CATCH-ALL -- match arm(s) binding an undefined constant: "
+                + ", ".join(sorted(catch))
+            )
         errors = sum(per_file.values())
         result[arch] = {
             "rc": 101 if errors or untranslated else 0,
@@ -2782,6 +3684,23 @@ def stage_check(stem: str) -> dict:
         **{a: {k: r[k] for k in ("rc", "errors", "untranslated")} for a, r in result.items()},
     )
     return result
+
+
+_ARM = re.compile(r"(?m)^\s*((?:[A-Z][A-Z0-9_]*\s*\|\s*)*[A-Z][A-Z0-9_]*)\s*(?:if\b[^=]*)?=>")
+
+
+def _undefined_arm_names(state: dict, visible: set[str]) -> set[str]:
+    """UPPER_CASE bare-name `match` arms in the translated modules that name no constant the
+    crate can see (its sources, ntdll-sys, the shared crates): each is a catch-all binding."""
+    src_dir = _crate_dir(state) / "src" / state["stem"]
+    out: set[str] = set()
+    for p in src_dir.glob("*.rs"):
+        text = p.read_text(errors="replace")
+        for m in _ARM.finditer(text):
+            for name in re.split(r"\s*\|\s*", m.group(1)):
+                if name and name not in visible:
+                    out.add(name)
+    return out
 
 
 def _masking_glob(diags: list[dict]) -> list[str]:
@@ -2922,7 +3841,9 @@ def _main(args) -> int:
                 thinking=args.thinking,
             )
         elif args.port_stage == "replay":
-            stage_replay(args.stem, fix_cap=args.fix_cap, fix_rounds=args.fix_rounds)
+            stage_replay(
+                args.stem, fix_cap=args.fix_cap, fix_rounds=args.fix_rounds, model=args.model
+            )
         elif args.port_stage == "fix":
             stage_fix(
                 args.stem,
@@ -2949,6 +3870,8 @@ def _main(args) -> int:
             stage_flip(args.stem)
         elif args.port_stage == "data":
             stage_data(args.stem, args.tu)
+        elif args.port_stage == "oracle":
+            stage_oracle(args.stem)
         elif args.port_stage == "status":
             stage_status(args.stem)
     except (PortError, pd.ProfileDeriveError) as e:
@@ -2966,6 +3889,9 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
+    stages.add_parser(
+        "oracle", help="the pre-flip C as <target>_c, for modrun's runtime diff (c_oracle)"
+    ).add_argument("stem")
     q = stages.add_parser("data", help="a C DATA TU (tables, no code) as Rust statics, $0")
     q.add_argument("stem")
     q.add_argument("tu", help="the .c, relative to the module (or the repo)")
@@ -2996,6 +3922,7 @@ def add_parser(sub) -> None:
     q.add_argument("stem")
     q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")
     q.add_argument("--fix-rounds", type=int, default=1)
+    q.add_argument("-m", "--model", default="deepseek", help="model for NEW fix purchases")
     q = stages.add_parser(
         "fix", help="send each function rustc still rejects back to the model, errors attached"
     )

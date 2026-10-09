@@ -1241,7 +1241,10 @@ unsafe fn SpiProcessCompletedRequest(
                 ((*Srb).DataBuffer as *mut i8)
                     .offset_from((*SrbInfo).DataOffset as *mut i8) as isize,
             )).cast();
-        (*Srb).SrbFlags as u32 & SRB_FLAGS_DATA_IN != 0;
+        // In case of data going in, flush the buffers (scsi.c:673).
+        if (*Srb).SrbFlags as u32 & SRB_FLAGS_DATA_IN != 0 {
+            ke_flush_io_buffers();
+        }
     }
 
     if !(*SrbInfo).BaseOfMapRegister.is_null() && !(*SrbInfo).ScatterGather.is_null() {
@@ -1589,9 +1592,9 @@ pub unsafe extern "system" fn ScsiPortStartIo(
                 ((*Srb).DataBuffer as *mut u8).offset_from(virtual_base) as isize,
             ) as *mut c_void;
         }
-        // Original had if (DeviceExtension->AdapterObject) { KeFlushIoBuffers(...); }
-        // Anchor preserved only the condition expression, no call.
-        !(*DeviceExtension).AdapterObject.is_null();
+        if !(*DeviceExtension).AdapterObject.is_null() {
+            ke_flush_io_buffers();
+        }
 
         if (*DeviceExtension).MapRegisters != 0 {
             (*SrbInfo).NumberOfMapRegisters = ADDRESS_AND_SIZE_TO_SPAN_PAGES(
@@ -1660,3 +1663,16 @@ pub unsafe extern "system" fn ScsiPortStartIo(
     }
 }
 
+/// `KeFlushIoBuffers(Mdl, ReadOperation, DmaOperation)`, which is a MACRO and differs by
+/// arch: empty on x86 and amd64, whose DMA is cache-coherent (xdk/x86/ke.h:188,
+/// xdk/amd64/ke.h:172), and `_DataSynchronizationBarrier()` on arm64 (xdk/arm64/ke.h:106).
+/// The translation kept only the conditions guarding both calls, which is correct on
+/// the two arches smoke runs and drops the barrier on the one where real hardware DMA
+/// is not coherent: a read completed into memory the CPU then sees stale. No operand
+/// matters on any arch, so none is taken.
+#[inline(always)]
+unsafe fn ke_flush_io_buffers() {
+    // Not `nomem`: the barrier must also order the compiler's own memory accesses.
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+}

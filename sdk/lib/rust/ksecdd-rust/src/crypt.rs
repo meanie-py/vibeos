@@ -4,7 +4,7 @@ use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS, STATUS_INSUFFICIENT_RESOURCES
 use crate::types::*;
 use crate::glue::*;
 use crate::glue::RtlSecureZeroMemory; // explicit: shadow ddk::* phantom (FORCEINLINE)
-use crate::glue::RtlAssert; // explicit: shadow ddk::* phantom (retail no-op)
+use crate::glue::RtlAssert; // explicit: shadow ddk::* phantom (the kernel export, via glue)
 use ntkrnl_sys::constants::*;
 use core::ffi::c_void;
 

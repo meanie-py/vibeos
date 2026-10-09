@@ -57,6 +57,7 @@ pub mod sort; // gdi/eng/sort.c — EngSort (proving slice)
 pub mod gdiobj; // gdi/ntgdi/gdiobj.c (+split2) — GDI handle table [Phase 1a]
 pub mod object; // user/ntuser/object.c — USER handle/object table [Phase 1b]
 pub mod wow64;  // WoW64: project the 64-bit CLIENTINFO into a 32-bit guest's TEB32
+pub mod pfnclient; // per-process client window procs for a non-native user32 (x86-64 guests)
 pub mod math;   // gdi/eng/math.c — EngMulDiv (Phase 2a proving slice)
 pub mod error;     // gdi/eng/error.c — Eng{Get,Set}LastError + SetLastNtError (FASTCALL)
 pub mod string;    // gdi/eng/string.c — STROBJ_* (re-translated with upgraded pipeline)

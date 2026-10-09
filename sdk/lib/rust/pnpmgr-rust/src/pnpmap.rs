@@ -432,7 +432,15 @@ unsafe fn IopEnumerateDetectedDevices(
                     LocalBootResources as *mut u8,
                     (*pValueInformation).DataLength as usize,
                 );
-            } else if (*ParentBootResources).PartialResourceList.PartialDescriptors[(*ParentBootResources).PartialResourceList.Count as usize - 1].Type == 4 {
+                // (Next arm.) PartialDescriptors is a C flexible array (`PartialDescriptors[1]`,
+                // xdk/cmtypes.h:350) of Count descriptors. Indexing bindgen's [_; 1] at
+                // Count - 1 panicked -- in the kernel, during device enumeration -- for any
+                // parent whose boot resources hold two descriptors or more.
+            } else if (*(&raw const (*ParentBootResources).PartialResourceList.PartialDescriptors[0])
+                .add((*ParentBootResources).PartialResourceList.Count as usize - 1))
+            .Type
+                == 4
+            {
                 core::ptr::copy_nonoverlapping(
                     (*pValueInformation).Data.as_ptr(),
                     LocalBootResources as *mut u8,

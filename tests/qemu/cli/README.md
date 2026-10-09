@@ -111,6 +111,45 @@ all included), then auto-triage on failure.
   `smoke:amd64-bios` lane. `VIBEOS_QEMU_BOOT_TRANSPORT=usb-ehci|ide-cd|usb-storage`
   picks the boot device on any x86 arch. See `docs/engineering/bios-boot.md`.
 
+- **`--gic 3`** (arm64) boots QEMU virt with a GICv3 and an ITS (`VIBEOS_QEMU_GIC=3`;
+  the default is the GICv2 the Pi 4 has) and FAILS the boot (`GIC_NOT_V3`) unless the HAL
+  prints `[GIC] GICv3: distributor`, and with `--nvme` (`GIC_NO_ITS`) unless an ITS came up
+  for MSI-X (`[HAL] GICv3 ITS: N of M up`, N at least 1). With `--smp N` it also carries the
+  IPIs, which are `ICC_SGI1R_EL1` writes there instead of GICD_SGIR, and the ITS spreads
+  each device's messages across the CPUs.
+
+- **`--smmu`** (arm64) puts an SMMUv3 in front of the PCI root complex
+  (`VIBEOS_QEMU_SMMU=1`, `iommu=smmuv3`) and FAILS the boot (`SMMU_NOT_BYPASSED`) unless the
+  HAL found it in the IORT and reports it passing DMA through untranslated (no vibeos
+  driver knows about an IOMMU). With `--gic 3 --nvme` the ITS's DeviceIDs then come through
+  the SMMU's own IORT mapping.
+
+- **`--nvme --tripwire NVME_LOSE_COMPLETION=<n>`** has nvme.sys throw its n-th I/O
+  completion away, so that command hangs, and FAILS the boot (`NVME_NOT_RESET`) unless
+  the driver reset the controller 30 s later, failed the command back and the retry
+  succeeded (`NVME_AFFINITY=<mask>` likewise sets the controller's interrupt Affinity
+  Policy, which the HAL must honour).
+
+- **`--nvme --tripwire NVME_FAIL_START=1`** has nvme.sys connect its messages and then
+  fail START, and FAILS the boot (`NVME_NOT_RELEASED`) unless the driver disconnected,
+  pci.sys turned MSI-X off at REMOVE, and the PnP manager gave every message vector back
+  to the HAL (`[PNP] message interrupts: N back to the HAL, 0 refused`). Nothing else in a
+  boot removes a device.
+
+- **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
+  mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
+  (`VIBEOS_QEMU_XHCI_MSI`), and FAILS the boot unless usbxhci ran (`XHCI_NOT_ENGAGED`), the
+  keyboard enumerated, which takes transfer interrupts (`XHCI_NO_TRANSFERS`), and usbport
+  took a message (`XHCI_NOT_MSI`) or the line (`XHCI_NOT_LINE`) as asked. With `msi`,
+  `--tripwire XHCI_MSI_MESSAGES=<n>` asks for a multiple-message MSI block of n, and the
+  boot FAILS (`XHCI_MSI_BLOCK_SHORT`) unless pci.sys enabled exactly that many.
+
+- **`--nvme-bridge`** (arm64, implies `--nvme`) puts that controller behind a PCIe root
+  port, on bus 1 (`VIBEOS_QEMU_NVME_BRIDGE=1`), as a server's devices are, and FAILS the
+  boot (`NVME_NOT_BEHIND_BRIDGE`) unless the PnP manager started the root port as well as
+  the `--nvme` checks passing: config space past bus 0 (the HAL's ECAM from the MCFG),
+  pci.sys driving the bridge's bus, and the requester ID of a device off the root bus.
+
 - **`--nvme`** (any arch; the default for `amd64-bios`, which is the OptiPlex 9020's
   stick + NVMe drive, opt out with `VIBEOS_QEMU_NVME=0`) attaches a QEMU `nvme`
   controller with one 64M MBR+FAT16 namespace (`VIBEOS_QEMU_NVME=1`) and FAILS the

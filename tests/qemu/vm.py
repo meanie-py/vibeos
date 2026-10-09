@@ -347,6 +347,39 @@ def smp_count() -> int | None:
     return int(n)
 
 
+def gic_version() -> int:
+    """The GIC arm64's virt machine gets: 2 (the default, as on the Pi 4) or 3
+    (VIBEOS_QEMU_GIC=3: GICv3 with an ITS, as on Graviton)."""
+    raw = os.environ.get("VIBEOS_QEMU_GIC", "").strip()
+    if raw in ("", "2"):
+        return 2
+    if raw == "3":
+        return 3
+    raise ValueError(f"VIBEOS_QEMU_GIC must be 2 or 3 (got {raw!r})")
+
+
+def smmu_requested() -> bool:
+    """VIBEOS_QEMU_SMMU=1: an SMMUv3 in front of arm64's PCI root complex, the way a
+    server puts one between its devices and memory (and, on a GICv3, its ITS)."""
+    return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
+
+
+def xhci_interrupts() -> str:
+    """VIBEOS_QEMU_XHCI_MSI: how the xHCI rig's controller interrupts. `msix` (QEMU's
+    default), `msi` (MSI-X off, so a plain MSI capability with a multiple-message
+    block) or `line` (both off: INTx, whatever the driver asked for)."""
+    mode = os.environ.get("VIBEOS_QEMU_XHCI_MSI", "").strip() or "msix"
+    if mode not in ("msix", "msi", "line"):
+        raise ValueError(f"VIBEOS_QEMU_XHCI_MSI={mode!r}: expected msix, msi or line")
+    return mode
+
+
+def nvme_bridged() -> bool:
+    """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
+    port, on bus 1, the way a server's devices do, instead of on the root bus."""
+    return os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() in ("1", "true", "yes")
+
+
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
@@ -731,9 +764,15 @@ class Arm64Config(ArchConfig):
     )
 
     def hostile_machine_args(self) -> list[str]:
-        """machine_args with the arm64 hostile hazards (a76, el2) applied."""
+        """machine_args with the GIC choice and the arm64 hostile hazards (a76, el2)
+        applied."""
         hazards = hostile_hazards()
         machine = list(self.machine_args)
+        if gic_version() == 3:
+            # virt's ITS is on by default with a GICv3; say so, so it cannot go quietly.
+            machine[machine.index("-M") + 1] += ",gic-version=3,its=on"
+        if smmu_requested():
+            machine[machine.index("-M") + 1] += ",iommu=smmuv3"
         if "el2" in hazards:
             machine[machine.index("-M") + 1] += ",virtualization=on"
         if "a76" in hazards:
@@ -1605,7 +1644,16 @@ def get_arch_config(arch: str) -> ArchConfig:
     cls = ARCH_CONFIGS.get(arch)
     if cls is None:
         raise ValueError(f"Unknown architecture: {arch!r}. Choose from: {list(ARCH_CONFIGS)}")
-    return cls()
+    cfg = cls()
+    # VIBEOS_QEMU_MEMORY=<qemu -m size> raises the guest RAM: smoke sets it from a payload's
+    # declared test.vm_memory (appstorm64: a sweep of x86-64 guests under FEX does not fit the
+    # 1G arm64 default with no pagefile).
+    mem = os.environ.get("VIBEOS_QEMU_MEMORY", "").strip()
+    if mem:
+        if not re.fullmatch(r"[1-9][0-9]*[MG]", mem):
+            raise ValueError(f"VIBEOS_QEMU_MEMORY must look like 2G or 1536M (got {mem!r})")
+        cfg.memory = mem
+    return cfg
 
 
 def launch_with_retry(
@@ -1911,9 +1959,12 @@ class QemuVM:
             if self._usb_disk_enabled()
             else []
         )
+        msi = {"msix": "", "msi": ",msix=off,msi=on", "line": ",msix=off,msi=off"}[
+            xhci_interrupts()
+        ]
         return [
             "-device",
-            "qemu-xhci,id=xhci,addr=0x8",
+            f"qemu-xhci,id=xhci,addr=0x8{msi}",
             "-device",
             "usb-kbd,bus=xhci.0,id=ukbd",
             "-device",
@@ -2009,12 +2060,17 @@ class QemuVM:
         disk = self.scratch_path.parent / "nvmedisk.qcow2"
         if not disk.exists():
             make_usb_stick_image(disk)
-        return [
-            "-drive",
-            f"file={disk},format=qcow2,if=none,id=nvme0",
-            "-device",
-            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
-        ]
+        drive = ["-drive", f"file={disk},format=qcow2,if=none,id=nvme0"]
+        if nvme_bridged():
+            # The root port takes slot 9 instead; the controller is its bus's device 0.
+            return [
+                *drive,
+                "-device",
+                "pcie-root-port,id=nvmeport,chassis=1,slot=1,addr=0x9",
+                "-device",
+                "nvme,serial=VIBEOSNVME0,drive=nvme0,bus=nvmeport",
+            ]
+        return [*drive, "-device", "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9"]
 
     def _virtio_mmio_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_VIRTIO_MMIO_DISK=1 (arm64) attaches a second virtio-blk-device

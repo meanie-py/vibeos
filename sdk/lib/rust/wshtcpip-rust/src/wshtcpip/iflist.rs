@@ -314,7 +314,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                 _ => {
                     outNumberOfBytes = 0 as DWORD;
                     pIntfIDItem = ((*IntfIDList).entry.next as *mut core::ffi::c_char).offset(
-                        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry)
+                        -(core::mem::offset_of!(_IntfIDItem, entry)
                             as core::ffi::c_ulonglong as isize),
                     ) as *mut _IntfIDItem as *mut IntfIDItem;
                     while core::ptr::addr_of_mut!((*pIntfIDItem).entry) != core::ptr::addr_of_mut!((*IntfIDList).entry) {
@@ -326,7 +326,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                             ) as DWORD as DWORD;
                         pIntfIDItem =
                             ((*pIntfIDItem).entry.next as *mut core::ffi::c_char).offset(
-                                -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry)
+                                -(core::mem::offset_of!(_IntfIDItem, entry)
                                     as core::ffi::c_ulonglong
                                     as isize),
                             ) as *mut _IntfIDItem as *mut IntfIDItem;
@@ -345,7 +345,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                         inTcpReq1.ID.toi_type = INFO_TYPE_PROVIDER as ULONG;
                         inTcpReq1.ID.toi_id = IP_MIB_ADDRTABLE_ENTRY_ID as ULONG;
                         pIntfIDItem = ((*IntfIDList).entry.next as *mut core::ffi::c_char).offset(
-                            -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry)
+                            -(core::mem::offset_of!(_IntfIDItem, entry)
                                 as core::ffi::c_ulonglong as isize),
                         ) as *mut _IntfIDItem
                             as *mut IntfIDItem;
@@ -377,7 +377,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                             } else {
                                 pIntfIDItem =
                                     ((*pIntfIDItem).entry.next as *mut core::ffi::c_char).offset(
-                                        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry)
+                                        -(core::mem::offset_of!(_IntfIDItem, entry)
                                             as core::ffi::c_ulonglong
                                             as isize),
                                     ) as *mut _IntfIDItem
@@ -390,7 +390,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                                 pIntfInfo = OutputBuffer as LPINTERFACE_INFO;
                                 pIntfIDItem =
                                     ((*IntfIDList).entry.next as *mut core::ffi::c_char).offset(
-                                        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry)
+                                        -(core::mem::offset_of!(_IntfIDItem, entry)
                                             as core::ffi::c_ulonglong
                                             as isize),
                                     ) as *mut _IntfIDItem
@@ -445,8 +445,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                                     pIntfIDItem = ((*pIntfIDItem).entry.next
                                         as *mut core::ffi::c_char)
                                         .offset(
-                                            -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>())
-                                                .entry)
+                                            -(core::mem::offset_of!(_IntfIDItem, entry)
                                                 as core::ffi::c_ulonglong
                                                 as isize),
                                         )
@@ -484,11 +483,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                                                 ((*IntfIDList).entry.next
                                                     as *mut core::ffi::c_char)
                                                     .offset(
-                                                        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<
-                                                            _IntfIDItem,
-                                                        >(
-                                                        ))
-                                                        .entry)
+                                                        -(core::mem::offset_of!(_IntfIDItem, entry)
                                                             as core::ffi::c_ulonglong
                                                             as isize),
                                                     )
@@ -515,11 +510,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
                                                 pIntfIDItem = ((*pIntfIDItem).entry.next
                                                     as *mut core::ffi::c_char)
                                                     .offset(
-                                                        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<
-                                                            _IntfIDItem,
-                                                        >(
-                                                        ))
-                                                        .entry)
+                                                        -(core::mem::offset_of!(_IntfIDItem, entry)
                                                             as core::ffi::c_ulonglong
                                                             as isize),
                                                     )
@@ -557,11 +548,11 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
         HeapFree(hHeap, 0 as DWORD, pIFEntry as PVOID);
     }
     pIntfIDItem = ((*IntfIDList).entry.prev as *mut core::ffi::c_char).offset(
-        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry) as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(_IntfIDItem, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut _IntfIDItem as *mut IntfIDItem;
     pIntfIDNext = ((*pIntfIDItem).entry.prev as *mut core::ffi::c_char).offset(
-        -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry) as core::ffi::c_ulonglong
+        -(core::mem::offset_of!(_IntfIDItem, entry) as core::ffi::c_ulonglong
             as isize),
     ) as *mut _IntfIDItem as *mut IntfIDItem;
     while core::ptr::addr_of_mut!((*pIntfIDItem).entry) != core::ptr::addr_of_mut!((*IntfIDList).entry) {
@@ -572,7 +563,7 @@ pub unsafe extern "system" fn WSHIoctl_GetInterfaceList(
         HeapFree(hHeap, 0 as DWORD, pIntfIDItem as PVOID);
         pIntfIDItem = pIntfIDNext;
         pIntfIDNext = ((*pIntfIDItem).entry.prev as *mut core::ffi::c_char).offset(
-            -(core::ptr::addr_of_mut!((*core::ptr::null_mut::<_IntfIDItem>()).entry) as core::ffi::c_ulonglong
+            -(core::mem::offset_of!(_IntfIDItem, entry) as core::ffi::c_ulonglong
                 as isize),
         ) as *mut _IntfIDItem as *mut IntfIDItem;
     }

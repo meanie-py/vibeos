@@ -39,7 +39,6 @@ unsafe extern "C" {
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
@@ -1731,7 +1730,7 @@ pub unsafe extern "C" fn SenseInfoInterpretRefineByIoControl(
     const IOCTL_DISK_CHECK_VERIFY: u32 = 0x74800;
     const IOCTL_CDROM_SET_SPEED: u32 = 0x24060;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if IoControlCode == IOCTL_CDROM_GET_LAST_SESSION
         || IoControlCode == IOCTL_CDROM_READ_TOC

@@ -736,7 +736,12 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
             let mut ppf: LPVOID = core::ptr::null_mut();
             hRes = IPersistFile_QueryInterface(pshl, &IID_IPersistFile, &mut ppf);
             if SUCCEEDED(hRes) {
-                hRes = IPersistFile_Load(ppf, (*ConsoleInfo).ConsoleTitle.as_mut_ptr(), 0);
+                // ConsoleTitle is a C flexible array (`WCHAR ConsoleTitle[ANYSIZE_ARRAY]`,
+                // concfg/settings.h:58) sized by cbSize, as the min() below computes. Its
+                // terminator indexed bindgen's [_; 1] and panicked -- in csrss -- whenever a
+                // console was started from a shortcut. One raw base, never a reference.
+                let title = &raw mut (*ConsoleInfo).ConsoleTitle[0];
+                hRes = IPersistFile_Load(ppf, title, 0);
                 if SUCCEEDED(hRes) {
                     let mut ShowCmd: i32 = 0;
 
@@ -744,8 +749,8 @@ pub(crate) unsafe fn LoadShellLinkConsoleInfo(
                         Length - 4,
                         ((*ConsoleInfo).cbSize as usize - FIELD_OFFSET!(_CONSOLE_STATE_INFO, ConsoleTitle) - core::mem::size_of::<u16>()) / core::mem::size_of::<u16>(),
                     );
-                    wcsncpy((*ConsoleInfo).ConsoleTitle.as_mut_ptr(), LinkName, Length);
-                    (*ConsoleInfo).ConsoleTitle[Length] = 0;
+                    wcsncpy(title, LinkName, Length);
+                    *title.add(Length) = 0;
 
                     hRes = IShellLinkW_GetShowCmd(pshl, &mut ShowCmd);
                     if SUCCEEDED(hRes) {

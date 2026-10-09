@@ -27,7 +27,7 @@ Already in the tree *(tree, 2026-10-05)*:
 | xHCI | **Rust-native** `usbxhci` (~20K lines, written in Rust from the start); SuperSpeed devices work on the Pi 4 |
 | HD Audio / PortCls | `drivers/wdm/audio/hdaudbus`, `portcls` |
 | D3DKMT thunks | `win32k-rust/src/d3dkmt.rs`: the syscall surface exists, but every adapter call returns `STATUS_PROCEDURE_NOT_FOUND` because nothing populates the dxgkrnl table |
-| NVMe | `nvme.sys` (2026-10-06), Rust from the start, all three arches: MSI-X interrupts since 2026-10-07 (the pin as fallback, a 10 ms timer behind both), one queue pair 63 commands deep with DMA to the requester's pages (also 2026-10-07), each namespace a disk.sys disk. Owed: a queue pair per CPU, controller reset on a hung command |
+| NVMe | `nvme.sys` (2026-10-06), Rust from the start, all three arches: MSI-X interrupts since 2026-10-07 (the pin as fallback, a 10 ms timer behind both), a queue pair per CPU (up to 8, each on the MSI-X message the HAL delivers to that CPU, since 2026-10-08), 63 commands deep with DMA to the requester's pages (2026-10-07), each namespace a disk.sys disk. A command hung 30 s resets the controller and is failed back for disk.sys to retry (2026-10-08; `--tripwire NVME_LOSE_COMPLETION=<n>` proves it) |
 | dxgkrnl / WDDM | **missing** |
 
 [`../product/driver-roadmap.md`](../product/driver-roadmap.md) predates the KMDF and xHCI
@@ -64,10 +64,40 @@ stub first). Real subsystem work, not stubs:
    `MSISupported` under its device key; pci.sys adds one message requirement per table
    entry (in FILTER_RESOURCE_REQUIREMENTS, since ReactOS queries requirements before
    AddDevice); the HAL translates each into a vector (x86: an APIC vector with no IOAPIC
-   pin; arm64: a GICv2m SPI) and supplies the address/data pci.sys writes into the table;
-   `IoConnectInterruptEx` connects message-based, or falls back to the line. Owed: plain
-   MSI (capability 05h), the GICv3 ITS backend (Graviton), freeing vectors on removal,
-   and `CONNECT_MESSAGE_BASED_PASSIVE`.
+   pin; arm64: a GICv2m SPI, or on a GICv3 an LPI that the ITS translates from the
+   device's requester ID through the IORT) and supplies the address/data pci.sys writes
+   into the table; `IoConnectInterruptEx` connects message-based, or falls back to the
+   line. The arm64 HAL drives a GICv3 (Graviton's) as well as the Pi's GICv2 since
+   2026-10-07: `smoke --arch arm64 --gic 3 [--nvme] [--smp N] [--smmu]`. The ITS backend
+   brings up every ITS the MADT lists, uses a two-level device table where the ITS can,
+   and spreads each device's messages across the CPUs (one collection per CPU); the
+   IORT walk follows a root complex through an SMMU, which the HAL puts in bypass at
+   boot since no driver programs an IOMMU. Since 2026-10-08: a device's `Affinity
+   Policy` (DevicePolicy, AssignmentSetOverride) rides on its message requirements and
+   the HAL places each message on a processor it allows, on all three arches (proved
+   by `--tripwire NVME_AFFINITY=<mask>`); arm64 `KeConnectInterrupt` enables on the
+   interrupt object's processor, as x86's does, and an ITS LPI enabled elsewhere is
+   moved there (MOVI). The PnP manager gives message vectors back to the HAL when a
+   device is removed or a translation is abandoned (ITS: DISCARD, then the device
+   unmapped), and pci.sys turns MSI/MSI-X off at STOP and REMOVE;
+   `--nvme --tripwire NVME_FAIL_START=1` proves that path (nvme.sys connects, then fails
+   START, and the boot fails unless the vectors come back). A device with MSI but no
+   MSI-X gets a multiple-message block since 2026-10-08, as on Windows: one requirement
+   spanning the block, which the HAL translates to consecutive values aligned to its
+   size (APIC vectors, GICv2m SPIs, or ITS EventIDs) and halves when it cannot find that
+   many together. usbport takes messages for xHCI controllers, so
+   `smoke --xhci msix|msi|line` runs the USB rig on each; with `msi` and
+   `--tripwire XHCI_MSI_MESSAGES=<n>` the controller gets an MSI block of n. Getting
+   xHCI onto MSI-X found pci.sys writing MSI-X tables before memory decode was on (field
+   manual). Owed: `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
+   handling itself over a DIRQL interrupt), and driving an SMMU for real (isolation)
+   rather than bypassing it. MOVI is built but never runs in QEMU: nothing connects a
+   message on a processor other than the one it was allocated for. The arm64 HAL's PCI config space comes from the MCFG since
+   2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
+   (pci.sys keeps the segment through bridges and in the requester ID the ITS routes
+   by), and the HAL publishes a root bus for each segment past 0. `smoke --arch arm64
+   --nvme-bridge` runs nvme.sys behind a PCIe root port on bus 1. Segments past 0 are
+   untested: QEMU's virt machine has one.
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.
@@ -85,7 +115,7 @@ unchanged.
 | Order | Area | What it takes | Notes |
 |---|---|---|---|
 | 1 | **KMDF wired up** | KMDF is built. What's left: version negotiation (drivers request specific WDF versions; ours is 1.17) and real drivers loaded on it | The master key: most modern drivers are KMDF |
-| 2 | **NVMe** | **First version done** (`nvme.sys`, 2026-10-06): a PnP driver that presents namespaces straight to disk.sys, not a StorPort miniport, because our StorPort never completes an SRB (its PDO handler and bus relations are stubs) and scsiport's legacy PCI scan cannot assign resources on arm64. INTx interrupts since the same day, MSI-X and a 63-deep queue with direct DMA since 2026-10-07. Owed: per-CPU queues, controller reset, and finishing StorPort, which vendor NVMe and RAID drivers still need | No modern PC boots without it. The test box has one (below) |
+| 2 | **NVMe** | **First version done** (`nvme.sys`, 2026-10-06): a PnP driver that presents namespaces straight to disk.sys, not a StorPort miniport, because our StorPort never completes an SRB (its PDO handler and bus relations are stubs) and scsiport's legacy PCI scan cannot assign resources on arm64. INTx interrupts since the same day, MSI-X and a 63-deep queue with direct DMA since 2026-10-07, a queue per CPU and controller reset on a hung command since 2026-10-08. Owed: finishing StorPort, which vendor NVMe and RAID drivers still need | No modern PC boots without it. The test box has one (below) |
 | 3 | **USB 3** | Our xHCI driver exists and works. The remaining question is compatibility with Windows 8+'s USB stack shape (`usbxhci` + `ucx01000` class extension + `usbhub3`) for vendor USB drivers that bind to it | Much further along than the rest |
 | 4 | **NDIS 6.x, then NetAdapterCx** | Modern Intel/Realtek NIC drivers are NDIS 6; the newest are NetAdapterCx (Windows 10, on KMDF) | Our NDIS is 5-era |
 | 5 | **HD Audio and the Vista audio stack** | Kernel: WaveRT miniports on PortCls (Realtek HDA drivers). User mode: the audio engine (`audiodg`) and WASAPI, which every modern app (Chrome included) talks to | Wine has WASAPI (`mmdevapi`) |

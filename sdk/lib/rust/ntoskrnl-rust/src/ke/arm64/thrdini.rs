@@ -361,6 +361,9 @@ pub unsafe extern "C" fn KiIdleLoop() -> ! {
                 (*Prcb).CurrentThread = NewThread;
                 (*NewThread).__bindgen_anon_5.__bindgen_anon_6.State = Running as UCHAR;
                 ntkrnl_sys::inline::ke::rq_inflight_unmark(NewThread);
+                // Leaving idle on our own: KiDeferredReadyThread only clears the
+                // idle bit for a thread it hands us as NextThread.
+                crate::ke::thrdschd::ki_idle_summary_clear((*Prcb).SetMember);
                 ntkrnl_sys::inline::ke::KiReleasePrcbLock(Prcb);
 
                 core::arch::asm!("msr daifclr, #2");

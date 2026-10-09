@@ -86,6 +86,7 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
         text=True,
     )
     names: dict[str, set[str]] = {}
+    suspects: set[str] = set()
     for line in proc.stdout.splitlines():
         try:
             msg = json.loads(line)
@@ -103,7 +104,61 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
             names.setdefault(m.group(1), set()).add("type")
         for name in pattern_bindings(msg.get("message") or {}):
             names.setdefault(name, set()).add("value")
+        suspects |= _shared_value_patterns(msg.get("message") or {})
+    # Newer rustc words a catch-all arm among several as "matches SOME of the same values",
+    # naming real constants and the binding alike. A real constant is DEFINED somewhere the
+    # crate can see; the catch-all is not (input's TVN_ITEMEXPANDING, after TVN_SELCHANGED).
+    if suspects:
+        defined = _visible_value_names(workspace, crate)
+        for name in suspects - defined:
+            names.setdefault(name, set()).add("value")
     return names
+
+
+def _shared_value_patterns(diag: dict) -> set[str]:
+    """UPPER_CASE pattern names an `unreachable pattern` note labels "matches some of the
+    same values"."""
+    if not str(diag.get("message") or "").startswith("unreachable pattern"):
+        return set()
+    out: set[str] = set()
+    for span in [
+        *(diag.get("spans") or []),
+        *(sp for c in diag.get("children") or [] for sp in c.get("spans") or []),
+    ]:
+        if "matches some of the same values" not in str(span.get("label") or ""):
+            continue
+        got = (span.get("text") or [{}])[0]
+        line = str(got.get("text") or "")
+        word = line[
+            int(got.get("highlight_start") or 1) - 1 : int(got.get("highlight_end") or 1) - 1
+        ]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", word.strip()):
+            out.add(word.strip())
+    return out
+
+
+def _visible_value_names(workspace: Path, crate: str) -> set[str]:
+    """`const`/`static` names in the crate, ntdll-sys's bindgen, and the shared crates."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
+    roots = [workspace / crate / "src", workspace / "ntdll-sys" / "src"]
+    roots += [workspace / d / "src" for d in ("win32macros-rust", "strsafe-rust")]
+    out: set[str] = set()
+    for root in roots:
+        for p in source_files(root, "*.rs") if root.is_dir() else []:
+            out |= set(
+                re.findall(
+                    r"\b(?:const|static(?:\s+mut)?)\s+([A-Z][A-Z0-9_]*)\s*:",
+                    p.read_text(errors="replace"),
+                )
+            )
+    return out
 
 
 _UNBOUND = re.compile(r"^variable `([A-Za-z_]\w*)` is not bound in all patterns")
@@ -599,7 +654,10 @@ SUBSTRATE_END = "// ==== end substrate helpers ===="
 ARCHES = {"x86": "i386", "x86_64": "amd64", "aarch64": "arm64"}
 _ALL_ARCHES = frozenset(ARCHES)
 #: Generated layout/assert files are not helpers anyone imports by name.
-_NOT_HELPERS = re.compile(r"^(?:hal_)?bindgen_|^size_check|^offset_check")
+# Not header ports: generated bindings and layout checks -- and `base`/`rtl`, ntoskrnl's own
+# Rust-flavoured core (its own LIST_ENTRY/SLIST_HEADER, `bool` returns): atapi's
+# `IsListEmpty(..) != 0` and `InitializeSListHead(&ddk_header)` stopped compiling on them.
+_NOT_HELPERS = re.compile(r"^(?:hal_)?bindgen_|^size_check|^offset_check|^base$|^rtl$")
 _SUBSTRATE_TOKEN = re.compile(
     r"(?P<cfg>#!?\[cfg\()"
     # Matched on MASKED text, where `extern "system" {` reads `extern          {`.
@@ -839,6 +897,149 @@ def substrate_helpers(
         else:
             found[name] = per
     return found, why
+
+
+_EXPLICIT_DDK = re.compile(r"^\s*use\s+\w+::ddk::\{([^}]*)\}", re.M)
+# An extern-block declaration: no body, no initializer (a bindgen accessor method has a body).
+_DECLARED = r"^\s*pub\s+(?:fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)\b[^{;=]*;"
+
+
+_IMPORTLIBS = re.compile(r"add_importlibs\(\s*\S+\s+([^)]*)\)")
+
+
+def module_exports(module_dir: Path, repo: Path) -> set[str] | None:
+    """Names the module's import libraries export on EVERY arch; None when unknowable.
+
+    The authority for "can this be an extern at all". A wdm.h FORCEINLINE (InitializeListHead,
+    ExAllocatePoolZero, KeGetCurrentIrql on amd64) is declared by the island like any export,
+    resolves, compiles -- and is undefined at link, because no .spec exports it. atapi linked
+    17 such names. A name some arch does not export is left to the substrate to decide per
+    arch (RtlUlongByteSwap: a fastcall export on i386, an intrinsic elsewhere).
+    """
+    from .spec_parser import parse_spec
+
+    cmake = module_dir / "CMakeLists.txt"
+    if not cmake.is_file():
+        return None
+    libs = {w for m in _IMPORTLIBS.finditer(cmake.read_text()) for w in m.group(1).split()}
+    specs: list[Path] = []
+    for lib in sorted(libs):
+        found = subprocess.run(
+            ["git", "ls-files", f"*/{lib}.spec", f"{lib}.spec"],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            check=False,
+        ).stdout.split()
+        if not found:
+            return None  # an import lib we cannot read: no authority, decide nothing
+        specs += [repo / f for f in found]
+    per_arch = [
+        set().union(*(parse_spec(spec, arch).keys() for spec in specs))
+        for arch in ("i386", "amd64", "arm64")
+    ]
+    return set.intersection(*per_arch) if per_arch else None
+
+
+def called_names(modules_dir: Path) -> set[str]:
+    """Every identifier the translated modules CALL (`X(`, not `X!(`)."""
+    out: set[str] = set()
+    for rs in sorted(modules_dir.glob("*.rs")):
+        out |= set(re.findall(r"(?<![!\w])([A-Za-z_]\w*)\s*\(", rs.read_text(errors="replace")))
+    return out
+
+
+def unpin_substrate(modules_dir: Path, names: set[str], ident: str) -> dict[str, int]:
+    """Point every module at the prelude's substrate import of `names`. Returns {file: edits}.
+
+    The translate stage wrote per-file `use ntkrnl_sys::ddk::{.., KeInitializeSpinLock, ..}`
+    lists and some bodies call `ntkrnl_sys::ddk::KeGetCurrentIrql()` by path. Either one binds
+    the bindgen EXTERN and beats the prelude's import of the real helper -- which for a header
+    inline means an undefined symbol at link (atapi: 7 of them, after resolve had already
+    imported every one).
+    """
+    out: dict[str, int] = {}
+    if not names:
+        return out
+    alt = "|".join(sorted(map(re.escape, names), key=len, reverse=True))
+    qualified = re.compile(rf"\b{re.escape(ident)}::ddk::({alt})\b")
+    lists = re.compile(rf"^(\s*use\s+{re.escape(ident)}::ddk::\{{)([^}}]*)(\}};[ \t]*\n?)", re.M)
+    for rs in sorted(modules_dir.glob("*.rs")):
+        text = rs.read_text(errors="replace")
+        n = 0
+
+        def trim(m: re.Match[str]) -> str:
+            nonlocal n
+            items = [i.strip() for i in m.group(2).split(",") if i.strip()]
+            kept = [i for i in items if i.split(" as ")[0].strip() not in names]
+            n += len(items) - len(kept)
+            return f"{m.group(1)}{', '.join(kept)}{m.group(3)}" if kept else ""
+
+        new = lists.sub(trim, text)
+        new, k = qualified.subn(r"\1", new)
+        n += k
+        if new != text:
+            rs.write_text(new)
+            out[rs.name] = n
+    return out
+
+
+def glob_ties(crate_src: Path, modules_dir: Path, sys_src: Path) -> dict[str, list[str]]:
+    """Names two prelude globs both export on some arch -> the arches (E0659 there).
+
+    The island (`crate::types::*`) and the kernel -sys glob (`ntkrnl_sys::ddk::*`) declare
+    many of the same functions, and a use through both is ambiguous. Which ones collide is
+    per ARCH: atapi's i386 island declares KeGetCurrentIrql (a real export there) where the
+    amd64 island does not (an inline there), so resolve -- which compiles amd64 -- never saw
+    it. Read from the islands rather than from rustc, because the import this produces
+    removes the very error that would justify it: a diagnostic-driven rule would drop it on
+    the next run and add it back on the one after. The -sys crate's declaration wins, the
+    one every other arch already resolves to.
+    """
+    # A name the prelude already spells out is settled there (a second explicit import is E0252).
+    prelude = crate_src / "prelude.rs"
+    settled: set[str] = set()
+    if prelude.is_file():
+        text = prelude.read_text(errors="replace")
+        m = re.search(re.escape(SUBSTRATE_BEGIN) + r".*?" + re.escape(SUBSTRATE_END), text, re.S)
+        settled = set(
+            re.findall(r"\b[A-Za-z_]\w*\b", text[: m.start()] + text[m.end() :] if m else text)
+        )
+    used: set[str] = set()
+    for rs in sorted(modules_dir.glob("*.rs")):
+        text = rs.read_text(errors="replace")
+        explicit = {
+            w.strip().split(" as ")[0]
+            for m in _EXPLICIT_DDK.finditer(text)
+            for w in m.group(1).split(",")
+        }
+        used |= set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", text)) - explicit
+    ties: dict[str, list[str]] = {}
+    for arch, suffix in ARCHES.items():
+        island = crate_src / f"types_{suffix}.rs"
+        if not island.is_file():
+            continue
+        mine = set(re.findall(_DECLARED, island.read_text(errors="replace"), re.M)) & used - settled
+        theirs: set[str] = set()
+        for p in (sys_src / f"bindgen_{suffix}.rs", sys_src / "bindgen_common.rs"):
+            if p.is_file():
+                theirs |= set(re.findall(_DECLARED, p.read_text(errors="replace"), re.M))
+        for name in sorted(mine & theirs):
+            ties.setdefault(name, []).append(arch)
+    return ties
+
+
+def with_glob_ties(
+    found: dict[str, dict[str, str | None]], ties: dict[str, list[str]]
+) -> dict[str, dict[str, str | None]]:
+    """`found` plus an explicit `ddk` import wherever a tie has no helper on that arch."""
+    out = {k: dict(v) for k, v in found.items()}
+    for name, arches in ties.items():
+        per = out.setdefault(name, {a: None for a in ARCHES})
+        for arch in arches:
+            if per.get(arch) is None:
+                per[arch] = "ddk"
+    return out
 
 
 def island_substrate(src: Path, workspace: Path) -> Path | None:

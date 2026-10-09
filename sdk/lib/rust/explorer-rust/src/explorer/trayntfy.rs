@@ -1302,7 +1302,7 @@ unsafe fn tnw_align_controls(this: *mut CTrayNotifyWnd, prc_client: *mut RECT) {
     let pt_pager: POINT;
     if (*this).IsHorizontal != 0 {
         let mut y = ((rc_client.bottom - rc_client.top) - (*this).trayNotifySize.cy) / 2;
-        if g_TaskbarSettings.UseCompactTrayIcons() != 0 {
+        if (*&raw const g_TaskbarSettings).UseCompactTrayIcons() != 0 {
             y += (*this).ContentMargin.cyTopHeight;
         }
         pt_pager = POINT {
@@ -1311,7 +1311,7 @@ unsafe fn tnw_align_controls(this: *mut CTrayNotifyWnd, prc_client: *mut RECT) {
         };
     } else {
         let mut x = ((rc_client.right - rc_client.left) - (*this).trayNotifySize.cx) / 2;
-        if g_TaskbarSettings.UseCompactTrayIcons() != 0 {
+        if (*&raw const g_TaskbarSettings).UseCompactTrayIcons() != 0 {
             x += (*this).ContentMargin.cxLeftWidth;
         }
         pt_pager = POINT {

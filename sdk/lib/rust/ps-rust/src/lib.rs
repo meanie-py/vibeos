@@ -37,5 +37,6 @@ pub mod quota;
 pub mod security;
 pub mod state;
 pub mod thread;
+pub mod trace;
 pub mod win32;
 pub mod inlines;

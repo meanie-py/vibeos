@@ -21,6 +21,20 @@
 #   (freezing one boot's face into the floor, the thing `--only` exists to
 #   prevent) and deleted this file's own provenance comments. Prefer a hand edit
 #   with a reason over a wholesale rewrite whenever the change is understood.
+# 2026-10-08, by HAND (rows only, per-arch samples all identical): banked a month of
+#   unbanked gains -- ExHardError 24/6 -> 30/0, IoVolume 1 -> 7 (ExResource stays 845 on purpose,
+#   c92ea2a: 879 minus the 34 checks its race can cost),
+#   ObSecurity 694 -> 695, RtlRangeList -> 5xx and the rest below. IoDeviceObject
+#   stays 184: 185 twice, then 184 in the validation sweep -- bistable, not banked. And ObTypes is now a
+#   .cpp (upstream, synced 2026-09-21): the parser only matched `<file>.c:<line>`, so its
+#   identities had silently vanished from every sweep since. The row now carries the
+#   ObTypes.cpp identities -- a rename plus two newly-passing asserts, not new failures.
+# 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
+#   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
+#   sweep list). MmReservedMapping's 44 are the TEST's i386 expectation, not ours: it wants
+#   the size PTE at `(TotalPtes + 2) << 32`, a value no 32-bit non-PAE PTE can hold. We
+#   store it in u.List.NextEntry at bit 12 (0x3000), exactly as upstream's C does, so
+#   upstream ReactOS fails these same lines; the ValidateMapping FALSEs cascade from :159.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -42,7 +56,7 @@ ExDoubleList OK pass=130 fail=16 skip=0 exit=0
     assert ExDoubleList.c:91
     assert ExDoubleList.c:99
 ExFastMutex OK pass=257 fail=0 skip=0 exit=0
-ExHardError OK pass=24 fail=6 skip=0 exit=0
+ExHardError OK pass=30 fail=0 skip=0 exit=0
 ExInterlocked OK pass=970 fail=4 skip=0 exit=0
     assert ExInterlocked.c:296
     assert ExInterlocked.c:297
@@ -111,7 +125,7 @@ IoFilesystem OK pass=162 fail=142 skip=1 exit=0
 IoInterrupt OK pass=2145 fail=0 skip=0 exit=0
 IoIrp OK pass=22 fail=0 skip=0 exit=0
 IoMdl OK pass=11 fail=0 skip=0 exit=0
-IoVolume OK pass=1 fail=0 skip=0 exit=0
+IoVolume OK pass=7 fail=0 skip=0 exit=0
 KdSystemDebugControl OK pass=40 fail=2 skip=0 exit=0
     assert KdSystemDebugControl.c:108
     assert KdSystemDebugControl.c:135
@@ -130,7 +144,20 @@ KeSpinLock OK pass=755 fail=30 skip=0 exit=0
     assert KeSpinLock.c:333
     assert KeSpinLock.c:343
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=587 fail=0 skip=0 exit=0
+MmReservedMapping OK pass=187 fail=44 skip=0 exit=0
+    assert MmReservedMapping.c:159
+    assert MmReservedMapping.c:211
+    assert MmReservedMapping.c:223
+    assert MmReservedMapping.c:240
+    assert MmReservedMapping.c:252
+    assert MmReservedMapping.c:282
+    assert MmReservedMapping.c:297
+    assert MmReservedMapping.c:348
+    assert MmReservedMapping.c:359
+    assert MmReservedMapping.c:386
+    assert MmReservedMapping.c:399
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003
@@ -176,24 +203,22 @@ NpfsVolumeInfo OK pass=63 fail=0 skip=0 exit=0
 ObHandle OK pass=351 fail=0 skip=0 exit=0
 ObQuery OK pass=19 fail=0 skip=0 exit=0
 ObReference OK pass=2205 fail=0 skip=0 exit=0
-ObSecurity OK pass=694 fail=15 skip=0 exit=0
+ObSecurity OK pass=695 fail=14 skip=0 exit=0
     assert ObSecurity.c:153
-    assert ObSecurity.c:189
 ObSymbolicLink OK pass=154 fail=0 skip=0 exit=0
 ObType OK pass=96 fail=0 skip=0 exit=0
-ObTypes OK pass=765 fail=17 skip=4 exit=0
-    assert ObTypes.c:198
-    assert ObTypes.c:202
-    assert ObTypes.c:209
-    assert ObTypes.c:212
-    assert ObTypes.c:214
-    assert ObTypes.c:219
-    assert ObTypes.c:221
-    assert ObTypes.c:231
-    assert ObTypes.c:232
-    assert ObTypes.c:233
-    assert ObTypes.c:27
-    assert ObTypes.c:28
+ObTypes OK pass=767 fail=15 skip=4 exit=0
+    assert ObTypes.cpp:269
+    assert ObTypes.cpp:276
+    assert ObTypes.cpp:279
+    assert ObTypes.cpp:281
+    assert ObTypes.cpp:288
+    assert ObTypes.cpp:290
+    assert ObTypes.cpp:301
+    assert ObTypes.cpp:302
+    assert ObTypes.cpp:303
+    assert ObTypes.cpp:80
+    assert ObTypes.cpp:81
 PsNotify OK pass=24 fail=0 skip=0 exit=0
 PsQuota OK pass=12 fail=0 skip=0 exit=0
 RtlAvlTreeKM OK pass=139 fail=0 skip=0 exit=0
@@ -201,7 +226,7 @@ RtlExceptionKM OK pass=33 fail=0 skip=0 exit=0
 RtlIntSafeKM OK pass=188 fail=0 skip=0 exit=0
 RtlIsValidOemCharacter OK pass=354 fail=0 skip=0 exit=0
 RtlMemoryKM OK pass=1085 fail=0 skip=0 exit=0
-RtlRangeList OK pass=232 fail=0 skip=0 exit=0
+RtlRangeList OK pass=521 fail=0 skip=0 exit=0
 RtlRegistryKM OK pass=210 fail=0 skip=0 exit=0
 RtlStackKM OK pass=39 fail=1 skip=0 exit=0
     assert RtlStack.c:70
@@ -215,7 +240,15 @@ SeInheritance OK pass=704433 fail=14 skip=0 exit=0
     assert SeInheritance.c:838
 SeLogonSession OK pass=4 fail=0 skip=0 exit=0
 SeQueryInfoToken OK pass=76 fail=0 skip=0 exit=0
-ZwAllocateVirtualMemory OK pass=843 fail=2 skip=0 exit=0
+TcpIpConnect OK pass=27 fail=7 skip=0 exit=0
+    assert TcpIp_user.c:117
+    assert connect.c:222
+    assert connect.c:233
+    assert connect.c:234
+    assert connect.c:235
+    assert connect.c:236
+    assert connect.c:237
+ZwAllocateVirtualMemory OK pass=849 fail=2 skip=0 exit=0
     assert ZwAllocateVirtualMemory.c:147
 ZwCreateSection OK pass=4 fail=3 skip=2 exit=0
     assert ZwCreateSection.c:272
@@ -258,12 +291,11 @@ HidPDescription OK pass=28 fail=9 skip=3 exit=0
     assert HidPDescription.c:189
     assert HidPDescription.c:200
     assert HidPDescription.c:204
-IoDeviceObject OK pass=184 fail=5 skip=0 exit=0
+IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189
     assert IoDeviceObject_drv.c:190
     assert IoDeviceObject_drv.c:207
-    assert? IoDeviceObject_drv.c:300
 IoReadWrite OK pass=16192 fail=151 skip=0 exit=0
     assert IoReadWrite_user.c:82
     assert IoReadWrite_user.c:83

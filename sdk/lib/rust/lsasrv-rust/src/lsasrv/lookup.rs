@@ -2527,7 +2527,6 @@ pub unsafe extern "C" fn LsapLookupSids(
     NamesBuffer = MIDL_user_allocate(names_buffer_len) as PLSAPR_TRANSLATED_NAME_EX;
     if NamesBuffer.is_null() {
         Status = STATUS_INSUFFICIENT_RESOURCES;
-        core::mem::drop(core::option::Option::None::<()>);
         break 'done;
     }
 

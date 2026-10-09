@@ -139,7 +139,12 @@ from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
 from .local_macros import expand as expand_macros
 from .local_macros import module_macros
-from .macro_authority import function_like_macros, register_via, string_literal_macros
+from .macro_authority import (
+    compile_argv,
+    function_like_macros,
+    register_via,
+    string_literal_macros,
+)
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
@@ -272,7 +277,9 @@ def resolve_target(args, path):
 # Model shortcuts for CLI convenience
 MODEL_ALIASES = {
     "sonnet": "claude-sonnet-4-5-20250929",
-    "haiku": "claude-haiku-4-5-20251001",
+    "haiku": "claude-haiku-5-5",
+    "haiku-5-5": "claude-haiku-5-5",
+    "haiku-4-5": "claude-haiku-4-5-20251001",
     "opus": "claude-opus-4-8",
     "opus-4-7": "claude-opus-4-7",
     "gemini-pro": "gemini-2.5-pro",
@@ -2248,6 +2255,31 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
                 agreed = here
             else:
                 agreed = {k: v for k, v in agreed.items() if here.get(k) == v}
+    return {**_compile_db_pinned_macros(wanted), **(agreed or {})}
+
+
+def _cheap_enough_to_fan_out(model: str) -> bool:
+    """Is `model`'s output price at or below DeepSeek v4-pro's? The `--concurrency` gate."""
+    price = MODEL_PRICING.get(model)
+    return price is not None and price[1] <= MODEL_PRICING[DEEPSEEK_MODEL_V4_PRO][1]
+
+
+def _compile_db_pinned_macros(c_file: Path) -> dict[str, int]:
+    """`-DNAME=<int>` on `c_file`'s REAL compile command, agreed across all three arches.
+
+    The CMakeLists only carries the module's own `-D`s; the build config adds the rest.
+    timedate.c opens `DisplayWin32ErrorDbg` under `#if DBG` and `DisplayWin32Error` under its
+    `#else`, and with DBG unknown both read as live, so the coverage check demanded a plan
+    entry for the one the build never compiles. A name absent on any arch decides nothing.
+    """
+    agreed: dict[str, int] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        argv = compile_argv(REACTOS_ROOT, arch, c_file)
+        if argv is None:
+            return {}
+        defs = [a if a.count("=") else f"{a}=1" for a in argv if a.startswith("-D") and len(a) > 2]
+        here = pinned_int_macros(defs)
+        agreed = here if agreed is None else {k: v for k, v in agreed.items() if here.get(k) == v}
     return agreed or {}
 
 
@@ -2611,14 +2643,16 @@ def cmd_translate(args):
         else ""
     )
 
-    # Concurrency: fan out per-function calls. ONLY for mechanical mode on DeepSeek —
-    # mechanical functions are independent (each forward-declares its callees), and
-    # DeepSeek is cheap enough that a bounded fan-out won't black-hole the budget the
-    # way Claude could. Claude/Gemini/idiomatic stay strictly sequential by policy.
+    # Concurrency: fan out per-function calls. ONLY for mechanical mode on a model no dearer
+    # than DeepSeek — mechanical functions are independent (each forward-declares its
+    # callees), and at that price a bounded fan-out won't black-hole the budget the way
+    # Sonnet/Opus could. The rule is the PRICE, not the vendor: Haiku 5.5 is cheaper than
+    # DeepSeek and ran ~250 control-panel functions one at a time before this.
     conc = max(1, getattr(args, "concurrency", 1) or 1)
-    if conc > 1 and not (mode == "mechanical" and model.startswith("deepseek-")):
+    if conc > 1 and not (mode == "mechanical" and _cheap_enough_to_fan_out(model)):
         print(
-            f"  (--concurrency {conc} ignored: only for --mode mechanical on DeepSeek)",
+            f"  (--concurrency {conc} ignored: only for --mode mechanical on a model "
+            "priced at or below DeepSeek)",
             file=sys.stderr,
         )
         conc = 1
@@ -3756,6 +3790,22 @@ def cmd_translate(args):
                     # and `ResponseCache.get` refuses any entry that still holds a token —
                     # so re-running the closed-envelope check here judged token-free Rust
                     # and could only false-reject, sending banked work back to be re-paid.
+                    # A stored reject that passes today's audit is adopted for $0, as on the
+                    # sequential path: hotplug's EnumHotpluggedDevices, refused by a checker
+                    # bug since fixed, otherwise hit the re-purchase guard below and was
+                    # neither re-bought nor recovered.
+                    if hit is None and dep.name not in reaudit_failed:
+                        hit = _adopt_rejected(
+                            dep,
+                            cache,
+                            fact_seals,
+                            call_seals,
+                            wide_seals,
+                            cpp_com_mode,
+                            func_idx,
+                            deterministic_contracts.get(dep.name, ""),
+                            sealed_names.get(dep.name),
+                        )
                     if hit is not None:
                         # The bank keeps the reply as the model spelled it; see
                         # restore_requested_name (a case-only rename of the C name).
@@ -5024,6 +5074,7 @@ def cmd_estimate(args):
         ("DeepSeek v4-flash", "deepseek-v4-flash"),
         ("Opus   (claude-opus-4-8)", "claude-opus-4-8"),
         ("Sonnet (claude-sonnet-4-5)", "claude-sonnet-4-5-20250929"),
+        ("Haiku  (claude-haiku-5-5)", "claude-haiku-5-5"),
         ("Haiku  (claude-haiku-4-5)", "claude-haiku-4-5-20251001"),
         ("Gemini 2.5 Pro", "gemini-2.5-pro"),
         ("Gemini 2.5 Flash", "gemini-2.5-flash"),

@@ -16,6 +16,10 @@
 use core::ffi::{c_char, c_int, c_uint, c_void};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+const CP_UTF8: c_uint = 65001;
+const MB_ERR_INVALID_CHARS: u32 = 0x8;
+const WC_ERR_INVALID_CHARS: u32 = 0x80;
+
 /// `struct _exception` (math.h).
 #[repr(C)]
 pub struct Exception {
@@ -109,6 +113,11 @@ pub unsafe extern "C" fn __acrt_MultiByteToWideChar(
     dst: *mut u16,
     dst_len: c_int,
 ) -> c_int {
+    // UCRT's own wrapper, which this shim had dropped: for CP_UTF8 Windows accepts only
+    // MB_ERR_INVALID_CHARS (anything else is ERROR_INVALID_FLAGS), and the CRT's callers
+    // all pass MB_PRECOMPOSED. Passed through, every LCMapString/GetStringType for a
+    // UTF-8 locale failed, so LC_CTYPE fell back to "C" under setlocale("en_US.UTF-8").
+    let flags = if cp == CP_UTF8 { flags & MB_ERR_INVALID_CHARS } else { flags };
     MultiByteToWideChar(cp, flags, src, src_len, dst, dst_len)
 }
 
@@ -124,6 +133,11 @@ pub unsafe extern "C" fn __acrt_WideCharToMultiByte(
     default_char: *const c_char,
     used_default: *mut c_int,
 ) -> c_int {
+    // As above: for CP_UTF8 only WC_ERR_INVALID_CHARS is accepted, and the default-char
+    // arguments must be NULL.
+    if cp == CP_UTF8 {
+        return WideCharToMultiByte(cp, flags & WC_ERR_INVALID_CHARS, src, src_len, dst, dst_len, core::ptr::null(), core::ptr::null_mut());
+    }
     WideCharToMultiByte(cp, flags, src, src_len, dst, dst_len, default_char, used_default)
 }
 

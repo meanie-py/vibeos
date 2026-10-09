@@ -67,7 +67,7 @@ const _: () = assert!(size_of::<super::ddk::_ARM64_DBGKD_CONTROL_SET>() == 12);
 const _: () = assert!(size_of::<super::ddk::_ARM64_NT_CONTEXT>() == 912);
 const _: () = assert!(size_of::<super::ddk::_ARM_DBGKD_CONTROL_REPORT>() == 24);
 const _: () = assert!(size_of::<super::ddk::_ARM_DBGKD_CONTROL_SET>() == 12);
-const _: () = assert!(size_of::<super::ddk::_ARM_LOADER_BLOCK>() == 80);
+const _: () = assert!(size_of::<super::ddk::_ARM_LOADER_BLOCK>() == 96);
 const _: () = assert!(size_of::<super::ddk::_ATOM_BASIC_INFORMATION>() == 8);
 const _: () = assert!(size_of::<super::ddk::_ATOM_TABLE_INFORMATION>() == 8);
 const _: () = assert!(size_of::<super::ddk::_AUX_ACCESS_DATA>() == 32);
@@ -765,7 +765,7 @@ const _: () = assert!(size_of::<super::ddk::_LEGACY_DEVICE_DETECTION_INTERFACE>(
 const _: () = assert!(size_of::<super::ddk::_LINK_TRACKING_INFORMATION>() == 20);
 const _: () = assert!(size_of::<super::ddk::_LIST_ENTRY>() == 16);
 const _: () = assert!(size_of::<super::ddk::_LOADER_BUGCHECK_PARAMETERS>() == 40);
-const _: () = assert!(size_of::<super::ddk::_LOADER_PARAMETER_BLOCK>() == 264);
+const _: () = assert!(size_of::<super::ddk::_LOADER_PARAMETER_BLOCK>() == 280);
 const _: () = assert!(size_of::<super::ddk::_LOADER_PARAMETER_CI_EXTENSION>() == 12);
 const _: () = assert!(size_of::<super::ddk::_LOADER_PARAMETER_EXTENSION>() == 184);
 const _: () = assert!(size_of::<super::ddk::_LOADER_PARAMETER_HYPERVISOR_EXTENSION>() == 56);

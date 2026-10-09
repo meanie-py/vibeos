@@ -66,7 +66,6 @@ extern "C" {
     
 }
 extern "system" {
-    fn PAGED_CODE();
     fn NT_ASSERT(condition: bool);
     fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u8);
     fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
@@ -1529,7 +1528,7 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
     OriginalIrp: PIRP,
     PageControl: u8,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let fdoExt: *mut FUNCTIONAL_DEVICE_EXTENSION = (*(*Pkt).Fdo).DeviceExtension as _;
     let fdoData: *mut CLASS_PRIVATE_FDO_DATA = (*fdoExt).PrivateFdoData;
@@ -1942,9 +1941,6 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
     );
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

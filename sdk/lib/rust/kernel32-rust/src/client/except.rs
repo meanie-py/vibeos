@@ -382,6 +382,37 @@ pub unsafe extern "system" fn GetErrorMode() -> u32 {
     return ErrMode;
 }
 
+/// `BaseProcessStartup`/`BaseThreadStartup`'s
+/// `__try { start() } __except (UnhandledExceptionFilter(GetExceptionInformation()))
+/// { ExitProcess/ExitThread(GetExceptionCode()) }`, for real.
+///
+/// The translation kept only the `__try` (DUMMY_PSEH), so no Win32 thread had a
+/// top-level handler: `UnhandledExceptionFilter` -- and with it
+/// `SetUnhandledExceptionFilter`, AeDebug, `SEM_NOGPFAULTERRORBOX` and the fault box --
+/// never ran on any arch, and every unhandled exception went second chance and ended as
+/// csrss's anonymous `TerminateProcess(0x80)`. On i386 the thread also ran with an
+/// empty `fs:[0]` chain, which `_setjmp3` (ucrtbase_apitest setjmp.c) saw as "no frame".
+/// ntdll's `RtlSehTryExcept` is a real frame on every arch (native SEH on amd64/arm64,
+/// an `fs:[0]` record on i386).
+pub(crate) unsafe fn run_under_top_level_handler<F: FnOnce()>(start: F) -> ! {
+    let mut state = ();
+    let caught = ntdll_sys::seh::try_except(
+        &mut state,
+        |_| start(),
+        |_, pointers| UnhandledExceptionFilter(pointers as PEXCEPTION_POINTERS),
+    );
+    // `start` ends in ExitThread, so only a handled exception gets here.
+    let code = match caught {
+        Err(code) => code as u32,
+        Ok(()) => 0,
+    };
+    /* If we are running inside CSRSS, then just quit this thread */
+    if BaseRunningInServerProcess == 0 {
+        crate::proc_getters::ExitProcess(code);
+    }
+    crate::k32_externs::ExitThread(code)
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn UnhandledExceptionFilter(
     ExceptionInfo: PEXCEPTION_POINTERS,

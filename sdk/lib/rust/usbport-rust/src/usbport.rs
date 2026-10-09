@@ -2141,6 +2141,12 @@ pub unsafe extern "system" fn USBPORT_AddDevice(
     (*FdoExtension).MiniPortInterface = MiniPortInterface;
     (*FdoExtension).FdoNameNumber = DeviceNumber;
 
+    // Before the PnP manager assigns resources, which follows AddDevice.
+    const USB_MINIPORT_VERSION_XHCI: u32 = 4;
+    if (*MiniPortInterface).Packet.MiniPortVersion == USB_MINIPORT_VERSION_XHCI {
+        crate::msi::opt_in(PhysicalDeviceObject);
+    }
+
     KeInitializeSemaphore(core::ptr::addr_of_mut!((*FdoExtension).DeviceSemaphore), 1, 1);
     KeInitializeSemaphore(core::ptr::addr_of_mut!((*FdoExtension).ControllerSemaphore), 1, 1);
 

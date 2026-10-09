@@ -8,9 +8,6 @@ use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile a
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
 
 extern "system" {
-    fn PAGED_CODE();
-}
-extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatVerifyOperationIsLegal(IrpContext: *mut IRP_CONTEXT);
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
@@ -31,8 +28,6 @@ extern "system" {
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02;  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
 
 
-unsafe extern "system" {
-}
 
 type ULONG = u32;
 type PIRP_CONTEXT = *mut core::ffi::c_void; // placeholder
@@ -101,7 +96,7 @@ pub unsafe extern "system" fn FatAcquireExclusiveVcb_Real(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
     if ExAcquireResourceSharedLite(
         core::ptr::addr_of_mut!((*Vcb).Resource) as *mut _,
         BooleanFlagOn((*( IrpContext as *mut IRP_CONTEXT )).Flags, IRP_CONTEXT_FLAG_WAIT),
@@ -217,7 +212,7 @@ pub unsafe extern "system" fn FatAcquireSharedFcbWaitForEx(
     IrpContext: *mut IRP_CONTEXT,
     Fcb: *mut FCB,
 ) -> i32 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT((FlagOn(
         (*(*IrpContext).OriginatingIrp).Flags,
@@ -365,7 +360,7 @@ pub unsafe extern "system" fn FatAcquireFcbForReadAhead(
     Fcb: *mut core::ffi::c_void,
     Wait: u8,
 ) -> u8 {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     //  We acquire the normal file resource shared here to synchronize
     //  correctly with purges.
@@ -478,7 +473,7 @@ pub unsafe extern "system" fn FatReleaseForCcFlush(
     let mut type_: i32;
     let header: *mut FSRTL_COMMON_FCB_HEADER;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let _ = device_object;
 
@@ -527,7 +522,7 @@ pub unsafe extern "system" fn FatNoOpAcquire(
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
-    PAGED_CODE();
+    PAGED_CODE!();
     NT_ASSERT((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
     UNREFERENCED_PARAMETER(Fcb);
@@ -540,7 +535,7 @@ pub unsafe extern "system" fn FatFilterCallbackAcquireForCreateSection(
 ) -> i32 {
     let _ = CompletionContext; // UNREFERENCED_PARAMETER
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(((*CallbackData).Operation == (FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as u8) as i32);
     NT_ASSERT(((*CallbackData).SizeOfFsFilterCallbackData == (core::mem::size_of::<FS_FILTER_CALLBACK_DATA>()) as u32) as i32);

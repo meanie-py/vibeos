@@ -601,6 +601,13 @@ pub unsafe extern "system" fn KiDispatchInterrupt() {
         KiRetireDpcListInDpcStack(Prcb, (*Prcb).DpcStack);
 
         (*Pcr).__bindgen_anon_1.NtTib.ExceptionList = OldHandler as *mut ntkrnl_sys::ddk::_EXCEPTION_REGISTRATION_RECORD;
+    } else {
+        // Serviced with nothing to retire: an IPI_DPC sent only to wake this CPU
+        // for a readied thread. KiIpiServiceRoutine set DpcInterruptRequested and
+        // only KiRetireDpcList clears it, so it stuck at 1 and every later local
+        // KeInsertQueueDpc requested nothing (kmtest KeDpc 316/0 -> 36/70 at
+        // i386 -smp 2; the arm64 soft-interrupt body had the same hole).
+        (*Prcb).DpcInterruptRequested = 0;
     }
 
     _enable();

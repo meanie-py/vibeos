@@ -44,7 +44,6 @@ extern "system" {
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 extern "system" {
     // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
@@ -355,7 +354,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     TracePrint!(
         TRACE_LEVEL_INFORMATION,
@@ -424,7 +423,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     if NT_SUCCESS(status) {
         DeviceRetrieveHackFlagsFromRegistry(deviceExtension);
         // scan for bad items.
-        DeviceScanForSpecial(deviceExtension, CdRomBadItems.as_mut_ptr(), Some(DeviceHackFlagsScan));
+        DeviceScanForSpecial(deviceExtension, (&raw mut CdRomBadItems).cast::<CDROM_SCAN_FOR_SPECIAL_INFO>(), Some(DeviceHackFlagsScan));
         // Check to see if it's a special device that needs special error process.
         DeviceScanSpecialDevices(deviceExtension); // may send command to device
     }
@@ -862,7 +861,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     let mut descriptor: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let device_extension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Set the passed-in descriptor pointer to NULL as default
     *Descriptor = core::ptr::null_mut();
@@ -1057,7 +1056,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
     const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // NT_ASSERT(DeviceList)
     NT_ASSERT((!DeviceList.is_null()) as i32);
@@ -1134,7 +1133,7 @@ pub unsafe extern "C" fn DeviceHackFlagsScan(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Data: usize,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut data = Data;
     // CLEAR_FLAG
@@ -1287,7 +1286,7 @@ pub unsafe extern "C" fn ScanForSpecialHandler(
     HackFlags: usize, // ULONG_PTR
 ) {
     // PAGED_CODE() macro call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // CLEAR_FLAG(HackFlags, CDROM_HACK_INVALID_FLAGS) – macro expanded to bitwise clear
     // Because CLEAR_FLAG is a macro and not a callable function, we manually expand it.
@@ -1502,7 +1501,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
     let mut count: u32 = 0;
 
     // PAGED_CODE();
-    unsafe { PAGED_CODE(); } // keep the macro call
+    unsafe { PAGED_CODE!(); } // keep the macro call
 
     // Check GET_CONFIGURATION data
     {
@@ -4636,7 +4635,7 @@ pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut propertyId: STORAGE_PROPERTY_ID;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if ntkrnl_sys::base::NT_SUCCESS(status) {
         propertyId = StorageAdapterProperty;
@@ -4826,7 +4825,7 @@ pub unsafe extern "system" fn DeviceIsPortable(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut type_: u32 = DEVPROP_TYPE_EMPTY;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     'Cleanup: loop {
         *IsPortable = 0; // FALSE
@@ -4873,7 +4872,7 @@ pub unsafe extern "system" fn DeviceIsPortable(
 pub unsafe extern "system" fn DeviceInitMmcContext(
     DeviceExtension: PCDROM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut status: i32 = 0; // STATUS_SUCCESS
 

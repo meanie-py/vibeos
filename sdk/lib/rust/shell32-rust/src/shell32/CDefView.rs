@@ -2990,6 +2990,12 @@ unsafe impl AtlWindow for CDefView {
     unsafe fn atl_window_proc() -> WNDPROC {
         Some(CDefView_WindowProc)
     }
+    /// CDefView.cpp:520 `virtual VOID OnFinalMessage(HWND) override`. Releases the reference
+    /// `OnNCCreate` took for the window's lifetime; without it every view window leaked its view.
+    #[inline]
+    unsafe fn atl_on_final_message(this: *mut Self, hWnd: HWND) {
+        CDefView_OnFinalMessage_body(this, hWnd)
+    }
 }
 
 /// CDefView.cpp:433 `BEGIN_MSG_MAP(CDefView)` — all 25 entries, in source order.

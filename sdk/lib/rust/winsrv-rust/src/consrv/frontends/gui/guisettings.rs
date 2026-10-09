@@ -144,13 +144,19 @@ pub unsafe extern "system" fn GuiConsoleShowConsoleProperties(
             core::mem::size_of_val(&(*Console).Colors),
         );
 
+        // ConsoleTitle is a C flexible array (`WCHAR ConsoleTitle[ANYSIZE_ARRAY]`,
+        // concfg/settings.h:58) at the end of a section sized for the whole title.
+        // Indexing bindgen's [_; 1] for the terminator panicked -- in csrss -- every time
+        // a console's Properties dialog was opened, and `.as_mut_ptr()` reached the copy
+        // destination through a reference to that one element. One raw base for both.
+        let title = &raw mut (*pSharedInfo).ConsoleTitle[0];
         core::ptr::copy_nonoverlapping(
             (*Console).OriginalTitle.Buffer as *const u8,
-            (*pSharedInfo).ConsoleTitle.as_mut_ptr() as *mut u8,
+            title as *mut u8,
             (*Console).OriginalTitle.Length as usize,
         );
 
-        (*pSharedInfo).ConsoleTitle[((*Console).OriginalTitle.Length / 2) as usize] = 0;
+        *title.add(((*Console).OriginalTitle.Length / 2) as usize) = 0;
 
         NtUnmapViewOfSection(NtCurrentProcess(), pSharedInfo as PVOID);
 
