@@ -135,7 +135,6 @@ pub const DPFLTR_TRACE_LEVEL:  ULONG = 2;
 // when callers pass extra variadic args — the caller pops them from the stack.
 // ---------------------------------------------------------------------------
 extern "C" {
-    pub fn TRACE_(component: ULONG, fmt: *const core::ffi::c_char, ...);
     pub fn WARN_(component: ULONG, fmt: *const core::ffi::c_char, ...);
     pub fn ERR_(component: ULONG, fmt: *const core::ffi::c_char, ...);
 }

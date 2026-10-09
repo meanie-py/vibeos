@@ -60,12 +60,16 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_rust_module_tree.py",
     "pytest:tools/test_rust_warning_census.py",
     "pytest:tools/test_scan_arg_side_effects.py",
+    "pytest:tools/test_scan_byte_step_one.py",
+    "pytest:tools/test_scan_call_literal_vs_c.py",
     "pytest:tools/test_scan_dropped_asserts.py",
+    "pytest:tools/test_scan_formatless_printf.py",
     "pytest:tools/test_scan_flex_array_panic.py",
     "pytest:tools/test_scan_import_cc.py",
     "pytest:tools/test_scan_invented_constants.py",
     "pytest:tools/test_scan_octal_literals.py",
     "pytest:tools/test_scan_ptr_highword_mask.py",
+    "pytest:tools/test_scan_ptr_typedef_cast_read.py",
     "pytest:tools/test_scan_raw_uart_writes.py",
     "pytest:tools/test_scan_res_named_types.py",
     "pytest:tools/test_scan_bindgen_padding_index.py",
@@ -382,8 +386,22 @@ class ReceiptSession:
                     )
                 )
                 os.replace(temp, path)
+            self._prune()
         finally:
             self.close()
+
+    def _prune(self) -> None:
+        """Drop receipts past _MAX_AGE. The key covers every tracked file, so each
+        commit mints a fresh set and none is ever read again; nothing removed them
+        and the store reached 90,882 files / 358 MB (2026-10-09). A stale receipt is
+        already refused on read, so this changes nothing but the directory size."""
+        cutoff = time.time() - _MAX_AGE
+        for path in self.root.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass
 
     def close(self) -> None:
         if not self.closed:

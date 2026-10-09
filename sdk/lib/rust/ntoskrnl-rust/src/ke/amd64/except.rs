@@ -304,7 +304,25 @@ unsafe fn KiDispatchExceptionToUser(
     }
 
     UserStack = UserRsp as PKUSER_EXCEPTION_STACK;
-    
+
+    // The budget a STACK_OVERFLOW handler gets is everything from here down to
+    // StackLimit, and ntdll's dispatch spends it twice over (search pass, then
+    // RtlUnwindEx's unwind pass, each RtlpUnwindInternal -> RtlVirtualUnwind).
+    // Print it, so "the handler ran out of stack" is a number, not a guess.
+    if (*ExceptionRecordPtr).ExceptionCode == STATUS_STACK_OVERFLOW {
+        let teb = (*PsGetCurrentThread()).Teb as PTEB;
+        if !teb.is_null() {
+            let limit = (*teb).NtTib.StackLimit as u64;
+            crate::dbg_print!(
+                b"[KI-EXC] STACK_OVERFLOW dispatch: rsp=%p frame=%p limit=%p handler budget=0x%lx\n\0",
+                (*Context).Rsp as usize,
+                UserRsp as usize,
+                limit as usize,
+                UserRsp.saturating_sub(limit) as u32,
+            );
+        }
+    }
+
     _enable();
     
     let result = 'seh: {
@@ -705,17 +723,33 @@ pub unsafe extern "system" fn KiDispatchException(
                 );
                 q += 1;
             }
+            // The data address an access violation touched (P1) and the volatile registers
+            // the trap frame holds: with only RIP, a fault inside a string routine says
+            // nothing about which caller handed it the bad pointer.
+            crate::dbg_print!(
+                b"[KI-EXC]   P0=%p P1=%p rax=%p rcx=%p rdx=%p r8=%p r9=%p\n\0",
+                (*ExceptionRecord).ExceptionInformation[0] as usize,
+                (*ExceptionRecord).ExceptionInformation[1] as usize,
+                (*TrapFrame).Rax as usize,
+                (*TrapFrame).Rcx as usize,
+                (*TrapFrame).Rdx as usize,
+                (*TrapFrame).R8 as usize,
+                (*TrapFrame).R9 as usize,
+            );
             let rsp = (*TrapFrame).Rsp as usize;
             crate::dbg_print!(b"[KI-EXC]   rsp=%p\n\0", rsp);
             let mut shown = 0;
             let mut off = 0usize;
-            while off < 0x100 && shown < 6 {
+            while off < 0x200 && shown < 10 {
                 let a = rsp + off;
                 if MmIsAddressValid(a as _) == 0 {
                     break;
                 }
                 let w = core::ptr::read_unaligned(a as *const u64);
-                if w >= 0x10000 && w < 0x0000_8000_0000_0000 && (w >> 32) >= 0x7ff {
+                // Above 4 GiB: EXEs load at 0x1_4000_0000 and DLLs at 0x7ff..., while stacks
+                // and heaps sit low. `>= 0x7ff` alone hid every EXE return address, which is
+                // why usetup's crash in ntdll's _wcsicmp showed no usetup frame at all.
+                if w < 0x0000_8000_0000_0000 && (w >> 32) >= 1 {
                     crate::dbg_print!(b"[KI-EXC]   [rsp+0x%lx]=%p\n\0", off as u32, w as usize);
                     shown += 1;
                 }

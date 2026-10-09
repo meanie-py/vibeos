@@ -110,6 +110,42 @@ def load_spec(name: str) -> dict:
     return spec
 
 
+def _load_by_path(modname: str, path: Path):
+    """A module loaded from a file, without putting its directory on sys.path."""
+    import importlib.util
+
+    mod_spec = importlib.util.spec_from_file_location(modname, path)
+    if mod_spec is None or mod_spec.loader is None:
+        die(f"cannot load {path}")
+    mod = importlib.util.module_from_spec(mod_spec)
+    mod_spec.loader.exec_module(mod)
+    return mod
+
+
+def guest_build_current(name: str, build_dir: Path) -> None:
+    """Die unless `build_dir` was built from the current working tree.
+
+    A guest set stages ANOTHER arch's build outputs, and nothing in this arch's build
+    rebuilds them: an appstorm64 run once tested a taskmgr.exe four hours older than the
+    fix it was meant to check. The answer comes from the build receipts `land` reads
+    (tests/qemu/cli/warmth.py): some `vibeos-cli build` of that arch must have seen this
+    tree, up to documentation-only differences."""
+    arch = build_dir.name.removeprefix("build-")
+    if arch not in ARCHES:
+        die(f"payload {name!r}: guest set build_dir {build_dir.name!r} is not build-<arch>")
+    warmth = _load_by_path("_payload_warmth", REPO / "tests/qemu/cli/warmth.py")
+    docs_only = _load_by_path("_payload_docs_only", REPO / "tools/docs_only.py")
+    try:
+        stale = warmth.missing(REPO, warmth.worktree_tree(REPO), (arch,), docs_only.is_inert)
+    except Exception as exc:
+        die(f"payload {name!r}: cannot read the {arch} build receipts: {exc}")
+    if stale:
+        die(
+            f"payload {name!r}: {build_dir.name} was not built from this tree, so its guest "
+            f"set would stage stale programs. Build it first: ./vibeos-cli build --arch {arch}"
+        )
+
+
 def guest_set(name: str, g: dict) -> dict[str, Path]:
     """A guest_sets entry -> {file name: host path}: its root programs and their
     COMPLETE import closure out of another arch's build tree (a guest process's
@@ -119,6 +155,7 @@ def guest_set(name: str, g: dict) -> dict[str, Path]:
     build_dir = REPO / g["build_dir"]
     if not build_dir.is_dir():
         die(f"payload {name!r}: guest set needs {build_dir} (./vibeos-cli build --arch ...)")
+    guest_build_current(name, build_dir)
     cp = subprocess.run(
         [
             sys.executable,

@@ -10,7 +10,6 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
-    fn DPRINT_OHCI(format: *const ::core::ffi::c_char, ...);
 }
 extern "system" {
     fn RtlAssert( VoidFailedAssertion: PVOID, VoidFileName: PVOID, LineNumber: ULONG, MutableMessage: *mut CHAR, );
@@ -190,7 +189,7 @@ pub unsafe extern "system" fn OHCI_EnableList(
     let TransferType: ULONG;
     let mut CommandStatus: OHCI_REG_COMMAND_STATUS = core::mem::zeroed();
 
-    DPRINT_OHCI(b"OHCI_EnableList: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_EnableList: ... \n\0".as_ptr() as *const i8);
 
     OperationalRegs = (*OhciExtension).OperationalRegs;
     CommandStatusReg = core::ptr::addr_of_mut!((*OperationalRegs).HcCommandStatus) as PULONG;
@@ -264,7 +263,7 @@ pub unsafe extern "system" fn OHCI_InitializeED(
     let mut EndpointControl: OHCI_ENDPOINT_CONTROL = core::mem::zeroed();
     let EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_InitializeED: OhciEndpoint - %p, ED - %p, FirstTD - %p, EdPA - %p\n\0".as_ptr()
             as *const i8,
         OhciEndpoint,
@@ -335,7 +334,7 @@ pub unsafe extern "system" fn OHCI_InitializeTDs(
 
     (*OhciEndpoint).MaxTransferDescriptors = TdCount;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_InitializeTDs: TdCount - %x\n\0".as_ptr() as *const i8,
         TdCount,
     );
@@ -349,7 +348,7 @@ pub unsafe extern "system" fn OHCI_InitializeTDs(
 
     ix = 0;
     while ix < TdCount {
-        DPRINT_OHCI(
+        DPRINT_OHCI!(
             b"OHCI_InitializeTDs: TdVA - %p, TdPA - %08X\n\0".as_ptr() as *const i8,
             TdVA,
             TdPA,
@@ -375,7 +374,7 @@ pub unsafe extern "system" fn OHCI_OpenControlEndpoint(
 ) -> MPSTATUS {
     let mut ED: POHCI_HCD_ED;
 
-    DPRINT_OHCI(b"OHCI_OpenControlEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_OpenControlEndpoint: ... \n\0".as_ptr() as *const i8);
 
     ED = (*EndpointProperties).BufferVA as POHCI_HCD_ED;
 
@@ -409,7 +408,7 @@ pub unsafe extern "system" fn OHCI_OpenBulkEndpoint(
 ) -> MPSTATUS {
     let mut ED: POHCI_HCD_ED;
 
-    DPRINT_OHCI(b"OHCI_OpenBulkEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_OpenBulkEndpoint: ... \n\0".as_ptr() as *const i8);
 
     ED = (*EndpointProperties).BufferVA as POHCI_HCD_ED;
 
@@ -443,7 +442,7 @@ pub unsafe extern "system" fn OHCI_OpenInterruptEndpoint(
     let ED: POHCI_HCD_ED;
     let ScheduleOffset: ULONG;
 
-    DPRINT_OHCI(b"OHCI_OpenInterruptEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_OpenInterruptEndpoint: ... \n\0".as_ptr() as *const i8);
 
     ED = (*EndpointProperties).BufferVA as POHCI_HCD_ED;
 
@@ -458,7 +457,7 @@ pub unsafe extern "system" fn OHCI_OpenInterruptEndpoint(
     }
 
     ScheduleOffset = (*EndpointProperties).ScheduleOffset;
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_OpenInterruptEndpoint: InitTD. Index[PeriodIdx] - %x, ScheduleOffset - %x\n\0"
             .as_ptr() as *const i8,
         *(&raw const Index).cast::<UCHAR>().offset(PeriodIdx as isize) as ULONG,
@@ -522,7 +521,7 @@ pub unsafe extern "system" fn OHCI_OpenEndpoint(
     let TransferType: ULONG;
     let MPStatus: MPSTATUS;
 
-    DPRINT_OHCI(b"OHCI_OpenEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_OpenEndpoint: ... \n\0".as_ptr() as *const i8);
 
     RtlCopyMemory(
         core::ptr::addr_of_mut!((*OhciEndpoint).EndpointProperties) as *mut core::ffi::c_void,
@@ -564,7 +563,7 @@ pub unsafe extern "system" fn OHCI_ReopenEndpoint(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let ED: POHCI_HCD_ED;
 
-    DPRINT_OHCI(b"OHCI_ReopenEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_ReopenEndpoint: ... \n\0".as_ptr() as *const i8);
 
     ED = (*OhciEndpoint).HcdED;
 
@@ -798,7 +797,7 @@ pub unsafe extern "system" fn OHCI_StartController(
     let mut jx: ULONG;
     let mut MPStatus: MPSTATUS = MP_STATUS_SUCCESS as MPSTATUS;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_StartController: ohciExtension - %p, Resources - %p\n\0".as_ptr() as *const i8,
         ohciExtension,
         Resources,
@@ -827,7 +826,7 @@ pub unsafe extern "system" fn OHCI_StartController(
     (*OhciExtension).HcResourcesVA = (*Resources).StartVA as POHCI_HC_RESOURCES;
     (*OhciExtension).HcResourcesPA = (*Resources).StartPA;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_StartController: HcResourcesVA - %p, HcResourcesPA - %lx\n\0".as_ptr() as *const i8,
         (*OhciExtension).HcResourcesVA,
         (*OhciExtension).HcResourcesPA,
@@ -883,7 +882,7 @@ pub unsafe extern "system" fn OHCI_StartController(
     }
 
     OhciHCCA = core::ptr::addr_of_mut!((*(*OhciExtension).HcResourcesVA).HcHCCA) as POHCI_HCCA;
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_InitializeSchedule: OhciHCCA - %p\n\0".as_ptr() as *const i8,
         OhciHCCA,
     );
@@ -905,7 +904,7 @@ pub unsafe extern "system" fn OHCI_StartController(
         jx = jx.wrapping_add(1);
     }
 
-    DPRINT_OHCI(b"OHCI_InitializeSchedule: ix - %x\n\0".as_ptr() as *const i8, ix);
+    DPRINT_OHCI!(b"OHCI_InitializeSchedule: ix - %x\n\0".as_ptr() as *const i8, ix);
 
     /* Init static Control and Bulk EDs head pointers which start from HCCA */
     InitializeListHead(core::ptr::addr_of_mut!((*OhciExtension).ControlStaticED.Link));
@@ -945,7 +944,7 @@ pub unsafe extern "system" fn OHCI_StartController(
 
     (*OhciExtension).FrameInterval = FrameInterval;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_StartController: FrameInterval - %lX\n\0".as_ptr() as *const i8,
         FrameInterval.AsULONG,
     );
@@ -987,7 +986,7 @@ pub unsafe extern "system" fn OHCI_StartController(
     }
 
     if MPStatus != MP_STATUS_SUCCESS as MPSTATUS {
-        DPRINT_OHCI(
+        DPRINT_OHCI!(
             b"OHCI_StartController: frame interval not set\n\0".as_ptr() as *const i8,
         );
         return MPStatus;
@@ -1213,7 +1212,7 @@ pub unsafe extern "system" fn OHCI_InterruptService(ohciExtension: PVOID) -> BOO
     let mut IntDisable: OHCI_REG_INTERRUPT_ENABLE_DISABLE = core::mem::zeroed();
     let mut HardwarePresent: BOOLEAN = 0;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_Interrupt: Ext %p\n\0".as_ptr() as *const i8,
         OhciExtension,
     );
@@ -1373,7 +1372,7 @@ unsafe fn OHCI_MapTransferToTD(
         .TransferBufferLength
         .wrapping_sub(TransferedLen);
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_MapTransferToTD: TransferedLen - %x\n\0".as_ptr() as *const i8,
         TransferedLen,
     );
@@ -1395,7 +1394,7 @@ unsafe fn OHCI_MapTransferToTD(
         SgIdx = SgIdx.wrapping_add(1);
     }
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_MapTransferToTD: SgIdx - %x, SgCount - %x\n\0".as_ptr() as *const i8,
         SgIdx,
         (*SGList).SgElementCount,
@@ -1456,7 +1455,7 @@ pub unsafe extern "system" fn OHCI_AllocateTD(
 ) -> POHCI_HCD_TD {
     let mut TD: POHCI_HCD_TD;
 
-    DPRINT_OHCI(b"OHCI_AllocateTD: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_AllocateTD: ... \n\0".as_ptr() as *const i8);
 
     TD = (*OhciEndpoint).FirstTD;
 
@@ -1484,7 +1483,7 @@ pub unsafe extern "system" fn OHCI_RemainTDs(
     let mut RemainTDs: ULONG;
     let mut ix: ULONG;
 
-    DPRINT_OHCI(b"OHCI_RemainTDs: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_RemainTDs: ... \n\0".as_ptr() as *const i8);
 
     MaxTDs = (*OhciEndpoint).MaxTransferDescriptors;
     TD = (*OhciEndpoint).FirstTD;
@@ -1517,7 +1516,7 @@ unsafe fn OHCI_ControlTransfer(
     let mut TransferedLen: ULONG;
     let mut DataToggle: UCHAR;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_ControlTransfer: Ext %p, Endpoint %p\n\0".as_ptr() as *const i8,
         OhciExtension,
         OhciEndpoint,
@@ -1724,7 +1723,7 @@ unsafe fn OHCI_BulkOrInterruptTransfer(
     let mut TransferedLen: ULONG;
     let mut MaxTDs: ULONG;
 
-    DPRINT_OHCI(b"OHCI_BulkOrInterruptTransfer: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_BulkOrInterruptTransfer: ... \n\0".as_ptr() as *const i8);
 
     MaxTDs = OHCI_RemainTDs(OhciExtension, OhciEndpoint);
 
@@ -1815,7 +1814,7 @@ pub unsafe extern "system" fn OHCI_SubmitTransfer(
     let OhciTransfer: POHCI_TRANSFER = ohciTransfer as POHCI_TRANSFER;
     let TransferType: ULONG;
 
-    DPRINT_OHCI(b"OHCI_SubmitTransfer: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_SubmitTransfer: ... \n\0".as_ptr() as *const i8);
 
     RtlZeroMemory(
         OhciTransfer as *mut core::ffi::c_void,
@@ -1889,7 +1888,7 @@ pub unsafe extern "system" fn OHCI_ProcessDoneTD(
     let mut BufferEnd: ULONG;
     let mut Length: ULONG;
 
-    DPRINT_OHCI(b"OHCI_ProcessDoneTD: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_ProcessDoneTD: ... \n\0".as_ptr() as *const i8);
 
     OhciTransfer = (*TD).OhciTransfer as POHCI_TRANSFER;
     OhciEndpoint = (*OhciTransfer).OhciEndpoint;
@@ -2095,7 +2094,7 @@ pub unsafe extern "system" fn OHCI_GetEndpointState(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let mut ED: POHCI_HCD_ED;
 
-    DPRINT_OHCI(b"OHCI_GetEndpointState: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_GetEndpointState: ... \n\0".as_ptr() as *const i8);
 
     ED = (*OhciEndpoint).HcdED;
 
@@ -2116,7 +2115,7 @@ pub unsafe extern "system" fn OHCI_RemoveEndpointFromSchedule(OhciEndpoint: POHC
     let mut PreviousED: POHCI_HCD_ED;
     let HeadED: POHCI_STATIC_ED;
 
-    DPRINT_OHCI(b"OHCI_RemoveEndpointFromSchedule \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_RemoveEndpointFromSchedule \n\0".as_ptr() as *const i8);
 
     ED = (*OhciEndpoint).HcdED;
     HeadED = (*OhciEndpoint).HeadED;
@@ -2156,7 +2155,7 @@ pub unsafe extern "system" fn OHCI_SetEndpointState(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let mut ED: POHCI_HCD_ED = core::ptr::null_mut();
 
-    // DPRINT_OHCI("OHCI_SetEndpointState: EndpointState - %x\n", EndpointState);
+    // DPRINT_OHCI!("OHCI_SetEndpointState: EndpointState - %x\n", EndpointState);
 
     ED = (*OhciEndpoint).HcdED;
 
@@ -2407,7 +2406,7 @@ pub unsafe extern "system" fn OHCI_PollEndpoint(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let TransferType: ULONG;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_PollEndpoint: OhciExtension - %p, Endpoint - %p\n\0".as_ptr() as *const i8,
         OhciExtension,
         OhciEndpoint,
@@ -2498,7 +2497,7 @@ pub unsafe extern "system" fn OHCI_Get32BitFrameNumber(ohciExtension: PVOID) -> 
     hp = (*OhciExtension).FrameHighPart;
     fm = (*HcHCCA).FrameNumber as ULONG;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_Get32BitFrameNumber: hp - %lX, fm - %lX\n\0".as_ptr() as *const i8,
         hp,
         fm,
@@ -2514,7 +2513,7 @@ pub unsafe extern "system" fn OHCI_InterruptNextSOF(ohciExtension: PVOID) {
     let InterruptEnableReg: PULONG;
     let mut IntEnable: OHCI_REG_INTERRUPT_ENABLE_DISABLE = core::mem::zeroed();
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_InterruptNextSOF: OhciExtension - %p\n\0".as_ptr() as *const i8,
         OhciExtension,
     );
@@ -2536,7 +2535,7 @@ pub unsafe extern "system" fn OHCI_EnableInterrupts(ohciExtension: PVOID) {
     let InterruptEnableReg: PULONG;
     let mut IntEnable: OHCI_REG_INTERRUPT_ENABLE_DISABLE = core::mem::zeroed();
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_EnableInterrupts: OhciExtension - %p\n\0".as_ptr() as *const i8,
         OhciExtension,
     );
@@ -2558,7 +2557,7 @@ pub unsafe extern "system" fn OHCI_DisableInterrupts(ohciExtension: PVOID) {
     let InterruptDisableReg: PULONG;
     let mut IntDisable: OHCI_REG_INTERRUPT_ENABLE_DISABLE = core::mem::zeroed();
 
-    DPRINT_OHCI(b"OHCI_DisableInterrupts\n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_DisableInterrupts\n\0".as_ptr() as *const i8);
 
     OperationalRegs = (*OhciExtension).OperationalRegs;
     InterruptDisableReg = core::ptr::addr_of_mut!((*OperationalRegs).HcInterruptDisable) as PULONG;
@@ -2595,7 +2594,7 @@ pub unsafe extern "system" fn OHCI_SetEndpointDataToggle(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let mut ED: POHCI_HCD_ED;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_SetEndpointDataToggle: Endpoint - %p, DataToggle - %x\n\0".as_ptr() as *const i8,
         OhciEndpoint,
         DataToggle,
@@ -2619,7 +2618,7 @@ pub unsafe extern "system" fn OHCI_GetEndpointStatus(
     let mut ED: POHCI_HCD_ED;
     let mut EndpointStatus: ULONG = USBPORT_ENDPOINT_RUN as ULONG;
 
-    DPRINT_OHCI(b"OHCI_GetEndpointStatus: ... \n\0".as_ptr() as *const i8);
+    DPRINT_OHCI!(b"OHCI_GetEndpointStatus: ... \n\0".as_ptr() as *const i8);
 
     ED = (*OhciEndpoint).HcdED;
 
@@ -2646,7 +2645,7 @@ pub unsafe extern "system" fn OHCI_SetEndpointStatus(
     let OhciEndpoint: POHCI_ENDPOINT = ohciEndpoint as POHCI_ENDPOINT;
     let mut ED: POHCI_HCD_ED = core::ptr::null_mut();
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"OHCI_SetEndpointStatus: Endpoint - %p, EndpointStatus - %lX\n\0".as_ptr() as *const i8,
         OhciEndpoint,
         EndpointStatus,
@@ -2898,7 +2897,7 @@ pub unsafe extern "system" fn DriverEntry(
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"DriverEntry: DriverObject - %p, RegistryPath - %wZ\n\0".as_ptr() as *const i8,
         DriverObject,
         RegistryPath,
@@ -2979,7 +2978,7 @@ pub unsafe extern "system" fn DriverEntry(
         core::ptr::addr_of_mut!(RegPacket),
     );
 
-    DPRINT_OHCI(
+    DPRINT_OHCI!(
         b"DriverEntry: USBPORT_RegisterUSBPortDriver return Status - %x\n\0".as_ptr() as *const i8,
         Status,
     );
@@ -3080,7 +3079,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TransferType;
 //     OHCI_REG_COMMAND_STATUS CommandStatus;
 //
-//     DPRINT_OHCI("OHCI_EnableList: ... \n");
+//     DPRINT_OHCI!("OHCI_EnableList: ... \n");
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
 //     CommandStatusReg = (PULONG)&OperationalRegs->HcCommandStatus;
@@ -3112,7 +3111,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_HCD_ED PrevED;
 //     PLIST_ENTRY HeadLink;
 //
-//     DPRINT_OHCI("OHCI_InsertEndpointInSchedule: OhciEndpoint - %p\n",
+//     DPRINT_OHCI!("OHCI_InsertEndpointInSchedule: OhciEndpoint - %p\n",
 //                 OhciEndpoint);
 //
 //     ED = OhciEndpoint->HcdED;
@@ -3165,7 +3164,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     OHCI_ENDPOINT_CONTROL EndpointControl;
 //     PUSBPORT_ENDPOINT_PROPERTIES EndpointProperties;
 //
-//     DPRINT_OHCI("OHCI_InitializeED: OhciEndpoint - %p, ED - %p, FirstTD - %p, EdPA - %p\n",
+//     DPRINT_OHCI!("OHCI_InitializeED: OhciEndpoint - %p, ED - %p, FirstTD - %p, EdPA - %p\n",
 //                 OhciEndpoint,
 //                 ED,
 //                 FirstTD,
@@ -3234,7 +3233,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OhciEndpoint->MaxTransferDescriptors = TdCount;
 //
-//     DPRINT_OHCI("OHCI_InitializeTDs: TdCount - %x\n", TdCount);
+//     DPRINT_OHCI!("OHCI_InitializeTDs: TdCount - %x\n", TdCount);
 //
 //     ASSERT(TdCount > 0);
 //
@@ -3244,7 +3243,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     for (ix = 0; ix < TdCount; ix++)
 //     {
-//         DPRINT_OHCI("OHCI_InitializeTDs: TdVA - %p, TdPA - %08X\n", TdVA, TdPA);
+//         DPRINT_OHCI!("OHCI_InitializeTDs: TdVA - %p, TdPA - %08X\n", TdVA, TdPA);
 //
 //         RtlZeroMemory(TdVA, sizeof(OHCI_HCD_TD));
 //
@@ -3265,7 +3264,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_OpenControlEndpoint: ... \n");
+//     DPRINT_OHCI!("OHCI_OpenControlEndpoint: ... \n");
 //
 //     ED = (POHCI_HCD_ED)EndpointProperties->BufferVA;
 //
@@ -3295,7 +3294,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_OpenBulkEndpoint: ... \n");
+//     DPRINT_OHCI!("OHCI_OpenBulkEndpoint: ... \n");
 //
 //     ED = (POHCI_HCD_ED)EndpointProperties->BufferVA;
 //
@@ -3325,7 +3324,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_HCD_ED ED;
 //     ULONG ScheduleOffset;
 //
-//     DPRINT_OHCI("OHCI_OpenInterruptEndpoint: ... \n");
+//     DPRINT_OHCI!("OHCI_OpenInterruptEndpoint: ... \n");
 //
 //     ED = (POHCI_HCD_ED)EndpointProperties->BufferVA;
 //
@@ -3344,7 +3343,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ASSERT(PeriodIdx < ARRAYSIZE(Index));
 //
 //     ScheduleOffset = EndpointProperties->ScheduleOffset;
-//     DPRINT_OHCI("OHCI_OpenInterruptEndpoint: InitTD. Index[PeriodIdx] - %x, ScheduleOffset - %x\n",
+//     DPRINT_OHCI!("OHCI_OpenInterruptEndpoint: InitTD. Index[PeriodIdx] - %x, ScheduleOffset - %x\n",
 //                 Index[PeriodIdx],
 //                 ScheduleOffset);
 //
@@ -3386,7 +3385,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TransferType;
 //     MPSTATUS MPStatus;
 //
-//     DPRINT_OHCI("OHCI_OpenEndpoint: ... \n");
+//     DPRINT_OHCI!("OHCI_OpenEndpoint: ... \n");
 //
 //     RtlCopyMemory(&OhciEndpoint->EndpointProperties,
 //                   EndpointProperties,
@@ -3439,7 +3438,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_ReopenEndpoint: ... \n");
+//     DPRINT_OHCI!("OHCI_ReopenEndpoint: ... \n");
 //
 //     ED = OhciEndpoint->HcdED;
 //
@@ -3464,35 +3463,35 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     ULONG TransferType;
 //
-//     DPRINT_OHCI("OHCI_QueryEndpointRequirements: ... \n");
+//     DPRINT_OHCI!("OHCI_QueryEndpointRequirements: ... \n");
 //
 //     TransferType = EndpointProperties->TransferType;
 //
 //     switch (TransferType)
 //     {
 //         case USBPORT_TRANSFER_TYPE_ISOCHRONOUS:
-//             DPRINT_OHCI("OHCI_QueryEndpointRequirements: IsoTransfer\n");
+//             DPRINT_OHCI!("OHCI_QueryEndpointRequirements: IsoTransfer\n");
 //             EndpointRequirements->MaxTransferSize = OHCI_MAX_ISO_TRANSFER_SIZE;
 //             EndpointRequirements->HeaderBufferSize =
 //             sizeof(OHCI_HCD_ED) + OHCI_MAX_ISO_TD_COUNT * sizeof(OHCI_HCD_TD);
 //             break;
 //
 //         case USBPORT_TRANSFER_TYPE_CONTROL:
-//             DPRINT_OHCI("OHCI_QueryEndpointRequirements: ControlTransfer\n");
+//             DPRINT_OHCI!("OHCI_QueryEndpointRequirements: ControlTransfer\n");
 //             EndpointRequirements->MaxTransferSize = OHCI_MAX_CONTROL_TRANSFER_SIZE;
 //             EndpointRequirements->HeaderBufferSize =
 //             sizeof(OHCI_HCD_ED) + OHCI_MAX_CONTROL_TD_COUNT * sizeof(OHCI_HCD_TD);
 //             break;
 //
 //         case USBPORT_TRANSFER_TYPE_BULK:
-//             DPRINT_OHCI("OHCI_QueryEndpointRequirements: BulkTransfer\n");
+//             DPRINT_OHCI!("OHCI_QueryEndpointRequirements: BulkTransfer\n");
 //             EndpointRequirements->MaxTransferSize = OHCI_MAX_BULK_TRANSFER_SIZE;
 //             EndpointRequirements->HeaderBufferSize =
 //             sizeof(OHCI_HCD_ED) + OHCI_MAX_BULK_TD_COUNT * sizeof(OHCI_HCD_TD);
 //             break;
 //
 //         case USBPORT_TRANSFER_TYPE_INTERRUPT:
-//             DPRINT_OHCI("OHCI_QueryEndpointRequirements: InterruptTransfer\n");
+//             DPRINT_OHCI!("OHCI_QueryEndpointRequirements: InterruptTransfer\n");
 //             EndpointRequirements->MaxTransferSize = OHCI_MAX_INTERRUPT_TRANSFER_SIZE;
 //             EndpointRequirements->HeaderBufferSize =
 //             sizeof(OHCI_HCD_ED) + OHCI_MAX_INTERRUPT_TD_COUNT * sizeof(OHCI_HCD_TD);
@@ -3645,7 +3644,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG jx;
 //     MPSTATUS MPStatus = MP_STATUS_SUCCESS;
 //
-//     DPRINT_OHCI("OHCI_StartController: ohciExtension - %p, Resources - %p\n",
+//     DPRINT_OHCI!("OHCI_StartController: ohciExtension - %p, Resources - %p\n",
 //                 ohciExtension,
 //                 Resources);
 //
@@ -3674,7 +3673,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     OhciExtension->HcResourcesVA = (POHCI_HC_RESOURCES)Resources->StartVA;
 //     OhciExtension->HcResourcesPA = Resources->StartPA;
 //
-//     DPRINT_OHCI("OHCI_StartController: HcResourcesVA - %p, HcResourcesPA - %lx\n",
+//     DPRINT_OHCI!("OHCI_StartController: HcResourcesVA - %p, HcResourcesPA - %lx\n",
 //                 OhciExtension->HcResourcesVA,
 //                 OhciExtension->HcResourcesPA);
 //
@@ -3716,7 +3715,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     }
 //
 //     OhciHCCA = &OhciExtension->HcResourcesVA->HcHCCA;
-//     DPRINT_OHCI("OHCI_InitializeSchedule: OhciHCCA - %p\n", OhciHCCA);
+//     DPRINT_OHCI!("OHCI_InitializeSchedule: OhciHCCA - %p\n", OhciHCCA);
 //
 //     /* Set head pointers which start from HCCA */
 //     for (ix = 0, jx = (INTERRUPT_ENDPOINTs - ENDPOINT_INTERRUPT_32ms);
@@ -3732,7 +3731,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         OhciExtension->IntStaticED[jx].HccaIndex = Balance[ix];
 //     }
 //
-//     DPRINT_OHCI("OHCI_InitializeSchedule: ix - %x\n", ix);
+//     DPRINT_OHCI!("OHCI_InitializeSchedule: ix - %x\n", ix);
 //
 //     /* Init static Control and Bulk EDs head pointers which start from HCCA */
 //     InitializeListHead(&OhciExtension->ControlStaticED.Link);
@@ -3767,7 +3766,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OhciExtension->FrameInterval = FrameInterval;
 //
-//     DPRINT_OHCI("OHCI_StartController: FrameInterval - %lX\n",
+//     DPRINT_OHCI!("OHCI_StartController: FrameInterval - %lX\n",
 //                 FrameInterval.AsULONG);
 //
 //     /* Reset HostController */
@@ -3808,7 +3807,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (MPStatus != MP_STATUS_SUCCESS)
 //     {
-//         DPRINT_OHCI("OHCI_StartController: frame interval not set\n");
+//         DPRINT_OHCI!("OHCI_StartController: frame interval not set\n");
 //         return MPStatus;
 //     }
 //
@@ -4018,7 +4017,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     OHCI_REG_INTERRUPT_ENABLE_DISABLE IntDisable;
 //     BOOLEAN HardwarePresent = FALSE;
 //
-//     DPRINT_OHCI("OHCI_Interrupt: Ext %p\n", OhciExtension);
+//     DPRINT_OHCI!("OHCI_Interrupt: Ext %p\n", OhciExtension);
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
 //
@@ -4082,7 +4081,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     InterruptDisableReg = (PULONG)&OperationalRegs->HcInterruptDisable;
 //     InterruptStatusReg = (PULONG)&OperationalRegs->HcInterruptStatus;
 //
-//     DPRINT_OHCI("OHCI_InterruptDpc: OhciExtension - %p, IsDoEnableInterrupts - %x\n",
+//     DPRINT_OHCI!("OHCI_InterruptDpc: OhciExtension - %p, IsDoEnableInterrupts - %x\n",
 //                 OhciExtension,
 //                 IsDoEnableInterrupts);
 //
@@ -4090,13 +4089,13 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (IntStatus.RootHubStatusChange)
 //     {
-//         DPRINT_OHCI("OHCI_InterruptDpc: RootHubStatusChange\n");
+//         DPRINT_OHCI!("OHCI_InterruptDpc: RootHubStatusChange\n");
 //         RegPacket.UsbPortInvalidateRootHub(OhciExtension);
 //     }
 //
 //     if (IntStatus.WritebackDoneHead)
 //     {
-//         DPRINT_OHCI("OHCI_InterruptDpc: WritebackDoneHead\n");
+//         DPRINT_OHCI!("OHCI_InterruptDpc: WritebackDoneHead\n");
 //
 //         HcHCCA = &OhciExtension->HcResourcesVA->HcHCCA;
 //         HcHCCA->DoneHead = 0;
@@ -4156,7 +4155,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG SgIdx, CurrentTransferLen, BufferEnd, CurrentBuffer;
 //     ULONG TransferDataLeft = OhciTransfer->TransferParameters->TransferBufferLength - TransferedLen;
 //
-//     DPRINT_OHCI("OHCI_MapTransferToTD: TransferedLen - %x\n", TransferedLen);
+//     DPRINT_OHCI!("OHCI_MapTransferToTD: TransferedLen - %x\n", TransferedLen);
 //
 //     for (SgIdx = 0; SgIdx < SGList->SgElementCount; SgIdx++)
 //     {
@@ -4169,7 +4168,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         }
 //     }
 //
-//     DPRINT_OHCI("OHCI_MapTransferToTD: SgIdx - %x, SgCount - %x\n",
+//     DPRINT_OHCI!("OHCI_MapTransferToTD: SgIdx - %x, SgCount - %x\n",
 //                 SgIdx,
 //                 SGList->SgElementCount);
 //
@@ -4227,7 +4226,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     POHCI_HCD_TD TD;
 //
-//     DPRINT_OHCI("OHCI_AllocateTD: ... \n");
+//     DPRINT_OHCI!("OHCI_AllocateTD: ... \n");
 //
 //     TD = OhciEndpoint->FirstTD;
 //
@@ -4253,7 +4252,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG RemainTDs;
 //     ULONG ix;
 //
-//     DPRINT_OHCI("OHCI_RemainTDs: ... \n");
+//     DPRINT_OHCI!("OHCI_RemainTDs: ... \n");
 //
 //     MaxTDs = OhciEndpoint->MaxTransferDescriptors;
 //     TD = OhciEndpoint->FirstTD;
@@ -4286,7 +4285,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TransferedLen;
 //     UCHAR DataToggle;
 //
-//     DPRINT_OHCI("OHCI_ControlTransfer: Ext %p, Endpoint %p\n",
+//     DPRINT_OHCI!("OHCI_ControlTransfer: Ext %p, Endpoint %p\n",
 //                 OhciExtension,
 //                 OhciEndpoint);
 //
@@ -4425,7 +4424,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TransferedLen;
 //     ULONG MaxTDs;
 //
-//     DPRINT_OHCI("OHCI_BulkOrInterruptTransfer: ... \n");
+//     DPRINT_OHCI!("OHCI_BulkOrInterruptTransfer: ... \n");
 //
 //     MaxTDs = OHCI_RemainTDs(OhciExtension, OhciEndpoint);
 //
@@ -4529,7 +4528,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_TRANSFER OhciTransfer = ohciTransfer;
 //     ULONG TransferType;
 //
-//     DPRINT_OHCI("OHCI_SubmitTransfer: ... \n");
+//     DPRINT_OHCI!("OHCI_SubmitTransfer: ... \n");
 //
 //     RtlZeroMemory(OhciTransfer, sizeof(OHCI_TRANSFER));
 //
@@ -4584,7 +4583,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG BufferEnd;
 //     ULONG Length;
 //
-//     DPRINT_OHCI("OHCI_ProcessDoneTD: ... \n");
+//     DPRINT_OHCI!("OHCI_ProcessDoneTD: ... \n");
 //
 //     OhciTransfer = TD->OhciTransfer;
 //     OhciEndpoint = OhciTransfer->OhciEndpoint;
@@ -4776,7 +4775,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_GetEndpointState: ... \n");
+//     DPRINT_OHCI!("OHCI_GetEndpointState: ... \n");
 //
 //     ED = OhciEndpoint->HcdED;
 //
@@ -4797,7 +4796,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_HCD_ED PreviousED;
 //     POHCI_STATIC_ED HeadED;
 //
-//     DPRINT_OHCI("OHCI_RemoveEndpointFromSchedule \n");
+//     DPRINT_OHCI!("OHCI_RemoveEndpointFromSchedule \n");
 //
 //     ED = OhciEndpoint->HcdED;
 //     HeadED = OhciEndpoint->HeadED;
@@ -4844,7 +4843,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_SetEndpointState: EndpointState - %x\n",
+//     DPRINT_OHCI!("OHCI_SetEndpointState: EndpointState - %x\n",
 //                 EndpointState);
 //
 //     ED = OhciEndpoint->HcdED;
@@ -4891,7 +4890,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UCHAR ConditionCode;
 //     BOOLEAN IsResetOnHalt = FALSE;
 //
-//     //DPRINT_OHCI("OHCI_PollAsyncEndpoint: Endpoint - %p\n", OhciEndpoint);
+//     //DPRINT_OHCI!("OHCI_PollAsyncEndpoint: Endpoint - %p\n", OhciEndpoint);
 //
 //     ED = OhciEndpoint->HcdED;
 //     NextTdPA = ED->HwED.HeadPointer & OHCI_ED_HEAD_POINTER_MASK;
@@ -4905,7 +4904,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     NextTD = RegPacket.UsbPortGetMappedVirtualAddress(NextTdPA,
 //                                                       OhciExtension,
 //                                                       OhciEndpoint);
-//     DPRINT_OHCI("NextTD - %p\n", NextTD);
+//     DPRINT_OHCI!("NextTD - %p\n", NextTD);
 //
 //     if ((ED->HwED.HeadPointer & OHCI_ED_HEAD_POINTER_HALT) == 0)
 //         goto ProcessListTDs;
@@ -5085,7 +5084,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     ULONG TransferType;
 //
-//     DPRINT_OHCI("OHCI_PollEndpoint: OhciExtension - %p, Endpoint - %p\n",
+//     DPRINT_OHCI!("OHCI_PollEndpoint: OhciExtension - %p, Endpoint - %p\n",
 //                 OhciExtension,
 //                 OhciEndpoint);
 //
@@ -5117,7 +5116,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USHORT FmDiff;
 //     POHCI_HCCA HcHCCA;
 //
-//     //DPRINT_OHCI("OHCI_CheckController: ...\n");
+//     //DPRINT_OHCI!("OHCI_CheckController: ...\n");
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
 //
@@ -5176,7 +5175,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     hp = OhciExtension->FrameHighPart;
 //     fm = HcHCCA->FrameNumber;
 //
-//     DPRINT_OHCI("OHCI_Get32BitFrameNumber: hp - %lX, fm - %lX\n", hp, fm);
+//     DPRINT_OHCI!("OHCI_Get32BitFrameNumber: hp - %lX, fm - %lX\n", hp, fm);
 //
 //     return ((fm & 0x7FFF) | hp) + ((fm ^ hp) & 0x8000);
 // }
@@ -5190,7 +5189,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PULONG InterruptEnableReg;
 //     OHCI_REG_INTERRUPT_ENABLE_DISABLE IntEnable;
 //
-//     DPRINT_OHCI("OHCI_InterruptNextSOF: OhciExtension - %p\n",
+//     DPRINT_OHCI!("OHCI_InterruptNextSOF: OhciExtension - %p\n",
 //                 OhciExtension);
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
@@ -5212,7 +5211,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PULONG InterruptEnableReg;
 //     OHCI_REG_INTERRUPT_ENABLE_DISABLE IntEnable;
 //
-//     DPRINT_OHCI("OHCI_EnableInterrupts: OhciExtension - %p\n",
+//     DPRINT_OHCI!("OHCI_EnableInterrupts: OhciExtension - %p\n",
 //                 OhciExtension);
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
@@ -5234,7 +5233,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PULONG InterruptDisableReg;
 //     OHCI_REG_INTERRUPT_ENABLE_DISABLE IntDisable;
 //
-//     DPRINT_OHCI("OHCI_DisableInterrupts\n");
+//     DPRINT_OHCI!("OHCI_DisableInterrupts\n");
 //
 //     OperationalRegs = OhciExtension->OperationalRegs;
 //     InterruptDisableReg = (PULONG)&OperationalRegs->HcInterruptDisable;
@@ -5262,7 +5261,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_SetEndpointDataToggle: Endpoint - %p, DataToggle - %x\n",
+//     DPRINT_OHCI!("OHCI_SetEndpointDataToggle: Endpoint - %p, DataToggle - %x\n",
 //                 OhciEndpoint,
 //                 DataToggle);
 //
@@ -5283,7 +5282,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_HCD_ED ED;
 //     ULONG EndpointStatus = USBPORT_ENDPOINT_RUN;
 //
-//     DPRINT_OHCI("OHCI_GetEndpointStatus: ... \n");
+//     DPRINT_OHCI!("OHCI_GetEndpointStatus: ... \n");
 //
 //     ED = OhciEndpoint->HcdED;
 //
@@ -5306,7 +5305,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     POHCI_ENDPOINT OhciEndpoint = ohciEndpoint;
 //     POHCI_HCD_ED ED;
 //
-//     DPRINT_OHCI("OHCI_SetEndpointStatus: Endpoint - %p, EndpointStatus - %lX\n",
+//     DPRINT_OHCI!("OHCI_SetEndpointStatus: Endpoint - %p, EndpointStatus - %lX\n",
 //                 OhciEndpoint,
 //                 EndpointStatus);
 //
@@ -5493,7 +5492,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     NTSTATUS Status;
 //
-//     DPRINT_OHCI("DriverEntry: DriverObject - %p, RegistryPath - %wZ\n",
+//     DPRINT_OHCI!("DriverEntry: DriverObject - %p, RegistryPath - %wZ\n",
 //                 DriverObject,
 //                 RegistryPath);
 //
@@ -5566,7 +5565,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                                            USB10_MINIPORT_INTERFACE_VERSION,
 //                                            &RegPacket);
 //
-//     DPRINT_OHCI("DriverEntry: USBPORT_RegisterUSBPortDriver return Status - %x\n",
+//     DPRINT_OHCI!("DriverEntry: USBPORT_RegisterUSBPortDriver return Status - %x\n",
 //                 Status);
 //
 //     return Status;

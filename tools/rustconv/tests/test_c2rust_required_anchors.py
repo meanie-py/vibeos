@@ -271,3 +271,18 @@ def test_an_extern_linkage_global_keeps_no_mangle(monkeypatch):
     out = anchor.build_preamble(Path("x.c"), verbose=False)
     assert "#[no_mangle]\npub static mut SpInfExports" in out
     assert "#[no_mangle]\nstatic mut Local" not in out
+
+
+def test_a_second_definition_is_anchored_through_its_export_name(monkeypatch):
+    # imagelist.c: internal bodies under the public spelling, then `#undef` and the real
+    # export -- which c2rust names `ImageList_Add_0` and keeps as `#[export_name]`.
+    text = (
+        'pub unsafe extern "C" fn Internal_Add() { internal(); }\n'
+        '#[export_name = "ImageList_Add"]\n'
+        'pub unsafe extern "C" fn ImageList_Add_0() { wrapper(); }\n'
+    )
+    monkeypatch.setattr(anchor, "_transpile_text", lambda *a, **kw: text)
+    got = anchor.build_anchor_map(
+        Path("pilot.c"), strict=True, required_names={"Internal_Add", "ImageList_Add"}
+    )
+    assert "wrapper" in got["ImageList_Add"] and "internal" in got["Internal_Add"]

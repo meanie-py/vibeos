@@ -72,7 +72,7 @@ extern "C" {
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Bit: u32) -> u8;
+    fn FlagOn(Flags: u32, Bit: u32) -> u32;
 }
 extern "C" {
     fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);

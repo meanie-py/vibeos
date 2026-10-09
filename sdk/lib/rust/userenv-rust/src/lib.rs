@@ -15,6 +15,24 @@
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
+// ntdll, cdecl. The C's DPRINT1s on the first-boot profile path (InitializeProfiles,
+// CreateStandardProfile, CopySystemProfile), restored: GUI setup reports only "X() failed /
+// Rebooting now!" in a message box, which serial never sees.
+extern "C" {
+    pub fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
+}
+
+/// The C's DPRINT1 on the profile path: `[USERENV] profiles: <step> failed (error N)`.
+macro_rules! DPRINT1 {
+    ($step:expr, $err:expr) => {
+        $crate::DbgPrint(
+            concat!("[USERENV] profiles: ", $step, " failed (error %lu)\n\0").as_ptr()
+                as *const core::ffi::c_char,
+            ($err) as u32,
+        )
+    };
+}
+
 pub mod types; // DYN_FUNCS/POLICY_VALUES/PROFILEINFO layouts (bindgen, per arch) + re-exported nt
 pub mod prelude; // the ONE import surface: types glob + enum aliases + skipped consts + bridges
 

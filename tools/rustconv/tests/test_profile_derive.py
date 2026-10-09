@@ -270,6 +270,21 @@ def test_quoted_include_prefers_the_includers_own_directory(tmp_path):
     assert hit == (_mod(tmp_path) / "shared.h").resolve()
 
 
+def test_compile_db_include_order_outranks_the_fixed_list(tmp_path):
+    """A wine module's `-I sdk/include/wine` comes before psdk, so `<commctrl.h>` is wine's."""
+    root = _basic_module(tmp_path)
+    _write(root / "sdk/include/psdk/commctrl.h", "#define WHICH 2\n")
+    _write(root / "sdk/include/wine/commctrl.h", "#define WHICH 1\n")
+    _write(_mod(tmp_path) / "helper.c", "#include <commctrl.h>\nint helper(void){return WHICH;}\n")
+    m = parse_cmakelists(_mod(tmp_path) / "CMakeLists.txt", root)
+    env = build_include_env(
+        root, m, compile_dirs=(root / "sdk/include/wine", root / "sdk/include/psdk")
+    )
+    closure = walk_includes([_mod(tmp_path) / "helper.c"], env)
+    hit = next(p for p, r in closure.headers.items() if r.name == "commctrl.h")
+    assert hit == (root / "sdk/include/wine/commctrl.h").resolve()
+
+
 def test_unresolved_include_raises_loudly(tmp_path):
     """Never emit a partial allowlist that looks complete (AGENTS.md: fail loud)."""
     root = _basic_module(tmp_path)
@@ -1527,3 +1542,12 @@ def test_a_packing_push_in_a_prologue_never_reaches_the_wrapper():
     )
     lines, _ = scan_preamble(src)
     assert lines == ['#include "precomp.h"', '#include "registry.h"']
+
+
+def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
+    from rustconv.profile_derive import header_type_defs
+
+    h = tmp_path / "cryptuiapi.h"
+    h.write_text("typedef struct _S {\n    union {\n        int a;\n    } DUMMYUNIONNAME1;\n} S;\n")
+    # inetcpl was split into two islands over this name alone.
+    assert header_type_defs(h) == {"_S", "S"}

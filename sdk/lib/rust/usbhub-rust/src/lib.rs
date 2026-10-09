@@ -8,6 +8,7 @@
 //! pure-LLM as c2rust couldn't anchor it, the rest c2rust-anchored). 5 .c -> 5 modules.
 //! Enumerates/powers/resets downstream ports. NOT boot-loaded in smoke (boots from CD/ramdisk).
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+#[macro_use]
 extern crate drvtrace_shim;
 
 pub mod types;

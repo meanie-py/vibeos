@@ -123,7 +123,7 @@ unsafe fn LsapCreateDatabaseKeys() -> NTSTATUS {
     let mut accounts_key_handle: HANDLE = core::ptr::null_mut();
     let mut domains_key_handle: HANDLE = core::ptr::null_mut();
     let mut secrets_key_handle: HANDLE = core::ptr::null_mut();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
 
     TRACE!(b"LsapInstallDatabase()\n\0".as_ptr() as *const u8);
 
@@ -255,7 +255,7 @@ unsafe fn LsapCreateRandomDomainSid(sid: *mut PSID) -> NTSTATUS {
 }
 
 unsafe fn LsapCreateDatabaseObjects() -> NTSTATUS {
-    let mut AuditEventsInfo: *mut _LSAP_POLICY_AUDIT_EVENTS_DATA = core::ptr::null_mut();
+    let AuditEventsInfo: *mut _LSAP_POLICY_AUDIT_EVENTS_DATA;
     let mut QuotaInfo: _POLICY_DEFAULT_QUOTA_INFO = core::mem::zeroed();
     let mut ModificationInfo: _POLICY_MODIFICATION_INFO = core::mem::zeroed();
     let AuditFullInfo: _POLICY_AUDIT_FULL_QUERY_INFO = _POLICY_AUDIT_FULL_QUERY_INFO {
@@ -568,7 +568,6 @@ unsafe fn LsapGetDomainInfo() -> i32 {
         ConvertSidToStringSidW(AccountDomainSid, &mut SidString);
         TRACE!(b"Account Domain SID: %S\n\0".as_ptr() as *const i8, SidString);
         LocalFree(SidString as *mut core::ffi::c_void);
-        SidString = core::ptr::null_mut();
 
         TRACE!(
             b"Account Domain Name: %wZ\n\0".as_ptr() as *const i8,

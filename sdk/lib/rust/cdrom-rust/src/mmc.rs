@@ -109,7 +109,7 @@ pub unsafe extern "C" fn DeviceDeallocateMmcResources(Device: WDFDEVICE) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let cddata: *mut CDROM_DATA = &raw mut (*deviceExtension).DeviceAdditionalData;
     let mmcData: *mut CDROM_MMC_EXTENSION = &raw mut (*cddata).Mmc;
@@ -188,7 +188,7 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
 pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
     Device: WDFDEVICE,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*deviceExtension).DeviceAdditionalData);
     let mmcData: *mut CDROM_MMC_EXTENSION = core::ptr::addr_of_mut!((*cdData).Mmc);
@@ -274,10 +274,10 @@ pub unsafe extern "C" fn DeviceUpdateMmcCapabilities(
             let profile: FEATURE_PROFILE_TYPE =
                 ((((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[0] as u16) << 8) |
                 (((*((*mmcData).CapabilitiesBuffer)).CurrentProfile[1] as u16) << 0)) as FEATURE_PROFILE_TYPE;
-            let mut t1: i64 = -1;
-            let mut t2: i64 = -1;
-            let mut t3: i64 = -1;
-            let mut t4: i64 = -1;
+            let mut t1: i64;
+            let mut t2: i64;
+            let mut t3: i64;
+            let mut t4: i64;
             let mut final_val: i64;
 
             t1 = DeviceRetryTimeGuessBasedOnProfile(profile);
@@ -334,11 +334,11 @@ pub unsafe extern "system" fn DeviceGetConfigurationWithAlloc(
     const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
     const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut header: GET_CONFIGURATION_HEADER = core::mem::zeroed();
     let mut buffer: *mut GET_CONFIGURATION_HEADER = core::ptr::null_mut();
     let mut returned: u32 = 0;
-    let mut size: u32 = 0;
+    let mut size: u32;
     let mut i: u32 = 0;
 
     // PAGED_CODE();

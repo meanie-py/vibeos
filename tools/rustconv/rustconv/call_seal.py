@@ -166,7 +166,14 @@ def _argument_count(masked: str, name_end: int) -> tuple[int, str] | None:
                 # seven arguments. That is not an argument; it is a line ending.
                 while segments and not segments[-1].strip():
                     segments.pop()
-                return len(segments), masked[opening + 1 : pos]
+                inner = masked[opening + 1 : pos]
+                # A `#if` arm INSIDE the argument list makes the count depend on which arm
+                # compiles: comctl32's TOOLTIPS_Show passes CreateRoundRectRgn's fourth
+                # argument once per `__REACTOS__` arm, so the C text reads as 7 arguments
+                # and the model's correct 6 was refused on every sample. Skip, never judge.
+                if re.search(r"(?m)^[ \t]*#[ \t]*(?:if|ifdef|ifndef|elif|else|endif)\b", inner):
+                    return None
+                return len(segments), inner
         elif depth == 1 and ch == ",":
             segments.append(masked[segment_start:pos])
             segment_start = pos + 1

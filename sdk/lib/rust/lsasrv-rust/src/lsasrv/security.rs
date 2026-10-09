@@ -255,7 +255,7 @@ pub unsafe extern "C" fn LsapCreateAccountSd(
     let mut EveryoneSid: PSID = core::ptr::null_mut();
     let mut LocalSystemSid: PSID = core::ptr::null_mut();
     let mut Dacl: PACL = core::ptr::null_mut();
-    let mut DaclSize: ULONG = 0;
+    let DaclSize: ULONG;
     let mut Status: NTSTATUS;
 
     if AccountSd.is_null() || AccountSdSize.is_null() {
@@ -450,8 +450,8 @@ pub unsafe extern "C" fn LsapCreateSecretSd(
     let mut EveryoneSid: PSID = core::ptr::null_mut();
     let mut LocalSystemSid: PSID = core::ptr::null_mut();
     let mut Dacl: PACL = core::ptr::null_mut();
-    let mut DaclSize: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let DaclSize: ULONG;
+    let mut Status: NTSTATUS;
 
     if SecretSd.is_null() || SecretSdSize.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -652,7 +652,7 @@ pub unsafe extern "C" fn LsapCreateTokenSd(
     let mut AdministratorsSid: PSID = core::ptr::null_mut();
     let mut LocalSystemSid: PSID = core::ptr::null_mut();
     let mut Dacl: PACL = core::ptr::null_mut();
-    let mut DaclSize: ULONG = 0;
+    let DaclSize: ULONG;
     let mut Status: NTSTATUS;
 
     if TokenSd.is_null() || TokenSdSize.is_null() {

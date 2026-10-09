@@ -1,6 +1,7 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+
 extern "system" {
     // ARRAYSIZE removed: a MACRO, not a linkable fn (no live call sites in this module).
     fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: *mut core::ffi::c_void) -> BOOL;
@@ -432,7 +433,9 @@ static USER_SHELL_FOLDERS_KEY2: [u16; 70] = [
 ];
 
 
-const IDS_PROFILEPATH: UINT = 0;
+// IDS_PROFILEPATH comes from the prelude (resources.h: 1). A local copy here said 0, a
+// resource that does not exist: LoadStringW failed and GUI setup stopped at
+// "InitializeProfiles() failed" on every install.
 unsafe extern "C" fn CreateStandardProfile(
     pszProfilesPath: LPCWSTR,
     hProfileListKey: HKEY,
@@ -445,9 +448,12 @@ unsafe extern "C" fn CreateStandardProfile(
     let mut szProfilePath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
+    // C: the profile NAME goes into szBuffer, which the path below is built from. Copied into
+    // szProfilePath (overwritten on the next line), szBuffer stayed empty and "Default User" /
+    // "All Users" were created as the profiles directory itself.
     StringCbCopyW(
-        szProfilePath.as_mut_ptr(),
-        core::mem::size_of_val(&szProfilePath),
+        szBuffer.as_mut_ptr(),
+        core::mem::size_of_val(&szBuffer),
         (*pProfileParams).pszProfileName,
     );
 
@@ -469,10 +475,14 @@ unsafe extern "C" fn CreateStandardProfile(
 
     if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
+            DPRINT1!("CreateStandardProfile step 1", GetLastError());
+
             return FALSE as BOOL;
         }
 
         if AppendSystemPostfix(szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as DWORD) == 0 {
+            DPRINT1!("CreateStandardProfile step 2", GetLastError());
+
             return FALSE as BOOL;
         }
 
@@ -494,6 +504,8 @@ unsafe extern "C" fn CreateStandardProfile(
 
         if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
             if GetLastError() != ERROR_ALREADY_EXISTS {
+                DPRINT1!("CreateStandardProfile step 3", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -510,6 +522,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        DPRINT1!("CreateStandardProfile step 4", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -545,6 +559,8 @@ unsafe extern "C" fn CreateStandardProfile(
 
         if CreateDirectoryW(szBuffer.as_mut_ptr(), core::ptr::null_mut()) == 0 {
             if GetLastError() != ERROR_ALREADY_EXISTS {
+                DPRINT1!("CreateStandardProfile step 5", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -565,6 +581,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        DPRINT1!("CreateStandardProfile step 6", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -609,6 +627,8 @@ unsafe extern "C" fn CreateStandardProfile(
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
+                DPRINT1!("CreateStandardProfile step 7", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -627,6 +647,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        DPRINT1!("CreateStandardProfile step 8", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -671,6 +693,8 @@ unsafe extern "C" fn CreateStandardProfile(
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
+                DPRINT1!("CreateStandardProfile step 9", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -691,13 +715,18 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
     let mut szProfilesPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
+    // The unexpanded path goes into szBuffer (stored in the registry as REG_EXPAND_SZ) and is
+    // expanded INTO szProfilesPath below. Loaded into szProfilesPath instead, the expansion of
+    // the still-empty szBuffer overwrote it with "", CreateDirectoryW("") failed, and GUI setup
+    // stopped at "InitializeProfiles() failed / Rebooting now!" on every install.
     if LoadStringW(
         hInstance as *mut core::ffi::c_void,
         IDS_PROFILEPATH,
-        szProfilesPath.as_mut_ptr(),
+        szBuffer.as_mut_ptr(),
         MAX_PATH as core::ffi::c_int,
     ) == 0
     {
+        DPRINT1!("LoadStringW(IDS_PROFILEPATH)", GetLastError());
         return 0;
     }
 
@@ -709,6 +738,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut hKey,
     );
     if Error != ERROR_SUCCESS as LONG {
+        DPRINT1!("RegOpenKeyExW(ProfileList)", Error);
         SetLastError(Error as DWORD);
         return 0;
     }
@@ -719,12 +749,14 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         MAX_PATH,
     ) == 0
     {
+        DPRINT1!("ExpandEnvironmentStringsW", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
 
     if CreateDirectoryW(szProfilesPath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
+            DPRINT1!("CreateDirectoryW(profiles directory)", GetLastError());
             RegCloseKey(hKey);
             return 0;
         }
@@ -740,6 +772,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         dwLength,
     );
     if Error != ERROR_SUCCESS as LONG {
+        DPRINT1!("RegSetValueExW(ProfilesDirectory)", Error);
         RegCloseKey(hKey);
         SetLastError(Error as DWORD);
         return 0;
@@ -751,6 +784,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut StandardProfiles[0],
     ) == 0
     {
+        DPRINT1!("CreateStandardProfile(Default User)", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
@@ -761,6 +795,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut StandardProfiles[1],
     ) == 0
     {
+        DPRINT1!("CreateStandardProfile(All Users)", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
@@ -863,6 +898,7 @@ pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
 extern "C" {
     fn wcslen(s: LPCWSTR) -> usize;
 }
+
 
 
 // ============================================================================

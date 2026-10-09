@@ -37,7 +37,7 @@ extern "C" {
 pub unsafe extern "system" fn USBPORT_InsertIdleIrp(Csq: PIO_CSQ, Irp: PIRP) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_QUEUE(b"USBPORT_InsertIdleIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_QUEUE!(b"USBPORT_InsertIdleIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     FdoExtension = (Csq as usize).wrapping_sub(
         core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, IdleIoCsq),
@@ -51,7 +51,7 @@ pub unsafe extern "system" fn USBPORT_InsertIdleIrp(Csq: PIO_CSQ, Irp: PIRP) {
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_RemoveIdleIrp(mut Csq: PIO_CSQ, mut Irp: PIRP) {
-    DPRINT_QUEUE(b"USBPORT_RemoveIdleIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_QUEUE!(b"USBPORT_RemoveIdleIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
     RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
 }
 
@@ -66,7 +66,7 @@ pub unsafe extern "system" fn USBPORT_PeekNextIdleIrp(
     let ListHead: PLIST_ENTRY;
     let mut NextIrp: PIRP = core::ptr::null_mut();
 
-    DPRINT_QUEUE(
+    DPRINT_QUEUE!(
         b"USBPORT_PeekNextIdleIrp: Irp - %p, PeekContext - %p\n\0".as_ptr() as *const i8,
         Irp,
         PeekContext,
@@ -103,7 +103,7 @@ pub unsafe extern "system" fn USBPORT_PeekNextIdleIrp(
 pub unsafe extern "system" fn USBPORT_AcquireIdleLock(Csq: PIO_CSQ, Irql: PKIRQL) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_QUEUE(b"USBPORT_AcquireIdleLock: ... \n\0".as_ptr() as *const i8);
+    DPRINT_QUEUE!(b"USBPORT_AcquireIdleLock: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (Csq as usize)
         .wrapping_sub(
@@ -117,7 +117,7 @@ pub unsafe extern "system" fn USBPORT_AcquireIdleLock(Csq: PIO_CSQ, Irql: PKIRQL
 pub unsafe extern "system" fn USBPORT_ReleaseIdleLock(Csq: PIO_CSQ, Irql: KIRQL) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION = core::ptr::null_mut();
 
-    DPRINT_QUEUE(b"USBPORT_ReleaseIdleLock: ... \n\0".as_ptr() as *const i8);
+    DPRINT_QUEUE!(b"USBPORT_ReleaseIdleLock: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (Csq as ULONG_PTR).wrapping_sub(
         core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, IdleIoCsq) as ULONG_PTR,
@@ -145,7 +145,7 @@ pub unsafe extern "system" fn USBPORT_CompleteCanceledIdleIrp(Csq: PIO_CSQ, Irp:
 pub unsafe extern "system" fn USBPORT_InsertBadRequest(Csq: PIO_CSQ, Irp: PIRP) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_QUEUE(b"USBPORT_InsertBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_QUEUE!(b"USBPORT_InsertBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     FdoExtension = ((Csq as usize)
         - (core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq)))
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn USBPORT_InsertBadRequest(Csq: PIO_CSQ, Irp: PIRP) 
 
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_RemoveBadRequest(Csq: PIO_CSQ, Irp: PIRP) {
-    DPRINT_QUEUE(b"USBPORT_RemoveBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_QUEUE!(b"USBPORT_RemoveBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
     RemoveEntryList(core::ptr::addr_of_mut!((*Irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
 }
 
@@ -174,7 +174,7 @@ pub unsafe extern "system" fn USBPORT_PeekNextBadRequest(
     let ListHead: PLIST_ENTRY;
     let mut NextIrp: PIRP = core::ptr::null_mut();
 
-    DPRINT_QUEUE(
+    DPRINT_QUEUE!(
         b"USBPORT_PeekNextBadRequest: Irp - %p, PeekContext - %p\n\0".as_ptr() as *const i8,
         Irp,
         PeekContext,
@@ -216,7 +216,7 @@ pub unsafe extern "system" fn USBPORT_AcquireBadRequestLock(
 ) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    // DPRINT_QUEUE("USBPORT_AcquireBadRequestLock: ... \n");
+    // DPRINT_QUEUE!("USBPORT_AcquireBadRequestLock: ... \n");
 
     FdoExtension = (Csq as usize).wrapping_sub(
         core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq),
@@ -232,7 +232,7 @@ pub unsafe extern "system" fn USBPORT_AcquireBadRequestLock(
 pub unsafe extern "system" fn USBPORT_ReleaseBadRequestLock(Csq: PIO_CSQ, Irql: KIRQL) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_QUEUE(b"USBPORT_ReleaseBadRequestLock: ... \n\0".as_ptr() as *const i8);
+    DPRINT_QUEUE!(b"USBPORT_ReleaseBadRequestLock: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (Csq as usize).wrapping_sub(
         core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq),
@@ -248,7 +248,7 @@ pub unsafe extern "system" fn USBPORT_ReleaseBadRequestLock(Csq: PIO_CSQ, Irql: 
 pub unsafe extern "system" fn USBPORT_CompleteCanceledBadRequest(Csq: PIO_CSQ, Irp: PIRP) {
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_QUEUE(b"USBPORT_CompleteCanceledBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_QUEUE!(b"USBPORT_CompleteCanceledBadRequest: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     FdoExtension = ((Csq as usize)
         - (core::mem::offset_of!(USBPORT_DEVICE_EXTENSION, BadRequestIoCsq)))
@@ -268,7 +268,7 @@ pub unsafe extern "system" fn USBPORT_InsertIrpInTable(
 ) {
     let mut ix: ULONG;
 
-    // DPRINT_CORE("USBPORT_InsertIrpInTable: IrpTable - %p, Irp - %p\n", IrpTable, Irp);
+    // DPRINT_CORE!("USBPORT_InsertIrpInTable: IrpTable - %p, Irp - %p\n", IrpTable, Irp);
 
     // ASSERT(IrpTable != NULL);
 
@@ -279,7 +279,7 @@ pub unsafe extern "system" fn USBPORT_InsertIrpInTable(
                 (*IrpTable).irp[ix as usize] = Irp;
 
                 if ix > 0 {
-                    // DPRINT_CORE("USBPORT_InsertIrpInTable: ix - %x\n", ix);
+                    // DPRINT_CORE!("USBPORT_InsertIrpInTable: ix - %x\n", ix);
                 }
 
                 return;
@@ -317,7 +317,7 @@ pub unsafe extern "system" fn USBPORT_RemoveIrpFromTable(
 ) -> PIRP {
     let mut ix: ULONG;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_RemoveIrpFromTable: IrpTable - %p, Irp - %p\n\0".as_ptr() as *const i8,
         IrpTable,
         Irp,
@@ -339,7 +339,7 @@ pub unsafe extern "system" fn USBPORT_RemoveIrpFromTable(
                 (*IrpTable).irp[ix as usize] = core::ptr::null_mut();
 
                 if ix > 0 {
-                    DPRINT_CORE(
+                    DPRINT_CORE!(
                         b"USBPORT_RemoveIrpFromTable: ix - %x\n\0".as_ptr() as *const i8,
                         ix,
                     );
@@ -369,7 +369,7 @@ pub unsafe extern "system" fn USBPORT_RemoveActiveTransferIrp(
 ) -> PIRP {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_RemoveActiveTransferIrp: Irp - %p\n\0".as_ptr() as *const i8,
         Irp,
     );
@@ -384,7 +384,7 @@ pub unsafe extern "system" fn USBPORT_RemovePendingTransferIrp(
 ) -> PIRP {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_RemovePendingTransferIrp: Irp - %p\n\0".as_ptr() as *const i8,
         Irp,
     );
@@ -404,7 +404,7 @@ pub unsafe extern "system" fn USBPORT_FindUrbInIrpTable(
     let mut irp: PIRP;
     let mut urbIn: PURB;
 
-    // DPRINT_CORE("USBPORT_FindUrbInIrpTable: IrpTable - %p, Urb - %p, Irp - %p\n", IrpTable, Urb, Irp);
+    // DPRINT_CORE!("USBPORT_FindUrbInIrpTable: IrpTable - %p, Urb - %p, Irp - %p\n", IrpTable, Urb, Irp);
 
     if IrpTable.is_null() {
         RtlAssert(
@@ -467,7 +467,7 @@ pub unsafe extern "system" fn USBPORT_FindIrpInTable(
     let mut ix: ULONG;
     let mut irp: PIRP;
 
-    // DPRINT_CORE("USBPORT_FindIrpInTable: IrpTable - %p, Irp - %p\n", IrpTable, Irp);
+    // DPRINT_CORE!("USBPORT_FindIrpInTable: IrpTable - %p, Irp - %p\n", IrpTable, Irp);
 
     if IrpTable.is_null() {
         RtlAssert(
@@ -496,7 +496,7 @@ pub unsafe extern "system" fn USBPORT_FindIrpInTable(
         }
     }
 
-    // DPRINT_CORE("USBPORT_FindIrpInTable: Not found!!!\n");
+    // DPRINT_CORE!("USBPORT_FindIrpInTable: Not found!!!\n");
     return core::ptr::null_mut();
 }
 
@@ -507,7 +507,7 @@ pub unsafe extern "system" fn USBPORT_FindActiveTransferIrp(
 ) -> PIRP {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_FindActiveTransferIrp: Irp - %p\n\0".as_ptr() as *const i8,
         Irp,
     );
@@ -529,7 +529,7 @@ pub unsafe extern "system" fn USBPORT_CancelPendingTransferIrp(
     let mut OldIrql: KIRQL = 0;
     let mut irp: PIRP;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_CancelPendingTransferIrp: DeviceObject - %p, Irp - %p\n\0".as_ptr() as *const i8,
         DeviceObject,
         Irp,
@@ -596,7 +596,7 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
     let mut Entry: PLIST_ENTRY;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(b"USBPORT_CancelActiveTransferIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_CORE!(b"USBPORT_CancelActiveTransferIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     PdoExtension = (*DeviceObject).DeviceExtension as PUSBPORT_RHDEVICE_EXTENSION;
     FdoDevice = (*PdoExtension).FdoDevice;
@@ -623,7 +623,7 @@ pub unsafe extern "system" fn USBPORT_CancelActiveTransferIrp(
     Transfer = (*Urb).__bindgen_anon_1.UrbControlTransfer.hca.Reserved8[0] as PUSBPORT_TRANSFER;
     Endpoint = (*Transfer).Endpoint;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_CancelActiveTransferIrp: irp - %p, Urb - %p, Transfer - %p\n\0".as_ptr() as *const i8,
         irp,
         Urb,
@@ -683,7 +683,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
     let mut Urb: PURB;
     let mut DeviceHandle: PUSBPORT_DEVICE_HANDLE = core::ptr::null_mut();
 
-    // DPRINT_CORE("USBPORT_FlushAbortList: Endpoint - %p\n", Endpoint);
+    // DPRINT_CORE!("USBPORT_FlushAbortList: Endpoint - %p\n", Endpoint);
 
     InitializeListHead(core::ptr::addr_of_mut!(List));
 
@@ -708,7 +708,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
             as *mut USBPORT_TRANSFER;
 
         if (*Transfer).Flags & TRANSFER_FLAG_ABORTED != 0 {
-            // DPRINT_CORE("USBPORT_FlushAbortList: Aborted PendingTransfer  - %p\n", Transfer);
+            // DPRINT_CORE!("USBPORT_FlushAbortList: Aborted PendingTransfer  - %p\n", Transfer);
 
             KeReleaseSpinLock(
                 (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
@@ -728,7 +728,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
             as *mut USBPORT_TRANSFER;
 
         if (*Transfer).Flags & TRANSFER_FLAG_ABORTED != 0 {
-            // DPRINT_CORE("USBPORT_FlushAbortList: Aborted ActiveTransfer - %p\n", Transfer);
+            // DPRINT_CORE!("USBPORT_FlushAbortList: Aborted ActiveTransfer - %p\n", Transfer);
 
             KeReleaseSpinLock(
                 (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
@@ -777,7 +777,7 @@ pub unsafe extern "system" fn USBPORT_FlushAbortList(Endpoint: PUSBPORT_ENDPOINT
 
         Status = USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_SUCCESS);
 
-        // DPRINT_CORE("USBPORT_FlushAbortList: complete Irp - %p\n", Irp);
+        // DPRINT_CORE!("USBPORT_FlushAbortList: complete Irp - %p\n", Irp);
 
         (*Irp).IoStatus.__bindgen_anon_1.Status = Status;
         (*Irp).IoStatus.Information = 0;
@@ -794,7 +794,7 @@ pub unsafe extern "system" fn USBPORT_FlushCancelList(Endpoint: PUSBPORT_ENDPOIN
     let mut OldIrql: KIRQL = 0;
     let mut PrevIrql: KIRQL = 0;
 
-    DPRINT_CORE(b"USBPORT_FlushCancelList: ... \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushCancelList: ... \n\0".as_ptr() as *const i8);
 
     FdoDevice = (*Endpoint).FdoDevice;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
@@ -870,7 +870,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
     let mut OldIrql: KIRQL = 0;
     let mut Result: BOOLEAN;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_FlushPendingTransfers: Endpoint - %p\n\0".as_ptr() as *const i8,
         Endpoint,
     );
@@ -888,7 +888,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
             }
         };
         if _old != 0 {
-            DPRINT_CORE(
+            DPRINT_CORE!(
                 b"USBPORT_FlushPendingTransfers: Endpoint Locked \n\0".as_ptr() as *const i8,
             );
             return;
@@ -971,7 +971,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                     as PUSBPORT_TRANSFER;
 
                 if !(*Transfer).Irp.is_null() {
-                    DPRINT_CORE(
+                    DPRINT_CORE!(
                         b"USBPORT_FlushPendingTransfers: Transfer->Irp->CancelRoutine - %p\n\0"
                             .as_ptr() as *const i8,
                         (*(*Transfer).Irp).CancelRoutine,
@@ -981,7 +981,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                 if !(*Transfer).Irp.is_null()
                     && IoSetCancelRoutine((*Transfer).Irp, None).is_none()
                 {
-                    DPRINT_CORE(
+                    DPRINT_CORE!(
                         b"USBPORT_FlushPendingTransfers: Transfer->Irp - %p\n\0".as_ptr()
                             as *const i8,
                         (*Transfer).Irp,
@@ -1039,7 +1039,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                     );
 
                     if (*Irp).Cancel != 0 && IoSetCancelRoutine(Irp, None).is_some() {
-                        DPRINT_CORE(
+                        DPRINT_CORE!(
                             b"USBPORT_FlushPendingTransfers: irp - %p\n\0".as_ptr() as *const i8,
                             Irp,
                         );
@@ -1090,7 +1090,7 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
                 core::ptr::addr_of_mut!((*Endpoint).FlushPendingLock) as *mut core::ffi::c_long
                     as *mut i32,
             );
-            DPRINT_CORE(
+            DPRINT_CORE!(
                 b"USBPORT_FlushPendingTransfers: Endpoint Unlocked. Exit\n\0".as_ptr() as *const i8,
             );
             return;
@@ -1105,7 +1105,7 @@ pub unsafe extern "system" fn USBPORT_QueuePendingUrbToEndpoint(
 ) {
     let mut Transfer: PUSBPORT_TRANSFER;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_QueuePendingUrbToEndpoint: Endpoint - %p, Urb - %p\n\0".as_ptr() as *const i8,
         Endpoint,
         Urb,
@@ -1131,7 +1131,7 @@ pub unsafe extern "system" fn USBPORT_QueueActiveUrbToEndpoint(
     let DeviceHandle: PUSBPORT_DEVICE_HANDLE;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_QueueActiveUrbToEndpoint: Endpoint - %p, Urb - %p\n\0".as_ptr() as *const i8,
         Endpoint,
         Urb,
@@ -1216,7 +1216,7 @@ pub unsafe extern "system" fn USBPORT_QueuePendingTransferIrp(mut Irp: PIRP) {
     let mut FdoDevice: PDEVICE_OBJECT;
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_CORE(b"USBPORT_QueuePendingTransferIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
+    DPRINT_CORE!(b"USBPORT_QueuePendingTransferIrp: Irp - %p\n\0".as_ptr() as *const i8, Irp);
 
     Urb = URB_FROM_IRP(Irp);
 
@@ -1247,7 +1247,7 @@ pub unsafe extern "system" fn USBPORT_QueueTransferUrb(mut Urb: PURB) {
     let mut DeviceHandle: PUSBPORT_DEVICE_HANDLE;
     let mut Parameters: PUSBPORT_TRANSFER_PARAMETERS;
 
-    DPRINT_CORE(b"USBPORT_QueueTransferUrb: Urb - %p\n\0".as_ptr() as *const i8, Urb);
+    DPRINT_CORE!(b"USBPORT_QueueTransferUrb: Urb - %p\n\0".as_ptr() as *const i8, Urb);
 
     if (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferFlags & USBD_DEFAULT_PIPE_TRANSFER != 0 {
         (*Urb).__bindgen_anon_1.UrbHeader.Function = URB_FUNCTION_CONTROL_TRANSFER as USHORT;
@@ -1278,7 +1278,7 @@ pub unsafe extern "system" fn USBPORT_QueueTransferUrb(mut Urb: PURB) {
         );
     }
 
-    DPRINT_URB(
+    DPRINT_URB!(
         b"... URB TransferBufferLength - %x\n\0".as_ptr() as *const i8,
         (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength,
     );
@@ -1298,7 +1298,7 @@ pub unsafe extern "system" fn USBPORT_QueueTransferUrb(mut Urb: PURB) {
 
     USBPORT_FlushPendingTransfers(Endpoint);
 
-    DPRINT_URB(
+    DPRINT_URB!(
         b"... URB TransferBufferLength - %x\n\0".as_ptr() as *const i8,
         (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength,
     );
@@ -1313,11 +1313,11 @@ pub unsafe extern "system" fn USBPORT_QueueTransferUrb(mut Urb: PURB) {
         BufferLength = (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength;
         BufferEnd = (Buffer as ULONG_PTR).wrapping_add(BufferLength as ULONG_PTR);
 
-        DPRINT_URB(b"URB TransferBuffer - %p\n\0".as_ptr() as *const i8, Buffer);
+        DPRINT_URB!(b"URB TransferBuffer - %p\n\0".as_ptr() as *const i8, Buffer);
 
         ix = 0 as ULONG;
         while (Buffer.offset(ix as isize) as ULONG_PTR) < BufferEnd {
-            DPRINT_URB(
+            DPRINT_URB!(
                 b"Buffer[%02X] - %p\n\0".as_ptr() as *const i8,
                 ix,
                 *Buffer.offset(ix as isize),
@@ -1339,7 +1339,7 @@ pub unsafe extern "system" fn USBPORT_FlushAllEndpoints(mut FdoDevice: PDEVICE_O
     };
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(b"USBPORT_FlushAllEndpoints: ... \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushAllEndpoints: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1387,7 +1387,7 @@ pub unsafe extern "system" fn USBPORT_FlushAllEndpoints(mut FdoDevice: PDEVICE_O
         }
     }
 
-    DPRINT_CORE(b"USBPORT_FlushAllEndpoints: exit\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushAllEndpoints: exit\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -1399,7 +1399,7 @@ pub unsafe extern "system" fn USBPORT_KillEndpointActiveTransfers(
     let mut Transfer: PUSBPORT_TRANSFER;
     let mut KilledTransfers: ULONG = 0;
 
-    DPRINT_CORE(b"USBPORT_KillEndpointActiveTransfers \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_KillEndpointActiveTransfers \n\0".as_ptr() as *const i8);
 
     ActiveList = (*Endpoint).TransferList.Flink as PLIST_ENTRY;
 
@@ -1437,7 +1437,7 @@ pub unsafe extern "system" fn USBPORT_FlushController(FdoDevice: PDEVICE_OBJECT)
         Blink: core::ptr::null_mut(),
     };
 
-    DPRINT_CORE(b"USBPORT_FlushController \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushController \n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1553,7 +1553,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
     let mut ActiveList: PLIST_ENTRY;
     let mut ActiveTransfer: PUSBPORT_TRANSFER;
 
-    // DPRINT_CORE("USBPORT_AbortEndpoint: Irp - %p\n", Irp);
+    // DPRINT_CORE!("USBPORT_AbortEndpoint: Irp - %p\n", Irp);
 
     KeAcquireSpinLock(
         (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
@@ -1576,7 +1576,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
             .wrapping_sub(core::mem::offset_of!(USBPORT_TRANSFER, TransferLink))
             as *mut USBPORT_TRANSFER as PUSBPORT_TRANSFER;
 
-        // DPRINT_CORE("USBPORT_AbortEndpoint: Abort PendingTransfer - %p\n", PendingTransfer);
+        // DPRINT_CORE!("USBPORT_AbortEndpoint: Abort PendingTransfer - %p\n", PendingTransfer);
 
         (*PendingTransfer).Flags |= TRANSFER_FLAG_ABORTED as ULONG;
 
@@ -1592,7 +1592,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
             .wrapping_sub(core::mem::offset_of!(USBPORT_TRANSFER, TransferLink))
             as *mut USBPORT_TRANSFER as PUSBPORT_TRANSFER;
 
-        // DPRINT_CORE("USBPORT_AbortEndpoint: Abort ActiveTransfer - %p\n", ActiveTransfer);
+        // DPRINT_CORE!("USBPORT_AbortEndpoint: Abort ActiveTransfer - %p\n", ActiveTransfer);
 
         (*ActiveTransfer).Flags |= TRANSFER_FLAG_ABORTED as ULONG;
 
@@ -1647,7 +1647,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_InsertIdleIrp: Irp - %p\n", Irp);
+//     DPRINT_QUEUE!("USBPORT_InsertIdleIrp: Irp - %p\n", Irp);
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1662,7 +1662,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // USBPORT_RemoveIdleIrp(IN PIO_CSQ Csq,
 //                       IN PIRP Irp)
 // {
-//     DPRINT_QUEUE("USBPORT_RemoveIdleIrp: Irp - %p\n", Irp);
+//     DPRINT_QUEUE!("USBPORT_RemoveIdleIrp: Irp - %p\n", Irp);
 //     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
 // }
 //
@@ -1677,7 +1677,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PLIST_ENTRY ListHead;
 //     PIRP NextIrp = NULL;
 //
-//     DPRINT_QUEUE("USBPORT_PeekNextIdleIrp: Irp - %p, PeekContext - %p\n",
+//     DPRINT_QUEUE!("USBPORT_PeekNextIdleIrp: Irp - %p, PeekContext - %p\n",
 //                  Irp,
 //                  PeekContext);
 //
@@ -1718,7 +1718,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_AcquireIdleLock: ... \n");
+//     DPRINT_QUEUE!("USBPORT_AcquireIdleLock: ... \n");
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1734,7 +1734,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_ReleaseIdleLock: ... \n");
+//     DPRINT_QUEUE!("USBPORT_ReleaseIdleLock: ... \n");
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1750,7 +1750,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_CompleteCanceledIdleIrp: ... \n");
+//     DPRINT_QUEUE!("USBPORT_CompleteCanceledIdleIrp: ... \n");
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1770,7 +1770,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_InsertBadRequest: Irp - %p\n", Irp);
+//     DPRINT_QUEUE!("USBPORT_InsertBadRequest: Irp - %p\n", Irp);
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1785,7 +1785,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // USBPORT_RemoveBadRequest(IN PIO_CSQ Csq,
 //                          IN PIRP Irp)
 // {
-//     DPRINT_QUEUE("USBPORT_RemoveBadRequest: Irp - %p\n", Irp);
+//     DPRINT_QUEUE!("USBPORT_RemoveBadRequest: Irp - %p\n", Irp);
 //     RemoveEntryList(&Irp->Tail.Overlay.ListEntry);
 // }
 //
@@ -1800,7 +1800,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PLIST_ENTRY ListHead;
 //     PIRP NextIrp = NULL;
 //
-//     DPRINT_QUEUE("USBPORT_PeekNextBadRequest: Irp - %p, PeekContext - %p\n",
+//     DPRINT_QUEUE!("USBPORT_PeekNextBadRequest: Irp - %p, PeekContext - %p\n",
 //                  Irp,
 //                  PeekContext);
 //
@@ -1841,7 +1841,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_AcquireBadRequestLock: ... \n");
+//     DPRINT_QUEUE!("USBPORT_AcquireBadRequestLock: ... \n");
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1857,7 +1857,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_ReleaseBadRequestLock: ... \n");
+//     DPRINT_QUEUE!("USBPORT_ReleaseBadRequestLock: ... \n");
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1873,7 +1873,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_QUEUE("USBPORT_CompleteCanceledBadRequest: Irp - %p\n", Irp);
+//     DPRINT_QUEUE!("USBPORT_CompleteCanceledBadRequest: Irp - %p\n", Irp);
 //
 //     FdoExtension = CONTAINING_RECORD(Csq,
 //                                      USBPORT_DEVICE_EXTENSION,
@@ -1893,7 +1893,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     ULONG ix;
 //
-//     DPRINT_CORE("USBPORT_InsertIrpInTable: IrpTable - %p, Irp - %p\n",
+//     DPRINT_CORE!("USBPORT_InsertIrpInTable: IrpTable - %p, Irp - %p\n",
 //                 IrpTable,
 //                 Irp);
 //
@@ -1909,7 +1909,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //                 if (ix > 0)
 //                 {
-//                     DPRINT_CORE("USBPORT_InsertIrpInTable: ix - %x\n", ix);
+//                     DPRINT_CORE!("USBPORT_InsertIrpInTable: ix - %x\n", ix);
 //                 }
 //
 //                 return;
@@ -1943,7 +1943,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     ULONG ix;
 //
-//     DPRINT_CORE("USBPORT_RemoveIrpFromTable: IrpTable - %p, Irp - %p\n",
+//     DPRINT_CORE!("USBPORT_RemoveIrpFromTable: IrpTable - %p, Irp - %p\n",
 //                 IrpTable,
 //                 Irp);
 //
@@ -1959,7 +1959,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //                 if (ix > 0)
 //                 {
-//                     DPRINT_CORE("USBPORT_RemoveIrpFromTable: ix - %x\n", ix);
+//                     DPRINT_CORE!("USBPORT_RemoveIrpFromTable: ix - %x\n", ix);
 //                 }
 //
 //                 return Irp;
@@ -1984,7 +1984,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_RemoveActiveTransferIrp: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_RemoveActiveTransferIrp: Irp - %p\n", Irp);
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     return USBPORT_RemoveIrpFromTable(FdoExtension->ActiveIrpTable, Irp);
 // }
@@ -1996,7 +1996,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_RemovePendingTransferIrp: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_RemovePendingTransferIrp: Irp - %p\n", Irp);
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     return USBPORT_RemoveIrpFromTable(FdoExtension->PendingIrpTable, Irp);
 // }
@@ -2011,7 +2011,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PIRP irp;
 //     PURB urbIn;
 //
-//     DPRINT_CORE("USBPORT_FindUrbInIrpTable: IrpTable - %p, Urb - %p, Irp - %p\n",
+//     DPRINT_CORE!("USBPORT_FindUrbInIrpTable: IrpTable - %p, Urb - %p, Irp - %p\n",
 //                 IrpTable,
 //                 Urb,
 //                 Irp);
@@ -2061,7 +2061,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     ULONG ix;
 //     PIRP irp;
 //
-//     DPRINT_CORE("USBPORT_FindIrpInTable: IrpTable - %p, Irp - %p\n",
+//     DPRINT_CORE!("USBPORT_FindIrpInTable: IrpTable - %p, Irp - %p\n",
 //                 IrpTable,
 //                 Irp);
 //
@@ -2083,7 +2083,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     }
 //     while (IrpTable->LinkNextTable);
 //
-//     DPRINT_CORE("USBPORT_FindIrpInTable: Not found!!!\n");
+//     DPRINT_CORE!("USBPORT_FindIrpInTable: Not found!!!\n");
 //     return NULL;
 // }
 //
@@ -2094,7 +2094,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_FindActiveTransferIrp: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_FindActiveTransferIrp: Irp - %p\n", Irp);
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     return USBPORT_FindIrpInTable(FdoExtension->ActiveIrpTable, Irp);
 // }
@@ -2112,7 +2112,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     KIRQL OldIrql;
 //     PIRP irp;
 //
-//     DPRINT_CORE("USBPORT_CancelPendingTransferIrp: DeviceObject - %p, Irp - %p\n",
+//     DPRINT_CORE!("USBPORT_CancelPendingTransferIrp: DeviceObject - %p, Irp - %p\n",
 //                 DeviceObject,
 //                 Irp);
 //
@@ -2165,7 +2165,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PLIST_ENTRY Entry;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_CancelActiveTransferIrp: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_CancelActiveTransferIrp: Irp - %p\n", Irp);
 //
 //     PdoExtension = DeviceObject->DeviceExtension;
 //     FdoDevice = PdoExtension->FdoDevice;
@@ -2187,7 +2187,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     Transfer = Urb->UrbControlTransfer.hca.Reserved8[0];
 //     Endpoint = Transfer->Endpoint;
 //
-//     DPRINT_CORE("USBPORT_CancelActiveTransferIrp: irp - %p, Urb - %p, Transfer - %p\n",
+//     DPRINT_CORE!("USBPORT_CancelActiveTransferIrp: irp - %p, Urb - %p, Transfer - %p\n",
 //                 irp,
 //                 Urb,
 //                 Transfer);
@@ -2238,7 +2238,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PURB Urb;
 //     PUSBPORT_DEVICE_HANDLE DeviceHandle = NULL;
 //
-//     DPRINT_CORE("USBPORT_FlushAbortList: Endpoint - %p\n", Endpoint);
+//     DPRINT_CORE!("USBPORT_FlushAbortList: Endpoint - %p\n", Endpoint);
 //
 //     InitializeListHead(&List);
 //
@@ -2261,7 +2261,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //         if (Transfer->Flags & TRANSFER_FLAG_ABORTED)
 //         {
-//             DPRINT_CORE("USBPORT_FlushAbortList: Aborted PendingTransfer  - %p\n",
+//             DPRINT_CORE!("USBPORT_FlushAbortList: Aborted PendingTransfer  - %p\n",
 //                         Transfer);
 //
 //             KeReleaseSpinLock(&Endpoint->EndpointSpinLock,
@@ -2282,7 +2282,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //         if (Transfer->Flags & TRANSFER_FLAG_ABORTED)
 //         {
-//             DPRINT_CORE("USBPORT_FlushAbortList: Aborted ActiveTransfer - %p\n",
+//             DPRINT_CORE!("USBPORT_FlushAbortList: Aborted ActiveTransfer - %p\n",
 //                         Transfer);
 //
 //             KeReleaseSpinLock(&Endpoint->EndpointSpinLock,
@@ -2326,7 +2326,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //         Status = USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_SUCCESS);
 //
-//         DPRINT_CORE("USBPORT_FlushAbortList: complete Irp - %p\n", Irp);
+//         DPRINT_CORE!("USBPORT_FlushAbortList: complete Irp - %p\n", Irp);
 //
 //         Irp->IoStatus.Status = Status;
 //         Irp->IoStatus.Information = 0;
@@ -2345,7 +2345,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     KIRQL OldIrql;
 //     KIRQL PrevIrql;
 //
-//     DPRINT_CORE("USBPORT_FlushCancelList: ... \n");
+//     DPRINT_CORE!("USBPORT_FlushCancelList: ... \n");
 //
 //     FdoDevice = Endpoint->FdoDevice;
 //     FdoExtension = FdoDevice->DeviceExtension;
@@ -2420,14 +2420,14 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     KIRQL OldIrql;
 //     BOOLEAN Result;
 //
-//     DPRINT_CORE("USBPORT_FlushPendingTransfers: Endpoint - %p\n", Endpoint);
+//     DPRINT_CORE!("USBPORT_FlushPendingTransfers: Endpoint - %p\n", Endpoint);
 //
 //     FdoDevice = Endpoint->FdoDevice;
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
 //     if (InterlockedCompareExchange(&Endpoint->FlushPendingLock, 1, 0))
 //     {
-//         DPRINT_CORE("USBPORT_FlushPendingTransfers: Endpoint Locked \n");
+//         DPRINT_CORE!("USBPORT_FlushPendingTransfers: Endpoint Locked \n");
 //         return;
 //     }
 //
@@ -2495,14 +2495,14 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //         if (Transfer->Irp)
 //         {
-//             DPRINT_CORE("USBPORT_FlushPendingTransfers: Transfer->Irp->CancelRoutine - %p\n",
+//             DPRINT_CORE!("USBPORT_FlushPendingTransfers: Transfer->Irp->CancelRoutine - %p\n",
 //                         Transfer->Irp->CancelRoutine);
 //         }
 //
 //         if (Transfer->Irp &&
 //             (IoSetCancelRoutine(Transfer->Irp, NULL) == NULL))
 //         {
-//             DPRINT_CORE("USBPORT_FlushPendingTransfers: Transfer->Irp - %p\n",
+//             DPRINT_CORE!("USBPORT_FlushPendingTransfers: Transfer->Irp - %p\n",
 //                         Transfer->Irp);
 //
 //             Transfer = NULL;
@@ -2548,7 +2548,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //             if (Irp->Cancel && IoSetCancelRoutine(Irp, NULL))
 //             {
-//                 DPRINT_CORE("USBPORT_FlushPendingTransfers: irp - %p\n", Irp);
+//                 DPRINT_CORE!("USBPORT_FlushPendingTransfers: irp - %p\n", Irp);
 //
 //                 KeReleaseSpinLock(&FdoExtension->FlushTransferSpinLock,
 //                                   OldIrql);
@@ -2585,7 +2585,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //         if (IsEnd)
 //         {
 //             InterlockedDecrement(&Endpoint->FlushPendingLock);
-//             DPRINT_CORE("USBPORT_FlushPendingTransfers: Endpoint Unlocked. Exit\n");
+//             DPRINT_CORE!("USBPORT_FlushPendingTransfers: Endpoint Unlocked. Exit\n");
 //             return;
 //         }
 //     }
@@ -2598,7 +2598,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 // {
 //     PUSBPORT_TRANSFER Transfer;
 //
-//     DPRINT_CORE("USBPORT_QueuePendingUrbToEndpoint: Endpoint - %p, Urb - %p\n",
+//     DPRINT_CORE!("USBPORT_QueuePendingUrbToEndpoint: Endpoint - %p, Urb - %p\n",
 //                 Endpoint,
 //                 Urb);
 //
@@ -2619,7 +2619,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PUSBPORT_DEVICE_HANDLE DeviceHandle;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: Endpoint - %p, Urb - %p\n",
+//     DPRINT_CORE!("USBPORT_QueueActiveUrbToEndpoint: Endpoint - %p, Urb - %p\n",
 //                 Endpoint,
 //                 Urb);
 //
@@ -2638,7 +2638,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //         KeReleaseSpinLock(&Endpoint->EndpointSpinLock,
 //                           Endpoint->EndpointOldIrql);
 //
-//         //DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: return FALSE\n");
+//         //DPRINT_CORE!("USBPORT_QueueActiveUrbToEndpoint: return FALSE\n");
 //         return FALSE;
 //     }
 //
@@ -2650,7 +2650,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //         KeReleaseSpinLock(&Endpoint->EndpointSpinLock,
 //                           Endpoint->EndpointOldIrql);
 //
-//         //DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: return FALSE\n");
+//         //DPRINT_CORE!("USBPORT_QueueActiveUrbToEndpoint: return FALSE\n");
 //         return FALSE;
 //     }
 //
@@ -2665,7 +2665,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //     KeReleaseSpinLock(&FdoExtension->MapTransferSpinLock, OldIrql);
 //
-//     //DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: return TRUE\n");
+//     //DPRINT_CORE!("USBPORT_QueueActiveUrbToEndpoint: return TRUE\n");
 //     return TRUE;
 // }
 //
@@ -2679,7 +2679,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PDEVICE_OBJECT FdoDevice;
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_QueuePendingTransferIrp: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_QueuePendingTransferIrp: Irp - %p\n", Irp);
 //
 //     Urb = URB_FROM_IRP(Irp);
 //
@@ -2715,7 +2715,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PUSBPORT_DEVICE_HANDLE DeviceHandle;
 //     PUSBPORT_TRANSFER_PARAMETERS Parameters;
 //
-//     DPRINT_CORE("USBPORT_QueueTransferUrb: Urb - %p\n", Urb);
+//     DPRINT_CORE!("USBPORT_QueueTransferUrb: Urb - %p\n", Urb);
 //
 //     if (Urb->UrbControlTransfer.TransferFlags & USBD_DEFAULT_PIPE_TRANSFER)
 //         Urb->UrbHeader.Function = URB_FUNCTION_CONTROL_TRANSFER;
@@ -2747,7 +2747,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //                       sizeof(USB_DEFAULT_PIPE_SETUP_PACKET));
 //     }
 //
-//     DPRINT_URB("... URB TransferBufferLength - %x\n",
+//     DPRINT_URB!("... URB TransferBufferLength - %x\n",
 //            Urb->UrbControlTransfer.TransferBufferLength);
 //
 //     Urb->UrbControlTransfer.TransferBufferLength = 0;
@@ -2768,7 +2768,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //
 //     USBPORT_FlushPendingTransfers(Endpoint);
 //
-//     DPRINT_URB("... URB TransferBufferLength - %x\n",
+//     DPRINT_URB!("... URB TransferBufferLength - %x\n",
 //            Urb->UrbControlTransfer.TransferBufferLength);
 //
 //     if (Urb->UrbControlTransfer.TransferBufferLength)
@@ -2782,11 +2782,11 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //         BufferLength = Urb->UrbControlTransfer.TransferBufferLength;
 //         BufferEnd = (ULONG_PTR)Buffer + BufferLength;
 //
-//         DPRINT_URB("URB TransferBuffer - %p\n", Buffer);
+//         DPRINT_URB!("URB TransferBuffer - %p\n", Buffer);
 //
 //         for (ix = 0; (ULONG_PTR)(Buffer + ix) < BufferEnd; ix++)
 //         {
-//             DPRINT_URB("Buffer[%02X] - %p\n", ix, Buffer[ix]);
+//             DPRINT_URB!("Buffer[%02X] - %p\n", ix, Buffer[ix]);
 //         }
 //     }
 // }
@@ -2801,7 +2801,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     LIST_ENTRY List;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_FlushAllEndpoints: ... \n");
+//     DPRINT_CORE!("USBPORT_FlushAllEndpoints: ... \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -2844,7 +2844,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //         }
 //     }
 //
-//     DPRINT_CORE("USBPORT_FlushAllEndpoints: exit\n");
+//     DPRINT_CORE!("USBPORT_FlushAllEndpoints: exit\n");
 // }
 //
 // ULONG
@@ -2856,7 +2856,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PUSBPORT_TRANSFER Transfer;
 //     ULONG KilledTransfers = 0;
 //
-//     DPRINT_CORE("USBPORT_KillEndpointActiveTransfers \n");
+//     DPRINT_CORE!("USBPORT_KillEndpointActiveTransfers \n");
 //
 //     ActiveList = Endpoint->TransferList.Flink;
 //
@@ -2891,7 +2891,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     KIRQL OldIrql;
 //     LIST_ENTRY FlushList;
 //
-//     DPRINT_CORE("USBPORT_FlushController \n");
+//     DPRINT_CORE!("USBPORT_FlushController \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -2955,7 +2955,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //     PIRP Irp;
 //
-//     DPRINT_QUEUE("USBPORT_BadRequestFlush: ... \n");
+//     DPRINT_QUEUE!("USBPORT_BadRequestFlush: ... \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -2985,7 +2985,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //     PLIST_ENTRY ActiveList;
 //     PUSBPORT_TRANSFER ActiveTransfer;
 //
-//     DPRINT_CORE("USBPORT_AbortEndpoint: Irp - %p\n", Irp);
+//     DPRINT_CORE!("USBPORT_AbortEndpoint: Irp - %p\n", Irp);
 //
 //     KeAcquireSpinLock(&Endpoint->EndpointSpinLock, &Endpoint->EndpointOldIrql);
 //
@@ -3002,7 +3002,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //                                             USBPORT_TRANSFER,
 //                                             TransferLink);
 //
-//         DPRINT_CORE("USBPORT_AbortEndpoint: Abort PendingTransfer - %p\n",
+//         DPRINT_CORE!("USBPORT_AbortEndpoint: Abort PendingTransfer - %p\n",
 //                     PendingTransfer);
 //
 //         PendingTransfer->Flags |= TRANSFER_FLAG_ABORTED;
@@ -3018,7 +3018,7 @@ pub unsafe extern "system" fn USBPORT_AbortEndpoint(
 //                                            USBPORT_TRANSFER,
 //                                            TransferLink);
 //
-//         DPRINT_CORE("USBPORT_AbortEndpoint: Abort ActiveTransfer - %p\n",
+//         DPRINT_CORE!("USBPORT_AbortEndpoint: Abort ActiveTransfer - %p\n",
 //                     ActiveTransfer);
 //
 //         ActiveTransfer->Flags |= TRANSFER_FLAG_ABORTED;

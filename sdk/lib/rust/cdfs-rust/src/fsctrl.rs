@@ -423,7 +423,7 @@ pub unsafe extern "C" fn CdCommonFsControl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> i32 {
-    let mut Status: i32 = core::mem::zeroed();
+    let Status: i32;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     // PAGED_CODE();
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn CdReMountOldVcb(
     DeviceObjectWeTalkTo: *mut DEVICE_OBJECT,
 ) {
     let mut SavedIrql: KIRQL = 0;
-    let mut Index: u32 = core::mem::zeroed();
+    let mut Index: u32;
     let mut Buffer: *mut u8;
 
     // UNREFERENCED_PARAMETER(IrpContext) - suppress unused parameter; no Rust equivalent needed
@@ -955,7 +955,7 @@ pub unsafe extern "C" fn CdUnlockVolume(
     // left as identifier assuming caller provides definition
     // Uncomment and adjust if value known: const FSRTL_VOLUME_UNLOCK: u32 = 2;
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
@@ -1000,7 +1000,7 @@ pub unsafe extern "C" fn CdDismountVolume(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
@@ -1425,7 +1425,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
     verify_volume: u8,
 ) {
     let mut found_secondary_vd: u8 = 0;
-    let mut sector_offset: u32 = FIRST_VD_SECTOR;
+    let mut sector_offset: u32;
     let mut length: u32 = 0;
     let mut index: u32;
 

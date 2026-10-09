@@ -114,7 +114,7 @@ const PRIMARY_VECTOR_BASE: ULONG = 0x30;
 // IDT_INTERNAL is a HalpRegisterVector usage flag, halx86/include/halp.h:61 =
 // 0x11 (IDT_REGISTERED|0x10). 2 is IDT_LATCHED, which left the cascade vector
 // unregistered in HalpIDTUsageFlags.
-const IDT_INTERNAL: ULONG = 0x11;
+const IDT_INTERNAL: ULONG = 0x11; // halp.h: IDT_INTERNAL 0x11, as the other hal copies; was 2
 // _KGDT_R0_CODE selector value (0x08).
 const KGDT_R0_CODE: USHORT = 0x08;
 

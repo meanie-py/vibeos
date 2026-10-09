@@ -829,11 +829,16 @@ pub unsafe extern "system" fn FindDevices(
                 // Use the IDENTIFY data to set drive parameters. atapi.c:1789
                 if SetDriveParameters(HwDeviceExtension, i, Channel) == 0 {
                     // Don't use this device as writes could cause corruption. atapi.c:1799
-                    (*deviceExtension).DeviceFlags[(i + Channel) as usize] = 0;
+                    // Diverges from the C, which indexes `i + Channel` here and
+                    // `deviceNumber + Channel * 2` below. deviceNumber is 2 once the probe loop
+                    // above has run, so on channel 1 the C read past DeviceFlags[4] and the
+                    // Rust panicked (a bugcheck); on channel 0 both read the wrong drive's
+                    // flags. This loop's drive is `i`.
+                    (*deviceExtension).DeviceFlags[(i + (Channel * 2)) as usize] = 0;
                     i += 1;
                     continue;
                 }
-                if (*deviceExtension).DeviceFlags[(deviceNumber + (Channel * 2)) as usize]
+                if (*deviceExtension).DeviceFlags[(i + (Channel * 2)) as usize]
                     & DFLAGS_REMOVABLE_DRIVE as USHORT
                     != 0
                 {

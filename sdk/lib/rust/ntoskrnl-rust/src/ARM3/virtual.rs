@@ -104,7 +104,7 @@ const VadImageMap: u32 = 2;
 const VadRotatePhysical: u32 = 6;
 const VadLargePageSection: u32 = 7;
 const TableFoundNode: TABLE_SEARCH_RESULT = ntkrnl_sys::ddk::_TABLE_SEARCH_RESULT_TableFoundNode;
-const HighPagePriority: u32 = 2;
+const HighPagePriority: u32 = 32; // header value; the hand copy said 2
 const IoReadAccess: u32 = 0;
 
 extern "system" {
@@ -2096,12 +2096,25 @@ pub unsafe extern "system" fn MiProtectVirtualMemory(
                     // [guard] let OldIrql = MiAcquirePfnLock();
                     let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
 
-                    // Mark the PTE as transition and change its protection
-                    PteContents.set_valid(false);
-                    PteContents.set_transition(true);
-                    PteContents.set_soft_protection(ProtectionMask);
+                    // A transition PTE built from scratch, not the valid one
+                    // with Valid cleared as the C does (virtual.c): the C relies on
+                    // x86, where no hardware bit lands on a software field that
+                    // matters. On arm64 hardware bit 10 is the Access Flag and
+                    // software bit 10 is Prototype, so every touched page made
+                    // NOACCESS read back as a prototype PTE; the next
+                    // MiGetPageProtection chased the "prototype pointer" with the
+                    // PFN lock held, faulted, blocked, and wedged the machine
+                    // (page heap's guard pages did it at once).
+                    let Page = PFN_FROM_PTE(&mut PteContents as PMMPTE);
+                    // The page leaves the working set here, so its dirty bit must
+                    // reach the PFN now (as TrimWsList does) or a written page
+                    // goes to the standby list as clean and can be repurposed.
+                    if MI_PTE_IS_DIRTY(PteContents.Long as u64) {
+                        (*Pfn1).set_modified(true);
+                    }
+                    MI_MAKE_TRANSITION_PTE(&mut PteContents, Page, ProtectionMask);
                     // Decrease PFN share count and write the PTE
-                    MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, PFN_FROM_PTE(&mut PteContents as PMMPTE) as ntkrnl_sys::ddk::PFN_NUMBER);
+                    MiDecrementShareCount(Pfn1 as ntkrnl_sys::ddk::PMMPFN, Page as ntkrnl_sys::ddk::PFN_NUMBER);
                     // FIXME: remove the page from the WS
                     MI_WRITE_INVALID_PTE(PointerPte, PteContents);
                     KeInvalidateTlbEntry(MiPteToAddress(PointerPte));

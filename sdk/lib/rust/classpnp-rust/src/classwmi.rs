@@ -67,7 +67,6 @@ extern "C" {
     static SharedSystemTime: LARGE_INTEGER;
 }
 extern "C" {
-    fn RtlStringCbPrintfW( pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ... ) -> NTSTATUS;
 }
 unsafe extern "system" {
     fn IsEqualGUID(Guid1: *const _GUID, Guid2: *const _GUID) -> bool;
@@ -758,7 +757,7 @@ pub unsafe extern "C" fn ConvertTickToDateTime(
     let fmt_arr: [u16; 37] = core::mem::transmute::<[u8; 74], [u16; 37]>(fmt_bytes);
     let fmt_pcwstr: *const u16 = fmt_arr.as_ptr();
 
-    RtlStringCbPrintfW(
+    strsafe_rust::RtlStringCbPrintfW!(
         outDateTime.as_mut_ptr(),
         core::mem::size_of::<[u16; 26]>(),
         fmt_pcwstr,

@@ -11,7 +11,7 @@ extern "system" {
     fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatVerifyOperationIsLegal(IrpContext: *mut IRP_CONTEXT);
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FlagOn(Flags: u32, Flag: u32) -> u8;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn NT_ASSERT(condition: i32);

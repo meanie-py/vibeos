@@ -596,7 +596,7 @@ pub unsafe extern "system" fn USBPORT_MiniportInterrupts(
     let IsLock: BOOLEAN;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_INT(
+    DPRINT_INT!(
         b"USBPORT_MiniportInterrupts: IsEnable - %p\n\0".as_ptr() as *const i8,
         (IsEnable as ::core::ffi::c_int),
     );
@@ -645,7 +645,7 @@ pub unsafe extern "system" fn USBPORT_SoftInterruptDpc(
     let mut FdoDevice: PDEVICE_OBJECT;
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_INT(b"USBPORT_SoftInterruptDpc: ...\n\0".as_ptr() as *const i8);
+    DPRINT_INT!(b"USBPORT_SoftInterruptDpc: ...\n\0".as_ptr() as *const i8);
 
     FdoDevice = DeferredContext as PDEVICE_OBJECT;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
@@ -667,7 +667,7 @@ pub unsafe extern "system" fn USBPORT_SoftInterrupt(FdoDevice: PDEVICE_OBJECT) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
 
-    DPRINT_INT(b"USBPORT_SoftInterrupt: ...\n\0".as_ptr() as *const i8);
+    DPRINT_INT!(b"USBPORT_SoftInterrupt: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -701,7 +701,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateControllerHandler(
 
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    // DPRINT_CORE("USBPORT_InvalidateControllerHandler: Invalidate Type - %x\n", Type);
+    // DPRINT_CORE!("USBPORT_InvalidateControllerHandler: Invalidate Type - %x\n", Type);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -807,7 +807,7 @@ pub unsafe extern "system" fn USBPORT_DoneTransfer(Transfer: PUSBPORT_TRANSFER) 
     let mut CancelIrql: KIRQL = 0;
     let mut OldIrql: KIRQL = 0;
 
-    // DPRINT_CORE("USBPORT_DoneTransfer: Transfer - %p\n", Transfer);
+    // DPRINT_CORE!("USBPORT_DoneTransfer: Transfer - %p\n", Transfer);
 
     Endpoint = (*Transfer).Endpoint;
     FdoDevice = (*Endpoint).FdoDevice;
@@ -837,7 +837,7 @@ pub unsafe extern "system" fn USBPORT_DoneTransfer(Transfer: PUSBPORT_TRANSFER) 
     USBPORT_USBDStatusToNtStatus((*Transfer).Urb, (*Transfer).USBDStatus);
     USBPORT_CompleteTransfer(Urb, (*Urb).__bindgen_anon_1.UrbHeader.Status);
 
-    // DPRINT_CORE("USBPORT_DoneTransfer: exit\n");
+    // DPRINT_CORE!("USBPORT_DoneTransfer: exit\n");
 }
 
 #[no_mangle]
@@ -851,7 +851,7 @@ pub unsafe extern "system" fn USBPORT_FlushDoneTransfers(FdoDevice: PDEVICE_OBJE
     let mut OldIrql: KIRQL = 0;
     let mut IsHasTransfers: BOOLEAN;
 
-    DPRINT_CORE(b"USBPORT_FlushDoneTransfers: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushDoneTransfers: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     DoneTransferList = core::ptr::addr_of_mut!((*FdoExtension).DoneTransferList) as PLIST_ENTRY;
@@ -917,7 +917,7 @@ pub unsafe extern "system" fn USBPORT_TransferFlushDpc(
 ) {
     let mut FdoDevice: PDEVICE_OBJECT;
 
-    // DPRINT_CORE("USBPORT_TransferFlushDpc: ...\n");
+    // DPRINT_CORE!("USBPORT_TransferFlushDpc: ...\n");
     FdoDevice = DeferredContext as PDEVICE_OBJECT;
     USBPORT_FlushDoneTransfers(FdoDevice);
 }
@@ -930,7 +930,7 @@ pub unsafe extern "system" fn USBPORT_QueueDoneTransfer(
     let FdoDevice: PDEVICE_OBJECT;
     let FdoExtension: PUSBPORT_DEVICE_EXTENSION;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_QueueDoneTransfer: Transfer - %p, USBDStatus - %p\n\0".as_ptr() as *const i8,
         Transfer,
         USBDStatus,
@@ -967,7 +967,7 @@ pub unsafe extern "system" fn USBPORT_DpcHandler(FdoDevice: PDEVICE_OBJECT) {
     };
     let mut LockCounter: LONG;
 
-    DPRINT_CORE(b"USBPORT_DpcHandler: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_DpcHandler: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1171,7 +1171,7 @@ pub unsafe extern "system" fn USBPORT_IsrDpc(
     let mut Packet: PUSBPORT_REGISTRATION_PACKET;
     let mut InterruptEnable: BOOLEAN;
 
-    DPRINT_INT(
+    DPRINT_INT!(
         b"USBPORT_IsrDpc: DeferredContext - %p, SystemArgument2 - %p\n\0".as_ptr() as *const i8,
         DeferredContext,
         SystemArgument2,
@@ -1204,7 +1204,7 @@ pub unsafe extern "system" fn USBPORT_IsrDpc(
         USBPORT_IsrDpcHandler(FdoDevice, TRUE as BOOLEAN);
     }
 
-    DPRINT_INT(b"USBPORT_IsrDpc: exit\n\0".as_ptr() as *const i8);
+    DPRINT_INT!(b"USBPORT_IsrDpc: exit\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -1221,7 +1221,7 @@ pub unsafe extern "system" fn USBPORT_InterruptService(
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     Packet = &mut (*(*FdoExtension).MiniPortInterface).Packet as PUSBPORT_REGISTRATION_PACKET;
 
-    DPRINT_INT(
+    DPRINT_INT!(
         b"USBPORT_InterruptService: FdoExtension[%p]->Flags - %08X\n\0".as_ptr() as *const i8,
         FdoExtension,
         (*FdoExtension).Flags,
@@ -1243,7 +1243,7 @@ pub unsafe extern "system" fn USBPORT_InterruptService(
         }
     }
 
-    DPRINT_INT(
+    DPRINT_INT!(
         b"USBPORT_InterruptService: return - %x\n\0".as_ptr() as *const i8,
         (Result as ::core::ffi::c_int),
     );
@@ -1256,7 +1256,7 @@ pub unsafe extern "system" fn USBPORT_SignalWorkerThread(FdoDevice: PDEVICE_OBJE
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(b"USBPORT_SignalWorkerThread ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_SignalWorkerThread ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1291,7 +1291,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJ
     };
     let mut Result: BOOLEAN;
 
-    DPRINT_CORE(b"USBPORT_WorkerThreadHandler: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_WorkerThreadHandler: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     Packet = core::ptr::addr_of_mut!((*(*FdoExtension).MiniPortInterface).Packet) as PUSBPORT_REGISTRATION_PACKET;
@@ -1321,7 +1321,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJ
         Endpoint = (((*workerList).Flink as usize)
             .wrapping_sub(core::mem::offset_of!(USBPORT_ENDPOINT, WorkerLink))) as *mut USBPORT_ENDPOINT as PUSBPORT_ENDPOINT;
 
-        DPRINT_CORE(b"USBPORT_WorkerThreadHandler: Endpoint - %p\n\0".as_ptr() as *const i8, Endpoint);
+        DPRINT_CORE!(b"USBPORT_WorkerThreadHandler: Endpoint - %p\n\0".as_ptr() as *const i8, Endpoint);
 
         RemoveHeadList(workerList);
         (*Endpoint).WorkerLink.Blink = core::ptr::null_mut();
@@ -1519,7 +1519,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThread(StartContext: PVOID) {
     let mut NewTime: LARGE_INTEGER = core::mem::zeroed();
     let mut OldIrql: KIRQL = 0;
 
-    // DPRINT_CORE("USBPORT_WorkerThread ...\n");
+    // DPRINT_CORE!("USBPORT_WorkerThread ...\n");
 
     FdoDevice = StartContext as PDEVICE_OBJECT;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
@@ -1557,7 +1557,7 @@ pub unsafe extern "system" fn USBPORT_WorkerThread(StartContext: PVOID) {
             (core::ptr::addr_of_mut!((*FdoExtension).WorkerThreadEventSpinLock) as *mut usize),
             OldIrql,
         );
-        // DPRINT_CORE("USBPORT_WorkerThread: run\n");
+        // DPRINT_CORE!("USBPORT_WorkerThread: run\n");
 
         if (*FdoExtension).MiniPortFlags as core::ffi::c_ulong
             & USBPORT_MPFLAG_INTERRUPTS_ENABLED as core::ffi::c_ulong
@@ -1652,7 +1652,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeControllersStart(FdoDevice: PDE
     let mut USB2FdoExtension: PUSBPORT_DEVICE_EXTENSION;
     let mut IsOn: BOOLEAN;
 
-    DPRINT_TIMER(
+    DPRINT_TIMER!(
         b"USBPORT_SynchronizeControllersStart: FdoDevice - %p\n\0".as_ptr() as *const i8,
         FdoDevice,
     );
@@ -1673,7 +1673,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeControllersStart(FdoDevice: PDE
         return;
     }
 
-    DPRINT_TIMER(
+    DPRINT_TIMER!(
         b"USBPORT_SynchronizeControllersStart: Flags - %p\n\0".as_ptr() as *const i8,
         (*FdoExtension).Flags,
     );
@@ -1684,7 +1684,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeControllersStart(FdoDevice: PDE
 
             USB2FdoDevice = USBPORT_FindUSB2Controller(FdoDevice);
 
-            DPRINT_TIMER(
+            DPRINT_TIMER!(
                 b"USBPORT_SynchronizeControllersStart: USB2FdoDevice - %p\n\0".as_ptr() as *const i8,
                 USB2FdoDevice,
             );
@@ -1729,7 +1729,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeControllersStart(FdoDevice: PDE
         }
     }
 
-    DPRINT_TIMER(b"USBPORT_SynchronizeControllersStart: exit\n\0".as_ptr() as *const i8);
+    DPRINT_TIMER!(b"USBPORT_SynchronizeControllersStart: exit\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -1878,7 +1878,7 @@ pub unsafe extern "system" fn USBPORT_StartTimer(
     let TimeIncrement: ULONG;
     let Result: BOOLEAN;
 
-    // DPRINT_TIMER("USBPORT_StartTimer: FdoDevice - %p, Time - %x\n", FdoDevice, Time);
+    // DPRINT_TIMER!("USBPORT_StartTimer: FdoDevice - %p, Time - %x\n", FdoDevice, Time);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -2394,7 +2394,7 @@ pub unsafe extern "system" fn USBPORT_GetMappedVirtualAddress(
     let mut Offset: ULONG;
     let mut VirtualAddress: ULONG_PTR;
 
-    // DPRINT_CORE("USBPORT_GetMappedVirtualAddress ...\n");
+    // DPRINT_CORE!("USBPORT_GetMappedVirtualAddress ...\n");
 
     Endpoint = (MiniPortEndpoint as ULONG_PTR)
         .wrapping_sub(core::mem::size_of::<USBPORT_ENDPOINT>() as ULONG_PTR)
@@ -2430,7 +2430,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpoint(
     let FdoDevice: PDEVICE_OBJECT;
     let mut Endpoint: PUSBPORT_ENDPOINT;
 
-    DPRINT_CORE(b"USBPORT_InvalidateEndpoint: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_InvalidateEndpoint: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (MiniPortExtension as usize)
         .wrapping_sub(core::mem::size_of::<USBPORT_DEVICE_EXTENSION>())
@@ -2599,7 +2599,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
     };
     let mut transfer: PUSBPORT_TRANSFER;
 
-    DPRINT_CORE(b"USBPORT_MapTransfer: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_MapTransfer: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     DmaAdapter = (*FdoExtension).DmaAdapter;
@@ -2637,7 +2637,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
             WriteToDevice,
         );
 
-        DPRINT_CORE(
+        DPRINT_CORE!(
             b"USBPORT_MapTransfer: PhAddress.__bindgen_anon_1.LowPart - %p, PhAddress.__bindgen_anon_1.HighPart - %x, TransferLength - %x\n\0"
                 .as_ptr() as *const i8,
         );
@@ -2654,7 +2654,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
                 ElementLength = SgCurrentLength;
             }
 
-            DPRINT_CORE(
+            DPRINT_CORE!(
                 b"USBPORT_MapTransfer: PhAddress.__bindgen_anon_1.LowPart - %p, HighPart - %x, ElementLength - %x\n\0"
                     .as_ptr() as *const i8,
             );
@@ -2781,7 +2781,7 @@ pub unsafe extern "system" fn USBPORT_FlushMapTransfers(FdoDevice: PDEVICE_OBJEC
     let mut Status: NTSTATUS;
     let DmaOperations: PDMA_OPERATIONS;
 
-    DPRINT_CORE(b"USBPORT_FlushMapTransfers: ...\n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_FlushMapTransfers: ...\n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     DmaOperations = (*(*FdoExtension).DmaAdapter).DmaOperations as PDMA_OPERATIONS;
@@ -3672,7 +3672,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     BOOLEAN IsLock;
 //     KIRQL OldIrql;
 //
-//     DPRINT_INT("USBPORT_MiniportInterrupts: IsEnable - %p\n", IsEnable);
+//     DPRINT_INT!("USBPORT_MiniportInterrupts: IsEnable - %p\n", IsEnable);
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
@@ -3707,7 +3707,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PDEVICE_OBJECT FdoDevice;
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_INT("USBPORT_SoftInterruptDpc: ...\n");
+//     DPRINT_INT!("USBPORT_SoftInterruptDpc: ...\n");
 //
 //     FdoDevice = DeferredContext;
 //     FdoExtension = FdoDevice->DeviceExtension;
@@ -3725,7 +3725,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //     LARGE_INTEGER DueTime = {{0, 0}};
 //
-//     DPRINT_INT("USBPORT_SoftInterrupt: ...\n");
+//     DPRINT_INT!("USBPORT_SoftInterrupt: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -3749,7 +3749,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_InvalidateControllerHandler: Invalidate Type - %x\n",
+//     DPRINT_CORE!("USBPORT_InvalidateControllerHandler: Invalidate Type - %x\n",
 //                 Type);
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
@@ -3843,7 +3843,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     KIRQL                      CancelIrql;
 //     KIRQL                      OldIrql;
 //
-//     DPRINT_CORE("USBPORT_DoneTransfer: Transfer - %p\n", Transfer);
+//     DPRINT_CORE!("USBPORT_DoneTransfer: Transfer - %p\n", Transfer);
 //
 //     Endpoint = Transfer->Endpoint;
 //     FdoDevice = Endpoint->FdoDevice;
@@ -3868,7 +3868,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USBPORT_USBDStatusToNtStatus(Transfer->Urb, Transfer->USBDStatus);
 //     USBPORT_CompleteTransfer(Urb, Urb->UrbHeader.Status);
 //
-//     DPRINT_CORE("USBPORT_DoneTransfer: exit\n");
+//     DPRINT_CORE!("USBPORT_DoneTransfer: exit\n");
 // }
 //
 // VOID
@@ -3883,7 +3883,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     KIRQL OldIrql;
 //     BOOLEAN IsHasTransfers;
 //
-//     DPRINT_CORE("USBPORT_FlushDoneTransfers: ...\n");
+//     DPRINT_CORE!("USBPORT_FlushDoneTransfers: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     DoneTransferList = &FdoExtension->DoneTransferList;
@@ -3941,7 +3941,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     PDEVICE_OBJECT FdoDevice;
 //
-//     DPRINT_CORE("USBPORT_TransferFlushDpc: ...\n");
+//     DPRINT_CORE!("USBPORT_TransferFlushDpc: ...\n");
 //     FdoDevice = DeferredContext;
 //     USBPORT_FlushDoneTransfers(FdoDevice);
 // }
@@ -3954,7 +3954,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PDEVICE_OBJECT FdoDevice;
 //     PUSBPORT_DEVICE_EXTENSION  FdoExtension;
 //
-//     DPRINT_CORE("USBPORT_QueueDoneTransfer: Transfer - %p, USBDStatus - %p\n",
+//     DPRINT_CORE!("USBPORT_QueueDoneTransfer: Transfer - %p, USBDStatus - %p\n",
 //                 Transfer,
 //                 USBDStatus);
 //
@@ -3981,7 +3981,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     LIST_ENTRY List;
 //     LONG LockCounter;
 //
-//     DPRINT_CORE("USBPORT_DpcHandler: ...\n");
+//     DPRINT_CORE!("USBPORT_DpcHandler: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -4061,7 +4061,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
 //
-//     DPRINT_CORE("USBPORT_IsrDpcHandler: IsDpcHandler - %x\n", IsDpcHandler);
+//     DPRINT_CORE!("USBPORT_IsrDpcHandler: IsDpcHandler - %x\n", IsDpcHandler);
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
@@ -4089,7 +4089,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                                      USBPORT_ENDPOINT,
 //                                      StateChangeLink);
 //
-//         DPRINT_CORE("USBPORT_IsrDpcHandler: Endpoint - %p\n", Endpoint);
+//         DPRINT_CORE!("USBPORT_IsrDpcHandler: Endpoint - %p\n", Endpoint);
 //
 //         /* Save the next entry before we potentially remove this one */
 //         NextList = List->Flink;
@@ -4129,7 +4129,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             Endpoint->StateLast = Endpoint->StateNext;
 //             KeReleaseSpinLockFromDpcLevel(&Endpoint->StateChangeSpinLock);
 //
-//             DPRINT_CORE("USBPORT_IsrDpcHandler: Endpoint->StateLast - %x\n",
+//             DPRINT_CORE!("USBPORT_IsrDpcHandler: Endpoint->StateLast - %x\n",
 //                         Endpoint->StateLast);
 //             
 //             KeReleaseSpinLockFromDpcLevel(&FdoExtension->EpStateChangeSpinLock);
@@ -4185,7 +4185,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUSBPORT_REGISTRATION_PACKET Packet;
 //     BOOLEAN InterruptEnable;
 //
-//     DPRINT_INT("USBPORT_IsrDpc: DeferredContext - %p, SystemArgument2 - %p\n",
+//     DPRINT_INT!("USBPORT_IsrDpc: DeferredContext - %p, SystemArgument2 - %p\n",
 //                DeferredContext,
 //                SystemArgument2);
 //
@@ -4216,7 +4216,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         USBPORT_IsrDpcHandler(FdoDevice, TRUE);
 //     }
 //
-//     DPRINT_INT("USBPORT_IsrDpc: exit\n");
+//     DPRINT_INT!("USBPORT_IsrDpc: exit\n");
 // }
 //
 // BOOLEAN
@@ -4233,7 +4233,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
 //
-//     DPRINT_INT("USBPORT_InterruptService: FdoExtension[%p]->Flags - %08X\n",
+//     DPRINT_INT!("USBPORT_InterruptService: FdoExtension[%p]->Flags - %08X\n",
 //            FdoExtension,
 //            FdoExtension->Flags);
 //
@@ -4248,7 +4248,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         }
 //     }
 //
-//     DPRINT_INT("USBPORT_InterruptService: return - %x\n", Result);
+//     DPRINT_INT!("USBPORT_InterruptService: return - %x\n", Result);
 //
 //     return Result;
 // }
@@ -4260,7 +4260,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUSBPORT_DEVICE_EXTENSION FdoExtension;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_SignalWorkerThread ...\n");
+//     DPRINT_CORE!("USBPORT_SignalWorkerThread ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -4281,7 +4281,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     LIST_ENTRY list;
 //     BOOLEAN Result;
 //
-//     DPRINT_CORE("USBPORT_WorkerThreadHandler: ...\n");
+//     DPRINT_CORE!("USBPORT_WorkerThreadHandler: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
@@ -4313,7 +4313,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                                      USBPORT_ENDPOINT,
 //                                      WorkerLink);
 //
-//         DPRINT_CORE("USBPORT_WorkerThreadHandler: Endpoint - %p\n", Endpoint);
+//         DPRINT_CORE!("USBPORT_WorkerThreadHandler: Endpoint - %p\n", Endpoint);
 //
 //         RemoveHeadList(workerList);
 //         Endpoint->WorkerLink.Blink = NULL;
@@ -4520,7 +4520,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     LARGE_INTEGER NewTime;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_WorkerThread ...\n");
+//     DPRINT_CORE!("USBPORT_WorkerThread ...\n");
 //
 //     FdoDevice = StartContext;
 //     FdoExtension = FdoDevice->DeviceExtension;
@@ -4547,7 +4547,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         KeAcquireSpinLock(&FdoExtension->WorkerThreadEventSpinLock, &OldIrql);
 //         KeClearEvent(&FdoExtension->WorkerThreadEvent);
 //         KeReleaseSpinLock(&FdoExtension->WorkerThreadEventSpinLock, OldIrql);
-//         DPRINT_CORE("USBPORT_WorkerThread: run\n");
+//         DPRINT_CORE!("USBPORT_WorkerThread: run\n");
 //
 //         if (FdoExtension->MiniPortFlags & USBPORT_MPFLAG_INTERRUPTS_ENABLED)
 //         {
@@ -4625,7 +4625,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUSBPORT_DEVICE_EXTENSION USB2FdoExtension;
 //     BOOLEAN IsOn;
 //
-//     DPRINT_TIMER("USBPORT_SynchronizeControllersStart: FdoDevice - %p\n",
+//     DPRINT_TIMER!("USBPORT_SynchronizeControllersStart: FdoDevice - %p\n",
 //                  FdoDevice);
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
@@ -4645,7 +4645,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         return;
 //     }
 //
-//     DPRINT_TIMER("USBPORT_SynchronizeControllersStart: Flags - %p\n",
+//     DPRINT_TIMER!("USBPORT_SynchronizeControllersStart: Flags - %p\n",
 //                  FdoExtension->Flags);
 //
 //     if (FdoExtension->Flags & USBPORT_FLAG_COMPANION_HC)
@@ -4654,7 +4654,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //         USB2FdoDevice = USBPORT_FindUSB2Controller(FdoDevice);
 //
-//         DPRINT_TIMER("USBPORT_SynchronizeControllersStart: USB2FdoDevice - %p\n",
+//         DPRINT_TIMER!("USBPORT_SynchronizeControllersStart: USB2FdoDevice - %p\n",
 //                      USB2FdoDevice);
 //
 //         if (USB2FdoDevice)
@@ -4695,7 +4695,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         }
 //     }
 //
-//     DPRINT_TIMER("USBPORT_SynchronizeControllersStart: exit\n");
+//     DPRINT_TIMER!("USBPORT_SynchronizeControllersStart: exit\n");
 // }
 //
 // VOID
@@ -4714,7 +4714,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     KIRQL OldIrql;
 //     KIRQL TimerOldIrql;
 //
-//     DPRINT_TIMER("USBPORT_TimerDpc: Dpc - %p, DeferredContext - %p\n",
+//     DPRINT_TIMER!("USBPORT_TimerDpc: Dpc - %p, DeferredContext - %p\n",
 //            Dpc,
 //            DeferredContext);
 //
@@ -4726,7 +4726,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     TimerFlags = FdoExtension->TimerFlags;
 //
-//     DPRINT_TIMER("USBPORT_TimerDpc: Flags - %p, TimerFlags - %p\n",
+//     DPRINT_TIMER!("USBPORT_TimerDpc: Flags - %p, TimerFlags - %p\n",
 //                  FdoExtension->Flags,
 //                  TimerFlags);
 //
@@ -4765,9 +4765,9 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     USBPORT_IsrDpcHandler(FdoDevice, FALSE);
 //
-//     DPRINT_TIMER("USBPORT_TimerDpc: USBPORT_TimeoutAllEndpoints UNIMPLEMENTED.\n");
+//     DPRINT_TIMER!("USBPORT_TimerDpc: USBPORT_TimeoutAllEndpoints UNIMPLEMENTED.\n");
 //     //USBPORT_TimeoutAllEndpoints(FdoDevice);
-//     DPRINT_TIMER("USBPORT_TimerDpc: USBPORT_CheckIdleEndpoints UNIMPLEMENTED.\n");
+//     DPRINT_TIMER!("USBPORT_TimerDpc: USBPORT_CheckIdleEndpoints UNIMPLEMENTED.\n");
 //     //USBPORT_CheckIdleEndpoints(FdoDevice);
 //
 //     USBPORT_BadRequestFlush(FdoDevice);
@@ -4814,7 +4814,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                    &FdoExtension->TimerDpc);
 //     }
 //
-//     DPRINT_TIMER("USBPORT_TimerDpc: exit\n");
+//     DPRINT_TIMER!("USBPORT_TimerDpc: exit\n");
 // }
 //
 // BOOLEAN
@@ -4827,7 +4827,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TimeIncrement;
 //     BOOLEAN Result;
 //
-//     DPRINT_TIMER("USBPORT_StartTimer: FdoDevice - %p, Time - %x\n",
+//     DPRINT_TIMER!("USBPORT_StartTimer: FdoDevice - %p, Time - %x\n",
 //            FdoDevice,
 //            Time);
 //
@@ -5147,7 +5147,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PLIST_ENTRY Entry;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_MiniportCompleteTransfer: USBDStatus - %x, TransferLength - %x\n",
+//     DPRINT_CORE!("USBPORT_MiniportCompleteTransfer: USBDStatus - %x, TransferLength - %x\n",
 //                 USBDStatus,
 //                 TransferLength);
 //
@@ -5288,7 +5288,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG Offset;
 //     ULONG_PTR VirtualAddress;
 //
-//     DPRINT_CORE("USBPORT_GetMappedVirtualAddress ...\n");
+//     DPRINT_CORE!("USBPORT_GetMappedVirtualAddress ...\n");
 //
 //     Endpoint = (PUSBPORT_ENDPOINT)((ULONG_PTR)MiniPortEndpoint -
 //                                    sizeof(USBPORT_ENDPOINT));
@@ -5315,7 +5315,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PDEVICE_OBJECT FdoDevice;
 //     PUSBPORT_ENDPOINT Endpoint;
 //
-//     DPRINT_CORE("USBPORT_InvalidateEndpoint: ...\n");
+//     DPRINT_CORE!("USBPORT_InvalidateEndpoint: ...\n");
 //
 //     FdoExtension = (PUSBPORT_DEVICE_EXTENSION)((ULONG_PTR)MiniPortExtension -
 //                                                sizeof(USBPORT_DEVICE_EXTENSION));
@@ -5447,7 +5447,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     ExFreePoolWithTag(Transfer, USB_PORT_TAG);
 //
-//     DPRINT_CORE("USBPORT_CompleteTransfer: exit\n");
+//     DPRINT_CORE!("USBPORT_CompleteTransfer: exit\n");
 // }
 //
 // IO_ALLOCATION_ACTION
@@ -5479,7 +5479,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     LIST_ENTRY List;
 //     PUSBPORT_TRANSFER transfer;
 //
-//     DPRINT_CORE("USBPORT_MapTransfer: ...\n");
+//     DPRINT_CORE!("USBPORT_MapTransfer: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     DmaAdapter = FdoExtension->DmaAdapter;
@@ -5517,7 +5517,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                                                &TransferLength,
 //                                                WriteToDevice);
 //
-//         DPRINT_CORE("USBPORT_MapTransfer: PhAddress.LowPart - %p, PhAddress.HighPart - %x, TransferLength - %x\n",
+//         DPRINT_CORE!("USBPORT_MapTransfer: PhAddress.LowPart - %p, PhAddress.HighPart - %x, TransferLength - %x\n",
 //                PhAddress.LowPart,
 //                PhAddress.HighPart,
 //                TransferLength);
@@ -5532,7 +5532,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             if (ElementLength > SgCurrentLength)
 //                 ElementLength = SgCurrentLength;
 //
-//             DPRINT_CORE("USBPORT_MapTransfer: PhAddress.LowPart - %p, HighPart - %x, ElementLength - %x\n",
+//             DPRINT_CORE!("USBPORT_MapTransfer: PhAddress.LowPart - %p, HighPart - %x, ElementLength - %x\n",
 //                    PhAddress.LowPart,
 //                    PhAddress.HighPart,
 //                    ElementLength);
@@ -5640,7 +5640,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     NTSTATUS Status;
 //     PDMA_OPERATIONS DmaOperations;
 //
-//     DPRINT_CORE("USBPORT_FlushMapTransfers: ...\n");
+//     DPRINT_CORE!("USBPORT_FlushMapTransfers: ...\n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     DmaOperations = FdoExtension->DmaAdapter->DmaOperations;
@@ -5705,7 +5705,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USBD_STATUS USBDStatus;
 //     SIZE_T IsoBlockLen = 0;
 //
-//     DPRINT_CORE("USBPORT_AllocateTransfer: FdoDevice - %p, Urb - %p, DeviceHandle - %p, Irp - %p, Event - %p\n",
+//     DPRINT_CORE!("USBPORT_AllocateTransfer: FdoDevice - %p, Urb - %p, DeviceHandle - %p, Irp - %p, Event - %p\n",
 //            FdoDevice,
 //            Urb,
 //            DeviceHandle,
@@ -5787,7 +5787,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     USBDStatus = USBD_STATUS_SUCCESS;
 //
-//     DPRINT_CORE("USBPORT_AllocateTransfer: return USBDStatus - %x\n",
+//     DPRINT_CORE!("USBPORT_AllocateTransfer: return USBDStatus - %x\n",
 //                 USBDStatus);
 //
 //     return USBDStatus;

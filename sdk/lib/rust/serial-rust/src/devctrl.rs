@@ -490,7 +490,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
     let mut ComPortBase: PUCHAR;
     let mut Status: NTSTATUS;
 
-    TRACE_(SERIAL, b"IRP_MJ_DEVICE_CONTROL dispatch\n\0".as_ptr() as *const i8);
+    TRACE_!(SERIAL, b"IRP_MJ_DEVICE_CONTROL dispatch\n\0".as_ptr() as *const i8);
 
     Stack = IoGetCurrentIrpStackLocation(Irp);
     LengthIn = (*Stack).Parameters.DeviceIoControl.InputBufferLength;
@@ -507,7 +507,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 
     match IoControlCode {
         IOCTL_SERIAL_CLEAR_STATS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_CLEAR_STATS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_CLEAR_STATS\n\0".as_ptr() as *const i8);
             KeSynchronizeExecution(
                 (*DeviceExtension).Interrupt,
                 Some(SerialClearPerfStats),
@@ -516,7 +516,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             Status = STATUS_SUCCESS;
         }
         IOCTL_SERIAL_CLR_DTR => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_CLR_DTR\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_CLR_DTR\n\0".as_ptr() as *const i8);
             Status = IoAcquireRemoveLock(
                 core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
                 ULongToPtr((*DeviceExtension).ComPort) as PVOID,
@@ -532,7 +532,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_CLR_RTS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_CLR_RTS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_CLR_RTS\n\0".as_ptr() as *const i8);
             Status = IoAcquireRemoveLock(
                 core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
                 ULongToPtr((*DeviceExtension).ComPort) as PVOID,
@@ -549,7 +549,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_CONFIG_SIZE => {
             let pConfigSize: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_CONFIG_SIZE\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_CONFIG_SIZE\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -560,7 +560,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_BAUD_RATE => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_BAUD_RATE\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_BAUD_RATE\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_BAUD_RATE>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -591,7 +591,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_COMMSTATUS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_COMMSTATUS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_COMMSTATUS\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_STATUS>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -603,7 +603,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_DTRRTS => {
             let pDtrRts: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_DTRRTS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_DTRRTS\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -637,7 +637,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_LINE_CONTROL => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_LINE_CONTROL\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_LINE_CONTROL\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_LINE_CONTROL>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -650,7 +650,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_MODEM_CONTROL => {
             let pMCR: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_MODEM_CONTROL\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_MODEM_CONTROL\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -662,7 +662,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_MODEMSTATUS => {
             let pMSR: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_MODEMSTATUS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_MODEMSTATUS\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -673,7 +673,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_PROPERTIES => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_PROPERTIES\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_PROPERTIES\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIAL_COMMPROP>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -684,7 +684,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_STATS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_STATS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_STATS\n\0".as_ptr() as *const i8);
             if (LengthOut as usize) < core::mem::size_of::<SERIALPERF_STATS>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferOut.is_null() {
@@ -700,7 +700,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_GET_TIMEOUTS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_TIMEOUTS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_TIMEOUTS\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<SERIAL_TIMEOUTS>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -711,7 +711,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_GET_WAIT_MASK => {
             let pWaitMask: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_GET_WAIT_MASK\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_GET_WAIT_MASK\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -731,7 +731,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_PURGE => {
             let mut Irql: KIRQL = 0;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_PURGE\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_PURGE\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -798,7 +798,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_SET_BAUD_RATE => {
             let pNewBaudRate: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_BAUD_RATE\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_BAUD_RATE\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -819,7 +819,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             Status = STATUS_SUCCESS;
         }
         IOCTL_SERIAL_SET_DTR => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_DTR\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_DTR\n\0".as_ptr() as *const i8);
             if (*DeviceExtension).MCR as i32 & (SR_MCR_DTR as i32) == 0 {
                 Status = IoAcquireRemoveLock(
                     core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
@@ -839,7 +839,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_FIFO_CONTROL => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_FIFO_CONTROL\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_FIFO_CONTROL\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -864,7 +864,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             Status = STATUS_SUCCESS;
         }
         IOCTL_SERIAL_SET_LINE_CONTROL => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_LINE_CONTROL\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_LINE_CONTROL\n\0".as_ptr() as *const i8);
             if (LengthIn as usize) < core::mem::size_of::<SERIAL_LINE_CONTROL>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else if BufferIn.is_null() {
@@ -875,7 +875,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_SET_MODEM_CONTROL => {
             let pMCR: PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_MODEM_CONTROL\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_MODEM_CONTROL\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -936,7 +936,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_RTS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_RTS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_RTS\n\0".as_ptr() as *const i8);
             if (*DeviceExtension).MCR as i32 & (SR_MCR_RTS as i32) == 0 {
                 Status = IoAcquireRemoveLock(
                     core::ptr::addr_of_mut!((*DeviceExtension).RemoveLock) as PVOID,
@@ -956,7 +956,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             }
         }
         IOCTL_SERIAL_SET_TIMEOUTS => {
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_TIMEOUTS\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_TIMEOUTS\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<SERIAL_TIMEOUTS>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -966,7 +966,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_SET_WAIT_MASK => {
             let pWaitMask: PULONG = BufferIn as PULONG;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_SET_WAIT_MASK\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_SET_WAIT_MASK\n\0".as_ptr() as *const i8);
             if LengthIn as usize != core::mem::size_of::<ULONG>() || BufferIn.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else if !(*DeviceExtension).WaitOnMaskIrp.is_null() {
@@ -987,7 +987,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
         }
         IOCTL_SERIAL_WAIT_ON_MASK => {
             let WaitingIrp: PIRP;
-            TRACE_(SERIAL, b"IOCTL_SERIAL_WAIT_ON_MASK\n\0".as_ptr() as *const i8);
+            TRACE_!(SERIAL, b"IOCTL_SERIAL_WAIT_ON_MASK\n\0".as_ptr() as *const i8);
             if LengthOut as usize != core::mem::size_of::<ULONG>() || BufferOut.is_null() {
                 Status = STATUS_INVALID_PARAMETER;
             } else {
@@ -1017,7 +1017,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
             Status = STATUS_NOT_IMPLEMENTED;
         }
         _ => {
-            // TRACE_(SERIAL, "Unknown IOCTL code 0x%x\n", IoControlCode) → DbgPrintEx
+            // TRACE_!(SERIAL, "Unknown IOCTL code 0x%x\n", IoControlCode) → DbgPrintEx
             DbgPrintEx(
                 DPFLTR_SERIAL_ID,
                 DPFLTR_TRACE_LEVEL,
@@ -1112,7 +1112,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 	if (NT_SUCCESS(Status))
 // 	{
 // 		UCHAR Lcr;
-// 		TRACE_(SERIAL, "SerialSetBaudRate(COM%lu, %lu Bauds)\n", DeviceExtension->ComPort, BaudRate);
+// 		TRACE_!(SERIAL, "SerialSetBaudRate(COM%lu, %lu Bauds)\n", DeviceExtension->ComPort, BaudRate);
 // 		/* Set Bit 7 of LCR to expose baud registers */
 // 		Lcr = READ_PORT_UCHAR(SER_LCR(ComPortBase));
 // 		WRITE_PORT_UCHAR(SER_LCR(ComPortBase), Lcr | (SR_LCR_DLAB as i32));
@@ -1142,7 +1142,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 	ASSERT(DeviceExtension);
 // 	ASSERT(NewSettings);
 //
-// 	TRACE_(SERIAL, "SerialSetLineControl(COM%lu, Settings { %lu %lu %lu })\n",
+// 	TRACE_!(SERIAL, "SerialSetLineControl(COM%lu, Settings { %lu %lu %lu })\n",
 // 		DeviceExtension->ComPort, NewSettings->StopBits, NewSettings->Parity, NewSettings->WordLength);
 //
 // 	/* Verify parameters */
@@ -1337,7 +1337,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 	PUCHAR ComPortBase;
 // 	NTSTATUS Status;
 //
-// 	TRACE_(SERIAL, "IRP_MJ_DEVICE_CONTROL dispatch\n");
+// 	TRACE_!(SERIAL, "IRP_MJ_DEVICE_CONTROL dispatch\n");
 //
 // 	Stack = IoGetCurrentIrpStackLocation(Irp);
 // 	LengthIn = Stack->Parameters.DeviceIoControl.InputBufferLength;
@@ -1353,7 +1353,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 	{
 // 		case IOCTL_SERIAL_CLEAR_STATS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_CLEAR_STATS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_CLEAR_STATS\n");
 // 			KeSynchronizeExecution(
 // 				DeviceExtension->Interrupt,
 // 				SerialClearPerfStats,
@@ -1363,7 +1363,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_CLR_DTR:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_CLR_DTR\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_CLR_DTR\n");
 // 			/* FIXME: If the handshake flow control of the device is configured to
 // 			 * automatically use DTR, return STATUS_INVALID_PARAMETER */
 // 			Status = IoAcquireRemoveLock(&DeviceExtension->RemoveLock, ULongToPtr(DeviceExtension->ComPort));
@@ -1377,7 +1377,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_CLR_RTS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_CLR_RTS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_CLR_RTS\n");
 // 			/* FIXME: If the handshake flow control of the device is configured to
 // 			 * automatically use RTS, return STATUS_INVALID_PARAMETER */
 // 			Status = IoAcquireRemoveLock(&DeviceExtension->RemoveLock, ULongToPtr(DeviceExtension->ComPort));
@@ -1393,7 +1393,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		{
 // 			/* Obsolete on Microsoft Windows 2000+ */
 // 			PULONG pConfigSize;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_CONFIG_SIZE\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_CONFIG_SIZE\n");
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1407,7 +1407,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_BAUD_RATE:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_BAUD_RATE\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_BAUD_RATE\n");
 // 			if (LengthOut < sizeof(SERIAL_BAUD_RATE))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferOut == NULL)
@@ -1445,7 +1445,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_COMMSTATUS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_COMMSTATUS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_COMMSTATUS\n");
 // 			if (LengthOut < sizeof(SERIAL_STATUS))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferOut == NULL)
@@ -1460,7 +1460,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_GET_DTRRTS:
 // 		{
 // 			PULONG pDtrRts;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_DTRRTS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_DTRRTS\n");
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1499,7 +1499,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_LINE_CONTROL:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_LINE_CONTROL\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_LINE_CONTROL\n");
 // 			if (LengthOut < sizeof(SERIAL_LINE_CONTROL))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferOut == NULL)
@@ -1515,7 +1515,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_GET_MODEM_CONTROL:
 // 		{
 // 			PULONG pMCR;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_MODEM_CONTROL\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_MODEM_CONTROL\n");
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1530,7 +1530,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_GET_MODEMSTATUS:
 // 		{
 // 			PULONG pMSR;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_MODEMSTATUS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_MODEMSTATUS\n");
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1544,7 +1544,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_PROPERTIES:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_PROPERTIES\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_PROPERTIES\n");
 // 			if (LengthOut < sizeof(SERIAL_COMMPROP))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferOut == NULL)
@@ -1558,7 +1558,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_STATS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_STATS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_STATS\n");
 // 			if (LengthOut < sizeof(SERIALPERF_STATS))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferOut == NULL)
@@ -1574,7 +1574,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_GET_TIMEOUTS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_TIMEOUTS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_TIMEOUTS\n");
 // 			if (LengthOut != sizeof(SERIAL_TIMEOUTS) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1588,7 +1588,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_GET_WAIT_MASK:
 // 		{
 // 			PULONG pWaitMask;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_GET_WAIT_MASK\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_GET_WAIT_MASK\n");
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1617,7 +1617,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_PURGE:
 // 		{
 // 			KIRQL Irql;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_PURGE\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_PURGE\n");
 // 			/* FIXME: SERIAL_PURGE_RXABORT and SERIAL_PURGE_TXABORT
 // 			 * should stop current request */
 // 			if (LengthIn != sizeof(ULONG) || BufferIn == NULL)
@@ -1674,7 +1674,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_SET_BAUD_RATE:
 // 		{
 // 			PULONG pNewBaudRate;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_BAUD_RATE\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_BAUD_RATE\n");
 // 			if (LengthIn != sizeof(ULONG) || BufferIn == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1709,7 +1709,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		{
 // 			/* FIXME: If the handshake flow control of the device is configured to
 // 			 * automatically use DTR, return STATUS_INVALID_PARAMETER */
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_DTR\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_DTR\n");
 // 			if (!(DeviceExtension->MCR & (SR_MCR_DTR as i32)))
 // 			{
 // 				Status = IoAcquireRemoveLock(&DeviceExtension->RemoveLock, ULongToPtr(DeviceExtension->ComPort));
@@ -1726,7 +1726,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_SET_FIFO_CONTROL:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_FIFO_CONTROL\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_FIFO_CONTROL\n");
 // 			if (LengthIn != sizeof(ULONG) || BufferIn == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1749,7 +1749,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_SET_LINE_CONTROL:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_LINE_CONTROL\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_LINE_CONTROL\n");
 // 			if (LengthIn < sizeof(SERIAL_LINE_CONTROL))
 // 				Status = STATUS_BUFFER_TOO_SMALL;
 // 			else if (BufferIn == NULL)
@@ -1761,7 +1761,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_SET_MODEM_CONTROL:
 // 		{
 // 			PULONG pMCR;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_MODEM_CONTROL\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_MODEM_CONTROL\n");
 // 			if (LengthIn != sizeof(ULONG) || BufferIn == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1807,7 +1807,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		{
 // 			/* FIXME: If the handshake flow control of the device is configured to
 // 			 * automatically use DTR, return STATUS_INVALID_PARAMETER */
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_RTS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_RTS\n");
 // 			if (!(DeviceExtension->MCR & (SR_MCR_RTS as i32)))
 // 			{
 // 				Status = IoAcquireRemoveLock(&DeviceExtension->RemoveLock, ULongToPtr(DeviceExtension->ComPort));
@@ -1824,7 +1824,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		}
 // 		case IOCTL_SERIAL_SET_TIMEOUTS:
 // 		{
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_TIMEOUTS\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_TIMEOUTS\n");
 // 			if (LengthIn != sizeof(SERIAL_TIMEOUTS) || BufferIn == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
 // 			else
@@ -1837,7 +1837,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_SET_WAIT_MASK:
 // 		{
 // 			PULONG pWaitMask = (PULONG)BufferIn;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_SET_WAIT_MASK\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_SET_WAIT_MASK\n");
 //
 // 			if (LengthIn != sizeof(ULONG) || BufferIn == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
@@ -1870,7 +1870,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		case IOCTL_SERIAL_WAIT_ON_MASK:
 // 		{
 // 			PIRP WaitingIrp;
-// 			TRACE_(SERIAL, "IOCTL_SERIAL_WAIT_ON_MASK\n");
+// 			TRACE_!(SERIAL, "IOCTL_SERIAL_WAIT_ON_MASK\n");
 //
 // 			if (LengthOut != sizeof(ULONG) || BufferOut == NULL)
 // 				Status = STATUS_INVALID_PARAMETER;
@@ -1906,7 +1906,7 @@ pub unsafe extern "system" fn SerialDeviceControl(
 // 		default:
 // 		{
 // 			/* Pass Irp to lower driver */
-// 			TRACE_(SERIAL, "Unknown IOCTL code 0x%x\n", Stack->Parameters.DeviceIoControl.IoControlCode);
+// 			TRACE_!(SERIAL, "Unknown IOCTL code 0x%x\n", Stack->Parameters.DeviceIoControl.IoControlCode);
 // 			IoSkipCurrentIrpStackLocation(Irp);
 // 			return IoCallDriver(DeviceExtension->LowerDevice, Irp);
 // 		}

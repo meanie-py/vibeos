@@ -195,7 +195,7 @@ unsafe extern "C" fn add_hfontitem(hfont: HFONT) -> HRESULT {
     S_OK
 }
 unsafe extern "C" fn inc_int_ref(hfont: HFONT) -> HRESULT {
-    let mut item: *mut HFONTItem = core::ptr::null_mut();
+    let item: *mut HFONTItem;
     let mut hr: HRESULT = S_FALSE;
 
     EnterCriticalSection(core::ptr::addr_of_mut!(OLEFontImpl_csHFONTLIST));
@@ -211,7 +211,7 @@ unsafe extern "C" fn inc_int_ref(hfont: HFONT) -> HRESULT {
     return hr;
 }
 unsafe extern "C" fn dec_int_ref(hfont: HFONT) -> HRESULT {
-    let mut item: *mut HFONTItem = core::ptr::null_mut();
+    let item: *mut HFONTItem;
     let mut hr: HRESULT = S_FALSE;
 
     EnterCriticalSection(core::ptr::addr_of_mut!(OLEFontImpl_csHFONTLIST));
@@ -230,7 +230,7 @@ unsafe extern "C" fn dec_int_ref(hfont: HFONT) -> HRESULT {
     return hr;
 }
 unsafe extern "C" fn inc_ext_ref(hfont: HFONT) -> HRESULT {
-    let mut item: *mut HFONTItem = core::ptr::null_mut::<HFONTItem>();
+    let item: *mut HFONTItem;
     let mut hr: HRESULT = S_FALSE;
     EnterCriticalSection(core::ptr::addr_of_mut!(OLEFontImpl_csHFONTLIST));
     item = find_hfontitem(hfont);
@@ -242,7 +242,7 @@ unsafe extern "C" fn inc_ext_ref(hfont: HFONT) -> HRESULT {
     return hr;
 }
 unsafe extern "C" fn dec_ext_ref(hfont: HFONT) -> HRESULT {
-    let mut item: *mut HFONTItem = core::ptr::null_mut();
+    let item: *mut HFONTItem;
     let mut hr: HRESULT = S_FALSE;
 
     EnterCriticalSection(core::ptr::addr_of_mut!(OLEFontImpl_csHFONTLIST));
@@ -1944,7 +1944,7 @@ fn OLEFontImpl_Load(
     let mut string_size: u8 = 0;
     let mut readBuffer: [i8; 256] = [0; 256];
     let mut cbRead: ULONG = 0;
-    let mut len: i32 = 0;
+    let len: i32;
 
     IStream_Read(
         pLoadStream,
@@ -2066,10 +2066,10 @@ fn OLEFontImpl_Save(
     fClearDirty: BOOL,
 ) -> HRESULT {
     let this: *mut OLEFontImpl = impl_from_IPersistStream(iface);
-    let mut attributes: BYTE = 0;
-    let mut string_size: BYTE = 0;
+    let mut attributes: BYTE;
+    let string_size: BYTE;
     let version: BYTE = 0x01;
-    let mut writeBuffer: *mut i8 = core::ptr::null_mut::<i8>();
+    let writeBuffer: *mut i8;
     let mut written: ULONG = 0;
 
     TRACE!(

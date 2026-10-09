@@ -45,3 +45,39 @@ def test_size_of_a_pointer_typedef_is_the_pointee():
     meant = C.replace("sizeof(*Foo)", "sizeof(PFOO)")
     fixed, _ = pd.repair(RUST, _decls(meant), TYPES, TARGETS)
     assert "size_of::<PFOO>()" in fixed
+
+
+def test_size_of_a_raw_pointer_is_the_pointee_unless_the_c_measures_a_pointer():
+    # acpi.c `sizeof(*TimingMode)` -> size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>() sized an
+    # ACPI output buffer 8 bytes; atapi's smart.c length checks had the same misreading.
+    c = "VOID\nGet(PFOO Foo)\n{\n    Alloc(sizeof(*Foo));\n}\n"
+    rust = (
+        'unsafe extern "C" fn Get(Foo: PFOO) {\n    Alloc(core::mem::size_of::<*mut _FOO>());\n}\n'
+    )
+    decls = {"Get": pd.c_declarations("Get", [("PFOO", "Foo")], c, TYPES)}
+    fixed, fixes = pd.repair(rust, decls, TYPES, TARGETS)
+    assert "size_of::<_FOO>()" in fixed and any("*mut _FOO" in f for f in fixes)
+    # A spelled-out pointer sizeof, or sizeof of a pointer VARIABLE, means a pointer size.
+    for meant in ("Alloc(sizeof(_FOO *));", "Alloc(sizeof(Foo));"):
+        c2 = c.replace("Alloc(sizeof(*Foo));", meant)
+        decls = {"Get": pd.c_declarations("Get", [("PFOO", "Foo")], c2, TYPES)}
+        assert pd.repair(rust, decls, TYPES, TARGETS)[0] == rust
+
+
+def test_an_element_size_of_a_pointer_array_is_kept():
+    # atapi: RTL_NUMBER_OF(PCSTR[]) is size_of::<[PCSTR; 4]>() / size_of::<PCSTR>(); the
+    # macro hides the C's sizeof(arr[0]), so the array of PFOO is the witness.
+    rust = RUST.replace(
+        "Alloc(core::mem::size_of::<PFOO>());",
+        "Alloc(core::mem::size_of::<[PFOO; 4]>() / core::mem::size_of::<PFOO>());",
+    )
+    fixed, _ = pd.repair(rust, _decls(), TYPES, TARGETS)
+    assert "size_of::<[PFOO; 4]>() / core::mem::size_of::<PFOO>()" in fixed
+
+
+def test_consecutive_declarations_are_all_seen():
+    # The declaration anchor consumed the `;`, so the second of two adjacent declarations
+    # was invisible: pciidex's `PATA_CONTROLLER Controller` right after `ChanData`.
+    c = "{\n    PBAR Bar = x;\n    PFOO Foo = y;\n}\n"
+    d = pd.c_declarations("Get", [], c, TYPES)
+    assert d.names == {"Bar": ("PBAR", 0), "Foo": ("PFOO", 0)}

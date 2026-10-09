@@ -278,11 +278,29 @@ def c_dirs_for(crate: str) -> list[Path]:
     # reachable when the source-early partition started running scanners alongside builds
     # rather than after them. Included source I/O errors must still fail loudly:
     # silently skipping unreadable source would shrink verification coverage.
-    skip = ("build-", "modules/rostests", "sdk/lib/rust", ".git")
-    hits = []
-    for parent, dirs, _ in source_walk(REPO, exclude_prefixes=skip):
-        hits.extend(parent / name for name in dirs if name == stem)
-    return hits
+    return list(_module_dir_index(REPO).get(stem, []))
+
+
+_MODULE_DIR_INDEX: dict[Path, dict[str, list[Path]]] = {}
+
+
+def _module_dir_index(root: Path) -> dict[str, list[Path]]:
+    """Directory name -> every source directory of that name, from ONE walk.
+
+    `c_dirs_for` used to walk the whole tree per crate: scan_hresult_literals asked
+    for 357 crates and spent 135 of its 166 seconds inside 1.1 million `source_walk`
+    frames re-reading the same 6.6 million directory entries. The walk is identical
+    every time within a process, so index it once (per root, so a test that
+    repoints REPO is not served the previous root's index)."""
+    cached = _MODULE_DIR_INDEX.get(root)
+    if cached is None:
+        skip = ("build-", "modules/rostests", "sdk/lib/rust", ".git")
+        index: dict[str, list[Path]] = defaultdict(list)
+        for parent, dirs, _ in source_walk(root, exclude_prefixes=skip):
+            for name in dirs:
+                index[name].append(parent / name)
+        cached = _MODULE_DIR_INDEX[root] = dict(index)
+    return cached
 
 
 _HEADER_CACHE: list[Path] | None = None

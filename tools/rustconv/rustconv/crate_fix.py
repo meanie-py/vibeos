@@ -565,6 +565,11 @@ _REPLACED_BY = {
     # A NULL function pointer in an `Option<fn>` slot is `None` (six setuplib refusals).
     "null_mut": re.compile(r"\bNone\b"),
     "null": re.compile(r"\bNone\b"),
+    # ntdef.h `#define NOTHING` expands to nothing (`ASSERT(x); NOTHING;`): there is no Rust
+    # for it to survive as. pciidex had three correct replies refused for dropping it.
+    "NOTHING": re.compile(r""),
+    # ntbasedef.h `DECLSPEC_ALIGN(x)` is an alignment ATTRIBUTE: its Rust is `align(x)`.
+    "DECLSPEC_ALIGN": re.compile(r"\balign\s*\("),
 }
 
 

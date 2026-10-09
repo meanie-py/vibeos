@@ -206,7 +206,7 @@ unsafe fn ExfWaitForRundownProtectionRelease_impl(RunRef: PEX_RUNDOWN_REF) {
         if CountVal != 0 && Event.is_null() {
             KeInitializeEvent(
                 core::ptr::addr_of_mut!(WaitBlock.WakeEvent) as PKEVENT,
-                0,
+                ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent as _,
                 0u8,
             );
             Event = core::ptr::addr_of_mut!(WaitBlock.WakeEvent) as PKEVENT;
@@ -307,7 +307,7 @@ unsafe fn ExfWaitForRundownProtectionReleaseCacheAware_impl(
     if TotalCount != 0 {
         KeInitializeEvent(
             core::ptr::addr_of_mut!(WaitBlock.WakeEvent) as PKEVENT,
-            0,
+            ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent as _,
             0u8,
         );
 

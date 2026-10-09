@@ -2041,6 +2041,21 @@ def _c_truthiness_rule(
         # error in the macro body; wrapping the call site cannot fix it, and the next pass
         # wrapped it again: `((((x) != 0)) != false) != false ..` six deep.
         in_own_macro = False
+        # The blamed tokens may be the macro's ARGUMENT, sitting inside the invocation in the
+        # user's own file (`assert!(x as INT)`): converting the call's `()` result fixes
+        # nothing -- comctl32's listview grew `!= 0)) != false))` around 34 asserts, one more
+        # layer every pass, until the pass regressed and was thrown away. Convert the argument.
+        site = _outermost_call_site(span) if span.get("expansion") else span
+        argument = (
+            span.get("expansion")
+            and span.get("file_name") == site.get("file_name")
+            and int(site.get("byte_start") or 0) <= int(span.get("byte_start") or 0)
+            and int(span.get("byte_end") or 0) <= int(site.get("byte_end") or 0)
+            and (int(span.get("byte_start") or 0), int(span.get("byte_end") or 0))
+            != (int(site.get("byte_start") or 0), int(site.get("byte_end") or 0))
+        )
+        if argument:
+            span = dict(span, expansion=None)
         if span.get("expansion") and from_bool:
             # A condition STORED into an integer is that use's conversion, never the macro's:
             # atapi.h's IS_ATAPI is a condition at 14 sites and a BOOLEAN at one, and
@@ -2431,6 +2446,12 @@ def _mut_binding_rule(
             file_name = str(span.get("file_name") or "")
             at = int(span.get("byte_start") or 0)
             if int(span.get("byte_end") or 0) != at or (file_name, at, at) in ctx.claimed:
+                continue
+            # E0596 through a `*const T` parameter offers the same `mut ` right after its `*`:
+            # `*mut const T` does not parse, and C said `const`. That is a type change, not
+            # a binding one -- comctl32's TRACKBAR_DrawChannel took the whole pass down.
+            data = load(file_name)
+            if data is None or data[at : at + 5] == b"const":
                 continue
             ctx.claimed.add((file_name, at, at))
             edits.append(

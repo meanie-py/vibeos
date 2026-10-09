@@ -439,7 +439,7 @@ pub const ViewUnmap: ULONG = 2;
 pub const VadNone: ULONG = 0;
 
 pub const _EVENT_TYPE_NotificationEvent: ULONG = 0;
-pub const _KWAIT_REASON_WrVirtualMemory: ULONG = 11;
+pub const _KWAIT_REASON_WrVirtualMemory: ULONG = 18; // header value; the hand copy said 11
 
 pub const MiExpansionPoolPagesInitialCharge: PFN_NUMBER = 32;
 
@@ -1216,7 +1216,7 @@ pub const IoReadAccess: ULONG = 0;
 pub const IoWriteAccess: ULONG = 1;
 pub const IoModifyAccess: ULONG = 2;
 
-pub const HighPagePriority: ULONG = 2;
+pub const HighPagePriority: ULONG = 32; // header value; the hand copy said 2
 
 pub const TableFoundNode: ULONG = 1;
 

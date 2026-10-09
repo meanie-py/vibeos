@@ -183,6 +183,41 @@ def test_rustc_truncated_snippets_relocate():
     assert r.relocate(lines, 1, "nowhere") is None
 
 
+def test_repeated_snippet_is_not_guessed():
+    """ole32 OLECONVERT_CreateCompObjStream: after a 13-line shift, the site at old line 1923
+    found the NEXT `hRes = IStream_Write(` sitting on line 1923 and two rows shared a line."""
+    lines = ["hRes = IStream_Write(", "x", "hRes = IStream_Write(", "y"]
+    assert r.relocate(lines, 2, "hRes = IStream_Write(") is None
+    assert r.relocate(lines, 1, "hRes = IStream_Write(") is None
+    # Mapped through the build's diff, the line is trusted -- but only if it still says so.
+    assert r.relocate(lines, 3, "hRes = IStream_Write(", exact=True) == 3
+    assert r.relocate(lines, 2, "hRes = IStream_Write(", exact=True) is None
+
+
+def test_line_map_follows_the_diff(tmp_path, monkeypatch):
+    import subprocess
+
+    def git(*a: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(tmp_path), *a], capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    git("init", "-q")
+    f = tmp_path / "sdk" / "lib" / "rust" / "c" / "a.rs"
+    f.parent.mkdir(parents=True)
+    f.write_text("".join(f"l{i}\n" for i in range(1, 11)))
+    git("add", "-A")
+    tree = git("write-tree")
+    lines = f.read_text().splitlines()
+    lines[2:3] = ["new3a", "new3b"]  # old line 3 replaced by two
+    lines.insert(0, "top")  # one inserted above everything
+    f.write_text("\n".join(lines) + "\n")
+    monkeypatch.setattr(r, "REPO", tmp_path)
+    monkeypatch.setattr(r, "RUST_ROOT", tmp_path / "sdk" / "lib" / "rust")
+    m = r.line_map(tree, "c/a.rs")
+    assert [m(i) for i in (1, 2, 3, 4, 10)] == [2, 3, None, 6, 12]
+
+
 def test_sizeof_is_not_a_read():
     """partmgr VolumeDeleteMountPoints: `InputSize = sizeof(*InputBuffer) + ..` precedes the
     allocation that first gives InputBuffer a value."""

@@ -179,6 +179,23 @@ pub unsafe extern "system" fn HalVibeosMessageCapacity() -> ULONG {
     unsafe { imp::message_capacity() }
 }
 
+/// pci.sys, starting a device and before it turns on bus mastering: make the
+/// device's DMA reach memory. Behind a translating SMMU (arm64, `SMMU=TRANSLATE`)
+/// that is its stream table entry; everywhere else there is nothing to do. FALSE
+/// when the device's DMA will not work.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosDmaAttach(RequesterId: ULONG) -> BOOLEAN {
+    #[cfg(target_arch = "aarch64")]
+    {
+        unsafe { crate::arm64::smmuv3::attach(RequesterId) as BOOLEAN }
+    }
+    #[cfg(not(target_arch = "aarch64"))]
+    {
+        let _ = RequesterId;
+        1
+    }
+}
+
 /// The address/data pair a device writes to raise `Vector`, which must have come from
 /// a message token's translation. FALSE for any other vector.
 ///

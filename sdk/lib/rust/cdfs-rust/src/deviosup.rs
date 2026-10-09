@@ -833,7 +833,7 @@ pub unsafe extern "C" fn CdPerformDevIoCtrlEx(
     const SL_OVERRIDE_VERIFY_VOLUME: u32 = 0x02;
     const STATUS_VERIFY_REQUIRED: i32 = 0x80000016u32 as i32; // ntstatus.h STATUS_VERIFY_REQUIRED (grind fabricated 0xC0000020)
 
-    let mut Status: i32 = core::mem::zeroed();
+    let mut Status: i32;
     let Irp: PIRP;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut LocalIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -1591,7 +1591,7 @@ pub unsafe extern "C" fn CdMultipleAsync(
     // PAGED_CODE();
 
     let mut CompletionRoutine: PIO_COMPLETION_ROUTINE;
-    let mut IrpSp: *mut IO_STACK_LOCATION = core::mem::zeroed();
+    let mut IrpSp: *mut IO_STACK_LOCATION;
     let mut Mdl: *mut MDL;
     let mut Irp: *mut IRP;
     let MasterIrp: *mut IRP;
@@ -1743,7 +1743,7 @@ pub unsafe extern "C" fn CdMultipleXAAsync(
     RawReads: *mut RAW_READ_INFO,
     TrackMode: TRACK_MODE_TYPE,
 ) {
-    let mut IrpSp: *mut IO_STACK_LOCATION = core::mem::zeroed();
+    let mut IrpSp: *mut IO_STACK_LOCATION;
     let mut Mdl: PMDL;
     let mut Irp: PIRP;
     let MasterIrp: PIRP;
@@ -2240,7 +2240,7 @@ pub unsafe extern "C" fn CdHijackIrpAndFlushDevice(
     // PAGED_CODE();
 
     let mut Event: KEVENT = core::mem::zeroed();
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let mut Status: NTSTATUS;
     let NextIrpSp: PIO_STACK_LOCATION = IoGetNextIrpStackLocation(Irp);
 
     core::ptr::copy_nonoverlapping(

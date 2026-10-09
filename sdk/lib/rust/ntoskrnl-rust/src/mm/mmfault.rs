@@ -186,8 +186,56 @@ unsafe fn MmNotPresentFault(
 }
 
 
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+extern "system" {
+    fn KeGetTrapFramePc(TrapFrame: ntkrnl_sys::ddk::PKTRAP_FRAME) -> ULONG_PTR;
+}
+// On arm64, KeGetTrapFramePc is a macro: TrapFrame->Pc
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn KeGetTrapFramePc(TrapFrame: ntkrnl_sys::ddk::PKTRAP_FRAME) -> ULONG_PTR {
+    (*TrapFrame).Pc as ULONG_PTR
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn MmAccessFault(
+    FaultCode: ULONG,
+    Address: PVOID,
+    Mode: KPROCESSOR_MODE,
+    TrapInformation: PVOID,
+) -> NTSTATUS {
+    const IRQL_NOT_LESS_OR_EQUAL: ULONG = 0x0000000A;
+    let Irql = KeGetCurrentIrql();
+    let Status = MmAccessFaultInner(FaultCode, Address, Mode, TrapInformation);
+
+    // Divergence: a kernel-mode trap above APC_LEVEL that MM cannot resolve is
+    // IRQL_NOT_LESS_OR_EQUAL, as on Windows, not an exception. The C already
+    // says so: MmArmAccessFault answers this case with STATUS_IN_PAGE_ERROR |
+    // 0x10000000 ("tell the trap handler to fail"), a value with a reserved bit
+    // set that exists only to be recognised, and the older path answers
+    // STATUS_UNSUCCESSFUL. No trap handler checks for either, so they were
+    // dispatched as an in-page exception that any SEH frame on the stack could
+    // swallow. One did: usbport read a NULL at DISPATCH_LEVEL inside a cdfs
+    // paging read, cdfs's try/except caught it, and the read failed with the
+    // bogus status d0000006 -- half of all amd64-bios boots at -smp 2, with
+    // nothing in the log naming usbport. The bugcheck names the driver (0xD1).
+    // Calls without a trap frame (MmProbeAndLockPages and friends) keep the
+    // status: they report failure to a caller that handles it.
+    if !NT_SUCCESS(Status) && Irql > APC_LEVEL as KIRQL && Mode == 0 && !TrapInformation.is_null() {
+        let Pc = KeGetTrapFramePc(TrapInformation as ntkrnl_sys::ddk::PKTRAP_FRAME);
+        let mut Access: ULONG_PTR = 0;
+        if crate::ARM3::helpers::MI_IS_WRITE_ACCESS(FaultCode as ULONG_PTR) {
+            Access |= 1;
+        }
+        if MI_IS_INSTRUCTION_FETCH(FaultCode as ULONG_PTR) {
+            Access |= 8;
+        }
+        KeBugCheckEx(IRQL_NOT_LESS_OR_EQUAL, Address as ULONG_PTR, Irql as ULONG_PTR, Access, Pc);
+    }
+    Status
+}
+
+unsafe fn MmAccessFaultInner(
     FaultCode: ULONG,
     Address: PVOID,
     Mode: KPROCESSOR_MODE,

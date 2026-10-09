@@ -71,7 +71,7 @@ pub unsafe extern "system" fn LsaCallAuthenticationPackage(
     ProtocolStatus: PNTSTATUS,
 ) -> NTSTATUS {
     let mut ApiMessage: LSA_API_MSG = core::mem::zeroed();
-    let mut Status: NTSTATUS = 0;
+    let Status: NTSTATUS;
     if DbgPrint(
         b"(%s:%d) LsaCallAuthenticationPackage()\n\0" as *const u8 as *const i8,
         b"sdk/lib/lsalib/lsa.c\0" as *const u8
@@ -169,7 +169,7 @@ pub unsafe extern "system" fn LsaCallAuthenticationPackage(
 #[no_mangle]
 pub unsafe extern "system" fn LsaDeregisterLogonProcess(LsaHandle: HANDLE) -> NTSTATUS {
     let mut ApiMessage: LSA_API_MSG = core::mem::zeroed();
-    let mut Status: NTSTATUS = 0;
+    let Status: NTSTATUS;
 
     ApiMessage.__bindgen_anon_1.__bindgen_anon_1.ApiNumber = LSASS_REQUEST_DEREGISTER_LOGON_PROCESS;
     ApiMessage.h.u1.s1.DataLength = core::mem::size_of::<ULONG>()
@@ -408,7 +408,7 @@ pub unsafe extern "system" fn LsaRegisterLogonProcess(
         Buffer: ::core::ptr::null_mut::<u16>(),
     };
     let mut EventHandle: HANDLE = ::core::ptr::null_mut::<::core::ffi::c_void>();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     if (*LogonProcessName).Length as i32 > LSASS_MAX_LOGON_PROCESS_NAME_LENGTH as i32 {
         return STATUS_NAME_TOO_LONG;

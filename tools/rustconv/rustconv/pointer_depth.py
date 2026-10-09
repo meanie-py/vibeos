@@ -24,8 +24,11 @@ SCSI mode-page lengths from it. Inside a function whose C never writes `sizeof(P
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
+
+from . import goto_arm
 
 #: `pub type PFOO = *mut _FOO;` in a bindgen island.
 _PTR_TYPEDEF = re.compile(r"^pub type ([A-Za-z_]\w*) = \*(?:mut|const) ", re.M)
@@ -56,6 +59,19 @@ class CFunctionDecls:
     ret: tuple[str, int] | None
     #: pointer typedefs the C itself takes `sizeof` of (`sizeof(PVOID)` is meant).
     sizeof_types: frozenset[str] = frozenset()
+    #: the C takes `sizeof` of a spelled-out pointer type (`sizeof(T *)`) somewhere in it.
+    sizeof_raw_pointer: bool = False
+    #: the C body uses `~` (bitwise not) anywhere; see logical_not.py.
+    bitwise_not: bool = False
+    #: the operands of the C's logical `!( .. )`, whitespace removed; see logical_not.py.
+    logical_nots: frozenset[str] = frozenset()
+    #: every identifier the C body spells (members included, also as a macro argument such as
+    #: `CONTAINING_RECORD(.., PortEntry)`); see union_slot.py.
+    identifiers: frozenset[str] = frozenset()
+    #: how often the C WRITES each member (`.M = `, `->M |= `), as sorted `(name, count)` pairs.
+    member_uses: tuple[tuple[str, int], ...] = ()
+    #: `(case, label)` per `switch` arm that ends in an unconditional `goto`; see goto_arm.py.
+    goto_arms: tuple[tuple[str, str], ...] = ()
 
 
 def _split_commas(text: str) -> list[str]:
@@ -92,7 +108,9 @@ def c_declarations(
     body = re.sub(r"/\*.*?\*/|//[^\n]*|\"(?:\\.|[^\"\\])*\"", " ", body, flags=re.S)
     alt = "|".join(sorted((re.escape(t) for t in types), key=len, reverse=True))
     if alt:
-        decl = re.compile(rf"(?:^|[;{{}}])\s*(?:const\s+|volatile\s+)*({alt})\b([^;(){{}}]*);")
+        # The anchor is a LOOKBEHIND: consuming the `;` hid every second of consecutive
+        # declarations (pciidex's `PATA_CONTROLLER Controller` after `ChanData`).
+        decl = re.compile(rf"(?:^|(?<=[;{{}}]))\s*(?:const\s+|volatile\s+)*({alt})\b([^;(){{}}]*);")
         for m in decl.finditer(body):
             for declarator in _split_commas(m.group(2)):
                 d = declarator.split("=", 1)[0]
@@ -109,7 +127,33 @@ def c_declarations(
     sized = frozenset(
         t for t in re.findall(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)", body) if t in types
     )
-    return CFunctionDecls(names, ret, sized)
+    raw = re.search(r"\bsizeof\s*\(\s*(?:const\s+)?[A-Za-z_]\w*\s*\*", body) is not None
+    # `sizeof(p)` / `sizeof p` of a pointer VARIABLE means a pointer size too.
+    for v in re.findall(r"\bsizeof\s*(?:\(\s*([A-Za-z_]\w*)\s*\)|\s([A-Za-z_]\w*)\b)", body):
+        typ, depth = names.get(v[0] or v[1], ("", 0))
+        raw = raw or depth > 0 or typ in types
+    code = re.sub(r'"(?:[^"\\]|\\.)*"', "", body)
+    nots: set[str] = set()
+    for m in re.finditer(r"!\s*\(", code):
+        depth, i = 0, m.end() - 1
+        for i in range(m.end() - 1, len(code)):
+            depth += {"(": 1, ")": -1}.get(code[i], 0)
+            if depth == 0:
+                break
+        nots.add(re.sub(r"\s+", "", code[m.end() : i]))
+    idents = frozenset(re.findall(r"[A-Za-z_]\w*", code))
+    uses = Counter(re.findall(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)", code))
+    return CFunctionDecls(
+        names,
+        ret,
+        sized,
+        raw,
+        "~" in code,
+        frozenset(nots),
+        idents,
+        tuple(sorted(uses.items())),
+        goto_arm.c_goto_arms(body),
+    )
 
 
 def _fn_spans(text: str) -> Iterable[tuple[str, int, int, int]]:
@@ -164,11 +208,38 @@ def repair(
             {
                 t
                 for t in re.findall(r"\bsize_of::<\s*([A-Za-z_]\w*)\s*>\s*\(\s*\)", body)
-                if targets and t in targets and t in types and t not in c.sizeof_types
+                if targets
+                and t in targets
+                and t in types
+                and t not in c.sizeof_types
+                # An array OF the pointer type in the same body makes it an element type, so its
+                # size is meant: atapi's RTL_NUMBER_OF over a `PCSTR[]` is
+                # `size_of::<[PCSTR; 4]>() / size_of::<PCSTR>()`, and the macro hides the C's
+                # sizeof from the guard above.
+                and not re.search(rf"\[\s*{re.escape(t)}\s*;", body)
             }
         )
-        if not wrong and ret_typ is None and not sized:
+        # The raw-pointer spelling of the same misreading: acpi.c's `sizeof(*TimingMode)` came
+        # back as `size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>()` and sized an ACPI output
+        # buffer 8 bytes short of the struct it receives. Only where the C never takes the
+        # size of ANY pointer type, so a deliberate pointer size is never touched.
+        raw_sized = (
+            sorted(
+                set(re.findall(r"\bsize_of::<\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*>", body))
+                - {"c_void", "core", "u8", "i8", "u16", "i16", "u32", "i32", "u64", "i64", "usize"}
+                - set(re.findall(r"\[\s*\*(?:mut|const)\s+([A-Za-z_]\w*)\s*;", body))
+            )
+            if not c.sizeof_types and not c.sizeof_raw_pointer
+            else []
+        )
+        if not wrong and ret_typ is None and not sized and not raw_sized:
             continue
+        for typ in raw_sized:
+            body = re.sub(
+                rf"\bsize_of::<\s*\*(?:mut|const)\s+{re.escape(typ)}\s*>",
+                f"size_of::<{typ}>",
+                body,
+            )
         for typ in sized:
             assert targets is not None  # `sized` is empty without them
             body = re.sub(
@@ -196,6 +267,7 @@ def repair(
             last = end
             what = sorted(wrong) + (["-> return"] if ret_typ else [])
             what += [f"size_of::<{t}>" for t in sized]
+            what += [f"size_of::<*mut {t}>" for t in raw_sized]
             fixes.append(f"{name}: {', '.join(what)}")
     out.append(rust[last:])
     return "".join(out), fixes

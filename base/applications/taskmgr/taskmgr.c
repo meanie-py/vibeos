@@ -1106,6 +1106,22 @@ LPWSTR GetLastErrorText(LPWSTR lpszBuf, DWORD dwSize)
     return lpszBuf;
 }
 
+/* GetMessage for a page refresh thread. The main window posts WM_TIMER
+ * every interval whether or not the last refresh finished, so a pass slower
+ * than the interval queues an unbounded backlog of refreshes ahead of
+ * WM_QUIT. One refresh answers them all: collapse the pending ones. */
+BOOL GetRefreshMessage(MSG *msg)
+{
+    MSG extra;
+
+    if (GetMessage(msg, NULL, 0, 0) <= 0)
+        return FALSE;
+    if (msg->message == WM_TIMER)
+        while (PeekMessage(&extra, NULL, WM_TIMER, WM_TIMER, PM_REMOVE))
+            ;
+    return TRUE;
+}
+
 DWORD EndLocalThread(HANDLE *hThread, DWORD dwThread)
 {
     DWORD dwExitCodeThread = 0;
@@ -1115,7 +1131,13 @@ DWORD EndLocalThread(HANDLE *hThread, DWORD dwThread)
         for (;;) {
             MSG msg;
 
-            if (WAIT_OBJECT_0 == WaitForSingleObject(*hThread, 500))
+            /* The refresh threads SendMessage into our windows. A plain
+             * WaitForSingleObject services none of those, so each send used
+             * to stall until the next 500ms poll, and a pass of dozens of
+             * ListView sends turned closing the window into minutes. Wake on
+             * input of any kind instead. */
+            if (WAIT_OBJECT_0 == MsgWaitForMultipleObjects(1, hThread, FALSE,
+                                                           INFINITE, QS_ALLINPUT))
                 break;
             while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
                 TranslateMessage(&msg);

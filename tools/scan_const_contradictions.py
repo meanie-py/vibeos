@@ -144,8 +144,19 @@ def arch_of(rel: str) -> str:
     return {"aarch64": "arm64", "x86_64": "amd64", "x86": "i386"}.get(a, a)
 
 
-def collect() -> dict[str, list[tuple[str, int, str]]]:
+# Any identifier, for the island comparison only. Enum members are CamelCase
+# (`UserThreadUseActiveDesktop`, `DelayedWorkQueue`), and CONST_RE's ALL_CAPS rule hid every
+# hand copy of one: winsrv's USERTHREADINFOCLASS (0..3 for 7/9/5/6) broke every ExitWindowsEx,
+# and 59 more sat in dbgk, ex, po, pnpmgr, cc, inbv, ... The cross-crate contradiction check
+# keeps ALL_CAPS: across crates a CamelCase name is too often a different local thing.
+ANY_CONST_RE = re.compile(
+    CONST_RE.pattern.replace("([A-Z_][A-Z0-9_]*)", "([A-Za-z_][A-Za-z0-9_]*)", 1)
+)
+
+
+def collect(any_case: bool = False) -> dict[str, list[tuple[str, int, str]]]:
     """name -> [(rel_path, value, arch)]"""
+    const_re = ANY_CONST_RE if any_case else CONST_RE
     decls: dict[str, list[tuple[str, int, str]]] = defaultdict(list)
     for path in sorted(source_files(RUST_ROOT)):
         sp = str(path)
@@ -168,7 +179,7 @@ def collect() -> dict[str, list[tuple[str, int, str]]]:
         for idx, line in enumerate(lines):
             if NOLINT_RE.search(line):
                 continue
-            m = CONST_RE.match(line)
+            m = const_re.match(line)
             if not m:
                 continue
             # `#[cfg(...)]`-gated declarations legitimately come in mutually
@@ -235,10 +246,36 @@ def contradictions(decls) -> list[tuple[str, str, int]]:
     return sorted(set(out))
 
 
+def _crate_of(rel: str) -> str:
+    parts = rel.split("/")
+    return parts[3] if len(parts) > 3 and parts[:3] == ["sdk", "lib", "rust"] else rel
+
+
+def within_crate(decls) -> list[tuple[str, str, int]]:
+    """[(name, file, value)] for a name with two values inside ONE crate (same arch bucket).
+
+    Across crates a name can legitimately mean two things; inside one crate, one of the two
+    copies is wrong. The cross-crate list is a large, mixed triage queue that only gates NEW
+    rows, and userenv's IDS_PROFILEPATH (0 and 1 in one crate) sat in it while it stopped GUI
+    setup on every install. This half is gated against a short reviewed baseline instead.
+    """
+    out = []
+    for name, sites in decls.items():
+        by_bucket: dict[tuple[str, str], set] = defaultdict(set)
+        for rel, val, arch in sites:
+            by_bucket[(_crate_of(rel), arch)].add(val)
+        bad = {k for k, v in by_bucket.items() if disagrees(v)}
+        for rel, val, arch in sites:
+            if (_crate_of(rel), arch) in bad:
+                out.append((name, rel, val))
+    return sorted(set(out))
+
+
 # `pub const NAME: T = VALUE;` as bindgen writes it -- the island's transcript of a C header.
 ISLAND_FILE_RE = re.compile(r"(?:^|/)(?:hal_)?bindgen_[a-z0-9_]+\.rs$")
 ISLAND_CONST_RE = re.compile(
-    r"^\s*pub const ([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^=]+=\s*(-?(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*;"
+    r"^\s*pub const ([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+?)\s*="
+    r"\s*(-?(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*;"
 )
 
 
@@ -252,9 +289,16 @@ def island_values() -> dict[str, set[int]]:
             m = ISLAND_CONST_RE.match(line)
             if m:
                 try:
-                    out[m.group(1)].add(int(m.group(2).replace("_", ""), 0))
+                    val = int(m.group(3).replace("_", ""), 0)
                 except ValueError:
-                    pass
+                    continue
+                out[m.group(1)].add(val)
+                # An enum member is `<EnumType>_<Member>: <EnumType>`; a hand copy is named by
+                # the bare member, as the C spells it. fastfat's `MmFlushForWrite = 2` (it is 1)
+                # was invisible until the member was indexed too.
+                enum_type = m.group(2).strip()
+                if m.group(1).startswith(enum_type + "_"):
+                    out[m.group(1)[len(enum_type) + 1 :]].add(val)
     return out
 
 
@@ -287,8 +331,12 @@ def main() -> int:
     lint = "--lint" in sys.argv
     decls = collect()
     if "--vs-island" in sys.argv:
-        for name, rel, val in island_disagreements(decls, island_values()):
+        for name, rel, val in island_disagreements(collect(any_case=True), island_values()):
             print(f"{rel}: {name} = {render_value(val)} [VS_ISLAND]")
+        return 0
+    if "--within-crate" in sys.argv:
+        for name, rel, val in within_crate(decls):
+            print(f"{rel}: {name} = {render_value(val)} [WITHIN_CRATE]")
         return 0
     hits = contradictions(decls)
 

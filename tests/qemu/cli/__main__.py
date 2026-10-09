@@ -19,6 +19,7 @@ from . import (
     diskspace,
     host_clock,
     hostlock,
+    installsmoke,
     maintenance,
     pi4,
     pi5,
@@ -38,6 +39,7 @@ from . import prune as prune_mod
 from . import repro as repro_mod
 from . import rrcmd as rr_mod
 from . import smoke as smoke_mod
+from . import stress as stress_mod
 from .archcfg import ACCEPTED_ARCHES
 
 # repo root = .../tests/qemu/cli/__main__.py -> up 3
@@ -94,7 +96,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     checks = b.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true", help="also run advisory source lints")
-    checks.add_argument("--no-check", action="store_true", help=argparse.SUPPRESS)
+    checks.add_argument(
+        "--no-check",
+        action="store_true",
+        help="skip the post-link binary lints too (gate/land run them as their own lane)",
+    )
     b.add_argument(
         "--keep-going",
         action="store_true",
@@ -320,6 +326,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="arm64 only: put an SMMUv3 in front of the PCI root complex (VIBEOS_QEMU_SMMU=1). "
         "The boot FAILS (SMMU_NOT_BYPASSED) unless the HAL found it in the IORT and left it "
         "passing DMA through; with --gic 3 the ITS's DeviceIDs then come through the SMMU",
+    )
+    s.add_argument(
+        "--cpu",
+        help="arm64 only: the QEMU -cpu model in place of cortex-a72 (VIBEOS_QEMU_CPU), "
+        "e.g. neoverse-n1 (Graviton2), neoverse-v1 (Graviton3), neoverse-n2 (closest to "
+        "Graviton4)",
+    )
+    s.add_argument(
+        "--headless",
+        action="store_true",
+        help="arm64 only: no display device, so UEFI hands over no GOP framebuffer, as on "
+        "a server (VIBEOS_QEMU_HEADLESS=1). The desktop marker still comes over serial",
+    )
+    s.add_argument(
+        "--boot-nvme",
+        action="store_true",
+        help="arm64 only: boot from an NVMe namespace holding the boot image, as an EC2 "
+        "instance boots from its NVMe root volume (VIBEOS_QEMU_BOOT_NVME=1). The boot FAILS "
+        "(NVME_BOOT_DISK_NOT_SEEN) unless nvme.sys also publishes that namespace as a disk",
     )
     s.add_argument(
         "--xhci",
@@ -564,6 +589,47 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)
 
+    stp = sub.add_parser(
+        "stress",
+        help="reproduce 'host load' as named mechanisms: boot a matrix of one-knob "
+        "profiles (slow-cpu, lockstep, starved-smp, tight-clock) and report failure "
+        "rate per profile — not a gate stage",
+    )
+    stp.add_argument("--arch", required=True, help="i386 | amd64 | arm64 (no default)")
+    stp.add_argument(
+        "--profile",
+        default="all",
+        help="comma list of baseline,slow-cpu,lockstep,starved-smp,tight-clock (default all)",
+    )
+    stp.add_argument("--repeat", type=int, default=3, help="boots per profile (default 3)")
+    stp.add_argument(
+        "--shift",
+        type=int,
+        default=0,
+        help=f"slow-cpu: -icount shift (guest clock = 2^N ns per instruction; default "
+        f"{stress_mod.DEFAULT_ICOUNT_SHIFT} ≈ a 40s boot during which the guest sees "
+        "~20 min pass). 3 ≈ TCG's real pace",
+    )
+    stp.add_argument(
+        "--smp", type=int, default=0, help="vCPUs for lockstep/starved-smp (default 2)"
+    )
+    stp.add_argument(
+        "--cores",
+        type=int,
+        default=0,
+        help="starved-smp: host cores QEMU is pinned to (default 1: every vCPU and the "
+        "iothread share one core, so the scheduler decides who runs)",
+    )
+    stp.add_argument(
+        "--timeout-scale",
+        type=float,
+        default=0,
+        help=f"tight-clock: multiply the harness boot/silence budgets (default "
+        f"{stress_mod.DEFAULT_TIMEOUT_SCALE})",
+    )
+    stp.add_argument("--allow-stale", action="store_true")
+    stp.set_defaults(fn=stress_mod.stress)
+
     fr = sub.add_parser("farm-report", help="cluster the farm corpus into failure families")
     fr.add_argument("--since", default="", help="only records with ts >= YYYYMMDD[-HHMMSS]")
     fr.add_argument("--sha", default="", help="only records from this short sha")
@@ -678,6 +744,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)",
     )
     cs.set_defaults(fn=cargoswap.cargo_swap)
+
+    ins = sub.add_parser(
+        "install-smoke",
+        help="install from the bootcd onto a blank disk, then boot that disk to the desktop "
+        "(amd64-bios; ~1h under TCG)",
+    )
+    arch_arg(ins)
+    ins.set_defaults(fn=installsmoke.install_smoke)
 
     cf = sub.add_parser(
         "conformance",

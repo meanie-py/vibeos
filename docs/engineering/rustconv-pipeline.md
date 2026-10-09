@@ -639,7 +639,7 @@ appeared as a misleading number.
 
 timedate, powercfg, joy, hotplug, hdwwiz, access, ncpa, telephon, odbccp32, openglcfg,
 wined3dcfg, console, main, input, mmsys and usrmgr: ~600 functions, about $2 in all
-including `port fix`. inetcpl is translated but NOT flipped (needs two islands, below).
+including `port fix`. inetcpl followed the same day (below).
 `-m haiku` runs with `--concurrency` now: the gate is the model's price, not its vendor.
 Every gap the run hit became a pass, so `port replay <stem> -m haiku --fix-cap $` alone
 rebuilds each crate:
@@ -673,10 +673,18 @@ comma-operator statement is several assignments to the invented-value audit; a C
 holds a function pointer may be spelled twice; a sealed `sizeof(TYPE)` the model hands back
 bare is restored at unseal.
 
-**Owed -- multi-island modules.** inetcpl's TUs need two islands (one group defines
-`COBJMACROS`/`NONAMELESSUNION`), and `port island`/`scaffold` generate one; its WIDL
-`IFoo_Method` COBJMACROS inlines are also "the -sys crate's job" to `port headers`. Both are
-needed before inetcpl can flip.
+**inetcpl, the seventeenth (flipped 2026-10-08).** It was parked as "needs two islands", and
+it never did: `profile_derive`'s anonymous-member filter covered `DUMMYUNIONNAME` and `2`-`9`
+but not `DUMMYUNIONNAME1`, so cryptuiapi.h's inline union read as a TYPE that "conflicted"
+with wtypes.h's, and the TU grouping split the module in two. With the name filtered, one
+island serves all five TUs. The derive also exposed `upsert_profile_arm` matching only a bare
+`  inetcpl)` label, so every re-derive APPENDED the multi-island `inetcpl|inetcpl-types_1)`
+arm -- six copies were on master. The rest was $0 tooling: WIDL C wrappers generated from the
+island Vtbl, wine/heap.h and `debugstr_*` in win32macros-rust, the wine debug types emitted
+with the channel statics, stale facts dropped once an island enum alias or a module defines
+the name, and dead `#if` arms dropped at integrate. Fix rounds: $0.0012. A read-only review
+found the dead `ImageList_Destroy` (now a loud integrate warning) and a heap overrun in the C's
+`create_connection_settings` (PAC URL bytes never counted in the size), fixed in the Rust.
 
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
@@ -902,6 +910,58 @@ Every fix below is a stage change, not a recipe.
 - **The -sys crates' own islands are widened too.** `normalize_island_abi --apply` (the one
   post-step every generator runs) now restores `L"..."` constants; 90 in eight -sys crates,
   msvcrt-sys's Python generator calls the widener itself.
+
+### pciidex and legide to a link (2026-10-08)
+
+A $0 replay under the rules above took pciidex from ~370 to 182 per arch and legide to 8. To
+replay at all, each crate's `cohab/` CMakeLists had to be installed first: `translate` proves a
+TU's owner from the real CMake source list. `port fix` ($0.22 in all) and hand fixes then took
+both to 0/0/0; pciidex.sys links on all three arches and legide.sys on i386. Classes fixed in
+the tools on the way:
+
+- **`C2RustUnnamed_N` is a counter, not a name.** It numbers anonymous types per transpile and
+  per arch (via.c's bridge-table struct is `_154`/`_162`/`_163` on i386/amd64/arm64).
+  In-crate import resolution wired via.rs to svw_pata's unrelated `_163` (48 errors). Now it
+  never imports one, and `resolve` takes the module's own type from its TU, **by field shape**:
+  the fields its struct literals spell, identical on every arch, or refused.
+- **An invented `const` hides a function-like macro.** intel.rs defined
+  `PIIX_REG_UDMATIM: u8 = 0x4A` (channel 0's value) beside calls `PIIX_REG_UDMATIM(Channel)`;
+  the name resolved, so `port macros` never offered it. Such a const is dropped and the macro
+  ported. Calls to in-scope macros inside a bought macro get their `!` at render
+  (`NUM_TO_BITMAP`'s `RTL_BITS_OF(ULONG)`, 46 errors).
+- **Signedness of bought macros.** The reply typed C's `int` macros as `u32`. A per-macro hand
+  port outside the generated block wins over the bank (the stage skips its names), and is the
+  fix when the call sites follow C's promotion: pciidex's prelude has about two dozen.
+- **Callbacks get their C signature** through a function-typedef declaration
+  (`CHANNEL_START_IO AtaAhciStartIo;`) and, for a `static` callback, through its own definition
+  in the TU's c2rust output (`c2rust_anchor.definition_signatures`): 62 functions in pciidex.
+- `glob_ties` no longer treats a name the prelude merely calls as settled; `resolve` will not
+  declare a `va_list` extern (nightly `VaList`); the substrate-import pruner handles the
+  brace-less `use ntkrnl_sys::ddk::X;`; `resolve` unpins a module's `ddk` import of any helper
+  the prelude defines (the `KeInitializeSpinLock` wrapper was bypassed, an undefined symbol);
+  the `port fix` audit lets `NOTHING` vanish, and `DECLSPEC_ALIGN` when the reply has `align(`.
+- **The audit was right three times, and is worth reading before overriding:** a reply changed
+  `IoAllocateDriverObjectExtension`'s client id from `DriverObject` to `&DriverExtension`, and
+  two replies dropped `DECLSPEC_ALIGN` without aligning anything. Those were fixed by hand
+  (`port hand`).
+
+**First boot (amd64, 2026-10-08).** `./vibeos-cli build --arch amd64 --ata-stack` boots to the
+desktop on pciidex + atapi with no uniata at all (6,376 ATA completions in one smoke). Getting
+there took a chain of defects that all compiled and that `port check` now reports:
+- a logical `!` read as bitwise (QBR reported zero channels);
+- pattern bindings that matched every PnP ID query;
+- a flexible array indexed past `[1]` (a panic);
+- a pointer-typedef depth error (0x1E);
+- union members re-slotted onto a neighbour, in three places: `union_slot`, so commands went
+  to port 0 and Error was read as Status;
+- a `continue` that skipped its loop's step: `loop_step`;
+- a dropped `goto CompleteIrp` that forwarded START_DEVICE twice;
+- bitfields set by guessed bit index: `scan_raw_bitfield`, a panic on the CD's mode page.
+
+The VM's disk and CD sit on the PIIX *secondary* channel under OVMF, which sets IDETIM decode
+only for the channel it found an ATAPI device on. So the channel-state check skipping the
+primary is correct, not a bug. Measure `PciRead32(0x40)` and the raw status ports before
+suspecting the HAL. i386 (legide) and arm64 are next.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

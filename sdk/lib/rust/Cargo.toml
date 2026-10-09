@@ -318,8 +318,11 @@ members = [
     "partmgr-rust",
     "fs_rec-rust",
     "pciidex-legacy-rust",
+    "pciidex-rust",
+    "legide-rust",
     "scsiport-rust",
     "atapi-legacy-rust",
+    "atapi-rust",
     "buslogic-rust",
     "vioblk-rust",
     "vioblk-cargo",
@@ -428,6 +431,8 @@ members = [
     "main-rust",
     "mmsys-rust",
     "usrmgr-rust",
+    "comctl32-rust",
+    "inetcpl-rust",
 ]
 resolver = "2"
 

@@ -205,6 +205,8 @@ def _norm(text: str) -> str:
 
 _CONST = r"^[ \t]*pub[ \t]+const[ \t]+{n}[ \t]*:[^=;]+=[^;]+;"
 _TYPE = r"^[ \t]*pub[ \t]+type[ \t]+{n}[ \t]*=[^;]+;"
+_CONST_ANY = re.compile(_CONST.replace("{n}", r"([A-Za-z_]\w*)"), re.M)
+_TYPE_ANY = re.compile(_TYPE.replace("{n}", r"([A-Za-z_]\w*)"), re.M)
 
 
 def is_test_source(rel: str) -> bool:
@@ -239,10 +241,16 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         # One identifier scan per file, not one regex per name: with 544 unresolved names
         # over the tree that loop was a 40-minute CPU stall inside `port replay`.
         present = names & set(re.findall(r"[A-Za-z_]\w*", src))
-        for n in present:
-            for kind, pat in (("const", _CONST), ("type", _TYPE)):
-                for m in re.finditer(pat.format(n=re.escape(n)), src, re.M):
-                    found[n].append(Item(kind, _norm(m.group(0)), None, rel))
+        # One pass per KIND, not one per name: a bindgen island is megabytes and holds
+        # hundreds of the wanted names, so the per-name regex was names x file size. comctl32
+        # (825 unresolved names) spent most of a 30-minute resolve pass here.
+        for kind, pat in (("const", _CONST_ANY), ("type", _TYPE_ANY)):
+            hits: dict[str, list[Item]] = {}
+            for m in pat.finditer(src):
+                if m.group(1) in present:
+                    hits.setdefault(m.group(1), []).append(Item(kind, _norm(m.group(0)), None, rel))
+            for n, items in hits.items():  # per name: consts first, then types, as before
+                found[n].extend(items)
         for _start, _end, body, abi in extern_block_spans(src):
             for decl in split_decls(body):
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
@@ -538,6 +546,14 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
     own = set(
         re.findall(r"^\s*(?:pub\s+)?(?:const|static|fn|type)\s+([A-Za-z_]\w*)", text, re.M)
     ) | set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", text))
+    # ...and a name the prelude already IMPORTS from somewhere else (a sibling module's own
+    # `heap_alloc`, re-exported by the cross-TU block): a second named import is E0252.
+    shared_idents = {ident for ident, _d, _p in SHARED_CRATES}
+    for m in re.finditer(r"^\s*pub use ([\w:]+?)::(?:\{([^}]*)\}|(\w+));", text, re.M):
+        if m.group(1).split("::")[0] in shared_idents:
+            continue
+        own.update(n.strip().split(" as ")[-1] for n in (m.group(2) or m.group(3)).split(","))
+    own.discard("")
     changed: list[str] = []
     for (ident, module), names in shared_provides(workspace).items():
         keep = sorted(names - own)
@@ -996,16 +1012,33 @@ def glob_ties(crate_src: Path, modules_dir: Path, sys_src: Path) -> dict[str, li
     the next run and add it back on the one after. The -sys crate's declaration wins, the
     one every other arch already resolves to.
     """
-    # A name the prelude already spells out is settled there (a second explicit import is E0252).
+    # A name the prelude already IMPORTS or DEFINES is settled there (a second explicit import
+    # is E0252). Only those: a name the prelude merely CALLS -- pciidex's ATA_IO_WAIT macro
+    # calling KeStallExecutionProcessor -- is a use, and ambiguous like any other.
     prelude = crate_src / "prelude.rs"
     settled: set[str] = set()
+    used: set[str] = set()
     if prelude.is_file():
         text = prelude.read_text(errors="replace")
         m = re.search(re.escape(SUBSTRATE_BEGIN) + r".*?" + re.escape(SUBSTRATE_END), text, re.S)
-        settled = set(
-            re.findall(r"\b[A-Za-z_]\w*\b", text[: m.start()] + text[m.end() :] if m else text)
+        rest = text[: m.start()] + text[m.end() :] if m else text
+        for imp in re.finditer(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+([^;]+);", rest):
+            body = imp.group(1)
+            names = re.findall(r"\{([^}]*)\}", body)
+            parts = names[0].split(",") if names else [body.rsplit("::", 1)[-1]]
+            for part in parts:
+                word = part.strip().split(" as ")[-1].strip()
+                if word and word != "*":
+                    settled.add(word)
+        settled |= set(
+            re.findall(
+                r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+                r"(?:fn|const|static(?:\s+mut)?|struct|union|enum|type|trait)\s+([A-Za-z_]\w*)",
+                rest,
+            )
         )
-    used: set[str] = set()
+        settled |= set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", rest))
+        used |= set(re.findall(r"\b([A-Za-z_]\w*)\s*\(", rest))
     for rs in sorted(modules_dir.glob("*.rs")):
         text = rs.read_text(errors="replace")
         explicit = {
@@ -1091,6 +1124,20 @@ def write_substrate(prelude: Path, block: str) -> bool:
     return True
 
 
+_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW])\b")
+
+
+def _x86_alias(sig: str) -> str:
+    """winuser.h `#define`s Get/SetWindowLongPtrW and Get/SetClassLongPtrW to the non-`Ptr`
+    function on 32-bit, so i386 user32 exports no `_GetWindowLongPtrW@8`. A declaration copied
+    from another crate loses that crate's `link_name`, and comctl32's i386 link failed on all
+    four. The attribute line, indented for an extern block, or "" when none applies."""
+    m = _LONG_PTR_ALIAS.search(sig)
+    if m is None or "link_name" in sig:
+        return ""
+    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2)}")]\n'
+
+
 def render(copied: dict[str, Item]) -> str:
     consts = [i for i in copied.values() if i.kind in ("const", "type")]
     fns: dict[str, list[Item]] = {}
@@ -1104,7 +1151,7 @@ def render(copied: dict[str, Item]) -> str:
         out.append(f"extern {abi} {{")
         for i in sorted(items, key=lambda i: i.text):
             text = i.text if i.text.startswith("fn") else re.sub(r"^.*?\bfn\b", "fn", i.text)
-            out.append(f"    pub {text} // {i.path}")
+            out.append(f"{_x86_alias(text)}    pub {text} // {i.path}")
         out.append("}")
     out.append(END)
     return "\n".join(out) + "\n"
@@ -1187,7 +1234,9 @@ def fact_rust_type(
         sugar, _, canonical = c_type.partition("|")
         canonical = (canonical or sugar).removeprefix("const ").strip()
         if re.fullmatch(r"[A-Za-z_]\w*", sugar) and sugar in known_types:
-            return sugar
+            # A POINTER-typed constant (taskdialog.c's `TD_ERROR_ICON`, MAKEINTRESOURCEW(-2))
+            # needs an int-to-pointer cast; the leading `*` tells render_facts so.
+            return f"*{sugar}" if canonical.endswith("*") else sugar
         if bare_int_unsigned and sugar == "int" and value >= 0:
             # A bare `#define X 4` is an `int` to clang, and bindgen -- hence every island
             # and -sys constant these bodies mix it with -- spells the same macro `u32`.
@@ -1207,7 +1256,10 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
     out = [FACTS_BEGIN]
     for name, (ty, value, src) in sorted(facts.items()):
         literal = str(value)
-        if value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
+        if ty.startswith("*"):
+            ty = ty[1:]
+            literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
+        elif value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
             literal = f"0x{value & 0xFFFFFFFF:08X}_u32 as {ty}"
         elif value >= 10:
             literal = f"0x{value:X}"
@@ -1224,7 +1276,8 @@ def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
     out = {}
     for line in m.group(1).splitlines():
         f = re.match(
-            r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+)?(-?\d+)?; // clang, (\S+)",
+            r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+|usize as \w+)?(-?\d+)?;"
+            r" // clang, (\S+)",
             line.strip(),
         )
         if not f:
@@ -1233,7 +1286,7 @@ def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
         value = int(hexv, 16) if hexv else int(decv)
         if hexv and line.find("_u32 as") > 0 and value >= 2**31:
             value -= 2**32
-        out[name] = (ty, value, src)
+        out[name] = (f"*{ty}" if "usize as" in line else ty, value, src)
     return out
 
 
@@ -1312,7 +1365,7 @@ def render_externs(sigs: dict[str, tuple[str, str, str]]) -> str:
         out.append(f'extern "{abi}" {{')
         for _, sig, src in items:
             # c2rust's text is already indented for an extern block (params at 8).
-            out.append(f"    pub {sig} // {src}")
+            out.append(f"{_x86_alias(sig)}    pub {sig} // {src}")
         out.append("}")
     out.append(EXTERNS_END)
     return "\n".join(out) + "\n"

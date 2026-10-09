@@ -325,7 +325,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // 	IN PCIRCULAR_BUFFER pBuffer,
 // 	IN ULONG BufferSize)
 // {
-// 	TRACE_(SERIAL, "InitializeCircularBuffer(pBuffer %p, BufferSize %lu)\n", pBuffer, BufferSize);
+// 	TRACE_!(SERIAL, "InitializeCircularBuffer(pBuffer %p, BufferSize %lu)\n", pBuffer, BufferSize);
 // 	ASSERT(pBuffer);
 // 	pBuffer->Buffer = (PUCHAR)ExAllocatePoolWithTag(NonPagedPool, BufferSize * sizeof(UCHAR), SERIAL_TAG);
 // 	if (!pBuffer->Buffer)
@@ -339,7 +339,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // FreeCircularBuffer(
 // 	IN PCIRCULAR_BUFFER pBuffer)
 // {
-// 	TRACE_(SERIAL, "FreeCircularBuffer(pBuffer %p)\n", pBuffer);
+// 	TRACE_!(SERIAL, "FreeCircularBuffer(pBuffer %p)\n", pBuffer);
 // 	ASSERT(pBuffer);
 // 	if (pBuffer->Buffer != NULL)
 // 		ExFreePoolWithTag(pBuffer->Buffer, SERIAL_TAG);
@@ -350,7 +350,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // IsCircularBufferEmpty(
 // 	IN PCIRCULAR_BUFFER pBuffer)
 // {
-// 	TRACE_(SERIAL, "IsCircularBufferEmpty(pBuffer %p)\n", pBuffer);
+// 	TRACE_!(SERIAL, "IsCircularBufferEmpty(pBuffer %p)\n", pBuffer);
 // 	ASSERT(pBuffer);
 // 	return (pBuffer->ReadPosition == pBuffer->WritePosition);
 // }
@@ -359,7 +359,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // GetNumberOfElementsInCircularBuffer(
 // 	IN PCIRCULAR_BUFFER pBuffer)
 // {
-// 	TRACE_(SERIAL, "GetNumberOfElementsInCircularBuffer(pBuffer %p)\n", pBuffer);
+// 	TRACE_!(SERIAL, "GetNumberOfElementsInCircularBuffer(pBuffer %p)\n", pBuffer);
 // 	ASSERT(pBuffer);
 // 	return (pBuffer->WritePosition + pBuffer->Length - pBuffer->ReadPosition) % pBuffer->Length;
 // }
@@ -370,7 +370,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // 	IN UCHAR Entry)
 // {
 // 	ULONG NextPosition;
-// 	TRACE_(SERIAL, "PushCircularBufferEntry(pBuffer %p, Entry 0x%x)\n", pBuffer, Entry);
+// 	TRACE_!(SERIAL, "PushCircularBufferEntry(pBuffer %p, Entry 0x%x)\n", pBuffer, Entry);
 // 	ASSERT(pBuffer);
 // 	ASSERT(pBuffer->Length);
 // 	NextPosition = (pBuffer->WritePosition + 1) % pBuffer->Length;
@@ -386,7 +386,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // 	IN PCIRCULAR_BUFFER pBuffer,
 // 	OUT PUCHAR Entry)
 // {
-// 	TRACE_(SERIAL, "PopCircularBufferEntry(pBuffer %p)\n", pBuffer);
+// 	TRACE_!(SERIAL, "PopCircularBufferEntry(pBuffer %p)\n", pBuffer);
 // 	ASSERT(pBuffer);
 // 	ASSERT(pBuffer->Length);
 // 	if (IsCircularBufferEmpty(pBuffer))
@@ -403,7 +403,7 @@ pub unsafe extern "C" fn IncreaseCircularBufferSize(
 // {
 // 	PUCHAR NewBuffer;
 //
-// 	TRACE_(SERIAL, "IncreaseCircularBufferSize(pBuffer %p, NewBufferSize %lu)\n", pBuffer, NewBufferSize);
+// 	TRACE_!(SERIAL, "IncreaseCircularBufferSize(pBuffer %p, NewBufferSize %lu)\n", pBuffer, NewBufferSize);
 // 	ASSERT(pBuffer);
 // 	ASSERT(pBuffer->Length);
 // 	if (pBuffer->Length > NewBufferSize)

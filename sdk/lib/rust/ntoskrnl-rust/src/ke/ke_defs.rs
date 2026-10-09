@@ -455,9 +455,9 @@ pub const IO_ACCESS_MAP_NONE: u16 = 0;
 // KWAIT_REASON enum values (with underscore prefix as bindgen generates them)
 pub const _KWAIT_REASON_WrQuantumEnd: u32 = 30;
 pub const _KWAIT_REASON_WrQueue: u32 = 15;
-pub const _KWAIT_REASON_WrMutex: u32 = 5;
+pub const _KWAIT_REASON_WrMutex: u32 = 29; // header value; the hand copy said 5
 pub const _KWAIT_REASON_WrGuardedMutex: u32 = 35;
-pub const _KWAIT_REASON_WrYieldExecution: u32 = 36;
+pub const _KWAIT_REASON_WrYieldExecution: u32 = 33; // header value; the hand copy said 36
 
 // High importance for DPC
 pub const HighImportance: u32 = 2;

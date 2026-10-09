@@ -831,7 +831,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
     let mut dwState: DWORD = 0;
     let header: *mut FMT_HEADER = rgbTok as *mut FMT_HEADER;
     let numHeader: *mut FMT_NUMBER_HEADER;
-    let mut pToken: *const BYTE = core::ptr::null();
+    let mut pToken: *const BYTE;
     let mut hRes: HRESULT = S_OK;
 
     TRACE!(
@@ -980,7 +980,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
 
     while SUCCEEDED(hRes) && *pToken != FMT_GEN_END {
         let mut defaultChar: WCHAR = '?' as u16;
-        let mut boolFlag: DWORD = 0;
+        let boolFlag: DWORD;
         let mut localeValue: DWORD = 0;
         let mut shouldAdvance: BOOL = 1;
 
@@ -1914,7 +1914,7 @@ unsafe extern "C" fn VARIANT_FormatString(
     let mut pSrc: LPWSTR;
     let header = rgbTok as *mut FMT_HEADER;
     let strHeader: *mut FMT_STRING_HEADER;
-    let mut pToken: *const BYTE = core::ptr::null();
+    let mut pToken: *const BYTE;
     let mut vStr: VARIANT = core::mem::zeroed();
     let mut blanks_first: i32;
     let mut bUpper: BOOL = 0; // FALSE
@@ -1962,7 +1962,7 @@ unsafe extern "C" fn VARIANT_FormatString(
     pToken = (strHeader as *const BYTE).offset(5);
 
     while *pToken != 0x02 {
-        let mut dwCount: i32 = 0;
+        let mut dwCount: i32;
 
         if pToken.offset_from(rgbTok as *const BYTE) > (*header).size as isize {
             ERR!(b"Ran off the end of the format!\n\0".as_ptr() as LPCSTR);

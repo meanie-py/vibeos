@@ -643,7 +643,9 @@ unsafe extern "C" fn AddNTOSInstallation(
 
     RtlInitEmptyUnicodeString(
         &raw mut (*NtOsInstall).SystemArcPath,
-        (NtOsInstall as *mut u8).add(1) as *mut u16,
+        // C: (PWCHAR)(NtOsInstall + 1) -- the strings follow the WHOLE struct. A byte step
+        // wrote them over the struct's own ListEntry.
+        NtOsInstall.add(1) as *mut u16,
         ArcPathLength as u16,
     );
     RtlCopyMemory!(
@@ -655,7 +657,7 @@ unsafe extern "C" fn AddNTOSInstallation(
 
     RtlInitEmptyUnicodeString(
         &raw mut (*NtOsInstall).SystemNtPath,
-        ((NtOsInstall as *mut u8).add(1) as usize + ArcPathLength) as *mut u16,
+        (NtOsInstall.add(1) as usize + ArcPathLength) as *mut u16,
         NtPathLength as u16,
     );
     RtlCopyUnicodeString(&raw mut (*NtOsInstall).SystemNtPath, SystemRootNtPath);

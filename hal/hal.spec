@@ -20,6 +20,7 @@
 @ stdcall -arch=arm64 HalSelfTestGicSpiArm64(long)
 @ stdcall -arch=arm64 HalpEnterInterruptIrql(long)
 @ stdcall -arch=arm64 HalpExitInterruptIrql(long)
+@ stdcall HalVibeosDmaAttach(long)
 @ stdcall HalVibeosMessageCapacity()
 @ stdcall HalVibeosMessageAllocate(long ptr ptr ptr)
 @ stdcall HalVibeosMessageAllocateBlock(ptr ptr ptr ptr)

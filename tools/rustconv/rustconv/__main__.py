@@ -124,6 +124,7 @@ from .fact_seal import (
     unseal_facts,
 )
 from .function_coverage import (
+    CoverageError,
     require_c_plan,
     require_rust_definitions,
     restore_requested_name,
@@ -1561,7 +1562,13 @@ def cmd_submit(args):
             result.output_tokens,
             attempt_id=result.attempt_id,
         )
-        usd = cost_usd(model, result.input_tokens, result.output_tokens, result.cache_read_tokens)
+        usd = cost_usd(
+            model,
+            result.input_tokens,
+            result.output_tokens,
+            result.cache_read_tokens,
+            cache_write_tokens=result.cache_write_tokens,
+        )
         print(
             f"Cost: ${usd:.2f}  | archived: {archive.dir}",
             file=sys.stderr,
@@ -2882,7 +2889,11 @@ def cmd_translate(args):
                 "cache_write_tokens": result.cache_write_tokens,
                 "cost_usd": round(
                     cost_usd(
-                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                        model,
+                        result.input_tokens,
+                        result.output_tokens,
+                        result.cache_read_tokens,
+                        cache_write_tokens=result.cache_write_tokens,
                     ),
                     8,
                 ),
@@ -3969,7 +3980,11 @@ def cmd_translate(args):
                                 attempt_id=r.attempt_id,
                             )
                             running_cost += cost_usd(
-                                model, r.input_tokens, r.output_tokens, r.cache_read_tokens
+                                model,
+                                r.input_tokens,
+                                r.output_tokens,
+                                r.cache_read_tokens,
+                                cache_write_tokens=r.cache_write_tokens,
                             )
                         _record_outcome(
                             dp,
@@ -3998,6 +4013,15 @@ def cmd_translate(args):
                             stage="submit",
                             error=r.error,
                             **_result_fields(r, elapsed_ms),
+                        )
+                        # A failed call is BILLED (comctl32's four truncated window procs
+                        # cost $0.08 that the counter and the cap never saw).
+                        running_cost += cost_usd(
+                            model,
+                            r.input_tokens,
+                            r.output_tokens,
+                            r.cache_read_tokens,
+                            cache_write_tokens=r.cache_write_tokens,
                         )
                         print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
                         parallel_errors.append(f"{dp.name}: {r.error}")
@@ -4202,6 +4226,7 @@ def cmd_translate(args):
                             result.input_tokens,
                             result.output_tokens,
                             result.cache_read_tokens,
+                            cache_write_tokens=result.cache_write_tokens,
                         )
 
             if result.success:
@@ -4248,7 +4273,11 @@ def cmd_translate(args):
                         attempt_id=result.attempt_id,
                     )
                     running_cost += cost_usd(
-                        model, result.input_tokens, result.output_tokens, result.cache_read_tokens
+                        model,
+                        result.input_tokens,
+                        result.output_tokens,
+                        result.cache_read_tokens,
+                        cache_write_tokens=result.cache_write_tokens,
                     )
                     print(
                         f"OK ({result.input_tokens} in / {result.output_tokens} out)"
@@ -4269,6 +4298,13 @@ def cmd_translate(args):
                 )
             else:
                 sequential_errors.append(f"{dep.name}: API failed: {result.error}")
+                running_cost += cost_usd(  # billed even though it failed
+                    model,
+                    result.input_tokens,
+                    result.output_tokens,
+                    result.cache_read_tokens,
+                    cache_write_tokens=result.cache_write_tokens,
+                )
                 _record_outcome(
                     dep,
                     "api_error",
@@ -4450,6 +4486,7 @@ def cmd_translate(args):
                         pre_res.input_tokens,
                         pre_res.output_tokens,
                         pre_res.cache_read_tokens,
+                        cache_write_tokens=pre_res.cache_write_tokens,
                     )
                 _record_preamble(
                     preamble_src,
@@ -4462,6 +4499,13 @@ def cmd_translate(args):
                     f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)", file=sys.stderr
                 )
             else:
+                running_cost += cost_usd(  # billed even though it failed
+                    model,
+                    pre_res.input_tokens,
+                    pre_res.output_tokens,
+                    pre_res.cache_read_tokens,
+                    cache_write_tokens=pre_res.cache_write_tokens,
+                )
                 _record_preamble(
                     preamble_src,
                     "api_error",
@@ -4833,10 +4877,20 @@ def cmd_translate(args):
             for dep in sorted_deps
             if not deterministic_only or dep.name in deterministic_workers
         }
-        require_rust_definitions(
-            {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
-            code,
-        )
+        try:
+            require_rust_definitions(
+                {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
+                code,
+            )
+        except CoverageError:
+            # Every body may be banked and correct on its own while the STITCH hides them
+            # (one item that parses as an open macro swallows the rest of the file), and the
+            # text that would show which one existed only in memory.
+            if archive is not None:
+                kept = archive.dir / f"{c_file.stem}.stitch-rejected.rs"
+                kept.write_text(code)
+                print(f"  stitched output kept for inspection: {kept}", file=sys.stderr)
+            raise
         if args.output and total_files == 1:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)

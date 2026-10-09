@@ -242,7 +242,7 @@ pub unsafe extern "system" fn LdrFindResource_U(
     ResourceDataEntry: *mut PIMAGE_RESOURCE_DATA_ENTRY,
 ) -> NTSTATUS {
     let mut res: PVOID = core::ptr::null_mut();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let status: NTSTATUS;
 
     status = find_entry(BaseAddress, ResourceInfo, Level, &mut res, 0);
     if NT_SUCCESS(status) {
@@ -270,7 +270,7 @@ pub unsafe extern "system" fn LdrFindResourceDirectory_U(
     addr: *mut PIMAGE_RESOURCE_DIRECTORY,
 ) -> NTSTATUS {
     let mut res: PVOID = core::ptr::null_mut();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let status: NTSTATUS;
 
     status = find_entry(BaseAddress, info, level, &mut res, 1);
     if NT_SUCCESS(status) {

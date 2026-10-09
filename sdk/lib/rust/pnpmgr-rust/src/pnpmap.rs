@@ -371,7 +371,7 @@ unsafe fn IopEnumerateDetectedDevices(
         Status = ZwQueryValueKey(
             hDeviceKey,
             &raw mut ConfigurationDataU,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             pValueInformation as PVOID,
             ValueInfoLength,
             &mut RequiredSize,
@@ -392,7 +392,7 @@ unsafe fn IopEnumerateDetectedDevices(
             Status = ZwQueryValueKey(
                 hDeviceKey,
                 &raw mut ConfigurationDataU,
-                1,
+                ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
                 pValueInformation as PVOID,
                 ValueInfoLength,
                 &mut RequiredSize,
@@ -501,7 +501,7 @@ unsafe fn IopEnumerateDetectedDevices(
         Status = ZwQueryValueKey(
             hDeviceKey,
             &raw mut IdentifierU,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             pValueInformation as PVOID,
             ValueInfoLength,
             &mut RequiredSize,
@@ -528,7 +528,7 @@ unsafe fn IopEnumerateDetectedDevices(
             Status = ZwQueryValueKey(
                 hDeviceKey,
                 &raw mut IdentifierU,
-                1,
+                ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
                 pValueInformation as PVOID,
                 ValueInfoLength,
                 &mut RequiredSize,
@@ -774,7 +774,7 @@ unsafe fn IopIsFirmwareMapperDisabled() -> BOOLEAN {
         Status = ZwQueryValueKey(
             hPnpKey,
             &mut KeyNameU,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             core::ptr::null_mut(),
             0,
             &mut DesiredLength,
@@ -786,7 +786,7 @@ unsafe fn IopIsFirmwareMapperDisabled() -> BOOLEAN {
                 Status = ZwQueryValueKey(
                     hPnpKey,
                     &mut KeyNameU,
-                    1,
+                    ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
                     KeyInformation as PVOID,
                     Length,
                     &mut DesiredLength,

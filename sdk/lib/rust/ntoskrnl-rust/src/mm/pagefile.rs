@@ -706,7 +706,7 @@ pub unsafe extern "system" fn NtCreatePagingFile(
         &mut io_status as *mut _IO_STATUS_BLOCK,
         &safe_minimum_size as *const LARGE_INTEGER as PVOID,
         core::mem::size_of::<LARGE_INTEGER>() as ULONG,
-        20,
+        ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileEndOfFileInformation as _,
     );
 
     if status < 0 || io_status.__bindgen_anon_1.Status < 0 {

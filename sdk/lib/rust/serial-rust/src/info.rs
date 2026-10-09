@@ -152,7 +152,7 @@ pub unsafe extern "system" fn SerialQueryInformation(
 // 		{
 // 			PFILE_STANDARD_INFORMATION StandardInfo = (PFILE_STANDARD_INFORMATION)SystemBuffer;
 //
-// 			TRACE_(SERIAL, "IRP_MJ_QUERY_INFORMATION / FileStandardInformation\n");
+// 			TRACE_!(SERIAL, "IRP_MJ_QUERY_INFORMATION / FileStandardInformation\n");
 // 			if (BufferLength < sizeof(FILE_STANDARD_INFORMATION))
 // 				Status = STATUS_BUFFER_OVERFLOW;
 // 			else if (!StandardInfo)
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn SerialQueryInformation(
 //
 // 			ASSERT(PositionInfo);
 //
-// 			TRACE_(SERIAL, "IRP_MJ_QUERY_INFORMATION / FilePositionInformation\n");
+// 			TRACE_!(SERIAL, "IRP_MJ_QUERY_INFORMATION / FilePositionInformation\n");
 // 			if (BufferLength < sizeof(FILE_POSITION_INFORMATION))
 // 				Status = STATUS_BUFFER_OVERFLOW;
 // 			else if (!PositionInfo)
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn SerialQueryInformation(
 // 		}
 // 		default:
 // 		{
-// 			TRACE_(SERIAL, "IRP_MJ_QUERY_INFORMATION: Unexpected file information class 0x%02x\n", Stack->Parameters.QueryFile.FileInformationClass);
+// 			TRACE_!(SERIAL, "IRP_MJ_QUERY_INFORMATION: Unexpected file information class 0x%02x\n", Stack->Parameters.QueryFile.FileInformationClass);
 // 			return ForwardIrpAndForget(DeviceObject, Irp);
 // 		}
 // 	}

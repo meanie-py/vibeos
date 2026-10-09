@@ -266,7 +266,7 @@ pub unsafe extern "system" fn KeSetIntervalProfile(
         ProfileSourceInterval.Source = ProfileSource;
         ProfileSourceInterval.Interval = Interval as _;
         HalSetSystemInformation(
-            7,
+            ntkrnl_sys::ddk::_HAL_SET_INFORMATION_CLASS_HalProfileSourceInterval as _,
             core::mem::size_of::<HAL_PROFILE_SOURCE_INTERVAL>() as ULONG,
             core::ptr::addr_of_mut!(ProfileSourceInterval) as PVOID,
         );

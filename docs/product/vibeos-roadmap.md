@@ -595,6 +595,59 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
+  (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
+  the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
+  step of setup broken, all fixed: the setup loader's `RtlStringCbPrintfW` stub (every boot
+  driver registered as `"%S\%S"`, then a `len - 4` panic); txtsetup.sif listing pruned
+  drivers (sacdrv/isapnp/floppy, a "Cannot load boot driver" message box); usetup's cabinet
+  header stride, CFFILE walk and over-dereferenced language list (smss.exe AV, 0x71); a
+  bitwise `!Success` that quit every install; fastfat's `FlagOn` read as a byte (no volume
+  lock, so no chkdsk); Mm extending files with info class 2 instead of 20 (all 964 copied files
+  lost); disk.sys's persistent-SRB flag cast to `u16` (0xC2 on the first flush); `CmLoadKey`'s
+  check flag 1 for 2 (every hive REGISTRY_CORRUPT); cmlib's permuted KEY_HIVE_EXIT/ENTRY (0x1E
+  on hive unload); a special APC dereferencing its NULL NormalContext (0x1E at reboot); and the
+  cargo-built smss/csrss/winlogon missing from reactos.cab (an installed system would have
+  none); txtsetup.sif's display rows still naming the pruned VGA miniports (setup stopped at
+  "failed to update display registry settings" behind an ENTER prompt; usetup now prints every
+  popup to the debug port and the test fails on it); and po's volume flush taking
+  `CONTAINING_RECORD` at offset 0 for the extension's last field (0x1E at setup's reboot);
+  `IoShutdownSystem` moving its initialized KEVENT (0x109 at the reboot); `usbxhci`/`fltmgr`
+  never copied to the disk (a "Cannot load boot driver" box on the first installed boot);
+  i386/amd64 `MmDeleteVirtualMapping` reading the dirty bit from the PTE it had just zeroed
+  (every file written through a mapping -- all 984 cab-extracted files -- was zero-filled);
+  po treating every reboot as a power-off (POWER_ACTION 5/6 swapped); and ntkrnl-sys's
+  `IS_DIRTY_SSE` testing a share-count bit, so `MiShutdownSystem` looped forever.
+  Text-mode setup runs to "installation succeeded", and the installed disk boots on its own
+  to winlogon, GUI setup and Explorer (run 32). Each class has a `vibeos-cli check` scanner now (see the field manual). Trying the
+  install with 2 GB also found the amd64 BIOS loader triple-faulting with more than ~1 GB of
+  RAM (its page lookup table placed past the 1 GiB it maps; `bios-boot.md`), fixed.
+  Setup's reboot now completes (run 39), and the installed disk's first boot reaches
+  winlogon, GUI setup and Explorer. GUI setup then stopped at "InitializeProfiles() failed":
+  userenv loaded the profiles path into the wrong buffer, copied the profile name into the
+  wrong one, and used a local `IDS_PROFILEPATH = 0` (resources.h: 1) -- all three fixed.
+  GUI setup then got further: kernel32's `FindFirstFileW("*.*")` failed on every empty
+  directory (a narrow `b"*.*"` compared with a UTF-16 pattern), so CopySystemProfile failed.
+  Once setup finished, its reboot did nothing, because **no Win32 shutdown, reboot or logoff
+  worked anywhere**. winsrv's hand-copied `USERTHREADINFOCLASS` made `ExitWindowsEx` fail,
+  and this fork's winlogon never created its SAS window, so win32k's `LN_LOGOFF` went nowhere
+  (field manual: "`ExitWindowsEx` returns TRUE and nothing shuts down"). With both fixed, GUI
+  setup reboots the machine itself (run 49). The second installed boot then hit boot-start
+  INF services for drivers setup never copied (machine.inf `isapnp`, hdc.inf `atapi`).
+  Both fixed; the full run passes twice in a row (runs 50 and the `install-smoke` verb).
+  **Still owed:** i386 and UEFI installs; deciding whether it joins a scheduled run (it is
+  its own verb, ~10 min, not a gate stage).
+
+- **27 constants defined with two values inside ONE crate, parked in a lint baseline**
+  (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
+  `IDS_PROFILEPATH` as 0 vs 1 all along, from inside its baseline ("the triage queue"), and it
+  blocked GUI setup on every install. Each pair was checked against its header, and the wrong
+  copies fixed: se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet-rust's FCI/FDI error codes, hal
+  `IDT_INTERNAL`, fastfat `OPLOCK_FLAG_PARENT_OBJECT`, cdrom `SRB_STATUS_MASK`, freeldr
+  `COLOR_WHITE`, user32 SPY_*, afd trace levels, inbv OWNED/DISABLED. The 10 rows left are
+  per-file meanings, and `scan_const_contradictions --within-crate` now gates the class
+  against exactly those (`scan_const_within_crate`), so the next one cannot park.
+
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
   lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now
@@ -1073,8 +1126,37 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (REOPENED
-    2026-10-08, was "FIXED 2026-10-07"). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-08, root cause;
+    the 10-07 fix below was real but not this bug). It came back: 35 of 65 amd64-bios boots on
+    10-08 failed, 19 of 33 merge-queue gates retried the lane (a HANG_TIMEOUT costs ~13 min)
+    and all 5 red gates that day were this lane, rejecting innocent lanes; the mean gate went
+    from ~12-15 min to 24.5. Cause: usbport's `DPRINT_URB` and the rest of the USB/serial
+    debug-print family were no-op FUNCTIONS (drvtrace-shim), so their arguments were
+    evaluated where the C's `if(0)` macros evaluate nothing. `USBPORT_QueueTransferUrb` ends
+    with a `DPRINT_URB` loop over `*Urb->TransferBuffer` after handing the URB to the
+    endpoint; on two CPUs the transfer completed on the other one, setting
+    `TransferBufferLength` on usbstor's MDL-only URB whose `TransferBuffer` is NULL. That NULL
+    read at DISPATCH_LEVEL came back from MM as `STATUS_IN_PAGE_ERROR | 0x10000000` (or
+    `STATUS_UNSUCCESSFUL` on the ROSMM path), no trap handler checks for it, and it was
+    dispatched as an in-page exception that cdfs's try/except caught inside a paging read
+    of the isohybrid stick: the read failed `d0000006`/`c0000001` and smss or csrss died. Fix:
+    the family are `macro_rules!` that evaluate nothing (drvtrace-shim exports them, no
+    same-named symbols remain); `MmAccessFault` bugchecks 0xA (shown as 0xD1 with the driver
+    named) when a kernel trap above APC_LEVEL cannot be resolved, so the next one is loud;
+    MmArmAccessFault's dropped `MM:***PAGE FAULT AT IRQL > 1` print is restored; and
+    `scan_macro_fn_shadow` now harvests every argument-discarding C macro from the headers
+    and flags an empty Rust fn of that name in any crate (+53 inherited findings baselined:
+    ASSERT, WARN_/ERR_/TRACE_ shims, analysis annotations, owed). Every failed amd64-bios
+    gate attempt on 10-08 (25 hangs, 10 bugchecks) carries `0xC0000006`. After: 19/20
+    amd64-bios `-smp 2` boots, 0 in-page errors, 0 raised-IRQL faults (runs
+    20261008-213019-klr7vs60 9/10 on the macro fix, 20261008-220051-ep79fjwh 10/10 on the
+    final tree); the one failure is a different hang, the next entry. Diagnosed with runs 20261008-210602-gnxprtk4 (cdfs completes
+    the failing read itself), 20261008-211124-y5oh5tam (the in-page exception, VA 0) and
+    20261008-212149-yl4k8096 (the fault: `USBPORT_QueueTransferUrb+0x134`, IRQL 2, CPU 1).
+    The cdrom-rust MCN-sync-IRP fix in the next entry was a real contributor too (it moved
+    the IRQL>1 traffic off scsiport); the REOPENED entry and the 10-07 one are kept for the record.
+  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (FIXED
+    2026-10-09 by the root-cause entry above; was REOPENED 2026-10-08). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
     queue over 10-07/10-08 (~30 of them) was csrss.exe exiting `0xC0000006` while loading
     winsrv, and every BUGCHECK 0xF4 was SMSS taking the same in-page error; `-smp 1` never
     fails. The 10-07 fix's 16/16 was measured alone, not under the gate's concurrent boots.
@@ -1091,7 +1173,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     under 6-8 concurrent VMs and two full gates green (20261008-231753-kzuu49zq,
     20261008-233332-nlk4h1lh, a1 passed both). The residual 1/22 (20261008-225946-tllwzl5t
     boot1: RIP fffff80000a08234, RCX fffff80000a2422b, both past the kernel's 0x32B000 runtime
-    image) is still open; the next occurrence names the module in the serial log. Earlier
+    image) was the same fault: 0xa08234 - usbport.sys+0x30234 (run 20261008-212149-yl4k8096)
+    = 0x9d8000, a page-aligned load base, so it is the `DPRINT_URB` NULL read above. Earlier
     entry follows for the record.
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
@@ -1106,8 +1189,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     imports in classpnp.sys; `create.rs` takes the real lookaside inline instead of a
     null-returning stub. After: 16/16 amd64-bios boots, 0 in-page errors, 0 asserts (runs
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
-    read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
+    read was never established, and it did not: 16/16 at the 10-07 rate (~19%) is a 3% fluke,
+    and the failures returned. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
+    seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
+    services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
+    dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
+    sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
+    no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
+    10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
+    established. Next occurrence: attach gdb before the harness tears the VM down
+    (`smoke --attach-on-fail` is parsed but does nothing, owed in the CLI) and read the
+    services thread's stack.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -5521,6 +5615,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `SeTokenFiltering` (all arches), i386 `RtlSplayTreeKM`, amd64 `RtlException`
+    quarantined since 07-11/12 — ROOT-CAUSED/FIXED 2026-10-08, four bugs.**
+    (1) SeTokenFiltering (TIMEOUT on x86, INCOMPLETE on arm64): the group-disable loop in
+    `SepPerformTokenFiltering` never advanced past a group it had disabled, so it spun forever.
+    The C has the same `GroupsInToken--` but never matches, because its `RtlEqualSid` compares
+    the pointers' addresses. Now 11/0 on every arch.
+    (2) RtlSplayTreeKM, i386 0x19: generictable sized nodes with the 20-byte sum of the link
+    structs, but writes the data at the 8-aligned `UserData` offset, 24. Every insert overran
+    its pool block by 4 bytes. Now 139/0. This also covers the i386 user-mode twin `RtlSplayTree`
+    (banked NO-END), which uses the same crate in ntdll.
+    (3) amd64 RtlException exit 128: ntdll's nested dispatch frames (RtlpUnwindInternal 0xa88
+    with a duplicate CONTEXT temporary, RtlVirtualUnwind 0x508 from an inlined CONTEXT copy)
+    overran the 0x1c40-byte STACK_OVERFLOW handler budget. Now 34/0.
+    (4) arm64 RtlException 33/1: the data-abort handler raised AV for every refused
+    MmAccessFault, including STACK_OVERFLOW. Now 34/0.
+    i386 RtlException STAYS quarantined: clang's x86-32 WinEH places the try-level stores only
+    around calls, so the call-free overflow loop runs at try-level -1. That is a toolchain
+    limit, and the kernel raises the right code.
   - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
     ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
     `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
@@ -7010,7 +7122,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `MmMapLockedPagesSpecifyCache` **CRASH** (own verdict — so the original claim was right, but
   only by luck, and only now evidenced), `IoFilesystem` **CRASH**, `MmReservedMapping` **CRASH**,
   `NpfsFileInfo` **CRASH**, `SeTokenFiltering` **INCOMPLETE** (it kills the VM outright — no
-  bugcheck, QEMU exits, see the quest doc), and `ExFastMutex` **OK** — un-quarantined, it was
+  bugcheck, QEMU exits, see the quest doc; 2026-10-08: NOT this family — an infinite loop in
+  token filtering, fixed, see the entry above), and `ExFastMutex` **OK** — un-quarantined, it was
   arm64's last arch-specific entry. `[PFNMISMATCH]` still fired **zero** times across all of it.
   The probe strings are compiled into this exact kernel (verified present in
   `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a

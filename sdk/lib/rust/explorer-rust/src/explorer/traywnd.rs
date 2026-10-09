@@ -2126,6 +2126,9 @@ unsafe fn tw_track_menu(
     is_context_menu: BOOL,
 ) -> UINT {
     let mut tmp: TPMPARAMS = core::mem::zeroed();
+    // Set before `ptmp = &mut tmp` can exist: TrackPopupMenuEx reads it through ptmp,
+    // and a later write through `tmp` would invalidate that pointer.
+    tmp.cbSize = size_of::<TPMPARAMS>() as UINT;
     let mut ptmp: *mut TPMPARAMS = null_mut();
     let mut pt: POINT = POINT { x: 0, y: 0 };
 
@@ -2154,8 +2157,6 @@ unsafe fn tw_track_menu(
     } else {
         pt = *ppt;
     }
-
-    tmp.cbSize = size_of::<TPMPARAMS>() as UINT;
 
     let mut fu_flags: UINT = TPM_RETURNCMD | TPM_VERTICAL;
     fu_flags |= if track_up != 0 { TPM_BOTTOMALIGN } else { TPM_TOPALIGN };

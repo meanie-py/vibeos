@@ -517,6 +517,27 @@ def _real_findings(root: Path) -> list[str]:
     return out
 
 
+def _concurrent_preflights(repo: Path, run: Run, args) -> None:
+    """Run the four build-independent preflights at once, the way the gate runs its
+    copies of them. Serially they cost a lane ~15 min before `submit` (check-tooling
+    504s, source lints 9s + 148s, per-arch binary lints 163s, difftest 92s, measured
+    2026-10-09); none depends on another's result, so the wall is the slowest one.
+    Every abort is collected rather than the first one winning, so a lane fixes all
+    of them in one pass instead of discovering them one resubmission at a time."""
+    import concurrent.futures as cf
+
+    steps = (_lint_preflight, _source_lint_preflight, _arch_lint_preflight, _difftest_preflight)
+    aborts: list[str] = []
+    with cf.ThreadPoolExecutor(max_workers=len(steps)) as ex:
+        for fut in [ex.submit(step, repo, run, args) for step in steps]:
+            try:
+                fut.result()
+            except LandAbort as exc:
+                aborts.append(str(exc))
+    if aborts:
+        raise LandAbort("\n\n".join(aborts))
+
+
 def _difftest_preflight(repo: Path, run: Run, args) -> None:
     """Run the gate's host differential harnesses HERE, before this lane is batched.
 
@@ -752,10 +773,7 @@ def _land_queued(args, repo: Path) -> int:
             # Only on a REAL submission: if this tip is already queued we are adding no new
             # risk to the batch, and a --dry-run has already returned above.
             _warm_preflight(repo, run, args)
-            _lint_preflight(repo, run, args)
-            _source_lint_preflight(repo, run, args)
-            _arch_lint_preflight(repo, run, args)
-            _difftest_preflight(repo, run, args)
+            _concurrent_preflights(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             # VERIFY the submission persisted, by RE-READING the queue from disk rather
             # than trusting the return value. `queue.submit` returning a Submission means
@@ -1025,10 +1043,7 @@ def _land_direct(args, repo: Path) -> int:
         # but a lint failure still burns a whole gate, and there is no reason to hold a
         # fleet-wide lock for the ~40s this takes.
         _warm_preflight(repo, run, args)
-        _lint_preflight(repo, run, args)
-        _source_lint_preflight(repo, run, args)
-        _arch_lint_preflight(repo, run, args)
-        _difftest_preflight(repo, run, args)
+        _concurrent_preflights(repo, run, args)
 
         _check_hold_for_direct(repo)
         _report_queue(run)

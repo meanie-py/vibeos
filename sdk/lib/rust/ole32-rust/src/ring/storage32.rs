@@ -1611,7 +1611,7 @@ fn StorageBaseImpl_Stat(
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
     let mut currentEntry: DirEntry = core::mem::zeroed();
-    let mut res: HRESULT = STG_E_UNKNOWN;
+    let res: HRESULT;
 
     TRACE(b"(%p, %p, %x)\n\0".as_ptr() as *const i8);
 
@@ -1774,7 +1774,7 @@ unsafe fn STORAGE_WriteCompObj(
     szProgIDName: LPCWSTR,
 ) -> HRESULT {
     let mut pstm: *mut IStream = core::ptr::null_mut();
-    let mut r: HRESULT = S_OK;
+    let mut r: HRESULT;
     static szwStreamName: [u16; 9] = [1, b'C' as u16, b'o' as u16, b'm' as u16, b'p' as u16, b'O' as u16, b'b' as u16, b'j' as u16, 0];
 
     static unknown1: [u8; 12] = [
@@ -1911,7 +1911,7 @@ pub unsafe extern "C" fn OLECONVERT_CreateCompObjStream(
             }
         }
 
-        hRes = IStream_Write(
+        IStream_Write(
             pStream,
             IStorageCompObj.byUnknown1.as_ptr() as *const core::ffi::c_void,
             core::mem::size_of_val(&IStorageCompObj.byUnknown1) as ULONG,
@@ -1920,42 +1920,42 @@ pub unsafe extern "C" fn OLECONVERT_CreateCompObjStream(
 
         WriteClassStm(pStream, &IStorageCompObj.clsid);
 
-        hRes = IStream_Write(
+        IStream_Write(
             pStream,
             &IStorageCompObj.dwCLSIDNameLength as *const _ as *const core::ffi::c_void,
             core::mem::size_of_val(&IStorageCompObj.dwCLSIDNameLength) as ULONG,
             core::ptr::null_mut(),
         );
         if IStorageCompObj.dwCLSIDNameLength > 0 {
-            hRes = IStream_Write(
+            IStream_Write(
                 pStream,
                 IStorageCompObj.strCLSIDName.as_ptr() as *const core::ffi::c_void,
                 IStorageCompObj.dwCLSIDNameLength,
                 core::ptr::null_mut(),
             );
         }
-        hRes = IStream_Write(
+        IStream_Write(
             pStream,
             &IStorageCompObj.dwOleTypeNameLength as *const _ as *const core::ffi::c_void,
             core::mem::size_of_val(&IStorageCompObj.dwOleTypeNameLength) as ULONG,
             core::ptr::null_mut(),
         );
         if IStorageCompObj.dwOleTypeNameLength > 0 {
-            hRes = IStream_Write(
+            IStream_Write(
                 pStream,
                 IStorageCompObj.strOleTypeName.as_ptr() as *const core::ffi::c_void,
                 IStorageCompObj.dwOleTypeNameLength,
                 core::ptr::null_mut(),
             );
         }
-        hRes = IStream_Write(
+        IStream_Write(
             pStream,
             &IStorageCompObj.dwProgIDNameLength as *const _ as *const core::ffi::c_void,
             core::mem::size_of_val(&IStorageCompObj.dwProgIDNameLength) as ULONG,
             core::ptr::null_mut(),
         );
         if IStorageCompObj.dwProgIDNameLength > 0 {
-            hRes = IStream_Write(
+            IStream_Write(
                 pStream,
                 IStorageCompObj.strProgIDName.as_ptr() as *const core::ffi::c_void,
                 IStorageCompObj.dwProgIDNameLength,
@@ -2151,7 +2151,7 @@ fn StorageBaseImpl_OpenStream(
     let newStream: *mut StgStreamImpl;
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let streamEntryRef: DirRef;
-    let mut res: HRESULT = STG_E_UNKNOWN;
+    let res: HRESULT;
 
     TRACE(b"(%p, %s, %p, %x, %d, %p)\n\0".as_ptr() as PCHAR);
 
@@ -2549,7 +2549,7 @@ fn StorageBaseImpl_CreateStorage(
     }
 
     if SUCCEEDED(hr) {
-        hr = StorageBaseImpl_Flush(This);
+        StorageBaseImpl_Flush(This);
     }
 
     S_OK
@@ -4308,7 +4308,7 @@ unsafe fn StorageImpl_GetNextFreeBigBlock(This: *mut StorageImpl, neededAddNumBl
     let mut depotBlockOffset: ULONG;
     let blocksPerDepot: ULONG = (*This).bigBlockSize / core::mem::size_of::<ULONG>() as ULONG;
     let mut nextBlockIndex: ULONG = BLOCK_SPECIAL;
-    let mut depotIndex: i32 = 0;
+    let mut depotIndex: i32;
     let mut freeBlock: ULONG = BLOCK_UNUSED;
     let mut read: ULONG = 0;
     let mut neededSize: ULARGE_INTEGER = core::mem::zeroed();
@@ -4971,7 +4971,7 @@ fn StorageBaseImpl_OpenStorage(
     let mut newTransactedStorage: *mut StorageBaseImpl = core::ptr::null_mut();
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let storageEntryRef: DirRef;
-    let mut res: HRESULT = STG_E_UNKNOWN;
+    let mut res: HRESULT;
 
     TRACE(b"(%p, %s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
 
@@ -5223,7 +5223,7 @@ unsafe extern "C" fn StorageImpl_CreateDirEntry(
     let storage = base as *mut StorageImpl;
     let mut currentEntryIndex: ULONG = 0;
     let mut newEntryIndex: ULONG = DIRENTRY_NULL;
-    let mut hr: HRESULT = S_OK;
+    let mut hr: HRESULT;
     let mut currentData: [BYTE; RAW_DIRENTRY_SIZE as usize] = [0; RAW_DIRENTRY_SIZE as usize];
     let mut sizeOfNameString: WORD = 0;
 
@@ -5405,7 +5405,7 @@ unsafe fn Storage32Impl_SmallBlocksToBigBlocks(
     ppsbChain: *mut *mut SmallBlockChainStream,
 ) -> *mut BlockChainStream {
     let mut bbHeadOfChain: ULONG = BLOCK_END_OF_CHAIN;
-    let mut size: ULARGE_INTEGER = core::mem::zeroed();
+    let mut size: ULARGE_INTEGER;
     let mut offset: ULARGE_INTEGER = core::mem::zeroed();
     let mut cbRead: ULONG = 0;
     let mut cbWritten: ULONG = 0;
@@ -5415,7 +5415,7 @@ unsafe fn Storage32Impl_SmallBlocksToBigBlocks(
     let mut resRead: HRESULT;
     let mut streamEntry: DirEntry = core::mem::zeroed();
     let buffer: *mut BYTE;
-    let mut bbTempChain: *mut BlockChainStream = core::ptr::null_mut();
+    let bbTempChain: *mut BlockChainStream;
     let bigBlockChain: *mut BlockChainStream;
 
     bbTempChain = BlockChainStream_Construct(
@@ -5674,7 +5674,7 @@ unsafe extern "C" fn StorageImpl_StreamReadAt(
 
         return hr;
     } else {
-        let mut stream: *mut BlockChainStream = core::ptr::null_mut();
+        let stream: *mut BlockChainStream;
 
         stream = *StorageImpl_GetCachedBlockChainStream(This, index);
         if stream.is_null() {
@@ -5853,7 +5853,7 @@ unsafe extern "C" fn StorageImpl_StreamLink(base: *mut StorageBaseImpl, dst: Dir
 }
 
 unsafe fn StorageImpl_Refresh(This: *mut StorageImpl, new_object: BOOL, create: BOOL) -> HRESULT {
-    let mut hr: HRESULT = S_OK;
+    let mut hr: HRESULT;
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let mut currentEntryRef: DirRef;
     let mut blockChainStream: *mut BlockChainStream;
@@ -6598,7 +6598,7 @@ unsafe fn BlockChainStream_Enlarge(
     let mut blockIndex: ULONG;
     let mut currentBlock: ULONG;
     let mut newNumBlocks: ULONG;
-    let mut oldNumBlocks: ULONG = 0;
+    let mut oldNumBlocks: ULONG;
 
     blockIndex = BlockChainStream_GetHeadOfChain(This);
 
@@ -6913,7 +6913,7 @@ unsafe fn SmallBlockChainStream_GetNextFreeBlock(
     let mut bytesRead: ULONG = 0;
     let mut blockIndex: ULONG = (*(*This).parentStorage).firstFreeSmallBlock;
     let mut nextBlockIndex: ULONG = BLOCK_END_OF_CHAIN;
-    let mut res: HRESULT = S_OK;
+    let mut res: HRESULT;
     let smallBlocksPerBigBlock: ULONG;
     let mut rootEntry: DirEntry = core::mem::zeroed();
     let blocksRequired: ULONG;
@@ -7013,7 +7013,7 @@ unsafe fn SmallBlockChainStream_ReadAt(
     buffer: *mut core::ffi::c_void,
     bytesRead: *mut ULONG,
 ) -> HRESULT {
-    let mut rc: HRESULT = S_OK;
+    let mut rc: HRESULT;
     let mut offsetInBigBlockFile: ULARGE_INTEGER = core::mem::zeroed();
     let mut blockNoInSequence: ULONG = offset.u.LowPart / (*(*This).parentStorage).smallBlockSize;
     let mut offsetInBlock: ULONG = offset.u.LowPart % (*(*This).parentStorage).smallBlockSize;
@@ -7448,7 +7448,7 @@ unsafe fn create_storagefile(
     ppstgOpen: *mut *mut core::ffi::c_void,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
-    let mut hFile: HANDLE = INVALID_HANDLE_VALUE;
+    let hFile: HANDLE;
     let mut hr: HRESULT = STG_E_INVALIDFLAG;
     let shareMode: DWORD;
     let accessMode: DWORD;
@@ -7731,8 +7731,8 @@ pub unsafe extern "system" fn StgOpenStorage(
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
-    let mut hr: HRESULT = S_OK;
-    let mut hFile: HANDLE = core::ptr::null_mut();
+    let mut hr: HRESULT;
+    let hFile: HANDLE;
     let shareMode: DWORD;
     let accessMode: DWORD;
     let mut temp_name: LPWSTR = core::ptr::null_mut();
@@ -7870,7 +7870,6 @@ pub unsafe extern "system" fn StgOpenStorage(
     if hFile == INVALID_HANDLE_VALUE {
         let last_error = GetLastError();
 
-        hr = E_FAIL;
 
         match last_error {
             ERROR_FILE_NOT_FOUND => {
@@ -7950,7 +7949,7 @@ pub unsafe extern "system" fn StgCreateDocfileOnILockBytes(
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
-    let mut hr: HRESULT = S_OK;
+    let hr: HRESULT;
 
     if ppstgOpen.is_null() || plkbyt.is_null() {
         return STG_E_INVALIDPOINTER;
@@ -7990,7 +7989,7 @@ pub unsafe extern "system" fn StgOpenStorageOnILockBytes(
     ppstgOpen: *mut *mut IStorage,
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
-    let mut hr: HRESULT = S_OK;
+    let hr: HRESULT;
 
     if plkbyt.is_null() || ppstgOpen.is_null() {
         return STG_E_INVALIDPOINTER;
@@ -8071,7 +8070,7 @@ unsafe fn OLECONVERT_GetOLE20FromOLE10(pDestStorage: *mut IStorage, pBuffer: *co
 
         hRes = StgOpenStorage(wstrTempFile.as_ptr(), core::ptr::null_mut(), STGM_READ, core::ptr::null_mut(), 0, &mut pTempStorage);
         if hRes == S_OK {
-            hRes = IStorage_CopyTo(pTempStorage, 0, core::ptr::null(), core::ptr::null_mut(), pDestStorage);
+            IStorage_CopyTo(pTempStorage, 0, core::ptr::null(), core::ptr::null_mut(), pDestStorage);
             IStorage_Release(pTempStorage);
         }
         DeleteFileW(wstrTempFile.as_ptr());
@@ -9807,12 +9806,12 @@ unsafe fn OLECONVERT_CreateOlePresStream(
             OlePres.pData = pData.add(8);
         }
 
-        hRes = IStream_Write(pStream, OlePres.byUnknown1.as_ptr() as *const core::ffi::c_void, nHeaderSize, core::ptr::null_mut());
-        hRes = IStream_Write(pStream, &OlePres.dwExtentX as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwExtentX) as ULONG, core::ptr::null_mut());
-        hRes = IStream_Write(pStream, &OlePres.dwExtentY as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwExtentY) as ULONG, core::ptr::null_mut());
-        hRes = IStream_Write(pStream, &OlePres.dwSize as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwSize) as ULONG, core::ptr::null_mut());
+        IStream_Write(pStream, OlePres.byUnknown1.as_ptr() as *const core::ffi::c_void, nHeaderSize, core::ptr::null_mut());
+        IStream_Write(pStream, &OlePres.dwExtentX as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwExtentX) as ULONG, core::ptr::null_mut());
+        IStream_Write(pStream, &OlePres.dwExtentY as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwExtentY) as ULONG, core::ptr::null_mut());
+        IStream_Write(pStream, &OlePres.dwSize as *const _ as *const core::ffi::c_void, core::mem::size_of_val(&OlePres.dwSize) as ULONG, core::ptr::null_mut());
         if OlePres.dwSize > 0 {
-            hRes = IStream_Write(pStream, OlePres.pData as *const core::ffi::c_void, OlePres.dwSize, core::ptr::null_mut());
+            IStream_Write(pStream, OlePres.pData as *const core::ffi::c_void, OlePres.dwSize, core::ptr::null_mut());
         }
         IStream_Release(pStream);
     }
@@ -9827,8 +9826,8 @@ unsafe fn OLECONVERT_CreateOle10NativeStream(pStorage: *mut IStorage, pData: *co
         STGM_CREATE | STGM_WRITE | STGM_SHARE_EXCLUSIVE, 0, 0, &mut pStream);
 
     if hRes == S_OK {
-        hRes = IStream_Write(pStream, &dwDataLength as *const _ as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
-        hRes = IStream_Write(pStream, pData as *const core::ffi::c_void, dwDataLength, core::ptr::null_mut());
+        IStream_Write(pStream, &dwDataLength as *const _ as *const core::ffi::c_void, core::mem::size_of::<u32>() as u32, core::ptr::null_mut());
+        IStream_Write(pStream, pData as *const core::ffi::c_void, dwDataLength, core::ptr::null_mut());
         IStream_Release(pStream);
     }
 }

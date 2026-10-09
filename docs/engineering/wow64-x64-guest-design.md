@@ -212,11 +212,32 @@ explorer opening a folder and My Computer). Getting there fixed:
 
 In isolation that took the fifteen from 4 passes to 9-10 per run, the misses all timing. A full
 sweep on a host saturated by integration builds (`20261008-114135-_w0p3rum-smoke-arm64`, mspaint
-164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; taskmgr's close
-DEADLOCK, x86-64 only (1 of 6 x86-64 runs, 0 of 30 native): `EndLocalThread` loops
-`WaitForSingleObject(500)` + `PeekMessage` while the perf thread sits in
-`SendMessageW(SB_SETTEXT)` to it, and the sent message is never dispatched; per-syscall cost under
+164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; per-syscall cost under
 FEX, which is what every slow applet is paying; memory (a 1 GB VM leaves ~30 MB before the sweep,
 so the payload asks for 2 GB; ~1 MB per x86-64 app is kept; exhaustion bugchecks 0x7A instead of
 failing the allocation); the guest user32 reading native procs from `gpsi` (pfnclient.rs); and
 remote `NtSetContextThread` on a guest thread.
+
+**Then (2026-10-08, evening): taskmgr.** Two bugs in taskmgr itself, both upstream, both visible
+only when the guest is slow:
+
+- A heap corruption (crashed 10 of 20 x86-64 launches): perfpage's `WM_DESTROY` disposed the
+  graph controls before stopping the thread that writes them, which stored each CPU-% sample at an
+  advancing index into freed memory. Stop the thread first, as procpage and applpage already did.
+  0 crashes in 18 launches after.
+- The close "deadlock" was neither a deadlock nor a lock holder (win32k's user-lock trace saw no
+  hold of 2 s or more). The main window posts `WM_TIMER` to each refresh thread every 500 ms
+  whether or not the last refresh has finished. Once x86 DOOM loads the VM, a pass outlasts the
+  interval and a backlog queues ahead of `WM_QUIT`. Each pass makes dozens of cross-thread
+  ListView `SendMessage`s, which `EndLocalThread` serviced only at its 500 ms polls, because
+  `WaitForSingleObject` dispatches no sent message. So every launch after DOOM started timed out,
+  even with 300 s allowed. Fix: `EndLocalThread` waits in `MsgWaitForMultipleObjects(QS_ALLINPUT)`,
+  and the refresh threads collapse pending `WM_TIMER`s into one pass (`GetRefreshMessage`).
+  12 of 12 then pass, 6 of them with DOOM running (`20261008-203258-r8s7qojj-smoke-arm64`); those
+  6 still take 86-111 s against ~20 s before DOOM (load, presumably the per-syscall cost owed above;
+  not measured).
+
+New and owed: one run (`20261008-194633-hxs3riy7-smoke-arm64`; 0 of the 3 runs before it) killed
+appstorm.exe 30 s in with a native undefined-instruction fault (ESR 0x02000000) at
+0x7FFFADFD80C4. The address looks like FEX's code cache, but that is not proven. The guest saw it
+as `c000001d` on the `ret` after `NtReadFile`'s `syscall`.
