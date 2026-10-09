@@ -169,6 +169,20 @@ def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     assert pr.refresh_shared_crates(crate, ws) == []
 
 
+def test_a_shared_name_the_prelude_already_imports_is_not_imported_again(tmp_path):
+    ws = tmp_path
+    (ws / "win32macros-rust" / "src").mkdir(parents=True)
+    (ws / "win32macros-rust" / "src" / "lib.rs").write_text(
+        "macro_rules! LOWORD {}\npub unsafe fn heap_alloc() {}\n"
+    )
+    crate = ws / "x-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\n')
+    (crate / "src" / "prelude.rs").write_text("pub use crate::x::m::heap_alloc;\n")
+    pr.refresh_shared_crates(crate, ws)
+    assert "pub use win32macros_rust::{LOWORD};" in (crate / "src" / "prelude.rs").read_text()
+
+
 def test_facts_block_round_trips_and_types_by_typedef(tmp_path):
     facts = {
         "STATUS_PARTITION_FAILURE": ("NTSTATUS", -1073741454, "fsutil.c"),

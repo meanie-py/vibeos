@@ -2,21 +2,27 @@
 spec2def(inetcpl.cpl inetcpl.spec)
 
 list(APPEND SOURCE
-    connections.c
-    content.c
-    general.c
-    inetcpl.c
-    security.c
+    # connections.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/connections.rs)
+    # content.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/content.rs)
+    # general.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/general.rs)
+    # inetcpl.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/inetcpl.rs)
+    # security.c  # replaced by Rust (sdk/lib/rust/inetcpl-rust/src/inetcpl/security.rs)
+    rust_cohab_stub.c
     precomp.h)
 
 file(GLOB inetcpl_rc_deps resources/*.*)
 add_rc_deps(inetcpl.rc ${inetcpl_rc_deps})
 
+# Every translation unit is Rust now (inetcpl-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(inetcpl_rust inetcpl-rust "" TRUE)
 add_library(inetcpl MODULE
     ${SOURCE}
     inetcpl.rc
     ${CMAKE_CURRENT_BINARY_DIR}/inetcpl_stubs.c
     ${CMAKE_CURRENT_BINARY_DIR}/inetcpl.def)
+add_dependencies(inetcpl rust_inetcpl_rust)
+target_link_libraries(inetcpl ${inetcpl_rust_LIB})
 
 set_module_type(inetcpl cpl UNICODE)
 target_link_libraries(inetcpl wine)

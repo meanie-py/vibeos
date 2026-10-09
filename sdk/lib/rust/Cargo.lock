@@ -978,6 +978,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "inetcpl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "inflib-rust"
 version = "0.1.0"
 dependencies = [
