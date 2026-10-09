@@ -321,10 +321,9 @@ unsafe extern "system" fn worker(_context: PVOID) {
             }
             None => null_mut(),
         },
-        // GENET is pure-poll: interrupts stay masked, the poll loop's delay_ms
-        // cadence drives RX. Its interrupt path is on branch pi4-genet-irq,
-        // waiting for the Pi 4 bench to measure it (roadmap).
-        AnyPhy::Genet(_) => null_mut(),
+        AnyPhy::Genet(g) => {
+            connect_platform(platform_irq, crate::genet::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
+        }
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
@@ -620,6 +619,10 @@ unsafe extern "system" fn worker(_context: PVOID) {
         // A GEM frame still queued may be waiting on a TX restart that only a poll
         // performs (gem.rs `reap_tx`); don't let the event wait sit on it.
         if matches!(&phy, AnyPhy::Gem(g) if g.dev().tx_in_flight()) {
+            pending = Some(1);
+        }
+        // GENET's RX-done is masked by its ISR until this pass has run.
+        if matches!(&phy, AnyPhy::Genet(g) if g.dev().rearm_irq()) {
             pending = Some(1);
         }
         #[cfg(not(feature = "ndis"))]

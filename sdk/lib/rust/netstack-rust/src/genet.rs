@@ -7,11 +7,12 @@
 //! exact part: EDK2's BcmGenetDxe (the firmware's own driver, polled like this
 //! one) and FreeBSD's if_genet.
 //!
-//! Shape, as in `E1000Phy` v1: polled (both GENET interrupts stay masked),
-//! copy-based, one contiguous DMA arena per direction. Unlike e1000 the
-//! descriptors are not in memory at all: GENET keeps its 256 RX and 256 TX
-//! descriptors in its own register file, so only the packet buffers are DMA
-//! memory. **That memory is not cache-coherent** (`_CCA 0`): the buffers are
+//! Shape, as in `E1000Phy`, interrupt-woken: the worker still polls the rings,
+//! and the RX-done interrupt (INTRL2_0, the first of the two lines ACPI gives)
+//! only wakes it (`irq_ack`, engine.rs). Copy-based, one contiguous DMA arena
+//! per direction. Unlike e1000 the descriptors are not in memory at all: GENET
+//! keeps its 256 RX and 256 TX descriptors in its own register file, so only
+//! the packet buffers are DMA memory. **That memory is not cache-coherent** (`_CCA 0`): the buffers are
 //! cached mappings, each TX buffer is cleaned to the point of coherency before
 //! its descriptor is handed over, and each received frame is invalidated
 //! before the CPU reads it (the same discipline as usbxhci's `hw.rs`).
@@ -47,8 +48,14 @@ const RGMII_OOB_ID_MODE_DISABLE: u32 = 1 << 16;
 const RGMII_OOB_RGMII_MODE_EN: u32 = 1 << 6;
 const RGMII_OOB_OOB_DISABLE: u32 = 1 << 5;
 const RGMII_OOB_RGMII_LINK: u32 = 1 << 4;
+// INTRL2_0: the default queue's (16) DMA interrupts, among others.
+const INTRL2_CPU_STAT: usize = 0x200;
 const INTRL2_CPU_CLEAR: usize = 0x208;
+const INTRL2_CPU_MASK_STATUS: usize = 0x20c;
 const INTRL2_CPU_SET_MASK: usize = 0x210;
+const INTRL2_CPU_CLEAR_MASK: usize = 0x214;
+/// The default queue's RX ring passed its MBUF_DONE threshold (one frame).
+const UMAC_IRQ_RXDMA_DONE: u32 = 1 << 13;
 const RBUF_CTRL: usize = 0x300;
 const RBUF_ALIGN_2B: u32 = 1 << 1;
 const RBUF_TBUF_SIZE_CTRL: usize = 0x3b4;
@@ -99,6 +106,7 @@ const RX_START_ADDR_LO: usize = ring(RX_BASE) + 0x14;
 const RX_START_ADDR_HI: usize = ring(RX_BASE) + 0x18;
 const RX_END_ADDR_LO: usize = ring(RX_BASE) + 0x1c;
 const RX_END_ADDR_HI: usize = ring(RX_BASE) + 0x20;
+const RX_MBUF_DONE_THRES: usize = ring(RX_BASE) + 0x24;
 const RX_XON_XOFF_THRES: usize = ring(RX_BASE) + 0x28;
 const RX_READ_PTR_LO: usize = ring(RX_BASE) + 0x2c;
 const RX_READ_PTR_HI: usize = ring(RX_BASE) + 0x30;
@@ -265,6 +273,8 @@ pub struct Genet {
     tx_va: *mut u8,
     tx_pa: u64,
     tx_prod: u16,
+    /// An ISR is connected and RX-done may be unmasked (`rearm_irq`).
+    irq_on: core::cell::Cell<bool>,
 }
 
 // The engine worker solely owns the device; the pointers are to non-paged DMA
@@ -472,6 +482,8 @@ impl Genet {
             (RX_WRITE_PTR_LO, 0), (RX_WRITE_PTR_HI, 0), (RX_PROD_INDEX, 0), (RX_CONS_INDEX, 0),
             (RX_RING_BUF_SIZE, ring_size), (RX_START_ADDR_LO, 0), (RX_START_ADDR_HI, 0),
             (RX_END_ADDR_LO, end), (RX_END_ADDR_HI, 0),
+            // An RX-done interrupt per frame.
+            (RX_MBUF_DONE_THRES, 1),
             // XON at 5 free, XOFF at DESC_COUNT/16.
             (RX_XON_XOFF_THRES, (5 << 16) | (DESC_COUNT as u32 >> 4)),
             (RX_READ_PTR_LO, 0), (RX_READ_PTR_HI, 0),
@@ -493,7 +505,36 @@ impl Genet {
         self.wr(TX_DMA_CTRL, self.rd(TX_DMA_CTRL) | DMA_CTRL_EN | DMA_CTRL_RBUF_EN);
         self.wr(RX_DMA_CTRL, self.rd(RX_DMA_CTRL) | DMA_CTRL_EN | DMA_CTRL_RBUF_EN);
         self.wr(UMAC_CMD, self.rd(UMAC_CMD) | UMAC_CMD_TXEN | UMAC_CMD_RXEN);
-        // Interrupts stay masked: the engine polls.
+        // Interrupts stay masked until the engine connects an ISR (enable_interrupts).
+    }
+
+    /// The context `irq_ack` takes: the register window.
+    pub fn irq_ctx(&self) -> *mut u8 {
+        self.regs
+    }
+
+    /// Unmask RX-done, once an ISR is connected. TX completion stays masked:
+    /// the transmitter needs no restart (unlike the GEM's), and the worker
+    /// reclaims TX descriptors whenever it runs.
+    pub fn enable_interrupts(&self) {
+        self.irq_on.set(true);
+        self.wr(INTRL2_CPU_CLEAR, 0xFFFF_FFFF);
+        self.wr(INTRL2_CPU_CLEAR_MASK, UMAC_IRQ_RXDMA_DONE);
+        nsprint!("[NETSTACK] genet: interrupts on (mask {:#x})\n", self.rd(INTRL2_CPU_MASK_STATUS));
+    }
+
+    /// Unmask RX-done again after the worker's pass; `irq_ack` masked it. RX-done
+    /// stays asserted while the ring holds frames past its threshold, so acking
+    /// it in the ISR alone stormed the CPU until the worker drained the ring:
+    /// pings peaked at 148 ms and TCP echoes stalled for good. Linux masks it in
+    /// the ISR and unmasks after NAPI for the same reason. True if frames are
+    /// already waiting, so the worker should not sleep.
+    pub fn rearm_irq(&self) -> bool {
+        if self.irq_on.get() {
+            self.wr(INTRL2_CPU_CLEAR, UMAC_IRQ_RXDMA_DONE);
+            self.wr(INTRL2_CPU_CLEAR_MASK, UMAC_IRQ_RXDMA_DONE);
+        }
+        self.rx_pending() != 0
     }
 
     pub fn mac_address(&self) -> [u8; 6] {
@@ -586,6 +627,7 @@ pub fn bringup(nic: PlatformNic) -> Option<Genet> {
             tx_va: core::ptr::null_mut(),
             tx_pa: 0,
             tx_prod: 0,
+            irq_on: core::cell::Cell::new(false),
         };
         let rev = g.rd(SYS_REV_CTRL);
         let major = (rev >> 24) & 0xf;
@@ -648,6 +690,23 @@ pub fn bringup(nic: PlatformNic) -> Option<Genet> {
 }
 
 // --------------------------------------------------------- smoltcp adapter
+/// The ISR's half (DIRQL): read and clear INTRL2_0's unmasked status. Touches
+/// nothing the worker owns.
+pub unsafe fn irq_ack(regs: PVOID) -> crate::isr::Ack {
+    let r = regs.cast::<u8>();
+    let rd = |off: usize| core::ptr::read_volatile(r.add(off).cast::<u32>());
+    let st = rd(INTRL2_CPU_STAT) & !rd(INTRL2_CPU_MASK_STATUS);
+    if st == 0 {
+        return crate::isr::Ack::NotOurs;
+    }
+    if st & UMAC_IRQ_RXDMA_DONE != 0 {
+        // Masked until the worker has drained the ring (Genet::rearm_irq).
+        core::ptr::write_volatile(r.add(INTRL2_CPU_SET_MASK).cast::<u32>(), UMAC_IRQ_RXDMA_DONE);
+    }
+    core::ptr::write_volatile(r.add(INTRL2_CPU_CLEAR).cast::<u32>(), st);
+    if st & UMAC_IRQ_RXDMA_DONE != 0 { crate::isr::Ack::Wake } else { crate::isr::Ack::Handled }
+}
+
 pub struct GenetPhy {
     dev: Genet,
 }
@@ -658,6 +717,9 @@ impl GenetPhy {
     }
     pub fn mac(&self) -> [u8; 6] {
         self.dev.mac_address()
+    }
+    pub fn dev(&self) -> &Genet {
+        &self.dev
     }
 }
 
