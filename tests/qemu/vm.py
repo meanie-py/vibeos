@@ -798,8 +798,8 @@ class Arm64Config(ArchConfig):
             machine[machine.index("-M") + 1] += ",virtualization=on"
         if "a76" in hazards:
             machine[machine.index("-cpu") + 1] = "cortex-a76"
-        if cpu_model():
-            machine[machine.index("-cpu") + 1] = cpu_model()
+        if model := cpu_model():
+            machine[machine.index("-cpu") + 1] = model
         return machine
 
     def hostile_memory(self) -> str:

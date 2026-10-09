@@ -42,6 +42,9 @@ pub unsafe extern "system" fn KdPortGetByteEx(
     _PortInformation: PCPPORT,
     ByteReceived: *mut u8,
 ) -> BOOLEAN {
+    if ByteReceived.is_null() {
+        return 0u8;
+    }
     match crate::arm64_dbg::uart_getc(KdGetPl011Base() as *mut u32) {
         Some(b) => {
             *ByteReceived = b;
