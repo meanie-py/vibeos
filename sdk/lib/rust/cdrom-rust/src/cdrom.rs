@@ -585,8 +585,8 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     Driver: WDFDRIVER,
     mut DeviceInit: *mut WDFDEVICE_INIT,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
-    let mut driverExtension: *mut CDROM_DRIVER_EXTENSION = core::ptr::null_mut();
+    let mut status: NTSTATUS; // STATUS_SUCCESS
+    let mut driverExtension: *mut CDROM_DRIVER_EXTENSION;
     let mut device: WDFDEVICE = core::ptr::null_mut();
     let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
     let mut deviceClaimed: i32 = 0; // FALSE
@@ -599,7 +599,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     let mut removeLockOptions: WDF_REMOVE_LOCK_OPTIONS = core::mem::zeroed();
     let mut wideDeviceName: *mut u16 = core::ptr::null_mut();
     let mut unicodeDeviceName: _UNICODE_STRING = core::mem::zeroed();
-    let mut lowerPdo: *mut DEVICE_OBJECT = core::ptr::null_mut();
+    let mut lowerPdo: *mut DEVICE_OBJECT;
     let mut deviceNumber: u32 = 0;
     let mut devicePropertySessionId: u32 = INVALID_SESSION;
     let mut devicePropertySize: u32 = 0;
@@ -1078,7 +1078,6 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
         if !deviceExtension.is_null() && deviceClaimed != 0 {
             DeviceClaimRelease(deviceExtension, 1);
         }
-        deviceClaimed = 0;
     }
 
     status
@@ -1212,8 +1211,8 @@ pub unsafe extern "system" fn DeviceEvtD0Entry(
         (*deviceExtension).IoTarget as usize,
         (*deviceExtension).IsInitialized as usize,
     );
-    let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut zpoddInfo: PZERO_POWER_ODD_INFO = core::ptr::null_mut();
+    let mut status: NTSTATUS;
+    let mut zpoddInfo: PZERO_POWER_ODD_INFO;
     let mut powerupReason: STORAGE_IDLE_POWERUP_REASON = core::mem::zeroed();
 
     if (*deviceExtension).IsInitialized != 0 {
@@ -1265,9 +1264,9 @@ pub unsafe extern "system" fn DeviceEvtD0Entry(
 pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WDF_POWER_DEVICE_STATE) -> i32 {
     PagedCode();
 
-    let mut status: i32 = ntkrnl_sys::base::STATUS_SUCCESS;
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut zpoddInfo: *mut ZERO_POWER_ODD_INFO = core::ptr::null_mut();
+    let mut status: i32;
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
+    let mut zpoddInfo: *mut ZERO_POWER_ODD_INFO;
 
     deviceExtension = DeviceGetExtension(Device);
     zpoddInfo = (*deviceExtension).ZeroPowerODDInfo;
@@ -1286,7 +1285,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
         // DBG block with WINVER >= 0x0601 (ignored condition)
         let mut secondsRemaining: u32 = 0;
         let mut watchdogTimeSupported: i32 = 0; // BOOL
-        watchdogTimeSupported = PoQueryWatchdogTime((*deviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining as *mut u32) as i32;
+        PoQueryWatchdogTime((*deviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining as *mut u32);
         UNREFERENCED_PARAMETER(0);
     }
 
@@ -1312,7 +1311,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
 
     // Step 2. QUIESCE QUEUE
     if ntkrnl_sys::base::NT_SUCCESS(status) && (TargetState != WdfPowerDeviceD3Final) {
-        status = DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
+        DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
         UNREFERENCED_PARAMETER(0);
         // We don't care about the status.
         status = ntkrnl_sys::base::STATUS_SUCCESS;
@@ -1322,7 +1321,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
 
     // Step 3. SYNC CACHE
     if ntkrnl_sys::base::NT_SUCCESS(status) && (*deviceExtension).DeviceAdditionalData.Mmc.WriteAllowed != 0 {
-        status = DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
+        DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
         UNREFERENCED_PARAMETER(0);
         status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
@@ -1331,9 +1330,8 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
 
     // Step 4. STOP UNIT
     if ntkrnl_sys::base::NT_SUCCESS(status) && (TEST_FLAG((*deviceExtension).ScanForSpecialFlags, CDROM_SPECIAL_DISABLE_SPIN_DOWN) == 0) {
-        status = DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
+        DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
         UNREFERENCED_PARAMETER(0);
-        status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
 
     if TargetState == WdfPowerDeviceD3Final {
@@ -1359,7 +1357,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
 #[no_mangle]
 pub unsafe extern "system" fn DeviceEvtSurpriseRemoval(Device: WDFDEVICE) {
     // PAGED_CODE();
-    let mut deviceExtension: PCDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut deviceExtension: PCDROM_DEVICE_EXTENSION;
     deviceExtension = DeviceGetExtension(Device);
 
     (*deviceExtension).SurpriseRemoved = 1; // TRUE
@@ -1566,7 +1564,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let mut requestParameters_uninit: core::mem::MaybeUninit<WDF_REQUEST_PARAMETERS> = core::mem::MaybeUninit::uninit();
     WDF_REQUEST_PARAMETERS_INIT(requestParameters_uninit.as_mut_ptr());
@@ -1738,7 +1736,7 @@ pub unsafe extern "C" fn RequestDispatchProcessDirectly(
     }
 
     if processed != 0 {
-        let mut currentStackLocationFlags: u8 = 0;
+        let mut currentStackLocationFlags: u8;
         currentStackLocationFlags = RequestGetCurrentStackLocationFlags(Request);
 
         if (status == STATUS_VERIFY_REQUIRED) &&
@@ -1762,7 +1760,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
     RequestParameters: WDF_REQUEST_PARAMETERS,
 ) -> u8 {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut processed: u8 = 0; // FALSE
+    let mut processed: u8; // FALSE
     let mut dataLength: usize = 0;
     let mut inZeroPowerState: u8 = 0; // FALSE
 
@@ -2460,7 +2458,7 @@ pub unsafe extern "C" fn RequestDispatchToSequentialQueue(
     } // end match ioctlCode
 
     if processed != 0 {
-        let mut currentStackLocationFlags: u8 = 0;
+        let mut currentStackLocationFlags: u8;
         currentStackLocationFlags = RequestGetCurrentStackLocationFlags(Request);
         if (status == STATUS_VERIFY_REQUIRED)
             && ((currentStackLocationFlags & SL_OVERRIDE_VERIFY_VOLUME) != 0)
@@ -2487,7 +2485,7 @@ pub unsafe extern "C" fn RequestDispatchSyncWithSequentialQueue(
     RequestParameters: WDF_REQUEST_PARAMETERS,
 ) -> BOOLEAN {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut processed: BOOLEAN = 0; // FALSE
+    let mut processed: BOOLEAN; // FALSE
     let mut dataLength: usize = 0;
 
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
@@ -2543,7 +2541,7 @@ pub unsafe extern "C" fn RequestDispatchSyncWithSequentialQueue(
 
                 if NT_SUCCESS(status) {
                     // now, put the special synchronization information into the context
-                    status = RequestSynchronizeProcessWithSerialQueue(Device, Request);
+                    RequestSynchronizeProcessWithSerialQueue(Device, Request);
 
                     // "status" is used for debugging in above statement, reset to success
                     status = STATUS_SUCCESS;
@@ -2592,7 +2590,7 @@ pub unsafe extern "C" fn RequestDispatchSpecialIoctls(
     RequestParameters: WDF_REQUEST_PARAMETERS,
 ) -> BOOLEAN {
     let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
-    let mut processed: BOOLEAN = 0; // FALSE
+    let mut processed: BOOLEAN; // FALSE
     let mut dataLength: usize = 0;
     let mut requestCompleted: BOOLEAN = 0; // FALSE
 
@@ -2790,7 +2788,7 @@ pub unsafe extern "C" fn RequestDispatchUnknownRequests(
     Request: WDFREQUEST,
     RequestParameters: WDF_REQUEST_PARAMETERS,
 ) -> u8 {
-    let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    let mut status: NTSTATUS;
     let deviceExtension = DeviceGetExtension(Device);
     let baseCode = DEVICE_TYPE_FROM_CTL_CODE(
         RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode,
@@ -2815,10 +2813,10 @@ pub unsafe extern "C" fn RequestProcessInternalDeviceControl(
 ) {
     const IRP_MJ_SCSI: u8 = 0x0f; // IRP_MJ_SCSI
     const IRP_MN_SCSI_CLASS: u8 = 0x01;
-    let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut irp: *mut IRP = core::ptr::null_mut();
-    let mut irpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
-    let mut nextStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut status: NTSTATUS;
+    let mut irp: *mut IRP;
+    let mut irpStack: *mut IO_STACK_LOCATION;
+    let mut nextStack: *mut IO_STACK_LOCATION;
     let mut requestSent: u8 = 0;
 
     irp = WdfRequestWdmGetIrp(Request);
@@ -2854,7 +2852,7 @@ pub unsafe extern "system" fn SequentialQueueEvtIoReadWrite(
     Request: WDFREQUEST,
     Length: usize,
 ) {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let device: WDFDEVICE = WdfIoQueueGetDevice(Queue);
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
@@ -2967,8 +2965,8 @@ pub unsafe extern "system" fn SequentialQueueEvtIoReadWrite(
 }
 #[no_mangle]
 pub unsafe extern "system" fn ReadWriteWorkItemRoutine(WorkItem: WDFWORKITEM) {
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut readWriteRequest: WDFREQUEST = core::ptr::null_mut();
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
+    let mut readWriteRequest: WDFREQUEST;
     let mut readWriteRequestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
@@ -3012,7 +3010,7 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
     InputBufferLength: usize,
     IoControlCode: ULONG,
 ) {
-    let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let device: WDFDEVICE = WdfIoQueueGetDevice(Queue);
     let deviceExtension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
     let requestContext: PCDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
@@ -3084,7 +3082,7 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
 }
 #[no_mangle]
 pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
 
     if KeGetCurrentIrql() > APC_LEVEL {
         DbgBreakPoint();
@@ -3122,7 +3120,7 @@ pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Request: WDFREQUEST,
 ) -> i32 {
-    let mut status: i32 = 0;
+    let mut status: i32;
     let mut information: usize = 0;
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut completeRequest: i32 = 1;
@@ -3309,7 +3307,7 @@ pub unsafe extern "system" fn SequentialQueueEvtCanceledOnQueue(
     if (*requestContext).SyncRequired != 0 {
         KeSetEvent((*requestContext).SyncEvent as *mut c_void, 1, 0); // IO_CD_ROM_INCREMENT, FALSE
     } else {
-        let mut deviceExtension: PCDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+        let mut deviceExtension: PCDROM_DEVICE_EXTENSION;
         let device: WDFDEVICE = WdfIoQueueGetDevice(Queue as WDFQUEUE);
         deviceExtension = DeviceGetExtension(device);
         RequestCompletion(
@@ -3326,7 +3324,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     Request: WDFREQUEST,
 ) -> NTSTATUS {
     // Local variables, preserving original names
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request as *mut core::ffi::c_void);
     let bufferToFree: *mut KEVENT = (*requestContext).SyncEvent;
@@ -3510,8 +3508,8 @@ pub unsafe extern "C" fn RequestIsIoctlBlockedByExclusiveAccess(
     IsBlocked: PBOOLEAN,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut ioctlCode: ULONG = 0;
-    let mut baseCode: ULONG = 0;
+    let mut ioctlCode: ULONG;
+    let mut baseCode: ULONG;
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
 
     // Get the Request parameters

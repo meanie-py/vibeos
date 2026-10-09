@@ -7429,7 +7429,7 @@ pub unsafe extern "system" fn RtlpInitEnvironment(
 ) -> i32 {
     let pp = &mut *process_parameters;
     let mut base_address: *mut u8 = core::ptr::null_mut();
-    let mut enviro_size: usize = 0;
+    let mut enviro_size: usize;
 
     // Give the caller 1MB if requested (reserve at fixed VA 4).
     if (pp.Flags & prc::RTL_USER_PROCESS_PARAMETERS_RESERVE_1MB) != 0 {

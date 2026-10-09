@@ -1331,8 +1331,8 @@ pub unsafe extern "system" fn AfdCancelHandler(
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let FileObject = (*IrpSp).FileObject;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut Function: ULONG = 0;
-    let mut IoctlCode: ULONG = 0;
+    let Function: ULONG;
+    let IoctlCode: ULONG;
     let mut CurrentIrp: PIRP;
     let mut CurrentEntry: PLIST_ENTRY;
     let DeviceExt = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;

@@ -39,8 +39,8 @@ pub type PNETLOGONMAIN = Option<unsafe extern "system" fn(ArgCount: i32, ArgVect
 // WINAPI (stdcall on i386) — matches LPSERVICE_MAIN_FUNCTIONW; a cdecl cast would
 // drift ESP on i386 when the SCM dispatches through the table.
 unsafe extern "system" fn NetlogonServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) {
-    let mut hNetlogon: HINSTANCE = core::ptr::null_mut();
-    let mut pNetlogonMain: PNETLOGONMAIN = None;
+    let hNetlogon: HINSTANCE;
+    let pNetlogonMain: PNETLOGONMAIN;
 
     // TRACE("NetlogonServiceMain(%lu %p)\n", dwArgc, pszArgv)
     if (*(__wine_dbch___default)).flags as u32 & (1u32 << __WINE_DBCL_TRACE as u32) != 0 {
@@ -133,7 +133,7 @@ unsafe extern "system" fn SamSsControlHandler(fdwControl: DWORD) {
     }
 }
 unsafe extern "system" fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) {
-    let mut hStatus: SERVICE_STATUS_HANDLE = core::ptr::null_mut();
+    let hStatus: SERVICE_STATUS_HANDLE;
     let mut ServiceStatus: SERVICE_STATUS = SERVICE_STATUS {
         dwServiceType: 0,
         dwCurrentState: 0,
@@ -177,7 +177,7 @@ unsafe extern "system" fn SamSsServiceMain(dwArgc: DWORD, pszArgv: *mut LPWSTR) 
 }
 
 unsafe extern "system" fn DispatcherThread(pParameter: *mut core::ffi::c_void) -> u32 {
-    let mut hEvent: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut hEvent: *mut core::ffi::c_void;
 
     // TRACE
     if (*(__wine_dbch___default as *mut __wine_debug_channel)).flags as u32 & (1u32 << __WINE_DBCL_TRACE) != 0 {

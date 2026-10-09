@@ -600,8 +600,39 @@ Upstream drift found on the way, not a warning: pcix arbiters (already tracked),
 AcceptEx's `SatisfySuperAccept` branch in `ListenComplete`, explorer's syspager balloon
 crash fix (#9332), and an oleaut32 Wine resync (`VarMod`, `serializeBMP`).
 
-**Owed:** the 858 harmless sites in bulk. Remove each dead initializer, so that rustc's
-definite-init check proves the site rather than silencing it.
+**The 858 harmless sites (2026-10-09).** `tools/apply_dead_assignments.py <rank.json>` takes
+the ranker's `C_DEAD`/`C_NO_INIT` rows and removes them: a pure initializer is dropped
+(`let mut x: T;`), a pure dead store is deleted, a dead store of a call keeps the call. It
+looks inside `stdmethod! { fn .. }`, which tree-sitter sees as one opaque token tree, by
+re-parsing the body in place. Then, for each of the 200 sites where the dead initializer
+was the only reason for `mut`, rustc flagged `unused_mut` on all three arches, and `mut`
+was dropped. It applied 817 and left 41 for review:
+
+- **13 initializers stay, because the removal compiles and is still wrong.**
+  `addr_of_mut!(x)` / `&raw mut x` of an uninitialized local is NOT E0381, and the callee
+  it is handed to may read the initial value (samsrv's in/out `&raw mut Length`). So
+  "rustc's definite-init proves it" holds only for a variable never raw-borrowed in its fn.
+  The tool now skips those. The first run did not, and the audit caught it before any boot.
+- **Three stores are live, and rustc's warning was a false positive.** cdrom
+  `fourByte = &allocationLength as *mut FOUR_BYTE` (DVD READ KEY),
+  `addr_of_mut!(blockAddress)` (SET READ AHEAD), and `srb.SenseInfoBuffer = &mut sense`
+  (autorun) each take the pointer first, write the local directly, then read through the
+  pointer. That direct write is aliasing UB, the same class as rtl-sync and traywnd. Each
+  now takes the pointer after the write, so the UB is gone, and so is the warning, because
+  rustc sees the borrow as the read.
+- 7 cdfs SEH flags, as above. 18 out-param and "NULL after free" stores (`subKey`, `Spb`,
+  `SidString`, version `len`, scsiport `Again` x2 and `Offset += CopyField(..)` x6, heappage
+  `Flags |=`), read
+  and removed by hand.
+
+The skip rule for a store is position-aware: a raw-pointer read rustc cannot see needs a
+pointer that EXISTS at the write, i.e. one taken earlier in the fn or anywhere in a loop
+around it. A borrow after the write is itself a read rustc counts.
+
+The ranker relocated rows by snippet when the tree had moved since the build, and after a
+13-line shift one `hRes = IStream_Write(` site took its neighbour's line (two rows on one
+line). It now maps each log's lines through `git diff` against the tree that build compiled,
+which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
 
 ## Owed follow-ups
 

@@ -135,9 +135,9 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     let mut ScsiPortKey: HANDLE = core::ptr::null_mut();
     let mut ScsiBusKey: HANDLE = core::ptr::null_mut();
     let mut ScsiInitiatorKey: HANDLE = core::ptr::null_mut();
-    let mut BusNumber: u32 = 0;
+    let mut BusNumber: u32;
     let mut UlongData: u32 = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     if DeviceExtension.is_null() {
         if DbgPrint(
@@ -445,7 +445,7 @@ pub unsafe extern "C" fn RegistryInitLunKey(
         SecurityQualityOfService: core::ptr::null_mut(),
     };
     let mut targetKey: HANDLE = core::ptr::null_mut();
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
     let mut portExt: PSCSI_PORT_DEVICE_EXTENSION =
         (*(*LunExtension).Common.LowerDevice).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
     let mut busKey: HANDLE =

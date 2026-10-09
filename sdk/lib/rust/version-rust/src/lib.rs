@@ -1001,10 +1001,10 @@ unsafe fn find_ne_resource(lzfd: HFILE, resLen: *mut DWORD, resOff: *mut DWORD) 
     const typeid: WORD = VS_FILE_INFO | 0x8000;
     const resid: WORD = VS_VERSION_INFO | 0x8000;
     let mut nehd: IMAGE_OS2_HEADER = core::mem::zeroed();
-    let mut typeInfo: *mut NE_TYPEINFO = core::ptr::null_mut();
-    let mut nameInfo: *mut NE_NAMEINFO = core::ptr::null_mut();
+    let mut typeInfo: *mut NE_TYPEINFO;
+    let mut nameInfo: *mut NE_NAMEINFO;
     let nehdoffset: DWORD;
-    let mut resTab: LPBYTE = core::ptr::null_mut();
+    let resTab: LPBYTE;
     let resTabSize: DWORD;
     let mut count: i32;
 
@@ -1550,8 +1550,8 @@ pub unsafe extern "system" fn GetFileVersionInfoSizeExW(
     let mut len: DWORD = 0;
     let mut offset: DWORD = 0;
     let mut magic: DWORD = 1;
-    let mut lzfd: HFILE = 0;
-    let mut hModule: HMODULE = core::ptr::null_mut();
+    let lzfd: HFILE;
+    let hModule: HMODULE;
     let mut ofs: OFSTRUCT = core::mem::zeroed();
 
     TRACE!(
@@ -1702,7 +1702,7 @@ pub unsafe extern "system" fn GetFileVersionInfoExW(
         magic = find_version_resource(lzfd, &mut len, &mut offset, flags);
         if magic > 1 {
             LZSeek(lzfd, offset as LONG, 0);
-            len = LZRead(lzfd, data as LPSTR, min(len, datasize) as i32) as DWORD;
+            LZRead(lzfd, data as LPSTR, min(len, datasize) as i32);
         }
         LZClose(lzfd);
     }

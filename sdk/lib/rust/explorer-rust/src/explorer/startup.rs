@@ -140,7 +140,7 @@ unsafe fn runCmd(cmdline: LPWSTR, dir: LPCWSTR, wait: i32, minimized: i32) -> i3
 unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchronous: i32) -> i32 {
     let mut hkWin: HKEY = core::ptr::null_mut();
     let mut hkRun: HKEY = core::ptr::null_mut();
-    let mut res: i32 = ERROR_SUCCESS as i32;
+    let mut res: i32;
     let mut i: u32 = 0;
     let mut cbMaxCmdLine: u32 = 0;
     let mut cchMaxValue: u32 = 0;
@@ -333,7 +333,7 @@ unsafe fn ProcessRunKeys(hkRoot: HKEY, szKeyName: LPCWSTR, bDelete: i32, bSynchr
 
 unsafe fn ProcessRunOnceEx(hkRoot: HKEY) -> u8 {
     let mut hkRunOnceEx: HKEY = core::ptr::null_mut();
-    let mut res: i32 = ERROR_SUCCESS as i32;
+    let mut res: i32;
     let mut cmdLine: [u16; 39] = [
         'r' as u16, 'u' as u16, 'n' as u16, 'd' as u16, 'l' as u16, 'l' as u16, '3' as u16, '2' as u16, ' ' as u16,
         'i' as u16, 'e' as u16, 'r' as u16, 'n' as u16, 'o' as u16, 'n' as u16, 'c' as u16, 'e' as u16, '.' as u16,

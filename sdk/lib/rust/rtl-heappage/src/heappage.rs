@@ -949,7 +949,7 @@ pub unsafe extern "system" fn RtlpDphAllocateNode(DphRoot: PDPH_HEAP_ROOT) -> PD
     let mut Node: PDPH_HEAP_BLOCK;
     let mut Status: NTSTATUS;
     let mut Size: SIZE_T = DPH_POOL_SIZE as SIZE_T;
-    let mut SizeVirtual: SIZE_T = 0;
+    let mut SizeVirtual: SIZE_T;
     let mut Ptr: PVOID = core::ptr::null_mut();
 
     /* Check for the easy case */
@@ -1905,9 +1905,6 @@ pub unsafe extern "system" fn RtlpPageHeapFree(
         RtlpDphInternalValidatePageHeap(DphRoot, core::ptr::null_mut(), 0);
     }
 
-    /* Add heap flags */
-    Flags |= (*DphRoot).HeapFlags;
-
     /* Find busy memory */
     Node = RtlpDphFindBusyMemory(DphRoot, Ptr);
 
@@ -1966,7 +1963,7 @@ pub unsafe extern "system" fn RtlpPageHeapReAllocate(
     Size: SIZE_T,
 ) -> PVOID {
     let DphRoot: PDPH_HEAP_ROOT;
-    let mut Node: PDPH_HEAP_BLOCK = core::ptr::null_mut();
+    let Node: PDPH_HEAP_BLOCK;
     let AllocatedNode: PDPH_HEAP_BLOCK;
     let mut Biased: BOOLEAN = 0u8;
     let mut UseNormalHeap: BOOLEAN = 0u8;

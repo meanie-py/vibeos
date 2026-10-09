@@ -183,7 +183,7 @@ pub unsafe extern "C" fn LsapRegQueryKeyInfo(
         Class: [0u16; 1],
     };
     let mut Length: u32 = 0;
-    let mut Status: NTSTATUS = 0;
+    let Status: NTSTATUS;
 
     FullInfoBuffer.ClassLength = 0u32;
     FullInfoBuffer.ClassOffset = 44u32;

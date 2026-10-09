@@ -10694,6 +10694,28 @@ language rules) over loosening what it reports.
   commit dates against the fix's date before theorising, and re-seed every arch that predates
   it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
+### rustc's `unused_assignments` cannot see a read through a raw pointer, and `addr_of_mut!` of an uninit local compiles
+
+**Symptom.** `value assigned to `x` is never read` on a store that the code plainly needs,
+e.g. cdrom `allocationLength = keyLength;` with the CDB filled from
+`fourByte = &allocationLength as *mut FOUR_BYTE` a few lines later. Or a bulk
+"remove the dead initializer and let definite-init prove it" pass that compiles green on all
+three arches and still leaves an uninitialized read.
+
+**Cause.** The lint's liveness is over the local, not over memory. A pointer taken BEFORE the
+write and read after it is invisible: the warning is a false positive, and deleting the store
+is a real bug. The same shape is also aliasing UB in Rust, because the direct write to the
+local invalidates the raw pointer taken earlier, so the false positive is a pointer to a
+real bug in its own right. And `addr_of_mut!(x)` / `&raw mut x` of an UNINITIALIZED local is
+not E0381 (only `x`, `&x`, `&mut x` are), so a removed initializer whose variable is later
+handed raw to an in/out callee (samsrv `&raw mut Length`) compiles and reads garbage.
+
+**Fix.** Take the pointer AFTER the write it reads: the UB goes, and so does the warning,
+because the borrow is now the read rustc counts. Never delete a dead store when a pointer
+to the variable can exist at it, i.e. one taken earlier in the fn or anywhere in a loop
+around it. Never trust definite-init for a variable raw-borrowed anywhere in its fn.
+`tools/apply_dead_assignments.py` encodes both rules and prints such sites as SKIP.
+
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
 vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).

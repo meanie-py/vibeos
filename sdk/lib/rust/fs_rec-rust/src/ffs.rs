@@ -164,7 +164,6 @@ pub unsafe extern "system" fn FsRecFfsFsControl(
                             }
                         }
                         ExFreePool(Spb as PVOID);
-                        Spb = core::ptr::null_mut();
                     }
                 }
                 ExFreePool(DiskLabel as PVOID);

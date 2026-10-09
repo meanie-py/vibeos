@@ -1528,7 +1528,7 @@ pub unsafe extern "system" fn OleLoad(
         );
         if SUCCEEDED(hres) {
             let mut dwStatus: DWORD = 0;
-            hres = IOleObject_GetMiscStatus(pOleObject, DVASPECT_CONTENT, &mut dwStatus);
+            IOleObject_GetMiscStatus(pOleObject, DVASPECT_CONTENT, &mut dwStatus);
         }
     }
 
@@ -2460,7 +2460,7 @@ unsafe fn DefaultDrop(
 
 /// ole2.c:2260 drag_enter
 unsafe fn drag_enter(info: *mut TrackerWindowInfo, mut new_target: HWND) {
-    let mut dwEffect: DWORD = *(*info).pdwEffect;
+    let mut dwEffect: DWORD;
 
     (*info).curTargetHWND = new_target;
 

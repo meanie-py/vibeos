@@ -108,7 +108,7 @@ pub unsafe extern "C" fn ConCfgOpenUserSettings(
     samDesired: REGSAM,
     Create: u8,
 ) -> u8 {
-    let mut Success: u8 = 1;
+    let Success: u8;
     let mut hKey: HKEY = ptr::null_mut();
 
     let mut szBuffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];

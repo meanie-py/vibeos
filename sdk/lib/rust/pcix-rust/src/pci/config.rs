@@ -45,7 +45,7 @@ pub unsafe extern "system" fn PciGetAdjustedInterruptLine(
 ) -> UCHAR {
     let mut InterruptLine: UCHAR = 0;
     let mut PciInterruptLine: UCHAR = 0;
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
 
     if (*PdoExtension).InterruptPin != 0 {
         Length = HalGetBusDataByOffset(
@@ -76,10 +76,10 @@ pub unsafe extern "system" fn PciReadWriteConfigSpace(
     Length: ULONG,
     Read: BOOLEAN,
 ) {
-    let mut PciInterface: PPCI_BUS_INTERFACE_STANDARD = core::ptr::null_mut::<_PCI_BUS_INTERFACE_STANDARD>();
-    let mut BusHandler: PBUS_HANDLER = core::ptr::null_mut::<_BUS_HANDLER>();
-    let mut BusData: PPCIBUSDATA = core::ptr::null_mut::<_PCIBUSDATA>();
-    let mut HalFunction: PciReadWriteConfig = None;
+    let mut PciInterface: PPCI_BUS_INTERFACE_STANDARD;
+    let mut BusHandler: PBUS_HANDLER;
+    let mut BusData: PPCIBUSDATA;
+    let mut HalFunction: PciReadWriteConfig;
 
     if !((*(*DeviceExtension).BusRootFdoExtension).BusRootFdoExtension
         == (*DeviceExtension).BusRootFdoExtension)
@@ -230,7 +230,7 @@ pub unsafe extern "system" fn PciReadSlotConfig(
 pub unsafe extern "system" fn PciQueryForPciBusInterface(
     FdoExtension: PPCI_FDO_EXTENSION,
 ) -> NTSTATUS {
-    let mut AttachedDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut AttachedDevice: PDEVICE_OBJECT;
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Status: NTSTATUS;
@@ -346,8 +346,8 @@ pub unsafe extern "system" fn PciQueryForPciBusInterface(
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciGetConfigHandlers(FdoExtension: PPCI_FDO_EXTENSION) -> NTSTATUS {
-    let mut BusHandler: PBUS_HANDLER = core::ptr::null_mut();
-    let mut Status: NTSTATUS = 0;
+    let mut BusHandler: PBUS_HANDLER;
+    let mut Status: NTSTATUS;
 
     if !((*FdoExtension).BusHandler).is_null() {
         RtlAssert(

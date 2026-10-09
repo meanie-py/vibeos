@@ -4456,11 +4456,11 @@ pub unsafe extern "C" fn aes_setup(
     rounds: i32,
     skey: *mut aes_key,
 ) -> i32 {
-    let mut i: i32 = 0;
-    let mut j: i32 = 0;
-    let mut temp: u32 = 0;
-    let mut rk: *mut u32 = core::ptr::null_mut::<u32>();
-    let mut rrk: *mut u32 = core::ptr::null_mut::<u32>();
+    let mut i: i32;
+    let mut j: i32;
+    let mut temp: u32;
+    let mut rk: *mut u32;
+    let mut rrk: *mut u32;
 
     if keylen != 16 && keylen != 24 && keylen != 32 {
         return -1; // CRYPT_INVALID_KEYSIZE
@@ -4790,17 +4790,17 @@ pub unsafe extern "C" fn aes_ecb_decrypt(
     mut pt: *mut u8,
     mut skey: *mut aes_key,
 ) {
-    let mut s0: u32 = 0;
-    let mut s1: u32 = 0;
-    let mut s2: u32 = 0;
-    let mut s3: u32 = 0;
-    let mut t0: u32 = 0;
-    let mut t1: u32 = 0;
-    let mut t2: u32 = 0;
-    let mut t3: u32 = 0;
-    let mut rk: *mut u32 = core::ptr::null_mut::<u32>();
-    let mut Nr: i32 = 0;
-    let mut r: i32 = 0;
+    let mut s0: u32;
+    let mut s1: u32;
+    let mut s2: u32;
+    let mut s3: u32;
+    let mut t0: u32;
+    let mut t1: u32;
+    let mut t2: u32;
+    let mut t3: u32;
+    let mut rk: *mut u32;
+    let mut Nr: i32;
+    let mut r: i32;
 
     Nr = (*skey).Nr;
     rk = core::ptr::addr_of_mut!((*skey).dK) as *mut u32;

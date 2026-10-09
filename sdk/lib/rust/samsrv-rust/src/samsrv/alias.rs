@@ -213,7 +213,7 @@ pub unsafe extern "C" fn SampGetMembersInAlias(
     MemberArray: *mut PSAMPR_SID_INFORMATION,
 ) -> NTSTATUS {
     let mut MembersKeyHandle: HANDLE = core::ptr::null_mut();
-    let mut Members: PSAMPR_SID_INFORMATION = core::ptr::null_mut();
+    let Members: PSAMPR_SID_INFORMATION;
     let mut Count: ULONG = 0;
     let mut DataLength: ULONG;
     let mut Index: ULONG;

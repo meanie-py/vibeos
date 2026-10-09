@@ -4718,7 +4718,7 @@ unsafe extern "C" fn serializeIcon(
     if GetIconInfo(hIcon, &mut infoIcon) != 0 {
         let hDC: HDC;
         let pInfoBitmap: *mut BITMAPINFO;
-        let mut pIconData: *mut u8 = core::ptr::null_mut();
+        let mut pIconData: *mut u8;
         let mut iDataSize: u32 = 0;
 
         pInfoBitmap = HeapAlloc(
@@ -5787,8 +5787,8 @@ unsafe extern "C" fn create_stream(
     filename: *const u16,
     stream: *mut *mut IStream,
 ) -> HRESULT {
-    let mut hFile: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut dwFileSize: u32 = 0;
+    let hFile: *mut core::ffi::c_void;
+    let dwFileSize: u32;
     let mut hGlobal: HGLOBAL = core::ptr::null_mut();
     let mut dwBytesRead: u32 = 0;
     let mut hr: i32 = 0;
@@ -5857,7 +5857,7 @@ pub unsafe extern "system" fn OleLoadPictureFile(
     picture: *mut *mut IDispatch,
 ) -> HRESULT {
     let mut stream: *mut IStream = core::ptr::null_mut();
-    let mut hr: HRESULT = 0;
+    let mut hr: HRESULT;
 
     TRACE!(
         b"(%s,%p)\n\0".as_ptr() as *const i8,

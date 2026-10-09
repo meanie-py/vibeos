@@ -156,7 +156,7 @@ pub unsafe extern "system" fn SamrConnect(
 #[no_mangle]
 pub unsafe extern "system" fn SamrCloseHandle(SamHandle: *mut SAMPR_HANDLE) -> NTSTATUS {
     let mut DbObject: PSAM_DB_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     RtlAcquireResourceShared(core::ptr::addr_of_mut!(SampResource), 1u8);
 
@@ -335,7 +335,7 @@ pub unsafe extern "system" fn SamrQuerySecurityObject(
     SecurityDescriptor: *mut PSAMPR_SR_SECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
     let mut SamObject: PSAM_DB_OBJECT = core::ptr::null_mut();
-    let mut SdData: PSAMPR_SR_SECURITY_DESCRIPTOR = core::ptr::null_mut();
+    let SdData: PSAMPR_SR_SECURITY_DESCRIPTOR;
     let mut RelativeSd: PISECURITY_DESCRIPTOR_RELATIVE = core::ptr::null_mut();
     let mut ResultSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut DesiredAccess: ACCESS_MASK = 0;
@@ -924,7 +924,7 @@ unsafe fn SampQueryDomainPassword(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1014,7 +1014,7 @@ unsafe fn SampQueryDomainGeneral(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
@@ -1139,7 +1139,7 @@ unsafe fn SampQueryDomainLogoff(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1186,7 +1186,7 @@ unsafe fn SampQueryDomainOem(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -1223,7 +1223,7 @@ unsafe fn SampQueryDomainName(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -1264,7 +1264,7 @@ unsafe fn SampQueryDomainReplication(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -1303,7 +1303,7 @@ unsafe fn SampQueryDomainServerRole(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1347,7 +1347,7 @@ unsafe fn SampQueryDomainModified(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1394,7 +1394,7 @@ unsafe fn SampQueryDomainState(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1437,7 +1437,7 @@ unsafe fn SampQueryDomainGeneral2(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
@@ -1565,7 +1565,7 @@ unsafe fn SampQueryDomainLockout(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1612,7 +1612,7 @@ unsafe fn SampQueryDomainModified2(
     DomainObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_DOMAIN_INFO_BUFFER;
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -1713,7 +1713,7 @@ unsafe fn SampSetDomainLogoff(
     Buffer: PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
@@ -1750,7 +1750,7 @@ unsafe fn SampSetDomainServerRole(
     Buffer: PSAMPR_DOMAIN_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let Status: NTSTATUS;
 
     Length = core::mem::size_of::<SAM_DOMAIN_FIXED_DATA>() as ULONG;
@@ -3968,7 +3968,7 @@ unsafe fn SampQueryGroupGeneral(
     GroupObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_GROUP_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_GROUP_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_GROUP_INFO_BUFFER;
     let mut FixedData: SAM_GROUP_FIXED_DATA = core::mem::zeroed();
     let mut MembersLength: ULONG = 0;
     let mut Length: ULONG;
@@ -4061,7 +4061,7 @@ unsafe fn SampQueryGroupGeneral(
 }
 unsafe fn SampQueryGroupName(GroupObject: PSAM_DB_OBJECT,
                             Buffer: *mut PSAMPR_GROUP_INFO_BUFFER) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_GROUP_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_GROUP_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -4097,7 +4097,7 @@ unsafe fn SampQueryGroupAttribute(
     GroupObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_GROUP_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_GROUP_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_GROUP_INFO_BUFFER;
     let mut FixedData: SAM_GROUP_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -4142,7 +4142,7 @@ unsafe fn SampQueryGroupAdminComment(
     GroupObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_GROUP_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_GROUP_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_GROUP_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -4774,7 +4774,7 @@ unsafe fn SampQueryAliasGeneral(
     AliasObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_ALIAS_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER;
     let mut MembersKeyHandle: HANDLE = core::ptr::null_mut();
     let mut Status: NTSTATUS;
 
@@ -4857,7 +4857,7 @@ unsafe fn SampQueryAliasName(
     AliasObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_ALIAS_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -4898,7 +4898,7 @@ unsafe fn SampQueryAliasAdminComment(
     AliasObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_ALIAS_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_ALIAS_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -5382,7 +5382,7 @@ unsafe fn SampQueryUserGeneral(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
@@ -5481,7 +5481,7 @@ unsafe fn SampQueryUserPreferences(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
@@ -5539,7 +5539,7 @@ unsafe fn SampQueryUserLogon(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut DomainFixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let PasswordCanChange: LARGE_INTEGER;
@@ -5718,7 +5718,7 @@ unsafe fn SampQueryUserAccount(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
@@ -5889,7 +5889,7 @@ unsafe fn SampQueryUserLogonHours(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut *mut SAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: *mut SAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: *mut SAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -5925,7 +5925,7 @@ unsafe fn SampQueryUserName(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -5981,7 +5981,7 @@ unsafe fn SampQueryUserAccountName(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6019,7 +6019,7 @@ unsafe fn SampQueryUserFullName(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6057,7 +6057,7 @@ unsafe fn SampQueryUserPrimaryGroup(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -6094,7 +6094,7 @@ unsafe fn SampQueryUserHome(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6149,7 +6149,7 @@ unsafe fn SampQueryUserScript(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6186,7 +6186,7 @@ unsafe fn SampQueryUserProfile(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6222,7 +6222,7 @@ unsafe fn SampQueryUserAdminComment(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6259,7 +6259,7 @@ unsafe fn SampQueryUserWorkStations(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6295,7 +6295,7 @@ unsafe fn SampQueryUserWorkStations(
 }
 
 unsafe fn SampQueryUserControl(UserObject: PSAM_DB_OBJECT, Buffer: *mut PSAMPR_USER_INFO_BUFFER) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -6331,7 +6331,7 @@ unsafe fn SampQueryUserExpires(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -6375,7 +6375,7 @@ unsafe fn SampQueryUserInternal1(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut Length: ULONG;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
@@ -6477,7 +6477,7 @@ unsafe fn SampQueryUserInternal2(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG;
     let Status: NTSTATUS;
@@ -6525,7 +6525,7 @@ unsafe fn SampQueryUserParameters(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
@@ -6564,13 +6564,13 @@ unsafe fn SampQueryUserAll(
     UserObject: PSAM_DB_OBJECT,
     Buffer: *mut PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
-    let mut InfoBuffer: PSAMPR_USER_INFO_BUFFER = core::ptr::null_mut();
+    let InfoBuffer: PSAMPR_USER_INFO_BUFFER;
     let mut DomainFixedData: SAM_DOMAIN_FIXED_DATA = core::mem::zeroed();
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let PasswordCanChange: LARGE_INTEGER;
     let PasswordMustChange: LARGE_INTEGER;
     let mut Length: ULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     *Buffer = core::ptr::null_mut();
 
@@ -7200,7 +7200,7 @@ unsafe fn SampSetUserGeneral(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     'done: {
@@ -7420,7 +7420,7 @@ unsafe fn SampSetUserInternal1(
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut Length: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     /* FIXME: Decrypt NT password */
     /* FIXME: Decrypt LM password */
@@ -7478,8 +7478,8 @@ unsafe fn SampSetUserInternal2(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Length: ULONG;
+    let mut Status: NTSTATUS;
 
     'done: {
         Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
@@ -7534,14 +7534,14 @@ unsafe fn SampSetUserAll(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let WhichFields: ULONG;
     let mut NtPassword: PENCRYPTED_NT_OWF_PASSWORD = core::ptr::null_mut();
     let mut LmPassword: PENCRYPTED_LM_OWF_PASSWORD = core::ptr::null_mut();
     let mut NtPasswordPresent: BOOLEAN = 0u8;
     let mut LmPasswordPresent: BOOLEAN = 0u8;
     let mut WriteFixedData: BOOLEAN = 0u8;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     WhichFields = (*Buffer).All.WhichFields;
 

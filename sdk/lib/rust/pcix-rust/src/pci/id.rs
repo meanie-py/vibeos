@@ -74,9 +74,9 @@ pub unsafe extern "system" fn PciGetDescriptionMessage(
     Length: PULONG,
 ) -> PWCHAR {
     let mut Entry: PMESSAGE_RESOURCE_ENTRY = core::ptr::null_mut::<_MESSAGE_RESOURCE_ENTRY>();
-    let mut TextLength: ULONG = 0;
-    let mut Description: PWCHAR = core::ptr::null_mut::<u16>();
-    let mut Buffer: PWCHAR = core::ptr::null_mut::<u16>();
+    let mut TextLength: ULONG;
+    let mut Description: PWCHAR;
+    let mut Buffer: PWCHAR;
     let mut MessageString: ANSI_STRING = ANSI_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -348,15 +348,15 @@ pub unsafe extern "system" fn PciQueryId(
     QueryType: BUS_QUERY_ID_TYPE,
     Buffer: *mut PWCHAR,
 ) -> NTSTATUS {
-    let mut SubsysId: ULONG = 0;
+    let mut SubsysId: ULONG;
     let mut VendorString: [CHAR; 22] = [0; 22];
-    let mut PdoExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut::<_PCI_PDO_EXTENSION>();
-    let mut ParentExtension: PPCI_FDO_EXTENSION = core::ptr::null_mut::<_PCI_FDO_EXTENSION>();
-    let mut StringBuffer: PWCHAR = core::ptr::null_mut::<WCHAR>();
-    let mut i: ULONG = 0;
-    let mut Size: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
-    let mut NextString: PANSI_STRING = core::ptr::null_mut::<ANSI_STRING>();
+    let mut PdoExtension: PPCI_PDO_EXTENSION;
+    let mut ParentExtension: PPCI_FDO_EXTENSION;
+    let mut StringBuffer: PWCHAR;
+    let mut i: ULONG;
+    let mut Size: ULONG;
+    let mut Status: NTSTATUS;
+    let mut NextString: PANSI_STRING;
     let mut DestinationString: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -614,7 +614,7 @@ pub unsafe extern "system" fn PciQueryDeviceText(
     Buffer: *mut PWCHAR,
 ) -> NTSTATUS {
     let _ = Locale;
-    let mut message_buffer: PWCHAR = core::ptr::null_mut();
+    let mut message_buffer: PWCHAR;
     let mut location_buffer: PWCHAR;
     let mut length: ULONG = 0;
     let status: NTSTATUS;
