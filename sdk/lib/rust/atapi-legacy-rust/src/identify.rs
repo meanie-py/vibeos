@@ -72,7 +72,7 @@ pub unsafe extern "system" fn IssueIdentify(
                 ((DeviceNumber << 4) | 0xA0) as UCHAR,
             );
 
-            statusByte = WaitOnBusy(baseIoAddress2);
+            WaitOnBusy(baseIoAddress2);
 
             signatureLow = ScsiPortReadPortUchar(
                 &mut (*baseIoAddress1).CylinderLow as *mut UCHAR as PUCHAR,
@@ -287,7 +287,7 @@ pub unsafe extern "system" fn IssueIdentify(
     }
 
     // Work around for some IDE that present more than 256 bytes. atapi.c:604
-    statusByte = WaitOnBusy(baseIoAddress2);
+    WaitOnBusy(baseIoAddress2);
 
     i = 0;
     while i < 0x10000 {
@@ -380,7 +380,7 @@ pub unsafe extern "system" fn AtapiResetController(
     let numberChannels: ULONG = (*deviceExtension).NumberChannels;
     let mut baseIoAddress1: PIDE_REGISTERS_1;
     let mut baseIoAddress2: PIDE_REGISTERS_2;
-    let mut result: BOOLEAN = 0; // FALSE
+    let mut result: BOOLEAN;
     let mut i: ULONG;
     let mut j: ULONG;
     let mut statusByte: UCHAR;
@@ -436,7 +436,7 @@ pub unsafe extern "system" fn AtapiResetController(
                     != 0
                 {
                     // Issue soft reset and issue identify. atapi.c:841
-                    statusByte = GetStatus(baseIoAddress2);
+                    GetStatus(baseIoAddress2);
 
                     AtapiSoftReset(baseIoAddress1, i);
 
@@ -633,7 +633,7 @@ pub unsafe extern "system" fn FindDevices(
     let mut deviceResponded: BOOLEAN = 0; // FALSE
     let mut skipSetParameters: BOOLEAN = 0; // FALSE
     let mut waitCount: ULONG = 10000;
-    let mut deviceNumber: ULONG = 0;
+    let mut deviceNumber: ULONG;
     let mut i: ULONG;
     let mut signatureLow: UCHAR;
     let mut signatureHigh: UCHAR;
@@ -660,7 +660,7 @@ pub unsafe extern "system" fn FindDevices(
         }
 
         AtapiSoftReset(baseIoAddress1, deviceNumber);
-        statusByte = WaitOnBusy(baseIoAddress2);
+        WaitOnBusy(baseIoAddress2);
 
         signatureLow = ScsiPortReadPortUchar(
             &mut (*baseIoAddress1).CylinderLow as *mut UCHAR as PUCHAR,
@@ -698,7 +698,7 @@ pub unsafe extern "system" fn FindDevices(
                 // Look to see if an Atapi device is present. atapi.c:1657
                 AtapiSoftReset(baseIoAddress1, deviceNumber);
 
-                statusByte = WaitOnBusy(baseIoAddress2);
+                WaitOnBusy(baseIoAddress2);
 
                 signatureLow = ScsiPortReadPortUchar(
                     &mut (*baseIoAddress1).CylinderLow as *mut UCHAR as PUCHAR,
@@ -784,7 +784,7 @@ pub unsafe extern "system" fn FindDevices(
             }
 
             if skipSetParameters == 0 {
-                statusByte = WaitOnBusy(baseIoAddress2);
+                WaitOnBusy(baseIoAddress2);
 
                 // Select the device. atapi.c:1747
                 ScsiPortWritePortUchar(
@@ -824,7 +824,7 @@ pub unsafe extern "system" fn FindDevices(
                     }
                 }
 
-                statusByte = WaitOnBusy(baseIoAddress2);
+                WaitOnBusy(baseIoAddress2);
 
                 // Use the IDENTIFY data to set drive parameters. atapi.c:1789
                 if SetDriveParameters(HwDeviceExtension, i, Channel) == 0 {

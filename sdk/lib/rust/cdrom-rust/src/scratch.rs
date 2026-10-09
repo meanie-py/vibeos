@@ -879,7 +879,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     request = (*DeviceExtension).ScratchContext.ScratchRequest;
     irp = WdfRequestWdmGetIrp(request);
     srb = (*DeviceExtension).ScratchContext.ScratchSrb;
-    irpStack = IoGetNextIrpStackLocation(irp);
+    IoGetNextIrpStackLocation(irp);
     requestContext = RequestGetContext(request as *mut core::ffi::c_void);
 
     PAGED_CODE!();

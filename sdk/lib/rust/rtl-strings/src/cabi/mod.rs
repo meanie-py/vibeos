@@ -5303,7 +5303,7 @@ pub unsafe extern "system" fn RtlSetEnvironmentVariable(
     let mut new_env: *mut u16 = core::ptr::null_mut();
     let mut env_len: usize = 0;
     let mut env_end: *mut u16 = core::ptr::null_mut();
-    let mut val_ptr: *mut u16 = core::ptr::null_mut();
+    let mut val_ptr: *mut u16;
     let mut tail: *mut u16 = core::ptr::null_mut();
     let mut hole: *mut u16 = core::ptr::null_mut();
     let mut head: *mut u16 = core::ptr::null_mut();
@@ -7428,7 +7428,7 @@ pub unsafe extern "system" fn RtlpInitEnvironment(
     process_parameters: *mut prc::RTL_USER_PROCESS_PARAMETERS,
 ) -> i32 {
     let pp = &mut *process_parameters;
-    let mut base_address: *mut u8 = core::ptr::null_mut();
+    let mut base_address: *mut u8;
     let mut enviro_size: usize;
 
     // Give the caller 1MB if requested (reserve at fixed VA 4).
@@ -7977,7 +7977,6 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(path_string: *const UNICOD
 
     // Check for drive path and truncate trailing colon.
     if *path_copy_buf.add((path_chars - 1) as usize) == b':' as u16 {
-        path_copy_len -= 2;
         path_chars -= 1;
         if path_chars == 0 {
             return 0;
@@ -7991,7 +7990,6 @@ pub unsafe extern "system" fn RtlIsDosDeviceName_Ustr(path_string: *const UNICOD
         if c != b'.' as u16 && c != b' ' as u16 {
             break;
         }
-        path_copy_len -= 2;
         colon_count += 1;
         path_chars -= 1;
     }

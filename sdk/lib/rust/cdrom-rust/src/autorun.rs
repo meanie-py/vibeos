@@ -2359,8 +2359,8 @@ pub unsafe extern "system" fn RequestMcnSyncIrpCompletion(
 ) -> i32 {
     const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
-    let mut device_extension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO = core::ptr::null_mut();
+    let mut device_extension: *mut CDROM_DEVICE_EXTENSION;
+    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO;
 
     if Context.is_null() {
         return STATUS_MORE_PROCESSING_REQUIRED;

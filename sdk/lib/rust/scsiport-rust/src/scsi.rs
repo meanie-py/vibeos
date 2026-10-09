@@ -635,7 +635,7 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
     let mut InterruptData: SCSI_PORT_INTERRUPT_DATA = core::mem::zeroed();
     let mut Context: SCSI_PORT_SAVE_INTERRUPT = core::mem::zeroed();
     let mut LunExtension: PSCSI_PORT_LUN_EXTENSION;
-    let mut NeedToStartIo: BOOLEAN = 0;
+    let mut NeedToStartIo: BOOLEAN ;
     let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO;
     let mut TimerValue: LARGE_INTEGER = core::mem::zeroed();
 

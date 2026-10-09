@@ -340,7 +340,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                 //  Acquire the Vcb and check whether there is already an Fcb.
                 //
                 CdLockVcb(IrpContext, Vcb);
-                UnlockVcb = 1;
+                *p_UnlockVcb = 1;
 
                 NextFcb = CdLookupFcbTable(IrpContext, Vcb, FileId);
 
@@ -364,7 +364,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                     //
                     if NextFcb.is_null() {
                         CdUnlockVcb(IrpContext, Vcb);
-                        UnlockVcb = 0;
+                        *p_UnlockVcb = 0;
 
                         //
                         //  Check that the path table offset lies within the path table.
@@ -375,7 +375,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                         }
 
                         CdInitializeCompoundPathEntry(IrpContext, core::ptr::addr_of_mut!(CompoundPathEntry));
-                        CleanupCompoundPathEntry = 1;
+                        *p_CleanupCompoundPathEntry = 1;
 
                         //
                         //  Start at the first entry in the PathTable.
@@ -427,7 +427,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                         //  Lock the Vcb and create the Fcb if necessary.
                         //
                         CdLockVcb(IrpContext, Vcb);
-                        UnlockVcb = 1;
+                        *p_UnlockVcb = 1;
 
                         NextFcb = CdCreateFcb(IrpContext, ParentFileId, NodeTypeCode, core::ptr::addr_of_mut!(Found));
 
@@ -474,7 +474,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                             CdUnlockVcb(IrpContext, Vcb);
                         }
 
-                        UnlockVcb = 0;
+                        *p_UnlockVcb = 0;
 
                         //
                         //  Set up the CurrentFcb pointers.  We know there was no previous
@@ -562,7 +562,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                         CdLookupLastFileDirent(IrpContext, NextFcb, core::ptr::addr_of_mut!(FileContext));
 
                         CdLockVcb(IrpContext, Vcb);
-                        UnlockVcb = 1;
+                        *p_UnlockVcb = 1;
 
                         NextFcb = CdCreateFcb(IrpContext, FileId, NodeTypeCode, core::ptr::addr_of_mut!(Found));
 
@@ -623,7 +623,7 @@ pub unsafe extern "C" fn CdOpenByFileId(
                     CdUnlockVcb(IrpContext, Vcb);
                 }
 
-                UnlockVcb = 0;
+                *p_UnlockVcb = 0;
 
                 //
                 //  Move to this Fcb.
@@ -778,7 +778,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                     CdFidSetDirectory(&mut FileId);
 
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = 1;
+                    *p_UnlockVcb = 1;
 
                     NextFcb = CdCreateFcb(IrpContext, FileId, CDFS_NTC_FCB_INDEX, &mut FcbExisted);
 
@@ -801,7 +801,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                         CdUnlockVcb(IrpContext, Vcb);
                     }
 
-                    UnlockVcb = 0;
+                    *p_UnlockVcb = 0;
 
                     ParentFcb = *CurrentFcb;
                     *CurrentFcb = NextFcb;
@@ -939,7 +939,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
 
                 // Lock Vcb
                 CdLockVcb(irp_context, vcb);
-                unlock_vcb = 1;
+                *p_unlock_vcb = 1;
 
                 // Get/Create Fcb
                 next_fcb = CdCreateFcb(irp_context, file_id, CDFS_NTC_FCB_DATA, &mut fcb_existed);
@@ -965,7 +965,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
                     CdUnlockVcb(irp_context, vcb);
                 }
 
-                unlock_vcb = 0;
+                *p_unlock_vcb = 0;
 
                 parent_fcb = *current_fcb;
                 *current_fcb = next_fcb;
@@ -1258,7 +1258,7 @@ pub unsafe extern "C" fn CdCommonCreate(
     mut IrpContext: *mut IRP_CONTEXT,
     mut Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     let FileObject: *mut FILE_OBJECT;
@@ -1282,10 +1282,10 @@ pub unsafe extern "C" fn CdCommonCreate(
     let mut VolumeOpen: u8 = 0; // FALSE
 
     let mut RelatedTypeOfOpen: TYPE_OF_OPEN = UnopenedFileObject;
-    let mut RelatedFileObject: *mut FILE_OBJECT;
+    let RelatedFileObject: *mut FILE_OBJECT;
     let mut RelatedCcb: *mut CCB = null_mut();
 
-    let mut NextFcb: *mut FCB = core::mem::zeroed();
+    let mut NextFcb: *mut FCB;
     let mut CurrentFcb: *mut FCB = null_mut();
 
     let FileName: *mut _UNICODE_STRING;
@@ -1342,7 +1342,6 @@ pub unsafe extern "C" fn CdCommonCreate(
     //  Reference our input parameters to make things easier.
     //
     FileObject = (*IrpSp).FileObject;
-    RelatedFileObject = null_mut();
 
     FileName = core::ptr::addr_of_mut!((*FileObject).FileName);
 
@@ -1602,7 +1601,6 @@ pub unsafe extern "C" fn CdCommonCreate(
                 FinalName.VersionString.Length = 0;
 
                 // walk the name component by component
-                FoundEntry = 0;
                 loop {
                     ShortNameMatch = 0; // FALSE
 
@@ -1619,7 +1617,7 @@ pub unsafe extern "C" fn CdCommonCreate(
                     //  Look this entry up in the path table.
                     //
                     CdInitializeCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
-                    CleanupCompoundPathEntry = 1; // TRUE
+                    *p_CleanupCompoundPathEntry = 1; // TRUE
 
                     FoundEntry = CdFindPathEntry(
                         IrpContext,
@@ -1787,7 +1785,7 @@ pub unsafe extern "C" fn CdCommonCreate(
                     );
 
                     CdCleanupCompoundPathEntry(IrpContext, &mut CompoundPathEntry);
-                    CleanupCompoundPathEntry = 0; // FALSE
+                    *p_CleanupCompoundPathEntry = 0; // FALSE
                 }
 
                 //

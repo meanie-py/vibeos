@@ -7449,7 +7449,7 @@ unsafe fn create_storagefile(
 ) -> HRESULT {
     let mut newStorage: *mut StorageBaseImpl = core::ptr::null_mut();
     let hFile: HANDLE;
-    let mut hr: HRESULT = STG_E_INVALIDFLAG;
+    let mut hr: HRESULT;
     let shareMode: DWORD;
     let accessMode: DWORD;
     let creationMode: DWORD;
