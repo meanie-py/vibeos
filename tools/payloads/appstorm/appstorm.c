@@ -523,6 +523,10 @@ static USHORT own_machine;
  * arrived after the wait was scored against the NEXT entry. The sampler showed every one busy,
  * none stuck. Only the waits stretch; every pass criterion is the same. */
 static DWORD slow = 1;
+/* build.sh APPSTORM_EMU_SLOW=n: a longer multiplier, to tell a slow app from a hung one. */
+#ifndef APPSTORM_EMU_SLOW
+#define APPSTORM_EMU_SLOW 6
+#endif
 
 static void note_emulation(void)
 {
@@ -535,7 +539,7 @@ static void note_emulation(void)
         CloseHandle(h);
     }
     if (shell && own_machine && shell != own_machine)
-        slow = 6;
+        slow = APPSTORM_EMU_SLOW;
     SAY("shell machine=0x%x: waits x%lu\n", shell, slow);
 }
 
@@ -744,7 +748,13 @@ int main(void)
     SAY("shell tray=%p\n", (void *)shell_tray);
     note_emulation();
     Sleep(5000); /* let the desktop settle before the first snapshot */
-    for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
+    /* APPSTORM_REPEAT (build.sh): the whole app list N times, to catch an intermittent
+     * failure in one boot -- with APPSTORM_ONLY, one app N times. */
+#ifndef APPSTORM_REPEAT
+#define APPSTORM_REPEAT 1
+#endif
+    for (unsigned rep = 0; rep < APPSTORM_REPEAT * (sizeof apps / sizeof apps[0]); rep++) {
+        const unsigned k = rep % (sizeof apps / sizeof apps[0]);
         const app_t *a = &apps[k];
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];
         if (!wanted(a->name))

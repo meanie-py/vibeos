@@ -102,11 +102,16 @@ PerformancePageWndProc(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     switch (message)
     {
         case WM_DESTROY:
-            GraphCtrl_Dispose(&PerformancePageCpuUsageHistoryGraph);
-            GraphCtrl_Dispose(&PerformancePageMemUsageHistoryGraph);
+            /* Stop the refresh thread BEFORE freeing what it draws into: it calls
+             * GraphCtrl_AddPoint on every tick, and disposing first let a tick write the
+             * CPU percentage into the freed PointBuffer (heap corruption, then a crash in
+             * the heap; seen as 1 run in 3 under x86-64 emulation, where ticks are slow
+             * and the CPU reads 100). */
 #ifdef RUN_PERF_PAGE
             EndLocalThread(&hPerformanceThread, dwPerformanceThread);
 #endif
+            GraphCtrl_Dispose(&PerformancePageCpuUsageHistoryGraph);
+            GraphCtrl_Dispose(&PerformancePageMemUsageHistoryGraph);
             break;
 
         case WM_INITDIALOG:
@@ -335,7 +340,7 @@ DWORD WINAPI PerformancePageRefreshThread(PVOID Parameter)
         WCHAR szChargeLimitFormat[256];
 
         /* Wait for an the event or application close */
-        if (GetMessage(&msg, NULL, 0, 0) <= 0)
+        if (!GetRefreshMessage(&msg))
             return 0;
 
         if (msg.message == WM_TIMER)
