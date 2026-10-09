@@ -934,8 +934,8 @@ pub unsafe extern "system" fn PciIdeXAddDevice(
     DriverObject: PDRIVER_OBJECT,
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
-    let mut DriverExtension: *mut _PCIIDEX_DRIVER_EXTENSION = core::ptr::null_mut();
-    let mut FdoExtension: *mut _FDO_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut DriverExtension: *mut _PCIIDEX_DRIVER_EXTENSION ;
+    let mut FdoExtension: *mut _FDO_DEVICE_EXTENSION ;
     let mut DeviceExtensionSize: ULONG = 0;
     let mut Fdo: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut DeviceName: _UNICODE_STRING = _UNICODE_STRING {

@@ -626,7 +626,7 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     let mut senseInfoBuffer: *mut u8;
     let mut retryCount: u32 = 0;
     let mut retry: u8;
-    let mut ioctlCode: u32 = 0;
+    let mut ioctlCode: u32;
     let mut request: WDFREQUEST = core::ptr::null_mut();
     let mut irp: *mut IRP = core::ptr::null_mut();
     let mut nextStack: *mut IO_STACK_LOCATION;

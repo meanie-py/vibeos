@@ -419,7 +419,7 @@ pub unsafe extern "system" fn AtapiInterrupt(HwDeviceExtension: PVOID) -> BOOLEA
 
         if (*srb).SrbFlags & SRB_FLAGS_DATA_OUT != 0 {
 
-            statusByte = WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
+            WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
 
             if atapiDev != 0 || (*deviceExtension).DWordIO == 0 {
 
@@ -483,7 +483,7 @@ pub unsafe extern "system" fn AtapiInterrupt(HwDeviceExtension: PVOID) -> BOOLEA
 
         if (*srb).SrbFlags & SRB_FLAGS_DATA_IN != 0 {
 
-            statusByte = WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
+            WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
 
             if atapiDev != 0 || (*deviceExtension).DWordIO == 0 {
                 ReadBuffer(baseIoAddress1 as PIDE_REGISTERS_1,
@@ -900,7 +900,7 @@ pub unsafe extern "system" fn AtapiStartIo(
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> BOOLEAN {
     let deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;
-    let mut status: ULONG = 0;
+    let mut status: ULONG;
 
     //
     // Determine which function.
@@ -1064,7 +1064,6 @@ pub unsafe extern "system" fn AtapiStartIo(
                     // in the DeviceMap field.
                     //
 
-                    deviceNumber = (*versionParameters).bIDEDeviceMap;
 
                     if ((*deviceExtension).DeviceFlags[(*Srb).TargetId as usize] as ULONG)
                             & DFLAGS_DEVICE_PRESENT == 0

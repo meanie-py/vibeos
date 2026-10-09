@@ -2179,7 +2179,7 @@ unsafe fn sp_notify_icon(
     dw_message: DWORD,
     icon_data: *const NOTIFYICONDATAW,
 ) -> BOOL {
-    let mut ret: BOOL = FALSE as BOOL;
+    let ret: BOOL;
     let tb = core::ptr::addr_of_mut!((*this).Toolbar);
 
     let visible_button_count = tb_get_visible_button_count(tb);

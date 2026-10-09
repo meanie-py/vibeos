@@ -366,7 +366,7 @@ unsafe extern "C" fn call_catch_block(rec: PEXCEPTION_RECORD) -> *mut core::ffi:
         ContextRecord: context,
     };
     let mut ctx: cxx_catch_ctx = core::mem::zeroed();
-    let mut ret_addr: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut ret_addr: *mut core::ffi::c_void;
 
     ctx.rethrow = (FALSE) as i32;
     ctx.prev_rec = prev_rec;
@@ -875,7 +875,7 @@ pub unsafe extern "C" fn msvcrt_free_signals() {
 #[cfg(not(feature = "ucrtsupport"))]
 #[no_mangle]
 pub unsafe extern "C" fn signal(sig: i32, func: __sighandler_t) -> __sighandler_t {
-    let mut ret: __sighandler_t = SIG_ERR();
+    let ret: __sighandler_t;
 
     if sig_addr(func) == SIG_ERR_ADDR {
         return SIG_ERR();

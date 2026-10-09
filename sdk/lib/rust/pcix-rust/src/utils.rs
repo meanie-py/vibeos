@@ -201,7 +201,6 @@ pub unsafe extern "system" fn PciIsDatacenter() -> BOOLEAN {
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    Result = FALSE;
 
     let empty_name: [u16; 1] = core::mem::transmute::<[u8; 2], [u16; 1]>(*b"\0\0");
     let setupdd_path: [u16; 60] = core::mem::transmute::<[u8; 120], [u16; 60]>(

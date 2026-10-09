@@ -356,21 +356,7 @@ unsafe extern "C" fn str_array_push(
     if (*a).num >= (*a).max {
         (*a).max = (*a).num;
     }
-    {
-        let mut i: core::ffi::c_int;
-        let mut c: core::ffi::c_char;
-
-        i = (*a).max as core::ffi::c_int - 1;
-        while i >= 0 {
-            c = b'>' as core::ffi::c_char;
-            if (i as core::ffi::c_uint) < (*a).start {
-                c = b'-' as core::ffi::c_char;
-            } else if (i as core::ffi::c_uint) >= (*a).num {
-                c = b'}' as core::ffi::c_char;
-            }
-            i -= 1;
-        }
-    }
+    // The C's `if (TRACE_ON(msvcrt))` dump loop fed only a TRACE, and the prints are dropped.
 
     (TRUE) as u8
 }
@@ -1398,7 +1384,7 @@ unsafe extern "C" fn handle_data(sym: *mut parsed_symbol) -> u8 {
         flags: 0,
     };
     let mut ct: datatype_t = core::mem::zeroed();
-    let mut name: *mut i8 = core::ptr::null_mut();
+    let mut name: *mut i8;
     let mut ret: u8 = FALSE;
 
     'done: {
@@ -1446,7 +1432,7 @@ unsafe extern "C" fn handle_data(sym: *mut parsed_symbol) -> u8 {
                     break 'done;
                 }
                 if *(*sym).current != (b'@') as i8 {
-                    let mut cls: *mut i8 = core::ptr::null_mut();
+                    let mut cls: *mut i8;
 
                     cls = get_class_name(sym);
                     if cls.is_null() {
@@ -1499,7 +1485,7 @@ unsafe extern "C" fn handle_method(sym: *mut parsed_symbol, cast_op: u8) -> u8 {
     let mut function_qualifier: *const i8 = core::ptr::null();
     let mut exported: *const i8 = core::ptr::null();
     let mut args_str: *const i8 = core::ptr::null();
-    let mut name: *const i8 = core::ptr::null();
+    let mut name: *const i8;
     let mut ret: u8 = FALSE;
     let mut has_args: u8 = (TRUE) as u8;
     let mut has_ret: u8 = (TRUE) as u8;

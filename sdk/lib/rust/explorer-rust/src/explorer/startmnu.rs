@@ -29,7 +29,7 @@ pub unsafe extern "C" fn UpdateStartMenu(
         &mut pbb as *mut *mut IBanneredBar as *mut *mut core::ffi::c_void,
     );
     if SUCCEEDED(hRet) {
-        hRet = (*pbb).SetBitmap(hbmBanner);
+        (*pbb).SetBitmap(hbmBanner);
 
         hRet = (*pbb).SetIconSize(if bSmallIcons != 0 { BMICON_SMALL } else { BMICON_LARGE });
     }

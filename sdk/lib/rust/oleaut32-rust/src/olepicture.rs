@@ -4530,7 +4530,7 @@ unsafe extern "C" fn serializeBMP(
     let mut hBitmap = hBitmap;
     let mut hdib: HBITMAP = core::ptr::null_mut();
 
-    let mut success: i32 = 0;
+    let success: i32;
     let hDC: HDC;
     let pInfoBitmap: *mut BITMAPINFO;
     let mut iNumPaletteEntries: i32;
@@ -4733,7 +4733,7 @@ unsafe extern "C" fn serializeIcon(
 
         let pIconDir: *mut CURSORICONFILEDIR;
         let mut pIconEntry: *mut CURSORICONFILEDIRENTRY;
-        let mut pIconBitmapHeader: *mut BITMAPINFOHEADER;
+        let pIconBitmapHeader: *mut BITMAPINFOHEADER;
         let iOffsetPalette: u32;
         let iOffsetColorData: u32;
         let iOffsetMaskData: u32;
@@ -4796,9 +4796,6 @@ unsafe extern "C" fn serializeIcon(
         (*pIconBitmapHeader).biHeight *= 2;
         pIconData = HeapReAlloc(GetProcessHeap(), 0, pIconData as *mut core::ffi::c_void, iDataSize as SIZE_T) as *mut u8;
         pIconEntry = pIconData.offset((3 * core::mem::size_of::<u16>()) as isize) as *mut CURSORICONFILEDIRENTRY;
-        pIconBitmapHeader = pIconData
-            .offset((3 * core::mem::size_of::<u16>()) as isize)
-            .offset(core::mem::size_of::<CURSORICONFILEDIRENTRY>() as isize) as *mut BITMAPINFOHEADER;
         (*pIconEntry).dwDIBSize = iDataSize - (3 * core::mem::size_of::<u16>() + core::mem::size_of::<CURSORICONFILEDIRENTRY>()) as u32;
 
         GetDIBits(

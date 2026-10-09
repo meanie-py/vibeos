@@ -615,7 +615,7 @@ unsafe fn tsdb_on_draw(this: *mut CTrayShowDesktopButton, hdc: HDC, prc: *const 
     if !(*this).m_hTheme.is_null() {
         let theme: HTHEME;
         let mut part: i32 = 0;
-        let mut state: i32 = 0;
+        let state: i32;
         if (*this).m_drawWithDedicatedBackground != 0 {
             theme = (*this).m_hTheme;
 

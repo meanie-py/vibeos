@@ -814,7 +814,7 @@ pub unsafe extern "system" fn HvLoadHive(
     let mut BaseBlock: PHBASE_BLOCK = core::ptr::null_mut();
     let Result: RESULT;
     #[cfg(not(target_arch = "x86_64"))]
-    let mut Result2: RESULT = RESULT::NotHive;
+    let mut Result2: RESULT;
     let mut TimeStamp: LARGE_INTEGER = core::mem::zeroed();
     let mut Offset: u32 = 0;
     let mut HiveData: *mut core::ffi::c_void;

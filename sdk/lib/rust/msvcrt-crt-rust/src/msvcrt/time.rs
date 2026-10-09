@@ -380,7 +380,7 @@ unsafe extern "C" fn is_dst(st: *const SYSTEMTIME) -> BOOL {
 unsafe extern "C" fn mktime_helper(mstm: *mut tm, local: BOOL) -> __time64_t {
     let mut st: SYSTEMTIME = core::mem::zeroed();
     let mut ft: FILETIME = core::mem::zeroed();
-    let mut ret: __time64_t = 0;
+    let mut ret: __time64_t;
     let mut i: i32;
     let mut use_dst: BOOL = (FALSE) as i32;
 
