@@ -285,13 +285,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
     crate::netcfg::set_mac(mac);
 
     // M10: connect the NIC's interrupt so an arriving frame wakes this worker via
-    // an event instead of pure busy-polling: virtio's INTx on x86, the GEM's PnP
-    // interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
+    // an event instead of pure busy-polling: virtio's INTx (x86 and arm64), the
+    // GEM's PnP interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
     // poll fallback, no regression. The NDIS backend (M11) drives RX from
     // ProtocolReceive instead, so this is gated off there.
     #[cfg(not(feature = "ndis"))]
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
-        #[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
             let df = crate::pci::find_virtio_net();
@@ -312,10 +311,20 @@ unsafe extern "system" fn worker(_context: PVOID) {
         AnyPhy::Gem(g) => {
             connect_platform(platform_irq, crate::gem::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
         }
-        // e1000 v1 and GENET are pure-poll: interrupts stay masked, the poll
-        // loop's delay_ms cadence drives RX. GENET's interrupt path is on branch
-        // pi4-genet-irq, waiting for the Pi 4 bench to measure it (roadmap).
-        _ => null_mut(),
+        AnyPhy::E1000(e) => match e.dev().interrupt_line() {
+            Some(line) => {
+                let event = unsafe { crate::isr::connect_line(crate::e1000::irq_ack, e.dev().irq_ctx().cast(), line as u32) };
+                if !event.is_null() {
+                    e.dev().enable_interrupts();
+                }
+                event
+            }
+            None => null_mut(),
+        },
+        // GENET is pure-poll: interrupts stay masked, the poll loop's delay_ms
+        // cadence drives RX. Its interrupt path is on branch pi4-genet-irq,
+        // waiting for the Pi 4 bench to measure it (roadmap).
+        AnyPhy::Genet(_) => null_mut(),
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));

@@ -11,11 +11,21 @@
 //!
 //! There is no C original. Windows splits this between sdbus.sys and
 //! sdstor.sys, and ReactOS has neither.
+//!
+//! Any SDHCI on PCI (class 08/05/01) binds here too, so QEMU tests it with no
+//! board: `VIBEOS_QEMU_EXTRA_ARGS="-device sdhci-pci,sd-spec-version=3,addr=0x1f
+//! -drive if=none,id=sd0,format=raw,file=<image> -device sd-card,drive=sd0"`.
+//! Pin the slot (`addr=`): a device that takes an earlier one renumbers the boot
+//! disk and the firmware falls back to PXE. On Windows-host QEMU the image path
+//! is a Windows one with forward slashes. QEMU's SDHCI completes every command
+//! before the driver could sleep, so the interrupt path (irq.rs) only runs on a
+//! board; the Pi 5 logs `first interrupt serviced`.
 
 #![no_std]
 #![allow(non_snake_case)]
 
 mod host;
+mod irq;
 mod pnp;
 mod print;
 mod scsi;
