@@ -76,6 +76,11 @@ DOUBLE_NOT_RE = re.compile(r"(?<![A-Za-z0-9_!])!!(?=[A-Za-z_(*])")
 STRING_RE = re.compile(r'b?"(?:\\.|[^"\\])*"')
 
 
+_KEYWORDS_BEFORE_EXPR = frozenset(
+    {"if", "while", "return", "match", "in", "else", "let", "break", "mut", "as", "move"}
+)
+
+
 def is_generated(text: str) -> bool:
     return any(m in "\n".join(text.split("\n")[:6]) for m in GEN_MARKERS)
 
@@ -87,8 +92,12 @@ def scan_line(line: str) -> bool:
         return True
     for m in UNARY_NOT_RE.finditer(line):
         before = line[: m.start()].rstrip()
-        # `foo!(` / `assert!(` — a macro bang, not the not-operator.
-        if before and (before[-1].isalnum() or before[-1] == "_"):
+        # `foo!(` / `assert!(` — a macro bang, not the not-operator. A KEYWORD before the
+        # `!` is not a macro name: `if !Success != 0` read as the macro `if!` and hid every
+        # `if`/`while`/`return` site -- usetup's PrepareCopyPage always quit, powercfg's
+        # Pos_InitData always failed, and the scanner reported 0 (2026-10-08).
+        word = re.search(r"[A-Za-z0-9_]+$", before)
+        if word and word.group(0) not in _KEYWORDS_BEFORE_EXPR:
             continue
         # `x & !MASK` — the legitimate unknown-flag test. `&&`/`||` are NOT that.
         if before.endswith(("&", "|", "^")) and not before.endswith(("&&", "||")):

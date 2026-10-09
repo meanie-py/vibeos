@@ -1668,14 +1668,21 @@ pub unsafe extern "C" fn _SEH2_GetExceptionCode() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn _Analysis_assume_(_Condition: bool) {}
 
-// i386: #define KeFlushIoBuffers(...) <empty>  (only ARM exports a real fn).
-// Caller declares it extern "system" -> _KeFlushIoBuffers@12. No-op stdcall shim.
+// KeFlushIoBuffers is a MACRO, per arch: empty on x86/amd64 (cache-coherent DMA,
+// xdk/x86/ke.h:188), `_DataSynchronizationBarrier()` on arm64 (xdk/arm64/ke.h:106).
+// Only 32-bit ARM exports a real function, so the driver carries its own. This was
+// empty on every arch, which dropped the arm64 barrier after a DMA read. (fastfat gets
+// it right by capturing the real macro in C: rust_cohab_fat.c.) Caller declares it
+// extern "system" -> _KeFlushIoBuffers@12 on i386.
 #[no_mangle]
 pub unsafe extern "system" fn KeFlushIoBuffers(
     _Mdl: *mut MDL,
     _ReadOperation: i32,
     _DmaOperation: i32,
 ) {
+    // Not `nomem`: the barrier must also order the compiler's own memory accesses.
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb sy", options(nostack, preserves_flags));
 }
 
 // cdprocs.h: #define BytesFromSectors(L)  ((ULONG)(L) << SECTOR_SHIFT). stdcall (@4).

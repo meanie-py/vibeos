@@ -1484,8 +1484,6 @@ pub unsafe fn CRegFolder_GetDetailsOf_body(this: *mut CRegFolder, pidl: PCUITEMI
                 return SHSetStrRetEmpty(core::ptr::addr_of_mut!((*psd).str_));
             }
         }
-
-        E_FAIL
     }
 }
 

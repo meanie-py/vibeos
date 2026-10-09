@@ -29,7 +29,6 @@ use crate::time::{delay_ms, now};
 pub static DHCP_READY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 const ECHO_PORT: u16 = 7777;
-const GW_IP: [u8; 4] = [10, 0, 2, 2];
 
 /// Neighbors netstack keeps resolved itself: the gateway and the on-link DNS servers.
 const WARM_MAX: usize = 5;
@@ -70,8 +69,6 @@ fn warm_neighbors<D: smoltcp::phy::Device>(
         });
     }
 }
-/// slirp's built-in DNS forwarder.
-const DNS_IP: [u8; 4] = [10, 0, 2, 3];
 const DNS_NAME: &str = "example.com";
 const DNS_MAX_ATTEMPTS: u32 = 20;
 const ICMP_IDENT: u16 = 0x022b;
@@ -113,6 +110,7 @@ enum AnyPhy {
     Virtio(VirtioPhy),
     E1000(crate::e1000::E1000Phy),
     Genet(crate::genet::GenetPhy),
+    Gem(crate::gem::GemPhy),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -122,6 +120,7 @@ impl AnyPhy {
             AnyPhy::Virtio(v) => v.mac(),
             AnyPhy::E1000(e) => e.mac(),
             AnyPhy::Genet(g) => g.mac(),
+            AnyPhy::Gem(g) => g.mac(),
         }
     }
 }
@@ -131,6 +130,7 @@ enum AnyRxToken {
     Virtio(crate::device::VirtioRxToken),
     E1000(crate::e1000::E1000RxToken),
     Genet(crate::genet::GenetRxToken),
+    Gem(crate::gem::GemRxToken),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -143,6 +143,7 @@ impl smoltcp::phy::RxToken for AnyRxToken {
             AnyRxToken::Virtio(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::E1000(t) => smoltcp::phy::RxToken::consume(t, f),
             AnyRxToken::Genet(t) => smoltcp::phy::RxToken::consume(t, f),
+            AnyRxToken::Gem(t) => smoltcp::phy::RxToken::consume(t, f),
         }
     }
 }
@@ -152,6 +153,7 @@ enum AnyTxToken<'a> {
     Virtio(crate::device::VirtioTxToken<'a>),
     E1000(crate::e1000::E1000TxToken<'a>),
     Genet(crate::genet::GenetTxToken<'a>),
+    Gem(crate::gem::GemTxToken<'a>),
 }
 
 #[cfg(not(feature = "ndis"))]
@@ -164,6 +166,7 @@ impl<'a> smoltcp::phy::TxToken for AnyTxToken<'a> {
             AnyTxToken::Virtio(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::E1000(t) => smoltcp::phy::TxToken::consume(t, len, f),
             AnyTxToken::Genet(t) => smoltcp::phy::TxToken::consume(t, len, f),
+            AnyTxToken::Gem(t) => smoltcp::phy::TxToken::consume(t, len, f),
         }
     }
 }
@@ -187,6 +190,9 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Genet(g) => g
                 .receive(ts)
                 .map(|(r, t)| (AnyRxToken::Genet(r), AnyTxToken::Genet(t))),
+            AnyPhy::Gem(g) => g
+                .receive(ts)
+                .map(|(r, t)| (AnyRxToken::Gem(r), AnyTxToken::Gem(t))),
         }
     }
 
@@ -195,6 +201,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Virtio(v) => v.transmit(ts).map(AnyTxToken::Virtio),
             AnyPhy::E1000(e) => e.transmit(ts).map(AnyTxToken::E1000),
             AnyPhy::Genet(g) => g.transmit(ts).map(AnyTxToken::Genet),
+            AnyPhy::Gem(g) => g.transmit(ts).map(AnyTxToken::Gem),
         }
     }
 
@@ -203,6 +210,7 @@ impl smoltcp::phy::Device for AnyPhy {
             AnyPhy::Virtio(v) => v.capabilities(),
             AnyPhy::E1000(e) => e.capabilities(),
             AnyPhy::Genet(g) => g.capabilities(),
+            AnyPhy::Gem(g) => g.capabilities(),
         }
     }
 }
@@ -220,8 +228,13 @@ unsafe extern "system" fn worker(_context: PVOID) {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match crate::pnp::wait().and_then(crate::genet::bringup) {
-                Some(d) => AnyPhy::Genet(crate::genet::GenetPhy::new(d)),
+            None => match crate::pnp::wait().and_then(|nic| match nic.kind {
+                crate::pnp::NicKind::Genet => {
+                    crate::genet::bringup(nic).map(|d| AnyPhy::Genet(crate::genet::GenetPhy::new(d)))
+                }
+                crate::pnp::NicKind::Gem => crate::gem::bringup(nic).map(|d| AnyPhy::Gem(crate::gem::GemPhy::new(d))),
+            }) {
+                Some(phy) => phy,
                 None => {
                     nsprint!("[NETSTACK] FAIL: M2 device bringup\n");
                     crate::tditrans::mark_engine_dead();
@@ -267,7 +280,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         }
         // e1000 v1 is pure-poll: interrupts stay masked (IMC), the poll loop's
         // delay_ms cadence drives RX. No regression vs the no-IRQ fallback path.
-        AnyPhy::E1000(_) | AnyPhy::Genet(_) => null_mut(),
+        AnyPhy::E1000(_) | AnyPhy::Genet(_) | AnyPhy::Gem(_) => null_mut(),
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
@@ -292,7 +305,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
         tcp::SocketBuffer::new(vec![0u8; 4096]),
     ));
     let dns_handle = sockets.add(dns::Socket::new(
-        &[IpAddress::v4(DNS_IP[0], DNS_IP[1], DNS_IP[2], DNS_IP[3])],
+        &[], // the lease's servers, set when it binds
         Vec::new(),
     ));
     sockets
@@ -300,7 +313,9 @@ unsafe extern "system" fn worker(_context: PVOID) {
         .bind(icmp::Endpoint::Ident(ICMP_IDENT))
         .ok();
 
-    let gw = IpAddress::v4(GW_IP[0], GW_IP[1], GW_IP[2], GW_IP[3]);
+    // The boot ping goes to the lease's router and the DNS self-test to the lease's
+    // servers: slirp's 10.0.2.2 / 10.0.2.3 under QEMU, the LAN's own on a board.
+    let mut gw: Option<IpAddress> = None;
     let mut dhcp_configured = false;
     let mut ping_sent = false;
     let mut ping_ok = false;
@@ -329,6 +344,8 @@ unsafe extern "system" fn worker(_context: PVOID) {
         crate::tditrans::pump(&mut iface, &mut sockets, &mut tdi_state);
 
         // --- DHCPv4: obtain a lease from slirp, apply it to the interface ---
+        // The lease's DNS servers, handed to the DNS socket once `sockets` is free.
+        let mut lease_dns: Option<Vec<IpAddress>> = None;
         if let Some(event) = sockets.get_mut::<dhcpv4::Socket>(dhcp_handle).poll() {
             match event {
                 dhcpv4::Event::Configured(cfg) => {
@@ -355,6 +372,9 @@ unsafe extern "system" fn worker(_context: PVOID) {
                         ndns += 1;
                     }
                     crate::netcfg::publish_dns_servers(&dns[..ndns]);
+                    gw = cfg.router.map(IpAddress::Ipv4);
+                    lease_dns =
+                        Some(dns[..ndns].iter().map(|o| IpAddress::v4(o[0], o[1], o[2], o[3])).collect());
                     // Resolve the gateway and the on-link DNS servers ourselves, now and
                     // every WARM_PERIOD_MS (see warm_neighbors).
                     nwarm = 0;
@@ -383,6 +403,9 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
         }
+        if let Some(servers) = lease_dns {
+            sockets.get_mut::<dns::Socket>(dns_handle).update_servers(&servers);
+        }
 
         // The rest needs an address — gate on the lease.
         if dhcp_configured && nwarm > 0 && (ts.total_millis() as i64) >= warm_next_ms {
@@ -393,7 +416,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
             // --- ICMP ping the gateway (also exercises ARP) ---
             {
                 let s = sockets.get_mut::<icmp::Socket>(icmp_handle);
-                if !ping_sent && s.can_send() {
+                if let (false, true, Some(gw)) = (ping_sent, s.can_send(), gw) {
                     let payload = [0u8; 16];
                     let repr = Icmpv4Repr::EchoRequest {
                         ident: ICMP_IDENT,
@@ -404,7 +427,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
                         let mut pkt = Icmpv4Packet::new_unchecked(buf);
                         repr.emit(&mut pkt, &ChecksumCapabilities::default());
                         ping_sent = true;
-                        nsprint!("[NETSTACK] icmp echo request -> 10.0.2.2\n");
+                        nsprint!("[NETSTACK] icmp echo request -> {}\n", gw);
                     }
                 }
                 if ping_sent && !ping_ok && s.can_recv() {
@@ -467,6 +490,10 @@ unsafe extern "system" fn worker(_context: PVOID) {
         // and the client gives up for good. With the guestfwd present slirp answers the
         // SYN at once (SYN-ACK, or RST while the host listener is not up yet), so this
         // never fires there.
+        if dhcp_configured && !client_done && !crate::netcfg::on_slirp() {
+            client_done = true;
+            nsprint!("[NETSTACK] outbound TCP: skipped (the host echo exists only on QEMU's network)\n");
+        }
         if dhcp_configured && !client_done {
             let s = sockets.get_mut::<tcp::Socket>(client_handle);
             let now_ms = now().total_millis() as i64;
@@ -533,6 +560,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
                         let _ = s.send_slice(&tmp[..n]);
                     }
                 }
+            }
+            // The client hung up and everything it sent has been echoed: close our
+            // side too. Left in CLOSE-WAIT the socket stays open forever and never
+            // listens again, so each boot answered exactly one connection.
+            if s.state() == tcp::State::CloseWait && !s.can_recv() && s.send_queue() == 0 {
+                s.close();
             }
         }
 

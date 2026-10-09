@@ -214,7 +214,6 @@ unsafe extern "C" {
     fn DEVICE_TYPE_FROM_CTL_CODE(io_control_code: u32) -> u32;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn DeviceCreateWellKnownName(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
@@ -462,7 +461,18 @@ const IOCTL_SCSI_PASS_THROUGH_EX: u32 = 0x0004D044;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0x0004D048;
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400;
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
-const RequestSetupMcnSyncIrp: usize = 0;
+// The MCN sync IRP marks itself with the ADDRESS of RequestSetupMcnSyncIrp in
+// Arg1/Arg2/Arg4 (autorun.rs stores it; cdrom.c:3037 compares against the function).
+// The translation had replaced this with `const … = 0`, so the self-check below never
+// matched, the driver's own sync IRP was dispatched as an UNKNOWN ioctl and forwarded
+// to the port driver once per timer tick: scsiport logged
+// `unknown ioctl code: 0x7C0C8` ~700 times per hung amd64-bios boot, media-change
+// detection never ran, and the chatter kept the smoke harness from recognising a
+// wedged guest (the "serial still flowing" rule). Compare against the real function.
+#[inline(always)]
+unsafe fn RequestSetupMcnSyncIrpAddr() -> usize {
+    crate::autorun::RequestSetupMcnSyncIrp as *const () as usize
+}
 
 const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
@@ -606,7 +616,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
     let mut devicePropertySize: u32 = 0;
     let mut devicePropertyType: u32 = DEVPROP_TYPE_EMPTY;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     driverExtension = DriverGetExtension(Driver);
 
@@ -1087,7 +1097,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
 #[no_mangle]
 pub unsafe extern "system" fn DeviceEvtCleanup(Device: WDFOBJECT) {
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let device = Device as *mut core::ffi::c_void;
     let format = b"WDFDEVICE %p cleanup: The device is about to be destroyed.\n\0".as_ptr() as *const i8;
@@ -1124,7 +1134,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION; // NULL initially
 
     // PAGED_CODE(); remains as a call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // TracePrint with varargs; we pass the format string and pointer
     TracePrint!(
@@ -1441,7 +1451,7 @@ pub unsafe extern "C" fn DeviceCleanupProtectedLocks(
     FileObjectContext: *mut FILE_OBJECT_CONTEXT,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = 0; // STATUS_SUCCESS
-    PAGED_CODE();
+    PAGED_CODE!();
     TracePrint!(
         4, // TRACE_LEVEL_INFORMATION
         0x1, // TRACE_FLAG_INIT
@@ -2742,9 +2752,9 @@ pub unsafe extern "C" fn RequestDispatchSpecialIoctls(
             if ((*deviceExtension).MediaChangeDetectionInfo).is_null() == false
                 && (irp == (*(*deviceExtension).MediaChangeDetectionInfo).MediaChangeSyncIrp)
                 && (WdfRequestGetRequestorMode(Request) == 0i8)
-                && (RequestParameters.Parameters.Others.as_ref().Arg1 as usize == RequestSetupMcnSyncIrp)
-                && (RequestParameters.Parameters.Others.as_ref().Arg2 as usize == RequestSetupMcnSyncIrp)
-                && (RequestParameters.Parameters.Others.as_ref().Arg4 as usize == RequestSetupMcnSyncIrp)
+                && (RequestParameters.Parameters.Others.as_ref().Arg1 as usize == RequestSetupMcnSyncIrpAddr())
+                && (RequestParameters.Parameters.Others.as_ref().Arg2 as usize == RequestSetupMcnSyncIrpAddr())
+                && (RequestParameters.Parameters.Others.as_ref().Arg4 as usize == RequestSetupMcnSyncIrpAddr())
             {
                 // This is the request we use to sync Media Change Detection with sequential queue.
                 status = WdfDeviceEnqueueRequest(Device, Request);
@@ -2973,7 +2983,7 @@ pub unsafe extern "system" fn ReadWriteWorkItemRoutine(WorkItem: WDFWORKITEM) {
     let mut readWriteRequestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     deviceExtension = WdfObjectGetTypedContext(
         WdfWorkItemGetParentObject(WorkItem),
@@ -3127,7 +3137,7 @@ pub unsafe extern "system" fn IoctlWorkItemRoutine(WorkItem: WDFWORKITEM) {
     let mut information: usize = 0;
     let mut requestParameters: WDF_REQUEST_PARAMETERS = core::mem::zeroed();
     let mut completeRequest: i32 = 1;
-    PAGED_CODE();
+    PAGED_CODE!();
     WDF_REQUEST_PARAMETERS_INIT(&mut requestParameters);
     WdfRequestGetParameters(Request, &mut requestParameters);
     NormalizeIoctl(&mut requestParameters);

@@ -1657,7 +1657,7 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                         core::ptr::addr_of_mut!((*(&raw mut (*Privileges).Privilege[0]).add(i as usize)).Luid) as *mut _LUID,
                         &mut (*(&raw mut (*CurrentPrivileges).Privilege[0]).add(i as usize)).Luid,
                     ) {
-                        (*NewPrivileges).Privilege[j as usize].Attributes =
+                        (*(&raw mut (*NewPrivileges).Privilege[0]).add(j as usize)).Attributes =
                             (*(&raw mut (*Privileges).Privilege[0]).add(i as usize)).Attributes;
 
                         bFound = 1;
@@ -1671,7 +1671,8 @@ pub unsafe extern "system" fn LsarAddPrivilegesToAccount(
                         1,
                         &mut (*(&raw mut (*Privileges).Privilege[0]).add(i as usize)) as *mut _
                             as PLUID_AND_ATTRIBUTES,
-                        &mut (*NewPrivileges).Privilege[PrivilegeCount as usize]
+                        &mut *(&raw mut (*NewPrivileges).Privilege[0])
+                            .add(PrivilegeCount as usize)
                             as PLUID_AND_ATTRIBUTES,
                     );
                     PrivilegeCount += 1;

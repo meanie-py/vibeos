@@ -17,7 +17,6 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlU
 extern "system" {
     } extern "C" { fn DebugTrace(severity: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
-    fn PAGED_CODE();
     fn Fat8dot3ToString( irp_context: *mut IRP_CONTEXT, dirent: *const DIRENT, flag: i32, filename: *mut OEM_STRING, );
     fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
@@ -138,7 +137,7 @@ pub unsafe extern "system" fn FatGetEaLength(
     );
     let mut EaSetRange = EaSetRange_uninit.assume_init();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -595,7 +594,7 @@ pub unsafe extern "system" fn FatDeleteEa(
     let mut EaBcb: *mut BCB = core::ptr::null_mut();
     let mut LockedEaFcb: i32 = 0; // BOOLEAN
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatDeleteEa...\n\0".as_ptr() as *const i8, 0);
 
@@ -1208,7 +1207,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
     let mut EaSet: *mut EA_SET_HEADER = core::ptr::null_mut();
     let mut EaSetClusterCount: u16 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     UNREFERENCED_PARAMETER((FileName).cast());
 
@@ -2218,7 +2217,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
     Offset: u32,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         DebugTrace(1, Dbg, (b"FatDeletePackedEa, Offset = %08lx\n\0".as_ptr() as *const u8).cast(), Offset);
 
@@ -2326,7 +2325,7 @@ pub unsafe extern "system" fn FatIsEaNameValid(
     let mut Index: u32;
     let mut Char: u8 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     _ = IrpContext;
 
@@ -2506,7 +2505,7 @@ pub unsafe extern "system" fn FatMarkEaRangeDirty(
     EaFileObject: *mut FILE_OBJECT,
     EaRange: *mut EA_RANGE,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     if (*EaRange).AuxilaryBuffer == 1 {

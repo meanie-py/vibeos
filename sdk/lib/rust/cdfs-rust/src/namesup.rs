@@ -19,7 +19,6 @@ extern "C" {
     fn FlagOn(Value: u32, Flags: u32) -> i32;
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn NT_ASSERT(condition: i32);
@@ -54,7 +53,7 @@ pub unsafe extern "C" fn CdConvertNameToCdName(
     let mut NameLength: u32 = 0u32;
     let mut CurrentCharacter: *mut u16 = (*CdName).FileName.Buffer;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // UNREFERENCED_PARAMETER( IrpContext );
     let _ = IrpContext;
@@ -96,7 +95,7 @@ pub unsafe extern "C" fn CdConvertBigToLittleEndian(
     let mut source: *const u8 = BigEndian;
     let mut destination: *mut u8 = LittleEndian;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if FlagOn(ByteCount, 1) != 0 {
         CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR as u32);
@@ -453,7 +452,7 @@ pub unsafe extern "C" fn CdIsNameInExpression(
     CheckVersion: BOOLEAN,
 ) -> BOOLEAN {
     let mut Match: BOOLEAN = 1;
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
 
     if FlagOn(WildcardFlags, CCB_FLAG_ENUM_NAME_EXP_HAS_WILD) != 0 {
@@ -511,7 +510,7 @@ pub unsafe extern "C" fn CdShortNameDirentOffset(
     let mut FoundTilde: i32 = 0;
     let mut NextWchar: *mut u16;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut c_void);
 
     RemainingByteCount = (*Name).Length as u32;

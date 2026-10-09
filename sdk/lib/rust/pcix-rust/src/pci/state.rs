@@ -9,8 +9,6 @@ use ntkrnl_sys::ke::*;
 use ntkrnl_sys::ddk::PCSTR;
 use core::ffi::c_void;
 
-extern "system" {
-}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

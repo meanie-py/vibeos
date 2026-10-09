@@ -14,7 +14,6 @@ use crate::types::{DCB};
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...); } extern "system" {
     fn NT_ASSERT(condition: i32);
-    fn PAGED_CODE();
     fn FatFspClose(vcb: *mut VCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
     fn FlagOn(flags: u32, flag: u32) -> i32;
@@ -78,7 +77,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 ) {
     unsafe {
         // PAGED_CODE(); (not available, assume call)
-        PAGED_CODE();
+        PAGED_CODE!();
 
         DebugTrace(
             1,
@@ -314,7 +313,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
     let OriginalFcb = Fcb;
     let mut NextFcb: *mut FCB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(
         1,
@@ -367,7 +366,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
     let mut ChildrenAcquired: i32 = 0; // FALSE
     let Vcb: *mut VCB;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     //
     //  If we can't wait, bail.

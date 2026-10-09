@@ -1389,14 +1389,36 @@ unsafe extern "system" fn IopUnloadDriver(
     QueryTable[0].Flags = RTL_QUERY_REGISTRY_DIRECT;
     QueryTable[0].EntryContext = &mut ImagePath as *mut _UNICODE_STRING as PVOID;
 
+    // Divergence from the C, which passes CapturedServiceName.Buffer straight through:
+    // RTL_REGISTRY_ABSOLUTE takes a NUL-terminated PWSTR, but this is a COUNTED string.
+    // A driver unloading itself from DriverEntry passes its RegistryPath, which points
+    // into a KEY_NAME_INFORMATION block with no terminator, so the key name ran on into
+    // whatever pool bytes followed and the open failed STATUS_OBJECT_NAME_NOT_FOUND on
+    // about half of boots (kmtest IoDeviceObject_drv.c:300, caught by a gdb probe
+    // reading the path at NtOpenKey). Query through a terminated copy.
+    let TerminatedLength = CapturedServiceName.Length as usize + core::mem::size_of::<u16>();
+    let TerminatedName = ExAllocatePoolWithTag(PagedPool, TerminatedLength, TAG_IO) as *mut u16;
+    if TerminatedName.is_null() {
+        ReleaseCapturedUnicodeString(&mut CapturedServiceName as *mut _UNICODE_STRING, PreviousMode);
+        ObDereferenceObject(DriverObject as PVOID);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::copy_nonoverlapping(
+        CapturedServiceName.Buffer,
+        TerminatedName,
+        CapturedServiceName.Length as usize / core::mem::size_of::<u16>(),
+    );
+    *TerminatedName.add(CapturedServiceName.Length as usize / core::mem::size_of::<u16>()) = 0;
+
     Status = RtlQueryRegistryValues(
         RTL_REGISTRY_ABSOLUTE,
-        CapturedServiceName.Buffer,
+        TerminatedName,
         QueryTable.as_mut_ptr(),
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
 
+    ExFreePoolWithTag(TerminatedName as PVOID, TAG_IO);
     ReleaseCapturedUnicodeString(&mut CapturedServiceName as *mut _UNICODE_STRING, PreviousMode);
 
     if Status < 0 {
@@ -1856,8 +1878,12 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
         &mut infoLength,
     );
     if Status == STATUS_BUFFER_TOO_SMALL {
-        nameInfo = ExAllocatePoolWithTag(NonPagedPool, infoLength as usize, TAG_IO)
-            as PKEY_NAME_INFORMATION;
+        // One WCHAR more than the key name needs: see the terminator below.
+        nameInfo = ExAllocatePoolWithTag(
+            NonPagedPool,
+            infoLength as usize + core::mem::size_of::<u16>(),
+            TAG_IO,
+        ) as PKEY_NAME_INFORMATION;
         if !nameInfo.is_null() {
             Status = ZwQueryKey(
                 ServiceHandle,
@@ -1873,6 +1899,17 @@ pub unsafe extern "C" fn IopInitializeDriverModule(
                 // base of the array (not an indexed slot) so we don't trip the
                 // bounds-check that fires when index >= 1.
                 RegistryPath.Buffer = core::ptr::addr_of_mut!((*nameInfo).Name) as *mut u16;
+                // Divergence from the C: NUL-terminate, in the WCHAR allocated past the
+                // name. KeyNameInformation is counted, but drivers hand
+                // RegistryPath->Buffer to RTL_REGISTRY_ABSOLUTE queries as a PWSTR
+                // (mountmgr, ramdisk, i8042prt here), and without this the key name ran
+                // on into pool garbage -- the open then failed
+                // STATUS_OBJECT_NAME_NOT_FOUND on about half of boots. The terminator
+                // stays OUTSIDE MaximumLength: Windows reports MaximumLength == Length
+                // (kmtest IoDeviceObject_drv.c:191).
+                *RegistryPath
+                    .Buffer
+                    .add((*nameInfo).NameLength as usize / core::mem::size_of::<u16>()) = 0;
             } else {
                 ExFreePoolWithTag(nameInfo as PVOID, TAG_IO);
                 nameInfo = core::ptr::null_mut();

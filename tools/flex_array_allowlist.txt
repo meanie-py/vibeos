@@ -1,0 +1,86 @@
+# scan_flex_array_panic: sites GRADED and found NOT to be bindgen flexible arrays.
+#
+# Format: [@arch[,arch]] <crate>: <symbol>      # rationale
+#
+# The symbol is the ARCH-NEUTRAL name the scanner prints: no i386 `_` decoration, no
+# `@N` stdcall suffix, no `17h<hash>E` legacy-mangling hash, no `.llvm.<n>` ThinLTO
+# suffix. An unscoped entry applies to every arch; `@amd64,arm64` limits it to those.
+# Scope an entry to the arches where the site EXISTS, because a stale entry fails the
+# lint on the arch where it went stale.
+#
+# An entry here is a claim that the bounds check is CORRECT and must stay. It is not a
+# deferral -- deferred work belongs in the roadmap, not in a file that silences a gate.
+# Every entry names the evidence for both grading tests: does the C over-allocate, and is
+# the declared length a LITERAL 1.
+#
+# A stale entry (one that no longer matches any finding) is reported as an error rather
+# than ignored: it means either the site was fixed and the entry should go, or the reader
+# stopped seeing it and the gate has quietly lost coverage.
+#
+# Whether a correct check SURVIVES is an optimizer decision, so a rebuild that changes
+# inlining can move one onto or off an arch (KeInitializeProcess appeared on arm64 after an
+# unrelated kernel change). That shows up here as ungraded or stale -- which is the gate
+# noticing, not a false alarm. Re-scope the entry against the new evidence.
+
+atapi-legacy-rust: _ZN17atapi_legacy_rust5entry29AtapiFindNativeModeControllerE
+# NativeModeAdapters is a genuine one-entry static table, not an allocation:
+#   atapi.h:319  NATIVE_MODE_CONTROLLER_INFORMATION const NativeModeAdapters[] = {
+#                    { "10ad", 4, "0105", 4} };
+#   atapi.h:322  #define NUM_NATIVE_MODE_ADAPTERS (sizeof(...) / sizeof(...))
+# Test 1 (does the C over-allocate?): NO -- static const, nothing is allocated.
+# Test 2 (literal 1?): the length is DERIVED from the initializer and the bound callers
+# use is computed from it, so the [T; 1] the Rust declares (entry.rs:52) is faithful. The
+# index is dynamic (atapi.c:2745 takes it from the caller's Context), so the check is
+# real, correct and must stay -- rewriting it as a pointer add would delete a live
+# safety check. (Graded first on atapi-rust, which no arch builds any more; the legacy
+# crate that replaced it carries the same table.)
+
+@amd64,arm64 rtl-rust: _ZN7network4pure11format_ipv6E
+@amd64 rtl-rust: _ZN11rtl_strings7core_rs8dos8dot312get_checksumE
+* : _ZN7network4pure11format_ipv6E
+@i386,amd64 * : _ZN11rtl_strings7core_rs8dos8dot312get_checksumE
+# NOT ARRAYS AT ALL -- both index a runtime-length SLICE (`out: &mut [C]` at
+# network/src/lib.rs:662, `buf: &[u16]` at rtl-strings dos8dot3.rs:29), and the
+# constant length is BRANCH-DERIVED: LLVM emits `cmp $1, %len; je` into a block that
+# calls panic_bounds_check(1, 1), because on that path it has just proved the length is
+# 1. Only the register-passing arches materialize it that way, which is why i386 never
+# flagged the staticlib copies. (The `*` lines grade the same two functions wherever they
+# are LINKED -- ntdll and both kernels -- including i386's.) The tell in the disassembly is the sibling panic(0, 0) block a few
+# bytes earlier: a [T; 1] can never fail with length 0. Correct checks on Rust slices;
+# they stay.
+
+# ---- cargo-linked images (the boot path) ------------------------------------------------
+
+ntkrnlmp-cargo: KeInitializeProcess
+@amd64,arm64 * : _ZN7ex_rust7sysinfo26QSI_SystemNumaProcessorMapE
+@i386 * : _RNvNtC7ex_rust7sysinfo26QSI_SystemNumaProcessorMap
+@amd64 * : _ZN7ex_rust7sysinfo29QSI_SystemNumaAvailableMemoryE
+@i386 * : _RNvNtC7ex_rust7sysinfo29QSI_SystemNumaAvailableMemory
+# KeNodeBlock is a genuine one-element array: `PKNODE KeNodeBlock[1] = { &KiNode0 };`
+# (ke/krnlinit.c) -- one NUMA node, no allocation behind it (test 1: NO). The index is a
+# runtime node number the optimizer cannot bound, so the check survives and is correct.
+# procobj.rs:242 (KeInitializeProcess's ideal-node walk, SMP kernel only), sysinfo.rs
+# 2182/2229. Graded first in the roadmap's flexible-array entry.
+
+@i386 * : MiFillSystemPageDirectory
+# MmSystemPageDirectory[PPE_PER_PAGE] (section.rs:677): PPE_PER_PAGE is 1 on i386 and 512
+# on the 64-bit arches -- an arch-sized REAL array, which is why only i386 flags it. Test 2
+# (literal 1?): NO, a named constant.
+
+@amd64 * : _ZN9kdbg_rust8i386_dis12Disassembler20disassemble_internalE
+@i386 * : _RNvMs0_NtC9kdbg_rust8i386_disNtB5_12Disassembler20disassemble_internal
+# X86_64_TABLE is `[[Dis386; 2]; 1]` (kdbg-rust i386_dis.rs:404), binutils' one-row
+# x86_64_table, indexed by the opcode entry's runtime bytemode2 (i386_dis.rs:3346). A real
+# static table, nothing allocated; the check is correct.
+
+@i386 nvme-cargo: _RNvNtC9nvme_rust3pnp7connect
+# `entries` is a slice built with from_raw_parts(MessageInfo, MessageCount) (pnp.rs:427);
+# the length-1 constant is branch-derived, as in the rtl-rust entries above.
+
+* : _ZN7zlib_rs7inflate8inftrees13inflate_tableE
+@amd64,arm64 * : _ZN7smoltcp4wire4ipv44Repr4emitE
+@i386 * : _RINvMs5_NtNtC7smoltcp4wire4ipv4NtB6_4Repr4emitQShEBa_
+# Third-party crates from the cargo registry, both indexing SLICES: zlib-rs writes
+# `table[1]` on a `&mut [Code]` (inftrees.rs:70), smoltcp `data[field::DSCP_ECN]` on the
+# packet buffer (wire/ipv4.rs:411). Branch-derived constants; correct checks.
+

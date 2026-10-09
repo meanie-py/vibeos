@@ -103,9 +103,14 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_verify_cohab_coverage.py"),
     (".", ".", "tools/test_scan_import_cc.py"),
     (".", ".", "tools/test_scan_octal_literals.py"),
+    # The i386 no-SSE ABI time bomb: -sse,-sse2 on the builtin i686 triple is a
+    # phase-out warning today and a hard error after a toolchain bump. Fires loudly
+    # here, with the migration, the moment the pinned rustc turns it into an error.
+    (".", ".", "tools/test_scan_i386_sse_abi.py"),
     (".", ".", "tools/test_scan_ptr_highword_mask.py"),
     (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
+    (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
     (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_let_shadow.py"),
@@ -173,6 +178,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
+    (".", ".", "tools/test_rust_warning_census.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_link_guard.py"),
     (".", ".", "tools/test_scan_orphan_modules.py"),

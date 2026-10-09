@@ -210,9 +210,6 @@ pub unsafe extern "system" fn ClassIoCompleteAssociated(
     return STATUS_MORE_PROCESSING_REQUIRED;
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

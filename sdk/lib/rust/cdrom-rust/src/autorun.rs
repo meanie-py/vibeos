@@ -88,7 +88,6 @@ extern "C" {
     fn DevicePowerSettingCallback( SettingGuid: *const ntkrnl_sys::ddk::GUID, Value: *mut core::ffi::c_void, ValueLength: u32, Context: *mut core::ffi::c_void, ) -> i32;
     fn RequestClearSendTime(request: *mut core::ffi::c_void);
     fn RequestSend( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Target: *mut core::ffi::c_void, Options: u32, RequestSent: *mut u8, ) -> i32;
-    fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn CountOfSetBitsUChar(byte: u8) -> u8;
     fn DeviceMarkActive(Extension: *mut CDROM_DEVICE_EXTENSION, Active: BOOLEAN, b: BOOLEAN);
@@ -897,7 +896,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
     let irp: *mut IRP;
     let mut retryImmediately: u8 = 0; // FALSE
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(!(*info).MediaChangeRequest.is_null() as i32);
     irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
@@ -1063,7 +1062,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
     let mut senseBuffer: *mut core::ffi::c_void = null_mut();
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if !(*DeviceExtension).MediaChangeDetectionInfo.is_null() {
         return STATUS_SUCCESS;
@@ -1677,7 +1676,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     let mut alwaysEnable: u32 = 0;
     let mut alwaysDisable: u32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     status = WdfDeviceOpenRegistryKey(
         (*DeviceExtension).Device,
@@ -1807,7 +1806,7 @@ pub unsafe extern "system" fn DeviceMediaChangeRegistryCallBack(
     const TRACE_FLAG_MCN: u32 = 12; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const TRUE: u32 = 1;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     // UNREFERENCED_PARAMETER(ValueName);
     let _ = ValueName;
 
@@ -1890,7 +1889,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> i32 {
     // Call pagable code marker
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut status: NTSTATUS;
     let device_descriptor: PSTORAGE_DEVICE_DESCRIPTOR = (*DeviceExtension).DeviceDescriptor;
@@ -2202,7 +2201,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
 ) {
     unsafe {
         // PAGED_CODE();
-        PAGED_CODE();
+        PAGED_CODE!();
 
         // if (FileObjectContext)
         if !FileObjectContext.is_null() {
@@ -2270,7 +2269,7 @@ pub unsafe extern "C" fn DeviceDisableMediaChangeDetection(
     let info = (*DeviceExtension).MediaChangeDetectionInfo;
 
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // if (FileObjectContext) ...
     if !FileObjectContext.is_null() {

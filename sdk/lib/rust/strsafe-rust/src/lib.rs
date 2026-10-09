@@ -428,6 +428,48 @@ pub unsafe extern "system" fn StringCchLengthW(
     StringLengthWorkerW(psz, cchMax, pcchLength)
 }
 
+/// strsafe.h:1083 `StringCopyNWorkerW` -- copy at most `cchToCopy` characters, always
+/// terminating; a destination that fills is truncated and reported INSUFFICIENT_BUFFER.
+unsafe fn StringCopyNWorkerW(
+    mut pszDest: *mut WCHAR,
+    mut cchDest: usize,
+    mut pszSrc: *const WCHAR,
+    mut cchToCopy: usize,
+) -> HRESULT {
+    let mut hr = S_OK;
+    if cchDest == 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    } else {
+        while cchDest != 0 && cchToCopy != 0 && *pszSrc != 0 {
+            *pszDest = *pszSrc;
+            pszDest = pszDest.add(1);
+            pszSrc = pszSrc.add(1);
+            cchDest -= 1;
+            cchToCopy -= 1;
+        }
+        if cchDest == 0 {
+            pszDest = pszDest.sub(1);
+            hr = STRSAFE_E_INSUFFICIENT_BUFFER;
+        }
+        *pszDest = 0;
+    }
+    hr
+}
+
+/// strsafe.h:236 `StringCchCopyNW` (console.cpl).
+#[no_mangle]
+pub unsafe extern "system" fn StringCchCopyNW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    cchToCopy: usize,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH || cchToCopy > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
 /// strsafe.h:275 `StringCchCopyNExW`.
 #[no_mangle]
 pub unsafe extern "system" fn StringCchCopyNExW(

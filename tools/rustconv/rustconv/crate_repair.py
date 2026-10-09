@@ -57,6 +57,7 @@ RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
 RULE_ANON_UNION = "anon_union_field"
 RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
+RULE_MATCH_ARM_GUARD = "match_arm_c_conversion"
 RULE_PACKED_FIELD_PTR = "packed_field_ptr"
 RULE_INDEX_USIZE = "index_usize"
 RULE_MACRO_CALL = "macro_call_bang"
@@ -100,6 +101,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_COMPARISON,
     RULE_NUMERIC_CAST,
     RULE_MATCH_SCRUTINEE,
+    RULE_MATCH_ARM_GUARD,
     RULE_NO_STD_PATH,
     # Before RULE_POINTER_CAST: both answer an E0308 whose EXPECTED side is a raw pointer, and
     # decay is the more specific shape (found side is an array, not a pointer). They cannot both
@@ -843,6 +845,11 @@ class _Ctx:
     #: Spans ``RULE_WIDTH_ALIAS`` has already answered, so ``RULE_NUMERIC_CAST`` stands down
     #: instead of proposing a second, width-baked edit for the same bytes.
     claimed: set[tuple[str, int, int]] = field(default_factory=set)
+    #: ``(file, scrutinee start, end) -> [(arm start, arm end, arm text, scrutinee type)]`` for
+    #: each mismatched arm that is a bare constant path: the guard fallback when arms disagree.
+    match_arm_sites: dict[tuple[str, int, int], list[tuple[int, int, str, str]]] = field(
+        default_factory=dict
+    )
     #: ``(struct, flattened field) -> dotted path through bindgen's ``__bindgen_anon_N``.
     #: Derived from the crate's own type declarations; empty disables ``RULE_ANON_UNION``.
     anon_unions: Mapping[tuple[str, str], str] = field(default_factory=dict)
@@ -2751,10 +2758,20 @@ def _match_scrutinee_rule(
             continue
         key = (file_name, scrutinee[0], scrutinee[1])
         ctx.match_wants.setdefault(key, set()).add(found)
+        arm = data[start:end].decode("utf-8", "replace")
+        if re.fullmatch(r"[A-Za-z_][\w:]*", arm) and re.match(rb"\s*=>", data[end:]):
+            ctx.match_arm_sites.setdefault(key, []).append((start, end, arm, expected))
         text = data[scrutinee[0] : scrutinee[1]].decode("utf-8", "replace")
         trailing = _RE_TRAILING_CAST.search(text)
         if trailing and trailing.group(0).split()[-1] == found:
             continue  # a previous pass already answered this match
+        # An earlier pass cast to `found` and a later one cast it AWAY: the arms disagree
+        # across passes (each pass sees one arm), and answering again builds a ladder. main's
+        # keyboard.rs reached `as i32) as u32` forty deep between a consensus-copied
+        # `PSN_APPLY: UINT` and the island's `PSN_RESET: i32`. Decline: the arms need a human.
+        if re.search(rf"\bas {re.escape(found)}\)\s*as \w+\s*$", text):
+            ctx.match_wants[key].add("<ladder>")  # -> the guard fallback in propose_edits
+            continue
         # A cast to some OTHER type is the translation's own -- C's integer promotion, written
         # out (`match (*Cdb).AsByte[0] as i32` against u32 SCSIOP_* arms). Skipping it as
         # "answered" left all 30 of atapi's satl.rs arms red; the outer cast keeps the C's
@@ -4212,6 +4229,8 @@ _RULE_TABLE: dict[
     RULE_NUMERIC_CAST: _numeric_cast_rule,
     RULE_COMPARISON: _comparison_rule,
     RULE_MATCH_SCRUTINEE: _match_scrutinee_rule,
+    # Emitted by propose_edits from the scrutinee rule's evidence, never per diagnostic.
+    RULE_MATCH_ARM_GUARD: lambda _d, _l, _c: ([], [], False),
     RULE_NO_STD_PATH: _no_std_path_rule,
     RULE_ARRAY_DECAY: _array_decay_rule,
     RULE_POINTER_CAST: _pointer_cast_rule,
@@ -4321,6 +4340,32 @@ def propose_edits(
         if len(wants) < 2:
             continue
         edit = edits.pop((*key, RULE_MATCH_SCRUTINEE), None)
+        # C converts every `case` label to the scrutinee's type, so the faithful answer to
+        # arms of DIFFERENT integer types is that conversion, per arm, as a guard:
+        # `code if code == PSN_APPLY as u32 =>`. (bindgen types `PSN_APPLY` i32 by its value
+        # where C says unsigned; clang-evaluated facts say u32. A guard also cannot silently
+        # BIND the way a bare unresolved pattern does.) Only bare-path arms; anything else is
+        # left to a human as before.
+        sites = ctx.match_arm_sites.get(key, [])
+        if sites and RULE_MATCH_ARM_GUARD in rules:
+            for a_start, a_end, arm, expected in sites:
+                guard = f"__c if __c == {arm} as {expected}"
+                guard_edit = Edit(
+                    file_name=key[0],
+                    byte_start=a_start,
+                    byte_end=a_end,
+                    replacement=guard,
+                    rule=RULE_MATCH_ARM_GUARD,
+                    authority=(
+                        f"arms want {', '.join(sorted(w for w in wants if w != '<ladder>'))}; "
+                        f"C converts the `case {arm}` label to the scrutinee type `{expected}`"
+                    ),
+                    original=arm,
+                    targets=(target,),
+                    requires_target_agreement=True,
+                )
+                edits[guard_edit.key] = guard_edit
+            continue
         skipped.append(
             Skipped(
                 RULE_MATCH_SCRUTINEE,

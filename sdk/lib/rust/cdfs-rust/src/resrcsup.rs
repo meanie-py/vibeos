@@ -8,7 +8,6 @@ use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
 use crate::glue::{CDFS_BUG_CHECK_RESRCSUP};
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "system" {
     fn IoGetTopLevelIrp() -> *mut IRP;
@@ -52,7 +51,7 @@ pub unsafe extern "C" fn CdAcquireResource(
     Type: u32,
 ) -> u8 {
     let mut Wait: u8 = 0; // FALSE
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if IgnoreWait == 0 && ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT_RS) != 0 {
         Wait = 1; // TRUE
@@ -102,7 +101,7 @@ pub unsafe extern "system" fn CdNoopAcquire(
 }
 #[no_mangle]
 pub unsafe extern "system" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(Fcb);
 }
 
@@ -112,7 +111,7 @@ pub unsafe extern "system" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
 //   FSRTL_CACHE_TOP_LEVEL_IRP = (PIRP)1  (fsrtltypes.h)
 #[no_mangle]
 pub unsafe extern "system" fn CdReleaseFromCache(Fcb: *mut FCB) {
-    PAGED_CODE();
+    PAGED_CODE!();
     let fsrtl_cache_top_level_irp: *mut IRP = 1 as *mut IRP;
     NT_ASSERT((IoGetTopLevelIrp() == fsrtl_cache_top_level_irp) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
@@ -125,7 +124,7 @@ pub unsafe extern "system" fn CdFilterCallbackAcquireForCreateSection(
     CompletionContext: *mut *mut core::ffi::c_void,
 ) -> i32 {
     let FileObject: *mut FILE_OBJECT;
-    PAGED_CODE();
+    PAGED_CODE!();
     NT_ASSERT(
         ((*CallbackData).Operation == FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as i32,
     );
@@ -179,7 +178,7 @@ pub unsafe extern "system" fn CdFilterCallbackAcquireForCreateSection(
 
 #[no_mangle]
 pub unsafe extern "system" fn CdReleaseForCreateSection(FileObject: PFILE_OBJECT) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let fcb: *mut FCB = (*FileObject).FsContext as *mut FCB;
 

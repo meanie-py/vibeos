@@ -335,7 +335,7 @@ pub unsafe extern "system" fn DriverEntry(
     let mut FatObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut ExtObject: PDEVICE_OBJECT = core::ptr::null_mut();
 
-    /* PAGED_CODE() */
+    /* PAGED_CODE!() */
     if (KeGetCurrentIrql() as u32) > (APC_LEVEL) as u32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,

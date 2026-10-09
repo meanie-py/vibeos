@@ -24,7 +24,6 @@ const Flush: FAT_FLUSH_TYPE = 1;       // FAT_FLUSH_TYPE::Flush (NoFlush=0, Flus
 const VolumeClean: VOLUME_CONDITION = 0; // FAT_VOLUME_STATE::VolumeClean
 
 extern "system" {
-    fn PAGED_CODE();
     } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); }
 
 extern "system" {
@@ -61,7 +60,7 @@ pub unsafe extern "system" fn FatFsdShutdown(
     let mut IrpContext: *mut IRP_CONTEXT = core::ptr::null_mut();
     let TopLevel: BOOLEAN;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatFsdShutdown\n\0".as_ptr() as *const i8, 0);
 

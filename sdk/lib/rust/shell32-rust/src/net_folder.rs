@@ -930,7 +930,6 @@ pub unsafe fn CNetFolder_GetDisplayNameOf_body(this: *mut CNetFolder, pidl: PCUI
     }
     let p = core::ptr::addr_of!((*pidl).mkid.abID) as *const u16;
     return cpp_com_SHSetStrRetW(strRet, p);
-    return E_NOTIMPL;
 }
 
 pub unsafe fn CNetFolder_SetNameOf_body(this: *mut CNetFolder, hwndOwner: HWND, pidl: PCUITEMID_CHILD, lpName: LPCOLESTR, dwFlags: SHGDNF, pPidlOut: *mut PITEMID_CHILD) -> HRESULT { E_FAIL }

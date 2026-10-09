@@ -275,28 +275,44 @@ pub extern "C" fn scalbnf(x: f32, mut n: i32) -> f32 {
     y * fb32(u)
 }
 
-// ---- round / roundf — ReactOS portable (ceil/floor + FP add) ----------
-// ceil/floor/ceilf/floorf are defined below (sub-wave 4); round/roundf call
-// those module-local impls directly.
+// ---- round / roundf — exact, on the bits ----------------------------
+// ReactOS's portable C was `arg < 0 ? ceil(arg - 0.5) : floor(arg + 0.5)`, which is
+// wrong twice: -0.0 is not `< 0`, so round(-0.0) came back +0.0 (ucrtbase_apitest
+// round.c:67/124), and the `+ 0.5` itself rounds, so round(0.49999999999999994) was
+// 1.0. Adding half an ulp-of-one to the MAGNITUDE bits and clearing the fraction is
+// exact, keeps the sign, and uses no FP arithmetic, so x87's extended precision on
+// no-SSE i386 cannot double-round it either.
 
-/// `double round(double)`.
-#[no_mangle]
-pub extern "C" fn round(arg: f64) -> f64 {
-    if arg < 0.0 {
-        ceil(arg - 0.5)
-    } else {
-        floor(arg + 0.5)
-    }
+macro_rules! round_bits {
+    ($x:expr, $uint:ty, $mant:expr, $bias:expr, $one:expr) => {{
+        let bits = $x.to_bits();
+        let sign = bits & ((1 as $uint) << ($mant + $bias.count_ones()));
+        let exp = ((bits >> $mant) & $bias as $uint) as i32 - (($bias >> 1) as i32);
+        if exp >= $mant {
+            bits // already an integer, or Inf/NaN
+        } else if exp < -1 {
+            sign // |x| < 0.5: a zero of x's sign
+        } else if exp == -1 {
+            sign | $one // 0.5 <= |x| < 1
+        } else {
+            let frac = ((1 as $uint) << ($mant - exp)) - 1;
+            let half = (1 as $uint) << ($mant - 1 - exp);
+            // A carry out of the fraction bumps the exponent, which is exactly right.
+            (bits + half) & !frac
+        }
+    }};
 }
 
-/// `float roundf(float)`.
+/// `double round(double)`: half away from zero.
+#[no_mangle]
+pub extern "C" fn round(arg: f64) -> f64 {
+    fb64(round_bits!(arg, u64, 52, 0x7ffu64, 0x3ff0_0000_0000_0000u64))
+}
+
+/// `float roundf(float)`: half away from zero.
 #[no_mangle]
 pub extern "C" fn roundf(arg: f32) -> f32 {
-    if arg < 0.0 {
-        ceilf(arg - 0.5)
-    } else {
-        floorf(arg + 0.5)
-    }
+    fb32(round_bits!(arg, u32, 23, 0xffu32, 0x3f80_0000u32))
 }
 
 // ---- nextafter / nextafterf — musl (bit walk; FP only on NaN path) ----
@@ -866,7 +882,23 @@ fn crt_errf(r: (f32, MathErr), name: &core::ffi::CStr, arg1: f32, arg2: f32) -> 
 #[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn exp(x: f64) -> f64 {
-    crt_err(musl_math::exp(x), c"exp", x, 0.0)
+    #[allow(unused_mut)]
+    let mut r = musl_math::exp(x);
+    // Windows i386 `exp` (msvcrt and ucrtbase alike) returns the canonical NaN, sign
+    // kept, when the HIGH word carries no payload below the quiet bit, and the input
+    // quieted otherwise: 0x7ff0000000000001 and 0x7ff8000000000001 both give
+    // 0x7ff8000000000000, while 0x7ff7ffffffffffff gives 0x7fffffffffffffff
+    // (apitests/crt/exp.c's `_M_IX86` rows, measured on Windows). That rule is fit to
+    // those ten rows, not taken from Microsoft's code. Only `exp` does this: sqrt,
+    // log10, atan and cos keep the payload on every arch.
+    #[cfg(target_arch = "x86")]
+    {
+        let b = x.to_bits();
+        if b & 0x7FFF_FFFF_FFFF_FFFF > 0x7FF0_0000_0000_0000 && (b >> 32) & 0x7_FFFF == 0 {
+            r.0 = fb64((b & 0x8000_0000_0000_0000) | 0x7FF8_0000_0000_0000);
+        }
+    }
+    crt_err(r, c"exp", x, 0.0)
 }
 
 /// `double log(double)` -- musl's. ±0 is a pole; a negative argument or NaN `_DOMAIN`.

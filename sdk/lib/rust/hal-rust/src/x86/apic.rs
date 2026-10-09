@@ -456,9 +456,8 @@ unsafe extern "C" {
     // amd64 must NOT wire this: its kernel owns IDT[0xE1] (KiIpiInterrupt).
     #[cfg(target_arch = "x86")]
     fn HalpIpiInterrupt();
-    // Serial flavor banner (i386): variadic cdecl, resolved via the ntoskrnl
-    // import lib — proves in every boot log that the APIC HAL is live.
-    #[cfg(target_arch = "x86")]
+    // Variadic cdecl, resolved via the ntoskrnl import lib: the i386 serial flavor
+    // banner, and where each message vector goes.
     fn DbgPrint(fmt: *const u8, ...) -> u32;
 }
 
@@ -791,10 +790,12 @@ pub unsafe extern "system" fn ApicInitializeLocalApic(Cpu: ULONG) {
         | ((APIC_TGM_LEVEL as ULONG) << 15);
     apic_write(APIC_LINT1, lint1);
 
-    // Error LVT — Fixed, masked at template (mask still set).
-    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG)
-        | ((APIC_MT_FIXED as ULONG) << 8)
-        | (1 << 16);
+    // Error LVT — Fixed, UNMASKED ("Enable error LVTR", apic.c:353-356). The C mutates one
+    // LvtEntry template in place: the LINT1/NMI step just above set Mask = 0, and the error
+    // step only rewrites Vector + MessageType, so the error LVT inherits the cleared mask and
+    // is written enabled. This value is rebuilt from scratch, so it must omit the mask bit to
+    // match; an earlier translation OR'd in (1 << 16) and left the error LVT masked.
+    let err_lvt: ULONG = (APIC_ERROR_VECTOR as ULONG) | ((APIC_MT_FIXED as ULONG) << 8);
     apic_write(APIC_ERRLVTR, err_lvt);
 
     // Set IRQL from PCR.
@@ -884,6 +885,14 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 // ---------------------------------------------------------------------------
 
 static mut MessageVectors: [bool; 256] = [false; 256];
+/// The processor each message vector is delivered to, chosen when it is handed out.
+static mut MessageCpu: [u8; 256] = [0; 256];
+/// At an MSI block's first vector, how many it holds; BLOCK_MEMBER at the rest; 0 (a
+/// block of one) at a lone message vector.
+static mut MessageBlock: [u8; 256] = [0; 256];
+const BLOCK_MEMBER: u8 = 0xFF;
+/// Counts message vectors handed out; each takes the next allowed processor in turn.
+static MessageRotor: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
 fn is_message_vector(vector: ULONG) -> bool {
     vector < 256 && unsafe { MessageVectors[vector as usize] }
@@ -916,26 +925,114 @@ pub(crate) unsafe fn message_capacity() -> u32 {
     n
 }
 
-pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, KIRQL, KAFFINITY)> {
+/// The next processor in turn of those `requested` that are running (all of them
+/// when it names none).
+unsafe fn next_message_cpu(requested: KAFFINITY) -> u32 {
+    let online = HalpDefaultInterruptAffinity;
+    let allowed = if online & requested != 0 { online & requested } else { online };
+    let mut rest = allowed;
+    for _ in 0..MessageRotor.fetch_add(1, core::sync::atomic::Ordering::Relaxed) % allowed.count_ones().max(1) {
+        rest &= rest - 1;
+    }
+    if rest == 0 { 0 } else { rest.trailing_zeros() }
+}
+
+unsafe fn claim_message_vectors(first: UCHAR, count: u32, cpu: u32) {
+    for v in first as usize..first as usize + count as usize {
+        HalpVectorToIndex[v] = APIC_RESERVED_VECTOR;
+        MessageVectors[v] = true;
+        MessageCpu[v] = cpu as u8;
+        MessageBlock[v] = if v == first as usize { count as u8 } else { BLOCK_MEMBER };
+    }
+}
+
+/// A free vector, delivered to the next processor in turn of those `requested` that
+/// are running. The affinity reported is that one processor, so the I/O manager
+/// connects the vector in that processor's IDT only.
+pub(crate) unsafe fn allocate_message_vector(requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
     let mut got = None;
     free_device_vectors(|vector, irql| {
         got = Some((vector, irql));
         false
     });
     let (vector, irql) = got?;
-    HalpVectorToIndex[vector as usize] = APIC_RESERVED_VECTOR;
-    MessageVectors[vector as usize] = true;
-    Some((vector as u32, irql, HalpDefaultInterruptAffinity))
+    let cpu = next_message_cpu(requested);
+    claim_message_vectors(vector, 1, cpu);
+    DbgPrint(b"[HAL] APIC: message vector %u at IRQL %u -> CPU%u\n\0".as_ptr(), vector as u32, irql as u32, cpu as u32);
+    Some((vector as u32, irql, 1 << cpu))
+}
+
+/// An MSI block: `count` (a power of two, 2-8) consecutive free vectors, the first a
+/// multiple of `count`, since the device ORs the message number into the low bits of
+/// one data value, and the data is the vector. One aligned run inside one priority
+/// class keeps them all at one IRQL. They share one address, so one processor.
+pub(crate) unsafe fn allocate_message_block(count: u32, requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
+    if count == 1 {
+        return allocate_message_vector(requested);
+    }
+    // Offset 15 of each class is never handed out (free_device_vectors stops at 14),
+    // so a class holds at most one block of 8 and none of 16.
+    if !count.is_power_of_two() || count > 8 {
+        return None;
+    }
+    let mut irql = (CLOCK_LEVEL as KIRQL).wrapping_sub(1);
+    while irql >= CMCI_LEVEL {
+        // The class's 15 device vectors start at its TPR value, which on i386 is
+        // 0xN1, not 0xN0: alignment is of the vector itself.
+        let class = irql_to_tpr(irql);
+        let mut start = (count - class % count) % count;
+        while start + count <= 15 {
+            if (start..start + count).all(|k| HalpVectorToIrq((class + start + k) as UCHAR) == APIC_FREE_VECTOR) {
+                let first = (class + start) as UCHAR;
+                let cpu = next_message_cpu(requested);
+                claim_message_vectors(first, count, cpu);
+                DbgPrint(
+                    b"[HAL] APIC: message vectors %u-%u (an MSI block of %u) at IRQL %u -> CPU%u\n\0".as_ptr(),
+                    first as u32,
+                    first as u32 + count - 1,
+                    count,
+                    irql as u32,
+                    cpu,
+                );
+                return Some((first as u32, irql, 1 << cpu));
+            }
+            start += count;
+        }
+        if irql == 0 {
+            break;
+        }
+        irql -= 1;
+    }
+    None
+}
+
+/// Give a message vector back to the free pool; an MSI block's first vector gives
+/// back the whole block. A vector inside a block is not released alone.
+pub(crate) unsafe fn release_message_vector(vector: u32) -> bool {
+    if !is_message_vector(vector) || MessageBlock[vector as usize] == BLOCK_MEMBER {
+        return false;
+    }
+    let count = MessageBlock[vector as usize].max(1) as u32;
+    for v in vector as usize..(vector + count) as usize {
+        MessageVectors[v] = false;
+        MessageBlock[v] = 0;
+        HalpVectorToIndex[v] = APIC_FREE_VECTOR;
+    }
+    DbgPrint(b"[HAL] APIC: message vectors %u-%u released\n\0".as_ptr(), vector, vector + count - 1);
+    true
 }
 
 /// Address 0xFEE0_0000 with the destination APIC ID in bits 19:12 (physical
 /// mode, no redirection hint); data = the vector, fixed delivery, edge. The
-/// destination is this processor, as HalEnableSystemInterrupt does for a line.
+/// destination is the processor the vector was handed out for.
 pub(crate) unsafe fn message_target(vector: u32, _requester: u32) -> Option<(u64, u32)> {
     if !is_message_vector(vector) {
         return None;
     }
-    let dest = (apic_read(APIC_ID) >> 24) as u64;
+    let dest = match super::madt::lapic_id(MessageCpu[vector as usize] as u32) {
+        Some(id) => id as u64,
+        None => (apic_read(APIC_ID) >> 24) as u64,
+    };
     Some((0xFEE0_0000 | (dest << 12), vector))
 }
 

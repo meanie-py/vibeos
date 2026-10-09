@@ -29,7 +29,6 @@ extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatRemoveMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Bytes: u32, );
     fn UNREFERENCED_PARAMETER(_: usize);
-    fn PAGED_CODE();
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
     fn FatReservedBytes(Bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerFat(Bpb: *const core::ffi::c_void) -> u32;
@@ -912,7 +911,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
     let mut unwind_cache_manager_informed: i32 = 0;
     let mut unwind_we_initialized_mcb: i32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatAddFileAllocation\n\0".as_ptr() as *const i8, (0i32) as usize);
     DebugTrace(0, Dbg, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
@@ -1351,7 +1350,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
     let mut Wait: BOOLEAN = 0;
     let mut Result: BOOLEAN = 1;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let IrpContext = IrpContext as *mut IRP_CONTEXT;
     let Vcb = Vcb as *mut VCB;
@@ -2410,7 +2409,7 @@ pub unsafe extern "system" fn FatInterpretClusterType(
         DebugTrace(1, Dbg as u32, b"InterpretClusterType\n\0".as_ptr() as *const i8, 0);
         DebugTrace(0, Dbg as u32, b"  Vcb   = %p\n\0".as_ptr() as *const i8, Vcb as usize);
         DebugTrace(0, Dbg as u32, b"  Entry = %8lx\n\0".as_ptr() as *const i8, (Entry) as usize);
-        PAGED_CODE();
+        PAGED_CODE!();
 
         match (*Vcb).AllocationSupport.FatIndexBitSize {
             32 => {
@@ -2458,7 +2457,7 @@ pub unsafe extern "system" fn FatLookupFatEntry(
     Context: *mut FAT_ENUMERATION_CONTEXT,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         DebugTrace(1, Dbg as u32, b"FatLookupFatEntry\n\0".as_ptr() as *const i8, (0i32) as usize);
         DebugTrace(0, Dbg as u32, b"  Vcb      = %p\n\0".as_ptr() as *const i8, Vcb as usize);
@@ -3165,7 +3164,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     }
     let mut current_run: RunType = RunType::UnknownClusters;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // ----------------------- START OF TRY BLOCK -----------------------
     {

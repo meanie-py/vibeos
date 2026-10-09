@@ -61,7 +61,6 @@ extern "C" {
 // where system==C. (verify_ffi FFI-ABI-mismatch class; field manual §ABI.)
 extern "C" {
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
-    fn PAGED_CODE();
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn NT_ASSERT(expression: i32);
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
@@ -1105,7 +1104,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
     FdoExtension: *mut FUNCTIONAL_DEVICE_EXTENSION,
     Enable: u8,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let diskData: *mut DISK_DATA =
         (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverData as *mut DISK_DATA;

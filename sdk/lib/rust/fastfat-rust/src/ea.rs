@@ -11,7 +11,6 @@ use ntkrnl_sys::ddk::{FILE_FULL_EA_INFORMATION, OEM_STRING, ULONG_PTR};
 use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 
 extern "system" {
-    fn PAGED_CODE();
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     } extern "C" { fn DebugTrace(arg1: i32, arg2: u32, fmt: *const i8, ...); } extern "system" {
     fn FatIsIrpTopLevel(Irp: *mut IRP) -> BOOLEAN;
@@ -445,7 +444,7 @@ pub unsafe extern "system" fn FatCommonQueryEa(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
     FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_DEVICE_REQUEST);
     return STATUS_INVALID_DEVICE_REQUEST;
 }
@@ -455,7 +454,7 @@ pub unsafe extern "system" fn FatCommonSetEa(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
     let status = ntkrnl_sys::constants::STATUS_INVALID_DEVICE_REQUEST;
     FatCompleteRequest(IrpContext, Irp, status);
     status

@@ -18,7 +18,6 @@ extern "system" {
     static mut FatDisableParentCheck: i32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, msg: *const i8, ...); } extern "system" {
     fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
-    fn PAGED_CODE();
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
     static mut FatData: FAT_DATA;
     fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
@@ -123,8 +122,6 @@ const VolumeDirty: u32 = 1;
 const STATUS_END_OF_FILE: i32 = 0xC0000011_u32 as i32;
 
 
-extern "system" {
-}
 
 const STATUS_DISK_FULL: i32 = 0xC000007F_u32 as i32;
 #[no_mangle]
@@ -158,7 +155,7 @@ pub unsafe extern "system" fn FatReadVolumeFile(
     Buffer: *mut *mut core::ffi::c_void,
 ) {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         let condition = (StartingVbo == 0) ||
             (StartingVbo.wrapping_add(ByteCount) <=
@@ -277,7 +274,7 @@ pub unsafe extern "system" fn FatReadDirectoryFile(
     let mut ByteCount = ByteCount;
     let mut Vbo: ntkrnl_sys::ddk::LARGE_INTEGER = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatReadDirectoryFile\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"Dcb         = %p\n\0".as_ptr() as *const i8, Dcb as usize);
@@ -805,7 +802,7 @@ pub unsafe extern "system" fn FatCloseEaFile(
     FlushFirst: u8,
 ) {
     // PAGED_CODE();
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // DebugTrace(+1, Dbg, "FatCloseEaFile\n", 0);
     DebugTrace(
@@ -960,10 +957,13 @@ pub unsafe extern "system" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT
         }
     }
 
-    let write_through_to_disk: i32 = (!FlagOn(
+    // C `!FlagOn(IrpContext->Flags, IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH)`. Was
+    // `!FlagOn(..) != 0`, a BITWISE not of the flag word that is never zero, so
+    // DISABLE_WRITE_THROUGH was ignored.
+    let write_through_to_disk: i32 = (FlagOn(
         (*irp_context).Flags,
         IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH,
-    ) != 0
+    ) == 0
         && !(*irp_context).Vcb.is_null()
         && (FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH) != 0
             || FlagOn(
@@ -1089,7 +1089,7 @@ pub unsafe extern "system" fn FatZeroData(
     let finished: u8;
 
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
     }
 
     sector_size = (*Vcb).Bpb.BytesPerSector as u32;

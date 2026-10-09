@@ -4629,9 +4629,6 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
     }
 }
 
-extern "system" {
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

@@ -22,7 +22,6 @@ extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(cond: i32);
-    fn PAGED_CODE();
     fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
     fn FsRtlIsLeadDbcsCharacter(character: u8) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
@@ -98,7 +97,7 @@ pub unsafe extern "system" fn FatStringTo8dot3(
     InputString: OEM_STRING,
     Output8dot3: *mut [u8; 11],
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     DebugTrace(1, Dbg, b"FatStringTo8dot3\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"InputString = %Z\n\0".as_ptr() as *const i8, &InputString as *const OEM_STRING);
@@ -163,7 +162,7 @@ pub unsafe extern "system" fn Fat8dot3ToString(
         let mut o: *mut u8;
         let mut d: *const u8;
 
-        PAGED_CODE();
+        PAGED_CODE!();
 
         DebugTrace(1, 0u32, b"Fat8dot3ToString\n\0".as_ptr() as *const i8, 0);
 
@@ -272,7 +271,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
     let mut dirent_byte_offset: u32 = 0;
     let mut local_ccb: CCB = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     NT_ASSERT(
         (((MAX_LFN_CHARACTERS as u16) * (core::mem::size_of::<u16>() as u16))
@@ -616,7 +615,7 @@ pub unsafe extern "system" fn FatEvaluateNameCase(
     let mut Lowers: u8 = 0;
     let mut ExtensionPresent: u8 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     let _ = IrpContext;
 
     *CreateLfn = 0;
@@ -630,7 +629,7 @@ pub unsafe extern "system" fn FatEvaluateNameCase(
             Uppers += 1;
         } else if (c >= 'a' as u16) && (c <= 'z' as u16) {
             Lowers += 1;
-        } else if (c >= 0x0080) && FatData.CodePageInvariant() != 0 {
+        } else if (c >= 0x0080) && (*&raw const FatData).CodePageInvariant() != 0 {
             break;
         }
 

@@ -34,7 +34,6 @@ extern "C" {
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn CdConvertBigToLittleEndian(IrpContext: PIRP_CONTEXT, Src: *const u8, SrcLen: ULONG, Dst: *mut u8);
@@ -372,7 +371,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
         let mut Length: ULONG;
         let Status: NTSTATUS;
 
-        PAGED_CODE();
+        PAGED_CODE!();
 
         if ((*Dirent).FileNameLen == 1) && FlagOnU32((*Dirent).DirentFlags as u32, CD_ATTRIBUTE_DIRECTORY) {
             DirectoryValue = *((*Dirent).FileName as *const u8);
@@ -771,7 +770,7 @@ pub unsafe extern "C" fn CdCleanupFileContext(
     let mut Count: u32 = 2;
     let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
@@ -797,7 +796,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     let mut NextDirentOffset: u32;
     let RawDirent: *mut RAW_DIRENT;
 
-    PAGED_CODE();
+    PAGED_CODE!();
     UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN) as _);

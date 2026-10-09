@@ -200,6 +200,132 @@ InitThreadData(
     ThreadData->Release = Release;
 }
 
+/* DIAGNOSTIC ONLY (vibeos), see StartThread: idle/kernel time summed over every CPU. */
+static
+VOID
+DiagTimes(
+    OUT PULONGLONG Idle,
+    OUT PULONGLONG Kernel,
+    OUT PULONG Interrupts)
+{
+    PSYSTEM_PROCESSOR_PERFORMANCE_INFORMATION Info;
+    ULONG Size = 64 * sizeof(*Info), Returned = 0, i;
+
+    *Idle = *Kernel = 0;
+    *Interrupts = 0;
+    Info = ExAllocatePoolWithTag(NonPagedPool, Size, 'DmfX');
+    if (!Info)
+        return;
+    if (NT_SUCCESS(ZwQuerySystemInformation(SystemProcessorPerformanceInformation,
+                                            Info, Size, &Returned)))
+    {
+        for (i = 0; i < Returned / sizeof(*Info); i++)
+        {
+            *Idle += Info[i].IdleTime.QuadPart;
+            *Kernel += Info[i].KernelTime.QuadPart;
+            *Interrupts += Info[i].InterruptCount;
+        }
+    }
+    ExFreePoolWithTag(Info, 'DmfX');
+}
+
+/* DIAGNOSTIC ONLY (vibeos), see StartThread: per-thread CPU time, to name whoever ran
+ * while the new thread sat Ready. */
+#define DIAG_MAX_THREADS 512
+#define DIAG_SPI_SIZE (512 * 1024)
+typedef struct _DIAG_THREAD_TIME
+{
+    HANDLE Tid;
+    LONGLONG Time;
+} DIAG_THREAD_TIME;
+
+static DIAG_THREAD_TIME DiagBefore[DIAG_MAX_THREADS];
+static ULONG DiagBeforeCount;
+
+static
+PSYSTEM_PROCESS_INFORMATION
+DiagQueryProcesses(VOID)
+{
+    PSYSTEM_PROCESS_INFORMATION Info;
+    ULONG Returned;
+
+    Info = ExAllocatePoolWithTag(NonPagedPool, DIAG_SPI_SIZE, 'DmfX');
+    if (Info && !NT_SUCCESS(ZwQuerySystemInformation(SystemProcessInformation, Info,
+                                                     DIAG_SPI_SIZE, &Returned)))
+    {
+        ExFreePoolWithTag(Info, 'DmfX');
+        Info = NULL;
+    }
+    return Info;
+}
+
+static
+VOID
+DiagSnapshotThreads(VOID)
+{
+    PSYSTEM_PROCESS_INFORMATION Process = DiagQueryProcesses(), First = Process;
+    PSYSTEM_THREAD_INFORMATION Thread;
+    ULONG i;
+
+    DiagBeforeCount = 0;
+    while (Process)
+    {
+        Thread = (PSYSTEM_THREAD_INFORMATION)(Process + 1);
+        for (i = 0; i < Process->NumberOfThreads && DiagBeforeCount < DIAG_MAX_THREADS; i++)
+        {
+            DiagBefore[DiagBeforeCount].Tid = Thread[i].ClientId.UniqueThread;
+            DiagBefore[DiagBeforeCount].Time = Thread[i].KernelTime.QuadPart + Thread[i].UserTime.QuadPart;
+            DiagBeforeCount++;
+        }
+        if (!Process->NextEntryOffset)
+            break;
+        Process = (PSYSTEM_PROCESS_INFORMATION)((PUCHAR)Process + Process->NextEntryOffset);
+    }
+    if (First)
+        ExFreePoolWithTag(First, 'DmfX');
+}
+
+static
+VOID
+DiagReportThreads(VOID)
+{
+    PSYSTEM_PROCESS_INFORMATION Process = DiagQueryProcesses(), First = Process;
+    PSYSTEM_THREAD_INFORMATION Thread;
+    LONGLONG Then, Now;
+    ULONG i, j;
+
+    while (Process)
+    {
+        Thread = (PSYSTEM_THREAD_INFORMATION)(Process + 1);
+        for (i = 0; i < Process->NumberOfThreads; i++)
+        {
+            Then = 0;
+            for (j = 0; j < DiagBeforeCount; j++)
+            {
+                if (DiagBefore[j].Tid == Thread[i].ClientId.UniqueThread)
+                {
+                    Then = DiagBefore[j].Time;
+                    break;
+                }
+            }
+            Now = Thread[i].KernelTime.QuadPart + Thread[i].UserTime.QuadPart;
+            if (Now > Then)
+                DbgPrint("[FMUTEX-RAN] %wZ pid %p tid %p: +%lu us (user now %lu ms) Pri %ld Base %ld "
+                         "State %lu WaitReason %lu Start %p\n",
+                         &Process->ImageName, Process->UniqueProcessId,
+                         Thread[i].ClientId.UniqueThread, (ULONG)((Now - Then) / 10),
+                         (ULONG)(Thread[i].UserTime.QuadPart / 10000), Thread[i].Priority,
+                         Thread[i].BasePriority, Thread[i].ThreadState, Thread[i].WaitReason,
+                         Thread[i].StartAddress);
+        }
+        if (!Process->NextEntryOffset)
+            break;
+        Process = (PSYSTEM_PROCESS_INFORMATION)((PUCHAR)Process + Process->NextEntryOffset);
+    }
+    if (First)
+        ExFreePoolWithTag(First, 'DmfX');
+}
+
 static
 NTSTATUS
 StartThread(
@@ -221,7 +347,34 @@ StartThread(
     Status = ObReferenceObjectByHandle(ThreadData->Handle, SYNCHRONIZE, *PsThreadType, KernelMode, (PVOID *)&ThreadData->Thread, NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
 
-    return KeWaitForSingleObject(&ThreadData->OutEvent, Executive, KernelMode, FALSE, Timeout);
+    if (!Timeout)
+        return KeWaitForSingleObject(&ThreadData->OutEvent, Executive, KernelMode, FALSE, Timeout);
+
+    /* DIAGNOSTIC ONLY (vibeos): arm64 lost every one of these 50 ms races, every sweep --
+     * the new thread had not reached the mutex when the wait timed out. Print how long the
+     * wait really lasted and where the thread was, to tell an early timeout from a thread
+     * that was not scheduled. Printed after the wait so it cannot move it. */
+    {
+        ULONGLONG Start, Elapsed, Idle0, Kernel0, Idle1, Kernel1;
+        ULONG Ints0, Ints1;
+        DiagSnapshotThreads();
+        DiagTimes(&Idle0, &Kernel0, &Ints0);
+        Start = KeQueryInterruptTime();
+        Status = KeWaitForSingleObject(&ThreadData->OutEvent, Executive, KernelMode, FALSE, Timeout);
+        Elapsed = KeQueryInterruptTime() - Start;
+        DiagTimes(&Idle1, &Kernel1, &Ints1);
+        DbgPrint("[FMUTEX-WAIT] status %lx after %lu us (timeout %lu us; idle %lu us, kernel %lu us, "
+                 "%lu interrupts): thread State %u "
+                 "WaitReason %u Pri %ld, caller Pri %ld, Count %ld Contention %lu\n",
+                 Status, (ULONG)(Elapsed / 10), (ULONG)(-Timeout->QuadPart / 10),
+                 (ULONG)((Idle1 - Idle0) / 10), (ULONG)((Kernel1 - Kernel0) / 10), Ints1 - Ints0,
+                 ThreadData->Thread->State, ThreadData->Thread->WaitReason,
+                 KeQueryPriorityThread(ThreadData->Thread),
+                 KeQueryPriorityThread(KeGetCurrentThread()),
+                 ThreadData->Mutex->Count, ThreadData->Mutex->Contention);
+        DiagReportThreads();
+        return Status;
+    }
 }
 
 static

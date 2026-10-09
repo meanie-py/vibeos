@@ -20,7 +20,8 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use ntkrnl_sys::ddk::{
     ExAllocatePoolWithTag, ExFreePoolWithTag, IoAllocateMdl, IoCreateDevice, IoForwardIrpSynchronously, IoFreeMdl,
     IoOpenDeviceRegistryKey, KeInitializeDpc, KeInitializeEvent, KeSetEvent, KeWaitForSingleObject,
-    MmBuildMdlForNonPagedPool, MmMapIoSpace, ZwClose, ZwCreateKey, ZwSetValueKey, _MEMORY_CACHING_TYPE_MmNonCached,
+    MmBuildMdlForNonPagedPool, MmMapIoSpace, ZwClose, ZwCreateKey, ZwOpenKey, ZwQueryValueKey, ZwSetValueKey,
+    _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _MEMORY_CACHING_TYPE_MmNonCached,
     HANDLE, IO_CONNECT_INTERRUPT_PARAMETERS, KEVENT, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT,
     PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_INTERRUPT_MESSAGE_INFO, PIO_STACK_LOCATION, PIRP, PMDL,
     PVOID, ULONG, UNICODE_STRING,
@@ -35,6 +36,7 @@ use crate::nvme::{self, dma_ready, now_us, Controller, Identity, Irq, Namespace,
 unsafe extern "system" {
     // ntoskrnl export (iomgr-rust irq.rs); Vista-era, so not in the pre-Vista bindings.
     fn IoConnectInterruptEx(Parameters: *mut IO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS;
+    fn IoDisconnectInterruptEx(Parameters: *mut ntkrnl_sys::ddk::IO_DISCONNECT_INTERRUPT_PARAMETERS);
 }
 use crate::print::nvprint;
 
@@ -100,11 +102,17 @@ const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 2;
 // IO_CONNECT_INTERRUPT_PARAMETERS.Version (wdm.h).
 const CONNECT_LINE_BASED: ULONG = 2;
 const CONNECT_MESSAGE_BASED: ULONG = 3;
-/// Admin and I/O completion queues: all the messages this driver can use.
-const MESSAGES_WANTED: u32 = 2;
+/// The SRB status for a request a controller reset failed back: the class driver
+/// retries it.
+const SRB_STATUS_BUS_RESET: u8 = 0x0E;
 const PLUGPLAY_REGKEY_DEVICE: ULONG = 1;
 const KEY_ALL_ACCESS: ULONG = 0xF003F;
+const REG_SZ: ULONG = 1;
+const REG_BINARY: ULONG = 3;
 const REG_DWORD: ULONG = 4;
+const KEY_READ: u32 = 0x20019;
+/// IRQ_DEVICE_POLICY's IrqPolicySpecifiedProcessors.
+const IRQ_POLICY_SPECIFIED_PROCESSORS: u32 = 4;
 const OBJ_CASE_INSENSITIVE_KERNEL_HANDLE: ULONG = 0x240;
 const CM_RESOURCE_TYPE_MEMORY_LARGE: u8 = 7;
 const CM_RESOURCE_MEMORY_LARGE_40: u16 = 0x0200;
@@ -250,6 +258,54 @@ unsafe fn set_dword(key: HANDLE, name: &[u16], value: u32) {
     ZwSetValueKey(key, &mut name, 0, REG_DWORD, (&raw mut v).cast(), 4);
 }
 
+/// The messages this driver can use: the admin queue's, and one per CPU for an
+/// I/O queue each.
+unsafe fn messages_wanted() -> u32 {
+    1 + (ntkrnl_sys::ddk::KeQueryActiveProcessors() as u64).count_ones().clamp(1, nvme::MAX_IO_QUEUES as u32)
+}
+
+/// A test-rig tripwire token, `<key>=<hex>`, which the kernel publishes as
+/// `VibeTripwire` under CurrentControlSet\Control:
+/// - `NVME_AFFINITY`: the processors this boot's NVMe messages should go to, as an
+///   INF's Affinity Policy would say;
+/// - `NVME_LOSE_COMPLETION`: the I/O completion (counted from 1) the engine throws
+///   away, so its command hangs and the controller is reset;
+/// - `NVME_FAIL_START`: START connects the interrupts, then disconnects them and
+///   fails, so the device is removed and its messages go back to the HAL.
+unsafe fn tripwire_value(key: &[u16]) -> Option<u64> {
+    let mut name = unicode(utf16!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control"));
+    let mut oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    oa.Length = size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    oa.ObjectName = &mut name;
+    oa.Attributes = OBJ_CASE_INSENSITIVE_KERNEL_HANDLE;
+    let mut control: HANDLE = null_mut();
+    if ZwOpenKey(&mut control, KEY_READ, &mut oa) < 0 {
+        return None;
+    }
+    let mut value = unicode(utf16!("VibeTripwire"));
+    // KEY_VALUE_PARTIAL_INFORMATION: TitleIndex, Type, DataLength, then the string.
+    let mut buf = [0u32; 3 + 128];
+    let mut got: ULONG = 0;
+    let status = ZwQueryValueKey(
+        control,
+        &mut value,
+        _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation,
+        buf.as_mut_ptr().cast(),
+        size_of::<[u32; 3 + 128]>() as ULONG,
+        &mut got,
+    );
+    ZwClose(control);
+    if status < 0 || buf[1] != REG_SZ {
+        return None;
+    }
+    let chars = core::slice::from_raw_parts(buf.as_ptr().add(3) as *const u16, (buf[2] as usize / 2).min(256));
+    let mut tokens = chars.split(|&c| c == b' ' as u16 || c == b';' as u16 || c == 0);
+    let token = tokens.find(|t| t.len() > key.len() && t.starts_with(key) && t[key.len()] == b'=' as u16)?;
+    let digits = &token[key.len() + 1..];
+    let digits = digits.strip_prefix(utf16!("0x")).unwrap_or(digits);
+    digits.iter().try_fold(0u64, |acc, &c| Some(acc << 4 | char::from_u32(c as u32)?.to_digit(16)? as u64)).filter(|&m| m != 0)
+}
+
 /// Ask pci.sys for MSI-X the Windows way: `MSISupported` under the device key's
 /// Interrupt Management\MessageSignaledInterruptProperties, which an INF's HKR
 /// AddReg would write (stornvme's does). Done here because there is no INF; the
@@ -263,8 +319,18 @@ unsafe fn opt_in_to_msix(pdo: PDEVICE_OBJECT) {
     if let Some(management) = create_key(device_key, utf16!("Interrupt Management")) {
         if let Some(props) = create_key(management, utf16!("MessageSignaledInterruptProperties")) {
             set_dword(props, utf16!("MSISupported"), 1);
-            set_dword(props, utf16!("MessageNumberLimit"), MESSAGES_WANTED);
+            set_dword(props, utf16!("MessageNumberLimit"), messages_wanted());
             ZwClose(props);
+        }
+        if let Some(mask) = tripwire_value(utf16!("NVME_AFFINITY")) {
+            if let Some(policy) = create_key(management, utf16!("Affinity Policy")) {
+                set_dword(policy, utf16!("DevicePolicy"), IRQ_POLICY_SPECIFIED_PROCESSORS);
+                let mut name = unicode(utf16!("AssignmentSetOverride"));
+                let mut set = mask as usize; // a KAFFINITY's bytes, as Windows stores it
+                ZwSetValueKey(policy, &mut name, 0, REG_BINARY, (&raw mut set).cast(), size_of::<usize>() as ULONG);
+                ZwClose(policy);
+                nvprint!("affinity policy from the tripwire: messages on processors {:#x}\n", mask);
+            }
         }
         ZwClose(management);
     }
@@ -315,7 +381,7 @@ unsafe fn fdo_dispatch(fdo: &mut Fdo, irp: PIRP) -> NTSTATUS {
             pass_down(fdo, irp)
         }
         (IRP_MJ_PNP, minor) => {
-            if minor == IRP_MN_REMOVE_DEVICE {
+            if minor == IRP_MN_REMOVE_DEVICE && fdo.controller.is_some() {
                 nvprint!("controller {}: removal is not supported; it stays running\n", fdo.number);
             }
             pass_down(fdo, irp)
@@ -425,15 +491,36 @@ unsafe fn connect(fdo: &mut Fdo) -> Option<u32> {
     fdo.messages = table;
     let count = (*table).MessageCount;
     let entries = core::slice::from_raw_parts((*table).MessageInfo.as_ptr(), count as usize);
+    let io = if count > 2 { "vectors from" } else { "vector" };
     nvprint!(
-        "controller {}: MSI-X: {} message(s) connected at level {}: admin on vector {}, I/O on vector {}\n",
+        "controller {}: MSI-X: {} message(s) connected at level {}: admin on vector {}, I/O on {} {}\n",
         n,
         count,
         (*table).UnifiedIrql,
         entries[0].Vector,
+        io,
         entries[(count as usize - 1).min(1)].Vector
     );
     Some(count)
+}
+
+/// Undo `connect`: the messages, or the pin. A START that fails must, before the
+/// PnP manager hands the vectors back to the HAL for another device.
+unsafe fn disconnect(fdo: &mut Fdo) {
+    let mut p: ntkrnl_sys::ddk::IO_DISCONNECT_INTERRUPT_PARAMETERS = core::mem::zeroed();
+    if !fdo.messages.is_null() {
+        p.Version = CONNECT_MESSAGE_BASED;
+        p.ConnectionContext.InterruptMessageTable = fdo.messages;
+        fdo.messages = null_mut();
+    } else if !fdo.irq.interrupt.is_null() {
+        p.Version = CONNECT_LINE_BASED;
+        p.ConnectionContext.InterruptObject = fdo.irq.interrupt;
+        fdo.irq.interrupt = null_mut();
+    } else {
+        return;
+    }
+    IoDisconnectInterruptEx(&mut p);
+    nvprint!("controller {}: interrupts disconnected\n", fdo.number);
 }
 
 /// Map the registers, bring the controller up, and publish its namespaces.
@@ -460,12 +547,34 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     // The pin is connected after, once bring-up has masked it.
     let early = if message_count(io) > 0 { connect(fdo) } else { None };
     let messages = early.unwrap_or(0);
+    // Where each message is delivered: an I/O queue per message, for its CPUs.
+    let mut targets = [0u64; nvme::MAX_IO_QUEUES + 1];
+    let count = (messages as usize).min(targets.len());
+    if count > 0 {
+        let entries = core::slice::from_raw_parts((*fdo.messages).MessageInfo.as_ptr(), messages as usize);
+        for (t, e) in targets.iter_mut().zip(entries) {
+            *t = e.TargetProcessorSet as u64;
+        }
+    }
+    if tripwire_value(utf16!("NVME_FAIL_START")).is_some() {
+        // So a rig sees a device's messages handed back: the PnP manager removes a
+        // device whose START failed, pci.sys turns its messages off, and the HAL
+        // takes the vectors back.
+        nvprint!("controller {}: tripwire: failing START after connecting\n", n);
+        disconnect(fdo);
+        return STATUS_ADAPTER_HARDWARE_ERROR;
+    }
+    if let Some(lose) = tripwire_value(utf16!("NVME_LOSE_COMPLETION")) {
+        nvme::LOSE_COMPLETION.store(lose as u32, Ordering::Relaxed);
+        nvprint!("controller {}: tripwire: I/O completion {} will be thrown away\n", n, lose);
+    }
 
     let t0 = now_us();
-    let mut c = match Controller::start(regs, len as usize, messages) {
+    let mut c = match Controller::start(regs, len as usize, &targets[..count]) {
         Ok(c) => c,
         Err(e) => {
             nvprint!("controller {}: bring-up failed: {:?}\n", n, e);
+            disconnect(fdo);
             return STATUS_ADAPTER_HARDWARE_ERROR;
         }
     };
@@ -483,6 +592,10 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         if id.volatile_cache { "present (disabled)" } else { "none" },
         (now_us() - t0) / 1000
     );
+
+    for (q, vector, cpus) in c.queues() {
+        nvprint!("controller {}: I/O queue {} on {} {}, for CPUs {:#x}\n", n, q, if messages > 0 { "message" } else { "vector" }, vector, cpus);
+    }
 
     // The admin commands are all here, before the I/O path is armed: they poll.
     let mut ids = [0u32; NAMESPACES_PER_CONTROLLER];
@@ -608,12 +721,20 @@ unsafe fn self_test_read(c: &Controller, t: *mut SelfTest, ns: &Namespace, lba: 
     r.mdl = (*t).mdl;
     r.system = (*t).buffer;
     request.write(r);
-    KeInitializeEvent(event, NOTIFICATION_EVENT as _, 0);
-    c.submit(request);
-    let mut timeout: LARGE_INTEGER = core::mem::zeroed();
-    timeout.QuadPart = -10_000 * SELF_TEST_WAIT_MS;
-    if KeWaitForSingleObject(event.cast(), 0, 0, 0, &mut timeout) == STATUS_TIMEOUT {
-        return Err(());
+    // Once more after a reset failed it back, as the disk class driver would
+    // (submit starts a request afresh).
+    for _ in 0..2 {
+        KeInitializeEvent(event, NOTIFICATION_EVENT as _, 0);
+        c.submit(request);
+        let mut timeout: LARGE_INTEGER = core::mem::zeroed();
+        timeout.QuadPart = -10_000 * SELF_TEST_WAIT_MS;
+        if KeWaitForSingleObject(event.cast(), 0, 0, 0, &mut timeout) == STATUS_TIMEOUT {
+            return Err(());
+        }
+        if !matches!((*request).error, Some(nvme::Error::Reset)) {
+            break;
+        }
+        nvprint!("controller {}: self-test: a read was failed back by a reset; retrying it\n", c.number());
     }
     Ok((*request).error)
 }
@@ -685,6 +806,10 @@ unsafe fn self_test(n: u32, c: &Controller, ns: &Namespace) {
     }
     if let Some((admin, io)) = c.message_counts() {
         nvprint!("controller {}: self-test: MSI-X messages taken: {} admin, {} I/O\n", n, admin, io);
+    }
+    let s = c.stats();
+    if s.resets > 0 {
+        nvprint!("controller {}: self-test: {} reset(s), {} command(s) failed back by them\n", n, s.resets, s.reset_failed);
     }
     IoFreeMdl(mdl);
     ExFreePoolWithTag(buffer.cast(), 0);
@@ -976,6 +1101,13 @@ unsafe fn irp_done(r: *mut Request) {
     ExFreePoolWithTag(r.cast(), 0);
     if let Some(e) = error {
         nvprint!("controller {}: {} of {} bytes at block {} failed: {:?}\n", (*ext.fdo).number, op.name(), bytes, lba, e);
+    }
+    if matches!(error, Some(nvme::Error::Reset)) {
+        // Not the medium's fault: the controller was reset under it.
+        (*srb).SrbStatus = SRB_STATUS_BUS_RESET;
+        (*srb).DataTransferLength = 0;
+        complete(irp, scsidisk::STATUS_IO_DEVICE_ERROR, 0);
+        return;
     }
     if (*srb).Function != scsidisk::SRB_FUNCTION_EXECUTE_SCSI {
         // SRB_FUNCTION_FLUSH / SHUTDOWN: no CDB, so no sense to report.

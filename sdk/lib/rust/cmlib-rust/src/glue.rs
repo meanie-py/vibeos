@@ -125,12 +125,11 @@ pub(crate) unsafe fn CmpIsKeyValueSmall(real_length: *mut u32, length: u32) -> b
     }
 }
 
-// ASSERT / PAGED_CODE — debug macros, no-ops in the NDEBUG cmlib build. Provided
-// as crate-local no-ops so translated bodies that call them need no extern sym.
+// ASSERT — a debug macro, a no-op in the NDEBUG cmlib build. Provided
+// as a crate-local no-op (PAGED_CODE is the macro in lib.rs) so translated bodies
+// that call it need no extern sym.
 #[inline]
 pub(crate) fn ASSERT(_cond: bool) {}
-#[inline]
-pub(crate) fn PAGED_CODE() {}
 
 extern "system" {
     // Real cmlib functions defined IN this crate (hivecell.rs). stdcall (_Name@N

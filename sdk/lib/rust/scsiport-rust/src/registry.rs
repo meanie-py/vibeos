@@ -553,7 +553,6 @@ pub unsafe extern "C" fn RegistryInitLunKey(
                     &raw mut (*LunExtension).InquiryData as *mut core::ffi::c_void,
                     36, // INQUIRYDATABUFFERSIZE
                 );
-                !(NT_SUCCESS(status));
             }
         }
     }

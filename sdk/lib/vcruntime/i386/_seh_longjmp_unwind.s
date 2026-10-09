@@ -27,7 +27,11 @@ __seh_longjmp_unwind@4:
     // Call _local_unwind2 to run the termination handlers
     push dword ptr [eax + JbTryLevel] // _Buf->TryLevel
     push dword ptr [eax + JbRegistration] // _Buf->Registration
-    mov ebp, [eax + JbEbp] // _Buf->Ebp
+    // Handlers run with ebp just past the registration node, as _except_handler3
+    // passes it -- not _Buf->Ebp. The two match in an MSVC frame, but clang
+    // realigns some SEH frames and addresses their locals from node + 16.
+    mov ebp, [eax + JbRegistration]
+    add ebp, 16
     call __local_unwind2
 
     // Clean up the stack and restore ebp

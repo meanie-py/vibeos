@@ -308,10 +308,22 @@ boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/amd64/rtlmem.S
 boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/i386/res_asm.s
 boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
+dll/cpl/access/CMakeLists.txt	1	# access.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/access.rs)
+dll/cpl/access/CMakeLists.txt	1	# display.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/display.rs)
+dll/cpl/access/CMakeLists.txt	1	# general.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/general.rs)
+dll/cpl/access/CMakeLists.txt	1	# keyboard.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/keyboard.rs)
+dll/cpl/access/CMakeLists.txt	1	# mouse.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/mouse.rs)
+dll/cpl/access/CMakeLists.txt	1	# sound.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/sound.rs)
 dll/cpl/appwiz/CMakeLists.txt	1	# addons.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/addons.rs)
 dll/cpl/appwiz/CMakeLists.txt	1	# appwiz.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/appwiz.rs)
 dll/cpl/appwiz/CMakeLists.txt	1	# createlink.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/createlink.rs)
 dll/cpl/appwiz/CMakeLists.txt	1	# removestartmenuitems.c # replaced by Rust (sdk/lib/rust/appwiz-rust/src/appwiz/removestartmenuitems.rs)
+dll/cpl/console/CMakeLists.txt	1	# colors.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/colors.rs)
+dll/cpl/console/CMakeLists.txt	1	# console.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/console.rs)
+dll/cpl/console/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/font.rs)
+dll/cpl/console/CMakeLists.txt	1	# layout.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/layout.rs)
+dll/cpl/console/CMakeLists.txt	1	# options.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/options.rs)
+dll/cpl/console/CMakeLists.txt	1	# utils.c # replaced by Rust (sdk/lib/rust/console-rust/src/console/utils.rs)
 dll/cpl/desk/CMakeLists.txt	1	# advappdlg.c
 dll/cpl/desk/CMakeLists.txt	1	# advmon.c
 dll/cpl/desk/CMakeLists.txt	1	# appearance.c
@@ -333,6 +345,20 @@ dll/cpl/desk/CMakeLists.txt	1	# rust_varargs_shim.c is no longer built (retired 
 dll/cpl/desk/CMakeLists.txt	1	# screensaver.c
 dll/cpl/desk/CMakeLists.txt	1	# settings.c
 dll/cpl/desk/CMakeLists.txt	1	# theme.c
+dll/cpl/hdwwiz/CMakeLists.txt	1	# hdwwiz.c # replaced by Rust (sdk/lib/rust/hdwwiz-rust/src/hdwwiz/hdwwiz.rs)
+dll/cpl/hotplug/CMakeLists.txt	1	# eject.c # replaced by Rust (sdk/lib/rust/hotplug-rust/src/hotplug/eject.rs)
+dll/cpl/hotplug/CMakeLists.txt	1	# enum.c # replaced by Rust (sdk/lib/rust/hotplug-rust/src/hotplug/enum.rs)
+dll/cpl/hotplug/CMakeLists.txt	1	# hotplug.c # replaced by Rust (sdk/lib/rust/hotplug-rust/src/hotplug/hotplug.rs)
+dll/cpl/input/CMakeLists.txt	1	# add_dialog.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/add_dialog.rs)
+dll/cpl/input/CMakeLists.txt	1	# advanced_settings_page.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/advanced_settings_page.rs)
+dll/cpl/input/CMakeLists.txt	1	# edit_dialog.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/edit_dialog.rs)
+dll/cpl/input/CMakeLists.txt	1	# input.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/input.rs)
+dll/cpl/input/CMakeLists.txt	1	# input_list.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/input_list.rs)
+dll/cpl/input/CMakeLists.txt	1	# key_sequence_dialog.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/key_sequence_dialog.rs)
+dll/cpl/input/CMakeLists.txt	1	# key_settings_dialog.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/key_settings_dialog.rs)
+dll/cpl/input/CMakeLists.txt	1	# layout_list.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/layout_list.rs)
+dll/cpl/input/CMakeLists.txt	1	# locale_list.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/locale_list.rs)
+dll/cpl/input/CMakeLists.txt	1	# settings_page.c # replaced by Rust (sdk/lib/rust/input-rust/src/input/settings_page.rs)
 dll/cpl/intl/CMakeLists.txt	1	# advanced.c
 dll/cpl/intl/CMakeLists.txt	1	# currency.c
 dll/cpl/intl/CMakeLists.txt	1	# date.c
@@ -345,6 +371,26 @@ dll/cpl/intl/CMakeLists.txt	1	# misc.c
 dll/cpl/intl/CMakeLists.txt	1	# numbers.c
 dll/cpl/intl/CMakeLists.txt	1	# sort.c)
 dll/cpl/intl/CMakeLists.txt	1	# time.c
+dll/cpl/joy/CMakeLists.txt	1	# joy.c # replaced by Rust (sdk/lib/rust/joy-rust/src/joy/joy.rs)
+dll/cpl/main/CMakeLists.txt	1	# keyboard.c # replaced by Rust (sdk/lib/rust/main-rust/src/main/keyboard.rs)
+dll/cpl/main/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/main-rust/src/main/main.rs)
+dll/cpl/main/CMakeLists.txt	1	# mouse.c # replaced by Rust (sdk/lib/rust/main-rust/src/main/mouse.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# audio.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/audio.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# mmsys.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/mmsys.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# sounds.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/sounds.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# speakervolume.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/speakervolume.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# voice.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/voice.rs)
+dll/cpl/mmsys/CMakeLists.txt	1	# volume.c # replaced by Rust (sdk/lib/rust/mmsys-rust/src/mmsys/volume.rs)
+dll/cpl/ncpa/CMakeLists.txt	1	# ncpa.c # replaced by Rust (sdk/lib/rust/ncpa-rust/src/ncpa/ncpa.rs)
+dll/cpl/odbccp32/CMakeLists.txt	1	# odbccp32.c # replaced by Rust (sdk/lib/rust/odbccp32i-rust/src/odbccp32i/odbccp32.rs)
+dll/cpl/openglcfg/CMakeLists.txt	1	# general.c # replaced by Rust (sdk/lib/rust/openglcfg-rust/src/openglcfg/general.rs)
+dll/cpl/openglcfg/CMakeLists.txt	1	# openglcfg.c # replaced by Rust (sdk/lib/rust/openglcfg-rust/src/openglcfg/openglcfg.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# advanced.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/advanced.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# alarms.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/alarms.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# hibernate.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/hibernate.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# powercfg.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/powercfg.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# powermeter.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/powermeter.rs)
+dll/cpl/powercfg/CMakeLists.txt	1	# powershemes.c # replaced by Rust (sdk/lib/rust/powercfg-rust/src/powercfg/powershemes.rs)
 dll/cpl/sysdm/CMakeLists.txt	1	# advanced.c
 dll/cpl/sysdm/CMakeLists.txt	1	# environment.c
 dll/cpl/sysdm/CMakeLists.txt	1	# general.c
@@ -358,6 +404,22 @@ dll/cpl/sysdm/CMakeLists.txt	1	# startrec.c
 dll/cpl/sysdm/CMakeLists.txt	1	# sysdm.c
 dll/cpl/sysdm/CMakeLists.txt	1	# userprofile.c
 dll/cpl/sysdm/CMakeLists.txt	1	# virtmem.c)
+dll/cpl/telephon/CMakeLists.txt	1	# telephon.c # replaced by Rust (sdk/lib/rust/telephon-rust/src/telephon/telephon.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# clock.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/clock.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# dateandtime.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/dateandtime.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# internettime.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/internettime.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# monthcal.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/monthcal.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# timedate.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/timedate.rs)
+dll/cpl/timedate/CMakeLists.txt	1	# timezone.c # replaced by Rust (sdk/lib/rust/timedate-rust/src/timedate/timezone.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# extra.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/extra.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# groupprops.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/groupprops.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# groups.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/groups.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/misc.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# userprops.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/userprops.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# users.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/users.rs)
+dll/cpl/usrmgr/CMakeLists.txt	1	# usrmgr.c # replaced by Rust (sdk/lib/rust/usrmgr-rust/src/usrmgr/usrmgr.rs)
+dll/cpl/wined3dcfg/CMakeLists.txt	1	# general.c # replaced by Rust (sdk/lib/rust/wined3dcfg-rust/src/wined3dcfg/general.rs)
+dll/cpl/wined3dcfg/CMakeLists.txt	1	# wined3dcfg.c # replaced by Rust (sdk/lib/rust/wined3dcfg-rust/src/wined3dcfg/wined3dcfg.rs)
 dll/directx/wine/d3dx9_36/d3dx9.cmake	1	# math.c wants M_PI, which <math.h> only exposes on request here.
 dll/directx/wine/dmime/CMakeLists.txt	1	# performance.c drives its message pump with a CONDITION_VARIABLE.
 dll/directx/wine/dpnet/CMakeLists.txt	1	# dpnet_main.c guards its one-time init with InitOnceExecuteOnce.

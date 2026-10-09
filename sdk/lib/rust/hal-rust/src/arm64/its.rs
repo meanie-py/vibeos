@@ -18,10 +18,13 @@
 //! Every CPU whose redistributor takes LPIs gets a collection (ICID = its processor
 //! number) on every ITS, and messages are spread across those CPUs as they are
 //! handed out, the way Windows spreads a device's MSI-X messages: a driver whose
-//! queues each have a message then completes on more than one CPU.
+//! queues each have a message then completes on more than one CPU. A device whose
+//! affinity policy names processors is spread over those instead.
 //!
-//! What is owed: returning LPIs and events when a device goes away, and moving an LPI
-//! (MOVI) when a driver asks for a different affinity.
+//! An LPI follows its interrupt object: KeConnectInterrupt enables it on the processor
+//! the object was initialized for, and an LPI enabled on a CPU it does not target is
+//! moved there (MOVI). When the PnP manager releases the device's resources each LPI
+//! comes back: its event is discarded, and the device unmapped once it has none left.
 
 #![cfg(target_arch = "aarch64")]
 
@@ -29,6 +32,7 @@ use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, rd, XSDT_PA};
+use super::bits::{nth_cpu, Bits};
 use super::gic3;
 use super::iort;
 
@@ -83,12 +87,11 @@ const COMMAND_SIZE: usize = 32;
 /// Events (messages) one device can have. MSI-X allows 2048; nothing we drive asks for
 /// more than a handful.
 const EVENTS_PER_DEVICE: u32 = 256;
+const EVENT_WORDS: usize = EVENTS_PER_DEVICE as usize / 64;
 const MAX_DEVICES: usize = 64;
 const MAX_ITS: usize = 4;
 const MAX_CPUS: u32 = 64;
 const NO_REQUESTER: u32 = u32::MAX;
-/// Requester IDs are on PCI segment 0: the only one pci.sys enumerates.
-const SEGMENT: u32 = 0;
 
 // ACPI.
 const MADT_RECORDS: usize = 44;
@@ -143,14 +146,21 @@ static mut ITSES: [Its; MAX_ITS] = [NO_ITS; MAX_ITS];
 static ITS_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 static LPI_COUNT: AtomicU32 = AtomicU32::new(0);
-static LPI_NEXT: AtomicU32 = AtomicU32::new(0);
+/// Which LPIs are handed out.
+static LPIS: Bits<{ LPI_SLOTS as usize / 64 }> = Bits::new();
+/// Counts messages handed out; each takes the next CPU of its allowed set in turn.
+static ROTOR: AtomicU32 = AtomicU32::new(0);
 static PROPERTIES: AtomicUsize = AtomicUsize::new(0);
 /// The CPUs whose redistributors take LPIs, each with a collection on every ITS.
 static CPUS: AtomicU64 = AtomicU64::new(0);
 /// Which CPU each LPI was handed out for, chosen at allocation.
 static LPI_CPU: [AtomicU8; LPI_SLOTS as usize] = [const { AtomicU8::new(0) }; LPI_SLOTS as usize];
+/// log2 of the MSI block each LPI belongs to (0: a lone message). A block's LPIs are
+/// consecutive and aligned to its size, so its first is `n & !(size - 1)`.
+static LPI_ORDER: [AtomicU8; LPI_SLOTS as usize] = [const { AtomicU8::new(0) }; LPI_SLOTS as usize];
 /// One ITT page per device slot, allocated at bring-up: nothing under LOCK allocates.
 static ITTS: AtomicU64 = AtomicU64::new(0);
+static ITTS_VA: AtomicUsize = AtomicUsize::new(0);
 
 /// The command queues, the device list and the LPI bindings, under one lock taken at
 /// DISPATCH_LEVEL: every caller is PnP or KeConnectInterrupt, never an ISR.
@@ -160,9 +170,11 @@ static LOCK: AtomicU32 = AtomicU32::new(0);
 struct Device {
     its: u8,
     id: u32,
-    events: u32,
+    /// Which EventIDs are bound.
+    events: [u64; EVENT_WORDS],
 }
-static mut DEVICES: [Device; MAX_DEVICES] = [Device { its: 0, id: NO_REQUESTER, events: 0 }; MAX_DEVICES];
+const NO_DEVICE: Device = Device { its: 0, id: NO_REQUESTER, events: [0; EVENT_WORDS] };
+static mut DEVICES: [Device; MAX_DEVICES] = [NO_DEVICE; MAX_DEVICES];
 
 /// What an LPI is bound to: (ITS index, DeviceID, EventID); DeviceID NO_REQUESTER while
 /// unbound.
@@ -507,10 +519,11 @@ unsafe fn bring_up() -> bool {
         return false;
     }
     CPUS.store(cpus, Ordering::Relaxed);
-    let Some((_, itts)) = table(MAX_DEVICES * PAGE, PAGE) else {
+    let Some((itts_va, itts)) = table(MAX_DEVICES * PAGE, PAGE) else {
         return false;
     };
     ITTS.store(itts, Ordering::Relaxed);
+    ITTS_VA.store(itts_va, Ordering::Relaxed);
 
     let mut up = 0;
     for &(id, pa) in &found[..count] {
@@ -552,9 +565,12 @@ unsafe fn probe() -> bool {
     }
 }
 
-/// Where a requester's MSIs go: (ITS index, DeviceID). The IORT says; with no IORT at
-/// all the requester ID is the DeviceID at the first ITS, which is what QEMU does.
+/// Where a requester's MSIs go: (ITS index, DeviceID). `requester` is pci.sys's: the
+/// PCI segment in bits 31:16 above the requester ID. The IORT says, from the root
+/// complex of that segment; with no IORT at all the requester ID is the DeviceID at
+/// the first ITS, which is what QEMU does.
 unsafe fn route(requester: u32) -> Option<(usize, u32)> {
+    let (segment, rid) = (requester >> 16, requester & 0xFFFF);
     let xsdt = XSDT_PA.load(Ordering::Relaxed);
     let mut answer: Option<Result<iort::Route, iort::Error>> = None;
     if xsdt != 0 {
@@ -563,11 +579,11 @@ unsafe fn route(requester: u32) -> Option<(usize, u32)> {
                 return;
             }
             let bytes = core::slice::from_raw_parts(t, len);
-            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, SEGMENT, requester)));
+            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, segment, rid)));
         });
     }
     let (its_id, device) = match answer {
-        None => (its(0).id, requester),
+        None => (its(0).id, rid),
         Some(Ok(r)) => (r.its, r.device_id),
         Some(Err(e)) => {
             report_route_error(requester, e);
@@ -620,22 +636,24 @@ unsafe fn prepare_device(index: usize, device: u32) -> bool {
 /// MAPD a device with an ITT for events_per_device() events, or find it mapped.
 unsafe fn map_device(index: usize, id: u32) -> Option<usize> {
     let devices = &raw mut DEVICES;
-    let slot = (0..MAX_DEVICES).find(|&n| {
-        let d = (*devices)[n];
-        (d.its as usize == index && d.id == id) || d.id == NO_REQUESTER
-    })?;
-    if (*devices)[slot].id == id {
+    if let Some(slot) = (0..MAX_DEVICES).find(|&n| (*devices)[n].its as usize == index && (*devices)[n].id == id) {
         return Some(slot);
     }
+    // A released device leaves a hole before devices still mapped: look for the
+    // device first, then for a hole.
+    let slot = (0..MAX_DEVICES).find(|&n| (*devices)[n].id == NO_REQUESTER)?;
     let i = its(index);
     let events = events_per_device(i);
     let itt = ITTS.load(Ordering::Relaxed) + (slot * PAGE) as u64;
+    // A slot a released device used: the ITS must not see its old translations.
+    core::ptr::write_bytes((ITTS_VA.load(Ordering::Relaxed) + slot * PAGE) as *mut u8, 0, PAGE);
+    dsb();
     // MAPD: DeviceID, Size (event ID bits - 1), ITT address, Valid.
     let size = events.trailing_zeros().max(1) - 1;
     if !command(i, [0x08 | ((id as u64) << 32), size as u64, (1 << 63) | itt, 0]) {
         return None;
     }
-    (*devices)[slot] = Device { its: index as u8, id, events: 0 };
+    (*devices)[slot] = Device { its: index as u8, id, ..NO_DEVICE };
     Some(slot)
 }
 
@@ -645,37 +663,141 @@ fn events_per_device(i: &Its) -> u32 {
     EVENTS_PER_DEVICE.min(1 << i.event_bits.min(31)).min(1 << (31 - fit.leading_zeros()))
 }
 
-/// Did this INTID come from the ITS? Those are LPIs we handed out.
+/// Is this INTID one of the LPIs the ITS hands out?
 pub(crate) fn owns(intid: u32) -> bool {
-    intid >= LPI_BASE && intid < LPI_BASE + LPI_NEXT.load(Ordering::Relaxed)
+    intid >= LPI_BASE && intid < LPI_BASE + LPI_COUNT.load(Ordering::Relaxed)
 }
 
 pub(crate) unsafe fn message_capacity() -> u32 {
     if !probe() {
         return 0;
     }
-    LPI_COUNT.load(Ordering::Relaxed).saturating_sub(LPI_NEXT.load(Ordering::Relaxed))
+    let count = LPI_COUNT.load(Ordering::Relaxed);
+    count - LPIS.count(count)
 }
 
-/// The next LPI, on the next CPU in turn.
-pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
-    if !probe() {
+/// `count` free LPIs (a power of two; 1 for a lone message), consecutive so a block's
+/// message k is its first LPI + k, on the next CPU in turn of those `requested` that
+/// take LPIs. A request naming none of them is said so and spread over all of them:
+/// an LPI has to go somewhere that can take it. A block's LPIs share one CPU, as its
+/// messages share one address everywhere else.
+pub(crate) unsafe fn allocate_message_block(count: u32, requested: ddk::KAFFINITY) -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
+    if !probe() || count > EVENTS_PER_DEVICE {
         return None;
     }
-    let count = LPI_COUNT.load(Ordering::Relaxed);
-    let n = LPI_NEXT
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| (n < count).then_some(n + 1))
-        .ok()?;
+    let n = LPIS.claim_block(count, LPI_COUNT.load(Ordering::Relaxed), LPI_BASE)?;
     let cpus = CPUS.load(Ordering::Relaxed);
-    let mut pick = n % cpus.count_ones();
-    let mut rest = cpus;
-    while pick > 0 {
-        rest &= rest - 1;
-        pick -= 1;
+    let mut allowed = cpus & requested as u64;
+    if allowed == 0 {
+        DbgPrint(
+            b"[HAL] GICv3 ITS: LPI %u asked for CPUs %llx, none of which take LPIs (%llx) - spreading it\n\0".as_ptr(),
+            LPI_BASE + n,
+            requested as u64,
+            cpus,
+        );
+        allowed = cpus;
     }
-    let cpu = rest.trailing_zeros();
-    LPI_CPU[n as usize].store(cpu as u8, Ordering::Relaxed);
+    let Some(cpu) = nth_cpu(allowed, ROTOR.fetch_add(1, Ordering::Relaxed)) else {
+        (n..n + count).for_each(|m| _ = LPIS.release(m));
+        return None;
+    };
+    for m in n..n + count {
+        LPI_CPU[m as usize].store(cpu as u8, Ordering::Relaxed);
+        LPI_ORDER[m as usize].store(count.trailing_zeros() as u8, Ordering::Relaxed);
+    }
+    if count > 1 {
+        DbgPrint(b"[HAL] GICv3 ITS: LPIs %u-%u, an MSI block of %u, on CPU%u\n\0".as_ptr(), LPI_BASE + n, LPI_BASE + n + count - 1, count, cpu);
+    }
     Some((LPI_BASE + n, super::clock::DEVICE_IRQL, 1 << cpu))
+}
+
+/// The block slot `n` belongs to: its first slot and its size.
+fn block_of(n: u32) -> (u32, u32) {
+    let size = 1u32 << LPI_ORDER[n as usize].load(Ordering::Relaxed);
+    (n & !(size - 1), size)
+}
+
+/// Give an LPI back: off, its event discarded (which also drops anything pending),
+/// and its device unmapped once that was the device's last event. An MSI block's
+/// first LPI gives back the whole block; an LPI inside a block is not released alone.
+pub(crate) unsafe fn release_message_vector(lpi: u32) -> bool {
+    if !owns(lpi) || PROPERTIES.load(Ordering::Relaxed) == 0 {
+        return false;
+    }
+    let n = lpi - LPI_BASE;
+    if !LPIS.is_set(n) {
+        DbgPrint(b"[HAL] GICv3 ITS: LPI %u released, but it was not handed out\n\0".as_ptr(), lpi);
+        return false;
+    }
+    let (first, size) = block_of(n);
+    if first != n {
+        DbgPrint(b"[HAL] GICv3 ITS: LPI %u released alone, but it is inside an MSI block\n\0".as_ptr(), lpi);
+        return false;
+    }
+    (n..n + size).fold(true, |ok, m| release_one(m) && ok)
+}
+
+unsafe fn release_one(n: u32) -> bool {
+    let n = n as usize;
+    let lpi = LPI_BASE + n as u32;
+    let properties = PROPERTIES.load(Ordering::Relaxed);
+    let disabled = (super::clock::gic_priority(super::clock::DEVICE_IRQL) & 0xFC) | LPI_PROP_RES1;
+    {
+        let _guard = Locked::take();
+        core::ptr::write_volatile((properties + n) as *mut u8, disabled);
+        dsb();
+        let bindings = &raw mut BINDINGS;
+        let b = (*bindings)[n];
+        if b.device != NO_REQUESTER {
+            let i = its(b.its as usize);
+            // DISCARD: DeviceID, EventID.
+            let ok = command(i, [0x0F | ((b.device as u64) << 32), b.event as u64, 0, 0])
+                && sync(i, LPI_CPU[n].load(Ordering::Relaxed) as u32);
+            let devices = &raw mut DEVICES;
+            if let Some(slot) = (0..MAX_DEVICES).find(|&s| (*devices)[s].its == b.its && (*devices)[s].id == b.device) {
+                let d = &mut (*devices)[slot];
+                d.events[b.event as usize / 64] &= !(1u64 << (b.event % 64));
+                // MAPD with Valid clear: the device has no events left.
+                if d.events.iter().all(|&w| w == 0) && command(i, [0x08 | ((b.device as u64) << 32), 0, 0, 0]) {
+                    *d = NO_DEVICE;
+                    DbgPrint(b"[HAL] GICv3 ITS %u: DeviceID %x unmapped, its last event gone\n\0".as_ptr(), i.id, b.device);
+                }
+            }
+            (*bindings)[n] = Binding { its: 0, device: NO_REQUESTER, event: 0 };
+            DbgPrint(
+                b"[HAL] GICv3 ITS %u: LPI %u released (DeviceID %x event %u)%s\n\0".as_ptr(),
+                i.id,
+                lpi,
+                b.device,
+                b.event,
+                if ok { b"\0".as_ptr() } else { b" - DISCARD failed, the event may still fire\0".as_ptr() },
+            );
+        }
+    }
+    LPI_ORDER[n].store(0, Ordering::Relaxed);
+    LPIS.release(n as u32)
+}
+
+/// Point a bound LPI at `cpu`'s collection (MOVI), when it targets another CPU and
+/// `cpu` takes LPIs.
+unsafe fn steer(lpi: u32, cpu: u32) {
+    let n = (lpi - LPI_BASE) as usize;
+    let from = LPI_CPU[n].load(Ordering::Relaxed) as u32;
+    if from == cpu || cpu >= MAX_CPUS || CPUS.load(Ordering::Relaxed) & (1 << cpu) == 0 {
+        return;
+    }
+    let _guard = Locked::take();
+    let b = (*(&raw const BINDINGS))[n];
+    if b.device != NO_REQUESTER {
+        let i = its(b.its as usize);
+        // MOVI: DeviceID, EventID -> ICID. The SYNC on the old target waits out
+        // anything already on its way there.
+        if !command(i, [0x01 | ((b.device as u64) << 32), b.event as u64, cpu as u64, 0]) || !sync(i, from) {
+            return;
+        }
+        DbgPrint(b"[HAL] GICv3 ITS %u: LPI %u moved from CPU%u to CPU%u\n\0".as_ptr(), i.id, lpi, from, cpu);
+    }
+    LPI_CPU[n].store(cpu as u8, Ordering::Relaxed);
 }
 
 /// The address/data pair that raises `lpi`. The first ask, from pci.sys, names the
@@ -683,7 +805,7 @@ pub(crate) unsafe fn allocate_message_vector() -> Option<(u32, ddk::KIRQL, ddk::
 /// reach; later asks (the I/O manager filling in a driver's message table) get the
 /// same pair back.
 pub(crate) unsafe fn message_target(lpi: u32, requester: u32) -> Option<(u64, u32)> {
-    if !probe() || !owns(lpi) {
+    if !probe() || !owns(lpi) || !LPIS.is_set(lpi - LPI_BASE) {
         return None;
     }
     let n = (lpi - LPI_BASE) as usize;
@@ -714,27 +836,41 @@ pub(crate) unsafe fn message_target(lpi: u32, requester: u32) -> Option<(u64, u3
     let slot = map_device(index, device)?;
     let devices = &raw mut DEVICES;
     let i = its(index);
-    let event = (*devices)[slot].events;
-    if event >= events_per_device(i) {
+    let limit = events_per_device(i);
+    // A block takes an aligned run of events, one per LPI in order: the device sends
+    // the first event's ID with the message number ORed into its low bits.
+    let (first, size) = block_of(n as u32);
+    let words = (*devices)[slot].events;
+    let free = |e: u32| words[e as usize / 64] & (1 << (e % 64)) == 0;
+    let Some(base_event) = (0..limit).step_by(size as usize).find(|&e| e + size <= limit && (e..e + size).all(free)) else {
+        DbgPrint(b"[HAL] GICv3 ITS %u: DeviceID %x has no %u free events left of %u\n\0".as_ptr(), i.id, device, size, limit);
         return None;
-    }
+    };
     // MAPTI: DeviceID, EventID -> pINTID, ICID (the CPU it was handed out for).
     let cpu = LPI_CPU[n].load(Ordering::Relaxed) as u32;
-    if !command(i, [0x0A | ((device as u64) << 32), event as u64 | ((lpi as u64) << 32), cpu as u64, 0]) || !sync(i, cpu) {
+    for k in 0..size {
+        let (event, m) = (base_event + k, (first + k) as usize);
+        let lpi = LPI_BASE + m as u32;
+        if !command(i, [0x0A | ((device as u64) << 32), event as u64 | ((lpi as u64) << 32), cpu as u64, 0]) {
+            return None;
+        }
+        (*devices)[slot].events[event as usize / 64] |= 1 << (event % 64);
+        (*bindings)[m] = Binding { its: index as u8, device, event };
+        DbgPrint(
+            b"[HAL] GICv3 ITS %u: requester %04x (DeviceID %x) event %u -> LPI %u on CPU%u\n\0".as_ptr(),
+            i.id,
+            requester,
+            device,
+            event,
+            lpi,
+            cpu,
+        );
+    }
+    if !sync(i, cpu) {
         return None;
     }
-    (*devices)[slot].events = event + 1;
-    (*bindings)[n] = Binding { its: index as u8, device, event };
-    DbgPrint(
-        b"[HAL] GICv3 ITS %u: requester %04x (DeviceID %x) event %u -> LPI %u on CPU%u\n\0".as_ptr(),
-        i.id,
-        requester,
-        device,
-        event,
-        lpi,
-        cpu,
-    );
-    Some((i.pa + GITS_TRANSLATER, event))
+    let b = (*bindings)[n];
+    Some((i.pa + GITS_TRANSLATER, b.event))
 }
 
 /// Write an LPI's property byte and make the redistributor drop its cached copy.
@@ -756,8 +892,13 @@ unsafe fn set_property(lpi: u32, value: u8) -> bool {
     command(i, [0x0C | ((b.device as u64) << 32), b.event as u64, 0, 0]) && sync(i, LPI_CPU[n].load(Ordering::Relaxed) as u32)
 }
 
-/// HalEnableSystemInterrupt for an LPI: its priority from the IRQL, and enable.
+/// HalEnableSystemInterrupt for an LPI, on the processor its interrupt object is
+/// for: delivered there, at the priority of its IRQL.
 pub(crate) unsafe fn enable(lpi: u32, irql: ddk::KIRQL) -> bool {
+    if !LPIS.is_set(lpi - LPI_BASE) {
+        return false;
+    }
+    steer(lpi, super::halstubs::halp_cpu_number());
     set_property(lpi, (super::clock::gic_priority(irql) & 0xFC) | LPI_PROP_RES1 | LPI_PROP_ENABLE)
 }
 

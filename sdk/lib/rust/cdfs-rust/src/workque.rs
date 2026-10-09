@@ -18,7 +18,6 @@ const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "C" {
-    fn PAGED_CODE();
 }
 extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
@@ -140,7 +139,7 @@ pub unsafe extern "C" fn CdFsdPostRequest(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP(Irp);
     CdPrePostIrp(IrpContext, Irp);
@@ -156,7 +155,7 @@ pub unsafe extern "system" fn CdPrePostIrp(
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut RemovedFcb: u8 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP(Irp);
@@ -232,7 +231,7 @@ pub unsafe extern "system" fn CdOplockComplete(
 ) {
     let mut RemovedFcb: u8 = 0;
     // PAGED_CODE()
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if (*Irp).IoStatus.__bindgen_anon_1.Status == STATUS_SUCCESS {
         match (*IrpContext).MajorFunction {

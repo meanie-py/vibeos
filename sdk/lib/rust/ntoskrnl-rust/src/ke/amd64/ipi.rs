@@ -38,6 +38,20 @@ pub unsafe extern "C" fn KiIpiSend(
         HalSendSoftwareInterrupt(TargetSet, APC_LEVEL);
     } else if IpiRequest == IPI_DPC {
         HalSendSoftwareInterrupt(TargetSet, DISPATCH_LEVEL);
+        // Divergence from the (never-SMP-validated) C: the DISPATCH soft vector is
+        // priority class 2, and on amd64 IRQL *is* the APIC TPR -- so a target
+        // sitting at DISPATCH_LEVEL, which is where the idle loop blocks in hlt,
+        // holds 0x2F pending in its IRR and never wakes. The thread just handed to
+        // it as NextThread (or the DPC just queued on it) then waits for the next
+        // clock interrupt: sampled at -smp 2, a halted idle CPU had a NextThread
+        // waiting in over half of all samples, and boot ran 4x slower than -smp 1.
+        // 0xE1 is above every IRQL the idle loop runs at; its handler services
+        // nothing here, but hlt returns and the idle loop re-checks NextThread and
+        // the DPC queue. The 0x2F request stays: it is what preempts a BUSY target
+        // once its IRQL drops. Not filtered to KiTbLazyIdleSet, because the idle
+        // loop joins that set after its NextThread check -- a filtered wake races.
+        #[cfg(feature = "smp")]
+        HalRequestIpi(TargetSet);
     } else if IpiRequest == IPI_FREEZE {
         HalSendNMI(TargetSet);
     } else {

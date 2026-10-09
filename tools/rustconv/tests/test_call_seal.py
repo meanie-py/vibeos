@@ -347,3 +347,15 @@ def test_a_nested_turbofish_does_not_close_early():
         sealed,
     )
     assert "Take(transmute::<Option<A>, fn(B) -> C>(x))" in restored
+
+
+def test_a_function_pointer_local_may_be_spelled_twice():
+    """input layout_list.c: `FN_X fn; ... if (fn) hr = fn(a);` -- `fn` is storage."""
+    from rustconv.call_seal import seal_calls, unseal_calls
+
+    body = "HRESULT f(void)\n{\n    FN_X fn;\n    if (fn) hr = fn(a);\n    return hr;\n}\n"
+    sealed = seal_calls(body, {"fn"})
+    (call,) = sealed.calls
+    tok = call.placeholder
+    out = unseal_calls(f"if let Some({tok}) = r#fn {{ hr = {tok}(a); }}", sealed)
+    assert out == "if let Some(r#fn) = r#fn { hr = r#fn(a); }"

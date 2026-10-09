@@ -97,7 +97,6 @@ fn SRB_STATUS(status: u8) -> u32 {
 const SRB_STATUS_STATUS_MASK: u32 = 0x3f;
 
 extern "C" {
-    fn PAGED_CODE();
     fn RequestSenseInfoInterpret( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, Request: *mut core::ffi::c_void, Srb: *mut SCSI_REQUEST_BLOCK, RetryAttempt: ULONG, Status: *mut NTSTATUS, RetryInterval: *mut LARGE_INTEGER, ) -> BOOLEAN;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
     fn DeviceMarkActive(DeviceExtension: PCDROM_DEVICE_EXTENSION, IsActive: BOOLEAN, SetIdleTimeout: BOOLEAN,);
@@ -490,7 +489,7 @@ pub unsafe extern "system" fn DeviceSetParameter(
     let mut registry_subkey_name: UNICODE_STRING = core::mem::zeroed();
     let mut registry_value_name: UNICODE_STRING = core::mem::zeroed();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     RtlInitUnicodeString(&mut registry_value_name, ParameterName);
 
@@ -556,7 +555,7 @@ pub unsafe extern "C" fn DeviceSendRequestSynchronously(
     let mut request_cancelled: BOOLEAN = 0;
     let request_context: PCDROM_REQUEST_CONTEXT = RequestGetContext(request);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if request_formated == 0 {
         WdfRequestFormatRequestUsingCurrentType(request);
@@ -1388,7 +1387,7 @@ pub unsafe extern "C" fn DevicePrintAllFeaturePages(
     Buffer: *mut GET_CONFIGURATION_HEADER,
     Usable: u32,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     ////////////////////////////////////////////////////////////////////////////////
     // items expected to ALWAYS be current if they exist
@@ -2254,7 +2253,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         dvd_default_region_wstr.as_ptr(),
     );
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let device_extension = DeviceGetExtension(Device);
 
@@ -2713,7 +2712,7 @@ pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
 #[no_mangle]
 pub unsafe extern "C" fn StringsAreMatched(StringToMatch: *mut i8, TargetString: *mut i8) -> i32 {
     let length: usize;
-    PAGED_CODE();
+    PAGED_CODE!();
     NT_ASSERT((!TargetString.is_null()) as i32);
     if StringToMatch.is_null() {
         return 1;
@@ -3023,7 +3022,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
     let mut nowLocked: BOOLEAN = 0;
 
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
 
         status = WdfWaitLockAcquire((*DeviceExtension).EjectSynchronizationLock, core::ptr::null_mut());
         if !NT_SUCCESS(status) {
@@ -3161,7 +3160,7 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
     let mut ANPending: i32 = 0;
     let mut requestInUse: i32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if EXCLUSIVE_MODE(cdData) == 0 {
         TracePrint!(

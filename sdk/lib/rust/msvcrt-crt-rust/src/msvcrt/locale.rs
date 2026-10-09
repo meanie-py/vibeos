@@ -153,16 +153,16 @@ pub static mut empty: [i8; 1] = [0];
 pub static mut cloc_dec_point: [i8; 2] = [b'.' as i8, 0];
 
 pub static mut cloc_lconv: lconv = lconv {
-    decimal_point: unsafe { cloc_dec_point.as_ptr() as *mut i8 },
-    thousands_sep: unsafe { empty.as_ptr() as *mut i8 },
-    grouping: unsafe { empty.as_ptr() as *mut i8 },
-    int_curr_symbol: unsafe { empty.as_ptr() as *mut i8 },
-    currency_symbol: unsafe { empty.as_ptr() as *mut i8 },
-    mon_decimal_point: unsafe { empty.as_ptr() as *mut i8 },
-    mon_thousands_sep: unsafe { empty.as_ptr() as *mut i8 },
-    mon_grouping: unsafe { empty.as_ptr() as *mut i8 },
-    positive_sign: unsafe { empty.as_ptr() as *mut i8 },
-    negative_sign: unsafe { empty.as_ptr() as *mut i8 },
+    decimal_point: unsafe { (&raw const cloc_dec_point).cast::<i8>() as *mut i8 },
+    thousands_sep: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    grouping: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    int_curr_symbol: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    currency_symbol: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    mon_decimal_point: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    mon_thousands_sep: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    mon_grouping: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    positive_sign: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
+    negative_sign: unsafe { (&raw const empty).cast::<i8>() as *mut i8 },
     int_frac_digits: 127,
     frac_digits: 127,
     p_cs_precedes: 127,
@@ -742,7 +742,7 @@ unsafe extern "C" fn ensure_cloc_static_init() {
     ) == 0
     {
         cloc_static_locinfo.lconv = core::ptr::addr_of_mut!(cloc_lconv);
-        cloc_static_locinfo.pctype = MSVCRT__ctype.as_mut_ptr().offset(1);
+        cloc_static_locinfo.pctype = (&raw mut MSVCRT__ctype).cast::<WORD>().offset(1);
         cloc_static_locinfo.pclmap = cloc_clmap.as_ptr();
         cloc_static_locinfo.pcumap = cloc_cumap.as_ptr();
         cloc_static_locinfo.lc_time_curr = core::ptr::addr_of_mut!(cloc_time_data);
@@ -818,7 +818,7 @@ unsafe extern "C" fn construct_lc_all(locinfo: pthreadlocinfo) -> *mut i8 {
     }
 
     sprintf(
-        current_lc_all.as_mut_ptr(),
+        (&raw mut current_lc_all).cast::<i8>(),
         b"LC_COLLATE=%s;LC_CTYPE=%s;LC_MONETARY=%s;LC_NUMERIC=%s;LC_TIME=%s\0".as_ptr() as *const i8,
         (*locinfo).lc_category[LC_COLLATE as usize].locale,
         (*locinfo).lc_category[LC_CTYPE as usize].locale,
@@ -827,7 +827,7 @@ unsafe extern "C" fn construct_lc_all(locinfo: pthreadlocinfo) -> *mut i8 {
         (*locinfo).lc_category[LC_TIME as usize].locale,
     );
 
-    current_lc_all.as_mut_ptr()
+    (&raw mut current_lc_all).cast::<i8>()
 }
 #[no_mangle]
 pub unsafe extern "C" fn _Getdays() -> *mut i8 {
@@ -1845,7 +1845,7 @@ unsafe extern "C" fn create_locinfo(
     } else {
         (*locinfo).lc_clike = 1;
         (*locinfo).mb_cur_max = 1;
-        (*locinfo).pctype = MSVCRT__ctype.as_mut_ptr().add(1);
+        (*locinfo).pctype = (&raw mut MSVCRT__ctype).cast::<WORD>().add(1);
         (*locinfo).pclmap = cloc_clmap.as_ptr();
         (*locinfo).pcumap = cloc_cumap.as_ptr();
         if init_category_name(
@@ -2709,13 +2709,13 @@ pub unsafe extern "C" fn _wsetlocale(category: i32, wlocale: *const wchar_t) -> 
     ret = setlocale(category, locale);
     free((locale).cast());
 
-    if !ret.is_null() && mbstowcs(current_lc_all.as_mut_ptr(), ret, MAX_LOCALE_LENGTH) == (1 as usize).wrapping_neg() {
+    if !ret.is_null() && mbstowcs((&raw mut current_lc_all).cast::<wchar_t>(), ret, MAX_LOCALE_LENGTH) == (1 as usize).wrapping_neg() {
         return core::ptr::null_mut();
     }
 
     _unlock_locales();
     if !ret.is_null() {
-        current_lc_all.as_mut_ptr()
+        (&raw mut current_lc_all).cast::<wchar_t>()
     } else {
         core::ptr::null_mut()
     }

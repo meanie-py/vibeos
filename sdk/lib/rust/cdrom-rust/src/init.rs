@@ -44,7 +44,6 @@ extern "system" {
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 extern "system" {
     // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
@@ -179,13 +178,16 @@ const CDROM_HACK_BAD_GET_CONFIG_SUPPORT: u32 = 0x100;  // was 0x0001 (LLM-invent
 const CDROM_HACK_BAD_VENDOR_PROFILES: u32 = 0x1000;  // was 0x0002 (LLM-invented); bindgen-correct
 const CDROM_HACK_BAD_TYPE_ONE_GET_CONFIG: u32 = 0x800;  // was 0x0004 (LLM-invented); bindgen-correct
 
-// HELD at 0x0003 (FeatureRemovableMedium) although cdrom.h's FeatureProfileList is 0x0000:
-// with the correct value QEMU's DVD-ROM fails the TYPE_ONE probe below, and the teardown
-// that follows goes through DeviceClaimRelease(Release) into FxRequest::Release reading
-// past its object (amd64/i386 BUGCHECK 0x19, arm64 hang; special pool on tag CDRO,
-// 2026-10-04). Restore the real value once that failure path is fixed (roadmap, "cdrom
-// FeatureProfileList").
-const FeatureProfileList: u32 = 0x0003;
+// cdrom.h's FeatureProfileList is 0x0000 (FEATURE_NUMBER). This was HELD at 0x0003 while the
+// teardown it exercised crashed: with the correct value QEMU's DVD-ROM answers the TYPE_ONE
+// probe below with more than the one feature, the device start tears down through
+// DeviceClaimRelease(Release) -> WdfObjectDelete -> FxRequest::Release, and that path read
+// past the just-freed request object (amd64/i386 BUGCHECK 0x19, arm64 hang). Root cause was
+// in vendored KMDF, not here: clang hoisted FxRequest::Release's load of m_Completed above
+// the `retValue == 1 &&` guard that was supposed to gate it, reading the object after
+// FinalRelease freed it. Fixed in vendor/wdf/shared/core/fxrequest.cpp (capture m_Completed
+// before the __super Release, like the sibling flags), so the real value is restored here.
+const FeatureProfileList: u32 = 0x0000;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ALL: u32 = 0;
 const SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE: u32 = 0x2;  // was 1 (LLM-invented); bindgen-correct
 
@@ -352,7 +354,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     TracePrint!(
         TRACE_LEVEL_INFORMATION,
@@ -421,7 +423,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
     if NT_SUCCESS(status) {
         DeviceRetrieveHackFlagsFromRegistry(deviceExtension);
         // scan for bad items.
-        DeviceScanForSpecial(deviceExtension, CdRomBadItems.as_mut_ptr(), Some(DeviceHackFlagsScan));
+        DeviceScanForSpecial(deviceExtension, (&raw mut CdRomBadItems).cast::<CDROM_SCAN_FOR_SPECIAL_INFO>(), Some(DeviceHackFlagsScan));
         // Check to see if it's a special device that needs special error process.
         DeviceScanSpecialDevices(deviceExtension); // may send command to device
     }
@@ -859,7 +861,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     let mut descriptor: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let device_extension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // Set the passed-in descriptor pointer to NULL as default
     *Descriptor = core::ptr::null_mut();
@@ -1054,7 +1056,7 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
     const TRACE_FLAG_INIT: u32 = 8; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // NT_ASSERT(DeviceList)
     NT_ASSERT((!DeviceList.is_null()) as i32);
@@ -1131,7 +1133,7 @@ pub unsafe extern "C" fn DeviceHackFlagsScan(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Data: usize,
 ) {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut data = Data;
     // CLEAR_FLAG
@@ -1284,7 +1286,7 @@ pub unsafe extern "C" fn ScanForSpecialHandler(
     HackFlags: usize, // ULONG_PTR
 ) {
     // PAGED_CODE() macro call
-    PAGED_CODE();
+    PAGED_CODE!();
 
     // CLEAR_FLAG(HackFlags, CDROM_HACK_INVALID_FLAGS) – macro expanded to bitwise clear
     // Because CLEAR_FLAG is a macro and not a callable function, we manually expand it.
@@ -1499,7 +1501,7 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
     let mut count: u32 = 0;
 
     // PAGED_CODE();
-    unsafe { PAGED_CODE(); } // keep the macro call
+    unsafe { PAGED_CODE!(); } // keep the macro call
 
     // Check GET_CONFIGURATION data
     {
@@ -1644,15 +1646,12 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
                     );
                     (*DeviceExtension).DeviceAdditionalData.Mmc.ReadCdSubCode = 1;
                 }
-                // Successfully got page; break out of loop.
-                // We must free buffer before breaking? The normal flow after this block would still execute the TracePrint warning and FREE_POOL.
-                // But we break, so we go to end of loop body directly. The buffer is still allocated; we need to free it.
-                // The C code: inside the success branch, after setting flags, it does 'break;' and then the loop ends.
-                // The buffer is freed only if the status wasn't success (i.e., in the part outside the if). So when we break, buffer is not freed.
-                // So we have to free it manually before break, because the loop cleanup won't run.
-                // So we'll free it here.
-                FREE_POOL(buffer as *mut core::ffi::c_void);
-                // Then break out of loop.
+                // Successfully got the page; break out of the loop. Do NOT free buffer
+                // here: the C success branch is a bare `break` (init.c:2537) and the FnExit
+                // cleanup below frees it exactly once. An earlier translation added a
+                // FREE_POOL here; because the Rust FREE_POOL is a fn and cannot null the
+                // caller's local the way the C macro does (ExFreePool(p); p = NULL), that
+                // left `buffer` dangling and made FnExit free it again -> BUGCHECK 0x19.
                 break;
             }
         }
@@ -1669,6 +1668,10 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
         );
 
         FREE_POOL(buffer as *mut core::ffi::c_void);
+        // Null after freeing, matching the C FREE_POOL macro (ExFreePool(p); p = NULL).
+        // The Rust FREE_POOL is a by-value fn and cannot null the caller's local, so
+        // without this the FnExit free below double-frees on the all-fail path.
+        buffer = core::ptr::null_mut();
 
         count += 1;
     }
@@ -4632,7 +4635,7 @@ pub unsafe extern "system" fn DeviceRetrieveDescriptorsAndTransferLength(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut propertyId: STORAGE_PROPERTY_ID;
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if ntkrnl_sys::base::NT_SUCCESS(status) {
         propertyId = StorageAdapterProperty;
@@ -4822,7 +4825,7 @@ pub unsafe extern "system" fn DeviceIsPortable(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut type_: u32 = DEVPROP_TYPE_EMPTY;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     'Cleanup: loop {
         *IsPortable = 0; // FALSE
@@ -4869,7 +4872,7 @@ pub unsafe extern "system" fn DeviceIsPortable(
 pub unsafe extern "system" fn DeviceInitMmcContext(
     DeviceExtension: PCDROM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut status: i32 = 0; // STATUS_SUCCESS
 

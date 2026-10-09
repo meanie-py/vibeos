@@ -41,7 +41,6 @@ unsafe extern "system" {
 
 extern "system" {
     pub fn NT_ASSERT(b: u8);
-    pub fn PAGED_CODE();
     pub fn SrbAssignSrbFlags(srb: *mut core::ffi::c_void, flags: u32);
     pub fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
     pub fn SrbSetOriginalRequest(srb: *mut core::ffi::c_void, irp: PIRP);
@@ -56,13 +55,6 @@ extern "system" {
 #[cfg(not(any(target_arch="x86",target_arch="x86_64")))]
 #[no_mangle] pub unsafe extern "C" fn __int2c() { core::arch::asm!("brk #0", options(nomem, nostack)); }
 
-extern "system" {
-    
-    
-    
-    
-    
-}
 
 
 // ---- ABI-corrected extern decls (CC matched to in-crate definition) ----

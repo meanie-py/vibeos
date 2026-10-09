@@ -84,7 +84,6 @@ unsafe extern "system" fn ExitWindowsThread(Param: LPVOID) -> DWORD {
     }
 
     ExitThread(dwExitCode);
-    ERROR_SUCCESS
 }
 
 unsafe fn ExitWindowsWorker(uFlags: UINT,

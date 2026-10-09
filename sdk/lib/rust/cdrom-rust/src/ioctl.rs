@@ -125,7 +125,6 @@ unsafe extern "C" {
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
-    fn PAGED_CODE();
 }
 unsafe extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
@@ -284,8 +283,6 @@ const STATUS_INVALID_BUFFER_SIZE: i32 = 0xC0000206u32 as i32;
 
 // MAX_COPY_PROTECT_AGID is provided by crate::types (= 4)
 
-unsafe extern "system" {
-}
 
 // Forward declarations for unknown symbols (caller dedups)
 
@@ -445,7 +442,7 @@ pub unsafe extern "C" fn ReadQChannel(
     let inputBuffer = InputBuffer as PCDROM_SUB_Q_DATA_FORMAT;
     let userChannelData = OutputBuffer as PSUB_Q_CHANNEL_DATA;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     UNREFERENCED_PARAMETER(InputBufferLength);
 
@@ -2419,7 +2416,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
     let mut idx: u32 = 0;
     let mut nameLength: u32 = 0;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     fileObject = WdfRequestGetFileObject(Request);
 
@@ -3480,7 +3477,7 @@ pub unsafe extern "C" fn RequestGetScsiPassThroughCdb(Irp: PIRP) -> *mut CDB {
 
     let mut cdb: *mut CDB = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let current_irp_stack = IoGetCurrentIrpStackLocation(Irp);
     let io_control_code = (*current_irp_stack).Parameters.DeviceIoControl.IoControlCode;
@@ -3752,7 +3749,7 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_NOT_FOUND;
+    let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut suggestedName: *mut MOUNTDEV_SUGGESTED_LINK_NAME = core::ptr::null_mut();
     let mut driveLetterNameBuffer: [u16; 10] = [0u16; 10];
     let mut queryTable: [RTL_QUERY_REGISTRY_TABLE; 2] = [
@@ -3770,8 +3767,10 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
         0,
     ];
 
+    // A bring-up checkpoint (370a754c85a) short-circuited here with STATUS_NOT_FOUND, so no
+    // CD-ROM ever got back the drive letter \Registry\Machine\System\DISK stored for it and
+    // mountmgr always handed out the next free one. The body below is the C's, now live.
     *DataLength = 0;
-    return status;
 
     // Check minimum output buffer size
     if (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize) <
@@ -3779,14 +3778,6 @@ pub unsafe extern "C" fn RequestHandleMountQuerySuggestedLinkName(
     {
         status = STATUS_BUFFER_TOO_SMALL;
         *DataLength = core::mem::size_of::<MOUNTDEV_SUGGESTED_LINK_NAME>();
-    }
-
-    let required_length = core::mem::offset_of!(MOUNTDEV_SUGGESTED_LINK_NAME, Name) + 28;
-    if NT_SUCCESS(status)
-        && (RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize) < required_length
-    {
-        *DataLength = required_length;
-        status = STATUS_BUFFER_OVERFLOW;
     }
 
     // Allocate buffer for device name copy
@@ -3913,7 +3904,7 @@ pub unsafe extern "C" fn RequestHandleReadTOC(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -4034,7 +4025,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
         ScratchBuffer_BeginUse(DeviceExtension);
 
         // Zero out the CDB
-        let mut cdb: CDB = core::mem::MaybeUninit::uninit().assume_init();
+        let mut cdb: CDB = core::mem::zeroed();
         core::ptr::write_bytes(&mut cdb as *mut CDB as *mut u8, 0, core::mem::size_of::<CDB>());
 
         // Fill CDB fields from input buffer
@@ -4057,8 +4048,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
         if status >= 0 {
             let scratch_srb = (*DeviceExtension).ScratchContext.ScratchSrb;
             let data_transfer_length = (*scratch_srb).DataTransferLength;
-            if data_transfer_length < 4u32 {
-                // MINIMUM_CDROM_READ_TOC_EX_SIZE
+            if data_transfer_length < MINIMUM_CDROM_READ_TOC_EX_SIZE {
                 *DataLength = 0;
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else {
@@ -4154,7 +4144,7 @@ pub unsafe extern "C" fn GetConfigurationDataSynthesize(
     let mut requiredLength: usize = 0;
     let mut header: *mut GET_CONFIGURATION_HEADER = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if InputBufferSize < (core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32) {
         *DataLength = 0;
@@ -4634,7 +4624,7 @@ pub unsafe extern "C" fn RequestHandleFakePartitionInfo(
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut ioctl: u32 = RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -4991,7 +4981,7 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     unsafe {
-        PAGED_CODE();
+        PAGED_CODE!();
         let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
         let fdoData: *mut CDROM_PRIVATE_FDO_DATA = (*DeviceExtension).PrivateFdoData;
         let mut fileObject: WDFFILEOBJECT = core::ptr::null_mut();
@@ -5945,7 +5935,7 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
     let mut writeToDevice: u8 = 0; // will be set later
     let mut reserveCommand: PPERSISTENT_RESERVE_COMMAND = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -6592,7 +6582,7 @@ pub unsafe extern "C" fn DeviceHandleStopAudio(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -6640,7 +6630,7 @@ pub unsafe extern "C" fn DeviceHandleGetSetVolume(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    PAGED_CODE();
+    PAGED_CODE!();
     *DataLength = 0;
 
     if NT_SUCCESS(status) {
@@ -6883,7 +6873,7 @@ pub unsafe extern "C" fn DeviceHandleDvdStartSessionReadKey(
     let mut keyParameters: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     if NT_SUCCESS(status) {
         status = WdfRequestRetrieveOutputBuffer(
@@ -7154,7 +7144,7 @@ pub unsafe extern "C" fn DeviceHandleDvdSendKey(
     let mut status: i32 = 0; // STATUS_SUCCESS
     let mut input_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 
@@ -7281,7 +7271,7 @@ pub unsafe extern "C" fn DeviceHandleSetReadAhead(
     DataLength: *mut usize,
 ) -> i32 {
     // PAGED_CODE macro
-    PAGED_CODE();
+    PAGED_CODE!();
 
     let mut status: i32 = STATUS_SUCCESS;
     let mut readAhead: *mut STORAGE_SET_READ_AHEAD = core::ptr::null_mut();
@@ -7350,7 +7340,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
     let cdData = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData) as *mut CDROM_DATA;
     let mut inputBuffer: *mut CDROM_SET_SPEED = core::ptr::null_mut();
 
-    PAGED_CODE();
+    PAGED_CODE!();
 
     *DataLength = 0;
 

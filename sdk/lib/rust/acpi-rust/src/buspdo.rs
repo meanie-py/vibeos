@@ -515,8 +515,6 @@ pub fn ASSERTMSG(_msg: *const u8, _expr: bool) {
 pub fn ASSERT(_expr: bool) {
 }
 
-pub fn PAGED_CODE() {
-}
 
 pub type PWCHAR = *mut u16;
 pub type WCHAR = u16;

@@ -577,7 +577,7 @@ unsafe fn PaintLine(
     }
 
     let HShift: LONG = if (*this).get_flag(F_ISHORIZONTAL)
-        && ((*this).VisibleLines <= 1 || g_TaskbarSettings.UseCompactTrayIcons() != 0)
+        && ((*this).VisibleLines <= 1 || (*&raw const g_TaskbarSettings).UseCompactTrayIcons() != 0)
     {
         0
     } else {
@@ -832,7 +832,7 @@ unsafe fn OnTaskbarSettingsChanged(
     let newSettings = lParam as *const TaskbarSettings;
 
     if (*newSettings).sr.HideClock() != (IsWindowVisible((*this).m_hWnd) == 0) as DWORD {
-        g_TaskbarSettings.sr.set_HideClock((*newSettings).sr.HideClock());
+        (*&raw mut g_TaskbarSettings).sr.set_HideClock((*newSettings).sr.HideClock());
         bHideClock = GetHideClock();
         ShowWindow((*this).m_hWnd, if bHideClock != 0 { SW_HIDE } else { SW_SHOW } as i32);
         bRealign = 1;

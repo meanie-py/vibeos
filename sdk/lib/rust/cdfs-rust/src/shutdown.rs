@@ -35,9 +35,6 @@ extern "C" {
     fn CdCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP, Status: i32);
 }
 
-// PAGED_CODE() is a DBG-only no-op verification macro.
-#[inline(always)] fn PAGED_CODE() {}
-
 // ---- file-scope preamble (translated) ----
 pub const BugCheckFileId: u32 = CDFS_BUG_CHECK_SHUTDOWN;
 
@@ -57,7 +54,7 @@ pub unsafe extern "C" fn CdCommonShutdown(IrpContext: *mut IRP_CONTEXT, Irp: PIR
         let mut VcbPresent: i32;
         let mut Status: i32;
 
-        PAGED_CODE();
+        PAGED_CODE!();
 
         SetFlag(
             core::ptr::addr_of_mut!((*IrpContext).Flags),

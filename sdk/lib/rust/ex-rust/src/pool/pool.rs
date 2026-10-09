@@ -1023,11 +1023,12 @@ pub unsafe extern "system" fn MmAllocateMappingAddress(
         return null_mut();
     }
 
-    // Store size in PTE[0] via the List.NextEntry field
+    // Store size in PTE[0]'s u.List.NextEntry, as the C does. That bitfield is NOT the low
+    // bits (bit 32 on amd64, bit 28 on arm64, bit 12 on i386), and the reader in
+    // MmMapLockedPagesWithReservedMapping/MmUnmapReservedMapping decodes it as NextEntry.
+    // Storing the raw count here read back as 0 there: BUGCHECK 0xDA/0x101, every map.
     let mut temp_pte = MMPTE { Long: 0 };
-    // The C code stores size_in_pages in u.List.NextEntry which is the full Long
-    // minus the valid bit. We just store size_in_pages directly (valid=0).
-    temp_pte.Long = size_in_pages;
+    temp_pte.set_list_next_entry(size_in_pages as ULONG_PTR);
     MI_WRITE_INVALID_PTE(pointer_pte, temp_pte);
 
     // Store pool tag in PTE[1]
@@ -1063,7 +1064,7 @@ pub unsafe extern "system" fn MmFreeMappingAddress(
     }
 
     // Get size
-    let size_in_pages = (*pointer_pte).Long as PFN_NUMBER;
+    let size_in_pages = (*pointer_pte).list_next_entry() as PFN_NUMBER;
     if size_in_pages < 3 {
         KeBugCheckEx(
             SYSTEM_PTE_MISUSE,
