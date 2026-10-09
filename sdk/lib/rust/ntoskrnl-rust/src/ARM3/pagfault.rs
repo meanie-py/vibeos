@@ -1664,45 +1664,66 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         if (pxe_valid == 0) || (ppe_valid == 0) || (((*PointerPde).valid() as usize) == 0) || (((*PointerPte).valid() as usize) == 0)
         {
-            // This fault is not valid, print out some debugging help (the C's own
-            // DbgPrints, which the translation had left as empty blocks). The PC's
-            // module is named too: a boot driver's address is unsymbolizable from
-            // the log otherwise, since no load bases are printed.
-            crate::dbg_print!(
-                b"MM:***PAGE FAULT AT IRQL > 1  Va %p, IRQL %lx\n\0",
+            // The C prints the Va, IRQL and faulting registers here (pagfault.c:1762).
+            // The translation had emptied every one of those blocks, so this status --
+            // STATUS_IN_PAGE_ERROR|0x10000000, which the smoke logs showed as
+            // `st=d0000006` killing csrss on amd64-bios -- reached the log with nothing
+            // naming the code that faulted at DISPATCH_LEVEL. Keep the C's diagnostic.
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"MM:***PAGE FAULT AT IRQL > 1  Va %p, IRQL %lx\n\0".as_ptr() as *const i8,
                 Address,
                 OldIrql as u32,
             );
             if !TrapInformation.is_null() {
                 let TrapFrame = TrapInformation as PKTRAP_FRAME;
                 #[cfg(target_arch = "x86")]
-                let pc = {
-                    crate::dbg_print!(b"MM:***EIP %p, EFL %p\n\0", (*TrapFrame).Eip, (*TrapFrame).EFlags);
-                    crate::dbg_print!(b"MM:***EAX %p, ECX %p EDX %p\n\0", (*TrapFrame).Eax, (*TrapFrame).Ecx, (*TrapFrame).Edx);
-                    crate::dbg_print!(b"MM:***EBX %p, ESI %p EDI %p\n\0", (*TrapFrame).Ebx, (*TrapFrame).Esi, (*TrapFrame).Edi);
-                    (*TrapFrame).Eip as usize
-                };
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EIP %p, EFL %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Eip as usize as PVOID,
+                        (*TrapFrame).EFlags as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EAX %p, ECX %p EDX %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Eax as usize as PVOID,
+                        (*TrapFrame).Ecx as usize as PVOID,
+                        (*TrapFrame).Edx as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EBX %p, ESI %p EDI %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Ebx as usize as PVOID,
+                        (*TrapFrame).Esi as usize as PVOID,
+                        (*TrapFrame).Edi as usize as PVOID,
+                    );
+                }
                 #[cfg(target_arch = "x86_64")]
-                let pc = {
-                    crate::dbg_print!(b"MM:***RIP %p, EFL %p\n\0", (*TrapFrame).Rip, (*TrapFrame).EFlags as usize);
-                    crate::dbg_print!(b"MM:***RAX %p, RCX %p RDX %p\n\0", (*TrapFrame).Rax, (*TrapFrame).Rcx, (*TrapFrame).Rdx);
-                    crate::dbg_print!(b"MM:***RBX %p, RSI %p RDI %p\n\0", (*TrapFrame).Rbx, (*TrapFrame).Rsi, (*TrapFrame).Rdi);
-                    (*TrapFrame).Rip as usize
-                };
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RIP %p, EFL %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rip as usize as PVOID,
+                        (*TrapFrame).EFlags as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RAX %p, RCX %p RDX %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rax as usize as PVOID,
+                        (*TrapFrame).Rcx as usize as PVOID,
+                        (*TrapFrame).Rdx as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RBX %p, RSI %p RDI %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rbx as usize as PVOID,
+                        (*TrapFrame).Rsi as usize as PVOID,
+                        (*TrapFrame).Rdi as usize as PVOID,
+                    );
+                    crate::ke::bug::KiPrintPcAndStack(TrapFrame as *const _);
+                }
                 #[cfg(target_arch = "aarch64")]
-                let pc = {
-                    crate::dbg_print!(b"MM:***PC %p, LR %p, SP %p\n\0", (*TrapFrame).Pc as usize, (*TrapFrame).Lr as usize, (*TrapFrame).Sp as usize);
-                    crate::dbg_print!(b"MM:***X0 %p, X1 %p, X2 %p, X3 %p\n\0", (*TrapFrame).__bindgen_anon_3.X[0] as usize, (*TrapFrame).__bindgen_anon_3.X[1] as usize, (*TrapFrame).__bindgen_anon_3.X[2] as usize, (*TrapFrame).__bindgen_anon_3.X[3] as usize);
-                    (*TrapFrame).Pc as usize
-                };
-                let mut entry: ntkrnl_sys::ddk::PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
-                let mut in_kernel: u8 = 0;
-                let base = crate::ke::bug::KiPcToFileHeader(pc as _, &mut entry as *mut _ as _, 0, &mut in_kernel);
-                if !base.is_null() && !entry.is_null() {
-                    crate::dbg_print!(
-                        b"MM:***PC in %wZ+0x%x\n\0",
-                        core::ptr::addr_of!((*entry).BaseDllName),
-                        (pc - (*entry).DllBase as usize) as u32,
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***PC %p, LR %p, SP %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Pc as usize as PVOID,
+                        (*TrapFrame).Lr as usize as PVOID,
+                        (*TrapFrame).Sp as usize as PVOID,
                     );
                 }
             }

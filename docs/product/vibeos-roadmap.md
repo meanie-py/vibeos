@@ -1077,7 +1077,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     final tree); the one failure is a different hang, the next entry. Diagnosed with runs 20261008-210602-gnxprtk4 (cdfs completes
     the failing read itself), 20261008-211124-y5oh5tam (the in-page exception, VA 0) and
     20261008-212149-yl4k8096 (the fault: `USBPORT_QueueTransferUrb+0x134`, IRQL 2, CPU 1).
-    The 10-07 entry, kept for its own fix: found
+    The cdrom-rust MCN-sync-IRP fix in the next entry was a real contributor too (it moved
+    the IRQL>1 traffic off scsiport); the REOPENED entry and the 10-07 one are kept for the record.
+  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (REOPENED
+    2026-10-08, was "FIXED 2026-10-07"). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
+    queue over 10-07/10-08 (~30 of them) was csrss.exe exiting `0xC0000006` while loading
+    winsrv, and every BUGCHECK 0xF4 was SMSS taking the same in-page error; `-smp 1` never
+    fails. The 10-07 fix's 16/16 was measured alone, not under the gate's concurrent boots.
+    The in-page status is `STATUS_IN_PAGE_ERROR|0x10000000`, MmArmAccessFault's "PAGE FAULT
+    AT IRQL > 1" path: kernel code at DISPATCH_LEVEL faulting on Va 0 with RIP outside every
+    image's `.text` -- a call through a bad pointer on the page-in path. The Rust had
+    dropped the C's register dump there; it now prints Va/IRQL/registers plus RIP and the
+    stack as `module+offset` (`KiPrintPcAndStack`). Two contributors fixed 2026-10-08:
+    cdrom-rust compared its MCN sync IRP against `const RequestSetupMcnSyncIrp = 0` instead
+    of the function's address, so its own IRP went down to scsiport every timer tick
+    (`unknown ioctl code: 0x7C0C8` ~700/boot) and was completed there at DISPATCH_LEVEL on
+    whichever CPU, racing the next tick; and that chatter kept the harness from fast-failing
+    the wedged guest (13 min per hang instead of ~2). After: 21 of 22 `-smp 2` boots green
+    under 6-8 concurrent VMs and two full gates green (20261008-231753-kzuu49zq,
+    20261008-233332-nlk4h1lh, a1 passed both). The residual 1/22 (20261008-225946-tllwzl5t
+    boot1: RIP fffff80000a08234, RCX fffff80000a2422b, both past the kernel's 0x32B000 runtime
+    image) is still open; the next occurrence names the module in the serial log. Earlier
+    entry follows for the record.
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
     from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
     (STATUS_IN_PAGE_ERROR) on a data read in ntdll and the boot hung; sometimes a kernel-mode
@@ -3111,8 +3133,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
-- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
-  (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
+- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent,
+  TRIPWIRE-GUARDED** (2026-09-13, research lane; tripwire 2026-10-08). They pass `-C target-feature=-sse,-sse2` while targeting the
   BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
   stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
   enabled to ensure that the ABI of the current target can be implemented correctly … this was
@@ -3133,10 +3155,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found);
   ucrtbase DID drop it (2026-10-03, for the `libm` crate -- see its CMakeLists).
   So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
-  split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
-  claim, not a test of mine. Whoever bumps
-  the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
-  it is a one-command check.
+  split.
+  **Re-derived from the live tree 2026-10-08 (research lane):** still latent, now with a
+  tripwire. The one-command check was run — `rustc 1.92.0 --target i686-pc-windows-gnu
+  -C target-feature=-sse,-sse2` on a trivial crate still **warns and exits 0**, so nothing is
+  broken. The count is now **54** CMakeLists (ucrtbase dropped out as noted); all 54 verified to
+  pair the flag with the builtin triple and none with a json. The feasibility of the "move to
+  the softfloat json" remedy was pinned as fact, not inferred: a custom json needs cargo to
+  rebuild `core`, i.e. `-Z build-std` = **nightly** (`gcc.cmake:789`,
+  `ntoskrnl-cargo/build-and-test.sh:43`). The 54 build on **stable** via
+  `cargo build --target i686-pc-windows-gnu` + `RUSTFLAGS` (per-CMakeLists `add_custom_command`,
+  not `add_cargo_module`), so the migration is: convert each into a build-std cargo cell on a
+  softfloat json — the model the i386 `*-cargo` cells already use. That is a large,
+  nightly-widening change for no live bug, hence **deferred by design** until the warning
+  becomes an error. A 54-crate migration is NOT warranted while rustc only warns.
+  **Tripwire landed** so the bump cannot break i386 silently: `tools/scan_i386_sse_abi.py` +
+  `tools/test_scan_i386_sse_abi.py`, wired into `check-tooling`. It compiles the exact doomed
+  combo and, the moment the pinned rustc turns rust-lang#116344 into a hard error, fails the
+  land preflight with ONE actionable message (the migration recipe + the full crate list)
+  instead of 54 cryptic build errors. Run `python tools/scan_i386_sse_abi.py` any time for the
+  current verdict (`OK_LATENT` / `TRIPPED_HARD_ERROR` / `ABI_CHANGED`) and `--list` for the 54.
 
 - **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
   (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit
