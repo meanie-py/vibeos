@@ -386,6 +386,17 @@ unsafe fn provision_tables(i: &mut Its, device_bits: u32) -> bool {
     i.device_limit != 0
 }
 
+/// The page of each ITS the MADT lists that devices write their MSIs to (its
+/// GITS_TRANSLATER), for an SMMU to let through.
+pub(crate) unsafe fn doorbell_pages() -> [Option<u64>; MAX_ITS] {
+    let (found, count) = madt_itses();
+    let mut pages = [None; MAX_ITS];
+    for (page, &(_, pa)) in pages.iter_mut().zip(&found[..count]) {
+        *page = Some((pa + GITS_TRANSLATER) & !(PAGE as u64 - 1));
+    }
+    pages
+}
+
 /// Every ITS the MADT lists: (GIC ITS ID, physical base).
 unsafe fn madt_itses() -> ([(u32, u64); MAX_ITS], usize) {
     let mut found = [(0u32, 0u64); MAX_ITS];

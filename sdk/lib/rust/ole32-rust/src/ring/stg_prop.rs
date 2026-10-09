@@ -516,7 +516,7 @@ unsafe fn PropertyStorage_StorePropWithId(
     propvar: *const PROPVARIANT,
     lcid: LCID,
 ) -> HRESULT {
-    let mut hr: HRESULT = S_OK;
+    let hr: HRESULT;
     let prop: *mut PROPVARIANT = PropertyStorage_FindProperty(This, propid);
 
     assert(!propvar.is_null());
@@ -1804,7 +1804,7 @@ unsafe fn PropertyStorage_ReadFromStream(This: *mut PropertyStorage_impl) -> HRE
         // UPSTREAM QUIRK (stg_prop.c:1380): the C does NOT check this hr — a failed
         // header read just leaves `hdr` zeroed, and the magic check below then remaps
         // the failure to STG_E_INVALIDHEADER. Kept as-is (hence the "never read" warn).
-        hr = PropertyStorage_ReadHeaderFromStream((*This).stm, core::ptr::addr_of_mut!(hdr));
+        PropertyStorage_ReadHeaderFromStream((*This).stm, core::ptr::addr_of_mut!(hdr));
         // I've only seen reserved == 1, but the article says I shouldn't disallow
         // higher values.
         if hdr.wByteOrder != PROPSETHDR_BYTEORDER_MAGIC || hdr.reserved < 1 {

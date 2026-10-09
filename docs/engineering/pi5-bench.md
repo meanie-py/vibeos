@@ -17,7 +17,7 @@ VibeOS reached the desktop on the Pi 5 on 2026-10-04. The first hands-free
 xHCI controllers (XHC0, XHC1) run under `usbxhci.sys`, so every USB port works and the
 Pico's keyboard and mouse with them, and the card slot (SDC0) runs under the Pi 4's
 `sdhc.sys`, at ~11 MB/s. Since 2026-10-08 the Ethernet works too (`gem.rs`, polled: 1 Gb/s
-link, DHCP, ping, TCP). The Pico's remote disk reads as a drive too, once the host
+link, DHCP, ping, TCP; interrupt-driven since that evening). The Pico's remote disk reads as a drive too, once the host
 serves it an image (`tools/pi5/pico.sh serve-image`; see `pi4-bench.md`). The two controllers share one level-triggered SPI (261),
 which needed shared-vector chaining in the arm64 kernel (`ke/arm64/stubs.rs`).
 
@@ -118,6 +118,15 @@ _HID <id>`):
   stager then share the bench board's DHCP lease (192.168.1.248 on 2026-10-08), and the
   stager still resolves as `vibeos-pi5` after a VibeOS boot. If the mailbox fails, the log
   says so and the driver falls back to `02:56:42:50:35:01`.
+- RP1's interrupts reach the GIC as legacy INTA, not MSI-X. The firmware leaves RP1's MSI-X
+  capability disabled (message control 0x3c, enable clear) and INTx enabled, and enables
+  only sources 31 and 36 (the two xHCIs) in `MSIX_CFG`, without IACK. Every enabled source
+  then drives INTA, which the BCM2712 root complex for RP1 (0x10_0012_0000) delivers as
+  INTID 261: the level, shared line in the DSDT. So the GEM's interrupt is one write,
+  `MSIX_CFG(6).ENABLE` (`gem.rs` `enable_interrupts`), done only once netstack's ISR is
+  connected to 261; the ISR acks the GEM's own ISR register (write-1-to-clear: DCFG1
+  IRQCOR = 0). Measured 2026-10-08 by dumping `MSIX_CFG`, the root complex's MSI registers
+  and RP1's config space through the controller's index/data window (0x9000/0x8000).
 
 The MCFG (OEM `RPIFDN`/`RPI5`) is not generic ECAM. It names bus 0 at 0x10_0010_8000,
 inside the Broadcom controller's registers, and the first read there returns 0xDEADDEAD

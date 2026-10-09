@@ -107,11 +107,21 @@ pub unsafe extern "C" fn NoUiMessageBox(MessageText: PCSTR) {
 
 #[no_mangle]
 pub unsafe extern "C" fn NoUiMessageBoxCritical(MessageText: PCSTR) {
-    // noui.c:100 — `#ifdef UEFIBOOT TRACE;return; #endif` then unconditional
-    // printf. UEFIBOOT off (smoke path) → printf variant only.
-    printf((b"%s\n\0".as_ptr()) as *const i8 , MessageText);
-    printf((b"Press any key\n\0".as_ptr()) as *const i8 );
-    MachConsGetCh();
+    // noui.c:100: on UEFI (`#ifdef UEFIBOOT`, this crate's `uefi` feature) the
+    // message goes to the debug serial port and the loader carries on. Waiting
+    // for a key there hangs a headless machine, which has no one to press it.
+    #[cfg(feature = "uefi")]
+    {
+        crate::frldr::dbgcon_str(b"[FLDR] ");
+        crate::frldr::dbgcon_str(core::ffi::CStr::from_ptr(MessageText as *const core::ffi::c_char).to_bytes());
+        crate::frldr::dbgcon_str(b"\r\n");
+    }
+    #[cfg(not(feature = "uefi"))]
+    {
+        printf((b"%s\n\0".as_ptr()) as *const i8, MessageText);
+        printf((b"Press any key\n\0".as_ptr()) as *const i8);
+        MachConsGetCh();
+    }
 }
 
 #[no_mangle]

@@ -508,7 +508,7 @@ unsafe fn SampSetupCreateUserAccount(
     let mut hNamesKey: HANDLE = core::ptr::null_mut();
     let mut Sd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut SdSize: ULONG = 0;
-    let mut UserSid: PSID = core::ptr::null_mut();
+    let UserSid: PSID;
     let mut Status: NTSTATUS;
 
     UserSid = AppendRidToSid(lpDomainSid, ulRelativeId);

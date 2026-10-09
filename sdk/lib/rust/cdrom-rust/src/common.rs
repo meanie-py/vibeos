@@ -466,11 +466,9 @@ pub unsafe extern "system" fn DeviceGetParameter(
         // close what we open
         if !subKey.is_null() {
             WdfRegistryClose(subKey);
-            subKey = core::ptr::null_mut();
         }
         if !rootKey.is_null() {
             WdfRegistryClose(rootKey);
-            rootKey = core::ptr::null_mut();
         }
     }
 
@@ -533,12 +531,10 @@ pub unsafe extern "system" fn DeviceSetParameter(
     // close what we open
     if !sub_key.is_null() {
         WdfRegistryClose(sub_key);
-        sub_key = core::ptr::null_mut();
     }
 
     if !root_key.is_null() {
         WdfRegistryClose(root_key);
-        root_key = core::ptr::null_mut();
     }
 
     status
@@ -550,7 +546,7 @@ pub unsafe extern "C" fn DeviceSendRequestSynchronously(
     request: WDFREQUEST,
     request_formated: BOOLEAN,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let device_extension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
     let mut request_cancelled: BOOLEAN = 0;
     let request_context: PCDROM_REQUEST_CONTEXT = RequestGetContext(request);
@@ -624,16 +620,16 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     const IoReadAccess: u32 = 0;
     const IoWriteAccess: u32 = 1;
 
-    let mut status: i32 = 0;
+    let mut status: i32;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let fdoData: *mut CDROM_PRIVATE_FDO_DATA = (*deviceExtension).PrivateFdoData;
-    let mut senseInfoBuffer: *mut u8 = core::ptr::null_mut();
+    let mut senseInfoBuffer: *mut u8;
     let mut retryCount: u32 = 0;
-    let mut retry: u8 = 0;
+    let mut retry: u8;
     let mut ioctlCode: u32 = 0;
     let mut request: WDFREQUEST = core::ptr::null_mut();
     let mut irp: *mut IRP = core::ptr::null_mut();
-    let mut nextStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut nextStack: *mut IO_STACK_LOCATION;
     let mut mdlAddress: *mut MDL = core::ptr::null_mut();
     let mut memoryLocked: u8 = 0;
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -862,7 +858,6 @@ pub unsafe extern "system" fn DeviceSendSrbSynchronously(
     if !mdlAddress.is_null() {
         if memoryLocked != 0 {
             MmUnlockPages(mdlAddress);
-            memoryLocked = 0;
         }
         IoFreeMdl(mdlAddress);
         (*irp).MdlAddress = core::ptr::null_mut();
@@ -949,13 +944,13 @@ pub unsafe extern "C" fn DeviceSendNotification(
 pub unsafe extern "C" fn DeviceSendStartUnit(Device: WDFDEVICE) {
     // local variables (direct transliteration of C)
     let mut status: NTSTATUS = STATUS_SUCCESS; // STATUS_SUCCESS = 0
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut startUnitRequest: WDFREQUEST = core::ptr::null_mut();
     let mut inputMemory: WDFMEMORY = core::ptr::null_mut();
     let mut context: *mut COMPLETION_CONTEXT = core::ptr::null_mut();
     let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
-    let mut cdb: *mut CDB = core::ptr::null_mut();
+    let mut cdb: *mut CDB;
 
     deviceExtension = DeviceGetExtension(Device);
 
@@ -1083,8 +1078,8 @@ pub unsafe extern "C" fn DeviceSendIoctlAsynchronously(
     IoControlCode: ULONG,
     TargetDeviceObject: *mut DEVICE_OBJECT,
 ) {
-    let mut irp: *mut IRP = core::ptr::null_mut();
-    let mut nextIrpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut irp: *mut IRP;
+    let mut nextIrpStack: *mut IO_STACK_LOCATION;
 
     irp = IoAllocateIrp((*(*DeviceExtension).DeviceObject).StackSize as i8, 0u8);
 
@@ -1166,7 +1161,7 @@ pub unsafe extern "system" fn DeviceAsynchronousCompletion(
 #[no_mangle]
 pub unsafe extern "C" fn DeviceReleaseQueue(Device: WDFDEVICE) {
     let deviceExtension = DeviceGetExtension(Device) as *mut CDROM_DEVICE_EXTENSION;
-    let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
+    let mut srb: *mut SCSI_REQUEST_BLOCK;
     let mut currentIrql: KIRQL = 0;
 
     KeRaiseIrql(DISPATCH_LEVEL, &mut currentIrql);
@@ -1220,7 +1215,7 @@ pub unsafe extern "system" fn DeviceReleaseQueueCompletion(
         let mut status: NTSTATUS;
         let device: WDFDEVICE = Context as WDFDEVICE;
         let deviceExtension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
-        let mut releaseQueueNeeded: BOOLEAN = 0;
+        let mut releaseQueueNeeded: BOOLEAN;
         let mut params: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
 
         WDF_REQUEST_REUSE_PARAMS_INIT(
@@ -2136,7 +2131,7 @@ pub unsafe extern "C" fn MediaReadCapacityDataInterpret(
     }
     let mut lastSector: u32 = 0;
     let mut bps: u32 = 0;
-    let mut bytesPerBlock: u32 = 0;
+    let mut bytesPerBlock: u32;
     let mut errorHappened: i32 = 0;
 
     // PAGED_CODE();
@@ -2325,7 +2320,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         b"DevicePickDvdRegion (%p): Got Copyright Descriptor %x\n\0".as_ptr() as *const i8,
     );
 
-    let mut media_region: u8 = 0;
+    let mut media_region: u8;
     if ntkrnl_sys::base::NT_SUCCESS(status) && (*dvd_copy_right).CopyrightProtectionType == 0x01 {
         if (*dvd_copy_right).RegionManagementInformation == 0xff {
             TracePrint!(
@@ -2440,7 +2435,6 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
                 .as_ptr() as *const i8,
         );
         default_dvd_region = 0;
-        status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
 
     if default_dvd_region > DVD_MAX_REGION {
@@ -2453,7 +2447,7 @@ pub unsafe extern "system" fn DevicePickDvdRegion(Device: WDFDEVICE) {
         default_dvd_region = 0;
     }
 
-    let mut dvd_region: u32 = 0;
+    let mut dvd_region: u32;
 
     if default_dvd_region != 0 && (media_region & (1u8 << (default_dvd_region - 1))) != 0 {
         dvd_region = 1u32 << (default_dvd_region - 1);
@@ -2558,8 +2552,8 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
 ) -> i32 {
     let mut status: i32;
     let mut string: WDFSTRING = core::ptr::null_mut();
-    let mut interfaceGuid: *mut GUID = core::ptr::null_mut();
-    let mut savingString: *mut UNICODE_STRING = core::ptr::null_mut();
+    let mut interfaceGuid: *mut GUID;
+    let mut savingString: *mut UNICODE_STRING;
     let mut setRestricted: bool = false;
     let mut localString: UNICODE_STRING = core::mem::zeroed();
 
@@ -2652,7 +2646,7 @@ pub unsafe extern "C" fn DeviceRegisterInterface(
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceRestoreDefaultSpeed(WorkItem: WDFWORKITEM) {
-    let mut status: i32 = 0;
+    let mut status: i32;
     let device: WDFDEVICE = WdfWorkItemGetParentObject(WorkItem) as WDFDEVICE;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
     let transferLength: u32 = core::mem::size_of::<PERFORMANCE_DESCRIPTOR>() as u32;
@@ -2728,9 +2722,9 @@ pub unsafe extern "system" fn RequestSetContextFields(
     Request: WDFREQUEST,
     Handler: PSYNC_HANDLER,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request);
-    let mut syncEvent: *mut KEVENT = core::ptr::null_mut();
+    let mut syncEvent: *mut KEVENT;
 
     syncEvent = ExAllocatePoolWithTag(
         0, // NonPagedPoolNx: ReactOS #defines it to NonPagedPool (no NX pool here)
@@ -2759,7 +2753,7 @@ pub unsafe extern "C" fn RequestDuidGetDeviceIdProperty(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut deviceIdDescriptor: PSTORAGE_DEVICE_ID_DESCRIPTOR = core::ptr::null_mut();
     let mut descHeader: PSTORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let mut propertyId: STORAGE_PROPERTY_ID = StorageDeviceIdProperty;
@@ -2830,8 +2824,8 @@ pub unsafe extern "C" fn RequestDuidGetDeviceProperty(
         let deviceDescriptor: *const STORAGE_DEVICE_DESCRIPTOR =
             (*DeviceExtension).DeviceDescriptor;
         let mut descHeader: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
-        let mut storageDuid: *mut STORAGE_DEVICE_UNIQUE_IDENTIFIER = core::ptr::null_mut();
-        let mut dest: *mut u8 = core::ptr::null_mut();
+        let mut storageDuid: *mut STORAGE_DEVICE_UNIQUE_IDENTIFIER;
+        let mut dest: *mut u8;
 
         if deviceDescriptor.is_null() {
             status = STATUS_NOT_FOUND;
@@ -2901,7 +2895,7 @@ pub unsafe extern "C" fn DeviceRetrieveModeSenseUsingScratch(
     PageControl: u8,
 ) -> u32 {
     // PAGED_CODE(); -- not applicable in Rust
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut transferSize: u32 = min(
         Length,
         (*DeviceExtension)
@@ -3008,7 +3002,7 @@ pub unsafe extern "C" fn PerformEjectionControl(
     LockType: MEDIA_LOCK_TYPE,
     Lock: BOOLEAN,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
     let mut fileObjectContext: *mut FILE_OBJECT_CONTEXT = core::ptr::null_mut();
     let mut srb = core::mem::MaybeUninit::<SCSI_REQUEST_BLOCK>::uninit();
     let srb_ptr = srb.as_mut_ptr();
@@ -3157,8 +3151,8 @@ pub unsafe extern "C" fn DeviceUnlockExclusive(
     let mut status: i32 = STATUS_SUCCESS;
     let cdData = &raw mut (*DeviceExtension).DeviceAdditionalData as *mut CDROM_DATA;
     let info = (*DeviceExtension).MediaChangeDetectionInfo;
-    let mut ANPending: i32 = 0;
-    let mut requestInUse: i32 = 0;
+    let mut ANPending: i32;
+    let mut requestInUse: i32;
 
     PAGED_CODE!();
 
@@ -3302,7 +3296,7 @@ pub unsafe extern "C" fn DeviceSendPowerDownProcessRequest(
 ) -> NTSTATUS {
     // Forward declarations for unknown symbols
 
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
     let mut requestSent: BOOLEAN = 0;
     let mut shouldRetry: BOOLEAN = 1;
     let cdb: *mut CDB = core::ptr::addr_of_mut!((*DeviceExtension).PowerContext.Srb.Cdb) as *mut CDB;
@@ -3475,7 +3469,7 @@ pub unsafe extern "C" fn RequestSend(
     RequestSent: *mut BOOLEAN,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut requestSent: BOOLEAN = 0;
+    let mut requestSent: BOOLEAN;
     let mut options: WDF_REQUEST_SEND_OPTIONS = WDF_REQUEST_SEND_OPTIONS {
         Size: 0,
         Flags: 0,

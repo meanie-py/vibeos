@@ -1727,6 +1727,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
                     );
                 }
             }
+
+            /* Tell the trap handler to fail */
             return STATUS_IN_PAGE_ERROR | 0x10000000;
         }
 

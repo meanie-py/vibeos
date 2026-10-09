@@ -677,7 +677,7 @@ pub unsafe extern "C" fn CdLookupLastFileDirent(
 
     let mut ExtentType: XA_EXTENT_TYPE = Form1Data;
     let mut CurrentCompoundDirent: *mut COMPOUND_DIRENT;
-    let mut CurrentDirent: *mut DIRENT = core::ptr::null_mut();
+    let mut CurrentDirent: *mut DIRENT;
     let mut FirstPass: i32 = 1;
     let mut FoundDirent: i32;
 
@@ -1004,7 +1004,7 @@ pub unsafe extern "C" fn CdLookupNextInitialFileDirent(
     let TargetDirContext: *mut DIRENT_ENUM_CONTEXT;
     let TempDirent: *mut COMPOUND_DIRENT;
 
-    let mut FoundDirent: u8 = 0; // FALSE
+    let mut FoundDirent: u8; // FALSE
     let mut FoundLastDirent: bool;
 
     // PAGED_CODE();

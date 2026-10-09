@@ -14,7 +14,7 @@ pub unsafe extern "system" fn OleMetafilePictFromIconAndLabel(
 ) -> HGLOBAL {
     let mut mfp: METAFILEPICT = core::mem::zeroed();
     let hdc: HDC;
-    let mut hmem: HGLOBAL = core::ptr::null_mut();
+    let hmem: HGLOBAL;
     let mfdata: LPVOID;
     let szIconOnly: &[u8] = b"IconOnly\0";
     let mut text_size: SIZE = core::mem::zeroed();

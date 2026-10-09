@@ -39,6 +39,7 @@ from pathlib import Path
 
 from . import (
     crate_integrate,
+    dead_regions,
     local_macros,
     pointer_depth,
     prelude_resolve,
@@ -99,11 +100,27 @@ def _record(state: dict, stage: str, started: float, **result) -> None:
 
 
 def upsert_profile_arm(script: str, arm: str, label: str) -> str:
-    """Insert or replace the `  <label>)` arm of gen_driver_types.sh's case table."""
-    start = re.search(rf"^  {re.escape(label)}\)\n", script, re.M)
-    if start:
-        end = script.index("\n    ;;\n", start.end()) + len("\n    ;;\n")
-        return script[: start.start()] + arm.rstrip("\n") + "\n" + script[end:]
+    """Insert or replace the `  <label>)` arm of gen_driver_types.sh's case table.
+
+    An arm is the label's whether it is `  <label>)` or a multi-island `  a|<label>|b)`.
+    Matching only the bare form re-appended inetcpl's `inetcpl|inetcpl-types_1)` arm on
+    every derive -- six copies, the first of which `case` kept running. Every arm carrying
+    the label is replaced: the first by the new arm, the rest dropped.
+    """
+    head = re.compile(rf"^  (?:[\w.+-]+\|)*{re.escape(label)}(?:\|[\w.+-]+)*\)\n", re.M)
+    spans = []
+    for m in head.finditer(script):
+        end = script.index("\n    ;;\n", m.end()) + len("\n    ;;\n")
+        spans.append((m.start(), end))
+    if spans:
+        out, pos = [], 0
+        for i, (a, b) in enumerate(spans):
+            out.append(script[pos:a])
+            if i == 0:
+                out.append(arm.rstrip("\n") + "\n")
+            pos = b
+        out.append(script[pos:])
+        return "".join(out)
     default = re.search(r"^  \*\) echo \"unknown driver", script, re.M)
     if not default:
         raise PortError("gen_driver_types.sh: no `*)` default arm to insert before")
@@ -1514,6 +1531,132 @@ def _module_fn_macros(state: dict) -> set[str]:
     return out
 
 
+_C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
+_ARM_HEAD = re.compile(
+    r"^([ \t]*)([A-Za-z_]\w*(?:[ \t]*\|[ \t]*[A-Za-z_]\w*)*)[ \t]*=>[ \t]*", re.M
+)
+
+
+def _dead_only_names(c_text: str) -> set[str]:
+    """Identifiers the C names ONLY on lines this tree never compiles."""
+    dead = dead_regions.never_compiled_lines(c_text)
+    # Comments out, line count kept: `/* prefer native version */` is not an identifier.
+    c_text = re.sub(
+        r"/\*.*?\*/|//[^\n]*", lambda m: "\n" * m.group(0).count("\n"), c_text, flags=re.S
+    )
+    c_text = re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', c_text)
+    live: set[str] = set()
+    gone: set[str] = set()
+    for n, line in enumerate(c_text.splitlines(), 1):
+        (gone if n in dead else live).update(_C_IDENT.findall(line))
+    return gone - live
+
+
+def _arm_end(text: str, pos: int) -> int | None:
+    """End of a match arm's body starting at `pos` (just past `=>`), trailing `,` included.
+    A `{ ... }` block or a one-line expression; anything else is left alone."""
+    if pos < len(text) and text[pos] == "{":
+        depth, i, n = 0, pos, len(text)
+        while i < n:
+            c = text[i]
+            if c == '"':
+                i += 1
+                while i < n and text[i] != '"':
+                    i += 2 if text[i] == "\\" else 1
+            elif text.startswith("//", i):
+                i = text.find("\n", i)
+                if i < 0:
+                    return None
+                continue
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    if text[end : end + 1] == ",":
+                        end += 1
+                    return end
+            i += 1
+        return None
+    eol = text.find("\n", pos)
+    line = text[pos : eol if eol >= 0 else len(text)].rstrip()
+    if line.endswith(",") and "{" not in line and "}" not in line:
+        return pos + len(line)
+    return None
+
+
+def _strip_rust_comments(text: str) -> str:
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
+
+
+def _drop_dead_arms(path: Path, c_file: Path) -> list[str]:
+    """A `match` arm whose pattern names only constants the C spells in a DEAD region.
+
+    Dead tokens are permitted to the model, never demanded (dead_regions.py), so a body may
+    keep a `#ifndef __REACTOS__` case. inetcpl's DllMain came back with
+    `DLL_WINE_PREATTACH => return FALSE`: the name is defined nowhere in our tree, so the
+    arm is a binding that matches EVERY reason -- DllMain would have refused the load. The
+    arm does not exist in any C we compile; it is dropped, and an alternative of a live arm
+    loses just the dead name.
+    """
+    dead = _dead_only_names(c_file.read_text(errors="replace"))
+    if not dead:
+        return []
+    text = path.read_text()
+    out: list[str] = []
+    pos, dropped = 0, []
+    for m in _ARM_HEAD.finditer(text):
+        if m.start() < pos:
+            continue
+        names = [n.strip() for n in m.group(2).split("|")]
+        hit = [n for n in names if n in dead]
+        if not hit:
+            continue
+        keep = [n for n in names if n not in dead]
+        if keep:
+            out.append(text[pos : m.start(2)] + " | ".join(keep))
+            pos = m.end(2)
+            dropped += hit
+            continue
+        end = _arm_end(text, m.end())
+        if end is None:
+            continue
+        line_end = text.find("\n", end)
+        if text[end : line_end if line_end >= 0 else len(text)].strip() == "":
+            end = line_end + 1 if line_end >= 0 else len(text)
+        out.append(text[pos : m.start()])
+        pos = end
+        dropped += hit
+    if not dropped:
+        return []
+    out.append(text[pos:])
+    path.write_text("".join(out))
+    return dropped
+
+
+_WINE_DBCH_ITEM = re.compile(
+    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:[^\n]*;\n", re.M
+)
+
+
+def _wine_debug_storage(path: Path) -> list[str]:
+    """`WINE_DEFAULT_DEBUG_CHANNEL(ch)` is two statics in a HEADER macro, and resolve writes
+    them once in the prelude (`_wine_debug_channels`). A translation that spells its own --
+    inetcpl's security.c came back with `pub static __wine_dbch___default: [u8; 8] =
+    *b"inetcpl\0"`, two TUs each with a different invented type -- shadows the real
+    `*mut __wine_debug_channel`, so it is dropped, and the bodies that then indexed it as
+    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`."""
+    text = path.read_text()
+    names = _WINE_DBCH_ITEM.findall(text)
+    new = _WINE_DBCH_ITEM.sub("", text)
+    new, n = re.subn(r"\b(__wine_dbch_\w+)\[0\]", r"(*\1).flags", new)
+    if new == text:
+        return []
+    path.write_text(new)
+    return names + ([f"[0] -> .flags x{n}"] if n else [])
+
+
 def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
     """Remove a module's own `extern` declaration of a name the C preprocessor says is a
     function-like MACRO. hotplug's eject.rs declared `fn ListView_InsertColumn(..)` and
@@ -1550,6 +1693,7 @@ def stage_integrate(stem: str) -> None:
     started = time.time()
     crate = _crate_dir(state)
     unprovided: dict[str, list[str]] = {}
+    dead_used: dict[str, list[str]] = {}
     changed = 0
     ptr_types, decls = _pointer_decls(state)
     ptr_targets = pointer_depth.pointer_targets(
@@ -1581,6 +1725,13 @@ def stage_integrate(stem: str) -> None:
                 f"integrate: {path.stem}: {counted} element count(s) taken of the array, "
                 "not a pointer to it"
             )
+        wine = _wine_debug_storage(path)
+        if wine:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: wine debug channel storage is the prelude's: "
+                + ", ".join(wine)
+            )
         dropped = _drop_macro_externs(path, fn_macros)
         if dropped:
             changed += 1
@@ -1594,6 +1745,28 @@ def stage_integrate(stem: str) -> None:
         print(f"integrate: {report.summary()}")
         c_file = REPO / state["module_dir"] / f"{path.stem}.c"
         if c_file.is_file():
+            dead_arms = _drop_dead_arms(path, c_file)
+            if dead_arms:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: match arm(s) the C has only in a dead "
+                    f"#if region dropped: {', '.join(dead_arms)}"
+                )
+            # Anything else a dead region alone names is a statement, which is not safe to
+            # drop by pattern -- so it is LOUD. inetcpl's security_on_destroy kept a
+            # `#ifndef __REACTOS__` ImageList_Destroy: a double free of the list comctl32
+            # had already destroyed with the listview. Hand-port the function (`port hand`).
+            still = sorted(
+                n
+                for n in _dead_only_names(c_file.read_text(errors="replace"))
+                if re.search(rf"\b{re.escape(n)}\b", _strip_rust_comments(path.read_text()))
+            )
+            if still:
+                dead_used[path.stem] = still
+                print(
+                    f"integrate: {path.stem}: WARNING: the C names these only in a dead #if "
+                    f"region, yet the translation uses them -- review: {', '.join(still)}"
+                )
             corrected = _verify_local_defines(path, c_file)
             if corrected:
                 changed += 1
@@ -1632,6 +1805,7 @@ def stage_integrate(stem: str) -> None:
         pointer_depth=depth_fixed,
         variadic=variadic,
         variadic_refused=variadic_refused,
+        dead_used=dead_used,
     )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
@@ -1756,7 +1930,28 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
             "pub static mut __wine_dbch___default: *mut __wine_debug_channel =\n"
             f"    unsafe {{ &raw mut __wine_dbch_{default} }};"
         )
-    block = "\n".join([_WINE_BEGIN, *lines, _WINE_END]) + "\n" if lines else ""
+    # The types themselves: wine/debug.h is a base header no island allowlists, so a crate
+    # whose bodies spell the expanded TRACE (`let __dbch: *mut __wine_debug_channel`) had
+    # nothing to name -- inetcpl, 42 errors; dnsapi/iphlpapi/msgina carry hand copies.
+    island = "\n".join(
+        p.read_text(errors="replace") for p in sorted(prelude.parent.glob("types_*.rs"))
+    )
+    types: list[str] = []
+    if re.search(r"\b__wine_debug_class\b", src + outside) and not re.search(
+        r"\b(?:type|enum|struct)\s+__wine_debug_class\b", outside + island
+    ):
+        types.append("pub type __wine_debug_class = ::core::ffi::c_int; // enum, wine/debug.h")
+    if (lines or re.search(r"\b__wine_debug_channel\b", src)) and not re.search(
+        r"\bstruct\s+__wine_debug_channel\b", outside + island
+    ):
+        types.append(
+            "#[repr(C)]\n"
+            "pub struct __wine_debug_channel { // wine/debug.h\n"
+            "    pub flags: ::core::ffi::c_uchar,\n"
+            "    pub name: [::core::ffi::c_char; 15],\n"
+            "}"
+        )
+    block = "\n".join([_WINE_BEGIN, *types, *lines, _WINE_END]) + "\n" if lines or types else ""
     new = (
         pat.sub(lambda _m: block, text)
         if pat.search(text)
@@ -1764,7 +1959,9 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     )
     if new != text:
         prelude.write_text(new)
-    return [ln.split()[3].rstrip(":") for ln in lines]
+    return [ln.split()[3].rstrip(":") for ln in lines] + [
+        t.split("pub ", 1)[1].split()[1] for t in types
+    ]
 
 
 def _unicode_tchar(state: dict, prelude: Path) -> bool:
@@ -1912,7 +2109,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     from . import sdk_macros
 
     _sdk = sdk_macros.existing_items(prelude)
-    shared |= sdk_macros.existing(prelude) | _sdk["type"] | _sdk["value"]
+    shared |= sdk_macros.existing(prelude) | _sdk["type"] | _sdk["value"] | _sdk["fn"]
     # ...and never a FORCEINLINE helper ntdll-sys already implements in Rust (inlines.rs,
     # re-exported through `ntdll_sys::nt`, which the island globs): diskpart got
     # winlogon-sys's bindgen `extern` InitializeListHead/IsListEmpty/RemoveEntryList/
@@ -2732,11 +2929,22 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
     # definition: atapi's replay gained ata_shared.h in its island AFTER the facts pass had
     # evaluated 47 of its constants, and every one became an E0428 on every arch.
     in_island = _island_constants(state)
+    # ...and the same for an island ENUM alias the consensus block now carries, or a name a
+    # translated module defines (re-exported by the siblings block): inetcpl's facts from a
+    # run before urlmon.h was islanded kept URLZONE_* beside their `tagURLZONE` aliases, and
+    # INTERNET_MAX_URL_LENGTH beside connections.rs's own const -- E0428 / E0255.
+    in_island |= {
+        k for k, v in prelude_resolve.existing_block(prelude).items() if v.path == "island enum"
+    }
+    in_island |= set(prelude_resolve.existing_siblings(prelude))
     stale = sorted(set(facts) & in_island)
     for name in stale:
         del facts[name]
     if stale:
-        print(f"resolve: {len(stale)} fact(s) dropped, the island defines them now")
+        print(
+            f"resolve: {len(stale)} fact(s) dropped, the island or a module defines them now: "
+            + ", ".join(stale)
+        )
     wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
@@ -2830,7 +3038,7 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     want_types = {n for n, ns in kinds.items() if "type" in ns} | had["type"]
     want_values = {n for n, ns in kinds.items() if ns == {"value"}} - called | had["value"]
     hand = local_macros.hand_ported(prelude) - sdk_macros.existing(prelude)
-    hand -= had["type"] | had["value"]
+    hand -= had["type"] | had["value"] | had["fn"]
     # ...but a name ALSO defined outside every generated block stays hand-owned: the
     # scaffold's `pub const NULL` once landed in this block too (mmsys, E0428), and then
     # subtracting the block's own names above handed NULL back to the lowering.
@@ -2841,10 +3049,13 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     hand |= set().union(*prelude_resolve.shared_provides(REPO / "sdk" / "lib" / "rust").values())
     wanted -= hand
     tus = [REPO / t for t in state["tus"]]
+    com = sdk_macros.com_wrappers(crate / "src", (called | had["fn"]) - hand)
+    wanted -= set(com)
     lowered, refused = sdk_macros.lower_for_crate(REPO, tus, crate / "src", wanted)
     items, item_refused = sdk_macros.object_items(
         REPO, tus, crate / "src", want_values - hand, want_types - hand
     )
+    items.update(com)
     refused.update(item_refused)
     if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
         print(

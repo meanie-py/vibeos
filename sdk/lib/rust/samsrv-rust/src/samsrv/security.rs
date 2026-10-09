@@ -22,7 +22,7 @@ pub unsafe extern "C" fn SampCreateServerSD(
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     // ntsam.h:99-117. SAM_SERVER_CREATE_DOMAIN is 0x0008, not 0x0004 -- at 0x0004
     // it COLLIDED with SAM_SERVER_INITIALIZE below, so every
@@ -263,7 +263,7 @@ pub unsafe extern "C" fn SampCreateBuiltinDomainSD(
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     'done: {
         Status = RtlAllocateAndInitializeSid(
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn SampCreateAccountDomainSD(ServerSd: *mut PSECURITY_DESC
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     // ntsam.h:33-72. CREATE_USER (0x10) and CREATE_GROUP (0x20) were SWAPPED,
     // so every ACE naming one granted the other.
@@ -733,7 +733,7 @@ pub unsafe extern "C" fn SampCreateAliasSD(AliasSd: *mut PSECURITY_DESCRIPTOR,
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     'done: {
         /* Create the Everyone SID */
@@ -994,7 +994,7 @@ pub unsafe extern "C" fn SampCreateGroupSD(
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     // ntsam.h:75-97. This family had been PERMUTED into the ALIAS_* numbering
     // (ntsam.h:9-13), which is a different set of rights on a different object
@@ -1248,7 +1248,7 @@ pub unsafe extern "C" fn SampCreateUserSD(
     let DaclSize: ULONG;
     let SaclSize: ULONG;
     let mut RelSDSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     'done: {
         Status = RtlAllocateAndInitializeSid(

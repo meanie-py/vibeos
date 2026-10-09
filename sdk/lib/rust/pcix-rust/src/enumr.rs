@@ -135,7 +135,6 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
 
     /* ASSERT((ResourceList == NULL) || (ResourceList->Count == 1)); omitted */
 
-    Partial = core::ptr::null_mut();
     InterruptResource = core::ptr::null_mut();
     BarIndex = 0;
 
@@ -199,7 +198,7 @@ pub unsafe extern "system" fn PciComputeNewCurrentSettings(
                     }
                 }
                 CmResourceTypeInterrupt => {
-                    /* ASSERT(InterruptResource == NULL); omitted */
+                    ntkrnl_sys::ASSERT!(InterruptResource.is_null());
                     /* ASSERT(Partial->u.Interrupt.Level == Partial->u.Interrupt.Vector); omitted */
                     InterruptResource = Partial;
 
@@ -1731,7 +1730,7 @@ pub unsafe extern "system" fn PciScanBus(DeviceExtension: PPCI_FDO_EXTENSION) ->
 
             PciGetEnhancedCapabilities(new_extension, pci_data);
 
-            status = PciGetFunctionLimits(new_extension, pci_data, hack_flags as u64);
+            PciGetFunctionLimits(new_extension, pci_data, hack_flags as u64);
 
             PciSetPowerManagedDevicePowerState(new_extension, PowerDeviceD0, 0u8);
 

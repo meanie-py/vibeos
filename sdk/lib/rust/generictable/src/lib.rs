@@ -170,11 +170,15 @@ unsafe fn list_entry_to_user_data(entry: *mut ListEntry) -> *mut c_void {
     node_to_user_data(node)
 }
 
-/// User data field offset in TABLE_ENTRY_HEADER.
+/// User data field offset in TABLE_ENTRY_HEADER — the C's
+/// `FIELD_OFFSET(TABLE_ENTRY_HEADER, UserData)`. It is NOT the sum of the two
+/// link structs: `UserData` is a LONGLONG, 8-aligned on every target, so on
+/// i386 it sits at 24, not 20. Sizing nodes by the sum allocated 4 bytes short
+/// and every insert wrote past its pool block (i386 BUGCHECK 0x19 in
+/// RtlSplayTreeKM); 64-bit was unaffected only because both come to 40 there.
 #[inline]
 fn user_data_offset() -> u32 {
-    // offset_of!(TableEntryHeader, user_data)
-    (core::mem::size_of::<SplayLinks>() + core::mem::size_of::<ListEntry>()) as u32
+    core::mem::offset_of!(TableEntryHeader, user_data) as u32
 }
 
 // ============================================================================
@@ -635,7 +639,11 @@ mod tests {
         {
             assert_eq!(core::mem::size_of::<SplayLinks>(), 12);
             assert_eq!(core::mem::size_of::<ListEntry>(), 8);
-            assert_eq!(user_data_offset(), 20);
+            // LONGLONG UserData is 8-aligned under the Windows i386 ABI (and our
+            // i686-kernel target), leaving a 4-byte gap after ListEntry: 24, not
+            // 20. A SysV i686 host aligns i64 to 4, so derive it rather than pin.
+            let a = core::mem::align_of::<i64>();
+            assert_eq!(user_data_offset() as usize, (20 + a - 1) & !(a - 1));
         }
     }
 
@@ -683,12 +691,12 @@ mod tests {
 
     #[test]
     fn test_node_to_user_data_offset() {
-        // Verify the offset calculation is correct
-        let offset = user_data_offset() as usize;
-        assert_eq!(
-            offset,
-            core::mem::size_of::<SplayLinks>() + core::mem::size_of::<ListEntry>()
-        );
+        // The node is sized by the offset node_to_user_data() writes at, so
+        // the two must agree; a sum of the link sizes does not on i386.
+        let mut header: TableEntryHeader = unsafe { core::mem::zeroed() };
+        let base = &mut header as *mut TableEntryHeader as usize;
+        let data = unsafe { node_to_user_data(&mut header.splay_links) } as usize;
+        assert_eq!(data - base, user_data_offset() as usize);
     }
 }
 

@@ -192,6 +192,18 @@ pub fn translate(t: &[u8], segment: u32, requester: u32) -> Result<Route, Error>
     Err(Error::TooDeep)
 }
 
+/// The SMMU a requester ID's DMA first crosses, and the StreamID it has there:
+/// the ID the SMMU's stream table is indexed by. None when the root complex maps
+/// the ID straight to an ITS (no SMMU on the path) or not at all. Unlike
+/// [`translate`] this needs no ITS beyond the SMMU, so it answers on a GICv2
+/// machine too.
+pub fn stream(t: &[u8], segment: u32, requester: u32) -> Option<(Smmu, u32)> {
+    let rc = nodes(t).find(|n| n.segment() == Some(segment))?;
+    let (next, sid) = rc.map(requester)?;
+    let node = node_at(t, next)?;
+    Some((node.smmu()?, sid))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +314,27 @@ mod tests {
             translate(t, 0, 0x48),
             Ok(Route { its: 7, device_id: 0x1_0048, smmu: Some(Smmu { version: 3, base: 0x0905_0000 }) })
         );
+        // The StreamID is the root complex's output, before the SMMU maps it on.
+        assert_eq!(stream(t, 0, 0x48), Some((Smmu { version: 3, base: 0x0905_0000 }, 0x48)));
+        assert_eq!(stream(t, 1, 0x48), None);
+    }
+
+    /// A GICv2 machine with an SMMU: the SMMU maps nowhere, and the StreamID is
+    /// still found.
+    #[test]
+    fn a_stream_needs_no_its_beyond_the_smmu() {
+        let smmu = smmu_v3(0x0905_0000, &[]);
+        let at = offsets(&[smmu.len()]);
+        let rc = root_complex(0, &[[0, 0xFFFF, 0x10_0000, at[0], 0]]);
+        let raw = iort(&[smmu, rc]);
+        let t = table(&raw).unwrap();
+        assert_eq!(stream(t, 0, 0x8), Some((Smmu { version: 3, base: 0x0905_0000 }, 0x10_0008)));
+        assert!(translate(t, 0, 0x8).is_err());
+        // No SMMU on the path: no stream.
+        let its = its_group(&[0]);
+        let at = offsets(&[its.len()]);
+        let raw = iort(&[its, root_complex(0, &[[0, 0xFFFF, 0, at[0], 0]])]);
+        assert_eq!(stream(table(&raw).unwrap(), 0, 0x8), None);
     }
 
     /// Two segments, each behind its own ITS, the way a server lays out its PCIe.

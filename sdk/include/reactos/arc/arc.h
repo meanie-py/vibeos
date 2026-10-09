@@ -741,6 +741,10 @@ typedef struct _ARM_LOADER_BLOCK
     /* ARM64-specific loader block fields */
     ULONG64 AcpiTablePhysicalAddress;
     ULONG AcpiTableSize;
+    /* vibeos arm64: the console UART at Arm64UartBase. Bits 7:0 its kind (0 a
+     * PL011, 1 a 16550 in memory space), 11:8 the 16550's register shift, 19:16 its
+     * access width in bytes; bit 31 set when QEMU virt's fw_cfg is at its fixed
+     * address (freeldr arm64_serial_acpi.rs, Uart::encode). */
     ULONG MachineType;
     ULONG64 KdCpuBuffer;
     /* Cache information */

@@ -33,6 +33,14 @@ pub unsafe extern "C" fn VideoAllocateOffScreenBuffer() -> *mut core::ffi::c_voi
 
     BufferSize = MachVideoGetBufferSize();
 
+    // No display (UEFI with no GOP, as on a server): nothing to buffer. The C asks
+    // for 0 bytes anyway, and the allocator reports that through the UI being set
+    // up, whose message box then waits for a key nobody can press. NULL makes the
+    // text UI fail cleanly, and UiInitialize carries on without one.
+    if BufferSize == 0 {
+        return core::ptr::null_mut();
+    }
+
     VideoOffScreenBuffer = MmAllocateMemoryWithType(BufferSize as usize, LoaderFirmwareTemporary);
 
     return VideoOffScreenBuffer;

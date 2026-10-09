@@ -79,7 +79,7 @@ pub unsafe extern "system" fn USBPORT_LogEntry(
     mut P2: ULONG,
     mut P3: ULONG,
 ) -> ULONG {
-    DPRINT_MINIPORT(
+    DPRINT_MINIPORT!(
         b"USBPORT_LogEntry: MiniPortExtension - %p, EnumTag - %lx, P1 - %lx, P2 - %lx, P3 - %lx\n\0".as_ptr() as *const i8,
         MiniPortExtension,
         EnumTag,
@@ -99,63 +99,63 @@ pub unsafe extern "system" fn USBPORT_DumpingDeviceDescriptor(
         return;
     }
 
-    DPRINT_URB(
+    DPRINT_URB!(
         b"Dumping Device Descriptor - %p\n\0".as_ptr() as *const i8,
         DeviceDescriptor,
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bLength             - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bLength as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bDescriptorType     - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bDescriptorType as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bcdUSB              - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bcdUSB as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bDeviceClass        - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bDeviceClass as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bDeviceSubClass     - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bDeviceSubClass as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bDeviceProtocol     - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bDeviceProtocol as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bMaxPacketSize0     - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bMaxPacketSize0 as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"idVendor            - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).idVendor as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"idProduct           - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).idProduct as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bcdDevice           - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bcdDevice as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"iManufacturer       - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).iManufacturer as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"iProduct            - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).iProduct as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"iSerialNumber       - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).iSerialNumber as ::core::ffi::c_int),
     );
-    DPRINT_URB(
+    DPRINT_URB!(
         b"bNumConfigurations  - %x\n\0".as_ptr() as *const i8,
         ((*DeviceDescriptor).bNumConfigurations as ::core::ffi::c_int),
     );
@@ -178,15 +178,15 @@ pub unsafe extern "system" fn USBPORT_DumpingConfiguration(
         return;
     }
 
-    DPRINT_URB(b"Dumping ConfigDescriptor - %p\n\0".as_ptr() as *const i8, ConfigDescriptor);
-    DPRINT_URB(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bLength as ::core::ffi::c_int));
-    DPRINT_URB(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bDescriptorType as ::core::ffi::c_int));
-    DPRINT_URB(b"wTotalLength        - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).wTotalLength as ::core::ffi::c_int));
-    DPRINT_URB(b"bNumInterfaces      - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bNumInterfaces as ::core::ffi::c_int));
-    DPRINT_URB(b"bConfigurationValue - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bConfigurationValue as ::core::ffi::c_int));
-    DPRINT_URB(b"iConfiguration      - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).iConfiguration as ::core::ffi::c_int));
-    DPRINT_URB(b"bmAttributes        - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bmAttributes as ::core::ffi::c_int));
-    DPRINT_URB(b"MaxPower            - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).MaxPower as ::core::ffi::c_int));
+    DPRINT_URB!(b"Dumping ConfigDescriptor - %p\n\0".as_ptr() as *const i8, ConfigDescriptor);
+    DPRINT_URB!(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bLength as ::core::ffi::c_int));
+    DPRINT_URB!(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bDescriptorType as ::core::ffi::c_int));
+    DPRINT_URB!(b"wTotalLength        - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).wTotalLength as ::core::ffi::c_int));
+    DPRINT_URB!(b"bNumInterfaces      - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bNumInterfaces as ::core::ffi::c_int));
+    DPRINT_URB!(b"bConfigurationValue - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bConfigurationValue as ::core::ffi::c_int));
+    DPRINT_URB!(b"iConfiguration      - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).iConfiguration as ::core::ffi::c_int));
+    DPRINT_URB!(b"bmAttributes        - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).bmAttributes as ::core::ffi::c_int));
+    DPRINT_URB!(b"MaxPower            - %x\n\0".as_ptr() as *const i8, ((*ConfigDescriptor).MaxPower as ::core::ffi::c_int));
 
     iDescriptor = (ConfigDescriptor as ULONG_PTR)
         .wrapping_add((*ConfigDescriptor).bLength as ULONG_PTR)
@@ -198,16 +198,16 @@ pub unsafe extern "system" fn USBPORT_DumpingConfiguration(
         return;
     }
 
-    DPRINT_URB(b"Dumping iDescriptor - %p\n\0".as_ptr() as *const i8, iDescriptor);
-    DPRINT_URB(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bLength as ::core::ffi::c_int));
-    DPRINT_URB(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bDescriptorType as ::core::ffi::c_int));
-    DPRINT_URB(b"bInterfaceNumber    - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceNumber as ::core::ffi::c_int));
-    DPRINT_URB(b"bAlternateSetting   - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bAlternateSetting as ::core::ffi::c_int));
-    DPRINT_URB(b"bNumEndpoints       - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bNumEndpoints as ::core::ffi::c_int));
-    DPRINT_URB(b"bInterfaceClass     - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceClass as ::core::ffi::c_int));
-    DPRINT_URB(b"bInterfaceSubClass  - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceSubClass as ::core::ffi::c_int));
-    DPRINT_URB(b"bInterfaceProtocol  - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceProtocol as ::core::ffi::c_int));
-    DPRINT_URB(b"iInterface          - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).iInterface as ::core::ffi::c_int));
+    DPRINT_URB!(b"Dumping iDescriptor - %p\n\0".as_ptr() as *const i8, iDescriptor);
+    DPRINT_URB!(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bLength as ::core::ffi::c_int));
+    DPRINT_URB!(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bDescriptorType as ::core::ffi::c_int));
+    DPRINT_URB!(b"bInterfaceNumber    - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceNumber as ::core::ffi::c_int));
+    DPRINT_URB!(b"bAlternateSetting   - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bAlternateSetting as ::core::ffi::c_int));
+    DPRINT_URB!(b"bNumEndpoints       - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bNumEndpoints as ::core::ffi::c_int));
+    DPRINT_URB!(b"bInterfaceClass     - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceClass as ::core::ffi::c_int));
+    DPRINT_URB!(b"bInterfaceSubClass  - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceSubClass as ::core::ffi::c_int));
+    DPRINT_URB!(b"bInterfaceProtocol  - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).bInterfaceProtocol as ::core::ffi::c_int));
+    DPRINT_URB!(b"iInterface          - %x\n\0".as_ptr() as *const i8, ((*iDescriptor).iInterface as ::core::ffi::c_int));
 
     Descriptor = (iDescriptor as ULONG_PTR)
         .wrapping_add((*iDescriptor).bLength as ULONG_PTR)
@@ -221,13 +221,13 @@ pub unsafe extern "system" fn USBPORT_DumpingConfiguration(
             return;
         }
 
-        DPRINT_URB(b"Dumping Descriptor  - %p\n\0".as_ptr() as *const i8, Descriptor);
-        DPRINT_URB(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bLength as ::core::ffi::c_int));
-        DPRINT_URB(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bDescriptorType as ::core::ffi::c_int));
-        DPRINT_URB(b"bEndpointAddress    - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bEndpointAddress as ::core::ffi::c_int));
-        DPRINT_URB(b"bmAttributes        - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bmAttributes as ::core::ffi::c_int));
-        DPRINT_URB(b"wMaxPacketSize      - %x\n\0".as_ptr() as *const i8, ((*Descriptor).wMaxPacketSize as ::core::ffi::c_int));
-        DPRINT_URB(b"bInterval           - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bInterval as ::core::ffi::c_int));
+        DPRINT_URB!(b"Dumping Descriptor  - %p\n\0".as_ptr() as *const i8, Descriptor);
+        DPRINT_URB!(b"bLength             - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bLength as ::core::ffi::c_int));
+        DPRINT_URB!(b"bDescriptorType     - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bDescriptorType as ::core::ffi::c_int));
+        DPRINT_URB!(b"bEndpointAddress    - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bEndpointAddress as ::core::ffi::c_int));
+        DPRINT_URB!(b"bmAttributes        - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bmAttributes as ::core::ffi::c_int));
+        DPRINT_URB!(b"wMaxPacketSize      - %x\n\0".as_ptr() as *const i8, ((*Descriptor).wMaxPacketSize as ::core::ffi::c_int));
+        DPRINT_URB!(b"bInterval           - %x\n\0".as_ptr() as *const i8, ((*Descriptor).bInterval as ::core::ffi::c_int));
 
         Descriptor = Descriptor.offset(1);
         ix = ix.wrapping_add(1);
@@ -251,22 +251,22 @@ pub unsafe extern "system" fn USBPORT_DumpingSetupPacket(
 pub unsafe extern "system" fn USBPORT_DumpingURB(mut Urb: PURB) {
     let mut SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET;
 
-    DPRINT_URB(b"UrbHeader.Length           - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Length as ::core::ffi::c_int));
-    DPRINT_URB(b"UrbHeader.Function         - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Function as ::core::ffi::c_int));
-    DPRINT_URB(b"UrbHeader.__bindgen_anon_1.Status           - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.Status);
-    DPRINT_URB(b"UrbHeader.UsbdDeviceHandle - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle);
-    DPRINT_URB(b"UrbHeader.UsbdFlags        - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags);
+    DPRINT_URB!(b"UrbHeader.Length           - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Length as ::core::ffi::c_int));
+    DPRINT_URB!(b"UrbHeader.Function         - %x\n\0".as_ptr() as *const i8, ((*Urb).__bindgen_anon_1.UrbHeader.Function as ::core::ffi::c_int));
+    DPRINT_URB!(b"UrbHeader.__bindgen_anon_1.Status           - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.Status);
+    DPRINT_URB!(b"UrbHeader.UsbdDeviceHandle - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle);
+    DPRINT_URB!(b"UrbHeader.UsbdFlags        - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags);
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.Length as i32) < 0x48 {
         return;
     }
 
-    DPRINT_URB(b"PipeHandle                - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.PipeHandle);
-    DPRINT_URB(b"TransferFlags             - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferFlags);
-    DPRINT_URB(b"TransferBufferLength      - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength);
-    DPRINT_URB(b"TransferBuffer            - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBuffer);
-    DPRINT_URB(b"TransferBufferMDL         - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferMDL);
-    DPRINT_URB(b"UrbLink                   - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.UrbLink);
+    DPRINT_URB!(b"PipeHandle                - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.PipeHandle);
+    DPRINT_URB!(b"TransferFlags             - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferFlags);
+    DPRINT_URB!(b"TransferBufferLength      - %x\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferLength);
+    DPRINT_URB!(b"TransferBuffer            - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBuffer);
+    DPRINT_URB!(b"TransferBufferMDL         - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.TransferBufferMDL);
+    DPRINT_URB!(b"UrbLink                   - %p\n\0".as_ptr() as *const i8, (*Urb).__bindgen_anon_1.UrbControlTransfer.UrbLink);
 
     if ((*Urb).__bindgen_anon_1.UrbHeader.Length as i32) < 0x50 {
         return;
@@ -685,7 +685,7 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 //                  IN ULONG P2,
 //                  IN ULONG P3)
 // {
-//     DPRINT_MINIPORT("USBPORT_LogEntry: MiniPortExtension - %p, EnumTag - %lx, P1 - %lx, P2 - %lx, P3 - %lx\n",
+//     DPRINT_MINIPORT!("USBPORT_LogEntry: MiniPortExtension - %p, EnumTag - %lx, P1 - %lx, P2 - %lx, P3 - %lx\n",
 //            MiniPortExtension,
 //            EnumTag,
 //            P1,
@@ -704,21 +704,21 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 //         return;
 //     }
 //
-//     DPRINT_URB("Dumping Device Descriptor - %p\n", DeviceDescriptor);
-//     DPRINT_URB("bLength             - %x\n", DeviceDescriptor->bLength);
-//     DPRINT_URB("bDescriptorType     - %x\n", DeviceDescriptor->bDescriptorType);
-//     DPRINT_URB("bcdUSB              - %x\n", DeviceDescriptor->bcdUSB);
-//     DPRINT_URB("bDeviceClass        - %x\n", DeviceDescriptor->bDeviceClass);
-//     DPRINT_URB("bDeviceSubClass     - %x\n", DeviceDescriptor->bDeviceSubClass);
-//     DPRINT_URB("bDeviceProtocol     - %x\n", DeviceDescriptor->bDeviceProtocol);
-//     DPRINT_URB("bMaxPacketSize0     - %x\n", DeviceDescriptor->bMaxPacketSize0);
-//     DPRINT_URB("idVendor            - %x\n", DeviceDescriptor->idVendor);
-//     DPRINT_URB("idProduct           - %x\n", DeviceDescriptor->idProduct);
-//     DPRINT_URB("bcdDevice           - %x\n", DeviceDescriptor->bcdDevice);
-//     DPRINT_URB("iManufacturer       - %x\n", DeviceDescriptor->iManufacturer);
-//     DPRINT_URB("iProduct            - %x\n", DeviceDescriptor->iProduct);
-//     DPRINT_URB("iSerialNumber       - %x\n", DeviceDescriptor->iSerialNumber);
-//     DPRINT_URB("bNumConfigurations  - %x\n", DeviceDescriptor->bNumConfigurations);
+//     DPRINT_URB!("Dumping Device Descriptor - %p\n", DeviceDescriptor);
+//     DPRINT_URB!("bLength             - %x\n", DeviceDescriptor->bLength);
+//     DPRINT_URB!("bDescriptorType     - %x\n", DeviceDescriptor->bDescriptorType);
+//     DPRINT_URB!("bcdUSB              - %x\n", DeviceDescriptor->bcdUSB);
+//     DPRINT_URB!("bDeviceClass        - %x\n", DeviceDescriptor->bDeviceClass);
+//     DPRINT_URB!("bDeviceSubClass     - %x\n", DeviceDescriptor->bDeviceSubClass);
+//     DPRINT_URB!("bDeviceProtocol     - %x\n", DeviceDescriptor->bDeviceProtocol);
+//     DPRINT_URB!("bMaxPacketSize0     - %x\n", DeviceDescriptor->bMaxPacketSize0);
+//     DPRINT_URB!("idVendor            - %x\n", DeviceDescriptor->idVendor);
+//     DPRINT_URB!("idProduct           - %x\n", DeviceDescriptor->idProduct);
+//     DPRINT_URB!("bcdDevice           - %x\n", DeviceDescriptor->bcdDevice);
+//     DPRINT_URB!("iManufacturer       - %x\n", DeviceDescriptor->iManufacturer);
+//     DPRINT_URB!("iProduct            - %x\n", DeviceDescriptor->iProduct);
+//     DPRINT_URB!("iSerialNumber       - %x\n", DeviceDescriptor->iSerialNumber);
+//     DPRINT_URB!("bNumConfigurations  - %x\n", DeviceDescriptor->bNumConfigurations);
 // }
 //
 // VOID
@@ -735,15 +735,15 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 //         return;
 //     }
 //
-//     DPRINT_URB("Dumping ConfigDescriptor - %p\n", ConfigDescriptor);
-//     DPRINT_URB("bLength             - %x\n", ConfigDescriptor->bLength);
-//     DPRINT_URB("bDescriptorType     - %x\n", ConfigDescriptor->bDescriptorType);
-//     DPRINT_URB("wTotalLength        - %x\n", ConfigDescriptor->wTotalLength);
-//     DPRINT_URB("bNumInterfaces      - %x\n", ConfigDescriptor->bNumInterfaces);
-//     DPRINT_URB("bConfigurationValue - %x\n", ConfigDescriptor->bConfigurationValue);
-//     DPRINT_URB("iConfiguration      - %x\n", ConfigDescriptor->iConfiguration);
-//     DPRINT_URB("bmAttributes        - %x\n", ConfigDescriptor->bmAttributes);
-//     DPRINT_URB("MaxPower            - %x\n", ConfigDescriptor->MaxPower);
+//     DPRINT_URB!("Dumping ConfigDescriptor - %p\n", ConfigDescriptor);
+//     DPRINT_URB!("bLength             - %x\n", ConfigDescriptor->bLength);
+//     DPRINT_URB!("bDescriptorType     - %x\n", ConfigDescriptor->bDescriptorType);
+//     DPRINT_URB!("wTotalLength        - %x\n", ConfigDescriptor->wTotalLength);
+//     DPRINT_URB!("bNumInterfaces      - %x\n", ConfigDescriptor->bNumInterfaces);
+//     DPRINT_URB!("bConfigurationValue - %x\n", ConfigDescriptor->bConfigurationValue);
+//     DPRINT_URB!("iConfiguration      - %x\n", ConfigDescriptor->iConfiguration);
+//     DPRINT_URB!("bmAttributes        - %x\n", ConfigDescriptor->bmAttributes);
+//     DPRINT_URB!("MaxPower            - %x\n", ConfigDescriptor->MaxPower);
 //
 //     iDescriptor = (PUSB_INTERFACE_DESCRIPTOR)((ULONG_PTR)ConfigDescriptor +
 //                                                          ConfigDescriptor->bLength);
@@ -753,16 +753,16 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 //         return;
 //     }
 //
-//     DPRINT_URB("Dumping iDescriptor - %p\n", iDescriptor);
-//     DPRINT_URB("bLength             - %x\n", iDescriptor->bLength);
-//     DPRINT_URB("bDescriptorType     - %x\n", iDescriptor->bDescriptorType);
-//     DPRINT_URB("bInterfaceNumber    - %x\n", iDescriptor->bInterfaceNumber);
-//     DPRINT_URB("bAlternateSetting   - %x\n", iDescriptor->bAlternateSetting);
-//     DPRINT_URB("bNumEndpoints       - %x\n", iDescriptor->bNumEndpoints);
-//     DPRINT_URB("bInterfaceClass     - %x\n", iDescriptor->bInterfaceClass);
-//     DPRINT_URB("bInterfaceSubClass  - %x\n", iDescriptor->bInterfaceSubClass);
-//     DPRINT_URB("bInterfaceProtocol  - %x\n", iDescriptor->bInterfaceProtocol);
-//     DPRINT_URB("iInterface          - %x\n", iDescriptor->iInterface);
+//     DPRINT_URB!("Dumping iDescriptor - %p\n", iDescriptor);
+//     DPRINT_URB!("bLength             - %x\n", iDescriptor->bLength);
+//     DPRINT_URB!("bDescriptorType     - %x\n", iDescriptor->bDescriptorType);
+//     DPRINT_URB!("bInterfaceNumber    - %x\n", iDescriptor->bInterfaceNumber);
+//     DPRINT_URB!("bAlternateSetting   - %x\n", iDescriptor->bAlternateSetting);
+//     DPRINT_URB!("bNumEndpoints       - %x\n", iDescriptor->bNumEndpoints);
+//     DPRINT_URB!("bInterfaceClass     - %x\n", iDescriptor->bInterfaceClass);
+//     DPRINT_URB!("bInterfaceSubClass  - %x\n", iDescriptor->bInterfaceSubClass);
+//     DPRINT_URB!("bInterfaceProtocol  - %x\n", iDescriptor->bInterfaceProtocol);
+//     DPRINT_URB!("iInterface          - %x\n", iDescriptor->iInterface);
 //
 //     Descriptor = (PUSB_ENDPOINT_DESCRIPTOR)((ULONG_PTR)iDescriptor +
 //                                                        iDescriptor->bLength);
@@ -774,13 +774,13 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 //             return;
 //         }
 //
-//         DPRINT_URB("Dumping Descriptor  - %p\n", Descriptor);
-//         DPRINT_URB("bLength             - %x\n", Descriptor->bLength);
-//         DPRINT_URB("bDescriptorType     - %x\n", Descriptor->bDescriptorType);
-//         DPRINT_URB("bEndpointAddress    - %x\n", Descriptor->bEndpointAddress);
-//         DPRINT_URB("bmAttributes        - %x\n", Descriptor->bmAttributes);
-//         DPRINT_URB("wMaxPacketSize      - %x\n", Descriptor->wMaxPacketSize);
-//         DPRINT_URB("bInterval           - %x\n", Descriptor->bInterval);
+//         DPRINT_URB!("Dumping Descriptor  - %p\n", Descriptor);
+//         DPRINT_URB!("bLength             - %x\n", Descriptor->bLength);
+//         DPRINT_URB!("bDescriptorType     - %x\n", Descriptor->bDescriptorType);
+//         DPRINT_URB!("bEndpointAddress    - %x\n", Descriptor->bEndpointAddress);
+//         DPRINT_URB!("bmAttributes        - %x\n", Descriptor->bmAttributes);
+//         DPRINT_URB!("wMaxPacketSize      - %x\n", Descriptor->wMaxPacketSize);
+//         DPRINT_URB!("bInterval           - %x\n", Descriptor->bInterval);
 //
 //         Descriptor += 1;
 //     }
@@ -846,23 +846,23 @@ pub unsafe extern "system" fn USBPORT_DumpingTtEndpoint(mut TtEndpoint: PUSB2_TT
 // {
 //     PUSB_DEFAULT_PIPE_SETUP_PACKET SetupPacket;
 //
-//     DPRINT_URB("UrbHeader.Length           - %x\n", Urb->UrbHeader.Length);
-//     DPRINT_URB("UrbHeader.Function         - %x\n", Urb->UrbHeader.Function);
-//     DPRINT_URB("UrbHeader.Status           - %x\n", Urb->UrbHeader.Status);
-//     DPRINT_URB("UrbHeader.UsbdDeviceHandle - %p\n", Urb->UrbHeader.UsbdDeviceHandle);
-//     DPRINT_URB("UrbHeader.UsbdFlags        - %x\n", Urb->UrbHeader.UsbdFlags);
+//     DPRINT_URB!("UrbHeader.Length           - %x\n", Urb->UrbHeader.Length);
+//     DPRINT_URB!("UrbHeader.Function         - %x\n", Urb->UrbHeader.Function);
+//     DPRINT_URB!("UrbHeader.Status           - %x\n", Urb->UrbHeader.Status);
+//     DPRINT_URB!("UrbHeader.UsbdDeviceHandle - %p\n", Urb->UrbHeader.UsbdDeviceHandle);
+//     DPRINT_URB!("UrbHeader.UsbdFlags        - %x\n", Urb->UrbHeader.UsbdFlags);
 //
 //     if (Urb->UrbHeader.Length < 0x48)
 //     {
 //         return;
 //     }
 //
-//     DPRINT_URB("PipeHandle                - %p\n", Urb->UrbControlTransfer.PipeHandle);
-//     DPRINT_URB("TransferFlags             - %x\n", Urb->UrbControlTransfer.TransferFlags);
-//     DPRINT_URB("TransferBufferLength      - %x\n", Urb->UrbControlTransfer.TransferBufferLength);
-//     DPRINT_URB("TransferBuffer            - %p\n", Urb->UrbControlTransfer.TransferBuffer);
-//     DPRINT_URB("TransferBufferMDL         - %p\n", Urb->UrbControlTransfer.TransferBufferMDL);
-//     DPRINT_URB("UrbLink                   - %p\n", Urb->UrbControlTransfer.__bindgen_anon_1.UrbLink);
+//     DPRINT_URB!("PipeHandle                - %p\n", Urb->UrbControlTransfer.PipeHandle);
+//     DPRINT_URB!("TransferFlags             - %x\n", Urb->UrbControlTransfer.TransferFlags);
+//     DPRINT_URB!("TransferBufferLength      - %x\n", Urb->UrbControlTransfer.TransferBufferLength);
+//     DPRINT_URB!("TransferBuffer            - %p\n", Urb->UrbControlTransfer.TransferBuffer);
+//     DPRINT_URB!("TransferBufferMDL         - %p\n", Urb->UrbControlTransfer.TransferBufferMDL);
+//     DPRINT_URB!("UrbLink                   - %p\n", Urb->UrbControlTransfer.__bindgen_anon_1.UrbLink);
 //
 //     if (Urb->UrbHeader.Length < 0x50)
 //     {

@@ -10,6 +10,7 @@ pub mod halstubs;
 pub mod iort;
 pub mod its;
 pub mod smmu;
+pub mod smmuv3;
 pub mod pnpdd;
 pub mod v2m;
 // SMP AP-start via PSCI CPU_ON (smp-bringup-quest.md M5a) — SMP HAL only.

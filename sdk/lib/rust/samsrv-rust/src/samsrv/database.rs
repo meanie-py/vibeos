@@ -65,7 +65,7 @@ pub unsafe extern "C" fn SampCreateDbObject(
     let mut ContainerKeyHandle: HANDLE = core::ptr::null_mut();
     let mut ObjectKeyHandle: HANDLE = core::ptr::null_mut();
     let mut MembersKeyHandle: HANDLE = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if DbObject.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -195,7 +195,7 @@ pub unsafe extern "C" fn SampOpenDbObject(
     let mut ContainerKeyHandle: HANDLE = core::ptr::null_mut();
     let mut ObjectKeyHandle: HANDLE = core::ptr::null_mut();
     let mut MembersKeyHandle: HANDLE = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if DbObject.is_null() {
         return STATUS_INVALID_PARAMETER;

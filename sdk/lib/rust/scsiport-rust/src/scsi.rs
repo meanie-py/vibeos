@@ -63,7 +63,7 @@ unsafe fn SpiHandleAttachRelease(
 ) -> NTSTATUS {
     let mut DeviceExtension: PSCSI_PORT_DEVICE_EXTENSION =
         (*(*LunExtension).Common.LowerDevice).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut DeviceObject: PDEVICE_OBJECT;
     let mut Irql: KIRQL;
     let mut IrpStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut Srb: PSCSI_REQUEST_BLOCK = (*IrpStack).Parameters.Scsi.Srb as PSCSI_REQUEST_BLOCK;
@@ -104,15 +104,15 @@ pub unsafe extern "system" fn ScsiPortDispatchScsi(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut lunExt: PSCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
-    let mut Stack: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut Srb: PSCSI_REQUEST_BLOCK = core::ptr::null_mut();
+    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION;
+    let mut lunExt: PSCSI_PORT_LUN_EXTENSION;
+    let mut Stack: PIO_STACK_LOCATION;
+    let mut Srb: PSCSI_REQUEST_BLOCK;
     let mut Irql: KIRQL = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut NextIrp: PIRP = core::ptr::null_mut();
-    let mut IrpList: PIRP = core::ptr::null_mut();
-    let mut Entry: PKDEVICE_QUEUE_ENTRY = core::ptr::null_mut();
+    let mut NextIrp: PIRP;
+    let mut IrpList: PIRP;
+    let mut Entry: PKDEVICE_QUEUE_ENTRY;
 
     // DPRINT entry
     {
@@ -402,12 +402,12 @@ unsafe fn SpiSendRequestSense(
     LunExtension: PSCSI_PORT_LUN_EXTENSION,
     InitialSrb: PSCSI_REQUEST_BLOCK,
 ) {
-    let mut Srb: PSCSI_REQUEST_BLOCK = core::ptr::null_mut();
-    let mut Cdb: PCDB = core::ptr::null_mut();
-    let mut Irp: PIRP = core::ptr::null_mut();
-    let mut IrpStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let mut Srb: PSCSI_REQUEST_BLOCK;
+    let mut Cdb: PCDB;
+    let mut Irp: PIRP;
+    let mut IrpStack: PIO_STACK_LOCATION;
     let mut LargeInt: LARGE_INTEGER = core::mem::zeroed();
-    let mut Ptr: *mut PVOID = core::ptr::null_mut();
+    let mut Ptr: *mut PVOID;
 
     Srb = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -500,16 +500,16 @@ unsafe fn SpiSendRequestSense(
 #[no_mangle]
 pub unsafe extern "system" fn ScsiPortStartPacket(Context: *mut core::ffi::c_void) -> i32 {
     // (LLM-fabricated local consts deleted — glue.rs/types are the verified source.)
-    let mut IrpStack: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut Srb: *mut _SCSI_REQUEST_BLOCK = core::ptr::null_mut();
+    let mut IrpStack: PIO_STACK_LOCATION;
+    let mut Srb: *mut _SCSI_REQUEST_BLOCK;
     let mut DeviceObject: PDEVICE_OBJECT = Context as PDEVICE_OBJECT;
     let mut CommonExtension: *mut _SCSI_PORT_COMMON_EXTENSION =
         (*DeviceObject).DeviceExtension as *mut _SCSI_PORT_COMMON_EXTENSION;
-    let mut DeviceExtension: *mut _SCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut LunExtension: *mut _SCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
-    let mut SrbInfo: *mut _SCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
-    let mut Result: i32 = 0;
-    let mut StartTimer: i32 = 0;
+    let mut DeviceExtension: *mut _SCSI_PORT_DEVICE_EXTENSION;
+    let mut LunExtension: *mut _SCSI_PORT_LUN_EXTENSION;
+    let mut SrbInfo: *mut _SCSI_REQUEST_BLOCK_INFO;
+    let mut Result: i32;
+    let mut StartTimer: i32;
 
     // DPRINT removed
 
@@ -634,9 +634,9 @@ pub unsafe extern "system" fn ScsiPortDpcForIsr(
         (*DpcDeviceObject).DeviceExtension as PSCSI_PORT_DEVICE_EXTENSION;
     let mut InterruptData: SCSI_PORT_INTERRUPT_DATA = core::mem::zeroed();
     let mut Context: SCSI_PORT_SAVE_INTERRUPT = core::mem::zeroed();
-    let mut LunExtension: PSCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
+    let mut LunExtension: PSCSI_PORT_LUN_EXTENSION;
     let mut NeedToStartIo: BOOLEAN = 0;
-    let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
+    let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO;
     let mut TimerValue: LARGE_INTEGER = core::mem::zeroed();
 
     // We need to acquire spinlock
@@ -871,8 +871,8 @@ unsafe fn SpiAllocateSrbStructures(
     LunExtension: PSCSI_PORT_LUN_EXTENSION,
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> PSCSI_REQUEST_BLOCK_INFO {
-    let mut SrbExtension: PCHAR = core::ptr::null_mut();
-    let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
+    let mut SrbExtension: PCHAR;
+    let mut SrbInfo: PSCSI_REQUEST_BLOCK_INFO;
     KeAcquireSpinLockAtDpcLevel((core::ptr::addr_of_mut!((*DeviceExtension).SpinLock)).cast());
     if (*DeviceExtension).NeedSrbDataAlloc != 0 {
         if (*Srb).Function as core::ffi::c_int == (SRB_FUNCTION_ABORT_COMMAND) as i32 {
@@ -1001,10 +1001,10 @@ pub unsafe extern "C" fn SpiGetNextRequestFromLun(
     mut LunExtension: PSCSI_PORT_LUN_EXTENSION,
     mut OldIrql: PKIRQL,
 ) {
-    let mut IrpStack: PIO_STACK_LOCATION = core::ptr::null_mut::<_IO_STACK_LOCATION>();
-    let mut NextIrp: PIRP = core::ptr::null_mut::<_IRP>();
-    let mut Entry: PKDEVICE_QUEUE_ENTRY = core::ptr::null_mut::<_KDEVICE_QUEUE_ENTRY>();
-    let mut Srb: PSCSI_REQUEST_BLOCK = core::ptr::null_mut::<_SCSI_REQUEST_BLOCK>();
+    let mut IrpStack: PIO_STACK_LOCATION;
+    let mut NextIrp: PIRP;
+    let mut Entry: PKDEVICE_QUEUE_ENTRY;
+    let mut Srb: PSCSI_REQUEST_BLOCK;
     if (*LunExtension).QueueCount >= (*LunExtension).MaxQueueCount
         || ((*LunExtension).Flags & SCSI_PORT_LU_ACTIVE) == 0
     {
@@ -1102,12 +1102,12 @@ pub unsafe extern "C" fn SpiGetNextRequestFromLun(
 
 pub unsafe extern "system" fn SpiSaveInterruptData(Context: *mut core::ffi::c_void) -> i32 {
     let mut InterruptContext: *mut SCSI_PORT_SAVE_INTERRUPT = Context as *mut SCSI_PORT_SAVE_INTERRUPT;
-    let mut LunExtension: *mut SCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
-    let mut Srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
-    let mut SrbInfo: *mut SCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
-    let mut NextSrbInfo: *mut SCSI_REQUEST_BLOCK_INFO = core::ptr::null_mut();
-    let mut DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut IsTimed: i32 = 0;
+    let mut LunExtension: *mut SCSI_PORT_LUN_EXTENSION;
+    let mut Srb: *mut SCSI_REQUEST_BLOCK;
+    let mut SrbInfo: *mut SCSI_REQUEST_BLOCK_INFO;
+    let mut NextSrbInfo: *mut SCSI_REQUEST_BLOCK_INFO;
+    let mut DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION;
+    let mut IsTimed: i32;
 
     DeviceExtension = (*InterruptContext).DeviceExtension;
 
@@ -1211,10 +1211,10 @@ unsafe fn SpiProcessCompletedRequest(
     mut SrbInfo: *mut _SCSI_REQUEST_BLOCK_INFO,
     NeedToCallStartIo: *mut u8,
 ) {
-    let mut Srb: *mut _SCSI_REQUEST_BLOCK = core::ptr::null_mut();
-    let mut LunExtension: *mut _SCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
-    let mut Result: i32 = 0;
-    let mut Irp: *mut IRP = core::ptr::null_mut();
+    let mut Srb: *mut _SCSI_REQUEST_BLOCK;
+    let mut LunExtension: *mut _SCSI_PORT_LUN_EXTENSION;
+    let mut Result: i32;
+    let mut Irp: *mut IRP;
 
     Srb = (*SrbInfo).Srb;
     Irp = (*Srb).OriginalRequest as *mut IRP;
@@ -1345,7 +1345,6 @@ unsafe fn SpiProcessCompletedRequest(
         (*DeviceExtension).FreeSrbInfo = SrbInfo;
     }
 
-    SrbInfo = core::ptr::null_mut();
 
     if (*DeviceExtension).Flags & SCSI_PORT_REQUEST_PENDING != 0 {
         (*DeviceExtension).Flags &= !SCSI_PORT_REQUEST_PENDING;

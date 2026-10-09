@@ -127,7 +127,7 @@ pub unsafe extern "C" fn SampRemoveMemberFromGroup(
     GroupObject: PSAM_DB_OBJECT,
     MemberId: ULONG,
 ) -> NTSTATUS {
-    let mut MembersBuffer: PULONG = core::ptr::null_mut();
+    let MembersBuffer: PULONG;
     let MembersCount: ULONG;
     let mut Length: ULONG = 0;
     let mut i: ULONG;

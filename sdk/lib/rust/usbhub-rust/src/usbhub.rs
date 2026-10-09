@@ -39,10 +39,8 @@ use core::ffi::c_void;
 
 extern "C" {
     fn IoSizeOfIrp(StackSize: i8) -> u16;
-    fn DPRINT_SCE(format: *const i8, ...);
     fn DbgPrint(Format: *const i8, ...) -> u32;
     fn DPRINT(fmt: *const i8, ...);
-    fn DPRINT_PNP(fmt: *const i8, ...);
     fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -301,7 +299,7 @@ pub unsafe extern "system" fn USBH_PassIrp(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    DPRINT_PNP(
+    DPRINT_PNP!(
         b"USBH_PassIrp: DeviceObject - %p, Irp - %p\n\0".as_ptr() as *const i8,
         DeviceObject,
         Irp,
@@ -1843,7 +1841,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationAckChangeComplete(
 
     HubExtension = Context as PUSBHUB_FDO_EXTENSION;
 
-    DPRINT_SCE(b"USBH_ChangeIndicationAckChangeComplete: ... \n\0".as_ptr() as *const i8);
+    DPRINT_SCE!(b"USBH_ChangeIndicationAckChangeComplete: ... \n\0".as_ptr() as *const i8);
 
     // ASSERT(HubExtension->Port > 0);
     Port = (*HubExtension).Port - 1;
@@ -1880,7 +1878,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationAckChange(
     let IoStack: PIO_STACK_LOCATION;
     let mut RequestType: BM_REQUEST_TYPE = core::mem::zeroed();
 
-    // DPRINT_SCE("USBH_ChangeIndicationAckChange: ... \n");
+    // DPRINT_SCE!("USBH_ChangeIndicationAckChange: ... \n");
 
     (*Urb).Hdr.Length = core::mem::size_of::<_URB_CONTROL_VENDOR_OR_CLASS_REQUEST>() as USHORT;
     (*Urb).Hdr.Function = URB_FUNCTION_CLASS_OTHER as USHORT;
@@ -1938,7 +1936,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationProcessChange(
 
     HubExtension = Context as PUSBHUB_FDO_EXTENSION;
 
-    DPRINT_SCE(
+    DPRINT_SCE!(
         b"USBH_ChangeIndicationProcessChange: PortStatus - %lX\n\0".as_ptr() as *const i8,
         psc_get_asulong32(core::ptr::addr_of!((*HubExtension).PortStatus)),
     );
@@ -1998,7 +1996,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationQueryChange(
     let IoStack: PIO_STACK_LOCATION;
     let mut RequestType: BM_REQUEST_TYPE = core::mem::zeroed();
 
-    DPRINT_SCE(
+    DPRINT_SCE!(
         b"USBH_ChangeIndicationQueryChange: Port - %x\n\0".as_ptr() as *const i8,
         Port as u32,
     );
@@ -2067,7 +2065,7 @@ pub unsafe extern "system" fn USBH_ProcessHubStateChange(
     HubExtension: PUSBHUB_FDO_EXTENSION,
     HubStatus: PUSB_HUB_STATUS_AND_CHANGE,
 ) {
-    DPRINT_SCE(
+    DPRINT_SCE!(
         b"USBH_ProcessHubStateChange: HubStatus - %lx\n\0".as_ptr() as *const i8,
         hsc_get_asulong32(HubStatus),
     );
@@ -2104,7 +2102,7 @@ pub unsafe extern "system" fn USBH_ProcessPortStateChange(
     let RequestValue: USHORT;
     let mut Irql: KIRQL = 0;
 
-    DPRINT_SCE(b"USBH_ProcessPortStateChange ... \n\0".as_ptr() as *const i8);
+    DPRINT_SCE!(b"USBH_ProcessPortStateChange ... \n\0".as_ptr() as *const i8);
 
     let PortData = (*HubExtension).PortData.offset((Port - 1) as isize);
 
@@ -2379,7 +2377,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationWorker(
     let mut Status: NTSTATUS;
     let mut Port: USHORT = 0;
 
-    DPRINT_SCE(b"USBH_ChangeIndicationWorker ... \n\0".as_ptr() as *const i8);
+    DPRINT_SCE!(b"USBH_ChangeIndicationWorker ... \n\0".as_ptr() as *const i8);
 
     WorkItem = Context as PUSBHUB_STATUS_CHANGE_CONTEXT;
 
@@ -2403,7 +2401,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationWorker(
                 break 'Enum;
             }
 
-            DPRINT_SCE(
+            DPRINT_SCE!(
                 b"USBH_ChangeIndicationWorker: RequestErrors - %x\n\0".as_ptr() as *const i8,
                 (*HubExtension).RequestErrors,
             );
@@ -2551,7 +2549,7 @@ pub unsafe extern "system" fn USBH_ChangeIndication(
     HubExtension = Context as PUSBHUB_FDO_EXTENSION;
     UrbStatus = (*HubExtension).SCEWorkerUrb.Hdr.Status;
 
-    DPRINT_SCE(
+    DPRINT_SCE!(
         b"USBH_ChangeIndication: IrpStatus - %x, UrbStatus - %x, HubFlags - %lX\n\0".as_ptr() as *const i8,
         (*Irp).IoStatus.__bindgen_anon_1.Status,
         UrbStatus,
@@ -2574,7 +2572,7 @@ pub unsafe extern "system" fn USBH_ChangeIndication(
             || (*HubExtension).RequestErrors > USBHUB_MAX_REQUEST_ERRORS
             || (*Irp).IoStatus.__bindgen_anon_1.Status == STATUS_DELETE_PENDING
         {
-            DPRINT_SCE(
+            DPRINT_SCE!(
                 b"USBH_ChangeIndication: HubExtension->RequestErrors - %x\n\0".as_ptr() as *const i8,
                 (*HubExtension).RequestErrors,
             );
@@ -2582,7 +2580,7 @@ pub unsafe extern "system" fn USBH_ChangeIndication(
             return STATUS_MORE_PROCESSING_REQUIRED;
         }
 
-        DPRINT_SCE(
+        DPRINT_SCE!(
             b"USBH_ChangeIndication: HubExtension->RequestErrors - %x\n\0".as_ptr() as *const i8,
             (*HubExtension).RequestErrors,
         );
@@ -2668,18 +2666,18 @@ pub unsafe extern "system" fn USBH_SubmitStatusChangeTransfer(
     let Urb: *mut _URB_BULK_OR_INTERRUPT_TRANSFER;
     let IoStack: PIO_STACK_LOCATION;
 
-    DPRINT_SCE(
+    DPRINT_SCE!(
         b"USBH_SubmitStatusChangeTransfer: HubExtension - %p, SCEIrp - %p\n\0".as_ptr() as *const i8,
         HubExtension,
         (*HubExtension).SCEIrp,
     );
 
     if (*HubExtension).HubFlags & USBHUB_FDO_FLAG_NOT_D0_STATE != 0 {
-        DPRINT_SCE(
+        DPRINT_SCE!(
             b"USBH_SubmitStatusChangeTransfer: USBHUB_FDO_FLAG_NOT_D0_STATE\n\0".as_ptr()
                 as *const i8,
         );
-        DPRINT_SCE(
+        DPRINT_SCE!(
             b"USBH_SubmitStatusChangeTransfer: HubFlags - %lX\n\0".as_ptr() as *const i8,
             (*HubExtension).HubFlags,
         );
@@ -4276,9 +4274,9 @@ pub unsafe extern "system" fn USBH_ProcessDeviceInformation(
     USBHUB_DumpingDeviceDescriptor(core::ptr::addr_of_mut!((*PortExtension).DeviceDescriptor));
     USBHUB_DumpingConfiguration(ConfigDescriptor);
 
-    // DPRINT_PNP("USBH_ProcessDeviceInformation: Class - %x, SubClass - %x, Protocol - %x\n", ...)
+    // DPRINT_PNP!("USBH_ProcessDeviceInformation: Class - %x, SubClass - %x, Protocol - %x\n", ...)
 
-    // DPRINT_PNP("USBH_ProcessDeviceInformation: bNumConfigurations - %x, bNumInterfaces - %x\n", ...)
+    // DPRINT_PNP!("USBH_ProcessDeviceInformation: bNumConfigurations - %x, bNumInterfaces - %x\n", ...)
 
     /* Enumeration of USB Composite Devices (msdn): ... */
 
@@ -5368,7 +5366,7 @@ pub unsafe extern "system" fn DriverEntry(
 // USBH_PassIrp(IN PDEVICE_OBJECT DeviceObject,
 //              IN PIRP Irp)
 // {
-//     DPRINT_PNP("USBH_PassIrp: DeviceObject - %p, Irp - %p\n",
+//     DPRINT_PNP!("USBH_PassIrp: DeviceObject - %p, Irp - %p\n",
 //                DeviceObject,
 //                Irp);
 //
@@ -6914,7 +6912,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     HubExtension = Context;
 //
-//     DPRINT_SCE("USBH_ChangeIndicationAckChangeComplete: ... \n");
+//     DPRINT_SCE!("USBH_ChangeIndicationAckChangeComplete: ... \n");
 //
 //     ASSERT(HubExtension->Port > 0);
 //     Port = HubExtension->Port - 1;
@@ -6952,7 +6950,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PIO_STACK_LOCATION IoStack;
 //     BM_REQUEST_TYPE RequestType;
 //
-//     DPRINT_SCE("USBH_ChangeIndicationAckChange: ... \n");
+//     DPRINT_SCE!("USBH_ChangeIndicationAckChange: ... \n");
 //
 //     Urb->Hdr.Length = sizeof(struct _URB_CONTROL_VENDOR_OR_CLASS_REQUEST);
 //     Urb->Hdr.Function = URB_FUNCTION_CLASS_OTHER;
@@ -7006,7 +7004,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     HubExtension = Context;
 //
-//     DPRINT_SCE("USBH_ChangeIndicationProcessChange: PortStatus - %lX\n",
+//     DPRINT_SCE!("USBH_ChangeIndicationProcessChange: PortStatus - %lX\n",
 //                HubExtension->PortStatus.AsUlong32);
 //
 //     if ((NT_SUCCESS(Irp->IoStatus.Status) ||
@@ -7065,7 +7063,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PIO_STACK_LOCATION IoStack;
 //     BM_REQUEST_TYPE RequestType;
 //
-//     DPRINT_SCE("USBH_ChangeIndicationQueryChange: Port - %x\n", Port);
+//     DPRINT_SCE!("USBH_ChangeIndicationQueryChange: Port - %x\n", Port);
 //
 //     InterlockedIncrement(&HubExtension->PendingRequestCount);
 //
@@ -7132,7 +7130,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     USB_HUB_CHANGE HubStatusChange;
 //
-//     DPRINT_SCE("USBH_ProcessHubStateChange: HubStatus - %lx\n", HubStatus->AsUlong32);
+//     DPRINT_SCE!("USBH_ProcessHubStateChange: HubStatus - %lx\n", HubStatus->AsUlong32);
 //
 //     HubStatusChange = HubStatus->HubChange;
 //
@@ -7174,7 +7172,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USHORT RequestValue;
 //     KIRQL Irql;
 //
-//     DPRINT_SCE("USBH_ProcessPortStateChange ... \n");
+//     DPRINT_SCE!("USBH_ProcessPortStateChange ... \n");
 //
 //     ASSERT(Port > 0);
 //     PortData = &HubExtension->PortData[Port - 1];
@@ -7456,7 +7454,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     NTSTATUS Status;
 //     USHORT Port = 0;
 //
-//     DPRINT_SCE("USBH_ChangeIndicationWorker ... \n");
+//     DPRINT_SCE!("USBH_ChangeIndicationWorker ... \n");
 //
 //     WorkItem = Context;
 //
@@ -7480,7 +7478,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         goto Enum;
 //     }
 //
-//     DPRINT_SCE("USBH_ChangeIndicationWorker: RequestErrors - %x\n",
+//     DPRINT_SCE!("USBH_ChangeIndicationWorker: RequestErrors - %x\n",
 //                HubExtension->RequestErrors);
 //
 //     if (HubExtension->LowerPDO == HubExtension->RootHubPdo)
@@ -7638,7 +7636,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     HubExtension = Context;
 //     UrbStatus = HubExtension->SCEWorkerUrb.Hdr.Status;
 //
-//     DPRINT_SCE("USBH_ChangeIndication: IrpStatus - %x, UrbStatus - %x, HubFlags - %lX\n",
+//     DPRINT_SCE!("USBH_ChangeIndication: IrpStatus - %x, UrbStatus - %x, HubFlags - %lX\n",
 //                Irp->IoStatus.Status,
 //                UrbStatus,
 //                HubExtension->HubFlags);
@@ -7660,13 +7658,13 @@ pub unsafe extern "system" fn DriverEntry(
 //             HubExtension->RequestErrors > USBHUB_MAX_REQUEST_ERRORS ||
 //             Irp->IoStatus.Status == STATUS_DELETE_PENDING)
 //         {
-//             DPRINT_SCE("USBH_ChangeIndication: HubExtension->RequestErrors - %x\n",
+//             DPRINT_SCE!("USBH_ChangeIndication: HubExtension->RequestErrors - %x\n",
 //                        HubExtension->RequestErrors);
 //
 //             return STATUS_MORE_PROCESSING_REQUIRED;
 //         }
 //
-//         DPRINT_SCE("USBH_ChangeIndication: HubExtension->RequestErrors - %x\n",
+//         DPRINT_SCE!("USBH_ChangeIndication: HubExtension->RequestErrors - %x\n",
 //                    HubExtension->RequestErrors);
 //     }
 //     else
@@ -7750,14 +7748,14 @@ pub unsafe extern "system" fn DriverEntry(
 //     struct _URB_BULK_OR_INTERRUPT_TRANSFER * Urb;
 //     PIO_STACK_LOCATION IoStack;
 //
-//     DPRINT_SCE("USBH_SubmitStatusChangeTransfer: HubExtension - %p, SCEIrp - %p\n",
+//     DPRINT_SCE!("USBH_SubmitStatusChangeTransfer: HubExtension - %p, SCEIrp - %p\n",
 //                HubExtension,
 //                HubExtension->SCEIrp);
 //
 //     if (HubExtension->HubFlags & USBHUB_FDO_FLAG_NOT_D0_STATE)
 //     {
-//         DPRINT_SCE("USBH_SubmitStatusChangeTransfer: USBHUB_FDO_FLAG_NOT_D0_STATE\n");
-//         DPRINT_SCE("USBH_SubmitStatusChangeTransfer: HubFlags - %lX\n",
+//         DPRINT_SCE!("USBH_SubmitStatusChangeTransfer: USBHUB_FDO_FLAG_NOT_D0_STATE\n");
+//         DPRINT_SCE!("USBH_SubmitStatusChangeTransfer: HubFlags - %lX\n",
 //                    HubExtension->HubFlags);
 //
 //         return STATUS_INVALID_DEVICE_STATE;
@@ -9396,12 +9394,12 @@ pub unsafe extern "system" fn DriverEntry(
 //     USBHUB_DumpingDeviceDescriptor(&PortExtension->DeviceDescriptor);
 //     USBHUB_DumpingConfiguration(ConfigDescriptor);
 //
-//     DPRINT_PNP("USBH_ProcessDeviceInformation: Class - %x, SubClass - %x, Protocol - %x\n",
+//     DPRINT_PNP!("USBH_ProcessDeviceInformation: Class - %x, SubClass - %x, Protocol - %x\n",
 //                PortExtension->DeviceDescriptor.bDeviceClass,
 //                PortExtension->DeviceDescriptor.bDeviceSubClass,
 //                PortExtension->DeviceDescriptor.bDeviceProtocol);
 //
-//     DPRINT_PNP("USBH_ProcessDeviceInformation: bNumConfigurations - %x, bNumInterfaces - %x\n",
+//     DPRINT_PNP!("USBH_ProcessDeviceInformation: bNumConfigurations - %x, bNumInterfaces - %x\n",
 //                PortExtension->DeviceDescriptor.bNumConfigurations,
 //                ConfigDescriptor->bNumInterfaces);
 //

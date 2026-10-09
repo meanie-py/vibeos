@@ -1,4 +1,5 @@
-//! arch/arm64/debug.c — ARM64 UEFI debug stubs (PL011 UART).
+//! arch/arm64/debug.c — ARM64 UEFI debug stubs (the ACPI console UART: a PL011,
+//! or a 16550 in memory space).
 //!
 //! Used only by uefildr.efi (arm64). Provides:
 //!   - Rs232PortInitialize / Rs232PortPutByte — for the debug.rs serial path
@@ -19,11 +20,16 @@ use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 // Zero until firmware describes a supported UART. Never probe a QEMU address
 // on unknown hardware: that address can be ordinary RAM on a physical board.
 static UART_BASE: AtomicUsize = AtomicUsize::new(0);
+// Its register model, Uart::encode()'s form.
+static UART_KIND: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 // The validated XSDT that answered the UART query, kept so later loader stages
 // can consult the same tables without re-walking the EFI configuration table.
 static XSDT_BASE: AtomicU64 = AtomicU64::new(0);
 
 pub fn uart_base() -> usize { UART_BASE.load(Ordering::Relaxed) }
+
+/// The console UART's register model, as `Uart::encode` gives it to the kernel.
+pub fn uart_kind() -> u32 { UART_KIND.load(Ordering::Relaxed) }
 
 /// Physical address of the XSDT, or zero if ACPI discovery never succeeded.
 pub fn xsdt_base() -> u64 { XSDT_BASE.load(Ordering::Relaxed) }
@@ -48,8 +54,9 @@ pub unsafe fn initialize(system: *mut EFI_SYSTEM_TABLE) -> bool {
             || rsdp.length > 4096 { continue; }
         let all = core::slice::from_raw_parts(ptr.cast::<u8>(), rsdp.length as usize);
         if all.iter().fold(0u8, |s,b| s.wrapping_add(*b)) != 0 { continue; }
-        if let Some(base) = crate::arm64_serial_acpi::from_xsdt(rsdp.xsdt_physical_address) {
-            UART_BASE.store(base as usize, Ordering::Relaxed);
+        if let Some(uart) = crate::arm64_serial_acpi::from_xsdt(rsdp.xsdt_physical_address) {
+            UART_KIND.store(uart.encode(), Ordering::Relaxed);
+            UART_BASE.store(uart.base as usize, Ordering::Relaxed);
             XSDT_BASE.store(rsdp.xsdt_physical_address, Ordering::Relaxed);
             return true;
         }
@@ -72,6 +79,24 @@ pub unsafe extern "C" fn Rs232PortPutByte(ByteToSend: UCHAR) {
     // any normal loader work. A panic before discovery must not touch MMIO.
     if base == 0 { return; }
     // Preserve the firmware's baud and clock settings. Wait for FIFO space.
+    let kind = uart_kind();
+    if kind & 0xFF == crate::arm64_serial_acpi::MACHINE_UART_NS16550 {
+        // 16550: THR at 0, LSR (register 5) bit 5 = transmit holding register empty.
+        let shift = (kind >> 8) & 0xF;
+        let lsr = base + (5 << shift);
+        if (kind >> 16) & 0xF == 4 {
+            while core::ptr::read_volatile(lsr as *const u32) & 0x20 == 0 {
+                core::hint::spin_loop();
+            }
+            core::ptr::write_volatile(base as *mut u32, ByteToSend as u32);
+        } else {
+            while core::ptr::read_volatile(lsr as *const u8) & 0x20 == 0 {
+                core::hint::spin_loop();
+            }
+            core::ptr::write_volatile(base as *mut u8, ByteToSend);
+        }
+        return;
+    }
     let flags = (base + 0x18) as *const u32;
     while core::ptr::read_volatile(flags) & (1 << 5) != 0 {
         core::hint::spin_loop();

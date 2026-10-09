@@ -76,11 +76,11 @@ pub unsafe extern "system" fn Pin_fnDeviceIoControl(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Context: PDISPATCH_CONTEXT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = 0;
+    let Context: PDISPATCH_CONTEXT;
+    let mut Status: NTSTATUS;
     let mut BytesReturned: ULONG = 0;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
-    let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let IoStack: PIO_STACK_LOCATION;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
@@ -129,10 +129,10 @@ pub unsafe extern "system" fn Pin_fnDeviceIoControl(
 }
 #[no_mangle]
 pub unsafe extern "system" fn Pin_fnWrite(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
-    let mut Context: PDISPATCH_CONTEXT = core::ptr::null_mut();
-    let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let Context: PDISPATCH_CONTEXT;
+    let mut IoStack: PIO_STACK_LOCATION;
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
     Context = (*(*IoStack).FileObject).FsContext as PDISPATCH_CONTEXT;
@@ -186,8 +186,8 @@ pub unsafe extern "system" fn Pin_fnWrite(DeviceObject: PDEVICE_OBJECT, Irp: PIR
 
 #[no_mangle]
 pub unsafe extern "system" fn Pin_fnClose(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
-    let mut Context: PDISPATCH_CONTEXT = core::ptr::null_mut();
-    let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let Context: PDISPATCH_CONTEXT;
+    let IoStack: PIO_STACK_LOCATION;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 
@@ -216,7 +216,7 @@ pub unsafe extern "C" fn SetMixerInputOutputFormat(
 ) -> i32 {
     let mut PinRequest: crate::types::KSP_PIN = core::mem::zeroed();
     let mut BytesReturned: u32 = 0;
-    let mut Status: i32 = 0;
+    let mut Status: i32;
 
     PinRequest.Property.Set = crate::types::KSPROPSETID_Connection;
     PinRequest.Property.Flags = KSPROPERTY_TYPE_SET;
@@ -310,10 +310,9 @@ pub unsafe extern "system" fn InstantiatePins(
     DispatchContext: PDISPATCH_CONTEXT,
     DeviceExtension: PSYSAUDIODEVEXT,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let mut RealPinHandle: *mut core::ffi::c_void = core::ptr::null_mut::<core::ffi::c_void>();
-    let mut InputFormat: PKSDATAFORMAT_WAVEFORMATEX =
-        core::ptr::null_mut::<KSDATAFORMAT_WAVEFORMATEX>();
+    let InputFormat: PKSDATAFORMAT_WAVEFORMATEX;
     let mut OutputFormat: PKSDATAFORMAT_WAVEFORMATEX =
         core::ptr::null_mut::<KSDATAFORMAT_WAVEFORMATEX>();
     let mut MixerPinConnect: PKSPIN_CONNECT = core::ptr::null_mut::<KSPIN_CONNECT>();
@@ -429,10 +428,10 @@ pub unsafe extern "system" fn DispatchCreateSysAudioPin(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut IoStack: PIO_STACK_LOCATION = core::ptr::null_mut();
-    let mut DeviceEntry: PKSAUDIO_DEVICE_ENTRY = core::ptr::null_mut();
+    let IoStack: PIO_STACK_LOCATION;
+    let DeviceEntry: PKSAUDIO_DEVICE_ENTRY;
     let mut Connect: PKSPIN_CONNECT = core::ptr::null_mut();
-    let mut DispatchContext: PDISPATCH_CONTEXT = core::ptr::null_mut();
+    let DispatchContext: PDISPATCH_CONTEXT;
 
     // DPRINT is disabled by NDEBUG in pin.c.
 

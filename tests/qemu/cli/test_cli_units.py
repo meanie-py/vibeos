@@ -97,6 +97,36 @@ def test_a_scoped_fingerprint_still_catches_an_in_scope_commit(tiny_repo: Path):
     assert provenance.git_fingerprint(tiny_repo, scope) != before
 
 
+def test_tree_content_hash_is_the_same_committed_or_not(tiny_repo: Path):
+    """Build a dirty tree, then commit exactly what was built: the media are fresh. The
+    scoped fingerprint hashes `git diff HEAD` text, so it moved on the commit and every
+    smoke of a just-committed build said STALE_MEDIA for an identical tree."""
+    # An exclude naming a gitignored path made `git add -A -- <scope>` exit 1 in make_stamp.
+    scope = [".", ":(exclude)docs", ":(exclude).claude"]
+    (tiny_repo / ".gitignore").write_text(".claude\n")
+    (tiny_repo / ".claude").mkdir()
+    (tiny_repo / ".claude" / "s.json").write_text("{}\n")
+    (tiny_repo / "kernel.c").write_text("int k;\n")
+    (tiny_repo / "a.txt").write_text("edited\n")
+    dirty = provenance.tree_content_hash(tiny_repo, scope)
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "commit what was built")
+    assert provenance.tree_content_hash(tiny_repo, scope) == dirty
+    # ...while the index the user is staging in is left alone, and content still counts.
+    (tiny_repo / "kernel.c").write_text("int k2;\n")
+    assert provenance.tree_content_hash(tiny_repo, scope) != dirty
+    assert (
+        b"kernel.c"
+        not in subprocess.run(
+            ["git", "diff", "--cached", "--name-only"], cwd=tiny_repo, capture_output=True
+        ).stdout
+    )
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "n.md").write_text("x\n")
+    (tiny_repo / "kernel.c").write_text("int k;\n")
+    assert provenance.tree_content_hash(tiny_repo, scope) == dirty, "excluded path"
+
+
 def test_an_unscoped_fingerprint_still_tracks_HEAD(tiny_repo: Path):
     """Unscoped is the coarse tier-1 gate and SHOULD move on any commit: there is
     no scope to respect, so whole-tree identity is the right question."""
@@ -9771,6 +9801,59 @@ def test_nvme_fail_start_must_hand_its_messages_back(monkeypatch):
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
 
 
+def test_server_shaped_boots_must_prove_their_shape(monkeypatch):
+    """--headless and --boot-nvme reach the same desktop as an ordinary boot, so
+    only their own evidence says the rig really had no display, or really booted
+    from NVMe and left that volume to nvme.sys."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_HEADLESS", "1")
+    bad = smoke_mod._headless_check("[arm64vid] Framebuffer: 800x600 32 BPP\n")
+    assert bad and bad["classification"] == "NOT_HEADLESS"
+    assert (
+        smoke_mod._headless_check("[arm64vid] no firmware framebuffer: headless, 1024x768\n")
+        is None
+    )
+    monkeypatch.delenv("VIBEOS_QEMU_HEADLESS")
+    assert smoke_mod._headless_check("") is None
+    monkeypatch.setenv("VIBEOS_QEMU_BOOT_NVME", "1")
+    bad = smoke_mod._boot_nvme_check("[NVME] controller 0: bring-up failed\n")
+    assert bad and bad["classification"] == "NVME_BOOT_DISK_NOT_SEEN"
+    assert smoke_mod._boot_nvme_check(smoke_mod._NVME_PUBLISHED + "\n") is None
+    monkeypatch.delenv("VIBEOS_QEMU_BOOT_NVME")
+    assert smoke_mod._boot_nvme_check("") is None
+
+
+def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
+    """A translating SMMU's verdict is its faults: an attached device that DMAs
+    outside the identity map still reaches the desktop."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE")
+    bad = smoke_mod._gic_check(
+        "[HAL] IORT: SMMUv3 at 0000000009050000 was disabled; now bypassing\n"
+    )
+    assert bad and bad["classification"] == "SMMU_NOT_TRANSLATING"
+    on = "[HAL] SMMUv3 at 0000000009050000: TRANSLATING - 16 StreamID bits\n"
+    attached = "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - translating\n"
+    bad = smoke_mod._gic_check(on)
+    assert bad and bad["classification"] == "SMMU_NOT_ATTACHED"
+    assert smoke_mod._gic_check(on + attached) is None
+    fault = "[HAL] SMMUv3 at 0000000009050000: FAULT type 10 StreamID 48 address {:016x}\n"
+    bad = smoke_mod._gic_check(on + attached + fault.format(0x1000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_BAD_DMA=100000000")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_MISSED_BAD_DMA"
+    caught = fault.format(0x1_0000_0000) + fault.format(0x1_0000_0FFC)
+    assert smoke_mod._gic_check(on + attached + caught) is None
+    bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU")
+
+
 def test_xhci_boot_must_interrupt_the_way_asked(monkeypatch):
     """A controller left on its line still enumerates, and the desktop needs no USB,
     so only the verdict can tell a broken message path from a working one."""
@@ -10809,6 +10892,49 @@ def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
     assert exe.read_text().strip() == "built"
     assert pc.stale_binaries("demo", "arm64") == []
     assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
+
+
+def _fake_receipts(pc, monkeypatch, stale_arches):
+    """compile.py's receipt modules replaced: `missing` answers `stale_arches`."""
+    import types
+
+    seen = {}
+
+    def missing(repo, tree, arches, is_inert, **kw):
+        seen["arches"] = arches
+        return [a for a in arches if a in stale_arches]
+
+    fakes = {
+        "_payload_warmth": types.SimpleNamespace(missing=missing, worktree_tree=lambda repo: "T"),
+        "_payload_docs_only": types.SimpleNamespace(is_inert=lambda p: False),
+    }
+    monkeypatch.setattr(pc, "_load_by_path", lambda modname, path: fakes[modname])
+    return seen
+
+
+def test_payload_guest_set_from_a_stale_build_dies(tmp_path, monkeypatch, capsys):
+    """A guest set stages ANOTHER arch's build outputs, which this arch's build never
+    rebuilds: an appstorm64 run tested a taskmgr.exe older than the fix it was checking.
+    No receipt for this tree on that arch -> refuse, naming the build to run."""
+    pc = _load_payload_compile()
+    seen = _fake_receipts(pc, monkeypatch, {"amd64"})
+    with pytest.raises(SystemExit):
+        pc.guest_build_current("appstorm64", tmp_path / "build-amd64")
+    assert seen["arches"] == ("amd64",)
+    assert "./vibeos-cli build --arch amd64" in capsys.readouterr().err
+
+
+def test_payload_guest_set_from_a_current_build_passes(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    _fake_receipts(pc, monkeypatch, set())
+    pc.guest_build_current("appstorm64", tmp_path / "build-amd64")  # no SystemExit
+
+
+def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    _fake_receipts(pc, monkeypatch, set())
+    with pytest.raises(SystemExit):
+        pc.guest_build_current("appstorm64", tmp_path / "somewhere-else")
 
 
 def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):

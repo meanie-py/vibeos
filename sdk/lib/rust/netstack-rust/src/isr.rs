@@ -1,22 +1,25 @@
-//! Interrupt-driven RX (M10, amd64) — virtio INTx → ISR → DPC → event.
+//! Interrupt-driven RX (M10): NIC interrupt → ISR → DPC → event.
 //!
 //! The smoltcp worker busy-polls with a short `delay_ms` by default. This module
-//! connects the virtio-net device's legacy INTx so an arriving frame wakes the
-//! worker through a `SynchronizationEvent` instead, dropping idle CPU and RX
-//! latency. The discipline (matches `scsiport-rust`'s model):
+//! connects the NIC's interrupt so an arriving frame (or a finished transmit)
+//! wakes the worker through a `SynchronizationEvent` instead, dropping idle CPU
+//! and latency. The discipline (matches `scsiport-rust`'s model):
 //!
-//!   - ISR (at DIRQL): `ack_interrupt` reads+clears the device ISR status
-//!     register (deasserting the shared INTx line); if the used ring advanced it
-//!     queues the DPC and returns TRUE, else FALSE so the chained ISRs run.
-//!   - DPC (at DISPATCH): `KeSetEvent` on the RX event.
+//!   - ISR (at DIRQL): the backend's `ack` reads and clears the device's own
+//!     interrupt status, deasserting a shared level line. Not ours → FALSE, so
+//!     the chained ISRs run; ours → TRUE, queueing the DPC if the worker has
+//!     something to do.
+//!   - DPC (at DISPATCH): `KeSetEvent` on the event.
 //!   - worker (at PASSIVE): waits on the event with the poll deadline as the
 //!     fallback timeout, then runs `iface.poll` exactly as before.
 //!
-//! The ISR/DPC touch ONLY the ISR status register + the event/DPC — never the
-//! Interface / SocketSet / queue descriptors — so the worker stays the sole owner
-//! of the smoltcp state at PASSIVE. x86 only (i386 + amd64): both use the same
-//! working x86 HAL `HalGetInterruptVector` + IOAPIC routing. arm64's
-//! `HalGetInterruptVector` is a stub returning 0, so it stays on polling.
+//! The ISR/DPC touch ONLY the status register and the event/DPC — never the
+//! Interface / SocketSet / descriptor rings — so the worker stays the sole owner
+//! of the smoltcp state at PASSIVE.
+//!
+//! Two callers: virtio-net's legacy INTx on x86, routed by the x86 HAL's
+//! `HalGetInterruptVector` (`connect`), and the platform NICs on arm64, whose
+//! translated interrupt resource comes from PnP START (`connect_resource`).
 //!
 //! ABI note: the ISR (PKSERVICE_ROUTINE) and DPC (PKDEFERRED_ROUTINE) callbacks
 //! are NTAPI — cdecl on amd64, but **stdcall on i386** — so both are declared
@@ -28,58 +31,70 @@ use core::ptr::null_mut;
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use ntkrnl_sys::ddk::{
-    HalGetInterruptVector, IoConnectInterrupt, KAFFINITY, KDPC, KEVENT, KSPIN_LOCK,
-    KeInitializeDpc, KeInitializeEvent, KeInsertQueueDpc, KeSetEvent, PKDEFERRED_ROUTINE,
-    PKINTERRUPT, PKSERVICE_ROUTINE, PVOID, _KDPC, _KINTERRUPT,
+    IoConnectInterrupt, KAFFINITY, KDPC, KEVENT, KSPIN_LOCK, KeInitializeDpc, KeInitializeEvent,
+    KeInsertQueueDpc, KeSetEvent, PKDEFERRED_ROUTINE, PKINTERRUPT, PKSERVICE_ROUTINE, PVOID, _KDPC, _KINTERRUPT,
 };
 
-use crate::device::{self, NetDev};
 use crate::serial::nsprint;
 
-const PCI_BUS: i32 = 5; // _INTERFACE_TYPE_PCIBus (INTERFACE_TYPE = c_int)
 const LEVEL_SENSITIVE: u32 = 0; // _KINTERRUPT_MODE_LevelSensitive (c_uint)
+const LATCHED: u32 = 1; // _KINTERRUPT_MODE_Latched
 const SYNCHRONIZATION_EVENT: u32 = 1; // _EVENT_TYPE_SynchronizationEvent (c_uint)
-const VIRTIO_ISR_QUEUE: u32 = 1 << 0; // InterruptStatus::QUEUE_INTERRUPT
 
-/// Count of RX interrupts serviced (DPC fires) + a one-shot "first" latch, so a
-/// runtime test can prove the ISR→DPC→event path is live rather than the worker
-/// merely riding the fallback timeout.
+/// What a backend's `ack` found in its device's interrupt status.
+#[derive(Clone, Copy, PartialEq)]
+pub enum Ack {
+    /// Status clear: another device on a shared line.
+    NotOurs,
+    /// Ours, acknowledged, nothing for the worker.
+    Handled,
+    /// Ours, acknowledged: wake the worker.
+    Wake,
+}
+
+/// Reads and clears the device's interrupt status, at DIRQL. `ctx` is what was
+/// passed to connect.
+pub type AckFn = unsafe fn(ctx: PVOID) -> Ack;
+
+/// Count of interrupts that woke the worker (DPC fires) + a one-shot "first"
+/// latch, so a runtime test can prove the ISR→DPC→event path is live rather
+/// than the worker merely riding the fallback timeout.
 static RX_IRQS: AtomicU32 = AtomicU32::new(0);
 static FIRST_IRQ: AtomicBool = AtomicBool::new(false);
 
-/// Total RX interrupts serviced so far (for diagnostics/tests).
+/// Total interrupts that woke the worker so far (for diagnostics/tests).
 pub fn rx_irq_count() -> u32 {
     RX_IRQS.load(Ordering::Relaxed)
 }
 
 /// ISR/DPC shared state. Boxed + leaked to `'static`: the worker never returns,
 /// and the ISR/DPC reference this asynchronously, so it needs a stable address
-/// that outlives `connect`.
+/// that outlives connect.
 #[repr(C)]
 struct RxIsr {
     event: KEVENT,
     dpc: KDPC,
     spinlock: KSPIN_LOCK,
     interrupt: PKINTERRUPT,
-    dev: *mut NetDev,
+    ack: AckFn,
+    ctx: PVOID,
 }
 
-/// Interrupt service routine (DIRQL). Ack the device, wake the worker on RX.
+/// Interrupt service routine (DIRQL). Ack the device, wake the worker.
 unsafe extern "system" fn isr(_interrupt: *mut _KINTERRUPT, ctx: PVOID) -> u8 {
     let s = ctx as *mut RxIsr;
-    let bits = device::ack_interrupt((*s).dev);
-    if bits == 0 {
-        return 0; // FALSE — ISR status clear: not our (shared) interrupt
+    match ((*s).ack)((*s).ctx) {
+        Ack::NotOurs => 0, // FALSE: let the chained ISRs look
+        Ack::Handled => 1,
+        Ack::Wake => {
+            // Defer the wake to DISPATCH (can't touch the event dispatcher at DIRQL).
+            KeInsertQueueDpc(&mut (*s).dpc, null_mut(), null_mut());
+            1
+        }
     }
-    if bits & VIRTIO_ISR_QUEUE != 0 {
-        // Used ring advanced — defer the wake to DISPATCH (can't touch the event
-        // dispatcher at DIRQL).
-        KeInsertQueueDpc(&mut (*s).dpc, null_mut(), null_mut());
-    }
-    1 // TRUE — handled
 }
 
-/// DPC (DISPATCH). Signal the worker's RX event.
+/// DPC (DISPATCH). Signal the worker's event.
 unsafe extern "system" fn dpc(_dpc: *mut _KDPC, ctx: PVOID, _a1: PVOID, _a2: PVOID) {
     let s = ctx as *mut RxIsr;
     RX_IRQS.fetch_add(1, Ordering::Relaxed);
@@ -94,16 +109,26 @@ unsafe extern "system" fn dpc(_dpc: *mut _KDPC, ctx: PVOID, _a1: PVOID, _a2: PVO
     KeSetEvent(&mut (*s).event, 0, 0);
 }
 
-/// Connect the virtio-net INTx (`interrupt_line` from PCI config 0x3C) to the RX
-/// ISR. Returns the RX event the worker should wait on, or null on any failure
-/// (the worker then falls back to pure polling — no functional regression).
-pub unsafe fn connect(dev: *mut NetDev, interrupt_line: u32) -> *mut KEVENT {
+/// Connect `ack` to a translated interrupt. Returns the event the worker should
+/// wait on, or null on failure (the worker then keeps polling: no functional
+/// regression). On a shared line the caller must not let its device raise the
+/// interrupt until this has returned non-null, or nobody claims it.
+pub unsafe fn connect_resource(
+    ack: AckFn,
+    ctx: PVOID,
+    vector: u32,
+    irql: u8,
+    affinity: KAFFINITY,
+    latched: bool,
+    shared: bool,
+) -> *mut KEVENT {
     let s = Box::leak(Box::new(RxIsr {
         event: core::mem::zeroed(),
         dpc: core::mem::zeroed(),
         spinlock: 0,
         interrupt: null_mut(),
-        dev,
+        ack,
+        ctx,
     }));
     KeInitializeEvent(&mut s.event, SYNCHRONIZATION_EVENT, 0);
     // The NTAPI callback fn-pointer types are cdecl on amd64 but stdcall on i386;
@@ -114,25 +139,6 @@ pub unsafe fn connect(dev: *mut NetDev, interrupt_line: u32) -> *mut KEVENT {
     let isr_routine: PKSERVICE_ROUTINE = Some(core::mem::transmute(isr as *const ()));
     KeInitializeDpc(&mut s.dpc, dpc_routine, s as *mut _ as PVOID);
 
-    let mut irql: u8 = 0;
-    let mut affinity: KAFFINITY = 0;
-    // For PCI the bus interrupt level and vector are both the routed IRQ line.
-    let vector = HalGetInterruptVector(
-        PCI_BUS,
-        0,
-        interrupt_line,
-        interrupt_line,
-        &mut irql,
-        &mut affinity,
-    );
-    if vector == 0 || affinity == 0 {
-        nsprint!(
-            "[NETSTACK] M10: HalGetInterruptVector failed (line {}) — polling\n",
-            interrupt_line
-        );
-        return null_mut();
-    }
-
     let status = IoConnectInterrupt(
         &mut s.interrupt,
         isr_routine,
@@ -141,21 +147,52 @@ pub unsafe fn connect(dev: *mut NetDev, interrupt_line: u32) -> *mut KEVENT {
         vector,
         irql,
         irql,
-        LEVEL_SENSITIVE, // INTx is level-triggered
-        1,               // ShareVector — INTx is shared
+        if latched { LATCHED } else { LEVEL_SENSITIVE },
+        shared as u8,
         affinity,
         0, // FloatingSave
     );
     if status < 0 {
-        nsprint!(
-            "[NETSTACK] M10: IoConnectInterrupt failed {:#010x} — polling\n",
-            status as u32
-        );
+        nsprint!("[NETSTACK] M10: IoConnectInterrupt failed {:#010x} — polling\n", status as u32);
         return null_mut();
     }
-    nsprint!(
-        "[NETSTACK] M10: interrupt-driven RX connected (line {}, vector {}, irql {})\n",
-        interrupt_line, vector, irql
-    );
+    nsprint!("[NETSTACK] M10: interrupt-driven RX connected (vector {}, irql {})\n", vector, irql);
     &mut s.event
+}
+
+/// virtio-net's ack: read and clear the ISR status register (deasserting the
+/// shared INTx line); wake the worker if the used ring advanced.
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+unsafe fn virtio_ack(dev: PVOID) -> Ack {
+    const VIRTIO_ISR_QUEUE: u32 = 1 << 0; // InterruptStatus::QUEUE_INTERRUPT
+    match crate::device::ack_interrupt(dev as *mut crate::device::NetDev) {
+        0 => Ack::NotOurs,
+        bits if bits & VIRTIO_ISR_QUEUE != 0 => Ack::Wake,
+        _ => Ack::Handled,
+    }
+}
+
+/// Connect the virtio-net INTx (`interrupt_line` from PCI config 0x3C) to the RX
+/// ISR. Returns the RX event the worker should wait on, or null on any failure.
+#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+pub unsafe fn connect(dev: *mut crate::device::NetDev, interrupt_line: u32) -> *mut KEVENT {
+    const PCI_BUS: i32 = 5; // _INTERFACE_TYPE_PCIBus (INTERFACE_TYPE = c_int)
+    let mut irql: u8 = 0;
+    let mut affinity: KAFFINITY = 0;
+    // For PCI the bus interrupt level and vector are both the routed IRQ line.
+    let vector = ntkrnl_sys::ddk::HalGetInterruptVector(
+        PCI_BUS,
+        0,
+        interrupt_line,
+        interrupt_line,
+        &mut irql,
+        &mut affinity,
+    );
+    if vector == 0 || affinity == 0 {
+        nsprint!("[NETSTACK] M10: HalGetInterruptVector failed (line {}) — polling\n", interrupt_line);
+        return null_mut();
+    }
+    nsprint!("[NETSTACK] M10: virtio INTx line {}\n", interrupt_line);
+    // INTx is level-triggered and shared.
+    connect_resource(virtio_ack, dev as PVOID, vector, irql, affinity, false, true)
 }

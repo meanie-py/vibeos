@@ -376,8 +376,12 @@ unsafe fn TrimWsList(WsList: PMMWSL) -> ULONG {
             }
 
             MI_MAKE_TRANSITION_PTE(&mut *PointerPte, Page, Protection as ULONG);
-            // C: KeInvalidateTlbEntry(MiAddressToPte(PointerPte)) — this is the PTE that maps PointerPte
-            KeInvalidateTlbEntry(MiAddressToPte(PointerPte as PVOID) as PVOID);
+            // The page's own translation, EntryVA. The C (wslist.cpp) invalidates
+            // MiAddressToPte(PointerPte) -- the mapping of the page TABLE -- and leaves
+            // the trimmed page's TLB entry live: a write through it lands in a page
+            // already on the standby/modified list, never marks it modified, and once
+            // the page is repurposed corrupts its new owner.
+            KeInvalidateTlbEntry(EntryVA);
             MiDecrementShareCount(Pfn as *mut _MMPFN, Page as _);
 
             // [guard-drop] MiReleasePfnLock(OldIrql);

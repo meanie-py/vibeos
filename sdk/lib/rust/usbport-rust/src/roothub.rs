@@ -579,7 +579,7 @@ pub unsafe extern "system" fn USBPORT_RootHubSCE(Transfer: PUSBPORT_TRANSFER) ->
     /* Scan all the ports for changes */
     Port = 1;
     while Port <= NumberOfPorts as ULONG {
-        DPRINT_CORE(b"USBPORT_RootHubSCE: Port - %p\n\0".as_ptr() as *const i8, Port);
+        DPRINT_CORE!(b"USBPORT_RootHubSCE: Port - %p\n\0".as_ptr() as *const i8, Port);
 
         /* Request the port status from miniport */
         if ((*Packet).RH_GetPortStatus.unwrap())(
@@ -650,7 +650,7 @@ pub unsafe extern "system" fn USBPORT_RootHubEndpointWorker(Endpoint: PUSBPORT_E
     let USBDStatus: USBD_STATUS;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_RootHubEndpointWorker: Endpoint - %p\n\0".as_ptr() as *const i8,
         Endpoint,
     );
@@ -1706,7 +1706,7 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
 //     /* Scan all the ports for changes */
 //     for (Port = 1; Port <= NumberOfPorts; Port++)
 //     {
-//         DPRINT_CORE("USBPORT_RootHubSCE: Port - %p\n", Port);
+//         DPRINT_CORE!("USBPORT_RootHubSCE: Port - %p\n", Port);
 //
 //         /* Request the port status from miniport */
 //         if (Packet->RH_GetPortStatus(FdoExtension->MiniPortExt,
@@ -1774,7 +1774,7 @@ pub unsafe extern "system" fn USBPORT_RootHubPowerAndChirpAllCcPorts(FdoDevice: 
 //     USBD_STATUS USBDStatus;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_RootHubEndpointWorker: Endpoint - %p\n", Endpoint);
+//     DPRINT_CORE!("USBPORT_RootHubEndpointWorker: Endpoint - %p\n", Endpoint);
 //
 //     FdoDevice = Endpoint->FdoDevice;
 //     FdoExtension = FdoDevice->DeviceExtension;

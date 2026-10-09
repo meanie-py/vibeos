@@ -1462,6 +1462,18 @@ innocent code.** Fix: make it a `macro_rules!` (the faithful shape — C never e
 args), consume args by value (`let _ = $arg;`; `&$arg` is E0793 on a packed field), and do
 **not** type-bind the parameters, because the per-module extern decls it replaces routinely
 disagree with each other. Then fix the ABI mismatches you uncovered — they are real.
+The other face of the same trap: once the no-op is out of line, its arguments **run**, and they
+are reads the C never performs. usbport's `USBPORT_QueueTransferUrb` ends by dumping
+`*Urb->TransferBuffer` through `DPRINT_URB` after the URB is queued; with the drvtrace-shim
+no-op symbols that loop executed, and on two CPUs the transfer had already completed on the
+other one, so it read a NULL `TransferBuffer` at DISPATCH_LEVEL. Symptom far from the cause: a
+paging read failing `d0000006`/`c0000001` in cdfs (whose try/except swallowed the in-page
+exception), on half of amd64-bios `-smp 2` boots. `scan_macro_fn_shadow` now harvests every
+argument-discarding C macro (`if(0)`, `__noop`, `(void)0`) from the headers and flags an empty
+Rust fn of that name in any crate, a shim crate included. Expect the conversion itself to
+uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
+`EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
+`scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -1855,6 +1867,16 @@ copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32
 (macros + folded constants) are the two precedents. For the enum-member case above the fix is
 smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
 prelude, and delete the copies.
+
+**Not a macro either: WIDL's C wrappers and wine/heap.h (2026-10-08).** Under `__WINESRC__`
+the widl headers define `WIDL_C_INLINE_WRAPPERS`, so `IFoo_Method(This, ...)` is a `static
+inline` function, not a macro — the preprocessor lowering finds nothing, no DLL exports it, and
+a dozen crates carry hand copies of `IUnknown_Release` & co. `port macros` now GENERATES them
+from the island's `IFooVtbl` slot types with `tools/gen_commacros.py`'s parser and body
+(`((*(*This).lpVtbl).M.unwrap_unchecked())(This, ..)`: a NULL slot faults as in C); a slot
+whose callback ABI differs per arch gets one `#[cfg(target_arch)]` copy each. `heap_alloc`/`_zero`/`realloc`/`free`/`calloc` and
+`debugstr_w`/`wn`/`a`/`an` are in `win32macros-rust`; a consensus `extern` copy of `debugstr_w`
+compiles and then fails at link, since only libwine's `wine_dbgstr_wn` exists.
 
 **The pointer-width/nominal half is now generated, not ported (2026-10-08).** `port macros`
 lowers every SDK header macro a crate calls (`PropSheet_Changed`, `ListView_InsertColumn`,
@@ -2752,6 +2774,26 @@ tail into the suspend counts.
 **Generalize.** A macro spelled `FIELD_OFFSET(..) + sizeof(..)` or `RTL_SIZEOF_THROUGH_FIELD`
 exists precisely because the tail is someone else's storage. Grep for the overlay
 (`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
+
+### A header sized as the SUM of its members is short when the trailing field is wider-aligned
+**Symptom.** i386-only BUGCHECK 0x19 (BAD_POOL_HEADER) on a free in RtlSplayTreeKM, and
+NO-END in its user-mode twin; amd64 and arm64 were clean. It looked like splay-tree corruption.
+
+**Cause.** The generic table allocates each node as header + caller data, with the data
+starting at `TABLE_ENTRY_HEADER.UserData`, a `LONGLONG`. The C sizes the header with
+`FIELD_OFFSET(TABLE_ENTRY_HEADER, UserData)`, which is 24 on i386 because the LONGLONG is
+8-aligned. The translation wrote `size_of::<SplayLinks>() + size_of::<ListEntry>()` = 20,
+but writes the data through the field, at 24. So every insert overran its pool block by 4
+bytes. On 64-bit both expressions come to 40, so only i386 could ever see it. The crate's
+own unit test asserted 20, which pinned the bug in place.
+
+**Fix.** `offset_of!(TableEntryHeader, user_data)`. Use one expression for both the size
+and the write.
+
+**Generalize.** Whenever an allocation size and a data pointer are computed separately,
+they must be the same expression. Treat a sum of member sizes that stands in for
+`FIELD_OFFSET` as a bug until proven otherwise. The 32-bit targets are where alignment
+padding appears.
 
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
@@ -3799,6 +3841,15 @@ of them were **ours**, not the model's:
   is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
   read where the handler landed, not just whether it is gone.
 
+  **Permitted also means KEPT, and a kept dead arm is live code.** inetcpl's `DllMain` came back
+  with the `#ifndef __REACTOS__` `case DLL_WINE_PREATTACH: return FALSE;` — a name defined nowhere
+  in our tree, so a catch-all binding: DllMain would have refused every load. Its
+  `security_on_destroy` kept the `#ifndef __REACTOS__` `ImageList_Destroy` of a list comctl32 had
+  already freed with the listview (a double free on every close of the Security page). `port
+  integrate` now drops a `match` arm whose pattern names only identifiers the C spells solely on
+  never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
+  (statements are not safe to drop by pattern; hand-port them with `port hand`).
+
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
   `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,
@@ -4412,6 +4463,25 @@ one, and the leading underscore suppresses the unused warning that would have ex
 flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
 declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
 outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
+### Fixing one C bug can unmask another that it was hiding
+**Symptom.** SeTokenFiltering wedged in the kernel on every arch: TIMEOUT, a process that
+TerminateProcess can't reap, and every later kmtest failing with SET_RESULTBUFFER 0x5.
+Upstream ReactOS passes it.
+
+**Cause.** In `SepPerformTokenFiltering`, the group-disable loop does `GroupsInToken--;
+continue;` after disabling a group. That line was copied from the privilege loop above it,
+where the entry is REMOVED and the decrement re-examines whatever slid into its slot. A
+disabled group stays in the token, so the next pass matches it again, forever. Upstream
+never reaches that line, because its `RtlEqualSid(&...Sid, &...Sid)` compares the addresses
+of the SID pointers and so in practice never matches. The translation passed the real SIDs,
+which correctly fixed the first bug and turned the second into a hang.
+
+**Fix.** Advance past the disabled group, and leave a DIVERGES comment naming both bugs.
+
+**Generalize.** A translation that repairs a C bug has to re-read the code the bug was
+guarding. Here, code that only ran because a comparison now succeeds. In particular, check
+any `index--; continue;` for whether the loop body actually removed the entry.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 
@@ -6509,6 +6579,13 @@ why the live ones survived review: 23 sites in 9 crates, 2 live, 15 vestiges, 6 
 comments.
 **Fix:** move the label so the block spans the skipped code (`'quit: { ...; if c { break
 'quit; } ...skipped... }`), or delete a vestige. `scan_noop_goto` gates it (baseline empty).
+A second shape the scanner cannot see: **two C labels folded into one `break`.** umpnpmgr's
+`DeviceInstallThread` has `goto Step2` (skip the install loop) and `goto Cleanup` (free, then
+skip it); both became `break 'outer` out of the retry loop, landing on the install loop. So a
+failed `PNP_GetDeviceListSize` or `HeapAlloc` walked a null list, and a failed
+`PNP_GetDeviceList` freed the list, walked it, and freed it again. When a C function has
+several labels, check that each `break` lands where its own `goto` did; keep the outcome in a
+variable (here: `deviceList` stays null unless the query succeeded) rather than in the jump.
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no
@@ -7211,6 +7288,43 @@ the kernel disagree, suspect the harness first if the harness is younger.**
 - **Fix:** derive the handler ebp from the registration (`&frame->_ebp`, as Wine does for
   `_local_unwind2` and the filter calls), never from a separately saved frame pointer.
   Done in crt-shared-rust's `_seh_longjmp_unwind`/`4` and vcruntime's `_seh_longjmp_unwind.s`.
+
+### A STACK_OVERFLOW handler runs on one page — dispatch frame bloat makes it undeliverable
+**Symptom.** amd64 user-mode RtlException died with exit 128 inside RtlVirtualUnwind,
+followed by `[KI-EXC] STACK EXHAUSTED and undeliverable`. Its stack-overflow case expects
+STATUS_STACK_OVERFLOW to be caught.
+
+**Cause.** The kernel was right: it committed the guaranteed page and raised the exception
+with a 0x1c40-byte budget (`[KI-EXC] STACK_OVERFLOW dispatch` prints it). But amd64 dispatch
+is nested: the search pass's RtlpUnwindInternal → RtlVirtualUnwind, then the handler's
+RtlUnwindEx → a second RtlpUnwindInternal → RtlVirtualUnwind. Our RtlpUnwindInternal frame
+was 0xa88, because a `let restored: CONTEXT = *p;` temporary sat beside `UnwindContext`.
+RtlVirtualUnwind's was 0x508, from an inlined epilog helper's CONTEXT copy. Together they
+needed more than the budget.
+
+**Fix.** Copy CONTEXTs through pointers (`ptr::copy`), and mark the helper that holds the
+CONTEXT copy `#[inline(never)]`. 34/0.
+
+**Generalize.** On this path, every CONTEXT you name is 0x4d0 bytes of a budget of about one
+page. When a frame on the dispatch path grows, check its `sub rsp` in the disassembly.
+
+### clang i386 SEH: a call-free loop inside `__try` runs at try-level -1
+**Symptom.** i386 user-mode RtlException died with "Unhandled exception c00000fd" even
+though the kernel raised STATUS_STACK_OVERFLOW correctly. The test's `__except` never ran.
+
+**Cause.** x86-32 SEH tracks the current `__try` with a try-level store, and LLVM's
+WinEHState pass places those stores only around calls. For a `__try { while (1) { p =
+_alloca(1024); *p = 5; } }` (the 1 KB alloca is an inline `sub esp`), it emitted the
+enter-try store (7) and the leave-try store (-1) back to back, before the loop. The loop
+therefore faults at try-level -1. This is a toolchain limit, not an OS bug. amd64 and arm64
+use IP-range scope tables and are unaffected.
+
+**Fix.** None in the OS. The test stays quarantined on i386, and RtlExceptionKM covers its
+other assertions.
+
+**Generalize.** If an i386 handler isn't reached, disassemble the function and find the
+try-level slot stores (`movl $N, off(%esi)`) around the faulting PC before you suspect
+dispatch.
 
 ### PSEH hand-lowering recipe
 For FS-driver translations, `_SEH2_TRY`/`_FINALLY`/`_EXCEPT` lower to a `'seh:` labelled block
@@ -8111,6 +8225,12 @@ guarantees** — `copy` and `copy_if_different` differ precisely on whether mtim
 - **A reconstructed `build-arm64` dir → perpetual CMake reconfigure → permanent false
   `STALE_MEDIA`** `[§9.6e]`. Not a code signal. `mkramdisk.sh --refresh` also assumes a prior
   full build populated the media tree.
+- **Build a dirty tree, commit exactly that, and smoke said `STALE_MEDIA`** ("N path(s) vs
+  the build's commit") on all three arches, although the build's `warm-receipt` tree WAS
+  `HEAD^{tree}`. The scoped fingerprints hashed `git diff HEAD` text, so committing moved
+  them. Stamps now carry `tree_content_hash` (a scratch-index `git add -A`), which is the
+  same committed or not. Settle a STALE_MEDIA you doubt with the receipt tree vs
+  `git rev-parse HEAD^{tree}`, never with `--allow-stale`.
 - **A bad `mkramdisk` run hangs arm64 late boot** `[§9.6d]` — serial reaches csrss → user32 →
   winsrv → mpr → `ufat.dll`. Regenerate (`--refresh`) and re-smoke **before** suspecting code.
 - **arm64 "uefildr StartImage: Unsupported" is a CORRUPTED `qemu/efivars.fd`**, not build drift
@@ -10843,6 +10963,28 @@ language rules) over loosening what it reports.
   commit dates against the fix's date before theorising, and re-seed every arch that predates
   it — a stale ratchet floor will swing in BOTH directions with no source change behind either.
 
+### rustc's `unused_assignments` cannot see a read through a raw pointer, and `addr_of_mut!` of an uninit local compiles
+
+**Symptom.** `value assigned to `x` is never read` on a store that the code plainly needs,
+e.g. cdrom `allocationLength = keyLength;` with the CDB filled from
+`fourByte = &allocationLength as *mut FOUR_BYTE` a few lines later. Or a bulk
+"remove the dead initializer and let definite-init prove it" pass that compiles green on all
+three arches and still leaves an uninitialized read.
+
+**Cause.** The lint's liveness is over the local, not over memory. A pointer taken BEFORE the
+write and read after it is invisible: the warning is a false positive, and deleting the store
+is a real bug. The same shape is also aliasing UB in Rust, because the direct write to the
+local invalidates the raw pointer taken earlier, so the false positive is a pointer to a
+real bug in its own right. And `addr_of_mut!(x)` / `&raw mut x` of an UNINITIALIZED local is
+not E0381 (only `x`, `&x`, `&mut x` are), so a removed initializer whose variable is later
+handed raw to an in/out callee (samsrv `&raw mut Length`) compiles and reads garbage.
+
+**Fix.** Take the pointer AFTER the write it reads: the UB goes, and so does the warning,
+because the borrow is now the read rustc counts. Never delete a dead store when a pointer
+to the variable can exist at it, i.e. one taken earlier in the fn or anywhere in a loop
+around it. Never trust definite-init for a variable raw-borrowed anywhere in its fn.
+`tools/apply_dead_assignments.py` encodes both rules and prints such sites as SKIP.
+
 ### Lints as permanent gates
 `tools/` carries the deterministic detectors; all are wired into `vibeos-cli check` at **0 NEW
 vs `tools/lint-baseline/`**, and several hold an EMPTY baseline (strict).
@@ -11682,6 +11824,31 @@ list"), from which the upstream writer followed.
 
 ## arm64: SEH, unwind & bring-up
 
+### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
+- **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the
+  serial log stops at `[FLDR] past _changestack, entering RunLoader` with the CPU in
+  firmware code, then, once that is fixed, at a `!!FREELDR-RUST-PANIC@...ui.rs`, then
+  at `BugCheck 0xB4` (VIDEO_DRIVER_INIT_FAILURE) after `[arm64vid] No ARC framebuffer`.
+  Seen 2026-10-08 preparing for EC2 Graviton, which has no display.
+- **Cause:** four independent gaps, each hidden by every rig having a framebuffer:
+  1. **A dropped `#ifdef UEFIBOOT`.** ui.c falls back to the no-UI vtable when the text
+     UI cannot start; the translation kept only the BIOS `return FALSE`, with a comment
+     claiming UEFIBOOT was off. It is the crate's `uefi` feature, on for uefildr.efi.
+  2. **A zero-byte allocation.** With no display the framebuffer console's buffer size
+     is 0; `MmAllocateMemory(0)` reports itself through the text UI being initialized,
+     whose message box waits for a key on UEFI's console input forever. The C does the
+     same.
+  3. **A divide by zero C gets away with.** `UiIndicateProgress` divides by a progress
+     count only `UiInitProgressBar` sets; arm64 `udiv` by zero quietly yields 0, Rust
+     panics.
+  4. **No display, no win32k.** arm64vid bailed with no firmware framebuffer, as if a
+     VGA miniport would take over; arm64 has none.
+- **Fix:** restore the UEFI fallback under `cfg(feature = "uefi")`; no display, no
+  off-screen buffer; guard the division; arm64vid runs the desktop on a 1024x768 frame
+  in nonpaged memory (`Arm64VidHeadless`). The loader now says
+  `[FLDR] waiting for a key on the UEFI console` before blocking on one, since on a
+  headless machine that wait is the hang.
+
 ### `RtlVirtualUnwind` decoding and the frame-walk bugs
 - **`save_next` resolves FORWARD, not backward** `[§9.114]` — a **32%-wrong** decoder that
   silently mis-restored callee-saved registers. ARM64 `.xdata` unwind codes are stored in
@@ -11714,6 +11881,18 @@ list"), from which the upstream writer followed.
   deliberately **cfg-gated to i386 and self-retiring** — guarding all arches measurably costs.
 - **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
   arm64 (OPEN; needs a `#[naked]` capture stub).
+
+### arm64 raised every refused page fault as ACCESS_VIOLATION
+**Symptom.** arm64 user-mode RtlException got `0xc0000005` where it expects
+STATUS_STACK_OVERFLOW (`RtlException.c:171`), although MM had logged "Close to our death".
+
+**Cause.** The data-abort handler in `ke/arm64/trap.rs` discarded MmAccessFault's status
+and raised STATUS_ACCESS_VIOLATION whenever it was negative. Guard-page and stack-overflow
+refusals return their own codes, and Windows raises them as those codes, as do our i386
+(`traphdlr.rs`) and amd64 handlers.
+
+**Fix.** Raise MmAccessFault's status when it is GUARD_PAGE_VIOLATION or STACK_OVERFLOW,
+and AV otherwise.
 
 ### An uninitialised PFN `CacheAttribute` turns every `VirtualProtect`ed page into DEVICE memory
 `MiInitializePfn` (and the `AndMakePteValid` / `ForOtherProcess` variants) never set
@@ -12002,6 +12181,22 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   test, used by `TrimWsList`, ARM3's `MI_IS_PAGE_DIRTY` and RosMm's `WasDirty`. **Same lesson as
   the AF entry: list every bit x86 hardware keeps up to date, and give each one a software path
   on arm64.**
+- **A touched page made PAGE_NOACCESS reads back as a PROTOTYPE PTE on arm64; the machine wedges
+  spinning on `MmPfnLock`.** Symptom: one process doing `VirtualProtect(PAGE_NOACCESS)` on pages it
+  has used (page heap's guard pages did it at once) and the whole arm64 VM goes silent. gdb: the
+  vCPU spins in `KeAcquireSpinLockRaiseToDpc` on `MmPfnLock`, whose owner word names a DIFFERENT
+  thread, so on one CPU nothing can release it. That thread's saved stack: `NtProtectVirtualMemory`
+  → `MiGetPageProtection` (PFN lock held) → kernel data abort → `MmAccessFault` blocked on the
+  address-space push lock: a context switch with a spinlock held. Cause: `MiProtectVirtualMemory`'s
+  NOACCESS branch makes the transition PTE IN PLACE, as the C does: clear Valid, set Transition and
+  Protection, keep every other bit. On x86 no hardware bit lands on a software field that matters.
+  On arm64 hardware bit 10 is the Access Flag and software bit 10 is Prototype, so the next
+  `MiGetPageProtection` took the prototype path and read through a garbage pointer with the PFN
+  lock held. The same lines also dropped the dirty bit, sending a written page to the standby
+  list as clean. Fix (virtual.rs): mark the PFN modified if `MI_PTE_IS_DIRTY`, then build the
+  transition PTE from scratch with `MI_MAKE_TRANSITION_PTE`. **Converting a hardware PTE to a
+  software one in place inherits every hardware bit into a software field; on arm64 build the
+  software PTE from zero.**
 - **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
   spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
   dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads

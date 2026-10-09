@@ -272,7 +272,6 @@ pub unsafe extern "C" fn SampRemoveMemberFromAllAliases(
             );
             if !NT_SUCCESS(Status) {
                 if Status == STATUS_NO_MORE_ENTRIES {
-                    Status = STATUS_SUCCESS;
                 }
                 break;
             }
@@ -291,11 +290,10 @@ pub unsafe extern "C" fn SampRemoveMemberFromAllAliases(
                     &mut MembersKey,
                 );
                 if NT_SUCCESS(Status) {
-                    Status = SampRegDeleteValue(AliasKey, MemberSidString);
+                    SampRegDeleteValue(AliasKey, MemberSidString);
 
                     SampRegCloseKey(&mut MembersKey);
                 } else if Status == STATUS_OBJECT_NAME_NOT_FOUND {
-                    Status = STATUS_SUCCESS;
                 }
 
                 SampRegCloseKey(&mut AliasKey);
