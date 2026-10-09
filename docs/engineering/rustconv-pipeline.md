@@ -955,13 +955,30 @@ there took a chain of defects that all compiled and that `port check` now report
 - union members re-slotted onto a neighbour, in three places: `union_slot`, so commands went
   to port 0 and Error was read as Status;
 - a `continue` that skipped its loop's step: `loop_step`;
-- a dropped `goto CompleteIrp` that forwarded START_DEVICE twice;
+- a dropped `goto CompleteIrp` that forwarded START_DEVICE twice: `goto_arm`;
 - bitfields set by guessed bit index: `scan_raw_bitfield`, a panic on the CD's mode page.
 
 The VM's disk and CD sit on the PIIX *secondary* channel under OVMF, which sets IDETIM decode
 only for the channel it found an ATAPI device on. So the channel-state check skipping the
 primary is correct, not a bug. Measure `PciRead32(0x40)` and the raw status ports before
-suspecting the HAL. i386 (legide) and arm64 are next.
+suspecting the HAL.
+
+**i386 (2026-10-09)** boots the same way with no further fixes: it is UEFI too (OVMF32), so the
+same single channel shows up. legide loads as a boot driver and finds nothing, because nothing
+sits on the legacy primary ports. Its detection path still has no test that finds a device.
+Both arches print three classpnp "SRB and IRP result transfer lengths don't match" lines on
+MODE SENSE. That is the C: on an underrun atapi sets `SRB_STATUS_DATA_OVERRUN` and
+`Irp->IoStatus.Information` but never writes the real length back to
+`Srb->DataTransferLength`. classpnp's MODE SENSE hack (retry.c) treats it as success, so it is
+noise, not a failure.
+
+**AHCI (2026-10-09).** `smoke --ahci` on `--ata-stack` media boots both x86 arches with the CD on
+ich9-ahci, also with no fixes. pciide starts 8086:2922 through pciidex's `ahci_*` chipset code,
+the controller reports 6 ports, and atapi enumerates the DVD-ROM on port 0. smoke's
+`_ahci_check` now accepts that chain (pciide START of 2922 plus an `IDE\CdRom` under it), as
+well as uniata's `AhciDetect: exit found=1`. arm64's smoke VM (`virt`, virtio-blk) has no ATA
+controller, so the stack is reached there only through AHCI, and `--ahci` attaches ich9-ahci
+on x86 only today.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

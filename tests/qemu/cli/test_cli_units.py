@@ -9739,6 +9739,17 @@ def test_ahci_boot_must_show_uniata_driving_ahci(monkeypatch):
     assert smoke_mod._ahci_check("[UNIATA] AhciDetect: exit found=0 GHC=0 chans=0\n")
     real = "[UNIATA] AhciDetect: exit found=1 GHC=80000000 chans=6\n"
     assert smoke_mod._ahci_check(real) is None
+    # --ata-stack media: pciide must START ich9-ahci AND a CdRom must enumerate under it.
+    started = (
+        "[DA] AddDevice PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&609b8881&05 "
+        "(drv \\Driver\\pciide) -> 0x0\n"
+        "[DA] START PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&609b8881&05 -> 0x0\n"
+    )
+    cd = "[CDDB] check IDE\\CdRomQEMU_QEMU_DVD-ROM____2.5+____\\5&89c6c1e1&0.0.0\n"
+    assert smoke_mod._ahci_check(started + cd) is None
+    assert smoke_mod._ahci_check(started)["classification"] == "AHCI_NOT_ENGAGED"
+    failed = started.replace("&05 -> 0x0\n", "&05 -> 0xc0000001\n", 1)
+    assert smoke_mod._ahci_check(failed + cd)
 
 
 def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
