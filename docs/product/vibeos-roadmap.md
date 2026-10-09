@@ -596,7 +596,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 ## Known bugs & flakes (live registry)
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
-  (IN PROGRESS 2026-10-08). New gate: `bootcdregtest.iso` installs onto a blank disk, then
+  (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
   the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
   step of setup broken, all fixed: the setup loader's `RtlStringCbPrintfW` stub (every boot
   driver registered as `"%S\%S"`, then a `len - 4` panic); txtsetup.sif listing pruned
@@ -626,8 +626,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   winlogon, GUI setup and Explorer. GUI setup then stopped at "InitializeProfiles() failed":
   userenv loaded the profiles path into the wrong buffer, copied the profile name into the
   wrong one, and used a local `IDS_PROFILEPATH = 0` (resources.h: 1) -- all three fixed.
-  **Still owed:** GUI setup completing and its reboot into the second installed boot (the
-  test waits for the desktop after the SECOND `[SMSS] _main`); i386 and UEFI installs.
+  GUI setup then got further: kernel32's `FindFirstFileW("*.*")` failed on every empty
+  directory (a narrow `b"*.*"` compared with a UTF-16 pattern), so CopySystemProfile failed.
+  Once setup finished, its reboot did nothing, because **no Win32 shutdown, reboot or logoff
+  worked anywhere**. winsrv's hand-copied `USERTHREADINFOCLASS` made `ExitWindowsEx` fail,
+  and this fork's winlogon never created its SAS window, so win32k's `LN_LOGOFF` went nowhere
+  (field manual: "`ExitWindowsEx` returns TRUE and nothing shuts down"). With both fixed, GUI
+  setup reboots the machine itself (run 49). The second installed boot then hit boot-start
+  INF services for drivers setup never copied (machine.inf `isapnp`, hdc.inf `atapi`).
+  Both fixed; the full run passes twice in a row (runs 50 and the `install-smoke` verb).
+  **Still owed:** i386 and UEFI installs; deciding whether it joins a scheduled run (it is
+  its own verb, ~10 min, not a gate stage).
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
   (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's

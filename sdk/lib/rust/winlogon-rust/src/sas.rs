@@ -1320,6 +1320,7 @@ pub unsafe extern "C" fn HandleShutdown(Session: PWLSESSION, wlxAction: DWORD) -
     let uMsgId: UINT;
     let mut Old: BOOLEAN = 0;
 
+    DbgPrint(b"[WINLOGON] HandleShutdown(action=%lu)\n\0".as_ptr() as *const i8, wlxAction);
     if wlxAction == WLX_SAS_ACTION_SHUTDOWN_REBOOT {
         uMsgId = IDS_REACTOSISRESTARTING;
     } else {
@@ -1673,6 +1674,7 @@ unsafe extern "system" fn SASWindowProc(
                 }
                 LN_LOGOFF => {
                     let Flags = lParam as UINT;
+                    DbgPrint(b"[WINLOGON] LN_LOGOFF flags=0x%x state=%u\n\0".as_ptr() as *const i8, Flags, (*Session).LogonState as u32);
                     let mut Action = Flags & EWX_ACTION_MASK as UINT;
                     let wlxAction: DWORD;
 

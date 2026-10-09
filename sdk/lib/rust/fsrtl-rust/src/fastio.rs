@@ -56,7 +56,7 @@ fn CcCopyWriteWontFlush(_fo: PFILE_OBJECT, _foff: PLARGE_INTEGER, len: ULONG) ->
 }
 
 const FastIoIsNotPossible: u8 = 0;
-const FastIoIsQuestionable: u8 = 1;
+const FastIoIsQuestionable: u8 = 2; // header value; the hand copy said 1
 const NotificationEvent: u32 = 0;
 const Executive: u32 = 0;
 const KernelMode: KPROCESSOR_MODE = 0i8;

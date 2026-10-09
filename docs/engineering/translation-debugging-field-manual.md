@@ -3420,8 +3420,28 @@ image laid down at build time, so drift here is invisible to every other gate.
 - **Boot-driver rows (media `x`) for drivers the CD no longer carries** (sacdrv, isapnp,
   floppy): setupldr's message box again.
 
-`tests/qemu/test_install.py` checks all three before it boots anything
-(`_uninstalled_service_images`, `_missing_display_services`, `_missing_boot_drivers`).
+- **An INF that installs a pruned or never-copied driver as boot-start.** GUI setup's PnP pass
+  runs after text setup, so it can register a boot driver text setup never copied. machine.inf
+  installed `isapnp` for QEMU's PIIX3 ISA bridge, and hdc.inf `atapi` for the IDE channels. The
+  disk then booted once (GUI setup) and stopped on the next boot at "Cannot load boot driver".
+
+`tests/qemu/test_install.py` checks all of these before it boots anything
+(`_uninstalled_service_images` covers hivesys.inf and the INFs' StartType=0 services,
+`_missing_display_services`, `_missing_boot_drivers`).
+
+### `ExitWindowsEx` returns TRUE and nothing shuts down
+A Win32 shutdown, reboot or logoff passes through four hops, and each one failed here without
+a sound. **user32 → CSR** `UserpExitWindowsEx`. **winsrv** `SrvExitWindowsEx` asks win32k with
+`NtUserSetInformationThread(UserThreadInitiateShutdown)`: winsrv had hand-copied
+`USERTHREADINFOCLASS` as 0..3 (the header says 5/6/7/9), so win32k returned
+STATUS_NOT_IMPLEMENTED and `ExitWindowsEx` failed with error 1. **win32k** answers a caller that
+is not winlogon by posting `WM_LOGONNOTIFY`/`LN_LOGOFF` to `hwndSAS` and returning
+STATUS_PENDING, so the caller sees success **whether or not a window exists**. **winlogon**:
+this fork's fast path never called `InitializeSAS` and ended in a bare wait with no message
+loop, so `hwndSAS` was NULL and the post went nowhere. GUI setup's reboot, and every shutdown
+started from Win32, ended there. Fixed: the fast path creates the SAS window and pumps it (it
+skips only the screensaver notification). The `[WINSRV]`, `[WINLOGON] LN_LOGOFF` and
+`HandleShutdown` lines show which hop a request reached.
 
 ### A key the INF plainly declares is missing from the livecd hive
 

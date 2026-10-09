@@ -104,9 +104,9 @@ const RESOURCE_DATA_LEVEL: ULONG = 0x3;
 
 const IDB_MAX_RESOURCES: usize = 5;
 
-const HeadlessCmdPutString: ULONG = 1;
-const HeadlessCmdClearDisplay: ULONG = 3;
-const HeadlessCmdSetColor: ULONG = 4;
+const HeadlessCmdPutString: ULONG = 3; // header value; the hand copy said 1
+const HeadlessCmdClearDisplay: ULONG = 4; // header value; the hand copy said 3
+const HeadlessCmdSetColor: ULONG = 9; // header value; the hand copy said 4
 
 #[repr(C)]
 struct INBV_PROGRESS_STATE {

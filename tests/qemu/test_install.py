@@ -170,6 +170,19 @@ def _uninstalled_service_images() -> list[str]:
         re.I,
     ):
         services.setdefault(m.group(1), {})[m.group(2)] = m.group(3).strip().strip('"')
+    # GUI setup's PnP pass installs services from the INFs, after text setup: a boot-start one
+    # whose binary setup never copied stops the NEXT boot at FreeLdr's "Cannot load boot
+    # driver" box (machine.inf's isapnp for the PIIX3 ISA bridge; hdc.inf's atapi).
+    for inf in sorted((PROJECT_DIR / "media" / "inf").glob("*.inf")):
+        text = inf.read_text("latin-1", errors="replace")
+        for m in re.finditer(r"\[(\w+_Service_Inst)\](.*?)(?=^\[)", text, re.S | re.M):
+            body = m.group(2)
+            start = re.search(r"StartType\s*=\s*(\d+)", body)
+            binary = re.search(r"ServiceBinary\s*=\s*%1[02]%\\(?:\S*\\)?([\w.]+)", body, re.I)
+            if start and binary and int(start.group(1)) == 0:
+                services.setdefault(f"{inf.name}:{m.group(1)}", {}).update(
+                    {"ImagePath": binary.group(1), "Start": "0x0"}
+                )
     missing = []
     for name, values in sorted(services.items()):
         image = values.get("ImagePath", "").split()[0:1]
@@ -238,12 +251,69 @@ def install_disk(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     assert not services, f"txtsetup.sif [Display] names services hivesys.inf lacks: {services}"
     work = tmp_path_factory.mktemp("install")
     disk = work / _DISK_NAME
+    resume = os.environ.get("VIBEOS_INSTALL_STAGE1_DISK")
+    if resume:
+        # Iterate on the installed system without replaying text setup (12-15 min under TCG):
+        # start from a disk a previous run left right after stage 1 (<basetemp>/install0/
+        # install.qcow2), with the named binaries refreshed from this build first.
+        shutil.copyfile(resume, disk)
+        refresh = [n for n in os.environ.get("VIBEOS_INSTALL_REFRESH", "").split(",") if n]
+        _refresh_installed_files(disk, refresh)
+        (work / "stage1-resumed").write_text(f"{resume}\nrefreshed: {refresh}\n")
+        return disk
     subprocess.run(
         ["qemu-img", "create", "-f", "qcow2", str(disk), _DISK_SIZE],
         check=True,
         capture_output=True,
     )
     return disk
+
+
+def _refresh_installed_files(disk: Path, names: list[str]) -> None:
+    """Copy this build's outputs for `names` over every installed copy, in place.
+
+    A name's build output comes from the CD's file list (bootcdregtest.stripped.lst) or the
+    cab manifest (reactos.dff.<config>.dyn), both of which name outputs at the canonical
+    mount. Its installed copies are found on the disk itself, by name, under ReactOS/:
+    reactos.cab files land in directories the manifest only numbers. Through a raw image
+    and mtools on the FAT partition, so the qcow2 is rewritten whole.
+    """
+    if not names:
+        return
+    wanted = {n.lower() for n in names}
+    outputs: dict[str, str] = {}
+    lst = (_BUILD / "boot" / "bootcdregtest.stripped.lst").read_text().splitlines()
+    for row in lst:
+        dest, _, src = row.partition("=")
+        if dest.rsplit("/", 1)[-1].lower() in wanted:
+            outputs.setdefault(dest.rsplit("/", 1)[-1].lower(), src)
+    dyn = max(
+        (_BUILD / "boot" / "bootdata" / "packages").glob("reactos.dff.*.dyn"),
+        key=lambda f: f.stat().st_mtime,
+    )
+    for row in dyn.read_text().splitlines():
+        m = re.match(r'"([^"]+)"', row)
+        if m and m.group(1).rsplit("/", 1)[-1].lower() in wanted:
+            outputs.setdefault(m.group(1).rsplit("/", 1)[-1].lower(), m.group(1))
+    missing = sorted(wanted - set(outputs))
+    assert not missing, f"VIBEOS_INSTALL_REFRESH: not built for the CD: {missing}"
+    raw = disk.with_suffix(".raw")
+    subprocess.run(["qemu-img", "convert", "-O", "raw", str(disk), str(raw)], check=True)
+    mbr = raw.read_bytes()[:512]
+    image = f"{raw}@@{int.from_bytes(mbr[446 + 8 : 446 + 12], 'little') * 512}"
+    env = {**os.environ, "MTOOLS_SKIP_CHECK": "1"}
+    tree = subprocess.run(
+        ["mdir", "-/", "-b", "-i", image, "::/ReactOS"], capture_output=True, text=True, env=env
+    ).stdout.splitlines()
+    for name, src in outputs.items():
+        # The build lists outputs at the canonical mount (tools/canon-run.sh).
+        local = src.replace("/tmp/vibeos/", f"{PROJECT_DIR}/")
+        targets = [t for t in tree if t.rsplit("/", 1)[-1].lower() == name]
+        assert targets, f"VIBEOS_INSTALL_REFRESH: {name} is not installed on the disk"
+        for target in targets:
+            subprocess.run(["mcopy", "-o", "-i", image, local, target], check=True, env=env)
+    subprocess.run(["qemu-img", "convert", "-O", "qcow2", str(raw), str(disk)], check=True)
+    raw.unlink()
 
 
 def _boot(config: _SetupStage, work: Path) -> tuple[QemuVM, str, str | None]:
@@ -403,39 +473,41 @@ def test_unattended_install_then_boot(install_disk: Path) -> None:
     root = install_disk.parent
     problems: list[str] = []
 
-    # --- stage 1: text-mode setup from the CD ------------------------------------------
-    vm, serial, failure = _boot(_SetupStage(disk=install_disk), root / "setup")
-    installed = failure is None
-    try:
-        # usetup flushes and calls NtShutdownSystem(ShutdownReboot) next.
-        if installed and not _wait_reboot(vm, 300):
-            tail = serial + vm.serial.partial_output
-            problems.append(
-                "stage 1: setup reported success but the VM never rebooted "
-                f"(fatal={_fatal(tail)}):\n{tail[-3000:]}"
-            )
-        # Once setup has said it succeeded, its hives are flushed and the boot code written,
-        # so the installed disk is worth booting even if the shutdown after it crashed:
-        # one run then reports both, rather than hiding stage 2 behind the reboot.
-        written = _staged_disk(vm)
-        if installed and written != install_disk:
-            if vm._proc is not None and vm._proc.poll() is None:
-                # Still running (it crashed instead of rebooting): pause it first. vm_stop
-                # drains and flushes every block device, so the qcow2 on disk carries the
-                # clusters QEMU had allocated but not yet written back.
-                try:
-                    vm.qmp.execute("stop")
-                except Exception:
-                    pass
-            shutil.copyfile(written, install_disk)
-    finally:
-        vm.stop()
-    pages = re.findall(r"\[USETUP\] page (\d+)", serial)
-    assert installed, (
-        f"stage 1 (text setup) failed: {failure}\nfatal={_fatal(serial)} pages={pages}\n"
-        f"{serial[-6000:]}"
-    )
-    assert _SETUP_QUIT not in serial, f"setup quit instead of installing: pages={pages}"
+    # VIBEOS_INSTALL_STAGE1_DISK: the disk already holds text setup's result (see the fixture).
+    if not (root / "stage1-resumed").is_file():
+        # --- stage 1: text-mode setup from the CD ------------------------------------------
+        vm, serial, failure = _boot(_SetupStage(disk=install_disk), root / "setup")
+        installed = failure is None
+        try:
+            # usetup flushes and calls NtShutdownSystem(ShutdownReboot) next.
+            if installed and not _wait_reboot(vm, 300):
+                tail = serial + vm.serial.partial_output
+                problems.append(
+                    "stage 1: setup reported success but the VM never rebooted "
+                    f"(fatal={_fatal(tail)}):\n{tail[-3000:]}"
+                )
+            # Once setup has said it succeeded, its hives are flushed and the boot code written,
+            # so the installed disk is worth booting even if the shutdown after it crashed:
+            # one run then reports both, rather than hiding stage 2 behind the reboot.
+            written = _staged_disk(vm)
+            if installed and written != install_disk:
+                if vm._proc is not None and vm._proc.poll() is None:
+                    # Still running (it crashed instead of rebooting): pause it first. vm_stop
+                    # drains and flushes every block device, so the qcow2 on disk carries the
+                    # clusters QEMU had allocated but not yet written back.
+                    try:
+                        vm.qmp.execute("stop")
+                    except Exception:
+                        pass
+                shutil.copyfile(written, install_disk)
+        finally:
+            vm.stop()
+        pages = re.findall(r"\[USETUP\] page (\d+)", serial)
+        assert installed, (
+            f"stage 1 (text setup) failed: {failure}\nfatal={_fatal(serial)} pages={pages}\n"
+            f"{serial[-6000:]}"
+        )
+        assert _SETUP_QUIT not in serial, f"setup quit instead of installing: pages={pages}"
 
     # --- stage 2: the installed disk, GUI setup, then the desktop -----------------------
     vm, serial, failure = _boot(_InstalledStage(disk=install_disk), root / "installed")

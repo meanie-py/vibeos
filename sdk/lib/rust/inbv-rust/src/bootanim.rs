@@ -121,8 +121,8 @@ extern "system" {
     fn KeQuerySystemTime(CurrentTime: *mut LARGE_INTEGER);
 }
 
-const StorageServer: ULONG = 0;
-const ComputeServer: ULONG = 1;
+const StorageServer: ULONG = 13; // header value; the hand copy said 0
+const ComputeServer: ULONG = 14; // header value; the hand copy said 1
 
 #[repr(u8)]
 enum BBLT_VERT_ALIGNMENT {

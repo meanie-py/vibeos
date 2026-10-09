@@ -212,9 +212,9 @@ type CDROM_SCAN_FOR_SPECIAL_HANDLER = unsafe extern "C" fn(*mut CDROM_DEVICE_EXT
 
 const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
 const FILE_DEVICE_DVD: u32 = 0x33;
-const BusTypeScsi: u32 = 0x00;
-const BusTypeAtapi: u32 = 0x01;
-const BusTypeUnknown: u32 = 0x02;
+const BusTypeScsi: u32 = 1; // header value; the hand copy said 0x00
+const BusTypeAtapi: u32 = 2; // header value; the hand copy said 0x01
+const BusTypeUnknown: u32 = 0; // header value; the hand copy said 0x02
 const FeatureAACS: u32 = 0x010D;
 const FeatureCdRead: u32 = 0x001E; // _FEATURE_NUMBER_FeatureCdRead = 30
 const FeatureDvdRead: u32 = 0x0012;

@@ -144,8 +144,19 @@ def arch_of(rel: str) -> str:
     return {"aarch64": "arm64", "x86_64": "amd64", "x86": "i386"}.get(a, a)
 
 
-def collect() -> dict[str, list[tuple[str, int, str]]]:
+# Any identifier, for the island comparison only. Enum members are CamelCase
+# (`UserThreadUseActiveDesktop`, `DelayedWorkQueue`), and CONST_RE's ALL_CAPS rule hid every
+# hand copy of one: winsrv's USERTHREADINFOCLASS (0..3 for 7/9/5/6) broke every ExitWindowsEx,
+# and 59 more sat in dbgk, ex, po, pnpmgr, cc, inbv, ... The cross-crate contradiction check
+# keeps ALL_CAPS: across crates a CamelCase name is too often a different local thing.
+ANY_CONST_RE = re.compile(
+    CONST_RE.pattern.replace("([A-Z_][A-Z0-9_]*)", "([A-Za-z_][A-Za-z0-9_]*)", 1)
+)
+
+
+def collect(any_case: bool = False) -> dict[str, list[tuple[str, int, str]]]:
     """name -> [(rel_path, value, arch)]"""
+    const_re = ANY_CONST_RE if any_case else CONST_RE
     decls: dict[str, list[tuple[str, int, str]]] = defaultdict(list)
     for path in sorted(source_files(RUST_ROOT)):
         sp = str(path)
@@ -168,7 +179,7 @@ def collect() -> dict[str, list[tuple[str, int, str]]]:
         for idx, line in enumerate(lines):
             if NOLINT_RE.search(line):
                 continue
-            m = CONST_RE.match(line)
+            m = const_re.match(line)
             if not m:
                 continue
             # `#[cfg(...)]`-gated declarations legitimately come in mutually
@@ -320,7 +331,7 @@ def main() -> int:
     lint = "--lint" in sys.argv
     decls = collect()
     if "--vs-island" in sys.argv:
-        for name, rel, val in island_disagreements(decls, island_values()):
+        for name, rel, val in island_disagreements(collect(any_case=True), island_values()):
             print(f"{rel}: {name} = {render_value(val)} [VS_ISLAND]")
         return 0
     if "--within-crate" in sys.argv:

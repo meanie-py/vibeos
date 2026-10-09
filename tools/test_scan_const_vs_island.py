@@ -91,3 +91,18 @@ def test_within_crate_ignores_two_crates_meaning_two_things():
 def test_within_crate_ignores_a_per_arch_override():
     decls = {"PAGE_SHIFT": [(USERENV + "a.rs", 12, "amd64"), (USERENV + "b.rs", 16, "arm64")]}
     assert within_crate(decls) == []
+
+
+def test_island_collection_sees_camel_case_enum_members():
+    """winsrv's hand copy of USERTHREADINFOCLASS was invisible to the ALL_CAPS collector."""
+    m = scc.ANY_CONST_RE.match("const UserThreadUseActiveDesktop: u32 = 0;")
+    assert m is not None and m.group(1) == "UserThreadUseActiveDesktop"
+    hits = island_disagreements(
+        {"UserThreadUseActiveDesktop": [("sdk/lib/rust/winsrv-rust/src/x.rs", 0, "common")]},
+        {"UserThreadUseActiveDesktop": {7}},
+    )
+    assert hits == [("UserThreadUseActiveDesktop", "sdk/lib/rust/winsrv-rust/src/x.rs", 0)]
+
+
+def test_the_cross_crate_check_keeps_all_caps_only():
+    assert scc.CONST_RE.match("const DelayedWorkQueue: u32 = 0;") is None

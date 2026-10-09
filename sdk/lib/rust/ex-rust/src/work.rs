@@ -63,8 +63,8 @@ const EX_CRITICAL_QUEUE_PRIORITY_INCREMENT: KPRIORITY = 5;
 const EX_DELAYED_QUEUE_PRIORITY_INCREMENT: KPRIORITY = 4;
 
 const MaximumWorkQueue: usize = 3;
-const DelayedWorkQueue: WORK_QUEUE_TYPE = 0;
-const CriticalWorkQueue: WORK_QUEUE_TYPE = 1;
+const DelayedWorkQueue: WORK_QUEUE_TYPE = 1; // header value; the hand copy said 0
+const CriticalWorkQueue: WORK_QUEUE_TYPE = 0; // header value; the hand copy said 1
 const HyperCriticalWorkQueue: WORK_QUEUE_TYPE = 2;
 
 const WinKdWorkerStart: ULONG = 1;

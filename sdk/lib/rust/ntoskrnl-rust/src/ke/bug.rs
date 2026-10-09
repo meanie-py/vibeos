@@ -156,11 +156,11 @@ const BV_COLOR_WHITE: ULONG = 15;
 /// category at a glance.
 const RUST_PANIC_BUGCODE: ULONG = 0xE052_5354;
 
-const HeadlessCmdStartBugCheck: ULONG = 0;
+const HeadlessCmdStartBugCheck: ULONG = 14; // header value; the hand copy said 0
 const HeadlessCmdEnableTerminal: ULONG = 1;
-const HeadlessCmdSendBlueScreenData: ULONG = 2;
+const HeadlessCmdSendBlueScreenData: ULONG = 20; // header value; the hand copy said 2
 
-const HalRebootRoutine: ULONG = 1;
+const HalRebootRoutine: ULONG = 3; // header value; the hand copy said 1
 
 const POWER_FAILURE_SIMULATE: ULONG = 0x000000E5; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 const UNEXPECTED_KERNEL_MODE_TRAP: ULONG = 0x0000007F;
