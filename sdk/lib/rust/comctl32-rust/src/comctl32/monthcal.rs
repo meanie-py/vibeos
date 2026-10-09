@@ -1258,7 +1258,7 @@ unsafe extern "C" fn MONTHCAL_PaintTodayTitle(infoPtr: *const MONTHCAL_INFO, hdc
     DrawTextW(hdc, buf.as_ptr(), -(1), core::ptr::addr_of_mut!(text_rect), (DT_CALCRECT | DT_LEFT | DT_VCENTER | DT_SINGLELINE) as UINT);
     DrawTextW(hdc, buf.as_ptr(), -(1), core::ptr::addr_of_mut!(text_rect), (DT_LEFT | DT_VCENTER | DT_SINGLELINE) as UINT);
 
-    if !((*infoPtr).dwStyle & MCS_NOTODAYCIRCLE) != 0 {
+    if ((*infoPtr).dwStyle & MCS_NOTODAYCIRCLE) == 0 {
         OffsetRect(core::ptr::addr_of_mut!(box_rect), -(*infoPtr).width_increment, 0);
         MONTHCAL_Circle(infoPtr, hdc, core::ptr::addr_of_mut!(box_rect));
     }

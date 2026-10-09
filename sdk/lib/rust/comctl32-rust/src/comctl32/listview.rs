@@ -2636,7 +2636,7 @@ unsafe extern "C" fn LISTVIEW_ShowFocusRect(infoPtr: *const LISTVIEW_INFO, fShow
                 break 'done;
             }
 
-            core::ptr::write_bytes(core::ptr::addr_of_mut!(dis), 0, core::mem::size_of::<DRAWITEMSTRUCT>());
+            core::ptr::write_bytes(core::ptr::addr_of_mut!(dis), 0, 1); // ZeroMemory(&dis, sizeof(dis)): ONE element
             dis.CtlType = ODT_LISTVIEW;
             dis.CtlID = GetWindowLongPtrW((*infoPtr).hwndSelf, GWLP_ID) as UINT;
             dis.itemID = item.iItem as UINT;

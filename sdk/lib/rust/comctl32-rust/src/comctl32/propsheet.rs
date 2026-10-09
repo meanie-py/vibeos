@@ -41,7 +41,8 @@ static mut PropSheetInfoStr: [WCHAR; 18] = [
 
 // NONAMELESSUNION: object-like macro with no value, no declaration emitted.
 
-#[repr(C)]
+// propsheet.c:71-93: between `pshpack2.h` and `poppack.h` -- 2-byte packing, as the C lays it out.
+#[repr(C, packed(2))]
 pub struct MyDLGTEMPLATEEX {
     pub dlgVer: WORD,
     pub signature: WORD,
@@ -50,7 +51,8 @@ pub struct MyDLGTEMPLATEEX {
     pub style: DWORD,
 }
 
-#[repr(C)]
+// propsheet.c:71-93: between `pshpack2.h` and `poppack.h` -- 2-byte packing, as the C lays it out.
+#[repr(C, packed(2))]
 pub struct MyDLGITEMTEMPLATEEX {
     pub helpid: DWORD,
     pub exStyle: DWORD,
@@ -3600,7 +3602,7 @@ pub unsafe extern "system" fn CreatePropertySheetPageW(lpPropSheetPage: LPCPROPS
 
     (*ppsp).dwFlags |= PSP_INTERNAL_UNICODE;
 
-    if !((*ppsp).dwFlags & PSP_DLGINDIRECT) != 0 {
+    if ((*ppsp).dwFlags & PSP_DLGINDIRECT) == 0 {
         if !IS_INTRESOURCE!((*ppsp).u.pszTemplate) {
             (*ppsp).u.pszTemplate = heap_strdupW((*lpPropSheetPage).u.pszTemplate) as LPCWSTR;
         }
@@ -4303,13 +4305,7 @@ unsafe extern "system" fn PROPSHEET_DialogProc(
             }
 
             if (*psInfo).useCallback != 0 {
-                Some(
-                    (*psInfo)
-                        .ppshheader
-                        .pfnCallback
-                        .expect("non-null function pointer"),
-                )
-                .unwrap_unchecked()(
+                ((*psInfo).ppshheader.pfnCallback.unwrap_unchecked())(
                     hwnd,
                     PSCB_INITIALIZED as UINT,
                     0 as LPARAM,

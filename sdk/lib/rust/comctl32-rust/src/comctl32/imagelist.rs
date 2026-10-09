@@ -32,7 +32,8 @@ pub const IMAGELIST_VERSION: u32 = 0x101;
 pub const ILC_PUBLICFLAGS: u32 = 0xFFFFFFFF; /* Allow all flags for now */
 pub const ILC_COLORMASK: u32 = 0xFE;
 
-#[repr(C)]
+// imagelist.c:133-147: between `pshpack2.h` and `poppack.h` -- 2-byte packing, as the C lays it out.
+#[repr(C, packed(2))]
 pub struct _ILHEAD {
     pub usMagic: USHORT,
     pub usVersion: USHORT,
@@ -2699,6 +2700,11 @@ pub unsafe extern "system" fn Internal_GetImageInfo(himl: HIMAGELIST, i: INT, pI
 #[no_mangle]
 pub unsafe extern "system" fn ImageList_GetImageRect(himl: HIMAGELIST, i: INT, lpRect: LPRECT) -> BOOL {
     let mut ImageInfo: IMAGEINFO = core::mem::zeroed();
+    // Divergence: the __REACTOS__ arm writes through lpRect unchecked (a NULL faults); Wine's
+    // arm returns FALSE for it, and so does this.
+    if lpRect.is_null() {
+        return FALSE;
+    }
     if Internal_GetImageInfo(himl, i, core::ptr::addr_of_mut!(ImageInfo)) == 0 {
         return FALSE;
     }
@@ -4270,7 +4276,7 @@ pub unsafe extern "system" fn ImageList_SetColorTable(himl: HIMAGELIST, uStartIn
 
 #[no_mangle]
 pub unsafe extern "system" fn ImageList_CoCreateInstance(rclsid: REFCLSID, punkOuter: *const IUnknown, riid: REFIID, ppv: *mut *mut core::ffi::c_void) -> HRESULT {
-    if !IsEqualCLSID(core::ptr::addr_of!(CLSID_ImageList), rclsid) != 0 {
+    if IsEqualCLSID(core::ptr::addr_of!(CLSID_ImageList), rclsid) == 0 {
         return E_NOINTERFACE;
     }
 

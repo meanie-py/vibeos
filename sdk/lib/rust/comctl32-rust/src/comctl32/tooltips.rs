@@ -634,6 +634,8 @@ unsafe extern "C" fn TOOLTIPS_CalcTipSize(infoPtr: *const TOOLTIPS_INFO, lpSize:
     }
 }
 
+// nolint: constant-placement (checked line by line against tooltips.c:589-845: every 0, 2 and
+// BALLOON_STEMINDENT sits where the C has it; the ring pairs `rect.left = 0` with `max(0, ..)`)
 unsafe extern "C" fn TOOLTIPS_Show(infoPtr: *mut TOOLTIPS_INFO, track_activate: BOOL) {
     let mut toolPtr: *mut TTTOOL_INFO = core::ptr::null_mut();
     let mut monitor: HMONITOR;

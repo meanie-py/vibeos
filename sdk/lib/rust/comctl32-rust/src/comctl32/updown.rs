@@ -995,7 +995,7 @@ unsafe extern "C" fn UPDOWN_DoAction(mut infoPtr: *mut UPDOWN_INFO, mut delta: i
 }
 
 unsafe extern "C" fn UPDOWN_IsEnabled(infoPtr: *const UPDOWN_INFO) -> BOOL {
-    if !IsWindowEnabled((*infoPtr).Self_) != 0 {
+    if IsWindowEnabled((*infoPtr).Self_) == 0 {
         return FALSE;
     }
     if !(*infoPtr).Buddy.is_null() {
