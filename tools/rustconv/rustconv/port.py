@@ -1822,6 +1822,44 @@ def _wine_debug_storage(path: Path) -> list[str]:
     return names + ([f"[0] -> .flags x{n}"] if n else [])
 
 
+def _aw_export_names(path: Path, c_file: Path) -> list[str]:
+    """`#[no_mangle] fn _tWinMain` -> `#[export_name = "wWinMain"]`.
+
+    The C DEFINES `_tWinMain`, which tchar.h makes `wWinMain` under UNICODE; the CRT startup
+    calls `wWinMain`, and a `#[no_mangle]` on the C spelling exports a symbol nobody calls
+    (notepad: undefined `wWinMain` at link). Only an alias every built arch agrees on."""
+    from .macro_authority import MacroAuthorityError, identifier_aliases
+
+    text = path.read_text()
+    names = re.findall(
+        r"#\[no_mangle\]\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?extern\s+\"\w+\"\s+fn\s+(\w+)",
+        text,
+    )
+    if not names:
+        return []
+    try:
+        aliases = identifier_aliases(REPO, c_file.resolve())
+    except MacroAuthorityError:
+        return []
+    done: list[str] = []
+    for name in names:
+        target = aliases.get(name)
+        if not target or target == name:
+            continue
+        new = re.sub(
+            rf"#\[no_mangle\](\s*(?:#\[[^\]]*\]\s*)*pub\s+(?:unsafe\s+)?extern\s+\"\w+\"\s+fn\s+{re.escape(name)}\b)",
+            rf'#[export_name = "{target}"]\1',
+            text,
+            count=1,
+        )
+        if new != text:
+            text = new
+            done.append(f"{name} -> {target}")
+    if done:
+        path.write_text(text)
+    return done
+
+
 def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
     """Remove a module's own `extern` declaration of a name the C preprocessor says is a
     function-like MACRO. hotplug's eject.rs declared `fn ListView_InsertColumn(..)` and
@@ -1841,6 +1879,13 @@ def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
             r"\s*(?:pub(?:\([^)]*\))?\s+)?fn\s+([A-Za-z_]\w*)\s*\(.*\)[^;{]*;\s*(?://.*)?$", line
         )
         if depth_extern and m and m.group(1) in fn_macros:
+            dropped.append(m.group(1))
+            continue
+        # A bodyless `fn X(..);` OUTSIDE an extern block is never Rust ("free function
+        # without a body"). notepad's dialog.c preamble carried `fn ZeroMemory(..);`; port
+        # resolve then took it for a sibling definition, made it `pub`, re-exported it over
+        # win32macros-rust's macro, and every `ZeroMemory!(` call went back to a call.
+        if not depth_extern and m and re.match(r"(?:pub(?:\([^)]*\))?\s+)?fn\b", line):
             dropped.append(m.group(1))
             continue
         out.append(line)
@@ -1909,6 +1954,13 @@ def stage_integrate(stem: str) -> None:
         print(f"integrate: {report.summary()}")
         c_file = REPO / state["module_dir"] / f"{path.stem}.c"
         if c_file.is_file():
+            exported = _aw_export_names(path, c_file)
+            if exported:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: definition(s) spelled with an SDK alias "
+                    f"export the real name: {', '.join(exported)}"
+                )
             dead_arms = _drop_dead_arms(path, c_file)
             if dead_arms:
                 changed += 1
@@ -2832,9 +2884,26 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
+    # An alias TARGET no prototype could declare (c2rust emits nothing for FormatMessageW,
+    # whose last parameter is `va_list *`) falls back to the tree's agreed declaration of
+    # it; the unresolved name was the alias, so the consensus pass never asked for it.
+    targets = {t for t in sdk_alias.values() if t in todo}
+    if targets:
+        found_items = prelude_resolve.workspace_items(
+            targets, REPO / "sdk" / "lib" / "rust", _crate_dir(state)
+        )
+        for target in sorted(targets):
+            item, _why = prelude_resolve.consensus(target, found_items.get(target, []))
+            if item is not None and item.kind == "fn" and item.abi:
+                text = re.sub(r"^.*?\bfn\b", "fn", item.text)
+                sigs[target] = (item.abi.strip('"'), text, item.path)
+                todo.discard(target)
     for name, target in sorted(sdk_alias.items()):
         if target in sigs or re.search(rf"\bfn {re.escape(target)}\b", prelude.read_text()):
             sigs[name] = ("use", f"pub use crate::prelude::{target} as {name};", "sdk alias")
+    lost = sorted(f"{n} -> {t}" for n, t in sdk_alias.items() if n not in sigs)
+    if lost:
+        print(f"resolve: SDK alias target declared nowhere, hand-declare it: {', '.join(lost)}")
     prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
     if sigs:
         print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")
@@ -3067,6 +3136,15 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
         }
     names |= opaque
     names -= island - opaque
+    # ...nor one the prelude's hand-written part defines: the scaffold's `size_t = usize`
+    # got a second, c2rust `size_t = c_ulonglong` beside it (E0428, and amd64's width).
+    hand = re.sub(
+        r"^// ==== (?!end)[^\n]*\n.*?^// ==== end [^\n]*\n?",
+        "",
+        prelude.read_text(),
+        flags=re.S | re.M,
+    )
+    names -= set(re.findall(r"^pub (?:type|struct|union|enum) (\w+)", hand, re.M))
     items: dict[str, tuple[str, str]] = {}
     for tu in state["tus"]:
         c_file = REPO / tu

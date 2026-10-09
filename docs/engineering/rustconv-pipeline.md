@@ -686,6 +686,24 @@ the name, and dead `#if` arms dropped at integrate. Fix rounds: $0.0012. A read-
 found the dead `ImageList_Destroy` (now a loud integrate warning) and a heap overrun in the C's
 `create_connection_settings` (PAC URL bytes never counted in the size), fixed in the Rust.
 
+**notepad, the first application (2026-10-09).** 5 `.c`, 89 functions, $0.15 of Haiku plus
+$0.05 of `port fix`; `port replay` rebuilds it at 0/0/0 from the banks. Every gap it hit
+was an ARCH COMPARISON that counted an absent arch as agreement:
+`sdk_macros.object_expansions` probed only the arches where a name is a macro, so
+`SetWindowLongPtrW` (a macro on i386 alone) became `SetWindowLongW` on all three; and
+c2rust's agreement checks read a FALLBACK transpile (main.c fails on i386 and anchored from
+build-amd64), so `wcslen` was declared `-> c_ulonglong` with a second `size_t` beside the
+scaffold's. Both now need every arch, and c2rust's checks read `_native_text`. Also: the
+A/W switch's string constants (`FINDMSGSTRING` -> `FINDMSGSTRINGW`) are widened in UNICODE
+islands -- the narrow one broke Find/Replace; resolve no longer copies another crate's
+`crate::island::` paths; an SDK alias target c2rust cannot declare (`FormatMessageW`, a
+`va_list *` parameter) falls back to tree consensus and is never dropped silently; a
+bodyless free `fn` is dropped at integrate; a `#[no_mangle]` definition spelled with an SDK
+alias exports the real name (`_tWinMain` -> `wWinMain`, which the CRT calls); and
+strsafe-rust gained `StringCchCatNW`. Review fixes beyond the C: a UTF-16BE save that wrote
+stack bytes past its buffer (`&buffer[dwPos]`, a WCHAR index into a BYTE array), a
+command-line check that read before the string, and `unwrap_unchecked` on a NULL edit proc.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR

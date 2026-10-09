@@ -2203,6 +2203,13 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
+  FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
+  just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
+  missed it. notepad registered its Find/Replace message from those bytes read as UTF-16 and
+  Find Next never fired. `widen_island_constants.py` now widens an A/W name through its `W`
+  target when the island's own `pub type TCHAR = WCHAR` says it was generated UNICODE; an
+  island that does not say keeps the bytes.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
@@ -4467,6 +4474,16 @@ such an attribute, on amd64/arm64 it is nothing. Two fixes, in this order:
    prints which db actually produced the anchor and why the requested one could not. Not a
    silent degrade — an anchor from another arch is still compiler-exact, but its pointer
    widths and conventions are that arch's, so the caller is told.
+   **Except a caller that passes `verbose=False` and then COMPARES arches.** `extern_signatures`,
+   `local_types` and `definition_signatures` ask each arch in turn and accept what agrees;
+   notepad's main.c fails on i386, its "i386" text was build-amd64's, amd64 agreed with
+   itself, and `port resolve` declared `wcslen -> c_ulonglong` and a second `size_t =
+   c_ulonglong` for every arch. Those checks now read `_native_text` (the arch's OWN db or
+   nothing), and with an arch missing they refuse any item carrying a 64-bit width. The same
+   shape bit `sdk_macros.object_expansions`: it probed only the arches where a name IS a
+   macro, so `SetWindowLongPtrW` (a macro on i386 alone) had one expansion and was called
+   unanimous -- notepad's 64-bit subclassing went through `SetWindowLongW`. **An arch that is
+   absent from a comparison is not an arch that agreed.**
 2. On a non-i386 target only, the anchor also erases `__thiscall`. The 64-bit compiler
    ignores that keyword outright, so erasing it there is a no-op rather than a semantic edit;
    on i386 it is real ABI and is never touched.
