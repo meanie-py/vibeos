@@ -29,10 +29,9 @@ use core::ffi::c_void;
 pub use winsrv_sys;
 
 // Explorer-wide shared C++ types (TaskbarSettings, TW_STRUCKRECTS2, …).
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
-#[macro_use]
-pub mod winedebug;
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate. Re-exported at the root
+// so explorer-rust's `use explorer_sys::*;` keeps finding them.
+pub use winedebug_rust::{ERR, FIXME, TRACE, WARN};
 
 pub mod types;
 

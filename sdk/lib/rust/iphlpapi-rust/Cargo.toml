@@ -23,6 +23,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 win32macros-rust = { path = "../win32macros-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }

@@ -1437,7 +1437,7 @@ unsafe extern "C" fn VARIANT_FormatNumber(
                 }
             }
             _ => {
-                ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as PCHAR, *pToken);
+                ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as PCHAR, *pToken as core::ffi::c_uint);
                 hRes = E_INVALIDARG;
                 break;
             }
@@ -2025,7 +2025,7 @@ unsafe extern "C" fn VARIANT_FormatString(
                 pToken = pToken.offset(1);
             }
             _ => {
-                ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as LPCSTR, *pToken);
+                ERR!(b"Unknown token 0x%02x!\n\0".as_ptr() as LPCSTR, *pToken as core::ffi::c_uint);
                 hRes = 0x80070057u32 as i32;
                 break;
             }
@@ -2110,7 +2110,7 @@ pub unsafe extern "system" fn VarFormatFromTokens(
         } else {
             ERR!(
                 b"unrecognised format type 0x%02x\n\0".as_ptr() as LPCSTR,
-                (*header).type_,
+                (*header).type_ as core::ffi::c_uint,
             );
             return E_INVALIDARG;
         }

@@ -30,6 +30,7 @@ from rustconv.crate_repair import (
     RULE_NUMERIC_CAST,
     RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
+    RULE_VARIADIC_PROMOTION,
     RULE_SIZEOF_TYPE,
     CargoCheckRun,
     Edit,
@@ -166,6 +167,53 @@ def test_numeric_cast_is_faithful_not_panicking():
     assert "try_into" not in edit.replacement and "unwrap" not in edit.replacement
     assert "panic" in edit.authority  # the authority records WHY rustc's own fix is refused
     assert edit.original == "v.len()"
+
+
+def _e0617(src: bytes, arg: bytes) -> dict:
+    start = src.index(arg)
+    end = start + len(arg)
+    return _diag(
+        "can't pass `u16` to variadic function",
+        code="E0617",
+        spans=[_span("src/v.rs", start, end, is_primary=True)],
+        children=[
+            {
+                "message": "cast the value to `c_uint`",
+                "level": "help",
+                "spans": [
+                    _span(
+                        "src/v.rs",
+                        end,
+                        end,
+                        replacement=" as c_uint",
+                        applicability="MachineApplicable",
+                    )
+                ],
+                "children": [],
+            }
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    ("arg", "want"),
+    [
+        # `as` binds tighter than `&`: appending would cast VT_TYPEMASK alone (oleaut32).
+        (b"(*vt) & VT_TYPEMASK", "((*vt) & VT_TYPEMASK) as core::ffi::c_uint"),
+        (b"(*p).wFlags", "(*p).wFlags as core::ffi::c_uint"),
+        (b"V_VT(v)", "V_VT(v) as core::ffi::c_uint"),
+    ],
+)
+def test_variadic_promotion_casts_the_whole_argument(arg, want):
+    src = b"unsafe fn f() { DbgPrint(fmt, " + arg + b"); }\n"
+    plan = propose_edits(
+        [_e0617(src, arg)],
+        _reader({"src/v.rs": src}),
+        target="amd64",
+        rules=[RULE_VARIADIC_PROMOTION],
+    )
+    assert [e.replacement for e in plan.edits] == [want]
+    assert plan.edits[0].original == arg.decode()
 
 
 def test_zero_length_child_span_never_becomes_an_edit():

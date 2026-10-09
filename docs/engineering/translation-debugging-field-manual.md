@@ -1857,6 +1857,15 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **A macro that swallows its arguments hides them from the type checker.** Wine's
+  ERR/FIXME/WARN/TRACE were the same story at 31 byte-identical `winedebug.rs` copies, now
+  `winedebug-rust`. Two crates had their own instead: ole32 and oleaut32 printed `"(see
+  source)"` for ~300 ERR/FIXME sites through a `($($t:tt)*)` muncher, and version-rust made
+  FIXME a no-op. Forwarding those to the real macros surfaced **47 compile errors** in
+  arguments no compiler had ever seen: `u16`/`u8` passed to `...`, `debugstr_guid` fed the
+  wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
+  with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
+  print AND an unchecked expression; use the shared crate.
 - **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
   emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
   shobjidl.h's `FVM_ICON` exists in shell32's island solely as

@@ -1,0 +1,17 @@
+# winedebug-rust — Wine's ERR/FIXME/WARN/TRACE (sdk/include/wine/debug.h), ported ONCE.
+[package]
+name = "winedebug-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib: consumers are staticlib crates that pull this in as a path dependency, the same shape
+# as win32macros-rust. It is all macros plus one extern declaration, so it contributes no code
+# to the consumer's `.a` beyond what the call sites expand to.
+crate-type = ["rlib"]
+
+[dependencies]

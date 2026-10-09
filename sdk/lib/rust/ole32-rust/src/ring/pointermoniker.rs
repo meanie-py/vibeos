@@ -899,7 +899,7 @@ fn ObjrefMonikerImpl_BindToObject(
     _riid: *const IID,
     _result: *mut LPVOID,
 ) -> HRESULT {
-    FIXME!("(%p,%p,%p,%s,%p): stub\n", _iface, _pbc, _left, debugstr_guid(_riid), _result);
+    FIXME!("(%p,%p,%p,%s,%p): stub\n", _iface, _pbc, _left, debugstr_guid((_riid).cast()), _result);
     E_NOTIMPL
 }
 }
@@ -912,7 +912,7 @@ fn ObjrefMonikerImpl_BindToStorage(
     _riid: *const IID,
     _result: *mut LPVOID,
 ) -> HRESULT {
-    FIXME!("(%p,%p,%p,%s,%p): stub\n", _iface, _pbc, _left, debugstr_guid(_riid), _result);
+    FIXME!("(%p,%p,%p,%s,%p): stub\n", _iface, _pbc, _left, debugstr_guid((_riid).cast()), _result);
     E_NOTIMPL
 }
 }

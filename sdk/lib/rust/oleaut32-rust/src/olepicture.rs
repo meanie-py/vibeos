@@ -3822,7 +3822,7 @@ fn OLEPictureImpl_EnumConnectionPoints(
     iface: *mut IConnectionPointContainer,
     ppEnum: *mut *mut IEnumConnectionPoints,
 ) -> HRESULT {
-    let _This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
+    let This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
     FIXME!(
         b"(%p,%p), stub!\n\0".as_ptr() as *const i8,
         This,
@@ -3916,7 +3916,7 @@ stdmethod! {
 fn OLEPictureImpl_IsDirty(
     iface: *mut IPersistStream
 ) -> HRESULT {
-    let _This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
+    let This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
     FIXME!(b"(%p),stub!\n\0".as_ptr() as *const i8, This);
     E_NOTIMPL
 }
@@ -5718,12 +5718,12 @@ pub unsafe extern "system" fn OleLoadPicture(
 #[no_mangle]
 pub unsafe extern "system" fn OleLoadPictureEx(
     lpstream: LPSTREAM,
-    _lSize: LONG,
+    lSize: LONG,
     fRunmode: BOOL,
     riid: REFIID,
-    _xsiz: DWORD,
-    _ysiz: DWORD,
-    _flags: DWORD,
+    xsiz: DWORD,
+    ysiz: DWORD,
+    flags: DWORD,
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
     let mut ps: LPPERSISTSTREAM = core::ptr::null_mut();
@@ -6070,7 +6070,7 @@ fn SPCF_CreateInstance(
 }
 stdmethod! {
 fn SPCF_LockServer(iface: LPCLASSFACTORY, dolock: BOOL) -> HRESULT {
-    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
+    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
     FIXME!(b"(%p)->(%d),stub!\n\0".as_ptr() as *const i8, This, dolock);
     S_OK
 }

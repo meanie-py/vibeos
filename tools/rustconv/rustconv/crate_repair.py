@@ -3661,7 +3661,7 @@ def _variadic_promotion_rule(
     got = _primary_bytes(diagnostic, load)
     if got is None:
         return [], [], False
-    span, file_name, data, _masked, _start, _end = got
+    span, file_name, data, _masked, start, end = got
     for child in diagnostic.get("children") or []:
         for sp in child.get("spans") or []:
             rep = sp.get("suggested_replacement")
@@ -3671,24 +3671,39 @@ def _variadic_promotion_rule(
                 and sp.get("file_name") == file_name
             ):
                 at = int(sp["byte_start"])
-                return (
-                    [
-                        _simple_edit(
-                            RULE_VARIADIC_PROMOTION,
-                            file_name,
-                            data,
-                            at,
-                            at,
-                            rep.replace(" as c_", " as core::ffi::c_"),
-                            "rustc E0617: C promotes a narrow integer / float passed to `...`",
-                            span,
-                            ctx,
-                        )
-                    ],
-                    [],
-                    True,
+                if at != end:
+                    continue  # rustc's suggestion is always "append to the argument"
+                cast = rep.replace(" as c_", " as core::ffi::c_")
+                arg = data[start:end].decode("utf-8", "replace")
+                # rustc's suggestion only APPENDS, and `as` binds tighter than every binary
+                # operator: `a & VT_TYPEMASK as c_uint` casts the right operand, not the
+                # argument. The u16-vs-c_uint mismatch that leaves was then "fixed" back to u16
+                # by truncating_numeric_cast, and the two rules traded the site every pass
+                # (oleaut32's VarDecFromXxx FIXME!). Replace the whole argument, so the edit
+                # also records what it rewrote for the oscillation guard.
+                wrapped = arg if _RE_ATOMIC_EXPR.fullmatch(arg.strip()) else f"({arg})"
+                edit = _simple_edit(
+                    RULE_VARIADIC_PROMOTION,
+                    file_name,
+                    data,
+                    start,
+                    end,
+                    f"{wrapped}{cast}",
+                    "rustc E0617: C promotes a narrow integer / float passed to `...`",
+                    span,
+                    ctx,
                 )
+                return [edit], [], True
     return [], [], False
+
+
+#: An expression `as` can follow without parentheses: unary operators (which bind tighter
+#: than `as`) on a path or one parenthesized group, then any chain of `.field`, `(args)` and
+#: `[index]`. Anything with a binary operator outside parentheses is not one.
+_PAREN = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
+_RE_ATOMIC_EXPR = re.compile(
+    rf"[*!&-]*(?:[\w:]+|{_PAREN})(?:\.\w+|{_PAREN}|\[[^\[\]]*\])*"
+)
 
 
 def _local_static_mut_rule(
@@ -5439,11 +5454,13 @@ def repair_crate(
     snapshot: dict[str, bytes] = {}
     previous_total: int | None = None
     previous_halting: int | None = None
-    # (file, rule, text) for every replacement a pass wrote. A rule asked to edit text it
-    # wrote itself in an earlier pass is oscillating: its answer did not hold, and answering
-    # again builds a ladder (`((x != 0) != 0)`, `((x) as i32) as u32`) one pass at a time
-    # while the error count stays flat. Declining it is what lets the run reach a fixpoint.
-    produced: set[tuple[str, str, str]] = set()
+    # (file, text) for every replacement a pass wrote. A rule asked to edit text a repair
+    # wrote in an earlier pass is oscillating: that answer did not hold, and answering again
+    # builds a ladder (`((x != 0) != 0)`, `((x) as i32) as u32`) one pass at a time while
+    # the error count stays flat. TWO rules can trade a site the same way -- oleaut32's
+    # variadic_promotion and truncating_numeric_cast stacked `as c_uint) as u16` ten deep
+    # -- so the key is the text, not the rule. Declining it lets the run reach a fixpoint.
+    produced: set[tuple[str, str]] = set()
     for index in range(1, max_passes + 1):
         if target_dirs and all(t in target_dirs for t in targets):
             # Separate build dirs: the arches really run at once (3x on every pass).
@@ -5523,14 +5540,14 @@ def repair_crate(
             current.skipped.extend(panic_skipped)
         fresh: list[Edit] = []
         for edit in candidates:
-            if (edit.file_name, edit.rule, edit.original.strip()) in produced:
+            if edit.original.strip() and (edit.file_name, edit.original.strip()) in produced:
                 current.skipped.append(
                     Skipped(
                         edit.rule,
                         "reapplied_own_edit",
                         edit.file_name,
                         edit.line,
-                        f"`{edit.original}` is this rule's own output from an earlier pass; "
+                        f"`{edit.original}` is a repair's own output from an earlier pass; "
                         f"re-editing it to `{edit.replacement}` would oscillate. The site "
                         "needs a different rule or a human.",
                     )
@@ -5554,7 +5571,7 @@ def repair_crate(
             session.final_red = list(merged.red)
             return session
         applied, snapshot, failed = apply_edits(selected, root, within=resolved_dir)
-        produced.update((e.file_name, e.rule, e.replacement.strip()) for e in applied)
+        produced.update((e.file_name, e.replacement.strip()) for e in applied)
         current.applied.extend(applied)
         current.skipped.extend(failed)
         session.passes.append(current)

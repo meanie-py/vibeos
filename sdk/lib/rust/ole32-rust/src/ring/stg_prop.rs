@@ -1508,7 +1508,7 @@ unsafe fn propertystorage_read_scalar(
             }
         }
         _ => {
-            FIXME!(b"unsupported type %d\n\0".as_ptr() as LPCSTR, (*prop).vt);
+            FIXME!(b"unsupported type %d\n\0".as_ptr() as LPCSTR, (*prop).vt as core::ffi::c_uint);
             hr = STG_E_INVALIDPARAMETER;
         }
     }
@@ -1530,7 +1530,7 @@ unsafe fn propertystorage_get_elemsize(prop: *const PROPVARIANT) -> usize {
         VT_CLSID => core::mem::size_of::<CLSID>(),
         VT_VARIANT => core::mem::size_of::<PROPVARIANT>(),
         _ => {
-            FIXME!(b"Unhandled type %#x.\n\0".as_ptr() as LPCSTR, (*prop).vt);
+            FIXME!(b"Unhandled type %#x.\n\0".as_ptr() as LPCSTR, (*prop).vt as core::ffi::c_uint);
             0
         }
     }
@@ -2647,7 +2647,7 @@ unsafe fn PropertyStorage_WritePropertyToStream(
             bytesWritten = count;
         }
         _ => {
-            FIXME!(b"unsupported type: %d\n\0".as_ptr() as LPCSTR, (*var).vt);
+            FIXME!(b"unsupported type: %d\n\0".as_ptr() as LPCSTR, (*var).vt as core::ffi::c_uint);
             return STG_E_INVALIDPARAMETER;
         }
     }
@@ -3794,22 +3794,22 @@ pub unsafe extern "system" fn StgConvertPropertyToVariant(
 /// rustconv dropped it entirely; restored here so the Rust TU covers the whole C TU.
 #[no_mangle]
 pub unsafe extern "system" fn StgConvertVariantToProperty(
-    _pvar: *const PROPVARIANT,
-    _CodePage: USHORT,
-    _pprop: *mut SERIALIZEDPROPERTYVALUE,
-    _pcb: *mut ULONG,
-    _pid: PROPID,
-    _fReserved: BOOLEAN,
-    _pcIndirect: *mut ULONG,
+    pvar: *const PROPVARIANT,
+    CodePage: USHORT,
+    pprop: *mut SERIALIZEDPROPERTYVALUE,
+    pcb: *mut ULONG,
+    pid: PROPID,
+    fReserved: BOOLEAN,
+    pcIndirect: *mut ULONG,
 ) -> *mut SERIALIZEDPROPERTYVALUE {
     FIXME!(
         b"%p,%d,%p,%p,%d,%d,%p\n\0".as_ptr() as LPCSTR,
         pvar,
-        CodePage,
+        CodePage as core::ffi::c_uint,
         pprop,
         pcb,
         pid,
-        fReserved,
+        fReserved as core::ffi::c_uint,
         pcIndirect,
     );
 

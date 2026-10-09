@@ -152,7 +152,7 @@ unsafe fn DPA_GetPtrCount(hdpa: HDPA) -> INT {
 macro_rules! UNIMPLEMENTED {
     () => {
         unsafe {
-            crate::winedebug::ffi::DbgPrint(
+            winedebug_rust::ffi::DbgPrint(
                 concat!("fixme:(", file!(), ":", line!(), ") UNIMPLEMENTED\n\0").as_ptr() as *const _,
             )
         }
