@@ -234,7 +234,7 @@ def _smp_check(text: str, arch: str) -> dict | None:
                 "on the UP HAL, so HalStartNextProcessor is the FALSE stub and "
                 "this boot is silently 1 CPU",
                 "the boot entry is missing /HAL=halmp.dll (livecd.ini "
-                "[LiveCD_SMP], or mkramdisk.sh --smp on arm64)",
+                "[LiveCD_SMP], or qemu/freeldr.ini [ReactOS_Arm64_MP] on arm64)",
             ],
         }
     if "UP HAL stub called" in text:

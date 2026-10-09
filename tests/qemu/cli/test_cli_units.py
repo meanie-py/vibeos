@@ -4520,6 +4520,56 @@ def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
     assert fake.calls, "smokes still run so the matrix stays informative"
 
 
+@pytest.mark.parametrize("canonical", [True, False])
+def test_gate_defers_tooling_only_while_a_build_will_recreate_its_dir(
+    tmp_path, monkeypatch, canonical
+):
+    """check-tooling reads build-<arch>/compile_commands.json and generated headers.
+
+    A build that must fresh-configure deletes its build dir first, so tooling run
+    beside it reads nothing: 2026-10-09 a green master went AUTO-held red on
+    MacroAuthorityError and five lanes stalled. That case submits tooling after the
+    builds; an already-configured tree keeps the overlap (tooling before builds end).
+    """
+    import threading
+
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod.canon, "is_canonical", lambda build_dir: canonical)
+    builds_done = threading.Event()
+    pending = {"n": 3}
+    lock = threading.Lock()
+
+    def build(repo, run, arch, args, **kw):
+        if canonical:
+            # Overlap: tooling must be able to start while this build is still running.
+            assert tooling_started.wait(10), "tooling should overlap a configured tree's builds"
+        with lock:
+            pending["n"] -= 1
+            if pending["n"] == 0:
+                builds_done.set()
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    tooling_started = threading.Event()
+    order: list[bool] = []
+
+    def tooling(repo, root):
+        tooling_started.set()
+        order.append(builds_done.is_set())
+        return _tooling_once_stub(ok=True)(repo, root)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_tooling_once", tooling)
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: None)
+    assert gate_mod.gate(_gate_args(no_lint=False, no_build=False), tmp_path) == 0
+    assert order == [not canonical], "tooling ran exactly once, after the builds iff fresh"
+
+
 def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch):
     """The stage judges artifacts THIS run produced, so it runs only when both opt-ins hold.
 
