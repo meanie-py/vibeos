@@ -1322,7 +1322,7 @@ constants, or the runtime call set to the model:
 python -m rustconv --arch amd64 translate path/to/Class.cpp \
   --target shell32 --cpp-com --class CClass --fn CClass_Method \
   --mode mechanical --seal-facts --seal-calls --prompt
-# (--model deepseek is the DEFAULT since 2026-08-06; spell it only to escalate, e.g. -m sonnet)
+# (Haiku 5.5 is the DEFAULT since 2026-10-09 whenever ANTHROPIC_API_KEY is set; -m deepseek for DeepSeek, -m sonnet to escalate)
 
 # Batch N candidate/base replacements, one cargo invocation per architecture.
 python -m rustconv candidate-check candidates.json
