@@ -318,16 +318,20 @@ unsafe fn NetTestBootEnabled() -> bool {
     lError == ERROR_SUCCESS as LONG && dwType == REG_DWORD && dwValue == 1
 }
 
-/// True when a USB mass-storage device was enumerated this boot: PnP creates
-/// `HKLM\SYSTEM\CurrentControlSet\Enum\USBSTOR` the moment usbstor reports a
-/// child PDO, which happens long before winlogon runs. Plain smokes (no USB
-/// disk attached) never have the key, so stortest.exe is never spawned there —
-/// same explorer-race rationale as NetTestBootEnabled above.
+/// True when the loader was given the `STORTEST` boot option.
+///
+/// stortest.exe hunts for its test volume for two minutes, opening every volume
+/// every 2 s (and each open of an unmountable one tries every file system), and
+/// on a Pi 4 it writes to the boot card. It used to start whenever
+/// `Enum\USBSTOR` existed, which on the bench boards is every boot: the Pico's
+/// disk is always attached. So it is opt-in: put `STORTEST` in the loader's
+/// options. The kernel publishes those options, without slashes, as
+/// `Control\SystemStartOptions`.
 unsafe fn StorTestBootEnabled() -> bool {
     let mut hKey: HKEY = null_mut();
     if RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        wstr!("SYSTEM\\CurrentControlSet\\Enum\\USBSTOR").as_ptr(),
+        wstr!("SYSTEM\\CurrentControlSet\\Control").as_ptr(),
         0,
         KEY_QUERY_VALUE,
         &mut hKey,
@@ -335,8 +339,26 @@ unsafe fn StorTestBootEnabled() -> bool {
     {
         return false;
     }
+    let mut options: [u16; 512] = [0; 512];
+    let mut dwType: DWORD = 0;
+    // One element short of the buffer, so the string always stays terminated.
+    let mut dwSize: DWORD = (size_of::<[u16; 512]>() - size_of::<u16>()) as DWORD;
+    let lError = RegQueryValueExW(
+        hKey,
+        wstr!("SystemStartOptions").as_ptr(),
+        null_mut(),
+        &mut dwType,
+        options.as_mut_ptr() as LPBYTE,
+        &mut dwSize,
+    );
     RegCloseKey(hKey);
-    true
+    if lError != ERROR_SUCCESS as LONG || dwType != REG_SZ {
+        return false;
+    }
+    let len = options.iter().position(|&c| c == 0).unwrap_or(options.len());
+    options[..len]
+        .split(|&c| c == b' ' as u16 || c == b'/' as u16)
+        .any(|word| word.len() == 8 && word.iter().zip(b"STORTEST").all(|(&c, &b)| c < 0x80 && (c as u8).eq_ignore_ascii_case(&b)))
 }
 
 // Loads the user's preloaded keyboard layouts. Called on all arches now —
@@ -3238,9 +3260,9 @@ pub unsafe extern "system" fn WinMain(
     }
 
     /* USB mass-storage usermode proof: spawn stortest.exe (same pattern and
-     * rationale as nettest above). Gated on the PnP Enum key that only exists
-     * when a USBSTOR device was enumerated this boot, so plain smokes never
-     * pay the process-creation race against explorer's handoff. stortest finds
+     * rationale as nettest above). Only with the STORTEST boot option (see
+     * StorTestBootEnabled), so no boot pays the process-creation race against
+     * explorer's handoff unless it asked for the test. stortest finds
      * the VIBEUSB FAT volume by label, reads MARKER.TXT, writes + reads back a
      * file, and emits [STORTEST] markers to the debug serial. */
     if StorTestBootEnabled() {

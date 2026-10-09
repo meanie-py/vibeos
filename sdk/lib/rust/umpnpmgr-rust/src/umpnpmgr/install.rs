@@ -554,6 +554,35 @@ unsafe extern "C" fn IsConsoleBoot() -> i32 {
 pub unsafe extern "C" fn IsUISuppressionAllowed() -> BOOL {
     (g_IsUISuppressed != 0 || GetSuppressNewUIValue() != 0) as BOOL
 }
+/// Remove from the install queue every event for a device in `devices` (a
+/// double-NUL-terminated list, as PNP_GetDeviceList returns).
+unsafe fn DropQueuedInstalls(devices: PWSTR) {
+    let mut dropped: u32 = 0;
+    WaitForSingleObject(hDeviceInstallListMutex, (INFINITE) as u32);
+    let head = core::ptr::addr_of_mut!(DeviceInstallListHead);
+    let mut entry = (*head).Flink;
+    while entry != head {
+        let next = (*entry).Flink;
+        let params = (entry as *mut u8).offset(-(core::mem::offset_of!(DeviceInstallParams, ListEntry) as isize))
+            as *mut DeviceInstallParams;
+        let mut dev = devices;
+        while *dev != UNICODE_NULL {
+            if _wcsicmp(dev, (*params).DeviceIds.as_ptr()) == 0 {
+                RemoveEntryList(entry);
+                HeapFree(GetProcessHeap(), 0, params as LPVOID);
+                dropped += 1;
+                break;
+            }
+            dev = dev.offset((lstrlenW(dev) + 1) as isize);
+        }
+        entry = next;
+    }
+    ReleaseMutex(hDeviceInstallListMutex);
+    if dropped != 0 {
+        DPRINT1!("Dropped %u queued install(s) the boot-time pass already tried\n", dropped);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn DeviceInstallThread(lpParameter: LPVOID) -> u32 {
     let mut ListEntry: PLIST_ENTRY;
@@ -563,9 +592,15 @@ pub unsafe extern "system" fn DeviceInstallThread(lpParameter: LPVOID) -> u32 {
 
     // DPRINT removed
 
+    // Step 1: install the devices configured during the boot. The C leaves this
+    // step on any failure (`goto Step2` / `goto Cleanup`); the list is walked only
+    // when PNP_GetDeviceList succeeded, and freed once. The first translation fell
+    // through to the walk on every failure path: a null dereference when the size
+    // query or the allocation failed, and a walk of freed memory, then a second
+    // free, when the list query did.
     let mut deviceList: PWSTR = core::ptr::null_mut();
 
-    'outer: loop {
+    loop {
         let mut devListSize: u32 = 0;
         let status = PNP_GetDeviceListSize(
             core::ptr::null_mut(),
@@ -574,49 +609,65 @@ pub unsafe extern "system" fn DeviceInstallThread(lpParameter: LPVOID) -> u32 {
             0,
         );
         if status != (CR_SUCCESS) as u32 {
-            break 'outer;
+            break;
         }
 
-        deviceList = HeapAlloc(
+        let list = HeapAlloc(
             GetProcessHeap(),
             0,
             ((devListSize as usize) * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
-        if deviceList.is_null() {
-            break 'outer;
+        if list.is_null() {
+            break;
         }
 
         let status = PNP_GetDeviceList(
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            deviceList,
+            list,
             &mut devListSize,
             0,
         );
         if status == (CR_BUFFER_SMALL) as u32 {
-            HeapFree(GetProcessHeap(), 0, deviceList as LPVOID);
+            HeapFree(GetProcessHeap(), 0, list as LPVOID);
         } else if status != (CR_SUCCESS) as u32 {
-            // DPRINT removed
-            HeapFree(GetProcessHeap(), 0, deviceList as LPVOID);
-            break 'outer;
+            DPRINT1!("PNP_GetDeviceList failed with error %u\n", status);
+            HeapFree(GetProcessHeap(), 0, list as LPVOID);
+            break;
         } else {
+            deviceList = list;
             break;
         }
     }
 
-    let mut currentDev = deviceList;
-    while *currentDev.offset(0 as isize) != UNICODE_NULL {
-        InstallDevice(currentDev, FALSE);
-        currentDev = currentDev.offset((lstrlenW(currentDev) + 1) as isize);
+    if !deviceList.is_null() {
+        let mut currentDev = deviceList;
+        while *currentDev.offset(0 as isize) != UNICODE_NULL {
+            InstallDevice(currentDev, FALSE);
+            currentDev = currentDev.offset((lstrlenW(currentDev) + 1) as isize);
+        }
     }
 
-    HeapFree(GetProcessHeap(), 0, deviceList as LPVOID);
-
+    // Step 2: start the wait-loop for newly added devices
     // DPRINT removed
 
     WaitForSingleObject(hInstallEvent, (INFINITE) as u32);
 
     let showWizard = SetupIsActive() == 0 && IsConsoleBoot() == 0;
+
+    // Exceeds the C: the kernel queues an install event for each device it found
+    // without a driver while booting, and step 1 has just tried every one of those
+    // devices. The C dequeues and tries each again, and when that try is also
+    // non-interactive it can only repeat step 1's result: every device with no
+    // driver was installed twice per boot, a newdev process each, both failing
+    // with 259 (seen on the Pi 5 for VIBEOS\RP1GEM and ACPI\BRCM5D12). When the
+    // queued try would show the wizard, it is a different attempt and is kept.
+    if !deviceList.is_null() && !(showWizard && IsUISuppressionAllowed() == 0) {
+        DropQueuedInstalls(deviceList);
+    }
+    if !deviceList.is_null() {
+        HeapFree(GetProcessHeap(), 0, deviceList as LPVOID);
+    }
 
     loop {
         WaitForSingleObject(hDeviceInstallListMutex, (INFINITE) as u32);
