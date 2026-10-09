@@ -304,7 +304,25 @@ unsafe fn KiDispatchExceptionToUser(
     }
 
     UserStack = UserRsp as PKUSER_EXCEPTION_STACK;
-    
+
+    // The budget a STACK_OVERFLOW handler gets is everything from here down to
+    // StackLimit, and ntdll's dispatch spends it twice over (search pass, then
+    // RtlUnwindEx's unwind pass, each RtlpUnwindInternal -> RtlVirtualUnwind).
+    // Print it, so "the handler ran out of stack" is a number, not a guess.
+    if (*ExceptionRecordPtr).ExceptionCode == STATUS_STACK_OVERFLOW {
+        let teb = (*PsGetCurrentThread()).Teb as PTEB;
+        if !teb.is_null() {
+            let limit = (*teb).NtTib.StackLimit as u64;
+            crate::dbg_print!(
+                b"[KI-EXC] STACK_OVERFLOW dispatch: rsp=%p frame=%p limit=%p handler budget=0x%lx\n\0",
+                (*Context).Rsp as usize,
+                UserRsp as usize,
+                limit as usize,
+                UserRsp.saturating_sub(limit) as u32,
+            );
+        }
+    }
+
     _enable();
     
     let result = 'seh: {

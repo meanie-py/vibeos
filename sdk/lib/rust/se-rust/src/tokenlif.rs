@@ -1025,7 +1025,16 @@ unsafe fn SepPerformTokenFiltering(
                 (*(*access_token).UserAndGroups.offset(groups_in_token as isize)).Attributes &= !(SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT);
                 (*(*access_token).UserAndGroups.offset(groups_in_token as isize)).Attributes |= SE_GROUP_USE_FOR_DENY_ONLY;
 
+                // DIVERGES from tokenlif.c, which does `GroupsInToken--; continue;`
+                // here — copied from the privilege loop above, where the entry is
+                // REMOVED and the decrement re-examines the one that slid into its
+                // slot. A disabled group is NOT removed, so re-examining it matches
+                // again and the loop spins forever at PASSIVE_LEVEL (SeTokenFiltering
+                // wedged in-kernel, un-reapable). Upstream never hangs only because
+                // its RtlEqualSid compares `&...Sid` — the addresses of the pointers —
+                // so in practice nothing matches; this port compares the SIDs. Move on.
                 found_group = 0;
+                groups_in_token += 1;
                 continue;
             }
 

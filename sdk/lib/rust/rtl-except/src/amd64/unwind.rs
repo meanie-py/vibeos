@@ -284,6 +284,13 @@ unsafe fn GetXmmReg(Context: PCONTEXT, Reg: u8) -> M128A {
  * \brief Helper function that tries to unwind epilog instructions.
  * \return TRUE if we have been in an epilog and it could be unwound.
  *         FALSE if the instructions were not allowed for an epilog. */
+// Out of line on purpose (the C says `__inline`): this holds a whole CONTEXT
+// copy, and inlined that 0x4d0 lands in RtlVirtualUnwind's frame on EVERY
+// call, epilog or not. RtlVirtualUnwind runs nested inside RtlpUnwindInternal
+// twice over during a dispatch (search pass, then RtlUnwindEx's unwind pass),
+// and a STACK_OVERFLOW is dispatched on the one guaranteed page -- the bloat
+// is what made amd64 RtlException's overflow undeliverable (exit 128).
+#[inline(never)]
 unsafe fn RtlpTryToUnwindEpilog(
     Context: PCONTEXT,
     ControlPc: ULONG64,
@@ -858,9 +865,14 @@ pub unsafe extern "system" fn RtlpUnwindInternal(
                        that resulted in this unwind. The installed handler has
                        already copied the original dispatcher context, we now
                        need to copy back the original context. */
-                    let restored: CONTEXT = *DispatcherContext.ContextRecord;
-                    *ContextRecord = restored;
-                    UnwindContext = restored;
+                    // Copy through the pointers, never via a CONTEXT temporary:
+                    // a `let` here is a second 0x4d0 slot in this frame for its
+                    // whole lifetime, and this frame is live twice over on a
+                    // stack-overflow dispatch (see RtlpTryToUnwindEpilog). The
+                    // source may alias ContextRecord, hence copy(), not
+                    // copy_nonoverlapping().
+                    core::ptr::copy(DispatcherContext.ContextRecord as *const CONTEXT, ContextRecord, 1);
+                    core::ptr::copy_nonoverlapping(ContextRecord as *const CONTEXT, &mut UnwindContext, 1);
 
                     /* The original context was from "before" the unwind, so we
                        need to do an additional virtual unwind to restore the

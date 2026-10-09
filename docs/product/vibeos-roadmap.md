@@ -5557,6 +5557,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `SeTokenFiltering` (all arches), i386 `RtlSplayTreeKM`, amd64 `RtlException`
+    quarantined since 07-11/12 — ROOT-CAUSED/FIXED 2026-10-08, four bugs.**
+    (1) SeTokenFiltering (TIMEOUT on x86, INCOMPLETE on arm64): the group-disable loop in
+    `SepPerformTokenFiltering` never advanced past a group it had disabled, so it spun forever.
+    The C has the same `GroupsInToken--` but never matches, because its `RtlEqualSid` compares
+    the pointers' addresses. Now 11/0 on every arch.
+    (2) RtlSplayTreeKM, i386 0x19: generictable sized nodes with the 20-byte sum of the link
+    structs, but writes the data at the 8-aligned `UserData` offset, 24. Every insert overran
+    its pool block by 4 bytes. Now 139/0. This also covers the i386 user-mode twin `RtlSplayTree`
+    (banked NO-END), which uses the same crate in ntdll.
+    (3) amd64 RtlException exit 128: ntdll's nested dispatch frames (RtlpUnwindInternal 0xa88
+    with a duplicate CONTEXT temporary, RtlVirtualUnwind 0x508 from an inlined CONTEXT copy)
+    overran the 0x1c40-byte STACK_OVERFLOW handler budget. Now 34/0.
+    (4) arm64 RtlException 33/1: the data-abort handler raised AV for every refused
+    MmAccessFault, including STACK_OVERFLOW. Now 34/0.
+    i386 RtlException STAYS quarantined: clang's x86-32 WinEH places the try-level stores only
+    around calls, so the call-free overflow loop runs at try-level -1. That is a toolchain
+    limit, and the kernel raises the right code.
   - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
     ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
     `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
@@ -7046,7 +7064,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `MmMapLockedPagesSpecifyCache` **CRASH** (own verdict — so the original claim was right, but
   only by luck, and only now evidenced), `IoFilesystem` **CRASH**, `MmReservedMapping` **CRASH**,
   `NpfsFileInfo` **CRASH**, `SeTokenFiltering` **INCOMPLETE** (it kills the VM outright — no
-  bugcheck, QEMU exits, see the quest doc), and `ExFastMutex` **OK** — un-quarantined, it was
+  bugcheck, QEMU exits, see the quest doc; 2026-10-08: NOT this family — an infinite loop in
+  token filtering, fixed, see the entry above), and `ExFastMutex` **OK** — un-quarantined, it was
   arm64's last arch-specific entry. `[PFNMISMATCH]` still fired **zero** times across all of it.
   The probe strings are compiled into this exact kernel (verified present in
   `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a

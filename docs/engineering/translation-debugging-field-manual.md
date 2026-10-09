@@ -2706,6 +2706,26 @@ tail into the suspend counts.
 exists precisely because the tail is someone else's storage. Grep for the overlay
 (`*Fill[...]` members in ndk headers) before collapsing it to `size_of`.
 
+### A header sized as the SUM of its members is short when the trailing field is wider-aligned
+**Symptom.** i386-only BUGCHECK 0x19 (BAD_POOL_HEADER) on a free in RtlSplayTreeKM, and
+NO-END in its user-mode twin; amd64 and arm64 were clean. It looked like splay-tree corruption.
+
+**Cause.** The generic table allocates each node as header + caller data, with the data
+starting at `TABLE_ENTRY_HEADER.UserData`, a `LONGLONG`. The C sizes the header with
+`FIELD_OFFSET(TABLE_ENTRY_HEADER, UserData)`, which is 24 on i386 because the LONGLONG is
+8-aligned. The translation wrote `size_of::<SplayLinks>() + size_of::<ListEntry>()` = 20,
+but writes the data through the field, at 24. So every insert overran its pool block by 4
+bytes. On 64-bit both expressions come to 40, so only i386 could ever see it. The crate's
+own unit test asserted 20, which pinned the bug in place.
+
+**Fix.** `offset_of!(TableEntryHeader, user_data)`. Use one expression for both the size
+and the write.
+
+**Generalize.** Whenever an allocation size and a data pointer are computed separately,
+they must be the same expression. Treat a sum of member sizes that stands in for
+`FIELD_OFFSET` as a bug until proven otherwise. The 32-bit targets are where alignment
+padding appears.
+
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
 its capability list, and got 64 bytes back, so every capability looked absent. Nothing
@@ -4322,6 +4342,25 @@ one, and the leading underscore suppresses the unused warning that would have ex
 flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
 declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
 outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
+### Fixing one C bug can unmask another that it was hiding
+**Symptom.** SeTokenFiltering wedged in the kernel on every arch: TIMEOUT, a process that
+TerminateProcess can't reap, and every later kmtest failing with SET_RESULTBUFFER 0x5.
+Upstream ReactOS passes it.
+
+**Cause.** In `SepPerformTokenFiltering`, the group-disable loop does `GroupsInToken--;
+continue;` after disabling a group. That line was copied from the privilege loop above it,
+where the entry is REMOVED and the decrement re-examines whatever slid into its slot. A
+disabled group stays in the token, so the next pass matches it again, forever. Upstream
+never reaches that line, because its `RtlEqualSid(&...Sid, &...Sid)` compares the addresses
+of the SID pointers and so in practice never matches. The translation passed the real SIDs,
+which correctly fixed the first bug and turned the second into a hang.
+
+**Fix.** Advance past the disabled group, and leave a DIVERGES comment naming both bugs.
+
+**Generalize.** A translation that repairs a C bug has to re-read the code the bug was
+guarding. Here, code that only ran because a comparison now succeeds. In particular, check
+any `index--; continue;` for whether the loop body actually removed the entry.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 
@@ -7108,6 +7147,43 @@ the kernel disagree, suspect the harness first if the harness is younger.**
 - **Fix:** derive the handler ebp from the registration (`&frame->_ebp`, as Wine does for
   `_local_unwind2` and the filter calls), never from a separately saved frame pointer.
   Done in crt-shared-rust's `_seh_longjmp_unwind`/`4` and vcruntime's `_seh_longjmp_unwind.s`.
+
+### A STACK_OVERFLOW handler runs on one page — dispatch frame bloat makes it undeliverable
+**Symptom.** amd64 user-mode RtlException died with exit 128 inside RtlVirtualUnwind,
+followed by `[KI-EXC] STACK EXHAUSTED and undeliverable`. Its stack-overflow case expects
+STATUS_STACK_OVERFLOW to be caught.
+
+**Cause.** The kernel was right: it committed the guaranteed page and raised the exception
+with a 0x1c40-byte budget (`[KI-EXC] STACK_OVERFLOW dispatch` prints it). But amd64 dispatch
+is nested: the search pass's RtlpUnwindInternal → RtlVirtualUnwind, then the handler's
+RtlUnwindEx → a second RtlpUnwindInternal → RtlVirtualUnwind. Our RtlpUnwindInternal frame
+was 0xa88, because a `let restored: CONTEXT = *p;` temporary sat beside `UnwindContext`.
+RtlVirtualUnwind's was 0x508, from an inlined epilog helper's CONTEXT copy. Together they
+needed more than the budget.
+
+**Fix.** Copy CONTEXTs through pointers (`ptr::copy`), and mark the helper that holds the
+CONTEXT copy `#[inline(never)]`. 34/0.
+
+**Generalize.** On this path, every CONTEXT you name is 0x4d0 bytes of a budget of about one
+page. When a frame on the dispatch path grows, check its `sub rsp` in the disassembly.
+
+### clang i386 SEH: a call-free loop inside `__try` runs at try-level -1
+**Symptom.** i386 user-mode RtlException died with "Unhandled exception c00000fd" even
+though the kernel raised STATUS_STACK_OVERFLOW correctly. The test's `__except` never ran.
+
+**Cause.** x86-32 SEH tracks the current `__try` with a try-level store, and LLVM's
+WinEHState pass places those stores only around calls. For a `__try { while (1) { p =
+_alloca(1024); *p = 5; } }` (the 1 KB alloca is an inline `sub esp`), it emitted the
+enter-try store (7) and the leave-try store (-1) back to back, before the loop. The loop
+therefore faults at try-level -1. This is a toolchain limit, not an OS bug. amd64 and arm64
+use IP-range scope tables and are unaffected.
+
+**Fix.** None in the OS. The test stays quarantined on i386, and RtlExceptionKM covers its
+other assertions.
+
+**Generalize.** If an i386 handler isn't reached, disassemble the function and find the
+try-level slot stores (`movl $N, off(%esi)`) around the faulting PC before you suspect
+dispatch.
 
 ### PSEH hand-lowering recipe
 For FS-driver translations, `_SEH2_TRY`/`_FINALLY`/`_EXCEPT` lower to a `'seh:` labelled block
@@ -11629,6 +11705,18 @@ list"), from which the upstream writer followed.
   deliberately **cfg-gated to i386 and self-retiring** — guarding all arches measurably costs.
 - **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
   arm64 (OPEN; needs a `#[naked]` capture stub).
+
+### arm64 raised every refused page fault as ACCESS_VIOLATION
+**Symptom.** arm64 user-mode RtlException got `0xc0000005` where it expects
+STATUS_STACK_OVERFLOW (`RtlException.c:171`), although MM had logged "Close to our death".
+
+**Cause.** The data-abort handler in `ke/arm64/trap.rs` discarded MmAccessFault's status
+and raised STATUS_ACCESS_VIOLATION whenever it was negative. Guard-page and stack-overflow
+refusals return their own codes, and Windows raises them as those codes, as do our i386
+(`traphdlr.rs`) and amd64 handlers.
+
+**Fix.** Raise MmAccessFault's status when it is GUARD_PAGE_VIOLATION or STACK_OVERFLOW,
+and AV otherwise.
 
 ### An uninitialised PFN `CacheAttribute` turns every `VirtualProtect`ed page into DEVICE memory
 `MiInitializePfn` (and the `AndMakePteValid` / `ForOtherProcess` variants) never set
