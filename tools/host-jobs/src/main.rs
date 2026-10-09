@@ -179,6 +179,17 @@ fn positive(key: &str, default: usize) -> io::Result<usize> {
         Err(e) => Err(io::Error::other(e)),
     }
 }
+/// Like `positive`, but 0 is a value: `VIBEOS_HOST_JOB_LAND_RESERVE=0` disables
+/// the landing reserve, the same as `VIBEOS_LAND_BOOT_RESERVE=0` for boots.
+fn non_negative(key: &str, default: usize) -> io::Result<usize> {
+    match env::var(key) {
+        Ok(s) => s
+            .parse::<usize>()
+            .map_err(|_| io::Error::other(format!("{key} must be a non-negative integer"))),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(e) => Err(io::Error::other(e)),
+    }
+}
 fn quote(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
@@ -427,7 +438,7 @@ impl Broker {
         // CPU slots are for integration only, the same way the boot pool keeps half
         // its permits for landing. With no gate running, lanes use every slot.
         let land_present = rows.iter().any(|r| is_landing(&r.4));
-        let reserve = positive("VIBEOS_HOST_JOB_LAND_RESERVE", self.slots / 2)?;
+        let reserve = non_negative("VIBEOS_HOST_JOB_LAND_RESERVE", self.slots / 2)?;
         rows.sort_by_key(|r| (effective_rank(r.2, r.1, now()), r.1, r.0.clone()));
         for (path, _, _, kind, body) in rows {
             if !body.contains("\"state\":\"waiting\"") {
@@ -573,7 +584,10 @@ fn slot_allowed(
     if index >= cpu_limit {
         return false;
     }
-    landing || !land_present || index < cpu_limit.saturating_sub(reserve)
+    // Never the whole pool: lanes always keep at least one slot, as the boot pool's
+    // land_boot_reserve does, so a gate delays them without ever stopping them.
+    let reserve = reserve.min(cpu_limit.saturating_sub(1));
+    landing || !land_present || index < cpu_limit - reserve
 }
 fn effective_rank(rank: u8, born: u64, current: u64) -> u8 {
     if current.saturating_sub(born) >= 120_000 {
@@ -742,9 +756,13 @@ mod tests {
         assert!(slot_allowed(17, 18, 9, true, true));
         // No gate present: the lane uses every slot.
         assert!(slot_allowed(17, 18, 9, false, false));
-        // Never past the limit, and a reserve larger than the limit leaves lanes nothing.
+        // Never past the limit, and no reserve takes a lane's LAST slot.
         assert!(!slot_allowed(18, 18, 9, true, true));
-        assert!(!slot_allowed(0, 18, 40, false, true));
+        assert!(slot_allowed(0, 18, 40, false, true));
+        assert!(!slot_allowed(1, 18, 40, false, true));
+        // A one-slot broker (tests, tiny hosts) and a reserve of 0 both mean "no reserve".
+        assert!(slot_allowed(0, 1, 0, false, true));
+        assert!(slot_allowed(17, 18, 0, false, true));
     }
     #[test]
     fn json() {
