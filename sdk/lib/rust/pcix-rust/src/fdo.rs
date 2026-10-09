@@ -787,7 +787,7 @@ pub unsafe extern "system" fn PciAddDevice(
     let mut FdoExtension: PPCI_FDO_EXTENSION;
     let mut ParentExtension: PPCI_FDO_EXTENSION;
     let mut PdoExtension: PPCI_PDO_EXTENSION;
-    let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut DeviceObject: PDEVICE_OBJECT ;
     let mut Buffer: [u8; 20] = [0u8; 20];
     let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION = &raw mut Buffer as *mut u8 as PKEY_VALUE_PARTIAL_INFORMATION;
     let mut Status: NTSTATUS;

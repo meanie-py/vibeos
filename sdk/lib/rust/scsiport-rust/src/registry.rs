@@ -136,7 +136,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
     let mut ScsiBusKey: HANDLE = core::ptr::null_mut();
     let mut ScsiInitiatorKey: HANDLE = core::ptr::null_mut();
     let mut BusNumber: u32;
-    let mut UlongData: u32 = 0;
+    let mut UlongData: u32 ;
     let mut Status: NTSTATUS;
 
     if DeviceExtension.is_null() {
@@ -424,7 +424,7 @@ pub unsafe extern "C" fn RegistryInitAdapterKey(
 pub unsafe extern "C" fn RegistryInitLunKey(
     mut LunExtension: PSCSI_PORT_LUN_EXTENSION,
 ) -> NTSTATUS {
-    let mut typeName: PWCHAR = core::ptr::null_mut();
+    let mut typeName: PWCHAR ;
     let mut nameBuffer: [WCHAR; 64] = [0u16; 64];
     let mut keyName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,

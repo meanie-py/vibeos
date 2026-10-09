@@ -1573,7 +1573,7 @@ pub unsafe extern "C" fn CdMountVolume(
     const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 7 << 16;
     const IOCTL_SCSI_GET_CAPABILITIES: u32 = (4 << 16) | (0x404 << 2);
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let mut Status: NTSTATUS;
 
     let mut VolDo: *mut VOLUME_DEVICE_OBJECT = core::ptr::null_mut();
     let mut Vcb: *mut VCB = core::ptr::null_mut();
@@ -1780,7 +1780,7 @@ pub unsafe extern "C" fn CdMountVolume(
                     if FilesystemDeviceType == FILE_DEVICE_DISK_FILE_SYSTEM {
                         CdFreePool(&mut (CdromToc as *mut core::ffi::c_void) as *mut *mut core::ffi::c_void);
                         CdromToc = core::ptr::null_mut();
-                        Status = STATUS_SUCCESS;
+                        *p_Status = STATUS_SUCCESS;
                     } else {
                         break 'try_block; // try_leave( Status )
                     }
@@ -2057,7 +2057,7 @@ pub unsafe extern "C" fn CdInvalidateVolumes(
     const IO_TYPE_VPB: u16 = 10; // iotypes.h
     const KERNEL_MODE: i8 = 0; // KernelMode
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut SavedIrql: KIRQL = 0;
 

@@ -46,6 +46,12 @@
 /* ── the fake TEB ─────────────────────────────────────────────────────── */
 
 #define TEB_BLOCK 0x1000
+/* PSEH's dummy arm: sdk/lib/pseh/dummy.c defines this for the DLL. except_i386.rs reads it
+ * to guard cxx_frame_handler's `__EXCEPT_CTX(se_translation_filter, &ctx)`, exactly as
+ * except.rs does on x64 (msvcrt-difftest/cppimpl.c carries the same definition). Zero is
+ * DUMMY_PSEH: the filter compiles and never runs. */
+int _SEH2_Volatile0 = 0;
+
 static unsigned char g_teb_block[TEB_BLOCK] __attribute__((aligned(16)));
 static int g_teb_ready;
 

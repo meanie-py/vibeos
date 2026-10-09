@@ -1237,7 +1237,9 @@ pub unsafe extern "C" fn _statusfp2(x86_sw: *mut u32, sse2_sw: *mut u32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn _statusfp() -> u32 {
-    let mut flags: u32 = 0;
+    // The C's `flags = 0` is overwritten on x86 but handed to `_setfp` as in/out on the
+    // other arches, so each arm owns its own initializer.
+    let flags: u32;
     #[cfg(target_arch = "x86")]
     {
         let mut x86_sw: u32 = 0;
@@ -1248,12 +1250,14 @@ pub unsafe extern "C" fn _statusfp() -> u32 {
     }
     #[cfg(not(target_arch = "x86"))]
     {
+        let mut sw: u32 = 0;
         _setfp(
             core::ptr::null_mut(),
             0,
-            &mut flags,
+            &mut sw,
             0,
         );
+        flags = sw;
     }
     flags
 }
@@ -1342,25 +1346,30 @@ pub unsafe extern "C" fn __control87_2(
 
 #[no_mangle]
 pub unsafe extern "C" fn _control87(newval: u32, mask: u32) -> u32 {
-    let mut flags = 0;
+    // The C's `flags = 0` is overwritten by `flags = newval` off x86 but handed to
+    // `__control87_2` on x86, so each arm owns its own initializer.
+    let flags: u32;
     // C: `#if defined(__i386__) && (_MSVCR_VER == 0 || _MSVCR_VER >= 80)` — TRUE at 0.
     #[cfg(target_arch = "x86")]
     {
+        let mut x86_cw: u32 = 0;
         let mut sse2_cw: u32 = 0;
 
-        __control87_2(newval, mask, &mut flags, &mut sse2_cw);
+        __control87_2(newval, mask, &mut x86_cw, &mut sse2_cw);
 
         if sse2_supported != 0 {
-            if ((flags ^ sse2_cw) & (_MCW_EM | _MCW_RC)) != 0 {
-                flags |= _EM_AMBIGUOUS;
+            if ((x86_cw ^ sse2_cw) & (_MCW_EM | _MCW_RC)) != 0 {
+                x86_cw |= _EM_AMBIGUOUS;
             }
-            flags |= sse2_cw;
+            x86_cw |= sse2_cw;
         }
+        flags = x86_cw;
     }
     #[cfg(not(target_arch = "x86"))]
     {
-        flags = newval;
-        _setfp(&mut flags, mask, core::ptr::null_mut(), 0);
+        let mut cw: u32 = newval;
+        _setfp(&mut cw, mask, core::ptr::null_mut(), 0);
+        flags = cw;
     }
     flags
 }

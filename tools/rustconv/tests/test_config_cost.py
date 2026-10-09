@@ -73,16 +73,19 @@ class TestBackendDefault:
     VALUE and the precedence.
     """
 
-    def test_deepseek_key_wins_over_anthropic(self, monkeypatch):
+    def test_anthropic_key_wins_and_defaults_to_haiku_5_5(self, monkeypatch):
+        # Haiku 5.5 is the translation default since 2026-10-09: cheaper per call than
+        # DeepSeek v4-pro and less integration rework (rustconv-pipeline.md).
         monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+        assert config.get_backend() == "claude"
+        assert resolve_model(None) == "claude-haiku-5-5"
+
+    def test_falls_back_to_deepseek_without_anthropic_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         assert config.get_backend() == "deepseek"
         assert resolve_model(None) == config.DEEPSEEK_MODEL_V4_PRO
-
-    def test_falls_back_to_claude_without_deepseek_key(self, monkeypatch):
-        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
-        assert config.get_backend() == "claude"
 
     def test_every_backend_has_a_default_model(self):
         # A backend get_backend() can return but DEFAULT_MODELS lacks is a KeyError at the
@@ -93,6 +96,9 @@ class TestBackendDefault:
     def test_default_model_is_priced(self):
         # An unpriced default silently over-estimates to Opus in the pre-payment banner.
         assert config.DEEPSEEK_MODEL_V4_PRO in config.MODEL_PRICING
+        assert config.model_pricing("claude-haiku-5-5") < config.model_pricing(
+            config.DEEPSEEK_MODEL_V4_PRO
+        )
         assert config.model_pricing(config.DEEPSEEK_MODEL_V4_PRO) < config.model_pricing(
             config.CLAUDE_MODEL_SONNET
         )

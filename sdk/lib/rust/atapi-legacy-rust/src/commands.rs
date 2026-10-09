@@ -276,7 +276,7 @@ unsafe fn map_error_finish(
     baseIoAddress1: PIDE_REGISTERS_1,
     srbStatus: UCHAR,
     scsiStatus: UCHAR,
-    mut errorByte: UCHAR,
+    _errorByte: UCHAR,
 ) -> ULONG {
     let mut i: ULONG;
 
@@ -328,8 +328,7 @@ unsafe fn map_error_finish(
 
                 if (statusByte & IDE_STATUS_ERROR as UCHAR) != 0 {
                     // Read the error register.
-                    errorByte = ScsiPortReadPortUchar((baseIoAddress1 as PUCHAR).add(1));
-                    let _ = errorByte;
+                    ScsiPortReadPortUchar((baseIoAddress1 as PUCHAR).add(1));
 
                     (*deviceExtension).MaximumBlockXfer[i as usize] = 0;
                 }
@@ -600,7 +599,7 @@ pub unsafe extern "system" fn AtapiSendCommand(
     (*deviceExtension).DataBuffer = (*Srb).DataBuffer as PUSHORT;
     (*deviceExtension).WordsLeft = (*Srb).DataTransferLength / 2;
 
-    statusByte = WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
+    WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
 
     // atapi.c:5251 — Write transfer byte count to registers.
     byteCountLow = ((*Srb).DataTransferLength & 0xFF) as UCHAR;
@@ -634,7 +633,7 @@ pub unsafe extern "system" fn AtapiSendCommand(
         );
 
         // Wait for DRQ.
-        statusByte = WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
+        WaitOnBusy(baseIoAddress2 as PIDE_REGISTERS_2);
         statusByte = WaitForDrq(baseIoAddress2 as PIDE_REGISTERS_2);
 
         if (statusByte & IDE_STATUS_DRQ as UCHAR) == 0 {

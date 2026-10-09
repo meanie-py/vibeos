@@ -5363,7 +5363,7 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
 
 #[no_mangle]
 pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
-    let mut lOk: BOOL = 1;
+    let lOk: BOOL;
     let mut rc: HRESULT;
     let resT: i32;
     let mut lv: VARIANT = core::mem::zeroed();

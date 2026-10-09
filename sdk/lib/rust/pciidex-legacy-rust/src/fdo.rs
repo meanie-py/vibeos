@@ -779,7 +779,7 @@ pub unsafe extern "C" fn PciIdeXFdoParseResources(
     }
 
     let mut bus_master_descriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
-    let mut io_base: PVOID = core::ptr::null_mut();
+    let mut io_base: PVOID ;
 
     if ResourcesTranslated.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -945,9 +945,9 @@ pub unsafe extern "C" fn PciIdeXFdoRemoveDevice(
     FdoExtension: PFDO_DEVICE_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut PdoExtension: PPDO_DEVICE_EXTENSION = core::ptr::null_mut::<_PDO_DEVICE_EXTENSION>();
-    let mut Status: NTSTATUS = 0;
-    let mut i: ULONG = 0;
+    let mut PdoExtension: PPDO_DEVICE_EXTENSION ;
+    let mut Status: NTSTATUS ;
+    let mut i: ULONG ;
 
     if KeGetCurrentIrql() as core::ffi::c_int > (APC_LEVEL) as i32 {
         DbgPrint(
@@ -1338,7 +1338,7 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
             return PciIdeXFdoRemoveDevice(FdoExtension, Irp);
         }
         IRP_MN_QUERY_PNP_DEVICE_STATE => {
-            Status = PciIdeXFdoQueryPnpDeviceState(FdoExtension, Irp);
+            PciIdeXFdoQueryPnpDeviceState(FdoExtension, Irp);
         }
         IRP_MN_QUERY_DEVICE_RELATIONS => {
             if (*IoStack).Parameters.QueryDeviceRelations.Type != BusRelations {
@@ -1354,7 +1354,7 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
             }
         }
         IRP_MN_DEVICE_USAGE_NOTIFICATION => {
-            Status = PciIdeXFdoQueryDeviceUsageNotification(FdoExtension, Irp);
+            PciIdeXFdoQueryDeviceUsageNotification(FdoExtension, Irp);
         }
         IRP_MN_QUERY_INTERFACE => {
             Status = PciIdeXFdoQueryInterface(FdoExtension, IoStack);

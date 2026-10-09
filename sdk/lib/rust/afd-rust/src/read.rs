@@ -800,7 +800,7 @@ unsafe fn packet_socket_recv_complete_impl(
     }
 
     if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && (*FCB).Recv.Content < (*FCB).Recv.Size {
-        Status = TdiReceiveDatagram(
+        TdiReceiveDatagram(
             core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
             (*FCB).AddressFile.Object,
             0,

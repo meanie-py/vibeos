@@ -462,6 +462,12 @@ pub unsafe extern "C" fn cxx_frame_handler(
             except_ptrs.ExceptionRecord = rec;
             except_ptrs.ContextRecord = context;
             se_translator((*rec).ExceptionCode, &mut except_ptrs);
+
+            // __EXCEPT_CTX(se_translation_filter, &ctx) -- never entered under DUMMY_PSEH,
+            // as in except.rs. Dropping it entirely left `ctx` built and never read.
+            if crate::cpp_rtti::_SEH2_Volatile0 != 0 {
+                se_translation_filter(&mut except_ptrs, core::ptr::addr_of_mut!(ctx).cast());
+            }
         }
     }
 

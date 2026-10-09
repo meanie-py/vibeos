@@ -363,7 +363,6 @@ pub unsafe extern "system" fn VarTokenizeFormatString(
 
     if lpszFormat.is_null() || *lpszFormat == 0 {
         if cbTok < 1 { return TYPE_E_BUFFERTOOSMALL as HRESULT; }
-        cbTok -= 1;
         *rgbTok = FMT_TO_STRING as u8;
         if !pcbActual.is_null() {
             *pcbActual = FMT_TO_STRING as i32;
