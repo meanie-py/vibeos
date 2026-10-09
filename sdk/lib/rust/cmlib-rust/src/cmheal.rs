@@ -41,7 +41,6 @@ unsafe fn DPRINT1(format: *const i8) {
 }
 unsafe extern "C" {
     fn DbgPrint(format: *const i8, ...);
-    fn ASSERT(_cond: i32);
     // Consumer-provided globals (ntoskrnl in the kernel; loader supplies a
     // zero stub). Gated behind !CMLIB_HOST && !_BLDR_ in C.
     #[cfg(not(feature = "bldr"))]
@@ -113,7 +112,7 @@ pub unsafe extern "system" fn CmpRepairParentKey(
             ParentRepaired = CmpRemoveSubKeyInLeaf(Hive, KeyNode, KeyIndex, TargetKey);
         } else {
             // DPRINT removed
-            ASSERT(0);
+            ASSERT!(0);
         }
 
         if ParentRepaired != 0 {
@@ -313,7 +312,7 @@ unsafe fn CmpRemoveFastIndexKeyCell(
     Index: u32,
     UpdateCount: u8,
 ) {
-    ASSERT((Index < (*FastIndex).Count as u32) as i32);
+    ASSERT!((Index < (*FastIndex).Count as u32) as i32);
 
     /* Calculate the number of trailing cells */
     let MoveCount = (*FastIndex).Count as u32 - Index - 1;
@@ -336,7 +335,7 @@ unsafe fn CmpRemoveFastIndexKeyCell(
 
 /// Removes a cell from a normal key index (C `static VOID CmpRemoveIndexKeyCell`).
 unsafe fn CmpRemoveIndexKeyCell(KeyIndex: *mut CM_KEY_INDEX, Index: u32) {
-    ASSERT((Index < (*KeyIndex).Count as u32) as i32);
+    ASSERT!((Index < (*KeyIndex).Count as u32) as i32);
 
     /* Calculate the number of trailing cells */
     let MoveCount = (*KeyIndex).Count as u32 - Index - 1;
@@ -364,7 +363,7 @@ unsafe fn CmpRemoveValueFromValueList(
     let count_ptr =
         core::ptr::addr_of_mut!((*ValueListNode).__bindgen_anon_1.__bindgen_anon_1.ValueList.Count);
     let count = core::ptr::read_unaligned(count_ptr);
-    ASSERT((Index < count) as i32);
+    ASSERT!((Index < count) as i32);
 
     /* Calculate the number of trailing values */
     let MoveCount = count - Index - 1;
@@ -394,7 +393,7 @@ unsafe fn CmpRemoveSubkeyInRoot(
 
     PAGED_CODE!();
 
-    ASSERT((!RootIndex.is_null()) as i32);
+    ASSERT!((!RootIndex.is_null()) as i32);
 
     let root_list = core::ptr::addr_of!((*RootIndex).List) as *const HCELL_INDEX;
 
@@ -407,8 +406,8 @@ unsafe fn CmpRemoveSubkeyInRoot(
          * valid to begin with.
          */
         if RootCountIndex != 0 {
-            ASSERT((!Leaf.is_null()) as i32);
-            ASSERT((LeafCell == *root_list.add((RootCountIndex - 1) as usize)) as i32);
+            ASSERT!((!Leaf.is_null()) as i32);
+            ASSERT!((LeafCell == *root_list.add((RootCountIndex - 1) as usize)) as i32);
             HvReleaseCell(Hive, LeafCell);
         }
 

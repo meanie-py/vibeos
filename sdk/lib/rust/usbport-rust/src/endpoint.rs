@@ -1843,7 +1843,7 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointActive(
                         b"USBPORT_DmaEndpointActive: FIXME call USBPORT_ErrorCompleteIsoTransfer\n\0".as_ptr()
                             as *const i8,
                     );
-                    ASSERT(0);
+                    ASSERT!(0);
                 }
 
                 return USBPORT_ENDPOINT_ACTIVE;

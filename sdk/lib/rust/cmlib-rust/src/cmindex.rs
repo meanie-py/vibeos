@@ -48,7 +48,7 @@
 
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{CM_KEY_NODE, CM_INDEX, CM_KEY_FAST_INDEX, CM_KEY_INDEX, CmpCompareCompressedName, CmpCompressedNameSize, CmpCopyCompressedName, HBIN, HCELL, HCELL_INDEX, HHIVE, HSTORAGE_TYPE, PCM_KEY_FAST_INDEX, PCM_KEY_INDEX, PCM_KEY_NODE, PCUNICODE_STRING, PHCELL_INDEX, PHHIVE, RtlCompareUnicodeString, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile, _HHIVE, _UNICODE_STRING};
-use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, ASSERT, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
+use crate::glue::{HvGetCell, HvReleaseCell, HvGetCellType, HCELL_NIL, HBLOCK_SIZE, CM_KEY_INDEX_ROOT, CM_KEY_INDEX_LEAF, CM_KEY_FAST_LEAF, CM_KEY_HASH_LEAF, INVALID_INDEX, CmpMaxIndexPerHblock, TAG_CM, KEY_COMP_NAME};
 use core::ffi::c_void;
 
 extern "system" {
@@ -209,8 +209,8 @@ pub unsafe extern "system" fn CmpFindSubKeyInRoot(
     let mut Result: i32;
 
     /* Verify Index for validity */
-    ASSERT((*Index).Count != 0);
-    ASSERT((*Index).Signature == CM_KEY_INDEX_ROOT);
+    ASSERT!((*Index).Count != 0);
+    ASSERT!((*Index).Signature == CM_KEY_INDEX_ROOT);
 
     /* Set high limit and loop */
     High = (*Index).Count as u32 - 1;
@@ -508,7 +508,7 @@ pub unsafe extern "system" fn CmpDoFindSubKeyByNumber(
         }
 
         /* Should never get here */
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     /* If we got here, then the cell is in this index */
@@ -762,7 +762,7 @@ pub unsafe extern "system" fn CmpSplitLeaf(
     HvMarkCellDirty(Hive, LeafCell, 0u8);
 
     /* Make sure its type is the same */
-    ASSERT(HvGetCellType(LeafCell) == Type as u32);
+    ASSERT!(HvGetCellType(LeafCell) == Type as u32);
 
     /* Allocate the cell, fail in case of error */
     NewCell = HvAllocateCell(Hive, TotalSize, Type, LeafCell);
@@ -1621,7 +1621,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
     KeyNode = HvGetCell(Hive, Child) as PCM_KEY_NODE;
     if KeyNode.is_null() {
         /* Shouldn't happen */
-        ASSERT(false);
+        ASSERT!(false);
         return 0;
     }
 
@@ -1640,7 +1640,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
         if Name.Buffer.is_null() {
             /* Release the cell and fail */
             HvReleaseCell(Hive, Child);
-            ASSERT(false);
+            ASSERT!(false);
             return 0;
         }
 
@@ -1668,7 +1668,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
     KeyNode = HvGetCell(Hive, Parent) as PCM_KEY_NODE;
     if KeyNode.is_null() {
         /* Not handled */
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     /* Find out the type of the cell, and check if this is the first subkey */
@@ -1683,14 +1683,14 @@ pub unsafe extern "system" fn CmpAddSubKey(
         );
         if IndexCell == HCELL_NIL {
             /* Not handled */
-            ASSERT(false);
+            ASSERT!(false);
         }
 
         /* Get the leaf cell */
         Index = HvGetCell(Hive, IndexCell) as PCM_KEY_INDEX;
         if Index.is_null() {
             /* Shouldn't happen */
-            ASSERT(false);
+            ASSERT!(false);
         }
 
         /* Now check what kind of hive we're dealing with */
@@ -1716,7 +1716,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
         ) as PCM_KEY_INDEX;
         if Index.is_null() {
             /* Not handled */
-            ASSERT(false);
+            ASSERT!(false);
         }
 
         /* Remember to release the cell later */
@@ -1753,14 +1753,14 @@ pub unsafe extern "system" fn CmpAddSubKey(
             );
             if IndexCell == HCELL_NIL {
                 /* Not handled */
-                ASSERT(false);
+                ASSERT!(false);
             }
 
             /* Get the index cell */
             Index = HvGetCell(Hive, IndexCell) as PCM_KEY_INDEX;
             if Index.is_null() {
                 /* Shouldn't happen */
-                ASSERT(false);
+                ASSERT!(false);
             }
 
             /* Mark the index as a root, and set the index cell */
@@ -1783,7 +1783,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
         LeafCell = CmpSelectLeaf(Hive, KeyNode, &mut Name, Type as HSTORAGE_TYPE, &mut RootPointer);
         if LeafCell == HCELL_NIL {
             /* Not handled */
-            ASSERT(false);
+            ASSERT!(false);
         }
     }
 
@@ -1791,7 +1791,7 @@ pub unsafe extern "system" fn CmpAddSubKey(
     LeafCell = CmpAddToLeaf(Hive, LeafCell, Child, &mut Name);
     if LeafCell == HCELL_NIL {
         /* Not handled */
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     /* Update the key counts */

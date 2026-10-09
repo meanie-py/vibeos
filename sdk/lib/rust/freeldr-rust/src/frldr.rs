@@ -174,8 +174,18 @@ extern "C" fn ERR(_fmt: *const i8) { /* no-op */ }
 extern "C" fn WARN(_fmt: *const i8) { /* no-op */ }
 #[no_mangle]
 extern "C" fn FIXME(_fmt: *const i8) { /* no-op */ }
+// freeldr debug.h, DBG branch (this build): `DebugDumpBuffer(mask, buf, len)`, which
+// dumps only when that channel is enabled. Was an empty fn: every dump was dropped.
 #[no_mangle]
-extern "C" fn DbgDumpBuffer(_level: ULONG, _buffer: *const u8, _size: ULONG) {}
+extern "C" fn DbgDumpBuffer(level: ULONG, buffer: *const u8, size: ULONG) {
+    #[cfg(not(feature = "rosload"))]
+    unsafe {
+        crate::debug::DebugDumpBuffer(level, buffer as PVOID, size)
+    }
+    // rosload builds without the debug module: there is no channel to dump to.
+    #[cfg(feature = "rosload")]
+    let _ = (level, buffer, size);
+}
 
 #[no_mangle]
 extern "C" fn BugCheck(_message: *const i8) -> ! {
@@ -287,8 +297,6 @@ pub fn ROUND_UP<T: IntAlign>(n: T, align: T) -> T {
 pub use ntkrnl_sys::rtl::RtlZeroMemory;
 
 /// `ASSERT(cond)` — no-op in the freeldr release build (NDEBUG).
-#[inline(always)]
-pub fn ASSERT<T>(_cond: T) {}
 
 /// Debug-only: write a single character to QEMU's debugcon (port 0xe9). Lets
 /// us trace boot progress past the screen-clear in PcVideoInit without

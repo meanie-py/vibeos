@@ -60,7 +60,6 @@ pub unsafe fn KeQuerySystemTime(current_time: *mut ntkrnl_sys::ddk::_LARGE_INTEG
 
 // ---- uhci-specific shims ----
 pub const MAXUSHORT: ::core::ffi::c_int = 0xFFFF;
-#[inline] pub fn ASSERT(_cond: i32) {} // NT_ASSERT — no-op in retail (NDEBUG)
 #[inline] pub unsafe fn SharedSystemTimePtr() -> *mut ULONG64 {
     let SharedUserData = ntkrnl_sys::mm::KI_USER_SHARED_DATA as *mut ntkrnl_sys::ddk::_KUSER_SHARED_DATA;
     core::ptr::addr_of_mut!((*SharedUserData).SystemTime) as *mut ULONG64

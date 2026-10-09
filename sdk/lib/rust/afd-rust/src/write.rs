@@ -65,7 +65,7 @@ unsafe fn send_complete_impl(
         return STATUS_FILE_CLOSED;
     }
 
-    ASSERT((*FCB).SendIrp.InFlightRequest == Irp);
+    ASSERT!((*FCB).SendIrp.InFlightRequest == Irp);
     (*FCB).SendIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
@@ -133,7 +133,7 @@ unsafe fn send_complete_impl(
         Map = ((*SendReq).BufferArray as usize + (*SendReq).BufferCount as usize * core::mem::size_of::<AFD_WSABUF>()) as PAFD_MAPBUF;
 
         TotalBytesCopied = (*NextIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as SIZE_T;
-        ASSERT(TotalBytesCopied != 0);
+        ASSERT!(TotalBytesCopied != 0);
 
         if TotalBytesCopied > SendLength as SIZE_T {
             TotalBytesCopied -= SendLength as SIZE_T;
@@ -151,7 +151,7 @@ unsafe fn send_complete_impl(
             break;
         }
 
-        ASSERT((*NextIrp).IoStatus.Information != 0);
+        ASSERT!((*NextIrp).IoStatus.Information != 0);
 
         (*NextIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
@@ -170,7 +170,7 @@ unsafe fn send_complete_impl(
         IoCompleteRequest(NextIrp, IO_NETWORK_INCREMENT);
     }
 
-    ASSERT(SendLength == 0);
+    ASSERT!(SendLength == 0);
 
     if HaltSendQueue == 0 && !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize])) {
         NextIrpEntry = (*FCB).PendingIrpList[FUNCTION_SEND as usize].Flink;
@@ -204,7 +204,7 @@ unsafe fn send_complete_impl(
             if SpaceAvail == 0 {
                 (*FCB).PollState &= !AFD_EVENT_SEND;
 
-                ASSERT(((*SendReq).AfdFlags & AFD_OVERLAPPED) != 0);
+                ASSERT!(((*SendReq).AfdFlags & AFD_OVERLAPPED) != 0);
 
                 NextIrp = core::ptr::null_mut();
             }

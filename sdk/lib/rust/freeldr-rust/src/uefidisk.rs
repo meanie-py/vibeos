@@ -666,7 +666,7 @@ unsafe extern "C" fn UefiDiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut
 
     if DiskReadBufferSize == 0 {
         ERR(b"DiskOpen(): DiskReadBufferSize is 0, something is wrong.\n\0".as_ptr() as PCHAR);
-        ASSERT(0u8);
+        ASSERT!(0u8);
         return ENOMEM;
     }
 

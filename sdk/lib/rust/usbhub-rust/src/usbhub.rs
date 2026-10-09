@@ -88,8 +88,6 @@ extern "system" {
 
 // ---- C macros (faithful inline translations) ----
 #[inline]
-unsafe fn ASSERT<T>(_cond: T) {} // NT_ASSERT — no-op in DUMMY_PSEH/release builds
-#[inline]
 fn USBD_SUCCESS(Status: USBD_STATUS) -> BOOL {
     (Status >= 0) as BOOL // usb.h:167
 }
@@ -1972,7 +1970,7 @@ pub unsafe extern "system" fn USBH_ChangeIndicationProcessChange(
             RequestValue,
         );
     } else {
-        ASSERT(!(*HubExtension).WorkItemToQueue.is_null());
+        ASSERT!(!(*HubExtension).WorkItemToQueue.is_null());
 
         WorkItem = (*HubExtension).WorkItemToQueue;
         (*HubExtension).WorkItemToQueue = core::ptr::null_mut();

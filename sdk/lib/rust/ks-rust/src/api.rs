@@ -32,9 +32,7 @@ unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
         && (*a).Data3 == (*b).Data3
         && (*a).Data4 == (*b).Data4
 }
-// ASSERT / UNIMPLEMENTED DDK stubs.
-#[inline(always)]
-unsafe fn ASSERT<T>(_cond: T) {}
+// UNIMPLEMENTED DDK stub (ASSERT is the crate macro in lib.rs).
 #[allow(non_upper_case_globals)]
 const UNIMPLEMENTED: () = ();
 
@@ -1497,7 +1495,7 @@ pub unsafe extern "C" fn KspCountEventSets(
 
     if (*AutomationTableA).EventItemSize != 0 && (*AutomationTableB).EventItemSize != 0 {
         /* sanity check */
-        ASSERT((*AutomationTableA).EventItemSize == (*AutomationTableB).EventItemSize);
+        ASSERT!((*AutomationTableA).EventItemSize == (*AutomationTableB).EventItemSize);
     }
 
     /* now iterate all Event sets and compare their guids */

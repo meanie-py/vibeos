@@ -68,7 +68,6 @@ unsafe extern "system" {
 }
 unsafe extern "C" {
     fn DPRINT1(format: *const i8, ...);
-    fn ASSERT(condition: u32);
     fn DPRINT(format: *const u8, ...);
     #[cfg(not(feature = "bldr"))]
     static mut CmiVolatileHive: *mut CMHIVE;
@@ -288,8 +287,8 @@ unsafe fn CmpValidateClass(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE!();
 
-    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
-    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
+    ASSERT!(((CurrentCell != HCELL_NIL) as BOOLEAN));
+    ASSERT!(((!CellData.is_null()) as BOOLEAN));
 
     /* Cache the class cell and validate it (if any). CM_KEY_NODE is packed. */
     let class_cell: HCELL_INDEX =
@@ -327,8 +326,8 @@ unsafe fn CmpValidateValueListByCount(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE!();
 
-    ASSERT(((!ValueListData.is_null()) as BOOLEAN) as _);
-    ASSERT(((ListCount != 0) as BOOLEAN) as _);
+    ASSERT!(((!ValueListData.is_null()) as BOOLEAN));
+    ASSERT!(((ListCount != 0) as BOOLEAN));
 
     /* Assume we haven't removed any value counts for now */
     *ValuesRemoved = 0;
@@ -499,8 +498,8 @@ unsafe fn CmpValidateValueList(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE!();
 
-    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
-    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
+    ASSERT!(((CurrentCell != HCELL_NIL) as BOOLEAN));
+    ASSERT!(((!CellData.is_null()) as BOOLEAN));
 
     /* Cache the value list and validate it (CM_KEY_NODE is packed) */
     let value_list_cell: HCELL_INDEX = core::ptr::addr_of!(
@@ -566,8 +565,8 @@ unsafe fn CmpValidateSubKeyList(
 ) -> CM_CHECK_REGISTRY_STATUS {
     PAGED_CODE!();
 
-    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
-    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
+    ASSERT!(((CurrentCell != HCELL_NIL) as BOOLEAN));
+    ASSERT!(((!CellData.is_null()) as BOOLEAN));
 
     let mut total_leaf_count: u32 = 0;
 
@@ -720,7 +719,7 @@ unsafe fn CmpPurgeVolatiles(
 ) {
     PAGED_CODE!();
 
-    ASSERT(((!CellData.is_null()) as BOOLEAN) as _);
+    ASSERT!(((!CellData.is_null()) as BOOLEAN));
 
     /* Did the caller ask to purge volatiles, and are there any? */
     let volatile_subkey_counts: u32 = core::ptr::addr_of!(
@@ -776,7 +775,7 @@ unsafe fn CmpValidateKey(
 
     PAGED_CODE!();
 
-    ASSERT(((CurrentCell != HCELL_NIL) as BOOLEAN) as _);
+    ASSERT!(((CurrentCell != HCELL_NIL) as BOOLEAN));
 
     UNREFERENCED_PARAMETER(SecurityDefaulted);
 
@@ -918,7 +917,7 @@ unsafe fn CmpValidateRegistryInternal(
 
     PAGED_CODE!();
 
-    ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
+    ASSERT!(((!Hive.is_null()) as BOOLEAN));
 
     /*
      * Allocate some memory blocks for the stack state structure so we can
@@ -1104,7 +1103,7 @@ pub unsafe extern "system" fn HvValidateHive(Hive: *mut HHIVE) -> CM_CHECK_REGIS
 
     PAGED_CODE!();
 
-    ASSERT(((!Hive.is_null()) as BOOLEAN) as _);
+    ASSERT!(((!Hive.is_null()) as BOOLEAN));
 
     /* Is the hive signature valid? */
     if (*Hive).Signature != HV_HHIVE_SIGNATURE {

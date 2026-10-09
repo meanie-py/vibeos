@@ -2359,7 +2359,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                 current_block = 15751724822426609728;
                 break;
             } else if NextTdPA != (*(*TD).NextHcdTD).PhysicalAddress {
-                ASSERT(0);
+                ASSERT!(0);
             }
         } else {
             if (*TD).NextHcdTD.is_null() {
@@ -2437,7 +2437,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                 );
 
                                 if (*TD).__bindgen_anon_1.UhciTransfer != (*NextTD).__bindgen_anon_1.UhciTransfer {
-                                    ASSERT(((*TD).__bindgen_anon_1.UhciTransfer == (*NextTD).__bindgen_anon_1.UhciTransfer) as i32);
+                                    ASSERT!(((*TD).__bindgen_anon_1.UhciTransfer == (*NextTD).__bindgen_anon_1.UhciTransfer) as i32);
                                 }
 
                                 while !TD.is_null()
