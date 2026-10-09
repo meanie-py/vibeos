@@ -1414,7 +1414,10 @@ other one, so it read a NULL `TransferBuffer` at DISPATCH_LEVEL. Symptom far fro
 paging read failing `d0000006`/`c0000001` in cdfs (whose try/except swallowed the in-page
 exception), on half of amd64-bios `-smp 2` boots. `scan_macro_fn_shadow` now harvests every
 argument-discarding C macro (`if(0)`, `__noop`, `(void)0`) from the headers and flags an empty
-Rust fn of that name in any crate, a shim crate included.
+Rust fn of that name in any crate, a shim crate included. Expect the conversion itself to
+uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
+`EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
+`scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool

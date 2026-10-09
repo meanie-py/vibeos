@@ -872,6 +872,13 @@ pub unsafe extern "system" fn EHCI_OpenInterruptEndpoint(
 
     DummyTD = EHCI_AllocTd(EhciExtension, EhciEndpoint);
 
+    // Divergence: the C dereferences DummyTD unchecked, though EHCI_AllocTd returns
+    // NULL when the endpoint has no free TD (the bulk/control opener above checks
+    // it). With EHCI_AllocTd inlined, LLVM turned that NULL deref into a ud2.
+    if DummyTD.is_null() {
+        return MP_STATUS_NO_RESOURCES as MPSTATUS;
+    }
+
     (*DummyTD).TdFlags |= EHCI_HCD_TD_FLAG_DUMMY as ULONG;
     (*DummyTD).NextHcdTD = core::ptr::null_mut();
     (*DummyTD).AltNextHcdTD = core::ptr::null_mut();

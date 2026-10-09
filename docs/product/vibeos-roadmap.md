@@ -1079,8 +1079,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     20261008-212149-yl4k8096 (the fault: `USBPORT_QueueTransferUrb+0x134`, IRQL 2, CPU 1).
     The cdrom-rust MCN-sync-IRP fix in the next entry was a real contributor too (it moved
     the IRQL>1 traffic off scsiport); the REOPENED entry and the 10-07 one are kept for the record.
-  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (REOPENED
-    2026-10-08, was "FIXED 2026-10-07"). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
+  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (FIXED
+    2026-10-09 by the root-cause entry above; was REOPENED 2026-10-08). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
     queue over 10-07/10-08 (~30 of them) was csrss.exe exiting `0xC0000006` while loading
     winsrv, and every BUGCHECK 0xF4 was SMSS taking the same in-page error; `-smp 1` never
     fails. The 10-07 fix's 16/16 was measured alone, not under the gate's concurrent boots.
@@ -1097,7 +1097,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     under 6-8 concurrent VMs and two full gates green (20261008-231753-kzuu49zq,
     20261008-233332-nlk4h1lh, a1 passed both). The residual 1/22 (20261008-225946-tllwzl5t
     boot1: RIP fffff80000a08234, RCX fffff80000a2422b, both past the kernel's 0x32B000 runtime
-    image) is still open; the next occurrence names the module in the serial log. Earlier
+    image) was the same fault: 0xa08234 - usbport.sys+0x30234 (run 20261008-212149-yl4k8096)
+    = 0x9d8000, a page-aligned load base, so it is the `DPRINT_URB` NULL read above. Earlier
     entry follows for the record.
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots

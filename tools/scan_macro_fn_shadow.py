@@ -311,9 +311,13 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
     (
         "the drvtrace-shim bug: a C `if(0)` debug macro as an empty fn in ANOTHER crate",
         {
-            "usbdebug.h": "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n",
+            "usbdebug.h": (
+                "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n"
+            ),
             "shim/Cargo.toml": "[package]\nname='shim'\n",
-            "shim/src/lib.rs": '#[no_mangle]\npub unsafe extern "C" fn DPRINT_URB(_fmt: *const i8) {}\n',
+            "shim/src/lib.rs": (
+                '#[no_mangle]\npub unsafe extern "C" fn DPRINT_URB(_fmt: *const i8) {}\n'
+            ),
         },
         ["lib.rs"],
     ),
@@ -337,8 +341,13 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
     (
         "the drvtrace-shim fix: a macro that evaluates nothing, invoked as one",
         {
-            "usbdebug.h": "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n",
-            "lib.rs": "macro_rules! DPRINT_URB {\n    ($($a:expr),*) => { if false { $(let _ = $a;)* } };\n}\n",
+            "usbdebug.h": (
+                "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n"
+            ),
+            "lib.rs": (
+                "macro_rules! DPRINT_URB {\n"
+                "    ($($a:expr),*) => { if false { $(let _ = $a;)* } };\n}\n"
+            ),
             "queue.rs": "pub unsafe fn f(p: *const u32) { DPRINT_URB!(p, *p); }\n",
         },
         [],
