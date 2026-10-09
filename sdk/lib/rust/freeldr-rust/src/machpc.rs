@@ -827,8 +827,11 @@ unsafe fn DetectSerialPointerPeripheral(
             }
             memcpy(
                 Identifier.as_mut_ptr().offset(7) as *mut core::ffi::c_void,
-                b" - \0".as_ptr() as *const core::ffi::c_void,
-                3 * core::mem::size_of::<u16>(),
+                // The C copies L" - " (6 bytes) into this CHAR array, leaving " \0-\0 \0" and
+                // cutting the identifier short. The intent is the 3 characters " - ".
+                // nolint: narrow-vs-wide (the C is wrong here; this array is CHAR)
+                b" - ".as_ptr() as *const core::ffi::c_void,
+                3,
             );
 
             i = 10;

@@ -1201,6 +1201,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A narrow b"..." passed where the file's own C passes L"...". kernel32's FindFirstFileExW
+    # compared its UTF-16 pattern with b"*.*", never shortened it, and "*.*" stopped matching
+    # "." and "..": FindFirstFileW failed on every empty directory. Gated at zero.
+    snw = repo / "tools" / "scan_narrow_vs_wide_literal.py"
+    specs.append(
+        (
+            "scan_narrow_vs_wide_literal",
+            [py, str(snw), "--lint"] if snw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A re-ported mm.h section-segment-entry helper (`IS_DIRTY_SSE` & co.) evaluated against
     # the macro on sample entries. ntkrnl-sys's IS_DIRTY_SSE tested a share-count bit, so
     # MiShutdownSystem looped forever and the install never rebooted. Gated at zero.

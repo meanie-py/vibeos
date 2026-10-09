@@ -2180,6 +2180,32 @@ pub unsafe fn flush(srb: *mut SRB) {
 }
 """
 
+_NARROW_WIDE_BAD = """\
+pub unsafe fn pattern(FilePattern: UNICODE_STRING) -> bool {
+    RtlCompareMemory(FilePattern.Buffer as PVOID, b"*.*\\0".as_ptr() as PVOID, 6) == 6
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     if (RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) == 6)
+"""
+
+# The fix, a macro that builds UTF-16 from a byte literal, and a narrow literal the C also
+# passes narrow.
+_NARROW_WIDE_GOOD = """\
+pub unsafe fn pattern(FilePattern: UNICODE_STRING) -> bool {
+    RtlCompareMemory(FilePattern.Buffer as PVOID, STAR_DOT_STAR_W.as_ptr() as PVOID, 6) == 6
+        && RtlInitUnicodeString(&mut s, wstr!(b"*.*\\0")) == 0
+        && DbgPrint(b"hi\\0".as_ptr()) == 0
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     if (RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) == 6)
+//     RtlInitUnicodeString(&s, L"*.*");
+//     DbgPrint("hi");
+"""
+
 _CALL_ARG_SWAP_BAD = """\
 pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
     let mut szProfilesPath: [WCHAR; 260] = [0; 260];
@@ -2710,6 +2736,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _CONST_NARROWING_BAD},
         good={"good.rs": _CONST_NARROWING_GOOD},
+    ),
+    Control(
+        name="scan_narrow_vs_wide_literal",
+        script="tools/scan_narrow_vs_wide_literal.py",
+        argv=["--lint"],
+        bad={"bad.rs": _NARROW_WIDE_BAD},
+        good={"good.rs": _NARROW_WIDE_GOOD},
     ),
     Control(
         name="scan_call_arg_swap",

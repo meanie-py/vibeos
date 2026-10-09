@@ -1,15 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-macro_rules! profile_fail {
-    ($step:expr, $err:expr) => {
-        DbgPrint(
-            concat!("[USERENV] profiles: ", $step, " failed (error %lu)\n\0").as_ptr()
-                as *const core::ffi::c_char,
-            ($err) as u32,
-        )
-    };
-}
 
 extern "system" {
     // ARRAYSIZE removed: a MACRO, not a linkable fn (no live call sites in this module).
@@ -906,9 +897,6 @@ pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
 // a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.
 extern "C" {
     fn wcslen(s: LPCWSTR) -> usize;
-    // ntdll, cdecl: the C's DPRINT1s, restored on the first-boot profile path. GUI setup only
-    // says "InitializeProfiles() failed"; these name the step and the error.
-    fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
 }
 
 
