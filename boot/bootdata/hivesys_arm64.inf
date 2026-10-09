@@ -31,3 +31,9 @@ HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","HardwareID",0x00010000,"*PNP0A03"
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","DeviceDesc",0x00000000,"PCI Bus (root-enumerated)"
 HKLM,"SYSTEM\CurrentControlSet\Enum\Root\*PNP0A03\0000","ConfigFlags",0x00010001,0x00000000
+
+; A standard SDHCI on PCI (class 08/05/01, e.g. QEMU's sdhci-pci). sdhc.sys drives
+; it like the Pis' ACPI hosts, which gives the driver a test bed with no board.
+; arm64 only: sdhc.sys is built only there.
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_080501","Service",0x00000000,"sdhc"
+HKLM,"SYSTEM\CurrentControlSet\Control\CriticalDeviceDatabase\PCI#CC_080501","ClassGUID",0x00000000,"{4D36E97B-E325-11CE-BFC1-08002BE10318}"

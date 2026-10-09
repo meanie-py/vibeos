@@ -74,23 +74,23 @@ const DbgKmLoadDllApi: DBGKM_APINUMBER = _DBGKM_APINUMBER_DbgKmLoadDllApi;
 const DbgKmUnloadDllApi: DBGKM_APINUMBER = _DBGKM_APINUMBER_DbgKmUnloadDllApi;
 
 #[allow(non_upper_case_globals)]
-const DbgCreateProcessStateChange: ULONG = 1;
+const DbgCreateProcessStateChange: ULONG = 3; // header value; the hand copy said 1
 #[allow(non_upper_case_globals)]
 const DbgCreateThreadStateChange: ULONG = 2;
 #[allow(non_upper_case_globals)]
-const DbgExceptionStateChange: ULONG = 3;
+const DbgExceptionStateChange: ULONG = 6; // header value; the hand copy said 3
 #[allow(non_upper_case_globals)]
-const DbgBreakpointStateChange: ULONG = 4;
+const DbgBreakpointStateChange: ULONG = 7; // header value; the hand copy said 4
 #[allow(non_upper_case_globals)]
-const DbgSingleStepStateChange: ULONG = 5;
+const DbgSingleStepStateChange: ULONG = 8; // header value; the hand copy said 5
 #[allow(non_upper_case_globals)]
-const DbgLoadDllStateChange: ULONG = 6;
+const DbgLoadDllStateChange: ULONG = 9; // header value; the hand copy said 6
 #[allow(non_upper_case_globals)]
-const DbgUnloadDllStateChange: ULONG = 7;
+const DbgUnloadDllStateChange: ULONG = 10; // header value; the hand copy said 7
 #[allow(non_upper_case_globals)]
-const DbgExitThreadStateChange: ULONG = 8;
+const DbgExitThreadStateChange: ULONG = 4; // header value; the hand copy said 8
 #[allow(non_upper_case_globals)]
-const DbgExitProcessStateChange: ULONG = 9;
+const DbgExitProcessStateChange: ULONG = 5; // header value; the hand copy said 9
 
 const LPC_DEBUG_EVENT: i16 = 0x08;
 const LPC_EXCEPTION: i16 = 0x07;
@@ -122,7 +122,7 @@ extern "system" {
     static mut PsThreadType: POBJECT_TYPE;
 }
 extern "C" {
-    fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID) -> PVOID;
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID; // ntoskrnl shim_exports
     fn DefaultSetInfoBufferCheck(
         OperationClass: ULONG,
         ClassList: *const _INFORMATION_CLASS_INFO,
@@ -566,10 +566,10 @@ pub unsafe extern "system" fn DbgkpPostFakeModuleMessages(
 
         if i != 0 {
             ldr_entry = CONTAINING_RECORD(
-                next_entry as PVOID,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            ) as PLDR_DATA_TABLE_ENTRY;
+            next_entry as PVOID,
+            core::mem::size_of::<_LDR_DATA_TABLE_ENTRY>(),
+            core::mem::offset_of!(_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
+        ) as PLDR_DATA_TABLE_ENTRY;
             probe_or_done!(ldr_entry, core::mem::size_of::<_LDR_DATA_TABLE_ENTRY>());
 
             RtlZeroMemory(
@@ -1115,8 +1115,8 @@ pub unsafe extern "system" fn DbgkpCloseObject(
     while debug_event_list != core::ptr::addr_of_mut!((*debug_object).EventList) {
         debug_event = CONTAINING_RECORD(
             debug_event_list as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
         ) as PDEBUG_EVENT;
 
         debug_event_list = (*debug_event_list).Flink;
@@ -1214,8 +1214,8 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
     while next_entry != core::ptr::addr_of_mut!((*debug_object).EventList) {
         debug_event = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
         ) as PDEBUG_EVENT;
         next_entry = (*next_entry).Flink;
 
@@ -1282,8 +1282,8 @@ pub unsafe extern "system" fn DbgkpSetProcessDebugObject(
         next_entry = RemoveHeadList(&mut temp_list);
         debug_event = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
         ) as PDEBUG_EVENT;
 
         DbgkpWakeTarget(debug_event);
@@ -1330,8 +1330,8 @@ pub unsafe extern "system" fn DbgkClearProcessDebugObject(
     while next_entry != core::ptr::addr_of_mut!((*debug_object).EventList) {
         debug_event = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
         ) as PDEBUG_EVENT;
         next_entry = (*next_entry).Flink;
 
@@ -1352,8 +1352,8 @@ pub unsafe extern "system" fn DbgkClearProcessDebugObject(
         next_entry = RemoveHeadList(&mut temp_list);
         debug_event = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
         ) as PDEBUG_EVENT;
 
         (*debug_event).Status = STATUS_DEBUGGER_INACTIVE;
@@ -1572,10 +1572,10 @@ pub unsafe extern "system" fn NtDebugContinue(
             next_entry = (*list_head).Flink;
             while list_head != next_entry {
                 debug_event = CONTAINING_RECORD(
-                    next_entry as PVOID,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                ) as PDEBUG_EVENT;
+            next_entry as PVOID,
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
+        ) as PDEBUG_EVENT;
 
                 if (*debug_event).ClientId.UniqueProcess == client_id.UniqueProcess {
                     if needs_wake != 0 {
@@ -1900,10 +1900,10 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
             next_entry = (*list_head).Flink;
             while list_head != next_entry {
                 debug_event = CONTAINING_RECORD(
-                    next_entry as PVOID,
-                    core::ptr::null_mut(),
-                    core::ptr::null_mut(),
-                ) as PDEBUG_EVENT;
+            next_entry as PVOID,
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
+        ) as PDEBUG_EVENT;
 
                 if (*debug_event).Flags & (DEBUG_EVENT_INACTIVE | DEBUG_EVENT_READ) == 0 {
                     got_event = 1u8;
@@ -1911,10 +1911,10 @@ pub unsafe extern "system" fn NtWaitForDebugEvent(
                     next_entry2 = (*debug_object).EventList.Flink;
                     while next_entry2 != next_entry {
                         debug_event2 = CONTAINING_RECORD(
-                            next_entry2 as PVOID,
-                            core::ptr::null_mut(),
-                            core::ptr::null_mut(),
-                        ) as PDEBUG_EVENT;
+            next_entry2 as PVOID,
+            core::mem::size_of::<_DEBUG_EVENT>(),
+            core::mem::offset_of!(_DEBUG_EVENT, EventList),
+        ) as PDEBUG_EVENT;
 
                         if (*debug_event2).ClientId.UniqueProcess
                             == (*debug_event).ClientId.UniqueProcess

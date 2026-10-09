@@ -1113,6 +1113,11 @@ fn main() {
             return STATUS_NOT_IMPLEMENTED;\n\
          }}\n\
          NTSTATUS NTAPI NtClose(HANDLE h) {{ (void)h; return 0; }}\n\
+         /* rtl-strings' RtlDefaultNpAcl ASSERTs like security.c; the real\n\
+            RtlAssert lives in rtl-diag, which this harness does not link. */\n\
+         VOID NTAPI RtlAssert(PVOID a, PVOID f, ULONG l, PCHAR m) {{\n\
+            (void)a;(void)f;(void)l;(void)m;\n\
+         }}\n\
          #define NtCurrentProcess() ((HANDLE)0)\n\
          #define NtCurrentThread() ((HANDLE)0)\n\
          /* Mirror the env-wave gcc movzbl workaround for the BOOLEAN\n\

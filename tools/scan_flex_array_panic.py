@@ -102,19 +102,19 @@ a member missing from the build dir is reported, never skipped silently.
 from __future__ import annotations
 
 import argparse
-import concurrent.futures as cf
 import os
 import re
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
 
 if __package__:
-    from .binary_facts import BinaryFacts, BinaryFactsError
+    from .binary_facts import BinaryFacts
 else:
-    from binary_facts import BinaryFacts, BinaryFactsError
+    from binary_facts import BinaryFacts
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -234,7 +234,7 @@ def artifact_index(build: Path) -> dict[str, Path]:
     """Every `lib*.a` under the build tree -> the first path the walk meets it at.
 
     ONE walk for the whole corpus. This was a walk PER CRATE -- 240 full descents of
-    the build tree, ~10 s of a run whose cached verdicts took 0.2 s."""
+    the build tree, ~8 s of a run whose cached verdicts take well under one."""
     out: dict[str, Path] = {}
     for dirpath, dirnames, filenames in os.walk(build):
         # A crate's own cargo target dir under the build tree is intermediate
@@ -646,48 +646,6 @@ def scan_object(
     return hits
 
 
-def _jobs() -> int:
-    """objdump processes in flight. The scan shares the host with the gate's smokes, so
-    this stays well under the core count; VIBEOS_FLEX_SCAN_JOBS overrides."""
-    env = os.environ.get("VIBEOS_FLEX_SCAN_JOBS")
-    if env:
-        return max(1, int(env))
-    return max(1, min(6, (os.cpu_count() or 2) // 4))
-
-
-def scan_corpus(work: list[tuple[str, Path]], arch: str) -> tuple[list[tuple[str, str]], int]:
-    """[(crate, raw symbol)] over every artifact, and how many were already known.
-
-    The gate's slowest lint was this reader run serially: one `objdump -dr` per
-    artifact, ~2-3 min per arch, on every build, land preflight and gate, over
-    artifacts a one-crate change mostly leaves byte-identical. So the per-artifact
-    verdict goes through `binary_facts` (content-addressed, worktree-local, the same
-    store scan_ud2 and scan_self_recursive use; VIBEOS_BINARY_CACHE=0 is the uncached
-    oracle) and the misses run in parallel. `--explain` needs the disassembly itself
-    and never comes through here. Results are gathered in `work` order, so the output
-    reads the same however the threads finish."""
-    facts = BinaryFacts(
-        REPO,
-        namespace="flex-array-panic",
-        implementation=[Path(__file__)],
-        tools=[OBJDUMP],
-        options={"arch": arch},
-    )
-    extracted: list[int] = []
-
-    def one(art: Path) -> list[str]:
-        def extract() -> list[str]:
-            extracted.append(1)
-            return [sym for sym, _, _ in scan_object(art, arch=arch)]
-
-        return facts.get(art, extract)
-
-    with cf.ThreadPoolExecutor(max_workers=_jobs()) as ex:
-        found = list(ex.map(one, [art for _, art in work]))
-    out = [(crate, sym) for (crate, _), syms in zip(work, found, strict=True) for sym in syms]
-    return out, len(work) - len(extracted)
-
-
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", required=True, choices=ARCHES)
@@ -727,23 +685,40 @@ def main(argv: list[str]) -> int:
             work.append((crate, image))
         else:
             missing.append(f"{crate}({image.name})")
-    cached = 0
-    if args.explain:
-        for crate, art in work:
-            for sym, _, ctx in scan_object(art, arch=args.arch, explain=True):
+    # Content-addressed per artifact, like every other post-link scanner: three objdump
+    # passes over ~290 archives and images cost 80-96s serially on EVERY invocation,
+    # and a landing invokes this reader up to five times per arch on the same bytes.
+    # `--explain` wants the disassembly window, which is not a fact worth storing.
+    facts = (
+        None
+        if args.explain
+        else BinaryFacts(
+            REPO,
+            namespace="flex-array-panic",
+            implementation=[Path(__file__)],
+            tools=[OBJDUMP],
+            options={"arch": args.arch},
+        )
+    )
+
+    def hits_for(item: tuple[str, Path]) -> list[tuple[str, int, list[str]]]:
+        _crate, art = item
+
+        def extract():
+            return [list(h) for h in scan_object(art, arch=args.arch, explain=bool(args.explain))]
+
+        raw = facts.get(art, extract) if facts is not None else extract()
+        return [(sym, int(length), list(ctx)) for sym, length, ctx in raw]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for (crate, _art), hits in zip(work, pool.map(hits_for, work), strict=True):
+            for sym, _, ctx in hits:
                 key = normalize_symbol(sym, args.arch)
                 findings.append((crate, key))
-                if args.explain in crate or args.explain in key:
+                if args.explain and (args.explain in crate or args.explain in key):
                     print(f"\n=== {crate}: {key}")
                     for line in ctx:
                         print(f"    {line}")
-    else:
-        try:
-            raw, cached = scan_corpus(work, args.arch)
-        except BinaryFactsError as error:
-            print(f"scan_flex_array_panic: {error}", file=sys.stderr)
-            return 2
-        findings = [(crate, normalize_symbol(sym, args.arch)) for crate, sym in raw]
 
     graded = graded_ok(args.arch)
     seen = sorted(set(findings))
@@ -770,7 +745,7 @@ def main(argv: list[str]) -> int:
     print(
         f"\n{args.arch}: {len(seen)} site(s) in {len({c for c, _ in seen})} module(s); "
         f"corpus {len(corpus)} staticlibs + {len(images)} cargo-linked images declared, "
-        f"{len(missing)} not built; {cached}/{len(work)} artifacts unchanged (cached)",
+        f"{len(missing)} not built",
         file=sys.stderr,
     )
     if missing:

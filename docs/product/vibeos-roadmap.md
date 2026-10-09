@@ -421,11 +421,12 @@ together, plus a foundational arm64-interrupts effort that ends the polling clas
 | # | Quest | Doc | Size | Status (2026-07-10) |
 |---|-------|-----|------|-----------|
 | 10a | **USB HID input** — beachhead ✅ **COMPLETE** (USB kbd/mouse enumerate + deliver keystrokes on ALL arches; both walls closed); the **unification migration is owed**: USB HID as the default smoke input transport, retire `arm64input`+`i8042prt`, xHCI gap | [`../engineering/archive/input-architecture-and-unification.md`](../engineering/archive/input-architecture-and-unification.md) | M (migration) | migration in the Check-back ledger |
-| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk |
+| 10b | **USB mass storage / real storage** (kill the arm64 RAM disk) — sticks read and write from the desktop on QEMU xHCI and the Pi 4; **x86 BOOTS from a USB stick** under SeaBIOS (xHCI and EHCI) and UEFI (2026-10-05), and the `smoke:amd64-bios` gate lane boots that way. Owed: the arm64 boot volume off the RAM disk, and Intel xHCI port routing (`XUSB2PR`) for real 8-series boards | [`../engineering/archive/usb-mass-storage-real-storage-quest.md`](../engineering/archive/usb-mass-storage-real-storage-quest.md), [`../engineering/bios-boot.md`](../engineering/bios-boot.md) | M | **x86 boots from USB.** **Pi 4 storage reads and writes** (USB stick 2026-09-27; SD card slot 2026-10-05, `sdhc.sys`, ~10.7 MB/s polled; writable 2026-10-06: stortest's write+flush+readback passes on the boot card and the UEFI firmware reads the file back). **Pi 5 SD reads** (2026-10-06: the same `sdhc.sys` on the BCM2712's SDC0, ~11 MB/s; writes enabled but untested, its card holds the bench stager). **Pi 5 USB mass storage reads and writes** (2026-10-07, over RP1's xHCI: the Pico's served FAT image reads as F:; a 1.4 MB copy to a Ventoy stick's FAT partition reads back byte-identical from Linux on the same board, SHA-256 checked). Next: boot from the card instead of the RAM disk. **Gate parity (2026-10-09)** is the same goal on the QEMU side: arm64 is the only arch whose gate boot never touches its storage stack (firmware reads `boot.img` over NVMe, freeldr copies a 361 MB `ramdisk.img` into RAM, `ramdisk.sys` + fastfat serve it), and the only one with a second media step (`qemu/mkramdisk.sh`) that can drift from what ninja built. Content and kernel flavor already match (same `livecd.<config>.lst`; all three default to the MP pair). Rungs, each checkable on its own: (1) `boot/boot_images.cmake:198` makes arm64's `livecd` emit `livecd.iso` like x86 (generic mkisofs + UEFI El Torito; `BOOTAA64.EFI` is already defined); (2) QEMU_EFI loads uefildr from that ISO on a virtio-scsi or xHCI `usb-storage` CD; (3) the kernel reaches the desktop with the CD as system volume (cdfs builds for arm64; the USB-storage boot path is already proven on x86 by `smoke:amd64-bios`); (4) the arm64 gate lane boots the ISO and `mkramdisk.sh` leaves the gate, kept only as the Pi delivery format until the card boot lands |
 | 10c | **arm64 GIC interrupts** — ✅ **LANDED 2026-07-05** (real vectoring, GIC SPI routing, hardware IRQL via GICC_PMR, arm64input → ISR+DPC; shared vectors chain since 2026-10-07, for the Pi 5's two RP1 xHCIs on one SPI) | [`../engineering/archive/arm64-interrupts-quest.md`](../engineering/archive/arm64-interrupts-quest.md) | — | done |
-| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). **Pi 5 GEM works** (2026-10-08: the HAL synthesizes `VIBEOS\RP1GEM` because the firmware's ACPI omits it; netstack's `gem.rs`, polled; 1 Gb/s link, DHCP, ping, 1 MiB TCP echo intact at 60 KiB/s, the same as GENET). Its MAC is the board's own, from the VideoCore mailbox. Owed on the GEM: interrupts (RP1 source 6 is not routed under UEFI: `MSIX_CFG(6)` is 0). Next: interrupts for both, then I217 |
+| 10d | **Real NIC** (replace virtio-net; interrupt-driven miniport → netstack). First target: the Pi 4's GENET (BCM2711). Next: the Pi 5's Cadence GEM (behind RP1) and the OptiPlex's Intel I217-LM (e1000e class; `e1000` covers only 8254x) | [`../engineering/archive/real-nic-networking-quest.md`](../engineering/archive/real-nic-networking-quest.md) | M–L | **Pi 4 GENET works** (2026-10-05: DHCP, ping, TCP on the LAN; polled). **Pi 5 GEM works** (2026-10-08: the HAL synthesizes `VIBEOS\RP1GEM` because the firmware's ACPI omits it; netstack's `gem.rs`, polled; 1 Gb/s link, DHCP, ping, 1 MiB TCP echo intact at 60 KiB/s, the same as GENET). Its MAC is the board's own, from the VideoCore mailbox. **GEM interrupt-driven** (2026-10-08): RP1 signals legacy INTA under this UEFI, so enabling `MSIX_CFG(6)` puts the GEM on INTID 261 beside the xHCIs; ping RTT 0.29 ms (polled GENET: 4.7 ms), 300/300; TCP echo 3.7-6.2 MB/s, 8 MiB intact (polled: 60 KiB/s). **GENET interrupt-driven** (2026-10-09): RX-done on INTRL2_0, masked in the ISR and unmasked after the worker's pass (as Linux does around NAPI); ping RTT 0.56 ms, 300/300 (polled: 4.7-9.9 ms); 1 MiB TCP echo intact at 1.6 MB/s (polled: 60 KiB/s). An 8 MiB echo stalls on both, polled and interrupt (bug registry). **QEMU NICs interrupt-driven everywhere** (2026-10-09): virtio-net's INTx on arm64 too (GIC INTID from the board's GPEX routing; was x86-only), and e1000 (QEMU's default x86 NIC, so every x86 smoke) on its INTx. Next: I217 |
 | 10e | **Verified network boot in freeldr** — freeldr fetches the kernel/ramdisk itself over HTTP through UEFI's HTTP/TCP protocols, and **refuses to boot any payload whose SHA-256 does not match** a signed/pinned manifest (treat it as prod: a netboot that trusts whatever answers on the LAN is a remote-code-execution path). Motivation: on the Pi 4 the 140 MB ramdisk costs ~17 min per kernel iteration, and the network is not the limit (iPXE pulls it in 19 s): it is writing it to and reading it from the SD card through the firmware (`docs/engineering/pi4-bench.md`). Fetching into RAM skips the card entirely. Interim: iPXE `sanboot` of the boot image | — | M | proposed 2026-09-26 |
 | 10f | **Maybe: bring legacy BIOS boot back (loader only)** for i386 and amd64. The BIOS prune (`85102c111a3`..`5ca4d482d32`, 2026-05-29) assumed BIOS no longer mattered. That holds for amd64 PCs from about 2012 on, but almost every real 32-bit PC is BIOS-only, so without it i386 boots on no physical hardware; SeaBIOS is also the default in plain QEMU and Proxmox, and on coreboot/Libreboot machines such as the owner's OptiPlex 9020 (a candidate x64 bench: COM1, NVMe boot through SeaBIOS). **Scope: the loader, not the emulator.** The PC-AT machine layer survives in `freeldr-rust` (`machpc`, `pcmem`, `pcdisk`, `pcvesa`, `pchw`, `pxe`); restore the real-mode entry (`arch/realmode/*`) and `pcat.cmake` from git, wire `freeldr.sys` into the cargo-driven loader link (`ab763550984`), and repair four months of drift in the BIOS-only paths. The loader hands the kernel a VESA framebuffer like UEFI's GOP one, so fast486, HAL x86bios and videoprt INT10 stay retired. **Add a SeaBIOS smoke cell for i386 and amd64**, or it rots again. Quick experiment first: OpenCore's OpenDuet (UEFI loaded from disk by a legacy BIOS) runs today's `uefildr.efi` with no OS change. | — | M | considered 2026-10-05 |
+| 10g | **RDP server for headless boards** (Pi 4, Pi 5, Graviton): serve the desktop to `mstsc` with **IronRDP** as the protocol engine. Tier 0 is a memory-backed display for boards with no GOP; tier 1 a service that shadows the console (capture, bitmap encode, `SendInput`, a SAS path for Ctrl+Alt+Del). First step: Rust `std` (tokio) in guest user mode, which `ironrdp-server` needs; the sans-IO crates plus schannel are the fallback. Multi-session Terminal Services is a separate, later tier | [`../engineering/rdp-server-design.md`](../engineering/rdp-server-design.md) | L | proposed 2026-10-08 |
 
 Not trash, leave alone: the GOP linear-framebuffer display driver (`arm64vid`, shared all
 arches) and the PL011 UART (a real ARM peripheral).
@@ -594,6 +595,71 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09 on the C
+  ndis.sys). The baseline for translating ndis: nothing else on our media reaches NDIS
+  (netstack drives virtio and e1000 100E/100F itself). The payload boots QEMU's e1000
+  82544GC and, through ndisuio, binds, queries the MAC and link, sets the packet filter, sends
+  an ARP who-has to slirp's gateway and reads the reply. Getting it green fixed ndisuio's read
+  and write (no `DO_BUFFERED_IO`) and the arm64 HAL's missing scatter/gather DMA ops.
+  **Open, both found with an rtl8139 on arm64:** (1) rtl8139's driver accepts only port
+  BARs, and arm64's `virt` machine maps its I/O BAR as memory, so `MiniportInitialize` fails;
+  (2) ndis then still publishes the adapter to protocols: ndisuio bound to one named `\`,
+  the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
+  (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
+
+- **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
+  (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
+  the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
+  step of setup broken, all fixed: the setup loader's `RtlStringCbPrintfW` stub (every boot
+  driver registered as `"%S\%S"`, then a `len - 4` panic); txtsetup.sif listing pruned
+  drivers (sacdrv/isapnp/floppy, a "Cannot load boot driver" message box); usetup's cabinet
+  header stride, CFFILE walk and over-dereferenced language list (smss.exe AV, 0x71); a
+  bitwise `!Success` that quit every install; fastfat's `FlagOn` read as a byte (no volume
+  lock, so no chkdsk); Mm extending files with info class 2 instead of 20 (all 964 copied files
+  lost); disk.sys's persistent-SRB flag cast to `u16` (0xC2 on the first flush); `CmLoadKey`'s
+  check flag 1 for 2 (every hive REGISTRY_CORRUPT); cmlib's permuted KEY_HIVE_EXIT/ENTRY (0x1E
+  on hive unload); a special APC dereferencing its NULL NormalContext (0x1E at reboot); and the
+  cargo-built smss/csrss/winlogon missing from reactos.cab (an installed system would have
+  none); txtsetup.sif's display rows still naming the pruned VGA miniports (setup stopped at
+  "failed to update display registry settings" behind an ENTER prompt; usetup now prints every
+  popup to the debug port and the test fails on it); and po's volume flush taking
+  `CONTAINING_RECORD` at offset 0 for the extension's last field (0x1E at setup's reboot);
+  `IoShutdownSystem` moving its initialized KEVENT (0x109 at the reboot); `usbxhci`/`fltmgr`
+  never copied to the disk (a "Cannot load boot driver" box on the first installed boot);
+  i386/amd64 `MmDeleteVirtualMapping` reading the dirty bit from the PTE it had just zeroed
+  (every file written through a mapping -- all 984 cab-extracted files -- was zero-filled);
+  po treating every reboot as a power-off (POWER_ACTION 5/6 swapped); and ntkrnl-sys's
+  `IS_DIRTY_SSE` testing a share-count bit, so `MiShutdownSystem` looped forever.
+  Text-mode setup runs to "installation succeeded", and the installed disk boots on its own
+  to winlogon, GUI setup and Explorer (run 32). Each class has a `vibeos-cli check` scanner now (see the field manual). Trying the
+  install with 2 GB also found the amd64 BIOS loader triple-faulting with more than ~1 GB of
+  RAM (its page lookup table placed past the 1 GiB it maps; `bios-boot.md`), fixed.
+  Setup's reboot now completes (run 39), and the installed disk's first boot reaches
+  winlogon, GUI setup and Explorer. GUI setup then stopped at "InitializeProfiles() failed":
+  userenv loaded the profiles path into the wrong buffer, copied the profile name into the
+  wrong one, and used a local `IDS_PROFILEPATH = 0` (resources.h: 1) -- all three fixed.
+  GUI setup then got further: kernel32's `FindFirstFileW("*.*")` failed on every empty
+  directory (a narrow `b"*.*"` compared with a UTF-16 pattern), so CopySystemProfile failed.
+  Once setup finished, its reboot did nothing, because **no Win32 shutdown, reboot or logoff
+  worked anywhere**. winsrv's hand-copied `USERTHREADINFOCLASS` made `ExitWindowsEx` fail,
+  and this fork's winlogon never created its SAS window, so win32k's `LN_LOGOFF` went nowhere
+  (field manual: "`ExitWindowsEx` returns TRUE and nothing shuts down"). With both fixed, GUI
+  setup reboots the machine itself (run 49). The second installed boot then hit boot-start
+  INF services for drivers setup never copied (machine.inf `isapnp`, hdc.inf `atapi`).
+  Both fixed; the full run passes twice in a row (runs 50 and the `install-smoke` verb).
+  **Still owed:** i386 and UEFI installs; deciding whether it joins a scheduled run (it is
+  its own verb, ~10 min, not a gate stage).
+
+- **27 constants defined with two values inside ONE crate, parked in a lint baseline**
+  (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
+  `IDS_PROFILEPATH` as 0 vs 1 all along, from inside its baseline ("the triage queue"), and it
+  blocked GUI setup on every install. Each pair was checked against its header, and the wrong
+  copies fixed: se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet-rust's FCI/FDI error codes, hal
+  `IDT_INTERNAL`, fastfat `OPLOCK_FLAG_PARENT_OBJECT`, cdrom `SRB_STATUS_MASK`, freeldr
+  `COLOR_WHITE`, user32 SPY_*, afd trace levels, inbv OWNED/DISABLED. The 10 rows left are
+  per-file meanings, and `scan_const_contradictions --within-crate` now gates the class
+  against exactly those (`scan_const_within_crate`), so the next one cannot park.
+
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
   lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now
@@ -608,6 +674,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
   st=...` with the real status instead of bugchecking.
 
+- **Pi 4: the UEFI firmware faulted at every boot** (FIXED 2026-10-09: factory variable
+  store). `Synchronous Exception at 0x0000000039BE1228`, twice, right after the `ESC
+  (setup), F1 (shell), ENTER (boot)` prompt, on every boot from 2026-10-08 19:46 until the
+  store was reset, so in the boot manager before any VibeOS code. Ruled out first, each by
+  a boot that still faulted or a direct read: the Pico, the LAN, the card's FAT and the
+  firmware code (`RPI_EFI.fd` byte-identical to the v1.53 release outside the variable
+  store, which parsed cleanly). Writing the stock `RPI_EFI.fd` (factory variables; the bench
+  needs no non-default setting) fixed it at the first boot. Which variable the firmware
+  chokes on is not known; both faulting copies are at
+  `<PI4_BENCH>/fw-backup/RPI_EFI.fd.crashing-2026100{8,9}` if it recurs.
+- **Pi 4: an 8 MiB TCP echo stalls a few KiB short, and the echo listener then stops
+  accepting** (OPEN, 2026-10-09). Polled GENET and interrupt-driven GENET both fail it
+  (1 MiB passes on both); the GEM on the Pi 5 passes 8 MiB. After the stall pings still
+  answer, but a new connection to :7777 times out. Not the interrupt path, then: suspect
+  GENET RX drops under a 1 Gb/s burst (256-entry ring, no drop counter read yet) plus the
+  echo socket not re-listening after an aborted connection (netstack engine.rs).
 - **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
   2026-10-08). The arm64 HAL fell back to probing QEMU virt's fixed ECAM addresses whenever it
   found no MCFG, and took any first word other than 0xFFFF as a host bridge. On the Pi 5
@@ -640,13 +722,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `[IRQL-CHK]`, `[APC]`) now print only under the `PROCTRACE` boot option; classpnp's
     `TracePrint` limits each repeating warning (the Pico's empty disk polled every second)
     to its first 8 occurrences, then every 1000th. Settled desktop: 0 B/s.
-  Owed: the GEM's transmitter goes idle after almost every frame (130 restarts for 211
-  frames sent), so each reply waits for the next `reap_tx` instead of leaving at once (fine
-  at ping rates, a throughput cap); GEM interrupts would fix both. The Pi 4's GENET drives the
-  same PHY and does not touch EEE either: measure it before changing it. `stortest.exe`
-  opens every volume each 2 s for two minutes on a board whose test volume it cannot find,
-  and each open of an unmountable volume (the SD's ext4 root, the empty Pico) retries every
-  file system.
+  Follow-ups, 2026-10-08 evening:
+  - **GEM interrupts: DONE.** The transmitter still goes idle after most frames, but the
+    TXUBR/TCOMP interrupt now wakes the worker to restart it at once (RTT 0.29 ms, TCP echo
+    ~100x faster; quest 10d).
+  - **stortest: FIXED.** It started whenever `Enum\USBSTOR` existed, which on the bench is
+    every boot (the Pico's disk), hunted for two minutes and wrote to the Pi 4's boot card.
+    Now opt-in: `/STORTEST` in the loader options (`pi4-bench.md`).
+  - **Devices without a driver installed twice: FIXED.** umpnpmgr's boot pass tried every
+    device, then the install events the kernel queued during boot tried the same devices
+    again with the same non-interactive result. Those duplicates are now dropped (18 on the
+    Pi 4, 31 on the Pi 5); each device installs once per boot. The same function walked a
+    null or freed device list when listing failed (two C labels folded into one `break`).
+  - **EEE on the Pi 4: measured, unchanged.** The same BCM54213PE, but 360/360 pings with
+    no periodic loss, polled and interrupt-driven.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as
@@ -5539,6 +5628,24 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
     noted in the sweep list since 07-25. (2) setup.exe's registration burst starving the
     test's 50 ms races, proven per-thread by `[FMUTEX-RAN]`. Field manual: the setup
     paragraph under "A kmtest count drift on a UP guest is the boot-time ladder".
+  - **kmtest `SeTokenFiltering` (all arches), i386 `RtlSplayTreeKM`, amd64 `RtlException`
+    quarantined since 07-11/12 — ROOT-CAUSED/FIXED 2026-10-08, four bugs.**
+    (1) SeTokenFiltering (TIMEOUT on x86, INCOMPLETE on arm64): the group-disable loop in
+    `SepPerformTokenFiltering` never advanced past a group it had disabled, so it spun forever.
+    The C has the same `GroupsInToken--` but never matches, because its `RtlEqualSid` compares
+    the pointers' addresses. Now 11/0 on every arch.
+    (2) RtlSplayTreeKM, i386 0x19: generictable sized nodes with the 20-byte sum of the link
+    structs, but writes the data at the 8-aligned `UserData` offset, 24. Every insert overran
+    its pool block by 4 bytes. Now 139/0. This also covers the i386 user-mode twin `RtlSplayTree`
+    (banked NO-END), which uses the same crate in ntdll.
+    (3) amd64 RtlException exit 128: ntdll's nested dispatch frames (RtlpUnwindInternal 0xa88
+    with a duplicate CONTEXT temporary, RtlVirtualUnwind 0x508 from an inlined CONTEXT copy)
+    overran the 0x1c40-byte STACK_OVERFLOW handler budget. Now 34/0.
+    (4) arm64 RtlException 33/1: the data-abort handler raised AV for every refused
+    MmAccessFault, including STACK_OVERFLOW. Now 34/0.
+    i386 RtlException STAYS quarantined: clang's x86-32 WinEH places the try-level stores only
+    around calls, so the call-free overflow loop runs at try-level -1. That is a toolchain
+    limit, and the kernel raises the right code.
   - **kmtest `MmReservedMapping` / `MmMapLockedPagesSpecifyCache` quarantined since 07-10 —
     ROOT-CAUSED/FIXED 2026-10-08, four translation bugs, all arches.** (1) 0xDA/0x101:
     `MmAllocateMappingAddress` stored the size PTE as a raw value while the map/unmap path decoded
@@ -7028,7 +7135,8 @@ Field-manual § pointers hold the full writeups. **Update on state change.**
   `MmMapLockedPagesSpecifyCache` **CRASH** (own verdict — so the original claim was right, but
   only by luck, and only now evidenced), `IoFilesystem` **CRASH**, `MmReservedMapping` **CRASH**,
   `NpfsFileInfo` **CRASH**, `SeTokenFiltering` **INCOMPLETE** (it kills the VM outright — no
-  bugcheck, QEMU exits, see the quest doc), and `ExFastMutex` **OK** — un-quarantined, it was
+  bugcheck, QEMU exits, see the quest doc; 2026-10-08: NOT this family — an infinite loop in
+  token filtering, fixed, see the entry above), and `ExFastMutex` **OK** — un-quarantined, it was
   arm64's last arch-specific entry. `[PFNMISMATCH]` still fired **zero** times across all of it.
   The probe strings are compiled into this exact kernel (verified present in
   `build-arm64/ntoskrnl/ntoskrnl.exe`, absent on i386/amd64), so this is genuine silence, not a

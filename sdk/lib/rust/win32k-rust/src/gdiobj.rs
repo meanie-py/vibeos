@@ -668,9 +668,11 @@ unsafe fn ENTRY_vPushFreeEntry(pentFree: PENTRY) {
     (*pentFree).ObjectOwner.ulObj = 0;
     (*pentFree).pUser = core::ptr::null_mut();
 
+    // C: REF_INC_REUSE (0x01000000). 0x80000000 added 0x80 to the reuse byte, so the
+    // counter that makes a stale handle detectable wrapped every second free.
     InterlockedExchangeAdd(
         gpaulRefCount.add(idxToFree as usize) as *mut i32,
-        0x80000000u32 as i32
+        REF_INC_REUSE as i32
     );
     (*pentFree).FullUnique = (*pentFree).FullUnique.wrapping_add(0x0100);
 

@@ -392,7 +392,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                     //
 
                     CdLockFcb(IrpContext, Fcb);
-                    UnlockFcb = true;
+                    *p_UnlockFcb = true;
 
                     McbEntryOffset = CdFindMcbEntry(IrpContext, Fcb, FileOffset);
 
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                     }
 
                     CdUnlockFcb(IrpContext, Fcb);
-                    UnlockFcb = false;
+                    *p_UnlockFcb = false;
 
                     //
                     //  Initialize the search dirent structures.
@@ -476,7 +476,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                         //
 
                         CdLockFcb(IrpContext, Fcb);
-                        UnlockFcb = true;
+                        *p_UnlockFcb = true;
 
                         if CurrentMcbOffset >= (*Fcb).Mcb.CurrentEntryCount {
                             CdAddAllocationFromDirent(
@@ -489,7 +489,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                         }
 
                         CdUnlockFcb(IrpContext, Fcb);
-                        UnlockFcb = false;
+                        *p_UnlockFcb = false;
 
                         //
                         //  If this is the last dirent for the file then exit.

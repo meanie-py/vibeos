@@ -1048,7 +1048,7 @@ pub unsafe extern "system" fn RtlpInitializeHeapSegment(
     InitializeListHead(core::ptr::addr_of_mut!((*Segment).UCRSegmentList));
 
     if (((*Segment).Entry.Size as SIZE_T) << HEAP_ENTRY_SHIFT) < SegmentCommit {
-        let mut FreeEntry: PHEAP_ENTRY = core::ptr::null_mut();
+        let mut FreeEntry: PHEAP_ENTRY;
 
         if (*Segment).NumberOfUnCommittedPages != 0 {
             let mut GuardEntry: PHEAP_ENTRY = core::ptr::addr_of_mut!((*Segment).Entry)
@@ -1387,8 +1387,8 @@ pub unsafe extern "system" fn RtlCreateHeap(
     Lock: PVOID,
     mut Parameters: PRTL_HEAP_PARAMETERS,
 ) -> HANDLE {
-    let mut CommittedAddress: PVOID = core::ptr::null_mut();
-    let mut UncommittedAddress: PVOID = core::ptr::null_mut();
+    let mut CommittedAddress: PVOID;
+    let UncommittedAddress: PVOID;
     let mut Heap: PHEAP = core::ptr::null_mut();
     let mut SafeParams: RTL_HEAP_PARAMETERS = core::mem::zeroed();
     let MaximumUserModeAddress: ULONG_PTR;
@@ -1629,7 +1629,6 @@ pub unsafe extern "system" fn RtlCreateHeap(
             return core::ptr::null_mut();
         }
 
-        UncommittedAddress = (UncommittedAddress as PCHAR).add(CommitSize as usize) as PVOID;
     }
 
     /* Initialize the heap */

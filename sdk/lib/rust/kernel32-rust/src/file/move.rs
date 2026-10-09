@@ -39,10 +39,10 @@ const PRIV_ALLOW_NON_TRACKABLE: DWORD = 0x2;
 // ntstatus.h
 const STATUS_NOT_SAME_DEVICE: NTSTATUS = 0xC000_00D4u32 as NTSTATUS;
 
-// RTL_CONSTANT_STRING builds a UNICODE_STRING from a wide literal. The translation
-// passed a NUL-terminated UTF-16 byte buffer cast to *const i8; reinterpret as wide.
-unsafe fn RTL_CONSTANT_STRING(s: *const i8) -> _UNICODE_STRING {
-    let p = s as *const u16;
+// RTL_CONSTANT_STRING builds a UNICODE_STRING from a WIDE literal. The callers used to
+// pass narrow b"\??\UNC\0" bytes cast to *const i8, which this reinterpreted as UTF-16
+// -- "\?" read as one character -- so the \??\ and \??\UNC\ prefix tests never matched.
+unsafe fn RTL_CONSTANT_STRING(p: *const u16) -> _UNICODE_STRING {
     let mut len: USHORT = 0;
     while *p.add((len as usize) / 2) != 0 {
         len += core::mem::size_of::<WCHAR>() as USHORT;
@@ -237,8 +237,14 @@ pub unsafe extern "system" fn BasepGetComputerNameFromNtPath(
     let mut NameLength: USHORT;
     let mut TargetDevice: [WCHAR; MAX_PATH as usize + 1] = [0; MAX_PATH as usize + 1];
     let mut DeviceName: [WCHAR; 3] = ['A' as WCHAR, ':' as WCHAR, '\0' as WCHAR];
-    let UncString: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\??\\UNC\0".as_ptr() as *const i8);
-    let GlobalString: _UNICODE_STRING = RTL_CONSTANT_STRING(b"\\??\\\0".as_ptr() as *const i8);
+    // C: L"\\??\\UNC\\" and L"\\??\\" (the UNC prefix has its trailing backslash).
+    static UNC_PREFIX_W: [u16; 9] = [
+        b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16, b'U' as u16, b'N' as u16,
+        b'C' as u16, b'\\' as u16, 0,
+    ];
+    static GLOBAL_PREFIX_W: [u16; 5] = [b'\\' as u16, b'?' as u16, b'?' as u16, b'\\' as u16, 0];
+    let UncString: _UNICODE_STRING = RTL_CONSTANT_STRING(UNC_PREFIX_W.as_ptr());
+    let GlobalString: _UNICODE_STRING = RTL_CONSTANT_STRING(GLOBAL_PREFIX_W.as_ptr());
 
     // L"\Device\LanmanRedirector\;"
     static LANMAN_REDIRECTOR_PREFIX: [u16; 27] = [

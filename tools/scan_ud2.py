@@ -270,6 +270,7 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
     findings = []
     current_function = None
     prev_call_target = None
+    prev_fastfail = False
     known = KNOWN_DRIVER_UD2.get(path.name, set())
     for line in result.stdout.splitlines():
         func_match = re.match(r"^([0-9a-f]+)\s+<(.+)>:", line)
@@ -288,6 +289,8 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
             hit = bool(m)
             addr = m.group(1) if m else ""
         if not hit:
+            if re.match(r"^\s*[0-9a-f]+:", line):
+                prev_fastfail = re.search(r"\bint\s+\$0x29\b", line) is not None
             cm = re.search(r"\b(?:call\w*|bl)\s+.*<(.+?)>", line)
             if cm:
                 prev_call_target = cm.group(1)
@@ -306,6 +309,9 @@ def scan_driver_binary(path: Path, objdump: str, arch: str) -> list[dict]:
             or any(e in fn for e in DRIVER_INTRINSIC_SKIP)
             or _is_mangled(fn)
             or (prev_call_target and any(n in prev_call_target for n in NORETURN_CALLEES))
+            # `int $0x29` is __fastfail (RtlFailFast, the LIST_ENTRY integrity check): it
+            # never returns, so the path ends in ud2 by design.
+            or prev_fastfail
         )
         known_hit = any(k in fn for k in known)
         findings.append(
@@ -410,6 +416,7 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
 
     findings = []
     current_function = None
+    prev_insn = ""
 
     for line in result.stdout.splitlines():
         # Match function labels like "0046b350 <_IopAcquireFileObjectLock@16>:"
@@ -446,7 +453,11 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
             ud2_match = re.search(r"^\s+([0-9a-f]+):\s+0f 0b\s+ud2", line)
             if ud2_match:
                 addr = ud2_match.group(1)
-                expected = any(e in current_function for e in EXPECTED_UD2)
+                # `int $0x29` is __fastfail (RtlFailFast: a corrupt LIST_ENTRY, a failed
+                # /GS check). It never returns, so the compiler ends the path with ud2 --
+                # a deliberate stop, as in the C header inlines, not a signature fold.
+                fastfail = re.search(r"\bint\s+\$0x29\b", prev_insn) is not None
+                expected = fastfail or any(e in current_function for e in EXPECTED_UD2)
                 known_cgu = any(e in current_function for e in KNOWN_CGU_UD2)
                 findings.append(
                     {
@@ -456,6 +467,8 @@ def scan_ud2(ntoskrnl_path: Path, objdump: str, arch: str = "i386") -> list[dict
                         "known_cgu": known_cgu,
                     }
                 )
+            if re.match(r"^\s+[0-9a-f]+:", line):
+                prev_insn = line
 
     return findings
 

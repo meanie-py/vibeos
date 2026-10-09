@@ -57,8 +57,8 @@ pub unsafe extern "system" fn PciFindPdoByLocation(
     BusNumber: ULONG,
     SlotNumber: ULONG,
 ) -> PPCI_PDO_EXTENSION {
-    let mut DeviceExtension: PPCI_FDO_EXTENSION = core::ptr::null_mut();
-    let mut PdoExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut();
+    let mut DeviceExtension: PPCI_FDO_EXTENSION;
+    let mut PdoExtension: PPCI_PDO_EXTENSION;
     let mut PciSlot: PCI_SLOT_NUMBER = core::mem::zeroed();
     PciSlot.u.AsULONG = SlotNumber;
 
@@ -216,7 +216,7 @@ pub unsafe extern "system" fn PciAssignSlotResources(
     let mut Resources: PCM_RESOURCE_LIST = core::ptr::null_mut::<_CM_RESOURCE_LIST>();
     let mut PciData: _PCI_COMMON_HEADER = core::mem::zeroed();
     let mut ExistingDeviceObject: PDEVICE_OBJECT = core::ptr::null_mut::<_DEVICE_OBJECT>();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     *AllocatedResources = core::ptr::null_mut::<_CM_RESOURCE_LIST>();
 

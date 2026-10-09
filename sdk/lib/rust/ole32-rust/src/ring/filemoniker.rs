@@ -503,7 +503,7 @@ fn FileMonikerImpl_BindToObject(
     ppvResult: *mut *mut c_void,
 ) -> HRESULT {
     let This = impl_from_IMoniker(iface);
-    let mut res: HRESULT = E_FAIL;
+    let mut res: HRESULT;
     let mut clsID: CLSID = core::mem::zeroed();
     let mut pObj: *mut IUnknown = core::ptr::null_mut();
     let mut prot: *mut IRunningObjectTable = core::ptr::null_mut();
@@ -1205,7 +1205,7 @@ pub unsafe extern "C" fn FileMonikerImpl_DecomposePath(
     let mut i: c_int = 0;
     let mut j: c_int;
     let mut tabIndex: c_int = 0;
-    let mut ret: c_int = 0;
+    let ret: c_int;
     let strgtable: *mut LPOLESTR;
 
     let len: c_int = lstrlenW(str);

@@ -4396,7 +4396,7 @@ unsafe fn find_comserver_redirection(
     data: *mut ACTCTX_SECTION_KEYED_DATA,
 ) -> NTSTATUS {
     let comclass: *mut comclassredirect_data;
-    let mut index: *mut guid_index = core::ptr::null_mut();
+    let index: *mut guid_index;
 
     if ((*actctx).sections & SERVERREDIRECT_SECTION as u32) == 0 {
         return STATUS_SXS_KEY_NOT_FOUND;
@@ -5873,7 +5873,7 @@ pub unsafe extern "system" fn RtlFindActivationContextSectionString(
     ptr: PVOID,
 ) -> NTSTATUS {
     let data: PACTCTX_SECTION_KEYED_DATA = ptr as PACTCTX_SECTION_KEYED_DATA;
-    let mut status: NTSTATUS = STATUS_SXS_KEY_NOT_FOUND;
+    let mut status: NTSTATUS;
 
     status = RtlpFindActivationContextSection_CheckParameters(flags, guid, section_kind, section_name, data);
     if !NT_SUCCESS(status) {
@@ -6457,7 +6457,6 @@ pub unsafe extern "system" fn RtlCreateActivationContext(
 
     if !file.is_null() {
         NtClose(file);
-        file = core::ptr::null_mut();
     }
     RtlFreeUnicodeString(&mut nameW);
 

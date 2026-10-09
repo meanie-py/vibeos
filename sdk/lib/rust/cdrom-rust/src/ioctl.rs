@@ -436,7 +436,7 @@ pub unsafe extern "C" fn ReadQChannel(
     const TRACE_LEVEL_VERBOSE: u32 = 5; // storswtr.h:26-30
     const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut transferByteCount: u32 = 0;
     let mut cdb: CDB = core::mem::zeroed();
     let inputBuffer = InputBuffer as PCDROM_SUB_Q_DATA_FORMAT;
@@ -585,7 +585,7 @@ pub unsafe extern "C" fn ReadDvdStructure(
     DataLength: *mut usize,
 ) -> i32 {
 
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let request: *mut DVD_READ_STRUCTURE = InputBuffer as *mut DVD_READ_STRUCTURE;
     let header: *mut DVD_DESCRIPTOR_HEADER = OutputBuffer as *mut DVD_DESCRIPTOR_HEADER;
     let mut cdb: CDB = core::mem::zeroed();
@@ -834,7 +834,7 @@ pub unsafe extern "system" fn RequestHandleUnknownIoctl(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(Request);
     let syncRequired: BOOLEAN = (*requestContext).SyncRequired;
@@ -892,7 +892,7 @@ pub unsafe extern "system" fn RequestHandleUnknownIoctl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceIsPlayActive(Device: WDFDEVICE) -> u8 {
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut status: NTSTATUS; // STATUS_SUCCESS
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let currentBuffer: *mut SUB_Q_CURRENT_POSITION;
     let mut bytesRead: usize = 0;
@@ -956,7 +956,7 @@ pub unsafe extern "C" fn RequestHandleGetInquiryData(
     request_parameters: WDF_REQUEST_PARAMETERS,
     data_length: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*device_extension).DeviceAdditionalData);
 
     *data_length = 0;
@@ -1009,11 +1009,11 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
     const TRACE_LEVEL_INFORMATION: u32 = 4; // storswtr.h:26-30
     const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
 
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let cd_data: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
     let mut media_types: *mut GET_MEDIA_TYPES = core::ptr::null_mut();
-    let mut media_info: *mut DEVICE_MEDIA_INFO = core::ptr::null_mut();
-    let mut size_needed: u32 = 0;
+    let mut media_info: *mut DEVICE_MEDIA_INFO;
+    let mut size_needed: u32;
     let zpodd_info: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     *DataLength = 0;
@@ -1095,7 +1095,6 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
                     media_info = media_info.add(1);
                     (*media_info).DeviceSpecific.RemovableDiskInfo.MediaCharacteristics |=
                         MEDIA_CURRENTLY_MOUNTED;
-                    media_info = media_info.sub(1);
                 } else {
                     (*media_info).DeviceSpecific.RemovableDiskInfo.MediaCharacteristics |=
                         MEDIA_CURRENTLY_MOUNTED;
@@ -1235,7 +1234,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
     mut RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let cdData = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
 
     let mut inputBuffer: *mut c_void = core::ptr::null_mut();
@@ -1373,7 +1372,7 @@ pub unsafe extern "C" fn RequestValidateRawRead(
 
     if status >= 0 {
         let mut bufferIsPageAligned: u8 = 0;
-        let mut maxLength: ULONG = 0;
+        let mut maxLength: ULONG;
 
         if ((MmGetMdlVirtualAddress((*irp).MdlAddress) as usize) & (PAGE_SIZE - 1)) == 0 {
             bufferIsPageAligned = 1;
@@ -1631,7 +1630,7 @@ pub unsafe extern "C" fn RequestValidateDvdSendKey(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut key: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -2360,7 +2359,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessQueryLockState(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut status: NTSTATUS; // STATUS_SUCCESS
     let deviceExtension = DeviceGetExtension(Device);
     let cdData = &mut (*deviceExtension).DeviceAdditionalData as *mut CDROM_DATA;
     let mut exclusiveLockState: *mut CDROM_EXCLUSIVE_LOCK_STATE = core::ptr::null_mut();
@@ -2412,7 +2411,7 @@ pub unsafe extern "system" fn RequestHandleExclusiveAccessLockDevice(
     let mut exclusiveLock: *mut CDROM_EXCLUSIVE_LOCK = core::ptr::null_mut();
     let mut logEntry: *mut IO_ERROR_LOG_PACKET;
 
-    let mut fileObject: WDFFILEOBJECT = core::ptr::null_mut();
+    let mut fileObject: WDFFILEOBJECT;
     let mut idx: u32 = 0;
     let mut nameLength: u32 = 0;
 
@@ -2585,7 +2584,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyRetrieveCachedData(
     const StorageAdapterProperty: u32 = 1;
     const INVALID_OFFSET: u32 = 0xFFFFFFFF;
 
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut inputBuffer: *mut STORAGE_PROPERTY_QUERY = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -2743,7 +2742,7 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyDeviceUniqueId(
     Request: WDFREQUEST,
 ) -> i32 {
     let deviceExtension = DeviceGetExtension(Device);
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut inputBuffer: *mut STORAGE_PROPERTY_QUERY = core::ptr::null_mut();
     let mut descHeader: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
     let mut outLength: usize = 0;
@@ -2867,12 +2866,12 @@ pub unsafe extern "system" fn RequestHandleQueryPropertyWriteCache(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut status: NTSTATUS; // STATUS_SUCCESS
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
     let mut query: *mut STORAGE_PROPERTY_QUERY = core::ptr::null_mut();
     let mut writeCache: *mut STORAGE_WRITE_CACHE_PROPERTY = core::ptr::null_mut();
     let mut modeData: *mut MODE_PARAMETER_HEADER = core::ptr::null_mut();
-    let mut pageData: *mut MODE_CACHING_PAGE = core::ptr::null_mut();
+    let mut pageData: *mut MODE_CACHING_PAGE;
     let mut length: usize = 0;
     let mut information: u32 = 0;
     let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
@@ -3161,9 +3160,9 @@ pub unsafe extern "C" fn RequestValidateDvdReadKey(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut keyParameters: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
-    let mut keyLength: u32 = 0;
+    let mut keyLength: u32;
 
     *DataLength = 0;
 
@@ -3244,7 +3243,7 @@ pub unsafe extern "C" fn RequestValidateDvdEndSession(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut sessionId: *mut DVD_SESSION_ID = core::ptr::null_mut();
 
     // UNREFERENCED_PARAMETER(DeviceExtension);
@@ -3283,7 +3282,7 @@ pub unsafe extern "C" fn RequestValidateAacsEndSession(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut sessionId: *mut DVD_SESSION_ID = core::ptr::null_mut();
     let cdData: *mut CDROM_DATA = &mut (*DeviceExtension).DeviceAdditionalData;
 
@@ -3544,11 +3543,11 @@ pub unsafe extern "system" fn RequestHandleScsiPassThrough(
     Device: WDFDEVICE,
     Request: WDFREQUEST,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    let mut status: NTSTATUS;
     let device_extension = DeviceGetExtension(Device);
     let irp = WdfRequestWdmGetIrp(Request);
     let zpodd_info = (*device_extension).ZeroPowerODDInfo;
-    let mut cdb: PCDB = core::ptr::null_mut();
+    let mut cdb: PCDB;
     let mut is_soft_eject: i32 = 0; // BOOLEAN as i32, 0 = FALSE
 
     #[cfg(debug_assertions)]
@@ -4072,12 +4071,12 @@ pub unsafe extern "C" fn GetConfigurationDataConversionTypeAllToTypeOne(
     Srb: *mut SCSI_REQUEST_BLOCK,
     DataLength: *mut usize,
 ) {
-    let mut featureHeader: *mut FEATURE_HEADER = core::ptr::null_mut();
-    let mut thisFeature: FEATURE_NUMBER = 0;
-    let mut totalLength: u32 = 0;
+    let mut featureHeader: *mut FEATURE_HEADER;
+    let mut thisFeature: FEATURE_NUMBER;
+    let mut totalLength: u32;
     let mut featureLength: u32 = 0;
-    let mut headerLength: u32 = 0;
-    let mut header: *mut GET_CONFIGURATION_HEADER = core::ptr::null_mut();
+    let mut headerLength: u32;
+    let mut header: *mut GET_CONFIGURATION_HEADER;
 
     // PAGED_CODE();
 
@@ -4131,18 +4130,18 @@ pub unsafe extern "C" fn GetConfigurationDataSynthesize(
     RequestType: u32,
     DataLength: *mut usize,
 ) {
-    let mut featureHeader: *mut FEATURE_HEADER = core::ptr::null_mut();
+    let mut featureHeader: *mut FEATURE_HEADER;
     let mut validLength: u32 = 0;
-    let mut featureLength: u32 = 0;
-    let mut headerLength: u32 = 0;
-    let mut buffer: *mut u8 = core::ptr::null_mut();
-    let mut bytesRemaining: u32 = 0;
-    let mut featureCode: FEATURE_NUMBER = 0;
-    let mut shouldCopy: i32 = 0;
-    let mut copyLength: usize = 0;
-    let mut transferedLength: usize = 0;
-    let mut requiredLength: usize = 0;
-    let mut header: *mut GET_CONFIGURATION_HEADER = core::ptr::null_mut();
+    let mut featureLength: u32;
+    let mut headerLength: u32;
+    let mut buffer: *mut u8;
+    let mut bytesRemaining: u32;
+    let mut featureCode: FEATURE_NUMBER;
+    let mut shouldCopy: i32;
+    let mut copyLength: usize;
+    let mut transferedLength: usize;
+    let mut requiredLength: usize;
+    let mut header: *mut GET_CONFIGURATION_HEADER;
 
     PAGED_CODE!();
 
@@ -4242,11 +4241,11 @@ pub unsafe extern "C" fn RequestHandleGetConfiguration(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
     let mut inputBuffer: *mut GET_CONFIGURATION_IOCTL_INPUT = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut transferByteCount: usize = 0;
+    let mut transferByteCount: usize;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
     let mut inZeroPowerState: i32 = 0; // FALSE
 
@@ -4385,7 +4384,7 @@ pub unsafe extern "C" fn RequestHandleGetDriveGeometry(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     // PAGED_CODE() expansion: assert IRQL <= APC_LEVEL
@@ -4720,7 +4719,7 @@ pub unsafe extern "C" fn RequestHandleGetDeviceNumber(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut size_t,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
 
     *DataLength = 0;
 
@@ -4757,7 +4756,7 @@ pub unsafe extern "C" fn RequestHandleGetHotPlugInfo(
     DataLength: *mut usize,
 ) -> i32 {
     unsafe {
-        let mut status: i32 = STATUS_SUCCESS;
+        let mut status: i32;
         *DataLength = 0;
         if RequestParameters.Parameters.DeviceIoControl.as_ref().OutputBufferLength as usize >= core::mem::size_of::<STORAGE_HOTPLUG_INFO>() {
             let mut info: *mut STORAGE_HOTPLUG_INFO = core::ptr::null_mut();
@@ -4857,8 +4856,8 @@ pub unsafe extern "system" fn RequestHandleEventNotification(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO = core::ptr::null_mut();
-    let mut requestInUse: i32 = 0;
+    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO;
+    let mut requestInUse: i32;
     let mut eventBuffer: *mut STORAGE_EVENT_NOTIFICATION = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -4938,7 +4937,7 @@ pub unsafe extern "C" fn RequestHandleEjectionControl(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // PAGED_CODE();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut mediaRemoval: *mut PREVENT_MEDIA_REMOVAL = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -4984,9 +4983,9 @@ pub unsafe extern "C" fn RequestHandleEnableStreaming(
         PAGED_CODE!();
         let cdData: *mut CDROM_DATA = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData);
         let fdoData: *mut CDROM_PRIVATE_FDO_DATA = (*DeviceExtension).PrivateFdoData;
-        let mut fileObject: WDFFILEOBJECT = core::ptr::null_mut();
+        let mut fileObject: WDFFILEOBJECT;
         let mut fileObjectContext: PFILE_OBJECT_CONTEXT = core::ptr::null_mut();
-        let mut status: NTSTATUS = STATUS_SUCCESS;
+        let mut status: NTSTATUS;
         let mut inputBuffer: *mut CDROM_STREAMING_CONTROL = core::ptr::null_mut();
         let mut enforceStreamingRead: u8 = 0;
         let mut enforceStreamingWrite: u8 = 0;
@@ -5054,7 +5053,7 @@ pub unsafe extern "C" fn RequestHandleSendOpcInformation(
     Request: WDFREQUEST,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut inputBuffer: *mut CDROM_SIMPLE_OPC_INFO = core::ptr::null_mut();
 
     // PAGED_CODE(); omitted – equivalent debug check not transliterated
@@ -5128,7 +5127,7 @@ pub unsafe extern "C" fn RequestHandleGetPerformance(
     if status >= 0 {
         let mut descriptorSize: u16 = 0;
         let mut descriptorCount: u16 = 0;
-        let mut transferSize: size_t = 0;
+        let mut transferSize: size_t;
         let mut cdb: CDB = core::mem::zeroed();
 
         ScratchBuffer_BeginUse(DeviceExtension);
@@ -5240,11 +5239,11 @@ pub unsafe extern "C" fn RequestHandleMcnSyncFakeIoctl(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let info: *mut MEDIA_CHANGE_DETECTION_INFO =
         (*DeviceExtension).MediaChangeDetectionInfo;
     let mut shouldRetry: i32 = 1; // TRUE
-    let mut requestSent: i32 = 0; // FALSE
+    let mut requestSent: i32; // FALSE
 
     // PAGED_CODE ();    // pageable code assertion, elided mechanically
 
@@ -5283,7 +5282,7 @@ pub unsafe extern "C" fn RequestIsRealtimeStreaming(Request: WDFREQUEST, IsReadR
     let mut useStreaming: u8 = 0;
 
     if useStreaming == 0 {
-        let mut currentStackLocationFlags: u8 = 0;
+        let mut currentStackLocationFlags: u8;
         currentStackLocationFlags = RequestGetCurrentStackLocationFlags(Request);
 
         useStreaming = if (currentStackLocationFlags as i32 & SL_REALTIME_STREAM as i32) != 0 { 1 } else { 0 };
@@ -5594,7 +5593,7 @@ pub unsafe extern "C" fn RequestHandleReadWrite(
 
     if NT_SUCCESS(status) {
         let entireXferLen: u32 = (*currentStack).Parameters.Read.Length;
-        let mut maxLength: u32 = 0;
+        let mut maxLength: u32;
         let mut packetsCount: u32;
 
         let readWriteContext: *mut CDROM_SCRATCH_READ_WRITE_CONTEXT;
@@ -5726,9 +5725,9 @@ pub unsafe extern "C" fn RequestHandleReserveRelease(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
-    let mut cdb: *mut CDB = core::ptr::null_mut();
-    let mut ioctl_code: u32 = 0;
+    let mut srb: *mut SCSI_REQUEST_BLOCK;
+    let mut cdb: *mut CDB;
+    let mut ioctl_code: u32;
 
     // PAGED_CODE();
     *DataLength = 0;
@@ -5820,7 +5819,7 @@ pub unsafe extern "C" fn RequestValidatePersistentReserve(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let ioctlCode: u32 = RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
     let mut reserveCommand: *mut PERSISTENT_RESERVE_COMMAND = core::ptr::null_mut();
 
@@ -5928,11 +5927,11 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let ioctlCode: u32 = RequestParameters.Parameters.DeviceIoControl.as_ref().IoControlCode;
     let mut srb: *mut SCSI_REQUEST_BLOCK = core::ptr::null_mut();
     let mut cdb: *mut CDB = core::ptr::null_mut();
-    let mut writeToDevice: u8 = 0; // will be set later
+    let mut writeToDevice: u8; // will be set later
     let mut reserveCommand: PPERSISTENT_RESERVE_COMMAND = core::ptr::null_mut();
 
     PAGED_CODE!();
@@ -5962,7 +5961,7 @@ pub unsafe extern "C" fn RequestHandlePersistentReserve(
     }
 
     if NT_SUCCESS(status) {
-        let mut dataBufLen: usize = 0;
+        let mut dataBufLen: usize;
 
         if ioctlCode == IOCTL_STORAGE_PERSISTENT_RESERVE_IN {
             (*cdb).PERSISTENT_RESERVE_IN.as_mut().OperationCode = SCSIOP_PERSISTENT_RESERVE_IN;
@@ -6023,7 +6022,7 @@ pub unsafe extern "C" fn RequestHandleAreVolumesReady(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     let mut completeRequest: BOOLEAN = 1;
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
 
     let _ = &RequestParameters;
 
@@ -6059,10 +6058,10 @@ pub unsafe extern "system" fn RequestHandleVolumeOnline(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut request: WDFREQUEST = core::ptr::null_mut();
-    let mut irp: *mut IRP = core::ptr::null_mut();
-    let mut nextStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut irp: *mut IRP;
+    let mut nextStack: *mut IO_STACK_LOCATION;
 
     let _ = RequestParameters;
 
@@ -6120,7 +6119,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
     let cdData = &(*DeviceExtension).DeviceAdditionalData as *const CDROM_DATA;
     let mut rawReadInfo: RAW_READ_INFO = core::mem::zeroed();
     let mut outputVirtAddr: *mut core::ffi::c_void = core::ptr::null_mut();
-    let mut startingSector: u32 = 0;
+    let mut startingSector: u32;
 
     let irp = WdfRequestWdmGetIrp(Request);
     let currentIrpStack = IoGetCurrentIrpStackLocation(irp);
@@ -6199,7 +6198,7 @@ pub unsafe extern "C" fn DeviceHandleRawRead(
     if status >= 0 {
         let srb = (*DeviceExtension).ScratchContext.ScratchSrb;
         let cdb = (*srb).Cdb.as_mut_ptr() as *mut CDB;
-        let mut transferByteCount: usize = 0;
+        let mut transferByteCount: usize;
         let mut shouldRetry: i32 = 1;
         let mut timesAlreadyRetried: u32 = 0;
         let mut retryIn100nsUnits: i64 = 0;
@@ -6321,7 +6320,7 @@ pub unsafe extern "C" fn DeviceHandlePlayAudioMsf(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let mut input_buffer: *mut CDROM_PLAY_AUDIO_MSF = core::ptr::null_mut();
 
     // PAGED_CODE();
@@ -6382,7 +6381,7 @@ pub unsafe extern "C" fn DeviceHandleReadQChannel(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut inputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -6512,7 +6511,7 @@ pub unsafe extern "C" fn DeviceHandleSeekAudioMsf(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let mut inputBuffer: *mut CDROM_SEEK_AUDIO_MSF = core::ptr::null_mut();
 
     // PAGED_CODE();
@@ -6759,7 +6758,7 @@ pub unsafe extern "C" fn DeviceHandleReadDvdStructure(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
     let mut input_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut output_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -6807,7 +6806,7 @@ pub unsafe extern "C" fn DeviceHandleDvdEndSession(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut sessionId: *mut DVD_SESSION_ID = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -6922,7 +6921,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     let mut status: i32 = STATUS_SUCCESS;
     let mut keyLength: u32 = 0;
     let mut result: u32 = 0;
-    let mut allocationLength: u32 = 0; // set to keyLength below (REPORT KEY alloc len)
+    let mut allocationLength: u32; // set to keyLength below (REPORT KEY alloc len)
     let mut fourByte: *mut FOUR_BYTE;
     let keyParameters: *mut DVD_COPY_PROTECT_KEY = InputBuffer as *mut DVD_COPY_PROTECT_KEY;
 
@@ -6932,9 +6931,6 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     let _ = InputBufferLength;
 
     *DataLength = 0;
-
-    // fourByte = (PFOUR_BYTE)&allocationLength;
-    fourByte = &allocationLength as *const u32 as *mut FOUR_BYTE;
 
     if IoControlCode == IOCTL_DVD_READ_KEY {
         if keyParameters.is_null() {
@@ -6951,7 +6947,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
         if status >= 0 &&
             (*keyParameters).KeyType == DvdDiskKey
         {
-            let mut keyHeader: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
+            let mut keyHeader: *mut DVD_COPY_PROTECT_KEY;
             let readStructureRequest: *mut DVD_READ_STRUCTURE = keyParameters as *mut DVD_READ_STRUCTURE;
 
             // save the key header
@@ -7037,7 +7033,12 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     if status >= 0 {
         let mut cdb: CDB = core::mem::zeroed();
 
-        allocationLength = keyLength; // fourByte points here → CDB AllocationLength
+        allocationLength = keyLength;
+        // The C takes `fourByte = (PFOUR_BYTE)&allocationLength` at the top and writes
+        // allocationLength afterwards. In Rust that write invalidates a pointer derived from
+        // a shared borrow (UB), and rustc -- unable to see the read through it -- reported
+        // the write as dead. Take the pointer after the value it reads.
+        fourByte = &allocationLength as *const u32 as *mut FOUR_BYTE;
         core::ptr::write_bytes(&mut cdb as *mut CDB as *mut u8, 0, core::mem::size_of::<CDB>());
 
         cdb.REPORT_KEY.as_mut().OperationCode = SCSIOP_REPORT_KEY;
@@ -7141,7 +7142,7 @@ pub unsafe extern "C" fn DeviceHandleDvdSendKey(
     DataLength: *mut usize,
 ) -> i32 {
 
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let mut input_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
     PAGED_CODE!();
@@ -7182,7 +7183,7 @@ pub unsafe extern "C" fn DvdSendKey(
     let key: *mut DVD_COPY_PROTECT_KEY = InputBuffer as *mut DVD_COPY_PROTECT_KEY;
     let mut keyLength: u32 = 0;
     let mut result: u32 = 0;
-    let mut four_byte: *mut FOUR_BYTE = core::ptr::null_mut();
+    let mut four_byte: *mut FOUR_BYTE;
 
     let _ = InputBufferLength;
     *DataLength = 0;
@@ -7224,7 +7225,7 @@ pub unsafe extern "C" fn DvdSendKey(
     }
 
     if status >= 0 {
-        let mut keyBuffer: *mut CDVD_KEY_HEADER = core::ptr::null_mut();
+        let mut keyBuffer: *mut CDVD_KEY_HEADER;
         let mut cdb: CDB = core::mem::zeroed();
 
         ScratchBuffer_BeginUse(DeviceExtension);
@@ -7273,7 +7274,7 @@ pub unsafe extern "C" fn DeviceHandleSetReadAhead(
     // PAGED_CODE macro
     PAGED_CODE!();
 
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut readAhead: *mut STORAGE_SET_READ_AHEAD = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -7311,6 +7312,10 @@ pub unsafe extern "C" fn DeviceHandleSetReadAhead(
         cdb.SET_READ_AHEAD.as_mut().TriggerLBA[3] = (*fourByte).__bindgen_anon_1.as_ref().Byte0;
 
         blockAddress = ((*readAhead).TargetAddress.QuadPart >> (*DeviceExtension).SectorShift) as u32;
+        // Re-derive after the write: a direct write to the local invalidates the earlier
+        // raw pointer (Stacked Borrows), and rustc called this write dead because the read
+        // through `fourByte` is invisible to it.
+        let fourByte: *mut FOUR_BYTE = core::ptr::addr_of_mut!(blockAddress) as *mut FOUR_BYTE;
 
         cdb.SET_READ_AHEAD.as_mut().ReadAheadLBA[0] = (*fourByte).__bindgen_anon_1.as_ref().Byte3;
         cdb.SET_READ_AHEAD.as_mut().ReadAheadLBA[1] = (*fourByte).__bindgen_anon_1.as_ref().Byte2;
@@ -7336,7 +7341,7 @@ pub unsafe extern "C" fn DeviceHandleSetSpeed(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let cdData = core::ptr::addr_of_mut!((*DeviceExtension).DeviceAdditionalData) as *mut CDROM_DATA;
     let mut inputBuffer: *mut CDROM_SET_SPEED = core::ptr::null_mut();
 

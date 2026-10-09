@@ -313,21 +313,19 @@ def test_set_info_ex_ioctl(vm: QemuVM) -> None:
 
 
 def test_interrupt_driven_rx(vm: QemuVM) -> None:
-    r"""M10 (x86 — i386 + amd64): the virtio-net legacy INTx is connected to
-    netstack's ISR and actually fires. The ISR acks the device (reads+clears the
-    ISR status, deasserts INTx) and queues a DPC; the DPC sets the worker's RX
-    event; the worker wakes on that event instead of busy-polling.
+    r"""M10: the virtio-net legacy INTx is connected to netstack's ISR and
+    actually fires, on every arch. The ISR acks the device (reads+clears the ISR
+    status, deasserts INTx) and queues a DPC; the DPC sets the worker's RX event;
+    the worker wakes on that event instead of busy-polling.
 
     Two proofs: (1) the interrupt CONNECTED (IoConnectInterrupt +
-    HalGetInterruptVector resolved a real vector for the manually-enumerated NIC);
+    HalGetInterruptVector resolved a real vector for the manually-enumerated NIC;
+    on arm64 the vector is the GIC INTID of the board's GPEX INTx routing);
     (2) it FIRED — the one-shot marker is emitted from the DPC, so it can only
     appear if a real device IRQ drove the ISR→DPC→event path (not the worker's
-    fallback timeout). i386 + amd64 share the x86 HAL vector path; arm64's
-    HalGetInterruptVector is a stub, so it stays on polling.
+    fallback timeout).
     """
     _require_net_config(vm)
-    if "arm64" in vm.config.arch:
-        pytest.skip("M10 interrupt-driven RX needs the x86 HAL vector path (arm64 stub)")
     assert _wait_for_marker(vm, MARK_M10_CONNECTED, timeout=90), (
         "virtio RX interrupt was not connected (IoConnectInterrupt / HalGetInterruptVector(PCIBus))"
     )

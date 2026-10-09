@@ -951,3 +951,139 @@ pub fn GetIRPMinorFunctionString(minor_function: UCHAR) -> PCHAR {
     };
     s as PCHAR
 }
+
+// ============================================================================
+// Driver-facing header macros a translation calls as functions
+// ============================================================================
+// Ported once here so `rustconv port resolve` imports them, instead of each driver crate
+// hand-writing its own copy (pcix-rust, ks-rust and usbport-rust each have one).
+
+/// wdm.h `IsEqualGUIDAligned(g1, g2)`: both GUIDs 8-byte aligned, compared as two
+/// LONGLONGs. Generic over the pointee because the C macro casts whatever it is given.
+#[inline]
+pub unsafe fn IsEqualGUIDAligned<A, B>(guid1: *const A, guid2: *const B) -> bool {
+    let (a, b) = (guid1 as *const i64, guid2 as *const i64);
+    *a == *b && *a.add(1) == *b.add(1)
+}
+
+/// ke.h `KeFlushIoBuffers(Mdl, ReadOperation, DmaOperation)`: DMA is cache-coherent on
+/// x86/amd64 (the macro is empty); arm64 issues a full data synchronization barrier.
+/// `inline(always)`, never an out-of-line no-op (an optimization barrier).
+#[inline(always)]
+pub unsafe fn KeFlushIoBuffers<M>(_mdl: *mut M, _read_operation: BOOLEAN, _dma_operation: BOOLEAN) {
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+}
+
+/// iotypes.h `PCI_MULTIFUNCTION_DEVICE(PciData)`: bit 7 of the header-type byte. The C
+/// casts any PCI config pointer; the common header is the part every layout shares.
+#[inline]
+pub unsafe fn PCI_MULTIFUNCTION_DEVICE<T>(pci_data: *const T) -> bool {
+    ((*(pci_data as *const ddk::PCI_COMMON_HEADER)).HeaderType & 0x80) != 0
+}
+
+/// Integer widths `BYTES_TO_PAGES` is applied to (the C macro keeps its argument's type).
+pub trait PageCountArith: Copy {
+    fn bytes_to_pages(self) -> Self;
+}
+macro_rules! page_count_arith {
+    ($($t:ty),*) => {$(
+        impl PageCountArith for $t {
+            #[inline]
+            fn bytes_to_pages(self) -> Self {
+                (self >> PAGE_SHIFT) + ((self & (PAGE_SIZE as $t - 1)) != 0) as $t
+            }
+        }
+    )*};
+}
+page_count_arith!(u32, u64, usize);
+
+/// mmfuncs.h `BYTES_TO_PAGES(Size)`, in the C's overflow-safe form: shift first, then add
+/// one for a partial page (`Size + PAGE_SIZE - 1` would wrap for a size near the top).
+#[inline]
+pub fn BYTES_TO_PAGES<T: PageCountArith>(size: T) -> T {
+    size.bytes_to_pages()
+}
+
+// A driver reaches ntoskrnl's DATA exports through the import table: haltypes.h aliases
+// `HalDispatchTable` to `__imp_HalDispatchTable` for every non-ntoskrnl module (HALDISPATCH
+// is that pointer). amd64 names the import slot directly; i386 and arm64 import it with
+// raw-dylib, as win32k-rust does for ExDesktopObjectType.
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    #[link_name = "__imp_HalDispatchTable"]
+    static HalDispatchTable_imp: *mut ddk::HAL_DISPATCH;
+}
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    #[link_name = "HalDispatchTable"]
+    static mut HalDispatchTable_data: ddk::HAL_DISPATCH;
+}
+
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    #[link_name = "__imp_InitSafeBootMode"]
+    static InitSafeBootMode_imp: *const ULONG;
+}
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    #[link_name = "InitSafeBootMode"]
+    static InitSafeBootMode_data: ULONG;
+}
+
+/// ntoskrnl's `InitSafeBootMode` DATA export (`@ extern` in ntoskrnl.spec), read from a
+/// DRIVER through its import slot -- a plain `extern static` of the name is an undefined
+/// symbol at a driver's link (pciidex.sys's safe-boot check).
+#[inline(always)]
+pub unsafe fn InitSafeBootModeValue() -> ULONG {
+    #[cfg(target_arch = "x86_64")]
+    {
+        *InitSafeBootMode_imp
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+    {
+        core::ptr::addr_of!(InitSafeBootMode_data).read_volatile()
+    }
+}
+
+/// haltypes.h `HALDISPATCH` as seen from a DRIVER (never from ntoskrnl itself).
+#[inline(always)]
+unsafe fn driver_hal_dispatch() -> *mut ddk::HAL_DISPATCH {
+    #[cfg(target_arch = "x86_64")]
+    {
+        HalDispatchTable_imp
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+    {
+        core::ptr::addr_of_mut!(HalDispatchTable_data)
+    }
+}
+
+/// haltypes.h `HalGetInterruptTranslator` = `HALDISPATCH->HalGetInterruptTranslator`, for a
+/// driver. The C calls the slot unconditionally; an empty slot is STATUS_NOT_IMPLEMENTED here
+/// rather than a call through NULL.
+#[inline]
+pub unsafe fn HalGetInterruptTranslator(
+    ParentInterfaceType: ddk::INTERFACE_TYPE,
+    ParentBusNumber: ULONG,
+    BridgeInterfaceType: ddk::INTERFACE_TYPE,
+    Size: USHORT,
+    Version: USHORT,
+    Translator: ddk::PTRANSLATOR_INTERFACE,
+    BridgeBusNumber: PULONG,
+) -> NTSTATUS {
+    match (*driver_hal_dispatch()).HalGetInterruptTranslator {
+        Some(f) => f(
+            ParentInterfaceType,
+            ParentBusNumber,
+            BridgeInterfaceType,
+            Size,
+            Version,
+            Translator,
+            BridgeBusNumber,
+        ),
+        None => STATUS_NOT_IMPLEMENTED,
+    }
+}

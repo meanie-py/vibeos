@@ -766,7 +766,7 @@ unsafe fn CmpValidateKey(
     Flags: u32,
     FixHive: u8,
 ) -> CM_CHECK_REGISTRY_STATUS {
-    let mut cm_status_code: CM_CHECK_REGISTRY_STATUS = 0;
+    let mut cm_status_code: CM_CHECK_REGISTRY_STATUS;
     let cell_data: *mut CELL_DATA;
     let cell_size: u32;
     let mut do_subkeys_repair: u8 = 0u8;

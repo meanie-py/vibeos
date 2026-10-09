@@ -322,8 +322,11 @@ unsafe fn MmDeleteVirtualMappingEx(
 
         if OldPte.Long != 0 {
             if !WasDirty.is_null() {
-                // Dirty bit is bit 6 on x86/x86_64
-                *WasDirty = (((*PointerPte).Long >> 6) & 1) as BOOLEAN;
+                // Dirty bit is bit 6 on x86/x86_64 -- of the OLD value: the exchange above
+                // has already zeroed *PointerPte. Reading it there reported every page clean,
+                // so nothing written through a file mapping ever reached the file (setup's
+                // whole cab extraction came out zero-filled).
+                *WasDirty = ((OldPte.Long >> 6) & 1) as BOOLEAN;
             }
             if !Page.is_null() {
                 *Page = OldPte.page_frame_number() as _;

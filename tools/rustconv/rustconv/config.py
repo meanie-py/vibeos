@@ -558,17 +558,24 @@ def __dir__():
 
 
 def get_backend() -> str:
-    if os.environ.get("DEEPSEEK_API_KEY"):
-        return "deepseek"
+    # Claude first: Haiku 5.5 is the translation default (2026-10-09). Over ~2,500 banked
+    # functions it needed less rework to integrate than DeepSeek v4-pro (about 15% of shipped
+    # lines vs 16-23% on same-era modules; comctl32 5.5%) at about 1/4 the cost per call.
+    # DeepSeek stays one `-m deepseek` away.
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "claude"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
     return "gemini"
 
 
 # Claude models
 CLAUDE_MODEL_SONNET = "claude-sonnet-4-5-20250929"
 CLAUDE_MODEL_HAIKU = "claude-haiku-4-5-20251001"
-CLAUDE_MAX_TOKENS = 32768
+# Output cap per call. Sealed bodies are token-DENSE (`__RUSTCONV_FACT_0172__` is many tokens
+# for 22 characters): comctl32's BUTTON_WindowProc filled 32768 tokens with 16K characters and
+# was truncated on every sample. RUSTCONV_CLAUDE_MAX_TOKENS raises it for such a run.
+CLAUDE_MAX_TOKENS = int(os.environ.get("RUSTCONV_CLAUDE_MAX_TOKENS", "32768"))
 
 # Gemini
 GEMINI_CMD = "gemini"
@@ -604,7 +611,7 @@ DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "65536"))
 # Default model per backend
 DEFAULT_MODELS = {
     "deepseek": DEEPSEEK_MODEL_V4_PRO,
-    "claude": CLAUDE_MODEL_SONNET,
+    "claude": "claude-haiku-5-5",
     "gemini": GEMINI_MODEL,
 }
 
@@ -685,14 +692,21 @@ def cost_usd(
     output_tokens: int,
     cache_read_tokens: int = 0,
     *,
+    cache_write_tokens: int = 0,
     batch: bool = False,
     when: datetime.datetime | None = None,
 ) -> float:
     """USD cost for a single call. batch=True applies the 50% batch discount.
 
     `input_tokens` are the UNCACHED ones; `cache_read_tokens` the prefix served from cache
-    (DeepSeek's prompt_cache_hit_tokens). `when` is the call's time (default: now), which
-    decides DeepSeek's peak/off-peak band.
+    (DeepSeek's prompt_cache_hit_tokens), `cache_write_tokens` the prefix written to it.
+    `when` is the call's time (default: now), which decides DeepSeek's peak/off-peak band.
+
+    Claude bills a cache READ at 0.1x the input rate and a WRITE at 1.25x (batch_runner's
+    estimate_cost always did). This charged reads at the full rate and ignored writes, so
+    the running total -- and the cost cap -- read 2.4x high on comctl32, whose listview.c
+    prompts carry ~143K cached tokens each: $5.41 reported for ~$2.25 of calls, and the cap
+    stopped the run 21 files early.
     """
     if model in DEEPSEEK_RATES:
         hit, miss, out = DEEPSEEK_RATES[model]
@@ -700,9 +714,17 @@ def cost_usd(
         return (cache_read_tokens * hit + input_tokens * miss + output_tokens * out) * scale / 1e6
     pin, pout = model_pricing(model)
     if model in CLAUDE_TIERED_PRICING:
+        # The tier is decided by the WHOLE prompt, cached parts included.
         threshold, short, long = CLAUDE_TIERED_PRICING[model]
-        pin, pout = long if input_tokens + cache_read_tokens > threshold else short
-    cost = (input_tokens + cache_read_tokens) * pin / 1_000_000 + output_tokens * pout / 1_000_000
+        prompt = input_tokens + cache_read_tokens + cache_write_tokens
+        pin, pout = long if prompt > threshold else short
+    read_rate, write_rate = (0.1, 1.25) if model.startswith("claude-") else (1.0, 1.0)
+    cost = (
+        input_tokens * pin
+        + cache_read_tokens * pin * read_rate
+        + cache_write_tokens * pin * write_rate
+        + output_tokens * pout
+    ) / 1_000_000
     return cost * (BATCH_DISCOUNT if batch else 1.0)
 
 

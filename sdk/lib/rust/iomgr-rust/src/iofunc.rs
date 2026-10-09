@@ -354,7 +354,10 @@ const FileAccessInformation: u32 = 8;
 const FileModeInformation: u32 = 16;
 const FileAlignmentInformation: u32 = 17;
 const FileAllInformation: u32 = 18;
-const FileMaximumInformation: u32 = 64;
+// ntoskrnl's own header value (41), which IopQueryOperationLength/IopSetOperationLength are
+// sized to: 64 let classes 42..63 through the bound check and index past those tables.
+const FileMaximumInformation: u32 =
+    ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileMaximumInformation as u32;
 const FileRenameInformation: u32 = 10;
 const FileLinkInformation: u32 = 11;
 const FileCompletionInformation: u32 = 30;
@@ -363,7 +366,10 @@ const FileMoveClusterInformation: u32 = 31;
 // FS information class enum values
 const FileFsDeviceInformation: u32 = 4;
 const FileFsDriverPathInformation: u32 = 0x00000009;
-const FileFsMaximumInformation: u32 = 9;
+// ntoskrnl's own header value (11), the size of IopQueryFsOperationLength: 9 rejected the
+// valid classes 9 and 10.
+const FileFsMaximumInformation: u32 =
+    ntkrnl_sys::ddk::_FSINFOCLASS_FileFsMaximumInformation as u32;
 
 // Additional IRP constants
 const IRP_MJ_SET_VOLUME_INFORMATION: u32 = 0x0B;

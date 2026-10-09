@@ -2247,7 +2247,7 @@ pub unsafe extern "system" fn NetLocalGroupGetMembers(
                         core::ptr::null_mut()
                     },
                     &raw mut ObjectAttributes as PLSA_OBJECT_ATTRIBUTES,
-                    0x00000002u32, // POLICY_EXECUTE
+                    POLICY_EXECUTE, // 0x20801; the literal 2 was POLICY_VIEW_AUDIT_INFORMATION
                     &raw mut (*EnumContext).LsaHandle,
                 );
                 if Status < 0 {

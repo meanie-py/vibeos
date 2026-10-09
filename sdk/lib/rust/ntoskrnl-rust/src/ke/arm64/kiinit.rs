@@ -220,12 +220,16 @@ pub unsafe extern "system" fn KiSystemStartup(
     // loader identity-maps the UART page, so the physical address is usable
     // until Phase 1 swaps in an MmMapIoSpace kernel VA.
     Arm64UartKernelBase = (*LoaderBlock).u.Arm.Arm64UartBase as PVOID;
+    // MachineType: the UART's register model, and whether QEMU's fw_cfg is there
+    // (freeldr winldr_arm64.rs; arc.h ARM_LOADER_BLOCK).
+    const MACHINE_QEMU_FW_CFG: u32 = 1 << 31;
+    let MachineType = (*LoaderBlock).u.Arm.MachineType;
+    crate::arm64_dbg::ARM64_UART_KIND.store(MachineType & !MACHINE_QEMU_FW_CFG, core::sync::atomic::Ordering::Relaxed);
     Arm64GicDistributorPhysical = (*LoaderBlock).u.Arm.Arm64GicDistributorBase;
     Arm64GicCpuInterfacePhysical = (*LoaderBlock).u.Arm.Arm64GicCpuInterfaceBase;
-    // Same inference the loader makes when deciding whether to map the page.
-    const QEMU_VIRT_UART: u64 = 0x0900_0000;
+    // The loader decided whether fw_cfg is there, and mapped its page if so.
     const QEMU_VIRT_FW_CFG: u64 = 0x0902_0000;
-    Arm64FwCfgPhysical = if (*LoaderBlock).u.Arm.Arm64UartBase == QEMU_VIRT_UART {
+    Arm64FwCfgPhysical = if MachineType & MACHINE_QEMU_FW_CFG != 0 {
         QEMU_VIRT_FW_CFG
     } else {
         0

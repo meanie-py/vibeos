@@ -261,7 +261,7 @@ unsafe fn ExTimedWaitForUnblockPushLock(
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!((*(WaitBlock as PEX_PUSH_LOCK_WAIT_BLOCK)).__bindgen_anon_1.WakeEvent),
-        0u32,
+        ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent as _,
         0u8,
     );
 
@@ -302,7 +302,7 @@ unsafe fn ExTimedWaitForUnblockPushLock(
         Status = KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*(WaitBlock as PEX_PUSH_LOCK_WAIT_BLOCK)).__bindgen_anon_1.WakeEvent)
                 as PVOID,
-            19u32,
+            ntkrnl_sys::ddk::_KWAIT_REASON_WrPushLock as _,
             0i8,
             0u8,
             Timeout,

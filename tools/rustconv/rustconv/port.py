@@ -39,10 +39,16 @@ from pathlib import Path
 
 from . import (
     crate_integrate,
+    dead_regions,
+    flex_index,
+    goto_arm,
     local_macros,
+    logical_not,
+    loop_step,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
+    union_slot,
     variadic_shim,
 )
 from . import profile_derive as pd
@@ -99,11 +105,27 @@ def _record(state: dict, stage: str, started: float, **result) -> None:
 
 
 def upsert_profile_arm(script: str, arm: str, label: str) -> str:
-    """Insert or replace the `  <label>)` arm of gen_driver_types.sh's case table."""
-    start = re.search(rf"^  {re.escape(label)}\)\n", script, re.M)
-    if start:
-        end = script.index("\n    ;;\n", start.end()) + len("\n    ;;\n")
-        return script[: start.start()] + arm.rstrip("\n") + "\n" + script[end:]
+    """Insert or replace the `  <label>)` arm of gen_driver_types.sh's case table.
+
+    An arm is the label's whether it is `  <label>)` or a multi-island `  a|<label>|b)`.
+    Matching only the bare form re-appended inetcpl's `inetcpl|inetcpl-types_1)` arm on
+    every derive -- six copies, the first of which `case` kept running. Every arm carrying
+    the label is replaced: the first by the new arm, the rest dropped.
+    """
+    head = re.compile(rf"^  (?:[\w.+-]+\|)*{re.escape(label)}(?:\|[\w.+-]+)*\)\n", re.M)
+    spans = []
+    for m in head.finditer(script):
+        end = script.index("\n    ;;\n", m.end()) + len("\n    ;;\n")
+        spans.append((m.start(), end))
+    if spans:
+        out, pos = [], 0
+        for i, (a, b) in enumerate(spans):
+            out.append(script[pos:a])
+            if i == 0:
+                out.append(arm.rstrip("\n") + "\n")
+            pos = b
+        out.append(script[pos:])
+        return "".join(out)
     default = re.search(r"^  \*\) echo \"unknown driver", script, re.M)
     if not default:
         raise PortError("gen_driver_types.sh: no `*)` default arm to insert before")
@@ -163,6 +185,49 @@ def switch_facts(dp: pd.DerivedProfile) -> list[str]:
         for m in [re.search(r"`(\w+)`", f.detail)]
         if m
     )
+
+
+_PATTERN_ARM = re.compile(r"(?m)^\s*\|?\s*([A-Za-z_][\w\s|]*?)\s*=>")
+
+
+def _pattern_idents(modules_dir: Path) -> set[str]:
+    """Bare identifiers used as `match` arm patterns (`Name =>`, `A | B =>`) in the crate.
+
+    Such a name is either a constant or a catch-all binding, and rustc only warns about the
+    latter. Offered to `island_enum_aliases`, which aliases exactly the ones that are a
+    unique enumerator of one enum on every arch and ignores the rest.
+    """
+    out: set[str] = set()
+    for rs in modules_dir.glob("*.rs"):
+        text = rs.read_text(errors="replace")
+        for pattern in _PATTERN_ARM.findall(text):
+            out |= {
+                n.strip()
+                for n in pattern.split("|")
+                if re.fullmatch(r"[A-Za-z_]\w*", n.strip())
+                and n.strip() != "_"
+                and not n.strip().islower()
+            }
+    return out
+
+
+def _undefined_pattern_constants(src: Path, modules_dir: Path, sys_src: Path | None) -> set[str]:
+    """Upper-case match-arm identifiers that no `const`/`static` or prelude import defines."""
+    wanted = {n for n in _pattern_idents(modules_dir) if prelude_resolve.looks_constant(n)}
+    if not wanted:
+        return set()
+    from tools.source_walk import source_files  # repo-root package: imported at use
+
+    files = list(source_files(src, "*.rs")) + (list(sys_src.glob("*.rs")) if sys_src else [])
+    defined: set[str] = set()
+    for f in files:
+        text = f.read_text(errors="replace")
+        defined |= set(re.findall(r"\b(?:const|static(?:\s+mut)?)\s+([A-Z_][A-Z0-9_]*)\b", text))
+        defined |= set(re.findall(r"\bas\s+([A-Z_][A-Z0-9_]*)\s*[,;}]", text))
+        for m in re.finditer(r"\buse\s+[\w:]+::\{([^}]*)\}", text):
+            defined |= {w.strip().split(" as ")[-1].strip() for w in m.group(1).split(",")}
+        defined |= set(re.findall(r"\buse\s+[\w:]+::([A-Z_][A-Z0-9_]*)\s*;", text))
+    return wanted - defined
 
 
 def _seed_switch_facts(state: dict, prelude: Path) -> None:
@@ -1223,14 +1288,30 @@ def stage_headers(
     return spent
 
 
+def _island_texts(crate: Path) -> list[str]:
+    """Each arch's island WITH the -sys bindgen it globs: a kernel island's
+    `PCM_PARTIAL_RESOURCE_DESCRIPTOR` is ntkrnl-sys's, and pciidex's
+    `InterruptDesc: *mut PCM_PARTIAL_RESOURCE_DESCRIPTOR` (a pointer to the pointer) went
+    unrepaired and faulted the --ata-stack boot in PciIdeConnectInterrupt (0x1E)."""
+    sys_src = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    out = []
+    for island in sorted((crate / "src").glob("types_*.rs")):
+        text = island.read_text(errors="replace")
+        arch = island.stem.removeprefix("types_")
+        if sys_src is not None:
+            for extra in (sys_src / f"bindgen_{arch}.rs", sys_src / "bindgen_common.rs"):
+                if extra.is_file():
+                    text += "\n" + extra.read_text(errors="replace")
+        out.append(text)
+    return out
+
+
 def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunctionDecls]]:
     """The island's pointer typedefs, and what each C function declares with them."""
     from .scanner import scan_file
 
     crate = _crate_dir(state)
-    types = pointer_depth.pointer_typedefs(
-        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
-    )
+    types = pointer_depth.pointer_typedefs(_island_texts(crate))
     decls: dict[str, pointer_depth.CFunctionDecls] = {}
     for unit in _units(state):
         path = REPO / unit
@@ -1239,6 +1320,107 @@ def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunc
         for fn in scan_file(path).functions:
             decls[fn.name] = pointer_depth.c_declarations(fn.name, fn.params, fn.body_text, types)
     return types, decls
+
+
+_WINE_DEFAULT_CHANNEL = re.compile(r"^[ \t]*WINE_DEFAULT_DEBUG_CHANNEL\(\s*(\w+)\s*\)", re.M)
+_CHANNEL_ITEM = re.compile(
+    r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:static[ \t]+(?:mut[ \t]+)?|const[ \t]+)"
+    r"(__wine_dbch_\w+)[ \t]*:",
+    re.M,
+)
+# `static NAME: () = ();` -- what the model writes for a C forward declaration it has no Rust
+# spelling for. Never meaningful, and when NAME is the function's own (comctl32's
+# UPDOWN_Paint, TOOLBAR_CalcStrings) it is a duplicate definition.
+_UNIT_PLACEHOLDER = re.compile(
+    r"(?:^[ \t]*#\[[^\n]*\]\n(?:[ \t]*\n)*)*^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?static[ \t]+"
+    r"\w+[ \t]*:[ \t]*\(\)[ \t]*=[ \t]*\(\)[ \t]*;[ \t]*\n",
+    re.M,
+)
+
+
+def _strip_unit_placeholders(state: dict) -> list[str]:
+    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs."""
+    changed = []
+    for tu in state["tus"]:
+        path = _tu_output(state, tu)
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        new = _UNIT_PLACEHOLDER.sub("", text)
+        if new != text:
+            path.write_text(new)
+            changed.append(path.stem)
+    return changed
+
+
+def _strip_channel_items(text: str) -> str:
+    """Remove every `static __wine_dbch_*` item -- a definition or an extern-block entry --
+    through its terminating `;` at bracket depth 0, with any attribute lines above it."""
+    while m := _CHANNEL_ITEM.search(text):
+        depth, i = 0, m.end()
+        while i < len(text):
+            ch = text[i]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            elif ch == ";" and depth == 0:
+                break
+            i += 1
+        start = m.start()
+        while True:  # attributes and a comment naming the macro ride with the item
+            prev = text.rfind("\n", 0, max(start - 1, 0)) + 1
+            line = text[prev:start].strip()
+            if start and (line.startswith("#[") or line.startswith("// WINE_DEFAULT_DEBUG")):
+                start = prev
+                continue
+            break
+        end = text.find("\n", i)
+        text = text[:start] + text[(len(text) if end < 0 else end + 1) :]
+    return text
+
+
+def _wine_channel_macro_calls(state: dict, crate: Path) -> list[str]:
+    """Give each module its `WINE_DEFAULT_DEBUG_CHANNEL(ch)` deterministically.
+
+    The macro defines a per-file `static struct __wine_debug_channel __wine_dbch_ch =
+    { ~0, "ch" }` and `__wine_dbch___default` pointing at it, and the translated TRACE/ERR
+    sites read both. Left to the paid preamble, comctl32's 38 files came back as six
+    different things: a byte string, an `extern` declaration nothing defines (an undefined
+    symbol at link), and a struct with `flags: 0` where the C says `~0` -- logging silently
+    off. A header macro is substrate, not translation: strip whatever the preamble made of
+    it and invoke the prelude's `wine_default_debug_channel!` instead. Opt-in by the prelude
+    defining that macro, and re-applied on every integrate, so a replay keeps it.
+    """
+    prelude = crate / "src" / "prelude.rs"
+    if "macro_rules! wine_default_debug_channel" not in prelude.read_text(errors="replace"):
+        return []
+    changed = []
+    for tu in state["tus"]:
+        m = _WINE_DEFAULT_CHANNEL.search((REPO / tu).read_text(errors="replace"))
+        path = _tu_output(state, tu)
+        if m is None or not path.is_file():
+            continue
+        text = path.read_text()
+        call = f"crate::wine_default_debug_channel!(__wine_dbch_{m.group(1)});\n"
+        new = _strip_channel_items(text)
+        if call not in new:
+            # After the leading inner attributes and `use` lines, before the first item.
+            lines = new.splitlines(keepends=True)
+            at = 0
+            for i, line in enumerate(lines):
+                if line.startswith(("#![", "use ", "pub use ")) or not line.strip():
+                    at = i + 1
+                    continue
+                if line.lstrip().startswith("//"):
+                    continue
+                break
+            lines.insert(at, call)
+            new = "".join(lines)
+        if new != text:
+            path.write_text(new)
+            changed.append(path.stem)
+    return changed
 
 
 def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
@@ -1514,6 +1696,132 @@ def _module_fn_macros(state: dict) -> set[str]:
     return out
 
 
+_C_IDENT = re.compile(r"\b[A-Za-z_]\w*\b")
+_ARM_HEAD = re.compile(
+    r"^([ \t]*)([A-Za-z_]\w*(?:[ \t]*\|[ \t]*[A-Za-z_]\w*)*)[ \t]*=>[ \t]*", re.M
+)
+
+
+def _dead_only_names(c_text: str) -> set[str]:
+    """Identifiers the C names ONLY on lines this tree never compiles."""
+    dead = dead_regions.never_compiled_lines(c_text)
+    # Comments out, line count kept: `/* prefer native version */` is not an identifier.
+    c_text = re.sub(
+        r"/\*.*?\*/|//[^\n]*", lambda m: "\n" * m.group(0).count("\n"), c_text, flags=re.S
+    )
+    c_text = re.sub(r'"(?:[^"\\\n]|\\.)*"', '""', c_text)
+    live: set[str] = set()
+    gone: set[str] = set()
+    for n, line in enumerate(c_text.splitlines(), 1):
+        (gone if n in dead else live).update(_C_IDENT.findall(line))
+    return gone - live
+
+
+def _arm_end(text: str, pos: int) -> int | None:
+    """End of a match arm's body starting at `pos` (just past `=>`), trailing `,` included.
+    A `{ ... }` block or a one-line expression; anything else is left alone."""
+    if pos < len(text) and text[pos] == "{":
+        depth, i, n = 0, pos, len(text)
+        while i < n:
+            c = text[i]
+            if c == '"':
+                i += 1
+                while i < n and text[i] != '"':
+                    i += 2 if text[i] == "\\" else 1
+            elif text.startswith("//", i):
+                i = text.find("\n", i)
+                if i < 0:
+                    return None
+                continue
+            elif c == "{":
+                depth += 1
+            elif c == "}":
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    if text[end : end + 1] == ",":
+                        end += 1
+                    return end
+            i += 1
+        return None
+    eol = text.find("\n", pos)
+    line = text[pos : eol if eol >= 0 else len(text)].rstrip()
+    if line.endswith(",") and "{" not in line and "}" not in line:
+        return pos + len(line)
+    return None
+
+
+def _strip_rust_comments(text: str) -> str:
+    return re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
+
+
+def _drop_dead_arms(path: Path, c_file: Path) -> list[str]:
+    """A `match` arm whose pattern names only constants the C spells in a DEAD region.
+
+    Dead tokens are permitted to the model, never demanded (dead_regions.py), so a body may
+    keep a `#ifndef __REACTOS__` case. inetcpl's DllMain came back with
+    `DLL_WINE_PREATTACH => return FALSE`: the name is defined nowhere in our tree, so the
+    arm is a binding that matches EVERY reason -- DllMain would have refused the load. The
+    arm does not exist in any C we compile; it is dropped, and an alternative of a live arm
+    loses just the dead name.
+    """
+    dead = _dead_only_names(c_file.read_text(errors="replace"))
+    if not dead:
+        return []
+    text = path.read_text()
+    out: list[str] = []
+    pos, dropped = 0, []
+    for m in _ARM_HEAD.finditer(text):
+        if m.start() < pos:
+            continue
+        names = [n.strip() for n in m.group(2).split("|")]
+        hit = [n for n in names if n in dead]
+        if not hit:
+            continue
+        keep = [n for n in names if n not in dead]
+        if keep:
+            out.append(text[pos : m.start(2)] + " | ".join(keep))
+            pos = m.end(2)
+            dropped += hit
+            continue
+        end = _arm_end(text, m.end())
+        if end is None:
+            continue
+        line_end = text.find("\n", end)
+        if text[end : line_end if line_end >= 0 else len(text)].strip() == "":
+            end = line_end + 1 if line_end >= 0 else len(text)
+        out.append(text[pos : m.start()])
+        pos = end
+        dropped += hit
+    if not dropped:
+        return []
+    out.append(text[pos:])
+    path.write_text("".join(out))
+    return dropped
+
+
+_WINE_DBCH_ITEM = re.compile(
+    r"^(?:#\[no_mangle\]\n)?pub\s+static\s+(?:mut\s+)?(__wine_dbch_\w+)\s*:[^\n]*;\n", re.M
+)
+
+
+def _wine_debug_storage(path: Path) -> list[str]:
+    """`WINE_DEFAULT_DEBUG_CHANNEL(ch)` is two statics in a HEADER macro, and resolve writes
+    them once in the prelude (`_wine_debug_channels`). A translation that spells its own --
+    inetcpl's security.c came back with `pub static __wine_dbch___default: [u8; 8] =
+    *b"inetcpl\0"`, two TUs each with a different invented type -- shadows the real
+    `*mut __wine_debug_channel`, so it is dropped, and the bodies that then indexed it as
+    bytes (`__wine_dbch___default[0]`, the struct's first field) read `.flags`."""
+    text = path.read_text()
+    names = _WINE_DBCH_ITEM.findall(text)
+    new = _WINE_DBCH_ITEM.sub("", text)
+    new, n = re.subn(r"\b(__wine_dbch_\w+)\[0\]", r"(*\1).flags", new)
+    if new == text:
+        return []
+    path.write_text(new)
+    return names + ([f"[0] -> .flags x{n}"] if n else [])
+
+
 def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
     """Remove a module's own `extern` declaration of a name the C preprocessor says is a
     function-like MACRO. hotplug's eject.rs declared `fn ListView_InsertColumn(..)` and
@@ -1550,12 +1858,12 @@ def stage_integrate(stem: str) -> None:
     started = time.time()
     crate = _crate_dir(state)
     unprovided: dict[str, list[str]] = {}
+    dead_used: dict[str, list[str]] = {}
     changed = 0
     ptr_types, decls = _pointer_decls(state)
-    ptr_targets = pointer_depth.pointer_targets(
-        p.read_text(errors="replace") for p in sorted((crate / "src").glob("types_*.rs"))
-    )
+    ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []
+    flex_fields, _ = flex_index.field_shapes()
     crate_types = sizeof_restore.crate_types(crate / "src")
     fn_macros = _module_fn_macros(state)
     island_consts = _island_consts(crate / "src")
@@ -1581,6 +1889,13 @@ def stage_integrate(stem: str) -> None:
                 f"integrate: {path.stem}: {counted} element count(s) taken of the array, "
                 "not a pointer to it"
             )
+        wine = _wine_debug_storage(path)
+        if wine:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: wine debug channel storage is the prelude's: "
+                + ", ".join(wine)
+            )
         dropped = _drop_macro_externs(path, fn_macros)
         if dropped:
             changed += 1
@@ -1594,6 +1909,28 @@ def stage_integrate(stem: str) -> None:
         print(f"integrate: {report.summary()}")
         c_file = REPO / state["module_dir"] / f"{path.stem}.c"
         if c_file.is_file():
+            dead_arms = _drop_dead_arms(path, c_file)
+            if dead_arms:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: match arm(s) the C has only in a dead "
+                    f"#if region dropped: {', '.join(dead_arms)}"
+                )
+            # Anything else a dead region alone names is a statement, which is not safe to
+            # drop by pattern -- so it is LOUD. inetcpl's security_on_destroy kept a
+            # `#ifndef __REACTOS__` ImageList_Destroy: a double free of the list comctl32
+            # had already destroyed with the listview. Hand-port the function (`port hand`).
+            still = sorted(
+                n
+                for n in _dead_only_names(c_file.read_text(errors="replace"))
+                if re.search(rf"\b{re.escape(n)}\b", _strip_rust_comments(path.read_text()))
+            )
+            if still:
+                dead_used[path.stem] = still
+                print(
+                    f"integrate: {path.stem}: WARNING: the C names these only in a dead #if "
+                    f"region, yet the translation uses them -- review: {', '.join(still)}"
+                )
             corrected = _verify_local_defines(path, c_file)
             if corrected:
                 changed += 1
@@ -1610,12 +1947,36 @@ def stage_integrate(stem: str) -> None:
                 print(f"integrate: {path.stem}: dropped sizeof put back: {'; '.join(restored)}")
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
+        new, not_fixed, not_refused = logical_not.repair(new, decls)
+        # C indexes a trailing `T Arr[1]` past its declared length; Rust's bounds check on the
+        # bindgen `[T; 1]` panics instead (pciidex's resource walk, on the PIIX3's second
+        # descriptor, was the --ata-stack boot's first Rust panic).
+        new, flexed = flex_index.rewrite(new, flex_fields)
+        if flexed:
+            print(f"integrate: {path.stem}: {flexed} flexible-array index(es) made unchecked")
         if new != text:
             path.write_text(new)
             changed += 1
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
+        for f in not_fixed:
+            print(f"integrate: {path.stem}::{f} C logical `!x` read as bitwise `!(x) != 0`, fixed")
+        for f in not_refused:
+            print(
+                f"integrate: {path.stem}::{f} has `!(x) ==/!= 0` and its C uses `~`: check by hand"
+            )
     variadic, variadic_refused = _variadic_twins(state, crate, stem)
     changed += bool(variadic)
+    placeholders = _strip_unit_placeholders(state)
+    changed += len(placeholders)
+    if placeholders:
+        print(f"integrate: `static X: () = ();` placeholders dropped in {', '.join(placeholders)}")
+    channels = _wine_channel_macro_calls(state, crate)
+    changed += len(channels)
+    if channels:
+        print(
+            "integrate: WINE_DEFAULT_DEBUG_CHANNEL from the prelude macro in "
+            f"{len(channels)} module(s)"
+        )
     if depth_fixed:
         print(
             f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "
@@ -1632,6 +1993,7 @@ def stage_integrate(stem: str) -> None:
         pointer_depth=depth_fixed,
         variadic=variadic,
         variadic_refused=variadic_refused,
+        dead_used=dead_used,
     )
     if unprovided:
         print("integrate: names nothing provides (a prelude gap, or invented by the model):")
@@ -1716,6 +2078,11 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     for the default, `__wine_dbch___default = &__wine_dbch_ch`. Statics in a HEADER, so no
     translated function carries them and the island has only an `extern` -- usrmgr linked
     with `undefined symbol ___wine_dbch___default` on i386, as appwiz had (by hand)."""
+    if "macro_rules! wine_default_debug_channel" in prelude.read_text():
+        # Each file defines its own channel through the macro (_wine_channel_macro_calls):
+        # comctl32's 39 TUs have 39 different DEFAULT channels, which one prelude-level
+        # `__wine_dbch___default` cannot express. Writing statics here would duplicate them.
+        return []
     module_dir = REPO / state["module_dir"]
     default: str | None = None
     declared: list[str] = []
@@ -1756,7 +2123,28 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
             "pub static mut __wine_dbch___default: *mut __wine_debug_channel =\n"
             f"    unsafe {{ &raw mut __wine_dbch_{default} }};"
         )
-    block = "\n".join([_WINE_BEGIN, *lines, _WINE_END]) + "\n" if lines else ""
+    # The types themselves: wine/debug.h is a base header no island allowlists, so a crate
+    # whose bodies spell the expanded TRACE (`let __dbch: *mut __wine_debug_channel`) had
+    # nothing to name -- inetcpl, 42 errors; dnsapi/iphlpapi/msgina carry hand copies.
+    island = "\n".join(
+        p.read_text(errors="replace") for p in sorted(prelude.parent.glob("types_*.rs"))
+    )
+    types: list[str] = []
+    if re.search(r"\b__wine_debug_class\b", src + outside) and not re.search(
+        r"\b(?:type|enum|struct)\s+__wine_debug_class\b", outside + island
+    ):
+        types.append("pub type __wine_debug_class = ::core::ffi::c_int; // enum, wine/debug.h")
+    if (lines or re.search(r"\b__wine_debug_channel\b", src)) and not re.search(
+        r"\bstruct\s+__wine_debug_channel\b", outside + island
+    ):
+        types.append(
+            "#[repr(C)]\n"
+            "pub struct __wine_debug_channel { // wine/debug.h\n"
+            "    pub flags: ::core::ffi::c_uchar,\n"
+            "    pub name: [::core::ffi::c_char; 15],\n"
+            "}"
+        )
+    block = "\n".join([_WINE_BEGIN, *types, *lines, _WINE_END]) + "\n" if lines or types else ""
     new = (
         pat.sub(lambda _m: block, text)
         if pat.search(text)
@@ -1764,7 +2152,9 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     )
     if new != text:
         prelude.write_text(new)
-    return [ln.split()[3].rstrip(":") for ln in lines]
+    return [ln.split()[3].rstrip(":") for ln in lines] + [
+        t.split("pub ", 1)[1].split()[1] for t in types
+    ]
 
 
 def _unicode_tchar(state: dict, prelude: Path) -> bool:
@@ -1912,7 +2302,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     from . import sdk_macros
 
     _sdk = sdk_macros.existing_items(prelude)
-    shared |= sdk_macros.existing(prelude) | _sdk["type"] | _sdk["value"]
+    shared |= sdk_macros.existing(prelude) | _sdk["type"] | _sdk["value"] | _sdk["fn"]
     # ...and never a FORCEINLINE helper ntdll-sys already implements in Rust (inlines.rs,
     # re-exported through `ntdll_sys::nt`, which the island globs): diskpart got
     # winlogon-sys's bindgen `extern` InitializeListHead/IsListEmpty/RemoveEntryList/
@@ -2049,7 +2439,13 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         # in a Rust pattern the bare name is a BINDING, never unresolved, so it would never
         # reach this alias step on its own. diskpart's FormatCallback matched `PROGRESS` and
         # `DONE` bare, and the first arm caught every command.
-        case_enums = set(load_state(stem).get("switch_enums", [])) - set(copied)
+        # The Rust says the same thing directly, and is the only witness when derive's C audit
+        # recorded nothing: pciidex's switch_enums was EMPTY, so `BusQueryDeviceID =>` bound
+        # every IRP_MN_QUERY_ID and each ID query answered with the device ID -- the channel
+        # PDO never matched the CriticalDeviceDatabase and the --ata-stack boot hit 0x6B.
+        case_enums = (
+            set(load_state(stem).get("switch_enums", [])) | _pattern_idents(modules_dir)
+        ) - set(copied)
         aliases = prelude_resolve.island_enum_aliases(todo | case_enums, crate / "src", island_sys)
         copied.update(aliases)
         todo -= set(aliases)
@@ -2126,10 +2522,19 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         + type_names
     )
     _seed_switch_facts(state, prelude)
+    # A constant used only as a match pattern is never "unresolved" either -- it binds. atapi's
+    # `IOCTL_SCSI_RESCAN_BUS =>` (a CTL_CODE macro nothing defined) caught every IOCTL the FDO
+    # does not handle, rescanning the bus instead of passing the IRP down.
+    loose = _undefined_pattern_constants(crate / "src", modules_dir, island_sys)
+    if loose:
+        still = _resolve_facts(state, prelude, sorted(loose))
+        for name in still:
+            print(f"resolve: `{name} =>` binds everything and clang could not evaluate it")
     type_gaps = set(res.undefined) | {
         n for n, why in res.conflicting.items() if why.startswith("a type")
     }
     found = _resolve_local_types(state, prelude, type_gaps)
+    _resolve_anonymous_types(state)
     align_definition_abis(state)
     align_definition_returns(state)
     island_found = _resolve_island_types(load_state(stem), type_gaps - found)
@@ -2174,8 +2579,18 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         print(f"resolve: {len(siblings)} name(s) imported from the module's own translations")
     if substrate:
         print(f"resolve: {len(substrate)} header helper(s) imported from ntkrnl-sys")
-        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning.
+    if kernel_sys is not None:
+        # Only names with a Rust port on some arch: a pure glob tie needs no unpinning. Plus
+        # every function the prelude DEFINES: a wrapper there (KeInitializeSpinLock over the
+        # island's lock type) is the binding, and a module's `ddk::{..}` pin of the same name
+        # bypassed it straight to the bindgen extern -- pciidex.sys's undefined symbol.
         ported = {n for n, per in substrate.items() if any(v is not None for v in per.values())}
+        ported |= set(
+            re.findall(
+                r"(?m)^pub\s+(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?fn\s+(\w+)",
+                prelude.read_text(),
+            )
+        )
         unpinned = prelude_resolve.unpin_substrate(modules_dir, ported, "ntkrnl_sys")
         if unpinned:
             print(
@@ -2405,6 +2820,15 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             if name not in abis:
                 print(f"resolve: {name}: clang reported no plain cdecl/stdcall type; hand-port it")
                 continue
+            # A `va_list` parameter is `core::ffi::VaList`, which is `c_variadic` -- nightly.
+            # Declaring it would make the crate unbuildable on stable; a caller forwards its
+            # list through the module's C shim instead (pciidex's vibeos_vDbgPrintEx).
+            if "VaList" in sig:
+                print(
+                    f"resolve: {name}: takes a va_list (not declarable on stable); use the C shim"
+                )
+                todo.discard(name)
+                continue
             abi = "C" if "..." in sig else abis[name]
             sigs[name] = (abi, sig, Path(tu).name)
             todo.discard(name)
@@ -2527,8 +2951,27 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
     headers = " ".join(
         h.read_text(errors="replace") for h in (REPO / state["module_dir"]).rglob("*.h")
     )
-    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*\(", headers)}
+    # `NAME(` is a prototype; `TYPEDEF NAME;` declares through a function typedef, which is
+    # how pciidex.h declares every callback (`CHANNEL_START_IO AtaAhciStartIo;`).
+    todo = {n for n in wanted if re.search(rf"\b{re.escape(n)}\s*[(;]", headers)}
+    # A `static` CALLBACK has no prototype anywhere: its own definition is the authority, and
+    # an exact type is what a fn-pointer slot needs (pciidex's PataEnableInterrupts took
+    # `Enable: i32` where the C says BOOLEAN, and could not be stored).
+    statics = (callbacks & wanted) - todo
     proto: dict[str, str] = {}
+    for tu in state["tus"]:
+        if not statics:
+            break
+        text = (REPO / tu).read_text(errors="replace")
+        mine = {n for n in statics if re.search(rf"(?m)^{re.escape(n)}\s*\(", text)}
+        if not mine:
+            continue
+        try:
+            found = c2rust_anchor.definition_signatures(REPO / tu, mine)
+        except c2rust_anchor.C2RustError:
+            continue
+        proto.update(found)
+        statics -= set(found)
     for tu in state["tus"]:
         if not todo:
             break
@@ -2668,6 +3111,79 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     return set(items)
 
 
+_ANON_NAME = re.compile(r"\bC2RustUnnamed\w*")
+_ANON_IMPORT = re.compile(r"(?m)^use crate::[\w:]+::C2RustUnnamed\w*;[^\n]*\n")
+
+
+def _literal_fields(code: str, name: str) -> frozenset[str]:
+    """The field names `code`'s struct literals of `name` spell (`name { a: .., b: .. }`)."""
+    out: set[str] = set()
+    for m in re.finditer(rf"\b{re.escape(name)}\s*\{{", code):
+        depth, i, top = 0, m.end() - 1, []
+        while i < len(code):
+            c = code[i]
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    break
+            top.append(c if depth == 1 else " ")
+            i += 1
+        out |= set(re.findall(r"(?:^|[{,])\s*(\w+)\s*:(?!:)", "".join(top)))
+    return frozenset(out)
+
+
+def _resolve_anonymous_types(state: dict) -> dict[str, list[str]]:
+    """Each module's missing `C2RustUnnamed_N` types, from ITS OWN TU's c2rust output.
+
+    The translation can use one (a function-local `static const struct {..} T[]` is
+    `[C2RustUnnamed_163; 16]` in the anchor it was shown) without defining it, and the
+    file-scope harvest only carries types for file-scope tables. These names are numbered
+    per transpile, so a sibling's same-named type is a different struct: an import of one
+    (which in-crate import resolution used to add) is removed, never trusted. Returns
+    `{module file: [names written]}`.
+    """
+    from . import c2rust_anchor
+
+    written: dict[str, list[str]] = {}
+    for tu in state["tus"]:
+        path = _tu_output(state, tu)
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        code = re.sub(r"//[^\n]*", "", text)
+        defined = set(
+            re.findall(r"(?m)^\s*(?:pub\s+)?(?:struct|union|enum|type)\s+(C2RustUnnamed\w*)", code)
+        )
+        missing = set(_ANON_NAME.findall(code)) - defined
+        if not missing:
+            continue
+        fields = {n: _literal_fields(code, n) for n in missing}
+        try:
+            agreed, differs = c2rust_anchor.anonymous_types(REPO / tu, fields)
+        except c2rust_anchor.C2RustError as e:
+            print(f"resolve: anonymous types of {tu}: {str(e).splitlines()[0][:120]}")
+            continue
+        for name, why in sorted(differs.items()):
+            print(f"resolve: {path.name}: no single {Path(tu).name} type for {name} ({why})")
+        new = _ANON_IMPORT.sub("", text)
+        blocks = [agreed[n] for n in sorted(agreed) if n not in defined]
+        if blocks:
+            # After the leading `use`/attribute lines, so the module's header stays first.
+            head = re.match(r"(?:(?:use |#!\[|//)[^\n]*\n|\n)*", new)
+            at = head.end() if head else 0
+            new = new[:at] + "\n".join(f"{b}\n" for b in blocks) + "\n" + new[at:]
+            written[path.name] = sorted(agreed)
+        if new != text:
+            path.write_text(new)
+    for fname, names in sorted(written.items()):
+        print(
+            f"resolve: {fname}: {len(names)} anonymous type(s) from its own TU: {', '.join(names)}"
+        )
+    return written
+
+
 def drop_model_type_twins(modules: Path, names: set[str]) -> dict[str, list[str]]:
     """Remove a translated module's own `struct`/`union`/`type` for a name the prelude now
     takes from c2rust -- the compiler-exact layout wins, as it already does for statics.
@@ -2732,11 +3248,22 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
     # definition: atapi's replay gained ata_shared.h in its island AFTER the facts pass had
     # evaluated 47 of its constants, and every one became an E0428 on every arch.
     in_island = _island_constants(state)
+    # ...and the same for an island ENUM alias the consensus block now carries, or a name a
+    # translated module defines (re-exported by the siblings block): inetcpl's facts from a
+    # run before urlmon.h was islanded kept URLZONE_* beside their `tagURLZONE` aliases, and
+    # INTERNET_MAX_URL_LENGTH beside connections.rs's own const -- E0428 / E0255.
+    in_island |= {
+        k for k, v in prelude_resolve.existing_block(prelude).items() if v.path == "island enum"
+    }
+    in_island |= set(prelude_resolve.existing_siblings(prelude))
     stale = sorted(set(facts) & in_island)
     for name in stale:
         del facts[name]
     if stale:
-        print(f"resolve: {len(stale)} fact(s) dropped, the island defines them now")
+        print(
+            f"resolve: {len(stale)} fact(s) dropped, the island or a module defines them now: "
+            + ", ".join(stale)
+        )
     wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
@@ -2805,6 +3332,39 @@ def _seed_item_bank(stem: str, macros: dict, thinking: str, item_path) -> None:
                 item_path(name).write_text(item)
 
 
+def _drop_invented_macro_consts(modules: Path, defs: dict) -> set[str]:
+    """Function-like C macros a module re-made as a `const`, removed; returns their names.
+
+    The C has only `#define PIIX_REG_UDMATIM(Channel) (0x4A + (Channel))`, yet intel.rs came
+    back with `pub const PIIX_REG_UDMATIM: u8 = 0x4A;` -- the value for channel 0, invented --
+    beside calls `PIIX_REG_UDMATIM(Channel)`. The name then resolves, so it is not among the
+    names this stage ports, and the calls fail as E0618 forever. A `const` of a name the C
+    defines ONLY with parameters is never right; the macro port replaces it.
+    """
+    dropped: set[str] = set()
+    for rs in sorted(modules.glob("*.rs")):
+        text = rs.read_text()
+        new = text
+        for m in list(_CONST_ITEM.finditer(text)):
+            name = m.group("name")
+            d = defs.get(name)
+            if d is None or d.params is None or d.kind != "macro":
+                continue
+            if not re.search(rf"\b{re.escape(name)}\s*\(", text):
+                continue
+            new = new.replace(m.group(0), "", 1)
+            dropped.add(name)
+        if new != text:
+            rs.write_text(new)
+            print(f"macros: {rs.name}: invented const(s) for function-like macros dropped")
+    return dropped
+
+
+_CONST_ITEM = re.compile(
+    r"(?m)^(?:pub(?:\([^)]*\))?\s+)?const\s+(?P<name>[A-Za-z_]\w*)\s*:[^=;]+=[^;]*;[^\n]*\n"
+)
+
+
 def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -> None:
     """SDK header macros the crate CALLS, lowered from the TUs' own preprocessor ($0).
 
@@ -2830,7 +3390,7 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     want_types = {n for n, ns in kinds.items() if "type" in ns} | had["type"]
     want_values = {n for n, ns in kinds.items() if ns == {"value"}} - called | had["value"]
     hand = local_macros.hand_ported(prelude) - sdk_macros.existing(prelude)
-    hand -= had["type"] | had["value"]
+    hand -= had["type"] | had["value"] | had["fn"]
     # ...but a name ALSO defined outside every generated block stays hand-owned: the
     # scaffold's `pub const NULL` once landed in this block too (mmsys, E0428), and then
     # subtracting the block's own names above handed NULL back to the lowering.
@@ -2841,10 +3401,13 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     hand |= set().union(*prelude_resolve.shared_provides(REPO / "sdk" / "lib" / "rust").values())
     wanted -= hand
     tus = [REPO / t for t in state["tus"]]
+    com = sdk_macros.com_wrappers(crate / "src", (called | had["fn"]) - hand)
+    wanted -= set(com)
     lowered, refused = sdk_macros.lower_for_crate(REPO, tus, crate / "src", wanted)
     items, item_refused = sdk_macros.object_items(
         REPO, tus, crate / "src", want_values - hand, want_types - hand
     )
+    items.update(com)
     refused.update(item_refused)
     if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
         print(
@@ -2897,6 +3460,7 @@ def stage_macros(
             for rs in (crate / "src" / stem).glob("*.rs")
         )
     }
+    called |= _drop_invented_macro_consts(crate / "src" / stem, defs)
     _sdk_macros(state, crate, prelude, names - set(defs))
     wanted = called | local_macros.existing(prelude)
     hand = local_macros.hand_ported(prelude)
@@ -2958,6 +3522,19 @@ def stage_macros(
             item_path(name).write_text(item)
         ported.update(fresh)
         print(f"macros: bought for ${usd:.4f}, reply kept in {raw}")
+    # A reply calls a macro the prompt did not list as in scope -- one the prelude gained
+    # later -- as a function: pata.h's NUM_TO_BITMAP came back as `RTL_BITS_OF(ULONG)` (46
+    # errors in pciidex). The banked text stays as bought; the `!` is applied on every render,
+    # the same rewrite integrate gives the module bodies.
+    from .crate_integrate import fix_macro_calls
+
+    rust_macros = local_macros.in_scope_macros(prelude) | {
+        n for n in ported if macros[n].kind == "macro"
+    }
+    ported = {
+        n: fix_macro_calls(text, rust_macros, {n} if macros[n].kind == "fn" else set())[0]
+        for n, text in ported.items()
+    }
     changed = local_macros.write_block(prelude, local_macros.render(ported, macros))
     _record(state, "macros", started, ported=len(ported), usd=round(usd, 4), changed=changed)
     print(f"macros: {len(ported)} in the prelude; run `port integrate {stem}` to fix call sites")
@@ -3625,7 +4202,17 @@ def stage_check(stem: str) -> dict:
     for arch, diags in _check_json(stem, state["crate"]).items():
         per_file: dict[str, int] = {}
         untranslated = 0
+        catch_all = 0
         for d in diags:
+            # In a translated C `switch`, an unreachable arm means an earlier arm's "constant"
+            # is a BINDING that matches everything (pciidex's `BusQueryDeviceID =>` answered
+            # every ID query with the device ID). rustc only warns; it is a defect.
+            if (d.get("code") or {}).get("code") == "unreachable_patterns":
+                catch_all += 1
+                primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
+                where = primary["file_name"] if primary else "<no span>"
+                per_file[where] = per_file.get(where, 0) + 1
+                continue
             if not cr.is_error_diagnostic(d):
                 continue
             primary = next((sp for sp in d.get("spans") or [] if sp.get("is_primary")), None)
@@ -3669,6 +4256,11 @@ def stage_check(stem: str) -> dict:
             "masked_by": globs,
         }
         print(f"check {arch}: errors={errors} (+{untranslated} module(s) not translated yet)")
+        if catch_all:
+            print(
+                f"check {arch}: {catch_all} of them are unreachable match arms -- an earlier "
+                "arm binds everything (an enumerator `port resolve` did not alias)"
+            )
         if globs:
             # rustc stops reporting unresolved names once a glob import fails: the name might
             # have come from that glob. inicache's invented `use ntdll_sys::nt::tier1::*;`
@@ -3677,11 +4269,59 @@ def stage_check(stem: str) -> dict:
                 f"check {arch}: UNDERCOUNT -- a failed glob import hides every unresolved-name "
                 f"error; fix it first (`port integrate` swaps substrate globs): {', '.join(globs)}"
             )
+    # A C `for` lowered to `while` must repeat the step before every `continue`; a path that
+    # never writes the loop variable retries the same index forever (atapi's enumerator).
+    stuck = [
+        f"{f.relative_to(REPO)}:{h.line} (no `{h.step}`)"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        for h in loop_step.scan(f.read_text(errors="replace"))
+    ]
+    for line in stuck:
+        print(f"check: continue skips the loop step -- {line}")
+    # A union member written under its neighbour's name compiles (same type) and is silent:
+    # pciidex's task-file block sent every command to port 0 and read Error as Status.
+    _, decls = _pointer_decls(state)
+    reslots = [
+        f"{f.relative_to(REPO)}:{h.line} {h.fn} `.{h.member}`"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        if not f.name.startswith("types_")
+        for h in union_slot.scan(f.read_text(errors="replace"), decls)
+    ]
+    for line in reslots:
+        print(f"check: union member the C never writes there -- {line}")
+    # A `case` arm whose C ends `goto L;` must leave the Rust arm too: falling out runs the
+    # code after the `match` (pciidex's START_DEVICE forwarded the IRP a second time).
+    falls = [
+        f"{f.relative_to(REPO)}:{h.line} {h.fn} `{h.case}` (C: goto {h.label})"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        for h in goto_arm.scan(f.read_text(errors="replace"), decls)
+    ]
+    for line in falls:
+        print(f"check: match arm falls through where the C jumps -- {line}")
+    for r in result.values():
+        r["loop_skips"] = len(stuck)
+        r["union_reslots"] = len(reslots)
+        r["goto_falls"] = len(falls)
+        if stuck or reslots or falls:
+            r["rc"] = 101
     _record(
         state,
         "check",
         started,
-        **{a: {k: r[k] for k in ("rc", "errors", "untranslated")} for a, r in result.items()},
+        **{
+            a: {
+                k: r[k]
+                for k in (
+                    "rc",
+                    "errors",
+                    "untranslated",
+                    "loop_skips",
+                    "union_reslots",
+                    "goto_falls",
+                )
+            }
+            for a, r in result.items()
+        },
     )
     return result
 
@@ -3908,13 +4548,13 @@ def add_parser(sub) -> None:
         "includes each header (after resolve; replay keeps them)",
     )
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, required=True)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="off")
     q = stages.add_parser("macros", help="port the module's own C macros the crate calls")
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, default=0.30)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="on")
@@ -3922,12 +4562,12 @@ def add_parser(sub) -> None:
     q.add_argument("stem")
     q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")
     q.add_argument("--fix-rounds", type=int, default=1)
-    q.add_argument("-m", "--model", default="deepseek", help="model for NEW fix purchases")
+    q.add_argument("-m", "--model", default="haiku", help="model for NEW fix purchases")
     q = stages.add_parser(
         "fix", help="send each function rustc still rejects back to the model, errors attached"
     )
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, required=True)
     q.add_argument("--rounds", type=int, default=3)
     # off: retries carry the refusal reason instead (escalating bought the same wrong
@@ -3938,7 +4578,7 @@ def add_parser(sub) -> None:
     q.add_argument("--dry-run", action="store_true")
     q = stages.add_parser("translate")
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument(
         "--cost-cap",
         type=float,

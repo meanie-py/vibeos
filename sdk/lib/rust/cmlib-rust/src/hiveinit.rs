@@ -57,6 +57,10 @@ use crate::glue::*;
 use crate::hivewrt::HvSyncHiveFromRecover;
 use core::ffi::c_void;
 
+extern "C" {
+    fn DbgPrint(format: *const i8, ...) -> u32;
+}
+
 // Pointer-width integer matching ULONG_PTR/SIZE_T on all arches.
 // (Kept for reference; bodies use `usize` directly to match SIZE_T/ULONG_PTR.)
 #[cfg(target_pointer_width = "32")]
@@ -131,6 +135,24 @@ pub unsafe extern "system" fn HvpVerifyHiveHeader(
         || (*BaseBlock).Sequence1 != (*BaseBlock).Sequence2
         || HvpHiveHeaderChecksum(BaseBlock) != (*BaseBlock).CheckSum
     {
+        DbgPrint(b"Verify Hive Header failed:\n\0".as_ptr() as *const i8);
+        DbgPrint(
+            b"    Signature: 0x%x, expected 0x%x; Major: 0x%x, expected 0x%x\n\0".as_ptr() as *const i8,
+            (*BaseBlock).Signature, HV_HBLOCK_SIGNATURE, (*BaseBlock).Major, HSYS_MAJOR,
+        );
+        DbgPrint(
+            b"    Minor: 0x%x expected to be >= 0x%x; Type: 0x%x, expected 0x%x\n\0".as_ptr() as *const i8,
+            (*BaseBlock).Minor, HSYS_MINOR, (*BaseBlock).Type, FileType,
+        );
+        DbgPrint(
+            b"    Format: 0x%x, expected 0x%x; Cluster: 0x%x, expected 1\n\0".as_ptr() as *const i8,
+            (*BaseBlock).Format, HBASE_FORMAT_MEMORY, (*BaseBlock).Cluster,
+        );
+        DbgPrint(
+            b"    Sequence: 0x%x, expected 0x%x; Checksum: 0x%x, expected 0x%x\n\0".as_ptr() as *const i8,
+            (*BaseBlock).Sequence1, (*BaseBlock).Sequence2,
+            HvpHiveHeaderChecksum(BaseBlock), (*BaseBlock).CheckSum,
+        );
         return 0; // FALSE
     }
 
@@ -790,29 +812,66 @@ pub unsafe extern "system" fn HvLoadHive(
     let mut Status: NTSTATUS;
     let mut Success: BOOLEAN;
     let mut BaseBlock: PHBASE_BLOCK = core::ptr::null_mut();
-    let mut Result: RESULT = RESULT::NotHive;
+    let Result: RESULT;
     #[cfg(not(target_arch = "x86_64"))]
-    let mut Result2: RESULT = RESULT::NotHive;
+    let mut Result2: RESULT;
     let mut TimeStamp: LARGE_INTEGER = core::mem::zeroed();
     let mut Offset: u32 = 0;
     let mut HiveData: *mut core::ffi::c_void;
     let mut FileSize: u32;
     let mut HiveSelfHeal: BOOLEAN = 0;
-    /* Get the hive header */ Result = HvpGetHiveHeader(Hive, &mut BaseBlock, &mut TimeStamp);
-    match Result { RESULT::NoMemory => { /* Fail */ // DPRINT removed return STATUS_INSUFFICIENT_RESOURCES;
-    } RESULT::Fail => { /* Fail */ return STATUS_REGISTRY_CORRUPT;
-    } RESULT::NotHive => { /* Fail */ // DPRINT removed return STATUS_NOT_REGISTRY_FILE;
-    } RESULT::HiveSuccess => { /* Success, continue */ }
-    RESULT::SelfHeal => { HiveSelfHeal = 1; }
-    RESULT::RecoverData => { /* break; */ } RESULT::RecoverHeader => { /* FIXME: See the comment above (near HvpQueryHiveSize) */ #[cfg(target_arch = "x86_64")] { return STATUS_REGISTRY_CORRUPT;
-    } #[cfg(not(target_arch = "x86_64"))] { /* The header needs to be recovered so do it */ // DPRINT removed Result2 = HvpRecoverHeaderFromLog(Hive, &mut TimeStamp, &mut BaseBlock);
-    if Result2 == RESULT::NoMemory { // DPRINT removed return STATUS_INSUFFICIENT_RESOURCES;
-    } /* Did we fail? */ if Result2 == RESULT::Fail { // DPRINT removed return STATUS_REGISTRY_CORRUPT;
-    } /* Did we trigger the self-heal mode? */ if Result2 == RESULT::SelfHeal { HiveSelfHeal = 1;
-    } /* Now recover the data */ Result2 = HvpRecoverDataFromLog(Hive, BaseBlock);
-    if Result2 == RESULT::Fail { // DPRINT removed return STATUS_REGISTRY_CORRUPT;
-    } /* Tag the boot as self heal if we haven't done it before */ if (Result2 == RESULT::SelfHeal) && (HiveSelfHeal == 0) { HiveSelfHeal = 1;
-    } /* break; */ } } } /* Set the boot type */ (*BaseBlock).BootType = if HiveSelfHeal != 0 { HBOOT_TYPE_SELF_HEAL } else { HBOOT_TYPE_REGULAR };
+    // Get the hive header. (This block was collapsed onto a few lines with each DPRINT1
+    // replaced by `// DPRINT removed`, which commented out the `return` after it: NoMemory
+    // and NotHive fell through and carried on with no valid header.)
+    Result = HvpGetHiveHeader(Hive, &mut BaseBlock, &mut TimeStamp);
+    match Result {
+        RESULT::NoMemory => {
+            DbgPrint(b"There's no enough memory to get the header\n\0".as_ptr() as *const i8);
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+        RESULT::Fail => return STATUS_REGISTRY_CORRUPT,
+        RESULT::NotHive => {
+            DbgPrint(b"The hive is not an actual registry hive file\n\0".as_ptr() as *const i8);
+            return STATUS_NOT_REGISTRY_FILE;
+        }
+        RESULT::HiveSuccess => {}
+        RESULT::SelfHeal => HiveSelfHeal = 1,
+        // FIXME (C): RecoverHeader implies RecoverData until HvLoadHive loses its hack.
+        RESULT::RecoverData => {}
+        RESULT::RecoverHeader => {
+            // FIXME (C): see the comment near HvpQueryHiveSize.
+            #[cfg(target_arch = "x86_64")]
+            {
+                DbgPrint(b"The hive base header needs recovery, unsupported on amd64\n\0".as_ptr() as *const i8);
+                return STATUS_REGISTRY_CORRUPT;
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                DbgPrint(b"Attempting to heal the header...\n\0".as_ptr() as *const i8);
+                Result2 = HvpRecoverHeaderFromLog(Hive, &mut TimeStamp, &mut BaseBlock);
+                if Result2 == RESULT::NoMemory {
+                    DbgPrint(b"There's no enough memory to recover header from log\n\0".as_ptr() as *const i8);
+                    return STATUS_INSUFFICIENT_RESOURCES;
+                }
+                if Result2 == RESULT::Fail {
+                    DbgPrint(b"Failed to recover the hive header\n\0".as_ptr() as *const i8);
+                    return STATUS_REGISTRY_CORRUPT;
+                }
+                if Result2 == RESULT::SelfHeal {
+                    HiveSelfHeal = 1;
+                }
+                Result2 = HvpRecoverDataFromLog(Hive, BaseBlock);
+                if Result2 == RESULT::Fail {
+                    DbgPrint(b"Failed to recover the hive data\n\0".as_ptr() as *const i8);
+                    return STATUS_REGISTRY_CORRUPT;
+                }
+                if Result2 == RESULT::SelfHeal && HiveSelfHeal == 0 {
+                    HiveSelfHeal = 1;
+                }
+            }
+        }
+    }
+    /* Set the boot type */ (*BaseBlock).BootType = if HiveSelfHeal != 0 { HBOOT_TYPE_SELF_HEAL } else { HBOOT_TYPE_REGULAR };
     /* Setup hive data */ (*Hive).BaseBlock = BaseBlock;
     (*Hive).Version = (*BaseBlock).Minor;
     /* Allocate a buffer large enough to hold the hive */ FileSize = HBLOCK_SIZE + (*BaseBlock).Length; // == sizeof(HBASE_BLOCK) + BaseBlock->Length;

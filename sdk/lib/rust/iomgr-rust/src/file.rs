@@ -1961,7 +1961,7 @@ unsafe fn IopQueryNameInternal(
     } else {
         Status = IoQueryFileInformation(
             FileObject,
-            9,
+            ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileNameInformation as _,
             if LengthMismatch != 0 { Length } else { FileLength },
             LocalFileInfo as PVOID,
             &mut LocalReturnLength,

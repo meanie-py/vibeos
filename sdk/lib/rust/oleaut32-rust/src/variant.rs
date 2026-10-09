@@ -703,7 +703,7 @@ unsafe fn VARIANT_CopyIRecordInfo(dest: *mut VARIANT, src: *mut VARIANT) -> HRES
 
     let dest_rec = core::ptr::addr_of_mut!((*dest).n1.n2.n3.brecVal);
     let src_rec = core::ptr::addr_of_mut!((*src).n1.n2.n3.brecVal);
-    let mut hr: HRESULT = S_OK;
+    let hr: HRESULT;
     let mut size: ULONG = 0;
 
     if (*src_rec).pRecInfo.is_null() {
@@ -802,7 +802,7 @@ unsafe fn VARIANT_DataSize(pv: *const VARIANT) -> usize {
 
 #[no_mangle]
 pub unsafe extern "system" fn VariantCopyInd(pvargDest: *mut VARIANT, pvargSrc: *mut VARIANTARG) -> HRESULT {
-    let mut vTmp: VARIANTARG = core::mem::zeroed();
+    let mut vTmp: VARIANTARG;
     let mut pSrc: *mut VARIANTARG = pvargSrc;
     let vt: VARTYPE;
     let mut hres: HRESULT = S_OK;
@@ -899,7 +899,7 @@ pub unsafe extern "system" fn VariantChangeTypeEx(
     wFlags: USHORT,
     vt: VARTYPE,
 ) -> HRESULT {
-    let mut res: HRESULT = S_OK;
+    let mut res: HRESULT;
 
     TRACE!(
         b"(%s,%s,0x%08x,0x%04x,%s)\n\0".as_ptr() as *const i8,
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn VarDateFromUdateEx(
     dwFlags: ULONG,
     pDateOut: *mut DATE,
 ) -> HRESULT {
-    let mut ud: UDATE = core::mem::zeroed();
+    let mut ud: UDATE;
     let mut dateVal: f64 = 0.0;
 
     TRACE!(
@@ -2674,7 +2674,7 @@ pub unsafe extern "system" fn VarCmp(
 #[no_mangle]
 pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
-    let mut resvt: VARTYPE = VT_EMPTY;
+    let mut resvt: VARTYPE;
     let leftvt: VARTYPE;
     let rightvt: VARTYPE;
     let rightExtraFlags: VARTYPE;
@@ -3424,7 +3424,7 @@ pub unsafe extern "system" fn VarMul(left: LPVARIANT, right: LPVARIANT, result: 
 #[no_mangle]
 pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
 
-    let mut hres: HRESULT = S_OK;
+    let mut hres: HRESULT;
     let mut resvt: VARTYPE = VT_EMPTY;
     let leftvt: VARTYPE;
     let rightvt: VARTYPE;
@@ -3567,7 +3567,7 @@ pub unsafe extern "system" fn VarDiv(left: LPVARIANT, right: LPVARIANT, result: 
 #[no_mangle]
 pub unsafe extern "system" fn VarSub(mut left: LPVARIANT, mut right: LPVARIANT, result: LPVARIANT) -> HRESULT {
     let mut hres: HRESULT = S_OK;
-    let mut resvt: VARTYPE = VT_EMPTY;
+    let resvt: VARTYPE;
     let leftvt: VARTYPE;
     let rightvt: VARTYPE;
     let rightExtraFlags: VARTYPE;
@@ -5238,8 +5238,8 @@ unsafe fn VarRound_Exit(hRet: HRESULT, pVarOut: LPVARIANT, temp: *mut VARIANT) {
 
 #[no_mangle]
 pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
-    let mut hres: HRESULT = S_OK;
-    let mut resvt: VARTYPE = VT_EMPTY;
+    let mut hres: HRESULT;
+    let resvt: VARTYPE;
     let leftvt: VARTYPE;
     let rightvt: VARTYPE;
     let rightExtraFlags: VARTYPE;
@@ -5363,9 +5363,9 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
 
 #[no_mangle]
 pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
-    let mut lOk: BOOL = 1;
-    let mut rc: HRESULT = E_FAIL;
-    let mut resT: i32 = 0;
+    let lOk: BOOL;
+    let mut rc: HRESULT;
+    let resT: i32;
     let mut lv: VARIANT = core::mem::zeroed();
     let mut rv: VARIANT = core::mem::zeroed();
     let mut tempLeft: VARIANT = core::mem::zeroed();
@@ -5577,7 +5577,7 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
 
 #[no_mangle]
 pub unsafe extern "system" fn VarPow(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
-    let mut hr: HRESULT = S_OK;
+    let mut hr: HRESULT;
     let mut dl: VARIANT = core::mem::zeroed();
     let mut dr: VARIANT = core::mem::zeroed();
     let resvt: VARTYPE;

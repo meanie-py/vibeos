@@ -72,7 +72,9 @@ extern "C" {
     fn TRACE(fmt: *const i8, ...);
     fn UiDrawStatusText(text: PCSTR);
     fn printf(fmt: *const i8, ...) -> i32;
-    fn NtLdrGetOption(BootOptions: PCSTR, Option: PCSTR) -> u8;
+    // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
+    // address whose low byte is 0 reads "absent"; only the pointer width is safe.
+    fn NtLdrGetOption(BootOptions: PCSTR, Option: PCSTR) -> usize;
     fn strrchr(s: *const i8, c: i32) -> *mut i8;
     fn PeLdrCheckForLoadedDll( LoadOrderListHead: PLIST_ENTRY, DllName: PCSTR, DriverDTE: *mut PLDR_DATA_TABLE_ENTRY, ) -> u8;
     fn PeLdrLoadImage( FullPath: PCSTR, LoaderType: u32, DriverBase: *mut *mut core::ffi::c_void, ) -> u8;

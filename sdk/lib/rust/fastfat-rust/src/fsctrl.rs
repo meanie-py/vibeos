@@ -58,7 +58,10 @@ extern "system" {
     fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> u8;
     fn NT_ASSERT(condition: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
+    // rust_cohab_stub.c returns the MASK (ULONG_PTR x & f). Declared `-> BOOLEAN`, every
+    // flag above bit 7 read as clear: CCB_FLAG_MANAGE_VOLUME_ACCESS (0x20000) among them,
+    // so FSCTL_LOCK_VOLUME failed INVALID_PARAMETER and setup's chkdsk could not run.
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCheckForDismount( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Ignore: BOOLEAN, ) -> BOOLEAN;
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);

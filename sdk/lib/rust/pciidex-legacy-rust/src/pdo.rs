@@ -785,8 +785,6 @@ pub unsafe extern "C" fn PciIdeXPdoStartDevice(
     PdoExtension: PPDO_DEVICE_EXTENSION,
     ResourceList: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
-    let mut IoBase: PUCHAR = core::ptr::null_mut();
-
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
         DbgPrint(
             b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
@@ -801,11 +799,6 @@ pub unsafe extern "C" fn PciIdeXPdoStartDevice(
         );
     }
 
-    IoBase = (*(*PdoExtension).ParentController).BusMasterPortBase;
-
-    if (*PdoExtension).Channel != 0 {
-        IoBase = IoBase.offset(BM_SECONDARY_CHANNEL_OFFSET as isize);
-    }
 
     STATUS_SUCCESS
 }
@@ -1347,7 +1340,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
     Irp: PIRP,
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let Buffer: PWCHAR;
     let mut End: PWCHAR = core::ptr::null_mut();
     let mut CharCount: usize;
@@ -1542,7 +1535,6 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             Remaining = Remaining.wrapping_sub(1);
 
             // ID 2
-            IdStart = End;
             static PRIMARY_IDE_CHANNEL: [u16; 20] = [
                 'P' as u16, 'r' as u16, 'i' as u16, 'm' as u16, 'a' as u16,
                 'r' as u16, 'y' as u16, '_' as u16, 'I' as u16, 'D' as u16,
@@ -1590,7 +1582,6 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
             Remaining = Remaining.wrapping_sub(1);
 
             // ID 3
-            IdStart = End;
             Status = RtlStringCchPrintfExW(
                 End as NTSTRSAFE_PWSTR,
                 Remaining,
@@ -1783,7 +1774,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryDeviceUsageNotification(
     }
 
     let IoStack = IoGetCurrentIrpStackLocation(Irp);
-    let mut Counter: *mut i32 = core::ptr::null_mut();
+    let mut Counter: *mut i32 ;
 
     match (*IoStack).Parameters.UsageNotification.Type as u32 {
         1 => {
@@ -1808,7 +1799,7 @@ pub unsafe extern "C" fn PciIdeXPdoDispatchPnp(
     PdoExtension: PPDO_DEVICE_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let IoStack: PIO_STACK_LOCATION;
 
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {

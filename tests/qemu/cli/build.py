@@ -1436,7 +1436,20 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         run.add(Stage("mkramdisk", status="ok", detail=flag or "full"))
 
     # --- binary lints (need the built binary) ---
-    lints.run_binary_lints(run, repo, arch, strict=bool(getattr(args, "strict", False)))
+    # `--no-check` was accepted and then ignored for months: the gate passed it to every
+    # build and still paid 176-266s of post-link scanners INSIDE each build, then ran the
+    # same scanners again as its own `lint:<arch>` lane. A standalone build keeps them on,
+    # because that is where an agent sees its first ud2 / flex-array finding.
+    if getattr(args, "no_check", False):
+        run.add(
+            Stage(
+                "binary-lints",
+                status="skip",
+                detail="--no-check: the caller's own lint lane (gate/land) runs them",
+            )
+        )
+    else:
+        lints.run_binary_lints(run, repo, arch, strict=bool(getattr(args, "strict", False)))
 
     # --- symbol index for triage ---
     bi = repo / "qemu" / "build-index.sh"

@@ -1142,8 +1142,16 @@ def build_include_env(
     module: CMakeModule,
     arch: str = "i386",
     extra_dirs: tuple[Path, ...] = (),
+    compile_dirs: tuple[Path, ...] = (),
 ) -> IncludeEnv:
     """Assemble the include search path in the order the real compile uses it.
+
+    *compile_dirs* is the module's own ``-I`` list from the compile db, and when present it
+    is searched FIRST, in its own order: it is the only authority on precedence. The fixed
+    list below is the fallback for a module with no db entry. Appending the db list after it
+    resolved comctl32's ``commctrl.h`` to psdk's when the compiler takes sdk/include/wine's
+    (a wine module puts that dir ahead of psdk), so the two wine-only constants its switches
+    use read as owned by no header at all.
 
     Order is taken from the module's actual compile command (see
     ``build-<arch>/compile_commands.json``) and from ``gen_driver_types.sh``'s own
@@ -1159,7 +1167,7 @@ def build_include_env(
     build_dir = repo_root / f"build-{arch}"
     if not build_dir.is_dir():
         build_dir = None
-    search: list[tuple[Path, str]] = []
+    search: list[tuple[Path, str]] = [(d, "compile") for d in compile_dirs]
     if build_dir is not None:
         rel = module.module_dir.relative_to(repo_root)
         search.append((build_dir / rel, "generated"))
@@ -2426,7 +2434,7 @@ _TYPEDEF_NAME_RE = re.compile(r"\}\s*([A-Za-z_]\w*)\s*(?:,\s*\*?\w+\s*)*;")
 _ANON_AGGREGATE_NAMES = frozenset(
     f"DUMMY{kind}NAME{suffix}"
     for kind in ("UNION", "STRUCT")
-    for suffix in ("", *(str(n) for n in range(2, 10)))
+    for suffix in ("", *(str(n) for n in range(1, 10)))
 )
 
 
@@ -2822,7 +2830,8 @@ def derive(
         repo_root,
         module,
         arch=arch,
-        extra_dirs=tuple(extra_inc_dirs) + tuple(db.include_dirs if db else ()),
+        extra_dirs=tuple(extra_inc_dirs),
+        compile_dirs=tuple(db.include_dirs if db else ()),
     )
     if env.build_dir is None:
         findings.append(
@@ -3844,7 +3853,9 @@ pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID
 // NT_VERIFY(exp) is `((exp) ? TRUE : FALSE)` in a free build: the expression is evaluated.
 #[macro_export] macro_rules! NT_VERIFY { ($e:expr $(,)?) => { ($e) }; }
 // ntbasedef.h: UNREACHABLE is `__builtin_unreachable()`, so reaching it is UB in C too.
-#[macro_export] macro_rules! UNREACHABLE { () => { core::hint::unreachable_unchecked() }; }
+#[macro_export] macro_rules! UNREACHABLE {
+    () => { core::hint::unreachable_unchecked() }; // nolint: assert-to-ub (__builtin_unreachable)
+}
 pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
 
 // HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).

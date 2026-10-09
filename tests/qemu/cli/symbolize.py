@@ -194,6 +194,10 @@ def resolve(repo: Path, arch: str, addr: int, want_module: str | None = None) ->
         return f"{addr:#x} -> (overlapping modules: {names}; pass --module)"
 
     m = uniq[0]
+    if want_module and addr < m.base:
+        # A bugcheck prints `ndis.sys+0x12D10` for a relocated driver: with the module named,
+        # an address below its link-time base is that offset, not an address outside it.
+        addr += m.base
     hit = lookup_symbol(repo, arch, m.name, addr)
     if hit is None and (want_module or identical):
         hit = lookup_symbol_live(repo, arch, m, addr)
@@ -221,11 +225,14 @@ def run(args, repo: Path) -> int:
             return 1
     rc = 0
     for raw in args.addr:
+        module = args.module
+        if "+" in raw:  # `ndis.sys+0x12D10`, as a bugcheck prints a relocated module's PC
+            module, raw = raw.rsplit("+", 1)
         try:
             addr = int(raw, 16)  # int(x, 16) already accepts a 0x prefix
         except ValueError:
             print(f"{raw} -> (not a hex address)")
             rc = 1
             continue
-        print(resolve(repo, arch, addr, args.module))
+        print(resolve(repo, arch, addr, module))
     return rc

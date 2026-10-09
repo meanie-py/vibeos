@@ -91,6 +91,13 @@ class TestResolution:
         assert "use crate::owner::GetDefaultRecycleBin;" in new
         assert notes == []
 
+    def test_a_c2rust_anonymous_type_is_never_imported_from_a_sibling(self, tmp_path):
+        # c2rust numbers C2RustUnnamed_N per transpile: svw_pata's _163 is a timing struct,
+        # via's is a bridge-table struct. Importing one into the other gave 48 field errors.
+        crate = _crate(tmp_path, {"svw.rs": "pub struct C2RustUnnamed_163 { pub Value: u8 }\n"})
+        code = "use crate::prelude::*;\nstatic T: [C2RustUnnamed_163; 1] = [];\n"
+        assert "use crate::svw" not in resolve_in_crate_imports(code, crate)[0]
+
     def test_the_use_lands_after_the_prelude_glob(self, tmp_path):
         crate = _crate(tmp_path, {"owner.rs": 'pub unsafe extern "C" fn Foo() {}\n'})
         code = "use crate::prelude::*;\npub unsafe fn f() { Foo(); }\n"
@@ -216,3 +223,15 @@ def test_path_attr_module_takes_its_declared_name_not_its_location(tmp_path):
     assert _module_path(src / "shell_link.rs", src) == "crate::shell_link"
     (src / "shell32" / "other.rs").write_text("pub struct Other;\n")
     assert _module_path(src / "shell32" / "other.rs", src) == "crate::shell32::other"
+
+
+def test_an_unknown_single_substrate_import_is_dropped(tmp_path, monkeypatch):
+    # sil680.rs's header named one item, so it had no braces: `use ntkrnl_sys::ddk::Channel;`
+    # (a FIELD name), which the pruner never matched. A known one is left exactly as written.
+    from rustconv import crate_integrate as ci
+
+    monkeypatch.setattr(ci, "_module_names", lambda ws, path: frozenset({"PCSTR"}))
+    src = "use crate::prelude::*;\nuse ntkrnl_sys::ddk::Channel;\nuse ntkrnl_sys::ddk::PCSTR;\n"
+    new, dropped = ci.drop_unknown_substrate_imports(src, tmp_path)
+    assert dropped == ["Channel"]
+    assert new == "use crate::prelude::*;\nuse ntkrnl_sys::ddk::PCSTR;\n"

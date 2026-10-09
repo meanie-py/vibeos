@@ -1880,7 +1880,7 @@ pub unsafe extern "C" fn EnableVisualTheme(hwndParent: HWND, ThemeFile: PCWSTR) 
     // shape and does not compile. Three consts, values in C declaration order.
     const THEME_FILE: i32 = 0;
     const STYLE_FILE: i32 = 1;
-    const UNKNOWN: i32 = 2;
+    const UNKNOWN: i32 = 2; // nolint: const-contradiction (wizard.c's local anonymous enum)
 
 
     let mut szPath: [u16; (MAX_PATH) as usize] = [0; (MAX_PATH) as usize];

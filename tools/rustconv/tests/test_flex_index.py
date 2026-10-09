@@ -45,3 +45,16 @@ def test_field_shapes_split_flexible_from_ambiguous(tmp_path):
     flex, ambiguous = fi.field_shapes.__wrapped__(tmp_path)
     assert flex == {"Items"}  # Name is not the last field
     assert ambiguous == {"Table"}
+
+
+def test_a_place_broken_across_lines_is_still_rewritten():
+    # pciidex's resource walk, as rustfmt wrote it: the first --ata-stack Rust panic.
+    from rustconv import flex_index as fi
+
+    src = (
+        "let d = &mut (*R).List[0]\n            .PartialResourceList\n"
+        "            .PartialDescriptors[i as usize];\n"
+    )
+    out, n = fi.rewrite(src, frozenset({"PartialDescriptors"}))
+    assert n == 1
+    assert "core::ptr::addr_of_mut!((*R).List[0]" in out and ".add(i as usize)" in out

@@ -215,6 +215,29 @@ impl smoltcp::phy::Device for AnyPhy {
     }
 }
 
+/// Connect a platform NIC's PnP interrupt to `ack`, then let the device raise
+/// it (`enable`). Null, and the device left masked, when there is no interrupt
+/// resource or the connect fails: the worker then polls.
+#[cfg(not(feature = "ndis"))]
+fn connect_platform(
+    irq: Option<crate::pnp::PlatformIrq>,
+    ack: crate::isr::AckFn,
+    ctx: *mut u8,
+    enable: impl FnOnce(),
+) -> *mut ntkrnl_sys::ddk::KEVENT {
+    let Some(irq) = irq else {
+        nsprint!("[NETSTACK] M10: the platform NIC has no interrupt resource; polling\n");
+        return null_mut();
+    };
+    let event = unsafe {
+        crate::isr::connect_resource(ack, ctx.cast(), irq.vector, irq.irql, irq.affinity as _, irq.latched, irq.shared)
+    };
+    if !event.is_null() {
+        enable();
+    }
+    event
+}
+
 unsafe extern "system" fn worker(_context: PVOID) {
     nsprint!("[NETSTACK] M2/M3 engine: starting smoltcp poll loop\n");
 
@@ -222,17 +245,22 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // protocol shim above a real miniport (M11). Both expose the same phy::Device
     // surface, so the poll loop below is backend-agnostic.
     #[cfg(not(feature = "ndis"))]
+    let mut platform_irq: Option<crate::pnp::PlatformIrq> = None;
+    #[cfg(not(feature = "ndis"))]
     let mut phy = match device::bringup() {
         Some(d) => AnyPhy::Virtio(VirtioPhy::new(d)),
         None => match crate::e1000::bringup() {
             Some(d) => AnyPhy::E1000(crate::e1000::E1000Phy::new(d)),
             // No PCI NIC: a platform NIC (pnp.rs) starts moments after
             // DriverEntry when the machine has one.
-            None => match crate::pnp::wait().and_then(|nic| match nic.kind {
+            None => match crate::pnp::wait().and_then(|nic| {
+                platform_irq = nic.irq;
+                match nic.kind {
                 crate::pnp::NicKind::Genet => {
                     crate::genet::bringup(nic).map(|d| AnyPhy::Genet(crate::genet::GenetPhy::new(d)))
                 }
                 crate::pnp::NicKind::Gem => crate::gem::bringup(nic).map(|d| AnyPhy::Gem(crate::gem::GemPhy::new(d))),
+                }
             }) {
                 Some(phy) => phy,
                 None => {
@@ -256,12 +284,12 @@ unsafe extern "system" fn worker(_context: PVOID) {
     // Publish the MAC for the M9 management plane (iphlpapi IFEntry queries).
     crate::netcfg::set_mac(mac);
 
-    // M10 (x86 — i386 + amd64): connect the virtio INTx so an arriving frame wakes
-    // this worker via an event instead of pure busy-polling. Null on any failure
-    // (or arm64) → the loop keeps the `delay_ms` poll fallback, no regression. The
-    // NDIS backend (M11) drives RX from ProtocolReceive instead, so this is gated
-    // to the virtio path.
-    #[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), not(feature = "ndis")))]
+    // M10: connect the NIC's interrupt so an arriving frame wakes this worker via
+    // an event instead of pure busy-polling: virtio's INTx (x86 and arm64), the
+    // GEM's PnP interrupt on the Pi 5. Null on any failure → the loop keeps the `delay_ms`
+    // poll fallback, no regression. The NDIS backend (M11) drives RX from
+    // ProtocolReceive instead, so this is gated off there.
+    #[cfg(not(feature = "ndis"))]
     let rx_event: *mut ntkrnl_sys::ddk::KEVENT = match &mut phy {
         AnyPhy::Virtio(v) => {
             v.enable_interrupts();
@@ -278,9 +306,24 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 None => null_mut(),
             }
         }
-        // e1000 v1 is pure-poll: interrupts stay masked (IMC), the poll loop's
-        // delay_ms cadence drives RX. No regression vs the no-IRQ fallback path.
-        AnyPhy::E1000(_) | AnyPhy::Genet(_) | AnyPhy::Gem(_) => null_mut(),
+        // The GEM shares its line with both xHCIs, so each NIC is unmasked only
+        // once its ISR is in.
+        AnyPhy::Gem(g) => {
+            connect_platform(platform_irq, crate::gem::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
+        }
+        AnyPhy::E1000(e) => match e.dev().interrupt_line() {
+            Some(line) => {
+                let event = unsafe { crate::isr::connect_line(crate::e1000::irq_ack, e.dev().irq_ctx().cast(), line as u32) };
+                if !event.is_null() {
+                    e.dev().enable_interrupts();
+                }
+                event
+            }
+            None => null_mut(),
+        },
+        AnyPhy::Genet(g) => {
+            connect_platform(platform_irq, crate::genet::irq_ack, g.dev().irq_ctx(), || g.dev().enable_interrupts())
+        }
     };
 
     let mut config = Config::new(HardwareAddress::Ethernet(EthernetAddress(mac)));
@@ -572,8 +615,17 @@ unsafe extern "system" fn worker(_context: PVOID) {
         // Sleep until smoltcp's next deadline. A pending timer caps the wait at
         // 10ms (TX completion / echo latency); when nothing is pending the RX
         // event (amd64) lets us idle far longer since a frame wakes us instantly.
-        let pending = iface.poll_delay(ts, &sockets).map(|d| d.total_millis() as i64);
-        #[cfg(all(any(target_arch = "x86_64", target_arch = "x86"), not(feature = "ndis")))]
+        let mut pending = iface.poll_delay(ts, &sockets).map(|d| d.total_millis() as i64);
+        // A GEM frame still queued may be waiting on a TX restart that only a poll
+        // performs (gem.rs `reap_tx`); don't let the event wait sit on it.
+        if matches!(&phy, AnyPhy::Gem(g) if g.dev().tx_in_flight()) {
+            pending = Some(1);
+        }
+        // GENET's RX-done is masked by its ISR until this pass has run.
+        if matches!(&phy, AnyPhy::Genet(g) if g.dev().rearm_irq()) {
+            pending = Some(1);
+        }
+        #[cfg(not(feature = "ndis"))]
         {
             if rx_event.is_null() {
                 delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
@@ -594,7 +646,7 @@ unsafe extern "system" fn worker(_context: PVOID) {
                 }
             }
         }
-        #[cfg(any(not(any(target_arch = "x86_64", target_arch = "x86")), feature = "ndis"))]
+        #[cfg(feature = "ndis")]
         delay_ms(pending.map(|d| d.clamp(1, 10)).unwrap_or(10));
     }
 }

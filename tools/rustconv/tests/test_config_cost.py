@@ -29,8 +29,21 @@ class TestCostUsd:
         at = config.cost_usd("claude-haiku-5-5", threshold, 1000)
         assert at == pytest.approx((threshold * short[0] + 1000 * short[1]) / 1e6)
         over = config.cost_usd("claude-haiku-5-5", threshold - 10, 1000, cache_read_tokens=11)
-        assert over == pytest.approx(((threshold + 1) * long[0] + 1000 * long[1]) / 1e6)
+        expect = ((threshold - 10) * long[0] + 11 * long[0] * 0.1 + 1000 * long[1]) / 1e6
+        assert over == pytest.approx(expect)
         assert long[0] > short[0] and long[1] > short[1]
+
+    def test_claude_cache_reads_and_writes_bill_at_their_own_rates(self):
+        # 0.1x for a read, 1.25x for a write -- the same rule batch_runner.estimate_cost uses.
+        from rustconv.batch_runner import estimate_cost
+
+        args = ("claude-haiku-5-5", 2000, 500)
+        got = config.cost_usd(*args, cache_read_tokens=150_000, cache_write_tokens=8000)
+        assert got == pytest.approx(estimate_cost(*args, 150_000, 8000))
+        pin = config.CLAUDE_TIERED_PRICING["claude-haiku-5-5"][2][0]
+        assert config.cost_usd("claude-haiku-5-5", 0, 0, 200_000) == pytest.approx(
+            200_000 * pin * 0.1 / 1e6
+        )
 
     def test_batch_runner_tier_matches(self):
         from rustconv.batch_runner import LONG_PROMPT_PRICING, estimate_cost
@@ -60,16 +73,19 @@ class TestBackendDefault:
     VALUE and the precedence.
     """
 
-    def test_deepseek_key_wins_over_anthropic(self, monkeypatch):
+    def test_anthropic_key_wins_and_defaults_to_haiku_5_5(self, monkeypatch):
+        # Haiku 5.5 is the translation default since 2026-10-09: cheaper per call than
+        # DeepSeek v4-pro and less integration rework (rustconv-pipeline.md).
         monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
+        assert config.get_backend() == "claude"
+        assert resolve_model(None) == "claude-haiku-5-5"
+
+    def test_falls_back_to_deepseek_without_anthropic_key(self, monkeypatch):
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+        monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
         assert config.get_backend() == "deepseek"
         assert resolve_model(None) == config.DEEPSEEK_MODEL_V4_PRO
-
-    def test_falls_back_to_claude_without_deepseek_key(self, monkeypatch):
-        monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
-        monkeypatch.setenv("ANTHROPIC_API_KEY", "y")
-        assert config.get_backend() == "claude"
 
     def test_every_backend_has_a_default_model(self):
         # A backend get_backend() can return but DEFAULT_MODELS lacks is a KeyError at the
@@ -80,6 +96,9 @@ class TestBackendDefault:
     def test_default_model_is_priced(self):
         # An unpriced default silently over-estimates to Opus in the pre-payment banner.
         assert config.DEEPSEEK_MODEL_V4_PRO in config.MODEL_PRICING
+        assert config.model_pricing("claude-haiku-5-5") < config.model_pricing(
+            config.DEEPSEEK_MODEL_V4_PRO
+        )
         assert config.model_pricing(config.DEEPSEEK_MODEL_V4_PRO) < config.model_pricing(
             config.CLAUDE_MODEL_SONNET
         )

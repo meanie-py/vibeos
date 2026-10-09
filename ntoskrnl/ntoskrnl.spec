@@ -1430,6 +1430,7 @@
 @ stdcall SeUnregisterLogonSessionTerminatedRoutine(ptr)
 @ stdcall SeValidSecurityDescriptor(long ptr)
 @ stdcall VerSetConditionMask(long long long long)
+@ stdcall -arch=arm64 VibeTripwireHasToken(ptr long)
 @ cdecl VfFailDeviceNode(ptr long long long ptr ptr ptr)
 @ cdecl VfFailDriver(long long long ptr ptr ptr)
 @ cdecl VfFailSystemBIOS(long long long ptr ptr ptr)

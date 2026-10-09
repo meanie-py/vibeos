@@ -24,10 +24,8 @@ pub mod e1000;
 pub mod pnp;
 pub mod gem;
 pub mod genet;
-// M10: interrupt-driven RX (virtio INTx -> ISR -> DPC -> event). x86 (i386 +
-// amd64) — both share the working x86 HAL HalGetInterruptVector + IOAPIC routing.
-// arm64's HalGetInterruptVector is a stub returning 0, so it stays on polling.
-#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
+// M10: interrupt-driven RX (NIC interrupt -> ISR -> DPC -> event): virtio's INTx
+// on x86, and the platform NICs' interrupt resource from PnP on arm64.
 pub mod isr;
 // M11: real-NIC backend via an NDIS protocol shim (off by default — virtio is the
 // shipping path). Selecting it swaps VirtioPhy -> NdisPhy in engine.rs.

@@ -124,6 +124,34 @@ def _strip_forbidden_hal_imports(use_stmt: str) -> str | None:
     return f"{prefix}{{{', '.join(items)}}};"
 
 
+_CHAR_LITERAL = re.compile(r"'(?:\\.|[^\\'])'")
+
+
+def _ends_in_block_comment(line: str, in_comment: bool) -> bool:
+    """Whether a `/* */` comment is still open at the end of LINE (strings and `//` aware)."""
+    i = 0
+    while i < len(line):
+        if in_comment:
+            end = line.find("*/", i)
+            if end < 0:
+                return True
+            in_comment, i = False, end + 2
+        elif line.startswith("//", i):
+            return False
+        elif line.startswith("/*", i):
+            in_comment, i = True, i + 2
+        elif (char := _CHAR_LITERAL.match(line, i)) is not None:
+            i = char.end()
+        elif line[i] == '"':
+            i += 1
+            while i < len(line) and line[i] != '"':
+                i += 2 if line[i] == "\\" else 1
+            i += 1
+        else:
+            i += 1
+    return in_comment
+
+
 def _extract_use_statements(code: str) -> tuple[list[str], str]:
     """Extract `use` statements (single- and multi-line) from a code fragment.
 
@@ -143,10 +171,17 @@ def _extract_use_statements(code: str) -> tuple[list[str], str]:
     remaining_lines: list[str] = []
     lines = code.splitlines()
     i = 0
+    in_comment = False
     while i < len(lines):
         line = lines[i]
         stripped = line.strip()
-        if stripped.startswith("use "):
+        # A C comment carried into the body wraps like prose: toolbar.c's
+        # `/* if hot, attempt to draw with hot image list, if fails,\n use default image list */`
+        # put a line starting `use ` inside a block comment, and hoisting it left the comment
+        # open -- swallowing the other 168 functions of the file.
+        starts_in_comment = in_comment
+        in_comment = _ends_in_block_comment(line, in_comment)
+        if not starts_in_comment and stripped.startswith("use "):
             # Accumulate until we see a `;` terminator with balanced braces.
             buf = [line]
             joined = stripped

@@ -250,12 +250,12 @@ pub unsafe extern "system" fn OleCreatePropertyFrameIndirect(lpParams: *mut OCPF
 
     let mut property_sheet: PROPSHEETHEADERW = core::mem::zeroed();
     let mut property_sheet_page: PROPSHEETPAGEW = core::mem::zeroed();
-    let mut dialogs: *mut DialogTemplate = core::ptr::null_mut();
-    let mut property_page: *mut *mut IPropertyPage = core::ptr::null_mut();
-    let mut property_page_site: *mut PropertyPageSite = core::ptr::null_mut();
+    let dialogs: *mut DialogTemplate;
+    let property_page: *mut *mut IPropertyPage;
+    let mut property_page_site: *mut PropertyPageSite;
     let mut res: HRESULT;
     let mut i: u32;
-    let mut hcomctl: HMODULE = core::ptr::null_mut();
+    let hcomctl: HMODULE;
     let mut property_sheet_dialog_find: HRSRC = core::ptr::null_mut();
     let mut property_sheet_dialog_load: HGLOBAL = core::ptr::null_mut();
     let mut property_sheet_dialog_data: *mut u16 = core::ptr::null_mut();

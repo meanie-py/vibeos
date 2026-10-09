@@ -760,7 +760,6 @@ fn RunningObjectTableImpl_Register(
     IBindCtx_Release(pbc);
     if FAILED(hr) {
         CoFileTimeNow(core::ptr::addr_of_mut!((*rot_entry).last_modified));
-        hr = S_OK;
     }
 
     hr = get_moniker_comparison_data(
@@ -1130,7 +1129,7 @@ fn RunningObjectTableImpl_GetTimeOfLastChange(
     pmkObjectName: *mut IMoniker,
     pfiletime: *mut FILETIME,
 ) -> HRESULT {
-    let mut hr: HRESULT = MK_E_UNAVAILABLE;
+    let mut hr: HRESULT;
     let This = impl_from_IRunningObjectTable(iface);
     let mut pmkObjectName = pmkObjectName;
     let mut moniker_data: *mut MonikerComparisonData = core::ptr::null_mut();
@@ -1445,7 +1444,7 @@ pub unsafe extern "system" fn MkParseDisplayName(
     ppmk: *mut *mut IMoniker,
 ) -> HRESULT {
     let mut szDisplayName = szDisplayName;
-    let mut hr: HRESULT = MK_E_SYNTAX;
+    let mut hr: HRESULT;
     const WSZ_CLSID_COLON: [u16; 6] = [
         b'c' as u16,
         b'l' as u16,

@@ -1,6 +1,7 @@
 """rustconv port: the hand-offs it automates are idempotent and land where they should."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -33,6 +34,49 @@ def test_profile_arm_is_inserted_before_the_default_and_replaced_in_place():
     assert (
         changed.count("  beta)") == 1 and "base/setup/x" in changed and "setup/lib" not in changed
     )
+
+
+def test_a_multi_island_arm_is_replaced_not_appended_again():
+    multi = ARM.replace("  beta)", "  beta|beta-types_1)")
+    script = port.upsert_profile_arm(SCRIPT, multi, "beta")
+    script = script.replace("  *) echo", multi + "  *) echo")  # the duplicate derives left
+    once = port.upsert_profile_arm(script, ARM, "beta")
+    assert once.count("  beta)") == 1 and "beta|beta-types_1" not in once
+    assert once.count("  alpha)") == 1
+
+
+def test_a_dead_ifndef_reactos_case_arm_is_dropped(tmp_path):
+    c = tmp_path / "m.c"
+    c.write_text(
+        "BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID r)\n{\n    switch (reason)\n    {\n"
+        "#ifndef __REACTOS__\n        case DLL_WINE_PREATTACH:\n            return FALSE;\n#endif\n"
+        "        case DLL_PROCESS_ATTACH:\n            hcpl = h;\n    }\n    return TRUE;\n}\n"
+    )
+    rs = tmp_path / "m.rs"
+    rs.write_text(
+        "fn DllMain(reason: DWORD) -> BOOL {\n    match reason {\n"
+        "        DLL_WINE_PREATTACH => {\n            return FALSE;\n        }\n"
+        "        DLL_PROCESS_ATTACH | DLL_WINE_PREATTACH => {\n            hcpl = h;\n        }\n"
+        "        _ => {}\n    }\n    return TRUE;\n}\n"
+    )
+    assert port._drop_dead_arms(rs, c) == ["DLL_WINE_PREATTACH", "DLL_WINE_PREATTACH"]
+    out = rs.read_text()
+    assert "DLL_WINE_PREATTACH" not in out and "return FALSE" not in out
+    assert "        DLL_PROCESS_ATTACH => {" in out
+    assert port._drop_dead_arms(rs, c) == []
+
+
+def test_a_translations_own_wine_debug_channel_storage_is_dropped(tmp_path):
+    rs = tmp_path / "security.rs"
+    rs.write_text(
+        "use crate::prelude::*;\n"
+        'pub static __wine_dbch___default: [u8; 8] = *b"inetcpl\\0";\n'
+        "fn f() {\n    if __wine_dbch___default[0] as c_int & 8 != 0 {}\n}\n"
+    )
+    assert port._wine_debug_storage(rs) == ["__wine_dbch___default", "[0] -> .flags x1"]
+    out = rs.read_text()
+    assert "static" not in out and "(*__wine_dbch___default).flags as c_int" in out
+    assert port._wine_debug_storage(rs) == []
 
 
 def test_script_without_a_default_arm_is_refused():
@@ -238,9 +282,9 @@ def test_a_dry_run_estimates_every_tu_at_cost_cap_zero(tmp_path, monkeypatch):
 
 
 def test_base_header_case_constants_are_recorded_not_blocking():
-    from rustconv import profile_derive as pd
-
     from types import SimpleNamespace
+
+    from rustconv import profile_derive as pd
 
     dp = SimpleNamespace(
         errors=[
@@ -366,3 +410,98 @@ def test_flip_comments_each_tu_and_links_the_archive(tmp_path, monkeypatch):
 
     with _pytest.raises(port.PortError):
         port.flip_cmake(cml.replace("    a.c\n", ""), state)
+
+
+def test_an_anonymous_type_is_matched_by_shape_in_its_own_tu(tmp_path, monkeypatch):
+    # via.c's bridge-table struct is C2RustUnnamed_154/_162/_163 on i386/amd64/arm64, and
+    # amd64's _163 is a different struct: the number identifies nothing, the fields do.
+    from rustconv import c2rust_anchor
+
+    def item(n, fields):
+        body = "".join(f"    pub {f}: {ty},\n" for f, ty in fields)
+        return f"#[derive(Copy, Clone)]\n#[repr(C)]\npub struct {n} {{\n{body}}}\n"
+
+    bridge = [("DeviceID", "USHORT"), ("MinimumRevisionID", "UCHAR"), ("Flags", "UCHAR")]
+    other = [("DeviceID", "USHORT"), ("Flags", "USHORT")]
+    texts = {
+        "i386": item("C2RustUnnamed_154", bridge) + item("C2RustUnnamed_155", other),
+        "amd64": item("C2RustUnnamed_162", bridge) + item("C2RustUnnamed_163", other),
+        "arm64": item("C2RustUnnamed_163", bridge) + item("C2RustUnnamed_164", other),
+    }
+    monkeypatch.setattr(c2rust_anchor, "_transpile_text", lambda f, verbose, arch: texts[arch])
+    code = (
+        "static mut L: [C2RustUnnamed_163; 1] = [C2RustUnnamed_163 {\n"
+        "    DeviceID: 1 as USHORT, MinimumRevisionID: f(0, 1), Flags: 3 as UCHAR,\n}];\n"
+    )
+    fields = port._literal_fields(code, "C2RustUnnamed_163")
+    assert fields == {"DeviceID", "MinimumRevisionID", "Flags"}
+    agreed, differs = c2rust_anchor.anonymous_types(
+        tmp_path / "via.c", {"C2RustUnnamed_163": fields}
+    )
+    assert differs == {}
+    assert "pub struct C2RustUnnamed_163 {" in agreed["C2RustUnnamed_163"]
+    assert "MinimumRevisionID: UCHAR" in agreed["C2RustUnnamed_163"]
+    # No struct of that shape on one arch: refused, never guessed.
+    texts["arm64"] = item("C2RustUnnamed_164", other)
+    agreed, differs = c2rust_anchor.anonymous_types(
+        tmp_path / "via.c", {"C2RustUnnamed_163": fields}
+    )
+    assert agreed == {} and "C2RustUnnamed_163" in differs
+
+
+def test_an_invented_const_for_a_function_like_macro_is_dropped(tmp_path):
+    from rustconv.local_macros import CMacro
+
+    mods = tmp_path / "m"
+    mods.mkdir()
+    (mods / "intel.rs").write_text(
+        "pub const PIIX_REG_UDMATIM: u8 = 0x4A;\npub const KEEP: u8 = 1;\n"
+        "fn f() { PciRead8(c, PIIX_REG_UDMATIM(Channel)); }\n"
+    )
+    defs = {
+        "PIIX_REG_UDMATIM": CMacro(
+            "PIIX_REG_UDMATIM", ("Channel",), "(0x4A + (Channel))", "intel.c"
+        ),
+        "KEEP": CMacro("KEEP", None, "1", "intel.c"),
+    }
+    assert port._drop_invented_macro_consts(mods, defs) == {"PIIX_REG_UDMATIM"}
+    text = (mods / "intel.rs").read_text()
+    assert "const PIIX_REG_UDMATIM" not in text and "const KEEP" in text
+
+
+def test_definition_signatures_read_a_static_function_from_its_own_definition(monkeypatch):
+    # PataEnableInterrupts is `static`: no header declares it, so only its definition can
+    # give the fn-pointer slot its exact type (`Enable: BOOLEAN`, not the model's `i32`).
+    from rustconv import c2rust_anchor
+
+    text = (
+        'unsafe extern "C" fn PataEnableInterrupts(\n    mut ChannelContext: PVOID,\n'
+        "    mut Enable: BOOLEAN,\n) {\n}\n"
+        'pub unsafe extern "C" fn PataStartIo(mut c: PVOID, mut r: PATA_DEVICE_REQUEST)'
+        " -> BOOLEAN {\n    0\n}\n"
+    )
+    monkeypatch.setattr(c2rust_anchor, "_transpile_text", lambda f, verbose, arch: text)
+    sigs = c2rust_anchor.definition_signatures(
+        Path("pata.c"), {"PataEnableInterrupts", "PataStartIo"}
+    )
+    assert sigs["PataEnableInterrupts"] == (
+        "fn PataEnableInterrupts(ChannelContext: PVOID, Enable: BOOLEAN);"
+    )
+    assert sigs["PataStartIo"] == "fn PataStartIo(c: PVOID, r: PATA_DEVICE_REQUEST) -> BOOLEAN;"
+
+
+def test_a_constant_used_only_as_a_match_pattern_is_found(tmp_path):
+    # `BusQueryDeviceID =>` and atapi's `IOCTL_SCSI_RESCAN_BUS =>` were bindings that matched
+    # everything: a name used only as a pattern is never "unresolved", so resolve never saw it.
+    src = tmp_path / "src"
+    mods = src / "m"
+    mods.mkdir(parents=True)
+    (src / "prelude.rs").write_text("pub const IOCTL_KNOWN: u32 = 1;\n")
+    (mods / "a.rs").write_text(
+        "fn f(c: u32) {\n    match c {\n        IOCTL_KNOWN => {}\n"
+        "        IOCTL_A | IOCTL_B => {}\n        BusQueryDeviceID => {}\n"
+        "        _ => {}\n    }\n}\n"
+    )
+    found = port._pattern_idents(mods)
+    assert found == {"IOCTL_KNOWN", "IOCTL_A", "IOCTL_B", "BusQueryDeviceID"}
+    assert port._undefined_pattern_constants(src, mods, None) == {"IOCTL_A", "IOCTL_B"}

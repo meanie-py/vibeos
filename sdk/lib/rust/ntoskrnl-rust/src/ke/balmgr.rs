@@ -196,7 +196,7 @@ pub unsafe extern "system" fn KeBalanceSetManager(Context: PVOID) {
         Status = KeWaitForMultipleObjects(
             1,
             WaitObjects.as_mut_ptr(),
-            0,
+            ntkrnl_sys::ddk::_WAIT_TYPE_WaitAny as _,
             0,
             0i8,
             0u8,

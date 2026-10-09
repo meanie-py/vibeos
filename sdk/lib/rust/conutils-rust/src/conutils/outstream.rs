@@ -326,7 +326,7 @@ pub unsafe extern "C" fn ConPrintfV(
 ) -> i32 {
     let mut Len: i32;
     let mut bufSrc: [u16; CON_RC_STRING_MAX_SIZE] = [0u16; CON_RC_STRING_MAX_SIZE];
-    let mut pEnd: *mut u16 = core::ptr::null_mut();
+    let pEnd: *mut u16;
 
     // strsafe StringCchVPrintfExW(dest, cch, &pEnd, NULL, 0, fmt, args) semantics
     // via the msvcrt cdecl primitive it wraps: bounded format, guaranteed NUL, and
@@ -377,7 +377,7 @@ pub unsafe extern "C" fn ConResPuts(stream: *mut CON_STREAM, uID: u32) -> i32 {
     );
 
     if !szStr.is_null() && Len != 0 {
-        let mut result_len = Len;
+        let result_len;
         EnterCriticalSection(core::ptr::addr_of_mut!((*stream).Lock));
         if let Some(func) = (*stream).WriteFunc {
             result_len = func(stream, szStr, Len as u32);
@@ -431,8 +431,8 @@ pub unsafe extern "C" fn ConMsgPuts(
     dwMessageId: u32,
     dwLanguageId: u32,
 ) -> i32 {
-    let mut Len: i32 = 0;
-    let mut dwLength: u32 = 0;
+    let mut Len: i32;
+    let dwLength: u32;
     let mut lpMsgBuf: *mut u16 = core::ptr::null_mut();
 
     dwFlags |= FORMAT_MESSAGE_ALLOCATE_BUFFER;
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn ConMsgPrintf2V(
     args: va_list,
 ) -> i32 {
     let mut Len: i32;
-    let mut dwLength: u32 = 0;
+    let dwLength: u32;
     let mut lpMsgBuf: *mut u16 = core::ptr::null_mut();
 
     dwFlags |= FORMAT_MESSAGE_ALLOCATE_BUFFER;
@@ -519,7 +519,7 @@ pub unsafe extern "C" fn ConMsgPrintfV(
     Arguments: *mut va_list,
 ) -> i32 {
     let mut Len: i32;
-    let mut dwLength: u32 = 0;
+    let dwLength: u32;
     let mut lpMsgBuf: *mut u16 = core::ptr::null_mut();
 
     dwFlags |= FORMAT_MESSAGE_ALLOCATE_BUFFER;
@@ -564,7 +564,7 @@ pub unsafe extern "C" fn ConResMsgPrintfExV(
     Arguments: *mut va_list,
 ) -> i32 {
     let mut Len: i32;
-    let mut dwLength: u32 = 0;
+    let dwLength: u32;
     let mut lpMsgBuf: *mut u16 = core::ptr::null_mut();
     let mut bufSrc: [u16; CON_RC_STRING_MAX_SIZE] = [0u16; CON_RC_STRING_MAX_SIZE];
 

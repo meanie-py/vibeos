@@ -218,14 +218,14 @@ const PNP_PROPERTY_CONTAINERID: ULONG = 0xd;
 
 const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 0x00000011;
 const DevicePropertyPhysicalDeviceObjectName: DEVICE_REGISTRY_PROPERTY = 14;
-const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 19;
+const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 12; // header value; the hand copy said 19
 const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 0x0000000D;
 const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 0x0000000E;
 const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 0x00000013;
 const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 0x00000010;
-const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 22;
+const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 15; // header value; the hand copy said 22
 const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 0x00000012;
-const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 28;
+const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 22; // header value; the hand copy said 28
 
 const EjectionRelations: ULONG = 0x00000001;
 const RemovalRelations: ULONG = 0x00000003;
@@ -911,25 +911,27 @@ unsafe fn IopGetDeviceProperty(
             
             if Status >= 0 {
                 (*PowerData).PD_MostRecentPowerState = PowerDeviceD0;
-                if DeviceCapabilities._bitfield_1.get(0, 1) != 0 {
+                // Named getters: the raw `_bitfield_1.get(n, 1)` calls read bits 2-5 (Lock/Eject/
+                // Removable/Dock) as WakeFromD0-D3 and bit 12 (WakeFromD2) as WarmEjectSupported.
+                if DeviceCapabilities.DeviceD1() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_D1_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(1, 1) != 0 {
+                if DeviceCapabilities.DeviceD2() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_D2_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(2, 1) != 0 {
+                if DeviceCapabilities.WakeFromD0() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D0_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(3, 1) != 0 {
+                if DeviceCapabilities.WakeFromD1() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D1_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(4, 1) != 0 {
+                if DeviceCapabilities.WakeFromD2() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D2_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(5, 1) != 0 {
+                if DeviceCapabilities.WakeFromD3() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D3_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(12, 1) != 0 {
+                if DeviceCapabilities.WarmEjectSupported() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WARM_EJECT_SUPPORTED;
                 }
                 (*PowerData).PD_D1Latency = DeviceCapabilities.D1Latency;

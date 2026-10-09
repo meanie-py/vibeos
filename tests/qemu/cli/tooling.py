@@ -111,9 +111,11 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
+    (".", ".", "tools/test_apply_dead_assignments.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
     (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_let_shadow.py"),
+    (".", ".", "tools/test_scan_raw_bitfield.py"),
     (".", ".", "tools/test_scan_winerror_consts.py"),
     (".", ".", "tools/test_scan_res_named_types.py"),
     (".", ".", "tools/test_scan_bindgen_padding_index.py"),
@@ -194,6 +196,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_export_thunks.py"),
     (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
+    (".", ".", "tools/test_scan_byte_step_one.py"),
+    (".", ".", "tools/test_scan_call_literal_vs_c.py"),
+    (".", ".", "tools/test_scan_formatless_printf.py"),
+    (".", ".", "tools/test_scan_ptr_typedef_cast_read.py"),
     (".", ".", "tools/test_strip_msvc_cmake.py"),
     # The substrate half of scan_extern_decl_drift has no other oracle: its
     # findings are about declarations of symbols NOTHING in the tree defines, so
@@ -281,9 +287,13 @@ def check_tooling(args, repo: Path) -> int:
                     [sys.executable, "-m", "pytest", target, "-q"]
                     # Each invalidation case builds its own tmp_path project.
                     # Keep these live, but distribute cases across the host.
+                    # The rustconv suite is 152 files run serially: 433s of a 433s
+                    # check-tooling wall (every other check finishes under it), so
+                    # it alone decides what a cache miss costs the whole fleet.
                     + (
                         ["-n", str(min(8, lint_jobs()))]
                         if target == "tools/test_build_invalidation.py"
+                        or (pkg == "tools/rustconv" and target == "tests")
                         else []
                     )
                     + (

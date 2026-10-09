@@ -140,11 +140,11 @@ pub unsafe extern "C" fn SampRemoveGroupMembershipFromUser(
     UserObject: PSAM_DB_OBJECT,
     GroupId: ULONG,
 ) -> NTSTATUS {
-    let mut GroupsBuffer: PGROUP_MEMBERSHIP = core::ptr::null_mut();
+    let GroupsBuffer: PGROUP_MEMBERSHIP;
     let GroupsCount: ULONG;
     let mut Length: ULONG = 0;
     let mut i: ULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     TRACE!(
         b"(%p %lu)\n\0".as_ptr() as *const i8,
@@ -233,7 +233,7 @@ pub unsafe extern "C" fn SampGetUserGroupAttributes(
     GroupAttributes: PULONG,
 ) -> NTSTATUS {
     let mut UserObject: PSAM_DB_OBJECT = core::ptr::null_mut();
-    let mut GroupsBuffer: PGROUP_MEMBERSHIP = core::ptr::null_mut();
+    let GroupsBuffer: PGROUP_MEMBERSHIP;
     let mut Length: ULONG = 0;
     let mut i: ULONG;
     let mut Status: NTSTATUS;
@@ -306,7 +306,7 @@ pub unsafe extern "C" fn SampSetUserGroupAttributes(
     GroupAttributes: ULONG,
 ) -> NTSTATUS {
     let mut UserObject: PSAM_DB_OBJECT = core::ptr::null_mut();
-    let mut GroupsBuffer: PGROUP_MEMBERSHIP = core::ptr::null_mut();
+    let GroupsBuffer: PGROUP_MEMBERSHIP;
     let mut Length: ULONG = 0;
     let mut i: ULONG;
     let mut Status: NTSTATUS;
@@ -383,7 +383,7 @@ pub unsafe extern "C" fn SampSetUserGroupAttributes(
 }
 #[no_mangle]
 pub unsafe extern "C" fn SampRemoveUserFromAllGroups(UserObject: PSAM_DB_OBJECT) -> NTSTATUS {
-    let mut GroupsBuffer: PGROUP_MEMBERSHIP = core::ptr::null_mut();
+    let GroupsBuffer: PGROUP_MEMBERSHIP;
     let mut GroupObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut Length: ULONG = 0;
     let mut i: ULONG;
@@ -475,14 +475,14 @@ pub unsafe extern "C" fn SampSetUserPassword(
 ) -> NTSTATUS {
     let mut NtHistory: PENCRYPTED_NT_OWF_PASSWORD = core::ptr::null_mut();
     let mut LmHistory: PENCRYPTED_LM_OWF_PASSWORD = core::ptr::null_mut();
-    let mut NtHistoryLength: ULONG = 0;
-    let mut LmHistoryLength: ULONG = 0;
+    let NtHistoryLength: ULONG;
+    let LmHistoryLength: ULONG;
     let mut CurrentHistoryLength: ULONG;
     let MaxHistoryLength: ULONG = 3;
     let mut Length: ULONG = 0;
     let UseNtPassword: BOOLEAN;
     let UseLmPassword: BOOLEAN;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     UseNtPassword = if (NtPasswordPresent != 0)
         && (NtPassword != core::ptr::null_mut())

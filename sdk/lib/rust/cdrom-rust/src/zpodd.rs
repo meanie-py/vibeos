@@ -59,12 +59,12 @@ pub unsafe extern "C" fn DeviceInitializeZPODD(DeviceExtension: *mut CDROM_DEVIC
     PAGED_CODE!();
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut tempStatus: NTSTATUS = STATUS_SUCCESS;
+    let mut tempStatus: NTSTATUS;
     let mut zpoddInfo: *mut ZERO_POWER_ODD_INFO = core::ptr::null_mut();
-    let mut removableMediumHeader: *mut FEATURE_DATA_REMOVABLE_MEDIUM = core::ptr::null_mut();
-    let mut ZPODDEnabledInRegistry: u32 = 0;
+    let mut removableMediumHeader: *mut FEATURE_DATA_REMOVABLE_MEDIUM;
+    let mut ZPODDEnabledInRegistry: u32;
     let mut deepestWakeableDstate: DEVICE_WAKE_DEPTH = DeviceWakeDepthNotWakeable;
-    let mut inHomePosition: i32 = 0;
+    let mut inHomePosition: i32;
 
     'cleanup: {
     if !(*DeviceExtension).ZeroPowerODDInfo.is_null() {
@@ -211,7 +211,7 @@ pub unsafe extern "C" fn DeviceGetZPODDEnabledFromRegistry() -> u32 {
         90, 101, 114, 111, 80, 111, 119, 101, 114, 79, 68, 68, 69, 110, 97, 98, 108, 101, 100, 0,
     ];
 
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let mut registryKey: WDFKEY = core::ptr::null_mut();
     let mut ZPODDEnabled: u32 = 0;
 
@@ -250,12 +250,12 @@ pub unsafe extern "C" fn DeviceQueryD3ColdInterface(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     D3ColdInterface: *mut D3COLD_SUPPORT_INTERFACE,
 ) -> NTSTATUS {
-    let mut irp: PIRP = core::ptr::null_mut();
+    let mut irp: PIRP;
     let mut event: KEVENT = core::mem::zeroed();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut targetDevice: PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut status: NTSTATUS;
+    let mut targetDevice: PDEVICE_OBJECT;
     let mut ioStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
-    let mut irpStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let mut irpStack: PIO_STACK_LOCATION;
 
     // PAGED_CODE();
 
@@ -342,10 +342,10 @@ pub unsafe extern "C" fn DeviceSendEnableIdlePowerIoctl(
     Enable: u8,
     D3IdleTimeout: u32,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut idlePower: STORAGE_IDLE_POWER = unsafe { core::mem::zeroed() };
     let mut ioStatus: _IO_STATUS_BLOCK = unsafe { core::mem::zeroed() };
-    let mut irp: *mut IRP = core::ptr::null_mut();
+    let mut irp: *mut IRP;
     let mut event: KEVENT = unsafe { core::mem::zeroed() };
 
     // PAGED_CODE();  (omitted, no equivalent needed)
@@ -420,7 +420,7 @@ pub unsafe extern "C" fn DeviceZPODDGetPowerupReason(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     PowerupReason: *mut STORAGE_IDLE_POWERUP_REASON,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS as i32;
+    let mut status: i32;
     let irp: *mut IRP;
     let mut ioStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut event: KEVENT = core::mem::zeroed();
@@ -469,7 +469,7 @@ pub unsafe extern "C" fn DeviceZPODDGetPowerupReason(
 #[no_mangle]
 pub unsafe extern "C" fn DeviceZPODDIsInHomePosition(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> u8 {
 
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     let cdb: *mut CDB = core::ptr::addr_of_mut!(srb.Cdb) as *mut CDB;

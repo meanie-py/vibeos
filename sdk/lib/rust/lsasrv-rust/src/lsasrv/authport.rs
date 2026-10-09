@@ -139,7 +139,7 @@ unsafe fn LsapCheckLogonProcess(
         SecurityQualityOfService: core::ptr::null_mut(),
     };
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
-    let mut Context: PLSAP_LOGON_CONTEXT = core::ptr::null_mut();
+    let Context: PLSAP_LOGON_CONTEXT;
     let Status: NTSTATUS;
 
     TRACE!(
@@ -291,7 +291,6 @@ pub unsafe extern "system" fn AuthPortThreadRoutine(_Param: *mut core::ffi::c_vo
         );
     }
 
-    Status = STATUS_SUCCESS;
     loop {
         if (*__wine_dbch___default).flags as core::ffi::c_int
             & (1 as core::ffi::c_int) << __WINE_DBCL_TRACE as core::ffi::c_int
@@ -368,7 +367,7 @@ pub unsafe extern "system" fn AuthPortThreadRoutine(_Param: *mut core::ffi::c_vo
                                 as *const core::ffi::c_char,
                         );
                     }
-                    Status = LsapHandlePortConnection(&raw mut RequestMsg);
+                    LsapHandlePortConnection(&raw mut RequestMsg);
                     ReplyMsg = core::ptr::null_mut::<_LSA_API_MSG>();
                 }
                 LPC_PORT_CLOSED => {

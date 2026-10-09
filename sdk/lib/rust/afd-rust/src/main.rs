@@ -358,7 +358,6 @@ unsafe fn AfdCreateSocket(
     let DeviceExt: PAFD_DEVICE_EXTENSION;
     let EaInfo: PFILE_FULL_EA_INFORMATION;
     let mut ConnectInfo: PAFD_CREATE_PACKET = core::ptr::null_mut();
-    let mut EaInfoValue: PWCHAR = core::ptr::null_mut();
     let _i: UINT;
     let Status: NTSTATUS = STATUS_SUCCESS;
 
@@ -380,14 +379,11 @@ unsafe fn AfdCreateSocket(
     if !EaInfo.is_null() {
         ConnectInfo = ((*EaInfo).EaName.as_ptr() as usize + (*EaInfo).EaNameLength as usize + 1)
             as PAFD_CREATE_PACKET;
-        EaInfoValue = ((ConnectInfo as PCHAR) as usize + core::mem::size_of::<AFD_CREATE_PACKET>())
-            as PWCHAR;
 
         AFD_DbgPrint!(
             MID_TRACE,
-            b"EaInfo: %p, EaInfoValue: %p\n\0".as_ptr() as PCHAR,
+            b"EaInfo: %p\n\0".as_ptr() as PCHAR,
             EaInfo,
-            EaInfoValue,
         );
     }
 
@@ -1014,8 +1010,8 @@ unsafe fn AfdQueryVolumeInformation(
     Status
 }
 
-const MID_TRACE: u32 = 1;
-const MIN_TRACE: u32 = 0;
+const MID_TRACE: u32 = 0x00000002; // afd debug.h: MID_TRACE 2; was 1
+const MIN_TRACE: u32 = 0x00000001; // afd debug.h: MIN_TRACE 1; was 0
 // AFD IOCTLs — _AFD_CONTROL_CODE(Op, Method) = (FILE_DEVICE_NETWORK<<12)|(Op<<2)|Method
 // per drivers/afd/shared.h. The grind hardcoded many of these with WRONG (roughly
 // sequential) values, so msafd's real codes were misrouted — e.g. SEND (0x1201F)
@@ -1331,8 +1327,8 @@ pub unsafe extern "system" fn AfdCancelHandler(
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
     let FileObject = (*IrpSp).FileObject;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut Function: ULONG = 0;
-    let mut IoctlCode: ULONG = 0;
+    let Function: ULONG;
+    let IoctlCode: ULONG;
     let mut CurrentIrp: PIRP;
     let mut CurrentEntry: PLIST_ENTRY;
     let DeviceExt = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;

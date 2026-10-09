@@ -328,7 +328,7 @@ pub unsafe extern "system" fn DriverEntry(
     DriverObject: PDRIVER_OBJECT,
     RegistryPath: PUNICODE_STRING,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let mut DeviceCount: ULONG = 0;
     let mut CdfsObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut UdfsObject: PDEVICE_OBJECT = core::ptr::null_mut();

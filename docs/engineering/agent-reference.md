@@ -406,6 +406,18 @@ own `[KRNLBASE]` serial line if anything looks wrong.
 
 Full toolkit reference + design: `docs/engineering/kernel-debugging-infra.md` and `qemu/README.md`. (`qemu/ps` shows every live QEMU across all worktrees + slot usage; QEMUs are capped via `VIBEOS_QEMU_MAX_CONCURRENT`/`VIBEOS_QEMU_MAX_LIFETIME`; **same-arch i386/amd64 boots run in parallel on the default `windows-host` TCG backend** — the per-arch sub-cap is bypassed there (`vm.py:1295-1299`) and only serializes the accelerator-sharing backends (native+KVM, windows-host+WHPX); see the North Star note + `qemu/README.md` → Resource management); run `qemu/build-index.sh <arch>` after each kernel build for offline sym lookup.)
 
+### "Host load" — when the flake needs a named mechanism
+
+`./vibeos-cli stress --arch amd64 --repeat 5` boots the same media through one-knob
+profiles — `slow-cpu` (`-icount`, the guest clock outruns the CPU), `lockstep`
+(`-smp 2` on single-threaded TCG, a stable interleaving), `starved-smp` (`-smp 2`
+pinned to one host core, the scheduler preempts vCPUs), `tight-clock` (harness
+budgets ×0.5) and a `baseline` control — and prints the failure rate per profile.
+Which profile fails IS the diagnosis: timeout, race, or wall clock. Not a gate
+stage. Knobs and the reading guide: `tests/qemu/cli/README.md` → `stress`; the
+three env vars (`VIBEOS_QEMU_ICOUNT_SHIFT`, `VIBEOS_TCG_THREAD`,
+`VIBEOS_BOOT_TIMEOUT_SCALE`) also work on a plain `smoke`.
+
 ### Record/replay — when the bug is too rare to catch live
 
 `./vibeos-cli rr record --arch arm64` boots once under QEMU's instruction-counted

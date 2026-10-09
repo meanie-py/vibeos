@@ -189,6 +189,8 @@ static GUID_BUS_TYPE_PCI: GUID = guid(
 // NTAPI = extern "system" per arch.
 // ---------------------------------------------------------------------------
 extern "system" {
+    /// hal-rust message.rs: set up a device's DMA path (an SMMU stream) before it masters the bus.
+    fn HalVibeosDmaAttach(RequesterId: ULONG) -> BOOLEAN;
     fn PciDuplicateUnicodeString(
         Flags: ULONG,
         SourceString: PCUNICODE_STRING,
@@ -1659,6 +1661,17 @@ unsafe fn PdoStartDevice(
         }
         RawFullDesc = CmiGetNextResourceDescriptor(RawFullDesc);
         i += 1;
+    }
+
+    // Before bus mastering: behind a translating SMMU, the device's DMA needs its
+    // stream table entry first. Same requester ID msix.rs computes.
+    {
+        let dev = (*DeviceExtension).PciDevice;
+        let slot = (*dev).SlotNumber.u.AsULONG;
+        let requester = ((*dev).BusNumber & 0xFF_FFFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
+        if HalVibeosDmaAttach(requester) == 0 {
+            DPRINT1!("requester %06x: the HAL could not set up its DMA path\n", requester);
+        }
     }
 
     let mut Command: USHORT = 0;

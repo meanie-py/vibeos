@@ -432,7 +432,7 @@ unsafe extern "C" fn CreateFreeLoaderIniForReactOS(
     let mut BootStoreHandle: *mut core::ffi::c_void = core::ptr::null_mut();
 
     Status = OpenBootStore(
-        BootStoreHandle,
+        &raw mut BootStoreHandle,
         IniPath,
         FreeLdr,
         BS_CreateAlways,
@@ -573,7 +573,7 @@ unsafe extern "C" fn CreateFreeLoaderIniForReactOSAndBootSector(
     }
 
     Status = OpenBootStore(
-        (&raw mut BootStoreHandle).cast(),
+        &raw mut BootStoreHandle,
         IniPath,
         FreeLdr,
         BS_CreateAlways,
@@ -719,7 +719,7 @@ unsafe extern "C" fn UpdateFreeLoaderIni(
     let mut BootEntry: PBOOT_STORE_ENTRY = &raw mut xxBootEntry as PBOOT_STORE_ENTRY;
     let mut Options: PNTOS_OPTIONS = &raw mut (*BootEntry).OsOptions as PNTOS_OPTIONS;
     Status = OpenBootStore(
-        (&raw mut BootStoreHandle).cast(),
+        &raw mut BootStoreHandle,
         IniPath,
         FreeLdr,
         BS_OpenExisting,
@@ -786,7 +786,7 @@ unsafe extern "C" fn UpdateBootIni(
     let mut BootEntry: PBOOT_STORE_ENTRY = &raw mut xxBootEntry as PBOOT_STORE_ENTRY;
     let mut Options: PNTOS_OPTIONS = &raw mut (*BootEntry).OsOptions as PNTOS_OPTIONS;
     Status = OpenBootStore(
-        (&raw mut BootStoreHandle).cast(),
+        &raw mut BootStoreHandle,
         IniPath,
         NtLdr,
         BS_OpenExisting,

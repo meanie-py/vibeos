@@ -423,7 +423,7 @@ pub unsafe extern "C" fn CdCommonFsControl(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CdUserFsctl(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> i32 {
-    let mut Status: i32 = core::mem::zeroed();
+    let Status: i32;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     // PAGED_CODE();
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn CdReMountOldVcb(
     DeviceObjectWeTalkTo: *mut DEVICE_OBJECT,
 ) {
     let mut SavedIrql: KIRQL = 0;
-    let mut Index: u32 = core::mem::zeroed();
+    let mut Index: u32;
     let mut Buffer: *mut u8;
 
     // UNREFERENCED_PARAMETER(IrpContext) - suppress unused parameter; no Rust equivalent needed
@@ -955,7 +955,7 @@ pub unsafe extern "C" fn CdUnlockVolume(
     // left as identifier assuming caller provides definition
     // Uncomment and adjust if value known: const FSRTL_VOLUME_UNLOCK: u32 = 2;
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
@@ -1000,7 +1000,7 @@ pub unsafe extern "C" fn CdDismountVolume(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let Vcb: *mut VCB;
     let mut Fcb: *mut FCB = core::ptr::null_mut();
@@ -1425,7 +1425,7 @@ unsafe extern "C" fn CdFindActiveVolDescriptor(
     verify_volume: u8,
 ) {
     let mut found_secondary_vd: u8 = 0;
-    let mut sector_offset: u32 = FIRST_VD_SECTOR;
+    let mut sector_offset: u32;
     let mut length: u32 = 0;
     let mut index: u32;
 
@@ -1573,7 +1573,7 @@ pub unsafe extern "C" fn CdMountVolume(
     const IOCTL_DISK_GET_DRIVE_GEOMETRY: u32 = 7 << 16;
     const IOCTL_SCSI_GET_CAPABILITIES: u32 = (4 << 16) | (0x404 << 2);
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let mut Status: NTSTATUS;
 
     let mut VolDo: *mut VOLUME_DEVICE_OBJECT = core::ptr::null_mut();
     let mut Vcb: *mut VCB = core::ptr::null_mut();
@@ -1780,7 +1780,7 @@ pub unsafe extern "C" fn CdMountVolume(
                     if FilesystemDeviceType == FILE_DEVICE_DISK_FILE_SYSTEM {
                         CdFreePool(&mut (CdromToc as *mut core::ffi::c_void) as *mut *mut core::ffi::c_void);
                         CdromToc = core::ptr::null_mut();
-                        Status = STATUS_SUCCESS;
+                        *p_Status = STATUS_SUCCESS;
                     } else {
                         break 'try_block; // try_leave( Status )
                     }
@@ -2057,7 +2057,7 @@ pub unsafe extern "C" fn CdInvalidateVolumes(
     const IO_TYPE_VPB: u16 = 10; // iotypes.h
     const KERNEL_MODE: i8 = 0; // KernelMode
 
-    let mut Status: NTSTATUS = core::mem::zeroed();
+    let Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let mut SavedIrql: KIRQL = 0;
 

@@ -406,7 +406,6 @@ pub unsafe extern "system" fn ScratchBuffer_ResetItems(
     let mut reuseParams: WDF_REQUEST_REUSE_PARAMS = core::mem::zeroed();
     let irp: PIRP;
 
-    status = ntkrnl_sys::base::STATUS_SUCCESS;
 
     // NT_ASSERT checks
     let scratch = &(*DeviceExtension).ScratchContext;
@@ -488,7 +487,7 @@ pub unsafe extern "system" fn ScratchBuffer_PerformNextReadWrite(
             core::ptr::addr_of_mut!((*DeviceExtension).ScratchContext.ScratchReadWriteContext);
         let requestContext = RequestGetContext((*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void);
         let originalRequest = (*requestContext).OriginalRequest;
-        let mut status: i32 = 0; // STATUS_SUCCESS
+        let mut status: i32; // STATUS_SUCCESS
         CdromDbgPrint3(b"[PNRW] scratchreq=%p reqctx=%p origreq=%p\n\0".as_ptr() as *const i8,
             (*DeviceExtension).ScratchContext.ScratchRequest as usize,
             requestContext as usize, originalRequest as usize);
@@ -564,11 +563,11 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteTimerRoutine(
     SystemArgument2: *mut core::ffi::c_void,
 ) {
 
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut readWriteContext: *mut CDROM_SCRATCH_READ_WRITE_CONTEXT = core::ptr::null_mut();
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
+    let mut readWriteContext: *mut CDROM_SCRATCH_READ_WRITE_CONTEXT;
     let originalRequest: *mut core::ffi::c_void;
     let requestContext: *mut CDROM_REQUEST_CONTEXT;
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut oldIrql: KIRQL = 0;
 
     let _ = Dpc;
@@ -683,7 +682,7 @@ pub unsafe extern "system" fn ScratchBuffer_ReadWriteCompletionRoutine(
         // The request has been cancelled, just need to complete it
     } else if SRB_STATUS((*(*device_extension).ScratchContext.ScratchSrb).SrbStatus) != SRB_STATUS_SUCCESS {
         // The SCSI command that we sent down has failed, retry it if necessary
-        let mut should_retry: i32 = TRUE;
+        let mut should_retry: i32;
         let mut retry_in_100ns_units: i64 = 0;
 
         should_retry = RequestSenseInfoInterpretForScratchBuffer(
@@ -880,7 +879,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupSrb(
     request = (*DeviceExtension).ScratchContext.ScratchRequest;
     irp = WdfRequestWdmGetIrp(request);
     srb = (*DeviceExtension).ScratchContext.ScratchSrb;
-    irpStack = IoGetNextIrpStackLocation(irp);
+    IoGetNextIrpStackLocation(irp);
     requestContext = RequestGetContext(request as *mut core::ffi::c_void);
 
     PAGED_CODE!();
@@ -940,7 +939,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
     SynchronousSrb: u8,
     SrbHistoryItem: *mut *mut SRB_HISTORY_ITEM,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let srb = (*DeviceExtension).ScratchContext.ScratchSrb;
     let history = (*DeviceExtension).ScratchContext.ScratchHistory;
     let mut item: *mut SRB_HISTORY_ITEM = core::ptr::null_mut();
@@ -1217,7 +1216,7 @@ pub unsafe extern "C" fn ScratchBuffer_SetupReadWriteSrb(
 
     let originalIrp: PIRP = WdfRequestWdmGetIrp(OriginalRequest);
     let irp: PIRP = WdfRequestWdmGetIrp(scratch_request);
-    let mut irpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut irpStack: *mut IO_STACK_LOCATION;
     let requestContext: *mut CDROM_REQUEST_CONTEXT = RequestGetContext(scratch_request as *mut core::ffi::c_void);
 
     (*requestContext).OriginalRequest = OriginalRequest;

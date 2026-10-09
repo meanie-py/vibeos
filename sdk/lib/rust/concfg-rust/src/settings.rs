@@ -108,7 +108,7 @@ pub unsafe extern "C" fn ConCfgOpenUserSettings(
     samDesired: REGSAM,
     Create: u8,
 ) -> u8 {
-    let mut Success: u8 = 1;
+    let Success: u8;
     let mut hKey: HKEY = ptr::null_mut();
 
     let mut szBuffer: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
@@ -191,7 +191,7 @@ pub unsafe extern "C" fn ConCfgReadUserSettings(
     let mut szValueName: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut dwValueName: u32;
     let mut szValue: [u16; LF_FACESIZE as usize] = [0; LF_FACESIZE as usize];
-    let mut Value: u32 = 0;
+    let mut Value: u32;
     let mut dwValue: u32;
 
     let title = if DefaultSettings != 0 {

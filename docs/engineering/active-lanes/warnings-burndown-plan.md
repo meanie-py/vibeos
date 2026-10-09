@@ -563,9 +563,106 @@ cdrom `DeviceSendSrbSynchronously` sets `ioctlCode` early on purpose, fixing a C
 first send went out with 0, and says so in a comment. ole32 `create_storagefile` spelled out a
 `goto end`. rtl `RtlpInitEnvironment`'s reset of `base_address` matches the C, whose 1 MB
 reserve at `(PVOID)4` rounds the base to 0. The 12 debug ones are ASSERTs and prints that the
-Rust dropped. **Owed:** the 149 unpaired sites, then the 858 harmless ones in bulk. Remove
-each dead initializer so that rustc's definite-init check proves the site, rather than
-silencing it.
+Rust dropped.
+
+**The debug-only reads and the 149 unpaired sites (2026-10-08).** The C's ASSERTs are back at
+the eight ASSERT-only sites and heappage's two `ASSERT(FALSE)`s, as RtlAssert-and-continue.
+The prints stay dropped. The 149 were read against the C by hand: 121 faithful, 7 debug,
+16 benign, 2 Rust-only, and four real bugs, now fixed:
+
+- uniata `UniataFindBusMasterController` ran the `#ifdef UNIATA_INIT_ON_PROBE` arm, a macro
+  nothing defines. That ran an extra `FindDevices` on every channel at FindAdapter time and
+  never cleared a latched `BM_STATUS_INTR`. It now runs the `#else` arm the C compiles. Smoke
+  is green on amd64 and i386 with the disk and CD found.
+- atapi-legacy `FindDevices` indexed `DeviceFlags[deviceNumber + Channel*2]` after the probe
+  loop had left `deviceNumber == 2`: index 4 of 4 on channel 1, a panic (the C reads past the
+  array). It indexes by `i` now.
+- explorer `ProcessRunKeys` reported success on out-of-memory, because the C's `goto end`
+  skips `res = ERROR_SUCCESS` and the Rust's `break` did not.
+- lsasrv `LsarQueryAuditEvents` with no audit data returned success, a NULL output, and a
+  leaked buffer.
+
+Two stores were a write through the variable after a raw pointer to it had been taken
+(rtl-sync `RtlWaitOnAddress`, explorer `tw_track_menu`). They now go through the pointer.
+**Do not delete** cdfs's SEH cleanup flags (`UnlockVcb`, `UnlockFcb`,
+`CleanupCompoundPathEntry`), the 10 benign ones in strucsup/allocsup/create: the finally
+block reads them through `*p_X` pointers that rustc cannot see.
+
+Why the ranker could not pair these, which is owed as rules:
+- The C is gone from the tree for uniata (`50c1dd7f8d1^`), NT4 atapi (`a3a7746beed^`) and
+  pciidex-legacy (`5213cf717cf`). Read them with `git show`.
+- C++ methods became prefixed snake fns (`tw_track_menu` = `CTrayWindow::TrackMenu`).
+- `_impl` / `_v` / `_rs` wrapper suffixes.
+- Writes hidden in macros: `WaitOnBusy`, `GetBaseStatus`, `NEED_SPACE`, `CON_STREAM_WRITE2`.
+- `goto` emulated with a flag or a labelled block.
+
+Upstream drift found on the way, not a warning: pcix arbiters (already tracked), afd
+AcceptEx's `SatisfySuperAccept` branch in `ListenComplete`, explorer's syspager balloon
+crash fix (#9332), and an oleaut32 Wine resync (`VarMod`, `serializeBMP`).
+
+**The 858 harmless sites (2026-10-09).** `tools/apply_dead_assignments.py <rank.json>` takes
+the ranker's `C_DEAD`/`C_NO_INIT` rows and removes them: a pure initializer is dropped
+(`let mut x: T;`), a pure dead store is deleted, a dead store of a call keeps the call. It
+looks inside `stdmethod! { fn .. }`, which tree-sitter sees as one opaque token tree, by
+re-parsing the body in place. Then, for each of the 200 sites where the dead initializer
+was the only reason for `mut`, rustc flagged `unused_mut` on all three arches, and `mut`
+was dropped. It applied 817 and left 41 for review:
+
+- **13 initializers stay, because the removal compiles and is still wrong.**
+  `addr_of_mut!(x)` / `&raw mut x` of an uninitialized local is NOT E0381, and the callee
+  it is handed to may read the initial value (samsrv's in/out `&raw mut Length`). So
+  "rustc's definite-init proves it" holds only for a variable never raw-borrowed in its fn.
+  The tool now skips those. The first run did not, and the audit caught it before any boot.
+- **Three stores are live, and rustc's warning was a false positive.** cdrom
+  `fourByte = &allocationLength as *mut FOUR_BYTE` (DVD READ KEY),
+  `addr_of_mut!(blockAddress)` (SET READ AHEAD), and `srb.SenseInfoBuffer = &mut sense`
+  (autorun) each take the pointer first, write the local directly, then read through the
+  pointer. That direct write is aliasing UB, the same class as rtl-sync and traywnd. Each
+  now takes the pointer after the write, so the UB is gone, and so is the warning, because
+  rustc sees the borrow as the read.
+- 7 cdfs SEH flags, as above. 18 out-param and "NULL after free" stores (`subKey`, `Spb`,
+  `SidString`, version `len`, scsiport `Again` x2 and `Offset += CopyField(..)` x6, heappage
+  `Flags |=`), read
+  and removed by hand.
+
+The skip rule for a store is position-aware: a raw-pointer read rustc cannot see needs a
+pointer that EXISTS at the write, i.e. one taken earlier in the fn or anywhere in a loop
+around it. A borrow after the write is itself a read rustc counts.
+
+The ranker relocated rows by snippet when the tree had moved since the build, and after a
+13-line shift one `hRes = IStream_Write(` site took its neighbour's line (two rows on one
+line). It now maps each log's lines through `git diff` against the tree that build compiled,
+which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
+
+**The last 175, and the crates the census had not covered (2026-10-09): `unused_assignments` → 0.**
+Two Haiku 5.5 subagents read the 175 against the C. They were read-only on the repo, and
+each wrote one JSONL row per site: a verdict plus an exact `old`/`new` edit. I reviewed and
+applied the edits centrally. Results: 147 faithful dead writes, 11 debug-only, 17 cdfs SEH
+flags written through their `p_X` pointer, and no bugs. The earlier hand read's bugs were
+already fixed. I also moved 14 more cdfs flag writes rustc never warned about onto their
+pointers. Haiku proposed one meaningless `let _ = (*p).field;` (dropped). It also removed
+four initializers that my raw-borrow rule would have kept. Each turned out to be written
+before its borrow, so the rule is stricter than it needs to be: the condition that matters
+is a raw borrow BEFORE the first write (owed: refine `apply_dead_assignments`).
+
+**A clean log does not carry every crate's warnings.** The 000251 clean ×3 logs held no
+msvcrt-crt-rust or crt-shared-rust warning at all, the next clean build (150818) held 27
+`unused_assignments` there, and the one after it (154317) held none again for unchanged
+content. A crate's warnings reach `full.log` only from the build that really compiles its
+content, probably because sccache serves the rest without them. (`NOT BUILT (no coverage)`
+in the same log is `scan_flex_array_panic`'s binary corpus, NOT cargo's, and says nothing
+about this.) **Owed: the census must check per-crate coverage**, by compiling each crate
+it reports on or by refusing a log that lacks a crate's compile, before any total is
+trusted. The zero below was established crate by crate from the build that compiled each
+one's current content. The 27 were:
+- i386 `cxx_frame_handler` had dropped `__EXCEPT_CTX(se_translation_filter, &ctx)` and
+  left `ctx` built and never read. It is restored as the `if _SEH2_Volatile0` guard that
+  x64 `except.rs` already uses. That is inert under DUMMY_PSEH, as in the C.
+- `_statusfp` / `_control87`: the `flags = 0` is dead on one arch set and in/out to
+  `_setfp` / `__control87_2` on the other, so each cfg arm now owns its initializer.
+- `create_locinfo`: current Wine overwrites `i = GetLocaleInfoEx(..)` with
+  `i = WideCharToMultiByte(..)` at once. The tree's `locale.c` is the older A-version and
+  is not the oracle here.
 
 ## Owed follow-ups
 

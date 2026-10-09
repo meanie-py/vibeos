@@ -505,10 +505,14 @@ pub const FREELDR_PE_BASE: usize = 0x10000;
 pub const FREELDR_SECTION_COUNT: usize = 4;
 // 4 GiB of flat loader address range. arm64's is 0x100000 in mm.h: the i386
 // 0xFFFFF left the last page below 4 GiB out of the loader's page lookup table.
-// amd64 keeps 0xFFFFF: mm.h's 0x3FFFF is the BIOS loader's 1 GiB identity map,
-// and the UEFI loader here has always run with 4 GiB.
-#[cfg(not(target_arch = "aarch64"))]
+// The amd64 UEFI loader runs with 4 GiB mapped. The amd64 BIOS loader does NOT: it
+// identity-maps 1 GiB, which is what mm.h's 0x3FFFF says. With 0xFFFFF the page lookup
+// table went to the top of RAM below 4 GiB, so a machine with more than ~1 GiB put it
+// past the map and the BIOS loader triple-faulted at its first write (debugcon `C1234`).
+#[cfg(any(target_arch = "x86", all(target_arch = "x86_64", feature = "uefi")))]
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0xFFFFF;
+#[cfg(all(target_arch = "x86_64", not(feature = "uefi")))]
+pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x3FFFF;
 #[cfg(target_arch = "aarch64")]
 pub const MM_MAX_PAGE_LOADER: PFN_NUMBER = 0x100000;
 // x86common.h: MEMORY_MARGIN = HEX(88000), MAX_FREELDR_PE_SIZE = MEMORY_MARGIN

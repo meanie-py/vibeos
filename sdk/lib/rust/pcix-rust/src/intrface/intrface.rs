@@ -63,7 +63,7 @@ pub unsafe extern "system" fn PciQueryInterface(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     RtlStringFromGUID(InterfaceType, &raw mut GuidString);
     DbgPrint(

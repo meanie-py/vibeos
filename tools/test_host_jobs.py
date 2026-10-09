@@ -17,8 +17,8 @@ def runner():
     return hostjobs.ensure(REPO)
 
 
-def run(cmd, cwd, env):
-    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=120)
+def run(cmd, cwd, env, timeout=120):
+    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
 
@@ -39,6 +39,11 @@ def test_runner_process_contracts(runner, tmp_path):
         ],
         REPO,
         os.environ,
+        # A cold compile into a fresh target dir plus a serial process suite: ~10 s on
+        # this host at load average 40, but the gate runs it beside three builds and it
+        # was killed at 120 s on 2026-10-09 while its tests were passing. A safety net,
+        # not a deadline; the suite's own timing checks are calibrated inside it.
+        timeout=600,
     )
 
 

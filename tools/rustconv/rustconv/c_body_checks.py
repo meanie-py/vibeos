@@ -145,22 +145,33 @@ _RS_FLAG_ASSIGN = re.compile(
     r"(?m)(?P<lead>(?:^|[;{}])[^\n;{}]*?)(?<![\w.*\])])(?P<name>[A-Za-z_]\w*)\s*=(?!=)\s*\(?\s*"
     r"(?P<val>[01])(?:[iu](?:8|16|32|64|size))?\s*\)?\s*(?:as\s+[\w:]+\s*)*;"
 )
-_C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*([^;]*);")
+_C_ASSIGN = re.compile(r"(?<![\w.>=!<*\])])([A-Za-z_]\w*)\s*=(?!=)\s*")
 
 
-def _top_level_commas(expr: str) -> list[str]:
-    """`expr` split at the commas outside any (), [] or {} -- C's comma operator."""
-    out, depth, start = [], 0, 0
-    for i, ch in enumerate(expr):
-        if ch in "([{":
-            depth += 1
-        elif ch in ")]}":
-            depth -= 1
-        elif ch == "," and depth == 0:
-            out.append(expr[start:i])
-            start = i + 1
-    out.append(expr[start:])
-    return out
+def _c_assignments(c_code: str):
+    """``(name, rhs)`` for each C assignment, the RHS ending where the EXPRESSION does.
+
+    Not at the next `;`: `for (i = 0, p = es->text; ...)` gave `i` the value
+    `0, p = es->text`, and `if ((page = h / w) < 1) page = 1;` swallowed the second
+    assignment into the first one's RHS -- three correct comctl32 bodies (EDIT_EM_ReplaceSel,
+    LISTBOX_GetMaxTopIndex, LISTBOX_UpdatePage) were refused as "invented" values the C
+    spells plainly. The RHS stops at `;`, a top-level comma, or an unbalanced `)`/`]`/`}`;
+    every assignment is found independently, nested ones included.
+    """
+    for m in _C_ASSIGN.finditer(c_code):
+        depth, end = 0, m.end()
+        while end < len(c_code):
+            ch = c_code[end]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                if depth == 0:
+                    break
+                depth -= 1
+            elif ch == ";" or (ch == "," and depth == 0):
+                break
+            end += 1
+        yield m.group(1), c_code[m.end() : end]
 
 
 def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
@@ -175,26 +186,18 @@ def invented_flag_assignments(c_body: str, rust: str) -> list[str]:
     """
     c_code = _C_COMMENT_OR_STRING.sub(" ", c_body)
     c_values: dict[str, set[str]] = {}
-    for m in _C_ASSIGN.finditer(c_code):
-        # The COMMA operator makes one statement several assignments: hotplug's enum.c writes
-        # `dwCapabilities = 0, dwSize = sizeof(dwCapabilities);`, which recorded the value
-        # `0, dwSize = sizeof(..)` and refused the correct `dwCapabilities = 0` twice.
-        segments = _top_level_commas(f"{m.group(1)} = {m.group(2)}")
-        for seg in segments:
-            a = re.match(r"\s*([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", seg, re.S)
-            if a is None:
-                continue
-            # A chained assignment gives every name in it the final value: usetup's
-            # `Pos = Length = 0;` was split into two statements by a correct translation, and
-            # `Length = 0` was refused on every sample because only `Pos` was recorded.
-            names = [a.group(1)]
-            rhs = a.group(2).strip()
-            while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
-                names.append(chained.group(1))
-                rhs = chained.group(2).strip()
-            rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", rhs).strip("() ")
-            for name in names:
-                c_values.setdefault(name, set()).add(rhs)
+    for first, raw_rhs in _c_assignments(c_code):
+        # A chained assignment gives every name in it the final value: usetup's
+        # `Pos = Length = 0;` was split into two statements by a correct translation, and
+        # `Length = 0` was refused on every sample because only `Pos` was recorded.
+        names = [first]
+        rhs = raw_rhs.strip()
+        while chained := re.match(r"([A-Za-z_]\w*)\s*=(?!=)\s*(.+)$", rhs, re.S):
+            names.append(chained.group(1))
+            rhs = chained.group(2).strip()
+        rhs = re.sub(r"^\(\s*\w+\s*\)\s*", "", rhs).strip("() ")
+        for name in names:
+            c_values.setdefault(name, set()).add(rhs)
     out = []
     for m in _RS_FLAG_ASSIGN.finditer(rust):
         if re.search(r"\blet\b", m.group("lead")):

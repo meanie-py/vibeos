@@ -207,7 +207,7 @@ pub unsafe extern "system" fn AfdSelect(
     Irp: PIRP,
     _IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_NO_MEMORY;
+    let Status: NTSTATUS;
     let mut FCB: PAFD_FCB;
     let mut FileObject: PFILE_OBJECT;
     let PollReq: PAFD_POLL_INFO = (*Irp).AssociatedIrp.SystemBuffer as PAFD_POLL_INFO;
@@ -348,7 +348,7 @@ pub unsafe extern "system" fn AfdEventSelect(
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
     let FileObject = (*IrpSp).FileObject;
-    let mut Status: NTSTATUS = STATUS_NO_MEMORY;
+    let Status: NTSTATUS;
     let EventSelectInfo = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_EVENT_SELECT_INFO;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
 
@@ -516,8 +516,8 @@ unsafe fn UpdatePollWithFCB(Poll: PAFD_ACTIVE_POLL, _FileObject: PFILE_OBJECT) -
 }
 #[no_mangle]
 pub unsafe extern "C" fn PollReeval(DeviceExt: PAFD_DEVICE_EXTENSION, FileObject: PFILE_OBJECT) {
-    let mut Poll: PAFD_ACTIVE_POLL = core::ptr::null_mut();
-    let mut ThePollEnt: PLIST_ENTRY = core::ptr::null_mut();
+    let mut Poll: PAFD_ACTIVE_POLL;
+    let mut ThePollEnt: PLIST_ENTRY;
     let FCB: PAFD_FCB;
     let mut OldIrql: KIRQL = 0;
     let mut PollReq: PAFD_POLL_INFO;

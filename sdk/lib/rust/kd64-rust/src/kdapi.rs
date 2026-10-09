@@ -293,7 +293,7 @@ const KdPacketNeedsResend: KDSTATUS = 2;
 
 const MANUALLY_INITIATED_CRASH: ULONG = 0xE2;
 
-const SysDbgQueryVersion: ULONG = 0;
+const SysDbgQueryVersion: ULONG = 7; // header value; the hand copy said 0
 const SysDbgReadVirtual: ULONG = 8;
 const SysDbgWriteVirtual: ULONG = 9;
 const SysDbgReadPhysical: ULONG = 10;

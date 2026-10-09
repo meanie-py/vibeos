@@ -1710,6 +1710,33 @@ def test_rustc_mut_suggestion_is_applied_once_per_binding():
     assert [(e.byte_start, e.replacement) for e in plan.edits] == [(at, "mut ")]
 
 
+def test_rustc_mut_suggestion_inside_a_const_pointer_type_is_refused():
+    """E0596 behind `*const T` suggests `mut ` after the `*`: `*mut const T` does not parse."""
+    from rustconv.crate_repair import RULE_MUT_BINDING
+
+    src = b"unsafe fn f(p: *const S) {\n    g(&mut (*p).x);\n}\n"
+    at = src.index(b"const S")
+    child = {
+        "message": "consider changing this to be a mutable pointer",
+        "spans": [
+            {
+                **_span("src/a.rs", at, at),
+                "suggested_replacement": "mut ",
+                "suggestion_applicability": "MachineApplicable",
+            }
+        ],
+        "children": [],
+    }
+    diag = {
+        **_diag("cannot borrow `(*p).x` as mutable", code="E0596", spans=[]),
+        "children": [child],
+    }
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_MUT_BINDING]
+    )
+    assert not plan.edits
+
+
 def test_an_anon_union_struct_literal_becomes_zeroed_plus_stores():
     from rustconv.crate_repair import RULE_ANON_UNION
 
@@ -2357,3 +2384,30 @@ def test_a_raw_pointer_autoref_through_an_island_deref_names_the_anonymous_membe
     )
     assert [e.replacement for e in plan.edits] == ["__bindgen_anon_1.Lun"]
     assert plan.edits[0].original == "Lun"
+
+
+def test_truthiness_converts_a_foreign_macros_argument_not_its_result():
+    """`assert!(x as INT)`: rustc blames the argument tokens inside the invocation. Wrapping the
+    call's `()` result grew one `!= 0` layer around comctl32's 34 asserts every pass."""
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"fn f() {\n    assert!(ok as INT);\n}\n"
+    call = b"assert!(ok as INT)"
+    at = src.index(call)
+    arg = src.index(b"ok as INT")
+    inner = _span(
+        "src/a.rs",
+        arg,
+        arg + len(b"ok as INT"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
+    inner["expansion"] = {
+        "span": _span("src/a.rs", at, at + len(call), line=2),
+        "macro_decl_name": "assert!",
+    }
+    diag = _diag("mismatched types", code="E0308", spans=[inner])
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
+    )
+    assert [e.replacement for e in plan.edits] == ["((ok as INT) != 0)"]

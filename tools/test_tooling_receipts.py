@@ -3,6 +3,7 @@
 import json
 import os
 import subprocess
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import pytest
@@ -88,6 +89,21 @@ def test_expired_receipt_reruns(repo):
     data["created"] = 0
     path.write_text(json.dumps(data))
     assert not invoke(repo)[1]
+
+
+def test_finish_prunes_receipts_past_max_age(repo):
+    """Every commit mints a fresh receipt set (the key hashes every tracked file) and
+    nothing ever removed the old ones: 90,882 files / 358 MB on 2026-10-09."""
+    invoke(repo)
+    store = repo / ".git/vibeos-tooling-receipts"
+    fresh = next(store.glob("*.json"))
+    stale = store / ("0" * 64 + ".json")
+    stale.write_text(fresh.read_text())
+    old = time.time() - receipts._MAX_AGE - 60
+    os.utime(stale, (old, old))
+    invoke(repo)
+    assert not stale.exists()
+    assert fresh.exists()
 
 
 def test_concurrent_identical_invocations_compute_once(repo):

@@ -156,11 +156,11 @@ const BV_COLOR_WHITE: ULONG = 15;
 /// category at a glance.
 const RUST_PANIC_BUGCODE: ULONG = 0xE052_5354;
 
-const HeadlessCmdStartBugCheck: ULONG = 0;
+const HeadlessCmdStartBugCheck: ULONG = 14; // header value; the hand copy said 0
 const HeadlessCmdEnableTerminal: ULONG = 1;
-const HeadlessCmdSendBlueScreenData: ULONG = 2;
+const HeadlessCmdSendBlueScreenData: ULONG = 20; // header value; the hand copy said 2
 
-const HalRebootRoutine: ULONG = 1;
+const HalRebootRoutine: ULONG = 3; // header value; the hand copy said 1
 
 const POWER_FAILURE_SIMULATE: ULONG = 0x000000E5; // FIXED 2026-07-05: translation invented wrong value (verified vs bugcodes.h)
 const UNEXPECTED_KERNEL_MODE_TRAP: ULONG = 0x0000007F;
@@ -1779,6 +1779,101 @@ pub unsafe extern "system" fn KeBugCheckEx(
                     }
                     qi += 1;
                 }
+            }
+        }
+        // arm64's half of the above. Its trap frame carries Lr as well as Pc, which is the
+        // one that matters when Pc is 0: a call through a NULL function pointer (ndis's send
+        // path on arm64) leaves the caller ONLY in Lr. Before this an arm64 0x1E printed raw
+        // addresses with no module to resolve them against.
+        #[cfg(target_arch = "aarch64")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
+        if (BugCheckCode == 0x50 || BugCheckCode == 0xBE || BugCheckCode == 0x7E || BugCheckCode == 0x1E)
+            && BugCheckParameter3 > 0xFFFF800000000000
+        {
+            unsafe fn sym(label: &[u8], value: u64) {
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                let base = if value > 0xFFFF800000000000 {
+                    KiPcToFileHeader(value as PVOID, &mut le, 0u8, &mut in_kernel)
+                } else {
+                    core::ptr::null_mut()
+                };
+                if !base.is_null() && !le.is_null() {
+                    let mut ansi = [0i8; 64];
+                    KeBugCheckUnicodeToAnsi(
+                        &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                        ansi.as_mut_ptr(),
+                        64,
+                    );
+                    crate::dbg_print!(
+                        b"***   %s = 0x%p = %s+0x%lX\n\0",
+                        label.as_ptr(),
+                        value as PVOID,
+                        ansi.as_ptr(),
+                        (value as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                    );
+                } else {
+                    crate::dbg_print!(b"***   %s = 0x%p (no module)\n\0", label.as_ptr(), value as PVOID);
+                }
+            }
+            let tf = BugCheckParameter3 as *const ntkrnl_sys::ddk::_KTRAP_FRAME;
+            sym(b"TrapFrame.Pc\0", (*tf).Pc);
+            sym(b"TrapFrame.Lr\0", (*tf).Lr);
+            let sp = (*tf).Sp;
+            let mut printed = 0u32;
+            let mut qi = 0u64;
+            while sp > 0xFFFF800000000000 && qi < 256 && printed < 12 {
+                let at = sp + qi * 8;
+                if MmIsAddressValid(at as PVOID) == 0 {
+                    break;
+                }
+                let val = *(at as *const u64);
+                let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                let mut in_kernel: BOOLEAN = 0;
+                if val > 0xFFFF800000000000
+                    && !KiPcToFileHeader(val as PVOID, &mut le, 0u8, &mut in_kernel).is_null()
+                {
+                    sym(b"tfstack\0", val);
+                    printed += 1;
+                }
+                qi += 1;
+            }
+        }
+        // Every other bugcheck was raised by a direct KeBugCheckEx call, so the caller
+        // chain is on THIS stack. Without this, a 0xC2 (paged pool freed at DISPATCH_LEVEL,
+        // during setup's hive flush) printed four numbers and no caller at all.
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
+        if !matches!(BugCheckCode, 0x50 | 0xBE | 0x7E | 0x1E) {
+            let rsp: u64;
+            core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack));
+            let mut printed = 0u32;
+            let mut qi = 0u64;
+            while qi < 768 && printed < 28 {
+                let sp = rsp + qi * 8;
+                if MmIsAddressValid(sp as PVOID) == 0 {
+                    break;
+                }
+                let val = *(sp as *const u64);
+                if val > 0xFFFF800000000000 {
+                    let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                    let mut in_kernel: BOOLEAN = 0;
+                    let base = KiPcToFileHeader(val as PVOID, &mut le, 0u8, &mut in_kernel);
+                    if !base.is_null() && !le.is_null() {
+                        let mut ansi = [0i8; 64];
+                        KeBugCheckUnicodeToAnsi(
+                            &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                            ansi.as_mut_ptr(),
+                            64,
+                        );
+                        crate::dbg_print!(
+                            b"***   callstack[+0x%03lX] = %s+0x%lX\n\0",
+                            (qi * 8) as ULONG,
+                            ansi.as_ptr(),
+                            (val as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                        );
+                        printed += 1;
+                    }
+                }
+                qi += 1;
             }
         }
     }

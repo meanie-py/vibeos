@@ -196,12 +196,11 @@ pub unsafe extern "system" fn PciIsSuiteVersion(SuiteMask: u16) -> u8 {
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciIsDatacenter() -> BOOLEAN {
-    let mut Result: BOOLEAN = 0;
+    let mut Result: BOOLEAN;
     let mut Value: PVOID = core::ptr::null_mut();
     let mut ResultLength: ULONG = 0;
     let mut Status: NTSTATUS;
 
-    Result = FALSE;
 
     let empty_name: [u16; 1] = core::mem::transmute::<[u8; 2], [u16; 1]>(*b"\0\0");
     let setupdd_path: [u16; 60] = core::mem::transmute::<[u8; 120], [u16; 60]>(
@@ -291,7 +290,7 @@ pub unsafe extern "system" fn PciGetRegistryValue(
     OutputLength: PULONG,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = 0;
-    let mut PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::null_mut();
+    let mut PartialInfo: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut NeededLength: ULONG = 0;
     let mut ActualLength: ULONG = 0;
     let mut ValueString: _UNICODE_STRING = _UNICODE_STRING {
@@ -299,7 +298,7 @@ pub unsafe extern "system" fn PciGetRegistryValue(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut KeyHandle: HANDLE = core::ptr::null_mut();
+    let mut KeyHandle: HANDLE;
     let Result: BOOLEAN;
 
     PartialInfo = core::ptr::null_mut();
@@ -482,7 +481,7 @@ pub unsafe extern "system" fn PciFindParentPciFdoExtension(
     Lock: PKEVENT,
 ) -> PPCI_FDO_EXTENSION {
     let SearchExtension: PPCI_PDO_EXTENSION = (*DeviceObject).DeviceExtension as PPCI_PDO_EXTENSION;
-    let mut FoundExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut();
+    let mut FoundExtension: PPCI_PDO_EXTENSION;
     let mut DeviceExtension: PPCI_FDO_EXTENSION;
 
     if !Lock.is_null() {
@@ -716,7 +715,6 @@ pub unsafe extern "system" fn PciGetDeviceProperty(
                 506i32,
             );
         }
-        Status = STATUS_INSUFFICIENT_RESOURCES;
     } else {
         Status = IoGetDeviceProperty(
             DeviceObject,
@@ -751,7 +749,7 @@ pub unsafe extern "system" fn PciSendIoctl(
     OutputBuffer: PVOID,
     OutputBufferLength: u32,
 ) -> NTSTATUS {
-    let mut Irp: PIRP = core::ptr::null_mut();
+    let mut Irp: PIRP;
     let mut Status: NTSTATUS;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -1509,7 +1507,7 @@ pub unsafe extern "system" fn PciIsSlotPresentInParentMethod(
     PdoExtension: PPCI_PDO_EXTENSION,
     Method: ULONG,
 ) -> BOOLEAN {
-    let mut FoundSlot: BOOLEAN = 0;
+    let mut FoundSlot: BOOLEAN;
     let mut Argument: PACPI_METHOD_ARGUMENT;
     let mut OutputBuffer: PACPI_EVAL_OUTPUT_BUFFER;
     let Length: ULONG;
@@ -1724,7 +1722,7 @@ pub unsafe extern "system" fn PciQueryBusInformation(
     PdoExtension: PPCI_PDO_EXTENSION,
     Buffer: *mut PPNP_BUS_INFORMATION,
 ) -> NTSTATUS {
-    let mut BusInfo: PPNP_BUS_INFORMATION = core::ptr::null_mut::<_PNP_BUS_INFORMATION>();
+    let mut BusInfo: PPNP_BUS_INFORMATION;
     BusInfo = ExAllocatePoolWithTag(
         PagedPool,
         core::mem::size_of::<PNP_BUS_INFORMATION>() as usize,
@@ -1748,7 +1746,7 @@ pub unsafe extern "system" fn PciDetermineSlotNumber(
 
     let ParentExtension: PPCI_FDO_EXTENSION = (*PdoExtension).ParentFdoExtension;
     let mut ResultLength: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     if DbgPrint(
         b"(%s:%d) Slot lookup for %d.%u.%u\n\0".as_ptr() as *const u8,
@@ -1861,9 +1859,9 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     (*DeviceCapability).Address = !0u32;
     (*DeviceCapability).UINumber = !0u32;
 
-    let mut Event = core::mem::MaybeUninit::<KEVENT>::uninit();
-    KeInitializeEvent(Event.as_mut_ptr(), _EVENT_TYPE_SynchronizationEvent, 0u8);
-    let mut Event = Event.assume_init();
+    // In place, never moved: an initialized KEVENT's empty wait list points at itself.
+    let mut Event: KEVENT = core::mem::zeroed();
+    KeInitializeEvent(&mut Event, _EVENT_TYPE_SynchronizationEvent, 0u8);
 
     let AttachedDevice = IoGetAttachedDeviceReference(DeviceObject);
 
@@ -1933,10 +1931,10 @@ pub unsafe extern "system" fn PciQueryPowerCapabilities(
     let mut NewPowerState: DEVICE_POWER_STATE;
     let mut DevicePowerState: DEVICE_POWER_STATE;
     let mut DeviceWakeLevel: DEVICE_POWER_STATE;
-    let mut DeviceWakeState: DEVICE_POWER_STATE = PowerDeviceUnspecified;
+    let mut DeviceWakeState: DEVICE_POWER_STATE;
     let mut SystemWakeState: SYSTEM_POWER_STATE;
-    let mut DeepestWakeState: SYSTEM_POWER_STATE = PowerSystemUnspecified;
-    let mut CurrentState: SYSTEM_POWER_STATE = PowerSystemUnspecified;
+    let mut DeepestWakeState: SYSTEM_POWER_STATE;
+    let mut CurrentState: SYSTEM_POWER_STATE;
 
     DeepestWakeState = PowerSystemUnspecified;
     SystemWakeState = DeepestWakeState;

@@ -45,6 +45,16 @@ to stop being black, because the display lags the marker by a few seconds.
     always allowed.
   - `pi4 lease drop --force` is for a lane that died holding the lease.
 
+**Opt-in boot diagnostics.** Both boards boot with `tools/pi4/freeldr.ini` (the Pi 5's
+`stage.sh` only shortens its menu timeout). Add a word to the `Options=` line of the entry
+you boot to turn one on for your build:
+- `/STORTEST`: winlogon starts `stortest.exe`, which looks for the `VIBEUSB` stick or the Pi
+  4's `VIBEOS_RPI4` card for up to two minutes and runs write+flush+read-back on it. Off by
+  default since 2026-10-08: it used to start whenever any USB disk was present, which on the
+  bench is every boot (the Pico's disk), and it writes to the boot card.
+- `/PROCTRACE`: the kernel's per-process and per-thread breadcrumbs (`[PS]`, `[MM]
+  InitProcAS`, `[IRQL-CHK]`, `[APC]`).
+
 Everything the bench runs is in `tools/pi4/`. The Windows-side paths below
 (COM port, bench directory, python) are this bench's defaults, and each can be
 overridden by the environment variable named beside it.

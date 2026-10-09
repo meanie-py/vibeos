@@ -522,10 +522,10 @@ pub unsafe extern "C" fn CdVerifyFcbOperation(
     IrpContext: *mut IRP_CONTEXT,
     Vcb: *mut VCB,
 ) -> u8 {
-    let mut OldVpb: *mut VPB = core::ptr::null_mut();
+    let OldVpb: *mut VPB;
     let mut VcbPresent: u8 = 1;
     let mut SavedIrql: KIRQL = 0;
-    let mut FinalReference: u8 = 0;
+    let FinalReference: u8;
 
     ASSERT_EXCLUSIVE_CDDATA();
     ASSERT_EXCLUSIVE_VCB(Vcb);

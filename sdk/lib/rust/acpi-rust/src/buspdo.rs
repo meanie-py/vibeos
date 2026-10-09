@@ -1060,8 +1060,8 @@ pub unsafe extern "C" fn Bus_PDO_QueryDeviceText(
     DeviceData: PPDO_DEVICE_DATA,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Buffer: PWCHAR = core::ptr::null_mut();
-    let mut Temp: PWCHAR = core::ptr::null_mut();
+    let Buffer: PWCHAR;
+    let Temp: PWCHAR;
     let stack: PIO_STACK_LOCATION;
     let mut status: NTSTATUS = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
@@ -1170,16 +1170,16 @@ pub unsafe extern "C" fn Bus_PDO_QueryResources(
     Irp: PIRP,
 ) -> NTSTATUS {
     let mut NumberOfResources: ULONG = 0;
-    let mut ResourceList: PCM_RESOURCE_LIST = core::ptr::null_mut();
-    let mut ResourceDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
-    let mut AcpiStatus: ACPI_STATUS = 0;
+    let ResourceList: PCM_RESOURCE_LIST;
+    let mut ResourceDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let mut AcpiStatus: ACPI_STATUS;
     let mut Buffer: ACPI_BUFFER = ACPI_BUFFER {
         Length: 0,
         Pointer: core::ptr::null_mut(),
     };
-    let mut resource: *mut ACPI_RESOURCE = core::ptr::null_mut();
-    let mut ResourceListSize: ULONG = 0;
-    let mut i: ULONG = 0;
+    let mut resource: *mut ACPI_RESOURCE;
+    let ResourceListSize: ULONG;
+    let mut i: ULONG;
     let mut BusNumber: ULONGLONG = 0;
     let mut device: *mut acpi_device = core::ptr::null_mut();
 

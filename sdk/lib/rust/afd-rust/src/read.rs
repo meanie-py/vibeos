@@ -92,7 +92,7 @@ unsafe fn TryToSatisfyRecvRequestFromBuffer(
     RecvReq: PAFD_RECV_INFO,
     TotalBytesCopied: *mut UINT,
 ) -> NTSTATUS {
-    let mut BytesToCopy: UINT = 0;
+    let mut BytesToCopy: UINT;
     let mut FcbBytesCopied: UINT = (*FCB).Recv.BytesUsed;
     let mut BytesAvailable: UINT = (*FCB).Recv.Content - (*FCB).Recv.BytesUsed;
     let Map: PAFD_MAPBUF;
@@ -178,7 +178,7 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
     let mut NextIrpSp: PIO_STACK_LOCATION;
     let mut RecvReq: PAFD_RECV_INFO;
     let mut TotalBytesCopied: UINT = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let mut RetStatus: NTSTATUS = STATUS_PENDING;
 
     AFD_DbgPrint!(MID_TRACE, b"%p %p\n\0".as_ptr() as PCHAR, FCB, Irp);
@@ -368,12 +368,12 @@ unsafe fn SatisfyPacketRecvRequest(
     DatagramRecv: PAFD_STORED_DATAGRAM,
     TotalBytesCopied: PUINT,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let Status: NTSTATUS;
     let IrpSp: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let RecvReq: PAFD_RECV_INFO = (GetLockedData(Irp, IrpSp)) as _;
-    let mut BytesToCopy: UINT = 0;
+    let BytesToCopy: UINT;
     let BytesAvailable: UINT = (*DatagramRecv).Len;
-    let mut AddrLen: UINT = 0;
+    let AddrLen: UINT;
     let Map: PAFD_MAPBUF;
     let ExtraBuffers: BOOLEAN = CheckUnlockExtraBuffers(FCB, IrpSp);
 
@@ -485,11 +485,11 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
     IrpSp: PIO_STACK_LOCATION,
     Short: u8,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_INVALID_PARAMETER;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let RecvReq: PAFD_RECV_INFO;
-    let mut TotalBytesCopied: UINT = 0;
+    let TotalBytesCopied: UINT;
     let DatagramRecv: PAFD_STORED_DATAGRAM;
     let ListEntry: PLIST_ENTRY;
     let mut LockMode: KPROCESSOR_MODE = 0;
@@ -800,7 +800,7 @@ unsafe fn packet_socket_recv_complete_impl(
     }
 
     if NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) && (*FCB).Recv.Content < (*FCB).Recv.Size {
-        Status = TdiReceiveDatagram(
+        TdiReceiveDatagram(
             core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
             (*FCB).AddressFile.Object,
             0,
@@ -822,7 +822,7 @@ pub unsafe extern "system" fn AfdPacketSocketReadData(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let RecvReq: PAFD_RECV_INFO_UDP;

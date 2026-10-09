@@ -74,9 +74,13 @@ unsafe fn arm64_dma_ops() -> *mut ddk::DMA_OPERATIONS {
         (*ops).MapTransfer = Some(core::mem::transmute(Arm64DmaMapTransfer as usize));
         (*ops).GetDmaAlignment = Some(core::mem::transmute(Arm64DmaGetDmaAlignment as usize));
         (*ops).ReadDmaCounter = Some(core::mem::transmute(Arm64DmaReadDmaCounter as usize));
-        // Scatter-gather ops stay None — usbport/usbstor don't use them; a
-        // future consumer that does should get a loud None-unwrap, not a
-        // silently-wrong implementation.
+        // ndis's ProSend calls GetScatterGatherList for every bus-master miniport (e1000)
+        // through this table from C, so a None here was a call to address 0 -- a 0x1E
+        // naming nothing -- not a loud unwrap.
+        (*ops).GetScatterGatherList =
+            Some(core::mem::transmute(Arm64DmaGetScatterGatherList as usize));
+        (*ops).PutScatterGatherList =
+            Some(core::mem::transmute(Arm64DmaPutScatterGatherList as usize));
         ARM64_DMA_OPS_READY.store(true, Ordering::Release);
     }
     ops
@@ -312,6 +316,83 @@ unsafe extern "system" fn Arm64DmaMapTransfer(
         *Length = max_len as ddk::ULONG;
     }
     phys
+}
+
+/// Build the list from MapTransfer's physically contiguous runs and hand it to the
+/// execution routine at DISPATCH_LEVEL, as the x86 HAL does once map registers are
+/// allocated (here they are free, so it happens immediately). One MDL, like x86's
+/// HalBuildScatterGatherList.
+unsafe extern "system" fn Arm64DmaGetScatterGatherList(
+    DmaAdapter: ddk::PDMA_ADAPTER,
+    DeviceObject: ddk::PDEVICE_OBJECT,
+    Mdl: ddk::PMDL,
+    CurrentVa: ddk::PVOID,
+    Length: ddk::ULONG,
+    ExecutionRoutine: ddk::PDRIVER_LIST_CONTROL,
+    Context: ddk::PVOID,
+    WriteToDevice: ddk::BOOLEAN,
+) -> ddk::NTSTATUS {
+    let Some(routine) = ExecutionRoutine else {
+        return ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
+    };
+    if Mdl.is_null() || Length == 0 {
+        return ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
+    }
+    // A buffer spans at most Length/PAGE_SIZE + 2 pages, and every run is at least
+    // the rest of a page, so this bounds the element count.
+    let max_elems = Length as usize / PAGE_SIZE + 2;
+    let bytes = core::mem::size_of::<ddk::SCATTER_GATHER_LIST>()
+        + max_elems * core::mem::size_of::<ddk::SCATTER_GATHER_ELEMENT>();
+    let list = ddk::ExAllocatePoolWithTag(
+        ddk::_POOL_TYPE_NonPagedPool,
+        bytes as ddk::SIZE_T,
+        HAL_DMA_TAG,
+    ) as ddk::PSCATTER_GATHER_LIST;
+    if list.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::write_bytes(list as *mut u8, 0, bytes);
+    let elems = (*list).Elements.as_mut_ptr();
+    let mut n = 0usize;
+    let mut done = 0u32;
+    while done < Length && n < max_elems {
+        let mut run = Length - done;
+        let addr = Arm64DmaMapTransfer(
+            DmaAdapter,
+            Mdl,
+            core::ptr::null_mut(),
+            (CurrentVa as *mut u8).add(done as usize) as ddk::PVOID,
+            &mut run,
+            WriteToDevice,
+        );
+        if run == 0 {
+            break;
+        }
+        (*elems.add(n)).Address = addr;
+        (*elems.add(n)).Length = run;
+        done += run;
+        n += 1;
+    }
+    if done != Length {
+        ddk::ExFreePoolWithTag(list as ddk::PVOID, HAL_DMA_TAG);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    (*list).NumberOfElements = n as ddk::ULONG;
+    let old = KfRaiseIrql(DISPATCH_LEVEL);
+    routine(DeviceObject, (*DeviceObject).CurrentIrp, list, Context);
+    KfLowerIrql(old);
+    STATUS_SUCCESS
+}
+
+unsafe extern "system" fn Arm64DmaPutScatterGatherList(
+    DmaAdapter: ddk::PDMA_ADAPTER,
+    ScatterGather: ddk::PSCATTER_GATHER_LIST,
+    WriteToDevice: ddk::BOOLEAN,
+) {
+    // Coherent, no map registers: nothing to flush or release but the list itself.
+    if !ScatterGather.is_null() {
+        ddk::ExFreePoolWithTag(ScatterGather as ddk::PVOID, HAL_DMA_TAG);
+    }
 }
 
 unsafe extern "system" fn Arm64DmaGetDmaAlignment(DmaAdapter: ddk::PDMA_ADAPTER) -> ddk::ULONG {

@@ -72,7 +72,7 @@ pub unsafe extern "C" fn LsarQueryAuditLog(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut AuditLogInfo: PPOLICY_AUDIT_LOG_INFO = core::ptr::null_mut();
+    let AuditLogInfo: PPOLICY_AUDIT_LOG_INFO;
     let mut AttributeSize: ULONG = core::mem::size_of::<POLICY_AUDIT_LOG_INFO>() as ULONG;
     let Status: NTSTATUS;
 
@@ -110,7 +110,7 @@ pub unsafe extern "C" fn LsarQueryAuditEvents(
     let mut AuditData: PLSAP_POLICY_AUDIT_EVENTS_DATA = core::ptr::null_mut();
     let mut p: PLSAPR_POLICY_AUDIT_EVENTS_INFO = core::ptr::null_mut();
     let mut AttributeSize: ULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let mut goto_done: bool = false;
 
     *PolicyInformation = core::ptr::null_mut();
@@ -168,7 +168,6 @@ pub unsafe extern "C" fn LsarQueryAuditEvents(
         ) as PLSAPR_POLICY_AUDIT_EVENTS_INFO;
         if p.is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto_done = true;
         } else {
             if AuditData.is_null() {
                 (*p).AuditingMode = 0u8;
@@ -190,8 +189,13 @@ pub unsafe extern "C" fn LsarQueryAuditEvents(
                         (*p).EventAuditingOptions,
                         (*AuditData).MaximumAuditEventCount as usize,
                     );
-                    *PolicyInformation = p as PLSAPR_POLICY_INFORMATION;
                 }
+            }
+            // On BOTH branches, as the C does (policy.c `*PolicyInformation = p;` after the
+            // if/else): with no PolAdtEv data this returned success, a NULL output, and
+            // leaked `p`.
+            if !goto_done {
+                *PolicyInformation = p as PLSAPR_POLICY_INFORMATION;
             }
         }
     }
@@ -225,7 +229,7 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut p: PLSAPR_POLICY_PRIMARY_DOM_INFO = core::ptr::null_mut();
+    let p: PLSAPR_POLICY_PRIMARY_DOM_INFO;
     let domain_name: PUNICODE_STRING;
     let mut attribute_size: ULONG;
     let mut status: NTSTATUS;
@@ -237,7 +241,6 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    status = STATUS_SUCCESS;
 
     'body: {
         // Domain Name
@@ -358,8 +361,8 @@ pub unsafe extern "C" fn LsarQueryAccountDomain(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut p: *mut _LSAPR_POLICY_ACCOUNT_DOM_INFO = core::ptr::null_mut();
-    let mut DomainName: *mut _UNICODE_STRING = core::ptr::null_mut();
+    let p: *mut _LSAPR_POLICY_ACCOUNT_DOM_INFO;
+    let DomainName: *mut _UNICODE_STRING;
     let mut AttributeSize: u32 = 0;
     let mut Status: NTSTATUS;
 
@@ -470,9 +473,9 @@ pub unsafe extern "C" fn LsarQueryServerRole(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut ServerRoleInfo: PPOLICY_LSA_SERVER_ROLE_INFO = core::ptr::null_mut::<_POLICY_LSA_SERVER_ROLE_INFO>();
-    let mut AttributeSize: ULONG = 0;
-    let mut Status: NTSTATUS = 0;
+    let ServerRoleInfo: PPOLICY_LSA_SERVER_ROLE_INFO;
+    let mut AttributeSize: ULONG;
+    let mut Status: NTSTATUS;
 
     *PolicyInformation = core::ptr::null_mut::<_LSAPR_POLICY_INFORMATION>();
 
@@ -525,7 +528,7 @@ pub unsafe extern "C" fn LsarQueryDefaultQuota(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut QuotaInfo: PPOLICY_DEFAULT_QUOTA_INFO = core::ptr::null_mut();
+    let QuotaInfo: PPOLICY_DEFAULT_QUOTA_INFO;
     let mut AttributeSize: ULONG;
     let Status: NTSTATUS;
 
@@ -612,7 +615,7 @@ pub unsafe extern "C" fn LsarQueryDnsDomain(
     PolicyObject: PLSA_DB_OBJECT,
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
-    let mut p: *mut _LSAPR_POLICY_DNS_DOMAIN_INFO = core::ptr::null_mut();
+    let p: *mut _LSAPR_POLICY_DNS_DOMAIN_INFO;
     let mut DomainName: PUNICODE_STRING;
     let mut AttributeSize: u32;
     let mut Status: NTSTATUS;
@@ -693,7 +696,7 @@ pub unsafe extern "C" fn LsarQueryDnsDomain(
                 cleanup_required = true;
                 break 'main_loop;
             }
-            Status = LsapGetObjectAttribute(PolicyObject, pol_pr_dm_s as LPWSTR, (*p).Sid as LPVOID, &mut AttributeSize);
+            LsapGetObjectAttribute(PolicyObject, pol_pr_dm_s as LPWSTR, (*p).Sid as LPVOID, &mut AttributeSize);
         }
 
         // DNS Domain Name
@@ -896,8 +899,8 @@ pub unsafe extern "C" fn LsarSetAuditEvents(
     PolicyObject: PLSA_DB_OBJECT,
     Info: PLSAPR_POLICY_AUDIT_EVENTS_INFO,
 ) -> NTSTATUS {
-    let mut AuditData: PLSAP_POLICY_AUDIT_EVENTS_DATA = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let AuditData: PLSAP_POLICY_AUDIT_EVENTS_DATA;
+    let Status: NTSTATUS;
 
     let AttributeSize = (core::mem::size_of::<LSAP_POLICY_AUDIT_EVENTS_DATA>()
         + (*Info).MaximumAuditEventCount as usize * core::mem::size_of::<DWORD>())
@@ -938,7 +941,7 @@ pub unsafe extern "C" fn LsarSetPrimaryDomain(
     PolicyObject: PLSA_DB_OBJECT,
     Info: PLSAPR_POLICY_PRIMARY_DOM_INFO,
 ) -> NTSTATUS {
-    let mut Buffer: *mut _UNICODE_STRING = core::ptr::null_mut();
+    let Buffer: *mut _UNICODE_STRING;
     let mut Length: ULONG;
     let Ptr: LPWSTR;
 
@@ -1003,7 +1006,7 @@ pub unsafe extern "C" fn LsarSetAccountDomain(
     PolicyObject: PLSA_DB_OBJECT,
     Info: PLSAPR_POLICY_ACCOUNT_DOM_INFO,
 ) -> NTSTATUS {
-    let mut length = 0u32;
+    let mut length;
     let buffer_ptr;
 
     length = (core::mem::size_of::<_UNICODE_STRING>() as u32)
@@ -1157,7 +1160,7 @@ pub unsafe extern "C" fn LsarSetAuditFull(
     PolicyObject: PLSA_DB_OBJECT,
     Info: PPOLICY_AUDIT_FULL_QUERY_INFO,
 ) -> NTSTATUS {
-    let mut AuditFullInfo: PPOLICY_AUDIT_FULL_QUERY_INFO = core::ptr::null_mut();
+    let AuditFullInfo: PPOLICY_AUDIT_FULL_QUERY_INFO;
     let mut AttributeSize: ULONG = core::mem::size_of::<POLICY_AUDIT_FULL_QUERY_INFO>() as ULONG;
     let mut Status: NTSTATUS;
 

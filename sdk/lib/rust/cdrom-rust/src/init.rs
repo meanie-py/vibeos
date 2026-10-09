@@ -52,7 +52,6 @@ extern "system" {
     fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, params: PWDF_REQUEST_COMPLETION_PARAMS, context: WDFCONTEXT);
 }
 extern "C" {
-    fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> u32;
     fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;
@@ -213,9 +212,9 @@ type CDROM_SCAN_FOR_SPECIAL_HANDLER = unsafe extern "C" fn(*mut CDROM_DEVICE_EXT
 
 const FILE_DEVICE_CD_ROM: u32 = 0x00000002;
 const FILE_DEVICE_DVD: u32 = 0x33;
-const BusTypeScsi: u32 = 0x00;
-const BusTypeAtapi: u32 = 0x01;
-const BusTypeUnknown: u32 = 0x02;
+const BusTypeScsi: u32 = 1; // header value; the hand copy said 0x00
+const BusTypeAtapi: u32 = 2; // header value; the hand copy said 0x01
+const BusTypeUnknown: u32 = 0; // header value; the hand copy said 0x02
 const FeatureAACS: u32 = 0x010D;
 const FeatureCdRead: u32 = 0x001E; // _FEATURE_NUMBER_FeatureCdRead = 30
 const FeatureDvdRead: u32 = 0x0012;
@@ -261,7 +260,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
     Release: u8,
 ) -> i32 {
     // PAGED_CODE();
-    let mut status: i32 = 0;
+    let mut status: i32;
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     let mut descriptor: WDF_MEMORY_DESCRIPTOR = core::mem::zeroed();
     let mut request: *mut core::ffi::c_void = core::ptr::null_mut();
@@ -352,7 +351,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
 #[no_mangle]
 pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut deviceExtension: *mut CDROM_DEVICE_EXTENSION;
 
     PAGED_CODE!();
 
@@ -514,15 +513,15 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
 
     // 9. Set volume interface properties (NTDDI_VERSION >= NTDDI_WIN8)
     if NT_SUCCESS(status) {
-        let mut isCritical: i32 = 0;
+        let mut isCritical: i32;
         let mut isPortable: u8 = 0;
         let isRemovable: i32 = (TEST_FLAG(
             (*(*deviceExtension).DeviceObject).Characteristics,
             FILE_REMOVABLE_MEDIA,
         ) != 0) as i32;
-        let mut propCritical: i32 = DEVPROP_FALSE;
-        let mut propPortable: i32 = DEVPROP_FALSE;
-        let mut propRemovable: i32 = DEVPROP_FALSE;
+        let mut propCritical: i32;
+        let mut propPortable: i32;
+        let mut propRemovable: i32;
 
         status = DeviceIsPortable(deviceExtension, &mut isPortable);
 
@@ -585,7 +584,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoInit(Device: WDFDEVICE) -> N
 }
 #[no_mangle]
 pub unsafe extern "C" fn DeviceInitReleaseQueueContext(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS; // STATUS_SUCCESS is imported from ntkrnl_sys::base, assumed available
+    let mut status: i32; // STATUS_SUCCESS is imported from ntkrnl_sys::base, assumed available
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
 
     // PAGED_CODE(); // omitted (irrelevant in mechanical transliteration)
@@ -694,7 +693,7 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
     const TRACE_FLAG_PNP: u32 = 1; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
     const IOCTL_SCSI_EXECUTE_IN: u32 = 0x1b0011;  // was 0x0000001B (LLM-invented); bindgen-correct
 
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut status: NTSTATUS; // STATUS_SUCCESS
     let mut attributes = core::mem::MaybeUninit::<WDF_OBJECT_ATTRIBUTES>::uninit();
 
     // PAGED_CODE();
@@ -741,7 +740,7 @@ pub unsafe extern "C" fn DeviceInitPowerContext(
 pub unsafe extern "C" fn DeviceCreateWellKnownName(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut unicodeLinkName = ntkrnl_sys::ddk::UNICODE_STRING {
         Length: 0u16,
         MaximumLength: 0u16,
@@ -857,8 +856,8 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     let mut status: NTSTATUS;
     let mut memory_descriptor: WDF_MEMORY_DESCRIPTOR = core::mem::zeroed();
     let mut query: STORAGE_PROPERTY_QUERY = core::mem::zeroed();
-    let mut buffer_length: u32 = 0;
-    let mut descriptor: *mut STORAGE_DESCRIPTOR_HEADER = core::ptr::null_mut();
+    let mut buffer_length: u32;
+    let mut descriptor: *mut STORAGE_DESCRIPTOR_HEADER;
     let device_extension: PCDROM_DEVICE_EXTENSION = DeviceGetExtension(Device);
 
     PAGED_CODE!();
@@ -992,7 +991,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
 pub unsafe extern "C" fn DeviceRetrieveHackFlagsFromRegistry(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut hardware_key: WDFKEY = core::ptr::null_mut();
     let mut sub_key: WDFKEY = core::ptr::null_mut();
     let mut device_hacks: u32 = 0;
@@ -1146,7 +1145,7 @@ pub unsafe extern "C" fn DeviceInitializeHotplugInfo(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
     unsafe {
-        let mut status: NTSTATUS = STATUS_SUCCESS;
+        let mut status: NTSTATUS;
         let fdoData = (*DeviceExtension).PrivateFdoData;
         let mut deviceRemovalPolicy: DEVICE_REMOVAL_POLICY = 0;
         let mut resultLength: u32 = 0;
@@ -1305,7 +1304,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
     let cdb: *mut CDB = core::ptr::addr_of_mut!((srb).Cdb) as *mut CDB;
-    let mut tmpInquiry: *mut INQUIRYDATA = core::ptr::null_mut();
+    let mut tmpInquiry: *mut INQUIRYDATA;
     let mut requestedInquiryTransferBytes: u32 = MINIMUM_CDROM_INQUIRY_SIZE;
     let mut needResendCommand: i32 = 1; // TRUE
     let mut portDriverHack: i32 = 0; // FALSE
@@ -1498,14 +1497,14 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let mut buffer: *mut u8 = core::ptr::null_mut();
-    let mut count: u32 = 0;
+    let mut count: u32;
 
     // PAGED_CODE();
     unsafe { PAGED_CODE!(); } // keep the macro call
 
     // Check GET_CONFIGURATION data
     {
-        let mut cd_read_header: *mut FEATURE_DATA_CD_READ = core::ptr::null_mut();
+        let mut cd_read_header: *mut FEATURE_DATA_CD_READ;
         let additional_length: u32 =
             core::mem::size_of::<FEATURE_DATA_CD_READ>() as u32 - core::mem::size_of::<FEATURE_HEADER>() as u32;
 
@@ -1708,9 +1707,9 @@ pub unsafe extern "C" fn DeviceSetRawReadInfo(
 #[no_mangle]
 pub unsafe extern "C" fn DeviceInitializeDvd(Device: WDFDEVICE) -> NTSTATUS {
     // PAGED_CODE();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION;
-    let mut copyProtectKey: *mut DVD_COPY_PROTECT_KEY = core::ptr::null_mut();
+    let mut copyProtectKey: *mut DVD_COPY_PROTECT_KEY;
     let rpcKey: *mut DVD_RPC_KEY;
     let bufferLen: u32;
     let mut bytesReturned: usize = 0;
@@ -4531,7 +4530,7 @@ pub unsafe extern "system" fn DeviceInitAllocateBuffers(
     DeviceExtension: PCDROM_DEVICE_EXTENSION,
 ) -> NTSTATUS {
     let mut status: i32 = 0; // STATUS_SUCCESS
-    let mut senseData: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut senseData: *mut core::ffi::c_void;
     CdromDbgPrint1(b"[ALOC] enter sz_fdo=%x\n\0".as_ptr() as *const i8, core::mem::size_of::<CDROM_PRIVATE_FDO_DATA>());
 
     // PAGED_CODE();
@@ -4820,9 +4819,9 @@ pub unsafe extern "system" fn DeviceIsPortable(
     IsPortable: PBOOLEAN,
 ) -> NTSTATUS {
     let mut isInternal: i32 = DEVPROP_FALSE as i32;
-    let mut isPortable: u8 = 0; // FALSE
+    let mut isPortable: u8; // FALSE
     let mut size: u32 = 0;
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut type_: u32 = DEVPROP_TYPE_EMPTY;
 
     PAGED_CODE!();

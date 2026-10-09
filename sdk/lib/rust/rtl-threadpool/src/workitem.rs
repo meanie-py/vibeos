@@ -234,7 +234,7 @@ unsafe extern "system" fn RtlpExecuteWorkItem(
 }
 
 unsafe fn RtlpQueueWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     InterlockedIncrement(core::ptr::addr_of_mut!(ThreadPoolWorkerThreadsRequests));
 
@@ -334,7 +334,7 @@ unsafe extern "system" fn RtlpExecuteIoWorkItem(
 unsafe fn RtlpQueueIoWorkerThread(WorkItem: PRTLP_WORKITEM) -> NTSTATUS {
     let mut CurrentEntry: PLIST_ENTRY;
     let mut IoThread: PRTLP_IOWORKERTHREAD = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS as NTSTATUS;
+    let Status: NTSTATUS;
 
     if (*WorkItem).Flags & WT_EXECUTEINPERSISTENTIOTHREAD != 0 {
         if !PersistentIoThread.is_null() {
@@ -516,7 +516,6 @@ unsafe extern "system" fn RtlpIoWorkerThreadProc(Parameter: PVOID) -> ULONG {
                 }
 
                 /* We timed out, let's see if we're allowed to terminate */
-                Terminate = 0u8;
 
                 Status = RtlEnterCriticalSection(&raw mut ThreadPoolLock);
                 if NT_SUCCESS(Status) {

@@ -250,6 +250,34 @@ macro_rules! MAKEINTRESOURCEW {
     };
 }
 
+/// `winuser.h` — `#define IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)`
+///
+/// `bool`, not C's `int`: the call sites test it both bare and with `!= 0`, and an `int` result
+/// would let `!IS_INTRESOURCE(p)` compile as a bitwise NOT that is never zero. A `bool` turns
+/// every `!= 0` site into a compile error instead.
+#[macro_export]
+macro_rules! IS_INTRESOURCE {
+    ($r:expr $(,)?) => {
+        ((($r) as usize) >> 16) == 0
+    };
+}
+
+/// `winbase.h` — `#define MAKEINTATOM(i) (LPWSTR)((ULONG_PTR)((WORD)(i)))` (UNICODE).
+#[macro_export]
+macro_rules! MAKEINTATOM {
+    ($i:expr $(,)?) => {
+        ((($i) as usize) & 0xffff) as *mut u16
+    };
+}
+
+/// `winuser.h` — `#define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))`
+#[macro_export]
+macro_rules! GET_WHEEL_DELTA_WPARAM {
+    ($w:expr $(,)?) => {
+        (((($w) as usize) >> 16) & 0xffff) as u16 as i16
+    };
+}
+
 /// `winuser.h:581` — `#define MAKEINTRESOURCEA(i) ((LPSTR)(ULONG_PTR)LOWORD(i))`
 #[macro_export]
 macro_rules! MAKEINTRESOURCEA {
@@ -312,6 +340,22 @@ macro_rules! GetGValue {
 macro_rules! GetBValue {
     ($rgb:expr $(,)?) => {
         ((($rgb as u32) >> 16) & 0xff) as u8
+    };
+}
+
+/// `wingdi.h:3384` — `#define GetAValue(rgb) ((BYTE)((rgb)>>24))`
+#[macro_export]
+macro_rules! GetAValue {
+    ($rgb:expr $(,)?) => {
+        ((($rgb as u32) >> 24) & 0xff) as u8
+    };
+}
+
+/// `wingdi.h:3387` — `#define RGBA(r,g,b,a) ((COLORREF)((((DWORD)(BYTE)(a))<<24) | RGB(r,g,b)))`
+#[macro_export]
+macro_rules! RGBA {
+    ($r:expr, $g:expr, $b:expr, $a:expr $(,)?) => {
+        (((($a as u32) & 0xff) << 24) | $crate::RGB!($r, $g, $b)) as u32
     };
 }
 
@@ -403,6 +447,15 @@ macro_rules! _countof {
 /// same result type for the same reason.
 #[macro_export]
 macro_rules! ARRAYSIZE {
+    ($a:expr $(,)?) => {
+        ($a).len() as u32
+    };
+}
+
+/// Wine's `#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))` — the Wine-derived DLLs'
+/// spelling of [`ARRAYSIZE`], `u32` for the same reason: comctl32's 63 sites feed `UINT`/`INT`.
+#[macro_export]
+macro_rules! ARRAY_SIZE {
     ($a:expr $(,)?) => {
         ($a).len() as u32
     };
@@ -1007,6 +1060,99 @@ pub fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b { a } else { b }
 }
 
+// ================= wine/heap.h =================================================================
+//
+// `static inline` in the header, so no DLL exports them and every wine-derived crate carried a
+// hand copy (wldap32, advapi32, ...). One copy here. `SIZE_T` is `usize` on every target.
+
+extern "system" {
+    // kernel32. Private, like iswctype below: a consumer's own declarations stay its own.
+    fn GetProcessHeap() -> *mut core::ffi::c_void;
+    fn HeapAlloc(heap: *mut core::ffi::c_void, flags: u32, bytes: usize) -> *mut core::ffi::c_void;
+    fn HeapReAlloc(
+        heap: *mut core::ffi::c_void,
+        flags: u32,
+        mem: *mut core::ffi::c_void,
+        bytes: usize,
+    ) -> *mut core::ffi::c_void;
+    fn HeapFree(heap: *mut core::ffi::c_void, flags: u32, mem: *mut core::ffi::c_void) -> i32;
+}
+
+/// `winnt.h` — `#define HEAP_ZERO_MEMORY 8`.
+const HEAP_ZERO_MEMORY: u32 = 0x8;
+
+/// `wine/heap.h` — `HeapAlloc(GetProcessHeap(), 0, len)`.
+#[inline]
+pub unsafe fn heap_alloc(len: usize) -> *mut core::ffi::c_void {
+    unsafe { HeapAlloc(GetProcessHeap(), 0, len) }
+}
+
+/// `wine/heap.h` — `HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)`.
+#[inline]
+pub unsafe fn heap_alloc_zero(len: usize) -> *mut core::ffi::c_void {
+    unsafe { HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len) }
+}
+
+/// `wine/heap.h` — a NULL `mem` allocates, as `realloc` does.
+#[inline]
+pub unsafe fn heap_realloc(mem: *mut core::ffi::c_void, len: usize) -> *mut core::ffi::c_void {
+    if mem.is_null() {
+        return unsafe { HeapAlloc(GetProcessHeap(), 0, len) };
+    }
+    unsafe { HeapReAlloc(GetProcessHeap(), 0, mem, len) }
+}
+
+/// `wine/heap.h` — returns nothing; HeapFree's BOOL is dropped, as in the C.
+#[inline]
+pub unsafe fn heap_free(mem: *mut core::ffi::c_void) {
+    unsafe { HeapFree(GetProcessHeap(), 0, mem) };
+}
+
+/// `wine/heap.h` — NULL when `count * size` overflows. `checked_mul` is the C's
+/// `size && len / size != count` test.
+#[inline]
+pub unsafe fn heap_calloc(count: usize, size: usize) -> *mut core::ffi::c_void {
+    match count.checked_mul(size) {
+        Some(len) => unsafe { HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len) },
+        None => core::ptr::null_mut(),
+    }
+}
+
+// ================= wine/debug.h string helpers ==================================================
+//
+// `static __inline` over libwine's `wine_dbgstr_wn`/`wine_dbgstr_an`, so they link only into a
+// module that links `wine` -- which every module that names them does (they are wine/debug.h).
+// A per-crate `extern` copy of `debugstr_w` (the consensus route) links to nothing: inetcpl.
+
+extern "C" {
+    fn wine_dbgstr_wn(s: *const u16, n: i32) -> *const core::ffi::c_char;
+    fn wine_dbgstr_an(s: *const core::ffi::c_char, n: i32) -> *const core::ffi::c_char;
+}
+
+/// `wine/debug.h` — `wine_dbgstr_wn(s, n)`.
+#[inline]
+pub unsafe fn debugstr_wn(s: *const u16, n: i32) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, n) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_wn(s, -1)`.
+#[inline]
+pub unsafe fn debugstr_w(s: *const u16) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, -1) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_an(s, n)`.
+#[inline]
+pub unsafe fn debugstr_an(s: *const core::ffi::c_char, n: i32) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, n) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_an(s, -1)`.
+#[inline]
+pub unsafe fn debugstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, -1) }
+}
+
 extern "C" {
     // `int __cdecl iswctype(wint_t, wctype_t)`, exported by both ntdll and msvcrt. Private:
     // consumers that declare it themselves keep their own declaration.
@@ -1492,4 +1638,23 @@ mod tests {
         assert_eq!(UNICODE_NULL, 0u16);
         assert_eq!(INVALID_HANDLE_VALUE as isize, -1);
     }
+}
+
+/// `winnt.h` `InterlockedIncrement` / `InterlockedDecrement` — intrinsics under MSVC and
+/// `static __inline` here, so no object file defines them. Rust's atomics are the portable
+/// spelling of the same LOCK-prefixed read-modify-write, returning the NEW value as Win32 does.
+/// `LONG` is `i32` on all three targets, which is what lets this be shared.
+#[inline(always)]
+pub unsafe fn InterlockedIncrement(addend: *mut i32) -> i32 {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        + 1
+}
+
+/// See [`InterlockedIncrement`].
+#[inline(always)]
+pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        - 1
 }

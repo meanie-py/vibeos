@@ -1124,20 +1124,94 @@ def _snip(snippet: str) -> str:
     return s
 
 
-def relocate(lines: list[str], line: int, snippet: str) -> int | None:
+def relocate(lines: list[str], line: int, snippet: str, exact: bool = False) -> int | None:
+    """The current line of a site the log put at `line`.
+
+    `exact`: `line` was already mapped through `git diff <built tree>` (`line_map`), so the
+    snippet must be ON it. Otherwise this is a guess by text, and a guess is only taken
+    when it is unique: in a file that shifted by k lines, the k-th `hRes = IStream_Write(`
+    below a site matches the site's OLD line number, and the nearest-match search would
+    hand one site's verdict to its neighbour (two rows on one line, one line never read)."""
     s = _snip(snippet)
     if not s:
         return line
-    if 0 < line <= len(lines) and s in lines[line - 1]:
-        return line
-    for d in range(1, 400):
-        for ln in (line - d, line + d):
-            if 0 < ln <= len(lines) and s in lines[ln - 1]:
-                return ln
+    here = 0 < line <= len(lines) and s in lines[line - 1]
+    if exact:
+        return line if here else None
+    hits = [i + 1 for i in range(max(0, line - 400), min(len(lines), line + 399)) if s in lines[i]]
+    if len(hits) == 1:
+        return hits[0]
+    return line if here and not hits else None
+
+
+def built_tree(log: Path) -> str | None:
+    """The tree the build that wrote `log` compiled: the `warm-receipt` stage of its
+    summary.json, which `vibeos-cli build` records as `git write-tree` of the worktree.
+    None when the build predates receipts or did not get that far."""
+    try:
+        stages = json.loads((log.parent / "summary.json").read_text())["stages"]
+    except (OSError, ValueError, KeyError):
+        return None
+    for st in stages:
+        m = re.match(r"tree ([0-9a-f]{7,40})$", st.get("detail", ""))
+        if st.get("name") == "warm-receipt" and st.get("status") == "ok" and m:
+            cp = subprocess.run(
+                ["git", "-C", str(REPO), "rev-parse", "--verify", "-q", m.group(1) + "^{tree}"],
+                capture_output=True,
+                text=True,
+            )
+            return cp.stdout.strip() or None
     return None
 
 
-def analyze(sites: list[census.Site]) -> list[Row]:
+_HUNK = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@", re.M)
+
+
+def line_map(tree: str, rel: str) -> Callable[[int], int | None]:
+    """old line (in `tree`) -> line in the working tree, or None if the line itself changed."""
+    cp = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "diff",
+            "-U0",
+            "--no-color",
+            "--no-ext-diff",
+            tree,
+            "--",
+            str((RUST_ROOT / rel).relative_to(REPO)),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    hunks = [(int(a), int(b or 1), int(d or 1)) for a, b, _c, d in _HUNK.findall(cp.stdout)]
+
+    def f(line: int) -> int | None:
+        off = 0
+        for a, b, d in hunks:
+            # `-a,0` inserts AFTER old line a; `-a,b` replaces old lines a..a+b-1.
+            first = a + 1 if b == 0 else a
+            if line < first:
+                break
+            if b and line < a + b:
+                return None
+            off += d - b
+        return line + off
+
+    return f
+
+
+def map_sites(sites: list[census.Site], tree: str) -> None:
+    """Move each site's line from `tree` to the working tree; 0 marks a changed line."""
+    maps: dict[str, Callable[[int], int | None]] = {}
+    for s in sites:
+        if s.path not in maps:
+            maps[s.path] = line_map(tree, s.path)
+        s.line = maps[s.path](s.line) or 0
+
+
+def analyze(sites: list[census.Site], exact: bool = False) -> list[Row]:
     rows: list[Row] = []
     pending: list[tuple[Row, RustWrite]] = []
     for s in sites:
@@ -1148,11 +1222,14 @@ def analyze(sites: list[census.Site]) -> list[Row]:
         if not f.is_file():
             row.verdict, row.note = "STALE", "file gone"
             continue
+        if exact and not s.line:
+            row.verdict, row.note = "STALE", "line changed since the build"
+            continue
         src = f.read_bytes()
         lines = src.decode("utf8", "replace").split("\n")
-        ln = relocate(lines, s.line, s.snippet)
+        ln = relocate(lines, s.line, s.snippet, exact)
         if ln is None:
-            row.verdict, row.note = "STALE", "snippet not found"
+            row.verdict, row.note = "STALE", "snippet not found (or not unique)"
             continue
         col = s.col if ln == s.line else (lines[ln - 1].find(_snip(s.snippet)[:20]) + 1)
         row.line = ln
@@ -1207,12 +1284,25 @@ def main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
 
     per_arch: dict[str, list[census.Site]] = defaultdict(list)
+    exact = True
     for log in args.logs:
         if not log.is_file():
             print(f"MISSING LOG: {log}", file=sys.stderr)
             return 2
         sites, _ = census.parse_log(log.read_text(errors="replace"))
         census.attribute(sites)
+        # Map each log through ITS OWN built tree before merging: the per-arch builds of
+        # one batch can be of different trees, and merge keys on the line.
+        tree = built_tree(log)
+        if tree:
+            map_sites(sites, tree)
+        else:
+            exact = False
+            print(
+                f"note: {log} has no warm-receipt tree; lines are relocated by snippet, and a "
+                "snippet that is not unique nearby is STALE",
+                file=sys.stderr,
+            )
         per_arch[census.arch_of(log)].extend(sites)
     merged = census.merge(per_arch)
     census.attribute(merged)
@@ -1220,7 +1310,7 @@ def main(argv: list[str]) -> int:
     if not sites:
         print(f"no {LINT} sites in the given logs", file=sys.stderr)
         return 2
-    rows = analyze(sites)
+    rows = analyze(sites, exact)
 
     counts: dict[tuple[str, str], int] = defaultdict(int)
     for r in rows:

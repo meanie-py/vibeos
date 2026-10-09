@@ -164,7 +164,7 @@ pub unsafe extern "system" fn LsarClose(
     ObjectHandle: *mut LSAPR_HANDLE,
 ) -> NTSTATUS {
     let mut DbObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     TRACE!(b"LsarClose(%p)\n\0".as_ptr() as *const i8, ObjectHandle);
 
@@ -232,9 +232,9 @@ pub unsafe extern "system" fn LsarQuerySecurityObject(
     SecurityDescriptor: *mut PLSAPR_SR_SECURITY_DESCRIPTOR,
 ) -> NTSTATUS {
     let mut DbObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut RelativeSd: PISECURITY_DESCRIPTOR_RELATIVE = core::ptr::null_mut();
+    let RelativeSd: PISECURITY_DESCRIPTOR_RELATIVE;
     let mut ResultSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
-    let mut SdData: PLSAPR_SR_SECURITY_DESCRIPTOR = core::ptr::null_mut();
+    let SdData: PLSAPR_SR_SECURITY_DESCRIPTOR;
     let mut DesiredAccess: ACCESS_MASK = 0;
     let mut RelativeSdSize: ULONG = 0;
     let mut ResultSdSize: ULONG = 0;
@@ -367,7 +367,7 @@ pub unsafe extern "system" fn LsarSetSecurityObject(
 ) -> NTSTATUS {
     let mut DbObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut DesiredAccess: ACCESS_MASK = 0;
-    let mut RelativeSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
+    let mut RelativeSd: PSECURITY_DESCRIPTOR;
     let mut RelativeSdSize: ULONG = 0;
     let mut TokenHandle: HANDLE = core::ptr::null_mut();
     let Mapping: PGENERIC_MAPPING;
@@ -566,7 +566,7 @@ pub unsafe extern "system" fn LsarQueryInformationPolicy(
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut DesiredAccess: ACCESS_MASK = 0;
+    let DesiredAccess: ACCESS_MASK;
     let Status: NTSTATUS;
 
     match InformationClass {
@@ -675,7 +675,7 @@ pub unsafe extern "system" fn LsarSetInformationPolicy(
     PolicyInformation: PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut DesiredAccess: ACCESS_MASK = 0;
+    let DesiredAccess: ACCESS_MASK;
     let mut Status: NTSTATUS;
 
     match InformationClass {
@@ -827,7 +827,7 @@ pub unsafe extern "C" fn LsarpCreateAccount(
     let mut SidString: LPWSTR = core::ptr::null_mut();
     let mut AccountSd: PSECURITY_DESCRIPTOR = core::ptr::null_mut();
     let mut AccountSdSize: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if ConvertSidToStringSid(AccountSid as PSID, &mut SidString) == 0 {
         ERR!("ConvertSidToStringSid failed\n");
@@ -893,7 +893,7 @@ pub unsafe extern "system" fn LsarCreateAccount(
 ) -> NTSTATUS {
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut AccountObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if RtlValidSid(AccountSid as PSID) == 0 {
         return STATUS_INVALID_PARAMETER;
@@ -929,7 +929,7 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
         Information: core::ptr::null_mut(),
     };
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut AccountKeyBuffer: PWSTR = core::ptr::null_mut();
+    let AccountKeyBuffer: PWSTR;
     let mut AccountsKeyHandle: HANDLE = core::ptr::null_mut();
     let mut AccountKeyHandle: HANDLE = core::ptr::null_mut();
     let mut SidKeyHandle: HANDLE = core::ptr::null_mut();
@@ -939,7 +939,7 @@ pub unsafe extern "system" fn LsarEnumerateAccounts(
     let mut RequiredLength: ULONG;
     let mut DataLength: ULONG;
     let mut i: ULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if EnumerationContext.is_null() || EnumerationBuffer.is_null() {
         return STATUS_INVALID_PARAMETER;
@@ -1432,7 +1432,7 @@ unsafe fn LsarpOpenAccount(
     AccountObject: *mut PLSA_DB_OBJECT,
 ) -> NTSTATUS {
     let mut SidString: LPWSTR = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let Status: NTSTATUS;
 
     if ConvertSidToStringSid(AccountSid as PSID, &mut SidString) == 0 {
         ERR!("ConvertSidToStringSid failed\n");
@@ -1502,7 +1502,7 @@ pub unsafe extern "system" fn LsarEnumeratePrivilegesAccount(
 ) -> NTSTATUS {
     let mut AccountObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut PrivilegeSetSize: ULONG = 0;
-    let mut PrivilegeSet: PLSAPR_PRIVILEGE_SET = core::ptr::null_mut();
+    let PrivilegeSet: PLSAPR_PRIVILEGE_SET;
     let mut Status: NTSTATUS;
 
     *Privileges = core::ptr::null_mut();
@@ -2050,7 +2050,7 @@ pub unsafe extern "system" fn LsarOpenSecret(
 ) -> NTSTATUS {
     let mut PolicyObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut SecretObject: PLSA_DB_OBJECT = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     Status = LsapValidateDbObject(
         PolicyHandle as PLSA_DB_OBJECT,
@@ -2180,8 +2180,8 @@ pub unsafe extern "system" fn LsarQuerySecret(
     let mut EncOldValue: PLSAPR_CR_CIPHER_VALUE = core::ptr::null_mut();
     let mut CurrentValue: PBYTE = core::ptr::null_mut();
     let mut OldValue: PBYTE = core::ptr::null_mut();
-    let mut CurrentValueLength: ULONG = 0;
-    let mut OldValueLength: ULONG = 0;
+    let mut CurrentValueLength: ULONG;
+    let mut OldValueLength: ULONG;
     let mut BufferSize: ULONG;
     let mut Status: NTSTATUS;
 
@@ -2478,13 +2478,13 @@ pub unsafe extern "system" fn LsarEnumerateAccountsWithUserRight(
     let mut AccountRight: ACCESS_MASK = 0;
     let mut Luid: PLUID = core::ptr::null_mut();
     let mut AccountKeyBufferSize: ULONG = 0;
-    let mut AccountKeyBuffer: PWSTR = core::ptr::null_mut();
+    let AccountKeyBuffer: PWSTR;
     let mut AccountsKeyHandle: HANDLE = core::ptr::null_mut();
     let mut AccountKeyHandle: HANDLE = core::ptr::null_mut();
     let mut AttributeKeyHandle: HANDLE = core::ptr::null_mut();
     let mut SystemAccess: ACCESS_MASK;
     let mut PrivilegeSet: PPRIVILEGE_SET;
-    let mut EnumBuffer: PLSAPR_ACCOUNT_INFORMATION = core::ptr::null_mut();
+    let EnumBuffer: PLSAPR_ACCOUNT_INFORMATION;
     let ReturnBuffer: PLSAPR_ACCOUNT_INFORMATION;
     let mut SubKeyCount: ULONG = 0;
     let mut EnumIndex: ULONG;
@@ -3365,8 +3365,8 @@ pub unsafe extern "system" fn LsarStorePrivateData(
     let mut SecretsObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut SecretObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut Time: LARGE_INTEGER = core::mem::zeroed();
-    let mut Value: PBYTE = core::ptr::null_mut();
-    let mut ValueLength: ULONG = 0;
+    let Value: PBYTE;
+    let ValueLength: ULONG;
     let mut Status: NTSTATUS;
 
     Status = LsapValidateDbObject(
@@ -3500,7 +3500,7 @@ pub unsafe extern "system" fn LsarRetrievePrivateData(
     let mut SecretObject: PLSA_DB_OBJECT = core::ptr::null_mut();
     let mut EncCurrentValue: PLSAPR_CR_CIPHER_VALUE = core::ptr::null_mut();
     let mut CurrentValueLength: ULONG = 0;
-    let mut CurrentValue: PBYTE = core::ptr::null_mut();
+    let CurrentValue: PBYTE;
     let mut Status: NTSTATUS;
 
     TRACE!(

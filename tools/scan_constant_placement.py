@@ -21,6 +21,8 @@ USAGE
 
 from __future__ import annotations
 
+import multiprocessing
+import os
 import re
 import sys
 from pathlib import Path
@@ -36,6 +38,16 @@ REPO = Path(__file__).resolve().parent.parent
 RUST_ROOT = REPO / "sdk" / "lib" / "rust"
 SKIP_PATH_RE = re.compile(r"(/target/|/\.responses/|/bindgen_|/types_[a-z0-9]+\.rs$)")
 NOLINT = "nolint: constant-placement"
+
+
+def _jobs() -> int:
+    raw = os.environ.get("VIBEOS_LINT_JOBS")
+    return max(1, int(raw) if raw else (os.cpu_count() or 1))
+
+
+def _audit_pair(pair) -> list[tuple[str, str]]:
+    fn, twin = pair
+    return [("/".join(f.ring), f.message()) for f in placement_findings(twin.body, fn.body)]
 
 
 def main() -> int:
@@ -64,21 +76,29 @@ def main() -> int:
     index = CIndex()
     index.load({fn.name for fn in funcs})
 
-    found = 0
+    pairs = []
     for fn in funcs:
         twins = prefer(fn.path, index.get(fn.name))
-        if not twins or affinity(fn.path, twins[0]) <= 0:
-            continue
-        for finding in placement_findings(twins[0].body, fn.body):
-            found += 1
-            rel = fn.path.relative_to(REPO) if fn.path.is_relative_to(REPO) else fn.path
-            ring = "/".join(finding.ring)
-            if lint:
-                print(f"{rel}:{fn.line}: constant-placement {fn.name} {ring}")
-            else:
-                c_rel = twins[0].path.relative_to(REPO)
-                print(f"{rel}:{fn.line}: {fn.name} (C: {c_rel}:{twins[0].line})")
-                print("    " + finding.message().replace("\n", "\n    "))
+        if twins and affinity(fn.path, twins[0]) > 0:
+            pairs.append((fn, twins[0]))
+
+    # ~28,600 twin pairs through seal_facts + placement_findings is 145s of pure
+    # Python on one core; the pairs are independent, so spread them over the host.
+    # imap keeps the output in pair order, so the report is byte-stable across runs.
+    found = 0
+    with multiprocessing.get_context("fork").Pool(_jobs()) as pool:
+        for (fn, twin), findings in zip(
+            pairs, pool.imap(_audit_pair, pairs, chunksize=64), strict=True
+        ):
+            for ring, message in findings:
+                found += 1
+                rel = fn.path.relative_to(REPO) if fn.path.is_relative_to(REPO) else fn.path
+                if lint:
+                    print(f"{rel}:{fn.line}: constant-placement {fn.name} {ring}")
+                else:
+                    c_rel = twin.path.relative_to(REPO)
+                    print(f"{rel}:{fn.line}: {fn.name} (C: {c_rel}:{twin.line})")
+                    print("    " + message.replace("\n", "\n    "))
     if not lint:
         print(f"\n{found} finding(s) over {len(funcs)} Rust function(s)")
     return 1 if found else 0

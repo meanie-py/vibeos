@@ -419,6 +419,9 @@ class ScanResult:
     # comments). This is what the `translate` pipeline feeds through the LLM
     # as a synthetic preamble unit so the stitched .rs actually compiles.
     preamble_text: str = ""
+    # Function definitions inside a MALFORMED preamble node (an ERROR, or an unbalanced `#if`
+    # spanning bodies): a parse defect, never a real file-scope construct.
+    preamble_swallowed_functions: int = 0
     # Function bodies the scanner SAW but could not extract — C++ methods
     # (out-of-line `Class::m` qualified declarators, in-class definitions,
     # ctors/dtors/operators). Entries are "name @ Lstart". A non-empty list
@@ -756,6 +759,19 @@ def _parse_function(node, source: bytes, source_text: str) -> CFunction | None:
                     return None  # operators stay unextracted (no C ABI shape)
             else:
                 name = qtext
+        elif (
+            child.type == "ERROR"
+            and name in CALLING_CONVENTIONS
+            and len(child.children) == 1
+            and child.children[0].type == "identifier"
+        ):
+            # tree-sitter's recovery from an unknown `WINAPI` lands either way round:
+            # `LPVOID WINAPI ReAlloc (...)` puts WINAPI in an ERROR before the declarator,
+            # but `LPVOID WINAPI Alloc (...)` makes WINAPI the declarator's name and puts
+            # `Alloc` in the ERROR after it -- comctl32's Alloc and Free were planned as two
+            # functions named `WINAPI`. The convention is never the name; the identifier is.
+            calling_convention = name
+            name = _extract_text(child.children[0], source)
         elif child.type == "destructor_name":
             is_dtor = True
             name = _extract_text(child, source).lstrip("~")
@@ -1547,6 +1563,93 @@ class _Root:
         self.children = children
 
 
+def _count_function_definitions(node) -> int:
+    """function_definition nodes at or below *node*."""
+    count, stack = 0, [node]
+    while stack:
+        cur = stack.pop()
+        if cur.type == "function_definition":
+            count += 1
+        stack.extend(cur.children)
+    return count
+
+
+# `#define A B` where both are identifiers, scoped by a later `#undef A` (or the end of
+# the file). imagelist.c is the case: ReactOS's "big bad image list hack" renames 19
+# ImageList_* to Internal_*, defines the internal bodies under the PUBLIC spelling, then
+# `#undef`s and defines the real exported wrappers. The preprocessor sees Internal_Add and
+# ImageList_Add; a raw-text scan saw ImageList_Add twice, so the Rust would have exported
+# the unchecked internal body under the public name, and c2rust's anchors could not match.
+_LOCAL_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$")
+_LOCAL_UNDEF = re.compile(r"^[ \t]*#[ \t]*undef[ \t]+([A-Za-z_]\w*)")
+_STRING_OR_WORD = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|[A-Za-z_]\w*')
+
+
+def _rename_windows(raw: str) -> list[tuple[str, str, int, int]]:
+    """``(name, target, first_line, last_line)``, 1-based, for each in-file identifier rename."""
+    lines = raw.split("\n")
+    open_: dict[str, tuple[str, int]] = {}
+    windows: list[tuple[str, str, int, int]] = []
+    # Only a rename every build sees counts: one under `#ifdef USE_RTL_BITMAP64` (bitmap.c,
+    # which bitmap64.c includes with it set) is not this file's spelling at all. So each
+    # enclosing conditional must be one this tree always takes -- `#ifdef __REACTOS__`.
+    stack: list[bool] = []
+    for no, line in enumerate(lines, 1):
+        if m := _PP_IF.match(line):
+            sym = m.group(2).strip()
+            stack.append(
+                (m.group(1) == "ifdef" and sym == "__REACTOS__")
+                or (m.group(1) == "if" and sym == "defined(__REACTOS__)")
+            )
+            continue
+        if re.match(r"^[ \t]*#[ \t]*(else|elif)\b", line) and stack:
+            stack[-1] = False
+            continue
+        if re.match(r"^[ \t]*#[ \t]*endif\b", line) and stack:
+            stack.pop()
+            continue
+        if not all(stack):
+            continue
+        if m := _LOCAL_DEFINE.match(line):
+            if m.group(1) != m.group(2):
+                open_[m.group(1)] = (m.group(2), no + 1)
+        elif (m := _LOCAL_UNDEF.match(line)) and m.group(1) in open_:
+            target, first = open_.pop(m.group(1))
+            windows.append((m.group(1), target, first, no - 1))
+    windows.extend((name, t, first, len(lines)) for name, (t, first) in open_.items())
+    return windows
+
+
+def _defines_inside_window(raw: str, result: "ScanResult") -> bool:
+    """Whether some scanned definition is spelled with a name renamed where it stands."""
+    return any(
+        f.name == name and first <= f.line_start <= last
+        for name, _t, first, last in _rename_windows(raw)
+        for f in result.functions
+    )
+
+
+def _apply_local_renames(raw: str) -> str:
+    """Respell each renamed identifier inside its window, as the preprocessor would.
+
+    String and character literals are left alone (a TRACE format naming the function is
+    text, not a token), and so are directive lines. Line count is preserved.
+    """
+    windows = _rename_windows(raw)
+    lines = raw.split("\n")
+    for no in range(1, len(lines) + 1):
+        line = lines[no - 1]
+        if line.lstrip().startswith("#"):
+            continue
+        active = {n: t for n, t, first, last in windows if first <= no <= last}
+        if not active:
+            continue
+        lines[no - 1] = _STRING_OR_WORD.sub(
+            lambda m, active=active: active.get(m.group(0), m.group(0)), line
+        )
+    return "\n".join(lines)
+
+
 def _merged_root(parser, source: bytes) -> _Root:
     """Top-level nodes of the SEH-masked parse, falling back to the raw parse where it fuses.
 
@@ -1588,9 +1691,65 @@ def _merged_root(parser, source: bytes) -> _Root:
     return _Root(out)
 
 
-def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
+def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = False) -> ScanResult:
     """Parse a C/C++ source file and extract structural information."""
+    result = _scan_file(path, force_cpp=force_cpp, _resolve_reactos=_resolve_reactos)
+    if _resolve_reactos or force_cpp or path.suffix.lower() != ".c":
+        return result
+    raw = path.read_text(errors="replace")
+    # A definition spelled with a name the file itself renames where it stands (see
+    # _rename_windows) is scanned again with the renames applied. Gated like the fallback
+    # below: a file with no such definition keeps its exact text.
+    renames = _defines_inside_window(raw, result)
+    if renames:
+        result = _scan_file(path, force_cpp=False, _resolve_reactos=False, _local_renames=True)
+    # Wine code splits a body's braces across `#ifdef __REACTOS__` arms (combo.c's
+    # WM_SYSKEYDOWN case opens a `{` in one arm and closes it in the other), which
+    # tree-sitter cannot parse: COMBO_WindowProc, TOOLBAR_DrawButton and six more comctl32
+    # functions vanished from the plan, and translate refused the TU. Every compile line in
+    # this tree carries -D__REACTOS__, so the arm is decided. It is resolved ONLY when the
+    # plain scan has lost a live definition -- the case translate already refuses -- so a
+    # file that scans completely, and every body banked from it, keeps its exact text.
+    # (Resolving it everywhere changed bodies in ~130 files, fastfat and user32 among them.)
+    if "__REACTOS__" not in raw:
+        return result
+    # The same split can leave every definition extracted and still be broken: listview.c
+    # splits a SIGNATURE across the arms (LISTVIEW_NextIconPosTop), tree-sitter wraps the rest
+    # of the file in one ERROR node, the walk still finds all 240 functions inside it -- and
+    # the preamble, which keeps every top-level node that is not a function, carried 272K
+    # characters of function bodies into every call's shared context. 160K-token prompts,
+    # over Haiku 5.5's 100K tier on every call: listview alone cost more than the other 16
+    # files of the run together. treeview.c's 108K preamble is the same shape.
+    if result.preamble_swallowed_functions:
+        retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
+        have = {f.name for f in result.functions}
+        if retry.preamble_swallowed_functions < result.preamble_swallowed_functions and have <= {
+            f.name for f in retry.functions
+        }:
+            return retry
+        return result
+    from .c_defs import c_functions
+    from .dead_regions import never_compiled_lines
+
+    if renames:
+        raw = _apply_local_renames(raw)
+    dead = never_compiled_lines(raw)
+    live = "\n".join("" if n in dead else ln for n, ln in enumerate(raw.splitlines(), 1))
+    have = {f.name for f in result.functions}
+    lost = c_functions(live) - have
+    if not lost:
+        return result
+    retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
+    again = {f.name for f in retry.functions}
+    return retry if len(lost - again) < len(lost) and have <= again else result
+
+
+def _scan_file(
+    path: Path, *, force_cpp: bool, _resolve_reactos: bool, _local_renames: bool = False
+) -> ScanResult:
     raw = _expand_split_includes(path, path.read_text(errors="replace"))
+    if _local_renames:
+        raw = _apply_local_renames(raw)
     # portcls.h defines PORTCLASSAPI solely as DECLSPEC_IMPORT/DECLSPEC_EXPORT.
     # It is a linkage annotation, not the following function's return type.
     # Keep NTAPI and the real return type intact; preserve line coordinates.
@@ -1614,25 +1773,31 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
     # case every identifier-bearing `#if` stays undecidable and the scan is byte-identical
     # to before -- so this cannot quietly change any module it does not apply to.
     build_defines = cmake_target_defines(path)
-    source_text = _normalize_callbacks(
-        _blank_memmodel(
-            _expand_extern_c(
-                _expand_composite_conventions(
-                    _strip_sal(
-                        _expand_csr_api(
-                            _expand_case_macros(
-                                _resolve_known_preproc(_strip_known_off_ifdefs(raw), build_defines)
+
+    def _prepare(defines: dict[str, str]) -> str:
+        return _normalize_callbacks(
+            _blank_memmodel(
+                _expand_extern_c(
+                    _expand_composite_conventions(
+                        _strip_sal(
+                            _expand_csr_api(
+                                _expand_case_macros(
+                                    _resolve_known_preproc(_strip_known_off_ifdefs(raw), defines)
+                                )
                             )
                         )
-                    )
-                ),
-                is_cpp,
+                    ),
+                    is_cpp,
+                )
             )
         )
-    )
-    source = source_text.encode("utf-8")
 
     parser = Parser(CPP_LANG if is_cpp else C_LANG)
+    if _resolve_reactos:
+        build_defines = {**build_defines, "__REACTOS__": "1"}
+    source_text = _prepare(build_defines)
+    source = source_text.encode("utf-8")
+
     # Parse a SEH-masked copy; every slice below still reads `source`, byte for byte.
     root = _merged_root(parser, source)
 
@@ -1758,6 +1923,8 @@ def scan_file(path: Path, *, force_cpp: bool = False) -> ScanResult:
                 # `extern "C" <single-decl>;` (no braces) — keep verbatim.
             if child.type in ("{", "}"):  # declaration_list braces when flattened
                 continue
+            if child.has_error:  # a balanced `#ifdef` around a whole function is not a defect
+                result.preamble_swallowed_functions += _count_function_definitions(child)
             preamble_parts.append(_extract_text(child, source))
 
     _collect_preamble(root.children)

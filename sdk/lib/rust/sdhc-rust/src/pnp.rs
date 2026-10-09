@@ -98,6 +98,9 @@ const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000_009Au32 as NTSTATUS;
 const STATUS_INVALID_DEVICE_REQUEST: NTSTATUS = 0xC000_0010u32 as NTSTATUS;
 const STATUS_DEVICE_CONFIGURATION_ERROR: NTSTATUS = 0xC000_0182u32 as NTSTATUS;
 const CM_RESOURCE_TYPE_MEMORY: u8 = 3;
+const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
+const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
+const CM_RESOURCE_SHARE_SHARED: u8 = 3; // CmResourceShareShared
 
 static FDO: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
 static LOWER: AtomicPtr<DEVICE_OBJECT> = AtomicPtr::new(null_mut());
@@ -252,6 +255,23 @@ unsafe fn start(io: PIO_STACK_LOCATION) -> NTSTATUS {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     sdprint!("host started, regs {:#x}+{:#x}\n", pa.QuadPart, len);
+    // Nothing may signal until a waiter arms it (irq.rs); the firmware can leave
+    // signals enabled with status latched.
+    crate::irq::quiet(regs);
+    match descs.iter().find(|d| d.Type == CM_RESOURCE_TYPE_INTERRUPT) {
+        Some(int) => {
+            let i = int.u.Interrupt;
+            crate::irq::connect(
+                regs,
+                i.Vector,
+                i.Level as u8,
+                i.Affinity as _,
+                int.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0,
+                int.ShareDisposition == CM_RESOURCE_SHARE_SHARED,
+            );
+        }
+        None => sdprint!("no interrupt resource: polling\n"),
+    }
 
     let mut host = Host::new(regs);
     let t0 = now_us();

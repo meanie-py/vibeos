@@ -108,7 +108,9 @@ extern "system" {
 const KDBG_TAG: ULONG = 0x4742444B;
 const KD_BREAKPOINT_MAX: usize = 32;
 
-const DBGKD_MAJOR_NT: u16 = 6;
+// DBGKD_MAJOR_TYPES starts at DBGKD_MAJOR_NT = 0; 6 is DBGKD_MAJOR_TNT, so the version block
+// told the debugger it was talking to a different OS.
+const DBGKD_MAJOR_NT: u16 = ntkrnl_sys::ddk::_DBGKD_MAJOR_TYPES_DBGKD_MAJOR_NT as u16;
 const DBGKD_VERS_FLAG_MP: u16 = 0x0001;
 
 const DbgKdMinimumStateChange: ULONG = 0x00003030;
@@ -116,7 +118,7 @@ const DbgKdMaximumStateChange: ULONG = 0x00003033;
 const DbgKdMinimumManipulate: ULONG = 0x00003130;
 const DbgKdMaximumManipulate: ULONG = 0x00003161;
 
-const LoaderBad: u32 = 2;
+const LoaderBad: u32 = 3; // header value; the hand copy said 2
 
 unsafe fn KdpGetMemorySizeInMBs(loader_block: PLOADER_PARAMETER_BLOCK) -> SIZE_T {
     let mut number_of_physical_pages: SIZE_T = 0;

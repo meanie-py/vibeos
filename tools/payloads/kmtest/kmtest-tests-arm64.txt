@@ -189,7 +189,13 @@ SeQueryInfoToken
 # (TerminateProcess can't reap it), driver keeps the result buffer registered, and every
 # subsequent test in the boot fails SET_RESULTBUFFER with 0x5. One wedge poisons the
 # whole rest of the run — must stay quarantined until the hang is triaged.
-#SeTokenFiltering
+# UN-QUARANTINED 2026-10-08: root-caused and fixed. SepPerformTokenFiltering's group-disable
+# loop did `continue` without advancing after disabling a matched group, so it re-matched the
+# same group forever at PASSIVE_LEVEL -- the in-kernel wedge above. The C has the same bug
+# (`GroupsInToken--`, copied from the privilege loop where the entry IS removed) but never
+# hangs, because its RtlEqualSid compares `&...Sid`, the pointers' addresses, and so never
+# matches. se-rust tokenlif.rs now advances. 11/0 on all three arches.
+SeTokenFiltering
 # QUARANTINED 2026-07-17 (VALIDATED + LOCALIZED — was UNVALIDATED "may pass"): re-tested with
 # MmSection quarantined; does NOT pass — BUGCHECK 0x4E (PFN_LIST_CORRUPT), poisons the rest of
 # the run. GDB-triaged: params 0x4E (0xAD, 0x40006, 0x0, 0x4259b). Subcode 0xAD is raised in
@@ -275,6 +281,11 @@ RtlAvlTree
 # now isolated and baselined rather than hidden behind a quarantine — which is the
 # whole point of enabling this test. NOTE amd64 does NOT get here: it still dies
 # NO-END exit=128 in usermode exception DISPATCH, a separate amd64-only bug.
+# FIXED 2026-10-08: 34/0. It was not the guard page. MiCheckForUserStackOverflow already
+# returned STATUS_STACK_OVERFLOW, and the arm64 data-abort handler (ke/arm64/trap.rs) raised
+# ACCESS_VIOLATION for EVERY failed MmAccessFault. It now raises GUARD_PAGE_VIOLATION and
+# STACK_OVERFLOW as themselves, like the x86 handlers. (amd64's dispatch death was frame
+# bloat in rtl-except; also fixed, also 34/0.)
 RtlException
 RtlIntSafe
 RtlMemory

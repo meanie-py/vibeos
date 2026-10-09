@@ -23,9 +23,9 @@ pub unsafe extern "C" fn RustBridge_CResourceList_NumberOfEntriesOfType(
     context: *mut RustBridge_CResourceList_Context,
     Type: CM_RESOURCE_TYPE,
 ) -> u32 {
-    let mut Index: u32 = 0;
+    let mut Index: u32;
     let mut Count: u32 = 0;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
+    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
     PC_ASSERT_IRQL_EQUAL!(PASSIVE_LEVEL);
 
@@ -57,9 +57,9 @@ pub unsafe extern "C" fn RustBridge_CResourceList_FindTranslatedEntry(
     Type: CM_RESOURCE_TYPE,
     Index: u32,
 ) -> PCM_PARTIAL_RESOURCE_DESCRIPTOR {
-    let mut DescIndex: u32 = 0;
+    let mut DescIndex: u32;
     let mut Count: u32 = 0;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
+    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
     PC_ASSERT_IRQL_EQUAL!(PASSIVE_LEVEL);
 
@@ -97,7 +97,7 @@ pub unsafe extern "C" fn RustBridge_CResourceList_FindUntranslatedEntry(
 ) -> PCM_PARTIAL_RESOURCE_DESCRIPTOR {
     let mut DescIndex: u32;
     let mut Count: u32 = 0;
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
+    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
     PC_ASSERT_IRQL_EQUAL!(PASSIVE_LEVEL);
 
@@ -138,7 +138,7 @@ pub unsafe extern "C" fn RustBridge_CResourceList_AddEntry(
     Translated: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Untranslated: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
 ) -> NTSTATUS {
-    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR = core::ptr::null_mut();
+    let mut PartialDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
     PC_ASSERT_IRQL_EQUAL!(PASSIVE_LEVEL);
 
@@ -196,10 +196,8 @@ pub unsafe extern "C" fn RustBridge_CResourceList_AddEntryFromParent(
     Type: CM_RESOURCE_TYPE,
     Index: ULONG,
 ) -> NTSTATUS {
-    let mut Translated: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
-        core::ptr::null_mut::<CM_PARTIAL_RESOURCE_DESCRIPTOR>();
-    let mut Untranslated: PCM_PARTIAL_RESOURCE_DESCRIPTOR =
-        core::ptr::null_mut::<CM_PARTIAL_RESOURCE_DESCRIPTOR>();
+    let Translated: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    let Untranslated: PCM_PARTIAL_RESOURCE_DESCRIPTOR;
 
     PC_ASSERT_IRQL_EQUAL!(PASSIVE_LEVEL);
 

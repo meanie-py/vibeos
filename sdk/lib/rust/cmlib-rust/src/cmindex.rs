@@ -472,6 +472,8 @@ pub unsafe extern "system" fn CmpDoFindSubKeyByNumber(
             /* Check if this isn't the first iteration */
             if i != 0 {
                 /* Make sure we had something valid, and release it */
+                ntkrnl_sys::ASSERT!(!Leaf.is_null());
+                ntkrnl_sys::ASSERT!(LeafCell == index_list_get(Index, i - 1));
                 HvReleaseCell(Hive, LeafCell);
             }
 
@@ -1155,8 +1157,8 @@ pub unsafe extern "system" fn CmpFindSubKeyByNumber(
     Node: *mut CM_KEY_NODE,
     Number: u32,
 ) -> u32 {
-    let mut Index: *mut CM_KEY_INDEX = core::ptr::null_mut();
-    let mut Result: u32 = HCELL_NIL;
+    let Index: *mut CM_KEY_INDEX;
+    let Result: u32;
 
     // Check if it's in the stable list
     if Number < (*Node).SubKeyCounts[Stable as usize] {

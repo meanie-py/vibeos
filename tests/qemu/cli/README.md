@@ -89,9 +89,12 @@ provenance stamp.
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
   reason.)
-- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion).
-  Source lints are opt-in (`--check`); `--no-check` remains a compatibility alias
-  for the default. Strict source verification runs through `check --strict` / `gate`.
+- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion, flex-array
+  panics, export thunks). Source lints are opt-in (`--check`); `--no-check` skips
+  the binary lints as well — it is what `gate` passes, because the gate runs them
+  as its own `lint:<arch>` lane over the same objects (for months the flag was
+  parsed and ignored, and every gate build paid 3-4 minutes of scanners twice).
+  Strict source verification runs through `check --strict` / `gate`.
 - Build failures are **classified**: `CMAKE_CONFIGURE_FAIL` /
   `CARGO_CHECK_FAIL` / `LINK_FAIL` (with i386 PE-decoration hints on undefined
   symbols — `_Foo@N` = stdcall, `@Foo@N` = fastcall, `_Foo` = cdecl) /
@@ -144,6 +147,20 @@ all included), then auto-triage on failure.
   pci.sys turned MSI-X off at REMOVE, and the PnP manager gave every message vector back
   to the HAL (`[PNP] message interrupts: N back to the HAL, 0 refused`). Nothing else in a
   boot removes a device.
+
+- **`--cpu <model>`, `--headless`, `--boot-nvme`** (arm64) shape the machine like a
+  Graviton instance: a Neoverse core (`neoverse-n1`/`-v1`/`-n2`, `VIBEOS_QEMU_CPU`),
+  no display device so UEFI hands over no GOP (`VIBEOS_QEMU_HEADLESS=1`; FAILS
+  `NOT_HEADLESS` unless arm64vid ran on its in-memory frame), and the boot image on an
+  NVMe namespace as EC2's root volume is (`VIBEOS_QEMU_BOOT_NVME=1`; FAILS
+  `NVME_BOOT_DISK_NOT_SEEN` unless nvme.sys published it). More vCPUs than host CPUs
+  stretch the silence watchdog to 15 minutes: UEFI goes quiet that long under TCG.
+
+- **`--smmu --tripwire SMMU=TRANSLATE`** (arm64) drives the SMMUv3 for real instead of
+  bypassing it, and FAILS unless it translated (`SMMU_NOT_TRANSLATING`), every started
+  device's stream was attached (`SMMU_NOT_ATTACHED`), and nothing faulted
+  (`SMMU_FAULT`). Add `NVME_BAD_DMA=<hex>` and nvme.sys aims one Identify there: the
+  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it.
 
 - **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
   mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
@@ -321,6 +338,33 @@ failure (a lost boot says nothing about an assertion it never reached). Dirty-tr
 are listed separately and never graded, because their commit does not name the code. The
 evidence pointer says so when it pointed into `/tmp` and is gone.
 
+### `stress --arch A [--profile LIST] [--repeat N] [--shift S] [--smp N] [--cores C] [--timeout-scale F]`
+**Reproduce "host load" as named mechanisms** — not a gate stage. "It only fails
+under load" bundles three different things, and a loaded host is a bad instrument
+because it changes all three at once. `stress` boots the same media through a matrix
+of one-knob profiles and prints the failure rate per profile; the matrix is the
+diagnosis:
+
+| profile | knob | a failure here is |
+|---|---|---|
+| `baseline` | none | a bug (or stale media), not load |
+| `slow-cpu` | `-icount shift=N,sleep=off` (`VIBEOS_QEMU_ICOUNT_SHIFT`): guest clock advances 2^N ns per instruction whatever the host does | a guest-side timeout: the guest sees ~20 min pass during a 40 s boot |
+| `lockstep` | `-smp 2` + single-threaded TCG (`VIBEOS_TCG_THREAD=single`) | a cross-CPU race, now with a stable interleaving to debug under |
+| `starved-smp` | `-smp 2` MTTCG, QEMU pinned to one host core | the "host load" race: the scheduler preempts a vCPU mid-critical-section |
+| `tight-clock` | harness budgets ×0.5 (`VIBEOS_BOOT_TIMEOUT_SCALE`) | a healthy boot crossing the wall clock — fix the budget, not the OS |
+
+A profile that could not be applied (nothing pinned, UP kernel on an SMP profile)
+is reported `NOT_APPLIED`, never green. Rows land in `<run>/rows.jsonl` with the
+same evidence fields as `farm`; failures keep their artifacts. The three env knobs
+work on their own too (`VIBEOS_QEMU_ICOUNT_SHIFT=7 ./vibeos-cli smoke --arch amd64`)
+and `slow-cpu`'s icount is what `rr record` needs, so a flake caught under it can be
+replayed under GDB. Exit 1 when any cell failed. Its first run (2026-10-09, amd64,
+one boot per profile) already named one: `slow-cpu` turned the `[SEH-USER]` boot
+self-test red with `child exit=0x103` — sehtest waits 60,000 guest-ms for its child
+(`WaitForSingleObject(pi.hProcess, 60000)`), and under `shift=7` that budget is gone
+before the child finishes; the other four profiles, including a 534 s boot pinned to
+one core, were green.
+
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
 The source-scanner suite runs **once in two disjoint partitions**. Five audited
@@ -354,6 +398,16 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   retrying a regression away is exactly what the North Star forbids. (The old
   blanket HANG_TIMEOUT retry dated from the native-KVM contention era and let a
   ~50% service wedge pass a 3-attempt gate ~87% of the time.)
+- **The build broker puts the landing gate first too.** Compiler and linker
+  processes are admitted by `tools/host-jobs` (18 CPU slots on a 24-vCPU box, link
+  cap 4). A conductor's gate (`VIBEOS_JOB_CLASS=integration`) ranks ahead of a
+  lane's own `build` (`interactive`), and while any gate job is present the top half
+  of the slots are gate-only (`VIBEOS_HOST_JOB_LAND_RESERVE`, default slots/2, 0
+  disables it, and it never takes a lane's last slot);
+  every class still ages to top rank after 120 s, so a lane is delayed by a gate,
+  never starved. Before 2026-10-09 the order was the reverse, and a gate that took
+  530 s on a quiet host took 1500-2100 s whenever 15-20 lane builds overlapped it —
+  which the whole queue then paid per landing (submit-to-verdict median 39 min).
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
@@ -634,6 +688,22 @@ exit mechanics) and aggregates one verdict + `summary.json`. Covers:
 x86 only — arm64 has no livecd for the swap (skips cleanly); ntoskrnl skips on
 amd64 (i386-only PoC). Slow (boots QEMU per module) — run it before trusting a
 cargo-drive handoff, not in the hot loop.
+
+### `install-smoke --arch amd64-bios`
+**Setup, end to end.** Builds `bootcdregtest.iso`, installs it unattended onto a blank 4 GB
+disk (usetup partitions, formats, copies, writes the hives and FreeLdr, reboots), then boots
+that disk with no CD through the GUI second stage to Explorer. Nothing else runs the installer:
+every other boot starts from the livecd. Drives `tests/qemu/test_install.py`; one verdict +
+`summary.json`. A missing txtsetup.sif boot driver fails before booting; a bugcheck in either
+stage fails within seconds, with the loader's debugcon tail and the serial attached. About an
+hour under TCG, so it is its own verb and not a gate stage.
+
+Iterating on the installed system (GUI setup, userenv, winlogon, ...) without replaying text
+setup: every run leaves the disk exactly as setup left it at `<basetemp>/install0/
+install.qcow2` (copy it before the next run). `VIBEOS_INSTALL_STAGE1_DISK=<that copy>` starts
+stage 2 from it, and `VIBEOS_INSTALL_REFRESH=syssetup.dll,winlogon.exe` first copies this
+build's outputs for those names over every installed copy (CD files and reactos.cab files
+alike), the kernel and drivers included. Only a change to text setup itself needs a full run.
 
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
@@ -1027,6 +1097,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | Watch a specific boot marker fast | `vibeos-cli boot` |
 | Lint gate (NEW-vs-baseline) + binary checks | `vibeos-cli check [--strict]` |
 | Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
+| Prove the bootcd still installs and the installed disk boots | `vibeos-cli install-smoke --arch amd64-bios` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |
 | What's live across worktrees | `vibeos-cli ps` (== `qemu/ps`) |

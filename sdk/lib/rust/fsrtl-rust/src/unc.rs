@@ -113,7 +113,7 @@ unsafe fn FsRtlpIsDfsEnabled() -> BOOLEAN {
     status = ZwQueryValueKey(
         key,
         &mut key_name,
-        1,
+        ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
         &mut key_query_output as *mut KeyQueryBuffer as PVOID,
         core::mem::size_of::<KeyQueryBuffer>() as ULONG,
         &mut length,

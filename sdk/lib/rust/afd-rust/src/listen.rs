@@ -111,7 +111,7 @@ unsafe fn listen_complete_impl(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FCB = Context as PAFD_FCB;
     // Listen-path breadcrumb (see AfdListenSocket).
     DbgPrint(b"[AFD] ListenComplete FCB=%p status=0x%x\n\0".as_ptr() as PCHAR,
@@ -179,7 +179,6 @@ unsafe fn listen_complete_impl(
     ) as PAFD_TDI_OBJECT_QELT;
 
     if Qelt.is_null() {
-        Status = STATUS_NO_MEMORY;
     } else {
         let AddressType = (*(*FCB).LocalAddress).Address[0].AddressType;
 
@@ -264,7 +263,7 @@ pub unsafe extern "C" fn AfdListenSocket(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let ListenReq: PAFD_LISTEN_DATA;
@@ -403,7 +402,7 @@ pub unsafe extern "C" fn AfdAccept(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let DeviceExt: PAFD_DEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;

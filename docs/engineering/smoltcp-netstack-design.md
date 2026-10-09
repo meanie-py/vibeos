@@ -535,6 +535,11 @@ promised is now built and integrated:
   `NdisXxx` externs unresolved, as expected — they resolve at the `netstack.sys` link once an ndis
   import lib is wired).
 
+**Coverage now exists (2026-10-09):** `./vibeos-cli smoke --arch <a> --payload ndisprobe`
+drives ndis.sys through QEMU's e1000 82544GC (a model netstack does not claim) and ndisuio:
+bind, OID query/set, send, receive. It passes on all three arches, so a protocol-side
+bring-up can tell an NDIS fault from its own.
+
 **Remaining sub-task (the multi-week part):** get ndis.sys + one miniport (e1000/rtl8139/netkvm) onto
 the QEMU boot path, add the ndis import lib to the `netstack-cargo` link, flip `feature = "ndis"` on,
 and debug the live binding. That is its own lane with its own bring-up bugs (design unchanged below).

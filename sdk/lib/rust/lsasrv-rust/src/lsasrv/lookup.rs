@@ -728,7 +728,7 @@ unsafe fn LsapSplitNames(
     DomainNames: *mut PRPC_UNICODE_STRING,
     AccountNames: *mut PRPC_UNICODE_STRING,
 ) -> NTSTATUS {
-    let mut DomainsBuffer: PRPC_UNICODE_STRING = core::ptr::null_mut();
+    let DomainsBuffer: PRPC_UNICODE_STRING;
     let mut AccountsBuffer: PRPC_UNICODE_STRING = core::ptr::null_mut();
     let mut DomainLength: u32;
     let mut AccountLength: u32;
@@ -888,7 +888,7 @@ unsafe fn LsapAddAuthorityToDomainsList(
     Index: PULONG,
 ) -> NTSTATUS {
     let mut AuthoritySid: SID = core::mem::zeroed();
-    let mut i: ULONG = 0;
+    let mut i: ULONG;
 
     RtlInitializeSid(
         core::ptr::addr_of_mut!(AuthoritySid) as PSID,
@@ -1078,9 +1078,9 @@ unsafe fn LsapLookupIsolatedNames(
         MaximumLength: core::mem::size_of::<[u16; 1]>() as u16,
         Buffer: w!("").as_ptr() as *const u16 as *mut u16,
     };
-    let mut ptr: *mut _WELL_KNOWN_SID = core::ptr::null_mut();
-    let mut ptr2: *mut _WELL_KNOWN_SID = core::ptr::null_mut();
-    let mut DomainSid: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut ptr: *mut _WELL_KNOWN_SID;
+    let mut ptr2: *mut _WELL_KNOWN_SID;
+    let mut DomainSid: *mut core::ffi::c_void;
     let mut DomainIndex: u32 = 0;
     let mut i: u32 = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
@@ -1157,7 +1157,6 @@ unsafe fn LsapLookupIsolatedNames(
                     );
                     if !DomainSid.is_null() {
                         MIDL_user_free(DomainSid);
-                        DomainSid = core::ptr::null_mut();
                     }
                     if !NT_SUCCESS(Status) {
                         break;
@@ -1253,7 +1252,7 @@ unsafe fn LsapLookupIsolatedBuiltinNames(
         Element: core::ptr::null_mut(),
     };
     let mut DomainIndex: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     Status = SamrConnect(
         core::ptr::null_mut(),
@@ -1354,7 +1353,7 @@ unsafe fn LsapLookupIsolatedAccountNames(
     let mut Use: _SAMPR_ULONG_ARRAY = _SAMPR_ULONG_ARRAY { Count: 0, Element: core::ptr::null_mut() };
     let mut DomainIndex: u32 = 0;
     let _i: u32;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if (*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE as i32) != 0 {
         ros_dbg_log(
@@ -1579,7 +1578,7 @@ unsafe fn LsapLookupBuiltinNames(
         Element: core::ptr::null_mut(),
     };
     let mut DomainIndex: u32 = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let _result = 'main: {
         Status = SamrConnect(
             core::ptr::null_mut::<u16>(),
@@ -1863,13 +1862,13 @@ pub unsafe extern "C" fn LsapLookupNames(
     _ClientRevision: u32,
 ) -> i32 {
     let mut DomainsBuffer: *mut _LSAPR_REFERENCED_DOMAIN_LIST = core::ptr::null_mut();
-    let mut SidsBuffer: *mut _LSAPR_TRANSLATED_SID_EX2 = core::ptr::null_mut();
+    let SidsBuffer: *mut _LSAPR_TRANSLATED_SID_EX2;
     let mut DomainNames: *mut _RPC_UNICODE_STRING = core::ptr::null_mut();
     let mut AccountNames: *mut _RPC_UNICODE_STRING = core::ptr::null_mut();
     let SidsBufferLength: usize;
     let mut i: u32;
     let mut Mapped: u32 = 0u32;
-    let mut Status: i32 = STATUS_SUCCESS;
+    let mut Status: i32;
 
     (*TranslatedSids).Entries = 0u32;
     (*TranslatedSids).Sids = core::ptr::null_mut();
@@ -2202,7 +2201,7 @@ unsafe fn LsapLookupBuiltinDomainSids(
     let mut SidString: LPWSTR = core::ptr::null_mut();
     let mut DomainIndex: ULONG = 0;
     let mut RelativeIds: [ULONG; 1] = [0; 1];
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     'done_block: {
         Status = SamrConnect(
@@ -2376,7 +2375,7 @@ unsafe fn LsapLookupAccountDomainSids(
     let mut SidString: LPWSTR = core::ptr::null_mut();
     let mut DomainIndex: ULONG = 0;
     let mut RelativeIds: [ULONG; 1] = [0; 1];
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     Status = SamrConnect(
         core::ptr::null_mut(),
@@ -2517,9 +2516,9 @@ pub unsafe extern "C" fn LsapLookupSids(
     _ClientRevision: DWORD,
 ) -> NTSTATUS {
     let mut DomainsBuffer: PLSAPR_REFERENCED_DOMAIN_LIST = core::ptr::null_mut();
-    let mut NamesBuffer: PLSAPR_TRANSLATED_NAME_EX = core::ptr::null_mut();
+    let NamesBuffer: PLSAPR_TRANSLATED_NAME_EX;
     let mut Mapped: ULONG = 0;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     'done: {
     let names_buffer_len = ((*SidEnumBuffer).Entries as usize)

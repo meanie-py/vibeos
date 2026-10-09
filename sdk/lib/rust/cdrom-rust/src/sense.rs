@@ -428,7 +428,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     // Post media change workitem queue
     if mediaChange != 0 && *Status != (0x8000001Cu32 as i32) /* STATUS_MEDIA_CHANGED */ {
         if (*DeviceExtension).DeviceAdditionalData.RestoreDefaults != 0 {
-            let mut status: NTSTATUS = STATUS_SUCCESS;
+            let mut status: NTSTATUS;
             let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
             let mut workitemConfig: WDF_WORKITEM_CONFIG = core::mem::zeroed();
             let mut workItem: WDFWORKITEM = core::mem::zeroed();
@@ -566,7 +566,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 b"SenseInfoInterpretByAdditionalSenseCode: Lun not ready\n\0".as_ptr() as *const i8,
             );
 
-            let mut need = 1; // TRUE
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_OPERATION_IN_PROGRESS => {
                     let mut not_ready: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
@@ -715,7 +715,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0 // FALSE
         }
         SCSI_ADSENSE_INVALID_MEDIA => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_UNKNOWN_FORMAT => {
                     need = 0;
@@ -748,7 +748,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_NO_SEEK_COMPLETE => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 0x00 => {
                     need = 0;
@@ -766,7 +766,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_LUN_COMMUNICATION => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SESNEQ_COMM_CRC_ERROR => {
                     need = 0;
@@ -915,7 +915,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0
         }
         SCSI_ADSENSE_OPERATOR_REQUEST => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_MEDIUM_REMOVAL => {
                     need = 0;
@@ -1011,7 +1011,6 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 [0u8; core::mem::size_of::<u32>() + core::mem::size_of::<u8>()];
 
             (wmi_event_data.as_mut_ptr() as *mut u32).write_unaligned(core::mem::size_of::<u8>() as u32);
-            wmi_event_data[core::mem::size_of::<u32>()] = additional_sense_code_qual;
 
             *status = STATUS_SUCCESS as i32;
             *retry = 0;
@@ -1032,7 +1031,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0
         }
         0x57 => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 0x00 => {
                     need = 0;
@@ -1359,7 +1358,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
     LogContext: *mut ERROR_LOG_CONTEXT,
 ) {
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut totalSize: u32 = 0;
+    let mut totalSize: u32;
     let mut senseBufferSize: u32 = 0;
     let mut staticErrLogEntry: IO_ERROR_LOG_PACKET = core::mem::zeroed();
     let mut staticErrLogData: CDROM_ERROR_LOG_DATA = core::mem::zeroed();
@@ -1779,7 +1778,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
     let mut retryIntervalInSeconds: u32 = 0;
     let mut retry: u8 = 1; // TRUE
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut readSector: u32 = 0;
+    let mut readSector: u32;
     let mut logContext: ERROR_LOG_CONTEXT = core::mem::zeroed();
 
     let mut majorFunctionCode: u8 = 0;
@@ -2117,7 +2116,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
 ) -> i32 {
     let mut retry: i32 = 0;
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut readSector: u32 = 0;
+    let mut readSector: u32;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     *Status = STATUS_IO_DEVICE_ERROR;
@@ -2132,8 +2131,8 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
                 + core::mem::size_of::<u8>()) as u32
     {
         let senseKey: u8 = ((*senseBuffer).SenseKey() & 0x0f) as u8;
-        let mut additionalSenseCode: u8 = 0;
-        let mut additionalSenseCodeQual: u8 = 0;
+        let mut additionalSenseCode: u8;
+        let mut additionalSenseCodeQual: u8;
 
         readSector = (*senseBuffer).AdditionalSenseLength as u32
             + core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength) as u32;

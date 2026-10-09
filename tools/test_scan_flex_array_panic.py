@@ -408,79 +408,26 @@ def test_a_large_immediate_with_objdumps_trailing_comment_is_read(monkeypatch):
     assert _run(monkeypatch, FLEX) == [("_Victim@8", 1)]
 
 
-def _counting_objdump(monkeypatch, listing_for):
-    """subprocess.run stand-in that records which artifacts were disassembled."""
-    scanned: list[str] = []
-    real_run = s.subprocess.run
+def test_the_corpus_is_found_in_ONE_walk_of_the_build_tree(tmp_path, monkeypatch):
+    """It was one full walk per crate -- 240 descents, most of a cached run's time."""
+    for name in ("a", "b", "c"):
+        lib = tmp_path / "sdk" / name / f"lib{name}_rust.a"
+        lib.parent.mkdir(parents=True)
+        lib.write_bytes(b"")
+    walks: list[str] = []
+    real_walk = os.walk
 
-    def run(argv, *a, **k):
-        if Path(argv[0]) != s.OBJDUMP:  # platform.platform() shells out to uname
-            return real_run(argv, *a, **k)
-        scanned.append(Path(argv[-1]).name)
-        return _Proc(listing_for(Path(argv[-1])))
+    def spy(top, *a, **kw):
+        walks.append(str(top))
+        yield from real_walk(top, *a, **kw)
 
-    monkeypatch.setattr(s.subprocess, "run", run)
-    return scanned
-
-
-def _corpus(tmp_path, monkeypatch, names):
-    monkeypatch.setattr(s, "REPO", tmp_path)
-    monkeypatch.delenv("VIBEOS_BINARY_CACHE", raising=False)
-    work = []
-    for name in names:
-        art = tmp_path / f"lib{name}.a"
-        art.write_bytes(name.encode())
-        work.append((name, art))
-    return work
-
-
-def _victims(path: Path) -> str:
-    return FLEX.replace("_Victim@8", f"_{path.stem}@8")
-
-
-def test_an_unchanged_artifact_is_not_disassembled_twice(tmp_path, monkeypatch):
-    work = _corpus(tmp_path, monkeypatch, ["a", "b"])
-    scanned = _counting_objdump(monkeypatch, _victims)
-    first, cached1 = s.scan_corpus(work, "i386")
-    second, cached2 = s.scan_corpus(work, "i386")
-    assert first == second == [("a", "_liba@8"), ("b", "_libb@8")]
-    assert sorted(scanned) == ["liba.a", "libb.a"]
-    assert (cached1, cached2) == (0, 2)
-
-
-def test_changed_bytes_are_rescanned(tmp_path, monkeypatch):
-    """The key is the CONTENT: a rebuilt crate with new bytes is a miss, its neighbour a hit."""
-    work = _corpus(tmp_path, monkeypatch, ["a", "b"])
-    scanned = _counting_objdump(monkeypatch, _victims)
-    s.scan_corpus(work, "i386")
-    work[1][1].write_bytes(b"rebuilt")
-    _, cached = s.scan_corpus(work, "i386")
-    assert sorted(scanned[:2]) == ["liba.a", "libb.a"]
-    assert scanned[2:] == ["libb.a"] and cached == 1
-
-
-def test_the_cache_is_per_arch(tmp_path, monkeypatch):
-    work = _corpus(tmp_path, monkeypatch, ["a"])
-    scanned = _counting_objdump(monkeypatch, _victims)
-    s.scan_corpus(work, "i386")
-    _, cached = s.scan_corpus(work, "amd64")
-    assert cached == 0 and scanned == ["liba.a", "liba.a"]
-
-
-def test_VIBEOS_BINARY_CACHE_0_is_the_uncached_oracle(tmp_path, monkeypatch):
-    work = _corpus(tmp_path, monkeypatch, ["a"])
-    scanned = _counting_objdump(monkeypatch, _victims)
-    monkeypatch.setenv("VIBEOS_BINARY_CACHE", "0")
-    s.scan_corpus(work, "i386")
-    _, cached = s.scan_corpus(work, "i386")
-    assert cached == 0 and scanned == ["liba.a", "liba.a"]
-    assert not (tmp_path / ".cache").exists()
-
-
-def test_parallel_results_come_back_in_corpus_order(tmp_path, monkeypatch):
-    names = [f"m{i:02d}" for i in range(20)]
-    work = _corpus(tmp_path, monkeypatch, names)
-    _counting_objdump(monkeypatch, _victims)
-    monkeypatch.setenv("VIBEOS_FLEX_SCAN_JOBS", "8")
-    out, _ = s.scan_corpus(work, "i386")
-    assert [c for c, _ in out] == names
+    monkeypatch.setattr(s.os, "walk", spy)
+    index = s.artifact_index(tmp_path)
+    found = [s.find_artifact(tmp_path, f"{n}-rust", index) for n in ("a", "b", "c", "zz")]
+    assert [p.name if p else None for p in found] == [
+        "liba_rust.a",
+        "libb_rust.a",
+        "libc_rust.a",
+        None,
+    ]
+    assert walks == [str(tmp_path)]

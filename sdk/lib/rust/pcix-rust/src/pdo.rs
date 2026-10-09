@@ -265,7 +265,7 @@ pub unsafe extern "system" fn PciPdoIrpStartDevice(
 
     let mut Status: NTSTATUS;
     let Changed: BOOLEAN;
-    let mut DoReset: BOOLEAN = 0u8;
+    let mut DoReset: BOOLEAN;
 
     DoReset = 0u8;
     Status = PciBeginStateTransition(

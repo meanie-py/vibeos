@@ -763,7 +763,7 @@ pub unsafe extern "system" fn USBPORT_RootHubCreateDevice(
 ) -> NTSTATUS {
 
     const USB_PORT_TAG: u32 = 0x70627375; // 'Uptp'
-    const UsbFullSpeed: u32 = 0;
+    const UsbFullSpeed: u32 = 1; // header value; the hand copy said 0
     const DEVICE_HANDLE_FLAG_ROOTHUB: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x10; verified vs usbport.h/usbmport.h
     const USB_DEVICE_DESCRIPTOR_TYPE: u8 = 0x01;
     const USB_CONFIGURATION_DESCRIPTOR_TYPE: u8 = 0x02;

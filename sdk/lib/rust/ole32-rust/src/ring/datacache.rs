@@ -1161,7 +1161,7 @@ unsafe fn save_mfpict(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut I
 
 unsafe fn save_emf(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut IStream) -> HRESULT {
     let mut hr: HRESULT = S_OK;
-    let mut data_size: c_int = 0;
+    let mut data_size: c_int;
     let data: *mut BYTE;
 
     if contents == 0 {
@@ -3041,7 +3041,7 @@ unsafe fn DataCache_UpdateCache(
         CF_DIB as CLIPFORMAT,
         CF_BITMAP as CLIPFORMAT,
     ];
-    let mut fmt: FORMATETC = core::mem::zeroed();
+    let mut fmt: FORMATETC;
     let mut slots: c_int = 0;
     let mut done_one: BOOL = 0;
 

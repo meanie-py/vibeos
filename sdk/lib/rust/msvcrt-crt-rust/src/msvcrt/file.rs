@@ -2491,7 +2491,7 @@ pub unsafe extern "C" fn _wsopen_dispatch(
     secure: i32,
 ) -> i32 {
     let mut access = 0;
-    let mut creation = 0;
+    let mut creation: DWORD;
     let attrib: DWORD;
     let mut sa: SECURITY_ATTRIBUTES = core::mem::zeroed();
     let mut sharing: DWORD;
@@ -4004,7 +4004,7 @@ pub unsafe extern "C" fn _flsbuf(c: i32, file: *mut FILE) -> i32 {
     }
 
     if (*file)._flag & ((_IOMYBUF | MSVCRT__USERBUF)) as i32 != 0 {
-        let mut res = 0;
+        let mut res;
 
         if (*file)._cnt <= 0 {
             res = msvcrt_flush_buffer(file);

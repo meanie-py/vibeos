@@ -29,6 +29,10 @@ def _arguments(text: str, token: str) -> list[list[str]]:
         # Turbofish commas need the Rust parser, not a guessed angle-bracket balance.
         if "::<" in interior:
             continue
+        # A `#if` arm inside a C argument list makes the positions depend on which arm
+        # compiles (comctl32's TOOLTIPS_Show); call_seal's arity check skips these too.
+        if re.search(r"(?m)^[ \t]*#[ \t]*(?:if|ifdef|ifndef|elif|else|endif)\b", interior):
+            continue
         args, start, depth = [], 0, 0
         for i, char in enumerate(interior):
             if char in "([{":

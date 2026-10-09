@@ -506,14 +506,14 @@ pub unsafe extern "C" fn LsapGetLogonSessionData(RequestMsg: PLSA_API_MSG) -> NT
         SecurityQualityOfService: core::ptr::null_mut::<core::ffi::c_void>(),
     };
     let mut ProcessHandle: HANDLE = core::ptr::null_mut();
-    let mut Session: PLSAP_LOGON_SESSION = core::ptr::null_mut::<_LSAP_LOGON_SESSION>();
-    let mut LocalSessionData: PSECURITY_LOGON_SESSION_DATA = core::ptr::null_mut::<_SECURITY_LOGON_SESSION_DATA>();
+    let Session: PLSAP_LOGON_SESSION;
+    let LocalSessionData: PSECURITY_LOGON_SESSION_DATA;
     let mut ClientBaseAddress: PVOID = core::ptr::null_mut();
-    let mut TotalLength: ULONG = 0;
+    let mut TotalLength: ULONG;
     let mut SidLength: ULONG = 0;
-    let mut MemSize: SIZE_T = 0;
-    let mut Ptr: PUCHAR = core::ptr::null_mut::<UCHAR>();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut MemSize: SIZE_T;
+    let mut Ptr: PUCHAR;
+    let mut Status: NTSTATUS;
 
     if (*__wine_dbch___default).flags as i32 & (1i32 << __WINE_DBCL_TRACE as i32) != 0 {
         ros_dbg_log(
@@ -688,7 +688,6 @@ pub unsafe extern "C" fn LsapGetLogonSessionData(RequestMsg: PLSA_API_MSG) -> NT
             (*Session).Upn.MaximumLength as usize,
         );
         (*LocalSessionData).Upn.Buffer = (Ptr as usize).wrapping_sub(LocalSessionData as usize) as PWSTR;
-        Ptr = (Ptr as usize).wrapping_add((*Session).Upn.MaximumLength as usize) as PUCHAR;
     }
 
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
