@@ -80,6 +80,20 @@ def test_module_override_resolves_a_shared_base_module(tmp_path):
     )
 
 
+def test_module_override_takes_the_bugcheck_offset_form(tmp_path):
+    # A bugcheck prints `ndis.sys+0x12D10` for a relocated driver. With the module named,
+    # an address below its link-time base is that offset (the arm64 0x1E in ProSend had to
+    # be symbolicated by adding the base by hand).
+    repo = _index(
+        tmp_path,
+        [_mod(0x7FFB00000000, 0x7FFB00040000, "ndis.sys")],
+        ["ndis.sys\t00007ffb00012a84\tProSend\tprotocol.c:485"],
+    )
+    assert "ndis.sys!ProSend+0x28c" in symbolize.resolve(
+        repo, "amd64", 0x12D10, want_module="ndis.sys"
+    )
+
+
 def test_declines_when_the_nearest_symbol_is_implausibly_far(tmp_path):
     # A PE symbol table omits statics, thunks and data regions, so SOME symbol
     # always sorts below any address. Past MAX_SANE_OFFSET that is not evidence.

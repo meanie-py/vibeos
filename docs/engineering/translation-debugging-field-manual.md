@@ -13669,6 +13669,11 @@ per-arch accelerator cap, so a parallel repro just queues.
   across boots on arm64 (`0xFFFFF80042190000` twice), so a base recorded once stays good for
   that build. The derive-from-`module+offset`-pairs method below is now the *fallback*, for
   logs predating this line.
+- **A relocated driver: pass the bugcheck's `module+offset` straight to `sym`.**
+  `./vibeos-cli sym --arch arm64 ndis.sys+0x12D10` (or `--module ndis.sys 0x12D10`) adds the
+  link-time base itself. **arm64 0x1E with `TrapFrame.Pc = 0`** is a call through a NULL
+  function pointer: the caller is only in `TrapFrame.Lr`, which the bugcheck now prints
+  symbolicated along with the trap frame's stack (it printed raw addresses before).
 - **i386 Rust-in-ntoskrnl carries a `+0x291000` shift** `[§9.2]`. C: `file_VA = runtime - 0x7fe00000`.
   Rust: additionally `- 0x291000`. One-shot for both:
   `qemu/addr2sym.sh i386 --reloc 0x80091000 <addr>`.
@@ -13941,6 +13946,32 @@ introduced at any heap exit — it is an external stray write.**
   Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
   the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
   resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
+
+### A NIC works through NDIS on x86 and calls address 0 on arm64
+- **Symptom:** `ndisprobe` with an e1000 on arm64: bind, MAC and filter pass, then the first
+  send bugchecks 0x1E with `TrapFrame.Pc = 0`, `TrapFrame.Lr = ndis.sys!ProSend`. The same
+  card passes on amd64, and an rtl8139 passes everywhere it starts.
+- **Cause:** ndis sends a bus-master miniport's packets through
+  `DmaOperations->GetScatterGatherList`, and the arm64 HAL's identity-mapped DMA table
+  (`hal-rust/src/arm64/dma.rs`) left the scatter/gather slots `None`, on the theory that a
+  consumer would get "a loud None-unwrap". The caller is C, so it called address 0.
+- **Fix:** `Arm64DmaGetScatterGatherList` builds the list from `MapTransfer`'s contiguous
+  runs and calls the execution routine at DISPATCH_LEVEL; `Put` frees it. **A slot in a
+  table a C driver calls through is never a safe place to leave a `None`**; a stub that
+  fails with a status is.
+
+### A driver's `WriteFile` hands its lower layer a NULL buffer
+- **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at
+  ndis/buffer.c:352`, then 0x1E in ndis.sys. Its IOCTLs all worked.
+- **Cause:** `NduDispatchRead/Write` read `Irp->AssociatedIrp.SystemBuffer`, which only
+  buffered I/O fills in, and `DriverEntry` never set `DO_BUFFERED_IO`, so every read and
+  write was "neither I/O" with a NULL SystemBuffer. IOCTLs take their method from the
+  control code (METHOD_BUFFERED here), so they never showed it. The same `IoCreateDevice`
+  call also passed DeviceType and Characteristics swapped. Upstream C; nothing on our
+  media had ever called ndisuio's read or write (the WLAN service uses IOCTLs only).
+- **Fix:** `GlobalDeviceObject->Flags |= DO_BUFFERED_IO` and the arguments in order. When a
+  driver's IRP_MJ_READ/WRITE uses SystemBuffer, MdlAddress or UserBuffer, check that its
+  device flags pick the matching I/O method.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

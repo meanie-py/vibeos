@@ -287,11 +287,11 @@ pub unsafe extern "C" fn PciIdPrintfAppend_v(
     mut Format: PCCH,
     ap: *mut c_void,
 ) -> ULONG {
-    let mut NextId: ULONG = 0;
-    let mut Size: ULONG = 0;
-    let mut Length: ULONG = 0;
-    let mut MaxLength: ULONG = 0;
-    let mut AnsiString: PANSI_STRING = core::ptr::null_mut();
+    let mut NextId: ULONG;
+    let mut Size: ULONG;
+    let mut Length: ULONG;
+    let mut MaxLength: ULONG;
+    let mut AnsiString: PANSI_STRING;
 
     if (*IdBuffer).Count == 0 {
         RtlAssert(

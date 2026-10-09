@@ -309,8 +309,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--ahci",
         action="store_true",
         help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
-        "so uniata's AHCI path carries the whole boot. The boot FAILS "
-        "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller",
+        "so an AHCI driver carries the whole boot: uniata's, or pciidex's on "
+        "--ata-stack media. The boot FAILS (AHCI_NOT_ENGAGED) unless uniata reports "
+        "finding the controller or pciide starts it with the CD enumerated under it",
     )
     s.add_argument(
         "--gic",
@@ -586,7 +587,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--ahci",
         action="store_true",
         help="soak with the boot CD on ich9-ahci (x86 only), same knob as "
-        "`smoke --ahci`; every boot must show uniata driving AHCI",
+        "`smoke --ahci`; every boot must show uniata (or pciidex, on --ata-stack "
+        "media) driving AHCI",
     )
     f.add_argument(
         "--polite",

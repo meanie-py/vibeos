@@ -381,7 +381,6 @@ pub unsafe extern "system" fn AtapiDmaSetup(
         if (*deviceExtension).Host64 == 0 {
             dma_base = (*chan).DB_PRD_PhAddr;
             (*dma_req_core(AtaReq)).Flags |= REQ_FLAG_DMA_DBUF_PRD as UCHAR;
-            i = 1;
         }
     } else if dma_base == 0 || i == 0 || (dma_base as LONG) == -1 {
         return FALSE as BOOLEAN;
@@ -875,7 +874,7 @@ pub unsafe extern "system" fn AtaSetTransferMode(
     LunExt: PHW_LU_EXTENSION,
     mut mode: ULONG,
 ) -> BOOLEAN {
-    let mut statusByte: LONG = 0;
+    let mut statusByte: LONG;
     let apiomode: CHAR;
     let disable_intr: BOOLEAN =
         ((((*deviceExtension).HwFlags & UNIATA_AHCI) != 0) || (CPU_num > 1)) as BOOLEAN;
@@ -1830,7 +1829,6 @@ unsafe fn dma_init_intel(
                 tim |= 0x1 << 31;
                 tim &= !(0x7 << 16);
                 tim |= (i as ULONG) << 16;
-                idx = (i + 8) as ULONG;
                 udma_ok = TRUE as BOOLEAN;
                 apiomode = ATA_PIO4 as SCHAR;
                 break;
@@ -1844,7 +1842,6 @@ unsafe fn dma_init_intel(
                     tim &= !(0x1 << 31);
                     tim &= !(0x3 << 8);
                     tim |= (i as ULONG) << 8;
-                    idx = (i + 5) as ULONG;
                     udma_ok = TRUE as BOOLEAN;
                     apiomode = if i == 0 { ATA_PIO0 as SCHAR } else if i == 1 { ATA_PIO3 as SCHAR } else { ATA_PIO4 as SCHAR };
                     break;
@@ -1854,7 +1851,6 @@ unsafe fn dma_init_intel(
         }
         if udma_ok == 0 {
             setmode(ATA_PIO0 + apiomode as ULONG);
-            idx = apiomode as ULONG;
         }
         tim &= !0x7;
         tim |= apiomode as ULONG & 0x7;
@@ -2278,7 +2274,6 @@ unsafe fn dma_init_ite(
                 if setmode(ATA_WDMA0 + i as ULONG) != 0 {
                     set_pci!(0x48, reg48 as LONG & !u_flag, UCHAR, 1);
                     set_pci!(0x4a, reg4a as LONG & !a_speed, UCHAR, 1);
-                    pio = 3;
                     done_w = true; // return in C
                     break;
                 }
@@ -2560,26 +2555,7 @@ pub unsafe extern "system" fn hpt_timing(
             };
         }
         x if x == HPT370 => {
-            // NOTE: matches C — HPT370 case has no `break`, so it FALLS THROUGH
-            // into HPT366. We replicate by computing the HPT370 timing then
-            // overwriting via the HPT366 path below.
-            timing = match m {
-                v if v == ATA_PIO0 => 0x06914e57,
-                v if v == ATA_PIO1 => 0x06914e43,
-                v if v == ATA_PIO2 => 0x06514e33,
-                v if v == ATA_PIO3 => 0x06514e22,
-                v if v == ATA_PIO4 => 0x06514e21,
-                v if v == ATA_WDMA0 => 0x26514e97,
-                v if v == ATA_WDMA1 => 0x26514e33,
-                v if v == ATA_WDMA2 => 0x26514e21,
-                v if v == ATA_UDMA0 => 0x16514e31,
-                v if v == ATA_UDMA1 => 0x164d4e31,
-                v if v == ATA_UDMA2 => 0x16494e31,
-                v if v == ATA_UDMA3 => 0x166d4e31,
-                v if v == ATA_UDMA4 => 0x16454e31,
-                v if v == ATA_UDMA5 => 0x16454e31,
-                _ => 0x06514e57,
-            };
+            // C: HPT370 has no break and falls through to HPT366, so its own table is never used.
             // fall through to HPT366
             timing = hpt366_timing(deviceExtension, dev, m, slotNumber, SystemIoBusNumber, HwDeviceExtension);
         }
@@ -2675,10 +2651,10 @@ pub unsafe extern "system" fn via82c_timing(
 
     let t_clk: USHORT = 1000 / 33;
 
-    let mut setup: USHORT = 0;
-    let mut active: USHORT = 0;
-    let mut recover: USHORT = 0;
-    let mut cycle: USHORT = 0;
+    let mut setup: USHORT;
+    let mut active: USHORT;
+    let mut recover: USHORT;
+    let mut cycle: USHORT;
 
     match mode as ULONG {
         x if x == ATA_PIO1 => { setup = 50; active = 125; recover = 100; cycle = 383; }

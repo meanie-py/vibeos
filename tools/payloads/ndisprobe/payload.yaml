@@ -1,0 +1,23 @@
+# ndisprobe — ndis.sys end to end through a real miniport, via ndisuio: bind, open, OID
+# query/set, raw send, raw receive (an ARP round trip to slirp's gateway).
+#   tools/payloads/ndisprobe/build.sh <arch>
+#   VIBEOS_PAYLOAD=ndisprobe ./vibeos-cli build --arch <arch>
+#   ./vibeos-cli smoke --arch <arch> --payload ndisprobe
+name: ndisprobe
+description: ndis.sys bind, OID, send and receive through e1000 and ndisuio
+
+build_hint: "tools/payloads/ndisprobe/build.sh {arch}"
+
+binaries:
+  - src: tools/payloads/ndisprobe/ndisprobe-{arch}.exe
+    root: image
+    dest: Profiles/All Users/Start Menu/Programs/StartUp/ndisprobe.exe
+
+test:
+  launch_marker: "[NDISPROBE] done"
+  pass_marker: "[NDISPROBE] done VERDICT=PASS"
+  launch_drain_secs: 300
+  # A NIC an NDIS miniport drives and netstack does not: QEMU's 82544GC (PCI 8086:100C) is
+  # in nete1000.inf on every arch. netstack claims only 100E/100F; rtl8139's driver handles
+  # port BARs only, which arm64's virt machine maps as memory.
+  qemu_extra_args: "-nic user,model=e1000-82544gc"

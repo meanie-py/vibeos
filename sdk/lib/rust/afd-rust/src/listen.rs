@@ -111,7 +111,7 @@ unsafe fn listen_complete_impl(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FCB = Context as PAFD_FCB;
     // Listen-path breadcrumb (see AfdListenSocket).
     DbgPrint(b"[AFD] ListenComplete FCB=%p status=0x%x\n\0".as_ptr() as PCHAR,
@@ -179,7 +179,6 @@ unsafe fn listen_complete_impl(
     ) as PAFD_TDI_OBJECT_QELT;
 
     if Qelt.is_null() {
-        Status = STATUS_NO_MEMORY;
     } else {
         let AddressType = (*(*FCB).LocalAddress).Address[0].AddressType;
 

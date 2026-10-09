@@ -6457,7 +6457,6 @@ pub unsafe extern "system" fn RtlCreateActivationContext(
 
     if !file.is_null() {
         NtClose(file);
-        file = core::ptr::null_mut();
     }
     RtlFreeUnicodeString(&mut nameW);
 

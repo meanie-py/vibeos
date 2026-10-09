@@ -411,7 +411,8 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   processes are admitted by `tools/host-jobs` (18 CPU slots on a 24-vCPU box, link
   cap 4). A conductor's gate (`VIBEOS_JOB_CLASS=integration`) ranks ahead of a
   lane's own `build` (`interactive`), and while any gate job is present the top half
-  of the slots are gate-only (`VIBEOS_HOST_JOB_LAND_RESERVE`, default slots/2);
+  of the slots are gate-only (`VIBEOS_HOST_JOB_LAND_RESERVE`, default slots/2, 0
+  disables it, and it never takes a lane's last slot);
   every class still ages to top rank after 120 s, so a lane is delayed by a gate,
   never starved. Before 2026-10-09 the order was the reverse, and a gate that took
   530 s on a quiet host took 1500-2100 s whenever 15-20 lane builds overlapped it —

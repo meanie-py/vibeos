@@ -7269,7 +7269,7 @@ unsafe fn SampSetUserPreferences(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
@@ -7315,7 +7315,7 @@ unsafe fn SampSetUserPrimaryGroup(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     Length = core::mem::size_of::<SAM_USER_FIXED_DATA>() as ULONG;
@@ -7419,7 +7419,7 @@ unsafe fn SampSetUserInternal1(
     Buffer: PSAMPR_USER_INFO_BUFFER,
 ) -> NTSTATUS {
     let mut FixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     /* FIXME: Decrypt NT password */
@@ -8224,7 +8224,7 @@ pub unsafe extern "system" fn SamrGetUserDomainPasswordInformation(
     let mut UserFixedData: SAM_USER_FIXED_DATA = core::mem::zeroed();
     let mut DomainObject: PSAM_DB_OBJECT = core::ptr::null_mut();
     let mut UserObject: PSAM_DB_OBJECT = core::ptr::null_mut();
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
     TRACE!(

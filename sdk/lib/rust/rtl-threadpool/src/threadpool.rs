@@ -819,9 +819,6 @@ unsafe fn tp_waitqueue_lock(wait: *mut threadpool_object) -> NTSTATUS {
     RtlEnterCriticalSection(core::ptr::addr_of_mut!(waitqueue.cs));
 
     status = 'out: {
-        bucket = (waitqueue.buckets.next as *mut u8)
-            .offset(-(core::mem::offset_of!(waitqueue_bucket, bucket_entry) as isize))
-            as *mut waitqueue_bucket;
         let mut entry = waitqueue.buckets.next;
         while entry != core::ptr::addr_of_mut!(waitqueue.buckets) {
             bucket = (entry as *mut u8)

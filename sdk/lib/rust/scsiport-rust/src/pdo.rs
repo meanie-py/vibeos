@@ -364,7 +364,7 @@ unsafe fn PdoHandleQueryDeviceId(
 
 unsafe fn ConvertToUnicodeString(
     Buffer: *mut i8,
-    mut ResultBufferLength: u32,
+    ResultBufferLength: u32,
     mut ResultBufferOffset: u32,
     ResultBuffer: *mut u16,
     NewResultBufferOffset: *mut u32,
@@ -417,12 +417,6 @@ unsafe fn ConvertToUnicodeString(
             core::ptr::null_mut::<i8>(),
         );
     } else {};
-    ResultBufferLength = (ResultBufferLength as u64).wrapping_sub(
-        (DeviceString.Length as usize)
-            .wrapping_add(core::mem::size_of::<u16>())
-            .wrapping_div(core::mem::size_of::<u16>())
-            as u64,
-    ) as u32 as u32;
     ResultBufferOffset = (ResultBufferOffset as u64).wrapping_add(
         (DeviceString.Length as usize)
             .wrapping_add(core::mem::size_of::<u16>())

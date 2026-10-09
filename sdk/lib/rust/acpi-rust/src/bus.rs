@@ -889,7 +889,7 @@ unsafe fn acpi_bus_walk(
 unsafe fn acpi_bus_check_device(handle: ACPI_HANDLE) {
     let mut device: *mut acpi_device = core::ptr::null_mut();
     let status: ACPI_STATUS;
-    let mut old_status: acpi_device_status = core::mem::zeroed();
+    let mut old_status: acpi_device_status ;
 
     if acpi_bus_get_device(handle, &mut device) != 0 {
         return;

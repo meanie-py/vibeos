@@ -132,8 +132,9 @@ impl VirtioPhy {
 /// `&mut` to during `iface.poll`. This is sound because (a) the underlying
 /// operation is a single volatile read of the ISR *MMIO register*, which is
 /// disjoint from every queue descriptor / `NetDev` field the worker mutates, and
-/// (b) on QEMU's single vCPU the ISR preempts the worker — they never execute
-/// concurrently. The ISR must touch nothing else on the device.
+/// (b) a read-to-clear of that register is safe to race with the worker on
+/// another CPU, since the worker never reads it. The ISR must touch nothing else
+/// on the device.
 pub unsafe fn ack_interrupt(dev: *mut NetDev) -> u32 {
     (*dev).ack_interrupt().bits()
 }

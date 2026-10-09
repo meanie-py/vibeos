@@ -89,8 +89,13 @@ unsafe fn arm64_dma_ops() -> *mut ddk::DMA_OPERATIONS {
         (*ops).MapTransfer = Some(core::mem::transmute(Arm64DmaMapTransfer as usize));
         (*ops).GetDmaAlignment = Some(core::mem::transmute(Arm64DmaGetDmaAlignment as usize));
         (*ops).ReadDmaCounter = Some(core::mem::transmute(Arm64DmaReadDmaCounter as usize));
-        (*ops).GetScatterGatherList = Some(core::mem::transmute(Arm64DmaGetScatterGatherList as usize));
-        (*ops).PutScatterGatherList = Some(core::mem::transmute(Arm64DmaPutScatterGatherList as usize));
+        // ndis's ProSend calls GetScatterGatherList for every bus-master miniport (e1000)
+        // through this table from C, so a None here was a call to address 0 -- a 0x1E
+        // naming nothing -- not a loud unwrap.
+        (*ops).GetScatterGatherList =
+            Some(core::mem::transmute(Arm64DmaGetScatterGatherList as usize));
+        (*ops).PutScatterGatherList =
+            Some(core::mem::transmute(Arm64DmaPutScatterGatherList as usize));
         ARM64_DMA_OPS_READY.store(true, Ordering::Release);
     }
     ops
@@ -342,11 +347,11 @@ unsafe extern "system" fn Arm64DmaGetScatterGatherList(
 ) -> ddk::NTSTATUS {
     type ListControl = unsafe extern "system" fn(ddk::PDEVICE_OBJECT, ddk::PIRP, ddk::PSCATTER_GATHER_LIST, ddk::PVOID);
     let Some(routine) = ExecutionRoutine else {
-        return STATUS_INSUFFICIENT_RESOURCES;
+        return ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
     };
     let routine: ListControl = core::mem::transmute(routine);
     if Mdl.is_null() || Length == 0 {
-        return STATUS_INSUFFICIENT_RESOURCES;
+        return ntkrnl_sys::constants::STATUS_INVALID_PARAMETER;
     }
     let mut runs = 0usize;
     for_each_run(Mdl, CurrentVa, Length, |_, _| runs += 1);

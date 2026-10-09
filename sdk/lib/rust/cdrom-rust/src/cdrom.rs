@@ -1400,7 +1400,7 @@ unsafe fn CreateQueueEvtIoDefaultImpl(
     unsafe {
         let fileObject: WDFFILEOBJECT = WdfRequestGetFileObject(Request);
         let device: WDFDEVICE = WdfIoQueueGetDevice(Queue);
-        let mut status: NTSTATUS = STATUS_SUCCESS;
+        let mut status: NTSTATUS;
         let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
 
         // PAGED_CODE(); // no-op
@@ -3374,7 +3374,7 @@ pub unsafe extern "C" fn RequestSynchronizeProcessWithSerialQueue(
     } else {
         let mut waitStatus: NTSTATUS = STATUS_UNSUCCESSFUL;
         let cdData: *mut CDROM_DATA = &mut (*deviceExtension).DeviceAdditionalData as *mut _;
-        let mut fCallSyncCallback: BOOLEAN = 0; // FALSE
+        let mut fCallSyncCallback: BOOLEAN;
         let irp: PIRP = WdfRequestWdmGetIrp(Request);
 
         // wait loop – exact replication of C control flow

@@ -40,12 +40,11 @@ unsafe fn send_complete_impl(
     let Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
     let FCB = Context as PAFD_FCB;
     let mut NextIrpEntry: PLIST_ENTRY;
-    let mut NextIrp: PIRP = core::ptr::null_mut();
+    let mut NextIrp: PIRP;
     let mut NextIrpSp: PIO_STACK_LOCATION;
-    let mut SendReq: PAFD_SEND_INFO = core::ptr::null_mut();
-    let mut Map: PAFD_MAPBUF;
-    let mut TotalBytesCopied: SIZE_T = 0;
-    let mut TotalBytesProcessed: SIZE_T = 0;
+    let mut SendReq: PAFD_SEND_INFO;
+    let Map: PAFD_MAPBUF;
+    let mut TotalBytesCopied: SIZE_T;
     let mut SpaceAvail: SIZE_T;
     let mut i: SIZE_T;
     let mut SendLength: UINT;
@@ -122,7 +121,6 @@ unsafe fn send_complete_impl(
         ((*FCB).Send.BytesUsed as usize) - ((*Irp).IoStatus.Information as usize),
     );
 
-    TotalBytesProcessed = 0;
     SendLength = (*Irp).IoStatus.Information as UINT;
     HaltSendQueue = 0u8;
     while !IsListEmpty(core::ptr::addr_of_mut!((*FCB).PendingIrpList[FUNCTION_SEND as usize])) && SendLength > 0 {
@@ -130,7 +128,6 @@ unsafe fn send_complete_impl(
         NextIrp = (NextIrpEntry as usize - core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)) as PIRP;
         NextIrpSp = IoGetCurrentIrpStackLocation(NextIrp);
         SendReq = (GetLockedData(NextIrp, NextIrpSp)) as _;
-        Map = ((*SendReq).BufferArray as usize + (*SendReq).BufferCount as usize * core::mem::size_of::<AFD_WSABUF>()) as PAFD_MAPBUF;
 
         TotalBytesCopied = (*NextIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as SIZE_T;
         ASSERT(TotalBytesCopied != 0);
@@ -140,7 +137,6 @@ unsafe fn send_complete_impl(
             (*NextIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] = TotalBytesCopied as PVOID;
 
             (*FCB).Send.BytesUsed -= SendLength;
-            TotalBytesProcessed += SendLength as SIZE_T;
             SendLength = 0;
 
             InsertHeadList(
@@ -156,7 +152,6 @@ unsafe fn send_complete_impl(
         (*NextIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
 
         (*FCB).Send.BytesUsed -= TotalBytesCopied as u32;
-        TotalBytesProcessed += TotalBytesCopied;
         SendLength -= TotalBytesCopied as UINT;
 
         IoSetCancelRoutine(NextIrp, None);

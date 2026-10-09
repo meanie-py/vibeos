@@ -234,7 +234,7 @@ def _smp_check(text: str, arch: str) -> dict | None:
                 "on the UP HAL, so HalStartNextProcessor is the FALSE stub and "
                 "this boot is silently 1 CPU",
                 "the boot entry is missing /HAL=halmp.dll (livecd.ini "
-                "[LiveCD_SMP], or mkramdisk.sh --smp on arm64)",
+                "[LiveCD_SMP], or qemu/freeldr.ini [ReactOS_Arm64_MP] on arm64)",
             ],
         }
     if "UP HAL stub called" in text:
@@ -678,6 +678,9 @@ def _payload_stage(
     boot_budget = 600
     drain = 0.0
     vm_memory = ""
+    # QEMU devices a payload needs (ndisprobe: a NIC an NDIS miniport drives), appended to
+    # whatever VIBEOS_QEMU_EXTRA_ARGS the caller set, so the recipe lives in the payload.
+    extra_args: list[str] = []
     try:
         import yaml as _yaml
 
@@ -689,6 +692,8 @@ def _payload_stage(
                 drain = max(drain, float(_test.get("launch_drain_secs", 30)))
                 # The largest declared guest RAM wins (vm.py get_arch_config).
                 vm_memory = max(vm_memory, str(_test.get("vm_memory", "")), key=_mem_mb)
+                if _test.get("qemu_extra_args"):
+                    extra_args.append(str(_test["qemu_extra_args"]))
                 if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
     except ImportError:
@@ -729,6 +734,15 @@ def _payload_stage(
                 "VIBEOS_ARTIFACT_DIR": str(payload_dir),
                 "VIBEOS_QEMU_MAX_LIFETIME": str(_payload_vm_lifetime(boot_budget, drain)),
                 **({"VIBEOS_QEMU_MEMORY": vm_memory} if vm_memory else {}),
+                **(
+                    {
+                        "VIBEOS_QEMU_EXTRA_ARGS": " ".join(
+                            [os.environ.get("VIBEOS_QEMU_EXTRA_ARGS", ""), *extra_args]
+                        ).strip()
+                    }
+                    if extra_args
+                    else {}
+                ),
             },
         )
     except subprocess.TimeoutExpired:
@@ -809,6 +823,15 @@ def _payload_vm_lifetime(boot_budget: float, drain: float, environ=os.environ) -
 # controller's ABAR and counted its ports; found=1 is the only proof that the
 # guest drove the CD through AHCI rather than some fallback.
 _AHCI_FOUND_RE = re.compile(r"\[UNIATA\] AhciDetect: exit found=1\b")
+# On `--ata-stack` media there is no uniata: pciide (pciidex's AHCI chipset code) must have
+# STARTED the ich9-ahci function (8086:2922), and atapi must have enumerated the CD under one
+# of its ports. The PIIX function is still on the bus with no CD on it, so a start alone
+# would not prove the CD went through AHCI.
+_ATA_STACK_AHCI_RES = (
+    re.compile(r"\[DA\] AddDevice PCI\\VEN_8086&DEV_2922\S* \(drv \\Driver\\pciide\) -> 0x0"),
+    re.compile(r"\[DA\] START PCI\\VEN_8086&DEV_2922\S* -> 0x0"),
+    re.compile(r"\[CDDB\] check IDE\\CdRom"),
+)
 
 
 def ahci_requested() -> bool:
@@ -818,18 +841,22 @@ def ahci_requested() -> bool:
 
 
 def _ahci_check(text: str) -> dict | None:
-    """Prove an `--ahci` boot actually ran uniata's AHCI path. A desktop alone
-    proves nothing here: if the controller were not attached, or uniata fell
-    back to legacy/PIO mode, the boot would look identical and an AHCI soak
-    would bank green for a path it never touched."""
+    """Prove an `--ahci` boot actually drove the CD through AHCI: uniata's AHCI
+    path, or on `--ata-stack` media pciidex's. A desktop alone proves nothing
+    here: if the controller were not attached, or the driver fell back to
+    legacy/PIO mode, the boot would look identical and an AHCI soak would bank
+    green for a path it never touched."""
     if not ahci_requested() or _AHCI_FOUND_RE.search(text):
+        return None
+    if all(r.search(text) for r in _ATA_STACK_AHCI_RES):
         return None
     return {
         "classification": "AHCI_NOT_ENGAGED",
         "salient": [
-            "--ahci boot reached the desktop but uniata never reported `AhciDetect: exit found=1`",
-            "the CD was not on ich9-ahci (backend.py rewrite) or uniata did not "
-            "claim it in AHCI mode (PCI#CC_0106 in hivesys.inf)",
+            "--ahci boot reached the desktop but neither uniata reported `AhciDetect: exit "
+            "found=1` nor pciide started ich9-ahci (8086:2922) with a CdRom under it",
+            "the CD was not on ich9-ahci (backend.py rewrite) or no driver claimed it in "
+            "AHCI mode (PCI#CC_0106: hivesys.inf, or ata_stack.inf on --ata-stack media)",
         ],
     }
 
