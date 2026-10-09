@@ -42,6 +42,12 @@ SeaBIOS ─▶ [USB stick: isombr.bin ─▶] isoboot.bin ─▶ freeldr.sys ─
 
 ## Things that bite
 
+- **More than ~1 GB of RAM.** The BIOS loader identity-maps 1 GiB (mm.h's x64
+  `MM_MAX_PAGE_LOADER` is `0x3FFFF` for that reason); the UEFI loader maps 4 GiB. The Rust
+  kept 4 GiB for both, so the page lookup table went to the top of RAM below 4 GiB and the
+  BIOS loader triple-faulted at its first write into it, debugcon ending `C1234`. QEMU with
+  `-m 1G` booted and `-m 1536M` did not; every smoke used 512 MB. Fixed 2026-10-08 by keying
+  the constant on the `uefi` feature. Real BIOS machines have far more than 1 GB.
 - **The size ceiling.** The whole loader image, `.bss` included, must fit below
   `MEMORY_MARGIN` (`x86common.h`: `MAX_FREELDR_PE_SIZE` = 0x77000, about 476 KB). Above
   it sits the INT 13h bounce buffer, which must stay in conventional memory under the

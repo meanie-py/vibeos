@@ -157,21 +157,8 @@ pub const tcompTYPE_NONE: u32 = 0x00000000;
 pub const tcompTYPE_MSZIP: u32 = 0x00000001;
 
 // ---- FCI error codes ----
-pub const FCIERR_NONE: i32 = 0;
-pub const FCIERR_OPEN_SRC: i32 = 1;
-pub const FCIERR_READ_SRC: i32 = 2;
-pub const FCIERR_ALLOC_FAIL: i32 = 3;
-pub const FCIERR_TEMP_FILE: i32 = 4;
-pub const FCIERR_CAB_FILE: u32 = 8;
-pub const FCIERR_USER_ABORT: i32 = 5;
 
 // ---- FDI error codes ----
-pub const FDIERROR_NONE: i32 = 0;
-pub const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
-pub const FDIERROR_NOT_A_CABINET: i32 = 2;
-pub const FDIERROR_UNKNOWN_CABINET_VERSION: i32 = 3;
-pub const FDIERROR_CORRUPT_CABINET: i32 = 4;
-pub const FDIERROR_ALLOC_FAIL: i32 = 5;
 
 // (SEEK_SET / SEEK_CUR are in ntdll_sys::nt — keep locals to avoid ambiguity)
 
@@ -393,3 +380,28 @@ pub struct DLLVERSIONINFO {
 }
 
 // ---- (fdi_decomp_state type alias lives in fdi.rs, not here) ----
+
+// fci.h / fdi.h enums, in header order. The hand-typed copies these replace had
+// FCIERR_USER_ABORT = 5 (BAD_COMPR_TYPE) and FCIERR_CAB_FILE = 8 (MCI_FAIL), and fci.rs /
+// fdi.rs shadowed them with further invented values (FDIERROR_NOT_A_CABINET = 5, ...).
+pub const FCIERR_NONE: i32 = 0;
+pub const FCIERR_OPEN_SRC: i32 = 1;
+pub const FCIERR_READ_SRC: i32 = 2;
+pub const FCIERR_ALLOC_FAIL: i32 = 3;
+pub const FCIERR_TEMP_FILE: i32 = 4;
+pub const FCIERR_BAD_COMPR_TYPE: i32 = 5;
+pub const FCIERR_CAB_FILE: u32 = 6;
+pub const FCIERR_USER_ABORT: i32 = 7;
+pub const FCIERR_MCI_FAIL: i32 = 8;
+pub const FDIERROR_NONE: i32 = 0;
+pub const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
+pub const FDIERROR_NOT_A_CABINET: i32 = 2;
+pub const FDIERROR_UNKNOWN_CABINET_VERSION: i32 = 3;
+pub const FDIERROR_CORRUPT_CABINET: i32 = 4;
+pub const FDIERROR_ALLOC_FAIL: i32 = 5;
+pub const FDIERROR_BAD_COMPR_TYPE: i32 = 6;
+pub const FDIERROR_MDI_FAIL: i32 = 7;
+pub const FDIERROR_TARGET_FILE: i32 = 8;
+pub const FDIERROR_RESERVE_MISMATCH: i32 = 9;
+pub const FDIERROR_WRONG_CABINET: i32 = 10;
+pub const FDIERROR_USER_ABORT: i32 = 11;

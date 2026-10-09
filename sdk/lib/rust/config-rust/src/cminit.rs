@@ -300,6 +300,12 @@ pub unsafe extern "system" fn CmpInitializeHive(
         } else {
             let CheckStatus = CmCheckRegistry(Hive, CheckFlags);
             if CM_CHECK_REGISTRY_SUCCESS(CheckStatus) == 0 {
+                // Not in the C. cmcheck's own DPRINT1s were dropped in translation, so this
+                // was a bare REGISTRY_CORRUPT: the status names which check failed.
+                crate::dbg_print!(
+                    b"CmpInitializeHive: CmCheckRegistry failed (CM_CHECK_REGISTRY status %lu)\n\0",
+                    CheckStatus as u32,
+                );
                 ExDeleteResourceLite((*Hive).FlusherLock);
                 ExFreePoolWithTag((*Hive).FlusherLock as *mut core::ffi::c_void, TAG_CMHIVE);
                 ExFreePoolWithTag((*Hive).ViewLock as *mut core::ffi::c_void, TAG_CMHIVE);
@@ -534,7 +540,7 @@ pub unsafe extern "system" fn CmpOpenHiveFiles(
             &mut IoStatusBlock,
             &mut FileInformation as *mut FILE_STANDARD_INFORMATION as *mut core::ffi::c_void,
             core::mem::size_of::<FILE_STANDARD_INFORMATION>() as u32,
-            5,
+            ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileStandardInformation as _,
         );
         if Status >= 0 {
             if FileInformation.EndOfFile.QuadPart == 0 {

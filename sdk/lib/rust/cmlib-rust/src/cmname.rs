@@ -138,7 +138,7 @@ pub unsafe extern "system" fn CmpFindNameInList(
     ChildIndex: *mut u32,
     CellIndex: PHCELL_INDEX,
 ) -> u8 {
-    let mut CellData: PCELL_DATA = core::ptr::null_mut();
+    let CellData: PCELL_DATA;
     let mut CellToRelease: HCELL_INDEX = 0xFFFFFFFF;
     let mut i: u32;
     let mut KeyValue: PCM_KEY_VALUE;

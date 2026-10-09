@@ -1661,6 +1661,65 @@ pub unsafe extern "C" fn co_MsqSendMessage(
     co_MsqSendMessage_impl(ptirec, Wnd, Msg, wParam, lParam, uTimeout, Block, HookMessage, uResult)
 }
 
+const STUCK_SEND_SECS: i64 = 15;
+const STUCK_SEND_REPORTS: u32 = 4;
+
+/// An untimed SendMessage has waited STUCK_SEND_SECS. Where is its message?
+/// Still QUEUED on the receiver (the receiver is not dispatching sent
+/// messages: what are its wake bits?), or taken (SMF_RECEIVERBUSY: the
+/// receiver is running it and has not finished: what is it running?).
+unsafe fn report_stuck_send(pti: PTHREADINFO, ptirec: PTHREADINFO, Message: PUSER_SENT_MESSAGE, Report: u32) {
+    extern "C" {
+        fn DbgPrint(Format: *const u8, ...) -> u32;
+    }
+    let tid = |t: PTHREADINFO| -> usize {
+        if t.is_null() {
+            0
+        } else {
+            ntkrnl_sys::ddk::PsGetThreadId(pti_ethread(t) as *mut ntkrnl_sys::ddk::_ETHREAD) as usize
+        }
+    };
+    let mut Queued = 0u32;
+    let mut Ahead = 0u32;
+    let Head = core::ptr::addr_of_mut!((*ptirec).SentMessagesListHead);
+    let mut Entry = (*Head).Flink;
+    while Entry != Head {
+        if (Entry as *mut u8).sub(core::mem::offset_of!(USER_SENT_MESSAGE, ListEntry)) as PUSER_SENT_MESSAGE == Message {
+            Queued = 1;
+            break;
+        }
+        Ahead += 1;
+        Entry = (*Entry).Flink;
+    }
+    let pWnd = ValidateHwndNoErr((*Message).Msg.hwnd);
+    let Owner = if pWnd.is_null() { core::ptr::null_mut() } else { head_pti(pWnd) };
+    let Cur = (*ptirec).pusmCurrent;
+    // Why the receiver last waited: WrUserRequest (13) is a message wait,
+    // UserRequest (6) a handle wait such as WaitForSingleObject.
+    let Kt = pti_ethread(ptirec) as *const u8;
+    let RecWait = *Kt.add(core::mem::offset_of!(ntkrnl_sys::ddk::_KTHREAD, WaitReason));
+    DbgPrint(
+        b"[WIN32K] STUCK SEND %us: tid %u -> tid %u msg 0x%x hwnd %p (owner tid %u) %s (ahead %u) flags 0x%x; receiver wait reason %u wake 0x%x change 0x%x cti 0x%x TIF 0x%x running msg 0x%x from tid %u, sending msg 0x%x\n\0".as_ptr(),
+        (STUCK_SEND_SECS as u32) * Report,
+        tid(pti) as u32,
+        tid(ptirec) as u32,
+        (*Message).Msg.message,
+        (*Message).Msg.hwnd,
+        tid(Owner) as u32,
+        if Queued != 0 { b"QUEUED\0".as_ptr() } else { b"TAKEN\0".as_ptr() },
+        Ahead,
+        (*Message).flags,
+        RecWait as u32,
+        (*(*ptirec).pcti).fsWakeBits as u32,
+        (*(*ptirec).pcti).fsChangeBits as u32,
+        (*(*ptirec).pcti).CTI_flags as u32,
+        (*ptirec).TIF_flags as u32,
+        if Cur.is_null() { 0 } else { (*Cur).Msg.message },
+        if Cur.is_null() { 0 } else { tid((*Cur).ptiSender) as u32 },
+        if (*ptirec).pusmSent.is_null() { 0 } else { (*(*ptirec).pusmSent).Msg.message },
+    );
+}
+
 unsafe fn co_MsqSendMessage_impl(
     ptirec: PTHREADINFO,
     Wnd: HWND,
@@ -1841,25 +1900,54 @@ unsafe fn co_MsqSendMessage_impl(
         WaitObjects[1] = (*pti).pEventQueueServer as PVOID;
         WaitObjects[2] = pti_ethread(ptirec) as PVOID;
 
+        // An untimed send waits forever. Every STUCK_SEND_SECS (up to
+        // STUCK_SEND_REPORTS times) say where the message is (report_stuck_send),
+        // then go on waiting forever: the one place that knows why a sender is
+        // stuck, and repeated so a slow drain can be told from a real deadlock.
+        // The deadline is absolute: every wakeup (a message posted to the sender
+        // wakes this wait through pEventQueueServer) would otherwise restart a
+        // relative 15 s, and a sender woken each refresh tick was never reported.
+        let mut Watch: LARGE_INTEGER = core::mem::zeroed();
+        let WatchStart = EngGetTickCount32();
+        let mut Reports = 0u32;
+
         loop {
-            UserLeaveCo();
+            // A watchdog wake only reports and waits again; it never reaches the
+            // do-while condition at the bottom of the outer loop.
+            WaitStatus = loop {
+                if uTimeout == 0 && Reports < STUCK_SEND_REPORTS {
+                    let Due = (STUCK_SEND_SECS as u32 * 1000) * (Reports + 1);
+                    let Elapsed = EngGetTickCount32().wrapping_sub(WatchStart);
+                    Watch.QuadPart = -10_000 * (Due.saturating_sub(Elapsed).max(1) as i64);
+                }
+                UserLeaveCo();
 
-            WaitStatus = KeWaitForMultipleObjects(
-                3,
-                WaitObjects.as_mut_ptr(),
-                WaitAny,
-                _KWAIT_REASON_UserRequest,
-                1i32 as i8,
-                0u8,
-                if uTimeout != 0 {
-                    core::ptr::addr_of_mut!(Timeout) as _
-                } else {
-                    core::ptr::null_mut()
-                },
-                core::ptr::null_mut(),
-            );
+                let Status = KeWaitForMultipleObjects(
+                    3,
+                    WaitObjects.as_mut_ptr(),
+                    WaitAny,
+                    _KWAIT_REASON_UserRequest,
+                    1i32 as i8,
+                    0u8,
+                    if uTimeout != 0 {
+                        core::ptr::addr_of_mut!(Timeout) as _
+                    } else if Reports < STUCK_SEND_REPORTS {
+                        core::ptr::addr_of_mut!(Watch) as _
+                    } else {
+                        core::ptr::null_mut()
+                    },
+                    core::ptr::null_mut(),
+                );
 
-            UserEnterCo();
+                UserEnterCo();
+
+                if Status == STATUS_TIMEOUT && uTimeout == 0 {
+                    Reports += 1;
+                    report_stuck_send(pti, ptirec, Message, Reports);
+                    continue;
+                }
+                break Status;
+            };
 
             if WaitStatus == STATUS_TIMEOUT {
                 Entry = (*ptirec).SentMessagesListHead.Flink;

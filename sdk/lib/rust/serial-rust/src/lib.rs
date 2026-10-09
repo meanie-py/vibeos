@@ -6,6 +6,7 @@
 
 //! serial.sys — faithful C→Rust cohab (rustconv opus + c2rust anchor).
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+#[macro_use]
 extern crate drvtrace_shim;
 
 pub mod types;

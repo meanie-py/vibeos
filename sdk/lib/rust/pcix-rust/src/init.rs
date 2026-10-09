@@ -158,17 +158,17 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
 ) -> NTSTATUS {
     let mut Result: BOOLEAN;
     let mut Status: NTSTATUS = 0;
-    let mut KeyHandle: HANDLE = core::ptr::null_mut();
+    let mut KeyHandle: HANDLE;
     let mut SubKey: HANDLE = core::ptr::null_mut();
     let mut NumberOfBytes: ULONG = 0;
     let mut i: ULONG;
     let mut Length: ULONG;
-    let mut FullInfo: PKEY_FULL_INFORMATION = core::ptr::null_mut();
-    let mut KeyInfo: PKEY_BASIC_INFORMATION = core::ptr::null_mut();
-    let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::null_mut();
+    let mut FullInfo: PKEY_FULL_INFORMATION;
+    let mut KeyInfo: PKEY_BASIC_INFORMATION;
+    let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION;
     let mut NodeData: PACPI_BIOS_MULTI_NODE;
     let mut ValueName: _UNICODE_STRING = core::mem::zeroed();
-    let mut Package: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut Package: *mut core::ffi::c_void;
 
     ValueInfo = core::ptr::null_mut();
     KeyInfo = core::ptr::null_mut();
@@ -355,15 +355,15 @@ pub unsafe extern "system" fn PciAcpiFindRsdt(
 
 #[no_mangle]
 pub unsafe extern "system" fn PciGetAcpiTable(TableCode: u32) -> *mut core::ffi::c_void {
-    let mut Header: *mut DESCRIPTION_HEADER = core::ptr::null_mut();
+    let mut Header: *mut DESCRIPTION_HEADER;
     let mut AcpiMultiNode: *mut _ACPI_BIOS_MULTI_NODE = core::ptr::null_mut();
-    let mut Rsdt: *mut RSDT = core::ptr::null_mut();
-    let mut Xsdt: *mut XSDT = core::ptr::null_mut();
+    let mut Rsdt: *mut RSDT;
+    let mut Xsdt: *mut XSDT;
     let mut EntryCount: u32;
     let mut TableLength: u32;
     let mut Offset: u32;
     let mut CurrentEntry: u32;
-    let mut TableBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
+    let mut TableBuffer: *mut core::ffi::c_void;
     let mut MappedAddress: *mut core::ffi::c_void;
     let mut PhysicalAddress: PHYSICAL_ADDRESS = core::mem::zeroed();
     let Status: NTSTATUS = PciAcpiFindRsdt(&raw mut AcpiMultiNode);
@@ -494,8 +494,8 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut SubKey: HANDLE = core::ptr::null_mut();
     let mut NumberOfBytes: ULONG = 0;
-    let mut i: ULONG = 0;
-    let mut Length: ULONG = 0;
+    let mut i: ULONG;
+    let mut Length: ULONG;
     let mut FullInfo: PKEY_FULL_INFORMATION = core::ptr::null_mut();
     let mut KeyInfo: PKEY_BASIC_INFORMATION = core::ptr::null_mut();
     let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION = core::ptr::null_mut();
@@ -916,7 +916,7 @@ pub unsafe extern "system" fn DriverEntry(
     let mut ParametersKey: HANDLE = core::ptr::null_mut();
     let mut DebugKey: HANDLE = core::ptr::null_mut();
     let mut ControlSetKey: HANDLE = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    let mut Status: NTSTATUS;
 
     // Debug message
     DbgPrint(b"PCI: DriverEntry!\n\0".as_ptr() as PCSTR);

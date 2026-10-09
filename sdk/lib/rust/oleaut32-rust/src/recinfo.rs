@@ -790,7 +790,7 @@ fn IRecordInfoImpl_GetField(
     pvarField: *mut VARIANT,
 ) -> HRESULT {
     let This: *mut IRecordInfoImpl = impl_from_IRecordInfo(iface);
-    let mut i: i32 = 0;
+    let mut i: i32;
 
     TRACE!(
         b"(%p)->(%p %s %p)\n\0".as_ptr() as *const i8,
@@ -1097,7 +1097,7 @@ pub unsafe extern "system" fn GetRecordInfoFromGuids(
 ) -> HRESULT {
     let mut pTypeInfo: *mut ITypeInfo = core::ptr::null_mut::<ITypeInfo>();
     let mut pTypeLib: *mut ITypeLib = core::ptr::null_mut::<ITypeLib>();
-    let mut hres: HRESULT = 0;
+    let mut hres: HRESULT;
     
     TRACE!(
         b"(%p,%d,%d,%d,%s,%p)\n\0".as_ptr() as *const i8,

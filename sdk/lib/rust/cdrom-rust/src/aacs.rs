@@ -49,7 +49,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaKeyBlock(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> i32 {
-    let mut status: i32 = 0; // STATUS_SUCCESS
+    let mut status: i32; // STATUS_SUCCESS
     let mut layerNumber: *mut u8 = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
     let mut transferSize: u32 = core::mem::size_of::<READ_DVD_STRUCTURES_HEADER>() as u32;
@@ -270,7 +270,7 @@ pub unsafe extern "C" fn DeviceHandleAacsStartSession(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut sessionId: *mut DVD_SESSION_ID = core::ptr::null_mut();
     // PAGED_CODE();
 
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // PAGED_CODE();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut sessionId: *mut u8 = core::ptr::null_mut(); // DVD_SESSION_ID is u8
     *DataLength = 0;
 
@@ -340,8 +340,8 @@ pub unsafe extern "C" fn DeviceHandleAacsEndSession(
     if NT_SUCCESS(status) {
         let mut transferSize: u32 = 0;
         let mut cdb: CDB = core::mem::zeroed();
-        let mut currentSession: u8 = 0;
-        let mut limitSession: u8 = 0;
+        let mut currentSession: u8;
+        let mut limitSession: u8;
 
         if *sessionId == DVD_END_ALL_SESSIONS {
             currentSession = 0;
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn DeviceHandleAacsSendCertificate(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut input: *mut AACS_SEND_CERTIFICATE = core::ptr::null_mut();
 
     PAGED_CODE!();
@@ -483,7 +483,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetCertificate(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut input: *mut DVD_SESSION_ID = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -607,7 +607,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGetChallengeKey(
 ) -> i32 {
     // AacsGetChallengeKey
 
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut input: *mut DVD_SESSION_ID = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -728,7 +728,7 @@ pub unsafe extern "C" fn DeviceHandleSendChallengeKey(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // PAGED_CODE();
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut input: *mut AACS_SEND_CHALLENGE_KEY = core::ptr::null_mut();
 
     *DataLength = 0;
@@ -809,7 +809,7 @@ pub unsafe extern "C" fn DeviceHandleReadVolumeId(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // AacsReadVolumeID
-    let mut status: NTSTATUS = 0; // STATUS_SUCCESS
+    let mut status: NTSTATUS; // STATUS_SUCCESS
     let mut input: *mut u8 = core::ptr::null_mut();
     let mut output_buffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -928,7 +928,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadSerialNumber(
     DataLength: *mut usize,
 ) -> i32 {
     unsafe {
-        let mut status: i32 = 0; // STATUS_SUCCESS
+        let mut status: i32; // STATUS_SUCCESS
         let mut input: *mut u8 = core::ptr::null_mut();
         let mut outputBuffer: *mut u8 = core::ptr::null_mut();
 
@@ -1048,7 +1048,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadMediaId(
     RequestParameters: WDF_REQUEST_PARAMETERS,
     DataLength: *mut usize,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut input: *mut u8 = core::ptr::null_mut();
     let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 
@@ -1158,7 +1158,7 @@ pub unsafe extern "C" fn DeviceHandleAacsReadBindingNonce(
     DataLength: *mut SIZE_T,
 ) -> NTSTATUS {
     // AacsReadBindingNonce
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut input: *mut AACS_READ_BINDING_NONCE = core::ptr::null_mut();
     let mut outputBuffer: *mut c_void = core::ptr::null_mut();
 
@@ -1289,7 +1289,7 @@ pub unsafe extern "C" fn DeviceHandleAacsGenerateBindingNonce(
 ) -> NTSTATUS {
     // AacsGenerateBindingNonce
     unsafe {
-        let mut status: NTSTATUS = STATUS_SUCCESS;
+        let mut status: NTSTATUS;
         let mut input: *mut AACS_READ_BINDING_NONCE = core::ptr::null_mut();
         let mut outputBuffer: *mut core::ffi::c_void = core::ptr::null_mut();
 

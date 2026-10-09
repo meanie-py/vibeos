@@ -71,7 +71,8 @@ pub unsafe extern "C" fn FltpOpenFilterServicesKey(
     if !SubKey.is_null() {
         RtlAppendUnicodeToString(
             core::ptr::addr_of_mut!(Path),
-            (b"\\\0".as_ptr()) as PCWSTR,
+            // C: L"\\". A narrow b"\\\0" read as UTF-16 is '\\' and then whatever follows.
+            [b'\\' as u16, 0u16].as_ptr() as PCWSTR,
         );
         RtlAppendUnicodeStringToString(core::ptr::addr_of_mut!(Path), SubKey);
     }

@@ -10,6 +10,7 @@
 //! USBPORT_REGISTRATION_PACKET with the usbport framework. guid.c stays as a C data TU.
 //! NOT boot-loaded in smoke (boots from CD/ramdisk, not USB). Bar: link-clean x3.
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
+#[macro_use]
 extern crate drvtrace_shim;
 
 pub mod types;

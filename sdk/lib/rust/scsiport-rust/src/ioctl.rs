@@ -147,7 +147,7 @@ unsafe fn PdoHandleQueryProperty(
     let ioStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let lunExt: PSCSI_PORT_LUN_EXTENSION =
         (*DeviceObject).DeviceExtension as PSCSI_PORT_LUN_EXTENSION;
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
 
     if !((*ioStack).Parameters.DeviceIoControl.InputBufferLength as usize
         >= core::mem::size_of::<STORAGE_PROPERTY_QUERY>())
@@ -329,7 +329,7 @@ unsafe fn PdoHandleScsiPassthrough(
     Irp: PIRP,
 ) -> NTSTATUS {
     let lunExt: PSCSI_PORT_LUN_EXTENSION = (*DeviceObject).DeviceExtension as PSCSI_PORT_LUN_EXTENSION;
-    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut::<_SCSI_PORT_DEVICE_EXTENSION>();
+    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION;
 
     if !((KeGetCurrentIrql() as i32) < (DISPATCH_LEVEL as i32)) {
         RtlAssert(
@@ -369,9 +369,9 @@ unsafe fn FdoHandleScsiPassthrough(
     Irp: PIRP,
 ) -> NTSTATUS {
 
-    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut lunExt: PSCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
-    let mut spt: PSCSI_PASS_THROUGH = core::ptr::null_mut();
+    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION;
+    let mut lunExt: PSCSI_PORT_LUN_EXTENSION;
+    let mut spt: PSCSI_PASS_THROUGH;
 
     if !((KeGetCurrentIrql() as i32) < 2i32) {
         ((RtlAssert))(
@@ -418,11 +418,10 @@ unsafe fn FdoHandleQueryProperty(
     DeviceObject: *mut ntkrnl_sys::ddk::DEVICE_OBJECT,
     Irp: *mut ntkrnl_sys::ddk::IRP,
 ) -> i32 {
-    let mut adapterDescriptor: *mut STORAGE_ADAPTER_DESCRIPTOR_WIN8 =
-        core::ptr::null_mut();
+    let mut adapterDescriptor: *mut STORAGE_ADAPTER_DESCRIPTOR_WIN8;
     let ioStack = IoGetCurrentIrpStackLocation(Irp);
     let portExt = (*DeviceObject).DeviceExtension as *mut SCSI_PORT_DEVICE_EXTENSION;
-    let mut status: i32 = 0;
+    let mut status: i32;
 
     if ((*ioStack).Parameters.DeviceIoControl.InputBufferLength as usize)
         < core::mem::size_of::<STORAGE_PROPERTY_QUERY>() as usize
@@ -525,10 +524,10 @@ pub unsafe extern "system" fn ScsiPortDeviceControl(
 ) -> NTSTATUS {
     let Stack: PIO_STACK_LOCATION;
     let comExt: PSCSI_PORT_COMMON_EXTENSION = (*DeviceObject).DeviceExtension as PSCSI_PORT_COMMON_EXTENSION;
-    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut lunExt: PSCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
+    let mut portExt: PSCSI_PORT_DEVICE_EXTENSION;
+    let mut lunExt: PSCSI_PORT_LUN_EXTENSION;
     let IoControlCode: u32;
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
 
     (*Irp).IoStatus.Information = 0;
 

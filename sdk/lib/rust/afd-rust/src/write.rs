@@ -351,13 +351,13 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     Short: u8,
 ) -> NTSTATUS {
 
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let SendReq: PAFD_SEND_INFO;
     let mut TotalBytesCopied: u32 = 0;
     let mut i: u32;
-    let mut SpaceAvail: u32 = 0;
+    let mut SpaceAvail: u32;
     let mut BytesCopied: u32;
     let mut SendLength: u32;
     let mut LockMode: KPROCESSOR_MODE = 0;
@@ -607,7 +607,7 @@ pub unsafe extern "system" fn AfdPacketSocketWriteData(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let mut TargetAddress: PTDI_CONNECTION_INFORMATION = core::ptr::null_mut();
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;

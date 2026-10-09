@@ -120,8 +120,6 @@ const SEEK_SET: i32 = 0;
 const SEEK_CUR: i32 = 1;
 const ERROR_INVALID_HANDLE: u32 = 6;
 const ERROR_BAD_ARGUMENTS: u32 = 160;
-const FDIERROR_NONE: i32 = 0;
-const FDIERROR_ALLOC_FAIL: i32 = 2;
 const TRUE: i32 = 1;
 const CAB_BLOCKMAX: i32 = 32768; // typical value
 
@@ -2590,9 +2588,6 @@ unsafe fn fdi_decomp(
     const cffile_Time: usize = 12;
     const cffile_Attribs: usize = 14;
     const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
-    const FDIERROR_NOT_A_CABINET: i32 = 5;
-    const FDIERROR_WRONG_CABINET: i32 = 7;
-    const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
     const MAX_PATH: usize = 260;
     const SEEK_SET: i32 = 0;
     const SEEK_CUR: i32 = 1;
@@ -2922,10 +2917,6 @@ pub unsafe extern "C" fn FDICopy(
     const FALSE: i32 = 0;
     const TRUE: i32 = 1;
     // fdierror.h enum values
-    const FDIERROR_CABINET_NOT_FOUND: i32 = 1;
-    const FDIERROR_CORRUPT_CABINET: i32 = 4;
-    const FDIERROR_ALLOC_FAIL: i32 = 5;
-    const FDIERROR_USER_ABORT: i32 = 11;
     // winerror.h / dderror.h
     const ERROR_FILE_NOT_FOUND: u32 = 2;
     const ERROR_NOT_ENOUGH_MEMORY: u32 = 8;

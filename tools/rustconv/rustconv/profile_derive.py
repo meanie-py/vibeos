@@ -2434,7 +2434,7 @@ _TYPEDEF_NAME_RE = re.compile(r"\}\s*([A-Za-z_]\w*)\s*(?:,\s*\*?\w+\s*)*;")
 _ANON_AGGREGATE_NAMES = frozenset(
     f"DUMMY{kind}NAME{suffix}"
     for kind in ("UNION", "STRUCT")
-    for suffix in ("", *(str(n) for n in range(2, 10)))
+    for suffix in ("", *(str(n) for n in range(1, 10)))
 )
 
 

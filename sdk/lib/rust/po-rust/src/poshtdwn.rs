@@ -98,9 +98,16 @@ pub unsafe extern "system" fn PopInitShutdownList() {
     PopShutdownListAvailable = 1; // TRUE
 }
 
+/// One serial line per shutdown phase, so a reboot that never happens names the phase it
+/// stalls in (the install smoke's setup reboot sat silent for five minutes).
+unsafe fn shutdown_phase(name: &[u8]) {
+    ntkrnl_sys::driver_ddk::DbgPrint(c"[PO] shutdown: %s\n".as_ptr(), name.as_ptr());
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn PopGracefulShutdown(_Context: PVOID) {
     let _Context = opaque_ptr(_Context);
+    shutdown_phase(b"begin (PopProcessShutDownLists)\0");
     // Process the registered waits and work items
     PopProcessShutDownLists();
 
@@ -117,37 +124,49 @@ pub unsafe extern "system" fn PopGracefulShutdown(_Context: PVOID) {
     }
 
     // First, the HAL handles any "end of boot" special functionality
+    shutdown_phase(b"HalEndOfBoot()\0");
     HalEndOfBoot();
 
     // Shut down the Shim cache if enabled
+    shutdown_phase(b"ApphelpCacheShutdown()\0");
     ApphelpCacheShutdown();
 
     // In this step, the I/O manager does first-chance shutdown notification
+    shutdown_phase(b"IoShutdownSystem(0)\0");
     IoShutdownSystem(0);
 
     // In this step, all workers are killed and hives are flushed
+    shutdown_phase(b"CmShutdownSystem()\0");
     CmShutdownSystem();
 
     // Shut down the Executive
+    shutdown_phase(b"ExShutdownSystem()\0");
     ExShutdownSystem();
 
     // Note that modified pages should be written here (MiShutdownSystem)
+    shutdown_phase(b"MmShutdownSystem(0)\0");
     MmShutdownSystem(0);
 
     // Flush all user files before we start shutting down IO
+    shutdown_phase(b"CcShutdownSystem()\0");
     CcShutdownSystem();
 
     // In this step, the I/O manager does last-chance shutdown notification
+    shutdown_phase(b"IoShutdownSystem(1)\0");
     IoShutdownSystem(1);
+    shutdown_phase(b"CcWaitForCurrentLazyWriterActivity()\0");
     CcWaitForCurrentLazyWriterActivity();
 
     // FIXME: Calling Mm shutdown phase 1 here to get page file dereference
+    shutdown_phase(b"MmShutdownSystem(1)\0");
     MmShutdownSystem(1);
 
     // In this step, the HAL disables any wake timers
+    shutdown_phase(b"HalSetWakeEnable(0)\0");
     HalSetWakeEnable(0); // FALSE
 
     // And finally the power request is sent
+    shutdown_phase(b"PopShutdownSystem(PopAction.Action)\0");
     PopShutdownSystem(PopAction.Action);
 }
 
@@ -321,22 +340,29 @@ pub unsafe extern "system" fn PopShutdownSystem(SystemAction: POWER_ACTION) {
 
     KeSetSystemAffinityThread(1);
 
-    match SystemAction {
-        0x6 => {
-            PopSetSystemPowerState(5, SystemAction);
-            HalReturnToFirmware(1);
+    // Named, not numbered: the translation had ShutdownReset (5) and ShutdownOff (6) swapped,
+    // with PowerSystemHibernate (5) for PowerSystemShutdown and PowerDown/Restart (1/2) for
+    // Reboot/PowerDown. Every reboot request -- setup's, at the end of the install -- went to
+    // the "safe to turn off" halt loop instead.
+    use ntkrnl_sys::ddk::{
+        _FIRMWARE_REENTRY_HalPowerDownRoutine as HalPowerDownRoutine,
+        _FIRMWARE_REENTRY_HalRebootRoutine as HalRebootRoutine,
+        _SYSTEM_POWER_STATE_PowerSystemShutdown as PowerSystemShutdown,
+        POWER_ACTION_PowerActionShutdown as PowerActionShutdown,
+        POWER_ACTION_PowerActionShutdownOff as PowerActionShutdownOff,
+        POWER_ACTION_PowerActionShutdownReset as PowerActionShutdownReset,
+    };
+    match SystemAction as u32 {
+        a if a == PowerActionShutdownReset as u32 => {
+            PopSetSystemPowerState(PowerSystemShutdown as _, SystemAction);
+            HalReturnToFirmware(HalRebootRoutine as _);
         }
-        0x4 => {
-            if PopShutdownPowerOffPolicy != 0 {
-            }
-            PopSetSystemPowerState(5, SystemAction);
+        a if a == PowerActionShutdown as u32 || a == PowerActionShutdownOff as u32 => {
+            // C: case PowerActionShutdown falls through to ShutdownOff; the power-off
+            // policy check there has an empty (FIXFIX) body.
+            PopSetSystemPowerState(PowerSystemShutdown as _, SystemAction);
             PopShutdownHandler();
-            HalReturnToFirmware(2);
-        }
-        0x5 => {
-            PopSetSystemPowerState(5, SystemAction);
-            PopShutdownHandler();
-            HalReturnToFirmware(2);
+            HalReturnToFirmware(HalPowerDownRoutine as _);
         }
         _ => {}
     }

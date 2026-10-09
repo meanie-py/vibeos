@@ -149,12 +149,8 @@ pub struct FCI_Int {
 }
 
 // ---- consts / statics / type aliases (deduped) ----
-const FCIERR_NONE: i32 = 0;
-const FCIERR_ALLOC_FAIL: i32 = 5;
 const CB_MAX_CABINET_NAME: usize = 256;
 const CB_MAX_DISK_NAME: usize = 256;
-const FCIERR_CAB_FILE: u32 = 8; // Wine
-const FCIERR_USER_ABORT: i32 = 5;
 const statusFolder: u32 = 1;
 const CB_MAX_FILENAME: i32 = 256;
 const Z_DEFAULT_COMPRESSION: i32 = -1;
@@ -174,7 +170,6 @@ type PFNFCISTATUS = unsafe extern "system" fn(
 const SEEK_SET: i32 = 0;
 const SEEK_CUR: i32 = 1;
 const statusFile: i32 = 0;
-const FCIERR_TEMP_FILE: i32 = 0x104;
 const cffileCONTINUED_FROM_PREV: u16 = 0xFFFD;
 const cffileCONTINUED_TO_NEXT: u16 = 0xFFFE;
 const cffileCONTINUED_PREV_AND_NEXT: u16 = 0xFFFF;
@@ -523,7 +518,6 @@ unsafe fn add_folder(fci: *mut FCI_Int) -> *mut folder {
     let folder: *mut folder = ((*fci).alloc)(core::mem::size_of::<folder>() as u32) as *mut folder;
 
     if folder.is_null() {
-        const FCIERR_ALLOC_FAIL: u32 = 1;
         set_error(fci, FCIERR_ALLOC_FAIL as i32, ERROR_NOT_ENOUGH_MEMORY as i32);
         return core::ptr::null_mut();
     }
@@ -839,8 +833,6 @@ unsafe extern "C" fn copy_data_blocks(
 ) -> i32 {
     let mut err: i32 = 0;
     const statusFolder: u32 = 1;
-    const FCIERR_TEMP_FILE: i32 = 4;
-    const FCIERR_USER_ABORT: i32 = 7;
 
     if ((*fci).seek)(handle as isize, start_pos as i32, SEEK_SET, core::ptr::addr_of_mut!(err), (*fci).pv) as isize
         != start_pos as isize

@@ -288,7 +288,7 @@ pub unsafe extern "system" fn USBPORT_EndpointHasQueuedTransfers(
     let mut Transfer: PUSBPORT_TRANSFER = core::ptr::null_mut();
     let mut Result: BOOLEAN = 0;
 
-    DPRINT_CORE(b"USBPORT_EndpointHasQueuedTransfers: ... \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_EndpointHasQueuedTransfers: ... \n\0".as_ptr() as *const i8);
 
     KeAcquireSpinLock(
         (core::ptr::addr_of_mut!((*Endpoint).EndpointSpinLock) as *mut usize),
@@ -1491,7 +1491,7 @@ pub unsafe extern "system" fn USBPORT_FlushClosedEndpointList(FdoDevice: PDEVICE
     let ClosedList: PLIST_ENTRY;
     let mut Endpoint: PUSBPORT_ENDPOINT;
 
-    // DPRINT_CORE("USBPORT_FlushClosedEndpointList: ... \n");
+    // DPRINT_CORE!("USBPORT_FlushClosedEndpointList: ... \n");
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1543,7 +1543,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpointHandler(
     let mut OldIrql: KIRQL = 0;
     let mut IsAddEntry: BOOLEAN = 0;
 
-    DPRINT_CORE(
+    DPRINT_CORE!(
         b"USBPORT_InvalidateEndpointHandler: Endpoint - %p, Type - %x\n\0".as_ptr() as *const i8,
         Endpoint,
         Type,
@@ -1559,7 +1559,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpointHandler(
             (core::ptr::addr_of_mut!((*FdoExtension).EndpointListSpinLock) as *mut usize),
             core::ptr::addr_of_mut!(OldIrql),
         );
-        DPRINT_CORE(
+        DPRINT_CORE!(
             b"USBPORT_InvalidateEndpointHandler: KeAcquireSpinLock \n\0".as_ptr() as *const i8,
         );
 
@@ -1567,7 +1567,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpointHandler(
             && ((*Endpoint).Flags & ENDPOINT_FLAG_IDLE) == 0
             && USBPORT_GetEndpointState(Endpoint) != USBPORT_ENDPOINT_CLOSED
         {
-            DPRINT_CORE(
+            DPRINT_CORE!(
                 b"USBPORT_InvalidateEndpointHandler: InsertTailList \n\0".as_ptr() as *const i8,
             );
             InsertTailList(core::ptr::addr_of_mut!((*FdoExtension).WorkerList), WorkerLink);
@@ -1601,7 +1601,7 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpointHandler(
                     && ((*endpoint).Flags & ENDPOINT_FLAG_ROOTHUB_EP0) == 0
                     && USBPORT_GetEndpointState(endpoint) != USBPORT_ENDPOINT_CLOSED
                 {
-                    DPRINT_CORE(
+                    DPRINT_CORE!(
                         b"USBPORT_InvalidateEndpointHandler: InsertTailList \n\0".as_ptr()
                             as *const i8,
                     );
@@ -1790,7 +1790,7 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointActive(
     let mut MpStatus: MPSTATUS;
     let mut OldIrql: KIRQL = 0;
 
-    DPRINT_CORE(b"USBPORT_DmaEndpointActive \n\0".as_ptr() as *const i8);
+    DPRINT_CORE!(b"USBPORT_DmaEndpointActive \n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
@@ -1938,7 +1938,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
     let mut Packet: PUSBPORT_REGISTRATION_PACKET;
     let mut EndpointState: ULONG;
 
-    // DPRINT_CORE("USBPORT_EndpointWorker: Endpoint - %p, LockNotChecked - %x\n", Endpoint, LockNotChecked);
+    // DPRINT_CORE!("USBPORT_EndpointWorker: Endpoint - %p, LockNotChecked - %x\n", Endpoint, LockNotChecked);
 
     FdoDevice = (*Endpoint).FdoDevice;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
@@ -1953,7 +1953,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
             InterlockedDecrement(
                 core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
             );
-            // DPRINT_CORE("USBPORT_EndpointWorker: LockCounter > 0\n");
+            // DPRINT_CORE!("USBPORT_EndpointWorker: LockCounter > 0\n");
             return 1 as BOOLEAN;
         }
     }
@@ -1975,7 +1975,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
         InterlockedDecrement(
             core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
         );
-        // DPRINT_CORE("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_CLOSED. return FALSE\n");
+        // DPRINT_CORE!("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_CLOSED. return FALSE\n");
         return 0 as BOOLEAN;
     }
 
@@ -2014,7 +2014,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
         InterlockedDecrement(
             core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
         );
-        // DPRINT_CORE("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_REMOVE. return FALSE\n");
+        // DPRINT_CORE!("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_REMOVE. return FALSE\n");
         return 0 as BOOLEAN;
     }
 
@@ -2041,7 +2041,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
             InterlockedDecrement(
                 core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
             );
-            // DPRINT_CORE("USBPORT_EndpointWorker: return FALSE\n");
+            // DPRINT_CORE!("USBPORT_EndpointWorker: return FALSE\n");
             return 0 as BOOLEAN;
         }
 
@@ -2050,7 +2050,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
             core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
         );
 
-        // DPRINT_CORE("USBPORT_EndpointWorker: return TRUE\n");
+        // DPRINT_CORE!("USBPORT_EndpointWorker: return TRUE\n");
         return 1 as BOOLEAN;
     }
 
@@ -2061,7 +2061,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
     InterlockedDecrement(
         core::ptr::addr_of_mut!((*Endpoint).LockCounter) as *mut core::ffi::c_long,
     );
-    // DPRINT_CORE("USBPORT_EndpointWorker: return FALSE\n");
+    // DPRINT_CORE!("USBPORT_EndpointWorker: return FALSE\n");
     return 0 as BOOLEAN;
 }
 
@@ -2331,7 +2331,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     PUSBPORT_TRANSFER Transfer;
 //     BOOLEAN Result = FALSE;
 //
-//     DPRINT_CORE("USBPORT_EndpointHasQueuedTransfers: ... \n");
+//     DPRINT_CORE!("USBPORT_EndpointHasQueuedTransfers: ... \n");
 //
 //     KeAcquireSpinLock(&Endpoint->EndpointSpinLock, &Endpoint->EndpointOldIrql);
 //
@@ -3386,7 +3386,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     PLIST_ENTRY ClosedList;
 //     PUSBPORT_ENDPOINT Endpoint;
 //
-//     DPRINT_CORE("USBPORT_FlushClosedEndpointList: ... \n");
+//     DPRINT_CORE!("USBPORT_FlushClosedEndpointList: ... \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -3427,7 +3427,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     KIRQL OldIrql;
 //     BOOLEAN IsAddEntry = FALSE;
 //
-//     DPRINT_CORE("USBPORT_InvalidateEndpointHandler: Endpoint - %p, Type - %x\n",
+//     DPRINT_CORE!("USBPORT_InvalidateEndpointHandler: Endpoint - %p, Type - %x\n",
 //                 Endpoint,
 //                 Type);
 //
@@ -3438,13 +3438,13 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     {
 //         WorkerLink = &Endpoint->WorkerLink;
 //         KeAcquireSpinLock(&FdoExtension->EndpointListSpinLock, &OldIrql);
-//         DPRINT_CORE("USBPORT_InvalidateEndpointHandler: KeAcquireSpinLock \n");
+//         DPRINT_CORE!("USBPORT_InvalidateEndpointHandler: KeAcquireSpinLock \n");
 //
 //         if ((!WorkerLink->Flink || !WorkerLink->Blink) &&
 //             !(Endpoint->Flags & ENDPOINT_FLAG_IDLE) &&
 //             USBPORT_GetEndpointState(Endpoint) != USBPORT_ENDPOINT_CLOSED)
 //         {
-//             DPRINT_CORE("USBPORT_InvalidateEndpointHandler: InsertTailList \n");
+//             DPRINT_CORE!("USBPORT_InvalidateEndpointHandler: InsertTailList \n");
 //             InsertTailList(&FdoExtension->WorkerList, WorkerLink);
 //             IsAddEntry = TRUE;
 //         }
@@ -3472,7 +3472,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //                     !(endpoint->Flags & ENDPOINT_FLAG_ROOTHUB_EP0) &&
 //                     USBPORT_GetEndpointState(endpoint) != USBPORT_ENDPOINT_CLOSED)
 //                 {
-//                     DPRINT_CORE("USBPORT_InvalidateEndpointHandler: InsertTailList \n");
+//                     DPRINT_CORE!("USBPORT_InvalidateEndpointHandler: InsertTailList \n");
 //                     InsertTailList(&FdoExtension->WorkerList, &endpoint->WorkerLink);
 //                     IsAddEntry = TRUE;
 //                 }
@@ -3524,7 +3524,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     ULONG CompletedLen = 0;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_DmaEndpointPaused \n");
+//     DPRINT_CORE!("USBPORT_DmaEndpointPaused \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
@@ -3618,7 +3618,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     MPSTATUS MpStatus;
 //     KIRQL OldIrql;
 //
-//     DPRINT_CORE("USBPORT_DmaEndpointActive \n");
+//     DPRINT_CORE!("USBPORT_DmaEndpointActive \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //
@@ -3696,7 +3696,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     ULONG EndpointState;
 //     BOOLEAN IsPaused = FALSE;
 //
-//     DPRINT_CORE("USBPORT_DmaEndpointWorker ... \n");
+//     DPRINT_CORE!("USBPORT_DmaEndpointWorker ... \n");
 //
 //     FdoDevice = Endpoint->FdoDevice;
 //
@@ -3749,7 +3749,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //                                          INVALIDATE_ENDPOINT_WORKER_THREAD);
 //     }
 //
-//     DPRINT_CORE("USBPORT_DmaEndpointWorker exit \n");
+//     DPRINT_CORE!("USBPORT_DmaEndpointWorker exit \n");
 // }
 //
 // BOOLEAN
@@ -3762,7 +3762,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     PUSBPORT_REGISTRATION_PACKET Packet;
 //     ULONG EndpointState;
 //
-//     DPRINT_CORE("USBPORT_EndpointWorker: Endpoint - %p, LockNotChecked - %x\n",
+//     DPRINT_CORE!("USBPORT_EndpointWorker: Endpoint - %p, LockNotChecked - %x\n",
 //            Endpoint,
 //            LockNotChecked);
 //
@@ -3775,7 +3775,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //         if (InterlockedIncrement(&Endpoint->LockCounter))
 //         {
 //             InterlockedDecrement(&Endpoint->LockCounter);
-//             DPRINT_CORE("USBPORT_EndpointWorker: LockCounter > 0\n");
+//             DPRINT_CORE!("USBPORT_EndpointWorker: LockCounter > 0\n");
 //             return TRUE;
 //         }
 //     }
@@ -3788,7 +3788,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     {
 //         KeReleaseSpinLockFromDpcLevel(&Endpoint->EndpointSpinLock);
 //         InterlockedDecrement(&Endpoint->LockCounter);
-//         DPRINT_CORE("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_CLOSED. return FALSE\n");
+//         DPRINT_CORE!("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_CLOSED. return FALSE\n");
 //         return FALSE;
 //     }
 //
@@ -3819,7 +3819,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //         KeReleaseSpinLockFromDpcLevel(&FdoExtension->EndpointListSpinLock);
 //
 //         InterlockedDecrement(&Endpoint->LockCounter);
-//         DPRINT_CORE("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_REMOVE. return FALSE\n");
+//         DPRINT_CORE!("USBPORT_EndpointWorker: State == USBPORT_ENDPOINT_REMOVE. return FALSE\n");
 //         return FALSE;
 //     }
 //
@@ -3848,14 +3848,14 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //             USBPORT_FlushAbortList(Endpoint);
 //
 //             InterlockedDecrement(&Endpoint->LockCounter);
-//             DPRINT_CORE("USBPORT_EndpointWorker: return FALSE\n");
+//             DPRINT_CORE!("USBPORT_EndpointWorker: return FALSE\n");
 //             return FALSE;
 //         }
 //
 //         KeReleaseSpinLockFromDpcLevel(&Endpoint->StateChangeSpinLock);
 //         InterlockedDecrement(&Endpoint->LockCounter);
 //
-//         DPRINT_CORE("USBPORT_EndpointWorker: return TRUE\n");
+//         DPRINT_CORE!("USBPORT_EndpointWorker: return TRUE\n");
 //         return TRUE;
 //     }
 //
@@ -3864,7 +3864,7 @@ pub unsafe extern "system" fn USBPORT_EndpointWorker(
 //     USBPORT_FlushAbortList(Endpoint);
 //
 //     InterlockedDecrement(&Endpoint->LockCounter);
-//     DPRINT_CORE("USBPORT_EndpointWorker: return FALSE\n");
+//     DPRINT_CORE!("USBPORT_EndpointWorker: return FALSE\n");
 //     return FALSE;
 // }
 //

@@ -152,7 +152,7 @@ unsafe fn ExpUuidLoadSequenceNumber(Sequence: *mut ULONG) -> NTSTATUS {
     let Status = ZwQueryValueKey(
         KeyHandle,
         core::ptr::addr_of_mut!(ValueName),
-        0,
+        ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
         ValueBuffer.as_mut_ptr() as PVOID,
         VALUE_BUFFER_SIZE as ULONG,
         core::ptr::addr_of_mut!(ValueLength),

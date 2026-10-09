@@ -106,7 +106,7 @@ pub unsafe extern "system" fn SerialCreate(
 // 	PSERIAL_DEVICE_EXTENSION DeviceExtension;
 // 	NTSTATUS Status;
 //
-// 	TRACE_(SERIAL, "IRP_MJ_CREATE\n");
+// 	TRACE_!(SERIAL, "IRP_MJ_CREATE\n");
 // 	Stack = IoGetCurrentIrpStackLocation(Irp);
 // 	DeviceExtension = (PSERIAL_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
 //

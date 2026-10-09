@@ -1737,8 +1737,8 @@ unsafe fn ShiftRow128Dec(mut a: *mut [MV_U8; 4]) {
 }
 #[no_mangle]
 unsafe fn Substitution(mut a: *mut [MV_U8; 4], mut box_0: *mut MV_U8) {
-    let mut i: i32 = 0;
-    let mut j: i32 = 0;
+    let mut i: i32;
+    let mut j: i32;
     i = 0 as i32;
     while i < 4 as i32 {
         j = 0 as i32;
@@ -1753,8 +1753,8 @@ unsafe fn Substitution(mut a: *mut [MV_U8; 4], mut box_0: *mut MV_U8) {
 #[no_mangle]
 unsafe fn MixColumn(mut a: *mut [MV_U8; 4], mut rk: *mut [MV_U8; 4]) {
     let mut b: [[MV_U8; 4]; 4] = [[0; 4]; 4];
-    let mut i: i32 = 0;
-    let mut j: i32 = 0;
+    let mut i: i32;
+    let mut j: i32;
     j = 0 as i32;
     while j < 4 as i32 {
         b[0 as i32 as usize][j as usize] = (mask
@@ -1834,8 +1834,8 @@ unsafe fn MixColumn(mut a: *mut [MV_U8; 4], mut rk: *mut [MV_U8; 4]) {
 #[no_mangle]
 unsafe fn InvMixColumn(mut a: *mut [MV_U8; 4]) {
     let mut b: [[MV_U8; 4]; 4] = [[0; 4]; 4];
-    let mut i: i32 = 0;
-    let mut j: i32 = 0;
+    let mut i: i32;
+    let mut j: i32;
     j = 0 as i32;
     while j < 4 as i32 {
         b[0 as i32 as usize][j as usize] = (mask
@@ -1948,12 +1948,12 @@ pub unsafe extern "C" fn rijndaelKeySched(
     mut blockBits: core::ffi::c_int,
     mut W: *mut [[MV_U8; 4]; 4],
 ) -> core::ffi::c_int {
-    let mut KC: core::ffi::c_int = 0;
-    let mut BC: core::ffi::c_int = 0;
-    let mut ROUNDS: core::ffi::c_int = 0;
-    let mut i: core::ffi::c_int = 0;
-    let mut j: core::ffi::c_int = 0;
-    let mut t: core::ffi::c_int = 0;
+    let mut KC: core::ffi::c_int;
+    let mut BC: core::ffi::c_int;
+    let mut ROUNDS: core::ffi::c_int;
+    let mut i: core::ffi::c_int;
+    let mut j: core::ffi::c_int;
+    let mut t: core::ffi::c_int;
     let mut rconpointer: core::ffi::c_int = 0 as core::ffi::c_int;
     let mut tk: [[MV_U8; 8]; 4] = [[0; 8]; 4];
     match keyBits {
@@ -2101,9 +2101,9 @@ pub unsafe extern "C" fn rijndaelEncrypt128(
     mut rk: *mut [[MV_U8; 4]; 4],
     mut rounds: i32,
 ) -> i32 {
-    let mut r: i32 = 0;
-    let mut BC: i32 = 0;
-    let mut ROUNDS: i32 = 0;
+    let mut r: i32;
+    let mut BC: i32;
+    let mut ROUNDS: i32;
     BC = 4i32;
     ROUNDS = rounds;
     KeyAddition(a, &raw mut *rk.offset(0 as isize) as *mut [MV_U8; 4], BC as MV_U8);

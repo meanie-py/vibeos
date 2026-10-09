@@ -76,7 +76,7 @@ extern "system" {
     fn FatSingleAsync(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, StartingLbo: LBO, ByteCount: ULONG, Irp: *mut IRP);
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatWaitSync(IrpContext: *mut IRP_CONTEXT);
-    fn FlagOn(flags: u32, flag: u32) -> BOOLEAN;
+    fn FlagOn(flags: u32, flag: u32) -> u32;
     fn CollectReadStats(Vcb: *mut VCB, OpenType: TYPE_OF_OPEN, ByteCount: ULONG);
     fn ExGetCurrentResourceThread() -> *mut ERESOURCE_THREAD;
     fn PsUpdateDiskCounters(Process: *mut _EPROCESS, ReadBytes: u64, WriteBytes: u64, ReadCount: u32, WriteCount: u32, Flags: u32);

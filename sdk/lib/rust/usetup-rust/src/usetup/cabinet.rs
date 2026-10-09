@@ -508,7 +508,10 @@ pub unsafe extern "C" fn CabinetOpen(CabinetContext: PCABINET_CONTEXT) -> ULONG 
         return CAB_STATUS_INVALID_CAB;
     }
 
-    Buffer = ((*CabinetContext).PCABHeader as *mut u8).add(1);
+    // C: (PUCHAR)(PCABHeader + 1) -- past the whole CFHEADER. Casting to bytes FIRST
+    // stepped one byte, so the folder table was read from inside the header and the first
+    // file extracted faulted on a garbage CFDATA pointer (the install smoke's first copy).
+    Buffer = (*CabinetContext).PCABHeader.add(1) as *mut u8;
 
     if (*(*CabinetContext).PCABHeader).Flags & CAB_FLAG_RESERVE != 0 {
         (*CabinetContext).CabinetReserved = *(Buffer as *mut u16) as u32;
@@ -643,7 +646,7 @@ pub unsafe extern "C" fn CabinetFindNext(
         {
             DPRINT!(
                 b"Skipping file (%s): FileOffset (0x%X), LastFileOffset (0x%X)\n\0".as_ptr() as *const i8,
-                ((*Search).File as *const u8).add(1) as *const i8,
+                (*(*Search).File).FileName.as_ptr() as *const i8,
                 (*(*Search).File).FileOffset,
                 (*CabinetContext).LastFileOffset,
             );
@@ -675,11 +678,11 @@ pub unsafe extern "C" fn CabinetFindNext(
             DPRINT!(b"End of cabinet reached\n\0".as_ptr() as *const i8);
             return CAB_STATUS_NOFILE;
         } else {
-            (*Search).File = strchr(
-                ((*Search).File as *const u8).add(1) as *const i8,
-                0,
-            )
-            .add(1) as PCFFILE;
+            // C: strchr((char *)(Search->File + 1), 0) + 1. CFFILE ends in FileName[1], so
+            // the C starts its scan 4 bytes into the name and skips a name of 3 characters
+            // or fewer. Scan from the name itself. (The byte cast this replaces scanned from
+            // inside FileSize, met its zero high byte, and walked into garbage.)
+            (*Search).File = strchr((*(*Search).File).FileName.as_ptr() as *const i8, 0).add(1) as PCFFILE;
         }
     }
 

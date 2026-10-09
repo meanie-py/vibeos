@@ -274,50 +274,9 @@ fn MM_ROUND_DOWN(x: ULONG_PTR, align: ULONG_PTR) -> ULONG_PTR {
     x & !(align - 1)
 }
 
-#[inline]
-fn MAKE_SSE(page: PFN_NUMBER) -> ULONG_PTR {
-    (page << 1) | 0x1
-}
-
-#[inline]
-fn DIRTY_SSE(sse: ULONG_PTR) -> ULONG_PTR {
-    sse | 2
-}
-
-#[inline]
-fn MAKE_SWAP_SSE(offset: ULONG_PTR) -> ULONG_PTR {
-    offset << 1
-}
-
-#[inline]
-fn SHARE_COUNT_FROM_SSE(sse: ULONG_PTR) -> ULONG {
-    ((sse >> 2) & 0xFF) as ULONG
-}
-
-#[inline]
-fn BUMPREF_SSE(sse: ULONG_PTR) -> ULONG_PTR {
-    sse + (1 << 2)
-}
-
-#[inline]
-fn DECREF_SSE(sse: ULONG_PTR) -> ULONG_PTR {
-    sse - (1 << 2)
-}
-
-#[inline]
-fn SWAPENTRY_FROM_SSE(sse: ULONG_PTR) -> ULONG_PTR {
-    sse >> 1
-}
-
-#[inline]
-fn PFN_FROM_SSE(sse: ULONG_PTR) -> PFN_NUMBER {
-    sse >> 1
-}
-
-#[inline]
-fn IS_SWAP_FROM_SSE(sse: ULONG_PTR) -> bool {
-    (sse & 0x00000001) == 0
-}
+// (No SSE helpers here: ARM3/section.c uses prototype PTEs, not section segment entries. A
+// private set with an invented encoding -- swap bit inverted, share count at bit 2 -- sat here
+// unused; the real ones are mm.h's, in mm/section.rs.)
 
 #[inline]
 unsafe fn InterlockedIncrement64(addend: *mut i64) -> i64 {

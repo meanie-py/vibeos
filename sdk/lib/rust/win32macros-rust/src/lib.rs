@@ -1060,6 +1060,99 @@ pub fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b { a } else { b }
 }
 
+// ================= wine/heap.h =================================================================
+//
+// `static inline` in the header, so no DLL exports them and every wine-derived crate carried a
+// hand copy (wldap32, advapi32, ...). One copy here. `SIZE_T` is `usize` on every target.
+
+extern "system" {
+    // kernel32. Private, like iswctype below: a consumer's own declarations stay its own.
+    fn GetProcessHeap() -> *mut core::ffi::c_void;
+    fn HeapAlloc(heap: *mut core::ffi::c_void, flags: u32, bytes: usize) -> *mut core::ffi::c_void;
+    fn HeapReAlloc(
+        heap: *mut core::ffi::c_void,
+        flags: u32,
+        mem: *mut core::ffi::c_void,
+        bytes: usize,
+    ) -> *mut core::ffi::c_void;
+    fn HeapFree(heap: *mut core::ffi::c_void, flags: u32, mem: *mut core::ffi::c_void) -> i32;
+}
+
+/// `winnt.h` — `#define HEAP_ZERO_MEMORY 8`.
+const HEAP_ZERO_MEMORY: u32 = 0x8;
+
+/// `wine/heap.h` — `HeapAlloc(GetProcessHeap(), 0, len)`.
+#[inline]
+pub unsafe fn heap_alloc(len: usize) -> *mut core::ffi::c_void {
+    unsafe { HeapAlloc(GetProcessHeap(), 0, len) }
+}
+
+/// `wine/heap.h` — `HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len)`.
+#[inline]
+pub unsafe fn heap_alloc_zero(len: usize) -> *mut core::ffi::c_void {
+    unsafe { HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len) }
+}
+
+/// `wine/heap.h` — a NULL `mem` allocates, as `realloc` does.
+#[inline]
+pub unsafe fn heap_realloc(mem: *mut core::ffi::c_void, len: usize) -> *mut core::ffi::c_void {
+    if mem.is_null() {
+        return unsafe { HeapAlloc(GetProcessHeap(), 0, len) };
+    }
+    unsafe { HeapReAlloc(GetProcessHeap(), 0, mem, len) }
+}
+
+/// `wine/heap.h` — returns nothing; HeapFree's BOOL is dropped, as in the C.
+#[inline]
+pub unsafe fn heap_free(mem: *mut core::ffi::c_void) {
+    unsafe { HeapFree(GetProcessHeap(), 0, mem) };
+}
+
+/// `wine/heap.h` — NULL when `count * size` overflows. `checked_mul` is the C's
+/// `size && len / size != count` test.
+#[inline]
+pub unsafe fn heap_calloc(count: usize, size: usize) -> *mut core::ffi::c_void {
+    match count.checked_mul(size) {
+        Some(len) => unsafe { HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, len) },
+        None => core::ptr::null_mut(),
+    }
+}
+
+// ================= wine/debug.h string helpers ==================================================
+//
+// `static __inline` over libwine's `wine_dbgstr_wn`/`wine_dbgstr_an`, so they link only into a
+// module that links `wine` -- which every module that names them does (they are wine/debug.h).
+// A per-crate `extern` copy of `debugstr_w` (the consensus route) links to nothing: inetcpl.
+
+extern "C" {
+    fn wine_dbgstr_wn(s: *const u16, n: i32) -> *const core::ffi::c_char;
+    fn wine_dbgstr_an(s: *const core::ffi::c_char, n: i32) -> *const core::ffi::c_char;
+}
+
+/// `wine/debug.h` — `wine_dbgstr_wn(s, n)`.
+#[inline]
+pub unsafe fn debugstr_wn(s: *const u16, n: i32) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, n) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_wn(s, -1)`.
+#[inline]
+pub unsafe fn debugstr_w(s: *const u16) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, -1) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_an(s, n)`.
+#[inline]
+pub unsafe fn debugstr_an(s: *const core::ffi::c_char, n: i32) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, n) }
+}
+
+/// `wine/debug.h` — `wine_dbgstr_an(s, -1)`.
+#[inline]
+pub unsafe fn debugstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, -1) }
+}
+
 extern "C" {
     // `int __cdecl iswctype(wint_t, wctype_t)`, exported by both ntdll and msvcrt. Private:
     // consumers that declare it themselves keep their own declaration.

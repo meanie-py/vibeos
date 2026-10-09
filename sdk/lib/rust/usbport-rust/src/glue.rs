@@ -88,13 +88,7 @@ pub const USBD_STATUS_DEVICE_NOT_RESPONDING: LONG = 0xC0000005u32 as LONG;
 // link (cdecl, caller cleans varargs). ----
 extern "C" {
     pub fn DPRINT(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_CORE(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_URB(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_QUEUE(fmt: *const ::core::ffi::c_char, ...);
     pub fn DPRINT_USB(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_TIMER(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_INT(fmt: *const ::core::ffi::c_char, ...);
-    pub fn DPRINT_MINIPORT(fmt: *const ::core::ffi::c_char, ...);
 }
 mod dprint_syms {
     macro_rules! noop { ($($n:ident),*) => { $(

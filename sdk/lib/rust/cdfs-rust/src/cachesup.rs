@@ -108,7 +108,7 @@ extern "system" {
     fn CcInitializeCacheMap( FileObject: *mut FILE_OBJECT, FileSizes: *mut core::ffi::c_void, PinAccess: BOOLEAN, Callbacks: *mut core::ffi::c_void, LazyWriteContext: *mut core::ffi::c_void, );
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn CdInitializeDirContext( IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT, );

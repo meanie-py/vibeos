@@ -165,11 +165,21 @@ pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
 
     UiVtbl = if UiMinimal != 0 { MiniTuiVtbl } else { TuiVtbl };
 
-    // ui.c:174 — rustconv mangled the #ifdef UEFIBOOT / #else / #endif into
-    // broken braces. UEFIBOOT is OFF for the smoke path (see freeldr_decfg
-    // policy), so the active C branch is `#else return FALSE;`.
+    // ui.c:174, `#ifdef UEFIBOOT`, which is this crate's `uefi` feature (the
+    // uefildr.efi archive). On UEFI with no GOP (a server: EC2 Graviton has no
+    // display) the text UI cannot start, and the C carries on with no UI so the
+    // OS still loads. The translation kept only the BIOS `return FALSE`; RunLoader
+    // then reported the failure through the dead text UI, whose message box waits
+    // for a key on UEFI's console input forever: a headless boot hung before the
+    // kernel was loaded.
     if (UiVtbl.Initialize.unwrap())() == 0 {
         MachVideoSetDisplayMode(core::ptr::null(), 0u8);
+        #[cfg(feature = "uefi")]
+        {
+            dbgcon_str(b"[FLDR] no text UI (no display): loading without one\r\n");
+            UiVtbl = SavedNoUiVtbl;
+        }
+        #[cfg(not(feature = "uefi"))]
         return 0u8;
     }
 
@@ -392,11 +402,17 @@ pub unsafe extern "C" fn UiMessageBox(
         Format as *const i8,
         &[a0, a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11],
     );
+    dbgcon_str(b"[FLDR] message: ");
+    dbgcon_str(core::ffi::CStr::from_ptr(Buffer.as_ptr()).to_bytes());
+    dbgcon_str(b"\r\n");
     (UiVtbl.MessageBox.unwrap())(Buffer.as_ptr() as PCSTR);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn UiMessageBoxCritical(MessageText: PCSTR) {
+    dbgcon_str(b"[FLDR] message: ");
+    dbgcon_str(core::ffi::CStr::from_ptr(MessageText as *const core::ffi::c_char).to_bytes());
+    dbgcon_str(b"\r\n");
     (UiVtbl.MessageBoxCritical.unwrap())(MessageText);
 }
 
@@ -440,6 +456,11 @@ pub unsafe extern "C" fn UiIndicateProgress() {
 
     UiProgressBar.Indicator.Count = UiProgressBar.Indicator.Count.wrapping_add(1);
 
+    // No progress bar was set up (a boot with no display runs without a UI): the C
+    // divides by its zero Expected anyway, which arm64's udiv quietly answers with 0.
+    if UiProgressBar.Indicator.Expected == 0 {
+        return;
+    }
     Percentage = 100u32.wrapping_mul(UiProgressBar.Indicator.Count)
         .wrapping_div(UiProgressBar.Indicator.Expected);
     Percentage = if Percentage < 99 { Percentage } else { 99 };

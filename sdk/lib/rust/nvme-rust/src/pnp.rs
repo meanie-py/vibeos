@@ -564,6 +564,9 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
         disconnect(fdo);
         return STATUS_ADAPTER_HARDWARE_ERROR;
     }
+    if let Some(bad) = tripwire_value(utf16!("NVME_BAD_DMA")) {
+        nvme::BAD_DMA.store(bad, Ordering::Relaxed);
+    }
     if let Some(lose) = tripwire_value(utf16!("NVME_LOSE_COMPLETION")) {
         nvme::LOSE_COMPLETION.store(lose as u32, Ordering::Relaxed);
         nvprint!("controller {}: tripwire: I/O completion {} will be thrown away\n", n, lose);

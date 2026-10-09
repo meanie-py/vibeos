@@ -78,7 +78,7 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
     Message.Header.u1.s1.TotalLength = size_of::<LSAP_RM_API_MESSAGE>() as i16;
     Message.Header.u1.s1.DataLength = 0;
 
-    let mut ReplyMessage: *mut PORT_MESSAGE = null_mut();
+    let mut ReplyMessage: *mut PORT_MESSAGE;
     let mut RemotePortView: REMOTE_PORT_VIEW = REMOTE_PORT_VIEW {
         Length: size_of::<REMOTE_PORT_VIEW>() as u32,
         ViewSize: 0,
@@ -86,7 +86,7 @@ unsafe extern "system" fn LsapRmServerThread(_StartContext: *mut c_void) -> u32 
     };
     let mut MessagePort: HANDLE = null_mut();
     let mut DummyPortHandle: HANDLE = null_mut();
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     Status = NtListenPort(SeLsaCommandPort, addr_of_mut!(Message.Header) as *mut _PORT_MESSAGE);
     if Status < 0 {
@@ -168,7 +168,7 @@ pub unsafe extern "C" fn LsapRmInitializeServer() -> NTSTATUS {
         EffectiveOnly: 0,
     };
     let mut InitEvent: HANDLE = core::ptr::null_mut();
-    let mut ThreadHandle: HANDLE = core::ptr::null_mut();
+    let ThreadHandle: HANDLE;
     let mut ThreadId: DWORD = 0;
     let mut Status: NTSTATUS;
 

@@ -192,8 +192,8 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
     Resources: PCM_RESOURCE_LIST,
 ) -> NTSTATUS {
     let _ = Resources;
-    let mut PdoExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut();
-    let mut Instance: PVOID = core::ptr::null_mut();
+    let mut PdoExtension: PPCI_PDO_EXTENSION;
+    let mut Instance: PVOID;
     if (*DeviceExtension).ArbitersInitialized != 0 {
         if DbgPrint(
             b"(%s:%d) PCI Warning hot start FDOx %p, resource ranges not checked.\n\0"

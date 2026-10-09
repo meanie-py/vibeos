@@ -64,7 +64,7 @@ pub unsafe extern "system" fn SerialPower(
 // {
 // 	PSERIAL_DEVICE_EXTENSION DeviceExtension;
 //
-// 	TRACE_(SERIAL, "IRP_MJ_POWER dispatch\n");
+// 	TRACE_!(SERIAL, "IRP_MJ_POWER dispatch\n");
 //
 // 	DeviceExtension = DeviceObject->DeviceExtension;
 // 	PoStartNextPowerIrp(Irp);

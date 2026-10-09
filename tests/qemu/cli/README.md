@@ -136,6 +136,20 @@ all included), then auto-triage on failure.
   to the HAL (`[PNP] message interrupts: N back to the HAL, 0 refused`). Nothing else in a
   boot removes a device.
 
+- **`--cpu <model>`, `--headless`, `--boot-nvme`** (arm64) shape the machine like a
+  Graviton instance: a Neoverse core (`neoverse-n1`/`-v1`/`-n2`, `VIBEOS_QEMU_CPU`),
+  no display device so UEFI hands over no GOP (`VIBEOS_QEMU_HEADLESS=1`; FAILS
+  `NOT_HEADLESS` unless arm64vid ran on its in-memory frame), and the boot image on an
+  NVMe namespace as EC2's root volume is (`VIBEOS_QEMU_BOOT_NVME=1`; FAILS
+  `NVME_BOOT_DISK_NOT_SEEN` unless nvme.sys published it). More vCPUs than host CPUs
+  stretch the silence watchdog to 15 minutes: UEFI goes quiet that long under TCG.
+
+- **`--smmu --tripwire SMMU=TRANSLATE`** (arm64) drives the SMMUv3 for real instead of
+  bypassing it, and FAILS unless it translated (`SMMU_NOT_TRANSLATING`), every started
+  device's stream was attached (`SMMU_NOT_ATTACHED`), and nothing faulted
+  (`SMMU_FAULT`). Add `NVME_BAD_DMA=<hex>` and nvme.sys aims one Identify there: the
+  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it.
+
 - **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
   mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
   (`VIBEOS_QEMU_XHCI_MSI`), and FAILS the boot unless usbxhci ran (`XHCI_NOT_ENGAGED`), the
@@ -626,6 +640,22 @@ x86 only — arm64 has no livecd for the swap (skips cleanly); ntoskrnl skips on
 amd64 (i386-only PoC). Slow (boots QEMU per module) — run it before trusting a
 cargo-drive handoff, not in the hot loop.
 
+### `install-smoke --arch amd64-bios`
+**Setup, end to end.** Builds `bootcdregtest.iso`, installs it unattended onto a blank 4 GB
+disk (usetup partitions, formats, copies, writes the hives and FreeLdr, reboots), then boots
+that disk with no CD through the GUI second stage to Explorer. Nothing else runs the installer:
+every other boot starts from the livecd. Drives `tests/qemu/test_install.py`; one verdict +
+`summary.json`. A missing txtsetup.sif boot driver fails before booting; a bugcheck in either
+stage fails within seconds, with the loader's debugcon tail and the serial attached. About an
+hour under TCG, so it is its own verb and not a gate stage.
+
+Iterating on the installed system (GUI setup, userenv, winlogon, ...) without replaying text
+setup: every run leaves the disk exactly as setup left it at `<basetemp>/install0/
+install.qcow2` (copy it before the next run). `VIBEOS_INSTALL_STAGE1_DISK=<that copy>` starts
+stage 2 from it, and `VIBEOS_INSTALL_REFRESH=syssetup.dll,winlogon.exe` first copies this
+build's outputs for those names over every installed copy (CD files and reactos.cab files
+alike), the kernel and drivers included. Only a change to text setup itself needs a full run.
+
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
 shell tools (`start` → `start.sh`, `inspect`/`bt`/`triage-bugcheck` →
@@ -1018,6 +1048,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | Watch a specific boot marker fast | `vibeos-cli boot` |
 | Lint gate (NEW-vs-baseline) + binary checks | `vibeos-cli check [--strict]` |
 | Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
+| Prove the bootcd still installs and the installed disk boots | `vibeos-cli install-smoke --arch amd64-bios` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |
 | What's live across worktrees | `vibeos-cli ps` (== `qemu/ps`) |

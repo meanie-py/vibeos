@@ -251,7 +251,7 @@ pub unsafe extern "system" fn AfdGetSockName(
     let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
-    let mut Mdl: PMDL = core::ptr::null_mut();
+    let Mdl: PMDL;
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);

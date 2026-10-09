@@ -243,8 +243,6 @@ unsafe extern "C" {
     fn PORT_ALLOCATED_SENSE_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID) -> BOOLEAN;
     fn FREE_PORT_ALLOCATED_SENSE_BUFFER_EX(fdoExtension: PFUNCTIONAL_DEVICE_EXTENSION, srb: PVOID);
     fn MmGetMdlVirtualAddress(mdl: PVOID) -> PVOID;
-    fn RtlStringCchPrintfA(dest: *mut i8, dest_sz: usize, fmt: *const i8, ...) -> NTSTATUS;
-    fn RtlStringCbPrintfA(dest: *mut i8, dest_sz: usize, fmt: *const i8, ...) -> NTSTATUS;
     fn ClasspIsOffloadDataTransferCommand(cdb: PCDB) -> BOOLEAN;
     fn InterpretSenseInfoWithoutHistory(fdo: PDEVICE_OBJECT, irp: PIRP, srb: PSCSI_REQUEST_BLOCK, major_fn: UCHAR, io_device_code: ULONG, prev_retry: ULONG, status: *mut NTSTATUS, retry_in_100ns: *mut LONGLONG) -> BOOLEAN;
     fn ClasspIsReceiveTokenInformation_c(cdb: PCDB) -> BOOLEAN;
@@ -4523,7 +4521,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
                     (scsiAddress.TargetId) as i32,
                     (scsiAddress.Lun) as i32);
 
-        status = RtlStringCchPrintfA(
+        status = strsafe_rust::RtlStringCchPrintfA!(
             buffer.as_mut_ptr() as NTSTRSAFE_PSTR,
             (core::mem::size_of_val(&buffer) - 1) as usize,
             b"\\Registry\\Machine\\Hardware\\DeviceMap\\Scsi\\Scsi Port %d\\Scsi Bus %d\\Target Id %d\\Logical Unit Id %d\0".as_ptr() as PCHAR,
@@ -4563,7 +4561,7 @@ pub unsafe extern "system" fn ClassUpdateInformationInRegistry(
                         w!("DeviceName").as_ptr() as PWSTR
                     );
 
-                    status = RtlStringCchPrintfA(
+                    status = strsafe_rust::RtlStringCchPrintfA!(
                         buffer.as_mut_ptr() as NTSTRSAFE_PSTR,
                         (core::mem::size_of_val(&buffer) - 1) as usize,
                         b"%s%d\0".as_ptr() as PCHAR,

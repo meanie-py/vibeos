@@ -395,7 +395,9 @@ unsafe fn _disable() {
 // EBP/RIP, causing the wrapper to `ret` to garbage 0x10006 (rosload PE
 // header bytes) on i386.
 extern "C" {
-    fn NtLdrGetOption(Options: PCSTR, Name: PCSTR) -> u32;
+    // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
+    // address whose low byte is 0 reads "absent"; only the pointer width is safe.
+    fn NtLdrGetOption(Options: PCSTR, Name: PCSTR) -> usize;
     fn NtLdrGetOptionEx(Options: PCSTR, Name: PCSTR, OptionLength: *mut u32) -> PCSTR;
 }
 
@@ -825,8 +827,11 @@ unsafe fn DetectSerialPointerPeripheral(
             }
             memcpy(
                 Identifier.as_mut_ptr().offset(7) as *mut core::ffi::c_void,
-                b" - \0".as_ptr() as *const core::ffi::c_void,
-                3 * core::mem::size_of::<u16>(),
+                // The C copies L" - " (6 bytes) into this CHAR array, leaving " \0-\0 \0" and
+                // cutting the identifier short. The intent is the 3 characters " - ".
+                // nolint: narrow-vs-wide (the C is wrong here; this array is CHAR)
+                b" - ".as_ptr() as *const core::ffi::c_void,
+                3,
             );
 
             i = 10;

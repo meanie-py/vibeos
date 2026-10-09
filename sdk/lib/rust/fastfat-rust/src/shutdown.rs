@@ -36,7 +36,7 @@ extern "system" {
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32) -> u32;
-    fn FlagOn(flags: u32, mask: u32) -> BOOLEAN;
+    fn FlagOn(flags: u32, mask: u32) -> u32;
     fn NT_ASSERT(condition: BOOLEAN);
     fn FsRtlExitFileSystem();
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
@@ -114,7 +114,7 @@ pub unsafe extern "system" fn FatCommonShutdown(
     (*(core::ptr::addr_of_mut!(FatData))).set_ShutdownStarted(1);
 
     // NT_ASSERT(FlagOn(IrpContext->Flags, IRP_CONTEXT_FLAG_WAIT))
-    NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT));
+    NT_ASSERT((FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) != 0) as BOOLEAN);
 
     FatAcquireExclusiveGlobal(IrpContext);
 

@@ -819,7 +819,79 @@ def existing_items(prelude: Path) -> dict[str, set[str]]:
     return {
         "type": set(re.findall(r"^pub type (\w+)", body, re.M)),
         "value": set(re.findall(r"^pub const (\w+)", body, re.M)),
+        "fn": set(re.findall(r"^pub unsafe fn (\w+)", body, re.M)),
     }
+
+
+_ISLAND_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
+
+
+def _render_wrapper(
+    name: str,
+    iface: str,
+    method: str,
+    sig: tuple[list[tuple[str, str]], str | None] | None,
+    cfg: str = "",
+) -> str:
+    assert sig is not None
+    args, ret = sig
+    params = ", ".join([f"This: *mut {iface}", *(f"{n}: {t}" for n, t in args)])
+    call = ", ".join(["This", *(n for n, _ in args)])
+    return (
+        f"{cfg}#[inline]\npub unsafe fn {name}({params})"
+        + (f" -> {ret}" if ret else "")
+        + f" {{ ((*(*This).lpVtbl).{method}.unwrap_unchecked())({call}) }}"
+        + " // widl C wrapper"
+    )
+
+
+def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
+    """WIDL's C wrappers (`IFoo_Method(This, ...)`) the crate calls, from the island's Vtbl.
+
+    Under `__WINESRC__` widl headers define WIDL_C_INLINE_WRAPPERS, so `IFoo_Method` is a
+    `static inline` function -- no macro for the preprocessor lowering to find, and no DLL
+    exports it -- and a dozen crates carry hand copies of IUnknown_Release & co. The body is
+    always `This->lpVtbl->Method(This, ...)`; it is generated with tools/gen_commacros.py's
+    parser and body (`unwrap_unchecked`: a NULL slot faults at the call, as in C). A method
+    whose callback parameter's ABI differs per arch gets one `#[cfg(target_arch)]` copy each.
+    """
+    try:
+        from tools.gen_commacros import parse_vtbls
+    except ImportError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.gen_commacros import parse_vtbls
+
+    per_arch: dict[str, dict[str, dict[str, tuple[list[tuple[str, str]], str | None]]]] = {}
+    for arch in _ISLAND_ARCH:
+        p = crate_src / f"types_{arch}.rs"
+        if not p.is_file():
+            return {}
+        per_arch[arch] = {
+            iface: {m: (args, ret) for m, args, ret in methods}
+            for iface, methods in parse_vtbls(p.read_text(errors="replace")).items()
+        }
+    out: dict[str, str] = {}
+    for name in sorted(wanted):
+        parts = name.split("_")
+        for cut in range(1, len(parts)):
+            iface, method = "_".join(parts[:cut]), "_".join(parts[cut:])
+            sigs = {a: v.get(iface, {}).get(method) for a, v in per_arch.items()}
+            if any(sig is None for sig in sigs.values()):
+                continue
+
+            if len({repr(sig) for sig in sigs.values()}) == 1:
+                out[name] = _render_wrapper(name, iface, method, next(iter(sigs.values())))
+            else:
+                out[name] = "\n".join(
+                    _render_wrapper(
+                        name, iface, method, sig, f'#[cfg(target_arch = "{_ISLAND_ARCH[a]}")]\n'
+                    )
+                    for a, sig in sorted(sigs.items())
+                )
+            break
+    return out
 
 
 _OBJ_DEFINE = re.compile(r"^#define ([A-Za-z_]\w*) (.+)$", re.M)

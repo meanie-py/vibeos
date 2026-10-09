@@ -1910,7 +1910,7 @@ pub unsafe extern "system" fn VarCyCmp(cyLeft: CY, cyRight: CY) -> HRESULT {
 
 #[no_mangle]
 pub unsafe extern "system" fn VarCyCmpR8(cyLeft: CY, dblRight: f64) -> HRESULT {
-    let mut hRet: HRESULT = 0;
+    let mut hRet: HRESULT;
     let mut cyRight: CY = unsafe { core::mem::zeroed() };
 
     hRet = VarCyFromR8(dblRight, &mut cyRight);
@@ -3130,7 +3130,7 @@ unsafe fn VARIANT_do_division(
     pDecOut: *mut DECIMAL,
     round: i32,
 ) -> HRESULT {
-    let mut hRet: HRESULT = S_OK;
+    let hRet: HRESULT;
     let mut di_left: VARIANT_DI = core::mem::zeroed();
     let mut di_right: VARIANT_DI = core::mem::zeroed();
     let mut di_result: VARIANT_DI = core::mem::zeroed();

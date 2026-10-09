@@ -36,6 +36,12 @@
 //!   NVME_FAIL_START=1   not read by the kernel: nvme.sys connects its messages, then
 //!                       fails START, so the PnP manager removes the device and its
 //!                       message vectors go back to the HAL.
+//!   NVME_BAD_DMA=<hex>  not read by the kernel: nvme.sys's bring-up sends one
+//!                       Identify whose data goes to <hex> (not memory), so a
+//!                       translating SMMU can be seen to fault it.
+//!   SMMU=TRANSLATE      not read here: the arm64 HAL drives each SMMUv3 for real
+//!                       (an identity map of RAM and MSI doorbells, faults reported)
+//!                       instead of bypassing it. Only means something with --smmu.
 //!   XHCI_MSI_MESSAGES=<hex>  not read by the kernel: usbport asks pci.sys for this
 //!                       many messages for an xHCI controller instead of one, so
 //!                       a rig with MSI-X off proves a multiple-message MSI block.
@@ -320,9 +326,13 @@ unsafe fn apply_token(tok: &[u8]) {
     } else if token_val(tok, b"NVME_AFFINITY").is_some()
         || token_val(tok, b"NVME_LOSE_COMPLETION").is_some()
         || token_val(tok, b"NVME_FAIL_START").is_some()
+        || token_val(tok, b"NVME_BAD_DMA").is_some()
         || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
     {
         // For nvme.sys and usbport, through the registry copy, like QUIET.
+    } else if tok == b"SMMU=TRANSLATE" {
+        // For the arm64 HAL, which asks VibeTripwireHasToken before the first
+        // driver starts (smmu.rs): drive each SMMUv3 for real, not in bypass.
     } else if tok == b"QUIET" {
         // For user mode, not the kernel: winlogon reads it back through
         // VibeTripwireRead's registry copy. Recognized here only so it doesn't

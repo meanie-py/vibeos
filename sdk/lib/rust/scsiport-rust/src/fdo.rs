@@ -46,17 +46,17 @@ unsafe fn FdoSendInquiry(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
     let mut IoStatusBlock: _IO_STATUS_BLOCK = core::mem::zeroed();
     IoStatusBlock.__bindgen_anon_1.Status = 0;
     IoStatusBlock.Information = 0;
-    let mut IrpStack: PIO_STACK_LOCATION = core::ptr::null_mut();
+    let mut IrpStack: PIO_STACK_LOCATION;
     let mut Event: KEVENT = core::mem::zeroed();
     let mut Irql: KIRQL = 0;
-    let mut Irp: PIRP = core::ptr::null_mut();
+    let mut Irp: PIRP;
     let mut Status: NTSTATUS = 0;
-    let mut InquiryBuffer: PINQUIRYDATA = core::ptr::null_mut();
-    let mut SenseBuffer: PSENSE_DATA = core::ptr::null_mut();
+    let mut InquiryBuffer: PINQUIRYDATA;
+    let mut SenseBuffer: PSENSE_DATA;
     let mut KeepTrying: BOOLEAN = 1;
     let mut RetryCount: ULONG = 0;
     let mut Srb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
-    let mut Cdb: *mut CDB = core::ptr::null_mut();
+    let mut Cdb: *mut CDB;
 
     // DPRINT removed
 
@@ -154,7 +154,6 @@ unsafe fn FdoSendInquiry(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS {
         // DPRINT removed
 
         if Srb.SrbStatus & (SRB_STATUS_QUEUE_FROZEN) as u8 != 0 {
-            KeepTrying = 0;
 
             // DPRINT removed
 
@@ -237,7 +236,7 @@ pub unsafe extern "C" fn FdoScanAdapter(
 
             // Scan all logical units
             for lun in 0..(*PortExtension).MaxLunCount {
-                let mut lunExt: *mut SCSI_PORT_LUN_EXTENSION = core::ptr::null_mut();
+                let mut lunExt: *mut SCSI_PORT_LUN_EXTENSION;
 
                 // Skip invalid lun values
                 if lun >= ((*(*PortExtension).PortConfig).MaximumNumberOfLogicalUnits) as u32 {
@@ -363,7 +362,7 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
     DeviceExtension: *mut SCSI_PORT_DEVICE_EXTENSION,
 ) -> NTSTATUS {
     let PortConfig: *mut PORT_CONFIGURATION_INFORMATION = (*DeviceExtension).PortConfig;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let mut OldIrql: KIRQL = 0;
 
     if (*DeviceExtension).HwInterrupt.is_none()
@@ -394,13 +393,13 @@ pub unsafe extern "C" fn FdoCallHWInitialize(
         );
         __debugbreak();
     } else {
-        let mut InterruptShareable: BOOLEAN = 0;
+        let mut InterruptShareable: BOOLEAN;
         let mut InterruptMode: [KINTERRUPT_MODE; 2] = [LevelSensitive; 2];
         let mut InterruptVector: [ULONG; 2] = [0; 2];
-        let mut i: ULONG = 0;
+        let mut i: ULONG;
         let mut MappedIrq: [ULONG; 2] = [0; 2];
         let mut Dirql: [KIRQL; 2] = [0; 2];
-        let mut MaxDirql: KIRQL = 0;
+        let mut MaxDirql: KIRQL;
         let mut Affinity: [KAFFINITY; 2] = [0; 2];
 
         (*DeviceExtension).InterruptLevel[0usize] = (*PortConfig).BusInterruptLevel;
@@ -667,7 +666,7 @@ pub unsafe extern "C" fn FdoStartAdapter(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut(),
     };
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
 
     IoStartTimer((*PortExtension).Common.DeviceObject);
 

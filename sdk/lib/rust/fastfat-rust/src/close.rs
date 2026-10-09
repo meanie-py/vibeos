@@ -64,7 +64,7 @@ extern "system" {
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
     fn NT_ASSERT(condition: u8);
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> u8;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----

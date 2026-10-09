@@ -69,9 +69,9 @@ extern "system" {
     fn KeClearEvent(Event: *mut KEVENT);
     fn RtlCheckBit(BitMap: *const RTL_BITMAP, Bit: u32) -> u8;
     fn FatFreeClusters(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32, ClusterCount: u32);
-    fn FatRootDirectoryLbo(Bpb: *const core::ffi::c_void) -> u32;
+    fn FatRootDirectoryLbo(Bpb: *const core::ffi::c_void) -> i64; // LBO
     fn FatRootDirectorySize(Bpb: *const core::ffi::c_void) -> u32;
-    fn FatFileAreaLbo(Bpb: *const core::ffi::c_void) -> u32;
+    fn FatFileAreaLbo(Bpb: *const core::ffi::c_void) -> i64; // LBO
     fn FatNumberOfClusters(Bpb: *const core::ffi::c_void) -> u32;
     // UCHAR in rust_cohab_fat.c: declared u32, the 64-bit arches read 24 undefined bits above
     // it, and a 64 MB FAT16 volume set itself up with 14 clusters (DISK_FULL at file 29).
@@ -1355,14 +1355,15 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
     let IrpContext = IrpContext as *mut IRP_CONTEXT;
     let Vcb = Vcb as *mut VCB;
 
-    DbgPrint(b"FatAllocateDiskSpace\n\0".as_ptr() as *const i8);
-    // DbgPrint Vcb/ByteCount/Mcb/Hint — variadic not expressible in safe Rust
+    // C: DebugTrace(+1, Dbg, ...) -- a trace, compiled out unless tracing is on. As an
+    // unconditional DbgPrint it put two serial lines on every allocation (setup's file copy).
+    DebugTrace(1, Dbg, b"FatAllocateDiskSpace\n\0".as_ptr() as *const i8, 0);
 
     ntkrnl_sys::ASSERT!((AbsoluteClusterHint <= (*Vcb).AllocationSupport.NumberOfClusters + 2) && (1 != AbsoluteClusterHint));
 
     if *ByteCount == 0 {
-        DbgPrint(b"Nothing to allocate.\n\0".as_ptr() as *const i8);
-        DbgPrint(b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8);
+        DebugTrace(0, Dbg, b"Nothing to allocate.\n\0".as_ptr() as *const i8, 0);
+        DebugTrace(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
         return;
     }
 
@@ -1817,7 +1818,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
         );
     }
 
-    DbgPrint(b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8);
+    DebugTrace(-1, Dbg, b"FatAllocateDiskSpace -> (VOID)\n\0".as_ptr() as *const i8, 0);
 }
 
 #[no_mangle]

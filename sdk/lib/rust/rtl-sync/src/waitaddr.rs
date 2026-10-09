@@ -197,7 +197,10 @@ pub unsafe extern "system" fn RtlWaitOnAddress(
         spin_unlock(b);
         return STATUS_SUCCESS;
     }
-    entry.Next = b.Head.load(Ordering::Relaxed);
+    // Through entry_ptr, not `entry`: wakers read the entry via that pointer, and a
+    // write through the parent place would invalidate it (and rustc then calls the
+    // store dead).
+    (*entry_ptr).Next = b.Head.load(Ordering::Relaxed);
     b.Head.store(entry_ptr, Ordering::Relaxed);
     spin_unlock(b);
 

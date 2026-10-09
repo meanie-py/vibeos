@@ -34,7 +34,11 @@ use ntkrnl_sys::ddk::{
 };
 
 extern "C" {
-    fn CONTAINING_RECORD(address: PVOID, type_: PVOID, field: PVOID) -> PVOID;
+    // ntoskrnl-rust shim_exports: (address, type size, field offset). Declared here with
+    // null for both, the offset was 0 and `Volume` is the LAST field of the extension, so
+    // every volume walk read a DEVICE_OBJECT from inside the list links: the shutdown
+    // flush bugchecked 0x1E (setup's reboot, the install smoke).
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
     fn InitializeObjectAttributes(
         p: *mut _OBJECT_ATTRIBUTES,
         n: *mut _UNICODE_STRING,
@@ -226,8 +230,8 @@ pub unsafe extern "system" fn PopFlushVolumeWorkerInner(Context: PVOID) {
 
         dope = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEVICE_OBJECT_POWER_EXTENSION>(),
+            core::mem::offset_of!(_DEVICE_OBJECT_POWER_EXTENSION, Volume),
         ) as PDEVICE_OBJECT_POWER_EXTENSION;
 
         status = ObQueryNameString(
@@ -330,8 +334,8 @@ pub unsafe extern "system" fn PopFlushVolumes(ShuttingDown: BOOLEAN) {
     while next_entry != core::ptr::addr_of_mut!(PopVolumeDevices) as PLIST_ENTRY {
         dope = CONTAINING_RECORD(
             next_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<_DEVICE_OBJECT_POWER_EXTENSION>(),
+            core::mem::offset_of!(_DEVICE_OBJECT_POWER_EXTENSION, Volume),
         ) as PDEVICE_OBJECT_POWER_EXTENSION;
 
         next_entry = (*next_entry).Flink;

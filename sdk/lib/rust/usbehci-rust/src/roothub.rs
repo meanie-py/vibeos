@@ -7,7 +7,6 @@ use ntkrnl_sys::ddk::{KeStallExecutionProcessor};
 use core::ffi::c_void;
 
 extern "C" {
-    fn DPRINT_RH(format: *const ::core::ffi::c_char, ...);
 }
 extern "system" {
     fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, );
@@ -29,7 +28,7 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
     let mut PortBit: ULONG;
     let mut ix: ULONG;
 
-    // DPRINT_RH("EHCI_RH_ChirpRootPort: Port - %x\n", Port);
+    // DPRINT_RH!("EHCI_RH_ChirpRootPort: Port - %x\n", Port);
     if !(Port as i32 != 0 as i32) {
         RtlAssert(
             b"Port != 0\0" as *const u8 as *const i8 as PVOID,
@@ -48,17 +47,17 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
         .AsULONG
     ) as PULONG;
     PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg as *mut ULONG);
-    // DPRINT_RH("EHCI_RH_ChirpRootPort: PortSC - %X\n", PortSC.AsULONG);
+    // DPRINT_RH!("EHCI_RH_ChirpRootPort: PortSC - %X\n", PortSC.AsULONG);
 
     PortBit = ((1 as i32) << (Port as i32 - 1 as i32)) as ULONG;
 
     if PortBit & (*EhciExtension).ResetPortBits != 0 {
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
         return MP_STATUS_SUCCESS as MPSTATUS;
     }
 
     if PortSC.c2rust_unnamed.PortPower() as i32 == 0 as i32 {
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
         return MP_STATUS_SUCCESS as MPSTATUS;
     }
 
@@ -66,7 +65,7 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
         || PortSC.c2rust_unnamed.PortEnabledDisabled() as i32 == 1 as i32
         || PortSC.c2rust_unnamed.PortOwner() as i32 == EHCI_PORT_OWNER_COMPANION_CONTROLLER
     {
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: No port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: No port - %x\n", Port);
         return MP_STATUS_SUCCESS as MPSTATUS;
     }
 
@@ -82,7 +81,7 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
             .set_PortOwner(EHCI_PORT_OWNER_COMPANION_CONTROLLER as ULONG);
         WRITE_REGISTER_ULONG(PortStatusReg as *mut ULONG, PortSC.AsULONG);
 
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
         return MP_STATUS_SUCCESS as MPSTATUS;
     }
 
@@ -109,7 +108,7 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
             KeStallExecutionProcessor(20 as ULONG);
             PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg as *mut ULONG);
 
-            // DPRINT_RH("EHCI_RH_ChirpRootPort: Reset port - %x\n", Port);
+            // DPRINT_RH!("EHCI_RH_ChirpRootPort: Reset port - %x\n", Port);
 
             if PortSC.c2rust_unnamed.PortReset() as i32 == 0 as i32 {
                 break;
@@ -138,13 +137,13 @@ pub unsafe extern "system" fn EHCI_RH_ChirpRootPort(
         (*EhciExtension).ResetPortBits |= PortBit;
 
         WRITE_REGISTER_ULONG(PortStatusReg as *mut ULONG, PortSC.AsULONG);
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: Disable port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: Disable port - %x\n", Port);
     } else {
         PortSC
             .c2rust_unnamed
             .set_PortOwner(EHCI_PORT_OWNER_COMPANION_CONTROLLER as ULONG);
         WRITE_REGISTER_ULONG(PortStatusReg as *mut ULONG, PortSC.AsULONG);
-        // DPRINT_RH("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
+        // DPRINT_RH!("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
     }
 
     return MP_STATUS_SUCCESS as MPSTATUS;
@@ -159,7 +158,7 @@ pub unsafe extern "system" fn EHCI_RH_GetRootHubData(
     let RootHubData: PUSBPORT_ROOT_HUB_DATA;
     let mut HubCharacteristics: USBPORT_HUB_20_CHARACTERISTICS = core::mem::zeroed();
 
-    DPRINT_RH(
+    DPRINT_RH!(
         b"EHCI_RH_GetRootHubData: EhciExtension - %p, rootHubData - %p\n\0".as_ptr() as *const i8,
         EhciExtension,
         rootHubData,
@@ -199,7 +198,7 @@ pub unsafe extern "system" fn EHCI_RH_GetStatus(
     ehciExtension: PVOID,
     Status: PUSHORT,
 ) -> MPSTATUS {
-    DPRINT_RH(b"EHCI_RH_GetStatus: ... \n\0".as_ptr() as *const i8);
+    DPRINT_RH!(b"EHCI_RH_GetStatus: ... \n\0".as_ptr() as *const i8);
     *Status = USB_GETSTATUS_SELF_POWERED as ::core::ffi::c_ushort;
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
@@ -224,7 +223,7 @@ pub unsafe extern "system" fn EHCI_RH_GetPortStatus(
     PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg as *mut ULONG);
 
     if PortSC.CurrentConnectStatus() != 0 {
-        DPRINT_RH(
+        DPRINT_RH!(
             b"EHCI_RH_GetPortStatus: Port - %x, PortSC.AsULONG - %X\n\0".as_ptr() as *const i8,
             Port as core::ffi::c_int,
             PortSC.AsULONG,
@@ -330,7 +329,7 @@ pub unsafe extern "system" fn EHCI_RH_GetPortStatus(
     *PortStatus = status;
 
     if status.PortStatus.Usb20PortStatus.CurrentConnectStatus() != 0 {
-        DPRINT_RH(
+        DPRINT_RH!(
             b"EHCI_RH_GetPortStatus: Port - %x, status.AsULONG - %X\n\0".as_ptr() as *const i8,
             Port as core::ffi::c_int,
             status.AsUlong32,
@@ -345,7 +344,7 @@ pub unsafe extern "system" fn EHCI_RH_GetHubStatus(
     ehciExtension: PVOID,
     HubStatus: PUSB_HUB_STATUS_AND_CHANGE,
 ) -> MPSTATUS {
-    DPRINT_RH(b"EHCI_RH_GetHubStatus: ... \n\0".as_ptr() as *const i8);
+    DPRINT_RH!(b"EHCI_RH_GetHubStatus: ... \n\0".as_ptr() as *const i8);
     (*HubStatus).AsUlong32 = 0 as ULONG;
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
@@ -499,7 +498,7 @@ pub unsafe extern "system" fn EHCI_RH_SetFeaturePortPower(
     let PortStatusReg: PULONG;
     let mut PortSC: EHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
-    DPRINT_RH(
+    DPRINT_RH!(
         b"EHCI_RH_SetFeaturePortPower: Port - %x\n\0".as_ptr() as *const ::core::ffi::c_char,
         Port as ::core::ffi::c_int,
     );
@@ -537,7 +536,7 @@ pub unsafe extern "system" fn EHCI_RH_SetFeaturePortEnable(
     ehciExtension: PVOID,
     Port: USHORT,
 ) -> MPSTATUS {
-    DPRINT_RH(b"EHCI_RH_SetFeaturePortEnable: Not supported\n\0".as_ptr() as *const ::core::ffi::c_char);
+    DPRINT_RH!(b"EHCI_RH_SetFeaturePortEnable: Not supported\n\0".as_ptr() as *const ::core::ffi::c_char);
     if !(Port as ::core::ffi::c_int != 0 as ::core::ffi::c_int) {
         RtlAssert(
             b"Port != 0\0" as *const u8 as *const ::core::ffi::c_char as PVOID,
@@ -752,7 +751,7 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortConnectChange(
     let mut PortStatusReg: PULONG;
     let mut PortSC: EHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
-    DPRINT_RH(
+    DPRINT_RH!(
         b"EHCI_RH_ClearFeaturePortConnectChange: Port - %x\n\0".as_ptr() as *const core::ffi::c_char,
         Port as core::ffi::c_int,
     );
@@ -848,7 +847,7 @@ pub unsafe extern "system" fn EHCI_RH_ClearFeaturePortOvercurrentChange(
     let PortStatusReg: PULONG;
     let mut PortSC: EHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
-    DPRINT_RH(
+    DPRINT_RH!(
         b"EHCI_RH_ClearFeaturePortOvercurrentChange: Port - %x\n\0".as_ptr() as *const i8,
         Port as core::ffi::c_int,
     );
@@ -886,7 +885,7 @@ pub unsafe extern "system" fn EHCI_RH_DisableIrq(ehciExtension: PVOID) {
     let IntrStsReg: PULONG;
     let mut IntrSts: EHCI_INTERRUPT_ENABLE = core::mem::zeroed();
 
-    DPRINT_RH(b"EHCI_RH_DisableIrq: ... \n\0".as_ptr() as *const i8);
+    DPRINT_RH!(b"EHCI_RH_DisableIrq: ... \n\0".as_ptr() as *const i8);
 
     IntrStsReg = core::ptr::addr_of_mut!((*(*EhciExtension).OperationalRegs).HcInterruptEnable.AsULONG) as PULONG;
     IntrSts.AsULONG = READ_REGISTER_ULONG(IntrStsReg as *mut ULONG);
@@ -905,7 +904,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
     let IntrStsReg: PULONG;
     let mut IntrSts: EHCI_INTERRUPT_ENABLE = core::mem::zeroed();
 
-    DPRINT_RH(b"EHCI_RH_EnableIrq: ... \n\0".as_ptr() as *const i8);
+    DPRINT_RH!(b"EHCI_RH_EnableIrq: ... \n\0".as_ptr() as *const i8);
 
     IntrStsReg = core::ptr::addr_of_mut!((*(*EhciExtension).OperationalRegs).HcInterruptEnable.AsULONG) as PULONG;
     IntrSts.AsULONG = READ_REGISTER_ULONG(IntrStsReg as *mut ULONG);
@@ -949,24 +948,24 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     ULONG PortBit;
 //     ULONG ix;
 //
-//     DPRINT_RH("EHCI_RH_ChirpRootPort: Port - %x\n", Port);
+//     DPRINT_RH!("EHCI_RH_ChirpRootPort: Port - %x\n", Port);
 //     ASSERT(Port != 0);
 //
 //     PortStatusReg = &EhciExtension->OperationalRegs->PortControl[Port - 1].AsULONG;
 //     PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg);
-//     DPRINT_RH("EHCI_RH_ChirpRootPort: PortSC - %X\n", PortSC.AsULONG);
+//     DPRINT_RH!("EHCI_RH_ChirpRootPort: PortSC - %X\n", PortSC.AsULONG);
 //
 //     PortBit = 1 << (Port - 1);
 //
 //     if (PortBit & EhciExtension->ResetPortBits)
 //     {
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
 //         return MP_STATUS_SUCCESS;
 //     }
 //
 //     if (PortSC.PortPower == 0)
 //     {
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: Skip port - %x\n", Port);
 //         return MP_STATUS_SUCCESS;
 //     }
 //
@@ -974,7 +973,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //         PortSC.PortEnabledDisabled == 1 ||
 //         PortSC.PortOwner == EHCI_PORT_OWNER_COMPANION_CONTROLLER)
 //     {
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: No port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: No port - %x\n", Port);
 //         return MP_STATUS_SUCCESS;
 //     }
 //
@@ -988,7 +987,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //         PortSC.PortOwner = EHCI_PORT_OWNER_COMPANION_CONTROLLER;
 //         WRITE_REGISTER_ULONG(PortStatusReg, PortSC.AsULONG);
 //
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
 //         return MP_STATUS_SUCCESS;
 //     }
 //
@@ -1018,7 +1017,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //              KeStallExecutionProcessor(20);
 //              PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg);
 //
-//              DPRINT_RH("EHCI_RH_ChirpRootPort: Reset port - %x\n", Port);
+//              DPRINT_RH!("EHCI_RH_ChirpRootPort: Reset port - %x\n", Port);
 //
 //              if (PortSC.PortReset == 0)
 //                  break;
@@ -1040,13 +1039,13 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //         EhciExtension->ResetPortBits |= PortBit;
 //
 //         WRITE_REGISTER_ULONG(PortStatusReg, PortSC.AsULONG);
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: Disable port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: Disable port - %x\n", Port);
 //     }
 //     else
 //     {
 //         PortSC.PortOwner = EHCI_PORT_OWNER_COMPANION_CONTROLLER;
 //         WRITE_REGISTER_ULONG(PortStatusReg, PortSC.AsULONG);
-//         DPRINT_RH("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
+//         DPRINT_RH!("EHCI_RH_ChirpRootPort: Companion HC port - %x\n", Port);
 //     }
 //
 //     return MP_STATUS_SUCCESS;
@@ -1061,7 +1060,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PUSBPORT_ROOT_HUB_DATA RootHubData;
 //     USBPORT_HUB_20_CHARACTERISTICS HubCharacteristics;
 //
-//     DPRINT_RH("EHCI_RH_GetRootHubData: EhciExtension - %p, rootHubData - %p\n",
+//     DPRINT_RH!("EHCI_RH_GetRootHubData: EhciExtension - %p, rootHubData - %p\n",
 //               EhciExtension,
 //               rootHubData);
 //
@@ -1102,7 +1101,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 // EHCI_RH_GetStatus(IN PVOID ehciExtension,
 //                   IN PUSHORT Status)
 // {
-//     DPRINT_RH("EHCI_RH_GetStatus: ... \n");
+//     DPRINT_RH!("EHCI_RH_GetStatus: ... \n");
 //     *Status = USB_GETSTATUS_SELF_POWERED;
 //     return MP_STATUS_SUCCESS;
 // }
@@ -1126,7 +1125,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //
 //     if (PortSC.CurrentConnectStatus)
 //     {
-//         DPRINT_RH("EHCI_RH_GetPortStatus: Port - %x, PortSC.AsULONG - %X\n",
+//         DPRINT_RH!("EHCI_RH_GetPortStatus: Port - %x, PortSC.AsULONG - %X\n",
 //                   Port,
 //                   PortSC.AsULONG);
 //     }
@@ -1181,7 +1180,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //
 //     if (status.PortStatus.Usb20PortStatus.CurrentConnectStatus)
 //     {
-//         DPRINT_RH("EHCI_RH_GetPortStatus: Port - %x, status.AsULONG - %X\n",
+//         DPRINT_RH!("EHCI_RH_GetPortStatus: Port - %x, status.AsULONG - %X\n",
 //                   Port,
 //                   status.AsUlong32);
 //     }
@@ -1194,7 +1193,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 // EHCI_RH_GetHubStatus(IN PVOID ehciExtension,
 //                      IN PUSB_HUB_STATUS_AND_CHANGE HubStatus)
 // {
-//     DPRINT_RH("EHCI_RH_GetHubStatus: ... \n");
+//     DPRINT_RH!("EHCI_RH_GetHubStatus: ... \n");
 //     HubStatus->AsUlong32 = 0;
 //     return MP_STATUS_SUCCESS;
 // }
@@ -1328,7 +1327,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PULONG PortStatusReg;
 //     EHCI_PORT_STATUS_CONTROL PortSC;
 //
-//     DPRINT_RH("EHCI_RH_SetFeaturePortPower: Port - %x\n", Port);
+//     DPRINT_RH!("EHCI_RH_SetFeaturePortPower: Port - %x\n", Port);
 //     ASSERT(Port != 0);
 //
 //     PortStatusReg = &EhciExtension->OperationalRegs->PortControl[Port - 1].AsULONG;
@@ -1350,7 +1349,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 // EHCI_RH_SetFeaturePortEnable(IN PVOID ehciExtension,
 //                              IN USHORT Port)
 // {
-//     DPRINT_RH("EHCI_RH_SetFeaturePortEnable: Not supported\n");
+//     DPRINT_RH!("EHCI_RH_SetFeaturePortEnable: Not supported\n");
 //     ASSERT(Port != 0);
 //     return MP_STATUS_SUCCESS;
 // }
@@ -1520,7 +1519,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PULONG PortStatusReg;
 //     EHCI_PORT_STATUS_CONTROL PortSC;
 //
-//     DPRINT_RH("EHCI_RH_ClearFeaturePortConnectChange: Port - %x\n", Port);
+//     DPRINT_RH!("EHCI_RH_ClearFeaturePortConnectChange: Port - %x\n", Port);
 //     ASSERT(Port != 0);
 //
 //     PortStatusReg = &EhciExtension->OperationalRegs->PortControl[Port - 1].AsULONG;
@@ -1578,7 +1577,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PULONG PortStatusReg;
 //     EHCI_PORT_STATUS_CONTROL PortSC;
 //
-//     DPRINT_RH("EHCI_RH_ClearFeaturePortOvercurrentChange: Port - %x\n", Port);
+//     DPRINT_RH!("EHCI_RH_ClearFeaturePortOvercurrentChange: Port - %x\n", Port);
 //     ASSERT(Port != 0);
 //
 //     PortStatusReg = &EhciExtension->OperationalRegs->PortControl[Port - 1].AsULONG;
@@ -1602,7 +1601,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PULONG IntrStsReg;
 //     EHCI_INTERRUPT_ENABLE IntrSts;
 //
-//     DPRINT_RH("EHCI_RH_DisableIrq: ... \n");
+//     DPRINT_RH!("EHCI_RH_DisableIrq: ... \n");
 //
 //     IntrStsReg = &EhciExtension->OperationalRegs->HcInterruptEnable.AsULONG;
 //     IntrSts.AsULONG = READ_REGISTER_ULONG(IntrStsReg);
@@ -1622,7 +1621,7 @@ pub unsafe extern "system" fn EHCI_RH_EnableIrq(ehciExtension: PVOID) {
 //     PULONG IntrStsReg;
 //     EHCI_INTERRUPT_ENABLE IntrSts;
 //
-//     DPRINT_RH("EHCI_RH_EnableIrq: ... \n");
+//     DPRINT_RH!("EHCI_RH_EnableIrq: ... \n");
 //
 //     IntrStsReg = &EhciExtension->OperationalRegs->HcInterruptEnable.AsULONG;
 //     IntrSts.AsULONG = READ_REGISTER_ULONG(IntrStsReg);

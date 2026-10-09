@@ -2323,10 +2323,14 @@ pub fn IS_SWAP_FROM_SSE(entry: ULONG_PTR) -> bool {
     (entry & 0x00000001) != 0
 }
 
-/// IS_DIRTY_SSE — check if section segment entry is dirty
+/// IS_DIRTY_SSE — check if section segment entry is dirty. mm.h: `((E) & 2)`.
+///
+/// This tested 0x8, the low bit of the SHARE COUNT (bits 3..11). MiShutdownSystem, its one
+/// user, then saw every page mapped an odd number of times as dirty -- 49,417 read-only CD
+/// pages -- and looped "while dirty" forever, so setup's reboot never came.
 #[inline]
 pub fn IS_DIRTY_SSE(entry: ULONG_PTR) -> bool {
-    (entry & 0x00000008) != 0
+    (entry & 0x00000002) != 0
 }
 
 /// CONTAINING_RECORD macro equivalent

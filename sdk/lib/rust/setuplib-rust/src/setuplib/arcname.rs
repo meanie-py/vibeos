@@ -102,8 +102,8 @@ pub static mut PeripheralTypes_U: [PCWSTR; 4] = unsafe {
 // NOT the CONFIGURATION_TYPE members of the same names (EisaAdapter = 8 there), so the
 // 0-based values here are the C's values.
 pub type _ADAPTER_TYPE = ::core::ffi::c_uint;
-pub const EisaAdapter: _ADAPTER_TYPE = 0;
-pub const ScsiAdapter: _ADAPTER_TYPE = 1;
+pub const EisaAdapter: _ADAPTER_TYPE = 0; // nolint: const-contradiction (module-private enum; the island's EisaAdapter is a different enum)
+pub const ScsiAdapter: _ADAPTER_TYPE = 1; // nolint: const-contradiction (module-private enum; the island's ScsiAdapter is a different enum)
 pub const MultiAdapter: _ADAPTER_TYPE = 2;
 pub const NetAdapter: _ADAPTER_TYPE = 3;
 pub const RamdiskAdapter: _ADAPTER_TYPE = 4;
@@ -112,7 +112,7 @@ pub type ADAPTER_TYPE = _ADAPTER_TYPE;
 pub type PADAPTER_TYPE = *mut _ADAPTER_TYPE;
 
 pub type _CONTROLLER_TYPE = ::core::ffi::c_uint;
-pub const DiskController: _CONTROLLER_TYPE = 0;
+pub const DiskController: _CONTROLLER_TYPE = 0; // nolint: const-contradiction (module-private enum; the island's DiskController is a different enum)
 pub const CdRomController: _CONTROLLER_TYPE = 1;
 pub const ControllerTypeMax: _CONTROLLER_TYPE = 2;
 pub type CONTROLLER_TYPE = _CONTROLLER_TYPE;

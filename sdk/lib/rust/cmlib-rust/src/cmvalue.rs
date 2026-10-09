@@ -204,9 +204,9 @@ pub unsafe extern "system" fn CmpRemoveValueFromList(
     mut Index: u32,
     ChildList: *mut CHILD_LIST
 ) -> i32 {
-    let mut Count: u32 = 0;
-    let mut CellData: *mut CELL_DATA = core::ptr::null_mut();
-    let mut NewCell: HCELL_INDEX = 0;
+    let Count: u32;
+    let CellData: *mut CELL_DATA;
+    let NewCell: HCELL_INDEX;
 
     // PAGED_CODE();
     PAGED_CODE!();
@@ -263,8 +263,8 @@ pub unsafe extern "system" fn CmpCopyKeyValueList(
     StorageType: HSTORAGE_TYPE,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS = STATUS_SUCCESS;
-    let mut SrcListData: *mut CELL_DATA = core::ptr::null_mut();
-    let mut DestListData: *mut CELL_DATA = core::ptr::null_mut();
+    let SrcListData: *mut CELL_DATA;
+    let DestListData: *mut CELL_DATA;
     let mut NewValue: HCELL_INDEX;
     let mut Index: u32;
 

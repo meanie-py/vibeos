@@ -2,6 +2,7 @@
 
 import pytest
 
+from rustconv import sdk_macros
 from rustconv.sdk_macros import LowerError, lower_expansion, macro_params, render_macro
 
 
@@ -116,3 +117,50 @@ def test_text_around_an_already_wide_value_is_the_identity():
 
     out, n = widen_call_sites("f(TEXT(API_NAME.as_ptr()), x)", {"TEXT"})
     assert (out, n) == ("f((API_NAME.as_ptr()), x)", 1)
+
+
+ISLAND_VTBL = """
+#[repr(C)]
+pub struct IZoneVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IZone, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IZone) -> ULONG>,
+    pub Destroy: ::core::option::Option<unsafe extern "system" fn(This: *mut IZone, dwEnum: DWORD)>,
+}
+"""
+
+
+def test_widl_c_wrappers_come_from_the_island_vtbl(tmp_path):
+    for arch in ("amd64", "arm64", "i386"):
+        (tmp_path / f"types_{arch}.rs").write_text(ISLAND_VTBL)
+    out = sdk_macros.com_wrappers(
+        tmp_path, {"IZone_Release", "IZone_QueryInterface", "IZone_Destroy", "IZone_Nope", "x_y"}
+    )
+    assert set(out) == {"IZone_Release", "IZone_QueryInterface", "IZone_Destroy"}
+    assert (
+        "pub unsafe fn IZone_Release(This: *mut IZone) -> ULONG "
+        "{ ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }" in out["IZone_Release"]
+    )
+    assert "(This, riid, ppvObject)" in out["IZone_QueryInterface"]
+    assert "-> " not in out["IZone_Destroy"].split("{")[0]
+
+
+def test_a_widl_wrapper_the_arches_disagree_on_is_generated_per_arch(tmp_path):
+    for arch in ("amd64", "arm64"):
+        (tmp_path / f"types_{arch}.rs").write_text(ISLAND_VTBL)
+    (tmp_path / "types_i386.rs").write_text(ISLAND_VTBL.replace("dwEnum: DWORD", "dwEnum: u64"))
+    out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy", "IZone_Release"})
+    assert "cfg" not in out["IZone_Release"]
+    destroy = out["IZone_Destroy"]
+    assert destroy.count("pub unsafe fn IZone_Destroy") == 3
+    assert '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)' in destroy
+
+
+def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
+    vtbl = ISLAND_VTBL.replace(
+        "dwEnum: DWORD)>",
+        "cb: ::core::option::Option<unsafe extern \"C\" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>",
+    )
+    for arch in ("amd64", "arm64", "i386"):
+        (tmp_path / f"types_{arch}.rs").write_text(vtbl)
+    out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy"})["IZone_Destroy"]
+    assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")

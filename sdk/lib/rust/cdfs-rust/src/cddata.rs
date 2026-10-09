@@ -427,7 +427,7 @@ pub unsafe extern "C" fn CdProcessException(
     Irp: ntkrnl_sys::ddk::PIRP,
     mut ExceptionCode: ntkrnl_sys::base::NTSTATUS,
 ) -> ntkrnl_sys::base::NTSTATUS {
-    let mut Device: ntkrnl_sys::ddk::PDEVICE_OBJECT = core::ptr::null_mut();
+    let mut Device: ntkrnl_sys::ddk::PDEVICE_OBJECT;
     let Vpb: ntkrnl_sys::ddk::PVPB;
     let mut Thread: ntkrnl_sys::ddk::PETHREAD;
 

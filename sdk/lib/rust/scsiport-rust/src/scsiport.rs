@@ -950,7 +950,6 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                         ConfigInfo.BusNumber += 1;
                         (*DeviceExtension).PortConfig = core::ptr::null_mut();
                         ExFreePool(PortConfig as *mut c_void);
-                        Again = 0;
                         continue 'create_port_config;
                     }
 
@@ -1012,7 +1011,6 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     );
                     if Result == SP_RETURN_NOT_FOUND {
                         ConfigInfo.BusNumber += 1;
-                        Again = 0;
                         (*DeviceExtension).PortConfig = core::ptr::null_mut();
                         ExFreePool(PortConfig as *mut c_void);
                         continue 'create_port_config;
@@ -2286,7 +2284,7 @@ unsafe fn SpiCreatePortConfig(
     ZeroStruct: u8,
 ) -> NTSTATUS {
     let mut UnicodeString: _UNICODE_STRING = core::mem::zeroed();
-    let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
+    let mut ObjectAttributes: _OBJECT_ATTRIBUTES;
     let mut DdkConfigInformation: *mut CONFIGURATION_INFORMATION;
     let mut RootKey: HANDLE = core::ptr::null_mut();
     let mut Key: HANDLE = core::ptr::null_mut();
@@ -2471,7 +2469,7 @@ unsafe fn SpiCreatePortConfig(
             ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
             ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-            Status = ZwOpenKey(
+            ZwOpenKey(
                 core::ptr::addr_of_mut!(Key),
                 KEY_READ,
                 &mut ObjectAttributes as *mut _OBJECT_ATTRIBUTES,
@@ -2513,7 +2511,7 @@ unsafe fn SpiCreatePortConfig(
         (*InternalConfigInfo).LastAdapterNumber = (*InternalConfigInfo).AdapterNumber;
 
         Found = 0;
-        Status = ((((IoQueryDeviceDescription))))(
+        ((((IoQueryDeviceDescription))))(
             core::ptr::addr_of_mut!((*HwInitData).AdapterInterfaceType),
             core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
             core::ptr::null_mut(),
@@ -2528,7 +2526,7 @@ unsafe fn SpiCreatePortConfig(
             let mut InterfaceType: INTERFACE_TYPE = Eisa;
 
             if (*HwInitData).AdapterInterfaceType == (crate::glue::Isa) as i32 {
-                Status = ((((IoQueryDeviceDescription))))(
+                ((((IoQueryDeviceDescription))))(
                     core::ptr::addr_of_mut!(InterfaceType),
                     core::ptr::addr_of_mut!((*InternalConfigInfo).BusNumber),
                     core::ptr::null_mut(),

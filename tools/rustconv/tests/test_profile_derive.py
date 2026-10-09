@@ -1542,3 +1542,12 @@ def test_a_packing_push_in_a_prologue_never_reaches_the_wrapper():
     )
     lines, _ = scan_preamble(src)
     assert lines == ['#include "precomp.h"', '#include "registry.h"']
+
+
+def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
+    from rustconv.profile_derive import header_type_defs
+
+    h = tmp_path / "cryptuiapi.h"
+    h.write_text("typedef struct _S {\n    union {\n        int a;\n    } DUMMYUNIONNAME1;\n} S;\n")
+    # inetcpl was split into two islands over this name alone.
+    assert header_type_defs(h) == {"_S", "S"}

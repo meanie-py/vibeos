@@ -48,7 +48,7 @@ pub unsafe extern "system" fn USBPORT_HandleGetConfiguration(Urb: PURB) -> NTSTA
 
     let SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET;
 
-    DPRINT_URB(b"USBPORT_HandleGetConfiguration: Urb - %p\n\0".as_ptr() as *const i8, Urb);
+    DPRINT_URB!(b"USBPORT_HandleGetConfiguration: Urb - %p\n\0".as_ptr() as *const i8, Urb);
 
     SetupPacket = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlGetConfigurationRequest.Reserved1) as PUSB_DEFAULT_PIPE_SETUP_PACKET;
 
@@ -95,7 +95,7 @@ pub unsafe extern "system" fn USBPORT_HandleGetCurrentFrame(
 
     (*Urb).__bindgen_anon_1.UrbGetCurrentFrameNumber.FrameNumber = FrameNumber;
 
-    DPRINT_URB(
+    DPRINT_URB!(
         b"USBPORT_HandleGetCurrentFrame: FrameNumber - %p\n\0".as_ptr() as *const i8,
         FrameNumber,
     );
@@ -119,7 +119,7 @@ pub unsafe extern "system" fn USBPORT_AbortPipe(
     let DeviceHandle: PUSBPORT_DEVICE_HANDLE;
     let Status: NTSTATUS;
 
-    // DPRINT_URB("USBPORT_AbortPipe: ... \n");
+    // DPRINT_URB!("USBPORT_AbortPipe: ... \n");
 
     PipeHandle = ((*Urb).__bindgen_anon_1.UrbPipeRequest.PipeHandle as *mut _USBPORT_PIPE_HANDLE);
     DeviceHandle = ((*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle as *mut _USBPORT_DEVICE_HANDLE);
@@ -166,7 +166,7 @@ pub unsafe extern "system" fn USBPORT_ResetPipe(
     let Endpoint: PUSBPORT_ENDPOINT;
     let Status: NTSTATUS;
 
-    DPRINT_URB(b"USBPORT_ResetPipe: ... \n\0".as_ptr() as *const i8);
+    DPRINT_URB!(b"USBPORT_ResetPipe: ... \n\0".as_ptr() as *const i8);
 
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
     Packet = core::ptr::addr_of_mut!((*(*FdoExtension).MiniPortInterface).Packet);
@@ -246,7 +246,7 @@ pub unsafe extern "system" fn USBPORT_SyncResetPipeAndClearStall(
     let mut EndpointState: ULONG;
     let mut Status: NTSTATUS;
 
-    DPRINT_URB(b"USBPORT_SyncResetPipeAndClearStall: ... \n\0".as_ptr() as *const i8);
+    DPRINT_URB!(b"USBPORT_SyncResetPipeAndClearStall: ... \n\0".as_ptr() as *const i8);
 
     DeviceHandle = (*Urb).__bindgen_anon_1.UrbHeader.UsbdDeviceHandle as PUSBPORT_DEVICE_HANDLE;
     PipeHandle = (*Urb).__bindgen_anon_1.UrbPipeRequest.PipeHandle as PUSBPORT_PIPE_HANDLE;
@@ -329,7 +329,7 @@ pub unsafe extern "system" fn USBPORT_HandleSetOrClearFeature(Urb: PURB) -> NTST
 
     let SetupPacket: PUSB_DEFAULT_PIPE_SETUP_PACKET;
 
-    DPRINT_URB(b"USBPORT_HandleSetOrClearFeature: Urb - %p\n\0".as_ptr() as *const i8, Urb);
+    DPRINT_URB!(b"USBPORT_HandleSetOrClearFeature: Urb - %p\n\0".as_ptr() as *const i8, Urb);
 
     SetupPacket = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlFeatureRequest.Reserved0)
         as PUSB_DEFAULT_PIPE_SETUP_PACKET;
@@ -341,49 +341,49 @@ pub unsafe extern "system" fn USBPORT_HandleSetOrClearFeature(Urb: PURB) -> NTST
 
     match (*Urb).__bindgen_anon_1.UrbHeader.Function {
         URB_FUNCTION_SET_FEATURE_TO_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE as _);
         }
 
         URB_FUNCTION_SET_FEATURE_TO_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE as _);
         }
 
         URB_FUNCTION_SET_FEATURE_TO_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT as _);
         }
 
         URB_FUNCTION_CLEAR_FEATURE_TO_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_CLEAR_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE as _);
         }
 
         URB_FUNCTION_CLEAR_FEATURE_TO_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_CLEAR_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE as _);
         }
 
         URB_FUNCTION_CLEAR_FEATURE_TO_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_CLEAR_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT as _);
         }
 
         URB_FUNCTION_CLEAR_FEATURE_TO_OTHER => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_CLEAR_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_OTHER as _);
         }
 
         URB_FUNCTION_SET_FEATURE_TO_OTHER => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_FEATURE;
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_OTHER as _);
         }
@@ -405,7 +405,7 @@ pub unsafe extern "system" fn USBPORT_HandleSetOrClearFeature(Urb: PURB) -> NTST
 pub unsafe extern "system" fn USBPORT_HandleDataTransfers(Urb: PURB) -> NTSTATUS {
     let Endpoint: PUSBPORT_ENDPOINT;
 
-    DPRINT_URB(b"USBPORT_HandleDataTransfers: Urb - %p\n\0".as_ptr() as *const i8, Urb);
+    DPRINT_URB!(b"USBPORT_HandleDataTransfers: Urb - %p\n\0".as_ptr() as *const i8, Urb);
 
     Endpoint = (*((*Urb).__bindgen_anon_1.UrbBulkOrInterruptTransfer.PipeHandle as PUSBPORT_PIPE_HANDLE)).Endpoint;
 
@@ -522,42 +522,42 @@ pub unsafe extern "system" fn USBPORT_HandleVendorOrClass(Irp: PIRP, Urb: PURB) 
 
     match (*Urb).__bindgen_anon_1.UrbHeader.Function {
         URB_FUNCTION_VENDOR_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_VENDOR);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE);
         }
         URB_FUNCTION_VENDOR_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_VENDOR);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE);
         }
         URB_FUNCTION_VENDOR_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_VENDOR);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT);
         }
         URB_FUNCTION_CLASS_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_CLASS);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE);
         }
         URB_FUNCTION_CLASS_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_CLASS);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE);
         }
         URB_FUNCTION_CLASS_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_CLASS);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT);
         }
         URB_FUNCTION_CLASS_OTHER => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_OTHER\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_OTHER\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_CLASS);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_OTHER);
         }
         URB_FUNCTION_VENDOR_OTHER => {
-            DPRINT_URB(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_OTHER\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_OTHER\n\0".as_ptr() as *const i8);
             (*SetupPacket).bmRequestType.set_Type(BMREQUEST_VENDOR);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_OTHER);
         }
@@ -609,37 +609,37 @@ pub unsafe extern "system" fn USBPORT_HandleGetSetDescriptor(
 
     match (*Urb).__bindgen_anon_1.UrbHeader.Function {
         URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_GET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_DEVICE_TO_HOST as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE as u8);
         }
         URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_DEVICE as u8);
         }
         URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_GET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_DEVICE_TO_HOST as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT as u8);
         }
         URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_ENDPOINT as u8);
         }
         URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_GET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_DEVICE_TO_HOST as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE as u8);
         }
         URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE => {
-            DPRINT_URB(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
+            DPRINT_URB!(b"USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n\0".as_ptr() as *const i8);
             (*SetupPacket).bRequest = USB_REQUEST_SET_DESCRIPTOR;
             (*SetupPacket).bmRequestType.set_Dir(BMREQUEST_HOST_TO_DEVICE as u8);
             (*SetupPacket).bmRequestType.set_Recipient(BMREQUEST_TO_INTERFACE as u8);
@@ -667,7 +667,7 @@ pub unsafe extern "system" fn USBPORT_ValidateTransferParametersURB(Urb: PURB) -
     let UrbRequest: *mut _URB_CONTROL_TRANSFER;
     let Mdl: PMDL;
 
-    DPRINT_URB(b"USBPORT_ValidateTransferParametersURB: Urb - %p\n\0".as_ptr() as *const i8, Urb);
+    DPRINT_URB!(b"USBPORT_ValidateTransferParametersURB: Urb - %p\n\0".as_ptr() as *const i8, Urb);
 
     UrbRequest = core::ptr::addr_of_mut!((*Urb).__bindgen_anon_1.UrbControlTransfer);
 
@@ -693,7 +693,7 @@ pub unsafe extern "system" fn USBPORT_ValidateTransferParametersURB(Urb: PURB) -
         && (*UrbRequest).TransferBufferMDL.is_null()
         && (*UrbRequest).TransferBufferLength != 0
     {
-        DPRINT_URB(
+        DPRINT_URB!(
             b"USBPORT_ValidateTransferParametersURB: TransferBuffer - %p, TransferBufferLength - %x\n\0".as_ptr() as *const i8,
             (*UrbRequest).TransferBuffer,
             (*UrbRequest).TransferBufferLength,
@@ -717,7 +717,7 @@ pub unsafe extern "system" fn USBPORT_ValidateTransferParametersURB(Urb: PURB) -
         (*UrbRequest).TransferBufferMDL = Mdl;
         (*Urb).__bindgen_anon_1.UrbHeader.UsbdFlags |= USBD_FLAG_ALLOCATED_MDL;
 
-        DPRINT_URB(b"USBPORT_ValidateTransferParametersURB: Mdl - %p\n\0".as_ptr() as *const i8, Mdl);
+        DPRINT_URB!(b"USBPORT_ValidateTransferParametersURB: Mdl - %p\n\0".as_ptr() as *const i8, Mdl);
     }
 
     return STATUS_SUCCESS;
@@ -1053,7 +1053,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 // {
 //     PUSB_DEFAULT_PIPE_SETUP_PACKET SetupPacket;
 //
-//     DPRINT_URB("USBPORT_HandleGetConfiguration: Urb - %p\n", Urb);
+//     DPRINT_URB!("USBPORT_HandleGetConfiguration: Urb - %p\n", Urb);
 //
 //     SetupPacket = (PUSB_DEFAULT_PIPE_SETUP_PACKET)
 //                    &Urb->UrbControlGetConfigurationRequest.Reserved1;
@@ -1094,7 +1094,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //
 //     Urb->UrbGetCurrentFrameNumber.FrameNumber = FrameNumber;
 //
-//     DPRINT_URB("USBPORT_HandleGetCurrentFrame: FrameNumber - %p\n",
+//     DPRINT_URB!("USBPORT_HandleGetCurrentFrame: FrameNumber - %p\n",
 //                FrameNumber);
 //
 //     return USBPORT_USBDStatusToNtStatus(Urb, USBD_STATUS_SUCCESS);
@@ -1111,7 +1111,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     PUSBPORT_DEVICE_HANDLE DeviceHandle;
 //     NTSTATUS Status;
 //
-//     DPRINT_URB("USBPORT_AbortPipe: ... \n");
+//     DPRINT_URB!("USBPORT_AbortPipe: ... \n");
 //
 //     PipeHandle = Urb->UrbPipeRequest.PipeHandle;
 //     DeviceHandle = Urb->UrbHeader.UsbdDeviceHandle;
@@ -1155,7 +1155,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     PUSBPORT_ENDPOINT Endpoint;
 //     NTSTATUS Status;
 //
-//     DPRINT_URB("USBPORT_ResetPipe: ... \n");
+//     DPRINT_URB!("USBPORT_ResetPipe: ... \n");
 //
 //     FdoExtension = FdoDevice->DeviceExtension;
 //     Packet = &FdoExtension->MiniPortInterface->Packet;
@@ -1219,7 +1219,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     NTSTATUS Status;
 //     USB_DEFAULT_PIPE_SETUP_PACKET SetupPacket;
 //
-//     DPRINT_URB("USBPORT_ClearStall: ... \n");
+//     DPRINT_URB!("USBPORT_ClearStall: ... \n");
 //
 //     PipeHandle = Urb->UrbPipeRequest.PipeHandle;
 //     DeviceHandle = Urb->UrbHeader.UsbdDeviceHandle;
@@ -1265,7 +1265,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     ULONG EndpointState;
 //     NTSTATUS Status;
 //
-//     DPRINT_URB("USBPORT_SyncResetPipeAndClearStall: ... \n");
+//     DPRINT_URB!("USBPORT_SyncResetPipeAndClearStall: ... \n");
 //
 //     ASSERT(Urb->UrbHeader.UsbdDeviceHandle);
 //     ASSERT(Urb->UrbHeader.Length == sizeof(struct _URB_PIPE_REQUEST));
@@ -1342,7 +1342,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 // {
 //     PUSB_DEFAULT_PIPE_SETUP_PACKET SetupPacket;
 //
-//     DPRINT_URB("USBPORT_HandleSetOrClearFeature: Urb - %p\n", Urb);
+//     DPRINT_URB!("USBPORT_HandleSetOrClearFeature: Urb - %p\n", Urb);
 //
 //     SetupPacket = (PUSB_DEFAULT_PIPE_SETUP_PACKET)
 //                   &Urb->UrbControlFeatureRequest.Reserved0;
@@ -1355,49 +1355,49 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     switch (Urb->UrbHeader.Function)
 //     {
 //         case URB_FUNCTION_SET_FEATURE_TO_DEVICE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_SET_FEATURE_TO_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_SET_FEATURE_TO_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_CLEAR_FEATURE_TO_DEVICE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n");
 //             SetupPacket->bRequest = USB_REQUEST_CLEAR_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_CLEAR_FEATURE_TO_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n");
 //             SetupPacket->bRequest = USB_REQUEST_CLEAR_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_CLEAR_FEATURE_TO_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n");
 //             SetupPacket->bRequest = USB_REQUEST_CLEAR_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_CLEAR_FEATURE_TO_OTHER:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
 //             SetupPacket->bRequest = USB_REQUEST_CLEAR_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_OTHER;
 //             break;
 //
 //         case URB_FUNCTION_SET_FEATURE_TO_OTHER:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_FEATURE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_OTHER;
 //             break;
@@ -1419,7 +1419,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 // {
 //     PUSBPORT_ENDPOINT Endpoint;
 //
-//     DPRINT_URB("USBPORT_HandleDataTransfers: Urb - %p\n", Urb);
+//     DPRINT_URB!("USBPORT_HandleDataTransfers: Urb - %p\n", Urb);
 //
 //     Endpoint = ((PUSBPORT_PIPE_HANDLE)
 //                 (Urb->UrbBulkOrInterruptTransfer.PipeHandle))->Endpoint;
@@ -1461,22 +1461,22 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     switch (Urb->UrbHeader.Function)
 //     {
 //         case URB_FUNCTION_GET_STATUS_FROM_DEVICE:
-//             DPRINT_URB("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_DEVICE\n");
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_GET_STATUS_FROM_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_INTERFACE\n");
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_GET_STATUS_FROM_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_ENDPOINT\n");
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_GET_STATUS_FROM_OTHER:
-//             DPRINT_URB("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_OTHER\n");
+//             DPRINT_URB!("USBPORT_HandleGetStatus: URB_FUNCTION_GET_STATUS_FROM_OTHER\n");
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_OTHER;
 //             break;
 //     }
@@ -1534,49 +1534,49 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     switch (Urb->UrbHeader.Function)
 //     {
 //         case URB_FUNCTION_VENDOR_DEVICE:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_DEVICE\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_VENDOR;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_VENDOR_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_INTERFACE\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_VENDOR;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_VENDOR_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_ENDPOINT\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_VENDOR;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_CLASS_DEVICE:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_DEVICE\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_CLASS;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_CLASS_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_INTERFACE\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_CLASS;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_CLASS_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_ENDPOINT\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_CLASS;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_CLASS_OTHER:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_OTHER\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_CLASS_OTHER\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_CLASS;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_OTHER;
 //             break;
 //
 //         case URB_FUNCTION_VENDOR_OTHER:
-//             DPRINT_URB("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_OTHER\n");
+//             DPRINT_URB!("USBPORT_HandleVendorOrClass: URB_FUNCTION_VENDOR_OTHER\n");
 //             SetupPacket->bmRequestType.Type = BMREQUEST_VENDOR;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_OTHER;
 //             break;
@@ -1606,42 +1606,42 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     switch (Urb->UrbHeader.Function)
 //     {
 //         case URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_DEVICE\n");
 //             SetupPacket->bRequest = USB_REQUEST_GET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_DEVICE_TO_HOST;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_DEVICE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_DEVICE;
 //             break;
 //
 //         case URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_ENDPOINT\n");
 //             SetupPacket->bRequest = USB_REQUEST_GET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_DEVICE_TO_HOST;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_ENDPOINT\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_ENDPOINT;
 //             break;
 //
 //         case URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_GET_DESCRIPTOR_FROM_INTERFACE\n");
 //             SetupPacket->bRequest = USB_REQUEST_GET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_DEVICE_TO_HOST;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
 //             break;
 //
 //         case URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE:
-//             DPRINT_URB("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
+//             DPRINT_URB!("USBPORT_HandleGetSetDescriptor: URB_FUNCTION_SET_DESCRIPTOR_TO_INTERFACE\n");
 //             SetupPacket->bRequest = USB_REQUEST_SET_DESCRIPTOR;
 //             SetupPacket->bmRequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
 //             SetupPacket->bmRequestType.Recipient = BMREQUEST_TO_INTERFACE;
@@ -1669,7 +1669,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //     struct _URB_CONTROL_TRANSFER *UrbRequest;
 //     PMDL Mdl;
 //
-//     DPRINT_URB("USBPORT_ValidateTransferParametersURB: Urb - %p\n", Urb);
+//     DPRINT_URB!("USBPORT_ValidateTransferParametersURB: Urb - %p\n", Urb);
 //
 //     UrbRequest = &Urb->UrbControlTransfer;
 //
@@ -1695,7 +1695,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //         UrbRequest->TransferBufferMDL == NULL &&
 //         UrbRequest->TransferBufferLength != 0)
 //     {
-//         DPRINT_URB("USBPORT_ValidateTransferParametersURB: TransferBuffer - %p, TransferBufferLength - %x\n",
+//         DPRINT_URB!("USBPORT_ValidateTransferParametersURB: TransferBuffer - %p, TransferBufferLength - %x\n",
 //                    UrbRequest->TransferBuffer,
 //                    UrbRequest->TransferBufferLength);
 //
@@ -1716,7 +1716,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //         UrbRequest->TransferBufferMDL = Mdl;
 //         Urb->UrbHeader.UsbdFlags |= USBD_FLAG_ALLOCATED_MDL;
 //
-//         DPRINT_URB("USBPORT_ValidateTransferParametersURB: Mdl - %p\n", Mdl);
+//         DPRINT_URB!("USBPORT_ValidateTransferParametersURB: Mdl - %p\n", Mdl);
 //     }
 //
 //     return STATUS_SUCCESS;
@@ -1890,7 +1890,7 @@ pub unsafe extern "system" fn USBPORT_HandleSubmitURB(
 //
 //     InterlockedIncrement(&DeviceHandle->DeviceHandleLock);
 //
-//     DPRINT_URB("USBPORT_HandleSubmitURB: Function - 0x%02X, DeviceHandle - %p\n",
+//     DPRINT_URB!("USBPORT_HandleSubmitURB: Function - 0x%02X, DeviceHandle - %p\n",
 //                Function,
 //                Urb->UrbHeader.UsbdDeviceHandle);
 //

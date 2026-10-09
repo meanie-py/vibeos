@@ -429,6 +429,7 @@ members = [
     "mmsys-rust",
     "usrmgr-rust",
     "comctl32-rust",
+    "inetcpl-rust",
 ]
 resolver = "2"
 

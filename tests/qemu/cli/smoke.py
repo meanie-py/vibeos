@@ -427,6 +427,8 @@ def _boot_vm(
                 or _gic_check(text)
                 or _nvme_check(text)
                 or _xhci_check(text)
+                or _boot_nvme_check(text)
+                or _headless_check(text)
                 or _virtio_mmio_check(text, arch)
             )
             if smp_fail is not None:
@@ -896,6 +898,47 @@ _XHCI_MSIX_ENABLED = "MSI-X enabled for 1b36:000d"
 _XHCI_MSI_ENABLED = re.compile(r"MSI enabled for 1b36:000d: (\d+) message\(s\)")
 
 
+# arm64vid-rust, when firmware handed over no framebuffer and the desktop runs on
+# a frame in memory (`Arm64VidHeadless`).
+_ARM64VID_HEADLESS = "[arm64vid] no firmware framebuffer: headless"
+
+
+def _headless_check(text: str) -> dict | None:
+    """Prove a `--headless` boot reached the desktop with no display: the loader
+    with no UI, arm64vid on its in-memory frame. Otherwise a rig that still gave
+    UEFI a GOP would pass while proving nothing about a server."""
+    if os.environ.get("VIBEOS_QEMU_HEADLESS", "").strip() != "1":
+        return None
+    if _ARM64VID_HEADLESS in text:
+        return None
+    return {
+        "classification": "NOT_HEADLESS",
+        "salient": [
+            f"--headless boot, but arm64vid never printed `{_ARM64VID_HEADLESS}`",
+            *[ln.strip() for ln in text.splitlines() if "[arm64vid]" in ln][-3:],
+        ],
+    }
+
+
+def _boot_nvme_check(text: str) -> dict | None:
+    """Prove a `--boot-nvme` boot, which UEFI loaded from an NVMe namespace as EC2
+    loads an instance from its root volume, also left that volume visible to the OS:
+    nvme.sys must publish it as a disk. The desktop alone shows only that firmware
+    could read it."""
+    if os.environ.get("VIBEOS_QEMU_BOOT_NVME", "").strip() != "1":
+        return None
+    if _NVME_PUBLISHED in text:
+        return None
+    return {
+        "classification": "NVME_BOOT_DISK_NOT_SEEN",
+        "salient": [
+            "booted from NVMe, but nvme.sys never published the boot namespace "
+            f"(`{_NVME_PUBLISHED}`)",
+            *[ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-4:],
+        ],
+    }
+
+
 def _xhci_check(text: str) -> dict | None:
     """Prove an `--xhci` boot ran the controller on the interrupts asked for. The
     desktop needs no USB, and a controller left on its line still enumerates, so a
@@ -1002,12 +1045,78 @@ _LPI_ON_AN_AP = re.compile(r"\[GIC\] CPU[1-9]\d*: first LPI delivered")
 _SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing")
 
 
+# arm64/smmuv3.rs, driving the SMMU for real (the SMMU=TRANSLATE tripwire).
+_SMMU_TRANSLATING = re.compile(r"\[HAL\] SMMUv3 at \S+: TRANSLATING")
+_SMMU_ATTACHED = re.compile(r"\[HAL\] SMMUv3 at \S+: requester \S+ is StreamID \S+ - translating")
+
+
+def _smmu_translate_check(text: str) -> dict | None:
+    """Prove a `--smmu --tripwire SMMU=TRANSLATE` boot ran its devices' DMA through
+    the SMMU's identity map: translating, every started device attached, and not
+    one fault. A device whose DMA faults may still reach the desktop (the boot
+    needs few of them), so the faults are the verdict, not the marker."""
+    lines = [ln.strip() for ln in text.splitlines() if "SMMUv3" in ln][-6:]
+    if not _SMMU_TRANSLATING.search(text):
+        return {
+            "classification": "SMMU_NOT_TRANSLATING",
+            "salient": [
+                "SMMU=TRANSLATE, but the HAL never put the SMMUv3 in translate mode",
+                *lines,
+            ],
+        }
+    if "NOT ATTACHED" in text or not _SMMU_ATTACHED.search(text):
+        return {
+            "classification": "SMMU_NOT_ATTACHED",
+            "salient": ["a device's stream was never attached to the SMMU's identity map", *lines],
+        }
+    faults = [
+        ln.strip()
+        for ln in text.splitlines()
+        if "SMMUv3" in ln and ("FAULT" in ln or "global error" in ln)
+    ]
+    # NVME_BAD_DMA=<hex>: nvme.sys aims one Identify (4 KiB of data) at that address
+    # on purpose, and the SMMU must fault it there; QEMU's device writes it a few
+    # bytes at a time, so a fault per write. Every other fault still fails.
+    bad = re.search(r"NVME_BAD_DMA=(?:0x)?([0-9a-fA-F]+)", os.environ.get("VIBEOS_TRIPWIRE", ""))
+    if bad:
+        target = int(bad[1], 16)
+        address = f"{target:016x}"
+
+        def in_buffer(line: str) -> bool:
+            at = re.search(r"address ([0-9a-fA-F]+)$", line)
+            return bool(at) and target <= int(at[1], 16) < target + 0x1000
+
+        caught = [ln for ln in faults if in_buffer(ln)]
+        if not caught:
+            return {
+                "classification": "SMMU_MISSED_BAD_DMA",
+                "salient": [
+                    f"nvme.sys aimed a DMA at {address}, and the SMMU reported no fault there",
+                    *faults[:2],
+                    *[ln.strip() for ln in text.splitlines() if "tripwire: an Identify" in ln][-1:],
+                ],
+            }
+        faults = [ln for ln in faults if ln not in caught]
+    if faults:
+        return {
+            "classification": "SMMU_FAULT",
+            "salient": [
+                f"{len(faults)} SMMU fault line(s): a device DMA'd outside the identity map",
+                *faults[:4],
+            ],
+        }
+    return None
+
+
 def _gic_check(text: str) -> dict | None:
     """Prove a `--gic 3` boot ran on the GICv3. The GICv2 path never runs there (QEMU
     describes no GICC), so a desktop already implies most of it, but not that the HAL
     took the v3 path rather than, say, booting without a clock; and with `--nvme`, that
     MSI-X went through the ITS."""
-    if os.environ.get("VIBEOS_QEMU_SMMU", "").strip() == "1" and not _SMMU_BYPASSED.search(text):
+    smmu = os.environ.get("VIBEOS_QEMU_SMMU", "").strip() == "1"
+    if smmu and "SMMU=TRANSLATE" in os.environ.get("VIBEOS_TRIPWIRE", ""):
+        return _smmu_translate_check(text)
+    if smmu and not _SMMU_BYPASSED.search(text):
         return {
             "classification": "SMMU_NOT_BYPASSED",
             "salient": [
@@ -1315,6 +1424,21 @@ def smoke(args, repo: Path) -> int:
             return run.finalize(repo)
         os.environ["VIBEOS_QEMU_SMMU"] = "1"
         run.add(Stage("smmu", status="warn", detail="SMMUv3 in front of PCI"))
+
+    # Server-shaped arm64: a Neoverse core, and no framebuffer (vm.py cpu_model, headless).
+    for flag, env, value in (
+        ("cpu", "VIBEOS_QEMU_CPU", getattr(args, "cpu", None)),
+        ("headless", "VIBEOS_QEMU_HEADLESS", "1" if getattr(args, "headless", False) else None),
+        ("boot-nvme", "VIBEOS_QEMU_BOOT_NVME", "1" if getattr(args, "boot_nvme", False) else None),
+    ):
+        if value is None:
+            continue
+        if arch != "arm64":
+            run.classification = "BAD_ARGS"
+            run.add(Stage(flag, status="fail", detail=f"--{flag} is arm64-only"))
+            return run.finalize(repo)
+        os.environ[env] = value
+        run.add(Stage(flag, status="warn", detail=f"{env}={value}"))
 
     # xHCI channel: the USB rig's controller on the interrupts asked for (vm.py
     # xhci_interrupts), and every boot must then show them working (_xhci_check).

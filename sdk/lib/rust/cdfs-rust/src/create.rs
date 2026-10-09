@@ -51,7 +51,7 @@ extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u8;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
@@ -1978,7 +1978,7 @@ pub unsafe extern "C" fn CdNormalizeFileNames(
     FileName: *mut _UNICODE_STRING,
     RemainingName: *mut CD_NAME,
 ) -> NTSTATUS {
-    let mut RemainingNameLength: u32 = 0;
+    let mut RemainingNameLength: u32;
     let mut RelatedNameLength: u32 = 0;
     let mut SeparatorLength: u32 = 0;
 

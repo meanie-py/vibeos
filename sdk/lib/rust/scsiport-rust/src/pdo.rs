@@ -379,7 +379,7 @@ unsafe fn ConvertToUnicodeString(
         MaximumLength: 0,
         Buffer: core::ptr::null_mut::<i8>(),
     };
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     if ResultBufferLength == 0 {
         RtlAssert(
             b"ResultBufferLength\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
@@ -505,14 +505,14 @@ unsafe fn PdoHandleQueryHardwareId(
         b'_' as core::ffi::c_char,
         0,
     ));
-    Offset = Offset.wrapping_add(CopyField(
+    CopyField(
         core::ptr::addr_of_mut!((*InquiryData).ProductRevisionLevel) as *mut u8,
         (core::ptr::addr_of_mut!(Id1) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         4,
         b'_' as core::ffi::c_char,
         0,
-    ));
+    );
     Id1Length = (strlen(
         core::ptr::addr_of_mut!(Id1) as *const core::ffi::c_char,
     ) as usize)
@@ -543,14 +543,14 @@ unsafe fn PdoHandleQueryHardwareId(
         b'_' as core::ffi::c_char,
         0,
     ));
-    Offset = Offset.wrapping_add(CopyField(
+    CopyField(
         core::ptr::addr_of_mut!((*InquiryData).ProductId) as *mut u8,
         (core::ptr::addr_of_mut!(Id2) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         16,
         b'_' as core::ffi::c_char,
         0,
-    ));
+    );
     Id2Length = (strlen(
         core::ptr::addr_of_mut!(Id2) as *const core::ffi::c_char,
     ) as usize)
@@ -573,14 +573,14 @@ unsafe fn PdoHandleQueryHardwareId(
             .offset(Offset as isize),
         DeviceType,
     ) as u32);
-    Offset = Offset.wrapping_add(CopyField(
+    CopyField(
         core::ptr::addr_of_mut!((*InquiryData).VendorId) as *mut u8,
         (core::ptr::addr_of_mut!(Id3) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         8,
         b'_' as core::ffi::c_char,
         0,
-    ));
+    );
     Id3Length = (strlen(
         core::ptr::addr_of_mut!(Id3) as *const core::ffi::c_char,
     ) as usize)
@@ -614,14 +614,14 @@ unsafe fn PdoHandleQueryHardwareId(
         b'_' as core::ffi::c_char,
         0,
     ));
-    Offset = Offset.wrapping_add(CopyField(
+    CopyField(
         core::ptr::addr_of_mut!((*InquiryData).ProductRevisionLevel) as *mut u8,
         (core::ptr::addr_of_mut!(Id4) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         1,
         b'_' as core::ffi::c_char,
         0,
-    ));
+    );
     Id4Length = (strlen(
         core::ptr::addr_of_mut!(Id4) as *const core::ffi::c_char,
     ) as usize)
@@ -650,14 +650,14 @@ unsafe fn PdoHandleQueryHardwareId(
         b'_' as core::ffi::c_char,
         0,
     ));
-    Offset = Offset.wrapping_add(CopyField(
+    CopyField(
         core::ptr::addr_of_mut!((*InquiryData).ProductRevisionLevel) as *mut u8,
         (core::ptr::addr_of_mut!(Id5) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         1,
         b'_' as core::ffi::c_char,
         0,
-    ));
+    );
     Id5Length = (strlen(
         core::ptr::addr_of_mut!(Id5) as *const core::ffi::c_char,
     ) as usize)
@@ -670,11 +670,11 @@ unsafe fn PdoHandleQueryHardwareId(
         core::mem::size_of::<[core::ffi::c_char; 50]>(),
     );
     Offset = 0;
-    Offset = sprintf(
+    sprintf(
         (core::ptr::addr_of_mut!(Id6) as *mut core::ffi::c_char)
             .offset(Offset as isize),
         GenericType,
-    ) as u32;
+    );
     Id6Length = (strlen(
         core::ptr::addr_of_mut!(Id6) as *const core::ffi::c_char,
     ) as usize)
@@ -767,10 +767,10 @@ unsafe fn PdoHandleQueryCompatibleId(
 ) -> NTSTATUS {
     let mut PDODeviceExtension: PSCSI_PORT_LUN_EXTENSION = (*DeviceObject).DeviceExtension as PSCSI_PORT_LUN_EXTENSION;
     let mut Buffer: [i8; 100] = [0i8; 100];
-    let mut Length: ULONG = 0;
+    let mut Length: ULONG;
     let mut Offset: ULONG = 0;
-    let mut InstanceId: LPWSTR = core::ptr::null_mut::<u16>();
-    let mut DeviceType: LPCSTR = core::ptr::null::<i8>();
+    let mut InstanceId: LPWSTR;
+    let mut DeviceType: LPCSTR;
 
     DeviceType = GetDeviceType(&raw mut (*PDODeviceExtension).InquiryData) as LPCSTR;
 
@@ -870,7 +870,7 @@ unsafe fn PdoHandleDeviceRelations(
     DeviceObject: *mut DEVICE_OBJECT,
     Irp: *mut IRP,
 ) -> NTSTATUS {
-    let mut deviceRelations: *mut DEVICE_RELATIONS = core::ptr::null_mut();
+    let mut deviceRelations: *mut DEVICE_RELATIONS;
     let ioStack: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
     if (*ioStack).Parameters.QueryDeviceRelations.Type != TargetDeviceRelation {
@@ -901,7 +901,7 @@ pub unsafe extern "C" fn PdoDispatchPnp(
 ) -> NTSTATUS {
     let ioStack: PIO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
     let lunExt: PSCSI_PORT_LUN_EXTENSION = (*DeviceObject).DeviceExtension as PSCSI_PORT_LUN_EXTENSION;
-    let mut status: NTSTATUS = 0;
+    let mut status: NTSTATUS;
 
     // DPRINT removed
 

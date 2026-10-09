@@ -126,21 +126,13 @@ LoadOrderGroup = Boot Bus Extender
 
 ;-------------------------- PCI-ISA BUS DRIVER --------------------------
 
+; isapnp.sys was pruned (Pre-Vista prune E1), so the bridge installs as a raw device, as
+; NO_DRV does. Installing the isapnp service made it a boot driver that is on no disk:
+; FreeLdr stopped the first boot after GUI setup at "Cannot load boot driver".
 [PCI_ISA_Inst.NT]
-CopyFiles = PCI_ISA_CopyFiles.NT
-
-[PCI_ISA_CopyFiles.NT]
-isapnp.sys
 
 [PCI_ISA_Inst.NT.Services]
-AddService = isapnp, 0x00000002, isapnp_Service_Inst
-
-[isapnp_Service_Inst]
-ServiceType   = 1
-StartType     = 0
-ErrorControl  = 3
-ServiceBinary = %12%\isapnp.sys
-LoadOrderGroup = Boot Bus Extender
+AddService = , 0x00000002
 
 ;---------------------------- PCI BUS DRIVER ----------------------------
 

@@ -82,7 +82,21 @@ const RBQP: usize = 0x018;
 const TBQP: usize = 0x01c;
 const RSR: usize = 0x020;
 const ISR: usize = 0x024;
+const IER: usize = 0x028;
 const IDR: usize = 0x02c;
+const IMR: usize = 0x030;
+// Interrupt causes (Linux's macb.h): frame received, RX ran out of buffers, TX
+// read a CPU-owned descriptor (went idle), TX underrun, TX error, frame sent,
+// receive overrun, and a DMA bus error.
+const INT_RCOMP: u32 = 1 << 1;
+const INT_RXUBR: u32 = 1 << 2;
+const INT_TXUBR: u32 = 1 << 3;
+const INT_TUND: u32 = 1 << 4;
+const INT_TXERR: u32 = 1 << 6;
+const INT_TCOMP: u32 = 1 << 7;
+const INT_ROVR: u32 = 1 << 10;
+const INT_HRESP: u32 = 1 << 11;
+const INT_WAKE: u32 = INT_RCOMP | INT_RXUBR | INT_TXUBR | INT_TUND | INT_TXERR | INT_TCOMP | INT_ROVR | INT_HRESP;
 const MAN: usize = 0x034;
 /// Clause 22: start 01, code 10.
 const MAN_C22: u32 = (1 << 30) | (2 << 16);
@@ -163,9 +177,17 @@ const PAD_OD: u32 = 1 << 7;
 const PAD_IE: u32 = 1 << 6;
 /// The DT's phy-reset-duration.
 const PHY_RESET_MS: i64 = 5;
-/// RP1's per-source interrupt routing: MSIX_CFG(n) = 0x108008 + 4n.
+/// RP1's per-source interrupt routing: MSIX_CFG(n) = 0x108008 + 4n, with
+/// atomic set/clear aliases at +0x800/+0xc00. Under this UEFI, RP1's MSI-X is
+/// off and its legacy INTA is on, so every enabled source drives INTA, which the
+/// BCM2712 root complex delivers as INTID 261: the level, shared line ACPI gives
+/// the xHCIs (sources 31 and 36, the only ones the firmware enables) and the HAL
+/// gives `VIBEOS\RP1GEM`. Enabling source 6 is all it takes; IACK_EN stays
+/// off, since INTA is level and follows the GEM's own status register.
 const RP1_PCIE_APBS: u64 = 0x10_8000;
+const APBS_REG_SET: usize = 0x800;
 const MSIX_CFG_ETH: usize = 0x8 + 4 * 6;
+const MSIX_CFG_ENABLE: u32 = 1 << 0;
 
 /// A locally administered address, used only if the firmware will not say the
 /// board's own (`board_mac`). Every Pi 5 that falls back shares it.
@@ -218,6 +240,7 @@ impl Mmio {
 pub struct Gem {
     regs: Mmio,
     clocks: Mmio,
+    apbs: Mmio,
     mac: [u8; 6],
     phy: u8,
     link: bool,
@@ -457,6 +480,27 @@ impl Gem {
         self.mac
     }
 
+    /// The context `irq_ack` takes: the register window.
+    pub fn irq_ctx(&self) -> *mut u8 {
+        self.regs.0
+    }
+
+    /// Unmask the causes the worker acts on, then let RP1 route them. Call only
+    /// once an ISR is connected: the line is shared with both xHCIs, and a GEM
+    /// interrupt nobody claims would hold the level line asserted.
+    pub fn enable_interrupts(&self) {
+        let _ = self.regs.rd(ISR);
+        self.regs.wr(ISR, 0xFFFF_FFFF);
+        self.regs.wr(IER, INT_WAKE);
+        self.apbs.wr(APBS_REG_SET + MSIX_CFG_ETH, MSIX_CFG_ENABLE);
+        nsprint!("[NETSTACK] gem: interrupts on (IMR {:#x}, RP1 MSIX_CFG(6) {:#x})\n", !self.regs.rd(IMR), self.apbs.rd(MSIX_CFG_ETH));
+    }
+
+    /// Frames handed to the GEM that it has not handed back yet.
+    pub fn tx_in_flight(&self) -> bool {
+        self.tx_cons != self.tx_prod
+    }
+
     pub fn can_recv(&self) -> bool {
         unsafe { desc_rd(self.rx_desc, self.rx_idx, 0) & RX_ADDR_USED != 0 }
     }
@@ -652,7 +696,7 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
             Mmio::map(rp1 + RP1_CLOCKS, 0x200),
             Mmio::map(rp1 + RP1_IO_BANK1, 0x40),
             Mmio::map(rp1 + RP1_RIO1, 0x4000),
-            Mmio::map(rp1 + RP1_PCIE_APBS, 0x100),
+            Mmio::map(rp1 + RP1_PCIE_APBS, 0x1000),
             Mmio::map(rp1 + RP1_PADS_BANK1, 0x40),
         ) else {
             nsprint!("[NETSTACK] gem: MmMapIoSpace failed (RP1 at {:#x})\n", rp1);
@@ -702,6 +746,7 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
         let mut g = Gem {
             regs,
             clocks,
+            apbs,
             mac,
             phy: 0,
             link: false,
@@ -782,6 +827,19 @@ pub fn bringup(nic: PlatformNic) -> Option<Gem> {
     }
 }
 
+/// The ISR's half (DIRQL): read and clear the GEM's interrupt status. This GEM
+/// was built without clear-on-read (DCFG1 IRQCOR = 0), so the bits are written
+/// back. Touches nothing the worker owns.
+pub unsafe fn irq_ack(regs: ntkrnl_sys::ddk::PVOID) -> crate::isr::Ack {
+    let isr = regs.cast::<u8>().add(ISR).cast::<u32>();
+    let st = core::ptr::read_volatile(isr);
+    if st == 0 {
+        return crate::isr::Ack::NotOurs;
+    }
+    core::ptr::write_volatile(isr, st);
+    if st & INT_WAKE != 0 { crate::isr::Ack::Wake } else { crate::isr::Ack::Handled }
+}
+
 // --------------------------------------------------------- smoltcp adapter
 pub struct GemPhy {
     dev: Gem,
@@ -793,6 +851,9 @@ impl GemPhy {
     }
     pub fn mac(&self) -> [u8; 6] {
         self.dev.mac_address()
+    }
+    pub fn dev(&self) -> &Gem {
+        &self.dev
     }
 }
 
