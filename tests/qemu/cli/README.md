@@ -89,9 +89,12 @@ provenance stamp.
   result or hand off. The clean build is the only one that proves a cold-link
   state. (The smoke harness's clean-build does the same nuke for the same
   reason.)
-- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion).
-  Source lints are opt-in (`--check`); `--no-check` remains a compatibility alias
-  for the default. Strict source verification runs through `check --strict` / `gate`.
+- Runs binary lints (`scan_ud2`, sacred primitives, self-recursion, flex-array
+  panics, export thunks). Source lints are opt-in (`--check`); `--no-check` skips
+  the binary lints as well — it is what `gate` passes, because the gate runs them
+  as its own `lint:<arch>` lane over the same objects (for months the flag was
+  parsed and ignored, and every gate build paid 3-4 minutes of scanners twice).
+  Strict source verification runs through `check --strict` / `gate`.
 - Build failures are **classified**: `CMAKE_CONFIGURE_FAIL` /
   `CARGO_CHECK_FAIL` / `LINK_FAIL` (with i386 PE-decoration hints on undefined
   symbols — `_Foo@N` = stdcall, `@Foo@N` = fastcall, `_Foo` = cdecl) /
