@@ -25,7 +25,12 @@ impl Fixture {
             .env("VIBEOS_HOST_JOB_SLOTS", "2")
             .env("VIBEOS_HOST_LINK_SLOTS", "1")
             .env_remove("VIBEOS_HOST_JOB_HELD")
-            .env_remove("VIBEOS_INNER_RUSTC_WRAPPER");
+            .env_remove("VIBEOS_INNER_RUSTC_WRAPPER")
+            // Hermetic class: the gate runs this suite with VIBEOS_JOB_CLASS=integration,
+            // which silently turned every unlabelled job here into a landing job. A test
+            // that wants a class sets it on the command explicitly.
+            .env_remove("VIBEOS_JOB_CLASS")
+            .env_remove("VIBEOS_HOST_JOB_LAND_RESERVE");
         c
     }
     fn spawn(&self, kind: &str, name: &str) -> Child {

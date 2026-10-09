@@ -434,10 +434,17 @@ impl Broker {
         }
         // A landing gate (job_class=integration) is the fleet's critical path: every
         // queued lane waits on it, while a lane's own build only serves that lane's
-        // NEXT submission. While any integration job is present, the top `reserve`
-        // CPU slots are for integration only, the same way the boot pool keeps half
-        // its permits for landing. With no gate running, lanes use every slot.
+        // NEXT submission. While any integration job is present, non-landing jobs may
+        // hold at most `cpu_limit - reserve` slots between them, the same way the boot
+        // pool keeps half its permits for landing. With no gate running, lanes use every
+        // slot. A COUNT, not an index range: the first version fenced lanes into the low
+        // slot NUMBERS, so landing jobs sitting in those numbers left lanes no slot while
+        // the high ones idled (and deadlocked test_runner_process_contracts in the gate).
         let land_present = rows.iter().any(|r| is_landing(&r.4));
+        let mut active_lanes = rows
+            .iter()
+            .filter(|r| occupied(&r.4) && !is_landing(&r.4))
+            .count();
         let reserve = non_negative("VIBEOS_HOST_JOB_LAND_RESERVE", self.slots / 2)?;
         rows.sort_by_key(|r| (effective_rank(r.2, r.1, now()), r.1, r.0.clone()));
         for (path, _, _, kind, body) in rows {
@@ -451,10 +458,10 @@ impl Broker {
                 continue;
             }
             let landing = is_landing(&body);
-            let Some(cpu_pos) = cpus
-                .iter()
-                .position(|i| slot_allowed(*i, cpu_limit, reserve, landing, land_present))
-            else {
+            if !may_start(active_lanes, cpu_limit, reserve, landing, land_present) {
+                continue;
+            }
+            let Some(cpu_pos) = cpus.iter().position(|i| *i < cpu_limit) else {
                 continue;
             };
             let link_pos = if kind == "link" {
@@ -479,6 +486,9 @@ impl Broker {
             grant.push('}');
             fs::write(path, grant)?;
             active_cpu += 1;
+            if !landing {
+                active_lanes += 1;
+            }
         }
         self.wakeup
             .state()
@@ -571,23 +581,20 @@ fn rank_of(class: &str) -> Option<u8> {
 fn is_landing(body: &str) -> bool {
     body.contains("\"job_class\":\"integration\"")
 }
-/// May a job take CPU slot `index`? The top `reserve` slots of `cpu_limit` are held
-/// for landing jobs whenever one is present (waiting or running); otherwise any job
-/// may take any slot. Running non-landing jobs in reserved slots simply finish.
-fn slot_allowed(
-    index: usize,
+/// May a job start now? A landing job always may (the slot count is checked by the
+/// caller). While a landing job is present, non-landing jobs share at most
+/// `cpu_limit - reserve` slots; lanes already over that simply finish. The reserve
+/// never takes a lane's last slot, as the boot pool's land_boot_reserve does, so a
+/// gate delays a lane without ever stopping it.
+fn may_start(
+    active_lanes: usize,
     cpu_limit: usize,
     reserve: usize,
     landing: bool,
     land_present: bool,
 ) -> bool {
-    if index >= cpu_limit {
-        return false;
-    }
-    // Never the whole pool: lanes always keep at least one slot, as the boot pool's
-    // land_boot_reserve does, so a gate delays them without ever stopping them.
     let reserve = reserve.min(cpu_limit.saturating_sub(1));
-    landing || !land_present || index < cpu_limit - reserve
+    landing || !land_present || active_lanes < cpu_limit - reserve
 }
 fn effective_rank(rank: u8, born: u64, current: u64) -> u8 {
     if current.saturating_sub(born) >= 120_000 {
@@ -749,20 +756,23 @@ mod tests {
         assert_eq!(rank_of("urgent"), None);
     }
     #[test]
-    fn reserved_slots_are_landing_only_while_a_gate_is_present() {
-        // 18 slots, 9 reserved: a lane may use 0..9 while a gate is present, a gate any.
-        assert!(slot_allowed(8, 18, 9, false, true));
-        assert!(!slot_allowed(9, 18, 9, false, true));
-        assert!(slot_allowed(17, 18, 9, true, true));
-        // No gate present: the lane uses every slot.
-        assert!(slot_allowed(17, 18, 9, false, false));
-        // Never past the limit, and no reserve takes a lane's LAST slot.
-        assert!(!slot_allowed(18, 18, 9, true, true));
-        assert!(slot_allowed(0, 18, 40, false, true));
-        assert!(!slot_allowed(1, 18, 40, false, true));
-        // A one-slot broker (tests, tiny hosts) and a reserve of 0 both mean "no reserve".
-        assert!(slot_allowed(0, 1, 0, false, true));
-        assert!(slot_allowed(17, 18, 0, false, true));
+    fn lanes_share_a_count_of_slots_while_a_gate_is_present() {
+        // 18 slots, 9 reserved: lanes may hold 9 between them while a gate is present.
+        assert!(may_start(8, 18, 9, false, true));
+        assert!(!may_start(9, 18, 9, false, true));
+        // A gate job is never held back by the lane count.
+        assert!(may_start(17, 18, 9, true, true));
+        // No gate present: lanes use every slot.
+        assert!(may_start(17, 18, 9, false, false));
+        // No reserve takes a lane's LAST slot.
+        assert!(may_start(0, 18, 40, false, true));
+        assert!(!may_start(1, 18, 40, false, true));
+        // Two slots, one reserved, gate jobs holding BOTH and one finishing: the lane
+        // gets the freed slot whichever number it is (the index-range version did not).
+        assert!(may_start(0, 2, 1, false, true));
+        // A one-slot broker and a reserve of 0 both mean "no reserve".
+        assert!(may_start(0, 1, 0, false, true));
+        assert!(may_start(17, 18, 0, false, true));
     }
     #[test]
     fn json() {

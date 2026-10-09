@@ -39,11 +39,11 @@ def test_runner_process_contracts(runner, tmp_path):
         ],
         REPO,
         os.environ,
-        # A cold compile into a fresh target dir plus a serial process suite: ~10 s on
-        # this host at load average 40, but the gate runs it beside three builds and it
-        # was killed at 120 s on 2026-10-09 while its tests were passing. A safety net,
-        # not a deadline; the suite's own timing checks are calibrated inside it.
-        timeout=600,
+        # ~10 s on this host at load average 40. Under pytest-timeout's 300 s (pyproject)
+        # on purpose: this budget raises TimeoutExpired WITH cargo's captured output, so a
+        # hang names the test it was in. pytest-timeout kills it with none -- which is how
+        # the 2026-10-09 gate reds read as "load" when they were a broker deadlock.
+        timeout=270,
     )
 
 
