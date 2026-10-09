@@ -3047,6 +3047,20 @@ pub unsafe extern "system" fn WinMain(
         }
     }
 
+    /* The hidden SAS window, as the C's full path creates it: win32k posts every
+     * ExitWindowsEx to it (WM_LOGONNOTIFY / LN_LOGOFF), and it is the only way this process
+     * hears that the system should shut down or reboot. This fast path skipped it, so
+     * NotifyLogon had no window, every Win32 shutdown/reboot was dropped -- GUI setup's
+     * reboot among them -- and the caller was still told STATUS_PENDING. Created before
+     * RunSetup so setup's reboot cannot race it. Non-fatal here: the boot below does not
+     * depend on it, and the fallback wait at the end still holds the process. */
+    if crate::sas::InitializeSAS(WLSession) != 0 {
+        (*WLSession).LogonState = STATE_INIT;
+        DbgPrint(b"[WINLOGON] SAS window up\n\0".as_ptr() as *const i8);
+    } else {
+        DbgPrint(b"[WINLOGON] InitializeSAS failed (error %lu)\n\0".as_ptr() as *const i8, GetLastError());
+    }
+
     /* Check for pending setup */
     if crate::setup::GetSetupType() != 0 {
         DbgPrint(b"[WINLOGON] Setup mode detected, launching setup...\n\0".as_ptr() as *const i8);
@@ -3799,8 +3813,23 @@ pub unsafe extern "system" fn WinMain(
     #[cfg(not(target_arch = "aarch64"))]
     TryStartDoom();
 
-    /* No SAS window, no GINA — just sleep forever. Block on a never-signaled
-     * event to properly enter WAIT state and leave the CPU for other threads. */
+    /* The SAS window's message loop (the C's, at the end of WinMain): LN_LOGOFF from
+     * win32k becomes HandleShutdown here. Divergence: this boot never logs a user on, so the
+     * idle screensaver notification is not dispatched -- it would start GINA's screensaver
+     * path on a desktop no one is logged on to. */
+    if !(*WLSession).SASWindow.is_null() {
+        let mut Msg: MSG = zeroed();
+        while GetMessageW(&mut Msg, (*WLSession).SASWindow, 0, 0) > 0 {
+            if Msg.message == WM_LOGONNOTIFY && Msg.wParam == LN_START_SCREENSAVE as WPARAM {
+                continue;
+            }
+            TranslateMessage(&Msg);
+            DispatchMessageW(&Msg);
+        }
+    }
+
+    /* Fallback: block on a never-signaled event, so a winlogon whose loop ends (or that
+     * has no SAS window) still holds -- it is a critical process. */
     {
         let mut oa: OBJECT_ATTRIBUTES = zeroed();
         oa.Length = size_of::<OBJECT_ATTRIBUTES>() as u32;

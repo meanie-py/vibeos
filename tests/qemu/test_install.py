@@ -170,6 +170,19 @@ def _uninstalled_service_images() -> list[str]:
         re.I,
     ):
         services.setdefault(m.group(1), {})[m.group(2)] = m.group(3).strip().strip('"')
+    # GUI setup's PnP pass installs services from the INFs, after text setup: a boot-start one
+    # whose binary setup never copied stops the NEXT boot at FreeLdr's "Cannot load boot
+    # driver" box (machine.inf's isapnp for the PIIX3 ISA bridge; hdc.inf's atapi).
+    for inf in sorted((PROJECT_DIR / "media" / "inf").glob("*.inf")):
+        text = inf.read_text("latin-1", errors="replace")
+        for m in re.finditer(r"\[(\w+_Service_Inst)\](.*?)(?=^\[)", text, re.S | re.M):
+            body = m.group(2)
+            start = re.search(r"StartType\s*=\s*(\d+)", body)
+            binary = re.search(r"ServiceBinary\s*=\s*%1[02]%\\(?:\S*\\)?([\w.]+)", body, re.I)
+            if start and binary and int(start.group(1)) == 0:
+                services.setdefault(f"{inf.name}:{m.group(1)}", {}).update(
+                    {"ImagePath": binary.group(1), "Start": "0x0"}
+                )
     missing = []
     for name, values in sorted(services.items()):
         image = values.get("ImagePath", "").split()[0:1]
