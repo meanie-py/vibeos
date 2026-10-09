@@ -104,7 +104,7 @@ const VadImageMap: u32 = 2;
 const VadRotatePhysical: u32 = 6;
 const VadLargePageSection: u32 = 7;
 const TableFoundNode: TABLE_SEARCH_RESULT = ntkrnl_sys::ddk::_TABLE_SEARCH_RESULT_TableFoundNode;
-const HighPagePriority: u32 = 2;
+const HighPagePriority: u32 = 32; // header value (was 2, invented)
 const IoReadAccess: u32 = 0;
 
 extern "system" {

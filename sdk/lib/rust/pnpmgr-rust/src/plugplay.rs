@@ -218,14 +218,14 @@ const PNP_PROPERTY_CONTAINERID: ULONG = 0xd;
 
 const DevicePropertyUINumber: DEVICE_REGISTRY_PROPERTY = 0x00000011;
 const DevicePropertyPhysicalDeviceObjectName: DEVICE_REGISTRY_PROPERTY = 14;
-const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 19;
+const DevicePropertyBusTypeGuid: DEVICE_REGISTRY_PROPERTY = 12; // header value (was 19, invented)
 const DevicePropertyLegacyBusType: DEVICE_REGISTRY_PROPERTY = 0x0000000D;
 const DevicePropertyBusNumber: DEVICE_REGISTRY_PROPERTY = 0x0000000E;
 const DevicePropertyRemovalPolicy: DEVICE_REGISTRY_PROPERTY = 0x00000013;
 const DevicePropertyAddress: DEVICE_REGISTRY_PROPERTY = 0x00000010;
-const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 22;
+const DevicePropertyEnumeratorName: DEVICE_REGISTRY_PROPERTY = 15; // header value (was 22, invented)
 const DevicePropertyInstallState: DEVICE_REGISTRY_PROPERTY = 0x00000012;
-const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 28;
+const DevicePropertyContainerID: DEVICE_REGISTRY_PROPERTY = 22; // header value (was 28, invented)
 
 const EjectionRelations: ULONG = 0x00000001;
 const RemovalRelations: ULONG = 0x00000003;

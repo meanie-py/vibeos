@@ -47,7 +47,7 @@ const UserFileOpen: i32 = 2;
 const UserDirectoryOpen: i32 = 3;
 const UserVolumeOpen: i32 = 4;
 const VirtualVolumeFile: i32 = 5;
-const DirectoryFile: i32 = 6;
+const DirectoryFile: i32 = 6; // nolint: const-contradiction (module-private enum; the island's DirectoryFile is a different enum)
 const EaFile: i32 = 7;
 
 const FAT_NTC_VCB: u32 = 0x0501;

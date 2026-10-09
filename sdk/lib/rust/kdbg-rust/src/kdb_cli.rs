@@ -230,7 +230,7 @@ extern "C" {
     fn RtlStringCbCopyA(pszDest: PSTR, cbDest: usize, pszSrc: PCSTR) -> NTSTATUS;
 }
 // SysDbgReadControlSpace constant (sysdbgmsg.h).
-const SysDbgReadControlSpace: ULONG = 1;
+const SysDbgReadControlSpace: ULONG = 12; // header value (was 1, invented)
 
 // AMD64 constant — only used when KdbpCmdRegs runs on amd64.
 #[cfg(target_arch = "x86_64")]
@@ -238,7 +238,7 @@ const AMD64_DEBUG_CONTROL_SPACE_KSPECIAL: ULONG_PTR = 0x2;
 
 // _FIRMWARE_REENTRY value used by HalReturnToFirmware (HAL_REBOOT_ROUTINE).
 #[allow(non_upper_case_globals)]
-const _FIRMWARE_REENTRY_HalRebootRoutine: u32 = 1;
+const _FIRMWARE_REENTRY_HalRebootRoutine: u32 = 3; // header value (was 1, invented)
 
 // RTL_NUMBER_OF as macro (function form not allowed for arrays of differing N).
 #[allow(unused_macros)]

@@ -9,13 +9,21 @@ extern "system" {
 
 // win32ss/include/ntuser.h:3606 = 0xffff0001; routine 0 is NOPARAM_ROUTINE_CREATEMENU.
 use winsrv_sys::winsrv::NOPARAM_ROUTINE_ISCONSOLEMODE;
-const UserThreadUseActiveDesktop: u32 = 0;
-const UserThreadRestoreDesktop: u32 = 1;
-const UserThreadInitiateShutdown: u32 = 2;
-const UserThreadEndShutdown: u32 = 3;
+// From the headers (ntuser.h USERTHREADINFOCLASS, csrsrv.h CSR_SHUTDOWN_FLAGS), not retyped.
+// The hand copies here were 0/1/2/3 and 0/1, where the headers say 7/9/5/6 and 4/8: win32k
+// answered every SrvExitWindowsEx with STATUS_NOT_IMPLEMENTED (an unknown info class), so
+// ExitWindowsEx -- GUI setup's reboot, every shutdown and logoff -- failed with error 1.
+const UserThreadUseActiveDesktop: u32 =
+    winsrv_sys::winsrv::_USERTHREADINFOCLASS_UserThreadUseActiveDesktop as u32;
+const UserThreadRestoreDesktop: u32 =
+    winsrv_sys::winsrv::_USERTHREADINFOCLASS_UserThreadRestoreDesktop as u32;
+const UserThreadInitiateShutdown: u32 =
+    winsrv_sys::winsrv::_USERTHREADINFOCLASS_UserThreadInitiateShutdown as u32;
+const UserThreadEndShutdown: u32 =
+    winsrv_sys::winsrv::_USERTHREADINFOCLASS_UserThreadEndShutdown as u32;
 
-const CsrShutdownSystem: u32 = 0;
-const CsrShutdownOther: u32 = 1;
+const CsrShutdownSystem: u32 = 4; // csrsrv.h CSR_SHUTDOWN_FLAGS
+const CsrShutdownOther: u32 = 8;
 const SHUTDOWN_SYSTEMCONTEXT: u32 = CsrShutdownSystem;
 const SHUTDOWN_OTHERCONTEXT: u32 = CsrShutdownOther;
 

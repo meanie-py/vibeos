@@ -212,7 +212,7 @@ const SIG_FIRM: ULONG = 0x4649524D;
 const SIG_RSMB: ULONG = 0x52534D42;
 const OBJ_NAME_PATH_SEPARATOR: u8 = b'\\';
 const ANSI_NULL: u8 = 0;
-const NormalPagePriority: ULONG = 0;
+const NormalPagePriority: ULONG = 16; // header value (was 0, invented)
 const IMAGE_DIRECTORY_ENTRY_EXPORT: USHORT = 0;
 const PROCESSOR_FEATURE_MAX: ULONG = 64;
 

@@ -100,7 +100,7 @@ const THREAD_ALERT_INCREMENT: KPRIORITY = 0x2;
 const IO_NO_INCREMENT: KPRIORITY = 0;
 const MUTANT_INCREMENT: KPRIORITY = 1;
 
-const MaximumWorkQueue: usize = 7;
+const MaximumWorkQueue: usize = 3; // header value (was 7, invented)
 const HyperCriticalWorkQueue: usize = 2;
 
 const OriginalApcEnvironment: usize = 0;

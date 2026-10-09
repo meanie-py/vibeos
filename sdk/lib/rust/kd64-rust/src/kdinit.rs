@@ -118,7 +118,7 @@ const DbgKdMaximumStateChange: ULONG = 0x00003033;
 const DbgKdMinimumManipulate: ULONG = 0x00003130;
 const DbgKdMaximumManipulate: ULONG = 0x00003161;
 
-const LoaderBad: u32 = 2;
+const LoaderBad: u32 = 3; // header value (was 2, invented)
 
 unsafe fn KdpGetMemorySizeInMBs(loader_block: PLOADER_PARAMETER_BLOCK) -> SIZE_T {
     let mut number_of_physical_pages: SIZE_T = 0;

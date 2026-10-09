@@ -6,7 +6,7 @@ use ntkrnl_sys::ddk::{
     PIO_RESOURCE_DESCRIPTOR, PUINT32, PUINT64, UINT64,
 };
 
-const CmResourceTypeDma: i32 = 5;
+const CmResourceTypeDma: i32 = 4; // header value (was 5, invented)
 
 extern "system" {
     static mut IopRootDmaArbiter: ARBITER_INSTANCE;

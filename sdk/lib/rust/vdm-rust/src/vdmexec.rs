@@ -48,8 +48,8 @@ const KGDT_R0_CODE: USHORT = 0x08;
 const RPL_MASK: USHORT = 0x0003;
 const FRAME_EDITED: USHORT = 0xFFF8;
 
-const VdmBop: ULONG = 0;
-const VdmMemAccess: ULONG = 1;
+const VdmBop: ULONG = 4; // header value (was 0, invented)
+const VdmMemAccess: ULONG = 2; // header value (was 1, invented)
 
 #[no_mangle]
 pub static mut VdmBopCount: ULONG = 0;
