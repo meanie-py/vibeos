@@ -4336,8 +4336,10 @@ of `PciIdeXFdoStartDevice` was discarded.
 unconditional last one was lost. atapi's `AtaFdoPnp`, the same shape, kept it as a labelled
 block.
 **Fix:** inline the label's tail (`IoStatus.Status = Status; IoCompleteRequest; release;
-return`). When a C dispatcher has both a forward tail and a completion label, check that every
-arm ending in `goto` ends in `return` in the Rust. There is no detector yet; it is owed.
+return`). `port check` now reports the class (`rustconv/goto_arm.py`): a C `case` arm whose
+last statement is `goto L;` (and `L:` is not the statement right after the `switch`) must map,
+by its case label, to a Rust arm whose last statement leaves it. A labelled block ending in
+`return` counts, as does an `if`/`else` chain where every branch leaves.
 
 ### A union member re-slotted to its neighbour's name
 

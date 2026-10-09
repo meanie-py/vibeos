@@ -28,6 +28,8 @@ from collections import Counter
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
+from . import goto_arm
+
 #: `pub type PFOO = *mut _FOO;` in a bindgen island.
 _PTR_TYPEDEF = re.compile(r"^pub type ([A-Za-z_]\w*) = \*(?:mut|const) ", re.M)
 
@@ -68,6 +70,8 @@ class CFunctionDecls:
     identifiers: frozenset[str] = frozenset()
     #: how often the C WRITES each member (`.M = `, `->M |= `), as sorted `(name, count)` pairs.
     member_uses: tuple[tuple[str, int], ...] = ()
+    #: `(case, label)` per `switch` arm that ends in an unconditional `goto`; see goto_arm.py.
+    goto_arms: tuple[tuple[str, str], ...] = ()
 
 
 def _split_commas(text: str) -> list[str]:
@@ -140,7 +144,15 @@ def c_declarations(
     idents = frozenset(re.findall(r"[A-Za-z_]\w*", code))
     uses = Counter(re.findall(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*(?:[-+*/%&|^]|<<|>>)?=(?!=)", code))
     return CFunctionDecls(
-        names, ret, sized, raw, "~" in code, frozenset(nots), idents, tuple(sorted(uses.items()))
+        names,
+        ret,
+        sized,
+        raw,
+        "~" in code,
+        frozenset(nots),
+        idents,
+        tuple(sorted(uses.items())),
+        goto_arm.c_goto_arms(body),
     )
 
 

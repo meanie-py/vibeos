@@ -40,6 +40,7 @@ from pathlib import Path
 from . import (
     crate_integrate,
     flex_index,
+    goto_arm,
     local_macros,
     logical_not,
     loop_step,
@@ -3960,17 +3961,37 @@ def stage_check(stem: str) -> dict:
     ]
     for line in reslots:
         print(f"check: union member the C never writes there -- {line}")
+    # A `case` arm whose C ends `goto L;` must leave the Rust arm too: falling out runs the
+    # code after the `match` (pciidex's START_DEVICE forwarded the IRP a second time).
+    falls = [
+        f"{f.relative_to(REPO)}:{h.line} {h.fn} `{h.case}` (C: goto {h.label})"
+        for f in sorted(_crate_dir(state).glob("src/**/*.rs"))
+        for h in goto_arm.scan(f.read_text(errors="replace"), decls)
+    ]
+    for line in falls:
+        print(f"check: match arm falls through where the C jumps -- {line}")
     for r in result.values():
         r["loop_skips"] = len(stuck)
         r["union_reslots"] = len(reslots)
-        if stuck or reslots:
+        r["goto_falls"] = len(falls)
+        if stuck or reslots or falls:
             r["rc"] = 101
     _record(
         state,
         "check",
         started,
         **{
-            a: {k: r[k] for k in ("rc", "errors", "untranslated", "loop_skips", "union_reslots")}
+            a: {
+                k: r[k]
+                for k in (
+                    "rc",
+                    "errors",
+                    "untranslated",
+                    "loop_skips",
+                    "union_reslots",
+                    "goto_falls",
+                )
+            }
             for a, r in result.items()
         },
     )
