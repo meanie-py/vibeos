@@ -27,6 +27,12 @@ unsafe extern "C" fn AtaDeviceSetGeometry(
             | (*DevExt).Device.__bindgen_anon_1.DeviceSelect as ::core::ffi::c_int) as UCHAR;
     Status = AtaPortSendRequest(PortData, DevExt);
     if !NT_SUCCESS!(Status) {
+        // Diverges from the C, which passes a stray `DevExt->TransferModeSelectedBitmap`
+        // between the two arguments this format names, so its `%s` reads that ULONG as a
+        // string pointer. Pass only what the format consumes.
+        WARN!(b"CH %lu: Failed to set geometry for '%s'\n\0".as_ptr() as *const i8,
+              (*PortData).PortNumber,
+              (*DevExt).FriendlyName.as_ptr());
     }
     return Status;
 }
@@ -67,6 +73,10 @@ unsafe extern "C" fn AtaDeviceSetPioTransferMode(
 
     Status = AtaPortSendRequest(PortData, DevExt);
     if !NT_SUCCESS!(Status) {
+        WARN!(b"CH %lu: Failed to set %lu PIO settings for '%s'\n\0".as_ptr() as *const i8,
+              (*PortData).PortNumber,
+              Mode,
+              (*DevExt).FriendlyName.as_ptr());
     }
 
     return Status;
@@ -101,6 +111,11 @@ unsafe extern "C" fn AtaDeviceSetDmaTransferMode(
     if NT_SUCCESS!(Status) {
         (*DevExt).Device.DeviceFlags &= !DEVICE_PIO_ONLY;
     } else {
+        WARN!(b"CH %lu: Failed to set 0x%lx DMA settings for '%s'\n\0".as_ptr() as *const i8,
+              (*PortData).PortNumber,
+              Mode,
+              (*DevExt).FriendlyName.as_ptr());
+
         (*DevExt).Device.DeviceFlags &= !DEVICE_NCQ;
         (*DevExt).TransferModeSelectedBitmap &= PIO_ALL;
     }
@@ -136,6 +151,11 @@ unsafe extern "C" fn AtaDeviceSetMultipleMode(
 
     Status = AtaPortSendRequest(PortData, DevExt);
     if !NT_SUCCESS!(Status) {
+        WARN!(b"CH %lu: Failed to set %u multiple mode for '%s'\n\0".as_ptr() as *const i8,
+              (*PortData).PortNumber,
+              (*DevExt).Device.__bindgen_anon_1.MultiSectorCount as u32,
+              (*DevExt).FriendlyName.as_ptr());
+
         (*DevExt).Device.__bindgen_anon_1.MultiSectorCount = 0;
     }
 

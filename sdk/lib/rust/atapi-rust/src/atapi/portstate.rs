@@ -223,6 +223,10 @@ unsafe extern "C" fn AtaPortMarkDeviceFailed(
 ) {
     (*DevExt).Worker.ResetRetryCount = (*DevExt).Worker.ResetRetryCount.wrapping_add(1);
     if (*DevExt).Worker.ResetRetryCount >= 4 {
+        ERR!(b"CH %lu: Too many reset attempts for the device %u, giving up\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as u32);
+
         (*DevExt).Worker.Flags |= DEV_WORKER_FLAG_REMOVED;
         (*PortData).Worker.BadDeviceBitmap |= 1
             << (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as ULONG;
@@ -304,6 +308,7 @@ unsafe extern "C" fn AtaPortResetPort(PortData: PATAPORT_PORT_DATA) -> NTSTATUS 
 
     (*PortData).Worker.ResetRetryCount = (*PortData).Worker.ResetRetryCount.wrapping_add(1);
     if (*PortData).Worker.ResetRetryCount >= 10 {
+        ERR!(b"CH %lu: Too many port reset attempts, giving up\n\0".as_ptr() as *const i8, (*PortData).PortNumber);
         (*PortData).Worker.BadDeviceBitmap = MAXULONG;
     }
 
@@ -498,6 +503,8 @@ unsafe extern "C" fn AtaPortRunStateMachine(PortData: PATAPORT_PORT_DATA) {
 
         if (*PortData).Worker.StateLoopCount.wrapping_add(1) > 1500 {
             (*PortData).Worker.StateLoopCount = (*PortData).Worker.StateLoopCount.wrapping_add(1);
+            ERR!(b"CH %lu: Loop detected %lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber,
+                 (*PortData).Worker.EventsPending);
         }
 
         match Action {
@@ -850,8 +857,34 @@ pub unsafe extern "C" fn AtaPortTimeout(
         Device,
     );
 
+    ERR!(b"CH %lu: Slot %lu (%08lx) timed out %lx (%lus) %u '%s'\n\0".as_ptr() as *const i8,
+         (*PortData).PortNumber,
+         Slot,
+         (1 as i32) << Slot,
+         (*Request).Flags,
+         (*Request).TimeOut,
+         (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as u32,
+         (*DevExt).FriendlyName.as_ptr());
     if (*Request).Flags & REQUEST_FLAG_PACKET_COMMAND != 0 {
+        ERR!(b"CH %lu: CDB %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*Request).__bindgen_anon_2.Cdb[0] as u32,
+             (*Request).__bindgen_anon_2.Cdb[1] as u32,
+             (*Request).__bindgen_anon_2.Cdb[2] as u32,
+             (*Request).__bindgen_anon_2.Cdb[3] as u32,
+             (*Request).__bindgen_anon_2.Cdb[4] as u32,
+             (*Request).__bindgen_anon_2.Cdb[5] as u32,
+             (*Request).__bindgen_anon_2.Cdb[6] as u32);
     } else {
+        ERR!(b"CH %lu: TF %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as u32,
+             (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_2.Feature as u32,
+             (*Request).__bindgen_anon_2.TaskFile.SectorCount as u32,
+             (*Request).__bindgen_anon_2.TaskFile.LowLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.MidLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.HighLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.DriveSelect as u32);
     }
 
     (*Request).SrbStatus = (SRB_STATUS_TIMEOUT) as u8;

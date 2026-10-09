@@ -932,11 +932,13 @@ unsafe extern "C" fn IntelPciBridgeErrataMatch(mut Context: PVOID, mut BusNumber
     if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450KX as i32)
         && ((*PciConfig).RevisionID as ::core::ffi::c_int) < (BRIDGE_450KX_REV_B0 as i32)
     {
+        WARN!(b"Enabling workaround for the 450KX #2\n\0".as_ptr() as *const i8);
         return TRUE;
     }
     if (*PciConfig).DeviceID as ::core::ffi::c_int == (PCI_DEV_BRIDGE_450NX as i32) {
         let mut ConfigReg: USHORT = 0;
         if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_B0 as i32) {
+            WARN!(b"Enabling workaround for the 450NX #19\n\0".as_ptr() as *const i8);
             return TRUE;
         }
         HalGetBusDataByOffset(
@@ -954,11 +956,13 @@ unsafe extern "C" fn IntelPciBridgeErrataMatch(mut Context: PVOID, mut BusNumber
         if (*PciConfig).RevisionID as ::core::ffi::c_int != (BRIDGE_450NX_REV_B1 as i32)
             && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_PCI_BUS_LOCK as i32) != 0
         {
+            WARN!(b"Enabling workaround for the 450NX #20\n\0".as_ptr() as *const i8);
             return TRUE;
         }
         if (*PciConfig).RevisionID as ::core::ffi::c_int == (BRIDGE_450NX_REV_C0 as i32)
             && ConfigReg as ::core::ffi::c_int & (PXB_CONFIG_BUF_RESTREAM as i32) != 0
         {
+            WARN!(b"Enabling workaround for the 450NX #25\n\0".as_ptr() as *const i8);
             return TRUE;
         }
     }
@@ -1091,6 +1095,14 @@ unsafe extern "C" fn IntelInitChannel(
         }
         TYPE_SATA => {
             SupportedMode = SATA_ALL as ULONG;
+
+            // TODO: Read the port map register and set CHANNEL_FLAG_NO_SLAVE when appropriate
+            ERR!(
+                b"CH %lu: PMR %02X PCS %04X\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                PciRead8(Controller, 0x90) as u32,
+                PciRead16(Controller, 0x92) as u32,
+            );
         }
         _ => {
             ASSERT!(FALSE);

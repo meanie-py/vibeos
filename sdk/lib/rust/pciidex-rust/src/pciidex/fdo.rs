@@ -247,6 +247,15 @@ pub unsafe extern "C" fn AtaCtrlPciMapBar(
 
     if MinimumIoLength != 0 {
         if (*Controller).AccessRange[Index as usize].Length < MinimumIoLength {
+            ERR!(
+                b"%04X:%04X.%02X: Unexpected PCI BAR #%lu length 0x%lx, minimum required 0x%lx\n\0".as_ptr() as *const i8,
+                (*Controller).Pci.VendorID as u32,
+                (*Controller).Pci.DeviceID as u32,
+                (*Controller).Pci.RevisionID as u32,
+                Index,
+                (*Controller).AccessRange[Index as usize].Length,
+                MinimumIoLength,
+            );
             return core::ptr::null_mut();
         }
     }
@@ -491,6 +500,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
 
     Status = AtaCtrlPciCollectInformation(FdoExt, ResourcesTranslated);
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to collect PCI information 0x%lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -512,6 +522,7 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     }
 
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to match ATA controller with status %lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -643,6 +654,7 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
         &mut Pdo,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create PDO 0x%lx\n\0".as_ptr() as *const i8, Status);
         return core::ptr::null_mut();
     }
 

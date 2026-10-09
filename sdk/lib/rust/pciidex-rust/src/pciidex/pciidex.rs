@@ -415,6 +415,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         core::ptr::addr_of_mut!(DeviceExtensionSize),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Invalid miniport extension size %lx\n\0".as_ptr() as *const i8, (*DriverExtension).MiniControllerExtensionSize);
         return Status;
     }
 
@@ -428,6 +429,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         core::ptr::addr_of_mut!(Fdo),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create FDO 0x%lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -463,6 +465,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
             core::ptr::addr_of_mut!((*FdoExtension).Common.__bindgen_anon_1.LowerDeviceObject),
         );
         if !NT_SUCCESS!(Status) {
+            ERR!(b"Failed to attach FDO 0x%lx\n\0".as_ptr() as *const i8, Status);
             break 'failure_cleanup;
         }
 
@@ -483,6 +486,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
                 core::mem::size_of::<BUS_INTERFACE_STANDARD>() as ULONG,
             );
             if !NT_SUCCESS!(Status) {
+                ERR!(b"No PCI bus interface 0x%lx\n\0".as_ptr() as *const i8, Status);
                 break 'failure_cleanup;
             }
 
