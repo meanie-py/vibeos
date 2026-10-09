@@ -172,7 +172,7 @@ pub unsafe extern "C" fn WinLdrSetupMemoryLayout(LoaderBlock: PLOADER_PARAMETER_
     const MM_PAGE_SIZE: u32 = 4096;
     // MAX_MAD_COUNT: use the file-level const (=200, matches C); the
     // translator's wrong-valued local shadow is removed.
-    const LoaderFree: u32 = 2; // header value (was 0, invented)
+    const LoaderFree: u32 = 2; // header value; the hand copy said 0
 
     let mut i: PFN_NUMBER;
     let _PagesCount: PFN_NUMBER;

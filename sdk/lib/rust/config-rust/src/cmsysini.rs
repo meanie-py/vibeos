@@ -384,8 +384,8 @@ pub const REG_NOTIFY_CHANGE_LAST_SET: u32 = 0x00000004;
 pub const REG_NOTIFY_CHANGE_SECURITY: u32 = 0x00000008;
 
 // REG_NOTIFY_CLASS values (from cmtypes.h)
-pub const RegNtPreKeyHandleClose: u32 = 14; // header value (was 30, invented)
-pub const RegNtPostKeyHandleClose: u32 = 25; // header value (was 31, invented)
+pub const RegNtPreKeyHandleClose: u32 = 14; // header value; the hand copy said 30
+pub const RegNtPostKeyHandleClose: u32 = 25; // header value; the hand copy said 31
 
 // KEY_* access (winreg.h)
 pub const KEY_ALL_ACCESS: u32 = STANDARD_RIGHTS_REQUIRED

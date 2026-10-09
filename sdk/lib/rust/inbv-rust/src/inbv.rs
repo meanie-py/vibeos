@@ -104,9 +104,9 @@ const RESOURCE_DATA_LEVEL: ULONG = 0x3;
 
 const IDB_MAX_RESOURCES: usize = 5;
 
-const HeadlessCmdPutString: ULONG = 3; // header value (was 1, invented)
-const HeadlessCmdClearDisplay: ULONG = 4; // header value (was 3, invented)
-const HeadlessCmdSetColor: ULONG = 9; // header value (was 4, invented)
+const HeadlessCmdPutString: ULONG = 3; // header value; the hand copy said 1
+const HeadlessCmdClearDisplay: ULONG = 4; // header value; the hand copy said 3
+const HeadlessCmdSetColor: ULONG = 9; // header value; the hand copy said 4
 
 #[repr(C)]
 struct INBV_PROGRESS_STATE {

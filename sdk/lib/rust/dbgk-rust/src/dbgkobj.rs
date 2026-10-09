@@ -74,23 +74,23 @@ const DbgKmLoadDllApi: DBGKM_APINUMBER = _DBGKM_APINUMBER_DbgKmLoadDllApi;
 const DbgKmUnloadDllApi: DBGKM_APINUMBER = _DBGKM_APINUMBER_DbgKmUnloadDllApi;
 
 #[allow(non_upper_case_globals)]
-const DbgCreateProcessStateChange: ULONG = 3; // header value (was 1, invented)
+const DbgCreateProcessStateChange: ULONG = 3; // header value; the hand copy said 1
 #[allow(non_upper_case_globals)]
 const DbgCreateThreadStateChange: ULONG = 2;
 #[allow(non_upper_case_globals)]
-const DbgExceptionStateChange: ULONG = 6; // header value (was 3, invented)
+const DbgExceptionStateChange: ULONG = 6; // header value; the hand copy said 3
 #[allow(non_upper_case_globals)]
-const DbgBreakpointStateChange: ULONG = 7; // header value (was 4, invented)
+const DbgBreakpointStateChange: ULONG = 7; // header value; the hand copy said 4
 #[allow(non_upper_case_globals)]
-const DbgSingleStepStateChange: ULONG = 8; // header value (was 5, invented)
+const DbgSingleStepStateChange: ULONG = 8; // header value; the hand copy said 5
 #[allow(non_upper_case_globals)]
-const DbgLoadDllStateChange: ULONG = 9; // header value (was 6, invented)
+const DbgLoadDllStateChange: ULONG = 9; // header value; the hand copy said 6
 #[allow(non_upper_case_globals)]
-const DbgUnloadDllStateChange: ULONG = 10; // header value (was 7, invented)
+const DbgUnloadDllStateChange: ULONG = 10; // header value; the hand copy said 7
 #[allow(non_upper_case_globals)]
-const DbgExitThreadStateChange: ULONG = 4; // header value (was 8, invented)
+const DbgExitThreadStateChange: ULONG = 4; // header value; the hand copy said 8
 #[allow(non_upper_case_globals)]
-const DbgExitProcessStateChange: ULONG = 5; // header value (was 9, invented)
+const DbgExitProcessStateChange: ULONG = 5; // header value; the hand copy said 9
 
 const LPC_DEBUG_EVENT: i16 = 0x08;
 const LPC_EXCEPTION: i16 = 0x07;

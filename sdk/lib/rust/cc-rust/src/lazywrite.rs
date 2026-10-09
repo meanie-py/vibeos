@@ -39,8 +39,8 @@ extern "C" {
 }
 
 const ReadAhead: u8 = 1;
-const LazyScan: u8 = 3; // header value (was 2, invented)
-const WriteBehind: u8 = 2; // header value (was 3, invented)
+const LazyScan: u8 = 3; // header value; the hand copy said 2
+const WriteBehind: u8 = 2; // header value; the hand copy said 3
 const SetDone: u8 = 4;
 const IO_NO_INCREMENT: LONG = 0;
 // KSPIN_LOCK_QUEUE_NUMBER values. Spelled out because the translation shipped bare
