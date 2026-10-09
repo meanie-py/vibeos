@@ -630,14 +630,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   test waits for the desktop after the SECOND `[SMSS] _main`); i386 and UEFI installs.
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
-  (OPEN, 2026-10-09). `scan_const_contradictions` reported userenv's `IDS_PROFILEPATH` as
-  0 vs 1 all along, but the finding sat in its baseline ("the triage queue"), and it blocked
-  GUI setup on every install. Within one crate, two values for one name means one of them is
-  wrong. The others: se-rust `TOKEN_HAS_ADMIN_GROUP` (0x1/0x80), cabinet-rust's FCI/FDI
-  error codes (permuted), fastfat `OPLOCK_FLAG_PARENT_OBJECT`, hal `IDT_INTERNAL`, cdrom
-  `SRB_STATUS_MASK`, freeldr `SECTORSIZE`/`COLOR_WHITE`, user32's SPY_* set, afd trace
-  levels, win32k `WINVER`, and more (list: the baseline's rows grouped by crate). Owed:
-  triage each against its header, then gate within-crate contradictions at zero.
+  (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
+  `IDS_PROFILEPATH` as 0 vs 1 all along, from inside its baseline ("the triage queue"), and it
+  blocked GUI setup on every install. Each pair was checked against its header, and the wrong
+  copies fixed: se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet-rust's FCI/FDI error codes, hal
+  `IDT_INTERNAL`, fastfat `OPLOCK_FLAG_PARENT_OBJECT`, cdrom `SRB_STATUS_MASK`, freeldr
+  `COLOR_WHITE`, user32 SPY_*, afd trace levels, inbv OWNED/DISABLED. The 10 rows left are
+  per-file meanings. **Owed:** gate within-crate contradictions at zero, so the next one
+  cannot park in the baseline.
 
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
