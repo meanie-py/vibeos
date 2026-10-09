@@ -102,6 +102,7 @@ a member missing from the build dir is reported, never skipped silently.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures as cf
 import os
 import re
 import struct
@@ -109,6 +110,11 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
+
+if __package__:
+    from .binary_facts import BinaryFacts, BinaryFactsError
+else:
+    from binary_facts import BinaryFacts, BinaryFactsError
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -224,8 +230,12 @@ def declared_corpus() -> list[str]:
     return out
 
 
-def find_artifact(build: Path, crate: str) -> Path | None:
-    want = "lib" + crate.replace("-", "_") + ".a"
+def artifact_index(build: Path) -> dict[str, Path]:
+    """Every `lib*.a` under the build tree -> the first path the walk meets it at.
+
+    ONE walk for the whole corpus. This was a walk PER CRATE -- 240 full descents of
+    the build tree, ~10 s of a run whose cached verdicts took 0.2 s."""
+    out: dict[str, Path] = {}
     for dirpath, dirnames, filenames in os.walk(build):
         # A crate's own cargo target dir under the build tree is intermediate
         # output, not the artifact the link consumes. PRUNE it rather than
@@ -233,9 +243,15 @@ def find_artifact(build: Path, crate: str) -> Path | None:
         # into the one tree a concurrent build is rewriting, so it can raise
         # FileNotFoundError out of the walk before it ever inspects a path.
         dirnames[:] = sorted(d for d in dirnames if not d.endswith("-target"))
-        if want in filenames:
-            return Path(dirpath) / want
-    return None
+        for name in filenames:
+            if name.startswith("lib") and name.endswith(".a"):
+                out.setdefault(name, Path(dirpath) / name)
+    return out
+
+
+def find_artifact(build: Path, crate: str, index: dict[str, Path] | None = None) -> Path | None:
+    want = "lib" + crate.replace("-", "_") + ".a"
+    return (artifact_index(build) if index is None else index).get(want)
 
 
 def declared_cargo_images(build: Path, arch: str) -> list[tuple[str, Path]]:
@@ -630,6 +646,48 @@ def scan_object(
     return hits
 
 
+def _jobs() -> int:
+    """objdump processes in flight. The scan shares the host with the gate's smokes, so
+    this stays well under the core count; VIBEOS_FLEX_SCAN_JOBS overrides."""
+    env = os.environ.get("VIBEOS_FLEX_SCAN_JOBS")
+    if env:
+        return max(1, int(env))
+    return max(1, min(6, (os.cpu_count() or 2) // 4))
+
+
+def scan_corpus(work: list[tuple[str, Path]], arch: str) -> tuple[list[tuple[str, str]], int]:
+    """[(crate, raw symbol)] over every artifact, and how many were already known.
+
+    The gate's slowest lint was this reader run serially: one `objdump -dr` per
+    artifact, ~2-3 min per arch, on every build, land preflight and gate, over
+    artifacts a one-crate change mostly leaves byte-identical. So the per-artifact
+    verdict goes through `binary_facts` (content-addressed, worktree-local, the same
+    store scan_ud2 and scan_self_recursive use; VIBEOS_BINARY_CACHE=0 is the uncached
+    oracle) and the misses run in parallel. `--explain` needs the disassembly itself
+    and never comes through here. Results are gathered in `work` order, so the output
+    reads the same however the threads finish."""
+    facts = BinaryFacts(
+        REPO,
+        namespace="flex-array-panic",
+        implementation=[Path(__file__)],
+        tools=[OBJDUMP],
+        options={"arch": arch},
+    )
+    extracted: list[int] = []
+
+    def one(art: Path) -> list[str]:
+        def extract() -> list[str]:
+            extracted.append(1)
+            return [sym for sym, _, _ in scan_object(art, arch=arch)]
+
+        return facts.get(art, extract)
+
+    with cf.ThreadPoolExecutor(max_workers=_jobs()) as ex:
+        found = list(ex.map(one, [art for _, art in work]))
+    out = [(crate, sym) for (crate, _), syms in zip(work, found, strict=True) for sym in syms]
+    return out, len(work) - len(extracted)
+
+
 def main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--arch", required=True, choices=ARCHES)
@@ -657,8 +715,9 @@ def main(argv: list[str]) -> int:
     images = declared_cargo_images(build, args.arch)
     missing, findings = [], []
     work: list[tuple[str, Path]] = []
+    index = artifact_index(build)
     for crate in corpus:
-        art = find_artifact(build, crate)
+        art = find_artifact(build, crate, index)
         if art is None:
             missing.append(crate)
         else:
@@ -668,14 +727,23 @@ def main(argv: list[str]) -> int:
             work.append((crate, image))
         else:
             missing.append(f"{crate}({image.name})")
-    for crate, art in work:
-        for sym, _, ctx in scan_object(art, arch=args.arch, explain=bool(args.explain)):
-            key = normalize_symbol(sym, args.arch)
-            findings.append((crate, key))
-            if args.explain and (args.explain in crate or args.explain in key):
-                print(f"\n=== {crate}: {key}")
-                for line in ctx:
-                    print(f"    {line}")
+    cached = 0
+    if args.explain:
+        for crate, art in work:
+            for sym, _, ctx in scan_object(art, arch=args.arch, explain=True):
+                key = normalize_symbol(sym, args.arch)
+                findings.append((crate, key))
+                if args.explain in crate or args.explain in key:
+                    print(f"\n=== {crate}: {key}")
+                    for line in ctx:
+                        print(f"    {line}")
+    else:
+        try:
+            raw, cached = scan_corpus(work, args.arch)
+        except BinaryFactsError as error:
+            print(f"scan_flex_array_panic: {error}", file=sys.stderr)
+            return 2
+        findings = [(crate, normalize_symbol(sym, args.arch)) for crate, sym in raw]
 
     graded = graded_ok(args.arch)
     seen = sorted(set(findings))
@@ -702,7 +770,7 @@ def main(argv: list[str]) -> int:
     print(
         f"\n{args.arch}: {len(seen)} site(s) in {len({c for c, _ in seen})} module(s); "
         f"corpus {len(corpus)} staticlibs + {len(images)} cargo-linked images declared, "
-        f"{len(missing)} not built",
+        f"{len(missing)} not built; {cached}/{len(work)} artifacts unchanged (cached)",
         file=sys.stderr,
     )
     if missing:

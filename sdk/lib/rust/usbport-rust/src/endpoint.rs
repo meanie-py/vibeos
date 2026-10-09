@@ -1813,7 +1813,7 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointActive(
                 as PUSBPORT_REGISTRATION_PACKET;
 
             if ((*Transfer).Flags & TRANSFER_FLAG_ISO) != 0 {
-                // DPRINT removed
+                DbgPrint(b"USBPORT_DmaEndpointActive: FIXME call SubmitIsoTransfer\n\0".as_ptr() as *const i8);
 
                 MpStatus = ((*Packet).SubmitIsoTransfer).expect("non-null function pointer")(
                     (*FdoExtension).MiniPortExt,
@@ -1839,7 +1839,10 @@ pub unsafe extern "system" fn USBPORT_DmaEndpointActive(
 
             if MpStatus != 0 {
                 if MpStatus != MP_STATUS_FAILURE && ((*Transfer).Flags & TRANSFER_FLAG_ISO) != 0 {
-                    // DPRINT removed
+                    DbgPrint(
+                        b"USBPORT_DmaEndpointActive: FIXME call USBPORT_ErrorCompleteIsoTransfer\n\0".as_ptr()
+                            as *const i8,
+                    );
                     ASSERT(0);
                 }
 

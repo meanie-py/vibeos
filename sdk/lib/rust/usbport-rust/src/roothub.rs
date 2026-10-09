@@ -562,13 +562,18 @@ pub unsafe extern "system" fn USBPORT_RootHubSCE(Transfer: PUSBPORT_TRANSFER) ->
 
     if Buffer.is_null() {
         /* Not valid parameter */
-        // DPRINT1("USBPORT_RootHubSCE: Error! Buffer is NULL\n");
+        DbgPrint(b"USBPORT_RootHubSCE: Error! Buffer is NULL\n\0".as_ptr() as *const i8);
         return RH_STATUS_UNSUCCESSFUL;
     }
 
     if TransferLength < ((NumberOfPorts as ULONG) / 8 + 1) {
         /* Not valid parameters */
-        // DPRINT1(...)
+        DbgPrint(
+            b"USBPORT_RootHubSCE: Error! TransferLength - %x, NumberOfPorts - %x\n\0".as_ptr()
+                as *const i8,
+            TransferLength as ULONG,
+            NumberOfPorts as ULONG,
+        );
         return RH_STATUS_UNSUCCESSFUL;
     }
 
@@ -589,7 +594,7 @@ pub unsafe extern "system" fn USBPORT_RootHubSCE(Transfer: PUSBPORT_TRANSFER) ->
         ) != 0
         {
             /* Miniport returned an error */
-            // DPRINT1("USBPORT_RootHubSCE: RH_GetPortStatus failed\n");
+            DbgPrint(b"USBPORT_RootHubSCE: RH_GetPortStatus failed\n\0".as_ptr() as *const i8);
             return RH_STATUS_UNSUCCESSFUL;
         }
 
@@ -635,7 +640,7 @@ pub unsafe extern "system" fn USBPORT_RootHubSCE(Transfer: PUSBPORT_TRANSFER) ->
     }
 
     /* Miniport returned an error */
-    // DPRINT1("USBPORT_RootHubSCE: RH_GetHubStatus failed\n");
+    DbgPrint(b"USBPORT_RootHubSCE: RH_GetHubStatus failed\n\0".as_ptr() as *const i8);
     RH_STATUS_UNSUCCESSFUL
 }
 

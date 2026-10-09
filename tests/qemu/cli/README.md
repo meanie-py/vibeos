@@ -100,10 +100,19 @@ provenance stamp.
 - arm64 automatically re-stages into `ramdisk.img`/`boot.img` (the trap that
   silently boots a stale kernel otherwise).
 
-### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder]`
+### `smoke --arch X [--allow-stale] [--repeat N] [--until M] [--fail-on RE] [--tripwire CFG] [--timing] [--no-net] [--nvme] [--ladder] [--attach-on-fail]`
 **The verdict front door.** Staleness preflight, then boot the real media via
 the same `QemuVM` the pytest harness uses (slots, reaper, lifetime cap, live-log
 all included), then auto-triage on failure.
+
+- **`--attach-on-fail`** keeps a FAILED boot's VM running, with a gdbstub, instead of
+  tearing it down, and prints its run-id (also the `attach` stage and `summary.json`
+  `attach`). It is handed to the debug toolkit: `./vibeos-cli gdb inspect <run-id> bt 30`
+  (windows-host), `gdb status`, and `gdb stop <run-id>` when done; `ps`/`kill` list it as
+  `smoke --attach-on-fail`, owned by your session, reaped at the usual lifetime cap.
+  `serial.log` is a snapshot from the moment of failure (the live serial was the smoke
+  process's socket). With `--repeat N` the loop stops at the first kept failure. A pass,
+  a launch failure or a harness exception still tears down as normal.
 
 - **`--arch amd64-bios`** boots the same amd64 media through SeaBIOS (legacy BIOS,
   `freeldr.sys`) instead of OVMF, with the ISO on a USB stick (xHCI) as a Libreboot

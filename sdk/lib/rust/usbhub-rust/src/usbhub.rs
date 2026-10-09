@@ -2074,14 +2074,14 @@ pub unsafe extern "system" fn USBH_ProcessHubStateChange(
     let HubStatusChange = hsc_change_bits(HubStatus);
 
     if (*HubStatusChange).LocalPowerChange() != 0 {
-        // DPRINT removed
+        DbgPrint(b"USBH_ProcessHubStateChange: LocalPowerChange\n\0".as_ptr() as *const i8);
         USBH_SyncClearHubStatus(HubExtension, USBHUB_FEATURE_C_HUB_LOCAL_POWER as USHORT);
     }
 
     if (*HubStatusChange).OverCurrentChange() != 0 {
         USBH_SyncClearHubStatus(HubExtension, USBHUB_FEATURE_C_HUB_OVER_CURRENT as USHORT);
         if (*hsc_status_bits(HubStatus)).OverCurrent() != 0 {
-            // DPRINT removed
+            DbgPrint(b"USBH_ProcessHubStateChange: OverCurrent UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
             DbgBreakPoint();
         }
     }
@@ -2188,12 +2188,12 @@ pub unsafe extern "system" fn USBH_ProcessPortStateChange(
     }
 
     if (*PortStatusChange).SuspendChange() != 0 {
-        // DPRINT removed
+        DbgPrint(b"USBH_ProcessPortStateChange: SuspendChange UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
         DbgBreakPoint();
     }
 
     if (*PortStatusChange).OverCurrentIndicatorChange() != 0 {
-        // DPRINT removed
+        DbgPrint(b"USBH_ProcessPortStateChange: OverCurrentIndicatorChange UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
         DbgBreakPoint();
     }
 

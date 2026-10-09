@@ -1123,9 +1123,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
     no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
     10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
-    established. Next occurrence: attach gdb before the harness tears the VM down
-    (`smoke --attach-on-fail` is parsed but does nothing, owed in the CLI) and read the
-    services thread's stack.
+    established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
+    --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
+    read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
