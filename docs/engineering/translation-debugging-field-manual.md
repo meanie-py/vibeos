@@ -1787,6 +1787,15 @@ copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32
 smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
 prelude, and delete the copies.
 
+**Not a macro either: WIDL's C wrappers and wine/heap.h (2026-10-08).** Under `__WINESRC__`
+the widl headers define `WIDL_C_INLINE_WRAPPERS`, so `IFoo_Method(This, ...)` is a `static
+inline` function, not a macro — the preprocessor lowering finds nothing, no DLL exports it, and
+a dozen crates carry hand copies of `IUnknown_Release` & co. `port macros` now GENERATES them
+from the island's `IFooVtbl` slot types (`((*(*This).lpVtbl).M.unwrap())(This, ..)`), identical
+on every arch or not at all. `heap_alloc`/`_zero`/`realloc`/`free`/`calloc` and
+`debugstr_w`/`wn`/`a`/`an` are in `win32macros-rust`; a consensus `extern` copy of `debugstr_w`
+compiles and then fails at link, since only libwine's `wine_dbgstr_wn` exists.
+
 **The pointer-width/nominal half is now generated, not ported (2026-10-08).** `port macros`
 lowers every SDK header macro a crate calls (`PropSheet_Changed`, `ListView_InsertColumn`,
 `TreeView_GetSelection`, `MAKEWPARAM`, `TVI_ROOT`, `LV_ITEM`, `REGSTR_PATH_SYSTRAY`) from the
@@ -3701,6 +3710,15 @@ of them were **ours**, not the model's:
   was caught only because its token count happened to come out wrong.) So a dead-region omission
   is now checked, but a dead-region *relocation* is not — when reviewing a sealed RPC wrapper,
   read where the handler landed, not just whether it is gone.
+
+  **Permitted also means KEPT, and a kept dead arm is live code.** inetcpl's `DllMain` came back
+  with the `#ifndef __REACTOS__` `case DLL_WINE_PREATTACH: return FALSE;` — a name defined nowhere
+  in our tree, so a catch-all binding: DllMain would have refused every load. Its
+  `security_on_destroy` kept the `#ifndef __REACTOS__` `ImageList_Destroy` of a list comctl32 had
+  already freed with the listview (a double free on every close of the Security page). `port
+  integrate` now drops a `match` arm whose pattern names only identifiers the C spells solely on
+  never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
+  (statements are not safe to drop by pattern; hand-port them with `port hand`).
 
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for

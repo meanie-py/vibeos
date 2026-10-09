@@ -819,7 +819,98 @@ def existing_items(prelude: Path) -> dict[str, set[str]]:
     return {
         "type": set(re.findall(r"^pub type (\w+)", body, re.M)),
         "value": set(re.findall(r"^pub const (\w+)", body, re.M)),
+        "fn": set(re.findall(r"^pub unsafe fn (\w+)", body, re.M)),
     }
+
+
+def _split_top(text: str) -> list[str]:
+    """Split at commas outside (), [] and <>."""
+    out, depth, cur = [], 0, []
+    for c in text:
+        if c in "([<":
+            depth += 1
+        elif c in ")]>" and depth:
+            depth -= 1
+        if c == "," and depth == 0:
+            out.append("".join(cur).strip())
+            cur = []
+        else:
+            cur.append(c)
+    if "".join(cur).strip():
+        out.append("".join(cur).strip())
+    return out
+
+
+def _vtbl_methods(island: str, iface: str) -> dict[str, tuple[list[str], str]] | None:
+    """`IFooVtbl`'s slots as {method: (["name: Type", ...], "Ret" or "")}, from bindgen."""
+    m = re.search(rf"^pub struct {re.escape(iface)}Vtbl \{{", island, re.M)
+    if m is None:
+        return None
+    depth, i = 0, m.end() - 1
+    while i < len(island):
+        depth += {"{": 1, "}": -1}.get(island[i], 0)
+        if depth == 0:
+            break
+        i += 1
+    body = island[m.end() : i]
+    out: dict[str, tuple[list[str], str]] = {}
+    heads = list(re.finditer(r"(?:^|\n)\s*pub (\w+):", body))
+    for k, h in enumerate(heads):
+        field = body[h.end() : heads[k + 1].start() if k + 1 < len(heads) else len(body)]
+        f = field.find("fn(")
+        if f < 0:
+            continue
+        depth, j = 0, f + 2
+        while j < len(field):
+            depth += {"(": 1, ")": -1}.get(field[j], 0)
+            if depth == 0:
+                break
+            j += 1
+        params = [p for p in _split_top(field[f + 3 : j]) if p]
+        rest = field[j + 1 :].strip().rstrip(",").strip()
+        if not rest.endswith(">"):
+            continue
+        rest = rest[:-1].strip().rstrip(",").strip()
+        ret = rest[2:].strip() if rest.startswith("->") else ""
+        out[h.group(1)] = (params, ret)
+    return out
+
+
+def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
+    """WIDL's C wrappers (`IFoo_Method(This, ...)`) the crate calls, from the island's Vtbl.
+
+    Under `__WINESRC__` widl headers define WIDL_C_INLINE_WRAPPERS, so `IFoo_Method` is a
+    `static inline` function -- no macro for the preprocessor lowering to find, and no DLL
+    exports it -- and a dozen crates carry hand copies of IUnknown_Release & co. The body is
+    always `This->lpVtbl->Method(This, ...)`, so it is generated from the bindgen slot type,
+    which already is the C signature. Every arch's island must agree.
+    """
+    islands = [p.read_text(errors="replace") for p in sorted(crate_src.glob("types_*.rs"))]
+    if not islands:
+        return {}
+    out: dict[str, str] = {}
+    for name in sorted(wanted):
+        parts = name.split("_")
+        for cut in range(1, len(parts)):
+            iface, method = "_".join(parts[:cut]), "_".join(parts[cut:])
+            if not iface.startswith("I"):
+                continue
+            sigs = [_vtbl_methods(t, iface) for t in islands]
+            if any(s is None or method not in s for s in sigs):
+                continue
+            first = sigs[0][method]  # type: ignore[index]
+            if any(s[method] != first for s in sigs) or not first[0]:  # type: ignore[index]
+                continue
+            params, ret = first
+            args = ", ".join(p.split(":", 1)[0].strip() for p in params)
+            this = args.split(",")[0].strip()
+            out[name] = (
+                f"#[inline]\npub unsafe fn {name}({', '.join(params)})"
+                + (f" -> {ret}" if ret else "")
+                + f" {{ ((*(*{this}).lpVtbl).{method}.unwrap())({args}) }} // widl C wrapper"
+            )
+            break
+    return out
 
 
 _OBJ_DEFINE = re.compile(r"^#define ([A-Za-z_]\w*) (.+)$", re.M)

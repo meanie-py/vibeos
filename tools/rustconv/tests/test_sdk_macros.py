@@ -2,6 +2,7 @@
 
 import pytest
 
+from rustconv import sdk_macros
 from rustconv.sdk_macros import LowerError, lower_expansion, macro_params, render_macro
 
 
@@ -116,3 +117,36 @@ def test_text_around_an_already_wide_value_is_the_identity():
 
     out, n = widen_call_sites("f(TEXT(API_NAME.as_ptr()), x)", {"TEXT"})
     assert (out, n) == ("f((API_NAME.as_ptr()), x)", 1)
+
+
+ISLAND_VTBL = """
+#[repr(C)]
+pub struct IZoneVtbl {
+    pub QueryInterface: ::core::option::Option< unsafe extern "system" fn( This: *mut IZone, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void, ) -> HRESULT, >,
+    pub Release: ::core::option::Option<unsafe extern "system" fn(This: *mut IZone) -> ULONG>,
+    pub Destroy: ::core::option::Option<unsafe extern "system" fn(This: *mut IZone, dwEnum: DWORD)>,
+}
+"""
+
+
+def test_widl_c_wrappers_come_from_the_island_vtbl(tmp_path):
+    for arch in ("amd64", "arm64", "i386"):
+        (tmp_path / f"types_{arch}.rs").write_text(ISLAND_VTBL)
+    out = sdk_macros.com_wrappers(
+        tmp_path, {"IZone_Release", "IZone_QueryInterface", "IZone_Destroy", "IZone_Nope", "x_y"}
+    )
+    assert set(out) == {"IZone_Release", "IZone_QueryInterface", "IZone_Destroy"}
+    assert (
+        "pub unsafe fn IZone_Release(This: *mut IZone) -> ULONG "
+        "{ ((*(*This).lpVtbl).Release.unwrap())(This) }" in out["IZone_Release"]
+    )
+    assert "(This, riid, ppvObject)" in out["IZone_QueryInterface"]
+    assert "-> " not in out["IZone_Destroy"].split("{")[0]
+
+
+def test_a_widl_wrapper_the_arches_disagree_on_is_not_generated(tmp_path):
+    (tmp_path / "types_amd64.rs").write_text(ISLAND_VTBL)
+    (tmp_path / "types_i386.rs").write_text(ISLAND_VTBL.replace("dwEnum: DWORD", "dwEnum: u64"))
+    assert set(sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy", "IZone_Release"})) == {
+        "IZone_Release"
+    }
