@@ -287,9 +287,13 @@ def check_tooling(args, repo: Path) -> int:
                     [sys.executable, "-m", "pytest", target, "-q"]
                     # Each invalidation case builds its own tmp_path project.
                     # Keep these live, but distribute cases across the host.
+                    # The rustconv suite is 152 files run serially: 433s of a 433s
+                    # check-tooling wall (every other check finishes under it), so
+                    # it alone decides what a cache miss costs the whole fleet.
                     + (
                         ["-n", str(min(8, lint_jobs()))]
                         if target == "tools/test_build_invalidation.py"
+                        or (pkg == "tools/rustconv" and target == "tests")
                         else []
                     )
                     + (
