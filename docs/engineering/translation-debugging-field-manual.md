@@ -11917,6 +11917,22 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   test, used by `TrimWsList`, ARM3's `MI_IS_PAGE_DIRTY` and RosMm's `WasDirty`. **Same lesson as
   the AF entry: list every bit x86 hardware keeps up to date, and give each one a software path
   on arm64.**
+- **A touched page made PAGE_NOACCESS reads back as a PROTOTYPE PTE on arm64; the machine wedges
+  spinning on `MmPfnLock`.** Symptom: one process doing `VirtualProtect(PAGE_NOACCESS)` on pages it
+  has used (page heap's guard pages did it at once) and the whole arm64 VM goes silent. gdb: the
+  vCPU spins in `KeAcquireSpinLockRaiseToDpc` on `MmPfnLock`, whose owner word names a DIFFERENT
+  thread, so on one CPU nothing can release it. That thread's saved stack: `NtProtectVirtualMemory`
+  → `MiGetPageProtection` (PFN lock held) → kernel data abort → `MmAccessFault` blocked on the
+  address-space push lock: a context switch with a spinlock held. Cause: `MiProtectVirtualMemory`'s
+  NOACCESS branch makes the transition PTE IN PLACE, as the C does: clear Valid, set Transition and
+  Protection, keep every other bit. On x86 no hardware bit lands on a software field that matters.
+  On arm64 hardware bit 10 is the Access Flag and software bit 10 is Prototype, so the next
+  `MiGetPageProtection` took the prototype path and read through a garbage pointer with the PFN
+  lock held. The same lines also dropped the dirty bit, sending a written page to the standby
+  list as clean. Fix (virtual.rs): mark the PFN modified if `MI_PTE_IS_DIRTY`, then build the
+  transition PTE from scratch with `MI_MAKE_TRANSITION_PTE`. **Converting a hardware PTE to a
+  software one in place inherits every hardware bit into a software field; on arm64 build the
+  software PTE from zero.**
 - **An EL1 instruction fetch on a user page loops silently forever — the fault handler called it
   spurious.** Symptom: a ~2% arm64 boot wedge with no bugcheck, no serial, every timed wait
   dead, every vCPU sample at the same user-range PC (`0x10000`) at EL1h; the whole box reads

@@ -323,6 +323,53 @@ pub unsafe extern "C" fn CleanupUserImpl() {
     ExDeleteResourceLite(core::ptr::addr_of_mut!(UserLock));
 }
 
+
+// Who holds the user lock for long. Every GUI thread queues on this one
+// ERESOURCE, so one long hold stalls all of them: taskmgr's close waited
+// minutes (receiver wait reason WrResource) once x86 DOOM was running.
+// First exclusive acquire notes the time, last release reports a hold over
+// USER_LOCK_SLOW_MS with the holder. Both fields change only while held
+// exclusively.
+const USER_LOCK_SLOW_MS: u32 = 2000;
+static mut USER_LOCK_DEPTH: u32 = 0;
+static mut USER_LOCK_SINCE: u32 = 0;
+
+unsafe fn user_lock_tick() -> u32 {
+    // The interrupt-time tick in SharedUserData, as EngGetTickCount32 reads it.
+    extern "system" { fn EngGetTickCount() -> u64; }
+    EngGetTickCount() as u32
+}
+
+#[inline(never)]
+unsafe fn user_lock_entered() {
+    if USER_LOCK_DEPTH == 0 {
+        USER_LOCK_SINCE = user_lock_tick();
+    }
+    USER_LOCK_DEPTH += 1;
+}
+
+#[inline(never)]
+unsafe fn user_lock_leaving() {
+    if ExIsResourceAcquiredExclusiveLite(core::ptr::addr_of_mut!(UserLock)) == 0 || USER_LOCK_DEPTH == 0 {
+        return;
+    }
+    USER_LOCK_DEPTH -= 1;
+    if USER_LOCK_DEPTH != 0 {
+        return;
+    }
+    let Held = user_lock_tick().wrapping_sub(USER_LOCK_SINCE);
+    if Held >= USER_LOCK_SLOW_MS {
+        let Process = ntkrnl_sys::ddk::IoGetCurrentProcess() as *const u8;
+        let Name = Process.add(core::mem::offset_of!(ntkrnl_sys::ddk::_EPROCESS, ImageFileName));
+        DbgPrint(
+            b"[WIN32K] user lock held %u ms by tid %u (%.15s)\n\0".as_ptr() as *const i8,
+            Held,
+            ntkrnl_sys::ddk::PsGetCurrentThreadId() as usize as u32,
+            Name,
+        );
+    }
+}
+
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn UserEnterShared() {
@@ -342,6 +389,7 @@ pub unsafe extern "C" fn UserEnterShared() {
 pub unsafe extern "fastcall" fn UserEnterExclusive() {
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+    user_lock_entered();
     gptiCurrent = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 }
 
@@ -350,12 +398,14 @@ pub unsafe extern "fastcall" fn UserEnterExclusive() {
 pub unsafe extern "C" fn UserEnterExclusive() {
     KeEnterCriticalRegion();
     ExAcquireResourceExclusiveLite(core::ptr::addr_of_mut!(UserLock), 1u8);
+    user_lock_entered();
     gptiCurrent = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "fastcall" fn UserLeave() {
+    user_lock_leaving();
     ExReleaseResourceLite(core::ptr::addr_of_mut!(UserLock));
     KeLeaveCriticalRegion();
 }
@@ -363,6 +413,7 @@ pub unsafe extern "fastcall" fn UserLeave() {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "C" fn UserLeave() {
+    user_lock_leaving();
     ExReleaseResourceLite(core::ptr::addr_of_mut!(UserLock));
     KeLeaveCriticalRegion();
 }

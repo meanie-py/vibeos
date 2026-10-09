@@ -460,7 +460,7 @@ DWORD WINAPI ProcessPageRefreshThread(void *lpParameter)
 
     while (1) {
         /*  Wait for an the event or application close */
-        if (GetMessage(&msg, NULL, 0, 0) <= 0)
+        if (!GetRefreshMessage(&msg))
             return 0;
 
         if (msg.message == WM_TIMER) {

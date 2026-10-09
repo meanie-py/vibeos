@@ -82,3 +82,4 @@ BOOL ConfirmMessageBox(HWND hWnd, LPCWSTR Text, LPCWSTR Title, UINT Type);
 VOID ShowWin32Error(DWORD dwError);
 LPTSTR GetLastErrorText(LPTSTR lpszBuf, DWORD dwSize);
 DWORD EndLocalThread(HANDLE *hThread, DWORD dwThread);
+BOOL GetRefreshMessage(MSG *msg);

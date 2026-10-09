@@ -10894,6 +10894,49 @@ def test_payload_stale_binary_is_rebuilt_before_staging(tmp_path, monkeypatch):
     assert pc.ensure_built(["demo"], "arm64") == []  # fresh: no rebuild
 
 
+def _fake_receipts(pc, monkeypatch, stale_arches):
+    """compile.py's receipt modules replaced: `missing` answers `stale_arches`."""
+    import types
+
+    seen = {}
+
+    def missing(repo, tree, arches, is_inert, **kw):
+        seen["arches"] = arches
+        return [a for a in arches if a in stale_arches]
+
+    fakes = {
+        "_payload_warmth": types.SimpleNamespace(missing=missing, worktree_tree=lambda repo: "T"),
+        "_payload_docs_only": types.SimpleNamespace(is_inert=lambda p: False),
+    }
+    monkeypatch.setattr(pc, "_load_by_path", lambda modname, path: fakes[modname])
+    return seen
+
+
+def test_payload_guest_set_from_a_stale_build_dies(tmp_path, monkeypatch, capsys):
+    """A guest set stages ANOTHER arch's build outputs, which this arch's build never
+    rebuilds: an appstorm64 run tested a taskmgr.exe older than the fix it was checking.
+    No receipt for this tree on that arch -> refuse, naming the build to run."""
+    pc = _load_payload_compile()
+    seen = _fake_receipts(pc, monkeypatch, {"amd64"})
+    with pytest.raises(SystemExit):
+        pc.guest_build_current("appstorm64", tmp_path / "build-amd64")
+    assert seen["arches"] == ("amd64",)
+    assert "./vibeos-cli build --arch amd64" in capsys.readouterr().err
+
+
+def test_payload_guest_set_from_a_current_build_passes(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    _fake_receipts(pc, monkeypatch, set())
+    pc.guest_build_current("appstorm64", tmp_path / "build-amd64")  # no SystemExit
+
+
+def test_payload_guest_set_build_dir_must_name_an_arch(tmp_path, monkeypatch):
+    pc = _load_payload_compile()
+    _fake_receipts(pc, monkeypatch, set())
+    with pytest.raises(SystemExit):
+        pc.guest_build_current("appstorm64", tmp_path / "somewhere-else")
+
+
 def test_payload_failed_rebuild_dies_loudly(tmp_path, monkeypatch):
     pc = _load_payload_compile()
     payloads = tmp_path / "tools" / "payloads"
