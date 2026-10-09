@@ -130,6 +130,20 @@ all included), then auto-triage on failure.
   succeeded (`NVME_AFFINITY=<mask>` likewise sets the controller's interrupt Affinity
   Policy, which the HAL must honour).
 
+- **`--nvme --tripwire NVME_FAIL_START=1`** has nvme.sys connect its messages and then
+  fail START, and FAILS the boot (`NVME_NOT_RELEASED`) unless the driver disconnected,
+  pci.sys turned MSI-X off at REMOVE, and the PnP manager gave every message vector back
+  to the HAL (`[PNP] message interrupts: N back to the HAL, 0 refused`). Nothing else in a
+  boot removes a device.
+
+- **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
+  mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
+  (`VIBEOS_QEMU_XHCI_MSI`), and FAILS the boot unless usbxhci ran (`XHCI_NOT_ENGAGED`), the
+  keyboard enumerated, which takes transfer interrupts (`XHCI_NO_TRANSFERS`), and usbport
+  took a message (`XHCI_NOT_MSI`) or the line (`XHCI_NOT_LINE`) as asked. With `msi`,
+  `--tripwire XHCI_MSI_MESSAGES=<n>` asks for a multiple-message MSI block of n, and the
+  boot FAILS (`XHCI_MSI_BLOCK_SHORT`) unless pci.sys enabled exactly that many.
+
 - **`--nvme-bridge`** (arm64, implies `--nvme`) puts that controller behind a PCIe root
   port, on bus 1 (`VIBEOS_QEMU_NVME_BRIDGE=1`), as a server's devices are, and FAILS the
   boot (`NVME_NOT_BEHIND_BRIDGE`) unless the PnP manager started the root port as well as

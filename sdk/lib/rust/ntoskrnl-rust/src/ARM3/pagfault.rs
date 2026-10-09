@@ -1664,16 +1664,68 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
         if (pxe_valid == 0) || (ppe_valid == 0) || (((*PointerPde).valid() as usize) == 0) || (((*PointerPte).valid() as usize) == 0)
         {
+            // The C prints the Va, IRQL and faulting registers here (pagfault.c:1762).
+            // The translation had emptied every one of those blocks, so this status --
+            // STATUS_IN_PAGE_ERROR|0x10000000, which the smoke logs showed as
+            // `st=d0000006` killing csrss on amd64-bios -- reached the log with nothing
+            // naming the code that faulted at DISPATCH_LEVEL. Keep the C's diagnostic.
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"MM:***PAGE FAULT AT IRQL > 1  Va %p, IRQL %lx\n\0".as_ptr() as *const i8,
+                Address,
+                OldIrql as u32,
+            );
             if !TrapInformation.is_null() {
                 let TrapFrame = TrapInformation as PKTRAP_FRAME;
                 #[cfg(target_arch = "x86")]
-                {}
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EIP %p, EFL %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Eip as usize as PVOID,
+                        (*TrapFrame).EFlags as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EAX %p, ECX %p EDX %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Eax as usize as PVOID,
+                        (*TrapFrame).Ecx as usize as PVOID,
+                        (*TrapFrame).Edx as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***EBX %p, ESI %p EDI %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Ebx as usize as PVOID,
+                        (*TrapFrame).Esi as usize as PVOID,
+                        (*TrapFrame).Edi as usize as PVOID,
+                    );
+                }
                 #[cfg(target_arch = "x86_64")]
-                {}
-                #[cfg(target_arch = "arm")]
-                {}
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RIP %p, EFL %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rip as usize as PVOID,
+                        (*TrapFrame).EFlags as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RAX %p, RCX %p RDX %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rax as usize as PVOID,
+                        (*TrapFrame).Rcx as usize as PVOID,
+                        (*TrapFrame).Rdx as usize as PVOID,
+                    );
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***RBX %p, RSI %p RDI %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Rbx as usize as PVOID,
+                        (*TrapFrame).Rsi as usize as PVOID,
+                        (*TrapFrame).Rdi as usize as PVOID,
+                    );
+                    crate::ke::bug::KiPrintPcAndStack(TrapFrame as *const _);
+                }
                 #[cfg(target_arch = "aarch64")]
-                {}
+                {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        b"MM:***PC %p, LR %p, SP %p\n\0".as_ptr() as *const i8,
+                        (*TrapFrame).Pc as usize as PVOID,
+                        (*TrapFrame).Lr as usize as PVOID,
+                        (*TrapFrame).Sp as usize as PVOID,
+                    );
+                }
             }
             return STATUS_IN_PAGE_ERROR | 0x10000000;
         }

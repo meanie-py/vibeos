@@ -108,3 +108,12 @@ class TestResolveModel:
 
     def test_full_id_passes_through(self):
         assert resolve_model("claude-opus-4-8") == "claude-opus-4-8"
+
+
+def test_concurrency_gate_is_by_price_not_vendor():
+    from rustconv.__main__ import _cheap_enough_to_fan_out
+
+    assert _cheap_enough_to_fan_out("deepseek-v4-pro")
+    assert _cheap_enough_to_fan_out("claude-haiku-5-5")
+    assert not _cheap_enough_to_fan_out("claude-sonnet-4-6")
+    assert not _cheap_enough_to_fan_out("no-such-model")

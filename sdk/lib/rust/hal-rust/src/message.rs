@@ -5,12 +5,16 @@
 //!      flagged `CM_RESOURCE_INTERRUPT_MESSAGE`, whose vector is a TOKEN rather than
 //!      a line: message k asks for raw vector `CM_RESOURCE_INTERRUPT_MESSAGE_TOKEN - k`.
 //!      Distinct tokens keep the PnP manager's match-by-vector bookkeeping from
-//!      folding two messages into one resource.
+//!      folding two messages into one resource. A device with plain MSI asks for its
+//!      block of N with one requirement spanning TOKEN - (N - 1) to TOKEN, and the
+//!      raw descriptor carries N as its MessageCount.
 //!   2. The PnP manager translates each through [`HalVibeosMessageAllocate`], which
 //!      hands out a vector the CPU can take a message on, its IRQL, and the one CPU it
 //!      is delivered to, chosen from the processors the device's affinity policy
 //!      allows. (`HalGetInterruptVector` spots a token too, and allocates with no
-//!      preference.)
+//!      preference.) An MSI block goes through [`HalVibeosMessageAllocateBlock`]
+//!      instead: consecutive values aligned to its size, since the device ORs the
+//!      message number into one data value, and message k is the first vector + k.
 //!   3. At START pci.sys asks [`HalVibeosMessageTarget`] for the address/data pair that
 //!      raises that vector, naming the device that will write it, and writes the pair
 //!      into the device's MSI-X table.
@@ -46,7 +50,7 @@ pub fn is_message_token(vector: u32) -> bool {
 
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), hal_apic))]
 mod imp {
-    pub(super) use crate::x86::apic::{allocate_message_vector, message_capacity, message_target, release_message_vector};
+    pub(super) use crate::x86::apic::{allocate_message_block, message_capacity, message_target, release_message_vector};
 }
 
 /// The GIC the firmware described decides: an ITS on a GICv3, a v2m frame on a GICv2.
@@ -60,8 +64,8 @@ mod imp {
     pub(super) unsafe fn message_target(vector: u32, requester: u32) -> Option<(u64, u32)> {
         unsafe { if gic3::present() { its::message_target(vector, requester) } else { v2m::message_target(vector, requester) } }
     }
-    pub(super) unsafe fn allocate_message_vector(requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
-        unsafe { if gic3::present() { its::allocate_message_vector(requested) } else { v2m::allocate_message_vector(requested) } }
+    pub(super) unsafe fn allocate_message_block(count: u32, requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
+        unsafe { if gic3::present() { its::allocate_message_block(count, requested) } else { v2m::allocate_message_block(count, requested) } }
     }
     pub(super) unsafe fn release_message_vector(vector: u32) -> bool {
         unsafe { if gic3::present() { its::release_message_vector(vector) } else { v2m::release_message_vector(vector) } }
@@ -78,7 +82,7 @@ mod imp {
     pub(super) unsafe fn message_target(_vector: u32, _requester: u32) -> Option<(u64, u32)> {
         None
     }
-    pub(super) unsafe fn allocate_message_vector(_requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
+    pub(super) unsafe fn allocate_message_block(_count: u32, _requested: KAFFINITY) -> Option<(u32, KIRQL, KAFFINITY)> {
         None
     }
     pub(super) unsafe fn release_message_vector(_vector: u32) -> bool {
@@ -93,7 +97,11 @@ pub unsafe fn allocate(irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
 }
 
 unsafe fn allocate_for(requested: KAFFINITY, irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
-    match unsafe { imp::allocate_message_vector(requested) } {
+    unsafe { allocate_block(1, requested, irql, affinity) }
+}
+
+unsafe fn allocate_block(count: u32, requested: KAFFINITY, irql: PKIRQL, affinity: PKAFFINITY) -> ULONG {
+    match unsafe { imp::allocate_message_block(count, requested) } {
         Some((vector, level, mask)) => {
             unsafe {
                 if !irql.is_null() {
@@ -126,9 +134,38 @@ pub unsafe extern "system" fn HalVibeosMessageAllocate(
     unsafe { allocate_for(Requested, Irql, Affinity) }
 }
 
-/// Give back a vector [`HalVibeosMessageAllocate`] handed out: the device it was for
-/// is gone. Its interrupt is disabled and the vector may be handed out again. FALSE
-/// for a vector that was not handed out.
+/// Translate an MSI block: `*Count` messages (a power of two, at most 32) that the
+/// device raises by ORing the message number into one data value, so they need
+/// consecutive values aligned to the block's size, all on one processor. Where that
+/// many cannot be found together the block halves until it fits, as Windows grants
+/// a device fewer messages than it asked for; `*Count` says how many it got. Returns
+/// the first vector (message k is that + k) and 0 when not even one is left.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosMessageAllocateBlock(
+    Count: *mut ULONG,
+    Requested: KAFFINITY,
+    Irql: PKIRQL,
+    Affinity: PKAFFINITY,
+) -> ULONG {
+    let mut count = unsafe { *Count }.min(32);
+    if !count.is_power_of_two() {
+        return 0;
+    }
+    while count > 0 {
+        let vector = unsafe { allocate_block(count, Requested, Irql, Affinity) };
+        if vector != 0 {
+            unsafe { *Count = count };
+            return vector;
+        }
+        count /= 2;
+    }
+    0
+}
+
+/// Give back a vector [`HalVibeosMessageAllocate`] or the first vector
+/// [`HalVibeosMessageAllocateBlock`] handed out: the device it was for
+/// is gone. Its interrupt is disabled and the vector may be handed out again (a
+/// block's every vector). FALSE for a vector that was not handed out.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn HalVibeosMessageRelease(Vector: ULONG) -> BOOLEAN {
     unsafe { imp::release_message_vector(Vector) as BOOLEAN }

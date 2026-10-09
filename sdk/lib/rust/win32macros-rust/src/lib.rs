@@ -764,6 +764,107 @@ macro_rules! UlongToPtr {
     };
 }
 
+// basetsd.h's integer <-> pointer conversions. On i386 these are MACROS, on _WIN64 `static
+// inline` functions with the same bodies; the results are `void*` / 32-bit integers on every
+// arch, so one definition serves all three. Signed sources SIGN-extend through `INT_PTR` /
+// `LONG_PTR`; unsigned ones zero-extend through `UINT_PTR` / `ULONG_PTR`.
+
+/// `IntToPtr(i)` = `((VOID*)(INT_PTR)((int)i))`.
+#[macro_export]
+macro_rules! IntToPtr {
+    ($i:expr $(,)?) => {
+        (($i) as i32 as isize as *mut core::ffi::c_void)
+    };
+}
+
+/// `LongToPtr(l)` = `((VOID*)(LONG_PTR)((long)l))` (`long` is 32-bit on Windows).
+#[macro_export]
+macro_rules! LongToPtr {
+    ($l:expr $(,)?) => {
+        (($l) as i32 as isize as *mut core::ffi::c_void)
+    };
+}
+
+/// `UIntToPtr(ui)` = `((VOID*)(UINT_PTR)((unsigned int)ui))`; `UintToPtr` is an alias.
+#[macro_export]
+macro_rules! UIntToPtr {
+    ($ui:expr $(,)?) => {
+        (($ui) as u32 as usize as *mut core::ffi::c_void)
+    };
+}
+
+/// basetsd.h `#define UintToPtr(ui) UIntToPtr(ui)`.
+#[macro_export]
+macro_rules! UintToPtr {
+    ($ui:expr $(,)?) => {
+        $crate::UIntToPtr!($ui)
+    };
+}
+
+/// `ULongToPtr(ul)` = `((VOID*)(ULONG_PTR)((unsigned long)ul))`.
+#[macro_export]
+macro_rules! ULongToPtr {
+    ($ul:expr $(,)?) => {
+        (($ul) as u32 as usize as *mut core::ffi::c_void)
+    };
+}
+
+/// `ULongToHandle(h)` = `((HANDLE)(ULONG_PTR)(h))`; `UlongToHandle` is an alias.
+#[macro_export]
+macro_rules! ULongToHandle {
+    ($h:expr $(,)?) => {
+        (($h) as u32 as usize as *mut core::ffi::c_void)
+    };
+}
+
+/// basetsd.h `#define UlongToHandle(ul) ULongToHandle(ul)`.
+#[macro_export]
+macro_rules! UlongToHandle {
+    ($h:expr $(,)?) => {
+        $crate::ULongToHandle!($h)
+    };
+}
+
+/// `LongToHandle(h)` = `((HANDLE)(LONG_PTR)(h))`.
+#[macro_export]
+macro_rules! LongToHandle {
+    ($h:expr $(,)?) => {
+        (($h) as i32 as isize as *mut core::ffi::c_void)
+    };
+}
+
+/// `PtrToInt(p)` = `((INT)(INT_PTR)(p))`; `PtrToLong` is the same width on Windows.
+#[macro_export]
+macro_rules! PtrToInt {
+    ($p:expr $(,)?) => {
+        (($p) as isize as i32)
+    };
+}
+
+/// `PtrToLong(p)` = `((LONG)(LONG_PTR)(p))`.
+#[macro_export]
+macro_rules! PtrToLong {
+    ($p:expr $(,)?) => {
+        (($p) as isize as i32)
+    };
+}
+
+/// `PtrToUint(p)` = `((UINT)(UINT_PTR)(p))`.
+#[macro_export]
+macro_rules! PtrToUint {
+    ($p:expr $(,)?) => {
+        (($p) as usize as u32)
+    };
+}
+
+/// `HandleToUlong(h)` = `((ULONG)(ULONG_PTR)(h))`.
+#[macro_export]
+macro_rules! HandleToUlong {
+    ($h:expr $(,)?) => {
+        (($h) as usize as u32)
+    };
+}
+
 /// `ndk/mmtypes.h` — `PAGE_ROUND_UP(x)` = `(((ULONG_PTR)(x) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))`.
 /// The arithmetic is `ULONG_PTR` (`usize`) and so is the result; `PAGE_SIZE` is the caller's.
 #[macro_export]

@@ -1028,6 +1028,7 @@ pub unsafe extern "system" fn USBPORT_ParseResources(
     const CmResourceTypeMemory: u8 = 3;
     const CM_RESOURCE_PORT_IO: u16 = 0x0001;
     const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 0x0001;
+    const CM_RESOURCE_INTERRUPT_MESSAGE: u16 = 0x0002;
     const USBPORT_RESOURCES_PORT: u32 = 1;
     const USBPORT_RESOURCES_MEMORY: u32 = 0x00000004; // FIXED 2026-07-05: translation invented 0x2; verified vs usbport.h/usbmport.h
     const USBPORT_RESOURCES_INTERRUPT: u32 = 0x00000002; // FIXED 2026-07-05: translation invented 0x4; verified vs usbport.h/usbmport.h
@@ -1067,7 +1068,12 @@ pub unsafe extern "system" fn USBPORT_ParseResources(
                     PortDescriptor = PartialDescriptor;
                 }
             } else if (*PartialDescriptor).Type == CmResourceTypeInterrupt {
-                if InterruptDescriptor.is_null() {
+                // A message, when pci.sys assigned any (msi.rs asked for them), wins
+                // over the line: the device raises messages once they are enabled.
+                let message = (*PartialDescriptor).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0;
+                if InterruptDescriptor.is_null()
+                    || (message && (*InterruptDescriptor).Flags & CM_RESOURCE_INTERRUPT_MESSAGE == 0)
+                {
                     InterruptDescriptor = PartialDescriptor;
                 }
             } else if (*PartialDescriptor).Type == CmResourceTypeMemory {
@@ -1128,8 +1134,18 @@ pub unsafe extern "system" fn USBPORT_ParseResources(
             (*UsbPortResources).ShareVector =
                 (((*InterruptDescriptor).ShareDisposition == (CmResourceShareShared as u8)) as u32 as u8);
 
+            // A test of the flag, not of the whole field: the C compares Flags with
+            // CM_RESOURCE_INTERRUPT_LATCHED, which reads a latched message (LATCHED |
+            // MESSAGE) as level-sensitive.
             (*UsbPortResources).InterruptMode =
-                ((*InterruptDescriptor).Flags == CM_RESOURCE_INTERRUPT_LATCHED) as u32;
+                ((*InterruptDescriptor).Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0) as u32;
+            if (*InterruptDescriptor).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0 {
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"[USBPORT] interrupt: message vector %u at IRQL %u\n\0".as_ptr() as _,
+                    (*InterruptDescriptor).u.Interrupt.Vector,
+                    (*InterruptDescriptor).u.Interrupt.Level,
+                );
+            }
         }
     } else {
         Status = STATUS_NONE_MAPPED;

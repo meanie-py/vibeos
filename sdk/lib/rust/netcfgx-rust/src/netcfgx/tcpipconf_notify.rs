@@ -828,7 +828,7 @@ pub unsafe extern "system" fn TcpipAdvGwDlg(
 
                     if SendMessageW((*pGwSettings).hDlgCtrl, (LVM_FINDITEMW) as u32, (1 as isize).wrapping_neg() as WPARAM, find.as_ptr() as LPARAM) == (1 as LRESULT).wrapping_neg() {
                         EndDialog(hwndDlg, TRUE as INT_PTR);
-                    } else if !(*pGwSettings).bAdd != 0 {
+                    } else if (*pGwSettings).bAdd == 0 { // C `!pGwSettings->bAdd`; a bitwise not was always true
                         EndDialog(hwndDlg, FALSE as INT_PTR);
                     } else {
                         DisplayError((IDS_DUP_GW) as u32, (IDS_TCPIP) as u32, MB_ICONINFORMATION);

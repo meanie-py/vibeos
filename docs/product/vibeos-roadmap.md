@@ -608,23 +608,45 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   around the header read; both fixed. A recurrence now prints `[MM] Failed to page data in!
   st=...` with the real status instead of bugchecking.
 
-- **Pi 5: ping loses 10-30% and spikes to hundreds of ms while the serial console is
-  saturated** (OPEN, 2026-10-08). On a settled desktop the debug UART runs at ~10.6 KB/s of
-  115200's ~11.5: `rundll32.exe` (newdev's client-side install) is spawned again and again for
-  devices it finds no driver for (`DevInstallW failed with error 259`, ~180 in one window), and
-  every spawn prints the full `[PS] PspCreateProcess`/`PspUserThreadStartup` trace, alongside
-  repeated `[FASTFAT] FatMountVolume` lines. A print on real hardware blocks its CPU until the
-  UART drains (field manual, "A UART print inside a trap costs"). The GEM itself counts no receive
-  errors (no FCS, buffer or overrun errors over the same window), and some boots ping 60/60.
-  Serving the Pico's disk did not lower the rate, so the empty disk is not the source. Not yet
-  shown: that the console is what drops the frames. Two fixes owed either way: stop the install
-  retry loop, and gate the per-thread `[PS]` tracing. Where the loop comes from is not settled:
-  umpnpmgr's queueing (`event.rs` ProcessDeviceInstallEvent) and its skip test (a `Class` value
-  or CONFIGFLAG_FAILEDINSTALL) match the C, and the kernel queues GUID_DEVICE_ENUMERATED only
-  when it initializes a devnode (`devaction.c` ~1340, `plugplay.c` ~375). So either devnodes are
-  being recreated, or newdev fails (error 259, no driver) without setting FAILEDINSTALL and
-  something re-queues. Next step: log the device ID on each `InstallDevice` call. QEMU arm64
-  shows the same failures (8 `DevInstallW failed` in one smoke boot), only fewer.
+- **Pi 5: ping lost 10-30% while ~100 phantom PCI devices were installed** (FIXED
+  2026-10-08). The arm64 HAL fell back to probing QEMU virt's fixed ECAM addresses whenever it
+  found no MCFG, and took any first word other than 0xFFFF as a host bridge. On the Pi 5
+  the MCFG (OEM RPIFDN, 92 bytes) has its signature zeroed somewhere between freeldr's read and
+  the HAL's (nothing in our tree writes it; the firmware at ExitBootServices is the suspect),
+  so the board has "no MCFG" by the time the HAL looks. Then 0x3F00_0000 (RAM; the old HAL) or 0x40_1000_0000 (`ecam.rs`, landed from
+  the pcie lane the same day) answered. pci.sys, bound to the hive's `Root\*PNP0A03`,
+  enumerated those bytes as ~100 devices (`VEN_706F` = "op", `SUBSYS_72656666` = "reff"),
+  writing command registers and BAR probes into whatever was there, and umpnpmgr spawned
+  `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
+  ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
+  after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
+  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
+  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+- **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
+  quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
+  - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
+    GEM driver does nothing about LPI. Lost requests came one every 2.5 s in bursts every
+    ~14 s; a capture on a second LAN host showed every one on the wire, and a per-sequence
+    trace showed none reached the driver, with the GEM counting no FCS, buffer or overrun
+    error. `gem.rs` now clears the advertisement: 360/360 from two hosts at once.
+  - **Self-tests aimed at QEMU's slirp.** `settest` programmed a default route via
+    10.0.2.2, so the board ARPed for it every second, and smoltcp rate-limits neighbor
+    discovery for the whole interface; the ICMP, DNS and TDI datagram self-tests and the
+    engine's boot ping targeted 10.0.2.x too and failed on every Pi 5 boot. They now use the
+    lease's gateway and DNS server (`netcfg::gateway`, `dns0`), which are the same addresses
+    under slirp; the TCP connects that need the harness's 10.0.2.100 listener run only on
+    slirp (`netcfg::on_slirp`). QEMU arm64-net suite: 15 passed, 1 skipped.
+  - **Console chatter.** Per-thread and per-process breadcrumbs (`[PS]`, `[MM] InitProcAS`,
+    `[IRQL-CHK]`, `[APC]`) now print only under the `PROCTRACE` boot option; classpnp's
+    `TracePrint` limits each repeating warning (the Pico's empty disk polled every second)
+    to its first 8 occurrences, then every 1000th. Settled desktop: 0 B/s.
+  Owed: the GEM's transmitter goes idle after almost every frame (130 restarts for 211
+  frames sent), so each reply waits for the next `reap_tx` instead of leaving at once (fine
+  at ping rates, a throughput cap); GEM interrupts would fix both. The Pi 4's GENET drives the
+  same PHY and does not touch EEE either: measure it before changing it. `stortest.exe`
+  opens every volume each 2 s for two minutes on a board whose test volume it cannot find,
+  and each open of an unmountable volume (the SD's ext4 root, the empty Pico) retries every
+  file system.
 
 - **FAT file dates showed as 01/01/1601 in `dir`** (FIXED 2026-10-08). fastfat's directory
   query passed only the time half of the FAT stamp to its time converter, so the date read as
@@ -1028,6 +1050,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (REOPENED
+    2026-10-08, was "FIXED 2026-10-07"). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
+    queue over 10-07/10-08 (~30 of them) was csrss.exe exiting `0xC0000006` while loading
+    winsrv, and every BUGCHECK 0xF4 was SMSS taking the same in-page error; `-smp 1` never
+    fails. The 10-07 fix's 16/16 was measured alone, not under the gate's concurrent boots.
+    The in-page status is `STATUS_IN_PAGE_ERROR|0x10000000`, MmArmAccessFault's "PAGE FAULT
+    AT IRQL > 1" path: kernel code at DISPATCH_LEVEL faulting on Va 0 with RIP outside every
+    image's `.text` -- a call through a bad pointer on the page-in path. The Rust had
+    dropped the C's register dump there; it now prints Va/IRQL/registers plus RIP and the
+    stack as `module+offset` (`KiPrintPcAndStack`). Two contributors fixed 2026-10-08:
+    cdrom-rust compared its MCN sync IRP against `const RequestSetupMcnSyncIrp = 0` instead
+    of the function's address, so its own IRP went down to scsiport every timer tick
+    (`unknown ioctl code: 0x7C0C8` ~700/boot) and was completed there at DISPATCH_LEVEL on
+    whichever CPU, racing the next tick; and that chatter kept the harness from fast-failing
+    the wedged guest (13 min per hang instead of ~2). After: 21 of 22 `-smp 2` boots green
+    under 6-8 concurrent VMs and two full gates green (20261008-231753-kzuu49zq,
+    20261008-233332-nlk4h1lh, a1 passed both). The residual 1/22 (20261008-225946-tllwzl5t
+    boot1: RIP fffff80000a08234, RCX fffff80000a2422b, both past the kernel's 0x32B000 runtime
+    image) is still open; the next occurrence names the module in the serial log. Earlier
+    entry follows for the record.
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
     from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
@@ -1107,9 +1149,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       a PAGE_READONLY view raised no access violation) failed on 3 of 3 i386 `-smp 2`
       sweeps, with or without the idle-summary fix. `KiInitMachineDependent` now sets it
       inside its per-processor affinity loop.
-    Left as timing noise (one sample each): amd64 `ExResource` (its :480/:518/:620 are
-    already `assert?` in the 1-vCPU baseline) and i386 `PsQuota` (nonpaged quota off by 24
-    bytes in 1 of 2 sweeps); `IoDeviceObject` +-1 is the known flicker.
+    - **amd64 idle CPUs slept through IPI_DPC** (FIXED): the rows first written off as
+      timing (amd64 `ExResource` :480/:620, plus a knock-on :301) were a whole-guest
+      slowdown. amd64 `-smp 2` swept in 775 s against 250 s at one vCPU and reached the
+      sweep at +423 s against +105 s; sampling both vCPUs over gdb found a halted idle CPU
+      with a `NextThread` already assigned in over half the samples. amd64 sends IPI_DPC
+      as the DISPATCH soft vector 0x2F, and on amd64 IRQL is the APIC TPR, so a target
+      idling at DISPATCH_LEVEL held it pending and slept until the clock tick. `KiIpiSend`
+      now also rings 0xE1. After: sweep 234 s, starting at +109 s; ExResource back to its
+      banked 879/2; `-smp 2` smoke green (run 20261008-174402-8rgmbt0d).
+    - **i386 `PsQuota` was the kmtest harness charging quota mid-test** (FIXED):
+      `KmtRunKernelTest` starts its user-callback thread and issues `RUN_TEST` at once;
+      that thread's parked `AWAIT_REQ` IOCTL is METHOD_BUFFERED, so its system buffer is a
+      quota allocation (12-byte packet + 4-byte process pointer + 8-byte header = the 24
+      bytes PsQuota saw). On one CPU it parks after the test, on two during it. The
+      kmtest driver's `RUN_TEST` now waits (bounded, 5 s) for the callback thread to park.
+      i386 `-smp 2` PsQuota 12/0 (run 20261008-174152-p1jx1zfg).
+    - **`IoDeviceObject` "+-1 flicker" was an unterminated registry path** (FIXED; not SMP,
+      it flipped at one vCPU on every arch): `IopUnloadDriver` passed the counted service
+      name to `RtlQueryRegistryValues` as a PWSTR, and DriverEntry's RegistryPath had no
+      terminator, so `:300` depended on the pool WCHAR after it (a gdb probe caught
+      `NtOpenKey` opening `...KMTEST-IODEVICEOBJECT` plus garbage). Both sites fixed; the
+      terminator sits outside `MaximumLength` (`:191`). 185/4 on all three arches; the
+      1-vCPU rows and arm64 smp2 (stale 180/9) re-banked, `assert? :300` removed.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -3031,8 +3093,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
-- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
-  (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
+- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent,
+  TRIPWIRE-GUARDED** (2026-09-13, research lane; tripwire 2026-10-08). They pass `-C target-feature=-sse,-sse2` while targeting the
   BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
   stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
   enabled to ensure that the ABI of the current target can be implemented correctly … this was
@@ -3053,10 +3115,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found);
   ucrtbase DID drop it (2026-10-03, for the `libm` crate -- see its CMakeLists).
   So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
-  split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
-  claim, not a test of mine. Whoever bumps
-  the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
-  it is a one-command check.
+  split.
+  **Re-derived from the live tree 2026-10-08 (research lane):** still latent, now with a
+  tripwire. The one-command check was run — `rustc 1.92.0 --target i686-pc-windows-gnu
+  -C target-feature=-sse,-sse2` on a trivial crate still **warns and exits 0**, so nothing is
+  broken. The count is now **54** CMakeLists (ucrtbase dropped out as noted); all 54 verified to
+  pair the flag with the builtin triple and none with a json. The feasibility of the "move to
+  the softfloat json" remedy was pinned as fact, not inferred: a custom json needs cargo to
+  rebuild `core`, i.e. `-Z build-std` = **nightly** (`gcc.cmake:789`,
+  `ntoskrnl-cargo/build-and-test.sh:43`). The 54 build on **stable** via
+  `cargo build --target i686-pc-windows-gnu` + `RUSTFLAGS` (per-CMakeLists `add_custom_command`,
+  not `add_cargo_module`), so the migration is: convert each into a build-std cargo cell on a
+  softfloat json — the model the i386 `*-cargo` cells already use. That is a large,
+  nightly-widening change for no live bug, hence **deferred by design** until the warning
+  becomes an error. A 54-crate migration is NOT warranted while rustc only warns.
+  **Tripwire landed** so the bump cannot break i386 silently: `tools/scan_i386_sse_abi.py` +
+  `tools/test_scan_i386_sse_abi.py`, wired into `check-tooling`. It compiles the exact doomed
+  combo and, the moment the pinned rustc turns rust-lang#116344 into a hard error, fails the
+  land preflight with ONE actionable message (the migration recipe + the full crate list)
+  instead of 54 cryptic build errors. Run `python tools/scan_i386_sse_abi.py` any time for the
+  current verdict (`OK_LATENT` / `TRIPPED_HARD_ERROR` / `ABI_CHANGED`) and `--list` for the 54.
 
 - **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
   (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit

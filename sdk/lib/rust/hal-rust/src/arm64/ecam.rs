@@ -12,8 +12,9 @@
 //!
 //! An MCFG on the quirk list describes a host bridge that is not ECAM and is read as
 //! no ECAM at all (the loader keeps the same list: freeldr's arm64_serial_acpi.rs).
-//! A machine with no MCFG keeps the probe this HAL always did: QEMU virt's high, then
-//! low, ECAM base, taken when its host bridge answers at 00:00.0.
+//! QEMU with no MCFG keeps the probe this HAL always did: QEMU virt's high, then
+//! low, ECAM base, taken when its host bridge answers at 00:00.0. Any other machine
+//! with no MCFG has no ECAM: on hardware that probe finds memory, not a bridge.
 //!
 //! The parser is pure, so tools/test_arm64_firmware_tables.py runs its tests on the
 //! host.
@@ -86,7 +87,7 @@ pub fn function_pa(w: &Window, bus: u8, slot: u32) -> u64 {
 #[cfg(target_arch = "aarch64")]
 mod live {
     use super::*;
-    use crate::arm64::acpi::{for_each_table, XSDT_PA};
+    use crate::arm64::acpi::{for_each_table, map_table, rd, unmap_table, XSDT_PA};
 
     unsafe extern "C" {
         fn DbgPrint(Format: *const u8, ...) -> u32;
@@ -110,13 +111,37 @@ mod live {
         ddk::MmMapIoSpace(phys, bytes as ddk::SIZE_T, ddk::_MEMORY_CACHING_TYPE_MmNonCached) as usize
     }
 
-    /// The windows: the MCFG's, else QEMU's probed one.
+    /// Whether the XSDT is QEMU's (edk2 ArmVirtQemu stamps OEM ID "BOCHS ").
+    unsafe fn is_qemu(xsdt: u64) -> bool {
+        if xsdt == 0 {
+            return false;
+        }
+        let h = map_table(xsdt, 36);
+        if h.is_null() {
+            return false;
+        }
+        let oem = rd::<[u8; 6]>(h, 10);
+        unmap_table(h, 36);
+        oem == *b"BOCHS "
+    }
+
+    /// The windows: the MCFG's, else (on QEMU only) QEMU's probed one. The probe
+    /// takes any first word other than 0xFFFF as a host bridge, so on hardware it
+    /// finds one wherever memory answers: on the Pi 5, whose MCFG reaches the HAL with its
+    /// signature zeroed (freeldr still reads "MCFG"), 0x40_1000_0000 answered and pci.sys
+    /// enumerated ~70 phantom devices a minute (umpnpmgr spawned a newdev install for
+    /// each). Before this module, the low base 0x3F00_0000 (RAM there) did the same.
     unsafe fn discover() {
         let windows = &raw mut WINDOWS;
         let mut mcfg: Option<Option<([Option<Window>; MAX_WINDOWS], usize)>> = None;
         let xsdt = XSDT_PA.load(Ordering::Relaxed);
         if xsdt != 0 {
             for_each_table(xsdt, |sig, t, len| {
+                if sig[0] == 0 {
+                    let oem = rd::<[u8; 6]>(t, 10);
+                    DbgPrint(b"[HAL] PCI: blank-signature table, len %u, OEM %c%c%c%c%c%c\n\0".as_ptr(), len as u32,
+                        oem[0] as u32, oem[1] as u32, oem[2] as u32, oem[3] as u32, oem[4] as u32, oem[5] as u32);
+                }
                 if sig == b"MCFG" && mcfg.is_none() {
                     mcfg = Some(parse(core::slice::from_raw_parts(t, len)));
                 }
@@ -140,6 +165,9 @@ mod live {
             }
             Some(None) => {
                 DbgPrint(b"[HAL] PCI: the MCFG is quirked or damaged - no ECAM config space\n\0".as_ptr());
+            }
+            None if !is_qemu(xsdt) => {
+                DbgPrint(b"[HAL] PCI: no MCFG - no ECAM config space\n\0".as_ptr());
             }
             None => {
                 for w in [QEMU_HIGH, QEMU_LOW] {
