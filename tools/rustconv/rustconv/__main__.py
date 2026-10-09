@@ -124,6 +124,7 @@ from .fact_seal import (
     unseal_facts,
 )
 from .function_coverage import (
+    CoverageError,
     require_c_plan,
     require_rust_definitions,
     restore_requested_name,
@@ -4860,10 +4861,20 @@ def cmd_translate(args):
             for dep in sorted_deps
             if not deterministic_only or dep.name in deterministic_workers
         }
-        require_rust_definitions(
-            {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
-            code,
-        )
+        try:
+            require_rust_definitions(
+                {f"{name}_body" for name in expected_names} if cpp_com_mode else expected_names,
+                code,
+            )
+        except CoverageError:
+            # Every body may be banked and correct on its own while the STITCH hides them
+            # (one item that parses as an open macro swallows the rest of the file), and the
+            # text that would show which one existed only in memory.
+            if archive is not None:
+                kept = archive.dir / f"{c_file.stem}.stitch-rejected.rs"
+                kept.write_text(code)
+                print(f"  stitched output kept for inspection: {kept}", file=sys.stderr)
+            raise
         if args.output and total_files == 1:
             output_path = Path(args.output)
             output_path.parent.mkdir(parents=True, exist_ok=True)

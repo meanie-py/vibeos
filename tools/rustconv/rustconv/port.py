@@ -1213,6 +1213,82 @@ def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunc
     return types, decls
 
 
+_WINE_DEFAULT_CHANNEL = re.compile(r"^[ \t]*WINE_DEFAULT_DEBUG_CHANNEL\(\s*(\w+)\s*\)", re.M)
+_CHANNEL_ITEM = re.compile(
+    r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?static[ \t]+(?:mut[ \t]+)?(__wine_dbch_\w+)[ \t]*:", re.M
+)
+
+
+def _strip_channel_items(text: str) -> str:
+    """Remove every `static __wine_dbch_*` item -- a definition or an extern-block entry --
+    through its terminating `;` at bracket depth 0, with any attribute lines above it."""
+    while m := _CHANNEL_ITEM.search(text):
+        depth, i = 0, m.end()
+        while i < len(text):
+            ch = text[i]
+            if ch in "([{":
+                depth += 1
+            elif ch in ")]}":
+                depth -= 1
+            elif ch == ";" and depth == 0:
+                break
+            i += 1
+        start = m.start()
+        while True:  # attributes and a comment naming the macro ride with the item
+            prev = text.rfind("\n", 0, max(start - 1, 0)) + 1
+            line = text[prev:start].strip()
+            if start and (line.startswith("#[") or line.startswith("// WINE_DEFAULT_DEBUG")):
+                start = prev
+                continue
+            break
+        end = text.find("\n", i)
+        text = text[:start] + text[(len(text) if end < 0 else end + 1) :]
+    return text
+
+
+def _wine_debug_channels(state: dict, crate: Path) -> list[str]:
+    """Give each module its `WINE_DEFAULT_DEBUG_CHANNEL(ch)` deterministically.
+
+    The macro defines a per-file `static struct __wine_debug_channel __wine_dbch_ch =
+    { ~0, "ch" }` and `__wine_dbch___default` pointing at it, and the translated TRACE/ERR
+    sites read both. Left to the paid preamble, comctl32's 38 files came back as six
+    different things: a byte string, an `extern` declaration nothing defines (an undefined
+    symbol at link), and a struct with `flags: 0` where the C says `~0` -- logging silently
+    off. A header macro is substrate, not translation: strip whatever the preamble made of
+    it and invoke the prelude's `wine_default_debug_channel!` instead. Opt-in by the prelude
+    defining that macro, and re-applied on every integrate, so a replay keeps it.
+    """
+    prelude = crate / "src" / "prelude.rs"
+    if "macro_rules! wine_default_debug_channel" not in prelude.read_text(errors="replace"):
+        return []
+    changed = []
+    for tu in state["tus"]:
+        m = _WINE_DEFAULT_CHANNEL.search((REPO / tu).read_text(errors="replace"))
+        path = _tu_output(state, tu)
+        if m is None or not path.is_file():
+            continue
+        text = path.read_text()
+        call = f"crate::wine_default_debug_channel!(__wine_dbch_{m.group(1)});\n"
+        new = _strip_channel_items(text)
+        if call not in new:
+            # After the leading inner attributes and `use` lines, before the first item.
+            lines = new.splitlines(keepends=True)
+            at = 0
+            for i, line in enumerate(lines):
+                if line.startswith(("#![", "use ", "pub use ")) or not line.strip():
+                    at = i + 1
+                    continue
+                if line.lstrip().startswith("//"):
+                    continue
+                break
+            lines.insert(at, call)
+            new = "".join(lines)
+        if new != text:
+            path.write_text(new)
+            changed.append(path.stem)
+    return changed
+
+
 def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
     """C-variadic definitions -> a Rust `_v` twin + a generated C trampoline (variadic_shim).
 
@@ -1315,6 +1391,13 @@ def stage_integrate(stem: str) -> None:
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
     variadic, variadic_refused = _variadic_twins(state, crate, stem)
     changed += bool(variadic)
+    channels = _wine_debug_channels(state, crate)
+    changed += len(channels)
+    if channels:
+        print(
+            "integrate: WINE_DEFAULT_DEBUG_CHANNEL from the prelude macro in "
+            f"{len(channels)} module(s)"
+        )
     if depth_fixed:
         print(
             f"integrate: {len(depth_fixed)} function(s) read a pointer typedef as its struct "

@@ -4771,6 +4771,13 @@ already been met the note is describing a bug, not a plan.
   `#if`, or under `#ifdef __REACTOS__`, count: bitmap.c's sit under `USE_RTL_BITMAP64`.
 - **A stitcher comment-collapse drops whole bodies into a `//` line.** **A dropped function
   name becomes a bare tuple no-op.**
+- **A wrapped C comment whose next line starts `use ` was hoisted as an import.** toolbar.c's
+  `/* if hot, attempt to draw with hot image list, if fails,` / `use default image list */`
+  sent its second line to the file's `use` block, which left the comment open inside
+  `TOOLBAR_DrawImage` and hid the other 168 functions. Every body was banked and correct; only
+  the coverage check ("Planned Rust definitions absent") noticed. The hoister now tracks block
+  comments, and a failed coverage check keeps the stitch as `<stem>.stitch-rejected.rs` in the
+  run dir, since that text otherwise existed only in memory.
 - **`verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`** — its regex is multi-line.
   **Diff the `.spec` export list against the assembled `#[no_mangle]` set before building.**
 - **A prefast declaration written with the function TYPE becomes a null STATIC, and takes the
