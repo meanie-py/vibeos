@@ -9747,7 +9747,8 @@ def test_ahci_boot_must_show_uniata_driving_ahci(monkeypatch):
     )
     cd = "[CDDB] check IDE\\CdRomQEMU_QEMU_DVD-ROM____2.5+____\\5&89c6c1e1&0.0.0\n"
     assert smoke_mod._ahci_check(started + cd) is None
-    assert smoke_mod._ahci_check(started)["classification"] == "AHCI_NOT_ENGAGED"
+    no_cd = smoke_mod._ahci_check(started)
+    assert no_cd and no_cd["classification"] == "AHCI_NOT_ENGAGED"
     failed = started.replace("&05 -> 0x0\n", "&05 -> 0xc0000001\n", 1)
     assert smoke_mod._ahci_check(failed + cd)
 
