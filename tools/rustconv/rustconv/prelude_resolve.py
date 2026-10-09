@@ -150,6 +150,8 @@ def _norm(text: str) -> str:
 
 _CONST = r"^[ \t]*pub[ \t]+const[ \t]+{n}[ \t]*:[^=;]+=[^;]+;"
 _TYPE = r"^[ \t]*pub[ \t]+type[ \t]+{n}[ \t]*=[^;]+;"
+_CONST_ANY = re.compile(_CONST.replace("{n}", r"([A-Za-z_]\w*)"), re.M)
+_TYPE_ANY = re.compile(_TYPE.replace("{n}", r"([A-Za-z_]\w*)"), re.M)
 
 
 def is_test_source(rel: str) -> bool:
@@ -184,10 +186,16 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         # One identifier scan per file, not one regex per name: with 544 unresolved names
         # over the tree that loop was a 40-minute CPU stall inside `port replay`.
         present = names & set(re.findall(r"[A-Za-z_]\w*", src))
-        for n in present:
-            for kind, pat in (("const", _CONST), ("type", _TYPE)):
-                for m in re.finditer(pat.format(n=re.escape(n)), src, re.M):
-                    found[n].append(Item(kind, _norm(m.group(0)), None, rel))
+        # One pass per KIND, not one per name: a bindgen island is megabytes and holds
+        # hundreds of the wanted names, so the per-name regex was names x file size. comctl32
+        # (825 unresolved names) spent most of a 30-minute resolve pass here.
+        for kind, pat in (("const", _CONST_ANY), ("type", _TYPE_ANY)):
+            hits: dict[str, list[Item]] = {}
+            for m in pat.finditer(src):
+                if m.group(1) in present:
+                    hits.setdefault(m.group(1), []).append(Item(kind, _norm(m.group(0)), None, rel))
+            for n, items in hits.items():  # per name: consts first, then types, as before
+                found[n].extend(items)
         for _start, _end, body, abi in extern_block_spans(src):
             for decl in split_decls(body):
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)

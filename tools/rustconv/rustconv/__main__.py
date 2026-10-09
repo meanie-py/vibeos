@@ -3782,6 +3782,24 @@ def cmd_translate(args):
                     # and `ResponseCache.get` refuses any entry that still holds a token —
                     # so re-running the closed-envelope check here judged token-free Rust
                     # and could only false-reject, sending banked work back to be re-paid.
+                    #
+                    # A stored REJECT that passes today's audit is adopted for $0, as on the
+                    # sequential path. This path never tried, so once Haiku 5.5 fanned out
+                    # (comctl32), a reject that a fixed audit would now pass -- four edit and
+                    # listbox bodies refused by a since-fixed invented-flag check -- was
+                    # refused re-purchase instead, and the TU could never assemble.
+                    if hit is None and dep.name not in reaudit_failed:
+                        hit = _adopt_rejected(
+                            dep,
+                            cache,
+                            fact_seals,
+                            call_seals,
+                            wide_seals,
+                            cpp_com_mode,
+                            func_idx,
+                            deterministic_contracts.get(dep.name, ""),
+                            sealed_names.get(dep.name),
+                        )
                     if hit is not None:
                         # The bank keeps the reply as the model spelled it; see
                         # restore_requested_name (a case-only rename of the C name).
@@ -3978,6 +3996,15 @@ def cmd_translate(args):
                             stage="submit",
                             error=r.error,
                             **_result_fields(r, elapsed_ms),
+                        )
+                        # A failed call is BILLED (comctl32's four truncated window procs
+                        # cost $0.08 that the counter and the cap never saw).
+                        running_cost += cost_usd(
+                            model,
+                            r.input_tokens,
+                            r.output_tokens,
+                            r.cache_read_tokens,
+                            cache_write_tokens=r.cache_write_tokens,
                         )
                         print(f"  [{fi}] {dp.name} FAIL: {r.error}", file=sys.stderr)
                         parallel_errors.append(f"{dp.name}: {r.error}")
@@ -4254,6 +4281,13 @@ def cmd_translate(args):
                 )
             else:
                 sequential_errors.append(f"{dep.name}: API failed: {result.error}")
+                running_cost += cost_usd(  # billed even though it failed
+                    model,
+                    result.input_tokens,
+                    result.output_tokens,
+                    result.cache_read_tokens,
+                    cache_write_tokens=result.cache_write_tokens,
+                )
                 _record_outcome(
                     dep,
                     "api_error",
@@ -4448,6 +4482,13 @@ def cmd_translate(args):
                     f"OK ({pre_res.input_tokens} in / {pre_res.output_tokens} out)", file=sys.stderr
                 )
             else:
+                running_cost += cost_usd(  # billed even though it failed
+                    model,
+                    pre_res.input_tokens,
+                    pre_res.output_tokens,
+                    pre_res.cache_read_tokens,
+                    cache_write_tokens=pre_res.cache_write_tokens,
+                )
                 _record_preamble(
                     preamble_src,
                     "api_error",

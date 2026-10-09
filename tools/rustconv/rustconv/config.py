@@ -568,7 +568,10 @@ def get_backend() -> str:
 # Claude models
 CLAUDE_MODEL_SONNET = "claude-sonnet-4-5-20250929"
 CLAUDE_MODEL_HAIKU = "claude-haiku-4-5-20251001"
-CLAUDE_MAX_TOKENS = 32768
+# Output cap per call. Sealed bodies are token-DENSE (`__RUSTCONV_FACT_0172__` is many tokens
+# for 22 characters): comctl32's BUTTON_WindowProc filled 32768 tokens with 16K characters and
+# was truncated on every sample. RUSTCONV_CLAUDE_MAX_TOKENS raises it for such a run.
+CLAUDE_MAX_TOKENS = int(os.environ.get("RUSTCONV_CLAUDE_MAX_TOKENS", "32768"))
 
 # Gemini
 GEMINI_CMD = "gemini"
