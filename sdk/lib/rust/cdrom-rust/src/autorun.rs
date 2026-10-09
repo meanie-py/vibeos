@@ -782,7 +782,9 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         status = WdfIoTargetFormatRequestForInternalIoctlOthers(
             (*DeviceExtension).IoTarget,
             (*info).MediaChangeRequest,
-            0x4D014, // IOCTL_SCSI_EXECUTE_IN
+            // IOCTL_SCSI_EXECUTE_IN is 0x1B0011; 0x4D014 (the comment's own claim) is no
+            // SCSI ioctl at all, so the media-change request was formatted for the wrong code.
+            0x1b0011, // IOCTL_SCSI_EXECUTE_IN
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),

@@ -2428,7 +2428,7 @@ pub unsafe extern "system" fn co_IntProcessMouseMessage(
                     MA_NOACTIVATE => {}
                     MA_ACTIVATEANDEAT => {
                         eatMsg = TRUE as BOOL;
-                        if !co_IntMouseActivateWindow(pwndTop) != 0 {
+                        if co_IntMouseActivateWindow(pwndTop) == 0 {
                             eatMsg = TRUE as BOOL;
                         }
                     }

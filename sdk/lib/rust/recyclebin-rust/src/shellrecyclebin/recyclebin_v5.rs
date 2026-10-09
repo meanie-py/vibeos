@@ -350,8 +350,9 @@ pub unsafe extern "system" fn RecycleBin5_DeleteFile(
             / core::mem::size_of::<DELETED_FILE_RECORD>() as u64) as DWORD
             - 1;
         pDeletedFile =
-            ((pHeader as *mut u8).add(1 as usize) as *mut DELETED_FILE_RECORD)
-                .add(dwEntries as usize);
+            // C: ((PDELETED_FILE_RECORD)(pHeader + 1)) + dwEntries -- the records follow the
+            // whole INFO2_HEADER, as DeleteFile's walk (below, size_of) already has it.
+            (pHeader.add(1) as *mut DELETED_FILE_RECORD).add(dwEntries as usize);
 
         // Get file size
         {
@@ -379,9 +380,8 @@ pub unsafe extern "system" fn RecycleBin5_DeleteFile(
         if dwEntries == 0 {
             (*pDeletedFile).dwRecordUniqueId = 0;
         } else {
-            let pLastDeleted = ((pHeader as *mut u8).add(1 as usize)
-                as *mut DELETED_FILE_RECORD)
-                .add(dwEntries as usize - 1);
+            let pLastDeleted =
+                (pHeader.add(1) as *mut DELETED_FILE_RECORD).add(dwEntries as usize - 1);
             (*pDeletedFile).dwRecordUniqueId = (*pLastDeleted).dwRecordUniqueId + 1;
         }
 

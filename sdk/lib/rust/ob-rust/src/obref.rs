@@ -131,7 +131,7 @@ unsafe fn ObpDeferObjectDeletion(Header: POBJECT_HEADER) {
     if old_entry.is_null() {
         ExQueueWorkItem(
             core::ptr::addr_of_mut!(ObpReaperWorkItem),
-            1, // CriticalWorkQueue
+            ntkrnl_sys::ddk::_WORK_QUEUE_TYPE_CriticalWorkQueue as _, // CriticalWorkQueue
         );
     }
 }

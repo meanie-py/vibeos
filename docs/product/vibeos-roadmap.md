@@ -594,6 +594,38 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
+  (IN PROGRESS 2026-10-08). New gate: `bootcdregtest.iso` installs onto a blank disk, then
+  the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
+  step of setup broken, all fixed: the setup loader's `RtlStringCbPrintfW` stub (every boot
+  driver registered as `"%S\%S"`, then a `len - 4` panic); txtsetup.sif listing pruned
+  drivers (sacdrv/isapnp/floppy, a "Cannot load boot driver" message box); usetup's cabinet
+  header stride, CFFILE walk and over-dereferenced language list (smss.exe AV, 0x71); a
+  bitwise `!Success` that quit every install; fastfat's `FlagOn` read as a byte (no volume
+  lock, so no chkdsk); Mm extending files with info class 2 instead of 20 (all 964 copied files
+  lost); disk.sys's persistent-SRB flag cast to `u16` (0xC2 on the first flush); `CmLoadKey`'s
+  check flag 1 for 2 (every hive REGISTRY_CORRUPT); cmlib's permuted KEY_HIVE_EXIT/ENTRY (0x1E
+  on hive unload); a special APC dereferencing its NULL NormalContext (0x1E at reboot); and the
+  cargo-built smss/csrss/winlogon missing from reactos.cab (an installed system would have
+  none); txtsetup.sif's display rows still naming the pruned VGA miniports (setup stopped at
+  "failed to update display registry settings" behind an ENTER prompt; usetup now prints every
+  popup to the debug port and the test fails on it); and po's volume flush taking
+  `CONTAINING_RECORD` at offset 0 for the extension's last field (0x1E at setup's reboot);
+  `IoShutdownSystem` moving its initialized KEVENT (0x109 at the reboot); `usbxhci`/`fltmgr`
+  never copied to the disk (a "Cannot load boot driver" box on the first installed boot);
+  i386/amd64 `MmDeleteVirtualMapping` reading the dirty bit from the PTE it had just zeroed
+  (every file written through a mapping -- all 984 cab-extracted files -- was zero-filled);
+  po treating every reboot as a power-off (POWER_ACTION 5/6 swapped); and ntkrnl-sys's
+  `IS_DIRTY_SSE` testing a share-count bit, so `MiShutdownSystem` looped forever.
+  Text-mode setup runs to "installation succeeded", and the installed disk boots on its own
+  to winlogon, GUI setup and Explorer (run 32). Each class has a `vibeos-cli check` scanner now (see the field manual). Trying the
+  install with 2 GB also found the amd64 BIOS loader triple-faulting with more than ~1 GB of
+  RAM (its page lookup table placed past the 1 GiB it maps; `bios-boot.md`), fixed.
+  **Still owed:** setup's own reboot completing on the `IS_DIRTY_SSE` fix (unverified at
+  landing), then GUI setup's reboot and the second installed boot -- the test waits for the
+  desktop after the SECOND `[SMSS] _main` since winlogon starts Explorer beside GUI setup;
+  i386 and UEFI installs.
+
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
   lsass RmCreateLogonSession ran the delete handler. modrun's logon suite `accepts` case now

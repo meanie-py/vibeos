@@ -2,7 +2,7 @@ use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CmpFreeSecurityDescriptor, CmpFreeValue, CmpMarkIndexDirty, CmpMarkValueDataDirty, CmpRemoveSubKey, HCELL_INDEX, PCELL_DATA, PCM_KEY_NODE, PCM_KEY_SECURITY, PHHIVE, HSTORAGE_TYPE_Stable as Stable, HSTORAGE_TYPE_Volatile as Volatile};
 
 // Hv* with correct per-fn ABI + KEY_HIVE_EXIT, from the shared glue.
-use crate::glue::{HvFreeCell, HvGetCell, HvMarkCellDirty, HvReleaseCell, KEY_HIVE_EXIT};
+use crate::glue::{HvFreeCell, HvGetCell, HvMarkCellDirty, HvReleaseCell, KEY_HIVE_ENTRY, KEY_HIVE_EXIT};
 
 // ---- file-scope preamble (translated) ----
 // No file-scope declarations to translate.
@@ -29,7 +29,10 @@ pub unsafe extern "system" fn CmpMarkKeyDirty(
     if CheckNoSubkeys != 0 {
     }
 
-    if ((*CellData).Flags & 0x0004) != 0 {
+    // The flag literals here were PERMUTED (0x4 for KEY_HIVE_EXIT, 0x2 for KEY_HIVE_ENTRY, and
+    // 0x1 for KEY_HIVE_EXIT in CmpFreeKeyBody): an exit node in the master hive was walked
+    // as an ordinary key, reached NIL cells, and unloading a hive bugchecked 0x1E.
+    if ((*CellData).Flags & KEY_HIVE_EXIT) != 0 {
         HvReleaseCell(Hive, Cell);
         return 1u8;
     }
@@ -71,7 +74,7 @@ pub unsafe extern "system" fn CmpMarkKeyDirty(
         }
     }
 
-    if ((*CellData).Flags & 0x0002) != 0 {
+    if ((*CellData).Flags & KEY_HIVE_ENTRY) != 0 {
         return 1u8;
     }
 
@@ -93,7 +96,7 @@ pub unsafe extern "system" fn CmpFreeKeyBody(
 
     CellData = HvGetCell(Hive, Cell) as PCM_KEY_NODE;
 
-    if ((*CellData).Flags & 0x0001) == 0 {
+    if ((*CellData).Flags & KEY_HIVE_EXIT) == 0 {
         if (*CellData).Security != 0xFFFFFFFF {
             HvFreeCell(Hive, (*CellData).Security);
         }

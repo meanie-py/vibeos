@@ -1110,6 +1110,131 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A `#[no_mangle]` printf whose parameters end at the format: it cannot read its
+    # arguments, so it prints the format verbatim or nothing. freeldr's RtlStringCbPrintfW
+    # registered every bootcd driver as "%S\\%S" and panicked the setup loader; classpnp's
+    # pair left DEVICEMAP's key path empty. Baseline: none.
+    sfp = repo / "tools" / "scan_formatless_printf.py"
+    specs.append(
+        (
+            "scan_formatless_printf",
+            [py, str(sfp), "--lint"] if sfp.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # `(p as *mut u8).add(1)` for the C's `(PUCHAR)(p + 1)`: one byte instead of one
+    # struct. usetup's cabinet reader read its folder table from inside the header (the
+    # install smoke's first file copy faulted), and setuplib/recyclebin had it too.
+    # Baseline: the four sites where `p` really is a byte pointer, each read against its C.
+    sbs = repo / "tools" / "scan_byte_step_one.py"
+    specs.append(
+        (
+            "scan_byte_step_one",
+            [py, str(sbs), "--lint"] if sbs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # `(*(x as *mut PFOO).read()).F` for the C's `((PFOO)x)->F`: the cast form of
+    # scan_ptr_typedef_indirection. usetup's unattended language lookup used L"0000" as a
+    # pointer and the bootcd's smss.exe died (0x71). Gated at zero.
+    spc = repo / "tools" / "scan_ptr_typedef_cast_read.py"
+    specs.append(
+        (
+            "scan_ptr_typedef_cast_read",
+            [py, str(spc), "--lint"] if spc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A bare integer where a FILE_INFORMATION_CLASS belongs. Mm extended files with class 2
+    # (FileFullDirectoryInformation) instead of FileEndOfFileInformation (20), so setup's
+    # cabinet extraction lost 964 files; apphelp passed 0. Gated at zero.
+    sic = repo / "tools" / "scan_info_class_literals.py"
+    specs.append(
+        (
+            "scan_info_class_literals",
+            [py, str(sic), "--lint"] if sic.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A named constant cast to a type too narrow for it: rustc's overflow lint covers
+    # literals only. disk.sys set SRB_CLASS_FLAGS_PERSISTANT `as USHORT` (= 0), classpnp freed
+    # an SRB inside the device extension, 0xC2 on the first flush. Gated at zero.
+    scn = repo / "tools" / "scan_const_narrowing_cast.py"
+    specs.append(
+        (
+            "scan_const_narrowing_cast",
+            [py, str(scn), "--lint"] if scn.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A statement a bulk edit folded into a trailing comment: `{ // DPRINT removed return X; }`.
+    # cmlib's HvLoadHive lost six of them and fell through on a file that was not a hive.
+    # Gated at zero.
+    scs = repo / "tools" / "scan_comment_swallowed_code.py"
+    specs.append(
+        (
+            "scan_comment_swallowed_code",
+            [py, str(scs), "--lint"] if scs.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A re-ported mm.h section-segment-entry helper (`IS_DIRTY_SSE` & co.) evaluated against
+    # the macro on sample entries. ntkrnl-sys's IS_DIRTY_SSE tested a share-count bit, so
+    # MiShutdownSystem looped forever and the install never rebooted. Gated at zero.
+    sse = repo / "tools" / "scan_sse_helpers.py"
+    specs.append(
+        (
+            "scan_sse_helpers",
+            [py, str(sse), "--lint"] if sse.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A location read right after InterlockedExchange*(P, 0) cleared it, instead of the
+    # returned old value. i386/amd64 MmDeleteVirtualMapping lost every PTE dirty bit that way:
+    # mapped-file writes never reached the disk. Gated at zero.
+    src = repo / "tools" / "scan_read_after_clear.py"
+    specs.append(
+        (
+            "scan_read_after_clear",
+            [py, str(src), "--lint"] if src.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A kernel object initialized through MaybeUninit::as_mut_ptr() and then moved out with
+    # assume_init(): its self-pointing list heads still name the old slot. IoShutdownSystem's
+    # event did it (0x109 at the end of every install). Gated at zero.
+    sim = repo / "tools" / "scan_init_then_move.py"
+    specs.append(
+        (
+            "scan_init_then_move",
+            [py, str(sim), "--lint"] if sim.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # CONTAINING_RECORD with the field passed as a null pointer: offset 0, right only for a
+    # first field. po's volume flush took the LAST field that way (0x1E at setup's reboot).
+    # Gated at zero.
+    scr = repo / "tools" / "scan_containing_record_null.py"
+    specs.append(
+        (
+            "scan_containing_record_null",
+            [py, str(scr), "--lint"] if scr.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
+    # A call passing a number where the C kept in the same file passes a named constant.
+    # CmLoadKey passed check flag 1 for CM_CHECK_REGISTRY_PURGE_VOLATILES (2): every NtLoadKey
+    # of a hive file failed REGISTRY_CORRUPT. Its first sweep also found win32k's GDI reuse
+    # counter, cdrom's media-change IOCTL, desk/netapi32/userenv arguments. Baseline: the
+    # pool-tag pairs (allocated and freed with the same tag) and the UNRESOLVED names.
+    scl = repo / "tools" / "scan_call_literal_vs_c.py"
+    specs.append(
+        (
+            "scan_call_literal_vs_c",
+            [py, str(scl), "--lint"] if scl.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A struct the C declares under pshpack that its Rust port lays out unpacked. diskpart read
     # the MBR magic from past the sector (no disk looked partitioned); setuplib's boot sectors
     # shifted every BPB field. Baseline: freeldr's PNP_DOCK_INFO and ACPI_BIOS_DATA, whose

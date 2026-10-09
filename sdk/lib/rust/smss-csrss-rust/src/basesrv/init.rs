@@ -1001,7 +1001,9 @@ pub unsafe extern "system" fn BaseInitializeStaticServerData(LoadedServerDll: PC
     );
     (*BaseStaticServerData).LUIDDeviceMapsEnabled = LuidEnabled as BOOLEAN;
 
-    if !(*BaseStaticServerData).LUIDDeviceMapsEnabled != 0
+    // C: !LUIDDeviceMapsEnabled. Bitwise, it was always true and the || below never
+    // initialized BaseSrvDDDBSMCritSec when LUID device maps ARE enabled.
+    if (*BaseStaticServerData).LUIDDeviceMapsEnabled == 0
         || RtlInitializeCriticalSectionAndSpinCount(
             core::ptr::addr_of_mut!(BaseSrvDDDBSMCritSec),
             0x80000000,

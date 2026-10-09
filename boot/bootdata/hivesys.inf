@@ -1864,16 +1864,17 @@ HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","ImagePath",0x00020000,"system32
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\usbhub","Type",0x00010001,0x00000001
 
-; GOP/linear-framebuffer video device driver (UEFI boots). Boot start so that
-; \Device\Video0 exists before win32k's InitVideo runs. On a legacy-BIOS boot
-; there is no GOP framebuffer in the ARC tree, so the driver bails in DriverEntry
-; and the VGA miniport drives the display instead. ErrorControl=0 (ignore) keeps
-; that bail non-fatal.
+; Linear-framebuffer video device driver: the UEFI GOP framebuffer, or the VBE one the
+; BIOS loader hands over in the same form. Boot start so that \Device\Video0 exists
+; before win32k's InitVideo runs (an installed system gets Start=1 from setup, still
+; ahead of win32k). ErrorControl=0 (ignore) keeps a missing framebuffer non-fatal.
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ErrorControl",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Group",0x00000000,"Boot Bus Extender"
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","ImagePath",0x00020000,"system32\drivers\arm64vid.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid","Type",0x00010001,0x00000001
+; Setup writes the installed display mode here (setuplib ProcessDisplayRegistry).
+HKLM,"SYSTEM\CurrentControlSet\Services\arm64vid\Device0",,0x00000012
 
 ; EHCI controller driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbehci","ErrorControl",0x00010001,0x00000001

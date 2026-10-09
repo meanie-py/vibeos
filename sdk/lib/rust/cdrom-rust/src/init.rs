@@ -52,7 +52,6 @@ extern "system" {
     fn DeviceReleaseQueueCompletion(request: WDFREQUEST, target: WDFIOTARGET, params: PWDF_REQUEST_COMPLETION_PARAMS, context: WDFCONTEXT);
 }
 extern "C" {
-    fn RtlStringCchPrintfW( pszDest: NTSTRSAFE_PWSTR, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn DeviceInitializeZPODD(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
     fn DeviceEnableMainTimer(deviceExtension: *mut CDROM_DEVICE_EXTENSION) -> u32;
     fn MediaReadCapacity(Device: WDFDEVICE) -> NTSTATUS;

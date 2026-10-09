@@ -66,7 +66,6 @@ extern "C" {
     static CDROM_DRIVER_EXTENSION_TYPE_INFO: WDF_OBJECT_CONTEXT_TYPE_INFO;
 }
 extern "C" {
-    fn RtlStringCchPrintfW(buf: NTSTRSAFE_PWSTR, cch: usize, fmt: *const u16, ...) -> NTSTATUS;
     fn DeviceClaimRelease(ext: *mut CDROM_DEVICE_EXTENSION, release: u8) -> NTSTATUS;
     fn DeviceSendRequestSynchronously(device: WDFDEVICE, request: WDFREQUEST, sendFlags: BOOLEAN) -> NTSTATUS;
     fn CdromRequestCompletion(deviceExtension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, information: ULONG_PTR);
@@ -738,7 +737,7 @@ pub unsafe extern "system" fn DriverEvtDeviceAdd(
         // 7. Device creation
         {
             wideDeviceName = ExAllocatePoolWithTag(
-                512, // NonPagedPoolNx placeholder
+                ntkrnl_sys::ddk::_POOL_TYPE_NonPagedPool as _, // cdrom.h: #define NonPagedPoolNx NonPagedPool (was 512)
                 64 * core::mem::size_of::<u16>(),
                 CDROM_TAG_STRINGS,
             ) as *mut u16;

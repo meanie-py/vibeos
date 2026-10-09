@@ -612,6 +612,15 @@ x86 only — arm64 has no livecd for the swap (skips cleanly); ntoskrnl skips on
 amd64 (i386-only PoC). Slow (boots QEMU per module) — run it before trusting a
 cargo-drive handoff, not in the hot loop.
 
+### `install-smoke --arch amd64-bios`
+**Setup, end to end.** Builds `bootcdregtest.iso`, installs it unattended onto a blank 4 GB
+disk (usetup partitions, formats, copies, writes the hives and FreeLdr, reboots), then boots
+that disk with no CD through the GUI second stage to Explorer. Nothing else runs the installer:
+every other boot starts from the livecd. Drives `tests/qemu/test_install.py`; one verdict +
+`summary.json`. A missing txtsetup.sif boot driver fails before booting; a bugcheck in either
+stage fails within seconds, with the loader's debugcon tail and the serial attached. About an
+hour under TCG, so it is its own verb and not a gate stage.
+
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
 shell tools (`start` → `start.sh`, `inspect`/`bt`/`triage-bugcheck` →
@@ -1004,6 +1013,7 @@ RUN=$(./vibeos-cli debug start amd64 --gdb | tail -1)
 | Watch a specific boot marker fast | `vibeos-cli boot` |
 | Lint gate (NEW-vs-baseline) + binary checks | `vibeos-cli check [--strict]` |
 | Prove a cargo-driven module boots (ntdll DLLs / ntoskrnl) | `vibeos-cli cargo-swap` |
+| Prove the bootcd still installs and the installed disk boots | `vibeos-cli install-smoke --arch amd64-bios` |
 | Interactive/ad-hoc single GDB op on a live run-id | `qemu/inspect.sh` (or `vibeos-cli debug inspect`) |
 | Raw interactive launcher (serial/GUI/`--debug`) | `qemu/run.sh` |
 | What's live across worktrees | `vibeos-cli ps` (== `qemu/ps`) |

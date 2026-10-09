@@ -911,7 +911,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
             stringIndex = (errorLogEntry as ULONG_PTR + core::mem::size_of::<IO_ERROR_LOG_PACKET>()) as PWCHAR;
             stringSize = (logEntrySize - core::mem::size_of::<IO_ERROR_LOG_PACKET>() as ULONG) as LONG;
 
-            status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%d").as_ptr() as PWSTR, (*fdoExtension).DeviceNumber);
+            status = strsafe_rust::RtlStringCbPrintfW!(stringIndex, stringSize as usize, w!("L%d").as_ptr() as PWSTR, (*fdoExtension).DeviceNumber);
 
             if NT_SUCCESS(status) {
                 (*errorLogEntry).NumberOfStrings += 1;
@@ -922,7 +922,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
                     stringIndex = stringIndex.offset((wcslen(stringIndex) + 1) as isize);
                     stringSize -= ((wcslen(stringIndex.offset(-((wcslen(stringIndex.offset(-1)) + 1) as isize))) + 1) * core::mem::size_of::<WCHAR>()) as LONG;
 
-                    status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, resources.UsedMappingResources);
+                    status = strsafe_rust::RtlStringCbPrintfW!(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, resources.UsedMappingResources);
 
                     if NT_SUCCESS(status) {
                         (*errorLogEntry).NumberOfStrings += 1;
@@ -930,7 +930,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
                         stringIndex = stringIndex.offset((wcslen(stringIndex) + 1) as isize);
                         stringSize -= ((wcslen(stringIndex.offset(-((wcslen(stringIndex.offset(-1)) + 1) as isize))) + 1) * core::mem::size_of::<WCHAR>()) as LONG;
 
-                        status = RtlStringCbPrintfW(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, resources.AvailableMappingResources);
+                        status = strsafe_rust::RtlStringCbPrintfW!(stringIndex, stringSize as usize, w!("L%I64u").as_ptr() as PWSTR, resources.AvailableMappingResources);
 
                         if NT_SUCCESS(status) {
                             (*errorLogEntry).NumberOfStrings += 1;

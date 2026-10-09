@@ -327,6 +327,11 @@ pub unsafe extern "C" fn PopupError(Text: PCCH, Status: PCCH, Ir: PINPUT_RECORD,
     let mut Width: SHORT;
     let mut Height: SHORT;
 
+    // Not in the C: every popup also goes to the debug port. Its text otherwise exists only
+    // on the screen, and an unattended setup that hits one (POPUP_WAIT_ENTER) idles forever
+    // with nothing on serial -- the install smoke treats this line as fatal.
+    DPRINT1!(b"[USETUP] error popup: %s\n\0".as_ptr() as *const i8, Text);
+
     MaxLength = 0;
     Lines = 0;
     pnext = Text;
@@ -657,7 +662,7 @@ unsafe extern "C" fn SetupStartPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
 
         ListEntry = GetFirstListEntry(USetupData.LanguageList);
         while !ListEntry.is_null() {
-            LocaleId = (*(GetListEntryData(ListEntry) as *mut PGENENTRY).read()).Id;
+            LocaleId = (*(GetListEntryData(ListEntry) as PGENENTRY)).Id;
             if ((_wcsicmp((USetupData.LocaleID).as_ptr(), LocaleId)) == 0) {
                 DPRINT!(b"found %S in LanguageList\n\0".as_ptr() as *const i8, LocaleId);
                 SetCurrentListEntry(USetupData.LanguageList, ListEntry);
@@ -668,7 +673,9 @@ unsafe extern "C" fn SetupStartPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
 
         ListEntry = GetFirstListEntry(USetupData.LayoutList);
         while !ListEntry.is_null() {
-            LocaleId = (*(GetListEntryData(ListEntry) as *mut PGENENTRY).read()).Id;
+            // C: ((PGENENTRY)GetListEntryData(ListEntry))->Id. A cast to *mut PGENENTRY
+            // plus .read() went one level deeper and used the Id TEXT as a pointer.
+            LocaleId = (*(GetListEntryData(ListEntry) as PGENENTRY)).Id;
             if ((_wcsicmp((USetupData.LocaleID).as_ptr(), LocaleId)) == 0) {
                 DPRINT!(b"found %S in LayoutList\n\0".as_ptr() as *const i8, LocaleId);
                 SetCurrentListEntry(USetupData.LayoutList, ListEntry);
@@ -2676,7 +2683,8 @@ unsafe extern "C" fn PrepareCopyPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
     MUIDisplayPage(PREPARE_COPY_PAGE);
 
     Success = PrepareFileCopy(&mut USetupData, None);
-    if !Success != 0 {
+    // C: if (!Success). `!` on a u8 is BITWISE: !1 == 0xFE, so success quit setup.
+    if Success == 0 {
         return QUIT_PAGE;
     }
 
@@ -3377,6 +3385,8 @@ unsafe extern "C" fn ProgressCountdown(
 
 unsafe extern "C" fn QuitPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
     MUIDisplayPage(QUIT_PAGE);
+    // Not in the C: tells the install smoke setup gave up rather than finished.
+    DPRINT1!(b"[USETUP] setup quit\n\0".as_ptr() as *const i8);
 
     /* Destroy the NTOS installations list */
     if NtOsInstallsList != core::ptr::null_mut() {
@@ -3403,6 +3413,8 @@ unsafe extern "C" fn QuitPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
 
 unsafe extern "C" fn SuccessPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
     MUIDisplayPage(SUCCESS_PAGE);
+    // Not in the C: stage 1's end marker for the install smoke.
+    DPRINT1!(b"[USETUP] installation succeeded\n\0".as_ptr() as *const i8);
 
     if IsUnattendedSetup != 0 {
         return FLUSH_PAGE;
@@ -3457,6 +3469,10 @@ pub unsafe extern "C" fn RunUSetup() -> i32 {
     Page = SetupStartPage(&mut Ir);
 
     while Page != REBOOT_PAGE && Page != RECOVERY_PAGE {
+        // Not in the C. The install smoke (tests/qemu/test_install.py) has no screen
+        // to read, so the page sequence on the debug port is how it says where an
+        // unattended setup stopped.
+        DPRINT1!(b"[USETUP] page %d\n\0".as_ptr() as *const i8, Page as i32);
         CONSOLE_ClearScreen();
         CONSOLE_Flush();
 

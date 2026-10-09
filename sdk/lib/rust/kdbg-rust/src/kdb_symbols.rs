@@ -52,7 +52,7 @@ extern "system" {
 }
 
 extern "C" {
-    fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID) -> PVOID;
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID; // ntoskrnl shim_exports
     fn InitializeObjectAttributes( p: *mut _OBJECT_ATTRIBUTES, n: PUNICODE_STRING, a: ULONG, r: HANDLE, s: PVOID, );
     static mut PsLoadedModuleSpinLock: KSPIN_LOCK;
     static mut PsLoadedModuleList: LIST_ENTRY;
@@ -93,8 +93,8 @@ unsafe fn KdbpSymSearchModuleList(
     while !current_entry.is_null() && current_entry != end_entry {
         *pLdrEntry = CONTAINING_RECORD(
             current_entry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::size_of::<ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY>(),
+            core::mem::offset_of!(ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
         ) as PLDR_DATA_TABLE_ENTRY;
 
         if (!Address.is_null()
@@ -240,7 +240,7 @@ pub unsafe extern "system" fn LoadSymbolsRoutine(Context: PVOID) {
     loop {
         let Status = KeWaitForSingleObject(
             core::ptr::addr_of_mut!(SymbolsToLoadEvent) as PVOID,
-            0u32,
+            ntkrnl_sys::ddk::_KWAIT_REASON_WrKernel as _,
             0i8,
             0u8,
             core::ptr::null_mut(),
@@ -260,10 +260,10 @@ pub unsafe extern "system" fn LoadSymbolsRoutine(Context: PVOID) {
             }
 
             let LdrEntry = CONTAINING_RECORD(
-                ListEntry as PVOID,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            ) as PLDR_DATA_TABLE_ENTRY;
+            ListEntry as PVOID,
+            core::mem::size_of::<ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY>(),
+            core::mem::offset_of!(ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY, InInitializationOrderLinks),
+        ) as PLDR_DATA_TABLE_ENTRY;
             let mut FileHandle: HANDLE = core::ptr::null_mut();
             let mut Attrib: _OBJECT_ATTRIBUTES = core::mem::zeroed();
             let mut Iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -530,10 +530,10 @@ pub unsafe extern "C" fn KdbSymInit(BootPhase: ULONG) -> BOOLEAN {
         ListEntry = PsLoadedModuleList.Flink;
         while ListEntry != core::ptr::addr_of_mut!(PsLoadedModuleList) {
             let LdrEntry = CONTAINING_RECORD(
-                ListEntry as PVOID,
-                core::ptr::null_mut(),
-                core::ptr::null_mut(),
-            ) as PLDR_DATA_TABLE_ENTRY;
+            ListEntry as PVOID,
+            core::mem::size_of::<ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY>(),
+            core::mem::offset_of!(ntkrnl_sys::ddk::_LDR_DATA_TABLE_ENTRY, InLoadOrderLinks),
+        ) as PLDR_DATA_TABLE_ENTRY;
             KdbSymProcessSymbols(LdrEntry, 1u8);
             ListEntry = (*ListEntry).Flink;
         }

@@ -86,10 +86,14 @@ def scan_line(line: str) -> bool:
     if DOUBLE_NOT_RE.search(STRING_RE.sub('""', line)):
         return True
     for m in UNARY_NOT_RE.finditer(line):
-        before = line[: m.start()].rstrip()
-        # `foo!(` / `assert!(` — a macro bang, not the not-operator.
-        if before and (before[-1].isalnum() or before[-1] == "_"):
+        # `foo!(` / `assert!(` — a macro bang, not the not-operator. Judged on the char
+        # RIGHT before the `!`: a macro's name touches its bang. Judged after rstrip,
+        # `if !Success != 0` read as the macro `if!` and was skipped -- every `if !x != 0`
+        # in the tree was invisible, usetup's PrepareCopyPage (setup always quit) among them.
+        raw_before = line[: m.start()]
+        if raw_before and (raw_before[-1].isalnum() or raw_before[-1] == "_"):
             continue
+        before = raw_before.rstrip()
         # `x & !MASK` — the legitimate unknown-flag test. `&&`/`||` are NOT that.
         if before.endswith(("&", "|", "^")) and not before.endswith(("&&", "||")):
             continue

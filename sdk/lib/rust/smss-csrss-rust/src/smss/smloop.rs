@@ -6,8 +6,8 @@ const THREAD_ALL_ACCESS: ACCESS_MASK = 0x001F03FF;
 // CONTAINING_RECORD + InitializeObjectAttributes are C macros, not
 // exports. Inline equivalents.
 #[inline(always)]
-unsafe fn CONTAINING_RECORD(address: PVOID, _type_: PVOID, field: PVOID) -> PVOID {
-    (address as *mut u8).wrapping_sub(field as usize) as PVOID
+unsafe fn CONTAINING_RECORD(address: PVOID, field_offset: usize) -> PVOID {
+    (address as *mut u8).wrapping_sub(field_offset) as PVOID
 }
 
 #[inline(always)]
@@ -179,8 +179,7 @@ unsafe extern "system" fn SmpLoadDeferedSubsystem(
     while NextEntry != &raw const SmpSubSystemsToDefer as *const _ as PLIST_ENTRY {
         RegEntry = CONTAINING_RECORD(
             NextEntry as PVOID,
-            core::ptr::null_mut(),
-            core::ptr::null_mut(),
+            core::mem::offset_of!(_SMP_REGISTRY_VALUE, Entry),
         ) as PSMP_REGISTRY_VALUE;
         if RtlEqualUnicodeString(&(*RegEntry).Name, &DeferedSubsystem, 1u8) != 0 {
             Status = SmpExecuteCommand(

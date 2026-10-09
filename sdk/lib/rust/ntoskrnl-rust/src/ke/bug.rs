@@ -1730,6 +1730,44 @@ pub unsafe extern "system" fn KeBugCheckEx(
                 }
             }
         }
+        // Every other bugcheck was raised by a direct KeBugCheckEx call, so the caller
+        // chain is on THIS stack. Without this, a 0xC2 (paged pool freed at DISPATCH_LEVEL,
+        // during setup's hive flush) printed four numbers and no caller at all.
+        #[cfg(target_arch = "x86_64")] // nolint: cfg-vs-c (bugcheck backtrace diagnostic, Rust-only)
+        if !matches!(BugCheckCode, 0x50 | 0xBE | 0x7E | 0x1E) {
+            let rsp: u64;
+            core::arch::asm!("mov {}, rsp", out(reg) rsp, options(nomem, nostack));
+            let mut printed = 0u32;
+            let mut qi = 0u64;
+            while qi < 768 && printed < 28 {
+                let sp = rsp + qi * 8;
+                if MmIsAddressValid(sp as PVOID) == 0 {
+                    break;
+                }
+                let val = *(sp as *const u64);
+                if val > 0xFFFF800000000000 {
+                    let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+                    let mut in_kernel: BOOLEAN = 0;
+                    let base = KiPcToFileHeader(val as PVOID, &mut le, 0u8, &mut in_kernel);
+                    if !base.is_null() && !le.is_null() {
+                        let mut ansi = [0i8; 64];
+                        KeBugCheckUnicodeToAnsi(
+                            &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+                            ansi.as_mut_ptr(),
+                            64,
+                        );
+                        crate::dbg_print!(
+                            b"***   callstack[+0x%03lX] = %s+0x%lX\n\0",
+                            (qi * 8) as ULONG,
+                            ansi.as_ptr(),
+                            (val as ULONG_PTR - base as ULONG_PTR) as ULONG,
+                        );
+                        printed += 1;
+                    }
+                }
+                qi += 1;
+            }
+        }
     }
     #[cfg(target_arch = "aarch64")]
     {

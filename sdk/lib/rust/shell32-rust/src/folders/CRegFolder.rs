@@ -585,7 +585,7 @@ use core::ffi::c_void;
 // own copy (CDrivesFolder.rs already does, identically).
 #[inline]
 unsafe fn SHELL32_GUIDToStringW(guid: *const CLSID, str_: LPWSTR) -> INT {
-    StringFromGUID2(guid.cast(), str_, 40)
+    StringFromGUID2(guid.cast(), str_, CHARS_IN_GUID as _)
 }
 
 // shfldr.h:189 `static inline BOOL IsIllegalFsFileName(PCWSTR Name)` -- another static inline

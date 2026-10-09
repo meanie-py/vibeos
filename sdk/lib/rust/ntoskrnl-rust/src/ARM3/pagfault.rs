@@ -1440,7 +1440,7 @@ unsafe fn MiDispatchFault(
         if !InPageBlock.is_null() {
             KeWaitForSingleObject(
                 &mut CurrentPageEvent as *mut KEVENT as *mut _,
-                0,
+                ntkrnl_sys::ddk::_KWAIT_REASON_WrPageIn as _,
                 0,
                 0,
                 core::ptr::null_mut(),

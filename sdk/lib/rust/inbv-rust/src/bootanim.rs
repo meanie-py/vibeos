@@ -56,7 +56,8 @@ extern "C" {
     static mut KeBootTime: LARGE_INTEGER;
 }
 
-const INBV_DISPLAY_STATE_OWNED: u32 = 0;
+const INBV_DISPLAY_STATE_OWNED: u32 =
+    ntkrnl_sys::ddk::_INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_OWNED as u32;
 
 const IDB_WKSTA_HEADER: ULONG = 1;
 const IDB_WKSTA_FOOTER: ULONG = 2;

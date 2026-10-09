@@ -238,7 +238,8 @@ def contradictions(decls) -> list[tuple[str, str, int]]:
 # `pub const NAME: T = VALUE;` as bindgen writes it -- the island's transcript of a C header.
 ISLAND_FILE_RE = re.compile(r"(?:^|/)(?:hal_)?bindgen_[a-z0-9_]+\.rs$")
 ISLAND_CONST_RE = re.compile(
-    r"^\s*pub const ([A-Za-z_][A-Za-z0-9_]*)\s*:\s*[^=]+=\s*(-?(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*;"
+    r"^\s*pub const ([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^=]+?)\s*="
+    r"\s*(-?(?:0[xX][0-9A-Fa-f_]+|\d[\d_]*))\s*;"
 )
 
 
@@ -252,9 +253,16 @@ def island_values() -> dict[str, set[int]]:
             m = ISLAND_CONST_RE.match(line)
             if m:
                 try:
-                    out[m.group(1)].add(int(m.group(2).replace("_", ""), 0))
+                    val = int(m.group(3).replace("_", ""), 0)
                 except ValueError:
-                    pass
+                    continue
+                out[m.group(1)].add(val)
+                # An enum member is `<EnumType>_<Member>: <EnumType>`; a hand copy is named by
+                # the bare member, as the C spells it. fastfat's `MmFlushForWrite = 2` (it is 1)
+                # was invisible until the member was indexed too.
+                enum_type = m.group(2).strip()
+                if m.group(1).startswith(enum_type + "_"):
+                    out[m.group(1)[len(enum_type) + 1 :]].add(val)
     return out
 
 

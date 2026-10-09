@@ -4207,7 +4207,7 @@ pub unsafe extern "C" fn ClasspLogSystemEventWithDeviceNumber(
     let string_size = (log_entry_size - core::mem::size_of::<IO_ERROR_LOG_PACKET>() as u32) as usize;
 
     let format: [u16; 3] = [0x0025, 0x0064, 0x0000]; // L"%d"
-    status = RtlStringCbPrintfW(
+    status = strsafe_rust::RtlStringCbPrintfW!(
         string_index,
         string_size,
         format.as_ptr(),
@@ -4489,7 +4489,7 @@ unsafe extern "system" fn ClasspLogIOEventWithContext(
                 let ioLogMessageContext = Context as PIO_RETRIED_LOG_MESSAGE_CONTEXT;
 
                 let fmt0: [u16; 8] = [0x0030, 0x0078, 0x0025, 0x0049, 0x0036, 0x0034, 0x0078, 0x0000]; // L"0x%I64x\0"
-                status = RtlStringCbPrintfW(
+                status = strsafe_rust::RtlStringCbPrintfW!(
                     stringIndex,
                     stringSize as usize,
                     fmt0.as_ptr() as PWSTR,
@@ -4505,7 +4505,7 @@ unsafe extern "system" fn ClasspLogIOEventWithContext(
 
                     if stringSize > 0 {
                         let fmt1: [u16; 3] = [0x0025, 0x0064, 0x0000]; // L"%d\0"
-                        status = RtlStringCbPrintfW(
+                        status = strsafe_rust::RtlStringCbPrintfW!(
                             stringIndex,
                             stringSize as usize,
                             fmt1.as_ptr() as PWSTR,

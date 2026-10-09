@@ -1269,7 +1269,7 @@ pub unsafe extern "system" fn FatGetDirentFromFcbOrDcb(
     );
 
     // Assert that we are not attempting this on the root directory.
-    NT_ASSERT((NodeType((FcbOrDcb).cast()) != (FAT_NTC_ROOT_DCB as u8) as u32) as i32);
+    NT_ASSERT((NodeType((FcbOrDcb).cast()) != FAT_NTC_ROOT_DCB as u32) as i32);
 
     // We know the offset of the dirent within the directory file,
     // so we just read it (with pinning).

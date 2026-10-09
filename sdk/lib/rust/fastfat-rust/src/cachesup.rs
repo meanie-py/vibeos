@@ -42,7 +42,7 @@ extern "system" {
 extern "system" {
     static FatDiskAccountingEnabled: BOOLEAN;
     fn CcSetAdditionalCacheAttributesEx(FileObject: PFILE_OBJECT, Flags: u32);
-    fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
+    fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> i64; // LBO
     fn FlagOn(flags: u32, mask: u32) -> i32;
     fn DbgDoit(pin: u32);
     fn PagedCode();
@@ -158,8 +158,8 @@ pub unsafe extern "system" fn FatReadVolumeFile(
         PAGED_CODE!();
 
         let condition = (StartingVbo == 0) ||
-            (StartingVbo.wrapping_add(ByteCount) <=
-                (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const _) + PAGE_SIZE as u32));
+            (StartingVbo.wrapping_add(ByteCount) as i64 <=
+                (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const _) + PAGE_SIZE as i64));
         NT_ASSERT(condition as i32);
 
         DebugTrace(1, Dbg as u32, b"FatReadVolumeFile\n\0".as_ptr() as *const i8, (0u32) as usize);

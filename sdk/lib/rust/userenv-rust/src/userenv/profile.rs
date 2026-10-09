@@ -1686,7 +1686,7 @@ pub unsafe extern "system" fn GetProfilesDirectoryA(
     bResult = GetProfilesDirectoryW(lpBuffer, lpcchSize);
     if bResult != 0 && !lpProfileDir.is_null() {
         bResult = WideCharToMultiByte(
-            1u32,
+            CP_ACP,
             0u32,
             lpBuffer,
             -1i32,
@@ -1897,7 +1897,7 @@ pub unsafe extern "system" fn GetUserProfileDirectoryA(
     bResult = GetUserProfileDirectoryW(hToken, lpBuffer, lpcchSize) as BOOL;
     if bResult != 0 && !lpProfileDir.is_null() {
         bResult = WideCharToMultiByte(
-            20 as u32,
+            CP_ACP,
             0 as u32,
             lpBuffer as LPCWSTR,
             -1 as i32,
@@ -2037,7 +2037,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
 
     if !(*lpProfileInfo).lpUserName.is_null() {
         len = MultiByteToWideChar(
-            1u32,
+            CP_ACP,
             0,
             (*lpProfileInfo).lpUserName,
             -1,
@@ -2050,7 +2050,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
             break 'cleanup;
         } else {
             MultiByteToWideChar(
-                1u32,
+                CP_ACP,
                 0,
                 (*lpProfileInfo).lpUserName,
                 -1,
@@ -2062,7 +2062,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
 
     if !(*lpProfileInfo).lpProfilePath.is_null() {
         len = MultiByteToWideChar(
-            1u32,
+            CP_ACP,
             0,
             (*lpProfileInfo).lpProfilePath,
             -1,
@@ -2075,7 +2075,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
             break 'cleanup;
         } else {
             MultiByteToWideChar(
-                1u32,
+                CP_ACP,
                 0,
                 (*lpProfileInfo).lpProfilePath,
                 -1,
@@ -2087,7 +2087,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
 
     if !(*lpProfileInfo).lpDefaultPath.is_null() {
         len = MultiByteToWideChar(
-            1u32,
+            CP_ACP,
             0,
             (*lpProfileInfo).lpDefaultPath,
             -1,
@@ -2100,7 +2100,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
             break 'cleanup;
         } else {
             MultiByteToWideChar(
-                1u32,
+                CP_ACP,
                 0,
                 (*lpProfileInfo).lpDefaultPath,
                 -1,
@@ -2112,7 +2112,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
 
     if !(*lpProfileInfo).lpServerName.is_null() {
         len = MultiByteToWideChar(
-            1u32,
+            CP_ACP,
             0,
             (*lpProfileInfo).lpServerName,
             -1,
@@ -2125,7 +2125,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
             break 'cleanup;
         } else {
             MultiByteToWideChar(
-                1u32,
+                CP_ACP,
                 0,
                 (*lpProfileInfo).lpServerName,
                 -1,
@@ -2137,7 +2137,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
 
     if (ProfileInfoW.dwFlags as u32 & 4u32) != 0 && !(*lpProfileInfo).lpPolicyPath.is_null() {
         len = MultiByteToWideChar(
-            1u32,
+            CP_ACP,
             0,
             (*lpProfileInfo).lpPolicyPath,
             -1,
@@ -2150,7 +2150,7 @@ pub unsafe extern "system" fn LoadUserProfileA(
             break 'cleanup;
         } else {
             MultiByteToWideChar(
-                1u32,
+                CP_ACP,
                 0,
                 (*lpProfileInfo).lpPolicyPath,
                 -1,

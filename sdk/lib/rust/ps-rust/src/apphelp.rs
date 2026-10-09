@@ -162,7 +162,8 @@ unsafe fn ApphelpCacheQueryInfo(ImageHandle: HANDLE, Entry: PSHIM_CACHE_ENTRY) -
         core::ptr::addr_of_mut!(io_status),
         core::ptr::addr_of_mut!(file_basic) as PVOID,
         core::mem::size_of::<FILE_BASIC_INFORMATION>() as ULONG,
-        0,
+        // FileBasicInformation (4); a literal 0 is no class at all and the query failed.
+        ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileBasicInformation as _,
     );
     if status < 0 {
         return status;
@@ -173,7 +174,7 @@ unsafe fn ApphelpCacheQueryInfo(ImageHandle: HANDLE, Entry: PSHIM_CACHE_ENTRY) -
         core::ptr::addr_of_mut!(io_status),
         core::ptr::addr_of_mut!(file_standard) as PVOID,
         core::mem::size_of::<FILE_STANDARD_INFORMATION>() as ULONG,
-        5,
+        ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileStandardInformation as _,
     );
     if status >= 0 {
         (*Entry).Persistent.DateTime = file_basic.LastWriteTime;

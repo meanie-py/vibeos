@@ -1938,6 +1938,16 @@ pub unsafe extern "system" fn MmCheckDirtySegment(
 
             if status >= 0 {
                 status = MiWritePage(Segment, (*Offset).QuadPart, page);
+            } else {
+                static REPORTED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if REPORTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 8 {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        c"[MM] page-out of %wZ at %I64x skipped: FsRtlAcquireFileForModWriteEx %08lx\n".as_ptr(),
+                        core::ptr::addr_of!((*(*Segment).FileObject).FileName),
+                        (*Offset).QuadPart,
+                        status,
+                    );
+                }
             }
 
             if PageOut != 0 {
@@ -2731,9 +2741,12 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
         }
 
         if MaximumSize.QuadPart > FileSize.QuadPart {
+            // FileEndOfFileInformation (20). A literal 2 (FileFullDirectoryInformation) made
+            // every extend fail, so a section larger than its file was NOT_EXTENDED: setup's
+            // cabinet extraction lost all 964 files.
             Status = IoSetInformation(
                 FileObject,
-                2u32,
+                ntkrnl_sys::ddk::_FILE_INFORMATION_CLASS_FileEndOfFileInformation as u32,
                 core::mem::size_of::<LARGE_INTEGER>() as u32,
                 core::ptr::addr_of_mut!(MaximumSize) as PVOID,
             );

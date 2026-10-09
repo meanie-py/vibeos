@@ -488,6 +488,14 @@ pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
     // Both negated guards are BITWISE not -> constant true -> both guards dead.
     (flags & 0x1) != 0 && !(flags & 0x10) != 0 && !(special & 0x80) != 0
 }
+pub unsafe fn prepare_copy(Success: u8) -> u32 {
+    // C: if (!Success) -- usetup quit every install. The `if` before the `!` once read as
+    // a macro name, so the bare `!x != 0` form was invisible.
+    if !Success != 0 {
+        return 29;
+    }
+    24
+}
 """
 
 # The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
@@ -2078,6 +2086,236 @@ unsafe fn register(ctx: *mut Ctx) {
 }
 """
 
+
+_FORMATLESS_PRINTF_BAD = """\
+#[no_mangle]
+pub unsafe extern "C" fn RtlStringCbPrintfW(d: *mut u16, cb: usize, fmt: *const u16) -> i32 {
+    0
+}
+"""
+
+# The fixed shapes: fixed slots replayed as a va_list, and a v-form taking one.
+_FORMATLESS_PRINTF_GOOD = """\
+#[no_mangle]
+pub unsafe extern "C" fn KdIoPrintf(Format: *const i8, a0: usize, a1: usize) {}
+#[no_mangle]
+pub unsafe extern "C" fn _vsnwprintf(b: *mut u16, n: usize, fmt: *const u16, ap: *mut u8) {}
+"""
+
+_BYTE_STEP_ONE_BAD = """\
+pub unsafe fn folders(h: *mut CFHEADER) -> *mut u8 {
+    // C: (PUCHAR)(PCABHeader + 1) -- past the whole header, not one byte.
+    (h as *mut u8).add(1)
+}
+"""
+
+_BYTE_STEP_ONE_GOOD = """\
+pub unsafe fn folders(h: *mut CFHEADER) -> *mut u8 {
+    h.add(1) as *mut u8
+}
+pub unsafe fn len_plus_nul(p: *const i8) -> usize {
+    strlen(p as *const i8).wrapping_add(1)
+}
+"""
+
+_PTR_TYPEDEF_CAST_READ_BAD = """\
+pub unsafe fn locale(e: PVOID) -> PCWSTR {
+    // C: ((PGENENTRY)e)->Id
+    (*(e as *mut PGENENTRY).read()).Id
+}
+"""
+
+_PTR_TYPEDEF_CAST_READ_GOOD = """\
+pub unsafe fn locale(e: PVOID) -> PCWSTR {
+    (*(e as PGENENTRY)).Id
+}
+pub unsafe fn slot(h: *mut PVOID) -> PVOID {
+    (h as *mut PVOID).read()
+}
+"""
+
+_INFO_CLASS_BAD = """\
+pub unsafe fn extend(fo: PFILE_OBJECT, size: *mut LARGE_INTEGER) -> NTSTATUS {
+    // C: FileEndOfFileInformation (20). 2 is FileFullDirectoryInformation.
+    IoSetInformation(fo, 2u32, 8, size as PVOID)
+}
+"""
+
+_INFO_CLASS_GOOD = """\
+pub unsafe fn extend(fo: PFILE_OBJECT, size: *mut LARGE_INTEGER) -> NTSTATUS {
+    IoSetInformation(fo, _FILE_INFORMATION_CLASS_FileEndOfFileInformation as u32, 8, size as PVOID)
+}
+extern "system" {
+    fn IoSetInformation(fo: PFILE_OBJECT, class: u32, len: u32, buf: PVOID) -> NTSTATUS;
+}
+"""
+
+_CONST_NARROWING_BAD = """\
+pub const SRB_CLASS_FLAGS_PERSISTANT: u32 = 0x20000000;
+pub unsafe fn flush(srb: *mut SRB) {
+    (*srb).SrbFlags |= (SRB_CLASS_FLAGS_PERSISTANT as USHORT) as u32;
+}
+"""
+
+# The fix, plus the all-ones idiom that must stay quiet (WEOF, a 0xFF fill byte).
+_CONST_NARROWING_GOOD = """\
+pub const SRB_CLASS_FLAGS_PERSISTANT: u32 = 0x20000000;
+pub const EOF: i32 = -1;
+pub const BLOCK_UNUSED: u32 = 0xffffffff;
+pub unsafe fn flush(srb: *mut SRB) {
+    (*srb).SrbFlags |= SRB_CLASS_FLAGS_PERSISTANT;
+    let weof = EOF as u16;
+    let fill = BLOCK_UNUSED as u8;
+}
+"""
+
+_SSE_HELPERS_BAD = """\
+#[inline]
+pub fn IS_DIRTY_SSE(entry: ULONG_PTR) -> bool {
+    (entry & 0x00000008) != 0
+}
+"""
+
+# mm.h's encoding, including a cfg'd 64-bit mask and a helper built from its siblings.
+_SSE_HELPERS_GOOD = """\
+#[inline]
+fn IS_DIRTY_SSE(sse: ULONG_PTR) -> bool {
+    (sse & 0x2) != 0
+}
+#[inline]
+fn PAGE_FROM_SSE(sse: ULONG_PTR) -> ULONG_PTR {
+    #[cfg(target_pointer_width = "64")]
+    { sse & 0xFFFFFFFFF000 }
+    #[cfg(target_pointer_width = "32")]
+    { sse & 0xFFFFF000 }
+}
+#[inline]
+fn BUMPREF_SSE(sse: ULONG_PTR) -> ULONG_PTR {
+    PAGE_FROM_SSE(sse) | ((SHARE_COUNT_FROM_SSE(sse) + 1) << 3) | (sse & 0x7)
+}
+"""
+
+_READ_AFTER_CLEAR_BAD = """\
+pub unsafe fn delete(PointerPte: PMMPTE, WasDirty: *mut u8) {
+    let mut OldPte = MMPTE { Long: 0 };
+    OldPte.Long = InterlockedExchangePte(PointerPte, 0);
+    if OldPte.Long != 0 {
+        *WasDirty = (((*PointerPte).Long >> 6) & 1) as u8;
+    }
+}
+"""
+
+# The fix; and an exchange with a non-zero value, whose location is still meaningful after.
+_READ_AFTER_CLEAR_GOOD = """\
+pub unsafe fn delete(PointerPte: PMMPTE, WasDirty: *mut u8) {
+    let mut OldPte = MMPTE { Long: 0 };
+    OldPte.Long = InterlockedExchangePte(PointerPte, 0);
+    if OldPte.Long != 0 {
+        *WasDirty = ((OldPte.Long >> 6) & 1) as u8;
+    }
+}
+pub unsafe fn protect(PointerPte: PMMPTE, TempPte: MMPTE) -> usize {
+    let _ = InterlockedExchangePte(PointerPte, TempPte.Long);
+    (*PointerPte).Long
+}
+"""
+
+_INIT_THEN_MOVE_BAD = """\
+pub unsafe fn shutdown() {
+    let mut Event: core::mem::MaybeUninit<_> = core::mem::MaybeUninit::uninit();
+    KeInitializeEvent(Event.as_mut_ptr(), _EVENT_TYPE_NotificationEvent, 0u8);
+    let Event = Event.assume_init();
+    send(core::ptr::addr_of!(Event) as *mut _);
+}
+"""
+
+# The fix; and a MaybeUninit filled by a non-initializer and then read, which is fine.
+_INIT_THEN_MOVE_GOOD = """\
+pub unsafe fn shutdown() {
+    let mut Event: KEVENT = core::mem::zeroed();
+    KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
+    send(&mut Event);
+    let mut tmp = core::mem::MaybeUninit::<u32>::uninit();
+    REVERSE_BYTES(tmp.as_mut_ptr(), &x);
+    let v = tmp.assume_init();
+}
+"""
+
+_CONTAINING_RECORD_NULL_BAD = """\
+pub unsafe fn walk(e: PLIST_ENTRY) -> PDOPE {
+    CONTAINING_RECORD(
+        e as PVOID,
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+    ) as PDOPE
+}
+"""
+
+# The fix; and a declaration, which has the name but no call.
+_CONTAINING_RECORD_NULL_GOOD = """\
+extern "C" {
+    fn CONTAINING_RECORD(address: PVOID, type_size: usize, field_offset: usize) -> PVOID;
+}
+pub unsafe fn walk(e: PLIST_ENTRY) -> PDOPE {
+    CONTAINING_RECORD(
+        e as PVOID,
+        core::mem::size_of::<DOPE>(),
+        core::mem::offset_of!(DOPE, Volume),
+    ) as PDOPE
+}
+"""
+
+_COMMENT_SWALLOWED_BAD = """\
+pub unsafe fn load(r: u32) -> i32 {
+    match r { 1 => { /* Fail */ // DPRINT removed return STATUS_NOT_REGISTRY_FILE;
+    } _ => {} }
+    0
+}
+"""
+
+# The fix, plus prose comments that mention code without being code.
+_COMMENT_SWALLOWED_GOOD = """\
+pub unsafe fn load(r: u32) -> i32 {
+    match r {
+        1 => {
+            return STATUS_NOT_REGISTRY_FILE; // DPRINT removed: the C printed here
+        }
+        _ => {}
+    }
+    // DPRINT removed return X; (a whole-line comment is prose, never code)
+    0
+}
+"""
+
+_CALL_LITERAL_BAD = """\
+const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
+pub unsafe fn load() {
+    CmpCmdHiveOpen(file, ctx, &mut a, &mut h, 0x00000001u32);
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     Status = CmpCmdHiveOpen(SourceFile, &Ctx, &Allocate, &CmHive,
+//                             CM_CHECK_REGISTRY_PURGE_VOLATILES);
+"""
+
+# The value the C names (fine), a literal where the C also passes a literal (fine), and a
+# call after `!` in the C that must still count as a call.
+_CALL_LITERAL_GOOD = """\
+const CM_CHECK_REGISTRY_PURGE_VOLATILES: u32 = 0x00000002;
+pub unsafe fn load() {
+    CmpCmdHiveOpen(file, ctx, &mut a, &mut h, 2u32);
+    SystemParametersInfoW(SPI_GETSCREENSAVETIMEOUT, 0, &mut t, 0);
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     Status = CmpCmdHiveOpen(SourceFile, &Ctx, &Allocate, &CmHive,
+//                             CM_CHECK_REGISTRY_PURGE_VOLATILES);
+//     if (!SystemParametersInfoW(SPI_GETSCREENSAVETIMEOUT, 0, &Timeout, 0))
+//         SystemParametersInfoW(SPI_SETSCREENSAVETIMEOUT, 600, 0, SPIF_UPDATEINIFILE);
+"""
+
 CONTROLS: list[Control] = [
     Control(
         name="scan_byteptr_stride",
@@ -2391,6 +2629,83 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _BITWISE_NOT_BAD},
         good={"good.rs": _BITWISE_NOT_GOOD},
+    ),
+    Control(
+        name="scan_info_class_literals",
+        script="tools/scan_info_class_literals.py",
+        argv=["--lint"],
+        bad={"bad.rs": _INFO_CLASS_BAD},
+        good={"good.rs": _INFO_CLASS_GOOD},
+    ),
+    Control(
+        name="scan_const_narrowing_cast",
+        script="tools/scan_const_narrowing_cast.py",
+        argv=["--lint"],
+        bad={"bad.rs": _CONST_NARROWING_BAD},
+        good={"good.rs": _CONST_NARROWING_GOOD},
+    ),
+    Control(
+        name="scan_sse_helpers",
+        script="tools/scan_sse_helpers.py",
+        argv=["--lint"],
+        bad={"bad.rs": _SSE_HELPERS_BAD},
+        good={"good.rs": _SSE_HELPERS_GOOD},
+    ),
+    Control(
+        name="scan_read_after_clear",
+        script="tools/scan_read_after_clear.py",
+        argv=["--lint"],
+        bad={"bad.rs": _READ_AFTER_CLEAR_BAD},
+        good={"good.rs": _READ_AFTER_CLEAR_GOOD},
+    ),
+    Control(
+        name="scan_init_then_move",
+        script="tools/scan_init_then_move.py",
+        argv=["--lint"],
+        bad={"bad.rs": _INIT_THEN_MOVE_BAD},
+        good={"good.rs": _INIT_THEN_MOVE_GOOD},
+    ),
+    Control(
+        name="scan_containing_record_null",
+        script="tools/scan_containing_record_null.py",
+        argv=["--lint"],
+        bad={"bad.rs": _CONTAINING_RECORD_NULL_BAD},
+        good={"good.rs": _CONTAINING_RECORD_NULL_GOOD},
+    ),
+    Control(
+        name="scan_comment_swallowed_code",
+        script="tools/scan_comment_swallowed_code.py",
+        argv=["--lint"],
+        bad={"bad.rs": _COMMENT_SWALLOWED_BAD},
+        good={"good.rs": _COMMENT_SWALLOWED_GOOD},
+    ),
+    Control(
+        name="scan_call_literal_vs_c",
+        script="tools/scan_call_literal_vs_c.py",
+        argv=["--lint"],
+        bad={"bad.rs": _CALL_LITERAL_BAD},
+        good={"good.rs": _CALL_LITERAL_GOOD},
+    ),
+    Control(
+        name="scan_formatless_printf",
+        script="tools/scan_formatless_printf.py",
+        argv=["--lint"],
+        bad={"bad.rs": _FORMATLESS_PRINTF_BAD},
+        good={"good.rs": _FORMATLESS_PRINTF_GOOD},
+    ),
+    Control(
+        name="scan_byte_step_one",
+        script="tools/scan_byte_step_one.py",
+        argv=["--lint"],
+        bad={"bad.rs": _BYTE_STEP_ONE_BAD},
+        good={"good.rs": _BYTE_STEP_ONE_GOOD},
+    ),
+    Control(
+        name="scan_ptr_typedef_cast_read",
+        script="tools/scan_ptr_typedef_cast_read.py",
+        argv=["--lint"],
+        bad={"bad.rs": _PTR_TYPEDEF_CAST_READ_BAD},
+        good={"good.rs": _PTR_TYPEDEF_CAST_READ_GOOD},
     ),
     Control(
         name="scan_variadic_array_arg",

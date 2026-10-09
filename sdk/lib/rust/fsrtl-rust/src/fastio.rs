@@ -1300,6 +1300,15 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
     if !FastDispatch.is_null() && (*FastDispatch).AcquireForModWrite.is_some() {
         if let Some(acquire_fn) = (*FastDispatch).AcquireForModWrite {
             Status = acquire_fn(FileObject, EndingOffset, ResourceToRelease, BaseDeviceObject);
+            if Status == STATUS_CANT_WAIT {
+                static REPORTED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if REPORTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 8 {
+                    ntkrnl_sys::driver_ddk::DbgPrint(
+                        c"[FSRTL] mod-write acquire CANT_WAIT from the FS's AcquireForModWrite: file=%wZ\n".as_ptr(),
+                        core::ptr::addr_of!((*FileObject).FileName),
+                    );
+                }
+            }
 
             if Status == STATUS_SUCCESS || Status == STATUS_CANT_WAIT {
                 return Status;
@@ -1324,6 +1333,20 @@ pub unsafe extern "system" fn FsRtlAcquireFileForModWriteEx(
         }
 
         if Result == 0 {
+            // Capped: the modified-page writer retries, and MiShutdownSystem loops "while
+            // dirty", so a resource that never frees spins silently without this line.
+            static REPORTED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+            if REPORTED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 8 {
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    c"[FSRTL] mod-write acquire CANT_WAIT: file=%wZ resource=%p excl=%u owner=%p active=%d flag=%x\n".as_ptr(),
+                    core::ptr::addr_of!((*FileObject).FileName),
+                    ResourceToAcquire,
+                    Exclusive as u32,
+                    (*ResourceToAcquire).OwnerEntry.OwnerThread as *const u8,
+                    (*ResourceToAcquire).ActiveCount as i32,
+                    (*ResourceToAcquire).Flag as u32,
+                );
+            }
             return STATUS_CANT_WAIT;
         }
 

@@ -74,7 +74,9 @@ extern "C" {
     fn strlen(s: PCSTR) -> usize;
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> *mut core::ffi::c_void;
     fn FrLdrHeapFree(ptr: *mut core::ffi::c_void, tag: u32);
-    fn NtLdrGetOptionExN(options: PCSTR, option: PCSTR, length: u32, OptionLength: *mut ULONG) -> u8;
+    // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
+    // address whose low byte is 0 reads "absent"; only the pointer width is safe.
+    fn NtLdrGetOptionExN(options: PCSTR, option: PCSTR, length: u32, OptionLength: *mut ULONG) -> usize;
     fn RTL_NUMBER_OF(arr: *const core::ffi::c_void) -> usize;
     fn AllocateAndInitLPB(version: u32, LoaderBlock: *mut PLOADER_PARAMETER_BLOCK);
     fn ERR(fmt: *const i8, ...);
@@ -82,7 +84,7 @@ extern "C" {
     fn InfCloseFile(InfHandle: HINF);
     fn InfOpenFile(InfHandle: *mut HINF, FileName: PCSTR, ErrorLine: *mut u32) -> u8;
     fn LoadAndBootWindowsCommon(version: u32, LoaderBlock: PLOADER_PARAMETER_BLOCK, BootOptions: PCSTR, BootPath: PCSTR) -> ARC_STATUS;
-    fn NtLdrGetOption(BootOptions: PCSTR, option: PCSTR) -> u8;
+    fn NtLdrGetOption(BootOptions: PCSTR, option: PCSTR) -> usize;
     fn NtLdrGetOptionEx(BootOptions: PCSTR, option: PCSTR, length: *mut u32) -> PSTR;
     fn RamDiskInitialize(arg1: u8, BootOptions: PCSTR, SystemPartition: PCSTR) -> ARC_STATUS;
     fn TRACE(fmt: *const i8, ...);
@@ -128,6 +130,16 @@ extern "C" {
 
 // cmtypes.h: #define SERVICE_ERROR_NORMAL 0x00000001
 pub const SERVICE_ERROR_NORMAL: ULONG = 0x00000001;
+
+// setupldr.c: "SourceDisksFiles." INF_ARCH
+#[cfg(target_arch = "x86")]
+const INF_FILES_SECTION: &[u8] = b"SourceDisksFiles.x86\0";
+#[cfg(target_arch = "x86_64")]
+const INF_FILES_SECTION: &[u8] = b"SourceDisksFiles.amd64\0";
+#[cfg(target_arch = "arm")]
+const INF_FILES_SECTION: &[u8] = b"SourceDisksFiles.arm\0";
+#[cfg(target_arch = "aarch64")]
+const INF_FILES_SECTION: &[u8] = b"SourceDisksFiles.arm64\0";
 
 unsafe fn SetupLdrLoadNlsData(
     LoaderBlock: PLOADER_PARAMETER_BLOCK,
@@ -254,11 +266,10 @@ unsafe fn SetupLdrScanBootDrivers(
 
     Pass = 0;
     while Pass <= 1 {
-        // C: {"SourceDisksFiles." INF_ARCH, "SourceDisksFiles"}; i386 INF_ARCH = "x86"
-        let pFilesSection: [PCSTR; 2] = [
-            b"SourceDisksFiles.x86\0".as_ptr() as PCSTR,
-            b"SourceDisksFiles\0".as_ptr() as PCSTR,
-        ];
+        // C: {"SourceDisksFiles." INF_ARCH, "SourceDisksFiles"}. The section is per
+        // ARCH: reading `.x86` everywhere left amd64 setup without its own section's
+        // boot drivers (acpi.sys is 'x' in `.amd64` and not in `.x86`).
+        let pFilesSection: [PCSTR; 2] = [INF_FILES_SECTION.as_ptr() as PCSTR, b"SourceDisksFiles\0".as_ptr() as PCSTR];
 
         if InfFindFirstLine(InfHandle, pFilesSection[Pass as usize], core::ptr::null(), &mut InfContext) == 0 {
             Pass += 1;
@@ -288,7 +299,12 @@ unsafe fn SetupLdrScanBootDrivers(
                         w!("%S").as_ptr() as *const u16,
                         DriverName,
                     );
-                    DriverNameW[wcslen(DriverNameW.as_ptr()) - 4] = 0;
+                    // Strip ".sys". The C indexes len - 4 unchecked; a name shorter than
+                    // its extension is an INF error, not a reason to panic the loader.
+                    let NameLen = wcslen(DriverNameW.as_ptr());
+                    if NameLen >= 4 {
+                        DriverNameW[NameLen - 4] = 0;
+                    }
 
                     Success = WinLdrAddDriverToList(
                         BootDriverListHead,
@@ -552,13 +568,20 @@ pub unsafe extern "C" fn LoadReactOSSetup(
     let mut UserBootOptions: [u8; 256] = [0; 256];
     let mut BootOptions: PCSTR;
 
-    // C: { "", #if _M_IX86 "I386\\" #endif "reactos\\", NULL } — i386 form (4 elems)
+    // C: { "", #if _M_IX86 "I386\\" #endif "reactos\\", NULL } — the I386\ entry is x86 only.
     #[repr(transparent)]
-    struct SourcePathsT([PCSTR; 4]);
-    unsafe impl Sync for SourcePathsT {}
-    static SourcePaths: SourcePathsT = SourcePathsT([
+    struct SourcePathsT<const N: usize>([PCSTR; N]);
+    unsafe impl<const N: usize> Sync for SourcePathsT<N> {}
+    #[cfg(target_arch = "x86")]
+    static SourcePaths: SourcePathsT<4> = SourcePathsT([
         b"\0".as_ptr() as PCSTR,
         b"I386\\\0".as_ptr() as PCSTR,
+        b"reactos\\\0".as_ptr() as PCSTR,
+        core::ptr::null(),
+    ]);
+    #[cfg(not(target_arch = "x86"))]
+    static SourcePaths: SourcePathsT<3> = SourcePathsT([
+        b"\0".as_ptr() as PCSTR,
         b"reactos\\\0".as_ptr() as PCSTR,
         core::ptr::null(),
     ]);

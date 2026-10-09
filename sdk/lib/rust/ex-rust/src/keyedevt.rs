@@ -227,7 +227,7 @@ pub unsafe extern "system" fn ExpReleaseOrWaitForKeyedEvent(
     let PreviousMode = KeGetPreviousMode();
     let mut Status = KeWaitForSingleObject(
         core::ptr::addr_of_mut!((*CurrentThread).__bindgen_anon_4.KeyedWaitSemaphore) as PVOID,
-        7u32,
+        ntkrnl_sys::ddk::_KWAIT_REASON_WrKeyedEvent as _,
         PreviousMode,
         Alertable,
         Timeout,
