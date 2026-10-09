@@ -329,6 +329,33 @@ failure (a lost boot says nothing about an assertion it never reached). Dirty-tr
 are listed separately and never graded, because their commit does not name the code. The
 evidence pointer says so when it pointed into `/tmp` and is gone.
 
+### `stress --arch A [--profile LIST] [--repeat N] [--shift S] [--smp N] [--cores C] [--timeout-scale F]`
+**Reproduce "host load" as named mechanisms** — not a gate stage. "It only fails
+under load" bundles three different things, and a loaded host is a bad instrument
+because it changes all three at once. `stress` boots the same media through a matrix
+of one-knob profiles and prints the failure rate per profile; the matrix is the
+diagnosis:
+
+| profile | knob | a failure here is |
+|---|---|---|
+| `baseline` | none | a bug (or stale media), not load |
+| `slow-cpu` | `-icount shift=N,sleep=off` (`VIBEOS_QEMU_ICOUNT_SHIFT`): guest clock advances 2^N ns per instruction whatever the host does | a guest-side timeout: the guest sees ~20 min pass during a 40 s boot |
+| `lockstep` | `-smp 2` + single-threaded TCG (`VIBEOS_TCG_THREAD=single`) | a cross-CPU race, now with a stable interleaving to debug under |
+| `starved-smp` | `-smp 2` MTTCG, QEMU pinned to one host core | the "host load" race: the scheduler preempts a vCPU mid-critical-section |
+| `tight-clock` | harness budgets ×0.5 (`VIBEOS_BOOT_TIMEOUT_SCALE`) | a healthy boot crossing the wall clock — fix the budget, not the OS |
+
+A profile that could not be applied (nothing pinned, UP kernel on an SMP profile)
+is reported `NOT_APPLIED`, never green. Rows land in `<run>/rows.jsonl` with the
+same evidence fields as `farm`; failures keep their artifacts. The three env knobs
+work on their own too (`VIBEOS_QEMU_ICOUNT_SHIFT=7 ./vibeos-cli smoke --arch amd64`)
+and `slow-cpu`'s icount is what `rr record` needs, so a flake caught under it can be
+replayed under GDB. Exit 1 when any cell failed. Its first run (2026-10-09, amd64,
+one boot per profile) already named one: `slow-cpu` turned the `[SEH-USER]` boot
+self-test red with `child exit=0x103` — sehtest waits 60,000 guest-ms for its child
+(`WaitForSingleObject(pi.hProcess, 60000)`), and under `shift=7` that budget is gone
+before the child finishes; the other four profiles, including a 534 s boot pinned to
+one core, were green.
+
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 
 The source-scanner suite runs **once in two disjoint partitions**. Five audited
