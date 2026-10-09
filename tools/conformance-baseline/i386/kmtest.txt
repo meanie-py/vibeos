@@ -42,6 +42,7 @@ ExDoubleList OK pass=130 fail=16 skip=0 exit=0
     assert ExDoubleList.c:91
     assert ExDoubleList.c:99
 ExFastMutex OK pass=257 fail=0 skip=0 exit=0
+ExFastMutexBounded OK pass=257 fail=0 skip=0 exit=0
 ExHardError OK pass=24 fail=6 skip=0 exit=0
 ExInterlocked OK pass=970 fail=4 skip=0 exit=0
     assert ExInterlocked.c:296

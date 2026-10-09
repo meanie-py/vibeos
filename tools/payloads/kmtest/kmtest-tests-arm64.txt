@@ -19,6 +19,7 @@ ExDoubleList
 #   (kmtest_drv.c:454 KeWaitForSingleObject timed out!); the ExiAcquire/Release fastcall NOT FOUND
 #   spam is benign, those are i386-only and skip()ped on 64-bit.")
 ExFastMutex
+ExFastMutexBounded
 # QUARANTINED 2026-07-16 (re-triaged after the task #10 SEH-resume fix): NOT the SEH cluster.
 # BUGCHECK 0x1E P1=0xC000001D (STATUS_ILLEGAL_INSTRUCTION), PC=0xfffffa0006176c60 — a NONPAGED-
 # POOL address, executing garbage, with NO [RAISE] preceding it. So ExRaiseHardError branches

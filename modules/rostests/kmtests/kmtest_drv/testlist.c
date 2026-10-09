@@ -11,6 +11,7 @@ KMT_TESTFUNC Test_Example;
 KMT_TESTFUNC Test_ExCallback;
 KMT_TESTFUNC Test_ExDoubleList;
 KMT_TESTFUNC Test_ExFastMutex;
+KMT_TESTFUNC Test_ExFastMutexBounded;
 KMT_TESTFUNC Test_ExHardError;
 KMT_TESTFUNC Test_ExHardErrorInteractive;
 KMT_TESTFUNC Test_ExInterlocked;
@@ -99,6 +100,7 @@ const KMT_TEST TestList[] =
     { "ExCallback",                         Test_ExCallback },
     { "ExDoubleList",                       Test_ExDoubleList },
     { "ExFastMutex",                        Test_ExFastMutex },
+    { "ExFastMutexBounded",                 Test_ExFastMutexBounded },
     { "ExHardError",                        Test_ExHardError },
     { "-ExHardErrorInteractive",            Test_ExHardErrorInteractive },
     { "ExInterlocked",                      Test_ExInterlocked },

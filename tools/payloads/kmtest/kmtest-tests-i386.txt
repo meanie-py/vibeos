@@ -8,6 +8,7 @@ CmSecurity
 ExCallback
 ExDoubleList
 ExFastMutex
+ExFastMutexBounded
 # QUARANTINED 2026-07-12 (i386 sweep 1): BUGCHECK 0x1E (0xc0000005) at
 # ntoskrnl.exe+0x675D (0x804c975d). Passes on amd64 (native SEH). i386-only
 # DUMMY_PSEH-structural candidate on the ExRaiseHardError path — the test's
