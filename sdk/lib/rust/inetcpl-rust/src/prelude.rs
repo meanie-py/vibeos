@@ -10,14 +10,24 @@ pub type size_t = usize;
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
-// out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
-// ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
-pub use crate::{ERR, FIXME, TRACE, WARN};
+// The wine/debug.h channel (TRACE/ERR/WARN/FIXME), as the C expands it: a flag test on the
+// default channel, then ros_dbg_log -- the same code the translated bodies spell out inline.
+// MACROS, never out-of-line fns (an out-of-line wrapper is an optimization barrier that
+// uncloaks latent ABI mismatches into ud2, field manual §9.65).
+#[macro_export] macro_rules! __wine_dbg {
+    ($cls:expr, $fmt:expr $(, $a:expr)* $(,)?) => {{
+        let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
+        if (*__dbch).flags as c_int & (1 << $cls as c_int) != 0 {
+            ros_dbg_log($cls, __dbch, concat!(file!(), "\0").as_ptr() as *const c_char,
+                b"\0".as_ptr() as *const c_char, line!() as c_int, $fmt $(, $a)*);
+        }
+    }};
+}
+#[macro_export] macro_rules! TRACE { ($($a:tt)*) => { __wine_dbg!(__WINE_DBCL_TRACE, $($a)*) }; }
+#[macro_export] macro_rules! ERR   { ($($a:tt)*) => { __wine_dbg!(__WINE_DBCL_ERR, $($a)*) }; }
+#[macro_export] macro_rules! WARN  { ($($a:tt)*) => { __wine_dbg!(__WINE_DBCL_WARN, $($a)*) }; }
+#[macro_export] macro_rules! FIXME { ($($a:tt)*) => { __wine_dbg!(__WINE_DBCL_FIXME, $($a)*) }; }
+pub use crate::{__wine_dbg, ERR, FIXME, TRACE, WARN};
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
@@ -170,17 +180,17 @@ extern "system" {
 #[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; }
 pub const HKEY_CURRENT_USER: HKEY = ((((((0x80000001u32) as LONG)) as LONG_PTR)) as HKEY);
 #[inline]
-pub unsafe fn IInternetSecurityManager_Release(This: *mut IInternetSecurityManager) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) } // widl C wrapper
+pub unsafe fn IInternetSecurityManager_Release(This: *mut IInternetSecurityManager) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) } // widl C wrapper
 #[inline]
-pub unsafe fn IInternetZoneManager_CreateZoneEnumerator(This: *mut IInternetZoneManager, pdwEnum: *mut DWORD, pdwCount: *mut DWORD, dwFlags: DWORD) -> HRESULT { ((*(*This).lpVtbl).CreateZoneEnumerator.unwrap())(This, pdwEnum, pdwCount, dwFlags) } // widl C wrapper
+pub unsafe fn IInternetZoneManager_CreateZoneEnumerator(This: *mut IInternetZoneManager, pdwEnum: *mut DWORD, pdwCount: *mut DWORD, dwFlags: DWORD) -> HRESULT { ((*(*This).lpVtbl).CreateZoneEnumerator.unwrap_unchecked())(This, pdwEnum, pdwCount, dwFlags) } // widl C wrapper
 #[inline]
-pub unsafe fn IInternetZoneManager_DestroyZoneEnumerator(This: *mut IInternetZoneManager, dwEnum: DWORD) -> HRESULT { ((*(*This).lpVtbl).DestroyZoneEnumerator.unwrap())(This, dwEnum) } // widl C wrapper
+pub unsafe fn IInternetZoneManager_DestroyZoneEnumerator(This: *mut IInternetZoneManager, dwEnum: DWORD) -> HRESULT { ((*(*This).lpVtbl).DestroyZoneEnumerator.unwrap_unchecked())(This, dwEnum) } // widl C wrapper
 #[inline]
-pub unsafe fn IInternetZoneManager_GetZoneAt(This: *mut IInternetZoneManager, dwEnum: DWORD, dwIndex: DWORD, pdwZone: *mut DWORD) -> HRESULT { ((*(*This).lpVtbl).GetZoneAt.unwrap())(This, dwEnum, dwIndex, pdwZone) } // widl C wrapper
+pub unsafe fn IInternetZoneManager_GetZoneAt(This: *mut IInternetZoneManager, dwEnum: DWORD, dwIndex: DWORD, pdwZone: *mut DWORD) -> HRESULT { ((*(*This).lpVtbl).GetZoneAt.unwrap_unchecked())(This, dwEnum, dwIndex, pdwZone) } // widl C wrapper
 #[inline]
-pub unsafe fn IInternetZoneManager_GetZoneAttributes(This: *mut IInternetZoneManager, dwZone: DWORD, pZoneAttributes: *mut ZONEATTRIBUTES) -> HRESULT { ((*(*This).lpVtbl).GetZoneAttributes.unwrap())(This, dwZone, pZoneAttributes) } // widl C wrapper
+pub unsafe fn IInternetZoneManager_GetZoneAttributes(This: *mut IInternetZoneManager, dwZone: DWORD, pZoneAttributes: *mut ZONEATTRIBUTES) -> HRESULT { ((*(*This).lpVtbl).GetZoneAttributes.unwrap_unchecked())(This, dwZone, pZoneAttributes) } // widl C wrapper
 #[inline]
-pub unsafe fn IInternetZoneManager_Release(This: *mut IInternetZoneManager) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) } // widl C wrapper
+pub unsafe fn IInternetZoneManager_Release(This: *mut IInternetZoneManager) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) } // widl C wrapper
 pub const S_OK: HRESULT = ((0) as HRESULT);
 pub use crate::{ARRAY_SIZE, DialogBoxW, ImageList_AddIcon, ListView_InsertItemW, MAKEWPARAM};
 // ==== end SDK header macros ====

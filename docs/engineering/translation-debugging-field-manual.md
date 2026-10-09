@@ -1791,8 +1791,9 @@ prelude, and delete the copies.
 the widl headers define `WIDL_C_INLINE_WRAPPERS`, so `IFoo_Method(This, ...)` is a `static
 inline` function, not a macro — the preprocessor lowering finds nothing, no DLL exports it, and
 a dozen crates carry hand copies of `IUnknown_Release` & co. `port macros` now GENERATES them
-from the island's `IFooVtbl` slot types (`((*(*This).lpVtbl).M.unwrap())(This, ..)`), identical
-on every arch or not at all. `heap_alloc`/`_zero`/`realloc`/`free`/`calloc` and
+from the island's `IFooVtbl` slot types with `tools/gen_commacros.py`'s parser and body
+(`((*(*This).lpVtbl).M.unwrap_unchecked())(This, ..)`: a NULL slot faults as in C); a slot
+whose callback ABI differs per arch gets one `#[cfg(target_arch)]` copy each. `heap_alloc`/`_zero`/`realloc`/`free`/`calloc` and
 `debugstr_w`/`wn`/`a`/`an` are in `win32macros-rust`; a consensus `extern` copy of `debugstr_w`
 compiles and then fails at link, since only libwine's `wine_dbgstr_wn` exists.
 

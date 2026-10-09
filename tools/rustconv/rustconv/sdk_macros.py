@@ -823,57 +823,7 @@ def existing_items(prelude: Path) -> dict[str, set[str]]:
     }
 
 
-def _split_top(text: str) -> list[str]:
-    """Split at commas outside (), [] and <>."""
-    out, depth, cur = [], 0, []
-    for c in text:
-        if c in "([<":
-            depth += 1
-        elif c in ")]>" and depth:
-            depth -= 1
-        if c == "," and depth == 0:
-            out.append("".join(cur).strip())
-            cur = []
-        else:
-            cur.append(c)
-    if "".join(cur).strip():
-        out.append("".join(cur).strip())
-    return out
-
-
-def _vtbl_methods(island: str, iface: str) -> dict[str, tuple[list[str], str]] | None:
-    """`IFooVtbl`'s slots as {method: (["name: Type", ...], "Ret" or "")}, from bindgen."""
-    m = re.search(rf"^pub struct {re.escape(iface)}Vtbl \{{", island, re.M)
-    if m is None:
-        return None
-    depth, i = 0, m.end() - 1
-    while i < len(island):
-        depth += {"{": 1, "}": -1}.get(island[i], 0)
-        if depth == 0:
-            break
-        i += 1
-    body = island[m.end() : i]
-    out: dict[str, tuple[list[str], str]] = {}
-    heads = list(re.finditer(r"(?:^|\n)\s*pub (\w+):", body))
-    for k, h in enumerate(heads):
-        field = body[h.end() : heads[k + 1].start() if k + 1 < len(heads) else len(body)]
-        f = field.find("fn(")
-        if f < 0:
-            continue
-        depth, j = 0, f + 2
-        while j < len(field):
-            depth += {"(": 1, ")": -1}.get(field[j], 0)
-            if depth == 0:
-                break
-            j += 1
-        params = [p for p in _split_top(field[f + 3 : j]) if p]
-        rest = field[j + 1 :].strip().rstrip(",").strip()
-        if not rest.endswith(">"):
-            continue
-        rest = rest[:-1].strip().rstrip(",").strip()
-        ret = rest[2:].strip() if rest.startswith("->") else ""
-        out[h.group(1)] = (params, ret)
-    return out
+_ISLAND_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 
 
 def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
@@ -882,33 +832,54 @@ def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
     Under `__WINESRC__` widl headers define WIDL_C_INLINE_WRAPPERS, so `IFoo_Method` is a
     `static inline` function -- no macro for the preprocessor lowering to find, and no DLL
     exports it -- and a dozen crates carry hand copies of IUnknown_Release & co. The body is
-    always `This->lpVtbl->Method(This, ...)`, so it is generated from the bindgen slot type,
-    which already is the C signature. Every arch's island must agree.
+    always `This->lpVtbl->Method(This, ...)`; it is generated with tools/gen_commacros.py's
+    parser and body (`unwrap_unchecked`: a NULL slot faults at the call, as in C). A method
+    whose callback parameter's ABI differs per arch gets one `#[cfg(target_arch)]` copy each.
     """
-    islands = [p.read_text(errors="replace") for p in sorted(crate_src.glob("types_*.rs"))]
-    if not islands:
-        return {}
+    try:
+        from tools.gen_commacros import parse_vtbls
+    except ImportError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.gen_commacros import parse_vtbls
+
+    per_arch: dict[str, dict[str, dict[str, tuple[list[tuple[str, str]], str | None]]]] = {}
+    for arch in _ISLAND_ARCH:
+        p = crate_src / f"types_{arch}.rs"
+        if not p.is_file():
+            return {}
+        per_arch[arch] = {
+            iface: {m: (args, ret) for m, args, ret in methods}
+            for iface, methods in parse_vtbls(p.read_text(errors="replace")).items()
+        }
     out: dict[str, str] = {}
     for name in sorted(wanted):
         parts = name.split("_")
         for cut in range(1, len(parts)):
             iface, method = "_".join(parts[:cut]), "_".join(parts[cut:])
-            if not iface.startswith("I"):
+            sigs = {a: v.get(iface, {}).get(method) for a, v in per_arch.items()}
+            if any(sig is None for sig in sigs.values()):
                 continue
-            sigs = [_vtbl_methods(t, iface) for t in islands]
-            if any(s is None or method not in s for s in sigs):
-                continue
-            first = sigs[0][method]  # type: ignore[index]
-            if any(s[method] != first for s in sigs) or not first[0]:  # type: ignore[index]
-                continue
-            params, ret = first
-            args = ", ".join(p.split(":", 1)[0].strip() for p in params)
-            this = args.split(",")[0].strip()
-            out[name] = (
-                f"#[inline]\npub unsafe fn {name}({', '.join(params)})"
-                + (f" -> {ret}" if ret else "")
-                + f" {{ ((*(*{this}).lpVtbl).{method}.unwrap())({args}) }} // widl C wrapper"
-            )
+
+            def render(sig: tuple[list[tuple[str, str]], str | None], cfg: str = "") -> str:
+                args, ret = sig
+                params = ", ".join([f"This: *mut {iface}", *(f"{n}: {t}" for n, t in args)])
+                call = ", ".join(["This", *(n for n, _ in args)])
+                return (
+                    f"{cfg}#[inline]\npub unsafe fn {name}({params})"
+                    + (f" -> {ret}" if ret else "")
+                    + f" {{ ((*(*This).lpVtbl).{method}.unwrap_unchecked())({call}) }}"
+                    + " // widl C wrapper"
+                )
+
+            if len({repr(sig) for sig in sigs.values()}) == 1:
+                out[name] = render(next(iter(sigs.values())))  # type: ignore[arg-type]
+            else:
+                out[name] = "\n".join(
+                    render(sig, f'#[cfg(target_arch = "{_ISLAND_ARCH[a]}")]\n')  # type: ignore[arg-type]
+                    for a, sig in sorted(sigs.items())
+                )
             break
     return out
 

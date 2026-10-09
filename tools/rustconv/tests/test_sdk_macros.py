@@ -138,15 +138,29 @@ def test_widl_c_wrappers_come_from_the_island_vtbl(tmp_path):
     assert set(out) == {"IZone_Release", "IZone_QueryInterface", "IZone_Destroy"}
     assert (
         "pub unsafe fn IZone_Release(This: *mut IZone) -> ULONG "
-        "{ ((*(*This).lpVtbl).Release.unwrap())(This) }" in out["IZone_Release"]
+        "{ ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }" in out["IZone_Release"]
     )
     assert "(This, riid, ppvObject)" in out["IZone_QueryInterface"]
     assert "-> " not in out["IZone_Destroy"].split("{")[0]
 
 
-def test_a_widl_wrapper_the_arches_disagree_on_is_not_generated(tmp_path):
-    (tmp_path / "types_amd64.rs").write_text(ISLAND_VTBL)
+def test_a_widl_wrapper_the_arches_disagree_on_is_generated_per_arch(tmp_path):
+    for arch in ("amd64", "arm64"):
+        (tmp_path / f"types_{arch}.rs").write_text(ISLAND_VTBL)
     (tmp_path / "types_i386.rs").write_text(ISLAND_VTBL.replace("dwEnum: DWORD", "dwEnum: u64"))
-    assert set(sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy", "IZone_Release"})) == {
-        "IZone_Release"
-    }
+    out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy", "IZone_Release"})
+    assert "cfg" not in out["IZone_Release"]
+    destroy = out["IZone_Destroy"]
+    assert destroy.count("pub unsafe fn IZone_Destroy") == 3
+    assert '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)' in destroy
+
+
+def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
+    vtbl = ISLAND_VTBL.replace(
+        "dwEnum: DWORD)>",
+        "cb: ::core::option::Option<unsafe extern \"C\" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>",
+    )
+    for arch in ("amd64", "arm64", "i386"):
+        (tmp_path / f"types_{arch}.rs").write_text(vtbl)
+    out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy"})["IZone_Destroy"]
+    assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")
