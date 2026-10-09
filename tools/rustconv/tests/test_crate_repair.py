@@ -848,6 +848,41 @@ def test_repair_crate_reaches_a_fixpoint_and_ledgers_every_edit(tmp_path: Path):
     assert entry["targets"] == ["amd64"]
 
 
+def test_repair_crate_declines_a_rule_re_editing_its_own_output(tmp_path: Path, monkeypatch):
+    """A rule whose answer does not hold gets asked again; answering builds a ladder.
+
+    The proposer stands in for a rule with no guard of its own (c_truthiness wrapped its own
+    `(x != 0)` every pass on comctl32 until the error count rose and the pass was reverted).
+    """
+    import rustconv.crate_repair as cr
+
+    crate_dir = tmp_path / "demo-rust"
+    (crate_dir / "src").mkdir(parents=True)
+    (crate_dir / "src" / "a.rs").write_bytes(b"pub fn f(x: u32) -> bool {\n    x\n}\n")
+    file_name = "demo-rust/src/a.rs"
+
+    def wrap_current(_diags, read_file, *, target, **_kw):
+        data = read_file(file_name)
+        start = data.index(b"    ", 25) + 4
+        end = data.index(b"\n", start)
+        text = data[start:end].decode()
+        edit = Edit(file_name, start, end, f"({text} != 0)", "c_truthiness", "test", text, 2)
+        return cr.RepairPlan(target=target, edits=(edit,))
+
+    monkeypatch.setattr(cr, "propose_edits", wrap_current)
+    session = repair_crate(
+        "demo-rust",
+        root=tmp_path,
+        targets=["amd64"],
+        rules=[cr.RULE_NUMERIC_CAST],
+        check_runner=lambda target: CargoCheckRun(target, (_diag("mismatched types"),), 1, 101),
+    )
+    assert session.status == "fixpoint"
+    assert len(session.passes) == 2
+    assert (crate_dir / "src" / "a.rs").read_bytes().count(b"!= 0") == 1
+    assert [s.reason for s in session.passes[1].skipped] == ["reapplied_own_edit"]
+
+
 def test_repair_crate_dry_run_writes_nothing(tmp_path: Path):
     crate_dir = tmp_path / "demo-rust"
     (crate_dir / "src").mkdir(parents=True)

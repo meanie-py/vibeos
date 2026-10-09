@@ -5439,6 +5439,11 @@ def repair_crate(
     snapshot: dict[str, bytes] = {}
     previous_total: int | None = None
     previous_halting: int | None = None
+    # (file, rule, text) for every replacement a pass wrote. A rule asked to edit text it
+    # wrote itself in an earlier pass is oscillating: its answer did not hold, and answering
+    # again builds a ladder (`((x != 0) != 0)`, `((x) as i32) as u32`) one pass at a time
+    # while the error count stays flat. Declining it is what lets the run reach a fixpoint.
+    produced: set[tuple[str, str, str]] = set()
     for index in range(1, max_passes + 1):
         if target_dirs and all(t in target_dirs for t in targets):
             # Separate build dirs: the arches really run at once (3x on every pass).
@@ -5516,6 +5521,23 @@ def repair_crate(
             panic_edits, panic_skipped = _panicking_cast_edits_for_crate(resolved_dir, root)
             candidates.extend(panic_edits)
             current.skipped.extend(panic_skipped)
+        fresh: list[Edit] = []
+        for edit in candidates:
+            if (edit.file_name, edit.rule, edit.original.strip()) in produced:
+                current.skipped.append(
+                    Skipped(
+                        edit.rule,
+                        "reapplied_own_edit",
+                        edit.file_name,
+                        edit.line,
+                        f"`{edit.original}` is this rule's own output from an earlier pass; "
+                        f"re-editing it to `{edit.replacement}` would oscillate. The site "
+                        "needs a different rule or a human.",
+                    )
+                )
+            else:
+                fresh.append(edit)
+        candidates = fresh
         selected, dropped = select_non_overlapping(candidates)
         current.skipped.extend(dropped)
         if not selected:
@@ -5532,6 +5554,7 @@ def repair_crate(
             session.final_red = list(merged.red)
             return session
         applied, snapshot, failed = apply_edits(selected, root, within=resolved_dir)
+        produced.update((e.file_name, e.rule, e.replacement.strip()) for e in applied)
         current.applied.extend(applied)
         current.skipped.extend(failed)
         session.passes.append(current)
