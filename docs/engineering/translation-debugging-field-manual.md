@@ -6368,6 +6368,13 @@ why the live ones survived review: 23 sites in 9 crates, 2 live, 15 vestiges, 6 
 comments.
 **Fix:** move the label so the block spans the skipped code (`'quit: { ...; if c { break
 'quit; } ...skipped... }`), or delete a vestige. `scan_noop_goto` gates it (baseline empty).
+A second shape the scanner cannot see: **two C labels folded into one `break`.** umpnpmgr's
+`DeviceInstallThread` has `goto Step2` (skip the install loop) and `goto Cleanup` (free, then
+skip it); both became `break 'outer` out of the retry loop, landing on the install loop. So a
+failed `PNP_GetDeviceListSize` or `HeapAlloc` walked a null list, and a failed
+`PNP_GetDeviceList` freed the list, walked it, and freed it again. When a C function has
+several labels, check that each `break` lands where its own `goto` did; keep the outcome in a
+variable (here: `deviceList` stays null unless the query succeeded) rather than in the jump.
 
 ### C++ constructs Rust cannot spell — overloads, default args, and RAII locals
 Translating a `.cpp` adds a failure class translating a `.c` does not have: C++ features with no

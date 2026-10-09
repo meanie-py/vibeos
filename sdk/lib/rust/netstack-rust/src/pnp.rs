@@ -16,7 +16,7 @@
 //! never see PnP or power IRPs: tdidev's dispatcher routes those here.
 
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicPtr, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 use ntkrnl_sys::ddk::{
     IoAttachDeviceToDeviceStack, IoCreateDevice, IoForwardIrpSynchronously, IoGetDeviceProperty, KeInitializeEvent,
@@ -32,7 +32,9 @@ const IRP_MJ_POWER: u8 = 0x16;
 const IRP_MJ_PNP: u8 = 0x1B;
 const IRP_MN_START_DEVICE: u8 = 0x00;
 const IRP_MN_REMOVE_DEVICE: u8 = 0x02;
+const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
 const CM_RESOURCE_TYPE_MEMORY: u8 = 3;
+const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
 const FILE_DEVICE_PHYSICAL_NETCARD: ULONG = 0x17;
 const DO_DEVICE_INITIALIZING: ULONG = 0x80;
 const NOTIFICATION_EVENT: u32 = 0; // _EVENT_TYPE_NotificationEvent
@@ -54,12 +56,25 @@ pub enum NicKind {
     Gem = 2,
 }
 
-/// The platform NIC's register window, as the PnP manager assigned it.
+/// The platform NIC's register window and interrupt, as the PnP manager
+/// assigned them.
 #[derive(Clone, Copy)]
 pub struct PlatformNic {
     pub kind: NicKind,
     pub mmio: u64,
     pub mmio_len: u64,
+    pub irq: Option<PlatformIrq>,
+}
+
+/// A translated interrupt resource: what IoConnectInterrupt takes.
+#[derive(Clone, Copy)]
+pub struct PlatformIrq {
+    pub vector: u32,
+    pub irql: u8,
+    pub affinity: usize,
+    /// Edge-triggered; otherwise level.
+    pub latched: bool,
+    pub shared: bool,
 }
 
 /// Our FDO, and the PDO below it (the HAL's ACPI child).
@@ -68,6 +83,12 @@ static LOWER: AtomicPtr<ntkrnl_sys::ddk::DEVICE_OBJECT> = AtomicPtr::new(null_mu
 static MMIO: AtomicU64 = AtomicU64::new(0);
 static MMIO_LEN: AtomicU64 = AtomicU64::new(0);
 static KIND: AtomicU8 = AtomicU8::new(0);
+static IRQ_PRESENT: AtomicBool = AtomicBool::new(false);
+static IRQ_VECTOR: AtomicU32 = AtomicU32::new(0);
+static IRQ_LEVEL: AtomicU8 = AtomicU8::new(0);
+static IRQ_AFFINITY: AtomicUsize = AtomicUsize::new(0);
+static IRQ_LATCHED: AtomicBool = AtomicBool::new(false);
+static IRQ_SHARED: AtomicBool = AtomicBool::new(false);
 /// Signalled when AddDevice attaches, and when START_DEVICE has recorded the
 /// resources.
 static mut ATTACHED: KEVENT = unsafe { core::mem::zeroed() };
@@ -113,7 +134,14 @@ pub fn wait() -> Option<PlatformNic> {
         k if k == NicKind::Gem as u8 => NicKind::Gem,
         _ => NicKind::Genet,
     };
-    (mmio != 0).then(|| PlatformNic { kind, mmio, mmio_len: MMIO_LEN.load(Ordering::Acquire) })
+    let irq = IRQ_PRESENT.load(Ordering::Acquire).then(|| PlatformIrq {
+        vector: IRQ_VECTOR.load(Ordering::Acquire),
+        irql: IRQ_LEVEL.load(Ordering::Acquire),
+        affinity: IRQ_AFFINITY.load(Ordering::Acquire),
+        latched: IRQ_LATCHED.load(Ordering::Acquire),
+        shared: IRQ_SHARED.load(Ordering::Acquire),
+    });
+    (mmio != 0).then(|| PlatformNic { kind, mmio, mmio_len: MMIO_LEN.load(Ordering::Acquire), irq })
 }
 
 unsafe extern "system" fn add_device(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT) -> NTSTATUS {
@@ -196,7 +224,8 @@ pub unsafe fn dispatch(_device: PDEVICE_OBJECT, irp: PIRP) -> NTSTATUS {
     }
 }
 
-/// Take the first memory range from the translated resources and wake the engine.
+/// Take the first memory range and interrupt from the translated resources and
+/// wake the engine.
 unsafe fn start(io: ntkrnl_sys::ddk::PIO_STACK_LOCATION) -> NTSTATUS {
     let list = (*io).Parameters.StartDevice.AllocatedResourcesTranslated;
     if list.is_null() || (*list).Count == 0 {
@@ -212,6 +241,20 @@ unsafe fn start(io: ntkrnl_sys::ddk::PIO_STACK_LOCATION) -> NTSTATUS {
     let mmio = mem.u.Memory.Start.QuadPart as u64;
     let len = mem.u.Memory.Length as u64;
     nsprint!("[NETSTACK] PnP: platform NIC started, regs {:#x}+{:#x}\n", mmio, len);
+    if let Some(int) = descs.iter().find(|d| d.Type == CM_RESOURCE_TYPE_INTERRUPT) {
+        let i = int.u.Interrupt;
+        nsprint!(
+            "[NETSTACK] PnP: platform NIC interrupt: vector {:#x}, level {}, {}\n",
+            i.Vector, i.Level, if int.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0 { "edge" } else { "level" }
+        );
+        IRQ_VECTOR.store(i.Vector, Ordering::Release);
+        IRQ_LEVEL.store(i.Level as u8, Ordering::Release);
+        IRQ_AFFINITY.store(i.Affinity as usize, Ordering::Release);
+        IRQ_LATCHED.store(int.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0, Ordering::Release);
+        // CmResourceShareShared
+        IRQ_SHARED.store(int.ShareDisposition == 3, Ordering::Release);
+        IRQ_PRESENT.store(true, Ordering::Release);
+    }
     MMIO_LEN.store(len, Ordering::Release);
     MMIO.store(mmio, Ordering::Release);
     KeSetEvent(&raw mut STARTED, 0, 0);
