@@ -22,7 +22,6 @@ CmSecurity
 ExCallback
 ExDoubleList
 ExFastMutex
-ExFastMutexBounded
 ExHardError
 ExInterlocked
 ExPools

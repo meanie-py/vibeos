@@ -3971,32 +3971,6 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   The two ExResource failures the baseline KEEPS (`:441`/`:488`, renumbered from 409/455 by the
   helper) are NT6 `ActiveCount` bookkeeping checked against the test's WS03 branch -- upstream
   semantics, accepted, not this race.
-- **`conformance:arm64` ExFastMutex ratchet flake — the TARPIT FIX (2026-10-08) + a separate
-  OldIrql bug it exposed.** The `ExFastMutex 204→202` ratchet red that repeatedly tarpitted the
-  merge queue was, like ExResource, `TestFastMutexConcurrent`'s Count/Contention timing race: a
-  thread that "should block" is given 50 ms, and under TCG load `Count`/`Contention` lag a
-  waiter, dropping the pass count below the floor. Fixed the same way: an `ExFastMutexBounded`
-  twin (`#define KMT_EXFASTMUTEX_BOUNDED` + `#include "ExFastMutex.c"`) whose `SETTLE_MUTEX`
-  waits (bounded ~5 s) for each contended state before asserting. It is immune to the race —
-  **stable `pass=209` across arm64 runs where unbounded flaked 202-208** — and is the reliable
-  ratchet anchor; the unbounded floor is loosened (200, `:344` assert?) because the twin now
-  carries the coverage. Registered in `kmtest_drv/testlist.c`, the three
-  `tools/payloads/kmtest/kmtest-tests-<arch>.txt` sweep lists, and the three UP baselines.
-  **Separately, this exposed a DETERMINISTIC arm64 OldIrql/IRQL leak — OPEN, NEW TICKET.**
-  `ExFastMutex.c:104/:106/:123/:125/:180` (single-threaded `TestFastMutex`, no contention) and
-  `:349/:356` fail every arm64 run with `(Mutex)->OldIrql = 1, expected 0` / `IRQL is 1,
-  expected 0`: a fast-mutex acquire at PASSIVE records APC. arm64-only (i386/amd64 `fail=0`),
-  consistent (not the bistable race), so the per-CPU soft IRQL (`KPCR.CurrentIrql`) is being
-  left at APC_LEVEL. The old baseline listed only one such failure (`:133`), so this is a
-  **likely regression** — prime suspects are the recent arm64 APC commits `ec8cb7df4a5`
-  ("deliver kernel APCs before returning to user mode") and `ad0898c9624` ("synchronous IRP
-  completions no longer land in dead stack frames"). A blind fix was tried and FALSIFIED: adding
-  the missing `interrupt_context_depth == 0` guard to the APC-delivery block in
-  `HalpDispatchSoftwareInterrupts` (arm64 `halstubs.rs`, which the DISPATCH half already has)
-  changed nothing (209 before and after), so it is reverted — the leak is elsewhere. Needs an
-  instrument-first hunt (record the RA when `CurrentIrql` is found > expected at a PASSIVE
-  checkpoint), as its own focused session. The ExFastMutex OldIrql failures are marked `assert`
-  in the arm64 baseline (tracked, not hidden) pending that fix.
 - **`NpfsFileInfo.c:57` "bistable" — ROOT-CAUSED 2026-09-26: the conformance PARSER, not npfs.**
   npfs returns `Information = 158` (Windows: 154 -- it subtracts the padded
   `sizeof(FILE_NAME_INFORMATION)`, 8, where Windows uses `FIELD_OFFSET(.., FileName)`, 4; upstream

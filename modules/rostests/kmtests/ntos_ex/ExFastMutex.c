@@ -40,53 +40,6 @@ static BOOLEAN (FASTCALL *pExiTryToAcquireFastMutex)(IN OUT PFAST_MUTEX FastMute
     ok_irql(ExpectedIrql);                                              \
 } while (0)
 
-/*
- * TestFastMutexConcurrent starts a thread that "should block" on the mutex, takes
- * its 50 ms StartThread timeout as proof it blocked, and then checks Count/Owner/
- * Contention at that instant. STATUS_TIMEOUT only says the thread did not acquire
- * in 50 ms, not that it has reached the contended path yet: under load (TCG, a busy
- * host) a freshly created thread may not have been scheduled, so the mutex still
- * reads its pre-contention state and Count/Contention lag one waiter behind. Every
- * recorded arm64 failure of these sites is exactly that -- a bistable "off by one
- * waiter", and which step loses the race varies sweep to sweep (204-208).
- *
- * KMT_EXFASTMUTEX_BOUNDED (the ExFastMutexBounded twin) waits -- bounded, ~5 s --
- * until the mutex has reached the state the next CheckMutex is about to assert, then
- * asserts it unchanged. This removes the scheduling assumption and nothing else: an
- * implementation that never reaches the state still fails, after the bound instead
- * of after 50 ms, and one that reaches a different state fails at once. ExFastMutex
- * keeps the original timing (and is expected to flake these under load); the bounded
- * twin is expected to pass them. Mirrors WaitForWaiters in ExResource.c.
- */
-#ifdef KMT_EXFASTMUTEX_BOUNDED
-static
-VOID
-SettleMutex(
-    PFAST_MUTEX Mutex,
-    LONG ExpectedCount,
-    PVOID ExpectedOwner,
-    ULONG ExpectedContention)
-{
-    LARGE_INTEGER Delay;
-    ULONG Tries;
-
-    Delay.QuadPart = -10 * 1000; /* 1 ms */
-    for (Tries = 0; Tries < 5000; ++Tries) /* ~5 s */
-    {
-        if (Mutex->Count == ExpectedCount &&
-            (PVOID)Mutex->Owner == ExpectedOwner &&
-            Mutex->Contention >= ExpectedContention)
-            return;
-        KeDelayExecutionThread(KernelMode, FALSE, &Delay);
-    }
-}
-#define SETTLE_MUTEX(Mutex, Count, Owner, Contention) \
-    SettleMutex((Mutex), (Count), (PVOID)(Owner), (Contention))
-#else
-/* The test as written: no settling, so the 50 ms scheduling assumption stands. */
-#define SETTLE_MUTEX(Mutex, Count, Owner, Contention) ((void)0)
-#endif
-
 static
 VOID
 TestFastMutex(
@@ -327,53 +280,42 @@ TestFastMutexConcurrent(
     /* have another thread acquire it -- should block */
     Status = StartThread(&ThreadData2, &Timeout, APC_LEVEL, FALSE, FALSE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
-    SETTLE_MUTEX(Mutex, -1L, ThreadData.Thread, 1LU);
     CheckMutex(Mutex, -1L, ThreadData.Thread, 1LU, PASSIVE_LEVEL, PASSIVE_LEVEL);
 
     /* finish the first thread -- now the second should become available */
     FinishThread(&ThreadData);
     Status = KeWaitForSingleObject(&ThreadData2.OutEvent, Executive, KernelMode, FALSE, NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
-    SETTLE_MUTEX(Mutex, 0L, ThreadData2.Thread, 1LU);
     CheckMutex(Mutex, 0L, ThreadData2.Thread, 1LU, APC_LEVEL, PASSIVE_LEVEL);
 
     /* block two more threads */
     Status = StartThread(&ThreadDataUnsafe, &Timeout, APC_LEVEL, FALSE, FALSE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
-    SETTLE_MUTEX(Mutex, -1L, ThreadData2.Thread, 2LU);
     CheckMutex(Mutex, -1L, ThreadData2.Thread, 2LU, APC_LEVEL, PASSIVE_LEVEL);
 
     Status = StartThread(&ThreadData, &Timeout, PASSIVE_LEVEL, FALSE, FALSE);
     ok_eq_hex(Status, STATUS_TIMEOUT);
-    SETTLE_MUTEX(Mutex, -2L, ThreadData2.Thread, 3LU);
     CheckMutex(Mutex, -2L, ThreadData2.Thread, 3LU, APC_LEVEL, PASSIVE_LEVEL);
 
     /* finish 1 */
     FinishThread(&ThreadData2);
     Status = KeWaitForSingleObject(&ThreadDataUnsafe.OutEvent, Executive, KernelMode, FALSE, NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
-    SETTLE_MUTEX(Mutex, -1L, ThreadDataUnsafe.Thread, 3LU);
     CheckMutex(Mutex, -1L, ThreadDataUnsafe.Thread, 3LU, APC_LEVEL, PASSIVE_LEVEL);
 
     /* finish 2 */
     FinishThread(&ThreadDataUnsafe);
     Status = KeWaitForSingleObject(&ThreadData.OutEvent, Executive, KernelMode, FALSE, NULL);
     ok_eq_hex(Status, STATUS_SUCCESS);
-    SETTLE_MUTEX(Mutex, 0L, ThreadData.Thread, 3LU);
     CheckMutex(Mutex, 0L, ThreadData.Thread, 3LU, PASSIVE_LEVEL, PASSIVE_LEVEL);
 
     /* finish 3 */
     FinishThread(&ThreadData);
 
-    SETTLE_MUTEX(Mutex, 1L, NULL, 3LU);
     CheckMutex(Mutex, 1L, NULL, 3LU, PASSIVE_LEVEL, PASSIVE_LEVEL);
 }
 
-#ifdef KMT_EXFASTMUTEX_BOUNDED
-START_TEST(ExFastMutexBounded)
-#else
 START_TEST(ExFastMutex)
-#endif
 {
     FAST_MUTEX Mutex;
     KIRQL Irql;
