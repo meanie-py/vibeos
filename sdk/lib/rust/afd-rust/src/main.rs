@@ -1014,8 +1014,8 @@ unsafe fn AfdQueryVolumeInformation(
     Status
 }
 
-const MID_TRACE: u32 = 1;
-const MIN_TRACE: u32 = 0;
+const MID_TRACE: u32 = 0x00000002; // afd debug.h: MID_TRACE 2; was 1
+const MIN_TRACE: u32 = 0x00000001; // afd debug.h: MIN_TRACE 1; was 0
 // AFD IOCTLs — _AFD_CONTROL_CODE(Op, Method) = (FILE_DEVICE_NETWORK<<12)|(Op<<2)|Method
 // per drivers/afd/shared.h. The grind hardcoded many of these with WRONG (roughly
 // sequential) values, so msafd's real codes were misrouted — e.g. SEND (0x1201F)

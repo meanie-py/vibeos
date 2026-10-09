@@ -794,10 +794,16 @@ pub unsafe extern "system" fn FindFirstFileExW(
             return INVALID_HANDLE_VALUE;
         }
 
+        // C: RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) -- the WIDE literal. Compared
+        // against the narrow b"*.*" the 6 bytes never matched, "*.*" went through the DOS
+        // wildcard rewrite instead (as `<"*`), and that rejects "." and "..": FindFirstFileW
+        // on any empty directory failed with ERROR_FILE_NOT_FOUND, so userenv could not copy
+        // the Default User profile and GUI setup stopped at "CopySystemProfile() failed".
+        static STAR_DOT_STAR_W: [u16; 3] = [b'*' as u16, b'.' as u16, b'*' as u16];
         if FilePattern.Length == 6
             && RtlCompareMemory(
                 FilePattern.Buffer as PVOID,
-                b"*.*\0".as_ptr() as PVOID,
+                STAR_DOT_STAR_W.as_ptr() as PVOID,
                 6,
             ) == 6
         {

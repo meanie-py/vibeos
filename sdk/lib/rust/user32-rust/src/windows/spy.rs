@@ -31,10 +31,10 @@ const SPY_INDENT_UNIT: INT = 4;
 
 // SPY_EnterMessage iFlag values (spy.h)
 const SPY_DISPATCHMESSAGE: INT = 0x0100;
-const SPY_SENDMESSAGE: INT = 0x0102;
-const SPY_DEFWNDPROC: INT = 0x0104;
+const SPY_SENDMESSAGE: INT = 0x0103; // user32 spy.c: 0x0103; was 0x102
+const SPY_DEFWNDPROC: INT = 0x0105; // user32 spy.c: 0x0105; was 0x104
 // SPY_ExitMessage iFlag values
-const SPY_RESULT_DEFWND: INT = 0x0000;
+const SPY_RESULT_DEFWND: INT = 0x0005; // user32 spy.c: 0x0005; was 0
 const SPY_RESULT_OK: INT = 0x0001;
 
 // WC_DIALOG == MAKEINTATOM(0x8002); the C compares (ULONG_PTR)WC_DIALOG.

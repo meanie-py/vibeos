@@ -2180,6 +2180,32 @@ pub unsafe fn flush(srb: *mut SRB) {
 }
 """
 
+_NARROW_WIDE_BAD = """\
+pub unsafe fn pattern(FilePattern: UNICODE_STRING) -> bool {
+    RtlCompareMemory(FilePattern.Buffer as PVOID, b"*.*\\0".as_ptr() as PVOID, 6) == 6
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     if (RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) == 6)
+"""
+
+# The fix, a macro that builds UTF-16 from a byte literal, and a narrow literal the C also
+# passes narrow.
+_NARROW_WIDE_GOOD = """\
+pub unsafe fn pattern(FilePattern: UNICODE_STRING) -> bool {
+    RtlCompareMemory(FilePattern.Buffer as PVOID, STAR_DOT_STAR_W.as_ptr() as PVOID, 6) == 6
+        && RtlInitUnicodeString(&mut s, wstr!(b"*.*\\0")) == 0
+        && DbgPrint(b"hi\\0".as_ptr()) == 0
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+//     if (RtlCompareMemory(FilePattern.Buffer, L"*.*", 6) == 6)
+//     RtlInitUnicodeString(&s, L"*.*");
+//     DbgPrint("hi");
+"""
+
 _CALL_ARG_SWAP_BAD = """\
 pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
     let mut szProfilesPath: [WCHAR; 260] = [0; 260];
@@ -2712,6 +2738,13 @@ CONTROLS: list[Control] = [
         good={"good.rs": _CONST_NARROWING_GOOD},
     ),
     Control(
+        name="scan_narrow_vs_wide_literal",
+        script="tools/scan_narrow_vs_wide_literal.py",
+        argv=["--lint"],
+        bad={"bad.rs": _NARROW_WIDE_BAD},
+        good={"good.rs": _NARROW_WIDE_GOOD},
+    ),
+    Control(
         name="scan_call_arg_swap",
         script="tools/scan_call_arg_swap.py",
         argv=["--lint"],
@@ -3048,6 +3081,11 @@ UNCOVERED: dict[str, str] = {
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
+    "scan_const_within_crate": (
+        "needs the whole tree's const declarations. The decision, within_crate(), is a pure "
+        "function over one dict, driven in tools/test_scan_const_vs_island.py with userenv's "
+        "IDS_PROFILEPATH (0 and 1 in one crate) as the positive control."
+    ),
     "scan_const_vs_island": (
         "needs the whole tree's bindgen islands as its oracle. The decision, "
         "island_disagreements(), is a pure function over two dicts, driven in "

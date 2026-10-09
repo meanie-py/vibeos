@@ -2853,6 +2853,13 @@ WEOF and fill-byte idiom, is allowed).
   in 1,054 functions of seven flipped modules, an inlined `RtlEqualLuid`.
 - **`tools/scan_const_contradictions.py` is oracle-free and the cheapest detector** — it asks
   only whether the tree contradicts *itself*, so it needs no catalog.
+- **A finding parked in a baseline is not triaged; it is hidden.** The cross-crate list
+  gates NEW rows only, and userenv's `IDS_PROFILEPATH` (0 in `setup.rs`, 1 in the prelude,
+  resources.h says 1) sat in it while it stopped GUI setup at "InitializeProfiles() failed"
+  on every install. Of 27 names with two values inside ONE crate, the header showed a wrong
+  copy for 17 (se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet's FCI/FDI codes, hal
+  `IDT_INTERNAL`, ...). Within one crate one copy is wrong by construction, so that half is
+  gated on its own (`scan_const_within_crate`) against only the reviewed per-file meanings.
 - **NEGATIVE result worth keeping:** do **not** auto-sweep all 2216 headers. It yields noise.
   False-positive classes both tools must handle: bindgen-generated files are correct *by
   construction*; `#[cfg]`-gated declarations are the Rust spelling of the header's `#ifdef`;

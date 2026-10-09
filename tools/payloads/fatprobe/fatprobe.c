@@ -8,7 +8,8 @@
  *      with duplicates, 8.3 names and most files missing, so Marlett never loaded);
  *   5. every name listed in %windir% (and system32) opens by its path, so a lookup and a listing
  *      of the same directory agree, and SearchPath finds what the listing shows.
- *   6. a file written only through a mapped view reaches the disk (usetup's cab extraction).
+ *   6. a file written only through a mapped view reaches the disk (usetup's cab extraction);
+ *   7. a new, empty directory lists "." and ".." (userenv's Default User copy).
  * Each step is announced before it runs, so a bugcheck names the step that took the guest down.
  * Verdict: "[FATPROBE] done VERDICT=PASS|FAIL". */
 #include <windows.h>
@@ -278,6 +279,74 @@ static void step_mapped_write(void)
     DeleteFileW(c);
 }
 
+/* 7. A freshly created directory lists "." and ".." -- FAT stores them as real dirents.
+ *    FindFirstFileW(newdir\*.*) on an empty directory failed with ERROR_FILE_NOT_FOUND,
+ *    so userenv's CopyDirectory of the Default User profile (its empty "Application Data")
+ *    failed and GUI setup stopped at "CopySystemProfile() failed". */
+static void step_empty_dir(void)
+{
+    WCHAR d[MAX_PATH], pat[MAX_PATH];
+    WIN32_FIND_DATAW fd;
+    HANDLE h;
+    int dot = 0, dotdot = 0, other = 0;
+
+    wsprintfW(d, L"%sfatprobe-emptydir", dir);
+    RemoveDirectoryW(d);
+    CHECK(CreateDirectoryW(d, NULL), "emptydir: CreateDirectoryW failed %lu\n", GetLastError());
+    wsprintfW(pat, L"%s\\*.*", d);
+    h = FindFirstFileW(pat, &fd);
+    CHECK(h != INVALID_HANDLE_VALUE, "emptydir: FindFirstFileW failed %lu (no \".\" entry)\n", GetLastError());
+    if (h != INVALID_HANDLE_VALUE) {
+        do {
+            if (!lstrcmpW(fd.cFileName, L".")) dot++;
+            else if (!lstrcmpW(fd.cFileName, L"..")) dotdot++;
+            else other++;
+        } while (FindNextFileW(h, &fd));
+        FindClose(h);
+        CHECK(dot == 1 && dotdot == 1 && other == 0, "emptydir: listed . x%d, .. x%d, other x%d\n", dot, dotdot, other);
+        if (dot == 1 && dotdot == 1 && other == 0) SAY("emptydir: . and .. listed\n");
+    }
+    CHECK(RemoveDirectoryW(d), "emptydir: RemoveDirectoryW failed %lu\n", GetLastError());
+
+    /* Diagnostics (no verdict): the same listing with no pattern at the NT level, and a
+     * non-empty new directory, so a failure above says whether "." is missing from the disk
+     * or only from the *.* match. The kept directory can be read off the tempdisk after. */
+    {
+        UNICODE_STRING us;
+        OBJECT_ATTRIBUTES oa;
+        IO_STATUS_BLOCK iosb;
+        HANDLE hd;
+        static BYTE buf[4096];
+        NTSTATUS st;
+        WCHAR nt[MAX_PATH], f[MAX_PATH];
+        wsprintfW(d, L"%sfatprobe-keepdir", dir);
+        CreateDirectoryW(d, NULL);
+        wsprintfW(f, L"%s\\file.txt", d);
+        make(f);
+        wsprintfW(nt, L"\\??\\%s", d);
+        us.Buffer = nt; us.Length = (USHORT)(lstrlenW(nt) * 2); us.MaximumLength = us.Length + 2;
+        InitializeObjectAttributes(&oa, &us, OBJ_CASE_INSENSITIVE, NULL, NULL);
+        st = NtOpenFile(&hd, FILE_LIST_DIRECTORY | SYNCHRONIZE, &oa, &iosb, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        FILE_DIRECTORY_FILE | FILE_SYNCHRONOUS_IO_NONALERT);
+        if (st >= 0) {
+            st = NtQueryDirectoryFile(hd, NULL, NULL, NULL, &iosb, buf, sizeof(buf), 1 /* FileDirectoryInformation: DIRINFO */,
+                                      FALSE, NULL, TRUE);
+            SAY("keepdir: NtQueryDirectoryFile(no pattern) st=%08lx info=%lu\n", st, (ULONG)iosb.Information);
+            if (st >= 0) {
+                DIRINFO *e = (DIRINFO *)buf;
+                for (;;) {
+                    SAY("keepdir: entry '%.*ls'\n", (int)(e->FileNameLength / 2), e->FileName);
+                    if (!e->NextEntryOffset) break;
+                    e = (DIRINFO *)((BYTE *)e + e->NextEntryOffset);
+                }
+            }
+            NtClose(hd);
+        } else {
+            SAY("keepdir: NtOpenFile st=%08lx\n", st);
+        }
+    }
+}
+
 int main(void)
 {
     WCHAR a[MAX_PATH], b[MAX_PATH];
@@ -336,6 +405,8 @@ int main(void)
     step_lookup();
     SAY("step mapped-write\n");
     step_mapped_write();
+    SAY("step empty-dir\n");
+    step_empty_dir();
 
     SAY("done VERDICT=%s failures=%ld\n", failures ? "FAIL" : "PASS", failures);
     return failures != 0;

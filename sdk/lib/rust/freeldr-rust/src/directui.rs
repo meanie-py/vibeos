@@ -53,7 +53,7 @@ pub unsafe extern "C" fn UiUnInitialize(BootText: PCSTR) {
 #[no_mangle]
 pub unsafe extern "C" fn UiDrawBackdrop(DrawHeight: ULONG) {
     
-    const COLOR_WHITE: u32 = 7;
+    const COLOR_WHITE: u32 = 15; // ui.h: 15 (7 is COLOR_GRAY)
     const COLOR_BLACK: u32 = 0;
     
     MachVideoClearScreen(ATTR(COLOR_WHITE, COLOR_BLACK));

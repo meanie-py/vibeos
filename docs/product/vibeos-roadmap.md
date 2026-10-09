@@ -622,10 +622,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   to winlogon, GUI setup and Explorer (run 32). Each class has a `vibeos-cli check` scanner now (see the field manual). Trying the
   install with 2 GB also found the amd64 BIOS loader triple-faulting with more than ~1 GB of
   RAM (its page lookup table placed past the 1 GiB it maps; `bios-boot.md`), fixed.
-  **Still owed:** setup's own reboot completing on the `IS_DIRTY_SSE` fix (unverified at
-  landing), then GUI setup's reboot and the second installed boot -- the test waits for the
-  desktop after the SECOND `[SMSS] _main` since winlogon starts Explorer beside GUI setup;
-  i386 and UEFI installs.
+  Setup's reboot now completes (run 39), and the installed disk's first boot reaches
+  winlogon, GUI setup and Explorer. GUI setup then stopped at "InitializeProfiles() failed":
+  userenv loaded the profiles path into the wrong buffer, copied the profile name into the
+  wrong one, and used a local `IDS_PROFILEPATH = 0` (resources.h: 1) -- all three fixed.
+  **Still owed:** GUI setup completing and its reboot into the second installed boot (the
+  test waits for the desktop after the SECOND `[SMSS] _main`); i386 and UEFI installs.
+
+- **27 constants defined with two values inside ONE crate, parked in a lint baseline**
+  (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
+  `IDS_PROFILEPATH` as 0 vs 1 all along, from inside its baseline ("the triage queue"), and it
+  blocked GUI setup on every install. Each pair was checked against its header, and the wrong
+  copies fixed: se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet-rust's FCI/FDI error codes, hal
+  `IDT_INTERNAL`, fastfat `OPLOCK_FLAG_PARENT_OBJECT`, cdrom `SRB_STATUS_MASK`, freeldr
+  `COLOR_WHITE`, user32 SPY_*, afd trace levels, inbv OWNED/DISABLED. The 10 rows left are
+  per-file meanings, and `scan_const_contradictions --within-crate` now gates the class
+  against exactly those (`scan_const_within_crate`), so the next one cannot park.
 
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each

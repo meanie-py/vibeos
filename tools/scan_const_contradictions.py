@@ -235,6 +235,31 @@ def contradictions(decls) -> list[tuple[str, str, int]]:
     return sorted(set(out))
 
 
+def _crate_of(rel: str) -> str:
+    parts = rel.split("/")
+    return parts[3] if len(parts) > 3 and parts[:3] == ["sdk", "lib", "rust"] else rel
+
+
+def within_crate(decls) -> list[tuple[str, str, int]]:
+    """[(name, file, value)] for a name with two values inside ONE crate (same arch bucket).
+
+    Across crates a name can legitimately mean two things; inside one crate, one of the two
+    copies is wrong. The cross-crate list is a large, mixed triage queue that only gates NEW
+    rows, and userenv's IDS_PROFILEPATH (0 and 1 in one crate) sat in it while it stopped GUI
+    setup on every install. This half is gated against a short reviewed baseline instead.
+    """
+    out = []
+    for name, sites in decls.items():
+        by_bucket: dict[tuple[str, str], set] = defaultdict(set)
+        for rel, val, arch in sites:
+            by_bucket[(_crate_of(rel), arch)].add(val)
+        bad = {k for k, v in by_bucket.items() if disagrees(v)}
+        for rel, val, arch in sites:
+            if (_crate_of(rel), arch) in bad:
+                out.append((name, rel, val))
+    return sorted(set(out))
+
+
 # `pub const NAME: T = VALUE;` as bindgen writes it -- the island's transcript of a C header.
 ISLAND_FILE_RE = re.compile(r"(?:^|/)(?:hal_)?bindgen_[a-z0-9_]+\.rs$")
 ISLAND_CONST_RE = re.compile(
@@ -297,6 +322,10 @@ def main() -> int:
     if "--vs-island" in sys.argv:
         for name, rel, val in island_disagreements(decls, island_values()):
             print(f"{rel}: {name} = {render_value(val)} [VS_ISLAND]")
+        return 0
+    if "--within-crate" in sys.argv:
+        for name, rel, val in within_crate(decls):
+            print(f"{rel}: {name} = {render_value(val)} [WITHIN_CRATE]")
         return 0
     hits = contradictions(decls)
 
