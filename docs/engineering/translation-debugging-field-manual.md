@@ -6239,6 +6239,19 @@ linking, silently wrong. `_WIN32_WINNT=0x502` instead of the module's real `0x60
 not a hand re-preprocess:** `strings -el <the pre-flip .c.obj>` shows exactly which literals
 the real build compiled in. A bare `clang -E` with guessed `-D`s is how the bug arose.
 
+### A per-ARCH `#define` gets baked in by a translation preprocessed under one arch
+The same hazard as the row-set entry above, along the arch axis, and the build cannot see it
+because every target compiles. comctl32's `commctrl.c` builds its SxS manifest name from
+`ARCH` (`#ifdef __i386__` → `L"x86"`, `__x86_64__` → `L"amd64"`, `__aarch64__` → `L"arm64"`).
+The c2rust pass ran under the arm64 profile, so the Rust held a transmuted byte literal
+spelling `arm64_microsoft.windows.common-controls_...manifest` on EVERY arch. On i386 and amd64
+`CreateActCtxW` failed with ERROR_FILE_NOT_FOUND (the `err:(...commctrl.c:163)` line every
+boot printed), and neither the v5 nor the v6 activation context existed. Found 2026-10-09 by
+reading an amd64 modrun serial log for something else. Fix: `#[cfg(target_arch)]` consts
+and a `const fn` that assembles the name. Review hint: a C file with an arch `#if` whose
+translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
+them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
+
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
 input that is NOT in the table. Cause: the C table ends in a terminator row (`L""`, `NULL`,

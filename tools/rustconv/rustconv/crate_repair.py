@@ -3701,9 +3701,7 @@ def _variadic_promotion_rule(
 #: than `as`) on a path or one parenthesized group, then any chain of `.field`, `(args)` and
 #: `[index]`. Anything with a binary operator outside parentheses is not one.
 _PAREN = r"\((?:[^()]|\((?:[^()]|\([^()]*\))*\))*\)"
-_RE_ATOMIC_EXPR = re.compile(
-    rf"[*!&-]*(?:[\w:]+|{_PAREN})(?:\.\w+|{_PAREN}|\[[^\[\]]*\])*"
-)
+_RE_ATOMIC_EXPR = re.compile(rf"[*!&-]*(?:[\w:]+|{_PAREN})(?:\.\w+|{_PAREN}|\[[^\[\]]*\])*")
 
 
 def _local_static_mut_rule(

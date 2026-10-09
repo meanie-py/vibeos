@@ -44,13 +44,13 @@ STRING_RE = re.compile(r'b?"(?:\\.|[^"\\])*"')
 CHAR_RE = re.compile(r"b?'(?:\\.|[^'\\])'")
 IDENT = r"[A-Za-z_]\w*"
 # `case A | B:` / `case (A|B|C):` -- only labels made of bare identifiers joined by `|`.
-C_CASE_RE = re.compile(
-    rf"\bcase\s+\(?\s*({IDENT}(?:\s*\|\s*{IDENT})+)\s*\)?\s*:(?!:)"
-)
+C_CASE_RE = re.compile(rf"\bcase\s+\(?\s*({IDENT}(?:\s*\|\s*{IDENT})+)\s*\)?\s*:(?!:)")
 PATH = rf"{IDENT}(?:::{IDENT})*"
 # An arm starts a line, or follows `{` / `,`; a guard's `x == A | B` follows `==`.
 ARM_RE = re.compile(rf"(?:^|[{{,])[ \t]*({PATH}(?:\s*\|\s*{PATH})+)\s*(?:=>|\bif\b)", re.M)
-MATCHES_RE = re.compile(rf"\bmatches!\s*\([^,()]*(?:\([^()]*\)[^,()]*)*,\s*({PATH}(?:\s*\|\s*{PATH})+)\s*[,)]")
+MATCHES_RE = re.compile(
+    rf"\bmatches!\s*\([^,()]*(?:\([^()]*\)[^,()]*)*,\s*({PATH}(?:\s*\|\s*{PATH})+)\s*[,)]"
+)
 
 
 def _blank(m: re.Match) -> str:
@@ -68,9 +68,21 @@ def c_bitor_labels(text: str) -> set[frozenset[str]]:
 
 def repo_c_labels() -> set[frozenset[str]]:
     files = subprocess.run(
-        ["git", "-C", str(REPO), "grep", "-lE", r"\bcase\s+\(?\s*\w+\s*\|", "--",
-         "*.c", "*.cpp", "*.h"],
-        capture_output=True, text=True, check=False,
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "grep",
+            "-lE",
+            r"\bcase\s+\(?\s*\w+\s*\|",
+            "--",
+            "*.c",
+            "*.cpp",
+            "*.h",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
     )
     if files.returncode not in (0, 1):
         raise SystemExit(f"scan_case_bitor_pattern: git grep failed: {files.stderr.strip()}")
@@ -87,9 +99,7 @@ def _patterns(text: str) -> tuple[re.Pattern, ...]:
 def scan_text(text: str, labels: set[frozenset[str]]) -> list[tuple[int, str]]:
     # Most files hold no candidate at all: match the raw text first, and pay for the
     # comment/string blanking only where a candidate is in the label set.
-    if not any(
-        _idents(m.group(1)) in labels for rx in _patterns(text) for m in rx.finditer(text)
-    ):
+    if not any(_idents(m.group(1)) in labels for rx in _patterns(text) for m in rx.finditer(text)):
         return []
     code = CHAR_RE.sub(_blank, STRING_RE.sub(_blank, COMMENT_RE.sub(_blank, text)))
     lines = text.splitlines()
@@ -111,7 +121,9 @@ def main() -> int:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("paths", nargs="*", type=Path)
-    ap.add_argument("--lint", action="store_true", help="terse, line-free output; exit 1 on findings")
+    ap.add_argument(
+        "--lint", action="store_true", help="terse, line-free output; exit 1 on findings"
+    )
     args = ap.parse_args()
 
     labels = repo_c_labels()
