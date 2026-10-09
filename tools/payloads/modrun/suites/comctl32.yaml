@@ -1,0 +1,18 @@
+# comctl32 (dll/win32/comctl32 -> comctl32-rust). Smoke only proves the listview draws the
+# desktop; this drives the non-window logic smoke never reaches. One probe
+# (probes/comctl32.c), staged twice: as comctl32_c.exe it loads the pre-flip C
+# (comctl32_c.dll, from c_oracle.cmake) beside it, under any other name the system
+# comctl32.dll. Both print only values, so the outputs must match byte for byte.
+module: comctl32
+variants:
+  c: '%SystemRoot%\bin\modrun\comctl32_c.exe'
+  rust: '%SystemRoot%\bin\modrun\comctl32_probe.exe'
+ninja: [comctl32_c]
+stage:
+  - {src: 'tools/payloads/modrun/probes/comctl32-{arch}.exe', dest: bin/modrun/comctl32_c.exe}
+  - {src: 'tools/payloads/modrun/probes/comctl32-{arch}.exe', dest: bin/modrun/comctl32_probe.exe}
+  - {src: 'build-{arch}/dll/win32/comctl32/comctl32_c.dll', dest: bin/modrun/comctl32_c.dll}
+cases:
+  - id: logic
+    expect: ['sort asc 1', 'dsa deleteall 1', 'getptr nodest', 'probe done']
+    timeout: 120
