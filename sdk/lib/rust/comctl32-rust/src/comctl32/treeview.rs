@@ -1055,7 +1055,7 @@ unsafe extern "C" fn TREEVIEW_AllocateItem(infoPtr: *const TREEVIEW_INFO) -> *mu
     // inc/dec to toggle the images.
     (*newItem).iImage = 0 as ::core::ffi::c_int;
     (*newItem).iSelectedImage = 0 as ::core::ffi::c_int;
-    (*newItem).iExpandedImage = I_IMAGENONE as WORD as ::core::ffi::c_int;
+    (*newItem).iExpandedImage = I_IMAGENONE as WORD as ::core::ffi::c_int; // nolint: const-narrowing-cast (the C narrows too: treeview.c:1012 `(WORD)I_IMAGENONE`)
     (*newItem).infoPtr = infoPtr;
 
     if DPA_InsertPtr(
@@ -2916,7 +2916,7 @@ unsafe extern "C" fn TREEVIEW_DrawItem(infoPtr: *const TREEVIEW_INFO, hdc: HDC, 
             /* The item is currently selected */
             imageIndex = (*item).iSelectedImage as INT;
         } else if (*item).state & TVIS_EXPANDED as UINT != 0
-            && (*item).iExpandedImage != (I_IMAGENONE as WORD) as ::core::ffi::c_int
+            && (*item).iExpandedImage != (I_IMAGENONE as WORD) as ::core::ffi::c_int // nolint: const-narrowing-cast (the C narrows too: treeview.c:2637 `(WORD)I_IMAGENONE`)
         {
             /* The item is currently not selected but expanded */
             imageIndex = (*item).iExpandedImage as INT;
