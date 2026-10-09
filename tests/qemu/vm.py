@@ -474,6 +474,101 @@ def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     return smp_selected_iso(iso, work_dir) if smp_count() else iso
 
 
+# --- `vibeos-cli stress` knobs ------------------------------------------------
+#
+# "Host load" is three different mechanisms, and each has a deterministic QEMU
+# knob. These env vars let `stress` (and anyone else) dial ONE of them at a time
+# so a flake gets a named cause instead of a weather report:
+#
+#   VIBEOS_QEMU_ICOUNT_SHIFT=N   `-icount shift=N,sleep=off`: the guest clock advances
+#                                2^N ns per instruction regardless of the host, so the
+#                                guest perceives a CPU 2^N ns/insn slow and its own
+#                                timeouts fire — "slow emulation", reproducible at a
+#                                chosen slowness. Forces single-threaded TCG (icount
+#                                has no MTTCG) and TCG itself on x86.
+#   VIBEOS_TCG_THREAD=single     round-robin every vCPU on ONE host thread at TCG's
+#                                timeslice: the cross-CPU interleaving is stable from
+#                                run to run instead of the host scheduler's choice.
+#   VIBEOS_BOOT_TIMEOUT_SCALE=F  multiply the harness boot/silence budgets: 0.5 asks
+#                                whether a "HANG" is a healthy boot that merely crossed
+#                                the wall clock.
+#
+# Host-side CPU starvation (pinning QEMU to one core so the scheduler, not TCG,
+# decides which vCPU runs) needs no QEMU flag; `stress` does it from outside.
+
+
+def stress_icount_shift() -> int | None:
+    raw = os.environ.get("VIBEOS_QEMU_ICOUNT_SHIFT", "").strip()
+    if not raw:
+        return None
+    try:
+        n = int(raw)
+    except ValueError:
+        raise ValueError(f"VIBEOS_QEMU_ICOUNT_SHIFT must be an integer (got {raw!r})") from None
+    if not 0 <= n <= 10:
+        raise ValueError(f"VIBEOS_QEMU_ICOUNT_SHIFT={n}: QEMU accepts 0..10")
+    return n
+
+
+def stress_tcg_thread() -> str | None:
+    raw = os.environ.get("VIBEOS_TCG_THREAD", "").strip()
+    if not raw:
+        return None
+    if raw not in ("single", "multi"):
+        raise ValueError(f"VIBEOS_TCG_THREAD must be single|multi (got {raw!r})")
+    return raw
+
+
+def stress_timeout_scale() -> float:
+    raw = os.environ.get("VIBEOS_BOOT_TIMEOUT_SCALE", "").strip()
+    if not raw:
+        return 1.0
+    try:
+        f = float(raw)
+    except ValueError:
+        raise ValueError(f"VIBEOS_BOOT_TIMEOUT_SCALE must be a number (got {raw!r})") from None
+    if f <= 0:
+        raise ValueError(f"VIBEOS_BOOT_TIMEOUT_SCALE={f}: must be positive")
+    return f
+
+
+def apply_stress_knobs(cmd: list[str], arch: str) -> list[str]:
+    """Rewrite a composed QEMU command line for the stress env knobs above.
+
+    Pure: returns the command unchanged when no knob is set, so every ordinary
+    boot is byte-identical to before this existed. Refuses to stack on an
+    existing `-icount` (a record/replay run owns its own)."""
+    shift = stress_icount_shift()
+    thread = stress_tcg_thread()
+    if shift is None and thread is None:
+        return cmd
+    if shift is not None and "-icount" in cmd:
+        raise ValueError(
+            "VIBEOS_QEMU_ICOUNT_SHIFT set on a command that already carries -icount "
+            "(record/replay?); stress and rr do not stack"
+        )
+    if shift is not None:
+        thread = "single"  # QEMU: "No MTTCG when icount is enabled"
+        if not arch.startswith("arm64"):
+            from . import backend as be
+
+            cmd = be.rewrite_accel(cmd, "tcg", arch)  # KVM/whpx have no instruction counter
+    out: list[str] = []
+    i = 0
+    while i < len(cmd):
+        a = cmd[i]
+        if a == "-accel" and i + 1 < len(cmd) and cmd[i + 1].split(",")[0] == "tcg":
+            props = [p for p in cmd[i + 1].split(",")[1:] if not p.startswith("thread=")]
+            out += ["-accel", ",".join(["tcg", f"thread={thread}", *props])]
+            i += 2
+            continue
+        out.append(a)
+        i += 1
+    if shift is not None:
+        out += ["-icount", f"shift={shift},sleep=off"]
+    return out
+
+
 def smp_boot_timeout(base: float, n: int | None) -> float:
     """Scale a UP-tuned boot_timeout for an `-smp N` boot.
 
@@ -1770,6 +1865,20 @@ class QemuVM:
             config._up_boot_timeout,  # type: ignore[attr-defined]
             smp_count(),
         )
+        # `vibeos-cli stress` knobs (see apply_stress_knobs). Applied AFTER the smp
+        # recompute above, so they too start from the stashed UP value every time.
+        scale = stress_timeout_scale()
+        if scale != 1.0:
+            self.config.boot_timeout *= scale
+            if self.config.hang_silence_seconds:
+                self.config.hang_silence_seconds *= scale
+        if stress_icount_shift() is not None:
+            # icount with sleep=off runs the guest as fast as TCG can, but the
+            # single-threaded round robin and the deterministic clock are still
+            # several times slower than MTTCG; same shape as the rr budget.
+            self.config.boot_timeout = max(self.config.boot_timeout, 900.0)
+            if self.config.hang_silence_seconds:
+                self.config.hang_silence_seconds = max(self.config.hang_silence_seconds, 600.0)
         # More vCPUs than host CPUs (a Graviton-sized -smp 64 on a 24-thread host):
         # every vCPU's firmware idle loop competes for the same threads, and UEFI's
         # boot manager goes serial-silent for minutes on a healthy boot. The
@@ -2519,6 +2628,7 @@ class QemuVM:
                 else:
                     cmd = self._build_native_cmd()
                 cmd = self._apply_record_replay(cmd)
+                cmd = apply_stress_knobs(cmd, self.config.arch)
             finally:
                 _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")

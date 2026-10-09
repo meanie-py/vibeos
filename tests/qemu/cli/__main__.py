@@ -39,6 +39,7 @@ from . import prune as prune_mod
 from . import repro as repro_mod
 from . import rrcmd as rr_mod
 from . import smoke as smoke_mod
+from . import stress as stress_mod
 from .archcfg import ACCEPTED_ARCHES
 
 # repo root = .../tests/qemu/cli/__main__.py -> up 3
@@ -587,6 +588,47 @@ def build_parser() -> argparse.ArgumentParser:
     )
     f.add_argument("--allow-stale", action="store_true")
     f.set_defaults(fn=farm_mod.farm)
+
+    stp = sub.add_parser(
+        "stress",
+        help="reproduce 'host load' as named mechanisms: boot a matrix of one-knob "
+        "profiles (slow-cpu, lockstep, starved-smp, tight-clock) and report failure "
+        "rate per profile — not a gate stage",
+    )
+    stp.add_argument("--arch", required=True, help="i386 | amd64 | arm64 (no default)")
+    stp.add_argument(
+        "--profile",
+        default="all",
+        help="comma list of baseline,slow-cpu,lockstep,starved-smp,tight-clock (default all)",
+    )
+    stp.add_argument("--repeat", type=int, default=3, help="boots per profile (default 3)")
+    stp.add_argument(
+        "--shift",
+        type=int,
+        default=0,
+        help=f"slow-cpu: -icount shift (guest clock = 2^N ns per instruction; default "
+        f"{stress_mod.DEFAULT_ICOUNT_SHIFT} ≈ a 40s boot during which the guest sees "
+        "~20 min pass). 3 ≈ TCG's real pace",
+    )
+    stp.add_argument(
+        "--smp", type=int, default=0, help="vCPUs for lockstep/starved-smp (default 2)"
+    )
+    stp.add_argument(
+        "--cores",
+        type=int,
+        default=0,
+        help="starved-smp: host cores QEMU is pinned to (default 1: every vCPU and the "
+        "iothread share one core, so the scheduler decides who runs)",
+    )
+    stp.add_argument(
+        "--timeout-scale",
+        type=float,
+        default=0,
+        help=f"tight-clock: multiply the harness boot/silence budgets (default "
+        f"{stress_mod.DEFAULT_TIMEOUT_SCALE})",
+    )
+    stp.add_argument("--allow-stale", action="store_true")
+    stp.set_defaults(fn=stress_mod.stress)
 
     fr = sub.add_parser("farm-report", help="cluster the farm corpus into failure families")
     fr.add_argument("--since", default="", help="only records with ts >= YYYYMMDD[-HHMMSS]")

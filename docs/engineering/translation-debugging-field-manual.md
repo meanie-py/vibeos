@@ -14041,6 +14041,24 @@ different stopping point. Two greps settle which, and skipping them cost this la
 two wrong diagnoses in a row — first "contention" asserted with no control, then a
 "master regressed it" theory that the thread count refuted immediately.
 
+### "It only fails under host load" — name the mechanism with `vibeos-cli stress`
+
+**Symptom:** a boot fails on a busy host and passes host-quiet, and the lane's
+explanation is "host load". **Cause:** "host load" is three mechanisms wearing one
+coat — slow emulation firing a guest-side timeout, the host scheduler reordering
+vCPUs across a shared structure, or the harness wall clock cutting a healthy boot —
+and a loaded host changes all three at once, never the same way twice, so it cannot
+tell them apart. The amd64-bios "flake" of 2026-10 was the second kind (usbport
+reading a transfer buffer the other CPU had already completed) and was called the
+first for a day. **Fix:** `./vibeos-cli stress --arch amd64 --repeat 5` runs the
+same media through one-knob profiles (`slow-cpu` = `-icount shift=N,sleep=off`,
+`lockstep` = `-smp 2` single-threaded TCG, `starved-smp` = `-smp 2` pinned to one
+host core, `tight-clock` = budgets ×0.5, plus a `baseline` control) and prints the
+failure rate per profile. Fails under `slow-cpu` only: a guest timeout. Under
+`lockstep`/`starved-smp`: a race, and `lockstep` gives a stable interleaving to
+debug under. Under none of them at your sample size: stop saying load. Not a gate
+stage; `tests/qemu/cli/README.md` has the knobs.
+
 ### New builds pass an older CPU-lease waiter
 
 **Symptom:** `host-status` shows an older waiter still queued while newer builds
