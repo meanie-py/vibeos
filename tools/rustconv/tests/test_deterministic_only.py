@@ -27,7 +27,28 @@ RUSTCONV_DIR = REPO_ROOT / "tools" / "rustconv"
 SUBJECT = REPO_ROOT / "dll/win32/msvcrt/mathf.c"
 
 
+def _configured_msvcrt() -> bool:
+    """A build-<arch> whose compile database already lists msvcrt's C.
+
+    translate derives the TU's macro set from that database (macro_authority), so without it
+    the run refuses before the property under test is reached. The merge gate runs this suite
+    BESIDE its `--clean` builds, which delete compile_commands.json for minutes: that window
+    turned origin/master "red" with nothing wrong (2026-10-09) and held the whole queue.
+    """
+    for db in REPO_ROOT.glob("build-*/compile_commands.json"):
+        try:
+            if "dll/win32/msvcrt/" in db.read_text(errors="replace"):
+                return True
+        except OSError:
+            continue
+    return False
+
+
 @pytest.mark.skipif(not SUBJECT.is_file(), reason="msvcrt sources not present")
+@pytest.mark.skipif(
+    not _configured_msvcrt(),
+    reason="no configured build-<arch> lists msvcrt (./vibeos-cli build --arch i386)",
+)
 def test_deterministic_only_spends_nothing_and_still_assembles(tmp_path):
     env = {
         **os.environ,
