@@ -47,7 +47,7 @@ pub unsafe extern "system" fn KdPortGetByteEx(
     }
     match crate::arm64_dbg::uart_getc(KdGetPl011Base() as *mut u32) {
         Some(b) => {
-            *ByteReceived = b;
+            core::ptr::write_volatile(ByteReceived, b);
             1u8
         }
         None => 0u8,
