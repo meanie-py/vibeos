@@ -389,6 +389,15 @@ flowing at the deadline) with **no** kernel census/lockdep wedge self-report.
   retrying a regression away is exactly what the North Star forbids. (The old
   blanket HANG_TIMEOUT retry dated from the native-KVM contention era and let a
   ~50% service wedge pass a 3-attempt gate ~87% of the time.)
+- **The build broker puts the landing gate first too.** Compiler and linker
+  processes are admitted by `tools/host-jobs` (18 CPU slots on a 24-vCPU box, link
+  cap 4). A conductor's gate (`VIBEOS_JOB_CLASS=integration`) ranks ahead of a
+  lane's own `build` (`interactive`), and while any gate job is present the top half
+  of the slots are gate-only (`VIBEOS_HOST_JOB_LAND_RESERVE`, default slots/2);
+  every class still ages to top rank after 120 s, so a lane is delayed by a gate,
+  never starved. Before 2026-10-09 the order was the reverse, and a gate that took
+  530 s on a quiet host took 1500-2100 s whenever 15-20 lane builds overlapped it —
+  which the whole queue then paid per landing (submit-to-verdict median 39 min).
 - **Concurrency is safe to over-submit.** Each smoke is a `vibeos-cli smoke`
   subprocess that self-throttles on the host boot-CPU pool (`hostlock` `bootcpu`,
   capacity-derived — 8 on a 24-vCPU box, was a flat 4) and the global QEMU cap
