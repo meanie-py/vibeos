@@ -300,8 +300,8 @@ unsafe extern "system" fn COMCTL32_StrSpnHelperA(
     }
     return lpszRead.offset_from(lpszStr) as ::core::ffi::c_int;
 }
-#[no_mangle] #[no_mangle]
-#[no_mangle] pub unsafe extern "system" fn StrCSpnA(lpszStr: LPCSTR, lpszMatch: LPCSTR) -> i32 {
+#[no_mangle]
+pub unsafe extern "system" fn StrCSpnA(lpszStr: LPCSTR, lpszMatch: LPCSTR) -> i32 {
     return COMCTL32_StrSpnHelperA(lpszStr, lpszMatch, StrChrA, TRUE);
 }
 

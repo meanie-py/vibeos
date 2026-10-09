@@ -28,16 +28,21 @@
 
 #![cfg(target_arch = "aarch64")]
 
-use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, rd, XSDT_PA};
-use super::bits::{nth_cpu, Bits};
+use super::bits::{next_cpu_after, nth_cpu, Bits};
 use super::gic3;
 use super::iort;
 
 unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
+}
+
+unsafe extern "system" {
+    /// ntoskrnl tripwire.rs: is this exact tripwire token set for this boot?
+    fn VibeTripwireHasToken(needle: *const u8, len: usize) -> u8;
 }
 
 // ITS control frame.
@@ -150,6 +155,11 @@ static LPI_COUNT: AtomicU32 = AtomicU32::new(0);
 static LPIS: Bits<{ LPI_SLOTS as usize / 64 }> = Bits::new();
 /// Counts messages handed out; each takes the next CPU of its allowed set in turn.
 static ROTOR: AtomicU32 = AtomicU32::new(0);
+/// The ITS_MISSTEER tripwire: bind each LPI to the CPU after the one it is handed
+/// out for, so only the MOVI at KeConnectInterrupt (steer) gets it delivered where
+/// its interrupt object is. Nothing else ever moves an LPI, so without this the
+/// move path never runs.
+static MISSTEERING: AtomicBool = AtomicBool::new(false);
 static PROPERTIES: AtomicUsize = AtomicUsize::new(0);
 /// The CPUs whose redistributors take LPIs, each with a collection on every ITS.
 static CPUS: AtomicU64 = AtomicU64::new(0);
@@ -564,6 +574,11 @@ unsafe fn bring_up() -> bool {
 /// LOCK; the first caller claims it and anyone else waits for the answer.
 unsafe fn probe() -> bool {
     if STATE.compare_exchange(UNPROBED, PROBING, Ordering::AcqRel, Ordering::Acquire).is_ok() {
+        const MISSTEER: &[u8] = b"ITS_MISSTEER";
+        if VibeTripwireHasToken(MISSTEER.as_ptr(), MISSTEER.len()) != 0 {
+            MISSTEERING.store(true, Ordering::Relaxed);
+            DbgPrint(b"[HAL] GICv3 ITS: tripwire ITS_MISSTEER - every LPI is bound one CPU over, for MOVI to fix\n\0".as_ptr());
+        }
         let ok = bring_up();
         STATE.store(if ok { READY } else { ABSENT }, Ordering::Release);
         return ok;
@@ -590,7 +605,7 @@ unsafe fn route(requester: u32) -> Option<(usize, u32)> {
                 return;
             }
             let bytes = core::slice::from_raw_parts(t, len);
-            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, segment, rid)));
+            answer = Some(iort::table(bytes).ok_or(iort::Error::Malformed).and_then(|t| iort::translate(t, super::ecam::root_complex_segment(segment), rid)));
         });
     }
     let (its_id, device) = match answer {
@@ -712,8 +727,9 @@ pub(crate) unsafe fn allocate_message_block(count: u32, requested: ddk::KAFFINIT
         (n..n + count).for_each(|m| _ = LPIS.release(m));
         return None;
     };
+    let bound = if MISSTEERING.load(Ordering::Relaxed) { next_cpu_after(cpus, cpu) } else { cpu };
     for m in n..n + count {
-        LPI_CPU[m as usize].store(cpu as u8, Ordering::Relaxed);
+        LPI_CPU[m as usize].store(bound as u8, Ordering::Relaxed);
         LPI_ORDER[m as usize].store(count.trailing_zeros() as u8, Ordering::Relaxed);
     }
     if count > 1 {

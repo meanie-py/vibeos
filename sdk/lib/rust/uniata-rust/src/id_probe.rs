@@ -329,8 +329,8 @@ pub unsafe extern "system" fn UniataCheckPCISubclass(
 } // end UniataCheckPCISubclass()
 
 pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
-    let mut deviceExtension: PHW_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut PciDevMap: PCHAR = core::ptr::null_mut();
+    let mut deviceExtension: PHW_DEVICE_EXTENSION ;
+    let mut PciDevMap: PCHAR ;
     let mut slotData: PCI_SLOT_NUMBER = core::mem::zeroed();
     let mut pciData: PCI_COMMON_CONFIG = core::mem::zeroed();
     let mut busNumber: ULONG;
@@ -361,9 +361,8 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
     let mut found: BOOLEAN;
     let mut known: BOOLEAN;
     let mut NeedPciAltInit: BOOLEAN;
-    let mut NonZeroSubId: BOOLEAN = 0;
 
-    let mut IrqForCompat: UCHAR = 10;
+    let mut IrqForCompat: UCHAR;
 
     slotData.u.AsULONG = 0;
 
@@ -453,7 +452,6 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                     SubSystemID = pciData.u.type0.as_ref().SubSystemID;
 
                     if SubVendorID != 0 && SubSystemID != 0 {
-                        NonZeroSubId = 1;
                     }
 
                     // VM detection
@@ -485,8 +483,6 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                     }
 
                     // look for known chipsets
-                    found = FALSE as BOOLEAN;
-                    known = FALSE as BOOLEAN;
 
                     if !deviceExtension.is_null() {
                         (*deviceExtension).slotNumber = slotData.u.AsULONG;
@@ -626,7 +622,7 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                                     5,
                                     core::mem::size_of::<UCHAR>() as ULONG,
                                 );
-                                busDataRead = HalGetBusData(
+                                HalGetBusData(
                                     PCIConfiguration,
                                     busNumber,
                                     slotData.u.AsULONG,
@@ -653,7 +649,7 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                                     } else {
                                         IrqForCompat = il;
                                     }
-                                    busDataRead = HalGetBusData(
+                                    HalGetBusData(
                                         PCIConfiguration,
                                         busNumber,
                                         slotData.u.AsULONG,
@@ -681,7 +677,7 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                                             5,
                                             core::mem::size_of::<UCHAR>() as ULONG,
                                         );
-                                        busDataRead = HalGetBusData(
+                                        HalGetBusData(
                                             PCIConfiguration,
                                             busNumber,
                                             slotData.u.AsULONG,
@@ -774,7 +770,6 @@ pub unsafe extern "system" fn UniataEnumBusMasterController__() -> ULONG {
                 ((BMListLen + 1) as usize)
                     * core::mem::size_of::<BUSMASTER_CONTROLLER_INFORMATION>() as usize,
             );
-            no_buses = FALSE as BOOLEAN;
             BMListLen = 0;
         }
         pass += 1;
@@ -1033,7 +1028,7 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     let mut statusByte: UCHAR;
     let bm_offset: ULONG;
 
-    let mut found: BOOLEAN = FALSE as BOOLEAN;
+    let mut found: BOOLEAN;
     let MasterDev: BOOLEAN;
     let mut simplexOnly: BOOLEAN = FALSE as BOOLEAN;
     let mut AltInit: BOOLEAN = FALSE as BOOLEAN;
@@ -1619,20 +1614,20 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
             // latched BM_STATUS_INTR.
             SelectDrive(chan, 0);
             ScsiPortStallExecution(10);
-            statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+            AtapiReadPort1(chan, IDX_IO1_i_Status);
             if ((*deviceExtension).HwFlags & UNIATA_NO_SLAVE) == 0
                 && (*deviceExtension).NumberLuns > 1
             {
                 SelectDrive(chan, 1);
                 ScsiPortStallExecution(1);
-                statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+                AtapiReadPort1(chan, IDX_IO1_i_Status);
                 SelectDrive(chan, 0);
             }
             statusByte = GetDmaStatus(deviceExtension, c);
             if (statusByte as ULONG & BM_STATUS_INTR as ULONG) != 0 {
                 // "we have DMA interrupt, but had never initiate DMA operation"
                 AtapiDmaDone(deviceExtension as PVOID, 0, c, core::ptr::null_mut());
-                statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+                AtapiReadPort1(chan, IDX_IO1_i_Status);
             }
         }
         found = TRUE as BOOLEAN;
@@ -1752,7 +1747,7 @@ unsafe fn finish_findbm(
 
 pub unsafe extern "system" fn UniataClaimLegacyPCIIDE(i: ULONG) -> NTSTATUS {
     let mut status: NTSTATUS;
-    let mut resourceList: PCM_RESOURCE_LIST = core::ptr::null_mut();
+    let mut resourceList: PCM_RESOURCE_LIST ;
     let mut devname: UNICODE_STRING = core::mem::zeroed();
     let mut oldResList: PCM_RESOURCE_LIST = core::ptr::null_mut();
 
@@ -1959,8 +1954,8 @@ pub unsafe extern "system" fn AtapiFindIsaController(
     let adapterCount: PULONG = Context as PULONG;
     let mut ioSpace: PUCHAR = core::ptr::null_mut();
     let mut i: ULONG;
-    let mut irq: ULONG = 0;
-    let mut portBase: ULONG = 0;
+    let mut irq: ULONG;
+    let mut portBase: ULONG;
     let mut retryCount: ULONG;
     let mut statusByte: UCHAR;
     let mut statusByte2: UCHAR;
@@ -1998,7 +1993,6 @@ pub unsafe extern "system" fn AtapiFindIsaController(
     AtapiReadChipConfig(HwDeviceExtension, DEVNUM_NOT_SPECIFIED, CHAN_NOT_SPECIFIED);
     AtapiChipInit(HwDeviceExtension, DEVNUM_NOT_SPECIFIED, CHAN_NOT_SPECIFIED);
 
-    portBase = 0;
     irq = 0;
     if !ArgumentString.is_null() {
         irq = AtapiParseArgumentString(ArgumentString as PCCH, b"Interrupt\0".as_ptr() as PCCH);
@@ -2155,7 +2149,6 @@ pub unsafe extern "system" fn AtapiFindIsaController(
         if ((statusByte ^ statusByte2) as ULONG & !IDE_STATUS_INDEX) != 0 {
             if !BaseIoAddress2.is_null() {
                 ScsiPortFreeDeviceBase(HwDeviceExtension, BaseIoAddress2 as PVOID);
-                BaseIoAddress2 = core::ptr::null_mut();
             }
             BaseIoAddress2 = (BaseIoAddress1 as ULONG_PTR + 0x0E) as PIDE_REGISTERS_2;
             ioSpace = ScsiPortGetDeviceBase(
@@ -2603,7 +2596,7 @@ pub unsafe extern "system" fn CheckDevice(
             return 0;
         }
 
-        statusByte = WaitOnBaseBusyLong(chan);
+        WaitOnBaseBusyLong(chan);
 
         statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
         if ((*deviceExtension).HwFlags & UNIATA_SATA) != 0 {
@@ -2680,7 +2673,7 @@ pub unsafe extern "system" fn CheckDevice(
                 // goto forget_device
                 UniataForgetDevice(LunExt);
                 RetVal = 0;
-                statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+                AtapiReadPort1(chan, IDX_IO1_i_Status);
             } else {
                 // goto try_atapi
                 RetVal = check_device_try_atapi(
@@ -2691,7 +2684,7 @@ pub unsafe extern "system" fn CheckDevice(
         } else {
             // VM Device not present
         }
-        statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+        AtapiReadPort1(chan, IDX_IO1_i_Status);
     }
     RetVal
 } // end CheckDevice()
@@ -2817,7 +2810,7 @@ pub unsafe extern "system" fn FindDevices(
                 continue;
             }
 
-            statusByte = WaitOnBusy(chan);
+            WaitOnBusy(chan);
 
             SelectDrive(chan, i & 0x01);
             statusByte = AtapiReadPort1(chan, IDX_IO2_AltStatus);
@@ -2837,8 +2830,8 @@ pub unsafe extern "system" fn FindDevices(
                 }
             }
 
-            statusByte = WaitOnBusy(chan);
-            statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+            WaitOnBusy(chan);
+            AtapiReadPort1(chan, IDX_IO1_i_Status);
 
             if SetDriveParameters(HwDeviceExtension, i, Channel) == 0 {
                 (*LunExt).DeviceFlags &= !DFLAGS_DEVICE_PRESENT;
@@ -2860,9 +2853,8 @@ pub unsafe extern "system" fn FindDevices(
     if deviceResponded != 0 {
         i = 0;
         while i < max_ldev {
-            LunExt = (*chan).lun[i as usize];
             SelectDrive(chan, i);
-            statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+            AtapiReadPort1(chan, IDX_IO1_i_Status);
             i += 1;
         }
         i = 0;
@@ -2876,9 +2868,9 @@ pub unsafe extern "system" fn FindDevices(
         }
     }
 
-    statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+    AtapiReadPort1(chan, IDX_IO1_i_Status);
     AtapiEnableInterrupts(deviceExtension as PVOID, Channel);
-    statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+    AtapiReadPort1(chan, IDX_IO1_i_Status);
 
     DbgPrint(b"[UNIATA] FindDevices ch=%u done resp=%u\n\0".as_ptr().cast(), Channel, deviceResponded as ULONG); // perf phase marker
     deviceResponded

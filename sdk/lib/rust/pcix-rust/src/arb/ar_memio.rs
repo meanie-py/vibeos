@@ -65,7 +65,7 @@ pub unsafe extern "system" fn ario_Constructor(
     Interface: PINTERFACE,
 ) -> NTSTATUS {
     let FdoExtension: PPCI_FDO_EXTENSION = DeviceExtension as PPCI_FDO_EXTENSION;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS ;
 
     // PAGED_CODE()
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {

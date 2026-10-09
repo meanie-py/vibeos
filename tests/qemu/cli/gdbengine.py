@@ -650,6 +650,12 @@ def cmd_probe(args, repo: Path) -> int:
 
 def stop(run: DebugRun) -> None:
     """Kill the debug QEMU and mark the run stopped."""
+    # A VM kept by `smoke --attach-on-fail` is also registered as a lock (so `ps`,
+    # `kill` and the reaper see it); unregister it with the VM, or `ps` lists a dead VM
+    # until its deadline. Read it FIRST: run.save() below rewrites the manifest with the
+    # dataclass fields only, which drops "lock".
+    mp = run.manifest_path()
+    lock = json.loads(mp.read_text()).get("lock") if mp.is_file() else None
     if run.backend == "windows-host" and run.win_uid:
         from .. import backend as be
 
@@ -666,6 +672,8 @@ def stop(run: DebugRun) -> None:
         run.save()
     if run.staging:
         shutil.rmtree(run.staging, ignore_errors=True)
+    if lock:
+        Path(lock).unlink(missing_ok=True)
 
 
 def status(run: DebugRun, *, check_alive: bool = True) -> dict:

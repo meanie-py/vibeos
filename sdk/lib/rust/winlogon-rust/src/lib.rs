@@ -19,10 +19,9 @@
 
 // Win32 predefined consts, macros, and the WLSession/hAppInstance globals
 // (owned by winlogon.rs, re-exported here) the leaf modules share.
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod preamble;
 

@@ -162,7 +162,6 @@ pub unsafe fn connect_resource(
 
 /// virtio-net's ack: read and clear the ISR status register (deasserting the
 /// shared INTx line); wake the worker if the used ring advanced.
-#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
 unsafe fn virtio_ack(dev: PVOID) -> Ack {
     const VIRTIO_ISR_QUEUE: u32 = 1 << 0; // InterruptStatus::QUEUE_INTERRUPT
     match crate::device::ack_interrupt(dev as *mut crate::device::NetDev) {
@@ -172,10 +171,12 @@ unsafe fn virtio_ack(dev: PVOID) -> Ack {
     }
 }
 
-/// Connect the virtio-net INTx (`interrupt_line` from PCI config 0x3C) to the RX
-/// ISR. Returns the RX event the worker should wait on, or null on any failure.
-#[cfg(any(target_arch = "x86_64", target_arch = "x86"))]
-pub unsafe fn connect(dev: *mut crate::device::NetDev, interrupt_line: u32) -> *mut KEVENT {
+/// Connect a PCI function's INTx (`interrupt_line`, from `pci::read_interrupt_line`)
+/// to `ack`. On x86 the line is the firmware-routed IRQ; on arm64 it is the GIC
+/// INTID, which the arm64 HAL passes through as the vector. Returns the event the
+/// worker should wait on, or null on any failure. INTx is level-triggered and
+/// shared, so the caller lets its function assert it only after this succeeds.
+pub unsafe fn connect_line(ack: AckFn, ctx: PVOID, interrupt_line: u32) -> *mut KEVENT {
     const PCI_BUS: i32 = 5; // _INTERFACE_TYPE_PCIBus (INTERFACE_TYPE = c_int)
     let mut irql: u8 = 0;
     let mut affinity: KAFFINITY = 0;
@@ -192,7 +193,11 @@ pub unsafe fn connect(dev: *mut crate::device::NetDev, interrupt_line: u32) -> *
         nsprint!("[NETSTACK] M10: HalGetInterruptVector failed (line {}) — polling\n", interrupt_line);
         return null_mut();
     }
-    nsprint!("[NETSTACK] M10: virtio INTx line {}\n", interrupt_line);
-    // INTx is level-triggered and shared.
-    connect_resource(virtio_ack, dev as PVOID, vector, irql, affinity, false, true)
+    nsprint!("[NETSTACK] M10: INTx line {}\n", interrupt_line);
+    connect_resource(ack, ctx, vector, irql, affinity, false, true)
+}
+
+/// Connect the virtio-net INTx to the RX ISR.
+pub unsafe fn connect(dev: *mut crate::device::NetDev, interrupt_line: u32) -> *mut KEVENT {
+    connect_line(virtio_ack, dev as PVOID, interrupt_line)
 }

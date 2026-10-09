@@ -634,6 +634,36 @@ The ranker relocated rows by snippet when the tree had moved since the build, an
 line). It now maps each log's lines through `git diff` against the tree that build compiled,
 which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
 
+**The last 175, and the crates the census had not covered (2026-10-09): `unused_assignments` → 0.**
+Two Haiku 5.5 subagents read the 175 against the C. They were read-only on the repo, and
+each wrote one JSONL row per site: a verdict plus an exact `old`/`new` edit. I reviewed and
+applied the edits centrally. Results: 147 faithful dead writes, 11 debug-only, 17 cdfs SEH
+flags written through their `p_X` pointer, and no bugs. The earlier hand read's bugs were
+already fixed. I also moved 14 more cdfs flag writes rustc never warned about onto their
+pointers. Haiku proposed one meaningless `let _ = (*p).field;` (dropped). It also removed
+four initializers that my raw-borrow rule would have kept. Each turned out to be written
+before its borrow, so the rule is stricter than it needs to be: the condition that matters
+is a raw borrow BEFORE the first write (owed: refine `apply_dead_assignments`).
+
+**A clean log does not carry every crate's warnings.** The 000251 clean ×3 logs held no
+msvcrt-crt-rust or crt-shared-rust warning at all, the next clean build (150818) held 27
+`unused_assignments` there, and the one after it (154317) held none again for unchanged
+content. A crate's warnings reach `full.log` only from the build that really compiles its
+content, probably because sccache serves the rest without them. (`NOT BUILT (no coverage)`
+in the same log is `scan_flex_array_panic`'s binary corpus, NOT cargo's, and says nothing
+about this.) **Owed: the census must check per-crate coverage**, by compiling each crate
+it reports on or by refusing a log that lacks a crate's compile, before any total is
+trusted. The zero below was established crate by crate from the build that compiled each
+one's current content. The 27 were:
+- i386 `cxx_frame_handler` had dropped `__EXCEPT_CTX(se_translation_filter, &ctx)` and
+  left `ctx` built and never read. It is restored as the `if _SEH2_Volatile0` guard that
+  x64 `except.rs` already uses. That is inert under DUMMY_PSEH, as in the C.
+- `_statusfp` / `_control87`: the `flags = 0` is dead on one arch set and in/out to
+  `_setfp` / `__control87_2` on the other, so each cfg arm now owns its initializer.
+- `create_locinfo`: current Wine overwrites `i = GetLocaleInfoEx(..)` with
+  `i = WideCharToMultiByte(..)` at once. The tree's `locale.c` is the older A-version and
+  is not the oracle here.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class

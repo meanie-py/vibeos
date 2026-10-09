@@ -1857,6 +1857,15 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **A macro that swallows its arguments hides them from the type checker.** Wine's
+  ERR/FIXME/WARN/TRACE were the same story at 31 byte-identical `winedebug.rs` copies, now
+  `winedebug-rust`. Two crates had their own instead: ole32 and oleaut32 printed `"(see
+  source)"` for ~300 ERR/FIXME sites through a `($($t:tt)*)` muncher, and version-rust made
+  FIXME a no-op. Forwarding those to the real macros surfaced **47 compile errors** in
+  arguments no compiler had ever seen: `u16`/`u8` passed to `...`, `debugstr_guid` fed the
+  wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
+  with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
+  print AND an unchecked expression; use the shared crate.
 - **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
   emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
   shobjidl.h's `FVM_ICON` exists in shell32's island solely as
@@ -3585,8 +3594,10 @@ neighbour).
 treeview.c's `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` means 0x8009. Translated verbatim, it is an
 or-pattern matching 0x0009 or 0x8000, so a plain TVGN_CARET took the wrong arm and a real
 0x8009 fell to the default. rustc's only hint is an `unreachable pattern` warning on the next
-arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Grep the C for
-`case\s+\w+\s*\|` before trusting a translated `match`.
+arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Gated two ways now:
+`tools/scan_case_bitor_pattern.py` (in `vibeos-cli check`) flags any Rust or-pattern whose
+constants some C `case` ORs together, and rustconv's body checks refuse the shape at
+translation time, so the model retries instead of shipping it.
 
 **An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
 C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
@@ -6244,6 +6255,19 @@ linking, silently wrong. `_WIN32_WINNT=0x502` instead of the module's real `0x60
 `s_PolicyTable` came out 169 rows; the real build is **159**. **Verify against ground truth,
 not a hand re-preprocess:** `strings -el <the pre-flip .c.obj>` shows exactly which literals
 the real build compiled in. A bare `clang -E` with guessed `-D`s is how the bug arose.
+
+### A per-ARCH `#define` gets baked in by a translation preprocessed under one arch
+The same hazard as the row-set entry above, along the arch axis, and the build cannot see it
+because every target compiles. comctl32's `commctrl.c` builds its SxS manifest name from
+`ARCH` (`#ifdef __i386__` → `L"x86"`, `__x86_64__` → `L"amd64"`, `__aarch64__` → `L"arm64"`).
+The c2rust pass ran under the arm64 profile, so the Rust held a transmuted byte literal
+spelling `arm64_microsoft.windows.common-controls_...manifest` on EVERY arch. On i386 and amd64
+`CreateActCtxW` failed with ERROR_FILE_NOT_FOUND (the `err:(...commctrl.c:163)` line every
+boot printed), and neither the v5 nor the v6 activation context existed. Found 2026-10-09 by
+reading an amd64 modrun serial log for something else. Fix: `#[cfg(target_arch)]` consts
+and a `const fn` that assembles the name. Review hint: a C file with an arch `#if` whose
+translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
+them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
 
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
@@ -13686,6 +13710,11 @@ per-arch accelerator cap, so a parallel repro just queues.
   across boots on arm64 (`0xFFFFF80042190000` twice), so a base recorded once stays good for
   that build. The derive-from-`module+offset`-pairs method below is now the *fallback*, for
   logs predating this line.
+- **A relocated driver: pass the bugcheck's `module+offset` straight to `sym`.**
+  `./vibeos-cli sym --arch arm64 ndis.sys+0x12D10` (or `--module ndis.sys 0x12D10`) adds the
+  link-time base itself. **arm64 0x1E with `TrapFrame.Pc = 0`** is a call through a NULL
+  function pointer: the caller is only in `TrapFrame.Lr`, which the bugcheck now prints
+  symbolicated along with the trap frame's stack (it printed raw addresses before).
 - **i386 Rust-in-ntoskrnl carries a `+0x291000` shift** `[§9.2]`. C: `file_VA = runtime - 0x7fe00000`.
   Rust: additionally `- 0x291000`. One-shot for both:
   `qemu/addr2sym.sh i386 --reloc 0x80091000 <addr>`.
@@ -13919,6 +13948,22 @@ introduced at any heap exit — it is an external stray write.**
   and says so (`MSI-X table entry N ... did not take`). For any capability programmed
   through a BAR, ask "is the device decoding this BAR yet?"
 
+### Every MmMapIoSpace fails partway through boot once a PCI device sits on a high bus number
+- **Symptom:** an arm64 boot with a device on bus 0x81 (QEMU `pxb-pcie`, `smoke --arch
+  arm64 --nvme-segment`) loses every driver that maps registers after a certain point:
+  `[VIOBLK] 00:02.0: a BAR could not be mapped (MmMapIoSpace)`, nvme and virtio-mmio the
+  same, then `0x6B` because the boot disk never arrived. Just before it, 261
+  `SpiGetPciConfiguration() called` lines where a normal boot has 4.
+- **Cause:** **the HAL's ECAM mapped 1 MiB per bus touched and never unmapped it, populated
+  or not.** The loader reports every bus up to the highest populated one (130 here), and
+  scsiport's legacy miniport scan reads all of them through `HalGetBusData`. That pinned
+  ~130 MiB of system PTEs for buses with nothing on them. Real hardware with sparse bus
+  numbers hits the same wall.
+- **Fix:** `ecam.rs` probes a bus on first touch and keeps the mapping only if some device's
+  function 0 answers; an empty bus reads as all-ones with no mapping. A config write to a
+  bridge's bus-number registers forgets which buses were empty. For any map-on-touch cache,
+  ask "what bounds the number of keys a scanner can touch?"
+
 ### A new SCSIPORT miniport loads, and no disk appears
 - **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
   but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot
@@ -13942,6 +13987,32 @@ introduced at any heap exit — it is an external stray write.**
   Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
   the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
   resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
+
+### A NIC works through NDIS on x86 and calls address 0 on arm64
+- **Symptom:** `ndisprobe` with an e1000 on arm64: bind, MAC and filter pass, then the first
+  send bugchecks 0x1E with `TrapFrame.Pc = 0`, `TrapFrame.Lr = ndis.sys!ProSend`. The same
+  card passes on amd64, and an rtl8139 passes everywhere it starts.
+- **Cause:** ndis sends a bus-master miniport's packets through
+  `DmaOperations->GetScatterGatherList`, and the arm64 HAL's identity-mapped DMA table
+  (`hal-rust/src/arm64/dma.rs`) left the scatter/gather slots `None`, on the theory that a
+  consumer would get "a loud None-unwrap". The caller is C, so it called address 0.
+- **Fix:** `Arm64DmaGetScatterGatherList` builds the list from `MapTransfer`'s contiguous
+  runs and calls the execution routine at DISPATCH_LEVEL; `Put` frees it. **A slot in a
+  table a C driver calls through is never a safe place to leave a `None`**; a stub that
+  fails with a status is.
+
+### A driver's `WriteFile` hands its lower layer a NULL buffer
+- **Symptom:** ndisuio's write path: `ASSERT FAILED: VirtualAddress != NULL at
+  ndis/buffer.c:352`, then 0x1E in ndis.sys. Its IOCTLs all worked.
+- **Cause:** `NduDispatchRead/Write` read `Irp->AssociatedIrp.SystemBuffer`, which only
+  buffered I/O fills in, and `DriverEntry` never set `DO_BUFFERED_IO`, so every read and
+  write was "neither I/O" with a NULL SystemBuffer. IOCTLs take their method from the
+  control code (METHOD_BUFFERED here), so they never showed it. The same `IoCreateDevice`
+  call also passed DeviceType and Characteristics swapped. Upstream C; nothing on our
+  media had ever called ndisuio's read or write (the WLAN service uses IOCTLs only).
+- **Fix:** `GlobalDeviceObject->Flags |= DO_BUFFERED_IO` and the arguments in order. When a
+  driver's IRP_MJ_READ/WRITE uses SystemBuffer, MdlAddress or UserBuffer, check that its
+  device flags pick the matching I/O method.
 
 ### Adding a PCI device to the arm64 QEMU rig makes UEFI PXE-boot
 - **Symptom:** the boot goes to `>>Start PXE over IPv4`, then HTTP boot, then a hang,

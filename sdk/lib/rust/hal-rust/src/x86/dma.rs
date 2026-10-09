@@ -746,6 +746,19 @@ pub unsafe extern "system" fn HalpDmaInitializeEisaAdapter(
 // HalGetAdapter — public DMA-adapter factory.
 // ---------------------------------------------------------------------------
 
+/// pci.sys's BUS_INTERFACE_STANDARD.GetDmaAdapter, naming the device (its PCI
+/// segment over its requester ID). Only the arm64 HAL drives an IOMMU that needs to
+/// know whose buffers it maps; here it is HalGetAdapter.
+#[cfg(not(feature = "minihal"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosGetDmaAdapter(
+    _RequesterId: ULONG,
+    DeviceDescription: PDEVICE_DESCRIPTION,
+    NumberOfMapRegisters: *mut ULONG,
+) -> PDMA_ADAPTER {
+    unsafe { HalGetAdapter(DeviceDescription, NumberOfMapRegisters) as PDMA_ADAPTER }
+}
+
 // dma.c: inside `#ifndef _MINIHAL_` (lines 626-1287) — absent under -D_MINIHAL_.
 #[cfg(not(feature = "minihal"))]
 #[unsafe(no_mangle)]

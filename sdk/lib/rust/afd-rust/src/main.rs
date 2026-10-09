@@ -358,7 +358,6 @@ unsafe fn AfdCreateSocket(
     let DeviceExt: PAFD_DEVICE_EXTENSION;
     let EaInfo: PFILE_FULL_EA_INFORMATION;
     let mut ConnectInfo: PAFD_CREATE_PACKET = core::ptr::null_mut();
-    let mut EaInfoValue: PWCHAR = core::ptr::null_mut();
     let _i: UINT;
     let Status: NTSTATUS = STATUS_SUCCESS;
 
@@ -380,14 +379,11 @@ unsafe fn AfdCreateSocket(
     if !EaInfo.is_null() {
         ConnectInfo = ((*EaInfo).EaName.as_ptr() as usize + (*EaInfo).EaNameLength as usize + 1)
             as PAFD_CREATE_PACKET;
-        EaInfoValue = ((ConnectInfo as PCHAR) as usize + core::mem::size_of::<AFD_CREATE_PACKET>())
-            as PWCHAR;
 
         AFD_DbgPrint!(
             MID_TRACE,
-            b"EaInfo: %p, EaInfoValue: %p\n\0".as_ptr() as PCHAR,
+            b"EaInfo: %p\n\0".as_ptr() as PCHAR,
             EaInfo,
-            EaInfoValue,
         );
     }
 

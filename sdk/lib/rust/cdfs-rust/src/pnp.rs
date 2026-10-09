@@ -427,7 +427,6 @@ pub unsafe extern "C" fn CdPnpRemove(
 
         CdUnlockVcb(IrpContext, Vcb);
 
-        Status = STATUS_SUCCESS;
     }
 
     //

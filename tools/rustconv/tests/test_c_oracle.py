@@ -27,6 +27,7 @@ endif()
 set_module_type(x win32cui UNICODE)
 target_link_libraries(x conutils ${PSEH_LIB})
 add_importlibs(x msvcrt kernel32 ntdll)
+set_wine_module_FIXME(x)
 add_library(x_static STATIC helper.c)
 add_executable(user EXCLUDE_FROM_ALL user.c)
 target_link_libraries(user x)
@@ -42,6 +43,8 @@ def test_the_oracle_is_the_pre_flip_c_with_the_rust_dropped():
     assert "set_module_type(x_c win32cui UNICODE)" in out
     assert "target_link_libraries(x_c conutils ${PSEH_LIB})" in out
     assert "add_importlibs(x_c msvcrt kernel32 ntdll)" in out
+    # A command naming the target alone configures it (Wine's defines, ARRAY_SIZE).
+    assert "set_wine_module_fixme(x_c)" in out  # CMake names are case-insensitive
     for gone in ("rust", "add_pch", "add_cd_file", "rust_cohab_stub.c"):
         assert gone not in out.split("never shipped.")[1]
     # A conditional that configured the target keeps its condition; one left empty goes.

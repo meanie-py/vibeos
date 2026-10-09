@@ -447,7 +447,7 @@ pub unsafe extern "C" fn locale_to_sname(locale: *const i8, codepage: *mut u16, 
         let mut search_language_buf: [i8; MAX_ELEM_LEN] = [0; MAX_ELEM_LEN];
         let mut search_country_buf: [i8; MAX_ELEM_LEN] = [0; MAX_ELEM_LEN];
         let mut search: locale_search_t = core::mem::zeroed();
-        let mut remapped = FALSE;
+        let mut remapped;
 
         memset(core::ptr::addr_of_mut!(search) as *mut core::ffi::c_void, 0, core::mem::size_of::<locale_search_t>());
         lstrcpynA(search_language_buf.as_mut_ptr(), locale, (MAX_ELEM_LEN) as i32);
@@ -1467,7 +1467,7 @@ unsafe extern "C" fn create_locinfo(
                 locale_sname[i as usize] = core::ptr::null_mut();
                 cp[i as usize] = (CP_ACP) as u16;
             } else {
-                let mut locale_found = FALSE;
+                let mut locale_found;
 
                 if !p.is_null() {
                     memcpy(
@@ -1955,7 +1955,7 @@ unsafe extern "C" fn create_locinfo(
 
         *(*locinfo).lconv_mon_refcount = 1;
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SINTLSYMBOL | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -1991,7 +1991,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SCURRENCY | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2027,7 +2027,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SMONDECIMALSEP | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2063,7 +2063,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SMONTHOUSANDSEP | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2145,7 +2145,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SPOSITIVESIGN | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2181,7 +2181,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_MONETARY],
             LOCALE_SNEGATIVESIGN | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2388,7 +2388,7 @@ unsafe extern "C" fn create_locinfo(
 
         *(*locinfo).lconv_num_refcount = 1;
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_NUMERIC],
             LOCALE_SDECIMAL | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),
@@ -2424,7 +2424,7 @@ unsafe extern "C" fn create_locinfo(
             break 'fail;
         }
 
-        i = GetLocaleInfoEx(
+        GetLocaleInfoEx(
             locale_sname[LC_NUMERIC],
             LOCALE_STHOUSAND | LOCALE_NOUSEROVERRIDE,
             wbuf.as_mut_ptr(),

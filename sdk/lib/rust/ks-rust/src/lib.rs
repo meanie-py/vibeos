@@ -5,6 +5,11 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(unused_assignments, improper_ctypes, improper_ctypes_definitions)]
 
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 // Pull in the slist crate so its #[no_mangle] RtlInterlockedPush/PopEntrySList land in
 // libks_rust.a (ntkrnl-sys references them; ntoskrnl doesn't export them under that name).
 extern crate slist;

@@ -8,13 +8,13 @@ use crate::prelude::*;
 
 #[no_mangle]
 pub unsafe extern "system" fn OleCreateLinkToFile(
-    _lpszFileName: LPCOLESTR,
-    _riid: REFIID,
-    _renderopt: DWORD,
-    _lpFormatEtc: LPFORMATETC,
-    _pClientSite: LPOLECLIENTSITE,
-    _pStg: LPSTORAGE,
-    _ppvObj: *mut LPVOID,
+    lpszFileName: LPCOLESTR,
+    riid: REFIID,
+    renderopt: DWORD,
+    lpFormatEtc: LPFORMATETC,
+    pClientSite: LPOLECLIENTSITE,
+    pStg: LPSTORAGE,
+    ppvObj: *mut LPVOID,
 ) -> HRESULT {
     FIXME!(
         b"(%p,%p,%i,%p,%p,%p,%p), stub!\n\0".as_ptr() as *const i8,
@@ -45,9 +45,9 @@ pub unsafe extern "system" fn OleCreateLink(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleGetIconOfClass(
-    _rclsid: *const CLSID,
-    _lpszLabel: LPOLESTR,
-    _fUseTypeAsLabel: BOOL,
+    rclsid: *const CLSID,
+    lpszLabel: LPOLESTR,
+    fUseTypeAsLabel: BOOL,
 ) -> HGLOBAL {
     FIXME!(
         b"(%p,%p,%x), stub!\n\0".as_ptr(),
@@ -60,12 +60,12 @@ pub unsafe extern "system" fn OleGetIconOfClass(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleGetIconOfFile(
-    _path: LPOLESTR,
-    _use_file_as_label: BOOL,
+    path: LPOLESTR,
+    use_file_as_label: BOOL,
 ) -> HGLOBAL {
     FIXME!(
         b"(%s, %d), stub!\n\0".as_ptr() as *const i8,
-        debugstr_w(path),
+        debugstr_w(path.cast()),
         use_file_as_label,
     );
     core::ptr::null_mut()
@@ -73,9 +73,9 @@ pub unsafe extern "system" fn OleGetIconOfFile(
 
 #[no_mangle]
 pub unsafe extern "system" fn OleRegEnumFormatEtc(
-    _clsid: *const GUID,
-    _dwDirection: DWORD,
-    _ppenumFormatetc: *mut LPENUMFORMATETC,
+    clsid: *const GUID,
+    dwDirection: DWORD,
+    ppenumFormatetc: *mut LPENUMFORMATETC,
 ) -> HRESULT {
     FIXME!(
         b"(%p, %d, %p), stub!\n\0".as_ptr() as *const i8,

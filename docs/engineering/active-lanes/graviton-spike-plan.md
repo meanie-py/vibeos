@@ -24,11 +24,15 @@
 >   and where each segment's requester 0 lands, so the first Graviton serial log answers
 >   the layout questions. Unmeasured there: whether firmware leaves LPIs on in a
 >   redistributor (that CPU is then passed over; if it is CPU0, nvme.sys falls back to
->   INTx).
+>   INTx). Moving an LPI to another CPU (MOVI) is proven by `--tripwire ITS_MISSTEER`,
+>   which binds every LPI one CPU off so only the move at connect delivers it.
 > - **PCIe config space:** from the MCFG since 2026-10-08, every bus of every segment;
 >   the HAL publishes a root bus per segment past 0 and pci.sys follows bridges
->   (`smoke --arch arm64 --nvme-bridge`: NVMe behind a root port). Graviton's layout,
->   and any segment past 0, is untested.
+>   (`smoke --arch arm64 --nvme-bridge`: NVMe behind a root port). A segment past 0 is
+>   proven in QEMU by `--nvme-segment` (2026-10-09): the HAL presents a pxb-pcie
+>   expander's buses as segment 1, and NVMe there runs on ITS MSI-X with requester
+>   `0x18100`. That boot found the ECAM mapping every bus up to the highest one for
+>   good and exhausting system PTEs; fixed. Graviton's real layout is still unmeasured.
 > - **Boot and console:** UEFI and ACPI, which arm64 vibeos already uses. EC2's
 >   Graviton console is not a PL011: it is Amazon's 16550-compatible PCI UART
 >   (1d0f:8250), which the SPCR names at an MMIO address with byte access (FreeBSD
@@ -51,8 +55,10 @@
 >   code runs); `--smp 32` is the largest tried.
 > - `--smmu --tripwire SMMU=TRANSLATE`: the HAL drives the SMMUv3 for real (an
 >   identity map of RAM and MSI doorbells, a stream table entry per device), and
->   `NVME_BAD_DMA=<hex>` shows a stray DMA reported as a fault. Bypass stays the
->   default, as on Windows without DMA remapping.
+>   `NVME_BAD_DMA=<hex>` shows a stray DMA reported as a fault. nvme.sys is
+>   DMA-remapping compatible, so its controller gets a domain holding only what its
+>   DMA adapter maps; `NVME_STRAY_DMA=1` proves a write to RAM it was not given
+>   faults. Bypass stays the default, as on Windows without DMA remapping.
 >
 > **Still unanswerable without the instance:** Graviton's ACPI tables (dump them
 > from a Linux instance first: they become host-test fixtures), firmware-left LPI

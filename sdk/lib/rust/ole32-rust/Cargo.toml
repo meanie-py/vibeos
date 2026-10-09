@@ -15,6 +15,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 # com-sys backs the `ring` modules' prelude (bindgen COM vtbls with exact per-arch
 # layouts + calling conventions). compobj/marshal still carry their own hand-rolled

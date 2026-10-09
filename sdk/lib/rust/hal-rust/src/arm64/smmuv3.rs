@@ -8,8 +8,18 @@
 //! device's StreamID and the address, instead of landing somewhere and corrupting
 //! it. Each device gets its own stream table entry when pci.sys starts it
 //! ([`attach`]), before its bus mastering is turned on; a StreamID nobody attached
-//! is aborted. Per-device page tables (real isolation between devices) would hang
-//! off the same entries.
+//! is aborted.
+//!
+//! A device whose driver declares itself DMA-remapping compatible (its service's
+//! Parameters\DmaRemappingCompatible = 1, which pci.sys reads, as Windows does) gets
+//! a domain of its own instead: its own context descriptor, ASID and page tables,
+//! holding its MSI doorbells and nothing else until its DMA adapter maps a buffer
+//! (dma.rs: common buffers, MapTransfer, scatter/gather lists). Addresses stay the
+//! identity, so the logical address a driver is handed is still the physical one;
+//! what changes is that a device can reach only the pages it was given, while it
+//! holds them. A page is mapped once however many buffers share it (a count in the
+//! descriptor's software bits) and unmapped, with its TLB entry invalidated, when the
+//! last of them is let go.
 //!
 //! Opt-in: the `SMMU=TRANSLATE` tripwire. Without it the HAL bypasses every SMMU
 //! (smmu.rs), which is what Windows does when DMA remapping is not asked for, and
@@ -72,6 +82,7 @@ const MAX_SPANS: usize = 64;
 // Commands.
 const CMD_CFGI_STE: u64 = 0x03;
 const CMD_CFGI_ALL: u64 = 0x04;
+const CMD_TLBI_NH_VA: u64 = 0x12;
 const CMD_TLBI_NSNH_ALL: u64 = 0x30;
 const CMD_SYNC: u64 = 0x46;
 
@@ -87,7 +98,19 @@ const DESC_PAGE: u64 = 0b11;
 const ADDRESS: u64 = ((1u64 << 48) - 1) & !0xFFF;
 /// Page-table pages for the identity map, allocated once.
 const POOL_PAGES: usize = 64;
+/// A strict domain's page-table pages: the root and its walk down to 4 KiB pages,
+/// one level-3 table per 2 MiB of memory its buffers touch. Never freed, so a
+/// domain that wants more is told no and its mapping fails loudly.
+const DOMAIN_POOL_PAGES: usize = 128;
 const PAGE: usize = 0x1000;
+/// Descriptor software bits 58:55: how many mappings hold a strict domain's page.
+/// At the top it stays mapped for good, which is the safe way to be wrong.
+const REFS_SHIFT: u32 = 55;
+const REFS_MAX: u64 = 15;
+const REFS: u64 = REFS_MAX << REFS_SHIFT;
+const MAX_DOMAINS: usize = 32;
+/// ASID 1 is the shared identity map; strict domains take 2 up.
+const FIRST_ASID: u16 = 2;
 
 struct Unit {
     base: u64,
@@ -103,13 +126,37 @@ struct Unit {
     span_count: usize,
 }
 
+/// Page-table pages, carved from one contiguous allocation.
+#[derive(Clone, Copy)]
+struct Pool {
+    va: usize,
+    pa: u64,
+    used: usize,
+    pages: usize,
+}
+
+/// A device of its own: the stream that is its, and the tables it can reach.
+struct Domain {
+    /// pci.sys's requester: the PCI segment in bits 31:16 over the requester ID.
+    requester: u32,
+    unit: u64,
+    asid: u16,
+    root: usize,
+    pool: Pool,
+    /// Pages mapped now.
+    pages: u32,
+    cd: u64,
+}
+
 static mut UNITS: [Option<Unit>; MAX_UNITS] = [const { None }; MAX_UNITS];
 static UNIT_COUNT: AtomicUsize = AtomicUsize::new(0);
-/// The one context descriptor every attached stream uses, and its page tables.
+/// The context descriptor every stream without a domain of its own uses, and its
+/// page tables.
 static CD_PA: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-static POOL_VA: AtomicUsize = AtomicUsize::new(0);
-static POOL_PA: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-static POOL_USED: AtomicUsize = AtomicUsize::new(0);
+static mut SHARED: Pool = Pool { va: 0, pa: 0, used: 0, pages: POOL_PAGES };
+/// The first SMMU's output address size (IDR5.OAS), for every CD.
+static OAS: AtomicU32 = AtomicU32::new(0);
+static mut DOMAINS: [Option<Domain>; MAX_DOMAINS] = [const { None }; MAX_DOMAINS];
 static LOCK: AtomicU32 = AtomicU32::new(0);
 static EVENTS_REPORTED: AtomicU32 = AtomicU32::new(0);
 static TIMER_ARMED: AtomicBool = AtomicBool::new(false);
@@ -180,24 +227,24 @@ unsafe fn settle(reg: usize, mask: u32, want: u32) -> bool {
 
 // ---- the identity map ----
 
-unsafe fn table_page() -> Option<(usize, u64)> {
-    let n = POOL_USED.fetch_add(1, Ordering::Relaxed);
-    if n >= POOL_PAGES {
+fn table_page(pool: &mut Pool) -> Option<(usize, u64)> {
+    if pool.used >= pool.pages {
         return None;
     }
-    let off = n * PAGE;
-    Some((POOL_VA.load(Ordering::Relaxed) + off, POOL_PA.load(Ordering::Relaxed) + off as u64))
+    let off = pool.used * PAGE;
+    pool.used += 1;
+    Some((pool.va + off, pool.pa + off as u64))
 }
 
-fn pool_va(pa: u64) -> usize {
-    POOL_VA.load(Ordering::Relaxed) + (pa - POOL_PA.load(Ordering::Relaxed)) as usize
+fn pool_va(pool: &Pool, pa: u64) -> usize {
+    pool.va + (pa - pool.pa) as usize
 }
 
 /// Map `addr` (aligned to the level's size) at `level` (1: 1 GiB, 2: 2 MiB, 3:
 /// 4 KiB). False when a finer table already occupies the slot, so the caller
 /// tries a smaller size; true when it is mapped (or a coarser block already maps
 /// it).
-unsafe fn map_one(root: usize, addr: u64, level: u32, attrs: u64) -> Option<bool> {
+unsafe fn map_one(pool: &mut Pool, root: usize, addr: u64, level: u32, attrs: u64) -> Option<bool> {
     let mut table = root;
     for l in 0..=level {
         let index = ((addr >> (39 - 9 * l)) & 511) as usize;
@@ -215,11 +262,11 @@ unsafe fn map_one(root: usize, addr: u64, level: u32, attrs: u64) -> Option<bool
         }
         match entry & 3 {
             0 => {
-                let (va, pa) = table_page()?;
+                let (va, pa) = table_page(pool)?;
                 core::ptr::write_volatile(slot, pa | DESC_TABLE);
                 table = va;
             }
-            DESC_TABLE => table = pool_va(entry & ADDRESS),
+            DESC_TABLE => table = pool_va(pool, entry & ADDRESS),
             _ => return Some(true), // a block above already maps it
         }
     }
@@ -227,14 +274,14 @@ unsafe fn map_one(root: usize, addr: u64, level: u32, attrs: u64) -> Option<bool
 }
 
 /// Identity-map [start, end), in the largest blocks that fit.
-unsafe fn map_range(root: usize, start: u64, end: u64, attrs: u64) -> bool {
+unsafe fn map_range(pool: &mut Pool, root: usize, start: u64, end: u64, attrs: u64) -> bool {
     let mut addr = start & !0xFFF;
     let end = (end + 0xFFF) & !0xFFF;
     while addr < end {
         let mut done = 0;
         for (level, size) in [(1u32, 1u64 << 30), (2, 1 << 21), (3, 1 << 12)] {
             if addr % size == 0 && addr + size <= end {
-                match map_one(root, addr, level, attrs) {
+                match map_one(pool, root, addr, level, attrs) {
                     Some(true) => {
                         done = size;
                         break;
@@ -258,9 +305,10 @@ unsafe fn build_map(oas: u32) -> bool {
     let Some((pool_va, pool_pa)) = alloc(POOL_PAGES * PAGE) else {
         return false;
     };
-    POOL_VA.store(pool_va, Ordering::Relaxed);
-    POOL_PA.store(pool_pa, Ordering::Relaxed);
-    let Some((root, root_pa)) = table_page() else {
+    OAS.store(oas, Ordering::Relaxed);
+    let pool = &mut *(&raw mut SHARED);
+    *pool = Pool { va: pool_va, pa: pool_pa, used: 0, pages: POOL_PAGES };
+    let Some((root, root_pa)) = table_page(pool) else {
         return false;
     };
     let ranges = ddk::MmGetPhysicalMemoryRanges();
@@ -272,28 +320,52 @@ unsafe fn build_map(oas: u32) -> bool {
     let mut r = ranges;
     while (*r).BaseAddress.QuadPart != 0 || (*r).NumberOfBytes.QuadPart != 0 {
         let (start, bytes) = ((*r).BaseAddress.QuadPart as u64, (*r).NumberOfBytes.QuadPart as u64);
-        ok &= map_range(root, start, start + bytes, DESC_NORMAL);
+        ok &= map_range(pool, root, start, start + bytes, DESC_NORMAL);
         ram += bytes;
         r = r.add(1);
     }
     ddk::ExFreePool(ranges as ddk::PVOID);
-    let mut doorbells = 0u32;
-    for pa in super::its::doorbell_pages().into_iter().flatten().chain(super::v2m::doorbell_page()) {
-        ok &= map_range(root, pa, pa + PAGE as u64, DESC_DEVICE);
-        doorbells += 1;
-    }
+    let doorbells = map_doorbells(pool, root);
+    ok &= doorbells.is_some();
     if !ok {
         DbgPrint(b"[HAL] SMMUv3: the identity map did not fit its %u table pages\n\0".as_ptr(), POOL_PAGES as u32);
         return false;
     }
-    let Some((cd, cd_pa)) = alloc(PAGE) else {
+    let Some(cd_pa) = context_descriptor(root_pa, 1) else {
         return false;
     };
-    // CD: T0SZ 16 (48-bit input), 4 KiB granule, non-cacheable walks, TTB1 off
-    // (EPD1), valid, IPS from the SMMU's output size, no access-flag faults,
-    // AArch64 tables, faults recorded and aborted (R, A), ASID 1.
+    CD_PA.store(cd_pa, Ordering::Release);
+    DbgPrint(
+        b"[HAL] SMMUv3: identity map of %llu MiB of RAM and %u MSI doorbell page(s), %u table pages\n\0".as_ptr(),
+        ram >> 20,
+        doorbells.unwrap_or(0),
+        pool.used as u32,
+    );
+    true
+}
+
+/// Map every MSI doorbell page (where a device's interrupt writes go) as Device
+/// memory; how many, or None when the pool ran out.
+unsafe fn map_doorbells(pool: &mut Pool, root: usize) -> Option<u32> {
+    let mut doorbells = 0u32;
+    for pa in super::its::doorbell_pages().into_iter().flatten().chain(super::v2m::doorbell_page()) {
+        if !map_range(pool, root, pa, pa + PAGE as u64, DESC_DEVICE) {
+            return None;
+        }
+        doorbells += 1;
+    }
+    Some(doorbells)
+}
+
+/// A context descriptor for the tables at `root_pa`, tagged `asid`: T0SZ 16 (48-bit
+/// input), 4 KiB granule, non-cacheable walks, TTB1 off (EPD1), valid, IPS from the
+/// SMMU's output size, no access-flag faults, AArch64 tables, faults recorded and
+/// aborted (R, A).
+unsafe fn context_descriptor(root_pa: u64, asid: u16) -> Option<u64> {
+    let (cd, cd_pa) = alloc(PAGE)?;
+    let oas = OAS.load(Ordering::Relaxed) as u64;
     let words: [u64; 8] = [
-        16 | (1 << 30) | (1 << 31) | ((oas as u64) << 32) | (1 << 35) | (1 << 41) | (1 << 45) | (1 << 46) | (1 << 48),
+        16 | (1 << 30) | (1 << 31) | (oas << 32) | (1 << 35) | (1 << 41) | (1 << 45) | (1 << 46) | ((asid as u64) << 48),
         root_pa & ADDRESS,
         0,
         MAIR,
@@ -306,14 +378,27 @@ unsafe fn build_map(oas: u32) -> bool {
         core::ptr::write_volatile((cd + i * 8) as *mut u64, *w);
     }
     dsb();
-    CD_PA.store(cd_pa, Ordering::Release);
-    DbgPrint(
-        b"[HAL] SMMUv3: identity map of %llu MiB of RAM and %u MSI doorbell page(s), %u table pages\n\0".as_ptr(),
-        ram >> 20,
-        doorbells,
-        POOL_USED.load(Ordering::Relaxed) as u32,
-    );
-    true
+    Some(cd_pa)
+}
+
+/// The level-3 descriptor slot for `addr` in a strict domain, its tables made on the
+/// way when `make`. None: not there (or no pool page left to make it).
+unsafe fn leaf(pool: &mut Pool, root: usize, addr: u64, make: bool) -> Option<*mut u64> {
+    let mut table = root;
+    for l in 0..3 {
+        let slot = (table + ((addr >> (39 - 9 * l)) & 511) as usize * 8) as *mut u64;
+        let entry = core::ptr::read_volatile(slot);
+        table = match entry & 3 {
+            DESC_TABLE => pool_va(pool, entry & ADDRESS),
+            0 if make => {
+                let (va, pa) = table_page(pool)?;
+                core::ptr::write_volatile(slot, pa | DESC_TABLE);
+                va
+            }
+            _ => return None,
+        };
+    }
+    Some((table + ((addr >> 12) & 511) as usize * 8) as *mut u64)
 }
 
 // ---- one SMMU ----
@@ -463,9 +548,10 @@ unsafe fn needs_span(base: u64, sid: u32) -> bool {
     })
 }
 
-/// Give StreamID `sid` on the SMMU at `base` the identity map. Idempotent. `fresh`
-/// is a span allocated beforehand for when the one holding `sid` is missing.
-unsafe fn attach_stream(base: u64, sid: u32, fresh: Option<(usize, u64)>) -> bool {
+/// Point StreamID `sid` on the SMMU at `base` at the context descriptor `cd`.
+/// Idempotent. `fresh` is a span allocated beforehand for when the one holding
+/// `sid` is missing.
+unsafe fn attach_stream(base: u64, sid: u32, cd: u64, fresh: Option<(usize, u64)>) -> bool {
     let units = &raw mut UNITS;
     let Some(u) = (*units).iter_mut().flatten().find(|u| u.base == base) else {
         return true; // that SMMU is bypassing: nothing to attach
@@ -494,26 +580,64 @@ unsafe fn attach_stream(base: u64, sid: u32, fresh: Option<(usize, u64)>) -> boo
         }
     };
     let ste = span + (sid as usize & ((1 << SPLIT) - 1)) * STE_BYTES;
-    if core::ptr::read_volatile(ste as *const u64) & 1 != 0 {
+    let word0 = 1 | (0b101 << 1) | (cd & ((1u64 << 52) - 1) & !0x3F);
+    let now = core::ptr::read_volatile(ste as *const u64);
+    if now == word0 {
         return true;
     }
-    // STE: stage 1 translates (Config 0b101) through the one CD, stage 2 bypassed;
+    if now & 1 != 0 {
+        // Another CD (the device now has a domain of its own, or no longer):
+        // invalid first, so the SMMU never sees half an entry.
+        wr64(ste, 0);
+        dsb();
+        if !command(u, [CMD_CFGI_STE | (sid as u64) << 32, 0]) || !sync(u) {
+            return false;
+        }
+    }
+    // STE: stage 1 translates (Config 0b101) through `cd`, stage 2 bypassed;
     // shareability from the incoming transaction. Valid last.
     for i in (1..8).rev() {
         wr64(ste + i * 8, if i == 1 { 1 << 44 } else { 0 });
     }
     dsb();
-    let cd = CD_PA.load(Ordering::Acquire);
-    wr64(ste, 1 | (0b101 << 1) | (cd & ((1u64 << 52) - 1) & !0x3F));
+    wr64(ste, word0);
     dsb();
     // Leaf 0: the level-1 descriptor may be new as well.
     command(u, [CMD_CFGI_STE | (sid as u64) << 32, 0]) && sync(u)
 }
 
+/// A strict domain for `requester` behind the SMMU at `unit`: the one it already has
+/// (a restarted device keeps its tables), else a new one with only its doorbells
+/// mapped. Its context descriptor's address, or None.
+unsafe fn domain_for(requester: u32, unit: u64) -> Option<u64> {
+    let domains = &raw mut DOMAINS;
+    if let Some(d) = (*domains).iter().flatten().find(|d| d.requester == requester) {
+        return Some(d.cd_pa());
+    }
+    let slot = (*domains).iter().position(Option::is_none)?;
+    let (va, pa) = alloc(DOMAIN_POOL_PAGES * PAGE)?;
+    let mut pool = Pool { va, pa, used: 0, pages: DOMAIN_POOL_PAGES };
+    let (root, root_pa) = table_page(&mut pool)?;
+    map_doorbells(&mut pool, root)?;
+    let asid = FIRST_ASID + slot as u16;
+    let cd_pa = context_descriptor(root_pa, asid)?;
+    let _guard = Locked::take();
+    (*domains)[slot] = Some(Domain { requester, unit, asid, root, pool, pages: 0, cd: cd_pa });
+    Some(cd_pa)
+}
+
+impl Domain {
+    fn cd_pa(&self) -> u64 {
+        self.cd
+    }
+}
+
 /// pci.sys, starting a device, before it may master the bus: give its StreamID (on
-/// whichever SMMU its PCI segment's root complex sends it to) the identity map.
-/// `requester` is the PCI segment in bits 31:16 over the requester ID.
-pub(crate) unsafe fn attach(requester: u32) -> bool {
+/// whichever SMMU its PCI segment's root complex sends it to) the identity map, or
+/// when `strict` (its driver is DMA-remapping compatible) a domain of its own that
+/// maps nothing until its DMA adapter does. `requester` is the PCI segment in bits
+/// 31:16 over the requester ID.
+pub(crate) unsafe fn attach(requester: u32, strict: bool) -> bool {
     if UNIT_COUNT.load(Ordering::Acquire) == 0 {
         return true;
     }
@@ -523,26 +647,115 @@ pub(crate) unsafe fn attach(requester: u32) -> bool {
     super::acpi::for_each_table(xsdt, |sig, t, len| {
         if sig == b"IORT" && found.is_none() {
             let bytes = core::slice::from_raw_parts(t, len);
-            found = super::iort::table(bytes).and_then(|t| super::iort::stream(t, segment, rid));
+            found = super::iort::table(bytes).and_then(|t| super::iort::stream(t, super::ecam::root_complex_segment(segment), rid));
         }
     });
     let Some((smmu, sid)) = found else {
         return true; // no SMMU on its path
     };
+    if (*(&raw const UNITS)).iter().flatten().all(|u| u.base != smmu.base) {
+        return true; // that SMMU is bypassing
+    }
     let fresh = if needs_span(smmu.base, sid) { alloc(STE_BYTES << SPLIT) } else { None };
-    let ok = {
+    // Allocated here, at PASSIVE: the contiguous allocator cannot run under LOCK.
+    let cd = if strict { domain_for(requester, smmu.base) } else { Some(CD_PA.load(Ordering::Acquire)) };
+    let ok = cd.is_some_and(|cd| {
         let _guard = Locked::take();
-        let ok = attach_stream(smmu.base, sid, fresh);
+        let ok = attach_stream(smmu.base, sid, cd, fresh);
         poll_events();
         ok
-    };
+    });
     DbgPrint(
         b"[HAL] SMMUv3 at %p: requester %04x is StreamID %x - %s\n\0".as_ptr(),
         smmu.base as ddk::PVOID,
         requester,
         sid,
-        if ok { b"translating\0".as_ptr() } else { b"NOT ATTACHED, its DMA will abort\0".as_ptr() },
+        match (ok, strict) {
+            (true, false) => b"translating\0".as_ptr(),
+            (true, true) => b"translating in a domain of its own (DMA-remapping compatible)\0".as_ptr(),
+            (false, _) => b"NOT ATTACHED, its DMA will abort\0".as_ptr(),
+        },
     );
+    ok
+}
+
+/// Whether `requester` has a domain of its own: its DMA adapter then has to map
+/// what it hands the device.
+pub(crate) unsafe fn is_strict(requester: u32) -> bool {
+    (*(&raw const DOMAINS)).iter().flatten().any(|d| d.requester == requester)
+}
+
+/// Let `requester`'s device reach [pa, pa + bytes) (map), or stop holding it
+/// (unmap). Nothing to do for a device without a domain of its own. False when
+/// the domain's tables are out of pages: the device would fault on that buffer.
+/// At or below DISPATCH_LEVEL.
+pub(crate) unsafe fn map(requester: u32, pa: u64, bytes: u64) -> bool {
+    update(requester, pa, bytes, true)
+}
+
+pub(crate) unsafe fn unmap(requester: u32, pa: u64, bytes: u64) {
+    update(requester, pa, bytes, false);
+}
+
+unsafe fn update(requester: u32, pa: u64, bytes: u64, mapping: bool) -> bool {
+    if bytes == 0 {
+        return true;
+    }
+    let _guard = Locked::take();
+    let domains = &raw mut DOMAINS;
+    let Some(d) = (*domains).iter_mut().flatten().find(|d| d.requester == requester) else {
+        return true;
+    };
+    let units = &raw mut UNITS;
+    let Some(u) = (*units).iter_mut().flatten().find(|u| u.base == d.unit) else {
+        return true;
+    };
+    let (first, last) = (pa & !0xFFF, (pa + bytes - 1) & !0xFFF);
+    let mut ok = true;
+    let mut invalidated = false;
+    let mut page = first;
+    while page <= last {
+        let Some(slot) = leaf(&mut d.pool, d.root, page, mapping) else {
+            if mapping {
+                ok = false;
+                DbgPrint(
+                    b"[HAL] SMMUv3: requester %04x's domain has no table page left to map %p\n\0".as_ptr(),
+                    requester,
+                    page as ddk::PVOID,
+                );
+                break;
+            }
+            page += PAGE as u64;
+            continue;
+        };
+        let entry = core::ptr::read_volatile(slot);
+        let refs = (entry & REFS) >> REFS_SHIFT;
+        if mapping {
+            let next = if entry & 3 == DESC_PAGE {
+                (entry & !REFS) | ((refs + 1).min(REFS_MAX) << REFS_SHIFT)
+            } else {
+                d.pages += 1;
+                page | DESC_NORMAL | DESC_PAGE | (1 << REFS_SHIFT)
+            };
+            core::ptr::write_volatile(slot, next);
+        } else if entry & 3 == DESC_PAGE && refs != 0 && refs != REFS_MAX {
+            if refs == 1 {
+                core::ptr::write_volatile(slot, 0);
+                d.pages -= 1;
+                dsb();
+                // TLBI_NH_VA: ASID, then the address, Leaf.
+                ok &= command(u, [CMD_TLBI_NH_VA | (d.asid as u64) << 48, page | 1]);
+                invalidated = true;
+            } else {
+                core::ptr::write_volatile(slot, (entry & !REFS) | ((refs - 1) << REFS_SHIFT));
+            }
+        }
+        page += PAGE as u64;
+    }
+    dsb();
+    if invalidated {
+        ok &= sync(u);
+    }
     ok
 }
 

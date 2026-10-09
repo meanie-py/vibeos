@@ -1157,7 +1157,6 @@ unsafe fn LsapLookupIsolatedNames(
                     );
                     if !DomainSid.is_null() {
                         MIDL_user_free(DomainSid);
-                        DomainSid = core::ptr::null_mut();
                     }
                     if !NT_SUCCESS(Status) {
                         break;

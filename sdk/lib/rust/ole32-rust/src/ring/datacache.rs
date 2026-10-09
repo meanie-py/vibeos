@@ -941,7 +941,7 @@ unsafe fn DataCacheEntry_LoadData(
         _ => {
             FIXME!(
                 b"Unimplemented clip format %x\n\0".as_ptr() as *const c_char,
-                (*cache_entry).fmtetc.cfFormat
+                (*cache_entry).fmtetc.cfFormat as core::ffi::c_uint
             );
             hr = E_NOTIMPL;
         }
@@ -1345,7 +1345,7 @@ unsafe fn DataCacheEntry_Save(
         _ => {
             FIXME!(
                 b"got unsupported clipboard format %x\n\0".as_ptr() as *const c_char,
-                (*cache_entry).fmtetc.cfFormat,
+                (*cache_entry).fmtetc.cfFormat as core::ffi::c_uint,
             );
         }
     }
@@ -3041,7 +3041,7 @@ unsafe fn DataCache_UpdateCache(
         CF_DIB as CLIPFORMAT,
         CF_BITMAP as CLIPFORMAT,
     ];
-    let mut fmt: FORMATETC = core::mem::zeroed();
+    let mut fmt: FORMATETC;
     let mut slots: c_int = 0;
     let mut done_one: BOOL = 0;
 

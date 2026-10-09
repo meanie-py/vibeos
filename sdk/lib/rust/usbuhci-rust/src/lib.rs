@@ -9,6 +9,11 @@
 //! opus + c2rust-anchored). 2 .c (roothub/usbuhci) -> 2 modules. Registers a
 //! USBPORT_REGISTRATION_PACKET with the usbport framework. guid.c stays as a C data TU.
 //! NOT boot-loaded in smoke (boots from CD/ramdisk, not USB). Bar: link-clean x3.
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
 #[macro_use]
 extern crate drvtrace_shim;

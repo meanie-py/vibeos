@@ -511,7 +511,7 @@ pub unsafe extern "C" fn LsapGetLogonSessionData(RequestMsg: PLSA_API_MSG) -> NT
     let mut ClientBaseAddress: PVOID = core::ptr::null_mut();
     let mut TotalLength: ULONG;
     let mut SidLength: ULONG = 0;
-    let mut MemSize: SIZE_T = 0;
+    let mut MemSize: SIZE_T;
     let mut Ptr: PUCHAR;
     let mut Status: NTSTATUS;
 

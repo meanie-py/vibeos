@@ -29,7 +29,22 @@ const UARTFR: u32 = 0x018; // Flag Register
 const UARTCR: u32 = 0x030; // Control Register
 const UARTFR_TXFF: u32 = 1 << 5; // TX FIFO Full
 const UARTFR_RXFE: u32 = 1 << 4; // RX FIFO Empty
+/// QEMU `virt`'s PL011. On a Pi this address is plain RAM, so DriverEntry
+/// checks the PrimeCell ID before it touches a register (`is_primecell`).
 const PL011_PHYS_ADDR: u64 = 0x09000000;
+/// PrimeCell component ID registers, 0xFF0..0xFFC: bytes 0D F0 05 B1 on every
+/// PrimeCell, the PL011 included.
+const UARTPCELLID0: usize = 0xFF0;
+const PRIMECELL_ID: [u32; 4] = [0x0D, 0xF0, 0x05, 0xB1];
+const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000_000Eu32 as NTSTATUS;
+
+/// Whether `base` maps a PrimeCell. Read-only, so a mapping of RAM is harmless.
+unsafe fn is_primecell(base: PVOID) -> bool {
+    (0..4).all(|i| {
+        let reg = (base as *const u8).add(UARTPCELLID0 + 4 * i) as *const u32; // nolint: magic-offset (PL011 MMIO register map)
+        core::ptr::read_volatile(reg) & 0xFF == PRIMECELL_ID[i]
+    })
+}
 const PL011_REG_SIZE: u32 = 0x1000;
 
 static mut g_UartBase: PVOID = core::ptr::null_mut();
@@ -75,6 +90,17 @@ pub unsafe extern "system" fn DriverEntry(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
     DbgPrint(b"[PL011] UART mapped at %p\n\0".as_ptr() as *const i8, g_UartBase);
+
+    // Divergence from the C, which assumed QEMU: on a Pi the fixed address is
+    // RAM, and the UARTCR read-modify-write below would store into it on every
+    // boot. Nothing opens this device today, so a board without a PL011 there
+    // simply gets no \Device\ArmSerial.
+    if !is_primecell(g_UartBase) {
+        DbgPrint(b"[PL011] no PrimeCell at %llx; not a QEMU virt board, no device\n\0".as_ptr() as *const i8, PL011_PHYS_ADDR);
+        MmUnmapIoSpace(g_UartBase, PL011_REG_SIZE as ntkrnl_sys::ddk::SIZE_T);
+        g_UartBase = core::ptr::null_mut();
+        return STATUS_NO_SUCH_DEVICE;
+    }
 
     // Ensure UART is enabled for TX and RX
     let cr = (g_UartBase as *mut u8).add(UARTCR as usize) as *mut u32; // nolint: magic-offset (PL011 MMIO register map)

@@ -15,10 +15,12 @@
 //!   firmware forces "card inserted" through the card-detect test bits, and
 //!   SDHCI refuses bus power when it believes the slot is empty. So the reset
 //!   path forces it again, and "no card" shows up as a command timeout instead.
-//! - **Polled PIO.** Data moves through the buffer data port, so there is no
-//!   DMA, no cache maintenance and no interrupt; timeouts come from the ARM
-//!   generic timer, because KUSER_SHARED_DATA's interrupt time does not advance
-//!   on this port.
+//! - **PIO, interrupt-paced.** Data moves through the buffer data port, so
+//!   there is no DMA and no cache maintenance. A wait longer than a few
+//!   microseconds sleeps on the controller's interrupt (irq.rs, `wait_int`)
+//!   instead of spinning; with no interrupt it spins as before. Timeouts come
+//!   from the ARM generic timer, because KUSER_SHARED_DATA's interrupt time does
+//!   not advance on this port.
 
 use core::ptr::{read_unaligned, read_volatile, write_unaligned, write_volatile};
 
@@ -70,6 +72,9 @@ const INT_ERRORS: u32 = 0x03FF_0000; // command and data errors, auto CMD12, ADM
 const INT_CMD_TIMEOUT: u32 = 1 << 16;
 /// The status bits to latch: the normal ones we poll for, and every error.
 const INT_LATCH: u32 = INT_ERRORS | 0x3F;
+/// Spin this long before sleeping on the interrupt: a command at 25 MHz
+/// completes well inside it, and sleeping costs more than it saves.
+const SPIN_FIRST_US: u64 = 20;
 
 // Command register flags: response type, CRC and index checks, data present.
 const RESP_NONE: u16 = 0x00;
@@ -174,6 +179,30 @@ impl Host {
         }
     }
 
+    /// Wait for `done(INT_STATUS)`, sleeping on the interrupt for `bits` (plus
+    /// errors) once a short spin has not seen it. Same contract as `spin_until`.
+    fn wait_int(&self, bits: u32, us: u64, done: impl Fn(u32) -> bool) -> Result<u32, u32> {
+        if !crate::irq::connected() {
+            return self.spin_until(REG_INT_STATUS, us, done);
+        }
+        if let Ok(v) = self.spin_until(REG_INT_STATUS, SPIN_FIRST_US.min(us), &done) {
+            return Ok(v);
+        }
+        let start = micros();
+        loop {
+            // Arm, then look again: a bit that latched before the arm raised no
+            // interrupt, and the ISR masks the signals again when one fires.
+            self.wr(REG_INT_SIGNAL, bits | INT_ERRORS);
+            let v = self.rd(REG_INT_STATUS);
+            let spent = micros().wrapping_sub(start);
+            if done(v) || spent > us {
+                self.wr(REG_INT_SIGNAL, 0);
+                return if done(v) { Ok(v) } else { Err(v) };
+            }
+            crate::irq::wait(us - spent);
+        }
+    }
+
     fn reset(&self, what: u32) -> Result<(), Error> {
         // The other bits of this dword are the clock and the timeout: keep them.
         self.wr(REG_CLOCK, (self.rd(REG_CLOCK) & !(RESET_ALL | RESET_CMD | RESET_DAT)) | what);
@@ -216,7 +245,7 @@ impl Host {
         }
         self.wr(REG_ARG, arg);
         self.wr(REG_XFER_CMD, (index as u32) << 24 | (flags as u32) << 16 | mode as u32);
-        let status = match self.spin_until(REG_INT_STATUS, 100_000, |v| v & (INT_CMD_DONE | INT_ERROR) != 0) {
+        let status = match self.wait_int(INT_CMD_DONE, 100_000, |v| v & (INT_CMD_DONE | INT_ERROR) != 0) {
             Ok(v) => v,
             Err(v) => {
                 self.recover();
@@ -231,7 +260,7 @@ impl Host {
         let r = [self.rd(REG_RESP), self.rd(REG_RESP + 4), self.rd(REG_RESP + 8), self.rd(REG_RESP + 12)];
         if flags == RESP_R1B {
             // The card holds DAT0 low while busy; the controller reports the end.
-            match self.spin_until(REG_INT_STATUS, 2_500_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
+            match self.wait_int(INT_XFER_DONE, 2_500_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
                 Ok(v) if v & INT_ERROR == 0 => self.wr(REG_INT_STATUS, INT_XFER_DONE),
                 Ok(v) | Err(v) => {
                     self.recover();
@@ -381,7 +410,7 @@ impl Host {
         };
         self.issue(index, self.address(lba), RESP_R1 | CMD_DATA, mode, count)?;
         for b in 0..count as usize {
-            let s = self.spin_until(REG_INT_STATUS, 1_000_000, |v| v & (INT_READ_READY | INT_ERROR) != 0);
+            let s = self.wait_int(INT_READ_READY, 1_000_000, |v| v & (INT_READ_READY | INT_ERROR) != 0);
             match s {
                 Ok(v) if v & INT_ERROR == 0 => self.wr(REG_INT_STATUS, INT_READ_READY),
                 Ok(v) | Err(v) => return Err(self.abort(index, v)),
@@ -391,7 +420,7 @@ impl Host {
                 write_unaligned(dst.add(i), self.rd(REG_BUFFER));
             }
         }
-        match self.spin_until(REG_INT_STATUS, 1_000_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
+        match self.wait_int(INT_XFER_DONE, 1_000_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
             Ok(v) if v & INT_ERROR == 0 => {
                 self.wr(REG_INT_STATUS, INT_XFER_DONE);
                 Ok(())
@@ -409,7 +438,7 @@ impl Host {
             if count == 1 { (24, 0) } else { (25, XFER_MULTI | XFER_BLOCK_COUNT | XFER_AUTO_CMD12) };
         self.issue(index, self.address(lba), RESP_R1 | CMD_DATA, mode, count)?;
         for b in 0..count as usize {
-            let s = self.spin_until(REG_INT_STATUS, 1_000_000, |v| v & (INT_WRITE_READY | INT_ERROR) != 0);
+            let s = self.wait_int(INT_WRITE_READY, 1_000_000, |v| v & (INT_WRITE_READY | INT_ERROR) != 0);
             match s {
                 Ok(v) if v & INT_ERROR == 0 => self.wr(REG_INT_STATUS, INT_WRITE_READY),
                 Ok(v) | Err(v) => return Err(self.abort(index, v)),
@@ -420,7 +449,7 @@ impl Host {
             }
         }
         // For a write, transfer complete waits out the card's busy (programming).
-        match self.spin_until(REG_INT_STATUS, 2_500_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
+        match self.wait_int(INT_XFER_DONE, 2_500_000, |v| v & (INT_XFER_DONE | INT_ERROR) != 0) {
             Ok(v) if v & INT_ERROR == 0 => self.wr(REG_INT_STATUS, INT_XFER_DONE),
             Ok(v) | Err(v) => return Err(self.abort(index, v)),
         }

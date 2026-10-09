@@ -16,10 +16,9 @@
 // prototypes and LDAPControlA/LDAPModA/LDAPSortKeyA/LDAPAPIInfoA (+W) INCOMPATIBLY.
 // There is no legal merged island (§9.108) — so NEVER glob both into one scope. The
 // prelude globs `types`; ber.rs imports from `types_1` explicitly.
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod types; // bindgen island, per arch (gen_driver_types.sh wldap32)
 pub mod types_1; // ber.c's island (TYPES_STEM=types_1 gen_driver_types.sh wldap32-types_1)

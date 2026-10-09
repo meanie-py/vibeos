@@ -4626,13 +4626,13 @@ def add_parser(sub) -> None:
         "includes each header (after resolve; replay keeps them)",
     )
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, required=True)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="off")
     q = stages.add_parser("macros", help="port the module's own C macros the crate calls")
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, default=0.30)
     q.add_argument("--dry-run", action="store_true")
     q.add_argument("--thinking", choices=("on", "off"), default="on")
@@ -4640,12 +4640,12 @@ def add_parser(sub) -> None:
     q.add_argument("stem")
     q.add_argument("--fix-cap", type=float, default=0.0, help="USD of NEW fix purchases")
     q.add_argument("--fix-rounds", type=int, default=1)
-    q.add_argument("-m", "--model", default="deepseek", help="model for NEW fix purchases")
+    q.add_argument("-m", "--model", default="haiku", help="model for NEW fix purchases")
     q = stages.add_parser(
         "fix", help="send each function rustc still rejects back to the model, errors attached"
     )
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument("--cost-cap", type=float, required=True)
     q.add_argument("--rounds", type=int, default=3)
     # off: retries carry the refusal reason instead (escalating bought the same wrong
@@ -4656,7 +4656,7 @@ def add_parser(sub) -> None:
     q.add_argument("--dry-run", action="store_true")
     q = stages.add_parser("translate")
     q.add_argument("stem")
-    q.add_argument("-m", "--model", default="deepseek")
+    q.add_argument("-m", "--model", default="haiku")
     q.add_argument(
         "--cost-cap",
         type=float,

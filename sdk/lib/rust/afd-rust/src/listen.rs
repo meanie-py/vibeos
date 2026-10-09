@@ -111,7 +111,7 @@ unsafe fn listen_complete_impl(
     Irp: PIRP,
     Context: PVOID,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FCB = Context as PAFD_FCB;
     // Listen-path breadcrumb (see AfdListenSocket).
     DbgPrint(b"[AFD] ListenComplete FCB=%p status=0x%x\n\0".as_ptr() as PCHAR,
@@ -126,7 +126,7 @@ unsafe fn listen_complete_impl(
         return STATUS_FILE_CLOSED;
     }
 
-    ASSERT((*FCB).ListenIrp.InFlightRequest == Irp);
+    ASSERT!((*FCB).ListenIrp.InFlightRequest == Irp);
     (*FCB).ListenIrp.InFlightRequest = core::ptr::null_mut();
 
     if (*FCB).SharedData.State == SOCKET_STATE_CLOSED {
@@ -179,7 +179,6 @@ unsafe fn listen_complete_impl(
     ) as PAFD_TDI_OBJECT_QELT;
 
     if Qelt.is_null() {
-        Status = STATUS_NO_MEMORY;
     } else {
         let AddressType = (*(*FCB).LocalAddress).Address[0].AddressType;
 
@@ -224,13 +223,13 @@ unsafe fn listen_complete_impl(
             (*FCB).ListenIrp.ConnectionCallInfo,
             (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
-        ASSERT(Status == STATUS_SUCCESS);
+        ASSERT!(Status == STATUS_SUCCESS);
 
         Status = TdiBuildNullConnectionInfoInPlace(
             (*FCB).ListenIrp.ConnectionReturnInfo,
             (*(*FCB).LocalAddress).Address[0].AddressType as u32,
         );
-        ASSERT(Status == STATUS_SUCCESS);
+        ASSERT!(Status == STATUS_SUCCESS);
 
         Status = TdiListen(
             core::ptr::addr_of_mut!((*FCB).ListenIrp.InFlightRequest),

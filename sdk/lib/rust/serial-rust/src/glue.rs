@@ -118,7 +118,9 @@ pub static mut KdComPortInUse: PUCHAR = core::ptr::null_mut();
 // ---------------------------------------------------------------------------
 // SERIAL — DPFLTR component id for DbgPrintEx calls.
 // ---------------------------------------------------------------------------
-pub const SERIAL: ULONG = 53; // DPFLTR_SERIAL_ID
+// `ERR_(SERIAL, ...)` pastes to DPFLTR_SERIAL_ID (psdk/dpfilter.h: 39). This was 53, a
+// number from nowhere, which a live print would have filtered against the wrong mask.
+pub const SERIAL: ULONG = DPFLTR_SERIAL_ID;
 
 // ---------------------------------------------------------------------------
 // DPFLTR constants used module-scope in cleanup.rs / misc.rs.
@@ -134,9 +136,9 @@ pub const DPFLTR_TRACE_LEVEL:  ULONG = 2;
 // self-contained.  cdecl caller-cleans-up means a 2-arg receiver is safe even
 // when callers pass extra variadic args — the caller pops them from the stack.
 // ---------------------------------------------------------------------------
+// (now `macro_rules!` in lib.rs over this DbgPrintEx)
 extern "C" {
-    pub fn WARN_(component: ULONG, fmt: *const core::ffi::c_char, ...);
-    pub fn ERR_(component: ULONG, fmt: *const core::ffi::c_char, ...);
+    pub fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: *const core::ffi::c_char, ...) -> ULONG;
 }
 
 // ---------------------------------------------------------------------------

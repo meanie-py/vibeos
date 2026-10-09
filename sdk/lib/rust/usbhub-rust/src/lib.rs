@@ -7,6 +7,11 @@
 //! usbhub.sys — USB hub class driver. Faithful C→Rust cohab (rustconv opus; usbhub.c via
 //! pure-LLM as c2rust couldn't anchor it, the rest c2rust-anchored). 5 .c -> 5 modules.
 //! Enumerates/powers/resets downstream ports. NOT boot-loaded in smoke (boots from CD/ramdisk).
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
 #[macro_use]
 extern crate drvtrace_shim;

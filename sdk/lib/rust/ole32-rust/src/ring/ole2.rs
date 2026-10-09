@@ -465,7 +465,7 @@ pub unsafe extern "system" fn OleUninitialize() {
 
 /// ole2.c:269 OleInitializeWOW [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleInitializeWOW(_x: DWORD, _y: DWORD) -> HRESULT {
+pub unsafe extern "system" fn OleInitializeWOW(x: DWORD, y: DWORD) -> HRESULT {
     FIXME!(b"(0x%08x, 0x%08x),stub!\n\0".as_ptr(), x, y);
     0
 }
@@ -1058,7 +1058,7 @@ pub unsafe extern "system" fn DoDragDrop(
 
 /// ole2.c:854 OleQueryLinkFromData [OLE32.@]
 #[no_mangle]
-pub unsafe extern "system" fn OleQueryLinkFromData(_pSrcDataObject: *mut IDataObject) -> HRESULT {
+pub unsafe extern "system" fn OleQueryLinkFromData(pSrcDataObject: *mut IDataObject) -> HRESULT {
     FIXME!(b"(%p),stub!\n\0".as_ptr(), pSrcDataObject);
     S_FALSE
 }
