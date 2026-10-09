@@ -1199,7 +1199,11 @@ unsafe fn StorageImpl_LockRegionSync(
             if delay < 150 {
                 delay += 1;
             }
-        } else {
+        }
+        // The C's `do { .. } while (hr == STG_E_ACCESSDENIED || hr == STG_E_LOCKVIOLATION)`:
+        // re-tested AFTER the sanity probe, so a probe failing some other way ends the wait
+        // with that error instead of retrying the full 20 seconds.
+        if !(hr == STG_E_ACCESSDENIED || hr == STG_E_LOCKVIOLATION) {
             break;
         }
     }

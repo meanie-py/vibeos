@@ -1129,9 +1129,29 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
       a PAGE_READONLY view raised no access violation) failed on 3 of 3 i386 `-smp 2`
       sweeps, with or without the idle-summary fix. `KiInitMachineDependent` now sets it
       inside its per-processor affinity loop.
-    Left as timing noise (one sample each): amd64 `ExResource` (its :480/:518/:620 are
-    already `assert?` in the 1-vCPU baseline) and i386 `PsQuota` (nonpaged quota off by 24
-    bytes in 1 of 2 sweeps); `IoDeviceObject` +-1 is the known flicker.
+    - **amd64 idle CPUs slept through IPI_DPC** (FIXED): the rows first written off as
+      timing (amd64 `ExResource` :480/:620, plus a knock-on :301) were a whole-guest
+      slowdown. amd64 `-smp 2` swept in 775 s against 250 s at one vCPU and reached the
+      sweep at +423 s against +105 s; sampling both vCPUs over gdb found a halted idle CPU
+      with a `NextThread` already assigned in over half the samples. amd64 sends IPI_DPC
+      as the DISPATCH soft vector 0x2F, and on amd64 IRQL is the APIC TPR, so a target
+      idling at DISPATCH_LEVEL held it pending and slept until the clock tick. `KiIpiSend`
+      now also rings 0xE1. After: sweep 234 s, starting at +109 s; ExResource back to its
+      banked 879/2; `-smp 2` smoke green (run 20261008-174402-8rgmbt0d).
+    - **i386 `PsQuota` was the kmtest harness charging quota mid-test** (FIXED):
+      `KmtRunKernelTest` starts its user-callback thread and issues `RUN_TEST` at once;
+      that thread's parked `AWAIT_REQ` IOCTL is METHOD_BUFFERED, so its system buffer is a
+      quota allocation (12-byte packet + 4-byte process pointer + 8-byte header = the 24
+      bytes PsQuota saw). On one CPU it parks after the test, on two during it. The
+      kmtest driver's `RUN_TEST` now waits (bounded, 5 s) for the callback thread to park.
+      i386 `-smp 2` PsQuota 12/0 (run 20261008-174152-p1jx1zfg).
+    - **`IoDeviceObject` "+-1 flicker" was an unterminated registry path** (FIXED; not SMP,
+      it flipped at one vCPU on every arch): `IopUnloadDriver` passed the counted service
+      name to `RtlQueryRegistryValues` as a PWSTR, and DriverEntry's RegistryPath had no
+      terminator, so `:300` depended on the pool WCHAR after it (a gdb probe caught
+      `NtOpenKey` opening `...KMTEST-IODEVICEOBJECT` plus garbage). Both sites fixed; the
+      terminator sits outside `MaximumLength` (`:191`). 185/4 on all three arches; the
+      1-vCPU rows and arm64 smp2 (stale 180/9) re-banked, `assert? :300` removed.
   - **User-pointer double-fetch (TOCTOU) sweep** (2026-10-07). A new `tools/scan_double_fetch.py`
     (`vibeos-cli check`, baseline-gated) flags the same user address captured twice on one
     control-flow path — the TOCTOU that SMP turns exploitable, since a thread on another CPU
@@ -3053,8 +3073,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `ntoskrnl/ntkrnlmp/ntkrnlmp.exe`, and confirm against what the boot actually loaded
   (`ramdisk(0)\reactos\system32\ntkrnlmp.exe` appears in the serial).
 
-- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent**
-  (2026-09-13, research lane). They pass `-C target-feature=-sse,-sse2` while targeting the
+- **54 i386 crates build on an SSE/ABI combination rustc is phasing out — OPEN, latent,
+  TRIPWIRE-GUARDED** (2026-09-13, research lane; tripwire 2026-10-08). They pass `-C target-feature=-sse,-sse2` while targeting the
   BUILTIN `i686-pc-windows-gnu`, whose spec declares `rustc-abi: x86-sse2`. Both the pinned
   stable (1.92.0) and the pinned nightly (2025-12-14) emit: *"target feature `sse2` must be
   enabled to ensure that the ABI of the current target can be implemented correctly … this was
@@ -3075,10 +3095,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and `ucrtbase` are candidates for simply dropping the flag (no kernel-side consumer found);
   ucrtbase DID drop it (2026-10-03, for the `libm` crate -- see its CMakeLists).
   So the fix for the other 52 is the softfloat ABI the kernel json already carries, not a KIND
-  split. **Still unverified:** whether a newer rustc actually hard-errors — that is rustc's own
-  claim, not a test of mine. Whoever bumps
-  the pin should re-run `rustc --target i686-pc-windows-gnu -C target-feature=-sse,-sse2` first;
-  it is a one-command check.
+  split.
+  **Re-derived from the live tree 2026-10-08 (research lane):** still latent, now with a
+  tripwire. The one-command check was run — `rustc 1.92.0 --target i686-pc-windows-gnu
+  -C target-feature=-sse,-sse2` on a trivial crate still **warns and exits 0**, so nothing is
+  broken. The count is now **54** CMakeLists (ucrtbase dropped out as noted); all 54 verified to
+  pair the flag with the builtin triple and none with a json. The feasibility of the "move to
+  the softfloat json" remedy was pinned as fact, not inferred: a custom json needs cargo to
+  rebuild `core`, i.e. `-Z build-std` = **nightly** (`gcc.cmake:789`,
+  `ntoskrnl-cargo/build-and-test.sh:43`). The 54 build on **stable** via
+  `cargo build --target i686-pc-windows-gnu` + `RUSTFLAGS` (per-CMakeLists `add_custom_command`,
+  not `add_cargo_module`), so the migration is: convert each into a build-std cargo cell on a
+  softfloat json — the model the i386 `*-cargo` cells already use. That is a large,
+  nightly-widening change for no live bug, hence **deferred by design** until the warning
+  becomes an error. A 54-crate migration is NOT warranted while rustc only warns.
+  **Tripwire landed** so the bump cannot break i386 silently: `tools/scan_i386_sse_abi.py` +
+  `tools/test_scan_i386_sse_abi.py`, wired into `check-tooling`. It compiles the exact doomed
+  combo and, the moment the pinned rustc turns rust-lang#116344 into a hard error, fails the
+  land preflight with ONE actionable message (the migration recipe + the full crate list)
+  instead of 54 cryptic build errors. Run `python tools/scan_i386_sse_abi.py` any time for the
+  current verdict (`OK_LATENT` / `TRIPPED_HARD_ERROR` / `ABI_CHANGED`) and `--list` for the 54.
 
 - **2026-10-06: x86-64 apps run on arm64 — the x64 ladder is at parity with the x86 one
   (BTCpu64 M2).** All ten 32-bit ladder sources, rebuilt for x86-64, plus `hello64`, exit
