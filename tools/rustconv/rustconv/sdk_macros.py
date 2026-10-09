@@ -826,6 +826,25 @@ def existing_items(prelude: Path) -> dict[str, set[str]]:
 _ISLAND_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
 
 
+def _render_wrapper(
+    name: str,
+    iface: str,
+    method: str,
+    sig: tuple[list[tuple[str, str]], str | None] | None,
+    cfg: str = "",
+) -> str:
+    assert sig is not None
+    args, ret = sig
+    params = ", ".join([f"This: *mut {iface}", *(f"{n}: {t}" for n, t in args)])
+    call = ", ".join(["This", *(n for n, _ in args)])
+    return (
+        f"{cfg}#[inline]\npub unsafe fn {name}({params})"
+        + (f" -> {ret}" if ret else "")
+        + f" {{ ((*(*This).lpVtbl).{method}.unwrap_unchecked())({call}) }}"
+        + " // widl C wrapper"
+    )
+
+
 def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
     """WIDL's C wrappers (`IFoo_Method(This, ...)`) the crate calls, from the island's Vtbl.
 
@@ -862,22 +881,13 @@ def com_wrappers(crate_src: Path, wanted: set[str]) -> dict[str, str]:
             if any(sig is None for sig in sigs.values()):
                 continue
 
-            def render(sig: tuple[list[tuple[str, str]], str | None], cfg: str = "") -> str:
-                args, ret = sig
-                params = ", ".join([f"This: *mut {iface}", *(f"{n}: {t}" for n, t in args)])
-                call = ", ".join(["This", *(n for n, _ in args)])
-                return (
-                    f"{cfg}#[inline]\npub unsafe fn {name}({params})"
-                    + (f" -> {ret}" if ret else "")
-                    + f" {{ ((*(*This).lpVtbl).{method}.unwrap_unchecked())({call}) }}"
-                    + " // widl C wrapper"
-                )
-
             if len({repr(sig) for sig in sigs.values()}) == 1:
-                out[name] = render(next(iter(sigs.values())))  # type: ignore[arg-type]
+                out[name] = _render_wrapper(name, iface, method, next(iter(sigs.values())))
             else:
                 out[name] = "\n".join(
-                    render(sig, f'#[cfg(target_arch = "{_ISLAND_ARCH[a]}")]\n')  # type: ignore[arg-type]
+                    _render_wrapper(
+                        name, iface, method, sig, f'#[cfg(target_arch = "{_ISLAND_ARCH[a]}")]\n'
+                    )
                     for a, sig in sorted(sigs.items())
                 )
             break
