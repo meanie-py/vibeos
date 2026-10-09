@@ -79,6 +79,68 @@ MACRO_DEF_RE = re.compile(r"(?m)^\s*macro_rules!\s+([A-Za-z_]\w*)")
 # C macros of the DDK that must never be lowered to a fn, whatever the crate defines.
 DDK_MACROS = frozenset({"PAGED_CODE", "PAGED_CODE_LOCKED"})
 
+# Where the C a translation came from lives. The dead-macro set is harvested from here.
+C_ROOT = REPO
+
+# A C macro whose expansion DISCARDS its arguments, in at least one configuration:
+#   #define DPRINT_URB(...)  do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)
+#   #define DPRINT_URB       __noop
+#   #define TRACE_(ch, ...)  ((void)0)
+# Its arguments are never evaluated. An empty Rust `fn` of the same name evaluates every one
+# of them before doing nothing -- including a dereference the C never performs.
+_C_DEFINE_RE = re.compile(r"^\s*#\s*define\s+([A-Za-z_]\w*)(\([^)]*\))?(?:\s+(.*?))?\s*$")
+_DISCARDS_RE = re.compile(
+    r"__noop|\(\s*\(\s*void\s*\)\s*0\s*\)|\(\s*void\s*\)\s*0|"
+    r"do\s*\{\s*\}\s*while\s*\(\s*0\s*\)|"
+    r"do\s*\{\s*if\s*\(\s*0\s*\)\s*\{.*\}\s*;?\s*\}\s*while\s*\(\s*0\s*\)|",
+    re.S,
+)
+
+
+def _c_headers(root: Path) -> list[Path]:
+    """Tracked headers under `root` (git, so build-* trees never count); a plain walk when
+    `root` is not a checkout (the self-test's temp dir)."""
+    import subprocess
+
+    try:
+        out = subprocess.run(
+            ["git", "-C", str(root), "ls-files", "-z", "--", "*.h"],
+            capture_output=True,
+            check=True,
+        ).stdout
+        return [root / p.decode("utf8", "replace") for p in out.split(b"\0") if p]
+    except (OSError, subprocess.CalledProcessError):
+        return sorted(root.rglob("*.h"))
+
+
+def dead_c_macros(root: Path) -> frozenset[str]:
+    """Every macro some C header defines as argument-discarding (see _DISCARDS_RE)."""
+    names: set[str] = set()
+    for path in _c_headers(root):
+        try:
+            lines = path.read_text("utf8", "replace").splitlines()
+        except OSError:
+            continue
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            while line.endswith("\\") and i + 1 < len(lines):
+                i += 1
+                line = line[:-1] + " " + lines[i]
+            i += 1
+            m = _C_DEFINE_RE.match(line)
+            if not m:
+                continue
+            body = re.sub(r"/\*.*?\*/|//.*$", "", m.group(3) or "").strip()
+            # An EMPTY expansion only discards arguments when there are arguments: an
+            # object-like `#define FOO` is a flag or an include guard, not a callable.
+            if not body and m.group(2) is None:
+                continue
+            if _DISCARDS_RE.fullmatch(body):
+                names.add(m.group(1))
+    return frozenset(names)
+
+
 _PARSER = None
 
 
@@ -171,9 +233,13 @@ def scan(paths: list[Path]) -> list[tuple[str, str, int]]:
         for name, line in empty_body_fns(raw):
             shadows.append((path, name, line))
 
+    # Names the C defines as argument-discarding are macros in EVERY crate, like DDK_MACROS:
+    # the no-op may sit in a shim crate that serves its callers' extern declarations, so no
+    # crate-local key could ever see it (drvtrace-shim's DPRINT_URB, 2026-10-08).
+    dead = dead_c_macros(C_ROOT) if shadows else frozenset()
     hits = []
     for path, name, line in shadows:
-        if name in DDK_MACROS or name in macros.get(crate_of(path), ()):
+        if name in DDK_MACROS or name in dead or name in macros.get(crate_of(path), ()):
             try:
                 rel = path.relative_to(REPO).as_posix()
             except ValueError:
@@ -243,6 +309,41 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
         ["read.rs"],
     ),
     (
+        "the drvtrace-shim bug: a C `if(0)` debug macro as an empty fn in ANOTHER crate",
+        {
+            "usbdebug.h": "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n",
+            "shim/Cargo.toml": "[package]\nname='shim'\n",
+            "shim/src/lib.rs": '#[no_mangle]\npub unsafe extern "C" fn DPRINT_URB(_fmt: *const i8) {}\n',
+        },
+        ["lib.rs"],
+    ),
+    (
+        "`__noop` and `((void)0)` discard their arguments too",
+        {
+            "dbg.h": "#define DPRINT_EHCI __noop\n#define TRACE_(ch, ...) ((void)0)\n",
+            "a.rs": "fn DPRINT_EHCI(_f: *const i8) {}\n",
+            "b.rs": "fn TRACE_(_c: u32) {}\n",
+        },
+        ["a.rs", "b.rs"],
+    ),
+    (
+        "a macro that PRINTS in C is not argument-discarding: no finding from this rule",
+        {
+            "debug.h": "#define DPRINT_LIVE(fmt, ...) DbgPrint(fmt, ##__VA_ARGS__)\n",
+            "a.rs": "fn DPRINT_LIVE(_f: *const i8) {}\n",
+        },
+        [],
+    ),
+    (
+        "the drvtrace-shim fix: a macro that evaluates nothing, invoked as one",
+        {
+            "usbdebug.h": "#define DPRINT_URB(...) do { if(0) { DbgPrint(__VA_ARGS__); } } while(0)\n",
+            "lib.rs": "macro_rules! DPRINT_URB {\n    ($($a:expr),*) => { if false { $(let _ = $a;)* } };\n}\n",
+            "queue.rs": "pub unsafe fn f(p: *const u32) { DPRINT_URB!(p, *p); }\n",
+        },
+        [],
+    ),
+    (
         "the PAGED_CODE fix: a macro, invoked as one",
         {
             "lib.rs": "macro_rules! PAGED_CODE {\n    () => {};\n}\n",
@@ -256,7 +357,7 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
 def self_test() -> int:
     import tempfile
 
-    global RUST_ROOT
+    global RUST_ROOT, C_ROOT
     ok = 0
     for desc, files, want in SELF_TEST:
         with tempfile.TemporaryDirectory() as tmp:
@@ -267,10 +368,12 @@ def self_test() -> int:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 dest.write_text(body)
             saved, RUST_ROOT = RUST_ROOT, root
+            saved_c, C_ROOT = C_ROOT, root
             try:
                 got = [Path(rel).name for rel, _, _ in scan(rust_files())]
             finally:
                 RUST_ROOT = saved
+                C_ROOT = saved_c
         if sorted(got) == sorted(want):
             ok += 1
         else:

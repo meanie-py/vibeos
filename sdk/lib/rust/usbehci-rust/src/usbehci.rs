@@ -10,7 +10,6 @@ use core::ffi::c_void;
 
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> u32;
-    fn DPRINT_EHCI(format: *const ::core::ffi::c_char, ...);
 }
 extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR);
@@ -553,7 +552,7 @@ pub unsafe extern "system" fn EHCI_AllocTd(
     let mut TD: PEHCI_HCD_TD;
     let mut ix: ULONG;
 
-    DPRINT_EHCI(b"EHCI_AllocTd: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_AllocTd: ... \n\0".as_ptr() as *const i8);
 
     if (*EhciEndpoint).MaxTDs == 0 {
         (RegPacket.UsbPortBugCheck.expect("non-null function pointer"))(EhciExtension as PVOID);
@@ -592,7 +591,7 @@ pub unsafe extern "system" fn EHCI_InitializeQH(
     let EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES;
     let DeviceSpeed: ULONG;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_InitializeQH: EhciEndpoint - %p, QH - %p, QhPA - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         QH,
@@ -1960,7 +1959,7 @@ pub unsafe extern "system" fn EHCI_InterruptService(ehciExtension: PVOID) -> BOO
 
     OperationalRegs = (*EhciExtension).OperationalRegs;
 
-    DPRINT_EHCI(b"EHCI_InterruptService: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_InterruptService: ... \n\0".as_ptr() as *const i8);
 
     Result = EHCI_HardwarePresent(EhciExtension, 0 as BOOLEAN);
 
@@ -2038,7 +2037,7 @@ pub unsafe extern "system" fn EHCI_InterruptDpc(
 
     OperationalRegs = (*EhciExtension).OperationalRegs;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_InterruptDpc: [%p] EnableInterrupts - %x\n\0".as_ptr() as *const i8,
         EhciExtension,
         EnableInterrupts as core::ffi::c_int,
@@ -2051,7 +2050,7 @@ pub unsafe extern "system" fn EHCI_InterruptDpc(
         || iStatus.ErrorInterrupt() == 1
         || iStatus.InterruptOnAsyncAdvance() == 1
     {
-        DPRINT_EHCI(
+        DPRINT_EHCI!(
             b"EHCI_InterruptDpc: [%p] InterruptStatus - %X\n\0".as_ptr() as *const i8,
             EhciExtension,
             iStatus.AsULONG,
@@ -2063,7 +2062,7 @@ pub unsafe extern "system" fn EHCI_InterruptDpc(
     }
 
     if iStatus.PortChangeInterrupt() == 1 {
-        DPRINT_EHCI(
+        DPRINT_EHCI!(
             b"EHCI_InterruptDpc: [%p] PortChangeInterrupt\n\0".as_ptr() as *const i8,
             EhciExtension,
         );
@@ -2099,7 +2098,7 @@ pub unsafe extern "system" fn EHCI_MapAsyncTransferToTd(
     let DiffLength: ULONG;
     let NumPackets: ULONG;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_MapAsyncTransferToTd: EhciTransfer - %p, TD - %p, TransferedLen - %x, MaxPacketSize - %x, DataToggle - %x\n\0".as_ptr() as *const i8,
         EhciTransfer,
         TD,
@@ -2183,7 +2182,7 @@ pub unsafe extern "system" fn EHCI_EnableAsyncList(EhciExtension: PEHCI_EXTENSIO
     let OperationalRegs: PEHCI_HW_REGISTERS;
     let mut UsbCmd: EHCI_USB_COMMAND = core::mem::zeroed();
 
-    DPRINT_EHCI(b"EHCI_EnableAsyncList: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_EnableAsyncList: ... \n\0".as_ptr() as *const i8);
 
     OperationalRegs = (*EhciExtension).OperationalRegs;
 
@@ -2228,7 +2227,7 @@ pub unsafe extern "system" fn EHCI_FlushAsyncCache(EhciExtension: PEHCI_EXTENSIO
     let mut EndTime: LARGE_INTEGER = core::mem::zeroed();
     let mut Cmd: EHCI_USB_COMMAND = core::mem::zeroed();
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_FlushAsyncCache: EhciExtension - %p\n\0".as_ptr() as *const i8,
         EhciExtension,
     );
@@ -2342,7 +2341,7 @@ pub unsafe extern "system" fn EHCI_LockQH(
     let OperationalRegs: PEHCI_HW_REGISTERS;
     let mut Command: EHCI_USB_COMMAND = core::mem::zeroed();
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_LockQH: QH - %p, TransferType - %x\n\0".as_ptr() as *const i8,
         QH,
         TransferType,
@@ -2404,7 +2403,7 @@ pub unsafe extern "system" fn EHCI_UnlockQH(
 
     let mut QhPA: ULONG;
 
-    DPRINT_EHCI(b"EHCI_UnlockQH: QH - %p\n\0".as_ptr() as *const i8, QH);
+    DPRINT_EHCI!(b"EHCI_UnlockQH: QH - %p\n\0".as_ptr() as *const i8, QH);
 
     if (*QH).sqh.QhFlags as core::ffi::c_ulong & EHCI_QH_FLAG_UPDATING as core::ffi::c_ulong == 0 {
         RtlAssert(
@@ -2457,7 +2456,7 @@ pub unsafe extern "system" fn EHCI_LinkTransferToQueue(
     let IsPresent: BOOLEAN;
     let mut ix: ULONG;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_LinkTransferToQueue: EhciEndpoint - %p, NextTD - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         NextTD,
@@ -2502,7 +2501,7 @@ pub unsafe extern "system" fn EHCI_LinkTransferToQueue(
 
         (*EhciEndpoint).HcdHeadP = NextTD;
     } else {
-        DPRINT_EHCI(
+        DPRINT_EHCI!(
             b"EHCI_LinkTransferToQueue: TD - %p, HcdTailP - %p\n\0".as_ptr() as *const i8,
             (*EhciEndpoint).HcdHeadP,
             (*EhciEndpoint).HcdTailP,
@@ -2566,7 +2565,7 @@ pub unsafe extern "system" fn EHCI_ControlTransfer(
     let mut Token: EHCI_TD_TOKEN = core::mem::zeroed();
     let mut DataToggle: ULONG = 1;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_ControlTransfer: EhciEndpoint - %p, EhciTransfer - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         EhciTransfer,
@@ -2772,7 +2771,7 @@ pub unsafe extern "system" fn EHCI_BulkTransfer(
     let mut TD: PEHCI_HCD_TD = core::ptr::null_mut();
     let mut TransferedLen: ULONG;
 
-    DPRINT_EHCI(
+    DPRINT_EHCI!(
         b"EHCI_BulkTransfer: EhciEndpoint - %p, EhciTransfer - %p\n\0".as_ptr() as *const i8,
         EhciEndpoint,
         EhciTransfer
@@ -3585,7 +3584,7 @@ pub unsafe extern "system" fn EHCI_SetEndpointState(
 pub unsafe extern "system" fn EHCI_InterruptNextSOF(ehciExtension: PVOID) {
     let EhciExtension: PEHCI_EXTENSION = ehciExtension as PEHCI_EXTENSION;
 
-    DPRINT_EHCI(b"EHCI_InterruptNextSOF: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_InterruptNextSOF: ... \n\0".as_ptr() as *const i8);
 
     (RegPacket.UsbPortInvalidateController.expect("non-null function pointer"))(
         EhciExtension as PVOID,
@@ -3597,7 +3596,7 @@ pub unsafe extern "system" fn EHCI_InterruptNextSOF(ehciExtension: PVOID) {
 pub unsafe extern "system" fn EHCI_GetErrorFromTD(TD: PEHCI_HCD_TD) -> USBD_STATUS {
     let mut Token: EHCI_TD_TOKEN;
 
-    DPRINT_EHCI(b"EHCI_GetErrorFromTD: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_GetErrorFromTD: ... \n\0".as_ptr() as *const i8);
 
     if (*TD).HwTD.Token.c2rust_unnamed.Status() as ::core::ffi::c_int
         & EHCI_TOKEN_STATUS_HALTED
@@ -3657,7 +3656,7 @@ pub unsafe extern "system" fn EHCI_ProcessDoneAsyncTd(
     let mut OperationalRegs: PEHCI_HW_REGISTERS;
     let mut Command: EHCI_USB_COMMAND = core::mem::zeroed();
 
-    DPRINT_EHCI(b"EHCI_ProcessDoneAsyncTd: TD - %p\n\0".as_ptr() as *const i8, TD);
+    DPRINT_EHCI!(b"EHCI_ProcessDoneAsyncTd: TD - %p\n\0".as_ptr() as *const i8, TD);
 
     EhciTransfer = (*TD).EhciTransfer;
 
@@ -3740,7 +3739,7 @@ pub unsafe extern "system" fn EHCI_PollActiveAsyncEndpoint(
     let CurrentTDPhys: ULONG;
     let mut IsScheduled: BOOLEAN;
 
-    DPRINT_EHCI(b"EHCI_PollActiveAsyncEndpoint: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_PollActiveAsyncEndpoint: ... \n\0".as_ptr() as *const i8);
 
     QH = (*EhciEndpoint).QH;
 
@@ -4106,7 +4105,7 @@ pub unsafe extern "system" fn EHCI_PollController(ehciExtension: PVOID) {
     let mut Port: ULONG;
     let mut PortSC: EHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
 
-    DPRINT_EHCI(b"EHCI_PollController: ... \n\0".as_ptr() as *const i8);
+    DPRINT_EHCI!(b"EHCI_PollController: ... \n\0".as_ptr() as *const i8);
 
     OperationalRegs = (*EhciExtension).OperationalRegs;
 
@@ -4597,7 +4596,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HCD_TD TD;
 //     ULONG ix;
 //
-//     DPRINT_EHCI("EHCI_AllocTd: ... \n");
+//     DPRINT_EHCI!("EHCI_AllocTd: ... \n");
 //
 //     if (EhciEndpoint->MaxTDs == 0)
 //     {
@@ -4635,7 +4634,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUSBPORT_ENDPOINT_PROPERTIES EndpointProperties;
 //     ULONG DeviceSpeed;
 //
-//     DPRINT_EHCI("EHCI_InitializeQH: EhciEndpoint - %p, QH - %p, QhPA - %p\n",
+//     DPRINT_EHCI!("EHCI_InitializeQH: EhciEndpoint - %p, QH - %p, QhPA - %p\n",
 //                 EhciEndpoint,
 //                 QH,
 //                 QhPA);
@@ -4745,7 +4744,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     for (ix = 0; ix < TdCount; ix++)
 //     {
-//         DPRINT_EHCI("EHCI_OpenBulkOrControlEndpoint: TdVA - %p, TdPA - %p\n",
+//         DPRINT_EHCI!("EHCI_OpenBulkOrControlEndpoint: TdVA - %p, TdPA - %p\n",
 //                     TdVA,
 //                     TdPA);
 //
@@ -5210,7 +5209,7 @@ pub unsafe extern "system" fn DriverEntry(
 // EHCI_GetQhForFrame(IN PEHCI_EXTENSION EhciExtension,
 //                    IN ULONG FrameIdx)
 // {
-//     //DPRINT_EHCI("EHCI_GetQhForFrame: FrameIdx - %x, Balance[FrameIdx] - %x\n",
+//     //DPRINT_EHCI!("EHCI_GetQhForFrame: FrameIdx - %x, Balance[FrameIdx] - %x\n",
 //     //            FrameIdx,
 //     //            Balance[FrameIdx & 0x1F]);
 //
@@ -5237,7 +5236,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG NewPAddress;
 //     ULONG_PTR VAddress;
 //
-//     //DPRINT_EHCI("EHCI_AlignHwStructure: *PhysicalAddress - %X, *VirtualAddress - %X, Alignment - %x\n",
+//     //DPRINT_EHCI!("EHCI_AlignHwStructure: *PhysicalAddress - %X, *VirtualAddress - %X, Alignment - %x\n",
 //     //             *PhysicalAddress,
 //     //             *VirtualAddress,
 //     //             Alignment);
@@ -5440,7 +5439,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         StaticHeadPA.AsULONG = StaticQH->PhysicalAddress;
 //         StaticHeadPA.Type = EHCI_LINK_TYPE_QH;
 //
-//         //DPRINT_EHCI("EHCI_InitializeSchedule: StaticHeadPA[%x] - %X\n",
+//         //DPRINT_EHCI!("EHCI_InitializeSchedule: StaticHeadPA[%x] - %X\n",
 //         //            Frame,
 //         //            StaticHeadPA);
 //
@@ -5924,7 +5923,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OperationalRegs = EhciExtension->OperationalRegs;
 //
-//     DPRINT_EHCI("EHCI_InterruptService: ... \n");
+//     DPRINT_EHCI!("EHCI_InterruptService: ... \n");
 //
 //     Result = EHCI_HardwarePresent(EhciExtension, FALSE);
 //
@@ -5982,7 +5981,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     OperationalRegs = EhciExtension->OperationalRegs;
 //
-//     DPRINT_EHCI("EHCI_InterruptDpc: [%p] EnableInterrupts - %x\n",
+//     DPRINT_EHCI!("EHCI_InterruptDpc: [%p] EnableInterrupts - %x\n",
 //                 EhciExtension, EnableInterrupts);
 //
 //     iStatus = EhciExtension->InterruptStatus;
@@ -5992,13 +5991,13 @@ pub unsafe extern "system" fn DriverEntry(
 //         iStatus.ErrorInterrupt == 1 ||
 //         iStatus.InterruptOnAsyncAdvance == 1)
 //     {
-//         DPRINT_EHCI("EHCI_InterruptDpc: [%p] InterruptStatus - %X\n", EhciExtension, iStatus.AsULONG);
+//         DPRINT_EHCI!("EHCI_InterruptDpc: [%p] InterruptStatus - %X\n", EhciExtension, iStatus.AsULONG);
 //         RegPacket.UsbPortInvalidateEndpoint(EhciExtension, NULL);
 //     }
 //
 //     if (iStatus.PortChangeInterrupt == 1)
 //     {
-//         DPRINT_EHCI("EHCI_InterruptDpc: [%p] PortChangeInterrupt\n", EhciExtension);
+//         DPRINT_EHCI!("EHCI_InterruptDpc: [%p] PortChangeInterrupt\n", EhciExtension);
 //         RegPacket.UsbPortInvalidateRootHub(EhciExtension);
 //     }
 //
@@ -6028,7 +6027,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG DiffLength;
 //     ULONG NumPackets;
 //
-//     DPRINT_EHCI("EHCI_MapAsyncTransferToTd: EhciTransfer - %p, TD - %p, TransferedLen - %x, MaxPacketSize - %x, DataToggle - %x\n",
+//     DPRINT_EHCI!("EHCI_MapAsyncTransferToTd: EhciTransfer - %p, TD - %p, TransferedLen - %x, MaxPacketSize - %x, DataToggle - %x\n",
 //                 EhciTransfer,
 //                 TD,
 //                 TransferedLen,
@@ -6105,7 +6104,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HW_REGISTERS OperationalRegs;
 //     EHCI_USB_COMMAND UsbCmd;
 //
-//     DPRINT_EHCI("EHCI_EnableAsyncList: ... \n");
+//     DPRINT_EHCI!("EHCI_EnableAsyncList: ... \n");
 //
 //     OperationalRegs = EhciExtension->OperationalRegs;
 //
@@ -6157,7 +6156,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     LARGE_INTEGER EndTime;
 //     EHCI_USB_COMMAND Cmd;
 //
-//     DPRINT_EHCI("EHCI_FlushAsyncCache: EhciExtension - %p\n", EhciExtension);
+//     DPRINT_EHCI!("EHCI_FlushAsyncCache: EhciExtension - %p\n", EhciExtension);
 //
 //     OperationalRegs = EhciExtension->OperationalRegs;
 //     Command.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG);
@@ -6242,7 +6241,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HW_REGISTERS OperationalRegs;
 //     EHCI_USB_COMMAND Command;
 //
-//     DPRINT_EHCI("EHCI_LockQH: QH - %p, TransferType - %x\n",
+//     DPRINT_EHCI!("EHCI_LockQH: QH - %p, TransferType - %x\n",
 //                 QH,
 //                 TransferType);
 //
@@ -6299,7 +6298,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     ULONG QhPA;
 //
-//     DPRINT_EHCI("EHCI_UnlockQH: QH - %p\n", QH);
+//     DPRINT_EHCI!("EHCI_UnlockQH: QH - %p\n", QH);
 //
 //     ASSERT(QH->sqh.QhFlags & EHCI_QH_FLAG_UPDATING);
 //     ASSERT(EhciExtension->LockQH);
@@ -6329,7 +6328,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     BOOLEAN IsPresent;
 //     ULONG ix;
 //
-//     DPRINT_EHCI("EHCI_LinkTransferToQueue: EhciEndpoint - %p, NextTD - %p\n",
+//     DPRINT_EHCI!("EHCI_LinkTransferToQueue: EhciEndpoint - %p, NextTD - %p\n",
 //                 EhciEndpoint,
 //                 NextTD);
 //
@@ -6364,7 +6363,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     }
 //     else
 //     {
-//         DPRINT_EHCI("EHCI_LinkTransferToQueue: TD - %p, HcdTailP - %p\n",
+//         DPRINT_EHCI!("EHCI_LinkTransferToQueue: TD - %p, HcdTailP - %p\n",
 //                     EhciEndpoint->HcdHeadP,
 //                     EhciEndpoint->HcdTailP);
 //
@@ -6421,7 +6420,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     EHCI_TD_TOKEN Token;
 //     ULONG DataToggle = 1;
 //
-//     DPRINT_EHCI("EHCI_ControlTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
+//     DPRINT_EHCI!("EHCI_ControlTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
 //                 EhciEndpoint,
 //                 EhciTransfer);
 //
@@ -6603,7 +6602,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HCD_TD TD;
 //     ULONG TransferedLen;
 //
-//     DPRINT_EHCI("EHCI_BulkTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
+//     DPRINT_EHCI!("EHCI_BulkTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
 //                 EhciEndpoint,
 //                 EhciTransfer);
 //
@@ -6762,7 +6761,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HCD_TD PrevTD = NULL;
 //     ULONG TransferedLen = 0;
 //
-//     DPRINT_EHCI("EHCI_InterruptTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
+//     DPRINT_EHCI!("EHCI_InterruptTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
 //                 EhciEndpoint,
 //                 EhciTransfer);
 //
@@ -6843,7 +6842,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     TD->HwTD.Token.InterruptOnComplete = 1;
 //
-//     DPRINT_EHCI("EHCI_InterruptTransfer: PendingTDs - %x, TD->PhysicalAddress - %p, FirstTD - %p\n",
+//     DPRINT_EHCI!("EHCI_InterruptTransfer: PendingTDs - %x, TD->PhysicalAddress - %p, FirstTD - %p\n",
 //                 EhciTransfer->PendingTDs,
 //                 TD->PhysicalAddress,
 //                 FirstTD);
@@ -6874,7 +6873,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_TRANSFER EhciTransfer = ehciTransfer;
 //     MPSTATUS MPStatus;
 //
-//     DPRINT_EHCI("EHCI_SubmitTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
+//     DPRINT_EHCI!("EHCI_SubmitTransfer: EhciEndpoint - %p, EhciTransfer - %p\n",
 //                 EhciEndpoint,
 //                 EhciTransfer);
 //
@@ -7401,7 +7400,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     PEHCI_EXTENSION EhciExtension = ehciExtension;
 //
-//     DPRINT_EHCI("EHCI_InterruptNextSOF: ... \n");
+//     DPRINT_EHCI!("EHCI_InterruptNextSOF: ... \n");
 //
 //     RegPacket.UsbPortInvalidateController(EhciExtension,
 //                                           USBPORT_INVALIDATE_CONTROLLER_SOFT_INTERRUPT);
@@ -7413,7 +7412,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     EHCI_TD_TOKEN Token;
 //
-//     DPRINT_EHCI("EHCI_GetErrorFromTD: ... \n");
+//     DPRINT_EHCI!("EHCI_GetErrorFromTD: ... \n");
 //
 //     ASSERT(TD->HwTD.Token.Status & EHCI_TOKEN_STATUS_HALTED);
 //
@@ -7461,7 +7460,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_HW_REGISTERS OperationalRegs;
 //     EHCI_USB_COMMAND Command;
 //
-//     DPRINT_EHCI("EHCI_ProcessDoneAsyncTd: TD - %p\n", TD);
+//     DPRINT_EHCI!("EHCI_ProcessDoneAsyncTd: TD - %p\n", TD);
 //
 //     EhciTransfer = TD->EhciTransfer;
 //
@@ -7538,7 +7537,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG CurrentTDPhys;
 //     BOOLEAN IsScheduled;
 //
-//     DPRINT_EHCI("EHCI_PollActiveAsyncEndpoint: ... \n");
+//     DPRINT_EHCI!("EHCI_PollActiveAsyncEndpoint: ... \n");
 //
 //     QH = EhciEndpoint->QH;
 //
@@ -7762,7 +7761,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PLIST_ENTRY DoneList;
 //     PEHCI_HCD_TD TD;
 //
-//     //DPRINT_EHCI("EHCI_PollAsyncEndpoint: EhciEndpoint - %p\n", EhciEndpoint);
+//     //DPRINT_EHCI!("EHCI_PollAsyncEndpoint: EhciEndpoint - %p\n", EhciEndpoint);
 //
 //     if (!EhciEndpoint->PendingTDs)
 //         return;
@@ -7817,7 +7816,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PEHCI_ENDPOINT EhciEndpoint = ehciEndpoint;
 //     ULONG TransferType;
 //
-//     //DPRINT_EHCI("EHCI_PollEndpoint: EhciEndpoint - %p\n", EhciEndpoint);
+//     //DPRINT_EHCI!("EHCI_PollEndpoint: EhciEndpoint - %p\n", EhciEndpoint);
 //
 //     TransferType = EhciEndpoint->EndpointProperties.TransferType;
 //
@@ -7833,7 +7832,7 @@ pub unsafe extern "system" fn DriverEntry(
 // {
 //     PEHCI_EXTENSION EhciExtension = ehciExtension;
 //
-//     //DPRINT_EHCI("EHCI_CheckController: ... \n");
+//     //DPRINT_EHCI!("EHCI_CheckController: ... \n");
 //
 //     if (EhciExtension->IsStarted)
 //         EHCI_HardwarePresent(EhciExtension, TRUE);
@@ -7848,7 +7847,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG FrameIndex;
 //     ULONG FrameNumber;
 //
-//     //DPRINT_EHCI("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
+//     //DPRINT_EHCI!("EHCI_Get32BitFrameNumber: EhciExtension - %p\n", EhciExtension);
 //
 //     FrameIdx = EhciExtension->FrameIndex;
 //     FrameIndex = READ_REGISTER_ULONG(&EhciExtension->OperationalRegs->FrameIndex);
@@ -7894,7 +7893,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG Port;
 //     EHCI_PORT_STATUS_CONTROL PortSC;
 //
-//     DPRINT_EHCI("EHCI_PollController: ... \n");
+//     DPRINT_EHCI!("EHCI_PollController: ... \n");
 //
 //     OperationalRegs = EhciExtension->OperationalRegs;
 //

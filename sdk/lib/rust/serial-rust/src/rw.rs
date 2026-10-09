@@ -404,7 +404,7 @@ pub unsafe extern "system" fn SerialWrite(
     let mut Irql: KIRQL = 0;
     let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    // TRACE_(SERIAL, "IRP_MJ_WRITE\n") → DbgPrintEx(DPFLTR_SERIAL_ID, DPFLTR_TRACE_LEVEL, ...)
+    // TRACE_!(SERIAL, "IRP_MJ_WRITE\n") → DbgPrintEx(DPFLTR_SERIAL_ID, DPFLTR_TRACE_LEVEL, ...)
     DbgPrintEx(
         DPFLTR_SERIAL_ID,
         DPFLTR_TRACE_LEVEL,
@@ -614,7 +614,7 @@ pub unsafe extern "system" fn SerialWrite(
 // 		if (Status == STATUS_TIMEOUT /* interval timeout */
 // 			|| Status == STATUS_WAIT_1) /* total timeout */
 // 		{
-// 			TRACE_(SERIAL, "Timeout when reading bytes. Status = 0x%08lx\n", Status);
+// 			TRACE_!(SERIAL, "Timeout when reading bytes. Status = 0x%08lx\n", Status);
 // 			break;
 // 		}
 // 	}
@@ -638,7 +638,7 @@ pub unsafe extern "system" fn SerialWrite(
 // 	PWORKITEM_DATA WorkItemData;
 // 	PIRP Irp;
 //
-// 	TRACE_(SERIAL, "SerialReadWorkItem() called\n");
+// 	TRACE_!(SERIAL, "SerialReadWorkItem() called\n");
 //
 // 	WorkItemData = (PWORKITEM_DATA)pWorkItemData;
 // 	Irp = WorkItemData->Irp;
@@ -664,7 +664,7 @@ pub unsafe extern "system" fn SerialWrite(
 // 	PIO_WORKITEM WorkItem;
 // 	NTSTATUS Status;
 //
-// 	TRACE_(SERIAL, "IRP_MJ_READ\n");
+// 	TRACE_!(SERIAL, "IRP_MJ_READ\n");
 //
 // 	Stack = IoGetCurrentIrpStackLocation(Irp);
 // 	Length = Stack->Parameters.Read.Length;
@@ -775,7 +775,7 @@ pub unsafe extern "system" fn SerialWrite(
 // 	KIRQL Irql;
 // 	NTSTATUS Status = STATUS_SUCCESS;
 //
-// 	TRACE_(SERIAL, "IRP_MJ_WRITE\n");
+// 	TRACE_!(SERIAL, "IRP_MJ_WRITE\n");
 //
 // 	/* FIXME: pend operation if possible */
 // 	/* FIXME: use write timeouts */

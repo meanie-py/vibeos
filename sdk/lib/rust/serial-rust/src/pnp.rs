@@ -689,7 +689,7 @@ pub unsafe extern "system" fn SerialPnp(
     match MinorFunction {
         0 => {
             /* IRP_MN_START_DEVICE */
-            /* TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_START_DEVICE\n"); */
+            /* TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_START_DEVICE\n"); */
 
             DeviceExtension = (*DeviceObject).DeviceExtension as PSERIAL_DEVICE_EXTENSION;
             Status = STATUS_UNSUCCESSFUL;
@@ -829,7 +829,7 @@ pub unsafe extern "system" fn SerialPnp(
 // 	WCHAR DeviceNameBuffer[32];
 // 	UNICODE_STRING DeviceName;
 //
-// 	TRACE_(SERIAL, "SerialAddDeviceInternal()\n");
+// 	TRACE_!(SERIAL, "SerialAddDeviceInternal()\n");
 //
 // 	ASSERT(DriverObject);
 // 	ASSERT(Pdo);
@@ -1144,7 +1144,7 @@ pub unsafe extern "system" fn SerialPnp(
 // 		IRP_MN_QUERY_REMOVE_DEVICE 0x1
 // 		IRP_MN_REMOVE_DEVICE 0x2
 // 		{
-// 			TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_REMOVE_DEVICE\n");
+// 			TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_REMOVE_DEVICE\n");
 // 			IoAcquireRemoveLock
 // 			IoReleaseRemoveLockAndWait
 // 			pass request to DeviceExtension-LowerDriver
@@ -1167,7 +1167,7 @@ pub unsafe extern "system" fn SerialPnp(
 // 		*/
 // 		case IRP_MN_START_DEVICE: /* 0x0 */
 // 		{
-// 			TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_START_DEVICE\n");
+// 			TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_START_DEVICE\n");
 //
 // 			/* Call lower driver */
 // 			DeviceExtension = DeviceObject->DeviceExtension;
@@ -1195,16 +1195,16 @@ pub unsafe extern "system" fn SerialPnp(
 // 			{
 // 				case BusRelations:
 // 				{
-// 					TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / BusRelations\n");
+// 					TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / BusRelations\n");
 // 					return ForwardIrpAndForget(DeviceObject, Irp);
 // 				}
 // 				case RemovalRelations:
 // 				{
-// 					TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / RemovalRelations\n");
+// 					TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / RemovalRelations\n");
 // 					return ForwardIrpAndForget(DeviceObject, Irp);
 // 				}
 // 				default:
-// 					TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / Unknown type 0x%lx\n",
+// 					TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_QUERY_DEVICE_RELATIONS / Unknown type 0x%lx\n",
 // 						Stack->Parameters.QueryDeviceRelations.Type);
 // 					return ForwardIrpAndForget(DeviceObject, Irp);
 // 			}
@@ -1212,12 +1212,12 @@ pub unsafe extern "system" fn SerialPnp(
 // 		}
 // 		case IRP_MN_FILTER_RESOURCE_REQUIREMENTS: /* (optional) 0xd */
 // 		{
-// 			TRACE_(SERIAL, "IRP_MJ_PNP / IRP_MN_FILTER_RESOURCE_REQUIREMENTS\n");
+// 			TRACE_!(SERIAL, "IRP_MJ_PNP / IRP_MN_FILTER_RESOURCE_REQUIREMENTS\n");
 // 			return ForwardIrpAndForget(DeviceObject, Irp);
 // 		}
 // 		default:
 // 		{
-// 			TRACE_(SERIAL, "Unknown minor function 0x%x\n", MinorFunction);
+// 			TRACE_!(SERIAL, "Unknown minor function 0x%x\n", MinorFunction);
 // 			return ForwardIrpAndForget(DeviceObject, Irp);
 // 		}
 // 	}

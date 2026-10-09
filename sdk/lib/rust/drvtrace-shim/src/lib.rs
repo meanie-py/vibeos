@@ -102,33 +102,47 @@ pub unsafe extern "C" fn TracePrint(
 pub unsafe extern "C" fn StorDebugPrint(_level: u32, _flags: u32, _fmt: *const i8) {}
 
 // ---------------------------------------------------------------------------
-// USB-fleet + serial DPRINT-family no-ops (2026-07-18). Same §9.99 story as
-// TracePrint above: call sites declare these C-variadic, the defs are
-// non-variadic no-ops — fine at machine level (cdecl caller-clean), UB to LLVM
-// in one module. Living here keeps def and callers in different LLVM modules,
-// so the pattern is fold-proof. Names are driver-unique on purpose; do NOT add
-// generic names (DPRINT, TRACE, ERR…) here — they'd leak into every binary
-// that links this shim and collide with crates' own defs.
+// USB-fleet + serial debug prints: MACROS, never functions.
+//
+// In C these are `do { if(0) { DbgPrint(...); } } while(0)` or `__noop` in the
+// builds we ship, so their ARGUMENTS ARE NEVER EVALUATED. They used to be no-op
+// extern functions here, and a function call evaluates every argument first.
+// usbport's USBPORT_QueueTransferUrb ends with a DPRINT_URB loop over
+// `*Urb->TransferBuffer`, read AFTER the URB was handed to the endpoint. On two
+// CPUs the transfer completed on the other one, which set TransferBufferLength
+// while usbstor's MDL-only URB had TransferBuffer NULL: a NULL read at
+// DISPATCH_LEVEL, raised as an in-page error that cdfs caught and turned into a
+// failed paging read. smss or csrss then died on about half of all amd64-bios
+// boots at -smp 2. The C never executes that read.
+//
+// Each macro type-checks its arguments (as the C's `if(0)` does) and runs none
+// of them. There are deliberately no same-named symbols any more: a call site
+// that slips back to `NAME(...)` fails to link instead of quietly evaluating.
+// Names are driver-unique on purpose; do NOT add generic names (DPRINT, TRACE,
+// ERR...) — crates define their own.
 
-macro_rules! dprint_noop {
-    ($($n:ident),* $(,)?) => { $(
-        #[no_mangle]
-        pub unsafe extern "C" fn $n(_fmt: *const i8) {}
+macro_rules! dead_dprint {
+    ($d:tt $($n:ident),* $(,)?) => { $(
+        #[macro_export]
+        macro_rules! $n {
+            ($d($d a:expr),* $d(,)?) => {
+                if false {
+                    $d( let _ = $d a; )*
+                }
+            };
+        }
     )* }
 }
 
-dprint_noop!(
+dead_dprint!($
     DPRINT_EHCI, DPRINT_RH,                    // usbehci
-    DPRINT_PNP, DPRINT_SCE,                    // usbhub
+    DPRINT_PNP, DPRINT_SCE, DPRINT_IOCTL,      // usbhub
     DPRINT_OHCI,                               // usbohci
     DPRINT_IMPL, DPRINT_UHCI,                  // usbuhci
     DPRINT_CORE, DPRINT_URB, DPRINT_QUEUE,     // usbport
     DPRINT_TIMER, DPRINT_INT, DPRINT_MINIPORT, // usbport
+    TRACE_,                                    // serial (ReactOS debug.h)
 );
-
-/// serial.sys TRACE_ (ReactOS debug.h, __noop in retail).
-#[no_mangle]
-pub unsafe extern "C" fn TRACE_(_component: u32, _fmt: *const i8) {}
 
 #[cfg(test)]
 mod tests {

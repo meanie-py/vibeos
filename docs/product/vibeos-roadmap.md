@@ -1050,7 +1050,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
+  - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-08, root cause;
+    the 10-07 fix below was real but not this bug). It came back: 35 of 65 amd64-bios boots on
+    10-08 failed, 19 of 33 merge-queue gates retried the lane (a HANG_TIMEOUT costs ~13 min)
+    and all 5 red gates that day were this lane, rejecting innocent lanes; the mean gate went
+    from ~12-15 min to 24.5. Cause: usbport's `DPRINT_URB` and the rest of the USB/serial
+    debug-print family were no-op FUNCTIONS (drvtrace-shim), so their arguments were
+    evaluated where the C's `if(0)` macros evaluate nothing. `USBPORT_QueueTransferUrb` ends
+    with a `DPRINT_URB` loop over `*Urb->TransferBuffer` after handing the URB to the
+    endpoint; on two CPUs the transfer completed on the other one, setting
+    `TransferBufferLength` on usbstor's MDL-only URB whose `TransferBuffer` is NULL. That NULL
+    read at DISPATCH_LEVEL came back from MM as `STATUS_IN_PAGE_ERROR | 0x10000000` (or
+    `STATUS_UNSUCCESSFUL` on the ROSMM path), no trap handler checks for it, and it was
+    dispatched as an in-page exception that cdfs's try/except caught inside a paging read
+    of the isohybrid stick: the read failed `d0000006`/`c0000001` and smss or csrss died. Fix:
+    the family are `macro_rules!` that evaluate nothing (drvtrace-shim exports them, no
+    same-named symbols remain); `MmAccessFault` bugchecks 0xA (shown as 0xD1 with the driver
+    named) when a kernel trap above APC_LEVEL cannot be resolved, so the next one is loud;
+    MmArmAccessFault's dropped `MM:***PAGE FAULT AT IRQL > 1` print is restored; and
+    `scan_macro_fn_shadow` now harvests every argument-discarding C macro from the headers
+    and flags an empty Rust fn of that name in any crate (+53 inherited findings baselined:
+    ASSERT, WARN_/ERR_/TRACE_ shims, analysis annotations, owed). Every failed amd64-bios
+    gate attempt on 10-08 (25 hangs, 10 bugchecks) carries `0xC0000006`. After: 19/20
+    amd64-bios `-smp 2` boots, 0 in-page errors, 0 raised-IRQL faults (runs
+    20261008-213019-klr7vs60 9/10 on the macro fix, 20261008-220051-ep79fjwh 10/10 on the
+    final tree); the one failure is a different hang, the next entry. Diagnosed with runs 20261008-210602-gnxprtk4 (cdfs completes
+    the failing read itself), 20261008-211124-y5oh5tam (the in-page exception, VA 0) and
+    20261008-212149-yl4k8096 (the fault: `USBPORT_QueueTransferUrb+0x134`, IRQL 2, CPU 1).
+    The 10-07 entry, kept for its own fix: found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
     from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
     (STATUS_IN_PAGE_ERROR) on a data read in ntdll and the boot hung; sometimes a kernel-mode
@@ -1063,8 +1090,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     imports in classpnp.sys; `create.rs` takes the real lookaside inline instead of a
     null-returning stub. After: 16/16 amd64-bios boots, 0 in-page errors, 0 asserts (runs
     20261007-144313-uhji_66e, 20261007-145433-6emhz3k9). How the leak turned into a failed
-    read is not established; reopen on any recurrence. Earlier runs: 20261006-041704-og7v50sd,
+    read was never established, and it did not: 16/16 at the 10-07 rate (~19%) is a 3% fluke,
+    and the failures returned. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
+    seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
+    services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
+    dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
+    sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
+    no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
+    10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
+    established. Next occurrence: attach gdb before the harness tears the VM down
+    (`smoke --attach-on-fail` is parsed but does nothing, owed in the CLI) and read the
+    services thread's stack.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED

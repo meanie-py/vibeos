@@ -535,7 +535,7 @@ pub unsafe extern "system" fn SerialInterruptService(
 // 		case SR_IIR_MSR_CHANGE:
 // 		{
 // 			UCHAR MSR, IER;
-// 			TRACE_(SERIAL, "SR_IIR_MSR_CHANGE\n");
+// 			TRACE_!(SERIAL, "SR_IIR_MSR_CHANGE\n");
 //
 // 			MSR = READ_PORT_UCHAR(SER_MSR(ComPortBase));
 // 			if (MSR & SR_MSR_CTS_CHANGED)
@@ -576,7 +576,7 @@ pub unsafe extern "system" fn SerialInterruptService(
 // 		}
 // 		case SR_IIR_THR_EMPTY:
 // 		{
-// 			TRACE_(SERIAL, "SR_IIR_THR_EMPTY\n");
+// 			TRACE_!(SERIAL, "SR_IIR_THR_EMPTY\n");
 //
 // 			KeInsertQueueDpc(&DeviceExtension->SendByteDpc, NULL, NULL);
 // 			Events |= SERIAL_EV_TXEMPTY;
@@ -587,7 +587,7 @@ pub unsafe extern "system" fn SerialInterruptService(
 // 		case SR_IIR_DATA_RECEIVED:
 // 		{
 // 			ULONG AlreadyReceivedBytes, Limit;
-// 			TRACE_(SERIAL, "SR_IIR_DATA_RECEIVED\n");
+// 			TRACE_!(SERIAL, "SR_IIR_DATA_RECEIVED\n");
 //
 // 			KeInsertQueueDpc(&DeviceExtension->ReceivedByteDpc, NULL, NULL);
 // 			Events |= SERIAL_EV_RXCHAR;
@@ -608,7 +608,7 @@ pub unsafe extern "system" fn SerialInterruptService(
 // 		case SR_IIR_ERROR:
 // 		{
 // 			UCHAR LSR;
-// 			TRACE_(SERIAL, "SR_IIR_ERROR\n");
+// 			TRACE_!(SERIAL, "SR_IIR_ERROR\n");
 //
 // 			LSR = READ_PORT_UCHAR(SER_LSR(ComPortBase));
 // 			if (LSR & SR_LSR_OVERRUN_ERROR)

@@ -1406,6 +1406,15 @@ innocent code.** Fix: make it a `macro_rules!` (the faithful shape — C never e
 args), consume args by value (`let _ = $arg;`; `&$arg` is E0793 on a packed field), and do
 **not** type-bind the parameters, because the per-module extern decls it replaces routinely
 disagree with each other. Then fix the ABI mismatches you uncovered — they are real.
+The other face of the same trap: once the no-op is out of line, its arguments **run**, and they
+are reads the C never performs. usbport's `USBPORT_QueueTransferUrb` ends by dumping
+`*Urb->TransferBuffer` through `DPRINT_URB` after the URB is queued; with the drvtrace-shim
+no-op symbols that loop executed, and on two CPUs the transfer had already completed on the
+other one, so it read a NULL `TransferBuffer` at DISPATCH_LEVEL. Symptom far from the cause: a
+paging read failing `d0000006`/`c0000001` in cdfs (whose try/except swallowed the in-page
+exception), on half of amd64-bios `-smp 2` boots. `scan_macro_fn_shadow` now harvests every
+argument-discarding C macro (`if(0)`, `__noop`, `(void)0`) from the headers and flags an empty
+Rust fn of that name in any crate, a shim crate included.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
