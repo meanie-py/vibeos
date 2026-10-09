@@ -34,6 +34,8 @@ typedef struct _KMT_USER_WORK_LIST
     LIST_ENTRY ListHead;
     FAST_MUTEX Lock;
     KEVENT NewWorkEvent;
+    /* Set while a callback thread is parked in IOCTL_KMTEST_USERMODE_AWAIT_REQ */
+    KEVENT CallbackParkedEvent;
 } KMT_USER_WORK_LIST, *PKMT_USER_WORK_LIST;
 
 extern
@@ -120,6 +122,7 @@ DriverEntry(
 
     ExInitializeFastMutex(&WorkList.Lock);
     KeInitializeEvent(&WorkList.NewWorkEvent, NotificationEvent, FALSE);
+    KeInitializeEvent(&WorkList.CallbackParkedEvent, NotificationEvent, FALSE);
     InitializeListHead(&WorkList.ListHead);
 
 cleanup:
@@ -356,6 +359,19 @@ DriverIoControl(
         {
             ANSI_STRING TestName;
             PCKMT_TEST TestEntry;
+            LARGE_INTEGER ParkTimeout;
+
+            /* KmtRunKernelTest starts the user-mode callback thread and issues this
+             * IOCTL at once. That thread's own AWAIT_REQ is METHOD_BUFFERED, so its
+             * system buffer is a quota allocation charged to the test's process for as
+             * long as it is parked. On one CPU the callback thread only runs after the
+             * test, but on two it parks DURING it, and a test that measures its own
+             * process (PsQuota: "nobody else is charging quotas other than us") sees
+             * the harness's charge. Wait -- bounded, the thread may have failed to
+             * start -- until it is parked, so the harness is quiescent before the test
+             * begins. */
+            ParkTimeout.QuadPart = -5LL * 1000 * 1000 * 10; /* 5 s */
+            KeWaitForSingleObject(&WorkList.CallbackParkedEvent, Executive, KernelMode, FALSE, &ParkTimeout);
 
             DPRINT("DriverIoControl. IOCTL_KMTEST_RUN_TEST, inlen=%lu, outlen=%lu\n",
                      IoStackLocation->Parameters.DeviceIoControl.InputBufferLength,
@@ -448,7 +464,9 @@ DriverIoControl(
 
             /* TODO: prevent multiple concurrent invocations */
             Timeout.QuadPart = TimeoutDuration;
+            KeSetEvent(&WorkList.CallbackParkedEvent, IO_NO_INCREMENT, FALSE);
             Status = KeWaitForSingleObject(&WorkList.NewWorkEvent, UserRequest, UserMode, FALSE, &Timeout);
+            KeClearEvent(&WorkList.CallbackParkedEvent);
 
             if (Status == STATUS_TIMEOUT)
                 DPRINT1("KeWaitForSingleObject timed out!\n");

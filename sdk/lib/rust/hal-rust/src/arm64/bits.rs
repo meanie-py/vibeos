@@ -38,6 +38,45 @@ impl<const W: usize> Bits<W> {
         None
     }
 
+    /// Claim `count` consecutive free slots below `limit`, the first of which plus
+    /// `bias` is a multiple of `count` (a power of two), all or nothing: a multiple
+    /// message MSI block, whose device varies the low bits of one data value, so the
+    /// values must be consecutive and aligned. `bias` is what slot 0 stands for (a
+    /// v2m frame's first SPI), so the alignment is of the value the device sends.
+    pub fn claim_block(&self, count: u32, limit: u32, bias: u32) -> Option<u32> {
+        if !count.is_power_of_two() {
+            return None;
+        }
+        let limit = limit.min((W * 64) as u32);
+        let mut first = (count - bias % count) % count;
+        while first + count <= limit {
+            if (first..first + count).all(|n| !self.is_set(n)) {
+                let mut got = 0;
+                while got < count && self.try_set(first + got) {
+                    got += 1;
+                }
+                if got == count {
+                    return Some(first);
+                }
+                // Lost a race for one of them: give back what this call took.
+                for n in first..first + got {
+                    self.release(n);
+                }
+            }
+            first += count;
+        }
+        None
+    }
+
+    /// Set one slot; false when it was already set.
+    fn try_set(&self, n: u32) -> bool {
+        let Some(word) = self.0.get(n as usize / 64) else {
+            return false;
+        };
+        let bit = 1u64 << (n % 64);
+        word.fetch_or(bit, Ordering::AcqRel) & bit == 0
+    }
+
     /// Give a slot back. False when it was not claimed: a double release.
     pub fn release(&self, n: u32) -> bool {
         let Some(word) = self.0.get(n as usize / 64) else {
@@ -114,6 +153,23 @@ mod tests {
         let b = Bits::<1>::new();
         assert!(!b.release(64));
         assert!(!b.is_set(4096));
+    }
+
+    #[test]
+    fn claims_aligned_blocks() {
+        let b = Bits::<2>::new();
+        assert_eq!(b.claim(128), Some(0));
+        // Slot 0 is taken, so a block of 4 starts at the next multiple of 4.
+        assert_eq!(b.claim_block(4, 128, 0), Some(4));
+        assert!((4..8).all(|n| b.is_set(n)) && !b.is_set(8));
+        // Biased: slot n stands for value n + 30, so the block's values start at 40.
+        assert_eq!(b.claim_block(4, 128, 30), Some(10));
+        // One taken slot inside every candidate leaves nothing for a block of 64.
+        assert_eq!(b.claim_block(64, 128, 0), Some(64));
+        assert_eq!(b.claim_block(64, 128, 0), None);
+        assert_eq!(b.claim_block(3, 128, 0), None, "not a power of two");
+        assert_eq!(b.claim_block(1, 128, 7), Some(1), "a block of one is any slot");
+        assert_eq!(b.count(128), 1 + 4 + 4 + 64 + 1);
     }
 
     #[test]

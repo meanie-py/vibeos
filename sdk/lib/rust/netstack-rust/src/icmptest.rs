@@ -39,7 +39,6 @@ static IP_NAME: [u16; 10] = wname(b"\\Device\\Ip");
 
 /// Gateway address slirp answers ICMP echo for (same target as the engine's
 /// boot self-test) and the payload we expect echoed back.
-const PING_DST: [u8; 4] = [10, 0, 2, 2];
 const PAYLOAD: &[u8] = b"vibeos-icmp-selftest";
 
 pub fn spawn() {
@@ -62,6 +61,12 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
         nsprint!("[NETSTACK] ICMP self-test: skipped (no network device)\n");
         return;
     }
+    // Ping the lease's gateway (10.0.2.2 under slirp; a hard-coded 10.0.2.2 timed out
+    // on every real network).
+    let Some(ping_dst) = crate::netcfg::gateway() else {
+        nsprint!("[NETSTACK] ICMP self-test: skipped (the lease named no gateway)\n");
+        return;
+    };
     // Settle after the engine's own boot ping so the two don't interleave on the UART.
     delay_ms(1500);
 
@@ -98,7 +103,7 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     core::ptr::write_bytes(in_buf, 0, in_len);
     core::ptr::write_bytes(out_buf, 0, out_len);
     let req = in_buf as *mut IcmpEchoRequest;
-    (*req).address = u32::from_ne_bytes(PING_DST);
+    (*req).address = u32::from_ne_bytes(ping_dst);
     (*req).timeout = 4000;
     (*req).data_offset = req_hdr as u16;
     (*req).data_size = PAYLOAD.len() as u16;
@@ -107,7 +112,7 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
 
     nsprint!(
         "[NETSTACK] ICMP self-test: ping {}.{}.{}.{}\n",
-        PING_DST[0], PING_DST[1], PING_DST[2], PING_DST[3]
+        ping_dst[0], ping_dst[1], ping_dst[2], ping_dst[3]
     );
 
     // --- Issue IOCTL_ICMP_ECHO_REQUEST (METHOD_BUFFERED, regular device-control). ---

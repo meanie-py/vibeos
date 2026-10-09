@@ -2683,7 +2683,8 @@ unsafe extern "C" fn PrepareCopyPage(Ir: PINPUT_RECORD) -> PAGE_NUMBER {
     MUIDisplayPage(PREPARE_COPY_PAGE);
 
     Success = PrepareFileCopy(&mut USetupData, None);
-    // C: if (!Success). `!` on a u8 is BITWISE: !1 == 0xFE, so success quit setup.
+    // C `if (!Success)`. Was `!Success != 0`: Rust's `!` on a BOOLEAN is BITWISE (0xFE/0xFF),
+    // never zero, so the page quit setup even when the copy list was prepared.
     if Success == 0 {
         return QUIT_PAGE;
     }

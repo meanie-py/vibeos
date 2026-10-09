@@ -778,6 +778,63 @@ def repair_window_receivers(rust: str, sealed: SealedCalls) -> tuple[str, list[s
     return rust, sorted(set(repaired))
 
 
+_RUST_KEYWORDS = frozenset(
+    {
+        "as",
+        "break",
+        "const",
+        "continue",
+        "crate",
+        "else",
+        "enum",
+        "extern",
+        "false",
+        "fn",
+        "for",
+        "if",
+        "impl",
+        "in",
+        "let",
+        "loop",
+        "match",
+        "mod",
+        "move",
+        "mut",
+        "pub",
+        "ref",
+        "return",
+        "self",
+        "static",
+        "struct",
+        "super",
+        "trait",
+        "true",
+        "type",
+        "unsafe",
+        "use",
+        "where",
+        "while",
+        "async",
+        "await",
+        "dyn",
+        "abstract",
+        "become",
+        "box",
+        "do",
+        "final",
+        "macro",
+        "override",
+        "priv",
+        "typeof",
+        "unsized",
+        "virtual",
+        "yield",
+        "try",
+        "gen",
+    }
+)
+
+
 def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | None = None) -> str:
     """Verify the closed call set and restore the callee names.
 
@@ -944,6 +1001,17 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
             if call.placeholder in omitted_dead
         )
     missing = sorted(absent - optional)
+    # A callee the body DECLARES is a function-pointer LOCAL (`FN_X fn; .. hr = fn(..)`):
+    # the faithful `if let Some(f) = fn { f(..) }` spells the variable twice. Relaxed here,
+    # not unsealed, so no banked body's key moves (input's layout_list.c).
+    body = _code_mask(sealed.text)
+    body = body[body.find("{") + 1 :]
+    for call in sealed.calls:
+        if re.search(
+            rf"(?:^|[;{{}}])\s*(?:const\s+)?[A-Za-z_]\w*\s+\**\s*{re.escape(call.original)}\s*[;=,\[]",
+            body,
+        ):
+            allowed_duplicates.add(call.placeholder)
     duplicates = sorted(
         token
         for token in expected
@@ -968,7 +1036,10 @@ def unseal_calls(rust: str, sealed: SealedCalls, *, dead_omissions: list[str] | 
             "model damaged deterministic call envelope (" + "; ".join(findings) + ")"
         )
     for call in sealed.calls:
-        rust = rust.replace(call.placeholder, call.original)
+        # A C identifier that is a Rust keyword (`fn`, a function-pointer local) restores
+        # as a raw identifier, the spelling the rest of the body already uses.
+        name = f"r#{call.original}" if call.original in _RUST_KEYWORDS else call.original
+        rust = rust.replace(call.placeholder, name)
     doubled = _doubled_after_unseal(rust, sealed)
     if doubled:
         raise CallSealError(

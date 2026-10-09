@@ -1661,12 +1661,6 @@ unsafe fn PdoStartDevice(
         i += 1;
     }
 
-    crate::msix::program(
-        DeviceExtension,
-        RawResList,
-        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
-    );
-
     let mut Command: USHORT = 0;
 
     DBGPRINT!("pci!PdoStartDevice: Enabling command flags ...");
@@ -1705,6 +1699,16 @@ unsafe fn PdoStartDevice(
     } else {
         DBGPRINT!("None\n");
     }
+
+    // After the decodes, not before: an MSI-X table lives in a memory BAR, and writes
+    // to a BAR the device is not decoding go nowhere. A device the firmware left
+    // decoding (QEMU's NVMe) hid that; QEMU's xHCI, which UEFI turns off at exit, sat
+    // with every table entry masked and the boot hung on its first USB transfer.
+    crate::msix::program(
+        DeviceExtension,
+        RawResList,
+        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
+    );
 
     STATUS_SUCCESS
 }

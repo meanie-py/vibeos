@@ -426,6 +426,7 @@ def _boot_vm(
                 or _ahci_check(text)
                 or _gic_check(text)
                 or _nvme_check(text)
+                or _xhci_check(text)
                 or _virtio_mmio_check(text, arch)
             )
             if smp_fail is not None:
@@ -882,6 +883,113 @@ _NVME_SELF_TEST = re.compile(
 )
 
 
+# usbxhci prints this once the controller runs...
+_XHCI_RUNNING = "[XHCI] controller running"
+# ...and the PnP manager this as it starts QEMU's usb-kbd, which takes control
+# transfers to enumerate, and every transfer completes by interrupt (usbxhci has no
+# transfer poll).
+_USB_KEYBOARD_STARTED = "[DA] START USB\\Vid_0627&Pid_0001"
+# usbport, when it took a message over the line (usbport-rust pnp.rs ParseResources).
+_USBPORT_MESSAGE = "[USBPORT] interrupt: message vector"
+# pci.sys, when it enabled QEMU's xHCI (1b36:000d) for messages (pci-rust msix.rs).
+_XHCI_MSIX_ENABLED = "MSI-X enabled for 1b36:000d"
+_XHCI_MSI_ENABLED = re.compile(r"MSI enabled for 1b36:000d: (\d+) message\(s\)")
+
+
+def _xhci_check(text: str) -> dict | None:
+    """Prove an `--xhci` boot ran the controller on the interrupts asked for. The
+    desktop needs no USB, and a controller left on its line still enumerates, so a
+    message path broken anywhere along pci.sys -> PnP -> HAL -> usbport would look
+    like a working boot; and a message that never arrives hangs only USB."""
+    mode = os.environ.get("VIBEOS_QEMU_XHCI_MSI", "").strip()
+    if not mode:
+        return None
+    lines = [ln.strip() for ln in text.splitlines() if "MSI" in ln or "[USBPORT] interrupt" in ln][
+        -4:
+    ]
+    if _XHCI_RUNNING not in text:
+        return {
+            "classification": "XHCI_NOT_ENGAGED",
+            "salient": [f"--xhci boot, but usbxhci never printed `{_XHCI_RUNNING}`", *lines],
+        }
+    if _USB_KEYBOARD_STARTED not in text:
+        return {
+            "classification": "XHCI_NO_TRANSFERS",
+            "salient": [
+                "the USB keyboard never started: its enumeration's control transfers "
+                f"never completed, so the controller's {mode} interrupts are not arriving",
+                *lines,
+            ],
+        }
+    message = _USBPORT_MESSAGE in text
+    if mode == "line":
+        if message:
+            return {
+                "classification": "XHCI_NOT_LINE",
+                "salient": ["--xhci line, but usbport connected a message", *lines],
+            }
+        return None
+    block = _XHCI_MSI_ENABLED.search(text)
+    enabled = _XHCI_MSIX_ENABLED in text if mode == "msix" else block is not None
+    if not message or not enabled:
+        return {
+            "classification": "XHCI_NOT_MSI",
+            "salient": [f"--xhci {mode}, but the controller did not interrupt by {mode}", *lines],
+        }
+    wanted = re.search(
+        r"XHCI_MSI_MESSAGES=(?:0x)?([0-9a-fA-F]+)", os.environ.get("VIBEOS_TRIPWIRE", "")
+    )
+    if mode == "msi" and block and wanted and int(block[1]) != int(wanted[1], 16):
+        return {
+            "classification": "XHCI_MSI_BLOCK_SHORT",
+            "salient": [
+                f"XHCI_MSI_MESSAGES asked for an MSI block of {int(wanted[1], 16)}, "
+                f"but pci.sys enabled {block[1]}",
+                *lines,
+            ],
+        }
+    return None
+
+
+# With the NVME_FAIL_START tripwire nvme.sys connects its messages and fails START.
+# The PnP manager then removes the device: pci.sys turns MSI-X off (msix.rs
+# `disable`) and the vectors go back to the HAL (pnpres.rs IopReleaseMessageInterrupts).
+_NVME_FAILED_START = "[NVME] controller 0: tripwire: failing START"
+_NVME_DISCONNECTED = "[NVME] controller 0: interrupts disconnected"
+_NVME_MSIX_OFF = "MSI-X disabled for 1b36:0010"
+_MESSAGES_RELEASED = re.compile(
+    r"\[PNP\] message interrupts: ([1-9]\d*) back to the HAL, 0 refused"
+)
+
+
+def _nvme_release_check(text: str) -> dict | None:
+    """Prove a device's message interrupts are given back when it goes away. Nothing
+    in a boot removes a device, so this path never runs otherwise, and a vector never
+    returned (or returned while the device still sends to it) shows no symptom until
+    a later device gets it."""
+    lines = [
+        ln.strip()
+        for ln in text.splitlines()
+        if "[NVME]" in ln or "MSI-X" in ln or "[PNP] message" in ln or "released" in ln
+    ][-8:]
+    for needle, what in (
+        (_NVME_FAILED_START, "nvme.sys never failed its START for the tripwire"),
+        (_NVME_DISCONNECTED, "nvme.sys never disconnected its interrupts"),
+        (_NVME_MSIX_OFF, "pci.sys never turned the controller's MSI-X off at REMOVE"),
+    ):
+        if needle not in text:
+            return {"classification": "NVME_NOT_RELEASED", "salient": [what, *lines]}
+    if not _MESSAGES_RELEASED.search(text):
+        return {
+            "classification": "NVME_NOT_RELEASED",
+            "salient": [
+                "the PnP manager never gave the device's message vectors back to the HAL",
+                *lines,
+            ],
+        }
+    return None
+
+
 # hal-rust arm64/gic3.rs prints this once clock init has mapped the GICv3...
 _GIC_V3 = "[GIC] GICv3: distributor"
 # ...and arm64/its.rs this once the ITS is up, at the first MSI-X request.
@@ -946,6 +1054,8 @@ def _nvme_check(text: str) -> dict | None:
     the ITS under --gic 3)."""
     if not nvme_requested():
         return None
+    if "NVME_FAIL_START" in os.environ.get("VIBEOS_TRIPWIRE", ""):
+        return _nvme_release_check(text)
     lines = [ln.strip() for ln in text.splitlines() if "[NVME]" in ln][-6:]
     if _NVME_PUBLISHED not in text:
         return {
@@ -1205,6 +1315,13 @@ def smoke(args, repo: Path) -> int:
             return run.finalize(repo)
         os.environ["VIBEOS_QEMU_SMMU"] = "1"
         run.add(Stage("smmu", status="warn", detail="SMMUv3 in front of PCI"))
+
+    # xHCI channel: the USB rig's controller on the interrupts asked for (vm.py
+    # xhci_interrupts), and every boot must then show them working (_xhci_check).
+    if getattr(args, "xhci", None):
+        os.environ["VIBEOS_QEMU_XHCI"] = "1"
+        os.environ["VIBEOS_QEMU_XHCI_MSI"] = args.xhci
+        run.add(Stage("xhci", status="warn", detail=f"xHCI rig on {args.xhci}"))
 
     # NVMe behind a root port (arm64): the config space, the bridge's own pci.sys
     # and the requester ID of a device off the root bus.

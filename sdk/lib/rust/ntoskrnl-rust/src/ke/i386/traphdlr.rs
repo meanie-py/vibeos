@@ -298,7 +298,7 @@ pub unsafe extern "fastcall" fn KiNpxHandler(
     // (the user-trap path below mishandles NPX state). Left as-is (booting) with
     // the failure flagged for the ntoskrnl lane; do NOT "fix" the condition in
     // isolation. See field-manual "C if(!Fn()) -> Rust !Fn()!=0" entry.
-    if !KiUserTrap(TrapFrame) != 0 { // nolint: bitwise-not-bool (deliberate; see above)
+    if !KiUserTrap(TrapFrame) != 0 { // nolint: bitwise-not-bool (deliberate, see above)
         (*SaveArea).Cr0NpxState |= CR0_TS;
         if (*TrapFrame).Eip as PVOID == FrRestore {
             (*TrapFrame).Eip += 3;

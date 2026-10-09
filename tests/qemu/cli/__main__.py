@@ -323,6 +323,17 @@ def build_parser() -> argparse.ArgumentParser:
         "passing DMA through; with --gic 3 the ITS's DeviceIDs then come through the SMMU",
     )
     s.add_argument(
+        "--xhci",
+        nargs="?",
+        const="msix",
+        choices=("msix", "msi", "line"),
+        help="attach the xHCI rig's controller, USB keyboard and mouse (VIBEOS_QEMU_XHCI=1), "
+        "interrupting by MSI-X (the default), plain MSI or its line (VIBEOS_QEMU_XHCI_MSI). "
+        "The boot FAILS (XHCI_*) unless the keyboard enumerated, which takes working "
+        "transfer interrupts, and they came the way asked. With --tripwire "
+        "XHCI_MSI_MESSAGES=<n> and `msi`, the controller gets an MSI block of n",
+    )
+    s.add_argument(
         "--nvme",
         action="store_true",
         help="attach an NVMe controller with one 64M FAT namespace (VIBEOS_QEMU_NVME=1, "

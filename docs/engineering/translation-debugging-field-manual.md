@@ -1736,6 +1736,13 @@ check is one grep: `grep '^pub type TCHAR = ' src/types_i386.rs` must say `WCHAR
 `scan_type_alias_contradictions` then reports the disagreement with ntdll-sys, which is real and
 deliberate — baseline it, exactly as BCHAR already is for aclui/shell32/syssetup/winsrv.
 
+**2026-10-08: mechanized, both halves.** The control panels re-hit it in 5 crates (27 stack
+buffers at half size, `RegEnumValueW` told 128 WCHARs into 128 bytes), each needing a hand fix.
+`profile_derive` now emits the TCHAR-family `UNBLOCK` for every UNICODE user-mode module, and
+`port resolve` writes a generated `UNICODE TCHAR family` prelude block (`TCHAR = WCHAR` …)
+whenever every TU's real compile command carries `-DUNICODE`. A `port fix` reply had already
+built a shim casting `LPTSTR` to `*mut i8` around the wrong type -- delete such shims on sight.
+
 ### The same rule for TYPEDEFS: a private `type` alias that disagrees on WIDTH
 The entry above is about shadow *structs*; this is the same disease one level down, and it is
 cheaper to hit because a one-line `type X = ...;` does not look like a mirror at all.
@@ -1837,6 +1844,16 @@ copies it replaces, with known-answer tests. `strsafe-rust` (inlines) and `win32
 (macros + folded constants) are the two precedents. For the enum-member case above the fix is
 smaller and different: one `pub use crate::island::__WIDL_..._FVM_ICON as FVM_ICON;` in the
 prelude, and delete the copies.
+
+**The pointer-width/nominal half is now generated, not ported (2026-10-08).** `port macros`
+lowers every SDK header macro a crate calls (`PropSheet_Changed`, `ListView_InsertColumn`,
+`TreeView_GetSelection`, `MAKEWPARAM`, `TVI_ROOT`, `LV_ITEM`, `REGSTR_PATH_SYSTRAY`) from the
+TU's OWN preprocessor expansion on all three arches into a per-crate `macro_rules!`/`const`/
+`type` block (`rustconv/sdk_macros.py`), keeping C's integer promotions and literal types
+(`(WORD)x << 16` shifts an int; `0x80000001` is unsigned before `(LONG)` sign-extends it). An
+expansion outside the grammar, or one that differs per arch (`UlongToHandle` is a macro on
+i386 and an inline elsewhere), is refused by name -- never approximated. The control panels
+needed ~40; nobody wrote one.
 
 **The boundary is narrower than "core primitives", and the compiler is what finds it.** A shared
 crate cannot depend on any consumer's bindgen island, so it must express everything in primitives
@@ -3152,6 +3169,13 @@ nobody traced what the contradiction meant. **Baselining a constant contradictio
 bug; when the constant gates a diagnostic, baselining it disables the diagnostic.** Two
 unresolved neighbours still sit three lines away (`MI_HYPERSPACE_PTES` 0xFF vs 0x100).
 
+**2026-10-08: `port integrate` drops them.** A one-line top-level `const` in a translated
+module that the island also defines is removed, and a differing value is reported. Its first run
+found Haiku's timedate preamble carrying `IDC_CPLICON = 1000`, `IDS_CPLNAME = 100`,
+`IDS_CPLDESCRIPTION = 101` ("Assumed values") over resource.h's 1/1001/1002, and appwiz's
+`ID_DWL_GECKO_DIALOG = 0` over 1200, already shipped. c2rust-laid `[WCHAR; N]` tables are a
+different type from the island's `&[u16; N]` literal and are left alone.
+
 It also runs the other way: **a glob-imported unit const captures a LOCAL VARIABLE of the same
 name, because `let Name: T;` is then a constant PATTERN, not a binding.** msv1_0's
 `BuildTokenGroups` has the C's `PTOKEN_GROUPS TokenGroups;`, and ntdll-sys exports
@@ -3473,6 +3497,27 @@ argument is the assigned value, not an arm; and the `#define`'s own span must be
 parameter NAME is reported as a 43rd constant). 77 → 120 constants on msvcrt. **When an audit
 reports zero for a file you know dispatches, suspect the audit before believing the file** —
 `grep -c 'case '` against the finding count is a five-second control.
+
+**An A/W ALIAS constant is the same hole one level up (2026-10-08).** input.cpl's settings page
+switched on `TVN_SELCHANGED`, which commctrl.h defines as `TVN_SELCHANGEDW`; the island carries
+only the `W` form, so the arm bound everything and OK/Apply never saved the keyboard layouts --
+found by a reviewer, not a tool. Three tool gaps let it through, now closed: `port resolve`
+subtracted every identifier alias as a FUNCTION alias, so a constant alias never reached the
+clang-evaluated facts; rustc emits the `unreachable pattern` warning only on an error-free crate,
+and resolve rewrites its extern block mid-round, so it now iterates to a fixed point carrying the
+names each round uncovers (each catch-all hides the next: usrmgr needed three rounds); and newer
+rustc labels the culprit "matches SOME of the same values", so a pattern name defined nowhere
+the crate can see is taken from that label too. **`port check` now counts a catch-all arm as an
+error** (`CATCH-ALL -- match arm(s) binding an undefined constant`), so "0 errors" means it.
+
+**Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
+facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
+`PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair
+used to cast the scrutinee toward whichever arm a pass reported and built `as i32) as u32` forty
+deep across passes; it now declines a cast it already undid, and when the arms disagree rewrites
+each mismatched bare-constant arm as `__c if __c == CONST as ScrutineeT =>` -- the C conversion,
+and a guard cannot silently bind. A lone minority arm against an existing scrutinee cast still
+needs that guard by hand (mmsys `SoundsDlgProc`).
 
 **A C ENUM MEMBER is the shape most likely to get past you**, because bindgen renames it and the
 translation does not. bindgen prefixes each member with the enum's OWN name, so fmifs's
@@ -6294,7 +6339,15 @@ suspect call kept it failing; eighty made it green.
   power-protected devices and onto devices that had explicitly reported FUA unsupported; an
   always-true `||` arm disabled win32k's CJK line-break rule in word wrap; kernel32's
   `DuplicateConsoleHandle` lost its `DUPLICATE_SAME_ACCESS` validation; and scsiport kept only
-  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. Two idioms the scanner must NOT flag,
+  the null half of `ASSERT(Lun && !Lun->Common.IsFDO)`. **2026-10-08: the gate had a hole the
+  size of the class.** A keyword before the `!` read as a macro bang (`if!`), so every
+  `if !x != 0`, `while !x`, `return !x` went unseen while the baseline stayed EMPTY. Fixing it
+  found five live sites in other lanes: usetup's `PrepareCopyPage` quit setup unconditionally,
+  fastfat ignored `IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH`, csrss basesrv never initialised
+  `BaseSrvDDDBSMCritSec` with LUID device maps on, plus netcfgx and win32k; and Haiku's powercfg
+  `Pos_InitData` always failed. The toggle form `x = !x` on a BOOL (access's keyboard
+  preference could never be switched off) is the same bug and is NOT caught by the scanner,
+  because `!x` on a bool is right -- only the type says which. Two idioms the scanner must NOT flag,
   and both are everywhere: `x & !MASK != 0` (the unknown-flag test — genuinely bitwise) and the
   macro bang in `offset_of!(T,f) == 0`. Missing them is not cosmetic — the first draft reported
   **4710** sites, essentially all of them these two, which is worth exactly as much as no
@@ -11488,18 +11541,48 @@ It stayed latent while threads rarely ran on the AP; fixing `KiIdleSummary` (thr
 the idle CPU) took it from never to 3 of 4 boots.
 
 **Fix:** `KiSystemStartupBootStack` installs the idle process's directory in TTBR0 and TTBR1
-on each AP, as `KiSwapProcess` would.
+on each AP, as `KiSwapProcess` would. **Tell:** `KiSwapProcess` sets both registers to the
+same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
+
+### A kernel write to a read-only page succeeds, but only on an AP: CR0.WP never set there
+**Symptom** (i386 `-smp 2`): kmtest `ZwMapViewOfSection` :492 writes to a PAGE_READONLY
+view under SEH and gets no access violation, every sweep; it passes on one vCPU.
+**Cause:** without CR0.WP, supervisor writes ignore the PTE's R/W bit. `KiSetCR0Bits` runs
+from `KiInitMachineDependent` (`KeInitSystem`), once, on the current CPU, and Phase 1 calls
+`KeStartAllProcessors` BEFORE `KeInitSystem`, so the APs copied a CR0 that did not have WP
+yet. The C has the same order. **Fix:** set it inside `KiInitMachineDependent`'s
+per-processor affinity loop. **Generalize:** any per-CPU control-register or MSR setup done
+in a Phase 1 routine that runs on one CPU is an AP gap; check where the AP's copy came from.
 
 ### A DPC queued on a CPU never runs until it idles: `DpcInterruptRequested` stuck at 1
-**Symptom** (arm64 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
+**Symptom** (arm64 and i386 `-smp 2` only): kmtest `KeDpc` reads `DpcCount = 0` after every insert
 and the re-insert returns FALSE; the DPC sits queued until that CPU next reaches its idle loop.
 **Cause:** every IPI_DPC sets `Prcb->DpcInterruptRequested`, including the ones
 `KiDeferredReadyThread` sends only to wake a CPU for a thread. The arm64 soft-interrupt body
-cleared it only when it retired a non-empty queue, so a wake with nothing queued left it set,
+(and i386's `KiDispatchInterrupt`) cleared it only when it retired a non-empty queue, so a
+wake with nothing queued left it set,
 and `KeInsertQueueDpc` skips requesting an interrupt while it is set. **Fix:** clear it on the
 empty-queue path too. Any per-PRCB "request pending" flag needs a clear on every path that
-services the request, not just the path that finds work. **Tell:** `KiSwapProcess` sets both registers to the
-same table, so TTBR0 != TTBR1 on a running CPU means TTBR0 was never set by a process switch.
+services the request, not just the path that finds work.
+
+### A multi-CPU guest is several times slower and both CPUs are mostly halted: the wake IPI is masked
+**Symptom** (amd64 `-smp 2` only): boot and every kmtest launch take ~3-4x the 1-vCPU time,
+yet timers run at the right rate (sleep-bound tests take their nominal time). Tests that
+assume a thread they started has reached its wait within 10 ms fail (`ExResource` waiter
+counts). Sampling both vCPUs over gdb (`info threads` per attach, then reading each
+PRCB through `$gs_base`/`$k_gs_base` + 0x180) finds a CPU **halted in its idle thread with
+`NextThread` already set**.
+**Cause:** amd64 `KiIpiSend(IPI_DPC)` sends the DISPATCH soft vector 0x2F. On amd64 IRQL
+*is* the APIC TPR (CR8), and the idle loop blocks in `hlt` at DISPATCH_LEVEL, so vector 0x2F
+(priority class 2) is held pending in the IRR and `hlt` never returns until a higher-class
+interrupt -- the clock tick -- arrives. Every cross-CPU handoff costs up to a tick. i386 and
+arm64 send IPI_DPC through their real IPI vector and never saw it.
+**Fix:** also ring the 0xE1 IPI vector, which is above every IRQL the idle loop runs at; its
+handler services nothing, but `hlt` returns and the idle loop re-checks `NextThread` and its
+DPC queue. Keep the 0x2F request: it is what preempts a *busy* target once its IRQL drops.
+Don't filter the wake to CPUs in `KiTbLazyIdleSet`: the idle loop joins that set after its
+`NextThread` check, so a filtered wake races. A wake interrupt must be deliverable at the
+IRQL the sleeper sleeps at.
 
 ### The machine keeps running after a BUGCHECK: the other CPUs were never frozen
 **Symptom** (MP, both amd64 and arm64): the serial carries thread exits, network
@@ -11703,6 +11786,19 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   Reproduce NIC-less in QEMU with `VIBEOS_QEMU_EXTRA_ARGS="-nic user,model=rtl8139"` (a NIC
   nothing drives). Not `-nic none`: that renumbers PCI, the efivars boot entry then names the
   wrong device, and the firmware drops to the Shell.
+- **Probing a fixed address for a device finds one on any board where memory answers.**
+  Symptom: the Pi 5 installs ~100 PCI devices whose IDs are ASCII (`VEN_706F`,
+  `SUBSYS_72656666`), floods serial with `rundll32` spawns, and loses 10-30% of pings. Cause:
+  with no MCFG, the arm64 HAL read QEMU virt's fixed ECAM bases and accepted any vendor word
+  other than 0xFFFF; on the Pi 5 both 0x3F00_0000 (RAM) and 0x40_1000_0000 answer, so pci.sys
+  enumerated, and wrote config cycles into, whatever was there. Fix: take the base from the
+  MCFG, and probe only on QEMU (XSDT OEM "BOCHS "). A "not all-ones" probe only proves
+  absence on a bus that returns all-ones; never use one to prove presence at an address no
+  table gave you. Related trap: **a table the loader saw can be gone by the time the kernel
+  looks.** On the Pi 5 the MCFG's signature is zeroed after freeldr reads it (OEM, length and
+  body intact; no code of ours writes it, so suspect the firmware at ExitBootServices), so
+  freeldr logs `MCFG OEM "RPIFDN"` and the HAL finds no MCFG. Log signatures
+  and OEM IDs from the kernel side before trusting the loader's view.
 - **An SError reported at `_enable` happened somewhere else, maybe in the loader.**
   Symptom: BUGCHECK 0x80, ESR EC=0x2F (`0xBE000011`), the PC on `_enable+4` in
   `KiSystemStartupBootStack`, every boot of the Pi 5. Cause: `_enable` is `daifclr #0xF`,
@@ -11722,6 +11818,20 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   the device tree does nothing under UEFI. Fix: clear the pad's OD bit (and set IE) before
   driving the pin (`netstack-rust/src/gem.rs` `reset_phy`). Read the pad, the function select and
   the RIO bits on both sides before guessing.
+- **A PHY that advertises EEE to a MAC driver that ignores LPI loses frames before the MAC.**
+  Symptom: the Pi 5 drops ~8% of pings in a rhythm (one frame every 2.5 s, bursts every
+  ~14 s); the sender's capture shows each lost request on the wire, the driver never sees it,
+  and the MAC counts no FCS, buffer or overrun error. Cause: the BCM54213PE advertises Energy
+  Efficient Ethernet out of reset (MMD 7.60 = 0x6), so the link enters low-power idle between
+  frames. Fix: clear the advertisement before restarting auto-negotiation unless the driver
+  implements LPI (Linux's phylib applies the same rule). How it was found: per-sequence
+  counts at the driver plus a capture on a second LAN host split "never arrived" from
+  "arrived, not answered" from "answered, lost"; only then was there one place to look.
+- **A self-test with the emulator's addresses baked in breaks the real network it runs on.**
+  netstack's self-tests targeted QEMU slirp's 10.0.2.2/.3/.100; on the Pi 5 one programmed a
+  default route via 10.0.2.2, and the endless ARP for it starved smoltcp's interface-wide
+  neighbor-discovery rate limit, dropping replies to real peers. Take targets from the
+  lease; gate harness-only peers on actually being on slirp.
 - **A Cadence GEM can go idle with a frame queued.** If the TX DMA reads the next descriptor
   while it is still CPU-owned, it stops, and a TSTART written as it finished the previous frame
   is ignored; the frame then waits for the next send. The log shows `TSR` 0x21 (used bit read,
@@ -11734,6 +11844,14 @@ Every one of these passed smoke ×N and failed on the first physical board (Rasp
   ~1 KB `[UEXC]`+`[ALIGN]` record per fault was minutes of serial time on the board. Those
   codes are now capped after 32 records (tripwire `UEXCVERBOSE` restores all). Before timing
   anything on hardware, count what the trap path prints.
+  The same cost applies outside traps: the per-thread and per-process breadcrumbs (`[PS]`
+  thread/process creation and exit, `[MM] InitProcAS`, `[IRQL-CHK]`, the `[APC]` frame dump)
+  were ~20 lines per thread and, on the Pi 5, 70-80% of the serial output after the desktop
+  appeared; gating them took first-minute ping loss from 12.5% to 3.3%. They now print only
+  when the boot options carry `PROCTRACE` (`ps-rust/src/trace.rs`, flag `VibeProcTrace` in
+  ntoskrnl-rust `shim_exports.rs`). Still printed without it: the first
+  `PspUserThreadStartup: returning` (a smoke milestone) and the exit trace of a thread that
+  exits non-zero (`tools/ucrt_tier2_sweep.py` reads it).
 
 ### arm64 bring-up bugs worth recognising again
 - **`0xE3 RESOURCE_NOT_OWNED` (#43) was a fastfat shim testing the wrong WAIT bit.**
@@ -13391,6 +13509,24 @@ introduced at any heap exit — it is an external stray write.**
   IMAN.IE off and lets usbport's EnableInterrupts turn them on, as EHCI does. For any new
   device family, ask "can this line be asserted before my ISR says yes?"
 
+### A device on MSI-X hangs on its first interrupt-driven I/O; the same device on its line or MSI works
+- **Symptom:** the driver starts, everything it polls works, and the first operation that
+  needs an interrupt never completes. Seen 2026-10-08 moving QEMU's xHCI to MSI-X: the root
+  hub came up, the first USB device reached `new device, slot 1`, and the boot hung waiting
+  for the GET_DESCRIPTOR completion. A QEMU `-trace usb_xhci_*` run showed the transfer
+  event queued on interrupter 0 with the vector in use. NVMe on MSI-X, xHCI on its line,
+  and xHCI on plain MSI all worked.
+- **Cause:** **pci.sys wrote the MSI-X table before turning on the device's memory decode.**
+  The table lives in a memory BAR, and writes to a BAR the device is not decoding go
+  nowhere, so every entry kept its reset state: masked. The device then sets pending bits
+  and never sends. A table readback was all `ffffffff`. NVMe hid it because the firmware
+  leaves that controller decoding; UEFI's xHCI driver turns decode off when it exits.
+  Plain MSI was immune because its address and data live in config space.
+- **Fix:** program MSI-X after the command register write in `PdoStartDevice`, and read
+  each entry back. pci.sys now refuses to count an entry whose data does not read back,
+  and says so (`MSI-X table entry N ... did not take`). For any capability programmed
+  through a BAR, ask "is the device decoding this BAR yet?"
+
 ### A new SCSIPORT miniport loads, and no disk appears
 - **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
   but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot
@@ -13615,6 +13751,34 @@ setup.exe as the thread that ran: +50 000 µs, the full window. The preempted se
 re-queues at the head and spends the rest of its foreground quantum first, which is Windows
 behaviour, not a scheduler bug. kmtest-sweep now waits for setup.exe to exit, which costs
 9–15 s. Before blaming the scheduler for a timing miss, diff per-thread CPU across the window.
+
+### A "bistable" kmtest row on every arch, even at one vCPU: a deterministic bug fed undefined bytes
+**Symptom:** a row banked `assert?` because it flips between two values on identical media
+(`IoDeviceObject_drv.c:300`: `ZwUnloadDriver` of the driver's own RegistryPath returned
+`STATUS_OBJECT_NAME_NOT_FOUND` on about half of boots, i386/amd64/arm64 alike, `-smp 1` too).
+**Cause:** not timing. A gdb probe logging the callee arguments inside `NtUnloadDriver` showed
+`NtOpenKey` receiving `'...\KMTEST-IODEVICEOBJECT뀷☓ɑ桔敲\x01'`: `IopUnloadDriver` handed the
+COUNTED `UNICODE_STRING` buffer to `RtlQueryRegistryValues(RTL_REGISTRY_ABSOLUTE, ...)`, which
+takes a NUL-terminated PWSTR, and DriverEntry's RegistryPath pointed into a
+`KEY_NAME_INFORMATION` block with no terminator. Whether the next pool WCHAR happened to be 0
+decided the result. The C has the same bug.
+**Fix:** `IopUnloadDriver` queries through a terminated copy, and `IopInitializeDriverModule`
+terminates RegistryPath in an extra WCHAR -- outside `MaximumLength`, which Windows reports
+equal to `Length` (`:191` asserts it; counting the NUL in broke it on all arches). **Rule:** a
+row that flips on every arch with no second CPU is reading memory nobody wrote; probe the
+arguments before accepting it as noise.
+
+### A test that measures its own process sees a charge it never made: the kmtest harness is running beside it
+**Symptom** (`-smp 2` only): `PsQuota.c:88`/`:119` read nonpaged quota usage 24 bytes above what
+the test charged, in some sweeps.
+**Cause:** `KmtRunKernelTest` starts its user-callback thread and issues `IOCTL_KMTEST_RUN_TEST`
+at once. The callback thread then parks in `IOCTL_KMTEST_USERMODE_AWAIT_REQ`, which is
+METHOD_BUFFERED, so its system buffer is a quota allocation charged to the same process
+(i386: 12-byte packet + 4-byte quota-process pointer + 8-byte pool header = 24). On one CPU it
+parks after the test; on two, during it.
+**Fix:** the kmtest driver's `RUN_TEST` waits (bounded, 5 s) on an event `AWAIT_REQ` sets while
+the callback thread is parked. Any per-process counter a kmtest reads (quota, handle count,
+thread count) includes the harness's own threads.
 
 ### `NET_FLAKE` that is not a flake `[§9.84]`
 A gate showing `✓ build ×3 ✓ lint ×3 ✓ smoke: all three` and a red net suite, where **all 15

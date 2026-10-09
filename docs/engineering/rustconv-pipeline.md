@@ -635,6 +635,49 @@ appeared as a misleading number.
   hand fixes (`ArcPathToNtPath`, `IsDiskSuperFloppyEx`) that had been made in the crate
   and never banked.
 
+### Sixteen control panels on Haiku 5.5 (2026-10-08)
+
+timedate, powercfg, joy, hotplug, hdwwiz, access, ncpa, telephon, odbccp32, openglcfg,
+wined3dcfg, console, main, input, mmsys and usrmgr: ~600 functions, about $2 in all
+including `port fix`. inetcpl is translated but NOT flipped (needs two islands, below).
+`-m haiku` runs with `--concurrency` now: the gate is the model's price, not its vendor.
+Every gap the run hit became a pass, so `port replay <stem> -m haiku --fix-cap $` alone
+rebuilds each crate:
+
+- **SDK header macros are lowered, not ported** (`sdk_macros.py`, `port macros`, $0): the TU's
+  own preprocessor expands each `PropSheet_*`/`ListView_*`/`TreeView_*`/`ComboBox_*`/`MAKE*`
+  macro the crate calls on all three arches, and the C expression is printed as a per-crate
+  `macro_rules!` -- C integer promotions and literal types kept, an uncast call argument
+  converted with `as _` except into a callback slot, `{ T x; ... }` statement blocks as a
+  zeroed local. Object-like ones become `pub type` (A/W type aliases, `REFIID`) or a `pub
+  const` (`TVI_ROOT`; a numbers-only pointer constant folded to its value). `TEXT("..")`/`_T`
+  call sites become UTF-16 arrays. Anything outside the grammar, or arch-dependent, is refused
+  by name. Names a shared crate provides are never lowered.
+- **resolve**: constant A/W aliases go to the clang facts (they were dropped as "function
+  aliases"); a name the island defines is never consensus-copied over it; per-arch identifier
+  aliases (`GetWindowLongPtrW` is `GetWindowLongW` on i386) get `cfg_attr(link_name)`; the
+  UNICODE TCHAR family is written for UNICODE modules; and it iterates to a fixed point,
+  carrying the catch-all `match` names each round uncovers.
+- **integrate**: drops a model-written `extern` for a name the C preprocessor says is a macro,
+  and a top-level `const` that redeclares an island constant (Haiku's preambles invent resource
+  IDs); puts back a `sizeof(TYPE)` the model dropped; counts `ARRAYSIZE!` of the array, not a
+  pointer to it; adds `!` to calls of macros re-exported from a shared crate.
+- **check** counts a catch-all `match` arm as an error.
+- **replay** runs `macros` again after crate-repair and `resolve` after the hand bank and at the
+  end, because rustc reports a name only once the errors in front of it are gone.
+
+Translate-side fixes from the same run: a DBG-only function header (`#if DBG` /`#else` around
+`DisplayWin32Error`) no longer trips the coverage check (compile-command `-D`s pin dead
+regions); a reject adopted for $0 on the parallel path as on the sequential one; a C
+comma-operator statement is several assignments to the invented-value audit; a C local that
+holds a function pointer may be spelled twice; a sealed `sizeof(TYPE)` the model hands back
+bare is restored at unseal.
+
+**Owed -- multi-island modules.** inetcpl's TUs need two islands (one group defines
+`COBJMACROS`/`NONAMELESSUNION`), and `port island`/`scaffold` generate one; its WIDL
+`IFoo_Method` COBJMACROS inlines are also "the -sys crate's job" to `port headers`. Both are
+needed before inetcpl can flip.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR

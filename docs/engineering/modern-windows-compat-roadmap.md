@@ -79,11 +79,20 @@ stub first). Real subsystem work, not stubs:
    interrupt object's processor, as x86's does, and an ITS LPI enabled elsewhere is
    moved there (MOVI). The PnP manager gives message vectors back to the HAL when a
    device is removed or a translation is abandoned (ITS: DISCARD, then the device
-   unmapped), and pci.sys turns MSI/MSI-X off at STOP and REMOVE. A device with MSI
-   but no MSI-X gets one MSI message. Owed: multi-message MSI (an aligned block of
-   data values), `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
+   unmapped), and pci.sys turns MSI/MSI-X off at STOP and REMOVE;
+   `--nvme --tripwire NVME_FAIL_START=1` proves that path (nvme.sys connects, then fails
+   START, and the boot fails unless the vectors come back). A device with MSI but no
+   MSI-X gets a multiple-message block since 2026-10-08, as on Windows: one requirement
+   spanning the block, which the HAL translates to consecutive values aligned to its
+   size (APIC vectors, GICv2m SPIs, or ITS EventIDs) and halves when it cannot find that
+   many together. usbport takes messages for xHCI controllers, so
+   `smoke --xhci msix|msi|line` runs the USB rig on each; with `msi` and
+   `--tripwire XHCI_MSI_MESSAGES=<n>` the controller gets an MSI block of n. Getting
+   xHCI onto MSI-X found pci.sys writing MSI-X tables before memory decode was on (field
+   manual). Owed: `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
    handling itself over a DIRQL interrupt), and driving an SMMU for real (isolation)
-   rather than bypassing it. The arm64 HAL's PCI config space comes from the MCFG since
+   rather than bypassing it. MOVI is built but never runs in QEMU: nothing connects a
+   message on a processor other than the one it was allocated for. The arm64 HAL's PCI config space comes from the MCFG since
    2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
    (pci.sys keeps the segment through bridges and in the requester ID the ITS routes
    by), and the HAL publishes a root bus for each segment past 0. `smoke --arch arm64

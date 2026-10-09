@@ -195,6 +195,57 @@ const DRIVER_LEFT_LOCKED_PAGES_IN_PROCESS: ULONG = 0x000000CB;
 const DRIVER_USED_EXCESSIVE_PTES: ULONG = 0x000000D8;
 const MANUALLY_INITIATED_CRASH: ULONG = 0x000000E2;
 
+/// Print a kernel PC as `module+offset` plus the first resolvable return
+/// addresses above `Rsp`, without bugchecking. The IRQL>1 page-fault path in
+/// MmArmAccessFault returns a status instead of stopping, and a raw RIP in the
+/// log is not actionable: amd64-bios's csrss in-page error showed a RIP inside
+/// the kernel's discarded debug sections, i.e. a call through a bad pointer,
+/// and only the caller chain says who made it.
+#[cfg(target_arch = "x86_64")]
+pub unsafe fn KiPrintPcAndStack(TrapFrame: *const ntkrnl_sys::ddk::_KTRAP_FRAME) {
+    if TrapFrame.is_null() {
+        return;
+    }
+    let mut resolve = |tag: &[u8], off: u64, val: u64| {
+        let mut le: PLDR_DATA_TABLE_ENTRY = core::ptr::null_mut();
+        let mut in_kernel: BOOLEAN = 0;
+        let base = KiPcToFileHeader(val as PVOID, &mut le, 0u8, &mut in_kernel);
+        if base.is_null() || le.is_null() {
+            return false;
+        }
+        let mut ansi = [0i8; 64];
+        KeBugCheckUnicodeToAnsi(
+            &(*le).BaseDllName as *const _ as PUNICODE_STRING,
+            ansi.as_mut_ptr(),
+            64,
+        );
+        crate::dbg_print!(
+            b"MM:***%s[+0x%03lX] = %s+0x%lX\n\0",
+            tag.as_ptr(),
+            off as ULONG,
+            ansi.as_ptr(),
+            (val as ULONG_PTR - base as ULONG_PTR) as ULONG,
+        );
+        true
+    };
+    let rip = (*TrapFrame).Rip as u64;
+    if !resolve(b"rip\0", 0, rip) {
+        crate::dbg_print!(b"MM:***rip 0x%p is in no loaded module\n\0", rip as PVOID);
+    }
+    let rsp = (*TrapFrame).Rsp as u64;
+    if rsp > 0xFFFF800000000000 {
+        let mut printed = 0u32;
+        let mut qi = 0u64;
+        while qi < 256 && printed < 12 {
+            let val = *((rsp + qi * 8) as *const u64);
+            if val > 0xFFFF800000000000 && resolve(b"stack\0", qi * 8, val) {
+                printed += 1;
+            }
+            qi += 1;
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KiPcToFileHeader(
     Pc: PVOID,

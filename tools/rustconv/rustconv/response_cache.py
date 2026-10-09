@@ -445,8 +445,9 @@ class ResponseCache:
             out = self.dir / "__rejected__"
             out.mkdir(parents=True, exist_ok=True)
             (out / (_safe_filename(name) + ".rs")).write_text(
-                f"// REJECTED by the deterministic audit — forensic copy, never assembled.\n"
-                f"// {error}\n\n{rust}"
+                "// REJECTED by the deterministic audit — forensic copy, never assembled.\n"
+                + "".join(f"// {line}\n" for line in str(error).splitlines() or [""])
+                + f"\n{rust}"
             )
         except OSError:
             pass
@@ -462,6 +463,11 @@ class ResponseCache:
             text = path.read_text()
         except OSError:
             return None
+        # The header ends at the first blank line. A multi-line audit message once wrote
+        # its second line UNcommented, so dropping only `// ` lines left it in the body and
+        # hotplug's EnumHotpluggedDevices could never be adopted.
+        if text.startswith("// REJECTED") and "\n\n" in text:
+            text = text.split("\n\n", 1)[1]
         body = "\n".join(line for line in text.splitlines() if not line.startswith("// "))
         return body if body.strip() else None
 

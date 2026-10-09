@@ -412,6 +412,9 @@ pub unsafe extern "C" fn VolumeDeleteMountPoints(PartExt: *mut PARTITION_EXTENSI
 
             OutputSize = (*OutputBuffer).Size;
             ExFreePoolWithTag(OutputBuffer as PVOID, TAG_PARTMGR);
+            // Diverges from the C, which leaves the freed pointer here: a SECOND
+            // STATUS_BUFFER_OVERFLOW ends the loop and the cleanup below freed it again.
+            OutputBuffer = core::ptr::null_mut();
             // Continue loop to reallocate
         }
     }

@@ -370,6 +370,14 @@ pub unsafe extern "system" fn KiInitMachineDependent() {
             i &= !(Affinity as ULONG);
             KeSetSystemAffinityThread(Affinity);
 
+            // CR0.WP on EVERY processor, while we run on it. The C sets it once, after
+            // this loop, so only on the CPU we return to; the APs were started earlier in
+            // Phase 1 (KeStartAllProcessors precedes KeInitSystem) with the boot CPU's CR0
+            // from before WP, so on them a kernel-mode write ignored read-only PTEs:
+            // kmtest ZwMapViewOfSection :492 wrote a PAGE_READONLY view with no access
+            // violation at i386 -smp 2, every sweep. amd64 sets WP per CPU in KiInitializeCpu.
+            KiSetCR0Bits();
+
             (*KeGetCurrentPrcb()).MHz = 0;
 
             if (KeFeatureBits & KF_RDTSC as u64) != 0 {
