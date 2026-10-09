@@ -293,8 +293,29 @@ def legacy_key(macros: dict[str, CMacro], thinking: str = "on") -> str:
     return hashlib.sha256(blob.encode()).hexdigest()[:16]
 
 
+def c_source_location(text: str) -> str:
+    """Spell C's `__FILE__`/`__LINE__` where a reply used Rust's `file!()`/`line!()`.
+
+    `__FILE__` is a NUL-terminated `char *`; `file!()` is a `&str` with no NUL, so passing it
+    on is a type error at best and an unterminated read at worst. `__LINE__` is an `int`;
+    `line!()` is a `u32`. timedate's `DisplayWin32Error(e)` came back as
+    `DisplayWin32ErrorDbg($e, file!(), line!())`. Applied at render so banked replies are
+    corrected on replay, for $0.
+    """
+    text = re.sub(
+        r"(?<![\w!(])file!\(\)(?!\s*,\s*\"\\0\")",
+        lambda _m: 'concat!(file!(), "\\0").as_ptr() as *const core::ffi::c_char',
+        text,
+    )
+    text = re.sub(r"(?<![\w!])line!\(\)(?!\s*as\b)", "(line!() as core::ffi::c_int)", text)
+    # C's `NULL` converts to any pointer; the prelude's `NULL` is a typed `*mut c_void`
+    # (console's UpdateFontPreview(.., NULL, ..) wanted an HFONT). `null_mut()` infers.
+    return re.sub(r"(?<![\w:])NULL(?![\w(])", "core::ptr::null_mut()", text)
+
+
 def render(ported: dict[str, str], macros: dict[str, CMacro]) -> str:
     out = [BEGIN]
+    ported = {n: c_source_location(t) for n, t in ported.items()}
     for name in sorted(ported):
         m = macros[name]
         if m.kind == "fn":

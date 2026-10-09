@@ -17,6 +17,9 @@
 #   (i386 IoDeviceObject bistability re-confirmed directly on 2026-08-02: two back-to-back
 #   --smp 2 rounds on IDENTICAL media gave 185/4 then 184/5, the extra one being
 #   IoDeviceObject_drv.c:300 STATUS_OBJECT_NAME_NOT_FOUND. Not an MP-conditional row.)
+#   EXPLAINED 2026-10-08: the I/O manager handed DriverEntry an unterminated RegistryPath
+#   and IopUnloadDriver queried it as a PWSTR, so :300 depended on the pool bytes after it.
+#   Fixed (iomgr-rust driver.rs); IoDeviceObject is 185/4 on every arch, no longer bistable.
 # KeSpinLock re-seeded 2026-08-02, 706/79 -> 754/31 — a REAL FIX, not a re-roll.
 #   hal-rust's x86 Kx{Acquire,Release}SpinLock were hard-coded UP no-ops (they predate the
 #   halmp.dll twin and never learned the `smp` feature), so the kernel stamped owners the

@@ -168,4 +168,17 @@ def test_a_table_call_never_panics():
     import pytest
 
     with pytest.raises(ValueError, match="panic path"):
-        parse_reply(reply.replace("SpInfFindFirstLine.unwrap())", "X.expect(\"y\"))"), {"SpInfFindFirstLine"})
+        parse_reply(
+            reply.replace("SpInfFindFirstLine.unwrap())", 'X.expect("y"))'), {"SpInfFindFirstLine"}
+        )
+
+
+def test_file_and_line_get_their_c_types():
+    from rustconv.local_macros import c_source_location
+
+    out = c_source_location("f($e, file!(), line!());")
+    assert out == (
+        'f($e, concat!(file!(), "\\0").as_ptr() as *const core::ffi::c_char, '
+        "(line!() as core::ffi::c_int));"
+    )
+    assert c_source_location(out) == out  # idempotent

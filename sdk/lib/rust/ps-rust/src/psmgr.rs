@@ -702,7 +702,10 @@ unsafe fn PspInitPhase0(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
 pub unsafe extern "system" fn PsInitSystem(loader_block: PLOADER_PARAMETER_BLOCK) -> BOOLEAN {
     let loader_block = opaque_ptr(loader_block);
     match ExpInitializationPhase {
-        0 => PspInitPhase0(loader_block),
+        0 => {
+            crate::trace::init(loader_block);
+            PspInitPhase0(loader_block)
+        }
         1 => PspInitPhase1(),
         _ => {
             KeBugCheckEx(

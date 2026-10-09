@@ -461,7 +461,18 @@ const IOCTL_SCSI_PASS_THROUGH_EX: u32 = 0x0004D044;
 const IOCTL_SCSI_PASS_THROUGH_DIRECT_EX: u32 = 0x0004D048;
 const IOCTL_STORAGE_QUERY_PROPERTY: u32 = 0x002D1400;
 const STATUS_IO_DEVICE_ERROR: i32 = 0xC0000185_u32 as i32;
-const RequestSetupMcnSyncIrp: usize = 0;
+// The MCN sync IRP marks itself with the ADDRESS of RequestSetupMcnSyncIrp in
+// Arg1/Arg2/Arg4 (autorun.rs stores it; cdrom.c:3037 compares against the function).
+// The translation had replaced this with `const … = 0`, so the self-check below never
+// matched, the driver's own sync IRP was dispatched as an UNKNOWN ioctl and forwarded
+// to the port driver once per timer tick: scsiport logged
+// `unknown ioctl code: 0x7C0C8` ~700 times per hung amd64-bios boot, media-change
+// detection never ran, and the chatter kept the smoke harness from recognising a
+// wedged guest (the "serial still flowing" rule). Compare against the real function.
+#[inline(always)]
+unsafe fn RequestSetupMcnSyncIrpAddr() -> usize {
+    crate::autorun::RequestSetupMcnSyncIrp as *const () as usize
+}
 
 const TRACE_LEVEL_ERROR: u32 = 2; // storswtr.h:26-30
 const TRACE_FLAG_IOCTL: u32 = 4; // storswtr.h:80-98 (an ORDINAL enum, not a bitmask)
@@ -2741,9 +2752,9 @@ pub unsafe extern "C" fn RequestDispatchSpecialIoctls(
             if ((*deviceExtension).MediaChangeDetectionInfo).is_null() == false
                 && (irp == (*(*deviceExtension).MediaChangeDetectionInfo).MediaChangeSyncIrp)
                 && (WdfRequestGetRequestorMode(Request) == 0i8)
-                && (RequestParameters.Parameters.Others.as_ref().Arg1 as usize == RequestSetupMcnSyncIrp)
-                && (RequestParameters.Parameters.Others.as_ref().Arg2 as usize == RequestSetupMcnSyncIrp)
-                && (RequestParameters.Parameters.Others.as_ref().Arg4 as usize == RequestSetupMcnSyncIrp)
+                && (RequestParameters.Parameters.Others.as_ref().Arg1 as usize == RequestSetupMcnSyncIrpAddr())
+                && (RequestParameters.Parameters.Others.as_ref().Arg2 as usize == RequestSetupMcnSyncIrpAddr())
+                && (RequestParameters.Parameters.Others.as_ref().Arg4 as usize == RequestSetupMcnSyncIrpAddr())
             {
                 // This is the request we use to sync Media Change Detection with sequential queue.
                 status = WdfDeviceEnqueueRequest(Device, Request);
