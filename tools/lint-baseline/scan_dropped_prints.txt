@@ -498,7 +498,7 @@ sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiCheckForUserStackOverflow [PA
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiCheckPdeForSessionSpace [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiResolveProtoPteFault [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MiResolveTransitionFault [ALL]
-sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MmArmAccessFault [ALL]
+sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MmArmAccessFault [PARTIAL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pagfault.rs: MmSetExecuteOptions [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pfnlist.rs: MiDecrementAvailablePages [ALL]
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/pfnlist.rs: MiDecrementReferenceCount [ALL]

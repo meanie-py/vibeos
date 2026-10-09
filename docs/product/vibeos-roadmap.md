@@ -1050,6 +1050,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: csrss/SMSS die with `C0000006` under the batch gate** (REOPENED
+    2026-10-08, was "FIXED 2026-10-07"). Every `smoke:amd64-bios` HANG_TIMEOUT in the merge
+    queue over 10-07/10-08 (~30 of them) was csrss.exe exiting `0xC0000006` while loading
+    winsrv, and every BUGCHECK 0xF4 was SMSS taking the same in-page error; `-smp 1` never
+    fails. The 10-07 fix's 16/16 was measured alone, not under the gate's concurrent boots.
+    The in-page status is `STATUS_IN_PAGE_ERROR|0x10000000`, MmArmAccessFault's "PAGE FAULT
+    AT IRQL > 1" path: kernel code at DISPATCH_LEVEL faulting on Va 0 with RIP outside every
+    image's `.text` -- a call through a bad pointer on the page-in path. The Rust had
+    dropped the C's register dump there; it now prints Va/IRQL/registers plus RIP and the
+    stack as `module+offset` (`KiPrintPcAndStack`). Two contributors fixed 2026-10-08:
+    cdrom-rust compared its MCN sync IRP against `const RequestSetupMcnSyncIrp = 0` instead
+    of the function's address, so its own IRP went down to scsiport every timer tick
+    (`unknown ioctl code: 0x7C0C8` ~700/boot) and was completed there at DISPATCH_LEVEL on
+    whichever CPU, racing the next tick; and that chatter kept the harness from fast-failing
+    the wedged guest (13 min per hang instead of ~2). After: 21 of 22 `-smp 2` boots green
+    under 6-8 concurrent VMs and two full gates green (20261008-231753-kzuu49zq,
+    20261008-233332-nlk4h1lh, a1 passed both). The residual 1/22 (20261008-225946-tllwzl5t
+    boot1: RIP fffff80000a08234, RCX fffff80000a2422b, both past the kernel's 0x32B000 runtime
+    image) is still open; the next occurrence names the module in the serial log. Earlier
+    entry follows for the record.
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-07; found
     2026-10-06, 15 of 80 `smoke:amd64-bios` runs over 10-06/07 across lanes). The lane boots
     from a USB stick over xHCI with an NVMe disk attached. Usually csrss took `0xC0000006`
