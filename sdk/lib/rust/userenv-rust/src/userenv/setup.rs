@@ -1,6 +1,16 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
+macro_rules! profile_fail {
+    ($step:expr, $err:expr) => {
+        DbgPrint(
+            concat!("[USERENV] profiles: ", $step, " failed (error %lu)\n\0").as_ptr()
+                as *const core::ffi::c_char,
+            ($err) as u32,
+        )
+    };
+}
+
 extern "system" {
     // ARRAYSIZE removed: a MACRO, not a linkable fn (no live call sites in this module).
     fn CreateDirectoryW(lpPathName: LPCWSTR, lpSecurityAttributes: *mut core::ffi::c_void) -> BOOL;
@@ -432,7 +442,9 @@ static USER_SHELL_FOLDERS_KEY2: [u16; 70] = [
 ];
 
 
-const IDS_PROFILEPATH: UINT = 0;
+// IDS_PROFILEPATH comes from the prelude (resources.h: 1). A local copy here said 0, a
+// resource that does not exist: LoadStringW failed and GUI setup stopped at
+// "InitializeProfiles() failed" on every install.
 unsafe extern "C" fn CreateStandardProfile(
     pszProfilesPath: LPCWSTR,
     hProfileListKey: HKEY,
@@ -472,10 +484,14 @@ unsafe extern "C" fn CreateStandardProfile(
 
     if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
+            profile_fail!("CreateStandardProfile step 1", GetLastError());
+
             return FALSE as BOOL;
         }
 
         if AppendSystemPostfix(szBuffer.as_mut_ptr(), (core::mem::size_of_val(&szBuffer) / core::mem::size_of::<WCHAR>()) as DWORD) == 0 {
+            profile_fail!("CreateStandardProfile step 2", GetLastError());
+
             return FALSE as BOOL;
         }
 
@@ -497,6 +513,8 @@ unsafe extern "C" fn CreateStandardProfile(
 
         if CreateDirectoryW(szProfilePath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
             if GetLastError() != ERROR_ALREADY_EXISTS {
+                profile_fail!("CreateStandardProfile step 3", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -513,6 +531,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        profile_fail!("CreateStandardProfile step 4", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -548,6 +568,8 @@ unsafe extern "C" fn CreateStandardProfile(
 
         if CreateDirectoryW(szBuffer.as_mut_ptr(), core::ptr::null_mut()) == 0 {
             if GetLastError() != ERROR_ALREADY_EXISTS {
+                profile_fail!("CreateStandardProfile step 5", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -568,6 +590,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        profile_fail!("CreateStandardProfile step 6", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -612,6 +636,8 @@ unsafe extern "C" fn CreateStandardProfile(
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
+                profile_fail!("CreateStandardProfile step 7", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -630,6 +656,8 @@ unsafe extern "C" fn CreateStandardProfile(
     );
     if Error != ERROR_SUCCESS as LONG {
         SetLastError(Error as DWORD);
+        profile_fail!("CreateStandardProfile step 8", GetLastError());
+
         return FALSE as BOOL;
     }
 
@@ -674,6 +702,8 @@ unsafe extern "C" fn CreateStandardProfile(
             if Error != ERROR_SUCCESS as LONG {
                 RegCloseKey(hKey);
                 SetLastError(Error as DWORD);
+                profile_fail!("CreateStandardProfile step 9", GetLastError());
+
                 return FALSE as BOOL;
             }
         }
@@ -705,6 +735,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         MAX_PATH as core::ffi::c_int,
     ) == 0
     {
+        profile_fail!("LoadStringW(IDS_PROFILEPATH)", GetLastError());
         return 0;
     }
 
@@ -716,6 +747,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut hKey,
     );
     if Error != ERROR_SUCCESS as LONG {
+        profile_fail!("RegOpenKeyExW(ProfileList)", Error);
         SetLastError(Error as DWORD);
         return 0;
     }
@@ -726,12 +758,14 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         MAX_PATH,
     ) == 0
     {
+        profile_fail!("ExpandEnvironmentStringsW", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
 
     if CreateDirectoryW(szProfilesPath.as_mut_ptr(), core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
+            profile_fail!("CreateDirectoryW(profiles directory)", GetLastError());
             RegCloseKey(hKey);
             return 0;
         }
@@ -747,6 +781,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         dwLength,
     );
     if Error != ERROR_SUCCESS as LONG {
+        profile_fail!("RegSetValueExW(ProfilesDirectory)", Error);
         RegCloseKey(hKey);
         SetLastError(Error as DWORD);
         return 0;
@@ -758,6 +793,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut StandardProfiles[0],
     ) == 0
     {
+        profile_fail!("CreateStandardProfile(Default User)", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
@@ -768,6 +804,7 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
         &mut StandardProfiles[1],
     ) == 0
     {
+        profile_fail!("CreateStandardProfile(All Users)", GetLastError());
         RegCloseKey(hKey);
         return 0;
     }
@@ -869,7 +906,11 @@ pub unsafe extern "C" fn UpdateUsersShellFolderSettings(
 // a wrong guess is a silent i386 stack walk on every call. The .spec is the truth.
 extern "C" {
     fn wcslen(s: LPCWSTR) -> usize;
+    // ntdll, cdecl: the C's DPRINT1s, restored on the first-boot profile path. GUI setup only
+    // says "InitializeProfiles() failed"; these name the step and the error.
+    fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
 }
+
 
 
 // ============================================================================

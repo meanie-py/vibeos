@@ -189,7 +189,7 @@ const NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK: u32 = 0x00000008;
 const FDO_HACK_GESN_IGNORE_OPCHANGE: u32 = 0x00000010;
 
 // SRB flags/status
-const SRB_STATUS_MASK: u8 = 0xFF;
+const SRB_STATUS_MASK: u8 = 0x3F; // srb.h: SRB_STATUS(Status) masks 0x3F (the queue-frozen/autosense bits are 0x40/0x80); was 0xFF
 const SRB_STATUS_SUCCESS: u8 = 0x1;  // was 0 (LLM-invented); bindgen-correct
 const SRB_STATUS_BUS_RESET: u8 = 0xe;  // was 0x06 (LLM-invented); bindgen-correct
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;

@@ -110,7 +110,7 @@ const FILE_NOTIFY_CHANGE_LAST_WRITE: u32 = 0x10;
 const FILE_NOTIFY_CHANGE_LAST_ACCESS: u32 = 0x20;
 const FILE_NOTIFY_CHANGE_SIZE: u32 = 8;
 const FILE_ACTION_MODIFIED: u32 = 0x03;
-const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x2;
+const OPLOCK_FLAG_PARENT_OBJECT: u32 = 0x10; // ntifs: OPLOCK_FLAG_PARENT_OBJECT 0x10, as create.rs; was 2 (OPLOCK_KEY_CHECK_ONLY)
 
 
 // NOTE: FatData is the real global FAT_DATA (imported from crate::types).
