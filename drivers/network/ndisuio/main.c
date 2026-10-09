@@ -49,8 +49,8 @@ DriverEntry(PDRIVER_OBJECT DriverObject,
     Status = IoCreateDevice(DriverObject,
                             0,
                             &NtDeviceName,
+                            FILE_DEVICE_NETWORK,
                             FILE_DEVICE_SECURE_OPEN,
-                            0,
                             FALSE,
                             &GlobalDeviceObject);
     if (!NT_SUCCESS(Status))
@@ -58,6 +58,11 @@ DriverEntry(PDRIVER_OBJECT DriverObject,
         DPRINT1("Failed to create device object with status 0x%x\n", Status);
         return Status;
     }
+
+    /* NduDispatchRead/Write use Irp->AssociatedIrp.SystemBuffer, which only buffered
+     * I/O fills in: without the flag every WriteFile handed NDIS a NULL buffer.
+     * (DeviceType and Characteristics above were also passed swapped.) */
+    GlobalDeviceObject->Flags |= DO_BUFFERED_IO;
 
     /* Create a symbolic link into the DOS devices namespace */
     Status = IoCreateSymbolicLink(&DosDeviceName, &NtDeviceName);

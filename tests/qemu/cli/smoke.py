@@ -678,6 +678,9 @@ def _payload_stage(
     boot_budget = 600
     drain = 0.0
     vm_memory = ""
+    # QEMU devices a payload needs (ndisprobe: a NIC an NDIS miniport drives), appended to
+    # whatever VIBEOS_QEMU_EXTRA_ARGS the caller set, so the recipe lives in the payload.
+    extra_args: list[str] = []
     try:
         import yaml as _yaml
 
@@ -689,6 +692,8 @@ def _payload_stage(
                 drain = max(drain, float(_test.get("launch_drain_secs", 30)))
                 # The largest declared guest RAM wins (vm.py get_arch_config).
                 vm_memory = max(vm_memory, str(_test.get("vm_memory", "")), key=_mem_mb)
+                if _test.get("qemu_extra_args"):
+                    extra_args.append(str(_test["qemu_extra_args"]))
                 if _test.get("net") and not pytest_arch.endswith("-net"):
                     pytest_arch += "-net"
     except ImportError:
@@ -729,6 +734,15 @@ def _payload_stage(
                 "VIBEOS_ARTIFACT_DIR": str(payload_dir),
                 "VIBEOS_QEMU_MAX_LIFETIME": str(_payload_vm_lifetime(boot_budget, drain)),
                 **({"VIBEOS_QEMU_MEMORY": vm_memory} if vm_memory else {}),
+                **(
+                    {
+                        "VIBEOS_QEMU_EXTRA_ARGS": " ".join(
+                            [os.environ.get("VIBEOS_QEMU_EXTRA_ARGS", ""), *extra_args]
+                        ).strip()
+                    }
+                    if extra_args
+                    else {}
+                ),
             },
         )
     except subprocess.TimeoutExpired:
