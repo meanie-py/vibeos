@@ -302,7 +302,7 @@ def _wait_marker(vm: QemuVM) -> str:
     """
     config = vm.config
     deadline = time.monotonic() + config.boot_timeout
-    need = getattr(config, "boots_required", 1)
+    need = getattr(config, "boots_required", 0)  # the CD stage runs usetup, not [SMSS]
     seen = ""  # markers already consumed from boots before the one that counts
     while True:
         try:
@@ -341,7 +341,10 @@ def _wait_marker(vm: QemuVM) -> str:
                     timeout=config.desktop_settle_seconds + 10,
                     min_bytes=0,
                 )
-            except TimeoutError:
+            except (TimeoutError, ConnectionError):
+                # The marker is in hand. Setup reboots right after its marker, and under
+                # -no-reboot that closes the serial socket: the expected next step, not a
+                # failure (it read as one once the reboot stopped hanging).
                 pass
         vm._boot_output = out
         return out

@@ -1,0 +1,3 @@
+sdk/lib/rust/cdfs-rust/src/cddata.rs:218: call-arg-swap CdFsdDispatch: CdCompleteRequest call#0 arg2: STATUS_INVALID_DEVICE_REQUEST where C passes Status
+sdk/lib/rust/cdrom-rust/src/common.rs:2555: call-arg-swap DeviceRegisterInterface: WdfStringCreate call#0 arg1: attributes where C passes NULL
+sdk/lib/rust/fastfat-rust/src/allocsup.rs:3093: call-arg-swap FatExamineFatEntries: FatReadVolumeFile call#0 arg5: pv where C passes FatBuffer

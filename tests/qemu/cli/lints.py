@@ -1178,6 +1178,18 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A call passing a different local than its own C at the same call (k-th call of a callee,
+    # same arity). userenv's InitializeProfiles loaded the profiles path into the buffer it
+    # then expanded an empty string over: GUI setup stopped at "InitializeProfiles() failed".
+    # Baseline: reviewed look-alikes (renamed buffers, an inlined Status, a deliberate WDF fix).
+    sas = repo / "tools" / "scan_call_arg_swap.py"
+    specs.append(
+        (
+            "scan_call_arg_swap",
+            [py, str(sas), "--lint"] if sas.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A re-ported mm.h section-segment-entry helper (`IS_DIRTY_SSE` & co.) evaluated against
     # the macro on sample entries. ntkrnl-sys's IS_DIRTY_SSE tested a share-count bit, so
     # MiShutdownSystem looped forever and the install never rebooted. Gated at zero.

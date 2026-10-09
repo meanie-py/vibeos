@@ -283,6 +283,17 @@ This was the *fourth* distinct break found by successive cold builds of one tree
 behind the previous — see "cold-build breakage comes in LAYERS" under stale artifacts `[§9.126]`,
 which reached the same conclusion independently from mainline's side.
 
+### A call that passes the wrong one of two same-typed buffers
+**Symptom:** a function fails on a path or name that is empty or half-built, though each
+call in it looks right. GUI setup's "InitializeProfiles() failed / Rebooting now!" box sat
+waiting for OK on every install. **Cause:** userenv's `InitializeProfiles` loaded the
+profiles-directory string into `szProfilesPath` where the C loads it into `szBuffer`. The next
+line expands `szBuffer` (still empty) INTO `szProfilesPath`, so the path became `""`.
+`CreateStandardProfile` did the same with the profile name. Two `[WCHAR; MAX_PATH]` locals, so
+nothing type-checks differently. **Fix:** pass the variable the C passes.
+`tools/scan_call_arg_swap.py` pairs the k-th call of each callee in a Rust fn with the k-th
+call in its own C, and flags a bare local that differs.
+
 ### `CONTAINING_RECORD` with its type and field passed as null pointers
 **Symptom:** a list walk reads a structure that is shifted by some fixed amount: 0x1E in
 po's `PopFlushVolumes` at setup's reboot (`DeviceObject` read out of the list links), or a
@@ -11322,6 +11333,19 @@ reported the page clean, the segment entry never became dirty, and `FreeSegmentP
 the returned old value. `tools/scan_read_after_clear.py` gates the shape at zero, and
 `--payload fatprobe` (step mapped-write) checks the behaviour in about a minute. It found this
 when the install smoke needed 12 minutes per try.
+
+### Shutdown never reboots: `MiShutdownSystem` loops on pages that are not dirty
+**Symptom:** the shutdown stops after `[PO] shutdown: MmShutdownSystem(0)`, with no write
+failures. `[MM] MiShutdownSystem: pass N wrote 49417 dirty data-file page(s)`: the same count
+every pass, and the pages it names live on the CD (`$PATH_TABLE$`, `REACTOS.CAB`), so they
+cannot really be dirty. **Cause:** `ntkrnl_sys::mm::IS_DIRTY_SSE` tested `0x8`, the low bit of
+the share count (mm.h: bits 3..11), not `0x2`. Every page mapped an odd number of times
+looked dirty, the write "succeeded", and the "while dirty" loop never ended. It sat harmless
+until the PTE-dirty fix above made the shutdown flush do real work. `ARM3/section.rs` carried
+a whole private SSE encoding as well (swap bit inverted, share count at bit 2), unused.
+**Fix:** use mm.h's encoding. `tools/scan_sse_helpers.py` evaluates every Rust `*_SSE` helper
+against the macro on sample entries. Read the printed `sse` value against the bit layout
+before trusting a predicate's verdict about it.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the

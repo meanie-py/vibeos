@@ -2180,6 +2180,62 @@ pub unsafe fn flush(srb: *mut SRB) {
 }
 """
 
+_CALL_ARG_SWAP_BAD = """\
+pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
+    let mut szProfilesPath: [WCHAR; 260] = [0; 260];
+    let mut szBuffer: [WCHAR; 260] = [0; 260];
+    LoadStringW(hInstance, IDS_PROFILEPATH, szProfilesPath.as_mut_ptr(), 260);
+    ExpandEnvironmentStringsW(szBuffer.as_mut_ptr(), szProfilesPath.as_mut_ptr(), 260);
+    1
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+// BOOL
+// InitializeProfiles(VOID)
+// {
+//     WCHAR szProfilesPath[MAX_PATH];
+//     WCHAR szBuffer[MAX_PATH];
+//     LoadStringW(hInstance, IDS_PROFILEPATH, szBuffer, ARRAYSIZE(szBuffer));
+//     ExpandEnvironmentStringsW(szBuffer, szProfilesPath, ARRAYSIZE(szProfilesPath));
+//     return TRUE;
+// }
+"""
+
+# The fix, plus a Rust alias of the C's variable (`let key = InputBuffer`), which is the same.
+_CALL_ARG_SWAP_GOOD = """\
+pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
+    let mut szProfilesPath: [WCHAR; 260] = [0; 260];
+    let mut szBuffer: [WCHAR; 260] = [0; 260];
+    LoadStringW(hInstance, IDS_PROFILEPATH, szBuffer.as_mut_ptr(), 260);
+    ExpandEnvironmentStringsW(szBuffer.as_mut_ptr(), szProfilesPath.as_mut_ptr(), 260);
+    1
+}
+pub unsafe fn ReadKey(InputBuffer: PVOID) {
+    let keyParameters: PVOID = InputBuffer;
+    ReadDvd(keyParameters);
+}
+// ============================================================================
+// ORIGINAL C SOURCE
+// ============================================================================
+// BOOL
+// InitializeProfiles(VOID)
+// {
+//     WCHAR szProfilesPath[MAX_PATH];
+//     WCHAR szBuffer[MAX_PATH];
+//     LoadStringW(hInstance, IDS_PROFILEPATH, szBuffer, ARRAYSIZE(szBuffer));
+//     ExpandEnvironmentStringsW(szBuffer, szProfilesPath, ARRAYSIZE(szProfilesPath));
+//     return TRUE;
+// }
+// VOID
+// ReadKey(PVOID InputBuffer)
+// {
+//     PVOID keyParameters;
+//     PVOID InputBuffer;
+//     ReadDvd(InputBuffer);
+// }
+"""
+
 _SSE_HELPERS_BAD = """\
 #[inline]
 pub fn IS_DIRTY_SSE(entry: ULONG_PTR) -> bool {
@@ -2654,6 +2710,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _CONST_NARROWING_BAD},
         good={"good.rs": _CONST_NARROWING_GOOD},
+    ),
+    Control(
+        name="scan_call_arg_swap",
+        script="tools/scan_call_arg_swap.py",
+        argv=["--lint"],
+        bad={"bad.rs": _CALL_ARG_SWAP_BAD},
+        good={"good.rs": _CALL_ARG_SWAP_GOOD},
     ),
     Control(
         name="scan_sse_helpers",
