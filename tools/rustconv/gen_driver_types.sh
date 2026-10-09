@@ -3196,6 +3196,54 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
+  comctl32)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/win32/comctl32/CMakeLists.txt
+    # (39 compiled TU(s), 170 headers in the include closure, 1098 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 396 external prototype(s) declared by the include closure, 76 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=1
+    DRIVER_DIR="${SRC}/dll/win32/comctl32"
+    WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <string.h>\n#include "windef.h"\n#include "winbase.h"\n#include "wingdi.h"\n#include "winuser.h"\n#include "winnls.h"\n#include "commctrl.h"\n#include "vfw.h"\n#include "mmsystem.h"\n#include "comctl32.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <stdlib.h>\n#define OEMRESOURCE\n#include "uxtheme.h"\n#include "vssym32.h"\n#include <ctype.h>\n#include <limits.h>\n#define COBJMACROS\n#define NONAMELESSUNION\n#include "winreg.h"\n#include "objbase.h"\n#include "winerror.h"\n#define NO_SHLWAPI_STREAM\n#include "shlwapi.h"\n#include <math.h>\n#include <stdio.h>\n#include "imm.h"\n#include <immdev.h>\n#include <imm32_undoc.h>\n#include "usp10.h"\n#include "vsstyle.h"\n#include "commoncontrols.h"\n#include "wine/exception.h"\n#include <assert.h>\n#include "winnt.h"\n#include "prsht.h"\n#define GLATESTING 0\n#include <stdlib.h> /* atoi */\n#include "wine/list.h"\n#include <windef.h>\n#include <reactos/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]comctl32_undoc\.h' --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]commoncontrols\.h'
+                  --allowlist-file '.*[/\\]imm32_undoc\.h'
+                  --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]immdev\.h'
+                  --allowlist-file '.*[/\\]mmsystem\.h'
+                  --allowlist-file '.*[/\\]objbase\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]psdk[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]reactos[/\\]undocuser\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]usp10\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]vfw\.h'
+                  --allowlist-file '.*[/\\]vsstyle\.h'
+                  --allowlist-file '.*[/\\]vssym32\.h'
+                  --allowlist-file '.*[/\\]windowsx\.h'
+                  --allowlist-file '.*[/\\]winerror\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*comctl32[/\\].*\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h'
+                  # objidl.h whole is ~3x the island; imagelist.c's ImageList_Read/Write only
+                  # call IStream_Read/Write/Seek through the vtable.
+                  --allowlist-type 'I(Sequential)?Stream(Vtbl)?'
+                  # rebar.c's SystemParametersInfoW(SPI_GETNONCLIENTMETRICS); winuser.h is not
+                  # allowlisted, and the c2rust alias named a struct nothing defined.
+                  --allowlist-type '(tag)?NONCLIENTMETRICSW' )
+    EXTRA_INC=( -I"${SRC}/dll/win32/comctl32" -I"${SRC}/build-i386/dll/win32/comctl32" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_WINE -D__ROS_LONG64__ -D_COMCTL32_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 

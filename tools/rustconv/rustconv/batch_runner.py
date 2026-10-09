@@ -194,6 +194,8 @@ def _submit_claude(
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
                 success=False,
                 error=f"empty output (stop_reason={stop_reason}, {output_tokens} output tokens)",
             )
@@ -204,6 +206,8 @@ def _submit_claude(
                 model=model,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
                 success=False,
                 error=(
                     f"truncated output at {output_tokens} tokens "

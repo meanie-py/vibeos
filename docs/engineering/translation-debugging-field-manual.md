@@ -1737,6 +1737,19 @@ sign as `signscale & 0x80` (bit 7 of the scale byte).
 when a macro has endian or arch branches, check which one the comment claims against the
 header itself. Grep the crate for every other composition of the same word.
 
+### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
+**Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the
+macro takes, or E0425 for a local (`infoPtr`, `hwnd`) inside a prelude macro's expansion.
+**Cause:** Wine's helper macros read locals they never take as parameters: comctl32's
+`HIDDENBAND(a)` and `IsOnlySet(flags)` read `infoPtr`, `add_flag(a)` reads `dwFlags` and
+`string`, and `REBAR_GetInfoPtr(wndPtr)` ignores its argument and reads `hwnd`. `macro_rules!`
+hygiene hides a call site's locals from the macro body, so the faithful one-parameter port does
+not resolve. Separately, the translated call sites guessed: most `HIDDENBAND` sites already
+passed `infoPtr` first, a few did not. **Fix:** hand-port above the generated block (so a
+replay keeps it), with each captured local as an explicit LEADING parameter, and make every call
+site pass it. One parse error like this halts rustc before type checking, which also makes
+crate-repair's pass look like it fixed everything (10 errors left, 0 applied).
+
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
 A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's
@@ -3545,6 +3558,13 @@ later arm**. It has shipped a BUGCHECK 0x1E, killed USB enumeration, and caused 
 `LCMapString` failure (a `switch` whose case labels became an or-pattern that swallowed a
 neighbour).
 
+**A C case label that ORs constants is ONE value; the same text as a Rust pattern is TWO.**
+treeview.c's `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` means 0x8009. Translated verbatim, it is an
+or-pattern matching 0x0009 or 0x8000, so a plain TVGN_CARET took the wrong arm and a real
+0x8009 fell to the default. rustc's only hint is an `unreachable pattern` warning on the next
+arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Grep the C for
+`case\s+\w+\s*\|` before trusting a translated `match`.
+
 **An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
 C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
 `goto Exit`/`break` becoming `break 'work`. Falling out of a C switch means *leaving* it — but
@@ -5044,8 +5064,27 @@ already been met the note is describing a bug, not a plan.
 - **Split-TU translation covers only the first chunk.** **Scanners skip macro-wrapped, SAL,
   callback and preprocessor-conditional definitions.** **Mid-size win32k leaves lost 25–50% of
   their functions.**
+- **`WINAPI` planned as the function's name.** tree-sitter's recovery from the unknown
+  convention macro lands either way round: `LPVOID WINAPI ReAlloc (` puts `WINAPI` in an ERROR
+  node, but `LPVOID WINAPI Alloc (` makes `WINAPI` the declarator and `Alloc` the ERROR.
+  comctl32's `Alloc` and `Free` became two functions named `WINAPI`. The scanner now takes the
+  identifier when the parsed name is a calling convention.
+- **A file-local rename (`#define A B` … `#undef A`) defines the internal body under the public
+  name.** imagelist.c renames 19 `ImageList_*` to `Internal_*`, defines the internal bodies with
+  the public spelling, then `#undef`s and defines the exported wrappers. The raw scan saw each
+  public name twice, so the Rust would have exported the unchecked internal body, and c2rust
+  (which sees `Internal_Add`) could not anchor it. The scanner applies such renames inside their
+  window, as the preprocessor does, when a definition sits inside one. Only renames under no
+  `#if`, or under `#ifdef __REACTOS__`, count: bitmap.c's sit under `USE_RTL_BITMAP64`.
 - **A stitcher comment-collapse drops whole bodies into a `//` line.** **A dropped function
   name becomes a bare tuple no-op.**
+- **A wrapped C comment whose next line starts `use ` was hoisted as an import.** toolbar.c's
+  `/* if hot, attempt to draw with hot image list, if fails,` / `use default image list */`
+  sent its second line to the file's `use` block, which left the comment open inside
+  `TOOLBAR_DrawImage` and hid the other 168 functions. Every body was banked and correct; only
+  the coverage check ("Planned Rust definitions absent") noticed. The hoister now tracks block
+  comments, and a failed coverage check keeps the stitch as `<stem>.stitch-rejected.rs` in the
+  run dir, since that text otherwise existed only in memory.
 - **`verify_lost_exports` cannot see a ONE-LINE `#[no_mangle]`** — its regex is multi-line.
   **Diff the `.spec` export list against the assembled `#[no_mangle]` set before building.**
 - **A prefast declaration written with the function TYPE becomes a null STATIC, and takes the
@@ -5157,6 +5196,24 @@ in, buy, and restore from a byte-exact backup verified with `git diff --quiet`.
 **Detection.** A column-0 sweep for `^name(` that is absent from the extracted set finds it with
 zero false positives on this file. Repo-wide it is noisy (`WINE_DEFAULT_DEBUG_CHANNEL` and other
 macro invocations sit at column 0 too), so it needs a macro-name filter before it can be a gate.
+
+**Now automatic for `__REACTOS__` (2026-10-08).** ReactOS-patched code does this constantly with
+`#ifdef __REACTOS__` / `#else` arms that each open their own `{` (comctl32's `COMBO_WindowProc`,
+`TOOLBAR_DrawButton` and six more; user32's `ComboWndProc_common`; classpnp's `class.c` lost 76
+of 91). `translate`'s `require_c_plan` refuses such a TU, and `scan_file` now rescans it with
+`__REACTOS__` defined (every compile line carries it). The rescan fires ONLY when the plain scan
+lost a live definition, so a file that already scanned completely keeps its exact body text and
+its banked translations. Resolving it unconditionally changed bodies in ~130 files.
+
+The same split can also cost money while losing nothing. Two split SIGNATURES in a row
+(listview.c's `LISTVIEW_NextIconPosTop`/`Left`) leave every function extracted, but tree-sitter
+wraps the rest of the file in one ERROR node, and the preamble keeps every top-level node
+that is not a function. listview's file context, sent with every call, was 281K characters
+of function bodies: 160K-token prompts, over Haiku 5.5's 100K price tier on every call. It
+cost more than the other 16 files of that run together. The scanner now counts definitions
+inside MALFORMED preamble nodes (`preamble_swallowed_functions`) and rescans with
+`__REACTOS__` resolved. listview 281K → 8.7K, toolbar 200K → 6.5K, user32's edit.c
+120K → 6K, and 60 more files.
 
 ### A `.c` in the source list can compile to an object with ZERO defined symbols
 

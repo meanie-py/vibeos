@@ -362,6 +362,16 @@ name = "com-sys"
 version = "0.1.0"
 
 [[package]]
+name = "comctl32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "compress"
 version = "0.1.0"
 

@@ -10,53 +10,61 @@ add_definitions(-D_WIN32_WINNT=0x600 -DWINVER=0x600)
 spec2def(comctl32.dll comctl32.spec ADD_IMPORTLIB)
 
 list(APPEND SOURCE
-    animate.c
-    button.c
-    combo.c
-    comboex.c
-    comctl32undoc.c
-    commctrl.c
-    datetime.c
-    dpa.c
-    draglist.c
-    dsa.c
-    edit.c
-    flatsb.c
-    header.c
-    hotkey.c
-    imagelist.c
-    ipaddress.c
-    listbox.c
-    listview.c
-    monthcal.c
-    nativefont.c
-    pager.c
-    progress.c
-    propsheet.c
-    rebar.c
-    smoothscroll.c
-    static.c
-    status.c
-    string.c
-    syslink.c
-    tab.c
-    taskdialog.c
-    theme_scrollbar.c
-    theming.c
-    toolbar.c
-    tooltips.c
-    trackbar.c
-    treeview.c
-    updown.c)
+    # animate.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/animate.rs)
+    # button.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/button.rs)
+    # combo.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/combo.rs)
+    # comboex.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/comboex.rs)
+    # comctl32undoc.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/comctl32undoc.rs)
+    # commctrl.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/commctrl.rs)
+    # datetime.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/datetime.rs)
+    # dpa.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/dpa.rs)
+    # draglist.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/draglist.rs)
+    # dsa.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/dsa.rs)
+    # edit.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/edit.rs)
+    # flatsb.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/flatsb.rs)
+    # header.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/header.rs)
+    # hotkey.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/hotkey.rs)
+    # imagelist.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/imagelist.rs)
+    # ipaddress.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/ipaddress.rs)
+    # listbox.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/listbox.rs)
+    # listview.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/listview.rs)
+    # monthcal.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/monthcal.rs)
+    # nativefont.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/nativefont.rs)
+    # pager.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/pager.rs)
+    # progress.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/progress.rs)
+    # propsheet.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/propsheet.rs)
+    # rebar.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/rebar.rs)
+    # smoothscroll.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/smoothscroll.rs)
+    # static.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/static.rs)
+    # status.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/status.rs)
+    # string.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/string.rs)
+    # syslink.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/syslink.rs)
+    # tab.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/tab.rs)
+    # taskdialog.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/taskdialog.rs)
+    # theme_scrollbar.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/theme_scrollbar.rs)
+    # theming.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/theming.rs)
+    # toolbar.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/toolbar.rs)
+    # tooltips.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/tooltips.rs)
+    # trackbar.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/trackbar.rs)
+    # treeview.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/treeview.rs)
+    # updown.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/updown.rs)
+    )
 
 list(APPEND PCH_SKIP_SOURCE
-    stubs.c)
+rust_cohab_stub.c
+    # stubs.c  # replaced by Rust (sdk/lib/rust/comctl32-rust/src/comctl32/stubs.rs)
+    )
 
+# Every translation unit is Rust now (comctl32-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(comctl32_rust comctl32-rust "" TRUE)
 add_library(comctl32 MODULE
     ${SOURCE}
     ${PCH_SKIP_SOURCE}
     rsrc.rc
     ${CMAKE_CURRENT_BINARY_DIR}/comctl32.def)
+add_dependencies(comctl32 rust_comctl32_rust)
+target_link_libraries(comctl32 ${comctl32_rust_LIB})
 
 set_module_type(comctl32 win32dll UNICODE)
 target_link_libraries(comctl32 uuid wine ${PSEH_LIB} oldnames)

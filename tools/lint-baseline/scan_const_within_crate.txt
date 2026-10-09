@@ -33,3 +33,5 @@ sdk/lib/rust/freeldr-rust/src/uefimem.rs: UNUSED_MAX_DESCRIPTOR_COUNT = 0x2710 [
 sdk/lib/rust/win32k-rust/src/desktop.rs: WINVER = 0x600 [WITHIN_CRATE]
 sdk/lib/rust/win32k-rust/src/ime.rs: WINVER = 0x502 [WITHIN_CRATE]
 sdk/lib/rust/win32k-rust/src/menu.rs: WINVER = 0x502 [WITHIN_CRATE]
+sdk/lib/rust/comctl32-rust/src/comctl32/header.rs: VERT_BORDER = 0x4 [WITHIN_CRATE]
+sdk/lib/rust/comctl32-rust/src/comctl32/status.rs: VERT_BORDER = 0x2 [WITHIN_CRATE]

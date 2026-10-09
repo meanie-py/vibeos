@@ -84,3 +84,12 @@ ntkrnlmp-cargo: KeInitializeProcess
 # `table[1]` on a `&mut [Code]` (inftrees.rs:70), smoltcp `data[field::DSCP_ECN]` on the
 # packet buffer (wire/ipv4.rs:411). Branch-derived constants; correct checks.
 
+
+comctl32-rust: THEMING_CallOriginalClass
+comctl32-rust: THEMING_ScrollbarSubclassProc
+# theming.c's `subclasses[]` and `originalProcs[NUM_SUBCLASSES]` are genuine one-entry static
+# tables under __REACTOS__ (the dialog subclass is `#ifndef __REACTOS__`), indexed by the subclass
+# number a window prop carries; ScrollbarSubclassProc inlines CallOriginalClass.
+# Test 1 (does the C over-allocate?): NO -- `static const` / `static WNDPROC[...]`, nothing allocated.
+# Test 2 (is the length a literal 1?): it is ARRAY_SIZE of a one-element initializer, not a `[1]`
+#   placeholder; a bogus prop index is out of bounds in the C too.

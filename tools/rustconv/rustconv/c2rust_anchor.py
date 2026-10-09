@@ -559,6 +559,12 @@ def _transpile_attempt(
     return result
 
 
+_EXPORT_NAMED = re.compile(
+    r'#\[export_name = "([A-Za-z_]\w*)"\]\s*(?:#\[[^\]]*\]\s*)*'
+    r'pub unsafe extern "[^"]+" fn ([A-Za-z_]\w*)'
+)
+
+
 def build_anchor_map(
     c_file: Path,
     timeout: int = 180,
@@ -578,6 +584,15 @@ def build_anchor_map(
     if strict and not fns and required_names:
         raise C2RustError(f"{c_file}: c2rust output contains no extracted function definitions")
     missing = (required_names or set()) - set(fns)
+    if missing:
+        # c2rust gives a second C definition of a name a `_0` Rust name and keeps the C one as
+        # `#[export_name]`. imagelist.c defines its internal bodies under the public spelling
+        # (`#define ImageList_Add Internal_Add`), `#undef`s, then defines the real exports:
+        # all 19 came back as `ImageList_Add_0` & co and read as missing anchors.
+        for exported, rust_name in _EXPORT_NAMED.findall(text):
+            if exported in missing and rust_name in fns:
+                fns[exported] = fns[rust_name]
+        missing = missing - set(fns)
     if missing:
         # A definition spelled with an SDK A/W macro (usetup console.c: `WriteConsole(`,
         # which UNICODE makes `WriteConsoleW`) is in c2rust's output under the expanded name.
