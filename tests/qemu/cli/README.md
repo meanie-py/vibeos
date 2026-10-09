@@ -649,6 +649,13 @@ every other boot starts from the livecd. Drives `tests/qemu/test_install.py`; on
 stage fails within seconds, with the loader's debugcon tail and the serial attached. About an
 hour under TCG, so it is its own verb and not a gate stage.
 
+Iterating on the installed system (GUI setup, userenv, winlogon, ...) without replaying text
+setup: every run leaves the disk exactly as setup left it at `<basetemp>/install0/
+install.qcow2` (copy it before the next run). `VIBEOS_INSTALL_STAGE1_DISK=<that copy>` starts
+stage 2 from it, and `VIBEOS_INSTALL_REFRESH=syssetup.dll,winlogon.exe` first copies this
+build's outputs for those names over every installed copy (CD files and reactos.cab files
+alike), the kernel and drivers included. Only a change to text setup itself needs a full run.
+
 ### `debug <verb> ...` — wraps the `qemu/` kernel-debugging toolkit
 Run-id-scoped GDB-over-the-real-boot debugging. Verbs pass through to the proven
 shell tools (`start` → `start.sh`, `inspect`/`bt`/`triage-bugcheck` →

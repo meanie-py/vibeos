@@ -2133,10 +2133,25 @@ unsafe extern "C" fn InstallReactOS() -> u32 {
     // HACK (upstream too): this should be done by the caller of InstallWindowsNt().
     // Enable the shutdown privilege and reboot the machine.
     if pSetupEnablePrivilege(SE_SHUTDOWN_NAME!() as PCWSTR, (TRUE) as i32) == 0 {
-        // DPRINT1 removed
+        DbgPrint(
+            c"[SYSSETUP] pSetupEnablePrivilege(SeShutdownPrivilege) failed (error %lu)\n".as_ptr(),
+            GetLastError(),
+        );
     }
-    ExitWindowsEx((EWX_REBOOT) as u32, 0);
+    // The install ends here: GUI setup's reboot into the second installed boot. Say whether
+    // it was accepted -- a refused ExitWindowsEx leaves the machine on its first-boot desktop.
+    let ok = ExitWindowsEx((EWX_REBOOT) as u32, 0);
+    DbgPrint(
+        c"[SYSSETUP] ExitWindowsEx(EWX_REBOOT) = %d (error %lu)\n".as_ptr(),
+        ok as i32,
+        GetLastError(),
+    );
     return 0;
+}
+
+extern "C" {
+    // ntdll, cdecl.
+    fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
 }
 
 #[no_mangle]

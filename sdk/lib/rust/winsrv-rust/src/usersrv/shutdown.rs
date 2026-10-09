@@ -530,6 +530,11 @@ unsafe extern "C" fn UserExitReactOS(CsrThread: *mut CSR_THREAD, Flags: UINT) ->
     UserExitReactOSImpl(CsrThread, Flags)
 }
 
+extern "C" {
+    // ntdll, cdecl.
+    fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
+}
+
 unsafe fn UserExitReactOSImpl(CsrThread: *mut CSR_THREAD, Flags: UINT) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut CallerLuid: LUID = core::mem::zeroed();
@@ -539,6 +544,14 @@ unsafe fn UserExitReactOSImpl(CsrThread: *mut CSR_THREAD, Flags: UINT) -> NTSTAT
 
     let mut Flags = Flags;
 
+    // The C's DPRINT1s on this path, restored: the request, and what win32k answered (which
+    // decides whether winlogon hears LN_LOGOFF at all).
+    DbgPrint(
+        c"[WINSRV] SrvExitWindowsEx(ClientId: %lx.%lx, Flags: 0x%x)\n".as_ptr(),
+        ProcessId as u32,
+        _ThreadId as u32,
+        Flags,
+    );
     if (Flags & EWX_CALLER_WINLOGON) != 0 {
         if ProcessId != LogonProcessId {
             return STATUS_ACCESS_DENIED;
@@ -566,6 +579,7 @@ unsafe fn UserExitReactOSImpl(CsrThread: *mut CSR_THREAD, Flags: UINT) -> NTSTAT
             &Flags as *const _ as *const core::ffi::c_void,
             core::mem::size_of::<UINT>() as ULONG,
         );
+        DbgPrint(c"[WINSRV] UserThreadInitiateShutdown -> 0x%08lx\n".as_ptr(), Status);
         match Status {
             STATUS_CANT_WAIT => {
                 CsrRevertToSelf();
