@@ -9801,6 +9801,59 @@ def test_nvme_fail_start_must_hand_its_messages_back(monkeypatch):
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
 
 
+def test_server_shaped_boots_must_prove_their_shape(monkeypatch):
+    """--headless and --boot-nvme reach the same desktop as an ordinary boot, so
+    only their own evidence says the rig really had no display, or really booted
+    from NVMe and left that volume to nvme.sys."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_HEADLESS", "1")
+    bad = smoke_mod._headless_check("[arm64vid] Framebuffer: 800x600 32 BPP\n")
+    assert bad and bad["classification"] == "NOT_HEADLESS"
+    assert (
+        smoke_mod._headless_check("[arm64vid] no firmware framebuffer: headless, 1024x768\n")
+        is None
+    )
+    monkeypatch.delenv("VIBEOS_QEMU_HEADLESS")
+    assert smoke_mod._headless_check("") is None
+    monkeypatch.setenv("VIBEOS_QEMU_BOOT_NVME", "1")
+    bad = smoke_mod._boot_nvme_check("[NVME] controller 0: bring-up failed\n")
+    assert bad and bad["classification"] == "NVME_BOOT_DISK_NOT_SEEN"
+    assert smoke_mod._boot_nvme_check(smoke_mod._NVME_PUBLISHED + "\n") is None
+    monkeypatch.delenv("VIBEOS_QEMU_BOOT_NVME")
+    assert smoke_mod._boot_nvme_check("") is None
+
+
+def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
+    """A translating SMMU's verdict is its faults: an attached device that DMAs
+    outside the identity map still reaches the desktop."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_SMMU", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE")
+    bad = smoke_mod._gic_check(
+        "[HAL] IORT: SMMUv3 at 0000000009050000 was disabled; now bypassing\n"
+    )
+    assert bad and bad["classification"] == "SMMU_NOT_TRANSLATING"
+    on = "[HAL] SMMUv3 at 0000000009050000: TRANSLATING - 16 StreamID bits\n"
+    attached = "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - translating\n"
+    bad = smoke_mod._gic_check(on)
+    assert bad and bad["classification"] == "SMMU_NOT_ATTACHED"
+    assert smoke_mod._gic_check(on + attached) is None
+    fault = "[HAL] SMMUv3 at 0000000009050000: FAULT type 10 StreamID 48 address {:016x}\n"
+    bad = smoke_mod._gic_check(on + attached + fault.format(0x1000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_BAD_DMA=100000000")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_MISSED_BAD_DMA"
+    caught = fault.format(0x1_0000_0000) + fault.format(0x1_0000_0FFC)
+    assert smoke_mod._gic_check(on + attached + caught) is None
+    bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU")
+
+
 def test_xhci_boot_must_interrupt_the_way_asked(monkeypatch):
     """A controller left on its line still enumerates, and the desktop needs no USB,
     so only the verdict can tell a broken message path from a working one."""

@@ -89,10 +89,15 @@ stub first). Real subsystem work, not stubs:
    `smoke --xhci msix|msi|line` runs the USB rig on each; with `msi` and
    `--tripwire XHCI_MSI_MESSAGES=<n>` the controller gets an MSI block of n. Getting
    xHCI onto MSI-X found pci.sys writing MSI-X tables before memory decode was on (field
-   manual). Owed: `CONNECT_MESSAGE_BASED_PASSIVE` (no consumer: KMDF does passive
-   handling itself over a DIRQL interrupt), and driving an SMMU for real (isolation)
-   rather than bypassing it. MOVI is built but never runs in QEMU: nothing connects a
-   message on a processor other than the one it was allocated for. The arm64 HAL's PCI config space comes from the MCFG since
+   manual). An SMMUv3 is driven for real with `--tripwire SMMU=TRANSLATE` (2026-10-08):
+   every device's StreamID gets a stream table entry at START, through one stage-1
+   identity map of RAM and the MSI doorbells, and faults are reported
+   (`NVME_BAD_DMA=<hex>` proves one is); bypass stays the default, as on Windows
+   without DMA remapping. Owed: per-device page tables (isolation between devices),
+   and `CONNECT_MESSAGE_BASED_PASSIVE`, which nothing calls (KMDF 1.17 connects only
+   `CONNECT_FULLY_SPECIFIED(_GROUP)` and does passive handling itself). MOVI is built
+   but never runs in QEMU: nothing connects a message on a processor other than the
+   one it was allocated for. The arm64 HAL's PCI config space comes from the MCFG since
    2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
    (pci.sys keeps the segment through bridges and in the requester ID the ITS routes
    by), and the HAL publishes a root bus for each segment past 0. `smoke --arch arm64

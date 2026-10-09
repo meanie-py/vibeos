@@ -11572,6 +11572,31 @@ list"), from which the upstream writer followed.
 
 ## arm64: SEH, unwind & bring-up
 
+### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
+- **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the
+  serial log stops at `[FLDR] past _changestack, entering RunLoader` with the CPU in
+  firmware code, then, once that is fixed, at a `!!FREELDR-RUST-PANIC@...ui.rs`, then
+  at `BugCheck 0xB4` (VIDEO_DRIVER_INIT_FAILURE) after `[arm64vid] No ARC framebuffer`.
+  Seen 2026-10-08 preparing for EC2 Graviton, which has no display.
+- **Cause:** four independent gaps, each hidden by every rig having a framebuffer:
+  1. **A dropped `#ifdef UEFIBOOT`.** ui.c falls back to the no-UI vtable when the text
+     UI cannot start; the translation kept only the BIOS `return FALSE`, with a comment
+     claiming UEFIBOOT was off. It is the crate's `uefi` feature, on for uefildr.efi.
+  2. **A zero-byte allocation.** With no display the framebuffer console's buffer size
+     is 0; `MmAllocateMemory(0)` reports itself through the text UI being initialized,
+     whose message box waits for a key on UEFI's console input forever. The C does the
+     same.
+  3. **A divide by zero C gets away with.** `UiIndicateProgress` divides by a progress
+     count only `UiInitProgressBar` sets; arm64 `udiv` by zero quietly yields 0, Rust
+     panics.
+  4. **No display, no win32k.** arm64vid bailed with no firmware framebuffer, as if a
+     VGA miniport would take over; arm64 has none.
+- **Fix:** restore the UEFI fallback under `cfg(feature = "uefi")`; no display, no
+  off-screen buffer; guard the division; arm64vid runs the desktop on a 1024x768 frame
+  in nonpaged memory (`Arm64VidHeadless`). The loader now says
+  `[FLDR] waiting for a key on the UEFI console` before blocking on one, since on a
+  headless machine that wait is the hang.
+
 ### `RtlVirtualUnwind` decoding and the frame-walk bugs
 - **`save_next` resolves FORWARD, not backward** `[§9.114]` — a **32%-wrong** decoder that
   silently mis-restored callee-saved registers. ARM64 `.xdata` unwind codes are stored in

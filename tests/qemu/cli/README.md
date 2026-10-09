@@ -136,6 +136,20 @@ all included), then auto-triage on failure.
   to the HAL (`[PNP] message interrupts: N back to the HAL, 0 refused`). Nothing else in a
   boot removes a device.
 
+- **`--cpu <model>`, `--headless`, `--boot-nvme`** (arm64) shape the machine like a
+  Graviton instance: a Neoverse core (`neoverse-n1`/`-v1`/`-n2`, `VIBEOS_QEMU_CPU`),
+  no display device so UEFI hands over no GOP (`VIBEOS_QEMU_HEADLESS=1`; FAILS
+  `NOT_HEADLESS` unless arm64vid ran on its in-memory frame), and the boot image on an
+  NVMe namespace as EC2's root volume is (`VIBEOS_QEMU_BOOT_NVME=1`; FAILS
+  `NVME_BOOT_DISK_NOT_SEEN` unless nvme.sys published it). More vCPUs than host CPUs
+  stretch the silence watchdog to 15 minutes: UEFI goes quiet that long under TCG.
+
+- **`--smmu --tripwire SMMU=TRANSLATE`** (arm64) drives the SMMUv3 for real instead of
+  bypassing it, and FAILS unless it translated (`SMMU_NOT_TRANSLATING`), every started
+  device's stream was attached (`SMMU_NOT_ATTACHED`), and nothing faulted
+  (`SMMU_FAULT`). Add `NVME_BAD_DMA=<hex>` and nvme.sys aims one Identify there: the
+  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it.
+
 - **`--xhci [msix|msi|line]`** (any arch) attaches the USB rig's `qemu-xhci`, keyboard and
   mouse (`VIBEOS_QEMU_XHCI=1`), interrupting by MSI-X (the default), plain MSI or its line
   (`VIBEOS_QEMU_XHCI_MSI`), and FAILS the boot unless usbxhci ran (`XHCI_NOT_ENGAGED`), the

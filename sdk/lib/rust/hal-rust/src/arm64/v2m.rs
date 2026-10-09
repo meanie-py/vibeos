@@ -118,6 +118,11 @@ unsafe fn probe() -> Option<u64> {
     Some(pa)
 }
 
+/// The frame's page, which devices write their MSIs to, for an SMMU to let through.
+pub(crate) unsafe fn doorbell_page() -> Option<u64> {
+    probe().map(|pa| pa & !0xFFF)
+}
+
 /// Is this INTID one of the frame's? Those are edge-triggered by construction.
 pub(crate) fn owns(intid: u32) -> bool {
     let base = SPI_BASE.load(Ordering::Relaxed);
