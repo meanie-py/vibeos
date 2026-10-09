@@ -1917,6 +1917,9 @@ HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Group",0x00000000,"SCSI miniport"
 HKLM,"SYSTEM\CurrentControlSet\Services\nvme","ImagePath",0x00020000,"system32\drivers\nvme.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Start",0x00010001,0x00000000
 HKLM,"SYSTEM\CurrentControlSet\Services\nvme","Type",0x00010001,0x00000001
+; Every address nvme.sys gives the controller comes from its DMA adapter, so it
+; may have a DMA-remapping domain of its own (pci.sys asks; the arm64 SMMU).
+HKLM,"SYSTEM\CurrentControlSet\Services\nvme\Parameters","DmaRemappingCompatible",0x00010001,0x00000001
 
 ; USB storage driver
 HKLM,"SYSTEM\CurrentControlSet\Services\usbstor","ErrorControl",0x00010001,0x00000001

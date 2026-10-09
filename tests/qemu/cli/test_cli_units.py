@@ -9882,6 +9882,30 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     assert smoke_mod._gic_check(on + attached + caught) is None
     bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
+    # nvme.sys is DMA-remapping compatible: with NVMe on, it gets a domain of its own.
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_STRAY_DMA=1")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_NO_DOMAIN"
+    own = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - "
+        "translating in a domain of its own (DMA-remapping compatible)\n"
+    )
+    bad = smoke_mod._gic_check(on + own)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    stray = "[NVME] tripwire: a stray Identify to RAM at 0x4a3f2000 {}\n"
+    landed = stray.format(
+        "completed; the controller WROTE 4096 byte(s) of a page it was never given"
+    )
+    bad = smoke_mod._gic_check(on + own + landed)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    held = stray.format("failed; the page is untouched")
+    bad = smoke_mod._gic_check(on + own + held)
+    assert bad and bad["classification"] == "SMMU_MISSED_STRAY_DMA"
+    assert smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010)) is None
+    bad = smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010) + fault.format(0x5000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.delenv("VIBEOS_QEMU_SMMU")
 

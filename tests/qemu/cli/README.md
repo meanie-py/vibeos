@@ -151,7 +151,12 @@ all included), then auto-triage on failure.
   bypassing it, and FAILS unless it translated (`SMMU_NOT_TRANSLATING`), every started
   device's stream was attached (`SMMU_NOT_ATTACHED`), and nothing faulted
   (`SMMU_FAULT`). Add `NVME_BAD_DMA=<hex>` and nvme.sys aims one Identify there: the
-  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it.
+  boot then FAILS (`SMMU_MISSED_BAD_DMA`) unless the SMMU faulted it. nvme.sys is
+  DMA-remapping compatible, so with `--nvme` its controller must get a domain of its
+  own (`SMMU_NO_DOMAIN`) that reaches only what its DMA adapter maps. Add
+  `NVME_STRAY_DMA=1` and it aims an Identify at a RAM page it never mapped: FAILS
+  unless the page came back untouched (`SMMU_STRAY_DMA_LANDED`) and the SMMU faulted
+  it (`SMMU_MISSED_STRAY_DMA`). The identity map would have let that write land.
 
 - **`--gic 3 --nvme --smp <n> --tripwire ITS_MISSTEER`** (arm64) binds every LPI one
   CPU over from the one it is handed out for, so only the ITS's MOVI, when the driver

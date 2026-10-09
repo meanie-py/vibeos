@@ -28,6 +28,14 @@
 //! as PRP1's offset must. Anything else goes through the bounce buffer, one
 //! command at a time; its PRP list is built once, at start.
 //!
+//! Every address the controller is given comes from the DMA adapter pci.sys
+//! hands out: its queues, PRP lists, bounce and identify buffers are common
+//! buffers, and a command's direct pages are mapped (MapTransfer) when it is
+//! issued and given back (FlushAdapterBuffers) when it completes or a reset fails
+//! it. That is what lets the service say it is DMA-remapping compatible, so
+//! behind a translating SMMU the controller reaches those pages and no others.
+//! With no adapter the addresses are physical, as before.
+//!
 //! Completions are reaped in the queue's DPC, queued by its ISR, and by a 10 ms
 //! timer that runs while anything is in flight on any queue. With an interrupt connected the timer
 //! reaps only a completion it already saw at its previous tick, so it cannot
@@ -65,7 +73,7 @@ use ntkrnl_sys::ddk::{
     ExQueueWorkItem, KeDelayExecutionThread, KeInitializeDpc, KeInitializeTimer, KeInsertQueueDpc, KeQueryPerformanceCounter,
     KeQueryActiveProcessors, KeSetTimer, KeStallExecutionProcessor, ExAllocatePoolWithTag, MmAllocateContiguousMemorySpecifyCache, MmFreeContiguousMemory,
     MmGetPhysicalAddress, _MEMORY_CACHING_TYPE_MmCached, _WORK_QUEUE_TYPE_DelayedWorkQueue, BOOLEAN, KDPC, KTIMER, LARGE_INTEGER,
-    MDL, PHYSICAL_ADDRESS, PKINTERRUPT, PMDL, PROCESSOR_NUMBER, PVOID, ULONG, WORK_QUEUE_ITEM,
+    MDL, PDMA_ADAPTER, PHYSICAL_ADDRESS, PKINTERRUPT, PMDL, PROCESSOR_NUMBER, PVOID, ULONG, WORK_QUEUE_ITEM,
 };
 use ntkrnl_sys::guards::SpinLockGuard;
 use ntkrnl_sys::ke::KSPIN_LOCK;
@@ -79,6 +87,7 @@ unsafe extern "system" {
 pub const PAGE: usize = 4096;
 /// Each queue's bounce buffer, and so the most one command moves (before MDTS).
 const BOUNCE: usize = 128 * 1024;
+pub const MAX_TRANSFER: usize = BOUNCE;
 const ADMIN_ENTRIES: u16 = 16;
 /// I/O queue entries. A queue of N entries holds N - 1 commands, so this many
 /// less one is the deepest an I/O queue gets: one command per slot.
@@ -157,6 +166,11 @@ pub static LOSE_COMPLETION: AtomicU32 = AtomicU32::new(0);
 /// Identify whose data goes to this address, which is not memory, so a translating
 /// SMMU can be seen to fault it. 0: off.
 pub static BAD_DMA: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+/// The test rig's `NVME_STRAY_DMA=1`: bring-up also aims an Identify at a page of
+/// RAM the adapter never handed out, filled with a pattern, and says whether the
+/// controller wrote it. Behind a DMA-remapping domain it must not have.
+pub static STRAY_DMA: AtomicBool = AtomicBool::new(false);
+const STRAY_PATTERN: u8 = 0xA5;
 static REAPED: AtomicU32 = AtomicU32::new(0);
 
 // The fields are read by Debug, in the log lines; dead-code analysis does not see that.
@@ -229,9 +243,9 @@ struct Queue {
 }
 
 impl Queue {
-    fn new(id: u16, entries: u16, sq: *mut u8, cq: *mut u8) -> Self {
-        let phys = |p: *mut u8| unsafe { MmGetPhysicalAddress(p.cast()).QuadPart } as u64;
-        Queue { id, entries, sq, sq_phys: phys(sq), cq, cq_phys: phys(cq), tail: 0, head: 0, phase: 1 }
+    /// The rings at `sq` and `cq`, whose device addresses are `sq_phys`, `cq_phys`.
+    fn new(id: u16, entries: u16, sq: *mut u8, sq_phys: u64, cq: *mut u8, cq_phys: u64) -> Self {
+        Queue { id, entries, sq, sq_phys, cq, cq_phys, tail: 0, head: 0, phase: 1 }
     }
 
     /// Back to empty, as a controller that has just been enabled sees it: both
@@ -414,6 +428,8 @@ struct Slot {
     offset: usize,
     bytes: usize,
     bounce: bool,
+    /// Its direct pages were mapped through the adapter, to give back.
+    mapped: bool,
     started: u64,
     warned: bool,
     prp: *mut u64,
@@ -466,6 +482,8 @@ pub struct Stats {
 
 pub struct Controller {
     regs: *mut u8,
+    /// pci.sys's DMA adapter for the controller, or null (addresses are physical).
+    dma: PDMA_ADAPTER,
     doorbell_stride: usize,
     ready_timeout_ms: u64,
     admin: Queue,
@@ -649,38 +667,57 @@ impl Command {
     }
 }
 
-/// Physically contiguous, cached memory the controller can address. Cached:
-/// PCIe DMA snoops the CPU caches on every machine this targets (x86, QEMU virt,
-/// Graviton), as it must for the requesters' own pages.
-unsafe fn contiguous(size: usize) -> *mut u8 {
+/// Contiguous, cached memory the controller can address, and its address as the
+/// controller sees it: the adapter's common buffer, or with no adapter physically
+/// contiguous memory and its physical address. Cached: PCIe DMA snoops the CPU
+/// caches on every machine this targets (x86, QEMU virt, Graviton), as it must for
+/// the requesters' own pages.
+unsafe fn common(dma: PDMA_ADAPTER, size: usize) -> Option<(*mut u8, u64)> {
+    if !dma.is_null() {
+        let mut logical: PHYSICAL_ADDRESS = core::mem::zeroed();
+        let allocate = (*(*dma).DmaOperations).AllocateCommonBuffer?;
+        let va = allocate(dma, size as ULONG, &mut logical, 1) as *mut u8;
+        return (!va.is_null()).then_some((va, logical.QuadPart as u64));
+    }
     let low: PHYSICAL_ADDRESS = core::mem::zeroed();
     let mut high: PHYSICAL_ADDRESS = core::mem::zeroed();
     let boundary: PHYSICAL_ADDRESS = core::mem::zeroed();
     // NVMe addresses all 64 bits; i386 kernels map no more than 4 GiB.
     high.QuadPart = if cfg!(target_pointer_width = "64") { 0x0000_FFFF_FFFF_FFFF } else { 0xFFFF_FFFF };
-    MmAllocateContiguousMemorySpecifyCache(size as _, low, high, boundary, _MEMORY_CACHING_TYPE_MmCached) as *mut u8
+    let va = MmAllocateContiguousMemorySpecifyCache(size as _, low, high, boundary, _MEMORY_CACHING_TYPE_MmCached) as *mut u8;
+    (!va.is_null()).then(|| (va, MmGetPhysicalAddress(va.cast()).QuadPart as u64))
+}
+
+unsafe fn free_common(dma: PDMA_ADAPTER, va: *mut u8, logical: u64, size: usize) {
+    match (*(dma.as_ref().map_or(null_mut(), |d| d.DmaOperations))).FreeCommonBuffer {
+        Some(free) if !dma.is_null() => {
+            let mut at: PHYSICAL_ADDRESS = core::mem::zeroed();
+            at.QuadPart = logical as i64;
+            free(dma, size as ULONG, at, va.cast(), 1);
+        }
+        _ => MmFreeContiguousMemory(va.cast()),
+    }
 }
 
 /// One I/O queue pair's memory and state, built in place in pool: with its
 /// slots it is kilobytes, and i386's kernel stack is 12 KiB all told.
-unsafe fn new_io(index: usize, entries: u16, vector: u16) -> Result<*mut Io, Error> {
-    let base = contiguous(QUEUE_TABLES * PAGE + BOUNCE);
-    if base.is_null() {
-        return Err(Error::NoMemory);
-    }
+unsafe fn new_io(dma: PDMA_ADAPTER, index: usize, entries: u16, vector: u16) -> Result<*mut Io, Error> {
+    let size = QUEUE_TABLES * PAGE + BOUNCE;
+    let (base, base_phys) = common(dma, size).ok_or(Error::NoMemory)?;
     let io = ExAllocatePoolWithTag(NONPAGED_POOL as _, size_of::<Io>() as _, IO_POOL_TAG) as *mut Io;
     if io.is_null() {
-        MmFreeContiguousMemory(base.cast());
+        free_common(dma, base, base_phys, size);
         return Err(Error::NoMemory);
     }
     core::ptr::write_bytes(base, 0, QUEUE_TABLES * PAGE);
     core::ptr::write_bytes(io.cast::<u8>(), 0, size_of::<Io>());
-    let phys = |p: *mut u8| MmGetPhysicalAddress(p.cast()).QuadPart as u64;
+    // The buffer is contiguous to the controller as well.
+    let phys = |p: *mut u8| base_phys + (p as usize - base as usize) as u64;
     let bounce_prp = base.add(2 * PAGE).cast::<u64>();
     let slot_prps = base.add(3 * PAGE);
     let bounce = base.add(QUEUE_TABLES * PAGE);
     (&raw mut (*io).index).write(index);
-    (&raw mut (*io).queue).write(Queue::new(index as u16 + 1, entries, base, base.add(PAGE)));
+    (&raw mut (*io).queue).write(Queue::new(index as u16 + 1, entries, base, base_phys, base.add(PAGE), phys(base.add(PAGE))));
     (&raw mut (*io).vector).write(vector);
     let slots = (&raw mut (*io).slots).cast::<Slot>();
     for i in 0..SLOTS {
@@ -689,6 +726,7 @@ unsafe fn new_io(index: usize, entries: u16, vector: u16) -> Result<*mut Io, Err
             offset: 0,
             bytes: 0,
             bounce: false,
+            mapped: false,
             started: 0,
             warned: false,
             prp: slot_prps.add(i * PRP_LIST).cast(),
@@ -709,6 +747,30 @@ unsafe fn new_io(index: usize, entries: u16, vector: u16) -> Result<*mut Io, Err
 }
 
 impl Controller {
+    /// The NVME_STRAY_DMA tripwire: an Identify into a page nobody gave the device.
+    unsafe fn stray_identify(&mut self) {
+        // A page-sized pool block is a whole page.
+        let page = ExAllocatePoolWithTag(NONPAGED_POOL as _, PAGE as _, IO_POOL_TAG) as *mut u8;
+        if page.is_null() {
+            nvprint!("tripwire: no page for the stray Identify\n");
+            return;
+        }
+        core::ptr::write_bytes(page, STRAY_PATTERN, PAGE);
+        let pa = MmGetPhysicalAddress(page.cast()).QuadPart as u64;
+        let cmd = Command::new(ADMIN_IDENTIFY, 0).prp(pa, 0).dw(10, CNS_CONTROLLER);
+        let outcome = match self.admin_command("tripwire stray identify", cmd) {
+            Ok(_) => "completed",
+            Err(_) => "failed",
+        };
+        let written = (0..PAGE).filter(|&i| *page.add(i) != STRAY_PATTERN).count();
+        if written == 0 {
+            nvprint!("tripwire: a stray Identify to RAM at {:#x} {}; the page is untouched\n", pa, outcome);
+        } else {
+            nvprint!("tripwire: a stray Identify to RAM at {:#x} {}; the controller WROTE {} byte(s) of a page it was never given\n", pa, outcome, written);
+        }
+        ntkrnl_sys::ddk::ExFreePoolWithTag(page.cast(), IO_POOL_TAG);
+    }
+
     fn rd(&self, off: usize) -> u32 {
         unsafe { read_volatile(self.regs.add(off).cast::<u32>()) }
     }
@@ -735,7 +797,7 @@ impl Controller {
     ///
     /// # Safety
     /// `regs` must map the controller's registers for `len` bytes.
-    pub unsafe fn start(regs: *mut u8, len: usize, targets: &[u64]) -> Result<Controller, Error> {
+    pub unsafe fn start(regs: *mut u8, len: usize, targets: &[u64], dma: PDMA_ADAPTER) -> Result<Controller, Error> {
         let cap = read_volatile(regs.add(REG_CAP).cast::<u32>()) as u64 | (read_volatile(regs.add(REG_CAP + 4).cast::<u32>()) as u64) << 32;
         let version = read_volatile(regs.add(REG_VS).cast::<u32>());
         if cap == u64::MAX || version >> 16 == 0 || version == u32::MAX {
@@ -764,18 +826,16 @@ impl Controller {
         );
 
         // Admin SQ, admin CQ, the identify page.
-        let base = contiguous(3 * PAGE);
-        if base.is_null() {
-            return Err(Error::NoMemory);
-        }
+        let (base, base_phys) = common(dma, 3 * PAGE).ok_or(Error::NoMemory)?;
         core::ptr::write_bytes(base, 0, 3 * PAGE);
         let mut c = Controller {
             regs,
+            dma,
             doorbell_stride,
             ready_timeout_ms,
-            admin: Queue::new(0, admin_entries, base, base.add(PAGE)),
+            admin: Queue::new(0, admin_entries, base, base_phys, base.add(PAGE), base_phys + PAGE as u64),
             identify: base.add(2 * PAGE),
-            identify_phys: MmGetPhysicalAddress(base.add(2 * PAGE).cast()).QuadPart as u64,
+            identify_phys: base_phys + 2 * PAGE as u64,
             next_cid: 0,
             max_transfer: BOUNCE,
             identity: core::mem::zeroed(),
@@ -804,6 +864,9 @@ impl Controller {
                 Err(e) => nvprint!("tripwire: an Identify to {:#x} failed: {:?}\n", bad, e),
             }
         }
+        if STRAY_DMA.load(Ordering::Relaxed) {
+            c.stray_identify();
+        }
         // MDTS (byte 77): the largest transfer, in units of the minimum page size.
         let mdts = *c.identify.add(77);
         if mdts != 0 && (PAGE << mdts) < c.max_transfer {
@@ -822,7 +885,7 @@ impl Controller {
             // Under MSI-X queue q raises message q + 1 when there is one, so its
             // interrupts are its own; on the pin, vector 0.
             let vector = if targets.len() >= 2 { q as u16 + 1 } else { 0 };
-            c.ios[q] = new_io(q, io_entries, vector)?;
+            c.ios[q] = new_io(c.dma, q, io_entries, vector)?;
             c.io_count = q + 1;
             if c.msix {
                 c.message_queue[vector as usize] = q as u8;
@@ -1166,6 +1229,7 @@ impl Controller {
             slot.offset = 0;
             slot.bytes = 0;
             slot.bounce = false;
+            slot.mapped = false;
             let cmd = if r.op == Op::Flush {
                 Command::new(NVM_FLUSH, r.nsid)
             } else {
@@ -1178,7 +1242,7 @@ impl Controller {
                 slot.bounce = !r.direct;
                 let (prp1, prp2) = if r.direct {
                     io.stats.direct += 1;
-                    Self::direct_prps(r, slot, offset, bytes)
+                    self.direct_prps(r, slot, offset, bytes)
                 } else {
                     io.stats.bounced += 1;
                     io.bounce_busy = true;
@@ -1220,24 +1284,74 @@ impl Controller {
         }
     }
 
-    /// PRP1 and PRP2 for `bytes` bytes at `offset` into `r`'s data, straight
-    /// from its MDL's page list (4.1.1): PRP1 the first byte, PRP2 the second
-    /// page or, past two, the slot's list of the rest.
-    unsafe fn direct_prps(r: &Request, slot: &mut Slot, offset: usize, bytes: usize) -> (u64, u64) {
+    /// PRP1 and PRP2 for `bytes` bytes at `offset` into `r`'s data (4.1.1): PRP1
+    /// the first byte, PRP2 the second page or, past two, the slot's list of the
+    /// rest. With an adapter, from the runs MapTransfer maps for the device (and
+    /// [`Controller::release_direct`] gives back); else straight from the MDL's
+    /// page list.
+    unsafe fn direct_prps(&self, r: &Request, slot: &mut Slot, offset: usize, bytes: usize) -> (u64, u64) {
         let at = r.mdl_offset + offset;
-        let prp1 = mdl_phys(r.mdl, at);
-        let first = PAGE - (prp1 as usize % PAGE);
-        if bytes <= first {
-            return (prp1, 0);
+        let map = (!self.dma.is_null()).then(|| (*(*self.dma).DmaOperations).MapTransfer).flatten();
+        let Some(map) = map else {
+            let prp1 = mdl_phys(r.mdl, at);
+            let first = PAGE - (prp1 as usize % PAGE);
+            if bytes <= first {
+                return (prp1, 0);
+            }
+            let rest = (bytes - first).div_ceil(PAGE);
+            if rest == 1 {
+                return (prp1, mdl_phys(r.mdl, at + first));
+            }
+            for i in 0..rest {
+                *slot.prp.add(i) = mdl_phys(r.mdl, at + first + i * PAGE);
+            }
+            return (prp1, slot.prp_phys);
+        };
+        // Each run is contiguous to the device; every page after PRP1's goes in the
+        // list, which then holds PRP2 itself when there is only one.
+        let mut va = self.data_va(r, offset);
+        let (mut left, mut prp1, mut pages) = (bytes, None, 0usize);
+        while left > 0 {
+            let mut run = left as ULONG;
+            let address = map(self.dma, r.mdl, null_mut(), va as PVOID, &mut run, (r.op == Op::Write) as BOOLEAN).QuadPart as u64;
+            // Past the first run, runs start on a page: it is the MDL's pages that end them.
+            let mut page = match prp1 {
+                None => (address & !(PAGE as u64 - 1)) + PAGE as u64,
+                Some(_) => address,
+            };
+            prp1.get_or_insert(address);
+            while page < address + run as u64 {
+                *slot.prp.add(pages) = page;
+                pages += 1;
+                page += PAGE as u64;
+            }
+            va += run as usize;
+            left -= run as usize;
         }
-        let rest = (bytes - first).div_ceil(PAGE);
-        if rest == 1 {
-            return (prp1, mdl_phys(r.mdl, at + first));
+        slot.mapped = true;
+        let prp1 = prp1.unwrap_or(0);
+        match pages {
+            0 => (prp1, 0),
+            1 => (prp1, *slot.prp),
+            _ => (prp1, slot.prp_phys),
         }
-        for i in 0..rest {
-            *slot.prp.add(i) = mdl_phys(r.mdl, at + first + i * PAGE);
+    }
+
+    /// The system's address `offset` bytes into `r`'s data, as the MDL describes it
+    /// (MapTransfer and FlushAdapterBuffers take that, not the PFNs).
+    unsafe fn data_va(&self, r: &Request, offset: usize) -> usize {
+        (*r.mdl).StartVa as usize + (*r.mdl).ByteOffset as usize + r.mdl_offset + offset
+    }
+
+    /// Give back what [`Controller::direct_prps`] mapped for a slot's command.
+    unsafe fn release_direct(&self, r: &Request, slot: &mut Slot) {
+        if !slot.mapped {
+            return;
         }
-        (prp1, slot.prp_phys)
+        slot.mapped = false;
+        if let Some(flush) = (*(*self.dma).DmaOperations).FlushAdapterBuffers {
+            flush(self.dma, r.mdl, null_mut(), self.data_va(r, slot.offset) as PVOID, slot.bytes as ULONG, (r.op == Op::Write) as BOOLEAN);
+        }
     }
 
     /// Reap what has completed on `io`, start what now can, and call the
@@ -1306,6 +1420,7 @@ impl Controller {
             };
             let r = &mut *slot.request;
             slot.request = null_mut();
+            self.release_direct(r, slot);
             io.in_flight -= 1;
             r.outstanding -= 1;
             if slot.bounce {
@@ -1436,6 +1551,8 @@ impl Controller {
                 }
                 let r = &mut *slot.request;
                 slot.request = null_mut();
+                // CC.EN is clear: nothing of it is moving any more.
+                c.release_direct(r, slot);
                 r.outstanding -= 1;
                 r.error.get_or_insert(Error::Reset);
                 io.in_flight -= 1;

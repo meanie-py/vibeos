@@ -1,9 +1,9 @@
 //! ARM64 DMA adapter — minimal coherent-DMA implementation for QEMU `virt`.
 //!
 //! The GPEX PCIe host bridge on `-M virt` is cache-coherent (`dma-coherent` in
-//! the DT/ACPI description) and there is no IOMMU in our configuration, so DMA
-//! is simply "device sees physical memory": no map registers, no bounce
-//! buffers, no cache maintenance. That collapses the NT DMA model to:
+//! the DT/ACPI description), and an SMMU, when one translates, maps the identity,
+//! so DMA is "device sees physical memory": no map registers, no bounce buffers,
+//! no cache maintenance. That collapses the NT DMA model to:
 //!
 //!   * `AllocateCommonBuffer`  = contiguous cached allocation + its physical
 //!     address (same pattern netstack-rust uses for its virtio/e1000 rings).
@@ -14,6 +14,13 @@
 //!     DISPATCH_LEVEL with a dummy MapRegisterBase (there is nothing to queue
 //!     for — map registers are infinite/free here).
 //!   * `FlushAdapterBuffers`   = TRUE no-op (coherent).
+//!
+//! Behind a translating SMMU, a device whose driver is DMA-remapping compatible has
+//! a domain of its own (smmuv3.rs), which reaches only what its adapter maps: every
+//! common buffer while it is allocated, every MapTransfer run until the flush, and
+//! every scatter/gather list until it is put back. Addresses stay the identity, so
+//! nothing here changes for any other device. Each adapter knows its device's
+//! requester ID (HalVibeosGetDmaAdapter, from pci.sys); HalGetAdapter's know none.
 //!
 //! Consumers: usbport-rust reaches this through
 //! `IoGetDmaAdapter` → pci.sys `BUS_INTERFACE_STANDARD.GetDmaAdapter` →
@@ -49,6 +56,14 @@ extern "C" {
 #[repr(C)]
 struct Arm64AdapterObject {
     dma_header: ddk::DMA_ADAPTER,
+    /// The device's PCI segment over its requester ID, or NO_REQUESTER.
+    requester: u32,
+}
+
+const NO_REQUESTER: u32 = u32::MAX;
+
+unsafe fn requester_of(adapter: *const ddk::DMA_ADAPTER) -> u32 {
+    if adapter.is_null() { NO_REQUESTER } else { (*(adapter as *const Arm64AdapterObject)).requester }
 }
 
 // One DMA_OPERATIONS table shared by every adapter. Function-pointer fields are
@@ -74,9 +89,8 @@ unsafe fn arm64_dma_ops() -> *mut ddk::DMA_OPERATIONS {
         (*ops).MapTransfer = Some(core::mem::transmute(Arm64DmaMapTransfer as usize));
         (*ops).GetDmaAlignment = Some(core::mem::transmute(Arm64DmaGetDmaAlignment as usize));
         (*ops).ReadDmaCounter = Some(core::mem::transmute(Arm64DmaReadDmaCounter as usize));
-        // Scatter-gather ops stay None — usbport/usbstor don't use them; a
-        // future consumer that does should get a loud None-unwrap, not a
-        // silently-wrong implementation.
+        (*ops).GetScatterGatherList = Some(core::mem::transmute(Arm64DmaGetScatterGatherList as usize));
+        (*ops).PutScatterGatherList = Some(core::mem::transmute(Arm64DmaPutScatterGatherList as usize));
         ARM64_DMA_OPS_READY.store(true, Ordering::Release);
     }
     ops
@@ -90,6 +104,22 @@ pub unsafe extern "system" fn HalGetAdapter(
     DeviceDescription: ddk::PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: ddk::PULONG,
 ) -> ddk::PADAPTER_OBJECT {
+    new_adapter(NO_REQUESTER, NumberOfMapRegisters)
+}
+
+/// pci.sys's BUS_INTERFACE_STANDARD.GetDmaAdapter: an adapter for the device with
+/// this requester ID (its PCI segment above it), so what it maps reaches that
+/// device's DMA-remapping domain if it has one.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosGetDmaAdapter(
+    RequesterId: ddk::ULONG,
+    DeviceDescription: ddk::PDEVICE_DESCRIPTION,
+    NumberOfMapRegisters: ddk::PULONG,
+) -> ddk::PDMA_ADAPTER {
+    new_adapter(RequesterId, NumberOfMapRegisters) as ddk::PDMA_ADAPTER
+}
+
+unsafe fn new_adapter(requester: u32, NumberOfMapRegisters: ddk::PULONG) -> ddk::PADAPTER_OBJECT {
     let adapter = ddk::ExAllocatePoolWithTag(
         ddk::_POOL_TYPE_NonPagedPool,
         core::mem::size_of::<Arm64AdapterObject>() as ddk::SIZE_T,
@@ -101,6 +131,7 @@ pub unsafe extern "system" fn HalGetAdapter(
     (*adapter).dma_header.Version = 1;
     (*adapter).dma_header.Size = core::mem::size_of::<ddk::DMA_ADAPTER>() as ddk::USHORT;
     (*adapter).dma_header.DmaOperations = arm64_dma_ops();
+    (*adapter).requester = requester;
 
     if !NumberOfMapRegisters.is_null() {
         // "Map registers" are free here; report a generous per-transfer cap so
@@ -143,6 +174,10 @@ pub unsafe extern "system" fn HalAllocateCommonBuffer(
     }
     core::ptr::write_bytes(va as *mut u8, 0, Length as usize);
     let base_phys = ddk::MmGetPhysicalAddress(va);
+    if !super::smmuv3::map(requester_of(AdapterObject as _), base_phys.QuadPart as u64, Length as u64) {
+        ddk::MmFreeContiguousMemory(va);
+        return core::ptr::null_mut();
+    }
     if !LogicalAddress.is_null() {
         *LogicalAddress = base_phys;
     }
@@ -158,6 +193,8 @@ pub unsafe extern "system" fn HalFreeCommonBuffer(
     CacheEnabled: ddk::BOOLEAN,
 ) {
     if !VirtualAddress.is_null() {
+        // The device stops reaching it before anything else can have it.
+        super::smmuv3::unmap(requester_of(AdapterObject as _), LogicalAddress.QuadPart as u64, Length as u64);
         ddk::MmFreeContiguousMemory(VirtualAddress);
     }
 }
@@ -247,7 +284,116 @@ unsafe extern "system" fn Arm64DmaFlushAdapterBuffers(
     Length: ddk::ULONG,
     WriteToDevice: ddk::BOOLEAN,
 ) -> ddk::BOOLEAN {
-    1 // coherent — nothing to flush
+    // Coherent, so nothing to flush; but the runs MapTransfer mapped for this
+    // transfer are given back.
+    let requester = requester_of(DmaAdapter);
+    if !Mdl.is_null() && super::smmuv3::is_strict(requester) {
+        for_each_run(Mdl, CurrentVa, Length, |pa, bytes| super::smmuv3::unmap(requester, pa, bytes));
+    }
+    1
+}
+
+/// Call `f` with each physically contiguous run of `Length` bytes of `Mdl`'s buffer
+/// from `CurrentVa`, from the MDL's page list. A chain of MDLs continues into the
+/// next one.
+unsafe fn for_each_run(mut mdl: ddk::PMDL, current_va: ddk::PVOID, length: ddk::ULONG, mut f: impl FnMut(u64, u64)) {
+    let mut left = length as usize;
+    let mut va = current_va as usize;
+    while !mdl.is_null() && left != 0 {
+        let start = (*mdl).StartVa as usize + (*mdl).ByteOffset as usize;
+        let end = start + (*mdl).ByteCount as usize;
+        if va < start || va >= end {
+            // Not in this MDL: a chained transfer starts each next MDL at its start.
+            va = start;
+        }
+        let pfns = mdl.offset(1) as *const ddk::PFN_NUMBER;
+        while va < end && left != 0 {
+            let offset = va - (*mdl).StartVa as usize;
+            let pa = ((*pfns.add(offset >> PAGE_SHIFT)) as u64) << PAGE_SHIFT | (offset & (PAGE_SIZE - 1)) as u64;
+            // Extend while the next page follows physically.
+            let mut run = (PAGE_SIZE - (offset & (PAGE_SIZE - 1))).min(end - va).min(left);
+            while run < left && va + run < end {
+                let next = (va + run - (*mdl).StartVa as usize) >> PAGE_SHIFT;
+                if *pfns.add(next) != *pfns.add(next - 1) + 1 {
+                    break;
+                }
+                run = (run + PAGE_SIZE).min(end - va).min(left);
+            }
+            f(pa, run as u64);
+            va += run;
+            left -= run;
+        }
+        mdl = (*mdl).Next;
+    }
+}
+
+/// GetScatterGatherList: the buffer's physical runs, mapped into the device's domain
+/// if it has one, handed to `ExecutionRoutine` at DISPATCH_LEVEL right away (there
+/// are no map registers to wait for). PutScatterGatherList gives them back.
+unsafe extern "system" fn Arm64DmaGetScatterGatherList(
+    DmaAdapter: ddk::PDMA_ADAPTER,
+    DeviceObject: ddk::PDEVICE_OBJECT,
+    Mdl: ddk::PMDL,
+    CurrentVa: ddk::PVOID,
+    Length: ddk::ULONG,
+    ExecutionRoutine: ddk::PDRIVER_LIST_CONTROL,
+    Context: ddk::PVOID,
+    WriteToDevice: ddk::BOOLEAN,
+) -> ddk::NTSTATUS {
+    type ListControl = unsafe extern "system" fn(ddk::PDEVICE_OBJECT, ddk::PIRP, ddk::PSCATTER_GATHER_LIST, ddk::PVOID);
+    let Some(routine) = ExecutionRoutine else {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    };
+    let routine: ListControl = core::mem::transmute(routine);
+    if Mdl.is_null() || Length == 0 {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let mut runs = 0usize;
+    for_each_run(Mdl, CurrentVa, Length, |_, _| runs += 1);
+    let bytes = core::mem::size_of::<ddk::SCATTER_GATHER_LIST>() + runs * core::mem::size_of::<ddk::SCATTER_GATHER_ELEMENT>();
+    let list = ddk::ExAllocatePoolWithTag(ddk::_POOL_TYPE_NonPagedPool, bytes as ddk::SIZE_T, HAL_DMA_TAG) as ddk::PSCATTER_GATHER_LIST;
+    if list.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let requester = requester_of(DmaAdapter);
+    let elements = (*list).Elements.as_mut_ptr();
+    let (mut n, mut mapped) = (0usize, true);
+    for_each_run(Mdl, CurrentVa, Length, |pa, len| {
+        let e = elements.add(n);
+        (*e).Address.QuadPart = pa as i64;
+        (*e).Length = len as ddk::ULONG;
+        (*e).Reserved = 0;
+        n += 1;
+        mapped &= super::smmuv3::map(requester, pa, len);
+    });
+    (*list).NumberOfElements = n as ddk::ULONG;
+    (*list).Reserved = 0;
+    if !mapped {
+        Arm64DmaPutScatterGatherList(DmaAdapter, list, WriteToDevice);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    let old_irql = KfRaiseIrql(DISPATCH_LEVEL);
+    let irp = if DeviceObject.is_null() { core::ptr::null_mut() } else { (*DeviceObject).CurrentIrp };
+    routine(DeviceObject, irp, list, Context);
+    KfLowerIrql(old_irql);
+    STATUS_SUCCESS
+}
+
+unsafe extern "system" fn Arm64DmaPutScatterGatherList(
+    DmaAdapter: ddk::PDMA_ADAPTER,
+    ScatterGather: ddk::PSCATTER_GATHER_LIST,
+    WriteToDevice: ddk::BOOLEAN,
+) {
+    if ScatterGather.is_null() {
+        return;
+    }
+    let requester = requester_of(DmaAdapter);
+    let elements = (*ScatterGather).Elements.as_ptr();
+    for i in 0..(*ScatterGather).NumberOfElements as usize {
+        let e = elements.add(i);
+        super::smmuv3::unmap(requester, (*e).Address.QuadPart as u64, (*e).Length as u64);
+    }
+    ddk::ExFreePoolWithTag(ScatterGather as ddk::PVOID, HAL_DMA_TAG);
 }
 
 unsafe extern "system" fn Arm64DmaFreeAdapterChannel(DmaAdapter: ddk::PDMA_ADAPTER) {}
@@ -311,6 +457,8 @@ unsafe extern "system" fn Arm64DmaMapTransfer(
     if (*Length) as usize > max_len {
         *Length = max_len as ddk::ULONG;
     }
+    // Until FlushAdapterBuffers gives it back.
+    super::smmuv3::map(requester_of(DmaAdapter), phys.QuadPart as u64, *Length as u64);
     phys
 }
 

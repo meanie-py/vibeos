@@ -55,8 +55,10 @@
 >   code runs); `--smp 32` is the largest tried.
 > - `--smmu --tripwire SMMU=TRANSLATE`: the HAL drives the SMMUv3 for real (an
 >   identity map of RAM and MSI doorbells, a stream table entry per device), and
->   `NVME_BAD_DMA=<hex>` shows a stray DMA reported as a fault. Bypass stays the
->   default, as on Windows without DMA remapping.
+>   `NVME_BAD_DMA=<hex>` shows a stray DMA reported as a fault. nvme.sys is
+>   DMA-remapping compatible, so its controller gets a domain holding only what its
+>   DMA adapter maps; `NVME_STRAY_DMA=1` proves a write to RAM it was not given
+>   faults. Bypass stays the default, as on Windows without DMA remapping.
 >
 > **Still unanswerable without the instance:** Graviton's ACPI tables (dump them
 > from a Linux instance first: they become host-test fixtures), firmware-left LPI

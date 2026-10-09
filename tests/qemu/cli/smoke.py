@@ -1053,6 +1053,10 @@ _SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing"
 # arm64/smmuv3.rs, driving the SMMU for real (the SMMU=TRANSLATE tripwire).
 _SMMU_TRANSLATING = re.compile(r"\[HAL\] SMMUv3 at \S+: TRANSLATING")
 _SMMU_ATTACHED = re.compile(r"\[HAL\] SMMUv3 at \S+: requester \S+ is StreamID \S+ - translating")
+# ...and nvme.sys, whose service is DMA-remapping compatible, in a domain of its own.
+_SMMU_OWN_DOMAIN = "translating in a domain of its own"
+# nvme-rust nvme.rs stray_identify (the NVME_STRAY_DMA tripwire).
+_STRAY = re.compile(r"tripwire: a stray Identify to RAM at 0x([0-9a-fA-F]+) \w+; (.*)$", re.M)
 
 
 def _smmu_translate_check(text: str) -> dict | None:
@@ -1074,11 +1078,50 @@ def _smmu_translate_check(text: str) -> dict | None:
             "classification": "SMMU_NOT_ATTACHED",
             "salient": ["a device's stream was never attached to the SMMU's identity map", *lines],
         }
+    if nvme_requested() and _SMMU_OWN_DOMAIN not in text:
+        return {
+            "classification": "SMMU_NO_DOMAIN",
+            "salient": [
+                "nvme.sys is DMA-remapping compatible, but no device got a domain of its own",
+                *lines,
+            ],
+        }
     faults = [
         ln.strip()
         for ln in text.splitlines()
         if "SMMUv3" in ln and ("FAULT" in ln or "global error" in ln)
     ]
+
+    def in_page(line: str, target: int) -> bool:
+        at = re.search(r"address ([0-9a-fA-F]+)$", line)
+        return bool(at) and target <= int(at[1], 16) < target + 0x1000
+
+    # NVME_STRAY_DMA: nvme.sys aims an Identify at a RAM page its adapter never
+    # handed out. Its domain must fault it, and the page must come back untouched;
+    # the identity map would have let the write land.
+    if "NVME_STRAY_DMA" in os.environ.get("VIBEOS_TRIPWIRE", ""):
+        stray = _STRAY.search(text)
+        if not stray or "untouched" not in stray[2]:
+            return {
+                "classification": "SMMU_STRAY_DMA_LANDED",
+                "salient": [
+                    "a stray Identify to a page nvme.sys never mapped was not stopped"
+                    if stray
+                    else "nvme.sys never reported its stray Identify",
+                    *([stray[0]] if stray else []),
+                ],
+            }
+        page = int(stray[1], 16)
+        if not any(in_page(ln, page) for ln in faults):
+            return {
+                "classification": "SMMU_MISSED_STRAY_DMA",
+                "salient": [
+                    f"the stray Identify to {page:#x} left its page untouched, but the SMMU "
+                    "reported no fault there",
+                    stray[0],
+                ],
+            }
+        faults = [ln for ln in faults if not in_page(ln, page)]
     # NVME_BAD_DMA=<hex>: nvme.sys aims one Identify (4 KiB of data) at that address
     # on purpose, and the SMMU must fault it there; QEMU's device writes it a few
     # bytes at a time, so a fault per write. Every other fault still fails.
@@ -1087,11 +1130,7 @@ def _smmu_translate_check(text: str) -> dict | None:
         target = int(bad[1], 16)
         address = f"{target:016x}"
 
-        def in_buffer(line: str) -> bool:
-            at = re.search(r"address ([0-9a-fA-F]+)$", line)
-            return bool(at) and target <= int(at[1], 16) < target + 0x1000
-
-        caught = [ln for ln in faults if in_buffer(ln)]
+        caught = [ln for ln in faults if in_page(ln, target)]
         if not caught:
             return {
                 "classification": "SMMU_MISSED_BAD_DMA",

@@ -93,16 +93,24 @@ stub first). Real subsystem work, not stubs:
    every device's StreamID gets a stream table entry at START, through one stage-1
    identity map of RAM and the MSI doorbells, and faults are reported
    (`NVME_BAD_DMA=<hex>` proves one is); bypass stays the default, as on Windows
-   without DMA remapping. Owed: per-device page tables (isolation between devices),
-   and `CONNECT_MESSAGE_BASED_PASSIVE`, which nothing calls (KMDF 1.17 connects only
-   `CONNECT_FULLY_SPECIFIED(_GROUP)` and does passive handling itself). MOVI is built
-   but never runs in QEMU: nothing connects a message on a processor other than the
-   one it was allocated for. The arm64 HAL's PCI config space comes from the MCFG since
+   without DMA remapping. A device whose driver is DMA-remapping compatible (its
+   service's `Parameters\DmaRemappingCompatible` = 1, read by pci.sys as Windows does)
+   gets a domain of its own (2026-10-09): its own CD, ASID and page tables, which hold
+   only what its DMA adapter maps (common buffers, MapTransfer runs, scatter/gather
+   lists), refcounted per page and TLB-invalidated on release. nvme.sys takes every
+   address from its adapter now and declares itself compatible; `NVME_STRAY_DMA=1`
+   proves a DMA to RAM it was never given faults and leaves the page untouched. Owed:
+   `CONNECT_MESSAGE_BASED_PASSIVE`, which nothing calls (KMDF 1.17 connects only
+   `CONNECT_FULLY_SPECIFIED(_GROUP)` and does passive handling itself), and the other
+   drivers (usbport, the virtio ones) still on physical addresses, so on the shared
+   identity map. MOVI is proven by `--tripwire ITS_MISSTEER`, a segment past 0 by
+   `--nvme-segment`. The arm64 HAL's PCI config space comes from the MCFG since
    2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
    (pci.sys keeps the segment through bridges and in the requester ID the ITS routes
    by), and the HAL publishes a root bus for each segment past 0. `smoke --arch arm64
-   --nvme-bridge` runs nvme.sys behind a PCIe root port on bus 1. Segments past 0 are
-   untested: QEMU's virt machine has one.
+   --nvme-bridge` runs nvme.sys behind a PCIe root port on bus 1, and `--nvme-segment`
+   on segment 1 (QEMU's virt machine has one segment, so the HAL presents a pxb-pcie
+   expander's buses as a second; `PCI_SEGMENT_SPLIT`).
 2. **Write-combined mappings** (`MmWriteCombined` through a correctly programmed PAT).
    Getting it wrong is mostly a performance problem, but it can show up as visible
    corruption.
