@@ -70,18 +70,17 @@ pub fn HRESULT_FROM_WIN32(x: u32) -> HRESULT {
 // QueryInterface miss and the object "just doesn't work" with no link error.
 
 // ---- wine debug channel macro forms (TRACE!(..) style call sites) ----
+// ERR!/FIXME! are the shared winedebug-rust ones: the C format interpolated through
+// DbgPrint. They used to print "(see source)" and swallow their arguments as raw
+// tokens, so no argument here had ever been type-checked.
 #[macro_export]
 macro_rules! TRACE { ($($t:tt)*) => {{}} }
 #[macro_export]
 macro_rules! WARN { ($($t:tt)*) => {{}} }
 #[macro_export]
-macro_rules! ERR { ($($t:tt)*) => {{
-    unsafe { $crate::debug_shims::ERR(b"(see source)\0".as_ptr() as *const core::ffi::c_char) }
-}} }
+macro_rules! ERR { ($($t:tt)*) => { ::winedebug_rust::ERR!($($t)*) } }
 #[macro_export]
-macro_rules! FIXME { ($($t:tt)*) => {{
-    unsafe { $crate::debug_shims::FIXME(b"(see source)\0".as_ptr() as *const core::ffi::c_char) }
-}} }
+macro_rules! FIXME { ($($t:tt)*) => { ::winedebug_rust::FIXME!($($t)*) } }
 
 // ---- STDMETHODCALLTYPE vtbl thunks ----
 // com-sys's bindgen vtbl slots spell the COM calling convention CONCRETELY:

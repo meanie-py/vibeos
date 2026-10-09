@@ -2982,7 +2982,7 @@ fn SFCF_CreateInstance(
 }
 stdmethod! {
 fn SFCF_LockServer(iface: LPCLASSFACTORY, dolock: BOOL) -> HRESULT {
-    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
+    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
     FIXME!(b"(%p)->(%d),stub!\n\0".as_ptr() as *const i8, This, dolock);
     return S_OK;
 }

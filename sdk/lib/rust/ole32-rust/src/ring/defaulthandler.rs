@@ -252,7 +252,7 @@ unsafe fn DefaultHandler_NDIUnknown_QueryInterface(
         if FAILED(hr) {
             FIXME!(
                 b"interface %s not implemented by data cache\n\0".as_ptr() as PCHAR,
-                debugstr_guid(riid),
+                debugstr_guid((riid).cast()),
             );
         }
         return hr;

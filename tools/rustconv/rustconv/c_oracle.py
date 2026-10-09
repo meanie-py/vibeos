@@ -158,13 +158,19 @@ def generate(cml: str) -> str:
         target = _target_of(cmd)
         if cmd.name in _SKIP or cmd.name.startswith("rust_") or target not in oracle:
             continue
-        words = [r for w in _words(cmd.args) if (r := rewrite(w)) is not None]
+        raw = _words(cmd.args)
+        words = [r for w in raw if (r := rewrite(w)) is not None]
         if cmd.name in ("add_executable", "add_library"):
             at = 2 if len(words) > 1 and words[1] in ("STATIC", "SHARED", "MODULE", "OBJECT") else 1
             if "EXCLUDE_FROM_ALL" not in words:
                 words.insert(at, "EXCLUDE_FROM_ALL")
-        elif not [w for w in words[1:] if w not in ("PUBLIC", "PRIVATE", "INTERFACE")]:
-            continue  # only Rust pieces were configured (add_dependencies(x rust_x))
+        elif len(words) < len(raw) and not [
+            w for w in words[1:] if w not in ("PUBLIC", "PRIVATE", "INTERFACE")
+        ]:
+            # Only Rust pieces were configured (add_dependencies(x rust_x)). A command that
+            # takes the target ALONE is real configuration: comctl32's oracle dropped
+            # set_wine_module_FIXME(comctl32) this way and lost Wine's ARRAY_SIZE.
+            continue
         body.append(f"{cmd.name}({' '.join(words)})")
     body = _prune_empty_ifs(body)
     head = [

@@ -1857,6 +1857,15 @@ Three kinds of divergence hide in that, and they are not equally serious:
   rather than live (the tree's five call sites all pass `GetRValue`-style bytes), but it is the
   same class as msgina's `StringCchPrintfW` dropping its bound.
 
+- **A macro that swallows its arguments hides them from the type checker.** Wine's
+  ERR/FIXME/WARN/TRACE were the same story at 31 byte-identical `winedebug.rs` copies, now
+  `winedebug-rust`. Two crates had their own instead: ole32 and oleaut32 printed `"(see
+  source)"` for ~300 ERR/FIXME sites through a `($($t:tt)*)` muncher, and version-rust made
+  FIXME a no-op. Forwarding those to the real macros surfaced **47 compile errors** in
+  arguments no compiler had ever seen: `u16`/`u8` passed to `...`, `debugstr_guid` fed the
+  wrong pointer type, and 44 parameters the translator had renamed `_riid`, `_This` — because
+  with every use swallowed, they really did look unused. A `$($t:tt)*` debug macro is a dropped
+  print AND an unchecked expression; use the shared crate.
 - **Not a gap at all — the island HAS it, under a name nobody guessed.** A C `enum` member is
   emitted by bindgen, but only fully qualified by its anonymous enum's generated tag:
   shobjidl.h's `FVM_ICON` exists in shell32's island solely as
@@ -3578,8 +3587,10 @@ neighbour).
 treeview.c's `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` means 0x8009. Translated verbatim, it is an
 or-pattern matching 0x0009 or 0x8000, so a plain TVGN_CARET took the wrong arm and a real
 0x8009 fell to the default. rustc's only hint is an `unreachable pattern` warning on the next
-arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Grep the C for
-`case\s+\w+\s*\|` before trusting a translated `match`.
+arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Gated two ways now:
+`tools/scan_case_bitor_pattern.py` (in `vibeos-cli check`) flags any Rust or-pattern whose
+constants some C `case` ORs together, and rustconv's body checks refuse the shape at
+translation time, so the model retries instead of shipping it.
 
 **An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
 C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
@@ -6227,6 +6238,19 @@ linking, silently wrong. `_WIN32_WINNT=0x502` instead of the module's real `0x60
 `s_PolicyTable` came out 169 rows; the real build is **159**. **Verify against ground truth,
 not a hand re-preprocess:** `strings -el <the pre-flip .c.obj>` shows exactly which literals
 the real build compiled in. A bare `clang -E` with guessed `-D`s is how the bug arose.
+
+### A per-ARCH `#define` gets baked in by a translation preprocessed under one arch
+The same hazard as the row-set entry above, along the arch axis, and the build cannot see it
+because every target compiles. comctl32's `commctrl.c` builds its SxS manifest name from
+`ARCH` (`#ifdef __i386__` → `L"x86"`, `__x86_64__` → `L"amd64"`, `__aarch64__` → `L"arm64"`).
+The c2rust pass ran under the arm64 profile, so the Rust held a transmuted byte literal
+spelling `arm64_microsoft.windows.common-controls_...manifest` on EVERY arch. On i386 and amd64
+`CreateActCtxW` failed with ERROR_FILE_NOT_FOUND (the `err:(...commctrl.c:163)` line every
+boot printed), and neither the v5 nor the v6 activation context existed. Found 2026-10-09 by
+reading an amd64 modrun serial log for something else. Fix: `#[cfg(target_arch)]` consts
+and a `const fn` that assembles the name. Review hint: a C file with an arch `#if` whose
+translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
+them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
 
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first

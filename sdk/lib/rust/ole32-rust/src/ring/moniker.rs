@@ -1961,7 +1961,7 @@ fn MonikerMarshalInner_QueryInterface(
         IMarshal_AddRef(core::ptr::addr_of_mut!((*This).IMarshal_iface));
         return S_OK;
     }
-    FIXME!(b"No interface for %s\n\0".as_ptr(), debugstr_guid(riid));
+    FIXME!(b"No interface for %s\n\0".as_ptr(), debugstr_guid((riid).cast()));
     E_NOINTERFACE
 }
 }

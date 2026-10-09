@@ -22,6 +22,7 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 com-sys = { path = "../com-sys" }
 # The bindgen island is path-included here too (see lib.rs): `shellcom` re-exports its DATA
 # types from it, so any crate that compiles shellcom.rs needs the island, and the island
