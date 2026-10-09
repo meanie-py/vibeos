@@ -1299,7 +1299,7 @@ def _strip_channel_items(text: str) -> str:
     return text
 
 
-def _wine_debug_channels(state: dict, crate: Path) -> list[str]:
+def _wine_channel_macro_calls(state: dict, crate: Path) -> list[str]:
     """Give each module its `WINE_DEFAULT_DEBUG_CHANNEL(ch)` deterministically.
 
     The macro defines a per-file `static struct __wine_debug_channel __wine_dbch_ch =
@@ -1721,7 +1721,7 @@ def stage_integrate(stem: str) -> None:
     changed += len(placeholders)
     if placeholders:
         print(f"integrate: `static X: () = ();` placeholders dropped in {', '.join(placeholders)}")
-    channels = _wine_debug_channels(state, crate)
+    channels = _wine_channel_macro_calls(state, crate)
     changed += len(channels)
     if channels:
         print(
@@ -1828,6 +1828,11 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     for the default, `__wine_dbch___default = &__wine_dbch_ch`. Statics in a HEADER, so no
     translated function carries them and the island has only an `extern` -- usrmgr linked
     with `undefined symbol ___wine_dbch___default` on i386, as appwiz had (by hand)."""
+    if "macro_rules! wine_default_debug_channel" in prelude.read_text():
+        # Each file defines its own channel through the macro (_wine_channel_macro_calls):
+        # comctl32's 39 TUs have 39 different DEFAULT channels, which one prelude-level
+        # `__wine_dbch___default` cannot express. Writing statics here would duplicate them.
+        return []
     module_dir = REPO / state["module_dir"]
     default: str | None = None
     declared: list[str] = []
