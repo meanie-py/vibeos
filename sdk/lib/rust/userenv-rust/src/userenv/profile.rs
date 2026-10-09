@@ -690,12 +690,12 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
     'done: {
     pUserSid = GetUserSid(hToken);
     if pUserSid.is_null() {
-        profile_fail!("CopySystemProfile: GetUserSid", GetLastError());
+        DPRINT1!("CopySystemProfile: GetUserSid", GetLastError());
         break 'done;
     }
 
     if GetUserSidStringFromToken(hToken, &mut SidString) == 0 {
-        profile_fail!("CopySystemProfile: GetUserSidStringFromToken", GetLastError());
+        DPRINT1!("CopySystemProfile: GetUserSidStringFromToken", GetLastError());
         break 'done;
     }
 
@@ -724,7 +724,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
         &mut dwDisposition,
     ) as u32;
     if dwError != ERROR_SUCCESS {
-        profile_fail!("CopySystemProfile: RegCreateKeyExW(ProfileList\\<sid>)", dwError);
+        DPRINT1!("CopySystemProfile: RegCreateKeyExW(ProfileList\\<sid>)", dwError);
         break 'done;
     }
 
@@ -737,7 +737,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
         RtlLengthSid(pUserSid),
     ) as u32;
     if dwError != ERROR_SUCCESS {
-        profile_fail!("CopySystemProfile: RegSetValueExW(Sid)", dwError);
+        DPRINT1!("CopySystemProfile: RegSetValueExW(Sid)", dwError);
         break 'done;
     }
 
@@ -763,7 +763,7 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
         ((wcslen(&szRawProfilePath[0]) + 1) * core::mem::size_of::<u16>()) as u32,
     ) as u32;
     if dwError != ERROR_SUCCESS {
-        profile_fail!("CopySystemProfile: RegSetValueExW(ProfileImagePath)", dwError);
+        DPRINT1!("CopySystemProfile: RegSetValueExW(ProfileImagePath)", dwError);
         break 'done;
     }
 
@@ -773,25 +773,25 @@ pub unsafe extern "system" fn CopySystemProfile(_Unused: u32) -> BOOL {
         szRawProfilePath.len() as u32, // C: ARRAYSIZE(szRawProfilePath)
     ) == 0
     {
-        profile_fail!("CopySystemProfile: ExpandEnvironmentStringsW", GetLastError());
+        DPRINT1!("CopySystemProfile: ExpandEnvironmentStringsW", GetLastError());
         break 'done;
     }
 
     if CreateDirectoryW(&szProfilePath[0], core::ptr::null_mut()) == 0 {
         if GetLastError() != ERROR_ALREADY_EXISTS {
-            profile_fail!("CopySystemProfile: CreateDirectoryW(systemprofile)", GetLastError());
+            DPRINT1!("CopySystemProfile: CreateDirectoryW(systemprofile)", GetLastError());
         break 'done;
         }
     }
 
     cchSize = szDefaultProfilePath.len() as u32; // C: ARRAYSIZE(szDefaultProfilePath)
     if GetDefaultUserProfileDirectoryW(&mut szDefaultProfilePath[0], &mut cchSize) == 0 {
-        profile_fail!("CopySystemProfile: GetDefaultUserProfileDirectoryW", GetLastError());
+        DPRINT1!("CopySystemProfile: GetDefaultUserProfileDirectoryW", GetLastError());
         break 'done;
     }
 
     if CopyDirectory(&szProfilePath[0], &szDefaultProfilePath[0]) == 0 {
-        profile_fail!("CopySystemProfile: CopyDirectory(Default User -> systemprofile)", GetLastError());
+        DPRINT1!("CopySystemProfile: CopyDirectory(Default User -> systemprofile)", GetLastError());
         break 'done;
     }
 

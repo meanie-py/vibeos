@@ -22,8 +22,8 @@ extern "C" {
     pub fn DbgPrint(Format: *const core::ffi::c_char, ...) -> u32;
 }
 
-/// `[USERENV] profiles: <step> failed (error N)` on the debug port.
-macro_rules! profile_fail {
+/// The C's DPRINT1 on the profile path: `[USERENV] profiles: <step> failed (error N)`.
+macro_rules! DPRINT1 {
     ($step:expr, $err:expr) => {
         $crate::DbgPrint(
             concat!("[USERENV] profiles: ", $step, " failed (error %lu)\n\0").as_ptr()
