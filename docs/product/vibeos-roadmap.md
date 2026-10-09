@@ -595,6 +595,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09 on the C
+  ndis.sys). The baseline for translating ndis: nothing else on our media reaches NDIS
+  (netstack drives virtio and e1000 100E/100F itself). The payload boots QEMU's e1000
+  82544GC and, through ndisuio, binds, queries the MAC and link, sets the packet filter, sends
+  an ARP who-has to slirp's gateway and reads the reply. Getting it green fixed ndisuio's read
+  and write (no `DO_BUFFERED_IO`) and the arm64 HAL's missing scatter/gather DMA ops.
+  **Open, both found with an rtl8139 on arm64:** (1) rtl8139's driver accepts only port
+  BARs, and arm64's `virt` machine maps its I/O BAR as memory, so `MiniportInitialize` fails;
+  (2) ndis then still publishes the adapter to protocols: ndisuio bound to one named `\`,
+  the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
+  (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
+
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
   the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
