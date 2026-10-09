@@ -7970,6 +7970,12 @@ guarantees** — `copy` and `copy_if_different` differ precisely on whether mtim
 - **A reconstructed `build-arm64` dir → perpetual CMake reconfigure → permanent false
   `STALE_MEDIA`** `[§9.6e]`. Not a code signal. `mkramdisk.sh --refresh` also assumes a prior
   full build populated the media tree.
+- **Build a dirty tree, commit exactly that, and smoke said `STALE_MEDIA`** ("N path(s) vs
+  the build's commit") on all three arches, although the build's `warm-receipt` tree WAS
+  `HEAD^{tree}`. The scoped fingerprints hashed `git diff HEAD` text, so committing moved
+  them. Stamps now carry `tree_content_hash` (a scratch-index `git add -A`), which is the
+  same committed or not. Settle a STALE_MEDIA you doubt with the receipt tree vs
+  `git rev-parse HEAD^{tree}`, never with `--allow-stale`.
 - **A bad `mkramdisk` run hangs arm64 late boot** `[§9.6d]` — serial reaches csrss → user32 →
   winsrv → mpr → `ufat.dll`. Regenerate (`--refresh`) and re-smoke **before** suspecting code.
 - **arm64 "uefildr StartImage: Unsupported" is a CORRUPTED `qemu/efivars.fd`**, not build drift

@@ -101,7 +101,11 @@ def test_tree_content_hash_is_the_same_committed_or_not(tiny_repo: Path):
     """Build a dirty tree, then commit exactly what was built: the media are fresh. The
     scoped fingerprint hashes `git diff HEAD` text, so it moved on the commit and every
     smoke of a just-committed build said STALE_MEDIA for an identical tree."""
-    scope = [".", ":(exclude)docs"]
+    # An exclude naming a gitignored path made `git add -A -- <scope>` exit 1 in make_stamp.
+    scope = [".", ":(exclude)docs", ":(exclude).claude"]
+    (tiny_repo / ".gitignore").write_text(".claude\n")
+    (tiny_repo / ".claude").mkdir()
+    (tiny_repo / ".claude" / "s.json").write_text("{}\n")
     (tiny_repo / "kernel.c").write_text("int k;\n")
     (tiny_repo / "a.txt").write_text("edited\n")
     dirty = provenance.tree_content_hash(tiny_repo, scope)

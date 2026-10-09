@@ -145,7 +145,10 @@ def tree_content_hash(repo: Path, paths: list[str]) -> str:
         if index.is_file():
             shutil.copy2(index, scratch)
         env = dict(os.environ, GIT_INDEX_FILE=str(scratch))
-        _run_bytes(["git", "add", "-A", "--", *paths], repo, env=env)
+        # Stage the WHOLE tree and scope only the listing: `git add -A -- <pathspec>`
+        # exits 1 when an exclude names a gitignored path (`.claude`), and that took a
+        # build down in make_stamp.
+        _run_bytes(["git", "add", "-A"], repo, env=env)
         entries = _run_bytes(["git", "ls-files", "-s", "--", *paths], repo, env=env)
     return hashlib.sha256(entries).hexdigest()
 
