@@ -259,7 +259,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
                 b"Int 15h AX=E820h returned an invalid entry length! (would-be-PcBiosMapCount = %lu, Entry length = (%Iu <=) %lu (<= %Iu))\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (crate::RTL_SIZEOF_THROUGH_FIELD!(BIOS_MEMORY_MAP, Type)) as usize, (Regs.x.ecx) as usize, (core::mem::size_of::<BIOS_MEMORY_MAP>()) as usize,
             );
             if PcBiosMapCount > 0 || Regs.x.ecx > ((core::mem::size_of::<BIOS_MEMORY_MAP>()) as u32) {
-                ASSERTMSG(
+                ASSERTMSG!(
                     b"Int 15h AX=E820h returned an invalid entry length!\n\0".as_ptr() as PCHAR,
                     0u8,
                 );

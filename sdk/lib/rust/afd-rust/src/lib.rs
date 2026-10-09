@@ -10,6 +10,11 @@
 #![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 pub mod types; // afd-private + TDI/shared struct layouts (gen_driver_types.sh, per-arch)
 #[macro_use] // AFD_DbgPrint! no-op macro must be in scope for the modules below
 pub mod glue; // #define consts/type-aliases/macros bindgen doesn't expand

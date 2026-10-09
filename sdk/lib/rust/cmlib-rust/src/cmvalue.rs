@@ -61,7 +61,7 @@ pub unsafe extern "system" fn CmpCopyCell(
 }
 
 use crate::glue::{
-    CmpIsKeyValueSmall, HvAllocateCell, HvFreeCell, HvMarkCellDirty, ASSERT, };
+    CmpIsKeyValueSmall, HvAllocateCell, HvFreeCell, HvMarkCellDirty, };
 
 // ---- file-scope preamble (translated) ----
 // #define NDEBUG not converted (preprocessor macro without constant value)
@@ -175,7 +175,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
     data_cell: *mut HCELL_INDEX,
 ) -> NTSTATUS {
     PAGED_CODE!();
-    ASSERT(data_size > 0x4 /* CM_KEY_VALUE_SMALL */);
+    ASSERT!(data_size > 0x4 /* CM_KEY_VALUE_SMALL */);
 
     let _ = (&hive, data_size);
 
@@ -186,7 +186,7 @@ pub unsafe extern "system" fn CmpSetValueDataNew(
 
     let cell_data = HvGetCell(hive, *data_cell) as PCELL_DATA;
     if cell_data.is_null() {
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     RtlCopyMemory(
@@ -330,7 +330,7 @@ pub unsafe extern "system" fn CmpFreeValue(Hive: *mut _HHIVE, Cell: HCELL_INDEX)
     /* Get the cell data */
     let Value = HvGetCell(Hive, Cell) as PCM_KEY_VALUE;
     if Value.is_null() {
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     /* Free it */
@@ -361,7 +361,7 @@ pub unsafe extern "system" fn CmpGetValueData(
     PAGED_CODE!();
 
     /* Sanity check */
-    ASSERT((*Value).Signature == CM_KEY_VALUE_SIGNATURE);
+    ASSERT!((*Value).Signature == CM_KEY_VALUE_SIGNATURE);
 
     /* Set failure defaults */
     *BufferAllocated = 0;
@@ -404,16 +404,16 @@ pub unsafe extern "system" fn CmpAddValueToList(
     PAGED_CODE!();
 
     /* Sanity check */
-    ASSERT(Index <= (*ChildList).Count);
+    ASSERT!(Index <= (*ChildList).Count);
 
     /* Get the number of entries in the child list */
     ChildCount = (*ChildList).Count;
     ChildCount += 1;
     if ChildCount > 1 {
-        ASSERT((*ChildList).List != HCELL_NIL);
+        ASSERT!((*ChildList).List != HCELL_NIL);
 
         /* The cell should be dirty at this point */
-        ASSERT(HvIsCellDirty(Hive, (*ChildList).List) != 0);
+        ASSERT!(HvIsCellDirty(Hive, (*ChildList).List) != 0);
 
         /* Check if we have less then 100 children */
         if ChildCount < 100 {
@@ -433,7 +433,7 @@ pub unsafe extern "system" fn CmpAddValueToList(
         ListCell = HvReallocateCell(Hive, (*ChildList).List, Length);
     } else {
         /* This is our first child, so allocate a single cell */
-        ASSERT((*ChildList).List == HCELL_NIL);
+        ASSERT!((*ChildList).List == HCELL_NIL);
         ListCell = HvAllocateCell(
             Hive,
             core::mem::size_of::<HCELL_INDEX>() as u32,
@@ -452,7 +452,7 @@ pub unsafe extern "system" fn CmpAddValueToList(
 
     /* Get the actual key list memory */
     let CellData = HvGetCell(Hive, ListCell) as PCELL_DATA;
-    ASSERT(!CellData.is_null());
+    ASSERT!(!CellData.is_null());
 
     /* Loop all the children */
     let key_list = core::ptr::addr_of_mut!((*CellData).u.KeyList) as *mut HCELL_INDEX;
@@ -469,7 +469,7 @@ pub unsafe extern "system" fn CmpAddValueToList(
 
     /* Release the list cell and make sure the value cell is dirty */
     HvReleaseCell(Hive, ListCell);
-    ASSERT(HvIsCellDirty(Hive, ValueCell) != 0);
+    ASSERT!(HvIsCellDirty(Hive, ValueCell) != 0);
 
     /* We're done here */
     STATUS_SUCCESS
@@ -496,7 +496,7 @@ pub unsafe extern "system" fn CmpCopyValue(
     /* Get the actual source data */
     Value = HvGetCell(SourceHive, SourceValueCell) as PCM_KEY_VALUE;
     if Value.is_null() {
-        ASSERT(false);
+        ASSERT!(false);
     }
 
     /* Copy the value cell body */
@@ -512,7 +512,7 @@ pub unsafe extern "system" fn CmpCopyValue(
     if DataSize == 0 {
         /* Nothing to copy */
         NewValue = HvGetCell(DestinationHive, NewValueCell) as PCM_KEY_VALUE;
-        ASSERT(!NewValue.is_null());
+        ASSERT!(!NewValue.is_null());
         (*NewValue).DataLength = 0;
         (*NewValue).Data = HCELL_NIL;
         HvReleaseCell(DestinationHive, NewValueCell);
@@ -528,14 +528,14 @@ pub unsafe extern "system" fn CmpCopyValue(
         } else {
             /* The value is small, but was stored in a regular cell. Get the data from it. */
             CellData = HvGetCell(SourceHive, (*Value).Data) as PCELL_DATA;
-            ASSERT(!CellData.is_null());
+            ASSERT!(!CellData.is_null());
             SmallData = *(CellData as *const u32);
             HvReleaseCell(SourceHive, (*Value).Data);
         }
 
         /* This is a small key, set the data directly inside */
         NewValue = HvGetCell(DestinationHive, NewValueCell) as PCM_KEY_VALUE;
-        ASSERT(!NewValue.is_null());
+        ASSERT!(!NewValue.is_null());
         (*NewValue).DataLength = DataSize + CM_KEY_VALUE_SPECIAL_SIZE;
         (*NewValue).Data = SmallData;
         HvReleaseCell(DestinationHive, NewValueCell);
@@ -557,7 +557,7 @@ pub unsafe extern "system" fn CmpCopyValue(
         }
 
         NewValue = HvGetCell(DestinationHive, NewValueCell) as PCM_KEY_VALUE;
-        ASSERT(!NewValue.is_null());
+        ASSERT!(!NewValue.is_null());
         (*NewValue).DataLength = DataSize;
         (*NewValue).Data = NewDataCell;
         HvReleaseCell(DestinationHive, NewValueCell);

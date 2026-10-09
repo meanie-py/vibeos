@@ -576,7 +576,7 @@ unsafe fn LinuxReadInitrd(LinuxInitrdFile: u32) -> u8 {
     }
     #[cfg(target_arch = "x86_64")]
     {
-        ASSERT((LinuxInitrdLoadAddress as usize) < 0x100000000);
+        ASSERT!((LinuxInitrdLoadAddress as usize) < 0x100000000);
     }
 
     (*LinuxSetupSector).RamdiskAddress = PtrToUlong(LinuxInitrdLoadAddress);

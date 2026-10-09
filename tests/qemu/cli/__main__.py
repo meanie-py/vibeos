@@ -268,8 +268,13 @@ def build_parser() -> argparse.ArgumentParser:
         "(VIBEOS_SERIAL_TIMESTAMPS=1) and print a boot-phase report "
         "(tools/boot_phase_report.py) after each boot",
     )
-    s.add_argument("--no-gdb", action="store_true")
-    s.add_argument("--attach-on-fail", action="store_true")
+    s.add_argument(
+        "--attach-on-fail",
+        action="store_true",
+        help="on a FAILED boot, keep the VM running with a gdbstub and print its run-id "
+        "for `vibeos-cli gdb inspect/stop <run-id>` (smoke has no stub otherwise; "
+        "the old --no-gdb was read by nothing and is gone)",
+    )
     s.add_argument(
         "--repeat",
         type=int,

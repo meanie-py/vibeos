@@ -40,7 +40,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
         return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
     }
 
-    ASSERT((*FCB).ConnectOptions);
+    ASSERT!((*FCB).ConnectOptions);
 
     if (*FCB).FilledConnectOptions < BufferSize {
         BufferSize = (*FCB).FilledConnectOptions;

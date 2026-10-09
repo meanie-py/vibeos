@@ -230,8 +230,12 @@ def declared_corpus() -> list[str]:
     return out
 
 
-def find_artifact(build: Path, crate: str) -> Path | None:
-    want = "lib" + crate.replace("-", "_") + ".a"
+def artifact_index(build: Path) -> dict[str, Path]:
+    """Every `lib*.a` under the build tree -> the first path the walk meets it at.
+
+    ONE walk for the whole corpus. This was a walk PER CRATE -- 240 full descents of
+    the build tree, ~8 s of a run whose cached verdicts take well under one."""
+    out: dict[str, Path] = {}
     for dirpath, dirnames, filenames in os.walk(build):
         # A crate's own cargo target dir under the build tree is intermediate
         # output, not the artifact the link consumes. PRUNE it rather than
@@ -239,9 +243,15 @@ def find_artifact(build: Path, crate: str) -> Path | None:
         # into the one tree a concurrent build is rewriting, so it can raise
         # FileNotFoundError out of the walk before it ever inspects a path.
         dirnames[:] = sorted(d for d in dirnames if not d.endswith("-target"))
-        if want in filenames:
-            return Path(dirpath) / want
-    return None
+        for name in filenames:
+            if name.startswith("lib") and name.endswith(".a"):
+                out.setdefault(name, Path(dirpath) / name)
+    return out
+
+
+def find_artifact(build: Path, crate: str, index: dict[str, Path] | None = None) -> Path | None:
+    want = "lib" + crate.replace("-", "_") + ".a"
+    return (artifact_index(build) if index is None else index).get(want)
 
 
 def declared_cargo_images(build: Path, arch: str) -> list[tuple[str, Path]]:
@@ -663,8 +673,9 @@ def main(argv: list[str]) -> int:
     images = declared_cargo_images(build, args.arch)
     missing, findings = [], []
     work: list[tuple[str, Path]] = []
+    index = artifact_index(build)
     for crate in corpus:
-        art = find_artifact(build, crate)
+        art = find_artifact(build, crate, index)
         if art is None:
             missing.append(crate)
         else:

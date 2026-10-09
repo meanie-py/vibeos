@@ -2876,7 +2876,8 @@ class QemuVM:
                 )
             )
             os.replace(tmp_lock, self._lock_path)
-            atexit.register(lambda p=self._lock_path: p.unlink(missing_ok=True))
+            self._lock_atexit = lambda p=self._lock_path: p.unlink(missing_ok=True)
+            atexit.register(self._lock_atexit)
         except OSError:
             self._lock_path = None
 
@@ -3555,6 +3556,78 @@ class QemuVM:
                 os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
         except (ProcessLookupError, OSError):
             pass
+
+    def detach_for_debug(self, owner_pid: int, run_id: str) -> dict:
+        """Leave the VM RUNNING for a debugger instead of stopping it; return its handles.
+
+        `smoke --attach-on-fail`. What this process owned has to be handed over, or the
+        kept VM is either killed or lost the moment the launcher exits:
+          * the 30-min watchdog is a daemon thread of THIS process -- it goes, and the
+            cap lives on as the lock's fresh `deadline`, which the reaper enforces;
+          * the lock is re-registered under `owner_pid` (the session that will debug,
+            alive after we exit) as `{owner}-{qemu}.json`, the name `qemu/stop.sh`
+            removes, and its atexit unlink is dropped -- otherwise the lock vanished at
+            exit and the VM ran untracked, invisible to `ps`/`kill` and past any cap;
+          * the serial/QMP clients close: both are this process's sockets and cannot
+            outlive it, so the boot's serial.log is a SNAPSHOT from here on.
+        Slots and the CPU lease are released when this process exits (they are its
+        fds), so the kept VM runs outside slot accounting. That is deliberate: holding
+        a per-arch slot for up to the lifetime cap would queue every later same-arch
+        boot behind a VM nobody is booting."""
+        proc = self._proc
+        if proc is None or proc.poll() is not None:
+            raise RuntimeError("cannot keep a VM whose QEMU has already exited")
+        if self._watchdog is not None:
+            self._watchdog.cancel()
+            self._watchdog = None
+        self.serial.close()
+        self.qmp.close()
+        for server in self._echo_servers:
+            server.shutdown()
+            server.server_close()
+        self._echo_servers = []
+        deadline = int(time.time() + MAX_VM_LIFETIME_SECONDS)
+        old = getattr(self, "_lock_path", None)
+        info: dict = {}
+        if old is not None:
+            try:
+                info = json.loads(old.read_text())
+            except (OSError, ValueError):
+                info = {}
+        info.update(
+            launcher_pid=owner_pid,
+            qemu_pid=proc.pid,
+            arch=self.config.arch,
+            deadline=deadline,
+            run_id=run_id,
+            source="smoke --attach-on-fail",
+        )
+        LOCK_DIR.mkdir(parents=True, exist_ok=True)
+        lock = LOCK_DIR / f"{owner_pid}-{proc.pid}.json"
+        tmp = lock.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(info))
+        os.replace(tmp, lock)
+        if old is not None and old != lock:
+            old.unlink(missing_ok=True)
+        hook = getattr(self, "_lock_atexit", None)
+        if hook is not None:
+            atexit.unregister(hook)
+        self._lock_path = None
+        self._proc = None  # stop() is now a no-op on the process; it is no longer ours
+        handles = {
+            "qemu_pid": proc.pid,
+            "deadline": deadline,
+            "lock": str(lock),
+            "gdb_host": self.gdb_host,
+            "gdb_port": self.gdb_port or 0,
+            "win_uid": self._win_uid,
+            "staging": str(self._win_staging or ""),
+        }
+        # Neither is ours any more: a later stop() must not rmtree the staging the
+        # debugger is booting from, nor kill the kept VM by its uid.
+        self._win_staging = None
+        self._win_uid = ""
+        return handles
 
     def stop(self) -> None:
         """Kill QEMU process, clean up sockets."""

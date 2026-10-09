@@ -8,6 +8,8 @@ QemuVM (which already owns slots/reaper/cap/live-log). Supports --repeat N
 
 from __future__ import annotations
 
+import dataclasses
+import json
 import os
 import re
 import subprocess
@@ -288,6 +290,7 @@ def _boot_vm(
     want_ladder: bool = False,
     timings: dict[str, float] | None = None,
     boot_arch: str | None = None,
+    attach: bool = False,
 ) -> dict:
     """A single independent boot. Returns {ok, outcome, classification, ...}.
     `arch` is the base arch (i386/amd64/arm64); the boot config is the vm_arch
@@ -330,6 +333,9 @@ def _boot_vm(
             backend=backend,
             windows=cli_cfg.get("qemu.windows", {}),
             serial_log=work / "serial.log",
+            # --attach-on-fail: a kept VM is only useful with a stub to attach to, and
+            # the stub has to be asked for at launch.
+            gdb=attach,
         ),
         timings,
         lambda msg: run.log(msg, header=label),
@@ -349,6 +355,7 @@ def _boot_vm(
             ],
         }
     assert vm is not None  # launch_with_retry returns a VM whenever last_exc is None
+    ok_boot = False
     try:
         watching = time.monotonic()
         outcome, text, diag = _watch(vm, marker, fail_on, config.boot_timeout)
@@ -482,6 +489,7 @@ def _boot_vm(
                 res["census_lines"] = ev["lines"]
             if shot:
                 res["screenshot"] = shot
+            ok_boot = True
             return res
         # failure — gather evidence
         dbg = None
@@ -492,7 +500,10 @@ def _boot_vm(
         tri = triage.classify(
             text,
             reached=False,
-            fail_marker=(marker if outcome == "failmarker" and fail_on else None),
+            # The pattern that FIRED, not the boot marker: this read "hit fail
+            # marker: [EXPLORER] _tWinMain entered" for a run that died on
+            # `--fail-on 'nvme\.sys'` long before explorer.
+            fail_marker=(fail_on if outcome == "failmarker" else None),
             debugcon=dbg,
             debugcon_raw=dbg_raw,
         )
@@ -539,9 +550,72 @@ def _boot_vm(
             tri["screenshot"] = shot
         return {"ok": False, "outcome": outcome, **tri}
     finally:
-        stopping = time.monotonic()
+        # Keep the VM only for a failed VERDICT: an exception here is a harness
+        # defect, not a guest state worth a debugger, so it still tears down.
+        if attach and not ok_boot and sys.exc_info()[0] is None:
+            _keep_for_debug(run, vm, arch, work, idx, total, label)
+        else:
+            stopping = time.monotonic()
+            vm.stop()
+            timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
+
+
+def _keep_for_debug(
+    run: Run, vm: QemuVM, arch: str, work: Path, idx: int, total: int, label: str
+) -> None:
+    """Hand a failed boot's live VM to the debug toolkit (`smoke --attach-on-fail`).
+
+    Writes `qemu/runs/<run-id>/manifest.json` in the gdbengine schema plus the owner and
+    deadline the reaper keys on, so `vibeos-cli gdb <verb> <run-id>`, `gdb stop`,
+    `debug stop`, `ps`, `kill` and the reaper all see the kept VM. A VM that cannot be
+    kept (QEMU already exited) is stopped and said so -- never silently dropped."""
+    from . import debugcmd, gdbengine
+
+    run_id = run.dir.name if total == 1 else f"{run.dir.name}-boot{idx}"
+    env_owner = os.environ.get("VIBEOS_QEMU_OWNER_PID", "")
+    owner = int(env_owner) if env_owner.isdigit() else debugcmd._session_owner(os.getppid())
+    try:
+        handles = vm.detach_for_debug(owner, run_id)
+    except RuntimeError as exc:
+        run.log(f"attach-on-fail: VM not kept: {exc}", header=label)
+        run.extra["attach"] = {"kept": False, "reason": str(exc)}
         vm.stop()
-        timings["stop_seconds"] = round(time.monotonic() - stopping, 3)
+        return
+    debug_run = gdbengine.DebugRun(
+        run_id=run_id,
+        arch=arch,
+        backend=vm._backend,
+        gdb_host=handles["gdb_host"],
+        gdb_port=handles["gdb_port"],
+        serial_log=str(work / "serial.log"),
+        kernel_image=str(gdbengine._kernel_image(arch)),
+        win_uid=handles["win_uid"],
+        qemu_pid=handles["qemu_pid"],
+        staging=handles["staging"],
+        start_time=time.strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+    manifest = {
+        **dataclasses.asdict(debug_run),
+        "owner_pid": owner,
+        "deadline": handles["deadline"],
+        "source": "smoke --attach-on-fail",
+        "lock": handles["lock"],
+    }
+    debug_run.dir.mkdir(parents=True, exist_ok=True)
+    debug_run.manifest_path().write_text(json.dumps(manifest, indent=2))
+    gdb = f"{handles['gdb_host']}:{handles['gdb_port']}" if handles["gdb_port"] else "none"
+    hint = (
+        f"VM KEPT for debugging: run-id {run_id} (gdbstub {gdb}, owner pid {owner}, "
+        f"reaped at {time.strftime('%H:%M:%S', time.localtime(handles['deadline']))}). "
+        f"serial.log is a snapshot -- the live serial ended with this process. "
+        f"Stop it: ./vibeos-cli gdb stop {run_id}"
+    )
+    run.log(hint, header=label)
+    print(hint, file=sys.stderr)
+    # Into the bounded summary too: stdout is what the caller reads, and a kept VM
+    # nobody notices runs until the reaper's deadline.
+    run.add(Stage("attach", status="warn", detail=f"VM kept: {run_id}", salient=[hint]))
+    run.extra["attach"] = {"kept": True, "run_id": run_id, **handles, "owner_pid": owner}
 
 
 def _net_stage(run: Run, repo: Path, arch: str) -> None:
@@ -1559,6 +1633,7 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_NVME"] = "1"
         run.add(Stage("nvme", status="warn", detail="NVMe controller attached"))
 
+    attach = bool(getattr(args, "attach_on_fail", False))
     results = []
     for i in range(total):
         r = _one_boot(
@@ -1571,6 +1646,7 @@ def smoke(args, repo: Path) -> int:
             total=total,
             want_ladder=bool(getattr(args, "ladder", False)),
             boot_arch=boot_arch,
+            attach=attach,
         )
         results.append(r)
         status = "ok" if r["ok"] else "fail"
@@ -1597,7 +1673,12 @@ def smoke(args, repo: Path) -> int:
             if r.get("screenshot"):
                 run.extra["screenshot"] = r["screenshot"]
         # fail-fast within a single run already handled by _watch; across runs
-        # we keep going to characterize a flake.
+        # we keep going to characterize a flake -- unless that failure's VM was
+        # kept for a debugger: you asked to look at THIS one, and the loop would
+        # otherwise boot on next to it while it still holds this process's slots.
+        if run.extra.get("attach", {}).get("kept"):
+            total = i + 1
+            break
 
     # Surface a screenshot even on a clean pass: the failure branch above already
     # carried the first failure's; otherwise take the first boot's (every boot

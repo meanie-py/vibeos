@@ -161,9 +161,7 @@ pub const TAG_AFD_TDI_CONNECTION_INFORMATION: u32 = fourcc(b"cTfA");
 pub const TAG_AFD_WSA_BUFFER: u32 = fourcc(b"bWfA");
 
 // --- release-noop / value macros used as call expressions in the C source ---
-// ASSERT(x) is empty in release (NDEBUG); the C uses it as a statement-call.
-#[inline(always)]
-pub fn ASSERT<T>(_cond: T) {}
+// (ASSERT is the crate macro in lib.rs, debug_assert!-backed.)
 // MIN/MAX(a,b) — afd uses the min/max value macros.
 #[inline(always)]
 pub fn MIN<T: PartialOrd>(a: T, b: T) -> T {
