@@ -160,3 +160,11 @@ def test_invented_flag_reads_each_c_assignment_to_its_own_end(c_body, rust):
 def test_invented_flag_still_catches_a_value_the_c_never_assigns():
     c_body = "{ Status = GetFileSystemName(x); if (!NT_SUCCESS(Status)) return Status; }"
     assert invented_flag_assignments(c_body, "Status = 0;")
+
+
+def test_case_bitor_label_as_or_pattern_is_refused():
+    c = "switch (a) { case TVGN_CARET|TVSI_NOSINGLEEXPAND: x = 1; break; }"
+    bad = "match a { TVGN_CARET | TVSI_NOSINGLEEXPAND => { x = 1; } _ => {} }"
+    good = "match a { v if v == TVGN_CARET | TVSI_NOSINGLEEXPAND => { x = 1; } _ => {} }"
+    assert any("or-pattern" in f for f in control_flow_findings(c, bad))
+    assert not any("or-pattern" in f for f in control_flow_findings(c, good))

@@ -2083,6 +2083,35 @@ pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
 
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+# scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
+# `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` is ONE value, the OR; the same text as a Rust
+# arm is an or-pattern matching EITHER constant. The GOOD case is the faithful guard.
+_CASE_BITOR_C = """\
+switch (action) {
+case TVGN_CARET|TVSI_NOSINGLEEXPAND:
+    bSingleExpand = FALSE;
+    break;
+}
+"""
+
+_CASE_BITOR_BAD = """\
+unsafe fn select(action: u32) {
+    match action {
+        TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
+_CASE_BITOR_GOOD = """\
+unsafe fn select(action: u32) {
+    match action {
+        x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
 _DOWHILE_BAD = """\
 unsafe fn register(ctx: *mut Ctx) {
     loop {
@@ -2457,6 +2486,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"olesys.rs": _WINERR_BAD},
         good={"olesys.rs": _WINERR_GOOD},
+    ),
+    Control(
+        name="scan_case_bitor_pattern",
+        script="tools/scan_case_bitor_pattern.py",
+        argv=["--lint"],
+        bad={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_BAD},
+        good={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

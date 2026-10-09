@@ -3578,8 +3578,10 @@ neighbour).
 treeview.c's `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` means 0x8009. Translated verbatim, it is an
 or-pattern matching 0x0009 or 0x8000, so a plain TVGN_CARET took the wrong arm and a real
 0x8009 fell to the default. rustc's only hint is an `unreachable pattern` warning on the next
-arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Grep the C for
-`case\s+\w+\s*\|` before trusting a translated `match`.
+arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Gated two ways now:
+`tools/scan_case_bitor_pattern.py` (in `vibeos-cli check`) flags any Rust or-pattern whose
+constants some C `case` ORs together, and rustconv's body checks refuse the shape at
+translation time, so the model retries instead of shipping it.
 
 **An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
 C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
