@@ -386,8 +386,22 @@ class ReceiptSession:
                     )
                 )
                 os.replace(temp, path)
+            self._prune()
         finally:
             self.close()
+
+    def _prune(self) -> None:
+        """Drop receipts past _MAX_AGE. The key covers every tracked file, so each
+        commit mints a fresh set and none is ever read again; nothing removed them
+        and the store reached 90,882 files / 358 MB (2026-10-09). A stale receipt is
+        already refused on read, so this changes nothing but the directory size."""
+        cutoff = time.time() - _MAX_AGE
+        for path in self.root.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff:
+                    path.unlink()
+            except OSError:
+                pass
 
     def close(self) -> None:
         if not self.closed:

@@ -95,7 +95,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     checks = b.add_mutually_exclusive_group()
     checks.add_argument("--check", action="store_true", help="also run advisory source lints")
-    checks.add_argument("--no-check", action="store_true", help=argparse.SUPPRESS)
+    checks.add_argument(
+        "--no-check",
+        action="store_true",
+        help="skip the post-link binary lints too (gate/land run them as their own lane)",
+    )
     b.add_argument(
         "--keep-going",
         action="store_true",

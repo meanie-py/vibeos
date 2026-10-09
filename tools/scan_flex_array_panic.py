@@ -107,8 +107,14 @@ import re
 import struct
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
+
+if __package__:
+    from .binary_facts import BinaryFacts
+else:
+    from binary_facts import BinaryFacts
 
 REPO = Path(__file__).resolve().parent.parent
 RUST_WS = REPO / "sdk" / "lib" / "rust"
@@ -668,14 +674,40 @@ def main(argv: list[str]) -> int:
             work.append((crate, image))
         else:
             missing.append(f"{crate}({image.name})")
-    for crate, art in work:
-        for sym, _, ctx in scan_object(art, arch=args.arch, explain=bool(args.explain)):
-            key = normalize_symbol(sym, args.arch)
-            findings.append((crate, key))
-            if args.explain and (args.explain in crate or args.explain in key):
-                print(f"\n=== {crate}: {key}")
-                for line in ctx:
-                    print(f"    {line}")
+    # Content-addressed per artifact, like every other post-link scanner: three objdump
+    # passes over ~290 archives and images cost 80-96s serially on EVERY invocation,
+    # and a landing invokes this reader up to five times per arch on the same bytes.
+    # `--explain` wants the disassembly window, which is not a fact worth storing.
+    facts = (
+        None
+        if args.explain
+        else BinaryFacts(
+            REPO,
+            namespace="flex-array-panic",
+            implementation=[Path(__file__)],
+            tools=[OBJDUMP],
+            options={"arch": args.arch},
+        )
+    )
+
+    def hits_for(item: tuple[str, Path]) -> list[tuple[str, int, list[str]]]:
+        _crate, art = item
+
+        def extract():
+            return [list(h) for h in scan_object(art, arch=args.arch, explain=bool(args.explain))]
+
+        raw = facts.get(art, extract) if facts is not None else extract()
+        return [(sym, int(length), list(ctx)) for sym, length, ctx in raw]
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for (crate, _art), hits in zip(work, pool.map(hits_for, work), strict=True):
+            for sym, _, ctx in hits:
+                key = normalize_symbol(sym, args.arch)
+                findings.append((crate, key))
+                if args.explain and (args.explain in crate or args.explain in key):
+                    print(f"\n=== {crate}: {key}")
+                    for line in ctx:
+                        print(f"    {line}")
 
     graded = graded_ok(args.arch)
     seen = sorted(set(findings))

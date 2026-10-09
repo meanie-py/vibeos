@@ -7052,6 +7052,33 @@ def test_lint_preflight_honours_skip_lint(tiny_repo: Path, tmp_path, monkeypatch
     assert any(s.name == "lint" and s.status == "skip" for s in run.stages)
 
 
+def test_concurrent_preflights_collect_EVERY_abort(tiny_repo: Path, tmp_path, monkeypatch):
+    """The four build-independent preflights run at once (serially they cost a lane
+    ~15 min before submit). A lane with two red preflights must learn both from ONE
+    submission, not one per resubmission."""
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path / "art")
+    seen: list[str] = []
+
+    def red(name):
+        def step(repo, run, args):
+            seen.append(name)
+            raise land_mod.LandAbort(f"{name} is red")
+
+        return step
+
+    def green(repo, run, args):
+        seen.append("green")
+
+    monkeypatch.setattr(land_mod, "_lint_preflight", red("tooling"))
+    monkeypatch.setattr(land_mod, "_source_lint_preflight", green)
+    monkeypatch.setattr(land_mod, "_arch_lint_preflight", green)
+    monkeypatch.setattr(land_mod, "_difftest_preflight", red("difftest"))
+    with pytest.raises(land_mod.LandAbort) as ei:
+        land_mod._concurrent_preflights(tiny_repo, Run("land", "t"), _Args())
+    assert "tooling is red" in str(ei.value) and "difftest is red" in str(ei.value)
+    assert sorted(seen) == ["difftest", "green", "green", "tooling"]
+
+
 def test_difftest_preflight_blocks_a_red_difftest(tiny_repo: Path, tmp_path, monkeypatch):
     """2026-09-25: a lane whose own difftest could not LINK after deleting a reference
     TU turned 17 of 18 batched gates red. The same ~30s check, here, stops it at the door."""
