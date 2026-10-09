@@ -22,19 +22,6 @@
 # unrelated kernel change). That shows up here as ungraded or stale -- which is the gate
 # noticing, not a false alarm. Re-scope the entry against the new evidence.
 
-atapi-legacy-rust: _ZN17atapi_legacy_rust5entry29AtapiFindNativeModeControllerE
-# NativeModeAdapters is a genuine one-entry static table, not an allocation:
-#   atapi.h:319  NATIVE_MODE_CONTROLLER_INFORMATION const NativeModeAdapters[] = {
-#                    { "10ad", 4, "0105", 4} };
-#   atapi.h:322  #define NUM_NATIVE_MODE_ADAPTERS (sizeof(...) / sizeof(...))
-# Test 1 (does the C over-allocate?): NO -- static const, nothing is allocated.
-# Test 2 (literal 1?): the length is DERIVED from the initializer and the bound callers
-# use is computed from it, so the [T; 1] the Rust declares (entry.rs:52) is faithful. The
-# index is dynamic (atapi.c:2745 takes it from the caller's Context), so the check is
-# real, correct and must stay -- rewriting it as a pointer add would delete a live
-# safety check. (Graded first on atapi-rust, which no arch builds any more; the legacy
-# crate that replaced it carries the same table.)
-
 @amd64,arm64 rtl-rust: _ZN7network4pure11format_ipv6E
 @amd64 rtl-rust: _ZN11rtl_strings7core_rs8dos8dot312get_checksumE
 * : _ZN7network4pure11format_ipv6E
