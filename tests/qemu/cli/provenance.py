@@ -11,9 +11,12 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -34,7 +37,9 @@ class ProvenanceError(RuntimeError):
     cargo-link staleness net silently switched off). Neither logged anything."""
 
 
-def _run_bytes(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -> bytes:
+def _run_bytes(
+    cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,), env: dict | None = None
+) -> bytes:
     """Run `cmd` and return its stdout as RAW BYTES, or raise ProvenanceError
     naming the command, rc and stderr.
 
@@ -49,7 +54,7 @@ def _run_bytes(cmd: list[str], cwd: Path, *, ok_codes: tuple[int, ...] = (0,)) -
     meaningful rather than a failure — `git grep` exits 1 for "no matches",
     which is a legitimate empty result, not a broken oracle."""
     try:
-        cp = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=120)
+        cp = subprocess.run(cmd, cwd=cwd, capture_output=True, timeout=120, env=env)
     except (OSError, subprocess.SubprocessError) as e:
         raise ProvenanceError(f"{' '.join(cmd)} (cwd={cwd}): {type(e).__name__}: {e}") from e
     if cp.returncode not in ok_codes:
@@ -119,6 +124,33 @@ def git_fingerprint(repo: Path, paths: list[str] | None = None) -> str:
     h.update(b"\0")
     h.update(untracked)
     return h.hexdigest()
+
+
+def tree_content_hash(repo: Path, paths: list[str]) -> str:
+    """Hash of the path-scoped WORKING-TREE content alone: the index entries (mode + blob
+    sha per path) that `git add -A` would record, built in a scratch copy of the index.
+
+    `git_fingerprint`'s scoped branch is not this. It hashes the CURRENT index plus the text
+    of `git diff HEAD` plus `git status`, so the same bytes hash differently committed and
+    uncommitted. Build a dirty tree, commit exactly what was built, and every smoke said
+    STALE_MEDIA ("119 path(s) vs the build's commit") for a tree identical to the one
+    compiled, per the build's own warm-receipt. A content question needs an answer that
+    does not depend on git bookkeeping, and this is that answer. ~0.1s here.
+
+    Raises ProvenanceError if any of its git calls fails -- see _run."""
+    index = Path(_run(["git", "rev-parse", "--git-path", "index"], repo).strip())
+    index = index if index.is_absolute() else repo / index
+    with tempfile.TemporaryDirectory(prefix="vibeos-prov-") as tmp:
+        scratch = Path(tmp) / "index"
+        if index.is_file():
+            shutil.copy2(index, scratch)
+        env = dict(os.environ, GIT_INDEX_FILE=str(scratch))
+        # Stage the WHOLE tree and scope only the listing: `git add -A -- <pathspec>`
+        # exits 1 when an exclude names a gitignored path (`.claude`), and that took a
+        # build down in make_stamp.
+        _run_bytes(["git", "add", "-A"], repo, env=env)
+        entries = _run_bytes(["git", "ls-files", "-s", "--", *paths], repo, env=env)
+    return hashlib.sha256(entries).hexdigest()
 
 
 def _sha256_file(p: Path) -> str:
@@ -777,6 +809,12 @@ class Stamp:
     # different failures, and the fingerprint alone cannot tell them apart. Empty on
     # stamps written before this field existed.
     head_sha: str = ""
+    # tree_content_hash() of the same two scopes. The fingerprints above are not
+    # commit-invariant (see tree_content_hash), so committing exactly what was built read
+    # as stale; these are compared instead whenever the stamp has them. Empty on stamps
+    # written before they existed, which fall back to the fingerprints.
+    rust_tree_hash: str = ""
+    build_tree_hash: str = ""
 
     def write(self, build_dir: Path) -> Path:
         path = build_dir / STAMP_NAME
@@ -893,6 +931,8 @@ def make_stamp(repo: Path, arch: str, cold: bool, ts: int) -> Stamp:
         rust_src_hash=rust_src_hash(repo),
         build_src_hash=build_src_hash(repo),
         head_sha=git_head(repo),
+        rust_tree_hash=tree_content_hash(repo, list(archcfg.RUST_SRC_DIRS)),
+        build_tree_hash=tree_content_hash(repo, [".", *NON_BUILD_PATHSPEC]),
         boot_media=cfg.boot_media_rel,
         boot_media_sha=_sha256_file(media),
         cold=cold,
@@ -1038,7 +1078,13 @@ def _check_staleness(repo: Path, arch: str) -> Staleness:
 
     # Tier 2: source changed — escalate to authoritative per-layer checks.
     reasons = list(cohab)
-    if rust_src_hash(repo) != stamp.rust_src_hash:
+    if stamp.rust_tree_hash and stamp.build_tree_hash:
+        rust_moved = tree_content_hash(repo, list(archcfg.RUST_SRC_DIRS)) != stamp.rust_tree_hash
+        build_moved = tree_content_hash(repo, [".", *NON_BUILD_PATHSPEC]) != stamp.build_tree_hash
+    else:
+        rust_moved = rust_src_hash(repo) != stamp.rust_src_hash
+        build_moved = bool(stamp.build_src_hash) and build_src_hash(repo) != stamp.build_src_hash
+    if rust_moved:
         reasons.append(
             "rust source changed since build" + (" (last build WARM — may mask)" if warm else "")
         )
@@ -1050,7 +1096,7 @@ def _check_staleness(repo: Path, arch: str) -> Staleness:
             "stamp predates build-source fingerprinting — cannot verify non-Rust sources; "
             "run `build` to re-stamp"
         )
-    elif build_src_hash(repo) != stamp.build_src_hash:
+    elif build_moved:
         reasons.append(
             "build source changed since build (C/asm/cmake/spec/rc)" + _src_delta(repo, stamp)
         )

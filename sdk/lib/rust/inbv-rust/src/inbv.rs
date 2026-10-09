@@ -104,9 +104,9 @@ const RESOURCE_DATA_LEVEL: ULONG = 0x3;
 
 const IDB_MAX_RESOURCES: usize = 5;
 
-const HeadlessCmdPutString: ULONG = 1;
-const HeadlessCmdClearDisplay: ULONG = 3;
-const HeadlessCmdSetColor: ULONG = 4;
+const HeadlessCmdPutString: ULONG = 3; // header value; the hand copy said 1
+const HeadlessCmdClearDisplay: ULONG = 4; // header value; the hand copy said 3
+const HeadlessCmdSetColor: ULONG = 9; // header value; the hand copy said 4
 
 #[repr(C)]
 struct INBV_PROGRESS_STATE {
@@ -135,9 +135,14 @@ struct HEADLESS_CMD_SET_COLOR {
     BkgdColor: ULONG,
 }
 
-const INBV_DISPLAY_STATE_DISABLED: ULONG = 0;
-const INBV_DISPLAY_STATE_OWNED: ULONG = 1;
-const INBV_DISPLAY_STATE_LOST: ULONG = 2;
+// From the header, not retyped: the translation had OWNED and DISABLED swapped (OWNED is 0),
+// so InbvGetDisplayState disagreed with bootanim.rs, which had OWNED right.
+const INBV_DISPLAY_STATE_DISABLED: ULONG =
+    ntkrnl_sys::ddk::_INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_DISABLED as ULONG;
+const INBV_DISPLAY_STATE_OWNED: ULONG =
+    ntkrnl_sys::ddk::_INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_OWNED as ULONG;
+const INBV_DISPLAY_STATE_LOST: ULONG =
+    ntkrnl_sys::ddk::_INBV_DISPLAY_STATE_INBV_DISPLAY_STATE_LOST as ULONG;
 
 type INBV_DISPLAY_STATE = ULONG;
 

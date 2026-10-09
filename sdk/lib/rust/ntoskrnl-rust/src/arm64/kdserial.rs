@@ -1,13 +1,8 @@
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::PCPPORT;
 
-/* PL011 register offsets */
-const PL011_DR: usize = 0x000; /* Data Register */
-const PL011_FR: usize = 0x018; /* Flag Register */
-
-/* Flag Register bits */
-const PL011_FR_TXFF: u32 = 0x20; /* Transmit FIFO full */
-const PL011_FR_RXFE: u32 = 0x10; /* Receive FIFO empty */
+// The registers themselves are arm64_dbg.rs's: the console UART may be a PL011 or
+// a 16550, and only the loader knows which.
 
 extern "C" {
     /* Defined in ke/arm64/stubs.rs as #[no_mangle] pub static mut PVOID */
@@ -47,17 +42,16 @@ pub unsafe extern "system" fn KdPortGetByteEx(
     _PortInformation: PCPPORT,
     ByteReceived: *mut u8,
 ) -> BOOLEAN {
-    let base: *mut ULONG = KdGetPl011Base();
-    if base.is_null() {
+    if ByteReceived.is_null() {
         return 0u8;
     }
-
-    if core::ptr::read_volatile(base.add(PL011_FR / 4)) & PL011_FR_RXFE != 0 {
-        return 0u8;
+    match crate::arm64_dbg::uart_getc(KdGetPl011Base() as *mut u32) {
+        Some(b) => {
+            core::ptr::write_volatile(ByteReceived, b);
+            1u8
+        }
+        None => 0u8,
     }
-
-    *ByteReceived = (core::ptr::read_volatile(base.add(PL011_DR / 4)) & 0xFF) as u8;
-    1u8
 }
 
 #[no_mangle]
@@ -65,14 +59,8 @@ pub unsafe extern "system" fn KdPortPutByteEx(
     _PortInformation: PCPPORT,
     ByteToSend: u8,
 ) {
-    let base: *mut ULONG = KdGetPl011Base();
-    if base.is_null() {
-        return;
-    }
-
-    while core::ptr::read_volatile(base.add(PL011_FR / 4)) & PL011_FR_TXFF != 0 {}
-
-    core::ptr::write_volatile(base.add(PL011_DR / 4), ByteToSend as ULONG);
+    // The console UART's own model (a PL011, or the 16550 an EC2 Graviton has).
+    crate::arm64_dbg::uart_putc(KdGetPl011Base() as *mut u32, ByteToSend);
 }
 
 

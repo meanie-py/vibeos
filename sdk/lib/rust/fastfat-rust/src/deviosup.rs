@@ -2072,7 +2072,7 @@ pub unsafe extern "system" fn FatToggleMediaEjectDisable(
             let _ = KeWaitForSingleObject(
                 addr_of_mut!(SyncContext.Event) as *mut c_void,
                 0u32 /*Executive*/,
-                1i8 /*UserMode*/,
+                KernelMode,
                 0,
                 core::ptr::null_mut(),
             );

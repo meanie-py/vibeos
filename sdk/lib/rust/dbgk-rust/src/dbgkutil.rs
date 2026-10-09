@@ -46,12 +46,12 @@ const FILE_SHARE_WRITE: ULONG = 0x00000002;
 const FILE_SHARE_DELETE: ULONG = 0x00000004;
 const FILE_SYNCHRONOUS_IO_NONALERT: ULONG = 0x00000020;
 
-const DbgKmCreateProcessApi: ULONG = 0;
-const DbgKmLoadDllApi: ULONG = 1;
-const DbgKmCreateThreadApi: ULONG = 2;
-const DbgKmExitProcessApi: ULONG = 3;
-const DbgKmExitThreadApi: ULONG = 4;
-const DbgKmUnloadDllApi: ULONG = 5;
+const DbgKmCreateProcessApi: ULONG = 2; // header value; the hand copy said 0
+const DbgKmLoadDllApi: ULONG = 5; // header value; the hand copy said 1
+const DbgKmCreateThreadApi: ULONG = 1; // header value; the hand copy said 2
+const DbgKmExitProcessApi: ULONG = 4; // header value; the hand copy said 3
+const DbgKmExitThreadApi: ULONG = 3; // header value; the hand copy said 4
+const DbgKmUnloadDllApi: ULONG = 6; // header value; the hand copy said 5
 
 const LPC_DEBUG_EVENT: i16 = 0x08;
 

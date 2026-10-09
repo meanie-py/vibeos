@@ -2024,6 +2024,22 @@ pub unsafe fn KxUnwaitThread(
             core::mem::offset_of!(ddk::_KWAIT_BLOCK, WaitListEntry),
         );
         let wait_thread = (*wait_block).Thread;
+        // A wait block whose Thread is not a kernel address is a dead waiter's stack
+        // frame still linked into this object -- name the object and the block before
+        // KiUnwaitThread's waitdep check bugchecks on the thread alone.
+        #[cfg(target_arch = "x86_64")]
+        if (wait_thread as usize) < 0xFFFF_8000_0000_0000 {
+            crate::driver_ddk::DbgPrint(
+                b"[KX-UNWAIT] object=%p type=%u wait_block=%p thread=%p flink=%p blink=%p\n\0"
+                    .as_ptr() as *const i8,
+                object,
+                (*object).__bindgen_anon_1.__bindgen_anon_1.Type as u32,
+                wait_block,
+                wait_thread,
+                (*wait_entry).Flink,
+                (*wait_entry).Blink,
+            );
+        }
         let wait_key = if (*wait_block).WaitType as u32 == ddk::_WAIT_TYPE_WaitAny {
             (*wait_block).WaitKey as LONG_PTR
         } else {

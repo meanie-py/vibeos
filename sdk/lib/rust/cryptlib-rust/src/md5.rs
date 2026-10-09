@@ -563,7 +563,7 @@ pub unsafe extern "system" fn MD5Update(
 ) {
     // FIX: extern "C" { fn memcpy/byteReverse/MD5Transform } removed;
     // replaced with core::ptr::copy_nonoverlapping and local fns.
-    let mut t: u32 = 0;
+    let mut t: u32;
     t = (*ctx).i[0 as usize];
     (*ctx).i[0 as usize] = t.wrapping_add(len << 3);
     if (*ctx).i[0 as usize] < t {
@@ -612,8 +612,8 @@ pub unsafe extern "system" fn MD5Update(
 pub unsafe extern "system" fn MD5Final(ctx: *mut MD5_CTX) {
     // FIX: extern "system" { fn memset/memcpy/MD5Transform } removed;
     // replaced with core::ptr::write_bytes, core::ptr::copy_nonoverlapping, local MD5Transform.
-    let mut count: u32 = 0;
-    let mut p: *mut u8 = core::ptr::null_mut::<u8>();
+    let mut count: u32;
+    let mut p: *mut u8;
 
     count = ((*ctx).i[0] as u32).wrapping_shr(3) & 0x3F_u32;
     p = (&raw mut (*ctx).in_0 as *mut u8).offset(count as isize);

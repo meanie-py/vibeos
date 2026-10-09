@@ -563,9 +563,76 @@ cdrom `DeviceSendSrbSynchronously` sets `ioctlCode` early on purpose, fixing a C
 first send went out with 0, and says so in a comment. ole32 `create_storagefile` spelled out a
 `goto end`. rtl `RtlpInitEnvironment`'s reset of `base_address` matches the C, whose 1 MB
 reserve at `(PVOID)4` rounds the base to 0. The 12 debug ones are ASSERTs and prints that the
-Rust dropped. **Owed:** the 149 unpaired sites, then the 858 harmless ones in bulk. Remove
-each dead initializer so that rustc's definite-init check proves the site, rather than
-silencing it.
+Rust dropped.
+
+**The debug-only reads and the 149 unpaired sites (2026-10-08).** The C's ASSERTs are back at
+the eight ASSERT-only sites and heappage's two `ASSERT(FALSE)`s, as RtlAssert-and-continue.
+The prints stay dropped. The 149 were read against the C by hand: 121 faithful, 7 debug,
+16 benign, 2 Rust-only, and four real bugs, now fixed:
+
+- uniata `UniataFindBusMasterController` ran the `#ifdef UNIATA_INIT_ON_PROBE` arm, a macro
+  nothing defines. That ran an extra `FindDevices` on every channel at FindAdapter time and
+  never cleared a latched `BM_STATUS_INTR`. It now runs the `#else` arm the C compiles. Smoke
+  is green on amd64 and i386 with the disk and CD found.
+- atapi-legacy `FindDevices` indexed `DeviceFlags[deviceNumber + Channel*2]` after the probe
+  loop had left `deviceNumber == 2`: index 4 of 4 on channel 1, a panic (the C reads past the
+  array). It indexes by `i` now.
+- explorer `ProcessRunKeys` reported success on out-of-memory, because the C's `goto end`
+  skips `res = ERROR_SUCCESS` and the Rust's `break` did not.
+- lsasrv `LsarQueryAuditEvents` with no audit data returned success, a NULL output, and a
+  leaked buffer.
+
+Two stores were a write through the variable after a raw pointer to it had been taken
+(rtl-sync `RtlWaitOnAddress`, explorer `tw_track_menu`). They now go through the pointer.
+**Do not delete** cdfs's SEH cleanup flags (`UnlockVcb`, `UnlockFcb`,
+`CleanupCompoundPathEntry`), the 10 benign ones in strucsup/allocsup/create: the finally
+block reads them through `*p_X` pointers that rustc cannot see.
+
+Why the ranker could not pair these, which is owed as rules:
+- The C is gone from the tree for uniata (`50c1dd7f8d1^`), NT4 atapi (`a3a7746beed^`) and
+  pciidex-legacy (`5213cf717cf`). Read them with `git show`.
+- C++ methods became prefixed snake fns (`tw_track_menu` = `CTrayWindow::TrackMenu`).
+- `_impl` / `_v` / `_rs` wrapper suffixes.
+- Writes hidden in macros: `WaitOnBusy`, `GetBaseStatus`, `NEED_SPACE`, `CON_STREAM_WRITE2`.
+- `goto` emulated with a flag or a labelled block.
+
+Upstream drift found on the way, not a warning: pcix arbiters (already tracked), afd
+AcceptEx's `SatisfySuperAccept` branch in `ListenComplete`, explorer's syspager balloon
+crash fix (#9332), and an oleaut32 Wine resync (`VarMod`, `serializeBMP`).
+
+**The 858 harmless sites (2026-10-09).** `tools/apply_dead_assignments.py <rank.json>` takes
+the ranker's `C_DEAD`/`C_NO_INIT` rows and removes them: a pure initializer is dropped
+(`let mut x: T;`), a pure dead store is deleted, a dead store of a call keeps the call. It
+looks inside `stdmethod! { fn .. }`, which tree-sitter sees as one opaque token tree, by
+re-parsing the body in place. Then, for each of the 200 sites where the dead initializer
+was the only reason for `mut`, rustc flagged `unused_mut` on all three arches, and `mut`
+was dropped. It applied 817 and left 41 for review:
+
+- **13 initializers stay, because the removal compiles and is still wrong.**
+  `addr_of_mut!(x)` / `&raw mut x` of an uninitialized local is NOT E0381, and the callee
+  it is handed to may read the initial value (samsrv's in/out `&raw mut Length`). So
+  "rustc's definite-init proves it" holds only for a variable never raw-borrowed in its fn.
+  The tool now skips those. The first run did not, and the audit caught it before any boot.
+- **Three stores are live, and rustc's warning was a false positive.** cdrom
+  `fourByte = &allocationLength as *mut FOUR_BYTE` (DVD READ KEY),
+  `addr_of_mut!(blockAddress)` (SET READ AHEAD), and `srb.SenseInfoBuffer = &mut sense`
+  (autorun) each take the pointer first, write the local directly, then read through the
+  pointer. That direct write is aliasing UB, the same class as rtl-sync and traywnd. Each
+  now takes the pointer after the write, so the UB is gone, and so is the warning, because
+  rustc sees the borrow as the read.
+- 7 cdfs SEH flags, as above. 18 out-param and "NULL after free" stores (`subKey`, `Spb`,
+  `SidString`, version `len`, scsiport `Again` x2 and `Offset += CopyField(..)` x6, heappage
+  `Flags |=`), read
+  and removed by hand.
+
+The skip rule for a store is position-aware: a raw-pointer read rustc cannot see needs a
+pointer that EXISTS at the write, i.e. one taken earlier in the fn or anywhere in a loop
+around it. A borrow after the write is itself a read rustc counts.
+
+The ranker relocated rows by snippet when the tree had moved since the build, and after a
+13-line shift one `hRes = IStream_Write(` site took its neighbour's line (two rows on one
+line). It now maps each log's lines through `git diff` against the tree that build compiled,
+which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
 
 ## Owed follow-ups
 

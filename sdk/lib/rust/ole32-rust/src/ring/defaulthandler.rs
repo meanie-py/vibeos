@@ -445,7 +445,7 @@ unsafe fn DefaultHandler_Stop(This: *mut DefaultHandler) {
         &mut cache_ctrl as *mut *mut IOleCacheControl as *mut LPVOID,
     );
     if SUCCEEDED(hr) {
-        hr = IOleCacheControl_OnStop(cache_ctrl);
+        IOleCacheControl_OnStop(cache_ctrl);
         IOleCacheControl_Release(cache_ctrl);
     }
 
@@ -1902,8 +1902,8 @@ pub unsafe extern "system" fn OleCreateEmbeddingHelper(
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
 
-    let mut newHandler: *mut DefaultHandler = core::ptr::null_mut();
-    let mut hr: HRESULT = S_OK;
+    let newHandler: *mut DefaultHandler;
+    let hr: HRESULT;
 
     TRACE!(
         b"(%s, %p, %08x, %p, %s, %p)\n\0".as_ptr(),

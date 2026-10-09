@@ -11,10 +11,10 @@ use ntkrnl_sys::ke::KeGetCurrentIrql;
 pub unsafe extern "system" fn PciAreBusNumbersConfigured(
     PdoExtension: PPCI_PDO_EXTENSION,
 ) -> BOOLEAN {
-    let mut PrimaryBus: UCHAR = 0;
-    let mut BaseBus: UCHAR = 0;
-    let mut SecondaryBus: UCHAR = 0;
-    let mut SubordinateBus: UCHAR = 0;
+    let mut PrimaryBus: UCHAR;
+    let mut BaseBus: UCHAR;
+    let mut SecondaryBus: UCHAR;
+    let mut SubordinateBus: UCHAR;
 
     if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
         DbgPrint(

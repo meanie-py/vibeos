@@ -85,6 +85,11 @@ pub unsafe extern "C" fn CopyDirectory(lpDestinationPath: LPCWSTR, lpSourcePath:
 
     hFind = FindFirstFileW(szFileName.as_ptr(), &mut FindFileData);
     if hFind == INVALID_HANDLE_VALUE {
+        crate::DbgPrint(
+            c"[USERENV] CopyDirectory: FindFirstFileW(%ws) failed (error %lu)\n".as_ptr(),
+            szFileName.as_ptr(),
+            GetLastError(),
+        );
         return 0;
     }
 
@@ -104,6 +109,12 @@ pub unsafe extern "C" fn CopyDirectory(lpDestinationPath: LPCWSTR, lpSourcePath:
             if (FindFileData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
                 if CreateDirectoryExW(szFullSrcName.as_ptr(), szFullDstName.as_ptr(), core::ptr::null_mut()) == 0 {
                     if GetLastError() != ERROR_ALREADY_EXISTS {
+                        crate::DbgPrint(
+                            c"[USERENV] CopyDirectory: CreateDirectoryExW(%ws -> %ws) failed (error %lu)\n".as_ptr(),
+                            szFullSrcName.as_ptr(),
+                            szFullDstName.as_ptr(),
+                            GetLastError(),
+                        );
                         FindClose(hFind);
                         return 0;
                     }
@@ -115,6 +126,12 @@ pub unsafe extern "C" fn CopyDirectory(lpDestinationPath: LPCWSTR, lpSourcePath:
                 }
             } else {
                 if CopyFileW(szFullSrcName.as_ptr(), szFullDstName.as_ptr(), 0) == 0 {
+                    crate::DbgPrint(
+                        c"[USERENV] CopyDirectory: CopyFileW(%ws -> %ws) failed (error %lu)\n".as_ptr(),
+                        szFullSrcName.as_ptr(),
+                        szFullDstName.as_ptr(),
+                        GetLastError(),
+                    );
                     FindClose(hFind);
                     return 0;
                 }

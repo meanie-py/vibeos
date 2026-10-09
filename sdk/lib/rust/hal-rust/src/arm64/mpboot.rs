@@ -471,7 +471,13 @@ pub unsafe extern "system" fn HalStartNextProcessor(
     // Device block for the PL011 UART (so post-MMU traces reach hardware).
     // Trace through the loader's debug UART only when the temp idmap can give
     // it a Device block of its own (same L0 slot, different 1GB).
-    let uart = if LoaderBlock.is_null() { 0 } else { (*LoaderBlock).u.Arm.Arm64UartBase };
+    // The trampoline's traces speak PL011 only: MachineType's low byte is the
+    // console UART's kind (0 = PL011; freeldr arm64_serial_acpi.rs Uart::encode).
+    let uart = if LoaderBlock.is_null() || (*LoaderBlock).u.Arm.MachineType & 0xFF != 0 {
+        0
+    } else {
+        (*LoaderBlock).u.Arm.Arm64UartBase
+    };
     let uart = if uart != 0
         && pgd_index(uart) == pgd_index(tramp_pa)
         && pud_index(uart) != pud_index(tramp_pa)

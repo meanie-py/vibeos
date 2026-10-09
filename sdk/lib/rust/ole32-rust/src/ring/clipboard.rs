@@ -658,7 +658,7 @@ unsafe fn render_embed_source_hack(data: *mut IDataObject, fmt: LPFORMATETC) -> 
         return hr;
     }
 
-    hr = StgCreateDocfileOnILockBytes(
+    StgCreateDocfileOnILockBytes(
         ptrILockBytes,
         STGM_SHARE_EXCLUSIVE | STGM_READWRITE,
         0,
@@ -728,7 +728,7 @@ unsafe fn render_embed_source_hack(data: *mut IDataObject, fmt: LPFORMATETC) -> 
             pdh.dwObjectExtentY = (*mfp).yExt as DWORD;
             pdh.dwSize = nSize as DWORD;
 
-            hr = IStorage_CreateStream(
+            IStorage_CreateStream(
                 std.__bindgen_anon_1.pstg,
                 name.as_ptr() as LPCOLESTR,
                 STGM_CREATE | STGM_SHARE_EXCLUSIVE | STGM_READWRITE,
@@ -737,7 +737,7 @@ unsafe fn render_embed_source_hack(data: *mut IDataObject, fmt: LPFORMATETC) -> 
                 &mut pStream,
             );
 
-            hr = IStream_Write(
+            IStream_Write(
                 pStream,
                 &pdh as *const PresentationDataHeader as *const c_void,
                 core::mem::size_of::<PresentationDataHeader>() as ULONG,
@@ -1598,7 +1598,7 @@ fn snapshot_GetData(
     med: *mut STGMEDIUM,
 ) -> HRESULT {
     let This = impl_from_IDataObject(iface);
-    let mut hr: HRESULT = S_OK;
+    let mut hr: HRESULT;
     let mut enum_data: *mut ole_priv_data = core::ptr::null_mut();
     let entry: *mut ole_priv_data_entry;
     let mut mask: DWORD;
@@ -1626,7 +1626,7 @@ fn snapshot_GetData(
     }
 
     if (*This).data.is_null() {
-        hr = get_current_dataobject(core::ptr::addr_of_mut!((*This).data));
+        get_current_dataobject(core::ptr::addr_of_mut!((*This).data));
     }
 
     if !(*This).data.is_null() {
@@ -1722,7 +1722,7 @@ fn snapshot_GetDataHere(
     med: *mut STGMEDIUM,
 ) -> HRESULT {
     let This = impl_from_IDataObject(iface);
-    let mut hr: HRESULT = S_OK;
+    let mut hr: HRESULT;
     let mut enum_data: *mut ole_priv_data = core::ptr::null_mut();
     let entry: *mut ole_priv_data_entry;
     let supported: DWORD;
@@ -1745,7 +1745,7 @@ fn snapshot_GetDataHere(
     }
 
     if (*This).data.is_null() {
-        hr = get_current_dataobject(core::ptr::addr_of_mut!((*This).data));
+        get_current_dataobject(core::ptr::addr_of_mut!((*This).data));
     }
 
     if !(*This).data.is_null() {

@@ -1718,7 +1718,7 @@ pub unsafe extern "system" fn CmLoadKey(
         CmpKeyObjectType as *mut _,
         0i8,
         core::ptr::null_mut(),
-        1u32,
+        KEY_READ, // C: KEY_READ; a literal 1 asked for KEY_QUERY_VALUE alone
         &mut ParseContext as *mut CM_PARSE_CONTEXT as *mut core::ffi::c_void,
         &mut KeyHandle,
     );
@@ -1731,7 +1731,10 @@ pub unsafe extern "system" fn CmLoadKey(
         &mut ClientSecurityContext,
         &mut Allocate,
         &mut CmHive,
-        0x00000001u32,
+        // C: CM_CHECK_REGISTRY_PURGE_VOLATILES (2). The literal 1 is no check flag at all:
+        // CmCheckRegistry answered INVALID_PARAMETER and every NtLoadKey of a hive file
+        // failed REGISTRY_CORRUPT (setup's ConnectRegistry, the install smoke).
+        crate::cmsysini::CM_CHECK_REGISTRY_PURGE_VOLATILES,
     );
 
     SeDeleteClientSecurity(&mut ClientSecurityContext);

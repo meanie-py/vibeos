@@ -163,7 +163,7 @@ extern "C" {
 }
 // NC_DoNCPaint — cdecl (nonclient.h `LRESULT NC_DoNCPaint(PWND,HDC,INT)`).
 extern "C" {
-    fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, Flags: INT) -> u32;
+    fn NC_DoNCPaint(pWnd: PWND, hDC: HDC, Flags: INT) -> LRESULT;
 }
 // IntWndBelongsToThread(WndObj, W32Thread) = WndObj->head.pti && == W32Thread (window.h macro).
 #[inline(always)]

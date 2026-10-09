@@ -428,7 +428,7 @@ pub unsafe extern "C" fn DeviceErrorHandlerForMmc(
     // Post media change workitem queue
     if mediaChange != 0 && *Status != (0x8000001Cu32 as i32) /* STATUS_MEDIA_CHANGED */ {
         if (*DeviceExtension).DeviceAdditionalData.RestoreDefaults != 0 {
-            let mut status: NTSTATUS = STATUS_SUCCESS;
+            let mut status: NTSTATUS;
             let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
             let mut workitemConfig: WDF_WORKITEM_CONFIG = core::mem::zeroed();
             let mut workItem: WDFWORKITEM = core::mem::zeroed();
@@ -1359,7 +1359,7 @@ pub unsafe extern "C" fn SenseInfoLogError(
     LogContext: *mut ERROR_LOG_CONTEXT,
 ) {
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut totalSize: u32 = 0;
+    let mut totalSize: u32;
     let mut senseBufferSize: u32 = 0;
     let mut staticErrLogEntry: IO_ERROR_LOG_PACKET = core::mem::zeroed();
     let mut staticErrLogData: CDROM_ERROR_LOG_DATA = core::mem::zeroed();
@@ -1779,7 +1779,7 @@ pub unsafe extern "C" fn SenseInfoInterpret(
     let mut retryIntervalInSeconds: u32 = 0;
     let mut retry: u8 = 1; // TRUE
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut readSector: u32 = 0;
+    let mut readSector: u32;
     let mut logContext: ERROR_LOG_CONTEXT = core::mem::zeroed();
 
     let mut majorFunctionCode: u8 = 0;
@@ -2117,7 +2117,7 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
 ) -> i32 {
     let mut retry: i32 = 0;
     let senseBuffer: *mut SENSE_DATA = (*Srb).SenseInfoBuffer as *mut SENSE_DATA;
-    let mut readSector: u32 = 0;
+    let mut readSector: u32;
     let zpoddInfo: *mut ZERO_POWER_ODD_INFO = (*DeviceExtension).ZeroPowerODDInfo;
 
     *Status = STATUS_IO_DEVICE_ERROR;
@@ -2132,8 +2132,8 @@ pub unsafe extern "C" fn SenseInfoInterpretForZPODD(
                 + core::mem::size_of::<u8>()) as u32
     {
         let senseKey: u8 = ((*senseBuffer).SenseKey() & 0x0f) as u8;
-        let mut additionalSenseCode: u8 = 0;
-        let mut additionalSenseCodeQual: u8 = 0;
+        let mut additionalSenseCode: u8;
+        let mut additionalSenseCodeQual: u8;
 
         readSector = (*senseBuffer).AdditionalSenseLength as u32
             + core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength) as u32;

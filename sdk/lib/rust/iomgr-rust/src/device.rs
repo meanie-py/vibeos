@@ -317,9 +317,12 @@ unsafe fn IoShutdownPnpDevices() {}
 
 #[no_mangle]
 pub unsafe extern "system" fn IoShutdownSystem(Phase: ULONG) {
-    let mut Event: core::mem::MaybeUninit<_> = core::mem::MaybeUninit::uninit();
-    KeInitializeEvent(Event.as_mut_ptr(), _EVENT_TYPE_NotificationEvent, 0u8);
-    let Event = Event.assume_init();
+    // Initialized IN PLACE and never moved: a KEVENT's empty wait list points at itself, so
+    // `let Event = Event.assume_init()` copied a list head still pointing at the old slot.
+    // The first KeSetEvent (mountmgr's shutdown IRP completing) then took that slot for a
+    // wait block and unwaited a garbage thread: 0x109 at the end of every install.
+    let mut Event: ntkrnl_sys::ddk::KEVENT = core::mem::zeroed();
+    KeInitializeEvent(&mut Event, _EVENT_TYPE_NotificationEvent, 0u8);
 
     if Phase == 0 {
         IoShutdownPnpDevices();

@@ -7,8 +7,8 @@
 //! dead with nothing pointing at why. So each SMMU the IORT describes is checked
 //! before the first driver starts, and put in bypass if it is not already: global
 //! bypass (SMMUv3 GBPA, SMMUv1/v2 sCR0.CLIENTPD) is the "no IOMMU" machine our
-//! drivers assume. Driving an SMMU for real (isolation, DMA remapping) is a separate
-//! piece of work this does not start.
+//! drivers assume. With the `SMMU=TRANSLATE` tripwire an SMMUv3 is driven for real
+//! instead (smmuv3.rs), and falls back to bypass if it cannot be.
 //!
 //! The report also makes a new board's IORT legible from one serial log: what it
 //! holds, and where each PCI segment's requester ID 0 lands.
@@ -20,6 +20,11 @@ use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, XSDT_PA};
 use super::iort;
+
+unsafe extern "system" {
+    /// ntoskrnl tripwire.rs: is this exact tripwire token set for this boot?
+    fn VibeTripwireHasToken(needle: *const u8, len: usize) -> u8;
+}
 
 unsafe extern "C" {
     fn DbgPrint(Format: *const u8, ...) -> u32;
@@ -177,7 +182,12 @@ pub(crate) unsafe fn platform_init() {
             };
         }
     });
+    const TRANSLATE: &[u8] = b"SMMU=TRANSLATE";
+    let translate = VibeTripwireHasToken(TRANSLATE.as_ptr(), TRANSLATE.len()) != 0;
     for smmu in smmus.iter().flatten() {
+        if translate && smmu.version == 3 && super::smmuv3::enable(smmu.base) {
+            continue;
+        }
         bypass(*smmu);
     }
 }

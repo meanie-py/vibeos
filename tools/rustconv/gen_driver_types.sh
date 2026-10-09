@@ -2859,9 +2859,9 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
-  inetcpl|inetcpl-types_1)
+  inetcpl)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 34 switch constant(s)).
+    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
@@ -2870,42 +2870,28 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h' )
-        ;;
-    esac
+    WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
+                  --allowlist-file '.*[/\\]cryptuiapi\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ole2\.h'
+                  --allowlist-file '.*[/\\]prsht\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]urlmon\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]wininet\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winreg\.h'
+                  --allowlist-file '.*inetcpl[/\\].*\.h'
+                  --allowlist-file '.*[/\\]servprov\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
     ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
@@ -3023,54 +3009,6 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    ;;
-  inetcpl|inetcpl-types_1)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h' )
-        ;;
-    esac
-    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
     ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
@@ -3240,58 +3178,6 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
-  inetcpl|inetcpl-types_1)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]servprov\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]servprov\.h' )
-        ;;
-    esac
-    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
-    ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:
@@ -3300,58 +3186,6 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
-  inetcpl|inetcpl-types_1)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]servprov\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]servprov\.h' )
-        ;;
-    esac
-    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
-    ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:
@@ -3360,58 +3194,6 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
-  inetcpl|inetcpl-types_1)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]servprov\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]servprov\.h' )
-        ;;
-    esac
-    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
-    ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:
@@ -3420,58 +3202,6 @@ case "$DRIVER" in
   # Then dispatch them from the crate: one `mod <stem>;` per island, and each
   # translated module imports from the island its own C include set belongs to
   # (names legitimately overlap between islands — never glob both into scope).
-  inetcpl|inetcpl-types_1)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-08 from dll/cpl/inetcpl/CMakeLists.txt
-    # (5 compiled TU(s), 164 headers in the include closure, 33 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 45 external prototype(s) declared by the include closure, 8 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/dll/cpl/inetcpl"
-    case "$DRIVER" in
-      # island types — 2 TU(s):
-      # connections.c content.c
-      inetcpl)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winnls.h>\n#include <wininet.h>\n#include <winuser.h>\n#include <winreg.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#include "wine/heap.h"\n#include <cryptuiapi.h>'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cryptuiapi\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]servprov\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h' )
-        ;;
-      # island types_1 — 3 TU(s):
-      # general.c inetcpl.c security.c
-      inetcpl-types_1)
-        WRAPPER_INC=$'#include "precomp.h"\n#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <winuser.h>\n#include <wininet.h>\n#include <winreg.h>\n#include <shlwapi.h>\n#include <prsht.h>\n#include <shlobj.h>\n#include "inetcpl.h"\n#include "wine/debug.h"\n#define NONAMELESSUNION\n#define COBJMACROS\n#define CONST_VTABLE\n#include <wingdi.h>\n#include <commctrl.h>\n#include <cpl.h>\n#include "ole2.h"\n#include "commctrl.h"\n#include "urlmon.h"\n#include "initguid.h"\n#include "winreg.h"\n#include "shlwapi.h"\n#include "wine/heap.h"'
-        ALLOW_FILES=( --allowlist-file '.*[/\\]commctrl\.h' --allowlist-file '.*[/\\]cpl\.h'
-                      --allowlist-file '.*[/\\]initguid\.h'
-                      --allowlist-file '.*[/\\]ole2\.h'
-                      --allowlist-file '.*[/\\]prsht\.h'
-                      --allowlist-file '.*[/\\]shlobj\.h'
-                      --allowlist-file '.*[/\\]shlwapi\.h'
-                      --allowlist-file '.*[/\\]urlmon\.h'
-                      --allowlist-file '.*[/\\]wingdi\.h'
-                      --allowlist-file '.*[/\\]wininet\.h'
-                      --allowlist-file '.*[/\\]winnls\.h'
-                      --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*inetcpl[/\\].*\.h'
-                      --allowlist-file '.*[/\\]servprov\.h' )
-        ;;
-    esac
-    EXTRA_INC=( -I"${SRC}/dll/cpl/inetcpl" -I"${SRC}/build-i386/dll/cpl/inetcpl" -I"${SRC}/sdk/include/wine" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
-    OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/inetcpl-rust/src}"
-    ;;
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:

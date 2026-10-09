@@ -855,6 +855,31 @@ def _c_width(ctype: str, types) -> int | str | None:
     return PTR if d else w
 
 
+_BOOLEAN_NAMES = frozenset({"BOOL", "BOOLEAN", "bool", "WINBOOL", "u8", "UCHAR", "BYTE"})
+
+
+def _narrows_meaning(decl_w, def_w, def_ty: str) -> bool:
+    """A declared return NARROWER than the definition, in the two shapes that lose
+    information rather than just a boolean's zero padding:
+
+    * the definition returns a pointer or an 8-byte value (an LBO, an LRESULT, a PCSTR
+      read as `u8` -- an option found at an address whose low byte is 0 read "absent");
+    * the definition returns a full word that is NOT a boolean type and the declaration
+      keeps one byte. fastfat's cohab `ULONG_PTR FlagOn(x, f) { return x & f; }` was
+      declared `-> BOOLEAN` in seven files, so every flag above bit 7 read as clear:
+      CCB_FLAG_MANAGE_VOLUME_ACCESS (0x20000) among them, and FSCTL_LOCK_VOLUME failed
+      for every caller (setup's chkdsk could not run).
+
+    A C `BOOL` read as a byte is the common benign case (its value is 0 or 1), so it is
+    left alone.
+    """
+    if _bytes(decl_w) >= _bytes(def_w):
+        return False
+    if def_w == PTR or _bytes(def_w) >= 8:
+        return True
+    return _bytes(decl_w) == 1 and norm(def_ty) not in _BOOLEAN_NAMES
+
+
 def _compare_returns(crate_returns, c_rets, types, called):
     """A declared RETURN wider than the definition's: the caller reads bits the
     callee never wrote. Neither x64 nor AAPCS64 defines the upper bits of a
@@ -892,14 +917,22 @@ def _compare_returns(crate_returns, c_rets, types, called):
             if ptr is not None:
                 cw = ptr if cw == PTR else cw
                 ow = ptr if ow == PTR else ow
-            if cw is None or not _reads_undefined(ow, cw):
+            if cw is None:
                 continue
-            yield (
-                cfile,
-                cline,
-                f"{sym}: RETURN WIDTH decl `-> {rty}` ({cw}) wider than {authority} ({ow})"
-                f"{' [pointer-sized: i386 differs]' if PTR in (cw, ow) else ''}",
-            )
+            if _reads_undefined(ow, cw):
+                yield (
+                    cfile,
+                    cline,
+                    f"{sym}: RETURN WIDTH decl `-> {rty}` ({cw}) wider than {authority} ({ow})"
+                    f"{' [pointer-sized: i386 differs]' if PTR in (cw, ow) else ''}",
+                )
+            elif _narrows_meaning(cw, ow, dty):
+                yield (
+                    cfile,
+                    cline,
+                    f"{sym}: RETURN NARROWED decl `-> {rty}` ({cw}) "
+                    f"drops bits of {authority} ({ow})",
+                )
 
 
 def scan(root_dir: Path, crate_dirs: list[Path]) -> list[tuple[Path, int, str]]:

@@ -325,7 +325,7 @@ pub unsafe extern "C" fn PartitionHandleStartDevice(
 }
 #[no_mangle]
 pub unsafe extern "C" fn VolumeDeleteMountPoints(PartExt: *mut PARTITION_EXTENSION) -> NTSTATUS {
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let mut MountMgr: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn VolumeDeleteMountPoints(PartExt: *mut PARTITION_EXTENSI
     };
     let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut FileObject: PFILE_OBJECT = core::ptr::null_mut();
-    let mut InputBuffer: PMOUNTMGR_MOUNT_POINT = core::ptr::null_mut();
+    let mut InputBuffer: PMOUNTMGR_MOUNT_POINT;
     let mut OutputBuffer: PMOUNTMGR_MOUNT_POINTS = core::ptr::null_mut();
 
     // PAGED_CODE assertion (c2rust expansion)
@@ -1085,7 +1085,7 @@ pub unsafe extern "C" fn PartitionHandleDeviceControl(DeviceObject: PDEVICE_OBJE
             let headerSize: SIZE_T = 2; // FIELD_OFFSET(MOUNTDEV_UNIQUE_ID, UniqueId)
             let uniqueId = (*Irp).AssociatedIrp.SystemBuffer as PMOUNTDEV_UNIQUE_ID;
             let basicVolId = &raw mut (*uniqueId).UniqueId as PBASIC_VOLUME_UNIQUE_ID;
-            let mut InterfaceName: PUNICODE_STRING = core::ptr::null_mut::<_UNICODE_STRING>();
+            let mut InterfaceName: PUNICODE_STRING;
 
             if VerifyIrpOutBufferSize(Irp, (headerSize) as usize) == 0 {
                 status = STATUS_BUFFER_TOO_SMALL;

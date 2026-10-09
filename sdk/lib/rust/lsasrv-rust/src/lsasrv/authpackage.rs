@@ -257,7 +257,7 @@ unsafe extern "system" fn LsapAddAuthPackage(
     Context: PVOID,
     _EntryContext: PVOID,
 ) -> NTSTATUS {
-    let mut Package: PAUTH_PACKAGE = core::ptr::null_mut();
+    let Package: PAUTH_PACKAGE;
     let mut PackageName: _UNICODE_STRING = _UNICODE_STRING {
         Length: 0,
         MaximumLength: 0,
@@ -269,7 +269,7 @@ unsafe extern "system" fn LsapAddAuthPackage(
         Buffer: core::ptr::null_mut(),
     };
     let Id: PULONG;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     TRACE!(
         b"LsapAddAuthPackage()\n\0".as_ptr() as *const u8,
@@ -937,7 +937,7 @@ unsafe fn LsapCopyLocalGroups(
 
     let mut sid_header: PSID = core::ptr::null_mut();
     let mut allocated_sids: ULONG = 0;
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
 
     'done: {
         status = NtReadVirtualMemory(
@@ -1254,7 +1254,7 @@ unsafe fn LsapAppendSidToGroups(
     DomainSid: PSID,
     RelativeId: ULONG,
 ) -> NTSTATUS {
-    let mut Groups: PTOKEN_GROUPS = core::ptr::null_mut();
+    let Groups: PTOKEN_GROUPS;
     let Sid: PSID;
     let Length: ULONG;
     let mut i: ULONG;
@@ -1433,7 +1433,7 @@ unsafe fn LsapAddSamGroups(
         Element: core::ptr::null_mut(),
     };
     let mut i: u32;
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if TokenInformationType != LsaTokenInformationV1 {
         return STATUS_SUCCESS;
@@ -1609,8 +1609,8 @@ unsafe fn LsapSetTokenOwner(
     TokenInformation: PVOID,
     TokenInformationType: LSA_TOKEN_INFORMATION_TYPE,
 ) -> NTSTATUS {
-    let mut TokenInfo1: *mut _LSA_TOKEN_INFORMATION_V1 = core::ptr::null_mut();
-    let mut OwnerSid: PSID_AND_ATTRIBUTES = core::ptr::null_mut();
+    let TokenInfo1: *mut _LSA_TOKEN_INFORMATION_V1;
+    let mut OwnerSid: PSID_AND_ATTRIBUTES;
     let Length: u32;
 
     if TokenInformationType == _LSA_TOKEN_INFORMATION_TYPE_LsaTokenInformationV1 {
@@ -1761,7 +1761,7 @@ unsafe fn LsapSetPrivileges(
     TokenInformation: PVOID,
     TokenInformationType: LSA_TOKEN_INFORMATION_TYPE,
 ) -> NTSTATUS {
-    let mut TokenInfo1: PLSA_TOKEN_INFORMATION_V1 = core::ptr::null_mut::<_LSA_TOKEN_INFORMATION_V1>();
+    let TokenInfo1: PLSA_TOKEN_INFORMATION_V1;
     let mut PolicyHandle: LSAPR_HANDLE = core::ptr::null_mut::<core::ffi::c_void>();
     let mut AccountHandle: LSAPR_HANDLE = core::ptr::null_mut::<core::ffi::c_void>();
     let mut Privileges: PLSAPR_PRIVILEGE_SET = core::ptr::null_mut::<_LSAPR_PRIVILEGE_SET>();
@@ -1848,12 +1848,12 @@ pub unsafe extern "C" fn LsapLogonUser(
     RequestMsg: PLSA_API_MSG,
     LogonContext: PLSAP_LOGON_CONTEXT,
 ) -> NTSTATUS {
-    let mut Package: PAUTH_PACKAGE = core::ptr::null_mut();
+    let Package: PAUTH_PACKAGE;
     let mut ObjectAttributes: _OBJECT_ATTRIBUTES = core::mem::zeroed();
     let mut Qos: SECURITY_QUALITY_OF_SERVICE = core::mem::zeroed();
     let mut TokenInformationType: LSA_TOKEN_INFORMATION_TYPE = LsaTokenInformationNull;
     let mut TokenInformation: PVOID = core::ptr::null_mut();
-    let mut TokenInfo0: PLSA_TOKEN_INFORMATION_NULL = core::ptr::null_mut();
+    let mut TokenInfo0: PLSA_TOKEN_INFORMATION_NULL;
     let mut TokenInfo1: PLSA_TOKEN_INFORMATION_V1 = core::ptr::null_mut();
     let mut AccountName: PUNICODE_STRING = core::ptr::null_mut();
     let mut AuthenticatingAuthority: PUNICODE_STRING = core::ptr::null_mut();
@@ -2047,7 +2047,7 @@ pub unsafe extern "C" fn LsapLogonUser(
             ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
             ObjectAttributes.SecurityQualityOfService = &mut Qos as *mut _ as PVOID;
 
-            Status = NtCreateToken(
+            NtCreateToken(
                 &mut TokenHandle,
                 TOKEN_ALL_ACCESS,
                 &mut ObjectAttributes,

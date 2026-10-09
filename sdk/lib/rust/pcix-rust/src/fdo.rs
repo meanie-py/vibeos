@@ -647,7 +647,7 @@ pub unsafe extern "system" fn PciGetHotPlugParameters(FdoExtension: PPCI_FDO_EXT
         Signature: 0,
         c2rust_unnamed: C2RustUnnamed_172 { MethodName: [0; 4] },
     };
-    let mut OutputBuffer: PACPI_EVAL_OUTPUT_BUFFER = core::ptr::null_mut();
+    let mut OutputBuffer: PACPI_EVAL_OUTPUT_BUFFER;
     let mut Length: ULONG;
     let mut Status: NTSTATUS;
 
@@ -783,10 +783,10 @@ pub unsafe extern "system" fn PciAddDevice(
     PhysicalDeviceObject: PDEVICE_OBJECT,
 ) -> NTSTATUS {
     let mut Descriptor: PCM_RESOURCE_LIST = core::ptr::null_mut();
-    let mut AttachedTo: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut FdoExtension: PPCI_FDO_EXTENSION = core::ptr::null_mut();
-    let mut ParentExtension: PPCI_FDO_EXTENSION = core::ptr::null_mut();
-    let mut PdoExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut();
+    let mut AttachedTo: PDEVICE_OBJECT;
+    let mut FdoExtension: PPCI_FDO_EXTENSION;
+    let mut ParentExtension: PPCI_FDO_EXTENSION;
+    let mut PdoExtension: PPCI_PDO_EXTENSION;
     let mut DeviceObject: PDEVICE_OBJECT = core::ptr::null_mut();
     let mut Buffer: [u8; 20] = [0u8; 20];
     let mut ValueInfo: PKEY_VALUE_PARTIAL_INFORMATION = &raw mut Buffer as *mut u8 as PKEY_VALUE_PARTIAL_INFORMATION;

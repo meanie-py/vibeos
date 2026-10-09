@@ -132,7 +132,7 @@ pub unsafe extern "system" fn FormatMessageSafeW(
     nSize: u32,
     Arguments: *const va_list,
 ) -> u32 {
-    let mut dwLength: u32 = 0;
+    let dwLength: u32;
     let dwFlags_mut = dwFlags;
 
     // SEH_TRY — direct call (DUMMY_PSEH: SEH handlers are dead code)

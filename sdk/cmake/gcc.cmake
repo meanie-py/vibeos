@@ -1080,6 +1080,36 @@ function(add_cargo_module _target _crate _output)
                 add_dependencies(${_cd} ${_target})
             endif()
         endforeach()
+        # ...and INSTALL it. On the bootcd NO_CAB puts the file loose on the CD, which the
+        # setup boot needs, and leaves it out of reactos.cab, which is what setup installs
+        # from: an installed system had no smss, csrss or winlogon at all. Upstream lists such
+        # binaries twice, loose and in the cabinet; so do we. Only the install directories
+        # (the loader is not installed), and only under the built name, which is the name
+        # the cabinet keeps (a renamed output is installed by its txtsetup.sif row instead).
+        # A file txtsetup.sif already installs (its [SourceDisksFiles] rows: the boot
+        # drivers, hal, ntoskrnl, ntdll...) stays out of the cabinet: both copies ran, and the
+        # second could not overwrite the first (16 ACCESS_DENIED copies per install).
+        get_property(_acm_txtsetup GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES)
+        if(NOT _acm_txtsetup)
+            file(STRINGS ${REACTOS_SOURCE_DIR}/boot/bootdata/txtsetup.sif _acm_lines REGEX "^[A-Za-z0-9_.-]+[ \t]*=")
+            set(_acm_txtsetup "")
+            foreach(_l ${_acm_lines})
+                string(REGEX REPLACE "^([A-Za-z0-9_.-]+).*" "\\1" _n "${_l}")
+                string(TOLOWER "${_n}" _n)
+                list(APPEND _acm_txtsetup ${_n})
+            endforeach()
+            set_property(GLOBAL PROPERTY VIBEOS_TXTSETUP_FILES "${_acm_txtsetup}")
+        endif()
+        get_filename_component(_acm_out_name ${_out} NAME)
+        string(TOLOWER "${_acm_out_name}" _acm_out_lc)
+        list(FIND _acm_txtsetup "${_acm_out_lc}" _acm_in_txtsetup)
+        if(_acm_NAME_ON_CD STREQUAL _acm_out_name AND _acm_in_txtsetup EQUAL -1
+           AND _acm_DESTINATION MATCHES "^reactos/system32(/drivers)?$")
+            add_cd_file(FILE ${_out} DESTINATION ${_acm_DESTINATION} FOR bootcd)
+            if(TARGET reactos_cab_inf)
+                add_dependencies(reactos_cab_inf ${_target})
+            endif()
+        endif()
     endif()
 endfunction()
 

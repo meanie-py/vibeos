@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from tools import scan_const_contradictions as scc
-from tools.scan_const_contradictions import island_disagreements
+from tools.scan_const_contradictions import island_disagreements, within_crate
 
 FSRTL = "sdk/lib/rust/fsrtl-rust/src/filelock.rs"
 ISLAND = {
@@ -61,3 +61,48 @@ def test_sixteen_bit_spellings_agree_but_wide_values_do_not():
     assert not scc.disagrees({-1, 0xFFFF})  # VARIANT_TRUE spelled both ways
     assert scc.disagrees({2, -2})  # the fastfat bug
     assert scc.disagrees({0x10000, 0})  # never forgiven by the 16-bit rule
+
+
+USERENV = "sdk/lib/rust/userenv-rust/src/"
+
+
+def test_within_crate_reports_userenvs_profilepath():
+    """Two values in ONE crate: GUI setup's "InitializeProfiles() failed"."""
+    decls = {
+        "IDS_PROFILEPATH": [
+            (USERENV + "prelude.rs", 1, "common"),
+            (USERENV + "userenv/setup.rs", 0, "common"),
+        ]
+    }
+    hits = within_crate(decls)
+    assert {h[1] for h in hits} == {USERENV + "prelude.rs", USERENV + "userenv/setup.rs"}, hits
+
+
+def test_within_crate_ignores_two_crates_meaning_two_things():
+    decls = {
+        "IDC_PROPERTIES": [
+            ("sdk/lib/rust/shell32-rust/src/a.rs", 2, "common"),
+            ("sdk/lib/rust/comctl32-rust/src/b.rs", 0x58A, "common"),
+        ]
+    }
+    assert within_crate(decls) == []
+
+
+def test_within_crate_ignores_a_per_arch_override():
+    decls = {"PAGE_SHIFT": [(USERENV + "a.rs", 12, "amd64"), (USERENV + "b.rs", 16, "arm64")]}
+    assert within_crate(decls) == []
+
+
+def test_island_collection_sees_camel_case_enum_members():
+    """winsrv's hand copy of USERTHREADINFOCLASS was invisible to the ALL_CAPS collector."""
+    m = scc.ANY_CONST_RE.match("const UserThreadUseActiveDesktop: u32 = 0;")
+    assert m is not None and m.group(1) == "UserThreadUseActiveDesktop"
+    hits = island_disagreements(
+        {"UserThreadUseActiveDesktop": [("sdk/lib/rust/winsrv-rust/src/x.rs", 0, "common")]},
+        {"UserThreadUseActiveDesktop": {7}},
+    )
+    assert hits == [("UserThreadUseActiveDesktop", "sdk/lib/rust/winsrv-rust/src/x.rs", 0)]
+
+
+def test_the_cross_crate_check_keeps_all_caps_only():
+    assert scc.CONST_RE.match("const DelayedWorkQueue: u32 = 0;") is None

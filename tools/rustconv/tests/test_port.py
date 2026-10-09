@@ -36,6 +36,49 @@ def test_profile_arm_is_inserted_before_the_default_and_replaced_in_place():
     )
 
 
+def test_a_multi_island_arm_is_replaced_not_appended_again():
+    multi = ARM.replace("  beta)", "  beta|beta-types_1)")
+    script = port.upsert_profile_arm(SCRIPT, multi, "beta")
+    script = script.replace("  *) echo", multi + "  *) echo")  # the duplicate derives left
+    once = port.upsert_profile_arm(script, ARM, "beta")
+    assert once.count("  beta)") == 1 and "beta|beta-types_1" not in once
+    assert once.count("  alpha)") == 1
+
+
+def test_a_dead_ifndef_reactos_case_arm_is_dropped(tmp_path):
+    c = tmp_path / "m.c"
+    c.write_text(
+        "BOOL WINAPI DllMain(HINSTANCE h, DWORD reason, LPVOID r)\n{\n    switch (reason)\n    {\n"
+        "#ifndef __REACTOS__\n        case DLL_WINE_PREATTACH:\n            return FALSE;\n#endif\n"
+        "        case DLL_PROCESS_ATTACH:\n            hcpl = h;\n    }\n    return TRUE;\n}\n"
+    )
+    rs = tmp_path / "m.rs"
+    rs.write_text(
+        "fn DllMain(reason: DWORD) -> BOOL {\n    match reason {\n"
+        "        DLL_WINE_PREATTACH => {\n            return FALSE;\n        }\n"
+        "        DLL_PROCESS_ATTACH | DLL_WINE_PREATTACH => {\n            hcpl = h;\n        }\n"
+        "        _ => {}\n    }\n    return TRUE;\n}\n"
+    )
+    assert port._drop_dead_arms(rs, c) == ["DLL_WINE_PREATTACH", "DLL_WINE_PREATTACH"]
+    out = rs.read_text()
+    assert "DLL_WINE_PREATTACH" not in out and "return FALSE" not in out
+    assert "        DLL_PROCESS_ATTACH => {" in out
+    assert port._drop_dead_arms(rs, c) == []
+
+
+def test_a_translations_own_wine_debug_channel_storage_is_dropped(tmp_path):
+    rs = tmp_path / "security.rs"
+    rs.write_text(
+        "use crate::prelude::*;\n"
+        'pub static __wine_dbch___default: [u8; 8] = *b"inetcpl\\0";\n'
+        "fn f() {\n    if __wine_dbch___default[0] as c_int & 8 != 0 {}\n}\n"
+    )
+    assert port._wine_debug_storage(rs) == ["__wine_dbch___default", "[0] -> .flags x1"]
+    out = rs.read_text()
+    assert "static" not in out and "(*__wine_dbch___default).flags as c_int" in out
+    assert port._wine_debug_storage(rs) == []
+
+
 def test_script_without_a_default_arm_is_refused():
     with pytest.raises(port.PortError):
         port.upsert_profile_arm("case x in\nesac\n", ARM, "beta")

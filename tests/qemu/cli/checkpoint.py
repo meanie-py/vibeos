@@ -456,6 +456,9 @@ def command(args, repo: Path) -> int:
                 "VIBEOS_QEMU_NVME_BRIDGE",
                 "VIBEOS_QEMU_XHCI",
                 "VIBEOS_QEMU_XHCI_MSI",
+                "VIBEOS_QEMU_CPU",
+                "VIBEOS_QEMU_HEADLESS",
+                "VIBEOS_QEMU_BOOT_NVME",
                 "VIBEOS_QEMU_EXTRA_ARGS",
             )
         ):

@@ -538,6 +538,14 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
     own = set(
         re.findall(r"^\s*(?:pub\s+)?(?:const|static|fn|type)\s+([A-Za-z_]\w*)", text, re.M)
     ) | set(re.findall(r"macro_rules!\s+([A-Za-z_]\w*)", text))
+    # ...and a name the prelude already IMPORTS from somewhere else (a sibling module's own
+    # `heap_alloc`, re-exported by the cross-TU block): a second named import is E0252.
+    shared_idents = {ident for ident, _d, _p in SHARED_CRATES}
+    for m in re.finditer(r"^\s*pub use ([\w:]+?)::(?:\{([^}]*)\}|(\w+));", text, re.M):
+        if m.group(1).split("::")[0] in shared_idents:
+            continue
+        own.update(n.strip().split(" as ")[-1] for n in (m.group(2) or m.group(3)).split(","))
+    own.discard("")
     changed: list[str] = []
     for (ident, module), names in shared_provides(workspace).items():
         keep = sorted(names - own)

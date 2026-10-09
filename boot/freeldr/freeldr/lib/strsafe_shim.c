@@ -62,6 +62,37 @@ RtlStringCbPrintfA(
     return STATUS_SUCCESS;
 }
 
+/* libcntpr provides _vsnwprintf (sdk/lib/crt/printf/_vsnwprintf.c). Its count is in
+ * characters; wchar_t is 16-bit on every PE target. */
+int __cdecl _vsnwprintf(unsigned short *str, __SIZE_TYPE__ count, const unsigned short *fmt,
+                        va_list ap);
+
+/* The wide twin. setupldr formats the boot drivers' names and paths with it. */
+NTSTATUS __cdecl
+RtlStringCbPrintfW(
+    unsigned short *pszDest,
+    __SIZE_TYPE__ cbDest,
+    const unsigned short *pszFormat,
+    ...)
+{
+    va_list args;
+    __SIZE_TYPE__ cchDest = cbDest / sizeof(unsigned short);
+    int n;
+
+    if (pszDest == NULL || cchDest == 0 || pszFormat == NULL)
+        return STATUS_INVALID_PARAMETER;
+
+    va_start(args, pszFormat);
+    n = _vsnwprintf(pszDest, cchDest, pszFormat, args);
+    va_end(args);
+
+    pszDest[cchDest - 1] = 0;
+
+    if (n < 0 || (__SIZE_TYPE__)n >= cchDest)
+        return STATUS_BUFFER_OVERFLOW;
+    return STATUS_SUCCESS;
+}
+
 /*
  * RtlZeroMemory: on i386, sdk/lib/rtl/i386/rtlmem.s in libblrtl.a provides
  * the stdcall `_RtlZeroMemory@8`. amd64/arm64 have no blrtl-side

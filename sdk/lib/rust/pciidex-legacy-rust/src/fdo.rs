@@ -1034,7 +1034,7 @@ pub unsafe extern "C" fn PciIdeXPdoCreateDevice(
     };
     let mut DeviceNameBuffer: [u16; 34] = [0u16; 34];
     let mut Pdo: PDEVICE_OBJECT = core::ptr::null_mut();
-    let mut PdoExtension: PPDO_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut PdoExtension: PPDO_DEVICE_EXTENSION;
     let mut Alignment: u32;
     static mut DeviceNumber: u32 = 0;
 
@@ -1332,7 +1332,7 @@ pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(
             return Status;
         }
         IRP_MN_STOP_DEVICE => {
-            Status = PciIdeXFdoStopDevice(FdoExtension);
+            PciIdeXFdoStopDevice(FdoExtension);
         }
         IRP_MN_REMOVE_DEVICE => {
             return PciIdeXFdoRemoveDevice(FdoExtension, Irp);

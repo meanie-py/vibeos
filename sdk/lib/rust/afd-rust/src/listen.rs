@@ -264,7 +264,7 @@ pub unsafe extern "C" fn AfdListenSocket(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let ListenReq: PAFD_LISTEN_DATA;
@@ -403,7 +403,7 @@ pub unsafe extern "C" fn AfdAccept(
     Irp: PIRP,
     IrpSp: PIO_STACK_LOCATION,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
     let FileObject: PFILE_OBJECT = (*IrpSp).FileObject;
     let DeviceExt: PAFD_DEVICE_EXTENSION = (*DeviceObject).DeviceExtension as PAFD_DEVICE_EXTENSION;
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;

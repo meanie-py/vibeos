@@ -18,7 +18,7 @@ pub unsafe extern "system" fn FsRtlBalanceReads(TargetDevice: PDEVICE_OBJECT) ->
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(Event),
-        1u32,
+        ntkrnl_sys::ddk::_EVENT_TYPE_NotificationEvent as _,
         0u8,
     );
 

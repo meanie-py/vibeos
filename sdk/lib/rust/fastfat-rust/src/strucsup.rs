@@ -97,7 +97,7 @@ extern "system" {
     // fsctrl.rs definition; this decl was left at u32.
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
     fn FatRootDirectorySize(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
-    fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
+    fn FatRootDirectoryLbo(Bpb: *const BIOS_PARAMETER_BLOCK) -> i64; // LBO
     fn FatLookupFileAllocationSize( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, );
     fn FatAcquireExclusiveGlobal(irp_context: *mut IRP_CONTEXT) -> u8;
     fn FatDeleteResource(resource: *mut ERESOURCE) -> NTSTATUS;

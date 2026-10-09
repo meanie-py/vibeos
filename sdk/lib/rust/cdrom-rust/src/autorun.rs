@@ -189,7 +189,7 @@ const NOTIFICATION_EXTERNAL_REQUEST_CLASS_MASK: u32 = 0x00000008;
 const FDO_HACK_GESN_IGNORE_OPCHANGE: u32 = 0x00000010;
 
 // SRB flags/status
-const SRB_STATUS_MASK: u8 = 0xFF;
+const SRB_STATUS_MASK: u8 = 0x3F; // srb.h: SRB_STATUS(Status) masks 0x3F (the queue-frozen/autosense bits are 0x40/0x80); was 0xFF
 const SRB_STATUS_SUCCESS: u8 = 0x1;  // was 0 (LLM-invented); bindgen-correct
 const SRB_STATUS_BUS_RESET: u8 = 0xe;  // was 0x06 (LLM-invented); bindgen-correct
 const SRB_STATUS_QUEUE_FROZEN: u8 = 0x40;
@@ -216,9 +216,9 @@ pub unsafe extern "C" fn GesnDataInterpret(
 ) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
     let info: *mut MEDIA_CHANGE_DETECTION_INFO = (*DeviceExtension).MediaChangeDetectionInfo;
-    let mut dataLength: LONG = 0;
-    let mut requiredLength: LONG = 0;
-    let mut inHomePosition: BOOLEAN = 0;
+    let mut dataLength: LONG;
+    let mut requiredLength: LONG;
+    let mut inHomePosition: BOOLEAN;
 
     *ResendImmediately = FALSE as BOOLEAN;
 
@@ -361,8 +361,6 @@ pub unsafe extern "C" fn GesnDataInterpret(
                         srb.CdbLength = 6;
                         srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
                         srb.SrbStatus = (SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_ERROR) as u8;
-                        srb.SenseInfoBuffer = &mut sense as *mut SENSE_DATA as *mut core::ffi::c_void;
-                        srb.SenseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as u8;
 
                         let rtl_size = core::mem::offset_of!(SENSE_DATA, AdditionalSenseLength)
                             + core::mem::size_of::<u8>();
@@ -371,6 +369,13 @@ pub unsafe extern "C" fn GesnDataInterpret(
 
                         sense.set_SenseKey(SCSI_SENSE_UNIT_ATTENTION as u8);
                         sense.AdditionalSenseCode = SCSI_ADSENSE_MEDIUM_CHANGED as u8;
+
+                        // After the sense fields, not before as in the C: writing `sense`
+                        // directly once a raw pointer to it is stored would invalidate that
+                        // pointer, and rustc -- blind to the ErrorHandler's read through
+                        // SenseInfoBuffer -- reported the writes as dead.
+                        srb.SenseInfoBuffer = &mut sense as *mut SENSE_DATA as *mut core::ffi::c_void;
+                        srb.SenseInfoBufferLength = core::mem::size_of::<SENSE_DATA>() as u8;
 
                         if let Some(handler) = (*DeviceExtension).DeviceAdditionalData.ErrorHandler {
                             handler(
@@ -782,7 +787,9 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
         status = WdfIoTargetFormatRequestForInternalIoctlOthers(
             (*DeviceExtension).IoTarget,
             (*info).MediaChangeRequest,
-            0x4D014, // IOCTL_SCSI_EXECUTE_IN
+            // IOCTL_SCSI_EXECUTE_IN is 0x1B0011; 0x4D014 (the comment's own claim) is no
+            // SCSI ioctl at all, so the media-change request was formatted for the wrong code.
+            0x1b0011, // IOCTL_SCSI_EXECUTE_IN
             core::ptr::null_mut(),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -1057,7 +1064,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
 ) -> NTSTATUS {
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut mediaChangeInfo: *mut MEDIA_CHANGE_DETECTION_INFO = null_mut();
+    let mut mediaChangeInfo: *mut MEDIA_CHANGE_DETECTION_INFO;
     let mut irp: *mut IRP = null_mut();
     let mut senseBuffer: *mut core::ffi::c_void = null_mut();
     let mut attributes: WDF_OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -1170,7 +1177,7 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
 
         // check the device supports GESN or not, initialize GESN structure if it supports
         {
-            let mut tempStatus: NTSTATUS = STATUS_SUCCESS;
+            let mut tempStatus: NTSTATUS;
 
             // TracePrint macros disabled due to varargs; original C calls commented
             // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
@@ -1242,11 +1249,11 @@ pub unsafe extern "C" fn DeviceInitializeGesn(
     // PAGED_CODE(); -- macro, no-op in Rust
 
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut header: *mut NOTIFICATION_EVENT_STATUS_HEADER = core::ptr::null_mut();
+    let mut header: *mut NOTIFICATION_EVENT_STATUS_HEADER;
     let mut detectionState: u32 = CdromDetectionUnknown;
     let deviceDescriptor: *mut STORAGE_DEVICE_DESCRIPTOR = (*DeviceExtension).DeviceDescriptor;
     let mut retryImmediately: BOOLEAN = 1; // TRUE
-    let mut i: u32 = 0;
+    let mut i: u32;
     let mut atapiResets: u32 = 0;
     let info: *mut MEDIA_CHANGE_DETECTION_INFO = (*DeviceExtension).MediaChangeDetectionInfo;
 
@@ -1602,7 +1609,7 @@ pub unsafe extern "C" fn DeviceInitializeMediaChangeDetection(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> i32 {
     let mut status: i32 = 0; // STATUS_SUCCESS
-    let mut disabled: i32 = 0; // FALSE
+    let mut disabled: i32; // FALSE
     let mut instanceOverride: u8 = 0; // initialised to avoid uninitialized use
 
     ; // PAGED_CODE()
@@ -1667,7 +1674,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
     Enabled: *mut u8,
 ) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
+    let mut status: NTSTATUS;
     let mut deviceKey: WDFKEY = core::ptr::null_mut();
     let mut subKey: WDFKEY = core::ptr::null_mut();
     let mut subkeyName: _UNICODE_STRING = core::mem::zeroed();
@@ -1894,7 +1901,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
     let mut status: NTSTATUS;
     let device_descriptor: PSTORAGE_DEVICE_DESCRIPTOR = (*DeviceExtension).DeviceDescriptor;
     let mut wdf_key: WDFKEY = core::ptr::null_mut();
-    let mut service_key: HANDLE = core::ptr::null_mut();
+    let mut service_key: HANDLE;
     let mut parameters: [RTL_QUERY_REGISTRY_TABLE; 2] = unsafe { core::mem::zeroed() };
     let mut device_unicode_string: _UNICODE_STRING = unsafe { core::mem::zeroed() };
     let mut device_string: ANSI_STRING = unsafe { core::mem::zeroed() };
@@ -2386,9 +2393,9 @@ pub unsafe extern "system" fn RequestMcnSyncIrpCompletion(
 pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
-    let mut irp: *mut IRP = core::ptr::null_mut();
-    let mut irpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
-    let mut nextIrpStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut irp: *mut IRP;
+    let mut irpStack: *mut IO_STACK_LOCATION;
+    let mut nextIrpStack: *mut IO_STACK_LOCATION;
 
     irp = (*(*DeviceExtension).MediaChangeDetectionInfo).MediaChangeSyncIrp;
     NT_ASSERT(if irp.is_null() { 0 } else { 1 });
@@ -2423,7 +2430,7 @@ pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
 #[no_mangle]
 pub unsafe extern "system" fn DeviceMainTimerTickHandler(Timer: WDFTIMER) {
 
-    let mut deviceExtension: PCDROM_DEVICE_EXTENSION = core::ptr::null_mut();
+    let mut deviceExtension: PCDROM_DEVICE_EXTENSION;
     let mut dataLength: usize = 0;
 
     deviceExtension = WdfObjectGetTypedContext(
@@ -2549,8 +2556,8 @@ pub unsafe extern "C" fn RequestHandleMcnControl(
     DataLength: *mut usize,
 ) -> NTSTATUS {
     // PAGED_CODE();
-    let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
-    let mut file_object: WDFFILEOBJECT = core::ptr::null_mut();
+    let mut status: NTSTATUS;
+    let mut file_object: WDFFILEOBJECT;
     let mut file_object_context: *mut FILE_OBJECT_CONTEXT = core::ptr::null_mut();
     let mut media_removal: *mut ntkrnl_sys::ddk::PREVENT_MEDIA_REMOVAL = core::ptr::null_mut();
 

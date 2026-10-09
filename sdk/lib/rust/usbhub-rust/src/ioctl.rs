@@ -31,10 +31,6 @@ extern "C" {
     fn wcschr(s: *const wchar_t, c: ::core::ffi::c_int) -> *mut wchar_t;
 }
 
-// DPRINT_IOCTL is a debug macro: __noop / `if(0) DbgPrint(...)` (drivers/usb/usbhub/dbg_uhub.h).
-// Faithful no-op in the release build.
-#[inline(always)]
-unsafe fn DPRINT_IOCTL(_fmt: *const i8) {}
 
 // PUSB_IDLE_CALLBACK_INFO is not emitted by bindgen (only the value type); usbioctl.h pointer typedef.
 type PUSB_IDLE_CALLBACK_INFO = *mut USB_IDLE_CALLBACK_INFO;
@@ -266,7 +262,7 @@ pub unsafe extern "system" fn USBH_PdoIoctlSubmitUrb(
     let mut Urb: PURB;
     let mut Status: NTSTATUS;
 
-    DPRINT_IOCTL(b"USBH_PdoIoctlSubmitUrb ... \n\0".as_ptr() as *const i8);
+    DPRINT_IOCTL!(b"USBH_PdoIoctlSubmitUrb ... \n\0".as_ptr() as *const i8);
 
     HubExtension = (*PortExtension).HubExtension;
 
@@ -1597,7 +1593,7 @@ pub unsafe extern "system" fn USBH_PdoInternalControl(
 //
 //     Urb = URB_FROM_IRP(Irp);
 //
-//     DPRINT_IOCTL("USBH_PdoUrbFilter: Device - %p, Irp - %p, Urb - %p\n",
+//     DPRINT_IOCTL!("USBH_PdoUrbFilter: Device - %p, Irp - %p, Urb - %p\n",
 //                  DeviceObject,
 //                  Irp,
 //                  Urb);
@@ -1710,7 +1706,7 @@ pub unsafe extern "system" fn USBH_PdoInternalControl(
 //     PURB Urb;
 //     NTSTATUS Status;
 //
-//     DPRINT_IOCTL("USBH_PdoIoctlSubmitUrb ... \n");
+//     DPRINT_IOCTL!("USBH_PdoIoctlSubmitUrb ... \n");
 //
 //     HubExtension = PortExtension->HubExtension;
 //
@@ -2782,7 +2778,7 @@ pub unsafe extern "system" fn USBH_PdoInternalControl(
 //     PIO_STACK_LOCATION IoStack;
 //     PULONG HubCount;
 //
-//     DPRINT_IOCTL("USBH_PdoInternalControl: PortExtension - %p, Irp - %p\n",
+//     DPRINT_IOCTL!("USBH_PdoInternalControl: PortExtension - %p, Irp - %p\n",
 //                  PortExtension,
 //                  Irp);
 //

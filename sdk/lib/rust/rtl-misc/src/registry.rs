@@ -952,7 +952,7 @@ pub unsafe extern "system" fn RtlQueryRegistryValues(
     Environment: PVOID,
 ) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut KeyValueInfo: PKEY_VALUE_FULL_INFORMATION = core::ptr::null_mut();
+    let mut KeyValueInfo: PKEY_VALUE_FULL_INFORMATION;
     let mut KeyHandle: HANDLE = core::ptr::null_mut();
     let mut CurrentKey: HANDLE;
     let mut BufferSize: SIZE_T;

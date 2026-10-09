@@ -138,7 +138,7 @@ unsafe fn ProbeAndCaptureUnicodeString(
 // (`_Name@N` on i386, cdecl elsewhere) — nm confirms @16 / @36.
 extern "system" {
     fn co_IntClientLoadLibrary( pstrLibName: PUNICODE_STRING, pstrInitFunc: PUNICODE_STRING, Unload: BOOL, ApiHook: BOOL, ) -> BOOL;
-    fn co_IntCallHookProc(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: u8, ModuleName: PUNICODE_STRING) -> u32;
+    fn co_IntCallHookProc(HookId: INT, Code: INT, wParam: WPARAM, lParam: LPARAM, Proc: HOOKPROC, ihmod: INT, offPfn: ULONG_PTR, Ansi: u8, ModuleName: PUNICODE_STRING) -> LRESULT; // callback.rs: a hook's LRESULT, not 32 bits
 }
 extern "C" {
     // GetW32ThreadInfo + UserDeleteW32Thread + _MmCopyFromCaller: real exported cdecl symbols.

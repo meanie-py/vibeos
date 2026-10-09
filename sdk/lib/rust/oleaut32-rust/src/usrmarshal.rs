@@ -1462,8 +1462,8 @@ pub unsafe extern "system" fn IDispatch_Invoke_Proxy(
 ) -> HRESULT {
     let hr: HRESULT;
     let mut VarResult: VARIANT = core::mem::zeroed();
-    let mut rgVarRefIdx: *mut UINT = core::ptr::null_mut();
-    let mut rgVarRef: *mut VARIANTARG = core::ptr::null_mut();
+    let rgVarRefIdx: *mut UINT;
+    let rgVarRef: *mut VARIANTARG;
     let mut u: UINT;
     let mut cVarRef: UINT;
     let mut uArgErr: UINT = 0;
@@ -2808,7 +2808,7 @@ pub unsafe extern "system" fn IPropertyBag_Read_Proxy(
     pErrorLog: *mut IErrorLog,
 ) -> HRESULT {
 
-    let mut pUnk: *mut IUnknown = core::ptr::null_mut();
+    let pUnk: *mut IUnknown;
     TRACE!(
         b"(%p, %s, %p, %p)\n\0".as_ptr() as PCHAR,
         This,

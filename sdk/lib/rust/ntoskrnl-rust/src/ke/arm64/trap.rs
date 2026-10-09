@@ -742,6 +742,11 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                 return;
             }
 
+            // What MmAccessFault said, when it refused. Not every refusal is
+            // an access violation: a guard-page hit and a user stack overflow
+            // come back as their own statuses and must be RAISED as them.
+            let mut MmStatus: NTSTATUS = STATUS_ACCESS_VIOLATION;
+
             if (DFSC & 0x3C) == 0x04 ||
                (DFSC & 0x3C) == 0x08 ||
                (DFSC & 0x3C) == 0x0C
@@ -775,6 +780,7 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
                     // and this deliberately mints no new bugcheck code.
                 } else {
                     ki_fault_retry_forget();
+                    MmStatus = Status;
                 }
             } else {
                 ki_fault_retry_forget();
@@ -785,8 +791,16 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
             // EXCEPTION_DATATYPE_MISALIGNMENT, not an access violation. FEX's
             // BTCpuResetToConsistentState keys on exactly this code to
             // backpatch unaligned LDAR/STLR (x86-TSO) and resume.
+            //
+            // A guard page or a user stack overflow is raised as its own code,
+            // as the x86 page-fault handlers do (i386 traphdlr.rs) and Windows
+            // does. Flattening both to ACCESS_VIOLATION is why arm64's user-mode
+            // RtlException got 0xc0000005 where it expects STATUS_STACK_OVERFLOW,
+            // although MiCheckForUserStackOverflow had returned exactly that.
             ExRec.ExceptionCode = if DFSC == 0x21 {
                 0x80000002u32 as i32 // STATUS_DATATYPE_MISALIGNMENT
+            } else if MmStatus == STATUS_GUARD_PAGE_VIOLATION || MmStatus == STATUS_STACK_OVERFLOW {
+                MmStatus
             } else {
                 STATUS_ACCESS_VIOLATION
             };

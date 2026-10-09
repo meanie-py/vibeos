@@ -620,9 +620,9 @@ unsafe fn WinLdrGicRedistributorLength(Base: ULONG64, Range: ULONG64) -> ULONG64
 
 /// QEMU virt's fw_cfg MMIO block, which carries the Phase-0 tripwire channel.
 /// It is a QEMU device with no ACPI description, so it cannot be discovered;
-/// it is probed ONLY when the discovered UART is QEMU virt's, which is what
-/// makes it safe — on a physical board this stays zero and nothing touches it.
-const QEMU_VIRT_UART: ULONG64 = 0x0900_0000;
+/// it is probed ONLY when the firmware's console tables describe QEMU virt's
+/// PL011, which is what makes it safe — on a physical board this stays zero and
+/// nothing touches it.
 const QEMU_VIRT_FW_CFG: ULONG64 = 0x0902_0000;
 static mut Arm64FwCfgBase: ULONG64 = 0;
 
@@ -687,7 +687,7 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
      * Non-fatal on failure, mirroring the C: a UP boot without them loses
      * only the affected feature, and the HAL reports IPI loss loudly. */
     if MempMapDevicePage(crate::arm64_debug::uart_base() as u64) == 0u8 {
-        ERR(b"Could not map PL011 UART page\n\0".as_ptr() as PCHAR);
+        ERR(b"Could not map the console UART page\n\0".as_ptr() as PCHAR);
     }
     let (Gicd, Gicc) = Arm64GicBases;
     let (Gicr, GicrLength) = Arm64GicRedistributors;
@@ -726,8 +726,6 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
 
     ERR(b">>> WinLdrSetupMachineDependent for ARM64\n\0".as_ptr() as _);
 
-    (*LoaderBlock).u.Arm.MachineType = 0;
-
     /* Carry the firmware's own description of this board to the kernel, so no
      * kernel or HAL path has to guess an MMIO address. */
     let Xsdt = crate::arm64_debug::xsdt_base();
@@ -740,7 +738,14 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
         }
         None => {}
     }
-    Arm64FwCfgBase = if Uart == QEMU_VIRT_UART { QEMU_VIRT_FW_CFG } else { 0 };
+    // QEMU virt's fw_cfg is wherever its PL011 is described, whichever UART is the
+    // console (a rig may make a 16550 the console and keep QEMU's PL011).
+    let QemuVirt = crate::arm64_serial_acpi::qemu_virt_from_xsdt(Xsdt);
+    Arm64FwCfgBase = if QemuVirt { QEMU_VIRT_FW_CFG } else { 0 };
+    // MachineType carries the console UART's register model on arm64, and whether
+    // fw_cfg is there (arm64_serial_acpi::MACHINE_*; arc.h ARM_LOADER_BLOCK).
+    (*LoaderBlock).u.Arm.MachineType = crate::arm64_debug::uart_kind()
+        | if QemuVirt { crate::arm64_serial_acpi::MACHINE_QEMU_FW_CFG } else { 0 };
     (*LoaderBlock).u.Arm.AcpiTablePhysicalAddress = Xsdt;
     (*LoaderBlock).u.Arm.Arm64UartBase = Uart;
     (*LoaderBlock).u.Arm.Arm64GicDistributorBase = Arm64GicBases.0;

@@ -955,7 +955,10 @@ pub unsafe extern "C" fn OpenBootStore_UStr(
 }
 #[no_mangle]
 pub unsafe extern "C" fn OpenBootStore(
-    Handle: *mut core::ffi::c_void,
+    // C: `PVOID* Handle` -- the opened store comes back through it. Taken as a bare
+    // pointer, CreateFreeLoaderIniForReactOS passed its NULL handle by value and the
+    // compiler had no way to object.
+    Handle: *mut *mut core::ffi::c_void,
     SystemPartition: PCWSTR,
     Type: BOOT_STORE_TYPE,
     OpenMode: BOOT_STORE_OPENMODE,
@@ -964,7 +967,7 @@ pub unsafe extern "C" fn OpenBootStore(
     let mut SystemPartitionPath: _UNICODE_STRING = core::mem::zeroed();
     RtlInitUnicodeString(&mut SystemPartitionPath, SystemPartition);
     return OpenBootStore_UStr(
-        (Handle).cast(),
+        Handle,
         &mut SystemPartitionPath,
         Type,
         OpenMode,

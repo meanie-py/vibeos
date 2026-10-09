@@ -250,6 +250,9 @@ pub struct ARM64VID_DEVICE_EXTENSION {
     pub FrameBufferMappedSize: ULONG,
     pub PhysDisp: PVOID,
     pub Callout: PVOID,
+    /// No framebuffer from firmware: FrameBufferMapped is nonpaged pool standing in
+    /// for one (see Arm64VidHeadless), never an I/O mapping.
+    pub Headless: BOOLEAN,
 }
 pub type PARM64VID_DEVICE_EXTENSION = *mut ARM64VID_DEVICE_EXTENSION;
 
@@ -378,6 +381,10 @@ pub unsafe extern "system" fn DriverEntry(
     core::ptr::write_bytes(DevExt as *mut u8, 0, core::mem::size_of::<ARM64VID_DEVICE_EXTENSION>());
 
     Status = Arm64VidDiscoverFramebuffer(DevExt);
+    #[cfg(target_arch = "aarch64")]
+    if !NT_SUCCESS(Status) {
+        Status = Arm64VidHeadless(DevExt);
+    }
     if !NT_SUCCESS(Status) {
         // No GOP/linear framebuffer in the ARC config tree — normal on a
         // legacy-BIOS boot where the VGA miniport owns the display. We MUST
@@ -413,6 +420,37 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     DPRINT1!("[arm64vid] DriverEntry SUCCESS\n");
+    STATUS_SUCCESS
+}
+
+/// arm64 with no firmware framebuffer: a server (EC2 Graviton has no display). An
+/// arm64 machine has no VGA to fall back to, and win32k bugchecks (0xB4,
+/// VIDEO_DRIVER_INIT_FAILURE) without a display device, so the desktop runs on a
+/// frame in memory that nothing scans out. Everything above the driver works the
+/// same; the session is reached over the network or watched over serial.
+#[cfg(target_arch = "aarch64")]
+unsafe fn Arm64VidHeadless(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
+    const WIDTH: ULONG = 1024;
+    const HEIGHT: ULONG = 768;
+    let size = WIDTH * HEIGHT * 4;
+    let frame = ExAllocatePoolWithTag(NonPagedPool, size as _, TAG_AVID);
+    if frame.is_null() {
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
+    core::ptr::write_bytes(frame as *mut u8, 0, size as usize);
+    (*DevExt).ScreenWidth = WIDTH;
+    (*DevExt).ScreenHeight = HEIGHT;
+    (*DevExt).PixelsPerScanLine = WIDTH;
+    (*DevExt).BitsPerPixel = 32;
+    (*DevExt).ScreenStride = WIDTH * 4;
+    (*DevExt).RedMask = 0x00FF_0000;
+    (*DevExt).GreenMask = 0x0000_FF00;
+    (*DevExt).BlueMask = 0x0000_00FF;
+    (*DevExt).FrameBufferSize = size;
+    (*DevExt).FrameBufferMapped = frame;
+    (*DevExt).FrameBufferMappedSize = size;
+    (*DevExt).Headless = 1;
+    DPRINT1!("[arm64vid] no firmware framebuffer: headless, %lux%lu in memory\n", WIDTH, HEIGHT);
     STATUS_SUCCESS
 }
 
@@ -511,7 +549,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
                 let pVideoMemoryInfo = OutputBuffer as *mut VIDEO_MEMORY_INFORMATION;
-                if (*DevExt).FrameBufferPhysical.QuadPart == 0 {
+                if (*DevExt).FrameBufferPhysical.QuadPart == 0 && (*DevExt).Headless == 0 {
                     DPRINT1!("[arm64vid] No framebuffer physical address!\n");
                     Status = STATUS_UNSUCCESSFUL;
                 } else {
@@ -543,7 +581,8 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
 
         IOCTL_VIDEO_UNMAP_VIDEO_MEMORY => {
             DPRINT1!("[arm64vid] IOCTL_VIDEO_UNMAP_VIDEO_MEMORY\n");
-            if !(*DevExt).FrameBufferMapped.is_null() {
+            // A headless frame is pool, kept for the next MAP.
+            if !(*DevExt).FrameBufferMapped.is_null() && (*DevExt).Headless == 0 {
                 MmUnmapIoSpace((*DevExt).FrameBufferMapped, (*DevExt).FrameBufferMappedSize as _);
                 (*DevExt).FrameBufferMapped = core::ptr::null_mut();
                 (*DevExt).FrameBufferMappedSize = 0;

@@ -361,7 +361,7 @@ pub unsafe extern "system" fn ExpInitializeCallbacks() -> BOOLEAN {
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(ExpCallbackEvent),
-        1u32,
+        ntkrnl_sys::ddk::_EVENT_TYPE_NotificationEvent as _,
         0u8,
     );
 

@@ -639,7 +639,7 @@ appeared as a misleading number.
 
 timedate, powercfg, joy, hotplug, hdwwiz, access, ncpa, telephon, odbccp32, openglcfg,
 wined3dcfg, console, main, input, mmsys and usrmgr: ~600 functions, about $2 in all
-including `port fix`. inetcpl is translated but NOT flipped (needs two islands, below).
+including `port fix`. inetcpl followed the same day (below).
 `-m haiku` runs with `--concurrency` now: the gate is the model's price, not its vendor.
 Every gap the run hit became a pass, so `port replay <stem> -m haiku --fix-cap $` alone
 rebuilds each crate:
@@ -673,10 +673,18 @@ comma-operator statement is several assignments to the invented-value audit; a C
 holds a function pointer may be spelled twice; a sealed `sizeof(TYPE)` the model hands back
 bare is restored at unseal.
 
-**Owed -- multi-island modules.** inetcpl's TUs need two islands (one group defines
-`COBJMACROS`/`NONAMELESSUNION`), and `port island`/`scaffold` generate one; its WIDL
-`IFoo_Method` COBJMACROS inlines are also "the -sys crate's job" to `port headers`. Both are
-needed before inetcpl can flip.
+**inetcpl, the seventeenth (flipped 2026-10-08).** It was parked as "needs two islands", and
+it never did: `profile_derive`'s anonymous-member filter covered `DUMMYUNIONNAME` and `2`-`9`
+but not `DUMMYUNIONNAME1`, so cryptuiapi.h's inline union read as a TYPE that "conflicted"
+with wtypes.h's, and the TU grouping split the module in two. With the name filtered, one
+island serves all five TUs. The derive also exposed `upsert_profile_arm` matching only a bare
+`  inetcpl)` label, so every re-derive APPENDED the multi-island `inetcpl|inetcpl-types_1)`
+arm -- six copies were on master. The rest was $0 tooling: WIDL C wrappers generated from the
+island Vtbl, wine/heap.h and `debugstr_*` in win32macros-rust, the wine debug types emitted
+with the channel statics, stale facts dropped once an island enum alias or a module defines
+the name, and dead `#if` arms dropped at integrate. Fix rounds: $0.0012. A read-only review
+found the dead `ImageList_Destroy` (now a loud integrate warning) and a heap overrun in the C's
+`create_connection_settings` (PAC URL bytes never counted in the size), fixed in the Rust.
 
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 

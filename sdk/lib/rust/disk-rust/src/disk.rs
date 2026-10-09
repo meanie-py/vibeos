@@ -2063,14 +2063,17 @@ pub unsafe extern "C" fn DiskFlushDispatch(
         (*srbEx).SrbExDataOffset[0] = 0;
         (*srbEx).OriginalRequest = (*FlushContext).CurrIrp as *mut ::core::ffi::c_void;
         (*srbEx).SrbStatus = 0;
-        (*srbEx).SrbFlags |= (SRB_CLASS_FLAGS_PERSISTANT as USHORT) as u32;
+        // C: SET_FLAG(..., SRB_CLASS_FLAGS_PERSISTANT). Through `as USHORT` 0x20000000 was 0,
+        // so ClassIoComplete freed this SRB, which lives in the device extension: 0xC2 on
+        // the first flush (setup's registry page).
+        (*srbEx).SrbFlags |= SRB_CLASS_FLAGS_PERSISTANT;
     } else {
         (*srb).Function = SRB_FUNCTION_FLUSH as UCHAR;
         (*srb).CdbLength = 0;
         (*srb).OriginalRequest = (*FlushContext).CurrIrp as *mut ::core::ffi::c_void;
         (*srb).SrbStatus = 0;
         (*srb).ScsiStatus = 0;
-        (*srb).SrbFlags |= (SRB_CLASS_FLAGS_PERSISTANT as USHORT) as u32;
+        (*srb).SrbFlags |= SRB_CLASS_FLAGS_PERSISTANT;
     }
 
     irpSp = IoGetCurrentIrpStackLocation((*FlushContext).CurrIrp);

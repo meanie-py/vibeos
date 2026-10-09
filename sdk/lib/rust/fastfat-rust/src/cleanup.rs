@@ -28,7 +28,7 @@ extern "system" {
 extern "system" {
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn FlagOn(flags: u32, mask: u32) -> BOOLEAN;
+    fn FlagOn(flags: u32, mask: u32) -> u32;
     fn ClearFlag(flags: *mut u32, mask: u32);
     fn SetFlag(flags: *mut u32, mask: u32);
     fn NT_ASSERT(condition: BOOLEAN);

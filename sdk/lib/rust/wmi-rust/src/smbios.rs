@@ -202,7 +202,7 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
 
     PhysicalAddress.QuadPart = 0xF0000;
 
-    EntryPointMapping = MmMapIoSpace(PhysicalAddress, SearchSize as _, 0) as *mut UCHAR;
+    EntryPointMapping = MmMapIoSpace(PhysicalAddress, SearchSize as _, ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _) as *mut UCHAR;
     if EntryPointMapping.is_null() {
         return 0xC0000001u32 as NTSTATUS;
     }
@@ -244,7 +244,7 @@ pub unsafe extern "system" fn WmipGetRawSMBiosTableData(
 
         PhysicalAddress.QuadPart = TableAddress as i64;
 
-        TableMapping = MmMapIoSpace(PhysicalAddress, TableSize as _, 0);
+        TableMapping = MmMapIoSpace(PhysicalAddress, TableSize as _, ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmCached as _);
         if TableMapping.is_null() {
             ExFreePoolWithTag(BiosTables, 0x534D5442);
             return 0xC0000001u32 as NTSTATUS;

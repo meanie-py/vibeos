@@ -15,8 +15,6 @@ extern "system" {
 }
 extern "C" {
     fn DbgPrint(Format: PCSTR, ...) -> ULONG;
-    fn DPRINT_IMPL(format: *const i8, ...);
-    fn DPRINT_UHCI(format: *const i8, ...);
 }
 extern "system" {
     fn READ_PORT_UCHAR(Port: *mut UCHAR) -> UCHAR;
@@ -146,7 +144,7 @@ pub unsafe extern "system" fn UhciFixDataToggle(
     mut TD: PUHCI_HCD_TD,
     mut DataToggle: BOOL,
 ) {
-    DPRINT_UHCI(
+    DPRINT_UHCI!(
         b"UhciFixDataToggle: UhciExtension - %p, UhciEndpoint - %p, DataToggle - %X\n\0".as_ptr()
             as *const i8,
         UhciExtension,
@@ -201,7 +199,7 @@ pub unsafe extern "system" fn UhciCleanupFrameList(
     let OldFrameNumber: ULONG;
     let mut ix: ULONG;
 
-    DPRINT_UHCI(
+    DPRINT_UHCI!(
         b"UhciCleanupFrameList: [%p] All - %x\n\0".as_ptr() as *const i8,
         UhciExtension,
         IsAllEntries as core::ffi::c_int,
@@ -241,13 +239,13 @@ pub unsafe extern "system" fn UhciUpdateCounter(UhciExtension: PUHCI_EXTENSION) 
     if (FrameNumber ^ (*UhciExtension).FrameHighPart) & UHCI_FRNUM_OVERFLOW_LIST != 0 {
         (*UhciExtension).FrameHighPart = ((*UhciExtension).FrameHighPart).wrapping_add(UHCI_FRAME_LIST_MAX_ENTRIES);
 
-        // DPRINT_UHCI("UhciUpdateCounter: UhciExtension->FrameHighPart - %lX\n", UhciExtension->FrameHighPart);
+        // DPRINT_UHCI!("UhciUpdateCounter: UhciExtension->FrameHighPart - %lX\n", UhciExtension->FrameHighPart);
     }
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciSetNextQH(QH: PUHCI_HCD_QH, NextQH: PUHCI_HCD_QH) {
-    DPRINT_UHCI(b"UhciSetNextQH: QH - %p, NextQH - %p\n\0".as_ptr() as *const i8, QH, NextQH);
+    DPRINT_UHCI!(b"UhciSetNextQH: QH - %p, NextQH - %p\n\0".as_ptr() as *const i8, QH, NextQH);
 
     (*QH).HwQH.NextQH = ((*NextQH).PhysicalAddress | UHCI_QH_HEAD_LINK_PTR_QH) as ULONG;
     (*QH).NextHcdQH = NextQH;
@@ -346,7 +344,7 @@ pub unsafe extern "system" fn UhciReopenEndpoint(
     EndpointProperties: PUSBPORT_ENDPOINT_PROPERTIES,
     uhciEndpoint: PVOID,
 ) -> MPSTATUS {
-    DPRINT_IMPL(b"Uhci: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"Uhci: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -444,7 +442,7 @@ pub unsafe extern "system" fn UhciCloseEndpoint(
     uhciEndpoint: PVOID,
     IsDoDisablePeriodic: BOOLEAN,
 ) {
-    DPRINT_IMPL(b"UhciCloseEndpoint: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciCloseEndpoint: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -907,12 +905,12 @@ pub unsafe extern "system" fn UhciStopController(
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciSuspendController(uhciExtension: PVOID) {
-    DPRINT_IMPL(b"UhciSuspendController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciSuspendController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciResumeController(uhciExtension: PVOID) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciResumeController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciResumeController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -926,7 +924,7 @@ pub unsafe extern "system" fn UhciHardwarePresent(UhciExtension: PUHCI_EXTENSION
     UhciStatus.AsUSHORT = READ_PORT_USHORT(StatusReg);
 
     if UhciStatus.AsUSHORT as i32 == MAXUSHORT {
-        // DPRINT_UHCI("UhciHardwarePresent: HW not present\n");
+        // DPRINT_UHCI!("UhciHardwarePresent: HW not present\n");
     }
 
     return (UhciStatus.AsUSHORT as i32 != MAXUSHORT) as BOOLEAN;
@@ -980,7 +978,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
     }
 
     if HcStatus.HcHalted() != 0 {
-        DPRINT_UHCI(
+        DPRINT_UHCI!(
             b"UhciInterruptService: Hc Halted [%p] HcStatus %X\n\0".as_ptr() as *const i8,
             UhciExtension,
             HcStatus.AsUSHORT as i32
@@ -1069,7 +1067,7 @@ pub unsafe extern "system" fn UhciInterruptDpc(
     let mut BaseRegister: PUHCI_HW_REGISTERS;
     let HcStatus: UHCI_USB_STATUS;
 
-    DPRINT_UHCI(
+    DPRINT_UHCI!(
         b"UhciInterruptDpc: [%p] EnableInt %x, HcStatus %X\n\0".as_ptr() as *const i8,
         uhciExtension,
         IsDoEnableInterrupts as core::ffi::c_int,
@@ -1172,7 +1170,7 @@ pub unsafe extern "system" fn UhciAllocateTD(
     let mut AllocTdCounter: ULONG;
     let mut ix: ULONG;
 
-    DPRINT_UHCI(b"UhciAllocateTD: ...\n\0".as_ptr() as *const i8);
+    DPRINT_UHCI!(b"UhciAllocateTD: ...\n\0".as_ptr() as *const i8);
 
     AllocTdCounter = (*UhciEndpoint).AllocTdCounter;
 
@@ -1874,7 +1872,7 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
     let mut USBDStatus: USBD_STATUS = USBD_STATUS_SUCCESS;
     let mut TransferedLen: SIZE_T;
 
-    DPRINT_UHCI(b"UhciProcessDoneNonIsoTD: TD - %p\n\0".as_ptr() as *const i8, TD);
+    DPRINT_UHCI!(b"UhciProcessDoneNonIsoTD: TD - %p\n\0".as_ptr() as *const i8, TD);
 
     UhciTransfer = (*TD).__bindgen_anon_1.UhciTransfer as PUHCI_TRANSFER;
     (*UhciTransfer).PendingTds = (*UhciTransfer).PendingTds.wrapping_sub(1);
@@ -1903,7 +1901,7 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
         if (*TD).HwTD.Token.PIDCode() as i32 == (UHCI_TD_PID_IN as i32)
             && (*TD).Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER != 0
         {
-            DPRINT_IMPL(b"UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+            DPRINT_IMPL!(b"UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
         }
 
         if USBDStatus != USBD_STATUS_SUCCESS {
@@ -1912,7 +1910,7 @@ pub unsafe extern "system" fn UhciProcessDoneNonIsoTD(
     }
 
     if (*TD).Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER != 0 {
-        DPRINT_IMPL(b"UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+        DPRINT_IMPL!(b"UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     }
 
     (*UhciEndpoint).AllocatedTDs = (*UhciEndpoint).AllocatedTDs.wrapping_sub(1);
@@ -1946,7 +1944,7 @@ pub unsafe extern "system" fn UhciIsochTransfer(
     ehciTransfer: PVOID,
     isoParameters: PVOID,
 ) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciIsochTransfer: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciIsochTransfer: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -1956,7 +1954,7 @@ pub unsafe extern "system" fn UhciAbortIsoTransfer(
     UhciEndpoint: PUHCI_ENDPOINT,
     UhciTransfer: PUHCI_TRANSFER,
 ) {
-    DPRINT_IMPL(b"UhciAbortIsoTransfer: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciAbortIsoTransfer: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -1987,7 +1985,7 @@ pub unsafe extern "system" fn UhciAbortNonIsoTransfer(
     while !TD.is_null() && (*TD).__bindgen_anon_1.UhciTransfer == UhciTransfer {
         if (*TD).HwTD.ControlStatus.__bindgen_anon_1.Status() as i32 & (UHCI_TD_STS_ACTIVE as i32) != 0 {
             if (*TD).Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER != 0 {
-                // DPRINT_IMPL("UhciAbortNonIsoTransfer: UNIMPLEMENTED. FIXME\n");
+                // DPRINT_IMPL!("UhciAbortNonIsoTransfer: UNIMPLEMENTED. FIXME\n");
             }
 
             (*UhciEndpoint).AllocatedTDs = (*UhciEndpoint).AllocatedTDs.wrapping_sub(1);
@@ -2076,7 +2074,7 @@ pub unsafe extern "system" fn UhciGetEndpointState(
     uhciExtension: PVOID,
     uhciEndpoint: PVOID,
 ) -> ULONG {
-    DPRINT_IMPL(b"UhciGetEndpointState: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciGetEndpointState: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return 0 as ULONG;
 }
 
@@ -2255,7 +2253,7 @@ pub unsafe extern "system" fn UhciGetEndpointStatus(
     let UhciEndpoint: PUHCI_ENDPOINT = uhciEndpoint as PUHCI_ENDPOINT;
     let EndpointStatus: ULONG;
 
-    DPRINT_UHCI(b"UhciGetEndpointStatus: ...\n\0".as_ptr() as *const i8);
+    DPRINT_UHCI!(b"UhciGetEndpointStatus: ...\n\0".as_ptr() as *const i8);
 
     if (*UhciEndpoint).Flags as ULONG & UHCI_ENDPOINT_FLAG_HALTED as ULONG != 0 {
         EndpointStatus = USBPORT_ENDPOINT_HALT as ULONG;
@@ -2304,7 +2302,7 @@ pub unsafe extern "system" fn UhciPollIsoEndpoint(
     mut UhciExtension: PUHCI_EXTENSION,
     mut UhciEndpoint: PUHCI_ENDPOINT,
 ) {
-    DPRINT_IMPL(b"UhciPollIsoEndpoint: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciPollIsoEndpoint: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -2626,7 +2624,7 @@ pub unsafe extern "system" fn UhciPollEndpoint(
     let mut UhciEndpoint: PUHCI_ENDPOINT = uhciEndpoint as PUHCI_ENDPOINT;
     let mut TransferType: ULONG;
 
-    DPRINT_UHCI(b"UhciPollEndpoint: ...\n\0".as_ptr() as *const i8);
+    DPRINT_UHCI!(b"UhciPollEndpoint: ...\n\0".as_ptr() as *const i8);
 
     TransferType = (*UhciEndpoint).EndpointProperties.TransferType;
 
@@ -2693,7 +2691,7 @@ pub unsafe extern "system" fn UhciGet32BitFrameNumber(uhciExtension: PVOID) -> U
     ) as ULONG;
     Uhci32BitFrame |= Fn as core::ffi::c_ulong as ULONG;
 
-    DPRINT_UHCI(
+    DPRINT_UHCI!(
         b"UhciGet32BitFrameNumber: Uhci32BitFrame - %lX\n\0".as_ptr() as *const i8,
         Uhci32BitFrame,
     );
@@ -2712,7 +2710,7 @@ pub unsafe extern "system" fn UhciInterruptNextSOF(uhciExtension: PVOID) {
     let mut SofFrame: ULONG;
     let mut Idx: ULONG;
 
-    DPRINT_UHCI(b"UhciInterruptNextSOF: ...\n\0".as_ptr() as *const i8);
+    DPRINT_UHCI!(b"UhciInterruptNextSOF: ...\n\0".as_ptr() as *const i8);
 
     CurrentFrame = UhciGet32BitFrameNumber(UhciExtension as PVOID);
 
@@ -2841,7 +2839,7 @@ pub unsafe extern "system" fn UhciPollController(uhciExtension: PVOID) {
     let mut PortControl: UHCI_PORT_STATUS_CONTROL = core::mem::zeroed();
     let mut Port: USHORT;
 
-    DPRINT_UHCI(
+    DPRINT_UHCI!(
         b"UhciPollController: UhciExtension - %p\n\0".as_ptr() as *const i8,
         UhciExtension,
     );
@@ -2881,12 +2879,12 @@ pub unsafe extern "system" fn UhciSetEndpointDataToggle(
     uhciEndpoint: PVOID,
     DataToggle: ULONG,
 ) {
-    DPRINT_IMPL(b"UhciSetEndpointDataToggle: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciSetEndpointDataToggle: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciResetController(uhciExtension: PVOID) {
-    DPRINT_IMPL(b"UhciResetController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciResetController: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
@@ -2900,7 +2898,7 @@ pub unsafe extern "system" fn UhciStartSendOnePacket(
     BufferLength: ULONG,
     pUSBDStatus: *mut USBD_STATUS,
 ) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciStartSendOnePacket: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciStartSendOnePacket: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -2915,7 +2913,7 @@ pub unsafe extern "system" fn UhciEndSendOnePacket(
     BufferLength: ULONG,
     pUSBDStatus: *mut USBD_STATUS,
 ) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciEndSendOnePacket: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciEndSendOnePacket: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -2926,18 +2924,18 @@ pub unsafe extern "system" fn UhciPassThru(
     ParameterLength: ULONG,
     pParameters: PVOID,
 ) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciPassThru: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciPassThru: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciFlushInterrupts(uhciExtension: PVOID) {
-    DPRINT_IMPL(b"UhciFlushInterrupts: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciFlushInterrupts: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UhciUnload(uhciExtension: PVOID) -> MPSTATUS {
-    DPRINT_IMPL(b"UhciUnload: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
+    DPRINT_IMPL!(b"UhciUnload: UNIMPLEMENTED. FIXME\n\0".as_ptr() as *const i8);
     return MP_STATUS_SUCCESS as MPSTATUS;
 }
 
@@ -3097,7 +3095,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                   IN PUHCI_HCD_TD TD,
 //                   IN BOOL DataToggle)
 // {
-//     DPRINT_UHCI("UhciFixDataToggle: UhciExtension - %p, UhciEndpoint - %p, DataToggle - %X\n",
+//     DPRINT_UHCI!("UhciFixDataToggle: UhciExtension - %p, UhciEndpoint - %p, DataToggle - %X\n",
 //                 UhciExtension,
 //                 UhciEndpoint,
 //                 DataToggle);
@@ -3152,7 +3150,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG OldFrameNumber;
 //     ULONG ix;
 //
-//     DPRINT_UHCI("UhciCleanupFrameList: [%p] All - %x\n",
+//     DPRINT_UHCI!("UhciCleanupFrameList: [%p] All - %x\n",
 //                 UhciExtension, IsAllEntries);
 //
 //     // FIXME: using UhciExtension->LockFrameList after supporting ISOs.
@@ -3194,7 +3192,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     {
 //         UhciExtension->FrameHighPart += UHCI_FRAME_LIST_MAX_ENTRIES;
 //
-//         DPRINT_UHCI("UhciUpdateCounter: UhciExtension->FrameHighPart - %lX\n",
+//         DPRINT_UHCI!("UhciUpdateCounter: UhciExtension->FrameHighPart - %lX\n",
 //                     UhciExtension->FrameHighPart);
 //     }
 // }
@@ -3204,7 +3202,7 @@ pub unsafe extern "system" fn DriverEntry(
 // UhciSetNextQH(IN PUHCI_HCD_QH QH,
 //               IN PUHCI_HCD_QH NextQH)
 // {
-//     DPRINT_UHCI("UhciSetNextQH: QH - %p, NextQH - %p\n", QH, NextQH);
+//     DPRINT_UHCI!("UhciSetNextQH: QH - %p, NextQH - %p\n", QH, NextQH);
 //
 //     QH->HwQH.NextQH = NextQH->PhysicalAddress | UHCI_QH_HEAD_LINK_PTR_QH;
 //     QH->NextHcdQH = NextQH;
@@ -3305,7 +3303,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                    IN PUSBPORT_ENDPOINT_PROPERTIES EndpointProperties,
 //                    IN PVOID uhciEndpoint)
 // {
-//     DPRINT_IMPL("Uhci: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("Uhci: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -3383,7 +3381,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                   IN PVOID uhciEndpoint,
 //                   IN BOOLEAN IsDoDisablePeriodic)
 // {
-//     DPRINT_IMPL("UhciCloseEndpoint: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciCloseEndpoint: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // MPSTATUS
@@ -3807,14 +3805,14 @@ pub unsafe extern "system" fn DriverEntry(
 // NTAPI
 // UhciSuspendController(IN PVOID uhciExtension)
 // {
-//     DPRINT_IMPL("UhciSuspendController: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciSuspendController: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // MPSTATUS
 // NTAPI
 // UhciResumeController(IN PVOID uhciExtension)
 // {
-//     DPRINT_IMPL("UhciResumeController: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciResumeController: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -3829,7 +3827,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UhciStatus.AsUSHORT = READ_PORT_USHORT(StatusReg);
 //
 //     if (UhciStatus.AsUSHORT == MAXUSHORT)
-//         DPRINT_UHCI("UhciHardwarePresent: HW not present\n");
+//         DPRINT_UHCI!("UhciHardwarePresent: HW not present\n");
 //
 //     return UhciStatus.AsUSHORT != MAXUSHORT;
 // }
@@ -3891,7 +3889,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (HcStatus.HcHalted)
 //     {
-//         DPRINT_UHCI("UhciInterruptService: Hc Halted [%p] HcStatus %X\n",
+//         DPRINT_UHCI!("UhciInterruptService: Hc Halted [%p] HcStatus %X\n",
 //                     UhciExtension,
 //                     HcStatus.AsUSHORT);
 //     }
@@ -3978,7 +3976,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUHCI_HW_REGISTERS BaseRegister;
 //     UHCI_USB_STATUS HcStatus;
 //
-//     DPRINT_UHCI("UhciInterruptDpc: [%p] EnableInt %x, HcStatus %X\n",
+//     DPRINT_UHCI!("UhciInterruptDpc: [%p] EnableInt %x, HcStatus %X\n",
 //                 uhciExtension, IsDoEnableInterrupts, UhciExtension->HcStatus);
 //
 //     BaseRegister = UhciExtension->BaseRegister;
@@ -4081,7 +4079,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG AllocTdCounter;
 //     ULONG ix;
 //
-//     DPRINT_UHCI("UhciAllocateTD: ...\n");
+//     DPRINT_UHCI!("UhciAllocateTD: ...\n");
 //
 //     AllocTdCounter = UhciEndpoint->AllocTdCounter;
 //
@@ -4135,7 +4133,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     BOOLEAN IsLastTd = TRUE;
 //     BOOLEAN ZeroLengthTransfer = TRUE;
 //
-//     DPRINT_UHCI("UhciMapAsyncTransferToTDs: ...\n");
+//     DPRINT_UHCI!("UhciMapAsyncTransferToTDs: ...\n");
 //
 //     TotalMaxPacketSize = UhciEndpoint->EndpointProperties.TotalMaxPacketSize;
 //     DeviceSpeed = UhciEndpoint->EndpointProperties.DeviceSpeed;
@@ -4284,7 +4282,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USHORT DeviceAddress;
 //     ULONG PhysicalAddress;
 //
-//     DPRINT_UHCI("UhciControlTransfer: UhciTransfer - %p\n", UhciTransfer);
+//     DPRINT_UHCI!("UhciControlTransfer: UhciTransfer - %p\n", UhciTransfer);
 //
 //     if (UhciEndpoint->EndpointLock > 1)
 //     {
@@ -4308,7 +4306,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UhciTransfer->PendingTds++;
 //     FirstTD = UhciAllocateTD(UhciExtension, UhciEndpoint);
 //     FirstTD->Flags |= UHCI_HCD_TD_FLAG_PROCESSED;
-//     DPRINT_UHCI("UhciControlTransfer: FirstTD - %p\n", FirstTD);
+//     DPRINT_UHCI!("UhciControlTransfer: FirstTD - %p\n", FirstTD);
 //
 //     FirstTD->HwTD.NextElement = 0;
 //
@@ -4340,7 +4338,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UhciTransfer->PendingTds++;
 //     LastTD = UhciAllocateTD(UhciExtension, UhciEndpoint);
 //     LastTD->Flags |= UHCI_HCD_TD_FLAG_PROCESSED;
-//     DPRINT_UHCI("UhciControlTransfer: LastTD - %p\n", LastTD);
+//     DPRINT_UHCI!("UhciControlTransfer: LastTD - %p\n", LastTD);
 //
 //     LastTD->HwTD.NextElement = 0;
 //
@@ -4411,7 +4409,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     /* Link this transfer to queue */
 //     UhciQueueTransfer(UhciExtension, UhciEndpoint, FirstTD, LastTD);
 //
-//     DPRINT_UHCI("UhciControlTransfer: end MP_STATUS_SUCCESS\n");
+//     DPRINT_UHCI!("UhciControlTransfer: end MP_STATUS_SUCCESS\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -4431,7 +4429,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG TDs;
 //     ULONG ix;
 //
-//     DPRINT_UHCI("UhciBulkOrInterruptTransfer: ...\n");
+//     DPRINT_UHCI!("UhciBulkOrInterruptTransfer: ...\n");
 //
 //     TotalMaxPacketSize = UhciEndpoint->EndpointProperties.TotalMaxPacketSize;
 //
@@ -4513,7 +4511,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUHCI_TRANSFER UhciTransfer = uhciTransfer;
 //     ULONG TransferType;
 //
-//     DPRINT_UHCI("UhciSubmitTransfer: ...\n");
+//     DPRINT_UHCI!("UhciSubmitTransfer: ...\n");
 //
 //     InterlockedIncrement(&UhciEndpoint->EndpointLock);
 //
@@ -4641,7 +4639,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     USBD_STATUS USBDStatus = USBD_STATUS_SUCCESS;
 //     SIZE_T TransferedLen;
 //
-//     DPRINT_UHCI("UhciProcessDoneNonIsoTD: TD - %p\n", TD);
+//     DPRINT_UHCI!("UhciProcessDoneNonIsoTD: TD - %p\n", TD);
 //
 //     UhciTransfer = TD->UhciTransfer;
 //     UhciTransfer->PendingTds--;
@@ -4670,7 +4668,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         if (TD->HwTD.Token.PIDCode == UHCI_TD_PID_IN &&
 //             TD->Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER)
 //         {
-//             DPRINT_IMPL("UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n");
+//             DPRINT_IMPL!("UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n");
 //         }
 //
 //         if (USBDStatus != USBD_STATUS_SUCCESS)
@@ -4678,7 +4676,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     }
 //
 //     if (TD->Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER)
-//         DPRINT_IMPL("UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n");
+//         DPRINT_IMPL!("UhciProcessDoneNonIsoTD: UNIMPLEMENTED. FIXME\n");
 //
 //     UhciEndpoint->AllocatedTDs--;
 //
@@ -4712,7 +4710,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                   IN PVOID ehciTransfer,
 //                   IN PVOID isoParameters)
 // {
-//     DPRINT_IMPL("UhciIsochTransfer: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciIsochTransfer: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -4722,7 +4720,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                      IN PUHCI_ENDPOINT UhciEndpoint,
 //                      IN PUHCI_TRANSFER UhciTransfer)
 // {
-//     DPRINT_IMPL("UhciAbortIsoTransfer: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciAbortIsoTransfer: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // VOID
@@ -4757,16 +4755,16 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     while (TD && TD->UhciTransfer == UhciTransfer)
 //     {
-//         DPRINT_UHCI("UhciAbortNonIsoTransfer: TD - %p\n", TD);
+//         DPRINT_UHCI!("UhciAbortNonIsoTransfer: TD - %p\n", TD);
 //
 //         if (TD->HwTD.ControlStatus.Status & UHCI_TD_STS_ACTIVE)
 //         {
 //             if (TD->Flags & UHCI_HCD_TD_FLAG_DATA_BUFFER)
-//                 DPRINT_IMPL("UhciAbortNonIsoTransfer: UNIMPLEMENTED. FIXME\n");
+//                 DPRINT_IMPL!("UhciAbortNonIsoTransfer: UNIMPLEMENTED. FIXME\n");
 //
 //             UhciEndpoint->AllocatedTDs--;
 //
-//             DPRINT_UHCI("UhciAbortNonIsoTransfer: Active TD - %p\n", TD);
+//             DPRINT_UHCI!("UhciAbortNonIsoTransfer: Active TD - %p\n", TD);
 //
 //             TD->HwTD.NextElement = 0;
 //             TD->Flags = 0;
@@ -4807,7 +4805,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             PhysicalAddress &= ~UHCI_QH_ELEMENT_LINK_PTR_TERMINATE;
 //         }
 //
-//         DPRINT_UHCI("UhciAbortNonIsoTransfer: TD - %p\n", TD);
+//         DPRINT_UHCI!("UhciAbortNonIsoTransfer: TD - %p\n", TD);
 //
 //         UhciEndpoint->QH->HwQH.NextElement = PhysicalAddress;
 //         UhciEndpoint->QH->HwQH.NextElement &= ~UHCI_QH_ELEMENT_LINK_PTR_QH;
@@ -4871,7 +4869,7 @@ pub unsafe extern "system" fn DriverEntry(
 // UhciGetEndpointState(IN PVOID uhciExtension,
 //                      IN PVOID uhciEndpoint)
 // {
-//     DPRINT_IMPL("UhciGetEndpointState: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciGetEndpointState: UNIMPLEMENTED. FIXME\n");
 //     return 0;
 // }
 //
@@ -5048,7 +5046,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUHCI_ENDPOINT UhciEndpoint = uhciEndpoint;
 //     ULONG EndpointStatus;
 //
-//     DPRINT_UHCI("UhciGetEndpointStatus: ...\n");
+//     DPRINT_UHCI!("UhciGetEndpointStatus: ...\n");
 //
 //     if (UhciEndpoint->Flags & UHCI_ENDPOINT_FLAG_HALTED)
 //         EndpointStatus = USBPORT_ENDPOINT_HALT;
@@ -5100,7 +5098,7 @@ pub unsafe extern "system" fn DriverEntry(
 // UhciPollIsoEndpoint(IN PUHCI_EXTENSION UhciExtension,
 //                     IN PUHCI_ENDPOINT UhciEndpoint)
 // {
-//     DPRINT_IMPL("UhciPollIsoEndpoint: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciPollIsoEndpoint: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // VOID
@@ -5117,7 +5115,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PLIST_ENTRY ListTDs;
 //     UCHAR TdStatus;
 //
-//     DPRINT_UHCI("UhciPollNonIsoEndpoint: UhciExtension - %p, UhciEndpoint - %p\n",
+//     DPRINT_UHCI!("UhciPollNonIsoEndpoint: UhciExtension - %p, UhciEndpoint - %p\n",
 //                 UhciExtension,
 //                 UhciEndpoint);
 //
@@ -5142,13 +5140,13 @@ pub unsafe extern "system" fn DriverEntry(
 //         NextTD = NULL;
 //     }
 //
-//     DPRINT_UHCI("UhciPollNonIsoEndpoint: NextTD - %p, NextTdPA - %p\n",
+//     DPRINT_UHCI!("UhciPollNonIsoEndpoint: NextTD - %p, NextTdPA - %p\n",
 //                 NextTD,
 //                 NextTdPA);
 //
 //     for (TD = UhciEndpoint->HeadTD; TD != NextTD && TD != NULL; TD = TD->NextHcdTD)
 //     {
-//         DPRINT_UHCI("UhciPollNonIsoEndpoint: TD - %p, TD->NextHcdTD - %p\n",
+//         DPRINT_UHCI!("UhciPollNonIsoEndpoint: TD - %p, TD->NextHcdTD - %p\n",
 //                     TD,
 //                     TD->NextHcdTD);
 //
@@ -5175,11 +5173,11 @@ pub unsafe extern "system" fn DriverEntry(
 //         {
 //             if (TD->NextHcdTD == NULL)
 //             {
-//                 DPRINT_UHCI("UhciPollNonIsoEndpoint: TD->NextHcdTD == NULL\n");
+//                 DPRINT_UHCI!("UhciPollNonIsoEndpoint: TD->NextHcdTD == NULL\n");
 //             }
 //             else
 //             {
-//                 DPRINT_UHCI("UhciPollNonIsoEndpoint: ControlStatus - %X\n",
+//                 DPRINT_UHCI!("UhciPollNonIsoEndpoint: ControlStatus - %X\n",
 //                             TD->NextHcdTD->HwTD.ControlStatus.AsULONG);
 //             }
 //         }
@@ -5189,7 +5187,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (NextTD == NULL)
 //     {
-//         DPRINT_UHCI("UhciPollNonIsoEndpoint: NextTD == NULL\n");
+//         DPRINT_UHCI!("UhciPollNonIsoEndpoint: NextTD == NULL\n");
 //
 //         UhciEndpoint->HeadTD = NULL;
 //         UhciEndpoint->TailTD = NULL;
@@ -5199,7 +5197,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         goto ProcessListTDs;
 //     }
 //
-//     DPRINT_UHCI("UhciPollNonIsoEndpoint: NextTD - %p, NextTdPA - %p\n",
+//     DPRINT_UHCI!("UhciPollNonIsoEndpoint: NextTD - %p, NextTdPA - %p\n",
 //                 NextTD,
 //                 NextTdPA);
 //
@@ -5207,7 +5205,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //     if (TdStatus & UHCI_TD_STS_ACTIVE)
 //     {
-//         DPRINT_UHCI("UhciPollNonIsoEndpoint: UHCI_TD_STS_ACTIVE \n");
+//         DPRINT_UHCI!("UhciPollNonIsoEndpoint: UHCI_TD_STS_ACTIVE \n");
 //         goto ProcessListTDs;
 //     }
 //
@@ -5295,7 +5293,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         if (NextTD->HwTD.Token.MaximumLength == UHCI_TD_LENGTH_NULL ||
 //             TransferedLen >= (NextTD->HwTD.Token.MaximumLength + 1))
 //         {
-//             DPRINT_UHCI("UhciPollNonIsoEndpoint: NextTD - %p, TransferedLen - %X\n",
+//             DPRINT_UHCI!("UhciPollNonIsoEndpoint: NextTD - %p, TransferedLen - %X\n",
 //                         NextTD,
 //                         TransferedLen);
 //
@@ -5310,7 +5308,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                 QH->HwQH.NextElement = NextTD->HwTD.NextElement;
 //                 QH->HwQH.NextElement |= UHCI_QH_ELEMENT_LINK_PTR_TD;
 //
-//                 DPRINT_UHCI("UhciPollNonIsoEndpoint: NextTD - %p, TD - %p\n",
+//                 DPRINT_UHCI!("UhciPollNonIsoEndpoint: NextTD - %p, TD - %p\n",
 //                             NextTD,
 //                             TD);
 //             }
@@ -5318,7 +5316,7 @@ pub unsafe extern "system" fn DriverEntry(
 //             goto ProcessListTDs;
 //         }
 //
-//         DPRINT_UHCI("UhciPollNonIsoEndpoint: ShortPacket. ControlStatus - %X\n",
+//         DPRINT_UHCI!("UhciPollNonIsoEndpoint: ShortPacket. ControlStatus - %X\n",
 //                     NextTD->HwTD.ControlStatus.AsULONG);
 //
 //         NextTD->Flags |= UHCI_HCD_TD_FLAG_DONE;
@@ -5337,7 +5335,7 @@ pub unsafe extern "system" fn DriverEntry(
 //
 //             if (!(TD->Flags & UHCI_HCD_TD_FLAG_DONE))
 //             {
-//                 DPRINT_UHCI("UhciPollNonIsoEndpoint: TD - %p\n", TD);
+//                 DPRINT_UHCI!("UhciPollNonIsoEndpoint: TD - %p\n", TD);
 //
 //                 TD->Flags |= (UHCI_HCD_TD_FLAG_DONE |
 //                               UHCI_HCD_TD_FLAG_NOT_ACCESSED);
@@ -5387,7 +5385,7 @@ pub unsafe extern "system" fn DriverEntry(
 //         PhysicalAddress &= ~UHCI_QH_ELEMENT_LINK_PTR_TERMINATE;
 //     }
 //
-//     DPRINT_UHCI("UhciPollNonIsoEndpoint: TD - %p\n", TD);
+//     DPRINT_UHCI!("UhciPollNonIsoEndpoint: TD - %p\n", TD);
 //
 //     QH->HwQH.NextElement = PhysicalAddress;
 //     QH->HwQH.NextElement &= ~UHCI_QH_ELEMENT_LINK_PTR_QH;
@@ -5414,7 +5412,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     if (UhciEndpoint->Flags & UHCI_ENDPOINT_FLAG_CONTROL_OR_ISO &&
 //         UhciEndpoint->Flags & UHCI_ENDPOINT_FLAG_HALTED)
 //     {
-//         DPRINT_UHCI("UhciPollNonIsoEndpoint: Halted periodic EP - %p\n",
+//         DPRINT_UHCI!("UhciPollNonIsoEndpoint: Halted periodic EP - %p\n",
 //                     UhciEndpoint);
 //
 //         UhciSetEndpointStatus(UhciExtension,
@@ -5432,7 +5430,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     PUHCI_ENDPOINT UhciEndpoint = uhciEndpoint;
 //     ULONG TransferType;
 //
-//     DPRINT_UHCI("UhciPollEndpoint: ...\n");
+//     DPRINT_UHCI!("UhciPollEndpoint: ...\n");
 //
 //     TransferType = UhciEndpoint->EndpointProperties.TransferType;
 //
@@ -5483,7 +5481,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     Uhci32BitFrame += ((USHORT)Hp ^ Fn) & UHCI_FRNUM_OVERFLOW_LIST;
 //     Uhci32BitFrame |= Fn;
 //
-//     DPRINT_UHCI("UhciGet32BitFrameNumber: Uhci32BitFrame - %lX\n",
+//     DPRINT_UHCI!("UhciGet32BitFrameNumber: Uhci32BitFrame - %lX\n",
 //                 Uhci32BitFrame);
 //
 //     return Uhci32BitFrame;
@@ -5502,7 +5500,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     ULONG SofFrame;
 //     ULONG Idx;
 //
-//     DPRINT_UHCI("UhciInterruptNextSOF: ...\n");
+//     DPRINT_UHCI!("UhciInterruptNextSOF: ...\n");
 //
 //     CurrentFrame = UhciGet32BitFrameNumber(UhciExtension);
 //
@@ -5621,7 +5619,7 @@ pub unsafe extern "system" fn DriverEntry(
 //     UHCI_PORT_STATUS_CONTROL PortControl;
 //     USHORT Port;
 //
-//     DPRINT_UHCI("UhciPollController: UhciExtension - %p\n", UhciExtension);
+//     DPRINT_UHCI!("UhciPollController: UhciExtension - %p\n", UhciExtension);
 //
 //     BaseRegister = UhciExtension->BaseRegister;
 //
@@ -5649,14 +5647,14 @@ pub unsafe extern "system" fn DriverEntry(
 //                           IN PVOID uhciEndpoint,
 //                           IN ULONG DataToggle)
 // {
-//     DPRINT_IMPL("UhciSetEndpointDataToggle: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciSetEndpointDataToggle: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // VOID
 // NTAPI
 // UhciResetController(IN PVOID uhciExtension)
 // {
-//     DPRINT_IMPL("UhciResetController: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciResetController: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // MPSTATUS
@@ -5670,7 +5668,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                        IN ULONG BufferLength,
 //                        IN USBD_STATUS * pUSBDStatus)
 // {
-//     DPRINT_IMPL("UhciStartSendOnePacket: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciStartSendOnePacket: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -5685,7 +5683,7 @@ pub unsafe extern "system" fn DriverEntry(
 //                      IN ULONG BufferLength,
 //                      IN USBD_STATUS * pUSBDStatus)
 // {
-//     DPRINT_IMPL("UhciEndSendOnePacket: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciEndSendOnePacket: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -5696,7 +5694,7 @@ pub unsafe extern "system" fn DriverEntry(
 //              IN ULONG ParameterLength,
 //              IN PVOID pParameters)
 // {
-//     DPRINT_IMPL("UhciPassThru: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciPassThru: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //
@@ -5704,14 +5702,14 @@ pub unsafe extern "system" fn DriverEntry(
 // NTAPI
 // UhciFlushInterrupts(IN PVOID uhciExtension)
 // {
-//     DPRINT_IMPL("UhciFlushInterrupts: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciFlushInterrupts: UNIMPLEMENTED. FIXME\n");
 // }
 //
 // MPSTATUS
 // NTAPI
 // UhciUnload(IN PVOID uhciExtension)
 // {
-//     DPRINT_IMPL("UhciUnload: UNIMPLEMENTED. FIXME\n");
+//     DPRINT_IMPL!("UhciUnload: UNIMPLEMENTED. FIXME\n");
 //     return MP_STATUS_SUCCESS;
 // }
 //

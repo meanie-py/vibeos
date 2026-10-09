@@ -1161,7 +1161,7 @@ unsafe fn save_mfpict(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut I
 
 unsafe fn save_emf(entry: *mut DataCacheEntry, contents: BOOL, stream: *mut IStream) -> HRESULT {
     let mut hr: HRESULT = S_OK;
-    let mut data_size: c_int = 0;
+    let mut data_size: c_int;
     let data: *mut BYTE;
 
     if contents == 0 {
