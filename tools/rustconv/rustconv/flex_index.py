@@ -28,8 +28,6 @@ import sys
 from functools import cache
 from pathlib import Path
 
-from tools.source_walk import source_files
-
 REPO = Path(__file__).resolve().parents[3]
 RUST = REPO / "sdk" / "lib" / "rust"
 _STRUCT = re.compile(r"pub struct (\w+)\s*\{(.*?)\n\}", re.S)
@@ -48,6 +46,10 @@ def field_shapes(root: Path = RUST) -> tuple[frozenset[str], frozenset[str]]:
     """
     flex: set[str] = set()
     longer: set[str] = set()
+    # Imported here: `tools` is the repo root's package, absent when rustconv is imported on its
+    # own (port.py imports this module, and check-tooling runs from tools/rustconv).
+    from tools.source_walk import source_files
+
     for path in source_files(root, "*.rs"):
         text = path.read_text(errors="replace")
         if "pub struct" not in text:
@@ -89,6 +91,15 @@ def _place_start(text: str, dot: int) -> int:
             continue
         if c == ":" and i >= 2 and text[i - 2] == ":":
             i -= 2
+            continue
+        # A chain rustfmt broke across lines (`(*R).List[0]\n    .PartialResourceList\n
+        # .PartialDescriptors[i]`, pciidex's resource walk): whitespace before a `.` is still
+        # inside the place.
+        if c.isspace() and i < len(text) and text[i] == ".":
+            j = i - 1
+            while j > 0 and text[j - 1].isspace():
+                j -= 1
+            i = j
             continue
         break
     return i
@@ -212,6 +223,8 @@ def run(paths: list[Path], *, check: bool = False, ambiguous_too: bool = False) 
     fields, ambiguous = field_shapes()
     total = 0
     for root in paths:
+        from tools.source_walk import source_files
+
         files = [root] if root.is_file() else sorted(source_files(root, "*.rs"))
         for f in files:
             text = f.read_text()

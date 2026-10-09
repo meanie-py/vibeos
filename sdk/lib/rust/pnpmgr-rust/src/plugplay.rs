@@ -911,25 +911,27 @@ unsafe fn IopGetDeviceProperty(
             
             if Status >= 0 {
                 (*PowerData).PD_MostRecentPowerState = PowerDeviceD0;
-                if DeviceCapabilities._bitfield_1.get(0, 1) != 0 {
+                // Named getters: the raw `_bitfield_1.get(n, 1)` calls read bits 2-5 (Lock/Eject/
+                // Removable/Dock) as WakeFromD0-D3 and bit 12 (WakeFromD2) as WarmEjectSupported.
+                if DeviceCapabilities.DeviceD1() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_D1_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(1, 1) != 0 {
+                if DeviceCapabilities.DeviceD2() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_D2_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(2, 1) != 0 {
+                if DeviceCapabilities.WakeFromD0() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D0_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(3, 1) != 0 {
+                if DeviceCapabilities.WakeFromD1() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D1_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(4, 1) != 0 {
+                if DeviceCapabilities.WakeFromD2() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D2_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(5, 1) != 0 {
+                if DeviceCapabilities.WakeFromD3() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WAKE_FROM_D3_SUPPORTED;
                 }
-                if DeviceCapabilities._bitfield_1.get(12, 1) != 0 {
+                if DeviceCapabilities.WarmEjectSupported() != 0 {
                     (*PowerData).PD_Capabilities |= PDCAP_WARM_EJECT_SUPPORTED;
                 }
                 (*PowerData).PD_D1Latency = DeviceCapabilities.D1Latency;

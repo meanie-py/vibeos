@@ -1030,6 +1030,82 @@ def local_types(
     return agreed, differs
 
 
+_ANON_FIELD_RE = re.compile(r"(?m)^\s*pub (\w+):")
+
+
+def anonymous_types(
+    c_file: Path,
+    fields: dict[str, frozenset[str]],
+    arches: tuple[str, ...] = ("i386", "amd64", "arm64"),
+) -> tuple[dict[str, str], dict[str, str]]:
+    """THIS file's anonymous struct each `C2RustUnnamed_N` stands for, matched by SHAPE.
+
+    `fields` maps each name the module uses to the field names its struct literals spell.
+    The number is a counter within one transpile, so it identifies nothing: via.c's bridge
+    table struct is `_154` on i386, `_162` on amd64 and `_163` on arm64, amd64's `_163` is a
+    different struct, and svw_pata.c has its own `_163` too (via.rs was handed that one: 48
+    field errors). So the name is kept as the module spelled it, and its definition is the
+    one anonymous type of this TU whose field names are exactly those -- the same text on
+    every arch, nested anonymous types not allowed (their names would be per-arch too).
+    A name with no unique, arch-agreed match is returned in the second dict, never guessed.
+    """
+    per_arch: list[dict[str, str]] = []
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            return {}, {n: f"{arch}: no c2rust output" for n in fields}
+        per_arch.append({k: v for k, v in _type_items(text).items() if _ANON_TYPE_RE.fullmatch(k)})
+    agreed: dict[str, str] = {}
+    differs: dict[str, str] = {}
+    for name, want in sorted(fields.items()):
+        bodies: set[str] = set()
+        for items in per_arch:
+            hits = [v for v in items.values() if frozenset(_ANON_FIELD_RE.findall(v)) == want]
+            bodies |= {re.sub(r"\bC2RustUnnamed\w*", "\0", h, count=1) for h in hits}
+            if len(hits) != 1:
+                bodies.add(f"{len(hits)} candidates")
+        nested = any(_ANON_TYPE_RE.search(b.replace("\0", "")) for b in bodies)
+        if not want or len(bodies) != 1 or nested:
+            differs[name] = f"fields {sorted(want)}: {len(bodies)} distinct match(es)"
+            continue
+        agreed[name] = bodies.pop().replace("\0", name)
+    return agreed, differs
+
+
+_DEF_FN_RE = re.compile(
+    r'(?m)^(?:pub )?(?:unsafe )?extern "C" fn ([A-Za-z_]\w*)\((.*?)\)(?:\s*->\s*([^{]+?))?\s*\{',
+    re.S,
+)
+
+
+def definition_signatures(
+    c_file: Path, names: set[str], arches: tuple[str, ...] = ("i386", "amd64", "arm64")
+) -> dict[str, str]:
+    """`fn NAME(..) -> T;` for functions the file DEFINES, from c2rust's own definitions,
+    when every arch's text agrees -- the only authority for a `static` function, which no
+    header declares. Same shape as `extern_signatures`; `mut` binding markers are dropped.
+    """
+    per_arch: dict[str, dict[str, str]] = {}
+    for arch in arches:
+        text = _transpile_text(c_file, verbose=False, arch=arch)
+        if text is None:
+            continue
+        found: dict[str, str] = {}
+        for m in _DEF_FN_RE.finditer(text):
+            if m.group(1) not in names:
+                continue
+            params = re.sub(r"(?<![\w*])mut\s+(?=\w+\s*:)", "", " ".join(m.group(2).split()))
+            ret = f" -> {' '.join(m.group(3).split())}" if m.group(3) else ""
+            found[m.group(1)] = f"fn {m.group(1)}({params.rstrip(', ')}){ret};"
+        per_arch[arch] = found
+    out: dict[str, str] = {}
+    for name in names:
+        texts = {p.get(name) for p in per_arch.values()}
+        if len(texts) == 1 and None not in texts and len(per_arch) == len(arches):
+            out[name] = texts.pop()  # type: ignore[assignment]
+    return out
+
+
 _EXTERN_FN_RE = re.compile(r"(?m)^    (?:pub )?fn ([A-Za-z_]\w*)\(")
 
 

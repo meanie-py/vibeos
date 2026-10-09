@@ -279,3 +279,22 @@ def test_struct_literal_field_labels_are_not_kept_names():
     lost = original.replace(body, "let a = ADDR { AsULONG: 0 };")
     found = cf.reply_findings(original, lost, {"error[E0560]": {"amd64"}}, lambda _: [])
     assert any("FLAG_A" in f for f in found)
+
+
+def test_an_empty_or_attribute_macro_may_vanish():
+    original = cf.function_spans(RUST)[1]
+    src = RUST[original.start : original.end].replace(
+        "STATUS_SUCCESS", "NOTHING;\n    STATUS_SUCCESS"
+    )
+    errors = {"error[E0425]: cannot find value `NOTHING`": {"amd64"}}
+    assert cf.reply_findings(src, src.replace("NOTHING;\n", ""), errors, lambda _: []) == []
+    aligned = src.replace("NOTHING;", "DECLSPEC_ALIGN(16);")
+    errors = {"error[E0425]: cannot find function `DECLSPEC_ALIGN`": {"amd64"}}
+    dropped = aligned.replace("DECLSPEC_ALIGN(16);", "")
+    assert any(
+        "names dropped" in f for f in cf.reply_findings(aligned, dropped, errors, lambda _: [])
+    )
+    kept = aligned.replace("DECLSPEC_ALIGN(16);", "#[repr(align(16))] struct A([u8; 16]);")
+    assert not any(
+        "names dropped" in f for f in cf.reply_findings(aligned, kept, errors, lambda _: [])
+    )

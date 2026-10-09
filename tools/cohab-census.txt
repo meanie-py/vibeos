@@ -1286,14 +1286,50 @@ drivers/storage/class/classpnp/CMakeLists.txt	1	# dummy.c + ntoskrnl-vista-rust 
 drivers/storage/class/disk/CMakeLists.txt	1	# data.c disk.c diskwmi.c geometry.c pnp.c # all replaced by Rust (disk-rust); kept on disk
 drivers/storage/class/ramdisk/CMakeLists.txt	1	# no ISR / no DPC / no HW register I/O. ramdisk.c kept on disk (never-delete). Bar: link-clean x3.
 drivers/storage/class/ramdisk/CMakeLists.txt	1	# ramdisk.c replaced by Rust (ramdisk-rust). Pure WDM RAM-disk class driver -- no miniport /
-drivers/storage/ide/atapi/CMakeLists.txt	1	# C body replaced by Rust; atapi.c/.h DELETED 2026-09-20 (Microsoft NT4 DDK EULA,
-drivers/storage/ide/atapi/CMakeLists.txt	1	# The NT4-DDK ATAPI IDE miniport (atapi.c, single TU, since deleted) was translated to Rust
-drivers/storage/ide/atapi/CMakeLists.txt	1	# atapi.sys — Rust cohabitation flip (atapi.c -> atapi-rust)
+drivers/storage/ide/atapi/CMakeLists.txt	1	# atapi.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# dev_config.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# dev_error.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# dev_identify.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# dev_power.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# dev_timings.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# enum.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# fdo.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# ioctl.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# pdo.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# portstate.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# satl.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# scsi.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# smart.c
+drivers/storage/ide/atapi/CMakeLists.txt	1	# wmi.c)
+drivers/storage/ide/legide/CMakeLists.txt	1	# legide.sys — Rust cohabitation flip (legide.c -> legide-rust), i386 only
+drivers/storage/ide/legide/CMakeLists.txt	1	# list(APPEND SOURCE legide.c)
+drivers/storage/ide/legide/CMakeLists.txt	1	# to Rust in sdk/lib/rust/legide-rust (rustconv port, sealed DeepSeek); legide.c stays on disk.
 drivers/storage/ide/pciide/CMakeLists.txt	1	# pciide.c is translated to Rust (sdk/lib/rust/pciide-rust, kept on disk per the
-drivers/storage/ide/pciidex/CMakeLists.txt	1	# C bodies replaced by Rust (fdo.c miniport.c pciidex.c pdo.c power.c) — kept on disk.
-drivers/storage/ide/pciidex/CMakeLists.txt	1	# a new acpi.c, calling back into fdo.c/pciidex.c internals we have translated
-drivers/storage/ide/pciidex/CMakeLists.txt	1	# pciidex.sys — Rust cohabitation flip (fdo/miniport/pciidex/pdo/power.c -> Rust)
-drivers/storage/ide/pciidex/CMakeLists.txt	1	# so they are 3-line trampolines in rust_varargs_shim.c that call the fixed-arity `*_v`
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# FDO+PDO core (fdo/pdo/pciidex/miniport/power/acpi.c) plus the chipset/ layer (per-vendor
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# PciIdeXDebugPrint is DEFINED by a 3-line trampoline in rust_varargs_shim.c (stable Rust
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# acpi.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ahci_generic.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ahci_hw.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ahci_io.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/amd.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ati.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/cmd.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/intel.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_generic.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_hw.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_io.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pctech.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/sil680.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/svw_pata.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/svw_sata.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/toshiba.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/via.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# fdo.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# list(APPEND SOURCE chipset/pata_legacy.c)
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# miniport.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# pciidex.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# pdo.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# power.c)
 drivers/storage/ide/uniata/CMakeLists.txt	1	# and id_ata.cpp's own header says the skeleton came from the NT4 DDK's
 drivers/storage/ide/uniata/CMakeLists.txt	1	# ros_glue/ros_glue.cpp went with them. It existed solely as the data home for
 drivers/storage/ide/uniata/CMakeLists.txt	1	# rust_varargs_shim.c stays: it is ours, and it holds the ONE thing stable Rust
@@ -1961,6 +1997,49 @@ sdk/lib/rtl/CMakeLists.txt	1	# wait.c — replaced by Rust implementation (sdk/l
 sdk/lib/rtl/CMakeLists.txt	1	# wine_debug.c — replaced by Rust (sdk/lib/rust/rtl-diag/); C-variadic shims in dbgprint_variadic.c
 sdk/lib/rtl/CMakeLists.txt	1	# workitem.c — replaced by Rust implementation (sdk/lib/rust/rtl-threadpool/)
 sdk/lib/rtl/CMakeLists.txt	1	#memres.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# atapi.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_config.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_error.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_identify.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_power.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# dev_timings.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# enum.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# fdo.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# ioctl.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# pdo.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# portstate.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# satl.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# scsi.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# smart.c
+sdk/lib/rust/atapi-rust/cohab/CMakeLists.txt	1	# wmi.c)
+sdk/lib/rust/legide-rust/cohab/CMakeLists.txt	1	# legide.sys — Rust cohabitation flip (legide.c -> legide-rust), i386 only
+sdk/lib/rust/legide-rust/cohab/CMakeLists.txt	1	# list(APPEND SOURCE legide.c)
+sdk/lib/rust/legide-rust/cohab/CMakeLists.txt	1	# to Rust in sdk/lib/rust/legide-rust (rustconv port, sealed DeepSeek); legide.c stays on disk.
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# FDO+PDO core (fdo/pdo/pciidex/miniport/power/acpi.c) plus the chipset/ layer (per-vendor
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# PciIdeXDebugPrint is DEFINED by a 3-line trampoline in rust_varargs_shim.c (stable Rust
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# acpi.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/ahci_generic.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/ahci_hw.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/ahci_io.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/amd.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/ati.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/cmd.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/intel.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/pata_generic.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/pata_hw.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/pata_io.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/pctech.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/sil680.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/svw_pata.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/svw_sata.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/toshiba.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# chipset/via.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# fdo.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# list(APPEND SOURCE chipset/pata_legacy.c)
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# miniport.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# pciidex.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# pdo.c
+sdk/lib/rust/pciidex-rust/cohab/CMakeLists.txt	1	# power.c)
 sdk/lib/skiplist/CMakeLists.txt	1	# add_library(skiplist16 skiplist.c) # body replaced by Rust; kept on disk
 sdk/lib/skiplist/CMakeLists.txt	1	# skiplist.c → Rust (sdk/lib/rust/skiplist-rust, kept on disk per the never-delete
 sdk/lib/smlib/CMakeLists.txt	1	# smclient.c — replaced by Rust (smss-csrss-rust/src/smlib/smclient.rs)

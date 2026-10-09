@@ -456,7 +456,12 @@ to it. `T *x` out-parameters are left alone.
 The quieter twin is `sizeof`: C `sizeof(*DevExt)` came back as
 `size_of::<PATAPORT_DEVICE_EXTENSION>()`, so the PDO extension handed to IoCreateDevice was 8
 bytes. `pointer_depth` restores the pointee unless that function's C itself writes
-`sizeof(PFOO)`.
+`sizeof(PFOO)`. The raw-pointer spelling is the same misreading: pciidex's
+`sizeof(*TimingMode)` came back as `size_of::<*mut _IDE_ACPI_TIMING_MODE_BLOCK>()` and sized
+the ACPI `_GTM` output buffer 8 bytes, a stack overrun at the first ACPI reply. atapi, already
+linking, had four more (a LUN list zeroed 8 bytes deep, SMART length checks that accept short
+buffers). `pointer_depth` rewrites `size_of::<*mut T>()` to `T` unless the C function takes the
+size of any pointer type or pointer variable.
 
 ### Per-arch provider differs, so a single-arch link check misses it
 `KeRaiseIrql`/`KeLowerIrql` are provided by **ntoskrnl on i386** (plus fastcall
@@ -1049,6 +1054,10 @@ hand flips the error to the other two.
   driver referencing kernel **data** (`KeLoaderBlock`) needs `raw-dylib` on i386/arm64 (PE data
   imports need an `__imp_` thunk); amd64 tolerates a plain extern static and hides it. Declare
   it crate-locally — don't change shared `globals.rs`, the kernel needs the local form.
+  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches);
+  the driver-facing readers are `ntkrnl_sys::inline::common::{InitSafeBootModeValue,
+  HalGetInterruptTranslator}`. Owed: `port resolve` should route an island `pub static` that
+  the import lib exports as `extern` (DATA) to such a reader by itself.
 - **`[T; 0]` extern-array decl** `[§9.35]` — Rust bounds-checks the *declared* length, so the C unsized-
   extern idiom panics at index 0. Declare the real per-arch size.
 
@@ -1407,6 +1416,7 @@ instruction BEFORE the trap first; it names the cause in one look.**
 | Preceding instruction | Cause | Fix |
 |---|---|---|
 | `call …panic_bounds_check` | array index the optimiser can't prove in range (see the indexing-panic entry) | pointer arithmetic at the unprovable site only |
+| `int $0x29` | `__fastfail` (`RtlFailFast`): the LIST_ENTRY integrity check in `RemoveEntryList`/`RemoveHeadList`, as in the C header inline. Expected; `scan_ud2` classifies it so since 2026-10-08 (atapi.sys showed 9) | none |
 | `call` to an ordinary function, no panic symbol | LLVM folded a UB path to `unreachable` after inlining | below |
 | none of the above | a genuine CC/sig-mismatch fold — the five shapes above | fix the ABI disagreement |
 
@@ -2385,6 +2395,12 @@ baseline empty) refuses the cast; `--fix` rewrites it.
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
   wild pointer/offset. **A per-file hand-rolled struct view reading a bitfield at offset 0**
   silently disables the feature it gates.
+- **A bitfield reached by bit INDEX (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
+  accessor** is a guess at the layout. atapi passed a page code as the *width* (28 bits of a
+  1-byte unit, an index panic the first time the CD was asked for a mode page) and put
+  SENSE_DATA's Valid bit where ErrorCode lives. ARM3's session code swapped Initialized and
+  DeletePending at all four sites. pnpmgr read Lock/Eject/Removable/Dock as WakeFromD0-D3.
+  Use `x.set_Field(v)` / `x.Field()`; `scan_raw_bitfield` (`vibeos-cli check`) gates it.
 - **Hand-rolled accessors over a union's byte view with two fields TRANSPOSED** fails only
   3 boots in 4 — a transposition is a *value* bug, so it only shows when the two differ.
 - **A bitfield struct filled by `transmute` of a hand-shifted integer** puts each field where
@@ -3578,6 +3594,11 @@ scanner cannot, because on other arches LLVM merges the block and no self-branch
 Corollary worth internalising: it was invisible for as long as it was, because classpnp.sys is
 not in arm64's default target set, so no arm64 sweep had ever linked or scanned that binary.
 
+**rustc's `unreachable_patterns` warning is the witness**, and `port check` counts it as a
+defect. pciidex's `BusQueryDeviceID =>` (an enumerator the island exposed only as
+`BUS_QUERY_ID_TYPE_BusQueryDeviceID`) answered every PnP ID query with the device ID, and
+`port resolve` now aliases bare enumerator names a pattern uses.
+
 **Upstream cause: an incomplete bindgen island** `[§9.112]`. A constant missing from the island
 is exactly the one a dispatcher matches on. **An island's completeness is a correctness
 property, not a convenience.** Prophylactic: allowlist the header that *owns* any constant a
@@ -4510,6 +4531,53 @@ one, and the leading underscore suppresses the unused warning that would have ex
 flags a nested `let _x` while `x` is in scope in the same function; a `_x` the C really
 declares is marked `// nolint: let-shadow (why)`. It cannot see an assignment dropped
 outright (consrv's `IntWriteConsoleOutputStringChars` lost `XStart = 0;` with no `let`).
+
+### A `continue` in a lowered C `for` that skips the step spins forever
+
+**Symptom:** a hang with no bugcheck, on a path that only runs when something fails. atapi's
+`AtaFdoEnumeratePort` would retry the same index forever after a PDO allocation failure.
+**Cause:** C `for (i = 0; i < n; ++i) { if (!x) continue; }` runs `++i` on every `continue`.
+Lowered to `while i < n { ...; i = i.wrapping_add(1); }`, each `continue` has to repeat the
+step itself. The model did that on four paths and missed the fifth.
+**Fix:** put the step before the `continue`. `port check` runs `loop_step.scan` and fails a
+crate when a `continue` that belongs to a loop is reached with no write to the loop variable
+since the loop's `{`. Hand-written loops that advance the variable earlier on the path, or
+shrink the bound instead (cmcheck's `ListCount -= 1`), are not flagged.
+
+### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
+
+**Symptom:** none visible at boot. pciidex's START_DEVICE handler sent the IRP down the stack
+a second time after `IoForwardIrpSynchronously` had already taken it through, and the status
+of `PciIdeXFdoStartDevice` was discarded.
+**Cause:** the C arm ends `goto CompleteIrp;` and the dispatcher's common tail after the
+`switch` forwards the IRP. The Rust arm just ended, so it fell into that tail. The early-exit
+`goto`s in the same arm were translated, since each one sat inside an `if`; only the
+unconditional last one was lost. atapi's `AtaFdoPnp`, the same shape, kept it as a labelled
+block.
+**Fix:** inline the label's tail (`IoStatus.Status = Status; IoCompleteRequest; release;
+return`). `port check` now reports the class (`rustconv/goto_arm.py`): a C `case` arm whose
+last statement is `goto L;` (and `L:` is not the statement right after the `switch`) must map,
+by its case label, to a Rust arm whose last statement leaves it. A labelled block ending in
+`return` counts, as does an `if`/`else` chain where every branch leaves.
+
+### A union member re-slotted to its neighbour's name
+
+**Symptom:** a device answers no commands. pciidex sent every ATA command byte to I/O port 0,
+Features landed on the command register (a NOP, aborted with status 0x41), and every
+IDENTIFY failed with `STATUS_IO_DEVICE_ERROR`.
+**Cause:** `PciIdeInitTaskFileIoResources` assigns pairs that share a union
+(`Error`/`Features`, `Status`/`Command`). The model wrote `__bindgen_anon_1.Error` where the C
+says `Registers->Status`, so Error got set twice and the Status/Command slot stayed null. It
+compiles because both members have the same type.
+The read side had the mirror slip: `PataReadStatus` (and the ServerWorks twin) read
+`Regs.__bindgen_anon_1.Error` where the C reads `Regs.Status`. While both bugs were present
+they cancelled out for reads, because the misplaced Error pointer held the status port.
+**Fix:** map each assignment to the C member name, not to its position in the run. `port
+check` runs `union_slot.scan`. It flags a `__bindgen_anon_N.M` whose C function never spells
+`M`. It also flags a member written more often than the C writes it, but only when another
+member the C writes lost a write: goto elimination legitimately copies a label's
+`IoStatus.Status = Status` into each arm. On pciidex, atapi and legide it reports exactly
+these three bugs and nothing else.
 
 ### Fixing one C bug can unmask another that it was hiding
 **Symptom.** SeTokenFiltering wedged in the kernel on every arch: TIMEOUT, a process that
@@ -6512,7 +6580,11 @@ suspect call kept it failing; eighty made it green.
   `BaseSrvDDDBSMCritSec` with LUID device maps on, plus netcfgx and win32k; and Haiku's powercfg
   `Pos_InitData` always failed. The toggle form `x = !x` on a BOOL (access's keyboard
   preference could never be switched off) is the same bug and is NOT caught by the scanner,
-  because `!x` on a bool is right -- only the type says which. Two idioms the scanner must NOT flag,
+  because `!x` on a bool is right -- only the type says which. pciidex's `!(ChannelBitmap & (1 << i))`
+  made QUERY_BUS_RELATIONS report zero channels (0x6B); `port integrate` now repairs `!(E) != 0`
+  against the C (`logical_not.py`). atapi's `IsNewDevice = !(Flags & 0x400) as BOOLEAN`, an `as`
+  form that repair does not touch, kept the complement's low byte (0xFF for every value); this
+  scanner caught it. Two idioms the scanner must NOT flag,
   and both are everywhere: `x & !MASK != 0` (the unknown-flag test — genuinely bitwise) and the
   macro bang in `offset_of!(T,f) == 0`. Missing them is not cosmetic — the first draft reported
   **4710** sites, essentially all of them these two, which is worth exactly as much as no

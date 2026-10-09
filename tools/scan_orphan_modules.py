@@ -43,7 +43,10 @@ authoritative list, because it grows.
 
 WHAT IS NOT AN ORPHAN:
   build.rs / tests/ / benches/ / examples/ (cargo compiles these by their own
-  rules), files pulled in by `include!`, and every file of a crate whose root does
+  rules), a crate's `hand/` beside its `src/` (rustconv `port`'s hand-port
+  overlays: `apply_hand_bodies` splices each file over the same-named fn in src/
+  after every reassembly, so the code is live, just not through a `mod`), files
+  pulled in by `include!`, and every file of a crate whose root does
   `include!(env!(...))` — that names a build.rs output no source-level walk can
   resolve, so the whole crate fails open.
 """
@@ -118,6 +121,15 @@ def scan_phantoms(roots):
     return out
 
 
+def _port_hand_dir(parent, name):
+    """`<crate>/hand/`: rustconv port's hand-port overlays, spliced into src/ on reassembly."""
+    return (
+        name == "hand"
+        and os.path.isfile(os.path.join(parent, "Cargo.toml"))
+        and os.path.isdir(os.path.join(parent, "src"))
+    )
+
+
 def scan(roots):
     findings, declared, rootless, stale = [], [], [], []
     # Membership is queried once per file, but the crate's reachable set is
@@ -127,7 +139,9 @@ def scan(roots):
     normalized_live = {}
     for root in roots:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
+            dirnames[:] = [
+                d for d in dirnames if d not in SKIP_DIRS and not _port_hand_dir(dirpath, d)
+            ]
             for fn in sorted(filenames):
                 if not fn.endswith(".rs") or fn in SKIP_NAMES:
                     continue

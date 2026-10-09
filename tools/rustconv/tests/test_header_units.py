@@ -259,3 +259,11 @@ def test_glob_ties_are_read_per_arch_from_the_islands(tmp_path):
     # A name the prelude already spells out is settled there (E0252 otherwise).
     (src / "prelude.rs").write_text("pub use ntkrnl_sys::ddk::KeGetCurrentIrql;\n")
     assert pr.glob_ties(src, src / "m", sys_src) == {}
+    # ...but a name the prelude merely CALLS is a use like any other (pciidex's ATA_IO_WAIT
+    # macro calls KeStallExecutionProcessor), even when no module calls it.
+    (src / "m" / "a.rs").write_text("fn f() {}\n")
+    (src / "prelude.rs").write_text(
+        "pub use crate::types::*;\npub use ntkrnl_sys::ddk::*;\n"
+        "macro_rules! W { () => { KeGetCurrentIrql() }; }\n"
+    )
+    assert pr.glob_ties(src, src / "m", sys_src) == {"KeGetCurrentIrql": ["x86"]}
