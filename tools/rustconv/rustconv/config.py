@@ -558,10 +558,14 @@ def __dir__():
 
 
 def get_backend() -> str:
-    if os.environ.get("DEEPSEEK_API_KEY"):
-        return "deepseek"
+    # Claude first: Haiku 5.5 is the translation default (2026-10-09). Over ~2,500 banked
+    # functions it needed less rework to integrate than DeepSeek v4-pro (about 15% of shipped
+    # lines vs 16-23% on same-era modules; comctl32 5.5%) at about 1/4 the cost per call.
+    # DeepSeek stays one `-m deepseek` away.
     if os.environ.get("ANTHROPIC_API_KEY"):
         return "claude"
+    if os.environ.get("DEEPSEEK_API_KEY"):
+        return "deepseek"
     return "gemini"
 
 
@@ -607,7 +611,7 @@ DEEPSEEK_MAX_TOKENS = int(os.environ.get("DEEPSEEK_MAX_TOKENS", "65536"))
 # Default model per backend
 DEFAULT_MODELS = {
     "deepseek": DEEPSEEK_MODEL_V4_PRO,
-    "claude": CLAUDE_MODEL_SONNET,
+    "claude": "claude-haiku-5-5",
     "gemini": GEMINI_MODEL,
 }
 
