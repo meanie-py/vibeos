@@ -97,6 +97,32 @@ def test_a_scoped_fingerprint_still_catches_an_in_scope_commit(tiny_repo: Path):
     assert provenance.git_fingerprint(tiny_repo, scope) != before
 
 
+def test_tree_content_hash_is_the_same_committed_or_not(tiny_repo: Path):
+    """Build a dirty tree, then commit exactly what was built: the media are fresh. The
+    scoped fingerprint hashes `git diff HEAD` text, so it moved on the commit and every
+    smoke of a just-committed build said STALE_MEDIA for an identical tree."""
+    scope = [".", ":(exclude)docs"]
+    (tiny_repo / "kernel.c").write_text("int k;\n")
+    (tiny_repo / "a.txt").write_text("edited\n")
+    dirty = provenance.tree_content_hash(tiny_repo, scope)
+    _git(tiny_repo, "add", "-A")
+    _git(tiny_repo, "commit", "-qm", "commit what was built")
+    assert provenance.tree_content_hash(tiny_repo, scope) == dirty
+    # ...while the index the user is staging in is left alone, and content still counts.
+    (tiny_repo / "kernel.c").write_text("int k2;\n")
+    assert provenance.tree_content_hash(tiny_repo, scope) != dirty
+    assert (
+        b"kernel.c"
+        not in subprocess.run(
+            ["git", "diff", "--cached", "--name-only"], cwd=tiny_repo, capture_output=True
+        ).stdout
+    )
+    (tiny_repo / "docs").mkdir()
+    (tiny_repo / "docs" / "n.md").write_text("x\n")
+    (tiny_repo / "kernel.c").write_text("int k;\n")
+    assert provenance.tree_content_hash(tiny_repo, scope) == dirty, "excluded path"
+
+
 def test_an_unscoped_fingerprint_still_tracks_HEAD(tiny_repo: Path):
     """Unscoped is the coarse tier-1 gate and SHOULD move on any commit: there is
     no scope to respect, so whole-tree identity is the right question."""
