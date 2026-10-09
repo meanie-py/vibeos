@@ -181,7 +181,11 @@ TestEventConcurrent(
         ThreadObjects[i] = Threads[i].Thread;
         Priority = KeQueryPriorityThread(Threads[i].Thread);
         ok_eq_long(Priority, 8L);
-        while (!Threads[i].Signal)
+        /* vibeos: Signal is set just BEFORE the thread's KeWaitForSingleObject. On one
+         * CPU it always blocks before we run again; with a second CPU we could check
+         * the wait list in that gap (amd64 -smp 2: :192 TheThread/TheEntry). Wait for
+         * the thread to really be Waiting, which is what CheckEvent asserts on. */
+        while (!Threads[i].Signal || Threads[i].Thread->State != Waiting)
         {
             Status = KeDelayExecutionThread(KernelMode, FALSE, &ShortTimeout);
             if (Status != STATUS_SUCCESS)
@@ -254,6 +258,9 @@ CountThread(
     ULONG *CounterValue = ThreadData->CounterValues;
     KPRIORITY Priority;
 
+    /* vibeos: same processor as TestEventScheduling, see there. */
+    KeSetSystemAffinityThread(1);
+
     Priority = KeQueryPriorityThread(KeGetCurrentThread());
     ok_eq_long(Priority, 8L);
 
@@ -266,6 +273,8 @@ CountThread(
 
     Priority = KeQueryPriorityThread(KeGetCurrentThread());
     ok_eq_long(Priority, 8L + min(ThreadData->PriorityIncrement, 7));
+
+    KeRevertToUserAffinityThread();
 }
 
 static
@@ -293,6 +302,15 @@ TestEventScheduling(
     KeInitializeEvent(&ThreadData->Event, SynchronizationEvent, FALSE);
     KeInitializeEvent(&ThreadData->WaitEvent, SynchronizationEvent, FALSE);
     Counter = &ThreadData->Counter;
+
+    /* vibeos: every assertion below is about PREEMPTION on one processor -- the
+     * boosted CountThread "will always win" because it preempts us inside
+     * KeSetEvent, before we store the next Counter. With a second CPU idle, NT
+     * (and our scheduler) readies the waiter THERE, it runs concurrently with
+     * our store, and the counters race (arm64 -smp 2: 1095-1496 failures). Pin
+     * both threads to processor 0 so the test checks what it means on any CPU
+     * count; on one CPU this is a no-op. */
+    KeSetSystemAffinityThread(1);
 
     for (PriorityIncrement = 0; PriorityIncrement <= 8; PriorityIncrement++)
     {
@@ -350,6 +368,7 @@ TestEventScheduling(
         }
     }
 
+    KeRevertToUserAffinityThread();
     ExFreePoolWithTag(ThreadData, 'CEmK');
 }
 

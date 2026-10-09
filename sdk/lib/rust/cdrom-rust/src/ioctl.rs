@@ -4048,8 +4048,7 @@ pub unsafe extern "C" fn RequestHandleReadTocEx(
         if status >= 0 {
             let scratch_srb = (*DeviceExtension).ScratchContext.ScratchSrb;
             let data_transfer_length = (*scratch_srb).DataTransferLength;
-            if data_transfer_length < 4u32 {
-                // MINIMUM_CDROM_READ_TOC_EX_SIZE
+            if data_transfer_length < MINIMUM_CDROM_READ_TOC_EX_SIZE {
                 *DataLength = 0;
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else {

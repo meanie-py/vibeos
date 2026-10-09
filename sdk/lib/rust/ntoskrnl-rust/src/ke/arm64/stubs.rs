@@ -378,8 +378,28 @@ pub unsafe extern "system" fn KeConnectInterrupt(Interrupt: PKINTERRUPT) -> BOOL
     (*entry).Blink = entry;
     INTERRUPT_TABLE[vector].store(Interrupt, Ordering::SeqCst);
     chain_unlock(vector, irql);
-    // Enable the GIC line. On failure, roll back the table slot.
-    if HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode) == 0 {
+    // Enable it on the processor the object is for, as x86's KeConnectInterrupt does:
+    // the HAL points what it can at the enabling processor (an ITS LPI is moved
+    // there), so a driver connecting a message on a processor of its choosing gets
+    // it delivered there. Above APC_LEVEL the thread cannot be moved, and the enable
+    // happens where it is.
+    extern "system" {
+        fn KeSetSystemAffinityThread(Affinity: ntkrnl_sys::ddk::KAFFINITY);
+        fn KeRevertToUserAffinityThread();
+    }
+    let number = (*Interrupt).Number as u32;
+    let moved = number != ntkrnl_sys::inline::ke::KeGetCurrentProcessorNumber()
+        && number < 64
+        && KeGetCurrentIrql() < DISPATCH_LEVEL as KIRQL;
+    if moved {
+        KeSetSystemAffinityThread(1 << number);
+    }
+    let enabled = HalEnableSystemInterrupt((*Interrupt).Vector, (*Interrupt).Irql, (*Interrupt).Mode);
+    if moved {
+        KeRevertToUserAffinityThread();
+    }
+    // On failure, roll back the table slot.
+    if enabled == 0 {
         INTERRUPT_TABLE[vector].store(core::ptr::null_mut(), Ordering::SeqCst);
         return 0u8;
     }
@@ -1149,8 +1169,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     (*TrapFrame).Pc = KeUserApcDispatcher as u64;
     (*TrapFrame).Spsr &= !0xF;
 
+    // Every user APC's frame, under the PROCTRACE boot option only (shim_exports.rs).
     #[cfg(target_arch = "aarch64")]
-    {
+    if crate::shim_exports::proc_trace_enabled() {
         ARM64_UART_TRACE_HEX(b"[APC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
         ARM64_UART_TRACE_HEX(b"[APC] SP=\0".as_ptr() as PCSTR, (*TrapFrame).Sp as ULONG_PTR);
         ARM64_UART_TRACE_HEX(

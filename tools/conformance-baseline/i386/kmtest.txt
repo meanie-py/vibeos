@@ -29,6 +29,12 @@
 #   .cpp (upstream, synced 2026-09-21): the parser only matched `<file>.c:<line>`, so its
 #   identities had silently vanished from every sweep since. The row now carries the
 #   ObTypes.cpp identities -- a rename plus two newly-passing asserts, not new failures.
+# 2026-10-08 (later), by HAND, two agreeing sweeps: MmMapLockedPagesSpecifyCache and
+#   MmReservedMapping come out of quarantine after their kernel bugs were fixed (see the
+#   sweep list). MmReservedMapping's 44 are the TEST's i386 expectation, not ours: it wants
+#   the size PTE at `(TotalPtes + 2) << 32`, a value no 32-bit non-PAE PTE can hold. We
+#   store it in u.List.NextEntry at bit 12 (0x3000), exactly as upstream's C does, so
+#   upstream ReactOS fails these same lines; the ValidateMapping FALSEs cascade from :159.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
     assert CmSecurity.c:44
 ExCallback OK pass=13 fail=0 skip=1 exit=0
@@ -138,7 +144,20 @@ KeSpinLock OK pass=755 fail=30 skip=0 exit=0
     assert KeSpinLock.c:333
     assert KeSpinLock.c:343
 KeTimer OK pass=54 fail=0 skip=0 exit=0
+MmMapLockedPagesSpecifyCache OK pass=16743 fail=0 skip=0 exit=0
 MmMdl OK pass=587 fail=0 skip=0 exit=0
+MmReservedMapping OK pass=187 fail=44 skip=0 exit=0
+    assert MmReservedMapping.c:159
+    assert MmReservedMapping.c:211
+    assert MmReservedMapping.c:223
+    assert MmReservedMapping.c:240
+    assert MmReservedMapping.c:252
+    assert MmReservedMapping.c:282
+    assert MmReservedMapping.c:297
+    assert MmReservedMapping.c:348
+    assert MmReservedMapping.c:359
+    assert MmReservedMapping.c:386
+    assert MmReservedMapping.c:399
 MmSection OK pass=71 fail=13 skip=4 exit=0
     assert MmSection.c:1002
     assert MmSection.c:1003
@@ -272,12 +291,11 @@ HidPDescription OK pass=28 fail=9 skip=3 exit=0
     assert HidPDescription.c:189
     assert HidPDescription.c:200
     assert HidPDescription.c:204
-IoDeviceObject OK pass=184 fail=5 skip=0 exit=0
+IoDeviceObject OK pass=185 fail=4 skip=0 exit=0
     assert IoDeviceObject_drv.c:188
     assert IoDeviceObject_drv.c:189
     assert IoDeviceObject_drv.c:190
     assert IoDeviceObject_drv.c:207
-    assert? IoDeviceObject_drv.c:300
 IoReadWrite OK pass=16192 fail=151 skip=0 exit=0
     assert IoReadWrite_user.c:82
     assert IoReadWrite_user.c:83

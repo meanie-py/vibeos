@@ -85,36 +85,9 @@ KiUserExceptionDispatcher:
     brk #0xF003                 /* should not return */
 
 .LRaiseException:
-#ifdef _USE_DUMMY_PSEH
-    /* DUMMY_PSEH swallow — mirrors amd64/dispatch.S: SEH handlers are dead
-     * code, so no handler ever catches. Continuable software exceptions
-     * (code < 0xC0000000, e.g. DBG_PRINTEXCEPTION_C) are swallowed by
-     * resuming, simulating _SEH2_EXCEPT(EXECUTE_HANDLER) fall-through.
-     * NT error statuses (hardware faults) go second-chance: resuming them
-     * would re-execute the faulting instruction in an infinite loop. */
-    ldr w2, [x19, #4]           /* ExceptionRecord->ExceptionFlags */
-    tbnz w2, #0, .LSecondChance /* EXCEPTION_NONCONTINUABLE (bit 0) */
-    ldr w2, [x19]               /* ExceptionRecord->ExceptionCode */
-    mov w3, #0xC0000000
-    cmp w2, w3
-    b.hs .LSecondChance
-    /* STATUS_BREAKPOINT (0x80000003): on arm64 Pc points AT the brk (no
-     * x86-style Rip-1 rewind) — step over it (+4) or resume re-executes it. */
-    movz w3, #0x8000, lsl #16
-    movk w3, #0x0003
-    cmp w2, w3
-    b.ne .LNoBrkAdjust
-    ldr x2, [x20, #0x108]       /* Context->Pc (X0..X28+Fp+Lr end at 0x100) */
-    add x2, x2, #4
-    str x2, [x20, #0x108]
-.LNoBrkAdjust:
-    mov x0, x20                 /* Context */
-    mov w1, #0                  /* TestAlert = FALSE */
-    bl NtContinue
-    brk #0xF003                 /* should not return */
-
-.LSecondChance:
-#endif
+    /* No handler took it: raise it second chance, as Windows does. Do not resume
+     * here -- every Win32 thread runs under kernel32's top-level __except, and a
+     * resumed int3 or guard-page fault just hides the bug. */
     mov x0, x19                 /* ExceptionRecord */
     mov x1, x20                 /* Context */
     mov w2, #0                  /* FirstChance = FALSE */

@@ -123,11 +123,8 @@ extern "C" {
     fn Ki386PerfEnd();
     fn PspRunCreateProcessNotifyRoutines(Process: PEPROCESS, Create: BOOLEAN);
 }
+use crate::trace::{ARM64_UART_TRACE, ARM64_UART_TRACE_HEX};
 extern "C" {
-    fn ARM64_UART_TRACE(msg: *const i8);
-}
-extern "C" {
-    fn ARM64_UART_TRACE_HEX(msg: *const i8, val: ULONG_PTR);
 }
 extern "system" {
     fn KeQuerySystemTime(time: *mut LARGE_INTEGER);

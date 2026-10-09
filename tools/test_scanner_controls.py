@@ -490,6 +490,17 @@ pub unsafe fn adjust_fua(flags: u32, special: u32) -> bool {
 }
 """
 
+# A KEYWORD before the `!` once read as a macro bang (`if!`), hiding every `if !x != 0`:
+# usetup's PrepareCopyPage always quit and powercfg's Pos_InitData always failed.
+_BITWISE_NOT_KEYWORD_BAD = """\
+pub unsafe fn prepare(success: u8) -> u32 {
+    if !success != 0 {
+        return 1;
+    }
+    0
+}
+"""
+
 # The GOOD fixture carries the fix AND both idioms the scanner must never flag. Without
 # them a scanner that simply matched every `!` would still pass its negative control.
 _BITWISE_NOT_GOOD = """\
@@ -3187,3 +3198,14 @@ def test_path_attr_and_dir_modules_are_not_phantoms(tmp_path: Path):
         },
     )
     assert "[PHANTOM]" not in out, f"false positive on a legitimate module shape:\n{out}"
+
+
+def test_bitwise_not_after_a_keyword_is_flagged():
+    """`if !x != 0` once read as the macro `if!` and was never flagged (usetup, powercfg)."""
+    from tools.scan_bitwise_not_bool import scan_line
+
+    for line in _BITWISE_NOT_KEYWORD_BAD.splitlines():
+        if "!success" in line:
+            assert scan_line(line)
+    assert not scan_line("    if success == 0 {")
+    assert not scan_line("    assert!(x != 0);")

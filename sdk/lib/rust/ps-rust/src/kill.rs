@@ -65,9 +65,9 @@ unsafe fn Arm64TraceImageName(prefix: PCSTR, image_name: *const i8, len: usize) 
     }
     buf[i] = 0;
 
-    ARM64_UART_TRACE(prefix);
-    ARM64_UART_TRACE(buf.as_ptr() as PCSTR);
-    ARM64_UART_TRACE(b"\r\n\0".as_ptr() as PCSTR);
+    crate::trace::always(prefix);
+    crate::trace::always(buf.as_ptr() as PCSTR);
+    crate::trace::always(b"\r\n\0".as_ptr() as PCSTR);
 }
 
 extern "C" {
@@ -125,11 +125,8 @@ extern "C" {
     static mut Arm64UartKernelBase: PVOID;
     fn Arm64UartPutChar(c: u8);
 }
+use crate::trace::{ARM64_UART_TRACE, ARM64_UART_TRACE_HEX};
 extern "C" {
-    fn ARM64_UART_TRACE(msg: PCSTR);
-}
-extern "C" {
-    fn ARM64_UART_TRACE_HEX(prefix: PCSTR, val: ULONG_PTR);
 }
 extern "system" {
     fn KeQuerySystemTime(current_time: *mut LARGE_INTEGER);
@@ -540,13 +537,16 @@ unsafe fn PspExitThread(exit_status: NTSTATUS) {
     thread = PsGetCurrentThread();
     current_process = (*(thread as *mut _ETHREAD)).ThreadsProcess;
 
+    // A failing thread's exit is traced even without PROCTRACE: tools/ucrt_tier2_sweep.py
+    // reads its status, image and start address to say how a dead harness died.
     #[cfg(target_arch = "aarch64")]
-    {
-        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Process=\0".as_ptr() as PCSTR, current_process as ULONG_PTR);
-        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Thread=\0".as_ptr() as PCSTR, thread as ULONG_PTR);
-        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: ExitStatus=\0".as_ptr() as PCSTR, exit_status as ULONG_PTR);
-        ARM64_UART_TRACE_HEX(b"[PS] PspExitThread: Teb=\0".as_ptr() as PCSTR, (*(thread as *mut _ETHREAD)).Tcb.Teb as ULONG_PTR);
-        ARM64_UART_TRACE_HEX(
+    if exit_status != 0 || crate::trace::enabled() {
+        use crate::trace::always_hex;
+        always_hex(b"[PS] PspExitThread: Process=\0".as_ptr() as PCSTR, current_process as ULONG_PTR);
+        always_hex(b"[PS] PspExitThread: Thread=\0".as_ptr() as PCSTR, thread as ULONG_PTR);
+        always_hex(b"[PS] PspExitThread: ExitStatus=\0".as_ptr() as PCSTR, exit_status as ULONG_PTR);
+        always_hex(b"[PS] PspExitThread: Teb=\0".as_ptr() as PCSTR, (*(thread as *mut _ETHREAD)).Tcb.Teb as ULONG_PTR);
+        always_hex(
             b"[PS] PspExitThread: StartAddress=\0".as_ptr() as PCSTR,
             (*(thread as *mut _ETHREAD))
                 .__bindgen_anon_6

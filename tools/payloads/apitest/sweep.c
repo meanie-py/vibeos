@@ -220,7 +220,7 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     SECURITY_ATTRIBUTES sa;
     STARTUPINFOA si;
     PROCESS_INFORMATION pi;
-    HANDLE rd = NULL, wr = NULL, thread = NULL;
+    HANDLE rd = NULL, wr = NULL, nul = INVALID_HANDLE_VALUE, thread = NULL;
     DWORD wait, code = 0;
 
     _snprintf(exepath, sizeof(exepath), "%s\\%s", bindir, suite);
@@ -241,12 +241,20 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
      * pump never sees EOF -- the classic redirect hang. */
     SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
 
+    /* A real (empty) stdin, as every Windows test runner provides. Handed
+     * INVALID_HANDLE_VALUE, the CRT parks fd 0 as a no-console placeholder that
+     * fclose(stdin) cannot release, so fd 0 never comes free again: ucrtbase's
+     * file.c then saw fopen/freopen land on fd 4 instead of 0 (file.c:91/97/170/175,
+     * failed by Microsoft's own ucrtbase the same way). */
+    nul = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa,
+                      OPEN_EXISTING, 0, NULL);
+
     ZeroMemory(&si, sizeof(si));
     si.cb = sizeof(si);
     si.dwFlags = STARTF_USESTDHANDLES;
     si.hStdOutput = wr;
     si.hStdError = wr;
-    si.hStdInput = INVALID_HANDLE_VALUE;
+    si.hStdInput = nul;
     ZeroMemory(&pi, sizeof(pi));
 
     /* DETACHED_PROCESS for the same reason as the kmtest sweep: these are
@@ -259,6 +267,8 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
         DbgPrint("[APITEST-SWEEP] launch FAILED %s err=%lu\n", suite, GetLastError());
         CloseHandle(rd);
         CloseHandle(wr);
+        if (nul != INVALID_HANDLE_VALUE)
+            CloseHandle(nul);
         return -1;
     }
 
@@ -300,6 +310,8 @@ static int run_child(const char *bindir, const char *suite, const char *arg,
     /* Drop OUR copy of the write end or the pump blocks forever after the child
      * exits: a pipe stays open as long as any writer handle lives. */
     CloseHandle(wr);
+    if (nul != INVALID_HANDLE_VALUE)
+        CloseHandle(nul);
     DbgPrint("[APITEST-SWEEP] closed  %s\n", suite);
 
     ctx->Read = rd;

@@ -194,11 +194,29 @@ explorer opening a folder and My Computer). Getting there fixed:
   log, which is now never capped). Also the amd64 side-by-side assemblies (comctl32 v5/v6,
   gdiplus), whose absence failed every activation context.
 
-**Owed, from that run:** rapps (its https database download fails, then it crashes);
-iexplore (crashes on close); control.exe and the twelve applets, which open an x86-64 explorer
-too slowly for appstorm's 30 s window wait once rapps and iexplore have run (in isolation,
-control and desk.cpl pass); and memory. A 1 GB VM leaves ~30 MB free before the sweep, with no
-pagefile, so the payload asks for 2 GB. Each x86-64 app keeps about 1 MB, and an exhausted
-machine bugchecks 0x7A instead of failing the allocation. The guest's user32 also still reads the
-native procs from `gpsi` in user mode (pfnclient.rs). appstorm's thread sampler cannot read
-an x86-64 guest thread's context (`NtGetContextThread on another thread: not supported yet`).
+**Then (2026-10-08, later).** The fifteen that failed, run on their own (`APPSTORM_ONLY`):
+
+- rapps and iexplore: both reach https, and secur32's schannel opens its crypto provider by the
+  `Image Path` rsaenh writes into the registry at self-registration (`rsaenh.rgs`). No INF names
+  it, so `wow64-closure.py` cannot derive it; it is a listed root now. Both then PASS (rapps
+  completes its database download in ~110 s).
+- appstorm's sampler can read an x86-64 guest thread now. A guest `NtGetContextThread` on another
+  thread (`thread.rs RemoteGuestContext`) answers for a thread parked in a syscall, from the guest
+  rsp and service each thread publishes in its wowx64 record for the duration of the syscall:
+  rip is the stub's return address at [rsp]. A thread running guest code is refused, not guessed.
+  (`stackdump.h` also had to learn to read a stack shallower than its 8 KB buffer.)
+- control.exe and the applets were never hung: every one the sampler caught was busy, mostly in
+  icon loading, class registration and, for sysdm, a logo built with two GetPixel syscalls per
+  pixel. They open in 40-80 s on a quiet host, so appstorm, when it is itself the emulated
+  process (its machine differs from the shell's), multiplies its waits by 6. Criteria unchanged.
+
+In isolation that took the fifteen from 4 passes to 9-10 per run, the misses all timing. A full
+sweep on a host saturated by integration builds (`20261008-114135-_w0p3rum-smoke-arm64`, mspaint
+164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; taskmgr's close
+DEADLOCK, x86-64 only (1 of 6 x86-64 runs, 0 of 30 native): `EndLocalThread` loops
+`WaitForSingleObject(500)` + `PeekMessage` while the perf thread sits in
+`SendMessageW(SB_SETTEXT)` to it, and the sent message is never dispatched; per-syscall cost under
+FEX, which is what every slow applet is paying; memory (a 1 GB VM leaves ~30 MB before the sweep,
+so the payload asks for 2 GB; ~1 MB per x86-64 app is kept; exhaustion bugchecks 0x7A instead of
+failing the allocation); the guest user32 reading native procs from `gpsi` (pfnclient.rs); and
+remote `NtSetContextThread` on a guest thread.

@@ -882,7 +882,23 @@ fn crt_errf(r: (f32, MathErr), name: &core::ffi::CStr, arg1: f32, arg2: f32) -> 
 #[cfg(cnt_libm)]
 #[no_mangle]
 pub extern "C" fn exp(x: f64) -> f64 {
-    crt_err(musl_math::exp(x), c"exp", x, 0.0)
+    #[allow(unused_mut)]
+    let mut r = musl_math::exp(x);
+    // Windows i386 `exp` (msvcrt and ucrtbase alike) returns the canonical NaN, sign
+    // kept, when the HIGH word carries no payload below the quiet bit, and the input
+    // quieted otherwise: 0x7ff0000000000001 and 0x7ff8000000000001 both give
+    // 0x7ff8000000000000, while 0x7ff7ffffffffffff gives 0x7fffffffffffffff
+    // (apitests/crt/exp.c's `_M_IX86` rows, measured on Windows). That rule is fit to
+    // those ten rows, not taken from Microsoft's code. Only `exp` does this: sqrt,
+    // log10, atan and cos keep the payload on every arch.
+    #[cfg(target_arch = "x86")]
+    {
+        let b = x.to_bits();
+        if b & 0x7FFF_FFFF_FFFF_FFFF > 0x7FF0_0000_0000_0000 && (b >> 32) & 0x7_FFFF == 0 {
+            r.0 = fb64((b & 0x8000_0000_0000_0000) | 0x7FF8_0000_0000_0000);
+        }
+    }
+    crt_err(r, c"exp", x, 0.0)
 }
 
 /// `double log(double)` -- musl's. ±0 is a pole; a negative argument or NaN `_DOMAIN`.

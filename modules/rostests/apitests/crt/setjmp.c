@@ -48,6 +48,8 @@ static void TEST_setjmp_normal(void)
             stage = 3;
 #ifdef __clang__ /* avoiding clang build hung up */
             skip("avoiding clang build crash\n");
+            /* Still take the jump, or this falls through into case 3 with value 1. */
+            longjmp(g_jmp_buf, 333);
 #else /* ndef __clang__ */
             _SEH2_TRY
             {
@@ -64,6 +66,7 @@ static void TEST_setjmp_normal(void)
 #endif /* ndef __clang__ */
         case 3:
             ok_int(value, 333);
+#ifndef __clang__ /* case 2 skipped the __try/__finally under clang */
 #ifdef _M_AMD64 // This is broken on Windows 2003 x64
             if (NtCurrentPeb()->OSMajorVersion >= 6)
 #endif
@@ -71,9 +74,11 @@ static void TEST_setjmp_normal(void)
                 ok_int(finally_called, TRUE);
                 ok_int(abnormal, TRUE);
             }
+#endif /* ndef __clang__ */
             stage = 4;
 #ifdef __clang__ /* avoiding clang build hung up */
             skip("avoiding clang build crash\n");
+            longjmp(g_jmp_buf, 444);
 #else /* ndef __clang__ */
             _SEH2_TRY
             {

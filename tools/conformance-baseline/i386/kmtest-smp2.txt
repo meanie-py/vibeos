@@ -17,6 +17,9 @@
 #   (i386 IoDeviceObject bistability re-confirmed directly on 2026-08-02: two back-to-back
 #   --smp 2 rounds on IDENTICAL media gave 185/4 then 184/5, the extra one being
 #   IoDeviceObject_drv.c:300 STATUS_OBJECT_NAME_NOT_FOUND. Not an MP-conditional row.)
+#   EXPLAINED 2026-10-08: the I/O manager handed DriverEntry an unterminated RegistryPath
+#   and IopUnloadDriver queried it as a PWSTR, so :300 depended on the pool bytes after it.
+#   Fixed (iomgr-rust driver.rs); IoDeviceObject is 185/4 on every arch, no longer bistable.
 # KeSpinLock re-seeded 2026-08-02, 706/79 -> 754/31 — a REAL FIX, not a re-roll.
 #   hal-rust's x86 Kx{Acquire,Release}SpinLock were hard-coded UP no-ops (they predate the
 #   halmp.dll twin and never learned the `smp` feature), so the kernel stamped owners the
@@ -26,6 +29,8 @@
 #   holds the owner stamp where a real queued lock holds the queue-handle pointer — plus one
 #   try-acquire that sets bit 0 without stamping the owner. All present on the UP kernel too
 #   (UP is 753/32), so none of them are MP-conditional.
+# 2026-10-08, by --write-baseline --only: MmMdl 594 -> 587, equal to the 1-vCPU baseline
+#   (its assert count tracks free pages). Not an SMP defect.
 CmSecurity OK pass=1048 fail=1 skip=1 exit=0
 ExCallback OK pass=13 fail=0 skip=1 exit=0
 ExDoubleList OK pass=130 fail=16 skip=0 exit=0
@@ -64,7 +69,7 @@ KeIrql OK pass=215 fail=0 skip=0 exit=0
 KeMutex OK pass=1122 fail=0 skip=0 exit=0
 KeSpinLock OK pass=754 fail=31 skip=0 exit=0
 KeTimer OK pass=54 fail=0 skip=0 exit=0
-MmMdl OK pass=594 fail=0 skip=0 exit=0
+MmMdl OK pass=587 fail=0 skip=0 exit=0
 MmSection OK pass=71 fail=13 skip=4 exit=0
 NpfsConnect OK pass=679 fail=0 skip=0 exit=0
 NpfsCreate OK pass=351 fail=0 skip=0 exit=0

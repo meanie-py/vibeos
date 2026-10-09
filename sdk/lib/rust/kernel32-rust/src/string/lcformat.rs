@@ -1361,7 +1361,9 @@ pub unsafe extern "system" fn GetNumberFormatW(
     if lpszValue.is_null()
         || cchOut < 0
         || (cchOut > 0 && lpNumberStr.is_null())
-        || IsValidLocale(lcid, 0) == 0
+        // The default LCIDs are not themselves valid locales (IsValidLocale says so,
+        // as on Windows), but they are valid ARGUMENTS here: validate what they name.
+        || IsValidLocale(ConvertDefaultLocale(lcid), 0) == 0
         || (!lpFormat.is_null()
             && (dwFlags != 0
                 || (*lpFormat).lpDecimalSep.is_null()
@@ -1872,7 +1874,9 @@ pub unsafe extern "system" fn GetCurrencyFormatW(
     if lpszValue.is_null()
         || cchOut < 0
         || (cchOut > 0 && lpCurrencyStr.is_null())
-        || IsValidLocale(lcid, 0) == 0
+        // The default LCIDs are not themselves valid locales (IsValidLocale says so,
+        // as on Windows), but they are valid ARGUMENTS here: validate what they name.
+        || IsValidLocale(ConvertDefaultLocale(lcid), 0) == 0
         || (!lpFormat.is_null()
             && (dwFlags != 0
                 || (*lpFormat).lpDecimalSep.is_null()

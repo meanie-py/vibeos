@@ -1530,22 +1530,6 @@ pub type MMPPE = MMPTE;
 pub type PMMPPE = PMMPTE;
 
 // ============================================================================
-// MMPTE List NextEntry accessor (PTE_LIST format)
-// ============================================================================
-
-/// Read the NextEntry field from a PTE in MMPTE_LIST format.
-/// On 64-bit: bits [63:32] (shifted right by 32), or bits [63:28] on ARM64
-/// On 32-bit: bits [31:10] (shifted right by 10)
-/// Simplification: just return upper bits of Long.
-#[inline]
-pub fn mmpte_list_next_entry(pte: &MMPTE) -> ULONG_PTR {
-    #[cfg(target_pointer_width = "64")]
-    { pte.Long >> 32 }
-    #[cfg(target_pointer_width = "32")]
-    { pte.Long >> 10 }
-}
-
-// ============================================================================
 // _A3_TRACE! macro
 // ============================================================================
 

@@ -13,7 +13,7 @@ import pytest
 from tests.qemu.cli.provenance import check_staleness
 from tests.qemu.test_smoke import _FATAL_MARKERS
 from tests.qemu.test_xhci import _stick_file, _tap, _type
-from tests.qemu.vm import PROJECT_DIR, USB_STICK_FILE, USB_STICK_TEXT, QemuVM
+from tests.qemu.vm import PROJECT_DIR, USB_STICK_FILE, USB_STICK_TEXT, QemuVM, smp_count
 
 _COPY = "COPY.TXT"
 # Which letter the namespace gets depends on what else the arch attaches (on
@@ -55,11 +55,19 @@ def test_nvme_controller_and_namespace(vm: QemuVM) -> None:
         "[NVME] controller 0: namespace 1: 131072 blocks of 512 B (64 MiB)",
         "[NVME] controller 0: self-test: partition 1 type 0x06 at block 2048",
         "[NVME] controller 0: namespace 1 published as a disk",
-        "MSI-X enabled for 1b36:0010: 2 of 65 table entries",
-        "[NVME] controller 0: MSI-X: 2 message(s) connected",
         "[NVME] controller 0: interrupts working",
     ):
         assert line in serial, f"missing {line!r}:\n{serial[-6000:]}"
+    # One message for the admin queue and one per CPU for an I/O queue each (at
+    # most 8), every one connected.
+    messages = 1 + min(smp_count() or 1, 8)
+    for line in (
+        f"MSI-X enabled for 1b36:0010: {messages} of 65 table entries",
+        f"[NVME] controller 0: MSI-X: {messages} message(s) connected",
+    ):
+        assert line in serial, f"missing {line!r}:\n{serial[-6000:]}"
+    queues = re.findall(r"\[NVME\] controller 0: I/O queue \d+ on message \d+", serial)
+    assert len(queues) == messages - 1, serial[-6000:]
     assert "self-test: read 1024 KiB" in serial, serial[-6000:]
     # Both messages fired: admin completions on one, the self-test's reads on the other.
     taken = re.search(r"MSI-X messages taken: (\d+) admin, (\d+) I/O", serial)

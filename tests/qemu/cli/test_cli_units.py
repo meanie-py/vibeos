@@ -8341,6 +8341,22 @@ def test_faulting_module_offset_beats_a_guessed_reloc():
     assert triage.faulting_module_offset("*** BUGCHECK: 0x0000007E (0,0,0,0)\n") is None
 
 
+def test_faulting_module_offset_only_from_a_pc_parameter():
+    # 0xF4's P4 is a message string; the banner resolved it and triage printed an
+    # anonymous constant as the fault (arm64 modrun, 2026-10-08).
+    f4 = (
+        "*** BUGCHECK: 0x000000F4 (0x0000000000000003, 0xfffffa00062e1970, "
+        "0xfffffa00062e1bd0, 0xfffff800422df6b0)\n***   P4 = ntoskrnl.exe+0x14D6B0\n"
+    )
+    assert triage.faulting_module_offset(f4) is None
+    # 0x1E names P2; a resolved P3 is a stack address, not the fault
+    p3 = (
+        "*** BUGCHECK: 0x0000001E (0x1, 0x0, 0xfffff80042193788, 0x0)\n"
+        "***   P3 = ntoskrnl.exe+0x3788\n"
+    )
+    assert triage.faulting_module_offset(p3) is None
+
+
 def test_faulting_module_offset_takes_the_LAST_bugcheck():
     """Same rule as faulting_pc: the crash being triaged is the one the boot died
     on, not the first the log happens to mention."""
@@ -9712,8 +9728,88 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(working + test.format(8, 0))
     assert bad and bad["classification"] == "NVME_BOUNCED"
     assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_LOSE_COMPLETION=3")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_RESET"
+    reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
+    assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
+    port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
+    assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_nvme_fail_start_must_hand_its_messages_back(monkeypatch):
+    """No boot removes a device, so the release path runs only under the tripwire;
+    the verdict must see every step, not just the failed START."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_FAIL_START=1")
+    failed = "[NVME] controller 0: tripwire: failing START after connecting\n"
+    bad = smoke_mod._nvme_check(failed)
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert any("disconnected" in s for s in bad["salient"])
+    steps = failed + (
+        "[NVME] controller 0: interrupts disconnected\n"
+        "(pci-rust/src/msix.rs:1) MSI-X disabled for 1b36:0010\n"
+    )
+    bad = smoke_mod._nvme_check(steps)
+    assert bad and any("back to the HAL" in s for s in bad["salient"])
+    bad = smoke_mod._nvme_check(steps + "[PNP] message interrupts: 1 back to the HAL, 1 refused\n")
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert (
+        smoke_mod._nvme_check(steps + "[PNP] message interrupts: 2 back to the HAL, 0 refused\n")
+        is None
+    )
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
+
+
+def test_xhci_boot_must_interrupt_the_way_asked(monkeypatch):
+    """A controller left on its line still enumerates, and the desktop needs no USB,
+    so only the verdict can tell a broken message path from a working one."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_TRIPWIRE", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msix")
+    running = "[XHCI] controller running: xHCI 1.00, 16 slots\n"
+    bad = smoke_mod._xhci_check("[EXPLORER] _tWinMain entered\n")
+    assert bad and bad["classification"] == "XHCI_NOT_ENGAGED"
+    bad = smoke_mod._xhci_check(running)
+    assert bad and bad["classification"] == "XHCI_NO_TRANSFERS"
+    kbd = "[DA] START USB\\Vid_0627&Pid_0001\\3&b8aad27b&1 -> 0x0\n"
+    bad = smoke_mod._xhci_check(running + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msix = (
+        "(pci-rust/src/msix.rs:1) MSI-X enabled for 1b36:000d: 1 of 16 table entries\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msix + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msi")
+    bad = smoke_mod._xhci_check(running + msix + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msi = (
+        "(pci-rust/src/msix.rs:1) MSI enabled for 1b36:000d: 4 message(s), data 0x50\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET XHCI_MSI_MESSAGES=8")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_MSI_BLOCK_SHORT"
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "XHCI_MSI_MESSAGES=4")
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "line")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_LINE"
+    assert smoke_mod._xhci_check(running + kbd) is None
+    monkeypatch.delenv("VIBEOS_QEMU_XHCI_MSI")
+    assert smoke_mod._xhci_check("") is None
 
 
 def test_arm64_boot_must_serve_its_virtio_mmio_scratch_disk():
@@ -11332,3 +11428,20 @@ def test_qemu_memory_override_is_validated(monkeypatch):
     monkeypatch.setenv("VIBEOS_QEMU_MEMORY", "lots")
     with pytest.raises(ValueError):
         vm_mod.get_arch_config("arm64")
+
+
+def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
+    # A BUGCHECK in the payload VM must name itself (and be symbolicated now, against the
+    # build that booted), not hide behind "payload suite FAILED" / the net stage's NET_FLAKE.
+    from . import triage as triage_mod
+
+    (tmp_path / "amd64-uefi_serial.log").write_text(
+        "PathName: X:\\\n\n*** BUGCHECK: 0x0000001E (0xffffffffc0000006, 0xfffff800004ef96e, "
+        "0xfffff880759b3680, 0x0000000000000000)\n***   P2 = ntoskrnl.exe+0xEF96E\n"
+    )
+    monkeypatch.setattr(triage_mod, "symbolicate_pc", lambda repo, arch, text: "MmCreatePeb+0x1")
+    crash = smoke_mod._payload_crash(Path("."), "amd64", tmp_path)
+    assert crash is not None and crash["classification"] == "BUGCHECK"
+    assert crash["salient"][-1] == "MmCreatePeb+0x1"
+    (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
+    assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None

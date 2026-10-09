@@ -33,8 +33,9 @@ const fn wdev<const N: usize>(s: &[u8]) -> [u16; N] {
 }
 static UDP_NAME: [u16; 11] = wdev(b"\\Device\\Udp");
 
-/// slirp's built-in DNS forwarder — a real UDP responder on :53.
-const DNS_IP: [u8; 4] = [10, 0, 2, 3];
+/// The query goes to the lease's DNS server, a real UDP responder on :53: slirp's
+/// forwarder (10.0.2.3) under QEMU, the LAN's resolver on a board. A hard-coded
+/// 10.0.2.3 timed out on every Pi 5 boot, the router having no route to slirp.
 const DNS_PORT: u16 = 53;
 
 /// A static DNS query for "example.com" A: 12-byte header (ID, RD flag, QDCOUNT=1)
@@ -192,7 +193,12 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     });
     nsprint!("[NETSTACK] TDI dgram self-test: set-event(receive-datagram) {:#010x}\n", st as u32);
 
-    // SEND_DATAGRAM the DNS query to 10.0.2.3:53. The data buffer must be pool
+    let Some(dns_ip) = crate::netcfg::dns0() else {
+        nsprint!("[NETSTACK] TDI dgram self-test: skipped (the lease named no DNS server)\n");
+        cleanup(addr_obj, addr_h);
+        return;
+    };
+    // SEND_DATAGRAM the DNS query to the lease's resolver. The data buffer must be pool
     // (METHOD_OUT_DIRECT builds the MDL the transport maps), exactly like AFD.
     let txbuf = ExAllocatePoolWithTag(0 /* NonPagedPool */ as _, DNS_QUERY.len() as _, u32::from_le_bytes(*b"NetD")) as *mut u8;
     if txbuf.is_null() {
@@ -202,7 +208,7 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
     }
     core::ptr::copy_nonoverlapping(DNS_QUERY.as_ptr(), txbuf, DNS_QUERY.len());
 
-    let mut remote = tdi::TaIpFull::new(DNS_IP, DNS_PORT);
+    let mut remote = tdi::TaIpFull::new(dns_ip, DNS_PORT);
     let mut info: tdi::TDI_CONNECTION_INFORMATION = zeroed();
     info.RemoteAddress = &mut remote as *mut _ as *mut c_void;
     info.RemoteAddressLength = size_of::<tdi::TaIpFull>() as i32;
@@ -236,8 +242,8 @@ unsafe extern "system" fn worker(_ctx: PVOID) {
 }
 
 /// Send from the first address object to the limited (255.255.255.255) and the directed
-/// (10.0.2.255, slirp's /24) broadcast on BC_PORT, and check that the local listener
-/// received each one.
+/// (the lease's subnet broadcast: 10.0.2.255 under slirp) broadcast on BC_PORT, and
+/// check that the local listener received each one.
 unsafe fn broadcast_stage(dev: ntkrnl_sys::ddk::PDEVICE_OBJECT, send_fo: *mut _FILE_OBJECT) {
     let mut ea: AddrEa = zeroed();
     ea.name_len = 16;
@@ -272,7 +278,8 @@ unsafe fn broadcast_stage(dev: ntkrnl_sys::ddk::PDEVICE_OBJECT, send_fo: *mut _F
     core::ptr::copy_nonoverlapping(BC_PAYLOAD.as_ptr(), buf, BC_PAYLOAD.len());
 
     let mut got = [false; 2];
-    for (i, dst) in [[255u8, 255, 255, 255], [10, 0, 2, 255]].iter().enumerate() {
+    let directed = crate::netcfg::broadcast_naddr().to_ne_bytes();
+    for (i, dst) in [[255u8, 255, 255, 255], directed].iter().enumerate() {
         let before = BC_COUNT.load(Ordering::Acquire);
         let mut remote = tdi::TaIpFull::new(*dst, BC_PORT);
         let mut info: tdi::TDI_CONNECTION_INFORMATION = zeroed();

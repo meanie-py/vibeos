@@ -55,6 +55,15 @@ static const app_t apps[] = {
     { "cpl-appwiz", "control.exe", "appwiz.cpl" },    { "cpl-ncpa", "control.exe", "ncpa.cpl" },
     { "cpl-access", "control.exe", "access.cpl" },    { "cpl-powercfg", "control.exe", "powercfg.cpl" },
     { "cpl-inetcpl", "control.exe", "inetcpl.cpl" },  { "cpl-joy", "control.exe", "joy.cpl" },
+    /* The rest of dll/cpl, all Rust since 2026-10-08 (rustconv port, Haiku 5.5). input and
+     * console build as win32dll modules (input.dll, console.dll). Not here: telephon.cpl
+     * hands off to tapi32's internalConfig, a `-stub` in this tree, and odbccp32i.cpl
+     * answers CPL_GETCOUNT with 0 (it only forwards CPL_DBLCLK to odbccp32.dll) -- neither
+     * can open a window, in C or in Rust. */
+    { "cpl-input", "control.exe", "input.dll" },      { "cpl-usrmgr", "control.exe", "usrmgr.cpl" },
+    { "cpl-hdwwiz", "control.exe", "hdwwiz.cpl" },    { "cpl-openglcfg", "control.exe", "openglcfg.cpl" },
+    { "cpl-wined3dcfg", "control.exe", "wined3dcfg.cpl" }, { "cpl-console", "control.exe", "console.dll" },
+    { "cpl-hotplug", "rundll32.exe", "shell32.dll,Control_RunDLL hotplug.dll" },
 };
 
 #define MAXW 64
@@ -515,6 +524,30 @@ static USHORT image_machine(HANDLE process)
 }
 static USHORT own_machine;
 
+/* Every launch and close wait is multiplied by this. 6 when appstorm is an EMULATED guest --
+ * its machine differs from the shell's (an x86-64 appstorm beside arm64's native explorer) --
+ * since each app it starts is JIT-translated from cold and every syscall crosses the CPU layer.
+ * Applets that open in ~15s natively took 40-80s under FEX on arm64 on a quiet host and past
+ * 90s on a loaded one (sysdm's logo alone is two GetPixel syscalls per pixel), and a dialog that
+ * arrived after the wait was scored against the NEXT entry. The sampler showed every one busy,
+ * none stuck. Only the waits stretch; every pass criterion is the same. */
+static DWORD slow = 1;
+
+static void note_emulation(void)
+{
+    DWORD pid = 0;
+    HANDLE h;
+    USHORT shell = 0;
+    GetWindowThreadProcessId(GetShellWindow(), &pid);
+    if (pid && (h = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid))) {
+        shell = image_machine(h);
+        CloseHandle(h);
+    }
+    if (shell && own_machine && shell != own_machine)
+        slow = 6;
+    SAY("shell machine=0x%x: waits x%lu\n", shell, slow);
+}
+
 /* Exit code of a finished process, or -1 while it runs; a crash is scored like main()'s. */
 static int crashed_code(DWORD rc)
 {
@@ -616,7 +649,7 @@ static int scn_notepad_save(const char *name)
         return 0;
     }
     WaitForInputIdle(pi.hProcess, 20000);
-    if (!(main = wait_window(pi.dwProcessId, L"Notepad", NULL, 30000, pi.hProcess))) {
+    if (!(main = wait_window(pi.dwProcessId, L"Notepad", NULL, 30000 * slow, pi.hProcess))) {
         why = "no notepad window";
         goto out;
     }
@@ -628,7 +661,7 @@ static int scn_notepad_save(const char *name)
     SendMessageW(edit, EM_SETMODIFY, TRUE, 0);
     SAY("  %s: typed, sending File > Save As\n", name);
     PostMessageW(main, WM_COMMAND, NP_CMD_SAVE_AS, 0);
-    if (!(dlg = wait_window(pi.dwProcessId, L"#32770", NULL, 30000, pi.hProcess))) {
+    if (!(dlg = wait_window(pi.dwProcessId, L"#32770", NULL, 30000 * slow, pi.hProcess))) {
         why = WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0 ? "died opening Save As" : "no Save As dialog";
         goto out;
     }
@@ -648,7 +681,7 @@ static int scn_notepad_save(const char *name)
     SAY("  %s: file name %s, pressing OK\n", name, target);
     PostMessageW(dlg, WM_COMMAND, MAKEWPARAM(IDOK, BN_CLICKED), (LPARAM)ok);
     t0 = GetTickCount();
-    while (GetTickCount() - t0 < 30000 && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
+    while (GetTickCount() - t0 < 30000 * slow && WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
         if (!IsWindow(dlg) && GetFileAttributesExA(target, GetFileExInfoStandard, &fa)) {
             saved = 1;
             break;
@@ -674,7 +707,7 @@ out:
     if (WaitForSingleObject(pi.hProcess, 0) == WAIT_TIMEOUT) {
         if (!why)
             PostMessageW(main, WM_CLOSE, 0, 0);
-        if (why || WaitForSingleObject(pi.hProcess, 10000) == WAIT_TIMEOUT) {
+        if (why || WaitForSingleObject(pi.hProcess, 10000 * slow) == WAIT_TIMEOUT) {
             if (!why) {
                 why = "would not close after saving";
                 dump_process(pi.dwProcessId);
@@ -723,6 +756,7 @@ int main(void)
     fmtmsg_check() ? pass++ : fail++;
     shell_note();
     SAY("shell tray=%p\n", (void *)shell_tray);
+    note_emulation();
     Sleep(5000); /* let the desktop settle before the first snapshot */
     for (unsigned k = 0; k < sizeof apps / sizeof apps[0]; k++) {
         const app_t *a = &apps[k];
@@ -781,7 +815,7 @@ int main(void)
          * busy, and stopping there failed desk/sysdm/intl on amd64 with the dialog on its way. */
         /* grow_family on every poll: with no window yet nothing else does, and appwiz's
          * rundll32 exits within seconds, orphaning the rapps it started. */
-        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000) {
+        while (!has_real_window(&before, &got) && GetTickCount() - t0 < 30000 * slow) {
             grow_family();
             Sleep(250);
         }
@@ -886,7 +920,7 @@ int main(void)
             HANDLE h = j ? OpenProcess(SYNCHRONIZE | PROCESS_TERMINATE | PROCESS_QUERY_INFORMATION,
                                        FALSE, pids[j]) : pi.hProcess;
             if (!h) continue;
-            if (WaitForSingleObject(h, 10000) == WAIT_TIMEOUT) {
+            if (WaitForSingleObject(h, 10000 * slow) == WAIT_TIMEOUT) {
                 SAY("  close timeout pid=%lu, threads:\n", pids[j]);
                 /* Every top-level window the process owns NOW: a modal box the close raised
                  * (a "save changes?" prompt) was created after the snapshot above. */

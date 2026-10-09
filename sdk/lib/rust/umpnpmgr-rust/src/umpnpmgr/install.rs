@@ -91,7 +91,7 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
         RegCloseKey(DeviceKey);
     }
 
-    // DPRINT removed
+    DPRINT1!("Installing: %S\n", DeviceInstance);
 
     UuidCreate((RandomUuid.as_mut_ptr() as *mut core::ffi::c_void).cast());
     swprintf(UuidString.as_mut_ptr(), w!("{%08X-%04X-%04X-%02X%02X-%02X%02X%02X%02X%02X%02X}") as *const u16,
@@ -108,7 +108,7 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
     ErrCode = CreatePnpInstallEventSecurity(core::ptr::addr_of_mut!(EventSd));
     if ErrCode != ERROR_SUCCESS
     {
-        // DPRINT removed
+        DPRINT1!("CreatePnpInstallEventSecurity failed with error %u\n", GetLastError());
         return FALSE;
     }
 
@@ -122,7 +122,7 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
     HeapFree(GetProcessHeap(), 0, EventSd as LPVOID);
     if hInstallEventLocal.is_null()
     {
-        // DPRINT removed
+        DPRINT1!("CreateEventW('%ls') failed with error %lu\n", InstallEventName.as_ptr(), GetLastError());
         DeviceInstalled = FALSE;
     } else {
         wcscpy(PipeName.as_mut_ptr(), w!("\\\\.\\pipe\\PNP_Device_Install_Pipe_0.") as *const u16);
@@ -130,7 +130,7 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
         hPipe = CreateNamedPipeW(PipeName.as_ptr(), (PIPE_ACCESS_OUTBOUND) as u32, (PIPE_TYPE_BYTE) as u32, 1, 512, 512, 0, core::ptr::null_mut());
         if hPipe == INVALID_HANDLE_VALUE
         {
-            // DPRINT removed
+            DPRINT1!("CreateNamedPipeW failed with error %u\n", GetLastError());
             DeviceInstalled = FALSE;
         } else {
             wcscpy(CommandLine.as_mut_ptr(), w!("rundll32.exe newdev.dll,ClientSideInstall ") as *const u16);
@@ -143,19 +143,19 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
             {
                 if CreateEnvironmentBlock(core::ptr::addr_of_mut!(Environment), hUserToken, (FALSE) as i32) == 0
                 {
-                    // DPRINT removed
+                    DPRINT1!("CreateEnvironmentBlock failed with error %d\n", GetLastError());
                     DeviceInstalled = FALSE;
                 } else {
                     if CreateProcessAsUserW(hUserToken, core::ptr::null_mut(), CommandLine.as_mut_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), (FALSE) as i32, (CREATE_UNICODE_ENVIRONMENT) as u32, Environment, core::ptr::null_mut(), core::ptr::addr_of_mut!(StartupInfo), core::ptr::addr_of_mut!(ProcessInfo)) == 0
                     {
-                        // DPRINT removed
+                        DPRINT1!("CreateProcessAsUserW failed with error %u\n", GetLastError());
                         DeviceInstalled = FALSE;
                     } else {
                         if ConnectNamedPipe(hPipe, core::ptr::null_mut()) == 0
                         {
                             if GetLastError() != ERROR_PIPE_CONNECTED
                             {
-                                // DPRINT removed
+                                DPRINT1!("ConnectNamedPipe failed with error %u\n", GetLastError());
                                 DeviceInstalled = FALSE;
                             } else {
                                 Value = core::mem::size_of_val(&InstallEventName) as u32;
@@ -194,14 +194,14 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
             {
                 if CreateProcessW(core::ptr::null_mut(), CommandLine.as_mut_ptr(), core::ptr::null_mut(), core::ptr::null_mut(), (FALSE) as i32, 0, core::ptr::null_mut(), core::ptr::null_mut(), core::ptr::addr_of_mut!(StartupInfo), core::ptr::addr_of_mut!(ProcessInfo)) == 0
                 {
-                    // DPRINT removed
+                    DPRINT1!("CreateProcessW failed with error %u\n", GetLastError());
                     DeviceInstalled = FALSE;
                 } else {
                     if ConnectNamedPipe(hPipe, core::ptr::null_mut()) == 0
                     {
                         if GetLastError() != ERROR_PIPE_CONNECTED
                         {
-                            // DPRINT removed
+                            DPRINT1!("ConnectNamedPipe failed with error %u\n", GetLastError());
                             DeviceInstalled = FALSE;
                         } else {
                             Value = core::mem::size_of_val(&InstallEventName) as u32;
@@ -260,7 +260,7 @@ unsafe extern "C" fn InstallDevice(DeviceInstance: PCWSTR, ShowWizard: u32) -> u
 
     if DeviceInstalled == 0
     {
-        // DPRINT removed
+        DPRINT1!("InstallDevice failed for DeviceInstance '%ws'\n", DeviceInstance);
     }
 
     DeviceInstalled

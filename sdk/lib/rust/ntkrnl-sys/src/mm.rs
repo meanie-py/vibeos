@@ -2382,12 +2382,17 @@ pub const TAG_RMAP: ULONG = u32::from_le_bytes(*b"pMrM"); // MrMp - rmap tag
 pub type MMSYSTEM_PTE_POOL_TYPE = ULONG;
 
 // Address space constants — architecture-dependent
+// MM_HIGHEST_VAD_ADDRESS is 16 pages BELOW the highest user address on every arch, as in
+// ntoskrnl/include/internal/<arch>/mm.h. Those top pages belong to KUSER_SHARED_DATA and the
+// guard region; with the limit equal to MM_HIGHEST_USER_ADDRESS, VADs (PEB/TEB first) were
+// placed there, and a caller asking for an address in that band got
+// STATUS_CONFLICTING_ADDRESSES instead of STATUS_INVALID_ADDRESS.
 #[cfg(target_arch = "x86")]
 pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "x86")]
 pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x7FFEFFFF;
 #[cfg(target_arch = "x86")]
-pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x7FFEFFFF;
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = MM_HIGHEST_USER_ADDRESS - 16 * 0x1000;
 #[cfg(target_arch = "x86")]
 pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "x86")]
@@ -2408,7 +2413,7 @@ pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "x86_64")]
 pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x000007FFFFFEFFFF;
 #[cfg(target_arch = "x86_64")]
-pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x000007FFFFFEFFFF;
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = MM_HIGHEST_USER_ADDRESS - 16 * 0x1000;
 #[cfg(target_arch = "x86_64")]
 pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "x86_64")]
@@ -2431,7 +2436,7 @@ pub const MM_LOWEST_USER_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "aarch64")]
 pub const MM_HIGHEST_USER_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
 #[cfg(target_arch = "aarch64")]
-pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = 0x7FFFFFFEFFFF;
+pub const MM_HIGHEST_VAD_ADDRESS: ULONG_PTR = MM_HIGHEST_USER_ADDRESS - 16 * 0x1000;
 #[cfg(target_arch = "aarch64")]
 pub const MI_LOWEST_VAD_ADDRESS: ULONG_PTR = 0x10000;
 #[cfg(target_arch = "aarch64")]
