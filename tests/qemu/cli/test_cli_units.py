@@ -9858,6 +9858,11 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
     port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
     assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "segment")
+    bad = smoke_mod._nvme_check(port + working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_SEGMENT_NOT_PUBLISHED"
+    seg = "[HAL] PCI segment 1: root bus 128-255 published for pci.sys\n"
+    assert smoke_mod._nvme_check(seg + port + working + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
@@ -9939,6 +9944,30 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     assert smoke_mod._gic_check(on + attached + caught) is None
     bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
+    # nvme.sys is DMA-remapping compatible: with NVMe on, it gets a domain of its own.
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_STRAY_DMA=1")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_NO_DOMAIN"
+    own = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - "
+        "translating in a domain of its own (DMA-remapping compatible)\n"
+    )
+    bad = smoke_mod._gic_check(on + own)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    stray = "[NVME] tripwire: a stray Identify to RAM at 0x4a3f2000 {}\n"
+    landed = stray.format(
+        "completed; the controller WROTE 4096 byte(s) of a page it was never given"
+    )
+    bad = smoke_mod._gic_check(on + own + landed)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    held = stray.format("failed; the page is untouched")
+    bad = smoke_mod._gic_check(on + own + held)
+    assert bad and bad["classification"] == "SMMU_MISSED_STRAY_DMA"
+    assert smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010)) is None
+    bad = smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010) + fault.format(0x5000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.delenv("VIBEOS_QEMU_SMMU")
 
@@ -10038,6 +10067,23 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
     assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
     monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_its_missteer_boot_must_move_an_lpi(monkeypatch):
+    """ITS_MISSTEER binds every LPI one CPU away from its interrupt object, so the
+    boot must show steer()'s MOVI putting one back; a desktop alone could be NVMe
+    polling."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "ITS_MISSTEER")
+    v3 = "[GIC] GICv3: distributor 0000000008000000, 131072 bytes of redistributors\n"
+    bad = smoke_mod._gic_check(v3)
+    assert bad and bad["classification"] == "GIC_LPI_NOT_MOVED"
+    moved = v3 + "[HAL] GICv3 ITS 0: LPI 8193 moved from CPU2 to CPU1\n"
+    assert smoke_mod._gic_check(moved) is None
 
 
 def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):

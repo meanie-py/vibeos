@@ -24,7 +24,7 @@ use ntkrnl_sys::ddk::{
     _KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation, _MEMORY_CACHING_TYPE_MmNonCached,
     HANDLE, IO_CONNECT_INTERRUPT_PARAMETERS, KEVENT, LARGE_INTEGER, NTSTATUS, OBJECT_ATTRIBUTES, PDEVICE_OBJECT,
     PDEVICE_RELATIONS, PDRIVER_OBJECT, PHYSICAL_ADDRESS, PIO_INTERRUPT_MESSAGE_INFO, PIO_STACK_LOCATION, PIRP, PMDL,
-    PVOID, ULONG, UNICODE_STRING,
+    PVOID, ULONG, UNICODE_STRING, DEVICE_DESCRIPTION, IoGetDmaAdapter, PDMA_ADAPTER,
 };
 use ntkrnl_sys::driver_ddk::{IoCallDriver, IoCompleteRequest, PoCallDriver, PoStartNextPowerIrp};
 use ntkrnl_sys::inline::mm::MmGetSystemAddressForMdlSafe;
@@ -306,6 +306,22 @@ unsafe fn tripwire_value(key: &[u16]) -> Option<u64> {
     digits.iter().try_fold(0u64, |acc, &c| Some(acc << 4 | char::from_u32(c as u32)?.to_digit(16)? as u64)).filter(|&m| m != 0)
 }
 
+/// The bus's DMA adapter for the controller: a 64-bit scatter/gather bus master,
+/// one command (the bounce buffer's size) at a time at most. What it maps is what
+/// the controller can reach behind a DMA-remapping domain.
+unsafe fn dma_adapter(pdo: PDEVICE_OBJECT) -> PDMA_ADAPTER {
+    let mut description: DEVICE_DESCRIPTION = core::mem::zeroed();
+    description.Version = 2; // DEVICE_DESCRIPTION_VERSION2
+    description.Master = 1;
+    description.ScatterGather = 1;
+    description.Dma32BitAddresses = 1;
+    description.Dma64BitAddresses = 1;
+    description.InterfaceType = ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus;
+    description.MaximumLength = nvme::MAX_TRANSFER as ULONG;
+    let mut map_registers: ULONG = 0;
+    IoGetDmaAdapter(pdo, &mut description, &mut map_registers)
+}
+
 /// Ask pci.sys for MSI-X the Windows way: `MSISupported` under the device key's
 /// Interrupt Management\MessageSignaledInterruptProperties, which an INF's HKR
 /// AddReg would write (stornvme's does). Done here because there is no INF; the
@@ -567,17 +583,27 @@ unsafe fn start(fdo: &mut Fdo, io: PIO_STACK_LOCATION) -> NTSTATUS {
     if let Some(bad) = tripwire_value(utf16!("NVME_BAD_DMA")) {
         nvme::BAD_DMA.store(bad, Ordering::Relaxed);
     }
+    if tripwire_value(utf16!("NVME_STRAY_DMA")).is_some() {
+        nvme::STRAY_DMA.store(true, Ordering::Relaxed);
+    }
     if let Some(lose) = tripwire_value(utf16!("NVME_LOSE_COMPLETION")) {
         nvme::LOSE_COMPLETION.store(lose as u32, Ordering::Relaxed);
         nvprint!("controller {}: tripwire: I/O completion {} will be thrown away\n", n, lose);
     }
 
+    let dma = dma_adapter(fdo.pdo);
+    if dma.is_null() {
+        nvprint!("controller {}: no DMA adapter from the bus - handing the controller physical addresses\n", n);
+    }
     let t0 = now_us();
-    let mut c = match Controller::start(regs, len as usize, &targets[..count]) {
+    let mut c = match Controller::start(regs, len as usize, &targets[..count], dma) {
         Ok(c) => c,
         Err(e) => {
             nvprint!("controller {}: bring-up failed: {:?}\n", n, e);
             disconnect(fdo);
+            if let Some(put) = dma.as_ref().and_then(|d| (*d.DmaOperations).PutDmaAdapter) {
+                put(dma);
+            }
             return STATUS_ADAPTER_HARDWARE_ERROR;
         }
     };

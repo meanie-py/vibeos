@@ -374,6 +374,15 @@ def build_parser() -> argparse.ArgumentParser:
         "behind it came up",
     )
     s.add_argument(
+        "--nvme-segment",
+        action="store_true",
+        help="arm64 only, implies --nvme: put the NVMe controller behind a root port on a "
+        "pxb-pcie expander at bus 0x80, and have the HAL present those buses as PCI segment 1 "
+        "(VIBEOS_QEMU_NVME_BRIDGE=segment, tripwire PCI_SEGMENT_SPLIT). The boot FAILS "
+        "(NVME_SEGMENT_NOT_PUBLISHED) unless the HAL published segment 1's root bus, and "
+        "otherwise as --nvme-bridge does",
+    )
+    s.add_argument(
         "--no-net",
         action="store_true",
         help="skip the amd64 netstack net-suite (default-on; escape hatch for fast iteration)",

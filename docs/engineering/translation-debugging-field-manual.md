@@ -13931,6 +13931,22 @@ introduced at any heap exit — it is an external stray write.**
   and says so (`MSI-X table entry N ... did not take`). For any capability programmed
   through a BAR, ask "is the device decoding this BAR yet?"
 
+### Every MmMapIoSpace fails partway through boot once a PCI device sits on a high bus number
+- **Symptom:** an arm64 boot with a device on bus 0x81 (QEMU `pxb-pcie`, `smoke --arch
+  arm64 --nvme-segment`) loses every driver that maps registers after a certain point:
+  `[VIOBLK] 00:02.0: a BAR could not be mapped (MmMapIoSpace)`, nvme and virtio-mmio the
+  same, then `0x6B` because the boot disk never arrived. Just before it, 261
+  `SpiGetPciConfiguration() called` lines where a normal boot has 4.
+- **Cause:** **the HAL's ECAM mapped 1 MiB per bus touched and never unmapped it, populated
+  or not.** The loader reports every bus up to the highest populated one (130 here), and
+  scsiport's legacy miniport scan reads all of them through `HalGetBusData`. That pinned
+  ~130 MiB of system PTEs for buses with nothing on them. Real hardware with sparse bus
+  numbers hits the same wall.
+- **Fix:** `ecam.rs` probes a bus on first touch and keeps the mapping only if some device's
+  function 0 answers; an empty bus reads as all-ones with no mapping. A config write to a
+  bridge's bus-number registers forgets which buses were empty. For any map-on-touch cache,
+  ask "what bounds the number of keys a scanner can touch?"
+
 ### A new SCSIPORT miniport loads, and no disk appears
 - **Symptom:** the `.sys` is loaded and its service is bound by the CriticalDeviceDatabase,
   but no `Found device of type 0` line follows, `IopCreateArcNames` sees no disk, and a boot

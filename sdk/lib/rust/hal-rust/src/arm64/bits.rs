@@ -120,8 +120,29 @@ pub fn nth_cpu(set: u64, pick: u32) -> Option<u32> {
     Some(rest.trailing_zeros())
 }
 
+/// The CPU after `cpu` in `set`, wrapping; `cpu` itself when it is the only one.
+pub fn next_cpu_after(set: u64, cpu: u32) -> u32 {
+    let above = set & !(u64::MAX >> (63 - cpu.min(63)));
+    match (above, set & !(1 << cpu.min(63))) {
+        (0, 0) => cpu,
+        (0, others) => others.trailing_zeros(),
+        (above, _) => above.trailing_zeros(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn next_cpu_after_wraps_and_skips_holes() {
+        assert_eq!(super::next_cpu_after(0b1111, 0), 1);
+        assert_eq!(super::next_cpu_after(0b1111, 3), 0);
+        assert_eq!(super::next_cpu_after(0b1010, 1), 3);
+        assert_eq!(super::next_cpu_after(0b1010, 3), 1);
+        assert_eq!(super::next_cpu_after(0b0100, 2), 2, "a lone CPU stays put");
+        assert_eq!(super::next_cpu_after(1 << 63 | 1, 63), 0);
+        assert_eq!(super::next_cpu_after(1 << 63 | 1, 0), 63);
+    }
+
     use super::*;
 
     #[test]
