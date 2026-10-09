@@ -2741,6 +2741,15 @@ pub unsafe extern "system" fn MmCreateDataFileSection(
         }
 
         if MaximumSize.QuadPart > FileSize.QuadPart {
+            // Exceeds the C, which extends the file whatever the protection. NT grows a file
+            // only for a section that could WRITE it; a read-only one larger than the file is
+            // STATUS_SECTION_TOO_BIG (kmtest ZwCreateSection.c:380). Without this, the extend
+            // below -- broken until its info class was fixed -- grew kmtest's file by a byte and
+            // every later size check against it failed (ZwCreateSection.c:490).
+            if (SectionPageProtection & (PAGE_READWRITE | PAGE_EXECUTE_READWRITE)) == 0 {
+                ObDereferenceObject(Section as PVOID);
+                return STATUS_SECTION_TOO_BIG;
+            }
             // FileEndOfFileInformation (20). A literal 2 (FileFullDirectoryInformation) made
             // every extend fail, so a section larger than its file was NOT_EXTENDED: setup's
             // cabinet extraction lost all 964 files.
