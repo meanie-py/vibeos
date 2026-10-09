@@ -3392,6 +3392,13 @@ later arm**. It has shipped a BUGCHECK 0x1E, killed USB enumeration, and caused 
 `LCMapString` failure (a `switch` whose case labels became an or-pattern that swallowed a
 neighbour).
 
+**A C case label that ORs constants is ONE value; the same text as a Rust pattern is TWO.**
+treeview.c's `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` means 0x8009. Translated verbatim, it is an
+or-pattern matching 0x0009 or 0x8000, so a plain TVGN_CARET took the wrong arm and a real
+0x8009 fell to the default. rustc's only hint is an `unreachable pattern` warning on the next
+arm. Fix: a guard, `x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND =>`. Grep the C for
+`case\s+\w+\s*\|` before trusting a translated `match`.
+
 **An EMPTY catch-all inside a goto-elimination loop is an infinite spin, not a swallowed case.**
 C `switch`es with no `default:` label are translated as `'work: loop { match .. }`, each
 `goto Exit`/`break` becoming `break 'work`. Falling out of a C switch means *leaving* it — but

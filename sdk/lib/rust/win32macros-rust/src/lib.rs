@@ -250,6 +250,34 @@ macro_rules! MAKEINTRESOURCEW {
     };
 }
 
+/// `winuser.h` — `#define IS_INTRESOURCE(_r) ((((ULONG_PTR)(_r)) >> 16) == 0)`
+///
+/// `bool`, not C's `int`: the call sites test it both bare and with `!= 0`, and an `int` result
+/// would let `!IS_INTRESOURCE(p)` compile as a bitwise NOT that is never zero. A `bool` turns
+/// every `!= 0` site into a compile error instead.
+#[macro_export]
+macro_rules! IS_INTRESOURCE {
+    ($r:expr $(,)?) => {
+        ((($r) as usize) >> 16) == 0
+    };
+}
+
+/// `winbase.h` — `#define MAKEINTATOM(i) (LPWSTR)((ULONG_PTR)((WORD)(i)))` (UNICODE).
+#[macro_export]
+macro_rules! MAKEINTATOM {
+    ($i:expr $(,)?) => {
+        ((($i) as usize) & 0xffff) as *mut u16
+    };
+}
+
+/// `winuser.h` — `#define GET_WHEEL_DELTA_WPARAM(wParam) ((short)HIWORD(wParam))`
+#[macro_export]
+macro_rules! GET_WHEEL_DELTA_WPARAM {
+    ($w:expr $(,)?) => {
+        (((($w) as usize) >> 16) & 0xffff) as u16 as i16
+    };
+}
+
 /// `winuser.h:581` — `#define MAKEINTRESOURCEA(i) ((LPSTR)(ULONG_PTR)LOWORD(i))`
 #[macro_export]
 macro_rules! MAKEINTRESOURCEA {
@@ -312,6 +340,22 @@ macro_rules! GetGValue {
 macro_rules! GetBValue {
     ($rgb:expr $(,)?) => {
         ((($rgb as u32) >> 16) & 0xff) as u8
+    };
+}
+
+/// `wingdi.h:3384` — `#define GetAValue(rgb) ((BYTE)((rgb)>>24))`
+#[macro_export]
+macro_rules! GetAValue {
+    ($rgb:expr $(,)?) => {
+        ((($rgb as u32) >> 24) & 0xff) as u8
+    };
+}
+
+/// `wingdi.h:3387` — `#define RGBA(r,g,b,a) ((COLORREF)((((DWORD)(BYTE)(a))<<24) | RGB(r,g,b)))`
+#[macro_export]
+macro_rules! RGBA {
+    ($r:expr, $g:expr, $b:expr, $a:expr $(,)?) => {
+        (((($a as u32) & 0xff) << 24) | $crate::RGB!($r, $g, $b)) as u32
     };
 }
 
@@ -403,6 +447,15 @@ macro_rules! _countof {
 /// same result type for the same reason.
 #[macro_export]
 macro_rules! ARRAYSIZE {
+    ($a:expr $(,)?) => {
+        ($a).len() as u32
+    };
+}
+
+/// Wine's `#define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))` — the Wine-derived DLLs'
+/// spelling of [`ARRAYSIZE`], `u32` for the same reason: comctl32's 63 sites feed `UINT`/`INT`.
+#[macro_export]
+macro_rules! ARRAY_SIZE {
     ($a:expr $(,)?) => {
         ($a).len() as u32
     };
@@ -1492,4 +1545,23 @@ mod tests {
         assert_eq!(UNICODE_NULL, 0u16);
         assert_eq!(INVALID_HANDLE_VALUE as isize, -1);
     }
+}
+
+/// `winnt.h` `InterlockedIncrement` / `InterlockedDecrement` — intrinsics under MSVC and
+/// `static __inline` here, so no object file defines them. Rust's atomics are the portable
+/// spelling of the same LOCK-prefixed read-modify-write, returning the NEW value as Win32 does.
+/// `LONG` is `i32` on all three targets, which is what lets this be shared.
+#[inline(always)]
+pub unsafe fn InterlockedIncrement(addend: *mut i32) -> i32 {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_add(1, core::sync::atomic::Ordering::SeqCst)
+        + 1
+}
+
+/// See [`InterlockedIncrement`].
+#[inline(always)]
+pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
+    (*(addend as *const core::sync::atomic::AtomicI32))
+        .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
+        - 1
 }

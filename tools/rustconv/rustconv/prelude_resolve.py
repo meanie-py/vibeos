@@ -1099,6 +1099,20 @@ def write_substrate(prelude: Path, block: str) -> bool:
     return True
 
 
+_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW])\b")
+
+
+def _x86_alias(sig: str) -> str:
+    """winuser.h `#define`s Get/SetWindowLongPtrW and Get/SetClassLongPtrW to the non-`Ptr`
+    function on 32-bit, so i386 user32 exports no `_GetWindowLongPtrW@8`. A declaration copied
+    from another crate loses that crate's `link_name`, and comctl32's i386 link failed on all
+    four. The attribute line, indented for an extern block, or "" when none applies."""
+    m = _LONG_PTR_ALIAS.search(sig)
+    if m is None or "link_name" in sig:
+        return ""
+    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2)}")]\n'
+
+
 def render(copied: dict[str, Item]) -> str:
     consts = [i for i in copied.values() if i.kind in ("const", "type")]
     fns: dict[str, list[Item]] = {}
@@ -1112,7 +1126,7 @@ def render(copied: dict[str, Item]) -> str:
         out.append(f"extern {abi} {{")
         for i in sorted(items, key=lambda i: i.text):
             text = i.text if i.text.startswith("fn") else re.sub(r"^.*?\bfn\b", "fn", i.text)
-            out.append(f"    pub {text} // {i.path}")
+            out.append(f"{_x86_alias(text)}    pub {text} // {i.path}")
         out.append("}")
     out.append(END)
     return "\n".join(out) + "\n"
@@ -1326,7 +1340,7 @@ def render_externs(sigs: dict[str, tuple[str, str, str]]) -> str:
         out.append(f'extern "{abi}" {{')
         for _, sig, src in items:
             # c2rust's text is already indented for an extern block (params at 8).
-            out.append(f"    pub {sig} // {src}")
+            out.append(f"{_x86_alias(sig)}    pub {sig} // {src}")
         out.append("}")
     out.append(EXTERNS_END)
     return "\n".join(out) + "\n"

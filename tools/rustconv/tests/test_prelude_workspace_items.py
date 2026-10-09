@@ -51,3 +51,24 @@ def test_a_pointer_typed_fact_is_cast_from_an_integer_and_round_trips(tmp_path):
     p = tmp_path / "prelude.rs"
     p.write_text(block)
     assert pr.existing_facts(p) == {"TD_ERROR_ICON": ("*LPWSTR", 0xFFFE, "taskdialog.c")}
+
+
+def test_a_copied_long_ptr_extern_gets_its_i386_alias():
+    """i386 user32 has no `_GetWindowLongPtrW@8`: winuser.h maps it to GetWindowLongW."""
+    from rustconv import prelude_resolve as pr
+
+    block = pr.render_externs(
+        {
+            "GetWindowLongPtrW": (
+                "system",
+                "fn GetWindowLongPtrW(h: HWND, i: INT) -> LONG_PTR;",
+                "x.c",
+            ),
+            "SetFocus": ("system", "fn SetFocus(h: HWND) -> HWND;", "x.c"),
+        }
+    )
+    assert (
+        '#[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n    pub fn GetWindowLongPtrW'
+        in block
+    )
+    assert block.count("cfg_attr") == 1
