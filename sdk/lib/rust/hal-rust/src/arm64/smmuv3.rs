@@ -523,7 +523,7 @@ pub(crate) unsafe fn attach(requester: u32) -> bool {
     super::acpi::for_each_table(xsdt, |sig, t, len| {
         if sig == b"IORT" && found.is_none() {
             let bytes = core::slice::from_raw_parts(t, len);
-            found = super::iort::table(bytes).and_then(|t| super::iort::stream(t, segment, rid));
+            found = super::iort::table(bytes).and_then(|t| super::iort::stream(t, super::ecam::root_complex_segment(segment), rid));
         }
     });
     let Some((smmu, sid)) = found else {

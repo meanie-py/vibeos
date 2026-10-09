@@ -395,10 +395,20 @@ def xhci_interrupts() -> str:
     return mode
 
 
-def nvme_bridged() -> bool:
-    """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
-    port, on bus 1, the way a server's devices do, instead of on the root bus."""
-    return os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() in ("1", "true", "yes")
+def nvme_bridge() -> str:
+    """VIBEOS_QEMU_NVME_BRIDGE (arm64): what the NVMe controller sits behind. `port`
+    (or 1): a PCIe root port, on bus 1, the way a server's devices do. `segment`: a
+    root port on a pxb-pcie expander whose buses start at 0x80, which the
+    PCI_SEGMENT_SPLIT tripwire has the HAL present as PCI segment 1. Empty: the root
+    bus."""
+    mode = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip()
+    if mode in ("", "0"):
+        return ""
+    if mode in ("1", "true", "yes", "port"):
+        return "port"
+    if mode == "segment":
+        return mode
+    raise ValueError(f"VIBEOS_QEMU_NVME_BRIDGE={mode!r}: expected port or segment")
 
 
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
@@ -934,6 +944,16 @@ class Arm64Config(ArchConfig):
                     "nvme,serial=VIBEOSBOOT0,drive=bootnvme,addr=0x2,bootindex=0",
                 ]
                 if boot_nvme()
+                else [
+                    "-drive",
+                    f"file={boot_img},format=raw,if=none,id=bootvirtio,readonly=on,file.locking=off",
+                    "-device",
+                    # Where if=virtio puts it, and where efivars' boot path says.
+                    "virtio-blk-pci,drive=bootvirtio,bus=pcie.0,addr=0x2",
+                ]
+                if nvme_bridge() == "segment"
+                # A bare if=virtio drive goes on the newest PCI bus, which would be
+                # the expander's, and that takes only bridges.
                 else [
                     "-drive",
                     f"file={boot_img},format=raw,if=virtio,readonly=on,file.locking=off",
@@ -2210,7 +2230,19 @@ class QemuVM:
         if not disk.exists():
             make_usb_stick_image(disk)
         drive = ["-drive", f"file={disk},format=qcow2,if=none,id=nvme0"]
-        if nvme_bridged():
+        if nvme_bridge() == "segment":
+            # The expander takes slot 9; its root port is bus 0x80's device 0 and the
+            # controller is device 0 on the bus behind that.
+            return [
+                *drive,
+                "-device",
+                "pxb-pcie,id=pxb0,bus_nr=0x80,bus=pcie.0,addr=0x9",
+                "-device",
+                "pcie-root-port,id=nvmeport,chassis=1,slot=1,bus=pxb0,addr=0x0",
+                "-device",
+                "nvme,serial=VIBEOSNVME0,drive=nvme0,bus=nvmeport",
+            ]
+        if nvme_bridge():
             # The root port takes slot 9 instead; the controller is its bus's device 0.
             return [
                 *drive,

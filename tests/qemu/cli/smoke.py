@@ -873,6 +873,9 @@ _NVME_RESET = re.compile(r"\[NVME\] controller 0: self-test: [1-9]\d* reset\(s\)
 # The PnP manager prints this as it starts each device: with --nvme-bridge, QEMU's
 # PCIe root port (1b36:000c), which pci.sys then drives as the controller's bus.
 _ROOT_PORT_STARTED = "[DA] START PCI\\VEN_1B36&DEV_000C"
+# ...and with --nvme-segment, the root port and controller sit on the expander's
+# buses, which the HAL publishes as segment 1 (arm64/pnpdd.rs).
+_SEGMENT_ROOT = re.compile(r"\[HAL\] PCI segment 1: root bus 128-255 published")
 # ...this once its MSI-X messages are connected (nvme-rust pnp.rs `connect`)...
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
@@ -1041,6 +1044,8 @@ _GIC_ITS = re.compile(r"\[HAL\] GICv3 ITS: [1-9]\d* of \d+ up")
 # arm64/smmu.rs, once it has looked at an SMMUv3 the IORT lists, and let DMA through.
 # arm64/clock.rs, on each CPU's first LPI: the ITS spreads a device's messages over
 # the CPUs, so an NVMe on an SMP boot takes its I/O completions on CPU1.
+# arm64/its.rs steer(): an LPI enabled on a CPU it was not bound to is moved there.
+_LPI_MOVED = re.compile(r"\[HAL\] GICv3 ITS \d+: LPI \d+ moved from CPU\d+ to CPU\d+")
 _LPI_ON_AN_AP = re.compile(r"\[GIC\] CPU[1-9]\d*: first LPI delivered")
 _SMMU_BYPASSED = re.compile(r"\[HAL\] IORT: SMMUv3 at \S+ was .*; now bypassing")
 
@@ -1140,6 +1145,16 @@ def _gic_check(text: str) -> dict | None:
             "classification": "GIC_NO_ITS",
             "salient": ["--gic 3 --nvme boot, but the HAL never reported an ITS up", *lines],
         }
+    if "ITS_MISSTEER" in os.environ.get("VIBEOS_TRIPWIRE", "") and not _LPI_MOVED.search(text):
+        # Every LPI was bound one CPU away from its interrupt object, so a boot whose
+        # devices still interrupt either moved them or never connected one at all.
+        return {
+            "classification": "GIC_LPI_NOT_MOVED",
+            "salient": [
+                "ITS_MISSTEER bound every LPI one CPU over, and no MOVI ever moved one back",
+                *[ln.strip() for ln in text.splitlines() if "LPI" in ln or "MISSTEER" in ln][-6:],
+            ],
+        }
     if nvme_requested() and (smp_count() or 1) > 1 and not _LPI_ON_AN_AP.search(text):
         return {
             "classification": "GIC_LPIS_ONE_CPU",
@@ -1233,8 +1248,16 @@ def _nvme_check(text: str) -> dict | None:
                 *lines,
             ],
         }
-    bridged = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() == "1"
-    if bridged and _ROOT_PORT_STARTED not in text:
+    bridge = os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip()
+    if bridge == "segment" and not _SEGMENT_ROOT.search(text):
+        return {
+            "classification": "NVME_SEGMENT_NOT_PUBLISHED",
+            "salient": [
+                "--nvme-segment boot, but the HAL never published PCI segment 1's root bus",
+                *[ln.strip() for ln in text.splitlines() if "[HAL] PCI" in ln][-4:],
+            ],
+        }
+    if bridge and _ROOT_PORT_STARTED not in text:
         return {
             "classification": "NVME_NOT_BEHIND_BRIDGE",
             "salient": [
@@ -1449,13 +1472,21 @@ def smoke(args, repo: Path) -> int:
 
     # NVMe behind a root port (arm64): the config space, the bridge's own pci.sys
     # and the requester ID of a device off the root bus.
-    if getattr(args, "nvme_bridge", False):
+    if getattr(args, "nvme_bridge", False) or getattr(args, "nvme_segment", False):
+        flag = "--nvme-segment" if getattr(args, "nvme_segment", False) else "--nvme-bridge"
         if arch != "arm64":
             run.classification = "BAD_ARGS"
-            run.add(Stage("nvme", status="fail", detail="--nvme-bridge is arm64-only"))
+            run.add(Stage("nvme", status="fail", detail=f"{flag} is arm64-only"))
             return run.finalize(repo)
-        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "1"
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "port"
         args.nvme = True
+    # ...or on a second PCI segment: QEMU has one, so the HAL makes the expander's
+    # buses one (the PCI_SEGMENT_SPLIT tripwire, arm64/ecam.rs).
+    if getattr(args, "nvme_segment", False):
+        os.environ["VIBEOS_QEMU_NVME_BRIDGE"] = "segment"
+        tokens = os.environ.get("VIBEOS_TRIPWIRE", "").split()
+        if "PCI_SEGMENT_SPLIT" not in tokens:
+            os.environ["VIBEOS_TRIPWIRE"] = " ".join([*tokens, "PCI_SEGMENT_SPLIT"])
     # NVMe channel: a controller attached on every arch (vm.py _nvme_args), and
     # every boot must then show nvme.sys publishing its namespace (_nvme_check).
     if nvme_default_on(args):

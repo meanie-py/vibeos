@@ -519,6 +519,7 @@ unsafe fn ecam_write(
         core::ptr::write_volatile(dst.add(reg as usize), *src.add(i as usize));
         copied += 1;
     }
+    super::ecam::wrote(offset, copied);
     copied
 }
 

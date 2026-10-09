@@ -9796,6 +9796,11 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
     port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
     assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "segment")
+    bad = smoke_mod._nvme_check(port + working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_SEGMENT_NOT_PUBLISHED"
+    seg = "[HAL] PCI segment 1: root bus 128-255 published for pci.sys\n"
+    assert smoke_mod._nvme_check(seg + port + working + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
@@ -9976,6 +9981,23 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
     assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
     monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_its_missteer_boot_must_move_an_lpi(monkeypatch):
+    """ITS_MISSTEER binds every LPI one CPU away from its interrupt object, so the
+    boot must show steer()'s MOVI putting one back; a desktop alone could be NVMe
+    polling."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "ITS_MISSTEER")
+    v3 = "[GIC] GICv3: distributor 0000000008000000, 131072 bytes of redistributors\n"
+    bad = smoke_mod._gic_check(v3)
+    assert bad and bad["classification"] == "GIC_LPI_NOT_MOVED"
+    moved = v3 + "[HAL] GICv3 ITS 0: LPI 8193 moved from CPU2 to CPU1\n"
+    assert smoke_mod._gic_check(moved) is None
 
 
 def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):

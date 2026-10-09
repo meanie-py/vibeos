@@ -42,6 +42,12 @@
 //!   SMMU=TRANSLATE      not read here: the arm64 HAL drives each SMMUv3 for real
 //!                       (an identity map of RAM and MSI doorbells, faults reported)
 //!                       instead of bypassing it. Only means something with --smmu.
+//!   PCI_SEGMENT_SPLIT   not read here: the arm64 HAL presents segment 0's buses
+//!                       from 0x80 up as PCI segment 1 (ecam.rs), for a QEMU
+//!                       boot with a device on a segment past 0.
+//!   ITS_MISSTEER        not read here: the arm64 HAL binds every LPI one CPU over
+//!                       from the one it hands out, so connecting the interrupt
+//!                       has to move it (MOVI). Only means something with --gic 3.
 //!   XHCI_MSI_MESSAGES=<hex>  not read by the kernel: usbport asks pci.sys for this
 //!                       many messages for an xHCI controller instead of one, so
 //!                       a rig with MSI-X off proves a multiple-message MSI block.
@@ -330,6 +336,11 @@ unsafe fn apply_token(tok: &[u8]) {
         || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
     {
         // For nvme.sys and usbport, through the registry copy, like QUIET.
+    } else if tok == b"PCI_SEGMENT_SPLIT" {
+        // For the arm64 HAL's ECAM (ecam.rs), asked when it first reads the MCFG.
+    } else if tok == b"ITS_MISSTEER" {
+        // For the arm64 HAL's ITS (its.rs), which asks VibeTripwireHasToken when it
+        // is first probed.
     } else if tok == b"SMMU=TRANSLATE" {
         // For the arm64 HAL, which asks VibeTripwireHasToken before the first
         // driver starts (smmu.rs): drive each SMMUv3 for real, not in bypass.
