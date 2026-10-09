@@ -51,7 +51,7 @@ extern "C" {
     fn CdUnlockVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> u8;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);

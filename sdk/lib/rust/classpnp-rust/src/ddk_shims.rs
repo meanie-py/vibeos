@@ -325,8 +325,10 @@ extern "fastcall" {
 }
 #[no_mangle] pub unsafe extern "system" fn RtlInterlockedPushEntrySList(head: PVOID, entry: PVOID) -> PVOID { ExpInterlockedPushEntrySList(head, entry) }
 #[no_mangle] pub unsafe extern "system" fn RtlInterlockedPopEntrySList(head: PVOID) -> PVOID { ExpInterlockedPopEntrySList(head) }
-#[no_mangle] pub unsafe extern "C" fn RtlStringCbPrintfW(dst: *mut u16, cb: usize, fmt: *const u16) -> NTSTATUS { if cb>=2 { *dst = 0; } 0 }
-#[no_mangle] pub unsafe extern "C" fn RtlStringCchPrintfA(dst: *mut i8, cch: usize, fmt: *const i8) -> NTSTATUS { if cch>=1 { *dst = 0; } 0 }
+// RtlStringCbPrintfW / RtlStringCchPrintfA were no-op stubs here that wrote an empty
+// string and returned success: the DEVICEMAP\Scsi key UpdateInformationInRegistry opens
+// was "" and every error-log string was empty. The call sites now use strsafe-rust's
+// macros, which format through ntoskrnl's _snprintf/_snwprintf.
 #[no_mangle] pub unsafe extern "C" fn RtlULongAdd(a: u32, b: u32, out: *mut u32) -> NTSTATUS {
     match a.checked_add(b) { Some(v) => { *out = v; 0 } None => { *out = 0; 0xC0000095u32 as i32 } }
 }

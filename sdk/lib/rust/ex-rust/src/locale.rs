@@ -214,7 +214,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     Status = ZwQueryValueKey(
         NlsLocaleKey,
         &mut LocaleIdString,
-        1,
+        ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
         BufferKey as PVOID,
         core::mem::size_of_val(&ValueBuffer) as ULONG,
         &mut ReturnedLength,
@@ -223,7 +223,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
         Status = ZwQueryValueKey(
             AltSortKey,
             &mut LocaleIdString,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             BufferKey as PVOID,
             core::mem::size_of_val(&ValueBuffer) as ULONG,
             &mut ReturnedLength,
@@ -250,7 +250,7 @@ unsafe fn ExpValidateNlsLocaleId(LocaleId: LCID) -> NTSTATUS {
     Status = ZwQueryValueKey(
         LangGroupKey,
         &mut LocaleIdString,
-        1,
+        ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
         BufferKey as PVOID,
         core::mem::size_of_val(&ValueBuffer) as ULONG,
         &mut ReturnedLength,
@@ -315,7 +315,7 @@ unsafe fn ExpGetCurrentUserUILanguage(
         Status = ZwQueryValueKey(
             KeyHandle,
             &mut ValueName,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             ValueBuffer.as_mut_ptr() as PVOID,
             core::mem::size_of_val(&ValueBuffer) as ULONG,
             &mut ValueLength,
@@ -511,7 +511,7 @@ pub unsafe extern "system" fn NtSetDefaultLocale(
         Status = ZwQueryValueKey(
             KeyHandle,
             &mut ValueName,
-            1,
+            ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValuePartialInformation as _,
             KeyValueInformation as PVOID,
             core::mem::size_of_val(&KeyValueBuffer) as ULONG,
             &mut ValueLength,

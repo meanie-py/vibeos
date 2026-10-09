@@ -19,6 +19,7 @@ from . import (
     diskspace,
     host_clock,
     hostlock,
+    installsmoke,
     maintenance,
     pi4,
     pi5,
@@ -697,6 +698,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="which cargo-driven module to boot-swap (ntoskrnl is i386-only)",
     )
     cs.set_defaults(fn=cargoswap.cargo_swap)
+
+    ins = sub.add_parser(
+        "install-smoke",
+        help="install from the bootcd onto a blank disk, then boot that disk to the desktop "
+        "(amd64-bios; ~1h under TCG)",
+    )
+    arch_arg(ins)
+    ins.set_defaults(fn=installsmoke.install_smoke)
 
     cf = sub.add_parser(
         "conformance",

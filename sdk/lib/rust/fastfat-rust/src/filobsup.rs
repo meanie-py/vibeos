@@ -64,7 +64,9 @@ const VCB_STATE_FLAG_LOCKED: u32 = 0x01; // FIXME: unknown value
 const VCB_STATE_FLAG_DELETED_FCB: u32 = 0x0100; // FIXME: unknown value
 const FCB_STATE_FORCE_MISS_IN_PROGRESS: u32 = 0x08; // FIXME: unknown value
 const IRP_CONTEXT_FLAG_WAIT: u32 = 0x02; // FIXME: unknown value  // nolint: const-contradiction (fastfat's own flag set, fatstruc.h:1563)
-const MmFlushForWrite: u32 = 0x00000002;
+// mmtypes.h: MmFlushForDelete = 0, MmFlushForWrite = 1. The value 2 was invented, so
+// MmFlushImageSection got a type it does not know.
+const MmFlushForWrite: ntkrnl_sys::ddk::_MMFLUSH_TYPE = ntkrnl_sys::ddk::_MMFLUSH_TYPE_MmFlushForWrite;
 
 // FAT_FLUSH_TYPE enum from fatprocs.h
 type FAT_FLUSH_TYPE = u32;

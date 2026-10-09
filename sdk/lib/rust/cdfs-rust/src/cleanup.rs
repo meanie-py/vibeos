@@ -82,7 +82,7 @@ extern "C" {
     fn ClearFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-    fn FlagOn(Flags: u32, Flag: u32) -> BOOLEAN;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
     fn NT_ASSERT(condition: u32);

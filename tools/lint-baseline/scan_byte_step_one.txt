@@ -1,0 +1,4 @@
+sdk/lib/rust/classpnp-rust/src/ddk_shims.rs:178: byte-step-one d
+sdk/lib/rust/cnt-rust/src/cabi/streamout.rs:535: byte-step-one string
+sdk/lib/rust/fsrtl-rust/src/notify.rs:621: byte-step-one (*full_directory_name).Buffer
+sdk/lib/rust/kdgdb-rust/src/gdb_input.rs:873: byte-step-one ProgramCounter

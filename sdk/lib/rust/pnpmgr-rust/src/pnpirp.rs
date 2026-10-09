@@ -74,7 +74,7 @@ pub unsafe extern "C" fn IopSynchronousCall(
 
     KeInitializeEvent(
         core::ptr::addr_of_mut!(Event),
-        0u32,
+        ntkrnl_sys::ddk::_EVENT_TYPE_SynchronizationEvent as _,
         0u8,
     );
 

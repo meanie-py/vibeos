@@ -445,9 +445,12 @@ unsafe extern "C" fn CreateStandardProfile(
     let mut szProfilePath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
+    // C: the profile NAME goes into szBuffer, which the path below is built from. Copied into
+    // szProfilePath (overwritten on the next line), szBuffer stayed empty and "Default User" /
+    // "All Users" were created as the profiles directory itself.
     StringCbCopyW(
-        szProfilePath.as_mut_ptr(),
-        core::mem::size_of_val(&szProfilePath),
+        szBuffer.as_mut_ptr(),
+        core::mem::size_of_val(&szBuffer),
         (*pProfileParams).pszProfileName,
     );
 
@@ -691,10 +694,14 @@ pub unsafe extern "system" fn InitializeProfiles() -> BOOL {
     let mut szProfilesPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut szBuffer: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
 
+    // The unexpanded path goes into szBuffer (stored in the registry as REG_EXPAND_SZ) and is
+    // expanded INTO szProfilesPath below. Loaded into szProfilesPath instead, the expansion of
+    // the still-empty szBuffer overwrote it with "", CreateDirectoryW("") failed, and GUI setup
+    // stopped at "InitializeProfiles() failed / Rebooting now!" on every install.
     if LoadStringW(
         hInstance as *mut core::ffi::c_void,
         IDS_PROFILEPATH,
-        szProfilesPath.as_mut_ptr(),
+        szBuffer.as_mut_ptr(),
         MAX_PATH as core::ffi::c_int,
     ) == 0
     {

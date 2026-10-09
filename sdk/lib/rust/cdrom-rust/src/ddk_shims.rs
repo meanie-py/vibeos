@@ -336,11 +336,6 @@ pub unsafe extern "C" fn PORT_ALLOCATED_SENSE(
 }
 #[no_mangle]
 pub unsafe extern "system" fn RequestGetCurrentStackLocationFlags(_Request: WDFREQUEST) -> u8 { 0 }
-// RtlStringCchPrintfW: ntstrsafe inline (no export). Stub returns STATUS_SUCCESS; building the
-// formatted device-interface ref-string is non-fatal to boot (the GUID path still resolves).
-// TODO: real swprintf impl for correct symbolic-link suffixes.
-#[no_mangle]
-pub unsafe extern "C" fn RtlStringCchPrintfW(_Dst: *mut u16, _CchDst: usize, _Format: *const u16) -> NTSTATUS { 0 }
 // ===== translated scratch.h FORCEINLINEs the c2rust pass left declared-not-defined =====
 // ScratchBuffer_ExecuteCdb := ExecuteCdbEx(.., TimeoutValue=0) (scratch.h FORCEINLINE).
 #[no_mangle]

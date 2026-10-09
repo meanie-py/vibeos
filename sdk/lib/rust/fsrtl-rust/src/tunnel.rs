@@ -190,7 +190,7 @@ unsafe fn FsRtlGetTunnelParameterValue(
         return;
     }
 
-    Status = ZwQueryValueKey(hKey, ParameterName, 2, core::ptr::null_mut(), 0, &mut Length);
+    Status = ZwQueryValueKey(hKey, ParameterName, ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation as _, core::ptr::null_mut(), 0, &mut Length);
 
     if Status != STATUS_BUFFER_TOO_SMALL {
         ZwClose(hKey);
@@ -204,7 +204,7 @@ unsafe fn FsRtlGetTunnelParameterValue(
         return;
     }
 
-    Status = ZwQueryValueKey(hKey, ParameterName, 2, Info as PVOID, Length, &mut Length);
+    Status = ZwQueryValueKey(hKey, ParameterName, ntkrnl_sys::ddk::_KEY_VALUE_INFORMATION_CLASS_KeyValueFullInformation as _, Info as PVOID, Length, &mut Length);
 
     if Status >= 0 {
         if (*Info).DataLength != 0 {

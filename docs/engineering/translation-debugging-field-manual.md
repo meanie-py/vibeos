@@ -283,6 +283,30 @@ This was the *fourth* distinct break found by successive cold builds of one tree
 behind the previous — see "cold-build breakage comes in LAYERS" under stale artifacts `[§9.126]`,
 which reached the same conclusion independently from mainline's side.
 
+### A call that passes the wrong one of two same-typed buffers
+**Symptom:** a function fails on a path or name that is empty or half-built, though each
+call in it looks right. GUI setup's "InitializeProfiles() failed / Rebooting now!" box sat
+waiting for OK on every install. **Cause:** userenv's `InitializeProfiles` loaded the
+profiles-directory string into `szProfilesPath` where the C loads it into `szBuffer`. The next
+line expands `szBuffer` (still empty) INTO `szProfilesPath`, so the path became `""`.
+`CreateStandardProfile` did the same with the profile name. Two `[WCHAR; MAX_PATH]` locals, so
+nothing type-checks differently. **Fix:** pass the variable the C passes.
+`tools/scan_call_arg_swap.py` pairs the k-th call of each callee in a Rust fn with the k-th
+call in its own C, and flags a bare local that differs.
+
+### `CONTAINING_RECORD` with its type and field passed as null pointers
+**Symptom:** a list walk reads a structure that is shifted by some fixed amount: 0x1E in
+po's `PopFlushVolumes` at setup's reboot (`DeviceObject` read out of the list links), or a
+module walk opening a garbage name. **Cause:** the macro's TYPE and FIELD are not values, so
+the translator declared `fn CONTAINING_RECORD(address: PVOID, ty: PVOID, field: PVOID)` and
+passed `null_mut()` for both. It links against ntoskrnl's export
+`CONTAINING_RECORD(address, type_size, field_offset)`, so the offset is 0. That is right
+exactly when the field is first, which is why most sites worked (`DEBUG_EVENT.EventList`,
+`LDR_DATA_TABLE_ENTRY.InLoadOrderLinks`). `DEVICE_OBJECT_POWER_EXTENSION.Volume` is the LAST
+field, and kdbg's symbol loader walks `InInitializationOrderLinks`. **Fix:** pass
+`core::mem::size_of::<T>()` and `core::mem::offset_of!(T, Field)` at every site, including
+first-field ones, so the layout is stated, not assumed. `tools/scan_containing_record_null.py`
+gates it at zero.
 ### Phantom symbols — declaring something that is not a symbol
 A C **macro** or **FORCEINLINE** has no out-of-line symbol; `extern`-declaring it demands a
 symbol that exists nowhere. It may "resolve" by accident and break later when an unrelated
@@ -386,6 +410,14 @@ hit this one (shlfileop.cpp, drive.cpp, CRecycleBin.cpp). Before believing a "mi
 grep `precomp.h` for the name: a `#define` there beats every other explanation, and the fix is
 to call the macro's *expansion*.
 
+### An out-parameter (`PVOID*`) declared as a plain pointer takes the caller's NULL by value
+**Symptom:** a function "succeeds" but the caller's handle stays NULL; the next call through it
+fails or dereferences NULL. **Cause:** setuplib's `OpenBootStore(PVOID* Handle, ...)` was
+translated as `Handle: *mut c_void`. Three callers still passed `(&raw mut h).cast()` and
+worked; `CreateFreeLoaderIniForReactOS` passed `BootStoreHandle` itself, its NULL, by value,
+and the compiler had nothing to object to: both are `*mut c_void`. **Fix:** declare the
+out-parameter as `*mut *mut c_void` (`*mut PVOID`), so a by-value argument is a type error.
+Then drop the `.cast()` at the callers that were right.
 ### A typedef that is ALREADY a pointer, given a second star
 The star lives in a header, so the model sees `_locale_t locale` as a bare type name and adds
 the indirection the parameter appears to lack — `locale: *mut _locale_t`, i.e. a
@@ -398,6 +430,12 @@ of those are loud. It was caught here solely because `(*locale).mbcinfo` failed 
 put the same mistake at a parameter the body merely forwards and it compiles, links, ships, and
 reads one indirection too deep forever. The same shape appears on **locals**
 (`let mbcinfo: *mut pthreadmbcinfo`), usually with a `.cast()` bolted on to make it build.
+
+**And in a CAST:** `(*(x as *mut PGENENTRY).read()).Id` for the C's `((PGENENTRY)x)->Id` loads a
+pointer out of what `x` points at and dereferences THAT. usetup's unattended language lookup
+handed `_wcsicmp` the Id string's first eight bytes, `L"0000"`, as a pointer
+(`rcx=0x0030003000300030`), and the bootcd's smss.exe died, BUGCHECK 0x71 on every unattended
+install. Gated at zero by `scan_ptr_typedef_cast_read`.
 
 **Fix:** `rustconv`'s `signature_fidelity` pass strips the invented star wherever the C declares
 the parameter with no `*`, `typedefs.py` proves that name a plain pointer from the TU's own
@@ -468,6 +506,15 @@ Same family, three positions, all silent on the arch where the widths happen to 
   symptom was `ERROR_DISK_FULL` on the 29th file in a directory. **rustc does not mask its own
   narrow returns either**: `extern "C" fn f(x: u32) -> u8 { (x >> 3) as u8 }` returns `x >> 3`
   unmasked on x64 and arm64, so a Rust definition is no safer an authority than a C one.
+- **A wide return read NARROW: the decl keeps the low byte of a mask, a pointer or an offset.**
+  fastfat's cohab `ULONG_PTR FlagOn(x, f) { return x & f; }` was declared `-> BOOLEAN` in seven
+  files, so every flag above bit 7 tested clear: `CCB_FLAG_MANAGE_VOLUME_ACCESS` (0x20000) never
+  matched, `FSCTL_LOCK_VOLUME` failed INVALID_PARAMETER for every caller, and setup's chkdsk could
+  not run. The same sweep found freeldr reading `NtLdrGetOption`'s `PCSTR` as `u8` (an option
+  found at an address whose low byte is 0 reads "absent"), fastfat's `LBO` helpers as `u32`, and
+  win32k's hook `LRESULT` as `u32`. `scan_extern_decl_drift` reports `RETURN NARROWED` for a
+  pointer or 8-byte definition read narrower, and for a non-boolean word read as one byte; the
+  benign rest (Rust `i32` definitions of 0/1 booleans) is its baseline.
 - **Detector:** `scan_extern_decl_drift` reports params, statics and returns wherever a
   declaration is WIDER than its definition, against the in-crate `#[no_mangle]` definition, the
   bindgen island, and for C returns, the cohab/stub function definitions;
@@ -1240,6 +1287,15 @@ read every field past offset 0 from 8x its address (Wine's vartype test died in
 destination rect (16bpp only, so the 32bpp smoke never saw it). **Gated:
 `tools/scan_byteptr_stride.py`** — the tree holds no legitimate `*mut PBYTE` arithmetic.
 
+### `(p as *mut u8).add(1)` for the C's `(PUCHAR)(p + 1)` steps one BYTE, not one struct
+The reverse error: the C steps past a whole header (`p + 1`, then casts) and the Rust casts
+first. usetup's cabinet reader took `(PUCHAR)(PCABHeader + 1)` as `+1` byte, read the folder
+table from inside the 36-byte CFHEADER, and faulted extracting the first file; that crashed the
+bootcd's smss.exe (BUGCHECK 0x71). Its `CFFILE + 1` name walk, setuplib's `NTOS_INSTALLATION + 1`
+strings (written over the struct's own ListEntry) and the recycle bin's `INFO2_HEADER + 1` records
+had it too. **Gated: `tools/scan_byte_step_one.py`**, baselined with the four sites where `p`
+really is a byte pointer. A new hit is a site to read against its C.
+
 ### `LIST_FOR_EACH_ENTRY` translated without its container_of
 
 **Symptom:** an access violation inside a list walk on the first call, often in a
@@ -1565,6 +1621,19 @@ containing a parked ud2 can move onto a live caller's path with no source change
   guard-only spin; `_strnicmp` collapsed to always-equal). Scope it to the offending crate,
   not the whole kernel body.
 ---
+
+### A kernel object initialized in a `MaybeUninit`, then moved out with `assume_init()`
+**Symptom:** 0x109 (or a garbage-thread unwait) the first time an event is SIGNALED, not when
+it is waited on. The waitdep check names a "thread" that is a user-mode-looking value, and
+`[KX-UNWAIT]` shows the event's wait list pointing at a self-linked entry a few bytes away.
+**Cause:** `KeInitializeEvent(Event.as_mut_ptr(), ..); let Event = Event.assume_init();`
+copies the object. An initialized KEVENT's empty wait list points at ITSELF, as do list heads,
+KTIMER, KMUTANT, KSEMAPHORE and ERESOURCE. The copy's list still points at the old slot, so it
+looks non-empty, and `KeSetEvent` unwaits whatever bytes are there. `IoShutdownSystem` did this
+with its shutdown-IRP event, and mountmgr's completion bugchecked at the end of every install.
+Whether the copy survives is up to the optimizer: pcix's capabilities query had the same code
+and never fired. **Fix:** declare the object (`let mut E: KEVENT = zeroed();`), initialize it in
+place and pass `&mut E` from then on. `tools/scan_init_then_move.py` gates it at zero.
 
 ## bindgen, struct layout & literal width
 
@@ -2760,6 +2829,18 @@ the HUNT** `[§9.124]`: "arm64 BUGCHECK 0x3 INVALID_AFFINITY_SET" was really
 `RESOURCE_NOT_OWNED`, and two long-standing bugs were being chased in the wrong subsystem for
 weeks. Related: `mm/section.rs` declared a wrong value that was a real behavioural bug, not
 just a label.
+**An enum argument written as its number is the same class, in a call.** Mm extended a file
+for a section with `IoSetInformation(FileObject, 2, ...)`: 2 is FileFullDirectoryInformation,
+the C says FileEndOfFileInformation (20). Every file-backed section larger than its file came
+back SECTION_NOT_EXTENDED, and setup's cabinet extraction lost 964 files. ps-rust's apphelp
+passed 0 for FileBasicInformation. `scan_info_class_literals` requires the class to be named in
+every file-information call (gated at zero).
+
+**And a correct constant cast too narrow:** disk.sys set `(SRB_CLASS_FLAGS_PERSISTANT as USHORT)
+as u32` on its flush SRB: 0x20000000 as `u16` is 0. classpnp then freed an SRB that lives in the
+device extension, and the first flush bugchecked 0xC2. rustc's overflow lint covers literals,
+never `CONST as u16`; `scan_const_narrowing_cast` does (gated at zero; all-ones narrowing, the
+WEOF and fill-byte idiom, is allowed).
 - **Fix deterministically:** `ntkrnl_sys::bugcodes::NAME` from `tools/gen_bugcodes.py`;
   `tools/rustconv/rustconv/verify_constants.py` (`--enums`, `--fix`) against a header catalog;
   `tools/scan_bugcheck_codes.py` (empty baseline, gate-wired).
@@ -3319,6 +3400,22 @@ desktop (amd64 setup's registration pass). Every other consrv site used the cons
 grep a module for `ServerData.as_ptr().add(<digit>)` / `[<digit>]` and friends; a literal
 where the C names a slot is the bug until proven otherwise.
 
+### Setup's tables still name a driver the tree pruned, or never copy one it ships
+Only the install path reads `txtsetup.sif`'s copy and display tables. The livecd boots from an
+image laid down at build time, so drift here is invisible to every other gate.
+- **A NO_CAB driver with no `[SourceDisksFiles]` row** is on the CD and nowhere on the installed
+  disk. `usbxhci` is boot-start in hivesys.inf, so the installed disk's first boot stopped at
+  FreeLdr's "Cannot load boot driver" box, which waits for a key. `fltmgr` had the same gap.
+- **A `[Display]` row naming a pruned miniport.** All rows named `vga`/`VgaSave` after the
+  VGA miniports were dropped, so setup stopped at "failed to update display registry
+  settings" (`ProcessDisplayRegistry` opens `Services\<service>`). They now name `arm64vid`,
+  the framebuffer driver every boot uses, with a `Device0` key for the mode.
+- **Boot-driver rows (media `x`) for drivers the CD no longer carries** (sacdrv, isapnp,
+  floppy): setupldr's message box again.
+
+`tests/qemu/test_install.py` checks all three before it boots anything
+(`_uninstalled_service_images`, `_missing_display_services`, `_missing_boot_drivers`).
+
 ### A key the INF plainly declares is missing from the livecd hive
 
 **Symptom:** a service or DLL fails on one arch only, with "not found"-style errors for a key that
@@ -3805,6 +3902,30 @@ of them were **ours**, not the model's:
   `math_error` call sites took under a minute that way, and the eleventh was the bug. The real
   fix is to anchor each fact token to its `(callee, argument index)` at seal time so a
   permutation cannot satisfy the envelope at all — tracked, not yet built.
+
+  **The unsealed kernel libraries have it too, and the table check now exists for calls.**
+  cmlib's `CmpMarkKeyDirty` tested `0x0004` where the C says `KEY_HIVE_EXIT` (0x2) and `0x0002`
+  where it says `KEY_HIVE_ENTRY` (0x4), and `CmpFreeKeyBody` tested `KEY_IS_VOLATILE` (0x1) for
+  `KEY_HIVE_EXIT`: unloading a hive walked the master hive's exit node as a key and bugchecked
+  0x1E (setup's registry page). `CmLoadKey` passed check flag `1` for
+  `CM_CHECK_REGISTRY_PURGE_VOLATILES` (2), so every `NtLoadKey` of a file came back
+  REGISTRY_CORRUPT. `scan_call_literal_vs_c` builds the argument table against the C a file
+  carries ("ORIGINAL C SOURCE"); its first sweep found win32k's GDI reuse counter, cdrom's
+  media-change IOCTL and four more. Masks (`Flags & 0x4`) in a file whose C lives elsewhere, as
+  cmkeydel's does, are still unchecked.
+
+  **Enum members, not just macros.** The first version only knew ALL_CAPS names, so a C enum
+  member (`HalRebootRoutine`, `KeyValuePartialInformation`) slipped past. It now resolves those
+  from the bindgen islands (`<EnumType>_<Member>`), and an island value outranks the crate's
+  own `const`, which can itself be invented: fastfat's `MmFlushForWrite = 2` (it is 1). The
+  first enum sweep found 33 sites. po's `PopShutdownSystem` had `POWER_ACTION` 5 and 6 swapped,
+  so every reboot went to the "safe to turn off" halt loop: setup's reboot never happened.
+  Five `ZwQueryValueKey` callers asked for `KeyValueFullInformation` and parsed the PARTIAL
+  layout (ex locale and uuid, pnpmap, fsrtl unc; tunnel the reverse). fastfat waited in
+  `UserMode` on a stack event (its comment said `/*UserMode*/`: a label is not evidence). The
+  balance manager waited `WaitAll` for `WaitAny`. The same island lookup in
+  `scan_const_contradictions --vs-island` now indexes enum members too, and caught inbv's
+  OWNED/DISABLED swapped and kd's `DBGKD_MAJOR_NT = 6`.
 
   **Running the table check module-wide instead of per-function needs three false-positive
   filters, or it buries the real thing.** Re-run across msvcrt 2026-09-13: `math_error` came
@@ -5303,6 +5424,19 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
 - **Stubbed/degraded bodies** — constant-return or pass-through. **A variadic function degraded
   to a non-formatting stub.** **`RTL_CONSTANT_STRING` global UNICODE_STRINGs stubbed to
   empty.** **A cfg-gated stub left empty** → NULL thread-start 0xF4.
+- **A `#[no_mangle]` printf whose parameters END at the format cannot format.** It never reads
+  what the caller pushed, so it returns the format verbatim or an empty string, with
+  STATUS_SUCCESS. freeldr's `RtlStringCbPrintfW` made setupldr register every bootcd boot driver
+  as `"%S\%S"`, then panicked stripping `.sys` from the two-character `"%S"` (`len - 4`): the
+  first step of any install. classpnp's `RtlStringCbPrintfW`/`RtlStringCchPrintfA` wrote `""`,
+  so the `DEVICEMAP\Scsi` key it opens was empty. Fix: a C shim over `_vsnprintf`/`_vsnwprintf`
+  (`boot/freeldr/freeldr/lib/strsafe_shim.c`), strsafe-rust's macros, or fixed slots (below).
+  `scan_formatless_printf` (`vibeos-cli check`, empty baseline) flags the shape.
+- **A statement a bulk edit folded into a trailing comment.** A tool replacing each `DPRINT1`
+  with `// DPRINT removed` ran over lines where the C had been collapsed onto one line, so the
+  comment took the code after it: `{ /* Fail */ // DPRINT removed return STATUS_NOT_REGISTRY_FILE; }`.
+  cmlib's `HvLoadHive` lost six `return`s that way and carried on past a file that was not a
+  hive. Gated at zero by `scan_comment_swallowed_code`.
 - **A cohab `rust_cohab_stub.c` that stubs a MACRO is a silent no-op, not a link error**
   `[§9.53]`. `SEH_TRY_EXCEPT` never called `try_fn(ctx)`, so fastfat directory enumeration
   returned **empty with STATUS_SUCCESS** → arm64 `FindFirstFile` failed for every FAT
@@ -6301,6 +6435,13 @@ suspect call kept it failing; eighty made it green.
   scanner at all.
   > A documented bug class with no gate is a bug class that recurs. The entry existed the whole
   > time these eight shipped.
+  **2026-10-08: the gate itself was blind to the bare form `if !x != 0`.** It recognised a macro
+  bang by the character before the `!` *after* stripping whitespace, so in `if !Success` the `f` of
+  `if` read as a macro name and every such site was skipped. Five were live: usetup's
+  `PrepareCopyPage` quit every install (`!Success` with Success = 1 is 0xFE), basesrv never
+  initialised its DOS-devices critical section when LUID device maps are enabled, netcfgx closed
+  the gateway dialog instead of reporting a duplicate. A macro's name touches its bang; judge that
+  character, not the trimmed one.
 - **C post-inc/dec rewritten with the wrong read order** (`x = y--` reading the post value).
 - **A post-decrement INSIDE a loop condition — `while (a && b && len--)`.** The decrement is
   part of the test, so the loop exits having *already* wrapped `len` to `SIZE_MAX`, and the
@@ -8449,6 +8590,14 @@ exports on every arch via the `cabi-math` flip: `pow(2, 0.5) == 0` shipped for w
 comment saying "FIXME"/"stub" in the C is a NOT-AN-ORACLE marker, never a fidelity target; and a
 difftest whose domain note excludes a non-terminating input is reporting a bug, not a scope.
 
+
+**Third instance: the C reads a field its own API guarantees is NULL.** `ExSwapinWorkerThreads`
+queues a SPECIAL kernel APC (no NormalRoutine) with `&AllowSwap` as its context, and the APC reads
+`*(PBOOLEAN)NormalContext`. But `KeInitializeApc` stores `NormalContext = NULL` for a special APC,
+so the C reads the low byte of that NULL slot and always passes FALSE; the Rust dereferenced one
+level further, as the caller meant, and faulted (0x1E when setup rebooted). The value now travels
+in `SystemArgument2`, which `KeInsertQueueApc` does deliver. When a faithful port faults where the
+C "works", check whether the C works only by reading something meaningless.
 ### A differential harness that cannot see its two sides diverge in STATE will report state differences as BEHAVIOUR differences
 **Symptom.** A perf/conformance row fails hard and reproducibly — `towlower` 10.8x TOO SLOW,
 all 3 passes, flat 44 MiB/s across a 65536x size range, calibration twins clean at 1.01x — and
@@ -11312,6 +11461,33 @@ NEXT code uses a different print path. The discriminator is cheap: put one probe
 on the channel the log demonstrably carries, immediately after the suspect line.
 If it prints, the line is a channel boundary, not a fault — and the probe is worth
 keeping, because the next reader will otherwise draw the same wrong conclusion.
+
+### Writes through a file mapping never reach the file: the dirty bit read after the PTE was cleared
+**Symptom:** a file written only through a mapped view (`CreateFileMapping` + `MapViewOfFile`,
+or `NtCreateSection` on a file handle) has the right size and is all zeros on disk, and after
+the section is gone even a cached read returns zeros. `WriteFile` to the same volume works.
+Setup extracts `reactos.cab` exactly this way, so 984 of 1042 installed files were
+zero-filled. **Cause:** i386/amd64 `MmDeleteVirtualMappingEx` (`i386/page.rs`, which amd64
+shares) did `OldPte = InterlockedExchangePte(PointerPte, 0)` and then read the dirty bit from
+`(*PointerPte).Long`, which it had just zeroed. The C reads `OldPte.u.Hard.Dirty`. Every unmap
+reported the page clean, the segment entry never became dirty, and `FreeSegmentPage` /
+`MmCheckDirtySegment` had nothing to write. arm64 read `OldPte` and was correct. **Fix:** read
+the returned old value. `tools/scan_read_after_clear.py` gates the shape at zero, and
+`--payload fatprobe` (step mapped-write) checks the behaviour in about a minute. It found this
+when the install smoke needed 12 minutes per try.
+
+### Shutdown never reboots: `MiShutdownSystem` loops on pages that are not dirty
+**Symptom:** the shutdown stops after `[PO] shutdown: MmShutdownSystem(0)`, with no write
+failures. `[MM] MiShutdownSystem: pass N wrote 49417 dirty data-file page(s)`: the same count
+every pass, and the pages it names live on the CD (`$PATH_TABLE$`, `REACTOS.CAB`), so they
+cannot really be dirty. **Cause:** `ntkrnl_sys::mm::IS_DIRTY_SSE` tested `0x8`, the low bit of
+the share count (mm.h: bits 3..11), not `0x2`. Every page mapped an odd number of times
+looked dirty, the write "succeeded", and the "while dirty" loop never ended. It sat harmless
+until the PTE-dirty fix above made the shutdown flush do real work. `ARM3/section.rs` carried
+a whole private SSE encoding as well (swap bit inverted, share count at bit 2), unused.
+**Fix:** use mm.h's encoding. `tools/scan_sse_helpers.py` evaluates every Rust `*_SSE` helper
+against the macro on sample entries. Read the printed `sse` value against the bit layout
+before trusting a predicate's verdict about it.
 
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the

@@ -27,7 +27,7 @@ extern "system" {
     fn FatAcquireExclusiveVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatReleaseVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, FlushOption: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> u8;
+    fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);

@@ -395,7 +395,9 @@ unsafe fn _disable() {
 // EBP/RIP, causing the wrapper to `ret` to garbage 0x10006 (rosload PE
 // header bytes) on i386.
 extern "C" {
-    fn NtLdrGetOption(Options: PCSTR, Name: PCSTR) -> u32;
+    // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
+    // address whose low byte is 0 reads "absent"; only the pointer width is safe.
+    fn NtLdrGetOption(Options: PCSTR, Name: PCSTR) -> usize;
     fn NtLdrGetOptionEx(Options: PCSTR, Name: PCSTR, OptionLength: *mut u32) -> PCSTR;
 }
 

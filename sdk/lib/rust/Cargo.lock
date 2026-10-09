@@ -309,6 +309,7 @@ dependencies = [
  "drvtrace-shim",
  "ntkrnl-sys",
  "panic-common",
+ "strsafe-rust",
 ]
 
 [[package]]

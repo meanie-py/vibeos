@@ -1860,9 +1860,9 @@ pub unsafe extern "system" fn PciGetDeviceCapabilities(
     (*DeviceCapability).Address = !0u32;
     (*DeviceCapability).UINumber = !0u32;
 
-    let mut Event = core::mem::MaybeUninit::<KEVENT>::uninit();
-    KeInitializeEvent(Event.as_mut_ptr(), _EVENT_TYPE_SynchronizationEvent, 0u8);
-    let mut Event = Event.assume_init();
+    // In place, never moved: an initialized KEVENT's empty wait list points at itself.
+    let mut Event: KEVENT = core::mem::zeroed();
+    KeInitializeEvent(&mut Event, _EVENT_TYPE_SynchronizationEvent, 0u8);
 
     let AttachedDevice = IoGetAttachedDeviceReference(DeviceObject);
 

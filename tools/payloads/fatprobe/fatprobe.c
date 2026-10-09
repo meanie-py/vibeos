@@ -8,6 +8,7 @@
  *      with duplicates, 8.3 names and most files missing, so Marlett never loaded);
  *   5. every name listed in %windir% (and system32) opens by its path, so a lookup and a listing
  *      of the same directory agree, and SearchPath finds what the listing shows.
+ *   6. a file written only through a mapped view reaches the disk (usetup's cab extraction).
  * Each step is announced before it runs, so a bugcheck names the step that took the guest down.
  * Verdict: "[FATPROBE] done VERDICT=PASS|FAIL". */
 #include <windows.h>
@@ -183,6 +184,13 @@ static void step_lookup(void)
         WCHAR p[MAX_PATH];
         int i;
         SAY("step lookup-after-writes\n");
+        /* The amd64 livecd's %windir% is on the CD: nothing to write, so nothing to test. */
+        wsprintfW(p, L"%s\\fatprobe-windir-writable.tmp", w);
+        if (!make(p)) {
+            SAY("lookup-after-writes skipped: %ls is not writable (err=%lu)\n", w, GetLastError());
+            return;
+        }
+        DeleteFileW(p);
         for (i = 0; i < 40; i++) {
             wsprintfW(p, L"%s\\fatprobe-windir-long-name-%02d.data", w, i);
             CHECK(make(p), "create windir %d err=%lu\n", i, GetLastError());
@@ -201,6 +209,75 @@ static void step_lookup(void)
     }
 }
 
+/* 6. A file written only through a mapped view reaches the disk. This is how usetup extracts
+ *    reactos.cab: CreateFile, a SEC_COMMIT section of the file's size, map, write, unmap, close
+ *    both. The installed disk came back with every extracted file the right size and all zeros.
+ *    Read back three ways: cached; non-cached (from the disk, after the section is gone); and a
+ *    WriteFile control through the same non-cached read. */
+#define MAPPED_SIZE (65536 + 123)
+
+static BYTE pattern_at(DWORD i) { return (BYTE)((i * 131u + (i >> 9)) | 1u); }
+
+static void check_back(const WCHAR *p, const char *how, DWORD flags)
+{
+    static BYTE raw[MAPPED_SIZE + 2 * 4096];
+    BYTE *buf = (BYTE *)(((ULONG_PTR)raw + 4095) & ~(ULONG_PTR)4095);
+    DWORD want = (flags & FILE_FLAG_NO_BUFFERING) ? (MAPPED_SIZE + 4095) & ~4095u : MAPPED_SIZE;
+    DWORD got = 0, i, zeros = 0, first_bad = MAXDWORD;
+    HANDLE h = CreateFileW(p, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, flags, NULL);
+    CHECK(h != INVALID_HANDLE_VALUE, "mapped %s: reopen failed %lu\n", how, GetLastError());
+    if (h == INVALID_HANDLE_VALUE) return;
+    CHECK(ReadFile(h, buf, want, &got, NULL), "mapped %s: ReadFile failed %lu\n", how, GetLastError());
+    CloseHandle(h);
+    CHECK(got == MAPPED_SIZE, "mapped %s: read %lu bytes, expected %u\n", how, got, MAPPED_SIZE);
+    for (i = 0; i < got && i < MAPPED_SIZE; i++) {
+        if (buf[i] == 0) zeros++;
+        if (buf[i] != pattern_at(i) && first_bad == MAXDWORD) first_bad = i;
+    }
+    CHECK(first_bad == MAXDWORD, "mapped %s: first wrong byte at 0x%lx (%lu of %lu bytes are zero)\n",
+          how, first_bad, zeros, got);
+    if (first_bad == MAXDWORD) SAY("mapped %s: %lu bytes OK\n", how, got);
+}
+
+static void step_mapped_write(void)
+{
+    WCHAR p[MAX_PATH], c[MAX_PATH];
+    HANDLE h, map;
+    BYTE *view;
+    DWORD i, w;
+    static BYTE data[MAPPED_SIZE];
+
+    path(p, L"mapped", 0);
+    path(c, L"written", 0);
+    DeleteFileW(p);
+    DeleteFileW(c);
+    h = CreateFileW(p, GENERIC_READ | GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    CHECK(h != INVALID_HANDLE_VALUE, "mapped: create failed %lu\n", GetLastError());
+    if (h == INVALID_HANDLE_VALUE) return;
+    map = CreateFileMappingW(h, NULL, PAGE_READWRITE, 0, MAPPED_SIZE, NULL);
+    CHECK(map != NULL, "mapped: CreateFileMapping failed %lu\n", GetLastError());
+    view = map ? MapViewOfFile(map, FILE_MAP_WRITE, 0, 0, 0) : NULL;
+    CHECK(view != NULL, "mapped: MapViewOfFile failed %lu\n", GetLastError());
+    if (view) {
+        for (i = 0; i < MAPPED_SIZE; i++) view[i] = pattern_at(i);
+        UnmapViewOfFile(view);
+    }
+    if (map) CloseHandle(map);
+    CloseHandle(h);
+
+    for (i = 0; i < MAPPED_SIZE; i++) data[i] = pattern_at(i);
+    h = CreateFileW(c, GENERIC_WRITE, 0, NULL, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (h != INVALID_HANDLE_VALUE) {
+        WriteFile(h, data, MAPPED_SIZE, &w, NULL);
+        CloseHandle(h);
+        check_back(c, "control (WriteFile, non-cached read)", FILE_FLAG_NO_BUFFERING);
+    }
+    check_back(p, "non-cached read", FILE_FLAG_NO_BUFFERING);
+    check_back(p, "cached read", 0);
+    DeleteFileW(p);
+    DeleteFileW(c);
+}
+
 int main(void)
 {
     WCHAR a[MAX_PATH], b[MAX_PATH];
@@ -208,6 +285,18 @@ int main(void)
     int i;
 
     GetTempPathW(MAX_PATH, dir);
+    {
+        /* The amd64 livecd's %TEMP% is on the CD; the harness's FAT tempdisk is C:. */
+        WCHAR probe[MAX_PATH];
+        HANDLE h;
+        wsprintfW(probe, L"%sfatprobe-writable.tmp", dir);
+        h = CreateFileW(probe, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_FLAG_DELETE_ON_CLOSE, NULL);
+        if (h == INVALID_HANDLE_VALUE)
+            lstrcpyW(dir, L"C:\\");
+        else
+            CloseHandle(h);
+        SAY("directory %ls\n", dir);
+    }
     SAY("start dir=%ls\n", dir);
 
     SAY("step rename\n");
@@ -245,6 +334,8 @@ int main(void)
 
     step_enum();
     step_lookup();
+    SAY("step mapped-write\n");
+    step_mapped_write();
 
     SAY("done VERDICT=%s failures=%ld\n", failures ? "FAIL" : "PASS", failures);
     return failures != 0;

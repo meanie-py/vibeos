@@ -479,12 +479,16 @@ unsafe extern "system" fn ExpSetSwappingKernelApc(
     SystemArgument1: *mut PVOID,
     SystemArgument2: *mut PVOID,
 ) {
-    let AllowSwap: PBOOLEAN;
     let Event = *SystemArgument1 as PKEVENT;
 
+    // The C passes &AllowSwap as the NormalContext and reads `*(PBOOLEAN)NormalContext`.
+    // But this is a special APC (no NormalRoutine), for which KeInitializeApc stores
+    // NormalContext = NULL: the C reads the low byte of that NULL, so it always passes
+    // FALSE, and the deref the Rust once did faulted (0x1E at setup's reboot). The value
+    // travels in SystemArgument2, which KeInsertQueueApc does deliver.
     if (*(KeGetCurrentThread() as PETHREAD as *mut _ETHREAD)).__bindgen_anon_8.__bindgen_anon_1.ActiveExWorker() != 0 {
-        AllowSwap = *NormalContext as PBOOLEAN;
-        KeSetKernelStackSwapEnable(*AllowSwap);
+        let _ = NormalContext;
+        KeSetKernelStackSwapEnable((*SystemArgument2 as usize != 0) as BOOLEAN);
     }
 
     KeSetEvent(Event as PVOID, 0, 0u8);
@@ -522,9 +526,9 @@ pub unsafe extern "system" fn ExSwapinWorkerThreads(AllowSwap: BOOLEAN) {
                 None,
                 None,
                 0i8,
-                &AllowSwap as *const BOOLEAN as PVOID,
+                core::ptr::null_mut(),
             );
-            if KeInsertQueueApc(&mut Apc, &mut Event as *mut KEVENT as PVOID, core::ptr::null_mut(), 3) != 0 {
+            if KeInsertQueueApc(&mut Apc, &mut Event as *mut KEVENT as PVOID, AllowSwap as usize as PVOID, 3) != 0 {
                 KeWaitForSingleObject(&mut Event as *mut KEVENT as PVOID, _KWAIT_REASON_Executive, 0i8, 0u8, core::ptr::null_mut());
                 KeClearEvent(&mut Event as *mut KEVENT as PVOID);
             }
