@@ -1215,8 +1215,33 @@ def _pointer_decls(state: dict) -> tuple[set[str], dict[str, pointer_depth.CFunc
 
 _WINE_DEFAULT_CHANNEL = re.compile(r"^[ \t]*WINE_DEFAULT_DEBUG_CHANNEL\(\s*(\w+)\s*\)", re.M)
 _CHANNEL_ITEM = re.compile(
-    r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?static[ \t]+(?:mut[ \t]+)?(__wine_dbch_\w+)[ \t]*:", re.M
+    r"^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?(?:static[ \t]+(?:mut[ \t]+)?|const[ \t]+)"
+    r"(__wine_dbch_\w+)[ \t]*:",
+    re.M,
 )
+# `static NAME: () = ();` -- what the model writes for a C forward declaration it has no Rust
+# spelling for. Never meaningful, and when NAME is the function's own (comctl32's
+# UPDOWN_Paint, TOOLBAR_CalcStrings) it is a duplicate definition.
+_UNIT_PLACEHOLDER = re.compile(
+    r"(?:^[ \t]*#\[[^\n]*\]\n(?:[ \t]*\n)*)*^[ \t]*(?:pub(?:\([^)]*\))?[ \t]+)?static[ \t]+"
+    r"\w+[ \t]*:[ \t]*\(\)[ \t]*=[ \t]*\(\)[ \t]*;[ \t]*\n",
+    re.M,
+)
+
+
+def _strip_unit_placeholders(state: dict) -> list[str]:
+    """Drop every `static NAME: () = ();` (and its attributes) from the module's outputs."""
+    changed = []
+    for tu in state["tus"]:
+        path = _tu_output(state, tu)
+        if not path.is_file():
+            continue
+        text = path.read_text()
+        new = _UNIT_PLACEHOLDER.sub("", text)
+        if new != text:
+            path.write_text(new)
+            changed.append(path.stem)
+    return changed
 
 
 def _strip_channel_items(text: str) -> str:
@@ -1391,6 +1416,10 @@ def stage_integrate(stem: str) -> None:
             depth_fixed += [f"{path.stem}::{f}" for f in fixes]
     variadic, variadic_refused = _variadic_twins(state, crate, stem)
     changed += bool(variadic)
+    placeholders = _strip_unit_placeholders(state)
+    changed += len(placeholders)
+    if placeholders:
+        print(f"integrate: `static X: () = ();` placeholders dropped in {', '.join(placeholders)}")
     channels = _wine_debug_channels(state, crate)
     changed += len(channels)
     if channels:

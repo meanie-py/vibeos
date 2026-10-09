@@ -1645,6 +1645,19 @@ sign as `signscale & 0x80` (bit 7 of the scale byte).
 when a macro has endian or arch branches, check which one the comment claims against the
 header itself. Grep the crate for every other composition of the same word.
 
+### A C macro that reads the CALLER's locals cannot be a plain `macro_rules!` port
+**Symptom:** `no rules expected <ident>` at call sites that pass one argument more than the
+macro takes, or E0425 for a local (`infoPtr`, `hwnd`) inside a prelude macro's expansion.
+**Cause:** Wine's helper macros read locals they never take as parameters: comctl32's
+`HIDDENBAND(a)` and `IsOnlySet(flags)` read `infoPtr`, `add_flag(a)` reads `dwFlags` and
+`string`, and `REBAR_GetInfoPtr(wndPtr)` ignores its argument and reads `hwnd`. `macro_rules!`
+hygiene hides a call site's locals from the macro body, so the faithful one-parameter port does
+not resolve. Separately, the translated call sites guessed: most `HIDDENBAND` sites already
+passed `infoPtr` first, a few did not. **Fix:** hand-port above the generated block (so a
+replay keeps it), with each captured local as an explicit LEADING parameter, and make every call
+site pass it. One parse error like this halts rustc before type checking, which also makes
+crate-repair's pass look like it fixed everything (10 errors left, 0 applied).
+
 ### A UNICODE module inherits the ANSI TCHAR family from the `-sys` glob
 `ntdll-sys` is generated WITHOUT `-DUNICODE`, so its bindgen carries `pub type LPTSTR = LPSTR;`.
 A module built `set_module_type(<m> win32dll UNICODE)` picks that up through the island's

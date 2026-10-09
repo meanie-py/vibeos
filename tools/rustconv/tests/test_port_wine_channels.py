@@ -31,3 +31,18 @@ def test_every_shape_a_preamble_gave_the_channel_is_removed():
 def test_uses_of_the_channel_are_left_alone():
     body = "fn f() {\n    let __dbch: *mut __wine_debug_channel = __wine_dbch___default;\n}\n"
     assert _strip_channel_items(body) == body
+
+
+def test_a_const_channel_and_unit_placeholders_are_stripped():
+    from rustconv.port import _UNIT_PLACEHOLDER, _strip_channel_items
+
+    text = (
+        "// WINE_DEFAULT_DEBUG_CHANNEL(commctrl)\n"
+        'pub const __wine_dbch___default: &[u8] = b"commctrl\\0";\n'
+        "#[inline]\n"
+        "\n"
+        "static TOOLBAR_CalcStrings: () = ();\n"
+        'unsafe extern "C" fn TOOLBAR_CalcStrings() {}\n'
+    )
+    out = _UNIT_PLACEHOLDER.sub("", _strip_channel_items(text))
+    assert out == 'unsafe extern "C" fn TOOLBAR_CalcStrings() {}\n'

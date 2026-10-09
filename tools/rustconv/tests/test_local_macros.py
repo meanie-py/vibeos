@@ -85,9 +85,18 @@ def test_rendered_block_round_trips_and_replaces_in_place(tmp_path, defs):
 
 def test_prompt_names_in_scope_macros_and_key_tracks_rules(tmp_path, defs):
     found, _ = defs
-    p = tmp_path / "prelude.rs"
+    shared = tmp_path / "win32macros-rust" / "src"
+    shared.mkdir(parents=True)
+    (shared / "lib.rs").write_text(
+        "macro_rules! LOWORD { () => {} }\nmacro_rules! ZeroMemory { () => {} }\n"
+        "pub fn max(a: i32, b: i32) -> i32 { a }\n"
+    )
+    (tmp_path / "x-rust" / "src").mkdir(parents=True)
+    p = tmp_path / "x-rust" / "src" / "prelude.rs"
+    # `max` is a FUNCTION the shared crate re-exports: listing it told comctl32's model `max!`.
     p.write_text(
-        "macro_rules! CONTAINING_RECORD { () => {} }\npub use win32macros_rust::{LOWORD, ZeroMemory};\n"
+        "macro_rules! CONTAINING_RECORD { () => {} }\n"
+        "pub use win32macros_rust::{LOWORD, ZeroMemory, max};\n"
         + lm.render({"X": "macro_rules! X { () => {} }"}, {"X": found["IS_RAWFS"]})
     )
     assert lm.in_scope_macros(p) == {"CONTAINING_RECORD", "LOWORD", "ZeroMemory"}
@@ -168,4 +177,6 @@ def test_a_table_call_never_panics():
     import pytest
 
     with pytest.raises(ValueError, match="panic path"):
-        parse_reply(reply.replace("SpInfFindFirstLine.unwrap())", "X.expect(\"y\"))"), {"SpInfFindFirstLine"})
+        parse_reply(
+            reply.replace("SpInfFindFirstLine.unwrap())", 'X.expect("y"))'), {"SpInfFindFirstLine"}
+        )

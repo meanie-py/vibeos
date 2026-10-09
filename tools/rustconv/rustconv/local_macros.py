@@ -315,8 +315,12 @@ def in_scope_macros(prelude: Path) -> set[str]:
     text = prelude.read_text()
     text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), "", text, flags=re.S)
     names = set(_MACRO_RULES.findall(text))
+    # The shared crate re-exports functions and constants too (`max`, `InterlockedIncrement`,
+    # `UNICODE_NULL`): listing `max` here told the model to write `max!`, a halting error.
+    shared = prelude.parents[2] / "win32macros-rust" / "src" / "lib.rs"
+    shared_macros = set(_MACRO_RULES.findall(shared.read_text())) if shared.is_file() else set()
     for m in re.finditer(r"pub use win32macros_rust::\{([^}]*)\}", text):
-        names |= {n.strip() for n in m.group(1).split(",") if n.strip()}
+        names |= {n.strip() for n in m.group(1).split(",") if n.strip() in shared_macros}
     return names
 
 

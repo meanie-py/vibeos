@@ -39,3 +39,15 @@ def test_each_name_gets_its_consts_then_its_types_per_file(tmp_path):
     ]
     assert [i.text for i in found["WM_USER"]] == ["const WM_USER: u32 = 1024;"]
     assert [i.kind for i in found["HWND"]] == ["type"]
+
+
+def test_a_pointer_typed_fact_is_cast_from_an_integer_and_round_trips(tmp_path):
+    """taskdialog.c's `TD_ERROR_ICON` is MAKEINTRESOURCEW(-2): an LPWSTR, not an integer."""
+    from rustconv import prelude_resolve as pr
+
+    ty = pr.fact_rust_type("LPWSTR|WCHAR *", 0xFFFE, {"LPWSTR"})
+    block = pr.render_facts({"TD_ERROR_ICON": (ty, 0xFFFE, "taskdialog.c")})
+    assert "pub const TD_ERROR_ICON: LPWSTR = 0xFFFEusize as LPWSTR;" in block
+    p = tmp_path / "prelude.rs"
+    p.write_text(block)
+    assert pr.existing_facts(p) == {"TD_ERROR_ICON": ("*LPWSTR", 0xFFFE, "taskdialog.c")}

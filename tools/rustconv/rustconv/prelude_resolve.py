@@ -1140,7 +1140,9 @@ def fact_rust_type(
         sugar, _, canonical = c_type.partition("|")
         canonical = (canonical or sugar).removeprefix("const ").strip()
         if re.fullmatch(r"[A-Za-z_]\w*", sugar) and sugar in known_types:
-            return sugar
+            # A POINTER-typed constant (taskdialog.c's `TD_ERROR_ICON`, MAKEINTRESOURCEW(-2))
+            # needs an int-to-pointer cast; the leading `*` tells render_facts so.
+            return f"*{sugar}" if canonical.endswith("*") else sugar
         if bare_int_unsigned and sugar == "int" and value >= 0:
             # A bare `#define X 4` is an `int` to clang, and bindgen -- hence every island
             # and -sys constant these bodies mix it with -- spells the same macro `u32`.
@@ -1160,7 +1162,10 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
     out = [FACTS_BEGIN]
     for name, (ty, value, src) in sorted(facts.items()):
         literal = str(value)
-        if value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
+        if ty.startswith("*"):
+            ty = ty[1:]
+            literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
+        elif value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
             literal = f"0x{value & 0xFFFFFFFF:08X}_u32 as {ty}"
         elif value >= 10:
             literal = f"0x{value:X}"
@@ -1177,7 +1182,8 @@ def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
     out = {}
     for line in m.group(1).splitlines():
         f = re.match(
-            r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+)?(-?\d+)?; // clang, (\S+)",
+            r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+|usize as \w+)?(-?\d+)?;"
+            r" // clang, (\S+)",
             line.strip(),
         )
         if not f:
@@ -1186,7 +1192,7 @@ def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
         value = int(hexv, 16) if hexv else int(decv)
         if hexv and line.find("_u32 as") > 0 and value >= 2**31:
             value -= 2**32
-        out[name] = (ty, value, src)
+        out[name] = (f"*{ty}" if "usize as" in line else ty, value, src)
     return out
 
 
