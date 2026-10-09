@@ -3048,6 +3048,11 @@ UNCOVERED: dict[str, str] = {
         "from `for` steps, 53 from prose, 80 from one unbalanced macro)."
     ),
     "scan_const_contradictions": "needs the whole tree (finds one NAME with two VALUES)",
+    "scan_const_within_crate": (
+        "needs the whole tree's const declarations. The decision, within_crate(), is a pure "
+        "function over one dict, driven in tools/test_scan_const_vs_island.py with userenv's "
+        "IDS_PROFILEPATH (0 and 1 in one crate) as the positive control."
+    ),
     "scan_const_vs_island": (
         "needs the whole tree's bindgen islands as its oracle. The decision, "
         "island_disagreements(), is a pure function over two dicts, driven in "

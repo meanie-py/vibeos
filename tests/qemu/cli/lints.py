@@ -714,6 +714,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same scanner, narrowest scope: one NAME with two VALUES inside ONE crate. One copy is
+    # wrong by construction. userenv's IDS_PROFILEPATH (0 vs 1) sat in the cross-crate
+    # baseline above while it stopped GUI setup on every install, so this half is gated
+    # against a short reviewed baseline of per-file meanings only.
+    specs.append(
+        (
+            "scan_const_within_crate",
+            [py, str(scc), "--within-crate"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # The ORACLE-BEARING half, and the half the above is blind to by construction:
     # a constant with exactly ONE definition in the tree cannot contradict itself,
     # so a lone wrong value is invisible there forever. This one needs no inference

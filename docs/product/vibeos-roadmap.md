@@ -636,8 +636,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   copies fixed: se-rust `TOKEN_HAS_ADMIN_GROUP`, cabinet-rust's FCI/FDI error codes, hal
   `IDT_INTERNAL`, fastfat `OPLOCK_FLAG_PARENT_OBJECT`, cdrom `SRB_STATUS_MASK`, freeldr
   `COLOR_WHITE`, user32 SPY_*, afd trace levels, inbv OWNED/DISABLED. The 10 rows left are
-  per-file meanings. **Owed:** gate within-crate contradictions at zero, so the next one
-  cannot park in the baseline.
+  per-file meanings, and `scan_const_contradictions --within-crate` now gates the class
+  against exactly those (`scan_const_within_crate`), so the next one cannot park.
 
 - **LogonUserW never succeeds: the right password fails with 1312** (FIXED 2026-10-08). se-rust's
   SRM command server matched `RM_API_NUMBER` as 0/1/2 where srmp.h numbers it from 1, so each
