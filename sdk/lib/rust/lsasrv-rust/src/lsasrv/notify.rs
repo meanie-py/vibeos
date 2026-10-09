@@ -95,9 +95,9 @@ unsafe fn LsapGetNotificationEntry(
 }
 
 unsafe fn LsapAddNotification(pRequestMsg: PLSA_API_MSG) -> NTSTATUS {
-    let mut pEntry: PLSA_NOTIFICATION_ENTRY = core::ptr::null_mut();
+    let pEntry: PLSA_NOTIFICATION_ENTRY;
     let mut hProcess: HANDLE = core::ptr::null_mut();
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     if ((*__wine_dbch___default).flags as i32 & (1 << __WINE_DBCL_TRACE)) != 0 {
         ros_dbg_log(

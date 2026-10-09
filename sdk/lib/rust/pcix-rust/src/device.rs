@@ -269,7 +269,6 @@ pub unsafe extern "system" fn Device_MassageHeaderForLimitsDetermination(Context
         && (*PdoExtension).SubClass as u32 == PCI_SUBCLASS_MSC_IDE_CTLR as u32
         && ((*PdoExtension).ProgIf as u32 & 5u32) != 5u32
     {
-        i = 4;
     }
 
     i = 0;

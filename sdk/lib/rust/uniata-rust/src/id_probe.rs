@@ -1036,7 +1036,6 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
     let mut found: BOOLEAN = FALSE as BOOLEAN;
     let MasterDev: BOOLEAN;
     let mut simplexOnly: BOOLEAN = FALSE as BOOLEAN;
-    let mut skip_find_dev: BOOLEAN = FALSE as BOOLEAN;
     let mut AltInit: BOOLEAN = FALSE as BOOLEAN;
 
     let mut IoBasePort1: SCSI_PHYSICAL_ADDRESS;
@@ -1612,28 +1611,28 @@ pub unsafe extern "system" fn UniataFindBusMasterController(
         }
 
         if ((*deviceExtension).HwFlags & UNIATA_AHCI) == 0 {
-            // UNIATA_INIT_ON_PROBE path
+            // The C's `#else //UNIATA_INIT_ON_PROBE` arm (id_probe.cpp:1762-1787):
+            // UNIATA_INIT_ON_PROBE is defined nowhere, so the shipped C never probes for
+            // devices here (that happens later) -- it only clears pending IDE and DMA
+            // interrupts. The first translation took the #ifdef arm, which ran an extra
+            // FindDevices on every channel at FindAdapter time and never cleared a
+            // latched BM_STATUS_INTR.
             SelectDrive(chan, 0);
             ScsiPortStallExecution(10);
             statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
-            skip_find_dev = FALSE as BOOLEAN;
             if ((*deviceExtension).HwFlags & UNIATA_NO_SLAVE) == 0
                 && (*deviceExtension).NumberLuns > 1
             {
-                if (statusByte & 0xf8) == 0xf8 || statusByte == 0xa5 {
-                    SelectDrive(chan, 1);
-                    ScsiPortStallExecution(1);
-                    statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
-                    if (statusByte & 0xf8) == 0xf8 || statusByte == 0xa5 {
-                        skip_find_dev = TRUE as BOOLEAN;
-                    }
-                }
+                SelectDrive(chan, 1);
+                ScsiPortStallExecution(1);
+                statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
+                SelectDrive(chan, 0);
             }
-
-            if skip_find_dev == 0 && FindDevices(HwDeviceExtension, 0, c) != 0 {
-                found = TRUE as BOOLEAN;
-            } else {
-                // no devices
+            statusByte = GetDmaStatus(deviceExtension, c);
+            if (statusByte as ULONG & BM_STATUS_INTR as ULONG) != 0 {
+                // "we have DMA interrupt, but had never initiate DMA operation"
+                AtapiDmaDone(deviceExtension as PVOID, 0, c, core::ptr::null_mut());
+                statusByte = AtapiReadPort1(chan, IDX_IO1_i_Status);
             }
         }
         found = TRUE as BOOLEAN;

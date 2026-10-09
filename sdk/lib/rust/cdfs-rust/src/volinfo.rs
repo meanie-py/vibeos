@@ -250,7 +250,7 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
     Buffer: *mut FILE_FS_ATTRIBUTE_INFORMATION,
     Length: *mut u32,
 ) -> i32 {
-    let mut BytesToCopy: u32 = 0; // ULONG
+    let BytesToCopy: u32; // ULONG
     let mut Status: i32 = 0; // STATUS_SUCCESS
 
     PAGED_CODE!();

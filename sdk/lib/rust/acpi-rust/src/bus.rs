@@ -314,7 +314,7 @@ pub unsafe extern "C" fn acpi_bus_get_device(
     handle: ACPI_HANDLE,
     device: *mut *mut acpi_device,
 ) -> c_int {
-    let mut status: ACPI_STATUS = AE_OK;
+    let status: ACPI_STATUS;
 
     if device.is_null() {
         return AE_BAD_PARAMETER as c_int;
@@ -357,7 +357,7 @@ pub unsafe extern "C" fn acpi_bus_get_status_handle(
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_get_status(device: *mut acpi_device) -> i32 {
-    let mut status: ACPI_STATUS = 0;
+    let status: ACPI_STATUS;
     let mut sta: u64 = 0;
 
     status = acpi_bus_get_status_handle((*device).handle, &mut sta);
@@ -397,7 +397,7 @@ pub unsafe extern "C" fn acpi_bus_get_private_data(
     handle: ACPI_HANDLE,
     data: *mut *mut core::ffi::c_void,
 ) -> core::ffi::c_int {
-    let mut status: ACPI_STATUS = AE_OK;
+    let status: ACPI_STATUS;
 
     if (*data).is_null() {
         return -1;
@@ -421,8 +421,8 @@ pub unsafe extern "C" fn acpi_bus_get_power(
     handle: ACPI_HANDLE,
     state: *mut c_int,
 ) -> c_int {
-    let mut result: c_int = 0;
-    let mut status: ACPI_STATUS = 0;
+    let mut result: c_int;
+    let status: ACPI_STATUS;
     let mut device: *mut acpi_device = core::ptr::null_mut();
     let mut psc: c_ulonglong = 0;
 
@@ -469,8 +469,8 @@ pub unsafe extern "C" fn acpi_bus_set_power(
     handle: ACPI_HANDLE,
     state: c_int,
 ) -> c_int {
-    let mut result: c_int = 0;
-    let mut status: ACPI_STATUS = AE_OK;
+    let mut result: c_int;
+    let status: ACPI_STATUS;
     let mut device: *mut acpi_device = core::ptr::null_mut();
     let mut object_name: [c_char; 5] = [
         '_' as c_char,
@@ -600,9 +600,9 @@ pub unsafe extern "C" fn acpi_bus_can_wakeup(handle: ACPI_HANDLE) -> BOOLEAN {
 }
 
 unsafe fn acpi_bus_get_power_flags(device: *mut acpi_device) -> i32 {
-    let mut status: ACPI_STATUS = 0;
+    let mut status: ACPI_STATUS;
     let mut handle: ACPI_HANDLE = core::ptr::null_mut();
-    let mut i: UINT32 = 0;
+    let mut i: UINT32;
 
     if device.is_null() {
         return AE_NOT_FOUND as i32;
@@ -762,7 +762,7 @@ pub unsafe extern "C" fn acpi_bus_generate_event(
     type_: UINT8,
     data: i32,
 ) -> i32 {
-    let mut TypeData: usize = 0;
+    let mut TypeData: usize;
 
     if device.is_null() {
         return (0x1 | 0x1000) as i32;
@@ -783,7 +783,7 @@ pub unsafe extern "C" fn acpi_bus_generate_event(
 pub unsafe extern "C" fn acpi_bus_receive_event(
     event: *mut acpi_bus_event,
 ) -> i32 {
-    let mut entry: *mut acpi_bus_event = core::ptr::null_mut();
+    let entry: *mut acpi_bus_event;
     let mut old_irql: KIRQL = 0;
 
     if event.is_null() {
@@ -834,7 +834,7 @@ unsafe fn acpi_bus_walk(
 ) -> i32 {
     let result: i32 = 0;
     let mut level: i32 = 0;
-    let mut device: *mut acpi_device = core::ptr::null_mut();
+    let mut device: *mut acpi_device;
 
     if start.is_null() || callback.is_none() {
         return AE_BAD_PARAMETER as i32;
@@ -888,7 +888,7 @@ unsafe fn acpi_bus_walk(
 
 unsafe fn acpi_bus_check_device(handle: ACPI_HANDLE) {
     let mut device: *mut acpi_device = core::ptr::null_mut();
-    let mut status: ACPI_STATUS = 0;
+    let status: ACPI_STATUS;
     let mut old_status: acpi_device_status = core::mem::zeroed();
 
     if acpi_bus_get_device(handle, &mut device) != 0 {
@@ -1027,7 +1027,7 @@ unsafe fn acpi_bus_driver_init(
     device: *mut acpi_device,
     driver: *mut acpi_driver,
 ) -> c_int {
-    let mut result: c_int = 0;
+    let mut result: c_int;
 
     if device.is_null() || driver.is_null() {
         return (0x1 | 0x1000) as ACPI_STATUS as c_int;
@@ -1068,8 +1068,8 @@ unsafe extern "C" fn acpi_bus_attach(
     _level: c_int,
     data: *mut c_void,
 ) -> c_int {
-    let mut result: c_int = 0;
-    let mut driver: *mut acpi_driver = core::ptr::null_mut();
+    let mut result: c_int;
+    let driver: *mut acpi_driver;
 
     if device.is_null() || data.is_null() {
         return (0x1 | 0x1000) as ACPI_STATUS as c_int;
@@ -1107,7 +1107,7 @@ unsafe extern "C" fn acpi_bus_unattach(
     _level: i32,
     data: *mut core::ffi::c_void,
 ) -> i32 {
-    let mut result: i32 = 0;
+    let result: i32;
     let driver: *mut acpi_driver = data as *mut acpi_driver;
 
     if device.is_null() || driver.is_null() {
@@ -1142,8 +1142,8 @@ unsafe extern "C" fn acpi_bus_unattach(
 
 unsafe fn acpi_bus_find_driver(device: *mut acpi_device) -> c_int {
     let mut result: c_int = AE_NOT_FOUND as c_int;
-    let mut entry: *mut list_head = core::ptr::null_mut::<list_head>();
-    let mut driver: *mut acpi_driver = core::ptr::null_mut::<acpi_driver>();
+    let mut entry: *mut list_head;
+    let mut driver: *mut acpi_driver;
 
     if device.is_null() || !(*device).driver.is_null() {
         return AE_BAD_PARAMETER as c_int;
@@ -1216,7 +1216,7 @@ pub unsafe extern "C" fn acpi_bus_unregister_driver(
 }
 
 unsafe fn acpi_bus_get_flags(device: *mut acpi_device) -> i32 {
-    let mut status: ACPI_STATUS = AE_OK;
+    let mut status: ACPI_STATUS;
     let mut temp: ACPI_HANDLE = core::ptr::null_mut();
 
     status = AcpiGetHandle(
@@ -1298,9 +1298,9 @@ pub unsafe extern "C" fn acpi_bus_add(
     handle: ACPI_HANDLE,
     type_: c_int,
 ) -> c_int {
-    let mut result: c_int = 0;
+    let mut result: c_int;
     let mut status: ACPI_STATUS = AE_OK;
-    let mut device: *mut acpi_device = core::ptr::null_mut();
+    let device: *mut acpi_device;
     let mut bus_id: [c_char; 5] = ['?' as c_char, 0, 0, 0, 0];
     let mut buffer: ACPI_BUFFER = ACPI_BUFFER {
         Length: 0,
@@ -1309,8 +1309,8 @@ pub unsafe extern "C" fn acpi_bus_add(
     let mut info: *mut ACPI_DEVICE_INFO = core::ptr::null_mut();
     let mut hid: *mut c_char = core::ptr::null_mut();
     let mut uid: *mut c_char = core::ptr::null_mut();
-    let mut cid_list: *mut ACPI_PNP_DEVICE_ID_LIST = core::ptr::null_mut();
-    let mut i: c_int = 0;
+    let cid_list: *mut ACPI_PNP_DEVICE_ID_LIST;
+    let mut i: c_int;
     let mut static_uid_buffer: acpi_unique_id = [0; 9];
 
     if child.is_null() {
@@ -1378,7 +1378,6 @@ pub unsafe extern "C" fn acpi_bus_add(
                 b"%s\0".as_ptr() as PCHAR,
                 bus_id.as_mut_ptr(),
             );
-            buffer.Pointer = core::ptr::null_mut();
         }
     }
 
@@ -1697,10 +1696,10 @@ unsafe fn acpi_bus_remove(
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_scan(start: *mut acpi_device) -> c_int {
-    let mut status: ACPI_STATUS = AE_OK;
-    let mut parent: *mut acpi_device = core::ptr::null_mut();
+    let mut status: ACPI_STATUS;
+    let mut parent: *mut acpi_device;
     let mut child: *mut acpi_device = core::ptr::null_mut();
-    let mut phandle: ACPI_HANDLE = core::ptr::null_mut();
+    let mut phandle: ACPI_HANDLE;
     let mut chandle: ACPI_HANDLE = core::ptr::null_mut();
     let mut type_: ACPI_OBJECT_TYPE = 0;
     let mut level: UINT32 = 1;
@@ -1775,7 +1774,7 @@ pub unsafe extern "C" fn acpi_bus_scan(start: *mut acpi_device) -> c_int {
 }
 
 unsafe fn acpi_bus_scan_fixed(root: *mut acpi_device) -> c_int {
-    let mut result: c_int = 0;
+    let result: c_int;
     let mut device: *mut acpi_device = core::ptr::null_mut();
 
     if root.is_null() {
@@ -1783,10 +1782,10 @@ unsafe fn acpi_bus_scan_fixed(root: *mut acpi_device) -> c_int {
     }
 
     if AcpiGbl_FADT.Flags as u32 & ACPI_FADT_POWER_BUTTON as u32 != 0 {
-        result = acpi_bus_add(&mut device, acpi_root, core::ptr::null_mut(), ACPI_BUS_TYPE_POWER_BUTTON as c_int);
+        acpi_bus_add(&mut device, acpi_root, core::ptr::null_mut(), ACPI_BUS_TYPE_POWER_BUTTON as c_int);
     } else {
         AcpiWriteBitRegister(ACPI_BITREG_POWER_BUTTON_ENABLE as UINT32, 1 as UINT32);
-        result = acpi_bus_add(&mut device, acpi_root, core::ptr::null_mut(), ACPI_BUS_TYPE_POWER_BUTTONF as c_int);
+        acpi_bus_add(&mut device, acpi_root, core::ptr::null_mut(), ACPI_BUS_TYPE_POWER_BUTTONF as c_int);
     }
 
     if AcpiGbl_FADT.Flags as u32 & ACPI_FADT_SLEEP_BUTTON as u32 != 0 {
@@ -1800,8 +1799,8 @@ unsafe fn acpi_bus_scan_fixed(root: *mut acpi_device) -> c_int {
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_bus_init() -> c_int {
-    let mut result: c_int = 0;
-    let mut status: ACPI_STATUS = AE_OK;
+    let mut result: c_int;
+    let mut status: ACPI_STATUS;
 
     KeInitializeDpc(&raw mut event_dpc, Some(acpi_bus_generate_event_dpc), core::ptr::null_mut());
 
@@ -1850,7 +1849,7 @@ pub unsafe extern "C" fn acpi_bus_init() -> c_int {
 }
 
 unsafe fn acpi_bus_exit() {
-    let mut status: ACPI_STATUS = AE_OK;
+    let mut status: ACPI_STATUS;
 
     // DPRINT removed
 
@@ -1880,7 +1879,7 @@ unsafe fn acpi_bus_exit() {
 }
 #[no_mangle]
 pub unsafe extern "C" fn acpi_init() -> c_int {
-    let mut result: c_int = 0;
+    let result: c_int;
 
     // ke::KSPIN_LOCK (usize) vs ddk::KeInitializeSpinLock's ULONG_PTR pointer —
     // same width per arch, distinct nominal type → cast the pointer.

@@ -237,7 +237,7 @@ pub unsafe extern "C" fn CdIs8dot3Name(
     let mut next_wchar: *mut u16;
     let mut count: u32;
     let mut dot_count: u32 = 0;
-    let mut last_char_dot: bool = false;
+    let mut last_char_dot: bool;
 
     UNREFERENCED_PARAMETER(irp_context);
 

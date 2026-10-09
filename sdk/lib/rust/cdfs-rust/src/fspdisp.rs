@@ -180,7 +180,7 @@ pub unsafe extern "system" fn CdFspDispatch(
 
         // Volume overflow queue processing
         let mut saved_irql: KIRQL = 0;
-        let mut entry: *mut core::ffi::c_void = core::ptr::null_mut();
+        let entry: *mut core::ffi::c_void;
 
         KeAcquireSpinLock(core::ptr::addr_of_mut!((*vol_do).OverflowQueueSpinLock) as PKSPIN_LOCK, &mut saved_irql);
 

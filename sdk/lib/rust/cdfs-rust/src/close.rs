@@ -467,7 +467,7 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
     let mut UserReference: u32;
     let mut VcbHoldCount: u32 = 0;
     let mut CurrentVcb: *mut VCB = core::ptr::null_mut();
-    let mut PotentialVcbTeardown: i32 = 0; // BOOLEAN
+    let mut PotentialVcbTeardown: i32; // BOOLEAN
 
     // PAGED_CODE(); // no-op in mechanical translation
 
@@ -580,7 +580,6 @@ pub unsafe extern "C" fn CdFspClose(Vcb: *mut VCB) {
             CdCheckForDismount(IrpContext, CurrentVcb, 0); // FALSE => 0
             CurrentVcb = core::ptr::null_mut();
             CdReleaseCdData(IrpContext);
-            PotentialVcbTeardown = 0;
         }
 
         // Complete request to cleanup IrpContext

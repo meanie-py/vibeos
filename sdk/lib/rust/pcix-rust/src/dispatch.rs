@@ -98,7 +98,7 @@ pub unsafe extern "system" fn PciPassIrpFromFdoToPdo(
     Irp: *mut _IRP,
 ) -> NTSTATUS {
     let mut IoStackLocation: *mut _IO_STACK_LOCATION;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
 
     if DbgPrint(
         b"(%s:%d) Pci PassIrp ...\n\0".as_ptr() as PCHAR,
@@ -131,15 +131,14 @@ pub unsafe extern "system" fn PciDispatchIrp(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut DeviceExtension: PPCI_FDO_EXTENSION = core::ptr::null_mut::<_PCI_FDO_EXTENSION>();
-    let mut IoStackLocation: PIO_STACK_LOCATION = core::ptr::null_mut::<_IO_STACK_LOCATION>();
-    let mut IrpDispatchTable: PPCI_MJ_DISPATCH_TABLE =
-        core::ptr::null_mut::<_PCI_MJ_DISPATCH_TABLE>();
-    let mut PassToPdo: BOOLEAN = 0u8;
-    let mut Status: NTSTATUS = 0;
+    let mut DeviceExtension: PPCI_FDO_EXTENSION;
+    let mut IoStackLocation: PIO_STACK_LOCATION;
+    let mut IrpDispatchTable: PPCI_MJ_DISPATCH_TABLE;
+    let mut PassToPdo: BOOLEAN;
+    let mut Status: NTSTATUS;
     let mut TableArray: *mut _PCI_MN_DISPATCH_TABLE = core::ptr::null_mut::<_PCI_MN_DISPATCH_TABLE>();
-    let mut Table: *mut _PCI_MN_DISPATCH_TABLE = core::ptr::null_mut::<_PCI_MN_DISPATCH_TABLE>();
-    let mut MaxMinor: USHORT = 0;
+    let mut Table: *mut _PCI_MN_DISPATCH_TABLE;
+    let mut MaxMinor: USHORT;
     let mut DispatchStyle: PCI_DISPATCH_STYLE = 0; // 0 = IRP_COMPLETE
     let mut DispatchFunction: PCI_DISPATCH_FUNCTION = None;
 

@@ -104,7 +104,7 @@ pub unsafe extern "system" fn PciDebugIrpDispatchDisplay(
     DeviceExtension: PPCI_FDO_EXTENSION,
     MaxMinor: USHORT,
 ) -> BOOLEAN {
-    let mut PdoDeviceExtension: PPCI_PDO_EXTENSION = core::ptr::null_mut();
+    let mut PdoDeviceExtension: PPCI_PDO_EXTENSION;
     let BreakMask: ULONG;
     let IrpString: PCHAR;
 

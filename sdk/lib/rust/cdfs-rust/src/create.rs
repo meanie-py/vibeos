@@ -1978,7 +1978,7 @@ pub unsafe extern "C" fn CdNormalizeFileNames(
     FileName: *mut _UNICODE_STRING,
     RemainingName: *mut CD_NAME,
 ) -> NTSTATUS {
-    let mut RemainingNameLength: u32 = 0;
+    let mut RemainingNameLength: u32;
     let mut RelatedNameLength: u32 = 0;
     let mut SeparatorLength: u32 = 0;
 

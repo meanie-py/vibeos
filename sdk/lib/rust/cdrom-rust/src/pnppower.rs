@@ -57,7 +57,7 @@ const TRACE_FLAG_GENERAL: u32 = 0; // storswtr.h:80-98 (an ORDINAL enum, not a b
 #[no_mangle]
 pub unsafe extern "system" fn RequestProcessShutdownFlush(device: WDFDEVICE, irp: PIRP) -> NTSTATUS {
     let mut status: NTSTATUS = STATUS_SUCCESS;
-    let mut currentStack: *mut IO_STACK_LOCATION = core::ptr::null_mut();
+    let mut currentStack: *mut IO_STACK_LOCATION;
     let deviceExtension: *mut CDROM_DEVICE_EXTENSION = DeviceGetExtension(device);
 
     WdfWaitLockAcquire((*deviceExtension).ShutdownFlushWaitLock, core::ptr::null_mut());
@@ -126,7 +126,7 @@ pub unsafe extern "system" fn RequestProcessSetPower(
 pub unsafe extern "C" fn DeviceScratchSyncCache(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut transferSize: u32 = 0;
     let mut cdb: CDB = core::mem::zeroed();
 
@@ -160,7 +160,7 @@ pub unsafe extern "C" fn DeviceScratchPreventMediaRemoval(
     DeviceExtension: PCDROM_DEVICE_EXTENSION,
     Prevent: u8,
 ) -> i32 {
-    let mut status: i32 = STATUS_SUCCESS;
+    let mut status: i32;
     let mut transferSize: u32 = 0;
 
     let mut cdb: CDB = core::mem::zeroed();
@@ -196,7 +196,7 @@ pub unsafe extern "C" fn RequestIssueShutdownFlush(
     let currentStack: *mut IO_STACK_LOCATION;
 
     let mut transferSize: u32 = 0;
-    let mut shouldRetry: i32 = 1;
+    let mut shouldRetry: i32;
     let mut timesAlreadyRetried: u32 = 0;
     let mut retryIn100nsUnits: i64 = 0;
 
@@ -324,9 +324,9 @@ pub unsafe extern "system" fn RequestProcessPowerIrpCompletion(
 }
 #[no_mangle]
 pub unsafe extern "C" fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS {
-    let mut status: NTSTATUS = ntkrnl_sys::base::STATUS_SUCCESS;
+    let mut status: NTSTATUS;
     let mut reuseParams: core::mem::MaybeUninit<WDF_REQUEST_REUSE_PARAMS> = core::mem::MaybeUninit::uninit();
-    let mut irp: PIRP = core::ptr::null_mut();
+    let mut irp: PIRP;
 
     // Zero SenseData
     {
@@ -390,7 +390,7 @@ pub unsafe extern "C" fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DE
 }
 #[no_mangle]
 pub unsafe extern "C" fn PowerContextBeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS {
-    let mut status: NTSTATUS = STATUS_SUCCESS;
+    let mut status: NTSTATUS;
 
     NT_ASSERT((!((*DeviceExtension).PowerContext.InUse)) as i32);
 

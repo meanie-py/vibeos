@@ -107,7 +107,7 @@ pub unsafe extern "system" fn SamIConnect(
 
 #[no_mangle]
 pub unsafe extern "system" fn SamIInitialize() -> NTSTATUS {
-    let mut Status: NTSTATUS = STATUS_SUCCESS;
+    let mut Status: NTSTATUS;
 
     TRACE!(b"SamIInitialize() called\n\0".as_ptr() as *const i8);
 

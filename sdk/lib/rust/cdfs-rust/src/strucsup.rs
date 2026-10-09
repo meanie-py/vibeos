@@ -1396,16 +1396,16 @@ pub unsafe extern "C" fn CdProcessToc(
 ) -> i32 {
     // PAGED_CODE();
 
-    let mut status: i32 = 0;
+    let mut status: i32;
     let mut iosb: _IO_STATUS_BLOCK = core::mem::zeroed();
     let mut command: CDROM_READ_TOC_EX = core::mem::zeroed();
-    let mut current_track: u32 = 0;
-    let mut local_track_count: u32 = 0;
-    let mut local_toc_length: u32 = 0;
+    let mut current_track: u32;
+    let local_track_count: u32;
+    let local_toc_length: u32;
     let mut address: u32 = 0;
     let mut use_read_toc: u8 = 0;
     let mut biased_toc_length: BiasedTocLength = BiasedTocLength { Length: 0 };
-    let mut track: *mut TRACK_DATA = core::ptr::null_mut();
+    let mut track: *mut TRACK_DATA;
 
     RtlZeroMemory(
         &raw mut command as *mut core::ffi::c_void,

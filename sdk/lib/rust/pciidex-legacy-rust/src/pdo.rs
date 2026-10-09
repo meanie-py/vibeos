@@ -1347,7 +1347,7 @@ pub unsafe extern "C" fn PciIdeXPdoQueryId(
     Irp: PIRP,
 ) -> NTSTATUS {
     let IoStack: PIO_STACK_LOCATION;
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let Buffer: PWCHAR;
     let mut End: PWCHAR = core::ptr::null_mut();
     let mut CharCount: usize;
@@ -1808,7 +1808,7 @@ pub unsafe extern "C" fn PciIdeXPdoDispatchPnp(
     PdoExtension: PPDO_DEVICE_EXTENSION,
     Irp: PIRP,
 ) -> NTSTATUS {
-    let mut Status: NTSTATUS = 0;
+    let mut Status: NTSTATUS;
     let IoStack: PIO_STACK_LOCATION;
 
     if KeGetCurrentIrql() as i32 > (APC_LEVEL) as i32 {
