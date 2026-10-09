@@ -100,13 +100,16 @@ pub fn split(windows: &mut [Option<Window>; MAX_WINDOWS], bus: u8, segment: u16)
     if windows.iter().flatten().any(|w| w.segment == segment) {
         return false;
     }
-    let Some(i) = windows.iter().position(|w| w.is_some_and(|w| w.segment == 0 && w.start < bus && bus <= w.end)) else {
+    let Some((i, w)) = windows
+        .iter()
+        .enumerate()
+        .find_map(|(i, w)| w.filter(|w| w.segment == 0 && w.start < bus && bus <= w.end).map(|w| (i, w)))
+    else {
         return false;
     };
     let Some(free) = windows.iter().position(Option::is_none) else {
         return false;
     };
-    let w = windows[i].unwrap();
     windows[i] = Some(Window { end: bus - 1, ..w });
     windows[free] = Some(Window { segment, start: bus, ..w });
     true
