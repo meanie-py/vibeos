@@ -19,6 +19,7 @@ static MAC: AtomicU64 = AtomicU64::new(0);
 static IPV4: AtomicU32 = AtomicU32::new(0);
 static MASK: AtomicU32 = AtomicU32::new(0);
 static GATEWAY: AtomicU32 = AtomicU32::new(0);
+static DNS0: AtomicU32 = AtomicU32::new(0);
 
 pub fn set_mac(mac: [u8; 6]) {
     let v = (mac[0] as u64) << 40
@@ -70,6 +71,32 @@ pub fn broadcast_naddr() -> u32 {
     ip | !mask
 }
 
+/// The lease's gateway, if it named one.
+pub fn gateway() -> Option<[u8; 4]> {
+    match GATEWAY.load(Ordering::Relaxed) {
+        0 => None,
+        v => Some(v.to_ne_bytes()),
+    }
+}
+
+/// Whether this is QEMU's user-mode (slirp) network, gateway 10.0.2.2: the only
+/// network where the harness's host listeners (10.0.2.100 guestfwds) exist.
+/// Self-tests that need one run only here. Elsewhere a connect to 10.0.2.100 sits
+/// in SYN-SENT, and smoltcp rate-limits neighbor discovery for the whole interface
+/// (one ARP a second, any address), so whatever it is ARPing for starves the ARP a
+/// reply to a real peer needs.
+pub fn on_slirp() -> bool {
+    gateway() == Some([10, 0, 2, 2])
+}
+
+/// The lease's first DNS server, if it named one.
+pub fn dns0() -> Option<[u8; 4]> {
+    match DNS0.load(Ordering::Relaxed) {
+        0 => None,
+        v => Some(v.to_ne_bytes()),
+    }
+}
+
 /// True once a DHCP lease has been published.
 pub fn configured() -> bool {
     IPV4.load(Ordering::Relaxed) != 0
@@ -99,6 +126,7 @@ pub fn publish_dns_servers(servers: &[[u8; 4]]) {
     if servers.is_empty() {
         return;
     }
+    DNS0.store(u32::from_ne_bytes(servers[0]), Ordering::Relaxed);
     // "a.b.c.d,a.b.c.d" as UTF-16, NUL-terminated (REG_SZ).
     let mut text = [0u16; 128];
     let mut n = 0usize;

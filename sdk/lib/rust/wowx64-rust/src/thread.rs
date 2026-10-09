@@ -85,9 +85,21 @@ pub struct ThreadRecord {
     /// Allocation base of the native stack, if we allocated it; 0 for the
     /// initial thread, whose native stack is the process's own.
     pub NativeStack: u64,
+    /// The guest rsp at the `syscall` this thread is inside, 0 while it runs
+    /// guest code: the one guest state that holds still long enough for
+    /// another thread or process to read it ([`RemoteGuestContext`]).
+    pub SyscallRsp: u64,
+    /// The service number of that syscall.
+    pub SyscallService: u64,
 }
 
-static mut INITIAL_THREAD: ThreadRecord = ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack: 0 };
+impl ThreadRecord {
+    pub const fn new(NativeStack: u64) -> Self {
+        ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack, SyscallRsp: 0, SyscallService: 0 }
+    }
+}
+
+static mut INITIAL_THREAD: ThreadRecord = ThreadRecord::new(0);
 
 unsafe fn SetRecord(R: *mut ThreadRecord) {
     (*NtCurrentTeb()).DeallocationBStore = R as PVOID;
@@ -105,6 +117,78 @@ pub unsafe fn Record() -> *mut ThreadRecord {
         die(b"guest thread with no wowx64 thread record\0");
     }
     R
+}
+
+/// `NtGetContextThread` on another x86-64 guest thread, in this process or
+/// another: its live guest state is in ITS CPU layer, out of reach, so this
+/// answers only for a thread parked in a syscall, from what that thread
+/// published there (`SyscallRsp`). The context is the stub's caller as if the
+/// stub had returned -- `rip` = the return address at [rsp], `rsp` past it,
+/// `rax` = the service -- which is what a sampler asking "where is this thread
+/// stuck" wants. A thread running guest code, or one not in an x86-64 guest
+/// (its native CONTEXT is arm64), is refused: a guessed context would send a
+/// stack walk somewhere wrong.
+pub unsafe fn RemoteGuestContext(Thread: HANDLE, Ctx: *mut WowX64Context) -> u64 {
+    const STATUS_NOT_IMPLEMENTED: u64 = 0xC000_0002;
+    const PROCESS_VM_READ: ACCESS_MASK = 0x0010;
+    const PROCESS_QUERY_INFORMATION: ACCESS_MASK = 0x0400;
+    const THREAD_QUERY_INFORMATION: ACCESS_MASK = 0x0040;
+    // GetThreadContext's caller holds THREAD_GET_CONTEXT, which is all Windows
+    // asks of it; finding the thread's TEB and process takes query rights, so
+    // ask for those on a handle of our own (an access-checked duplicate).
+    let mut Query: HANDLE = null_mut();
+    let Status = NtDuplicateObject(CURRENT_PROCESS, Thread, CURRENT_PROCESS, &mut Query, THREAD_QUERY_INFORMATION, 0, 0);
+    if Status < 0 {
+        return Status as u32 as u64;
+    }
+    let mut Info: THREAD_BASIC_INFORMATION = core::mem::zeroed();
+    let Status = NtQueryInformationThread(
+        Query,
+        ThreadBasicInformation,
+        &mut Info as *mut _ as PVOID,
+        core::mem::size_of::<THREAD_BASIC_INFORMATION>() as ULONG,
+        null_mut(),
+    );
+    NtClose(Query);
+    if Status < 0 {
+        return Status as u32 as u64;
+    }
+    let mut Process: HANDLE = null_mut();
+    let mut Oa: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    Oa.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    let mut Cid: CLIENT_ID = core::mem::zeroed();
+    Cid.UniqueProcess = Info.ClientId.UniqueProcess;
+    let Status = NtOpenProcess(&mut Process, PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, &mut Oa, &mut Cid);
+    if Status < 0 {
+        return Status as u32 as u64;
+    }
+    let Read = |At: u64, Out: *mut c_void, Len: usize| -> bool {
+        NtReadVirtualMemory(Process, At as PVOID, Out, Len as SIZE_T, null_mut()) >= 0
+    };
+    let mut Result = STATUS_NOT_IMPLEMENTED;
+    let (mut RecAt, mut Rec) = (0u64, ThreadRecord::new(0));
+    let mut Ret = 0u64;
+    if matches!(TargetProcess(Process), Some((IMAGE_FILE_MACHINE_AMD64, _)))
+        && Read(
+            Info.TebBaseAddress as u64 + core::mem::offset_of!(TEB, DeallocationBStore) as u64,
+            &mut RecAt as *mut _ as _,
+            8,
+        )
+        && RecAt != 0
+        && Read(RecAt, &mut Rec as *mut _ as _, core::mem::size_of::<ThreadRecord>())
+        && Rec.SyscallRsp != 0
+        && Read(Rec.SyscallRsp, &mut Ret as *mut _ as _, 8)
+    {
+        let Flags = (*Ctx).ContextFlags;
+        core::ptr::write_bytes(Ctx, 0, 1);
+        (*Ctx).ContextFlags = Flags;
+        (*Ctx).Rip = Ret;
+        (*Ctx).Rsp = Rec.SyscallRsp + 8;
+        (*Ctx).Rax = Rec.SyscallService;
+        Result = 0;
+    }
+    NtClose(Process);
+    Result
 }
 
 /// What a new guest thread starts from, parked between the guest's
@@ -537,7 +621,7 @@ unsafe extern "C" fn WowX64GuestThreadStart(Start: *mut ThreadStart, Rec: *mut T
     {
         die(b"guest thread: its native stack is not mapped\0");
     }
-    Rec.write(ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack: Info.AllocationBase as u64 });
+    Rec.write(ThreadRecord::new(Info.AllocationBase as u64));
     SetRecord(Rec);
 
     let Teb = NtCurrentTeb();
@@ -644,7 +728,7 @@ pub unsafe extern "system" fn WowX64StartGuestThreadFromNative(Context: PCONTEXT
     PublishGuestStack(Stack as u64, Top);
     (*Teb).FreeStackOnTermination = 1; // the guest stack: ours, freed with the thread
     // Lives in this frame, which never returns.
-    let mut Rec = ThreadRecord { Callouts: null_mut(), Apcs: null_mut(), NativeStack };
+    let mut Rec = ThreadRecord::new(NativeStack);
     SetRecord(&mut Rec);
 
     // Entered as if CALLed, with a zero return address: a routine that returns

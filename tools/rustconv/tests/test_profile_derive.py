@@ -22,10 +22,10 @@ from pathlib import Path
 import pytest
 
 from rustconv.profile_derive import (
-    resolve_sys_crate,
     DerivedProfile,
     Finding,
     ProfileDeriveError,
+    _interface_include_index,
     build_include_env,
     derive,
     emit_profile,
@@ -35,13 +35,13 @@ from rustconv.profile_derive import (
     header_symbols,
     is_shim_tu,
     parse_cmakelists,
+    resolve_sys_crate,
     scaffold_crate,
     scan_includes,
     scan_preamble,
     to_json,
     uncomment_flipped_source_lists,
     walk_includes,
-    _interface_include_index,
 )
 
 # ---------------------------------------------------------------------------
@@ -372,6 +372,18 @@ def test_case_label_in_a_dead_reactos_branch_is_not_audited(tmp_path):
     consts = find_switch_constants([_mod(tmp_path) / "helper.c"], root)
     assert "WINE_ONLY_REASON" not in {c.ident for c in consts}
     assert "WIDGET_MODE_FAST" in {c.ident for c in consts}
+
+
+def test_a_macro_call_in_a_case_label_audits_its_arguments_not_its_name(tmp_path):
+    """inetcpl: `case MAKEWPARAM(IDOK, BN_CLICKED):` -- MAKEWPARAM is no constant."""
+    root = _basic_module(tmp_path)
+    _write(
+        _mod(tmp_path) / "cmd.c",
+        '#include "precomp.h"\nint c(int w){ switch (w) {\n'
+        "    case MAKEWPARAM(WIDGET_MODE_FAST, WIDGET_MODE_SLOW): return 1;\n} return 0; }\n",
+    )
+    consts = find_switch_constants([_mod(tmp_path) / "cmd.c"], root)
+    assert {c.ident for c in consts} == {"WIDGET_MODE_FAST", "WIDGET_MODE_SLOW"}
 
 
 def test_case_labels_hidden_behind_a_function_like_macro_are_audited(tmp_path):

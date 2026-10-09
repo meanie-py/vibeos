@@ -43,6 +43,14 @@ use crate::pnp::PlatformNic;
 use crate::serial::nsprint;
 use crate::time::{delay_ms, now};
 
+/// Clause 22 access to clause 45 MMD registers (IEEE 802.3 22.2.4.3.11/12).
+const MII_MMD_CTRL: u8 = 13;
+const MII_MMD_DATA: u8 = 14;
+const MMD_CTRL_DATA_NO_INCR: u16 = 0x4000;
+/// MMD 7 (auto-negotiation), register 60: EEE advertisement.
+const MMD_AN: u16 = 7;
+const MMD_AN_EEE_ADV: u16 = 60;
+
 // ------------------------------------------------------------ GEM registers
 const NCR: usize = 0x000;
 const NCR_RE: u32 = 1 << 2;
@@ -343,9 +351,26 @@ impl Gem {
         self.phy_write(MII_ANAR, anar | ANAR_10_100_ALL).ok_or("ANAR write")?;
         let gbcr = self.phy_read(MII_GBCR).ok_or("GBCR read")?;
         self.phy_write(MII_GBCR, gbcr | GBCR_1000_ALL).ok_or("GBCR write")?;
+        // Advertise no Energy Efficient Ethernet. The BCM54213PE advertises EEE for
+        // 100BASE-TX and 1000BASE-T out of reset (MMD 7.60 = 0x6), so the link idles in
+        // low-power mode between frames, and this driver does nothing about LPI. The
+        // result was ping losing ~8% for minutes after boot in a pattern (one frame
+        // every 2.5 s, in bursts every ~14 s), every lost request missing from the
+        // GEM's own receive counter with no FCS, buffer or overrun error: the frames
+        // never reached the MAC. With the advertisement cleared, 200 of 200. Linux
+        // likewise lets phylib advertise EEE only when the MAC driver supports it.
+        self.mmd_write(MMD_AN, MMD_AN_EEE_ADV, 0).ok_or("EEE advertisement write")?;
         let bmcr = self.phy_read(MII_BMCR).ok_or("BMCR read")?;
         self.phy_write(MII_BMCR, bmcr | BMCR_ANE | BMCR_RESTART_AN).ok_or("BMCR write")?;
         Ok(())
+    }
+
+    /// Clause 45 MMD register write through the clause 22 MMD access registers.
+    fn mmd_write(&self, devad: u16, reg: u16, val: u16) -> Option<()> {
+        self.phy_write(MII_MMD_CTRL, devad)?;
+        self.phy_write(MII_MMD_DATA, reg)?;
+        self.phy_write(MII_MMD_CTRL, MMD_CTRL_DATA_NO_INCR | devad)?;
+        self.phy_write(MII_MMD_DATA, val)
     }
 
     /// Read the PHY's link state and, on a change, set the MAC's speed and

@@ -12,7 +12,7 @@
 
 #![cfg(target_arch = "aarch64")]
 
-use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicU8, Ordering};
 use ntkrnl_sys::ddk;
 
 use super::acpi::{for_each_table, rd, XSDT_PA};
@@ -45,6 +45,10 @@ static SPI_BASE: AtomicU32 = AtomicU32::new(0);
 static SPI_COUNT: AtomicU32 = AtomicU32::new(0);
 /// Which of the frame's SPIs are handed out (at most 988: INTIDs 32-1019).
 static SPIS: Bits<16> = Bits::new();
+/// At an MSI block's first SPI, how many it holds (0 for a lone SPI, BLOCK_MEMBER at
+/// the rest), indexed like SPIS.
+static BLOCKS: [AtomicU8; 1024] = [const { AtomicU8::new(0) }; 1024];
+const BLOCK_MEMBER: u8 = 0xFF;
 
 /// Find the frame once. Runs at PnP time, so MmMapIoSpace is up.
 unsafe fn probe() -> Option<u64> {
@@ -128,12 +132,21 @@ pub(crate) unsafe fn message_capacity() -> u32 {
     count - SPIS.count(count)
 }
 
-/// The next free SPI. Every SPI is routed to CPU0 on a GICv2 (ITARGETSR = 1), so a
-/// request that leaves CPU0 out cannot be honoured; it is said so, not silently moved.
-pub(crate) unsafe fn allocate_message_vector(requested: ddk::KAFFINITY) -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
+/// `count` free SPIs (a power of two; 1 for a lone message), the first INTID a
+/// multiple of `count`: the device ORs the message number into the data, which is the
+/// INTID. Every SPI is routed to CPU0 on a GICv2 (ITARGETSR = 1), so a request that
+/// leaves CPU0 out cannot be honoured; it is said so, not silently moved.
+pub(crate) unsafe fn allocate_message_block(count: u32, requested: ddk::KAFFINITY) -> Option<(u32, ddk::KIRQL, ddk::KAFFINITY)> {
     probe()?;
-    let n = SPIS.claim(SPI_COUNT.load(Ordering::Relaxed))?;
-    let intid = SPI_BASE.load(Ordering::Relaxed) + n;
+    let base = SPI_BASE.load(Ordering::Relaxed);
+    let n = SPIS.claim_block(count, SPI_COUNT.load(Ordering::Relaxed), base)?;
+    for k in 0..count {
+        BLOCKS[(n + k) as usize].store(if k > 0 { BLOCK_MEMBER } else if count > 1 { count as u8 } else { 0 }, Ordering::Relaxed);
+    }
+    let intid = base + n;
+    if count > 1 {
+        DbgPrint(b"[HAL] GICv2m: INTIDs %u-%u, an MSI block of %u\n\0".as_ptr(), intid, intid + count - 1, count);
+    }
     if requested & 1 == 0 {
         DbgPrint(b"[HAL] GICv2m: INTID %u asked for CPUs %llx, but every SPI goes to CPU0\n\0".as_ptr(), intid, requested as u64);
     }
@@ -141,12 +154,27 @@ pub(crate) unsafe fn allocate_message_vector(requested: ddk::KAFFINITY) -> Optio
     Some((intid, super::clock::DEVICE_IRQL, 1))
 }
 
-/// Return an SPI to the frame, its line off.
+/// Return an SPI to the frame, its line off; an MSI block's first SPI returns the
+/// whole block. An SPI inside a block is not released alone.
 pub(crate) unsafe fn release_message_vector(intid: u32) -> bool {
-    if !owns(intid) || !SPIS.release(intid - SPI_BASE.load(Ordering::Relaxed)) {
+    if !owns(intid) {
         return false;
     }
-    super::clock::disable_gic_interrupt(intid);
+    let n = intid - SPI_BASE.load(Ordering::Relaxed);
+    let count = match BLOCKS[n as usize].load(Ordering::Relaxed) {
+        BLOCK_MEMBER => return false,
+        0 => 1,
+        c => c as u32,
+    };
+    if !SPIS.is_set(n) {
+        return false;
+    }
+    for k in 0..count {
+        super::clock::disable_gic_interrupt(intid + k);
+        BLOCKS[(n + k) as usize].store(0, Ordering::Relaxed);
+        SPIS.release(n + k);
+    }
+    DbgPrint(b"[HAL] GICv2m: INTIDs %u-%u released\n\0".as_ptr(), intid, intid + count - 1);
     true
 }
 

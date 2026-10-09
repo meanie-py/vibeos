@@ -20,11 +20,13 @@
 //! message.rs): whether it can route messages at all, and the address/data that
 //! raises each translated vector, which START writes into the device's MSI-X table.
 //!
-//! A device without MSI-X but with MSI (capability 05h) gets one message. MSI's
-//! multiple messages are one block of data values the device varies the low bits
-//! of, which needs a contiguous, aligned block from the HAL (an aligned run of
-//! EventIDs on an ITS, of vectors on an APIC); that is owed, and one message is what
-//! a device with MSI must accept.
+//! A device without MSI-X but with MSI (capability 05h) gets a block of messages: a
+//! power of two, up to what its Multiple Message Capable field says. The device ORs
+//! the message number into the low bits of one data value, so the block is one
+//! requirement spanning TOKEN - (N - 1) to TOKEN, as on Windows, which the HAL
+//! translates to consecutive values aligned to N (vectors on an APIC, SPIs on a
+//! GICv2m frame, EventIDs on an ITS) and may shrink when it cannot find N together;
+//! the raw descriptor's MessageCount says what the device got.
 
 use core::mem::size_of;
 use core::ptr::addr_of_mut;
@@ -66,6 +68,7 @@ const PCI_CAPABILITY_ID_MSIX: u8 = 0x11;
 const MSI_CONTROL: usize = 2;
 const MSI_ADDRESS: usize = 4;
 const MSI_CONTROL_ENABLE: u16 = 0x0001;
+const MSI_CONTROL_MULTIPLE_CAPABLE: u16 = 0x000E;
 const MSI_CONTROL_MULTIPLE_ENABLE: u16 = 0x0070;
 const MSI_CONTROL_64BIT: u16 = 0x0080;
 const MSI_CONTROL_PER_VECTOR_MASK: u16 = 0x0100;
@@ -277,30 +280,37 @@ pub unsafe fn filter_requirements(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp
     }
     let entries = match (find_msix(&cfg), find_msi(&cfg)) {
         (Some(msix), _) => msix.entries,
-        (None, Some(_)) => 1,
+        // Multiple Message Capable: log2 of the block, 5 (32) at most.
+        (None, Some(cap)) => 1 << ((le16(&cfg, cap + MSI_CONTROL) & MSI_CONTROL_MULTIPLE_CAPABLE) >> 1).min(5),
         (None, None) => {
             DPRINT1!("MSI-X: slot %#x: opted in, but the device has neither MSI-X nor MSI\n", slot);
             return status;
         }
     };
     let capacity = HalVibeosMessageCapacity();
-    let count = entries.min(limit).min(capacity);
+    let msix = find_msix(&cfg).is_some();
+    let mut count = entries.min(limit).min(capacity);
+    if !msix && count > 1 {
+        count = 1 << (31 - count.leading_zeros()); // an MSI block is a power of two
+    }
     if count == 0 {
         DPRINT1!("MSI-X: slot %#x: the HAL cannot route messages (capacity %u)\n", slot, capacity);
         return status;
     }
     let (policy, targeted) = affinity_policy(DeviceObject);
-    if find_msix(&cfg).is_some() {
+    if msix {
         DPRINT1!("MSI-X: slot %#x: requesting %u of %u table entries\n", slot, count, entries);
     } else {
-        DPRINT1!("MSI: slot %#x: requesting one message\n", slot);
+        DPRINT1!("MSI: slot %#x: requesting a block of %u of the %u it can take\n", slot, count, entries);
     }
+    // MSI-X: a requirement per table entry. MSI: one for the whole block.
+    let (descriptors, span) = if msix { (count, 1) } else { (1, count) };
     if policy != 0 {
         DPRINT1!("MSI-X: slot %#x: affinity policy %u, processors %p\n", slot, policy as u32, targeted as PVOID);
     }
 
     let old_size = (*incoming).ListSize as usize;
-    let new_size = old_size + count as usize * size_of::<IO_RESOURCE_DESCRIPTOR>();
+    let new_size = old_size + descriptors as usize * size_of::<IO_RESOURCE_DESCRIPTOR>();
     let grown = ExAllocatePoolWithTag(PagedPool, new_size as SIZE_T, TAG_PCI) as PIO_RESOURCE_REQUIREMENTS_LIST;
     if grown.is_null() {
         return status;
@@ -309,18 +319,18 @@ pub unsafe fn filter_requirements(DeviceObject: PDEVICE_OBJECT, Irp: PIRP, IrpSp
     (*grown).ListSize = new_size as ULONG;
     let list = addr_of_mut!((*grown).List[0]);
     let first = addr_of_mut!((*list).Descriptors[0]).add((*list).Count as usize);
-    for k in 0..count as usize {
+    for k in 0..descriptors as usize {
         let d = first.add(k);
         core::ptr::write_bytes(d, 0, 1);
         (*d).Type = CmResourceTypeInterrupt;
         (*d).ShareDisposition = CmResourceShareDeviceExclusive;
         (*d).Flags = CM_RESOURCE_INTERRUPT_LATCHED | CM_RESOURCE_INTERRUPT_MESSAGE;
-        (*d).u.Interrupt.MinimumVector = MESSAGE_TOKEN - k as u32;
+        (*d).u.Interrupt.MinimumVector = MESSAGE_TOKEN - k as u32 - (span - 1);
         (*d).u.Interrupt.MaximumVector = MESSAGE_TOKEN - k as u32;
         (*d).u.Interrupt.AffinityPolicy = policy as _;
         (*d).u.Interrupt.TargetedProcessors = targeted;
     }
-    (*list).Count += count;
+    (*list).Count += descriptors;
     // The list we replace is ours (QUERY_RESOURCE_REQUIREMENTS allocated it) or an
     // upper filter's that already handed it on; either way nothing else holds it.
     if (*Irp).IoStatus.Information != 0 {
@@ -366,10 +376,11 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     if !read_config(ext, &mut cfg) {
         return;
     }
-    // The requester ID the device's writes carry: a GICv3 ITS translates by it.
+    // The requester ID the device's writes carry (a GICv3 ITS translates by it), with
+    // its PCI segment above it: BusNumber is a PCI_SEGMENT_BUS_NUMBER.
     let dev = (*ext).PciDevice;
     let slot = (*dev).SlotNumber.u.AsULONG;
-    let requester = ((*dev).BusNumber & 0xFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
+    let requester = ((*dev).BusNumber & 0xFF_FFFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
     let Some(msix) = find_msix(&cfg) else {
         if let Some(cap) = find_msi(&cfg) {
             program_msi(ext, &cfg, cap, requester, (0..n).map(|i| (rd.add(i), td.add(i))));
@@ -413,6 +424,17 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
         core::ptr::write_volatile(e.add(1), (address >> 32) as u32);
         core::ptr::write_volatile(e.add(2), data);
         core::ptr::write_volatile(e.add(3), 0); // vector control: unmasked
+        // Read it back: a table the device does not answer for (its BAR not decoding,
+        // or the wrong BAR) takes nothing, and its entries stay masked forever.
+        if core::ptr::read_volatile(e.add(2)) != data || core::ptr::read_volatile(e.add(3)) & 1 != 0 {
+            DPRINT1!(
+                "MSI-X table entry %u at %p did not take the message (data reads %#x) - not enabled\n",
+                entry,
+                e as PVOID,
+                core::ptr::read_volatile(e.add(2))
+            );
+            continue;
+        }
         programmed += 1;
     }
     MmUnmapIoSpace(table as PVOID, table_len as SIZE_T);
@@ -430,8 +452,9 @@ pub unsafe fn program(ext: PPDO_DEVICE_EXTENSION, raw: PCM_RESOURCE_LIST, transl
     );
 }
 
-/// MSI: the one message (raw token entry 0) into the capability, and enable it with
-/// one message (Multiple Message Enable = 0).
+/// MSI: the block's first message into the capability, and enable it with Multiple
+/// Message Enable = log2 of the block the PnP manager got for it (the raw
+/// descriptor's MessageCount).
 unsafe fn program_msi(
     ext: PPDO_DEVICE_EXTENSION,
     cfg: &[u8; 256],
@@ -439,19 +462,30 @@ unsafe fn program_msi(
     requester: u32,
     mut descriptors: impl Iterator<Item = (PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_DESCRIPTOR)>,
 ) {
-    let Some((_, t)) = descriptors.find(|&(r, _)| {
+    let Some((r, t)) = descriptors.find(|&(r, _)| {
         (*r).Type == CmResourceTypeInterrupt
             && (*r).Flags & CM_RESOURCE_INTERRUPT_MESSAGE != 0
             && (*r).u.Interrupt.Vector == MESSAGE_TOKEN
     }) else {
         return;
     };
+    let control = le16(cfg, cap + MSI_CONTROL);
+    let count = ((*r).u.Interrupt.Level >> 16).max(1);
+    let capable = 1 << ((control & MSI_CONTROL_MULTIPLE_CAPABLE) >> 1).min(5);
+    if !count.is_power_of_two() || count > capable {
+        DPRINT1!("MSI: %04x:%04x was given %u messages, and takes a block of at most %u - not enabled\n", le16(cfg, 0) as u32, le16(cfg, 2) as u32, count, capable);
+        return;
+    }
     let mut address = 0u64;
     let mut data: ULONG = 0;
     if HalVibeosMessageTarget((*t).u.Interrupt.Vector, requester, &mut address, &mut data) == 0 {
         return;
     }
-    let control = le16(cfg, cap + MSI_CONTROL);
+    if data & (count - 1) != 0 {
+        // The device would OR message numbers into bits that are not free.
+        DPRINT1!("MSI: data %#x for a block of %u is not aligned - not enabled\n", data, count);
+        return;
+    }
     let wide = control & MSI_CONTROL_64BIT != 0;
     if !wide && address >> 32 != 0 {
         DPRINT1!(
@@ -471,10 +505,17 @@ unsafe fn program_msi(
     };
     write_config(ext, data_at, data as u16);
     if control & MSI_CONTROL_PER_VECTOR_MASK != 0 {
-        write_config(ext, data_at + 4, 0u32); // Mask Bits: message 0 unmasked
+        write_config(ext, data_at + 4, 0u32); // Mask Bits: every message unmasked
     }
-    write_config(ext, cap + MSI_CONTROL, (control & !MSI_CONTROL_MULTIPLE_ENABLE) | MSI_CONTROL_ENABLE);
-    DPRINT1!("MSI enabled for %04x:%04x: one message\n", le16(cfg, 0) as u32, le16(cfg, 2) as u32);
+    let enable = (count.trailing_zeros() as u16) << 4;
+    write_config(ext, cap + MSI_CONTROL, (control & !MSI_CONTROL_MULTIPLE_ENABLE) | enable | MSI_CONTROL_ENABLE);
+    DPRINT1!(
+        "MSI enabled for %04x:%04x: %u message(s), data %#x\n",
+        le16(cfg, 0) as u32,
+        le16(cfg, 2) as u32,
+        count,
+        data
+    );
 }
 
 /// STOP, REMOVE, SURPRISE_REMOVAL: messages off, before the PnP manager hands the

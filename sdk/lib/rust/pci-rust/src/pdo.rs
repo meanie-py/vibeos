@@ -903,7 +903,11 @@ unsafe fn PdoQueryResourceRequirements(
             )))
             .u
             .type1
-            .SecondaryBus as ULONG;
+            .SecondaryBus as ULONG
+                // The segment rides above the bus (PCI_SEGMENT_BUS_NUMBER), so the
+                // bridge's own FDO stays on its segment and two segments' bus 1 are
+                // different resources to the PnP manager.
+                | (*(*DeviceExtension).PciDevice).BusNumber & !0xFF;
             (*ResourceList).BusNumber = secondary;
             (*Descriptor).u.BusNumber.MinBusNumber = secondary;
             (*Descriptor).u.BusNumber.MaxBusNumber = secondary;
@@ -1186,7 +1190,11 @@ unsafe fn PdoQueryResources(
             )))
             .u
             .type1
-            .SecondaryBus as ULONG;
+            .SecondaryBus as ULONG
+                // The segment rides above the bus (PCI_SEGMENT_BUS_NUMBER), so the
+                // bridge's own FDO stays on its segment and two segments' bus 1 are
+                // different resources to the PnP manager.
+                | (*(*DeviceExtension).PciDevice).BusNumber & !0xFF;
             (*full0).BusNumber = secondary;
             (*Descriptor).u.BusNumber.Start = secondary;
             (*Descriptor).u.BusNumber.Length = 1;
@@ -1653,12 +1661,6 @@ unsafe fn PdoStartDevice(
         i += 1;
     }
 
-    crate::msix::program(
-        DeviceExtension,
-        RawResList,
-        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
-    );
-
     let mut Command: USHORT = 0;
 
     DBGPRINT!("pci!PdoStartDevice: Enabling command flags ...");
@@ -1697,6 +1699,16 @@ unsafe fn PdoStartDevice(
     } else {
         DBGPRINT!("None\n");
     }
+
+    // After the decodes, not before: an MSI-X table lives in a memory BAR, and writes
+    // to a BAR the device is not decoding go nowhere. A device the firmware left
+    // decoding (QEMU's NVMe) hid that; QEMU's xHCI, which UEFI turns off at exit, sat
+    // with every table entry masked and the boot hung on its first USB transfer.
+    crate::msix::program(
+        DeviceExtension,
+        RawResList,
+        (*IrpSp).Parameters.StartDevice.AllocatedResourcesTranslated,
+    );
 
     STATUS_SUCCESS
 }

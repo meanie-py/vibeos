@@ -140,7 +140,12 @@ from .kernel_com import generate_owner
 from .kernel_preamble import derive_kernel_preamble
 from .local_macros import expand as expand_macros
 from .local_macros import module_macros
-from .macro_authority import function_like_macros, register_via, string_literal_macros
+from .macro_authority import (
+    compile_argv,
+    function_like_macros,
+    register_via,
+    string_literal_macros,
+)
 from .objdiff import run_objdiff
 from .outcome_ledger import OutcomeLedger
 from .placement_audit import placement_findings
@@ -2257,6 +2262,31 @@ def _module_pinned_macros(c_file: Path, args) -> dict[str, int]:
                 agreed = here
             else:
                 agreed = {k: v for k, v in agreed.items() if here.get(k) == v}
+    return {**_compile_db_pinned_macros(wanted), **(agreed or {})}
+
+
+def _cheap_enough_to_fan_out(model: str) -> bool:
+    """Is `model`'s output price at or below DeepSeek v4-pro's? The `--concurrency` gate."""
+    price = MODEL_PRICING.get(model)
+    return price is not None and price[1] <= MODEL_PRICING[DEEPSEEK_MODEL_V4_PRO][1]
+
+
+def _compile_db_pinned_macros(c_file: Path) -> dict[str, int]:
+    """`-DNAME=<int>` on `c_file`'s REAL compile command, agreed across all three arches.
+
+    The CMakeLists only carries the module's own `-D`s; the build config adds the rest.
+    timedate.c opens `DisplayWin32ErrorDbg` under `#if DBG` and `DisplayWin32Error` under its
+    `#else`, and with DBG unknown both read as live, so the coverage check demanded a plan
+    entry for the one the build never compiles. A name absent on any arch decides nothing.
+    """
+    agreed: dict[str, int] | None = None
+    for arch in ("i386", "amd64", "arm64"):
+        argv = compile_argv(REACTOS_ROOT, arch, c_file)
+        if argv is None:
+            return {}
+        defs = [a if a.count("=") else f"{a}=1" for a in argv if a.startswith("-D") and len(a) > 2]
+        here = pinned_int_macros(defs)
+        agreed = here if agreed is None else {k: v for k, v in agreed.items() if here.get(k) == v}
     return agreed or {}
 
 
@@ -2350,17 +2380,6 @@ def _class_declaration_scope(cls) -> str:
         if depth == 0:
             break
     return text[m.start() : i]
-
-
-def _fanout_cheap(model: str) -> bool:
-    """Whether *model* may fan out: DeepSeek, or priced no higher than the DeepSeek default."""
-    if model.startswith("deepseek-"):
-        return True
-    if model not in MODEL_PRICING:
-        return False  # unpriced: assume the worst, as model_pricing does
-    pin, pout = MODEL_PRICING[model]
-    din, dout = MODEL_PRICING[MODEL_ALIASES["deepseek"]]
-    return pin <= din and pout <= dout
 
 
 def cmd_translate(args):
@@ -2631,17 +2650,16 @@ def cmd_translate(args):
         else ""
     )
 
-    # Concurrency: fan out per-function calls. ONLY for mechanical mode on a model cheap
-    # enough that a bounded fan-out won't black-hole the budget -- mechanical functions
-    # are independent (each forward-declares its callees). The test is PRICE, not vendor:
-    # it was written as "DeepSeek only" when DeepSeek was the cheap lane, and Haiku 5.5
-    # ($0.10/$0.50 per 1M) then sat sequential at ~13x below the DeepSeek default it was
-    # protecting against (appwiz: 31 functions in 532s). Idiomatic stays sequential.
+    # Concurrency: fan out per-function calls. ONLY for mechanical mode on a model no dearer
+    # than DeepSeek — mechanical functions are independent (each forward-declares its
+    # callees), and at that price a bounded fan-out won't black-hole the budget the way
+    # Sonnet/Opus could. The rule is the PRICE, not the vendor: Haiku 5.5 is cheaper than
+    # DeepSeek and ran ~250 control-panel functions one at a time before this.
     conc = max(1, getattr(args, "concurrency", 1) or 1)
-    if conc > 1 and not (mode == "mechanical" and _fanout_cheap(model)):
+    if conc > 1 and not (mode == "mechanical" and _cheap_enough_to_fan_out(model)):
         print(
-            f"  (--concurrency {conc} ignored: only for --mode mechanical on a model priced "
-            f"at or below {MODEL_ALIASES['deepseek']})",
+            f"  (--concurrency {conc} ignored: only for --mode mechanical on a model "
+            "priced at or below DeepSeek)",
             file=sys.stderr,
         )
         conc = 1
@@ -3783,12 +3801,10 @@ def cmd_translate(args):
                     # and `ResponseCache.get` refuses any entry that still holds a token —
                     # so re-running the closed-envelope check here judged token-free Rust
                     # and could only false-reject, sending banked work back to be re-paid.
-                    #
-                    # A stored REJECT that passes today's audit is adopted for $0, as on the
-                    # sequential path. This path never tried, so once Haiku 5.5 fanned out
-                    # (comctl32), a reject that a fixed audit would now pass -- four edit and
-                    # listbox bodies refused by a since-fixed invented-flag check -- was
-                    # refused re-purchase instead, and the TU could never assemble.
+                    # A stored reject that passes today's audit is adopted for $0, as on the
+                    # sequential path: hotplug's EnumHotpluggedDevices, refused by a checker
+                    # bug since fixed, otherwise hit the re-purchase guard below and was
+                    # neither re-bought nor recovered.
                     if hit is None and dep.name not in reaudit_failed:
                         hit = _adopt_rejected(
                             dep,

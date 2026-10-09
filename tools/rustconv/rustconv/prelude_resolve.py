@@ -86,6 +86,7 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
         text=True,
     )
     names: dict[str, set[str]] = {}
+    suspects: set[str] = set()
     for line in proc.stdout.splitlines():
         try:
             msg = json.loads(line)
@@ -103,7 +104,61 @@ def unresolved(crate: str, triple: str, workspace: Path, target_dir: Path) -> di
             names.setdefault(m.group(1), set()).add("type")
         for name in pattern_bindings(msg.get("message") or {}):
             names.setdefault(name, set()).add("value")
+        suspects |= _shared_value_patterns(msg.get("message") or {})
+    # Newer rustc words a catch-all arm among several as "matches SOME of the same values",
+    # naming real constants and the binding alike. A real constant is DEFINED somewhere the
+    # crate can see; the catch-all is not (input's TVN_ITEMEXPANDING, after TVN_SELCHANGED).
+    if suspects:
+        defined = _visible_value_names(workspace, crate)
+        for name in suspects - defined:
+            names.setdefault(name, set()).add("value")
     return names
+
+
+def _shared_value_patterns(diag: dict) -> set[str]:
+    """UPPER_CASE pattern names an `unreachable pattern` note labels "matches some of the
+    same values"."""
+    if not str(diag.get("message") or "").startswith("unreachable pattern"):
+        return set()
+    out: set[str] = set()
+    for span in [
+        *(diag.get("spans") or []),
+        *(sp for c in diag.get("children") or [] for sp in c.get("spans") or []),
+    ]:
+        if "matches some of the same values" not in str(span.get("label") or ""):
+            continue
+        got = (span.get("text") or [{}])[0]
+        line = str(got.get("text") or "")
+        word = line[
+            int(got.get("highlight_start") or 1) - 1 : int(got.get("highlight_end") or 1) - 1
+        ]
+        if re.fullmatch(r"[A-Z][A-Z0-9_]*", word.strip()):
+            out.add(word.strip())
+    return out
+
+
+def _visible_value_names(workspace: Path, crate: str) -> set[str]:
+    """`const`/`static` names in the crate, ntdll-sys's bindgen, and the shared crates."""
+    try:
+        from tools.source_walk import source_files
+    except ModuleNotFoundError:
+        import sys
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+        from tools.source_walk import source_files
+
+    roots = [workspace / crate / "src", workspace / "ntdll-sys" / "src"]
+    roots += [workspace / d / "src" for d in ("win32macros-rust", "strsafe-rust")]
+    out: set[str] = set()
+    for root in roots:
+        for p in source_files(root, "*.rs") if root.is_dir() else []:
+            out |= set(
+                re.findall(
+                    r"\b(?:const|static(?:\s+mut)?)\s+([A-Z][A-Z0-9_]*)\s*:",
+                    p.read_text(errors="replace"),
+                )
+            )
+    return out
 
 
 _UNBOUND = re.compile(r"^variable `([A-Za-z_]\w*)` is not bound in all patterns")

@@ -1009,7 +1009,9 @@ pub unsafe extern "system" fn MiArchCreateProcessAddressSpace(
 
     MiReleaseSystemPtes(SystemPte, 1, SystemPteSpace);
 
-    PagePuts(b"[MM] MiArchCreateProcessAddressSpace done\r\n");
+    if crate::shim_exports::proc_trace_enabled() {
+        PagePuts(b"[MM] MiArchCreateProcessAddressSpace done\r\n");
+    }
 
     1u8
 }

@@ -1733,6 +1733,15 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
                 v = inner.pop()
                 inner.extend(v.children)
                 if v.type == "identifier":
+                    # `case MAKEWPARAM(IDOK, BN_CLICKED):` -- the callee is a function-like
+                    # macro, not a constant an arm could bind; its ARGUMENTS are the arms.
+                    parent = v.parent
+                    if (
+                        parent is not None
+                        and parent.type == "call_expression"
+                        and parent.child_by_field_name("function") == v
+                    ):
+                        continue
                     text = src[v.start_byte : v.end_byte].decode("utf-8", "replace")
                     found.append(SwitchConst(text, key, v.start_point[0] + 1))
         found.extend(_macro_switch_constants(src, key, parser))
@@ -3311,6 +3320,20 @@ def _hdr_regex_dir(dirname: str) -> str:
 _OPAQUE_RE = re.compile(r"pub struct (\w+) \{\s*pub _address: u8,\s*\}")
 
 
+TCHAR_FAMILY = (
+    "TCHAR",
+    "PTCHAR",
+    "TBYTE",
+    "PTBYTE",
+    "LPTSTR",
+    "LPCTSTR",
+    "PTSTR",
+    "PCTSTR",
+    "LPTCH",
+    "PTCH",
+)
+
+
 def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str]:
     """Struct tags the kernel -sys crate leaves opaque that this module needs WHOLE.
 
@@ -3419,6 +3442,16 @@ def emit_profile(dp: DerivedProfile) -> str:
             out.append("        ;;")
         out.append("    esac")
     unblock = opaque_types_to_unblock(dp) if not m.is_usermode else []
+    if m.is_usermode and m.unicode:
+        # ntdll-sys is built WITHOUT UNICODE, so its glob says `TCHAR = c_char`, and a module
+        # header's `TCHAR szPath[MAX_PATH]` field inherits it: half the bytes the C has
+        # (desk's _ICON_PATH, then the control panels' buffers). Unblocked, the island emits
+        # the family from its own -DUNICODE compile; the prelude covers the locals.
+        out.append(
+            "    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's."
+        )
+        out.append('    UNBLOCK="' + " ".join([*unblock, *TCHAR_FAMILY]) + '"')
+        unblock = []
     if unblock:
         out.append(
             "    # OPAQUE in ntkrnl-sys ({ _address: u8 }) but defined by an allowlisted header "

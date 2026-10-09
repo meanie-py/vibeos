@@ -113,7 +113,6 @@ unsafe impl Sync for addon_info_t {}
 
 // Value of ID_DWL_GECKO_DIALOG is defined in the resource header, which was not provided.
 // Placeholder value 0; must be replaced with the real resource id.
-pub const ID_DWL_GECKO_DIALOG: u32 = 0;
 
 pub type PSHA_CTX = *mut SHA_CTX;
 

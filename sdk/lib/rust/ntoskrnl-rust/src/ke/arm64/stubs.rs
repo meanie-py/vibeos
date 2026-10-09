@@ -1169,8 +1169,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     (*TrapFrame).Pc = KeUserApcDispatcher as u64;
     (*TrapFrame).Spsr &= !0xF;
 
+    // Every user APC's frame, under the PROCTRACE boot option only (shim_exports.rs).
     #[cfg(target_arch = "aarch64")]
-    {
+    if crate::shim_exports::proc_trace_enabled() {
         ARM64_UART_TRACE_HEX(b"[APC] PC=\0".as_ptr() as PCSTR, (*TrapFrame).Pc as ULONG_PTR);
         ARM64_UART_TRACE_HEX(b"[APC] SP=\0".as_ptr() as PCSTR, (*TrapFrame).Sp as ULONG_PTR);
         ARM64_UART_TRACE_HEX(

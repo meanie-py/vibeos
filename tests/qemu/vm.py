@@ -364,6 +364,22 @@ def smmu_requested() -> bool:
     return os.environ.get("VIBEOS_QEMU_SMMU", "").strip() in ("1", "true", "yes")
 
 
+def xhci_interrupts() -> str:
+    """VIBEOS_QEMU_XHCI_MSI: how the xHCI rig's controller interrupts. `msix` (QEMU's
+    default), `msi` (MSI-X off, so a plain MSI capability with a multiple-message
+    block) or `line` (both off: INTx, whatever the driver asked for)."""
+    mode = os.environ.get("VIBEOS_QEMU_XHCI_MSI", "").strip() or "msix"
+    if mode not in ("msix", "msi", "line"):
+        raise ValueError(f"VIBEOS_QEMU_XHCI_MSI={mode!r}: expected msix, msi or line")
+    return mode
+
+
+def nvme_bridged() -> bool:
+    """VIBEOS_QEMU_NVME_BRIDGE=1 (arm64): the NVMe controller sits behind a PCIe root
+    port, on bus 1, the way a server's devices do, instead of on the root bus."""
+    return os.environ.get("VIBEOS_QEMU_NVME_BRIDGE", "").strip() in ("1", "true", "yes")
+
+
 def testkernel_boot_img(src: Path, work_dir: Path) -> Path:
     """The /TESTKERNEL variant of arm64 boot.img, built ONCE and shared read-only.
 
@@ -1943,9 +1959,12 @@ class QemuVM:
             if self._usb_disk_enabled()
             else []
         )
+        msi = {"msix": "", "msi": ",msix=off,msi=on", "line": ",msix=off,msi=off"}[
+            xhci_interrupts()
+        ]
         return [
             "-device",
-            "qemu-xhci,id=xhci,addr=0x8",
+            f"qemu-xhci,id=xhci,addr=0x8{msi}",
             "-device",
             "usb-kbd,bus=xhci.0,id=ukbd",
             "-device",
@@ -2041,12 +2060,17 @@ class QemuVM:
         disk = self.scratch_path.parent / "nvmedisk.qcow2"
         if not disk.exists():
             make_usb_stick_image(disk)
-        return [
-            "-drive",
-            f"file={disk},format=qcow2,if=none,id=nvme0",
-            "-device",
-            "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9",
-        ]
+        drive = ["-drive", f"file={disk},format=qcow2,if=none,id=nvme0"]
+        if nvme_bridged():
+            # The root port takes slot 9 instead; the controller is its bus's device 0.
+            return [
+                *drive,
+                "-device",
+                "pcie-root-port,id=nvmeport,chassis=1,slot=1,addr=0x9",
+                "-device",
+                "nvme,serial=VIBEOSNVME0,drive=nvme0,bus=nvmeport",
+            ]
+        return [*drive, "-device", "nvme,serial=VIBEOSNVME0,drive=nvme0,addr=0x9"]
 
     def _virtio_mmio_disk_args(self) -> list[str]:
         """VIBEOS_QEMU_VIRTIO_MMIO_DISK=1 (arm64) attaches a second virtio-blk-device

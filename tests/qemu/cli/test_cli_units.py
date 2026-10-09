@@ -9728,8 +9728,88 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     bad = smoke_mod._nvme_check(working + test.format(8, 0))
     assert bad and bad["classification"] == "NVME_BOUNCED"
     assert smoke_mod._nvme_check(working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_LOSE_COMPLETION=3")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_RESET"
+    reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
+    assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
+    port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
+    assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
+
+
+def test_nvme_fail_start_must_hand_its_messages_back(monkeypatch):
+    """No boot removes a device, so the release path runs only under the tripwire;
+    the verdict must see every step, not just the failed START."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_FAIL_START=1")
+    failed = "[NVME] controller 0: tripwire: failing START after connecting\n"
+    bad = smoke_mod._nvme_check(failed)
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert any("disconnected" in s for s in bad["salient"])
+    steps = failed + (
+        "[NVME] controller 0: interrupts disconnected\n"
+        "(pci-rust/src/msix.rs:1) MSI-X disabled for 1b36:0010\n"
+    )
+    bad = smoke_mod._nvme_check(steps)
+    assert bad and any("back to the HAL" in s for s in bad["salient"])
+    bad = smoke_mod._nvme_check(steps + "[PNP] message interrupts: 1 back to the HAL, 1 refused\n")
+    assert bad and bad["classification"] == "NVME_NOT_RELEASED"
+    assert (
+        smoke_mod._nvme_check(steps + "[PNP] message interrupts: 2 back to the HAL, 0 refused\n")
+        is None
+    )
+    monkeypatch.delenv("VIBEOS_TRIPWIRE")
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
+
+
+def test_xhci_boot_must_interrupt_the_way_asked(monkeypatch):
+    """A controller left on its line still enumerates, and the desktop needs no USB,
+    so only the verdict can tell a broken message path from a working one."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_TRIPWIRE", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msix")
+    running = "[XHCI] controller running: xHCI 1.00, 16 slots\n"
+    bad = smoke_mod._xhci_check("[EXPLORER] _tWinMain entered\n")
+    assert bad and bad["classification"] == "XHCI_NOT_ENGAGED"
+    bad = smoke_mod._xhci_check(running)
+    assert bad and bad["classification"] == "XHCI_NO_TRANSFERS"
+    kbd = "[DA] START USB\\Vid_0627&Pid_0001\\3&b8aad27b&1 -> 0x0\n"
+    bad = smoke_mod._xhci_check(running + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msix = (
+        "(pci-rust/src/msix.rs:1) MSI-X enabled for 1b36:000d: 1 of 16 table entries\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msix + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "msi")
+    bad = smoke_mod._xhci_check(running + msix + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_MSI"
+    msi = (
+        "(pci-rust/src/msix.rs:1) MSI enabled for 1b36:000d: 4 message(s), data 0x50\n"
+        "[USBPORT] interrupt: message vector 80 at IRQL 8\n"
+    )
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET XHCI_MSI_MESSAGES=8")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_MSI_BLOCK_SHORT"
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "XHCI_MSI_MESSAGES=4")
+    assert smoke_mod._xhci_check(running + msi + kbd) is None
+    monkeypatch.setenv("VIBEOS_QEMU_XHCI_MSI", "line")
+    bad = smoke_mod._xhci_check(running + msi + kbd)
+    assert bad and bad["classification"] == "XHCI_NOT_LINE"
+    assert smoke_mod._xhci_check(running + kbd) is None
+    monkeypatch.delenv("VIBEOS_QEMU_XHCI_MSI")
+    assert smoke_mod._xhci_check("") is None
 
 
 def test_arm64_boot_must_serve_its_virtio_mmio_scratch_disk():

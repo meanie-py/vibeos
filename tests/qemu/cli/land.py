@@ -402,6 +402,102 @@ def _source_lint_preflight(repo: Path, run: Run, args) -> None:
         )
 
 
+def _arch_lint_preflight(repo: Path, run: Run, args) -> None:
+    """Run the conductor's per-arch BINARY lints here, for every arch this lane has built.
+
+    The two source partitions above cannot see `check --scope arch`: scan_ud2,
+    scan_self_recursive, scan_flex_array_panic and scan_export_thunks read the OBJECT
+    CODE, so they only exist once a build does. That left one deterministic LINT_FAIL
+    class that a lane could not catch before submitting: on 2026-10-08 a lane that
+    stopped building a crate left its `tools/flex_array_allowlist.txt` entry behind,
+    the scanner reported the entry STALE on all three arches, and the batch went red
+    (queue-batch-01791509613339746824) — after three cold builds and the smokes. The
+    lane had built every arch to smoke it; the scanner just never ran on those builds.
+
+    Same contract as the other preflights: NEVER MORE STRICT THAN THE GATE. It runs
+    `_lint_once(repo, <arch>, …)`, the gate's own call, and only for an arch whose
+    `build-<arch>` is FRESH for this tree (provenance says so, the same oracle `smoke`
+    uses to refuse stale media) — a stale build would grade a tree that is not the one
+    being submitted. No build, a stale one, or a scanner crash all WARN and let the
+    conductor be the oracle; only a scanner that ran on a fresh build and reported a
+    finding blocks.
+    """
+    if getattr(args, "skip_lint", False):
+        return
+    if _docs_only_vs_master(repo):
+        run.add(Stage("lint:arch", status="skip", detail="docs-only delta"))
+        return
+    import concurrent.futures as cf
+
+    from . import archcfg, provenance
+    from .gate import _lint_once
+
+    # The three arches are independent read-only passes (the gate runs them the same way,
+    # alongside its smokes), and scan_flex_array_panic alone is ~2 min per arch: serial,
+    # this preflight was 16 of a direct landing's 16 minutes. Only the subprocesses
+    # overlap; stages are still added in ARCHES order so the artifact reads the same.
+    def one(arch: str) -> tuple[str, provenance.Staleness | dict | None, Exception | None]:
+        st = provenance.check_staleness(repo, arch)
+        if not st.fresh:
+            return (arch, st, None)
+        try:
+            return (arch, _lint_once(repo, arch, run.dir / f"preflight-lint-{arch}"), None)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return (arch, None, exc)
+
+    with cf.ThreadPoolExecutor(max_workers=len(archcfg.ARCHES)) as ex:
+        outcomes = dict(zip(archcfg.ARCHES, ex.map(one, archcfg.ARCHES), strict=True))
+
+    for arch in archcfg.ARCHES:
+        _arch, got, exc = outcomes[arch]
+        if isinstance(got, provenance.Staleness):
+            run.add(
+                Stage(
+                    f"lint:{arch}",
+                    status="warn",
+                    detail="skipped: build-"
+                    + arch
+                    + " not fresh for HEAD ("
+                    + "; ".join(got.reasons[:2])
+                    + ") — the conductor's gate runs it",
+                )
+            )
+            continue
+        if exc is not None or got is None:
+            run.add(Stage(f"lint:{arch}", status="warn", detail=f"could not run: {exc}"))
+            continue
+        result = got
+        if result["ok"]:
+            run.add(Stage(f"lint:{arch}", status="ok", detail=f"clean ({result['seconds']:.0f}s)"))
+            continue
+        if result["classification"] == "SCANNER_ERROR":
+            real = _real_findings(run.dir / f"preflight-lint-{arch}")
+            if not real:
+                run.add(
+                    Stage(
+                        f"lint:{arch}",
+                        status="warn",
+                        detail=f"could not complete here ({result['salient'] or 'scanner error'})",
+                    )
+                )
+                continue
+            salient = "\n    ".join(real[:8])
+        else:
+            real = _real_findings(run.dir / f"preflight-lint-{arch}")
+            salient = (
+                "\n    ".join(real[:8]) if real else (result["salient"] or f"exit {result['exit']}")
+            )
+        raise LandAbort(
+            f"check --strict --scope arch --arch {arch} FAILED on this lane's own build — "
+            "fix it before queueing, or the conductor bounces the whole batch (3 cold "
+            "builds + the smokes) for a binary lint:\n    "
+            + salient
+            + f"\n  artifact: {run.dir / f'preflight-lint-{arch}'}"
+            + f"\n  reproduce: ./vibeos-cli check --strict --scope arch --arch {arch}"
+            + "\n  override (report every use): ./vibeos-cli land --skip-lint"
+        )
+
+
 def _real_findings(root: Path) -> list[str]:
     """Scanners in a partition run under `root` that FAILED WITH FINDINGS, as opposed to
     crashing. A crash reports `SCANNER_ERROR: ...` in its stage detail; anything else
@@ -658,6 +754,7 @@ def _land_queued(args, repo: Path) -> int:
             _warm_preflight(repo, run, args)
             _lint_preflight(repo, run, args)
             _source_lint_preflight(repo, run, args)
+            _arch_lint_preflight(repo, run, args)
             _difftest_preflight(repo, run, args)
             sub = queue.submit(repo, tip=head, lane=lane)
             # VERIFY the submission persisted, by RE-READING the queue from disk rather
@@ -930,6 +1027,7 @@ def _land_direct(args, repo: Path) -> int:
         _warm_preflight(repo, run, args)
         _lint_preflight(repo, run, args)
         _source_lint_preflight(repo, run, args)
+        _arch_lint_preflight(repo, run, args)
         _difftest_preflight(repo, run, args)
 
         _check_hold_for_direct(repo)
