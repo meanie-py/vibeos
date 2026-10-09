@@ -108,7 +108,8 @@ def render_status(state: dict) -> str:
         f"host jobs: {active + granted}/{state['cpu_slots']} CPU slots "
         f"({active} running, {granted} granted), "
         f"{len(rows) - active - granted} waiting; link cap {state['link_slots']}; "
-        "interactive priority with 120s aging"
+        "landing (integration) priority, half the slots reserved while a gate is present, "
+        "every class ages in after 120s"
     ]
     if state["legacy_adjusted_cpu_slots"] != state["cpu_slots"]:
         lines.append(
