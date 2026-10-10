@@ -801,7 +801,13 @@ pub unsafe extern "system" fn WndProc(hWnd: HWND, message: UINT, wParam: WPARAM,
                         (str_fmt).as_ptr(),
                         (((*AUD_BUF).audinfo().sample_rate() as f32 / (1000 as f32)) as f32) as core::ffi::c_double,
                         (*AUD_BUF).audinfo().bits() as core::ffi::c_uint,
-                        if (*AUD_BUF).audinfo().channels() == 2 { str_mono } else { str_stereo });
+                        // A C array argument DECAYS to its address: passed by value into the
+                        // variadic _snwprintf, i386 copied the 20 bytes and `%s` read "st" as a
+                        // pointer (64-bit passes the aggregate by hidden reference, so it worked
+                        // there by accident). Diverges from the C deliberately: sndrec32.cpp:850
+                        // shows "mono" for 2 channels here while :864 shows "stereo" for the same
+                        // condition; 2 channels is stereo.
+                        if (*AUD_BUF).audinfo().channels() == 2 { str_stereo.as_ptr() } else { str_mono.as_ptr() });
 
                 ExtTextOut(hdc,
                            STRFMT_X as c_int,
@@ -815,7 +821,7 @@ pub unsafe extern "system" fn WndProc(hWnd: HWND, message: UINT, wParam: WPARAM,
                 gprintf(str_tmp.as_mut_ptr(),
                         (MAX_LOADSTRING as usize),
                         (str_chan).as_ptr(),
-                        if (*AUD_BUF).audinfo().channels() == 2 { str_stereo } else { str_mono });
+                        if (*AUD_BUF).audinfo().channels() == 2 { str_stereo.as_ptr() } else { str_mono.as_ptr() });
 
                 ExtTextOut(hdc,
                            STRCHAN_X as c_int,

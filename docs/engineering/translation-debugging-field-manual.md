@@ -159,6 +159,17 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### A 64-bit bindgen island declares every WINAPI function `extern "C"`
+**Symptom:** `port resolve` refuses a plain Win32 import as "ABI disagreement (C, system)"
+(CloseHandle, GetLastError, HeapFree for a new module), or copies one as `extern "C"` and the
+i386 link fails on the undecorated name. **Cause:** x86_64 and arm64 have one calling
+convention, so bindgen writes WINAPI there as `"C"`; only an **i386** island records stdcall.
+A hand-written `extern "C"` copy of a stdcall import (an old prelude) votes the same way.
+**Fix (in `prelude_resolve.consensus`):** an i386 island declaration outvotes everything, a
+64-bit island never votes on the ABI, and shell32's `island_<arch>.rs` counts as bindgen.
+Get/SetWindow/ClassLongPtr are macros on i386, so clang reports no convention for them:
+the externs renderer files them under `"system"` by name.
+
 ### A `#[cfg(target_arch)]` pair is not automatically an ABI fork
 
 **Symptom.** Folding cfg-gated twins into one `extern "system"` item (`collapse_abi_twins.py`)
@@ -1045,6 +1056,12 @@ hand flips the error to the other two.
   UserName)` calls had it too. `scan_variadic_array_arg` (`vibeos-cli check`, empty baseline)
   resolves each `(*v).f` argument through v's declared type, since `name` is an array in
   `interface_info` and a pointer in the two dhcpcsvc structs beside it.
+  Fifth (2026-10-10), the shape the gate could not see: a bare array VARIABLE through an
+  ALIAS. sndrec32 passed `static mut str_mono: [u16; 10]` to `gprintf` (`pub use
+  .._snwprintf as gprintf`) inside an `if c { str_mono } else { str_stereo }`, and died at
+  0x00740073 ("st" of "stereo") painting its window on i386 only. The scanner now also flags
+  a bare `static`/`let` array argument (a parameter or local of the name shadows it), follows
+  `pub use .. as` aliases of a variadic, and checks both arms of an inline if/else.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -1072,6 +1089,10 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   4-byte FLOAT on the stack, bit-identical to a `u32`; amd64/arm64 pass it in a vector register
   and need the native `f32`. A plain `f32` won't compile on i386; a plain `u32` corrupts the
   others (`SetMiterLimit`).
+- **User-mode crate route: re-enable SSE for that crate's build only.**
+  `rust_staticlib_variant(... ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")` on i386, the
+  oleaut32/msvcrt pattern; sndrec32's `fseconds_total() -> f32` methods needed it. `port flip`
+  now emits it for a crate whose code uses `f32`/`f64`. Never for kernel code.
 - **A crate-PRIVATE helper is not exempt — give it `extern "C"`.** The `"Rust"` ABI passes
   f64 in xmm on x86, so a plain `fn helper(x: f64, xx: f64) -> f64` in a libm crate is rejected
   even though nothing outside the crate calls it; `extern "C"` uses x87/stack and compiles.
@@ -1135,6 +1156,13 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
+  (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
+  spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
+- **A unit's global that the module's own header declares `extern`** (`extern CARDWINDOW
+  *SolWnd;`) reaches every other unit through the ISLAND's extern declaration, so the defining
+  unit must export it `#[no_mangle]` under its C name, or the other units' references are
+  undefined. `port integrate` adds it (sol had 28).
 - **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
   two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
   flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
@@ -7712,6 +7740,14 @@ Prefer read-only tools for inspection — `llvm-readobj --sections`, `llvm-objdu
 .text`. If it has already happened, restore from a staged copy whose hash you recorded (the
 ramdisk/ISO is a faithful archive of what was built), or force a relink by deleting the output
 — an mtime-newer-than-inputs file will not relink on its own.
+
+### A shared crate named like a module is read as that module's Rust port
+**Symptom:** `build` fails `BUILD_INCOMPLETE`: `dll/win32/atl/atl.dll: stale — atl-rust has
+.rs newer than the built binary (cohab flip not rebuilt)`, for a DLL nobody flipped.
+**Cause:** the staleness net pairs workspace member `<stem>-rust` with the staged `<stem>.dll`
+by convention (provenance.py `_crate_for_stem`). A SHARED crate (ATL's C++ classes) named
+`atl-rust` collided with atl.dll. **Fix:** name a shared crate so no module shares its stem
+(`atlclasses-rust`), keeping the Rust path with `[lib] name = "atl_rust"`.
 
 ### A correct staleness oracle and a build graph that cannot act on it
 

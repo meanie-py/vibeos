@@ -4011,13 +4011,14 @@ def scaffold_crate(
         )
         # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
         deps += (
-            'atl-rust = { path = "../atl-rust", features = ["com"] }\n'
+            'atlclasses-rust = { path = "../atlclasses-rust", features = ["com"] }\n'
             if com
-            else 'atl-rust = { path = "../atl-rust" }\n'
+            else 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
         )
         atl_block = (
             "\n// ================= ATL =========================================================="
-            "==============\n// ATL's CStringW/CComPtr/containers, ported once in atl-rust.\n"
+            "==============\n"
+            "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
             "CSimpleMap, CStringW, POSITION};\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
