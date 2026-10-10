@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // uefimem.c: DBG_DEFAULT_CHANNEL(WARNING)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 // UINT32 comes from crate::frldr::* (keystone EFI surface).
@@ -12,7 +14,6 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory as LoaderSpecialMem
 
 extern "C" {
     fn _exituefi();
-    fn TRACE(fmt: *const i8, ...);
     fn FrLdrBugCheckWithMessage(code: u32, file: *const i8, line: u32, fmt: *const i8, ...);
     // cross-module freeldr fn (FLDRAPI empty → cdecl).
     fn AddMemoryDescriptor(
@@ -178,7 +179,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(LoadedImage) as *mut *mut core::ffi::c_void,
     );
     if status_handle != EFI_SUCCESS {
-        TRACE(b"Failed to find LoadedImageHandle with status: %d\n\0".as_ptr() as PCHAR, (status_handle) as usize);
+        TRACE!("Failed to find LoadedImageHandle with status: %d\n", (status_handle) as usize);
         UiMessageBoxCritical(b"Unable to initialize memory manager.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -187,7 +188,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
     PublicBootHandle = (*LoadedImage).DeviceHandle;
     EfiMemoryMap = core::ptr::null_mut();
 
-    TRACE(b"UefiMemGetMemoryMap: Gather memory map\n\0".as_ptr() as PCHAR);
+    TRACE!("UefiMemGetMemoryMap: Gather memory map\n");
     PUEFI_LoadMemoryMap(
         core::ptr::addr_of_mut!(MapKey),
         core::ptr::addr_of_mut!(MapSize),
@@ -195,10 +196,10 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(DescriptorVersion),
     );
 
-    TRACE(b"Value of MapKey: %d\n\0".as_ptr() as PCHAR, (MapKey) as usize);
-    TRACE(b"Value of MapSize: %d\n\0".as_ptr() as PCHAR, (MapSize) as usize);
-    TRACE(b"Value of DescriptorSize: %d\n\0".as_ptr() as PCHAR, (DescriptorSize) as usize);
-    TRACE(b"Value of DescriptorVersion: %d\n\0".as_ptr() as PCHAR, (DescriptorVersion) as usize);
+    TRACE!("Value of MapKey: %d\n", (MapKey) as usize);
+    TRACE!("Value of MapSize: %d\n", (MapSize) as usize);
+    TRACE!("Value of DescriptorSize: %d\n", (DescriptorSize) as usize);
+    TRACE!("Value of DescriptorVersion: %d\n", (DescriptorVersion) as usize);
 
     EntryCount = (MapSize / DescriptorSize) as UINT32;
 
@@ -209,7 +210,7 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
         core::ptr::addr_of_mut!(FreeldrMem) as *mut *mut core::ffi::c_void,
     );
     if status_alloc != EFI_SUCCESS {
-        TRACE(b"Failed to allocate pool with status %d\n\0".as_ptr() as PCHAR, (status_alloc) as usize);
+        TRACE!("Failed to allocate pool with status %d\n", (status_alloc) as usize);
         UiMessageBoxCritical(b"Unable to initialize memory manager.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -273,7 +274,7 @@ pub unsafe extern "C" fn UefiExitBootServices()
     let mut DescriptorSize: UINTN = 0;
     let mut DescriptorVersion: UINT32 = 0;
 
-    TRACE(b"Attempting to exit bootsevices\n\0".as_ptr() as *const i8);
+    TRACE!("Attempting to exit bootsevices\n");
     PUEFI_LoadMemoryMap(&mut MapKey,
                         &mut MapSize,
                         &mut DescriptorSize,
@@ -285,14 +286,14 @@ pub unsafe extern "C" fn UefiExitBootServices()
     }
 
     if Status != EFI_SUCCESS {
-        TRACE(b"Failed to exit boot services with status: %d\n\0".as_ptr() as *const i8, (Status) as usize);
+        TRACE!("Failed to exit boot services with status: %d\n", (Status) as usize);
         FrLdrBugCheckWithMessage(EXIT_BOOTSERVICES_FAILURE,
                                  b"uefimem.c\0".as_ptr() as *const i8,
                                  line!(),
                                  b"Failed to exit boot services with status: %d\0".as_ptr() as *const i8,
                                  Status);
     } else {
-        TRACE(b"Exited bootservices\n\0".as_ptr() as *const i8);
+        TRACE!("Exited bootservices\n");
     }
 }
 

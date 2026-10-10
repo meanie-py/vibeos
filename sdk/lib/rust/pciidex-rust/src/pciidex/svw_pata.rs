@@ -123,6 +123,8 @@ unsafe extern "C" fn SvwChooseDeviceSpeed(
             & (1 << Mode)
             == 0)
         {
+            ASSERT!((1 << Mode) & MWDMA_ALL);
+
             if SvwMwDmaTimings[Mode.wrapping_sub(MWDMA_MODE!(0)) as usize]
                 .CycleTime
                 >= (*Device).MinMwDmaCycleTime
@@ -333,6 +335,7 @@ pub unsafe extern "C" fn SvwPataGetControllerProperties(
     let mut No64KDma: BOOLEAN = FALSE;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_SERVERWORKS);
 
     match ((*Controller).Pci.DeviceID) as u32 {
         PCI_DEV_OSB4_IDE => {

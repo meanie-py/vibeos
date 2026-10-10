@@ -638,6 +638,8 @@ unsafe extern "C" fn IntelPiixChooseDeviceSpeed(
             continue;
         }
 
+        ASSERT!((Mode == SWDMA_MODE!(2)) || (Mode == MWDMA_MODE!(1)) || (Mode == MWDMA_MODE!(2)));
+
         if (*Device).DmaMode >= MWDMA_MODE!(0) {
             MinimumCycleTime = (*Device).MinMwDmaCycleTime;
         } else {
@@ -737,6 +739,10 @@ unsafe extern "C" fn IntelPiixSetTransferMode(mut Controller: PATA_CONTROLLER, m
                     IdeConfigReg = (IdeConfigReg as i32 | PIIX_CONFIG_CLOCK_UDMA66!(Channel, i)) as USHORT;
                 }
             } else if (*Device).DmaMode != PIO_MODE!(0) {
+                ASSERT!(((*Device).DmaMode == SWDMA_MODE!(2)) ||
+                        ((*Device).DmaMode == MWDMA_MODE!(1)) ||
+                        ((*Device).DmaMode == MWDMA_MODE!(2)));
+
                 TimingMode = IntelDmaModeToTimingMode[(*Device)
                     .DmaMode
                     .wrapping_sub(SWDMA_MODE!(2))
@@ -867,6 +873,8 @@ unsafe extern "C" fn IntelPiixLegacyComputeIdeTiming(
     let mut TimingMode: ULONG;
 
     if Mode > PIO_MODE!(4) {
+        ASSERT!((Mode == SWDMA_MODE!(2)) || (Mode == MWDMA_MODE!(1)) || (Mode == MWDMA_MODE!(2)));
+
         TimingMode = IntelDmaModeToTimingMode[(Mode - SWDMA_MODE!(2)) as usize];
     } else {
         TimingMode = Mode;
@@ -1123,6 +1131,7 @@ pub unsafe extern "C" fn IntelGetControllerProperties(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_INTEL);
 
     i = 0;
     while i < RTL_NUMBER_OF!(IntelControllerList) {

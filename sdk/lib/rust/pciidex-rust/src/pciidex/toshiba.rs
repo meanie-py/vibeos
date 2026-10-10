@@ -74,6 +74,7 @@ pub unsafe extern "C" fn ToshibaGetControllerProperties(
     let mut i: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_TOSHIBA);
 
     if (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_1 as u16) &&
         (*Controller).Pci.DeviceID != (PCI_DEV_PICCOLO_2 as u16) &&

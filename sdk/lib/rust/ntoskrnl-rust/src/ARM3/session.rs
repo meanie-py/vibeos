@@ -409,7 +409,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
     old_irql = MiAcquirePfnLock();
 
     if allocated_page_table != 0 {
-        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_INIT_MEMORY);
         color = MI_GET_NEXT_COLOR();
         page_frame_index = (MiRemoveZeroPageSafe(color)) as usize;
         if page_frame_index == 0 {
@@ -438,7 +438,7 @@ unsafe fn MiSessionInitializeWorkingSetList() -> NTSTATUS {
         KeZeroPages(pointer_pte as PVOID, (PAGE_SIZE as usize) as u32);
     }
 
-    MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_INIT_MEMORY);
     color = MI_GET_NEXT_COLOR();
     page_frame_index = (MiRemoveZeroPageSafe(color)) as usize;
     if page_frame_index == 0 {
@@ -557,7 +557,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
     temp_pte = ValidKernelPte;
     i = 0;
     while i < MiSessionDataPages as ULONG {
-        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_INIT_MEMORY);
         color = MI_GET_NEXT_COLOR();
         data_page[i as usize] = (MiRemoveZeroPageSafe(color)) as usize;
         if data_page[i as usize] == 0 {
@@ -575,7 +575,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
 
     session_global = MiPteToAddress(session_pte as PVOID as *mut MMPTE) as PMM_SESSION_SPACE;
 
-    MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_INIT_MEMORY);
     color = MI_GET_NEXT_COLOR();
     session_page_dir_index = (MiRemoveZeroPageSafe(color)) as usize;
     if session_page_dir_index == 0 {
@@ -606,7 +606,7 @@ let process = PsGetCurrentProcess() as *mut _EPROCESS;
 
     i = 0;
     while i < MiSessionTagPages as ULONG {
-        MI_SET_USAGE(MI_USAGE_INIT_MEMORY);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_INIT_MEMORY);
         color = MI_GET_NEXT_COLOR();
         tag_page[i as usize] = (MiRemoveZeroPageSafe(color)) as usize;
         if tag_page[i as usize] == 0 {

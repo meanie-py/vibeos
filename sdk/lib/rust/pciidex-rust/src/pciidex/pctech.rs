@@ -22,6 +22,7 @@ pub unsafe extern "C" fn PcTechGetControllerProperties(
     let mut i: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_PC_TECH);
 
     if (*Controller).Pci.DeviceID != (PCI_DEV_RZ1000 as u16) && (*Controller).Pci.DeviceID != (PCI_DEV_RZ1001 as u16) {
         return STATUS_NO_MATCH;

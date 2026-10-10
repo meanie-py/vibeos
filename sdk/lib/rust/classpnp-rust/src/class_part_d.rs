@@ -122,7 +122,6 @@ macro_rules! TracePrint { ($($t:tt)*) => {{}} }
 extern "C" {
     
     
-    fn _Analysis_assume_(expr: BOOLEAN);
     fn ClasspLogSystemEventWithDeviceNumber(DeviceObject: PDEVICE_OBJECT, ErrorCode: NTSTATUS) -> NTSTATUS;
 }
 
@@ -197,7 +196,7 @@ pub unsafe extern "C" fn RetryRequest(
 
     } else if (*Irp).MdlAddress != core::ptr::null_mut() {
 
-        NT_ASSERT!(SrbGetDataBuffer(srbHeader) == MmGetMdlVirtualAddress((*Irp).MdlAddress));
+        NT_ASSERT!(SrbGetDataBuffer(srbHeader as PVOID) == MmGetMdlVirtualAddress((*Irp).MdlAddress));
         // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
         transferByteCount = (*(*Irp).MdlAddress).ByteCount;
 
@@ -206,7 +205,7 @@ pub unsafe extern "C" fn RetryRequest(
         transferByteCount = 0;
     }
 
-    NT_ASSERT!(!TEST_FLAG(SrbGetSrbFlags(srbHeader), SRB_FLAGS_FREE_SENSE_BUFFER));
+    NT_ASSERT!(!TEST_FLAG(SrbGetSrbFlags(srbHeader as PVOID), SRB_FLAGS_FREE_SENSE_BUFFER));
 
     SrbSetDataTransferLength((srbHeader).cast(), transferByteCount);
 
@@ -253,7 +252,7 @@ pub unsafe extern "C" fn InterpretSenseInfoWithoutHistory(
         let mut tempSrb: SCSI_REQUEST_BLOCK = core::mem::zeroed();
         let mut srbPtr: PSCSI_REQUEST_BLOCK = Srb;
 
-        NT_ASSERT!(!(*(*fdoData).InterpretSenseInfo).Interpret.is_null());
+        NT_ASSERT!((*(*fdoData).InterpretSenseInfo).Interpret.is_some());
 
         if (*Srb).Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8 &&
             ((*(*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DriverExtension).SrbSupport &
@@ -300,7 +299,7 @@ pub unsafe extern "C" fn ClassFreeOrReuseSrb(
 ) {
     let commonExt = FdoExtension as PCOMMON_DEVICE_EXTENSION;
 
-    NT_ASSERT!(TEST_FLAG(SrbGetSrbFlags(Srb), SRB_FLAGS_FREE_SENSE_BUFFER) == 0);
+    NT_ASSERT!(TEST_FLAG(SrbGetSrbFlags(Srb as PVOID), SRB_FLAGS_FREE_SENSE_BUFFER) == 0);
 
     if (*commonExt).__bindgen_anon_1.IsSrbLookasideListInitialized() != 0 {
         ClasspFreeSrb(FdoExtension, (Srb).cast());
@@ -1067,7 +1066,7 @@ pub unsafe extern "system" fn ClassLogThresholdEvent(
 //     // not guaranteed to be an fdoExtension
 //     //
 //
-//     NT_ASSERT!(!TEST_FLAG(SrbGetSrbFlags(srbHeader), SRB_FLAGS_FREE_SENSE_BUFFER));
+//     NT_ASSERT!(!TEST_FLAG(SrbGetSrbFlags(srbHeader as PVOID), SRB_FLAGS_FREE_SENSE_BUFFER));
 //
 //     //
 //     // Reset byte count of transfer in SRB Extension.

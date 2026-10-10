@@ -13,9 +13,6 @@ use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 use super::helpers::*;
 
-// Resolve MI_SET_PROCESS2 ambiguity: helpers version takes PVOID, mm version takes &str
-fn MI_SET_PROCESS2_PTR(_name: *const i8) {}
-
 use ntkrnl_sys::ddk::{
     _CONTROL_AREA,
     _EPROCESS,
@@ -623,8 +620,8 @@ pub unsafe extern "system" fn MiFillSystemPageDirectory(base: PVOID, number_of_b
     while pointer_pde <= last_pde {
         let old_irql = MiAcquirePfnLock();
         if (*system_map_pde).valid() == false {
-            MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-            MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
+            ntkrnl_sys::MI_SET_PROCESS2!((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
             let page_frame_index = MiRemoveZeroPage(MI_GET_NEXT_COLOR());
             temp_pde.set_page_frame_number(page_frame_index as ULONG_PTR);
             #[cfg(any(target_arch = "x86", target_arch = "arm"))]
@@ -854,8 +851,8 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         while start_pde <= end_pde {
             if (*start_pde).valid() == false {
                 let old_irql = MiAcquirePfnLock();
-                MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-                MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
+                ntkrnl_sys::MI_SET_PROCESS2!((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
                     (*session_space).Color += 1;
                     (*session_space).Color & MmSecondaryColorMask
@@ -893,8 +890,8 @@ unsafe fn MiSessionCommitPageTables(start_va: PVOID, end_va: PVOID) -> NTSTATUS 
         while start_pde <= end_pde {
             if (*((*session_space).PageTables as PMMPTE).add(index)).Long == 0 {
                 let old_irql = MiAcquirePfnLock();
-                MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-                MI_SET_PROCESS2_PTR((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
+                ntkrnl_sys::MI_SET_PROCESS2!((*(PsGetCurrentProcess() as *mut _EPROCESS)).ImageFileName.as_ptr() as *const i8);
                 let color = {
                     (*session_space).Color += 1;
                     (*session_space).Color & MmSecondaryColorMask

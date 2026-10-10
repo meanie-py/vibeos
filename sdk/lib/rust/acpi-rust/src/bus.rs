@@ -1820,6 +1820,10 @@ pub unsafe extern "C" fn acpi_bus_init() -> c_int {
         return result;
     }
 
+    // Before anything reads a _PRT: tell the firmware which interrupt model
+    // the HAL uses, so PCI routing names I/O APIC inputs (pciroute.rs).
+    crate::pciroute::acpi_select_apic_model();
+
     status = AcpiInstallNotifyHandler(ACPI_ROOT_OBJECT, ACPI_SYSTEM_NOTIFY, Some(acpi_bus_notify), core::ptr::null_mut());
     if ACPI_FAILURE(status) {
         // DPRINT removed

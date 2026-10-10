@@ -44,6 +44,7 @@ unsafe extern "C" fn AtaFdoCreateSymLinks(
         FdoFormat,
         (*ChanExt).DeviceObjectNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(&mut ChannelName, ChannelNameBuffer.as_mut_ptr());
 
@@ -60,6 +61,7 @@ unsafe extern "C" fn AtaFdoCreateSymLinks(
             AtapDevSymLinkFormat,
             ScsiAdapter,
         );
+        ASSERT!(NT_SUCCESS!(Status));
 
         RtlInitUnicodeString(&mut SymLinkName, SymLinkNameBuffer.as_mut_ptr());
 
@@ -81,6 +83,7 @@ unsafe extern "C" fn AtaFdoCreateSymLinks(
             AtapDosSymLinkFormat,
             ScsiAdapter,
         );
+        ASSERT!(NT_SUCCESS!(Status));
 
         RtlInitUnicodeString(&mut SymLinkName, SymLinkNameBuffer.as_mut_ptr());
 
@@ -236,6 +239,7 @@ unsafe extern "C" fn AtaFdoRemoveSymLinks(
         AtapDevSymLinkFormat,
         (*ChanExt).ScsiPortNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         &mut SymLinkName,
@@ -250,6 +254,7 @@ unsafe extern "C" fn AtaFdoRemoveSymLinks(
         AtapDosSymLinkFormat,
         (*ChanExt).ScsiPortNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         &mut SymLinkName,

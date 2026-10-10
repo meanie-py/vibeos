@@ -595,6 +595,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
+  32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
+  the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
+  (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
+  `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
+  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
+  wait's alertable check is the first place to look.
+
 - **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
   the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
   translating ndis: nothing else on our media reaches NDIS
@@ -1274,6 +1282,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
     --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
     read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
+    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
+    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
+    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
+    0/20, so the run says nothing about whether that fix touches this hang -- and the
+    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
+    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -1400,6 +1414,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
     still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
     pci.sys, so they are unreached there.
+  - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
+    2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
+    assigns them, so a legacy detector that runs first sees free ports: legide's
+    IoReportResourceForDetection (a real Silent=TRUE check) ran before PIIX was added and
+    took 0x1F0 (i386 `smoke --isa-ide` run 20261009-204110, before the 0x1F0/0x170 skip;
+    PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
+    boot configs through its arbiters at enumeration. Not a one-line fix: the map check
+    cannot tell the requesting device from the owner, so writing a PDO's boot config there
+    makes its own later assignment conflict. Belongs with the arbiter work above.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and

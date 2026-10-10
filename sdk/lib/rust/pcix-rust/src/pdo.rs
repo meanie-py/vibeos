@@ -471,18 +471,22 @@ pub unsafe extern "system" fn PciPdoIrpQueryInterface(
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
     let _ = Irp;
-    let _ = IoStackLocation;
-    let _ = DeviceExtension;
+    PAGED_CODE!();
 
-    DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"PciPdoIrpQueryInterface\0".as_ptr() as *const c_char,
-        b"drivers/bus/pcix/pdo.c\0".as_ptr() as *const c_char,
-        312 as c_int,
-    );
-    DbgPrint(b"\0".as_ptr() as PCSTR);
-    DbgBreakPoint();
-    return STATUS_NOT_SUPPORTED;
+    // Query the interface from the PCI driver (upstream 81f04b39ba4). The C casts the PDO
+    // extension to an FDO one: PciQueryInterface branches on ExtensionType, reads FDO-only
+    // fields only on the FDO branch, and hands the pointer to the constructor unchanged.
+    let Query = &(*IoStackLocation).Parameters.QueryInterface;
+    // TODO (upstream): "There's more to this story, but NOT TODAY!"
+    PciQueryInterface(
+        DeviceExtension as PPCI_FDO_EXTENSION,
+        Query.InterfaceType,
+        Query.Size as ULONG,
+        Query.Version as ULONG,
+        Query.InterfaceSpecificData,
+        Query.Interface,
+        FALSE,
+    )
 }
 #[no_mangle]
 pub unsafe extern "system" fn PciPdoIrpQueryDeviceRelations(

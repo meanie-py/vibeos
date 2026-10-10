@@ -124,16 +124,13 @@ extern "system" {
     fn PsGetCurrentThread() -> *mut core::ffi::c_void;
 }
 extern "C" {
-    fn AssertVerifyDeviceIrp(Irp: PIRP);
 }
 extern "C" {
     fn CdFreeIoContext(IoContext: *mut CD_IO_CONTEXT);
 }
 extern "C" {
-    fn _Analysis_assume_(condition: bool);
 }
 extern "C" {
-    fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMapUserBuffer(irp_context: *mut IRP_CONTEXT, user_buffer: *mut *mut core::ffi::c_void);
@@ -1946,7 +1943,7 @@ pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
         let IoContext = Context as *mut CD_IO_CONTEXT;
         // _Analysis_assume_(Context != NULL) -- intentional no-op
 
-        AssertVerifyDeviceIrp(Irp);
+        AssertVerifyDeviceIrp!(Irp);
 
         if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             // InterlockedExchange( &IoContext->Status, Irp->IoStatus.Status )
@@ -1979,7 +1976,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     let IoContext = Context as *mut CD_IO_CONTEXT;
     // _Analysis_assume_(Context != NULL); (annotation, omitted)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     // UNREFERENCED_PARAMETER( DeviceObject ); handled by prefix _DeviceObject
 
@@ -2023,7 +2020,7 @@ pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     ntkrnl_sys::ASSERT!(!Context.is_null());
     let _ = DeviceObject;
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     if (*Irp).IoStatus.__bindgen_anon_1.Status < 0 {
         (*Irp).IoStatus.Information = 0;
@@ -2052,7 +2049,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
 
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     (*Irp).IoStatus.Information = 0;
 

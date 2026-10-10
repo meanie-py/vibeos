@@ -18,6 +18,8 @@ from .crate_fix import c_function_text
 from .function_coverage import rust_definition_bodies
 
 _SIZEOF = re.compile(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)")
+# `name!(` ending right where the candidate starts: it is the macro's first argument.
+_MACRO_OPEN = re.compile(r"[A-Za-z_]\w*!\(\s*\Z")
 
 
 def crate_types(crate_src: Path) -> set[str]:
@@ -45,9 +47,20 @@ def restore(rust: str, c_file: Path, types: set[str]) -> tuple[str, list[str]]:
         new = body
         for t in sorted(wanted):
             pat = re.compile(rf"(?<=[=(,])(\s*){re.escape(t)}(?=\s*(?:as\b|,|\)|;))")
-            new, n = pat.subn(rf"\1core::mem::size_of::<{t}>()", new)
-            if n:
-                fixed.append(f"{name}: sizeof({t}) x{n}")
+            count = 0
+
+            def put_back(m: re.Match, t: str = t) -> str:
+                nonlocal count
+                # The first argument of a macro takes a TYPE there by design:
+                # `FIELD_OFFSET!(DATATYPES_INFO_1W, pName)` (winprint) is not a sizeof.
+                if _MACRO_OPEN.search(m.string, 0, m.start()):
+                    return m.group(0)
+                count += 1
+                return f"{m.group(1)}core::mem::size_of::<{t}>()"
+
+            new = pat.sub(put_back, new)
+            if count:
+                fixed.append(f"{name}: sizeof({t}) x{count}")
         if new != body:
             rust = rust.replace(body, new, 1)
     return rust, fixed

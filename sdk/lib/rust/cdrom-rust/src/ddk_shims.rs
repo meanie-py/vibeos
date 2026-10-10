@@ -85,14 +85,6 @@ pub unsafe extern "system" fn PagedCode() {}
 pub unsafe extern "C" fn BootEnvironmentIsWinPE() -> BOOLEAN {
     0 // FALSE — cdrom is not running under WinPE in our boot path
 }
-#[no_mangle]
-pub unsafe extern "system" fn WPP_CLEANUP(_DriverObject: PDRIVER_OBJECT) {}
-#[no_mangle]
-pub unsafe extern "system" fn WPP_INIT_TRACING(
-    _DriverObject: PDRIVER_OBJECT,
-    _RegistryPath: PUNICODE_STRING,
-) {
-}
 // TracePrint is a macro now (see lib.rs) — no C trampoline, no _v twin.
 // EXCLUSIVE_MODE(_CdData) := (_CdData->ExclusiveOwner != NULL)
 #[no_mangle]

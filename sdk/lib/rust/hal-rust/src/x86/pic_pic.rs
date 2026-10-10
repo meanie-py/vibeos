@@ -1538,3 +1538,22 @@ pub unsafe extern "fastcall" fn KfLowerIrql(OldIrql: KIRQL) {
     // Restore interrupt state.
     unsafe { __writeeflags(EFlags) };
 }
+
+// ---------------------------------------------------------------------------
+// The APIC flavor's interrupt-line exports (apic.rs). The 8259 flavor routes
+// no interrupt through an I/O APIC: 0 inputs keeps acpi.sys in the PIC model
+// (no `\_PIC(1)`), so PCI INTx stays on the firmware's Interrupt Line, which
+// is exactly what the PICs are wired to.
+// ---------------------------------------------------------------------------
+
+#[cfg(not(feature = "minihal"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosIoApicInputs() -> ULONG {
+    0
+}
+
+#[cfg(not(feature = "minihal"))]
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosSetInterruptLine(_Gsi: ULONG, _LevelSensitive: BOOLEAN, _ActiveLow: BOOLEAN) -> BOOLEAN {
+    0
+}

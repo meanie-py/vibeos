@@ -1219,8 +1219,6 @@ pub static mut CdIsoId: [i8; 5] =
 // SAL no-ops in the cohab build (concurrencysal.h expands them to nothing).
 #[no_mangle]
 pub unsafe extern "C" fn PagedCode() {}
-#[no_mangle]
-pub unsafe extern "C" fn _Analysis_assume_lock_held_(_Lock: *mut c_void) {}
 
 // cdprocs.h:
 //   #define CdAcquireCacheForUpdate(IC)
@@ -1451,10 +1449,6 @@ use ntkrnl_sys::ddk::PIO_STACK_LOCATION;
 // _SEH2_TRY: cdecl (__SEH2_TRY, no @N).
 #[no_mangle]
 pub unsafe extern "C" fn _SEH2_TRY() {}
-// specstrings __analysis_assert(expr): wanted symbol ___analysis_assert@4
-// (i386 `_` decoration + C name `__analysis_assert`). stdcall, 1 arg, no-op.
-#[no_mangle]
-pub unsafe extern "C" fn __analysis_assert(_Expr: BOOLEAN) {}
 
 // cddata.h: #define ASSERT_FCB(F) NT_ASSERT(...)  — assert-only no-op. stdcall (@4).
 #[no_mangle]
@@ -1665,8 +1659,6 @@ pub unsafe extern "C" fn _SEH2_EXCEPT(_Code: i32) {}
 pub unsafe extern "C" fn _SEH2_GetExceptionCode() -> i32 {
     0
 }
-#[no_mangle]
-pub unsafe extern "C" fn _Analysis_assume_(_Condition: bool) {}
 
 // KeFlushIoBuffers is a MACRO, per arch: empty on x86/amd64 (cache-coherent DMA,
 // xdk/x86/ke.h:188), `_DataSynchronizationBarrier()` on arm64 (xdk/arm64/ke.h:106).
@@ -2003,9 +1995,6 @@ pub unsafe extern "C" fn LlSectorTruncate(L: i64) -> i64 {
     L & !((SECTOR_SIZE as i64) - 1)
 }
 
-// concurrencysal.h SAL annotation — no-op in the cohab build.
-#[no_mangle]
-pub unsafe extern "C" fn _Analysis_assume_lock_not_held_(_lock: *mut c_void) {}
 
 // PSEH: under DUMMY_PSEH the filter never runs; return NULL exception info.
 #[no_mangle]

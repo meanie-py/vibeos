@@ -39,7 +39,6 @@ unsafe extern "system" {
 }
 
 extern "system" {
-    pub fn NT_ASSERT(b: u8);
     pub fn SrbAssignSrbFlags(srb: *mut core::ffi::c_void, flags: u32);
     pub fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
     pub fn SrbSetOriginalRequest(srb: *mut core::ffi::c_void, irp: PIRP);

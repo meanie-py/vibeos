@@ -116,7 +116,7 @@ pub unsafe extern "system" fn MiLoadImageSection(
 
     temp_pte = ValidKernelPte;
     while pointer_pte < last_pte {
-        MI_SET_USAGE(MI_USAGE_DRIVER_PAGE);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_DRIVER_PAGE);
         page_frame_index = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
         MiInitializePfn(page_frame_index, pointer_pte, 1);
         temp_pte.set_page_frame_number((page_frame_index) as PFN_NUMBER);

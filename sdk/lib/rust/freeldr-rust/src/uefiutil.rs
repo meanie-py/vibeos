@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // uefiutil.c: DBG_DEFAULT_CHANNEL(WARNING)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::TIMEINFO;
@@ -5,7 +7,6 @@ use core::ffi::c_void;
 
 // FreeLDR ERR no-op (variadic to typecheck format args).
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
 }
 
 // GlobalSystemTable is OWNED by uefildr.c (or uefildr.rs in future swap);
@@ -32,7 +33,7 @@ pub unsafe extern "C" fn UefiGetTime() -> *mut TIMEINFO {
 
     Status = ((*(*GlobalSystemTable).RuntimeServices).GetTime).unwrap()(&mut time, core::ptr::null_mut());
     if Status != EFI_SUCCESS {
-        ERR(b"UefiGetTime: cannot get time status %d\n\0".as_ptr() as *const i8);
+        ERR!("UefiGetTime: cannot get time status %d\n");
     }
 
     // TIMEINFO uses u16 fields (Win32 SYSTEMTIME shape); EFI_TIME stores

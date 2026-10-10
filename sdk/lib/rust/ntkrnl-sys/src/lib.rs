@@ -248,10 +248,11 @@ mod offset_check_i386;
 // several translated sites said only "NT_ASSERT failed", which names nothing.
 
 /// C `ASSERT(exp)` / `NT_ASSERT(exp)`: print via RtlAssert and CONTINUE, exactly as the C does.
+/// Any scalar the C accepts (`ASSERT(FALSE)`, `ASSERT(Ptr)`) means non-zero / non-null.
 #[macro_export]
 macro_rules! ASSERT {
     ($e:expr) => {
-        if !$e {
+        if !$crate::dbgassert::truthy($e) {
             #[allow(unused_unsafe)]
             unsafe {
                 $crate::ddk::RtlAssert(
@@ -264,7 +265,7 @@ macro_rules! ASSERT {
         }
     };
     ($e:expr, $msg:expr) => {
-        if !$e {
+        if !$crate::dbgassert::truthy($e) {
             #[allow(unused_unsafe)]
             unsafe {
                 $crate::ddk::RtlAssert(

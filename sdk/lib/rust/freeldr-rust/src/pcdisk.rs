@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // pcdisk.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCSTR};
@@ -78,7 +80,6 @@ pub type _PC_DISK_DRIVE = PC_DISK_DRIVE;
 static mut lReportError: LONG = 0;
 
 extern "C" {
-    fn WARN(fmt: *const i8, ...);
     // uefidisk.c external freeldr globals (machpc.h declarations).
     static FrldrBootDrive: UCHAR;
     static FrldrBootPartition: ULONG;
@@ -87,11 +88,9 @@ extern "C" {
 extern "C" {
     fn WRITE_PORT_UCHAR(Port: *mut u8, Value: u8);
     fn sprintf(s: *mut i8, format: PCSTR, ...) -> i32;
-    fn ERR(fmt: *const i8, ...);
     fn UiMessageBox(message: PCSTR);
     fn INT386_SUCCESS(regs: REGS) -> u8;
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
-    fn TRACE(fmt: *const i8, ...);
 }
 
 #[no_mangle]
@@ -151,7 +150,7 @@ unsafe fn DiskError(ErrorString: PCSTR, ErrorCode: u32) {
         DiskGetErrorCodeString(ErrorCode)
     );
 
-    ERR(b"%s\n\0".as_ptr() as PCSTR, (ErrorCodeString.as_ptr()) as usize);
+    ERR!("%s\n", (ErrorCodeString.as_ptr()) as usize);
     UiMessageBox(ErrorCodeString.as_ptr() as PCSTR);
 }
 
@@ -160,9 +159,7 @@ pub unsafe extern "C" fn DiskResetController(DriveNumber: u8) -> u8 {
     let mut RegsIn: REGS = core::mem::zeroed();
     let mut RegsOut: REGS = core::mem::zeroed();
 
-    WARN(
-        b"DiskResetController(0x%x) DISK OPERATION FAILED -- RESETTING CONTROLLER\n\0".as_ptr() as PCHAR, (DriveNumber) as usize,
-    );
+    WARN!("DiskResetController(0x%x) DISK OPERATION FAILED -- RESETTING CONTROLLER\n", (DriveNumber) as usize);
 
     RegsIn.b.ah = 0x00;
     RegsIn.b.dl = DriveNumber;
@@ -201,10 +198,10 @@ unsafe fn DiskInt13ExtensionsSupported(DriveNumber: UCHAR) -> BOOLEAN {
     }
 
     #[cfg(debug_assertions)]
-    TRACE(b"Drive 0x%x: INT 13h Extended version: 0x%02x, API bitmap: 0x%04x\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (RegsOut.b.ah) as usize, (RegsOut.w.cx) as usize);
+    TRACE!("Drive 0x%x: INT 13h Extended version: 0x%02x, API bitmap: 0x%04x\n", (DriveNumber) as usize, (RegsOut.b.ah) as usize, (RegsOut.w.cx) as usize);
 
     if (RegsOut.w.cx & 0x0001) == 0 {
-        WARN(b"Drive 0x%x: Suspicious API subset support bitmap 0x%04x\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (RegsOut.w.cx) as usize);
+        WARN!("Drive 0x%x: Suspicious API subset support bitmap 0x%04x\n", (DriveNumber) as usize, (RegsOut.w.cx) as usize);
         return 0u8;
     }
 
@@ -221,7 +218,7 @@ unsafe fn DiskGetExtendedDriveParameters(
     let mut RegsIn: REGS = core::mem::zeroed();
     let mut RegsOut: REGS = core::mem::zeroed();
 
-    TRACE(b"DiskGetExtendedDriveParameters(0x%x)\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+    TRACE!("DiskGetExtendedDriveParameters(0x%x)\n", (DriveNumber) as usize);
 
     if (*DiskDrive).Int13ExtensionsSupported == 0 || (BufferSize < core::mem::size_of::<EXTENDED_GEOMETRY>() as USHORT) {
         return 0u8;
@@ -244,34 +241,34 @@ unsafe fn DiskGetExtendedDriveParameters(
 
     #[cfg(debug_assertions)]
     {
-        TRACE(b"Size of buffer:                          0x%x\n\0".as_ptr() as PCHAR, ((*Ptr).Size) as usize);
-        TRACE(b"Information flags:                       0x%x\n\0".as_ptr() as PCHAR, ((*Ptr).Flags) as usize);
-        TRACE(b"Number of physical cylinders on drive:   %u\n\0".as_ptr() as PCHAR, ((*Ptr).Cylinders) as usize);
-        TRACE(b"Number of physical heads on drive:       %u\n\0".as_ptr() as PCHAR, ((*Ptr).Heads) as usize);
-        TRACE(b"Number of physical sectors per track:    %u\n\0".as_ptr() as PCHAR, ((*Ptr).SectorsPerTrack) as usize);
-        TRACE(b"Total number of sectors on drive:        %I64u\n\0".as_ptr() as PCHAR, ((*Ptr).Sectors) as usize);
-        TRACE(b"Bytes per sector:                        %u\n\0".as_ptr() as PCHAR, ((*Ptr).BytesPerSector) as usize);
+        TRACE!("Size of buffer:                          0x%x\n", ((*Ptr).Size) as usize);
+        TRACE!("Information flags:                       0x%x\n", ((*Ptr).Flags) as usize);
+        TRACE!("Number of physical cylinders on drive:   %u\n", ((*Ptr).Cylinders) as usize);
+        TRACE!("Number of physical heads on drive:       %u\n", ((*Ptr).Heads) as usize);
+        TRACE!("Number of physical sectors per track:    %u\n", ((*Ptr).SectorsPerTrack) as usize);
+        TRACE!("Total number of sectors on drive:        %I64u\n", ((*Ptr).Sectors) as usize);
+        TRACE!("Bytes per sector:                        %u\n", ((*Ptr).BytesPerSector) as usize);
         if (*Ptr).Size >= 0x1E {
             let Off = ((*Ptr).PDPTE & 0xFFFF) as USHORT;
             let Seg = (((*Ptr).PDPTE >> 16) & 0xFFFF) as USHORT;
-            TRACE(b"EDD configuration parameters (DPTE):     %x:%x\n\0".as_ptr() as PCHAR, (Seg) as usize, (Off) as usize);
+            TRACE!("EDD configuration parameters (DPTE):     %x:%x\n", (Seg) as usize, (Off) as usize);
 
             if (*Ptr).PDPTE != 0xFFFFFFFF && (*Ptr).PDPTE != 0 {
                 let SpecPtr = (((Seg as ULONG_PTR) << 4) + Off as ULONG_PTR) as PUCHAR;
-                TRACE(b"SpecPtr:                                 0x%x\n\0".as_ptr() as PCHAR, (SpecPtr) as usize);
-                TRACE(b"Physical I/O port base address:          0x%x\n\0".as_ptr() as PCHAR, (*(SpecPtr.offset(0) as *const USHORT)) as usize);
-                TRACE(b"Disk-drive control port address:         0x%x\n\0".as_ptr() as PCHAR, (*(SpecPtr.offset(2) as *const USHORT)) as usize);
-                TRACE(b"Head register upper nibble:              0x%x\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(4)) as usize);
-                TRACE(b"BIOS Vendor-specific:                    0x%x\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(5)) as usize);
-                TRACE(b"IRQ for drive:                           %u\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(6)) as usize);
-                TRACE(b"Sector count for multi-sector transfers: %u\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(7)) as usize);
-                TRACE(b"DMA control:                             0x%x\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(8)) as usize);
-                TRACE(b"Programmed I/O control:                  0x%x\n\0".as_ptr() as PCHAR, (*SpecPtr.offset(9)) as usize);
-                TRACE(b"Drive options:                           0x%x\n\0".as_ptr() as PCHAR, (*(SpecPtr.offset(10) as *const USHORT)) as usize);
+                TRACE!("SpecPtr:                                 0x%x\n", (SpecPtr) as usize);
+                TRACE!("Physical I/O port base address:          0x%x\n", (*(SpecPtr.offset(0) as *const USHORT)) as usize);
+                TRACE!("Disk-drive control port address:         0x%x\n", (*(SpecPtr.offset(2) as *const USHORT)) as usize);
+                TRACE!("Head register upper nibble:              0x%x\n", (*SpecPtr.offset(4)) as usize);
+                TRACE!("BIOS Vendor-specific:                    0x%x\n", (*SpecPtr.offset(5)) as usize);
+                TRACE!("IRQ for drive:                           %u\n", (*SpecPtr.offset(6)) as usize);
+                TRACE!("Sector count for multi-sector transfers: %u\n", (*SpecPtr.offset(7)) as usize);
+                TRACE!("DMA control:                             0x%x\n", (*SpecPtr.offset(8)) as usize);
+                TRACE!("Programmed I/O control:                  0x%x\n", (*SpecPtr.offset(9)) as usize);
+                TRACE!("Drive options:                           0x%x\n", (*(SpecPtr.offset(10) as *const USHORT)) as usize);
             }
         }
         if (*Ptr).Size >= 0x42 {
-            TRACE(b"Signature:                             0x%x\n\0".as_ptr() as PCHAR, (*((Ptr as *const USHORT).offset(15))) as usize);
+            TRACE!("Signature:                             0x%x\n", (*((Ptr as *const USHORT).offset(15))) as usize);
         }
     }
 
@@ -309,9 +306,7 @@ unsafe fn InitDriveGeometry(
         core::mem::size_of_val(&(*DiskDrive).ExtGeometry) as USHORT,
     );
     if Success != 0 {
-        TRACE(
-            b"DiskGetExtendedDriveParameters(0x%x) returned:\nCylinders  : 0x%x\nHeads      : 0x%x\nSects/Track: 0x%x\nTotal Sects: 0x%llx\nBytes/Sect : 0x%x\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, ((*DiskDrive).ExtGeometry.Cylinders) as usize, ((*DiskDrive).ExtGeometry.Heads) as usize, ((*DiskDrive).ExtGeometry.SectorsPerTrack) as usize, ((*DiskDrive).ExtGeometry.Sectors) as usize, ((*DiskDrive).ExtGeometry.BytesPerSector) as usize,
-        );
+        TRACE!("DiskGetExtendedDriveParameters(0x%x) returned:\nCylinders  : 0x%x\nHeads      : 0x%x\nSects/Track: 0x%x\nTotal Sects: 0x%llx\nBytes/Sect : 0x%x\n", (DriveNumber) as usize, ((*DiskDrive).ExtGeometry.Cylinders) as usize, ((*DiskDrive).ExtGeometry.Heads) as usize, ((*DiskDrive).ExtGeometry.SectorsPerTrack) as usize, ((*DiskDrive).ExtGeometry.Sectors) as usize, ((*DiskDrive).ExtGeometry.BytesPerSector) as usize);
     }
 
     RtlZeroMemory(
@@ -342,9 +337,7 @@ unsafe fn InitDriveGeometry(
         * ((*DiskDrive).Geometry.Heads as ULONGLONG)
         * ((*DiskDrive).Geometry.SectorsPerTrack as ULONGLONG);
 
-    TRACE(
-        b"Regular Int13h(0x%x) returned:\nCylinders  : 0x%x\nHeads      : 0x%x\nSects/Track: 0x%x\nTotal Sects: 0x%llx\nBytes/Sect : 0x%x\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, ((*DiskDrive).Geometry.Cylinders) as usize, ((*DiskDrive).Geometry.Heads) as usize, ((*DiskDrive).Geometry.SectorsPerTrack) as usize, ((*DiskDrive).Geometry.Sectors) as usize, ((*DiskDrive).Geometry.BytesPerSector) as usize,
-    );
+    TRACE!("Regular Int13h(0x%x) returned:\nCylinders  : 0x%x\nHeads      : 0x%x\nSects/Track: 0x%x\nTotal Sects: 0x%llx\nBytes/Sect : 0x%x\n", (DriveNumber) as usize, ((*DiskDrive).Geometry.Cylinders) as usize, ((*DiskDrive).Geometry.Heads) as usize, ((*DiskDrive).Geometry.SectorsPerTrack) as usize, ((*DiskDrive).Geometry.Sectors) as usize, ((*DiskDrive).Geometry.BytesPerSector) as usize);
 
     Success
 }
@@ -361,9 +354,7 @@ unsafe fn PcDiskDriveInit(
         return 0u8;
     }
 
-    TRACE(
-        b"\nDriveNumber: 0x%x\nIsRemovable              = %s\nInt13ExtensionsSupported = %s\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (if (*DiskDrive).IsRemovable != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize, (if (*DiskDrive).Int13ExtensionsSupported != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize,
-    );
+    TRACE!("\nDriveNumber: 0x%x\nIsRemovable              = %s\nInt13ExtensionsSupported = %s\n", (DriveNumber) as usize, (if (*DiskDrive).IsRemovable != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize, (if (*DiskDrive).Int13ExtensionsSupported != 0 { b"TRUE\0".as_ptr() } else { b"FALSE\0".as_ptr() }) as usize);
 
     1u8
 }
@@ -445,9 +436,7 @@ unsafe fn PcDiskReadLogicalSectorsLBA(
     }
 
     DiskError(b"Disk Read Failed in LBA mode\0".as_ptr() as PCSTR, RegsOut.b.ah as u32);
-    ERR(
-        b"Disk Read Failed in LBA mode: %x (%s) (DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u)\n\0".as_ptr() as PCSTR, (RegsOut.b.ah as i32) as usize, (DiskGetErrorCodeString(RegsOut.b.ah as u32)) as usize, (DriveNumber as i32) as usize, (SectorNumber) as usize, (SectorCount) as usize,
-    );
+    ERR!("Disk Read Failed in LBA mode: %x (%s) (DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u)\n", (RegsOut.b.ah as i32) as usize, (DiskGetErrorCodeString(RegsOut.b.ah as u32)) as usize, (DriveNumber as i32) as usize, (SectorNumber) as usize, (SectorCount) as usize);
 
     0u8
 }
@@ -515,9 +504,7 @@ unsafe fn PcDiskReadLogicalSectorsCHS(
 
         if RetryCount >= 3 {
             DiskError(b"Disk Read Failed in CHS mode, after retrying 3 times\0".as_ptr() as PCSTR, RegsOut.b.ah as u32);
-            ERR(
-                b"Disk Read Failed in CHS mode, after retrying 3 times: %x (%s) (DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u)\n\0".as_ptr() as PCSTR, (RegsOut.b.ah) as usize, (DiskGetErrorCodeString(RegsOut.b.ah as u32)) as usize, (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize,
-            );
+            ERR!("Disk Read Failed in CHS mode, after retrying 3 times: %x (%s) (DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u)\n", (RegsOut.b.ah) as usize, (DiskGetErrorCodeString(RegsOut.b.ah as u32)) as usize, (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize);
             return 0u8;
         }
 
@@ -539,9 +526,7 @@ pub unsafe extern "C" fn PcDiskReadLogicalSectors(
 
     let DiskDrive: PPC_DISK_DRIVE;
 
-    TRACE(
-        b"PcDiskReadLogicalSectors() DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u Buffer: 0x%x\n\0".as_ptr() as PCSTR, (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize, (Buffer) as usize,
-    );
+    TRACE!("PcDiskReadLogicalSectors() DriveNumber: 0x%x SectorNumber: %I64u SectorCount: %u Buffer: 0x%x\n", (DriveNumber) as usize, (SectorNumber) as usize, (SectorCount) as usize, (Buffer) as usize);
 
     DiskDrive = PcDiskDriveNumberToDrive(DriveNumber);
     if DiskDrive.is_null() {
@@ -549,10 +534,10 @@ pub unsafe extern "C" fn PcDiskReadLogicalSectors(
     }
 
     if (DriveNumber >= 0x80) && (*DiskDrive).Int13ExtensionsSupported != 0 {
-        TRACE(b"--> Using LBA\n\0".as_ptr() as PCSTR);
+        TRACE!("--> Using LBA\n");
         return PcDiskReadLogicalSectorsLBA(DriveNumber, SectorNumber, SectorCount, Buffer);
     } else {
-        TRACE(b"--> Using CHS\n\0".as_ptr() as PCSTR);
+        TRACE!("--> Using CHS\n");
         return PcDiskReadLogicalSectorsCHS(DriveNumber, DiskDrive, SectorNumber, SectorCount, Buffer);
     }
 }
@@ -566,7 +551,7 @@ pub unsafe extern "C" fn DiskStopFloppyMotor() {
 pub unsafe extern "C" fn PcDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: PGEOMETRY) -> BOOLEAN {
     let DiskDrive: PPC_DISK_DRIVE;
 
-    TRACE(b"PcDiskGetDriveGeometry(0x%x)\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
+    TRACE!("PcDiskGetDriveGeometry(0x%x)\n", (DriveNumber) as usize);
 
     DiskDrive = PcDiskDriveNumberToDrive(DriveNumber);
     if DiskDrive.is_null() {
