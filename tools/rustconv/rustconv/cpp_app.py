@@ -1344,7 +1344,17 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
     # CWindowImpl/CDialogImpl subclass's, answered by its generated glue. Counting them
     # translated ATL's raw CWindow::Create (_U_RECT, _AtlBaseModule) for nothing. A call on a
     # PLAIN CWindow would then be missing, which fails to compile -- loud, never silent.
-    called = set(_CALL_RE.findall("\n".join(texts)))
+    joined = "\n".join(texts)
+    called = set(_CALL_RE.findall(joined))
+    # A static call is `Class::name(` (CWaitCursor::IsWaiting()), not `.name(`.
+    called |= set(re.findall(r"\b\w+::\s*([A-Za-z_]\w*)\s*\(", joined))
+    # A module class on PLAIN CWindow (CPaintToolBar : CWindow) calls ATL's own Create; only
+    # CWindowImpl/CDialogImpl subclasses have glue answering those names.
+    plain_cwindow = any(
+        not c.external and not atl_template(c) and any(short(b.name) == "CWindow" for b in c.bases)
+        for c in model.classes.values()
+    )
+    glue_only = frozenset() if plain_cwindow else ATL_IMPL_METHODS
     reached: set[tuple[str, str]] = set()
     while True:
         new = {
@@ -1353,7 +1363,7 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
             for m in c.methods
             if m.rust_name in called
             # Only CWindow: CRegKey::Create is a real call (registry.cpp).
-            and not (c.name == "CWindow" and m.rust_name in ATL_IMPL_METHODS)
+            and not (c.name == "CWindow" and m.rust_name in glue_only)
             and (c.name, m.rust_name) not in reached
         }
         if not new:
@@ -1564,6 +1574,28 @@ def qualify_static_calls(rust: str, model: ModuleModel) -> str:
         return f"{next(iter(owners[m.group(1)]))}::{m.group(0)}"
 
     return re.sub(rf"(?<![\w.:>])({alt})\s*\(", fix, rust)
+
+
+def static_paths(rust: str, model: ModuleModel) -> str:
+    """`CPaintToolBar__ToolBarWndProc` (the synthetic unit's name for a static method, used
+    as a VALUE -- a window procedure pointer) -> `CPaintToolBar::ToolBarWndProc`, its name
+    after assembly. Only for static methods: an instance method has no such value form."""
+    pairs = {
+        f"{c.name}__{m.rust_name or m.name}": f"{c.name}::{m.rust_name or m.name}"
+        for c in model.classes.values()
+        for m in c.methods
+        if m.static
+    }
+    if not pairs:
+        return rust
+    alt = "|".join(sorted(map(re.escape, pairs), key=len, reverse=True))
+
+    def fix(m: re.Match) -> str:
+        if re.search(r"\bfn\s+$", rust[max(0, m.start() - 8) : m.start()]):
+            return m.group(0)
+        return pairs[m.group(0)]
+
+    return re.sub(rf"\b(?:{alt})\b", fix, rust)
 
 
 def drop_global_qualifier(rust: str) -> str:

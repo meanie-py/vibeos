@@ -269,6 +269,13 @@ class Lowerer:
                 cls = info.owner.split("::")[-1]
                 edits.append((span[0], span[1] - span[0], f"{cls}__{info.name}"))
             return
+        if info is not None and info.kind == "function":
+            # An overloaded module function (`Fill` -> `Fill__1`): the decl clang resolved
+            # the call to names the overload.
+            t = _tok(n["range"]["end"], f, lo, hi)
+            if t is not None and info.rust_name != info.name:
+                edits.append((t[0] - lo, t[1], info.rust_name))
+            return
         if info is not None and info.kind == "enumconst":
             # The whole reference, qualifier included, is the island's flat name.
             span = _node_span(n, f, lo, hi)

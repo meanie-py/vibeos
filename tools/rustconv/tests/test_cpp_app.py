@@ -549,3 +549,40 @@ def test_a_function_scope_using_namespace_maps_bare_names_to_the_island():
     chunk = "void f(){\n    using namespace Gdiplus;\n    GpBitmap *p = NULL; x.GpBitmap;\n}"
     out = _apply_using(chunk, frozenset({"Gdiplus_GpBitmap"}))
     assert out == "void f(){\n    Gdiplus_GpBitmap *p = NULL; x.GpBitmap;\n}"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_overloaded_free_functions_keep_both_and_calls_pick_the_resolved_one(tmp_path):
+    """mspaint's drawing.h: Fill(.., COLORREF) and Fill(.., HBRUSH). One name dropped one."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef unsigned long COLORREF; typedef struct HBRUSH__ *HBRUSH; typedef void* HDC;\n"
+        "void Fill(HDC hdc, long x, COLORREF color);\nvoid Fill(HDC hdc, long x, HBRUSH b);\n"
+        "void Fill(HDC hdc, long x, COLORREF color) { }\n"
+        "void Fill(HDC hdc, long x, HBRUSH b) { Fill(hdc, x, (COLORREF)0); }\n"
+        "void Use(HDC h, HBRUSH b) { Fill(h, 1, b); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    by = {f.name: f for f in ex.model.functions}
+    assert set(by) == {"Fill__0", "Fill__1", "Use"}
+    assert by["Fill__1"].signature.startswith("void Fill__1(")
+    assert by["Fill__1"].lowered == "{ Fill__0(hdc, x, (COLORREF)0); }"
+    assert by["Use"].lowered == "{ Fill__1(h, 1, b); }"

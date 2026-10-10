@@ -479,6 +479,7 @@ class _Extractor:
         self._anon_seen: set[str] = set()
         self._anon_registered: set[str] = set()
         self._fn_defaults: dict[str, list[str | None]] = {}
+        self._overloads: dict[str, list[str]] = {}
         self.method_by_id: dict[str, Method] = {}
         # (Method | FreeFunc, CompoundStmt node, this class) to lower once the TU is walked:
         # a body can name a member of a class defined LATER in the same TU.
@@ -837,6 +838,27 @@ class _Extractor:
             )
         )
 
+    def scan_overloads(self, nodes: list) -> None:
+        """Every module free function's distinct signatures, in first-seen order: drawing.h
+        declares `Fill(.., COLORREF)` AND `Fill(.., HBRUSH)`, and keeping one name dropped
+        the other overload, so every call went to whichever came first."""
+        for n in nodes:
+            if n.get("kind") == "FunctionDecl" and self.mine(_file_of(n)):
+                sigs = self._overloads.setdefault(n["name"], [])
+                qt = n.get("type", {}).get("qualType", "")
+                if qt not in sigs:
+                    sigs.append(qt)
+            elif n.get("kind") in ("NamespaceDecl", "LinkageSpecDecl"):
+                self.scan_overloads(n.get("inner", []))
+
+    def fn_rust_name(self, n: dict) -> str:
+        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it."""
+        sigs = self._overloads.get(n["name"], [])
+        if len(sigs) < 2:
+            return n["name"]
+        qt = n.get("type", {}).get("qualType", "")
+        return f"{n['name']}__{sigs.index(qt) if qt in sigs else len(sigs)}"
+
     def _register_function(self, n: dict) -> None:
         """A module free function's declaration (a prototype in dib.h counts), for its
         default arguments: `CopyDIBImage(hbm, cx, cy)` must be called with dib.h's
@@ -846,24 +868,31 @@ class _Extractor:
             self.src.node_text(p["inner"][0]) if p.get("init") and p.get("inner") else None
             for p in params
         ]
-        if any(d is not None for d in defaults):
-            self._fn_defaults[n["name"]] = defaults
         # A redeclaration (the definition in dib.cpp) repeats no defaults, but a call may
         # reference it: it carries the prototype's.
-        known = self._fn_defaults.get(n["name"])
+        rust = self.fn_rust_name(n)
+        key = rust  # an overload's defaults are its own
+        if any(d is not None for d in defaults):
+            self._fn_defaults[key] = defaults
+        known = self._fn_defaults.get(key)
         if known is not None and len(known) == len(defaults):
-            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], n["name"], known)
+            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], rust, known)
+        elif rust != n["name"]:
+            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], rust)
 
     def free_function(self, n: dict) -> None:
         body = next((x for x in n.get("inner", []) if x["kind"] == "CompoundStmt"), None)
-        if body is None or any(f.name == n["name"] for f in self.model.functions):
+        rust = self.fn_rust_name(n)
+        if body is None or any(f.name == rust for f in self.model.functions):
             return
         whole, bspan = _span(n), _span(body)
         if whole is None or bspan is None:
             return
         sig = self.src.text((whole[0], whole[1], bspan[1])) or ""
+        if rust != n["name"]:
+            sig = re.sub(rf"\b{re.escape(n['name'])}(?=\s*\()", rust, sig, count=1)
         ff = FreeFunc(
-            n["name"],
+            rust,
             " ".join(sig.split()),
             self.rel(whole[0]),
             "",
@@ -970,6 +999,7 @@ def extract(
         # ids are per-AST; record() re-registers them on each TU
         ex.by_id, ex.decls, ex.method_by_id = {}, {}, {}
         ex._anon_seen, ex._anon_registered = set(), set()
+        ex.scan_overloads(ast.get("inner", []))
         ex.walk(ast.get("inner", []))
         ex.lower_pending()
         del ast

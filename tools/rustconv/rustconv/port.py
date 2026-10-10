@@ -656,9 +656,12 @@ def _cppapp_assemble_all(state: dict) -> list[str]:
             continue
         text = out.read_text()
         new = cpp_app.drop_global_qualifier(
-            cpp_app.qualify_static_calls(
-                cpp_app.unthis_globals(
-                    cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated), app
+            cpp_app.static_paths(
+                cpp_app.qualify_static_calls(
+                    cpp_app.unthis_globals(
+                        cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated), app
+                    ),
+                    app,
                 ),
                 app,
             )
