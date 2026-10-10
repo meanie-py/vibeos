@@ -56,6 +56,18 @@ _ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
 }
 
 
+_TEXT_MACRO = re.compile(
+    r"\b(?:TEXT|_TEXT|__TEXT|_T)\(\s*(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')\s*\)"
+)
+
+
+def unicode_text_macros(text: str) -> str:
+    """`TEXT("x")` / `_T('x')` -> `L"x"` / `L'x'`, what winnt.h/tchar.h expand them to in a
+    -DUNICODE compile. Lowered bodies keep the source's macro spelling, and an ATL header's
+    `TEXT(';')` reached the model as a call it cannot resolve."""
+    return _TEXT_MACRO.sub(lambda m: "L" + m.group(1), text)
+
+
 @dataclass
 class Lowered:
     text: str
@@ -121,11 +133,28 @@ class Lowerer:
 
         placed: set[tuple[int, int, str]] = set()
 
+        # Object-like macros over a caller's local are inlined FIRST (_local_in_macro): every
+        # node of their expansion is located at the macro-name token, and a member rename
+        # there (`rc.bottom` -> rewrite at `Y_MARGIN`) would overwrite the macro name.
+        def find_inlined(n: object) -> None:
+            if isinstance(n, list):
+                for x in n:
+                    find_inlined(x)
+            elif isinstance(n, dict):
+                if n.get("kind") == "DeclRefExpr":
+                    self._local_in_macro(n, f, lo, hi, edits)
+                find_inlined(n.get("inner", []))
+
+        find_inlined(node)
+        inlined = {(e[0], e[0] + e[1]) for e in edits}
+
         def put(loc: dict, length: int | None, repl: str, what: str) -> None:
             t = _tok(loc, f, lo, hi)
             if t is None:
                 unplaced.append(what)
                 return
+            if any(a <= t[0] - lo < b for a, b in inlined):
+                return  # inside an inlined macro: its text is the definition's, as written
             edit = (t[0] - lo, t[1] if length is None else length, repl)
             # A macro that repeats its argument (`min(a, b)` expands `b` twice) yields one
             # AST node per copy, all spelled at the same token: one edit, not one per copy.
@@ -233,6 +262,37 @@ class Lowerer:
         renamed = info.rust_name if written is not None and written != info.rust_name else None
         if prefix or renamed:
             put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
+
+    def _local_in_macro(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """palette.cpp's `#define Y_MARGIN ((rcClient.bottom / 2) - CXY_COLORBOX)` names the
+        CALLER's local `rcClient`. No Rust item can (a `macro_rules!` is hygienic, a const has
+        no locals), so such an object-like macro is inlined where it is expanded, exactly as
+        the preprocessor did. The tell is in the AST: a variable reference SPELLED inside a
+        `#define` line and EXPANDED at a token in this body."""
+        ref = n.get("referencedDecl", {})
+        if ref.get("kind") not in ("VarDecl", "ParmVarDecl"):
+            return
+        begin = n.get("range", {}).get("begin", {})
+        spell, exp = begin.get("spellingLoc"), begin.get("expansionLoc")
+        if not spell or not exp or exp.get("isMacroArgExpansion") or "offset" not in spell:
+            return
+        if exp.get("_file") != f or not lo <= exp.get("offset", -1) < hi:
+            return
+        src_file = spell.get("_file")
+        if not src_file:
+            return
+        cdp_text(src_file, 0, 0)  # load into _SRC: offsets are BYTES
+        data = _SRC[src_file]
+        line_start = data.rfind(b"\n", 0, spell["offset"]) + 1
+        line_end = data.find(b"\n", spell["offset"])
+        line = data[line_start : line_end if line_end >= 0 else len(data)].decode(
+            "utf-8", errors="replace"
+        )
+        m = re.match(r"\s*#\s*define\s+([A-Za-z_]\w*)(?![\w(])\s+(.*?)\s*(?:/\*.*)?$", line)
+        name = cdp_text(f, exp["offset"], exp["offset"] + exp.get("tokLen", 0))
+        if m is None or m.group(1) != name:
+            return  # a function-like macro, or a nested expansion: not this shape
+        edits.append((exp["offset"] - lo, len(name), f"({m.group(2).strip()})"))
 
     def _static_via_object(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
         """`toolsModel.CreateBrush(..)` where CreateBrush is STATIC: C++ allows the object
@@ -517,9 +577,22 @@ class Lowerer:
         """`audio_format(44100, 16, 2)` as an expression -> `audio_format__make_N(...)`."""
         cls = self._class(_strip_type(n.get("type", {}).get("qualType", "")))
         span = _node_span(n, f, lo, hi)
-        if cls is None or span is None:
+        if span is None:
             return
         t = cdp_text(f, lo + span[0], lo + span[1])
+        if cls is None:
+            # A functional cast to a SCALAR type, dib.cpp's `INT(cx * eTan)`: written as C's
+            # `((INT)(cx * eTan))`, or the model calls `INT(..)` like a function.
+            m = re.match(r"([A-Za-z_]\w*)\s*\(", t)
+            if (
+                n.get("kind") == "CXXFunctionalCastExpr"
+                and m is not None
+                and t.rstrip().endswith(")")
+                and n.get("castKind") != "ConstructorConversion"
+            ):
+                edits.append((span[0], m.end(), f"(({m.group(1)})("))
+                edits.append((span[1], 0, ")"))
+            return
         m = re.match(r"[\w:]+(?=\s*[({])", t)
         if m is None:
             return

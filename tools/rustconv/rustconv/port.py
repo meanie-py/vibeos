@@ -462,6 +462,43 @@ def stage_island(stem: str) -> None:
         # the module's classes back; cpp_classes.rs stays their one definition.
         deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated.read_text())
         print(f"island: {len(deferred)} class(es) deferred to cpp_classes.rs")
+    for island in sorted((_crate_dir(state) / "src").glob("types_*.rs")):
+        text = island.read_text()
+        fixed = drop_impossible_copy(text)
+        if fixed != text:
+            island.write_text(fixed)
+
+
+_STRUCT_ITEM = re.compile(
+    r"(?P<attrs>(?:#\[[^\]]*\]\s*)*)pub struct (?P<name>\w+)(?:<[^>]*>)?\s*\{(?P<body>[^{}]*)\}"
+)
+
+
+def drop_impossible_copy(island: str) -> str:
+    """bindgen derives `Copy, Clone` for ATL's CAtlStringMgr while its base IAtlStringMgr
+    (a vtable class) is `Debug` only, and the island does not compile (E0204). A struct
+    holding a non-Copy struct BY VALUE cannot be Copy; drop the derive, to a fixpoint (the
+    holder of a holder). Pointers to such a struct are Copy and are left alone."""
+    while True:
+        structs = {m.group("name"): m for m in _STRUCT_ITEM.finditer(island)}
+        non_copy = {n for n, m in structs.items() if not re.search(r"\bCopy\b", m.group("attrs"))}
+        bad = [
+            m
+            for n, m in structs.items()
+            if n not in non_copy
+            and any(
+                re.search(rf":\s*{re.escape(t)}\s*(?:,|$)", line.strip())
+                for line in m.group("body").splitlines()
+                for t in non_copy
+            )
+        ]
+        if not bad:
+            return island
+        for m in sorted(bad, key=lambda m: m.start(), reverse=True):
+            attrs = re.sub(r"\bCopy,\s*Clone\b|\bClone,\s*Copy\b", "", m.group("attrs"))
+            attrs = re.sub(r"#\[derive\(\s*,?\s*\)\]\s*", "", attrs)
+            attrs = re.sub(r"\(\s*,\s*", "(", attrs).replace(", )", ")")
+            island = island[: m.start("attrs")] + attrs + island[m.end("attrs") :]
 
 
 def stage_scaffold(module_dir: Path, target: str | None) -> None:
@@ -619,8 +656,17 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
     return sorted(done)
 
 
+# Bump when what translate SEALS in a cppapp unit changes (2: the island's mixed-case
+# constants, fact_seal.island_value_names). The unit text is unchanged, so without this the
+# stricter contract never reaches a unit that already has output; with it every unit is
+# revisited once, banked bodies with an unchanged contract replay for $0, and only the
+# bodies the new seal covers are bought.
+CPPAPP_SEAL_REVISION = 2
+
+
 def _unit_hash(tu: str) -> str:
-    return hashlib.sha256((REPO / tu).read_bytes()).hexdigest()[:16]
+    data = (REPO / tu).read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    return hashlib.sha256(data).hexdigest()[:16]
 
 
 def _unit_stale(state: dict, tu: str) -> bool:
@@ -666,6 +712,8 @@ def _cppapp_assemble_all(state: dict) -> list[str]:
                 app,
             )
         )
+        if unit.endswith("_h.hpp"):
+            new = cpp_app.publish_header_statics(new)
         if new != text:
             out.write_text(new)
             done.append(out.stem)

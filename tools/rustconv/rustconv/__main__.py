@@ -124,6 +124,7 @@ from .fact_seal import (
     FactSealError,
     canonicalize_hresult_predicates,
     fact_contract,
+    island_value_names,
     prepare_sealed_source,
     unseal_facts,
 )
@@ -3093,9 +3094,18 @@ def cmd_translate(args):
                 name: wide_seals[name].text if name in wide_seals else body
                 for name, body in model_bodies.items()
             }
+        # A cppapp synthetic unit (--via) names nested enum constants by their island
+        # spelling, which only the crate's own islands can say are constants.
+        island_values = (
+            island_value_names(rustconv_target.output_crate / "src")
+            if getattr(args, "via", None) and rustconv_target is not None
+            else frozenset()
+        )
         fact_seals = (
             {
-                dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
+                dep.name: prepare_sealed_source(
+                    model_bodies[dep.name], dialect=seal_dialect, extra_values=island_values
+                )
                 for dep in sorted_deps
             }
             if fact_seal_enabled

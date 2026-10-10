@@ -268,31 +268,37 @@ class _Sources:
         return None
 
     def node_text(self, node: dict) -> str | None:
-        """A node's source text. A function-like MACRO call (`RGB(255, 255, 255)` as an
+        span = self.node_span(node)
+        return None if span is None else self.text(span)
+
+    def node_span(self, node: dict) -> tuple[str, int, int] | None:
+        """A node's source span. A function-like MACRO call (`RGB(255, 255, 255)` as an
         initializer) has its expansion END reported at the macro NAME by clang's JSON, so
-        the span is just `RGB`: extend it through the call's balanced parentheses."""
+        the span is just `RGB`: extend it through the call's balanced parentheses. The
+        lowering needs this as much as the text does: a ctor init lowered over the short
+        span came out as `m_rgbBack = RGB;`."""
         span = _span(node)
         text = self.text(span)
         if span is None or text is None:
-            return text
+            return span
         end = (node.get("range") or {}).get("end", {})
         if "expansionLoc" not in end or not re.fullmatch(r"[\s\S]*\b\w+", text):
-            return text
+            return span
         f, b, e = span
         data = self._cache[f]
         i = e
         while i < len(data) and data[i : i + 1] in (b" ", b"\t"):
             i += 1
         if data[i : i + 1] != b"(":
-            return text
+            return span
         depth = 0
         while i < len(data):
             c = data[i : i + 1]
             depth += (c == b"(") - (c == b")")
             i += 1
             if depth == 0:
-                return data[b:i].decode("utf-8", errors="replace")
-        return text
+                return f, b, i
+        return span
 
     def text(self, span: tuple[str, int, int] | None) -> str | None:
         if span is None:
@@ -500,6 +506,7 @@ class _Extractor:
         self.module_dir = str(module_dir.resolve())
         self.src = _Sources()
         self.model = ModuleModel()
+        self.unicode = False  # the TU compiles with -DUNICODE: TEXT("x") is L"x"
         # Per TU: decl ids mean nothing outside the AST that produced them.
         self.by_id: dict[str, str] = {}  # record decl id -> qualified class name
         self.decls: dict[str, cpp_lower.DeclInfo] = {}
@@ -984,15 +991,15 @@ class _Extractor:
     def lower_pending(self) -> None:
         low = cpp_lower.Lowerer(self.decls, self.model.classes, self.base_path)
         for target, node, owner in self.pending:
-            span = _span(node)
+            span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            target.lowered = out.text
+            target.lowered = cpp_lower.unicode_text_macros(out.text) if self.unicode else out.text
             target.unplaced = out.unplaced
             target.calls = [list(c) for c in out.calls]
         for m, member, node, owner in self.pending_inits:
-            span = _span(node)
+            span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
@@ -1044,6 +1051,7 @@ def extract(
                 f"no compile command for {tu}\nfix: ./vibeos-cli build --arch {arch}"
             )
         ast = cdp.clang_ast(repo, arch, tu)
+        ex.unicode = any(a in ("-DUNICODE", "-D_UNICODE") for a in argv)
         # ids are per-AST; record() re-registers them on each TU
         ex.by_id, ex.decls, ex.method_by_id = {}, {}, {}
         ex._anon_seen, ex._anon_registered = set(), set()

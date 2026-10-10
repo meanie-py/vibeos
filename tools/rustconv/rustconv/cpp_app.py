@@ -439,7 +439,9 @@ def _render_class(
     for f in cls.fields:
         if f.static:
             continue
-        ty = _nested_names(rust_type(f.c_type, model, field=True), cls, h.island_names)
+        ty = _nested_names(
+            rust_type(f.c_type, model, field=True), cls, h.island_names, frozenset(h.by_short)
+        )
         lines.append(f"    pub {_ident(f.name)}: {ty},")
     lines.append("}")
     lines.append("")
@@ -897,16 +899,20 @@ def _wnd_class_info(cls: ClassModel) -> list[str]:
     ]
 
 
-def _nested_names(ty: str, cls: ClassModel, island_names: frozenset[str]) -> str:
+def _nested_names(
+    ty: str, cls: ClassModel, island_names: frozenset[str], own: frozenset[str] = frozenset()
+) -> str:
     """A type named bare inside its class (`FN_Shutdown` in CImageDx::SHARED) is the
     island's `CImageDx_FN_Shutdown`: bindgen spells a nested name Outer_Inner. Innermost
-    enclosing scope first, as C++ lookup goes; a name the island has bare is left alone."""
+    enclosing scope first, as C++ lookup goes; a name the island has bare is left alone.
+    A class cpp_classes.rs renders itself (`own`) is never the island's: ToolsModel's
+    `VirtualBrush m_fgBrush` became bindgen's method-less `ToolsModel_VirtualBrush`."""
     scopes = cls.qualified.split("::")
     prefixes = ["_".join(scopes[:k]) for k in range(len(scopes), 0, -1)]
 
     def fix(m: re.Match) -> str:
         w = m.group(0)
-        if w in island_names:
+        if w in island_names or w in own:
             return w
         return next((f"{p}_{w}" for p in prefixes if f"{p}_{w}" in island_names), w)
 
@@ -1624,6 +1630,12 @@ def _reached_by_calls(model: ModuleModel, ext: list[ClassModel]) -> set[tuple[st
                 todo |= targets(m.calls)
     for f in model.functions:
         todo |= targets(f.calls)
+    # An external class's ctors and dtor are always translated (synthetic_tus: Drop calls
+    # the dtor), so what THEY call is reached too: CImage's dtor calls Destroy.
+    for c in ext:
+        for m in c.methods:
+            if m.kind in ("ctor", "dtor"):
+                todo |= targets(m.calls)
     reached: set[tuple[str, str]] = set()
     while todo:
         k = todo.pop()
@@ -1654,6 +1666,14 @@ def static_paths(rust: str, model: ModuleModel) -> str:
         return pairs[m.group(0)]
 
     return re.sub(rf"\b(?:{alt})\b", fix, rust)
+
+
+def publish_header_statics(rust: str) -> str:
+    """A `static inline` function in a module HEADER (toolsmodel.h's `UnZoomed`) is one copy
+    per including TU in C++, and every TU calls it. Translated, it is one private `fn` in the
+    header's unit, which the crate prelude re-exports: E0603. One copy visible to the crate is
+    the same program. Top-level items only; already-public ones are left as they are."""
+    return re.sub(r'^((?:unsafe )?(?:extern "[\w-]+" )?fn )', r"pub(crate) \1", rust, flags=re.M)
 
 
 def drop_global_qualifier(rust: str) -> str:

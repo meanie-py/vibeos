@@ -25,13 +25,14 @@ from rustconv.crate_repair import (
     RULE_FLEX_ARRAY,
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
+    RULE_MATCH_ARM_GUARD,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
     RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
-    RULE_VARIADIC_PROMOTION,
     RULE_SIZEOF_TYPE,
+    RULE_VARIADIC_PROMOTION,
     CargoCheckRun,
     Edit,
     RepairError,
@@ -2601,3 +2602,259 @@ def test_a_method_receiver_is_not_an_argument_position():
 
     src = b"impl W { pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) {} }"
     assert harvest_signatures({"a.rs": src})["DefWindowProc"] == ["UINT", "WPARAM", "LPARAM"]
+
+
+_WIDE_MATCH_SRC = b"""pub unsafe fn f(wParam: WPARAM) -> i32 {
+    match wParam {
+        VK_ESCAPE => 1,
+        WMSZ_TOP | WMSZ_BOTTOM => 2,
+        _ => 0,
+    }
+}
+"""
+
+
+def test_match_scrutinee_wider_than_arms_converts_the_labels_not_the_scrutinee():
+    """mspaint's `match wParam` (u64 on amd64) against u32 VK_*: `wParam as u32` would match
+    VK_ESCAPE for 0x1_0000_001B. C converts each label, so each arm becomes a guard with
+    `as _`, which needs no cross-target agreement (i386's u32 WPARAM reports nothing)."""
+    src = _WIDE_MATCH_SRC
+    diags = [
+        _arm_diag(arm, "u64", "u32", src=src) for arm in (b"VK_ESCAPE", b"WMSZ_TOP", b"WMSZ_BOTTOM")
+    ]
+    plan = propose_edits(
+        diags,
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_MATCH_SCRUTINEE, RULE_MATCH_ARM_GUARD],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "__c if __c == VK_ESCAPE as _",
+        "__c if __c == WMSZ_TOP as _ || __c == WMSZ_BOTTOM as _",
+    ]
+    assert not any(e.requires_target_agreement for e in plan.edits)
+    assert len(merge_plans({"amd64": plan}).edits) == 2
+
+
+def test_a_parenthesised_negative_literal_wraps_too():
+    src = "fn f() { x.nPosition = (-(1)) as ULONG; }\n"
+    at = src.index("-(1)")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("a.rs", at, at + 4, is_primary=True)],
+    )
+    assert "x.nPosition = ((1 as u32).wrapping_neg()) as ULONG;" in _apply_plan(src, diag)
+
+
+def test_a_negated_int_macro_stays_signed():
+    """mspaint `(-GRIP_SIZE / 2) as i32`: C's `#define GRIP_SIZE 3` is an int, so the quotient
+    is -1. Wrapping in bindgen's u32 would make it 0x7FFF_FFFE."""
+    from rustconv.crate_repair import RULE_UNSIGNED_NEGATE
+
+    src = b"fn f() { g((-GRIP_SIZE / 2) as i32); }\n"
+    at = src.index(b"-GRIP_SIZE")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("src/a.rs", at, at + len(b"-GRIP_SIZE"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_UNSIGNED_NEGATE],
+        constants={"GRIP_SIZE": 3},
+    )
+    assert [e.replacement for e in plan.edits] == ["(-(GRIP_SIZE as i32))"]
+
+
+def test_a_constant_argument_of_a_compared_call_is_not_a_comparison_operand():
+    """`GetKeyState(VK_SHIFT) < 0`: the comparison is the CALL's; VK_SHIFT mismatches the
+    parameter. The comparison rule claimed it and declined, so nothing answered."""
+    from rustconv.crate_repair import RULE_COMPARISON, RULE_CONST_OPERAND
+
+    src = b"fn f() -> bool {\n    GetKeyState(VK_SHIFT) < 0\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"VK_SHIFT", "i32", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_COMPARISON, RULE_CONST_OPERAND],
+        constants={"VK_SHIFT": 0x10},
+    )
+    assert [e.replacement for e in plan.edits] == ["(VK_SHIFT as i32)"]
+
+
+def test_crate_constants_follow_the_public_ntdll_sys_glob(tmp_path):
+    from rustconv.crate_repair import local_constants
+
+    crate = tmp_path / "app-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "src" / "types_amd64.rs").write_text(
+        "pub use ntdll_sys::nt::*;\npub const OWN: u32 = 1;\n"
+    )
+    sys_src = tmp_path / "ntdll-sys" / "src"
+    sys_src.mkdir(parents=True)
+    (sys_src / "bindgen_amd64.rs").write_text(
+        "pub const VK_SHIFT: u32 = 16;\npub const OWN: u32 = 9;\npub const W: u32 = 4;\n"
+    )
+    (sys_src / "bindgen_i386.rs").write_text(
+        "pub const VK_SHIFT: u32 = 16;\npub const W: u32 = 8;\n"
+    )
+    assert local_constants(crate) == {"OWN": 1, "VK_SHIFT": 16}
+
+
+def test_an_option_fn_cast_to_an_integer_maps_none_to_zero():
+    src = 'fn f() { let a = GetProcAddress(h, b"X\\0".as_ptr() as *const i8) as usize; }\n'
+    at = src.index("GetProcAddress")
+    end = src.index("; }")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn() -> i64>` as `usize`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    out = _apply_plan(src, diag)
+    assert (
+        '(GetProcAddress(h, b"X\\0".as_ptr() as *const i8)).map_or(0, |f| f as usize) as usize'
+        in out
+    )
+
+
+def test_logical_not_of_a_pointer_is_a_null_test():
+    src = "fn f() { if !w.DoCreate() { g(); } }\n"
+    at = src.index("!w")
+    end = src.index(" {", at)
+    diag = _diag(
+        "cannot apply unary operator `!` to type `*mut HWND__`",
+        code="E0600",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "if (w.DoCreate()).is_null() { g(); }" in _apply_plan(src, diag)
+
+
+def test_an_integer_literal_where_a_float_is_wanted_is_a_float_literal():
+    from rustconv.crate_repair import RULE_FLOAT_LITERAL
+
+    src = b"fn f() { let mut x: f32 = 0; let e = M_PI * 2.0 / 180; }\n"
+    at = src.index(b"0;")
+    lit = _diag(
+        "mismatched types",
+        spans=[
+            _span("src/a.rs", at, at + 1, is_primary=True, label="expected `f32`, found integer")
+        ],
+    )
+    op = src.index(b"/ 180")
+    div = _diag(
+        "cannot divide `f64` by `{integer}`",
+        code="E0277",
+        spans=[_span("src/a.rs", op, op + 1, is_primary=True)],
+    )
+    plan = propose_edits(
+        [lit, div], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_FLOAT_LITERAL]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["0.0", "180.0"]
+
+
+def test_an_address_of_a_place_for_a_cpp_reference_is_the_reference():
+    """mspaint: `canvasWindow.GetImageRect(core::ptr::addr_of_mut!(rcImage.__base0))` where
+    GetImageRect takes `RECT&`."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"f(core::ptr::addr_of_mut!(rc.__base0)); g(addr_of!(pt)); h(p);"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+    a = src.index(b"core::ptr::addr_of_mut!")
+    e = _cpp_reference_arg(
+        _span("a.rs", a, src.index(b"); g")), "&mut tagRECT", "*mut tagRECT", load, ctx
+    )
+    assert e is not None and e.replacement == "&mut rc.__base0"
+    b = src.index(b"addr_of!(pt)")
+    e = _cpp_reference_arg(_span("a.rs", b, b + 12), "&tagPOINT", "*const tagPOINT", load, ctx)
+    assert e is not None and e.replacement == "&pt"
+    # A const address is not a mutable reference, and a bare pointer is not a place.
+    assert (
+        _cpp_reference_arg(_span("a.rs", b, b + 12), "&mut tagPOINT", "*const tagPOINT", load, ctx)
+        is None
+    )
+    c = src.index(b"p);")
+    assert _cpp_reference_arg(_span("a.rs", c, c + 1), "&mut X", "*mut X", load, ctx) is None
+
+
+def test_a_deref_of_a_class_object_drops_the_star():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { g((*toolsModel).GetBgBrush()); }\n"
+    at = src.index(b"*toolsModel")
+    diag = _diag(
+        "type `cpp_classes::ToolsModel` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, at + len(b"*toolsModel"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["toolsModel"]
+
+
+def test_a_generic_reference_parameter_binds_any_place():
+    """precomp.h's `Swap(T& a, T& b)` with two HBITMAP places (a pointer type)."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"Swap((*this_).m_hbmMaster, (*part).m_hbmImage); Swap(f(), x);"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+    a = src.index(b"(*this_)")
+    e = _cpp_reference_arg(
+        _span("a.rs", a, a + len(b"(*this_).m_hbmMaster")), "&mut _", "*mut HBITMAP__", load, ctx
+    )
+    assert e is not None and e.replacement == "&mut (*this_).m_hbmMaster"
+    c = src.index(b"f()")
+    assert _cpp_reference_arg(_span("a.rs", c, c + 3), "&mut _", "i32", load, ctx) is None
+
+
+def test_a_method_on_a_raw_pointer_to_a_class_goes_through_the_pointee():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { CImageDx::_shared().Release(); }\n"
+    at = src.index(b"Release")
+    diag = _diag(
+        "no method named `Release` found for raw pointer `*mut cpp_classes::SHARED` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"Release"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["(*CImageDx::_shared())"]
+
+
+def test_atl_format_with_a_string_table_id_is_atl_format_id():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { atl_format!(strSize, IDS_FILESIZE, g_fileSize); }\n"
+    plan = propose_edits(
+        [_mismatch(src, b"IDS_FILESIZE", "*const u16", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == ["atl_format_id!"]
+
+
+def test_cstringw_implicit_conversions_are_written_out():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { g(registrySettings.strFontName); s.strFontName = szText.as_ptr(); }\n"
+    plan = propose_edits(
+        [
+            _mismatch(src, b"registrySettings.strFontName", "*const u16", "CStringW"),
+            _mismatch(src, b"szText.as_ptr()", "CStringW", "*const u16"),
+        ],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "CStringW::from_ptr(szText.as_ptr())",
+        "registrySettings.strFontName.GetString()",
+    ]

@@ -541,3 +541,21 @@ def test_a_definition_spelled_with_an_sdk_alias_exports_the_real_name(tmp_path, 
     out = rs.read_text()
     assert '#[export_name = "wWinMain"]\npub unsafe extern "system" fn _tWinMain(' in out
     assert '#[no_mangle]\npub unsafe extern "C" fn Helper()' in out
+
+
+def test_a_struct_holding_a_non_copy_struct_is_not_copy():
+    from rustconv.port import drop_impossible_copy
+
+    island = (
+        "#[repr(C)]\n#[derive(Debug)]\npub struct ATL_IAtlStringMgr {\n"
+        "    pub vtable_: *const u8,\n}\n"
+        "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct ATL_CAtlStringMgr {\n"
+        "    pub _base: ATL_IAtlStringMgr,\n    pub m_MemMgr: *mut ATL_IAtlMemMgr,\n}\n"
+        "#[derive(Debug, Copy, Clone)]\npub struct Holder {\n    pub m: ATL_CAtlStringMgr,\n}\n"
+        "#[derive(Debug, Copy, Clone)]\npub struct ByPtr {\n    pub p: *mut ATL_IAtlStringMgr,\n}\n"
+    )
+    out = drop_impossible_copy(island)
+    assert "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct ATL_CAtlStringMgr" not in out
+    assert "#[derive(Debug)]\npub struct Holder" in out
+    assert "#[derive(Debug, Copy, Clone)]\npub struct ByPtr" in out
+    assert drop_impossible_copy(out) == out

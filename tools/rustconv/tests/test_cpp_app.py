@@ -7,6 +7,7 @@ from rustconv.cpp_model import (
     Base,
     ClassModel,
     Field,
+    FreeFunc,
     GlobalVar,
     Method,
     ModuleModel,
@@ -600,3 +601,153 @@ def test_assemble_leaves_extern_declarations_alone():
     out = cpp_app.assemble(rs, m)
     assert 'extern "C" {\n    fn CImage__s_x(n: u32) -> i32;\n}\n' in out
     assert "impl CImage {" in out and "pub unsafe fn Go(&mut self)" in out
+
+
+def test_external_reach_follows_resolved_calls_and_the_dtor():
+    """mspaint: a static `CImage::GetImporterFilterString` reaches the helper it calls, not
+    the CImage methods the module never calls; and CImage's dtor (always translated, Drop
+    calls it) reaches `Destroy`."""
+    img = ClassModel("CImage", "ATL::CImage", "class", "atlimage.h", external=True)
+    img.methods = [
+        _m("CImage", "ctor", rust_name="__ctor_0"),
+        _m("~CImage", "dtor", rust_name="__dtor", calls=[("CImage", "Destroy")]),
+        _m("Destroy", rust_name="Destroy"),
+        _m(
+            "GetImporterFilterString",
+            static=True,
+            rust_name="GetImporterFilterString",
+            calls=[("CImage", "BuildCodecFilterString")],
+        ),
+        _m("BuildCodecFilterString", static=True, rust_name="BuildCodecFilterString"),
+        _m("Attach", rust_name="Attach"),
+    ]
+    model = ModuleModel(classes={"ATL::CImage": img})
+    model.functions = [
+        FreeFunc("f", "void f()", "m.cpp", "{}", calls=[("CImage", "GetImporterFilterString")])
+    ]
+    reached = cpp_app._reached_by_calls(model, [img])
+    assert reached == {
+        ("CImage", "GetImporterFilterString"),
+        ("CImage", "BuildCodecFilterString"),
+        ("CImage", "Destroy"),
+    }
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_functional_cast_to_a_scalar_is_a_c_cast(tmp_path):
+    """dib.cpp's `INT(cx * eTan)`: left as written, the model called `INT(..)` like a fn."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef int INT;\nclass P { public: void Go(double e); int d; };\n"
+        "void P::Go(double e) { d = INT(3 * e) + 1; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ this_->d = ((INT)(3 * e)) + 1; }"
+
+
+def test_text_macros_are_wide_literals_in_a_unicode_tu():
+    out = cpp_lower.unicode_text_macros(
+        's += TEXT(\';\'); s += _T(" (" ); f(TEXT("a\\"b"), TEXTX(1));'
+    )
+    assert out == 's += L\';\'; s += L" ("; f(L"a\\"b", TEXTX(1));'
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_object_macro_over_a_callers_local_is_inlined(tmp_path):
+    """palette.cpp's `#define Y_MARGIN ((rcClient.bottom / 2) - CXY_COLORBOX)`: it names
+    the caller's local, which no Rust item can, so it is inlined where it was expanded."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define CXY 5\n#define Y_MARGIN ((rc.bottom / 2) - CXY) /* centre */\n"
+        "struct R { int bottom; };\nclass P { public: int Go(R rc); };\n"
+        "int P::Go(R rc) { int dy = 3 - Y_MARGIN; return CXY + dy; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ int dy = 3 - (((rc.bottom / 2) - CXY)); return CXY + dy; }"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_ctor_init_through_a_macro_call_keeps_its_arguments(tmp_path):
+    """selectionmodel.cpp's `m_rgbBack(RGB(255, 255, 255))` was lowered as `RGB`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define RGB(r, g, b) ((r) | ((g) << 8) | ((b) << 16))\n"
+        "class S { public: S(); int m_rgb; };\nS::S() : m_rgb(RGB(255, 255, 255)) {}\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (ctor,) = [m for m in ex.model.classes["S"].methods if m.kind == "ctor"]
+    assert ctor.lowered_inits == [("m_rgb", "RGB(255, 255, 255)")]
+
+
+def test_a_header_static_function_is_visible_to_the_crate():
+    rs = (
+        'unsafe extern "C" fn Zoomed__0(x: i32) -> i32 {\n    fn inner() {}\n    x\n}\n'
+        "pub fn Keep() {}\nfn Plain() {}\n"
+    )
+    out = cpp_app.publish_header_statics(rs)
+    assert out.startswith('pub(crate) unsafe extern "C" fn Zoomed__0')
+    assert "    fn inner() {}" in out and "pub fn Keep()" in out and "pub(crate) fn Plain()" in out
+    assert cpp_app.publish_header_statics(out) == out
+
+
+def test_a_nested_module_class_field_is_the_rendered_class_not_bindgens():
+    tm = ClassModel("ToolsModel", "ToolsModel", "class", "t.h")
+    island = frozenset({"ToolsModel_VirtualBrush", "ToolsModel_FN_X"})
+    out = cpp_app._nested_names("VirtualBrush", tm, island, frozenset({"VirtualBrush"}))
+    assert out == "VirtualBrush"
+    assert (
+        cpp_app._nested_names("FN_X", tm, island, frozenset({"VirtualBrush"})) == "ToolsModel_FN_X"
+    )

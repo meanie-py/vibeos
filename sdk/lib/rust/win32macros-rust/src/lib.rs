@@ -724,6 +724,15 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
+/// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()` (clang/gcc,
+/// which is how this tree builds). The C promises the point is never reached; so does this.
+#[macro_export]
+macro_rules! UNREACHABLE {
+    () => {
+        core::hint::unreachable_unchecked()
+    };
+}
+
 /// `debug.h` — `ASSERT(exp)`. Inert, matching the release (`!DBG`) build where the header
 /// defines it to `((VOID)0)`: the expression is TYPE-CHECKED but never evaluated, so a body
 /// that asserts on a name it never defines still fails to compile, and no side effect of the

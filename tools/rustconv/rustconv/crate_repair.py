@@ -88,6 +88,8 @@ RULE_BITFIELD = "bitfield_accessor"
 RULE_CONST_OPERAND = "c_constant_operand"
 RULE_C2RUST_ANON = "c2rust_anon_member"
 RULE_CPP_REFERENCE_ARG = "cpp_reference_argument"
+RULE_FLOAT_LITERAL = "c_float_literal"
+RULE_OBJECT_DEREF = "object_deref"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -137,6 +139,8 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_LITERAL_MUT,
     RULE_BITFIELD,
     RULE_C2RUST_ANON,
+    RULE_FLOAT_LITERAL,
+    RULE_OBJECT_DEREF,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -1553,7 +1557,59 @@ def _cpp_reference_arg(
         pat = re.sub(r"(?<![\w])_(?![\w])", ".+", pat)
         return re.fullmatch(pat, re.sub(r"\s+", " ", have.strip())) is not None
 
-    if m is None or not matches(m.group(2), found) or found.lstrip().startswith(("&", "*")):
+    if m is None:
+        return None
+    if m.group(1) in ("&mut ", "&") and m.group(2).strip() == "_":
+        # A fully generic reference parameter (precomp.h's `Swap(T& a, T& b)`): any PLACE
+        # binds, whatever its type -- including a pointer-typed HBITMAP.
+        file_name = str(span.get("file_name") or "")
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        data = load(file_name)
+        text = data[start:end].decode("utf-8", "replace").strip() if data else ""
+        if not _PLACE.fullmatch(text):
+            return None
+        return Edit(
+            file_name=file_name,
+            byte_start=start,
+            byte_end=end,
+            replacement=f"{m.group(1)}{text}",
+            rule=RULE_CPP_REFERENCE_ARG,
+            authority=f"a generic C++ reference parameter binds the place; expected `{expected}`",
+            original=text,
+            line=int(span.get("line_start") or 0),
+            column=int(span.get("column_start") or 0),
+            requires_target_agreement=False,
+            targets=(ctx.target,),
+        )
+    raw = re.fullmatch(r"\*(mut|const) (.+)", found.strip())
+    if m.group(1) in ("&mut ", "&") and raw is not None and matches(m.group(2), raw.group(2)):
+        # The model wrote C's `&place` as `addr_of_mut!(place)` for a C++ REFERENCE param
+        # (`canvasWindow.GetImageRect(rcImage)`): the reference to that place is the arg.
+        file_name = str(span.get("file_name") or "")
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        data = load(file_name)
+        if data is None or end <= start:
+            return None
+        text = data[start:end].decode("utf-8", "replace").strip()
+        a = re.fullmatch(r"(?:core::ptr::)?addr_of(_mut)?!\((.+)\)", text, re.S)
+        if a is None or not _PLACE.fullmatch(a.group(2).strip()):
+            return None
+        if m.group(1) == "&mut " and a.group(1) is None:
+            return None  # a const address where a mutable reference is wanted: not ours
+        return Edit(
+            file_name=file_name,
+            byte_start=start,
+            byte_end=end,
+            replacement=f"{m.group(1)}{a.group(2).strip()}",
+            rule=RULE_CPP_REFERENCE_ARG,
+            authority=f"a C++ reference parameter binds the place itself; expected `{expected}`",
+            original=text,
+            line=int(span.get("line_start") or 0),
+            column=int(span.get("column_start") or 0),
+            requires_target_agreement=False,
+            targets=(ctx.target,),
+        )
+    if not matches(m.group(2), found) or found.lstrip().startswith(("&", "*")):
         return None
     mutable = m.group(1) in ("&mut ", "*mut ")
     file_name = str(span.get("file_name") or "")
@@ -2297,6 +2353,231 @@ _RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
 _RE_C2RUST_ANON = re.compile(r"c2rust_unnamed(?:_\d+)?")
 
 
+def _float_literal_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """An integer LITERAL where rustc wants `f32`/`f64`: `let xDpi: f32 = 0;`, `M_PI / 180`.
+    C converts the constant to the floating type; `0.0` / `180.0` is that value exactly. The
+    label carries no backticks around `integer` (an unsuffixed literal), and the span may be
+    a secondary one under an "arguments to this method are incorrect" primary."""
+    edits: list[Edit] = []
+    message = str(diagnostic.get("message") or "")
+    floaty = re.search(
+        r"cannot (?:add|subtract|multiply|divide) `(f32|f64)` by `\{integer\}`", message
+    )
+    for span in diagnostic.get("spans") or []:
+        label = str(span.get("label") or "")
+        want = re.fullmatch(r"expected `(f32|f64)`, found integer", label)
+        if want is None and not (floaty and span.get("is_primary")):
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        if floaty:
+            # The primary is the operator; the literal is the right operand after it.
+            m = re.match(rb"\s*([0-9][0-9_]*)\b(?![.\w])", data[end:])
+            if m is None:
+                continue
+            start, end = end + m.start(1), end + m.end(1)
+        text = data[start:end].decode("utf-8", "replace").strip()
+        if not re.fullmatch(r"[0-9][0-9_]*", text):
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_FLOAT_LITERAL,
+                file_name,
+                data,
+                start,
+                end,
+                f"{text}.0",
+                "rustc: an integer literal where a float is expected; C converts the constant",
+                span,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
+def _object_deref_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0614 on a generated C++ CLASS: `(*toolsModel).GetBgBrush()` where mspaint's
+    `toolsModel` is a global OBJECT the model took for a pointer. rustc has proved the operand
+    is the class itself, so the object without `*` is what the C++ named. Only for
+    `cpp_classes::` types: a smart pointer's `*` is a real operation and stays red."""
+    if (diagnostic.get("code") or {}).get("code") != "E0614":
+        return [], [], False
+    m = re.search(r"type `cpp_classes::\w+` cannot be dereferenced", str(diagnostic.get("message")))
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    text = data[start:end].decode("utf-8", "replace")
+    star = re.fullmatch(r"\*\s*([A-Za-z_][\w.]*)", text)
+    if star is None:
+        return [], [], False
+    note = "rustc E0614: the operand is the class object itself, not a pointer to it"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF, file_name, data, start, end, star.group(1), note, span, ctx
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _atl_format_id_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`atl_format!(s, IDS_FILESIZE, ..)`: the format argument is an INTEGER, i.e. C++
+    called `CString::Format(UINT nFormatID, ...)`, the string-table overload. That is
+    atlclasses' `atl_format_id!`; rustc's `expected *const u16, found u32` proves which."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        if expected.replace(" ", "") != "*constu16" or found not in INT_PRIMITIVES | {"integer"}:
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        start = int(span.get("byte_start") or 0)
+        # Same length, so offsets hold: `_enclosing_call` names identifiers, not `name!`.
+        masked = _mask_lexical(data).replace(b"atl_format!(", b"atl_format_(")
+        callee, arg_index = _enclosing_call(masked, start)
+        if callee != "atl_format_" or arg_index != 1:
+            continue
+        name_at = data.rfind(b"atl_format!", 0, start)
+        if name_at < 0:
+            continue
+        edits.append(
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                name_at,
+                name_at + len(b"atl_format!"),
+                "atl_format_id!",
+                "the format argument is a string-table id: CString::Format(UINT nFormatID, ...)",
+                span,
+                ctx,
+            )
+        )
+    return edits, [], bool(edits)
+
+
+def _cstring_conversion_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """ATL CStringW's implicit conversions, written out: a CStringW where `*const u16` is
+    wanted is `operator PCXSTR()` -> `.GetString()`; a `*const u16` where a CStringW is
+    wanted (an assignment) is `operator=(PCXSTR)` -> `CStringW::from_ptr(..)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        exp, fnd = expected.replace(" ", ""), found.replace(" ", "")
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        text = data[start:end].decode("utf-8", "replace").strip()
+        if not text or not _balanced(_mask_lexical(text.encode())):
+            continue
+        if exp == "*constu16" and fnd.split("::")[-1] in ("CStringW", "&CStringW", "&mutCStringW"):
+            rep = f"{text}.GetString()" if _PLACE.fullmatch(text) else f"({text}).GetString()"
+            why = "CStringW's implicit operator PCXSTR"
+        elif exp.split("::")[-1] == "CStringW" and fnd in ("*constu16", "*mutu16"):
+            rep = f"CStringW::from_ptr({text})"
+            why = "CStringW's operator=(PCXSTR) / converting constructor"
+        else:
+            continue
+        edits.append(
+            _simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, rep, why, span, ctx)
+        )
+    return edits, [], bool(edits)
+
+
+def _merge_rules(diagnostic, load, ctx, *rules):
+    edits, skipped, claimed = [], [], False
+    for rule in rules:
+        e, sk, c = rule(diagnostic, load, ctx)
+        edits += e
+        skipped += sk
+        claimed = claimed or c
+    return edits, skipped, claimed
+
+
+def _receiver_start(data: bytes, dot: int) -> int | None:
+    """Start of the receiver expression that ends just before `.` at `dot`: a path, a call
+    or a parenthesized group, chained (`CImageDx::_shared()`, `(*p).q`, `a.b`)."""
+    i = dot
+    while True:
+        j = i
+        while j > 0 and data[j - 1 : j] in b" \t":
+            j -= 1
+        if j > 0 and data[j - 1 : j] == b")":
+            depth, k = 0, j - 1
+            while k >= 0:
+                c = data[k : k + 1]
+                depth += (c == b")") - (c == b"(")
+                if depth == 0:
+                    break
+                k -= 1
+            if k < 0:
+                return None
+            j = k
+        m = re.search(rb"[A-Za-z_][\w:]*\Z", data[:j])
+        i = m.start() if m else j
+        if i > 0 and data[i - 1 : i] == b".":
+            i -= 1
+            continue
+        return i if i < dot else None
+
+
+def _raw_receiver_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0599 a method called on a RAW POINTER to a generated C++ class: C++'s `_shared()`
+    returned `SHARED&`, the Rust returns `*mut SHARED`, and `.Release()` is SHARED's.
+    Calling it through the pointee, `(*CImageDx::_shared()).Release()`, is the C++ call."""
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    m = re.search(
+        r"no method named `(\w+)` found for raw pointer `\*(?:mut|const) cpp_classes::\w+`",
+        str(diagnostic.get("message") or ""),
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    if data[start:end].decode("utf-8", "replace") != m.group(1):
+        return [], [], False
+    dot = data.rfind(b".", 0, start)
+    if dot < 0 or data[dot + 1 : start].strip():
+        return [], [], False
+    recv = _receiver_start(data, dot)
+    if recv is None:
+        return [], [], False
+    text = data[recv:dot].decode("utf-8", "replace").strip()
+    note = "rustc E0599: the method is the pointee class's; C++ called it on the reference"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF, file_name, data, recv, dot, f"(*{text})", note, span, ctx
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _c2rust_anon_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2869,6 +3150,20 @@ def _enclosing_match_scrutinee(masked: bytes, start: int) -> tuple[int, int] | N
     return None
 
 
+def _bare_arm_pattern(data: bytes, start: int, end: int) -> tuple[int, int, str] | None:
+    """The whole arm pattern around the constant at ``start:end`` when it is bare constant
+    paths joined by ``|`` (``WMSZ_TOP | WMSZ_BOTTOM =>``), as ``(start, end, text)``."""
+    path = rb"[A-Za-z_][\w:]*"
+    head = re.search(rb"(?:" + path + rb"\s*\|\s*)*\Z", data[max(0, start - 400) : start])
+    tail = re.match(rb"(?:\s*\|\s*" + path + rb")*(?=\s*=>)", data[end:])
+    if head is None or tail is None or not re.fullmatch(path, data[start:end]):
+        return None
+    p_start, p_end = start - len(head.group(0)), end + tail.end()
+    if not re.search(rb"[{,}]\s*\Z", data[:p_start]):
+        return None  # a `|` inside a larger pattern, or not an arm at all
+    return p_start, p_end, data[p_start:p_end].decode("utf-8", "replace")
+
+
 def _match_scrutinee_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2910,9 +3205,16 @@ def _match_scrutinee_rule(
             continue
         key = (file_name, scrutinee[0], scrutinee[1])
         ctx.match_wants.setdefault(key, set()).add(found)
-        arm = data[start:end].decode("utf-8", "replace")
-        if re.fullmatch(r"[A-Za-z_][\w:]*", arm) and re.match(rb"\s*=>", data[end:]):
-            ctx.match_arm_sites.setdefault(key, []).append((start, end, arm, expected))
+        pattern = _bare_arm_pattern(data, start, end)
+        if pattern is not None:
+            ctx.match_arm_sites.setdefault(key, []).append((*pattern, expected))
+        # A scrutinee WIDER than the arm truncates under the cast: `match wParam as u32` on
+        # amd64 matches VK_ESCAPE for 0x1_0000_001B. C converts the LABEL instead, which is
+        # the guard fallback; it also needs no cross-target agreement (i386's WPARAM is
+        # already u32 and reports nothing, which vetoed the cast and left mspaint red).
+        if INT_WIDTH.get(found, 8) < INT_WIDTH.get(expected, 8):
+            ctx.match_wants[key].add("<narrowing>")
+            continue
         text = data[scrutinee[0] : scrutinee[1]].decode("utf-8", "replace")
         trailing = _RE_TRAILING_CAST.search(text)
         if trailing and trailing.group(0).split()[-1] == found:
@@ -4055,18 +4357,58 @@ def _unsigned_negate_rule(
     type, which is `(1 as u32).wrapping_neg()` -- u32::MAX for -1, and right for any N."""
     if (diagnostic.get("code") or {}).get("code") != "E0600":
         return [], [], False
-    m = re.search(
-        r"unary operator `-` to type `(u8|u16|u32|u64|usize)`", str(diagnostic.get("message") or "")
-    )
+    message = str(diagnostic.get("message") or "")
+    if re.search(r"unary operator `!` to type `\*(?:mut|const) ", message):
+        # C's `if (!mainWindow.DoCreate())` on an HWND: logical NOT of a pointer is "is NULL".
+        got = _primary_bytes(diagnostic, load)
+        if got is None:
+            return [], [], False
+        span, file_name, data, _masked, start, end = got
+        text = data[start:end].decode("utf-8", "replace")
+        inner = re.fullmatch(r"(?s)!\s*(.+)", text)
+        if data[:start].rstrip().endswith(b"!"):
+            return [], [], False  # `!!p`: RULE_POINTER_NOT_NOT's
+        if inner is None or not _balanced(inner.group(1).encode()):
+            return [], [], False
+        rep = f"({inner.group(1)}).is_null()"
+        note = "rustc E0600: C's `!p` on a pointer is a NULL test"
+        return (
+            [_simple_edit(RULE_UNSIGNED_NEGATE, file_name, data, start, end, rep, note, span, ctx)],
+            [],
+            True,
+        )
+    m = re.search(r"unary operator `-` to type `(u8|u16|u32|u64|usize)`", message)
     if m is None:
         return [], [], False
     got = _primary_bytes(diagnostic, load)
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
-    lit = re.fullmatch(
-        r"\(?\s*-\s*(\d+|0[xX][0-9a-fA-F]+)\s*\)?", data[start:end].decode("utf-8", "replace")
-    )
+    text = data[start:end].decode("utf-8", "replace")
+    lit = re.fullmatch(r"\(?\s*-\s*\(?\s*(\d+|0[xX][0-9a-fA-F]+)\s*\)?\s*\)?", text)
+    named = re.fullmatch(r"\(?\s*-\s*\(?\s*([A-Za-z_]\w*)\s*\)?\s*\)?", text)
+    value = ctx.constants.get(named.group(1)) if named else None
+    if lit is None and value is not None and 0 <= value <= 0x7FFF_FFFF:
+        # `-GRIP_SIZE` of a `#define GRIP_SIZE 3`: C's macro is an `int`, so the negation
+        # is signed and `-GRIP_SIZE / 2` is -1. bindgen's `u32` is the literal's width only;
+        # wrapping in u32 would make that division 0x7FFF_FFFE.
+        return (
+            [
+                _simple_edit(
+                    RULE_UNSIGNED_NEGATE,
+                    file_name,
+                    data,
+                    start,
+                    end,
+                    f"(-({named.group(1)} as i32))",
+                    "rustc E0600 on a constant whose value fits `int`: C negates the int macro",
+                    span,
+                    ctx,
+                )
+            ],
+            [],
+            True,
+        )
     if lit is None:
         return [], [], False
     return (
@@ -4095,17 +4437,35 @@ def _option_fn_as_ptr_rule(
     a PVOID; `None` is NULL. `f.map_or(null_mut(), |p| p as *mut _)`."""
     if (diagnostic.get("code") or {}).get("code") != "E0605":
         return [], [], False
-    m = re.match(
-        r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `\*(mut|const) ",
-        str(diagnostic.get("message") or ""),
-    )
-    if m is None:
+    message = str(diagnostic.get("message") or "")
+    m = re.match(r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `\*(mut|const) ", message)
+    # `(ULONG_PTR)GetProcAddress(..)` / `GetProcAddress(..) as usize`: the address as an
+    # integer, and None is 0. mspaint's OpenMailer tests MAPISendMailW's this way.
+    as_int = re.match(r"non-primitive cast: `Option<[^`]*fn\([^`]*` as `(usize|u64|u32)`", message)
+    if m is None and as_int is None:
         return [], [], False
     got = _primary_bytes(diagnostic, load)
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
     text = data[start:end].decode("utf-8", "replace")
+    if as_int is not None:
+        cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>usize|u64|u32|[A-Z_]+)", text)
+        if cast is None or not _balanced(cast.group("e").encode()):
+            return [], [], False
+        rep = f"({cast.group('e')}).map_or(0, |f| f as usize) as {cast.group('t')}"
+        edit = _simple_edit(
+            RULE_OPTION_FN_AS_PTR,
+            file_name,
+            data,
+            start,
+            end,
+            rep,
+            "rustc E0605: C casts the function pointer to an integer; None is 0",
+            span,
+            ctx,
+        )
+        return [edit], [], True
     cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>\*(?:mut|const)\s+[\w:]+)", text)
     if cast is None or not _balanced(cast.group("e").encode()):
         return [], [], False
@@ -4287,7 +4647,22 @@ def local_constants(crate_dir: Path) -> dict[str, int]:
         for m in _CONST_DEF.finditer(path.read_text(errors="replace")):
             value = int(m.group(3).replace("_", ""), 0) * (-1 if m.group(2) else 1)
             values.setdefault(m.group(1), set()).add(value)
-    return {k: v.pop() for k, v in values.items() if len(v) == 1}
+    own = {k: v.pop() for k, v in values.items() if len(v) == 1}
+    # The usermode island's PUBLIC `pub use ntdll_sys::nt::*;` reaches the caller's scope the
+    # same way `harvest`'s callee signatures do: mspaint's `GetKeyState(VK_SHIFT)` is a
+    # winuser.h `VK_SHIFT: u32 = 16` into a `c_int`, and only ntdll-sys defines it. Every
+    # bindgen_<arch>.rs is read, so a value that differs by arch drops out like a local one.
+    islands = [p.read_bytes() for p in (crate_dir / "src").glob("types_*.rs")]
+    if any(re.search(rb"^pub use ntdll_sys::nt::\*;", d, re.M) for d in islands):
+        sys_values: dict[str, set[int]] = {}
+        for path in sorted((crate_dir.parent / "ntdll-sys" / "src").glob("bindgen_*.rs")):
+            for m in _CONST_DEF.finditer(path.read_text(errors="replace")):
+                value = int(m.group(3).replace("_", ""), 0) * (-1 if m.group(2) else 1)
+                sys_values.setdefault(m.group(1), set()).add(value)
+        for name, vals in sys_values.items():
+            if name not in values and len(vals) == 1:
+                own[name] = vals.pop()
+    return own
 
 
 def _int_range(ty: str, width: int) -> tuple[int, int] | None:
@@ -4433,6 +4808,16 @@ _RULE_TABLE: dict[
     RULE_KEYWORD_FIELD: _keyword_field_rule,
     RULE_BITFIELD: _bitfield_rule,
     RULE_C2RUST_ANON: _c2rust_anon_rule,
+    RULE_FLOAT_LITERAL: _float_literal_rule,
+    RULE_OBJECT_DEREF: lambda d, load, c: _merge_rules(
+        d,
+        load,
+        c,
+        _object_deref_rule,
+        _raw_receiver_rule,
+        _atl_format_id_rule,
+        _cstring_conversion_rule,
+    ),
     RULE_CONST_OPERAND: _constant_operand_rule,
 }
 
@@ -4510,7 +4895,7 @@ def propose_edits(
     # visible now that every diagnostic has been seen. A scrutinee cast that satisfies one arm
     # and breaks another is not a repair; drop the whole match and say which types collided.
     for key, wants in ctx.match_wants.items():
-        if len(wants) < 2:
+        if len(wants) < 2 and "<narrowing>" not in wants:
             continue
         edit = edits.pop((*key, RULE_MATCH_SCRUTINEE), None)
         # C converts every `case` label to the scrutinee's type, so the faithful answer to
@@ -4521,8 +4906,14 @@ def propose_edits(
         # left to a human as before.
         sites = ctx.match_arm_sites.get(key, [])
         if sites and RULE_MATCH_ARM_GUARD in rules:
+            # Narrowing: `as _` lets the comparison name the scrutinee's own type, so the
+            # one edit is right on every arch whatever width the alias has there.
+            narrowing = "<narrowing>" in wants
             for a_start, a_end, arm, expected in sites:
-                guard = f"__c if __c == {arm} as {expected}"
+                target_type = "_" if narrowing else expected
+                guard = "__c if " + " || ".join(
+                    f"__c == {name.strip()} as {target_type}" for name in arm.split("|")
+                )
                 guard_edit = Edit(
                     file_name=key[0],
                     byte_start=a_start,
@@ -4530,12 +4921,12 @@ def propose_edits(
                     replacement=guard,
                     rule=RULE_MATCH_ARM_GUARD,
                     authority=(
-                        f"arms want {', '.join(sorted(w for w in wants if w != '<ladder>'))}; "
+                        f"arms want {', '.join(sorted(w for w in wants if w[:1] != '<'))}; "
                         f"C converts the `case {arm}` label to the scrutinee type `{expected}`"
                     ),
                     original=arm,
                     targets=(target,),
-                    requires_target_agreement=True,
+                    requires_target_agreement=not narrowing,
                 )
                 edits[guard_edit.key] = guard_edit
             continue

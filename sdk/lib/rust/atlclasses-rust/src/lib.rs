@@ -104,6 +104,17 @@ pub fn set_resource_instance(h: *mut c_void) {
     RESOURCE_INSTANCE.store(h, Ordering::Relaxed);
 }
 
+extern "C" {
+    /// The linker's symbol for the image that contains it -- the module's own, EXE or DLL.
+    static __ImageBase: u8;
+}
+
+/// `_AtlBaseModule.GetModuleInstance()`: CAtlBaseModule's constructor sets
+/// `m_hInst = reinterpret_cast<HINSTANCE>(&__ImageBase)`, the image this code is linked into.
+pub fn module_instance() -> *mut c_void {
+    unsafe { core::ptr::addr_of!(__ImageBase) as *mut c_void }
+}
+
 /// `_AtlBaseModule.GetResourceInstance()`: the instance set above, else the process image.
 pub fn resource_instance() -> *mut c_void {
     let h = RESOURCE_INSTANCE.load(Ordering::Relaxed);
@@ -151,6 +162,19 @@ macro_rules! atl_format {
             $crate::swprintf(__buf, __fmt $(, $done)*);
             __s.ReleaseBuffer();
         }
+    }};
+}
+
+/// `CStringT::Format(UINT nFormatID, ...)` -- cstringt.h: the format is a string-table entry
+/// (`strSize.Format(IDS_FILESIZE, g_fileSize)`), loaded from the module's resources and then
+/// formatted as `atl_format!` does. ATL's ATLENSURE throws when the load fails; this formats
+/// the empty string instead, so the result is empty rather than an exception nobody catches.
+#[macro_export]
+macro_rules! atl_format_id {
+    ($s:expr, $id:expr $(, $a:expr)* $(,)?) => {{
+        let mut __f = $crate::CStringW::new();
+        __f.LoadStringW(($id) as u32);
+        $crate::atl_format!($s, __f.GetString() $(, $a)*);
     }};
 }
 
@@ -1125,6 +1149,17 @@ impl CStringW {
             return;
         }
         self.m_nLength = wide_len(self.m_pszData) as i32;
+    }
+
+    /// `ReleaseBufferSetLength(int nNewLength)` — atlsimpstr.h; also `ReleaseBuffer(n)` with
+    /// an explicit length (CWindow::GetWindowText). The length is the caller's, not measured.
+    pub unsafe fn ReleaseBufferSetLength(&mut self, nNewLength: i32) {
+        if self.m_pszData.is_null() {
+            self.m_nLength = 0;
+            return;
+        }
+        self.m_nLength = nNewLength;
+        *self.m_pszData.add(nNewLength as usize) = 0;
     }
 
     /// `Left(int nCount)` — cstringt.h:776. ATL clamps: negative yields empty, over-long
