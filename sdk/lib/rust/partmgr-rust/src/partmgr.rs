@@ -428,6 +428,9 @@ pub unsafe extern "C" fn PartMgrUpdatePartitionDevices(
         while !curEntry2.is_null() {
             let partExt2 = (curEntry2 as usize - core::mem::offset_of!(PARTITION_EXTENSION, ListEntry)) as PPARTITION_EXTENSION;
             if (*partExt2).DetectedNumber == pdoNumber {
+                // Restart from the head. The C resets the cursor inside a `for` whose
+                // step then runs, so its "restart" never re-checks the first entry and
+                // can hand out a PDO number that entry already holds.
                 curEntry2 = (*FdoExtension).PartitionList.Next;
                 pdoNumber = pdoNumber.wrapping_add(1);
                 continue;

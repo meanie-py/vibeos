@@ -3,6 +3,13 @@
 #![allow(dead_code, unused_imports, unused_variables, unused_parens, unused_mut)]
 #![allow(clippy::all)]
 
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 // PAGED_CODE() is the DDK's "pageable code" IRQL assertion (xdk/kefuncs.h): NOP_FUNCTION in
 // a free build, and a no-op here. It is a macro, never a fn -- an out-of-line no-op call is an
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.

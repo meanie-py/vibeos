@@ -131,6 +131,7 @@ pub(crate) use vlog;
 
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(DriverObject: PVOID, RegistryPath: PVOID) -> ULONG {
+    crate::dma::read_parameters(RegistryPath.cast());
     let mut status = u32::MAX;
     for device_id in [b"1001", b"1042"] {
         let mut init: HW_INITIALIZATION_DATA = core::mem::zeroed();
@@ -206,6 +207,14 @@ unsafe extern "system" fn hw_find_adapter(
         vlog!("{:02x}:{:02x}.{}: no memory for the bounce pool", df.bus, df.device, df.function);
         return SP_RETURN_ERROR;
     }
+    let requester = crate::dma::requester(df.bus, df.device, df.function);
+    let (dma, claimed) = crate::dma::adapter_for(requester, ARENA_LEN as ULONG);
+    if dma.is_null() {
+        vlog!("{:02x}:{:02x}.{}: no DMA adapter from the HAL", df.bus, df.device, df.function);
+        return SP_RETURN_ERROR;
+    }
+    // Its queues and its arena, below, are common buffers of this adapter.
+    let _current = crate::dma::Current::set(dma);
     enable_device(df);
     // Adapters are found one at a time at init, so a per-adapter reset is race-free.
     crate::hal::MAP_FAILED.store(false, core::sync::atomic::Ordering::Release);
@@ -244,14 +253,15 @@ unsafe extern "system" fn hw_find_adapter(
     ptr::write(a.req, BlkReq::default());
     ptr::write(a.resp, BlkResp::default());
     vlog!(
-        "{:02x}:{:02x}.{} dev {:04x}: {} sectors ({} MiB){}",
+        "{:02x}:{:02x}.{} dev {:04x}: {} sectors ({} MiB){}{}",
         df.bus,
         df.device,
         df.function,
         device,
         a.sectors,
         a.sectors * SECTOR_SIZE as u64 >> 20,
-        if a.readonly { ", read-only" } else { "" }
+        if a.readonly { ", read-only" } else { "" },
+        if claimed { "; DMA-remapping compatible" } else { "" }
     );
     a.blk = Some(blk);
 

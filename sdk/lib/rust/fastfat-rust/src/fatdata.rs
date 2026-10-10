@@ -199,7 +199,7 @@ pub unsafe extern "system" fn FatBugCheckExceptionFilter(
         (*ExceptionPointer).ExceptionRecord as usize,
         (*ExceptionPointer).ContextRecord as usize,
         (*(*ExceptionPointer).ExceptionRecord).ExceptionAddress as usize,
-    );
+            );
 
     // return EXCEPTION_EXECUTE_HANDLER; // unreachable
     // Satisfy the return type in the unreachable path

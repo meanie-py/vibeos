@@ -1546,8 +1546,6 @@ pub static mut UnicodeFonts: [MUI_SUBFONT; 25] = unsafe {
     ]
 };
 
-pub const NOTHING: () = ();
-
 #[repr(C)]
 pub struct MUI_SUBFONT {
     pub FontName: PWCHAR,
@@ -1686,7 +1684,6 @@ unsafe extern "C" fn InputList_AppendNode() -> *mut INPUT_LIST_NODE {
     }
     pCurrent = _InputList;
     while !(*pCurrent).pNext.is_null() {
-        NOTHING;
         pCurrent = (*pCurrent).pNext as *mut INPUT_LIST_NODE;
     }
     (*pCurrent).pNext = pNew as *mut _INPUT_LIST_NODE;
@@ -2360,7 +2357,6 @@ pub unsafe extern "C" fn InputList_Sort() {
             /* Find last node */
             pNode = _InputList;
             while !(*pNode).pNext.is_null() {
-                NOTHING;
                 pNode = (*pNode).pNext as *mut INPUT_LIST_NODE;
             }
 

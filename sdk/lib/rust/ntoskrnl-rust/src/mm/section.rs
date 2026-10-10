@@ -519,7 +519,7 @@ const IMAGE_NT_OPTIONAL_HDR64_MAGIC: u16 = 0x20b;
 const PAGE_FLAGS_VALID_FOR_SECTION: ULONG =
     PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
     PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY |
-    PAGE_NOACCESS;
+    PAGE_NOACCESS | PAGE_NOCACHE | PAGE_WRITECOMBINE; // mm.h; the port had dropped the last two
 const PAGE_IS_WRITABLE: ULONG = PAGE_READWRITE | PAGE_WRITECOPY | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 const PAGE_IS_EXECUTABLE: ULONG = PAGE_EXECUTE | PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY;
 const PAGE_IS_WRITECOPY: ULONG = PAGE_WRITECOPY | PAGE_EXECUTE_WRITECOPY;
@@ -3719,6 +3719,24 @@ pub unsafe extern "system" fn MmMapViewOfSection(
         InterlockedIncrementUL(core::ptr::addr_of_mut!((*ImageSectionObject).MapCount) as *mut ULONG);
     } else {
         let Segment = (*Section).Segment as PMM_SECTION_SEGMENT;
+
+        // The C checks the view's protection against the section's before anything else
+        // ("check for write/read/execute access"); the port had dropped all three, so a
+        // PAGE_READONLY section mapped PAGE_READWRITE (or PAGE_EXECUTE) succeeded.
+        let Initial = (*Section).InitialPageProtection;
+        const WRITE: ULONG = PAGE_READWRITE | PAGE_EXECUTE_READWRITE;
+        const READ: ULONG = PAGE_READONLY | PAGE_WRITECOPY | PAGE_EXECUTE_READ | PAGE_EXECUTE_WRITECOPY;
+        if ((Protect & WRITE) != 0 && (Initial & WRITE) == 0)
+            || ((Protect & READ) != 0 && (Initial & PAGE_IS_READABLE_FIXUP) == 0)
+            || ((Protect & PAGE_IS_EXECUTABLE) != 0 && (Initial & PAGE_IS_EXECUTABLE) == 0)
+        {
+            MmUnlockAddressSpace(AddressSpace);
+            if IsAttached != 0 {
+                KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+            }
+            return STATUS_SECTION_PROTECTION;
+        }
+
         let mut ViewOffset: i64 = if SectionOffset.is_null() {
             0
         } else {

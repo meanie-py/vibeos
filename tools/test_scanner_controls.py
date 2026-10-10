@@ -1246,6 +1246,29 @@ pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
 }
 """
 
+# The DDK case: UNREFERENCED_PARAMETER is a macro in every DDK header, so an extern
+# declaration of it is a finding with no in-crate macro_rules! (cdfs, fastfat and cdrom
+# declared it in 30 files, resolved by whichever crate exported a no-op, 2026-10-09).
+_MACROSHADOW_DDK_BAD = """\
+extern "C" {
+    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+}
+"""
+
+_MACROSHADOW_DDK_GOOD = """\
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER!(IrpContext);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -2624,6 +2647,14 @@ CONTROLS: list[Control] = [
         pass_files=True,
     ),
     Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"close.rs": _MACROSHADOW_DDK_BAD},
+        good={"close.rs": _MACROSHADOW_DDK_GOOD},
+        pass_files=True,
+    ),
+    Control(
         name="scan_mask_drift",
         script="tools/scan_mask_drift.py",
         argv=["--lint"],
@@ -3258,6 +3289,28 @@ def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monke
     target = tmp_path / "selected.rs"
     assert module.main(["--lint", str(target)]) == 0
     assert seen == [[module.RUST_WS], [target]]
+
+
+def test_irql_a_passive_only_wait_does_not_make_its_callers_sleep(tmp_path):
+    """KeSynchronizeExecution waits only for a passive-level interrupt, which may be
+    synchronized only at PASSIVE_LEVEL; every caller holding a spin lock around it
+    (scsiport's) would otherwise be an IRQL_SLEEP_WHILE_HELD."""
+    spec = importlib.util.spec_from_file_location(
+        "irql_conditional_control", REPO / "tools/scan_irql_balance.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    src = tmp_path / "ke.rs"
+    src.write_text(
+        "fn KeSynchronizeExecution() { IopSync(); }\n"
+        "fn IopSync() { KeWaitForSingleObject(); }\n"
+        "fn Caller() { KeSynchronizeExecution(); }\n"
+    )
+    may_sleep, _, _ = module.build_summaries([src], {})
+    assert "IopSync" in may_sleep
+    assert "KeSynchronizeExecution" not in may_sleep
+    assert "Caller" not in may_sleep
 
 
 @pytest.mark.parametrize(

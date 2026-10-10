@@ -4581,6 +4581,20 @@ crate when a `continue` that belongs to a loop is reached with no write to the l
 since the loop's `{`. Hand-written loops that advance the variable earlier on the path, or
 shrink the bound instead (cmcheck's `ListCount -= 1`), are not flagged.
 
+### A dropped validation check fails OPEN: the bad request succeeds and nothing faults
+**Symptom:** a kmtest expects an error status and gets `STATUS_SUCCESS`; the boot and every
+smoke stay green, because nobody makes the bad request in normal operation.
+**Cause:** the port dropped a validation step without a trace. `MmMapViewOfSection`'s data path
+lost all three of the C's `/* check for write/read/execute access */` blocks, so a
+PAGE_READONLY section mapped PAGE_READWRITE or PAGE_EXECUTE succeeded (44 ZwCreateSection
+assertions). The same function's `PAGE_FLAGS_VALID_FOR_SECTION` copy lost the last two members of
+the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way: a legal
+`PAGE_READONLY | PAGE_NOCACHE` map returned STATUS_INVALID_PAGE_PROTECTION.
+**Fix:** diff the C function's status returns against the Rust's (`grep -n STATUS_` on both).
+A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
+left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
+macro, compare member lists against the header, not just the name.
+
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 
 **Symptom:** none visible at boot. pciidex's START_DEVICE handler sent the IRP down the stack
@@ -10046,6 +10060,16 @@ budget work against driving a row to zero, without an upstream reference measure
 zero is reachable. Cross-*arch* comparison is still fair game (it is the same codebase), which
 is why "arm64 fails 9 where i386 fails 4" is a real signal while "arm64 fails 9" is not.
 
+**3. Cross-arch comparison needs equal denominators too.** "arm64 fails 48, amd64 fails 3" read
+as an arm64-only section bug for months. The x86 row was `pass=4 fail=3 skip=2` — nine
+assertions out of 330 — because x86 conformance boots the livecd (`ArcBootDeviceName=
+multi(0)disk(0)cdrom(0)`), so `\SystemRoot` is read-only CDFS and every kmtest that creates a
+file there bails at setup (`0xc0000022`): ZwCreateSection, MmSection and the file halves of
+ZwMapViewOfSection and IoFilesystem. arm64 boots a writable FAT ramdisk and ran them all. The
+bugs it found (the missing view-protection checks in `MmMapViewOfSection`) were in shared code.
+**Before calling a failure arch-specific, compare `pass+fail` across arches** — the arch that
+"passes" may simply never have reached the assertion.
+
 ### No ratio can catch a cost the harness stubs away — count, don't measure `[§9.76]`
 Every instrument was green and the OS booted **3× slower**: the Rust folded each character
 through `_towlower_l(c, NULL)`, and a NULL locale means **three Win32 calls per character**, in
@@ -11790,6 +11814,24 @@ deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
 brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
 of every Rust fn that disables interrupts without restoring found this one only.
 
+### A thread "switching" to itself spins forever on its own SwapBusy
+**Symptom:** amd64 `-smp 2` `HANG_TIMEOUT` after a 60 s `[WIN32K] STUCK SEND`, one CPU idle in
+`hlt`, the other parked at `.SwapBusySet` (`ctxswitch.S:181`) with **`RDX == R8`** in
+`hang-cpustate.txt` — `KiSwapContextInternal`'s old and new thread are the same KTHREAD. Usually
+preceded by `[RQRUNNING] queuing a RUNNING thread ... runningOnCPU=<this CPU>`. 1 of 3 boots with
+each vCPU pinned to its own host core (`stress --profile starved-smp --cores 2`), 2026-10-09.
+**Cause:** NT's wait-commit releases the dispatcher lock before `KiSwapThread` dethrones the
+waiter, so a cross-CPU readier may legally queue the still-running thread T onto T's own CPU;
+`KiSwapThread` then selects T. T set its own `SwapBusy` on the way in (every wait path calls
+`KiSetThreadSwapBusy`), the asm spins until the NEW thread's `SwapBusy` clears, and only
+`KiSwapContextResume` — after the spin — would clear it. Upstream's `CONFIG_SMP` never ran this.
+The §9.56 work found the mechanism in July and armed a 0x57 tripwire, which is off by default, so
+every unarmed boot still wedged silently. **Fix:** `KiSwapThreadImpl` treats NextThread ==
+CurrentThread as "keep running": release `SwapBusy` and report a deliverable kernel APC exactly as
+`KiSwapContextResume` would, skip the stack/CR3/TEB switch that is already T's. Proved by the path
+firing, not by a soak going quiet: `[SMP] self-swap #1 resolved in place on CPU1` followed by
+`CreateProcessW returned` and the desktop (run 20261009-210915-89vskrzs).
+
 ### A lock the C declares and never takes is a race the C never hit
 **Symptom:** arm64 `-smp 2`, 1 boot in 5: BUGCHECK 0x1E in `CmpCreateKeyControlBlock` reading
 a garbage `CM_KEY_NODE`, while the other CPU loops in `HvFreeCell` on a NULL bin.
@@ -12142,6 +12184,12 @@ page, and it asked for a 0-byte common buffer.
   once guarded) `[§9.105a]`. The quarantine note's stated root cause was **wrong** and cost real
   time; the smoking gun was an **off-by-one in the trace, not an address**. The guard is
   deliberately **cfg-gated to i386 and self-retiring** — guarding all arches measurably costs.
+- **arm64 `RtlWalkFrameChain` started its walk at `sp`, not `x29`.** The generic walk reads
+  `[frame]` = caller's frame and `[frame + ptr]` = return address: the x86 EBP chain, and on
+  AArch64 exactly the x29 frame record. Starting at `sp` read locals as frame records, so it
+  returned 0 frames (RtlStackKM 13/27, user-mode RtlStack 16/24, in rtlk and ntdll alike). Two
+  more x86-isms rode along: the return address was read as a 32-bit `ULONG`, and the kernel
+  walk's "stop at user mode" test was `Eip & 0x80000000`; on 64-bit it is the top bit.
 - **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
   arm64 (OPEN; needs a `#[naked]` capture stub).
 
@@ -13046,6 +13094,26 @@ records at the same RVAs, they are not your bug. `P1` is `ExceptionInformation[1
 address, so "no page faults twice in a process" is a free end-to-end check of the recovery.
 And when a guest "never reports", read the serial *after* the harness stopped draining — a
 guest still making syscalls was cut off, not killed.
+
+### An emulated app hangs in `ExitProcess`: a CPU-layer lock orphaned by `NtTerminateProcess(NULL)`
+
+**Symptom.** An x86-64 guest opens its window and then never exits once closed (appstorm
+`close=TIMEOUT exit=0x103`, roughly 1 launch in 20). The parked-thread sample shows the exiting
+thread under `LdrShutdownProcess`, in some DLL's `DLL_PROCESS_DETACH`, parked on the return from a
+memory syscall (`ZwFreeVirtualMemory`).
+
+**Cause.** `ExitProcess` calls `NtTerminateProcess(NULL)` first, which kills every other thread
+wherever it is. wowx64 wraps each guest memory syscall in `BTCpu64Notify*` Before/After, and
+Before takes FEX's `ThreadCreationMutex`. A thread killed inside the native syscall dies holding
+it, and the exiting thread's next memory call deadlocks. Upstream `BTCpuProcessTerm` is empty,
+and Windows' orphaned-critical-section takeover at shutdown covers guest critical sections, not
+the emulator's own locks.
+
+**Fix.** Bracket `NtTerminateProcess(NULL)`: take the CPU layer's locks (bounded wait), kill the
+others, wait for each victim to die, then rebuild the locks in place. Never unlock them, because a
+victim killed while queued is still counted as a waiter. Any lock held across a syscall in a
+layer that outlives other threads needs the same treatment (`BTCpu64ProcessTerm`,
+wow64-x64-guest-design.md).
 
 ### A stock binary flushes out what a hand-written guest never can `[§9.67]`
 Every guest through M10 was written by us — a hidden bias, because a guest you author can only

@@ -435,7 +435,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 //   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
 //   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
 const CDFS_FILE_SYSTEM: u32 = 0x26;
-#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: u32, B: u32, C: u32) {
+#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: usize, B: usize, C: usize) {
     KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
 }
 
@@ -479,7 +479,6 @@ use ntkrnl_sys::ddk::{PIO_STACK_LOCATION, IoIsOperationSynchronous, BOOLEAN as D
 use crate::types::{FCB, TYPE_OF_ACQUIRE, _TYPE_OF_ACQUIRE_AcquireShared, PIRP_CONTEXT};
 
 // ntddk.h: UNREFERENCED_PARAMETER(P) — retail no-op (grind lowered to stdcall fn).
-#[no_mangle] pub extern "C" fn UNREFERENCED_PARAMETER(_Param: PVOID) {}
 
 // cdfs debug ASSERT macros — retail no-ops.
 #[no_mangle] pub extern "C" fn ASSERT_IRP_CONTEXT(_Irp: *mut IRP_CONTEXT) {}

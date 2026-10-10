@@ -607,6 +607,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
   (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
 
+- **x86 conformance never runs the kmtests that write a file** (OPEN, found 2026-10-09,
+  conformance lane). i386/amd64 conformance boots the livecd, so `\SystemRoot` is read-only
+  CDFS and every kmtest that creates a file there fails setup with `0xc0000022` and bails:
+  ZwCreateSection runs 9 assertions on x86 vs 330 on arm64 (writable FAT ramdisk), MmSection
+  ~90 vs ~370, and the file halves of ZwMapViewOfSection/IoFilesystem likewise. The shared-MM
+  bugs arm64 surfaced (the dropped view-protection checks in `MmMapViewOfSection`, fixed) were
+  invisible on x86 for exactly this reason. Fix owed: give x86 conformance a writable system
+  volume (boot the installed disk, or a writable ramdisk like arm64's) and re-seed the x86 rows,
+  which will move a lot of them; see the field manual's "A conformance score is not a defect
+  count".
+
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
   the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
@@ -1205,6 +1216,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     read was never established, and it did not: 16/16 at the 10-07 rate (~19%) is a 3% fluke,
     and the failures returned. Earlier runs: 20261006-041704-og7v50sd,
     20261006-222526-njeik_14, 20261006-235154-7ixyr41r (gates).
+  - **amd64 `-smp 2` boots ~5x slower when the host starves QEMU of cores** (OPEN, measured
+    2026-10-09; gate smokes boot UP so the gate does not pay it). Pinned to one host core, a
+    UP boot takes 70-111 s and an `-smp 2` boot 400-711 s; with a core per vCPU, `-smp 2` is
+    ~78 s. `stress --sample-pcs` puts 92.5% of non-halted samples in `ki_tb_shootdown`
+    (`ke/amd64/ipi.rs`), split between the ack wait and the sender lock: every x86 SMP
+    `KeInvalidateTlbEntry` and `KeFlushProcessTb` is a synchronous broadcast, and
+    `MiReserveSystemPtes` alone calls the latter on every reservation (upstream does too, where
+    it is a local CR3 reload). Two vCPUs sharing a host core pay a host timeslice per round
+    trip, since `pause` does not yield under TCG. Callers (stack-scan sampler): user-mapping
+    teardown `MmDeleteVirtualMappingEx` ~46%, `MiMapPagesInZeroSpace` ~16%,
+    `MiReserveAlignedSystemPtes` ~9%. **Partly fixed:** single-VA flushes of USER addresses now
+    go only to the current process's `ActiveProcessors` (`ki_tb_scope`, amd64); the starved
+    boot went 711-760 s -> 480 s and teardown's share fell to ~14%, 8/8 green at a core per
+    vCPU. **Still owed:** the kernel-VA broadcasts (system-PTE reserve ~25%, zero-space wrap
+    ~18%) need batching rather than scoping, and i386's packet transport has no scoping yet.
+    Runs 20261009-212808-1of2ir0n (before), 20261009-214354-tejagsx_ (after).
   - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
     seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
     services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's

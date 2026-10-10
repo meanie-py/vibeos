@@ -258,14 +258,30 @@ An EL0 EC-0 fault now prints a `[UDF]` line: PC, PTE, and the instruction words 
 word tells the causes apart: 0 means lost contents, a valid opcode means a rewrite was seen stale,
 anything else is a JIT encoding bug. Owed: the next hit.
 
-Owed, found on the way: `MiDecommitPages` overwrites a transition PTE with `MmDecommittedPte`
-without detaching the PFN, leaking the standby or modified frame. The C asserted the case away
-and the Rust dropped the asserts. Nothing reaches it while user pages are never trimmed, but the
-day they are, it is live.
+Found on the way, then fixed: `MiDecommitPages` overwrote a transition PTE with `MmDecommittedPte`
+without detaching the PFN, leaking the standby/modified frame (the C asserted the case away, the Rust
+dropped the asserts). It now detaches it as `MiDeletePte` does, and any other unexpected invalid PTE
+trips an `mm_guard`. Unreached while user pages are never trimmed.
 
-Owed, also an x64-guest flake: `osk` sometimes opens and then never closes (`close=TIMEOUT
-exit=0x103`), 2 of about 40 sweeps (`20261008-114135-_w0p3rum`, `20261009-191037-vsrxcvcf`
-payload4). Same shape as the taskmgr close hang above; not yet chased.
+`osk` sometimes opened and never closed (`close=TIMEOUT exit=0x103`, ~1 in 20 x64 launches;
+`20261008-114135-_w0p3rum`, `20261009-191037-vsrxcvcf` payload4). The parked-thread sample showed
+`ExitProcess` -> `LdrShutdownProcess` -> msacm32's `DLL_PROCESS_DETACH` -> `RtlFreeHeap`, parked
+on the return from `ZwFreeVirtualMemory`, i.e. inside our `NtFreeVirtualMemory` bracket. The
+cause: `ExitProcess` first calls `NtTerminateProcess(NULL)`, which kills every other thread
+wherever it is, including between a `BTCpu64Notify*` Before (FEX's `ThreadCreationMutex` taken)
+and its After. The exiting thread then deadlocks on a lock held by a dead thread. osk's
+warning-dialog thread is the usual victim. Upstream's `BTCpuProcessTerm` is empty, so upstream
+has the same hole. Fix (contract v4): `BTCpu64ProcessTerm` brackets that call, using FEX's own
+fork discipline:
+- Before: take `ThreadCreationMutex` and the code-invalidation lock if possible within ~2 s. A read
+  bracket can hold both across a blocking `NtReadFile`, so the wait is bounded.
+- After: wait for every victim to die, then rebuild both locks in place rather than unlocking. A
+  victim killed while queued is still counted as a waiter, and an unlock would hand off to it.
+
+Measured: osk x25 x4 boots (`20261009-214309-hxbaw3uw`), 100/100 closed, and the bracket fired on
+every exit (52 per boot). The CPU layer is built out of tree, so a `Module.cpp` edit used to ship
+the OLD plugin from a green build; arm64 builds now rebuild it when its sources are newer, or fail
+(`wowx64-cpu`, `CPU_LAYER_BUILD_FAIL`).
 
 The same runs found four applets that had never run as x64 guests: openglcfg, wined3dcfg, console
 and hotplug, added to appstorm on 2026-10-08. They were missing from the guest set; wowx64

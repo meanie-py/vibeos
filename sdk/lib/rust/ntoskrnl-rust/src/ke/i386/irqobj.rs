@@ -580,6 +580,14 @@ pub unsafe extern "system" fn KeDisconnectInterrupt(Interrupt: PKINTERRUPT) -> B
     State
 }
 
+extern "system" {
+    fn IopSynchronizePassiveInterrupt(
+        Interrupt: PKINTERRUPT,
+        Routine: PKSYNCHRONIZE_ROUTINE,
+        Context: PVOID,
+    ) -> ULONG;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeSynchronizeExecution(
     Interrupt: PKINTERRUPT,
@@ -588,6 +596,13 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
 ) -> BOOLEAN {
     let Interrupt = opaque_ptr(Interrupt);
     let SynchronizeContext = opaque_ptr(SynchronizeContext);
+    // A passive-level connection (IoConnectInterruptEx, CONNECT_MESSAGE_BASED_PASSIVE)
+    // synchronizes on its own mutex, at PASSIVE_LEVEL; iomgr irq.rs owns it.
+    // u32::MAX: not passive; anything else is the routine's BOOLEAN.
+    let Passive = IopSynchronizePassiveInterrupt(Interrupt, SynchronizeRoutine, SynchronizeContext);
+    if Passive != u32::MAX {
+        return Passive as BOOLEAN;
+    }
     let Success: BOOLEAN;
     let mut OldIrql: KIRQL = 0;
 

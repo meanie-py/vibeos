@@ -7,6 +7,7 @@
 // substrate emits it inside an `extern "system"` block, the wrong ABI for i386 varargs.
 #![allow(clashing_extern_declarations)]
 
+pub mod dma;
 pub mod hal;
 pub mod miniport;
 pub mod pci;

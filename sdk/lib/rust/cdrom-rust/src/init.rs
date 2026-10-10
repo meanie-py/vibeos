@@ -43,8 +43,6 @@ extern "system" {
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: SIZE_T, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
-unsafe extern "C" {
-}
 extern "system" {
     // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
     // Defined in common.rs as `extern "system"`; declare it with a matching ABI

@@ -11,11 +11,6 @@ use crate::ddk_shims::{RtlInitializeSplayLinks, RtlInsertAsLeftChild, RtlInsertA
     FlagOn, ClearFlag, Add2Ptr, CdRaiseStatus};
 
 extern "C" {
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
-}
-extern "C" {
     fn CdFreePool(Pool: *mut *mut u16);
 }
 extern "C" {
@@ -169,7 +164,7 @@ pub unsafe extern "C" fn CdRemovePrefix(
 ) {
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     let short_name_prefix = (*Fcb).ShortNamePrefix;
 

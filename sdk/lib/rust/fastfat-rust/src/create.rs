@@ -43,7 +43,7 @@ type Bcb = BCB;
 
 extern "system" {
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
-    fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
+    fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE)
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, DirentsNeeded: u32, BypassHint: i32, ) -> u32;
     fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: u8, Flush: u8, Status: *mut NTSTATUS);
@@ -70,7 +70,6 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
-    fn UNREFERENCED_PARAMETER(x: c_void);
     fn ARGUMENT_PRESENT(x: *mut c_void) -> u8;
     fn ExFreePool(P: *mut c_void);
     fn RtlAreBitsSet( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, ) -> u8;
@@ -118,7 +117,7 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn ObDereferenceObject(Object: PVOID);
     fn BooleanFlagOn(value: u8, flag: u8) -> u8;
-    fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
+    fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn FatGetNeedEaCount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut DIRENT, NeedEaCount: *mut u32);
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FsRtlOplockBreakH(Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: ULONG, Context: *mut c_void, CompletionRoutine: *mut c_void, PostIrpRoutine: *mut c_void) -> NTSTATUS;
@@ -887,7 +886,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     break 'main_try;
                 }
 
-                FatBugCheck(NodeType(Fcb as *const c_void) as u32, (Fcb as ULONG_PTR) as u32, 0);
+                FatBugCheck(NodeType(Fcb as *const c_void) as usize, Fcb as ULONG_PTR, 0);
             }
 
             if NodeType(Fcb as *const c_void) != (FAT_NTC_DCB) as u32 && NodeType(Fcb as *const c_void) != (FAT_NTC_ROOT_DCB) as u32 {
@@ -2315,7 +2314,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             }
 
             // Bugcheck if we get here
-            FatBugCheck(CreateDisposition, 0, 0);
+            FatBugCheck(CreateDisposition as usize, 0, 0);
         }
 
         // try_exit block: share access / counts update
@@ -2740,7 +2739,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 }
                 _ => {
                     DebugTrace(0, (Dbg) as i32, b"Illegal Create Disposition\n\0".as_ptr() as *const i8);
-                    FatBugCheck(CreateDisposition, 0, 0);
+                    FatBugCheck(CreateDisposition as usize, 0, 0);
                 }
             }
         }

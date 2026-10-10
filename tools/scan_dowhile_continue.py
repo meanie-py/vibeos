@@ -37,6 +37,15 @@ one walk around the macro rather than fix it. So a macro whose `while`/`loop` ha
 after a `$metavar` statement is flagged with no C reading needed; the fix is to advance at
 the TOP of the loop, behind a first-pass flag, or before the body when `next` is cached.
 
+THE SIBLING BY HAND. The same lowering written out: a `while` whose last statement updates
+a variable (`i += 1;`, `p = (*p).Next;`) and which holds a `continue` that no earlier
+update of that variable reaches -- an update counts only from a block still open at the
+`continue`, so one in a sibling `if` arm does not cover it. cmlib's HvValidateHive (2026-10)
+spun forever on a NULL bin this way, its C `for` header having run `BlockIndex++` on the
+`continue`. A C `while` with the same trailing update is faithful, so read the C; faithful
+sites are baselined like the do-while ones. A `for (;;)` whose `continue` legitimately
+re-runs the same element (a retry) is faithful too.
+
 Usage:
     python3 tools/scan_dowhile_continue.py [--lint] [paths...]
 """
@@ -44,6 +53,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import functools
 import re
 import sys
 from pathlib import Path
@@ -67,6 +77,15 @@ def _blank(m: re.Match) -> str:
     return re.sub(r"[^\n]", " ", m.group(0))
 
 
+@functools.lru_cache(maxsize=2)
+def _code_only(raw: str) -> str:
+    """`raw` with comments, strings and char literals blanked (offsets preserved). Each
+    scan below wants it, so a file is blanked once."""
+    text = COMMENT_RE.sub(_blank, raw)
+    text = STRING_RE.sub(_blank, text)
+    return CHAR_RE.sub(_blank, text)
+
+
 def _match_brace(text: str, open_idx: int) -> int:
     depth = 0
     for i in range(open_idx, len(text)):
@@ -82,9 +101,7 @@ def _match_brace(text: str, open_idx: int) -> int:
 
 def scan_text(raw: str) -> list[tuple[int, str, int]]:
     """(line, enclosing fn, number of skipping continues) per suspicious loop."""
-    text = COMMENT_RE.sub(_blank, raw)
-    text = STRING_RE.sub(_blank, text)
-    text = CHAR_RE.sub(_blank, text)
+    text = _code_only(raw)
     raw_lines = raw.splitlines()
     out = []
     for m in LOOP_RE.finditer(text):
@@ -124,6 +141,94 @@ def scan_text(raw: str) -> list[tuple[int, str, int]]:
     return out
 
 
+WHILE_RE = re.compile(r"(?:'(\w+)\s*:\s*)?\bwhile\b[^{;]*\{")
+TRAILING_STEP_RE = re.compile(r"(?:^|[;{}])\s*([\w.*()\[\]]+?)\s*(?:=|\+=|-=)\s*[^;=][^;]*;\s*$")
+
+
+def _own_continues(body: str, label: str | None) -> list[int]:
+    """Offsets of the `continue`s in `body` aimed at the loop that owns it."""
+    masked = list(body)
+    for n in NESTED_LOOP_RE.finditer(body):
+        k = body.find("{", n.end())
+        if k < 0:
+            continue
+        e = _match_brace(body, k)
+        if e < 0:
+            continue
+        for q in range(k, e + 1):
+            masked[q] = " "
+    flat = "".join(masked)
+    out = [
+        cm.start()
+        for cm in re.finditer(r"\bcontinue\b(?:\s*'(\w+))?\s*;", flat)
+        if (cm.group(1) or "") in ("", label or "")
+    ]
+    if label:
+        out += [
+            cm.start()
+            for cm in re.finditer(r"\bcontinue\s*'" + re.escape(label) + r"\s*;", body)
+            if flat[cm.start() : cm.start() + 8] != "continue"
+        ]
+    return sorted(out)
+
+
+def _block_ends(body: str, positions: list[int]) -> dict[int, int]:
+    """{pos: end offset of the innermost block of `body` holding pos} in one pass
+    (len(body) for the top level)."""
+    want = sorted(set(positions))
+    opened: dict[int, list[int]] = {}
+    stack: list[int] = []
+    ends: dict[int, int] = {}
+    w = 0
+    for i, ch in enumerate(body):
+        while w < len(want) and want[w] == i:
+            opened.setdefault(stack[-1] if stack else -1, []).append(i)
+            w += 1
+        if ch == "{":
+            stack.append(i)
+        elif ch == "}" and stack:
+            for q in opened.pop(stack.pop(), []):
+                ends[q] = i
+    for lst in opened.values():
+        for q in lst:
+            ends.setdefault(q, len(body))
+    return ends
+
+
+def scan_while_steps(raw: str) -> list[tuple[int, str, str, int]]:
+    """(line, enclosing fn, step variable, skipping continues) per `while` whose
+    trailing update a `continue` jumps past."""
+    text = _code_only(raw)
+    raw_lines = raw.splitlines()
+    out = []
+    for m in WHILE_RE.finditer(text):
+        label = m.group(1)
+        open_idx = m.end() - 1
+        close_idx = _match_brace(text, open_idx)
+        if close_idx < 0:
+            continue
+        body = text[open_idx + 1 : close_idx]
+        sm = TRAILING_STEP_RE.search(body.rstrip())
+        if not sm or sm.group(1) == "_":
+            continue
+        step_at = sm.start(1)
+        assign = re.compile(r"(?<![\w.])" + re.escape(sm.group(1)) + r"\s*(?:=(?!=)|\+=|-=)")
+        updates = [a.start() for a in assign.finditer(body) if a.start() < step_at]
+        conts = _own_continues(body, label)
+        if not conts:
+            continue
+        ends = _block_ends(body, updates)
+        skipping = sum(1 for c in conts if not any(u < c < ends[u] for u in updates))
+        if not skipping:
+            continue
+        line = text.count("\n", 0, m.start()) + 1
+        if NOLINT in raw_lines[line - 1]:
+            continue
+        fns = FN_RE.findall(text, 0, m.start())
+        out.append((line, fns[-1] if fns else "?", sm.group(1), skipping))
+    return out
+
+
 MACRO_RE = re.compile(r"\bmacro_rules!\s*(\w+)\s*\{")
 MACRO_LOOP_RE = re.compile(r"\b(?:while\b[^{;]*|loop\s*)\{")
 SPLICE_RE = re.compile(r"(?m)^\s*\$(\w+)\s*;?\s*$")
@@ -131,9 +236,7 @@ SPLICE_RE = re.compile(r"(?m)^\s*\$(\w+)\s*;?\s*$")
 
 def scan_macros(raw: str) -> list[tuple[int, str]]:
     """(line, macro name) for each loop macro that advances AFTER splicing `$body`."""
-    text = COMMENT_RE.sub(_blank, raw)
-    text = STRING_RE.sub(_blank, text)
-    text = CHAR_RE.sub(_blank, text)
+    text = _code_only(raw)
     out = []
     for m in MACRO_RE.finditer(text):
         end = _match_brace(text, m.end() - 1)
@@ -183,17 +286,19 @@ def main() -> int:
     files = []
     for p in args.paths or [RUST_ROOT]:
         files += [p] if p.is_file() else sorted(source_files(p))
-    findings = []
+    findings, step_findings, macro_findings = [], [], []
     for f in files:
-        for line, fn, count in scan_text(f.read_text(errors="replace")):
-            rel = f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f
-            findings.append((str(rel), line, fn, count))
+        raw = f.read_text(errors="replace")
+        rel = str(f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f)
+        findings += [(rel, line, fn, count) for line, fn, count in scan_text(raw)]
+        step_findings += [(rel, *hit) for hit in scan_while_steps(raw)]
+        macro_findings += [(rel, line, name) for line, name in scan_macros(raw)]
+    for rel, line, fn, var, count in step_findings:
+        if args.lint:
+            print(f"{rel}: fn {fn}: `continue` skips the while loop's trailing `{var}` update")
+        else:
+            print(f"{rel}:{line}: fn {fn}: {count} continue(s) skip the trailing `{var}` update")
 
-    macro_findings = []
-    for f in files:
-        for line, name in scan_macros(f.read_text(errors="replace")):
-            rel = f.resolve().relative_to(REPO) if f.resolve().is_relative_to(REPO) else f
-            macro_findings.append((str(rel), line, name))
     for rel, line, name in macro_findings:
         if args.lint:
             print(f"{rel}: macro {name}: loop advances after the spliced body; `continue` skips it")
@@ -209,7 +314,7 @@ def main() -> int:
             print(
                 f"{rel}:{line}: fn {fn}: {count} continue(s) skip the trailing `if .. {{ break; }}`"
             )
-    return 1 if findings or macro_findings else 0
+    return 1 if findings or macro_findings or step_findings else 0
 
 
 if __name__ == "__main__":

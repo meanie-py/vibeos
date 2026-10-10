@@ -146,6 +146,20 @@ struct Domain {
     /// Pages mapped now.
     pages: u32,
     cd: u64,
+    /// Attached by a driver that found the device itself (Attach::Claimed): kept
+    /// when pci.sys starts the device's PDO with no driver of its own.
+    claimed: bool,
+}
+
+/// How a stream is attached (HalVibeosDmaAttach).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Attach {
+    /// The shared identity map of RAM.
+    Shared,
+    /// A domain of its own: its driver is DMA-remapping compatible.
+    Strict,
+    /// The same, claimed by a driver that found the device outside PnP.
+    Claimed,
 }
 
 static mut UNITS: [Option<Unit>; MAX_UNITS] = [const { None }; MAX_UNITS];
@@ -622,7 +636,7 @@ unsafe fn domain_for(requester: u32, unit: u64) -> Option<u64> {
     let asid = FIRST_ASID + slot as u16;
     let cd_pa = context_descriptor(root_pa, asid)?;
     let _guard = Locked::take();
-    (*domains)[slot] = Some(Domain { requester, unit, asid, root, pool, pages: 0, cd: cd_pa });
+    (*domains)[slot] = Some(Domain { requester, unit, asid, root, pool, pages: 0, cd: cd_pa, claimed: false });
     Some(cd_pa)
 }
 
@@ -637,7 +651,7 @@ impl Domain {
 /// when `strict` (its driver is DMA-remapping compatible) a domain of its own that
 /// maps nothing until its DMA adapter does. `requester` is the PCI segment in bits
 /// 31:16 over the requester ID.
-pub(crate) unsafe fn attach(requester: u32, strict: bool) -> bool {
+pub(crate) unsafe fn attach(requester: u32, mode: Attach) -> bool {
     if UNIT_COUNT.load(Ordering::Acquire) == 0 {
         return true;
     }
@@ -657,8 +671,17 @@ pub(crate) unsafe fn attach(requester: u32, strict: bool) -> bool {
         return true; // that SMMU is bypassing
     }
     let fresh = if needs_span(smmu.base, sid) { alloc(STE_BYTES << SPLIT) } else { None };
+    // A device its driver claimed keeps that domain when pci.sys starts its PDO.
+    let kept = mode == Attach::Shared && (*(&raw const DOMAINS)).iter().flatten().any(|d| d.requester == requester && d.claimed);
+    let strict = mode != Attach::Shared || kept;
     // Allocated here, at PASSIVE: the contiguous allocator cannot run under LOCK.
     let cd = if strict { domain_for(requester, smmu.base) } else { Some(CD_PA.load(Ordering::Acquire)) };
+    if mode == Attach::Claimed && cd.is_some() {
+        let _guard = Locked::take();
+        if let Some(d) = (*(&raw mut DOMAINS)).iter_mut().flatten().find(|d| d.requester == requester) {
+            d.claimed = true;
+        }
+    }
     let ok = cd.is_some_and(|cd| {
         let _guard = Locked::take();
         let ok = attach_stream(smmu.base, sid, cd, fresh);
@@ -670,10 +693,14 @@ pub(crate) unsafe fn attach(requester: u32, strict: bool) -> bool {
         smmu.base as ddk::PVOID,
         requester,
         sid,
-        match (ok, strict) {
-            (true, false) => b"translating\0".as_ptr(),
-            (true, true) => b"translating in a domain of its own (DMA-remapping compatible)\0".as_ptr(),
-            (false, _) => b"NOT ATTACHED, its DMA will abort\0".as_ptr(),
+        match (ok, mode, kept) {
+            (true, Attach::Shared, false) => b"translating\0".as_ptr(),
+            (true, Attach::Shared, true) => b"translating in the domain its driver claimed\0".as_ptr(),
+            (true, Attach::Strict, _) => b"translating in a domain of its own (DMA-remapping compatible)\0".as_ptr(),
+            (true, Attach::Claimed, _) => {
+                b"translating in a domain of its own (DMA-remapping compatible, claimed by its driver)\0".as_ptr()
+            }
+            (false, _, _) => b"NOT ATTACHED, its DMA will abort\0".as_ptr(),
         },
     );
     ok

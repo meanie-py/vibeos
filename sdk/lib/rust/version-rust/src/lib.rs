@@ -989,7 +989,7 @@ unsafe fn read_xx_header(lzfd: HFILE) -> i32 {
         return IMAGE_NT_SIGNATURE as i32;
     }
 
-    magic[2] = '\0' as i8;
+    // The C NUL-terminates `magic` here for this WARN only, which the build drops.
     WARN!("Can't handle %s files.\n\0".as_ptr() as *const i8, magic.as_ptr() as *const i8);
     return 0;
 }

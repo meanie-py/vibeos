@@ -29,8 +29,6 @@ extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut core::ffi::c_void, Flag: i32);
 }
 extern "C" {
-}
-extern "C" {
     fn ASSERT_IRP_CONTEXT(irp: *mut IRP_CONTEXT);
 }
 extern "C" {

@@ -109,9 +109,6 @@ extern "system" {
     fn ScratchBuffer_ExecuteCdb(DeviceExtension: PCDROM_DEVICE_EXTENSION, OriginalRequest: *mut core::ffi::c_void, TransferSize: u32, GetDataFromDevice: u8, Cdb: PCDB, OprationLength: u8) -> NTSTATUS;
 }
 unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(x: usize);
-}
-unsafe extern "C" {
     fn PowerContextReuseRequest(DeviceExtension: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "system" {
@@ -1136,8 +1133,8 @@ pub unsafe extern "system" fn DeviceAsynchronousCompletion(
     let deviceExtension = DeviceGetExtension((*context).Device);
 
     // Suppress unused parameter warnings (mechanical preservation of C code).
-    UNREFERENCED_PARAMETER(&Target as *const _ as usize);
-    UNREFERENCED_PARAMETER(&Params as *const _ as usize);
+    UNREFERENCED_PARAMETER!(&Target as *const _ as usize);
+    UNREFERENCED_PARAMETER!(&Params as *const _ as usize);
 
     // If this is an execute SRB, check for a frozen queue.
     if (*context).Srb.Function == SRB_FUNCTION_EXECUTE_SCSI {

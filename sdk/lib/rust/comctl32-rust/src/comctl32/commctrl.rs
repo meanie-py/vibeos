@@ -1265,6 +1265,7 @@ pub unsafe extern "system" fn InitMUILanguage(uiLang: LANGID) {
     COMCTL32_uiLang = uiLang;
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn SetWindowSubclass(
     mut hWnd: HWND,
@@ -1404,6 +1405,7 @@ pub unsafe extern "system" fn SetWindowSubclass(
     return TRUE;
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn GetWindowSubclass(
     mut hWnd: HWND,
@@ -1448,6 +1450,7 @@ pub unsafe extern "system" fn GetWindowSubclass(
     return FALSE;
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn RemoveWindowSubclass(hWnd: HWND, pfnSubclass: SUBCLASSPROC, uID: UINT_PTR) -> BOOL {
     let mut stack: LPSUBCLASS_INFO = core::ptr::null_mut();

@@ -303,13 +303,48 @@ pub unsafe extern "C" fn KiTbShootdownSingle(Address: u64) {
     ki_tb_shootdown(Address);
 }
 
+/// Which processors can hold a translation for `va`.
+///
+/// A USER address is mapped only through its process's page tables, so only the CPUs
+/// whose CR3 is that process can have cached it: `ActiveProcessors` of the current
+/// (attached) process, which KiSwapProcess maintains — set with a SeqCst RMW and an
+/// mfence BEFORE the CR3 load. A CPU that joins after we read the mask therefore loads
+/// a fresh CR3, and no user PTE is Global here (only the HAL's APIC page sets G), so
+/// that load drops anything it cached for this address while it last ran us. The PTE
+/// store the caller made is SeqCst too, which closes the Dekker race with a joiner.
+/// NT scopes its process TB flushes the same way.
+///
+/// Measured why it matters (2026-10-09, `stress --sample-pcs`): two vCPUs on one host
+/// core spent 91% of the boot in this protocol, ~46% of it user-mapping teardown
+/// (MmDeleteVirtualMappingEx) broadcast to a CPU running some other process.
+///
+/// Everything else (system VAs, and the FULL sentinel, which callers use for kernel
+/// ranges too) stays a broadcast.
+#[cfg(feature = "smp")]
+unsafe fn ki_tb_scope(va: u64) -> u64 {
+    const USER_LIMIT: u64 = 0x0000_8000_0000_0000; // canonical lower half
+    if va == KI_TB_FLUSH_FULL || va >= USER_LIMIT {
+        return u64::MAX;
+    }
+    let thread = (*KeGetCurrentPrcb()).CurrentThread;
+    let process = (*thread).__bindgen_anon_1.ApcState.Process;
+    if process.is_null() {
+        return u64::MAX;
+    }
+    core::sync::atomic::AtomicU64::from_ptr(
+        core::ptr::addr_of_mut!((*process).ActiveProcessors) as *mut u64,
+    )
+    .load(core::sync::atomic::Ordering::SeqCst)
+}
+
 #[cfg(feature = "smp")]
 unsafe fn ki_tb_shootdown(va: u64) {
     use core::sync::atomic::Ordering;
     use crate::ke::processor::KeActiveProcessors;
 
     let me = (*(KeGetCurrentPrcb())).SetMember;
-    let targets = core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) & !me;
+    let scope = ki_tb_scope(va);
+    let targets = core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) & !me & scope;
     if targets == 0 {
         return;
     }
@@ -337,8 +372,10 @@ unsafe fn ki_tb_shootdown(va: u64) {
     // Publish the descriptor under the lock, before any pending bit is set.
     KiTbFlushVa.store(va, Ordering::SeqCst);
 
-    // Recompute under the lock — the active set may have grown.
-    let targets = core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) & !me;
+    // Recompute under the lock — the active set may have grown (and so may the
+    // process's: ki_tb_scope re-reads ActiveProcessors).
+    let targets =
+        core::ptr::read_volatile(core::ptr::addr_of!(KeActiveProcessors)) & !me & ki_tb_scope(va);
     let lazy = KiTbLazyIdleSet.load(Ordering::SeqCst) & targets;
     let mut awake = targets & !lazy;
 

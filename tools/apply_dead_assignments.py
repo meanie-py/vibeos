@@ -13,7 +13,12 @@ WHAT IT DOES, per shape:
               every arch that still compiles, EXCEPT through a raw borrow: `addr_of_mut!(x)`
               / `&raw mut x` of an uninitialized local COMPILES, and the callee it is handed
               to may read the initial value (an in/out size like samsrv's `&raw mut Length`).
-              So a variable raw-borrowed anywhere in its fn keeps its initializer (SKIP).
+              So a variable raw-borrowed before it is written keeps its initializer (SKIP).
+              "Written" means a plain `x = ..;` statement in the `let`'s own block ahead
+              of every raw borrow: straight-line code there runs before anything after it
+              on every path, so no borrow can see the initial value. A write inside a
+              branch or loop does not count (acpi's `old_status`, scsiport's `UlongData`
+              were removable by this rule and refused by the older fn-wide one).
               A site that no longer compiles goes back by hand (or `--skip`).
   DEAD_STORE  `x = <pure>;` -> deleted.
   LOST_CALL   `x = f(..);` -> `f(..);` (the call stays; only the dead store goes, along with
@@ -234,6 +239,35 @@ def address_taken(fn_src: str, var: str) -> bool:
     return _borrows(var).search(fn_src.encode()) is not None
 
 
+def raw_borrow_sees_init(fn: Any, let: Any, var: str) -> bool:
+    """Could a raw borrow of `var` observe the value its `let` initialized it with? Not if
+    a plain `var = ..;` statement in the `let`'s own block precedes every raw borrow in the
+    fn: that statement dominates everything after it."""
+    borrows = [fn.start_byte + m.start() for m in _raw_borrows(var).finditer(fn.text)]
+    if not borrows:
+        return False
+    first = min(borrows)
+    block = let.parent
+    for st in block.named_children if block is not None else []:
+        if st.start_byte <= let.end_byte:
+            continue
+        if st.start_byte >= first:
+            break
+        e = (
+            st.named_children[0]
+            if st.type == "expression_statement" and st.named_children
+            else None
+        )
+        lhs = (
+            e.child_by_field_name("left")
+            if e is not None and e.type == "assignment_expression"
+            else None
+        )
+        if lhs is not None and text(lhs) == var:
+            return False
+    return True
+
+
 def pointer_live_at(fn: Any, write: Any, var: str) -> bool:
     """Can a raw pointer to `var` exist when `write` runs? Only if one was taken BEFORE it
     in the source, or anywhere in a loop around it (taken on an earlier iteration). A
@@ -289,8 +323,10 @@ def plan_file(path: Path, rows: list[dict]) -> tuple[list[tuple[int, int, bytes,
                 skip(r, f"initializer not pure: {text(val)[:60]}")
                 continue
             fn = _enclosing_fn(n)
-            if fn is not None and _raw_borrows(var).search(fn.text):
-                skip(r, "raw-borrowed in fn -- `addr_of_mut!` of an uninit local compiles")
+            if fn is not None and raw_borrow_sees_init(fn, n, var):
+                skip(
+                    r, "raw-borrowed before any write -- `addr_of_mut!` of an uninit local compiles"
+                )
                 continue
             # Cut from the end of the pattern/type to the end of the value: ` = <init>`.
             ty = n.child_by_field_name("type")

@@ -670,29 +670,54 @@ unsafe fn KiSwapThreadImpl(
 
     KiReleasePrcbLock(Prcb);
 
-    // §9.56 tripwire 0x57 — THE SELF-SWAP. During the legal post-lock-release
-    // wait-commit window a cross-CPU readier (deferred drain, often after an
-    // AdjustUnwait boost) can standby/queue the committing thread onto ITS OWN
-    // still-running CPU; this swap then resolves NextThread == CurrentThread and
-    // KiSwapContext(T,T) wedges forever in ctxswitch.S's SwapBusy spin (T's own
-    // SwapBusy only clears in KiSwapContextResume — AFTER the spin). NT tolerates
-    // old==new; ReactOS's never-validated SMP spin does not. This converts the
-    // silent HANG_TIMEOUT into an attributed report proving the mechanism.
+    // §9.56 THE SELF-SWAP. During the legal post-lock-release wait-commit window a
+    // cross-CPU readier (deferred drain, often after an AdjustUnwait boost) can
+    // standby/queue the committing thread onto ITS OWN still-running CPU, so the
+    // selection above resolves NextThread == CurrentThread. KiSwapContext(T,T)
+    // then wedges forever: ctxswitch.S spins until the NEW thread's SwapBusy
+    // clears, and T set its own SwapBusy on the way in (KiSetThreadSwapBusy in
+    // every wait path), which only KiSwapContextResume clears — after the spin.
+    // Caught live 2026-10-09 by `stress --profile starved-smp --cores 2`: CPU#1
+    // parked at .SwapBusySet with RDX == R8 (old == new), CPU#0 idle, boot
+    // HANG_TIMEOUT. Upstream's CONFIG_SMP never ran this path; the 0x57 tripwire
+    // only proved the mechanism and left every unarmed boot to wedge silently.
+    //
+    // T was already unwaited (WaitStatus set by the readier) and is already this
+    // CPU's CurrentThread in state Running, so "switch to T" means "keep running
+    // T": do exactly what KiSwapContextResume does for a thread resuming here —
+    // release SwapBusy and report a deliverable kernel APC — minus the stack,
+    // address-space and TEB switch, which are already T's.
     #[cfg(feature = "smp")]
-    {
-        if NextThread == CurrentThread {
-            if ntkrnl_sys::inline::ke::RQ_ORACLE_ARMED {
-            ntkrnl_sys::ddk::KeBugCheckEx(
-                ntkrnl_sys::bugcodes::INVALID_WORK_QUEUE_ITEM,
-                CurrentThread as ntkrnl_sys::ddk::ULONG_PTR,
-                ((0x57u64 << 40)
-                    | ((*kt_State(CurrentThread)) as u64) << 8
-                    | (*Prcb).Number as u64) as ntkrnl_sys::ddk::ULONG_PTR,
-                (*CurrentThread).SwapBusy as ntkrnl_sys::ddk::ULONG_PTR,
-                (*CurrentThread).Priority as u64 as ntkrnl_sys::ddk::ULONG_PTR,
+    if NextThread == CurrentThread {
+        // Breadcrumb, bounded: proves the path fires AND that the boot survives it
+        // (before this fix a firing was a silent HANG_TIMEOUT).
+        static SELF_SWAPS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = SELF_SWAPS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        if n <= 4 {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[SMP] self-swap #%u resolved in place on CPU%u (thread %p)\n\0".as_ptr() as *const i8,
+                n,
+                (*Prcb).Number as u32,
+                CurrentThread,
             );
+        }
+        WaitIrql = *kt_WaitIrql(CurrentThread);
+        core::sync::atomic::AtomicU8::from_ptr(core::ptr::addr_of_mut!((*CurrentThread).SwapBusy))
+            .store(0, core::sync::atomic::Ordering::Release);
+        if (*CurrentThread).__bindgen_anon_1.ApcState.KernelApcPending != 0 {
+            if *kt_SpecialApcDisable(CurrentThread) == 0 && WaitIrql == PASSIVE_LEVEL as KIRQL {
+                ApcState = 1u8;
+            } else {
+                ntkrnl_sys::ddk::HalRequestSoftwareInterrupt(APC_LEVEL as KIRQL);
             }
         }
+        WaitStatus = (*CurrentThread).WaitStatus as isize;
+        if ApcState != 0 {
+            KeLowerIrql(APC_LEVEL);
+            KiDeliverApc(0i8, core::ptr::null_mut(), core::ptr::null_mut());
+        }
+        KeLowerIrql(WaitIrql);
+        return WaitStatus;
     }
 
     WaitIrql = *kt_WaitIrql(CurrentThread);

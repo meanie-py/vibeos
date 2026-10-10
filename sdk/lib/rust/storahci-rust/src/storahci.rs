@@ -2089,7 +2089,7 @@ pub unsafe extern "C" fn DeviceReportLuns(
 
     AhciDebugPrint!(b"DeviceReportLuns()\n\0".as_ptr() as *const i8);
 
-    UNREFERENCED_PARAMETER(Cdb as usize);
+    UNREFERENCED_PARAMETER!(Cdb as usize);
 
     PortExtension = core::ptr::addr_of_mut!(
         (*(*AdapterExtension).PortExtension.as_mut_ptr().offset((*Srb).PathId as isize))
