@@ -3734,3 +3734,27 @@ def test_bitwise_not_after_a_keyword_is_flagged():
             assert scan_line(line)
     assert not scan_line("    if success == 0 {")
     assert not scan_line("    assert!(x != 0);")
+
+
+def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
+    """BCHAR is WCHAR in a -DUNICODE module's island and BYTE in an ANSI one's (the
+    appcompat shims): two right answers to two compiles, not a contradiction. Inside ONE
+    crate the two widths are still a bug (aclui's TCHAR once came from the ANSI glob)."""
+    spec = importlib.util.spec_from_file_location(
+        "alias_tchar_control", REPO / "tools/scan_type_alias_contradictions.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rust = tmp_path / "sdk" / "lib" / "rust"
+    for crate, rhs in (("wide-rust", "WCHAR"), ("ansi-rust", "BYTE")):
+        (rust / crate / "src").mkdir(parents=True)
+        (rust / crate / "src" / "types.rs").write_text(
+            f"pub type WCHAR = u16;\npub type BYTE = u8;\npub type BCHAR = {rhs};\n"
+        )
+    decls, aliases = module.collect(tmp_path)
+    assert not [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    (rust / "wide-rust" / "src" / "prelude.rs").write_text("pub type BCHAR = u8;\n")
+    decls, aliases = module.collect(tmp_path)
+    hits = [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    assert hits and all("wide-rust" in h[1] for h in hits)
