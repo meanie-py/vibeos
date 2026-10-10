@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // winldr.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{
@@ -160,10 +162,7 @@ unsafe fn VAtoPTI(va: u64) -> ULONG {
 }
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn MmAllocateMemoryWithType(size: usize, type_: u32) -> *mut core::ffi::c_void;
-    fn WARN(fmt: *const i8, ...);
     fn __cpuid(info: *mut i32, function: i32);
     fn DbgPrint(fmt: *const i8, ...);
     fn UiMessageBox(msg: *const u8);
@@ -171,11 +170,11 @@ extern "C" {
 
 unsafe fn MempAllocatePageTables() -> u8 {
 
-    TRACE(b">>> MempAllocatePageTables\n\0".as_ptr() as *const i8);
+    TRACE!(">>> MempAllocatePageTables\n");
 
     PxeBase = MmAllocateMemoryWithType(PAGE_SIZE as usize, LoaderMemoryData) as *mut MMPTE_HARDWARE;
     if PxeBase.is_null() {
-        ERR(b"failed to allocate PML4\n\0".as_ptr() as *const i8);
+        ERR!("failed to allocate PML4\n");
         return 0u8;
     }
 
@@ -186,7 +185,7 @@ unsafe fn MempAllocatePageTables() -> u8 {
     (*PxeBase.add(idx)).set_Write(1);
     (*PxeBase.add(idx)).set_PageFrameNumber(PtrToPfn(PxeBase as *mut core::ffi::c_void));
 
-    TRACE(b">>> leave MempAllocatePageTables\n\0".as_ptr() as *const i8);
+    TRACE!(">>> leave MempAllocatePageTables\n");
 
     return 1u8;
 }
@@ -224,13 +223,13 @@ unsafe fn MempMapSinglePage(VirtualAddress: u64, PhysicalAddress: u64) -> u8 {
     PteBase = MempGetOrCreatePageDir(PdeBase, VAtoPDI(VirtualAddress));
 
     if PteBase.is_null() {
-        ERR(b"!!!No Dir %p, %p, %p, %p\n\0".as_ptr() as *const i8, (PxeBase) as usize, (PpeBase) as usize, (PdeBase) as usize, (PteBase) as usize);
+        ERR!("!!!No Dir %p, %p, %p, %p\n", (PxeBase) as usize, (PpeBase) as usize, (PdeBase) as usize, (PteBase) as usize);
         return 0u8;
     }
 
     Index = VAtoPTI(VirtualAddress);
     if (*PteBase.offset(Index as isize)).Valid() != 0 {
-        ERR(b"!!!Already mapped %ld\n\0".as_ptr() as *const i8, (Index) as usize);
+        ERR!("!!!Already mapped %ld\n", (Index) as usize);
         return 0u8;
     }
 
@@ -279,7 +278,7 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: u64, mut PhysicalAddress: u64,
     i = 0;
     while i < cPages {
         if MempMapSinglePage(VirtualAddress, PhysicalAddress) == 0 {
-            ERR(b"Failed to map page %ld from %p to %p\n\0".as_ptr() as *const i8, (i) as usize, (VirtualAddress as *mut core::ffi::c_void) as usize, (PhysicalAddress as *mut core::ffi::c_void) as usize);
+            ERR!("Failed to map page %ld from %p to %p\n", (i) as usize, (VirtualAddress as *mut core::ffi::c_void) as usize, (PhysicalAddress as *mut core::ffi::c_void) as usize);
             return i;
         }
         VirtualAddress += PAGE_SIZE as u64;
@@ -292,13 +291,13 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: u64, mut PhysicalAddress: u64,
 #[no_mangle]
 pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: u8) -> u8 {
 
-    TRACE(b">>> MempSetupPaging(0x%lx, %ld, %p)\n\0".as_ptr() as *const i8, (StartPage) as usize, (NumberOfPages) as usize, ((StartPage * PAGE_SIZE + KSEG0_BASE) as *mut core::ffi::c_void) as usize);
+    TRACE!(">>> MempSetupPaging(0x%lx, %ld, %p)\n", (StartPage) as usize, (NumberOfPages) as usize, ((StartPage * PAGE_SIZE + KSEG0_BASE) as *mut core::ffi::c_void) as usize);
 
     if MempMapRangeOfPages((StartPage * PAGE_SIZE) as u64,
                           (StartPage * PAGE_SIZE) as u64,
                           NumberOfPages) != NumberOfPages
     {
-        ERR(b"Failed to map pages %ld, %ld\n\0".as_ptr() as *const i8, (StartPage) as usize, (NumberOfPages) as usize);
+        ERR!("Failed to map pages %ld, %ld\n", (StartPage) as usize, (NumberOfPages) as usize);
         return 0u8;
     }
 
@@ -307,7 +306,7 @@ pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: P
                               (StartPage * PAGE_SIZE) as u64,
                               NumberOfPages) != NumberOfPages
         {
-            ERR(b"Failed to map pages %ld, %ld\n\0".as_ptr() as *const i8, (StartPage) as usize, (NumberOfPages) as usize);
+            ERR!("Failed to map pages %ld, %ld\n", (StartPage) as usize, (NumberOfPages) as usize);
             return 0u8;
         }
     }
@@ -325,20 +324,20 @@ unsafe fn WinLdrpMapApic() {
     let mut CpuInfo: [u32; 4] = [0; 4];
     let APICAddress: u64;
 
-    TRACE(b">>> WinLdrpMapApic\n\0".as_ptr() as *const i8);
+    TRACE!(">>> WinLdrpMapApic\n");
 
     __cpuid(CpuInfo.as_mut_ptr() as *mut i32, 1);
     LocalAPIC = if ((CpuInfo[3] >> 9) & 1) != 0 { 1 } else { 0 };
 
     if LocalAPIC == 0 {
-        WARN(b"No APIC found.\n\0".as_ptr() as *const i8);
+        WARN!("No APIC found.\n");
         return;
     }
 
     MsrValue.QuadPart = __readmsr(0x1B) as LONGLONG;
     APICAddress = (MsrValue.u.LowPart & 0xFFFFF000) as u64;
 
-    TRACE(b"Local APIC detected at address 0x%x\n\0".as_ptr() as *const i8, (APICAddress) as usize);
+    TRACE!("Local APIC detected at address 0x%x\n", (APICAddress) as usize);
 
     MempMapSinglePage(APIC_BASE, APICAddress);
 }
@@ -349,7 +348,7 @@ unsafe fn WinLdrMapSpecialPages() -> u8 {
     let PdeBase: PHARDWARE_PTE;
 
     if MempMapSinglePage(KI_USER_SHARED_DATA as u64, (SharedUserDataPfn * PAGE_SIZE) as u64) == 0 {
-        ERR(b"Could not map KI_USER_SHARED_DATA\n\0".as_ptr() as *const i8);
+        ERR!("Could not map KI_USER_SHARED_DATA\n");
         return 0u8;
     }
 
@@ -415,7 +414,7 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
     _OperatingSystemVersion: USHORT)
 {
 
-    TRACE(b"WinLdrSetProcessorContext\n\0".as_ptr() as *const i8);
+    TRACE!("WinLdrSetProcessorContext\n");
 
     _disable();
 
@@ -431,7 +430,7 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
 
     __ltr(KGDT64_SYS_TSS);
 
-    TRACE(b"leave WinLdrSetProcessorContext\n\0".as_ptr() as *const i8);
+    TRACE!("leave WinLdrSetProcessorContext\n");
 }
 
 #[no_mangle]

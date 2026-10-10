@@ -1451,8 +1451,6 @@ pub extern "C" fn debugstr_w(_s: *const WCHAR) -> *const u8 {
 pub extern "C" fn debugstr_a(_s: *const i8) -> *const i8 {
     core::ptr::null()
 }
-#[no_mangle]
-pub extern "C" fn assert(_condition: bool) {}
 
 // ---- Wine unicode.h "W" helpers (macro → libc mappings) ----
 extern "C" {

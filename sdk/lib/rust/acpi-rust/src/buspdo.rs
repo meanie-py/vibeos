@@ -510,9 +510,6 @@ pub fn DbgDeviceRelationString(_type_: ULONG) -> *const u8 {
 }
 
 
-pub fn ASSERT(_expr: bool) {
-}
-
 
 pub type PWCHAR = *mut u16;
 pub type WCHAR = u16;

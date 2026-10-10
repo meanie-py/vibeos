@@ -347,8 +347,8 @@ pub unsafe extern "system" fn MmCreateKernelStack(GuiStack: BOOLEAN, Node: UCHAR
     while i < (StackPages) as u32 {
         PointerPte = PointerPte.add(1);
 
-        MI_SET_USAGE(MI_USAGE_KERNEL_STACK);
-        super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_KERNEL_STACK);
+        ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
         let PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
         MI_WRITE_INVALID_PTE(PointerPte, InvalidPte);
 
@@ -394,8 +394,8 @@ unsafe fn MmGrowKernelStackEx(StackPointer: PVOID, GrowSize: ULONG) -> NTSTATUS 
     let OldIrql = MiAcquirePfnLock();
 
     while (LimitPte as ULONG_PTR) >= (NewLimitPte as ULONG_PTR) {
-        MI_SET_USAGE(MI_USAGE_KERNEL_STACK_EXPANSION);
-        super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_KERNEL_STACK_EXPANSION);
+        ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
         let PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
         MI_WRITE_INVALID_PTE(LimitPte, InvalidPte);
 
@@ -1120,7 +1120,7 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
     OldIrql = MiAcquirePfnLock();
 
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
-    MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_DIRECTORY);
     TableBaseIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if TableBaseIndex == 0 {
         TableBaseIndex = MiRemoveAnyPage(Color);
@@ -1128,7 +1128,7 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
         MiZeroPhysicalPage(TableBaseIndex);
         OldIrql = MiAcquirePfnLock();
     }
-    MI_SET_USAGE(MI_USAGE_PAGE_DIRECTORY);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_DIRECTORY);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     HyperIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if HyperIndex == 0 {
@@ -1137,7 +1137,7 @@ pub unsafe extern "system" fn MmCreateProcessAddressSpace(
         MiZeroPhysicalPage(HyperIndex);
         OldIrql = MiAcquirePfnLock();
     }
-    MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
     let Color = MI_GET_NEXT_PROCESS_COLOR(Process as *mut c_void);
     WsListIndex = (MiRemoveZeroPageSafe(Color)) as usize;
     if WsListIndex == 0 {

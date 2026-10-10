@@ -54,7 +54,6 @@ extern "C" {
     fn NT_ASSERT(condition: u32);
 }
 extern "C" {
-    fn __analysis_assert(condition: u32);
 }
 extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
@@ -438,7 +437,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 (*Dirent).FileNameLen,
             );
 
-            __analysis_assert(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
+            ntkrnl_sys::__analysis_assert!(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
             NT_ASSERT(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
             (*Dirent).CdFileName.FileName.Length = Length as USHORT;
         } else {

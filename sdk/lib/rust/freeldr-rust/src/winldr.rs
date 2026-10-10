@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, FIXME, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // winldr.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_DISK_SIGNATURE, ARC_STATUS, BOOT_DRIVER_LIST_ENTRY, BOOT_DRIVER_NODE, FILEINFORMATION, HEADLESS_LOADER_BLOCK, KiSystemStartup, LOADER_PARAMETER_EXTENSION, MEMORY_ALLOCATION_DESCRIPTOR, PARC_DISK_SIGNATURE, PBOOT_DRIVER_LIST_ENTRY, PBOOT_DRIVER_NODE, PCCH, PCSTR, PLDR_DATA_TABLE_ENTRY, PLOADER_PARAMETER_BLOCK, PLOADER_PARAMETER_EXTENSION, PMEMORY_ALLOCATION_DESCRIPTOR, PSETUP_LOADER_BLOCK, PSTR, PUNICODE_STRING, _BOOT_DRIVER_LIST_ENTRY, _LDR_DATA_TABLE_ENTRY};
@@ -69,7 +71,6 @@ pub static mut NoExecuteEnabled: BOOLEAN = 0;
 
 extern "C" {
     fn RtlStringCbPrintfA(pszDest: *mut u8, cbDest: usize, pszFormat: PCSTR, ...) -> i32;
-    fn TRACE(fmt: *const i8, ...);
     fn UiDrawStatusText(text: PCSTR);
     fn printf(fmt: *const i8, ...) -> i32;
     // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
@@ -78,7 +79,6 @@ extern "C" {
     fn strrchr(s: *const i8, c: i32) -> *mut i8;
     fn PeLdrCheckForLoadedDll( LoadOrderListHead: PLIST_ENTRY, DllName: PCSTR, DriverDTE: *mut PLDR_DATA_TABLE_ENTRY, ) -> u8;
     fn PeLdrLoadImage( FullPath: PCSTR, LoaderType: u32, DriverBase: *mut *mut core::ffi::c_void, ) -> u8;
-    fn ERR(fmt: *const i8, ...);
     fn PaToVa(pa: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn PeLdrAllocateDataTableEntry( LoadOrderListHead: PLIST_ENTRY, BaseDllName: PCSTR, FullDllName: PCSTR, BaseAddress: *mut core::ffi::c_void, DriverDTE: *mut PLDR_DATA_TABLE_ENTRY, ) -> u8;
     fn MmFreeMemory(ptr: *mut core::ffi::c_void);
@@ -91,7 +91,6 @@ extern "C" {
     fn ArcRead(FileId: u32, Buffer: *mut core::ffi::c_void, Length: u32, Count: *mut u32) -> ARC_STATUS;
     // mm.c canonical takes SIZE_T (usize). u32-decl truncated arg on 64-bit.
     fn MmAllocateMemoryWithType(MemorySize: usize, MemoryType: u32) -> *mut core::ffi::c_void;
-    fn WARN(fmt: *const i8, ...);
     fn UiUpdateProgressBar(Percentage: u32, ProgressString: PCCH);
     fn RtlStringCbCatA(pszDest: *mut u8, cbDest: usize, pszSrc: PCCH) -> i32;
     fn UiIndicateProgress();
@@ -109,7 +108,6 @@ extern "C" {
     fn RegCloseKey(hKey: HKEY) -> i32;
     fn RegOpenKey(hKey: HKEY, lpSubKey: *const u16, phkResult: *mut HKEY) -> i32;
     fn RegQueryValue(hKey: HKEY, lpSubKey: *const u16, lpType: *mut u32, lpData: *mut u8, lpcbData: *mut u32) -> i32;
-    fn FIXME(fmt: *const i8, ...);
     fn NtLdrGetOptionEx(BootOptions: PCSTR, Option: PCSTR, OptionLength: *mut u32) -> PCSTR;
     fn _strlwr(s: *mut u8) -> *mut u8;
     fn _strnicmp(s1: *const u8, s2: *const u8, n: usize) -> i32;
@@ -170,7 +168,7 @@ pub unsafe extern "C" fn NtLdrOutputLoadMsg(
 
     if SosEnabled != 0 {
         printf(b"  %s\n\0".as_ptr() as PCSTR, FileName);
-        TRACE(b"Loading: %s\n\0".as_ptr() as PCSTR, (FileName) as usize);
+        TRACE!("Loading: %s\n", (FileName) as usize);
     } else {
         let mut ProgressString: [u8; 256] = [0; 256];
 
@@ -242,9 +240,9 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
     PathSeparator = strstr(BootPath as *const u8 , b"\\\0".as_ptr()).offset_from(BootPath as *const u8 ) as usize;
     RtlStringCbCopyNA(ArcBoot.as_mut_ptr(), core::mem::size_of_val(&ArcBoot), BootPath as *const u8 , PathSeparator);
 
-    TRACE(b"ArcBoot: '%s'\\n\0".as_ptr() as PCSTR, (ArcBoot.as_ptr()) as usize);
-    TRACE(b"SystemRoot: '%s'\\n\0".as_ptr() as PCSTR, (SystemRoot) as usize);
-    TRACE(b"Options: '%s'\\n\0".as_ptr() as PCSTR, (Options) as usize);
+    TRACE!("ArcBoot: '%s'\\n", (ArcBoot.as_ptr()) as usize);
+    TRACE!("SystemRoot: '%s'\\n", (SystemRoot) as usize);
+    TRACE!("Options: '%s'\\n", (Options) as usize);
 
     (*LoaderBlock).ArcBootDeviceName = (*WinLdrSystemBlock).ArcBootDeviceName.as_mut_ptr();
     RtlStringCbCopyA((*LoaderBlock).ArcBootDeviceName, core::mem::size_of_val(&(*WinLdrSystemBlock).ArcBootDeviceName), ArcBoot.as_ptr() as *const i8 );
@@ -307,7 +305,7 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
             u32::from_be_bytes(*b"giSD"),
         ) as *mut ntkrnl_sys::ddk::_ARC_DISK_SIGNATURE;
         if ArcDiskSig.is_null() {
-            ERR(b"Failed to allocate ARC structure! Ignoring remaining ARC disks. (i = %lu, DiskCount = %lu)\\n\0".as_ptr() as PCSTR, (i) as usize, (DiscCount) as usize);
+            ERR!("Failed to allocate ARC structure! Ignoring remaining ARC disks. (i = %lu, DiskCount = %lu)\\n", (i) as usize, (DiscCount) as usize);
             break;
         }
 
@@ -379,7 +377,7 @@ pub unsafe extern "C" fn WinLdrInitializePhase1(
 
     (*LoaderBlock).Extension = PaToVa((*LoaderBlock).Extension as *mut core::ffi::c_void) as PLOADER_PARAMETER_EXTENSION;
 
-    TRACE(b"WinLdrInitializePhase1() completed\\n\0".as_ptr() as PCSTR);
+    TRACE!("WinLdrInitializePhase1() completed\\n");
 }
 
 unsafe fn WinLdrLoadDeviceDriver(
@@ -421,9 +419,7 @@ unsafe fn WinLdrLoadDeviceDriver(
         *DriverPath.as_mut_ptr() = 0;
     }
 
-    TRACE(
-        b"DriverPath: '%s', DllName: '%s', LPB\n\0".as_ptr() as PCSTR, (DriverPath.as_ptr()) as usize, (DllName.as_ptr()) as usize,
-    );
+    TRACE!("DriverPath: '%s', DllName: '%s', LPB\n", (DriverPath.as_ptr()) as usize, (DllName.as_ptr()) as usize);
 
     Success = PeLdrCheckForLoadedDll(LoadOrderListHead, DllName.as_ptr() as PCSTR, DriverDTE);
     if Success != 0 {
@@ -445,9 +441,7 @@ unsafe fn WinLdrLoadDeviceDriver(
         core::ptr::addr_of_mut!(DriverBase),
     );
     if Success == 0 {
-        ERR(
-            b"PeLdrLoadImage('%s') failed\n\0".as_ptr() as PCSTR, (DllName.as_ptr()) as usize,
-        );
+        ERR!("PeLdrLoadImage('%s') failed\n", (DllName.as_ptr()) as usize);
         return 0u8;
     }
 
@@ -459,9 +453,7 @@ unsafe fn WinLdrLoadDeviceDriver(
         DriverDTE,
     );
     if Success == 0 {
-        ERR(
-            b"PeLdrAllocateDataTableEntry('%s') failed\n\0".as_ptr() as PCSTR, (DllName.as_ptr()) as usize,
-        );
+        ERR!("PeLdrAllocateDataTableEntry('%s') failed\n", (DllName.as_ptr()) as usize);
         MmFreeMemory(DriverBase);
         return 0u8;
     }
@@ -483,9 +475,7 @@ unsafe fn WinLdrLoadDeviceDriver(
         *DriverDTE,
     );
     if Success == 0 {
-        ERR(
-            b"PeLdrScanImportDescriptorTable('%s') failed\n\0".as_ptr() as PCSTR, (FullPath.as_ptr()) as usize,
-        );
+        ERR!("PeLdrScanImportDescriptorTable('%s') failed\n", (FullPath.as_ptr()) as usize);
         PeLdrFreeDataTableEntry(*DriverDTE);
         MmFreeMemory(DriverBase);
         return 0u8;
@@ -533,9 +523,7 @@ unsafe fn WinLdrLoadBootDrivers(
             }
             (*DriverNode).Name.Buffer = PaToVa((*DriverNode).Name.Buffer as *mut core::ffi::c_void) as *mut u16;
         } else {
-            ERR(
-                b"Cannot load boot driver '%wZ'!\n\0".as_ptr() as PCSTR, (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize,
-            );
+            ERR!("Cannot load boot driver '%wZ'!\n", (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize);
             // ERR is a trace channel nobody sees on UEFI; the kernel then never
             // hears of the driver, and a device that needs it just sits there.
             // (DbgPrint takes no arguments here, so narrow the path by hand.)
@@ -581,7 +569,7 @@ pub unsafe extern "C" fn WinLdrLoadModule(
     NtLdrOutputLoadMsg(ModuleName, core::ptr::null());
     Status = ArcOpen(ModuleName as PSTR, OpenReadOnly, &mut FileId);
     if Status != ESUCCESS {
-        WARN(b"Error while opening '%s', Status: %u\n\0".as_ptr() as PCSTR, (ModuleName) as usize, (Status) as usize);
+        WARN!("Error while opening '%s', Status: %u\n", (ModuleName) as usize, (Status) as usize);
         return core::ptr::null_mut();
     }
 
@@ -595,7 +583,7 @@ pub unsafe extern "C" fn WinLdrLoadModule(
 
     PhysicalBase = MmAllocateMemoryWithType(FileSize as usize, MemoryType);
     if PhysicalBase.is_null() {
-        ERR(b"Could not allocate memory for '%s'\n\0".as_ptr() as PCSTR, (ModuleName) as usize);
+        ERR!("Could not allocate memory for '%s'\n", (ModuleName) as usize);
         ArcClose(FileId);
         return core::ptr::null_mut();
     }
@@ -603,11 +591,11 @@ pub unsafe extern "C" fn WinLdrLoadModule(
     Status = ArcRead(FileId, PhysicalBase, FileSize, &mut BytesRead);
     ArcClose(FileId);
     if Status != ESUCCESS {
-        WARN(b"Error while reading '%s', Status: %u\n\0".as_ptr() as PCSTR, (ModuleName) as usize, (Status) as usize);
+        WARN!("Error while reading '%s', Status: %u\n", (ModuleName) as usize, (Status) as usize);
         return core::ptr::null_mut();
     }
 
-    TRACE(b"Loaded %s at 0x%x with size 0x%x\n\0".as_ptr() as PCSTR, (ModuleName) as usize, (PhysicalBase) as usize, (FileSize) as usize);
+    TRACE!("Loaded %s at 0x%x with size 0x%x\n", (ModuleName) as usize, (PhysicalBase) as usize, (FileSize) as usize);
 
     return PhysicalBase;
 }
@@ -666,12 +654,10 @@ unsafe fn LoadModule(
     NtLdrOutputLoadMsg(FullFileName.as_ptr() as PCCH, core::ptr::null());
     let Success = PeLdrLoadImage(FullFileName.as_ptr() as PCCH, MemoryType, &mut BaseAddress);
     if Success == 0 {
-        ERR(b"PeLdrLoadImage('%s') failed\n\0".as_ptr() as PCCH, (File) as usize);
+        ERR!("PeLdrLoadImage('%s') failed\n", (File) as usize);
         return core::ptr::null_mut();
     }
-    TRACE(
-        b"%s loaded successfully at %p\n\0".as_ptr() as PCCH, (File) as usize, (BaseAddress) as usize,
-    );
+    TRACE!("%s loaded successfully at %p\n", (File) as usize, (BaseAddress) as usize);
 
     let Success = PeLdrAllocateDataTableEntry(
         core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead),
@@ -681,9 +667,7 @@ unsafe fn LoadModule(
         Dte,
     );
     if Success == 0 {
-        ERR(
-            b"PeLdrAllocateDataTableEntry('%s') failed\n\0".as_ptr() as PCCH, (FullFileName.as_ptr()) as usize,
-        );
+        ERR!("PeLdrAllocateDataTableEntry('%s') failed\n", (FullFileName.as_ptr()) as usize);
         MmFreeMemory(BaseAddress);
         return core::ptr::null_mut();
     }
@@ -724,7 +708,7 @@ unsafe fn WinLdrIsPaeSupported(
         PaeDisabled = 1u8;
     }
 
-    TRACE(b"PaeEnabled %X, PaeDisabled %X\n\0".as_ptr() as PCSTR, (PaeEnabled) as usize, (PaeDisabled) as usize);
+    TRACE!("PaeEnabled %X, PaeDisabled %X\n", (PaeEnabled) as usize, (PaeDisabled) as usize);
 
     if PaeDisabled != 0 {
         Result = 0u8;
@@ -769,12 +753,12 @@ unsafe fn LoadWindowsCore(
     RtlStringCbCopyA(DirPath.as_mut_ptr() as *mut i8 , 260, BootPath);
     RtlStringCbCatA(DirPath.as_mut_ptr(), 260, b"system32\\\0".as_ptr() as *const i8 );
 
-    TRACE(b"LoadWindowsCore: BootOptions '%s'\n\0".as_ptr() as *const i8 , (BootOptions) as usize);
+    TRACE!("LoadWindowsCore: BootOptions '%s'\n", (BootOptions) as usize);
 
     #[cfg(target_arch = "x86")]
     {
         if NtLdrGetOption(BootOptions, (b"3GB\0".as_ptr() as *const i8)) != 0 {
-            FIXME((b"LoadWindowsCore: 3GB - TRUE (not implemented)\n\0".as_ptr() as *const i8));
+            FIXME!("LoadWindowsCore: 3GB - TRUE (not implemented)\n");
             VirtualBias = 1u8;
         }
     }
@@ -783,14 +767,14 @@ unsafe fn LoadWindowsCore(
         (NtLdrGetOption(BootOptions, b"SAFEBOOT\0".as_ptr() as *const i8 ) != 0 ||
          NtLdrGetOption(BootOptions, b"SAFEBOOT:\0".as_ptr() as *const i8 ) != 0)
     {
-        FIXME(b"LoadWindowsCore: SAFEBOOT - TRUE (not implemented)\n\0".as_ptr() as *const i8 );
+        FIXME!("LoadWindowsCore: SAFEBOOT - TRUE (not implemented)\n");
         SafeBoot = 1u8;
     }
 
     if (OperatingSystemVersion > 0x0500) &&
         NtLdrGetOption(BootOptions, b"BOOTLOGO\0".as_ptr() as *const i8 ) != 0
     {
-        FIXME(b"LoadWindowsCore: BOOTLOGO - TRUE (not implemented)\n\0".as_ptr() as *const i8 );
+        FIXME!("LoadWindowsCore: BOOTLOGO - TRUE (not implemented)\n");
         BootLogo = 1u8;
     }
 
@@ -834,7 +818,7 @@ unsafe fn LoadWindowsCore(
             }
         }
     }
-    TRACE(b"NoExecuteEnabled %X\n\0".as_ptr() as *const i8 , (NoExecuteEnabled) as usize);
+    TRACE!("NoExecuteEnabled %X\n", (NoExecuteEnabled) as usize);
 
     RtlStringCbCopyA(HalFileName.as_mut_ptr() as *mut i8 , 260, b"hal.dll\0".as_ptr() as *const i8 );
     RtlStringCbCopyA(KernelFileName.as_mut_ptr() as *mut i8 , 260, b"ntoskrnl.exe\0".as_ptr() as *const i8 );
@@ -866,11 +850,11 @@ unsafe fn LoadWindowsCore(
             260,
         );
         if PaeModeOn != 0 {
-            FIXME((b"WinLdrIsPaeSupported: PaeModeOn\n\0".as_ptr() as *const i8));
+            FIXME!("WinLdrIsPaeSupported: PaeModeOn\n");
         }
     }
 
-    TRACE(b"HAL file = '%s' ; Kernel file = '%s'\n\0".as_ptr() as *const i8 , (HalFileName.as_ptr()) as usize, (KernelFileName.as_ptr()) as usize);
+    TRACE!("HAL file = '%s' ; Kernel file = '%s'\n", (HalFileName.as_ptr()) as usize, (KernelFileName.as_ptr()) as usize);
 
     KernelBase = LoadModule(
         LoaderBlock,
@@ -882,7 +866,7 @@ unsafe fn LoadWindowsCore(
         30,
     );
     if KernelBase.is_null() {
-        ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KernelFileName.as_ptr()) as usize);
+        ERR!("LoadModule('%s') failed\n", (KernelFileName.as_ptr()) as usize);
         UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , KernelFileName.as_ptr());
         return 0u8;
     }
@@ -897,7 +881,7 @@ unsafe fn LoadWindowsCore(
         35,
     );
     if HalBase.is_null() {
-        ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (HalFileName.as_ptr()) as usize);
+        ERR!("LoadModule('%s') failed\n", (HalFileName.as_ptr()) as usize);
         UiMessageBox(b"Could not load %s\0".as_ptr() as *const i8 , HalFileName.as_ptr());
         PeLdrFreeDataTableEntry(*KernelDTE);
         MmFreeMemory(KernelBase);
@@ -947,7 +931,7 @@ unsafe fn LoadWindowsCore(
         );
         if KdDllBase.is_null() {
             if IsCustomKdDll != 0 {
-                WARN(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KdDllName.as_ptr()) as usize);
+                WARN!("LoadModule('%s') failed\n", (KdDllName.as_ptr()) as usize);
 
                 IsCustomKdDll = 0u8;
                 RtlStringCbCopyA(KdDllName.as_mut_ptr() as *mut i8 , 260, b"kdcom.dll\0".as_ptr() as *const i8 );
@@ -964,7 +948,7 @@ unsafe fn LoadWindowsCore(
             }
 
             if KdDllBase.is_null() {
-                ERR(b"LoadModule('%s') failed\n\0".as_ptr() as *const i8 , (KdDllName.as_ptr()) as usize);
+                ERR!("LoadModule('%s') failed\n", (KdDllName.as_ptr()) as usize);
             }
         }
     }
@@ -1039,7 +1023,7 @@ unsafe fn WinLdrInitErrataInf(
     }
     
     if rc != 0 {
-        WARN(b"Could not open the BiosInfo/Errata registry key (Error %u)\n\0".as_ptr() as PCSTR, (rc as i32) as usize);
+        WARN!("Could not open the BiosInfo/Errata registry key (Error %u)\n", (rc as i32) as usize);
         return 0u8;
     }
 
@@ -1050,7 +1034,7 @@ unsafe fn WinLdrInitErrataInf(
                       szFileName.as_mut_ptr() as *mut u8,
                       &mut BufferSize);
     if rc != 0 {
-        WARN(b"Could not retrieve the InfName value (Error %u)\n\0".as_ptr() as PCSTR, (rc as i32) as usize);
+        WARN!("Could not retrieve the InfName value (Error %u)\n", (rc as i32) as usize);
         RegCloseKey(hKey);
         return 0u8;
     }
@@ -1068,7 +1052,7 @@ unsafe fn WinLdrInitErrataInf(
                                     &mut FileSize,
                                     LoaderRegistryData);
     if PhysicalBase.is_null() {
-        WARN(b"Could not load '%s'\n\0".as_ptr() as PCSTR, (ErrataFilePath.as_ptr() as PCSTR) as usize);
+        WARN!("Could not load '%s'\n", (ErrataFilePath.as_ptr() as PCSTR) as usize);
         return 0u8;
     }
 
@@ -1099,7 +1083,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
 
     ArgValue = GetArgumentValue(Argc, Argv, b"BootType\0".as_ptr() as PCSTR);
     if ArgValue.is_null() || *ArgValue == 0 {
-        ERR(b"No 'BootType' value, aborting!\n\0".as_ptr() as PCSTR);
+        ERR!("No 'BootType' value, aborting!\n");
         return EINVAL;
     }
 
@@ -1111,13 +1095,13 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     } else if _stricmp(ArgValue, b"WindowsVista\0".as_ptr() as PCSTR) == 0 {
         OperatingSystemVersion = _WIN32_WINNT_VISTA;
     } else {
-        ERR(b"Unknown 'BootType' value '%s', aborting!\n\0".as_ptr() as PCSTR, (ArgValue) as usize);
+        ERR!("Unknown 'BootType' value '%s', aborting!\n", (ArgValue) as usize);
         return EINVAL;
     }
 
     SystemPartition = GetArgumentValue(Argc, Argv, b"SystemPartition\0".as_ptr() as PCSTR);
     if SystemPartition.is_null() || *SystemPartition == 0 {
-        ERR(b"No 'SystemPartition' specified, aborting!\n\0".as_ptr() as PCSTR);
+        ERR!("No 'SystemPartition' specified, aborting!\n");
         return EINVAL;
     }
 
@@ -1147,7 +1131,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
         RtlStringCbCatA(BootPath.as_mut_ptr() as PCHAR as *mut u8 , core::mem::size_of_val(&BootPath), b"\\\0".as_ptr() as PCSTR);
     }
 
-    TRACE(b"BootPath: '%s'\n\0".as_ptr() as PCSTR, (BootPath.as_ptr()) as usize);
+    TRACE!("BootPath: '%s'\n", (BootPath.as_ptr()) as usize);
 
     *BootOptions.as_mut_ptr() = 0;
     ArgValue = GetArgumentValue(Argc, Argv, b"Options\0".as_ptr() as PCSTR);
@@ -1172,7 +1156,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
         }
     }
 
-    TRACE(b"BootOptions: '%s'\n\0".as_ptr() as PCSTR, (BootOptions.as_ptr()) as usize);
+    TRACE!("BootOptions: '%s'\n", (BootOptions.as_ptr()) as usize);
 
     FileName = NtLdrGetOptionEx(BootOptions.as_ptr() as PCSTR, b"RDPATH=\0".as_ptr() as PCSTR, &mut FileNameLength);
     if !FileName.is_null() && FileNameLength >= 7 {
@@ -1195,7 +1179,7 @@ pub unsafe extern "C" fn LoadAndBootWindows(
     DbgPrint(b"[FLDR] phase: system hive load begin\n\0".as_ptr() as *const i8);
     UiUpdateProgressBar(15, b"Loading system hive...\0".as_ptr() as PCSTR);
     Success = WinLdrInitSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR, 0u8);
-    TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
+    TRACE!("SYSTEM hive %s\n", (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
     if Success == 0 {
         return ENOEXEC;
     }
@@ -1208,13 +1192,13 @@ pub unsafe extern "C" fn LoadAndBootWindows(
 
     DbgPrint(b"[FLDR] phase: system hive loaded\n\0".as_ptr() as *const i8);
     Success = WinLdrScanSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR);
-    TRACE(b"SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"scanned\0".as_ptr() } else { b"not scanned\0".as_ptr() }) as usize);
+    TRACE!("SYSTEM hive %s\n", (if Success != 0 { b"scanned\0".as_ptr() } else { b"not scanned\0".as_ptr() }) as usize);
     if Success == 0 {
         return ENOEXEC;
     }
 
     Success = WinLdrInitErrataInf(LoaderBlock, OperatingSystemVersion, BootPath.as_ptr() as PCSTR);
-    TRACE(b"Firmware Errata file %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
+    TRACE!("Firmware Errata file %s\n", (if Success != 0 { b"loaded\0".as_ptr() } else { b"not loaded\0".as_ptr() }) as usize);
 
     return LoadAndBootWindowsCommon(OperatingSystemVersion, LoaderBlock, BootOptions.as_ptr() as PCSTR, BootPath.as_ptr() as PCSTR);
 }
@@ -1305,9 +1289,7 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
         #[cfg(feature = "uefi")]
         {
-            ERR(
-                b"Debug mode: connect debugger on port %.*s\n\0".as_ptr() as PCSTR, (DebugPortLength) as usize, (DebugPort) as usize,
-            );
+            ERR!("Debug mode: connect debugger on port %.*s\n", (DebugPortLength) as usize, (DebugPort) as usize);
         }
         #[cfg(not(feature = "uefi"))]
         {
@@ -1323,24 +1305,22 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     #[cfg(target_arch = "aarch64")]
     {
-        ERR(b">>> WinLdrSetupMemoryLayout...\n\0".as_ptr() as PCSTR);
+        ERR!(">>> WinLdrSetupMemoryLayout...\n");
     }
 
     WinLdrSetupMemoryLayout(LoaderBlock);
 
     #[cfg(target_arch = "aarch64")]
     {
-        ERR(b">>> WinLdrSetProcessorContext...\n\0".as_ptr() as PCSTR);
+        ERR!(">>> WinLdrSetProcessorContext...\n");
     }
 
     WinLdrSetProcessorContext(OperatingSystemVersion);
 
     #[cfg(target_arch = "aarch64")]
     {
-        ERR(
-            b">>> Page tables active! Extension=%p KiSystemStartup=%p\n\0".as_ptr() as PCSTR, ((*LoaderBlock).Extension) as usize, (KiSystemStartup as *const core::ffi::c_void) as usize,
-        );
-        ERR(b">>> Writing LoaderPagesSpanned...\n\0".as_ptr() as PCSTR);
+        ERR!(">>> Page tables active! Extension=%p KiSystemStartup=%p\n", ((*LoaderBlock).Extension) as usize, (KiSystemStartup as *const core::ffi::c_void) as usize);
+        ERR!(">>> Writing LoaderPagesSpanned...\n");
     }
 
     // On real ARM64 hardware this store was the first thing to fault after the
@@ -1377,18 +1357,14 @@ pub unsafe extern "C" fn LoadAndBootWindowsCommon(
 
     #[cfg(target_arch = "aarch64")]
     {
-        ERR(
-            b">>> Zeroing KI_USER_SHARED_DATA at %p...\n\0".as_ptr() as PCSTR, (KI_USER_SHARED_DATA as *const core::ffi::c_void) as usize,
-        );
+        ERR!(">>> Zeroing KI_USER_SHARED_DATA at %p...\n", (KI_USER_SHARED_DATA as *const core::ffi::c_void) as usize);
     }
 
     RtlZeroMemory(KI_USER_SHARED_DATA as *mut core::ffi::c_void, 4096);
 
     #[cfg(target_arch = "aarch64")]
     {
-        ERR(
-            b">>> Calling KiSystemStartup(%p)...\n\0".as_ptr() as PCSTR, (LoaderBlockVA) as usize,
-        );
+        ERR!(">>> Calling KiSystemStartup(%p)...\n", (LoaderBlockVA) as usize);
     }
 
     DbgPrint(b"[FLDR] phase: handoff to kernel\n\0".as_ptr() as *const i8);
@@ -1415,8 +1391,7 @@ pub unsafe extern "C" fn WinLdrpDumpMemoryDescriptors(LoaderBlock: PLOADER_PARAM
             ) as PMEMORY_ALLOCATION_DESCRIPTOR;
         
         
-        TRACE(
-            b"BP %08X PC %04X MT %d\n\0".as_ptr() as *const i8, ((*MemoryDescriptor).BasePage) as usize, ((*MemoryDescriptor).PageCount) as usize, ((*MemoryDescriptor).MemoryType) as usize);
+        TRACE!("BP %08X PC %04X MT %d\n", ((*MemoryDescriptor).BasePage) as usize, ((*MemoryDescriptor).PageCount) as usize, ((*MemoryDescriptor).MemoryType) as usize);
         
         NextMd = (*MemoryDescriptor).ListEntry.Flink;
     }
@@ -1431,9 +1406,7 @@ pub unsafe fn WinLdrpDumpBootDriver(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
             .offset(-((core::mem::offset_of!(BOOT_DRIVER_LIST_ENTRY, Link)) as isize))
             as PBOOT_DRIVER_LIST_ENTRY;
 
-        TRACE(
-            b"BootDriver %wZ DTE %08X RegPath: %wZ\n\0".as_ptr() as *const i8 , (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize, ((*BootDriver).LdrEntry) as usize, (core::ptr::addr_of_mut!((*BootDriver).RegistryPath)) as usize,
-        );
+        TRACE!("BootDriver %wZ DTE %08X RegPath: %wZ\n", (core::ptr::addr_of_mut!((*BootDriver).FilePath)) as usize, ((*BootDriver).LdrEntry) as usize, (core::ptr::addr_of_mut!((*BootDriver).RegistryPath)) as usize);
 
         NextBd = (*BootDriver).Link.Flink;
     }
@@ -1448,8 +1421,7 @@ unsafe fn WinLdrpDumpArcDisks(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     while NextBd != core::ptr::addr_of_mut!((*(*LoaderBlock).ArcDiskInformation).DiskSignatureListHead) {
         ArcDisk = (NextBd as *mut u8).offset(-(core::mem::offset_of!(ARC_DISK_SIGNATURE, ListEntry) as isize)) as PARC_DISK_SIGNATURE;
 
-        TRACE(
-            b"ArcDisk %s checksum: 0x%X, signature: 0x%X\n\0".as_ptr() as *const i8 , ((*ArcDisk).ArcName) as usize, ((*ArcDisk).CheckSum) as usize, ((*ArcDisk).Signature) as usize);
+        TRACE!("ArcDisk %s checksum: 0x%X, signature: 0x%X\n", ((*ArcDisk).ArcName) as usize, ((*ArcDisk).CheckSum) as usize, ((*ArcDisk).Signature) as usize);
 
         NextBd = (*ArcDisk).ListEntry.Flink;
     }

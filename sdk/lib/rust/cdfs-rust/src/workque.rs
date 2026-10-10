@@ -32,7 +32,6 @@ extern "C" {
     fn CdReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;

@@ -9,6 +9,13 @@ macro_rules! PAGED_CODE {
     () => {};
 }
 
+// cdprocs.h `AssertVerifyDevice` / `AssertVerifyDeviceIrp` (the NT_ASSERT forms are under
+// `#if 0`) and cddata.h `ASSERT_OPTIONAL_IRP` (`{ NOTHING; }` without CD_SANITY): empty,
+// operands never evaluated -- so token-discarding macros, not empty fns.
+macro_rules! AssertVerifyDevice { ($($t:tt)*) => { () }; }
+macro_rules! AssertVerifyDeviceIrp { ($($t:tt)*) => { () }; }
+macro_rules! ASSERT_OPTIONAL_IRP { ($($t:tt)*) => { () }; }
+
 pub mod types;
 pub mod glue;       // harvested #define consts + grind-noise aliases
 pub mod ddk_shims;  // FsRtl*/macro FORCEINLINE shims (shared w/ fastfat)

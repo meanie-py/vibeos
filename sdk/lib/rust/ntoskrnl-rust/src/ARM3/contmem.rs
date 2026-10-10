@@ -92,8 +92,8 @@ unsafe fn MiFindContiguousPages(
                     if Length == 0 {
                         let mut EndPfn = Pfn1.sub((SizeInPages - 1) as usize);
                         loop {
-                            MI_SET_USAGE(MI_USAGE_CONTINOUS_ALLOCATION);
-                            MI_SET_PROCESS2("Kernel Driver");
+                            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_CONTINOUS_ALLOCATION);
+                            ntkrnl_sys::MI_SET_PROCESS2!("Kernel Driver");
                             MiUnlinkFreeOrZeroedPage(Pfn1);
                             (*Pfn1).set_reference_count(1);
                             (*Pfn1).set_share_count(1 as ULONG_PTR);

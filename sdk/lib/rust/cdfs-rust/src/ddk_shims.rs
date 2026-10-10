@@ -424,10 +424,6 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 // wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
 #[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
 
-// cdfs debug ASSERT macros — retail no-ops.
-#[no_mangle] pub extern "C" fn ASSERT_OPTIONAL_IRP(_Irp: PIRP) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDevice(_IrpContext: *mut IRP_CONTEXT, _Status: i32) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDeviceIrp(_Irp: PIRP) {}
 
 // nodetype.h: CdBugCheck(A,B,C) = KeBugCheckEx(CDFS_FILE_SYSTEM, BugCheckFileId|__LINE__, A,B,C).
 //   CDFS_FILE_SYSTEM = 0x26 (sdk/include/reactos/mc/bugcodes.mc).

@@ -64,7 +64,6 @@ extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
-    fn _Analysis_assume_(expr: bool);
     fn DbgBreakPoint();
     } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;

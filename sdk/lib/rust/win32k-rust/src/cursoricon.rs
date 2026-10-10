@@ -122,9 +122,6 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HANDLE {
     *(obj as *const HANDLE)
 }
 
-// NT_ASSERT — debug-only, no-op in release.
-#[inline(always)]
-fn NT_ASSERT(_cond: bool) {}
 
 // IS_INTRESOURCE(ptr) = ((ULONG_PTR)ptr >> 16) == 0. (winuser.h macro)
 #[inline(always)]
@@ -472,7 +469,7 @@ pub unsafe extern "C" fn IntCreateCurIconHandle(Animated: BOOLEAN) -> HANDLE {
         (*CurIcon).CURSORF_flags |= CURSORF_ACON;
     }
 
-    NT_ASSERT((*CurIcon).pcurNext.is_null());
+    NT_ASSERT!((*CurIcon).pcurNext.is_null());
     UserDereferenceObject(CurIcon as _);
 
     hCurIcon

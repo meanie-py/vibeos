@@ -97,7 +97,6 @@ extern "C" {
 }
 extern "system" {
     fn CdromSequentialQueueEvtIoReadWrite(queue: WDFQUEUE, request: WDFREQUEST, length: usize);
-    fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
     fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn IoGetDevicePropertyData( PDO: *mut DEVICE_OBJECT, propertyKey: *const c_void, lcid: u32, flags: u32, size: u32, data: *mut c_void, requiredSize: *mut u32, dataType: *mut u32, ) -> NTSTATUS;
@@ -127,7 +126,6 @@ extern "system" {
     fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
     fn NT_ASSERT(condition: i32);
-    fn WPP_INIT_TRACING(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT, RegistryPath: ntkrnl_sys::ddk::PUNICODE_STRING);
     fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
     fn KeGetCurrentIrql() -> u8;
     fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -489,7 +487,7 @@ pub unsafe extern "system" fn DriverEntry(
     let mut driverObject: WDFDRIVER = core::ptr::null_mut();
 
     PagedCode();
-    WPP_INIT_TRACING(DriverObject, RegistryPath);
+    ntkrnl_sys::WPP_INIT_TRACING!(DriverObject, RegistryPath);
 
     {
         let level = TRACE_LEVEL_INFORMATION;
@@ -528,7 +526,7 @@ pub unsafe extern "system" fn DriverEntry(
             let flags = TRACE_FLAG_INIT;
             let fmt = b"WdfDriverCreate failed. %x\n\0".as_ptr() as *const i8;
             TracePrint!(level, flags, fmt, status as usize);
-            WPP_CLEANUP(DriverObject);
+            ntkrnl_sys::WPP_CLEANUP!(DriverObject);
         }
     } else {
         let driverExtension: *mut CDROM_DRIVER_EXTENSION = DriverGetExtension(driverObject);
@@ -562,7 +560,7 @@ pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
         driver,
     );
 
-    WPP_CLEANUP(WdfDriverWdmGetDriverObject(driver));
+    ntkrnl_sys::WPP_CLEANUP!(WdfDriverWdmGetDriverObject(driver));
 
     return;
 }

@@ -117,8 +117,6 @@ fn CLASS_DRIVER_EXTENSION_KEY() -> *mut core::ffi::c_void {
 
 extern "C" {
     fn DbgPrintEx(ComponentId: ULONG, Level: ULONG, Format: *const i8, ...);
-    fn WPP_INIT_TRACING(DriverObject: PDRIVER_OBJECT, RegistryPath: *mut _UNICODE_STRING);
-    fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
     fn IoAdjustPagingPathCount(Count: *mut i32, Increment: BOOLEAN);
     fn SET_FLAG(Flags: *mut ULONG, Flag: ULONG);
     fn LongToPtr(l: LONG) -> PVOID;
@@ -401,7 +399,7 @@ pub unsafe extern "system" fn ClassInitialize(
         if !NT_SUCCESS(status) {
             core::ptr::write_volatile(core::ptr::addr_of_mut!((*driverExtension).EtwHandle), 0);
         }
-        WPP_INIT_TRACING(DriverObject, RegistryPath);
+        ntkrnl_sys::WPP_INIT_TRACING!(DriverObject, RegistryPath);
     }
 
     if IdlePowerFDOList.Flink.is_null() {
@@ -426,7 +424,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
     ) as *mut CLASS_DRIVER_EXTENSION;
 
     if driverExtension.is_null() {
-        NT_ASSERT(0u8);
+        NT_ASSERT!(0u8);
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -476,7 +474,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).WorkingSet.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
             }
         }
 
@@ -525,7 +523,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
                 status = STATUS_INVALID_DEVICE_REQUEST;
             } else if !(*driverExtension).InterpretSenseInfo.is_null() {
                 status = STATUS_INVALID_PARAMETER;
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
             }
         }
 
@@ -541,7 +539,7 @@ pub unsafe extern "system" fn ClassInitializeEx(
             (*driverExtension).SrbSupport = srbSupport;
             status = STATUS_SUCCESS;
             if ((*driverExtension).SrbSupport & CLASS_SRB_SCSI_REQUEST_BLOCK) == 0 {
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
             }
         } else {
             status = STATUS_INVALID_PARAMETER;
@@ -555,14 +553,14 @@ pub unsafe extern "system" fn ClassInitializeEx(
 #[no_mangle]
 pub unsafe extern "system" fn ClassUnload(DriverObject: PDRIVER_OBJECT) {
     PAGED_CODE!();
-    NT_ASSERT(((*DriverObject).DeviceObject.is_null() as i32) as u8);
+    NT_ASSERT!(((*DriverObject).DeviceObject.is_null() as i32) as u8);
     let driverExtension = IoGetDriverObjectExtension(DriverObject, CLASS_DRIVER_EXTENSION_KEY()) as *mut CLASS_DRIVER_EXTENSION;
     if driverExtension.is_null() {
-        NT_ASSERT((0i32) as u8);
+        NT_ASSERT!((0i32) as u8);
         return;
     }
-    NT_ASSERT((!(*driverExtension).RegistryPath.Buffer.is_null() as i32) as u8);
-    NT_ASSERT(((!(*driverExtension).InitData.ClassUnload.is_none()) as i32) as u8);
+    NT_ASSERT!((!(*driverExtension).RegistryPath.Buffer.is_null() as i32) as u8);
+    NT_ASSERT!(((!(*driverExtension).InitData.ClassUnload.is_none()) as i32) as u8);
     TracePrint(
         TRACE_LEVEL_INFORMATION,
         TRACE_FLAG_INIT,
@@ -580,7 +578,7 @@ pub unsafe extern "system" fn ClassUnload(DriverObject: PDRIVER_OBJECT) {
     if (*driverExtension).EtwHandle != 0 {
         EtwUnregister((*driverExtension).EtwHandle);
         (*driverExtension).EtwHandle = 0;
-        WPP_CLEANUP(DriverObject);
+        ntkrnl_sys::WPP_CLEANUP!(DriverObject);
     }
 }
 
@@ -697,7 +695,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         status = (*Irp).IoStatus.__bindgen_anon_1.Status;
                     }
                 } else if type_ == BusRelations {
-                    NT_ASSERT(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
+                    NT_ASSERT!(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
 
                     if !(*init_data).ClassEnumerateDevice.is_none() {
                         status = ClassPnpQueryFdoRelations(DeviceObject, Irp);
@@ -769,7 +767,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     }
 
                     if NT_SUCCESS(status) {
-                        NT_ASSERT(((*common_extension).CurrentState != (*irp_stack).MinorFunction) as u8);
+                        NT_ASSERT!(((*common_extension).CurrentState != (*irp_stack).MinorFunction) as u8);
                         (*common_extension).PreviousState = (*common_extension).CurrentState;
                         (*common_extension).CurrentState = (*irp_stack).MinorFunction;
 
@@ -847,7 +845,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                     if is_fdo != 0 { b"fdo\0".as_ptr() } else { b"pdo\0".as_ptr() },
                 );
 
-                NT_ASSERT(((*common_extension).PagingPathCount == 0) as u8);
+                NT_ASSERT!(((*common_extension).PagingPathCount == 0) as u8);
 
                 ClasspDisableTimer(common_extension as *mut FUNCTIONAL_DEVICE_EXTENSION);
 
@@ -909,7 +907,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 if is_fdo != 0 {
                     IoCopyCurrentIrpStackLocationToNext(Irp);
                     status = IoCallDriver((*common_extension).LowerDeviceObject, Irp);
-                    NT_ASSERT(NT_SUCCESS(status) as u8);
+                    NT_ASSERT!(NT_SUCCESS(status) as u8);
                     complete_request = 0u8;
                 } else {
                     status = STATUS_SUCCESS;
@@ -930,7 +928,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                         {
                             status = STATUS_DEVICE_NOT_READY;
                         } else {
-                            NT_ASSERT(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
+                            NT_ASSERT!(((*common_extension).__bindgen_anon_1.IsInitialized() != 0) as u8);
                             KeEnterCriticalRegion();
                             KeWaitForSingleObject(
                                 core::ptr::addr_of_mut!((*common_extension).PathCountEvent) as *mut core::ffi::c_void,
@@ -1228,7 +1226,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             }
         }
     } else {
-        NT_ASSERT((!driver_extension.is_null()) as u8);
+        NT_ASSERT!((!driver_extension.is_null()) as u8);
         status = STATUS_INTERNAL_ERROR;
     }
 
@@ -1284,8 +1282,8 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
         dev_info = &raw mut (*init_data).PdoData;
     }
 
-    NT_ASSERT((*dev_info).ClassInitDevice.is_some() as u8);
-    NT_ASSERT((*dev_info).ClassStartDevice.is_some() as u8);
+    NT_ASSERT!((*dev_info).ClassInitDevice.is_some() as u8);
+    NT_ASSERT!((*dev_info).ClassStartDevice.is_some() as u8);
 
     if (*common_extension).__bindgen_anon_1.IsInitialized() == 0 {
         if is_fdo != 0 {
@@ -1403,7 +1401,7 @@ pub unsafe extern "C" fn ClassPnpStartDevice(device_object: *mut _DEVICE_OBJECT)
                         size_of::<crate::types::STOR_ADDR_BTL8>() as u32,
                     );
                 }
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
                 TracePrint(TRACE_LEVEL_ERROR, TRACE_FLAG_PNP,
                     b"ClassPnpStartDevice: fail to initialize release queue extended SRB 0x%x\n\0".as_ptr() as PCHAR, status);
                 return status;
@@ -1701,11 +1699,11 @@ pub unsafe extern "system" fn ClassReadWrite(DeviceObject: *mut _DEVICE_OBJECT, 
         status = STATUS_VERIFY_REQUIRED;
     } else {
         (*currentIrpStack).MinorFunction = (CLASSP_VOLUME_VERIFY_CHECKED) as u8;
-        NT_ASSERT((*(*commonExtension).DevInfo).ClassReadWriteVerification.is_some() as u8);
+        NT_ASSERT!((*(*commonExtension).DevInfo).ClassReadWriteVerification.is_some() as u8);
         status = (*(*commonExtension).DevInfo).ClassReadWriteVerification.expect("ClassReadWriteVerification")(DeviceObject, Irp);
 
         if !NT_SUCCESS(status) {
-            NT_ASSERT(((*Irp).IoStatus.__bindgen_anon_1.Status == status) as u8);
+            NT_ASSERT!(((*Irp).IoStatus.__bindgen_anon_1.Status == status) as u8);
             (*Irp).IoStatus.Information = 0;
             ClassReleaseRemoveLock(DeviceObject, (Irp as *mut c_void).cast());
             ClassCompleteRequest(DeviceObject, Irp, (IO_NO_INCREMENT) as _);
@@ -2097,7 +2095,7 @@ pub unsafe extern "system" fn ClassSendStartUnit(Fdo: *mut _DEVICE_OBJECT) {
 
             if !NT_SUCCESS(status) {
                 FREE_POOL(context as *mut c_void);
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
                 return;
             }
 
@@ -2273,14 +2271,14 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
         {
             hwMaxXferLen = (*fdoData).HwMaxXferLen;
         } else {
-            NT_ASSERT(((PAGE_SIZE % ((*fdoExt).DiskGeometry.BytesPerSector) as usize) == 0) as u8);
+            NT_ASSERT!(((PAGE_SIZE % ((*fdoExt).DiskGeometry.BytesPerSector) as usize) == 0) as u8);
             hwMaxXferLen = (*fdoData).HwMaxXferLen + PAGE_SIZE as u32;
             if hwMaxXferLen > (*adapterDesc).MaximumTransferLength {
                 hwMaxXferLen = (*adapterDesc).MaximumTransferLength;
             }
         }
 
-        NT_ASSERT((hwMaxXferLen >= PAGE_SIZE as u32) as u8);
+        NT_ASSERT!((hwMaxXferLen >= PAGE_SIZE as u32) as u8);
         numPackets = entireXferLen / hwMaxXferLen;
         if entireXferLen % hwMaxXferLen != 0 {
             numPackets += 1;
@@ -2334,7 +2332,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                 };
 
                 let slistEntry = SimplePopSlist(core::ptr::addr_of_mut!(pktList));
-                NT_ASSERT((!slistEntry.is_null()) as u8);
+                NT_ASSERT!((!slistEntry.is_null()) as u8);
                 pkt = (slistEntry as *mut u8).wrapping_offset(
                     -(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize),
                 ) as *mut TRANSFER_PACKET;
@@ -2360,11 +2358,11 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                 bufPtr = bufPtr.add(thisPieceLen as usize);
                 targetLocation.QuadPart += thisPieceLen as i64;
             }
-            NT_ASSERT(SimpleIsSlistEmpty(core::ptr::addr_of_mut!(pktList)));
+            NT_ASSERT!(SimpleIsSlistEmpty(core::ptr::addr_of_mut!(pktList)));
         } else if i >= 1 {
             while i > 1 {
                 let slistEntry = SimplePopSlist(core::ptr::addr_of_mut!(pktList));
-                NT_ASSERT((!slistEntry.is_null()) as u8);
+                NT_ASSERT!((!slistEntry.is_null()) as u8);
                 pkt = (slistEntry as *mut u8).wrapping_offset(
                     -(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize),
                 ) as *mut TRANSFER_PACKET;
@@ -2372,8 +2370,8 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
                 i -= 1;
             }
             let slistEntry = SimplePopSlist(core::ptr::addr_of_mut!(pktList));
-            NT_ASSERT((!slistEntry.is_null()) as u8);
-            NT_ASSERT(SimpleIsSlistEmpty(core::ptr::addr_of_mut!(pktList)));
+            NT_ASSERT!((!slistEntry.is_null()) as u8);
+            NT_ASSERT!(SimpleIsSlistEmpty(core::ptr::addr_of_mut!(pktList)));
             pkt = (slistEntry as *mut u8).wrapping_offset(
                 -(core::mem::offset_of!(TRANSFER_PACKET, SlistEntry) as isize),
             ) as *mut TRANSFER_PACKET;
@@ -2435,7 +2433,7 @@ pub unsafe extern "C" fn ServiceTransferRequest(Fdo: *mut _DEVICE_OBJECT, Irp: *
         status = STATUS_PENDING;
     }
 
-    NT_ASSERT((status != STATUS_UNSUCCESSFUL) as u8);
+    NT_ASSERT!((status != STATUS_UNSUCCESSFUL) as u8);
     status
 }
 

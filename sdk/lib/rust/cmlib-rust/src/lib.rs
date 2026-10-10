@@ -56,15 +56,6 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}
 
-// No-op shims for the cmlib.h debug macros (ASSERT / PAGED_CODE). In C these are
-// NDEBUG no-ops with no symbol; a few translated modules still reference them via
-// local `extern "C"` declarations, so provide the _ASSERT / _PAGED_CODE symbols
-// here to keep the crate self-contained on both the kernel and loader links.
-// (glue.rs also has crate-local inline ASSERT(bool)/PAGED_CODE() for the modules
-// that import them directly; those emit no symbol, so there is no clash.)
-#[unsafe(no_mangle)]
-pub extern "C" fn ASSERT(_cond: i32) {}
-
 mod glue;
 mod hivesum;
 mod cmse;

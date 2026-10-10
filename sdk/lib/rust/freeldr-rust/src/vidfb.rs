@@ -18,14 +18,14 @@
 //!     uefivid.rs owns the symbol under feature="uefi" (it's the
 //!     per-binary-owner; vidfb.c didn't export it). Extern-consume.
 
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_UI; // vidfb.c: DBG_DEFAULT_CHANNEL(UI)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use core::ffi::c_void;
 use crate::vgafont::{BitmapFont8x16, CHAR_WIDTH, CHAR_HEIGHT};
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     // vidfb.h FORCEINLINE — provided by uefivid.rs's `#[cfg(feature="uefi")]`
     // path. Pure popcount of OR'd masks; uefivid is the per-binary owner.
     fn PixelBitmasksToBpp(
@@ -102,20 +102,16 @@ static mut FrameBufferData: CM_FRAMEBUF_DEVICE_DATA = CM_FRAMEBUF_DEVICE_DATA {
 
 #[allow(dead_code)]
 unsafe fn VidFbPrintFramebufferInfo() {
-    TRACE(b"Framebuffer format:\n\0".as_ptr() as PCHAR);
-    TRACE(b"    BaseAddress       : 0x%X\n\0".as_ptr() as PCHAR, framebufInfo.BaseAddress);
-    TRACE(b"    BufferSize        : %lu\n\0".as_ptr() as PCHAR, framebufInfo.BufferSize);
-    TRACE(b"    ScreenWidth       : %lu\n\0".as_ptr() as PCHAR, framebufInfo.ScreenWidth);
-    TRACE(b"    ScreenHeight      : %lu\n\0".as_ptr() as PCHAR, framebufInfo.ScreenHeight);
-    TRACE(b"    PixelsPerScanLine : %lu\n\0".as_ptr() as PCHAR, framebufInfo.PixelsPerScanLine);
-    TRACE(b"    BitsPerPixel      : %lu\n\0".as_ptr() as PCHAR, framebufInfo.BitsPerPixel);
-    TRACE(b"    BytesPerPixel     : %lu\n\0".as_ptr() as PCHAR, framebufInfo.BytesPerPixel);
-    TRACE(b"    Delta             : %lu\n\0".as_ptr() as PCHAR, framebufInfo.Delta);
-    TRACE(b"    ARGB masks:       : %08x/%08x/%08x/%08x\n\0".as_ptr() as PCHAR,
-          framebufInfo.PixelMasks.ReservedMask,
-          framebufInfo.PixelMasks.RedMask,
-          framebufInfo.PixelMasks.GreenMask,
-          framebufInfo.PixelMasks.BlueMask);
+    TRACE!("Framebuffer format:\n");
+    TRACE!("    BaseAddress       : 0x%X\n", framebufInfo.BaseAddress);
+    TRACE!("    BufferSize        : %lu\n", framebufInfo.BufferSize);
+    TRACE!("    ScreenWidth       : %lu\n", framebufInfo.ScreenWidth);
+    TRACE!("    ScreenHeight      : %lu\n", framebufInfo.ScreenHeight);
+    TRACE!("    PixelsPerScanLine : %lu\n", framebufInfo.PixelsPerScanLine);
+    TRACE!("    BitsPerPixel      : %lu\n", framebufInfo.BitsPerPixel);
+    TRACE!("    BytesPerPixel     : %lu\n", framebufInfo.BytesPerPixel);
+    TRACE!("    Delta             : %lu\n", framebufInfo.Delta);
+    TRACE!("    ARGB masks:       : %08x/%08x/%08x/%08x\n", framebufInfo.PixelMasks.ReservedMask, framebufInfo.PixelMasks.RedMask, framebufInfo.PixelMasks.GreenMask, framebufInfo.PixelMasks.BlueMask);
 }
 
 #[no_mangle]
@@ -138,7 +134,7 @@ pub unsafe extern "C" fn VidFbInitializeVideo(
     core::ptr::write_bytes(&mut framebufInfo as *mut FRAMEBUFFER_INFO, 0u8, 1);
 
     if (ScreenWidth < 1) || (ScreenHeight < 1) {
-        ERR(b"Invalid framebuffer dimensions\n\0".as_ptr() as PCHAR);
+        ERR!("Invalid framebuffer dimensions\n");
         return 0u8;
     }
 
@@ -153,13 +149,12 @@ pub unsafe extern "C" fn VidFbInitializeVideo(
     framebufInfo.Delta = (PixelsPerScanLine * framebufInfo.BytesPerPixel + 3) & !3u32;
 
     if !(ScreenHeight * framebufInfo.Delta <= BufferSize) {
-        ERR(b"Framebuffer doesn't fit inside the video RAM (FB size: %lu, VRAM size: %lu)\n\0".as_ptr() as PCHAR,
-            ScreenHeight * framebufInfo.Delta, BufferSize);
+        ERR!("Framebuffer doesn't fit inside the video RAM (FB size: %lu, VRAM size: %lu)\n", ScreenHeight * framebufInfo.Delta, BufferSize);
         return 0u8;
     }
 
     if BitsPerPixel != 32 {
-        ERR(b"Unsupported %lu bits per pixel format\n\0".as_ptr() as PCHAR, BitsPerPixel);
+        ERR!("Unsupported %lu bits per pixel format\n", BitsPerPixel);
         return 0u8;
     }
 
@@ -208,7 +203,7 @@ pub unsafe extern "C" fn VidFbInitializeVideo(
                                    (*BitMasks).GreenMask,
                                    (*BitMasks).BlueMask,
                                    (*BitMasks).ReservedMask);
-            TRACE(b"BitsPerPixel = %lu , BppFromMasks = %lu\n\0".as_ptr() as PCHAR, BitsPerPixel, BppFromMasks);
+            TRACE!("BitsPerPixel = %lu , BppFromMasks = %lu\n", BitsPerPixel, BppFromMasks);
         }
     }
 

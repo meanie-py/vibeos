@@ -53,10 +53,9 @@ extern "system" {
 // XFORMOBJ_vInit is FORCEINLINE (xformobj.h): pxo->pmx = pmx.
 #[inline(always)] unsafe fn XFORMOBJ_vInit(pxo: *mut XFORMOBJ, pmx: *mut MATRIX) { (*(pxo as *mut _EXFORMOBJ)).pmx = pmx; }
 
-// NT_ASSERT is debug-only and stays silent. DbgPrint is NOT: region.c calls the
+// DbgPrint is NOT a macro here: region.c calls the
 // real cdecl-variadic ntoskrnl export directly (IntDumpRegion), so shadowing it
 // with a silent macro discarded the dump it exists to produce.
-macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
 
 // ---- file-scope preamble (translated) ----
 #[no_mangle]

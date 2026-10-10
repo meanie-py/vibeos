@@ -305,14 +305,10 @@ extern "C" {
 unsafe fn ERR(fmt: *const u8) {
     DbgPrint(fmt);
 }
-#[inline]
-unsafe fn TRACE(_fmt: *const u8) {}
-#[inline]
-unsafe fn WARN(_fmt: *const u8) {}
-#[inline]
-unsafe fn WARN1(_fmt: *const u8, _a: WORD) {}
-#[inline]
-unsafe fn FIXME1(_fmt: *const u8, _a: WPARAM) {}
+// TRACE/WARN are wine channels that are off by default and FIXME is on by default:
+// winedebug_rust's macros say exactly that. (These were empty fns, which evaluated the
+// arguments the C discards and dropped every FIXME.)
+use winedebug_rust::{FIXME, TRACE, WARN};
 
 // --- consts not present in win32k-sys (from SDK headers) ---
 const CP_ACP: UINT = 0; // winnls.h
@@ -532,7 +528,7 @@ unsafe fn DefWndHandleSysCommand(hWnd: HWND, wParam: WPARAM, lParam: LPARAM) -> 
             DoAppSwitch(wParam, lParam);
         }
         _ => {
-            FIXME1(b"Unimplemented DefWndHandleSysCommand wParam 0x%x\n\0".as_ptr(), wParam);
+            FIXME!("Unimplemented DefWndHandleSysCommand wParam 0x%x\n", wParam);
         }
     }
 
@@ -917,7 +913,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
                 }
 
                 if Flags & UISF_ACTIVE as WORD != 0 {
-                    WARN(b"WM_CHANGEUISTATE does not yet support UISF_ACTIVE\n\0".as_ptr());
+                    WARN!(b"WM_CHANGEUISTATE does not yet support UISF_ACTIVE\n\0".as_ptr());
                 }
 
                 if Action == UIS_INITIALIZE as WORD {
@@ -955,7 +951,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
                         return 0;
                     }
                 } else {
-                    WARN1(b"WM_CHANGEUISTATE: Unsupported Action 0x%x\n\0".as_ptr(), Action);
+                    WARN!(b"WM_CHANGEUISTATE: Unsupported Action 0x%x\n\0".as_ptr(), Action);
                     // C default: break; -> fall through to send/broadcast
                 }
 
@@ -998,7 +994,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
                 }
 
                 if Flags & UISF_ACTIVE as WORD != 0 {
-                    WARN(b"WM_UPDATEUISTATE does not yet support UISF_ACTIVE\n\0".as_ptr());
+                    WARN!(b"WM_UPDATEUISTATE does not yet support UISF_ACTIVE\n\0".as_ptr());
                 }
 
                 if Action == UIS_INITIALIZE as WORD {
@@ -1030,7 +1026,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
                         Change = FALSE;
                     }
                 } else {
-                    WARN1(b"WM_UPDATEUISTATE: Unsupported Action 0x%x\n\0".as_ptr(), Action);
+                    WARN!(b"WM_UPDATEUISTATE: Unsupported Action 0x%x\n\0".as_ptr(), Action);
                     return 0;
                 }
 
@@ -1044,7 +1040,7 @@ pub unsafe extern "system" fn User32DefWindowProc(
             }
 
             WM_COPYGLOBALDATA => {
-                TRACE(b"WM_COPYGLOBALDATA\n\0".as_ptr());
+                TRACE!(b"WM_COPYGLOBALDATA\n\0".as_ptr());
                 return lParam;
             }
 
@@ -1314,7 +1310,7 @@ pub unsafe extern "system" fn RealDefWindowProcA(
             let hwndIME: HWND;
 
             if ((*GetWin32ClientInfo()).dwTIFlags & TIF_DISABLEIME) != 0 {
-                TRACE(b"This thread's IME is disabled\n\0".as_ptr());
+                TRACE!(b"This thread's IME is disabled\n\0".as_ptr());
                 break 'ime_handle;
             }
 
@@ -1549,7 +1545,7 @@ unsafe fn ime_msg_handling(hWnd: HWND, Msg: UINT, wParam: WPARAM, lParam: LPARAM
     let hwndIME: HWND;
 
     if (*GetWin32ClientInfo()).dwTIFlags & TIF_DISABLEIME != 0 {
-        TRACE(b"This thread's IME is disabled\n\0".as_ptr());
+        TRACE!(b"This thread's IME is disabled\n\0".as_ptr());
         return Result;
     }
 

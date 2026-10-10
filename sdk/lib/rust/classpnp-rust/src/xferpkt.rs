@@ -66,7 +66,6 @@ extern "C" {
     
 }
 extern "system" {
-    fn NT_ASSERT(condition: bool);
     fn SrbSetRequestAttribute(srb: *mut core::ffi::c_void, attribute: u8);
     fn SrbSetCdbLength(srb: *mut core::ffi::c_void, length: u8);
     fn SrbSetOriginalRequest(srb: *mut core::ffi::c_void, irp: PIRP);
@@ -1189,11 +1188,11 @@ pub unsafe extern "system" fn TransferPktComplete(
         idleRequest = ClasspIsIdleRequest((*pkt).OriginalIrp);
         if idleRequest != 0 {
             InterlockedDecrement(&raw mut (*fdoData).ActiveIdleIoCount as *mut LONG);
-            NT_ASSERT((*fdoData).ActiveIdleIoCount >= 0);
+            NT_ASSERT!((*fdoData).ActiveIdleIoCount >= 0);
         } else {
             (*fdoData).LastNonIdleIoTime = completionTime;
             InterlockedDecrement(&raw mut (*fdoData).ActiveIoCount as *mut LONG);
-            NT_ASSERT((*fdoData).ActiveIoCount >= 0);
+            NT_ASSERT!((*fdoData).ActiveIoCount >= 0);
         }
     }
 
@@ -1206,10 +1205,10 @@ pub unsafe extern "system" fn TransferPktComplete(
         (*(*pkt).Srb).SrbStatus
             & (!(SRB_STATUS_AUTOSENSE_VALID | SRB_STATUS_QUEUE_FROZEN)) as u8;
     if srb_status_masked == (SRB_STATUS_SUCCESS) as u8 {
-        NT_ASSERT((*Irp).IoStatus.__bindgen_anon_1.Status >= 0);
+        NT_ASSERT!((*Irp).IoStatus.__bindgen_anon_1.Status >= 0);
         transferLength = SrbGetDataTransferLength((*pkt).Srb as PVOID);
         (*fdoData).LoggedTURFailureSinceLastIO = 0u8;
-        NT_ASSERT(PORT_ALLOCATED_SENSE_EX(fdoExt, (*pkt).Srb) == 0);
+        NT_ASSERT!(PORT_ALLOCATED_SENSE_EX(fdoExt, (*pkt).Srb) == 0);
         InterlockedExchangeAdd(
             &raw mut (*(*pkt).OriginalIrp).IoStatus.Information as *mut LONG,
             transferLength as LONG,
@@ -1240,7 +1239,7 @@ pub unsafe extern "system" fn TransferPktComplete(
         }
 
         if (*Irp).IoStatus.__bindgen_anon_1.Status >= 0 {
-            NT_ASSERT(shouldRetry == 0);
+            NT_ASSERT!(shouldRetry == 0);
             InterlockedExchangeAdd(
                 &raw mut (*(*pkt).OriginalIrp).IoStatus.Information as *mut LONG,
                 SrbGetDataTransferLength((*pkt).Srb as PVOID) as LONG,
@@ -1287,14 +1286,10 @@ pub unsafe extern "system" fn TransferPktComplete(
                 ((core::mem::size_of::<SENSE_DATA_EX>() as UCHAR) as u32) as _,
             );
         } else {
-            NT_ASSERT(
-                SrbGetSenseInfoBuffer((*pkt).Srb as PVOID)
-                    == (&raw mut (*pkt).SrbErrorSenseData as PVOID),
-            );
-            NT_ASSERT(
-                SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
-                    <= core::mem::size_of::<SENSE_DATA_EX>(),
-            );
+            NT_ASSERT!(SrbGetSenseInfoBuffer((*pkt).Srb as PVOID)
+                    == (&raw mut (*pkt).SrbErrorSenseData as PVOID));
+            NT_ASSERT!(SrbGetSenseInfoBufferLength((*pkt).Srb as PVOID) as usize
+                    <= core::mem::size_of::<SENSE_DATA_EX>());
         }
 
         RtlZeroMemory(
@@ -1320,7 +1315,7 @@ pub unsafe extern "system" fn TransferPktComplete(
         if numPacketsRemaining > 0 {
             // more packets remain
         } else {
-            NT_ASSERT(numPacketsRemaining == 0);
+            NT_ASSERT!(numPacketsRemaining == 0);
             if (*pkt).CompleteOriginalIrpWhenLastPacketCompletes != 0 {
                 let priority: IO_PAGING_PRIORITY = if (*(*pkt).OriginalIrp).Flags & IRP_PAGING_IO as ULONG != 0 {
                     IoGetPagingIoPriority((*pkt).OriginalIrp)
@@ -1330,13 +1325,11 @@ pub unsafe extern "system" fn TransferPktComplete(
                 let mut oldIrql: KIRQL = 0;
 
                 if (*(*pkt).OriginalIrp).IoStatus.__bindgen_anon_1.Status >= 0 {
-                    NT_ASSERT(
-                        (*(*pkt).OriginalIrp).IoStatus.Information as ULONG
+                    NT_ASSERT!((*(*pkt).OriginalIrp).IoStatus.Information as ULONG
                             == (*IoGetCurrentIrpStackLocation((*pkt).OriginalIrp))
                                 .Parameters
                                 .Read
-                                .Length,
-                    );
+                                .Length);
                     ClasspPerfIncrementSuccessfulIo(fdoExt);
                 }
 
@@ -1539,7 +1532,7 @@ pub unsafe extern "C" fn SetupModeSenseTransferPacket(
         let srb_template_cast = (*fdoData).SrbTemplate as *mut STORAGE_REQUEST_BLOCK;
         srbLength = (*srb_template_cast).SrbLength;
         let srb_cast = (*Pkt).Srb as *mut STORAGE_REQUEST_BLOCK;
-        NT_ASSERT((*srb_cast).SrbLength >= srbLength);
+        NT_ASSERT!((*srb_cast).SrbLength >= srbLength);
     } else {
         srbLength = ((*(*fdoData).SrbTemplate).Length) as u32;
     }
@@ -1869,9 +1862,7 @@ unsafe fn ClasspSetupReceiveWriteUsingTokenInformationTransferPacket(
 
     if (*adapter_desc_ext(adapter_desc as *mut _)).SrbType as u32 == SRB_TYPE_STORAGE_REQUEST_BLOCK {
         srb_length = (*((*fdoData).SrbTemplate as PVOID as *mut STORAGE_REQUEST_BLOCK)).SrbLength;
-        NT_ASSERT(
-            (*((*Pkt).Srb as PVOID as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srb_length,
-        );
+        NT_ASSERT!((*((*Pkt).Srb as PVOID as *mut STORAGE_REQUEST_BLOCK)).SrbLength >= srb_length);
     } else {
         srb_length = ((*(*fdoData).SrbTemplate).Length) as u32;
     }

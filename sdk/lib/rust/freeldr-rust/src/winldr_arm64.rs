@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // winldr.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PLOADER_PARAMETER_BLOCK};
@@ -6,8 +8,6 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderMemoryData as LoaderMemoryData;
 pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderStartupPcrPage as LoaderStartupPcrPage;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     // boot/freeldr/freeldr/include/mm.h: ARC loader allocator. amd64 winldr.rs
     // declares it the same way file-locally. Returns PVOID; arm64 NTAPI = plain
     // cdecl-ish (no @N decoration).
@@ -285,11 +285,11 @@ pub unsafe fn Arm64ReportMapping(Label: &[u8], VirtualAddress: ULONG64) {
 }
 
 unsafe fn MempAllocatePageTables() -> u8 {
-    TRACE(b">>> MempAllocatePageTables\n\0".as_ptr() as _);
+    TRACE!(">>> MempAllocatePageTables\n");
 
     Arm64Pgd = MmAllocateMemoryWithType(PAGE_SIZE as usize, LoaderMemoryData) as PARM64_PTE;
     if Arm64Pgd.is_null() {
-        ERR(b"Failed to allocate ARM64 PGD\n\0".as_ptr() as _);
+        ERR!("Failed to allocate ARM64 PGD\n");
         return 0u8;
     }
 
@@ -299,11 +299,7 @@ unsafe fn MempAllocatePageTables() -> u8 {
     *Arm64Pgd.add(ARM64_PXE_SELFMAP_INDEX) =
         ((Arm64Pgd as u64) & !0xFFFu64) | ARM64_KERNEL_PAGE_FLAGS;
 
-    TRACE(
-        b">>> ARM64 PGD allocated at %p, self-map at index 0x%x\n\0".as_ptr() as _,
-        Arm64Pgd,
-        ARM64_PXE_SELFMAP_INDEX,
-    );
+    TRACE!(">>> ARM64 PGD allocated at %p, self-map at index 0x%x\n", Arm64Pgd, ARM64_PXE_SELFMAP_INDEX);
     return 1u8;
 }
 
@@ -438,8 +434,7 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: ULONG64, mut PhysicalAddress: 
 
     while i < cPages {
         if MempMapSinglePage(VirtualAddress, PhysicalAddress) == 0u8 {
-            ERR(b"Failed to map page %ld from %p to %p\n\0".as_ptr() as PCHAR,
-                i, VirtualAddress as PVOID, PhysicalAddress as PVOID);
+            ERR!("Failed to map page %ld from %p to %p\n", i, VirtualAddress as PVOID, PhysicalAddress as PVOID);
             return i;
         }
         VirtualAddress += PAGE_SIZE as ULONG64;
@@ -452,14 +447,13 @@ unsafe fn MempMapRangeOfPages(mut VirtualAddress: ULONG64, mut PhysicalAddress: 
 #[no_mangle]
 pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: PFN_NUMBER, KernelMapping: BOOLEAN) -> BOOLEAN {
 
-    TRACE(b">>> MempSetupPaging(0x%lx, %ld, KernelMapping=%d)\n\0".as_ptr() as PCHAR,
-          StartPage, NumberOfPages, KernelMapping as i32);
+    TRACE!(">>> MempSetupPaging(0x%lx, %ld, KernelMapping=%d)\n", StartPage, NumberOfPages, KernelMapping as i32);
 
     if MempMapRangeOfPages(StartPage as ULONG64 * PAGE_SIZE,
                            StartPage as ULONG64 * PAGE_SIZE,
                            NumberOfPages) != NumberOfPages
     {
-        ERR(b"Failed to identity map pages %ld, %ld\n\0".as_ptr() as PCHAR, StartPage, NumberOfPages);
+        ERR!("Failed to identity map pages %ld, %ld\n", StartPage, NumberOfPages);
         return 0u8;
     }
 
@@ -468,7 +462,7 @@ pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: P
                                StartPage as ULONG64 * PAGE_SIZE,
                                NumberOfPages) != NumberOfPages
         {
-            ERR(b"Failed to kernel-map pages\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to kernel-map pages\n");
             return 0u8;
         }
     }
@@ -477,7 +471,7 @@ pub unsafe extern "C" fn MempSetupPaging(StartPage: PFN_NUMBER, NumberOfPages: P
 }
 
 unsafe fn MempUnmapPage(Page: PFN_NUMBER) {
-    TRACE(b">>> MempUnmapPage(%ld)\n\0".as_ptr() as *const i8, Page);
+    TRACE!(">>> MempUnmapPage(%ld)\n", Page);
 }
 
 #[no_mangle]
@@ -488,8 +482,8 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
     let mair: ULONG64;
     let ttbr_val: ULONG64 = Arm64Pgd as ULONG64;
 
-    ERR(b">>> WinLdrSetProcessorContext for ARM64\n\0".as_ptr() as *const i8);
-    ERR(b"  PGD at physical %p\n\0".as_ptr() as *const i8, Arm64Pgd);
+    ERR!(">>> WinLdrSetProcessorContext for ARM64\n");
+    ERR!("  PGD at physical %p\n", Arm64Pgd);
     Arm64ReportExceptionLevel(b"[FLDR] ctx-pre");
 
     core::arch::asm!("msr daifset, #0xF");
@@ -540,8 +534,7 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(
         options(nostack)
     );
 
-    ERR(b"<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n\0".as_ptr() as *const i8,
-        Arm64Pgd, tcr, mair);
+    ERR!("<<< WinLdrSetProcessorContext done: TTBR0=TTBR1=%p TCR=0x%llx MAIR=0x%llx\n", Arm64Pgd, tcr, mair);
     // EL1 arrives from an EL2 handoff with the MMU off, so the tables above are
     // configured but not yet in use. (When firmware handed off at EL1 the MMU is
     // already on with firmware's tables and this is a no-op - the TTBR swap
@@ -631,7 +624,7 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     let Pmd: PARM64_PTE;
 
     if MempMapSinglePage(KI_USER_SHARED_DATA as ULONG64, SharedUserDataPfn as ULONG64 * PAGE_SIZE) == 0 {
-        ERR(b"Could not map KI_USER_SHARED_DATA\n\0".as_ptr() as PCHAR);
+        ERR!("Could not map KI_USER_SHARED_DATA\n");
         return 0u8;
     }
 
@@ -661,11 +654,11 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
     while Va < EndVa {
         let TablePud = MempGetOrCreatePageDir(Arm64Pgd, ARM64_PGD_INDEX(Va));
         if TablePud.is_null() {
-            ERR(b"Could not create KSEG0 PUD\n\0".as_ptr() as PCHAR);
+            ERR!("Could not create KSEG0 PUD\n");
             break;
         }
         if MempGetOrCreatePageDir(TablePud, ARM64_PUD_INDEX(Va)).is_null() {
-            ERR(b"Could not create KSEG0 PMD\n\0".as_ptr() as PCHAR);
+            ERR!("Could not create KSEG0 PMD\n");
             break;
         }
         /* One L2 table covers 1GB of VA, so step by that. */
@@ -687,16 +680,16 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
      * Non-fatal on failure, mirroring the C: a UP boot without them loses
      * only the affected feature, and the HAL reports IPI loss loudly. */
     if MempMapDevicePage(crate::arm64_debug::uart_base() as u64) == 0u8 {
-        ERR(b"Could not map the console UART page\n\0".as_ptr() as PCHAR);
+        ERR!("Could not map the console UART page\n");
     }
     let (Gicd, Gicc) = Arm64GicBases;
     let (Gicr, GicrLength) = Arm64GicRedistributors;
     if Gicd != 0 && Gicc != 0 {
         if MempMapDevicePage(Gicd) == 0u8 {
-            ERR(b"Could not map GICD page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+            ERR!("Could not map GICD page (SMP IPIs disabled)\n");
         }
         if MempMapDevicePage(Gicc) == 0u8 {
-            ERR(b"Could not map GICC page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+            ERR!("Could not map GICC page (SMP IPIs disabled)\n");
         }
     } else if Gicd != 0 && Gicr != 0 {
         /* GICv3: an AP wakes and programs its own redistributor before
@@ -705,16 +698,16 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
         let mut Offset: ULONG64 = 0;
         while Offset < GicrLength {
             if MempMapDevicePage(Gicr + Offset) == 0u8 {
-                ERR(b"Could not map a GICR page (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+                ERR!("Could not map a GICR page (SMP IPIs disabled)\n");
                 break;
             }
             Offset += 0x1_0000;
         }
     } else {
-        ERR(b"No GIC in ACPI MADT (SMP IPIs disabled)\n\0".as_ptr() as PCHAR);
+        ERR!("No GIC in ACPI MADT (SMP IPIs disabled)\n");
     }
     if Arm64FwCfgBase != 0 && MempMapDevicePage(Arm64FwCfgBase) == 0u8 {
-        ERR(b"Could not map fw_cfg page (tripwire channel disabled)\n\0".as_ptr() as PCHAR);
+        ERR!("Could not map fw_cfg page (tripwire channel disabled)\n");
     }
 
     1u8
@@ -724,7 +717,7 @@ unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
 pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAMETER_BLOCK) {
     let mut SharedUserDataAddress: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    ERR(b">>> WinLdrSetupMachineDependent for ARM64\n\0".as_ptr() as _);
+    ERR!(">>> WinLdrSetupMachineDependent for ARM64\n");
 
     /* Carry the firmware's own description of this board to the kernel, so no
      * kernel or HAL path has to guess an MMIO address. */
@@ -770,34 +763,34 @@ pub unsafe extern "C" fn WinLdrSetupMachineDependent(LoaderBlock: PLOADER_PARAME
 
     SharedUserDataAddress = MmAllocateMemoryWithType(MM_PAGE_SIZE, LoaderStartupPcrPage);
     if SharedUserDataAddress.is_null() {
-        ERR(b"Can't allocate SharedUserData page.\n\0".as_ptr() as _);
+        ERR!("Can't allocate SharedUserData page.\n");
         return;
     }
     SharedUserDataPfn = (SharedUserDataAddress as ULONG_PTR) >> MM_PAGE_SHIFT;
     RtlZeroMemory(SharedUserDataAddress, MM_PAGE_SIZE);
 
-    ERR(b">>> Allocating page tables...\n\0".as_ptr() as _);
+    ERR!(">>> Allocating page tables...\n");
 
     if MempAllocatePageTables() == 0u8 {
-        ERR(b"Failed to allocate page tables\n\0".as_ptr() as _);
+        ERR!("Failed to allocate page tables\n");
         return;
     }
 
-    ERR(b">>> Mapping special pages...\n\0".as_ptr() as _);
+    ERR!(">>> Mapping special pages...\n");
 
     if WinLdrMapSpecialPages() == 0u8 {
-        ERR(b"Failed to map special pages\n\0".as_ptr() as _);
+        ERR!("Failed to map special pages\n");
         return;
     }
 
-    ERR(b"<<< WinLdrSetupMachineDependent done\n\0".as_ptr() as _);
+    ERR!("<<< WinLdrSetupMachineDependent done\n");
 }
 
 unsafe fn MempDump() {
 
     let mut i: u32;
 
-    TRACE(b"ARM64 Page Table Dump: PGD at %p\n\0".as_ptr() as *const i8, Arm64Pgd);
+    TRACE!("ARM64 Page Table Dump: PGD at %p\n", Arm64Pgd);
     if Arm64Pgd.is_null() {
         return;
     }
@@ -805,12 +798,7 @@ unsafe fn MempDump() {
     i = 0;
     while i < 512 {
         if (*Arm64Pgd.add(i as usize) & ARM64_PTE_VALID) != 0 {
-            TRACE(
-                b"  PGD[0x%03x] = %016llx (PA=%016llx)\n\0".as_ptr() as *const i8,
-                i,
-                *Arm64Pgd.add(i as usize),
-                *Arm64Pgd.add(i as usize) & !0xFFFu64,
-            );
+            TRACE!("  PGD[0x%03x] = %016llx (PA=%016llx)\n", i, *Arm64Pgd.add(i as usize), *Arm64Pgd.add(i as usize) & !0xFFFu64);
         }
         i += 1;
     }

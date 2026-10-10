@@ -36,9 +36,6 @@ extern "system" {
 
 // --- FORCEINLINE / macro helpers (no exported kernel symbol) ---
 
-// ASSERT_REFS_CO(obj) — debug-only ref assert; no-op in release.
-#[inline(always)]
-unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
 
 // RECTL_vOffsetRect (rect.h FORCEINLINE).
 #[inline(always)]
@@ -125,7 +122,7 @@ unsafe fn co_IntFixCaret_impl(Window: PWND, lprc: *mut RECTL, flags: UINT) -> HW
     let hWndCaret: HWND;
     let WndCaret: PWND;
 
-    ASSERT_REFS_CO(Window);
+    ASSERT_REFS_CO!(Window);
 
     pti = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
     ThreadQueue = (*pti).MessageQueue;

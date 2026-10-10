@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // uefihw.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_LIST, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCONFIGURATION_COMPONENT_DATA, PCSTR};
@@ -12,10 +14,8 @@ pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE_MultiFunctionAdapter as MultiFuncti
 
 extern "C" {
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
-    fn ERR(fmt: *const i8, ...);
     fn FldrCreateComponentKey( Parent: PCONFIGURATION_COMPONENT_DATA, Class: u32, Type: u32, Flags: ULONG, Key: ULONG, Affinity: ULONG, Identifier: *const i8, Data: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, ComponentKey: *mut PCONFIGURATION_COMPONENT_DATA, );
     fn FrLdrHeapAlloc(MemorySize: usize, Tag: ULONG) -> *mut core::ffi::c_void;
-    fn TRACE(fmt: *const i8, ...);
     fn FldrCreateSystemKey( SystemKey: *mut PCONFIGURATION_COMPONENT_DATA, SystemClass: *const i8, );
     // cross-module data from uefildr.c / uefimem.c / uefivid.c.
     static mut GlobalSystemTable: *mut EFI_SYSTEM_TABLE;
@@ -110,7 +110,7 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
                core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() as ULONG + TableSize;
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -127,16 +127,16 @@ unsafe fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
         AcpiBiosData = (PartialDescriptor.add(1)) as PACPI_BIOS_DATA;
 
         if (*Rsdp).revision > 0 {
-            TRACE(b"ACPI >1.0, using XSDT address\n\0".as_ptr() as *const i8);
+            TRACE!("ACPI >1.0, using XSDT address\n");
             (*AcpiBiosData).RSDTAddress.QuadPart = ((*Rsdp).xsdt_physical_address) as i64 ;
         } else {
-            TRACE(b"ACPI 1.0, using RSDT address\n\0".as_ptr() as *const i8);
+            TRACE!("ACPI 1.0, using RSDT address\n");
             (*AcpiBiosData).RSDTAddress.u.LowPart = (*Rsdp).rsdt_physical_address;
         }
 
         (*AcpiBiosData).Count = 0;
 
-        TRACE(b"RSDT %p, data size %x\n\0".as_ptr() as *const i8, ((*Rsdp).rsdt_physical_address) as usize, (TableSize) as usize);
+        TRACE!("RSDT %p, data size %x\n", ((*Rsdp).rsdt_physical_address) as usize, (TableSize) as usize);
 
         FldrCreateComponentKey(
             SystemKey,
@@ -177,7 +177,7 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -232,7 +232,7 @@ unsafe fn DetectInternal(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *m
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as u32;
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -370,8 +370,7 @@ unsafe fn pci_fixup_interrupt_lines() {
                         // INQUIRY-completion interrupt never arrived and boot
                         // wedged in scsiport's first device scan (2026-07-10).
                         elcr_mask |= 1 << route;
-                        TRACE(b"pci 00:%02x.%u IntLine %u (PIRQ%u)\n\0".as_ptr() as *const i8,
-                            dev as usize, func as usize, route as usize, pirq as usize);
+                        TRACE!("pci 00:%02x.%u IntLine %u (PIRQ%u)\n", dev as usize, func as usize, route as usize, pirq as usize);
                     }
                 }
             }
@@ -399,8 +398,7 @@ unsafe fn pci_fixup_interrupt_lines() {
             core::arch::asm!("out dx, al", in("dx") 0x4D1u16, in("al") cur,
                 options(nomem, nostack, preserves_flags));
         }
-        TRACE(b"ELCR |= %04x (PIRQ level-trigger)\n\0".as_ptr() as *const i8,
-            elcr_mask as usize);
+        TRACE!("ELCR |= %04x (PIRQ level-trigger)\n", elcr_mask as usize);
     }
 }
 
@@ -422,7 +420,7 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
         options(nomem, nostack, preserves_flags)
     );
     if read_back != probe {
-        TRACE(b"No PCI mech#1 config access\n\0".as_ptr() as *const i8);
+        TRACE!("No PCI mech#1 config access\n");
         return 0u8;
     }
 
@@ -449,7 +447,7 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
     (*BusData).MinorRevision = 0x10;
     (*BusData).NoBuses = (max_bus + 1) as UCHAR;
     (*BusData).HardwareMechanism = 1;  // config mechanism #1
-    TRACE(b"UefiFindPciBios: NoBuses %u\n\0".as_ptr() as *const i8, (max_bus + 1) as usize);
+    TRACE!("UefiFindPciBios: NoBuses %u\n", (max_bus + 1) as usize);
 
     // Finish what the firmware left undone (see comment above the function).
     pci_fixup_interrupt_lines();
@@ -506,13 +504,7 @@ unsafe fn pci_fixup_interrupt_lines() {
             if (1..=4).contains(&pin) && (line == 0 || line == 0xFF) {
                 let intid = INTA_INTID + (dev + pin - 1) % 4;
                 core::ptr::write_volatile(ecam_ptr(0, dev, func, 0x3C), intid as u8);
-                TRACE(
-                    b"PCI 00:%02x.%x pin %u -> INTID %u\n\0".as_ptr() as *const i8,
-                    dev as usize,
-                    func as usize,
-                    pin as usize,
-                    intid as usize,
-                );
+                TRACE!("PCI 00:%02x.%x pin %u -> INTID %u\n", dev as usize, func as usize, pin as usize, intid as usize);
             }
             // Single-function device: functions 1..7 are not there.
             let header_type = (ecam_read32(0, dev, func, 0x0C) >> 16) & 0xFF;
@@ -543,7 +535,7 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
     }
     let Some((base, first, last)) = crate::arm64_serial_acpi::mcfg_from_xsdt(rsdp.xsdt_physical_address)
     else {
-        TRACE(b"No ACPI MCFG: no PCI\n\0".as_ptr() as *const i8);
+        TRACE!("No ACPI MCFG: no PCI\n");
         return 0u8;
     };
     ECAM_BASE = base;
@@ -560,11 +552,7 @@ pub unsafe extern "C" fn UefiFindPciBios(BusData: crate::hwpci::PPCI_REGISTRY_IN
     // The field names an x86 config mechanism (CF8/CFC); there is none here, and the
     // arm64 HAL reads ECAM itself without consulting it.
     (*BusData).HardwareMechanism = 0;
-    TRACE(
-        b"UefiFindPciBios: ECAM %p, NoBuses %u\n\0".as_ptr() as *const i8,
-        base as usize,
-        (max_bus + 1) as usize,
-    );
+    TRACE!("UefiFindPciBios: ECAM %p, NoBuses %u\n", base as usize, (max_bus + 1) as usize);
 
     pci_fixup_interrupt_lines();
     1u8
@@ -577,7 +565,7 @@ pub unsafe extern "C" fn UefiHwDetect(
     let mut SystemKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut BusNumber: ULONG = 0;
 
-    TRACE(b"DetectHardware()\n\0".as_ptr() as *const i8);
+    TRACE!("DetectHardware()\n");
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     FldrCreateSystemKey(
@@ -599,7 +587,7 @@ pub unsafe extern "C" fn UefiHwDetect(
     }
     DetectAcpiBios(SystemKey, core::ptr::addr_of_mut!(BusNumber));
 
-    TRACE(b"DetectHardware() Done\n\0".as_ptr() as *const i8);
+    TRACE!("DetectHardware() Done\n");
     SystemKey
 }
 
