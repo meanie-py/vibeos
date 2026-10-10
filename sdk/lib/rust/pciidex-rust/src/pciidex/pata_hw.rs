@@ -158,6 +158,14 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
 
     (*ChanData).IsPollingActive = FALSE;
 
+    // PC-98 C-bus IDE: forget the selected bank, the reset below re-selects bank 0.
+    #[cfg(target_arch = "x86")]
+    {
+        if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_CBUS != 0 {
+            (*ChanData).LastAtaBankId = 0xFF;
+        }
+    }
+
     if !(*ChanData).Regs.Dma.is_null() {
         PciIdeDmaStop(ChanData);
     }
@@ -180,6 +188,20 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
         (*ChanData).__bindgen_anon_1.Channel,
         DeviceBitmap,
     );
+
+    #[cfg(target_arch = "x86")]
+    {
+        if (*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_CBUS != 0 {
+            // Reset the secondary IDE channel if present
+            if DeviceBitmap & ((1 << 2) | (1 << 3)) != 0 {
+                WRITE_PORT_UCHAR(PC98_ATA_BANK as PUCHAR, 1);
+                PataIssueSoftwareReset(ChanData);
+            }
+
+            WRITE_PORT_UCHAR(PC98_ATA_BANK as PUCHAR, 0);
+            (*ChanData).LastAtaBankId = 0xFF;
+        }
+    }
 
     PataIssueSoftwareReset(ChanData);
 
