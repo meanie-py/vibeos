@@ -40,13 +40,16 @@ bytes differ from the stock image (the option bit and the CMOS checksum).
 
 ## Known gaps
 
-- **The Pico's keys do not reach SeaBIOS or Ventoy.** Linux reads them; the
-  pre-OS menus do not react (SeaBIOS completes one report per key and nothing
-  happens). A real USB keyboard works there. Unsolved; needed before driving the
-  loader from the bench.
-- **`pico.sh key` reports `host_not_polling` under SeaBIOS** even when the key was
-  delivered: the client waits for every HID interface to drain, and SeaBIOS never
-  polls the mouse. Read the screen, not the exit code, until the client checks
-  only the interface it used.
+- **The Pico drives SeaBIOS and Ventoy since picousb `0f43f4f`** (2026-10-09). A
+  BIOS polls only the boot keyboard; the old firmware queued a mouse release per
+  control session that never completed and then blocked its single HID FIFO, so
+  no key arrived and `pico.sh key` exited `host_not_polling`. Now each interface
+  is scheduled on its own and only interfaces the host reads get a release. The
+  Pi 5's Pico (`picousb`) still runs the old firmware.
+- **Updating a Pico in place:** put a wait-and-copy loop on the target first (its
+  keyboard leaves with BOOTSEL), then `pico.sh bootsel`: from Linux,
+  `while [ ! -e /dev/disk/by-label/RP2350 ]; do sleep 1; done`, mount it, copy
+  picousb's stripped `build/firmware/picousb.uf2`, `sync`. The board flashes
+  itself and rejoins Wi-Fi in ~15 s with its configuration intact.
 - No netboot yet. The disk is disposable (its Ubuntu died in a power cut); a Ventoy
   stick with Debian and Ubuntu ISOs is plugged in.
