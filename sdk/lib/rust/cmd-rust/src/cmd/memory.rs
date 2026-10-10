@@ -1,6 +1,6 @@
 use crate::cmd::console::ConOutResPaging;
 use crate::cmd::cmd::ConvertULargeInteger;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -20,11 +20,11 @@ pub unsafe extern "C" fn CommandMemory(param: LPTSTR) -> INT {
 
     if _tcsncmp(
         param,
-        _T(&['/' as u16, '?' as u16, 0u16] as *const u16),
+        (&['/' as u16, '?' as u16, 0u16] as *const u16),
         2,
     ) == 0
     {
-        ConOutResPaging(TRUE, STRING_MEMORY_HELP1);
+        ConOutResPaging((TRUE) as BOOL, STRING_MEMORY_HELP1);
         return 0;
     }
 
@@ -32,7 +32,7 @@ pub unsafe extern "C" fn CommandMemory(param: LPTSTR) -> INT {
         FARPROC,
         Option<unsafe extern "system" fn(LPMEMORYSTATUSEX) -> BOOL>,
     >(GetProcAddress(
-        GetModuleHandle(_T(&[
+        GetModuleHandle((&[
             'K' as u16,
             'E' as u16,
             'R' as u16,
@@ -66,46 +66,46 @@ pub unsafe extern "C" fn CommandMemory(param: LPTSTR) -> INT {
         msex.dwMemoryLoad as ULONGLONG,
         &raw mut szMemoryLoad as LPTSTR,
         20,
-        FALSE,
+        (FALSE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullTotalPhys as ULONGLONG,
         &raw mut szTotalPhys as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullAvailPhys as ULONGLONG,
         &raw mut szAvailPhys as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullTotalPageFile as ULONGLONG,
         &raw mut szTotalPageFile as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullAvailPageFile as ULONGLONG,
         &raw mut szAvailPageFile as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullTotalVirtual as ULONGLONG,
         &raw mut szTotalVirtual as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
     ConvertULargeInteger(
         msex.ullAvailVirtual as ULONGLONG,
         &raw mut szAvailVirtual as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
 
-    ConOutResPrintf(
+    ConOutResPrintf!(
         STRING_MEMORY_HELP2,
         &raw mut szMemoryLoad as LPTSTR,
         &raw mut szTotalPhys as LPTSTR,

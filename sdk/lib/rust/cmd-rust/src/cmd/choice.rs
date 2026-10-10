@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -43,8 +43,8 @@ unsafe extern "C" fn GetCharacterTimeout(ch: LPTCH, dwMilliseconds: DWORD) -> IN
     }
 
     //if the event is a key pressed
-    if lpBuffer.EventType as ::core::ffi::c_int == KEY_EVENT
-        && lpBuffer.Event.KeyEvent.bKeyDown != FALSE
+    if lpBuffer.EventType as ::core::ffi::c_int == (KEY_EVENT as i32)
+        && (lpBuffer.Event.KeyEvent.bKeyDown) as u32 != FALSE
     {
         //read the key
         *ch = lpBuffer.Event.KeyEvent.uChar.UnicodeChar;
@@ -88,9 +88,9 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
     let mut lpTextParam: LPTSTR = core::ptr::null_mut();
     let mut iSkipTextIndex: UINT = 0;
     let mut iTextIndex: UINT = 0;
-    let mut bNoPrompt: BOOL = FALSE;
-    let mut bCaseSensitive: BOOL = FALSE;
-    let mut bTimeout: BOOL = FALSE;
+    let mut bNoPrompt: BOOL = (FALSE) as i32;
+    let mut bCaseSensitive: BOOL = (FALSE) as i32;
+    let mut bTimeout: BOOL = (FALSE) as i32;
     let mut nTimeout: INT = 0;
     let mut cDefault: TCHAR = 0;
     let mut cDefParam: TCHAR = 0;
@@ -123,17 +123,17 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
     let sBracketQ: [TCHAR; 3] = [']' as TCHAR, '?' as TCHAR, 0];
     let sPctCNl: [TCHAR; 4] = ['%' as TCHAR, 'c' as TCHAR, '\n' as TCHAR, 0];
 
-    LoadString(CMD_ModuleHandle, STRING_CHOICE_OPTION, core::ptr::addr_of_mut!(Options) as LPTSTR, 4);
+    LoadString((CMD_ModuleHandle).cast(), STRING_CHOICE_OPTION, core::ptr::addr_of_mut!(Options) as LPTSTR, 4);
     lpOptions = core::ptr::addr_of_mut!(Options) as LPTSTR;
 
     if _tcsncmp(param, core::ptr::addr_of!(sSlashQ) as LPCTSTR, 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_CHOICE_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_CHOICE_HELP);
         return 0;
     }
 
     /* build parameter array */
-    arg = split(param, core::ptr::addr_of_mut!(argc), FALSE, FALSE);
+    arg = split(param, core::ptr::addr_of_mut!(argc), (FALSE) as BOOL, (FALSE) as BOOL);
 
     /* evaluate arguments */
     nErrorLevel = 255;
@@ -144,11 +144,11 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
         {
             if _tcsnicmp(*arg.offset(i as isize), core::ptr::addr_of!(sSlashS) as LPCTSTR, 2) == 0
             {
-                bCaseSensitive = TRUE;
+                bCaseSensitive = (TRUE) as i32;
             }
             else if _tcsnicmp(*arg.offset(i as isize), core::ptr::addr_of!(sSlashCS) as LPCTSTR, 3) == 0
             {
-                bCaseSensitive = TRUE;
+                bCaseSensitive = (TRUE) as i32;
             }
             else if _tcsnicmp(*arg.offset(i as isize), core::ptr::addr_of!(sSlashC) as LPCTSTR, 2) == 0
             {
@@ -170,7 +170,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
                 if *lpOptions == 0
                 {
                     freep(arg);
-                    ConErrResPuts(STRING_CHOICE_ERROR);
+                    ConErrResPuts!(STRING_CHOICE_ERROR);
                     freep(arg);
                     return nErrorLevel;
                 }
@@ -190,14 +190,14 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
                 }
                 else
                 {
-                    ConErrResPrintf(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
+                    ConErrResPrintf!(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
                     freep(arg);
                     return nErrorLevel;
                 }
             }
             else if _tcsnicmp(*arg.offset(i as isize), core::ptr::addr_of!(sSlashN) as LPCTSTR, 2) == 0
             {
-                bNoPrompt = TRUE;
+                bNoPrompt = (TRUE) as i32;
             }
             else if _tcsnicmp(*arg.offset(i as isize), core::ptr::addr_of!(sSlashD) as LPCTSTR, 2) == 0
             {
@@ -215,7 +215,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
                 }
                 else
                 {
-                    ConErrResPrintf(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
+                    ConErrResPrintf!(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
                     freep(arg);
                     return nErrorLevel;
                 }
@@ -255,7 +255,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
                     _tcstol(s, core::ptr::addr_of_mut!(end), 10);
                     if !(end > s && *end == 0)
                     {
-                        ConErrResPuts(STRING_CHOICE_ERROR_TXT);
+                        ConErrResPuts!(STRING_CHOICE_ERROR_TXT);
                         freep(arg);
                         return nErrorLevel;
                     }
@@ -268,11 +268,11 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
 
                 /* parse_timeout_seconds: */
                 nTimeout = _ttoi(s);
-                bTimeout = TRUE;
+                bTimeout = (TRUE) as i32;
             }
             else if *(*arg.offset(i as isize)).offset(0 as isize) == '/' as TCHAR
             {
-                ConErrResPrintf(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
+                ConErrResPrintf!(STRING_CHOICE_ERROR_OPTION, *arg.offset(i as isize));
                 freep(arg);
                 return nErrorLevel;
             }
@@ -285,21 +285,21 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
         if cDefault == 0
         {
             /* goto failed_parse_timeout */
-            ConErrResPuts(STRING_CHOICE_ERROR_TXT);
+            ConErrResPuts!(STRING_CHOICE_ERROR_TXT);
             freep(arg);
             return nErrorLevel;
         }
         if nTimeout < 0 || (cDefParam != 0 && nTimeout > 9999)
         {
             /* goto failed_parse_timeout */
-            ConErrResPuts(STRING_CHOICE_ERROR_TXT);
+            ConErrResPuts!(STRING_CHOICE_ERROR_TXT);
             freep(arg);
             return nErrorLevel;
         }
         if IsKeyInString(lpOptions, cDefault, bCaseSensitive) < 0
         {
             /* goto failed_parse_timeout */
-            ConErrResPuts(STRING_CHOICE_ERROR_TXT);
+            ConErrResPuts!(STRING_CHOICE_ERROR_TXT);
             freep(arg);
             return nErrorLevel;
         }
@@ -311,7 +311,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
             if IsKeyInString(p.offset(1 as isize), *p, bCaseSensitive) >= 0
             {
                 /* goto invalid_choice_characters */
-                ConErrResPuts(STRING_CHOICE_ERROR);
+                ConErrResPuts!(STRING_CHOICE_ERROR);
                 freep(arg);
                 return nErrorLevel;
             }
@@ -352,11 +352,11 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
     /* print text */
     if !lpText.is_null()
     {
-        ConOutPrintf(core::ptr::addr_of!(sPctS) as LPCTSTR, lpText);
+        ConOutPrintf!(core::ptr::addr_of!(sPctS) as LPCTSTR, lpText);
     }
 
     /* print options */
-    if bNoPrompt == FALSE
+    if (bNoPrompt) as u32 == FALSE
     {
         let prefix: LPCTSTR = if !lpText.is_null() && lpText == lpTextParam
         {
@@ -366,16 +366,16 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
         {
             core::ptr::addr_of!(sEmpty) as LPCTSTR
         };
-        ConOutPrintf(core::ptr::addr_of!(sPctSBracketPctC) as LPCTSTR, prefix, *lpOptions.offset(0 as isize) as TCHAR);
+        ConOutPrintf!(core::ptr::addr_of!(sPctSBracketPctC) as LPCTSTR, prefix, (*lpOptions.offset(0 as isize) as TCHAR) as core::ffi::c_uint);
 
         i = 1;
         while (i as u32 as usize) < (_tcslen(lpOptions) as usize)
         {
-            ConOutPrintf(core::ptr::addr_of!(sCommaPctC) as LPCTSTR, *lpOptions.offset(i as isize) as TCHAR);
+            ConOutPrintf!(core::ptr::addr_of!(sCommaPctC) as LPCTSTR, (*lpOptions.offset(i as isize) as TCHAR) as core::ffi::c_uint);
             i += 1;
         }
 
-        ConOutPrintf(core::ptr::addr_of!(sBracketQ) as LPCTSTR);
+        ConOutPrintf!(core::ptr::addr_of!(sBracketQ) as LPCTSTR);
     }
 
     ConInFlush();
@@ -390,7 +390,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
 
             if val >= 0
             {
-                ConOutPrintf(core::ptr::addr_of!(sPctCNl) as LPCTSTR, *lpOptions.offset(val as isize) as TCHAR);
+                ConOutPrintf!(core::ptr::addr_of!(sPctCNl) as LPCTSTR, (*lpOptions.offset(val as isize) as TCHAR) as core::ffi::c_uint);
 
                 nErrorLevel = val + 1;
 
@@ -448,7 +448,7 @@ pub unsafe extern "C" fn CommandChoice(param: LPTSTR) -> INT {
     }
 
     val = IsKeyInString(lpOptions, cDefault, bCaseSensitive);
-    ConOutPrintf(core::ptr::addr_of!(sPctCNl) as LPCTSTR, *lpOptions.offset(val as isize) as TCHAR);
+    ConOutPrintf!(core::ptr::addr_of!(sPctCNl) as LPCTSTR, (*lpOptions.offset(val as isize) as TCHAR) as core::ffi::c_uint);
 
     nErrorLevel = val + 1;
 

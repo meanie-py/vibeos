@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -7,7 +7,7 @@ use core::ffi::c_void;
 pub unsafe extern "C" fn cmd_cls(param: LPTSTR) -> INT {
     static SLASH_QUESTION: [u16; 3] = ['/' as u16, '?' as u16, 0];
     if _tcsncmp(param, SLASH_QUESTION.as_ptr(), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_CLS_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_CLS_HELP);
         return 0;
     }
 

@@ -1,8 +1,7 @@
 use crate::cmd::console::ConOutResPaging;
-use crate::cmd::error::ErrorMessage;
 use crate::cmd::misc::IsValidPathName;
 use crate::cmd::error::error_invalid_drive;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -30,30 +29,34 @@ unsafe extern "C" fn PrintVolumeHeader(pszRootPath: LPTSTR) -> INT {
 
     /* print drive info */
     if szVolName[0] != '\0' as TCHAR {
-        ConOutResPrintf(
+        ConOutResPrintf!(
             STRING_VOL_HELP1,
-            *pszRootPath.add(0),
+            *pszRootPath.add(0) as core::ffi::c_uint,
             core::ptr::addr_of_mut!(szVolName) as *mut TCHAR,
         );
     } else {
-        ConOutResPrintf(
+        ConOutResPrintf!(
             STRING_VOL_HELP2,
-            *pszRootPath.add(0),
+            *pszRootPath.add(0) as core::ffi::c_uint,
         );
     }
 
     /* print the volume serial number */
-    ConOutResPrintf(STRING_VOL_HELP3, HIWORD(dwSerialNr), LOWORD(dwSerialNr));
+    ConOutResPrintf!(
+        STRING_VOL_HELP3,
+        HIWORD!(dwSerialNr) as core::ffi::c_uint,
+        LOWORD!(dwSerialNr) as core::ffi::c_uint
+    );
     return 0;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_vol(mut param: LPTSTR) -> INT {
     let mut szRootPath: [TCHAR; 4] = ['A' as TCHAR, ':' as TCHAR, '\\' as TCHAR, 0 as TCHAR];
-    let mut szPath: [TCHAR; MAX_PATH] = [0 as TCHAR; MAX_PATH];
+    let mut szPath: [TCHAR; (MAX_PATH) as _] = [0 as TCHAR; (MAX_PATH) as _];
     let mut szSlashQuestion: [TCHAR; 3] = ['/' as TCHAR, '?' as TCHAR, 0 as TCHAR];
 
     if _tcsncmp(param, szSlashQuestion.as_ptr(), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_VOL_HELP4);
+        ConOutResPaging((TRUE) as BOOL, STRING_VOL_HELP4);
         return 0 as INT;
     }
 

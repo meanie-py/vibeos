@@ -122,12 +122,25 @@ def upsert_profile_arm(script: str, arm: str, label: str) -> str:
     Matching only the bare form re-appended inetcpl's `inetcpl|inetcpl-types_1)` arm on
     every derive -- six copies, the first of which `case` kept running. Every arm carrying
     the label is replaced: the first by the new arm, the rest dropped.
+
+    A `    # >>> hand` ... `    # <<< hand` section of the old arm is carried into the new one
+    (before its `;;`): knobs derive cannot know, such as cmd's EXTRA_BL_ITEMS/EXTRA_RAW_LINES
+    pinning stream.h's CON_STREAM to conutils-h, would otherwise vanish on the next derive.
     """
     head = re.compile(rf"^  (?:[\w.+-]+\|)*{re.escape(label)}(?:\|[\w.+-]+)*\)\n", re.M)
     spans = []
     for m in head.finditer(script):
         end = script.index("\n    ;;\n", m.end()) + len("\n    ;;\n")
         spans.append((m.start(), end))
+    hand = [
+        h.group(0)
+        for a, b in spans[:1]
+        for h in re.finditer(r"^    # >>> hand\n.*?^    # <<< hand\n", script[a:b], re.M | re.S)
+    ]
+    if hand and "# >>> hand" not in arm:
+        body = arm.rstrip("\n")
+        cut = body.rindex("\n    ;;")
+        arm = body[:cut] + "\n" + "".join(hand).rstrip("\n") + body[cut:] + "\n"
     if spans:
         out, pos = [], 0
         for i, (a, b) in enumerate(spans):
@@ -1903,6 +1916,24 @@ def _wine_channel_macro_calls(state: dict, crate: Path) -> list[str]:
     return changed
 
 
+def _drop_stale_variadic_imports(files: list[Path], names: set[str]) -> None:
+    """Drop `use crate::<m>::F;` for each C-variadic entry F the prelude now declares.
+
+    A sibling was wired to F while <m> still extern-declared it; that block is stripped, so
+    the import names a private glob re-export (E0603) -- cmd had 7, ErrorMessage and
+    ConOutPrintfPaging. The prelude's extern block is F's one declaration.
+    """
+    if not names:
+        return
+    stale = re.compile(
+        rf"^use crate::[\w:]+::(?:{'|'.join(map(re.escape, sorted(names)))});\n", re.M
+    )
+    for path in files:
+        text = path.read_text()
+        if (new := stale.sub("", text)) != text:
+            path.write_text(new)
+
+
 def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
     """C-variadic definitions -> a Rust `_v` twin + a generated C trampoline (variadic_shim).
 
@@ -1921,6 +1952,9 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
         if rw.names:
             path.write_text(rw.text)
             done += rw.names
+        lowered, n = variadic_shim.lower_twin_va_starts(path.read_text())
+        if n:
+            path.write_text(lowered)
         # The rewrite's own per-file `extern "C" { fn F(.., ...) }` spells parameters in the
         # C's text (sndvol32: `lpTarget: *LPWSTR`, not Rust) and duplicates the prelude block
         # written below from the twin: drop it.
@@ -1938,6 +1972,7 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
             twin_texts.append(path.read_text(errors="replace"))
     for name, why in refused.items():
         print(f"integrate: variadic {name} left as is: {why}")
+    _drop_stale_variadic_imports(list(_unit_files(crate, stem)), set(all_twins))
     # A twin a hand-banked function replaces gets no trampoline: the hand version defines the
     # C name itself (ndis's NdisWriteErrorLogEntry reads only its fixed arguments, so it is a
     # plain fixed-arity `extern "C"` fn), and a trampoline would define it a second time.
@@ -3835,7 +3870,10 @@ def align_definition_returns(state: dict) -> dict[str, list[str]]:
         m = re.match(r"fn\s+\w+\s*\((.*)\)\s*(?:->\s*(.+?))?\s*;$", sig.strip(), re.S)
         if m is None:
             continue
-        c_params, c_ret = _split_top(m.group(1)), m.group(2)
+        # c2rust spells a by-value `va_list` as `core::ffi::VaList` (nightly); integrate lowers
+        # it, so the prototype must be lowered the same way or the two rewrite each other.
+        c_params = _split_top(variadic_shim.lower_va_list_types(m.group(1))[0])
+        c_ret = m.group(2)
         new_params, new_ret = params, ret
         if name in callbacks:
             rust = _split_top(params)
@@ -4293,9 +4331,7 @@ def _without_token_pasting(macros: dict) -> tuple[dict, list[str]]:
     # `, ##__VA_ARGS__` is GNU's comma swallow, not pasting: it builds no identifier, and
     # macro_rules! spells it `$(, $a:expr)*`. cmd's ConOutPrintf/ConErrResPrintf family
     # (~140 call sites) is nothing else, and was refused as a hand port.
-    pasting = {
-        n for n, m in macros.items() if "##" in re.sub(r",\s*##\s*__VA_ARGS__", "", m.body)
-    }
+    pasting = {n for n, m in macros.items() if "##" in re.sub(r",\s*##\s*__VA_ARGS__", "", m.body)}
     while True:
         reach = {
             n

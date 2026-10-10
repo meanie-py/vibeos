@@ -1,10 +1,9 @@
-use crate::cmd::error::ErrorMessage;
 use crate::cmd::error::error_invalid_switch;
 use crate::cmd::error::error_req_param_missing;
 use crate::cmd::error::error_too_many_parameters;
 use crate::cmd::misc::freep;
 use crate::cmd::misc::split;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
@@ -22,7 +21,7 @@ extern "system" {
 // No file-scope declarations to emit: the only file-scope construct is the `#ifdef INCLUDE_CMD_MKLINK` guard. `REPARSE_DATA_BUFFER`/`PREPARSE_DATA_BUFFER` are declared inside `CreateJunction` and are provided by the `ntkrnl_sys::ddk` imports, and the `enum { SYMBOLIC, HARD, JUNCTION }` is local to `cmd_mklink`.
 
 unsafe extern "C" fn CreateJunction(mut LinkName: LPCTSTR, mut TargetName: LPCTSTR) -> BOOL {
-    let mut alloca_allocations: Vec<Vec<u8>> = Vec::new();
+    let mut alloca_frame = AllocaFrame::new();
     // Token-preserving size expressions (values unchanged: PathBuffer[1] / DataBuffer[1]).
     let _ = core::mem::size_of::<[WCHAR; 1]>()
         + core::mem::size_of::<[WCHAR; 1]>()
@@ -60,7 +59,7 @@ unsafe extern "C" fn CreateJunction(mut LinkName: LPCTSTR, mut TargetName: LPCTS
             core::ptr::addr_of_mut!(TargetFullPath) as LPWSTR,
             core::ptr::null_mut::<LPWSTR>(),
         ) == 0
-        || RtlDosPathNameToNtPathName_U.expect("non-null function pointer")(
+        || RtlDosPathNameToNtPathName_U.unwrap_unchecked()(
             core::ptr::addr_of_mut!(TargetFullPath) as *mut TCHAR as PCWSTR,
             core::ptr::addr_of_mut!(TargetNTPath),
             core::ptr::null_mut::<PCWSTR>(),
@@ -74,7 +73,7 @@ unsafe extern "C" fn CreateJunction(mut LinkName: LPCTSTR, mut TargetName: LPCTS
         core::ptr::null_mut::<_SECURITY_ATTRIBUTES>(),
     ) == 0
     {
-        RtlFreeUnicodeString.expect("non-null function pointer")(core::ptr::addr_of_mut!(TargetNTPath));
+        RtlFreeUnicodeString.unwrap_unchecked()(core::ptr::addr_of_mut!(TargetNTPath));
         return 0;
     }
     hJunction = CreateFileW(
@@ -93,18 +92,17 @@ unsafe extern "C" fn CreateJunction(mut LinkName: LPCTSTR, mut TargetName: LPCTS
             .wrapping_mul(core::mem::size_of::<WCHAR>() as SIZE_T);
         let mut DataSize: DWORD = (core::mem::offset_of!(
             _REPARSE_DATA_BUFFER,
-            DUMMYUNIONNAME.MountPointReparseBuffer.PathBuffer
+            __bindgen_anon_1.MountPointReparseBuffer.PathBuffer
         ) as usize)
             .wrapping_add(TargetNTPath.Length as usize)
             .wrapping_add(core::mem::size_of::<WCHAR>() as usize)
             .wrapping_add(TargetLen as usize)
             .wrapping_add(core::mem::size_of::<WCHAR>() as usize) as DWORD;
-        alloca_allocations.push(::std::vec::from_elem(0u8, DataSize as usize));
         let mut Data: *mut _REPARSE_DATA_BUFFER =
-            alloca_allocations.last_mut().unwrap().as_mut_ptr() as *mut _REPARSE_DATA_BUFFER;
+            alloca_frame.alloc(DataSize as usize) as *mut _REPARSE_DATA_BUFFER;
         (*Data).ReparseTag = 0xA0000003u32 as DWORD; // IO_REPARSE_TAG_MOUNT_POINT
         (*Data).ReparseDataLength = DataSize.wrapping_sub(
-            core::mem::offset_of!(_REPARSE_DATA_BUFFER, DUMMYUNIONNAME.MountPointReparseBuffer)
+            core::mem::offset_of!(_REPARSE_DATA_BUFFER, __bindgen_anon_1.MountPointReparseBuffer)
                 as usize as DWORD,
         ) as WORD;
         (*Data).Reserved = 0 as WORD;
@@ -139,13 +137,13 @@ unsafe extern "C" fn CreateJunction(mut LinkName: LPCTSTR, mut TargetName: LPCTS
         ) != 0
         {
             CloseHandle(hJunction);
-            RtlFreeUnicodeString.expect("non-null function pointer")(core::ptr::addr_of_mut!(TargetNTPath));
+            RtlFreeUnicodeString.unwrap_unchecked()(core::ptr::addr_of_mut!(TargetNTPath));
             return 1;
         }
         CloseHandle(hJunction);
     }
     RemoveDirectoryW(LinkName as LPCWSTR);
-    RtlFreeUnicodeString.expect("non-null function pointer")(core::ptr::addr_of_mut!(TargetNTPath));
+    RtlFreeUnicodeString.unwrap_unchecked()(core::ptr::addr_of_mut!(TargetNTPath));
     return 0;
 }
 #[no_mangle]
@@ -153,7 +151,7 @@ pub unsafe extern "C" fn cmd_mklink(mut param: LPTSTR) -> INT {
     const SYMBOLIC: INT = 0;
     const HARD: INT = 1;
     const JUNCTION: INT = 2;
-    let mut hKernel32: HMODULE = GetModuleHandle(_T("KERNEL32"));
+    let mut hKernel32: HMODULE = GetModuleHandle((&[0x004b, 0x0045, 0x0052, 0x004e, 0x0045, 0x004c, 0x0033, 0x0032, 0x0000u16]).as_ptr() /* _T "KERNEL32" */);
     let mut Flags: DWORD = 0;
     let mut LinkType: INT = SYMBOLIC;
     let mut NumFiles: INT = 0;
@@ -162,20 +160,20 @@ pub unsafe extern "C" fn cmd_mklink(mut param: LPTSTR) -> INT {
     let mut i: INT = 0;
     let mut arg: *mut LPTSTR = core::ptr::null_mut();
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPuts(STRING_MKLINK_HELP);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPuts!(STRING_MKLINK_HELP);
         return 0;
     }
 
-    arg = split(param, &mut argc, FALSE, FALSE);
+    arg = split(param, &mut argc, (FALSE) as BOOL, (FALSE) as BOOL);
     i = 0;
     while i < argc {
         if *(*arg.offset(i as isize)).offset(0 as isize) == '/' as TCHAR {
-            if _tcsicmp(*arg.offset(i as isize), _T("/D")) == 0 {
+            if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x0044, 0x0000u16]).as_ptr() /* _T "/D" */) == 0 {
                 Flags |= 1; /* SYMBOLIC_LINK_FLAG_DIRECTORY */
-            } else if _tcsicmp(*arg.offset(i as isize), _T("/H")) == 0 {
+            } else if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x0048, 0x0000u16]).as_ptr() /* _T "/H" */) == 0 {
                 LinkType = HARD;
-            } else if _tcsicmp(*arg.offset(i as isize), _T("/J")) == 0 {
+            } else if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x004a, 0x0000u16]).as_ptr() /* _T "/J" */) == 0 {
                 LinkType = JUNCTION;
             } else {
                 error_invalid_switch(*(*arg.offset(i as isize)).offset(1 as isize));
@@ -217,9 +215,9 @@ pub unsafe extern "C" fn cmd_mklink(mut param: LPTSTR) -> INT {
                 )
             };
         if CreateSymbolicLink.is_some()
-            && CreateSymbolicLink(Name[0 as usize] as LPCTSTR, Name[1 as usize] as LPCTSTR, Flags) != 0
+            && (CreateSymbolicLink.unwrap_unchecked())(Name[0 as usize] as LPCTSTR, Name[1 as usize] as LPCTSTR, Flags) != 0
         {
-            ConOutResPrintf(STRING_MKLINK_CREATED_SYMBOLIC, Name[0 as usize], Name[1 as usize]);
+            ConOutResPrintf!(STRING_MKLINK_CREATED_SYMBOLIC, Name[0 as usize], Name[1 as usize]);
             return 0;
         }
     } else if LinkType == HARD {
@@ -236,19 +234,19 @@ pub unsafe extern "C" fn cmd_mklink(mut param: LPTSTR) -> INT {
                 )
             };
         if CreateHardLink.is_some()
-            && CreateHardLink(Name[0 as usize] as LPCTSTR, Name[1 as usize] as LPCTSTR, core::ptr::null_mut()) != 0
+            && (CreateHardLink.unwrap_unchecked())(Name[0 as usize] as LPCTSTR, Name[1 as usize] as LPCTSTR, core::ptr::null_mut()) != 0
         {
-            ConOutResPrintf(STRING_MKLINK_CREATED_HARD, Name[0 as usize], Name[1 as usize]);
+            ConOutResPrintf!(STRING_MKLINK_CREATED_HARD, Name[0 as usize], Name[1 as usize]);
             return 0;
         }
     } else {
         if CreateJunction(Name[0 as usize] as LPCTSTR, Name[1 as usize] as LPCTSTR) != 0 {
-            ConOutResPrintf(STRING_MKLINK_CREATED_JUNCTION, Name[0 as usize], Name[1 as usize]);
+            ConOutResPrintf!(STRING_MKLINK_CREATED_JUNCTION, Name[0 as usize], Name[1 as usize]);
             return 0;
         }
     }
 
-    ErrorMessage(GetLastError(), _T("MKLINK"));
+    ErrorMessage(GetLastError(), (&[0x004d, 0x004b, 0x004c, 0x0049, 0x004e, 0x004b, 0x0000u16]).as_ptr() /* _T "MKLINK" */);
     return 1;
 }
 // enforce_import_abi: moved 2 import decl(s) into the extern block their

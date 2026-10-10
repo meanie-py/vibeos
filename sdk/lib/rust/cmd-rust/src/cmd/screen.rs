@@ -2,7 +2,7 @@ use crate::cmd::console::ConOutResPaging;
 use crate::cmd::console::GetScreenSize;
 use crate::cmd::console::SetCursorXY;
 use crate::cmd::error::error_req_param_missing;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -13,10 +13,10 @@ pub unsafe extern "C" fn CommandScreen(mut param: LPTSTR) -> INT {
     let mut y: SHORT = 0;
     let mut maxx: SHORT = 0;
     let mut maxy: SHORT = 0;
-    let mut bSkipText: BOOL = FALSE;
+    let mut bSkipText: BOOL = (FALSE) as i32;
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_SCREEN_HELP);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_SCREEN_HELP);
         return 0;
     }
 
@@ -26,7 +26,7 @@ pub unsafe extern "C" fn CommandScreen(mut param: LPTSTR) -> INT {
     GetScreenSize(core::ptr::addr_of_mut!(maxx), core::ptr::addr_of_mut!(maxy));
 
     /* Get row */
-    while _istspace(*param) != 0 {
+    while _istspace!(*param) != 0 {
         param = param.offset(1);
     }
 
@@ -37,18 +37,18 @@ pub unsafe extern "C" fn CommandScreen(mut param: LPTSTR) -> INT {
 
     y = _ttoi(param) as SHORT;
     if y < 0 || y > (maxy - 1) {
-        ConOutResPuts(STRING_SCREEN_ROW);
+        ConOutResPuts!(STRING_SCREEN_ROW);
         return 1;
     }
 
     /* Get column */
-    param = _tcschr(param, _T(' '));
+    param = _tcschr(param, (' ' as u16));
     if param.is_null() {
         error_req_param_missing();
         return 1;
     }
 
-    while _istspace(*param) != 0 {
+    while _istspace!(*param) != 0 {
         param = param.offset(1);
     }
 
@@ -59,25 +59,25 @@ pub unsafe extern "C" fn CommandScreen(mut param: LPTSTR) -> INT {
 
     x = _ttoi(param) as SHORT;
     if x < 0 || x > (maxx - 1) {
-        ConErrResPuts(STRING_SCREEN_COL);
+        ConErrResPuts!(STRING_SCREEN_COL);
         return 1;
     }
 
     /* Get text */
-    param = _tcschr(param, _T(' '));
+    param = _tcschr(param, (' ' as u16));
     if param.is_null() {
-        bSkipText = TRUE;
+        bSkipText = (TRUE) as i32;
     } else {
-        while _istspace(*param) != 0 {
+        while _istspace!(*param) != 0 {
             param = param.offset(1);
         }
 
         if *param == 0 {
-            bSkipText = TRUE;
+            bSkipText = (TRUE) as i32;
         }
     }
 
-    bIgnoreEcho = TRUE;
+    bIgnoreEcho = (TRUE) as i32;
 
     if bSkipText != 0 {
         x = 0;
@@ -86,7 +86,7 @@ pub unsafe extern "C" fn CommandScreen(mut param: LPTSTR) -> INT {
     SetCursorXY(x, y);
 
     if bSkipText == 0 {
-        ConOutPuts(param);
+        ConOutPuts!(param);
     }
 
     return 0;

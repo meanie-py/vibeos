@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -151,15 +151,11 @@ pub static mut clrtable: [CLRTABLE; 28] = unsafe {
     ]
 };
 
-pub const FOREGROUND_BLUE: WORD = 0x0001;
-pub const FOREGROUND_GREEN: WORD = 0x0002;
-pub const FOREGROUND_RED: WORD = 0x0004;
-pub const FOREGROUND_INTENSITY: WORD = 0x0008;
 
-pub const _B: WORD = FOREGROUND_BLUE;
-pub const _G: WORD = FOREGROUND_GREEN;
-pub const _R: WORD = FOREGROUND_RED;
-pub const _I: WORD = FOREGROUND_INTENSITY;
+pub const _B: WORD = (FOREGROUND_BLUE as u16);
+pub const _G: WORD = (FOREGROUND_GREEN as u16);
+pub const _R: WORD = (FOREGROUND_RED as u16);
+pub const _I: WORD = (FOREGROUND_INTENSITY as u16);
 
 pub const CP_OK: i32 = 0;
 pub const CP_BLANK_NOT_FOUND: i32 = 1;
@@ -207,20 +203,20 @@ pub static mut CLRSTR_27: [TCHAR; 1] = [0];
 
 unsafe extern "C" fn chop_blank(arg_str: *mut LPTSTR) -> INT {
     let mut str: LPTSTR = core::ptr::null_mut();
-    str = _tcschr(*arg_str, _T(' '));
+    str = _tcschr(*arg_str, (' ' as u16));
     if str.is_null() {
-        str = _tcschr(*arg_str, _T('\0'));
+        str = _tcschr(*arg_str, ('\0' as u16));
         if !str.is_null() {
             *arg_str = str;
         }
         return CP_BLANK_NOT_FOUND;
     }
 
-    while _istspace(*str) != 0 {
+    while _istspace!(*str) != 0 {
         str = str.offset(1);
     }
 
-    if *str == _T('\0') {
+    if *str == ('\0' as u16) {
         *arg_str = str;
         return CP_END_OF_STRING;
     }
@@ -236,13 +232,13 @@ unsafe extern "C" fn hex_clr(str: LPTSTR) -> WORD {
 
     ch = *str.offset(1 as isize);
 
-    if _istdigit(ch as i32) != 0 {
-        ret = ((ch as i32) - (_T('0') as i32)) as WORD;
+    if _istdigit!(ch as i32) != 0 {
+        ret = ((ch as i32) - (('0' as u16) as i32)) as WORD;
     } else {
-        ch = _totupper(ch as i32) as TCHAR;
+        ch = _totupper((ch as i32) as u16) as TCHAR;
 
-        if ch >= _T('A') as TCHAR && ch <= _T('F') as TCHAR {
-            ret = ((ch as i32) - (_T('A') as i32) + 10) as WORD;
+        if ch >= ('A' as u16) as TCHAR && ch <= ('F' as u16) as TCHAR {
+            ret = ((ch as i32) - (('A' as u16) as i32) + 10) as WORD;
         } else {
             return (-(1 as i32)) as WORD;
         }
@@ -250,15 +246,15 @@ unsafe extern "C" fn hex_clr(str: LPTSTR) -> WORD {
 
     ch = *str.offset(0 as isize);
 
-    if _istdigit(ch as i32) != 0 {
+    if _istdigit!(ch as i32) != 0 {
         ret = (ret as i32
-            | (((ch as i32) - (_T('0') as i32)) << 4)) as WORD;
+            | (((ch as i32) - (('0' as u16) as i32)) << 4)) as WORD;
     } else {
-        ch = _totupper(ch as i32) as TCHAR;
+        ch = _totupper((ch as i32) as u16) as TCHAR;
 
-        if ch >= _T('A') as TCHAR && ch <= _T('F') as TCHAR {
+        if ch >= ('A' as u16) as TCHAR && ch <= ('F' as u16) as TCHAR {
             ret = (ret as i32
-                | (((ch as i32) - (_T('A') as i32) + 10)
+                | (((ch as i32) - (('A' as u16) as i32) + 10)
                     << 4)) as WORD;
         } else {
             return (-(1 as i32)) as WORD;
@@ -294,10 +290,10 @@ unsafe extern "C" fn str_to_color(arg_str: *mut LPTSTR) -> WORD {
     }
 
     /* foreground */
-    bBri = FALSE;
+    bBri = (FALSE) as i32;
 
-    if _tcsnicmp(str, _T("bri"), 3) == 0 {
-        bBri = TRUE;
+    if _tcsnicmp(str, (&[0x0062, 0x0072, 0x0069, 0x0000u16]).as_ptr() /* _T "bri" */, 3) == 0 {
+        bBri = (TRUE) as i32;
 
         if chop_blank(core::ptr::addr_of_mut!(str)) != 0 {
             return (-(1 as i32)) as WORD;
@@ -319,10 +315,10 @@ unsafe extern "C" fn str_to_color(arg_str: *mut LPTSTR) -> WORD {
     ret_clr = ((tmp_clr as i32) | (bBri << 3)) as WORD;
 
     /* background */
-    bBri = FALSE;
+    bBri = (FALSE) as i32;
 
-    if _tcsnicmp(str, _T("bri"), 3) == 0 {
-        bBri = TRUE;
+    if _tcsnicmp(str, (&[0x0062, 0x0072, 0x0069, 0x0000u16]).as_ptr() /* _T "bri" */, 3) == 0 {
+        bBri = (TRUE) as i32;
 
         if chop_blank(core::ptr::addr_of_mut!(str)) != 0 {
             return (-(1 as i32)) as WORD;
@@ -352,11 +348,11 @@ pub unsafe extern "C" fn StringToColor(lpColor: LPWORD, str: *mut LPTSTR) -> BOO
         wRet = hex_clr(*str);
         chop_blank(str);
         if wRet == (-(1 as ::core::ffi::c_int)) as WORD {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
 
     *lpColor = wRet;
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }

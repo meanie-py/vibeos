@@ -3,19 +3,19 @@ use crate::cmd::cmd::DoDelayedExpansion;
 use crate::cmd::cmd::ExecuteCommand;
 use crate::cmd::cmd::GetEnvVarOrSpecial;
 use crate::cmd::error::error_syntax;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
-unsafe extern "C" fn GenericCmp(
+unsafe extern "system" fn GenericCmp(
     StringCmp: unsafe extern "system" fn(LPCTSTR, LPCTSTR) -> INT,
     Left: LPCTSTR,
     Right: LPCTSTR,
 ) -> INT {
     let mut end: LPTSTR = core::ptr::null_mut();
     let mut nLeft: INT = _tcstol(Left, core::ptr::addr_of_mut!(end), 0) as INT;
-    if *end == _T('\0') {
+    if *end == ('\0' as u16) {
         let mut nRight: INT = _tcstol(Right, core::ptr::addr_of_mut!(end), 0) as INT;
-        if *end == _T('\0') {
+        if *end == ('\0' as u16) {
             /* both arguments are numeric */
             return if nLeft < nRight {
                 -1
@@ -27,9 +27,9 @@ unsafe extern "C" fn GenericCmp(
     return StringCmp(Left, Right);
 }
 #[no_mangle]
-pub unsafe extern "C" fn cmd_if(param: LPTSTR) -> INT {
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_IF_HELP1);
+pub unsafe extern "C" fn cmd_if(param: *mut TCHAR) -> ::core::ffi::c_int {
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_IF_HELP1);
         return 0;
     }
 
@@ -38,27 +38,27 @@ pub unsafe extern "C" fn cmd_if(param: LPTSTR) -> INT {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
-    let mut result: INT = FALSE; /* when set cause 'then' clause to be executed */
+    let mut result: INT = (FALSE) as i32; /* when set cause 'then' clause to be executed */
     let mut param: LPTSTR = core::ptr::null_mut();
     let mut Left: LPTSTR = core::ptr::null_mut();
     let mut Right: LPTSTR = core::ptr::null_mut();
 
-    if !(*Cmd).If.LeftArg.is_null() {
-        Left = DoDelayedExpansion((*Cmd).If.LeftArg);
+    if !(*Cmd).__bindgen_anon_1.If.LeftArg.is_null() {
+        Left = DoDelayedExpansion((*Cmd).__bindgen_anon_1.If.LeftArg);
         if Left.is_null() {
             return 1;
         }
     }
-    Right = DoDelayedExpansion((*Cmd).If.RightArg);
+    Right = DoDelayedExpansion((*Cmd).__bindgen_anon_1.If.RightArg);
     if Right.is_null() {
         if !Left.is_null() {
-            cmd_free(Left);
+            cmd_free!(Left);
         }
         return 1;
     }
 
     'fail: {
-        if bEnableExtensions != 0 && ((*Cmd).If.Operator == IF_CMDEXTVERSION) {
+        if bEnableExtensions != 0 && ((*Cmd).__bindgen_anon_1.If.Operator == IF_CMDEXTVERSION) {
             /* IF CMDEXTVERSION n: check if Command Extensions
              * version is greater or equal to n. */
             let n: DWORD = _tcstoul(
@@ -66,27 +66,27 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
                 core::ptr::addr_of_mut!(param),
                 10,
             );
-            if *param != _T('\0') {
+            if *param != ('\0' as u16) {
                 error_syntax(Right);
                 break 'fail;
             }
             result = (CMDEXTVERSION >= n) as INT;
-        } else if bEnableExtensions != 0 && ((*Cmd).If.Operator == IF_DEFINED) {
+        } else if bEnableExtensions != 0 && ((*Cmd).__bindgen_anon_1.If.Operator == IF_DEFINED) {
             /* IF DEFINED var: check if environment variable exists */
             result = (GetEnvVarOrSpecial(Right) != core::ptr::null_mut()) as INT;
-        } else if (*Cmd).If.Operator == IF_ERRORLEVEL {
+        } else if (*Cmd).__bindgen_anon_1.If.Operator == IF_ERRORLEVEL {
             /* IF ERRORLEVEL n: check if last exit code is greater or equal to n */
             let n: INT = _tcstol(
                 Right,
                 core::ptr::addr_of_mut!(param),
                 10,
             );
-            if *param != _T('\0') {
+            if *param != ('\0' as u16) {
                 error_syntax(Right);
                 break 'fail;
             }
             result = (nErrorLevel >= n) as INT;
-        } else if (*Cmd).If.Operator == IF_EXIST {
+        } else if (*Cmd).__bindgen_anon_1.If.Operator == IF_EXIST {
             let mut IsDir: BOOL;
             let mut Size: SIZE_T;
             let mut f: WIN32_FIND_DATA = core::mem::zeroed();
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
             /* IF EXIST filename: check if file exists (wildcards allowed) */
             StripQuotes(Right);
 
-            Size = _tcslen(Right);
+            Size = (_tcslen(Right)) as _;
             IsDir = (*Right.add((Size - 1) as usize) == '\\' as TCHAR) as BOOL;
             if IsDir != 0 {
                 *Right.add((Size - 1) as usize) = 0 as TCHAR;
@@ -112,11 +112,11 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
             }
 
             if attrs == INVALID_FILE_ATTRIBUTES {
-                result = FALSE;
+                result = (FALSE) as i32;
             } else if IsDir != 0 {
                 result = ((attrs & FILE_ATTRIBUTE_DIRECTORY) == FILE_ATTRIBUTE_DIRECTORY) as INT;
             } else {
-                result = TRUE;
+                result = (TRUE) as i32;
             }
 
             if IsDir != 0 {
@@ -133,20 +133,20 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
             let mut StringCmp: unsafe extern "system" fn(
                 LPCTSTR,
                 LPCTSTR,
-            ) -> INT = if ((*Cmd).If.Flags & IFFLAG_IGNORECASE) != 0 {
+            ) -> INT = if ((*Cmd).__bindgen_anon_1.If.Flags & (IFFLAG_IGNORECASE as u8)) != 0 {
                 lstrcmpi as _
             } else {
                 lstrcmp as _
             };
 
-            if (*Cmd).If.Operator == IF_STRINGEQ {
+            if (*Cmd).__bindgen_anon_1.If.Operator == IF_STRINGEQ {
                 /* IF str1 == str2 */
                 result = (StringCmp(Left, Right) == 0) as INT;
             } else {
                 let mut at_unknown_op: bool = false;
                 if bEnableExtensions != 0 {
                     result = GenericCmp(StringCmp, Left, Right);
-                    match (*Cmd).If.Operator {
+                    match (*Cmd).__bindgen_anon_1.If.Operator {
                         IF_EQU => {
                             result = (result == 0) as INT;
                         }
@@ -176,7 +176,7 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
                     /* unknownOp: */
                     ERR!(
                         b"Unknown IF operator 0x%x\n\0" as *const u8 as LPCSTR,
-                        (*Cmd).If.Operator,
+                        (*Cmd).__bindgen_anon_1.If.Operator,
                     );
                     break 'fail;
                 }
@@ -184,12 +184,12 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
         }
 
         if !Left.is_null() {
-            cmd_free(Left);
+            cmd_free!(Left);
         }
-        cmd_free(Right);
+        cmd_free!(Right);
 
         if result
-            ^ ((((*Cmd).If.Flags & IFFLAG_NEGATE) != 0) as INT)
+            ^ ((((*Cmd).__bindgen_anon_1.If.Flags & (IFFLAG_NEGATE as u8)) != 0) as INT)
             != 0
         {
             /* Full condition was true, do the command */
@@ -202,8 +202,8 @@ pub unsafe extern "C" fn ExecuteIf(Cmd: *mut PARSED_COMMAND) -> INT {
 
     /* fail: */
     if !Left.is_null() {
-        cmd_free(Left);
+        cmd_free!(Left);
     }
-    cmd_free(Right);
+    cmd_free!(Right);
     return 1;
 }

@@ -1,8 +1,7 @@
 use crate::cmd::batch::Batch;
 use crate::cmd::batch::FindArg;
 use crate::cmd::batch::ReadBatchLine;
-use ntdll_sys::nt::*;
-use ntdll_sys::nt::tier1::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
@@ -12,20 +11,20 @@ extern "system" {
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
 #[no_mangle]
-pub static mut bExit: BOOL = FALSE;
+pub static mut bExit: BOOL = (FALSE) as i32;
 
 #[no_mangle]
-pub static mut bCanExit: BOOL = TRUE;
+pub static mut bCanExit: BOOL = (TRUE) as i32;
 
 #[no_mangle]
-pub static mut bCtrlBreak: BOOL = FALSE;
+pub static mut bCtrlBreak: BOOL = (FALSE) as i32;
 
 #[no_mangle]
-pub static mut bIgnoreEcho: BOOL = FALSE;
+pub static mut bIgnoreEcho: BOOL = (FALSE) as i32;
 
 static mut fSingleCommand: BOOL = 0 as BOOL;
 
-static mut bAlwaysStrip: BOOL = FALSE;
+static mut bAlwaysStrip: BOOL = (FALSE) as i32;
 
 #[no_mangle]
 pub static mut nErrorLevel: INT = 0 as INT;
@@ -42,13 +41,13 @@ pub static mut ChildProcessRunningLock: CRITICAL_SECTION = _RTL_CRITICAL_SECTION
 };
 
 #[no_mangle]
-pub static mut bDisableBatchEcho: BOOL = FALSE;
+pub static mut bDisableBatchEcho: BOOL = (FALSE) as i32;
 
 #[no_mangle]
-pub static mut bEnableExtensions: BOOL = TRUE;
+pub static mut bEnableExtensions: BOOL = (TRUE) as i32;
 
 #[no_mangle]
-pub static mut bDelayedExpansion: BOOL = FALSE;
+pub static mut bDelayedExpansion: BOOL = (FALSE) as i32;
 
 #[no_mangle]
 pub static mut dwChildProcessId: DWORD = 0 as DWORD;
@@ -61,7 +60,7 @@ pub static mut CMD_ModuleHandle: HANDLE =
     ::core::ptr::null::<::core::ffi::c_void>() as *mut ::core::ffi::c_void;
 
 #[no_mangle]
-pub static mut bTitleSet: BOOL = FALSE;
+pub static mut bTitleSet: BOOL = (FALSE) as i32;
 
 #[no_mangle]
 pub static mut szCurTitle: [TCHAR; 260] = [0; 260];
@@ -79,21 +78,23 @@ pub static mut wDefColor: WORD = 0 as WORD;
 pub const SHELLEXECUTETEXT: [::core::ffi::c_char; 16] =
     unsafe { ::core::mem::transmute::<[u8; 16], [::core::ffi::c_char; 16]>(*b"ShellExecuteExW\0") };
 
-pub type NtQueryInformationProcessProc = unsafe extern "system" fn(
+// C's function-pointer typedef: nullable, and checked for NULL before each call.
+pub type NtQueryInformationProcessProc = Option<unsafe extern "system" fn(
     HANDLE,
     PROCESSINFOCLASS,
     PVOID,
     ULONG,
     PULONG,
-) -> NTSTATUS;
+) -> NTSTATUS>;
 
-pub type NtReadVirtualMemoryProc = unsafe extern "system" fn(
+// C's function-pointer typedef: nullable, and checked for NULL before each call.
+pub type NtReadVirtualMemoryProc = Option<unsafe extern "system" fn(
     HANDLE,
     PVOID,
     PVOID,
     SIZE_T,
     PSIZE_T,
-) -> NTSTATUS;
+) -> NTSTATUS>;
 
 // INCLUDE_CMD_COLOR block (wDefColor) emitted unconditionally
 
@@ -101,12 +102,7 @@ pub type NtReadVirtualMemoryProc = unsafe extern "system" fn(
 
 pub type MYEX = unsafe extern "system" fn(LPSHELLEXECUTEINFO) -> BOOL;
 #[no_mangle]
-pub unsafe extern "C" fn ConvertULargeInteger(
-    mut num: ULONGLONG,
-    mut des: LPTSTR,
-    mut len: UINT,
-    mut bPutSeparator: BOOL,
-) -> INT {
+pub unsafe extern "C" fn ConvertULargeInteger(mut num: ULONGLONG, mut des: LPTSTR, mut len: UINT, mut bPutSeparator: BOOL) -> INT {
     let mut temp: [TCHAR; 39] = [0; 39];
     let mut n: UINT = 0;
     let mut iTarget: UINT = 0;
@@ -134,7 +130,7 @@ pub unsafe extern "C" fn ConvertULargeInteger(
         let fresh32 = n;
         n = n.wrapping_add(1);
         temp[((38 as UINT).wrapping_sub(fresh32)) as usize] =
-            ((((num % (10 as ULONGLONG)) as TCHAR)) + _T('0')) as TCHAR;
+            ((((num % (10 as ULONGLONG)) as TCHAR)) + ('0' as u16)) as TCHAR;
         num = num / (10 as ULONGLONG);
         if !(num > (0 as ULONGLONG)) {
             break;
@@ -152,7 +148,7 @@ pub unsafe extern "C" fn ConvertULargeInteger(
         )) as *const ::core::ffi::c_void,
         (n as size_t).wrapping_mul(::core::mem::size_of::<TCHAR>() as size_t),
     );
-    *des.add(n as usize) = _T('\0');
+    *des.add(n as usize) = ('\0' as u16);
 
     return n as INT;
 }
@@ -161,31 +157,31 @@ unsafe extern "C" fn IsConsoleProcess(mut Process: HANDLE) -> BOOL {
     let mut Status: NTSTATUS;
     let mut Info: PROCESS_BASIC_INFORMATION = core::mem::zeroed();
     let mut ProcessPeb: PEB = core::mem::zeroed();
-    let mut BytesRead: SIZE_T;
+    let mut BytesRead: SIZE_T = 0;
 
     if NtQueryInformationProcessPtr.is_none() || NtReadVirtualMemoryPtr.is_none() {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
-    Status = NtQueryInformationProcessPtr(
+    Status = NtQueryInformationProcessPtr.unwrap_unchecked()(
         Process,
         ProcessBasicInformation,
         core::ptr::addr_of_mut!(Info) as PVOID,
         core::mem::size_of::<PROCESS_BASIC_INFORMATION>() as ULONG,
         core::ptr::null_mut::<ULONG>(),
     );
-    if !(NT_SUCCESS(Status)) {
-        return TRUE;
+    if !(NT_SUCCESS!(Status)) {
+        return (TRUE) as BOOL;
     }
-    Status = NtReadVirtualMemoryPtr(
+    Status = NtReadVirtualMemoryPtr.unwrap_unchecked()(
         Process,
         Info.PebBaseAddress as PVOID,
         core::ptr::addr_of_mut!(ProcessPeb) as PVOID,
         core::mem::size_of::<PEB>() as SIZE_T,
         core::ptr::addr_of_mut!(BytesRead),
     );
-    if !(NT_SUCCESS(Status)) || core::mem::size_of::<PEB>() != BytesRead as usize {
-        return TRUE;
+    if !(NT_SUCCESS!(Status)) || core::mem::size_of::<PEB>() != BytesRead as usize {
+        return (TRUE) as BOOL;
     }
 
     return (IMAGE_SUBSYSTEM_WINDOWS_CUI as ULONG == ProcessPeb.ImageSubsystem as ULONG) as BOOL;
@@ -205,8 +201,8 @@ pub unsafe extern "C" fn RunFile(mut flags: DWORD, mut filename: LPTSTR, mut par
         return core::ptr::null_mut();
     }
 
-    hShExt = ::core::mem::transmute::<FARPROC, MYEX>(GetProcAddress(hShell32 as _, SHELLEXECUTETEXT));
-    if hShExt.is_none() {
+    hShExt = ::core::mem::transmute::<FARPROC, MYEX>(GetProcAddress(hShell32 as _, (SHELLEXECUTETEXT).as_ptr()));
+    if (hShExt as usize) == 0 {
         FreeLibrary(hShell32);
         return core::ptr::null_mut();
     }
@@ -224,7 +220,7 @@ pub unsafe extern "C" fn RunFile(mut flags: DWORD, mut filename: LPTSTR, mut par
 }
 
 unsafe extern "C" fn SetConTitle(pszTitle: LPCTSTR) {
-    let mut szNewTitle: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szNewTitle: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     if pszTitle.is_null() {
         return;
     }
@@ -235,27 +231,27 @@ unsafe extern "C" fn SetConTitle(pszTitle: LPCTSTR) {
     /* Save the original console title and build a new one */
     GetConsoleTitle(
         core::ptr::addr_of_mut!(szCurTitle) as LPTSTR,
-        ARRAYSIZE(core::ptr::addr_of!(szCurTitle)) as DWORD,
+        ARRAYSIZE!(*core::ptr::addr_of!(szCurTitle)) as DWORD,
     );
     let FMT: [u16; 8] = [
         '%' as u16, 's' as u16, ' ' as u16, '-' as u16,
         ' ' as u16, '%' as u16, 's' as u16, 0,
     ];
-    StringCchPrintf(
+    StringCchPrintf!(
         core::ptr::addr_of_mut!(szNewTitle) as LPTSTR,
-        ARRAYSIZE(core::ptr::addr_of!(szNewTitle)) as size_t,
-        _T(FMT.as_ptr() as LPCTSTR),
+        ARRAYSIZE!(*core::ptr::addr_of!(szNewTitle)) as size_t,
+        (FMT.as_ptr() as LPCTSTR),
         core::ptr::addr_of!(szCurTitle) as LPCTSTR,
         pszTitle,
     );
-    bTitleSet = TRUE;
+    bTitleSet = (TRUE) as i32;
     ConSetTitle(core::ptr::addr_of!(szNewTitle) as LPCTSTR);
 }
 
 unsafe extern "C" fn ResetConTitle() {
     if bc.is_null() && bTitleSet != 0 {
         ConSetTitle(core::ptr::addr_of_mut!(szCurTitle) as *mut TCHAR as LPCTSTR);
-        bTitleSet = FALSE;
+        bTitleSet = (FALSE) as i32;
     }
 }
 
@@ -265,8 +261,8 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
     let mut dot: *mut TCHAR = core::ptr::null_mut();
     let mut dwExitCode: DWORD = 0;
     let mut FirstEnd: *mut TCHAR = core::ptr::null_mut();
-    let mut szFullName: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szFullCmdLine: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut szFullName: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szFullCmdLine: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut comma_set: [TCHAR; 5] = [',' as TCHAR, ';' as TCHAR, '=' as TCHAR, '/' as TCHAR, 0];
     let mut colon_s: [TCHAR; 2] = [':' as TCHAR, 0];
     let mut dot_bat: [TCHAR; 5] = ['.' as TCHAR, 'b' as TCHAR, 'a' as TCHAR, 't' as TCHAR, 0];
@@ -286,11 +282,11 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
     } else {
         /* If present in the first word, spaces and ,;=/ end the program
          * name and become the beginning of its parameters. */
-        let mut bInside: BOOL = FALSE;
+        let mut bInside: BOOL = (FALSE) as i32;
         FirstEnd = First;
         while *FirstEnd != 0 {
             if bInside == 0
-                && (_istspace(*FirstEnd) != 0
+                && (_istspace!(*FirstEnd) != 0
                     || !_tcschr(
                         core::ptr::addr_of_mut!(comma_set) as *mut TCHAR,
                         *FirstEnd,
@@ -313,13 +309,13 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
     _tcscpy(first, First);
 
     /* check for a drive change */
-    if _istalpha(*first.offset(0 as isize)) != 0
+    if _istalpha!(*first.offset(0 as isize)) != 0
         && (_tcscmp(
             first.offset(1 as isize),
             core::ptr::addr_of_mut!(colon_s) as *mut TCHAR,
         ) == 0)
     {
-        let mut working: BOOL = TRUE;
+        let mut working: BOOL = (TRUE) as i32;
         if SetCurrentDirectory(first) == 0 {
             /* Guess they changed disc or something, handle that gracefully and get to root */
             let mut str: [TCHAR; 4] = [0; 4];
@@ -331,7 +327,7 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
         }
 
         if working == 0 {
-            ConErrResPuts(STRING_FREE_ERROR1);
+            ConErrResPuts!(STRING_FREE_ERROR1);
         }
         return (working == 0) as INT;
     }
@@ -427,7 +423,7 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
         stui.cb = core::mem::size_of::<STARTUPINFO>() as DWORD;
         stui.lpTitle = Full;
         stui.dwFlags = 0;
-        stui.wShowWindow = SW_SHOWNORMAL;
+        stui.wShowWindow = (SW_SHOWNORMAL) as u16;
 
         /* Set the console to standard mode */
         SetConsoleMode(
@@ -440,7 +436,7 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
             core::ptr::addr_of_mut!(szFullCmdLine) as *mut TCHAR,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
-            TRUE,
+            (TRUE) as BOOL,
             0,
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -456,7 +452,7 @@ unsafe extern "C" fn Execute(Full: LPTSTR, First: LPTSTR, Rest: LPTSTR, Cmd: *mu
                 core::ptr::addr_of_mut!(szFullName) as *mut TCHAR,
                 rest,
                 core::ptr::null_mut(),
-                SW_SHOWNORMAL,
+                (SW_SHOWNORMAL) as INT,
             );
             execerror = (if !hProcess.is_null() {
                 ERROR_SUCCESS
@@ -540,11 +536,11 @@ pub unsafe extern "C" fn DoCommand(first: LPTSTR, rest: LPTSTR, Cmd: *mut PARSED
     let mut param: LPTSTR = core::ptr::null_mut();
     let mut cl: INT = 0;
     let mut cmdptr: LPCOMMAND = core::ptr::null_mut();
-    let mut nointernal: BOOL = FALSE;
+    let mut nointernal: BOOL = (FALSE) as i32;
     let mut ret: INT = 0;
 
     /* Full command line */
-    com = cmd_alloc(
+    com = cmd_alloc!(
         ((_tcslen(first) + _tcslen(rest) + 2)
             * core::mem::size_of::<TCHAR>()) as usize,
     ) as *mut TCHAR;
@@ -579,7 +575,7 @@ pub unsafe extern "C" fn DoCommand(first: LPTSTR, rest: LPTSTR, Cmd: *mut PARSED
         if !_tcschr(dots.as_ptr(), *first.offset(cl as isize)).is_null() {
             let mut tmp: TCHAR = *cp;
             *cp = 0 as TCHAR;
-            nointernal = IsExistingFile(first) != 0;
+            nointernal = (IsExistingFile(first) != 0) as i32;
             *cp = tmp;
             break;
         }
@@ -599,7 +595,7 @@ pub unsafe extern "C" fn DoCommand(first: LPTSTR, rest: LPTSTR, Cmd: *mut PARSED
             /* Skip over whitespace to rest of line, exclude 'echo' command */
             let echo = ['e' as u16, 'c' as u16, 'h' as u16, 'o' as u16, 0];
             if _tcsicmp((*cmdptr).name, echo.as_ptr()) != 0 {
-                while _istspace(*param) != 0 {
+                while _istspace!(*param) != 0 {
                     param = param.offset(1);
                 }
             }
@@ -607,19 +603,19 @@ pub unsafe extern "C" fn DoCommand(first: LPTSTR, rest: LPTSTR, Cmd: *mut PARSED
             /* Set the new console title */
             SetConTitle(com);
 
-            ret = ((*cmdptr).func)(param);
+            ret = (((*cmdptr).func).unwrap_unchecked())(param);
 
             /* Restore the original console title */
             ResetConTitle();
 
-            cmd_free(com);
+            cmd_free!(com);
             return ret;
         }
         cmdptr = cmdptr.offset(1);
     }
 
     ret = Execute(com, first, rest, Cmd);
-    cmd_free(com);
+    cmd_free!(com);
     return ret;
 }
 #[no_mangle]
@@ -639,8 +635,8 @@ pub unsafe extern "C" fn ParseCommandLine(cmd: LPTSTR) -> INT {
 }
 
 unsafe extern "C" fn ExecuteAsync(mut Cmd: *mut PARSED_COMMAND) -> HANDLE {
-    let mut CmdPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut CmdParams: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut CmdPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut CmdParams: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut ParamsEnd: *mut TCHAR = core::ptr::null_mut();
     let mut stui: STARTUPINFO = core::mem::zeroed();
     let mut prci: PROCESS_INFORMATION = core::mem::zeroed();
@@ -649,7 +645,7 @@ unsafe extern "C" fn ExecuteAsync(mut Cmd: *mut PARSED_COMMAND) -> HANDLE {
     GetModuleFileName(
         core::ptr::null_mut(),
         &raw mut CmdPath as *mut TCHAR,
-        ARRAYSIZE(&raw mut CmdPath),
+        ARRAYSIZE!(CmdPath),
     );
 
     /* Build the parameter string to pass to cmd.exe */
@@ -685,7 +681,7 @@ unsafe extern "C" fn ExecuteAsync(mut Cmd: *mut PARSED_COMMAND) -> HANDLE {
         &raw mut CmdParams as *mut TCHAR as LPWSTR,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        TRUE,
+        TRUE as BOOL,
         0,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
@@ -705,8 +701,8 @@ unsafe extern "C" fn ExecutePipeline(mut Cmd: *mut PARSED_COMMAND) -> INT {
     let mut hInput: HANDLE = core::ptr::null_mut();
     let hOldConIn: HANDLE = GetStdHandle(STD_INPUT_HANDLE);
     let hOldConOut: HANDLE = GetStdHandle(STD_OUTPUT_HANDLE);
-    let mut hProcess: [HANDLE; MAXIMUM_WAIT_OBJECTS] =
-        [core::ptr::null_mut(); MAXIMUM_WAIT_OBJECTS];
+    let mut hProcess: [HANDLE; (MAXIMUM_WAIT_OBJECTS) as _] =
+        [core::ptr::null_mut(); (MAXIMUM_WAIT_OBJECTS) as _];
     let mut nProcesses: INT = 0;
     let mut dwExitCode: DWORD = 0;
     let pipe_str: [u16; 2] = ['|' as u16, 0];
@@ -716,7 +712,7 @@ unsafe extern "C" fn ExecutePipeline(mut Cmd: *mut PARSED_COMMAND) -> INT {
         loop {
             let mut hPipeRead: HANDLE = core::ptr::null_mut();
             let mut hPipeWrite: HANDLE = core::ptr::null_mut();
-            if nProcesses > (MAXIMUM_WAIT_OBJECTS - 2) {
+            if (nProcesses) as u32 > (MAXIMUM_WAIT_OBJECTS - 2) {
                 error_too_many_parameters(pipe_str.as_ptr() as PCTSTR);
                 break 'failed;
             }
@@ -779,7 +775,7 @@ unsafe extern "C" fn ExecutePipeline(mut Cmd: *mut PARSED_COMMAND) -> INT {
         WaitForMultipleObjects(
             nProcesses as DWORD,
             &raw mut hProcess as *mut HANDLE,
-            TRUE,
+            (TRUE) as BOOL,
             INFINITE,
         );
         LeaveCriticalSection(&raw mut ChildProcessRunningLock);
@@ -819,7 +815,7 @@ unsafe extern "C" fn ExecutePipeline(mut Cmd: *mut PARSED_COMMAND) -> INT {
     return nErrorLevel;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ExecuteCommand(Cmd: *mut PARSED_COMMAND) -> INT {
+pub unsafe extern "C" fn ExecuteCommand(Cmd: *mut _PARSED_COMMAND) -> INT {
     let mut Sub: *mut PARSED_COMMAND = core::ptr::null_mut::<PARSED_COMMAND>();
     let mut First: LPTSTR = core::ptr::null_mut::<WCHAR>();
     let mut Rest: LPTSTR = core::ptr::null_mut::<WCHAR>();
@@ -845,15 +841,15 @@ pub unsafe extern "C" fn ExecuteCommand(Cmd: *mut PARSED_COMMAND) -> INT {
         C_COMMAND => {
             Ret = 1;
             First = DoDelayedExpansion(
-                core::ptr::addr_of_mut!((*Cmd).Command.First) as *mut TCHAR as PCTSTR,
+                core::ptr::addr_of_mut!((*Cmd).__bindgen_anon_1.Command.First) as *mut TCHAR as PCTSTR,
             ) as LPTSTR;
             if !First.is_null() {
-                Rest = DoDelayedExpansion((*Cmd).Command.Rest as PCTSTR) as LPTSTR;
+                Rest = DoDelayedExpansion((*Cmd).__bindgen_anon_1.Command.Rest as PCTSTR) as LPTSTR;
                 if !Rest.is_null() {
                     Ret = DoCommand(First, Rest, Cmd);
-                    cmd_free(Rest as *mut ::core::ffi::c_void);
+                    cmd_free!(Rest as *mut ::core::ffi::c_void);
                 }
-                cmd_free(First as *mut ::core::ffi::c_void);
+                cmd_free!(First as *mut ::core::ffi::c_void);
             }
             /* Fall through */
             // falls through to the break case below
@@ -913,11 +909,11 @@ pub unsafe extern "C" fn ExecuteCommandWithEcho(Cmd: *mut PARSED_COMMAND) -> INT
     /* Echo the reconstructed command line */
     if bEcho != 0 && bDisableBatchEcho == 0 && !Cmd.is_null() && ((*Cmd).Type != C_QUIET) {
         if bIgnoreEcho == 0 {
-            ConOutChar(_T('\n' as TCHAR));
+            ConOutChar(('\n' as TCHAR));
         }
         PrintPrompt();
         EchoCommand(Cmd);
-        ConOutChar(_T('\n' as TCHAR));
+        ConOutChar(('\n' as TCHAR));
     }
 
     /* Run the command */
@@ -928,11 +924,11 @@ pub unsafe extern "C" fn GetEnvVar(varName: LPCTSTR) -> LPTSTR {
     static mut ret: LPTSTR = core::ptr::null_mut();
     let mut size: UINT;
 
-    cmd_free(ret as *mut core::ffi::c_void);
+    cmd_free!(ret as *mut core::ffi::c_void);
     ret = core::ptr::null_mut();
     size = GetEnvironmentVariable(varName as LPCWSTR, core::ptr::null_mut(), 0) as UINT;
     if size > 0 {
-        ret = cmd_alloc((size as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+        ret = cmd_alloc!((size as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
         if !ret.is_null() {
             GetEnvironmentVariable(varName as LPCWSTR, ret as LPWSTR, (size + 1) as DWORD);
         }
@@ -941,7 +937,7 @@ pub unsafe extern "C" fn GetEnvVar(varName: LPCTSTR) -> LPTSTR {
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetEnvVarOrSpecial(varName: LPCTSTR) -> LPCTSTR {
-    static mut ret: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    static mut ret: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     let var: LPTSTR = GetEnvVar(varName);
     if !var.is_null() {
@@ -955,20 +951,20 @@ pub unsafe extern "C" fn GetEnvVarOrSpecial(varName: LPCTSTR) -> LPCTSTR {
     }
 
     /* %CD% */
-    if _tcsicmp(varName, _T("CD")) == 0 {
-        GetCurrentDirectory(ARRAYSIZE(ret), addr_of_mut!(ret) as *mut TCHAR);
+    if _tcsicmp(varName, (&[0x0043, 0x0044, 0x0000u16]).as_ptr() /* _T "CD" */) == 0 {
+        GetCurrentDirectory(ARRAYSIZE!(ret), addr_of_mut!(ret) as *mut TCHAR);
         return addr_of_mut!(ret) as *mut TCHAR as LPCTSTR;
     }
     /* %DATE% */
-    else if _tcsicmp(varName, _T("DATE")) == 0 {
+    else if _tcsicmp(varName, (&[0x0044, 0x0041, 0x0054, 0x0045, 0x0000u16]).as_ptr() /* _T "DATE" */) == 0 {
         return GetDateString() as LPCTSTR;
     }
     /* %TIME% */
-    else if _tcsicmp(varName, _T("TIME")) == 0 {
+    else if _tcsicmp(varName, (&[0x0054, 0x0049, 0x004d, 0x0045, 0x0000u16]).as_ptr() /* _T "TIME" */) == 0 {
         return GetTimeString() as LPCTSTR;
     }
     /* %RANDOM% */
-    else if _tcsicmp(varName, _T("RANDOM")) == 0 {
+    else if _tcsicmp(varName, (&[0x0052, 0x0041, 0x004e, 0x0044, 0x004f, 0x004d, 0x0000u16]).as_ptr() /* _T "RANDOM" */) == 0 {
         /* Get random number */
         _itot(
             rand(),
@@ -978,21 +974,21 @@ pub unsafe extern "C" fn GetEnvVarOrSpecial(varName: LPCTSTR) -> LPCTSTR {
         return addr_of_mut!(ret) as *mut TCHAR as LPCTSTR;
     }
     /* %CMDCMDLINE% */
-    else if _tcsicmp(varName, _T("CMDCMDLINE")) == 0 {
+    else if _tcsicmp(varName, (&[0x0043, 0x004d, 0x0044, 0x0043, 0x004d, 0x0044, 0x004c, 0x0049, 0x004e, 0x0045, 0x0000u16]).as_ptr() /* _T "CMDCMDLINE" */) == 0 {
         return GetCommandLine() as LPCTSTR;
     }
     /* %CMDEXTVERSION% */
-    else if _tcsicmp(varName, _T("CMDEXTVERSION")) == 0 {
+    else if _tcsicmp(varName, (&[0x0043, 0x004d, 0x0044, 0x0045, 0x0058, 0x0054, 0x0056, 0x0045, 0x0052, 0x0053, 0x0049, 0x004f, 0x004e, 0x0000u16]).as_ptr() /* _T "CMDEXTVERSION" */) == 0 {
         /* Set Command Extensions version number to CMDEXTVERSION */
         _itot(
-            CMDEXTVERSION,
+            (CMDEXTVERSION as i32),
             addr_of_mut!(ret) as *mut TCHAR,
             10,
         );
         return addr_of_mut!(ret) as *mut TCHAR as LPCTSTR;
     }
     /* %ERRORLEVEL% */
-    else if _tcsicmp(varName, _T("ERRORLEVEL")) == 0 {
+    else if _tcsicmp(varName, (&[0x0045, 0x0052, 0x0052, 0x004f, 0x0052, 0x004c, 0x0045, 0x0056, 0x0045, 0x004c, 0x0000u16]).as_ptr() /* _T "ERRORLEVEL" */) == 0 {
         _itot(
             nErrorLevel,
             addr_of_mut!(ret) as *mut TCHAR,
@@ -1002,11 +998,11 @@ pub unsafe extern "C" fn GetEnvVarOrSpecial(varName: LPCTSTR) -> LPCTSTR {
     }
     /* Available in Win7+, even if the underlying API is available in Win2003+ */
     /* %HIGHESTNUMANODENUMBER% */
-    else if _tcsicmp(varName, _T("HIGHESTNUMANODENUMBER")) == 0 {
+    else if _tcsicmp(varName, (&[0x0048, 0x0049, 0x0047, 0x0048, 0x0045, 0x0053, 0x0054, 0x004e, 0x0055, 0x004d, 0x0041, 0x004e, 0x004f, 0x0044, 0x0045, 0x004e, 0x0055, 0x004d, 0x0042, 0x0045, 0x0052, 0x0000u16]).as_ptr() /* _T "HIGHESTNUMANODENUMBER" */) == 0 {
         let mut NumaNodeNumber: ULONG = 0;
         GetNumaHighestNodeNumber(addr_of_mut!(NumaNodeNumber));
         _itot(
-            NumaNodeNumber,
+            (NumaNodeNumber) as i32,
             addr_of_mut!(ret) as *mut TCHAR,
             10,
         );
@@ -1038,7 +1034,7 @@ unsafe extern "C" fn GetEnhancedVar(
     static FMT_SIZE_STR: [TCHAR; 7] = [
         '%' as TCHAR, 'I' as TCHAR, '6' as TCHAR, '4' as TCHAR, 'u' as TCHAR, ' ' as TCHAR, 0,
     ];
-    static mut Result: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    static mut Result: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
 
     let mut Modifiers: u32 = 0;
 
@@ -1048,8 +1044,8 @@ unsafe extern "C" fn GetEnhancedVar(
     let mut Variable: PCTSTR = core::ptr::null();
     let mut VarEnd: PCTSTR = core::ptr::null();
     let mut VariableIsParam0: BOOL = 0;
-    let mut FullPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut FixedPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut FullPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut FixedPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut Filename: PTCHAR = core::ptr::null_mut();
     let mut Extension: PTCHAR = core::ptr::null_mut();
     let mut hFind: HANDLE = core::ptr::null_mut();
@@ -1070,10 +1066,10 @@ unsafe extern "C" fn GetEnhancedVar(
         FormatEnd = FormatEnd.offset(1);
     }
 
-    if *FormatEnd == _T('$') {
+    if *FormatEnd == ('$' as u16) {
         /* $PATH: syntax */
         PathVarName = FormatEnd.offset(1 as isize);
-        FormatEnd = _tcschr(PathVarName, _T(':')) as PCTSTR;
+        FormatEnd = _tcschr(PathVarName, (':' as u16)) as PCTSTR;
         if FormatEnd.is_null() {
             return core::ptr::null();
         }
@@ -1102,15 +1098,15 @@ unsafe extern "C" fn GetEnhancedVar(
 
     /* Exclude the leading and trailing quotes */
     VarEnd = Variable.offset(_tcslen(Variable) as isize);
-    if *Variable == _T('"') {
+    if *Variable == ('"' as u16) {
         Variable = Variable.offset(1);
-        if VarEnd > Variable && *VarEnd.offset(-(1 as isize)) == _T('"') {
+        if VarEnd > Variable && *VarEnd.offset(-(1 as isize)) == ('"' as u16) {
             VarEnd = VarEnd.offset(-1);
         }
     }
 
     if (VarEnd as usize).wrapping_sub(Variable as usize)
-        >= core::mem::size_of::<[TCHAR; CMDLINE_LENGTH]>()
+        >= core::mem::size_of::<[TCHAR; (CMDLINE_LENGTH) as _]>()
     {
         return &raw const EMPTY_STR as PCTSTR;
     }
@@ -1119,10 +1115,10 @@ unsafe extern "C" fn GetEnhancedVar(
         Variable as *const core::ffi::c_void,
         (VarEnd as usize).wrapping_sub(Variable as usize),
     );
-    *(&raw mut Result as *mut TCHAR).offset(VarEnd.offset_from(Variable) as isize) = _T('\0');
+    *(&raw mut Result as *mut TCHAR).offset(VarEnd.offset_from(Variable) as isize) = ('\0' as u16);
 
     /* Now determine the actual modifiers */
-    while Format < FormatEnd && *Format != _T('$') {
+    while Format < FormatEnd && *Format != ('$' as u16) {
         Modifiers |= 1
             << (_tcschr(
                 &raw const ModifierTable as PCTSTR,
@@ -1136,15 +1132,15 @@ unsafe extern "C" fn GetEnhancedVar(
         /* $PATH: syntax - search the directories listed in the
          * specified environment variable for the file */
         let mut PathVar: PTSTR = core::ptr::null_mut();
-        *(FormatEnd as PTSTR).offset(-(1 as isize)) = _T('\0'); // FIXME: HACK!
+        *(FormatEnd as PTSTR).offset(-(1 as isize)) = ('\0' as u16); // FIXME: HACK!
         PathVar = GetEnvVar(PathVarName) as PTSTR;
-        *(FormatEnd as PTSTR).offset(-(1 as isize)) = _T(':');
+        *(FormatEnd as PTSTR).offset(-(1 as isize)) = (':' as u16);
         if PathVar.is_null()
             || SearchPath(
                 PathVar as LPCTSTR,
                 &raw mut Result as *mut TCHAR as LPCTSTR,
                 core::ptr::null(),
-                ARRAYSIZE(FullPath) as DWORD,
+                ARRAYSIZE!(FullPath) as DWORD,
                 &raw mut FullPath as *mut TCHAR as LPTSTR,
                 core::ptr::null_mut(),
             ) == 0
@@ -1173,7 +1169,7 @@ unsafe extern "C" fn GetEnhancedVar(
         /* Convert the variable, now without quotes, to a full path */
         if GetFullPathName(
             &raw mut Result as *mut TCHAR as LPCTSTR,
-            ARRAYSIZE(FullPath) as DWORD,
+            ARRAYSIZE!(FullPath) as DWORD,
             &raw mut FullPath as *mut TCHAR as LPTSTR,
             core::ptr::null_mut(),
         ) == 0
@@ -1201,16 +1197,16 @@ unsafe extern "C" fn GetEnhancedVar(
 
     /* Loop over each \-separated component in the path */
     loop {
-        let mut Next: PTCHAR = _tcschr(In as PCTSTR, _T('\\')) as PTCHAR;
+        let mut Next: PTCHAR = _tcschr(In as PCTSTR, ('\\' as u16)) as PTCHAR;
         if !Next.is_null() {
-            *Next = _T('\0');
+            *Next = ('\0' as u16);
             Next = Next.offset(1);
         }
         /* Use FindFirstFile to get the correct name */
         if Out
             .offset(_tcslen(In as PCTSTR) as isize)
             .offset(1 as isize)
-            >= (&raw mut FixedPath as *mut TCHAR).offset(ARRAYSIZE(FixedPath) as isize)
+            >= (&raw mut FixedPath as *mut TCHAR).offset(ARRAYSIZE!(FixedPath) as isize)
         {
             return &raw const EMPTY_STR as PCTSTR;
         }
@@ -1233,7 +1229,7 @@ unsafe extern "C" fn GetEnhancedVar(
             if Out
                 .offset(_tcslen(FixedComponent as PCTSTR) as isize)
                 .offset(1 as isize)
-                >= (&raw mut FixedPath as *mut TCHAR).offset(ARRAYSIZE(FixedPath) as isize)
+                >= (&raw mut FixedPath as *mut TCHAR).offset(ARRAYSIZE!(FixedPath) as isize)
             {
                 return &raw const EMPTY_STR as PCTSTR;
             }
@@ -1241,7 +1237,7 @@ unsafe extern "C" fn GetEnhancedVar(
         }
         Filename = Out;
         Out = Out.offset(_tcslen(Out as PCTSTR) as isize);
-        *Out = _T('\\');
+        *Out = ('\\' as u16);
         Out = Out.offset(1);
 
         In = Next;
@@ -1249,32 +1245,26 @@ unsafe extern "C" fn GetEnhancedVar(
             break;
         }
     }
-    *Out.offset(-(1 as isize)) = _T('\0');
+    *Out.offset(-(1 as isize)) = ('\0' as u16);
 
     /* Build the result string. Start with attributes, modification time, and
      * file size. If the file didn't exist, these fields will all be empty. */
     Out = &raw mut Result as *mut TCHAR as PTCHAR;
     if hFind != INVALID_HANDLE_VALUE {
         if (Modifiers & M_ATTR) != 0 {
-            let Table: [(TCHAR, WORD); 11] = [
-                (_T('d'), FILE_ATTRIBUTE_DIRECTORY as WORD),
-                (_T('r'), FILE_ATTRIBUTE_READONLY as WORD),
-                (_T('a'), FILE_ATTRIBUTE_ARCHIVE as WORD),
-                (_T('h'), FILE_ATTRIBUTE_HIDDEN as WORD),
-                (_T('s'), FILE_ATTRIBUTE_SYSTEM as WORD),
-                (_T('c'), FILE_ATTRIBUTE_COMPRESSED as WORD),
-                (_T('o'), FILE_ATTRIBUTE_OFFLINE as WORD),
-                (_T('t'), FILE_ATTRIBUTE_TEMPORARY as WORD),
-                (_T('l'), FILE_ATTRIBUTE_REPARSE_POINT as WORD),
-                (_T('v'), FILE_ATTRIBUTE_INTEGRITY_STREAM as WORD),
-                (_T('x'), FILE_ATTRIBUTE_NO_SCRUB_DATA as WORD), // 0x20000
+            // cmd.c's 'v'/'x' rows are `#if (NTDDI_VERSION >= NTDDI_WIN8)`, off in this build.
+            let Table: [(TCHAR, WORD); 9] = [
+                (('d' as u16), FILE_ATTRIBUTE_DIRECTORY as WORD),
+                (('r' as u16), FILE_ATTRIBUTE_READONLY as WORD),
+                (('a' as u16), FILE_ATTRIBUTE_ARCHIVE as WORD),
+                (('h' as u16), FILE_ATTRIBUTE_HIDDEN as WORD),
+                (('s' as u16), FILE_ATTRIBUTE_SYSTEM as WORD),
+                (('c' as u16), FILE_ATTRIBUTE_COMPRESSED as WORD),
+                (('o' as u16), FILE_ATTRIBUTE_OFFLINE as WORD),
+                (('t' as u16), FILE_ATTRIBUTE_TEMPORARY as WORD),
+                (('l' as u16), FILE_ATTRIBUTE_REPARSE_POINT as WORD),
             ];
-            // #if (NTDDI_VERSION >= NTDDI_WIN8): entries 'v' and 'x' only when enabled
-            let TableLen: usize = if NTDDI_WIN7 >= NTDDI_WIN8 {
-                ARRAYSIZE(Table)
-            } else {
-                ARRAYSIZE(Table) - 2
-            };
+            let TableLen: usize = (ARRAYSIZE!(Table)) as usize;
             let mut Attrib: *const (TCHAR, WORD) = &raw const Table as *const (TCHAR, WORD);
             loop {
                 if !(Attrib
@@ -1285,12 +1275,12 @@ unsafe extern "C" fn GetEnhancedVar(
                 *Out = (if (w32fd.dwFileAttributes & ((*Attrib).1 as DWORD)) != 0 {
                     (*Attrib).0
                 } else {
-                    _T('-')
+                    ('-' as u16)
                 });
                 Out = Out.offset(1);
                 Attrib = Attrib.offset(1);
             }
-            *Out = _T(' ');
+            *Out = (' ' as u16);
             Out = Out.offset(1);
         }
         if (Modifiers & M_TIME) != 0 {
@@ -1300,19 +1290,19 @@ unsafe extern "C" fn GetEnhancedVar(
             FileTimeToSystemTime(&raw mut ft, &raw mut st);
 
             Out = Out.offset(
-                FormatDate(Out as *mut TCHAR, &raw mut st, TRUE)
+                FormatDate(Out as *mut TCHAR, &raw mut st, (TRUE) as BOOL)
                     as isize,
             );
-            *Out = _T(' ');
+            *Out = (' ' as u16);
             Out = Out.offset(1);
             Out = Out.offset(FormatTime(Out as *mut TCHAR, &raw mut st) as isize);
-            *Out = _T(' ');
+            *Out = (' ' as u16);
             Out = Out.offset(1);
         }
         if (Modifiers & M_SIZE) != 0 {
             let mut Size: ULARGE_INTEGER = core::mem::zeroed();
-            Size.c2rust_unnamed.__bindgen_anon_1.LowPart = w32fd.nFileSizeLow;
-            Size.c2rust_unnamed.__bindgen_anon_1.HighPart = w32fd.nFileSizeHigh;
+            Size.__bindgen_anon_1.LowPart = w32fd.nFileSizeLow;
+            Size.__bindgen_anon_1.HighPart = w32fd.nFileSizeHigh;
             Out = Out.offset(_stprintf(
                 Out as *mut TCHAR,
                 &raw const FMT_SIZE_STR as PCTSTR,
@@ -1335,7 +1325,7 @@ unsafe extern "C" fn GetEnhancedVar(
 
     /* Now add the requested parts of the name.
      * With the F modifier, add all parts to form the full path. */
-    Extension = _tcsrchr(Filename as PCTSTR, _T('.')) as PTCHAR;
+    Extension = _tcsrchr(Filename as PCTSTR, ('.' as u16)) as PTCHAR;
     if (Modifiers & (M_DRIVE | M_FULL)) != 0 {
         *Out = FixedPath[0 as usize];
         Out = Out.offset(1);
@@ -1372,11 +1362,11 @@ unsafe extern "C" fn GetEnhancedVar(
     /* Trim trailing space which otherwise would appear as a
      * result of using the A/T/Z modifiers but no others. */
     while Out != (&raw mut Result as *mut TCHAR).offset(0 as isize)
-        && *Out.offset(-(1 as isize)) == _T(' ')
+        && *Out.offset(-(1 as isize)) == (' ' as u16)
     {
         Out = Out.offset(-1);
     }
-    *Out = _T('\0');
+    *Out = ('\0' as u16);
 
     return &raw mut Result as *mut TCHAR as PCTSTR;
 }
@@ -1390,7 +1380,7 @@ unsafe extern "C" fn GetBatchVar(mut varName: PCTSTR, mut varNameLen: PUINT) -> 
             varNameEnd = varName.offset(1 as isize);
             ret = GetEnhancedVar(
                 &raw mut varNameEnd,
-                Some(FindArg as unsafe extern "C" fn(TCHAR, *mut PCTSTR, *mut BOOL) -> BOOL),
+                FindArg as unsafe extern "C" fn(TCHAR, *mut PCTSTR, *mut BOOL) -> BOOL,
             );
             if ret.is_null() {
                 ParseErrorEx(varName);
@@ -1442,10 +1432,10 @@ pub unsafe extern "C" fn SubstituteVar(
     *DestIncLen = 0 as size_t;
 
     if Delim == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
     if *Src != Delim {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     Src = Src.add(1);
@@ -1454,11 +1444,11 @@ pub unsafe extern "C" fn SubstituteVar(
     SubstStart = Src;
 
     let outcome: u8 = 'body: {
-        if *Src == 0 || *Src == _T('\r') || *Src == _T('\n') {
+        if *Src == 0 || *Src == ('\r' as u16) || *Src == ('\n' as u16) {
             break 'body 1;
         }
 
-        if !bc.is_null() && Delim == _T('%') {
+        if !bc.is_null() && Delim == ('%' as u16) {
             let mut NameLen: UINT = 0;
             Var = GetBatchVar(Src, core::ptr::addr_of_mut!(NameLen));
             if Var.is_null() && bParseError != 0 {
@@ -1478,7 +1468,7 @@ pub unsafe extern "C" fn SubstituteVar(
                 }
                 core::ptr::copy_nonoverlapping(Src, Dest, AppendLen);
                 Dest = Dest.add(AppendLen);
-                return FALSE;
+                return (FALSE) as BOOL;
             }
             if Var != core::ptr::null() {
                 VarLength = _tcslen(Var) as size_t;
@@ -1499,7 +1489,7 @@ pub unsafe extern "C" fn SubstituteVar(
         SubstStart = Src;
         while *Src != 0
             && *Src != Delim
-            && !(*Src == _T(':') && *Src.offset(1 as isize) != Delim)
+            && !(*Src == (':' as u16) && *Src.offset(1 as isize) != Delim)
         {
             Src = Src.add(1);
         }
@@ -1510,7 +1500,7 @@ pub unsafe extern "C" fn SubstituteVar(
         }
 
         EndChr = *Src;
-        *(Src as PTSTR) = _T('\0'); // FIXME: HACK!
+        *(Src as PTSTR) = ('\0' as u16); // FIXME: HACK!
         Var = GetEnvVarOrSpecial(SubstStart);
         *(Src as PTSTR) = EndChr;
         Src = Src.add(1);
@@ -1532,7 +1522,7 @@ pub unsafe extern "C" fn SubstituteVar(
             }
             core::ptr::copy_nonoverlapping(Var, Dest, VarLength);
             Dest = Dest.add(VarLength);
-        } else if *Src == _T('~') {
+        } else if *Src == ('~' as u16) {
             /* %VAR:~[start][,length]% - Substring.
              * Negative values are offsets from the end.
              */
@@ -1545,11 +1535,11 @@ pub unsafe extern "C" fn SubstituteVar(
             if Start < 0 as SSIZE_T {
                 Start = Start.wrapping_add(VarLength as SSIZE_T);
             }
-            Start = min(
-                max(Start, 0 as SSIZE_T) as size_t,
+            Start = min!(
+                max!(Start, 0 as SSIZE_T) as size_t,
                 VarLength,
             ) as SSIZE_T;
-            if *Src == _T(',') {
+            if *Src == (',' as u16) {
                 End = _tcstol(
                     Src.offset(1 as isize),
                     core::ptr::addr_of_mut!(Src) as *mut PTSTR,
@@ -1562,7 +1552,7 @@ pub unsafe extern "C" fn SubstituteVar(
                         Start as size_t
                     },
                 ) as SSIZE_T;
-                End = min(max(End, Start) as size_t, VarLength) as SSIZE_T;
+                End = min!(max!(End, Start) as size_t, VarLength) as SSIZE_T;
             }
             let c: TCHAR = *Src;
             Src = Src.add(1);
@@ -1585,18 +1575,18 @@ pub unsafe extern "C" fn SubstituteVar(
             let mut New: PCTSTR = core::ptr::null();
             let mut OldLength: size_t = 0;
             let mut NewLength: size_t = 0;
-            let mut Star: BOOL = FALSE;
+            let mut Star: BOOL = (FALSE) as i32;
             let mut LastMatch: size_t = 0 as size_t;
             let mut i: size_t = 0 as size_t;
 
-            if *Src == _T('*') {
-                Star = TRUE;
+            if *Src == ('*' as u16) {
+                Star = (TRUE) as i32;
                 Src = Src.add(1);
             }
 
             /* The string to replace may contain the delimiter */
             Old = Src;
-            Src = _tcschr(Old, _T('=')) as PCTSTR;
+            Src = _tcschr(Old, ('=' as u16)) as PCTSTR;
             if Src.is_null() {
                 break 'body 1;
             }
@@ -1675,22 +1665,18 @@ pub unsafe extern "C" fn SubstituteVar(
 
     if outcome == 2 {
         /* too_long: */
-        ConOutResPrintf(STRING_ALIAS_ERROR);
+        ConOutResPrintf!(STRING_ALIAS_ERROR);
         nErrorLevel = 9023;
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* success: */
     *SrcIncLen = Src.offset_from(Start) as size_t;
     *DestIncLen = Dest.offset_from(End) as size_t;
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SubstituteVars(
-    mut Src: PCTSTR,
-    mut Dest: PTSTR,
-    mut Delim: TCHAR,
-) -> BOOL {
+pub unsafe extern "C" fn SubstituteVars(mut Src: PCTSTR, mut Dest: PTSTR, mut Delim: TCHAR) -> BOOL {
     let mut DestEnd: PTCHAR = Dest.offset((CMDLINE_LENGTH - 1) as isize);
     let mut End: PCTSTR;
     let mut SrcIncLen: size_t = 0;
@@ -1726,25 +1712,25 @@ pub unsafe extern "C" fn SubstituteVars(
                 Delim,
             ) == 0
             {
-                return FALSE;
+                return (FALSE) as BOOL;
             } else {
                 Src = Src.offset(SrcIncLen as isize);
                 Dest = Dest.offset(DestIncLen as isize);
             }
         }
-        // APPEND1(_T('\0'))
+        // APPEND1(('\0' as u16))
         if Dest >= DestEnd {
             break 'too_long;
         }
-        *Dest = _T('\0');
+        *Dest = ('\0' as u16);
         Dest = Dest.offset(1);
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     // too_long:
-    ConOutResPrintf(STRING_ALIAS_ERROR);
+    ConOutResPrintf!(STRING_ALIAS_ERROR);
     nErrorLevel = 9023;
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 
 unsafe extern "C" fn FindForVar(
@@ -1774,11 +1760,11 @@ pub unsafe extern "C" fn SubstituteForVars(mut Src: PCTSTR, mut Dest: PTSTR) -> 
     let empty_str: [u16; 1] = [0u16];
     let mut DestEnd: PTCHAR = Dest.offset((CMDLINE_LENGTH - 1) as isize) as PTCHAR;
     while *Src != 0 {
-        if *Src.offset(0 as isize) == _T('%') {
+        if *Src.offset(0 as isize) == ('%' as u16) {
             let mut Dummy: BOOL = 0;
             let mut End: PCTSTR = Src.offset(2 as isize);
             let mut Value: PCTSTR = core::ptr::null();
-            if *Src.offset(1 as isize) == _T('~') {
+            if *Src.offset(1 as isize) == ('~' as u16) {
                 Value = GetEnhancedVar(
                     core::ptr::addr_of_mut!(End),
                     FindForVar as unsafe extern "C" fn(TCHAR, *mut PCTSTR, *mut BOOL) -> BOOL,
@@ -1798,7 +1784,7 @@ pub unsafe extern "C" fn SubstituteForVars(mut Src: PCTSTR, mut Dest: PTSTR) -> 
             }
             if !Value.is_null() {
                 if Dest.add(_tcslen(Value) as usize) > DestEnd {
-                    return FALSE;
+                    return (FALSE) as BOOL;
                 }
                 Dest = _stpcpy(Dest as LPTSTR, Value as LPCTSTR) as PTSTR;
                 Src = End;
@@ -1807,19 +1793,19 @@ pub unsafe extern "C" fn SubstituteForVars(mut Src: PCTSTR, mut Dest: PTSTR) -> 
         }
         /* Not a variable; just copy the character */
         if Dest >= DestEnd {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         *Dest = *Src;
         Dest = Dest.add(1);
         Src = Src.add(1);
     }
-    *Dest = _T('\0');
-    return TRUE;
+    *Dest = ('\0' as u16);
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn DoDelayedExpansion(Line: PCTSTR) -> PTSTR {
-    let mut Buf1: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
-    let mut Buf2: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut Buf1: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
+    let mut Buf2: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut Src: PTCHAR;
     let mut Dst: PTCHAR;
     let DestEnd: PTCHAR = (&raw mut Buf2 as PTCHAR)
@@ -1834,9 +1820,9 @@ pub unsafe extern "C" fn DoDelayedExpansion(Line: PCTSTR) -> PTSTR {
     }
 
     if bDelayedExpansion == 0
-        || _tcschr(&raw mut Buf1 as *mut TCHAR, _T('!')).is_null()
+        || _tcschr(&raw mut Buf1 as *mut TCHAR, ('!' as u16)).is_null()
     {
-        return cmd_dup(&raw mut Buf1 as *mut TCHAR);
+        return cmd_dup!(&raw mut Buf1 as *mut TCHAR);
     }
 
     /*
@@ -1850,7 +1836,7 @@ pub unsafe extern "C" fn DoDelayedExpansion(Line: PCTSTR) -> PTSTR {
         'scan: while *Src != 0
             && Src < (&raw mut Buf1 as PTCHAR).offset(CMDLINE_LENGTH as isize)
         {
-            if *Src == _T('^') {
+            if *Src == ('^' as u16) {
                 Src = Src.offset(1);
                 if *Src == 0
                     || !(Src < (&raw mut Buf1 as PTCHAR).offset(CMDLINE_LENGTH as isize))
@@ -1865,14 +1851,14 @@ pub unsafe extern "C" fn DoDelayedExpansion(Line: PCTSTR) -> PTSTR {
                 Src = Src.offset(1);
                 *Dst = ch;
                 Dst = Dst.offset(1);
-            } else if *Src == _T('!') {
+            } else if *Src == ('!' as u16) {
                 if SubstituteVar(
                     Src as PCTSTR,
                     &raw mut SrcIncLen,
                     Dst,
                     DestEnd,
                     &raw mut DestIncLen,
-                    _T('!'),
+                    ('!' as u16),
                 ) == 0
                 {
                     return core::ptr::null_mut();
@@ -1892,66 +1878,66 @@ pub unsafe extern "C" fn DoDelayedExpansion(Line: PCTSTR) -> PTSTR {
             }
             continue;
         }
-        // APPEND1(_T('\0'))
+        // APPEND1(('\0' as u16))
         if Dst >= DestEnd {
             break 'body;
         }
-        *Dst = _T('\0');
+        *Dst = ('\0' as u16);
         Dst = Dst.offset(1);
 
-        return cmd_dup(&raw mut Buf2 as *mut TCHAR);
+        return cmd_dup!(&raw mut Buf2 as *mut TCHAR);
     }
 
     // too_long:
-    ConOutResPrintf(STRING_ALIAS_ERROR);
+    ConOutResPrintf!(STRING_ALIAS_ERROR);
     nErrorLevel = 9023;
     return core::ptr::null_mut();
 }
 #[no_mangle]
 pub unsafe extern "C" fn ReadLine(commandline: *mut TCHAR, bMore: BOOL) -> BOOL {
-    let mut readline: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut readline: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut ip: LPTSTR = core::ptr::null_mut();
 
     /* if no batch input then... */
     if bc.is_null() {
         if bMore != 0 {
-            ConOutResPrintf(STRING_MORE);
+            ConOutResPrintf!(STRING_MORE);
         } else {
             /* JPP 19980807 - if echo off, don't print prompt */
             if bEcho != 0 {
                 if bIgnoreEcho == 0 {
-                    ConOutChar(_T('\n'));
+                    ConOutChar(('\n' as u16));
                 }
                 PrintPrompt();
             }
         }
 
-        if ReadCommand(readline.as_mut_ptr(), CMDLINE_LENGTH - 1) == 0 {
-            bExit = TRUE;
-            return FALSE;
+        if ReadCommand(readline.as_mut_ptr(), (CMDLINE_LENGTH - 1) as INT) == 0 {
+            bExit = (TRUE) as i32;
+            return (FALSE) as BOOL;
         }
 
-        if readline[0] == _T('\0') {
-            ConOutChar(_T('\n'));
+        if readline[0] == ('\0' as u16) {
+            ConOutChar(('\n' as u16));
         }
 
-        if CheckCtrlBreak(BREAK_INPUT) != 0 {
-            return FALSE;
+        if CheckCtrlBreak((BREAK_INPUT) as INT) != 0 {
+            return (FALSE) as BOOL;
         }
 
-        if readline[0] == _T('\0') {
-            return FALSE;
+        if readline[0] == ('\0' as u16) {
+            return (FALSE) as BOOL;
         }
 
         ip = readline.as_mut_ptr();
     } else {
         ip = ReadBatchLine();
         if ip.is_null() {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
 
-    return SubstituteVars(ip as PCTSTR, commandline as PTSTR, _T('%'));
+    return SubstituteVars(ip as PCTSTR, commandline as PTSTR, ('%' as u16));
 }
 
 unsafe extern "C" fn ProcessInput() -> INT {
@@ -1960,7 +1946,7 @@ unsafe extern "C" fn ProcessInput() -> INT {
 
     while bCanExit == 0 || bExit == 0 {
         /* Reset the Ctrl-Break / Ctrl-C state */
-        bCtrlBreak = FALSE;
+        bCtrlBreak = (FALSE) as i32;
 
         Cmd = ParseCommand(core::ptr::null_mut());
         if Cmd.is_null() {
@@ -1981,28 +1967,28 @@ unsafe extern "system" fn BreakHandler(dwCtrlType: DWORD) -> BOOL {
     if (dwCtrlType != CTRL_C_EVENT) &&
         (dwCtrlType != CTRL_BREAK_EVENT)
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     if TryEnterCriticalSection(core::ptr::addr_of_mut!(ChildProcessRunningLock)) == 0
     {
         /* Child process is running and will have received the control event */
-        return TRUE;
+        return (TRUE) as BOOL;
     }
     else
     {
         LeaveCriticalSection(core::ptr::addr_of_mut!(ChildProcessRunningLock));
     }
 
-    bCtrlBreak = TRUE;
+    bCtrlBreak = (TRUE) as i32;
 
-    rec.EventType = KEY_EVENT;
-    rec.Event.KeyEvent.bKeyDown = TRUE;
+    rec.EventType = (KEY_EVENT as u16);
+    rec.Event.KeyEvent.bKeyDown = (TRUE) as i32;
     rec.Event.KeyEvent.wRepeatCount = 1;
-    rec.Event.KeyEvent.wVirtualKeyCode = _T('C') as WORD;
-    rec.Event.KeyEvent.wVirtualScanCode = (_T('C') - 35) as WORD;
-    rec.Event.KeyEvent.uChar.AsciiChar = _T('C') as CHAR;
-    rec.Event.KeyEvent.uChar.UnicodeChar = _T('C') as WCHAR;
+    rec.Event.KeyEvent.wVirtualKeyCode = ('C' as u16) as WORD;
+    rec.Event.KeyEvent.wVirtualScanCode = (('C' as u16) - 35) as WORD;
+    rec.Event.KeyEvent.uChar.AsciiChar = ('C' as u16) as CHAR;
+    rec.Event.KeyEvent.uChar.UnicodeChar = ('C' as u16) as WCHAR;
     rec.Event.KeyEvent.dwControlKeyState = RIGHT_CTRL_PRESSED;
 
     WriteConsoleInput(
@@ -2014,26 +2000,26 @@ unsafe extern "system" fn BreakHandler(dwCtrlType: DWORD) -> BOOL {
 
     /* FIXME: Handle batch files */
 
-    // ConOutPrintf(_T("^C"));
+    // ConOutPrintf((&[0x005e, 0x0043, 0x0000u16]).as_ptr() /* _T "^C" */);
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn AddBreakHandler() {
     SetConsoleCtrlHandler(
-        Some(BreakHandler as unsafe extern "C" fn(DWORD) -> BOOL),
-        TRUE,
+        Some(BreakHandler),
+        (TRUE) as BOOL,
     );
 }
 #[no_mangle]
 pub unsafe extern "C" fn RemoveBreakHandler() {
-    SetConsoleCtrlHandler(Some(BreakHandler as unsafe extern "C" fn(DWORD) -> BOOL), FALSE);
+    SetConsoleCtrlHandler(Some(BreakHandler), (FALSE) as BOOL);
 }
 
 unsafe extern "C" fn LoadRegistrySettings(hKeyRoot: HKEY) {
     let mut lRet: LONG;
     let mut hKey: HKEY = core::ptr::null_mut();
-    let mut dwType: DWORD;
+    let mut dwType: DWORD = core::mem::zeroed();
     let mut len: DWORD;
     /*
      * Buffer big enough to hold the string L"4294967295",
@@ -2209,14 +2195,14 @@ unsafe extern "C" fn GetCmdLineCommand(
     mut AlwaysStrip: BOOL,
 ) {
     let mut LastQuote: *mut TCHAR = core::ptr::null_mut();
-    while _istspace(*ptr) {
+    while ((_istspace!(*ptr)) != 0) {
         ptr = ptr.add(1);
     }
 
     /* Remove leading quote, find final quote */
-    if *ptr == _T('"') && {
+    if *ptr == ('"' as u16) && {
         ptr = ptr.add(1);
-        LastQuote = _tcsrchr(ptr, _T('"')) as *mut TCHAR;
+        LastQuote = _tcsrchr(ptr, ('"' as u16)) as *mut TCHAR;
         !LastQuote.is_null()
     } {
         let mut Space: *const TCHAR;
@@ -2230,10 +2216,10 @@ unsafe extern "C" fn GetCmdLineCommand(
          *  4. Whitespace exists between the quotes
          *  5. Enclosed string is an executable filename
          */
-        *LastQuote = _T('\0');
+        *LastQuote = ('\0' as u16);
         Space = ptr.add(1 as usize);
         while Space < LastQuote as *const TCHAR {
-            if _istspace(*Space) {
+            if ((_istspace!(*Space)) != 0) {
                 /* Rule 4 */
                 let ExcludeChars: [u16; 8] = [
                     '"' as u16,
@@ -2251,7 +2237,7 @@ unsafe extern "C" fn GetCmdLineCommand(
                 /* Rule 5 */
                 {
                     /* All conditions met: preserve both the quotes */
-                    *LastQuote = _T('"');
+                    *LastQuote = ('"' as u16);
                     _tcscpy(commandline, ptr.sub(1 as usize));
                     return;
                 }
@@ -2281,9 +2267,9 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
     let mut ptr: LPTSTR = core::ptr::null_mut();
     let mut cmdLine: LPTSTR = core::ptr::null_mut();
     let mut option: TCHAR = 0;
-    let mut AutoRun: BOOL = TRUE;
-    let mut ModuleName: [TCHAR; MAX_PATH + 1] =
-        [0; MAX_PATH + 1];
+    let mut AutoRun: BOOL = (TRUE) as i32;
+    let mut ModuleName: [TCHAR; (MAX_PATH + 1) as _] =
+        [0; (MAX_PATH + 1) as _];
 
     let NTDLL_NAME: [TCHAR; 10] = [
         'n' as TCHAR, 't' as TCHAR, 'd' as TCHAR, 'l' as TCHAR, 'l' as TCHAR,
@@ -2342,7 +2328,7 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
     if GetModuleFileName(
         core::ptr::null_mut(),
         ModuleName.as_mut_ptr(),
-        ARRAYSIZE(ModuleName) as DWORD,
+        ARRAYSIZE!(ModuleName) as DWORD,
     ) != 0
     {
         ModuleName[MAX_PATH as usize] = '\0' as TCHAR;
@@ -2372,9 +2358,9 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
         if *ptr == '/' as TCHAR {
             option = _totupper(*ptr.add(1 as usize));
             if option == '?' as TCHAR {
-                ConOutResPaging(TRUE, STRING_CMD_HELP8);
+                ConOutResPaging((TRUE) as BOOL, STRING_CMD_HELP8);
                 nErrorLevel = 1;
-                bExit = TRUE;
+                bExit = (TRUE) as i32;
                 return core::ptr::null();
             } else if option == 'P' as TCHAR {
                 if IsExistingFile(AUTOEXEC_NAME.as_ptr()) == 0 {
@@ -2383,7 +2369,7 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
                 } else {
                     ParseCommandLine(AUTOEXEC_NAME.as_ptr() as LPTSTR);
                 }
-                bCanExit = FALSE;
+                bCanExit = (FALSE) as i32;
             } else if option == 'A' as TCHAR {
                 OutputStreamMode = AnsiText;
             } else if option == 'C' as TCHAR || option == 'K' as TCHAR || option == 'R' as TCHAR {
@@ -2392,11 +2378,11 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
                     | 1;
                 break;
             } else if option == 'D' as TCHAR {
-                AutoRun = FALSE;
+                AutoRun = (FALSE) as i32;
             } else if option == 'Q' as TCHAR {
-                bDisableBatchEcho = TRUE;
+                bDisableBatchEcho = (TRUE) as i32;
             } else if option == 'S' as TCHAR {
-                bAlwaysStrip = TRUE;
+                bAlwaysStrip = (TRUE) as i32;
             } else if _tcsnicmp(ptr as LPCTSTR, SLASH_T_NAME.as_ptr(), 3 as usize) == 0 {
                 /* Process /T (color) argument; overwrite any previous settings */
                 wDefColor = _tcstoul(
@@ -2438,10 +2424,10 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
                 ) as BOOL;
             } else if option == 'X' as TCHAR {
                 /* '/X' is identical to '/E:ON' */
-                bEnableExtensions = TRUE;
+                bEnableExtensions = (TRUE) as i32;
             } else if option == 'Y' as TCHAR {
                 /* '/Y' is identical to '/E:OFF' */
-                bEnableExtensions = FALSE;
+                bEnableExtensions = (FALSE) as i32;
             }
         }
         ptr = ptr.add(1);
@@ -2459,7 +2445,7 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
         ConSetScreenColor(
             ConStreamGetOSHandle(core::ptr::addr_of_mut!(csStdOut)),
             wDefColor,
-            TRUE,
+            (TRUE) as BOOL,
         );
     }
 
@@ -2475,12 +2461,12 @@ unsafe extern "C" fn Initialize() -> LPCTSTR {
             ConOutChar('\n' as TCHAR);
         }
 
-        ConOutResPrintf(
+        ConOutResPrintf!(
             STRING_REACTOS_VERSION,
             KERNEL_VERSION_STR,
             KERNEL_VERSION_BUILD_STR,
         );
-        ConOutResPrintf(STRING_CMD_COPYRIGHT, COPYRIGHT_YEAR);
+        ConOutResPrintf!(STRING_CMD_COPYRIGHT, COPYRIGHT_YEAR);
     }
 
     if AutoRun != 0 {
@@ -2498,7 +2484,7 @@ unsafe extern "C" fn Cleanup() {
         ['c' as u16, 'm' as u16, 'd' as u16, 'e' as u16, 'x' as u16, 'i' as u16, 't' as u16, '.' as u16, 'b' as u16, 'a' as u16, 't' as u16, 0u16].as_ptr() as LPCTSTR,
     ) != 0
     {
-        ConErrResPuts(STRING_CMD_ERROR5);
+        ConErrResPuts!(STRING_CMD_ERROR5);
         ParseCommandLine(
             ['c' as u16, 'm' as u16, 'd' as u16, 'e' as u16, 'x' as u16, 'i' as u16, 't' as u16, '.' as u16, 'b' as u16, 'a' as u16, 't' as u16, 0u16].as_ptr() as *const u16 as LPTSTR,
         );
@@ -2506,7 +2492,7 @@ unsafe extern "C" fn Cleanup() {
         ['\\' as u16, 'c' as u16, 'm' as u16, 'd' as u16, 'e' as u16, 'x' as u16, 'i' as u16, 't' as u16, '.' as u16, 'b' as u16, 'a' as u16, 't' as u16, 0u16].as_ptr() as LPCTSTR,
     ) != 0
     {
-        ConErrResPuts(STRING_CMD_ERROR5);
+        ConErrResPuts!(STRING_CMD_ERROR5);
         ParseCommandLine(
             ['\\' as u16, 'c' as u16, 'm' as u16, 'd' as u16, 'e' as u16, 'x' as u16, 'i' as u16, 't' as u16, '.' as u16, 'b' as u16, 'a' as u16, 't' as u16, 0u16].as_ptr() as *const u16 as LPTSTR,
         );
@@ -2546,17 +2532,17 @@ unsafe extern "C" fn Cleanup() {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _tmain(argc: INT, argv: *mut *const TCHAR) -> INT {
+pub unsafe extern "C" fn wmain(argc: INT, argv: *mut *const TCHAR) -> INT {
     let mut nExitCode: INT;
     let mut pCmdLine: LPCTSTR;
-    let mut startPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut startPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     DbgPrint(b"[CMD] _tmain entered, argc=%d\n\0".as_ptr() as PCSTR, argc);
 
     InitializeCriticalSection(core::ptr::addr_of_mut!(ChildProcessRunningLock));
     lpOriginalEnvironment = DuplicateEnvironment();
 
-    GetCurrentDirectory(ARRAYSIZE(startPath) as DWORD, startPath.as_mut_ptr());
+    GetCurrentDirectory(ARRAYSIZE!(startPath) as DWORD, startPath.as_mut_ptr());
     _tchdir(startPath.as_ptr());
 
     SetFileApisToOEM();
@@ -2590,7 +2576,7 @@ pub unsafe extern "C" fn _tmain(argc: INT, argv: *mut *const TCHAR) -> INT {
     );
 
     if !pCmdLine.is_null() && *pCmdLine != 0 {
-        let mut commandline: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+        let mut commandline: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
 
         /* Do the /C or /K command */
         DbgPrint(b"[CMD] Executing /C command\n\0".as_ptr() as PCSTR);
@@ -2606,7 +2592,7 @@ pub unsafe extern "C" fn _tmain(argc: INT, argv: *mut *const TCHAR) -> INT {
         );
         if fSingleCommand == 1 {
             // nErrorLevel = nExitCode;
-            bExit = TRUE;
+            bExit = (TRUE) as i32;
         }
         fSingleCommand = 0;
     }
@@ -2618,13 +2604,13 @@ pub unsafe extern "C" fn _tmain(argc: INT, argv: *mut *const TCHAR) -> INT {
     /* Do the cleanup */
     DbgPrint(b"[CMD] Cleanup starting\n\0".as_ptr() as PCSTR);
     Cleanup();
-    cmd_free(lpOriginalEnvironment as *mut core::ffi::c_void);
+    cmd_free!(lpOriginalEnvironment as *mut core::ffi::c_void);
 
     DbgPrint(b"[CMD] Exiting with code %d\n\0".as_ptr() as PCSTR, nExitCode);
     /* ARM64: bypass ExitProcess DLL cleanup which crashes in RtlDestroyHeap
      * due to stack page being unmapped during process teardown. Just terminate. */
     #[cfg(target_arch = "aarch64")]
     NtTerminateProcess(NtCurrentProcess(), nExitCode);
-    cmd_exit(nExitCode);
+    cmd_exit!((nExitCode) as u32);
     return nExitCode;
 }

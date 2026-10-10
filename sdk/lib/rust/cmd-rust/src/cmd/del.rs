@@ -1,5 +1,5 @@
 use crate::cmd::console::ConOutResPaging;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -31,16 +31,15 @@ pub const ATTR_N_SYSTEM: u32 = 0x040; // /A:-S
 pub const ATTR_N_READ_ONLY: u32 = 0x080; // /A:-R
 
 // RC_STRING_MAX_SIZE is not in the import list; ReactOS value is 4096.
-pub const RC_STRING_MAX_SIZE: usize = 4096;
 
 unsafe extern "C" fn LoadStrings() {
-    LoadString(CMD_ModuleHandle, STRING_DELETE_WIPE, core::ptr::addr_of_mut!(szDeleteWipe) as LPTSTR, ARRAYSIZE(szDeleteWipe));
-    GetModuleFileName(core::ptr::null_mut(), core::ptr::addr_of_mut!(CMDPath) as LPTSTR, ARRAYSIZE(CMDPath));
-    StringsLoaded = TRUE;
+    LoadString((CMD_ModuleHandle).cast(), STRING_DELETE_WIPE, core::ptr::addr_of_mut!(szDeleteWipe) as LPTSTR, (ARRAYSIZE!(szDeleteWipe)) as i32);
+    GetModuleFileName(core::ptr::null_mut(), core::ptr::addr_of_mut!(CMDPath) as LPTSTR, ARRAYSIZE!(CMDPath));
+    StringsLoaded = (TRUE) as u8;
 }
 
 unsafe extern "C" fn RemoveFile(lpFileName: LPTSTR, dwFlags: DWORD, f: *mut WIN32_FIND_DATA) -> BOOL {
-    if CheckCtrlBreak(BREAK_INPUT) != 0 {
+    if CheckCtrlBreak((BREAK_INPUT) as INT) != 0 {
         return 1;
     }
 
@@ -59,8 +58,8 @@ unsafe extern "C" fn RemoveFile(lpFileName: LPTSTR, dwFlags: DWORD, f: *mut WIN3
         let fmt1: [u16; 12] = ['%' as u16, 'I' as u16, '6' as u16, '4' as u16, 'd' as u16, '%' as u16, '%' as u16, ' ' as u16, '%' as u16, 's' as u16, '\r' as u16, 0];
         let fmt2: [u16; 10] = ['1' as u16, '0' as u16, '0' as u16, '%' as u16, '%' as u16, ' ' as u16, '%' as u16, 's' as u16, '\n' as u16, 0];
 
-        FileSize.u.__bindgen_anon_1.HighPart = (*f).nFileSizeHigh as LONG;
-        FileSize.u.__bindgen_anon_1.LowPart = (*f).nFileSizeLow;
+        FileSize.u.HighPart = (*f).nFileSizeHigh as LONG;
+        FileSize.u.LowPart = (*f).nFileSizeLow;
 
         i = 0 as LONGLONG;
         while i < 65536 as LONGLONG {
@@ -87,7 +86,7 @@ unsafe extern "C" fn RemoveFile(lpFileName: LPTSTR, dwFlags: DWORD, f: *mut WIN3
                     core::ptr::addr_of_mut!(temp),
                     core::ptr::null_mut(),
                 );
-                ConOutPrintf(
+                ConOutPrintf!(
                     fmt1.as_ptr(),
                     (i * (100 as LONGLONG)) / FileSize.QuadPart,
                     core::ptr::addr_of_mut!(szDeleteWipe) as *mut TCHAR,
@@ -101,7 +100,7 @@ unsafe extern "C" fn RemoveFile(lpFileName: LPTSTR, dwFlags: DWORD, f: *mut WIN3
                 core::ptr::addr_of_mut!(temp),
                 core::ptr::null_mut(),
             );
-            ConOutPrintf(
+            ConOutPrintf!(
                 fmt2.as_ptr(),
                 core::ptr::addr_of_mut!(szDeleteWipe) as *mut TCHAR,
             );
@@ -113,8 +112,8 @@ unsafe extern "C" fn RemoveFile(lpFileName: LPTSTR, dwFlags: DWORD, f: *mut WIN3
 }
 
 unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFlags: DWORD) -> DWORD {
-    let mut szFullPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szFileName: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFullPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szFileName: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut pFilePart: LPTSTR = core::ptr::null_mut();
     let mut hFile: HANDLE = core::ptr::null_mut();
     let mut f: WIN32_FIND_DATA = core::mem::zeroed();
@@ -124,21 +123,21 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
 
     _tcscpy(core::ptr::addr_of_mut!(szFileName) as LPTSTR, FileName);
 
-    if _tcschr(core::ptr::addr_of_mut!(szFileName) as LPTSTR, _T('*')).is_null()
+    if _tcschr(core::ptr::addr_of_mut!(szFileName) as LPTSTR, ('*' as u16)).is_null()
         && IsExistingDirectory(core::ptr::addr_of_mut!(szFileName) as LPTSTR) != 0
     {
         /* If it doesnt have a \ at the end already then on needs to be added */
-        if szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 1) as usize] != _T('\\') {
-            _tcscat(core::ptr::addr_of_mut!(szFileName) as LPTSTR, _T("\\"));
+        if szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 1) as usize] != ('\\' as u16) {
+            _tcscat(core::ptr::addr_of_mut!(szFileName) as LPTSTR, (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
         }
         /* Add a wildcard after the \ */
-        _tcscat(core::ptr::addr_of_mut!(szFileName) as LPTSTR, _T("*"));
+        _tcscat(core::ptr::addr_of_mut!(szFileName) as LPTSTR, (&[0x002a, 0x0000u16]).as_ptr() /* _T "*" */);
     }
 
-    if _tcscmp(core::ptr::addr_of_mut!(szFileName) as LPTSTR, _T("*")) == 0
-        || _tcscmp(core::ptr::addr_of_mut!(szFileName) as LPTSTR, _T("*.*")) == 0
-        || (szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 2) as usize] == _T('\\')
-            && szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 1) as usize] == _T('*'))
+    if _tcscmp(core::ptr::addr_of_mut!(szFileName) as LPTSTR, (&[0x002a, 0x0000u16]).as_ptr() /* _T "*" */) == 0
+        || _tcscmp(core::ptr::addr_of_mut!(szFileName) as LPTSTR, (&[0x002a, 0x002e, 0x002a, 0x0000u16]).as_ptr() /* _T "*.*" */) == 0
+        || (szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 2) as usize] == ('\\' as u16)
+            && szFileName[(_tcslen(core::ptr::addr_of_mut!(szFileName) as LPTSTR) - 1) as usize] == ('*' as u16))
     {
         /* well, the user wants to delete everything but if they didnt yes DEL_YES, DEL_QUIET, or DEL_PROMPT
            then we are going to want to make sure that in fact they want to do that.  */
@@ -147,12 +146,12 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
             || ((*dwFlags & DEL_QUIET) != 0)
             || ((*dwFlags & DEL_PROMPT) != 0))
         {
-            ConOutPrintf(_T("Delete %s, "), core::ptr::addr_of_mut!(szFileName) as LPTSTR);
+            ConOutPrintf!((&[0x0044, 0x0065, 0x006c, 0x0065, 0x0074, 0x0065, 0x0020, 0x0025, 0x0073, 0x002c, 0x0020, 0x0000u16]).as_ptr() /* _T "Delete %s, " */, core::ptr::addr_of_mut!(szFileName) as LPTSTR);
             res = FilePromptYNA(STRING_DEL_HELP2);
-            if (res == PROMPT_NO) || (res == PROMPT_BREAK) {
+            if (res == (PROMPT_NO as i32)) || (res == (PROMPT_BREAK as i32)) {
                 return 0x80000000;
             }
-            if res == PROMPT_ALL {
+            if res == (PROMPT_ALL as i32) {
                 *dwFlags |= DEL_YES;
             }
         }
@@ -169,34 +168,34 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
     if hFile != INVALID_HANDLE_VALUE {
         loop {
             'body: {
-                bExclusion = FALSE;
+                bExclusion = (FALSE) as i32;
 
                 /*if it is going to be excluded by - no need to check attrs*/
                 if (*dwFlags & DEL_ATTRIBUTES) != 0 && bExclusion == 0 {
                     /*save if file attr check if user doesnt care about that attr anyways*/
                     if (dwAttrFlags & ATTR_ARCHIVE) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_ARCHIVE) == 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_HIDDEN) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) == 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_SYSTEM) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) == 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_READ_ONLY) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_READONLY) == 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_N_ARCHIVE) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_ARCHIVE) != 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_N_HIDDEN) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_HIDDEN) != 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_N_SYSTEM) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_SYSTEM) != 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                     if (dwAttrFlags & ATTR_N_READ_ONLY) != 0 && (f.dwFileAttributes & FILE_ATTRIBUTE_READONLY) != 0 {
-                        bExclusion = TRUE;
+                        bExclusion = (TRUE) as i32;
                     }
                 }
                 if bExclusion != 0 {
@@ -220,17 +219,17 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
                 }
 
                 TRACE!(
-                    "Full filename: %s\n",
+                    (b"Full filename: %s\n\0").as_ptr() as LPCSTR,
                     debugstr_aw(core::ptr::addr_of_mut!(szFullPath) as LPTSTR),
                 );
 
                 /* ask for deleting */
                 if (*dwFlags & DEL_PROMPT) != 0 {
-                    ConErrResPrintf(STRING_DEL_ERROR5, core::ptr::addr_of_mut!(szFullPath) as LPTSTR);
+                    ConErrResPrintf!(STRING_DEL_ERROR5, core::ptr::addr_of_mut!(szFullPath) as LPTSTR);
 
                     res = FilePromptYN(STRING_DEL_ERROR6);
 
-                    if (res == PROMPT_NO) || (res == PROMPT_BREAK) {
+                    if (res == (PROMPT_NO as i32)) || (res == (PROMPT_BREAK as i32)) {
                         nErrorLevel = 0;
                         break 'body;
                     }
@@ -238,7 +237,7 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
 
                 /*user cant ask it to be quiet and tell you what it did*/
                 if !((*dwFlags & DEL_QUIET) != 0) && !((*dwFlags & DEL_TOTAL) != 0) {
-                    ConErrResPrintf(STRING_DEL_ERROR7, core::ptr::addr_of_mut!(szFullPath) as LPTSTR);
+                    ConErrResPrintf!(STRING_DEL_ERROR7, core::ptr::addr_of_mut!(szFullPath) as LPTSTR);
                 }
 
                 /* delete the file */
@@ -271,7 +270,7 @@ unsafe extern "C" fn DeleteFiles(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFl
 }
 
 unsafe extern "C" fn ProcessDirectory(FileName: LPTSTR, dwFlags: *mut DWORD, dwAttrFlags: DWORD) -> DWORD {
-    let mut szFullPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFullPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut pFilePart: LPTSTR = core::ptr::null_mut();
     let mut pSearchPart: LPTSTR = core::ptr::null_mut();
     let mut hFile: HANDLE = core::ptr::null_mut();
@@ -377,14 +376,14 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
     param is whatever is given after the command*/
 
     let mut arg: *mut LPTSTR = core::ptr::null_mut();
-    let mut args: INT;
+    let mut args: INT = core::mem::zeroed();
     let mut i: INT;
     let mut nEvalArgs: INT = 0; /* number of evaluated arguments */
     let mut dwFlags: DWORD = 0;
     let mut dwAttrFlags: DWORD = 0;
     let mut dwFiles: DWORD = 0;
     let mut ch: LONG;
-    let mut szOriginalArg: [TCHAR; MAX_PATH] = [0 as TCHAR; MAX_PATH];
+    let mut szOriginalArg: [TCHAR; (MAX_PATH) as _] = [0 as TCHAR; (MAX_PATH) as _];
 
     /*checks the first two chars of param to see if it is /?
     this however allows the following command to not show help
@@ -394,14 +393,14 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
         LoadStrings();
     }
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_DEL_HELP1);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_DEL_HELP1);
         return 0;
     }
 
     nErrorLevel = 0;
 
-    arg = split(param, addr_of_mut!(args), FALSE, FALSE);
+    arg = split(param, addr_of_mut!(args), (FALSE) as BOOL, (FALSE) as BOOL);
 
     if args == 0 {
         /* only command given */
@@ -412,27 +411,27 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
     /* check for options anywhere in command line */
     i = 0;
     while i < args {
-        if *(*arg.offset(i as isize)) == _T('/') {
+        if *(*arg.offset(i as isize)) == ('/' as u16) {
             /*found a command, but check to make sure it has something after it*/
             if _tcslen(*arg.offset(i as isize)) >= 2 {
                 ch = _totupper(*(*arg.offset(i as isize)).offset((1) as isize)) as LONG;
-                if ch == _T('N') as LONG {
+                if ch == ('N' as u16) as LONG {
                     dwFlags |= DEL_NOTHING;
-                } else if ch == _T('P') as LONG {
+                } else if ch == ('P' as u16) as LONG {
                     dwFlags |= DEL_PROMPT;
-                } else if ch == _T('Q') as LONG {
+                } else if ch == ('Q' as u16) as LONG {
                     dwFlags |= DEL_QUIET;
-                } else if ch == _T('F') as LONG {
+                } else if ch == ('F' as u16) as LONG {
                     dwFlags |= DEL_FORCE;
-                } else if ch == _T('S') as LONG {
+                } else if ch == ('S' as u16) as LONG {
                     dwFlags |= DEL_SUBDIR;
-                } else if ch == _T('T') as LONG {
+                } else if ch == ('T' as u16) as LONG {
                     dwFlags |= DEL_TOTAL;
-                } else if ch == _T('W') as LONG {
+                } else if ch == ('W' as u16) as LONG {
                     dwFlags |= DEL_WIPE;
-                } else if ch == _T('Y') as LONG {
+                } else if ch == ('Y' as u16) as LONG {
                     dwFlags |= DEL_YES;
-                } else if ch == _T('A') as LONG {
+                } else if ch == ('A' as u16) as LONG {
                     dwFlags |= DEL_ATTRIBUTES;
                     /*the proper syntax for /A has a min of 4 chars
                     i.e. /A:R or /A:-H */
@@ -442,32 +441,32 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
                     }
                     ch = _totupper(*(*arg.offset(i as isize)).offset((3) as isize)) as LONG;
                     if _tcslen(*arg.offset(i as isize)) == 4 {
-                        if ch == _T('A') as LONG {
+                        if ch == ('A' as u16) as LONG {
                             dwAttrFlags |= ATTR_ARCHIVE;
                         }
-                        if ch == _T('H') as LONG {
+                        if ch == ('H' as u16) as LONG {
                             dwAttrFlags |= ATTR_HIDDEN;
                         }
-                        if ch == _T('S') as LONG {
+                        if ch == ('S' as u16) as LONG {
                             dwAttrFlags |= ATTR_SYSTEM;
                         }
-                        if ch == _T('R') as LONG {
+                        if ch == ('R' as u16) as LONG {
                             dwAttrFlags |= ATTR_READ_ONLY;
                         }
                     }
                     if _tcslen(*arg.offset(i as isize)) == 5 {
-                        if ch == _T('-') as LONG {
+                        if ch == ('-' as u16) as LONG {
                             ch = _totupper(*(*arg.offset(i as isize)).offset((4) as isize)) as LONG;
-                            if ch == _T('A') as LONG {
+                            if ch == ('A' as u16) as LONG {
                                 dwAttrFlags |= ATTR_N_ARCHIVE;
                             }
-                            if ch == _T('H') as LONG {
+                            if ch == ('H' as u16) as LONG {
                                 dwAttrFlags |= ATTR_N_HIDDEN;
                             }
-                            if ch == _T('S') as LONG {
+                            if ch == ('S' as u16) as LONG {
                                 dwAttrFlags |= ATTR_N_SYSTEM;
                             }
-                            if ch == _T('R') as LONG {
+                            if ch == ('R' as u16) as LONG {
                                 dwAttrFlags |= ATTR_N_READ_ONLY;
                             }
                         }
@@ -495,19 +494,19 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
 
     /* check for filenames anywhere in command line */
     i = 0;
-    while i < args && !(dwFiles & 0x80000000) {
+    while i < args && (((dwFiles & 0x80000000)) == 0) {
         'body: {
             /*this checks to see if it is a flag; if it isn't, we assume it is a file name*/
-            if (*(*arg.offset(i as isize)) == _T('/')) || (*(*arg.offset(i as isize)) == _T('-')) {
+            if (*(*arg.offset(i as isize)) == ('/' as u16)) || (*(*arg.offset(i as isize)) == ('-' as u16)) {
                 break 'body;
             }
 
             /* We want to make a copies of the argument */
             if _tcslen(*arg.offset(i as isize)) == 2
-                && *(*arg.offset(i as isize)).offset((1) as isize) == _T(':')
+                && *(*arg.offset(i as isize)).offset((1) as isize) == (':' as u16)
             {
                 /* Check for C: D: ... */
-                GetRootPath(*arg.offset(i as isize), addr_of_mut!(szOriginalArg) as LPTSTR, MAX_PATH);
+                GetRootPath(*arg.offset(i as isize), addr_of_mut!(szOriginalArg) as LPTSTR, (MAX_PATH) as INT);
             } else {
                 _tcscpy(addr_of_mut!(szOriginalArg) as LPTSTR, *arg.offset(i as isize));
             }
@@ -526,9 +525,9 @@ pub unsafe extern "C" fn CommandDelete(param: LPTSTR) -> INT {
     if (dwFlags & DEL_TOTAL) != 0 {
         dwFiles &= 0x7fffffff;
         if dwFiles < 2 {
-            ConOutResPrintf(STRING_DEL_HELP3, dwFiles);
+            ConOutResPrintf!(STRING_DEL_HELP3, dwFiles);
         } else {
-            ConOutResPrintf(STRING_DEL_HELP4, dwFiles);
+            ConOutResPrintf!(STRING_DEL_HELP4, dwFiles);
         }
     }
 

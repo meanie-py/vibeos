@@ -8,7 +8,7 @@ use crate::cmd::console::GetCursorY;
 use crate::cmd::console::GetScreenSize;
 use crate::cmd::cmd::RemoveBreakHandler;
 use crate::cmd::console::SetCursorXY;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn cgetchar() -> TCHAR {
@@ -23,20 +23,20 @@ pub unsafe extern "C" fn cgetchar() -> TCHAR {
             1,
             core::ptr::addr_of_mut!(dwRead),
         );
-        if (irBuffer.EventType as i32 == KEY_EVENT)
-            && (irBuffer.Event.KeyEvent.bKeyDown != FALSE)
+        if (irBuffer.EventType as i32 == (KEY_EVENT as i32))
+            && ((irBuffer.Event.KeyEvent.bKeyDown) as u32 != FALSE)
         {
             if (irBuffer.Event.KeyEvent.dwControlKeyState
                 & (LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED))
                 != 0
             {
                 if irBuffer.Event.KeyEvent.wVirtualKeyCode as i32 == 'C' as i32 {
-                    bCtrlBreak = TRUE;
+                    bCtrlBreak = (TRUE) as i32;
                     break 'dowhile;
                 }
-            } else if (irBuffer.Event.KeyEvent.wVirtualKeyCode as i32 == VK_SHIFT)
-                || (irBuffer.Event.KeyEvent.wVirtualKeyCode as i32 == VK_MENU)
-                || (irBuffer.Event.KeyEvent.wVirtualKeyCode as i32 == VK_CONTROL)
+            } else if ((irBuffer.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_SHIFT)
+                || ((irBuffer.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_MENU)
+                || ((irBuffer.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_CONTROL)
             {
                 // Nothing to do
             } else {
@@ -55,9 +55,9 @@ pub unsafe extern "C" fn GetPathCase(Path: LPCTSTR, OutPath: LPTSTR) {
     let BackSlash: [TCHAR; 2] = ['\\' as TCHAR, 0 as TCHAR];
     let mut i: SIZE_T = 0;
     let mut cchPath: SIZE_T = _tcslen(Path) as SIZE_T;
-    let mut TempPath: [TCHAR; MAX_PATH] = [0 as TCHAR; MAX_PATH];
+    let mut TempPath: [TCHAR; (MAX_PATH) as _] = [0 as TCHAR; (MAX_PATH) as _];
     let mut pchTemp: LPTSTR = &raw mut TempPath as *mut TCHAR;
-    let mut pchTempEnd: LPTSTR = (&raw mut TempPath as *mut TCHAR).add(_countof(TempPath) as usize);
+    let mut pchTempEnd: LPTSTR = (&raw mut TempPath as *mut TCHAR).add(_countof!(TempPath) as usize);
     let mut FindFileData: WIN32_FIND_DATA = core::mem::zeroed();
     let mut hFind: HANDLE = core::ptr::null_mut();
 
@@ -69,11 +69,11 @@ pub unsafe extern "C" fn GetPathCase(Path: LPCTSTR, OutPath: LPTSTR) {
         'body: {
             if pchTemp.offset(1 as isize) >= pchTempEnd {
                 // On failure, copy the original path for an error message
-                StringCchCopy(OutPath, MAX_PATH, Path);
+                StringCchCopy(OutPath, (MAX_PATH) as _, Path);
                 return;
             }
 
-            if *Path.offset(i as isize) != _T('\\') && *Path.offset(i as isize) != _T('/') {
+            if *Path.offset(i as isize) != ('\\' as u16) && *Path.offset(i as isize) != ('/' as u16) {
                 *pchTemp = *Path.offset(i as isize);
                 pchTemp = pchTemp.offset(1);
                 *pchTemp = 0;
@@ -86,24 +86,24 @@ pub unsafe extern "C" fn GetPathCase(Path: LPCTSTR, OutPath: LPTSTR) {
                Because if you put it into findfirstfile, it will
                return your current folder */
             if TempPath[0 as usize] != 0 as TCHAR
-                && TempPath[1 as usize] == _T(':')
+                && TempPath[1 as usize] == (':' as u16)
                 && TempPath[2 as usize] == 0 as TCHAR
             {
                 /* "C:", "D:" etc. */
-                StringCchCat(OutPath, MAX_PATH, &raw mut TempPath as *mut TCHAR);
-                StringCchCat(OutPath, MAX_PATH, BackSlash.as_ptr());
-                StringCchCat(&raw mut TempPath as *mut TCHAR, _countof(TempPath), BackSlash.as_ptr());
+                StringCchCat(OutPath, (MAX_PATH) as _, &raw mut TempPath as *mut TCHAR);
+                StringCchCat(OutPath, (MAX_PATH) as _, BackSlash.as_ptr());
+                StringCchCat(&raw mut TempPath as *mut TCHAR, (_countof!(TempPath)) as _, BackSlash.as_ptr());
             } else {
                 hFind = FindFirstFile(&raw mut TempPath as *mut TCHAR, &raw mut FindFileData);
                 if hFind == INVALID_HANDLE_VALUE {
-                    StringCchCopy(OutPath, MAX_PATH, Path);
+                    StringCchCopy(OutPath, (MAX_PATH) as _, Path);
                     return;
                 }
                 FindClose(hFind);
-                StringCchCat(OutPath, MAX_PATH, BackSlash.as_ptr());
-                StringCchCat(OutPath, MAX_PATH, &raw mut FindFileData.cFileName as *mut TCHAR);
-                StringCchCat(OutPath, MAX_PATH, BackSlash.as_ptr());
-                StringCchCopy(&raw mut TempPath as *mut TCHAR, _countof(TempPath), OutPath);
+                StringCchCat(OutPath, (MAX_PATH) as _, BackSlash.as_ptr());
+                StringCchCat(OutPath, (MAX_PATH) as _, &raw mut FindFileData.cFileName as *mut TCHAR);
+                StringCchCat(OutPath, (MAX_PATH) as _, BackSlash.as_ptr());
+                StringCchCopy(&raw mut TempPath as *mut TCHAR, (_countof!(TempPath)) as _, OutPath);
             }
             pchTemp = (&raw mut TempPath as *mut TCHAR).add(_tcslen(&raw mut TempPath as *mut TCHAR) as usize);
         }
@@ -112,78 +112,78 @@ pub unsafe extern "C" fn GetPathCase(Path: LPCTSTR, OutPath: LPTSTR) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn CheckCtrlBreak(mode: INT) -> BOOL {
-    static mut bLeaveAll: BOOL = FALSE; /* leave all batch files */
+    static mut bLeaveAll: BOOL = (FALSE) as i32; /* leave all batch files */
     let mut options: [TCHAR; 4] = [0; 4]; /* Yes, No, All */
     let mut c: TCHAR = 0;
 
-    match mode {
+    match (mode) as u32 {
         BREAK_OUTOFBATCH => {
-            bLeaveAll = FALSE;
-            return FALSE;
+            bLeaveAll = (FALSE) as i32;
+            return (FALSE) as BOOL;
         }
         BREAK_BATCHFILE => {
             if bLeaveAll != 0 {
-                return TRUE;
+                return (TRUE) as BOOL;
             }
 
             if bCtrlBreak == 0 {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
-            LoadString(CMD_ModuleHandle, STRING_COPY_OPTION, options.as_mut_ptr(), ARRAYSIZE(options));
+            LoadString((CMD_ModuleHandle).cast(), STRING_COPY_OPTION, options.as_mut_ptr(), (ARRAYSIZE!(options)) as i32);
 
-            ConOutResPuts(STRING_CANCEL_BATCH_FILE);
+            ConOutResPuts!(STRING_CANCEL_BATCH_FILE);
             loop {
                 c = _totupper(cgetchar() as wint_t) as TCHAR;
-                if !((!_tcschr(options.as_mut_ptr(), c).is_null() || c == _T('\x03')) || c == 0) {
+                if !((!_tcschr(options.as_mut_ptr(), c).is_null() || c == ('\x03' as TCHAR)) || c == 0) {
                     break;
                 }
             }
 
-            ConOutChar(_T('\n'));
+            ConOutChar(('\n' as u16));
 
             if c == options[1 as usize] {
-                bCtrlBreak = FALSE; /* ignore */
-                return FALSE;
+                bCtrlBreak = (FALSE) as i32; /* ignore */
+                return (FALSE) as BOOL;
             }
 
             /* leave all batch files */
-            bLeaveAll = ((c == options[2 as usize]) || (c == _T('\x03'))) as BOOL;
+            bLeaveAll = ((c == options[2 as usize]) || (c == ('\x03' as TCHAR))) as BOOL;
             // break out of switch
         }
         BREAK_INPUT => {
             if bCtrlBreak == 0 {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
         }
         _ => {}
     }
 
     /* state processed */
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn add_entry(ac: LPINT, arg: *mut *mut LPTSTR, entry: LPCTSTR) -> BOOL {
     let mut q: LPTSTR;
     let mut newarg: *mut LPTSTR;
 
-    q = cmd_alloc(
+    q = cmd_alloc!(
         (_tcslen(entry) as usize + 1 as usize)
             * core::mem::size_of::<TCHAR>(),
     ) as LPTSTR;
     if q.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     _tcscpy(q, entry);
-    newarg = cmd_realloc(
+    newarg = cmd_realloc!(
         *arg as *mut core::ffi::c_void,
         ((*ac + 2) as usize)
             * core::mem::size_of::<LPTSTR>(),
     ) as *mut LPTSTR;
     if newarg.is_null() {
-        cmd_free(q as *mut core::ffi::c_void);
-        return FALSE;
+        cmd_free!(q as *mut core::ffi::c_void);
+        return (FALSE) as BOOL;
     }
 
     *arg = newarg;
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn add_entry(ac: LPINT, arg: *mut *mut LPTSTR, entry: LPCT
     *ac += 1;
     *(*arg).offset(*ac as isize) = core::ptr::null_mut();
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn expand(ac: LPINT, arg: *mut *mut LPTSTR, pattern: LPCTSTR) -> BOOL {
@@ -204,21 +204,21 @@ unsafe extern "C" fn expand(ac: LPINT, arg: *mut *mut LPTSTR, pattern: LPCTSTR) 
     let mut dirpart: LPTSTR = core::ptr::null_mut();
     let mut fullname: LPTSTR = core::ptr::null_mut();
 
-    pathend = _tcsrchr(pattern, _T('\\'));
+    pathend = _tcsrchr(pattern, ('\\' as u16));
     if !pathend.is_null() {
-        dirpart = cmd_alloc(
+        dirpart = cmd_alloc!(
             (pathend.offset_from(pattern) as usize + 2)
                 * core::mem::size_of::<TCHAR>(),
         ) as LPTSTR;
         if dirpart.is_null() {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         memcpy(
             dirpart as *mut core::ffi::c_void,
             pattern as *const core::ffi::c_void,
             pathend.offset_from(pattern) as usize + 1,
         );
-        *dirpart.offset(pathend.offset_from(pattern) + 1) = _T('\0');
+        *dirpart.offset(pathend.offset_from(pattern) + 1) = ('\0' as u16);
     } else {
         dirpart = core::ptr::null_mut();
     }
@@ -227,21 +227,21 @@ unsafe extern "C" fn expand(ac: LPINT, arg: *mut *mut LPTSTR, pattern: LPCTSTR) 
     if INVALID_HANDLE_VALUE != hFind {
         loop {
             if !dirpart.is_null() {
-                fullname = cmd_alloc(
+                fullname = cmd_alloc!(
                     (_tcslen(dirpart)
                         + _tcslen(core::ptr::addr_of_mut!(FindData.cFileName) as LPTSTR)
                         + 1)
                         * core::mem::size_of::<TCHAR>(),
                 ) as LPTSTR;
                 if fullname.is_null() {
-                    ok = FALSE;
+                    ok = (FALSE) as i32;
                 } else {
                     _tcscat(
                         _tcscpy(fullname, dirpart),
                         core::ptr::addr_of_mut!(FindData.cFileName) as LPTSTR,
                     );
                     ok = add_entry(ac, arg, fullname);
-                    cmd_free(fullname);
+                    cmd_free!(fullname);
                 }
             } else {
                 ok = add_entry(
@@ -260,25 +260,20 @@ unsafe extern "C" fn expand(ac: LPINT, arg: *mut *mut LPTSTR, pattern: LPCTSTR) 
     }
 
     if !dirpart.is_null() {
-        cmd_free(dirpart);
+        cmd_free!(dirpart);
     }
 
     return ok;
 }
 #[no_mangle]
-pub unsafe extern "C" fn split(
-    mut s: LPTSTR,
-    mut args: LPINT,
-    mut expand_wildcards: BOOL,
-    mut handle_plus: BOOL,
-) -> *mut LPTSTR {
+pub unsafe extern "C" fn split(mut s: LPTSTR, mut args: LPINT, mut expand_wildcards: BOOL, mut handle_plus: BOOL) -> *mut LPTSTR {
     let mut arg: *mut LPTSTR = core::ptr::null_mut::<LPTSTR>();
     let mut start: LPTSTR = core::ptr::null_mut::<WCHAR>();
     let mut q: LPTSTR = core::ptr::null_mut::<WCHAR>();
     let mut ac: INT = 0;
     let mut len: INT_PTR = 0;
 
-    arg = cmd_alloc(core::mem::size_of::<LPTSTR>()) as *mut LPTSTR;
+    arg = cmd_alloc!(core::mem::size_of::<LPTSTR>()) as *mut LPTSTR;
     if arg.is_null() {
         return core::ptr::null_mut::<LPTSTR>();
     }
@@ -286,31 +281,31 @@ pub unsafe extern "C" fn split(
 
     ac = 0;
     while *s != 0 {
-        let mut bQuoted: BOOL = FALSE;
+        let mut bQuoted: BOOL = (FALSE) as i32;
 
         /* skip leading spaces */
-        while *s != 0 && (_istspace(*s as TCHAR) != 0 || _istcntrl(*s as TCHAR) != 0) {
+        while *s != 0 && (_istspace!(*s as TCHAR) != 0 || _istcntrl!(*s as TCHAR) != 0) {
             s = s.offset(1);
         }
 
         start = s;
 
         /* the first character can be '/' */
-        if *s == _T('/' as TCHAR) {
+        if *s == ('/' as TCHAR) {
             s = s.offset(1);
         }
 
         /* skip to next word delimiter or start of next option */
-        while _istprint(*s as TCHAR) != 0 {
+        while _istprint!(*s as TCHAR) != 0 {
             /* if quote (") then set bQuoted */
-            bQuoted ^= (*s == _T('"' as TCHAR)) as BOOL;
+            bQuoted ^= (*s == ('"' as TCHAR)) as BOOL;
 
             /* Check if we have unquoted text */
             if bQuoted == 0 {
                 /* check for separators */
-                if _istspace(*s as TCHAR) != 0
-                    || (*s == _T('/' as TCHAR))
-                    || (handle_plus != 0 && (*s == _T('+' as TCHAR)))
+                if _istspace!(*s as TCHAR) != 0
+                    || (*s == ('/' as TCHAR))
+                    || (handle_plus != 0 && (*s == ('+' as TCHAR)))
                 {
                     /* Make length at least one character */
                     if s == start {
@@ -326,7 +321,7 @@ pub unsafe extern "C" fn split(
         /* a word was found */
         if s != start {
             len = s.offset_from(start) as INT_PTR;
-            q = cmd_alloc(
+            q = cmd_alloc!(
                 ((len + 1) as usize)
                     .wrapping_mul(core::mem::size_of::<TCHAR>()),
             ) as LPTSTR;
@@ -338,12 +333,12 @@ pub unsafe extern "C" fn split(
                 start as *const core::ffi::c_void,
                 (len as usize).wrapping_mul(core::mem::size_of::<TCHAR>()),
             );
-            *q.offset(len as isize) = _T('\0' as TCHAR);
+            *q.offset(len as isize) = ('\0' as TCHAR);
             StripQuotes(q as *mut TCHAR);
             if expand_wildcards != 0
-                && (_T('/' as TCHAR) != *start)
-                && (!_tcschr(q, _T('*' as TCHAR)).is_null()
-                    || !_tcschr(q, _T('?' as TCHAR)).is_null())
+                && (('/' as TCHAR) != *start)
+                && (!_tcschr(q, ('*' as TCHAR)).is_null()
+                    || !_tcschr(q, ('?' as TCHAR)).is_null())
             {
                 if expand(
                     core::ptr::addr_of_mut!(ac),
@@ -351,7 +346,7 @@ pub unsafe extern "C" fn split(
                     q as LPCTSTR,
                 ) == 0
                 {
-                    cmd_free(q as *mut core::ffi::c_void);
+                    cmd_free!(q as *mut core::ffi::c_void);
                     freep(arg);
                     return core::ptr::null_mut::<LPTSTR>();
                 }
@@ -362,12 +357,12 @@ pub unsafe extern "C" fn split(
                     q as LPCTSTR,
                 ) == 0
                 {
-                    cmd_free(q as *mut core::ffi::c_void);
+                    cmd_free!(q as *mut core::ffi::c_void);
                     freep(arg);
                     return core::ptr::null_mut::<LPTSTR>();
                 }
             }
-            cmd_free(q as *mut core::ffi::c_void);
+            cmd_free!(q as *mut core::ffi::c_void);
         }
     }
 
@@ -383,7 +378,7 @@ pub unsafe extern "C" fn splitspace(mut s: LPTSTR, args: LPINT) -> *mut LPTSTR {
     let mut ac: INT;
     let mut len: INT_PTR;
 
-    arg = cmd_alloc(core::mem::size_of::<LPTSTR>()) as *mut LPTSTR;
+    arg = cmd_alloc!(core::mem::size_of::<LPTSTR>()) as *mut LPTSTR;
     if arg.is_null() {
         return core::ptr::null_mut();
     }
@@ -391,26 +386,26 @@ pub unsafe extern "C" fn splitspace(mut s: LPTSTR, args: LPINT) -> *mut LPTSTR {
 
     ac = 0;
     while *s != 0 {
-        let mut bQuoted: BOOL = FALSE;
+        let mut bQuoted: BOOL = (FALSE) as i32;
 
         /* skip leading spaces */
-        while *s != 0 && (_istspace(*s) != 0 || _istcntrl(*s) != 0) {
+        while *s != 0 && (_istspace!(*s) != 0 || _istcntrl!(*s) != 0) {
             s = s.add(1);
         }
 
         start = s;
 
         /* skip to next word delimiter or start of next option */
-        while _istprint(*s) != 0 && (bQuoted != 0 || _istspace(*s) == 0) {
+        while _istprint!(*s) != 0 && (bQuoted != 0 || _istspace!(*s) == 0) {
             /* if quote (") then set bQuoted */
-            bQuoted ^= (*s == _T('\"')) as BOOL;
+            bQuoted ^= (*s == ('\"' as u16)) as BOOL;
             s = s.add(1);
         }
 
         /* a word was found */
         if s != start {
             len = s.offset_from(start) as INT_PTR;
-            q = cmd_alloc(
+            q = cmd_alloc!(
                 ((len + 1) as usize)
                     .wrapping_mul(core::mem::size_of::<TCHAR>()),
             ) as LPTSTR;
@@ -422,7 +417,7 @@ pub unsafe extern "C" fn splitspace(mut s: LPTSTR, args: LPINT) -> *mut LPTSTR {
                 start as *const core::ffi::c_void,
                 (len as usize).wrapping_mul(core::mem::size_of::<TCHAR>()),
             );
-            *q.offset(len as isize) = _T('\0');
+            *q.offset(len as isize) = ('\0' as u16);
             StripQuotes(q);
             if add_entry(
                 core::ptr::addr_of_mut!(ac),
@@ -430,11 +425,11 @@ pub unsafe extern "C" fn splitspace(mut s: LPTSTR, args: LPINT) -> *mut LPTSTR {
                 q as LPCTSTR,
             ) == 0
             {
-                cmd_free(q);
+                cmd_free!(q);
                 freep(arg);
                 return core::ptr::null_mut();
             }
-            cmd_free(q);
+            cmd_free!(q);
         }
     }
 
@@ -452,9 +447,9 @@ pub unsafe extern "C" fn freep(p: *mut LPTSTR) {
     while !(*q).is_null() {
         let fresh33 = q;
         q = q.offset(1);
-        cmd_free(*fresh33 as *mut ::core::ffi::c_void);
+        cmd_free!(*fresh33 as *mut ::core::ffi::c_void);
     }
-    cmd_free(p as *mut ::core::ffi::c_void);
+    cmd_free!(p as *mut ::core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn _stpcpy(mut dest: LPTSTR, mut src: LPCTSTR) -> LPTSTR {
@@ -462,24 +457,24 @@ pub unsafe extern "C" fn _stpcpy(mut dest: LPTSTR, mut src: LPCTSTR) -> LPTSTR {
     return dest.offset(_tcslen(src) as isize);
 }
 #[no_mangle]
-pub unsafe extern "C" fn StripQuotes(in_: *mut TCHAR) {
+pub unsafe extern "C" fn StripQuotes(mut in_: LPTSTR) {
     let mut out: *mut TCHAR = in_;
     while *in_ != 0 {
-        if *in_ != _T('"') {
+        if *in_ != ('"' as u16) {
             let fresh = out;
             out = out.offset(1);
             *fresh = *in_;
         }
         in_ = in_.offset(1);
     }
-    *out = _T('\0');
+    *out = ('\0' as u16);
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsValidPathName(pszPath: LPCTSTR) -> BOOL {
     let mut bResult: BOOL;
-    let mut szOldPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szOldPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
-    GetCurrentDirectory(ARRAYSIZE(szOldPath) as DWORD, addr_of_mut!(szOldPath) as LPTSTR);
+    GetCurrentDirectory(ARRAYSIZE!(szOldPath) as DWORD, addr_of_mut!(szOldPath) as LPTSTR);
     bResult = SetCurrentDirectory(pszPath as LPCWSTR);
 
     SetCurrentDirectory(addr_of_mut!(szOldPath) as *mut TCHAR as LPCWSTR);
@@ -502,16 +497,16 @@ pub unsafe extern "system" fn PagePrompt(Pager: PCON_PAGER, Done: DWORD, Total: 
     let mut iCursorY: SHORT = 0;
     let mut ir: INPUT_RECORD = core::mem::zeroed();
 
-    ConOutResPuts(STRING_MISC_HELP1);
+    ConOutResPuts!(STRING_MISC_HELP1);
 
     RemoveBreakHandler();
     ConInDisable();
 
     loop {
         ConInKey(core::ptr::addr_of_mut!(ir));
-        if !((ir.Event.KeyEvent.wVirtualKeyCode as i32 == VK_SHIFT)
-            || (ir.Event.KeyEvent.wVirtualKeyCode as i32 == VK_MENU)
-            || (ir.Event.KeyEvent.wVirtualKeyCode as i32 == VK_CONTROL))
+        if !(((ir.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_SHIFT)
+            || ((ir.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_MENU)
+            || ((ir.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_CONTROL))
         {
             break;
         }
@@ -533,33 +528,33 @@ pub unsafe extern "system" fn PagePrompt(Pager: PCON_PAGER, Done: DWORD, Total: 
         if !((fresh37 as i32) > (0 as i32)) {
             break;
         }
-        ConOutChar(_T(' '));
+        ConOutChar((' ' as u16));
     }
     SetCursorXY(0, iCursorY);
 
-    if (ir.Event.KeyEvent.wVirtualKeyCode as i32 == VK_ESCAPE)
-        || ((ir.Event.KeyEvent.wVirtualKeyCode as i32 == _T('C') as i32)
+    if ((ir.Event.KeyEvent.wVirtualKeyCode as i32) as u32 == VK_ESCAPE)
+        || ((ir.Event.KeyEvent.wVirtualKeyCode as i32 == ('C' as u16) as i32)
             && ((ir.Event.KeyEvent.dwControlKeyState
                 & ((LEFT_CTRL_PRESSED | RIGHT_CTRL_PRESSED) as DWORD))
                 != 0))
     {
         /* We break, output a newline */
-        ConOutChar(_T('\n'));
+        ConOutChar(('\n' as u16));
 
-        bCtrlBreak = TRUE;
-        return FALSE;
+        bCtrlBreak = (TRUE) as i32;
+        return (FALSE) as BOOL;
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn FilePromptYN(resID: UINT) -> INT {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = [0; RC_STRING_MAX_SIZE];
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = [0; (RC_STRING_MAX_SIZE) as _];
     let mut szIn: [TCHAR; 10] = [0; 10];
     let mut p: LPTSTR;
 
     if resID != 0 {
-        ConOutResPrintf(resID);
+        ConOutResPrintf!(resID);
     }
 
     /* preliminary fix */
@@ -567,30 +562,30 @@ pub unsafe extern "C" fn FilePromptYN(resID: UINT) -> INT {
 
     _tcsupr(szIn.as_mut_ptr());
     p = szIn.as_mut_ptr();
-    while _istspace(*p) != 0 {
+    while _istspace!(*p) != 0 {
         p = p.add(1);
     }
 
-    LoadString(CMD_ModuleHandle, STRING_CHOICE_OPTION, szMsg.as_mut_ptr(), ARRAYSIZE(szMsg) as INT);
+    LoadString((CMD_ModuleHandle).cast(), STRING_CHOICE_OPTION, szMsg.as_mut_ptr(), ARRAYSIZE!(szMsg) as INT);
 
     if _tcsncmp(p, szMsg.as_mut_ptr().add(0), 1) == 0 {
-        return PROMPT_YES;
+        return (PROMPT_YES) as INT;
     } else if _tcsncmp(p, szMsg.as_mut_ptr().add(1), 1) == 0 {
-        return PROMPT_NO;
+        return (PROMPT_NO) as INT;
     }
 
-    return PROMPT_NO;
+    return (PROMPT_NO) as INT;
 
     /* unfinished solution */
 }
 #[no_mangle]
 pub unsafe extern "C" fn FilePromptYNA(resID: UINT) -> INT {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = [0; RC_STRING_MAX_SIZE];
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = [0; (RC_STRING_MAX_SIZE) as _];
     let mut szIn: [TCHAR; 10] = [0; 10];
     let mut p: LPTSTR;
 
     if resID != 0 {
-        ConOutResPrintf(resID);
+        ConOutResPrintf!(resID);
     }
 
     /* preliminary fix */
@@ -598,21 +593,21 @@ pub unsafe extern "C" fn FilePromptYNA(resID: UINT) -> INT {
 
     _tcsupr(addr_of_mut!(szIn) as LPTSTR);
     p = addr_of_mut!(szIn) as LPTSTR;
-    while _istspace(*p) != 0 {
+    while _istspace!(*p) != 0 {
         p = p.offset(1);
     }
 
-    LoadString(CMD_ModuleHandle, STRING_COPY_OPTION, addr_of_mut!(szMsg) as LPTSTR, ARRAYSIZE(szMsg));
+    LoadString((CMD_ModuleHandle).cast(), STRING_COPY_OPTION, addr_of_mut!(szMsg) as LPTSTR, (ARRAYSIZE!(szMsg)) as i32);
 
     if _tcsncmp(p, addr_of_mut!(szMsg[0]) as LPTSTR, 1) == 0 {
-        return PROMPT_YES;
+        return (PROMPT_YES) as INT;
     } else if _tcsncmp(p, addr_of_mut!(szMsg[1]) as LPTSTR, 1) == 0 {
-        return PROMPT_NO;
+        return (PROMPT_NO) as INT;
     } else if _tcsncmp(p, addr_of_mut!(szMsg[2]) as LPTSTR, 1) == 0 {
-        return PROMPT_ALL;
+        return (PROMPT_ALL) as INT;
     }
 
-    return PROMPT_NO;
+    return (PROMPT_NO) as INT;
 
     /* unfinished solution */
 }

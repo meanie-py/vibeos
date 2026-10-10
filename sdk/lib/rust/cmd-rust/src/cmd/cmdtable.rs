@@ -4,7 +4,7 @@ use crate::cmd::choice::CommandChoice;
 use crate::cmd::beep::cmd_beep;
 use crate::cmd::call::cmd_call;
 use crate::cmd::cls::cmd_cls;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -92,17 +92,17 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_2BFE0A590FD6.as_ptr() as LPTSTR,
-            flags: CMD_BATCHONLY,
+            flags: (CMD_BATCHONLY as i32),
             func: Some(cmd_call as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_D85A0CBFB039.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_chdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_C2CB504125C9.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_chdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -152,7 +152,7 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_1F9BE24D4991.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(CommandDir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -162,7 +162,7 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_0E24EFDCDDBF.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(CommandEcho as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -172,7 +172,7 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_1E55342C191E.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(CommandEchoerr as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -207,7 +207,7 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_1F509DCAEB1D.as_ptr() as LPTSTR,
-            flags: CMD_BATCHONLY,
+            flags: (CMD_BATCHONLY as i32),
             func: Some(cmd_goto as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -227,12 +227,12 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_5C4147782415.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_mkdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_CADC4736A517.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_mkdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -272,12 +272,12 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_14ECF914DD1A.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_rmdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_F6B842C1451E.as_ptr() as LPTSTR,
-            flags: CMD_SPECIAL,
+            flags: (CMD_SPECIAL as i32),
             func: Some(cmd_rmdir as unsafe extern "C" fn(LPTSTR) -> INT),
         },
         tagCOMMAND {
@@ -312,7 +312,7 @@ pub static mut cmds: [COMMAND; 58] = unsafe {
         },
         tagCOMMAND {
             name: RUSTCONV_C2R_WSTR_73BCE7399733.as_ptr() as LPTSTR,
-            flags: CMD_BATCHONLY,
+            flags: (CMD_BATCHONLY as i32),
             func: Some(cmd_shift as unsafe extern "C" fn(*mut TCHAR) -> ::core::ffi::c_int),
         },
         tagCOMMAND {
@@ -376,11 +376,11 @@ pub unsafe extern "C" fn PrintCommandList() {
         if ((*cmdptr).flags as INT & CMD_HIDE as INT) == 0 {
             y += 1;
             if y == 8 as INT {
-                ConOutPuts((*cmdptr).name);
-                ConOutChar(_T('\n' as u16));
+                ConOutPuts!((*cmdptr).name);
+                ConOutChar(('\n' as u16));
                 y = 0 as INT;
             } else {
-                ConOutPrintf(_T("%-10s" as *const u8 as *const u16), (*cmdptr).name);
+                ConOutPrintf!(((&[0x0025, 0x002d, 0x0031, 0x0030, 0x0073, 0x0000u16]).as_ptr() /* _T "%-10s" */), (*cmdptr).name);
             }
         }
 
@@ -388,6 +388,6 @@ pub unsafe extern "C" fn PrintCommandList() {
     }
 
     if y != 0 as INT {
-        ConOutChar(_T('\n' as u16));
+        ConOutChar(('\n' as u16));
     }
 }

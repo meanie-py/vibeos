@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -10,28 +10,24 @@ pub static mut BatType: BATCH_TYPE = NONE;
 pub static mut bc: PBATCH_CONTEXT = ::core::ptr::null::<_BATCH_CONTEXT>() as *mut _BATCH_CONTEXT;
 
 #[no_mangle]
-pub static mut bBcEcho: BOOL = TRUE;
+pub static mut bBcEcho: BOOL = (TRUE) as i32;
 
 #[no_mangle]
-pub static mut bEcho: BOOL = TRUE;
+pub static mut bEcho: BOOL = (TRUE) as i32;
 
 #[no_mangle]
 pub static mut textline: [TCHAR; 8192] = [0; 8192];
 
 // Under #ifdef MSCMD_BATCH_ECHO in the C source; emitted unconditionally here.
 #[no_mangle]
-pub unsafe extern "C" fn FindArg(
-    mut Char: TCHAR,
-    mut ArgPtr: *mut PCTSTR,
-    mut IsParam0: *mut BOOL,
-) -> BOOL {
+pub unsafe extern "C" fn FindArg(mut Char: TCHAR, mut ArgPtr: *mut PCTSTR, mut IsParam0: *mut BOOL) -> BOOL {
     let mut pp: PCTSTR;
-    let mut n: INT = Char as INT - _T('0') as INT;
+    let mut n: INT = Char as INT - ('0' as u16) as INT;
 
     *ArgPtr = core::ptr::null();
 
     if n < 0 || n > 9 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     n = (*bc).shiftlevel[n as usize];
@@ -51,7 +47,7 @@ pub unsafe extern "C" fn FindArg(
     }
 
     *ArgPtr = pp;
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn BatchParams(
@@ -67,35 +63,35 @@ unsafe extern "C" fn BatchParams(
     *ParamList = core::ptr::null_mut();
 
     /* Make a raw copy of the parameters, but trim any leading and trailing whitespace */
-    // Args += _tcsspn(Args, _T(" \t"));
-    while _istspace(*Args) != 0 {
+    // Args += _tcsspn(Args, (&[0x0020, 0x0009, 0x0000u16]).as_ptr() /* _T " \t" */);
+    while _istspace!(*Args) != 0 {
         Args = Args.offset(1);
     }
     dp = (Args as PTSTR).offset(_tcslen(Args) as isize);
-    while (dp as PCTSTR > Args) && _istspace(*dp.offset(-(1 as isize))) != 0 {
+    while (dp as PCTSTR > Args) && _istspace!(*dp.offset(-(1 as isize))) != 0 {
         dp = dp.offset(-1);
     }
     len = (dp as PCTSTR).offset_from(Args) as SIZE_T;
-    *RawParams = cmd_alloc(((len + 1 as SIZE_T) * core::mem::size_of::<TCHAR>() as SIZE_T) as usize) as PTSTR;
+    *RawParams = cmd_alloc!(((len + 1 as SIZE_T) * core::mem::size_of::<TCHAR>() as SIZE_T) as usize) as PTSTR;
     if (*RawParams).is_null() {
         error_out_of_memory();
-        return FALSE;
+        return (FALSE) as BOOL;
     }
-    _tcsncpy(*RawParams, Args, len);
-    *(*RawParams).add(len as usize) = _T('\0');
+    _tcsncpy(*RawParams, Args, (len) as _);
+    *(*RawParams).add(len as usize) = ('\0' as u16);
 
     /* Parse the parameters as well */
     Args = *RawParams;
 
-    *ParamList = cmd_alloc(
+    *ParamList = cmd_alloc!(
         ((_tcslen(Arg0) + _tcslen(Args) + 3 as usize)
             * core::mem::size_of::<TCHAR>() as usize),
     ) as PTSTR;
     if (*ParamList).is_null() {
         error_out_of_memory();
-        cmd_free(*RawParams);
+        cmd_free!(*RawParams);
         *RawParams = core::ptr::null_mut();
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     dp = *ParamList;
@@ -104,14 +100,14 @@ unsafe extern "C" fn BatchParams(
         dp = _stpcpy(dp, Arg0);
         let fresh0 = dp;
         dp = dp.add(1);
-        *fresh0 = _T('\0');
+        *fresh0 = ('\0' as u16);
     }
 
     while *Args != 0 {
-        let mut inquotes: BOOL = FALSE;
+        let mut inquotes: BOOL = (FALSE) as i32;
 
         /* Find next parameter */
-        while _istspace(*Args) != 0
+        while _istspace!(*Args) != 0
             || (*Args != 0 && !_tcschr(STANDARD_SEPS, *Args).is_null())
         {
             Args = Args.offset(1);
@@ -123,12 +119,12 @@ unsafe extern "C" fn BatchParams(
         /* Copy it */
         loop {
             if !(inquotes != 0)
-                && (_istspace(*Args) != 0
+                && (_istspace!(*Args) != 0
                     || !_tcschr(STANDARD_SEPS, *Args).is_null())
             {
                 break;
             }
-            inquotes ^= (*Args == _T('"')) as BOOL;
+            inquotes ^= (*Args == ('"' as u16)) as BOOL;
             let fresh1 = Args;
             Args = Args.offset(1);
             let fresh2 = dp;
@@ -140,11 +136,11 @@ unsafe extern "C" fn BatchParams(
         }
         let fresh3 = dp;
         dp = dp.offset(1);
-        *fresh3 = _T('\0');
+        *fresh3 = ('\0' as u16);
     }
-    *dp = _T('\0');
+    *dp = ('\0' as u16);
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn ClearBatch() {
@@ -159,15 +155,15 @@ unsafe extern "C" fn ClearBatch() {
     );
 
     if !(*bc).mem.is_null() && (*bc).memfree != 0 {
-        cmd_free((*bc).mem);
+        cmd_free!((*bc).mem);
     }
 
     if !(*bc).raw_params.is_null() {
-        cmd_free((*bc).raw_params);
+        cmd_free!((*bc).raw_params);
     }
 
     if !(*bc).params.is_null() {
-        cmd_free((*bc).params);
+        cmd_free!((*bc).params);
     }
 }
 #[no_mangle]
@@ -179,13 +175,13 @@ pub unsafe extern "C" fn ExitBatch() {
 
     while !(*bc).setlocal.is_null() {
         let empty: [u16; 1] = [0u16];
-        cmd_endlocal(_T(empty.as_ptr() as LPTSTR));
+        cmd_endlocal((empty.as_ptr() as LPTSTR));
     }
 
     bc = (*bc).prev;
 
     if bc.is_null() {
-        CheckCtrlBreak(BREAK_OUTOFBATCH);
+        CheckCtrlBreak((BREAK_OUTOFBATCH) as INT);
         BatType = NONE;
         bEcho = bBcEcho;
     }
@@ -199,7 +195,7 @@ pub unsafe extern "C" fn ExitAllBatches() {
 
 unsafe extern "C" fn BatchFile2Mem(hBatchFile: HANDLE) {
     (*bc).memsize = GetFileSize(hBatchFile, core::ptr::null_mut());
-    (*bc).mem = cmd_alloc(((*bc).memsize.wrapping_add(1)) as usize) as *mut c_char;
+    (*bc).mem = cmd_alloc!(((*bc).memsize.wrapping_add(1)) as usize) as *mut c_char;
 
     /* if memory is available, read it in and close the file */
     if !(*bc).mem.is_null() {
@@ -212,41 +208,36 @@ unsafe extern "C" fn BatchFile2Mem(hBatchFile: HANDLE) {
             core::ptr::null_mut(),
         );
         *(*bc).mem.add((*bc).memsize as usize) = 0;  /* end this, so you can dump it as a string */
-        (*bc).memfree = TRUE;      /* this one needs to be freed */
+        (*bc).memfree = (TRUE) as i32;      /* this one needs to be freed */
     } else {
         (*bc).memsize = 0;      /* this will prevent mem being accessed */
-        (*bc).memfree = FALSE;
+        (*bc).memfree = (FALSE) as i32;
     }
     (*bc).mempos = 0;           /* set position to the start */
 }
 #[no_mangle]
-pub unsafe extern "C" fn Batch(
-    mut fullname: LPTSTR,
-    mut firstword: LPTSTR,
-    mut param: LPTSTR,
-    mut Cmd: *mut PARSED_COMMAND,
-) -> INT {
+pub unsafe extern "C" fn Batch(mut fullname: LPTSTR, mut firstword: LPTSTR, mut param: LPTSTR, mut Cmd: *mut PARSED_COMMAND) -> INT {
     let mut ret: INT = 0;
     let mut i: INT;
     let mut hFile: HANDLE = core::ptr::null_mut();
-    let mut bSameFn: BOOLEAN = FALSE;
+    let mut bSameFn: BOOLEAN = (FALSE) as u8;
     let mut bTopLevel: BOOLEAN;
     let mut new: BATCH_CONTEXT = core::mem::zeroed();
     let mut saved_fc: PFOR_CONTEXT;
 
     SetLastError(0);
     if !bc.is_null() && !(*bc).mem.is_null() {
-        let mut fpname: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+        let mut fpname: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
         GetFullPathName(
             fullname,
-            ARRAYSIZE(fpname),
+            ARRAYSIZE!(fpname),
             fpname.as_mut_ptr(),
             core::ptr::null_mut(),
         );
         if _tcsicmp((*bc).BatchFilePath.as_mut_ptr(), fpname.as_mut_ptr())
             == 0
         {
-            bSameFn = TRUE;
+            bSameFn = (TRUE) as u8;
         }
     }
 
@@ -262,7 +253,7 @@ pub unsafe extern "C" fn Batch(
         );
 
         if hFile == INVALID_HANDLE_VALUE {
-            ConErrResPuts(STRING_BATCH_ERROR);
+            ConErrResPuts!(STRING_BATCH_ERROR);
             return 1;
         }
     }
@@ -306,7 +297,7 @@ pub unsafe extern "C" fn Batch(
             new.mem = (*bc).mem;
             new.memsize = (*bc).memsize;
             new.mempos = 0;
-            new.memfree = FALSE; /* don't free this, being used before this */
+            new.memfree = (FALSE) as i32; /* don't free this, being used before this */
         }
         bc = core::ptr::addr_of_mut!(new);
         (*bc).RedirList = core::ptr::null_mut();
@@ -315,7 +306,7 @@ pub unsafe extern "C" fn Batch(
 
     GetFullPathName(
         fullname,
-        ARRAYSIZE((*bc).BatchFilePath),
+        ARRAYSIZE!((*bc).BatchFilePath),
         (*bc).BatchFilePath.as_mut_ptr(),
         core::ptr::null_mut(),
     );
@@ -356,7 +347,7 @@ pub unsafe extern "C" fn Batch(
          * to .BAT, unless this is a .CMD file */
         let cmd_str: [TCHAR; 5] = ['.' as TCHAR, 'c' as TCHAR, 'm' as TCHAR, 'd' as TCHAR, 0];
         let mut dotext: PTCHAR =
-            _tcsrchr((*bc).BatchFilePath.as_mut_ptr(), _T('.' as TCHAR));
+            _tcsrchr((*bc).BatchFilePath.as_mut_ptr(), ('.' as TCHAR));
         BatType = (if !dotext.is_null()
             && _tcsicmp(dotext, cmd_str.as_ptr()) == 0
         {
@@ -370,7 +361,7 @@ pub unsafe extern "C" fn Batch(
 
     /* If this is a "CALL :label args ...", call a subroutine of
      * the current batch file, only if extensions are enabled. */
-    if bEnableExtensions != 0 && *firstword == _T(':' as TCHAR) {
+    if bEnableExtensions != 0 && *firstword == (':' as TCHAR) {
         let mut expLabel: LPTSTR;
 
         /* Position at the place of the parent file (which is the same as the caller) */
@@ -395,7 +386,7 @@ pub unsafe extern "C" fn Batch(
             firstword
         });
         if !expLabel.is_null() {
-            cmd_free(expLabel);
+            cmd_free!(expLabel);
         }
     }
 
@@ -411,11 +402,11 @@ pub unsafe extern "C" fn Batch(
             /* Echo the pre-parsed batch file line on error */
             if bEcho != 0 && bDisableBatchEcho == 0 {
                 if bIgnoreEcho == 0 {
-                    ConOutChar(_T('\n' as TCHAR));
+                    ConOutChar(('\n' as TCHAR));
                 }
                 PrintPrompt();
-                ConOutPuts(core::ptr::addr_of_mut!(ParseLine) as *mut TCHAR);
-                ConOutChar(_T('\n' as TCHAR));
+                ConOutPuts!(core::ptr::addr_of_mut!(ParseLine) as *mut TCHAR);
+                ConOutChar(('\n' as TCHAR));
             }
             /* Stop all execution */
             ExitAllBatches();
@@ -498,14 +489,14 @@ pub unsafe extern "C" fn ReadBatchLine() -> LPTSTR {
     static NEWLINE: [u16; 2] = ['\n' as u16, 0];
 
     /* User halt */
-    if CheckCtrlBreak(BREAK_BATCHFILE) != 0 {
+    if CheckCtrlBreak((BREAK_BATCHFILE) as INT) != 0 {
         ExitAllBatches();
         return core::ptr::null_mut();
     }
 
     if BatchGetString(
         &raw mut textline as LPTSTR,
-        (ARRAYSIZE(textline) as INT) - 1,
+        (ARRAYSIZE!(textline) as INT) - 1,
     ) == 0
     {
         /* End of file */
@@ -521,7 +512,7 @@ pub unsafe extern "C" fn ReadBatchLine() -> LPTSTR {
     //
     if textline[(_tcslen(&raw mut textline as LPTSTR) as usize)
         - 1 as usize]
-        != _T('\n')
+        != ('\n' as u16)
     {
         _tcscat(&raw mut textline as LPTSTR, NEWLINE.as_ptr() as PCTSTR);
     }

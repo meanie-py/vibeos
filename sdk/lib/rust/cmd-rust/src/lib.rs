@@ -11,6 +11,10 @@
 #![allow(unused_assignments, static_mut_refs)]
 #![allow(clippy::all)]
 
+// console.c `#include`s wcwidth.c (mk_wcwidth_cjk, for IS_FULL_WIDTH): the shared port. Named
+// here so the staticlib carries its #[no_mangle] symbols; the prelude only declares them.
+extern crate wcwidth_rust;
+
 pub mod types; // bindgen island, per arch (gen_driver_types.sh cmd)
 #[macro_use]
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs

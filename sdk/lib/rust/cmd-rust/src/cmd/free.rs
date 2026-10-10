@@ -1,15 +1,15 @@
 use crate::cmd::console::ConOutResPaging;
 use crate::cmd::cmd::ConvertULargeInteger;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No file-scope typedefs, object-like `#define` constants, enums, or data tables appear in this preamble. The only declarations are the functions `PrintDiskInfo` and `CommandFree`, which are excluded from this pass.
 
 unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = core::mem::zeroed();
-    let mut szRootPath: [TCHAR; 4] = _T("A:\\");
-    let mut szDrive: [TCHAR; 2] = _T("A");
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = core::mem::zeroed();
+    let mut szRootPath: [TCHAR; 4] = [0x0041, 0x003a, 0x005c, 0x0000u16] /* _T "A:\\" */;
+    let mut szDrive: [TCHAR; 2] = [0x0041, 0x0000u16] /* _T "A" */;
     let mut szVolume: [TCHAR; 64] = core::mem::zeroed();
     let mut szSerial: [TCHAR; 10] = core::mem::zeroed();
     let mut szTotal: [TCHAR; 40] = core::mem::zeroed();
@@ -23,9 +23,9 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
     let mut dwTotCl: DWORD = 0;
 
     if _tcslen(szDisk) < 2
-        || *szDisk.add(1) != _T(':')
+        || *szDisk.add(1) != (':' as u16)
     {
-        ConErrResPrintf(STRING_FREE_ERROR1);
+        ConErrResPrintf!(STRING_FREE_ERROR1);
         return;
     }
 
@@ -44,30 +44,30 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
     ) != 0
     {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_FREE_ERROR1,
             addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
-        ConErrPrintf(_T("%s %s:\n"), addr_of_mut!(szMsg) as LPTSTR, addr_of_mut!(szDrive) as LPTSTR);
+        ConErrPrintf!((&[0x0025, 0x0073, 0x0020, 0x0025, 0x0073, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "%s %s:\n" */, addr_of_mut!(szMsg) as LPTSTR, addr_of_mut!(szDrive) as LPTSTR);
         return;
     }
 
-    if szVolume[0] == _T('\0') {
+    if szVolume[0] == ('\0' as u16) {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_FREE_ERROR2,
             addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
         _tcscpy(addr_of_mut!(szVolume) as LPTSTR, addr_of_mut!(szMsg) as LPTSTR);
     }
 
     _stprintf(
         addr_of_mut!(szSerial) as LPTSTR,
-        _T("%04X-%04X"),
-        HIWORD(dwSerial),
-        LOWORD(dwSerial),
+        (&[0x0025, 0x0030, 0x0034, 0x0058, 0x002d, 0x0025, 0x0030, 0x0034, 0x0058, 0x0000u16]).as_ptr() /* _T "%04X-%04X" */,
+        HIWORD!(dwSerial) as core::ffi::c_uint,
+        LOWORD!(dwSerial) as core::ffi::c_uint,
     );
 
     if GetDiskFreeSpace(
@@ -79,12 +79,12 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
     ) == 0
     {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_FREE_ERROR1,
             addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
-        ConErrPrintf(_T("%s %s:\n"), addr_of_mut!(szMsg) as LPTSTR, addr_of_mut!(szDrive) as LPTSTR);
+        ConErrPrintf!((&[0x0025, 0x0073, 0x0020, 0x0025, 0x0073, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "%s %s:\n" */, addr_of_mut!(szMsg) as LPTSTR, addr_of_mut!(szDrive) as LPTSTR);
         return;
     }
 
@@ -93,7 +93,7 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
         uliSize,
         addr_of_mut!(szTotal) as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
 
     uliSize = (dwSecPerCl.wrapping_mul(dwBytPerSec) as ULONGLONG)
@@ -102,7 +102,7 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
         uliSize,
         addr_of_mut!(szUsed) as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
 
     uliSize = (dwSecPerCl.wrapping_mul(dwBytPerSec) as ULONGLONG).wrapping_mul(dwFreeCl as ULONGLONG);
@@ -110,10 +110,10 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
         uliSize,
         addr_of_mut!(szFree) as LPTSTR,
         40,
-        TRUE,
+        (TRUE) as BOOL,
     );
 
-    ConOutResPrintf(
+    ConOutResPrintf!(
         STRING_FREE_HELP1,
         addr_of_mut!(szDrive) as LPTSTR,
         addr_of_mut!(szVolume) as LPTSTR,
@@ -126,19 +126,19 @@ unsafe extern "C" fn PrintDiskInfo(szDisk: LPTSTR) {
 #[no_mangle]
 pub unsafe extern "C" fn CommandFree(param: LPTSTR) -> INT {
     let mut szParam: LPTSTR = core::ptr::null_mut();
-    let mut szDefPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szDefPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut argc: INT = 0;
     let mut i: INT = 0;
     let mut arg: *mut LPTSTR = core::ptr::null_mut();
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_FREE_HELP2);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_FREE_HELP2);
         return 0;
     }
 
-    if param.is_null() || *param == _T('\0') {
+    if param.is_null() || *param == ('\0' as u16) {
         GetCurrentDirectory(MAX_PATH, szDefPath.as_mut_ptr());
-        szDefPath[2] = _T('\0');
+        szDefPath[2] = ('\0' as u16);
         szParam = szDefPath.as_mut_ptr();
     } else {
         szParam = param;
@@ -147,8 +147,8 @@ pub unsafe extern "C" fn CommandFree(param: LPTSTR) -> INT {
     arg = split(
         szParam,
         core::ptr::addr_of_mut!(argc),
-        FALSE,
-        FALSE,
+        (FALSE) as BOOL,
+        (FALSE) as BOOL,
     );
 
     i = 0;

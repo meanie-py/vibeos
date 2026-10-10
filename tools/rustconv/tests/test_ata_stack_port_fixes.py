@@ -156,3 +156,18 @@ def test_a_bank_bought_before_kept_diagnostics_stays_in_its_namespace(tmp_path, 
     (responses / f"{old.name}__diag_v1").mkdir()
     assert not port._bank_predates_kept_diagnostics("cmd", "base/shell/cmd/copy.c")
     assert not port._bank_predates_kept_diagnostics("cmd", "base/shell/cmd/new.c")
+
+
+def test_integrate_keeps_a_definition_the_prelude_reexports_from_this_module(tmp_path):
+    # cmd: resolve wired `pub use crate::cmd::dir::_DirSwitchesFlags;`, and integrate then
+    # dropped dir.rs's own struct as "prelude-provided" -- defined nowhere after that.
+    src_dir = tmp_path / "src"
+    (src_dir / "cmd").mkdir(parents=True)
+    (src_dir / "prelude.rs").write_text("pub use crate::cmd::dir::_DirSwitchesFlags;\n")
+    body = "use crate::prelude::*;\n#[repr(C)]\npub struct _DirSwitchesFlags {\n    pub b: i32,\n}\n"
+    crate_integrate._PROVIDED_CACHE.clear()
+    kept, _ = crate_integrate.integrate(body, tmp_path, module="dir")
+    assert "pub struct _DirSwitchesFlags" in kept
+    crate_integrate._PROVIDED_CACHE.clear()
+    dropped, _ = crate_integrate.integrate(body, tmp_path, module="vol")
+    assert "pub struct _DirSwitchesFlags" not in dropped

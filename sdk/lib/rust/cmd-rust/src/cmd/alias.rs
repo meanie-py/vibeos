@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -6,7 +6,7 @@ use core::ffi::c_void;
 
 unsafe extern "C" fn partstrlwr(str: LPTSTR) {
     let mut c: LPTSTR = str;
-    while *c != 0 && _istspace(*c) == 0 && *c != _T('=') {
+    while *c != 0 && _istspace!(*c) == 0 && *c != ('=' as u16) {
         *c = _totlower(*c);
         c = c.offset(1);
     }
@@ -19,29 +19,29 @@ unsafe extern "C" fn PrintAlias() {
     let cmd_exe: [u16; 8] = ['c' as u16, 'm' as u16, 'd' as u16, '.' as u16, 'e' as u16, 'x' as u16, 'e' as u16, 0];
     let fmt_s: [u16; 4] = ['%' as u16, 's' as u16, '\n' as u16, 0];
 
-    len = GetConsoleAliasesLength(_T(cmd_exe.as_ptr()));
+    len = GetConsoleAliasesLength((cmd_exe.as_ptr()));
     if len == 0 as DWORD {
         return;
     }
 
     /* allocate memory for an extra \0 char to make parsing easier */
-    ptr = cmd_alloc(len + core::mem::size_of::<TCHAR>() as DWORD);
+    ptr = cmd_alloc!(len + core::mem::size_of::<TCHAR>() as DWORD) as LPTSTR;
     if ptr.is_null() {
         return;
     }
 
     Aliases = ptr;
 
-    ZeroMemory(Aliases, len + core::mem::size_of::<TCHAR>() as DWORD);
+    ZeroMemory!(Aliases, len + core::mem::size_of::<TCHAR>() as DWORD);
 
-    if GetConsoleAliases(Aliases, len, _T(cmd_exe.as_ptr())) != 0 as DWORD {
+    if GetConsoleAliases(Aliases, len, (cmd_exe.as_ptr())) != 0 as DWORD {
         while *Aliases != '\0' as TCHAR {
-            ConOutPrintf(_T(fmt_s.as_ptr()), Aliases);
+            ConOutPrintf!((fmt_s.as_ptr()), Aliases);
             Aliases = Aliases.offset(lstrlen(Aliases) as isize);
             Aliases = Aliases.offset(1);
         }
     }
-    cmd_free(ptr);
+    cmd_free!(ptr);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
@@ -64,7 +64,7 @@ pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
         0 as TCHAR,
     ];
 
-    tmp = cmd_dup(cmd);
+    tmp = cmd_dup!(cmd);
     if tmp.is_null() {
         return;
     }
@@ -72,7 +72,7 @@ pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
     /* first part is the macro name */
     position = tmp.offset(_tcscspn(tmp, sep_nl.as_ptr()) as isize);
     if position == tmp {
-        cmd_free(tmp);
+        cmd_free!(tmp);
         return;
     }
     let fresh0 = position;
@@ -80,9 +80,9 @@ pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
     *fresh0 = '\0' as i32 as TCHAR;
     position = position.offset(_tcsspn(position, sep_sp.as_ptr()) as isize);
 
-    buffer = cmd_alloc(maxlen as usize);
+    buffer = cmd_alloc!(maxlen as usize) as LPTSTR;
     if buffer.is_null() {
-        cmd_free(tmp);
+        cmd_free!(tmp);
         return;
     }
 
@@ -93,14 +93,14 @@ pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
         exe_name.as_ptr(),
     ) == 0
     {
-        cmd_free(tmp);
-        cmd_free(buffer);
+        cmd_free!(tmp);
+        cmd_free!(buffer);
         return;
     }
 
     in_ = buffer;
     out = cmd;
-    while *in_ != 0 {
+    while *in_ != 0 { // nolint: dowhile-continue (alias.c's is a `while`: `continue` skips `*out++ = *in++` there too)
         if *in_ == '$' as i32 as TCHAR {
             Token = position;
             if *in_.offset(1 as isize) >= '1' as i32 as TCHAR
@@ -161,22 +161,22 @@ pub unsafe extern "C" fn ExpandAlias(cmd: LPTSTR, maxlen: INT) {
     *fresh7 = '\n' as i32 as TCHAR;
     *out = '\0' as i32 as TCHAR;
 
-    cmd_free(buffer);
-    cmd_free(tmp);
+    cmd_free!(buffer);
+    cmd_free!(tmp);
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn CommandAlias(param: LPTSTR) -> INT {
     let mut ptr: LPTSTR;
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_ALIAS_HELP);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_ALIAS_HELP);
         return 0;
     }
 
     nErrorLevel = 0 as INT;
 
-    if *param.offset(0 as isize) == _T('\0') {
+    if *param.offset(0 as isize) == ('\0' as u16) {
         PrintAlias();
         return 0;
     }
@@ -184,7 +184,7 @@ pub unsafe extern "C" fn CommandAlias(param: LPTSTR) -> INT {
     nErrorLevel = 0 as INT;
 
     /* error if no '=' found */
-    ptr = _tcschr(param, _T('=')) as LPTSTR;
+    ptr = _tcschr(param, ('=' as u16)) as LPTSTR;
     if ptr == (0 as LPTSTR) {
         nErrorLevel = 1 as INT;
         return 1;
@@ -193,14 +193,14 @@ pub unsafe extern "C" fn CommandAlias(param: LPTSTR) -> INT {
     /* Split rest into name and substitute */
     let fresh39 = ptr;
     ptr = ptr.offset(1);
-    *fresh39 = _T('\0');
+    *fresh39 = ('\0' as u16);
 
     partstrlwr(param);
 
-    if *ptr.offset(0 as isize) == _T('\0') {
-        AddConsoleAlias(param, core::ptr::null_mut(), _T("cmd.exe"));
+    if *ptr.offset(0 as isize) == ('\0' as u16) {
+        AddConsoleAlias(param, core::ptr::null_mut(), (&[0x0063, 0x006d, 0x0064, 0x002e, 0x0065, 0x0078, 0x0065, 0x0000u16]).as_ptr() /* _T "cmd.exe" */);
     } else {
-        AddConsoleAlias(param, ptr, _T("cmd.exe"));
+        AddConsoleAlias(param, ptr, (&[0x0063, 0x006d, 0x0064, 0x002e, 0x0065, 0x0078, 0x0065, 0x0000u16]).as_ptr() /* _T "cmd.exe" */);
     }
 
     return 0;

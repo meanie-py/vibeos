@@ -4,7 +4,7 @@ use crate::cmd::error::error_req_param_missing;
 use crate::cmd::error::error_syntax;
 use crate::cmd::misc::freep;
 use crate::cmd::misc::split;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -26,19 +26,19 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     let mut i: INT;
 
     let mut srcPattern: LPTSTR = core::ptr::null_mut();
-    let mut srcPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut srcPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut srcFILE: LPTSTR = core::ptr::null_mut();
-    let mut srcFinal: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut srcFinal: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     let mut dstPattern: LPTSTR = core::ptr::null_mut();
-    let mut dstPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut dstPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut dstFILE: LPTSTR = core::ptr::null_mut();
 
-    let mut dstLast: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut dstFinal: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut dstLast: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut dstFinal: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
-    let mut bDstWildcard: BOOL = FALSE;
-    let mut bPath: BOOL = FALSE;
+    let mut bDstWildcard: BOOL = (FALSE) as i32;
+    let mut bPath: BOOL = (FALSE) as i32;
 
     let mut p: LPTSTR = core::ptr::null_mut();
     let mut q: LPTSTR = core::ptr::null_mut();
@@ -48,8 +48,8 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     let mut f: WIN32_FIND_DATA = core::mem::zeroed();
 
     /*If the PARAM=/? then show the help*/
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_REN_HELP1);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_REN_HELP1);
         return 0;
     }
 
@@ -59,8 +59,8 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     arg = split(
         param,
         core::ptr::addr_of_mut!(args),
-        FALSE,
-        FALSE,
+        (FALSE) as BOOL,
+        (FALSE) as BOOL,
     );
 
     if args < 2 {
@@ -75,27 +75,27 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     i = 0;
     while i < args {
         /* Lets check if we have a special option chosen and set the flag(s)*/
-        if *(*arg.offset(i as isize)) == _T('/') {
+        if *(*arg.offset(i as isize)) == ('/' as u16) {
             if _tcslen(*arg.offset(i as isize)) >= 2 {
                 match _totupper(
                     *(*arg.offset(i as isize)).offset(1 as isize),
                 ) {
-                    x if x == _T('E') => {
+                    x if x == ('E' as u16) => {
                         dwFlags |= REN_ERROR;
                     }
-                    x if x == _T('N') => {
+                    x if x == ('N' as u16) => {
                         dwFlags |= REN_NOTHING;
                     }
-                    x if x == _T('P') => {
+                    x if x == ('P' as u16) => {
                         dwFlags |= REN_PROMPT;
                     }
-                    x if x == _T('Q') => {
+                    x if x == ('Q' as u16) => {
                         dwFlags |= REN_QUIET;
                     }
-                    x if x == _T('S') => {
+                    x if x == ('S' as u16) => {
                         dwFlags |= REN_SUBDIR;
                     }
-                    x if x == _T('T') => {
+                    x if x == ('T' as u16) => {
                         dwFlags |= REN_TOTAL;
                     }
                     _ => {}
@@ -123,7 +123,7 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     /* Get destination pattern and source pattern*/
     i = 0;
     while i < args {
-        if !(*(*arg.offset(i as isize)) == _T('/')) {
+        if !(*(*arg.offset(i as isize)) == ('/' as u16)) {
             //we save the Last argument as dstPattern
             dstPattern = *arg.offset(i as isize);
             srcPattern = *arg.offset((i - 1) as isize);
@@ -132,19 +132,19 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     }
 
     //Checking if the Source (srcPattern) is a Path to the file
-    if !_tcschr(srcPattern, _T('\\')).is_null() {
-        bPath = TRUE;
+    if !_tcschr(srcPattern, ('\\' as u16)).is_null() {
+        bPath = (TRUE) as i32;
 
         //Splitting srcPath and srcFile.
 
-        srcFILE = _tcschr(srcPattern, _T('\\'));
+        srcFILE = _tcschr(srcPattern, ('\\' as u16));
         nSlash += 1;
-        while !_tcschr(srcFILE, _T('\\')).is_null() {
+        while !_tcschr(srcFILE, ('\\' as u16)).is_null() {
             srcFILE = srcFILE.offset(1);
-            if *srcFILE == _T('\\') {
+            if *srcFILE == ('\\' as u16) {
                 nSlash += 1;
             }
-            if _tcschr(srcFILE, _T('\\')).is_null() {
+            if _tcschr(srcFILE, ('\\' as u16)).is_null() {
                 break;
             }
         }
@@ -155,15 +155,15 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
         );
 
         //Checking if the Destiny (dstPattern)is also a Path.And splitting dstPattern in dstPath and srcPath.
-        if !_tcschr(dstPattern, _T('\\')).is_null() {
-            dstFILE = _tcschr(dstPattern, _T('\\'));
+        if !_tcschr(dstPattern, ('\\' as u16)).is_null() {
+            dstFILE = _tcschr(dstPattern, ('\\' as u16));
             nSlash = 0;
-            while !_tcschr(dstFILE, _T('\\')).is_null() {
+            while !_tcschr(dstFILE, ('\\' as u16)).is_null() {
                 dstFILE = dstFILE.offset(1);
-                if *dstFILE == _T('\\') {
+                if *dstFILE == ('\\' as u16) {
                     nSlash += 1;
                 }
-                if _tcschr(dstFILE, _T('\\')).is_null() {
+                if _tcschr(dstFILE, ('\\' as u16)).is_null() {
                     break;
                 }
             }
@@ -197,9 +197,9 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     }
 
     //If srcPattern isn't a Path but a name:
-    if _tcschr(srcPattern, _T('\\')).is_null() {
+    if _tcschr(srcPattern, ('\\' as u16)).is_null() {
         srcFILE = srcPattern;
-        if !_tcschr(dstPattern, _T('\\')).is_null() {
+        if !_tcschr(dstPattern, ('\\' as u16)).is_null() {
             error_syntax(dstPattern);
             freep(arg);
             return 1;
@@ -209,10 +209,10 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
     }
 
     //Checking Wildcards.
-    if !_tcschr(dstFILE, _T('*')).is_null()
-        || !_tcschr(dstFILE, _T('?')).is_null()
+    if !_tcschr(dstFILE, ('*' as u16)).is_null()
+        || !_tcschr(dstFILE, ('?' as u16)).is_null()
     {
-        bDstWildcard = TRUE;
+        bDstWildcard = (TRUE) as i32;
     }
 
     hFile = FindFirstFile(srcPattern, core::ptr::addr_of_mut!(f));
@@ -227,11 +227,11 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
             /* ignore "." and ".." */
             if _tcscmp(
                 core::ptr::addr_of_mut!(f.cFileName) as LPTSTR,
-                _T("."),
+                (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */,
             ) == 0
                 || _tcscmp(
                     core::ptr::addr_of_mut!(f.cFileName) as LPTSTR,
-                    _T(".."),
+                    (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */,
                 ) == 0
             {
                 break 'body;
@@ -283,7 +283,7 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
             *r = 0;
 
             //Well we have splitted the Paths,so now we have to paste them again(if needed),thanks bPath.
-            if bPath != FALSE {
+            if (bPath) as u32 != FALSE {
                 _tcscpy(
                     core::ptr::addr_of_mut!(srcFinal) as LPTSTR,
                     core::ptr::addr_of_mut!(srcPath) as LPTSTR,
@@ -312,8 +312,8 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
             }
 
             if (dwFlags & REN_QUIET) == 0 && (dwFlags & REN_TOTAL) == 0 {
-                ConOutPrintf(
-                    _T("%s -> %s\n"),
+                ConOutPrintf!(
+                    (&[0x0025, 0x0073, 0x0020, 0x002d, 0x003e, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "%s -> %s\n" */,
                     core::ptr::addr_of_mut!(srcFinal) as LPTSTR,
                     core::ptr::addr_of_mut!(dstFinal) as LPTSTR,
                 );
@@ -329,7 +329,7 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
                     dwFiles += 1;
                 } else {
                     if (dwFlags & REN_ERROR) == 0 {
-                        ConErrResPrintf(STRING_REN_ERROR, GetLastError());
+                        ConErrResPrintf!(STRING_REN_ERROR, GetLastError());
                     }
                 }
             }
@@ -344,9 +344,9 @@ pub unsafe extern "C" fn cmd_rename(param: LPTSTR) -> INT {
 
     if (dwFlags & REN_QUIET) == 0 {
         if dwFiles == 1 {
-            ConOutResPrintf(STRING_REN_HELP2, dwFiles);
+            ConOutResPrintf!(STRING_REN_HELP2, dwFiles);
         } else {
-            ConOutResPrintf(STRING_REN_HELP3, dwFiles);
+            ConOutResPrintf!(STRING_REN_HELP3, dwFiles);
         }
     }
 

@@ -5,6 +5,9 @@
 // base field types resolved via the sibling -sys glob below (kernel: private
 // ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).
 pub use ntdll_sys::nt::*;
+pub use conutils_h::CON_STREAM;
+pub use conutils_h::CON_STREAM as _CON_STREAM;
+pub type PCON_STREAM = *mut conutils_h::CON_STREAM;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 #[repr(C, align(8))]
@@ -590,6 +593,78 @@ pub const RRF_RT_QWORD: u32 = 72;
 pub const RRF_RT_ANY: u32 = 65535;
 pub const RRF_NOEXPAND: u32 = 268435456;
 pub const RRF_ZEROONFAILURE: u32 = 536870912;
+pub const CONSOLE_WINDOWED: u32 = 0;
+pub const CONSOLE_FULLSCREEN: u32 = 1;
+pub const CONSOLE_FULLSCREEN_HARDWARE: u32 = 2;
+pub const CONSOLE_FULLSCREEN_MODE: u32 = 1;
+pub const CONSOLE_WINDOWED_MODE: u32 = 2;
+pub const FOREGROUND_BLUE: u32 = 1;
+pub const FOREGROUND_GREEN: u32 = 2;
+pub const FOREGROUND_RED: u32 = 4;
+pub const FOREGROUND_INTENSITY: u32 = 8;
+pub const BACKGROUND_BLUE: u32 = 16;
+pub const BACKGROUND_GREEN: u32 = 32;
+pub const BACKGROUND_RED: u32 = 64;
+pub const BACKGROUND_INTENSITY: u32 = 128;
+pub const COMMON_LVB_LEADING_BYTE: u32 = 256;
+pub const COMMON_LVB_TRAILING_BYTE: u32 = 512;
+pub const COMMON_LVB_GRID_HORIZONTAL: u32 = 1024;
+pub const COMMON_LVB_GRID_LVERTICAL: u32 = 2048;
+pub const COMMON_LVB_GRID_RVERTICAL: u32 = 4096;
+pub const COMMON_LVB_REVERSE_VIDEO: u32 = 16384;
+pub const COMMON_LVB_UNDERSCORE: u32 = 32768;
+pub const COMMON_LVB_SBCSDBCS: u32 = 768;
+pub const CONSOLE_TEXTMODE_BUFFER: u32 = 1;
+pub const CTRL_C_EVENT: u32 = 0;
+pub const CTRL_BREAK_EVENT: u32 = 1;
+pub const CTRL_CLOSE_EVENT: u32 = 2;
+pub const CTRL_LOGOFF_EVENT: u32 = 5;
+pub const CTRL_SHUTDOWN_EVENT: u32 = 6;
+pub const ENABLE_PROCESSED_INPUT: u32 = 1;
+pub const ENABLE_LINE_INPUT: u32 = 2;
+pub const ENABLE_ECHO_INPUT: u32 = 4;
+pub const ENABLE_WINDOW_INPUT: u32 = 8;
+pub const ENABLE_MOUSE_INPUT: u32 = 16;
+pub const ENABLE_INSERT_MODE: u32 = 32;
+pub const ENABLE_QUICK_EDIT_MODE: u32 = 64;
+pub const ENABLE_EXTENDED_FLAGS: u32 = 128;
+pub const ENABLE_PROCESSED_OUTPUT: u32 = 1;
+pub const ENABLE_WRAP_AT_EOL_OUTPUT: u32 = 2;
+pub const CONSOLE_NO_SELECTION: u32 = 0;
+pub const CONSOLE_SELECTION_IN_PROGRESS: u32 = 1;
+pub const CONSOLE_SELECTION_NOT_EMPTY: u32 = 2;
+pub const CONSOLE_MOUSE_SELECTION: u32 = 4;
+pub const CONSOLE_MOUSE_DOWN: u32 = 8;
+pub const KEY_EVENT: u32 = 1;
+pub const MOUSE_EVENT: u32 = 2;
+pub const WINDOW_BUFFER_SIZE_EVENT: u32 = 4;
+pub const MENU_EVENT: u32 = 8;
+pub const FOCUS_EVENT: u32 = 16;
+pub const RIGHT_ALT_PRESSED: u32 = 1;
+pub const LEFT_ALT_PRESSED: u32 = 2;
+pub const RIGHT_CTRL_PRESSED: u32 = 4;
+pub const LEFT_CTRL_PRESSED: u32 = 8;
+pub const SHIFT_PRESSED: u32 = 16;
+pub const NUMLOCK_ON: u32 = 32;
+pub const SCROLLLOCK_ON: u32 = 64;
+pub const CAPSLOCK_ON: u32 = 128;
+pub const ENHANCED_KEY: u32 = 256;
+pub const NLS_DBCSCHAR: u32 = 65536;
+pub const NLS_ALPHANUMERIC: u32 = 0;
+pub const NLS_KATAKANA: u32 = 131072;
+pub const NLS_HIRAGANA: u32 = 262144;
+pub const NLS_ROMAN: u32 = 4194304;
+pub const NLS_IME_CONVERSION: u32 = 8388608;
+pub const ALTNUMPAD_BIT: u32 = 67108864;
+pub const NLS_IME_DISABLE: u32 = 536870912;
+pub const FROM_LEFT_1ST_BUTTON_PRESSED: u32 = 1;
+pub const RIGHTMOST_BUTTON_PRESSED: u32 = 2;
+pub const FROM_LEFT_2ND_BUTTON_PRESSED: u32 = 4;
+pub const FROM_LEFT_3RD_BUTTON_PRESSED: u32 = 8;
+pub const FROM_LEFT_4TH_BUTTON_PRESSED: u32 = 16;
+pub const MOUSE_MOVED: u32 = 1;
+pub const DOUBLE_CLICK: u32 = 2;
+pub const MOUSE_WHEELED: u32 = 4;
 pub const ABE_LEFT: u32 = 0;
 pub const ABE_TOP: u32 = 1;
 pub const ABE_RIGHT: u32 = 2;
@@ -737,6 +812,9 @@ pub const STRSAFE_IGNORE_NULL_UNICODE_STRINGS: u32 = 65536;
 pub const STRSAFE_UNICODE_STRING_DEST_NULL_TERMINATED: u32 = 131072;
 pub const STRSAFE_VALID_FLAGS: u32 = 8191;
 pub const STRSAFE_UNICODE_STRING_VALID_FLAGS: u32 = 204799;
+pub const CON_PAGER_EXPAND_TABS: u32 = 1;
+pub const CON_PAGER_EXPAND_FF: u32 = 2;
+pub const CON_PAGER_CACHE_INCOMPLETE_LINE: u32 = 4;
 pub const RC_STRING_MAX_SIZE: u32 = 3072;
 pub const STRING_ERROR_PARAMETERF_ERROR: u32 = 100;
 pub const STRING_ERROR_INVALID_SWITCH: u32 = 101;
@@ -946,23 +1024,6 @@ pub const PROMPT_YES: u32 = 1;
 pub const PROMPT_ALL: u32 = 2;
 pub const PROMPT_BREAK: u32 = 3;
 pub const BATCH_BUFFSIZE: u32 = 8192;
-pub const KERNEL_VERSION_BUILD: u32 = 20261010;
-pub const KERNEL_VERSION_BUILD_STR: &[u8; 34] = b"20261010-0.4.17-dev-8078-g7089f37\0";
-pub const KERNEL_VERSION_BUILD_RC: &[u8; 35] = b"20261010-0.4.17-dev-8078-g7089f37\0\0";
-pub const KERNEL_VERSION_RC: &[u8; 18] = b"0.4.17-arm64-dev\0\0";
-pub const KERNEL_VERSION_STR: &[u8; 17] = b"0.4.17-arm64-dev\0";
-pub const KERNEL_VERSION_REVISION_RC: &[u8; 26] = b"0.4.17-dev-8078-g7089f37\0\0";
-pub const KERNEL_VERSION_REVISION_STR: &[u8; 25] = b"0.4.17-dev-8078-g7089f37\0";
-pub const KERNEL_VERSION_COMMIT_HASH: &[u8; 41] = b"7089f37b7b54b75918f52163dd05d40100217720\0";
-pub const REACTOS_DLL_VERSION_MAJOR: u32 = 42;
-pub const REACTOS_DLL_VERSION_RC: &[u8; 13] = b"42.4.17-dev\0\0";
-pub const REACTOS_DLL_VERSION_STR: &[u8; 12] = b"42.4.17-dev\0";
-pub const REACTOS_COMPILER_NAME: &[u8; 6] = b"Clang\0";
-pub const REACTOS_COMPILER_VERSION: &[u8; 7] = b"19.1.7\0";
-pub const KERNEL_VERSION_MAJOR: u32 = 0;
-pub const KERNEL_VERSION_MINOR: u32 = 4;
-pub const KERNEL_VERSION_PATCH_LEVEL: u32 = 17;
-pub const COPYRIGHT_YEAR: &[u8; 5] = b"2026\0";
 pub const CP_SHIFTJIS: u32 = 932;
 pub const CP_HANGUL: u32 = 949;
 pub const CP_JOHAB: u32 = 1361;
@@ -978,6 +1039,23 @@ pub const HANGUL_CHARSET: u32 = 129;
 pub const JOHAB_CHARSET: u32 = 130;
 pub const GB2312_CHARSET: u32 = 134;
 pub const CHINESEBIG5_CHARSET: u32 = 136;
+pub const KERNEL_VERSION_BUILD: u32 = 20261010;
+pub const KERNEL_VERSION_BUILD_STR: &[u8; 34] = b"20261010-0.4.17-dev-8097-g1dde7e8\0";
+pub const KERNEL_VERSION_BUILD_RC: &[u8; 35] = b"20261010-0.4.17-dev-8097-g1dde7e8\0\0";
+pub const KERNEL_VERSION_RC: &[u8; 18] = b"0.4.17-arm64-dev\0\0";
+pub const KERNEL_VERSION_STR: &[u8; 17] = b"0.4.17-arm64-dev\0";
+pub const KERNEL_VERSION_REVISION_RC: &[u8; 26] = b"0.4.17-dev-8097-g1dde7e8\0\0";
+pub const KERNEL_VERSION_REVISION_STR: &[u8; 25] = b"0.4.17-dev-8097-g1dde7e8\0";
+pub const KERNEL_VERSION_COMMIT_HASH: &[u8; 41] = b"1dde7e8f09a6f0b6235f9f56eb828e34a88679f0\0";
+pub const REACTOS_DLL_VERSION_MAJOR: u32 = 42;
+pub const REACTOS_DLL_VERSION_RC: &[u8; 13] = b"42.4.17-dev\0\0";
+pub const REACTOS_DLL_VERSION_STR: &[u8; 12] = b"42.4.17-dev\0";
+pub const REACTOS_COMPILER_NAME: &[u8; 6] = b"Clang\0";
+pub const REACTOS_COMPILER_VERSION: &[u8; 7] = b"19.1.7\0";
+pub const KERNEL_VERSION_MAJOR: u32 = 0;
+pub const KERNEL_VERSION_MINOR: u32 = 4;
+pub const KERNEL_VERSION_PATCH_LEVEL: u32 = 17;
+pub const COPYRIGHT_YEAR: &[u8; 5] = b"2026\0";
 pub type TCHAR = wchar_t;
 pub type PTCHAR = *mut wchar_t;
 pub type PTSTR = LPWSTR;
@@ -1209,6 +1287,30 @@ pub type NUMBERFMT = NUMBERFMTW;
 pub type LPNUMBERFMT = LPNUMBERFMTW;
 #[derive(Copy, Clone)]
 #[repr(C)]
+pub struct _CONSOLE_READCONSOLE_CONTROL {
+    pub nLength: ULONG,
+    pub nInitialChars: ULONG,
+    pub dwCtrlWakeupMask: ULONG,
+    pub dwControlKeyState: ULONG,
+}
+pub type CONSOLE_READCONSOLE_CONTROL = _CONSOLE_READCONSOLE_CONTROL;
+pub type PCONSOLE_READCONSOLE_CONTROL = *mut _CONSOLE_READCONSOLE_CONTROL;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _CHAR_INFO {
+    pub Char: _CHAR_INFO__bindgen_ty_1,
+    pub Attributes: WORD,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub union _CHAR_INFO__bindgen_ty_1 {
+    pub UnicodeChar: WCHAR,
+    pub AsciiChar: CHAR,
+}
+pub type CHAR_INFO = _CHAR_INFO;
+pub type PCHAR_INFO = *mut _CHAR_INFO;
+#[derive(Copy, Clone)]
+#[repr(C)]
 pub struct _SMALL_RECT {
     pub Left: SHORT,
     pub Top: SHORT,
@@ -1216,6 +1318,7 @@ pub struct _SMALL_RECT {
     pub Bottom: SHORT,
 }
 pub type SMALL_RECT = _SMALL_RECT;
+pub type PSMALL_RECT = *mut _SMALL_RECT;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _CONSOLE_CURSOR_INFO {
@@ -1223,6 +1326,7 @@ pub struct _CONSOLE_CURSOR_INFO {
     pub bVisible: BOOL,
 }
 pub type CONSOLE_CURSOR_INFO = _CONSOLE_CURSOR_INFO;
+pub type PCONSOLE_CURSOR_INFO = *mut _CONSOLE_CURSOR_INFO;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _COORD {
@@ -1230,6 +1334,24 @@ pub struct _COORD {
     pub Y: SHORT,
 }
 pub type COORD = _COORD;
+pub type PCOORD = *mut _COORD;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _CONSOLE_SELECTION_INFO {
+    pub dwFlags: DWORD,
+    pub dwSelectionAnchor: COORD,
+    pub srSelection: SMALL_RECT,
+}
+pub type CONSOLE_SELECTION_INFO = _CONSOLE_SELECTION_INFO;
+pub type PCONSOLE_SELECTION_INFO = *mut _CONSOLE_SELECTION_INFO;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct _CONSOLE_FONT_INFO {
+    pub nFont: DWORD,
+    pub dwFontSize: COORD,
+}
+pub type CONSOLE_FONT_INFO = _CONSOLE_FONT_INFO;
+pub type PCONSOLE_FONT_INFO = *mut _CONSOLE_FONT_INFO;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _CONSOLE_SCREEN_BUFFER_INFO {
@@ -1240,6 +1362,8 @@ pub struct _CONSOLE_SCREEN_BUFFER_INFO {
     pub dwMaximumWindowSize: COORD,
 }
 pub type CONSOLE_SCREEN_BUFFER_INFO = _CONSOLE_SCREEN_BUFFER_INFO;
+pub type PCONSOLE_SCREEN_BUFFER_INFO = *mut _CONSOLE_SCREEN_BUFFER_INFO;
+pub type PHANDLER_ROUTINE = ::core::option::Option<unsafe extern "system" fn(CtrlType: DWORD) -> BOOL>;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _KEY_EVENT_RECORD {
@@ -1257,6 +1381,7 @@ pub union _KEY_EVENT_RECORD__bindgen_ty_1 {
     pub AsciiChar: CHAR,
 }
 pub type KEY_EVENT_RECORD = _KEY_EVENT_RECORD;
+pub type PKEY_EVENT_RECORD = *mut _KEY_EVENT_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MOUSE_EVENT_RECORD {
@@ -1266,24 +1391,28 @@ pub struct _MOUSE_EVENT_RECORD {
     pub dwEventFlags: DWORD,
 }
 pub type MOUSE_EVENT_RECORD = _MOUSE_EVENT_RECORD;
+pub type PMOUSE_EVENT_RECORD = *mut _MOUSE_EVENT_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _WINDOW_BUFFER_SIZE_RECORD {
     pub dwSize: COORD,
 }
 pub type WINDOW_BUFFER_SIZE_RECORD = _WINDOW_BUFFER_SIZE_RECORD;
+pub type PWINDOW_BUFFER_SIZE_RECORD = *mut _WINDOW_BUFFER_SIZE_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _MENU_EVENT_RECORD {
     pub dwCommandId: UINT,
 }
 pub type MENU_EVENT_RECORD = _MENU_EVENT_RECORD;
+pub type PMENU_EVENT_RECORD = *mut _MENU_EVENT_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _FOCUS_EVENT_RECORD {
     pub bSetFocus: BOOL,
 }
 pub type FOCUS_EVENT_RECORD = _FOCUS_EVENT_RECORD;
+pub type PFOCUS_EVENT_RECORD = *mut _FOCUS_EVENT_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _INPUT_RECORD {
@@ -1299,6 +1428,7 @@ pub union _INPUT_RECORD__bindgen_ty_1 {
     pub MenuEvent: MENU_EVENT_RECORD,
     pub FocusEvent: FOCUS_EVENT_RECORD,
 }
+pub type INPUT_RECORD = _INPUT_RECORD;
 pub type PINPUT_RECORD = *mut _INPUT_RECORD;
 #[derive(Copy, Clone)]
 #[repr(C)]
@@ -1555,12 +1685,6 @@ pub type LPSHFILEOPSTRUCT = *mut SHFILEOPSTRUCTW;
 pub type SHFILEINFO = SHFILEINFOW;
 pub type SHNAMEMAPPING = SHNAMEMAPPINGW;
 pub type LPSHNAMEMAPPING = LPSHNAMEMAPPINGW;
-#[repr(C)]
-#[derive(Debug)]
-pub struct _CON_STREAM {
-    _unused: [u8; 0],
-}
-pub type PCON_STREAM = *mut _CON_STREAM;
 #[derive(Copy, Clone)]
 #[repr(C)]
 pub struct _CON_SCREEN {
@@ -1596,6 +1720,9 @@ pub struct _CON_PAGER {
 }
 pub type CON_PAGER = _CON_PAGER;
 pub type PCON_PAGER = *mut _CON_PAGER;
+pub type PAGE_PROMPT = ::core::option::Option<
+    unsafe extern "system" fn(Pager: PCON_PAGER, Done: DWORD, Total: DWORD) -> BOOL,
+>;
 unsafe extern "C" {
     pub static mut lpOriginalEnvironment: LPTSTR;
 }

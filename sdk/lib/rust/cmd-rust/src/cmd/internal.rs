@@ -1,20 +1,15 @@
 use crate::cmd::console::ConOutResPaging;
-use crate::cmd::error::ErrorMessage;
 use crate::cmd::cmdtable::PrintCommandList;
 use crate::cmd::goto::cmd_goto;
 use crate::cmd::error::error_invalid_drive;
 use crate::cmd::error::error_req_param_missing;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No file-scope typedefs, #defines, enums, or static tables appear in this preamble. It contains only function definitions (GetRootPath, SetRootPath, cmd_chdir, MakeFullPath, cmd_mkdir, DeleteFolder, cmd_rmdir, CommandRem), which are handled by the per-function passes.
 #[no_mangle]
-pub unsafe extern "C" fn GetRootPath(
-    InPath: LPCTSTR,
-    OutPath: LPTSTR,
-    size: INT,
-) -> INT {
+pub unsafe extern "C" fn GetRootPath(InPath: LPCTSTR, OutPath: LPTSTR, size: INT) -> INT {
     if *InPath.offset(0 as isize) as INT != 0
         && *InPath.offset(1 as isize) as INT == ':' as INT
     {
@@ -46,15 +41,15 @@ pub unsafe extern "C" fn GetRootPath(
 #[no_mangle]
 pub unsafe extern "C" fn SetRootPath(oldpath: *mut TCHAR, InPath: *mut TCHAR) -> BOOL {
     let mut dwLastError: DWORD = 0;
-    let mut OutPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut OutPathTemp: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut OutPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut OutPathTemp: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     'fail: {
         StripQuotes(InPath);
 
         /* Retrieve the full path name from the (possibly relative) InPath */
         if GetFullPathName(
             InPath,
-            ARRAYSIZE(OutPathTemp),
+            ARRAYSIZE!(OutPathTemp),
             core::ptr::addr_of_mut!(OutPathTemp) as LPTSTR,
             core::ptr::null_mut(),
         ) == 0
@@ -104,27 +99,27 @@ pub unsafe extern "C" fn SetRootPath(oldpath: *mut TCHAR, InPath: *mut TCHAR) ->
             SetCurrentDirectory(oldpath);
         }
 
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* Fail: */
-    ConErrFormatMessage(dwLastError);
+    ConErrFormatMessage!(dwLastError);
     nErrorLevel = 1;
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_chdir(param: LPTSTR) -> INT {
     let mut param = param;
-    let mut bChangeDrive: BOOL = FALSE;
+    let mut bChangeDrive: BOOL = (FALSE) as i32;
     let mut tmp: LPTSTR;
-    let mut szCurrent: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szCurrent: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     /* Filter out special cases first */
 
     /* Print help */
-    if _tcsncmp(param, _T("/?"), 2) == 0
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_CD_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_CD_HELP);
         return 0;
     }
 
@@ -145,42 +140,42 @@ pub unsafe extern "C" fn cmd_chdir(param: LPTSTR) -> INT {
     {
         /* Strip trailing whitespace */
         tmp = param.offset(_tcslen(param) as isize - 1 as isize);
-        while tmp > param && _istspace(*tmp) != 0
+        while tmp > param && _istspace!(*tmp) != 0
         {
             tmp = tmp.offset(-1);
         }
-        *tmp.offset(1 as isize) = _T('\0');
+        *tmp.offset(1 as isize) = ('\0' as u16);
     }
 
     /* Reset the error level */
     nErrorLevel = 0;
 
     /* Print the current directory on a disk */
-    if _tcslen(param) == 2 && *param.offset(1 as isize) == _T(':')
+    if _tcslen(param) == 2 && *param.offset(1 as isize) == (':' as u16)
     {
-        if GetRootPath(param, szCurrent.as_mut_ptr(), ARRAYSIZE(szCurrent)) != 0
+        if GetRootPath(param, szCurrent.as_mut_ptr(), (ARRAYSIZE!(szCurrent)) as INT) != 0
         {
             error_invalid_drive();
             return 1;
         }
-        ConOutPrintf(_T("%s\n"), szCurrent.as_mut_ptr());
+        ConOutPrintf!((&[0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "%s\n" */, szCurrent.as_mut_ptr());
         return 0;
     }
 
     /* Get the current directory */
-    GetCurrentDirectory(ARRAYSIZE(szCurrent), szCurrent.as_mut_ptr());
-    if *param.offset(0 as isize) == _T('\0')
+    GetCurrentDirectory(ARRAYSIZE!(szCurrent), szCurrent.as_mut_ptr());
+    if *param.offset(0 as isize) == ('\0' as u16)
     {
-        ConOutPrintf(_T("%s\n"), szCurrent.as_mut_ptr());
+        ConOutPrintf!((&[0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "%s\n" */, szCurrent.as_mut_ptr());
         return 0;
     }
 
     /* If the input string is prefixed with the /D switch, change the drive */
-    if _tcsncicmp(param, _T("/D"), 2) == 0
+    if _tcsncicmp(param, (&[0x002f, 0x0044, 0x0000u16]).as_ptr() /* _T "/D" */, 2) == 0
     {
-        bChangeDrive = TRUE;
+        bChangeDrive = (TRUE) as i32;
         param = param.offset(2 as isize);
-        while _istspace(*param) != 0
+        while _istspace!(*param) != 0
         {
             param = param.offset(1);
         }
@@ -202,25 +197,25 @@ pub unsafe extern "C" fn cmd_chdir(param: LPTSTR) -> INT {
     return 0;
 }
 #[no_mangle]
-pub unsafe extern "C" fn MakeFullPath(DirPath: LPTSTR) -> BOOL {
-    let mut path: [TCHAR; MAX_PATH] = core::mem::zeroed();
+pub unsafe extern "C" fn MakeFullPath(DirPath: *mut TCHAR) -> BOOL {
+    let mut path: [TCHAR; (MAX_PATH) as _] = core::mem::zeroed();
     let mut p: LPTSTR = DirPath;
     let mut n: INT_PTR;
     if CreateDirectory(DirPath, core::ptr::null_mut()) != 0 {
-        return TRUE;
+        return (TRUE) as BOOL;
     } else if GetLastError() != ERROR_PATH_NOT_FOUND {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* got ERROR_PATH_NOT_FOUND, so try building it up one component at a time */
-    if *p.add(0) != 0 && *p.add(1) == _T(':') {
+    if *p.add(0) != 0 && *p.add(1) == (':' as u16) {
         p = p.add(2);
     }
-    while *p == _T('\\') {
+    while *p == ('\\' as u16) {
         p = p.add(1); /* skip drive root */
     }
     loop {
-        p = _tcschr(p, _T('\\'));
+        p = _tcschr(p, ('\\' as u16));
         n = if !p.is_null() {
             let fresh31 = p;
             p = p.add(1);
@@ -229,18 +224,18 @@ pub unsafe extern "C" fn MakeFullPath(DirPath: LPTSTR) -> BOOL {
             _tcslen(DirPath) as INT_PTR
         };
         _tcsncpy(path.as_mut_ptr(), DirPath, n as usize);
-        path[n as usize] = _T('\0');
+        path[n as usize] = ('\0' as u16);
         if CreateDirectory(path.as_mut_ptr(), core::ptr::null_mut()) == 0
             && GetLastError() != ERROR_ALREADY_EXISTS
         {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         if p.is_null() {
             break;
         }
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_mkdir(mut param: LPTSTR) -> INT {
@@ -249,14 +244,14 @@ pub unsafe extern "C" fn cmd_mkdir(mut param: LPTSTR) -> INT {
     let mut i: INT;
     let mut dwLastError: DWORD;
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_MKDIR_HELP);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_MKDIR_HELP);
         return 0;
     }
 
-    p = split(param, core::ptr::addr_of_mut!(argc), FALSE, FALSE);
+    p = split(param, core::ptr::addr_of_mut!(argc), (FALSE) as BOOL, (FALSE) as BOOL);
     if argc == 0 {
-        ConErrResPuts(STRING_ERROR_REQ_PARAM_MISSING);
+        ConErrResPuts!(STRING_ERROR_REQ_PARAM_MISSING);
         freep(p);
         nErrorLevel = 1;
         return 1;
@@ -269,10 +264,10 @@ pub unsafe extern "C" fn cmd_mkdir(mut param: LPTSTR) -> INT {
             dwLastError = GetLastError();
             match dwLastError {
                 ERROR_PATH_NOT_FOUND => {
-                    ConErrResPuts(STRING_MD_ERROR2);
+                    ConErrResPuts!(STRING_MD_ERROR2);
                 }
                 ERROR_FILE_EXISTS | ERROR_ALREADY_EXISTS => {
-                    ConErrResPrintf(STRING_MD_ERROR, *p.offset(i as isize));
+                    ConErrResPrintf!(STRING_MD_ERROR, *p.offset(i as isize));
                 }
                 _ => {
                     ErrorMessage(GetLastError(), core::ptr::null_mut());
@@ -292,7 +287,7 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
     let mut hFile: HANDLE = core::ptr::null_mut();
     let mut f: WIN32_FIND_DATA = core::mem::zeroed();
     let mut dwAttribs: DWORD = 0;
-    let mut szFullPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFullPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     _tcscpy(core::ptr::addr_of_mut!(szFullPath) as *mut TCHAR, Directory);
     pFileName = (core::ptr::addr_of_mut!(szFullPath) as *mut TCHAR).add(
@@ -303,14 +298,14 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
      * path is not specified (paths like "C:" mean the current directory on drive C:).
      */
     if *(core::ptr::addr_of_mut!(szFullPath) as *mut TCHAR) != 0
-        && *pFileName.sub(1) != _T(':')
-        && *pFileName.sub(1) != _T('\\')
+        && *pFileName.sub(1) != (':' as u16)
+        && *pFileName.sub(1) != ('\\' as u16)
     {
         let fresh = pFileName;
         pFileName = pFileName.add(1);
-        *fresh = _T('\\');
+        *fresh = ('\\' as u16);
     }
-    _tcscpy(pFileName, _T("*"));
+    _tcscpy(pFileName, (&[0x002a, 0x0000u16]).as_ptr() /* _T "*" */);
 
     hFile = FindFirstFile(
         core::ptr::addr_of_mut!(szFullPath) as *mut TCHAR,
@@ -326,11 +321,11 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
 
                 if _tcscmp(
                     core::ptr::addr_of_mut!(f.cFileName) as *mut TCHAR,
-                    _T("."),
+                    (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */,
                 ) == 0
                     || _tcscmp(
                         core::ptr::addr_of_mut!(f.cFileName) as *mut TCHAR,
-                        _T(".."),
+                        (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */,
                     ) == 0
                 {
                     break 'body;
@@ -393,7 +388,7 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
 
     /* Ignore directory deletion if the user pressed Ctrl-C */
     if bCtrlBreak != 0 {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /*
@@ -403,19 +398,19 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
      */
     if GetFullPathName(
         Directory,
-        ARRAYSIZE(szFullPath),
+        ARRAYSIZE!(szFullPath),
         core::ptr::addr_of_mut!(szFullPath) as *mut TCHAR,
         core::ptr::null_mut(),
     ) == 3
-        && szFullPath[1] == _T(':')
-        && szFullPath[2] == _T('\\')
+        && szFullPath[1] == (':' as u16)
+        && szFullPath[2] == ('\\' as u16)
     {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* First attempt to delete the directory */
     if RemoveDirectory(Directory) != 0 {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /*
@@ -432,7 +427,7 @@ pub unsafe extern "C" fn DeleteFolder(Directory: LPTSTR) -> BOOL {
         }
     }
 
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_rmdir(param: LPTSTR) -> INT {
@@ -443,35 +438,35 @@ pub unsafe extern "C" fn cmd_rmdir(param: LPTSTR) -> INT {
     let mut dirCount: INT = 0;
     let mut i: INT = 0;
     let mut ch: TCHAR = 0;
-    let mut bRecurseDir: BOOL = FALSE;
-    let mut bQuiet: BOOL = FALSE;
+    let mut bRecurseDir: BOOL = (FALSE) as i32;
+    let mut bQuiet: BOOL = (FALSE) as i32;
 
-    if _tcsncmp(param, _T("/?"), 2) == 0
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_RMDIR_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_RMDIR_HELP);
         return 0;
     }
 
-    arg = split(param, core::ptr::addr_of_mut!(args), FALSE, FALSE);
+    arg = split(param, core::ptr::addr_of_mut!(args), (FALSE) as BOOL, (FALSE) as BOOL);
     dirCount = 0;
 
     /* Check for options anywhere in command line */
     i = 0;
     while i < args {
-        if *(*arg.offset(i as isize)) == _T('/')
+        if *(*arg.offset(i as isize)) == ('/' as u16)
         {
             /* Found an option, but check to make sure it has something after it */
             if _tcslen(*arg.offset(i as isize)) == 2
             {
                 ch = _totupper(*(*arg.offset(i as isize)).offset(1 as isize));
 
-                if ch == _T('S')
+                if ch == ('S' as u16)
                 {
-                    bRecurseDir = TRUE;
+                    bRecurseDir = (TRUE) as i32;
                 }
-                else if ch == _T('Q')
+                else if ch == ('Q' as u16)
                 {
-                    bQuiet = TRUE;
+                    bQuiet = (TRUE) as i32;
                 }
             }
         }
@@ -492,7 +487,7 @@ pub unsafe extern "C" fn cmd_rmdir(param: LPTSTR) -> INT {
 
     i = 0;
     while i < args {
-        if *(*arg.offset(i as isize)) == _T('/')
+        if *(*arg.offset(i as isize)) == ('/' as u16)
         {
             i += 1;
             continue;
@@ -504,15 +499,15 @@ pub unsafe extern "C" fn cmd_rmdir(param: LPTSTR) -> INT {
             if bQuiet == 0
             {
                 res = FilePromptYNA(STRING_DEL_HELP2);
-                if res == PROMPT_NO || res == PROMPT_BREAK
+                if res == (PROMPT_NO as i32) || res == (PROMPT_BREAK as i32)
                 {
                     nError = 1;
                     i += 1;
                     continue;
                 }
-                if res == PROMPT_ALL
+                if res == (PROMPT_ALL as i32)
                 {
-                    bQuiet = TRUE;
+                    bQuiet = (TRUE) as i32;
                 }
             }
 
@@ -541,15 +536,15 @@ pub unsafe extern "C" fn cmd_rmdir(param: LPTSTR) -> INT {
 pub unsafe extern "C" fn CommandExit(mut param: LPTSTR) -> INT {
     const SUPPORT_EXIT_B_NO_EXTENSIONS: bool = false;
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_EXIT_HELP);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_EXIT_HELP);
 
         /* Just make sure we don't exit */
-        bExit = FALSE;
+        bExit = (FALSE) as i32;
         return 0;
     }
 
-    if _tcsnicmp(param, _T("/B"), 2) == 0 {
+    if _tcsnicmp(param, (&[0x002f, 0x0042, 0x0000u16]).as_ptr() /* _T "/B" */, 2) == 0 {
         param = param.offset(2 as isize);
 
         /*
@@ -572,7 +567,7 @@ pub unsafe extern "C" fn CommandExit(mut param: LPTSTR) -> INT {
              */
             let bOldEnableExtensions = bEnableExtensions;
             if SUPPORT_EXIT_B_NO_EXTENSIONS {
-                bEnableExtensions = TRUE;
+                bEnableExtensions = (TRUE) as i32;
             }
 
             cmd_goto(EofLabel.as_mut_ptr());
@@ -582,20 +577,20 @@ pub unsafe extern "C" fn CommandExit(mut param: LPTSTR) -> INT {
                 bEnableExtensions = bOldEnableExtensions;
             }
         } else {
-            bExit = TRUE;
+            bExit = (TRUE) as i32;
         }
     } else {
         /* Exit this command interpreter instance */
-        bExit = TRUE;
+        bExit = (TRUE) as i32;
     }
 
     /* Search for an optional exit code */
-    while _istspace(*param) != 0 {
+    while _istspace!(*param) != 0 {
         param = param.offset(1);
     }
 
     /* Set the errorlevel to the exit code */
-    if _istdigit(*param) != 0 {
+    if _istdigit!(*param) != 0 {
         nErrorLevel = _ttoi(param);
         // if (fSingleCommand == 1) return nErrorLevel;
     }
@@ -604,9 +599,9 @@ pub unsafe extern "C" fn CommandExit(mut param: LPTSTR) -> INT {
 }
 #[no_mangle]
 pub unsafe extern "C" fn CommandRem(param: LPTSTR) -> INT {
-    if _tcsstr(param, _T("/?")) == param
+    if _tcsstr(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */) == param
     {
-        ConOutResPaging(TRUE, STRING_REM_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_REM_HELP);
     }
 
     return 0;

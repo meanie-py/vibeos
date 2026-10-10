@@ -6,7 +6,7 @@ use crate::cmd::error::error_bad_command;
 use crate::cmd::error::error_out_of_memory;
 use crate::cmd::error::error_sfile_not_found;
 use crate::cmd::error::error_syntax;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -18,9 +18,9 @@ pub static mut fc: PFOR_CONTEXT = ::core::ptr::null::<_FOR_CONTEXT>() as *mut _F
 // RunInstance, Exiting, ExitingOrGoto: function-like macros, inlined by the functions that use them.
 #[no_mangle]
 pub unsafe extern "C" fn cmd_for(mut param: LPTSTR) -> INT {
-    if _tcsncmp(param, _T("/?"), 2) == 0
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_FOR_HELP1);
+        ConOutResPaging((TRUE) as BOOL, STRING_FOR_HELP1);
         return 0;
     }
 
@@ -30,30 +30,30 @@ pub unsafe extern "C" fn cmd_for(mut param: LPTSTR) -> INT {
 
 unsafe extern "C" fn GetNextElement(pStart: *mut *mut TCHAR, pEnd: *mut *mut TCHAR) -> BOOL {
     let mut p: *mut TCHAR = *pEnd;
-    let mut InQuotes: BOOL = FALSE;
-    while _istspace(*p) != 0 {
+    let mut InQuotes: BOOL = (FALSE) as i32;
+    while _istspace!(*p) != 0 {
         p = p.offset(1);
     }
     if *p == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
     *pStart = p;
-    while *p != 0 && (InQuotes != 0 || _istspace(*p) == 0) {
+    while *p != 0 && (InQuotes != 0 || _istspace!(*p) == 0) {
         let fresh31 = p;
         p = p.offset(1);
-        InQuotes ^= (*fresh31 == _T('"')) as BOOL;
+        InQuotes ^= (*fresh31 == ('"' as u16)) as BOOL;
     }
     *pEnd = p;
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn ReadFileContents(mut InputFile: *mut FILE, mut Buffer: *mut TCHAR) -> LPTSTR {
     let mut Len: SIZE_T = 0 as SIZE_T;
     let mut AllocLen: SIZE_T = 1000 as SIZE_T;
 
-    let mut Contents: LPTSTR = cmd_alloc(
+    let mut Contents: LPTSTR = cmd_alloc!(
         AllocLen.wrapping_mul(core::mem::size_of::<TCHAR>() as SIZE_T),
-    );
+    ) as LPTSTR;
     if Contents.is_null() {
         return core::ptr::null_mut();
     }
@@ -62,7 +62,7 @@ unsafe extern "C" fn ReadFileContents(mut InputFile: *mut FILE, mut Buffer: *mut
         let mut CharsRead: ULONG_PTR = _tcslen(Buffer) as ULONG_PTR;
         while (Len as ULONG_PTR).wrapping_add(CharsRead) >= AllocLen as ULONG_PTR {
             let mut OldContents: LPTSTR = Contents;
-            Contents = cmd_realloc(
+            Contents = cmd_realloc!(
                 Contents,
                 {
                     AllocLen = AllocLen.wrapping_mul(2 as SIZE_T);
@@ -71,7 +71,7 @@ unsafe extern "C" fn ReadFileContents(mut InputFile: *mut FILE, mut Buffer: *mut
                 .wrapping_mul(core::mem::size_of::<TCHAR>() as SIZE_T),
             ) as LPTSTR;
             if Contents.is_null() {
-                cmd_free(OldContents);
+                cmd_free!(OldContents);
                 return core::ptr::null_mut();
             }
         }
@@ -79,7 +79,7 @@ unsafe extern "C" fn ReadFileContents(mut InputFile: *mut FILE, mut Buffer: *mut
         Len = (Len as ULONG_PTR).wrapping_add(CharsRead) as SIZE_T;
     }
 
-    *Contents.add(Len as usize) = _T('\0' as TCHAR);
+    *Contents.add(Len as usize) = ('\0' as TCHAR);
     return Contents;
 }
 
@@ -121,9 +121,9 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
     let mut Ret: INT = 0;
     let mut SingleElementJump: bool = false;
 
-    if !(*Cmd).For.Params.is_null() {
+    if !(*Cmd).__bindgen_anon_1.For.Params.is_null() {
         let mut Quote: TCHAR = 0;
-        let mut Param: PTCHAR = (*Cmd).For.Params as PTCHAR;
+        let mut Param: PTCHAR = (*Cmd).__bindgen_anon_1.For.Params as PTCHAR;
         if *Param == '"' as TCHAR || *Param == '\'' as TCHAR {
             let FreshQ: PTCHAR = Param;
             Param = Param.offset(1);
@@ -224,7 +224,7 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
                     RemainderVar = NumToksInSpec;
                     Param = Param.offset(1);
                 }
-                NumTokens = max(NumTokens, NumToksInSpec);
+                NumTokens = max!(NumTokens, NumToksInSpec);
             } else if _tcsnicmp(Param, UsebackKw.as_mut_ptr(), 7)
                 == 0
             {
@@ -242,10 +242,10 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
     }
 
     (*fc).varcount = NumTokens;
-    if (NumTokens as usize) <= ARRAYSIZE(Variables) {
+    if (NumTokens as usize) <= (ARRAYSIZE!(Variables) as usize) {
         (*fc).values = Variables.as_mut_ptr();
     } else {
-        (*fc).values = cmd_alloc(
+        (*fc).values = cmd_alloc!(
             ((*fc).varcount as usize) * core::mem::size_of::<LPTSTR>(),
         ) as *mut LPTSTR;
         if (*fc).values.is_null() {
@@ -264,7 +264,7 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
 
     'quit: {
         while SingleElementJump
-            || (ExitingOrGoto(Cmd) == 0
+            || (ExitingOrGoto!(Cmd) == false
                 && GetNextElement(
                     core::ptr::addr_of_mut!(Start),
                     core::ptr::addr_of_mut!(End),
@@ -282,7 +282,7 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
                 && *End.offset(-(1 as isize)) == StringQuote
             {
                 *End.offset(-(1 as isize)) = '\0' as TCHAR;
-                FullInput = cmd_dup(Start.offset(1 as isize));
+                FullInput = cmd_dup!(Start.offset(1 as isize));
             } else if *Start == CommandQuote
                 && *End.offset(-(1 as isize)) == CommandQuote
             {
@@ -327,14 +327,14 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
             In = FullInput;
             Skip = SkipLines;
             loop {
-                if !(ExitingOrGoto(Cmd) == 0 && !In.is_null()) {
+                if !(ExitingOrGoto!(Cmd) == false && !In.is_null()) {
                     break;
                 }
                 'body: {
                     let mut RemainingTokens: DWORD = TokensMask;
                     let mut CurVar: *mut LPTSTR = (*fc).values;
 
-                    ZeroMemory(
+                    ZeroMemory!(
                         (*fc).values as *mut core::ffi::c_void,
                         ((*fc).varcount as usize) * core::mem::size_of::<LPTSTR>(),
                     );
@@ -389,7 +389,7 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
                     }
 
                     if !(*(*fc).values.offset(0 as isize)).is_null() {
-                        Ret = RunInstance(Cmd);
+                        Ret = RunInstance!(Cmd);
                     }
                 }
                 In = NextLine;
@@ -399,12 +399,12 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
                 *DelimsEndPtr = DelimsEndChr;
             }
 
-            cmd_free(FullInput);
+            cmd_free!(FullInput);
         }
     }
 
     if !(*fc).values.is_null() && (*fc).values != Variables.as_mut_ptr() {
-        cmd_free((*fc).values);
+        cmd_free!((*fc).values);
     }
     (*fc).values = core::ptr::null_mut();
 
@@ -412,7 +412,10 @@ unsafe extern "C" fn ForF(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut T
 }
 
 unsafe extern "C" fn ForLoop(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mut TCHAR) -> INT {
-    let _ = [START, STEP, END];
+    // for.c's function-local `enum { START, STEP, END };`
+    const START: usize = 0;
+    const STEP: usize = 1;
+    const END: usize = 2;
     let mut params: [INT; 3] = [0, 0, 0];
     let mut i: INT;
     let mut Ret: INT = 0;
@@ -431,7 +434,7 @@ unsafe extern "C" fn ForLoop(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mu
      * Contrary to the other FOR-loops, FOR /L does not check
      * whether a GOTO has been done, and will continue to loop.
      */
-    while !Exiting(Cmd)
+    while !Exiting!(Cmd)
         && (if params[STEP as usize] >= 0 {
             (i <= params[END as usize]) as INT
         } else {
@@ -439,7 +442,7 @@ unsafe extern "C" fn ForLoop(Cmd: *mut PARSED_COMMAND, List: LPTSTR, Buffer: *mu
         }) != 0
     {
         _itot(i, Buffer, 10);
-        Ret = RunInstance(Cmd);
+        Ret = RunInstance!(Cmd);
         i += params[STEP as usize];
     }
 
@@ -455,7 +458,7 @@ unsafe extern "C" fn ForDir(
     let mut Ret: INT = 0;
     let mut Start: *mut TCHAR = core::ptr::null_mut();
     let mut End: *mut TCHAR = List as *mut TCHAR;
-    while ExitingOrGoto(Cmd) == 0
+    while ExitingOrGoto!(Cmd) == false
         && GetNextElement(core::ptr::addr_of_mut!(Start), core::ptr::addr_of_mut!(End)) != 0
     {
         if BufPos.offset(End.offset_from(Start) as isize)
@@ -468,10 +471,10 @@ unsafe extern "C" fn ForDir(
             Start as *const core::ffi::c_void,
             (End.offset_from(Start) as usize) * (core::mem::size_of::<TCHAR>() as usize),
         );
-        *BufPos.offset(End.offset_from(Start) as isize) = _T('\0');
+        *BufPos.offset(End.offset_from(Start) as isize) = ('\0' as u16);
 
-        if !_tcschr(BufPos, _T('?')).is_null()
-            || !_tcschr(BufPos, _T('*')).is_null()
+        if !_tcschr(BufPos, ('?' as u16)).is_null()
+            || !_tcschr(BufPos, ('*' as u16)).is_null()
         {
             let mut w32fd: WIN32_FIND_DATA = core::mem::zeroed();
             let mut hFind: HANDLE = core::ptr::null_mut();
@@ -482,7 +485,7 @@ unsafe extern "C" fn ForDir(
             if hFind == INVALID_HANDLE_VALUE {
                 continue;
             }
-            FilePart = _tcsrchr(BufPos, _T('\\'));
+            FilePart = _tcsrchr(BufPos, ('\\' as u16));
             FilePart = if !FilePart.is_null() {
                 FilePart.offset(1 as isize)
             } else {
@@ -494,17 +497,17 @@ unsafe extern "C" fn ForDir(
                         break 'body;
                     }
                     if ((w32fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0)
-                        != (((*Cmd).For.Switches & FOR_DIRS) == 0)
+                        != (((*Cmd).__bindgen_anon_1.For.Switches & (FOR_DIRS as u8)) == 0)
                     {
                         break 'body;
                     }
                     if _tcscmp(
                         core::ptr::addr_of_mut!(w32fd.cFileName) as *const TCHAR,
-                        _T("."),
+                        (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */,
                     ) == 0
                         || _tcscmp(
                             core::ptr::addr_of_mut!(w32fd.cFileName) as *const TCHAR,
-                            _T(".."),
+                            (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */,
                         ) == 0
                     {
                         break 'body;
@@ -513,9 +516,9 @@ unsafe extern "C" fn ForDir(
                         FilePart,
                         core::ptr::addr_of_mut!(w32fd.cFileName) as *const TCHAR,
                     );
-                    Ret = RunInstance(Cmd);
+                    Ret = RunInstance!(Cmd);
                 }
-                if !(ExitingOrGoto(Cmd) == 0
+                if !(ExitingOrGoto!(Cmd) == false
                     && FindNextFile(hFind, core::ptr::addr_of_mut!(w32fd)) != 0)
                 {
                     break;
@@ -523,7 +526,7 @@ unsafe extern "C" fn ForDir(
             }
             FindClose(hFind);
         } else {
-            Ret = RunInstance(Cmd);
+            Ret = RunInstance!(Cmd);
         }
     }
     return Ret;
@@ -552,7 +555,7 @@ unsafe extern "C" fn ForRecursive(
     /* NOTE (We don't apply Windows' CMD compatibility here):
      * Windows' CMD does not check whether a GOTO has been done,
      * and will continue to loop. */
-    if ExitingOrGoto(Cmd) != 0 {
+    if ExitingOrGoto!(Cmd) != false {
         return Ret;
     }
 
@@ -593,7 +596,7 @@ unsafe extern "C" fn ForRecursive(
         /* NOTE (We don't apply Windows' CMD compatibility here):
          * Windows' CMD does not check whether a GOTO has been done,
          * and will continue to loop. */
-        if !(ExitingOrGoto(Cmd) == 0
+        if !(ExitingOrGoto!(Cmd) == false
             && FindNextFile(hFind, core::ptr::addr_of_mut!(w32fd)) != 0)
         {
             break;
@@ -608,41 +611,41 @@ pub unsafe extern "C" fn ExecuteFor(mut Cmd: *mut PARSED_COMMAND) -> INT {
     let mut Ret: INT = 0;
     let mut List: LPTSTR = core::ptr::null_mut();
     let mut lpNew: PFOR_CONTEXT = core::ptr::null_mut();
-    let mut Buffer: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut Buffer: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut BufferPtr: LPTSTR = core::ptr::addr_of_mut!(Buffer) as LPTSTR;
 
-    List = DoDelayedExpansion((*Cmd).For.List) as LPTSTR;
+    List = DoDelayedExpansion((*Cmd).__bindgen_anon_1.For.List) as LPTSTR;
     if List.is_null() {
         return 1;
     }
 
     /* Create our FOR context */
-    lpNew = cmd_alloc(core::mem::size_of::<FOR_CONTEXT>() as usize) as PFOR_CONTEXT;
+    lpNew = cmd_alloc!(core::mem::size_of::<FOR_CONTEXT>() as usize) as PFOR_CONTEXT;
     if lpNew.is_null() {
 
-        cmd_free(List);
+        cmd_free!(List);
         return 1;
     }
     (*lpNew).prev = fc;
-    (*lpNew).firstvar = (*Cmd).For.Variable;
+    (*lpNew).firstvar = (*Cmd).__bindgen_anon_1.For.Variable;
     (*lpNew).varcount = 1;
     (*lpNew).values = core::ptr::addr_of_mut!(BufferPtr);
 
-    (*Cmd).For.Context = lpNew;
+    (*Cmd).__bindgen_anon_1.For.Context = lpNew;
     fc = lpNew;
 
     /* Run the extended FOR syntax only if extensions are enabled */
     if bEnableExtensions != 0 {
-        if (*Cmd).For.Switches & FOR_F != 0 {
+        if (*Cmd).__bindgen_anon_1.For.Switches & (FOR_F as u8) != 0 {
             Ret = ForF(Cmd, List, core::ptr::addr_of_mut!(Buffer) as LPTSTR);
-        } else if (*Cmd).For.Switches & FOR_LOOP != 0 {
+        } else if (*Cmd).__bindgen_anon_1.For.Switches & (FOR_LOOP as u8) != 0 {
             Ret = ForLoop(Cmd, List, core::ptr::addr_of_mut!(Buffer) as LPTSTR);
-        } else if (*Cmd).For.Switches & FOR_RECURSIVE != 0 {
+        } else if (*Cmd).__bindgen_anon_1.For.Switches & (FOR_RECURSIVE as u8) != 0 {
             let Len: DWORD = GetFullPathName(
-                if !(*Cmd).For.Params.is_null() {
-                    (*Cmd).For.Params
+                if !(*Cmd).__bindgen_anon_1.For.Params.is_null() {
+                    (*Cmd).__bindgen_anon_1.For.Params
                 } else {
-                    _T(".")
+                    (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */
                 },
                 MAX_PATH,
                 core::ptr::addr_of_mut!(Buffer) as LPTSTR,
@@ -676,7 +679,7 @@ pub unsafe extern "C" fn ExecuteFor(mut Cmd: *mut PARSED_COMMAND) -> INT {
         fc = (*lpNew).prev;
     }
 
-    cmd_free(lpNew);
-    cmd_free(List);
+    cmd_free!(lpNew);
+    cmd_free!(List);
     return Ret;
 }

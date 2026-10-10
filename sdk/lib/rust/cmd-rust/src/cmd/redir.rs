@@ -1,6 +1,6 @@
 use crate::cmd::cmd::DoDelayedExpansion;
 use crate::cmd::misc::StripQuotes;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
@@ -11,9 +11,9 @@ extern "system" {
 // @c2rust file-scope data (compiler-exact tables/statics)
 static mut StdStreams: [PCON_STREAM; 3] = unsafe {
     [
-        &raw const csStdIn as *mut CON_STREAM,
-        &raw const csStdOut as *mut CON_STREAM,
-        &raw const csStdErr as *mut CON_STREAM,
+        (&raw const csStdIn as *mut CON_STREAM).cast(),
+        (&raw const csStdOut as *mut CON_STREAM).cast(),
+        (&raw const csStdErr as *mut CON_STREAM).cast(),
     ]
 };
 
@@ -41,9 +41,9 @@ pub static RedirParams: [REDIR_PARAMS; 3] = [
 #[no_mangle]
 pub unsafe extern "C" fn GetHandle(Number: UINT) -> HANDLE {
     if Number < 3 {
-        return ConStreamGetOSHandle(StdStreams[Number as usize]);
+        return ConStreamGetOSHandle((StdStreams[Number as usize]).cast());
         // return GetStdHandle(STD_INPUT_HANDLE - Number);
-    } else if Number < (ARRAYSIZE(ExtraHandles) as UINT) + 3 {
+    } else if Number < (ARRAYSIZE!(ExtraHandles) as UINT) + 3 {
         return ExtraHandles[(Number - 3) as usize];
     } else {
         return INVALID_HANDLE_VALUE;
@@ -52,10 +52,10 @@ pub unsafe extern "C" fn GetHandle(Number: UINT) -> HANDLE {
 #[no_mangle]
 pub unsafe extern "C" fn SetHandle(Number: UINT, Handle: HANDLE) {
     if Number < 3 {
-        ConStreamSetOSHandle(StdStreams[Number as usize], Handle);
+        ConStreamSetOSHandle((StdStreams[Number as usize]).cast(), Handle);
         /* Synchronize the associated Win32 handle */
         SetStdHandle(STD_INPUT_HANDLE - Number, Handle);
-    } else if Number < ARRAYSIZE(ExtraHandles) + 3 {
+    } else if Number < ARRAYSIZE!(ExtraHandles) + 3 {
         ExtraHandles[(Number - 3) as usize] = Handle;
     }
 }
@@ -70,7 +70,7 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
     static mut SecAttr: SECURITY_ATTRIBUTES = SECURITY_ATTRIBUTES {
         nLength: core::mem::size_of::<SECURITY_ATTRIBUTES>() as DWORD,
         lpSecurityDescriptor: core::ptr::null_mut(),
-        bInheritHandle: TRUE,
+        bInheritHandle: (TRUE) as i32,
     };
 
     /* Some parameters used for read, write, and append, respectively */
@@ -96,7 +96,7 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
     while !Redir.is_null() {
         let mut redir_error_flag: bool = false;
         'iter: {
-            Filename = DoDelayedExpansion((*Redir).Filename) as LPTSTR;
+            Filename = DoDelayedExpansion(core::ptr::addr_of!((*Redir).Filename) as *const u16) as LPTSTR;
             if Filename.is_null() {
                 redir_error_flag = true;
                 break 'iter;
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
                         GetCurrentProcess(),
                         core::ptr::addr_of_mut!(hNew),
                         0 as DWORD,
-                        TRUE,
+                        (TRUE) as BOOL,
                         DUPLICATE_SAME_ACCESS as DWORD,
                     ) == 0
                 {
@@ -133,7 +133,7 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
 
             if hNew == INVALID_HANDLE_VALUE {
                 /* TODO: Print a more detailed message */
-                ConErrResPrintf(
+                ConErrResPrintf!(
                     if (*Redir).Mode == REDIR_READ as UINT {
                         STRING_CMD_ERROR1 as UINT
                     } else {
@@ -141,7 +141,7 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
                     },
                     Filename,
                 );
-                cmd_free(Filename);
+                cmd_free!(Filename);
                 redir_error_flag = true;
                 break 'iter;
             }
@@ -157,22 +157,22 @@ pub unsafe extern "C" fn PerformRedirection(RedirList: *mut REDIRECTION) -> BOOL
             (*Redir).OldHandle = GetHandle((*Redir).Number as UINT);
             SetHandle((*Redir).Number as UINT, hNew);
 
-            cmd_free(Filename);
+            cmd_free!(Filename);
         }
         if redir_error_flag {
             /* Undo all the redirections before this one */
             UndoRedirection(RedirList, Redir);
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         Redir = (*Redir).Next;
     }
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn UndoRedirection(mut Redir: *mut REDIRECTION, mut End: *mut REDIRECTION) {
     while Redir != End {
-        CloseHandle(GetHandle((*Redir).Number));
-        SetHandle((*Redir).Number, (*Redir).OldHandle);
+        CloseHandle(GetHandle(((*Redir).Number) as UINT));
+        SetHandle(((*Redir).Number) as UINT, (*Redir).OldHandle);
         (*Redir).OldHandle = INVALID_HANDLE_VALUE;
         Redir = (*Redir).Next;
     }
@@ -193,7 +193,7 @@ pub unsafe extern "C" fn FreeRedirection(mut Redir: *mut REDIRECTION) {
             );
         } else {
         }
-        cmd_free(Redir as *mut core::ffi::c_void);
+        cmd_free!(Redir as *mut core::ffi::c_void);
         Redir = Next;
     }
 }

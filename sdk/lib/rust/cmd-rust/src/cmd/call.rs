@@ -1,5 +1,5 @@
 use crate::cmd::batch::Batch;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
@@ -11,7 +11,7 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
 
     let help: [u16; 3] = ['/' as u16, '?' as u16, 0];
     if _tcsncmp(param, help.as_ptr(), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_CALL_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_CALL_HELP);
         return 0;
     }
 
@@ -23,12 +23,12 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
 
     /* Ignore parser comments (starting with a colon) */
     bOldIgnoreParserComments = bIgnoreParserComments;
-    bIgnoreParserComments = FALSE;
+    bIgnoreParserComments = (FALSE) as i32;
 
     /* Disable parsing of escape carets (non-quirks path, compiled out) */
     if false {
         bOldHandleContinuations = bHandleContinuations;
-        bHandleContinuations = FALSE;
+        bHandleContinuations = (FALSE) as i32;
         first = param;
     }
 
@@ -59,8 +59,8 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
         let mut End: PTCHAR;
 
         // TODO: Improvement: Use the scratch TempBuf if the string is not too long.
-        first = cmd_alloc(
-            (_tcslen(param) + nNumCarets + 1)
+        first = cmd_alloc!(
+            (_tcslen(param) + (nNumCarets) as usize + 1)
                 * core::mem::size_of::<TCHAR>(),
         ) as PTSTR;
         if first.is_null() {
@@ -119,14 +119,14 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
      */
     if Cmd.is_null() && bParseError == 0 {
         if first != param {
-            cmd_free(first);
+            cmd_free!(first);
         }
         nErrorLevel = 0;
         return nErrorLevel;
     }
 
     /* Reset bParseError so as to continue running afterwards */
-    bParseError = FALSE;
+    bParseError = (FALSE) as i32;
 
     /*
      * Otherwise, if no command is there because a parse error occurred,
@@ -138,10 +138,10 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
         || (*Cmd).Type == C_IF
         || ((*Cmd).Type != C_COMMAND && (*Cmd).Type != C_REM)
     {
-        ConErrResPrintf(STRING_ERROR_UNEXPECTED, first);
+        ConErrResPrintf!(STRING_ERROR_UNEXPECTED, first);
 
         if first != param {
-            cmd_free(first);
+            cmd_free!(first);
         }
         if !Cmd.is_null() {
             FreeCommand(Cmd);
@@ -151,11 +151,11 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
     }
 
     if first != param {
-        cmd_free(first);
+        cmd_free!(first);
     }
 
-    first = &raw mut (*Cmd).Command.First as *mut TCHAR as PTSTR;
-    param = (*Cmd).Command.Rest as LPTSTR;
+    first = &raw mut (*Cmd).__bindgen_anon_1.Command.First as *mut TCHAR as PTSTR;
+    param = (*Cmd).__bindgen_anon_1.Command.Rest as LPTSTR;
 
     /* "CALL :label args ..." - Call a subroutine of the current batch file, only if extensions are enabled */
     if bEnableExtensions != 0 && *first == ':' as TCHAR {
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn cmd_call(mut param: LPTSTR) -> INT {
 
         /* A batch context must be present */
         if bc.is_null() {
-            ConErrResPuts(STRING_ERROR_CALL_BAD_LABEL);
+            ConErrResPuts!(STRING_ERROR_CALL_BAD_LABEL);
             FreeCommand(Cmd);
             nErrorLevel = 1;
             return nErrorLevel;

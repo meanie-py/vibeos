@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import variadic_shim
+
 # --------------------------------------------------------------------------------------
 # Regexes. Two of these encode bugs that cost real debugging time in the ole32 run — the
 # comments are load-bearing, do not "simplify" them away.
@@ -413,6 +415,21 @@ def _path_module_globs(f: Path) -> list[Path]:
             if cand.is_file():
                 out.append(cand)
     return out
+
+
+def own_reexports(crate: Path, module: str) -> set[str]:
+    """Names the prelude re-exports from the crate module `module` (`pub use crate::..::m::X;`)."""
+    prelude = Path(crate) / "src" / "prelude.rs"
+    if not module or not prelude.is_file():
+        return set()
+    stem = Path(module).stem
+    return set(
+        re.findall(
+            rf"^pub use crate::(?:\w+::)*{re.escape(stem)}::(\w+)\s*;",
+            prelude.read_text(errors="replace"),
+            re.M,
+        )
+    )
 
 
 def provided_names(crate: Path) -> set[str]:
@@ -1107,9 +1124,14 @@ def integrate(
 
     if provided is None:
         provided = provided_names(crate)
+    # A name the prelude re-exports FROM THIS MODULE (resolve's `pub use crate::cmd::dir::X;`)
+    # is this module's own definition, not something provided to it: counting it dropped
+    # dir.rs's `_DirSwitchesFlags` the moment resolve wired it, and then nothing defined it.
+    provided = provided - own_reexports(crate, module)
 
     src = _swap_substrate(src, report)
     src, report.multichar_folded = fold_multichar_literals(src)
+    src, _ = variadic_shim.lower_va_list_types(src)
     src, report.dropped_bad_imports = drop_unknown_substrate_imports(src, crate.parent)
     src, report.indexed_offsets = route_indexed_offset_of(src)
     src, report.enums_lowered = lower_c_enums(src)

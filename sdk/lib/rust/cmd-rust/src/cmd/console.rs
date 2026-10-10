@@ -1,14 +1,5 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
-
-extern "C" {
-    fn cmd_alloc(size: usize) -> *mut core::ffi::c_void;
-    fn cmd_free(p: *mut core::ffi::c_void);
-}
-extern "system" {
-    fn CmdTrace(level: INT, file: LPCSTR, line: INT, func: LPCSTR, fmt: LPCSTR);
-    fn ZeroMemory(Destination: *mut core::ffi::c_void, Length: usize);
-}
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -51,10 +42,10 @@ pub static mut StdOutPager: CON_PAGER = unsafe {
         dwFlags: 0,
         nTabWidth: 0,
         ScrollRows: 0,
-        CachedLine: ::core::ptr::null::<WCHAR>(),
+        CachedLine: (::core::ptr::null::<WCHAR>()).cast(),
         cchCachedLine: 0,
         ich: 0,
-        CurrentLine: ::core::ptr::null::<WCHAR>(),
+        CurrentLine: (::core::ptr::null::<WCHAR>()).cast(),
         ichCurr: 0,
         iEndLine: 0,
         nSpacePending: 0,
@@ -114,28 +105,28 @@ pub unsafe extern "C" fn ConInKey(lpBuffer: PINPUT_RECORD) {
             1,
             core::ptr::addr_of_mut!(dwRead),
         );
-        if (*lpBuffer).EventType == KEY_EVENT
+        if (*lpBuffer).EventType == (KEY_EVENT as u16)
             && (*lpBuffer).Event.KeyEvent.bKeyDown != 0
         {
             break;
         }
-        if !(TRUE) {
+        if (((TRUE)) == 0) {
             break;
         }
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn ConInString(lpInput: LPWSTR, dwLength: DWORD) {
-    let mut dwOldMode: DWORD;
+pub unsafe extern "C" fn ConInString(lpInput: LPTSTR, dwLength: DWORD) {
+    let mut dwOldMode: DWORD = core::mem::zeroed();
     let mut dwRead: DWORD = 0;
     let mut hFile: HANDLE;
 
     let mut p: LPWSTR;
     let mut pBuf: PCHAR;
 
-    pBuf = cmd_alloc(dwLength.wrapping_sub(1) as usize) as PCHAR;
+    pBuf = cmd_alloc!(dwLength.wrapping_sub(1) as usize) as PCHAR;
 
-    ZeroMemory(lpInput as *mut core::ffi::c_void, dwLength as usize * core::mem::size_of::<WCHAR>());
+    ZeroMemory!(lpInput as *mut core::ffi::c_void, dwLength as usize * core::mem::size_of::<WCHAR>());
     hFile = GetStdHandle(STD_INPUT_HANDLE);
     GetConsoleMode(hFile, core::ptr::addr_of_mut!(dwOldMode));
 
@@ -157,7 +148,7 @@ pub unsafe extern "C" fn ConInString(lpInput: LPWSTR, dwLength: DWORD) {
         lpInput,
         dwLength.wrapping_sub(1) as i32,
     );
-    cmd_free(pBuf as *mut core::ffi::c_void);
+    cmd_free!(pBuf as *mut core::ffi::c_void);
 
     p = lpInput;
     while *p != 0 {
@@ -172,77 +163,73 @@ pub unsafe extern "C" fn ConInString(lpInput: LPWSTR, dwLength: DWORD) {
     SetConsoleMode(hFile, dwOldMode);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ConOutChar(mut c: WCHAR) {
-    ConWrite(core::ptr::addr_of_mut!(csStdOut), core::ptr::addr_of_mut!(c) as PCTCH, 1 as DWORD);
+pub unsafe extern "C" fn ConOutChar(mut c: TCHAR) {
+    ConWrite(core::ptr::addr_of_mut!(csStdOut), (core::ptr::addr_of_mut!(c) as PCTCH).cast(), 1 as DWORD);
 }
 #[no_mangle]
 pub unsafe extern "C" fn ConErrChar(mut c: WCHAR) {
-    ConWrite(StdErr, core::ptr::addr_of_mut!(c) as PCTCH, 1);
+    ConWrite(StdErr, (core::ptr::addr_of_mut!(c) as PCTCH).cast(), 1);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ConFormatMessage(mut Stream: PCON_STREAM, mut MessageId: DWORD, mut args: ...) {
+pub unsafe extern "C" fn ConFormatMessage_v(mut Stream: PCON_STREAM, mut MessageId: DWORD, ap_list: *mut ::core::ffi::c_void) {
     let mut Len: INT = 0;
-    let mut arg_ptr: va_list;
-    va_start(arg_ptr, MessageId);
+    let mut arg_ptr: va_list = *(ap_list as *mut va_list);
     Len = ConMsgPrintfV(
-        Stream,
+        (Stream).cast(),
         FORMAT_MESSAGE_FROM_SYSTEM as DWORD,
         core::ptr::null_mut(),
         MessageId,
         LANG_USER_DEFAULT as DWORD,
         &raw mut arg_ptr,
     );
-    va_end(arg_ptr);
 
     if Len <= 0 as INT {
-        ConResPrintf(Stream, STRING_CONSOLE_ERROR as UINT, MessageId);
+        ConResPrintf((Stream).cast(), STRING_CONSOLE_ERROR as UINT, MessageId);
     }
 }
+
+
 #[no_mangle]
-pub unsafe extern "C" fn ConPrintfVPaging(
-    mut Pager: PCON_PAGER,
-    mut StartPaging: BOOL,
-    mut szFormat: LPWSTR,
-    mut arg_ptr: va_list,
-) -> BOOL {
-    let mut szOut: [WCHAR; OUTPUT_BUFFER_SIZE] = [0; OUTPUT_BUFFER_SIZE];
+pub unsafe extern "C" fn ConPrintfVPaging(mut Pager: PCON_PAGER, mut StartPaging: BOOL, mut szFormat: LPTSTR, mut arg_ptr: *mut ::core::ffi::c_void) -> BOOL {
+    let mut szOut: [WCHAR; (OUTPUT_BUFFER_SIZE) as usize] = [0; (OUTPUT_BUFFER_SIZE) as usize];
 
     /* Return if no string has been given */
     if szFormat.is_null() {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /*len =*/
     _vswprintf(
         core::ptr::addr_of_mut!(szOut) as *mut WCHAR,
         szFormat as *const WCHAR,
-        arg_ptr.as_va_list(),
+        core::ptr::addr_of_mut!(arg_ptr) as *mut u8,
     );
 
     // return ConPutsPaging(Pager, PagePrompt, StartPaging, szOut);
     return ConWritePaging(
         Pager,
-        Some(PagePrompt as unsafe extern "C" fn(PCON_PAGER, DWORD, DWORD) -> BOOL),
+        Some(PagePrompt),
         StartPaging,
-        core::ptr::addr_of_mut!(szOut) as *mut WCHAR as PCTCH,
-        wcslen(core::ptr::addr_of_mut!(szOut) as *mut WCHAR) as SIZE_T,
+        (core::ptr::addr_of_mut!(szOut) as *mut WCHAR as PCTCH).cast(),
+        (wcslen(core::ptr::addr_of_mut!(szOut) as *mut WCHAR) as SIZE_T) as u32,
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn ConOutPrintfPaging(StartPaging: BOOL, szFormat: LPWSTR, mut args: ...) -> BOOL {
+pub unsafe extern "C" fn ConOutPrintfPaging_v(StartPaging: BOOL, szFormat: LPWSTR, ap_list: *mut ::core::ffi::c_void) -> BOOL {
     let mut bRet: BOOL;
-    let mut arg_ptr: va_list;
+    let mut arg_ptr: *mut ::core::ffi::c_void;
 
-    va_start(arg_ptr, szFormat);
+    arg_ptr = *(ap_list as *mut *mut ::core::ffi::c_void);
     bRet = ConPrintfVPaging(core::ptr::addr_of_mut!(StdOutPager), StartPaging, szFormat, arg_ptr);
-    va_end(arg_ptr);
     return bRet;
 }
+
+
 #[no_mangle]
 pub unsafe extern "C" fn ConOutResPaging(StartPaging: BOOL, resID: UINT) {
     ConResPaging(
         core::ptr::addr_of_mut!(StdOutPager),
-        Some(PagePrompt as unsafe extern "C" fn(PCON_PAGER, DWORD, DWORD) -> BOOL),
+        Some(PagePrompt),
         StartPaging,
         resID,
     );
@@ -315,7 +302,7 @@ pub unsafe extern "C" fn ConGetDefaultAttributes(pwDefAttr: PWORD) -> BOOL {
                           FILE_SHARE_READ | FILE_SHARE_WRITE, core::ptr::null_mut(),
                           OPEN_EXISTING, 0, core::ptr::null_mut());
     if hConsole == INVALID_HANDLE_VALUE {
-        return FALSE; // No default console
+        return (FALSE) as BOOL; // No default console
     }
 
     Success = GetConsoleScreenBufferInfo(hConsole, &mut csbi);
@@ -328,22 +315,22 @@ pub unsafe extern "C" fn ConGetDefaultAttributes(pwDefAttr: PWORD) -> BOOL {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn ConSetTitle(lpConsoleTitle: LPCWSTR) -> BOOL {
+pub unsafe extern "C" fn ConSetTitle(lpConsoleTitle: LPCTSTR) -> BOOL {
     SetConsoleTitle(lpConsoleTitle)
 }
 #[no_mangle]
 pub unsafe extern "C" fn ConRingBell(hOutput: HANDLE) {
-    MessageBeep(-1 as UINT);
+    MessageBeep((1 as u32).wrapping_neg() as UINT);
 }
 #[no_mangle]
-pub unsafe extern "C" fn ConSetScreenColor(hOutput: HANDLE, wColor: WORD, bFill: BOOL) -> BOOL {
+pub unsafe extern "C" fn ConSetScreenColor(hOutput: HANDLE, w_color: WORD, bFill: BOOL) -> BOOL {
     let mut dwWritten: DWORD = 0;
     let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = core::mem::zeroed();
     let mut coPos: COORD = core::mem::zeroed();
 
     /* Foreground and Background colors can't be the same */
-    if (wColor as i32 & 0x0F) == ((wColor as i32 & 0xF0) >> 4) {
-        return FALSE;
+    if (w_color as i32 & 0x0F) == ((w_color as i32 & 0xF0) >> 4) {
+        return (FALSE) as BOOL;
     }
 
     /* Fill the whole background if needed */
@@ -354,7 +341,7 @@ pub unsafe extern "C" fn ConSetScreenColor(hOutput: HANDLE, wColor: WORD, bFill:
         coPos.Y = 0 as SHORT;
         FillConsoleOutputAttribute(
             hOutput,
-            (wColor as i32 & 0x00FF) as WORD,
+            (w_color as i32 & 0x00FF) as WORD,
             (csbi.dwSize.X as i32 * csbi.dwSize.Y as i32) as DWORD,
             coPos,
             core::ptr::addr_of_mut!(dwWritten),
@@ -362,22 +349,22 @@ pub unsafe extern "C" fn ConSetScreenColor(hOutput: HANDLE, wColor: WORD, bFill:
     }
 
     /* Set the text attribute */
-    SetConsoleTextAttribute(hOutput, (wColor as i32 & 0x00FF) as WORD);
-    return TRUE;
+    SetConsoleTextAttribute(hOutput, (w_color as i32 & 0x00FF) as WORD);
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ConGetTextWidthW(pszText: PCWSTR) -> SIZE_T {
     let mut ich: SIZE_T;
     let mut cxWidth: SIZE_T;
 
-    if !IsCJKCodePage(OutputCodePage) {
-        return _tcslen(pszText);
+    if ((IsCJKCodePage!(OutputCodePage)) == 0) {
+        return (_tcslen(pszText)) as SIZE_T;
     }
 
     cxWidth = 0;
     ich = cxWidth;
-    while *pszText.add(ich) != 0 {
-        if IS_FULL_WIDTH(*pszText.add(ich)) {
+    while *pszText.add((ich) as _) != 0 {
+        if IS_FULL_WIDTH!(*pszText.add((ich) as _)) {
             cxWidth += 2;
         } else {
             cxWidth += 1;
@@ -400,7 +387,7 @@ pub unsafe extern "C" fn ConGetTextWidthA(pszText: PCSTR) -> SIZE_T {
         ::core::ptr::null_mut::<WCHAR>(),
         0 as ::core::ffi::c_int,
     );
-    pszWide = cmd_alloc(
+    pszWide = cmd_alloc!(
         (cchMax as SIZE_T).wrapping_mul(::core::mem::size_of::<WCHAR>() as SIZE_T),
     ) as PWSTR;
     MultiByteToWideChar(
@@ -412,6 +399,6 @@ pub unsafe extern "C" fn ConGetTextWidthA(pszText: PCSTR) -> SIZE_T {
         cchMax,
     );
     cxWidth = ConGetTextWidthW(pszWide as PCWSTR);
-    cmd_free(pszWide as *mut ::core::ffi::c_void);
+    cmd_free!(pszWide as *mut ::core::ffi::c_void);
     return cxWidth;
 }

@@ -1,17 +1,17 @@
 use crate::cmd::misc::IsExistingFile;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 pub const ENV_BUFFER_SIZE: usize = 1024;
 #[no_mangle]
 pub unsafe extern "C" fn SearchForExecutableSingle(pFileName: LPCTSTR, pFullName: LPTSTR, pPathExt: LPTSTR, pDirectory: LPTSTR) -> BOOL {
-    let mut szPathBuffer: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut szPathBuffer: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut pszPathEnd: *mut TCHAR;
     let mut s: LPTSTR;
     let mut f: LPTSTR;
     /* initialize full name buffer */
-    *pFullName = _T('\0');
+    *pFullName = ('\0' as u16);
 
     pszPathEnd = szPathBuffer.as_mut_ptr();
     if !pDirectory.is_null() {
@@ -19,23 +19,23 @@ pub unsafe extern "C" fn SearchForExecutableSingle(pFileName: LPCTSTR, pFullName
         pszPathEnd = pszPathEnd.add(_tcslen(pszPathEnd) as usize);
         let fresh = pszPathEnd;
         pszPathEnd = pszPathEnd.add(1);
-        *fresh = _T('\\');
+        *fresh = ('\\' as u16);
     }
     _tcscpy(pszPathEnd, pFileName);
     pszPathEnd = pszPathEnd.add(_tcslen(pszPathEnd) as usize);
 
     if IsExistingFile(szPathBuffer.as_mut_ptr()) != 0 {
         GetFullPathName(szPathBuffer.as_mut_ptr(), MAX_PATH, pFullName, core::ptr::null_mut());
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     s = pPathExt;
     while !s.is_null() && *s != 0 {
-        f = _tcschr(s, _T(';'));
+        f = _tcschr(s, (';' as u16));
 
         if !f.is_null() {
             _tcsncpy(pszPathEnd, s, f.offset_from(s) as usize);
-            *pszPathEnd.offset(f.offset_from(s)) = _T('\0');
+            *pszPathEnd.offset(f.offset_from(s)) = ('\0' as u16);
             s = f.add(1 as usize);
         } else {
             _tcscpy(pszPathEnd, s);
@@ -44,10 +44,10 @@ pub unsafe extern "C" fn SearchForExecutableSingle(pFileName: LPCTSTR, pFullName
 
         if IsExistingFile(szPathBuffer.as_mut_ptr()) != 0 {
             GetFullPathName(szPathBuffer.as_mut_ptr(), MAX_PATH, pFullName, core::ptr::null_mut());
-            return TRUE;
+            return (TRUE) as BOOL;
         }
     }
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn SearchForExecutable(pFileName: LPCTSTR, pFullName: LPTSTR) -> BOOL {
@@ -70,21 +70,21 @@ pub unsafe extern "C" fn SearchForExecutable(pFileName: LPCTSTR, pFullName: LPTS
     let semi: [TCHAR; 2] = [';' as TCHAR, 0];
 
     /* load environment variable PATHEXT */
-    pszPathExt = cmd_alloc(ENV_BUFFER_SIZE * core::mem::size_of::<TCHAR>()) as LPTSTR;
+    pszPathExt = cmd_alloc!(ENV_BUFFER_SIZE * core::mem::size_of::<TCHAR>()) as LPTSTR;
     if pszPathExt.is_null()
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
-    dwBuffer = GetEnvironmentVariable(pathext_name.as_ptr() as LPCTSTR, pszPathExt, ENV_BUFFER_SIZE);
-    if dwBuffer > ENV_BUFFER_SIZE
+    dwBuffer = GetEnvironmentVariable(pathext_name.as_ptr() as LPCTSTR, pszPathExt, (ENV_BUFFER_SIZE as u32));
+    if dwBuffer > (ENV_BUFFER_SIZE as u32)
     {
         let mut pszOldPathExt: LPTSTR = pszPathExt;
-        pszPathExt = cmd_realloc(pszPathExt as *mut core::ffi::c_void, (dwBuffer as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+        pszPathExt = cmd_realloc!(pszPathExt as *mut core::ffi::c_void, (dwBuffer as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
         if pszPathExt.is_null()
         {
-            cmd_free(pszOldPathExt as *mut core::ffi::c_void);
-            return FALSE;
+            cmd_free!(pszOldPathExt as *mut core::ffi::c_void);
+            return (FALSE) as BOOL;
         }
         GetEnvironmentVariable(pathext_name.as_ptr() as LPCTSTR, pszPathExt, dwBuffer);
         _tcslwr(pszPathExt);
@@ -101,34 +101,34 @@ pub unsafe extern "C" fn SearchForExecutable(pFileName: LPCTSTR, pFullName: LPTS
     /* Check if valid directly on specified path */
     if SearchForExecutableSingle(pFileName, pFullName, pszPathExt, core::ptr::null_mut()) != 0
     {
-        cmd_free(pszPathExt as *mut core::ffi::c_void);
-        return TRUE;
+        cmd_free!(pszPathExt as *mut core::ffi::c_void);
+        return (TRUE) as BOOL;
     }
 
     /* If an explicit directory was given, stop here - no need to search PATH. */
     if *pFileName.add(1) == ':' as TCHAR || !_tcschr(pFileName, '\\' as TCHAR).is_null()
     {
-        cmd_free(pszPathExt as *mut core::ffi::c_void);
-        return FALSE;
+        cmd_free!(pszPathExt as *mut core::ffi::c_void);
+        return (FALSE) as BOOL;
     }
 
     /* load environment variable PATH into buffer */
-    pszPath = cmd_alloc(ENV_BUFFER_SIZE * core::mem::size_of::<TCHAR>()) as LPTSTR;
+    pszPath = cmd_alloc!(ENV_BUFFER_SIZE * core::mem::size_of::<TCHAR>()) as LPTSTR;
     if pszPath.is_null()
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
-    dwBuffer = GetEnvironmentVariable(path_name.as_ptr() as LPCTSTR, pszPath, ENV_BUFFER_SIZE);
-    if dwBuffer > ENV_BUFFER_SIZE
+    dwBuffer = GetEnvironmentVariable(path_name.as_ptr() as LPCTSTR, pszPath, (ENV_BUFFER_SIZE as u32));
+    if dwBuffer > (ENV_BUFFER_SIZE as u32)
     {
         let mut pszOldPath: LPTSTR = pszPath;
-        pszPath = cmd_realloc(pszPath as *mut core::ffi::c_void, (dwBuffer as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
+        pszPath = cmd_realloc!(pszPath as *mut core::ffi::c_void, (dwBuffer as usize) * core::mem::size_of::<TCHAR>()) as LPTSTR;
         if pszPath.is_null()
         {
-            cmd_free(pszOldPath as *mut core::ffi::c_void);
-            cmd_free(pszPathExt as *mut core::ffi::c_void);
-            return FALSE;
+            cmd_free!(pszOldPath as *mut core::ffi::c_void);
+            cmd_free!(pszPathExt as *mut core::ffi::c_void);
+            return (FALSE) as BOOL;
         }
         GetEnvironmentVariable(path_name.as_ptr() as LPCTSTR, pszPath, dwBuffer);
     }
@@ -139,14 +139,14 @@ pub unsafe extern "C" fn SearchForExecutable(pFileName: LPCTSTR, pFullName: LPTS
     {
         if SearchForExecutableSingle(pFileName, pFullName, pszPathExt, pCh) != 0
         {
-            cmd_free(pszPath as *mut core::ffi::c_void);
-            cmd_free(pszPathExt as *mut core::ffi::c_void);
-            return TRUE;
+            cmd_free!(pszPath as *mut core::ffi::c_void);
+            cmd_free!(pszPathExt as *mut core::ffi::c_void);
+            return (TRUE) as BOOL;
         }
         pCh = _tcstok(core::ptr::null_mut(), semi.as_ptr() as LPCTSTR) as LPTSTR;
     }
 
-    cmd_free(pszPath as *mut core::ffi::c_void);
-    cmd_free(pszPathExt as *mut core::ffi::c_void);
-    return FALSE;
+    cmd_free!(pszPath as *mut core::ffi::c_void);
+    cmd_free!(pszPathExt as *mut core::ffi::c_void);
+    return (FALSE) as BOOL;
 }

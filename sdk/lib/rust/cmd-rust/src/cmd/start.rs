@@ -1,29 +1,28 @@
 use crate::cmd::console::ConOutResPaging;
-use crate::cmd::error::ErrorMessage;
 use crate::cmd::locale::InitLocale;
 use crate::cmd::cmd::RunFile;
 use crate::cmd::misc::StripQuotes;
 use crate::cmd::error::error_out_of_memory;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // No file-scope type, constant, enum, or table declarations appear in this preamble. The only top-level definitions are the functions `GetParameter` and `cmd_start`, which are excluded from this pass. The `#ifdef INCLUDE_CMD_START` guard is a build condition, not a `#define`, so it produces no Rust item.
 
 unsafe extern "C" fn GetParameter(pPointer: *mut *mut TCHAR) -> *mut TCHAR {
-    let mut bInQuote: BOOL = FALSE;
+    let mut bInQuote: BOOL = (FALSE) as i32;
     let mut start: *mut TCHAR = *pPointer;
     let mut p: *mut TCHAR = core::ptr::null_mut();
     p = start;
     while *p != 0 {
-        if bInQuote == 0 && (*p == _T('/') || _istspace(*p) != 0) {
+        if bInQuote == 0 && (*p == ('/' as u16) || _istspace!(*p) != 0) {
             break;
         }
-        bInQuote ^= (*p == _T('"')) as BOOL;
+        bInQuote ^= (*p == ('"' as u16)) as BOOL;
         *p.offset(-(1 as isize)) = *p;
         p = p.offset(1);
     }
-    *p.offset(-(1 as isize)) = _T('\0');
+    *p.offset(-(1 as isize)) = ('\0' as u16);
     *pPointer = p;
     return start.offset(-(1 as isize));
 }
@@ -52,8 +51,8 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
     static S_DOTCMD: [TCHAR; 5] = ['.' as TCHAR, 'c' as TCHAR, 'm' as TCHAR, 'd' as TCHAR, 0];
     static S_ERRMSG: [TCHAR; 35] = ['E' as TCHAR, 'r' as TCHAR, 'r' as TCHAR, 'o' as TCHAR, 'r' as TCHAR, ' ' as TCHAR, 'e' as TCHAR, 'x' as TCHAR, 'e' as TCHAR, 'c' as TCHAR, 'u' as TCHAR, 't' as TCHAR, 'i' as TCHAR, 'n' as TCHAR, 'g' as TCHAR, ' ' as TCHAR, 'C' as TCHAR, 'r' as TCHAR, 'e' as TCHAR, 'a' as TCHAR, 't' as TCHAR, 'e' as TCHAR, 'P' as TCHAR, 'r' as TCHAR, 'o' as TCHAR, 'c' as TCHAR, 'e' as TCHAR, 's' as TCHAR, 's' as TCHAR, '(' as TCHAR, ')' as TCHAR, '!' as TCHAR, '!' as TCHAR, '\n' as TCHAR, 0];
 
-    let mut szFullName: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
-    let mut szUnquotedName: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut szFullName: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
+    let mut szUnquotedName: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut param: *mut TCHAR = core::ptr::null_mut();
     let mut dot: *mut TCHAR = core::ptr::null_mut();
     let mut size: INT = 0;
@@ -61,7 +60,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
     let mut bWait: BOOL = FALSE as BOOL;
     let mut bBat: BOOL = FALSE as BOOL;
     let mut bCreate: BOOL = FALSE as BOOL;
-    let mut szFullCmdLine: [TCHAR; CMDLINE_LENGTH] = [0; CMDLINE_LENGTH];
+    let mut szFullCmdLine: [TCHAR; (CMDLINE_LENGTH) as _] = [0; (CMDLINE_LENGTH) as _];
     let mut prci: PROCESS_INFORMATION = core::mem::zeroed();
     let mut stui: STARTUPINFO = core::mem::zeroed();
     let mut dwCreationFlags: DWORD = (CREATE_NEW_CONSOLE | CREATE_UNICODE_ENVIRONMENT) as DWORD;
@@ -72,7 +71,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
     let mut wShowWindow: WORD = SW_SHOWNORMAL as WORD;
 
     while 1 != 0 {
-        if _istspace(*Rest) != 0 {
+        if _istspace!(*Rest) != 0 {
             Rest = Rest.offset(1);
         } else if *Rest == '"' as TCHAR && lpTitle.is_null() {
             lpTitle = GetParameter(core::ptr::addr_of_mut!(Rest));
@@ -84,16 +83,16 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
             if *option == '?' as TCHAR {
                 ConOutResPaging(TRUE as BOOL, STRING_START_HELP1 as UINT);
                 return 0 as INT;
-            } else if _totupper(*option) == 'D' as INT {
+            } else if (_totupper(*option)) as i32 == 'D' as INT {
                 lpDirectory = option.offset(1 as isize);
                 if *lpDirectory == 0 {
-                    while _istspace(*Rest) != 0 {
+                    while _istspace!(*Rest) != 0 {
                         Rest = Rest.offset(1);
                     }
                     lpDirectory = GetParameter(core::ptr::addr_of_mut!(Rest));
                 }
                 StripQuotes(lpDirectory);
-            } else if _totupper(*option) == 'I' as INT {
+            } else if (_totupper(*option)) as i32 == 'I' as INT {
                 /* rest of the option is apparently ignored */
                 lpEnvironment = lpOriginalEnvironment;
             } else if _tcsicmp(option, S_MIN.as_ptr() as LPTSTR) == 0 {
@@ -102,7 +101,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
                 wShowWindow = SW_MAXIMIZE as WORD;
             } else if _tcsicmp(option, S_AFFINITY.as_ptr() as LPTSTR) == 0 {
                 let mut end: *mut TCHAR = core::ptr::null_mut();
-                while _istspace(*Rest) != 0 {
+                while _istspace!(*Rest) != 0 {
                     Rest = Rest.offset(1);
                 }
                 option = GetParameter(core::ptr::addr_of_mut!(Rest));
@@ -112,7 +111,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
                     || dwAffinityMask == 0 as DWORD
                     || dwAffinityMask == (0 as DWORD).wrapping_sub(1 as DWORD)
                 {
-                    ConErrResPrintf(STRING_ERROR_INVALID_PARAM_FORMAT, option);
+                    ConErrResPrintf!(STRING_ERROR_INVALID_PARAM_FORMAT, option);
                     return 1 as INT;
                 }
                 dwCreationFlags |= CREATE_SUSPENDED as DWORD;
@@ -140,7 +139,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
             {
                 bWait = TRUE as BOOL;
             } else {
-                ConErrResPrintf(STRING_TYPE_ERROR, option);
+                ConErrResPrintf!(STRING_TYPE_ERROR, option);
                 return 0 as INT;
             }
         } else {
@@ -151,7 +150,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
     }
 
     /* get comspec */
-    comspec = cmd_alloc((MAX_PATH as usize) * (core::mem::size_of::<TCHAR>() as usize)) as LPTSTR;
+    comspec = cmd_alloc!((MAX_PATH as usize) * (core::mem::size_of::<TCHAR>() as usize)) as LPTSTR;
     if comspec.is_null() {
         error_out_of_memory();
         return 1 as INT;
@@ -163,9 +162,9 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
     } else {
         if size > MAX_PATH as INT {
             let mut Oldcomspec: LPTSTR = comspec;
-            comspec = cmd_realloc(comspec, (size as usize) * (core::mem::size_of::<TCHAR>() as usize)) as LPTSTR;
+            comspec = cmd_realloc!(comspec, (size as usize) * (core::mem::size_of::<TCHAR>() as usize)) as LPTSTR;
             if comspec.is_null() {
-                cmd_free(Oldcomspec);
+                cmd_free!(Oldcomspec);
                 return 1 as INT;
             }
             size = GetEnvironmentVariable(S_COMSPEC.as_ptr() as LPTSTR, comspec, size as DWORD) as INT;
@@ -186,7 +185,7 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
             if *Rest.offset(i as isize) == '"' as TCHAR {
                 bInside = (bInside == 0) as BOOL;
             }
-            if _istspace(*Rest.offset(i as isize) as INT) != 0 && bInside == 0 {
+            if _istspace!(*Rest.offset(i as isize) as INT) != 0 && bInside == 0 {
                 param = Rest.offset((i + 1 as INT) as isize);
                 *Rest.offset(i as isize) = '\0' as TCHAR;
                 break;
@@ -249,14 +248,14 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
             core::ptr::null_mut(),
             TRUE as BOOL,
             dwCreationFlags,
-            lpEnvironment,
+            (lpEnvironment).cast(),
             lpDirectory,
             core::ptr::addr_of_mut!(stui),
             core::ptr::addr_of_mut!(prci),
         );
         if bCreate != 0 {
             if dwAffinityMask != 0 {
-                SetProcessAffinityMask(prci.hProcess, dwAffinityMask);
+                SetProcessAffinityMask(prci.hProcess, (dwAffinityMask) as DWORD_PTR);
                 ResumeThread(prci.hThread);
             }
             CloseHandle(prci.hThread);
@@ -320,6 +319,6 @@ pub unsafe extern "C" fn cmd_start(mut Rest: LPTSTR) -> INT {
         );
     }
 
-    cmd_free(comspec);
+    cmd_free!(comspec);
     return 0 as INT;
 }

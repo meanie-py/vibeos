@@ -1,6 +1,6 @@
 use crate::cmd::console::ConOutResPaging;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_3DB566BC3DA4: [u16; 4] = [0x0043u16, 0x004F, 0x004D, 0x0000];
 pub static RUSTCONV_WSTR_5BD07A46AC2D: [u16; 4] = [0x0043u16, 0x004F, 0x004E, 0x0000];
 pub static RUSTCONV_WSTR_5F451136015F: [u16; 4] = [0x0041u16, 0x0055, 0x0058, 0x0000];
@@ -33,7 +33,7 @@ unsafe extern "C" fn CheckTerminalDeviceType(mut pszName: LPCTSTR) -> WORD {
         /* Convert from the current process/thread's codepage to UTF-16 */
         let mut len: DWORD = (strlen(pszName as *const i8) as DWORD)
             + 1 as DWORD;
-        buffer = cmd_alloc((len as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
+        buffer = cmd_alloc!((len as usize) * core::mem::size_of::<WCHAR>()) as *mut WCHAR;
         if buffer.is_null() {
             // SetLastError(ERROR_NOT_ENOUGH_MEMORY);
             return FALSE as WORD;
@@ -84,7 +84,7 @@ unsafe extern "C" fn CheckTerminalDeviceType(mut pszName: LPCTSTR) -> WORD {
     }
 
     if !unicode_build {
-        cmd_free(buffer);
+        cmd_free!(buffer);
     }
 
     return DeviceType;
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
     static mut SecAttr: SECURITY_ATTRIBUTES = SECURITY_ATTRIBUTES {
         nLength: core::mem::size_of::<SECURITY_ATTRIBUTES>() as DWORD,
         lpSecurityDescriptor: core::ptr::null_mut(),
-        bInheritHandle: TRUE,
+        bInheritHandle: (TRUE) as i32,
     };
 
     let mut Success: BOOL;
@@ -109,7 +109,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
     /* The user asked for help */
     if _tcsncmp(param as LPCTSTR, slash_help.as_ptr() as LPCTSTR, 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_CTTY_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_CTTY_HELP);
         return 0;
     }
 
@@ -126,7 +126,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
         /*
          * Special case for CON device.
          */
-        let mut bRetry: BOOL = FALSE;
+        let mut bRetry: BOOL = (FALSE) as i32;
 
         /* RetryOpenConsole: label lowered to loop head; goto becomes continue */
         loop
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
                 {
                     return 1;
                 }
-                bRetry = TRUE;
+                bRetry = (TRUE) as i32;
                 continue;
             }
 
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
                 {
                     return 1;
                 }
-                bRetry = TRUE;
+                bRetry = (TRUE) as i32;
                 continue;
             }
 
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
             GetCurrentProcess(),
             core::ptr::addr_of_mut!(hStdHandles[2]),
             0, // GENERIC_WRITE,
-            TRUE,
+            (TRUE) as BOOL,
             DUPLICATE_SAME_ACCESS /* 0 */,
         );
         if Success == 0
@@ -247,7 +247,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
             GetCurrentProcess(),
             core::ptr::addr_of_mut!(hStdHandles[0]),
             GENERIC_READ,
-            TRUE,
+            (TRUE) as BOOL,
             0,
         );
         if Success == 0
@@ -265,7 +265,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
             GetCurrentProcess(),
             core::ptr::addr_of_mut!(hStdHandles[1]),
             GENERIC_WRITE,
-            TRUE,
+            (TRUE) as BOOL,
             0,
         );
         if Success == 0
@@ -284,7 +284,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
             GetCurrentProcess(),
             core::ptr::addr_of_mut!(hStdHandles[2]),
             GENERIC_WRITE,
-            TRUE,
+            (TRUE) as BOOL,
             0,
         );
         if Success == 0
@@ -302,7 +302,7 @@ pub unsafe extern "C" fn cmd_ctty(param: LPTSTR) -> INT {
     }
     else
     {
-        ConOutResPrintf(STRING_ERROR_INVALID_DEVICE, param);
+        ConOutResPrintf!(STRING_ERROR_INVALID_DEVICE, param);
         return 1;
     }
 

@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -28,21 +28,21 @@ pub unsafe extern "C" fn InitLocale() {
     let mut szBuffer: [TCHAR; 256] = [0; 256];
 
     /* date settings */
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDATE, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
     cDateSeparator = szBuffer[0];
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE | LOCALE_RETURN_NUMBER, core::ptr::addr_of_mut!(nDateFormat) as LPTSTR, core::mem::size_of::<INT>() / (core::mem::size_of::<TCHAR>() as usize));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IDATE | LOCALE_RETURN_NUMBER, core::ptr::addr_of_mut!(nDateFormat) as LPTSTR, (core::mem::size_of::<INT>() / (core::mem::size_of::<TCHAR>() as usize)) as i32);
 
     /* time settings */
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STIME, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
     cTimeSeparator = szBuffer[0];
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ITIME | LOCALE_RETURN_NUMBER, core::ptr::addr_of_mut!(nTimeFormat) as LPTSTR, core::mem::size_of::<INT>() / (core::mem::size_of::<TCHAR>() as usize));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_ITIME | LOCALE_RETURN_NUMBER, core::ptr::addr_of_mut!(nTimeFormat) as LPTSTR, (core::mem::size_of::<INT>() / (core::mem::size_of::<TCHAR>() as usize)) as i32);
 
     /* number settings */
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_STHOUSAND, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
     cThousandSeparator = szBuffer[0];
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SDECIMAL, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
     cDecimalSeparator = szBuffer[0];
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SGROUPING, szBuffer.as_mut_ptr(), ARRAYSIZE(szBuffer));
+    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_SGROUPING, szBuffer.as_mut_ptr(), (ARRAYSIZE!(szBuffer)) as i32);
     nNumberGroups = _ttoi(szBuffer.as_mut_ptr()) as INT;
 }
 #[no_mangle]
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn GetDateString() -> LPTSTR {
         &raw mut t,
         core::ptr::null(),
         core::ptr::addr_of_mut!(szDate) as LPTSTR,
-        ARRAYSIZE(szDate) as i32,
+        ARRAYSIZE!(szDate) as i32,
     );
     return core::ptr::addr_of_mut!(szDate) as LPTSTR;
 }
@@ -66,7 +66,7 @@ pub unsafe extern "C" fn GetTimeString() -> LPTSTR {
     static mut szTime: [TCHAR; 12] = [0 as TCHAR; 12];
     let mut t: SYSTEMTIME = core::mem::zeroed();
     GetLocalTime(core::ptr::addr_of_mut!(t));
-    // _T("%2d%c%02d%c%02d%c%02d") as an explicit NUL-terminated wide array (22 units)
+    // (&[0x0025, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0000u16]).as_ptr() /* _T "%2d%c%02d%c%02d%c%02d" */ as an explicit NUL-terminated wide array (22 units)
     let FMT: [u16; 22] = [
         '%' as u16, '2' as u16, 'd' as u16,
         '%' as u16, 'c' as u16,

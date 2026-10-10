@@ -29,6 +29,21 @@ _DEF = re.compile(
 _VARIADIC_PARAM = re.compile(r",?\s*(?:mut\s+)?(?P<arg>[A-Za-z_]\w*)\s*:\s*\.\.\.\s*,?\s*$")
 _VALIST_TYPE = re.compile(r"(?:::)?(?:core::ffi::)?VaList(?:Impl)?\b(?:\s*<[^>]*>)?")
 
+# c2rust's `core::ffi::VaList` as a parameter, field or fn-pointer TYPE (a C `va_list` taken by
+# value: cmd's ConPrintfVPaging, Wine's `dbg_vlog` field). It is `c_variadic`, i.e. nightly. On
+# every Windows target `va_list` is `char *` by value, so `*mut c_void` is the same ABI and is
+# what strsafe-rust already spells `_vsnwprintf`'s parameter. Only a TYPE position (after `:`,
+# `(`, `,` or `->`): a twin body's `VaListImpl` walking is the variadic rewrite's business.
+_VALIST_PARAM_TYPE = re.compile(
+    r"(?P<lead>(?:(?<!:):(?!:)|\(|,|->|\*const|\*mut)\s*)"
+    r"(?:::)?(?:core::ffi::)?VaList\b(?:\s*<[^<>]*>)?"
+)
+
+
+def lower_va_list_types(text: str) -> tuple[str, int]:
+    """`x: core::ffi::VaList<'_, '_>` -> `x: *mut core::ffi::c_void` (see above)."""
+    return _VALIST_PARAM_TYPE.subn(r"\g<lead>*mut ::core::ffi::c_void", text)
+
 
 @dataclass
 class Rewrite:
@@ -69,7 +84,7 @@ def _close_brace(text: str, open_idx: int) -> int | None:
 
 
 _VA_START_LOCAL = re.compile(
-    r"let\s+(?:mut\s+)?(?P<v>[A-Za-z_]\w*)\s*:\s*va_list\s*;(?P<gap>\s*)va_start!\s*\(\s*(?P=v)\s*,[^)]*\)\s*;"
+    r"let\s+(?P<mut>mut\s+)?(?P<v>[A-Za-z_]\w*)\s*:\s*va_list\s*;(?P<gap>\s*)va_start!\s*\(\s*(?P=v)\s*,[^)]*\)\s*;"
 )
 
 
@@ -80,11 +95,58 @@ def _forwarded_va_list(body: str) -> str:
     already done the va_start: the local IS `*ap_list` (a `va_list` is a pointer on every
     Windows ABI, so copying it is va_copy), and the va_end is the trampoline's too."""
     m = _VA_START_LOCAL.search(body)
-    if m is None:
-        return body
-    v = m.group("v")
-    body = body[: m.start()] + f"let {v}: va_list = *(ap_list as *mut va_list);" + body[m.end() :]
-    return re.sub(rf"\s*va_end!\s*\(\s*{v}\s*\)\s*;", "", body)
+    if m is not None:
+        v = m.group("v")
+        # `mut` kept: a list handed on by address (cmd's `ConMsgPrintfV(.., &raw mut arg_ptr)`)
+        # needs it.
+        mut = "mut " if m.group("mut") else ""
+        body = (
+            body[: m.start()]
+            + f"let {mut}{v}: va_list = *(ap_list as *mut va_list);"
+            + body[m.end() :]
+        )
+        return re.sub(rf"\s*va_end!\s*\(\s*{v}\s*\)\s*;", "", body)
+    # The same with code between the declaration and the va_start (cmd's ErrorMessage starts
+    # its list inside an `if`, DirPrintf after a local): the va_start becomes the assignment,
+    # so the declaration stays where it is and Rust's deferred initialisation holds.
+    # Either spelling of the local's type: lower_va_list_types writes c2rust's VaList as the
+    # pointer it is (cmd's ConOutPrintfPaging_v), and only a va_list is ever va_start!ed.
+    for d in re.finditer(
+        r"let\s+(?:mut\s+)?(?P<v>[A-Za-z_]\w*)\s*:\s*"
+        r"(?P<ty>va_list|\*mut\s+(?:::)?(?:core::ffi::)?c_void)\s*;",
+        body,
+    ):
+        v, ty = d.group("v"), d.group("ty")
+        start = re.compile(rf"va_start!\s*\(\s*{v}\s*,[^)]*\)\s*;")
+        if not start.search(body, d.end()):
+            continue
+        body = body[: d.end()] + start.sub(f"{v} = *(ap_list as *mut {ty});", body[d.end() :])
+        body = re.sub(rf"\s*va_end!\s*\(\s*{v}\s*\)\s*;", "", body)
+    return body
+
+
+def lower_twin_va_starts(text: str) -> tuple[str, int]:
+    """`_forwarded_va_list` over every EXISTING `F_v` twin body in `text`.
+
+    The rewrite applies it only when it first makes a twin; a body bought or fixed later
+    (cmd's ConFormatMessage_v, ErrorMessage_v, ConOutPrintfPaging_v, DirPrintf_v, after the
+    paid fix stage) can carry `va_start!`/`va_end!` again, which lower to builtins Rust lacks.
+    """
+    count, pos = 0, 0
+    while (m := _TWIN.search(text, pos)) is not None:
+        close = _close_paren(text, m.end() - 1)
+        open_b = text.find("{", close) if close is not None else -1
+        end = _close_brace(text, open_b) if open_b >= 0 else None
+        if end is None or "ap_list" not in text[m.end() : close or m.end()]:
+            pos = m.end()
+            continue
+        body = text[open_b : end + 1]
+        new = _forwarded_va_list(body)
+        if new != body:
+            text = text[:open_b] + new + text[end + 1 :]
+            count += 1
+        pos = open_b + len(new)
+    return text, count
 
 
 def rewrite(text: str) -> Rewrite:
@@ -125,8 +187,14 @@ def rewrite(text: str) -> Rewrite:
             pos = body_close
             continue
         sep = ",\n    " if "\n" in params else ", "
+        # The C trampoline calls `F_v` by name, so the twin is always unmangled -- even for a
+        # C `static` variadic, whose definition had no `#[no_mangle]` to copy (cmd's DirPrintf:
+        # LINK_FAIL `DirPrintf_v: undefined` on all three arches).
+        attrs = m.group("attrs") or ""
+        if "no_mangle" not in attrs:
+            attrs += "#[no_mangle]\n"
         twin = (
-            f'{m.group("attrs")}{m.group("vis") or ""}unsafe extern "C" fn {name}_v('
+            f'{attrs}{m.group("vis") or ""}unsafe extern "C" fn {name}_v('
             f"{fixed}{sep}ap_list: *mut ::core::ffi::c_void{',' if sep != ', ' else ''}"
             f"{chr(10) if sep != ', ' else ''})"
             f"{' ' + ret if ret else ''} {body}"

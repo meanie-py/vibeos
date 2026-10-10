@@ -2,7 +2,7 @@ use crate::cmd::error::error_invalid_parameter_format;
 use crate::cmd::error::error_out_of_memory;
 use crate::cmd::misc::freep;
 use crate::cmd::misc::splitspace;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -30,7 +30,7 @@ pub unsafe extern "C" fn DuplicateEnvironment() -> LPTSTR {
     while *End != 0 {
         End = End.add((_tcslen(End) + 1) as usize);
     }
-    EnvironCopy = cmd_alloc(
+    EnvironCopy = cmd_alloc!(
         ((End.add(1 as usize)).offset_from(Environ) as usize)
             * core::mem::size_of::<TCHAR>(),
     ) as LPTSTR;
@@ -64,7 +64,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
             't' as u16, 'e' as u16, 'd' as u16, ' ' as u16,
             'y' as u16, 'e' as u16, 't' as u16, '!' as u16, '\n' as u16, 0,
         ];
-        ConOutPuts(msg.as_ptr() as LPTSTR);
+        ConOutPuts!(msg.as_ptr() as LPTSTR);
         return 0;
     }
 
@@ -73,7 +73,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
         return 0;
     }
 
-    Saved = cmd_alloc(core::mem::size_of::<SETLOCAL>()) as PSETLOCAL;
+    Saved = cmd_alloc!(core::mem::size_of::<SETLOCAL>()) as PSETLOCAL;
     if Saved.is_null() {
         error_out_of_memory();
         return 1;
@@ -82,7 +82,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
     (*Saved).Environment = DuplicateEnvironment();
     if (*Saved).Environment.is_null() {
         error_out_of_memory();
-        cmd_free(Saved as *mut core::ffi::c_void);
+        cmd_free!(Saved as *mut core::ffi::c_void);
         return 1;
     }
     /*
@@ -94,8 +94,8 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
     (*Saved).EnableExtensions = bEnableExtensions;
     (*Saved).DelayedExpansion = bDelayedExpansion;
 
-    (*Saved).Prev = (*bc).setlocal;
-    (*bc).setlocal = Saved;
+    (*Saved).Prev = ((*bc).setlocal).cast();
+    (*bc).setlocal = (Saved).cast();
 
     nErrorLevel = 0;
 
@@ -111,7 +111,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
             ].as_ptr() as LPTSTR,
         ) == 0
         {
-            bEnableExtensions = TRUE;
+            bEnableExtensions = (TRUE) as i32;
         } else if _tcsicmp(
             *arg.offset(i as isize),
             [
@@ -121,7 +121,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
             ].as_ptr() as LPTSTR,
         ) == 0
         {
-            bEnableExtensions = FALSE;
+            bEnableExtensions = (FALSE) as i32;
         } else if _tcsicmp(
             *arg.offset(i as isize),
             [
@@ -132,7 +132,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
             ].as_ptr() as LPTSTR,
         ) == 0
         {
-            bDelayedExpansion = TRUE;
+            bDelayedExpansion = (TRUE) as i32;
         } else if _tcsicmp(
             *arg.offset(i as isize),
             [
@@ -143,7 +143,7 @@ pub unsafe extern "C" fn cmd_setlocal(mut param: LPTSTR) -> INT {
             ].as_ptr() as LPTSTR,
         ) == 0
         {
-            bDelayedExpansion = FALSE;
+            bDelayedExpansion = (FALSE) as i32;
         } else {
             error_invalid_parameter_format(*arg.offset(i as isize));
             break;
@@ -161,11 +161,11 @@ pub unsafe extern "C" fn cmd_endlocal(param: LPTSTR) -> INT {
     let mut Value: LPTSTR;
     let mut Saved: PSETLOCAL;
     let mut drvEnvVar: [TCHAR; 4] = ['=' as TCHAR, '?' as TCHAR, ':' as TCHAR, 0 as TCHAR];
-    let mut szCurrent: [TCHAR; MAX_PATH] = [0 as TCHAR; MAX_PATH];
+    let mut szCurrent: [TCHAR; (MAX_PATH) as _] = [0 as TCHAR; (MAX_PATH) as _];
 
-    if _tcscmp(param, _T("/?")) == 0 {
+    if _tcscmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */) == 0 {
         // FIXME
-        ConOutPuts(_T("ENDLOCAL help not implemented yet!\n"));
+        ConOutPuts!((&[0x0045, 0x004e, 0x0044, 0x004c, 0x004f, 0x0043, 0x0041, 0x004c, 0x0020, 0x0068, 0x0065, 0x006c, 0x0070, 0x0020, 0x006e, 0x006f, 0x0074, 0x0020, 0x0069, 0x006d, 0x0070, 0x006c, 0x0065, 0x006d, 0x0065, 0x006e, 0x0074, 0x0065, 0x0064, 0x0020, 0x0079, 0x0065, 0x0074, 0x0021, 0x000a, 0x0000u16]).as_ptr() /* _T "ENDLOCAL help not implemented yet!\n" */);
         return 0;
     }
 
@@ -177,7 +177,7 @@ pub unsafe extern "C" fn cmd_endlocal(param: LPTSTR) -> INT {
     if Saved.is_null() {
         return 0;
     }
-    (*bc).setlocal = (*Saved).Prev;
+    (*bc).setlocal = ((*Saved).Prev).cast();
 
     bEnableExtensions = (*Saved).EnableExtensions;
     bDelayedExpansion = (*Saved).DelayedExpansion;
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn cmd_endlocal(param: LPTSTR) -> INT {
         Name = Environ;
         while *Name != 0 {
             'body: {
-                Value = _tcschr(Name.add(1 as usize), _T('='));
+                Value = _tcschr(Name.add(1 as usize), ('=' as u16));
                 if Value.is_null() {
                     break 'body;
                 }
@@ -202,14 +202,14 @@ pub unsafe extern "C" fn cmd_endlocal(param: LPTSTR) -> INT {
             }
             Name = Name.add((_tcslen(Name) + 1) as usize);
         }
-        cmd_free(Environ as *mut core::ffi::c_void);
+        cmd_free!(Environ as *mut core::ffi::c_void);
     }
 
     /* Now, restore variables from the copy saved by cmd_setlocal() */
     Name = (*Saved).Environment;
     while *Name != 0 {
         'body: {
-            Value = _tcschr(Name.add(1 as usize), _T('='));
+            Value = _tcschr(Name.add(1 as usize), ('=' as u16));
             if Value.is_null() {
                 break 'body;
             }
@@ -228,18 +228,18 @@ pub unsafe extern "C" fn cmd_endlocal(param: LPTSTR) -> INT {
     if GetEnvironmentVariable(
         core::ptr::addr_of_mut!(drvEnvVar) as *mut TCHAR,
         core::ptr::addr_of_mut!(szCurrent) as *mut TCHAR,
-        ARRAYSIZE(szCurrent),
+        ARRAYSIZE!(szCurrent),
     ) == 0
     {
         _stprintf(
             core::ptr::addr_of_mut!(szCurrent) as *mut TCHAR,
-            _T("%C:\\"),
-            ('A' as i32 + (*Saved).CurDrive as i32 - 1) as TCHAR,
+            (&[0x0025, 0x0043, 0x003a, 0x005c, 0x0000u16]).as_ptr() /* _T "%C:\\" */,
+            (('A' as i32 + (*Saved).CurDrive as i32 - 1) as TCHAR) as core::ffi::c_uint,
         );
     }
     _tchdir(core::ptr::addr_of_mut!(szCurrent) as *mut TCHAR); // SetRootPath(NULL, szCurrent);
 
-    cmd_free((*Saved).Environment as *mut core::ffi::c_void);
-    cmd_free(Saved as *mut core::ffi::c_void);
+    cmd_free!((*Saved).Environment as *mut core::ffi::c_void);
+    cmd_free!(Saved as *mut core::ffi::c_void);
     return 0;
 }

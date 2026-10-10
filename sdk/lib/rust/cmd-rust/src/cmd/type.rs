@@ -1,9 +1,8 @@
-use crate::cmd::console::ConOutPrintfPaging;
 use crate::cmd::console::ConOutResPaging;
 use crate::cmd::error::error_req_param_missing;
 use crate::cmd::misc::freep;
 use crate::cmd::misc::split;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -18,7 +17,7 @@ unsafe extern "C" fn FileGetString(
     let mut dwRead: DWORD = 0;
     let mut len: LONG = 0;
 
-    pString = cmd_alloc(nBufferLength as usize) as PCHAR;
+    pString = cmd_alloc!(nBufferLength as usize) as PCHAR;
 
     if ReadFile(
         hFile,
@@ -47,8 +46,8 @@ unsafe extern "C" fn FileGetString(
     }
 
     if len == 0 {
-        cmd_free(pString as PVOID);
-        return FALSE;
+        cmd_free!(pString as PVOID);
+        return (FALSE) as BOOL;
     }
 
     let fresh31 = len;
@@ -63,9 +62,9 @@ unsafe extern "C" fn FileGetString(
         lpBuffer as LPWSTR,
         len as ::core::ffi::c_int,
     );
-    cmd_free(pString as PVOID);
+    cmd_free!(pString as PVOID);
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn DoTypeFile(
@@ -98,12 +97,12 @@ unsafe extern "C" fn DoTypeFile(
             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
             core::ptr::null_mut(),
             GetLastError(),
-            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+            (MAKELANGID!(LANG_NEUTRAL, SUBLANG_DEFAULT)) as _,
             &raw mut errmsg as LPTSTR,
             0,
             core::ptr::null_mut(),
         );
-        let fmt1: [TCHAR; 8] = [
+        let mut fmt1: [TCHAR; 8] = [
             '%' as TCHAR,
             's' as TCHAR,
             ' ' as TCHAR,
@@ -113,10 +112,10 @@ unsafe extern "C" fn DoTypeFile(
             's' as TCHAR,
             0,
         ];
-        ConErrPrintf(&raw mut fmt1 as LPTSTR, FileName, errmsg);
-        LocalFree(errmsg);
+        ConErrPrintf!(&raw mut fmt1 as LPTSTR, FileName, errmsg);
+        LocalFree((errmsg).cast());
         nErrorLevel = 1;
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /*
@@ -152,7 +151,7 @@ unsafe extern "C" fn DoTypeFile(
      * alone is redirected, we can obtain the file contents only.
      */
     if bNoFileName == 0 {
-        let fmt2: [TCHAR; 7] = [
+        let mut fmt2: [TCHAR; 7] = [
             '\n' as TCHAR,
             '%' as TCHAR,
             's' as TCHAR,
@@ -161,27 +160,27 @@ unsafe extern "C" fn DoTypeFile(
             '\n' as TCHAR,
             0,
         ];
-        ConErrPrintf(&raw mut fmt2 as LPTSTR, FileName);
+        ConErrPrintf!(&raw mut fmt2 as LPTSTR, FileName);
     }
 
     if bPaging != 0 {
         while FileGetString(
             hFile,
             &raw mut buff as LPTSTR,
-            ARRAYSIZE(buff) as LONG,
+            ARRAYSIZE!(buff) as LONG,
         ) != 0
         {
-            let fmt3: [TCHAR; 3] = ['%' as TCHAR, 's' as TCHAR, 0];
+            let mut fmt3: [TCHAR; 3] = ['%' as TCHAR, 's' as TCHAR, 0];
             if ConOutPrintfPaging(
-                FALSE,
+                (FALSE) as BOOL,
                 &raw mut fmt3 as LPTSTR,
                 &raw mut buff as LPTSTR,
             ) == 0
             {
-                bCtrlBreak = FALSE;
+                bCtrlBreak = (FALSE) as i32;
                 CloseHandle(hFile);
                 nErrorLevel = 1;
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             /*
@@ -221,10 +220,10 @@ unsafe extern "C" fn DoTypeFile(
                 core::ptr::null_mut(),
             );
             if bCtrlBreak != 0 {
-                bCtrlBreak = FALSE;
+                bCtrlBreak = (FALSE) as i32;
                 CloseHandle(hFile);
                 nErrorLevel = 1;
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             /*
@@ -249,7 +248,7 @@ unsafe extern "C" fn DoTypeFile(
     }
 
     CloseHandle(hFile);
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
@@ -258,16 +257,16 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
     let mut argv: *mut LPTSTR = core::ptr::null_mut();
     let mut errmsg: LPTSTR = core::ptr::null_mut();
     let mut hConsoleOut: HANDLE = core::ptr::null_mut();
-    let mut bNoFileName: BOOL = FALSE;
-    let mut bPaging: BOOL = FALSE;
+    let mut bNoFileName: BOOL = (FALSE) as i32;
+    let mut bPaging: BOOL = (FALSE) as i32;
     let mut bFileFound: BOOL = 0;
     let mut dwLastError: DWORD = 0;
     let mut nFileSpecs: UINT = 0;
     let mut hFind: HANDLE = core::ptr::null_mut();
     let mut FindData: WIN32_FIND_DATA = core::mem::zeroed();
 
-    if _tcsncmp(param, _T("/?"), 2) == 0 {
-        ConOutResPaging(TRUE, STRING_TYPE_HELP1);
+    if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+        ConOutResPaging((TRUE) as BOOL, STRING_TYPE_HELP1);
         return 0;
     }
 
@@ -280,8 +279,8 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
     argv = split(
         param,
         core::ptr::addr_of_mut!(argc),
-        FALSE,
-        FALSE,
+        (FALSE) as BOOL,
+        (FALSE) as BOOL,
     );
 
     'quit: {
@@ -289,22 +288,22 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
         i = 0;
         while i < argc {
             'next: {
-                if *(*argv.offset(i as isize)).offset(0 as isize) == _T('/') {
+                if *(*argv.offset(i as isize)).offset(0 as isize) == ('/' as u16) {
                     if _tcslen(*argv.offset(i as isize)) == 2 {
                         let sw = _totupper(
                             *(*argv.offset(i as isize)).offset(1 as isize),
                         );
-                        if sw == _T('N') {
-                            bNoFileName = TRUE;
+                        if sw == ('N' as u16) {
+                            bNoFileName = (TRUE) as i32;
                             break 'next;
-                        } else if sw == _T('P') {
-                            bPaging = TRUE;
+                        } else if sw == ('P' as u16) {
+                            bPaging = (TRUE) as i32;
                             break 'next;
                         }
                     }
 
                     // error_invalid_switch(argv[i] + 1);
-                    ConErrResPrintf(
+                    ConErrResPrintf!(
                         STRING_TYPE_ERROR,
                         (*argv.offset(i as isize)).offset(1 as isize),
                     );
@@ -324,7 +323,7 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
 
         /* Reset paging state */
         if bPaging != 0 {
-            ConOutPrintfPaging(TRUE, _T(""));
+            ConOutPrintfPaging((TRUE) as BOOL, (&[0x0000u16]).as_ptr() as *mut u16 /* _T "" */);
         }
 
         /* Now loop through the files */
@@ -332,16 +331,16 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
         while i < argc {
             'next: {
                 /* Skip the options */
-                if *(*argv.offset(i as isize)).offset(0 as isize) == _T('/') {
+                if *(*argv.offset(i as isize)).offset(0 as isize) == ('/' as u16) {
                     break 'next;
                 }
 
                 /* If wildcards are present in this file specification, perform a file enumeration */
-                if !_tcschr(*argv.offset(i as isize), _T('*')).is_null()
-                    || !_tcschr(*argv.offset(i as isize), _T('?')).is_null()
+                if !_tcschr(*argv.offset(i as isize), ('*' as u16)).is_null()
+                    || !_tcschr(*argv.offset(i as isize), ('?' as u16)).is_null()
                 {
                     dwLastError = ERROR_SUCCESS;
-                    bFileFound = FALSE;
+                    bFileFound = (FALSE) as i32;
 
                     hFind = FindFirstFile(
                         *argv.offset(i as isize),
@@ -355,18 +354,18 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
                                 /* Ignore any directory silently */
                                 if _tcscmp(
                                     core::ptr::addr_of_mut!(FindData.cFileName) as LPTSTR,
-                                    _T("."),
+                                    (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */,
                                 ) == 0
                                     || _tcscmp(
                                         core::ptr::addr_of_mut!(FindData.cFileName) as LPTSTR,
-                                        _T(".."),
+                                        (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */,
                                     ) == 0
                                     || (FindData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
                                 {
                                     break 'body;
                                 }
 
-                                bFileFound = TRUE;
+                                bFileFound = (TRUE) as i32;
                                 if DoTypeFile(
                                     core::ptr::addr_of_mut!(FindData.cFileName) as LPTSTR,
                                     hConsoleOut,
@@ -402,13 +401,13 @@ pub unsafe extern "C" fn cmd_type(param: LPTSTR) -> INT {
                             FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_IGNORE_INSERTS | FORMAT_MESSAGE_FROM_SYSTEM,
                             core::ptr::null_mut(),
                             dwLastError,
-                            MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+                            (MAKELANGID!(LANG_NEUTRAL, SUBLANG_DEFAULT)) as _,
                             core::ptr::addr_of_mut!(errmsg) as LPTSTR,
                             0,
                             core::ptr::null_mut(),
                         );
-                        ConErrPrintf(_T("%s - %s"), *argv.offset(i as isize), errmsg);
-                        LocalFree(errmsg);
+                        ConErrPrintf!((&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0025, 0x0073, 0x0000u16]).as_ptr() /* _T "%s - %s" */, *argv.offset(i as isize), errmsg);
+                        LocalFree((errmsg).cast());
                         nErrorLevel = 1;
                     }
                 } else {

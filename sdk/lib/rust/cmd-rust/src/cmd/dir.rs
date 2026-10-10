@@ -1,10 +1,9 @@
-use crate::cmd::console::ConOutPrintfPaging;
 use crate::cmd::console::ConOutResPaging;
 use crate::cmd::console::ConPrintfVPaging;
 use crate::cmd::cmd::ConvertULargeInteger;
 use crate::cmd::console::GetScreenSize;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_96A296D224F2: [u16; 1] = [0x0000u16];
 
 use core::ffi::c_void;
@@ -68,7 +67,6 @@ pub struct _DirSwitchesFlags {
     pub stTimeField: _DirSwitchesFlags_stTimeField,
 }
 pub type DIRSWITCHFLAGS = _DirSwitchesFlags;
-pub type LPDIRSWITCHFLAGS = *mut DIRSWITCHFLAGS;
 
 #[repr(C)]
 #[allow(non_snake_case, non_camel_case_types)]
@@ -104,7 +102,7 @@ pub type PGETFREEDISKSPACEEX = unsafe extern "system" fn(
     PULARGE_INTEGER,
 ) -> BOOL;
 unsafe extern "C" fn DirHelp() {
-    ConOutResPaging(TRUE, STRING_DIR_HELP1);
+    ConOutResPaging((TRUE) as BOOL, STRING_DIR_HELP1);
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsDotDirectory(pszPath: LPCTSTR) -> BOOL {
@@ -115,7 +113,7 @@ pub unsafe extern "C" fn IsDotDirectory(pszPath: LPCTSTR) -> BOOL {
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsDotDirectoryN(pPath: *const TCHAR, Length: SIZE_T) -> BOOL {
-    return ((Length == 1 && *pPath.add(0) == _T('.')) || (Length == 2 && *pPath.add(0) == _T('.') && *pPath.add(1) == _T('.'))) as BOOL;
+    return ((Length == 1 && *pPath.add(0) == ('.' as u16)) || (Length == 2 && *pPath.add(0) == ('.' as u16) && *pPath.add(1) == ('.' as u16))) as BOOL;
 }
 
 unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LPINT, lpFlags: LPDIRSWITCHFLAGS) -> BOOL {
@@ -136,42 +134,42 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
     *entries = 0;
 
     /* Initialize variables; */
-    cCurSwitch = _T(' ');
-    bNegative = FALSE;
-    bPNegative = FALSE;
+    cCurSwitch = (' ' as u16);
+    bNegative = (FALSE) as i32;
+    bPNegative = (FALSE) as i32;
 
-    bOrderByNoPar = FALSE;
+    bOrderByNoPar = (FALSE) as i32;
 
     while *Line != 0 {
         cCurChar = *Line;
         cCurUChar = _totupper(*Line);
 
-        if cCurSwitch == _T('/') {
-            while _istspace(*Line) != 0 {
+        if cCurSwitch == ('/' as u16) {
+            while _istspace!(*Line) != 0 {
                 Line = Line.add(1);
             }
 
-            bNegative = (*Line == _T('-')) as BOOL;
+            bNegative = (*Line == ('-' as u16)) as BOOL;
             Line = Line.offset(bNegative as isize);
 
             cCurChar = *Line;
             cCurUChar = _totupper(*Line);
 
-            if cCurUChar == _T('A') || cCurUChar == _T('T') || cCurUChar == _T('O') {
+            if cCurUChar == ('A' as u16) || cCurUChar == ('T' as u16) || cCurUChar == ('O' as u16) {
                 match cCurUChar {
-                    _ if cCurUChar == _T('A') => {
+                    _ if cCurUChar == ('A' as u16) => {
                         (*lpFlags).stAttribs.dwAttribVal = 0;
                         (*lpFlags).stAttribs.dwAttribMask = 0;
                         if bNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribMask = (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
                         }
                     }
-                    _ if cCurUChar == _T('T') => {
+                    _ if cCurUChar == ('T' as u16) => {
                         if bNegative != 0 {
                             (*lpFlags).stTimeField.eTimeField = TF_MODIFIEDDATE;
                         }
                     }
-                    _ if cCurUChar == _T('O') => {
+                    _ if cCurUChar == ('O' as u16) => {
                         bOrderByNoPar = (bNegative == 0) as BOOL;
                         (*lpFlags).stOrderBy.sCriteriaCount = 0;
                     }
@@ -181,128 +179,128 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
                 if bNegative == 0 {
                     cCurSwitch = cCurUChar;
                     Line = Line.add(1);
-                    if *Line == _T(':') {
+                    if *Line == (':' as u16) {
                         Line = Line.add(1);
                     }
                     continue;
                 }
-            } else if cCurUChar == _T('L') {
+            } else if cCurUChar == ('L' as u16) {
                 (*lpFlags).bLowerCase = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('B') {
+            } else if cCurUChar == ('B' as u16) {
                 (*lpFlags).bBareFormat = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('C') {
+            } else if cCurUChar == ('C' as u16) {
                 (*lpFlags).bTSeparator = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('W') {
+            } else if cCurUChar == ('W' as u16) {
                 (*lpFlags).bWideList = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('D') {
+            } else if cCurUChar == ('D' as u16) {
                 (*lpFlags).bWideListColSort = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('N') {
+            } else if cCurUChar == ('N' as u16) {
                 (*lpFlags).bNewLongList = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('P') {
+            } else if cCurUChar == ('P' as u16) {
                 (*lpFlags).bPause = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('Q') {
+            } else if cCurUChar == ('Q' as u16) {
                 (*lpFlags).bUser = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('S') {
+            } else if cCurUChar == ('S' as u16) {
                 (*lpFlags).bRecursive = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('X') {
+            } else if cCurUChar == ('X' as u16) {
                 (*lpFlags).bShortName = (bNegative == 0) as BOOL;
-            } else if cCurUChar == _T('R') {
+            } else if cCurUChar == ('R' as u16) {
                 (*lpFlags).bDataStreams = (bNegative == 0) as BOOL;
-            } else if cCurChar == _T('4') {
+            } else if cCurChar == ('4' as u16) {
                 (*lpFlags).b4Digit = (bNegative == 0) as BOOL;
-            } else if cCurChar == _T('?') {
+            } else if cCurChar == ('?' as u16) {
                 DirHelp();
-                return FALSE;
+                return (FALSE) as BOOL;
             } else {
                 error_invalid_switch(_totupper(*Line) as TCHAR);
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             /* Make sure there's no extra characters at the end of the switch */
             if *Line.add(1 as usize) != 0
-                && *Line.add(1 as usize) != _T('/')
-                && _istspace(*Line.add(1 as usize)) == 0
+                && *Line.add(1 as usize) != ('/' as u16)
+                && _istspace!(*Line.add(1 as usize)) == 0
             {
                 error_parameter_format(*Line.add(1 as usize));
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
-            cCurSwitch = _T(' ');
-        } else if cCurSwitch == _T(' ') {
-            if cCurChar == _T('/') {
-                cCurSwitch = _T('/');
-            } else if _istspace(cCurChar) != 0 {
+            cCurSwitch = (' ' as u16);
+        } else if cCurSwitch == (' ' as u16) {
+            if cCurChar == ('/' as u16) {
+                cCurSwitch = ('/' as u16);
+            } else if _istspace!(cCurChar) != 0 {
                 /* do nothing */
             } else {
                 ptrStart = Line;
-                bIntoQuotes = FALSE;
+                bIntoQuotes = (FALSE) as i32;
                 while *Line != 0 {
-                    if bIntoQuotes == 0 && (*Line == _T('/') || _istspace(*Line) != 0) {
+                    if bIntoQuotes == 0 && (*Line == ('/' as u16) || _istspace!(*Line) != 0) {
                         break;
                     }
-                    bIntoQuotes ^= (*Line == _T('"')) as BOOL;
+                    bIntoQuotes ^= (*Line == ('"' as u16)) as BOOL;
                     Line = Line.add(1);
                 }
                 ptrEnd = Line;
 
-                temp = cmd_alloc(((ptrEnd.offset_from(ptrStart) + 1) as usize) * (core::mem::size_of::<TCHAR>() as usize));
+                temp = cmd_alloc!(((ptrEnd.offset_from(ptrStart) + 1) as usize) * (core::mem::size_of::<TCHAR>() as usize)) as LPTSTR;
                 if temp.is_null() {
-                    return FALSE;
+                    return (FALSE) as BOOL;
                 }
                 memcpy(
                     temp as *mut core::ffi::c_void,
                     ptrStart as *const core::ffi::c_void,
                     (ptrEnd.offset_from(ptrStart) as usize) * (core::mem::size_of::<TCHAR>() as usize),
                 );
-                *temp.offset(ptrEnd.offset_from(ptrStart)) = _T('\0');
+                *temp.offset(ptrEnd.offset_from(ptrStart)) = ('\0' as u16);
                 StripQuotes(temp);
-                if add_entry(entries, params, temp) == 0 {
-                    cmd_free(temp);
-                    freep(*params);
-                    return FALSE;
+                if add_entry(entries, (params).cast(), temp) == 0 {
+                    cmd_free!(temp);
+                    freep((*params).cast());
+                    return (FALSE) as BOOL;
                 }
 
-                cmd_free(temp);
+                cmd_free!(temp);
                 continue;
             }
         } else {
-            if cCurChar == _T('/') || _istspace(cCurChar) != 0 {
-                cCurSwitch = _T(' ');
+            if cCurChar == ('/' as u16) || _istspace!(cCurChar) != 0 {
+                cCurSwitch = (' ' as u16);
                 continue;
             }
             match cCurSwitch {
-                _ if cCurSwitch == _T('A') => {
-                    if cCurChar == _T('-') {
-                        bPNegative = TRUE;
-                    } else if cCurUChar == _T('D') {
+                _ if cCurSwitch == ('A' as u16) => {
+                    if cCurChar == ('-' as u16) {
+                        bPNegative = (TRUE) as i32;
+                    } else if cCurUChar == ('D' as u16) {
                         (*lpFlags).stAttribs.dwAttribMask |= (FILE_ATTRIBUTE_DIRECTORY as DWORD);
                         if bPNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribVal &= !(FILE_ATTRIBUTE_DIRECTORY as DWORD);
                         } else {
                             (*lpFlags).stAttribs.dwAttribVal |= (FILE_ATTRIBUTE_DIRECTORY as DWORD);
                         }
-                    } else if cCurUChar == _T('R') {
+                    } else if cCurUChar == ('R' as u16) {
                         (*lpFlags).stAttribs.dwAttribMask |= (FILE_ATTRIBUTE_READONLY as DWORD);
                         if bPNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribVal &= !(FILE_ATTRIBUTE_READONLY as DWORD);
                         } else {
                             (*lpFlags).stAttribs.dwAttribVal |= (FILE_ATTRIBUTE_READONLY as DWORD);
                         }
-                    } else if cCurUChar == _T('H') {
+                    } else if cCurUChar == ('H' as u16) {
                         (*lpFlags).stAttribs.dwAttribMask |= (FILE_ATTRIBUTE_HIDDEN as DWORD);
                         if bPNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribVal &= !(FILE_ATTRIBUTE_HIDDEN as DWORD);
                         } else {
                             (*lpFlags).stAttribs.dwAttribVal |= (FILE_ATTRIBUTE_HIDDEN as DWORD);
                         }
-                    } else if cCurUChar == _T('A') {
+                    } else if cCurUChar == ('A' as u16) {
                         (*lpFlags).stAttribs.dwAttribMask |= (FILE_ATTRIBUTE_ARCHIVE as DWORD);
                         if bPNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribVal &= !(FILE_ATTRIBUTE_ARCHIVE as DWORD);
                         } else {
                             (*lpFlags).stAttribs.dwAttribVal |= (FILE_ATTRIBUTE_ARCHIVE as DWORD);
                         }
-                    } else if cCurUChar == _T('S') {
+                    } else if cCurUChar == ('S' as u16) {
                         (*lpFlags).stAttribs.dwAttribMask |= (FILE_ATTRIBUTE_SYSTEM as DWORD);
                         if bPNegative != 0 {
                             (*lpFlags).stAttribs.dwAttribVal &= !(FILE_ATTRIBUTE_SYSTEM as DWORD);
@@ -311,51 +309,51 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
                         }
                     } else {
                         error_parameter_format(_totupper(*Line) as TCHAR);
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
                 }
-                _ if cCurSwitch == _T('T') => {
-                    if cCurUChar == _T('C') {
+                _ if cCurSwitch == ('T' as u16) => {
+                    if cCurUChar == ('C' as u16) {
                         (*lpFlags).stTimeField.eTimeField = TF_CREATIONDATE;
-                    } else if cCurUChar == _T('A') {
+                    } else if cCurUChar == ('A' as u16) {
                         (*lpFlags).stTimeField.eTimeField = TF_LASTACCESSEDDATE;
-                    } else if cCurUChar == _T('W') {
+                    } else if cCurUChar == ('W' as u16) {
                         (*lpFlags).stTimeField.eTimeField = TF_MODIFIEDDATE;
                     } else {
                         error_parameter_format(_totupper(*Line) as TCHAR);
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
                 }
-                _ if cCurSwitch == _T('O') => {
-                    bOrderByNoPar = FALSE;
+                _ if cCurSwitch == ('O' as u16) => {
+                    bOrderByNoPar = (FALSE) as i32;
 
-                    if cCurChar == _T('-') {
-                        bPNegative = TRUE;
-                    } else if cCurUChar == _T('N') {
+                    if cCurChar == ('-' as u16) {
+                        bPNegative = (TRUE) as i32;
+                    } else if cCurUChar == ('N' as u16) {
                         if ((*lpFlags).stOrderBy.sCriteriaCount as i32) < 3 {
                             (*lpFlags).stOrderBy.sCriteriaCount += 1;
                         }
                         (*lpFlags).stOrderBy.bCriteriaRev[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = bPNegative;
                         (*lpFlags).stOrderBy.eCriteria[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = ORDER_NAME;
-                    } else if cCurUChar == _T('S') {
+                    } else if cCurUChar == ('S' as u16) {
                         if ((*lpFlags).stOrderBy.sCriteriaCount as i32) < 3 {
                             (*lpFlags).stOrderBy.sCriteriaCount += 1;
                         }
                         (*lpFlags).stOrderBy.bCriteriaRev[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = bPNegative;
                         (*lpFlags).stOrderBy.eCriteria[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = ORDER_SIZE;
-                    } else if cCurUChar == _T('G') {
+                    } else if cCurUChar == ('G' as u16) {
                         if ((*lpFlags).stOrderBy.sCriteriaCount as i32) < 3 {
                             (*lpFlags).stOrderBy.sCriteriaCount += 1;
                         }
                         (*lpFlags).stOrderBy.bCriteriaRev[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = bPNegative;
                         (*lpFlags).stOrderBy.eCriteria[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = ORDER_DIRECTORY;
-                    } else if cCurUChar == _T('E') {
+                    } else if cCurUChar == ('E' as u16) {
                         if ((*lpFlags).stOrderBy.sCriteriaCount as i32) < 3 {
                             (*lpFlags).stOrderBy.sCriteriaCount += 1;
                         }
                         (*lpFlags).stOrderBy.bCriteriaRev[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = bPNegative;
                         (*lpFlags).stOrderBy.eCriteria[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = ORDER_EXTENSION;
-                    } else if cCurUChar == _T('D') {
+                    } else if cCurUChar == ('D' as u16) {
                         if ((*lpFlags).stOrderBy.sCriteriaCount as i32) < 3 {
                             (*lpFlags).stOrderBy.sCriteriaCount += 1;
                         }
@@ -363,14 +361,14 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
                         (*lpFlags).stOrderBy.eCriteria[((*lpFlags).stOrderBy.sCriteriaCount as i32 - 1) as usize] = ORDER_TIME;
                     } else {
                         error_parameter_format(_totupper(*Line) as TCHAR);
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
                 }
                 _ => {}
             }
             /* We check if we calculated the negative value and release the flag */
-            if cCurChar != _T('-') && bPNegative != 0 {
-                bPNegative = FALSE;
+            if cCurChar != ('-' as u16) && bPNegative != 0 {
+                bPNegative = (FALSE) as i32;
             }
         }
 
@@ -380,47 +378,48 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
     /* /O with no switch parameters acts like /O:GN */
     if bOrderByNoPar != 0 {
         (*lpFlags).stOrderBy.sCriteriaCount = 2;
-        (*lpFlags).stOrderBy.eCriteria[0 as usize] = ORDER_DIRECTORY;
-        (*lpFlags).stOrderBy.bCriteriaRev[0 as usize] = FALSE;
-        (*lpFlags).stOrderBy.eCriteria[1 as usize] = ORDER_NAME;
-        (*lpFlags).stOrderBy.bCriteriaRev[1 as usize] = FALSE;
+        (*lpFlags).stOrderBy.eCriteria[0 as usize] = ORDER_DIRECTORY as i32;
+        (*lpFlags).stOrderBy.bCriteriaRev[0 as usize] = FALSE as BOOL;
+        (*lpFlags).stOrderBy.eCriteria[1 as usize] = ORDER_NAME as i32;
+        (*lpFlags).stOrderBy.bCriteriaRev[1 as usize] = FALSE as BOOL;
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
-unsafe extern "C" fn DirPrintf(lpFlags: LPDIRSWITCHFLAGS, szFormat: LPTSTR, mut args: ...) -> BOOL {
-    let mut Done: BOOL = TRUE;
-    let mut arg_ptr: va_list;
-    va_start(arg_ptr, szFormat);
+#[no_mangle]
+unsafe extern "C" fn DirPrintf_v(lpFlags: LPDIRSWITCHFLAGS, szFormat: LPTSTR, ap_list: *mut ::core::ffi::c_void) -> BOOL {
+    let mut Done: BOOL = (TRUE) as i32;
+    let arg_ptr: va_list = *(ap_list as *mut va_list);
     if (*lpFlags).bPause != 0 {
-        Done = ConPrintfVPaging(core::ptr::addr_of_mut!(StdOutPager), FALSE, szFormat, arg_ptr);
+        Done = ConPrintfVPaging(core::ptr::addr_of_mut!(StdOutPager), (FALSE) as BOOL, szFormat, core::ptr::read(core::ptr::addr_of!(arg_ptr) as *const *mut ::core::ffi::c_void));
     } else {
         ConPrintfV(StdOut, szFormat, arg_ptr);
     }
-    va_end(arg_ptr);
     return Done;
 }
 
+
+
 unsafe extern "C" fn PrintDirectoryHeader(szPath: LPCTSTR, lpFlags: LPDIRSWITCHFLAGS) -> BOOL {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = [0; RC_STRING_MAX_SIZE];
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = [0; (RC_STRING_MAX_SIZE) as _];
     let mut szFullDir: LPCTSTR;
-    let mut szRootName: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szRootName: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut szVolName: [TCHAR; 80] = [0; 80];
     let mut dwSerialNr: DWORD = 0;
 
     if (*lpFlags).bBareFormat != 0 {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     szFullDir = szPath;
 
     /* Get the media ID of the drive */
-    if GetVolumePathName(szFullDir, szRootName.as_mut_ptr(), ARRAYSIZE(szRootName)) == 0
+    if GetVolumePathName(szFullDir, szRootName.as_mut_ptr(), ARRAYSIZE!(szRootName)) == 0
         || GetVolumeInformation(
             szRootName.as_mut_ptr() as LPCTSTR,
             szVolName.as_mut_ptr(),
-            ARRAYSIZE(szVolName),
+            ARRAYSIZE!(szVolName),
             core::ptr::addr_of_mut!(dwSerialNr),
             core::ptr::null_mut(),
             core::ptr::null_mut(),
@@ -428,47 +427,52 @@ unsafe extern "C" fn PrintDirectoryHeader(szPath: LPCTSTR, lpFlags: LPDIRSWITCHF
             0,
         ) == 0
     {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* Print drive info */
-    if szVolName[0] != _T('\0') {
+    if szVolName[0] != ('\0' as u16) {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP2,
             szMsg.as_mut_ptr(),
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
         DirPrintf(
             lpFlags,
             szMsg.as_mut_ptr(),
-            _totupper(szRootName[0]),
+            _totupper(szRootName[0]) as core::ffi::c_uint,
             szVolName.as_mut_ptr(),
         );
     } else {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP3,
             szMsg.as_mut_ptr(),
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
         DirPrintf(
             lpFlags,
             szMsg.as_mut_ptr(),
-            _totupper(szRootName[0]),
+            _totupper(szRootName[0]) as core::ffi::c_uint,
         );
     }
 
     /* Print the volume serial number if the return was successful */
     LoadString(
-        CMD_ModuleHandle,
+        (CMD_ModuleHandle).cast(),
         STRING_DIR_HELP4,
         szMsg.as_mut_ptr(),
-        ARRAYSIZE(szMsg),
+        (ARRAYSIZE!(szMsg)) as i32,
     );
-    DirPrintf(lpFlags, szMsg.as_mut_ptr(), HIWORD(dwSerialNr), LOWORD(dwSerialNr));
+    DirPrintf(
+        lpFlags,
+        szMsg.as_mut_ptr(),
+        HIWORD!(dwSerialNr) as core::ffi::c_uint,
+        LOWORD!(dwSerialNr) as core::ffi::c_uint,
+    );
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn DirPrintFileDateTime(
@@ -519,7 +523,7 @@ pub unsafe extern "C" fn FormatDate(lpDate: *mut TCHAR, dt: LPSYSTEMTIME, b4Digi
             /* mmddyy */
             return _stprintf(
                 lpDate,
-                _T("%02d%c%02d%c%0*d"),
+                (&[0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x002a, 0x0064, 0x0000u16]).as_ptr() /* _T "%02d%c%02d%c%0*d" */,
                 (*dt).wMonth as INT,
                 cDateSeparator as INT,
                 (*dt).wDay as INT,
@@ -532,7 +536,7 @@ pub unsafe extern "C" fn FormatDate(lpDate: *mut TCHAR, dt: LPSYSTEMTIME, b4Digi
             /* ddmmyy */
             return _stprintf(
                 lpDate,
-                _T("%02d%c%02d%c%0*d"),
+                (&[0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x002a, 0x0064, 0x0000u16]).as_ptr() /* _T "%02d%c%02d%c%0*d" */,
                 (*dt).wDay as INT,
                 cDateSeparator as INT,
                 (*dt).wMonth as INT,
@@ -545,7 +549,7 @@ pub unsafe extern "C" fn FormatDate(lpDate: *mut TCHAR, dt: LPSYSTEMTIME, b4Digi
             /* yymmdd */
             return _stprintf(
                 lpDate,
-                _T("%0*d%c%02d%c%02d"),
+                (&[0x0025, 0x0030, 0x002a, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0000u16]).as_ptr() /* _T "%0*d%c%02d%c%02d" */,
                 (if b4Digit != 0 { 4 } else { 2 }) as INT,
                 wYear as INT,
                 cDateSeparator as INT,
@@ -595,7 +599,7 @@ pub unsafe extern "C" fn FormatTime(lpTime: *mut TCHAR, dt: LPSYSTEMTIME) -> INT
 }
 
 unsafe extern "C" fn GetUserDiskFreeSpace(mut lpRoot: LPCTSTR, mut lpFreeSpace: PULARGE_INTEGER) {
-    let mut pGetFreeDiskSpaceEx: PGETFREEDISKSPACEEX = None;
+    let mut pGetFreeDiskSpaceEx: Option<PGETFREEDISKSPACEEX> = None;
     let mut hInstance: HINSTANCE = core::ptr::null_mut();
     let mut dwSecPerCl: DWORD = 0;
     let mut dwBytPerSec: DWORD = 0;
@@ -609,16 +613,16 @@ unsafe extern "C" fn GetUserDiskFreeSpace(mut lpRoot: LPCTSTR, mut lpFreeSpace: 
     let mut KERNEL32: [u16; 9] = ['K' as u16, 'E' as u16, 'R' as u16, 'N' as u16, 'E' as u16, 'L' as u16, '3' as u16, '2' as u16, 0];
     hInstance = GetModuleHandle(KERNEL32.as_ptr()) as HINSTANCE;
     if !hInstance.is_null() {
-        pGetFreeDiskSpaceEx = core::mem::transmute::<FARPROC, PGETFREEDISKSPACEEX>(
+        pGetFreeDiskSpaceEx = core::mem::transmute::<FARPROC, Option<PGETFREEDISKSPACEEX>>(
             GetProcAddress(hInstance, b"GetDiskFreeSpaceExW\0".as_ptr() as LPCSTR),
         );
         if pGetFreeDiskSpaceEx.is_some() {
-            if pGetFreeDiskSpaceEx.expect("non-null function pointer")(
+            if (pGetFreeDiskSpaceEx.unwrap_unchecked())(
                 lpRoot,
                 lpFreeSpace,
                 &mut TotalNumberOfBytes,
                 &mut TotalNumberOfFreeBytes,
-            ) != FALSE
+            ) != FALSE as BOOL
             {
                 return;
             }
@@ -645,7 +649,7 @@ unsafe extern "C" fn PrintSummary(
     lpFlags: LPDIRSWITCHFLAGS,
     TotalSummary: BOOL,
 ) -> INT {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = [0; RC_STRING_MAX_SIZE];
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = [0; (RC_STRING_MAX_SIZE) as _];
     let mut szBuffer: [TCHAR; 64] = [0; 64];
     let mut uliFree: ULARGE_INTEGER = core::mem::zeroed();
 
@@ -669,14 +673,14 @@ unsafe extern "C" fn PrintSummary(
         ConvertULargeInteger(
             u64Bytes,
             core::ptr::addr_of_mut!(szBuffer) as LPTSTR,
-            ARRAYSIZE(szBuffer) as UINT,
+            ARRAYSIZE!(szBuffer) as UINT,
             (*lpFlags).bTSeparator,
         );
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP5,
             core::ptr::addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg) as INT,
+            ARRAYSIZE!(szMsg) as INT,
         );
         DirPrintf(
             lpFlags,
@@ -691,14 +695,14 @@ unsafe extern "C" fn PrintSummary(
         ConvertULargeInteger(
             u64Bytes,
             core::ptr::addr_of_mut!(szBuffer) as LPTSTR,
-            ARRAYSIZE(szBuffer) as UINT,
+            ARRAYSIZE!(szBuffer) as UINT,
             (*lpFlags).bTSeparator,
         );
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP8,
             core::ptr::addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg) as INT,
+            ARRAYSIZE!(szMsg) as INT,
         );
         DirPrintf(
             lpFlags,
@@ -714,14 +718,14 @@ unsafe extern "C" fn PrintSummary(
         ConvertULargeInteger(
             uliFree.QuadPart,
             core::ptr::addr_of_mut!(szBuffer) as LPTSTR,
-            ARRAYSIZE(szBuffer) as UINT,
+            ARRAYSIZE!(szBuffer) as UINT,
             (*lpFlags).bTSeparator,
         );
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP6,
             core::ptr::addr_of_mut!(szMsg) as LPTSTR,
-            ARRAYSIZE(szMsg) as INT,
+            ARRAYSIZE!(szMsg) as INT,
         );
         DirPrintf(
             lpFlags,
@@ -737,7 +741,7 @@ unsafe extern "C" fn PrintSummary(
 pub unsafe extern "C" fn getExt(file: *const TCHAR) -> *mut TCHAR {
     static mut NoExt: [TCHAR; 1] = [0 as TCHAR];
     let NoExtPtr: *mut TCHAR = core::ptr::addr_of_mut!(NoExt) as *mut TCHAR;
-    let mut lastdot: *mut TCHAR = _tcsrchr(file, _T('.')) as *mut TCHAR;
+    let mut lastdot: *mut TCHAR = _tcsrchr(file, ('.' as u16)) as *mut TCHAR;
     return if !lastdot.is_null() {
         lastdot.offset(1 as isize)
     } else {
@@ -755,7 +759,7 @@ unsafe extern "C" fn getName(file: *const TCHAR, dest: *mut TCHAR) -> LPTSTR {
         return dest;
     }
 
-    end = _tcsrchr(file, _T('.'));
+    end = _tcsrchr(file, ('.' as u16));
     if end.is_null() {
         iLen = _tcslen(file) as INT_PTR;
     } else {
@@ -763,7 +767,7 @@ unsafe extern "C" fn getName(file: *const TCHAR, dest: *mut TCHAR) -> LPTSTR {
     }
 
     _tcsncpy(dest, file, iLen as usize);
-    *dest.offset(iLen as isize) = _T('\0');
+    *dest.offset(iLen as isize) = ('\0' as u16);
 
     return dest;
 }
@@ -784,16 +788,16 @@ unsafe extern "C" fn DirPrintNewList(
     let mut ptrCurStream: PDIRFINDSTREAMNODE;
 
     i = 0;
-    while i < dwCount && CheckCtrlBreak(BREAK_INPUT) == 0 {
+    while i < dwCount && CheckCtrlBreak((BREAK_INPUT) as INT) == 0 {
         /* Calculate size */
         if (**ptrFiles.offset(i as isize)).stFindInfo.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
             /* Junction */
             iSizeFormat = -(14) as INT;
-            _tcscpy(szSize.as_mut_ptr(), _T("<JUNCTION>"));
+            _tcscpy(szSize.as_mut_ptr(), (&[0x003c, 0x004a, 0x0055, 0x004e, 0x0043, 0x0054, 0x0049, 0x004f, 0x004e, 0x003e, 0x0000u16]).as_ptr() /* _T "<JUNCTION>" */);
         } else if (**ptrFiles.offset(i as isize)).stFindInfo.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0 {
             /* Directory */
             iSizeFormat = -(14) as INT;
-            _tcscpy(szSize.as_mut_ptr(), _T("<DIR>"));
+            _tcscpy(szSize.as_mut_ptr(), (&[0x003c, 0x0044, 0x0049, 0x0052, 0x003e, 0x0000u16]).as_ptr() /* _T "<DIR>" */);
         } else {
             /* File */
             iSizeFormat = 14 as INT;
@@ -808,11 +812,11 @@ unsafe extern "C" fn DirPrintNewList(
         }
 
         /* Calculate short name */
-        szShortName[0] = _T('\0');
+        szShortName[0] = ('\0' as u16);
         if (*lpFlags).bShortName != 0 {
             _stprintf(
                 szShortName.as_mut_ptr(),
-                _T(" %-12s"),
+                (&[0x0020, 0x0025, 0x002d, 0x0031, 0x0032, 0x0073, 0x0000u16]).as_ptr() /* _T " %-12s" */,
                 core::ptr::addr_of_mut!((**ptrFiles.offset(i as isize)).stFindInfo.cAlternateFileName),
             );
         }
@@ -821,14 +825,14 @@ unsafe extern "C" fn DirPrintNewList(
         DirPrintFileDateTime(
             szDate.as_mut_ptr(),
             szTime.as_mut_ptr(),
-            core::ptr::addr_of_mut!((**ptrFiles.offset(i as isize)).stFindInfo),
+            (core::ptr::addr_of_mut!((**ptrFiles.offset(i as isize)).stFindInfo)).cast(),
             lpFlags,
         );
 
         /* Print the line */
         DirPrintf(
             lpFlags,
-            _T("%10s  %-6s    %*s%s %s\n"),
+            (&mut [0x0025, 0x0031, 0x0030, 0x0073, 0x0020, 0x0020, 0x0025, 0x002d, 0x0036, 0x0073, 0x0020, 0x0020, 0x0020, 0x0020, 0x0025, 0x002a, 0x0073, 0x0025, 0x0073, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_mut_ptr() /* _T "%10s  %-6s    %*s%s %s\n" */,
             szDate.as_mut_ptr(),
             szTime.as_mut_ptr(),
             iSizeFormat,
@@ -850,7 +854,7 @@ unsafe extern "C" fn DirPrintNewList(
             /* Print the line */
             DirPrintf(
                 lpFlags,
-                _T("%10s  %-6s    %*s%s %s%s\n"),
+                (&mut [0x0025, 0x0031, 0x0030, 0x0073, 0x0020, 0x0020, 0x0025, 0x002d, 0x0036, 0x0073, 0x0020, 0x0020, 0x0020, 0x0020, 0x0025, 0x002a, 0x0073, 0x0025, 0x0073, 0x0020, 0x0025, 0x0073, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_mut_ptr() /* _T "%10s  %-6s    %*s%s %s%s\n" */,
                 RUSTCONV_WSTR_96A296D224F2.as_ptr(),
                 RUSTCONV_WSTR_96A296D224F2.as_ptr(),
                 16,
@@ -875,11 +879,11 @@ unsafe extern "C" fn DirPrintWideList(
     let mut iColumns: USHORT = 0;
     let mut iLines: USHORT = 0;
     let mut iLongestName: UINT_PTR = 0;
-    let mut szTempFname: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szTempFname: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut i: DWORD = 0;
     let mut j: DWORD = 0;
     let mut temp: DWORD = 0;
-    let bCJK: BOOL = IsCJKCodePage(OutputCodePage);
+    let bCJK: BOOL = IsCJKCodePage!(OutputCodePage);
     let mut cxWidth: SIZE_T = 0;
 
     /* Calculate longest name */
@@ -931,7 +935,7 @@ unsafe extern "C" fn DirPrintWideList(
         .wrapping_div(iColumns as DWORD)) as USHORT;
 
     i = 0 as DWORD;
-    while i < iLines as DWORD && CheckCtrlBreak(BREAK_INPUT) == 0 {
+    while i < iLines as DWORD && CheckCtrlBreak((BREAK_INPUT) as INT) == 0 {
         j = 0 as DWORD;
         while j < iColumns as DWORD {
             if (*lpFlags).bWideListColSort != 0 {
@@ -1021,7 +1025,7 @@ unsafe extern "C" fn DirPrintOldList(
     let mut u64FileSize: ULARGE_INTEGER = core::mem::zeroed();
 
     i = 0;
-    while i < dwCount && CheckCtrlBreak(BREAK_INPUT) == 0 {
+    while i < dwCount && CheckCtrlBreak((BREAK_INPUT) as INT) == 0 {
         /* Broke 8.3 format */
         if *(core::ptr::addr_of!((*(*ptrFiles.offset(i as isize))).stFindInfo.cAlternateFileName) as *const TCHAR) != 0
         {
@@ -1057,7 +1061,7 @@ unsafe extern "C" fn DirPrintOldList(
             iSizeFormat = -17;
             _tcscpy(
                 core::ptr::addr_of_mut!(szSize) as LPTSTR,
-                _T("<DIR>"),
+                (&[0x003c, 0x0044, 0x0049, 0x0052, 0x003e, 0x0000u16]).as_ptr() /* _T "<DIR>" */,
             );
         } else {
             /* File */
@@ -1083,7 +1087,7 @@ unsafe extern "C" fn DirPrintOldList(
         /* Print the line */
         DirPrintf(
             lpFlags,
-            _T("%-8s %-3s  %*s %s  %s\n"),
+            (&[0x0025, 0x002d, 0x0038, 0x0073, 0x0020, 0x0025, 0x002d, 0x0033, 0x0073, 0x0020, 0x0020, 0x0025, 0x002a, 0x0073, 0x0020, 0x0025, 0x0073, 0x0020, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() as LPTSTR /* _T "%-8s %-3s  %*s %s  %s\n" */,
             core::ptr::addr_of_mut!(szName) as LPTSTR,       /* The file's 8.3 name */
             core::ptr::addr_of_mut!(szExt) as LPTSTR,        /* The file's 8.3 extension */
             iSizeFormat,                                     /* print format for size column */
@@ -1105,7 +1109,7 @@ unsafe extern "C" fn DirPrintBareList(
     let mut i: DWORD;
 
     i = 0;
-    while i < dwCount && CheckCtrlBreak(BREAK_INPUT) == 0 {
+    while i < dwCount && CheckCtrlBreak((BREAK_INPUT) as INT) == 0 {
         'body: {
             if IsDotDirectory(
                 core::ptr::addr_of_mut!((**ptrFiles.add(i as usize)).stFindInfo.cFileName) as LPCTSTR,
@@ -1145,15 +1149,15 @@ unsafe extern "C" fn DirPrintFiles(
     mut szCurPath: LPCTSTR,
     mut lpFlags: LPDIRSWITCHFLAGS,
 ) {
-    let mut szMsg: [TCHAR; RC_STRING_MAX_SIZE] = [0; RC_STRING_MAX_SIZE];
-    let mut szTemp: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szMsg: [TCHAR; (RC_STRING_MAX_SIZE) as _] = [0; (RC_STRING_MAX_SIZE) as _];
+    let mut szTemp: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     /* Print trailing backslash for root directory of drive */
     _tcscpy(szTemp.as_mut_ptr(), szCurPath);
     if _tcslen(szTemp.as_mut_ptr()) == 2
-        && szTemp[1] == _T(':')
+        && szTemp[1] == (':' as u16)
     {
-        _tcscat(szTemp.as_mut_ptr(), _T("\\"));
+        _tcscat(szTemp.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
     }
 
     /* Condition to print header:
@@ -1163,10 +1167,10 @@ unsafe extern "C" fn DirPrintFiles(
         && !((*lpFlags).bRecursive != 0 && dwCount <= 0)
     {
         LoadString(
-            CMD_ModuleHandle,
+            (CMD_ModuleHandle).cast(),
             STRING_DIR_HELP7,
             szMsg.as_mut_ptr(),
-            ARRAYSIZE(szMsg),
+            (ARRAYSIZE!(szMsg)) as i32,
         );
         if DirPrintf(lpFlags, szMsg.as_mut_ptr(), szTemp.as_mut_ptr()) == 0 {
             return;
@@ -1344,9 +1348,9 @@ unsafe extern "C" fn DirNodeCleanup(mut ptrStartNode: PDIRFINDLISTNODE, mut pdwC
         while !(*ptrStartNode).stInfo.ptrHead.is_null() {
             ptrFreeNode = (*ptrStartNode).stInfo.ptrHead;
             (*ptrStartNode).stInfo.ptrHead = (*ptrFreeNode).ptrNext;
-            cmd_free(ptrFreeNode as *mut core::ffi::c_void);
+            cmd_free!(ptrFreeNode as *mut core::ffi::c_void);
         }
-        cmd_free(ptrStartNode as *mut core::ffi::c_void);
+        cmd_free!(ptrStartNode as *mut core::ffi::c_void);
         ptrStartNode = ptrNextNode;
         *pdwCount = (*pdwCount).wrapping_sub(1);
     }
@@ -1364,7 +1368,7 @@ unsafe extern "C" fn DirList(
     let mut ptrFileArray: *mut PDIRFINDINFO = core::ptr::null_mut();
     let mut ptrStartNode: PDIRFINDLISTNODE = core::ptr::null_mut();
     let mut ptrNextNode: PDIRFINDLISTNODE = core::ptr::null_mut();
-    let mut szSubPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szSubPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut pszSubFilePart: LPTSTR = core::ptr::null_mut();
     let mut cPathSep: TCHAR = 0;
     let mut dwCount: DWORD = 0;
@@ -1395,7 +1399,7 @@ unsafe extern "C" fn DirList(
     u64CountBytes = 0;
 
     /* Prepare the linked list, first node is allocated */
-    ptrStartNode = cmd_alloc((core::mem::size_of::<DIRFINDLISTNODE>()) as size_t) as PDIRFINDLISTNODE;
+    ptrStartNode = cmd_alloc!((core::mem::size_of::<DIRFINDLISTNODE>()) as size_t) as PDIRFINDLISTNODE;
     if ptrStartNode.is_null() {
         return 1;
     }
@@ -1410,7 +1414,7 @@ unsafe extern "C" fn DirList(
                 == ((*lpFlags).stAttribs.dwAttribMask & (*lpFlags).stAttribs.dwAttribVal)
             {
                 (*ptrNextNode).ptrNext =
-                    cmd_alloc((core::mem::size_of::<DIRFINDLISTNODE>()) as size_t) as PDIRFINDLISTNODE;
+                    cmd_alloc!((core::mem::size_of::<DIRFINDLISTNODE>()) as size_t) as PDIRFINDLISTNODE;
                 if (*ptrNextNode).ptrNext.is_null() {
                     DirNodeCleanup(ptrStartNode, core::ptr::addr_of_mut!(dwCount));
                     FindClose(hSearch);
@@ -1456,10 +1460,12 @@ unsafe extern "C" fn DirList(
                                 ) -> HANDLE,
                             >,
                         >(
-                            GetProcAddress(
-                                GetModuleHandle(k32.as_ptr()) as HINSTANCE,
-                                b"FindFirstStreamW\0".as_ptr() as LPCSTR,
-                            ) as PVOID,
+                            core::mem::transmute::<_, PVOID>(
+                                GetProcAddress(
+                                    GetModuleHandle(k32.as_ptr()) as HINSTANCE,
+                                    b"FindFirstStreamW\0".as_ptr() as LPCSTR,
+                                ),
+                            ),
                         );
                         pFindNextStreamW = core::mem::transmute::<
                             PVOID,
@@ -1470,16 +1476,18 @@ unsafe extern "C" fn DirList(
                                 ) -> BOOL,
                             >,
                         >(
-                            GetProcAddress(
-                                GetModuleHandle(k32.as_ptr()) as HINSTANCE,
-                                b"FindNextStreamW\0".as_ptr() as LPCSTR,
-                            ) as PVOID,
+                            core::mem::transmute::<_, PVOID>(
+                                GetProcAddress(
+                                    GetModuleHandle(k32.as_ptr()) as HINSTANCE,
+                                    b"FindNextStreamW\0".as_ptr() as LPCSTR,
+                                ),
+                            ),
                         );
                     }
 
                     /* Try to get stream information */
                     if pFindFirstStreamW.is_some() && pFindNextStreamW.is_some() {
-                        hStreams = pFindFirstStreamW(
+                        hStreams = (pFindFirstStreamW.unwrap_unchecked())(
                             wfdFileInfo.cFileName.as_ptr(),
                             FindStreamInfoStandard,
                             core::ptr::addr_of_mut!(wfsdStreamInfo) as LPVOID,
@@ -1494,13 +1502,13 @@ unsafe extern "C" fn DirList(
                         ptrCurNode = core::ptr::addr_of_mut!(
                             (*(*ptrNextNode).ptrNext).stInfo.ptrHead
                         );
-                        while pFindNextStreamW(
+                        while (pFindNextStreamW.unwrap_unchecked())(
                             hStreams,
                             core::ptr::addr_of_mut!(wfsdStreamInfo) as LPVOID,
                         ) != 0
                         {
                             *ptrCurNode =
-                                cmd_alloc((core::mem::size_of::<DIRFINDSTREAMNODE>()) as size_t) as PDIRFINDSTREAMNODE;
+                                cmd_alloc!((core::mem::size_of::<DIRFINDSTREAMNODE>()) as size_t) as PDIRFINDSTREAMNODE;
                             if (*ptrCurNode).is_null() {
                                 DirNodeCleanup(
                                     ptrStartNode,
@@ -1561,7 +1569,7 @@ unsafe extern "C" fn DirList(
     (*ptrNextNode).ptrNext = core::ptr::null_mut();
 
     /* Calculate and allocate space need for making an array of pointers */
-    ptrFileArray = cmd_alloc(
+    ptrFileArray = cmd_alloc!(
         (core::mem::size_of::<PDIRFINDINFO>() as size_t).wrapping_mul(dwCount as size_t),
     ) as *mut PDIRFINDINFO;
     if ptrFileArray.is_null() {
@@ -1604,18 +1612,18 @@ unsafe extern "C" fn DirList(
             dwCountDirs as ULONG,
             u64CountBytes,
             lpFlags,
-            FALSE,
+            (FALSE) as BOOL,
         );
     }
     *pszFilePart.offset(-(1 as isize)) = cPathSep;
 
     /* Free array */
-    cmd_free(ptrFileArray as *mut core::ffi::c_void);
+    cmd_free!(ptrFileArray as *mut core::ffi::c_void);
 
     /* Free linked list */
     DirNodeCleanup(ptrStartNode, core::ptr::addr_of_mut!(dwCount));
 
-    if CheckCtrlBreak(BREAK_INPUT) != 0 {
+    if CheckCtrlBreak((BREAK_INPUT) as INT) != 0 {
         return 1;
     }
 
@@ -1635,7 +1643,7 @@ unsafe extern "C" fn DirList(
 
         /* The new search is involving any *.* file */
         memcpy(
-            addr_of_mut_szSubPath(&mut szSubPath),
+            szSubPath.as_mut_ptr() as *mut core::ffi::c_void,
             szFullPath as *const core::ffi::c_void,
             (pszFilePart.offset_from(szFullPath) as size_t)
                 * (core::mem::size_of::<TCHAR>() as size_t),
@@ -1658,7 +1666,7 @@ unsafe extern "C" fn DirList(
                 {
                     /* Concat the path and the directory to do recursive */
                     memcpy(
-                        addr_of_mut_szSubPath(&mut szSubPath),
+                        szSubPath.as_mut_ptr() as *mut core::ffi::c_void,
                         szFullPath as *const core::ffi::c_void,
                         (pszFilePart.offset_from(szFullPath) as size_t)
                             * (core::mem::size_of::<TCHAR>() as size_t),
@@ -1711,7 +1719,7 @@ unsafe extern "C" fn ResolvePattern(
     let mut pNextDir: LPTSTR = core::ptr::null_mut();
     let mut ptr: LPTSTR = core::ptr::null_mut();
     let mut pszPatternPart: LPTSTR = core::ptr::null_mut();
-    let mut szNewPattern: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szNewPattern: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     /* Make a copy of the path pattern */
     _tcscpy(core::ptr::addr_of_mut!(szNewPattern) as LPTSTR, pszPattern);
@@ -1722,13 +1730,13 @@ unsafe extern "C" fn ResolvePattern(
     /* Convert slashes into backslashes */
     pNextDir = pszPattern;
     loop {
-        pNextDir = _tcschr(pNextDir, _T('/'));
+        pNextDir = _tcschr(pNextDir, ('/' as u16));
         if pNextDir.is_null() {
             break;
         }
         let fresh0 = pNextDir;
         pNextDir = pNextDir.add(1);
-        *fresh0 = _T('\\');
+        *fresh0 = ('\\' as u16);
     }
 
     /*
@@ -1740,14 +1748,14 @@ unsafe extern "C" fn ResolvePattern(
         pCurDir = pNextDir;
 
         /* Find the next path separator in the pattern */
-        pNextDir = _tcschr(pNextDir, _T('\\'));
+        pNextDir = _tcschr(pNextDir, ('\\' as u16));
         if pNextDir.is_null() {
             break;
         }
 
         /* Ignore the special "." and ".." directories that are correctly handled */
         if (pNextDir.offset_from(pCurDir) == 0 as isize)
-            || IsDotDirectoryN(pCurDir, pNextDir.offset_from(pCurDir) as usize) != 0
+            || IsDotDirectoryN(pCurDir, (pNextDir.offset_from(pCurDir)) as SIZE_T) != 0
         {
             /* Found such a directory, ignore */
             pNextDir = pNextDir.add(1);
@@ -1757,7 +1765,7 @@ unsafe extern "C" fn ResolvePattern(
         /* Check whether this is a dots-only directory */
         ptr = pCurDir;
         while ptr < pNextDir {
-            if *ptr != _T('.') {
+            if *ptr != ('.' as u16) {
                 break;
             }
             ptr = ptr.add(1);
@@ -1770,15 +1778,15 @@ unsafe extern "C" fn ResolvePattern(
 
         /* Skip any consecutive backslashes */
         ptr = pNextDir;
-        while *ptr == _T('\\') {
+        while *ptr == ('\\' as u16) {
             ptr = ptr.add(1);
         }
 
         /* pCurDir is a dots-only directory, perform partial canonicalization */
 
         /* Remove any following "." directory */
-        if *ptr.offset(0 as isize) == _T('.')
-            && (*ptr.offset(1 as isize) == _T('\\')
+        if *ptr.offset(0 as isize) == ('.' as u16)
+            && (*ptr.offset(1 as isize) == ('\\' as u16)
                 || *ptr.offset(1 as isize) == 0 as TCHAR)
         {
             memmove(
@@ -1790,14 +1798,14 @@ unsafe extern "C" fn ResolvePattern(
             );
         }
         /* Remove any following ".." directory */
-        else if *ptr.offset(0 as isize) == _T('.')
-            && *ptr.offset(1 as isize) == _T('.')
-            && (*ptr.offset(2 as isize) == _T('\\')
+        else if *ptr.offset(0 as isize) == ('.' as u16)
+            && *ptr.offset(1 as isize) == ('.' as u16)
+            && (*ptr.offset(2 as isize) == ('\\' as u16)
                 || *ptr.offset(2 as isize) == 0 as TCHAR)
         {
             /* Skip any consecutive backslashes before the next directory */
             ptr = ptr.offset(2 as isize);
-            while *ptr == _T('\\') {
+            while *ptr == ('\\' as u16) {
                 ptr = ptr.add(1);
             }
 
@@ -1850,7 +1858,7 @@ unsafe extern "C" fn ResolvePattern(
      */
 
     /* Find the last path separator in the original szPath */
-    pNextDir = _tcsrchr(pszPattern, _T('\\'));
+    pNextDir = _tcsrchr(pszPattern, ('\\' as u16));
     if !pNextDir.is_null() {
         /* Skip past the separator and look at the path */
         pNextDir = pNextDir.add(1);
@@ -1859,9 +1867,9 @@ unsafe extern "C" fn ResolvePattern(
         pNextDir = pszPattern;
     }
 
-    if _istalpha(*pNextDir.offset(0 as isize)) != 0
-        && *pNextDir.offset(1 as isize) == _T(':')
-        && *pNextDir.offset(2 as isize) != _T('\\')
+    if _istalpha!(*pNextDir.offset(0 as isize)) != 0
+        && *pNextDir.offset(1 as isize) == (':' as u16)
+        && *pNextDir.offset(2 as isize) != ('\\' as u16)
     {
         /*
          * The syntax "<drive_letter>:" without any trailing backslash actually
@@ -1898,10 +1906,10 @@ unsafe extern "C" fn ResolvePattern(
      */
     if pszPatternPart.is_null() || IsExistingDirectory(pszFullPath) != 0 {
         pszPatternPart = pszFullPath.add(_tcslen(pszFullPath) as usize);
-        if *pszPatternPart.offset(-(1 as isize)) != _T('\\') {
+        if *pszPatternPart.offset(-(1 as isize)) != ('\\' as u16) {
             let fresh1 = pszPatternPart;
             pszPatternPart = pszPatternPart.add(1);
-            *fresh1 = _T('\\');
+            *fresh1 = ('\\' as u16);
         }
         _tcscpy(pszPatternPart, ['*' as TCHAR, 0 as TCHAR].as_ptr() as LPTSTR);
     }
@@ -1914,11 +1922,12 @@ unsafe extern "C" fn ResolvePattern(
 }
 #[no_mangle]
 pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
-    let mut dircmd: [TCHAR; MAX_PATH] = [0; MAX_PATH];   /* A variable to store the DIRCMD environment variable */
-    let mut prev_volume: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szFullPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut dircmd: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];   /* A variable to store the DIRCMD environment variable */
+    let mut prev_volume: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szFullPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut params: *mut LPTSTR = core::ptr::null_mut();
-    let mut pszFilePart: LPTSTR;
+    // An out-parameter ResolvePattern fills before any read (the C leaves it uninitialised).
+    let mut pszFilePart: LPTSTR = core::ptr::null_mut();
     let mut cPathSep: TCHAR;
     let mut entries: INT = 0;
     let mut loop_0: UINT = 0;
@@ -1927,18 +1936,18 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
     let mut ChangedVolume: BOOL;
 
     /* Initialize Switch Flags < Default switches are set here! > */
-    stFlags.b4Digit = TRUE;
-    stFlags.bBareFormat = FALSE;
-    stFlags.bDataStreams = FALSE;
-    stFlags.bLowerCase = FALSE;
-    stFlags.bNewLongList = TRUE;
-    stFlags.bPause = FALSE;
-    stFlags.bRecursive = FALSE;
-    stFlags.bShortName = FALSE;
-    stFlags.bTSeparator = TRUE;
-    stFlags.bUser = FALSE;
-    stFlags.bWideList = FALSE;
-    stFlags.bWideListColSort = FALSE;
+    stFlags.b4Digit = (TRUE) as i32;
+    stFlags.bBareFormat = (FALSE) as i32;
+    stFlags.bDataStreams = (FALSE) as i32;
+    stFlags.bLowerCase = (FALSE) as i32;
+    stFlags.bNewLongList = (TRUE) as i32;
+    stFlags.bPause = (FALSE) as i32;
+    stFlags.bRecursive = (FALSE) as i32;
+    stFlags.bShortName = (FALSE) as i32;
+    stFlags.bTSeparator = (TRUE) as i32;
+    stFlags.bUser = (FALSE) as i32;
+    stFlags.bWideList = (FALSE) as i32;
+    stFlags.bWideListColSort = (FALSE) as i32;
     stFlags.stTimeField.eTimeField = TF_MODIFIEDDATE;
     stFlags.stAttribs.dwAttribMask = FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM;
     stFlags.stAttribs.dwAttribVal = 0;
@@ -1948,10 +1957,10 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
 
     'cleanup: {
         /* Read the parameters from the DIRCMD environment variable */
-        if GetEnvironmentVariable(_T("DIRCMD"), dircmd.as_mut_ptr(), ARRAYSIZE(dircmd)) != 0 {
+        if GetEnvironmentVariable((&[0x0044, 0x0049, 0x0052, 0x0043, 0x004d, 0x0044, 0x0000u16]).as_ptr() /* _T "DIRCMD" */, dircmd.as_mut_ptr(), ARRAYSIZE!(dircmd)) != 0 {
             if DirReadParam(
                 dircmd.as_mut_ptr(),
-                core::ptr::addr_of_mut!(params),
+                (core::ptr::addr_of_mut!(params)).cast(),
                 core::ptr::addr_of_mut!(entries),
                 core::ptr::addr_of_mut!(stFlags),
             ) == 0
@@ -1964,11 +1973,11 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
         /* Read the parameters */
         if DirReadParam(
             rest,
-            core::ptr::addr_of_mut!(params),
+            (core::ptr::addr_of_mut!(params)).cast(),
             core::ptr::addr_of_mut!(entries),
             core::ptr::addr_of_mut!(stFlags),
         ) == 0
-            || CheckCtrlBreak(BREAK_INPUT) != 0
+            || CheckCtrlBreak((BREAK_INPUT) as INT) != 0
         {
             nErrorLevel = 1;
             break 'cleanup;
@@ -1979,7 +1988,7 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
             if add_entry(
                 core::ptr::addr_of_mut!(entries),
                 core::ptr::addr_of_mut!(params),
-                _T("*"),
+                (&[0x002a, 0x0000u16]).as_ptr() /* _T "*" */,
             ) == 0
             {
                 nErrorLevel = 1;
@@ -1987,16 +1996,16 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
             }
         }
 
-        prev_volume[0] = _T('\0');
+        prev_volume[0] = ('\0' as u16);
 
         /* Reset paging state */
         if stFlags.bPause != 0 {
-            ConOutPrintfPaging(TRUE, _T(""));
+            ConOutPrintfPaging((TRUE) as BOOL, (&[0x0000u16]).as_ptr() as LPWSTR /* _T "" */);
         }
 
         loop_0 = 0;
         while loop_0 < (entries as UINT) {
-            if CheckCtrlBreak(BREAK_INPUT) != 0 {
+            if CheckCtrlBreak((BREAK_INPUT) as INT) != 0 {
                 nErrorLevel = 1;
                 break 'cleanup;
             }
@@ -2009,45 +2018,45 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
                Uncomment this to show the final state of switch flags*/
             {
                 let mut i: i32;
-                TRACE!("Attributes mask/value %x/%x\n", stFlags.stAttribs.dwAttribMask, stFlags.stAttribs.dwAttribVal);
-                TRACE!("(B) Bare format : %i\n", stFlags.bBareFormat);
-                TRACE!("(C) Thousand : %i\n", stFlags.bTSeparator);
-                TRACE!("(W) Wide list : %i\n", stFlags.bWideList);
-                TRACE!("(D) Wide list sort by column : %i\n", stFlags.bWideListColSort);
-                TRACE!("(L) Lowercase : %i\n", stFlags.bLowerCase);
-                TRACE!("(N) New : %i\n", stFlags.bNewLongList);
-                TRACE!("(O) Order : %i\n", stFlags.stOrderBy.sCriteriaCount);
+                TRACE!("Attributes mask/value %x/%x\n\0".as_ptr() as *const core::ffi::c_char, stFlags.stAttribs.dwAttribMask, stFlags.stAttribs.dwAttribVal);
+                TRACE!("(B) Bare format : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bBareFormat);
+                TRACE!("(C) Thousand : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bTSeparator);
+                TRACE!("(W) Wide list : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bWideList);
+                TRACE!("(D) Wide list sort by column : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bWideListColSort);
+                TRACE!("(L) Lowercase : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bLowerCase);
+                TRACE!("(N) New : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bNewLongList);
+                TRACE!("(O) Order : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.stOrderBy.sCriteriaCount as core::ffi::c_int);
                 i = 0;
                 while i < stFlags.stOrderBy.sCriteriaCount as i32 {
                     TRACE!(
-                        " Order Criteria [%i]: %i (Reversed: %i)\n",
+                        " Order Criteria [%i]: %i (Reversed: %i)\n\0".as_ptr() as *const core::ffi::c_char,
                         i,
                         stFlags.stOrderBy.eCriteria[i as usize],
                         stFlags.stOrderBy.bCriteriaRev[i as usize]
                     );
                     i += 1;
                 }
-                TRACE!("(P) Pause : %i\n", stFlags.bPause);
-                TRACE!("(Q) Owner : %i\n", stFlags.bUser);
-                TRACE!("(R) Data stream : %i\n", stFlags.bDataStreams);
-                TRACE!("(S) Recursive : %i\n", stFlags.bRecursive);
-                TRACE!("(T) Time field : %i\n", stFlags.stTimeField.eTimeField);
-                TRACE!("(X) Short names : %i\n", stFlags.bShortName);
-                TRACE!("Parameter : %s\n", debugstr_aw(*params.add(loop_0 as usize)));
+                TRACE!("(P) Pause : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bPause);
+                TRACE!("(Q) Owner : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bUser);
+                TRACE!("(R) Data stream : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bDataStreams);
+                TRACE!("(S) Recursive : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bRecursive);
+                TRACE!("(T) Time field : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.stTimeField.eTimeField);
+                TRACE!("(X) Short names : %i\n\0".as_ptr() as *const core::ffi::c_char, stFlags.bShortName);
+                TRACE!("Parameter : %s\n\0".as_ptr() as *const core::ffi::c_char, debugstr_aw(*params.add(loop_0 as usize)));
             }
 
             /* Print the drive header if the volume changed */
-            ChangedVolume = TRUE;
+            ChangedVolume = (TRUE) as i32;
 
             if stFlags.bBareFormat == 0
                 && GetVolumePathName(
                     *params.add(loop_0 as usize),
                     szFullPath.as_mut_ptr(),
-                    ARRAYSIZE(szFullPath),
+                    ARRAYSIZE!(szFullPath),
                 ) != 0
             {
                 if _tcscmp(szFullPath.as_mut_ptr(), prev_volume.as_mut_ptr()) == 0 {
-                    ChangedVolume = FALSE;
+                    ChangedVolume = (FALSE) as i32;
                 } else {
                     _tcscpy(prev_volume.as_mut_ptr(), szFullPath.as_mut_ptr());
                 }
@@ -2056,14 +2065,14 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
             /* Resolve the pattern */
             ResolvePattern(
                 *params.add(loop_0 as usize),
-                ARRAYSIZE(szFullPath),
+                ARRAYSIZE!(szFullPath),
                 szFullPath.as_mut_ptr(),
                 core::ptr::addr_of_mut!(pszFilePart),
             );
 
             /* Print the header */
             cPathSep = *pszFilePart.offset(-(1) as isize);
-            *pszFilePart.offset(-(1) as isize) = _T('\0'); /* Truncate to directory name only */
+            *pszFilePart.offset(-(1) as isize) = ('\0' as u16); /* Truncate to directory name only */
             if ChangedVolume != 0
                 && stFlags.bBareFormat == 0
                 && PrintDirectoryHeader(
@@ -2088,14 +2097,14 @@ pub unsafe extern "C" fn CommandDir(rest: LPTSTR) -> INT {
             }
 
             /* Print the footer */
-            *pszFilePart.offset(-(1) as isize) = _T('\0'); /* Truncate to directory name only */
+            *pszFilePart.offset(-(1) as isize) = ('\0' as u16); /* Truncate to directory name only */
             PrintSummary(
                 szFullPath.as_mut_ptr() as LPCTSTR,
                 recurse_file_cnt,
                 recurse_dir_cnt,
                 recurse_bytes,
                 core::ptr::addr_of_mut!(stFlags),
-                TRUE,
+                (TRUE) as BOOL,
             );
 
             loop_0 = loop_0.wrapping_add(1);

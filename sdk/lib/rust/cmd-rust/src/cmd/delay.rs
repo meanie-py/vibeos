@@ -1,5 +1,5 @@
 use crate::cmd::console::ConOutResPaging;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -13,7 +13,7 @@ pub unsafe extern "C" fn CommandDelay(mut param: LPTSTR) -> INT {
 
     if _tcsncmp(param, SLASH_QUESTION.as_ptr(), 2) == 0
     {
-        ConOutResPaging(TRUE, STRING_DELAY_HELP);
+        ConOutResPaging((TRUE) as BOOL, STRING_DELAY_HELP);
         return 0;
     }
 

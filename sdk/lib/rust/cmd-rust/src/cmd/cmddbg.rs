@@ -1,5 +1,4 @@
-use ntdll_sys::nt::*;
-use ntdll_sys::nt::tier1::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----

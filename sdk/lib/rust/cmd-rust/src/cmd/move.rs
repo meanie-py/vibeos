@@ -1,5 +1,4 @@
 use crate::cmd::console::ConOutResPaging;
-use crate::cmd::error::ErrorMessage;
 use crate::cmd::misc::FilePromptYNA;
 use crate::cmd::internal::GetRootPath;
 use crate::cmd::misc::IsExistingDirectory;
@@ -11,7 +10,7 @@ use crate::cmd::error::error_syntax;
 use crate::cmd::error::error_too_many_parameters;
 use crate::cmd::misc::freep;
 use crate::cmd::misc::splitspace;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -31,7 +30,7 @@ pub const MOVE_PATHS_ON_DIF_VOL: u32 = 0x080; /* source and destination paths ar
 
 unsafe extern "C" fn MoveOverwrite(fn_0: LPTSTR) -> INT {
     let mut res: INT = 0;
-    ConOutResPrintf(STRING_MOVE_HELP1, fn_0);
+    ConOutResPrintf!(STRING_MOVE_HELP1, fn_0);
     res = FilePromptYNA(0);
     return res;
 }
@@ -41,7 +40,7 @@ pub unsafe extern "C" fn GetDirectory(wholepath: LPTSTR, directory: LPTSTR, Chec
     if CheckExisting != 0 && IsExistingDirectory(wholepath) != 0 {
         _tcscpy(directory, wholepath);
     } else {
-        last = _tcsrchr(wholepath, _T('\\'));
+        last = _tcsrchr(wholepath, ('\\' as u16));
         if !last.is_null() {
             _tcsncpy(
                 directory,
@@ -51,7 +50,7 @@ pub unsafe extern "C" fn GetDirectory(wholepath: LPTSTR, directory: LPTSTR, Chec
             *directory.offset(last.offset_from(wholepath) as isize + 1) =
                 0;
         } else {
-            GetRootPath(wholepath, directory, MAX_PATH);
+            GetRootPath(wholepath, directory, (MAX_PATH) as INT);
         }
     }
 }
@@ -63,11 +62,11 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
     let mut i: INT = 0;
     let mut nFiles: INT = 0;
     let mut pszDest: LPTSTR = core::ptr::null_mut();
-    let mut szDestPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szFullDestPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szSrcDirPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szSrcPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szFullSrcPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szDestPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szFullDestPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szSrcDirPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szSrcPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szFullSrcPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut dwFlags: DWORD = 0;
     let mut nOverwrite: INT = 0;
     let mut findBuffer: WIN32_FIND_DATA = core::mem::zeroed();
@@ -75,8 +74,8 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
 
     let mut hDestFile: HANDLE = core::ptr::null_mut();
     let mut findDestBuffer: WIN32_FIND_DATA = core::mem::zeroed();
-    let mut szMoveDest: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szMoveSrc: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szMoveDest: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szMoveSrc: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut pszDestDirPointer: LPTSTR = core::ptr::null_mut();
     let mut pszSrcDirPointer: LPTSTR = core::ptr::null_mut();
     let mut nDirLevel: INT = 0;
@@ -89,8 +88,8 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
     let mut dwMoveStatusFlags: DWORD = 0;
 
     'quit: {
-        if _tcsncmp(param, _T("/?"), 2) == 0 {
-            ConOutResPaging(TRUE, STRING_MOVE_HELP2);
+        if _tcsncmp(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */, 2) == 0 {
+            ConOutResPaging((TRUE) as BOOL, STRING_MOVE_HELP2);
             return 0;
         }
 
@@ -100,11 +99,11 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
         /* read options */
         i = 0;
         while i < argc {
-            if _tcsicmp(*arg.offset(i as isize), _T("/N")) == 0 {
+            if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x004e, 0x0000u16]).as_ptr() /* _T "/N" */) == 0 {
                 dwFlags |= MOVE_NOTHING;
-            } else if _tcsicmp(*arg.offset(i as isize), _T("/Y")) == 0 {
+            } else if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x0059, 0x0000u16]).as_ptr() /* _T "/Y" */) == 0 {
                 dwFlags |= MOVE_OVER_YES;
-            } else if _tcsicmp(*arg.offset(i as isize), _T("/-Y")) == 0 {
+            } else if _tcsicmp(*arg.offset(i as isize), (&[0x002f, 0x002d, 0x0059, 0x0000u16]).as_ptr() /* _T "/-Y" */) == 0 {
                 dwFlags |= MOVE_OVER_NO;
             } else {
                 break;
@@ -129,22 +128,22 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
 
         /* If no destination is given, default to current directory */
         pszDest = if nFiles == 1 {
-            _T(".")
+            (&[0x002e, 0x0000u16]).as_ptr() as LPTSTR /* _T "." */
         } else {
             *arg.offset((i + 1) as isize)
         };
 
         /* check for wildcards in source and destination */
-        if _tcschr(pszDest, _T('*')) != core::ptr::null_mut()
-            || _tcschr(pszDest, _T('?')) != core::ptr::null_mut()
+        if _tcschr(pszDest, ('*' as u16)) != core::ptr::null_mut()
+            || _tcschr(pszDest, ('?' as u16)) != core::ptr::null_mut()
         {
             /* '*'/'?' in dest, this doesnt happen.  give folder name instead*/
             error_invalid_parameter_format(pszDest);
             nErrorLevel = 1;
             break 'quit;
         }
-        if _tcschr(*arg.offset(i as isize), _T('*')) != core::ptr::null_mut()
-            || _tcschr(*arg.offset(i as isize), _T('?')) != core::ptr::null_mut()
+        if _tcschr(*arg.offset(i as isize), ('*' as u16)) != core::ptr::null_mut()
+            || _tcschr(*arg.offset(i as isize), ('?' as u16)) != core::ptr::null_mut()
         {
             dwMoveStatusFlags |= MOVE_SOURCE_HAS_WILD;
         }
@@ -165,7 +164,7 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
             core::ptr::addr_of_mut!(pszFile),
         );
         if !pszFile.is_null() {
-            *pszFile = _T('\0');
+            *pszFile = ('\0' as u16);
         }
 
         hFile = FindFirstFile(*arg.offset(i as isize), core::ptr::addr_of_mut!(findBuffer));
@@ -176,11 +175,11 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
         }
 
         /* check for special cases "." and ".." and if found skip them */
-        FoundFile = TRUE;
+        FoundFile = (TRUE) as i32;
         while FoundFile != 0
-            && (_tcscmp(findBuffer.cFileName.as_mut_ptr(), _T("."))
+            && (_tcscmp(findBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */)
                 == 0
-                || _tcscmp(findBuffer.cFileName.as_mut_ptr(), _T(".."))
+                || _tcscmp(findBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */)
                     == 0)
         {
             FoundFile = FindNextFile(hFile, core::ptr::addr_of_mut!(findBuffer));
@@ -194,7 +193,7 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
             break 'quit;
         }
 
-        OnlyOneFile = TRUE;
+        OnlyOneFile = (TRUE) as i32;
         /* check if there can be found files as files have first priority */
         if (findBuffer.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0 {
             dwMoveStatusFlags |= MOVE_SOURCE_IS_DIR;
@@ -205,9 +204,9 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
             && FindNextFile(hFile, core::ptr::addr_of_mut!(findBuffer)) != 0
         {
             if (findBuffer.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0 {
-                ConOutPrintf(_T(""));
+                ConOutPrintf!((&[0x0000u16]).as_ptr() /* _T "" */);
                 if (dwMoveStatusFlags & MOVE_SOURCE_IS_FILE) != 0 {
-                    OnlyOneFile = FALSE;
+                    OnlyOneFile = (FALSE) as i32;
                 } else {
                     /* this has been done this way so that we don't disturb other settings if they have been set before this */
                     dwMoveStatusFlags |= MOVE_SOURCE_IS_FILE;
@@ -226,11 +225,11 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
         }
 
         /* check for special cases "." and ".." and if found skip them */
-        FoundFile = TRUE;
+        FoundFile = (TRUE) as i32;
         while FoundFile != 0
-            && (_tcscmp(findBuffer.cFileName.as_mut_ptr(), _T("."))
+            && (_tcscmp(findBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */)
                 == 0
-                || _tcscmp(findBuffer.cFileName.as_mut_ptr(), _T(".."))
+                || _tcscmp(findBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */)
                     == 0)
         {
             FoundFile = FindNextFile(hFile, core::ptr::addr_of_mut!(findBuffer));
@@ -261,9 +260,9 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                 _tcscpy(szFullSrcPath.as_mut_ptr(), szSrcDirPath.as_mut_ptr());
                 if szFullSrcPath[(_tcslen(szFullSrcPath.as_mut_ptr())
                     - 1) as usize]
-                    != _T('\\')
+                    != ('\\' as u16)
                 {
-                    _tcscat(szFullSrcPath.as_mut_ptr(), _T("\\"));
+                    _tcscat(szFullSrcPath.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                 }
                 _tcscat(szFullSrcPath.as_mut_ptr(), findBuffer.cFileName.as_mut_ptr());
                 _tcscpy(szSrcPath.as_mut_ptr(), szFullSrcPath.as_mut_ptr());
@@ -287,9 +286,9 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                     /*check to see if there is an ending slash, if not add one*/
                     if szFullDestPath[(_tcslen(szFullDestPath.as_mut_ptr())
                         - 1) as usize]
-                        != _T('\\')
+                        != ('\\' as u16)
                     {
-                        _tcscat(szFullDestPath.as_mut_ptr(), _T("\\"));
+                        _tcscat(szFullDestPath.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                     }
                     _tcscat(szFullDestPath.as_mut_ptr(), findBuffer.cFileName.as_mut_ptr());
 
@@ -354,14 +353,14 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                 {
                     nOverwrite = MoveOverwrite(szFullDestPath.as_mut_ptr());
                 }
-                if nOverwrite == PROMPT_NO || nOverwrite == PROMPT_BREAK {
+                if nOverwrite == (PROMPT_NO as i32) || nOverwrite == (PROMPT_BREAK as i32) {
                     break 'body;
                 }
-                if nOverwrite == PROMPT_ALL {
+                if nOverwrite == (PROMPT_ALL as i32) {
                     dwFlags |= MOVE_OVER_YES;
                 }
 
-                ConOutPrintf(_T("%s => %s "), szSrcPath.as_mut_ptr(), szFullDestPath.as_mut_ptr());
+                ConOutPrintf!((&[0x0025, 0x0073, 0x0020, 0x003d, 0x003e, 0x0020, 0x0025, 0x0073, 0x0020, 0x0000u16]).as_ptr() /* _T "%s => %s " */, szSrcPath.as_mut_ptr(), szFullDestPath.as_mut_ptr());
 
                 /* are we really supposed to do something */
                 if (dwFlags & MOVE_NOTHING) != 0 {
@@ -385,8 +384,8 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                     DeleteFile(szMoveDest.as_mut_ptr());
                     MoveStatus = CreateDirectory(szMoveDest.as_mut_ptr(), core::ptr::null_mut()); /* we use default security settings */
                     if MoveStatus != 0 {
-                        _tcscat(szMoveDest.as_mut_ptr(), _T("\\"));
-                        _tcscat(szMoveSrc.as_mut_ptr(), _T("\\"));
+                        _tcscat(szMoveDest.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
+                        _tcscat(szMoveSrc.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                         nDirLevel = 0;
                         pszDestDirPointer = szMoveDest
                             .as_mut_ptr()
@@ -394,17 +393,17 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                         pszSrcDirPointer = szMoveSrc
                             .as_mut_ptr()
                             .offset(_tcslen(szMoveSrc.as_mut_ptr()) as isize);
-                        _tcscpy(pszSrcDirPointer, _T("*.*"));
+                        _tcscpy(pszSrcDirPointer, (&[0x002a, 0x002e, 0x002a, 0x0000u16]).as_ptr() /* _T "*.*" */);
                         hDestFile = FindFirstFile(szMoveSrc.as_mut_ptr(), core::ptr::addr_of_mut!(findDestBuffer));
                         if hDestFile == INVALID_HANDLE_VALUE {
-                            MoveStatus = FALSE;
+                            MoveStatus = (FALSE) as i32;
                         } else {
-                            let mut FirstTime: BOOL = TRUE;
-                            FoundFile = TRUE;
-                            MoveStatus = FALSE;
+                            let mut FirstTime: BOOL = (TRUE) as i32;
+                            FoundFile = (TRUE) as i32;
+                            MoveStatus = (FALSE) as i32;
                             while FoundFile != 0 {
                                 if FirstTime != 0 {
-                                    FirstTime = FALSE;
+                                    FirstTime = (FALSE) as i32;
                                 } else {
                                     FoundFile = FindNextFile(hDestFile, core::ptr::addr_of_mut!(findDestBuffer));
                                 }
@@ -414,13 +413,13 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                     FindClose(hDestFile);
                                     pszSrcDirPointer = pszSrcDirPointer.offset(-1);
                                     pszDestDirPointer = pszDestDirPointer.offset(-1);
-                                    _tcscpy(pszSrcDirPointer, _T(""));
-                                    _tcscpy(pszDestDirPointer, _T(""));
+                                    _tcscpy(pszSrcDirPointer, (&[0x0000u16]).as_ptr() /* _T "" */);
+                                    _tcscpy(pszDestDirPointer, (&[0x0000u16]).as_ptr() /* _T "" */);
                                     if nDirLevel > 0 {
-                                        let mut szTempPath: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+                                        let mut szTempPath: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
                                         let mut nDiff: INT_PTR;
 
-                                        FoundFile = TRUE; /* we need to continue our seek for files */
+                                        FoundFile = (TRUE) as i32; /* we need to continue our seek for files */
                                         nDirLevel -= 1;
                                         RemoveDirectory(szMoveSrc.as_mut_ptr());
                                         GetDirectory(
@@ -432,7 +431,7 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                             .wrapping_sub(_tcslen(szTempPath.as_mut_ptr())))
                                             as INT_PTR;
                                         pszSrcDirPointer = pszSrcDirPointer.offset(-(nDiff as isize));
-                                        _tcscpy(pszSrcDirPointer, _T(""));
+                                        _tcscpy(pszSrcDirPointer, (&[0x0000u16]).as_ptr() /* _T "" */);
                                         GetDirectory(
                                             szMoveDest.as_mut_ptr(),
                                             szTempPath.as_mut_ptr(),
@@ -442,18 +441,18 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                             .wrapping_sub(_tcslen(szTempPath.as_mut_ptr())))
                                             as INT_PTR;
                                         pszDestDirPointer = pszDestDirPointer.offset(-(nDiff as isize));
-                                        _tcscpy(pszDestDirPointer, _T(""));
+                                        _tcscpy(pszDestDirPointer, (&[0x0000u16]).as_ptr() /* _T "" */);
                                         if szMoveSrc[(_tcslen(szMoveSrc.as_mut_ptr())
                                             - 1) as usize]
-                                            != _T('\\')
+                                            != ('\\' as u16)
                                         {
-                                            _tcscat(szMoveSrc.as_mut_ptr(), _T("\\"));
+                                            _tcscat(szMoveSrc.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                                         }
                                         if szMoveDest[(_tcslen(szMoveDest.as_mut_ptr())
                                             - 1) as usize]
-                                            != _T('\\')
+                                            != ('\\' as u16)
                                         {
-                                            _tcscat(szMoveDest.as_mut_ptr(), _T("\\"));
+                                            _tcscat(szMoveDest.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                                         }
                                         pszDestDirPointer = szMoveDest
                                             .as_mut_ptr()
@@ -461,23 +460,23 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                         pszSrcDirPointer = szMoveSrc
                                             .as_mut_ptr()
                                             .offset(_tcslen(szMoveSrc.as_mut_ptr()) as isize);
-                                        _tcscpy(pszSrcDirPointer, _T("*.*"));
+                                        _tcscpy(pszSrcDirPointer, (&[0x002a, 0x002e, 0x002a, 0x0000u16]).as_ptr() /* _T "*.*" */);
                                         hDestFile = FindFirstFile(szMoveSrc.as_mut_ptr(), core::ptr::addr_of_mut!(findDestBuffer));
                                         if hDestFile == INVALID_HANDLE_VALUE {
                                             continue;
                                         }
-                                        FirstTime = TRUE;
+                                        FirstTime = (TRUE) as i32;
                                     } else {
-                                        MoveStatus = TRUE; /* we moved everything so lets tell user about it */
+                                        MoveStatus = (TRUE) as i32; /* we moved everything so lets tell user about it */
                                         RemoveDirectory(szMoveSrc.as_mut_ptr());
                                     }
                                     continue;
                                 }
 
                                 /* if we find "." or ".." we'll skip them */
-                                if _tcscmp(findDestBuffer.cFileName.as_mut_ptr(), _T("."))
+                                if _tcscmp(findDestBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x0000u16]).as_ptr() /* _T "." */)
                                     == 0
-                                    || _tcscmp(findDestBuffer.cFileName.as_mut_ptr(), _T(".."))
+                                    || _tcscmp(findDestBuffer.cFileName.as_mut_ptr(), (&[0x002e, 0x002e, 0x0000u16]).as_ptr() /* _T ".." */)
                                         == 0
                                 {
                                     continue;
@@ -489,7 +488,7 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                     FoundFile = CopyFile(
                                         szMoveSrc.as_mut_ptr(),
                                         szMoveDest.as_mut_ptr(),
-                                        FALSE,
+                                        (FALSE) as i32,
                                     );
                                     if FoundFile == 0 {
                                         continue;
@@ -498,8 +497,8 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                 } else {
                                     FindClose(hDestFile);
                                     CreateDirectory(szMoveDest.as_mut_ptr(), core::ptr::null_mut());
-                                    _tcscat(szMoveDest.as_mut_ptr(), _T("\\"));
-                                    _tcscat(szMoveSrc.as_mut_ptr(), _T("\\"));
+                                    _tcscat(szMoveDest.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
+                                    _tcscat(szMoveSrc.as_mut_ptr(), (&[0x005c, 0x0000u16]).as_ptr() /* _T "\\" */);
                                     nDirLevel += 1;
                                     pszDestDirPointer = szMoveDest
                                         .as_mut_ptr()
@@ -507,13 +506,13 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                                     pszSrcDirPointer = szMoveSrc
                                         .as_mut_ptr()
                                         .offset(_tcslen(szMoveSrc.as_mut_ptr()) as isize);
-                                    _tcscpy(pszSrcDirPointer, _T("*.*"));
+                                    _tcscpy(pszSrcDirPointer, (&[0x002a, 0x002e, 0x002a, 0x0000u16]).as_ptr() /* _T "*.*" */);
                                     hDestFile = FindFirstFile(szMoveSrc.as_mut_ptr(), core::ptr::addr_of_mut!(findDestBuffer));
                                     if hDestFile == INVALID_HANDLE_VALUE {
-                                        FoundFile = FALSE;
+                                        FoundFile = (FALSE) as i32;
                                         continue;
                                     }
-                                    FirstTime = TRUE;
+                                    FirstTime = (TRUE) as i32;
                                 }
                             }
                         }
@@ -521,9 +520,9 @@ pub unsafe extern "C" fn cmd_move(param: LPTSTR) -> INT {
                 }
 
                 if MoveStatus != 0 {
-                    ConOutResPrintf(STRING_MOVE_ERROR1);
+                    ConOutResPrintf!(STRING_MOVE_ERROR1);
                 } else {
-                    ConOutResPrintf(STRING_MOVE_ERROR2);
+                    ConOutResPrintf!(STRING_MOVE_ERROR2);
                     nErrorLevel = 1;
                 }
             }

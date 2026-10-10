@@ -1,5 +1,5 @@
 use crate::cmd::console::ConInString;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "system" {
@@ -34,11 +34,11 @@ pub unsafe extern "C" fn CommandHistory(mut param: LPTSTR) -> INT {
     let mut h_tmp: LPHIST_ENTRY;
     let mut szBuffer: [TCHAR; 2048] = [0; 2048];
 
-    tmp = _tcschr(param, _T('/'));
+    tmp = _tcschr(param, ('/' as u16));
 
     if !tmp.is_null() {
         param = tmp;
-        match _totupper(*param.offset(1 as isize) as INT) {
+        match _totupper((*param.offset(1 as isize) as INT) as u16) {
             70 => {
                 CleanHistory();
                 InitHistory();
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn CommandHistory(mut param: LPTSTR) -> INT {
         h_tmp = (*Top).prev;
         while h_tmp != Bottom {
             let fmt: [u16; 4] = ['%' as u16, 's' as u16, '\n' as u16, 0];
-            ConOutPrintf(fmt.as_ptr() as LPCTSTR, (*h_tmp).string);
+            ConOutPrintf!(fmt.as_ptr() as LPCTSTR, (*h_tmp).string);
             h_tmp = (*h_tmp).prev;
         }
     }
@@ -103,7 +103,7 @@ pub unsafe extern "C" fn set_size(mut new_size: INT) {
 pub unsafe extern "C" fn InitHistory() {
     size = 0 as INT;
 
-    Top = cmd_alloc(core::mem::size_of::<HIST_ENTRY>() as _) as LPHIST_ENTRY;
+    Top = cmd_alloc!(core::mem::size_of::<HIST_ENTRY>() as SIZE_T) as LPHIST_ENTRY;
     if Top.is_null() {
         CmdTrace(
             2 as INT, // __WINE_DBCL_WARN
@@ -115,7 +115,7 @@ pub unsafe extern "C" fn InitHistory() {
         );
         return;
     }
-    Bottom = cmd_alloc(core::mem::size_of::<HIST_ENTRY>() as _) as LPHIST_ENTRY;
+    Bottom = cmd_alloc!(core::mem::size_of::<HIST_ENTRY>() as SIZE_T) as LPHIST_ENTRY;
     if Bottom.is_null() {
         CmdTrace(
             2 as INT, // __WINE_DBCL_WARN
@@ -125,7 +125,7 @@ pub unsafe extern "C" fn InitHistory() {
             b"InitHistory\0" as *const u8 as LPCSTR,
             b"Cannot allocate memory for Bottom!\n\0" as *const u8 as LPCSTR,
         );
-        cmd_free(Top as _);
+        cmd_free!(Top);
         Top = core::ptr::null_mut();
         return;
     }
@@ -146,8 +146,8 @@ pub unsafe extern "C" fn CleanHistory() {
         del((*Bottom).next);
     }
 
-    cmd_free(Top as *mut core::ffi::c_void);
-    cmd_free(Bottom as *mut core::ffi::c_void);
+    cmd_free!(Top as *mut core::ffi::c_void);
+    cmd_free!(Bottom as *mut core::ffi::c_void);
 }
 #[no_mangle]
 pub unsafe extern "C" fn History_del_current_entry(mut str: LPTSTR) {
@@ -205,11 +205,11 @@ unsafe extern "C" fn del(item: LPHIST_ENTRY) {
         return;
     }
     if !(*item).string.is_null() {
-        cmd_free((*item).string as *mut core::ffi::c_void);
+        cmd_free!((*item).string as *mut core::ffi::c_void);
     }
     (*(*item).next).prev = (*item).prev;
     (*(*item).prev).next = (*item).next;
-    cmd_free(item as *mut core::ffi::c_void);
+    cmd_free!(item as *mut core::ffi::c_void);
     size -= 1;
 }
 
@@ -219,10 +219,10 @@ unsafe extern "C" fn add_at_bottom(mut string: LPTSTR) {
     while size >= max_size {
         del((*Top).prev);
     }
-    while _istspace(*string) != 0 {
+    while _istspace!(*string) != 0 {
         string = string.offset(1);
     }
-    if *string == _T('\0') {
+    if *string == ('\0' as u16) {
         return;
     }
     /*if new entry is the same than the last do not add it*/
@@ -232,16 +232,16 @@ unsafe extern "C" fn add_at_bottom(mut string: LPTSTR) {
         }
     }
     /*create new empty Bottom*/
-    tmp = cmd_alloc(core::mem::size_of::<HIST_ENTRY>() as usize) as LPHIST_ENTRY;
+    tmp = cmd_alloc!(core::mem::size_of::<HIST_ENTRY>() as usize) as LPHIST_ENTRY;
     if tmp.is_null() {
         return;
     }
     /*fill old bottom with string, it will become new Bottom->next*/
-    (*Bottom).string = cmd_alloc(
+    (*Bottom).string = cmd_alloc!(
         (_tcslen(string) + 1) * core::mem::size_of::<TCHAR>(),
     ) as LPTSTR;
     if (*Bottom).string.is_null() {
-        cmd_free(tmp);
+        cmd_free!(tmp);
         return;
     }
     _tcscpy((*Bottom).string, string);
@@ -309,13 +309,13 @@ pub unsafe extern "C" fn History(mut dir: INT, mut commandline: LPTSTR) {
         return;
     }
     if size == 0 {
-        *commandline.offset(0 as isize) = _T('\0');
+        *commandline.offset(0 as isize) = ('\0' as u16);
         return;
     }
     if dir < 0 {
         if (*curr_ptr).next == Top || curr_ptr == Top {
             curr_ptr = Top;
-            *commandline.offset(0 as isize) = _T('\0');
+            *commandline.offset(0 as isize) = ('\0' as u16);
             return;
         }
         curr_ptr = (*curr_ptr).next;
@@ -326,7 +326,7 @@ pub unsafe extern "C" fn History(mut dir: INT, mut commandline: LPTSTR) {
     if dir > 0 {
         if (*curr_ptr).prev == Bottom || curr_ptr == Bottom {
             curr_ptr = Bottom;
-            *commandline.offset(0 as isize) = _T('\0');
+            *commandline.offset(0 as isize) = ('\0' as u16);
             return;
         }
         curr_ptr = (*curr_ptr).prev;

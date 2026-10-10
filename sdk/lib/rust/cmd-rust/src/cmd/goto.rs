@@ -1,7 +1,7 @@
 use crate::cmd::batch::BatchGetString;
 use crate::cmd::console::ConOutResPaging;
 use crate::cmd::batch::ExitBatch;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 #[no_mangle]
 pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
@@ -27,9 +27,9 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
      * Note that the choice of help parsing forbids
      * any label containing '/?' in it.
      */
-    if !_tcsstr(param, _T("/?")).is_null()
+    if !_tcsstr(param, (&[0x002f, 0x003f, 0x0000u16]).as_ptr() /* _T "/?" */).is_null()
     {
-        ConOutResPaging(TRUE, STRING_GOTO_HELP1);
+        ConOutResPaging((TRUE) as BOOL, STRING_GOTO_HELP1);
         return 0;
     }
 
@@ -40,23 +40,23 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
     }
 
     /* Fail if no label has been provided */
-    if *param == _T('\0')
+    if *param == ('\0' as u16)
     {
-        ConErrResPrintf(STRING_GOTO_ERROR1);
+        ConErrResPrintf!(STRING_GOTO_ERROR1);
         ExitBatch();
         return 1;
     }
 
     /* Strip leading whitespace */
-    while _istspace(*param) != 0
+    while _istspace!(*param) != 0
     {
         param = param.offset(1);
     }
 
     /* Support jumping to the end of the file, only if extensions are enabled */
     if bEnableExtensions != 0 &&
-        (_tcsnicmp(param, _T(":EOF"), 4) == 0) &&
-        (*param.offset(4 as isize) == 0 || _istspace(*param.offset(4 as isize)) != 0)
+        (_tcsnicmp(param, (&[0x003a, 0x0045, 0x004f, 0x0046, 0x0000u16]).as_ptr() /* _T ":EOF" */, 4) == 0) &&
+        (*param.offset(4 as isize) == 0 || _istspace!(*param.offset(4 as isize)) != 0)
     {
         /* Position at the end of the batch file */
         (*bc).mempos = (*bc).memsize;
@@ -67,19 +67,19 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
     }
 
     /* Skip the first colon or plus sign */
-    if *param == _T(':') || *param == _T('+')
+    if *param == (':' as u16) || *param == ('+' as u16)
     {
         param = param.offset(1);
     }
     /* Terminate the label at the first delimiter character */
     tmp = param;
-    while _istcntrl(*tmp) == 0 && _istspace(*tmp) == 0 &&
-           _tcschr(_T(":+"), *tmp).is_null() && _tcschr(STANDARD_SEPS, *tmp).is_null() /* &&
-           !_tcschr(_T("&|<>"), *tmp) */
+    while _istcntrl!(*tmp) == 0 && _istspace!(*tmp) == 0 &&
+           _tcschr((&[0x003a, 0x002b, 0x0000u16]).as_ptr() /* _T ":+" */, *tmp).is_null() && _tcschr(STANDARD_SEPS, *tmp).is_null() /* &&
+           !_tcschr((&[0x0026, 0x007c, 0x003c, 0x003e, 0x0000u16]).as_ptr() /* _T "&|<>" */, *tmp) */
     {
         tmp = tmp.offset(1);
     }
-    *tmp = _T('\0');
+    *tmp = ('\0' as u16);
 
     /* If we don't have any label, bail out */
     'notfound: {
@@ -93,11 +93,11 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
          * If none has been found, restart at the beginning of the file, and continue
          * until reaching back our old current position.
          */
-        bRetry = FALSE;
+        bRetry = (FALSE) as i32;
         dwCurrPos = (*bc).mempos;
 
         'retry: loop {
-            while BatchGetString(core::ptr::addr_of_mut!(textline) as LPTSTR, ARRAYSIZE(textline)) != 0
+            while BatchGetString(core::ptr::addr_of_mut!(textline) as LPTSTR, (ARRAYSIZE!(textline)) as INT) != 0
             {
                 if bRetry != 0 && ((*bc).mempos >= dwCurrPos)
                 {
@@ -108,19 +108,19 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
 
                 /* A bug in Windows' CMD makes it always ignore the
                  * first character of the line, unless it's a colon. */
-                if *label != _T(':')
+                if *label != (':' as u16)
                 {
                     label = label.offset(1);
                 }
 
                 /* Strip any leading whitespace */
-                while _istspace(*label) != 0
+                while _istspace!(*label) != 0
                 {
                     label = label.offset(1);
                 }
 
                 /* If this is not a label, continue searching */
-                if *label != _T(':')
+                if *label != (':' as u16)
                 {
                     continue;
                 }
@@ -128,18 +128,18 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
                 /* Skip the first colon or plus sign */
                 label = label.offset(1);
                 /* Strip any whitespace between the colon and the label */
-                while _istspace(*label) != 0
+                while _istspace!(*label) != 0
                 {
                     label = label.offset(1);
                 }
                 /* Terminate the label at the first delimiter character */
                 tmp = label;
-                while _istcntrl(*tmp) == 0 && _istspace(*tmp) == 0 &&
-                      _tcschr(_T(":+"), *tmp).is_null() && _tcschr(STANDARD_SEPS, *tmp).is_null() &&
-                      _tcschr(_T("&|<>"), *tmp).is_null()
+                while _istcntrl!(*tmp) == 0 && _istspace!(*tmp) == 0 &&
+                      _tcschr((&[0x003a, 0x002b, 0x0000u16]).as_ptr() /* _T ":+" */, *tmp).is_null() && _tcschr(STANDARD_SEPS, *tmp).is_null() &&
+                      _tcschr((&[0x0026, 0x007c, 0x003c, 0x003e, 0x0000u16]).as_ptr() /* _T "&|<>" */, *tmp).is_null()
                 {
                     /* Support the escape caret */
-                    if *tmp == _T('^')
+                    if *tmp == ('^' as u16)
                     {
                         /* Move the buffer back one character */
                         memmove(
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
 
                     tmp = tmp.offset(1);
                 }
-                *tmp = _T('\0');
+                *tmp = ('\0' as u16);
 
                 /* Jump if the labels are identical */
                 if _tcsicmp(label, param) == 0
@@ -164,7 +164,7 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
             }
             if bRetry == 0 && ((*bc).mempos >= (*bc).memsize)
             {
-                bRetry = TRUE;
+                bRetry = (TRUE) as i32;
                 (*bc).mempos = 0;
                 continue 'retry;
             }
@@ -172,7 +172,7 @@ pub unsafe extern "C" fn cmd_goto(mut param: LPTSTR) -> INT {
         }
     }
 
-    ConErrResPrintf(STRING_GOTO_ERROR2, param);
+    ConErrResPrintf!(STRING_GOTO_ERROR2, param);
     ExitBatch();
     return 1;
 }
