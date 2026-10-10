@@ -54,7 +54,15 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     TRACE!("Allocated %d bytes (%d pages) of memory (type %ld) starting at page 0x%lx.\n", MemorySize, PagesNeeded, MemoryType, FirstFreePageFromEnd);
     TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
-    if ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned {
+    // DIVERGES from the C: a LoaderXIPRom allocation (the boot ramdisk image) does not
+    // count toward LoaderPagesSpanned. The span sizes the kernel's KSEG0 boot-image
+    // reservation (MmBootImageSize) and gates which loader regions get a KSEG0 mapping,
+    // but ramdisk.sys reaches the image only through MmMapIoSpace of its physical base.
+    // Counted, a ~300MB writable-root ramdisk made the i386 boot image 456MB of a 2GB
+    // kernel VA space, all of it reserved and mapped for nothing.
+    if MemoryType != LoaderXIPRom
+        && ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned
+    {
         LoaderPagesSpanned = ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) as PFN_NUMBER;
     }
 
@@ -97,7 +105,8 @@ pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAdd
     TRACE!("Allocated %d bytes (%d pages) of memory starting at page %d.\n", MemorySize, PagesNeeded, StartPageNumber);
     TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
-    if ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned  {
+    // LoaderXIPRom stays out of the span; see MmAllocateMemoryWithType.
+    if MemoryType != LoaderXIPRom && ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned  {
         LoaderPagesSpanned = (MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT ;
     }
 
@@ -159,7 +168,8 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     TRACE!("Allocated %d bytes (%d pages) of memory starting at page %d.\n", MemorySize, PagesNeeded, FirstFreePageFromEnd);
     TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
-    if (((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT) > LoaderPagesSpanned {
+    // LoaderXIPRom stays out of the span; see MmAllocateMemoryWithType.
+    if MemoryType != LoaderXIPRom && (((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT) > LoaderPagesSpanned {
         LoaderPagesSpanned = ((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT ;
     }
 
