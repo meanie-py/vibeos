@@ -78,3 +78,32 @@ def test_arms_that_leave_pass():
 
 def test_an_if_without_else_still_falls_out():
     assert len(scan(_rust("            if x { return A; }"), _decls())) == 1
+
+
+def test_a_goto_flag_tested_after_the_match_is_the_jump():
+    # servman's MainWndProc: `goto_default = true;` for `goto HandleDefaultMessage;`, with
+    # DefWindowProc under `if goto_default { .. }` after the match.
+    def rust(flag: str, tested: bool) -> str:
+        return (
+            'pub unsafe extern "C" fn PciIdeXFdoDispatchPnp(Fdo: PVOID, Irp: PIRP) -> NTSTATUS {\n'
+            f"    let mut {flag}: bool = false;\n"
+            "    match (*IoStack).MinorFunction {\n"
+            "        IRP_MN_START_DEVICE => {\n"
+            "            Status = PciIdeXFdoStartDevice(Fdo, Irp);\n"
+            f"            {flag} = true;\n"
+            "        }\n"
+            "        _ => {}\n"
+            "    }\n"
+            + (
+                f"    if {flag} {{\n        return Complete(Irp, Status);\n    }}\n"
+                if tested
+                else ""
+            )
+            + "    return IoCallDriver(Lower, Irp);\n}\n"
+        )
+
+    assert scan(rust("goto_complete", True), _decls()) == []
+    assert scan(rust("completeirp", True), _decls()) == []
+    # A flag nobody tests, or one whose name says nothing about the jump, is still a fall.
+    assert len(scan(rust("goto_complete", False), _decls())) == 1
+    assert len(scan(rust("done", True), _decls())) == 1

@@ -272,6 +272,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         text=True,
     )
     found: dict[str, list[Item]] = {n: [] for n in names}
+    aliases: dict[Path, dict[str, str]] = {}
     for rel in proc.stdout.split():
         path = workspace / rel
         if exclude in path.parents or "/target/" in rel:
@@ -306,10 +307,56 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
             for decl in split_decls(body):
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
                 if m and m.group(1) in present:
+                    decl = _inline_core_aliases(decl, workspace / top, aliases)
                     found[m.group(1)].append(Item("fn", _norm(decl), abi, rel))
         for name, decl, abi in exported_definitions(src, present):
+            decl = _inline_core_aliases(decl, workspace / top, aliases)
             found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
+
+
+# Spelled entirely in `core` terms, so an alias of this shape means the same in any crate.
+_CORE_ALIAS_RHS = re.compile(
+    r"(?:\s|[(),<>*\-]|->|::|Option|unsafe|extern|\"(?:C|system)\"|fn|const|mut|core|ffi|"
+    r"c_(?:void|char|schar|uchar|short|ushort|int|uint|long|ulong|longlong|ulonglong)|"
+    r"[iu](?:8|16|32|64|size))*"
+)
+
+
+_ALIAS_DEF = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type ([A-Za-z_]\w*)\s*=\s*([^;]+);", re.M)
+
+
+def _inline_core_aliases(decl: str, crate_dir: Path, cache: dict[Path, dict[str, str]]) -> str:
+    """A copied declaration names its source crate's private aliases: ucrt-rust's
+    `qsort(.., comp: Compare)` reached cmd and net with `Compare` undefined, because types
+    are never copied. Where the alias is spelled purely in `core` terms (`Option<unsafe
+    extern "C" fn(*const c_void, *const c_void) -> c_int>`) it means the same everywhere, so
+    it is substituted into the declaration; anything else is left for the island, as before.
+    """
+    if crate_dir not in cache:
+        found: dict[str, str] = {}
+        from tools.source_walk import source_files  # repo-root package: imported at use
+
+        for rs in source_files(crate_dir / "src", "*.rs"):
+            try:
+                text = rs.read_text(errors="replace")
+            except OSError:
+                continue
+            for m in _ALIAS_DEF.finditer(text):
+                rhs = " ".join(m.group(2).split())
+                if _CORE_ALIAS_RHS.fullmatch(rhs) and found.get(m.group(1), rhs) == rhs:
+                    found[m.group(1)] = rhs
+                else:
+                    found[m.group(1)] = ""  # disagreeing or not core-only: never inline
+        cache[crate_dir] = {k: v for k, v in found.items() if v}
+    table = cache[crate_dir]
+    if not table:
+        return decl
+    return re.sub(
+        r"(:\s*)([A-Za-z_]\w*)\b(?!\s*::)",
+        lambda m: m.group(1) + table.get(m.group(2), m.group(2)),
+        decl,
+    )
 
 
 _EXPORTED_FN = re.compile(
@@ -1423,9 +1470,22 @@ def existing_local_types(prelude: Path) -> set[str]:
 
 def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
     """name -> (rust text, source TU)."""
+    from .crate_repair import _BINDGEN_KEYWORDS
+
     out = [LOCAL_TYPES_BEGIN]
     for name, (text, src) in sorted(items.items()):
         out.append(f"// {name}: c2rust, {src}")
+        # c2rust escapes a keyword-named C field as `type_0`, bindgen and crate-repair as
+        # `type_`: reg.exe's `data_type` came out `type_0` while its body read `.type_`.
+        text = re.sub(
+            r"(\bpub\s+)(\w+)_0(\s*:)",
+            lambda m: (
+                m.group(1) + m.group(2) + "_" + m.group(3)
+                if m.group(2) in _BINDGEN_KEYWORDS
+                else m.group(0)
+            ),
+            text,
+        )
         out.append(variadic_shim.lower_va_list_types(text)[0])
     out.append(LOCAL_TYPES_END)
     block = "\n".join(out) + "\n"

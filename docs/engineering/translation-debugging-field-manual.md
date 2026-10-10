@@ -6227,6 +6227,18 @@ attributes** (`#[no_mangle]` must survive with the feature off) whose body is th
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
 
+**Variant: a module's OWN config header turns a feature off, and the dead arm is planned
+anyway.** cmd.exe's `config.h` carries `//#define FEATURE_UNIX_FILENAME_COMPLETION` beside
+`#define FEATURE_4NT_FILENAME_COMPLETION`, and filecomp.c defines `CompleteFilename` under
+each. The scanner only read toggles in the TU itself, so both arms were bought: two
+`CompleteFilename`s, the dead UNIX one `#[no_mangle]` with the wrong signature. This is a
+build choice the module makes for itself, not an optional backend, so there is no second arm
+to keep: the scanner now reads `//#define NAME` toggles in the module-directory headers a TU
+includes (`_header_off_switches`) and drops the arm, provided no `.c`/`.h` there defines NAME and
+its CMakeLists never passes `-DNAME`. Wine's `/* #undef HAVE_X */` form is untouched, so the
+rule above still governs it. Header ON switches are deliberately not read: a kept `#ifdef ON`
+arm translates correctly, and deciding them would re-key every banked function under one.
+
 **Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
 that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
 a deliberate concession. `CDefView::OnCreate` wraps `SHChangeNotifyRegister` in

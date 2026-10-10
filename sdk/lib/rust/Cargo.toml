@@ -493,6 +493,9 @@ members = [
     "svchost-rust",
     "cmd-rust",
     "kbdlayouts-rust",
+    "servman-rust",
+    "net-rust",
+    "reg-rust",
 ]
 resolver = "2"
 
