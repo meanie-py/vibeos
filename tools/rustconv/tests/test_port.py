@@ -627,3 +627,62 @@ def test_a_rust_str_passed_to_c_gets_its_nul(tmp_path):
     out = rs.read_text()
     assert 'g(b"1\\0".as_ptr())' in out and 'MessageBox(h, b"Help\\0".as_ptr() as LPCSTR)' in out
     assert 'k(b"ok\\0".as_ptr())' in out and 'j("done\\0".as_ptr())' in out
+
+def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeypatch):
+    # winegdi links into gdi32 from another CMakeLists, so derive cannot infer its mode;
+    # the --usermode given once must reach every later re-derive without being repeated.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    mod = tmp_path / "win32ss" / "gdi" / "gdi32" / "wine"
+    mod.mkdir(parents=True)
+    for stem, target, extra in (
+        ("winegdi", "winegdi", {"mode_override": True}),
+        ("other", "other", {"usermode": False}),
+    ):
+        (tmp_path / "state" / stem).mkdir(parents=True)
+        state = {"stem": stem, "module_dir": "win32ss/gdi/gdi32/wine", "target": target}
+        (tmp_path / "state" / stem / "state.json").write_text(json.dumps({**state, **extra}))
+    assert port.recorded_mode(mod, "winegdi") is True
+    assert port.recorded_mode(mod, "other") is None  # an inferred mode is not an override
+    assert port.recorded_mode(mod, None) is True  # the CLI omits --target for a lone target
+
+
+def test_token_pasting_macros_and_their_callers_are_hand_ports():
+    from types import SimpleNamespace as M
+
+    macros = {
+        "CS_StrA": M(body="((LPCSTR)(pCS) + (pCS)->dw##Name##Offset)"),
+        "CS_StrW": M(body="((LPCWSTR)CS_StrA(pCS, Name))"),
+        "CS_Wrap": M(body="CS_StrW(p, n)"),
+        "ALIGN_DWORD": M(body="(((len) + 3) & ~3)"),
+    }
+    kept, pasting = port._without_token_pasting(macros)
+    assert list(kept) == ["ALIGN_DWORD"]
+    assert pasting == ["CS_StrA", "CS_StrW", "CS_Wrap"]
+
+
+def test_each_source_list_gets_its_own_stub():
+    lines = [
+        "list(APPEND VISTA_SOURCE",
+        "     # wine/win.c  # replaced by Rust (x.rs)",
+        "     )",
+        "list(APPEND SOURCE",
+        "    # dpi.c  # replaced by Rust (y.rs)",
+        "    rust_cohab_stub.c",
+        "    )",
+    ]
+    assert not port._list_has_stub(lines, 1)
+    assert port._list_has_stub(lines, 4)
+
+
+def test_flip_links_with_the_targets_own_link_signature():
+    state = {
+        "stem": "winegdi",
+        "crate": "winegdi-rust",
+        "target": "winegdi",
+        "module_dir": "win32ss/gdi/gdi32/wine",
+        "tus": [],
+    }
+    cml = "add_library(winegdi STATIC ${SOURCE})\ntarget_link_libraries(winegdi PRIVATE pseh)\n"
+    out = port.flip_cmake(cml, state)
+    assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out

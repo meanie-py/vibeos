@@ -4,7 +4,7 @@ extern "system" {
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
     fn EBRUSHOBJ_psoMask(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
     fn EBRUSHOBJ_psoPattern(pebo: *mut EBRUSHOBJ) -> *mut SURFOBJ;
-    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> u8;
+    fn CLIPOBJ_bEnum(ClipRegion: *mut CLIPOBJ, size: u32, RectEnum: *mut core::ffi::c_void) -> i32;
     fn CLIPOBJ_cEnumStart(ClipRegion: *mut CLIPOBJ, bAll: u32, iType: u32, iDirection: u32, cLimit: u32) -> u32;
     fn XLATEOBJ_iXlate(pxlo: *mut XLATEOBJ, iColor: u32) -> u32;
 }

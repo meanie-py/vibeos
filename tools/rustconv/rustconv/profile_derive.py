@@ -68,7 +68,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from .dead_regions import (  # noqa: F401  (KNOWN_DEFINED re-exported)
+from .dead_regions import (
     KNOWN_DEFINED,
     cond_truth,
     eval_int_guard,
@@ -1580,6 +1580,25 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
+def merge_prologue(merged: list[str], lines: list[str]) -> None:
+    """Fold one TU's prologue into the module wrapper, keeping THAT TU's order.
+
+    Appending unseen lines at the end reorders a TU whose prologue differs from the first
+    one's: winegdi's enhmetafile.c includes wine/port.h straight after config.h, but the
+    merge put it after gdi_private.h, which by then had pulled in wine/exception.h and its
+    `#define sigsetjmp(buf,sigs) setjmp(buf)` -- port.h's sigsetjmp prototype then expanded
+    to a second `_setjmp` declaration on amd64. An unseen line goes right after the nearest
+    line that precedes it in its own TU.
+    """
+    anchor = -1
+    for line in lines:
+        if line in merged:
+            anchor = max(anchor, merged.index(line))
+            continue
+        anchor += 1
+        merged.insert(anchor, line)
+
+
 _DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
 _FLAG_IN_CMAKE_RE = (
     r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
@@ -1653,7 +1672,7 @@ def _prologue_lines(text: str) -> list[str]:
 def scan_preamble(
     text: str,
     known_undefined: frozenset[str] = frozenset(),
-    known_defined: frozenset[str] = frozenset(),
+    known_defined: frozenset[str] = KNOWN_DEFINED,
 ) -> tuple[list[str], bool]:
     """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
 
@@ -1667,8 +1686,11 @@ def scan_preamble(
     which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
     for a header that does not exist here and bindgen died on it.
 
-    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
-    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
+    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list), and
+    *known_defined* its mirror (``__REACTOS__``): wine-sourced TUs keep ReactOS headers under
+    `#ifdef __REACTOS__` and wine's user_private.h/winternl.h under the `#else`, which do
+    not exist here, so keeping both arms asked bindgen for headers it can never find.
+    A guard on a macro in either is resolved and the dead arm dropped; a guard we cannot
     decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
     *known_defined* is the other half: macros every compile of this TU defines. fltmc's
     `#ifdef __REACTOS__ ... #else #include <Windows.h> #endif` kept the MSVC arm, and the
@@ -2316,6 +2338,46 @@ def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
     }
 
 
+def xmacro_enumerators(tu: Path, wanted: frozenset[str]) -> dict[str, tuple[str, str]]:
+    """``{name: ("enum", value)}`` for enumerators a TU generates with an X-macro.
+
+    imm32's softkbd.c defines ``DEFINE_T1K(code, vk, name, vk_name, special)`` as
+    ``name = code,`` inside an ``enum {`` and then ``#include "t1keys.h"``, whose
+    ``DEFINE_T1K(48, 0x09, T1K_TAB, VK_TAB, TRUE)`` rows are the members. No header SPELLS
+    ``T1K_TAB = 48``, so the plain owner search reports every one UNOWNED -- a false §9.112
+    alarm on constants that do exist (in the TU's preprocessed enum). Each ``#define`` of a
+    function-like macro whose body is ``<param> = <param>,`` is applied to the headers the TU
+    includes after it (until its ``#undef``).
+    """
+    out: dict[str, tuple[str, str]] = {}
+    if not wanted:
+        return out
+    text = _strip_c_comments(_read(tu))
+    defs = list(
+        re.finditer(
+            r"^[ \t]*#[ \t]*define[ \t]+(\w+)\(([^)]*)\)[ \t]*\\?\s*(\w+)[ \t]*=[ \t]*(\w+)[ \t]*,",
+            text,
+            re.M,
+        )
+    )
+    for d in defs:
+        macro, params = d.group(1), [p.strip() for p in d.group(2).split(",")]
+        if d.group(3) not in params or d.group(4) not in params:
+            continue
+        name_i, value_i = params.index(d.group(3)), params.index(d.group(4))
+        undef = re.search(rf"^[ \t]*#[ \t]*undef[ \t]+{macro}\b", text[d.end() :], re.M)
+        scope = text[d.end() : d.end() + undef.start()] if undef else text[d.end() :]
+        for inc in re.finditer(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', scope, re.M):
+            header = tu.parent / inc.group(1)
+            if not header.is_file():
+                continue
+            for row in re.finditer(rf"\b{macro}\s*\(([^)]*)\)", _strip_c_comments(_read(header))):
+                args = [a.strip() for a in row.group(1).split(",")]
+                if len(args) == len(params) and args[name_i] in wanted:
+                    out.setdefault(args[name_i], ("enum", args[value_i]))
+    return out
+
+
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
     """``{name: (macro_kind, definition)}`` for the constants a header OWNS.
 
@@ -2529,6 +2591,9 @@ def own_constants(
     tu_local: dict[str, tuple[str, str]] = {}
     for tu in tus:
         tu_local.update(header_symbols(tu, wanted))
+        tu_local.update(
+            {k: v for k, v in xmacro_enumerators(tu, wanted).items() if k not in tu_local}
+        )
     ordered = sorted(closure.headers.items(), key=lambda kv: (kv[1].depth, kv[1].name))
     per_header: dict[Path, dict[str, tuple[str, str]]] = {}
     remaining = set(wanted)
@@ -2795,6 +2860,13 @@ _NTDDI_FOR = {
 }
 
 
+# The root CMakeLists' add_definitions() beyond the version macros that change what a header
+# DECLARES. compile_commands.json isolation strips them as repo-wide, so without these an
+# island sees d3dukmdt.h's WDDM 3.0 default and vendor/libdxg's d3dkmthk.h then names a type
+# it never defines (D3DKMT_DISPLAYPORT_OPERATION_HEADER) -- every win32k-family island failed.
+_BASELINE_DEFS = ("D3D_UMD_INTERFACE_VERSION=0x000C", "DXGKDDI_INTERFACE_VERSION=0x1052")
+
+
 def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list[str]:
     """VER_DEFS mirroring the module's real compile, plus the bindgen-side extras.
 
@@ -2834,6 +2906,8 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
     if not redefines:
         ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
     defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
+    overridden = {d[2:].partition("=")[0] for d in extra}
+    defs += [f"-D{d}" for d in _BASELINE_DEFS if d.partition("=")[0] not in overridden]
     defs += extra
     if module.unicode:
         defs += ["-DUNICODE", "-D_UNICODE"]
@@ -3004,6 +3078,11 @@ def derive(
             "section that reads as a pass.\n  To re-audit the C the Rust replaced:\n\n"
             "    --flipped-sources\n"
         )
+    # Past the refusal, scaffolding is never translation surface: a re-derive of a flipped
+    # module (with --flipped-sources) still lists rust_cohab_stub.c / rust_varargs_shim.c, and
+    # mirrored the shim's `#include <stdarg.h>` into bmfd's wrapper and both files into ftfd's
+    # island TU list.
+    tus = [tu for tu in tus if not is_shim_tu(tu)]
 
     # The compile db is loaded FIRST so its real `-I` list can seed the search path: it is the
     # only place that knows a module reaching outside its own directory (afd includes
@@ -3309,9 +3388,7 @@ def derive(
                     "wrapper keeps both arms; review",
                 )
             )
-        for line in lines:
-            if line not in wrapper:
-                wrapper.append(line)
+        merge_prologue(wrapper, lines)
     if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
         pch_line = f'#include "{module.pch_header.name}"'
         if pch_line not in wrapper:
@@ -3335,9 +3412,7 @@ def derive(
             src = tu_by_key.get(key)
             if src is None:
                 continue
-            for line in scan_preamble(_read(src), known_undefined)[0]:
-                if line not in lines:
-                    lines.append(line)
+            merge_prologue(lines, scan_preamble(_read(src), known_undefined)[0])
         # Only if a TU in THIS island actually compiles with the PCH. wldap32 splits
         # exactly along that line: ber.c is the PCH-skipped TU and it is also the one
         # whose headers conflict with precomp.h's.
@@ -4121,6 +4196,20 @@ pub fn max<T: PartialOrd>(a: T, b: T) -> T {
 """
 
 
+def _kernel_panic(m: CMakeModule) -> str:
+    """panic-common's flavour for a kernel module: "kernel" reports through DbgPrint and halts
+    with KeBugCheckEx, both ntoskrnl imports. A GDI font/display driver imports win32k ONLY
+    (bmfd, ftfd: `add_importlibs(ftfd win32k)`), so those link nothing and need "raw"."""
+    try:
+        text = (m.module_dir / "CMakeLists.txt").read_text(errors="replace")
+    except OSError:
+        return "kernel"
+    imports = re.findall(rf"add_importlibs\(\s*{re.escape(m.name)}\b([^)]*)\)", text, re.S)
+    if imports and not any(re.search(r"\bntoskrnl\b", i) for i in imports):
+        return "raw"
+    return "kernel"
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -4182,7 +4271,7 @@ def scaffold_crate(
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
         'ntdll-sys = { path = "../ntdll-sys" }\n'
         if m.is_usermode
-        else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
+        else f'panic-common = {{ path = "../panic-common", features = ["{_kernel_panic(m)}"] }}\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
         # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
         # as in ntdll), and the rest are header macros kernel C uses as much as user C.
