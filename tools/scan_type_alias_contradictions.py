@@ -70,6 +70,24 @@ from tools.source_walk import source_files
 REPO = Path(__file__).resolve().parent.parent
 
 SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
+CHARSET_GENERIC = frozenset(
+    {
+        "TCHAR",
+        "_TCHAR",
+        "TBYTE",
+        "BCHAR",
+        "PTCHAR",
+        "PTBYTE",
+        "LPTCH",
+        "PTCH",
+        "LPTSTR",
+        "LPCTSTR",
+        "PTSTR",
+        "PCTSTR",
+        "PBCHAR",
+    }
+)
+
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*\()")
 
 # [pub[(…)]] type NAME = RHS;   — no generics, no `where`; those are not the
@@ -247,6 +265,12 @@ def alias_facts(text: str):
         if NOLINT_RE.search(line):
             continue
         if "<" in rhs or "dyn " in rhs or "impl " in rhs or "fn(" in rhs:
+            continue
+        # Charset-generic typedefs follow each module's own UNICODE define (winnt.h's TCHAR,
+        # winddi.h's BCHAR): a UNICODE module's island says WCHAR, an ANSI one's BYTE/CHAR.
+        # Both are right for their module, and the islands are generated, so a per-line
+        # nolint would not survive a regen (imm32 vs bmfd, 26 "contradictions").
+        if name in CHARSET_GENERIC:
             continue
         decls.append((name, rhs))
     return decls, aliases
