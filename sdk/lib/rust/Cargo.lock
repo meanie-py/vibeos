@@ -1636,6 +1636,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "varargs-rust",
  "win32macros-rust",
 ]
 

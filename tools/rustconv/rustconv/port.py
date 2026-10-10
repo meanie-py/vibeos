@@ -1407,10 +1407,17 @@ def flip_cmake(cml: str, state: dict) -> str:
             lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
         last = max(last or 0, hit)
     text = "\n".join(lines)
-    if "rust_cohab_stub.c" not in text and last is not None:
+    extra = ["rust_cohab_stub.c"]
+    # The C-variadic trampolines integrate's variadic_shim pass wrote: without them in the
+    # target, every `ShowError(..)` caller links against nothing (mspaint's flip did this).
+    if (module / "rust_varargs_shim.c").is_file():
+        extra.append("rust_varargs_shim.c")
+    for offset, name in enumerate(n for n in extra if n not in text):
+        if last is None:
+            break
         lines = text.split("\n")
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
-        lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
+        lines.insert(last + 1 + offset, f"{indent}{name}")
         text = "\n".join(lines)
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:

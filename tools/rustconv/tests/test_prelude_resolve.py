@@ -381,3 +381,23 @@ def test_an_extern_static_is_copied_from_the_island():
     pick, why = consensus("GUID_NULL", items)
     assert pick is items[0], why
     assert 'extern "C" {\n    pub static GUID_NULL: GUID;' in render({"GUID_NULL": pick})
+
+
+def test_a_bare_long_ptr_with_only_64bit_link_names_gets_the_i386_alias():
+    """mspaint's prelude copied `GetWindowLongPtr` with x86_64/aarch64 link_names only, and
+    i386 linked the literal macro name: `undefined symbol: _GetWindowLongPtr@8`."""
+    from rustconv.prelude_resolve import _x86_alias
+
+    sig = (
+        '#[cfg_attr(target_arch = "x86_64", link_name = "GetWindowLongPtrW")]\n'
+        "fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR;"
+    )
+    assert _x86_alias(sig) == '    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n'
+    assert (
+        _x86_alias("fn SetClassLongPtrA(h: HWND, i: INT, v: LONG_PTR) -> ULONG_PTR;").count(
+            '"SetClassLongA"'
+        )
+        == 1
+    )
+    done = '#[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]\n' + sig
+    assert _x86_alias(done) == ""

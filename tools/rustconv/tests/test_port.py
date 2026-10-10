@@ -559,3 +559,16 @@ def test_a_struct_holding_a_non_copy_struct_is_not_copy():
     assert "#[derive(Debug)]\npub struct Holder" in out
     assert "#[derive(Debug, Copy, Clone)]\npub struct ByPtr" in out
     assert drop_impossible_copy(out) == out
+
+
+def test_flip_lists_the_variadic_shim_when_integrate_wrote_one(tmp_path, monkeypatch):
+    """mspaint's flip commented out the C++ and left rust_varargs_shim.c out of the target:
+    ShowError's trampoline would never have been compiled."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "rust_varargs_shim.c").write_text("/* shim */\n")
+    state = {"stem": "m", "crate": "m-rust", "target": "m", "module_dir": "m", "tus": ["m/a.c"]}
+    cml = "list(APPEND SOURCE\n    a.c\n    m.h)\n\nadd_executable(m ${SOURCE} m.rc)\n"
+    out = port.flip_cmake(cml, state)
+    assert "    rust_cohab_stub.c\n    rust_varargs_shim.c\n    m.h)" in out
+    assert port.flip_cmake(out, state) == out, "idempotent"

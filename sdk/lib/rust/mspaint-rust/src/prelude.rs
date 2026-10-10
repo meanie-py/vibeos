@@ -196,6 +196,7 @@ extern "system" {
     pub fn GetTempFileNameW(arg1: LPCWSTR, arg2: LPCWSTR, arg3: UINT, arg4: LPWSTR) -> UINT; // aclui-rust/src/types_i386.rs
     pub fn GetTempPathW(arg1: DWORD, arg2: LPWSTR) -> DWORD; // aclui-rust/src/types_i386.rs
     pub fn GetTickCount() -> DWORD; // aclui-rust/src/types_i386.rs
+    #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]
     #[cfg_attr(target_arch = "x86_64", link_name = "GetWindowLongPtrW")]
     #[cfg_attr(target_arch = "aarch64", link_name = "GetWindowLongPtrW")]
     pub fn GetWindowLongPtr(hwnd: HWND, index: INT) -> LONG_PTR; // shell32-rust/src/dialogs/drvdefext.rs
@@ -253,6 +254,7 @@ extern "system" {
     pub fn SetRectEmpty(arg1: LPRECT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn SetScrollInfo( arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCSCROLLINFO, arg4: BOOL, ) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
     pub fn SetScrollPos( arg1: HWND, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int, arg4: BOOL, ) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
+    #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongW")]
     #[cfg_attr(target_arch = "x86_64", link_name = "SetWindowLongPtrW")]
     #[cfg_attr(target_arch = "aarch64", link_name = "SetWindowLongPtrW")]
     pub fn SetWindowLongPtr(hwnd: HWND, index: INT, value: LONG_PTR) -> LONG_PTR; // shell32-rust/src/dialogs/drvdefext.rs

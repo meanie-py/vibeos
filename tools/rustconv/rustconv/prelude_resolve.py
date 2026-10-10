@@ -1237,7 +1237,7 @@ def write_substrate(prelude: Path, block: str) -> bool:
     return True
 
 
-_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW])\b")
+_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW]?)\b")
 
 
 def _x86_alias(sig: str) -> str:
@@ -1246,9 +1246,13 @@ def _x86_alias(sig: str) -> str:
     from another crate loses that crate's `link_name`, and comctl32's i386 link failed on all
     four. The attribute line, indented for an extern block, or "" when none applies."""
     m = _LONG_PTR_ALIAS.search(sig)
-    if m is None or "link_name" in sig:
+    if m is None or re.search(
+        r'target_arch\s*=\s*"x86"[^\]]*link_name|^\s*#\[link_name', sig, re.M
+    ):
         return ""
-    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2)}")]\n'
+    # The bare TCHAR spelling (`GetWindowLongPtr`, copied with only 64-bit link_names, as
+    # mspaint's prelude got from shell32) is the W function in this tree's UNICODE modules.
+    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2) or "W"}")]\n'
 
 
 def render(copied: dict[str, Item]) -> str:
