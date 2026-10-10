@@ -2269,6 +2269,11 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **And a Rust `&str` handed to C has no NUL at all.** magnify (an ANSI module, where
+  `TEXT("1")` lowers to `"1"`) passed `"1".as_ptr()` to CB_ADDSTRING: the control read on
+  through rodata, and picking an item copied that run-on into a 2-char stack buffer. `port
+  integrate` now rewrites `"x".as_ptr()` (and `TEXT!("x").as_ptr()`) to `b"x\0".as_ptr()`; in a
+  UNICODE module the same spelling is a u8/u16 type error, which is the loud outcome.
   **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
   FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
   just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening

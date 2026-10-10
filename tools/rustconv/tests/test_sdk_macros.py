@@ -214,3 +214,8 @@ def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
         tmp_path, tmp_path / "x.c", {"SetWindowLongPtrW", "StringCchCopy"}
     )
     assert got == {"StringCchCopy": "StringCchCopyW"}
+
+
+def test_a_vtable_call_goes_through_the_option_slot():
+    out = low("(__rcv_p0__)->lpVtbl->Release(__rcv_p0__)")
+    assert ".lpVtbl).Release.unwrap_unchecked()(" in out

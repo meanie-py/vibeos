@@ -1132,6 +1132,17 @@ def integrate(
     # Which names are macros is a fact about the PRELUDE, not about the C — see prelude_macros.
     macros = prelude_macros(crate)
     src, report.macro_calls_fixed = fix_macro_calls(src, macros, defined)
+    # ...and the other way: a name the prelude defines as a FUNCTION and not as a macro is a
+    # plain call. dxdiag's `IDirectSound8_Release!(p)` was right while the SDK macro was
+    # lowered as one, and wrong once the island carried the Vtbl and `com_wrappers` wrote
+    # the WIDL C wrapper as a function instead (E: cannot find macro).
+    prelude_rs = crate / "src" / "prelude.rs"
+    if prelude_rs.is_file():
+        fns = set(re.findall(r"(?m)^pub (?:unsafe )?fn (\w+)", prelude_rs.read_text())) - macros
+        for name in sorted(fns):
+            src, n = re.subn(rf"(?<!\w){re.escape(name)}!\s*\(", f"{name}(", src)
+            if n:
+                report.macro_calls_fixed.append(f"{name}!→fn x{n}")
     src, report.fn_ptr_calls = unchecked_fn_pointer_calls(src)
 
     out, pos = [], 0

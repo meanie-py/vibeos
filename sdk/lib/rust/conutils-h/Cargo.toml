@@ -1,0 +1,18 @@
+# conutils-h — sdk/lib/conutils's HEADER surface, once, for every console app crate.
+# See src/lib.rs for why this is not conutils-rust itself.
+[package]
+name = "conutils-h"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib, no dependencies: declarations, three static references and one statement macro.
+# The definitions are conutils-rust's #[no_mangle] exports (and conutils_variadic_shims.c),
+# which every consumer already links through the `conutils` CMake library.
+crate-type = ["rlib"]
+
+[dependencies]
