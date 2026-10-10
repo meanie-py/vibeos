@@ -1661,7 +1661,28 @@ pub unsafe extern "system" fn MiDecommitPages(
                     }
                     ValidPteList[PteCount as usize] = PointerPte;
                     PteCount += 1;
+                } else if PteContents.transition() && !PteContents.prototype() {
+                    // A trimmed page, still on the standby/modified list. The C asserts
+                    // this away; overwriting the PTE leaves the PFN pointing at it and
+                    // the frame leaked on its list for good. Detach it as delete does
+                    // (MiDeletePte's transition path: PFN deleted, freed if
+                    // unreferenced), then mark the PTE decommitted.
+                    let OldIrql = MiAcquirePfnLock();
+                    MiDeletePte(PointerPte, StartingAddress, Process, core::ptr::null_mut());
+                    MiReleasePfnLock(OldIrql);
+                    MI_WRITE_INVALID_PTE(PointerPte, MmDecommittedPte);
                 } else {
+                    // Demand-zero is the expected case. A paged-out or prototype PTE in
+                    // a private range is not, and decommitting it would drop its
+                    // backing silently: say so (the C ASSERTs).
+                    if PteContents.prototype() || PteContents.page_frame_number() != 0 {
+                        mm_guard_trip!(
+                            "virtual.MiDecommitPages unexpected-invalid-pte", 8,
+                            "PointerPte" => PointerPte as ULONG_PTR,
+                            "Pte" => PteContents.Long as ULONG_PTR,
+                            "VirtualAddress" => StartingAddress as ULONG_PTR,
+                        );
+                    }
                     MI_WRITE_INVALID_PTE(PointerPte, MmDecommittedPte);
                 }
             }

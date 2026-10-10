@@ -10936,6 +10936,31 @@ def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypat
     assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
 
 
+def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
+    """mkramdisk stages whatever libwowx64fex.dll is on disk, so an edited Module.cpp
+    shipped the old plugin from a green build and every x86-64 guest died at launch
+    on the contract-version mismatch, a whole boot later."""
+    import os
+
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []  # no DLL: mkramdisk says MISSING
+    dll = tmp_path / build_mod.WOWX64_CPU_DLL
+    dll.parent.mkdir(parents=True)
+    dll.write_text("plugin")
+    os.utime(dll, (2_000_000, 2_000_000))
+    src = tmp_path / "tools" / "fex" / "wowx64fex"
+    src.mkdir(parents=True)
+    (src / "Module.cpp").write_text("old")
+    os.utime(src / "Module.cpp", (1_000_000, 1_000_000))
+    header = tmp_path / "sdk" / "include" / "reactos" / "wowx64" / "btcpu64.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("v3")
+    os.utime(header, (1_000_000, 1_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []
+
+    os.utime(header, (3_000_000, 3_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
+
+
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
     """The stamp is smoke's only evidence of what the media carries. Written ahead of a
     PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke

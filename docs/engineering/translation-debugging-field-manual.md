@@ -12429,6 +12429,26 @@ address, so "no page faults twice in a process" is a free end-to-end check of th
 And when a guest "never reports", read the serial *after* the harness stopped draining — a
 guest still making syscalls was cut off, not killed.
 
+### An emulated app hangs in `ExitProcess`: a CPU-layer lock orphaned by `NtTerminateProcess(NULL)`
+
+**Symptom.** An x86-64 guest opens its window and then never exits once closed (appstorm
+`close=TIMEOUT exit=0x103`, roughly 1 launch in 20). The parked-thread sample shows the exiting
+thread under `LdrShutdownProcess`, in some DLL's `DLL_PROCESS_DETACH`, parked on the return from a
+memory syscall (`ZwFreeVirtualMemory`).
+
+**Cause.** `ExitProcess` calls `NtTerminateProcess(NULL)` first, which kills every other thread
+wherever it is. wowx64 wraps each guest memory syscall in `BTCpu64Notify*` Before/After, and
+Before takes FEX's `ThreadCreationMutex`. A thread killed inside the native syscall dies holding
+it, and the exiting thread's next memory call deadlocks. Upstream `BTCpuProcessTerm` is empty,
+and Windows' orphaned-critical-section takeover at shutdown covers guest critical sections, not
+the emulator's own locks.
+
+**Fix.** Bracket `NtTerminateProcess(NULL)`: take the CPU layer's locks (bounded wait), kill the
+others, wait for each victim to die, then rebuild the locks in place. Never unlock them, because a
+victim killed while queued is still counted as a waiter. Any lock held across a syscall in a
+layer that outlives other threads needs the same treatment (`BTCpu64ProcessTerm`,
+wow64-x64-guest-design.md).
+
 ### A stock binary flushes out what a hand-written guest never can `[§9.67]`
 Every guest through M10 was written by us — a hidden bias, because a guest you author can only
 exercise what you thought of, and it silently *avoids* what you got wrong. One stock binary found

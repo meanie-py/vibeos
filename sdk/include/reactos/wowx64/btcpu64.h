@@ -31,7 +31,7 @@
 
 #include <stdint.h>
 
-#define WOWX64_CONTRACT_VERSION 3
+#define WOWX64_CONTRACT_VERSION 4
 
 /* Register arguments of a guest system service: r10 (the stub's copy of rcx),
  * rdx, r8, r9. The rest are on the guest stack at rsp+0x28 and are read by the
@@ -131,6 +131,12 @@ typedef struct _WOWX64_HOST_SERVICES {
  *       before its own NtTerminateThread (nothing of the JIT runs after), or
  *       for another thread of the process once it has DIED. Never for a live
  *       other thread: freeing state a running JIT is using is not cleanup.
+ *   void    BTCpu64ProcessTerm(void *Process, int After, int32_t Status);  -- (v4)
+ *       Brackets NtTerminateProcess(NULL), which kills every OTHER thread
+ *       wherever it is -- including between a Notify* Before and its After,
+ *       orphaning the CPU layer's locks for the exiting thread to deadlock on
+ *       (osk's ExitProcess, 2026-10-09). Before: quiesce what it can. After:
+ *       once the victims are dead, make the locks usable again.
  *   int32_t BTCpu64GetContext(void *Thread, void *Process, void *Reserved, WOWX64_CONTEXT *Context);
  *   int32_t BTCpu64SetContext(void *Thread, void *Process, void *Reserved, const WOWX64_CONTEXT *Context);
  *   void    BTCpu64Simulate(void);                 -- runs the guest; never returns
