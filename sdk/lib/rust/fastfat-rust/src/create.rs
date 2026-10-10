@@ -117,7 +117,7 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn ObDereferenceObject(Object: PVOID);
     fn BooleanFlagOn(value: u8, flag: u8) -> u8;
-    fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
+    fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn FatGetNeedEaCount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut DIRENT, NeedEaCount: *mut u32);
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FsRtlOplockBreakH(Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: ULONG, Context: *mut c_void, CompletionRoutine: *mut c_void, PostIrpRoutine: *mut c_void) -> NTSTATUS;
@@ -886,7 +886,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     break 'main_try;
                 }
 
-                FatBugCheck(NodeType(Fcb as *const c_void) as u32, (Fcb as ULONG_PTR) as u32, 0);
+                FatBugCheck(NodeType(Fcb as *const c_void) as usize, Fcb as ULONG_PTR, 0);
             }
 
             if NodeType(Fcb as *const c_void) != (FAT_NTC_DCB) as u32 && NodeType(Fcb as *const c_void) != (FAT_NTC_ROOT_DCB) as u32 {
@@ -2314,7 +2314,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             }
 
             // Bugcheck if we get here
-            FatBugCheck(CreateDisposition, 0, 0);
+            FatBugCheck(CreateDisposition as usize, 0, 0);
         }
 
         // try_exit block: share access / counts update
@@ -2739,7 +2739,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 }
                 _ => {
                     DebugTrace(0, (Dbg) as i32, b"Illegal Create Disposition\n\0".as_ptr() as *const i8);
-                    FatBugCheck(CreateDisposition, 0, 0);
+                    FatBugCheck(CreateDisposition as usize, 0, 0);
                 }
             }
         }

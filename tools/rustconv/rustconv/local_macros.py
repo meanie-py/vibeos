@@ -125,7 +125,14 @@ def header_functions(headers: list[Path], root: Path) -> dict[str, CMacro]:
         except Exception:  # a header the scanner cannot read has nothing for us
             continue
         rel = h.relative_to(root) if h.is_relative_to(root) else h
+        text = h.read_text(errors="replace")
         for fn in scan.functions:
+            # ndis's efilter.h: three semicolon-less `DECLARE_UNKNOWN_*(X)` invocations and
+            # then `typedef struct ETHI_FILTER {` read to the scanner as one "function"
+            # ETHI_FILTER with no return type, and the macros stage then tried to BUY a port
+            # of a struct. C has no function without a return type; a struct is not one.
+            if not fn.return_type or re.search(rf"\bstruct\s+{re.escape(fn.name)}\s*\{{", text):
+                continue
             out[fn.name] = CMacro(fn.name, None, fn.body_text, f"{rel}:{fn.line_start}", "fn")
     return out
 

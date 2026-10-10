@@ -14,5 +14,7 @@ spec2def(kdvbox.dll kdvm.spec)
 # _WINKD_ && !GDB (see drivers/base/CMakeLists.txt). i386 + amd64.
 #
 #   kdvm.c kdvbox.c kdvbox_asm.S  -- replaced by Rust (kdvm-rust); kept on disk.
+# DESTINATION: txtsetup.sif copies kdvbox.dll, so setup needs it on the CD.
 add_cargo_kernel_dll(kdvbox kdvm-cargo kdvbox.dll BODY_CRATE kdvm-rust
+    DESTINATION reactos/system32
     EXTRA_DEPENDS libcntpr memcmp)

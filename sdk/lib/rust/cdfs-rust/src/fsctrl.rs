@@ -2018,8 +2018,8 @@ pub unsafe extern "C" fn CdMountVolume(
 
                 (*(*p_Vcb)).VcbReference -= CDFS_RESIDUAL_REFERENCE as i32;
 
-                if CdDismountVcb(IrpContext, (*p_Vcb)) != 0 {
-                    CdReleaseVcb(IrpContext, (*p_Vcb));
+                if CdDismountVcb(IrpContext, *p_Vcb ) != 0 {
+                    CdReleaseVcb(IrpContext, *p_Vcb );
                 }
             } else if !(*p_VolDo).is_null() {
                 IoDeleteDevice((*p_VolDo) as *mut DEVICE_OBJECT);

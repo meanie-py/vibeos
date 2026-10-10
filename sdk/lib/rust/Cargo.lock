@@ -1672,6 +1672,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "ndis-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "netapi32-rust"
 version = "0.1.0"
 dependencies = [

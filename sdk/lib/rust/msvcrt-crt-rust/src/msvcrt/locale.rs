@@ -297,9 +297,9 @@ unsafe extern "C" fn compare_info(name: *mut u16, flags: u32, buff: *mut u16, cm
     len = (wcslen(cmp)) as i32;
 
     if exact != 0 || len <= 3 {
-        ((_wcsicmp(cmp, buff) == 0) as i32)
+        (_wcsicmp(cmp, buff) == 0) as i32
     } else {
-        ((_wcsnicmp(cmp, buff, (len) as usize) == 0) as i32)
+        (_wcsnicmp(cmp, buff, (len) as usize) == 0) as i32
     }
 }
 // `CALLBACK` in the C, i.e. `__stdcall` on i386 and cdecl everywhere else — which is
@@ -447,7 +447,7 @@ pub unsafe extern "C" fn locale_to_sname(locale: *const i8, codepage: *mut u16, 
         let mut search_language_buf: [i8; MAX_ELEM_LEN] = [0; MAX_ELEM_LEN];
         let mut search_country_buf: [i8; MAX_ELEM_LEN] = [0; MAX_ELEM_LEN];
         let mut search: locale_search_t = core::mem::zeroed();
-        let mut remapped;
+        let remapped;
 
         memset(core::ptr::addr_of_mut!(search) as *mut core::ffi::c_void, 0, core::mem::size_of::<locale_search_t>());
         lstrcpynA(search_language_buf.as_mut_ptr(), locale, (MAX_ELEM_LEN) as i32);
@@ -835,7 +835,7 @@ pub unsafe extern "C" fn _Getdays() -> *mut i8 {
     let mut i: i32;
     let mut len: i32;
     let mut size: i32 = 0;
-    let mut out: *mut i8;
+    let out: *mut i8;
 
     i = 0;
     while i < 7 {
@@ -1306,7 +1306,7 @@ unsafe extern "C" fn create_time_data(sname: *mut u16) -> *mut __lc_time_data {
         LOCALE_STIMEFORMAT
     ];
 
-    let mut cur: *mut __lc_time_data;
+    let cur: *mut __lc_time_data;
     let mut i: i32;
     let mut ret: i32;
     let mut size: i32;
@@ -1467,7 +1467,7 @@ unsafe extern "C" fn create_locinfo(
                 locale_sname[i as usize] = core::ptr::null_mut();
                 cp[i as usize] = (CP_ACP) as u16;
             } else {
-                let mut locale_found;
+                let locale_found;
 
                 if !p.is_null() {
                     memcpy(

@@ -534,7 +534,7 @@ unsafe extern "C" fn LcidSortEntryCompare(a: *const core::ffi::c_void, b: *const
 
 #[no_mangle]
 pub unsafe extern "system" fn RtlpInitializeLocaleTable() -> NTSTATUS {
-    let mut SortTable: PSORT_ENTRY;
+    let SortTable: PSORT_ENTRY;
     let SortTableSize: SIZE_T;
 
     NtQueryDefaultLocale(1u8, core::ptr::addr_of_mut!(RtlpUserDefaultLcid));

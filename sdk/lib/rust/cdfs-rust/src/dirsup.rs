@@ -82,7 +82,7 @@ extern "C" {
     fn CdShortNameDirentOffset(IrpContext: *mut IRP_CONTEXT, FileName: *mut _UNICODE_STRING) -> u32;
 }
 extern "C" {
-    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING) -> i32;
+    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> i32;
 }
 extern "C" {
     fn CdGenerate8dot3Name(IrpContext: *mut IRP_CONTEXT, Source: *mut _UNICODE_STRING, Offset: u32, Buffer: *mut u16, Length: *mut u16);
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn CdFindFile(
                 && (*Name).VersionString.Length as u32 == 0
                 && CdIs8dot3Name(
                     IrpContext,
-                    core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
+                    (*Dirent).CdFileName.FileName,
                 ) == 0
             {
                 CdGenerate8dot3Name(
@@ -925,7 +925,7 @@ pub unsafe extern "C" fn CdFindFileByShortName(
 
             if CdIs8dot3Name(
                 IrpContext,
-                core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
+                (*Dirent).CdFileName.FileName,
             ) != 0 {
                 break;
             }

@@ -3716,7 +3716,17 @@ _RUST_KEYWORDS = frozenset(
 
 
 def _rust_mod_ident(stem: str) -> str:
+    if stem[:1].isdigit():  # ndis's 30stubs.c: no raw identifier makes this one legal
+        return f"_{stem}"
     return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
+
+
+def _rust_mod_decl(stem: str) -> str:
+    """`pub mod x;` for a TU, with a #[path] when the file name is not an identifier."""
+    ident = _rust_mod_ident(stem)
+    if ident == f"_{stem}":
+        return f'#[path = "{stem}.rs"] pub mod {ident};'
+    return f"pub mod {ident};"
 
 
 #: Appended to a KERNEL crate's scaffold prelude: what every port of a WDM driver needs and
@@ -3982,7 +3992,7 @@ crate-type = ["staticlib"]
     mods = []
     for tu in m.compiled_tus:
         # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
-        mods.append(f"    pub mod {_rust_mod_ident(tu.stem)};")
+        mods.append(f"    {_rust_mod_decl(tu.stem)}")
     write(
         src / "lib.rs",
         f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.

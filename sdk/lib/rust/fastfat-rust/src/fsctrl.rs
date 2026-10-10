@@ -111,7 +111,7 @@ extern "system" {
     fn FsRtlOplockFsctrl( Oplock: *mut OPLOCK, Irp: *mut IRP, OpenCount: ULONG, ) -> NTSTATUS;
     fn FsRtlOplockIsSharedRequest(Irp: *mut IRP) -> BOOLEAN;
     fn FsRtlCheckLockForOplockRequest( FileLock: *mut FILE_LOCK, AllocationSize: *const LARGE_INTEGER, ) -> BOOLEAN;
-    fn FatBugCheck(param1: ULONG, param2: ULONG, param3: ULONG);
+    fn FatBugCheck(param1: usize, param2: usize, param3: usize);
     fn BooleanFlagOn(Flags: u32, Bit: u32) -> bool;
     fn CcUninitializeCacheMap(FileObject: *mut FILE_OBJECT, TruncateSize: *const LARGE_INTEGER, UninitEvent: *mut c_void);
     fn CopyUchar4(dst: *mut u32, src: *const u8);
@@ -1225,7 +1225,7 @@ pub unsafe extern "system" fn FatOplockRequest(
             *p_status = STATUS_INVALID_PARAMETER;
             return; // try_leave
         } else {
-            FatBugCheck(FsControlCode, 0, 0);
+            FatBugCheck(FsControlCode as usize, 0, 0);
         }
 
         // Check DELETE_ON_CLOSE
@@ -12336,7 +12336,7 @@ pub unsafe extern "system" fn FatMountVolume(
 #[no_mangle]
 pub unsafe extern "system" fn FatInvalidateVolumes(Irp: PIRP) -> NTSTATUS {
     let _ = Irp;
-    FatBugCheck(FAT_BUG_CHECK_FSCTRL, 1, 0);
+    FatBugCheck(FAT_BUG_CHECK_FSCTRL as usize, 1, 0);
     unsafe { core::hint::unreachable_unchecked() }
 }
 

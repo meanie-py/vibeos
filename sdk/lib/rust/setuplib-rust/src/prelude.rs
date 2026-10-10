@@ -70,6 +70,7 @@ pub use win32macros_rust::{ARRAYSIZE, ASSERT, C_ASSERT, DWLP_DLGPROC, DWLP_MSGRE
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const ARCH_NEC98x86: _ARCHITECTURE_TYPE = _ARCHITECTURE_TYPE_ARCH_NEC98x86; // island enum
 pub const ARCH_PcAT: _ARCHITECTURE_TYPE = _ARCHITECTURE_TYPE_ARCH_PcAT; // island enum
+pub const ARCH_Efi: _ARCHITECTURE_TYPE = _ARCHITECTURE_TYPE_ARCH_Efi; // island enum
 pub const BS_CreateAlways: _BOOT_STORE_OPENMODE = _BOOT_STORE_OPENMODE_BS_CreateAlways; // island enum
 pub const BS_CreateNew: _BOOT_STORE_OPENMODE = _BOOT_STORE_OPENMODE_BS_CreateNew; // island enum
 pub const BS_OpenAlways: _BOOT_STORE_OPENMODE = _BOOT_STORE_OPENMODE_BS_OpenAlways; // island enum

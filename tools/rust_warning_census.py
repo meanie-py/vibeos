@@ -47,6 +47,7 @@ import argparse
 import functools
 import json
 import os
+import posixpath
 import re
 import subprocess
 import sys
@@ -377,7 +378,8 @@ def _site_of(diag: dict) -> Site | None:
     path = span["file_name"]
     if path.startswith(CANON):
         path = path[len(CANON) :]
-    path = path.removeprefix("sdk/lib/rust/")
+    # One spelling per file (menuband reaches shell32's island through `../../`).
+    path = posixpath.normpath(path.removeprefix("sdk/lib/rust/"))
     text = span.get("text") or [{}]
     code = diag.get("code") or {}
     return Site(
@@ -417,7 +419,16 @@ def read_build_dir(build_dir: Path, repo: Path) -> list[Unit]:
 def coverage(units: list[Unit]) -> tuple[set[str], dict[str, str]]:
     """(crates with a fresh unit, {crate: why stale} for crates with none)."""
     fresh = {u.crate for u in units if not u.stale}
-    stale = {u.crate: u.stale for u in units if u.stale and u.crate not in fresh}
+    stale: dict[str, str] = {}
+
+    # Old-hash units of a crate linger beside the current one; name the newest one's reason.
+    def built(u: Unit) -> float:
+        stamp = u.fpdir / "invoked.timestamp"
+        return stamp.stat().st_mtime if stamp.is_file() else 0.0
+
+    for u in sorted(units, key=built):
+        if u.stale and u.crate not in fresh:
+            stale[u.crate] = u.stale
     return fresh, stale
 
 

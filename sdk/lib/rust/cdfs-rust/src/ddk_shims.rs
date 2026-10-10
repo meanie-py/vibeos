@@ -18,8 +18,7 @@ use ntkrnl_sys::ddk::{
     PUNICODE_STRING, PUNLOCK_ROUTINE, PVOID, PWCHAR, ULONG, ULONGLONG,
     _DRIVER_OBJECT,
 };
-use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion,
-    MmUnmapLockedPages};
+use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion};
 
 // ---------------------------------------------------------------------------
 // Layer 1: real ntoskrnl exports absent from bindgen (ntifs.h surface).
@@ -256,13 +255,9 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 
 //  mmfuncs.h MmPrepareMdlForReuse macro. #[no_mangle] so the per-file
 //  `extern "C" { fn MmPrepareMdlForReuse(...) }` decls resolve at link.
-const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0020; // mmtypes.h:23 (was 0x0004 = MDL_SOURCE_IS_NONPAGED_POOL)
-
 #[no_mangle]
 pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
-    if (*Mdl).MdlFlags as u16 & MDL_PARTIAL_HAS_BEEN_MAPPED != 0 {
-        MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
-    }
+    ntkrnl_sys::inline::mm::MmPrepareMdlForReuse(Mdl as _)
 }
 
 //  ARGUMENT_PRESENT macro: (ptr) != NULL
@@ -435,7 +430,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 //   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
 //   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
 const CDFS_FILE_SYSTEM: u32 = 0x26;
-#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: u32, B: u32, C: u32) {
+#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: usize, B: usize, C: usize) {
     KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
 }
 

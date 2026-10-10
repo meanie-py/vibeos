@@ -2411,6 +2411,12 @@ baseline empty) refuses the cast; `--fix` rewrites it.
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
   wild pointer/offset. **A per-file hand-rolled struct view reading a bitfield at offset 0**
   silently disables the feature it gates.
+- **A bitfield struct translated as one WHOLE field per bitfield**, inside a union with the
+  raw word, compiles and reads zeros: writing the word fills only the first field. amd64's
+  `CPU_SIGNATURE` (Step:4 Model:4 Family:4 ...) became seven `u32`s, so every boot was
+  "AMD64 Family 0 Model 0" -- the CPU's PnP id (its install failed with error 31) and
+  `KeProcessorLevel` 0. Tell: a hand `#[repr(C)] union { Fields, AsULONG }` whose `Fields`
+  struct is bigger than the word. Fix: shift accessors over the word.
 - **A bitfield reached by bit INDEX (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
   accessor** is a guess at the layout. atapi passed a page code as the *width* (28 bits of a
   1-byte unit, an index panic the first time the CD was asked for a mode page) and put
@@ -6326,6 +6332,17 @@ reading an amd64 modrun serial log for something else. Fix: `#[cfg(target_arch)]
 and a `const fn` that assembles the name. Review hint: a C file with an arch `#if` whose
 translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
 them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
+
+### An `#ifdef` that no target defines: the guarded line is dead in the C too
+The translation dropping it is then FAITHFUL, and so a diff against the C finds nothing.
+winldr.c sets the loader block's `BootViaEFI` under `#ifdef UEFIBOOT`, but that code lives in
+rosload.exe, one binary for both loaders, and no CMake file defines `UEFIBOOT` for it (or for
+anything else since the loader split). So nothing after the loader could tell a UEFI boot from
+a BIOS one; `SystemBootEnvironmentInformation` (kernel32's `GetFirmwareType`) was not even
+implemented, and setup hard-wired `ARCH_PcAT`, so UEFI installs could not exist. Fix: rosload
+asks the first-stage loader (`FrLdrIsUefiBoot`, in freeldr.spec), and the kernel answers class
+90 from the latched bit. Review hint: before trusting a guarded line as live, `grep -rn` the
+macro in `*.cmake`/`CMakeLists.txt` for the target that compiles the file.
 
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
@@ -11562,6 +11579,24 @@ a flip's remaining C++ for `static_cast<`/`reinterpret_cast<` naming a Rust-owne
 you believe the flip is closure-complete — the retained closure will not show it, because a
 `static_cast` demands no symbol.
 
+### A DDK macro hand-shimmed per crate as an empty body leaks whatever the macro released
+**Symptom.** `NO_MORE_SYSTEM_PTES` (0x3F, 17 PTEs) about two minutes into i386 setup's file
+copy, then 0xC2 cascades. amd64 survives the same leak on its far larger PTE space, so only
+a long i386 disk workload ever shows it.
+**Cause.** `MmPrepareMdlForReuse` is a wdm.h macro: a reused partial MDL that has been
+mapped is unmapped first. classpnp reuses one partial MDL per transfer packet and scsiport's
+StartIo maps it (`MmGetSystemAddressForMdl`); classpnp-rust's `ddk_shims.rs` defined the macro
+as `{}`, so every split transfer leaked its pages' PTEs (43,695 of 45,023 held by that one
+chain). Four crates had their own copy: classpnp empty, cdrom clearing 0x8 instead of
+unmapping, fastfat and cdfs right. And the kernel set 0x10 (`MDL_PARTIAL` again) where it
+meant `MDL_PARTIAL_HAS_BEEN_MAPPED` (0x20), so even the right copies never fired.
+**Fix.** One copy, `ntkrnl_sys::inline::mm::MmPrepareMdlForReuse`, that the shims delegate to;
+the kernel sets 0x20. **Finding it:** count ownership, not totals — a reservation table keyed
+by `RtlWalkFrameChain` and released per PTE named the leaking chain in one run, where the
+free count alone only said "empty". Still empty and owed: classpnp's
+`FREE_PORT_ALLOCATED_SENSE_BUFFER(_EX)` (dead until a port sets `SRB_FLAGS_PORT_DRIVER_ALLOCSENSE`)
+and `ExInitialize{Set,Delete}TimerParameters` (the `ExSetTimer` path).
+
 ### A cohab shim declared VOID SWALLOWS the real function's return value
 
 **Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C
@@ -14127,6 +14162,27 @@ introduced at any heap exit — it is an external stray write.**
   Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
   the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
   resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
+
+### A time function returns the uptime: `SharedSystemTime` is 0x7FFE0008
+- **Symptom:** a driver's "current system time" is a small number that grows from boot, and
+  only while a process with the user shared page is current.
+- **Cause:** amd64/arm64 `KeQuerySystemTime` is a macro over `KI_USER_SHARED_DATA + 0x14`
+  (SystemTime, kernel address 0xFFFFF78000000014). storport's glue declared `SharedSystemTime
+  = 0x7ffe0008`, which is +0x8 (InterruptTime) at the USER-mode address, and `port resolve`
+  copied it into ndis as tree consensus, shadowing the island's correct per-arch constant.
+- **Fix:** call `KeQuerySystemTime` (ntkrnl-sys `inline::ke` on amd64/arm64, the export on
+  i386), as the C does. `resolve` no longer copies a name any island arch defines.
+
+### A driver links on amd64 and says `undefined symbol: KeNumberProcessors` on i386/arm64
+- **Symptom:** `ld.lld: error: undefined symbol: KeNumberProcessors` (arm64) or
+  `_KeNumberProcessors: i386 cdecl -- missing symbol` (i386), referenced from a Rust driver
+  crate's `.refptr`; the same crate links on amd64.
+- **Cause:** a DATA export (`@ extern KeNumberProcessors` in ntoskrnl.spec) read through a plain
+  `extern { static X: T; }`, which is what every bindgen island declares. The import library
+  has only `__imp_X`; amd64's linker auto-imports the plain name, i386 and arm64 do not.
+- **Fix:** read it through the import, per arch, as `ntkrnl_sys::inline::common::
+  InitSafeBootModeValue` / `KeNumberProcessorsValue` do (`__imp_X` pointer on amd64, a
+  `raw-dylib` data import on i386/arm64). ndis.sys hit it twice.
 
 ### A NIC works through NDIS on x86 and calls address 0 on arm64
 - **Symptom:** `ndisprobe` with an e1000 on arm64: bind, MAC and filter pass, then the first

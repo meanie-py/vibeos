@@ -34,7 +34,7 @@ extern "C" {
     fn CdAllocateFcbData(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
 }
 extern "C" {
-    fn CdBugCheck(a: u32, b: u32, c: u32);
+    fn CdBugCheck(a: usize, b: usize, c: usize);
 }
 extern "C" {
     fn CdFreePool(P: *mut *mut core::ffi::c_void);
@@ -576,7 +576,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
     let mut UnlockVcb: bool = false;
     let mut StartingBlock: u32 = 0;
     let mut ByteCount: u32 = 0;
-    let mut FileId: LONGLONG = 0;
+    let FileId: LONGLONG = 0;
     let mut RawDirent: *mut RAW_DIRENT = core::ptr::null_mut();
     let mut PathEntry: PATH_ENTRY = core::mem::zeroed();
     let mut McbEntry: *mut CD_MCB_ENTRY = core::ptr::null_mut();
@@ -857,7 +857,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
             }
         },
         |_, _| {
-            if (*p_UnlockVcb) {
+            if *p_UnlockVcb  {
                 CdUnlockVcb(IrpContext, Vcb);
             }
         },
@@ -1153,7 +1153,7 @@ pub unsafe extern "C" fn CdCreateCcb(
     Fcb: *mut FCB,
     Flags: u32,
 ) -> *mut CCB {
-    let mut NewCcb: *mut CCB;
+    let NewCcb: *mut CCB;
 
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext);
@@ -1319,7 +1319,7 @@ pub unsafe extern "C" fn CdTeardownStructures(
         },
         |_, _| {
             if (*p_AcquiredCurrentFcb) != 0 && !(*p_CurrentFcb).is_null() {
-                CdReleaseFcb(IrpContext, (*p_CurrentFcb));
+                CdReleaseFcb(IrpContext, *p_CurrentFcb );
             }
 
             ClearFlag(&mut (*(*IrpContext).TopLevel).Flags, IRP_CONTEXT_FLAG_IN_TEARDOWN);
@@ -1586,7 +1586,7 @@ pub unsafe extern "C" fn CdDeleteFcb(
 pub unsafe extern "C" fn CdCreateFcbNonpaged(IrpContext: *mut IRP_CONTEXT) -> *mut FCB_NONPAGED {
     // Unknown externs used by this function
 
-    let mut FcbNonpaged: *mut FCB_NONPAGED;
+    let FcbNonpaged: *mut FCB_NONPAGED;
 
     PAGED_CODE!();
 

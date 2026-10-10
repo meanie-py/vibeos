@@ -301,8 +301,8 @@ pub unsafe extern "C" fn WarmSocketForConnection(FCB: PAFD_FCB) -> NTSTATUS {
     Status
 }
 #[no_mangle]
-pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
-    let mut Status: NTSTATUS;
+pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB, Receive: BOOL) -> NTSTATUS {
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
     if (*FCB).Recv.Size == 0 {
         Status = TdiQueryMaxDatagramLength(
@@ -351,18 +351,20 @@ pub unsafe extern "C" fn MakeSocketIntoConnection(FCB: PAFD_FCB) -> NTSTATUS {
     (*FCB).SharedData.State = SOCKET_STATE_CONNECTED;
     (*FCB).SharedData.ConnectTime = 0;
 
-    Status = TdiReceive(
-        core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
-        (*FCB).Connection.Object,
-        TDI_RECEIVE_NORMAL as u16,
-        (*FCB).Recv.Window,
-        (*FCB).Recv.Size,
-        Some(ReceiveComplete),
-        FCB as *mut core::ffi::c_void,
-    );
+    if Receive != 0 {
+        Status = TdiReceive(
+            core::ptr::addr_of_mut!((*FCB).ReceiveIrp.InFlightRequest),
+            (*FCB).Connection.Object,
+            TDI_RECEIVE_NORMAL as u16,
+            (*FCB).Recv.Window,
+            (*FCB).Recv.Size,
+            Some(ReceiveComplete),
+            FCB as *mut core::ffi::c_void,
+        );
 
-    if Status == STATUS_PENDING {
-        Status = STATUS_SUCCESS;
+        if Status == STATUS_PENDING {
+            Status = STATUS_SUCCESS;
+        }
     }
 
     (*FCB).PollState |= AFD_EVENT_CONNECT | AFD_EVENT_SEND;
@@ -510,7 +512,7 @@ unsafe fn stream_socket_connect_complete_impl(
     }
 
     if NT_SUCCESS(Status) {
-        Status = MakeSocketIntoConnection(FCB);
+        Status = MakeSocketIntoConnection(FCB, 1);
 
         if !NT_SUCCESS(Status) {
             'end: loop {
@@ -653,7 +655,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
     match (*FCB).SharedData.State {
         SOCKET_STATE_CONNECTED => {
-            Status = STATUS_SUCCESS;
+            Status = STATUS_INVALID_PARAMETER;
         }
 
         SOCKET_STATE_CONNECTING => {
