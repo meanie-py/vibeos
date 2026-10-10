@@ -519,6 +519,8 @@ unsafe extern "C" fn stringw(
     return buf;
 }
 
+// nolint: export-shadow (ftfd imports only win32k; this is sprintf.c's private copy, which
+// the statically linked FreeType resolves against, exactly as the C build does)
 #[no_mangle]
 pub unsafe extern "C" fn _vsnprintf(
     buf: *mut ::core::ffi::c_char,
@@ -1019,6 +1021,8 @@ extern "C" {
 }
 
 
+// nolint: export-shadow (ftfd imports only win32k; this is sprintf.c's private copy, which
+// the statically linked FreeType resolves against, exactly as the C build does)
 #[no_mangle]
 pub unsafe extern "C" fn vsprintf(buf: *mut core::ffi::c_char, fmt: *const core::ffi::c_char, args: va_list) -> i32 {
     return _vsnprintf(buf, MAXLONG as usize, fmt, args);
