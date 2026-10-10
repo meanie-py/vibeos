@@ -969,6 +969,8 @@ _ATA_TIMEOUT_RE = re.compile(
     r"(?:Slot \d+ \(\w+\) timed out|Internal request timed out)"
 )
 _ATA_NO_IRQ_RE = re.compile(r"\(pciidex-rust/[^)]*\) CH \d+: Could not connect to interrupt")
+# rtl-diag's RtlAssert: `*** ASSERT FAILED: <expr> at <file!()>:<line>`, print and continue.
+_ATA_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at (?:atapi|pciidex|legide)-rust/")
 
 
 def _ata_health_check(text: str) -> dict | None:
@@ -976,6 +978,13 @@ def _ata_health_check(text: str) -> dict | None:
     reset and retried, and a channel that could not connect its interrupt is simply left
     out, so the desktop comes up either way: only these lines say a disk was served by
     the timeout path, or not at all."""
+    asserts = [ln.strip() for ln in text.splitlines() if _ATA_ASSERT_RE.search(ln)]
+    if asserts:
+        # DBG=1: the C's ASSERTs are live and print and continue, so the boot goes on.
+        return {
+            "classification": "ATA_ASSERT",
+            "salient": [f"{len(asserts)} ATA stack assertion(s) failed", *asserts[:4]],
+        }
     lost = [ln.strip() for ln in text.splitlines() if _ATA_TIMEOUT_RE.search(ln)]
     if lost:
         return {
