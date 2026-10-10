@@ -1237,7 +1237,9 @@ def flip_cmake(cml: str, state: dict) -> str:
             f"# disk. The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
-        if _crate_uses_float(crate):
+        # User mode only: kernel code must never touch SSE state (ftfd mentions f64 in its
+        # private vsprintf; there, doubles cross a call by bit pattern instead).
+        if state.get("usermode", True) and _crate_uses_float(crate):
             # The workspace builds i686 with -sse,-sse2 (kernel code must not touch SSE
             # state), and rustc then rejects any function passing f32/f64 by value: sndrec32's
             # `fseconds_total() -> f32`. User code re-enables it for its own build only, the
