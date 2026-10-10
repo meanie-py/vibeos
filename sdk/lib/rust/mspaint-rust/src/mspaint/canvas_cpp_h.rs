@@ -359,8 +359,8 @@ impl CCanvasWindow {
     
         // Calculate image size
         let mut rcImage: CRect = CRect__make_0();
-        (*this_).GetImageRect(&mut rcImage.__base0);
-        let mut sizeImage: SIZE = SIZE { cx: imageModel.GetWidth(), cy: imageModel.GetHeight() };
+        (*this_).GetImageRect(&mut (rcImage).__base0);
+        let sizeImage: SIZE = SIZE { cx: imageModel.GetWidth(), cy: imageModel.GetHeight() };
     
         // We use a memory bitmap to reduce flickering
         let hbmCache1: HBITMAP = CreateDIBWithProperties(rcClient.right, rcClient.bottom);
@@ -377,22 +377,19 @@ impl CCanvasWindow {
         let hbm0Old: HGDIOBJ = SelectObject(hdcMem0, (hbmCache1).cast());
     
         // Fill the background on hdcMem0
-        FillRect(hdcMem0, core::ptr::addr_of_mut!(rcCanvasDraw.__base0), (COLOR_APPWORKSPACE + 1) as HBRUSH);
+        FillRect(hdcMem0, core::ptr::addr_of!((rcCanvasDraw).__base0), (COLOR_APPWORKSPACE + 1) as HBRUSH);
     
         // Draw the sizeboxes if necessary
         let mut rcBase: RECT = (*this_).GetBaseRect();
         if selectionModel.m_bShow == 0 && IsWindowVisible(textEditWindow.op_to_HWND()) == 0 {
-            drawSizeBoxes(hdcMem0, core::ptr::addr_of_mut!(rcBase), (FALSE) as BOOL, core::ptr::addr_of_mut!(rcCanvasDraw.__base0));
+            drawSizeBoxes(hdcMem0, core::ptr::addr_of_mut!(rcBase), (FALSE) as BOOL, core::ptr::addr_of!((rcCanvasDraw).__base0));
         }
     
         // Calculate the target area on the image
-        let mut rcImageDraw: CRect = {
-            let mut tmp: CRect = CRect__make_0();
-            tmp = rcCanvasDraw;
-            tmp
-        };
-        (*this_).CanvasToImage__1(&mut rcImageDraw.__base0, (FALSE) as BOOL);
-        rcImageDraw.IntersectRect(core::ptr::addr_of_mut!(rcImageDraw.__base0) as *const RECT, core::ptr::addr_of_mut!(rcImage.__base0) as *const RECT);
+        let mut rcImageDraw: CRect = CRect__make_0();
+        rcImageDraw = core::ptr::read(&rcCanvasDraw);
+        (*this_).CanvasToImage__1(&mut (rcImageDraw).__base0, (FALSE) as BOOL);
+        rcImageDraw.IntersectRect(core::ptr::addr_of!((rcImageDraw).__base0), core::ptr::addr_of!((rcImage).__base0));
     
         // Consider rounding down by zooming
         rcImageDraw.__base0.right += 1;
@@ -408,7 +405,7 @@ impl CCanvasWindow {
         toolsModel.OnDrawOverlayOnImage(hdcMem1);
     
         // Transfer the bits with stretch (hdcMem0 <-- hdcMem1)
-        (*this_).ImageToCanvas__1(&mut rcImage.__base0);
+        (*this_).ImageToCanvas__1(&mut (rcImage).__base0);
         StretchBlt(hdcMem0, rcImage.__base0.left, rcImage.__base0.top, rcImage.Width(), rcImage.Height(),
                      hdcMem1, 0, 0, sizeImage.cx, sizeImage.cy, SRCCOPY);
     
@@ -447,7 +444,7 @@ impl CCanvasWindow {
     
         // Draw new frame on hdcMem0 if any
         if (*this_).m_hitCanvasSizeBox != HIT_NONE && (*this_).m_rcResizing.IsRectEmpty() == 0 {
-            DrawXorRect(hdcMem0, core::ptr::addr_of_mut!((*this_).m_rcResizing.__base0));
+            DrawXorRect(hdcMem0, core::ptr::addr_of!(((*this_).m_rcResizing).__base0));
         }
     
         // Transfer the bits (hDC <-- hdcMem0)

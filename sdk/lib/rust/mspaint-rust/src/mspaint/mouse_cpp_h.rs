@@ -499,7 +499,7 @@ impl ToolsModel {
             yRel = labs(yRel);
         }
     
-        if wParam & (MK_LBUTTON) as _ != 0 {
+        if (wParam & (MK_LBUTTON) as _) != 0 {
             (*this_).OnMouseMove((TRUE) as i32, pt.x, pt.y);
             canvasWindow.__base0.Invalidate((FALSE) as BOOL);
             if ((*this_).m_activeTool >= TOOL_TEXT) || (*this_).IsSelection() != 0 {
@@ -512,7 +512,7 @@ impl ToolsModel {
             }
         }
     
-        if wParam & (MK_RBUTTON) as _ != 0 {
+        if (wParam & (MK_RBUTTON) as _) != 0 {
             (*this_).OnMouseMove((FALSE) as i32, pt.x, pt.y);
             canvasWindow.__base0.Invalidate((FALSE) as BOOL);
             if (*this_).m_activeTool >= TOOL_TEXT {
@@ -1102,18 +1102,17 @@ impl TextTool {
         }
     pub unsafe fn draw(&mut self, hdc: HDC) {
         let this_: *mut Self = self;
-        let mut szText: CStringW = CStringW::new();
+        let mut szText = CStringW::new();
         textEditWindow.__base0.GetWindowTextW__1(&mut szText);
     
-        let mut rc: CRect = CRect__make_0();
+        let mut rc = CRect__make_0();
         textEditWindow.InvalidateEditRect();
-        textEditWindow.GetEditRect(core::ptr::addr_of_mut!(rc.__base0));
+        textEditWindow.GetEditRect(&mut rc.__base0);
         rc.InflateRect__0((-GRIP_SIZE / 2) as i32, (-GRIP_SIZE / 2) as i32);
     
         // Draw the text
-        let style: INT = if ((toolsModel.IsBackgroundTransparent()) != 0) { 0 } else { 1 };
-        Text__1(hdc, rc.__base0.left, rc.__base0.top, rc.__base0.right, rc.__base0.bottom, toolsModel.GetFgBrush(), toolsModel.GetBgBrush(), szText.GetString(),
-             textEditWindow.GetFont(), style);
+        let style: INT = if toolsModel.IsBackgroundTransparent() != 0 { 0 } else { 1 };
+        Text__1(hdc, rc.left, rc.top, rc.right, rc.bottom, toolsModel.GetFgBrush(), toolsModel.GetBgBrush(), szText.GetString(), textEditWindow.GetFont(), style);
     }
     pub unsafe fn quit(&mut self) {
         let this_: *mut Self = self;
@@ -1124,60 +1123,59 @@ impl TextTool {
     }
     pub unsafe fn OnButtonUp__body(&mut self, bLeftButton: BOOL, x: &mut LONG, y: &mut LONG) -> BOOL {
         let this_: *mut Self = self;
-        let mut pt: POINT = POINT { x: *x, y: *y };
-        imageModel.Clamp(&mut pt);
-        selectionModel.SetRectFromPoints(&g_ptStart, &pt);
+            let mut pt: POINT = POINT { x: *x, y: *y };
+            imageModel.Clamp(&mut pt);
+            selectionModel.SetRectFromPoints(&g_ptStart, &pt);
     
-        let bTextBoxShown: BOOL = IsWindowVisible(textEditWindow.op_to_HWND());
-        if bTextBoxShown != 0 {
-            if textEditWindow.__base0.GetWindowTextLengthW() > 0 {
-                imageModel.PushImageForUndo__0();
-                (*this_).draw((*this_).__base0.m_hdc);
+            let bTextBoxShown: BOOL = IsWindowVisible((textEditWindow).op_to_HWND());
+            if bTextBoxShown != 0 {
+                if textEditWindow.__base0.GetWindowTextLengthW() > 0 {
+                    imageModel.PushImageForUndo__0();
+                    (*this_).draw((*this_).__base0.m_hdc);
+                }
+                if selectionModel.m_rc.IsRectEmpty() != 0 {
+                    (*this_).quit();
+                    return (TRUE) as BOOL;
+                }
             }
+    
+            if registrySettings.ShowTextTool != 0 {
+                if fontsDialog.__base0.IsWindow() == 0 {
+                    fontsDialog.Create((mainWindow).op_to_HWND(), 0);
+                }
+    
+                fontsDialog.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
+            }
+    
+            let mut rc: CRect = {
+                let mut t: CRect = CRect__make_0();
+                t = selectionModel.m_rc;
+                t
+            };
+    
+            // Enlarge if tool small
+            let cxMin: INT = (CX_MINTEXTEDIT as i32);
+            let cyMin: INT = (CY_MINTEXTEDIT as i32);
             if selectionModel.m_rc.IsRectEmpty() != 0 {
-                (*this_).quit();
-                return (TRUE) as BOOL;
+                rc.SetRect(*x, *y, *x + cxMin, *y + cyMin);
+            } else {
+                if rc.__base0.right - rc.__base0.left < cxMin {
+                    rc.__base0.right = rc.__base0.left + cxMin;
+                }
+                if rc.__base0.bottom - rc.__base0.top < cyMin {
+                    rc.__base0.bottom = rc.__base0.top + cyMin;
+                }
             }
-        }
     
-        if registrySettings.ShowTextTool != 0 {
-            if fontsDialog.__base0.IsWindow() == 0 {
-                fontsDialog.Create({ let _ = mainWindow; 0 }.op_to_HWND());
+            if textEditWindow.__base0.IsWindow() == 0 {
+                textEditWindow.Create((canvasWindow).op_to_HWND());
             }
     
-            fontsDialog.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
-        }
-    
-        // CRect rc = COMMENT_TOKEN_ECHO____() = selectionModel.m_rc;
-        let mut rc: CRect = {
-            let slot: *mut CRect = CRect__make_0();
-            *slot = core::ptr::read(core::ptr::addr_of!(selectionModel.m_rc));
-            core::ptr::read(slot)
-        };
-    
-        // Enlarge if tool small
-        let mut cxMin: INT = (CX_MINTEXTEDIT as i32);
-        let mut cyMin: INT = (CY_MINTEXTEDIT as i32);
-        if selectionModel.m_rc.IsRectEmpty() != 0 {
-            rc.SetRect(*x, *y, *x + cxMin, *y + cyMin);
-        } else {
-            if rc.__base0.right - rc.__base0.left < cxMin {
-                rc.__base0.right = rc.__base0.left + cxMin;
-            }
-            if rc.__base0.bottom - rc.__base0.top < cyMin {
-                rc.__base0.bottom = rc.__base0.top + cyMin;
-            }
-        }
-    
-        if textEditWindow.__base0.IsWindow() == 0 {
-            textEditWindow.Create(canvasWindow.op_to_HWND());
-        }
-    
-        textEditWindow.__base0.SetWindowTextW(core::ptr::null_mut());
-        textEditWindow.ValidateEditRect(&((*core::ptr::addr_of_mut!(rc)).__base0));
-        textEditWindow.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
-        textEditWindow.__base0.SetFocus();
-        return (TRUE) as BOOL;
+            textEditWindow.__base0.SetWindowTextW(core::ptr::null_mut());
+            textEditWindow.ValidateEditRect(&rc.__base0);
+            textEditWindow.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
+            textEditWindow.__base0.SetFocus();
+            return (TRUE) as BOOL;
     }
     pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
         let this_: *mut Self = self;

@@ -1518,10 +1518,19 @@ def assemble(rust: str, model: ModuleModel) -> str:
     out: list[str] = []
     impls: dict[str, list[str]] = {}
     pos = 0
+    externs = _extern_block_spans(rust)
     for m in _FN_HEAD_RE.finditer(rust):
         name = m.group("name")
         cls = next((c for c in classes if name.startswith(c + "__")), None)
-        if cls is None:
+        if cls is None or m.start() < pos:
+            continue
+        # A DECLARATION is not a method: inside an `extern {}` block, or a head whose `;`
+        # comes before any `{`. A worker that declared `CImage__s_gdiplus_X(..);` in an
+        # extern block had it moved into `impl CImage`, tearing the block apart.
+        if any(lo <= m.start() < hi for lo, hi in externs):
+            continue
+        semi, brace = rust.find(";", m.end()), rust.find("{", m.end())
+        if brace < 0 or (0 <= semi < brace and "(" not in rust[semi:brace]):
             continue
         end = _fn_end(rust, m.end())
         out.append(rust[pos : m.start()])
@@ -1615,6 +1624,20 @@ def drop_global_qualifier(rust: str) -> str:
         return name
 
     return re.sub(r"(?<![\w:>)\]])::([A-Za-z_]\w*)(?=\s*[(!])", fix, rust)
+
+
+def _extern_block_spans(text: str) -> list[tuple[int, int]]:
+    """(start, end) of every `extern "..." {` block."""
+    spans = []
+    for m in re.finditer(r'\bextern\s*(?:"[^"]*"\s*)?\{', text):
+        depth, i = 0, m.end() - 1
+        while i < len(text):
+            depth += (text[i] == "{") - (text[i] == "}")
+            if depth == 0:
+                spans.append((m.start(), i + 1))
+                break
+            i += 1
+    return spans
 
 
 def _fn_end(text: str, start: int) -> int:

@@ -586,3 +586,17 @@ def test_overloaded_free_functions_keep_both_and_calls_pick_the_resolved_one(tmp
     assert by["Fill__1"].signature.startswith("void Fill__1(")
     assert by["Fill__1"].lowered == "{ Fill__0(hdc, x, (COLORREF)0); }"
     assert by["Use"].lowered == "{ Fill__1(h, 1, b); }"
+
+
+def test_assemble_leaves_extern_declarations_alone():
+    """atlimage: a worker's `extern "C" { fn CImage__s_x(..) -> i32; }` was moved into impl."""
+    c = ClassModel("CImage", "CImage", "class", "t.cpp")
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = (
+        'extern "C" {\n    fn CImage__s_x(n: u32) -> i32;\n}\n'
+        "pub unsafe fn CImage__Go(this_: *mut CImage) {\n    CImage__s_x(1);\n}\n"
+    )
+    out = cpp_app.assemble(rs, m)
+    assert 'extern "C" {\n    fn CImage__s_x(n: u32) -> i32;\n}\n' in out
+    assert "impl CImage {" in out and "pub unsafe fn Go(&mut self)" in out

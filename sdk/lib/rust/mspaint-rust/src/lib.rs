@@ -52,6 +52,7 @@ pub mod mspaint {
     pub mod atlbase_h_h;
     pub mod atltypes_h_h;
     pub mod CWaitCursor_h_h;
+    pub mod atlimage_h_h;
 }
 
 // staticlib needs a panic handler + eh personality (no_std cohab); std supplies them under test.

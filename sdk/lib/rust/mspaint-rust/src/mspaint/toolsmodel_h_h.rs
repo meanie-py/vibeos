@@ -13,7 +13,7 @@ use core::ffi::c_void;
 
 
 
-unsafe extern "C" fn Zoomed__0(xy: i32) -> i32 {
+pub unsafe extern "C" fn Zoomed__0(xy: i32) -> i32 {
     MulDiv(xy, toolsModel.GetZoom(), (DEFAULT_ZOOM as i32))
 }
 
@@ -24,11 +24,11 @@ unsafe extern "C" fn UnZoomed__0(xy: i32, bRound: BOOL) -> i32 {
     return xy * (DEFAULT_ZOOM as i32) / toolsModel.GetZoom();
 }
 
-unsafe extern "C" fn Zoomed__1(pt: *mut POINT) {
+pub unsafe extern "C" fn Zoomed__1(pt: *mut POINT) {
     *pt = POINT { x: Zoomed__0((*pt).x), y: Zoomed__0((*pt).y) };
 }
 
-unsafe extern "C" fn Zoomed__2(rc: *mut RECT) {
+pub unsafe extern "C" fn Zoomed__2(rc: *mut RECT) {
     let __tmp = RECT {
         left: Zoomed__0((*rc).left),
         top: Zoomed__0((*rc).top),
@@ -38,12 +38,12 @@ unsafe extern "C" fn Zoomed__2(rc: *mut RECT) {
     *rc = __tmp;
 }
 
-unsafe extern "C" fn UnZoomed__1(pt: *mut POINT, bRound: BOOL) {
+pub unsafe extern "C" fn UnZoomed__1(pt: *mut POINT, bRound: BOOL) {
     let x = UnZoomed__0((*pt).x, bRound);
     let y = UnZoomed__0((*pt).y, bRound);
     *pt = POINT { x: x, y: y };
 }
-unsafe extern "C" fn UnZoomed__2(rc: *mut RECT, bRound: BOOL) {
+pub unsafe extern "C" fn UnZoomed__2(rc: *mut RECT, bRound: BOOL) {
     *rc = RECT {
         left: UnZoomed__0((*rc).left, bRound),
         top: UnZoomed__0((*rc).top, bRound),

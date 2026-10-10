@@ -2145,6 +2145,118 @@ pub unsafe fn CFontsDialog__new_in_0(__p: *mut CFontsDialog) -> *mut CFontsDialo
 pub unsafe fn CFontsDialog__new_0() -> *mut CFontsDialog { CFontsDialog__new_in_0(cpp_alloc::<CFontsDialog>()) }
 pub unsafe fn CFontsDialog__delete(p: *mut CFontsDialog) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 
+// ---- ATL::CImage (sdk/lib/atl/atlimage.h)
+#[repr(C)]
+pub struct CImage {
+    pub __vtbl: *const CImage__vtbl,
+    pub m_hBitmap: HBITMAP,
+    pub m_hOldBitmap: HBITMAP,
+    pub m_nWidth: INT,
+    pub m_nHeight: INT,
+    pub m_nPitch: INT,
+    pub m_nBPP: INT,
+    pub m_pBits: LPVOID,
+    pub m_bHasAlphaChannel: BOOL,
+    pub m_bIsDIBSection: BOOL,
+    pub m_clrTransparentColor: COLORREF,
+    pub m_hDC: HDC,
+    pub m_nDCRefCount: LONG,
+}
+
+#[repr(C)]
+pub struct CImage__vtbl {
+    pub __delete: unsafe fn(*mut CImage),
+    pub __drop: unsafe fn(*mut CImage),
+}
+
+pub static mut CImage__s_gdiplus: CInitGDIPlus = unsafe { core::mem::zeroed() };
+unsafe fn CImage__vt_delete_own(p: *mut CImage) { let d = (p as *mut CImage); core::ptr::drop_in_place(d); cpp_free(d as *mut core::ffi::c_void); }
+unsafe fn CImage__vt_drop_own(p: *mut CImage) { core::ptr::drop_in_place((p as *mut CImage)); }
+pub static CImage__VTBL_own: CImage__vtbl = CImage__vtbl { __delete: CImage__vt_delete_own, __drop: CImage__vt_drop_own };
+impl CImage {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        (*this).__vtbl = &CImage__VTBL_own as *const CImage__vtbl as *const CImage__vtbl;
+    }
+}
+
+pub unsafe fn CImage__zeroed() -> CImage { core::mem::zeroed() }
+pub unsafe fn CImage__make_0() -> CImage { let mut __obj = CImage__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CImage__new_in_0(__p: *mut CImage) -> *mut CImage { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CImage__new_0() -> *mut CImage { CImage__new_in_0(cpp_alloc::<CImage>()) }
+pub unsafe fn CImage__delete(p: *mut CImage) { if p.is_null() { return; } let sub = p as *mut CImage; ((*(*sub).__vtbl).__delete)(sub); }
+impl Drop for CImage {
+    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+}
+
+// ---- ATL::CImage::MYBITMAPINFOEX (sdk/lib/atl/atlimage.h)
+#[derive(Clone, Copy)]
+#[repr(C)]
+pub struct MYBITMAPINFOEX {
+    pub __base0: BITMAPINFO,
+    pub bmiColorsExtra: [RGBQUAD; 255 as usize],
+}
+
+impl MYBITMAPINFOEX {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+impl core::ops::Deref for MYBITMAPINFOEX { type Target = BITMAPINFO; fn deref(&self) -> &BITMAPINFO { &self.__base0 } }
+impl core::ops::DerefMut for MYBITMAPINFOEX { fn deref_mut(&mut self) -> &mut BITMAPINFO { &mut self.__base0 } }
+pub unsafe fn MYBITMAPINFOEX__zeroed() -> MYBITMAPINFOEX { core::mem::zeroed() }
+pub unsafe fn MYBITMAPINFOEX__make_0() -> MYBITMAPINFOEX { let mut __obj = MYBITMAPINFOEX__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn MYBITMAPINFOEX__new_in_0(__p: *mut MYBITMAPINFOEX) -> *mut MYBITMAPINFOEX { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn MYBITMAPINFOEX__new_0() -> *mut MYBITMAPINFOEX { MYBITMAPINFOEX__new_in_0(cpp_alloc::<MYBITMAPINFOEX>()) }
+pub unsafe fn MYBITMAPINFOEX__delete(p: *mut MYBITMAPINFOEX) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+
+// ---- ATL::CImage::CInitGDIPlus (sdk/lib/atl/atlimage.h)
+#[repr(C)]
+pub struct CInitGDIPlus {
+    pub m_hInst: HINSTANCE,
+    pub m_dwToken: ULONG_PTR,
+    pub m_sect: CRITICAL_SECTION,
+    pub m_nCImageObjects: LONG,
+    pub m_dwLastError: DWORD,
+    pub Startup: FUN_Startup,
+    pub Shutdown: FUN_Shutdown,
+    pub CreateBitmapFromFile: FUN_CreateBitmapFromFile,
+    pub CreateBitmapFromHBITMAP: FUN_CreateBitmapFromHBITMAP,
+    pub CreateBitmapFromStream: FUN_CreateBitmapFromStream,
+    pub CreateHBITMAPFromBitmap: FUN_CreateHBITMAPFromBitmap,
+    pub DisposeImage: FUN_DisposeImage,
+    pub GetImageDecoders: FUN_GetImageDecoder,
+    pub GetImageDecodersSize: FUN_GetImageDecoderSize,
+    pub GetImageEncoders: FUN_GetImageEncoder,
+    pub GetImageEncodersSize: FUN_GetImageEncoderSize,
+    pub SaveImageToFile: FUN_SaveImageToFile,
+    pub SaveImageToStream: FUN_SaveImageToStream,
+}
+
+impl CInitGDIPlus {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+pub unsafe fn CInitGDIPlus__zeroed() -> CInitGDIPlus { core::mem::zeroed() }
+pub unsafe fn CInitGDIPlus__make_0() -> CInitGDIPlus { let mut __obj = CInitGDIPlus__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CInitGDIPlus__new_in_0(__p: *mut CInitGDIPlus) -> *mut CInitGDIPlus { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CInitGDIPlus__new_0() -> *mut CInitGDIPlus { CInitGDIPlus__new_in_0(cpp_alloc::<CInitGDIPlus>()) }
+pub unsafe fn CInitGDIPlus__delete(p: *mut CInitGDIPlus) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+impl Drop for CInitGDIPlus {
+    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+}
+
 // ---- CImageDx (base/applications/mspaint/atlimagedx.h)
 #[repr(C)]
 pub struct CImageDx {

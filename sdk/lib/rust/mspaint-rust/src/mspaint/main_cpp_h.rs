@@ -12,9 +12,7 @@ pub static CPP_COM_WSTR_F7E2D0733EDD: [WCHAR; 4] = [0x0061, 0x0066, 0x0078, 0x00
 
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated; repaired by hand: the bought reply mixed the
-// model's commentary into the Rust) ----
-// main.cpp's function-pointer typedefs: Option<fn> is C's nullable function pointer.
+// ---- file-scope preamble (translated) ----
 pub type FN_HtmlHelpW = Option<unsafe extern "system" fn(HWND, LPCWSTR, UINT, DWORD_PTR) -> HWND>;
 pub type FN_MAPISendMail =
     Option<unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessage, FLAGS, ULONG) -> ULONG>;
@@ -22,22 +20,26 @@ pub type FN_MAPISendMailW =
     Option<unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessageW, FLAGS, ULONG) -> ULONG>;
 
 #[no_mangle]
-pub static mut g_askBeforeEnlarging: BOOL = FALSE;
+pub static mut g_askBeforeEnlarging: BOOL = (FALSE) as i32;
 #[no_mangle]
 pub static mut g_hinstExe: HINSTANCE = core::ptr::null_mut();
 #[no_mangle]
 pub static mut g_szFileName: [WCHAR; 512] = [0; 512];
 pub static mut g_szMailTempFile: [WCHAR; 512] = [0; 512];
 #[no_mangle]
-pub static mut g_isAFile: BOOL = FALSE;
+pub static mut g_isAFile: BOOL = (FALSE) as i32;
 #[no_mangle]
-pub static mut g_imageSaved: BOOL = FALSE;
+pub static mut g_imageSaved: BOOL = (FALSE) as i32;
 #[no_mangle]
-pub static mut g_showGrid: BOOL = FALSE;
+pub static mut g_showGrid: BOOL = (FALSE) as i32;
 #[no_mangle]
 pub static mut g_hStatusBar: HWND = core::ptr::null_mut();
 static mut s_hHHCTRL_OCX: HINSTANCE = core::ptr::null_mut(); // HtmlHelpW needs "hhctrl.ocx"
 static mut s_pHtmlHelpW: FN_HtmlHelpW = None;
+
+static mut s_hHHCTRL_OCX_UNUSED_MARKER: u8 = 0;
+
+static OFNHOOKPROC_FILE_TYPE_PLACEHOLDER: () = ();
 
 
 
@@ -91,17 +93,17 @@ unsafe extern "C" fn FileExtFromFilter(pExt: LPWSTR, pOFN: *mut OPENFILENAME) ->
             }
             *pchExt = 0;
             CharLower(pExt);
-            return TRUE;
+            return (TRUE) as BOOL;
         }
         pch = pch.add((wcslen(pch) + 1) as usize);
         nIndex += 1;
     }
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 unsafe extern "system" fn OFNHookProc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> UINT_PTR {
     let mut hParent: HWND;
     let mut pon: *mut OFNOTIFYW;
-    let mut Path: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut Path: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     match uMsg {
         WM_NOTIFY => {
             pon = lParam as *mut OFNOTIFYW;
@@ -109,7 +111,7 @@ unsafe extern "system" fn OFNHookProc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lP
                 hParent = GetParent(hwnd);
                 SendMessageW(hParent, CDM_GETFILEPATH, _countof!(Path) as WPARAM, core::ptr::addr_of_mut!(Path) as *mut WCHAR as LPARAM);
                 FileExtFromFilter(PathFindExtensionW(core::ptr::addr_of_mut!(Path) as *mut WCHAR), (*pon).lpOFN);
-                SendMessageW(hParent, CDM_SETCONTROLTEXT, cmb13, PathFindFileNameW(core::ptr::addr_of_mut!(Path) as *mut WCHAR) as LPARAM);
+                SendMessageW(hParent, CDM_SETCONTROLTEXT, (cmb13) as WPARAM, PathFindFileNameW(core::ptr::addr_of_mut!(Path) as *mut WCHAR) as LPARAM);
                 StringCchCopyW((*(*pon).lpOFN).lpstrFile, (*(*pon).lpOFN).nMaxFile as usize, core::ptr::addr_of_mut!(Path) as *const WCHAR);
             }
         }
@@ -121,43 +123,30 @@ unsafe extern "system" fn OFNHookProc(hwnd: HWND, uMsg: UINT, wParam: WPARAM, lP
 pub unsafe extern "C" fn OpenMailer(hWnd: HWND, mut pszPathName: LPCWSTR) -> BOOL {
     // Delete the temporary file if any
     if g_szMailTempFile[0] != 0 {
-        DeleteFileW(core::ptr::addr_of_mut!(g_szMailTempFile) as *mut WCHAR);
+        DeleteFileW(addr_of_mut!(g_szMailTempFile) as *mut WCHAR);
         g_szMailTempFile[0] = UNICODE_NULL;
     }
 
     let mut strFileTitle = CStringW::new();
-    if PathFileExistsW(pszPathName) != 0 && imageModel.IsImageSaved() {
+    if PathFileExistsW(pszPathName) != 0 && ((imageModel.IsImageSaved()) != 0) {
         strFileTitle = CStringW::from_ptr(PathFindFileNameW(pszPathName));
     } else {
         // Not existing or not saved
         // Get the name of a temporary file
-        let mut szTempDir = [0 as WCHAR; MAX_PATH];
-        GetTempPathW(_countof!(szTempDir) as DWORD, szTempDir.as_mut_ptr());
-        if GetTempFileNameW(
-            szTempDir.as_mut_ptr(),
-            CPP_COM_WSTR_F7E2D0733EDD.as_ptr(),
-            0,
-            core::ptr::addr_of_mut!(g_szMailTempFile) as *mut WCHAR,
-        ) == 0
-        {
-            return FALSE; // Failure
+        let mut szTempDir: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        GetTempPathW(_countof!(szTempDir), szTempDir.as_mut_ptr());
+        if GetTempFileNameW(szTempDir.as_mut_ptr(), CPP_COM_WSTR_F7E2D0733EDD.as_ptr(), 0, addr_of_mut!(g_szMailTempFile) as *mut WCHAR) == 0 {
+            return (FALSE) as BOOL; // Failure
         }
 
-        if PathFileExistsW(core::ptr::addr_of!(g_szFileName) as *const WCHAR) != 0 {
+        if PathFileExistsW(addr_of!(g_szFileName) as *const WCHAR) != 0 {
             // Set file title
-            strFileTitle = CStringW::from_ptr(PathFindFileNameW(
-                core::ptr::addr_of!(g_szFileName) as *const WCHAR,
-            ));
+            strFileTitle = CStringW::from_ptr(PathFindFileNameW(addr_of!(g_szFileName) as *const WCHAR));
 
             // Copy to the temporary file
-            if CopyFileW(
-                core::ptr::addr_of!(g_szFileName) as *const WCHAR,
-                core::ptr::addr_of_mut!(g_szMailTempFile) as *mut WCHAR,
-                FALSE,
-            ) == 0
-            {
+            if CopyFileW(addr_of!(g_szFileName) as *const WCHAR, addr_of!(g_szMailTempFile) as *const WCHAR, (FALSE) as BOOL) == 0 {
                 g_szMailTempFile[0] = UNICODE_NULL;
-                return FALSE; // Failure
+                return (FALSE) as BOOL; // Failure
             }
         } else {
             // Set file title
@@ -166,87 +155,66 @@ pub unsafe extern "C" fn OpenMailer(hWnd: HWND, mut pszPathName: LPCWSTR) -> BOO
 
             // Save it to the temporary file
             let hbmLocked: HBITMAP = imageModel.LockBitmap();
-            let ret = SaveDIBToFile(
-                hbmLocked,
-                core::ptr::addr_of_mut!(g_szMailTempFile) as *mut WCHAR,
-                FALSE,
-                Gdiplus_ImageFormatPNG,
-            );
+            let ret: BOOL = SaveDIBToFile(hbmLocked, addr_of_mut!(g_szMailTempFile) as *mut WCHAR, (FALSE) as BOOL, &Gdiplus_ImageFormatPNG);
             imageModel.UnlockBitmap(hbmLocked);
             if ret == 0 {
                 g_szMailTempFile[0] = UNICODE_NULL;
-                return FALSE; // Failure
+                return (FALSE) as BOOL; // Failure
             }
         }
 
         // Use the temporary file
-        pszPathName = core::ptr::addr_of!(g_szMailTempFile) as *const WCHAR;
+        pszPathName = addr_of!(g_szMailTempFile) as *const WCHAR;
     }
 
     // Load "mapi32.dll"
     let hMAPI: HINSTANCE = LoadLibraryW(CPP_COM_WSTR_67DB42DC8E1B.as_ptr());
     if hMAPI.is_null() {
-        return FALSE; // Failure
+        return (FALSE) as BOOL; // Failure
     }
 
     // Attachment
     let mut attachmentW: MapiFileDescW = core::mem::zeroed();
-    attachmentW.nPosition = (-(1 as i32)) as ULONG;
+    attachmentW.nPosition = (-(1)) as ULONG;
     attachmentW.lpszPathName = pszPathName as LPWSTR;
     attachmentW.lpszFileName = strFileTitle.GetString() as LPWSTR;
 
     // Message with attachment
     let mut messageW: MapiMessageW = core::mem::zeroed();
     messageW.lpszSubject = core::ptr::null_mut();
-    messageW.nFileCount = 1 as ULONG;
-    messageW.lpFiles = core::ptr::addr_of_mut!(attachmentW);
+    messageW.nFileCount = 1;
+    messageW.lpFiles = addr_of_mut!(attachmentW);
 
     // First, try to open the mailer by the function of Unicode version
-    let pMAPISendMailW: FN_MAPISendMailW = core::mem::transmute(GetProcAddress(
-        hMAPI,
-        b"MAPISendMailW\0".as_ptr() as *const i8,
-    ));
-    if pMAPISendMailW.is_some() {
-        pMAPISendMailW(
-            0,
-            hWnd as ULONG_PTR,
-            core::ptr::addr_of_mut!(messageW),
-            MAPI_DIALOG | MAPI_LOGON_UI,
-            0,
-        );
+    let pMAPISendMailW_addr = GetProcAddress(hMAPI, b"MAPISendMailW\0".as_ptr() as *const i8) as usize;
+    if pMAPISendMailW_addr != 0 {
+        let pMAPISendMailW: FN_MAPISendMailW = core::mem::transmute(pMAPISendMailW_addr);
+        (pMAPISendMailW.unwrap_unchecked())(0, hWnd as ULONG_PTR, addr_of_mut!(messageW), (MAPI_DIALOG | MAPI_LOGON_UI), 0);
         FreeLibrary(hMAPI);
-        return TRUE; // MAPISendMailW will show an error message on failure
+        return (TRUE) as BOOL; // MAPISendMailW will show an error message on failure
     }
 
     // Convert to ANSI strings
-    let szPathNameA = CStringA::from_wide(pszPathName);
-    let szFileTitleA = CStringA::from_wide(strFileTitle.GetString());
+    let mut szPathNameA = CStringA::from_ptr(pszPathName);
+    let mut szFileTitleA = CStringA::from_ptr(strFileTitle.GetString());
 
     let mut attachment: MapiFileDesc = core::mem::zeroed();
-    attachment.nPosition = (-(1 as i32)) as ULONG;
+    attachment.nPosition = (-(1)) as ULONG;
     attachment.lpszPathName = szPathNameA.GetString() as LPSTR;
     attachment.lpszFileName = szFileTitleA.GetString() as LPSTR;
 
     let mut message: MapiMessage = core::mem::zeroed();
     message.lpszSubject = core::ptr::null_mut();
-    message.nFileCount = 1 as ULONG;
-    message.lpFiles = core::ptr::addr_of_mut!(attachment);
+    message.nFileCount = 1;
+    message.lpFiles = addr_of_mut!(attachment);
 
     // Try again but in ANSI version
-    let pMAPISendMail: FN_MAPISendMail = core::mem::transmute(GetProcAddress(
-        hMAPI,
-        b"MAPISendMail\0".as_ptr() as *const i8,
-    ));
-    if pMAPISendMail.is_some() {
-        pMAPISendMail(
-            0,
-            hWnd as ULONG_PTR,
-            core::ptr::addr_of_mut!(message),
-            MAPI_DIALOG | MAPI_LOGON_UI,
-            0,
-        );
+    let pMAPISendMail_addr = GetProcAddress(hMAPI, b"MAPISendMail\0".as_ptr() as *const i8) as usize;
+    if pMAPISendMail_addr != 0 {
+        let pMAPISendMail: FN_MAPISendMail = core::mem::transmute(pMAPISendMail_addr);
+        (pMAPISendMail.unwrap_unchecked())(0, hWnd as ULONG_PTR, addr_of_mut!(message), (MAPI_DIALOG | MAPI_LOGON_UI), 0);
         FreeLibrary(hMAPI);
-        return TRUE; // MAPISendMail will show an error message on failure
+        return (TRUE) as BOOL; // MAPISendMail will show an error message on failure
     }
 
     FreeLibrary(hMAPI);
@@ -254,23 +222,23 @@ pub unsafe extern "C" fn OpenMailer(hWnd: HWND, mut pszPathName: LPCWSTR) -> BOO
 }
 
 unsafe extern "C" fn DoHtmlHelpW(hwndCaller: HWND, pszFile: LPCWSTR, uCommand: UINT, dwData: DWORD_PTR) -> HWND {
-    let mut szPath: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szPath: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     if s_hHHCTRL_OCX.is_null() && (uCommand != HH_CLOSE_ALL) {
         // The function loads the system library, not local
         GetSystemDirectoryW(szPath.as_mut_ptr(), _countof!(szPath));
-        StringCchCatW(szPath.as_mut_ptr(), _countof!(szPath), CPP_COM_WSTR_C3F0B98328E3.as_ptr());
+        StringCchCatW(szPath.as_mut_ptr(), (_countof!(szPath)) as _, CPP_COM_WSTR_C3F0B98328E3.as_ptr());
         s_hHHCTRL_OCX = LoadLibraryW(szPath.as_ptr());
         if !s_hHHCTRL_OCX.is_null() {
             s_pHtmlHelpW = core::mem::transmute(GetProcAddress(s_hHHCTRL_OCX, b"HtmlHelpW\0".as_ptr() as *const i8));
         }
     }
 
-    if s_pHtmlHelpW.is_null() {
+    if s_pHtmlHelpW.is_none() {
         return core::ptr::null_mut();
     }
 
-    return s_pHtmlHelpW(hwndCaller, pszFile, uCommand, dwData);
+    return (s_pHtmlHelpW.unwrap_unchecked())(hwndCaller, pszFile, uCommand, dwData);
 }
 #[no_mangle]
 pub unsafe extern "system" fn wWinMain(hInstance: HINSTANCE, hPrevInstance: HINSTANCE, lpCmdLine: LPWSTR, nCmdShow: INT) -> INT {
@@ -287,18 +255,18 @@ pub unsafe extern "system" fn wWinMain(hInstance: HINSTANCE, hPrevInstance: HINS
     registrySettings.Load(nCmdShow);
 
     // Create the main window
-    if mainWindow.DoCreate().is_null() {
-        MessageBoxW(core::ptr::null_mut(), CPP_COM_WSTR_85D11F0B94E7.as_ptr(), core::ptr::null_mut(), MB_ICONERROR);
+    if !mainWindow.DoCreate() {
+        MessageBox(core::ptr::null_mut(), CPP_COM_WSTR_85D11F0B94E7.as_ptr(), core::ptr::null_mut(), MB_ICONERROR);
         return 1;
     }
 
     // Initialize imageModel
-    if *__imp___argc < 2 || DoLoadImageFile((mainWindow).op_to_HWND(), *(*__imp___wargv).add(1), TRUE).is_null() {
-        InitializeImage(core::ptr::null_mut(), core::ptr::null_mut(), FALSE);
+    if __argc < 2 || !DoLoadImageFile((mainWindow).op_to_HWND(), __targv[1], (TRUE) as BOOL) {
+        InitializeImage(core::ptr::null_mut(), core::ptr::null_mut(), (FALSE) as BOOL);
     }
 
     // Make the window visible on the screen
-    mainWindow.__base0.ShowWindow(registrySettings.WindowPlacement.showCmd);
+    mainWindow.__base0.ShowWindow((registrySettings.WindowPlacement.showCmd) as i32);
 
     // Load the access keys
     let hAccel: HACCEL = LoadAcceleratorsW(hInstance, MAKEINTRESOURCEW!(800));
@@ -354,74 +322,81 @@ pub unsafe extern "C" fn __cxx_global_init() {
 impl CMainWindow {
     pub unsafe fn DoCreate(&mut self) -> HWND {
         let this_: *mut Self = self;
-        LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, g_szFileName.as_mut_ptr(), _countof!(g_szFileName));
+        LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, _countof!(g_szFileName) as i32);
     
         let mut strTitle = CStringW::new();
-        atl_format!(strTitle, IDS_WINDOWTITLE, PathFindFileName(g_szFileName.as_ptr()));
+        atl_format!(strTitle, CStringW::from_resource(IDS_WINDOWTITLE).GetString(), PathFindFileName(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR));
     
-        let rc: &mut RECT = &mut registrySettings.WindowPlacement.rcNormalPosition;
+        let rc: &mut RECT = &mut *core::ptr::addr_of_mut!(registrySettings.WindowPlacement.rcNormalPosition);
         return (*this_).Create(HWND_DESKTOP, rc, strTitle.GetString(), WS_OVERLAPPEDWINDOW, WS_EX_ACCEPTFILES, 0);
     }
     pub unsafe fn GetOpenFileNameW(&mut self, pszFile: LPWSTR, cchMaxFile: INT) -> BOOL {
         let this_: *mut Self = self;
         static mut ofn: OPENFILENAMEW = unsafe { core::mem::zeroed() };
         static mut strFilter: CStringW = CStringW::new();
+        let p_ofn: *mut OPENFILENAMEW = core::ptr::addr_of_mut!(ofn);
+        let p_strFilter: *mut CStringW = core::ptr::addr_of_mut!(strFilter);
     
-        if (*core::ptr::addr_of!(ofn)).lStructSize == 0 {
+        if (*p_ofn).lStructSize == 0
+        {
             // The "All Files" item text
-            let mut strAllPictureFiles = CStringW::new();
+            let mut strAllPictureFiles: CStringW = CStringW::new();
             strAllPictureFiles.LoadStringW(IDS_ALLPICTUREFILES);
     
             // Get the import filter
             let mut aguidFileTypesI: CSimpleArray<GUID> = CSimpleArray::new();
-            CImage::GetImporterFilterString(&mut *core::ptr::addr_of_mut!(strFilter), &mut aguidFileTypesI, &strAllPictureFiles,
-                                            CImage::excludeDefaultLoad, 0x007Cu16);
-            (*core::ptr::addr_of_mut!(strFilter)).Replace(0x007Cu16, UNICODE_NULL);
+            CImage::GetImporterFilterString(&mut *p_strFilter, &mut aguidFileTypesI, &strAllPictureFiles,
+                                            1 /* ATL_CImage_ExcludeFlags_excludeDefaultLoad */, 0x007Cu16);
+            (*p_strFilter).Replace(0x007Cu16, UNICODE_NULL);
     
             // Initializing the OPENFILENAME structure for GetOpenFileName
-            ZeroMemory!(core::ptr::addr_of_mut!(ofn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAMEW>());
-            (*core::ptr::addr_of_mut!(ofn)).lStructSize = core::mem::size_of::<OPENFILENAMEW>() as DWORD;
-            (*core::ptr::addr_of_mut!(ofn)).hwndOwner = (*this_).__base0.m_hWnd;
-            (*core::ptr::addr_of_mut!(ofn)).hInstance = g_hinstExe;
-            (*core::ptr::addr_of_mut!(ofn)).lpstrFilter = (*core::ptr::addr_of_mut!(strFilter)).GetString();
-            (*core::ptr::addr_of_mut!(ofn)).Flags = OFN_EXPLORER | OFN_HIDEREADONLY;
-            (*core::ptr::addr_of_mut!(ofn)).lpstrDefExt = CPP_COM_WSTR_368075081DBB.as_ptr();
+            ZeroMemory!(p_ofn as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAMEW>());
+            (*p_ofn).lStructSize = core::mem::size_of::<OPENFILENAMEW>() as DWORD;
+            (*p_ofn).hwndOwner   = (*this_).__base0.m_hWnd;
+            (*p_ofn).hInstance   = g_hinstExe;
+            (*p_ofn).lpstrFilter = (*p_strFilter).GetString();
+            (*p_ofn).Flags       = OFN_EXPLORER | OFN_HIDEREADONLY;
+            (*p_ofn).lpstrDefExt = CPP_COM_WSTR_368075081DBB.as_ptr();
         }
     
-        (*core::ptr::addr_of_mut!(ofn)).lpstrFile = pszFile;
-        (*core::ptr::addr_of_mut!(ofn)).nMaxFile = cchMaxFile as DWORD;
-        return GetOpenFileNameW(core::ptr::addr_of_mut!(ofn));
+        (*p_ofn).lpstrFile = pszFile;
+        (*p_ofn).nMaxFile  = cchMaxFile as DWORD;
+        return GetOpenFileNameW(p_ofn);
     }
     pub unsafe fn GetSaveFileNameW(&mut self, pszFile: LPWSTR, cchMaxFile: INT) -> BOOL {
         let this_: *mut Self = self;
-        static mut sfn: OPENFILENAMEW = unsafe { core::mem::zeroed() };
-        static mut strFilter: CStringW = CStringW::new();
+        let sfnp: *mut OPENFILENAMEW = core::ptr::addr_of_mut!(sfn);
+        let strFilterp: *mut CStringW = core::ptr::addr_of_mut!(strFilter);
     
-        if (*core::ptr::addr_of!(sfn)).lStructSize == 0 {
+        if (*sfnp).lStructSize == 0
+        {
             // Get the export filter
-            let mut aguidFileTypesE = CSimpleArray::<GUID>::new();
-            GetExporterFilterString(core::ptr::addr_of_mut!(strFilter), core::ptr::addr_of_mut!(aguidFileTypesE), core::ptr::null_mut(),
-                                            CImage::excludeDefaultSave, 0x007Cu16);
-            (*core::ptr::addr_of_mut!(strFilter)).Replace(0x007Cu16, UNICODE_NULL);
+            let mut aguidFileTypesE: CSimpleArray<GUID> = CSimpleArray::<GUID>::new();
+            CImage::GetExporterFilterString(&mut *strFilterp, &mut aguidFileTypesE, core::ptr::null_mut(),
+                                            2 /* ATL_CImage_ExcludeFlags_excludeDefaultSave */, 0x007Cu16);
+            (*strFilterp).Replace(0x007Cu16, UNICODE_NULL);
     
             // Initializing the OPENFILENAME structure for GetSaveFileName
-            ZeroMemory!(core::ptr::addr_of_mut!(sfn) as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAMEW>());
-            (*core::ptr::addr_of_mut!(sfn)).lStructSize = core::mem::size_of::<OPENFILENAMEW>() as DWORD;
-            (*core::ptr::addr_of_mut!(sfn)).hwndOwner = (*this_).__base0.m_hWnd;
-            (*core::ptr::addr_of_mut!(sfn)).hInstance = g_hinstExe;
-            (*core::ptr::addr_of_mut!(sfn)).lpstrFilter = (*core::ptr::addr_of!(strFilter)).GetString();
-            (*core::ptr::addr_of_mut!(sfn)).Flags = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_ENABLEHOOK;
-            (*core::ptr::addr_of_mut!(sfn)).lpfnHook = OFNHookProc;
-            (*core::ptr::addr_of_mut!(sfn)).lpstrDefExt = CPP_COM_WSTR_368075081DBB.as_ptr();
+            ZeroMemory!(sfnp as *mut core::ffi::c_void, core::mem::size_of::<OPENFILENAMEW>());
+            (*sfnp).lStructSize = core::mem::size_of::<OPENFILENAMEW>() as DWORD;
+            (*sfnp).hwndOwner   = (*this_).__base0.m_hWnd;
+            (*sfnp).hInstance   = g_hinstExe;
+            (*sfnp).lpstrFilter = (*strFilterp).GetString();
+            (*sfnp).Flags       = OFN_EXPLORER | OFN_OVERWRITEPROMPT | OFN_ENABLEHOOK;
+            (*sfnp).lpfnHook    = OFNHookProc;
+            (*sfnp).lpstrDefExt = CPP_COM_WSTR_368075081DBB.as_ptr();
     
             let pchDotExt: LPWSTR = PathFindExtensionW(pszFile);
-            if *pchDotExt == UNICODE_NULL {
+            if *pchDotExt == UNICODE_NULL
+            {
                 // Choose PNG
-                StringCchCatW(pszFile, cchMaxFile, CPP_COM_WSTR_3E31FFE6FE35.as_ptr());
+                StringCchCatW(pszFile, cchMaxFile as usize, CPP_COM_WSTR_3E31FFE6FE35.as_ptr());
                 let mut i: INT = 0;
-                while i < aguidFileTypesE.GetSize() {
-                    if *aguidFileTypesE.GetAt(i) == Gdiplus_ImageFormatPNG {
-                        (*core::ptr::addr_of_mut!(sfn)).nFilterIndex = (i + 1) as DWORD;
+                while i < aguidFileTypesE.GetSize()
+                {
+                    if (*aguidFileTypesE.GetAt(i)) == Gdiplus_ImageFormatPNG
+                    {
+                        (*sfnp).nFilterIndex = (i + 1) as DWORD;
                         break;
                     }
                     i += 1;
@@ -429,9 +404,9 @@ impl CMainWindow {
             }
         }
     
-        (*core::ptr::addr_of_mut!(sfn)).lpstrFile = pszFile;
-        (*core::ptr::addr_of_mut!(sfn)).nMaxFile = cchMaxFile as DWORD;
-        return GetSaveFileNameW(core::ptr::addr_of_mut!(sfn));
+        (*sfnp).lpstrFile = pszFile;
+        (*sfnp).nMaxFile  = cchMaxFile as DWORD;
+        return GetSaveFileNameW(sfnp);
     }
     pub unsafe fn ChooseColorW(&mut self, prgbColor: *mut COLORREF) -> BOOL {
         let this_: *mut Self = self;
@@ -455,11 +430,11 @@ impl CMainWindow {
         (*cc).Flags = CC_RGBINIT;
         (*cc).rgbResult = *prgbColor;
         if ChooseColor(cc) == 0 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     
         *prgbColor = (*cc).rgbResult;
-        return TRUE;
+        return (TRUE) as BOOL;
     }
     pub unsafe fn TrackPopupMenu(&mut self, ptScreen: POINT, iSubMenu: INT) {
         let this_: *mut Self = self;
@@ -467,8 +442,8 @@ impl CMainWindow {
         let hSubMenu: HMENU = GetSubMenu(hMenu, iSubMenu);
     
         SetForegroundWindow((*this_).__base0.m_hWnd);
-        let id: INT_PTR = TrackPopupMenu(hSubMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
-                                      ptScreen.x, ptScreen.y, 0, (*this_).__base0.m_hWnd, core::ptr::null_mut());
+        let id: INT_PTR = (TrackPopupMenu(hSubMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                                      ptScreen.x, ptScreen.y, 0, (*this_).__base0.m_hWnd, core::ptr::null_mut())) as _;
         (*this_).__base0.PostMessageW(WM_NULL, 0, 0);
         if id != 0 {
             (*this_).__base0.PostMessageW(WM_COMMAND, id, 0);
@@ -482,14 +457,14 @@ impl CMainWindow {
             return textEditWindow.__base0.SendMessageW__0(EM_CANUNDO, 0, 0) as BOOL;
         }
         if selectionModel.m_bShow != 0 && toolsModel.IsSelection() != 0 {
-            return TRUE;
+            return (TRUE) as BOOL;
         }
         return imageModel.CanUndo();
     }
     pub unsafe fn CanRedo(&mut self) -> BOOL {
         let this_: *mut Self = self;
         if toolsModel.GetActiveTool() == TOOL_TEXT && IsWindowVisible(textEditWindow.op_to_HWND()) != 0 {
-            return FALSE; // There is no "WM_REDO" in EDIT control
+            return (FALSE) as BOOL; // There is no "WM_REDO" in EDIT control
         }
         return imageModel.CanRedo();
     }
@@ -505,14 +480,14 @@ impl CMainWindow {
     }
     pub unsafe fn OnDropFiles(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        let mut droppedfile: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+        let mut droppedfile: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     
         let hDrop: HDROP = wParam as HDROP;
         DragQueryFile(hDrop, 0, droppedfile.as_mut_ptr(), _countof!(droppedfile));
         DragFinish(hDrop);
     
         if (*this_).ConfirmSave() != 0 {
-            DoLoadImageFile((*this_).__base0.m_hWnd, droppedfile.as_mut_ptr(), TRUE);
+            DoLoadImageFile((*this_).__base0.m_hWnd, droppedfile.as_mut_ptr(), (TRUE) as BOOL);
         }
     
         return 0;
@@ -524,7 +499,7 @@ impl CMainWindow {
         (*this_).__base0.SetMenu((*this_).m_hMenu);
     
         // Create the status bar
-        let mut style: DWORD = SBARS_SIZEGRIP | WS_CHILD | (if registrySettings.ShowStatusBar { WS_VISIBLE } else { 0 });
+        let mut style: DWORD = SBARS_SIZEGRIP | WS_CHILD | (if ((registrySettings.ShowStatusBar) != 0) { WS_VISIBLE } else { 0 });
         g_hStatusBar = CreateWindowExW(0, STATUSCLASSNAME, core::ptr::null_mut(), style, 0, 0, 0, 0, (*this_).__base0.m_hWnd,
                                          core::ptr::null_mut(), g_hinstExe, core::ptr::null_mut());
         SendMessageW(g_hStatusBar, SB_SETMINHEIGHT, 21, 0);
@@ -533,29 +508,29 @@ impl CMainWindow {
         toolBoxContainer.DoCreate((*this_).__base0.m_hWnd);
     
         // Create the palette window
-        let rcEmpty: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 }; // Rely on WM_SIZE
-        style = WS_CHILD | (if registrySettings.ShowPalette { WS_VISIBLE } else { 0 });
-        paletteWindow.Create((*this_).__base0.m_hWnd, rcEmpty, core::ptr::null_mut(), style, WS_EX_STATICEDGE, 0);
+        let mut rcEmpty: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 }; // Rely on WM_SIZE
+        style = WS_CHILD | (if ((registrySettings.ShowPalette) != 0) { WS_VISIBLE } else { 0 });
+        paletteWindow.Create((*this_).__base0.m_hWnd, &mut rcEmpty, core::ptr::null_mut(), style, WS_EX_STATICEDGE, 0);
     
         // Create the canvas
         style = WS_CHILD | WS_GROUP | WS_HSCROLL | WS_VSCROLL | WS_VISIBLE;
-        canvasWindow.Create((*this_).__base0.m_hWnd, rcEmpty, core::ptr::null_mut(), style, WS_EX_CLIENTEDGE, 0);
+        canvasWindow.Create((*this_).__base0.m_hWnd, &mut rcEmpty, core::ptr::null_mut(), style, WS_EX_CLIENTEDGE, 0);
     
         // Create and show the miniature if necessary
-        if registrySettings.ShowThumbnail {
+        if ((registrySettings.ShowThumbnail) != 0) {
             miniature.DoCreate((*this_).__base0.m_hWnd);
-            miniature.__base0.ShowWindow(SW_SHOWNOACTIVATE);
+            miniature.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
         }
     
         // Set icon
-        (*this_).__base0.SendMessageW__0(WM_SETICON, ICON_BIG, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
-        (*this_).__base0.SendMessageW__0(WM_SETICON, ICON_SMALL, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
+        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_BIG) as WPARAM, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
+        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_SMALL) as WPARAM, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
     
         return 0;
     }
     pub unsafe fn OnDestroy(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        registrySettings.WindowPlacement.length = core::mem::size_of::<WINDOWPLACEMENT>();
+        registrySettings.WindowPlacement.length = (core::mem::size_of::<WINDOWPLACEMENT>()) as _;
         (*this_).__base0.GetWindowPlacement(core::ptr::addr_of_mut!(registrySettings.WindowPlacement));
     
         DoHtmlHelpW(core::ptr::null_mut(), core::ptr::null_mut(), HH_CLOSE_ALL, 0);
@@ -564,7 +539,7 @@ impl CMainWindow {
         {
             FreeLibrary(s_hHHCTRL_OCX);
             s_hHHCTRL_OCX = core::ptr::null_mut();
-            s_pHtmlHelpW = core::ptr::null_mut();
+            s_pHtmlHelpW = None;
         }
     
         (*this_).__base0.SetMenu(core::ptr::null_mut());
@@ -606,49 +581,49 @@ impl CMainWindow {
         //
         // Edit menu
         //
-        EnableMenuItem(menu, IDM_EDITUNDO, ENABLED_IF!((*this_).CanUndo()));
-        EnableMenuItem(menu, IDM_EDITREDO, ENABLED_IF!((*this_).CanRedo()));
-        EnableMenuItem(menu, IDM_EDITCUT, ENABLED_IF!(if textShown != 0 { hasTextSel } else { trueSelection }));
-        EnableMenuItem(menu, IDM_EDITCOPY, ENABLED_IF!(if textShown != 0 { hasTextSel } else { trueSelection }));
+        EnableMenuItem(menu, IDM_EDITUNDO, ENABLED_IF!((((*this_).CanUndo()) != 0)));
+        EnableMenuItem(menu, IDM_EDITREDO, ENABLED_IF!((((*this_).CanRedo()) != 0)));
+        EnableMenuItem(menu, IDM_EDITCUT, ENABLED_IF!(if textShown != 0 { ((hasTextSel) != 0) } else { ((trueSelection) != 0) }));
+        EnableMenuItem(menu, IDM_EDITCOPY, ENABLED_IF!(if textShown != 0 { ((hasTextSel) != 0) } else { ((trueSelection) != 0) }));
         EnableMenuItem(menu, IDM_EDITDELETESELECTION,
-                       ENABLED_IF!(if textShown != 0 { hasTextSel } else { trueSelection }));
-        EnableMenuItem(menu, IDM_EDITINVERTSELECTION, ENABLED_IF!(trueSelection));
-        EnableMenuItem(menu, IDM_EDITCOPYTO, ENABLED_IF!(trueSelection));
-        EnableMenuItem(menu, IDM_EDITPASTE, ENABLED_IF!((*this_).CanPaste()));
-        EnableMenuItem(menu, IDM_CROPSELECTION, ENABLED_IF!(trueSelection));
+                       ENABLED_IF!(if textShown != 0 { ((hasTextSel) != 0) } else { ((trueSelection) != 0) }));
+        EnableMenuItem(menu, IDM_EDITINVERTSELECTION, ENABLED_IF!(((trueSelection) != 0)));
+        EnableMenuItem(menu, IDM_EDITCOPYTO, ENABLED_IF!(((trueSelection) != 0)));
+        EnableMenuItem(menu, IDM_EDITPASTE, ENABLED_IF!((((*this_).CanPaste()) != 0)));
+        EnableMenuItem(menu, IDM_CROPSELECTION, ENABLED_IF!(((trueSelection) != 0)));
     
         //
         // View menu
         //
-        CheckMenuItem(menu, IDM_VIEWTOOLBOX, CHECKED_IF!(IsWindowVisible((toolBoxContainer).op_to_HWND())));
-        CheckMenuItem(menu, IDM_VIEWCOLORPALETTE, CHECKED_IF!(IsWindowVisible((paletteWindow).op_to_HWND())));
-        CheckMenuItem(menu, IDM_VIEWSTATUSBAR, CHECKED_IF!(IsWindowVisible(g_hStatusBar)));
-        CheckMenuItem(menu, IDM_FORMATICONBAR, CHECKED_IF!(IsWindowVisible((fontsDialog).op_to_HWND())));
-        EnableMenuItem(menu, IDM_FORMATICONBAR, ENABLED_IF!((toolsModel.GetActiveTool() == TOOL_TEXT) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM125, CHECKED_IF!((toolsModel.GetZoom() == 125) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM25, CHECKED_IF!((toolsModel.GetZoom() == 250) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM50, CHECKED_IF!((toolsModel.GetZoom() == 500) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM100, CHECKED_IF!((toolsModel.GetZoom() == 1000) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM200, CHECKED_IF!((toolsModel.GetZoom() == 2000) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM400, CHECKED_IF!((toolsModel.GetZoom() == 4000) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWZOOM800, CHECKED_IF!((toolsModel.GetZoom() == 8000) as BOOL));
-        CheckMenuItem(menu, IDM_VIEWSHOWGRID, CHECKED_IF!(g_showGrid));
-        CheckMenuItem(menu, IDM_VIEWSHOWMINIATURE, CHECKED_IF!(registrySettings.ShowThumbnail));
+        CheckMenuItem(menu, IDM_VIEWTOOLBOX, CHECKED_IF!(((IsWindowVisible((toolBoxContainer).op_to_HWND())) != 0)));
+        CheckMenuItem(menu, IDM_VIEWCOLORPALETTE, CHECKED_IF!(((IsWindowVisible((paletteWindow).op_to_HWND())) != 0)));
+        CheckMenuItem(menu, IDM_VIEWSTATUSBAR, CHECKED_IF!(((IsWindowVisible(g_hStatusBar)) != 0)));
+        CheckMenuItem(menu, IDM_FORMATICONBAR, CHECKED_IF!(((IsWindowVisible((fontsDialog).op_to_HWND())) != 0)));
+        EnableMenuItem(menu, IDM_FORMATICONBAR, ENABLED_IF!((((toolsModel.GetActiveTool() == TOOL_TEXT) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM125, CHECKED_IF!((((toolsModel.GetZoom() == 125) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM25, CHECKED_IF!((((toolsModel.GetZoom() == 250) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM50, CHECKED_IF!((((toolsModel.GetZoom() == 500) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM100, CHECKED_IF!((((toolsModel.GetZoom() == 1000) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM200, CHECKED_IF!((((toolsModel.GetZoom() == 2000) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM400, CHECKED_IF!((((toolsModel.GetZoom() == 4000) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWZOOM800, CHECKED_IF!((((toolsModel.GetZoom() == 8000) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_VIEWSHOWGRID, CHECKED_IF!(((g_showGrid) != 0)));
+        CheckMenuItem(menu, IDM_VIEWSHOWMINIATURE, CHECKED_IF!(((registrySettings.ShowThumbnail) != 0)));
     
         //
         // Image menu
         //
-        EnableMenuItem(menu, IDM_IMAGECROP, ENABLED_IF!(selectionModel.m_bShow));
-        EnableMenuItem(menu, IDM_IMAGEDELETEIMAGE, ENABLED_IF!((selectionModel.m_bShow == 0) as BOOL));
-        CheckMenuItem(menu, IDM_IMAGEDRAWOPAQUE, CHECKED_IF!((toolsModel.IsBackgroundTransparent() == 0) as BOOL));
+        EnableMenuItem(menu, IDM_IMAGECROP, ENABLED_IF!(((selectionModel.m_bShow) != 0)));
+        EnableMenuItem(menu, IDM_IMAGEDELETEIMAGE, ENABLED_IF!((((selectionModel.m_bShow == 0) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_IMAGEDRAWOPAQUE, CHECKED_IF!((((toolsModel.IsBackgroundTransparent() == 0) as BOOL) != 0)));
     
         //
         // Palette menu
         //
-        CheckMenuItem(menu, IDM_COLORSMODERNPALETTE, CHECKED_IF!((paletteModel.SelectedPalette() == PAL_MODERN) as BOOL));
-        CheckMenuItem(menu, IDM_COLORSOLDPALETTE, CHECKED_IF!((paletteModel.SelectedPalette() == PAL_OLDTYPE) as BOOL));
-        CheckMenuItem(menu, IDM_COLORSGRAYSCALE, CHECKED_IF!((paletteModel.SelectedPalette() == PAL_GRAYSCALE) as BOOL));
-        CheckMenuItem(menu, IDM_COLORSMONOCHROME, CHECKED_IF!((paletteModel.SelectedPalette() == PAL_MONOCHROME) as BOOL));
+        CheckMenuItem(menu, IDM_COLORSMODERNPALETTE, CHECKED_IF!((((paletteModel.SelectedPalette() == PAL_MODERN) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_COLORSOLDPALETTE, CHECKED_IF!((((paletteModel.SelectedPalette() == PAL_OLDTYPE) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_COLORSGRAYSCALE, CHECKED_IF!((((paletteModel.SelectedPalette() == PAL_GRAYSCALE) as BOOL) != 0)));
+        CheckMenuItem(menu, IDM_COLORSMONOCHROME, CHECKED_IF!((((paletteModel.SelectedPalette() == PAL_MONOCHROME) as BOOL) != 0)));
         return 0;
     }
     pub unsafe fn OnSize(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -703,52 +678,45 @@ impl CMainWindow {
     pub unsafe fn OnCommand(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         // Disable commands while dragging mouse
-        if canvasWindow.m_drawing != 0 && GetCapture() != 0 {
-            ATLTRACE(b"locking!\n\0".as_ptr() as *const i8);
+        if canvasWindow.m_drawing != 0 && GetCapture() != core::ptr::null_mut() {
+            ATLTRACE!(b"locking!\n\0".as_ptr() as *const i8);
             return 0;
         }
     
         let textShown: BOOL = (toolsModel.GetActiveTool() == TOOL_TEXT && IsWindowVisible(textEditWindow.op_to_HWND()) != 0) as BOOL;
-        'sw0: {
-            match LOWORD!(wParam) {
+        'sw: {
+            match (LOWORD!(wParam)) as u32 {
                 IDM_HELPINFO => {
-                    let mut infotitle = [0u16; 100];
-                    let mut infotext = [0u16; 200];
-                    LoadStringW(g_hinstExe, IDS_INFOTITLE, infotitle.as_mut_ptr(), _countof!(infotitle));
-                    LoadStringW(g_hinstExe, IDS_INFOTEXT, infotext.as_mut_ptr(), _countof!(infotext));
-                    ShellAboutW((*this_).__base0.m_hWnd, infotitle.as_ptr(), infotext.as_ptr(),
+                    let mut infotitle: [WCHAR; 100] = [0; 100];
+                    let mut infotext: [WCHAR; 200] = [0; 200];
+                    LoadStringW(g_hinstExe, IDS_INFOTITLE, infotitle.as_mut_ptr(), _countof!(infotitle) as INT);
+                    LoadStringW(g_hinstExe, IDS_INFOTEXT, infotext.as_mut_ptr(), _countof!(infotext) as INT);
+                    ShellAboutW((*this_).__base0.m_hWnd, infotitle.as_mut_ptr(), infotext.as_mut_ptr(),
                         LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)));
-                    break 'sw0;
                 }
                 IDM_HELPHELPTOPICS => {
                     DoHtmlHelpW((*this_).__base0.m_hWnd, CPP_COM_WSTR_461B74EEBD9E.as_ptr(), HH_DISPLAY_TOPIC, 0);
-                    break 'sw0;
                 }
                 IDM_FILEEXIT => {
                     (*this_).__base0.SendMessageW__0(WM_CLOSE, wParam, lParam);
-                    break 'sw0;
                 }
                 IDM_FILENEW => {
                     if (*this_).ConfirmSave() != 0 {
-                        InitializeImage(core::ptr::null_mut(), core::ptr::null_mut(), FALSE);
+                        InitializeImage(core::ptr::null_mut(), core::ptr::null_mut(), (FALSE) as BOOL);
                     }
-                    break 'sw0;
                 }
                 IDM_FILEOPEN => {
-                    let mut szFileName = [0u16; MAX_LONG_PATH];
-                    core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr(), szFileName.as_mut_ptr(), MAX_LONG_PATH);
-                    if (*this_).ConfirmSave() != 0 && (*this_).GetOpenFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                        DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_ptr(), TRUE);
+                    let mut szFileName: [WCHAR; (MAX_LONG_PATH) as _] = [0; (MAX_LONG_PATH) as _];
+                    core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr() as *const WCHAR, szFileName.as_mut_ptr(), (MAX_LONG_PATH) as _);
+                    if (*this_).ConfirmSave() != 0 && (*this_).GetOpenFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName) as INT) != 0 {
+                        DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_mut_ptr(), (TRUE) as BOOL);
                     }
-                    break 'sw0;
                 }
                 IDM_FILESAVE => {
-                    (*this_).saveImage(TRUE);
-                    break 'sw0;
+                    (*this_).saveImage((TRUE) as BOOL);
                 }
                 IDM_FILESAVEAS => {
-                    (*this_).saveImage(FALSE);
-                    break 'sw0;
+                    (*this_).saveImage((FALSE) as BOOL);
                 }
                 IDM_FILEPAGESETUP => {
                     // DUMMY: Shows the dialog only, no functionality
@@ -757,7 +725,6 @@ impl CMainWindow {
                     psd.lStructSize = core::mem::size_of::<PAGESETUPDLG>() as DWORD;
                     psd.hwndOwner = (*this_).__base0.m_hWnd;
                     PageSetupDlg(core::ptr::addr_of_mut!(psd));
-                    break 'sw0;
                 }
                 IDM_FILEPRINT => {
                     // TODO: Test whether it actually works
@@ -773,7 +740,7 @@ impl CMainWindow {
                     pd.nToPage = 0xffff;
                     pd.nMinPage = 1;
                     pd.nMaxPage = 0xffff;
-                    if PrintDlg(core::ptr::addr_of_mut!(pd)) == TRUE {
+                    if (PrintDlg(core::ptr::addr_of_mut!(pd))) as u32 == TRUE {
                         BitBlt(pd.hDC, 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), imageModel.GetDC(), 0, 0, SRCCOPY);
                         DeleteDC(pd.hDC);
                     }
@@ -783,59 +750,51 @@ impl CMainWindow {
                     if !pd.hDevNames.is_null() {
                         GlobalFree(pd.hDevNames);
                     }
-                    break 'sw0;
                 }
                 IDM_FILESEND => {
-                    canvasWindow.OnEndDraw(FALSE);
+                    canvasWindow.OnEndDraw((FALSE) as BOOL);
                     if OpenMailer((*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR) == 0 {
-                        ShowError(IDS_CANTSENDMAIL);
+                        ShowError((IDS_CANTSENDMAIL) as INT);
                     }
-                    break 'sw0;
                 }
                 IDM_FILEASWALLPAPERPLANE => {
                     RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_TILED);
-                    break 'sw0;
                 }
                 IDM_FILEASWALLPAPERCENTERED => {
                     RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_CENTERED);
-                    break 'sw0;
                 }
                 IDM_FILEASWALLPAPERSTRETCHED => {
                     RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_STRETCHED);
-                    break 'sw0;
                 }
                 IDM_FILE1 | IDM_FILE2 | IDM_FILE3 | IDM_FILE4 => {
-                    let iFile: INT = LOWORD!(wParam) as INT - IDM_FILE1;
+                    let iFile: INT = (LOWORD!(wParam) as INT) - (IDM_FILE1 as i32);
                     if (*this_).ConfirmSave() != 0 {
-                        DoLoadImageFile((*this_).__base0.m_hWnd, registrySettings.strFiles[iFile as usize].GetString(), TRUE);
+                        DoLoadImageFile((*this_).__base0.m_hWnd, registrySettings.strFiles[iFile as usize].GetString(), (TRUE) as BOOL);
                     }
-                    break 'sw0;
                 }
                 IDM_EDITUNDO => {
                     if textShown != 0 {
                         textEditWindow.__base0.PostMessageW(WM_UNDO, 0, 0);
-                        break 'sw0;
+                        break 'sw;
                     }
-                    canvasWindow.OnEndDraw(FALSE);
-                    imageModel.Undo(FALSE);
-                    break 'sw0;
+                    canvasWindow.OnEndDraw((FALSE) as BOOL);
+                    imageModel.Undo((FALSE) as BOOL);
                 }
                 IDM_EDITREDO => {
                     if textShown != 0 {
                         // There is no "WM_REDO" in EDIT control
-                        break 'sw0;
+                        break 'sw;
                     }
-                    canvasWindow.OnEndDraw(FALSE);
+                    canvasWindow.OnEndDraw((FALSE) as BOOL);
                     imageModel.Redo();
-                    break 'sw0;
                 }
                 IDM_EDITCOPY => {
                     if textShown != 0 {
                         textEditWindow.__base0.SendMessageW__0(WM_COPY, 0, 0);
-                        break 'sw0;
+                        break 'sw;
                     }
                     if selectionModel.m_bShow == 0 || (*this_).__base0.OpenClipboard() == 0 {
-                        break 'sw0;
+                        break 'sw;
                     }
     
                     EmptyClipboard();
@@ -843,72 +802,70 @@ impl CMainWindow {
                     selectionModel.TakeOff();
     
                     {
-                        let hbmCopy = selectionModel.GetSelectionContents();
-                        let hGlobal = BitmapToClipboardDIB(hbmCopy);
+                        let hbmCopy: HBITMAP = selectionModel.GetSelectionContents();
+                        let hGlobal: HGLOBAL = BitmapToClipboardDIB(hbmCopy);
                         if !hGlobal.is_null() {
                             SetClipboardData(CF_DIB, hGlobal);
                         } else {
                             ShowOutOfMemory();
                             imageModel.ClearHistory();
                         }
-                        DeleteObject(hbmCopy);
+                        DeleteObject((hbmCopy).cast());
                     }
     
                     CloseClipboard();
-                    break 'sw0;
                 }
                 IDM_EDITCUT => {
                     if textShown != 0 {
                         textEditWindow.__base0.SendMessageW__0(WM_CUT, 0, 0);
-                        break 'sw0;
+                        break 'sw;
                     }
                     /* Copy */
-                    (*this_).__base0.SendMessageW__0(WM_COMMAND, IDM_EDITCOPY, 0);
+                    (*this_).__base0.SendMessageW__0(WM_COMMAND, (IDM_EDITCOPY) as WPARAM, 0);
                     /* Delete selection */
-                    (*this_).__base0.SendMessageW__0(WM_COMMAND, IDM_EDITDELETESELECTION, 0);
-                    break 'sw0;
+                    (*this_).__base0.SendMessageW__0(WM_COMMAND, (IDM_EDITDELETESELECTION) as WPARAM, 0);
                 }
                 IDM_EDITPASTE => {
                     if textShown != 0 {
                         textEditWindow.__base0.SendMessageW__0(WM_PASTE, 0, 0);
-                        break 'sw0;
+                        break 'sw;
                     }
     
                     if (*this_).__base0.OpenClipboard() == 0 {
-                        break 'sw0;
+                        break 'sw;
                     }
     
                     // In many cases, CF_ENHMETAFILE provides a better image than CF_DIB
                     if IsClipboardFormatAvailable(CF_ENHMETAFILE) != 0 {
-                        let hEMF = GetClipboardData(CF_ENHMETAFILE) as HENHMETAFILE;
+                        let hEMF: HENHMETAFILE = GetClipboardData(CF_ENHMETAFILE) as HENHMETAFILE;
                         if !hEMF.is_null() {
-                            let hbm = BitmapFromHEMF(hEMF);
+                            let hbm: HBITMAP = BitmapFromHEMF(hEMF);
                             DeleteEnhMetaFile(hEMF);
                             if !hbm.is_null() {
                                 (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                                 CloseClipboard();
-                                break 'sw0;
+                                break 'sw;
                             }
                         }
                     }
     
                     // In many cases, CF_DIB provides a better image than CF_BITMAP
                     if IsClipboardFormatAvailable(CF_DIB) != 0 {
-                        let hbm = BitmapFromClipboardDIB(GetClipboardData(CF_DIB));
+                        let hbm: HBITMAP = BitmapFromClipboardDIB(GetClipboardData(CF_DIB));
                         if !hbm.is_null() {
                             (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                             CloseClipboard();
-                            break 'sw0;
+                            break 'sw;
                         }
                     }
     
                     // The last resort
                     if IsClipboardFormatAvailable(CF_BITMAP) != 0 {
-                        let hbm = GetClipboardData(CF_BITMAP) as HBITMAP;
+                        let hbm: HBITMAP = GetClipboardData(CF_BITMAP) as HBITMAP;
                         if !hbm.is_null() {
                             (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                             CloseClipboard();
-                            break 'sw0;
+                            break 'sw;
                         }
                     }
     
@@ -922,96 +879,82 @@ impl CMainWindow {
                     }
     
                     CloseClipboard();
-                    break 'sw0;
                 }
                 IDM_CROPSELECTION => {
-                    let hbmSelection = selectionModel.GetSelectionContents();
+                    let hbmSelection: HBITMAP = selectionModel.GetSelectionContents();
                     if !hbmSelection.is_null() {
                         imageModel.PushImageForUndo__1(hbmSelection);
                         selectionModel.HideSelection();
                         imageModel.NotifyImageChanged();
                     }
-                    break 'sw0;
                 }
                 IDM_EDITDELETESELECTION => {
                     if textShown != 0 {
                         textEditWindow.__base0.SendMessageW__0(WM_CLEAR, 0, 0);
-                        break 'sw0;
+                        break 'sw;
                     }
-                    'sw2: {
-                        match toolsModel.GetActiveTool() {
-                            TOOL_FREESEL | TOOL_RECTSEL => {
-                                selectionModel.DeleteSelection();
-                                break 'sw2;
-                            }
-                            TOOL_TEXT => {
-                                canvasWindow.OnEndDraw(TRUE);
-                                break 'sw2;
-                            }
-                            _ => {}
+                    match toolsModel.GetActiveTool() {
+                        TOOL_FREESEL | TOOL_RECTSEL => {
+                            selectionModel.DeleteSelection();
                         }
+    
+                        TOOL_TEXT => {
+                            canvasWindow.OnEndDraw((TRUE) as BOOL);
+                        }
+                        _ => {}
                     }
-                    break 'sw0;
                 }
                 IDM_EDITSELECTALL => {
                     if textShown != 0 {
-                        textEditWindow.__base0.SendMessageW__0(EM_SETSEL, 0, -(1));
-                        break 'sw0;
+                        textEditWindow.__base0.SendMessageW__0(EM_SETSEL, 0, -1);
+                        break 'sw;
                     }
-                    let hToolbar = FindWindowEx(toolBoxContainer.__base0.m_hWnd, core::ptr::null_mut(), TOOLBARCLASSNAME, core::ptr::null_mut());
-                    SendMessageW(hToolbar, TB_CHECKBUTTON, ID_RECTSEL, MAKELPARAM!(TRUE, 0));
+                    let hToolbar: HWND = FindWindowEx(toolBoxContainer.__base0.m_hWnd, core::ptr::null_mut(), TOOLBARCLASSNAME, core::ptr::null_mut());
+                    SendMessageW(hToolbar, TB_CHECKBUTTON, (ID_RECTSEL) as WPARAM, MAKELPARAM!(TRUE, 0));
                     toolsModel.selectAll();
-                    canvasWindow.__base0.Invalidate(TRUE);
-                    break 'sw0;
+                    canvasWindow.__base0.Invalidate((TRUE) as BOOL);
                 }
                 IDM_EDITCOPYTO => {
-                    let mut szFileName = [0u16; MAX_LONG_PATH];
-                    LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, szFileName.as_mut_ptr(), _countof!(szFileName));
-                    if (*this_).GetSaveFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                        let hbmSelection = selectionModel.GetSelectionContents();
+                    let mut szFileName: [WCHAR; (MAX_LONG_PATH) as _] = [0; (MAX_LONG_PATH) as _];
+                    LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, szFileName.as_mut_ptr(), _countof!(szFileName) as INT);
+                    if (*this_).GetSaveFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName) as INT) != 0 {
+                        let hbmSelection: HBITMAP = selectionModel.GetSelectionContents();
                         if hbmSelection.is_null() {
                             ShowOutOfMemory();
                             imageModel.ClearHistory();
-                            break 'sw0;
+                            break 'sw;
                         }
-                        SaveDIBToFile(hbmSelection, szFileName.as_ptr(), FALSE, GUID_NULL);
-                        DeleteObject(hbmSelection);
+                        SaveDIBToFile(hbmSelection, szFileName.as_mut_ptr(), (FALSE) as BOOL, &GUID_NULL);
+                        DeleteObject((hbmSelection).cast());
                     }
-                    break 'sw0;
                 }
                 IDM_EDITPASTEFROM => {
-                    let mut szFileName = [0u16; MAX_LONG_PATH];
-                    core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr(), szFileName.as_mut_ptr(), MAX_LONG_PATH);
-                    if (*this_).GetOpenFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                        let hbmNew = DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_ptr(), FALSE);
+                    let mut szFileName: [WCHAR; (MAX_LONG_PATH) as _] = [0; (MAX_LONG_PATH) as _];
+                    core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr() as *const WCHAR, szFileName.as_mut_ptr(), (MAX_LONG_PATH) as _);
+                    if (*this_).GetOpenFileNameW(szFileName.as_mut_ptr(), _countof!(szFileName) as INT) != 0 {
+                        let hbmNew: HBITMAP = DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_mut_ptr(), (FALSE) as BOOL);
                         if !hbmNew.is_null() {
                             (*this_).InsertSelectionFromHBITMAP(hbmNew, (*this_).__base0.m_hWnd);
                         }
                     }
-                    break 'sw0;
                 }
                 IDM_COLORSEDITPALETTE => {
                     let mut rgbColor: COLORREF = paletteModel.GetFgColor();
                     if (*this_).ChooseColorW(core::ptr::addr_of_mut!(rgbColor)) != 0 {
                         paletteModel.SetFgColor(rgbColor);
                     }
-                    break 'sw0;
                 }
                 IDM_COLORSMODERNPALETTE => {
                     paletteModel.SelectPalette(PAL_MODERN);
-                    break 'sw0;
                 }
                 IDM_COLORSOLDPALETTE => {
                     paletteModel.SelectPalette(PAL_OLDTYPE);
-                    break 'sw0;
                 }
                 IDM_COLORSGRAYSCALE => {
                     paletteModel.SelectPalette(PAL_GRAYSCALE);
-                    break 'sw0;
                 }
                 IDM_COLORSMONOCHROME => {
                     paletteModel.SelectPalette(PAL_MONOCHROME);
-                    break 'sw0;
                 }
                 IDM_IMAGEINVERTCOLORS => {
                     if selectionModel.m_bShow != 0 {
@@ -1019,75 +962,65 @@ impl CMainWindow {
                     } else {
                         imageModel.InvertColors();
                     }
-                    break 'sw0;
                 }
                 IDM_IMAGEDELETEIMAGE => {
                     imageModel.PushImageForUndo__0();
-                    Rect__0(imageModel.GetDC(), 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), paletteModel.GetBgColor(), paletteModel.GetBgColor(), 0, TRUE);
+                    Rect__0(imageModel.GetDC(), 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), paletteModel.GetBgColor(), paletteModel.GetBgColor(), 0, (TRUE) as i32);
                     imageModel.NotifyImageChanged();
-                    break 'sw0;
                 }
                 IDM_IMAGEROTATEMIRROR => {
                     {
-                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        let waitCursor: CWaitCursor = CWaitCursor__make_0();
                         canvasWindow.updateScrollPos(0, 0);
-                        'sw1: {
-                            match mirrorRotateDialog.DoModal(mainWindow.__base0.m_hWnd, 0) {
-                                1 => { /* flip horizontally */
-                                    if selectionModel.m_bShow != 0 {
-                                        selectionModel.FlipHorizontally();
-                                    } else {
-                                        imageModel.FlipHorizontally();
-                                    }
-                                    break 'sw1;
+                        match mirrorRotateDialog.DoModal(mainWindow.__base0.m_hWnd, 0) {
+                            1 => { /* flip horizontally */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.FlipHorizontally();
+                                } else {
+                                    imageModel.FlipHorizontally();
                                 }
-                                2 => { /* flip vertically */
-                                    if selectionModel.m_bShow != 0 {
-                                        selectionModel.FlipVertically();
-                                    } else {
-                                        imageModel.FlipVertically();
-                                    }
-                                    break 'sw1;
-                                }
-                                3 => { /* rotate 90 degrees */
-                                    if selectionModel.m_bShow != 0 {
-                                        selectionModel.RotateNTimes90Degrees(1);
-                                    } else {
-                                        imageModel.RotateNTimes90Degrees(1);
-                                    }
-                                    break 'sw1;
-                                }
-                                4 => { /* rotate 180 degrees */
-                                    if selectionModel.m_bShow != 0 {
-                                        selectionModel.RotateNTimes90Degrees(2);
-                                    } else {
-                                        imageModel.RotateNTimes90Degrees(2);
-                                    }
-                                    break 'sw1;
-                                }
-                                5 => { /* rotate 270 degrees */
-                                    if selectionModel.m_bShow != 0 {
-                                        selectionModel.RotateNTimes90Degrees(3);
-                                    } else {
-                                        imageModel.RotateNTimes90Degrees(3);
-                                    }
-                                    break 'sw1;
-                                }
-                                _ => {}
                             }
+                            2 => { /* flip vertically */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.FlipVertically();
+                                } else {
+                                    imageModel.FlipVertically();
+                                }
+                            }
+                            3 => { /* rotate 90 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(1);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(1);
+                                }
+                            }
+                            4 => { /* rotate 180 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(2);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(2);
+                                }
+                            }
+                            5 => { /* rotate 270 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(3);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(3);
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    break 'sw0;
                 }
                 IDM_IMAGEATTRIBUTES => {
                     if attributesDialog.DoModal(mainWindow.__base0.m_hWnd, 0) != 0 {
-                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        let waitCursor: CWaitCursor = CWaitCursor__make_0();
                         if attributesDialog.m_bBlackAndWhite != 0 && imageModel.IsBlackAndWhite() == 0 {
-                            let mut strText = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_LOSECOLOR));
-                            let mut strTitle = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_PROGRAMNAME));
+                            let strText = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_LOSECOLOR));
+                            let strTitle = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_PROGRAMNAME));
                             let id: INT = (*this_).__base0.MessageBoxW(strText.GetString(), strTitle.GetString(), MB_ICONINFORMATION | MB_YESNOCANCEL);
-                            if id != IDYES {
-                                break 'sw0;
+                            if (id) as u32 != IDYES {
+                                break 'sw;
                             }
     
                             imageModel.PushBlackAndWhite();
@@ -1098,11 +1031,10 @@ impl CMainWindow {
                             imageModel.Crop(attributesDialog.newWidth, attributesDialog.newHeight, 0, 0);
                         }
                     }
-                    break 'sw0;
                 }
                 IDM_IMAGESTRETCHSKEW => {
                     if stretchSkewDialog.DoModal(mainWindow.__base0.m_hWnd, 0) != 0 {
-                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        let waitCursor: CWaitCursor = CWaitCursor__make_0();
                         if selectionModel.m_bShow != 0 {
                             selectionModel.StretchSkew(stretchSkewDialog.percentage.x, stretchSkewDialog.percentage.y,
                                                        stretchSkewDialog.angle.x, stretchSkewDialog.angle.y);
@@ -1111,102 +1043,83 @@ impl CMainWindow {
                                                    stretchSkewDialog.angle.x, stretchSkewDialog.angle.y);
                         }
                     }
-                    break 'sw0;
                 }
                 IDM_IMAGEDRAWOPAQUE => {
                     toolsModel.SetBackgroundTransparent((toolsModel.IsBackgroundTransparent() == 0) as BOOL);
-                    break 'sw0;
                 }
                 IDM_IMAGECROP => {
-                    let hbmCopy = selectionModel.GetSelectionContents();
+                    let hbmCopy: HBITMAP = selectionModel.GetSelectionContents();
                     imageModel.PushImageForUndo__1(hbmCopy);
                     selectionModel.HideSelection();
-                    break 'sw0;
                 }
                 IDM_VIEWTOOLBOX => {
                     registrySettings.ShowToolBox = (toolBoxContainer.__base0.IsWindowVisible() == 0) as DWORD;
-                    toolBoxContainer.__base0.ShowWindow(if registrySettings.ShowToolBox != 0 { SW_SHOWNOACTIVATE } else { SW_HIDE });
+                    toolBoxContainer.__base0.ShowWindow(if registrySettings.ShowToolBox != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw0;
                 }
                 IDM_VIEWCOLORPALETTE => {
                     registrySettings.ShowPalette = (paletteWindow.__base0.IsWindowVisible() == 0) as DWORD;
-                    paletteWindow.__base0.ShowWindow(if registrySettings.ShowPalette != 0 { SW_SHOWNOACTIVATE } else { SW_HIDE });
+                    paletteWindow.__base0.ShowWindow(if registrySettings.ShowPalette != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw0;
                 }
                 IDM_VIEWSTATUSBAR => {
                     registrySettings.ShowStatusBar = (IsWindowVisible(g_hStatusBar) == 0) as DWORD;
-                    ShowWindow(g_hStatusBar, if registrySettings.ShowStatusBar != 0 { SW_SHOWNOACTIVATE } else { SW_HIDE });
+                    ShowWindow(g_hStatusBar, (if registrySettings.ShowStatusBar != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 }));
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw0;
                 }
                 IDM_FORMATICONBAR => {
                     if toolsModel.GetActiveTool() == TOOL_TEXT {
                         if fontsDialog.__base0.IsWindow() == 0 {
-                            fontsDialog.Create({ let _ = &mainWindow; 0 }.op_to_HWND());
+                            fontsDialog.Create(mainWindow.op_to_HWND(), 0);
                         }
                         registrySettings.ShowTextTool = (IsWindowVisible(fontsDialog.op_to_HWND()) == 0) as DWORD;
-                        fontsDialog.__base0.ShowWindow(if registrySettings.ShowTextTool != 0 { SW_SHOW } else { SW_HIDE });
+                        fontsDialog.__base0.ShowWindow(if registrySettings.ShowTextTool != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
                         fontsDialog.__base0.SendMessageW__0(DM_REPOSITION, 0, 0);
                     }
-                    break 'sw0;
                 }
                 IDM_VIEWSHOWGRID => {
                     g_showGrid = (g_showGrid == 0) as BOOL;
-                    canvasWindow.__base0.Invalidate(FALSE);
-                    break 'sw0;
+                    canvasWindow.__base0.Invalidate((FALSE) as BOOL);
                 }
                 IDM_VIEWSHOWMINIATURE => {
                     registrySettings.ShowThumbnail = (IsWindowVisible(miniature.op_to_HWND()) == 0) as DWORD;
                     miniature.DoCreate((*this_).__base0.m_hWnd);
-                    miniature.__base0.ShowWindow(if registrySettings.ShowThumbnail != 0 { SW_SHOWNOACTIVATE } else { SW_HIDE });
-                    break 'sw0;
+                    miniature.__base0.ShowWindow(if registrySettings.ShowThumbnail != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                 }
     
                 IDM_VIEWZOOM125 => {
                     canvasWindow.zoomTo(125, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM25 => {
                     canvasWindow.zoomTo(250, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM50 => {
                     canvasWindow.zoomTo(500, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM100 => {
                     canvasWindow.zoomTo(1000, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM200 => {
                     canvasWindow.zoomTo(2000, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM400 => {
                     canvasWindow.zoomTo(4000, 0, 0);
-                    break 'sw0;
                 }
                 IDM_VIEWZOOM800 => {
                     canvasWindow.zoomTo(8000, 0, 0);
-                    break 'sw0;
                 }
     
                 IDM_VIEWFULLSCREEN => {
                     // Create and show the fullscreen window
                     fullscreenWindow.DoCreate();
-                    fullscreenWindow.__base0.ShowWindow(SW_SHOWMAXIMIZED);
-                    break 'sw0;
+                    fullscreenWindow.__base0.ShowWindow((SW_SHOWMAXIMIZED) as i32);
                 }
     
                 IDM_CTRL_PLUS => {
-                    toolsModel.SpecialTweak(FALSE);
-                    break 'sw0;
+                    toolsModel.SpecialTweak((FALSE) as BOOL);
                 }
                 IDM_CTRL_MINUS => {
-                    toolsModel.SpecialTweak(TRUE);
-                    break 'sw0;
+                    toolsModel.SpecialTweak((TRUE) as BOOL);
                 }
                 _ => {}
             }
@@ -1219,11 +1132,11 @@ impl CMainWindow {
     
         if GetKeyState(0x11 /* VK_CONTROL */) < 0 { // Ctrl+Wheel
             if zDelta < 0 {
-                if toolsModel.GetZoom() > MIN_ZOOM {
+                if toolsModel.GetZoom() > (MIN_ZOOM as i32) {
                     canvasWindow.zoomTo(toolsModel.GetZoom() / 2, 0, 0);
                 }
             } else if zDelta > 0 {
-                if toolsModel.GetZoom() < MAX_ZOOM {
+                if toolsModel.GetZoom() < (MAX_ZOOM as i32) {
                     canvasWindow.zoomTo(toolsModel.GetZoom() * 2, 0, 0);
                 }
             }
@@ -1231,7 +1144,7 @@ impl CMainWindow {
             let mut nCount: UINT = 3;
             if GetAsyncKeyState(0x10 /* VK_SHIFT */) < 0 {
                 // #define SPI_GETWHEELSCROLLCHARS 0x006C  // Needed for pre-NT6 PSDK
-                SystemParametersInfoW(SPI_GETWHEELSCROLLCHARS, 0, core::ptr::addr_of_mut!(nCount), 0);
+                SystemParametersInfoW(SPI_GETWHEELSCROLLCHARS, 0, (core::ptr::addr_of_mut!(nCount)).cast(), 0);
                 let mut i: UINT = 0;
                 while i < nCount {
                     if zDelta < 0 {
@@ -1242,7 +1155,7 @@ impl CMainWindow {
                     i += 1;
                 }
             } else {
-                SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, core::ptr::addr_of_mut!(nCount), 0);
+                SystemParametersInfoW(SPI_GETWHEELSCROLLLINES, 0, (core::ptr::addr_of_mut!(nCount)).cast(), 0);
                 let mut i: UINT = 0;
                 while i < nCount {
                     if zDelta < 0 {
@@ -1278,18 +1191,18 @@ impl CMainWindow {
             if registrySettings.Bar2ID == BAR2ID_RIGHT
             {
                 hDWP = DeferWindowPos(hDWP, toolBoxContainer.op_to_HWND(), core::ptr::null_mut(),
-                                        rcSpace.right - CX_TOOLBAR, rcSpace.top,
-                                        CX_TOOLBAR, rcSpace.bottom - rcSpace.top,
+                                        rcSpace.right - (CX_TOOLBAR as i32), rcSpace.top,
+                                        (CX_TOOLBAR as i32), rcSpace.bottom - rcSpace.top,
                                         uFlags);
-                rcSpace.right -= CX_TOOLBAR;
+                rcSpace.right -= (CX_TOOLBAR as i32);
             }
             else
             {
                 hDWP = DeferWindowPos(hDWP, toolBoxContainer.op_to_HWND(), core::ptr::null_mut(),
                                         rcSpace.left, rcSpace.top,
-                                        CX_TOOLBAR, rcSpace.bottom - rcSpace.top,
+                                        (CX_TOOLBAR as i32), rcSpace.bottom - rcSpace.top,
                                         uFlags);
-                rcSpace.left += CX_TOOLBAR;
+                rcSpace.left += (CX_TOOLBAR as i32);
             }
         }
     
@@ -1298,18 +1211,18 @@ impl CMainWindow {
             if registrySettings.Bar1ID == BAR1ID_BOTTOM
             {
                 hDWP = DeferWindowPos(hDWP, paletteWindow.op_to_HWND(), core::ptr::null_mut(),
-                                        rcSpace.left, rcSpace.bottom - CY_PALETTE,
-                                        rcSpace.right - rcSpace.left, CY_PALETTE,
+                                        rcSpace.left, rcSpace.bottom - (CY_PALETTE as i32),
+                                        rcSpace.right - rcSpace.left, (CY_PALETTE as i32),
                                         uFlags);
-                rcSpace.bottom -= CY_PALETTE;
+                rcSpace.bottom -= (CY_PALETTE as i32);
             }
             else
             {
                 hDWP = DeferWindowPos(hDWP, paletteWindow.op_to_HWND(), core::ptr::null_mut(),
                                         rcSpace.left, rcSpace.top,
-                                        rcSpace.right - rcSpace.left, CY_PALETTE,
+                                        rcSpace.right - rcSpace.left, (CY_PALETTE as i32),
                                         uFlags);
-                rcSpace.top += CY_PALETTE;
+                rcSpace.top += (CY_PALETTE as i32);
             }
         }
     
@@ -1325,7 +1238,7 @@ impl CMainWindow {
     }
     pub unsafe fn saveImage(&mut self, mut overwrite: BOOL) {
         let this_: *mut Self = self;
-        canvasWindow.OnEndDraw(FALSE);
+        canvasWindow.OnEndDraw((FALSE) as BOOL);
     
         // Is the extension not supported?
         let pchDotExt: PWCHAR = PathFindExtensionW(addr_of_mut!(g_szFileName) as *mut u16);
@@ -1333,7 +1246,7 @@ impl CMainWindow {
             // Remove the extension
             PathRemoveExtensionW(addr_of_mut!(g_szFileName) as *mut u16);
             // No overwrite
-            overwrite = FALSE;
+            overwrite = (FALSE) as i32;
         }
     
         if g_isAFile != 0 && overwrite != 0 {
@@ -1354,20 +1267,20 @@ impl CMainWindow {
         let mut curHeight: i32 = imageModel.GetHeight();
     
         if width > curWidth || height > curHeight {
-            let mut shouldEnlarge: BOOL = TRUE;
+            let mut shouldEnlarge: BOOL = (TRUE) as i32;
     
             if g_askBeforeEnlarging != 0 {
                 let mut programname: [WCHAR; 20] = [0; 20];
                 let mut shouldEnlargePromptText: [WCHAR; 100] = [0; 100];
     
-                LoadStringW(g_hinstExe, IDS_PROGRAMNAME, programname.as_mut_ptr(), _countof!(programname));
-                LoadStringW(g_hinstExe, IDS_ENLARGEPROMPTTEXT, shouldEnlargePromptText.as_mut_ptr(), _countof!(shouldEnlargePromptText));
+                LoadStringW(g_hinstExe, IDS_PROGRAMNAME, programname.as_mut_ptr(), (_countof!(programname)) as i32);
+                LoadStringW(g_hinstExe, IDS_ENLARGEPROMPTTEXT, shouldEnlargePromptText.as_mut_ptr(), (_countof!(shouldEnlargePromptText)) as i32);
     
-                match (*this_).__base0.MessageBoxW(shouldEnlargePromptText.as_mut_ptr(), programname.as_mut_ptr(), MB_YESNOCANCEL | MB_ICONQUESTION) {
+                match ((*this_).__base0.MessageBoxW(shouldEnlargePromptText.as_mut_ptr(), programname.as_mut_ptr(), MB_YESNOCANCEL | MB_ICONQUESTION)) as u32 {
                     IDYES => {
                     }
                     IDNO => {
-                        shouldEnlarge = FALSE;
+                        shouldEnlarge = (FALSE) as i32;
                     }
                     IDCANCEL => {
                         return;
@@ -1392,15 +1305,15 @@ impl CMainWindow {
         toolsModel.SetActiveTool(TOOL_RECTSEL);
     
         selectionModel.InsertFromHBITMAP(bitmap, 0, 0, core::ptr::null_mut());
-        selectionModel.m_bShow = TRUE;
+        selectionModel.m_bShow = (TRUE) as i32;
         imageModel.NotifyImageChanged();
     }
     pub unsafe fn ConfirmSave(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        canvasWindow.OnEndDraw(FALSE);
+        canvasWindow.OnEndDraw((FALSE) as BOOL);
     
-        if imageModel.IsImageSaved() {
-            return TRUE;
+        if ((imageModel.IsImageSaved()) != 0) {
+            return (TRUE) as BOOL;
         }
     
         let mut strProgramName = CStringW::new();
@@ -1409,35 +1322,35 @@ impl CMainWindow {
         let mut strSavePromptText = CStringW::new();
         atl_format!(
             strSavePromptText,
-            CStringW::from_resource(IDS_SAVEPROMPTTEXT).GetString(),
-            PathFindFileName(g_szFileName.as_ptr())
+            IDS_SAVEPROMPTTEXT,
+            PathFindFileName(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR)
         );
     
-        match (*this_).__base0.MessageBoxW(
+        match ((*this_).__base0.MessageBoxW(
             strSavePromptText.GetString(),
             strProgramName.GetString(),
             MB_YESNOCANCEL | MB_ICONQUESTION,
-        ) {
+        )) as u32 {
             IDYES => {
-                (*this_).saveImage(TRUE);
+                (*this_).saveImage((TRUE) as BOOL);
                 return imageModel.IsImageSaved();
             }
             IDNO => {
-                return TRUE;
+                return (TRUE) as BOOL;
             }
             IDCANCEL => {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
             _ => {}
         }
     
-        return TRUE;
+        return (TRUE) as BOOL;
     }
     pub unsafe fn ProcessFileMenu(&mut self, hPopupMenu: HMENU) {
         let this_: *mut Self = self;
         let mut iItem: INT = 0;
-        while iItem < MAX_RECENT_FILES {
-            RemoveMenu(hPopupMenu, IDM_FILE1 + iItem, MF_BYCOMMAND);
+        while iItem < (MAX_RECENT_FILES as i32) {
+            RemoveMenu(hPopupMenu, IDM_FILE1 + (iItem) as u32, MF_BYCOMMAND);
             iItem += 1;
         }
     
@@ -1450,23 +1363,24 @@ impl CMainWindow {
         let cMenuItems: INT = GetMenuItemCount(hPopupMenu);
     
         let mut iItem: INT = 0;
-        while iItem < MAX_RECENT_FILES {
-            let strFile: *mut CStringW = &mut registrySettings.strFiles[iItem as usize];
-            if (*strFile).IsEmpty() {
+        while iItem < (MAX_RECENT_FILES as i32) {
+            let strFile: &mut CStringW = &mut registrySettings.strFiles[iItem as usize];
+            if strFile.IsEmpty() {
                 break;
             }
     
             // Condense the lengthy pathname by using '...'
-            let mut pathFile = CPath::from_ptr(strFile.GetString());
-            pathFile.CompactPathEx(MAX_RECENT_PATHNAME_DISPLAY as UINT, 0);
-            assert(wcslen(pathFile.GetString()) <= MAX_RECENT_PATHNAME_DISPLAY);
+            // #define MAX_RECENT_PATHNAME_DISPLAY 30
+            let mut pathFile = CPath__make_0(strFile.GetString());
+            pathFile.CompactPathEx(MAX_RECENT_PATHNAME_DISPLAY);
+            assert!(wcslen(pathFile.GetString()) <= (MAX_RECENT_PATHNAME_DISPLAY as usize));
     
             // Add an accelerator (by '&') to the item number for quick access
-            let mut szText = [0u16; 4 + MAX_RECENT_PATHNAME_DISPLAY + 1];
+            let mut szText = [0u16; (4 + MAX_RECENT_PATHNAME_DISPLAY + 1) as usize];
             StringCchPrintfW!(szText.as_mut_ptr(), _countof!(szText), CPP_COM_WSTR_773566D1D102.as_ptr(), iItem + 1, pathFile.GetString());
     
             let iMenuItem: INT = (cMenuItems - 2) + iItem;
-            InsertMenu(hPopupMenu, iMenuItem, MF_BYPOSITION | MF_STRING, IDM_FILE1 + iItem, szText.as_ptr());
+            InsertMenu(hPopupMenu, iMenuItem, MF_BYPOSITION | MF_STRING, IDM_FILE1 + (iItem) as u32, szText.as_ptr());
     
             iItem += 1;
         }

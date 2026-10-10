@@ -21,6 +21,7 @@ use core::ffi::c_void;
 
 
 
+
 impl CRegKey {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -174,5 +175,19 @@ impl CRegKey {
     pub unsafe fn op_to_HKEY(&mut self) -> HKEY {
         let this_: *mut Self = self;
         return (*this_).m_hKey;
+    }
+    pub unsafe fn _GetMultiStringSize(mut pszz: LPCTSTR) -> ULONG {
+        let mut count: usize = 0;
+        loop {
+            let len: usize = _tcslen(pszz);
+            count += len + 1;
+            pszz = pszz.add(len + 1);
+            if !(*pszz != TEXT('\0')) {
+                break;
+            }
+        }
+        count += 1;
+        ATLASSERT!(count * core::mem::size_of::<TCHAR>() <= ULONG_MAX);
+        return (count as ULONG) * (core::mem::size_of::<TCHAR>() as ULONG);
     }
 }
