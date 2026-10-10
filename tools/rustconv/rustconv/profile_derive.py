@@ -4230,13 +4230,15 @@ pub extern "C" fn rust_eh_personality() {{}}
     )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
     debug_block = (
-        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
-// out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
-// ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME): wine's own flag test on the default
+// channel, then ros_dbg_log -- win32macros-rust's WINE_*! macros, which expand HERE (the
+// channel storage and the ros_dbg_log extern are this crate's; `port resolve` writes them).
+// MACROS, never out-of-line fns: an out-of-line wrapper is an optimization barrier that
+// uncloaks latent ABI mismatches into ud2 (field manual §9.65).
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { win32macros_rust::WINE_TRACE!($($arg)*) }; }
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { win32macros_rust::WINE_ERR!($($arg)*) }; }
+#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
         else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns

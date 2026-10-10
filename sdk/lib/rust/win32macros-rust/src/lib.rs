@@ -1153,6 +1153,20 @@ pub unsafe fn debugstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_cha
     unsafe { wine_dbgstr_an(s, -1) }
 }
 
+/// wine/debug.h: `static __inline const char *wine_dbgstr_w(const WCHAR *s) { return
+/// wine_dbgstr_wn(s, -1); }`. An inline in the header, exported by nothing: extrac32 took a
+/// tree-consensus `extern fn wine_dbgstr_w` and failed to link on all three arches.
+#[inline(always)]
+pub unsafe fn wine_dbgstr_w(s: *const u16) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, -1) }
+}
+
+/// wine/debug.h: `wine_dbgstr_a(s)` is `wine_dbgstr_an(s, -1)`, an inline like the above.
+#[inline(always)]
+pub unsafe fn wine_dbgstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, -1) }
+}
+
 extern "C" {
     // `int __cdecl iswctype(wint_t, wctype_t)`, exported by both ntdll and msvcrt. Private:
     // consumers that declare it themselves keep their own declaration.
