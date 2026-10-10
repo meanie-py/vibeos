@@ -12,14 +12,14 @@ pub static CPP_COM_WSTR_F7E2D0733EDD: [WCHAR; 4] = [0x0061, 0x0066, 0x0078, 0x00
 
 use core::ffi::c_void;
 
-// ---- file-scope preamble (translated) ----
+// ---- file-scope preamble (translated; repaired by hand: the bought reply mixed the
+// model's commentary into the Rust) ----
+// main.cpp's function-pointer typedefs: Option<fn> is C's nullable function pointer.
 pub type FN_HtmlHelpW = Option<unsafe extern "system" fn(HWND, LPCWSTR, UINT, DWORD_PTR) -> HWND>;
-
-Wait — the rules require a raw pointer style for function pointer typedefs, and `NULL` must be null, not Option. Correcting:
-
-pub type FN_HtmlHelpW = unsafe extern "system" fn(HWND, LPCWSTR, UINT, DWORD_PTR) -> HWND;
-pub type FN_MAPISendMail = unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessage, FLAGS, ULONG) -> ULONG;
-pub type FN_MAPISendMailW = unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessageW, FLAGS, ULONG) -> ULONG;
+pub type FN_MAPISendMail =
+    Option<unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessage, FLAGS, ULONG) -> ULONG>;
+pub type FN_MAPISendMailW =
+    Option<unsafe extern "system" fn(LHANDLE, ULONG_PTR, lpMapiMessageW, FLAGS, ULONG) -> ULONG>;
 
 #[no_mangle]
 pub static mut g_askBeforeEnlarging: BOOL = FALSE;
@@ -36,16 +36,8 @@ pub static mut g_imageSaved: BOOL = FALSE;
 pub static mut g_showGrid: BOOL = FALSE;
 #[no_mangle]
 pub static mut g_hStatusBar: HWND = core::ptr::null_mut();
-static mut s_hHHCTRL_OCX: HINSTANCE = core::ptr::null_mut();
-static mut s_pHtmlHelpW: FN_HtmlHelpW_PTR = core::ptr::null_mut();
-
-Note: `s_pHtmlHelpW` needs a nullable function pointer type. Final correct declaration:
-
-pub type FN_HtmlHelpW = Option<unsafe extern "system" fn(HWND, LPCWSTR, UINT, DWORD_PTR) -> HWND>;
-
-static mut s_hHHCTRL_OCX_UNUSED_MARKER: u8 = 0;
-
-static OFNHOOKPROC_FILE_TYPE_PLACEHOLDER: () = ();
+static mut s_hHHCTRL_OCX: HINSTANCE = core::ptr::null_mut(); // HtmlHelpW needs "hhctrl.ocx"
+static mut s_pHtmlHelpW: FN_HtmlHelpW = None;
 
 
 

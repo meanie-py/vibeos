@@ -2407,6 +2407,27 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+def _rust_parse_error(code: str) -> str | None:
+    """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
+    style check: rustfmt reformats what it can parse and fails only on what it cannot."""
+    import shutil
+    import subprocess
+
+    exe = shutil.which("rustfmt")
+    if exe is None:
+        raise RuntimeError("rustfmt not found: the preamble parse gate cannot run")
+    res = subprocess.run(
+        [exe, "--edition", "2021", "--emit", "stdout"],
+        input=code,
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode == 0:
+        return None
+    first = next((ln for ln in res.stderr.splitlines() if ln.startswith("error")), "")
+    return first or f"rustfmt exit {res.returncode}"
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
     # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
@@ -4550,6 +4571,15 @@ def cmd_translate(args):
                     # hold `__RUSTCONV_WIDE_nnnn__`.
                     pre_res.rust_code = unseal_wide_literals(
                         scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
+                    )
+                bad = _rust_parse_error(pre_res.rust_code)
+                if bad is not None:
+                    # Never banked: mspaint's main.cpp preamble came back with the model's
+                    # commentary ("Wait -- the rules require ...") between two conflicting
+                    # definitions, was banked, and every replay re-served it as a parse error.
+                    raise ValueError(
+                        f"{c_file.name}: the preamble reply does not parse as Rust ({bad}); "
+                        "not banked -- re-run to buy it again"
                     )
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)
