@@ -935,7 +935,9 @@ def _explode_inline_sources(cml: str, target: str) -> str:
     target's own call (logonui's whole CMakeLists is four lines) had no line to comment and
     the flip refused. Only a one-line call is rewritten; a multi-line one is left alone.
     """
-    m = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M)
+    m = re.search(
+        rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M
+    )
     if m is None:
         return cml
     call = m.group(0)

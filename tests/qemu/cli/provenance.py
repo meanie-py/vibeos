@@ -354,7 +354,17 @@ def _cmake_named_crates(repo: str) -> frozenset[str] | None:
     """
     try:
         out = subprocess.run(
-            ["git", "-C", repo, "grep", "-ohE", r"[A-Za-z0-9_-]+-rust\b", "--", "*CMakeLists.txt", "*.cmake"],
+            [
+                "git",
+                "-C",
+                repo,
+                "grep",
+                "-ohE",
+                r"[A-Za-z0-9_-]+-rust\b",
+                "--",
+                "*CMakeLists.txt",
+                "*.cmake",
+            ],
             capture_output=True,
             text=True,
             check=False,

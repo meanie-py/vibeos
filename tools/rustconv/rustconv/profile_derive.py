@@ -544,7 +544,8 @@ def _unroll_target_foreach(text: str) -> str:
     def literal_list(name: str, before: int) -> list[str] | None:
         items: list[str] = []
         for m in re.finditer(
-            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
+            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b"
+            rf"|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
             text[:before],
             re.M,
         ):
@@ -558,7 +559,9 @@ def _unroll_target_foreach(text: str) -> str:
 
     def unroll(m: re.Match) -> str:
         var, spec, body = m.group(1), m.group(2).split(), m.group(3)
-        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(r"\bforeach\s*\(", body):
+        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(
+            r"\bforeach\s*\(", body
+        ):
             return m.group(0)
         if spec and spec[0] in ("IN", "RANGE"):
             return m.group(0)
@@ -1574,10 +1577,14 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
 
 
 _DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
-_FLAG_IN_CMAKE_RE = r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+_FLAG_IN_CMAKE_RE = (
+    r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+)
 
 
-def _foreign_build_flags(tus: list[Path], repo_root: Path, module_defines: set[str]) -> frozenset[str]:
+def _foreign_build_flags(
+    tus: list[Path], repo_root: Path, module_defines: set[str]
+) -> frozenset[str]:
     """Prologue guard macros that only some OTHER target's compile flags define.
 
     apphelp's sdbwrite.c opens `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
@@ -1600,6 +1607,7 @@ def _foreign_build_flags(tus: list[Path], repo_root: Path, module_defines: set[s
                 guards.add(g[0])
     out: set[str] = set()
     for macro in sorted(guards - named):
+
         def grep(pattern: str, *paths: str) -> bool:
             r = subprocess.run(
                 ["git", "-C", str(repo_root), "grep", "-qE", "-e", pattern, "--", *paths],
@@ -2321,7 +2329,9 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         # same-line-only pattern reports as UNOWNED — another false §9.112 alarm. And a
         # member need not start its line: cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on
         # one, and every one after the first was reported UNOWNED.
-        for m in re.finditer(rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
+        for m in re.finditer(
+            rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M
+        ):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
         for name, kind in _cxx_consts(text, alt).items():
@@ -2793,7 +2803,11 @@ def derive_source(
     # win32ss/printing/base) has its owners in SIBLING directories, which the ancestor walk
     # below never visits; offer those first, the preferred target's own directory before all.
     siblings = sorted(
-        (c.parent for c in source.parent.glob("*/CMakeLists.txt") if f"../{source.name}" in _read(c)),
+        (
+            c.parent
+            for c in source.parent.glob("*/CMakeLists.txt")
+            if f"../{source.name}" in _read(c)
+        ),
         key=lambda d: d.name != preferred_target,
     )
     for directory in [*siblings, *source.parents]:

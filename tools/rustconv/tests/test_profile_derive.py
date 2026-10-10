@@ -1102,7 +1102,10 @@ class TestMostlyDeadBodies:
 
     def test_a_module_that_is_mostly_a_disabled_ifdef_is_flagged(self, tmp_path: Path):
         dead = "\n".join(f"    int x{i} = {i};" for i in range(60))
-        body = f"int go(void) {{\n    int ret = 0;\n#ifdef HAVE_LDAP\n{dead}\n#endif\n    return ret;\n}}\n"
+        body = (
+            f"int go(void) {{\n    int ret = 0;\n#ifdef HAVE_LDAP\n{dead}\n#endif\n"
+            "    return ret;\n}}\n"
+        )
         root = self._tree_with_config(tmp_path, body)
         dp = derive(_mod(tmp_path), root)
         hits = [f for f in dp.findings if f.code == "MOSTLY_DEAD_BODIES"]
@@ -1559,7 +1562,10 @@ def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
     from rustconv.profile_derive import header_symbols
 
     h = tmp_path / "cmd.h"
-    h.write_text("typedef enum _T\n{\n    C_COMMAND,\n    C_MULTI, C_OR, C_AND, C_PIPE,\n    C_FOR, C_IF, C_REM\n} T;\n")
+    h.write_text(
+        "typedef enum _T\n{\n    C_COMMAND,\n    C_MULTI, C_OR, C_AND, C_PIPE,\n"
+        "    C_FOR, C_IF, C_REM\n} T;\n"
+    )
     wanted = frozenset({"C_MULTI", "C_OR", "C_PIPE", "C_IF", "C_REM"})
     assert set(header_symbols(h, wanted)) == wanted
 
@@ -1576,8 +1582,8 @@ def test_a_prologue_arm_only_another_target_compiles_is_dropped(tmp_path):
     (tmp_path / "tool" / "CMakeLists.txt").write_text("add_definitions(-DHOSTTOOL=1)\n")
     tu = tmp_path / "write.c"
     tu.write_text(
-        "#if !defined(HOSTTOOL)\n#include \"windef.h\"\n#else\n#include <typedefs.h>\n#endif\n"
-        "#ifdef _WIN64\n#include \"wide.h\"\n#endif\nint x;\n"
+        '#if !defined(HOSTTOOL)\n#include "windef.h"\n#else\n#include <typedefs.h>\n#endif\n'
+        '#ifdef _WIN64\n#include "wide.h"\n#endif\nint x;\n'
     )
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)

@@ -891,7 +891,9 @@ def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_re
     (rust / "inwork-rust").mkdir()
     (rust / "inwork-rust" / "Cargo.toml").write_text("[package]\nname = 'inwork-rust'\n")
     manifest = rust / "Cargo.toml"
-    manifest.write_text(manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",'))
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",')
+    )
     provenance._workspace_members.cache_clear()
     provenance._cmake_named_crates.cache_clear()
     assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
