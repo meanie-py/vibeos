@@ -3952,6 +3952,20 @@ pub fn max<T: PartialOrd>(a: T, b: T) -> T {
 """
 
 
+def _kernel_panic(m: CMakeModule) -> str:
+    """panic-common's flavour for a kernel module: "kernel" reports through DbgPrint and halts
+    with KeBugCheckEx, both ntoskrnl imports. A GDI font/display driver imports win32k ONLY
+    (bmfd, ftfd: `add_importlibs(ftfd win32k)`), so those link nothing and need "raw"."""
+    try:
+        text = (m.module_dir / "CMakeLists.txt").read_text(errors="replace")
+    except OSError:
+        return "kernel"
+    imports = re.findall(rf"add_importlibs\(\s*{re.escape(m.name)}\b([^)]*)\)", text, re.S)
+    if imports and not any(re.search(r"\bntoskrnl\b", i) for i in imports):
+        return "raw"
+    return "kernel"
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -4013,7 +4027,7 @@ def scaffold_crate(
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
         'ntdll-sys = { path = "../ntdll-sys" }\n'
         if m.is_usermode
-        else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
+        else f'panic-common = {{ path = "../panic-common", features = ["{_kernel_panic(m)}"] }}\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
         # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
         # as in ntdll), and the rest are header macros kernel C uses as much as user C.
