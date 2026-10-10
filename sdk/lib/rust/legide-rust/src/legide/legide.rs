@@ -347,14 +347,18 @@ unsafe extern "C" fn AtaLegacyChannelBuildResources(
         Descriptor = Descriptor.add(1);
         AtaLegacyMakePortResource(Descriptor, 0x435, 1);
     } else {
+        // vibeos, LEGIDE_DETECT only: detection was forced on an ACPI machine, where the two
+        // compatibility channels belong to the PCI IDE function whether or not pciidex has
+        // started it and set the claimed flags yet (legide runs first here).
+        let forced = FORCED_DETECTION.load(core::sync::atomic::Ordering::Relaxed);
         if (*LegacyChannel).IoBase == 0x1F0
-            && (*ConfigInfo).AtDiskPrimaryAddressClaimed != 0
+            && ((*ConfigInfo).AtDiskPrimaryAddressClaimed != 0 || forced)
         {
             return (FALSE as i32);
         }
 
         if (*LegacyChannel).IoBase == 0x170
-            && (*ConfigInfo).AtDiskSecondaryAddressClaimed != 0
+            && ((*ConfigInfo).AtDiskSecondaryAddressClaimed != 0 || forced)
         {
             return (FALSE as i32);
         }
@@ -701,6 +705,14 @@ unsafe extern "C" fn AtaOpenRegistryKey(
     return ZwOpenKey(KeyHandle, KEY_ALL_ACCESS, &mut ObjectAttributes);
 }
 
+/// Set when the LEGIDE_DETECT tripwire forced detection past DisableFirmwareMapper.
+static FORCED_DETECTION: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+extern "system" {
+    // ntoskrnl (tripwire.rs): whether this boot's tripwire config holds the exact token.
+    fn VibeTripwireHasToken(needle: *const u8, len: usize) -> u8;
+}
+
 unsafe extern "C" fn AtaLegacyShouldDetectChannels(
     mut RegistryPath: PUNICODE_STRING,
 ) -> BOOLEAN {
@@ -752,9 +764,16 @@ unsafe extern "C" fn AtaLegacyShouldDetectChannels(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    // vibeos divergence, test rigs only: the LEGIDE_DETECT tripwire probes anyway. The
+    // ACPI HAL always sets DisableFirmwareMapper and we ship no PC/AT HAL, so without it
+    // nothing below this line can run on any boot (`smoke --isa-ide`).
     if NT_SUCCESS!(Status) != false && KeyValue != 0 {
-        DPRINT!("Skipping legacy detection on a PnP system\n");
-        return FALSE;
+        if VibeTripwireHasToken(b"LEGIDE_DETECT".as_ptr(), b"LEGIDE_DETECT".len()) == 0 {
+            DPRINT!("Skipping legacy detection on a PnP system\n");
+            return FALSE;
+        }
+        FORCED_DETECTION.store(true, core::sync::atomic::Ordering::Relaxed);
+        DPRINT1!("LEGIDE_DETECT: probing the non-compatibility channels on a PnP system\n");
     }
 
     Status = AtaOpenRegistryKey(

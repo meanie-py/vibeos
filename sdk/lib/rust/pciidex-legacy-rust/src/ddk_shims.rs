@@ -4,7 +4,6 @@
 // provide matching no-op fns. Generic over arg type so any expression is accepted.
 #![allow(non_snake_case, unused_variables)]
 #[inline(always)] pub fn UNIMPLEMENTED_DBGBREAK() {}
-#[inline(always)] pub fn UNREFERENCED_PARAMETER<T>(_: T) {}
 #[inline(always)] pub fn ASSERT_FDO<T>(_: T) {}
 #[inline(always)] pub fn ASSERT_PDO<T>(_: T) {}
 #[inline(always)] pub fn ASSERTMSG<A, B>(_: A, _: B) {}

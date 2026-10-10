@@ -34,8 +34,6 @@ extern "C" {
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
 extern "C" {
-}
-extern "C" {
     fn CdConvertBigToLittleEndian(IrpContext: PIRP_CONTEXT, Src: *const u8, SrcLen: ULONG, Dst: *mut u8);
 }
 extern "C" {
@@ -61,9 +59,6 @@ extern "C" {
 }
 extern "C" {
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -772,7 +767,7 @@ pub unsafe extern "C" fn CdCleanupFileContext(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     loop {
         CurrentCompoundDirent = (core::ptr::addr_of_mut!((*FileContext).Dirents) as *mut COMPOUND_DIRENT).add(Count as usize);
@@ -797,7 +792,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     let RawDirent: *mut RAW_DIRENT;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN) as _);
 

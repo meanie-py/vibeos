@@ -1009,7 +1009,12 @@ def object_expansions(repo: Path, source: Path, names: set[str]) -> dict[str, st
         if argv is None:
             return {}
         defined = dict(_OBJ_DEFINE.findall(_dump(argv)))
-        want = sorted(n for n in names if n in defined)
+        # A name that is a macro on only SOME arches is not an alias: winuser.h makes
+        # `SetWindowLongPtrW` `SetWindowLongW` on i386 alone, and probing only the arches
+        # where it is defined collected one expansion and called it unanimous -- notepad's
+        # 64-bit window-proc subclassing went through the 32-bit SetWindowLongW.
+        names = {n for n in names if n in defined}
+        want = sorted(names)
         if not want:
             return {}
         probe = "\n".join(f"__RCV_BEGIN_{n}__ {n} __RCV_END__" for n in want)
@@ -1017,7 +1022,7 @@ def object_expansions(repo: Path, source: Path, names: set[str]) -> dict[str, st
         for n in want:
             m = re.search(rf"__RCV_BEGIN_{n}__(.*?)__RCV_END__", text, re.S)
             per.setdefault(n, set()).add(" ".join(m.group(1).split()) if m else "")
-    return {n: ex.pop() for n, ex in per.items() if len(ex) == 1 and len(per) and "" not in ex}
+    return {n: ex.pop() for n, ex in per.items() if n in names and len(ex) == 1 and "" not in ex}
 
 
 _C_ESCAPES = {"n": 10, "t": 9, "r": 13, "0": 0, "\\": 92, '"': 34, "'": 39, "a": 7, "b": 8}

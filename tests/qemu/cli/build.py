@@ -625,6 +625,54 @@ def _maybe_canonize(
     return True
 
 
+def _stage_payloads(run, repo: Path, build_dir: Path, arch: str):
+    """Build the env's payload selection, then stamp it into the build dir. Returns
+    (selection, the loaded compile.py module), or None (with PAYLOAD_BUILD_FAIL on
+    `run`) when a payload would not build.
+
+    The stamp persists VIBEOS_PAYLOAD/VIBEOS_DOOM BEFORE ninja runs the media
+    steps, so env-less rebuilds (conftest's clean-build `ninja livecd`, raw
+    canon-run ninja, smoke's net stage) reproduce the same media instead of
+    silently reverting the payload set (the 2026-07-07 doom-clobber incident).
+    Front door sets or CLEARS it: a build with no selection in env stamps <none>
+    (docs/engineering/payload-harness-design.md).
+
+    It is written only after the payloads built: the stamp is smoke's sole
+    evidence of what the media carries, and one written ahead of a failure claims
+    a payload the untouched media lacks -- the next smoke's payload-check then
+    passes and boots ×N for a marker nothing can print (1h23m lost to a refused
+    appstorm64 rebuild, 2026-10-09). On failure the old stamp stands, still
+    describing the old media."""
+    import importlib.util
+    import io
+
+    spec = importlib.util.spec_from_file_location(
+        "payload_compile", repo / "tools" / "payloads" / "compile.py"
+    )
+    assert spec is not None and spec.loader is not None
+    payload_compile = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(payload_compile)
+
+    wanted = payload_compile.resolve_env_payloads(os.environ)
+    if wanted:
+        # A payload binary older than its source would boot the old test: rebuild it
+        # here, where the media step is about to stage it. compile.py dies loudly on a
+        # failed build; surface that as a classified build failure.
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                rebuilt = payload_compile.ensure_built(wanted, arch)
+        except SystemExit:
+            why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
+            run.classification = "PAYLOAD_BUILD_FAIL"
+            run.add(Stage("payloads", status="fail", detail=",".join(wanted), salient=why[:6]))
+            return None
+        detail = ",".join(wanted) + (f" (rebuilt {','.join(rebuilt)})" if rebuilt else "")
+        run.add(Stage("payloads", status="ok", detail=detail))
+    payload_compile.write_stamp(build_dir)
+    return wanted, payload_compile
+
+
 def _isolation_preflight(run, repo: Path, build_dir: Path) -> bool:
     """Footgun guard (the 2026-07-04 dedup incident, both failure modes): a
     multi-link file inside a build tree means some cross-worktree hardlink
@@ -1021,41 +1069,10 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
             run.add(Stage("storage-config", status="fail", exit=cp.returncode))
             return run.finalize(repo)
 
-    # --- payload selection stamp (docs/engineering/payload-harness-design.md) ---
-    # Persist the env's VIBEOS_PAYLOAD/VIBEOS_DOOM selection into the build dir
-    # BEFORE ninja runs the media steps, so env-less rebuilds (conftest's
-    # clean-build `ninja livecd`, raw canon-run ninja, smoke's net stage)
-    # reproduce the same media instead of silently reverting the payload set
-    # (the 2026-07-07 doom-clobber incident). Front door sets or CLEARS it:
-    # a build with no selection in env stamps <none>.
-    import importlib.util
-
-    _spec = importlib.util.spec_from_file_location(
-        "payload_compile", repo / "tools" / "payloads" / "compile.py"
-    )
-    assert _spec is not None and _spec.loader is not None
-    _payload_compile = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_payload_compile)
-
-    stamped = _payload_compile.write_stamp(build_dir)
-    if stamped:
-        # A payload binary older than its source would boot the old test: rebuild it
-        # here, where the media step is about to stage it. compile.py dies loudly on a
-        # failed build; surface that as a classified build failure.
-        import contextlib
-        import io
-
-        err = io.StringIO()
-        try:
-            with contextlib.redirect_stderr(err):
-                rebuilt = _payload_compile.ensure_built(stamped, arch)
-        except SystemExit:
-            why = [ln for ln in err.getvalue().strip().splitlines() if ln.strip()]
-            run.classification = "PAYLOAD_BUILD_FAIL"
-            run.add(Stage("payloads", status="fail", detail=",".join(stamped), salient=why[:6]))
-            return run.finalize(repo)
-        detail = ",".join(stamped) + (f" (rebuilt {','.join(rebuilt)})" if rebuilt else "")
-        run.add(Stage("payloads", status="ok", detail=detail))
+    staged = _stage_payloads(run, repo, build_dir, arch)
+    if staged is None:
+        return run.finalize(repo)
+    stamped, _payload_compile = staged
 
     if cold:
         _clean(run, repo, arch)
@@ -1330,6 +1347,8 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     # lane green, the fresh integration tree red. After this a warm build dir holds
     # what a fresh build of the same targets would. Only files ninja logged
     # building are candidates (tools/ninja_closure_prune.py).
+    import importlib.util
+
     _spec = importlib.util.spec_from_file_location(
         "ninja_closure_prune", repo / "tools" / "ninja_closure_prune.py"
     )

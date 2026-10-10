@@ -47,6 +47,7 @@ unsafe extern "C" fn AtaTimQueryPioModeSupport(
         }
 
         if CycleTime == 0 {
+            WARN!(b"Device '%s' returned zero cycle time\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr());
             NT_VERIFY!(_BitScanReverse(&raw mut BestMode, SupportedMode));
             CycleTime = AtapModeToCycleTime[BestMode as usize];
         }

@@ -297,6 +297,8 @@ unsafe extern "C" fn AtaAhciHbaRequestOsOwnership(mut IoBase: PVOID) {
         KeStallExecutionProcessor(10);
         i = i.wrapping_add(1);
     }
+
+    WARN!(b"Unable to acquire the OS semaphore %08lx\n\0".as_ptr() as *const i8, Control);
 }
 
 unsafe extern "C" fn AtaAhciIsPortRemovable(
@@ -575,6 +577,7 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
     }
 
     if (*Controller).InterruptDesc.Type != CmResourceTypeInterrupt {
+        ERR!(b"No interrupt resource\n\0".as_ptr() as *const i8);
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
@@ -627,6 +630,7 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
         i = i.wrapping_sub(1);
     }
     if i == 0 {
+        ERR!(b"HBA reset failed %08lx\n\0".as_ptr() as *const i8, GlobalControl);
         return STATUS_IO_TIMEOUT;
     }
 
@@ -683,6 +687,11 @@ pub unsafe extern "C" fn AhciGetControllerProperties(
         FALSE,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(
+            b"Could not connect to interrupt %lu, status 0x%lx\n\0".as_ptr() as *const i8,
+            (*InterruptDesc).u.Interrupt.Vector,
+            Status,
+        );
         return Status;
     }
 

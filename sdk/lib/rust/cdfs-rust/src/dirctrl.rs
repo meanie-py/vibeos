@@ -15,8 +15,6 @@ extern "C" {
 }
 
 extern "C" {
-}
-extern "C" {
     fn CdAcquireVcbShared(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Exclusive: BOOLEAN) -> u8;
 }
 extern "C" {

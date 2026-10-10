@@ -494,8 +494,8 @@ pub unsafe extern "system" fn AfdConnectedSocketReadData(
     let ListEntry: PLIST_ENTRY;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
-    UNREFERENCED_PARAMETER(Short as usize as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(Short as usize as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
@@ -647,7 +647,7 @@ unsafe fn packet_socket_recv_complete_impl(
     let mut NextIrpEntry: PLIST_ENTRY;
     let mut DatagramRecvEntry: PLIST_ENTRY;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as *const i8, FCB);
 

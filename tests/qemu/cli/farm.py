@@ -245,13 +245,10 @@ def farm(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
 
     # Same shape for --ahci: smoke's `_ahci_check` fails any boot that did not
-    # actually run uniata's AHCI path, so the soak cannot bank IDE boots as AHCI.
+    # actually run an AHCI driver, so the soak cannot bank IDE boots as AHCI.
     polite = bool(getattr(args, "polite", False))
     ahci = bool(getattr(args, "ahci", False))
     if ahci:
-        if any(archcfg.base_arch(a) == "arm64" for a in arches):
-            print("[farm] --ahci is x86-only (arm64 boots a ramdisk, no IDE CD to move)")
-            return 1
         os.environ["VIBEOS_AHCI_CD"] = "1"
 
     # Farming stale media produces garbage data — same hard boundary as smoke.

@@ -4,7 +4,7 @@
 export VIBEOS_BENCH_BOARD=pi5
 export PI4_BENCH=${PI5_BENCH:-/mnt/d/home/vibeos-rpi5-setup}
 export PI4_PICO_HOST=${PI5_PICO_HOST:-picousb}
-export PI4_HDMI_VID=${PI5_HDMI_VID:-345f}
+export PI4_HDMI_VID=${PI5_HDMI_VID:-534d}
 # The second Shelly plug (a Plug US Gen4, like the Pi 4's; 192.168.1.87 on 2026-10-05).
 export PI4_PLUG=${PI5_PLUG:-shellyplugusg4-acebe6f18e28}
 [ -n "${PI5_PLUG_PASS:-}" ] && export PI4_PLUG_PASS=$PI5_PLUG_PASS

@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-from tools.scan_dowhile_continue import scan_macros, scan_text
+from tools.scan_dowhile_continue import scan_macros, scan_text, scan_while_steps
 
 BUGGY = """
 fn register(ctx: *mut Ctx) {
@@ -108,3 +108,67 @@ def test_macro_advancing_after_its_body_is_flagged():
 
 def test_macro_advancing_first_or_outside_a_loop_is_clean():
     assert scan_macros(MACRO_FIXED) == []
+
+
+# cmlib HvValidateHive (2026-10): the C `for (BlockIndex = 0; ..;)` ran `BlockIndex++`
+# before its `continue`; the Rust `while` did not, and spun on the first NULL bin.
+STEP_BUGGY = """
+fn validate(hive: *mut Hive, len: u32) {
+    let mut i = 0;
+    while i < len {
+        if bin(hive, i) == 0 {
+            continue;
+        }
+        if odd(i) {
+            i += 2;
+        } else if skip(i) {
+            continue; // the update above is in a sibling arm: does not cover this
+        }
+        i += 1;
+    }
+}
+"""
+
+STEP_COVERED = """
+fn a(len: u32) {
+    let mut i = 0;
+    while i < len {
+        if bad(i) {
+            i += 1;
+            continue;
+        }
+        i += 1;
+    }
+}
+fn b(head: *mut Entry) {
+    let mut e = (*head).next;
+    while e != head {
+        let cur = e;
+        e = (*e).next; // advanced at the top: every continue below is covered
+        if skip(cur) {
+            continue;
+        }
+        work(cur);
+        e = (*cur).next;
+    }
+}
+fn c(len: u32) {
+    let mut i = 0;
+    while i < len {
+        for j in 0..4 {
+            if j == 1 { continue; } // the for's own
+        }
+        i += 1;
+    }
+}
+"""
+
+
+def test_a_continue_past_the_trailing_step_is_flagged():
+    assert [(fn, var, n) for _, fn, var, n in scan_while_steps(STEP_BUGGY)] == [
+        ("validate", "i", 2)
+    ]
+
+
+def test_a_step_in_an_enclosing_block_or_a_nested_loop_continue_is_clean():
+    assert scan_while_steps(STEP_COVERED) == []

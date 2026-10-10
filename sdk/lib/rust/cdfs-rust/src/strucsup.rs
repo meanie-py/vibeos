@@ -28,8 +28,6 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-}
-extern "C" {
     fn CdAllocateFcbIndex(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
 }
 extern "C" {
@@ -52,9 +50,6 @@ extern "C" {
 }
 extern "C" {
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
 }
 extern "C" {
     fn _SEH2_AbnormalTermination() -> i32;
@@ -450,7 +445,7 @@ pub unsafe extern "C" fn CdInitializeVcb(
 ) {
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( IrpContext );
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     // RtlZeroMemory( Vcb, sizeof( VCB ));
     core::ptr::write_bytes(Vcb as *mut u8, 0, core::mem::size_of::<VCB>());
@@ -879,7 +874,7 @@ pub unsafe extern "C" fn CdDeleteVcb(
         PAGED_CODE!();
         ASSERT_EXCLUSIVE_CDDATA();
         ASSERT_EXCLUSIVE_VCB(Vcb);
-        UNREFERENCED_PARAMETER(IrpContext);
+        UNREFERENCED_PARAMETER!(IrpContext);
 
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).Vpb) as *mut *mut core::ffi::c_void);
@@ -1161,7 +1156,7 @@ pub unsafe extern "C" fn CdCreateCcb(
     let mut NewCcb: *mut CCB;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     NewCcb = CdAllocateCcb(IrpContext);
     RtlZeroMemory(NewCcb as *mut core::ffi::c_void, core::mem::size_of::<CCB>());

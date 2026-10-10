@@ -1,5 +1,7 @@
 """sdk_macros: SDK header macros lowered from the preprocessor's own expansion."""
 
+import re
+
 import pytest
 
 from rustconv import sdk_macros
@@ -152,15 +154,44 @@ def test_a_widl_wrapper_the_arches_disagree_on_is_generated_per_arch(tmp_path):
     assert "cfg" not in out["IZone_Release"]
     destroy = out["IZone_Destroy"]
     assert destroy.count("pub unsafe fn IZone_Destroy") == 3
-    assert '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)' in destroy
+    assert (
+        '#[cfg(target_arch = "x86")]\n#[inline]\npub unsafe fn IZone_Destroy(This: *mut IZone, dwEnum: u64)'
+        in destroy
+    )
 
 
 def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
     vtbl = ISLAND_VTBL.replace(
         "dwEnum: DWORD)>",
-        "cb: ::core::option::Option<unsafe extern \"C\" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>",
+        'cb: ::core::option::Option<unsafe extern "C" fn(x: DWORD) -> BOOL>, n: DWORD) -> HRESULT>',
     )
     for arch in ("amd64", "arm64", "i386"):
         (tmp_path / f"types_{arch}.rs").write_text(vtbl)
     out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy"})["IZone_Destroy"]
     assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")
+
+
+def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
+    """winuser.h makes `SetWindowLongPtrW` a macro on i386 only. One arch's expansion is not
+    unanimity: notepad's 64-bit subclassing was routed through the 32-bit SetWindowLongW."""
+    dumps = {
+        "i386": "#define SetWindowLongPtrW SetWindowLongW\n#define StringCchCopy StringCchCopyW\n",
+        "amd64": "#define StringCchCopy StringCchCopyW\n",
+        "arm64": "#define StringCchCopy StringCchCopyW\n",
+    }
+    monkeypatch.setattr(sdk_macros, "compile_argv", lambda _r, arch, _s: [arch])
+    monkeypatch.setattr(sdk_macros, "_dump", lambda argv: dumps[argv[0]])
+
+    def preprocess(argv, _source, probe):
+        defined = dict(sdk_macros._OBJ_DEFINE.findall(dumps[argv[0]]))
+        return re.sub(
+            r"(__RCV_BEGIN_\w+__) (\w+) (__RCV_END__)",
+            lambda m: f"{m.group(1)} {defined.get(m.group(2), m.group(2))} {m.group(3)}",
+            probe,
+        )
+
+    monkeypatch.setattr(sdk_macros, "_preprocess", preprocess)
+    got = sdk_macros.object_expansions(
+        tmp_path, tmp_path / "x.c", {"SetWindowLongPtrW", "StringCchCopy"}
+    )
+    assert got == {"StringCchCopy": "StringCchCopyW"}

@@ -95,8 +95,6 @@ extern "C" {
     fn _SEH2_AbnormalTermination() -> BOOLEAN;
 }
 extern "C" {
-}
-extern "C" {
     fn FsRtlDismountComplete(TargetDeviceObject: *mut DEVICE_OBJECT, Status: NTSTATUS);
 }
 extern "C" {
