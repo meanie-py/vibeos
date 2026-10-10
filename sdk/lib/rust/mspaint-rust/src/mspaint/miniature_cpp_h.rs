@@ -42,7 +42,7 @@ impl CMiniatureWindow {
         LoadStringW(g_hinstExe, IDS_MINIATURETITLE, strTitle.as_mut_ptr(), (_countof!(strTitle)) as i32);
     
         let style: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
-        return (*this_).Create(hwndParent, rc, strTitle.as_mut_ptr(), style, WS_EX_PALETTEWINDOW);
+        return (*this_).Create(hwndParent, &mut rc, strTitle.as_mut_ptr(), style, WS_EX_PALETTEWINDOW);
     }
     pub unsafe fn OnMove(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;

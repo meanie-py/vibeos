@@ -235,7 +235,7 @@ pub unsafe extern "C" fn SetFileInfo(name: LPCWSTR, pFound: LPWIN32_FIND_DATAW, 
     let mut strTitle = CStringW::new();
     atl_format!(
         strTitle,
-        IDS_WINDOWTITLE,
+        &IDS_WINDOWTITLE,
         PathFindFileNameW(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR)
     );
     mainWindow.__base0.SetWindowTextW(strTitle.GetString());

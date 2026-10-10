@@ -58,7 +58,7 @@ impl CStyledCursor {
         }
     
         if !(*this_).m_hCursor.is_null() {
-            let _ = DestroyCursor((*this_).m_hCursor);
+            DestroyCursor((*this_).m_hCursor);
         }
     
         (*this_).m_hCursor = CStyledCursor::CreateStyledCursor(style, zoom, radius, color, is_rubber);
@@ -213,7 +213,7 @@ impl CCanvasWindow {
         let this_: *mut Self = self;
         (*this_).m_drawing = (FALSE) as i32;
         toolsModel.OnEndDraw(bCancel);
-        (*this_).__base0.Invalidate((FALSE) as i32);
+        (*this_).__base0.Invalidate((FALSE) as BOOL);
     }
     pub unsafe fn updateScrollRange(&mut self) {
         let this_: *mut Self = self;
@@ -286,12 +286,12 @@ impl CCanvasWindow {
     pub unsafe fn getNewZoomRect(&mut self, rcView: &mut CRect, newZoom: INT, ptTarget: CPoint) {
         let this_: *mut Self = self;
         let mut rcImage: CRect = CRect__make_0();
-        (*this_).GetImageRect(&mut (rcImage).__base0);
-        (*this_).ImageToCanvas__1(&mut (rcImage).__base0);
+        (*this_).GetImageRect(&mut rcImage.__base0);
+        (*this_).ImageToCanvas__1(&mut rcImage.__base0);
     
         // Calculate the zoom rectangle
         let oldZoom: INT = toolsModel.GetZoom();
-        (*this_).__base0.GetClientRect(rcView);
+        (*this_).__base0.GetClientRect((rcView.op_to_tagRECT()).cast());
         let cxView: LONG = rcView.__base0.right * oldZoom / newZoom;
         let cyView: LONG = rcView.__base0.bottom * oldZoom / newZoom;
         rcView.SetRect(
@@ -324,7 +324,7 @@ impl CCanvasWindow {
     pub unsafe fn zoomTo(&mut self, newZoom: INT, left: LONG, top: LONG) {
         let this_: *mut Self = self;
         let mut pt: POINT = POINT { x: left, y: top };
-        (*this_).CanvasToImage__0(&mut pt, (FALSE) as i32);
+        (*this_).CanvasToImage__0(&mut pt, (FALSE) as BOOL);
     
         toolsModel.SetZoom(newZoom);
         (*this_).ImageToCanvas__0(&mut pt);
@@ -333,11 +333,11 @@ impl CCanvasWindow {
     
         (*this_).updateScrollRange();
         (*this_).updateScrollPos(pt.x, pt.y);
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
     }
     pub unsafe fn CanvasHitTest(&mut self, pt: POINT) -> HITTEST {
         let this_: *mut Self = self;
-        if selectionModel.m_bShow != 0 || IsWindowVisible(textEditWindow) != 0 {
+        if selectionModel.m_bShow != 0 || IsWindowVisible(textEditWindow.op_to_HWND()) != 0 {
             return HIT_INNER;
         }
         let mut rcBase: RECT = (*this_).GetBaseRect();
@@ -355,7 +355,7 @@ impl CCanvasWindow {
         let this_: *mut Self = self;
         // This is the target area we have to draw on
         let mut rcCanvasDraw: CRect = CRect__make_0();
-        rcCanvasDraw.IntersectRect(core::ptr::addr_of!(*rcClient), core::ptr::addr_of!(*rcPaint));
+        rcCanvasDraw.IntersectRect(rcClient as *const RECT, rcPaint as *const RECT);
     
         // Calculate image size
         let mut rcImage: CRect = CRect__make_0();
@@ -381,15 +381,18 @@ impl CCanvasWindow {
     
         // Draw the sizeboxes if necessary
         let mut rcBase: RECT = (*this_).GetBaseRect();
-        if selectionModel.m_bShow == 0 && IsWindowVisible(textEditWindow) == 0 {
+        if selectionModel.m_bShow == 0 && IsWindowVisible(textEditWindow.op_to_HWND()) == 0 {
             drawSizeBoxes(hdcMem0, core::ptr::addr_of_mut!(rcBase), (FALSE) as BOOL, core::ptr::addr_of_mut!(rcCanvasDraw.__base0));
         }
     
         // Calculate the target area on the image
-        let mut rcImageDraw: CRect = CRect__make_0();
-        rcImageDraw = rcCanvasDraw;
-        (*this_).CanvasToImage__1(&mut rcImageDraw.__base0, (FALSE) as i32);
-        rcImageDraw.IntersectRect(core::ptr::addr_of!(rcImageDraw.__base0), core::ptr::addr_of!(rcImage.__base0));
+        let mut rcImageDraw: CRect = {
+            let mut tmp: CRect = CRect__make_0();
+            tmp = rcCanvasDraw;
+            tmp
+        };
+        (*this_).CanvasToImage__1(&mut rcImageDraw.__base0, (FALSE) as BOOL);
+        rcImageDraw.IntersectRect(core::ptr::addr_of_mut!(rcImageDraw.__base0) as *const RECT, core::ptr::addr_of_mut!(rcImage.__base0) as *const RECT);
     
         // Consider rounding down by zooming
         rcImageDraw.__base0.right += 1;
@@ -490,7 +493,7 @@ impl CCanvasWindow {
         }
         si.nPos = max(min(si.nPos, si.nMax), si.nMin);
         (*this_).__base0.SetScrollInfo(fnBar, core::ptr::addr_of_mut!(si), (TRUE) as i32);
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
     }
     pub unsafe fn OnSize(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
@@ -502,12 +505,12 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnHScroll(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).OnHVScroll(wParam, (SB_HORZ) as WPARAM);
+        (*this_).OnHVScroll(wParam, (SB_HORZ) as INT);
         return 0;
     }
     pub unsafe fn OnVScroll(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).OnHVScroll(wParam, (SB_VERT) as WPARAM);
+        (*this_).OnHVScroll(wParam, (SB_VERT) as INT);
         return 0;
     }
     pub unsafe fn OnEraseBkgnd(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -554,11 +557,11 @@ impl CCanvasWindow {
             return 0;
         }
     
-        (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
+        (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
         if toolsModel.GetActiveTool() == TOOL_ZOOM
         {
-            (*this_).__base0.Invalidate((TRUE) as i32);
+            (*this_).__base0.Invalidate((TRUE) as BOOL);
         }
     
         if (*this_).m_drawing == 0 || toolsModel.GetActiveTool() <= TOOL_AIRBRUSH
@@ -683,19 +686,19 @@ impl CCanvasWindow {
         }
         (*this_).ImageToCanvas__1(&mut rcResizing.__base0);
         (*this_).m_rcResizing = rcResizing;
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
     
         return 0;
     }
     pub unsafe fn OnKeyDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         if wParam == (VK_ESCAPE) as _ {
-            (*this_).OnEndDraw((TRUE) as i32);
+            (*this_).OnEndDraw((TRUE) as BOOL);
             ReleaseCapture();
             (*this_).m_nMouseDownMsg = 0;
             (*this_).m_hitCanvasSizeBox = HIT_NONE;
             (*this_).m_rcResizing.SetRectEmpty();
-            (*this_).__base0.Invalidate((TRUE) as i32);
+            (*this_).__base0.Invalidate((TRUE) as BOOL);
         }
     
         return 0;
@@ -724,7 +727,7 @@ impl CCanvasWindow {
             return 0;
         }
     
-        let hitSelection: HITTEST = selectionModel.hitTest(pt);
+        let mut hitSelection: HITTEST = selectionModel.hitTest(pt);
         if hitSelection != HIT_NONE {
             if setCursorOnSizeBox(hitSelection) == 0 {
                 SetCursor(LoadCursorW(core::ptr::null_mut(), IDC_SIZEALL as LPCWSTR));
@@ -737,39 +740,31 @@ impl CCanvasWindow {
         (*this_).ImageToCanvas__1(&mut rcImage.__base0);
     
         if rcImage.PtInRect(pt) != 0 {
-            match toolsModel.GetActiveTool() {
-                TOOL_FILL => {
-                    SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_FILL)));
-                }
-                TOOL_COLOR => {
-                    SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_COLOR)));
-                }
-                TOOL_ZOOM => {
-                    SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_ZOOM)));
-                }
-                TOOL_PEN => {
-                    SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_PEN)));
-                }
-                TOOL_AIRBRUSH => {
-                    SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_AIRBRUSH)));
-                }
-                TOOL_RUBBER => {
-                    (*this_).m_hRubberCursor.SetStyle(BrushStyleSquare,
-                                             toolsModel.GetZoom(),
-                                             toolsModel.GetRubberRadius(),
-                                             paletteModel.GetBgColor(), (TRUE) as COLORREF);
-                    (*this_).m_hRubberCursor.SetCursor();
-                }
-                TOOL_BRUSH => {
-                    (*this_).m_hBrushCursor.SetStyle(toolsModel.GetBrushStyle(),
-                                            toolsModel.GetZoom(),
-                                            toolsModel.GetBrushWidth() / 2,
-                                            paletteModel.GetFgColor(), (FALSE) as COLORREF);
-                    (*this_).m_hBrushCursor.SetCursor();
-                }
-                _ => {
-                    SetCursor(LoadCursorW(core::ptr::null_mut(), IDC_CROSS as LPCWSTR));
-                }
+            let activeTool = toolsModel.GetActiveTool();
+            if activeTool == TOOL_FILL {
+                SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_FILL)));
+            } else if activeTool == TOOL_COLOR {
+                SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_COLOR)));
+            } else if activeTool == TOOL_ZOOM {
+                SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_ZOOM)));
+            } else if activeTool == TOOL_PEN {
+                SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_PEN)));
+            } else if activeTool == TOOL_AIRBRUSH {
+                SetCursor(LoadCursorW(g_hinstExe, MAKEINTRESOURCEW!(IDC_AIRBRUSH)));
+            } else if activeTool == TOOL_RUBBER {
+                (*this_).m_hRubberCursor.SetStyle(BrushStyleSquare,
+                                         toolsModel.GetZoom(),
+                                         toolsModel.GetRubberRadius(),
+                                         paletteModel.GetBgColor(), (TRUE) as BOOL);
+                (*this_).m_hRubberCursor.SetCursor();
+            } else if activeTool == TOOL_BRUSH {
+                (*this_).m_hBrushCursor.SetStyle(toolsModel.GetBrushStyle(),
+                                        toolsModel.GetZoom(),
+                                        toolsModel.GetBrushWidth() / 2,
+                                        paletteModel.GetFgColor(), (FALSE) as BOOL);
+                (*this_).m_hBrushCursor.SetCursor();
+            } else {
+                SetCursor(LoadCursorW(core::ptr::null_mut(), IDC_CROSS as LPCWSTR));
             }
             return 0;
         }
@@ -782,14 +777,14 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnMouseWheel(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        return SendMessageW((*this_).__base0.GetParent(), nMsg, wParam, lParam);
+        return SendMessageW((*this_).__base0.GetParent().op_to_HWND(), nMsg, wParam, lParam);
     }
     pub unsafe fn OnCancelMode(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         // Cancel dragging
         (*this_).m_hitCanvasSizeBox = HIT_NONE;
         (*this_).m_rcResizing.SetRectEmpty();
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
         return 0;
     }
     pub unsafe fn OnCaptureChanged(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -825,10 +820,10 @@ impl CCanvasWindow {
         let hitSelection: HITTEST = selectionModel.hitTest(pt);
         if hitSelection != HIT_NONE {
             (*this_).m_drawing = (TRUE) as i32;
-            (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
+            (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
             (*this_).__base0.SetCapture();
             toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE) as i32);
-            (*this_).__base0.Invalidate((TRUE) as i32);
+            (*this_).__base0.Invalidate((TRUE) as BOOL);
             return 0;
         }
     
@@ -836,11 +831,11 @@ impl CCanvasWindow {
         if hit == HIT_NONE || hit == HIT_BORDER {
             let tool = toolsModel.GetActiveTool();
             if tool == TOOL_BEZIER || tool == TOOL_SHAPE {
-                toolsModel.OnEndDraw((TRUE) as i32);
-                (*this_).__base0.Invalidate((TRUE) as i32);
+                toolsModel.OnEndDraw((TRUE) as BOOL);
+                (*this_).__base0.Invalidate((TRUE) as BOOL);
             } else if tool == TOOL_FREESEL || tool == TOOL_RECTSEL {
-                toolsModel.OnEndDraw((FALSE) as i32);
-                (*this_).__base0.Invalidate((TRUE) as i32);
+                toolsModel.OnEndDraw((FALSE) as BOOL);
+                (*this_).__base0.Invalidate((TRUE) as BOOL);
             } else {
             }
     
@@ -848,13 +843,13 @@ impl CCanvasWindow {
             return 0;
         }
     
-        (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
+        (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
         if hit == HIT_INNER {
             (*this_).m_drawing = (TRUE) as i32;
             (*this_).__base0.SetCapture();
             toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE) as i32);
-            (*this_).__base0.Invalidate((TRUE) as i32);
+            (*this_).__base0.Invalidate((TRUE) as BOOL);
             return 0;
         }
     
@@ -869,7 +864,7 @@ impl CCanvasWindow {
     pub unsafe fn OnButtonDblClk(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut pt: POINT = POINT { x: GET_X_LPARAM!(lParam), y: GET_Y_LPARAM!(lParam) };
-        (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
+        (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
         (*this_).m_drawing = (FALSE) as i32;
         ReleaseCapture();
@@ -877,13 +872,13 @@ impl CCanvasWindow {
     
         toolsModel.OnButtonDown((nMsg == WM_LBUTTONDBLCLK) as BOOL, pt.x, pt.y, (TRUE) as i32);
         toolsModel.resetTool();
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
         return 0;
     }
     pub unsafe fn OnButtonUp(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut pt: POINT = POINT { x: GET_X_LPARAM!(lParam), y: GET_Y_LPARAM!(lParam) };
-        (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
+        (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
         ReleaseCapture();
     
@@ -893,7 +888,7 @@ impl CCanvasWindow {
         if (*this_).m_drawing != 0 {
             (*this_).m_drawing = (FALSE) as i32;
             toolsModel.OnButtonUp(bLeftButton, pt.x, pt.y);
-            (*this_).__base0.Invalidate((FALSE) as i32);
+            (*this_).__base0.Invalidate((FALSE) as BOOL);
             SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 2, CPP_COM_WSTR_96A296D224F2.as_ptr() as LPARAM);
             return 0;
         }
@@ -942,7 +937,7 @@ impl CCanvasWindow {
         (*this_).m_hitCanvasSizeBox = HIT_NONE;
         toolsModel.resetTool(); // resets the point-buffer of the polygon and bezier functions
         (*this_).updateScrollRange();
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
         return 0;
     }
 }

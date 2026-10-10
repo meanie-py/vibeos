@@ -65,8 +65,7 @@ impl ToolsModel {
     }
     pub unsafe fn SendSetCursor(&mut self) {
         let this_: *mut Self = self;
-        canvasWindow.__base0.SendMessageW__0(WM_SETCURSOR, (canvasWindow.operator_HWND()) as WPARAM,
-                                 MAKELPARAM!(HTCLIENT, WM_MOUSEMOVE));
+        canvasWindow.__base0.SendMessageW__0(WM_SETCURSOR, (canvasWindow.op_to_HWND() as HWND) as WPARAM, MAKELPARAM!(HTCLIENT, WM_MOUSEMOVE));
     }
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -181,7 +180,7 @@ impl ToolsModel {
     }
     pub unsafe fn SetActiveTool(&mut self, nActiveTool: TOOLTYPE) {
         let this_: *mut Self = self;
-        (*this_).OnEndDraw((FALSE) as i32);
+        (*this_).OnEndDraw((FALSE) as BOOL);
     
         selectionModel.Landing();
     
@@ -317,16 +316,16 @@ impl ToolsModel {
     pub unsafe fn NotifyToolChanged(&mut self) {
         let this_: *mut Self = self;
         if (*core::ptr::addr_of_mut!(toolBoxContainer)).__base0.IsWindow() != 0 {
-            (*core::ptr::addr_of_mut!(toolBoxContainer)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as UINT, 0);
+            (*core::ptr::addr_of_mut!(toolBoxContainer)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as WPARAM, 0);
         }
         if (*core::ptr::addr_of_mut!(toolSettingsWindow)).__base0.IsWindow() != 0 {
-            (*core::ptr::addr_of_mut!(toolSettingsWindow)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as UINT, 0);
+            (*core::ptr::addr_of_mut!(toolSettingsWindow)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as WPARAM, 0);
         }
         if (*core::ptr::addr_of_mut!(fontsDialog)).__base0.IsWindow() != 0 {
-            (*core::ptr::addr_of_mut!(fontsDialog)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as UINT, 0);
+            (*core::ptr::addr_of_mut!(fontsDialog)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as WPARAM, 0);
         }
         if (*core::ptr::addr_of_mut!(textEditWindow)).__base0.IsWindow() != 0 {
-            (*core::ptr::addr_of_mut!(textEditWindow)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as UINT, 0);
+            (*core::ptr::addr_of_mut!(textEditWindow)).__base0.SendMessageW__0(WM_TOOLSMODELTOOLCHANGED, ((*this_).m_activeTool) as WPARAM, 0);
         }
     }
     pub unsafe fn NotifyToolSettingsChanged(&mut self) {

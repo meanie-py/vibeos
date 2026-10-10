@@ -65,10 +65,10 @@ impl CImageDx {
         }
     
         if !pxDpi.is_null() {
-            ((*CImageDx::_shared()).m_GetImageHorizontalResolution)(pImage, pxDpi);
+            (((*CImageDx::_shared()).m_GetImageHorizontalResolution).unwrap_unchecked())(pImage, pxDpi);
         }
         if !pyDpi.is_null() {
-            ((*CImageDx::_shared()).m_GetImageVerticalResolution)(pImage, pyDpi);
+            (((*CImageDx::_shared()).m_GetImageVerticalResolution).unwrap_unchecked())(pImage, pyDpi);
         }
     
         return (TRUE) as BOOL;
@@ -96,7 +96,7 @@ impl CImageDx {
     
         // create a GpBitmap object from file
         let mut pBitmap: *mut GpBitmap = core::ptr::null_mut();
-        if ((*CImageDx::_shared()).m_CreateBitmapFromFile)(pszFileName, core::ptr::addr_of_mut!(pBitmap)) != 0 /* Ok */
+        if (((*CImageDx::_shared()).m_CreateBitmapFromFile).unwrap_unchecked())(pszFileName, core::ptr::addr_of_mut!(pBitmap)) != 0 /* Ok */
         {
             (*CImageDx::_shared()).Release();
             return E_FAIL;
@@ -106,7 +106,7 @@ impl CImageDx {
         let mut hbm: HBITMAP = core::ptr::null_mut();
         let mut color: Color = core::mem::zeroed();
         color.__ctor_0(0xFF, 0xFF, 0xFF);
-        let status: Status = ((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap)(pBitmap, core::ptr::addr_of_mut!(hbm), color.GetValue());
+        let status: Status = (((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap).unwrap_unchecked())(pBitmap, core::ptr::addr_of_mut!(hbm), color.GetValue());
     
         // get the resolution
         if !pxDpi.is_null() || !pyDpi.is_null() {
@@ -114,7 +114,7 @@ impl CImageDx {
         }
     
         // delete GpBitmap
-        ((*CImageDx::_shared()).m_DisposeImage)(pBitmap);
+        (((*CImageDx::_shared()).m_DisposeImage).unwrap_unchecked())(pBitmap);
     
         // attach it
         if status == 0 /* Ok */ {
@@ -145,7 +145,7 @@ impl CImageDx {
     
         // Get encoders
         let mut cEncoders: UINT = 0;
-        let mut pEncoders: *mut ImageCodecInfo = CImageDx::GetAllEncoders(cEncoders);
+        let mut pEncoders: *mut ImageCodecInfo = CImageDx::GetAllEncoders(&mut cEncoders);
     
         // if the file type is null, get the file type from extension
         let mut clsid: CLSID = core::mem::zeroed();

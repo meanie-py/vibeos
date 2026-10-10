@@ -52,7 +52,7 @@ use core::ffi::c_void;
 
 
 unsafe extern "C" fn ReadDWORD(key: &mut CRegKey, lpName: LPCWSTR, dwValue: &mut DWORD) {
-    let mut dwTemp: DWORD = core::mem::zeroed();
+    let mut dwTemp: DWORD = 0;
     if (key.QueryDWORDValue(lpName, &mut dwTemp)) as u32 == ERROR_SUCCESS {
         *dwValue = dwTemp;
     }
@@ -62,7 +62,7 @@ unsafe extern "C" fn ReadString(key: &mut CRegKey, lpName: LPCWSTR, strValue: &m
     let mut strTemp = CStringW::new();
     let mut nChars: ULONG = MAX_PATH;
     let psz: LPWSTR = strTemp.GetBuffer(nChars as i32);
-    let error: LONG = key.QueryStringValue(lpName, psz, &mut nChars as *mut ULONG);
+    let error: LONG = key.QueryStringValue(lpName, psz, core::ptr::addr_of_mut!(nChars));
     strTemp.ReleaseBuffer();
 
     if (error) as u32 == ERROR_SUCCESS {
@@ -122,15 +122,13 @@ impl RegistrySettings {
     pub unsafe fn SetWallpaper(szFileName: LPCWSTR, style: WallpaperStyle) {
         // Build the local path to the converted cached BMP wallpaper
         let mut hr: HRESULT;
-        let mut szWallpaper = [0u16; (MAX_PATH) as _];
+        let mut szWallpaper: [u16; (MAX_PATH) as _] = [0u16; (MAX_PATH) as _];
         hr = SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE) as i32, core::ptr::null_mut(), 0, szWallpaper.as_mut_ptr());
-        if hr < 0 {
+        if ((hr) < 0) {
             return;
         }
-        // TEXT("\\Wallpaper1.bmp")
-        let wallpaper_suffix: [u16; 16] = ['\\' as u16, 'W' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'p' as u16, 'a' as u16, 'p' as u16, 'e' as u16, 'r' as u16, '1' as u16, '.' as u16, 'b' as u16, 'm' as u16, 'p' as u16, 0];
-        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, wallpaper_suffix.as_ptr());
-        if hr < 0 {
+        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, TEXT(['\\' as u16, 'W' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'p' as u16, 'a' as u16, 'p' as u16, 'e' as u16, 'r' as u16, '1' as u16, '.' as u16, 'b' as u16, 'm' as u16, 'p' as u16, 0u16].as_ptr()));
+        if ((hr) < 0) {
             return;
         }
     
@@ -141,7 +139,7 @@ impl RegistrySettings {
         hr = img.SaveDx(szWallpaper.as_ptr(), GUID_NULL, 0, 0);
         img.Detach();
         imageModel.UnlockBitmap(hbmLocked);
-        if hr < 0 {
+        if ((hr) < 0) {
             return;
         }
     
@@ -163,13 +161,14 @@ impl RegistrySettings {
         let this_: *mut Self = self;
         (*this_).LoadPresets(nCmdShow);
     
-        let mut paint = CRegKey__make_0();
+        let mut paint: CRegKey = CRegKey__make_0();
         if (paint.Open(HKEY_CURRENT_USER, CPP_COM_WSTR_3BA6431A3ECF.as_ptr(), KEY_READ)) as u32 != ERROR_SUCCESS {
             return;
         }
     
-        let mut view = CRegKey__make_0();
-        if (view.Open(paint.m_hKey, CPP_COM_WSTR_8E637B93C326.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut view: CRegKey = CRegKey__make_0();
+        if (view.Open((paint).op_to_HKEY(), CPP_COM_WSTR_8E637B93C326.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut view, CPP_COM_WSTR_5637D6D9B722.as_ptr(), &mut (*this_).BMPHeight);
             ReadDWORD(&mut view, CPP_COM_WSTR_ADC82F9D93FF.as_ptr(), &mut (*this_).BMPWidth);
             ReadDWORD(&mut view, CPP_COM_WSTR_F7FE9C1C496F.as_ptr(), &mut (*this_).GridExtent);
@@ -187,13 +186,14 @@ impl RegistrySettings {
             view.QueryBinaryValue(
                 CPP_COM_WSTR_898362848E86.as_ptr(),
                 core::ptr::addr_of_mut!((*this_).WindowPlacement) as *mut core::ffi::c_void,
-                &mut pnBytes,
+                core::ptr::addr_of_mut!(pnBytes),
             );
         }
     
-        let mut files = CRegKey__make_0();
-        if (files.Open(paint.m_hKey, CPP_COM_WSTR_6AAEE4F6F310.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
-            let mut szName = [0u16; 64 as usize];
+        let mut files: CRegKey = CRegKey__make_0();
+        if (files.Open((paint).op_to_HKEY(), CPP_COM_WSTR_6AAEE4F6F310.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
+            let mut szName: [WCHAR; 64 as usize] = [0u16; 64 as usize];
             let mut i: INT = 0;
             while i < (MAX_RECENT_FILES as i32) {
                 StringCchPrintfW!(szName.as_mut_ptr(), _countof!(szName), CPP_COM_WSTR_23EB6AA79FD7.as_ptr(), i + 1);
@@ -202,8 +202,9 @@ impl RegistrySettings {
             }
         }
     
-        let mut text = CRegKey__make_0();
-        if (text.Open(paint.m_hKey, CPP_COM_WSTR_61F885AFBBFF.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut text: CRegKey = CRegKey__make_0();
+        if (text.Open((paint).op_to_HKEY(), CPP_COM_WSTR_61F885AFBBFF.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut text, CPP_COM_WSTR_F9733F036A48.as_ptr(), &mut (*this_).Bold);
             ReadDWORD(&mut text, CPP_COM_WSTR_06A6605715D2.as_ptr(), &mut (*this_).Italic);
             ReadDWORD(&mut text, CPP_COM_WSTR_985EB6DF0FA6.as_ptr(), &mut (*this_).Underline);
@@ -212,35 +213,39 @@ impl RegistrySettings {
             ReadDWORD(&mut text, CPP_COM_WSTR_75C1D54D3AAD.as_ptr(), &mut (*this_).FontsPositionX);
             ReadDWORD(&mut text, CPP_COM_WSTR_F2CE9334849C.as_ptr(), &mut (*this_).FontsPositionY);
             ReadDWORD(&mut text, CPP_COM_WSTR_5394C414C1C0.as_ptr(), &mut (*this_).ShowTextTool);
-            ReadString(&mut text, CPP_COM_WSTR_5AFD201798EE.as_ptr(), &mut (*this_).strFontName, (*this_).strFontName.as_ptr());
+            ReadString(&mut text, CPP_COM_WSTR_5AFD201798EE.as_ptr(), &mut (*this_).strFontName, (*this_).strFontName);
         }
     
-        let mut bar1 = CRegKey__make_0();
-        if (bar1.Open(paint.m_hKey, CPP_COM_WSTR_ADF960B697D7.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut bar1: CRegKey = CRegKey__make_0();
+        if (bar1.Open((paint).op_to_HKEY(), CPP_COM_WSTR_ADF960B697D7.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut bar1, CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), &mut (*this_).Bar1ID);
         }
     
-        let mut bar2 = CRegKey__make_0();
-        if (bar2.Open(paint.m_hKey, CPP_COM_WSTR_14F6F8E408B3.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut bar2: CRegKey = CRegKey__make_0();
+        if (bar2.Open((paint).op_to_HKEY(), CPP_COM_WSTR_14F6F8E408B3.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut bar2, CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), &mut (*this_).Bar2ID);
         }
     
-        let mut bar3 = CRegKey__make_0();
-        if (bar3.Open(paint.m_hKey, CPP_COM_WSTR_3AE1A3A3354B.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut bar3: CRegKey = CRegKey__make_0();
+        if (bar3.Open((paint).op_to_HKEY(), CPP_COM_WSTR_3AE1A3A3354B.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut bar3, CPP_COM_WSTR_EFDA06104782.as_ptr(), &mut (*this_).ShowToolBox);
         }
     
-        let mut bar4 = CRegKey__make_0();
-        if (bar4.Open(paint.m_hKey, CPP_COM_WSTR_9A40F31D852F.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
+        let mut bar4: CRegKey = CRegKey__make_0();
+        if (bar4.Open((paint).op_to_HKEY(), CPP_COM_WSTR_9A40F31D852F.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS
+        {
             ReadDWORD(&mut bar4, CPP_COM_WSTR_EFDA06104782.as_ptr(), &mut (*this_).ShowPalette);
         }
     
         // Fix the bitmap size if too large
         if (*this_).BMPWidth > 5000 {
-            (*this_).BMPWidth = ((GetSystemMetrics((SM_CXSCREEN) as i32) as DWORD) * 6) / 10;
+            (*this_).BMPWidth = ((GetSystemMetrics((SM_CXSCREEN) as i32) as DWORD * 6) / 10);
         }
         if (*this_).BMPHeight > 5000 {
-            (*this_).BMPHeight = ((GetSystemMetrics((SM_CYSCREEN) as i32) as DWORD) * 6) / 10;
+            (*this_).BMPHeight = ((GetSystemMetrics((SM_CYSCREEN) as i32) as DWORD * 6) / 10);
         }
     }
     pub unsafe fn Store(&mut self) {
@@ -248,34 +253,34 @@ impl RegistrySettings {
         (*this_).BMPWidth = (imageModel.GetWidth()) as u32;
         (*this_).BMPHeight = (imageModel.GetHeight()) as u32;
     
-        let mut paint: CRegKey = CRegKey__make_0();
+        let mut paint = CRegKey__make_0();
         if (paint.Create(HKEY_CURRENT_USER, CPP_COM_WSTR_3BA6431A3ECF.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 != ERROR_SUCCESS {
             return;
         }
     
-        let mut view: CRegKey = CRegKey__make_0();
-        if (view.Create(paint.m_hKey, CPP_COM_WSTR_8E637B93C326.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut view = CRegKey__make_0();
+        if (view.Create((paint).op_to_HKEY(), CPP_COM_WSTR_8E637B93C326.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
-            view.SetDWORDValue(CPP_COM_WSTR_5637D6D9B722.as_ptr(),     (*this_).BMPHeight);
-            view.SetDWORDValue(CPP_COM_WSTR_ADC82F9D93FF.as_ptr(),      (*this_).BMPWidth);
-            view.SetDWORDValue(CPP_COM_WSTR_F7FE9C1C496F.as_ptr(),    (*this_).GridExtent);
-            view.SetDWORDValue(CPP_COM_WSTR_105BE282E139.as_ptr(),  (*this_).NoStretching);
+            view.SetDWORDValue(CPP_COM_WSTR_5637D6D9B722.as_ptr(), (*this_).BMPHeight);
+            view.SetDWORDValue(CPP_COM_WSTR_ADC82F9D93FF.as_ptr(), (*this_).BMPWidth);
+            view.SetDWORDValue(CPP_COM_WSTR_F7FE9C1C496F.as_ptr(), (*this_).GridExtent);
+            view.SetDWORDValue(CPP_COM_WSTR_105BE282E139.as_ptr(), (*this_).NoStretching);
             view.SetDWORDValue(CPP_COM_WSTR_1E89521B2A68.as_ptr(), (*this_).ShowThumbnail);
-            view.SetDWORDValue(CPP_COM_WSTR_C034EBE7EBDB.as_ptr(),    (*this_).SnapToGrid);
-            view.SetDWORDValue(CPP_COM_WSTR_D5CB8490FEAB.as_ptr(),   (*this_).ThumbHeight);
-            view.SetDWORDValue(CPP_COM_WSTR_71C1C4832397.as_ptr(),    (*this_).ThumbWidth);
-            view.SetDWORDValue(CPP_COM_WSTR_8DEF9F32272B.as_ptr(),     (*this_).ThumbXPos);
-            view.SetDWORDValue(CPP_COM_WSTR_EDF089635053.as_ptr(),     (*this_).ThumbYPos);
-            view.SetDWORDValue(CPP_COM_WSTR_001ACA68BF26.as_ptr(),   (*this_).UnitSetting);
+            view.SetDWORDValue(CPP_COM_WSTR_C034EBE7EBDB.as_ptr(), (*this_).SnapToGrid);
+            view.SetDWORDValue(CPP_COM_WSTR_D5CB8490FEAB.as_ptr(), (*this_).ThumbHeight);
+            view.SetDWORDValue(CPP_COM_WSTR_71C1C4832397.as_ptr(), (*this_).ThumbWidth);
+            view.SetDWORDValue(CPP_COM_WSTR_8DEF9F32272B.as_ptr(), (*this_).ThumbXPos);
+            view.SetDWORDValue(CPP_COM_WSTR_EDF089635053.as_ptr(), (*this_).ThumbYPos);
+            view.SetDWORDValue(CPP_COM_WSTR_001ACA68BF26.as_ptr(), (*this_).UnitSetting);
             view.SetDWORDValue(CPP_COM_WSTR_087E14528D4B.as_ptr(), (*this_).ShowStatusBar);
     
             view.SetBinaryValue(CPP_COM_WSTR_898362848E86.as_ptr(), core::ptr::addr_of!((*this_).WindowPlacement) as *const core::ffi::c_void, core::mem::size_of::<WINDOWPLACEMENT>() as ULONG);
         }
     
-        let mut files: CRegKey = CRegKey__make_0();
-        if (files.Create(paint.m_hKey, CPP_COM_WSTR_6AAEE4F6F310.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut files = CRegKey__make_0();
+        if (files.Create((paint).op_to_HKEY(), CPP_COM_WSTR_6AAEE4F6F310.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
-            let mut szName: [WCHAR; 64] = [0 as WCHAR; 64];
+            let mut szName = [0 as WCHAR; (64) as usize];
             let mut iFile: INT = 0;
             while iFile < (MAX_RECENT_FILES as i32) {
                 StringCchPrintfW!(szName.as_mut_ptr(), _countof!(szName), CPP_COM_WSTR_23EB6AA79FD7.as_ptr(), iFile + 1);
@@ -284,40 +289,40 @@ impl RegistrySettings {
             }
         }
     
-        let mut text: CRegKey = CRegKey__make_0();
-        if (text.Create(paint.m_hKey, CPP_COM_WSTR_61F885AFBBFF.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut text = CRegKey__make_0();
+        if (text.Create((paint).op_to_HKEY(), CPP_COM_WSTR_61F885AFBBFF.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
-            text.SetDWORDValue(CPP_COM_WSTR_F9733F036A48.as_ptr(),          (*this_).Bold);
-            text.SetDWORDValue(CPP_COM_WSTR_06A6605715D2.as_ptr(),        (*this_).Italic);
-            text.SetDWORDValue(CPP_COM_WSTR_985EB6DF0FA6.as_ptr(),     (*this_).Underline);
-            text.SetDWORDValue(CPP_COM_WSTR_4B411275E1D3.as_ptr(),       (*this_).CharSet);
-            text.SetDWORDValue(CPP_COM_WSTR_246AD1D83DFB.as_ptr(),     (*this_).PointSize);
-            text.SetDWORDValue(CPP_COM_WSTR_75C1D54D3AAD.as_ptr(),     (*this_).FontsPositionX);
-            text.SetDWORDValue(CPP_COM_WSTR_F2CE9334849C.as_ptr(),     (*this_).FontsPositionY);
-            text.SetDWORDValue(CPP_COM_WSTR_5394C414C1C0.as_ptr(),  (*this_).ShowTextTool);
+            text.SetDWORDValue(CPP_COM_WSTR_F9733F036A48.as_ptr(), (*this_).Bold);
+            text.SetDWORDValue(CPP_COM_WSTR_06A6605715D2.as_ptr(), (*this_).Italic);
+            text.SetDWORDValue(CPP_COM_WSTR_985EB6DF0FA6.as_ptr(), (*this_).Underline);
+            text.SetDWORDValue(CPP_COM_WSTR_4B411275E1D3.as_ptr(), (*this_).CharSet);
+            text.SetDWORDValue(CPP_COM_WSTR_246AD1D83DFB.as_ptr(), (*this_).PointSize);
+            text.SetDWORDValue(CPP_COM_WSTR_75C1D54D3AAD.as_ptr(), (*this_).FontsPositionX);
+            text.SetDWORDValue(CPP_COM_WSTR_F2CE9334849C.as_ptr(), (*this_).FontsPositionY);
+            text.SetDWORDValue(CPP_COM_WSTR_5394C414C1C0.as_ptr(), (*this_).ShowTextTool);
             text.SetStringValue(CPP_COM_WSTR_5AFD201798EE.as_ptr(), (*this_).strFontName, REG_SZ);
         }
     
-        let mut bar1: CRegKey = CRegKey__make_0();
-        if (bar1.Create(paint.m_hKey, CPP_COM_WSTR_ADF960B697D7.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut bar1 = CRegKey__make_0();
+        if (bar1.Create((paint).op_to_HKEY(), CPP_COM_WSTR_ADF960B697D7.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
             bar1.SetDWORDValue(CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), (*this_).Bar1ID);
         }
     
-        let mut bar2: CRegKey = CRegKey__make_0();
-        if (bar2.Create(paint.m_hKey, CPP_COM_WSTR_14F6F8E408B3.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut bar2 = CRegKey__make_0();
+        if (bar2.Create((paint).op_to_HKEY(), CPP_COM_WSTR_14F6F8E408B3.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
             bar2.SetDWORDValue(CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), (*this_).Bar2ID);
         }
     
-        let mut bar3: CRegKey = CRegKey__make_0();
-        if (bar3.Create(paint.m_hKey, CPP_COM_WSTR_3AE1A3A3354B.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut bar3 = CRegKey__make_0();
+        if (bar3.Create((paint).op_to_HKEY(), CPP_COM_WSTR_3AE1A3A3354B.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
             bar3.SetDWORDValue(CPP_COM_WSTR_EFDA06104782.as_ptr(), (*this_).ShowToolBox);
         }
     
-        let mut bar4: CRegKey = CRegKey__make_0();
-        if (bar4.Create(paint.m_hKey, CPP_COM_WSTR_9A40F31D852F.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
+        let mut bar4 = CRegKey__make_0();
+        if (bar4.Create((paint).op_to_HKEY(), CPP_COM_WSTR_9A40F31D852F.as_ptr(), REG_NONE, REG_OPTION_NON_VOLATILE, KEY_READ | KEY_WRITE, core::ptr::null_mut(), core::ptr::null_mut())) as u32 == ERROR_SUCCESS
         {
             bar4.SetDWORDValue(CPP_COM_WSTR_EFDA06104782.as_ptr(), (*this_).ShowPalette);
         }

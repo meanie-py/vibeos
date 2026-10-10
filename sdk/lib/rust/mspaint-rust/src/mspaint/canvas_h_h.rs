@@ -4,6 +4,7 @@ use core::ffi::c_void;
 
 
 
+
 impl CStyledCursor {
     pub unsafe fn __dtor__body(&mut self) {
         let this_: *mut Self = self;
@@ -16,6 +17,10 @@ impl CStyledCursor {
         if !(*this_).m_hCursor.is_null() {
             SetCursor((*this_).m_hCursor);
         }
+    }
+    pub unsafe fn op_to_HICON(&mut self) -> HCURSOR {
+        let this_: *mut Self = self;
+        return (*this_).m_hCursor;
     }
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;

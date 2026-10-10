@@ -21,7 +21,7 @@ impl CFullscreenWindow {
         }; // Rely on SW_SHOWMAXIMIZED
         return (*this_).Create(
             HWND_DESKTOP,
-            rc,
+            &mut rc,
             core::ptr::null_mut(),
             WS_POPUPWINDOW,
             WS_EX_TOPMOST,
@@ -29,8 +29,8 @@ impl CFullscreenWindow {
     }
     pub unsafe fn OnCreate(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_BIG) as UINT, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
-        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_SMALL) as UINT, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
+        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_BIG) as WPARAM, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
+        (*this_).__base0.SendMessageW__0(WM_SETICON, (ICON_SMALL) as WPARAM, LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)) as LPARAM);
         return 0;
     }
     pub unsafe fn OnCloseOrKeyDownOrLButtonDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {

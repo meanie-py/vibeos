@@ -94,7 +94,7 @@ impl CToolBox {
             } else {
                 0
             });
-        return ((*this_).Create(hwndParent, rcToolBox, core::ptr::null_mut(), style) != core::ptr::null_mut()) as BOOL;
+        return ((*this_).Create(hwndParent, &mut rcToolBox, core::ptr::null_mut(), style) != core::ptr::null_mut()) as BOOL;
     }
     pub unsafe fn OnCreate(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
@@ -169,7 +169,7 @@ impl CToolBox {
         let mut i: usize = 0;
         while i < _countof!(CommandToToolMapping) {
             if CommandToToolMapping[i].tool == tool {
-                (*this_).toolbar.__base0.SendMessageW__0(TB_CHECKBUTTON, (CommandToToolMapping[i].id) as UINT, (TRUE) as WPARAM);
+                (*this_).toolbar.__base0.SendMessageW__0(TB_CHECKBUTTON, ((CommandToToolMapping[i].id) as UINT) as WPARAM, ((TRUE) as WPARAM) as LPARAM);
                 break;
             }
             i += 1;

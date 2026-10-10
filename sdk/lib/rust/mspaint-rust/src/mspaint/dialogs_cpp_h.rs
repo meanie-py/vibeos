@@ -260,15 +260,15 @@ impl CAttributesDialog {
         if Edit_GetModify(hWndCtl) != 0 {
             let mut tempS: [WCHAR; 100] = core::mem::zeroed();
             if (*this_).__base0.IsDlgButtonChecked((IDD_ATTRIBUTESRB1 as i32)) != 0 {
-                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as LPTSTR);
+                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as i32);
                 (*this_).newWidth = max(1, (wcstod(tempS.as_mut_ptr(), core::ptr::null_mut()) * g_xDpi as f64) as i32);
             }
             else if (*this_).__base0.IsDlgButtonChecked((IDD_ATTRIBUTESRB2 as i32)) != 0 {
-                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as LPTSTR);
+                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as i32);
                 (*this_).newWidth = max(1, (wcstod(tempS.as_mut_ptr(), core::ptr::null_mut()) * PpcmFromDpi(g_xDpi) as f64) as i32);
             }
             else if (*this_).__base0.IsDlgButtonChecked((IDD_ATTRIBUTESRB3 as i32)) != 0 {
-                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as LPTSTR);
+                (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as i32);
                 (*this_).newWidth = max(1, _wtoi(tempS.as_mut_ptr()));
             }
             Edit_SetModify(hWndCtl, FALSE);
@@ -670,7 +670,7 @@ impl CFontsDialog {
                 ComboBox_GetLBText(hwndNames, iItem, szText.as_mut_ptr());
             }
         } else if codeNotify == CBN_EDITCHANGE {
-            (*this_).__base0.GetDlgItemTextW__0((IDD_FONTSNAMES as i32), szText.as_mut_ptr(), (_countof!(szText)) as LPTSTR);
+            (*this_).__base0.GetDlgItemTextW__0((IDD_FONTSNAMES as i32), szText.as_mut_ptr(), (_countof!(szText)) as i32);
             iItem = ComboBox_FindStringExact(hwndNames, -1, szText.as_ptr());
         }
     

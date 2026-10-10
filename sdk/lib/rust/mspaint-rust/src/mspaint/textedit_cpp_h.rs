@@ -101,13 +101,13 @@ impl CTextEditWindow {
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rcWnd.__base0));
         core::ptr::copy_nonoverlapping(core::ptr::addr_of!(rcWnd), core::ptr::addr_of_mut!(rcText), 1);
     
-        let hDC: HDC = (*this_).__base0.GetDC();
-        if !hDC.is_null() {
+        let hDC = (*this_).__base0.GetDC();
+        if hDC as usize != 0 {
             SelectObject(hDC, ((*this_).m_hFontZoomed).cast());
             let mut tm: TEXTMETRIC = core::mem::zeroed();
             GetTextMetrics(hDC, core::ptr::addr_of_mut!(tm));
             szText += CPP_COM_WSTR_66A0B53312C1.as_ptr(); // This is a trick to enable the g_ptEnd newlines
-            const uFormat: UINT = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
+            let uFormat: UINT = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
                                  DT_EXPANDTABS | DT_WORDBREAK;
             DrawTextW(hDC, szText.GetString(), -1, core::ptr::addr_of_mut!(rcText.__base0), uFormat | DT_CALCRECT);
             if tm.tmDescent > 0 {
@@ -125,10 +125,10 @@ impl CTextEditWindow {
     
         (*this_).__base0.MoveWindow(rc.__base0.left, rc.__base0.top, rc.__base0.right - rc.__base0.left, rc.__base0.bottom - rc.__base0.top, (FALSE) as i32);
     
-        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as UINT, 0);
-        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as UINT, 0);
+        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as WPARAM, 0);
+        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as WPARAM, 0);
     
-        InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of!(rc.__base0), (TRUE) as BOOL);
+        InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rc.__base0), (TRUE) as BOOL);
     }
     pub unsafe fn InvalidateEditRect(&mut self) {
         let this_: *mut Self = self;
@@ -138,8 +138,8 @@ impl CTextEditWindow {
         ::InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rc), TRUE);
     
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rc));
-        (*this_).__base0.MapWindowPoints__0(canvasWindow, core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
-        canvasWindow.CanvasToImage__1(rc, (FALSE) as i32);
+        (*this_).__base0.MapWindowPoints__0((canvasWindow).op_to_HWND(), core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
+        canvasWindow.CanvasToImage__1(&mut rc, (FALSE) as BOOL);
         (*this_).m_rc = rc;
     }
     pub unsafe fn UpdateFont(&mut self) {
@@ -184,13 +184,13 @@ impl CTextEditWindow {
         SetWindowFont((*this_).__base0.m_hWnd, (*this_).m_hFontZoomed, TRUE);
         (*this_).DefWindowProc(
             EM_SETMARGINS,
-            (EC_LEFTMARGIN | EC_RIGHTMARGIN) as UINT,
-            (MAKELONG!(0, 0)) as WPARAM,
+            (EC_LEFTMARGIN | EC_RIGHTMARGIN) as WPARAM,
+            (MAKELONG!(0, 0)) as LPARAM,
         );
     
         (*this_).FixEditPos(core::ptr::null_mut());
     
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
     }
     pub unsafe fn GetEditRect(&mut self, prc: LPRECT) -> BOOL {
         let this_: *mut Self = self;
@@ -258,14 +258,14 @@ impl CTextEditWindow {
         let mut rcMoving: CRect = CRect { __base0: *prcMoving };
     
         let mut rcImage: CRect = CRect__make_0();
-        canvasWindow.GetImageRect(&mut rcImage.__base0);
-        canvasWindow.ImageToCanvas__1(&mut rcImage.__base0);
+        canvasWindow.GetImageRect(core::ptr::addr_of_mut!(rcImage.__base0));
+        canvasWindow.ImageToCanvas__1(core::ptr::addr_of_mut!(rcImage.__base0));
         canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), core::ptr::addr_of_mut!(rcImage.__base0));
     
         let mut rcWnd: CRect = CRect__make_0();
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rcWnd.__base0));
-        let mut cx: INT = rcWnd.Width();
-        let mut cy: INT = rcWnd.Height();
+        let cx: INT = rcWnd.Width();
+        let cy: INT = rcWnd.Height();
     
         if rcMoving.__base0.left < rcImage.__base0.left {
             rcMoving.__base0.left = rcImage.__base0.left;
@@ -284,14 +284,14 @@ impl CTextEditWindow {
         }
     
         *prcMoving = rcMoving.__base0;
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnSizing(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         // Restrict the window size to the image area
         let prcSizing: LPRECT = lParam as LPRECT;
-        let mut rcSizing: CRect = core::ptr::read(prcSizing as *const CRect);
+        let mut rcSizing: CRect = CRect { __base0: *prcSizing };
     
         let mut rcImage: CRect = CRect__make_0();
         canvasWindow.GetImageRect(&mut rcImage.__base0);
@@ -331,7 +331,7 @@ impl CTextEditWindow {
         }
     
         *prcSizing = rcSizing.__base0;
-        (*this_).__base0.Invalidate((TRUE) as i32);
+        (*this_).__base0.Invalidate((TRUE) as BOOL);
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnChar(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -351,7 +351,7 @@ impl CTextEditWindow {
     pub unsafe fn OnKeyDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         if wParam == (VK_ESCAPE) as _ {
-            toolsModel.OnEndDraw((TRUE) as i32);
+            toolsModel.OnEndDraw((TRUE) as BOOL);
             return 0;
         }
     
@@ -365,8 +365,8 @@ impl CTextEditWindow {
     pub unsafe fn OnLButtonDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let ret: LRESULT = (*this_).DefWindowProc(nMsg, wParam, lParam);
-        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as UINT, 0);
-        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as UINT, 0);
+        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as WPARAM, 0);
+        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as WPARAM, 0);
         return ret;
     }
     pub unsafe fn OnEraseBkGnd(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -400,7 +400,7 @@ impl CTextEditWindow {
     pub unsafe fn OnNCPaint(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut rc: CRect = CRect__make_0();
-        (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc.__base0));
+        (*this_).__base0.GetWindowRect(&mut rc.__base0);
     
         let hDC: HDC = (*this_).__base0.GetDCEx(core::ptr::null_mut(), DCX_WINDOW | DCX_PARENTCLIP);
         if !hDC.is_null() {
@@ -427,14 +427,16 @@ impl CTextEditWindow {
     }
     pub unsafe fn OnSetCursor(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if CWaitCursor::IsWaiting() != 0 {
+        if CWaitCursor::IsWaiting() != 0
+        {
             *bHandled = (FALSE) as i32;
             return 0;
         }
     
-        let nHitTest: UINT = LOWORD!(lParam as DWORD) as UINT;
-        if nHitTest == HTCAPTION {
-            SetCursor(LoadCursorW(core::ptr::null_mut(), IDC_SIZEALL as usize as LPCWSTR)); // Enable drag move
+        let nHitTest: UINT = (LOWORD!(lParam)) as u32;
+        if nHitTest == HTCAPTION
+        {
+            SetCursor(::LoadCursorW(core::ptr::null_mut(), (IDC_SIZEALL as usize) as LPCWSTR)); // Enable drag move
             return (FALSE) as LRESULT;
         }
         return (*this_).DefWindowProc(nMsg, wParam, lParam);
@@ -451,26 +453,26 @@ impl CTextEditWindow {
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rc));
         (*this_).__base0.SendMessageW__0(EM_SETRECTNP, 0, core::ptr::addr_of_mut!(rc) as LPARAM);
-        (*this_).__base0.SendMessageW__0(EM_SETMARGINS, (EC_LEFTMARGIN | EC_RIGHTMARGIN) as UINT, (MAKELONG!(0, 0)) as WPARAM);
+        (*this_).__base0.SendMessageW__0(EM_SETMARGINS, (EC_LEFTMARGIN | EC_RIGHTMARGIN) as WPARAM, (MAKELONG!(0, 0)) as LPARAM);
     
         return ret;
     }
     pub unsafe fn OnSetSel(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let ret: LRESULT = (*this_).DefWindowProc(nMsg, wParam, lParam);
-        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as UINT, 0);
-        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as UINT, 0);
+        (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as WPARAM, 0);
+        (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as WPARAM, 0);
         (*this_).InvalidateEditRect();
         return ret;
     }
     pub unsafe fn OnMouseWheel(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        return SendMessageW((*this_).__base0.GetParent(), nMsg, wParam, lParam);
+        return SendMessageW((*this_).__base0.GetParent().op_to_HWND(), nMsg, wParam, lParam);
     }
     pub unsafe fn OnCut(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let ret: LRESULT = (*this_).DefWindowProc(nMsg, wParam, lParam);
-        (*this_).__base0.Invalidate((TRUE) as i32); // Redraw
+        (*this_).__base0.Invalidate((TRUE) as BOOL); // Redraw
         return ret;
     }
     pub unsafe fn OnPaste(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -482,7 +484,7 @@ impl CTextEditWindow {
     pub unsafe fn OnClear(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut ret: LRESULT = (*this_).DefWindowProc(nMsg, wParam, lParam);
-        (*this_).__base0.Invalidate((TRUE) as i32); // Redraw
+        (*this_).__base0.Invalidate((TRUE) as BOOL); // Redraw
         return ret;
     }
     pub unsafe fn DoHitTest(&mut self, rc: &mut RECT, pt: POINT) -> INT {
@@ -494,14 +496,14 @@ impl CTextEditWindow {
             HIT_UPPER_RIGHT => { return (HTTOPRIGHT) as INT; }
             HIT_MIDDLE_LEFT => { return (HTLEFT) as INT; }
             HIT_MIDDLE_RIGHT => { return (HTRIGHT) as INT; }
-            HIT_LOWER_LEFT => { return (HTBOTTOMLEFT) as INT; }
-            HIT_LOWER_CENTER => { return (HTBOTTOM) as INT; }
-            HIT_LOWER_RIGHT => { return (HTBOTTOMRIGHT) as INT; }
-            HIT_BORDER => { return (HTCAPTION) as INT; } // Enable drag move
-            HIT_INNER => { return (HTCLIENT) as INT; }
+            HIT_LOWER_LEFT => { return HTBOTTOMLEFT; }
+            HIT_LOWER_CENTER => { return HTBOTTOM; }
+            HIT_LOWER_RIGHT => { return HTBOTTOMRIGHT; }
+            HIT_BORDER => { return HTCAPTION; } // Enable drag move
+            HIT_INNER => { return HTCLIENT; }
             _ => {}
         }
-        return (HTNOWHERE) as INT;
+        return HTNOWHERE;
     }
     pub unsafe fn DrawGrip(&mut self, hDC: HDC, rc: &mut RECT) {
         let this_: *mut Self = self;

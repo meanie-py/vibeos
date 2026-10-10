@@ -116,7 +116,7 @@ impl ImageModel {
         }
     
         let hbmMaster: HBITMAP = (*this_).LockBitmap();
-        (*part).m_hbmImage = getSubImage(hbmMaster, rc.__base0);
+        (*part).m_hbmImage = getSubImage(hbmMaster, &rc.__base0);
         (*this_).UnlockBitmap(hbmMaster);
     
         (*this_).PushDone();
@@ -202,7 +202,7 @@ impl ImageModel {
             bottom: (*this_).GetHeight() - nOffsetY,
         };
         let hbmOld: HBITMAP = imageModel.LockBitmap();
-        putSubImage(hbmNew, rcPart, hbmOld);
+        putSubImage(hbmNew, &rcPart, hbmOld);
         imageModel.UnlockBitmap(hbmOld);
     
         // Push it
@@ -317,11 +317,11 @@ impl ImageModel {
         let _ = this_;
         if (canvasWindow.__base0.IsWindow()) != 0 {
             canvasWindow.updateScrollRange();
-            canvasWindow.__base0.Invalidate((TRUE) as i32);
+            canvasWindow.__base0.Invalidate((TRUE) as BOOL);
         }
     
         if (miniature.__base0.IsWindow()) != 0 {
-            miniature.__base0.Invalidate((TRUE) as i32);
+            miniature.__base0.Invalidate((TRUE) as BOOL);
         }
     }
     pub unsafe fn IsBlackAndWhite(&mut self) -> BOOL {
@@ -348,8 +348,8 @@ impl ImageModel {
         }
     
         let hbmMaster: HBITMAP = (*this_).LockBitmap();
-        let hbmPart: HBITMAP = getSubImage(hbmMaster, (*part).m_rcPart.__base0);
-        putSubImage(hbmMaster, (*part).m_rcPart.__base0, (*part).m_hbmImage);
+        let hbmPart: HBITMAP = getSubImage(hbmMaster, &(*part).m_rcPart.__base0);
+        putSubImage(hbmMaster, &(*part).m_rcPart.__base0, (*part).m_hbmImage);
         DeleteObject(((*part).m_hbmImage).cast());
         (*part).m_hbmImage = hbmPart;
         (*this_).UnlockBitmap(hbmMaster);

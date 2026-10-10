@@ -125,7 +125,7 @@ impl CToolSettingsWindow {
             right: X_TOOLSETTINGS + CX_TOOLSETTINGS,
             bottom: Y_TOOLSETTINGS + CY_TOOLSETTINGS,
         };
-        return (!(*this_).Create(toolBoxContainer, toolSettingsWindowPos, core::ptr::null_mut(), WS_CHILD | WS_VISIBLE).is_null()) as BOOL;
+        return (!(*this_).Create(&mut toolBoxContainer, &mut toolSettingsWindowPos, core::ptr::null_mut(), WS_CHILD | WS_VISIBLE).is_null()) as BOOL;
     }
     pub unsafe fn drawTrans(&mut self, hdc: HDC, prc: LPCRECT) {
         let this_: *mut Self = self;
@@ -336,8 +336,8 @@ impl CToolSettingsWindow {
         trackbarZoomPos.InflateRect(-1, -1);
     
         (*this_).trackbarZoom.Create(TRACKBAR_CLASS, (*this_).__base0.m_hWnd, trackbarZoomPos, core::ptr::null_mut(), WS_CHILD | TBS_VERT | TBS_AUTOTICKS, 0, 0, core::ptr::null_mut());
-        (*this_).trackbarZoom.SendMessageW__0(TBM_SETRANGE, (TRUE) as UINT, MAKELPARAM!(MIN_ZOOM_TRACK, MAX_ZOOM_TRACK));
-        (*this_).trackbarZoom.SendMessageW__0(TBM_SETPOS, (TRUE) as UINT, (DEFAULT_ZOOM_TRACK) as WPARAM);
+        (*this_).trackbarZoom.SendMessageW__0(TBM_SETRANGE, ((TRUE) as UINT) as WPARAM, MAKELPARAM!(MIN_ZOOM_TRACK, MAX_ZOOM_TRACK));
+        (*this_).trackbarZoom.SendMessageW__0(TBM_SETPOS, ((TRUE) as UINT) as WPARAM, ((DEFAULT_ZOOM_TRACK) as WPARAM) as LPARAM);
         return 0;
     }
     pub unsafe fn OnDestroy(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {

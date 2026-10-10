@@ -29,6 +29,7 @@ use core::ffi::c_void;
 
 
 
+
 impl CPoint {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -104,13 +105,10 @@ impl CSize {
 impl CRect {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
-        {
-            let __v = 0;
-            (*this_).__base0.bottom = __v;
-            (*this_).__base0.right = __v;
-            (*this_).__base0.top = __v;
-            (*this_).__base0.left = __v;
-        }
+        (*this_).__base0.bottom = 0;
+        (*this_).__base0.right = 0;
+        (*this_).__base0.top = 0;
+        (*this_).__base0.left = 0;
     }
     pub unsafe fn __ctor_1(&mut self, l: i32, t: i32, r: i32, b: i32) {
         let this_: *mut Self = self;
@@ -157,7 +155,7 @@ impl CRect {
             (*this_).__base0.bottom = bottomRight.y;
         }
     }
-    pub unsafe fn EqualRect(&mut self, lpRect: LPCRECT) -> i32 {
+    pub unsafe fn EqualRect(&mut self, lpRect: LPCRECT) -> BOOL {
         let this_: *mut Self = self;
         return EqualRect(this_ as LPCRECT, lpRect);
     }
@@ -167,15 +165,15 @@ impl CRect {
     }
     pub unsafe fn InflateRect__0(&mut self, x: i32, y: i32) {
         let this_: *mut Self = self;
-        InflateRect(this_ as *mut RECT, x, y);
+        InflateRect((this_).cast(), x, y);
     }
-    pub unsafe fn IntersectRect(&mut self, lpRect1: LPCRECT, lpRect2: LPCRECT) -> i32 {
+    pub unsafe fn IntersectRect(&mut self, lpRect1: LPCRECT, lpRect2: LPCRECT) -> BOOL {
         let this_: *mut Self = self;
         return IntersectRect(this_ as *mut RECT, lpRect1, lpRect2);
     }
-    pub unsafe fn IsRectEmpty(&mut self) -> i32 {
+    pub unsafe fn IsRectEmpty(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        return IsRectEmpty(this_);
+        return IsRectEmpty(this_ as *const RECT);
     }
     pub unsafe fn NormalizeRect(&mut self) {
         let this_: *mut Self = self;
@@ -196,7 +194,7 @@ impl CRect {
     }
     pub unsafe fn PtInRect(&mut self, point: POINT) -> BOOL {
         let this_: *mut Self = self;
-        return PtInRect(this_ as *mut RECT, point);
+        return PtInRect(this_ as LPCRECT, point);
     }
     pub unsafe fn SetRect(&mut self, x1: i32, y1: i32, x2: i32, y2: i32) {
         let this_: *mut Self = self;
@@ -209,12 +207,16 @@ impl CRect {
         let this_: *mut Self = self;
         ZeroMemory!(this_ as *mut core::ffi::c_void, core::mem::size_of::<CRect>());
     }
-    pub unsafe fn UnionRect(&mut self, lpRect1: LPCRECT, lpRect2: LPCRECT) -> BOOL {
+    pub unsafe fn UnionRect(&mut self, lpRect1: LPCRECT, lpRect2: LPCRECT) -> i32 {
         let this_: *mut Self = self;
         return UnionRect((this_).cast(), lpRect1, lpRect2);
     }
     pub unsafe fn Width(&mut self) -> i32 {
         let this_: *mut Self = self;
         return (*this_).__base0.right - (*this_).__base0.left;
+    }
+    pub unsafe fn op_to_tagRECT(&mut self) -> *mut CRect {
+        let this_: *mut Self = self;
+        return this_;
     }
 }

@@ -209,7 +209,7 @@ pub unsafe extern "C" fn BuildMaskFromPoints() {
     SelectObject(hdcMem, hbmOld);
     DeleteDC(hdcMem);
 
-    selectionModel.setMask(rc, hbmMask);
+    selectionModel.setMask(&rc, hbmMask);
 }
 
 unsafe extern "C" fn pushToPoints(x: i32, y: i32) {
@@ -427,19 +427,19 @@ impl ToolsModel {
         (*(*this_).m_pToolObject).OnButtonDown(bLeftButton, x, y, bDoubleClick);
         (*(*this_).m_pToolObject).endEvent();
     }
-    pub unsafe fn OnMouseMove(&mut self, bLeftButton: BOOL, x: LONG, y: LONG) {
+    pub unsafe fn OnMouseMove(&mut self, bLeftButton: BOOL, mut x: LONG, mut y: LONG) {
         let this_: *mut Self = self;
         (*(*this_).m_pToolObject).beginEvent();
-        if (*(*this_).m_pToolObject).OnMouseMove(bLeftButton, x, y) != 0 {
+        if (*(*this_).m_pToolObject).OnMouseMove(bLeftButton, &mut x, &mut y) != 0 {
             g_ptEnd = POINT { x: x, y: y };
         }
     
         (*(*this_).m_pToolObject).endEvent();
     }
-    pub unsafe fn OnButtonUp(&mut self, bLeftButton: BOOL, x: LONG, y: LONG) {
+    pub unsafe fn OnButtonUp(&mut self, bLeftButton: BOOL, mut x: LONG, mut y: LONG) {
         let this_: *mut Self = self;
         (*(*this_).m_pToolObject).beginEvent();
-        if (*(*this_).m_pToolObject).OnButtonUp(bLeftButton, x, y) != 0 {
+        if (*(*this_).m_pToolObject).OnButtonUp(bLeftButton, &mut x, &mut y) != 0 {
             g_ptEnd = POINT { x: x, y: y };
         }
     
@@ -553,7 +553,7 @@ impl TwoPointDrawTool {
         rcPartial.NormalizeRect();
         let mut size: SIZE = toolsModel.GetToolSize();
         rcPartial.InflateRect__0((size.cx + 1) / 2, (size.cy + 1) / 2);
-        imageModel.PushImageForUndo__2((rcPartial).__base0);
+        imageModel.PushImageForUndo__2(&((rcPartial).__base0));
     
         (*this_).__base0.OnDrawOverlayOnImage((*this_).__base0.m_hdc);
         (*this_).m_bDrawing = (FALSE) as i32;
@@ -623,7 +623,7 @@ impl SmoothDrawTool {
         let size: SIZE = toolsModel.GetToolSize();
         rcPartial.InflateRect__0((size.cx + 1) / 2, (size.cy + 1) / 2);
     
-        imageModel.PushImageForUndo__2((rcPartial).__base0);
+        imageModel.PushImageForUndo__2(&((rcPartial).__base0));
     
         (*this_).OnDrawOverlayOnImage((*this_).__base0.m_hdc);
         imageModel.NotifyImageChanged();
@@ -691,14 +691,14 @@ impl SelectionBaseTool {
             let mut pt = POINT { x: x, y: y };
             if (*this_).m_bLeftButton == 0 // Show context menu on Right-click
             {
-                canvasWindow.ImageToCanvas__0(pt);
+                canvasWindow.ImageToCanvas__0(&mut pt);
                 canvasWindow.__base0.ClientToScreen__0(&mut pt);
                 mainWindow.TrackPopupMenu(pt, 0);
                 return;
             }
     
             let mut ptCanvas = pt;
-            canvasWindow.ImageToCanvas__0(ptCanvas);
+            canvasWindow.ImageToCanvas__0(&mut ptCanvas);
             let hit = selectionModel.hitTest(ptCanvas);
             if hit != HIT_NONE // Dragging of selection started?
             {
@@ -718,10 +718,10 @@ impl SelectionBaseTool {
             selectionModel.Landing();
             (*this_).m_bDrawing = (TRUE) as i32;
     
-            imageModel.Clamp(pt);
+            imageModel.Clamp(&mut pt);
             if (*this_).isRectSelect() != 0
             {
-                selectionModel.SetRectFromPoints(g_ptStart, pt);
+                selectionModel.SetRectFromPoints(&g_ptStart, &pt);
             }
             else
             {
@@ -753,10 +753,10 @@ impl SelectionBaseTool {
                 regularize(g_ptStart.x, g_ptStart.y, &mut pt.x, &mut pt.y);
             }
     
-            imageModel.Clamp(pt);
+            imageModel.Clamp(&mut pt);
     
             if (*this_).isRectSelect() != 0 {
-                selectionModel.SetRectFromPoints(g_ptStart, pt);
+                selectionModel.SetRectFromPoints(&g_ptStart, &pt);
             } else {
                 pushToPoints(pt.x, pt.y);
             }
@@ -789,10 +789,10 @@ impl SelectionBaseTool {
             regularize(g_ptStart.x, g_ptStart.y, &mut pt.x, &mut pt.y);
         }
     
-        imageModel.Clamp(pt);
+        imageModel.Clamp(&mut pt);
     
         if (*this_).isRectSelect() != 0 {
-            selectionModel.SetRectFromPoints(g_ptStart, pt);
+            selectionModel.SetRectFromPoints(&g_ptStart, &pt);
             selectionModel.m_bShow = (selectionModel.m_rc.IsRectEmpty() == 0) as BOOL;
         } else {
             if s_cPoints > 2 {
@@ -919,12 +919,12 @@ impl ColorTool {
     pub unsafe fn OnButtonDown__body(&mut self, bLeftButton: BOOL, x: LONG, y: LONG, bDoubleClick: BOOL) {
         let this_: *mut Self = self;
         let rgbColor: COLORREF = (*this_).fetchColor(x, y);
-        toolSettingsWindow.__base0.SendMessageW__0(WM_TOOLSMODELCOLORPICKED, (rgbColor) as UINT, 0);
+        toolSettingsWindow.__base0.SendMessageW__0(WM_TOOLSMODELCOLORPICKED, ((rgbColor) as UINT) as WPARAM, 0);
     }
     pub unsafe fn OnMouseMove__body(&mut self, bLeftButton: BOOL, x: &mut LONG, y: &mut LONG) -> BOOL {
         let this_: *mut Self = self;
         let rgbColor: COLORREF = (*this_).fetchColor(*x, *y);
-        toolSettingsWindow.__base0.SendMessageW__0(WM_TOOLSMODELCOLORPICKED, (rgbColor) as UINT, 0);
+        toolSettingsWindow.__base0.SendMessageW__0(WM_TOOLSMODELCOLORPICKED, ((rgbColor) as UINT) as WPARAM, 0);
         return (TRUE) as BOOL;
     }
     pub unsafe fn OnButtonUp__body(&mut self, bLeftButton: BOOL, x: &mut LONG, y: &mut LONG) -> BOOL {
@@ -1092,7 +1092,7 @@ impl TextTool {
     pub unsafe fn OnButtonDown__body(&mut self, bLeftButton: BOOL, x: LONG, y: LONG, bDoubleClick: BOOL) {
         let this_: *mut Self = self;
         if ((textEditWindow.__base0.IsWindow()) == 0) {
-            textEditWindow.Create(canvasWindow);
+            textEditWindow.Create(&mut canvasWindow);
         }
     
         (*this_).UpdatePoint(x, y);
@@ -1127,10 +1127,10 @@ impl TextTool {
     pub unsafe fn OnButtonUp__body(&mut self, bLeftButton: BOOL, x: &mut LONG, y: &mut LONG) -> BOOL {
         let this_: *mut Self = self;
         let mut pt: POINT = POINT { x: *x, y: *y };
-        imageModel.Clamp(pt);
-        selectionModel.SetRectFromPoints(g_ptStart, pt);
+        imageModel.Clamp(&mut pt);
+        selectionModel.SetRectFromPoints(&g_ptStart, &pt);
     
-        let bTextBoxShown: BOOL = IsWindowVisible(textEditWindow);
+        let bTextBoxShown: BOOL = IsWindowVisible(&mut textEditWindow);
         if bTextBoxShown != 0 {
             if textEditWindow.__base0.GetWindowTextLengthW() > 0 {
                 imageModel.PushImageForUndo__0();
@@ -1144,7 +1144,7 @@ impl TextTool {
     
         if registrySettings.ShowTextTool != 0 {
             if fontsDialog.__base0.IsWindow() == 0 {
-                fontsDialog.Create(mainWindow);
+                fontsDialog.Create(&mut mainWindow);
             }
     
             fontsDialog.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
@@ -1168,11 +1168,11 @@ impl TextTool {
         }
     
         if textEditWindow.__base0.IsWindow() == 0 {
-            textEditWindow.Create(canvasWindow);
+            textEditWindow.Create(&mut canvasWindow);
         }
     
         textEditWindow.__base0.SetWindowTextW(core::ptr::null_mut());
-        textEditWindow.ValidateEditRect((*core::ptr::addr_of_mut!(rc)).__base0);
+        textEditWindow.ValidateEditRect(&((*core::ptr::addr_of_mut!(rc)).__base0));
         textEditWindow.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
         textEditWindow.__base0.SetFocus();
         return (TRUE) as BOOL;
@@ -1180,7 +1180,7 @@ impl TextTool {
     pub unsafe fn OnEndDraw__body(&mut self, bCancel: BOOL) {
         let this_: *mut Self = self;
         if bCancel == 0 {
-            if IsWindowVisible(textEditWindow) != 0
+            if IsWindowVisible(&mut textEditWindow) != 0
                 && textEditWindow.__base0.GetWindowTextLengthW() > 0
             {
                 imageModel.PushImageForUndo__0();
@@ -1309,7 +1309,7 @@ impl RectTool {
                 return;
             }
             if GetAsyncKeyState(VK_SHIFT) < 0 {
-                regularize(g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y);
+                regularize(g_ptStart.x, g_ptStart.y, &mut g_ptEnd.x, &mut g_ptEnd.y);
             }
             if (*this_).__base0.m_bLeftButton != 0 {
                 Rect(hdc, g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y, toolsModel.GetFgBrush(), toolsModel.GetBgBrush(), toolsModel.GetLineWidth(), toolsModel.GetShapeStyle());
@@ -1416,7 +1416,7 @@ impl ShapeTool {
                 (size.cy + 1) / 2,
             );
     
-            imageModel.PushImageForUndo__2((rcPartial).__base0);
+            imageModel.PushImageForUndo__2(&((rcPartial).__base0));
     
             (*this_).m_bClosed = (TRUE) as i32;
             (*this_).OnDrawOverlayOnImage((*this_).__base0.m_hdc);
@@ -1444,7 +1444,7 @@ impl EllipseTool {
             return;
         }
         if GetAsyncKeyState(VK_SHIFT) < 0 {
-            regularize(g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y);
+            regularize(g_ptStart.x, g_ptStart.y, &mut g_ptEnd.x, &mut g_ptEnd.y);
         }
         if (*this_).__base0.m_bLeftButton != 0 {
             Ellp(hdc, g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y, toolsModel.GetFgBrush(), toolsModel.GetBgBrush(), toolsModel.GetLineWidth(), toolsModel.GetShapeStyle());
@@ -1466,7 +1466,7 @@ impl RRectTool {
             return;
         }
         if GetAsyncKeyState(VK_SHIFT) < 0 {
-            regularize(g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y);
+            regularize(g_ptStart.x, g_ptStart.y, &mut g_ptEnd.x, &mut g_ptEnd.y);
         }
         if (*this_).__base0.m_bLeftButton != 0 {
             RRect(hdc, g_ptStart.x, g_ptStart.y, g_ptEnd.x, g_ptEnd.y, toolsModel.GetFgBrush(), toolsModel.GetBgBrush(), toolsModel.GetLineWidth(), toolsModel.GetShapeStyle());

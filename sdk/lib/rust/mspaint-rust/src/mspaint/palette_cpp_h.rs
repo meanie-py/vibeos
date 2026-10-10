@@ -2,6 +2,8 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 // Constants from palette.h
+const CXY_COLORBOX: i32 = 16;      /* width / height of a normal color box */
+const CXY_BIGBOX: i32 = 32;        /* width / height of the big box (CXY_COLORBOX * 2) */
 
 
 
@@ -25,7 +27,7 @@ unsafe extern "C" fn drawColorBox(hDC: HDC, prc: LPCRECT, hbr: HBRUSH, nBorder: 
 unsafe extern "C" fn getColorBoxRect(prc: LPRECT, rcClient: LPCRECT, iColor: i32) {
     let dx: i32 = (iColor % HALF_COLOR_COUNT) * (CXY_COLORBOX as i32); /* delta x */
     let dy: i32 = (iColor / HALF_COLOR_COUNT) * (CXY_COLORBOX as i32); /* delta y */
-    let y_margin: i32 = ((*rcClient).bottom / 2) - (CXY_COLORBOX as i32); /* center position minus one color box */
+    let y_margin: i32 = ((*rcClient).bottom / 2) - CXY_COLORBOX; /* center position minus one color box */
     (*prc).left = X_COLORBOX_OFFSET + dx;
     (*prc).right = (*prc).left + (CXY_COLORBOX as i32);
     (*prc).top = y_margin + dy;
@@ -68,10 +70,10 @@ impl CPaletteWindow {
         FillRect(hMemDC, core::ptr::addr_of_mut!(rcClient), (COLOR_3DFACE + 1) as usize as HBRUSH);
 
         /* Y_MARGIN = center position minus one color box */
-        let y_margin: i32 = (rcClient.bottom / 2) - (CXY_COLORBOX as i32);
+        let y_margin: i32 = (rcClient.bottom / 2) - CXY_COLORBOX;
 
         /* Draw the big box that contains the black box and the white box */
-        rc = RECT { left: X_MARGIN, top: y_margin, right: X_MARGIN + (CXY_BIGBOX as i32), bottom: y_margin + (CXY_BIGBOX as i32) };
+        rc = RECT { left: X_MARGIN, top: y_margin, right: X_MARGIN + (CXY_BIGBOX as i32), bottom: y_margin + CXY_BIGBOX };
         DrawEdge(hMemDC, core::ptr::addr_of_mut!(rc), EDGE_SUNKEN as u32, BF_RECT | BF_ADJUST);
         let rgbLight: COLORREF = GetSysColor((COLOR_3DHIGHLIGHT) as i32);
         let mut y: INT = rc.top;
@@ -90,14 +92,14 @@ impl CPaletteWindow {
 
         /* Draw the white box in the big box, at 5/8 position */
         rc.left = X_MARGIN + ((CXY_BIGBOX * 5 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
-        rc.top = y_margin + ((CXY_BIGBOX * 5 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
+        rc.top = y_margin + (CXY_BIGBOX * 5 / 8) - (CXY_SELECTEDBOX / 2);
         rc.right = rc.left + CXY_SELECTEDBOX;
         rc.bottom = rc.top + CXY_SELECTEDBOX;
         drawColorBox(hMemDC, core::ptr::addr_of_mut!(rc), toolsModel.GetBgBrush(), BDR_RAISEDINNER);
 
         /* Draw the black box (overlapping the white box), at 3/8 position */
         rc.left = X_MARGIN + ((CXY_BIGBOX * 3 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
-        rc.top = y_margin + ((CXY_BIGBOX * 3 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
+        rc.top = y_margin + (CXY_BIGBOX * 3 / 8) - (CXY_SELECTEDBOX / 2);
         rc.right = rc.left + CXY_SELECTEDBOX;
         rc.bottom = rc.top + CXY_SELECTEDBOX;
         drawColorBox(hMemDC, core::ptr::addr_of_mut!(rc), toolsModel.GetFgBrush(), BDR_RAISEDINNER);
@@ -125,7 +127,7 @@ impl CPaletteWindow {
         let this_: *mut Self = self;
         let iColor: INT = (*this_).DoHitTest(GET_X_LPARAM!(lParam), GET_Y_LPARAM!(lParam));
         if iColor != -1 {
-            paletteModel.SetFgColor(paletteModel.GetColor((iColor) as u32));
+            paletteModel.SetFgColor(paletteModel.GetColor((iColor) as UINT));
         }
         (*this_).__base0.SetCapture();
         return 0;
@@ -134,7 +136,7 @@ impl CPaletteWindow {
         let this_: *mut Self = self;
         let iColor: INT = (*this_).DoHitTest(GET_X_LPARAM!(lParam), GET_Y_LPARAM!(lParam));
         if iColor != -1 {
-            paletteModel.SetBgColor(paletteModel.GetColor((iColor) as u32));
+            paletteModel.SetBgColor(paletteModel.GetColor((iColor) as UINT));
         }
         return 0;
     }
@@ -144,7 +146,7 @@ impl CPaletteWindow {
         let mut rgbColor: COLORREF = paletteModel.GetFgColor();
         if iColor != -1 && (mainWindow.ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0)
         {
-            paletteModel.SetColor((iColor) as u32, rgbColor);
+            paletteModel.SetColor((iColor) as UINT, rgbColor);
             paletteModel.SetFgColor(rgbColor);
         }
         return 0;
@@ -154,7 +156,7 @@ impl CPaletteWindow {
         let iColor: INT = (*this_).DoHitTest(GET_X_LPARAM!(lParam), GET_Y_LPARAM!(lParam));
         let mut rgbColor: COLORREF = paletteModel.GetBgColor();
         if iColor != -1 && mainWindow.ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0 {
-            paletteModel.SetColor((iColor) as u32, rgbColor);
+            paletteModel.SetColor((iColor) as UINT, rgbColor);
             paletteModel.SetBgColor(rgbColor);
         }
         return 0;
@@ -196,7 +198,7 @@ impl CPaletteWindow {
     }
     pub unsafe fn OnPaletteModelColorChanged(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.Invalidate((FALSE) as i32);
+        (*this_).__base0.Invalidate((FALSE) as BOOL);
         return 0;
     }
     pub unsafe fn DoHitTest(&mut self, xPos: INT, yPos: INT) -> INT {
@@ -205,7 +207,7 @@ impl CPaletteWindow {
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient));
 
         /* Y_MARGIN = center position minus one color box */
-        let y_margin: i32 = (rcClient.bottom / 2) - (CXY_COLORBOX as i32);
+        let y_margin: i32 = (rcClient.bottom / 2) - CXY_COLORBOX;
 
         /* delta x and y */
         let dx: INT = xPos - X_COLORBOX_OFFSET;
