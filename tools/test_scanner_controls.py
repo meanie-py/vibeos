@@ -3788,3 +3788,24 @@ def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
     catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
     hits = module.scan_file(rs, catalog)
     assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]
+
+
+def test_formatless_printf_name_needs_a_real_printf(tmp_path):
+    """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
+    parameter and its name contains Print+F(unctionName); it is not a printf, and the old
+    case-insensitive `printf` match flagged it. A real one must still flag."""
+    spec = importlib.util.spec_from_file_location(
+        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "x.rs"
+    rs.write_text(
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn SeiPrintFunctionName(p: LPCSTR, szOrdProcFmt: *mut i8)'
+        " -> LPCSTR { p }\n"
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
+    )
+    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]

@@ -411,8 +411,7 @@ pub unsafe extern "C" fn UpdateTrayIcon(hPrinter: HANDLE, JobId: DWORD) {
             ),
         );
 
-        if fpFunction.is_some() {
-            let fpFunction = fpFunction.expect("non-null function pointer");
+        if let Some(fpFunction) = fpFunction {
             fpFunction(
                 SHCNE_CREATE as LONG,
                 (SHCNF_FLUSHNOWAIT | SHCNF_FLUSH | SHCNF_PRINTJOBW) as UINT,
