@@ -186,7 +186,7 @@ impl CStyledCursor {
             hotY = (height * zoom / ((2 * DEFAULT_ZOOM)) as i32) as DWORD;
         }
     
-        let mut ii: ICONINFO = ICONINFO { fIcon: (FALSE) as i32, xHotspot: hotX, yHotspot: hotY, hbmMask: hbmMask, hbmColor: hbmColor };
+        let mut ii: ICONINFO = ICONINFO { fIcon: (FALSE as i32), xHotspot: hotX, yHotspot: hotY, hbmMask: hbmMask, hbmColor: hbmColor };
         let hCursor: HCURSOR = CreateIconIndirect(core::ptr::addr_of_mut!(ii)) as HCURSOR;
     
         DeleteObject((hbmMask).cast());
@@ -201,7 +201,7 @@ impl CCanvasWindow {
         let this_: *mut Self = self;
         (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
-        (*this_).m_drawing = (FALSE) as i32;
+        (*this_).m_drawing = (FALSE as i32);
         (*this_).m_hitCanvasSizeBox = HIT_NONE;
         (*this_).m_ptOrig = POINT { x: -1, y: -1 };
         (*this_).m_nMouseDownMsg = 0;
@@ -211,7 +211,7 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnEndDraw(&mut self, bCancel: BOOL) {
         let this_: *mut Self = self;
-        (*this_).m_drawing = (FALSE) as i32;
+        (*this_).m_drawing = (FALSE as i32);
         toolsModel.OnEndDraw(bCancel);
         (*this_).__base0.Invalidate((FALSE) as BOOL);
     }
@@ -246,37 +246,37 @@ impl CCanvasWindow {
     
         si.nMax = sizeWhole.__base0.cx;
         si.nPage = sizePage.__base0.cx as u32;
-        (*this_).__base0.SetScrollInfo((SB_HORZ) as i32, core::ptr::addr_of_mut!(si), (TRUE) as i32);
+        (*this_).__base0.SetScrollInfo((SB_HORZ as i32), core::ptr::addr_of_mut!(si), (TRUE as i32));
     
         si.nMax = sizeWhole.__base0.cy;
         si.nPage = sizePage.__base0.cy as u32;
-        (*this_).__base0.SetScrollInfo((SB_VERT) as i32, core::ptr::addr_of_mut!(si), (TRUE) as i32);
+        (*this_).__base0.SetScrollInfo((SB_VERT as i32), core::ptr::addr_of_mut!(si), (TRUE as i32));
     }
     pub unsafe fn updateScrollPos(&mut self, x: INT, y: INT) {
         let this_: *mut Self = self;
-        (*this_).__base0.SetScrollPos((SB_HORZ) as i32, x, (TRUE) as i32);
-        (*this_).__base0.SetScrollPos((SB_VERT) as i32, y, (TRUE) as i32);
+        (*this_).__base0.SetScrollPos((SB_HORZ as i32), x, (TRUE as i32));
+        (*this_).__base0.SetScrollPos((SB_VERT as i32), y, (TRUE as i32));
     }
     pub unsafe fn ImageToCanvas__0(&mut self, pt: &mut POINT) {
         let this_: *mut Self = self;
         Zoomed__1(pt);
-        pt.x += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32;
-        pt.y += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32;
+        pt.x += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ as i32))) as u32) as i32;
+        pt.y += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT as i32))) as u32) as i32;
     }
     pub unsafe fn ImageToCanvas__1(&mut self, rc: &mut RECT) {
         let this_: *mut Self = self;
         Zoomed__2(rc);
-        OffsetRect(rc as *mut RECT, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32);
+        OffsetRect(rc as *mut RECT, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ as i32))) as u32) as i32, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT as i32))) as u32) as i32);
     }
     pub unsafe fn CanvasToImage__0(&mut self, pt: &mut POINT, bRound: BOOL) {
         let this_: *mut Self = self;
-        pt.x -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32;
-        pt.y -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32;
+        pt.x -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ as i32))) as u32) as i32;
+        pt.y -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT as i32))) as u32) as i32;
         UnZoomed__1(pt, bRound);
     }
     pub unsafe fn CanvasToImage__1(&mut self, rc: &mut RECT, bRound: BOOL) {
         let this_: *mut Self = self;
-        OffsetRect(core::ptr::addr_of_mut!(*rc), (*this_).__base0.GetScrollPos((SB_HORZ) as i32) - (GRIP_SIZE as i32), (*this_).__base0.GetScrollPos((SB_VERT) as i32) - (GRIP_SIZE as i32));
+        OffsetRect(core::ptr::addr_of_mut!(*rc), (*this_).__base0.GetScrollPos((SB_HORZ as i32)) - (GRIP_SIZE as i32), (*this_).__base0.GetScrollPos((SB_VERT as i32)) - (GRIP_SIZE as i32));
         UnZoomed__2(rc, bRound);
     }
     pub unsafe fn GetImageRect(&mut self, rc: &mut RECT) {
@@ -286,12 +286,12 @@ impl CCanvasWindow {
     pub unsafe fn getNewZoomRect(&mut self, rcView: &mut CRect, newZoom: INT, ptTarget: CPoint) {
         let this_: *mut Self = self;
         let mut rcImage: CRect = CRect__make_0();
-        (*this_).GetImageRect(&mut rcImage.__base0);
-        (*this_).ImageToCanvas__1(&mut rcImage.__base0);
+        (*this_).GetImageRect(&mut (rcImage).__base0);
+        (*this_).ImageToCanvas__1(&mut (rcImage).__base0);
     
         // Calculate the zoom rectangle
         let oldZoom: INT = toolsModel.GetZoom();
-        (*this_).__base0.GetClientRect((rcView.op_to_tagRECT()).cast());
+        (*this_).__base0.GetClientRect((rcView).op_to_tagRECT());
         let cxView: LONG = rcView.__base0.right * oldZoom / newZoom;
         let cyView: LONG = rcView.__base0.bottom * oldZoom / newZoom;
         rcView.SetRect(
@@ -317,7 +317,7 @@ impl CCanvasWindow {
         rcView.OffsetRect__0(dx, dy);
     
         rcView.IntersectRect(
-            core::ptr::addr_of!(rcView.__base0),
+            core::ptr::addr_of!((*rcView).__base0),
             core::ptr::addr_of!(rcImage.__base0),
         );
     }
@@ -328,8 +328,8 @@ impl CCanvasWindow {
     
         toolsModel.SetZoom(newZoom);
         (*this_).ImageToCanvas__0(&mut pt);
-        pt.x += (*this_).__base0.GetScrollPos((SB_HORZ) as i32);
-        pt.y += (*this_).__base0.GetScrollPos((SB_VERT) as i32);
+        pt.x += (*this_).__base0.GetScrollPos((SB_HORZ as i32));
+        pt.y += (*this_).__base0.GetScrollPos((SB_VERT as i32));
     
         (*this_).updateScrollRange();
         (*this_).updateScrollPos(pt.x, pt.y);
@@ -359,7 +359,7 @@ impl CCanvasWindow {
     
         // Calculate image size
         let mut rcImage: CRect = CRect__make_0();
-        (*this_).GetImageRect(&mut (rcImage).__base0);
+        (*this_).GetImageRect(&mut rcImage.__base0);
         let sizeImage: SIZE = SIZE { cx: imageModel.GetWidth(), cy: imageModel.GetHeight() };
     
         // We use a memory bitmap to reduce flickering
@@ -377,19 +377,19 @@ impl CCanvasWindow {
         let hbm0Old: HGDIOBJ = SelectObject(hdcMem0, (hbmCache1).cast());
     
         // Fill the background on hdcMem0
-        FillRect(hdcMem0, core::ptr::addr_of!((rcCanvasDraw).__base0), (COLOR_APPWORKSPACE + 1) as HBRUSH);
+        FillRect(hdcMem0, addr_of_mut!(rcCanvasDraw.__base0), (COLOR_APPWORKSPACE + 1) as HBRUSH);
     
         // Draw the sizeboxes if necessary
         let mut rcBase: RECT = (*this_).GetBaseRect();
         if selectionModel.m_bShow == 0 && IsWindowVisible(textEditWindow.op_to_HWND()) == 0 {
-            drawSizeBoxes(hdcMem0, core::ptr::addr_of_mut!(rcBase), (FALSE) as BOOL, core::ptr::addr_of!((rcCanvasDraw).__base0));
+            drawSizeBoxes(hdcMem0, addr_of_mut!(rcBase), (FALSE) as BOOL, addr_of_mut!(rcCanvasDraw.__base0));
         }
     
         // Calculate the target area on the image
         let mut rcImageDraw: CRect = CRect__make_0();
-        rcImageDraw = core::ptr::read(&rcCanvasDraw);
-        (*this_).CanvasToImage__1(&mut (rcImageDraw).__base0, (FALSE) as BOOL);
-        rcImageDraw.IntersectRect(core::ptr::addr_of!((rcImageDraw).__base0), core::ptr::addr_of!((rcImage).__base0));
+        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(rcCanvasDraw), core::ptr::addr_of_mut!(rcImageDraw), 1);
+        (*this_).CanvasToImage__1(&mut rcImageDraw.__base0, (FALSE) as BOOL);
+        rcImageDraw.IntersectRect(addr_of!(rcImageDraw.__base0), addr_of!(rcImage.__base0));
     
         // Consider rounding down by zooming
         rcImageDraw.__base0.right += 1;
@@ -405,7 +405,7 @@ impl CCanvasWindow {
         toolsModel.OnDrawOverlayOnImage(hdcMem1);
     
         // Transfer the bits with stretch (hdcMem0 <-- hdcMem1)
-        (*this_).ImageToCanvas__1(&mut (rcImage).__base0);
+        (*this_).ImageToCanvas__1(&mut rcImage.__base0);
         StretchBlt(hdcMem0, rcImage.__base0.left, rcImage.__base0.top, rcImage.Width(), rcImage.Height(),
                      hdcMem1, 0, 0, sizeImage.cx, sizeImage.cy, SRCCOPY);
     
@@ -444,7 +444,7 @@ impl CCanvasWindow {
     
         // Draw new frame on hdcMem0 if any
         if (*this_).m_hitCanvasSizeBox != HIT_NONE && (*this_).m_rcResizing.IsRectEmpty() == 0 {
-            DrawXorRect(hdcMem0, core::ptr::addr_of!(((*this_).m_rcResizing).__base0));
+            DrawXorRect(hdcMem0, addr_of_mut!((*this_).m_rcResizing.__base0));
         }
     
         // Transfer the bits (hDC <-- hdcMem0)
@@ -489,7 +489,7 @@ impl CCanvasWindow {
             _ => {}
         }
         si.nPos = max(min(si.nPos, si.nMax), si.nMin);
-        (*this_).__base0.SetScrollInfo(fnBar, core::ptr::addr_of_mut!(si), (TRUE) as i32);
+        (*this_).__base0.SetScrollInfo(fnBar, core::ptr::addr_of_mut!(si), (TRUE as i32));
         (*this_).__base0.Invalidate((TRUE) as BOOL);
     }
     pub unsafe fn OnSize(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -524,16 +524,16 @@ impl CCanvasWindow {
         let mut rcClient: RECT = core::mem::zeroed();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient));
     
-        static mut s_bShowedOutOfMemory: BOOL = (FALSE) as i32; // Don't show "Out Of Memory" message multiple time
+        static mut s_bShowedOutOfMemory: BOOL = (FALSE as i32); // Don't show "Out Of Memory" message multiple time
     
         let mut ps: PAINTSTRUCT = core::mem::zeroed();
         let hDC: HDC = (*this_).__base0.BeginPaint(core::ptr::addr_of_mut!(ps));
     
         if (*this_).DoDraw(hDC, &mut rcClient, &mut ps.rcPaint) != 0 {
-            s_bShowedOutOfMemory = (FALSE) as i32;
+            s_bShowedOutOfMemory = (FALSE as i32);
         } else if s_bShowedOutOfMemory == 0 {
             ShowOutOfMemory();
-            s_bShowedOutOfMemory = (TRUE) as i32;
+            s_bShowedOutOfMemory = (TRUE as i32);
             imageModel.ClearHistory(); // Reduce memory usage
         }
     
@@ -546,8 +546,8 @@ impl CCanvasWindow {
     
         if (*this_).m_nMouseDownMsg == WM_MBUTTONDOWN
         {
-            let x: INT = (*this_).__base0.GetScrollPos((SB_HORZ) as i32) - (pt.x - (*this_).m_ptOrig.x);
-            let y: INT = (*this_).__base0.GetScrollPos((SB_VERT) as i32) - (pt.y - (*this_).m_ptOrig.y);
+            let x: INT = (*this_).__base0.GetScrollPos((SB_HORZ as i32)) - (pt.x - (*this_).m_ptOrig.x);
+            let y: INT = (*this_).__base0.GetScrollPos((SB_VERT as i32)) - (pt.y - (*this_).m_ptOrig.y);
             (*this_).__base0.SendMessageW__0(WM_HSCROLL, MAKEWPARAM!(SB_THUMBPOSITION, x), 0);
             (*this_).__base0.SendMessageW__0(WM_VSCROLL, MAKEWPARAM!(SB_THUMBPOSITION, y), 0);
             (*this_).m_ptOrig = pt;
@@ -646,8 +646,8 @@ impl CCanvasWindow {
         // Limit bitmap size
         cxImage = max(1, cxImage);
         cyImage = max(1, cyImage);
-        cxImage = min((MAXWORD) as i32, cxImage);
-        cyImage = min((MAXWORD) as i32, cyImage);
+        cxImage = min((MAXWORD as i32), cxImage);
+        cyImage = min((MAXWORD as i32), cyImage);
     
         // Display new size
         let mut strSize: CStringW = CStringW::new();
@@ -689,7 +689,7 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnKeyDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if wParam == (VK_ESCAPE) as _ {
+        if wParam == (VK_ESCAPE as _) {
             (*this_).OnEndDraw((TRUE) as BOOL);
             ReleaseCapture();
             (*this_).m_nMouseDownMsg = 0;
@@ -703,7 +703,7 @@ impl CCanvasWindow {
     pub unsafe fn OnSetCursor(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         if CWaitCursor::IsWaiting() != 0 {
-            *bHandled = (FALSE) as i32;
+            *bHandled = (FALSE as i32);
             return 0;
         }
     
@@ -720,7 +720,7 @@ impl CCanvasWindow {
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient.__base0));
     
         if rcClient.PtInRect(pt) == 0 {
-            *bHandled = (FALSE) as i32;
+            *bHandled = (FALSE as i32);
             return 0;
         }
     
@@ -767,7 +767,7 @@ impl CCanvasWindow {
         }
     
         if selectionModel.m_bShow != 0 || setCursorOnSizeBox((*this_).CanvasHitTest(pt)) == 0 {
-            *bHandled = (FALSE) as i32;
+            *bHandled = (FALSE as i32);
         }
     
         return 0;
@@ -816,10 +816,10 @@ impl CCanvasWindow {
     
         let hitSelection: HITTEST = selectionModel.hitTest(pt);
         if hitSelection != HIT_NONE {
-            (*this_).m_drawing = (TRUE) as i32;
+            (*this_).m_drawing = (TRUE as i32);
             (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
             (*this_).__base0.SetCapture();
-            toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE) as i32);
+            toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE as i32));
             (*this_).__base0.Invalidate((TRUE) as BOOL);
             return 0;
         }
@@ -843,9 +843,9 @@ impl CCanvasWindow {
         (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
         if hit == HIT_INNER {
-            (*this_).m_drawing = (TRUE) as i32;
+            (*this_).m_drawing = (TRUE as i32);
             (*this_).__base0.SetCapture();
-            toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE) as i32);
+            toolsModel.OnButtonDown(bLeftButton, pt.x, pt.y, (FALSE as i32));
             (*this_).__base0.Invalidate((TRUE) as BOOL);
             return 0;
         }
@@ -863,11 +863,11 @@ impl CCanvasWindow {
         let mut pt: POINT = POINT { x: GET_X_LPARAM!(lParam), y: GET_Y_LPARAM!(lParam) };
         (*this_).CanvasToImage__0(&mut pt, (TRUE) as BOOL);
     
-        (*this_).m_drawing = (FALSE) as i32;
+        (*this_).m_drawing = (FALSE as i32);
         ReleaseCapture();
         (*this_).m_nMouseDownMsg = 0;
     
-        toolsModel.OnButtonDown((nMsg == WM_LBUTTONDBLCLK) as BOOL, pt.x, pt.y, (TRUE) as i32);
+        toolsModel.OnButtonDown((nMsg == WM_LBUTTONDBLCLK) as BOOL, pt.x, pt.y, (TRUE as i32));
         toolsModel.resetTool();
         (*this_).__base0.Invalidate((TRUE) as BOOL);
         return 0;
@@ -883,7 +883,7 @@ impl CCanvasWindow {
         (*this_).m_nMouseDownMsg = 0;
     
         if (*this_).m_drawing != 0 {
-            (*this_).m_drawing = (FALSE) as i32;
+            (*this_).m_drawing = (FALSE as i32);
             toolsModel.OnButtonUp(bLeftButton, pt.x, pt.y);
             (*this_).__base0.Invalidate((FALSE) as BOOL);
             SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 2, CPP_COM_WSTR_96A296D224F2.as_ptr() as LPARAM);
@@ -929,7 +929,7 @@ impl CCanvasWindow {
         }
         (*this_).m_rcResizing.SetRectEmpty();
     
-        g_imageSaved = (FALSE) as i32;
+        g_imageSaved = (FALSE as i32);
     
         (*this_).m_hitCanvasSizeBox = HIT_NONE;
         toolsModel.resetTool(); // resets the point-buffer of the polygon and bezier functions

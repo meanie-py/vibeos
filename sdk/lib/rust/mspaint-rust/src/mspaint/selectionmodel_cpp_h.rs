@@ -14,9 +14,9 @@ impl SelectionModel {
         let this_: *mut Self = self;
         (*this_).m_hbmColor = core::ptr::null_mut();
         (*this_).m_hbmMask = core::ptr::null_mut();
-        (*this_).m_rgbBack = RGB;
-        (*this_).m_bShow = (FALSE) as i32;
-        (*this_).m_bContentChanged = (FALSE) as i32;
+        (*this_).m_rgbBack = RGB!(255, 255, 255);
+        (*this_).m_bShow = (FALSE as i32);
+        (*this_).m_bContentChanged = (FALSE as i32);
         {
             (*this_).m_rc.SetRectEmpty();
             (*this_).m_rcOld.SetRectEmpty();
@@ -30,7 +30,7 @@ impl SelectionModel {
     }
     pub unsafe fn SetRectFromPoints(&mut self, ptFrom: &POINT, ptTo: &POINT) {
         let this_: *mut Self = self;
-        (*this_).m_rc = CRect__make_5(ptFrom, ptTo);
+        (*this_).m_rc = CRect__make_5(*ptFrom, *ptTo);
         (*this_).m_rc.NormalizeRect();
     }
     pub unsafe fn setMask(&mut self, rc: &CRect, hbmMask: HBITMAP) {
@@ -83,7 +83,7 @@ impl SelectionModel {
             rc.UnionRect((*this_).m_rc.op_to_tagRECT(), (*this_).m_rcOld.op_to_tagRECT());
             imageModel.PushImageForUndo__2(&((rc).__base0));
     
-            canvasWindow.m_drawing = (FALSE) as i32;
+            canvasWindow.m_drawing = (FALSE as i32);
             toolsModel.OnDrawOverlayOnImage(imageModel.GetDC());
         }
     
@@ -95,8 +95,8 @@ impl SelectionModel {
     }
     pub unsafe fn HideSelection(&mut self) {
         let this_: *mut Self = self;
-        (*this_).m_bShow = (FALSE) as i32;
-        (*this_).m_bContentChanged = (FALSE) as i32;
+        (*this_).m_bShow = (FALSE as i32);
+        (*this_).m_bContentChanged = (FALSE as i32);
         (*this_).ClearColorImage();
         (*this_).ClearMaskImage();
         (*this_).m_rc.SetRectEmpty();
@@ -138,7 +138,7 @@ impl SelectionModel {
     
         let mut rcSelection: CRect = CRect__make_0();
         rcSelection = (*this_).m_rc;
-        canvasWindow.ImageToCanvas__1((rcSelection).__base0);
+        canvasWindow.ImageToCanvas__1(&mut rcSelection.__base0);
         rcSelection.InflateRect__0((GRIP_SIZE as i32), (GRIP_SIZE as i32));
         drawSizeBoxes(hCanvasDC, core::ptr::addr_of_mut!(rcSelection.__base0), (TRUE) as BOOL, core::ptr::null_mut());
     }
@@ -183,14 +183,14 @@ impl SelectionModel {
     }
     pub unsafe fn DrawBackgroundPoly(&mut self, hDCImage: HDC, crBg: COLORREF) {
         let this_: *mut Self = self;
-        if (*this_).m_rcOld.IsRectEmpty() != 0 {
+        if (((*this_).m_rcOld.IsRectEmpty()) != 0) {
             return;
         }
     
         let hbrOld: HGDIOBJ = SelectObject(hDCImage, GetStockObject((DC_BRUSH as i32)));
         SetDCBrushColor(hDCImage, crBg);
-        MaskBlt(hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_rcOld.Width(), (*this_).m_rcOld.Height(),
-                  hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_hbmMask, 0, 0, MAKEROP4!(PATCOPY, SRCCOPY));
+        MaskBlt(hDCImage, (*this_).m_rcOld.__base0.left, (*this_).m_rcOld.__base0.top, (*this_).m_rcOld.Width(), (*this_).m_rcOld.Height(),
+                  hDCImage, (*this_).m_rcOld.__base0.left, (*this_).m_rcOld.__base0.top, (*this_).m_hbmMask, 0, 0, MAKEROP4!(PATCOPY, SRCCOPY));
         SelectObject(hDCImage, hbrOld);
     }
     pub unsafe fn DrawBackgroundRect(&mut self, hDCImage: HDC, crBg: COLORREF) {
@@ -199,38 +199,40 @@ impl SelectionModel {
             return;
         }
     
-        Rect__0(hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_rcOld.right, (*this_).m_rcOld.bottom, crBg, crBg, 0, 1);
+        Rect__0(hDCImage, (*this_).m_rcOld.__base0.left, (*this_).m_rcOld.__base0.top, (*this_).m_rcOld.__base0.right, (*this_).m_rcOld.__base0.bottom, crBg, crBg, 0, 1);
     }
     pub unsafe fn DrawSelection__0(&mut self, hDCImage: HDC, crBg: COLORREF, bBgTransparent: BOOL, rc: &CRect, hbm: HBITMAP) {
         let this_: *mut Self = self;
-        let rc_mut: *mut CRect = rc as *const CRect as *mut CRect;
-        if (*rc_mut).IsRectEmpty() != 0 {
+        // `const CRect& rc`: read-only. CRect's generated methods take `&mut self` (the
+        // C++ const is not carried), so they are called on a copy of the plain RECT.
+        let mut rc: CRect = *rc;
+        if rc.IsRectEmpty() != 0 {
             return;
         }
     
-        let mut bm: BITMAP = core::mem::zeroed();
+        let mut bm: BITMAP = core::mem::zeroed::<BITMAP>();
         if GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as *mut core::ffi::c_void) == 0 {
             return;
         }
     
-        let keyColor: COLORREF = if bBgTransparent != 0 { crBg } else { CLR_INVALID as COLORREF };
+        let keyColor: COLORREF = if bBgTransparent != 0 { crBg } else { CLR_INVALID };
     
         let hMemDC: HDC = CreateCompatibleDC(hDCImage);
         let hbmOld: HGDIOBJ = SelectObject(hMemDC, (hbm).cast());
-        ColorKeyedMaskBlt(hDCImage, (*rc_mut).__base0.left, (*rc_mut).__base0.top, (*rc_mut).Width(), (*rc_mut).Height(),
+        ColorKeyedMaskBlt(hDCImage, rc.__base0.left, rc.__base0.top, rc.Width(), rc.Height(),
                           hMemDC, 0, 0, bm.bmWidth, bm.bmHeight, (*this_).m_hbmMask, keyColor);
         SelectObject(hMemDC, hbmOld);
         DeleteDC(hMemDC);
     }
-    pub unsafe fn InsertFromHBITMAP(&mut self, hbmColor: HBITMAP, x: i32, y: i32, hbmMask: HBITMAP) {
+    pub unsafe fn InsertFromHBITMAP(&mut self, hbmColor: HBITMAP, x: INT, y: INT, hbmMask: HBITMAP) {
         let this_: *mut Self = self;
         DeleteObject(((*this_).m_hbmColor).cast());
         (*this_).m_hbmColor = hbmColor;
     
-        (*this_).m_rc.left = x;
-        (*this_).m_rc.top = y;
-        (*this_).m_rc.right = x + GetDIBWidth(hbmColor);
-        (*this_).m_rc.bottom = y + GetDIBHeight(hbmColor);
+        (*this_).m_rc.__base0.left = x;
+        (*this_).m_rc.__base0.top = y;
+        (*this_).m_rc.__base0.right = x + GetDIBWidth(hbmColor);
+        (*this_).m_rc.__base0.bottom = y + GetDIBHeight(hbmColor);
     
         if !hbmMask.is_null() {
             DeleteObject(((*this_).m_hbmMask).cast());
@@ -338,10 +340,10 @@ impl SelectionModel {
     
         (*this_).TakeOff();
     
-        let oldWidth: i32 = (*this_).m_rc.Width();
-        let oldHeight: i32 = (*this_).m_rc.Height();
-        let newWidth: i32 = oldWidth * nStretchPercentX / 100;
-        let newHeight: i32 = oldHeight * nStretchPercentY / 100;
+        let mut oldWidth: i32 = (*this_).m_rc.Width();
+        let mut oldHeight: i32 = (*this_).m_rc.Height();
+        let mut newWidth: i32 = oldWidth * nStretchPercentX / 100;
+        let mut newHeight: i32 = oldHeight * nStretchPercentY / 100;
     
         let mut hbmColor: HBITMAP = (*this_).m_hbmColor;
         let mut hbmMask: HBITMAP = (*this_).m_hbmMask;
@@ -355,8 +357,8 @@ impl SelectionModel {
             AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), CopyMonoImage(hbmMask, newWidth, newHeight, (STRETCH_HALFTONE) as INT));
         }
     
-        let mut hbmOld: HGDIOBJ = core::ptr::null_mut();
-        let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
+        let mut hbmOld: HGDIOBJ = core::mem::zeroed();
+        let mut hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
     
         if nSkewDegX != 0 {
             hbmOld = SelectObject(hDC, (hbmColor).cast());
@@ -376,9 +378,9 @@ impl SelectionModel {
     
         DeleteDC(hDC);
     
-        (*this_).InsertFromHBITMAP(hbmColor, (*this_).m_rc.left, (*this_).m_rc.top, hbmMask);
+        (*this_).InsertFromHBITMAP(hbmColor, (*this_).m_rc.__base0.left, (*this_).m_rc.__base0.top, hbmMask);
     
-        (*this_).m_bShow = (TRUE) as i32;
+        (*this_).m_bShow = (TRUE as i32);
         (*this_).NotifyContentChanged();
     }
     pub unsafe fn InvertSelection(&mut self) {
@@ -404,30 +406,41 @@ impl SelectionModel {
     }
     pub unsafe fn Dragging(&mut self, hit: HITTEST, pt: POINT) {
         let this_: *mut Self = self;
-        if hit == HIT_NONE {
-            // no-op
-        } else if hit == HIT_UPPER_LEFT {
-            (*this_).m_rc.left += pt.x - (*this_).m_ptHit.x;
-            (*this_).m_rc.top += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_UPPER_CENTER {
-            (*this_).m_rc.top += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_UPPER_RIGHT {
-            (*this_).m_rc.right += pt.x - (*this_).m_ptHit.x;
-            (*this_).m_rc.top += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_MIDDLE_LEFT {
-            (*this_).m_rc.left += pt.x - (*this_).m_ptHit.x;
-        } else if hit == HIT_MIDDLE_RIGHT {
-            (*this_).m_rc.right += pt.x - (*this_).m_ptHit.x;
-        } else if hit == HIT_LOWER_LEFT {
-            (*this_).m_rc.left += pt.x - (*this_).m_ptHit.x;
-            (*this_).m_rc.bottom += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_LOWER_CENTER {
-            (*this_).m_rc.bottom += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_LOWER_RIGHT {
-            (*this_).m_rc.right += pt.x - (*this_).m_ptHit.x;
-            (*this_).m_rc.bottom += pt.y - (*this_).m_ptHit.y;
-        } else if hit == HIT_BORDER || hit == HIT_INNER {
-            (*this_).m_rc.OffsetRect__0(pt.x - (*this_).m_ptHit.x, pt.y - (*this_).m_ptHit.y);
+        match hit {
+            HIT_NONE => {
+            }
+            HIT_UPPER_LEFT => {
+                (*this_).m_rc.__base0.left += pt.x - (*this_).m_ptHit.x;
+                (*this_).m_rc.__base0.top += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_UPPER_CENTER => {
+                (*this_).m_rc.__base0.top += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_UPPER_RIGHT => {
+                (*this_).m_rc.__base0.right += pt.x - (*this_).m_ptHit.x;
+                (*this_).m_rc.__base0.top += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_MIDDLE_LEFT => {
+                (*this_).m_rc.__base0.left += pt.x - (*this_).m_ptHit.x;
+            }
+            HIT_MIDDLE_RIGHT => {
+                (*this_).m_rc.__base0.right += pt.x - (*this_).m_ptHit.x;
+            }
+            HIT_LOWER_LEFT => {
+                (*this_).m_rc.__base0.left += pt.x - (*this_).m_ptHit.x;
+                (*this_).m_rc.__base0.bottom += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_LOWER_CENTER => {
+                (*this_).m_rc.__base0.bottom += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_LOWER_RIGHT => {
+                (*this_).m_rc.__base0.right += pt.x - (*this_).m_ptHit.x;
+                (*this_).m_rc.__base0.bottom += pt.y - (*this_).m_ptHit.y;
+            }
+            HIT_BORDER | HIT_INNER => {
+                (*this_).m_rc.OffsetRect__0(pt.x - (*this_).m_ptHit.x, pt.y - (*this_).m_ptHit.y);
+            }
+            _ => {}
         }
         (*this_).m_ptHit = pt;
     }
@@ -447,7 +460,7 @@ impl SelectionModel {
     }
     pub unsafe fn NotifyContentChanged(&mut self) {
         let this_: *mut Self = self;
-        (*this_).m_bContentChanged = (TRUE) as i32;
+        (*this_).m_bContentChanged = (TRUE as i32);
         imageModel.NotifyImageChanged();
     }
     pub unsafe fn StretchSelection(&mut self, bShrink: BOOL) {
@@ -469,19 +482,19 @@ impl SelectionModel {
     
         // The selection area must exist there
         if (*this_).m_rc.Width() <= 0 {
-            (*this_).m_rc.right = (*this_).m_rc.left + 1;
+            (*this_).m_rc.__base0.right = (*this_).m_rc.__base0.left + 1;
         }
         if (*this_).m_rc.Height() <= 0 {
-            (*this_).m_rc.bottom = (*this_).m_rc.top + 1;
+            (*this_).m_rc.__base0.bottom = (*this_).m_rc.__base0.top + 1;
         }
     
         imageModel.NotifyImageChanged();
     }
     pub unsafe fn SwapWidthAndHeight(&mut self) {
         let this_: *mut Self = self;
-        let cx: INT = (*this_).m_rc.Width();
-        let cy: INT = (*this_).m_rc.Height();
-        (*this_).m_rc.right = (*this_).m_rc.left + cy;
-        (*this_).m_rc.bottom = (*this_).m_rc.top + cx;
+        let cx: i32 = (*this_).m_rc.Width();
+        let cy: i32 = (*this_).m_rc.Height();
+        (*this_).m_rc.__base0.right = (*this_).m_rc.__base0.left + cy;
+        (*this_).m_rc.__base0.bottom = (*this_).m_rc.__base0.top + cx;
     }
 }

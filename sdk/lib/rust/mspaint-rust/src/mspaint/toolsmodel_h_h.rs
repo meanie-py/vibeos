@@ -18,7 +18,7 @@ pub unsafe extern "C" fn Zoomed__0(xy: i32) -> i32 {
 }
 
 pub unsafe extern "C" fn UnZoomed__0(xy: i32, bRound: BOOL) -> i32 {
-    if r#if(bRound) != 0 {
+    if bRound != 0 {
         return MulDiv(xy, (DEFAULT_ZOOM as i32), toolsModel.GetZoom());
     }
     return xy * (DEFAULT_ZOOM as i32) / toolsModel.GetZoom();

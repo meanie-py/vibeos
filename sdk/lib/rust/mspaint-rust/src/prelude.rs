@@ -22,8 +22,9 @@ pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
 
 // ================= ATL ========================================================================
 // ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.
-pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, CSimpleMap, CStringA, CStringW, POSITION};
+pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};
 pub use atl_rust::CPath;
+pub use atl_rust::CStringW as CSimpleString;
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
@@ -65,7 +66,7 @@ pub fn NT_SUCCESS(s: NTSTATUS) -> bool {
 }
 pub use crate::{CONTAINING_RECORD, NT_SUCCESS};
 // The Win32 header macros, ported once in win32macros-rust, not per module.
-pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedDecrement, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, ZeroMemory, _countof, debugstr_a, debugstr_an, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, max, min, wide_bytes};
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DPRINT1, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_WHEEL_DELTA_WPARAM, GET_X_LPARAM, GET_Y_LPARAM, GetAValue, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, HandleToUlong, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, IS_INTRESOURCE, InitializeObjectAttributes, IntToPtr, InterlockedDecrement, InterlockedIncrement, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, LongToHandle, LongToPtr, MAKEINTATOM, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToInt, PtrToLong, PtrToUint, PtrToUlong, RGB, RGBA, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UIntToPtr, ULongToHandle, ULongToPtr, UNICODE_NULL, UNREACHABLE, UNREFERENCED_PARAMETER, UintToPtr, UlongToHandle, UlongToPtr, ZeroMemory, _countof, debugstr_a, debugstr_an, debugstr_w, debugstr_wn, heap_alloc, heap_alloc_zero, heap_calloc, heap_free, heap_realloc, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, max, min, wide_bytes};
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
@@ -445,6 +446,28 @@ macro_rules! DEG2RAD {
 }
 #[allow(unused_imports)]
 pub(crate) use DEG2RAD;
+
+// HAND-WRITTEN: precomp.h:89 `template <typename T> inline void Swap(T& a, T& b)
+// { T tmp = a; a = b; b = tmp; }` -- cppapp does not generate templates. Both call sites swap
+// two places of one type (HBITMAPs in history.cpp, CStringW in registry.cpp), and the copy
+// dance leaves exactly the two values exchanged, which is `mem::swap`.
+#[allow(dead_code)]
+pub unsafe fn Swap<T>(a: &mut T, b: &mut T) {
+    core::mem::swap(a, b);
+}
+
+// HAND-WRITTEN: gdiplusimaging.h's `DEFINE_GUID(ImageFormatXXX, ..)` under the module's
+// -DINITGUID DEFINES each GUID in every TU that includes it, so nothing exports them to link
+// against; the island's `extern { static Gdiplus_ImageFormatXXX }` would never resolve. The
+// values are the header's (gdiplusimaging.h:24-32). These shadow the island's declarations.
+pub static Gdiplus_ImageFormatBMP: GUID = GUID { Data1: 0xb96b3cab, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatEMF: GUID = GUID { Data1: 0xb96b3cac, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatWMF: GUID = GUID { Data1: 0xb96b3cad, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatJPEG: GUID = GUID { Data1: 0xb96b3cae, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatPNG: GUID = GUID { Data1: 0xb96b3caf, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatGIF: GUID = GUID { Data1: 0xb96b3cb0, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatTIFF: GUID = GUID { Data1: 0xb96b3cb1, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
+pub static Gdiplus_ImageFormatIcon: GUID = GUID { Data1: 0xb96b3cb5, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
 
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
 #[macro_export] macro_rules! ComboBox_AddString { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((323) as _), ((0) as _), (($p1) as LPARAM))) as DWORD)) as c_int) }; }

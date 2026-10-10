@@ -62,7 +62,7 @@ pub unsafe extern "C" fn getSizeBoxRect(prc: LPRECT, hit: HITTEST, prcBase: LPCR
         }
         h if h == HIT_INNER => {
             *prc = *prcBase;
-            InflateRect(prc, (-GRIP_SIZE) as i32, (-GRIP_SIZE) as i32);
+            InflateRect(prc, (-(GRIP_SIZE as i32)) as i32, (-(GRIP_SIZE as i32)) as i32);
             return (TRUE) as BOOL;
         }
         _ => {
@@ -84,12 +84,12 @@ pub unsafe extern "C" fn getSizeBoxHitTest(pt: POINT, prcBase: LPCRECT) -> HITTE
     }
 
     rc.__base0 = *prcBase;
-    rc.InflateRect__0((-GRIP_SIZE) as i32, (-GRIP_SIZE) as i32);
+    rc.InflateRect__0((-(GRIP_SIZE as i32)) as i32, (-(GRIP_SIZE as i32)) as i32);
     if rc.PtInRect(pt) != 0 {
         return HIT_INNER;
     }
 
-    let mut i: INT = (HIT_UPPER_LEFT) as i32;
+    let mut i: i32 = (HIT_UPPER_LEFT) as i32;
     while ((i) as u32) <= HIT_LOWER_RIGHT {
         let hit: HITTEST = i as HITTEST;
         getSizeBoxRect(core::ptr::addr_of_mut!(rc.__base0), hit, prcBase);
@@ -103,8 +103,8 @@ pub unsafe extern "C" fn getSizeBoxHitTest(pt: POINT, prcBase: LPCRECT) -> HITTE
 }
 #[no_mangle]
 pub unsafe extern "C" fn drawSizeBoxes(hdc: HDC, prcBase: LPCRECT, bDrawFrame: BOOL, prcPaint: LPCRECT) {
-    let mut rc = CRect__make_0();
-    let mut rcIntersect = CRect__make_0();
+    let mut rc: CRect = CRect__make_0();
+    let mut rcIntersect: CRect = CRect__make_0();
 
     if !prcPaint.is_null() && IntersectRect(core::ptr::addr_of_mut!(rcIntersect.__base0), prcPaint, prcBase) == 0 {
         return;
@@ -112,12 +112,12 @@ pub unsafe extern "C" fn drawSizeBoxes(hdc: HDC, prcBase: LPCRECT, bDrawFrame: B
 
     if bDrawFrame != 0 {
         rc.__base0 = *prcBase;
-        rc.InflateRect__0((-GRIP_SIZE / 2) as i32, (-GRIP_SIZE / 2) as i32);
+        rc.InflateRect__0(((-(GRIP_SIZE as i32)) / 2) as i32, ((-(GRIP_SIZE as i32)) / 2) as i32);
 
         let mut logBrush: LOGBRUSH = LOGBRUSH { lbStyle: BS_HOLLOW, lbColor: 0, lbHatch: 0 };
-        let rgbHighlight: COLORREF = GetSysColor((COLOR_HIGHLIGHT) as i32);
+        let rgbHighlight: COLORREF = GetSysColor((COLOR_HIGHLIGHT as i32));
         let oldPen: HGDIOBJ = SelectObject(hdc, (CreatePen((PS_DOT as i32), 1, rgbHighlight)).cast());
-        let oldBrush: HGDIOBJ = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of_mut!(logBrush))).cast());
+        let oldBrush: HGDIOBJ = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of!(logBrush))).cast());
         Rectangle(hdc, rc.__base0.left, rc.__base0.top, rc.__base0.right, rc.__base0.bottom);
         DeleteObject(SelectObject(hdc, oldBrush));
         DeleteObject(SelectObject(hdc, oldPen));
@@ -126,8 +126,8 @@ pub unsafe extern "C" fn drawSizeBoxes(hdc: HDC, prcBase: LPCRECT, bDrawFrame: B
     let mut i: INT = (HIT_UPPER_LEFT) as i32;
     while ((i) as u32) <= HIT_LOWER_RIGHT {
         getSizeBoxRect(core::ptr::addr_of_mut!(rc.__base0), i as HITTEST, prcBase);
-        if prcPaint.is_null() || IntersectRect(core::ptr::addr_of_mut!(rcIntersect.__base0), core::ptr::addr_of_mut!(rc.__base0), prcPaint) != 0 {
-            FillRect(hdc, core::ptr::addr_of_mut!(rc.__base0), (COLOR_HIGHLIGHT + 1) as HBRUSH);
+        if prcPaint.is_null() || IntersectRect(core::ptr::addr_of_mut!(rcIntersect.__base0), core::ptr::addr_of!(rc.__base0), prcPaint) != 0 {
+            FillRect(hdc, core::ptr::addr_of!(rc.__base0), (COLOR_HIGHLIGHT + 1) as usize as HBRUSH);
         }
         i += 1;
     }

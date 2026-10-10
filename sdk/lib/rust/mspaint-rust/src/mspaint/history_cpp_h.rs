@@ -37,7 +37,7 @@ impl IMAGE_PART {
         DeleteObject(((*this_).m_hbmImage).cast());
         (*this_).m_hbmImage = core::ptr::null_mut();
         (*this_).m_rcPart.SetRectEmpty();
-        (*this_).m_bPartial = (FALSE) as i32;
+        (*this_).m_bPartial = (FALSE as i32);
     }
 }
 
@@ -53,7 +53,7 @@ impl ImageModel {
         (*this_).m_hbmMaster = CreateColorDIB(1, 1, RGB!(255, 255, 255));
         (*this_).m_hbmOld = SelectObject((*this_).m_hDrawingDC, ((*this_).m_hbmMaster).cast());
     
-        g_imageSaved = (TRUE) as i32;
+        g_imageSaved = (TRUE as i32);
         }
     }
     pub unsafe fn __dtor__body(&mut self) {
@@ -102,7 +102,7 @@ impl ImageModel {
     
         let part: &mut IMAGE_PART = &mut (*this_).m_historyItems[(*this_).m_currInd as usize];
         (*part).clear();
-        (*part).m_bPartial = (TRUE) as i32;
+        (*part).m_bPartial = (TRUE as i32);
         (*part).m_rcPart.__base0 = *rcPartial;
     
         let rcImage: CRect = CRect__make_1(0, 0, (*this_).GetWidth(), (*this_).GetHeight());
@@ -343,7 +343,7 @@ impl ImageModel {
         let this_: *mut Self = self;
         let part: *mut IMAGE_PART = core::ptr::addr_of_mut!((*this_).m_historyItems[(*this_).m_currInd as usize]);
         if (*part).m_bPartial == 0 {
-            Swap((*this_).m_hbmMaster, (*part).m_hbmImage);
+            Swap(&mut (*this_).m_hbmMaster, &mut (*part).m_hbmImage);
             return;
         }
     
@@ -363,7 +363,7 @@ impl ImageModel {
         }
         (*this_).m_redoSteps = 0;
     
-        g_imageSaved = (FALSE) as i32;
+        g_imageSaved = (FALSE as i32);
         (*this_).NotifyImageChanged();
     }
 }

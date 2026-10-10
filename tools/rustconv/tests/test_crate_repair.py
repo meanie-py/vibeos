@@ -2858,3 +2858,120 @@ def test_cstringw_implicit_conversions_are_written_out():
         "CStringW::from_ptr(szText.as_ptr())",
         "registrySettings.strFontName.GetString()",
     ]
+
+
+def test_compound_assign_through_a_reference_zero_pointer_and_int_float():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = (
+        b"fn f(strFilter: &mut CStringW) {\n    strFilter += p;\n"
+        b"    k.Create(h, REG_NONE);\n    g((*this_).newWidth / g_xDpi);\n}\n"
+    )
+    a = src.index(b"strFilter +=")
+    assign = _diag(
+        "binary assignment operation `+=` cannot be applied to type `&mut atl_rust::CStringW`",
+        code="E0368",
+        spans=[
+            _span("src/a.rs", a, a + 9, label="cannot use `+=` on type `&mut CStringW`"),
+            _span("src/a.rs", a, a + 14, is_primary=True),
+        ],
+    )
+    op = src.index(b"/ g_xDpi")
+    div = _diag(
+        "cannot divide `i32` by `f32`",
+        code="E0277",
+        spans=[_span("src/a.rs", op, op + 1, is_primary=True)],
+    )
+    plan = propose_edits(
+        [assign, _mismatch(src, b"REG_NONE", "*mut u16", "u32"), div],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+        constants={"REG_NONE": 0},
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "((*this_).newWidth as f32)",
+        "*strFilter",
+        "core::ptr::null_mut()",
+    ]
+
+
+def test_an_option_fn_integer_cast_inside_its_own_parentheses():
+    src = "fn f() { if ((*this_).m_Shutdown as usize) == 0 {} }\n"
+    at = src.index("((*this_)")
+    end = src.index(" == 0")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn(u64)>` as `usize`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "if ((*this_).m_Shutdown).map_or(0, |f| f as usize) as usize == 0 {}" in _apply_plan(
+        src, diag
+    )
+
+
+def test_a_constant_operand_for_a_64bit_want_infers_its_width():
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(wParam: WPARAM) -> bool {\n    wParam == VK_ESCAPE\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"VK_ESCAPE", "u64", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"VK_ESCAPE": 0x1B},
+    )
+    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as _)"]
+
+
+def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
+    from rustconv.crate_repair import RULE_CONST_OPERAND, _cpp_reference_arg, _Ctx
+
+    src = (
+        b"fn f(wParam: WPARAM) {\n    if wParam == (IDD_X as u64) {}\n"
+        b"    if wParam & MK_LBUTTON != 0 {}\n}\n"
+    )
+    plan = propose_edits(
+        [
+            _mismatch(src, b"(IDD_X as u64)", "u32", "u64"),
+            _mismatch(src, b"MK_LBUTTON", "u64", "u32"),
+        ],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CONST_OPERAND],
+        constants={"IDD_X": 5, "MK_LBUTTON": 1},
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(IDD_X as _)", "(MK_LBUTTON as WPARAM)"]
+    # `original` must be the span's own text, or apply_edits declines it as stale.
+    assert sorted(e.original for e in plan.edits) == ["(IDD_X as u64)", "MK_LBUTTON"]
+    # Parenthesised places bind to a C++ reference too.
+    ref = b"g((rc).__base0); h((*core::ptr::addr_of_mut!(rcImage)).__base0);"
+    ctx = _Ctx(target="amd64", width=64)
+    a = ref.index(b"(rc)")
+    e = _cpp_reference_arg(_span("a.rs", a, a + 12), "&mut tagRECT", "tagRECT", lambda f: ref, ctx)
+    assert e is not None and e.replacement == "&mut (rc).__base0"
+    b = ref.index(b"(*core")
+    e = _cpp_reference_arg(
+        _span("a.rs", b, ref.index(b");", b)), "*mut tagRECT", "tagRECT", lambda f: ref, ctx
+    )
+    assert e is not None and e.replacement == "&mut (*core::ptr::addr_of_mut!(rcImage)).__base0"
+
+
+def test_an_uninferable_constant_cast_takes_the_siblings_type():
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(wParam: WPARAM) {\n    if wParam & (MK_LBUTTON as _) != 0 {}\n}\n"
+    at = src.index(b"_)")
+    diag = _diag(
+        "type annotations needed",
+        code="E0282",
+        spans=[_span("src/a.rs", at, at + 1, is_primary=True, label="cannot infer type")],
+    )
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"MK_LBUTTON": 1},
+    )
+    assert [e.replacement for e in plan.edits] == ["WPARAM"]

@@ -5,7 +5,7 @@ pub static CPP_COM_WSTR_37BB6F4CC6ED: [WCHAR; 12] = [0x0067, 0x0064, 0x0069, 0x0
 use core::ffi::c_void;
 
 extern "system" {
-    fn PathFindExtensionW(pszPath: LPCWSTR) -> *mut WCHAR;
+    fn PathFindExtensionW(pszPath: LPCWSTR) -> *mut u16;
 }
 
 
@@ -41,7 +41,7 @@ impl CImageDx {
             DeleteObject(((*this_).m_hBitmap).cast());
         }
     
-        CImageDx::_shared().Release();
+        (*CImageDx::_shared()).Release();
     }
     pub unsafe fn Attach(&mut self, hbm: HBITMAP) {
         let this_: *mut Self = self;
@@ -104,8 +104,9 @@ impl CImageDx {
     
         // get an HBITMAP
         let mut hbm: HBITMAP = core::ptr::null_mut();
-        let color: Gdiplus_Color = Gdiplus_Color__make_0(0xFF, 0xFF, 0xFF);
-        let status: Gdiplus_Status = (((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap).unwrap_unchecked())(pBitmap, core::ptr::addr_of_mut!(hbm), color.GetValue());
+        // Gdiplus::Color(255, 255, 255): MakeARGB(0xFF, r, g, b), opaque white.
+        let color: DWORD = 0xFFFF_FFFF; // Gdiplus::ARGB is a DWORD
+        let status: Gdiplus_Status = (((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap).unwrap_unchecked())(pBitmap, core::ptr::addr_of_mut!(hbm), color);
     
         // get the resolution
         if !pxDpi.is_null() || !pyDpi.is_null() {
@@ -125,52 +126,53 @@ impl CImageDx {
     }
     pub unsafe fn SaveDx(&mut self, pszFileName: LPCWSTR, guidFileType: &GUID, xDpi: f32, yDpi: f32) -> HRESULT {
         let this_: *mut Self = self;
+        const Ok: u32 = 0; // Gdiplus Ok
     
-            (*CImageDx::_shared()).AddRef();
+        (*CImageDx::_shared()).AddRef();
     
-            if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateBitmapFromHBITMAP, b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8) ||
-                !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_SaveImageToFile, b"GdipSaveImageToFile\0".as_ptr() as *const i8) ||
-                !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8)
-            {
-                (*CImageDx::_shared()).Release();
-                return E_FAIL;
-            }
-    
-            // create a Gdiplus_GpBitmap from HBITMAP
-            let mut pBitmap: *mut Gdiplus_GpBitmap = core::ptr::null_mut();
-            (((*CImageDx::_shared()).m_CreateBitmapFromHBITMAP).unwrap_unchecked())((*this_).m_hBitmap, core::ptr::null_mut(), core::ptr::addr_of_mut!(pBitmap));
-    
-            // set the resolution
-            (*this_).SetResolution(pBitmap, xDpi, yDpi);
-    
-            // Get encoders
-            let mut cEncoders: UINT = 0;
-            let mut pEncoders: *mut Gdiplus_ImageCodecInfo = CImageDx::GetAllEncoders(&mut cEncoders);
-    
-            // if the file type is null, get the file type from extension
-            let mut clsid: CLSID = core::mem::zeroed();
-            if IsEqualGUID!(guidFileType, GUID_NULL)
-            {
-                let mut strExt: CStringW = CStringW::from_ptr(PathFindExtensionW(pszFileName) as *const WCHAR);
-                clsid = CImageDx::FindCodecForExtension(&strExt, pEncoders, cEncoders);
-            }
-            else
-            {
-                clsid = CImageDx::FindCodecForFileType(guidFileType, pEncoders, cEncoders);
-            }
-    
-            cpp_delete_array(pEncoders);
-    
-            // save to file
-            let status: Gdiplus_Status = (((*CImageDx::_shared()).m_SaveImageToFile).unwrap_unchecked())((pBitmap).cast(), pszFileName, core::ptr::addr_of_mut!(clsid), core::ptr::null_mut());
-    
-            // destroy Gdiplus_GpBitmap
-            (((*CImageDx::_shared()).m_DisposeImage).unwrap_unchecked())((pBitmap).cast());
-    
+        if CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateBitmapFromHBITMAP, b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8) == false ||
+            CImageDx::get_fn(&mut (*CImageDx::_shared()).m_SaveImageToFile, b"GdipSaveImageToFile\0".as_ptr() as *const i8) == false ||
+            CImageDx::get_fn(&mut (*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8) == false
+        {
             (*CImageDx::_shared()).Release();
-    
-            return if status == 0 /* Ok */ { S_OK } else { E_FAIL };
+            return E_FAIL;
         }
+    
+        // create a Gdiplus_GpBitmap from HBITMAP
+        let mut pBitmap: *mut Gdiplus_GpBitmap = core::ptr::null_mut();
+        (((*CImageDx::_shared()).m_CreateBitmapFromHBITMAP).unwrap_unchecked())((*this_).m_hBitmap, core::ptr::null_mut(), core::ptr::addr_of_mut!(pBitmap));
+    
+        // set the resolution
+        (*this_).SetResolution(pBitmap, xDpi, yDpi);
+    
+        // Get encoders
+        let mut cEncoders: UINT = 0;
+        let mut pEncoders: *mut Gdiplus_ImageCodecInfo = CImageDx::GetAllEncoders(&mut cEncoders);
+    
+        // if the file type is null, get the file type from extension
+        let mut clsid: CLSID = core::mem::zeroed();
+        if IsEqualGUID!(guidFileType, core::ptr::addr_of!(GUID_NULL)) != false
+        {
+            let mut strExt = CStringW::from_ptr(PathFindExtensionW(pszFileName));
+            clsid = CImageDx::FindCodecForExtension(strExt.GetString(), pEncoders, cEncoders);
+        }
+        else
+        {
+            clsid = CImageDx::FindCodecForFileType(guidFileType, pEncoders, cEncoders);
+        }
+    
+        cpp_delete_array(pEncoders);
+    
+        // save to file
+        let status: Gdiplus_Status = (((*CImageDx::_shared()).m_SaveImageToFile).unwrap_unchecked())((pBitmap).cast(), pszFileName, core::ptr::addr_of_mut!(clsid), core::ptr::null_mut());
+    
+        // destroy Gdiplus_GpBitmap
+        (((*CImageDx::_shared()).m_DisposeImage).unwrap_unchecked())((pBitmap).cast());
+    
+        (*CImageDx::_shared()).Release();
+    
+        return if status == Ok { S_OK } else { E_FAIL };
+    }
     pub unsafe fn IsExtensionSupported(pchDotExt: PWCHAR) -> BOOL {
         (*CImageDx::_shared()).AddRef();
     
@@ -178,7 +180,7 @@ impl CImageDx {
         let pEncoders: *mut Gdiplus_ImageCodecInfo = CImageDx::GetAllEncoders(&mut cEncoders);
     
         let clsid: CLSID = CImageDx::FindCodecForExtension(pchDotExt, pEncoders, cEncoders);
-        let ret: BOOL = ((IsEqualGUID!(clsid, CLSID_NULL) == false) as BOOL);
+        let ret: BOOL = !IsEqualGUID!(core::ptr::addr_of!(clsid), core::ptr::addr_of!(GUID_NULL)) as BOOL;
         cpp_delete_array(pEncoders);
     
         (*CImageDx::_shared()).Release();
@@ -232,30 +234,15 @@ impl CImageDx {
                 ichSep = strSpecs.Find(0x003Bu16, ichOld);
     
                 let mut strSpec = CStringW::new();
-                let src = strSpecs.GetString();
-                let total = strSpecs.GetLength();
                 if ichSep < 0 {
-                    strSpec.SetString(src.add(ichOld as usize), total - ichOld);
+                    strSpec = strSpecs.Mid(ichOld);
                 } else {
-                    strSpec.SetString(src.add(ichOld as usize), ichSep - ichOld);
+                    strSpec = strSpecs.Mid__1(ichOld, ichSep - ichOld);
                 }
     
-                // ReverseFind(0x002Eu16) on strSpec
-                let mut ichDot: i32 = -1;
-                let sp = strSpec.GetString();
-                let sl = strSpec.GetLength();
-                let mut k: i32 = sl - 1;
-                while k >= 0 {
-                    if *sp.add(k as usize) == 0x002Eu16 {
-                        ichDot = k;
-                        break;
-                    }
-                    k -= 1;
-                }
+                let mut ichDot: i32 = strSpec.ReverseFind(0x002Eu16);
                 if ichDot >= 0 {
-                    let mut tmp = CStringW::new();
-                    tmp.SetString(sp.add(ichDot as usize), sl - ichDot);
-                    strSpec = tmp;
+                    strSpec = strSpec.Mid(ichDot);
                 }
     
                 if dotext.is_null() || strSpec.CompareNoCase(dotext) == 0 {
@@ -270,17 +257,17 @@ impl CImageDx {
             }
             i += 1;
         }
-        return CLSID_NULL;
+        return GUID_NULL;
     }
-    pub unsafe fn FindCodecForFileType(guidFileType: *const GUID, pCodecs: *const Gdiplus_ImageCodecInfo, nCodecs: u32) -> CLSID {
-        let mut iInfo: u32 = 0;
+    pub unsafe fn FindCodecForFileType(guidFileType: *const GUID, pCodecs: *const Gdiplus_ImageCodecInfo, nCodecs: UINT) -> CLSID {
+        let mut iInfo: UINT = 0;
         while iInfo < nCodecs {
             if IsEqualGUID!(core::ptr::addr_of!((*pCodecs.add(iInfo as usize)).FormatID), guidFileType) != false {
                 return (*pCodecs.add(iInfo as usize)).Clsid;
             }
             iInfo += 1;
         }
-        return CLSID_NULL;
+        return GUID_NULL;
     }
 }
 
@@ -296,28 +283,26 @@ impl SHARED {
             return core::ptr::null_mut();
         }
     
-        let Startup: FN_Startup = core::mem::transmute(GetProcAddress(
-            (*this_).m_hGdiPlus,
-            b"GdiplusStartup\0".as_ptr() as *const i8,
-        ));
-        (*this_).m_Shutdown = core::mem::transmute(GetProcAddress(
-            (*this_).m_hGdiPlus,
-            b"GdiplusShutdown\0".as_ptr() as *const i8,
-        ));
-        if (Startup as usize) == 0 || ((*this_).m_Shutdown as usize) == 0 {
+        let Startup: CImageDx_FN_Startup = core::mem::transmute::<_, CImageDx_FN_Startup>(
+            GetProcAddress((*this_).m_hGdiPlus, b"GdiplusStartup\0".as_ptr() as *const i8),
+        );
+        (*this_).m_Shutdown = core::mem::transmute::<_, CImageDx_FN_Shutdown>(
+            GetProcAddress((*this_).m_hGdiPlus, b"GdiplusShutdown\0".as_ptr() as *const i8),
+        );
+        if (Startup).map_or(0, |f| f as usize) as usize == 0 || ((*this_).m_Shutdown).map_or(0, |f| f as usize) as usize == 0 {
             FreeLibrary((*this_).m_hGdiPlus);
             (*this_).m_hGdiPlus = core::ptr::null_mut();
             return core::ptr::null_mut();
         }
     
         let mut gdiplusStartupInput: Gdiplus_GdiplusStartupInput = core::mem::zeroed();
-        Startup(
+        (Startup.unwrap_unchecked())(
             core::ptr::addr_of_mut!((*this_).m_dwToken),
             core::ptr::addr_of_mut!(gdiplusStartupInput),
             core::ptr::null_mut(),
         );
     
-        (*this_).m_hGdiPlus
+        return (*this_).m_hGdiPlus;
     }
     pub unsafe fn Free(&mut self) {
         let this_: *mut Self = self;
@@ -358,7 +343,7 @@ impl SHARED {
 }
 
 impl CImageDx {
-    /// atlimagedx.h's member TEMPLATE `template <typename FN_T> static bool CImageDx::get_fn(FN_T& fn,
+    /// atlimagedx.h's member TEMPLATE `template <typename FN_T> static bool get_fn(FN_T& fn,
     /// const char *name)`, hand-ported (cppapp does not generate templates): resolve `fn`
     /// from gdiplus.dll on first use. `F` is the field's function-pointer type; FARPROC and
     /// it are the same size, as the C++ reinterpret_cast assumes.

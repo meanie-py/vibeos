@@ -1,21 +1,10 @@
 use crate::prelude::*;
+// Deterministic UTF-16 literals from the selected C++ helper closure.
+pub static CPP_COM_WSTR_37BB6F4CC6ED: [WCHAR; 12] = [0x0067, 0x0064, 0x0069, 0x0070, 0x006C, 0x0075, 0x0073, 0x002E, 0x0064, 0x006C, 0x006C, 0x0000];
+pub static CPP_COM_WSTR_4F2D892D6AF4: [WCHAR; 2] = [0x0029, 0x0000];
+pub static CPP_COM_WSTR_ACBE5EA9B8F8: [WCHAR; 3] = [0x0020, 0x0028, 0x0000];
+
 use core::ffi::c_void;
-
-extern "C" {
-    fn CGdiPlusToken__ReleaseGDIPlus(this: *mut core::ffi::c_void);
-}
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -48,8 +37,8 @@ impl CImage {
         (*this_).m_nPitch = 0;
         (*this_).m_nBPP = 0;
         (*this_).m_pBits = core::ptr::null_mut();
-        (*this_).m_bHasAlphaChannel = (FALSE) as i32;
-        (*this_).m_bIsDIBSection = (FALSE) as i32;
+        (*this_).m_bHasAlphaChannel = (FALSE as i32);
+        (*this_).m_bIsDIBSection = (FALSE as i32);
         (*this_).m_clrTransparentColor = CLR_INVALID;
         (*this_).m_hDC = core::ptr::null_mut();
         (*this_).m_nDCRefCount = 0;
@@ -62,111 +51,30 @@ impl CImage {
         (*this_).Destroy();
         CImage__s_gdiplus.DecreaseCImageCount();
     }
-    pub unsafe fn ReleaseGDIPlus() {
-        CGdiPlusToken__ReleaseGDIPlus(core::ptr::addr_of_mut!(CImage__s_gdiplus) as *mut core::ffi::c_void);
-    }
-    pub unsafe fn Attach(&mut self, hBitmap: HBITMAP, eOrientation: DIBOrientation) {
-        let this_: *mut Self = self;
-        (*this_).AttachInternal(hBitmap, eOrientation, -1);
-    }
     pub unsafe fn Detach(&mut self) -> HBITMAP {
         let this_: *mut Self = self;
-            (*this_).m_hOldBitmap = core::ptr::null_mut();
-            (*this_).m_nBPP = 0;
-            (*this_).m_nPitch = 0;
-            (*this_).m_nHeight = 0;
-            (*this_).m_nWidth = 0;
-            (*this_).m_pBits = core::ptr::null_mut();
+        (*this_).m_hOldBitmap = core::ptr::null_mut();
+        (*this_).m_nWidth = 0;
+        (*this_).m_nHeight = 0;
+        (*this_).m_nPitch = 0;
+        (*this_).m_nBPP = 0;
+        (*this_).m_pBits = core::ptr::null_mut();
     
-            (*this_).m_bIsDIBSection = (FALSE) as i32;
-            (*this_).m_bHasAlphaChannel = (FALSE) as i32;
-            (*this_).m_clrTransparentColor = CLR_INVALID;
+        (*this_).m_bHasAlphaChannel = (FALSE as i32);
+        (*this_).m_bIsDIBSection = (FALSE as i32);
+        (*this_).m_clrTransparentColor = CLR_INVALID;
     
-            let hBitmap: HBITMAP = (*this_).m_hBitmap;
-            (*this_).m_hBitmap = core::ptr::null_mut();
-            return hBitmap;
-        }
-    pub unsafe fn GetDC(&mut self) -> HDC {
-        let this_: *mut Self = self;
-        ATLASSERT!((*this_).m_nDCRefCount >= 0);
-        if InterlockedIncrement(core::ptr::addr_of_mut!((*this_).m_nDCRefCount)) == 1 {
-            ATLASSERT!((*this_).m_hDC == core::ptr::null_mut());
-            ATLASSERT!((*this_).m_hOldBitmap == core::ptr::null_mut());
-    
-            (*this_).m_hDC = CreateCompatibleDC(core::ptr::null_mut());
-            ATLASSERT!((*this_).m_hDC != core::ptr::null_mut());
-    
-            (*this_).m_hOldBitmap = SelectObject((*this_).m_hDC, ((*this_).m_hBitmap).cast()) as HBITMAP;
-            ATLASSERT!((*this_).m_hOldBitmap != core::ptr::null_mut());
-        }
-    
-        return (*this_).m_hDC;
+        let hBitmap: HBITMAP = (*this_).m_hBitmap;
+        (*this_).m_hBitmap = core::ptr::null_mut();
+        return hBitmap;
     }
-    pub unsafe fn ReleaseDC(&mut self) {
-        let this_: *mut Self = self;
-        ATLASSERT!((*this_).m_nDCRefCount > 0);
-    
-        if InterlockedDecrement(core::ptr::addr_of_mut!((*this_).m_nDCRefCount)) != 0 {
-            return;
-        }
-    
-        if !(*this_).m_hOldBitmap.is_null() {
-            ATLASSERT!(!(*this_).m_hDC.is_null());
-            SelectObject((*this_).m_hDC, ((*this_).m_hOldBitmap).cast());
-            (*this_).m_hOldBitmap = core::ptr::null_mut();
-        }
-    
-        if !(*this_).m_hDC.is_null() {
-            DeleteDC((*this_).m_hDC);
-            (*this_).m_hDC = core::ptr::null_mut();
-        }
-    }
-    pub unsafe fn Create(&mut self, nWidth: i32, nHeight: i32, nBPP: i32, dwFlags: DWORD) -> BOOL {
-        let this_: *mut Self = self;
-        return (*this_).CreateEx(nWidth, nHeight, nBPP, BI_RGB, core::ptr::null_mut::<DWORD>(), dwFlags);
-    }
-    pub unsafe fn CreateEx(&mut self, nWidth: INT, nHeight: INT, nBPP: INT, eCompression: DWORD, pdwBitmasks: *const DWORD, dwFlags: DWORD) -> BOOL {
-        let this_: *mut Self = self;
-            return (*this_).CreateInternal(nWidth, nHeight, nBPP, eCompression, pdwBitmasks, dwFlags);
-        }
     pub unsafe fn Destroy(&mut self) {
         let this_: *mut Self = self;
-        if (*this_).m_hBitmap != core::ptr::null_mut() {
+        if ((*this_).m_hBitmap as usize) != 0 {
             DeleteObject(((*this_).Detach()).cast());
         }
     }
-    pub unsafe fn GetHeight(&mut self) -> i32 {
-        let this_: *mut Self = self;
-        ATLASSERT!((*this_).m_hBitmap);
-        return (*this_).m_nHeight;
-    }
-    pub unsafe fn GetWidth(&mut self) -> i32 {
-        let this_: *mut Self = self;
-        ATLASSERT!((*this_).m_hBitmap);
-        return (*this_).m_nWidth;
-    }
     pub unsafe fn ShouldExcludeFormat(guidFileType: *const GUID, dwExclude: DWORD) -> bool {
-        // Gdiplus_ImageFormat* GUIDs (GDI+ image format identifiers)
-        let Gdiplus_ImageFormatGIF: GUID = GUID { Data1: 0xb96b3cb0, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatBMP: GUID = GUID { Data1: 0xb96b3cab, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatEMF: GUID = GUID { Data1: 0xb96b3cac, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatWMF: GUID = GUID { Data1: 0xb96b3cad, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatJPEG: GUID = GUID { Data1: 0xb96b3cae, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatPNG: GUID = GUID { Data1: 0xb96b3caf, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatTIFF: GUID = GUID { Data1: 0xb96b3cb1, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-        let Gdiplus_ImageFormatIcon: GUID = GUID { Data1: 0xb96b3cb5, Data2: 0x0728, Data3: 0x11d3, Data4: [0x9d, 0x7b, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e] };
-    
-        // ATL_CImage_ExcludeFlags_* values (ATL CImage::ExcludeFlags)
-        let ATL_CImage_ExcludeFlags_excludeBMP: DWORD = 0x0000_0001; // excludeBMP
-        let ATL_CImage_ExcludeFlags_excludeGIF: DWORD = 0x0000_0002; // excludeGIF
-        let ATL_CImage_ExcludeFlags_excludeJPEG: DWORD = 0x0000_0004; // excludeJPEG
-        let ATL_CImage_ExcludeFlags_excludePNG: DWORD = 0x0000_0008; // excludePNG
-        let ATL_CImage_ExcludeFlags_excludeEMF: DWORD = 0x0000_0010; // excludeEMF
-        let ATL_CImage_ExcludeFlags_excludeWMF: DWORD = 0x0000_0020; // excludeWMF
-        let ATL_CImage_ExcludeFlags_excludeTIFF: DWORD = 0x0000_0040; // excludeTIFF
-        let ATL_CImage_ExcludeFlags_excludeIcon: DWORD = 0x0000_0080; // excludeIcon
-        let ATL_CImage_ExcludeFlags_excludeOther: DWORD = 0x8000_0000; // excludeOther
-    
         if IsEqualGUID!(guidFileType, core::ptr::addr_of!(Gdiplus_ImageFormatGIF)) != false {
             return (dwExclude & ATL_CImage_ExcludeFlags_excludeGIF) != 0;
         }
@@ -193,16 +101,16 @@ impl CImage {
         }
         return (dwExclude & ATL_CImage_ExcludeFlags_excludeOther) == ATL_CImage_ExcludeFlags_excludeOther;
     }
-    pub unsafe fn BuildCodecFilterString(pCodecs: *const Gdiplus_ImageCodecInfo, cCodecs: UINT, strFilter: &mut CStringW, aguidFileTypes: &mut CSimpleArray<GUID>, pszAllFilesDescription: LPCTSTR, dwExclude: DWORD, chSeparator: TCHAR) -> HRESULT {
+    pub unsafe fn BuildCodecFilterString(pCodecs: *const Gdiplus_ImageCodecInfo, cCodecs: UINT, strFilter: *mut CStringW, aguidFileTypes: *mut CSimpleArray<GUID>, pszAllFilesDescription: LPCTSTR, dwExclude: DWORD, chSeparator: TCHAR) -> HRESULT {
         if pCodecs.is_null() || cCodecs == 0 {
-            strFilter.AppendChar(chSeparator);
+            (*strFilter).AppendChar(chSeparator);
             return E_FAIL;
         }
     
         if !pszAllFilesDescription.is_null() {
-            *strFilter += pszAllFilesDescription;
+            (*strFilter) += pszAllFilesDescription;
     
-            let mut bFirst: BOOL = (TRUE) as i32;
+            let mut bFirst: BOOL = (TRUE as i32);
             let mut extensions = CStringW::new();
             let mut i: UINT = 0;
             while i < cCodecs {
@@ -212,9 +120,9 @@ impl CImage {
                     }
     
                     if bFirst != 0 {
-                        bFirst = (FALSE) as i32;
+                        bFirst = (FALSE as i32);
                     } else {
-                        extensions.AppendChar(TEXT(';'));
+                        extensions.AppendChar(0x003Bu16);
                     }
     
                     let mut ext = CStringW::from_ptr((*pCodecs.add(i as usize)).FilenameExtension);
@@ -223,11 +131,11 @@ impl CImage {
                 i += 1;
             }
     
-            strFilter.AppendChar(chSeparator);
-            *strFilter += extensions.GetString();
-            strFilter.AppendChar(chSeparator);
+            (*strFilter).AppendChar(chSeparator);
+            (*strFilter) += extensions.GetString();
+            (*strFilter).AppendChar(chSeparator);
     
-            aguidFileTypes.Add(GUID_NULL);
+            (*aguidFileTypes).Add(GUID_NULL);
         }
     
         let mut i: UINT = 0;
@@ -240,20 +148,20 @@ impl CImage {
                 let mut extensions = CStringW::from_ptr((*pCodecs.add(i as usize)).FilenameExtension);
     
                 let mut desc = CStringW::from_ptr((*pCodecs.add(i as usize)).FormatDescription);
-                *strFilter += desc.GetString();
-                *strFilter += TEXT(" (");
-                *strFilter += extensions.GetString();
-                *strFilter += TEXT(")");
-                strFilter.AppendChar(chSeparator);
-                *strFilter += extensions.GetString();
-                strFilter.AppendChar(chSeparator);
+                (*strFilter) += desc.GetString();
+                (*strFilter) += CPP_COM_WSTR_ACBE5EA9B8F8.as_ptr();
+                (*strFilter) += extensions.GetString();
+                (*strFilter) += CPP_COM_WSTR_4F2D892D6AF4.as_ptr();
+                (*strFilter).AppendChar(chSeparator);
+                (*strFilter) += extensions.GetString();
+                (*strFilter).AppendChar(chSeparator);
     
-                aguidFileTypes.Add((*pCodecs.add(i as usize)).FormatID);
+                (*aguidFileTypes).Add((*pCodecs.add(i as usize)).FormatID);
             }
             i += 1;
         }
     
-        strFilter.AppendChar(chSeparator);
+        (*strFilter).AppendChar(chSeparator);
         return S_OK;
     }
     pub unsafe fn GetImporterFilterString(strImporters: &mut CSimpleString, aguidFileTypes: &mut CSimpleArray<GUID>, pszAllFilesDescription: LPCTSTR, dwExclude: DWORD, chSeparator: TCHAR) -> HRESULT {
@@ -262,8 +170,8 @@ impl CImage {
         }
     
         let mut cDecoders: UINT = 0;
-        let mut pDecoders: *mut Gdiplus_ImageCodecInfo = CImage::_getAllDecoders(&mut cDecoders);
-        let mut hr: HRESULT = CImage::BuildCodecFilterString(pDecoders,
+        let pDecoders: *mut Gdiplus_ImageCodecInfo = CImage::_getAllDecoders(&mut cDecoders);
+        let hr: HRESULT = CImage::BuildCodecFilterString(pDecoders,
                                             cDecoders,
                                             strImporters,
                                             aguidFileTypes,
@@ -278,7 +186,7 @@ impl CImage {
             return E_FAIL;
         }
     
-        let cEncoders: UINT = 0;
+        let mut cEncoders: UINT = 0;
         let pEncoders: *mut Gdiplus_ImageCodecInfo = CImage::_getAllEncoders(&mut cEncoders);
         let hr: HRESULT = CImage::BuildCodecFilterString(pEncoders,
                                             cEncoders,
@@ -293,54 +201,9 @@ impl CImage {
     pub unsafe fn InitGDIPlus() -> bool {
         return CImage__s_gdiplus.Init();
     }
-    pub unsafe fn FindCodecForExtension(dotext: LPCTSTR, pCodecs: *const Gdiplus_ImageCodecInfo, nCodecs: UINT) -> CLSID {
-        let mut i: UINT = 0;
-        while i < nCodecs {
-            let mut strSpecs = CStringW::from_ptr((*pCodecs.add(i as usize)).FilenameExtension);
-            let mut ichOld: i32 = 0;
-            let mut ichSep: i32;
-            loop {
-                ichSep = strSpecs.Find(TEXT(';' as TCHAR), ichOld);
-    
-                let mut strSpec: CStringW;
-                if ichSep < 0 {
-                    strSpec = strSpecs.Mid(ichOld);
-                } else {
-                    strSpec = strSpecs.Mid(ichOld, ichSep - ichOld);
-                }
-    
-                let ichDot: i32 = strSpec.ReverseFind(TEXT('.' as TCHAR));
-                if ichDot >= 0 {
-                    strSpec = strSpec.Mid(ichDot);
-                }
-    
-                if dotext.is_null() || strSpec.CompareNoCase(dotext) == 0 {
-                    return (*pCodecs.add(i as usize)).Clsid;
-                }
-    
-                if ichSep < 0 {
-                    break;
-                }
-    
-                ichOld = ichSep + 1;
-            }
-            i += 1;
-        }
-        return CLSID_NULL;
-    }
-    pub unsafe fn FindCodecForFileType(guidFileType: *const GUID, pCodecs: *const Gdiplus_ImageCodecInfo, nCodecs: u32) -> CLSID {
-        let mut iInfo: u32 = 0;
-        while iInfo < nCodecs {
-            if IsEqualGUID!(core::ptr::addr_of!((*pCodecs.add(iInfo as usize)).FormatID), guidFileType) != false {
-                return (*pCodecs.add(iInfo as usize)).Clsid;
-            }
-            iInfo += 1;
-        }
-        return CLSID_NULL;
-    }
     pub unsafe fn _getAllEncoders(cEncoders: *mut UINT) -> *mut Gdiplus_ImageCodecInfo {
         let mut total_size: UINT = 0;
-        (CImage__s_gdiplus.GetImageEncodersSize)(cEncoders, &mut total_size);
+        ((CImage__s_gdiplus.GetImageEncodersSize).unwrap_unchecked())(cEncoders, &mut total_size);
         if total_size == 0 {
             return core::ptr::null_mut(); // failure
         }
@@ -355,12 +218,12 @@ impl CImage {
             return core::ptr::null_mut(); // failure
         }
     
-        (CImage__s_gdiplus.GetImageEncoders)(*cEncoders, total_size, ret);
+        ((CImage__s_gdiplus.GetImageEncoders).unwrap_unchecked())(*cEncoders, total_size, ret);
         return ret; // needs delete[]
     }
     pub unsafe fn _getAllDecoders(cDecoders: *mut UINT) -> *mut Gdiplus_ImageCodecInfo {
         let mut total_size: UINT = 0;
-        ((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecodersSize)(cDecoders, &mut total_size as *mut UINT);
+        (((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecodersSize).unwrap_unchecked())(cDecoders, &mut total_size as *mut UINT);
         if total_size == 0 {
             return core::ptr::null_mut();
         }
@@ -375,111 +238,9 @@ impl CImage {
             return core::ptr::null_mut();
         }
     
-        ((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecoders)(*cDecoders, total_size, ret);
+        (((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecoders).unwrap_unchecked())(*cDecoders, total_size, ret);
         return ret;
     }
-    pub unsafe fn AttachInternal(&mut self, hBitmap: HBITMAP, mut eOrientation: DIBOrientation, iTransColor: LONG) {
-        let this_: *mut Self = self;
-        (*this_).Destroy();
-    
-        let mut ds: DIBSECTION = core::mem::zeroed();
-        let bm: *mut BITMAP = core::ptr::addr_of_mut!(ds.dsBm);
-    
-        (*this_).m_bIsDIBSection = (GetObjectW((hBitmap).cast(), core::mem::size_of::<DIBSECTION>() as i32, core::ptr::addr_of_mut!(ds) as LPVOID) == core::mem::size_of::<DIBSECTION>() as i32) as BOOL;
-    
-        if (*this_).m_bIsDIBSection == 0 && GetObjectW((hBitmap).cast(), core::mem::size_of::<BITMAP>() as i32, bm as LPVOID) == 0 {
-            return;
-        }
-    
-        (*this_).m_hBitmap = hBitmap;
-        (*this_).m_nWidth = (*bm).bmWidth;
-        (*this_).m_nHeight = (*bm).bmHeight;
-        (*this_).m_nBPP = ((*bm).bmBitsPixel) as _;
-        (*this_).m_bHasAlphaChannel = ((*bm).bmBitsPixel == 32) as BOOL;
-        (*this_).m_clrTransparentColor = CLR_INVALID;
-    
-        (*this_).m_nPitch = 0;
-        (*this_).m_pBits = core::ptr::null_mut();
-        if (*this_).m_bIsDIBSection != 0 {
-            if eOrientation == ATL_CImage_DIBOrientation_DIBOR_DEFAULT {
-                eOrientation = if ds.dsBmih.biHeight < 0 {
-                    ATL_CImage_DIBOrientation_DIBOR_TOPDOWN
-                } else {
-                    ATL_CImage_DIBOrientation_DIBOR_BOTTOMUP
-                };
-            }
-    
-            let pb: LPBYTE = (*bm).bmBits as LPBYTE;
-            if eOrientation == ATL_CImage_DIBOrientation_DIBOR_BOTTOMUP {
-                (*this_).m_nPitch = -(*bm).bmWidthBytes;
-                (*this_).m_pBits = pb.offset(((*bm).bmWidthBytes * ((*this_).m_nHeight - 1)) as isize) as LPVOID;
-            } else {
-                (*this_).m_nPitch = (*bm).bmWidthBytes;
-                (*this_).m_pBits = pb as LPVOID;
-            }
-        }
-    }
-    pub unsafe fn CreateInternal(&mut self, nWidth: i32, nHeight: i32, nBPP: i32, eCompression: DWORD, pdwBitmasks: *const DWORD, dwFlags: DWORD) -> BOOL {
-        let this_: *mut Self = self;
-            ATLASSERT!(nWidth != 0);
-            ATLASSERT!(nHeight != 0);
-    
-            // initialize BITMAPINFO extension
-            let mut bi: MYBITMAPINFOEX = MYBITMAPINFOEX__make_0();
-            ZeroMemory!(core::ptr::addr_of_mut!(bi) as *mut _, core::mem::size_of::<MYBITMAPINFOEX>());
-            bi.__base0.bmiHeader.biSize = (core::mem::size_of::<BITMAPINFOHEADER>()) as DWORD;
-            bi.__base0.bmiHeader.biWidth = nWidth;
-            bi.__base0.bmiHeader.biHeight = nHeight;
-            bi.__base0.bmiHeader.biPlanes = 1;
-            bi.__base0.bmiHeader.biBitCount = nBPP as WORD;
-            bi.__base0.bmiHeader.biCompression = eCompression;
-    
-            // is there alpha channel?
-            let bHasAlphaCh: bool;
-            bHasAlphaCh = (nBPP == 32 && (dwFlags & createAlphaChannel) != 0);
-    
-            // get orientation
-            let eOrientation: DIBOrientation;
-            eOrientation = if nHeight > 0 { ATL_CImage_DIBOrientation_DIBOR_BOTTOMUP } else { ATL_CImage_DIBOrientation_DIBOR_TOPDOWN };
-    
-            // does it have bit fields?
-            if eCompression == BI_BITFIELDS
-            {
-                if nBPP == 16 || nBPP == 32
-                {
-                    // store the mask data
-                    let pdwMask: LPDWORD = core::ptr::addr_of_mut!(bi.__base0.bmiColors) as LPDWORD;
-                    *pdwMask.offset((0) as isize) = *pdwBitmasks.offset((0) as isize);
-                    *pdwMask.offset((1) as isize) = *pdwBitmasks.offset((1) as isize);
-                    *pdwMask.offset((2) as isize) = *pdwBitmasks.offset((2) as isize);
-                }
-                else
-                {
-                    return (FALSE) as BOOL;
-                }
-            }
-            else
-            {
-                ATLASSERT!(pdwBitmasks.is_null());
-                if !pdwBitmasks.is_null()
-                {
-                    return (FALSE) as BOOL;
-                }
-            }
-    
-            // create a DIB section
-            let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
-            ATLASSERT!(!hDC.is_null());
-            let hbm: HBITMAP = CreateDIBSection(hDC, core::ptr::addr_of!(bi.__base0) as *const BITMAPINFO, DIB_RGB_COLORS, core::ptr::null_mut(), core::ptr::null_mut(), 0);
-            ATLASSERT!(!hbm.is_null());
-            DeleteDC(hDC);
-    
-            // attach it
-            (*this_).AttachInternal(hbm, eOrientation, -(1));
-            (*this_).m_bHasAlphaChannel = bHasAlphaCh as BOOL;
-    
-            return (hbm != core::ptr::null_mut()) as BOOL;
-        }
 }
 
 impl MYBITMAPINFOEX {

@@ -7,6 +7,43 @@ pub static CPP_COM_WSTR_A9EDBA2FC474: [WCHAR; 3] = [0x0025, 0x0064, 0x0000];
 
 use core::ffi::c_void;
 
+extern "system" {
+    fn lstrcmpW(lpString1: LPCWSTR, lpString2: LPCWSTR) -> INT;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ShowError(INT, ...) itself is the C trampoline in rust_varargs_shim.c (see the prelude).
 #[no_mangle]
 pub unsafe extern "C" fn ShowError_v(stringID: INT, ap: *mut core::ffi::c_void) {
@@ -23,40 +60,24 @@ pub unsafe extern "C" fn ShowError_v(stringID: INT, ap: *mut core::ffi::c_void) 
     mainWindow.__base0.MessageBoxW(strText.GetString(), strProgramName.GetString(), MB_ICONERROR);
 }
 
+
 unsafe extern "system" fn EnumFontFamProc(lpelf: *mut ENUMLOGFONTW, lpntm: *mut NEWTEXTMETRICW, FontType: INT, lParam: LPARAM) -> INT {
     let arrFontNames: *mut CSimpleArray<CStringW> = lParam as *mut CSimpleArray<CStringW>;
     let name: LPWSTR = (*lpelf).elfLogFont.lfFaceName.as_mut_ptr();
-    if *name.add(0 as usize) == 0x0040u16 { // Vertical fonts
-        return (TRUE) as INT;
+    if *name.add(0 as usize) == 0x0040u16 as WCHAR { // Vertical fonts
+        return TRUE as INT;
     }
 
-    let mut i: INT = 0;
+    let mut i: INT = 0 as INT;
     while i < (*arrFontNames).GetSize() {
-        let elem: *mut CStringW = (*arrFontNames).GetAt(i);
-        let s: *const WCHAR = (*elem).GetString();
-        // case-sensitive wide string equality, as CStringW operator== does
-        let mut eq: bool = true;
-        let mut k: usize = 0;
-        loop {
-            let a: WCHAR = *s.add(k);
-            let b: WCHAR = *name.add(k);
-            if a != b {
-                eq = false;
-                break;
-            }
-            if a == 0 {
-                break;
-            }
-            k += 1;
-        }
-        if eq { // Already exists
-            return (TRUE) as INT;
+        if lstrcmpW((*(*arrFontNames).GetAt(i)).GetString(), name) == 0 { // Already exists
+            return TRUE as INT;
         }
         i += 1;
     }
 
-    let _ = (*arrFontNames).Add(CStringW::from_ptr(name));
-    return (TRUE) as INT;
+    (*arrFontNames).Add(CStringW::from_ptr(name));
+    return TRUE as INT;
 }
 
 impl CMirrorRotateDialog {
@@ -124,8 +145,8 @@ impl CAttributesDialog {
         (*this_).newHeight = imageModel.GetHeight();
     
         (*this_).__base0.CheckDlgButton((IDD_ATTRIBUTESRB3 as i32), BST_CHECKED);
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE) as i32);
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE as i32));
     
         if ((imageModel.IsBlackAndWhite()) != 0) {
             (*this_).__base0.CheckRadioButton((IDD_ATTRIBUTESRB4 as i32), (IDD_ATTRIBUTESRB5 as i32), (IDD_ATTRIBUTESRB4 as i32));
@@ -133,15 +154,15 @@ impl CAttributesDialog {
             (*this_).__base0.CheckRadioButton((IDD_ATTRIBUTESRB4 as i32), (IDD_ATTRIBUTESRB5 as i32), (IDD_ATTRIBUTESRB5 as i32));
         }
     
-        if g_isAFile != 0 {
-            let mut date = [0u16; 100];
-            let mut temp = [0u16; 100];
+        if ((g_isAFile) != 0) {
+            let mut date: [WCHAR; 100] = [0; 100];
+            let mut temp: [WCHAR; 100] = [0; 100];
             GetDateFormatW(LOCALE_USER_DEFAULT, 0, core::ptr::addr_of_mut!(g_fileTime), core::ptr::null_mut(), date.as_mut_ptr(), (_countof!(date)) as i32);
             GetTimeFormatW(LOCALE_USER_DEFAULT, 0, core::ptr::addr_of_mut!(g_fileTime), core::ptr::null_mut(), temp.as_mut_ptr(), (_countof!(temp)) as i32);
             StringCchCatW(date.as_mut_ptr(), (_countof!(date)) as _, CPP_COM_WSTR_8D71B3FAAB82.as_ptr());
             StringCchCatW(date.as_mut_ptr(), (_countof!(date)) as _, temp.as_mut_ptr());
             let mut strSize = CStringW::new();
-            atl_format!(strSize, IDS_FILESIZE, g_fileSize);
+            atl_format_id!(strSize, IDS_FILESIZE, g_fileSize);
             (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESTEXT6 as i32), date.as_ptr());
             (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESTEXT7 as i32), strSize.GetString());
         }
@@ -150,10 +171,28 @@ impl CAttributesDialog {
         (*this_).__base0.GetDlgItemTextW__1((IDD_ATTRIBUTESTEXT8 as i32), &mut strUnit);
     
         let mut strRes = CStringW::new();
-        if wcscmp(strUnit.GetString(), CPP_COM_WSTR_505E2CF608D7.as_ptr()) == 0 {
-            atl_format!(strRes, IDS_PRINTRES, ROUND!(g_xDpi), ROUND!(g_yDpi));
+        let mut StrEq: bool = true;
+        {
+            let mut pa: *const WCHAR = strUnit.GetString();
+            let mut pb: *const WCHAR = CPP_COM_WSTR_505E2CF608D7.as_ptr();
+            loop {
+                let ca: WCHAR = *pa;
+                let cb: WCHAR = *pb;
+                if ca != cb {
+                    StrEq = false;
+                    break;
+                }
+                if ca == 0 {
+                    break;
+                }
+                pa = pa.add(1);
+                pb = pb.add(1);
+            }
+        }
+        if StrEq {
+            atl_format_id!(strRes, IDS_PRINTRES, ROUND!(g_xDpi), ROUND!(g_yDpi));
         } else {
-            atl_format!(strRes, IDS_PRINTRES, ROUND!(PpcmFromDpi(g_xDpi)), ROUND!(PpcmFromDpi(g_yDpi)));
+            atl_format_id!(strRes, IDS_PRINTRES, ROUND!(PpcmFromDpi(g_xDpi)), ROUND!(PpcmFromDpi(g_yDpi)));
         }
     
         (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESTEXT8 as i32), strRes.GetString());
@@ -181,8 +220,8 @@ impl CAttributesDialog {
         (*this_).newHeight = imageModel.GetHeight();
         (*this_).__base0.CheckDlgButton((IDD_ATTRIBUTESRB3 as i32), BST_CHECKED);
         (*this_).__base0.CheckDlgButton((IDD_ATTRIBUTESRB5 as i32), BST_CHECKED);
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE) as i32);
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE as i32));
         return 0;
     }
     pub unsafe fn OnRadioButton1(&mut self, wNotifyCode: WORD, wID: WORD, hWndCtl: HWND, bHandled: &mut BOOL) -> LRESULT {
@@ -192,9 +231,9 @@ impl CAttributesDialog {
         }
     
         let mut strNum = CStringW::new();
-        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), (*this_).newWidth / g_xDpi);
+        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), ((*this_).newWidth as f32) / g_xDpi);
         (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESEDIT1 as i32), strNum.GetString());
-        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), (*this_).newHeight / g_yDpi);
+        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), ((*this_).newHeight as f32) / g_yDpi);
         (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESEDIT2 as i32), strNum.GetString());
         return 0;
     }
@@ -205,9 +244,9 @@ impl CAttributesDialog {
         }
     
         let mut strNum = CStringW::new();
-        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), (*this_).newWidth / PpcmFromDpi(g_xDpi));
+        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), ((*this_).newWidth as f32) / PpcmFromDpi(g_xDpi));
         (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESEDIT1 as i32), strNum.GetString());
-        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), (*this_).newHeight / PpcmFromDpi(g_yDpi));
+        atl_format!(strNum, CPP_COM_WSTR_1E472015D7DF.as_ptr(), ((*this_).newHeight as f32) / PpcmFromDpi(g_yDpi));
         (*this_).__base0.SetDlgItemTextW((IDD_ATTRIBUTESEDIT2 as i32), strNum.GetString());
         return 0;
     }
@@ -217,8 +256,8 @@ impl CAttributesDialog {
             return 0;
         }
     
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE) as i32);
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT1 as i32), ((*this_).newWidth) as u32, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_ATTRIBUTESEDIT2 as i32), ((*this_).newHeight) as u32, (FALSE as i32));
         return 0;
     }
     pub unsafe fn OnEdit1(&mut self, wNotifyCode: WORD, wID: WORD, hWndCtl: HWND, bHandled: &mut BOOL) -> LRESULT {
@@ -266,10 +305,10 @@ impl CAttributesDialog {
 impl CStretchSkewDialog {
     pub unsafe fn OnInitDialog(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITHSTRETCH as i32), 100, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITVSTRETCH as i32), 100, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITHSKEW as i32), 0, (FALSE) as i32);
-        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITVSKEW as i32), 0, (FALSE) as i32);
+        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITHSTRETCH as i32), 100, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITVSTRETCH as i32), 100, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITHSKEW as i32), 0, (FALSE as i32));
+        (*this_).__base0.SetDlgItemInt((IDD_STRETCHSKEWEDITVSKEW as i32), 0, (FALSE as i32));
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnClose(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -291,10 +330,10 @@ impl CStretchSkewDialog {
         strrcPercentage.LoadStringW(IDS_PERCENTAGE);
         strrcAngle.LoadStringW(IDS_ANGLE);
     
-        (*this_).percentage.x = ((*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITHSTRETCH as i32), core::ptr::addr_of_mut!(tr1), (FALSE) as i32)) as i32;
-        (*this_).percentage.y = ((*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITVSTRETCH as i32), core::ptr::addr_of_mut!(tr2), (FALSE) as i32)) as i32;
-        (*this_).angle.x = ((*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITHSKEW as i32), core::ptr::addr_of_mut!(tr3), (TRUE) as i32)) as i32;
-        (*this_).angle.y = ((*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITVSKEW as i32), core::ptr::addr_of_mut!(tr4), (TRUE) as i32)) as i32;
+        (*this_).percentage.x = (*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITHSTRETCH as i32), core::ptr::addr_of_mut!(tr1), (FALSE as i32)) as i32;
+        (*this_).percentage.y = (*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITVSTRETCH as i32), core::ptr::addr_of_mut!(tr2), (FALSE as i32)) as i32;
+        (*this_).angle.x = (*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITHSKEW as i32), core::ptr::addr_of_mut!(tr3), (TRUE as i32)) as i32;
+        (*this_).angle.y = (*this_).__base0.GetDlgItemInt((IDD_STRETCHSKEWEDITVSKEW as i32), core::ptr::addr_of_mut!(tr4), (TRUE as i32)) as i32;
     
         if !(tr1 != 0 && tr2 != 0 && tr3 != 0 && tr4 != 0) {
             (*this_).__base0.MessageBoxW(strrcIntNumbers.GetString(), core::ptr::null_mut(), MB_ICONEXCLAMATION);
@@ -325,14 +364,18 @@ impl CFontsDialog {
     pub unsafe fn InitFontNames(&mut self) {
         let this_: *mut Self = self;
         // List the fonts
-        let mut arrFontNames: CSimpleArray<CStringW> = CSimpleArray::<CStringW>::new();
+        let mut arrFontNames = CSimpleArray::<CStringW>::new();
         let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
         if !hDC.is_null() {
             EnumFontFamiliesW(
                 hDC,
-                core::ptr::null_mut(),
-                EnumFontFamProc,
-                addr_of_mut!(arrFontNames) as LPARAM,
+                core::ptr::null(),
+                // `(FONTENUMPROCW)EnumFontFamProc`: the C casts away the const in the
+                // callback's LOGFONT parameter, and so does this.
+                core::mem::transmute::<*const core::ffi::c_void, FONTENUMPROCW>(
+                    EnumFontFamProc as *const core::ffi::c_void,
+                ),
+                core::ptr::addr_of_mut!(arrFontNames) as LPARAM,
             );
             DeleteDC(hDC);
         }
@@ -342,7 +385,7 @@ impl CFontsDialog {
         SendMessageW(hwndNames, CB_RESETCONTENT, 0, 0);
         let mut i: INT = 0;
         while i < arrFontNames.GetSize() {
-            ComboBox_AddString!(hwndNames, (*arrFontNames.GetAt(i)).GetString() as LPARAM);
+            ComboBox_AddString!(hwndNames, (*arrFontNames.GetAt(i)).GetString());
             i += 1;
         }
     
@@ -377,16 +420,16 @@ impl CFontsDialog {
         let this_: *mut Self = self;
         let hwndToolbar: HWND = (*this_).__base0.GetDlgItem(IDD_FONTSTOOLBAR as _);
         SendMessageW(hwndToolbar, TB_BUTTONSTRUCTSIZE as _, (core::mem::size_of::<TBBUTTON>()) as WPARAM, 0 as _);
-        SendMessageW(hwndToolbar, TB_SETBITMAPSIZE as _, 0 as _, MAKELPARAM!(16 as _, 16 as _));
-        SendMessageW(hwndToolbar, TB_SETBUTTONWIDTH as _, 0 as _, MAKELPARAM!(20 as _, 20 as _));
+        SendMessageW(hwndToolbar, TB_SETBITMAPSIZE as _, 0 as _, MAKELPARAM!(16, 16));
+        SendMessageW(hwndToolbar, TB_SETBUTTONWIDTH as _, 0 as _, MAKELPARAM!(20, 20));
     
         let mut AddBitmap: TBADDBITMAP = core::mem::zeroed();
         AddBitmap.hInst = g_hinstExe;
         AddBitmap.nID = IDB_FONTSTOOLBAR as _;
         SendMessageW(hwndToolbar, TB_ADDBITMAP as _, 4 as _, core::ptr::addr_of_mut!(AddBitmap) as LPARAM);
     
-        let himl: HIMAGELIST = ImageList_LoadImage(g_hinstExe, MAKEINTRESOURCEW!(IDB_FONTSTOOLBAR as _),
-                                              16 as _, 8 as _, RGB!(255 as _, 0 as _, 255 as _), IMAGE_BITMAP as _,
+        let himl: HIMAGELIST = ImageList_LoadImage(g_hinstExe, MAKEINTRESOURCEW!(IDB_FONTSTOOLBAR),
+                                              16 as _, 8 as _, RGB!(255, 0, 255), IMAGE_BITMAP as _,
                                               LR_CREATEDIBSECTION as _);
         SendMessageW(hwndToolbar, TB_SETIMAGELIST as _, 0 as _, himl as LPARAM);
     
@@ -448,14 +491,14 @@ impl CFontsDialog {
     
         if ((registrySettings.ShowTextTool) == 0)
         {
-            (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+            (*this_).__base0.ShowWindow((SW_HIDE as i32));
         }
     
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnClose(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.ShowWindow((SW_HIDE) as i32); // Just hide. Recycle for optimization
+        (*this_).__base0.ShowWindow((SW_HIDE as i32)); // Just hide. Recycle for optimization
         return 0;
     }
     pub unsafe fn OnCommand(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
@@ -467,7 +510,7 @@ impl CFontsDialog {
     
         match id {
             IDCANCEL => {
-                (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+                (*this_).__base0.ShowWindow((SW_HIDE as i32));
                 registrySettings.ShowTextTool = FALSE;
             }
             IDD_FONTSNAMES => {
@@ -510,16 +553,16 @@ impl CFontsDialog {
             let pToolTip: LPTOOLTIPTEXTW = lParam as LPTOOLTIPTEXTW;
             (*pToolTip).hinst = g_hinstExe;
             match (*pnmhdr).idFrom {
-                IDM_BOLD => {
+                __c if __c == IDM_BOLD as _ => {
                     (*pToolTip).lpszText = MAKEINTRESOURCEW!(IDS_BOLD);
                 }
-                IDM_ITALIC => {
+                __c if __c == IDM_ITALIC as _ => {
                     (*pToolTip).lpszText = MAKEINTRESOURCEW!(IDS_ITALIC);
                 }
-                IDM_UNDERLINE => {
+                __c if __c == IDM_UNDERLINE as _ => {
                     (*pToolTip).lpszText = MAKEINTRESOURCEW!(IDS_UNDERLINE);
                 }
-                IDM_VERTICAL => {
+                __c if __c == IDM_VERTICAL as _ => {
                     (*pToolTip).lpszText = MAKEINTRESOURCEW!(IDS_VERTICAL);
                 }
                 _ => {}
@@ -530,19 +573,19 @@ impl CFontsDialog {
     pub unsafe fn OnToolsModelToolChanged(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         if wParam != (TOOL_TEXT) as _ {
-            (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+            (*this_).__base0.ShowWindow((SW_HIDE as i32));
         }
     
         return 0;
     }
     pub unsafe fn OnMeasureItem(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if wParam == (IDD_FONTSNAMES as u64) {
+        if wParam == (IDD_FONTSNAMES as _) {
             let pMeasureItem: LPMEASUREITEMSTRUCT = lParam as LPMEASUREITEMSTRUCT;
             let mut rc: RECT = core::mem::zeroed();
             GetClientRect((*this_).__base0.GetDlgItem((IDD_FONTSNAMES as i32)), core::ptr::addr_of_mut!(rc));
             (*pMeasureItem).itemWidth = (rc.right - rc.left) as u32;
-            (*pMeasureItem).itemHeight = (GetSystemMetrics((SM_CYVSCROLL) as i32)) as u32;
+            (*pMeasureItem).itemHeight = (GetSystemMetrics((SM_CYVSCROLL as i32))) as u32;
             return (TRUE) as LRESULT;
         }
         return 0;
@@ -550,9 +593,9 @@ impl CFontsDialog {
     pub unsafe fn OnDrawItem(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         // TODO: Owner-draw the font types
-        if wParam == (IDD_FONTSNAMES as u64) {
+        if wParam == (IDD_FONTSNAMES as _) {
             let pDrawItem: LPDRAWITEMSTRUCT = lParam as LPDRAWITEMSTRUCT;
-            if (*pDrawItem).itemID == ((-(1)) as UINT) {
+            if (*pDrawItem).itemID == ((1 as u32).wrapping_neg() as UINT) {
                 return (TRUE) as LRESULT;
             }
     
@@ -561,11 +604,11 @@ impl CFontsDialog {
             let hwndItem: HWND = (*pDrawItem).hwndItem;
             let mut rcItem: RECT = (*pDrawItem).rcItem;
             if ((*pDrawItem).itemState & ODS_SELECTED) != 0 {
-                FillRect((*pDrawItem).hDC, &mut rcItem, GetSysColorBrush((COLOR_HIGHLIGHT) as i32));
-                SetTextColor((*pDrawItem).hDC, GetSysColor((COLOR_HIGHLIGHTTEXT) as i32));
+                FillRect((*pDrawItem).hDC, &mut rcItem, GetSysColorBrush((COLOR_HIGHLIGHT as i32)));
+                SetTextColor((*pDrawItem).hDC, GetSysColor((COLOR_HIGHLIGHTTEXT as i32)));
             } else {
-                FillRect((*pDrawItem).hDC, &mut rcItem, GetSysColorBrush((COLOR_WINDOW) as i32));
-                SetTextColor((*pDrawItem).hDC, GetSysColor((COLOR_WINDOWTEXT) as i32));
+                FillRect((*pDrawItem).hDC, &mut rcItem, GetSysColorBrush((COLOR_WINDOW as i32)));
+                SetTextColor((*pDrawItem).hDC, GetSysColor((COLOR_WINDOWTEXT as i32)));
             }
     
             let mut szText = [0 as WCHAR; (LF_FACESIZE as usize)];
@@ -602,7 +645,7 @@ impl CFontsDialog {
         match codeNotify {
             CBN_SELCHANGE => {
                 iItem = ComboBox_GetCurSel!(hwndSizes);
-                cch = ComboBox_GetLBTextLen!(hwndSizes, iItem);
+                cch = ComboBox_GetLBTextLen!(hwndSizes, iItem) as UINT;
                 if iItem != CB_ERR && 0 < cch && cch < _countof!(szText) as UINT {
                     ComboBox_GetLBText!(hwndSizes, iItem, szText.as_mut_ptr());
                     PointSize = _wtoi(szText.as_ptr());
@@ -631,7 +674,7 @@ impl CFontsDialog {
     
         if codeNotify == CBN_SELCHANGE {
             iItem = ComboBox_GetCurSel!(hwndNames);
-            cch = ComboBox_GetLBTextLen!(hwndNames, iItem);
+            cch = ComboBox_GetLBTextLen!(hwndNames, iItem) as UINT;
             if iItem != CB_ERR && 0 < cch && cch < _countof!(szText) {
                 ComboBox_GetLBText!(hwndNames, iItem, szText.as_mut_ptr());
             }
@@ -641,7 +684,7 @@ impl CFontsDialog {
         }
     
         if iItem != CB_ERR && registrySettings.strFontName.CompareNoCase(szText.as_ptr()) != 0 {
-            registrySettings.strFontName = szText.as_ptr();
+            registrySettings.strFontName = CStringW::from_ptr(szText.as_ptr());
             toolsModel.NotifyToolChanged();
         }
     }

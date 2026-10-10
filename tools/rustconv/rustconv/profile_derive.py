@@ -4182,7 +4182,7 @@ def scaffold_crate(
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
-            "CSimpleMap, CStringA, CStringW, POSITION};\n"
+            "CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"

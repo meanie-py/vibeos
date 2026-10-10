@@ -215,8 +215,10 @@ impl CRect {
         let this_: *mut Self = self;
         return (*this_).__base0.right - (*this_).__base0.left;
     }
-    pub unsafe fn op_to_tagRECT(&mut self) -> *mut CRect {
+    pub unsafe fn op_to_tagRECT(&mut self) -> LPRECT {
+        // atltypes.h `operator LPRECT() { return this; }`: CRect derives from RECT, and the
+        // RECT is the first member (`__base0`), so this object's address is the RECT's.
         let this_: *mut Self = self;
-        return this_;
+        return core::ptr::addr_of_mut!((*this_).__base0);
     }
 }

@@ -1544,8 +1544,8 @@ pub struct ToolsModel {
     pub m_transpBg: BOOL,
     pub m_zoom: i32,
     pub m_pToolObject: *mut ToolBase,
-    pub m_fgBrush: ToolsModel_VirtualBrush,
-    pub m_bgBrush: ToolsModel_VirtualBrush,
+    pub m_fgBrush: VirtualBrush,
+    pub m_bgBrush: VirtualBrush,
 }
 
 impl ToolsModel {

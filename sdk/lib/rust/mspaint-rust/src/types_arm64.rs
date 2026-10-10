@@ -11606,7 +11606,6 @@ pub type ATL_CStringT_PCXSTR = ATL_CStringT_CThisSimpleString;
 pub type ATL_CStringT_YCHAR = ATL_CStringT_CThisSimpleString;
 pub type ATL_CStringT_PYSTR = ATL_CStringT_CThisSimpleString;
 pub type ATL_CStringT_PCYSTR = ATL_CStringT_CThisSimpleString;
-#[derive(Copy, Clone)]
 #[repr(C)]
 pub struct ATL_CAtlStringMgr {
     pub _base: ATL_IAtlStringMgr,

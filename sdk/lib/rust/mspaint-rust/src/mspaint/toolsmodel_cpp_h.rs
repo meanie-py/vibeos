@@ -79,7 +79,7 @@ impl ToolsModel {
             (*this_).m_oldActiveTool = (*this_).m_activeTool;
             (*this_).m_airBrushRadius = 5;
             (*this_).m_rubberRadius = 4;
-            (*this_).m_transpBg = (FALSE) as i32;
+            (*this_).m_transpBg = (FALSE as i32);
             (*this_).m_zoom = (DEFAULT_ZOOM as i32);
             (*this_).m_pToolObject = (*this_).GetOrCreateTool((*this_).m_activeTool);
         }
@@ -309,9 +309,9 @@ impl ToolsModel {
     pub unsafe fn selectAll(&mut self) {
         let this_: *mut Self = self;
         (*this_).SetActiveTool(TOOL_RECTSEL);
-        (*this_).OnButtonDown((TRUE) as i32, 0, 0, (FALSE) as i32);
-        (*this_).OnMouseMove((TRUE) as i32, imageModel.GetWidth(), imageModel.GetHeight());
-        (*this_).OnButtonUp((TRUE) as i32, imageModel.GetWidth(), imageModel.GetHeight());
+        (*this_).OnButtonDown((TRUE as i32), 0, 0, (FALSE as i32));
+        (*this_).OnMouseMove((TRUE as i32), imageModel.GetWidth(), imageModel.GetHeight());
+        (*this_).OnButtonUp((TRUE as i32), imageModel.GetWidth(), imageModel.GetHeight());
     }
     pub unsafe fn NotifyToolChanged(&mut self) {
         let this_: *mut Self = self;

@@ -17,48 +17,103 @@ impl CPaintToolBar {
     pub unsafe fn DoCreate(&mut self, hwndParent: HWND) -> BOOL {
         let this_: *mut Self = self;
         // NOTE: The horizontal line above the toolbar is hidden by CCS_NODIVIDER style.
-        let toolbarPos: RECT = RECT {
+        let mut toolbarPos = RECT {
             left: 0,
             top: 0,
-            right: (CX_TOOLBAR + (2 * GetSystemMetrics((SM_CXBORDER) as i32)) as u32) as i32,
-            bottom: (CY_TOOLBAR + (2 * GetSystemMetrics((SM_CYBORDER) as i32)) as u32) as i32,
+            right: (CX_TOOLBAR + (2 * GetSystemMetrics((SM_CXBORDER as i32))) as u32) as i32,
+            bottom: (CY_TOOLBAR + (2 * GetSystemMetrics((SM_CYBORDER as i32))) as u32) as i32,
         };
         let style: DWORD = WS_CHILD | WS_VISIBLE | CCS_NOPARENTALIGN | CCS_VERT | CCS_NORESIZE |
-                      TBSTYLE_TOOLTIPS | TBSTYLE_FLAT;
-        if (*this_).__base0.Create(TOOLBARCLASSNAMEW, hwndParent, toolbarPos, core::ptr::null_mut(), style, 0, 0, core::ptr::null_mut()) == core::ptr::null_mut() {
+            TBSTYLE_TOOLTIPS | TBSTYLE_FLAT;
+        if (*this_).__base0.Create(
+            TOOLBARCLASSNAMEW.as_ptr(),
+            hwndParent,
+            &mut toolbarPos,
+            core::ptr::null_mut(),
+            style,
+            0,
+            core::ptr::null_mut(),
+            core::ptr::null_mut(),
+        ).is_null() {
             return (FALSE) as BOOL;
         }
     
-        let hImageList: HIMAGELIST = ImageList_Create(16, 16, ILC_COLOR24 | ILC_MASK, 16, 0);
-        (*this_).__base0.SendMessageW__0(TB_SETIMAGELIST, 0 as WPARAM, hImageList as LPARAM);
+        let hImageList: HIMAGELIST = ImageList_Create(
+            16,
+            16,
+            ILC_COLOR24 | ILC_MASK,
+            16,
+            0,
+        );
+        (*this_).__base0.SendMessageW__0(TB_SETIMAGELIST, 0, hImageList as LPARAM);
     
-        let hbmIcons: HBITMAP = LoadImageW(g_hinstExe, MAKEINTRESOURCEW!(IDB_TOOLBARICONS),
-                                                 IMAGE_BITMAP, 256, 16, 0) as HBITMAP;
+        let hbmIcons: HBITMAP = LoadImageW(
+            g_hinstExe,
+            MAKEINTRESOURCEW!(IDB_TOOLBARICONS),
+            IMAGE_BITMAP,
+            256,
+            16,
+            0,
+        ) as HBITMAP;
         ImageList_AddMasked(hImageList, hbmIcons, RGB!(255, 0, 255));
         DeleteObject((hbmIcons).cast());
     
-        (*this_).__base0.SendMessageW__0(TB_BUTTONSTRUCTSIZE, core::mem::size_of::<TBBUTTON>() as WPARAM, 0);
+        (*this_).__base0.SendMessageW__0(
+            TB_BUTTONSTRUCTSIZE,
+            core::mem::size_of::<TBBUTTON>() as WPARAM,
+            0,
+        );
     
-        let mut szToolTip: [WCHAR; 30 as usize] = [0u16; 30 as usize];
+        let mut szToolTip: [WCHAR; 30] = [0; 30];
         let mut tbbutton: TBBUTTON = core::mem::zeroed();
-        ZeroMemory!(core::ptr::addr_of_mut!(tbbutton) as *mut _, core::mem::size_of::<TBBUTTON>());
+        ZeroMemory!(
+            core::ptr::addr_of_mut!(tbbutton) as *mut core::ffi::c_void,
+            core::mem::size_of::<TBBUTTON>(),
+        );
         tbbutton.fsStyle = (TBSTYLE_CHECKGROUP as u8);
         let mut i: INT = 0;
         while i < (NUM_TOOLS as i32) {
-            LoadStringW(g_hinstExe, IDS_TOOLTIP1 + (i) as u32, szToolTip.as_mut_ptr(), (_countof!(szToolTip)) as i32);
+            LoadStringW(
+                g_hinstExe,
+                IDS_TOOLTIP1 + (i) as u32,
+                szToolTip.as_mut_ptr(),
+                (_countof!(szToolTip)) as i32,
+            );
             tbbutton.iString = szToolTip.as_mut_ptr() as INT_PTR;
-            tbbutton.fsState = (TBSTATE_ENABLED | (if i % 2 == 1 { TBSTATE_WRAP } else { 0 })) as u8;
+            tbbutton.fsState = (TBSTATE_ENABLED | (if i % 2 == 1 {
+                TBSTATE_WRAP
+            } else {
+                0
+            })) as u8;
             tbbutton.idCommand = (ID_FREESEL + (i) as u32) as i32;
             tbbutton.iBitmap = i;
-            (*this_).__base0.SendMessageW__0((TB_ADDBUTTONS) as UINT, 1 as WPARAM, core::ptr::addr_of_mut!(tbbutton) as LPARAM);
+            (*this_).__base0.SendMessageW__0(
+                (TB_ADDBUTTONS) as UINT,
+                1,
+                core::ptr::addr_of_mut!(tbbutton) as LPARAM,
+            );
             i += 1;
         }
     
-        (*this_).__base0.SendMessageW__0(TB_CHECKBUTTON, ID_PEN as WPARAM, MAKELPARAM!(TRUE, 0));
-        (*this_).__base0.SendMessageW__0(TB_SETMAXTEXTROWS, 0 as WPARAM, 0);
-        (*this_).__base0.SendMessageW__0(TB_SETBUTTONSIZE, 0 as WPARAM, MAKELPARAM!(CXY_TB_BUTTON, CXY_TB_BUTTON));
+        (*this_).__base0.SendMessageW__0(
+            TB_CHECKBUTTON,
+            (ID_PEN) as WPARAM,
+            MAKELPARAM!(TRUE, 0),
+        );
+        (*this_).__base0.SendMessageW__0(TB_SETMAXTEXTROWS, 0, 0);
+        (*this_).__base0.SendMessageW__0(
+            TB_SETBUTTONSIZE,
+            0,
+            MAKELPARAM!(CXY_TB_BUTTON, CXY_TB_BUTTON),
+        );
     
-        (*this_).__base0.SetWindowLongPtr(GWLP_USERDATA, (*this_).__base0.SetWindowLongPtr(GWLP_WNDPROC, CPaintToolBar::ToolBarWndProc as usize as LONG_PTR));
+        (*this_).__base0.SetWindowLongPtr(
+            GWLP_USERDATA,
+            (*this_).__base0.SetWindowLongPtr(
+                GWLP_WNDPROC,
+                CPaintToolBar::ToolBarWndProc as LONG_PTR,
+            ),
+        );
         return (TRUE) as BOOL;
     }
     pub unsafe fn ToolBarWndProc(hwnd: HWND, uMsg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {
@@ -103,7 +158,7 @@ impl CToolBox {
         let this_: *mut Self = self;
         let id: UINT = LOWORD!(wParam) as UINT;
         let mut i: usize = 0;
-        while i < _countof!(CommandToToolMapping) {
+        while i < (_countof!(CommandToToolMapping)) as usize {
             if CommandToToolMapping[i].id == id {
                 toolsModel.SetActiveTool(CommandToToolMapping[i].tool);
                 break;
@@ -159,7 +214,7 @@ impl CToolBox {
         // Check the toolbar button
         let tool: TOOLTYPE = toolsModel.GetActiveTool();
         let mut i: usize = 0;
-        while i < _countof!(CommandToToolMapping) {
+        while i < (_countof!(CommandToToolMapping)) as usize {
             if CommandToToolMapping[i].tool == tool {
                 (*this_).toolbar.__base0.SendMessageW__0(TB_CHECKBUTTON, (CommandToToolMapping[i].id) as WPARAM, (TRUE) as LPARAM);
                 break;

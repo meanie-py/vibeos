@@ -150,11 +150,11 @@ impl CToolSettingsWindow {
                 FillRect(
                     hdc,
                     core::ptr::addr_of_mut!(rects[i as usize]),
-                    GetSysColorBrush((COLOR_HIGHLIGHT) as i32),
+                    GetSysColorBrush((COLOR_HIGHLIGHT as i32)),
                 );
-                iColor = (COLOR_HIGHLIGHTTEXT) as i32;
+                iColor = (COLOR_HIGHLIGHTTEXT as i32);
             } else {
-                iColor = (COLOR_WINDOWTEXT) as i32;
+                iColor = (COLOR_WINDOWTEXT as i32);
             }
     
             let yCenter: INT = (rects[i as usize].top + rects[i as usize].bottom) / 2;
@@ -184,14 +184,14 @@ impl CToolSettingsWindow {
             let iColor: INT;
             let data: &BrushStyleAndWidth = &c_BrushPresets[i as usize];
             if data.width == toolsModel.GetBrushWidth() && data.style == toolsModel.GetBrushStyle() {
-                iColor = (COLOR_HIGHLIGHTTEXT) as i32;
+                iColor = (COLOR_HIGHLIGHTTEXT as i32);
                 FillRect(
                     hdc,
                     core::ptr::addr_of_mut!(rcItem),
                     (COLOR_HIGHLIGHT + 1) as HBRUSH,
                 );
             } else {
-                iColor = (COLOR_WINDOWTEXT) as i32;
+                iColor = (COLOR_WINDOWTEXT as i32);
             }
     
             Brush__0(
@@ -221,10 +221,10 @@ impl CToolSettingsWindow {
             rcLine.__base0.top = (rcLine.__base0.top + rcLine.__base0.bottom - penWidth) / 2;
             rcLine.__base0.bottom = rcLine.__base0.top + penWidth;
             if toolsModel.GetLineWidth() == penWidth {
-                FillRect(hdc, core::ptr::addr_of!(rects[i as usize]), GetSysColorBrush((COLOR_HIGHLIGHT) as i32));
-                FillRect(hdc, core::ptr::addr_of!(rcLine.__base0), GetSysColorBrush((COLOR_HIGHLIGHTTEXT) as i32));
+                FillRect(hdc, core::ptr::addr_of!(rects[i as usize]), GetSysColorBrush((COLOR_HIGHLIGHT as i32)));
+                FillRect(hdc, &rcLine.__base0, GetSysColorBrush((COLOR_HIGHLIGHTTEXT as i32)));
             } else {
-                FillRect(hdc, core::ptr::addr_of!(rcLine.__base0), GetSysColorBrush((COLOR_WINDOWTEXT) as i32));
+                FillRect(hdc, &rcLine.__base0, GetSysColorBrush((COLOR_WINDOWTEXT as i32)));
             }
             i += 1;
         }
@@ -232,14 +232,14 @@ impl CToolSettingsWindow {
     pub unsafe fn drawBox(&mut self, hdc: HDC, prc: LPCRECT) {
         let this_: *mut Self = self;
         let mut rects: [CRect; 3] = core::mem::zeroed();
-        getBoxRects(core::ptr::addr_of_mut!((*rects.as_mut_ptr()).__base0), prc, core::ptr::null_mut());
+        getBoxRects(core::ptr::addr_of_mut!(rects[0].__base0), prc, core::ptr::null_mut());
     
         let mut iItem: INT = 0;
         while iItem < 3 {
             let rcItem: &mut CRect = &mut rects[iItem as usize];
     
             if toolsModel.GetShapeStyle() == iItem {
-                FillRect(hdc, core::ptr::addr_of_mut!(rcItem.__base0), GetSysColorBrush((COLOR_HIGHLIGHT) as i32));
+                FillRect(hdc, core::ptr::addr_of!(rcItem.__base0), GetSysColorBrush((COLOR_HIGHLIGHT as i32)));
             }
     
             rcItem.InflateRect__0(-5, -5);
@@ -247,15 +247,15 @@ impl CToolSettingsWindow {
             if iItem <= 1 {
                 let rgbPen: COLORREF;
                 if toolsModel.GetShapeStyle() == iItem {
-                    rgbPen = GetSysColor((COLOR_HIGHLIGHTTEXT) as i32);
+                    rgbPen = GetSysColor((COLOR_HIGHLIGHTTEXT as i32));
                 } else {
-                    rgbPen = GetSysColor((COLOR_WINDOWTEXT) as i32);
+                    rgbPen = GetSysColor((COLOR_WINDOWTEXT as i32));
                 }
                 let hOldBrush: HGDIOBJ;
                 if iItem == 0 {
                     hOldBrush = SelectObject(hdc, GetStockObject((NULL_BRUSH as i32)));
                 } else {
-                    hOldBrush = SelectObject(hdc, (GetSysColorBrush((COLOR_APPWORKSPACE) as i32)).cast());
+                    hOldBrush = SelectObject(hdc, (GetSysColorBrush((COLOR_APPWORKSPACE as i32))).cast());
                 }
                 let hOldPen: HGDIOBJ = SelectObject(hdc, (CreatePen((PS_SOLID as i32), 1, rgbPen)).cast());
                 Rectangle(hdc, rcItem.__base0.left, rcItem.__base0.top, rcItem.__base0.right, rcItem.__base0.bottom);
@@ -263,9 +263,9 @@ impl CToolSettingsWindow {
                 SelectObject(hdc, hOldBrush);
             } else {
                 if toolsModel.GetShapeStyle() == iItem {
-                    FillRect(hdc, core::ptr::addr_of_mut!(rcItem.__base0), GetSysColorBrush((COLOR_HIGHLIGHTTEXT) as i32));
+                    FillRect(hdc, core::ptr::addr_of!(rcItem.__base0), GetSysColorBrush((COLOR_HIGHLIGHTTEXT as i32)));
                 } else {
-                    FillRect(hdc, core::ptr::addr_of_mut!(rcItem.__base0), GetSysColorBrush((COLOR_WINDOWTEXT) as i32));
+                    FillRect(hdc, core::ptr::addr_of!(rcItem.__base0), GetSysColorBrush((COLOR_WINDOWTEXT as i32)));
                 }
             }
     
@@ -285,17 +285,17 @@ impl CToolSettingsWindow {
             let y: INT = ((*rc).top + (*rc).bottom) / 2;
             let bHigh: BOOL = ((s_AirRadius[i] as i32) == (toolsModel.GetAirBrushRadius() as i32)) as BOOL;
             if bHigh != 0 {
-                FillRect(hdc, rc as LPCRECT, GetSysColorBrush((COLOR_HIGHLIGHT) as i32));
+                FillRect(hdc, rc as LPCRECT, GetSysColorBrush((COLOR_HIGHLIGHT as i32)));
     
                 let mut k: INT = 0;
                 while k < 3 {
-                    Airbrush__0(hdc, x, y, GetSysColor((COLOR_HIGHLIGHTTEXT) as i32), s_AirRadius[i] as INT);
+                    Airbrush__0(hdc, x, y, GetSysColor((COLOR_HIGHLIGHTTEXT as i32)), s_AirRadius[i] as INT);
                     k += 1;
                 }
             } else {
                 let mut k: INT = 0;
                 while k < 3 {
-                    Airbrush__0(hdc, x, y, GetSysColor((COLOR_WINDOWTEXT) as i32), s_AirRadius[i] as INT);
+                    Airbrush__0(hdc, x, y, GetSysColor((COLOR_WINDOWTEXT as i32)), s_AirRadius[i] as INT);
                     k += 1;
                 }
             }
@@ -308,7 +308,7 @@ impl CToolSettingsWindow {
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient.__base0));
         rcClient.InflateRect__0(-MARGIN1, -MARGIN1);
     
-        let mut yCenter: i32 = (rcClient.__base0.top + rcClient.__base0.bottom) / 2;
+        let yCenter: i32 = (rcClient.__base0.top + rcClient.__base0.bottom) / 2;
         rect1.SetRect(rcClient.__base0.left, rcClient.__base0.top, rcClient.__base0.right, yCenter);
         rect2.SetRect(rcClient.__base0.left, yCenter, rcClient.__base0.right, rcClient.__base0.bottom);
     
@@ -328,7 +328,7 @@ impl CToolSettingsWindow {
         (*this_).calculateTwoBoxes(&mut trackbarZoomPos, &mut rect2);
         trackbarZoomPos.InflateRect__0(-1, -1);
     
-        (*this_).trackbarZoom.Create(TRACKBAR_CLASS, (*this_).__base0.m_hWnd, (trackbarZoomPos).__base0, core::ptr::null_mut(), WS_CHILD | TBS_VERT | TBS_AUTOTICKS, 0, 0, core::ptr::null_mut());
+        (*this_).trackbarZoom.Create(TRACKBAR_CLASS, (*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(trackbarZoomPos.__base0), core::ptr::null_mut(), WS_CHILD | TBS_VERT | TBS_AUTOTICKS, 0, core::ptr::null_mut(), core::ptr::null_mut());
         (*this_).trackbarZoom.SendMessageW__0(TBM_SETRANGE, (TRUE) as WPARAM, MAKELPARAM!(MIN_ZOOM_TRACK, MAX_ZOOM_TRACK));
         (*this_).trackbarZoom.SendMessageW__0(TBM_SETPOS, (TRUE) as WPARAM, (DEFAULT_ZOOM_TRACK) as LPARAM);
         return 0;
@@ -341,22 +341,24 @@ impl CToolSettingsWindow {
     }
     pub unsafe fn OnVScroll(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        let trackPos: INT = MAX_ZOOM_TRACK - ((*this_).trackbarZoom.SendMessageW__0(TBM_GETPOS, 0, 0) as INT);
-        canvasWindow.zoomTo((MIN_ZOOM << trackPos) as INT, 0, 0);
+        unsafe {
+            let trackPos: INT = MAX_ZOOM_TRACK - ((*this_).trackbarZoom.SendMessageW__0(TBM_GETPOS, 0, 0) as INT);
+            canvasWindow.zoomTo((MIN_ZOOM << trackPos) as INT, 0, 0);
     
-        let zoomRate: INT = toolsModel.GetZoom();
+            let zoomRate: INT = toolsModel.GetZoom();
     
-        let mut strZoom = CStringW::new();
-        if zoomRate % 10 == 0 {
-            atl_format!(strZoom, CPP_COM_WSTR_C5D4AD672797.as_ptr(), zoomRate / 10);
-        } else {
-            atl_format!(strZoom, CPP_COM_WSTR_2D9285714724.as_ptr(), zoomRate / 10, zoomRate % 10);
+            let mut strZoom: CStringW = CStringW::new();
+            if zoomRate % 10 == 0 {
+                atl_format!(strZoom, CPP_COM_WSTR_C5D4AD672797.as_ptr(), zoomRate / 10);
+            } else {
+                atl_format!(strZoom, CPP_COM_WSTR_2D9285714724.as_ptr(), zoomRate / 10, zoomRate % 10);
+            }
+    
+            SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 1, strZoom.GetString() as LPARAM);
+    
+            (*this_).OnToolsModelZoomChanged(nMsg, wParam, lParam, bHandled);
+            return 0;
         }
-    
-        SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 1, strZoom.GetString() as LPARAM);
-    
-        (*this_).OnToolsModelZoomChanged(nMsg, wParam, lParam, bHandled);
-        return 0;
     }
     pub unsafe fn OnPaint(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
@@ -486,7 +488,7 @@ impl CToolSettingsWindow {
         let this_: *mut Self = self;
         (*this_).m_rgbPickColor = CLR_INVALID;
         (*this_).__base0.Invalidate((TRUE) as BOOL);
-        (*this_).trackbarZoom.ShowWindow(if wParam == (TOOL_ZOOM) as _ { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
+        (*this_).trackbarZoom.ShowWindow(if wParam == (TOOL_ZOOM) as _ { (SW_SHOW as i32) } else { (SW_HIDE as i32) });
         return 0;
     }
     pub unsafe fn OnToolsModelSettingsChanged(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {

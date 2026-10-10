@@ -738,8 +738,8 @@ def test_a_header_static_function_is_visible_to_the_crate():
         "pub fn Keep() {}\nfn Plain() {}\n"
     )
     out = cpp_app.publish_header_statics(rs)
-    assert out.startswith('pub(crate) unsafe extern "C" fn Zoomed__0')
-    assert "    fn inner() {}" in out and "pub fn Keep()" in out and "pub(crate) fn Plain()" in out
+    assert out.startswith('pub unsafe extern "C" fn Zoomed__0')
+    assert "    fn inner() {}" in out and "pub fn Keep()" in out and "pub fn Plain()" in out
     assert cpp_app.publish_header_statics(out) == out
 
 
@@ -751,3 +751,66 @@ def test_a_nested_module_class_field_is_the_rendered_class_not_bindgens():
     assert (
         cpp_app._nested_names("FN_X", tm, island, frozenset({"VirtualBrush"})) == "ToolsModel_FN_X"
     )
+
+
+def test_a_nested_type_in_a_unit_signature_and_body_is_the_islands():
+    """registry.cpp's `SetWallpaper(LPCWSTR, WallpaperStyle style)` and atlimagedx's
+    `FN_Startup Startup = ..` reached the model bare; the island spells them Outer_Inner."""
+    rs = ClassModel("RegistrySettings", "RegistrySettings", "class", "r.h")
+    rs.methods = [
+        _m(
+            "SetWallpaper",
+            params=[
+                ("szFileName", "LPCWSTR"),
+                ("style", "WallpaperStyle"),
+                ("s", "CSimpleString &"),
+            ],
+            static=True,
+            rust_name="SetWallpaper",
+            body=("r.cpp", 0, 1),
+            lowered="{ FN_Startup f; }",
+        )
+    ]
+    model = ModuleModel(classes={"RegistrySettings": rs})
+    island = (
+        "pub type RegistrySettings_WallpaperStyle = u32;\n"
+        "pub type RegistrySettings_FN_Startup = u32;\n"
+        "pub type RegistrySettings_CSimpleString = u32;\n"
+    )
+    unit = cpp_app.synthetic_tus(model, island)["r.cpp"]
+    # An atl_rust type keeps its bare name even where the island has an Outer_ spelling.
+    assert "LPCWSTR szFileName, RegistrySettings_WallpaperStyle style, CSimpleString & s)" in unit
+    assert "{ RegistrySettings_FN_Startup f; }" in unit
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_field_of_a_plain_struct_base_goes_through_the_base(tmp_path):
+    """CRect derives from RECT: `m_rcOld.left` is the base subobject's field. Without the
+    path Rust reached it through the generated Deref (dangerous_implicit_autorefs)."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "struct tagRECT { int left; int top; };\n"
+        "class CRect : public tagRECT { public: int Width(); };\n"
+        "class S { public: CRect m_rc; int Go(); };\n"
+        "int S::Go() { return m_rc.left + m_rc.Width(); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["S"].methods if m.name == "Go"]
+    assert go == "{ return this_->m_rc.__base0.left + this_->m_rc.Width(); }"

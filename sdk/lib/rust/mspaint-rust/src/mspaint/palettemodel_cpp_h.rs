@@ -30,8 +30,8 @@ impl PaletteModel {
     }
     pub unsafe fn NotifyPaletteChanged(&mut self) {
         let this_: *mut Self = self;
-        if (*paletteWindow).__base0.IsWindow() != 0 {
-            (*paletteWindow).__base0.Invalidate(FALSE);
+        if paletteWindow.__base0.IsWindow() != 0 {
+            paletteWindow.__base0.Invalidate(FALSE as BOOL);
         }
     }
     pub unsafe fn __ctor_0(&mut self) {
@@ -48,19 +48,19 @@ impl PaletteModel {
     }
     pub unsafe fn SelectPalette(&mut self, nPalette: PAL_TYPE) {
         let this_: *mut Self = self;
-        static modernColors: [COLORREF; (NUM_COLORS as usize)] = [
+        static modernColors: [COLORREF; (NUM_COLORS as _)] = [
             0x000000, 0x464646, 0x787878, 0x300099, 0x241ced, 0x0078ff, 0x0ec2ff,
             0x00f2ff, 0x1de6a8, 0x4cb122, 0xefb700, 0xf36d4d, 0x99362f, 0x98316f,
             0xffffff, 0xdcdcdc, 0xb4b4b4, 0x3c5a9c, 0xb1a3ff, 0x7aaae5, 0x9ce4f5,
             0xbdf9ff, 0xbcf9d3, 0x61bb9d, 0xead999, 0xd19a70, 0x8e6d54, 0xd5a5b5
         ];
-        static oldColors: [COLORREF; (NUM_COLORS as usize)] = [
+        static oldColors: [COLORREF; (NUM_COLORS as _)] = [
             0x000000, 0x808080, 0x000080, 0x008080, 0x008000, 0x808000, 0x800000,
             0x800080, 0x408080, 0x404000, 0xff8000, 0x804000, 0xff0040, 0x004080,
             0xffffff, 0xc0c0c0, 0x0000ff, 0x00ffff, 0x00ff00, 0xffff00, 0xff0000,
             0xff00ff, 0x80ffff, 0x80ff00, 0xffff80, 0xff8080, 0x8000ff, 0x4080ff
         ];
-        static grayscale: [COLORREF; (NUM_COLORS as usize)] = [
+        static grayscale: [COLORREF; (NUM_COLORS as _)] = [
             0x000000, 0x090909, 0x121212, 0x1C1C1C, 0x252525, 0x2F2F2F, 0x383838,
             0x424242, 0x4B4B4B, 0x555555, 0x5E5E5E, 0x676767, 0x717171, 0x7B7B7B,
             0xFFFFFF, 0xF6F6F6, 0xEDEDED, 0xE3E3E3, 0xD9D9D9, 0xD0D0D0, 0xC7C7C7,

@@ -231,6 +231,8 @@ class Lowerer:
             base = (base.get("inner") or [{}])[0]
         this_node = _unwrap_casts(base)
         implicit_this = this_node.get("kind") == "CXXThisExpr" and _implicit(this_node)
+        if info is None and not implicit_this and self._plain_base_field(n, base, put):
+            return
         if info is None:
             # A member of a class the module does not define. Through an implicit `this`
             # it is inherited from an EXTERNAL base (`Invalidate(FALSE)` in a CWindowImpl
@@ -293,6 +295,28 @@ class Lowerer:
         if m is None or m.group(1) != name:
             return  # a function-like macro, or a nested expansion: not this shape
         edits.append((exp["offset"] - lo, len(name), f"({m.group(2).strip()})"))
+
+    def _plain_base_field(self, n: dict, base: dict, put) -> bool:
+        """`m_rcOld.left` where CRect DERIVES from RECT: clang wraps the object in a
+        DerivedToBase cast to the plain struct, whose fields are not in the decl table. The
+        member lives in the base at `__base0`; without the path, Rust reached it through the
+        generated Deref, a reference made through a raw pointer (dangerous_implicit_autorefs)
+        where C++ just named the base subobject."""
+        if base.get("kind") != "ImplicitCastExpr" or base.get("castKind") not in (
+            "DerivedToBase",
+            "UncheckedDerivedToBase",
+        ):
+            return False
+        obj = (base.get("inner") or [{}])[0]
+        static_type = _strip_type(obj.get("type", {}).get("qualType", ""))
+        if not static_type or self._class(static_type) is None:
+            return False
+        target = _strip_type(base.get("type", {}).get("qualType", ""))
+        path = self.base_path(static_type, target) or self.base_path(static_type, "\0external")
+        if not path:
+            return False
+        put(n["range"]["end"], 0, path, n.get("name", "?"))
+        return True
 
     def _static_via_object(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
         """`toolsModel.CreateBrush(..)` where CreateBrush is STATIC: C++ allows the object

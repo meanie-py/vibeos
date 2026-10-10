@@ -24,8 +24,8 @@ impl CFullscreenWindow {
     }
     pub unsafe fn OnCloseOrKeyDownOrLButtonDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        mainWindow.__base0.ShowWindow((SW_SHOW) as i32);
-        (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+        mainWindow.__base0.ShowWindow((SW_SHOW as i32));
+        (*this_).__base0.ShowWindow((SW_HIDE as i32));
         return 0;
     }
     pub unsafe fn OnPaint(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {

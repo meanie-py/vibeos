@@ -453,7 +453,7 @@ pub unsafe extern "C" fn Brush__1(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LO
 pub unsafe extern "C" fn RectSel(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG) {
     let mut oldBrush: HBRUSH;
     let mut logbrush: LOGBRUSH = core::mem::zeroed();
-    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_DOT as i32), 1, GetSysColor((COLOR_HIGHLIGHT) as i32))).cast()) as HPEN;
+    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_DOT as i32), 1, GetSysColor((COLOR_HIGHLIGHT as i32)))).cast()) as HPEN;
     let oldRop: UINT = (GetROP2(hdc)) as u32;
 
     SetROP2(hdc, (R2_NOTXORPEN as i32));
@@ -472,7 +472,7 @@ pub unsafe extern "C" fn RectSel(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LON
 pub unsafe extern "C" fn Text__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, lpchText: LPCWSTR, font: HFONT, style: LONG) {
     let iSaveDC: INT = SaveDC(hdc); // We will modify the clipping region. Save now.
 
-    let mut rc = CRect__make_1(x1, y1, x2, y2);
+    let mut rc: CRect = CRect__make_1(x1, y1, x2, y2);
 
     if style == 0 // Transparent
     {
@@ -484,7 +484,7 @@ pub unsafe extern "C" fn Text__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LON
         SetBkColor(hdc, bg);
 
         let hbr: HBRUSH = CreateSolidBrush(bg);
-        FillRect(hdc, core::ptr::addr_of!(rc.__base0), hbr); // Fill the background
+        FillRect(hdc, core::ptr::addr_of_mut!(rc.__base0), hbr); // Fill the background
         DeleteObject((hbr).cast());
     }
 

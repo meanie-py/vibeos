@@ -89,15 +89,15 @@ impl CTextEditWindow {
     }
     pub unsafe fn FixEditPos(&mut self, pszOldText: LPCWSTR) {
         let this_: *mut Self = self;
-        let mut szText = CStringW::new();
+        let mut szText: CStringW = CStringW::new();
         (*this_).__base0.GetWindowTextW__1(&mut szText);
     
         let mut rcParent: RECT = core::mem::zeroed();
         GetWindowRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rcParent));
     
-        let mut rc = CRect__make_0();
-        let mut rcWnd = CRect__make_0();
-        let mut rcText = CRect__make_0();
+        let mut rc: CRect = CRect__make_0();
+        let mut rcWnd: CRect = CRect__make_0();
+        let mut rcText: CRect = CRect__make_0();
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rcWnd.__base0));
         rcText = rcWnd;
     
@@ -116,14 +116,14 @@ impl CTextEditWindow {
             (*this_).__base0.ReleaseDC(hDC);
         }
     
-        UnionRect(core::ptr::addr_of_mut!(rc.__base0), core::ptr::addr_of!(rcText.__base0), core::ptr::addr_of!(rcWnd.__base0));
+        UnionRect(core::ptr::addr_of_mut!(rc.__base0), core::ptr::addr_of_mut!(rcText.__base0), core::ptr::addr_of_mut!(rcWnd.__base0));
         MapWindowPoints(core::ptr::null_mut(), (*this_).m_hwndParent, core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
     
         rcWnd = rc;
         GetClientRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rcParent));
-        rc.IntersectRect(core::ptr::addr_of!(rcParent), core::ptr::addr_of!(rcWnd.__base0));
+        rc.IntersectRect(core::ptr::addr_of_mut!(rcParent), core::ptr::addr_of_mut!(rcWnd.__base0));
     
-        (*this_).__base0.MoveWindow(rc.__base0.left, rc.__base0.top, rc.__base0.right - rc.__base0.left, rc.__base0.bottom - rc.__base0.top, (FALSE) as i32);
+        (*this_).__base0.MoveWindow(rc.__base0.left, rc.__base0.top, rc.__base0.right - rc.__base0.left, rc.__base0.bottom - rc.__base0.top, (FALSE as i32));
     
         (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as WPARAM, 0);
         (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as WPARAM, 0);
@@ -162,7 +162,7 @@ impl CTextEditWindow {
         StringCchCopyW(
             core::ptr::addr_of_mut!(lf.lfFaceName) as *mut u16,
             (_countof!(lf.lfFaceName)) as _,
-            registrySettings.strFontName,
+            registrySettings.strFontName.GetString(),
         );
     
         let hdc: HDC = (*this_).__base0.GetDC();
@@ -204,9 +204,9 @@ impl CTextEditWindow {
         }
     
         let mut rc: CRect = CRect { __base0: (*this_).m_rc };
-        canvasWindow.ImageToCanvas__1(&mut rc.__base0);
+        canvasWindow.ImageToCanvas__1(&mut (rc).__base0);
     
-        (*this_).__base0.MoveWindow(rc.__base0.left, rc.__base0.top, rc.Width(), rc.Height(), (TRUE) as i32);
+        (*this_).__base0.MoveWindow(rc.__base0.left, rc.__base0.top, rc.Width(), rc.Height(), (TRUE as i32));
     }
     pub unsafe fn OnCreate(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
@@ -215,7 +215,7 @@ impl CTextEditWindow {
     }
     pub unsafe fn OnClose(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+        (*this_).__base0.ShowWindow((SW_HIDE as i32));
         if !(*this_).m_hFont.is_null() {
             DeleteObject(((*this_).m_hFont).cast());
             (*this_).m_hFont = core::ptr::null_mut();
@@ -231,7 +231,7 @@ impl CTextEditWindow {
         if wParam == (TOOL_TEXT) as _ {
             (*this_).UpdateFont();
         } else {
-            (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+            (*this_).__base0.ShowWindow((SW_HIDE as i32));
         }
         return 0;
     }
@@ -258,8 +258,8 @@ impl CTextEditWindow {
         let mut rcMoving: CRect = CRect { __base0: *prcMoving };
     
         let mut rcImage: CRect = CRect__make_0();
-        canvasWindow.GetImageRect(core::ptr::addr_of_mut!(rcImage.__base0));
-        canvasWindow.ImageToCanvas__1(core::ptr::addr_of_mut!(rcImage.__base0));
+        canvasWindow.GetImageRect(&mut rcImage.__base0);
+        canvasWindow.ImageToCanvas__1(&mut rcImage.__base0);
         canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), core::ptr::addr_of_mut!(rcImage.__base0));
     
         let mut rcWnd: CRect = CRect__make_0();
@@ -267,18 +267,24 @@ impl CTextEditWindow {
         let cx: INT = rcWnd.Width();
         let cy: INT = rcWnd.Height();
     
-        if rcMoving.__base0.left < rcImage.__base0.left {
+        if rcMoving.__base0.left < rcImage.__base0.left
+        {
             rcMoving.__base0.left = rcImage.__base0.left;
             rcMoving.__base0.right = rcImage.__base0.left + cx;
-        } else if rcMoving.__base0.right > rcImage.__base0.right {
+        }
+        else if rcMoving.__base0.right > rcImage.__base0.right
+        {
             rcMoving.__base0.right = rcImage.__base0.right;
             rcMoving.__base0.left = rcImage.__base0.right - cx;
         }
     
-        if rcMoving.__base0.top < rcImage.__base0.top {
+        if rcMoving.__base0.top < rcImage.__base0.top
+        {
             rcMoving.__base0.top = rcImage.__base0.top;
             rcMoving.__base0.bottom = rcImage.__base0.top + cy;
-        } else if rcMoving.__base0.bottom > rcImage.__base0.bottom {
+        }
+        else if rcMoving.__base0.bottom > rcImage.__base0.bottom
+        {
             rcMoving.__base0.bottom = rcImage.__base0.bottom;
             rcMoving.__base0.top = rcImage.__base0.bottom - cy;
         }
@@ -290,53 +296,53 @@ impl CTextEditWindow {
     pub unsafe fn OnSizing(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         // Restrict the window size to the image area
-        let prcSizing: LPRECT = lParam as LPRECT;
-        let mut rcSizing: CRect = CRect { __base0: *prcSizing };
+        let mut prcSizing: LPRECT = lParam as LPRECT;
+        let mut rcSizing: CRect = CRect { __base0: *prcSizing }; // CRect rcSizing = *prcSizing;
     
         let mut rcImage: CRect = CRect__make_0();
-        canvasWindow.GetImageRect(&mut rcImage.__base0);
-        canvasWindow.ImageToCanvas__1(&mut rcImage.__base0);
-        canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), core::ptr::addr_of_mut!(rcImage.__base0));
+        canvasWindow.GetImageRect(&mut (rcImage).__base0);
+        canvasWindow.ImageToCanvas__1(&mut (rcImage).__base0);
+        canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), &mut (*core::ptr::addr_of_mut!(rcImage)).__base0);
     
         // Horizontally
         match wParam {
-            WMSZ_BOTTOMLEFT | WMSZ_LEFT | WMSZ_TOPLEFT => {
+            __c if __c == WMSZ_BOTTOMLEFT as _ || __c == WMSZ_LEFT as _ || __c == WMSZ_TOPLEFT as _ => {
                 if rcSizing.__base0.left < rcImage.__base0.left {
                     rcSizing.__base0.left = rcImage.__base0.left;
                 }
             }
-            WMSZ_BOTTOMRIGHT | WMSZ_RIGHT | WMSZ_TOPRIGHT => {
+            __c if __c == WMSZ_BOTTOMRIGHT as _ || __c == WMSZ_RIGHT as _ || __c == WMSZ_TOPRIGHT as _ => {
                 if rcSizing.__base0.right > rcImage.__base0.right {
                     rcSizing.__base0.right = rcImage.__base0.right;
                 }
             }
-            WMSZ_TOP | WMSZ_BOTTOM => {}
+            __c if __c == WMSZ_TOP as _ || __c == WMSZ_BOTTOM as _ => {}
             _ => {}
         }
     
         // Vertically
         match wParam {
-            WMSZ_BOTTOM | WMSZ_BOTTOMLEFT | WMSZ_BOTTOMRIGHT => {
+            __c if __c == WMSZ_BOTTOM as _ || __c == WMSZ_BOTTOMLEFT as _ || __c == WMSZ_BOTTOMRIGHT as _ => {
                 if rcSizing.__base0.bottom > rcImage.__base0.bottom {
                     rcSizing.__base0.bottom = rcImage.__base0.bottom;
                 }
             }
-            WMSZ_TOP | WMSZ_TOPLEFT | WMSZ_TOPRIGHT => {
+            __c if __c == WMSZ_TOP as _ || __c == WMSZ_TOPLEFT as _ || __c == WMSZ_TOPRIGHT as _ => {
                 if rcSizing.__base0.top < rcImage.__base0.top {
                     rcSizing.__base0.top = rcImage.__base0.top;
                 }
             }
-            WMSZ_LEFT | WMSZ_RIGHT => {}
+            __c if __c == WMSZ_LEFT as _ || __c == WMSZ_RIGHT as _ => {}
             _ => {}
         }
     
-        *prcSizing = rcSizing.__base0;
+        *prcSizing = (rcSizing).__base0;
         (*this_).__base0.Invalidate((TRUE) as BOOL);
         return (TRUE) as LRESULT;
     }
     pub unsafe fn OnChar(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if wParam == (VK_TAB) as _ {
+        if wParam == (VK_TAB as _) {
             return 0; // FIXME: Tabs
         }
     
@@ -350,7 +356,7 @@ impl CTextEditWindow {
     }
     pub unsafe fn OnKeyDown(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if wParam == (VK_ESCAPE) as _ {
+        if wParam == (VK_ESCAPE as _) {
             toolsModel.OnEndDraw((TRUE) as BOOL);
             return 0;
         }
@@ -400,11 +406,13 @@ impl CTextEditWindow {
     pub unsafe fn OnNCPaint(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
         let mut rc: CRect = CRect__make_0();
-        (*this_).__base0.GetWindowRect(&mut rc.__base0);
+        (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc.__base0));
     
         let hDC: HDC = (*this_).__base0.GetDCEx(core::ptr::null_mut(), DCX_WINDOW | DCX_PARENTCLIP);
         if !hDC.is_null() {
-            rc.OffsetRect__0(-rc.__base0.left, -rc.__base0.top);
+            let dx = -rc.__base0.left;
+            let dy = -rc.__base0.top;
+            rc.OffsetRect__0(dx, dy);
             (*this_).DrawGrip(hDC, &mut rc.__base0);
             (*this_).__base0.ReleaseDC(hDC);
         }
@@ -429,7 +437,7 @@ impl CTextEditWindow {
         let this_: *mut Self = self;
         if CWaitCursor::IsWaiting() != 0
         {
-            *bHandled = (FALSE) as i32;
+            *bHandled = (FALSE as i32);
             return 0;
         }
     

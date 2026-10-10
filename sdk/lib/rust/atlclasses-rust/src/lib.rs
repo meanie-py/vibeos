@@ -150,7 +150,7 @@ macro_rules! atl_format {
     };
     (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$n:ident $($names:ident)*], $a:expr
         $(, $rest:expr)*) => {{
-        let $n = $a;
+        let $n = $crate::VaPromote::va_promote($a);
         $crate::atl_format!(@bind $s, $fmt, [$($done)* $n], [$($names)*] $(, $rest)*)
     }};
     (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$($names:ident)*]) => {{
@@ -163,6 +163,42 @@ macro_rules! atl_format {
             __s.ReleaseBuffer();
         }
     }};
+}
+
+/// C's default argument promotions for a `...` argument: float becomes double, and the
+/// integer types narrower than `int` become `int`. `atl_format!` hands its arguments to a C
+/// variadic, where an `f32` does not compile (mspaint's `newWidth / g_xDpi`) and a narrow
+/// integer would be read back as an `int` the callee never got.
+pub trait VaPromote {
+    type Out;
+    fn va_promote(self) -> Self::Out;
+}
+macro_rules! va_promote_as {
+    ($($t:ty => $o:ty),* $(,)?) => {$(
+        impl VaPromote for $t {
+            type Out = $o;
+            #[inline(always)]
+            fn va_promote(self) -> $o { self as $o }
+        }
+    )*};
+}
+va_promote_as!(
+    f32 => f64, f64 => f64, i8 => i32, u8 => i32, i16 => i32, u16 => i32, i32 => i32,
+    u32 => u32, i64 => i64, u64 => u64, isize => isize, usize => usize,
+);
+impl<T> VaPromote for *const T {
+    type Out = *const T;
+    #[inline(always)]
+    fn va_promote(self) -> *const T {
+        self
+    }
+}
+impl<T> VaPromote for *mut T {
+    type Out = *mut T;
+    #[inline(always)]
+    fn va_promote(self) -> *mut T {
+        self
+    }
 }
 
 /// `CStringT::Format(UINT nFormatID, ...)` -- cstringt.h: the format is a string-table entry
@@ -316,6 +352,17 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     pub unsafe fn Reallocate(&mut self, nElements: usize) -> BOOL {
         let bytes = nElements.wrapping_mul(core::mem::size_of::<T>());
         let p = A::Reallocate(self.m_pData as *mut c_void, bytes) as *mut T;
+        if p.is_null() {
+            return 0;
+        }
+        self.m_pData = p;
+        1
+    }
+
+    /// ATL's `ReallocateBytes(nBytes)` (atlalloc.h): `Reallocate` by a byte count, for a
+    /// buffer whose size is not a whole number of `T` (mspaint's point list sizes in bytes).
+    pub unsafe fn ReallocateBytes(&mut self, nBytes: usize) -> BOOL {
+        let p = A::Reallocate(self.m_pData as *mut c_void, nBytes) as *mut T;
         if p.is_null() {
             return 0;
         }
@@ -1175,6 +1222,36 @@ impl CStringW {
         let mut s = Self::new();
         s.SetString(self.as_ptr(), n);
         s
+    }
+
+    /// `Mid(int iFirst)` — cstringt.h: from `iFirst` to the end (`Mid(iFirst, GetLength() -
+    /// iFirst)`). ATL clamps a negative `iFirst` to 0.
+    pub unsafe fn Mid(&self, iFirst: i32) -> Self {
+        self.Mid__1(iFirst, self.m_nLength - iFirst)
+    }
+
+    /// `Mid(int iFirst, int nCount)` — cstringt.h. ATL clamps: a negative `iFirst` or `nCount`
+    /// is 0, `iFirst` past the end is the end, and the count stops at the end of the string.
+    pub unsafe fn Mid__1(&self, iFirst: i32, nCount: i32) -> Self {
+        let first = iFirst.clamp(0, self.m_nLength);
+        let count = nCount.clamp(0, self.m_nLength - first);
+        let mut s = Self::new();
+        if count > 0 {
+            s.SetString(self.as_ptr().add(first as usize), count);
+        }
+        s
+    }
+
+    /// `ReverseFind(XCHAR ch)` — cstringt.h: the index of the LAST `ch`, or -1.
+    pub fn ReverseFind(&self, ch: WCHAR) -> i32 {
+        let mut i = self.m_nLength - 1;
+        while i >= 0 {
+            if unsafe { *self.as_ptr().add(i as usize) } == ch {
+                return i;
+            }
+            i -= 1;
+        }
+        -1
     }
 
     /// `operator+=(XCHAR ch)` — cstringt.h. Appends the character **even when it is NUL**,

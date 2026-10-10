@@ -1529,7 +1529,13 @@ def _ref_to_void_pointer(
 
 # A place: a name or a DEREFERENCE -- `(*p)`, `(*CImageDx::_shared())` (a deref is a place
 # whatever the pointer came from) -- then fields and indexes.
-_PLACE = re.compile(r"(?:\(\*\s*[\w.:]+(?:\(\))?\s*\)|[A-Za-z_]\w*)(?:\s*\.\s*\w+|\[[^\[\]]+\])*")
+_PLACE = re.compile(
+    r"(?:\(\*\s*[\w.:]+(?:\(\))?\s*\)"
+    # `(*core::ptr::addr_of_mut!(rcImage))` and a parenthesised name `(rc)`: still places.
+    r"|\(\*\s*(?:core::ptr::)?addr_of(?:_mut)?!\(\s*[\w.]+\s*\)\s*\)"
+    r"|\(\s*[A-Za-z_]\w*\s*\)"
+    r"|[A-Za-z_]\w*)(?:\s*\.\s*\w+|\[[^\[\]]+\])*"
+)
 
 
 def _cpp_reference_arg(
@@ -2502,6 +2508,111 @@ def _cstring_conversion_rule(
             _simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, rep, why, span, ctx)
         )
     return edits, [], bool(edits)
+
+
+def _ref_compound_assign_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0368 `strFilter += x` where `strFilter: &mut CStringW` (a C++ `CString&` parameter):
+    the operator is the referent's, `*strFilter += x`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0368":
+        return [], [], False
+    if not re.search(r"cannot be applied to type `&mut ", str(diagnostic.get("message") or "")):
+        return [], [], False
+    edits: list[Edit] = []
+    for span in diagnostic.get("spans") or []:
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None or span.get("is_primary"):
+            continue
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        text = data[start:end].decode("utf-8", "replace")
+        if not re.fullmatch(r"[A-Za-z_]\w*", text) or not re.match(rb"\s*[-+*/|&^]?=", data[end:]):
+            continue
+        note = "the compound assignment is the referent's operator (a C++ reference)"
+        edits.append(
+            _simple_edit(
+                RULE_OBJECT_DEREF, file_name, data, start, end, f"*{text}", note, span, ctx
+            )
+        )
+    return edits, [], bool(edits)
+
+
+def _zero_constant_pointer_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A constant whose value is 0 where a pointer is wanted: CRegKey::Create's ATL default
+    `LPTSTR lpszClass = REG_NONE` -- C++ takes an integral constant 0 as the null pointer."""
+    if (diagnostic.get("code") or {}).get("code") != "E0308" or not ctx.constants:
+        return [], [], False
+    edits: list[Edit] = []
+    for span, expected, found in _mismatch_sites(diagnostic):
+        ptr = re.fullmatch(r"\*(mut|const) .+", expected.strip())
+        if ptr is None or found not in INT_PRIMITIVES:
+            continue
+        file_name = str(span.get("file_name") or "")
+        data = load(file_name)
+        if data is None:
+            continue
+        start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+        name = data[start:end].decode("utf-8", "replace").strip()
+        if ctx.constants.get(name) != 0:
+            continue
+        null = "core::ptr::null_mut()" if ptr.group(1) == "mut" else "core::ptr::null()"
+        note = f"`{name}` is the constant 0, C++'s null pointer constant where a pointer is wanted"
+        edits.append(
+            _simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, null, note, span, ctx)
+        )
+    return edits, [], bool(edits)
+
+
+_FLOAT_OP = re.compile(
+    r"cannot (add|subtract|multiply|divide) `[iu](?:8|16|32|64|size)` "
+    r"(?:by|to|from) `(f32|f64)`"
+)
+
+
+def _int_float_arith_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`(*this_).newWidth / g_xDpi`, int / float: C converts the integer operand to the float
+    type (the usual arithmetic conversions). The primary span is the operator; the integer is
+    the operand before it."""
+    m = _FLOAT_OP.search(str(diagnostic.get("message") or ""))
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    if data[start:end].strip() not in (b"/", b"*", b"+", b"-"):
+        return [], [], False
+    op = start
+    while op > 0 and data[op - 1 : op] in b" \t":
+        op -= 1
+    # The operand ends where the operator begins: the same backward chain scan as a receiver.
+    left = _receiver_start(data, op) if op > 0 else None
+    if left is None:
+        return [], [], False
+    text = data[left:op].decode("utf-8", "replace").strip()
+    if not text or not _balanced(_mask_lexical(text.encode())):
+        return [], [], False
+    note = f"C converts the integer operand to `{m.group(2)}` (usual arithmetic conversions)"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                left,
+                op,
+                f"({text} as {m.group(2)})",
+                note,
+                span,
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
 
 
 def _merge_rules(diagnostic, load, ctx, *rules):
@@ -4450,6 +4561,13 @@ def _option_fn_as_ptr_rule(
     span, file_name, data, _masked, start, end = got
     text = data[start:end].decode("utf-8", "replace")
     if as_int is not None:
+        # rustc's span may carry the source's own parentheses: `((*this_).m_Shutdown as usize)`.
+        while (
+            text.startswith("(")
+            and text.endswith(")")
+            and _matching_closer(_mask_lexical(text.encode()), 0) == len(text) - 1
+        ):
+            text = text[1:-1].strip()
         cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>usize|u64|u32|[A-Z_]+)", text)
         if cast is None or not _balanced(cast.group("e").encode()):
             return [], [], False
@@ -4672,6 +4790,49 @@ def _int_range(ty: str, width: int) -> tuple[int, int] | None:
     return (0, 2**bits - 1) if ty[0] == "u" else (-(2 ** (bits - 1)), 2 ** (bits - 1) - 1)
 
 
+def _sibling_declared_type(data: bytes, start: int, end: int) -> str | None:
+    """`wParam & K` / `K | wParam`: the type NAME the other operand was declared with
+    (`wParam: WPARAM` earlier in the function), when the constant at start..end is one side
+    of a bitwise or arithmetic operator and the other side is a bare identifier."""
+    before = data[:start].decode("utf-8", "replace")
+    after = data[end:].decode("utf-8", "replace")
+    m = re.search(r"\b([A-Za-z_]\w*)\s*[&|^+*/-]\s*$", before) or re.match(
+        r"\s*[&|^+*/-]\s*([A-Za-z_]\w*)\b(?!\s*[.(\[])", after
+    )
+    if m is None:
+        return None
+    decl = None
+    for d in re.finditer(rf"\b{re.escape(m.group(1))}\s*:\s*([A-Za-z_]\w*)\b", before):
+        decl = d.group(1)
+    return decl if decl and decl not in INT_PRIMITIVES else None
+
+
+def _infer_constant_cast(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0282 at the `_` of `(MK_LBUTTON as _)` under a bitwise/arithmetic operator: name the
+    other operand's declared type instead (`wParam: WPARAM` -> `as WPARAM`)."""
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    if data[start:end] != b"_":
+        return [], [], False
+    m = re.search(rb"\(\s*([A-Za-z_]\w*)\s+as\s*\Z", data[:start])
+    close = re.match(rb"\s*\)", data[end:])
+    if m is None or close is None or m.group(1).decode() not in ctx.constants:
+        return [], [], False
+    sibling = _sibling_declared_type(data, m.start(), end + close.end())
+    if sibling is None:
+        return [], [], False
+    note = f"the other operand is declared `{sibling}`; `as _` cannot be inferred here"
+    return (
+        [_simple_edit(RULE_CONST_OPERAND, file_name, data, start, end, sibling, note, span, ctx)],
+        [],
+        True,
+    )
+
+
 def _constant_operand_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -4684,7 +4845,10 @@ def _constant_operand_rule(
     One that does not fit (`0x80000000` into `i32`) is left to the rules that reason about
     promotion.
     """
-    if (diagnostic.get("code") or {}).get("code") != "E0308" or not ctx.constants:
+    code = (diagnostic.get("code") or {}).get("code")
+    if code == "E0282" and ctx.constants:
+        return _infer_constant_cast(diagnostic, load, ctx)
+    if code != "E0308" or not ctx.constants:
         return [], [], False
     edits: list[Edit] = []
     for span, expected, found in _mismatch_sites(diagnostic):
@@ -4695,7 +4859,13 @@ def _constant_operand_rule(
         data = load(file_name)
         if data is None or end <= start or (file_name, start, end) in ctx.claimed:
             continue
-        name = data[start:end].decode("utf-8", "replace").strip()
+        original = data[start:end].decode("utf-8", "replace")
+        name = original.strip()
+        # A constant the translation already cast to one arch's width, `(IDD_X as u64)`:
+        # re-spelled like a bare one (the model baked amd64's WPARAM into an i386 build).
+        baked = re.fullmatch(r"\(\s*([A-Za-z_]\w*)\s+as\s+[iu](?:8|16|32|64|size)\s*\)", name)
+        if baked is not None:
+            name = baked.group(1)
         value = ctx.constants.get(name)
         bounds = _int_range(expected, ctx.width)
         if value is None or bounds is None or not bounds[0] <= value <= bounds[1]:
@@ -4704,19 +4874,28 @@ def _constant_operand_rule(
         # A match ARM is a pattern, where a cast does not parse: the scrutinee rule owns it.
         if _in_macro_definition(masked, start) or _in_match_pattern(masked, end):
             continue
+        target = expected
+        if baked is not None or expected in ("u64", "i64", "usize", "isize"):
+            # A baked width is arch-dependent by construction, whatever this target wants.
+            # `as _` cannot be inferred under an arithmetic/bitwise operator (`wParam &
+            # (MK_LBUTTON as _)`); there the other operand's DECLARED type name is portable.
+            target = _sibling_declared_type(data, start, end) or "_"
         ctx.claimed.add((file_name, start, end))
         edits.append(
             Edit(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=f"({name} as {expected})",
+                # A 64-bit or pointer-sized want is usually a width-varying alias (WPARAM is
+                # u64 on amd64, u32 on i386): `as _` lets each target's context say, where
+                # `as u64` broke every i386 `wParam == (VK_ESCAPE as u64)`.
+                replacement=f"({name} as {target})",
                 rule=RULE_CONST_OPERAND,
                 authority=(
                     f"`{name}` is the constant {value}, which `{expected}` holds exactly; C "
                     "converts a constant to the type its use needs"
                 ),
-                original=name,
+                original=original,
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),
                 requires_target_agreement=False,
@@ -4817,6 +4996,9 @@ _RULE_TABLE: dict[
         _raw_receiver_rule,
         _atl_format_id_rule,
         _cstring_conversion_rule,
+        _ref_compound_assign_rule,
+        _zero_constant_pointer_rule,
+        _int_float_arith_rule,
     ),
     RULE_CONST_OPERAND: _constant_operand_rule,
 }

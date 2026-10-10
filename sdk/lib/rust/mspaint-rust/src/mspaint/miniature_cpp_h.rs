@@ -46,9 +46,8 @@ impl CMiniatureWindow {
     }
     pub unsafe fn OnMove(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if (*this_).__base0.IsWindowVisible() != 0 && !((*this_).__base0.IsIconic() != 0) && !((*this_).__base0.IsZoomed() != 0)
-        {
-            let mut rc = CRect__make_0();
+        if (((*this_).__base0.IsWindowVisible()) != 0) && (((*this_).__base0.IsIconic()) == 0) && (((*this_).__base0.IsZoomed()) == 0) {
+            let mut rc: CRect = CRect__make_0();
             (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc.__base0));
             registrySettings.ThumbXPos = (rc.__base0.left) as u32;
             registrySettings.ThumbYPos = (rc.__base0.top) as u32;
@@ -67,7 +66,7 @@ impl CMiniatureWindow {
     }
     pub unsafe fn OnClose(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        (*this_).__base0.ShowWindow((SW_HIDE) as i32);
+        (*this_).__base0.ShowWindow((SW_HIDE as i32));
         registrySettings.ShowThumbnail = FALSE;
         return 0;
     }

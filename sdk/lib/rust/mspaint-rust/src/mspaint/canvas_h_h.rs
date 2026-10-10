@@ -28,6 +28,6 @@ impl CStyledCursor {
         (*this_).m_zoom = -1;
         (*this_).m_radius = -1;
         (*this_).m_color = CLR_INVALID;
-        (*this_).m_is_rubber = (FALSE) as i32;
+        (*this_).m_is_rubber = (FALSE as i32);
     }
 }
