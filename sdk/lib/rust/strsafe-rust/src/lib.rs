@@ -242,6 +242,138 @@ unsafe fn StringCopyNExWorkerW(
     hr
 }
 
+/// strsafe.h:996 `StringCopyExWorkerW`, ported in full (all flags), like its `N` sibling.
+#[allow(clippy::too_many_arguments)]
+unsafe fn StringCopyExWorkerW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    mut pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let mut pszDestEnd: *mut WCHAR = pszDest;
+    let mut cchRemaining: usize = 0;
+    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    } else {
+        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
+            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
+                hr = STRSAFE_E_INVALID_PARAMETER;
+            }
+            if pszSrc.is_null() {
+                pszSrc = EMPTY.as_ptr();
+            }
+        }
+        if hr >= 0 {
+            if cchDest == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = 0;
+                if *pszSrc != 0 {
+                    hr = if pszDest.is_null() {
+                        STRSAFE_E_INVALID_PARAMETER
+                    } else {
+                        STRSAFE_E_INSUFFICIENT_BUFFER
+                    };
+                }
+            } else {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+                while cchRemaining != 0 && *pszSrc != 0 {
+                    *pszDestEnd = *pszSrc;
+                    pszDestEnd = pszDestEnd.add(1);
+                    pszSrc = pszSrc.add(1);
+                    cchRemaining -= 1;
+                }
+                if cchRemaining > 0 {
+                    if dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 {
+                        memset(
+                            pszDestEnd.add(1) as *mut c_void,
+                            fill_pattern(dwFlags),
+                            (cchRemaining - 1) * core::mem::size_of::<WCHAR>()
+                                + (cbDest % core::mem::size_of::<WCHAR>()),
+                        );
+                    }
+                } else {
+                    pszDestEnd = pszDestEnd.sub(1);
+                    cchRemaining += 1;
+                    hr = STRSAFE_E_INSUFFICIENT_BUFFER;
+                }
+                *pszDestEnd = 0;
+            }
+        }
+    }
+    if hr < 0 && !pszDest.is_null() {
+        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
+            memset(pszDest as *mut c_void, fill_pattern(dwFlags), cbDest);
+            if fill_pattern(dwFlags) == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+            } else if cchDest > 0 {
+                pszDestEnd = pszDest.add(cchDest - 1);
+                cchRemaining = 1;
+                *pszDestEnd = 0;
+            }
+        }
+        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
+            pszDestEnd = pszDest;
+            cchRemaining = cchDest;
+            *pszDestEnd = 0;
+        }
+    }
+    if hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDestEnd;
+        }
+        if !pcchRemaining.is_null() {
+            *pcchRemaining = cchRemaining;
+        }
+    }
+    hr
+}
+
+/// strsafe.h:184 `StringCchCopyExW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCchCopyExW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyExWorkerW(
+        pszDest,
+        cchDest,
+        cchDest * core::mem::size_of::<WCHAR>(),
+        pszSrc,
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+    )
+}
+
+/// strsafe.h:255 `StringCbCopyNW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyNW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    cbToCopy: usize,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let cchToCopy = cbToCopy / core::mem::size_of::<WCHAR>();
+    if cchDest > STRSAFE_MAX_CCH || cchToCopy > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
 /// strsafe.h:1646 `StringVPrintfExWorkerW`.
 #[allow(clippy::too_many_arguments)]
 unsafe fn StringVPrintfExWorkerW(
@@ -635,6 +767,27 @@ macro_rules! StringCbPrintfW {
             $(, $arg)*
         )
     };
+}
+
+/// strsafe.h:585 `StringCchPrintfExW(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfExW {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                pszDest, cchDest, cchDest * core::mem::size_of::<$crate::WCHAR>(),
+                $ppszDestEnd as _, $pcchRemaining as _,
+                $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
 }
 
 /// strsafe.h `StringCbPrintfExW(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags,

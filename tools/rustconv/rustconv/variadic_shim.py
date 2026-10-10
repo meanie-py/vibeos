@@ -68,6 +68,25 @@ def _close_brace(text: str, open_idx: int) -> int | None:
     return None
 
 
+_VA_START_LOCAL = re.compile(
+    r"let\s+(?:mut\s+)?(?P<v>[A-Za-z_]\w*)\s*:\s*va_list\s*;(?P<gap>\s*)va_start!\s*\(\s*(?P=v)\s*,[^)]*\)\s*;"
+)
+
+
+def _forwarded_va_list(body: str) -> str:
+    """C's forwarding shape -- `va_list args; va_start(args, last); FooV(.., args);
+    va_end(args);` (progman's PrintString) -- translated as a local `va_list` plus the
+    lowered `va_start!`/`va_end!`, which mean nothing in Rust. In the twin the trampoline has
+    already done the va_start: the local IS `*ap_list` (a `va_list` is a pointer on every
+    Windows ABI, so copying it is va_copy), and the va_end is the trampoline's too."""
+    m = _VA_START_LOCAL.search(body)
+    if m is None:
+        return body
+    v = m.group("v")
+    body = body[: m.start()] + f"let {v}: va_list = *(ap_list as *mut va_list);" + body[m.end() :]
+    return re.sub(rf"\s*va_end!\s*\(\s*{v}\s*\)\s*;", "", body)
+
+
 def rewrite(text: str) -> Rewrite:
     """Every variadic DEFINITION in `text` -> its `_v` twin plus an extern declaration of the
     variadic entry (so references to `F` still resolve -- to the C trampoline)."""
@@ -94,6 +113,7 @@ def rewrite(text: str) -> Rewrite:
         fixed = params[: v.start()].rstrip().rstrip(",")
         ret = out.text[close_p + 1 : body_open].strip()
         body = out.text[body_open : body_close + 1]
+        body = _forwarded_va_list(body)
         body = _VALIST_TYPE.sub("varargs_rust::VaArgs", body)
         body = re.sub(
             rf"\b{arg}\s*\.\s*clone\s*\(\s*\)", "varargs_rust::VaArgs::from_ptr(ap_list)", body

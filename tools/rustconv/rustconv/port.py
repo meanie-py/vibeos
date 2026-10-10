@@ -964,7 +964,9 @@ def flip_cmake(cml: str, state: dict) -> str:
     lines = _explode_inline_sources(cml, target).split("\n")
     last = None
     for tu in state["tus"]:
-        rel = str((REPO / tu).relative_to(module))
+        # `../marshalling.c` (spoolss): a TU shared upward is listed relative to the module,
+        # which `relative_to` cannot express.
+        rel = os.path.relpath(REPO / tu, module)
         rs = _tu_output(state, tu).relative_to(REPO)
         pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
         hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
@@ -992,6 +994,16 @@ def flip_cmake(cml: str, state: dict) -> str:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
         lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
         text = "\n".join(lines)
+    # integrate's C-variadic trampolines (variadic_shim): stable Rust cannot define the
+    # `...` entry points, so the module must compile the generated shim (progman's
+    # PrintString, apphelp's ShimDbgPrint). Listed beside the stub.
+    if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
+        text = re.sub(
+            r"(?m)^(\s*)rust_cohab_stub\.c$",
+            r"\1rust_cohab_stub.c\n\1rust_varargs_shim.c",
+            text,
+            count=1,
+        )
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:
         add = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b", text, re.M)
