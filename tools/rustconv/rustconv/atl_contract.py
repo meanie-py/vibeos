@@ -1,15 +1,16 @@
-"""The ATL substrate contract: what a C++ worker is told about `atl-rust`.
+"""The ATL substrate contract: what a C++ worker is told about `atlclasses-rust` (`atl_rust`).
 
 A C++ body that names `CAtlStringW` or `CComPtr` needs a fixed Rust API to map onto, or the
 model invents one -- a wrapper type, a drop it forgets, a `Format` that takes a Rust string.
 `--local-raii` solves that for ONE file-local type by pasting its whole lowering into every
 prompt that mentions it; for a shared 1,300-line crate that would be most of each prompt,
 billed per function. So this hands over the API only: the public signatures of each type
-the body actually names, extracted from `sdk/lib/rust/atl-rust/src/lib.rs` (the source of
+the body actually names, extracted from `sdk/lib/rust/atlclasses-rust/src/lib.rs` (the source of
 truth, never a copy here), plus the C++-spelling mapping rules that no signature conveys.
 
 The assembled module reaches these through the crate prelude (`pub use atl_rust::...`), which
-`crate_integrate` wires when the crate depends on atl-rust.
+the scaffold wires when the crate is C++. The contract TEXT still says `atl-rust`: it is
+part of the response cache's capability hash, and rewording it would orphan every banked body.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import re
 from functools import cache
 from pathlib import Path
 
-ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atl-rust"
+ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atlclasses-rust"
 
 # C++ spelling -> atl-rust type. Every TU the cluster serves is a UNICODE build, so the
 # TCHAR spellings (`CString`, `CAtlString`) are the W string; a non-UNICODE C++ module
@@ -30,7 +31,7 @@ _DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap")
 
 @cache
 def _api() -> dict[str, list[str]]:
-    """atl-rust type -> its public method signatures, bodies and docs stripped."""
+    """atl_rust type -> its public method signatures, bodies and docs stripped."""
     text = (ATL_RUST / "src" / "lib.rs").read_text()
     out: dict[str, list[str]] = {}
     for m in re.finditer(r"^impl(?:<[^>]*>)?\s+(\w+)(?:<[^>]*>)?\s*\{", text, re.M):
@@ -49,7 +50,7 @@ def _api() -> dict[str, list[str]]:
 
 
 def types_used(body: str) -> list[str]:
-    """The atl-rust types a C++ body names, in a stable order."""
+    """The atl_rust types a C++ body names, in a stable order."""
     used = []
     if any(re.search(rf"\b{s}\b", body) for s in _STRING_SPELLINGS):
         used.append("CStringW")
@@ -67,7 +68,7 @@ def contract(body: str, *, unicode: bool = True) -> str:
     if not unicode and any(re.search(rf"\b{s}\b", body) for s in _TCHAR_SPELLINGS):
         raise ValueError(
             "a non-UNICODE C++ module names CString/CAtlString: its TCHAR string is the ANSI "
-            "CStringA, which atl-rust does not provide. Add it rather than map onto CStringW."
+            "CStringA, which atl_rust does not provide. Add it rather than map onto CStringW."
         )
     api = _api()
     lines = [

@@ -4004,10 +4004,11 @@ def scaffold_crate(
     if is_cpp:
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
-        deps += 'atl-rust = { path = "../atl-rust" }\n'
+        deps += 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
         atl_block = (
             "\n// ================= ATL =========================================================="
-            "==============\n// ATL's CStringW/CComPtr/containers, ported once in atl-rust.\n"
+            "==============\n"
+            "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, CComPtr, CHeapPtr, CSimpleArray, CSimpleMap, "
             "CStringW};\n"
         )

@@ -764,7 +764,7 @@ def test_scaffold_writes_the_crate_skeleton(tmp_path):
 
 
 def _cpp_module(tmp_path):
-    """widget.dll with one C++ TU: the island must parse as C++, the crate gets atl-rust."""
+    """widget.dll with one C++ TU: the island must parse as C++, the crate gets atlclasses-rust."""
     root = _basic_module(tmp_path, cmake=CMAKE_USERMODE.replace("helper.c", "helper.cpp"))
     _write(_mod(tmp_path) / "helper.cpp", "int helper(void){return 0;}\n")
     return root
@@ -781,7 +781,7 @@ def test_cpp_module_scaffold_wires_atl_rust(tmp_path):
     root = _cpp_module(tmp_path)
     out = tmp_path / "widget-rust"
     scaffold_crate(derive(_mod(tmp_path), root), out)
-    assert 'atl-rust = { path = "../atl-rust" }' in (out / "Cargo.toml").read_text()
+    assert 'atlclasses-rust = { path = "../atlclasses-rust" }' in (out / "Cargo.toml").read_text()
     prelude = (out / "src/prelude.rs").read_text()
     assert "pub use atl_rust::{atl_format," in prelude and "CStringW}" in prelude
 
