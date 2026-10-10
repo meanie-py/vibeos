@@ -1535,6 +1535,17 @@ def _pointer_cast_rule(
         if edit is not None:
             edits.append(edit)
             claimed = True
+    # Several bad arguments in one call are ONE "arguments to this function are incorrect"
+    # error: each argument's "expected `*mut HWND__`, found `usize`" is a child NOTE whose
+    # span is the argument, with no label of its own. sndrec32's `MessageBox(0, ..)` and
+    # `CreateEvent(0, .., 0)` were 32 errors the rule never saw.
+    for child in diagnostic.get("children") or []:
+        message = str(child.get("message") or "")
+        for span in child.get("spans") or []:
+            edit = _fn_or_zero_as_pointer({**span, "label": message}, load, ctx)
+            if edit is not None:
+                edits.append(edit)
+                claimed = True
     for span, expected, found in _mismatch_sites(diagnostic):
         twin = _same_c_type_cast(span, expected, found, load, ctx)
         if twin is not None:

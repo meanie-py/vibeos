@@ -363,6 +363,10 @@ class IncludeEnv:
             return "module"
         if self.module_build_dir is not None and _is_within(path, self.module_build_dir):
             return "generated"
+        if not _is_within(path, self.repo_root):
+            # The compiler's own headers (llvm-mingw's libc++ via the compile db's
+            # -isystem): never a ReactOS type surface.
+            return "toolchain"
         parts = path.parts
         if "idl" in parts:
             return "idl"
@@ -1688,6 +1692,9 @@ def scan_preamble(
     not exist here, so keeping both arms asked bindgen for headers it can never find.
     A guard on a macro in either is resolved and the dead arm dropped; a guard we cannot
     decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    *known_defined* is the other half: macros every compile of this TU defines. fltmc's
+    `#ifdef __REACTOS__ ... #else #include <Windows.h> #endif` kept the MSVC arm, and the
+    island asked a case-sensitive host for a `Windows.h` that no ReactOS compile opens.
     """
     lines = _prologue_lines(text)
     keep: list[str] = []
@@ -1806,7 +1813,12 @@ def walk_includes(tus: list[Path], env: IncludeEnv) -> Closure:
                     ref.includers.append(includer)
                 ref.tus.add(tu_key)
                 reached.add(target)
-                if target not in seen_files:
+                # The toolchain's own headers (libc++'s <vector>, <map>) are recorded but never
+                # descended into: they feed no allowlist (see the kind filter in derive), and
+                # their internals select platform arms by `#if` the lexical walker cannot
+                # evaluate -- drwtsn32's <map> reached libc++'s android.h and pthread.h and
+                # failed the derive on headers no ReactOS compile ever opens.
+                if target not in seen_files and ref.kind != "toolchain":
                     seen_files.add(target)
                     queue.append((target, depth + 1))
             # macro-spelled includes (`#include SOME_MACRO`) cannot be walked lexically
@@ -3331,7 +3343,14 @@ def derive(
     )
     wrapper: list[str] = []
     for tu in tus:
-        lines, conditional = scan_preamble(_read(tu), known_undefined)
+        # Defined by EVERY compile of this TU: the global ReactOS definition, the language,
+        # and the module's character set (set_module_type ... UNICODE).
+        known_defined = frozenset(
+            {"__REACTOS__"}
+            | ({"__cplusplus"} if str(tu).lower().endswith(CPP_SUFFIXES) else set())
+            | ({"UNICODE", "_UNICODE"} if module.unicode else set())
+        )
+        lines, conditional = scan_preamble(_read(tu), known_undefined, known_defined)
         if conditional:
             findings.append(
                 Finding(
@@ -3349,6 +3368,12 @@ def derive(
 
     # ---- islands / conflicts ----
     conflicts = find_conflicts(closure, sorted(closure.headers))
+    if any(str(t).lower().endswith(CPP_SUFFIXES) for t in tus):
+        # A C++ module takes ATL from atl-rust (atl_contract), not from its island: bindgen's
+        # rendering of ATL's own classes (CAtlStringMgr, CStringT) does not even compile
+        # (`derive(Copy)` on a class with a non-Copy member, E0204).
+        for rx in [rx for rx in allow_reasons if re.search(r"atl\w*\\\.h", rx)]:
+            del allow_reasons[rx]
     allow_files = sorted(allow_reasons)
     tu_by_key = {_rel(p, repo_root): p for p in tus}
 
@@ -3606,6 +3631,9 @@ def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str
     return out
 
 
+CPP_SUFFIXES = (".cpp", ".cc", ".cxx")
+
+
 def emit_profile(dp: DerivedProfile) -> str:
     """The ready-to-paste ``case`` arm for ``gen_driver_types.sh``.
 
@@ -3658,8 +3686,21 @@ def emit_profile(dp: DerivedProfile) -> str:
                 "    # The count does NOT settle the flag — island it both ways and run one "
                 "cargo check each. See the report."
             )
-        out.append("    BLOCKLIST_FUNCS=1")
+        if any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus):
+            # A C++ cell keeps the SDK's prototypes (fltmc's FilterLoad is in no other crate):
+            # the module's OWN functions are `_Z`-mangled without `extern "C"` and the -x c++
+            # post-pass strips them, so nothing it defines can clash. FROM_CRATE drops any
+            # `extern "C"` one it also defines.
+            out.append("    BLOCKLIST_FUNCS=0")
+            out.append("    BLOCKLIST_FUNCS_FROM_CRATE=1")
+        else:
+            out.append("    BLOCKLIST_FUNCS=1")
     out.append(f'    DRIVER_DIR="${{SRC}}/{rel}"')
+    if any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus):
+        # A C++ TU's include closure declares classes (`class CCanvasWindow : public
+        # CWindowImpl<...>`), which a C parse rejects as an unknown type name: the island
+        # must be parsed the way the TU is compiled.
+        out.append("    LANG_ARGS=( -x c++ -std=gnu++17 )")
     if not multi:
         out.append(f"    WRAPPER_INC=$'{wrapper}'")
         out.extend(_allow_files_lines(dp.allow_files))
@@ -4207,6 +4248,30 @@ def scaffold_crate(
         # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
         # as in ntdll), and the rest are header macros kernel C uses as much as user C.
     ) + 'win32macros-rust = { path = "../win32macros-rust" }\n'
+    is_cpp = any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus)
+    atl_block = ""
+    if is_cpp:
+        # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
+        # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
+        com = any(
+            re.search(r"\bCComHeapPtr\b", tu.read_text(errors="replace"))
+            for tu in m.compiled_tus
+            if tu.is_file()
+        )
+        # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
+        deps += (
+            'atlclasses-rust = { path = "../atlclasses-rust", features = ["com"] }\n'
+            if com
+            else 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
+        )
+        atl_block = (
+            "\n// ================= ATL =========================================================="
+            "==============\n"
+            "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
+            "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
+            "CSimpleMap, CStringW, POSITION};\n"
+            + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+        )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
     # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
@@ -4329,7 +4394,7 @@ pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
 {debug_block}
-
+{atl_block}
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
 // a call to the function itself → infinite self-recursion → silent hang. Import them (AGENTS.md).

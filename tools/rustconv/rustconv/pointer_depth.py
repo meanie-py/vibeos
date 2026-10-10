@@ -101,7 +101,10 @@ def c_declarations(
         words = re.findall(r"[A-Za-z_]\w*", ptype)
         hit = [w for w in words if w in types]
         if hit:
-            note(pname, hit[-1], ptype.count("*"))
+            # A C++ reference parameter (`PVOID& AddressInfo`) is one level of indirection in
+            # Rust (`*mut PVOID`), exactly as a `*` is: counting only stars "repaired"
+            # tracert's correct `*mut PVOID` back to `PVOID`.
+            note(pname, hit[-1], ptype.count("*") + ptype.count("&"))
     open_brace = body_text.find("{")
     body = body_text[open_brace:] if open_brace != -1 else ""
     # Blank comments and string literals so neither can pose as a declaration.
