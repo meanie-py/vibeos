@@ -1882,7 +1882,21 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
+        run.add(Stage("freeldr_size", status="skip", detail="no binary"))
         return
+    # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
+    # outgrows MAX_FREELDR_PE_SIZE. Restoring freeldr's debug prints did exactly that and
+    # the first symptom was every amd64-bios boot hanging in the gate; read it post-link.
+    # Only the arches that build freeldr_pe say anything; the others print SKIP and pass.
+    fls = repo / "tools" / "check_freeldr_size.py"
+    _lint_stage(
+        run,
+        repo,
+        "freeldr_size",
+        [py, str(fls), "--check", str(build_dir)] if fls.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )
     # Binary lints are judged by exit code (by_exit_code=True), not baseline-diff:
     # their output is arch-specific so a single baseline can't match across arches
     # (scan_ud2 emits ud2 on x86 vs branch-to-self spins on arm64). The tools'
