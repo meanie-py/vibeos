@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -20,7 +21,6 @@ extern "system" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
     } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn FatCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatCommonClose(Vcb: *mut VCB, Fcb: *mut FCB, Ccb: *mut CCB, TypeOfOpen: u32, arg1: u8, arg2: u8, VcbDeleted: *mut u8) -> NTSTATUS;
     fn FatCommonRead(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
@@ -130,7 +130,7 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                     if *p_vcb_deleted != 0 {
                         *p_vol_do = core::ptr::null_mut();
                     }
-                    NT_ASSERT((*status == ntkrnl_sys::base::STATUS_SUCCESS) as i32);
+                    NT_ASSERT!((*status == ntkrnl_sys::base::STATUS_SUCCESS) as i32);
                     FatCompleteRequest(irp_context, irp, *status);
                 }
                 n if n == ntkrnl_sys::constants::IRP_MJ_READ => {

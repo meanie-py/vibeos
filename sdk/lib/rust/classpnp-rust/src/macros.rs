@@ -60,9 +60,10 @@ macro_rules! abi_cast {
     ($func:expr) => { unsafe { ::core::mem::transmute($func as usize) } };
 }
 
-/// NT_ASSERTMSG(Msg, Expr) — debug assertion with message; no-op in the translation.
+/// NT_ASSERTMSG(Msg, Expr) — checked-build assertion with a message, `nt_assertmsg!`'s
+/// debug_assert: type-checked, evaluated only under debug-assertions, like NT_ASSERT.
 #[macro_export]
-macro_rules! NT_ASSERTMSG { ($($t:tt)*) => {{}} }
+macro_rules! NT_ASSERTMSG { ($($t:tt)*) => { ntkrnl_sys::nt_assertmsg!($($t)*) } }
 
 /// REVERSE_BYTES_SHORT(Dest, Src) — reverse a 2-byte (USHORT) field in place.
 #[macro_export]

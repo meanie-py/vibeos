@@ -23,6 +23,25 @@ macro_rules! PAGED_CODE {
     () => {};
 }
 
+// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
+// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
+// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
+macro_rules! w {
+    ($s:literal) => {{
+        const __W: &[u16] = &{
+            const BYTES: &[u8] = $s.as_bytes();
+            let mut out = [0u16; { BYTES.len() + 1 }];
+            let mut i = 0;
+            while i < BYTES.len() {
+                out[i] = BYTES[i] as u16;
+                i += 1;
+            }
+            out
+        };
+        __W
+    }};
+}
+
 // pcix.sys — Rust translation of the full MS-architecture PCI bus driver
 // (drivers/bus/pcix). staticlib -> libpcix_rust.a, cohab-linked into the cmake pcix.sys
 // with the translated .c commented out. NOT loaded at boot; bar = link-clean ×3.

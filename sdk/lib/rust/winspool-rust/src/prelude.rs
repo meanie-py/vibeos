@@ -578,39 +578,7 @@ pub static wszCurrentEnvironment: [u16; 14] = env_wide(b"Windows ARM64\0");
 pub static cbCurrentEnvironment: DWORD = core::mem::size_of_val(&wszCurrentEnvironment) as DWORD;
 // ==== end winspool local ====
 
-// ==== winspool local: strsafe.h StringCchCopyA (absent from strsafe-rust) ====
-// Ported from sdk/include/psdk/strsafe.h:145 + StringCopyWorkerA:893. Candidate for the
-// shared strsafe-rust crate.
-pub const STRSAFE_E_INSUFFICIENT_BUFFER: HRESULT = 0x8007_007Au32 as HRESULT;
-pub const STRSAFE_E_INVALID_PARAMETER: HRESULT = 0x8007_0057u32 as HRESULT;
-
-unsafe fn StringCopyWorkerA(mut pszDest: *mut c_char, mut cchDest: usize, mut pszSrc: *const c_char) -> HRESULT {
-    let mut hr: HRESULT = 0; // S_OK
-    if cchDest == 0 {
-        hr = STRSAFE_E_INVALID_PARAMETER;
-    } else {
-        while cchDest != 0 && *pszSrc != 0 {
-            *pszDest = *pszSrc;
-            pszDest = pszDest.add(1);
-            pszSrc = pszSrc.add(1);
-            cchDest -= 1;
-        }
-        if cchDest == 0 {
-            pszDest = pszDest.sub(1);
-            hr = STRSAFE_E_INSUFFICIENT_BUFFER;
-        }
-        *pszDest = 0;
-    }
-    hr
-}
-
-pub unsafe fn StringCchCopyA(pszDest: *mut c_char, cchDest: usize, pszSrc: *const c_char) -> HRESULT {
-    if cchDest > STRSAFE_MAX_CCH as usize {
-        return STRSAFE_E_INVALID_PARAMETER;
-    }
-    StringCopyWorkerA(pszDest, cchDest, pszSrc)
-}
-// ==== end winspool local strsafe ====
+pub use strsafe_rust::{StringCchCopyA, STRSAFE_E_INSUFFICIENT_BUFFER, STRSAFE_E_INVALID_PARAMETER};
 
 // ==== winspool local: wine debug channels ====
 // reactos/wine/debug.h ERR/FIXME print through DbgPrint in this DBG=1 tree, same as DPRINT1.

@@ -73,12 +73,39 @@ tools/optiplex/power.sh cycle 10     # boot it; watch COM7 (serial.sh)
 freeldr reads but the kernel cannot see, so the livecd loads its kernel and then has no
 boot volume. The staged image holds the loader and `livecd/livecd.iso`, and its only
 `freeldr.ini` entry loads that into a RAM disk exported as a CD (`/RDPATH ...
-/RDEXPORTASCD`, the SMP kernel pair, debug on COM1). It reached the desktop on
-2026-10-10: ~6.5 min pulling the 400 MB image at ~1 MB/s, then ~1 min to `shell ready`.
+/RDEXPORTASCD`, the SMP kernel pair, debug on COM1). `netboot.sh` also writes
+`optiplex.ipxe`; it `imgfree`s first, because the board's embedded script re-chains it on
+failure and a failed attempt's images stay registered (each retry leaked 400 MB until every
+download failed with ENOSPC, hiding the first error).
+
+Timing (2026-10-10): ~3.5 min pulling the image, then ~1 min to `shell ready`. freeldr
+reads it 62 KB at a time (its INT 13h buffer sits below 1 MB), so a `sanboot` is ~6,500
+HTTP range requests; `serve_http.py` speaks HTTP/1.1 keep-alive for that, which took the
+pull from ~1 MB/s (a new TCP connection per request) to ~2 MB/s.
+
+Tried and dropped: iPXE `kernel memdisk iso raw` + `initrd` (one GET, then INT 13h from
+RAM; boots in QEMU). On the board, GRUB's iPXE fails the 400 MB `initrd` with ENOSPC
+although its heap has 2 GB (a chained second iPXE downloads it fine; not run down), and
+memdisk's CD emulation leaves the NVMe at drive 80h, where `isoboot.bin` finds an MBR and
+offers "Press any key to boot from the ReactOS medium", then boots the NVMe. `isobtrt.bin`
+is no way round that: without the prompt it boots the hard disk at once.
+
+## What VibeOS sees (2026-10-10)
+
+| Hardware | Status |
+|---|---|
+| CPU, i7-4770 (4C/8T) | 8 processors started (MADT) |
+| RAM, 32 GB | **4 GiB used.** The amd64 loader cuts the map at 4 GiB (roadmap: "amd64 RAM above 4 GiB"); `[MM] physical memory: 4095 MiB` |
+| HD 4600 iGPU | VBE linear framebuffer at the panel's native 1920x1080; no native driver |
+| Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. It reports 85 ports (should be 21) |
+| Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports); its root hub enumerated no devices |
+| Crucial P310 NVMe | nvme.sys, disk and three partitions |
+| SATA AHCI, TSSTcorp DVD | UniATA; the DVD is `cdrom.sys` |
+| I217-LM Ethernet (8086:153A) | **No driver**: e1000 lists no PCH (e1000e) parts; `NicPresent=0` |
+| HD Audio (8C20) | **hdaudbus fails**: "unable to exit reset", START 0xC0000001. The HDMI/DP audio function starts but its codec verbs time out |
+| PCI INTx | All routed by ACPI `_PRT` (GSI 16-23, level, active-low) |
 
 ## Known gaps
 
-- The RAM-disk pull is ~1 MB/s (iPXE serving freeldr's INT 13h reads over HTTP).
-- 1024x768 in the corner of the 1080p panel. libgfxinit sets 1920x1080 and SeaBIOS's
-  coreboot-framebuffer VGA offers 16 "modes" that are all windows onto it (same 7680-byte
-  pitch); freeldr prefers 1024x768. Prefer the native mode when every mode shares a pitch.
+- RAM above 4 GiB, the NIC and audio (table above).
+- The netboot pull is still ~2 MB/s; the next step is bigger INT 13h reads in freeldr.

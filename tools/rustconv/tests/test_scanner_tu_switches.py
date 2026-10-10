@@ -104,3 +104,52 @@ def test_real_cmd_tus_plan_every_function():
         assert c_functions(c.read_text(errors="replace")) <= {
             f.name for f in scan_file(c).functions
         }
+
+
+HDR_TU = """\
+#include "cfg.h"
+
+#ifdef FEATURE_UNIX
+int CompleteUnix(char *s) { return 0; }
+#endif
+
+#ifdef FEATURE_4NT
+int Complete4nt(char *s, int n) { return n; }
+#endif
+"""
+
+
+def test_a_config_header_toggle_settles_the_tu(tmp_path):
+    # cmd.exe's config.h: `//#define FEATURE_UNIX_FILENAME_COMPLETION`. Before, filecomp.c
+    # planned BOTH completers, and the dead one was exported with the wrong signature.
+    c = tmp_path / "t.c"
+    c.write_text(HDR_TU)
+    (tmp_path / "cfg.h").write_text("#pragma once\n//#define FEATURE_UNIX\n#define FEATURE_4NT\n")
+    assert {f.name for f in scan_file(c).functions} == {"Complete4nt"}
+
+
+def test_a_header_toggle_some_module_file_defines_stays_undecided(tmp_path):
+    c = tmp_path / "t.c"
+    c.write_text(HDR_TU)
+    (tmp_path / "cfg.h").write_text("//#define FEATURE_UNIX\n#define FEATURE_4NT\n")
+    (tmp_path / "other.c").write_text("#define FEATURE_UNIX\n")
+    assert {f.name for f in scan_file(c).functions} == {"CompleteUnix", "Complete4nt"}
+    (tmp_path / "other.c").unlink()
+    (tmp_path / "CMakeLists.txt").write_text("add_definitions(-DFEATURE_UNIX)\n")
+    assert {f.name for f in scan_file(c).functions} == {"CompleteUnix", "Complete4nt"}
+
+
+def test_real_cmd_filecomp_plans_only_the_4nt_completer():
+    root = Path(__file__).resolve().parents[3] / "base/shell/cmd/filecomp.c"
+    if root.is_file():
+        names = [f.name for f in scan_file(root).functions]
+        assert names.count("CompleteFilename") == 1 and "ShowCompletionMatches" not in names
+
+
+def test_a_tu_toggle_the_cmake_file_defines_stays_undecided(tmp_path):
+    names = _names(tmp_path, {"CMakeLists.txt": "add_definitions(-DOFF_SWITCH)\n"})
+    assert "arms" in names
+    c = tmp_path / "t.c"
+    from rustconv.scanner import tu_switches
+
+    assert "OFF_SWITCH" not in tu_switches(c, c.read_text())[1]

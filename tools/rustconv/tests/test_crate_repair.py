@@ -1672,6 +1672,23 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_keyword_field_in_a_struct_literal_takes_bindgens_spelling():
+    # reg.exe's type table: `reg_type_rels { type_0: REG_SZ, .. }` against bindgen's `type_`.
+    from rustconv.crate_repair import RULE_KEYWORD_FIELD
+
+    src = b"static T: [R; 1] = [R { type_0: 1, name: N }];\n"
+    at = src.index(b"type_0")
+    diag = _diag(
+        "struct `types_arch::reg_type_rels` has no field named `type_0`",
+        code="E0560",
+        spans=[_span("src/a.rs", at, at + 6, is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_KEYWORD_FIELD]
+    )
+    assert [(e.original, e.replacement) for e in plan.edits] == [("type_0", "type_")]
+
+
 def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
     from rustconv.crate_repair import RULE_C2RUST_HOP
 

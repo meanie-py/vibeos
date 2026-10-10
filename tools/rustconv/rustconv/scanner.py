@@ -1132,10 +1132,59 @@ def tu_switches(path: Path, raw: str) -> tuple[dict[str, str], frozenset[str]]:
                 pass
         for name in sorted(off):
             active = re.compile(rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}\b", re.M)
-            mention = re.compile(rf"\b{re.escape(name)}\b")
+            mention = re.compile(rf"(?:(?<!\w)|(?<=-D)){re.escape(name)}\b")  # and `-DNAME`
             if active.search(raw) or any(mention.search(t) for t in others):
                 off.discard(name)
-    return defined, frozenset(off)
+    return defined, frozenset(off | (_header_off_switches(path, raw) - defined.keys()))
+
+
+def _local_header_closure(path: Path, raw: str) -> list[Path]:
+    """The module-directory headers a TU `#include "..."`s, transitively."""
+    seen: list[Path] = []
+    todo = [raw]
+    while todo:
+        for inc in re.findall(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', todo.pop(), re.M):
+            h = (path.parent / inc).resolve()
+            if h.parent == path.parent.resolve() and h.is_file() and h not in seen:
+                seen.append(h)
+                todo.append(h.read_text(errors="replace"))
+    return seen
+
+
+def _header_off_switches(path: Path, raw: str) -> frozenset[str]:
+    """Switches a module's own configuration HEADER turns off (cmd.exe's config.h).
+
+    `//#define FEATURE_UNIX_FILENAME_COMPLETION` in config.h is as much a decision as the
+    same toggle in the TU, but `tu_switches` only read the TU, so filecomp.c's dead UNIX
+    arm was translated alongside the live 4NT one: two `CompleteFilename`s, the dead one
+    exported with the wrong signature. Positive evidence only, as for a TU toggle: the
+    header carries the commented-out toggle, and no `.c`/`.h` of the module defines the
+    name on an active line and its CMakeLists.txt never mentions it (`-DNAME`).
+
+    ON switches from headers are deliberately not read: a kept `#ifdef ON` arm translates
+    correctly, and deciding them would re-key every banked function under one.
+    """
+    toggles: set[str] = set()
+    for h in _local_header_closure(path, raw):
+        toggles |= set(_TU_OFF_SWITCH.findall(h.read_text(errors="replace")))
+    if not toggles:
+        return frozenset()
+    sources = [raw]
+    for f in (*sorted(path.parent.glob("*.[ch]")), path.parent / "CMakeLists.txt"):
+        try:
+            sources.append(f.read_text(errors="replace"))
+        except OSError:
+            pass
+    cmake = sources[-1] if (path.parent / "CMakeLists.txt").is_file() else ""
+    off = set()
+    for name in toggles:
+        active = re.compile(rf"^[ \t]*#[ \t]*(define|undef)[ \t]+{re.escape(name)}\b", re.M)
+        # `\b` alone misses `-DNAME`: D and N are both word characters.
+        if not any(active.search(t) for t in sources) and not re.search(
+            rf"(?:(?<!\w)|(?<=-D)){re.escape(name)}\b", cmake
+        ):
+            off.add(name)
+    return frozenset(off)
 
 
 def _eval_pp_cond(

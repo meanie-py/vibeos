@@ -59,9 +59,6 @@ extern "C" {
     fn IsUniqueIdPresent( DeviceExtension: *mut DEVICE_EXTENSION, DatabaseEntry: *mut DATABASE_ENTRY, ) -> BOOLEAN;
     fn UpdateReplicatedUniqueIds( ListDeviceInfo: *mut DEVICE_INFORMATION, DatabaseEntry: *mut DATABASE_ENTRY, );
 }
-extern "C" {
-    fn DPRINT1(format: *const i8, ...);
-}
 
 // ---- file-scope preamble (translated) ----
 pub const NDEBUG: i32 = 1;

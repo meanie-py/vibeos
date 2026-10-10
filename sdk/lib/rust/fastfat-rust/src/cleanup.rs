@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -31,7 +32,6 @@ extern "system" {
     fn FlagOn(flags: u32, mask: u32) -> u32;
     fn ClearFlag(flags: *mut u32, mask: u32);
     fn SetFlag(flags: *mut u32, mask: u32);
-    fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(node: *const c_void) -> u32;
     fn FatAcquireExclusiveFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u8;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
@@ -209,12 +209,12 @@ pub unsafe extern "system" fn FatCommonCleanup(
     let mut ShareAccess: *mut c_void = ptr::null_mut();
 
     if TypeOfOpen == UserFileOpen || TypeOfOpen == UserDirectoryOpen {
-        NT_ASSERT((Fcb != ptr::null_mut()) as u8);
+        NT_ASSERT!((Fcb != ptr::null_mut()) as u8);
         FatAcquireExclusiveFcb(IrpContext, Fcb);
         AcquiredFcb = TRUE;
 
         if FlagOn((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE) != 0 {
-            NT_ASSERT((NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB) as u8);
+            NT_ASSERT!((NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB) as u8);
             SetFlag(&mut (*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
             ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             #[cfg(ntddi_ge_ntddi_win8)]
@@ -406,13 +406,13 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                     ptr::null(),
                                     ptr::null(),
                                 );
-                                NT_ASSERT(BreakStatus != STATUS_PENDING);
+                                NT_ASSERT!(BreakStatus != STATUS_PENDING);
                             }
                         }
                     }
                 }
 
-                NT_ASSERT(((*Fcb).UncleanCount != 0) as u8);
+                NT_ASSERT!(((*Fcb).UncleanCount != 0) as u8);
                 (*Fcb).UncleanCount -= 1;
             }
             UserFileOpen => {
@@ -551,16 +551,16 @@ pub unsafe extern "system" fn FatCommonCleanup(
                                     ptr::null(),
                                     ptr::null(),
                                 );
-                                NT_ASSERT(BreakStatus != STATUS_PENDING);
+                                NT_ASSERT!(BreakStatus != STATUS_PENDING);
                             }
                         }
                     }
                 }
 
-                NT_ASSERT(((*Fcb).UncleanCount != 0) as u8);
+                NT_ASSERT!(((*Fcb).UncleanCount != 0) as u8);
                 (*Fcb).UncleanCount -= 1;
                 if FlagOn((*FileObject).Flags, FO_CACHE_SUPPORTED) == 0 {
-                    NT_ASSERT(((*Fcb).NonCachedUncleanCount != 0) as u8);
+                    NT_ASSERT!(((*Fcb).NonCachedUncleanCount != 0) as u8);
                     (*Fcb).NonCachedUncleanCount -= 1;
                 }
 

@@ -11,6 +11,13 @@ macro_rules! PAGED_CODE {
     () => {};
 }
 
+// DBGLOGFLUSHINFO — debug macro that discards arguments in the C free build. A macro, never an
+// out-of-line fn (an out-of-line no-op is an optimization barrier).
+#[macro_export]
+macro_rules! DBGLOGFLUSHINFO {
+    ($($arg:tt)*) => {};
+}
+
 // Fold-proof trace shims (TracePrint/StorDebugPrint) — see drvtrace-shim/src/lib.rs.
 extern crate drvtrace_shim;
 

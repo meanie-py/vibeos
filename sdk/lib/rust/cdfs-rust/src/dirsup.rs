@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{CcMapData, PLARGE_INTEGER, RtlOemToUnicodeN};
 // resolve_imports.py: explicit kernel/private-type imports
@@ -49,7 +50,6 @@ extern "C" {
     fn CdFreePool(Pool: *mut *mut core::ffi::c_void);
 }
 extern "C" {
-    fn NT_ASSERT(condition: u32);
 }
 extern "C" {
 }
@@ -433,7 +433,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
             );
 
             ntkrnl_sys::__analysis_assert!(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
-            NT_ASSERT(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
+            NT_ASSERT!(((Status == STATUS_SUCCESS) as BOOLEAN));
             (*Dirent).CdFileName.FileName.Length = Length as USHORT;
         } else {
             CdConvertBigToLittleEndian(
@@ -793,7 +793,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
-    NT_ASSERT(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN) as _);
+    NT_ASSERT!(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN));
 
     if ((*DirContext).SectorOffset >= (*DirContext).DataLength) ||
         ((*DirContext).Sector.is_null())

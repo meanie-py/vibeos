@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
@@ -74,7 +75,6 @@ extern "C" {
 
 // DBG-only no-op verification macros (PAGED_CODE / ASSERT_* / NT_ASSERT /
 // UNREFERENCED_PARAMETER expand to nothing in a retail build).
-#[inline(always)] fn NT_ASSERT(_cond: bool) {}
 #[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
 #[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
 #[inline(always)] unsafe fn ASSERT_LOCKED_FCB(_p: *const FCB) {}
@@ -183,8 +183,8 @@ pub unsafe extern "C" fn CdAddInitialAllocation(
         ASSERT_IRP_CONTEXT(IrpContext as *const IRP_CONTEXT);
         ASSERT_FCB(Fcb);
         ASSERT_LOCKED_FCB(Fcb);
-        NT_ASSERT(0 == (*Fcb).Mcb.CurrentEntryCount);
-        NT_ASSERT(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
+        NT_ASSERT!(0 == (*Fcb).Mcb.CurrentEntryCount);
+        NT_ASSERT!(CDFS_NTC_FCB_DATA != (*fcb_hdr(Fcb)).NodeTypeCode as u32);
 
         let mcb_entry: *mut CD_MCB_ENTRY = (*Fcb).Mcb.McbArray;
         let disk_offset: i64 = LlBytesFromBlocks((*Fcb).Vcb, StartingBlock);

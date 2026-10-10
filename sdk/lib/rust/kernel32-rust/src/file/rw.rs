@@ -1,3 +1,4 @@
+use winedebug_rust::{TRACE};
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 #[allow(unused_imports)]

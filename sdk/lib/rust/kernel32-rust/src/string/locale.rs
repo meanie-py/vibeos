@@ -1,3 +1,4 @@
+use winedebug_rust::{TRACE, WARN};
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 // NLS substrate: winnls.h types/constants + Wine unicode helpers not in ntdll-sys.
@@ -20,9 +21,7 @@ extern "C" {
     // resolved symbol is still the nls_subst body (which ignores the extra args).
     fn _snwprintf( buffer: *mut WCHAR, count: usize, format: *const WCHAR, ... ) -> i32;
     fn sprintfW(buf: *mut WCHAR, format: *const WCHAR, ...) -> i32;
-    fn TRACE(fmt: *const i8, ...);
     fn FIXME(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn wcslen(s: *const WCHAR) -> usize;
     fn MAKELCID(langid: LANGID, sortid: DWORD) -> LCID;
     fn SORTIDFROMLCID(lcid: LCID) -> DWORD;
@@ -26621,13 +26620,7 @@ pub unsafe extern "system" fn GetLocaleInfoA(
     let mut lenW: INT;
     let mut ret: INT;
 
-    TRACE(
-        b"(lcid=0x%x,lctype=0x%x,%p,%d)\n\0".as_ptr() as PCSTR,
-        lcid,
-        lctype,
-        buffer,
-        len,
-    );
+    TRACE!("(lcid=0x%x,lctype=0x%x,%p,%d)\n", lcid, lctype, buffer, len);
 
     if len < 0 || (len != 0 && buffer.is_null()) {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -26735,13 +26728,7 @@ pub unsafe extern "system" fn GetLocaleInfoW(
     lcflags = (lctype & LOCALE_LOCALEINFOFLAGSMASK) as UINT;
     lctype &= 0xffff;
 
-    TRACE(
-        b"(lcid=0x%x,lctype=0x%x,%p,%d)\n\0".as_ptr() as PCSTR,
-        lcid,
-        lctype,
-        buffer,
-        len,
-    );
+    TRACE!("(lcid=0x%x,lctype=0x%x,%p,%d)\n", lcid, lctype, buffer, len);
 
     if (lcflags & LOCALE_NOUSEROVERRIDE) == 0
         && lcid == convert_default_lcid(LOCALE_USER_DEFAULT, lctype)
@@ -26884,14 +26871,7 @@ pub unsafe extern "system" fn GetLocaleInfoW(
         }
         HeapFree(GetProcessHeap(), 0, tmp as _);
 
-        TRACE(
-            b"(lcid=0x%x,lctype=0x%x,%p,%d) returning number %d\n\0".as_ptr() as PCSTR,
-            lcid,
-            lctype,
-            buffer,
-            len,
-            number,
-        );
+        TRACE!("(lcid=0x%x,lctype=0x%x,%p,%d) returning number %d\n", lcid, lctype, buffer, len, number);
     } else {
         memcpy(
             buffer as *mut _,
@@ -26902,15 +26882,7 @@ pub unsafe extern "system" fn GetLocaleInfoW(
             *buffer.offset((ret - 1) as isize) = 0;
         }
 
-        TRACE(
-            b"(lcid=0x%x,lctype=0x%x,%p,%d) returning %d %s\n\0".as_ptr() as PCSTR,
-            lcid,
-            lctype,
-            buffer,
-            len,
-            ret,
-            debugstr_w(buffer),
-        );
+        TRACE!("(lcid=0x%x,lctype=0x%x,%p,%d) returning %d %s\n", lcid, lctype, buffer, len, ret, debugstr_w(buffer));
     }
     ret
 }
@@ -26971,12 +26943,7 @@ pub unsafe extern "system" fn SetLocaleInfoW(
         return 0;
     }
 
-    TRACE(
-        b"setting %x (%s) to %s\n\0".as_ptr() as PCSTR,
-        lctype,
-        debugstr_w((*value).name),
-        debugstr_w(data),
-    );
+    TRACE!("setting %x (%s) to %s\n", lctype, debugstr_w((*value).name), debugstr_w(data));
 
     WriteProfileStringW(intlW.as_ptr(), (*value).name, data);
 
@@ -27065,7 +27032,7 @@ pub unsafe extern "system" fn GetThreadLocale() -> LCID {
 
 #[no_mangle]
 pub unsafe extern "system" fn SetThreadLocale(mut lcid: LCID) -> BOOL {
-    TRACE(b"(0x%04X)\n\0".as_ptr() as PCSTR, lcid);
+    TRACE!("(0x%04X)\n", lcid);
 
     lcid = ConvertDefaultLocale(lcid);
 
@@ -27173,11 +27140,7 @@ pub unsafe extern "system" fn EnumSystemLocalesA(
     dwFlags: DWORD,
 ) -> BOOL {
 
-    TRACE(
-        b"(%p,%08x)\n\0".as_ptr() as *const i8,
-        lpfnLocaleEnum.map_or(core::ptr::null(), |f| f as *const core::ffi::c_void),
-        dwFlags,
-    );
+    TRACE!("(%p,%08x)\n", lpfnLocaleEnum.map_or(core::ptr::null(), |f| f as *const core::ffi::c_void), dwFlags);
 
     EnumResourceLanguagesA(
         kernel32_handle,
@@ -27300,7 +27263,7 @@ pub unsafe extern "system" fn GetStringTypeW(
             }
         }
         CT_CTYPE3 => {
-            WARN(b"CT_CTYPE3: semi-stub.\n\0".as_ptr() as PCSTR);
+            WARN!("CT_CTYPE3: semi-stub.\n");
             let mut src_ptr = src;
             while count > 0 {
                 let c = *src_ptr as INT;
@@ -28019,15 +27982,7 @@ pub unsafe extern "system" fn LCMapStringEx(
         srclen = lstrlenW(src) + 1;
     }
 
-    TRACE(
-        b"(%s,0x%08lx,%s,%d,%p,%d)\n\0".as_ptr() as PCSTR,
-        debugstr_w(locale),
-        flags,
-        debugstr_wn(src, srclen),
-        srclen,
-        dst,
-        dstlen,
-    );
+    TRACE!("(%s,0x%08lx,%s,%d,%p,%d)\n", debugstr_w(locale), flags, debugstr_wn(src, srclen), srclen, dst, dstlen);
 
     flags &= !LOCALE_USE_CP_ACP;
 
@@ -28073,15 +28028,7 @@ pub unsafe extern "system" fn LCMapStringW(
     dst: LPWSTR,
     dstlen: INT,
 ) -> INT {
-    TRACE(
-        b"(0x%04x,0x%08x,%s,%d,%p,%d)\n\0".as_ptr() as PCSTR,
-        lcid,
-        flags,
-        debugstr_wn(src, srclen),
-        srclen,
-        dst,
-        dstlen,
-    );
+    TRACE!("(0x%04x,0x%08x,%s,%d,%p,%d)\n", lcid, flags, debugstr_wn(src, srclen), srclen, dst, dstlen);
 
     LCMapStringEx(
         core::ptr::null(),
@@ -28717,7 +28664,7 @@ unsafe fn NLS_EnumSystemLanguageGroups(lpProcs: *mut ENUMLANGUAGEGROUP_CALLBACKS
             let bInstalled: BOOL = (szValue[0] == b'1' as WCHAR) as BOOL;
             let lgrpid: LGRPID = strtoulW(szNumber.as_mut_ptr(), core::ptr::null_mut(), 16);
 
-            TRACE(b"grpid %s (%sinstalled)\n\0".as_ptr() as PCSTR, debugstr_w(szNumber.as_mut_ptr()), if bInstalled != 0 { b"\0".as_ptr() } else { b"not \0".as_ptr() });
+            TRACE!("grpid %s (%sinstalled)\n", debugstr_w(szNumber.as_mut_ptr()), if bInstalled != 0 { b"\0".as_ptr() } else { b"not \0".as_ptr() });
 
             if (*lpProcs).dwFlags == LGRPID_SUPPORTED || bInstalled != 0 {
                 let mut szGrpName: [WCHAR; 48] = [0; 48];
@@ -28804,12 +28751,7 @@ pub unsafe extern "system" fn EnumSystemLanguageGroupsA(
         lParam: lParam,
     };
 
-    TRACE(
-        b"(%p,0x%08X,0x%08lX)\n\0".as_ptr() as PCSTR,
-        pLangGrpEnumProc,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("(%p,0x%08X,0x%08lX)\n", pLangGrpEnumProc, dwFlags, lParam);
 
     NLS_EnumSystemLanguageGroups(if pLangGrpEnumProc.is_some() {
         core::ptr::addr_of_mut!(procs)
@@ -28831,12 +28773,7 @@ pub unsafe extern "system" fn EnumSystemLanguageGroupsW(
         lParam: 0,
     };
 
-    TRACE(
-        b"(%p,0x%08X,0x%08lX)\n\0".as_ptr() as PCSTR,
-        pLangGrpEnumProc,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("(%p,0x%08X,0x%08lX)\n", pLangGrpEnumProc, dwFlags, lParam);
 
     procs.procA = None;
     procs.procW = pLangGrpEnumProc;
@@ -28916,7 +28853,7 @@ unsafe fn NLS_EnumLanguageGroupLocales(lpProcs: *mut ENUMLANGUAGEGROUPLOCALE_CAL
     hKey = NLS_RegOpenKey(core::ptr::null_mut(), (*(&raw const szLocaleKeyName)).as_ptr());
 
     if hKey.is_null() {
-        WARN(b"NLS registry key not found. Please apply the default registry file 'wine.inf'\n\0".as_ptr() as PCSTR);
+        WARN!("NLS registry key not found. Please apply the default registry file 'wine.inf'\n");
     }
 
     while bContinue != 0 {
@@ -28931,10 +28868,7 @@ unsafe fn NLS_EnumLanguageGroupLocales(lpProcs: *mut ENUMLANGUAGEGROUPLOCALE_CAL
         {
             lgrpid = strtoulW(szValue.as_ptr(), core::ptr::null_mut(), 16);
 
-            TRACE(b"lcid %s, grpid %d (%smatched)\n\0".as_ptr() as PCSTR, 
-                  debugstr_w(szNumber.as_ptr()), 
-                  lgrpid,
-                  if lgrpid == (*lpProcs).lgrpid { b"\0".as_ptr() } else { b"not \0".as_ptr() });
+            TRACE!("lcid %s, grpid %d (%smatched)\n", debugstr_w(szNumber.as_ptr()), lgrpid, if lgrpid == (*lpProcs).lgrpid { b"\0".as_ptr() } else { b"not \0".as_ptr() });
 
             if lgrpid == (*lpProcs).lgrpid {
                 let lcid: LCID = strtoulW(szNumber.as_ptr(), core::ptr::null_mut(), 16);
@@ -29007,13 +28941,7 @@ pub unsafe extern "system" fn EnumLanguageGroupLocalesA(
         lParam,
     };
 
-    TRACE(
-        b"(%p,0x%08X,0x%08X,0x%08lX)\n\0".as_ptr() as PCSTR,
-        pLangGrpLcEnumProc,
-        lgrpid,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("(%p,0x%08X,0x%08X,0x%08lX)\n", pLangGrpLcEnumProc, lgrpid, dwFlags, lParam);
 
     NLS_EnumLanguageGroupLocales(
         if pLangGrpLcEnumProc.is_some() {
@@ -29039,13 +28967,7 @@ pub unsafe extern "system" fn EnumLanguageGroupLocalesW(
         lParam: 0,
     };
 
-    TRACE(
-        b"(%p,0x%08X,0x%08X,0x%08lX)\n\0".as_ptr() as PCSTR,
-        pLangGrpLcEnumProc,
-        lgrpid,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("(%p,0x%08X,0x%08X,0x%08lX)\n", pLangGrpLcEnumProc, lgrpid, dwFlags, lParam);
 
     callbacks.procA = None;
     callbacks.procW = pLangGrpLcEnumProc;
@@ -29291,12 +29213,7 @@ pub unsafe extern "system" fn EnumUILanguagesA(
         param: 0,
     };
 
-    TRACE(
-        b"%p, %x, %lx\n\0".as_ptr() as PCSTR,
-        pUILangEnumProc,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("%p, %x, %lx\n", pUILangEnumProc, dwFlags, lParam);
 
     if pUILangEnumProc.is_none() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -29333,12 +29250,7 @@ pub unsafe extern "system" fn EnumUILanguagesW(
         param: 0,
     };
 
-    TRACE(
-        b"%p, %x, %lx\n\0".as_ptr() as PCSTR,
-        pUILangEnumProc,
-        dwFlags,
-        lParam,
-    );
+    TRACE!("%p, %x, %lx\n", pUILangEnumProc, dwFlags, lParam);
 
     if pUILangEnumProc.is_none() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -29388,7 +29300,7 @@ unsafe fn NLS_EnumSystemCodePages(lpProcs: *mut ENUMSYSTEMCODEPAGES_CALLBACKS) -
         w!("\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\NLS\\CodePage\0").as_ptr() as PCWSTR,
     );
     if hKey.is_null() {
-        WARN(b"NLS_RegOpenKey() failed\n\0".as_ptr() as PCSTR);
+        WARN!("NLS_RegOpenKey() failed\n");
         return 0;
     }
 
@@ -29452,11 +29364,7 @@ pub unsafe extern "system" fn EnumSystemCodePagesW(
         dwFlags: 0,
     };
 
-    TRACE(
-        b"(%p,0x%08X)\n\0".as_ptr() as PCSTR,
-        lpCodePageEnumProc,
-        dwFlags,
-    );
+    TRACE!("(%p,0x%08X)\n", lpCodePageEnumProc, dwFlags);
 
     procs.procA = None;
     procs.procW = lpCodePageEnumProc;
@@ -29480,7 +29388,7 @@ pub unsafe extern "system" fn EnumSystemCodePagesA(
         dwFlags: dwFlags,
     };
 
-    TRACE(b"(%p,0x%08X)\n\0".as_ptr() as PCSTR, lpCodePageEnumProc, dwFlags);
+    TRACE!("(%p,0x%08X)\n", lpCodePageEnumProc, dwFlags);
 
     NLS_EnumSystemCodePages(if lpCodePageEnumProc.is_none() {
         core::ptr::null_mut()
@@ -29554,7 +29462,7 @@ pub unsafe extern "system" fn GetGeoInfoW(
     let mut val: i32 = 0;
     let len: i32;
 
-    TRACE(b"(%s:%d) %d %d %p %d %d\n\0".as_ptr() as PCSTR, geoid, geotype, data, data_len, lang as i32);
+    TRACE!("(%s:%d) %d %d %p %d %d\n", geoid, geotype, data, data_len, lang as i32);
 
     ptr = get_geoinfo_dataptr(geoid);
     if ptr.is_null() {
@@ -29588,7 +29496,7 @@ pub unsafe extern "system" fn GetGeoInfoW(
             return 0;
         }
         _ => {
-            WARN(b"(%s:%d) unrecognized type %d\n\0".as_ptr() as PCSTR, geotype);
+            WARN!("(%s:%d) unrecognized type %d\n", geotype);
             SetLastError(ERROR_INVALID_FLAGS);
             return 0;
         }
@@ -29631,14 +29539,7 @@ pub unsafe extern "system" fn GetGeoInfoA(
     let mut buffW: *mut WCHAR;
     let mut len: ::core::ffi::c_int;
 
-    TRACE(
-        b"%d %d %p %d %d\n\0".as_ptr() as LPCSTR,
-        geoid,
-        geotype,
-        data,
-        data_len,
-        lang as i32,
-    );
+    TRACE!("%d %d %p %d %d\n", geoid, geotype, data, data_len, lang as i32);
 
     len = GetGeoInfoW(geoid, geotype, core::ptr::null_mut(), 0, lang);
     if len == 0 {
@@ -29696,12 +29597,7 @@ pub unsafe extern "system" fn EnumSystemGeoID(
 ) -> BOOL {
     let mut i: INT;
 
-    TRACE(
-        b"(%d, %d, %p)\n\0".as_ptr() as PCSTR,
-        geoclass,
-        parent,
-        enumproc,
-    );
+    TRACE!("(%d, %d, %p)\n", geoclass, parent, enumproc);
 
     if enumproc.is_none() {
         SetLastError(ERROR_INVALID_PARAMETER);

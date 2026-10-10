@@ -497,6 +497,9 @@ members = [
     "taskmgr-rust",
     "regedit-rust",
     "clb-rust",
+    "servman-rust",
+    "net-rust",
+    "reg-rust",
 ]
 resolver = "2"
 

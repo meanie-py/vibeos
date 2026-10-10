@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -38,7 +39,6 @@ extern "system" {
     fn FatTruncateFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, file_size: i32, );
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
-    fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(p: *mut FCB) -> u32;
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -422,7 +422,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
 
     PAGED_CODE!();
 
-    NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
+    NT_ASSERT!(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
 
     DebugTrace(
         1,

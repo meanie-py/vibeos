@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -57,7 +58,6 @@ extern "C" {
 }
 extern "system" {
     fn WDF_MEMORY_DESCRIPTOR_INIT_BUFFER( descriptor: *mut WDF_MEMORY_DESCRIPTOR, buffer: *mut core::ffi::c_void, length: u32, );
-    fn NT_ASSERT( condition: i32, );
     static WdfObjectContextTypeInfo_CDROM_REQUEST_CONTEXT: WDF_OBJECT_CONTEXT_TYPE_INFO;
     fn DeviceGetExtension(Device: WDFDEVICE) -> PCDROM_DEVICE_EXTENSION;
     fn DeviceGetParameter( DeviceExtension: *mut core::ffi::c_void, SubKeyName: *mut u16, ValueName: *mut u16, Value: *mut u32, ) -> ();
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
     if status >= 0 {
         // fill up srb structure
         srb.OriginalRequest = WdfRequestWdmGetIrp(request as WDFREQUEST) as *mut core::ffi::c_void;
-        NT_ASSERT(if !srb.OriginalRequest.is_null() { 1 } else { 0 });
+        NT_ASSERT!(if !srb.OriginalRequest.is_null() { 1 } else { 0 });
 
         srb.Length = core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u16;
 
@@ -306,7 +306,7 @@ pub unsafe extern "C" fn DeviceClaimRelease(
             core::ptr::null_mut(),
         );
 
-        NT_ASSERT(if (srb.SrbFlags & 0x04 /* SRB_FLAGS_FREE_SENSE_BUFFER */) == 0 {
+        NT_ASSERT!(if (srb.SrbFlags & 0x04 /* SRB_FLAGS_FREE_SENSE_BUFFER */) == 0 {
             1
         } else {
             0
@@ -757,7 +757,7 @@ pub unsafe extern "C" fn DeviceCreateWellKnownName(
             b"DeviceCreateWellKnownName: link already exists %p\n\0".as_ptr() as *const i8,
             (*DeviceExtension).DeviceAdditionalData.WellKnownName.Buffer,
         );
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
         return STATUS_UNSUCCESSFUL;
     }
 
@@ -870,9 +870,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
 
     descriptor = (&query as *const STORAGE_PROPERTY_QUERY) as *mut STORAGE_DESCRIPTOR_HEADER;
 
-    NT_ASSERT(
-        (core::mem::size_of::<STORAGE_PROPERTY_QUERY>() >= 2 * core::mem::size_of::<u32>()) as i32,
-    );
+    NT_ASSERT!((core::mem::size_of::<STORAGE_PROPERTY_QUERY>() >= 2 * core::mem::size_of::<u32>()) as i32);
 
     WDF_MEMORY_DESCRIPTOR_INIT_BUFFER(
         core::ptr::addr_of_mut!(memory_descriptor),
@@ -914,9 +912,7 @@ pub unsafe extern "C" fn DeviceRetrieveDescriptor(
     // This time we know how much data there is so we can
     // allocate a buffer of the correct size
     buffer_length = (*descriptor).Size;
-    NT_ASSERT(
-        (buffer_length as usize >= core::mem::size_of::<STORAGE_PROPERTY_QUERY>()) as i32,
-    );
+    NT_ASSERT!((buffer_length as usize >= core::mem::size_of::<STORAGE_PROPERTY_QUERY>()) as i32);
     if (buffer_length as usize) < core::mem::size_of::<STORAGE_PROPERTY_QUERY>() {
         buffer_length = core::mem::size_of::<STORAGE_PROPERTY_QUERY>() as u32;
     }
@@ -1056,9 +1052,9 @@ pub unsafe extern "C" fn DeviceScanForSpecial(
     PAGED_CODE!();
 
     // NT_ASSERT(DeviceList)
-    NT_ASSERT((!DeviceList.is_null()) as i32);
+    NT_ASSERT!((!DeviceList.is_null()) as i32);
     // NT_ASSERT(Function)
-    NT_ASSERT((Function.is_some()) as i32);
+    NT_ASSERT!((Function.is_some()) as i32);
 
     if DeviceList.is_null() {
         return;
@@ -1315,7 +1311,7 @@ pub unsafe extern "C" fn DeviceCacheDeviceInquiryData(
 
     // Short-circuit if already cached
     if !(*DeviceExtension).DeviceAdditionalData.CachedInquiryData.is_null() {
-        NT_ASSERT(((*DeviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount != 0) as i32);
+        NT_ASSERT!(((*DeviceExtension).DeviceAdditionalData.CachedInquiryDataByteCount != 0) as i32);
         return STATUS_SUCCESS;
     }
 
@@ -4842,8 +4838,8 @@ pub unsafe extern "system" fn DeviceIsPortable(
             break 'Cleanup;
         }
 
-        NT_ASSERT((size as usize == core::mem::size_of::<i32>()) as i32);
-        NT_ASSERT((type_ == DEVPROP_TYPE_BOOLEAN) as i32);
+        NT_ASSERT!((size as usize == core::mem::size_of::<i32>()) as i32);
+        NT_ASSERT!((type_ == DEVPROP_TYPE_BOOLEAN) as i32);
 
         if isInternal == DEVPROP_TRUE as i32 {
             break 'Cleanup;
@@ -5188,7 +5184,7 @@ pub unsafe extern "system" fn DeviceGetMmcSupportInfo(
     *IsMmcDevice = 1; // TRUE
 
     // This code doesn't handle total get config size over 64k
-    NT_ASSERT((size <= MAXUSHORT) as i32);
+    NT_ASSERT!((size <= MAXUSHORT) as i32);
 
     // Check for SCSI_GET_CONFIGURATION_REQUEST_TYPE_ONE support in the device.
     {

@@ -244,3 +244,23 @@ def test_a_static_variadics_twin_is_still_unmangled():
     out = v.rewrite(src)
     assert out.names == ["DirPrintf"]
     assert '#[no_mangle]\nunsafe extern "C" fn DirPrintf_v(' in out.text
+
+
+def test_an_unnamed_ellipsis_is_still_variadic():
+    # net.exe's PrintMessageStringV: the C's bare `...` survived translation unnamed.
+    src = (
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn PrintMessageStringV(dwMessage: DWORD, ...) {\n'
+        "    let mut args: va_list;\n"
+        "    va_start!(args, dwMessage);\n"
+        "    ConMsgPrintfV(StdOut, 0, h, dwMessage, 0, core::ptr::addr_of_mut!(args));\n"
+        "    va_end!(args);\n"
+        "}\n"
+    )
+    out = v.rewrite(src)
+    assert out.names == ["PrintMessageStringV"] and not out.refused
+    assert (
+        "fn PrintMessageStringV_v(dwMessage: DWORD, ap_list: *mut ::core::ffi::c_void)" in out.text
+    )
+    assert "let mut args: va_list = *(ap_list as *mut va_list);" in out.text
+    assert "pub fn PrintMessageStringV(dwMessage: DWORD, ...);" in out.text

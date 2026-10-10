@@ -63,9 +63,6 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
     fn memset(s: *mut core::ffi::c_void, c: core::ffi::c_int, n: usize) -> *mut core::ffi::c_void;
     fn wcstol(nptr: *const u16, endptr: *mut *mut u16, base: core::ffi::c_int) -> core::ffi::c_long;
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn SockGetTdiName( AddressFamily: *mut i32, SocketType: *mut i32, Protocol: *mut i32, g: GROUP, dwFlags: DWORD, TransportName: *mut _UNICODE_STRING, HelperDLLContext: *mut PVOID, HelperData: *mut PHELPER_DATA, HelperEvents: *mut DWORD, ) -> INT;
 }
 

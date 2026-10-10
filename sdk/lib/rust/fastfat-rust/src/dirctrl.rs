@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
@@ -51,7 +52,6 @@ extern "system" {
     fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
     fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
     fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
-    fn NT_ASSERT(condition: u8);
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
@@ -588,7 +588,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|2|6|3 -> 1: every dir-info class
@@ -655,7 +655,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     );
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                     }
 
@@ -686,7 +686,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|6 -> 2|3 -> 1 (see the short-name
@@ -700,7 +700,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
                                 BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
                                 Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
-                                NT_ASSERT((Fat8Dot3String.Length <= 12) as u8);
+                                NT_ASSERT!((Fat8Dot3String.Length <= 12) as u8);
                                 *p_Status = RtlOemToUnicodeN(
                                     &mut (*BothDirInfo).ShortName[0],
                                     12 * core::mem::size_of::<u16>() as u32,
@@ -708,8 +708,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                     Fat8Dot3String.Buffer,
                                     (Fat8Dot3String.Length) as u32,
                                 );
-                                NT_ASSERT(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
-                                NT_ASSERT((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
+                                NT_ASSERT!(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
+                                NT_ASSERT!((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
                                 (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
 
                                 if (*p_Status) < 0 {
@@ -781,7 +781,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         .wrapping_add(BaseLength as usize).wrapping_add(BytesConverted as usize) as _;
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         // try_return(Status = STATUS_BUFFER_OVERFLOW) — inner closure: flag + break loop
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                         do_return = true;

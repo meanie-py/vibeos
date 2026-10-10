@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
 use ntkrnl_sys::ddk::{ExAcquireResourceExclusiveLite, ExAcquireResourceSharedLite, ExAcquireSharedStarveExclusive, ExReleaseResourceLite, FS_FILTER_CALLBACK_DATA, PFILE_OBJECT};
@@ -14,7 +15,6 @@ extern "system" {
     fn IoSetTopLevelIrp(Irp: *mut IRP);
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn CdAcquireResource(
         ACQUIRE_SHARED => ExAcquireResourceSharedLite(Resource, Wait),
         ACQUIRE_SHARED_STARVE_EXCLUSIVE => ExAcquireSharedStarveExclusive(Resource, Wait),
         _ => {
-            NT_ASSERT(0); // NT_ASSERT(FALSE)
+            NT_ASSERT!(0); // NT_ASSERT(FALSE)
             0
         }
     };
@@ -108,7 +108,7 @@ pub unsafe extern "system" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
 pub unsafe extern "system" fn CdReleaseFromCache(Fcb: *mut FCB) {
     PAGED_CODE!();
     let fsrtl_cache_top_level_irp: *mut IRP = 1 as *mut IRP;
-    NT_ASSERT((IoGetTopLevelIrp() == fsrtl_cache_top_level_irp) as i32);
+    NT_ASSERT!((IoGetTopLevelIrp() == fsrtl_cache_top_level_irp) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
     ExReleaseResourceLite((*Fcb).__bindgen_anon_1.Header.as_ref().Resource);
 }
@@ -120,13 +120,9 @@ pub unsafe extern "system" fn CdFilterCallbackAcquireForCreateSection(
 ) -> i32 {
     let FileObject: *mut FILE_OBJECT;
     PAGED_CODE!();
-    NT_ASSERT(
-        ((*CallbackData).Operation == FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as i32,
-    );
-    NT_ASSERT(
-        ((*CallbackData).SizeOfFsFilterCallbackData
-            == core::mem::size_of::<FS_FILTER_CALLBACK_DATA>() as u32) as i32,
-    );
+    NT_ASSERT!(((*CallbackData).Operation == FS_FILTER_ACQUIRE_FOR_SECTION_SYNCHRONIZATION) as i32);
+    NT_ASSERT!(((*CallbackData).SizeOfFsFilterCallbackData
+            == core::mem::size_of::<FS_FILTER_CALLBACK_DATA>() as u32) as i32);
     // UNREFERENCED_PARAMETER
     let _ = CompletionContext;
     FileObject = (*CallbackData).FileObject;

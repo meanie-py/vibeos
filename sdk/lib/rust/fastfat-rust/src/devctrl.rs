@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -29,7 +30,6 @@ extern "system" {
     fn FatFlushAndCleanVolume(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Vcb: *mut VCB, FlushOption: u32);
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn NT_ASSERT(cond: u32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     fn KeWaitForSingleObject(Object: *mut KEVENT, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *mut i64) -> NTSTATUS;
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
@@ -323,7 +323,7 @@ pub unsafe extern "system" fn FatCommonDeviceControl(
         }
 
         if !completion_context.is_null() {
-            NT_ASSERT(((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as i32) as u32);
+            NT_ASSERT!(((((*irp_sp).Parameters).DeviceIoControl.IoControlCode == IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES) as i32) as u32);
             FatReleaseVolume(IrpContext, vcb);
         } else {
             Irp = core::ptr::null_mut();

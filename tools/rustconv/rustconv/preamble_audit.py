@@ -45,7 +45,13 @@ from tree_sitter import Language, Parser
 # #defined to nothing, tree-sitter does not know that, and a parameter spelled
 # `CONST CHAR FAR *p` fails the whole enclosing function. Reused rather than
 # reimplemented so both parsers agree on what the C says.
-from .scanner import CPP_LANG, _blank_memmodel, _expand_case_macros, _normalize_callbacks
+from .scanner import (
+    CPP_LANG,
+    RE_CODE_SEG_BYTES,
+    _blank_memmodel,
+    _expand_case_macros,
+    _normalize_callbacks,
+)
 
 C_LANG = Language(tsc.language())
 
@@ -53,6 +59,12 @@ C_LANG = Language(tsc.language())
 _CPP_SUFFIXES = (".cpp", ".cxx", ".cc", ".hpp", ".hxx")
 
 #: Kinds whose absence BREAKS things (silently, in the vtbl case). Always reported.
+#: Calling-convention macros, which tree-sitter reads as a declarator name when an `#if`
+#: separates them from the function name (the arbiter library's NTDDI-split signatures).
+_CALLING_CONVENTIONS = frozenset(
+    {"NTAPI", "WINAPI", "APIENTRY", "CALLBACK", "STDCALL", "FASTCALL", "CDECL", "STDMETHODCALLTYPE"}
+)
+
 CRITICAL_KINDS = ("table", "variable", "struct", "union", "enum")
 
 _GUARD_RE = re.compile(r"(^_|_H_?$|_INCLUDED_?$|^__)", re.I)
@@ -133,6 +145,10 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
     # the function catalog first, and until it landed here too the two disagreed about
     # errno.c — the catalog saw 18 functions while this audit still called line 132 a
     # top-level ERROR and skipped every file-scope check it exists to perform.
+    # And a fourth: the catalog blanks `CODE_SEG("PAGE")` for its parse (scanner's
+    # RE_CODE_SEG_BYTES); left in here, every PAGED function of the arbiter library read as a
+    # top-level ERROR and all six of its files skipped their file-scope checks.
+    raw = RE_CODE_SEG_BYTES.sub(lambda m: b" " * len(m.group()), raw.encode()).decode()
     text = _normalize_callbacks(_blank_memmodel(_expand_case_macros(raw)))
     src = text.encode()
     # Parse a .cpp with the C++ grammar, as the function catalog already does. Using the C
@@ -237,6 +253,11 @@ def _scan(c_path: Path) -> tuple[list[CDecl], dict[str, str], list[int]]:
                 nm, is_fn = _declarator_name(target, src)
                 if not nm or is_fn:
                     continue  # function prototype — the function pipeline owns it
+                # `NTSTATUS NTAPI` + `#if (NTDDI_VERSION >= ...)` + the NAME: a function whose
+                # two signatures are chosen between the convention and the name parses as a
+                # declaration of a variable called NTAPI. A convention is never a variable.
+                if nm in _CALLING_CONVENTIONS and not has_init:
+                    continue
                 # A `static const <X>Vtbl name = {...}` is the class that silently
                 # produces method-less COM objects. Call it out by name.
                 kind = "table" if has_init and type_name.endswith("Vtbl") else "variable"

@@ -1529,6 +1529,15 @@ Rust fn of that name in any crate, a shim crate included. Expect the conversion 
 uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
 `EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
 `scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
+The same bug also comes as an `extern` DECLARATION, `extern "C" { fn TRACE(fmt: *const i8, ...); }`,
+bound at link time to whatever no-op some crate or cohab stub happens to export. That form has
+no body for the empty-fn check to see. By 2026-10-10 that had hidden about 386 NT_ASSERT calls in
+five storage/FS drivers, plus 93 declarations of Wine TRACE/ERR, DPRINT, KdPrintEx and similar.
+fastfat's NT_ASSERT evaluated an operand that faults (cachesup.rs). `scan_macro_fn_shadow` flags these declarations now too. Convert with
+`tools/fn_call_to_macro.py`. When you write the replacement macro, never name it after a std
+macro: a crate-root `macro_rules! assert` shadows `core::assert!` in every module declared
+after it. cabinet's compile-time `FDINOTIFICATION` layout asserts silently became no-ops that
+way, and they still compiled.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -6232,6 +6241,18 @@ it; `--apply` writes. It emits a `#[cfg(not(feature=...))]` twin carrying a **co
 attributes** (`#[no_mangle]` must survive with the feature off) whose body is the initializer
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
+
+**Variant: a module's OWN config header turns a feature off, and the dead arm is planned
+anyway.** cmd.exe's `config.h` carries `//#define FEATURE_UNIX_FILENAME_COMPLETION` beside
+`#define FEATURE_4NT_FILENAME_COMPLETION`, and filecomp.c defines `CompleteFilename` under
+each. The scanner only read toggles in the TU itself, so both arms were bought: two
+`CompleteFilename`s, the dead UNIX one `#[no_mangle]` with the wrong signature. This is a
+build choice the module makes for itself, not an optional backend, so there is no second arm
+to keep: the scanner now reads `//#define NAME` toggles in the module-directory headers a TU
+includes (`_header_off_switches`) and drops the arm, provided no `.c`/`.h` there defines NAME and
+its CMakeLists never passes `-DNAME`. Wine's `/* #undef HAVE_X */` form is untouched, so the
+rule above still governs it. Header ON switches are deliberately not read: a kept `#ifdef ON`
+arm translates correctly, and deciding them would re-key every banked function under one.
 
 **Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
 that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
@@ -11980,6 +12001,19 @@ struct's lock fields with no acquirer is a cheap sweep for more of these.
 port of an upstream fix that missed half of it) — a livelock no smoke boot had shown except as
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
+
+### An object linked into a shared list before it is initialized
+**Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in
+win32k `ProcessTimers`, on the raw input thread, after the desktop is up.
+**Cause:** `CreateTimer` linked a zeroed TIMER into `TimersListHead` and `IntSetTimer` filled it
+in afterwards, both without `TimerLock`, while the RIT walks that list under `TimerLock` every
+10 ms. On one CPU the walker can never run inside that window. On two it can: if the creating
+vCPU stalls for two ticks, one pass drives the zeroed countdown negative and the next reads
+`pti->TIF_flags` with `pti == NULL`. Upstream ReactOS has the identical code.
+**Fix:** link only after every field is set, under the lock the walker holds. The tell on a live
+VM: walk the list and look for an entry whose fields are all still zero except the ones the
+walker writes. When a C "create" helper links the object it returns, check whether anything
+walks that list on another thread.
 
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial

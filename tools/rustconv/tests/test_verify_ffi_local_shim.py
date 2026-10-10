@@ -73,3 +73,19 @@ def test_a_plain_declaration_is_not_mistaken_for_a_definition():
     every decl would suppress its own ABI check."""
     src = 'unsafe extern "C" {\n    fn InterlockedIncrement(p: *mut i32) -> i32;\n}\n'
     assert verify_ffi._LOCAL_DEF_RE.findall(src) == []
+
+
+def test_a_block_rejoined_on_one_line_takes_the_new_convention():
+    """`} extern "system" {` closes one block and opens the next; its braces net to
+    zero. The parser used to stay in the FIRST block's convention for the rest of it, so
+    fastfat's verfysup.rs read as correct only while the two conventions happened to agree."""
+    spec = {"KeSetEvent": {"conv": "stdcall", "params": 3}}
+    src = (
+        'extern "C" {\n    fn helper(p: *mut u8);\n'
+        '} extern "system" {\n    fn KeSetEvent(e: *mut u8, i: i32, w: u8) -> i32;\n}\n'
+    )
+    facts = verify_ffi.extern_facts("fastfat-rust/src/verfysup.rs", src, spec, {}, [])
+    assert [f for f in facts if f["type"] == "ABI"] == []
+    wrong = src.replace('} extern "system" {', '} extern "C" {')
+    facts = verify_ffi.extern_facts("fastfat-rust/src/verfysup.rs", wrong, spec, {}, [])
+    assert [f["type"] for f in facts if f["type"] == "ABI"] == ["ABI"]

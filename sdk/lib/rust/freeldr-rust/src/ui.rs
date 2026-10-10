@@ -10,8 +10,6 @@ use crate::tui::TuiVtbl;
 
 extern "C" {
     fn _vsnprintf(buffer: *mut i8, count: usize, format: PCSTR, ap: va_list) -> i32;
-    fn va_start(ap: *mut va_list, param: *const core::ffi::c_void);
-    fn va_end(ap: *mut va_list);
     fn strcpy(dest: PCHAR, src: PCSTR) -> PCHAR;
     fn strlen(s: PCSTR) -> usize;
     fn IniGetNumSectionItems(SectionId: ULONG_PTR) -> ULONG;

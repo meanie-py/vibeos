@@ -158,6 +158,25 @@ def _diverges(block: str) -> bool:
     return False
 
 
+def _sets_jump_flag(block: str, rest: str, label: str) -> bool:
+    """The other faithful lowering of `goto L;`: the arm's last statement raises a flag and the
+    code after the `match` runs L's block under `if flag { .. }`. servman's MainWndProc ends
+    WM_COMMAND with `goto_default = true;` for `goto HandleDefaultMessage;`, and the
+    DefWindowProc call sits in `if goto_default { .. }` after the match. Only a flag whose
+    NAME says it is that jump (`goto` in it, or the label itself), and which the rest of the
+    function actually tests -- an arbitrary `done = true;` proves nothing."""
+    stmts = _top_statements(block)
+    if not stmts:
+        return False
+    m = re.fullmatch(r"\s*([A-Za-z_]\w*)\s*=\s*true\s*;?\s*", stmts[-1])
+    if not m:
+        return False
+    flag = m.group(1)
+    if "goto" not in flag.lower() and label.lower() not in flag.lower():
+        return False
+    return re.search(rf"\bif\s+{re.escape(flag)}\s*\{{", rest) is not None
+
+
 def scan(rust: str, decls: Mapping[str, _Decls]) -> list[Fallthrough]:
     s = _strip(rust)
     found: list[Fallthrough] = []
@@ -169,6 +188,8 @@ def scan(rust: str, decls: Mapping[str, _Decls]) -> list[Fallthrough]:
         for case, label in d.goto_arms:
             for open_at, close in _arm_block(s, lo, hi, case):
                 if _diverges(s[open_at + 1 : close]):
+                    continue
+                if _sets_jump_flag(s[open_at + 1 : close], s[close:hi], label):
                     continue
                 found.append(Fallthrough(name, case, label, s.count("\n", 0, open_at) + 1))
     return found

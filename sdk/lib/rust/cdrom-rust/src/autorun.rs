@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL, _UNICODE_STRING, HANDLE};
@@ -33,7 +34,6 @@ unsafe extern "system" {
     fn WDF_WORKITEM_CONFIG_INIT(config: *mut WDF_WORKITEM_CONFIG, routine: unsafe extern "C" fn(WDFWORKITEM));
 }
 extern "system" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn DeviceSendNotification( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, guid: *const GUID, size: u32, context: *const core::ffi::c_void, );
@@ -765,7 +765,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
     let info = (*DeviceExtension).MediaChangeDetectionInfo;
 
     irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
-    NT_ASSERT(!irp.is_null() as i32);
+    NT_ASSERT!(!irp.is_null() as i32);
 
     if !(*irp).MdlAddress.is_null() {
         (*irp).MdlAddress = core::ptr::null_mut();
@@ -852,7 +852,7 @@ pub unsafe extern "system" fn RequestSetupMcnRequest(
             cdb = &raw mut (*srb).Cdb[0] as *mut CDB;
             (*cdb).CDB6GENERIC.as_mut().OperationCode = 0x00; // SCSIOP_TEST_UNIT_READY
         } else {
-            NT_ASSERT(!(*info).Gesn.Buffer.is_null() as i32);
+            NT_ASSERT!(!(*info).Gesn.Buffer.is_null() as i32);
             (*srb).TimeOutValue = 0x4; // GESN_TIMEOUT_VALUE
             (*srb).CdbLength = 10;
             (*srb).SrbFlags |= 0x40; // SRB_FLAGS_DATA_IN
@@ -902,10 +902,10 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
 
     PAGED_CODE!();
 
-    NT_ASSERT(!(*info).MediaChangeRequest.is_null() as i32);
+    NT_ASSERT!(!(*info).MediaChangeRequest.is_null() as i32);
     irp = WdfRequestWdmGetIrp((*info).MediaChangeRequest);
 
-    NT_ASSERT((TEST_FLAG((*info).MediaChangeSrb.SrbStatus as u32, SRB_STATUS_QUEUE_FROZEN as u32) == 0) as i32);
+    NT_ASSERT!((TEST_FLAG((*info).MediaChangeSrb.SrbStatus as u32, SRB_STATUS_QUEUE_FROZEN as u32) == 0) as i32);
 
     // use InterpretSenseInfo routine to check for media state, and also
     // to call ClassError() with correct parameters.
@@ -987,7 +987,7 @@ pub unsafe extern "C" fn RequestPostWorkMcnRequest(
     }
 
     // Remember the IRP and SRB for use the next time.
-    NT_ASSERT(!IoGetNextIrpStackLocation(irp).is_null() as i32);
+    NT_ASSERT!(!IoGetNextIrpStackLocation(irp).is_null() as i32);
     (*IoGetNextIrpStackLocation(irp)).Parameters.Scsi.Srb = &raw mut (*info).MediaChangeSrb as *mut _;
 
     // run a sanity check to make sure we're not recursing continuously
@@ -1185,18 +1185,18 @@ pub unsafe extern "C" fn DeviceInitializeMcn(
                 // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN available for %p\n",
                 //             DeviceExtension->DeviceObject));
-                NT_ASSERT(((*mediaChangeInfo).Gesn.Supported != 0) as i32);
-                NT_ASSERT((!(*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
-                NT_ASSERT(((*mediaChangeInfo).Gesn.BufferSize != 0) as i32);
-                NT_ASSERT(((*mediaChangeInfo).Gesn.EventMask != 0) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.Supported != 0) as i32);
+                NT_ASSERT!((!(*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.BufferSize != 0) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.EventMask != 0) as i32);
             } else {
                 // TracePrint!((TRACE_LEVEL_INFORMATION, TRACE_FLAG_MCN,
                 //             "DeviceInitializeMcn: GESN *NOT* available for %p\n",
                 //             DeviceExtension->DeviceObject));
-                NT_ASSERT(((*mediaChangeInfo).Gesn.Supported == 0) as i32);
-                NT_ASSERT(((*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
-                NT_ASSERT(((*mediaChangeInfo).Gesn.BufferSize == 0) as i32);
-                NT_ASSERT(((*mediaChangeInfo).Gesn.EventMask == 0) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.Supported == 0) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.Buffer.is_null()) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.BufferSize == 0) as i32);
+                NT_ASSERT!(((*mediaChangeInfo).Gesn.EventMask == 0) as i32);
                 (*mediaChangeInfo).Gesn.Supported = 0; // just in case....
             }
         }
@@ -1757,7 +1757,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
                 .as_ptr() as *const i8,
             b"Both Enable and Disable set -- DISABLE\0".as_ptr() as *const i8,
         );
-        NT_ASSERT(NT_SUCCESS(status) as i32);
+        NT_ASSERT!(NT_SUCCESS(status) as i32);
         status = STATUS_SUCCESS;
         *Enabled = 0; // FALSE
     } else if alwaysDisable != 0 {
@@ -1768,7 +1768,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
                 .as_ptr() as *const i8,
             b"DISABLE\0".as_ptr() as *const i8,
         );
-        NT_ASSERT(NT_SUCCESS(status) as i32);
+        NT_ASSERT!(NT_SUCCESS(status) as i32);
         status = STATUS_SUCCESS;
         *Enabled = 0; // FALSE
     } else if alwaysEnable != 0 {
@@ -1779,7 +1779,7 @@ pub unsafe extern "C" fn DeviceMediaChangeDeviceInstanceOverride(
                 .as_ptr() as *const i8,
             b"ENABLE\0".as_ptr() as *const i8,
         );
-        NT_ASSERT(NT_SUCCESS(status) as i32);
+        NT_ASSERT!(NT_SUCCESS(status) as i32);
         status = STATUS_SUCCESS;
         *Enabled = 1; // TRUE
     } else {
@@ -2020,7 +2020,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
                 offset += strlen(revision_id);
             }
 
-            NT_ASSERT((offset == device_string.Length as usize) as i32);
+            NT_ASSERT!((offset == device_string.Length as usize) as i32);
 
             // Null-terminate
             *device_string.Buffer.add(device_string.Length as usize) = 0i8;
@@ -2239,7 +2239,7 @@ pub unsafe extern "C" fn DeviceEnableMediaChangeDetection(
         };
 
         // NT_ASSERT(oldCount >= 0);
-        NT_ASSERT((oldCount >= 0) as i32);
+        NT_ASSERT!((oldCount >= 0) as i32);
 
         TracePrint!(0x5 /* TRACE_LEVEL_VERBOSE */, 0x2 /* TRACE_FLAG_MCN */,
                    b"DeviceEnableMediaChangeDetection: Disable count reduced to %d - \n\0".as_ptr() as *const i8,
@@ -2395,7 +2395,7 @@ pub unsafe extern "C" fn RequestSetupMcnSyncIrp(
     let mut nextIrpStack: *mut IO_STACK_LOCATION;
 
     irp = (*(*DeviceExtension).MediaChangeDetectionInfo).MediaChangeSyncIrp;
-    NT_ASSERT(if irp.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if irp.is_null() { 0 } else { 1 });
     IoSetNextIrpStackLocation(irp);
 
     irpStack = IoGetCurrentIrpStackLocation(irp);

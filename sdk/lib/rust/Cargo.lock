@@ -116,6 +116,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -313,6 +314,7 @@ dependencies = [
  "libz-rs-sys",
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2022,6 +2024,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "net-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "netapi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -2592,6 +2606,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reg-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regedit-rust"
 version = "0.1.0"
 dependencies = [
@@ -3014,6 +3040,18 @@ dependencies = [
  "panic-common",
  "win32macros-rust",
  "winsrv-sys",
+]
+
+[[package]]
+name = "servman-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
