@@ -3245,6 +3245,8 @@ unsafe fn MmMapViewOfSegment(
     {
         extern "system" {
             fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
+        }
+        extern "C" {
             fn MmGetKernelAddressSpace() -> PVOID;
         }
         if AddressSpace == MmGetKernelAddressSpace() {
