@@ -18,12 +18,20 @@ real index is never touched.
 CLOSE ENOUGH COUNTS. A receipt for a tree whose difference from the submitted one is
 documentation only is accepted: Markdown does not cool a compiler cache. The predicate is
 `tools/docs_only.py`, the same one the conductor uses to skip gating docs-only batches.
+
+So is a difference in Python the build never runs. A receipt answers ONE question -- would
+the gate's compiler caches be cold? -- and a `.py` under tools/ or tests/ can only move them
+if the build executes it (a generator) or something it executes imports it. Without this
+rule the common sequence "build, see a lint finding in your new tool, fix it, commit" was
+refused as "not BUILT" and cost three no-op rebuilds (smp-bringup, 2026-10-09: four .py
+files touched after a green build, nothing compiled changed). See build_reachable_python.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -103,6 +111,96 @@ def _changed(repo: Path, a: str, b: str) -> set[str] | None:
         return None
 
 
+# How the build names a Python file: a path or a bare basename (often behind a CMake
+# variable, `${REACTOS_SOURCE_DIR}/tools/gen_cflags.py`), or a module (`-m rustconv.c_oracle`).
+_PY_REF = re.compile(r"([A-Za-z0-9_-]+)\.py\b|-m\s+([A-Za-z_][\w.]*)")
+# The same shape in POSIX ERE, for `git grep` (no \\b, \\s or \\w there).
+_GREP_PY_REF = r"[A-Za-z0-9_-]+\.py|-m[[:space:]]+[A-Za-z_][A-Za-z0-9_.]*"
+_IMPORT = re.compile(r"^\s*(?:from\s+\.*([\w.]*)\s+import\s+([\w, ()]+)|import\s+([\w., ]+))", re.M)
+NEUTRAL_ROOTS = ("tools/", "tests/")
+# Tracked files that can make the build run Python: CMake, cargo build scripts and the
+# reactos-link crate they share, sdk/tools (build-time Python itself), shell drivers.
+# Comments in these count too -- harmless, since a false reference only reports cold.
+BUILD_GRAPH = (
+    "*CMakeLists.txt",
+    "*.cmake",
+    "*build.rs",
+    "sdk/lib/rust/reactos-link",
+    "sdk/tools",
+    "*.sh",
+    "*.cmd",
+)
+
+
+def _names(dotted: str) -> set[str]:
+    return {part for part in re.split(r"[.,\s()]+", dotted) if part and part != "as"}
+
+
+def build_reachable_python(repo: Path) -> set[str] | None:
+    """The tracked tools/ and tests/ `.py` files the build might execute, or None if that
+    cannot be worked out (then nothing is treated as neutral).
+
+    Roots are the Python every BUILD_GRAPH file names, plus this worktree's own generated
+    build-*/build.ninja. Then everything a reachable file imports,
+    to a fixpoint. Matching is by NAME, so a same-named file anywhere makes every file of
+    that name reachable: over-approximation only ever reports cold, the safe direction."""
+    try:
+        tracked = _git(repo, "ls-files", "--", "tools/*.py", "tests/*.py").splitlines()
+        cp = subprocess.run(
+            [
+                "git",
+                "grep",
+                "-h",
+                "-o",
+                "-I",
+                "-E",
+                _GREP_PY_REF,
+                "--",
+                *BUILD_GRAPH,
+            ],
+            cwd=str(repo),
+            capture_output=True,
+            text=True,
+            timeout=600,
+        )
+    except (RuntimeError, OSError, subprocess.SubprocessError):
+        return None
+    if cp.returncode not in (0, 1):  # 1 is "no match": a real answer
+        return None
+    refs = cp.stdout
+    text = [refs]
+    for ninja in sorted(repo.glob("build-*/build.ninja")):  # this worktree's own, never a sibling's
+        try:
+            text.append(ninja.read_text("utf8", "replace"))
+        except OSError:
+            return None
+    by_name: dict[str, list[str]] = {}
+    for p in tracked:
+        parts = p[: -len(".py")].split("/")
+        for key in {parts[-1]} | (
+            {parts[-2]} if parts[-1] == "__init__" and len(parts) > 1 else set()
+        ):
+            by_name.setdefault(key, []).append(p)
+    wanted: set[str] = set()
+    for m in _PY_REF.finditer("\n".join(text)):
+        wanted |= {m.group(1)} if m.group(1) else _names(m.group(2))
+    reachable: set[str] = set()
+    pending = [p for n in wanted for p in by_name.get(n, [])]
+    while pending:
+        p = pending.pop()
+        if p in reachable:
+            continue
+        reachable.add(p)
+        try:
+            src = (repo / p).read_text("utf8", "replace")
+        except OSError:
+            continue
+        for m in _IMPORT.finditer(src):
+            for name in _names(" ".join(g for g in m.groups() if g)):
+                pending.extend(q for q in by_name.get(name, []) if q not in reachable)
+    return reachable
+
+
 def missing(
     repo: Path,
     tree: str,
@@ -114,12 +212,23 @@ def missing(
 ) -> list[str]:
     """The arches with no receipt close enough to `tree` to have warmed the cache for it.
 
-    A receipt covers `tree` when every path that differs between them is either inert
-    (docs) or identical to `master` in `tree`. The second rule is the merge case: a lane
-    that built, then merged origin/master, now differs from its receipt by everything that
-    landed meanwhile -- but that code was built by master's own gate, so it is already in
-    the cache. Only the lane's OWN changes can be cold."""
+    A receipt covers `tree` when every path that differs between them is inert (docs), or
+    Python the build cannot reach (build_reachable_python), or identical to `master` in
+    `tree`. The last rule is the merge case: a lane that built, then merged origin/master,
+    now differs from its receipt by everything that landed meanwhile -- but that code was
+    built by master's own gate, so it is already in the cache. Only the lane's OWN changes
+    can be cold."""
     own = _changed(repo, master, tree) if master else None
+    reach: set[str] | bool | None = False  # computed on first need: it costs a repo grep
+
+    def neutral(p: str) -> bool:
+        nonlocal reach
+        if not (p.endswith(".py") and p.startswith(NEUTRAL_ROOTS)):
+            return False
+        if reach is False:
+            reach = build_reachable_python(repo)
+        return isinstance(reach, set) and p not in reach
+
     out = []
     for arch in arches:
         trees = _receipt_trees(repo, arch)
@@ -130,7 +239,7 @@ def missing(
             diff = _changed(repo, t, tree)
             if diff is None:
                 continue
-            if all(is_inert(p) or (own is not None and p not in own) for p in diff):
+            if all(is_inert(p) or (own is not None and p not in own) or neutral(p) for p in diff):
                 warm = True
                 break
         if not warm:
