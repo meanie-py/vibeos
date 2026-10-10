@@ -1443,7 +1443,7 @@ pub unsafe extern "system" fn InitializeSetup(
 /// Whether the firmware that started this boot is UEFI, from `SystemBootEnvironmentInformation`
 /// (the loader block's `BootViaEFI`). Upstream hard-wires `ARCH_PcAT` here, which made every
 /// UEFI install write a BIOS boot sector the firmware never runs.
-unsafe fn BootedFromUefi() -> bool {
+pub(crate) unsafe fn BootedFromUefi() -> bool {
     extern "system" {
         fn NtQuerySystemInformation(Class: u32, Info: *mut core::ffi::c_void, Length: u32, ReturnLength: *mut u32) -> NTSTATUS;
     }
