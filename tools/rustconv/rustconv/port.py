@@ -52,6 +52,7 @@ from . import (
     variadic_shim,
 )
 from . import profile_derive as pd
+from .profile_derive import CPP_SUFFIXES
 
 REPO = Path(__file__).resolve().parents[3]
 GEN = REPO / "tools" / "rustconv" / "gen_driver_types.sh"
@@ -76,6 +77,16 @@ class PortError(RuntimeError):
 
 def _state_path(stem: str) -> Path:
     return STATE_ROOT / stem / "state.json"
+
+
+def _module_headers(module_dir: Path) -> list[Path]:
+    return sorted(f for ext in ("*.h", "*.hpp") for f in module_dir.rglob(ext))
+
+
+def _module_sources(module_dir: Path) -> list[Path]:
+    """Every header and TU the module owns, C++ included (sndrec32 is all .hpp/.cpp)."""
+    tus = (f for ext in ("*.c", *(f"*{s}" for s in CPP_SUFFIXES)) for f in module_dir.rglob(ext))
+    return sorted([*_module_headers(module_dir), *tus])
 
 
 def load_state(stem: str) -> dict:
@@ -477,6 +488,201 @@ def add_workspace_member(crate: str) -> bool:
 
 
 # --------------------------------------------------------------------------------------
+# cppapp: a C++ module's classes (cpp_model -> cpp_app)
+# --------------------------------------------------------------------------------------
+
+
+# Modules a stage GENERATES rather than translates: not a unit, never rewritten as one.
+# Integrate strips type definitions from a unit (types belong to the island) -- applied to
+# cpp_classes.rs it deleted every class struct the module has.
+GENERATED_MODULES = frozenset({"cpp_classes.rs"})
+
+
+_TCHAR_ENTRY = {"_tWinMain": ("wWinMain", "WinMain"), "_tmain": ("wmain", "main")}
+
+
+def _tchar_entry_point(path: Path, unicode: bool) -> str:
+    """`_tWinMain` / `_tmain` are tchar.h MACROS for the real entry point: `wWinMain`/`wmain`
+    in a UNICODE build, `WinMain`/`main` otherwise. The CRT startup calls the real name, so
+    a Rust `#[no_mangle] fn _tWinMain` (sol, spider) is an undefined `wWinMain` at link."""
+    text = path.read_text()
+    done = []
+    for macro, (wide, narrow) in _TCHAR_ENTRY.items():
+        real = wide if unicode else narrow
+        new = re.sub(rf"(\bfn\s+){macro}\b", rf"\g<1>{real}", text)
+        if new != text:
+            done.append(f"{macro} -> {real}")
+            text = new
+    if done:
+        path.write_text(text)
+    return ", ".join(done)
+
+
+def _island_extern_statics(src: Path) -> set[str]:
+    """Globals the island declares `extern` (the module's own header: `extern CARDWINDOW
+    *SolWnd;`), on every arch it was generated for."""
+    names: set[str] = set()
+    for island in src.glob("types_*.rs"):
+        names |= set(
+            re.findall(r"^\s+pub static (?:mut )?(\w+):", island.read_text(errors="replace"), re.M)
+        )
+    return names
+
+
+_UNIT_STATIC = re.compile(r"^(?!#\[no_mangle\]\n)(pub )?static (mut )?(\w+):", re.M)
+
+
+def _export_island_statics(path: Path, island: set[str]) -> list[str]:
+    """A unit's definition of a global the island declares `extern`: the C++ gave it
+    external linkage, and every OTHER unit reaches it through that extern -- so it must be
+    exported under its C name. sol defined `SolWnd` and 17 more as plain Rust statics; the
+    other TUs' references were undefined symbols at link."""
+    text = path.read_text()
+    done: list[str] = []
+
+    def repl(m: re.Match[str]) -> str:
+        name = m.group(3)
+        start = m.start()
+        prev = text[text.rfind("\n", 0, max(start - 1, 0)) + 1 : start]
+        if name not in island or "no_mangle" in prev:
+            return m.group(0)
+        done.append(name)
+        return f"#[no_mangle]\npub static {m.group(2) or ''}{name}:"
+
+    new = _UNIT_STATIC.sub(repl, text)
+    if new != text:
+        path.write_text(new)
+    return done
+
+
+def _flip_output(state: dict, tu: str) -> Path:
+    """Where a flipped TU's Rust lives: its own module, or for a cppapp TU the synthetic unit
+    holding its bodies (`audio_format.cpp` -> `audio_format_cpp_h.rs`)."""
+    if state.get("cppapp") and tu in state.get("cpp_tus", []):
+        unit = next(
+            (
+                u
+                for u in state.get("header_tus", {})
+                if Path(u).name == Path(tu).name.replace(".", "_") + ".hpp"
+            ),
+            None,
+        )
+        if unit is not None:
+            return _tu_output(state, unit)
+    return _tu_output(state, tu)
+
+
+def _unit_files(crate: Path, stem: str) -> list[Path]:
+    return [
+        p for p in sorted((crate / "src" / stem).glob("*.rs")) if p.name not in GENERATED_MODULES
+    ]
+
+
+def _cppapp_dir(stem: str) -> Path:
+    return STATE_ROOT / stem / "cppapp"
+
+
+def stage_cppapp(stem: str) -> None:
+    """Render a C++ module's classes and lower every body into synthetic headers, $0.
+
+    The module's `.cpp` TUs stop being translation units: each body file becomes one
+    synthetic header of lowered free functions (cpp_lower), translated through the TU that
+    compiles it (`--via`, the `port headers` mechanism), and `assemble` moves each
+    translated `<Class>__<name>` into its class. `src/<stem>/cpp_classes.rs` holds the
+    layout, vtables and constructors, generated from clang's class model (cpp_app)."""
+    from . import cpp_app, cpp_model
+
+    state = load_state(stem)
+    started = time.time()
+    module_dir = REPO / state["module_dir"]
+    cpp_tus = state.get("cpp_tus") or [t for t in state["tus"] if t.lower().endswith(CPP_SUFFIXES)]
+    if not cpp_tus:
+        raise PortError(f"{stem}: no C++ TU to model")
+    out = _cppapp_dir(stem)
+    out.mkdir(parents=True, exist_ok=True)
+    model = cpp_model.extract(REPO, module_dir, [REPO / t for t in cpp_tus], cache_dir=out)
+    unplaced = [
+        f"{c.name}::{m.name}: {u}"
+        for c in model.classes.values()
+        for m in c.methods
+        for u in m.unplaced
+    ] + [f"{f.name}: {u}" for f in model.functions for u in f.unplaced]
+    for u in unplaced:
+        print(f"cppapp: UNLOWERED (inside a macro expansion): {u}")
+    crate_src = _crate_dir(state) / "src" / stem
+    crate_src.mkdir(parents=True, exist_ok=True)
+    island = "\n".join(
+        f.read_text(errors="replace") for f in (_crate_dir(state) / "src").glob("types_*.rs")
+    )
+    island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
+    island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
+    island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
+    (crate_src / "cpp_classes.rs").write_text(
+        cpp_app.render_classes(model, island_structs, island_text)
+    )
+    units: dict[str, str] = {}
+    for body_file, text in cpp_app.synthetic_tus(model, island_text).items():
+        name = Path(body_file).name.replace(".", "_") + ".hpp"
+        (out / name).write_text(text)
+        via = body_file if body_file in cpp_tus else _including_tu(REPO / body_file, cpp_tus)
+        units[str(out / name)] = via
+    state["cpp_tus"] = cpp_tus
+    # `tus` keeps meaning "the TUs the module compiles" (facts and macros are evaluated
+    # against them); _units() is what changes: the synthetic units replace them.
+    state["header_tus"] = units
+    state["cppapp"] = {"model": str(out / "cpp_model.json")}
+    _cppapp_wire_crate(state)
+    _record(
+        state,
+        "cppapp",
+        started,
+        classes=len(model.classes),
+        units=len(units),
+        unlowered=len(unplaced),
+    )
+    print(
+        f"cppapp: {stem}: {len(model.classes)} class(es), {len(model.functions)} function(s), "
+        f"{len(units)} synthetic unit(s); cpp_classes.rs written"
+    )
+
+
+def _including_tu(header: Path, tus: list[str]) -> str:
+    """A TU that includes `header` (any one: a header compiles the same in each)."""
+    for t in tus:
+        if header.name in (REPO / t).read_text(errors="replace"):
+            return t
+    return tus[0]  # reached through a precompiled header that names it transitively
+
+
+def _cppapp_wire_crate(state: dict) -> None:
+    """lib.rs: drop the .cpp module declarations (they are no longer units) and declare
+    cpp_classes; the prelude re-exports it so every translated unit sees the classes."""
+    crate = _crate_dir(state)
+    stem = state["stem"]
+    lib = crate / "src" / "lib.rs"
+    text = lib.read_text()
+    block = re.search(rf"(?m)^pub mod {re.escape(stem)} \{{\n(.*?)^\}}", text, re.S)
+    if block is None:
+        raise PortError(f"{lib}: no `pub mod {stem} {{ .. }}` block")
+    gone = {_module_name(t) for t in state["cpp_tus"]}
+    kept = [
+        ln
+        for ln in block.group(1).splitlines()
+        if not any(re.search(rf"\bpub mod (?:r#)?{re.escape(g)};", ln) for g in gone)
+    ]
+    if not any("pub mod cpp_classes;" in ln for ln in kept):
+        kept.insert(0, "    pub mod cpp_classes; // generated: rustconv port cppapp")
+    lib.write_text(text[: block.start(1)] + "\n".join(kept) + "\n" + text[block.end(1) :])
+    prelude = crate / "src" / "prelude.rs"
+    ptext = prelude.read_text()
+    line = f"pub use crate::{stem}::cpp_classes::*;"
+    if line not in ptext:
+        prelude.write_text(
+            ptext.rstrip("\n") + "\n\n// The module's C++ classes (port cppapp).\n" + line + "\n"
+        )
+
+
+# --------------------------------------------------------------------------------------
 # translate
 # --------------------------------------------------------------------------------------
 
@@ -496,8 +702,10 @@ def _tu_output(state: dict, tu: str) -> Path:
 
 
 def _units(state: dict) -> list[str]:
-    """What translate runs: the module's TUs, then the headers `port headers` adopted."""
-    return [*state["tus"], *state.get("header_tus", {})]
+    """What translate runs: the module's TUs, then the headers `port headers` adopted. A
+    cppapp module's C++ TUs are not units: their bodies are in the synthetic headers."""
+    cpp = set(state.get("cpp_tus", [])) if state.get("cppapp") else set()
+    return [*(t for t in state["tus"] if t not in cpp), *state.get("header_tus", {})]
 
 
 def _has_body(path: Path) -> bool:
@@ -757,6 +965,15 @@ def stage_translate(
         ]
         if tu in vias:
             cmd += ["--via", str(REPO / vias[tu])]
+        cppapp = state.get("cppapp")
+        if tu.lower().endswith(CPP_SUFFIXES) or (cppapp and tu in vias):
+            # translate refuses a C++ TU without a mode: the classless half is one run, and
+            # each class defined in the TU is its own class-atomic run.
+            cmd.append("--free-functions")
+        if cppapp and tu in vias:
+            # A synthetic unit: lowered C++ that c2rust cannot anchor (it is not the TU's
+            # text, and c2rust has no C++), with the generated class context per worker.
+            cmd += ["--cpp-app-model", cppapp["model"], "--no-c2rust"]
         # Per TU, recorded in the state so `port replay` asks the bank the same question.
         if Path(tu).name in state.get("expand_macros", []):
             cmd += ["--expand-local-macros", state["module_dir"]]
@@ -775,7 +992,13 @@ def stage_translate(
         # Only the names THIS TU defines: translate reports a name its worklist never
         # missed, and every other TU's names would be exactly that.
         c_text = (REPO / tu).read_text(errors="replace")
-        mine = [n for n in rebuy_fn or [] if re.search(rf"^\s*{re.escape(n)}\s*\(", c_text, re.M)]
+        # A definition line may carry its return type first (`void Cls__m(Cls *this_)` in a
+        # cppapp synthetic unit), so the name need not open the line.
+        mine = [
+            n
+            for n in rebuy_fn or []
+            if re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
+        ]
         if mine:
             cmd += ["--rebuy-fn", *mine]
             if "--reassemble" not in cmd:
@@ -784,6 +1007,11 @@ def stage_translate(
         proc = subprocess.run(
             cmd, cwd=REPO / "tools" / "rustconv", capture_output=True, text=True, env=env
         )
+        if state.get("cppapp") and tu in vias and not dry_run and out.is_file():
+            from . import cpp_app, cpp_model
+
+            app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+            out.write_text(cpp_app.assemble(out.read_text(), app))
         # One log per TU per PASS: the escalation pass used to overwrite the cheap pass's
         # log, which destroyed exactly the token counts the cheap-vs-thinking comparison needs.
         log = STATE_ROOT / stem / f"translate-{_module_name(tu)}-thinking-{thinking}.log"
@@ -965,7 +1193,7 @@ def flip_cmake(cml: str, state: dict) -> str:
     last = None
     for tu in state["tus"]:
         rel = str((REPO / tu).relative_to(module))
-        rs = _tu_output(state, tu).relative_to(REPO)
+        rs = _flip_output(state, tu).relative_to(REPO)
         pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
         hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
         if hit is None:
@@ -1009,12 +1237,38 @@ def flip_cmake(cml: str, state: dict) -> str:
             f"# disk. The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
+        if _crate_uses_float(crate):
+            # The workspace builds i686 with -sse,-sse2 (kernel code must not touch SSE
+            # state), and rustc then rejects any function passing f32/f64 by value: sndrec32's
+            # `fseconds_total() -> f32`. User code re-enables it for its own build only, the
+            # oleaut32/msvcrt pattern; the extern "system" float return ABI (st0) is unchanged.
+            env = f"{stem.upper()}_RUST_ENV"
+            head = (
+                f"# {crate} passes floats by value: i386 user code needs SSE (see oleaut32).\n"
+                f"set({env})\n"
+                f'if(ARCH STREQUAL "i386")\n'
+                f'    set({env} ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")\n'
+                "endif()\n" + head.replace('"" TRUE)\n', f'"" TRUE ${{{env}}})\n')
+            )
         tail = (
             f"add_dependencies({target} rust_{variant})\n"
             f"target_link_libraries({target} ${{{variant}_LIB}})\n"
         )
         text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
     return text
+
+
+def _crate_uses_float(crate: str) -> bool:
+    from tools.source_walk import source_files
+
+    src = REPO / "sdk" / "lib" / "rust" / crate / "src"
+    if not src.is_dir():
+        return False
+    return any(
+        re.search(r"\b(?:f32|f64)\b", p.read_text(errors="replace"))
+        for p in source_files(src)
+        if p.suffix == ".rs" and not p.name.startswith("types")
+    )
 
 
 def stage_flip(stem: str) -> None:
@@ -1472,7 +1726,7 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     done: list[str] = []
     refused: dict[str, str] = {}
     all_twins: dict[str, tuple[list[tuple[str, str]], str]] = {}
-    for path in sorted((crate / "src" / stem).glob("*.rs")):
+    for path in _unit_files(crate, stem):
         rw = variadic_shim.rewrite(path.read_text())
         refused.update(rw.refused)
         if rw.names:
@@ -1960,7 +2214,15 @@ def stage_integrate(stem: str) -> None:
     crate_types = sizeof_restore.crate_types(crate / "src")
     fn_macros = _module_fn_macros(state)
     island_consts = _island_consts(crate / "src")
-    for path in sorted((crate / "src" / stem).glob("*.rs")):
+    unicode = _TCHAR_BEGIN in (crate / "src" / "prelude.rs").read_text(errors="replace")
+    island_statics = _island_extern_statics(crate / "src")
+    for path in _unit_files(crate, stem):
+        renamed = _tchar_entry_point(path, unicode)
+        if renamed:
+            print(f"integrate: {path.stem}: entry point {renamed}")
+        exported = _export_island_statics(path, island_statics)
+        if exported:
+            print(f"integrate: {path.stem}: #[no_mangle] on {', '.join(exported)}")
         shadow = _drop_island_shadows(path, island_consts)
         if shadow:
             changed += 1
@@ -2257,6 +2519,31 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     ]
 
 
+_A_ALIAS_RE = re.compile(r"^pub type (\w+) = (\w+)A;", re.M)
+
+
+def _tchar_structs(state: dict, prelude: Path) -> dict[str, str]:
+    """The TCHAR-dependent STRUCT names the crate uses, re-pointed at their W form.
+
+    ntdll-sys is generated without UNICODE, so its `WNDCLASS` is `WNDCLASSA`: spider's
+    `RegisterClass(&wndclass)` handed RegisterClassW an ANSI struct (a type error, caught --
+    but only because the field types also differ). Any `pub type X = <base>A;` in the islands
+    whose `<base>W` also exists, for a name the translated units actually spell."""
+    crate_src = prelude.parent
+    island = [crate_src / "types_amd64.rs"]
+    island += sorted((REPO / "sdk" / "lib" / "rust" / "ntdll-sys" / "src").glob("*amd64*.rs"))
+    text = "\n".join(p.read_text(errors="replace") for p in island if p.is_file())
+    defined = set(re.findall(r"^pub (?:struct|type|union) (\w+)", text, re.M))
+    units = "\n".join(
+        p.read_text(errors="replace") for p in (crate_src / state["stem"]).glob("*.rs")
+    )
+    out = {}
+    for name, base in _A_ALIAS_RE.findall(text):
+        if f"{base}W" in defined and re.search(rf"\b{re.escape(name)}\b", units):
+            out[name] = f"{base}W"
+    return out
+
+
 def _unicode_tchar(state: dict, prelude: Path) -> bool:
     """A UNICODE module's TCHAR is WCHAR; ntdll-sys (built without UNICODE) exports
     `TCHAR = c_char`, and a prelude that only globs it gave 27 control-panel buffers HALF
@@ -2276,6 +2563,11 @@ def _unicode_tchar(state: dict, prelude: Path) -> bool:
     block = ""
     if unicode:
         lines = [f"pub type {n} = {t};" for n, t in _TCHAR_TYPES.items() if n not in hand]
+        lines += [
+            f"pub type {n} = {t};"
+            for n, t in sorted(_tchar_structs(state, prelude).items())
+            if n not in hand and n not in _TCHAR_TYPES
+        ]
         if lines:
             block = "\n".join([_TCHAR_BEGIN, *lines, _TCHAR_END]) + "\n"
     new = (
@@ -2845,7 +3137,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     names = (set(names) | prelude_resolve.existing_externs(prelude)) - declared
     sigs: dict[str, tuple[str, str, str]] = {}
     module_dir = REPO / state["module_dir"]
-    files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
+    files = _module_sources(module_dir)
     defs, _ambiguous = local_macros.module_macros(files, REPO)
     stem = state["stem"]
     modules_dir = _crate_dir(state) / "src" / stem
@@ -3558,7 +3850,7 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
         )
     pasting = {n for n, why in refused.items() if why.startswith("token pasting")}
     widen = sdk_macros.widening_macros(REPO, tus, pasting)
-    for rs in sorted((crate / "src" / state["stem"]).glob("*.rs")):
+    for rs in _unit_files(crate, state["stem"]):
         text = rs.read_text()
         new, n = sdk_macros.widen_call_sites(text, widen)
         if n:
@@ -3579,11 +3871,14 @@ def stage_macros(
     crate = _crate_dir(state)
     prelude = crate / "src" / "prelude.rs"
     module_dir = REPO / state["module_dir"]
-    files = sorted([*module_dir.rglob("*.h"), *module_dir.rglob("*.c")])
+    files = _module_sources(module_dir)
     defs, ambiguous = local_macros.module_macros(files, REPO)
     # Functions the module's HEADERS define inline: a macro of the same name wins.
-    for name, fn in local_macros.header_functions(sorted(module_dir.rglob("*.h")), REPO).items():
-        defs.setdefault(name, fn)
+    # A cppapp module's header functions are class members, rendered and translated by
+    # cpp_app: read as C they become a free `audio_membuffer(this)` shadowing the class.
+    if not state.get("cppapp"):
+        for name, fn in local_macros.header_functions(_module_headers(module_dir), REPO).items():
+            defs.setdefault(name, fn)
     names = prelude_resolve.unresolved_names(
         state["crate"],
         RUST_TARGETS["amd64"],
@@ -4563,6 +4858,8 @@ def _main(args) -> int:
             stage_derive(_module(args.module), args.target)
         elif args.port_stage == "island":
             stage_island(args.stem)
+        elif args.port_stage == "cppapp":
+            stage_cppapp(args.stem)
         elif args.port_stage == "scaffold":
             stage_scaffold(_module(args.module), args.target)
         elif args.port_stage == "translate":
@@ -4671,6 +4968,9 @@ def add_parser(sub) -> None:
         q.add_argument("--target", default=None, help="CMake target, when there are several")
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
+    stages.add_parser(
+        "cppapp", help="a C++ module: render its classes, lower its bodies to synthetic units ($0)"
+    ).add_argument("stem")
     stages.add_parser(
         "oracle", help="the pre-flip C as <target>_c, for modrun's runtime diff (c_oracle)"
     ).add_argument("stem")
