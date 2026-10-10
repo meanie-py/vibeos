@@ -829,6 +829,11 @@ def arm64_cohab_repo(tmp_path: Path) -> Path:
     (r / "qemu" / "boot.img").write_bytes(b"BOOT")
     (r / "docs").mkdir()
     (r / "docs" / "readme.md").write_text("hi\n")
+    (r / "drivers" / "x" / "foo").mkdir(parents=True)
+    (r / "drivers" / "x" / "foo" / "CMakeLists.txt").write_text(
+        'rust_staticlib_variant(foo_rust foo-rust "" TRUE)\n'
+        'rust_staticlib_variant(k32_rust k32-vista-rust "" TRUE)\n'
+    )
     _git(r, "init", "-q")
     _git(r, "config", "user.email", "t@t")
     _git(r, "config", "user.name", "t")
@@ -875,6 +880,24 @@ def test_crate_for_stem_ignores_a_parked_non_member_crate(arm64_cohab_repo: Path
     assert not any(
         "parked" in rel for rel in provenance.boot_set_cohab_rels(arm64_cohab_repo, "arm64")
     )
+
+
+def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_repo: Path):
+    """`rustconv port` makes a crate a workspace member when work STARTS, long before its
+    flip; spoolsv.exe, still built from C, was paired with spoolsv-rust mid-integration and
+    the arm64 build reported `cohab flip not rebuilt`. A crate no CMake file names is not
+    linked into anything yet."""
+    rust = arm64_cohab_repo / "sdk" / "lib" / "rust"
+    (rust / "inwork-rust").mkdir()
+    (rust / "inwork-rust" / "Cargo.toml").write_text("[package]\nname = 'inwork-rust'\n")
+    manifest = rust / "Cargo.toml"
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",')
+    )
+    provenance._workspace_members.cache_clear()
+    provenance._cmake_named_crates.cache_clear()
+    assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
+    assert provenance._crate_for_stem(arm64_cohab_repo, "foo") is not None
 
 
 def test_cohab_rels_maps_only_rust_binaries(arm64_cohab_repo: Path):

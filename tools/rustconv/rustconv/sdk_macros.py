@@ -998,7 +998,13 @@ def object_items(
             # `__MINGW_NAME_AW(LVITEM)` -> `LVITEMW`): the expansion is the final name. A
             # value use of a type (`PROPSHEETHEADER` where the model dropped its sizeof)
             # gets the alias too, so the sizeof pass can see it is a type.
-            if re.fullmatch(r"[A-Za-z_]\w*", expansion) and (as_type or expansion in island):
+            # ...but a C type KEYWORD is not a Rust name: `#define VOID void` became
+            # `pub type VOID = void;` (audiosrv). Those take the type parser below.
+            if (
+                re.fullmatch(r"[A-Za-z_]\w*", expansion)
+                and expansion not in _C_TYPE_WORDS
+                and (as_type or expansion in island)
+            ):
                 out[n] = f"pub type {n} = {expansion};"
                 continue
             if as_type:

@@ -1,0 +1,15 @@
+# kbdlayouts-rust — every keyboard layout DLL's tables (dll/keyboard), see src/lib.rs.
+[package]
+name = "kbdlayouts-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "kbdlayouts_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }

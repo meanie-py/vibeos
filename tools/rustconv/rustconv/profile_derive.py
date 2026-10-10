@@ -62,6 +62,7 @@ import argparse
 import functools
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import date
@@ -521,6 +522,66 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+_FOREACH_RE = re.compile(
+    r"^[ \t]*foreach\s*\(\s*(\w+)\s+([^)]*)\)(.*?)^[ \t]*endforeach\s*\(\s*\w*\s*\)", re.M | re.S
+)
+
+
+def _unroll_target_foreach(text: str) -> str:
+    """Unroll a `foreach()` whose body DEFINES TARGETS, over a literal list.
+
+    dll/keyboard builds all 91 layout DLLs from one `foreach(_keyboard_layout
+    ${_keyboard_layouts})` around `add_library(${_keyboard_layout} MODULE ...)`. The parser
+    below is single-pass and saw one target literally named `${_keyboard_layout}`, so no
+    layout had a provable owner. Each iteration is pasted in with the loop variable
+    substituted -- CMake's own semantics, the variable scope being the enclosing one.
+
+    Only literal items, and `${LIST}` where every `set(LIST ..)` / `list(APPEND LIST ..)`
+    before the loop is literal. Anything else (a generated list, a nested `foreach`, `IN
+    LISTS`/`RANGE` forms) is left as it was: the old result, not a guess.
+    """
+
+    def literal_list(name: str, before: int) -> list[str] | None:
+        items: list[str] = []
+        for m in re.finditer(
+            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b"
+            rf"|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
+            text[:before],
+            re.M,
+        ):
+            if m.group(0).lstrip().startswith("set"):
+                items = []
+            words = m.group(1).split()
+            if any("$" in w or '"' in w for w in words):
+                return None
+            items.extend(words)
+        return items or None
+
+    def unroll(m: re.Match) -> str:
+        var, spec, body = m.group(1), m.group(2).split(), m.group(3)
+        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(
+            r"\bforeach\s*\(", body
+        ):
+            return m.group(0)
+        if spec and spec[0] in ("IN", "RANGE"):
+            return m.group(0)
+        items: list[str] = []
+        for word in spec:
+            ref = re.fullmatch(r"\$\{(\w+)\}", word)
+            if ref:
+                listed = literal_list(ref.group(1), m.start())
+                if listed is None:
+                    return m.group(0)
+                items.extend(listed)
+            elif "$" in word:
+                return m.group(0)
+            else:
+                items.append(word)
+        return "".join(body.replace("${" + var + "}", item) for item in items)
+
+    return _FOREACH_RE.sub(unroll, text)
+
+
 def _read_with_includes(path: Path, _seen: frozenset[Path] = frozenset()) -> str:
     """`_read`, but splicing `include(<file>.cmake)` in at the include site.
 
@@ -879,7 +940,7 @@ def parse_cmakelists(
     restored_sources: list[str] = []
     if flipped_sources:
         raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir, repo_root)
-    text = _strip_cmake_comments(raw_text)
+    text = _unroll_target_foreach(_strip_cmake_comments(raw_text))
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
         "REACTOS_SOURCE_DIR": [str(repo_root)],
@@ -1515,25 +1576,54 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
-def scan_preamble(
-    text: str, known_undefined: frozenset[str] = frozenset()
-) -> tuple[list[str], bool]:
-    """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
+_DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
+_FLAG_IN_CMAKE_RE = (
+    r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+)
 
-    Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
-    ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
-    if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
 
-    Guarded includes are the exception, and it is not cosmetic: this used to drop the
-    `#ifdef`/`#endif` while KEEPING the include between them, promoting a conditional
-    include to an unconditional one. wldap32 wraps OpenLDAP under `#ifdef HAVE_LDAP_H`,
-    which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
-    for a header that does not exist here and bindgen died on it.
+def _foreign_build_flags(
+    tus: list[Path], repo_root: Path, module_defines: set[str]
+) -> frozenset[str]:
+    """Prologue guard macros that only some OTHER target's compile flags define.
 
-    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
-    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
-    decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    apphelp's sdbwrite.c opens `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
+    <typedefs.h>`: the `#else` arm is the host tool's, which its own CMakeLists builds with
+    `-DSDBWRITE_HOSTTOOL`. Mirrored into apphelp's wrapper it asked bindgen for the host
+    tool's typedefs.h, which no target include path has. A macro is decidably undefined
+    here when this module's own -D set lacks it, no file in the tree `#define`s it, and some
+    CMakeLists does set it as a compile flag: a build switch, not something a header or the
+    compiler could supply (`_WIN64` and friends are predefined, and so never match the last
+    condition).
     """
+    named = {d[2:].split("=", 1)[0] for d in module_defines if d.startswith("-D")} | {
+        d.split("=", 1)[0] for d in module_defines if not d.startswith("-")
+    }
+    guards: set[str] = set()
+    for tu in tus:
+        for line in _prologue_lines(_read(tu)):
+            g = _guard_macro(line)
+            if g is not None:
+                guards.add(g[0])
+    out: set[str] = set()
+    for macro in sorted(guards - named):
+
+        def grep(pattern: str, *paths: str) -> bool:
+            r = subprocess.run(
+                ["git", "-C", str(repo_root), "grep", "-qE", "-e", pattern, "--", *paths],
+                capture_output=True,
+            )
+            return r.returncode == 0
+
+        if grep(_DEFINE_DIRECTIVE_RE.format(macro)):
+            continue
+        if grep(_FLAG_IN_CMAKE_RE.format(macro), "*CMakeLists.txt", "*.cmake"):
+            out.add(macro)
+    return frozenset(out)
+
+
+def _prologue_lines(text: str) -> list[str]:
+    """The TU's lines up to its last `#include` before the first real code line."""
     lines = text.splitlines()
     end = 0
     in_comment = False
@@ -1553,11 +1643,34 @@ def scan_preamble(
                 end = i + 1
             continue
         break  # first real code line ends the prologue
+    return lines[:end]
+
+
+def scan_preamble(
+    text: str, known_undefined: frozenset[str] = frozenset()
+) -> tuple[list[str], bool]:
+    """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
+
+    Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
+    ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
+    if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
+
+    Guarded includes are the exception, and it is not cosmetic: this used to drop the
+    `#ifdef`/`#endif` while KEEPING the include between them, promoting a conditional
+    include to an unconditional one. wldap32 wraps OpenLDAP under `#ifdef HAVE_LDAP_H`,
+    which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
+    for a header that does not exist here and bindgen died on it.
+
+    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
+    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
+    decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    """
+    lines = _prologue_lines(text)
     keep: list[str] = []
     conditional = False
     # stack of "this arm is dead" flags; None = undecided (keep both arms, as before)
     arms: list[bool | None] = []
-    for line in lines[:end]:
+    for line in lines:
         d = _DIRECTIVE_RE.match(line)
         if d is None:
             continue
@@ -2210,11 +2323,15 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         for m in re.finditer(rf"^[ \t]*#[ \t]*define[ \t]+({alt})\b(\()?([^\n]*)", text, re.M):
             name, paren, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
             out.setdefault(name, ("function-like", body) if paren else (_macro_kind(body), body))
-        # enum members: one per line, `NAME[= ...]` followed by `,` or the closing `}`. The
-        # separator match must cross a NEWLINE: the LAST member of an enum has no trailing
-        # comma and its `}` sits on the next line (`DomainDisplayServer` in ntsam.h), which a
-        # same-line-only pattern reports as UNOWNED — another false §9.112 alarm.
-        for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
+        # enum members: `NAME[= ...]` followed by `,` or the closing `}`. The separator
+        # match must cross a NEWLINE: the LAST member of an enum has no trailing comma and
+        # its `}` sits on the next line (`DomainDisplayServer` in ntsam.h), which a
+        # same-line-only pattern reports as UNOWNED — another false §9.112 alarm. And a
+        # member need not start its line: cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on
+        # one, and every one after the first was reported UNOWNED.
+        for m in re.finditer(
+            rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M
+        ):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
         for name, kind in _cxx_consts(text, alt).items():
@@ -2694,7 +2811,18 @@ def derive_source(
     only the remaining C after a partial flip silently excludes the requested file.
     """
     source = source.resolve()
-    for directory in source.parents:
+    # A TU shared upward (`../marshalling.c`, compiled by both spoolss/ and winspool/ under
+    # win32ss/printing/base) has its owners in SIBLING directories, which the ancestor walk
+    # below never visits; offer those first, the preferred target's own directory before all.
+    siblings = sorted(
+        (
+            c.parent
+            for c in source.parent.glob("*/CMakeLists.txt")
+            if f"../{source.name}" in _read(c)
+        ),
+        key=lambda d: d.name != preferred_target,
+    )
+    for directory in [*siblings, *source.parents]:
         cmake = directory / "CMakeLists.txt"
         if not cmake.is_file():
             continue
@@ -3115,7 +3243,9 @@ def derive(
             )
 
     # ---- wrapper: mirror each TU's real prologue ----
-    known_undefined = _wine_config_undefs(repo_root)
+    known_undefined = _wine_config_undefs(repo_root) | _foreign_build_flags(
+        tus, repo_root, set(module.definitions) | set(db.module_defines if db else ())
+    )
     wrapper: list[str] = []
     for tu in tus:
         lines, conditional = scan_preamble(_read(tu), known_undefined)
