@@ -18,6 +18,7 @@ pub mod prelude; // the ONE import surface: types glob + debug macros + CRT exte
 #[allow(clippy::module_inception)]
 pub mod opengl32 {
     pub mod apistubs;
+    pub mod glexports; // apistubs.c's glfuncs.h X-macro, expanded (non-i386 exports)
     pub mod dllmain;
     pub mod icdload;
     pub mod swimpl;
