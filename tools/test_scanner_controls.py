@@ -2932,7 +2932,7 @@ CONTROLS: list[Control] = [
         good={"good.rs": _VARIADIC_ARRAY_GOOD},
     ),
     Control(
-        name="scan_variadic_array_arg_bare",
+        name="scan_variadic_array_arg",
         script="tools/scan_variadic_array_arg.py",
         argv=["--lint"],
         bad={"bad.rs": _VARIADIC_ARRAY_BARE_BAD},
