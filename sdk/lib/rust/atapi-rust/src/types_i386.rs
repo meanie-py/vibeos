@@ -5317,15 +5317,18 @@ pub const ENUM_CHILDREN_NAME_IS_FILTER: u32 = 4;
 unsafe extern "C" {
     pub fn _RTL_CONSTANT_STRING_type_check(s: *const ::core::ffi::c_void) -> ::core::ffi::c_char;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbCodePageTag: BOOLEAN;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut NlsMbOemCodePageTag: BOOLEAN;
 }
 unsafe extern "C" {
     pub fn c_assert() -> *mut [::core::ffi::c_char; 1usize];
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeNumberProcessors: CCHAR;
 }
@@ -5737,9 +5740,11 @@ unsafe extern "system" {
 unsafe extern "system" {
     pub fn DbgSetDebugFilterState(ComponentId: ULONG, Level: ULONG, State: BOOLEAN) -> NTSTATUS;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerEnabled: BOOLEAN;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KdDebuggerNotPresent: BOOLEAN;
 }
@@ -5768,6 +5773,7 @@ unsafe extern "system" {
         OutBufferNeeded: PULONG,
     ) -> NTSTATUS;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeTickCount: KSYSTEM_TIME;
 }

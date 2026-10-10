@@ -105,7 +105,9 @@ def require_no_namespace_rebuy(base_key: str, selected_key: str) -> None:
         raise ValueError(
             "Protection/cache namespace changed while previously purchased output exists. "
             "Refusing automatic re-purchase. Replay using its original seal/cache flags "
-            "or review and migrate the bank first:\n  " + "\n  ".join(sorted(conflicts))
+            "(a bank without `__diag_v1` predates kept ERR/WARN/ASSERT: "
+            "--no-keep-diagnostics) or review and migrate the bank first:\n  "
+            + "\n  ".join(sorted(conflicts))
         )
 
 

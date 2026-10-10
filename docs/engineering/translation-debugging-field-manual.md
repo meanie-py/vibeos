@@ -1054,10 +1054,12 @@ hand flips the error to the other two.
   driver referencing kernel **data** (`KeLoaderBlock`) needs `raw-dylib` on i386/arm64 (PE data
   imports need an `__imp_` thunk); amd64 tolerates a plain extern static and hides it. Declare
   it crate-locally — don't change shared `globals.rs`, the kernel needs the local form.
-  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches);
-  the driver-facing readers are `ntkrnl_sys::inline::common::{InitSafeBootModeValue,
-  HalGetInterruptTranslator}`. Owed: `port resolve` should route an island `pub static` that
-  the import lib exports as `extern` (DATA) to such a reader by itself.
+  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches).
+  A kernel island now does this itself: `gen_driver_types.sh` runs
+  `bindgen_data_imports.py`, which gives every `@ extern` (DATA) export of ntoskrnl.spec /
+  hal.spec its own raw-dylib `+verbatim` extern block, so the translation reads the C's plain
+  name. raw-dylib is right on **amd64 too** (pciidex.sys: one ntoskrnl.exe descriptor,
+  `cmpl $0x1, (%r8)` through the slot); the hand-bound `__imp_` form there was never needed.
 - **`[T; 0]` extern-array decl** `[§9.35]` — Rust bounds-checks the *declared* length, so the C unsized-
   extern idiom panics at index 0. Declare the real per-arch size.
 
@@ -4676,8 +4678,12 @@ reset, DMA failure and spurious interrupt. atapi kept 5 of its 52, pciidex 9 of 
 of pciidex's had come back as `INFO!`, which prints nothing.
 **Fix:** restore them against the C — format string byte for byte, each argument widened the
 way C varargs promote it, at the same point in the control flow. With them back, the arm64
-failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`). Owed:
-rustconv should keep `ERR`/`WARN` for kernel modules instead of stripping them.
+failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`).
+`ASSERT` went the same way (atapi, pciidex and legide kept 33 of 234), and those 33 were
+win32macros' release-build no-op; the ATA crates now take ntkrnl-sys's `ASSERT!`, which calls
+RtlAssert (print and continue) as the DBG=1 C does. rustconv now keeps `ERR`/`WARN`/`ASSERT`
+for plain C (`--keep-diagnostics`, default on, its own `__diag_v1` bank namespace), and
+`macro_authority` treats `#define ASSERT (void)RTL_VERIFY` as the function-like macro it is.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 

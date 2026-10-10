@@ -2312,7 +2312,11 @@ def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
 
 
 def sys_crate_consts(
-    repo_root: Path, usermode: bool, arch: str = "i386", crate: str | None = None
+    repo_root: Path,
+    usermode: bool,
+    arch: str = "i386",
+    crate: str | None = None,
+    enum_prefixes: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """``{const name: providing file stem}`` for the sibling -sys crate's exports.
 
@@ -2332,12 +2336,14 @@ def sys_crate_consts(
         return out
     other_arches = tuple(f"_{a}" for a in ARCHES if a != arch)
     files = sorted(base.glob("*bindgen*.rs"), key=lambda p: (p.stem not in primary, p.stem))
+    bare: set[str] = set()
     for f in files:
         if f.stem.endswith(other_arches):
             continue  # another arch's island
         text = _read(f)
         for name in re.findall(r"pub const (\w+)", text):
             out.setdefault(name, f.stem)
+            bare.add(name)
         # bindgen spells a C enumerator `<enum type>_<member>` (`_DEVICE_USAGE_NOTIFICATION_
         # TYPE_DeviceUsageTypePaging`), so the bare member the C switches on never appears
         # as a `pub const` of its own. It IS carried -- `port resolve` aliases the bare
@@ -2345,6 +2351,12 @@ def sys_crate_consts(
         # DeviceUsageType*/DeviceText* cases a blocking error.
         for _ty, member in re.findall(r"pub const (\w+?)_(\w+):\s*\1\s*=", text):
             out.setdefault(member, f.stem)
+            if enum_prefixes is not None:
+                enum_prefixes.setdefault(member, _ty)
+    if enum_prefixes is not None:
+        # Carried only PREFIXED: the bare name a `case` uses still needs the prelude alias.
+        for name in bare & enum_prefixes.keys():
+            del enum_prefixes[name]
     return out
 
 
@@ -2877,7 +2889,8 @@ def derive(
     sys_crate = getattr(module, "sys_crate", None) or resolve_sys_crate(
         repo_root, module.name, module.is_usermode
     )
-    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
+    sys_enum_prefixes: dict[str, str] = {}
+    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate, sys_enum_prefixes)
     # A name the output crate's prelude already provides is resolved for every module of
     # the crate, which is exactly the fix SWITCH_CONST_IN_BASE_HEADER asks for -- so a
     # re-derive after transcribing must stop reporting it.
@@ -2955,6 +2968,23 @@ def derive(
             # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
             # so its (often huge) owning header does NOT need to be allowlisted.
             o.allowlisted = True
+            prefix = sys_enum_prefixes.get(o.ident) if o.sys_source != "prelude" else None
+            if prefix:
+                # The -sys crate carries the ENUM MEMBER only prefixed. Skipping this (the
+                # `continue` below) is why every kernel module recorded no switch_enums:
+                # their DDK enums all come from ntkrnl-sys, so pciidex's `BusQueryDeviceID =>`
+                # was never aliased and bound every IRP_MN_QUERY_ID.
+                o.enum_prefix = prefix
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_ENUM_PREFIXED",
+                        f"`{o.ident}` ({sys_crate}) is an ENUM MEMBER: the -sys crate emits "
+                        f"it as `{prefix}_{o.ident}`, never the bare name. Alias it in the "
+                        f"prelude — pub use {prefix}_{o.ident} as {o.ident}; — `port "
+                        "resolve` does so for every recorded one.",
+                    )
+                )
             if o.sys_source not in (f"bindgen_{arch}", "bindgen_common", "prelude"):
                 findings.append(
                     Finding(

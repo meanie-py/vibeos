@@ -3046,6 +3046,9 @@ _WINDOWS_SCALAR_TYPEDEFS = frozenset(
 
 
 _CPP_COM_DEBUG_MACROS = {"ASSERT", "ERR", "FIXME", "MESSAGE", "TRACE", "WARN", "pdump"}
+# What plain C still strips under --keep-diagnostics: the statements a release build compiles
+# out. ERR, WARN and ASSERT stay -- DBG=1 here, so all three run.
+KEPT_DIAGNOSTICS_STRIPPED = frozenset({"FIXME", "MESSAGE", "TRACE", "pdump"})
 _CPP_COM_LITERAL_WORDS = {"FALSE", "NULL", "TRUE"}
 _CPP_COM_TYPE_WORDS = {
     "BOOL",
@@ -6043,7 +6046,7 @@ def worker_signature(
 # label or a `&'a` lifetime blanked everything to the next apostrophe. See lex_mask.
 
 
-def strip_debug_statements(text: str, names: set[str] | None = None) -> str:
+def strip_debug_statements(text: str, names: set[str] | frozenset[str] | None = None) -> str:
     """Remove complete shell32 debug-macro statements from a model-only view."""
     masked = _masked_cpp(text)
     spans = []

@@ -522,6 +522,23 @@ def test_sys_crate_consts_carries_bindgen_enum_members_by_bare_name(tmp_path):
     assert got["PLAIN"] == "bindgen_i386"
 
 
+def test_sys_enum_members_carried_only_prefixed_are_reported(tmp_path):
+    """A kernel module's DDK enums all come from ntkrnl-sys. Treating "in the -sys crate" as
+    resolved recorded no switch_enums for any kernel module, so pciidex's bare
+    `BusQueryDeviceID =>` was never aliased and bound every IRP_MN_QUERY_ID."""
+    from rustconv.profile_derive import sys_crate_consts
+
+    src = tmp_path / "sdk/lib/rust/ntkrnl-sys/src"
+    src.mkdir(parents=True)
+    (src / "bindgen_i386.rs").write_text(
+        "pub const _BUS_QUERY_ID_TYPE_BusQueryDeviceID: _BUS_QUERY_ID_TYPE = 0;\n"
+        "pub const _BOTH_Both: _BOTH = 0;\npub const Both: u32 = 0;\n"
+    )
+    prefixes: dict[str, str] = {}
+    sys_crate_consts(tmp_path, usermode=False, arch="i386", enum_prefixes=prefixes)
+    assert prefixes == {"BusQueryDeviceID": "_BUS_QUERY_ID_TYPE"}
+
+
 def test_macro_expression_const_is_flagged_for_verification(tmp_path):
     root = _basic_module(tmp_path)
     _write(

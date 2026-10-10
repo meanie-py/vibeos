@@ -479,6 +479,7 @@ pub unsafe extern "C" fn CmdGetControllerProperties(
     let mut CheckInterrupt: PCHANNEL_CHECK_INTERRUPT = Some(CmdCheckInterruptPci);
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_CMD);
 
     match ((*Controller).Pci.DeviceID) as u32 {
         PCI_DEV_PCI0640 => {

@@ -9861,6 +9861,11 @@ def test_ata_health_check_fails_a_lost_interrupt():
     assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
     # The network stack's own timeouts are not the ATA stack's.
     assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+    fired = "*** ASSERT FAILED: !Srb.is_null() at atapi-rust/src/atapi/scsi.rs:1257\n"
+    bad = smoke_mod._ata_health_check(fired)
+    assert bad and bad["classification"] == "ATA_ASSERT"
+    # Someone else's assert is not the ATA stack's.
+    assert smoke_mod._ata_health_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
 
 
 def test_legide_check_needs_a_detected_channel(monkeypatch):
