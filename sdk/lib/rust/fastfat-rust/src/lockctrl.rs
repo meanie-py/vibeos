@@ -33,7 +33,6 @@ extern "system" {
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: i32) -> i32;
-    fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
     fn IoSetTopLevelIrp(Irp: *mut core::ffi::c_void);
 }
 
@@ -87,7 +86,7 @@ pub unsafe extern "system" fn FatFsdLockControl(
 
     unsafe { DebugTrace(-1, (DBG) as u32, b"FatFsdLockControl -> %08lx\n\0".as_ptr() as *const i8, Status); }
 
-    unsafe { UNREFERENCED_PARAMETER(VolumeDeviceObject); }
+    UNREFERENCED_PARAMETER!(VolumeDeviceObject);
 
     Status
 }

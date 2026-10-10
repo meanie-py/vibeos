@@ -15,8 +15,6 @@ extern "C" {
 }
 
 extern "C" {
-}
-extern "C" {
     fn ASSERT_IRP_CONTEXT(p: PIRP_CONTEXT);
 }
 extern "C" {

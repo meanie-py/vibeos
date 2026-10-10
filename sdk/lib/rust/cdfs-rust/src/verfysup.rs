@@ -70,8 +70,6 @@ extern "C" {
     fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 extern "C" {
-}
-extern "C" {
     fn CdRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
 }
 extern "C" {

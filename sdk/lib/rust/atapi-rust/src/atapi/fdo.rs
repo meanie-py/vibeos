@@ -284,6 +284,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
         (core::mem::size_of::<PCIIDEX_CHANNEL_INTERFACE>()) as _,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to query channel interface %lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
     (*PortData).ChannelContext = ChannelInterface.ChannelContext;
@@ -352,6 +353,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
 
     Status = AtaFdoAllocateLocalBuffer(PortData);
     if !NT_SUCCESS!(Status) {
+        ERR!(b"CH %lu: Failed to allocate local buffer 0x%lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber, Status);
         return Status;
     }
 
@@ -389,11 +391,13 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
 
     Status = AtaFdoCreatePortThread((PortData).cast());
     if !NT_SUCCESS!(Status) {
+        ERR!(b"CH %lu: Failed to create port thread 0x%lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber, Status);
         return Status;
     }
 
     Status = AtaFdoCreateSymLinks((ChanExt).cast());
     if !NT_SUCCESS!(Status) {
+        ERR!(b"CH %lu: Failed to create symbolic links 0x%lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber, Status);
         return Status;
     }
 
@@ -435,6 +439,7 @@ pub unsafe extern "C" fn AtaFdoStartDevice(
 
     Status = (((*PortData).AttachChannel).unwrap_unchecked())((*PortData).ChannelContext, TRUE);
     if !NT_SUCCESS!(Status) {
+        ERR!(b"CH %lu: Failed to attach channel %lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber, Status);
         return Status;
     }
     (*PortData).PortFlags |= PORT_FLAG_CHANNEL_ATTACHED;

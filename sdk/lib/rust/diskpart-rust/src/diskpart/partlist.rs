@@ -376,7 +376,7 @@ unsafe extern "C" fn EnumerateBiosDiskEntries() {
     }
 
     AdapterCount = 0;
-    while true {
+    loop {
         StringCchPrintfW!(
             Name.as_mut_ptr(),
             ARRAYSIZE!(Name),
@@ -410,7 +410,7 @@ unsafe extern "C" fn EnumerateBiosDiskEntries() {
             core::ptr::null_mut(),
         );
         if NT_SUCCESS!(Status) {
-            while true {
+            loop {
                 StringCchPrintfW!(
                     Name.as_mut_ptr(),
                     ARRAYSIZE!(Name),
@@ -451,7 +451,7 @@ unsafe extern "C" fn EnumerateBiosDiskEntries() {
                     QueryTable[1].QueryRoutine = Some(DiskConfigurationDataQueryRoutine);
 
                     DiskCount = 0;
-                    while true {
+                    loop {
                         BiosDiskEntry = RtlAllocateHeap(
                             RtlGetProcessHeap!(),
                             HEAP_ZERO_MEMORY,

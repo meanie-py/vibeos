@@ -1410,6 +1410,12 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
 
 
+# QEMU trace events behind `--ahci`'s interrupt check (smoke._ahci_irq_check): a command
+# the device finished, and the controller's INTx going up and (the guest's ISR having
+# cleared PxIS/IS) back down.
+AHCI_TRACE_EVENTS = ("ahci_cmd_done", "ahci_irq_raise", "ahci_irq_lower")
+
+
 TEMP_DISK_MB = 64
 _TEMP_PART_START = 2048  # sectors; the conventional 1 MiB alignment
 
@@ -2277,6 +2283,58 @@ class QemuVM:
             "virtio-blk-device,drive=viommio0",
         ]
 
+    def _ahci_args(self) -> list[str]:
+        """VIBEOS_AHCI_CD=1 on arm64 (`smoke --ahci`): an ich9-ahci controller with the
+        USB stick's 64M MBR + FAT16 image on port 0 and an empty CD drive on port 1. x86
+        moves its boot CD onto the controller instead (backend.rewrite_accel); arm64
+        boots a ramdisk, so there is no CD to move and the controller gets its own
+        disks. Pinned to PCI slot 10 for the reason xHCI and NVMe are pinned to 8 and 9:
+        auto-assigned, it would take slot 2 from the boot disk saved in efivars.
+
+        On every arch it also turns on QEMU's own AHCI trace events (to the QEMU stderr
+        log), from which smoke's `_ahci_irq_check` proves the guest driver ran on
+        interrupts: a driver that silently polled works just as well, only slower."""
+        if os.environ.get("VIBEOS_AHCI_CD", "").strip() != "1":
+            return []
+        trace = [a for ev in AHCI_TRACE_EVENTS for a in ("-trace", ev)]
+        if not self.config.arch.startswith("arm64"):
+            return trace
+        disk = self.scratch_path.parent / "ahcidisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "ich9-ahci,id=ahci0,addr=0xa",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=ahcihd",
+            "-device",
+            "ide-hd,bus=ahci0.0,drive=ahcihd",
+            "-device",
+            "ide-cd,bus=ahci0.1",
+            *trace,
+        ]
+
+    def _isa_ide_args(self) -> list[str]:
+        """VIBEOS_QEMU_ISA_IDE=1 on i386 (`smoke --isa-ide`): an ISA IDE controller on
+        the tertiary legacy channel (0x1E8/0x3EE, IRQ 11) holding the USB stick's 64M MBR +
+        FAT16 image. legide (i386, --ata-stack media) probes the four PC/AT channels, and
+        PIIX already owns the first two, so this is the only one it can find: without it,
+        its detection path never sees a device."""
+        flag = os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip()
+        if flag not in ("1", "true", "yes") or not self.config.arch.startswith("i386"):
+            return []
+        disk = self.scratch_path.parent / "isaidedisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "isa-ide,iobase=0x1e8,iobase2=0x3ee,irq=11,id=isaide",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=isaidehd",
+            "-device",
+            "ide-hd,bus=isaide.0,drive=isaidehd",
+        ]
+
     def _set_live_tee(self) -> None:
         """Tee to the caller's owned log, or the legacy per-arch live path."""
         # ASCII-only header: the tee file is latin-1 (byte-faithful to the serial stream).
@@ -2503,6 +2561,8 @@ class QemuVM:
             *self._usb_disk_args(),
             *self._nvme_args(),
             *self._virtio_mmio_disk_args(),
+            *self._ahci_args(),
+            *self._isa_ide_args(),
             *self._temp_disk_args(),
         ]
         self._prepared_arch_args = (

@@ -32,9 +32,10 @@ unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
         && (*a).Data3 == (*b).Data3
         && (*a).Data4 == (*b).Data4
 }
-// UNIMPLEMENTED DDK stub (ASSERT is the crate macro in lib.rs).
-#[allow(non_upper_case_globals)]
-const UNIMPLEMENTED: () = ();
+// UNIMPLEMENTED (debug.h) only prints, so it is empty in a retail build.
+macro_rules! UNIMPLEMENTED {
+    () => {};
+}
 
 // ks.h KSCREATE_ITEM_IRP_STORAGE(Irp): place expr aliasing DriverContext[0].
 macro_rules! KSCREATE_ITEM_IRP_STORAGE {
@@ -1056,7 +1057,7 @@ pub unsafe extern "system" fn KopDispatchCreate(
                         break;
                     }
                 } else {
-                    UNIMPLEMENTED;
+                    UNIMPLEMENTED!();
 
                     (*(*IoStack).FileObject).FsContext2 = Header as *mut core::ffi::c_void;
 

@@ -62,7 +62,6 @@ extern "system" {
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: u32) -> NTSTATUS;
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -153,7 +152,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
 
     DebugTrace(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status);
 
-    UNREFERENCED_PARAMETER(VolumeDeviceObject);
+    UNREFERENCED_PARAMETER!(VolumeDeviceObject);
 
     Status
 }

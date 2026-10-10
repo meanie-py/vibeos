@@ -59,7 +59,7 @@ pub unsafe extern "system" fn AfdGetDisconnectOptions(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -94,7 +94,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptions(
     let DisconnectOptions = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let DisconnectOptionsSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -143,7 +143,7 @@ pub unsafe extern "system" fn AfdSetDisconnectOptionsSize(
     let DisconnectOptionsSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn AfdGetDisconnectData(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -225,7 +225,7 @@ pub unsafe extern "system" fn AfdSetDisconnectData(
     let DisconnectData = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let DisconnectDataSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -274,7 +274,7 @@ pub unsafe extern "system" fn AfdSetDisconnectDataSize(
     let DisconnectDataSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -320,7 +320,7 @@ unsafe fn AfdGetTdiHandles(
     let HandleFlags = LockRequest(Irp, IrpSp, 1u8, core::ptr::null_mut()) as PULONG;
     let HandleData = (*Irp).UserBuffer as PAFD_TDI_HANDLE_DATA;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -849,7 +849,7 @@ unsafe fn AfdDisconnect(
     let mut CurrentEntry: PLIST_ENTRY;
     let mut CurrentIrp: PIRP;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);

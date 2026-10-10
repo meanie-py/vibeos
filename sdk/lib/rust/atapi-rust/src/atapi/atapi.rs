@@ -485,6 +485,7 @@ pub unsafe extern "system" fn AtaStorageNotificationlDpc(
 
         WorkItem = IoAllocateWorkItem((*DevExt).Common.Self_);
         if WorkItem.is_null() {
+            ERR!(b"Failed to allocate workitem\0".as_ptr() as *const i8);
         } else {
             IoQueueWorkItem(
                 WorkItem,
@@ -749,6 +750,7 @@ pub unsafe extern "system" fn AtaAddChannel(
         core::ptr::addr_of_mut!(Fdo),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create the FDO with status 0x%lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -763,6 +765,7 @@ pub unsafe extern "system" fn AtaAddChannel(
 
     (*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject = IoAttachDeviceToDeviceStack(Fdo, PhysicalDeviceObject);
     if (*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject.is_null() {
+        ERR!(b"Failed to attach the FDO\n\0".as_ptr() as *const i8);
         Status = STATUS_DEVICE_REMOVED;
         if !(*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject.is_null() {
             IoDetachDevice((*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject);

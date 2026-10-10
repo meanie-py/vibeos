@@ -142,10 +142,6 @@ pub unsafe extern "C" fn IoSetCancelRoutine(
     core::mem::transmute_copy(&old)
 }
 
-// ---- UNREFERENCED_PARAMETER macro: no-op ----
-#[no_mangle]
-pub unsafe extern "system" fn UNREFERENCED_PARAMETER(_param: *mut c_void) {}
-
 // KeAcquireSpinLockRaiseToDpc: exported on amd64/arm64; on i386 it's a macro
 // (KfAcquireSpinLock). Provide it on i386: raise IRQL to DISPATCH, acquire at DPC level,
 // return old IRQL.

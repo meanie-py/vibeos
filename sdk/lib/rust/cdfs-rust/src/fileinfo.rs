@@ -67,15 +67,10 @@ extern "C" {
     fn CdReleaseFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-}
-extern "C" {
     fn ASSERT_FILE_OBJECT(obj: PFILE_OBJECT);
 }
 extern "C" {
     fn FlagOn(Flags: u32, Bit: u32) -> u32;
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -450,7 +445,7 @@ pub unsafe extern "system" fn CdFastQueryBasicInfo(
     let TypeOfOpen: u32;
     let mut Fcb: PFCB = core::ptr::null_mut();
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
     ASSERT_FILE_OBJECT(FileObject);
     FsRtlEnterFileSystem();
 
@@ -704,8 +699,8 @@ pub unsafe extern "C" fn CdQueryEaInfo(
     Length: *mut u32,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Fcb as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Fcb as *mut core::ffi::c_void);
     (*Buffer).EaSize = 0;
     *Length -= core::mem::size_of::<FILE_EA_INFORMATION>() as u32;
 }

@@ -388,12 +388,13 @@ def widen_crates(repo: pathlib.Path, crates: list[pathlib.Path], stem: str | Non
     import widen_island_constants as widen
 
     wide = widen.wide_defines(repo)
+    aliases = widen.alias_defines(repo)
     for c in crates:
         src = c / "src" if (c / "src").is_dir() else c
         files = sorted(src.glob(f"{stem}_*.rs" if stem else "*bindgen_*.rs"))
         for path in files:
             text = path.read_text()
-            new, widened, refused = widen.widen(text, wide)
+            new, widened, refused = widen.widen(text, wide, aliases)
             if new != text:
                 path.write_text(new)
             if widened or refused:

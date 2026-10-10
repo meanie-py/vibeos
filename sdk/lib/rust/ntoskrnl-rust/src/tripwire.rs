@@ -36,6 +36,10 @@
 //!   NVME_FAIL_START=1   not read by the kernel: nvme.sys connects its messages, then
 //!                       fails START, so the PnP manager removes the device and its
 //!                       message vectors go back to the HAL.
+//!   LEGIDE_DETECT       not read by the kernel: legide.sys (i386) probes the PC/AT
+//!                       IDE channels although the ACPI HAL set DisableFirmwareMapper,
+//!                       which otherwise makes it skip detection on every boot we
+//!                       ship. `smoke --isa-ide` sets it, with a disk on 0x1E8.
 //!   NVME_BAD_DMA=<hex>  not read by the kernel: nvme.sys's bring-up sends one
 //!                       Identify whose data goes to <hex> (not memory), so a
 //!                       translating SMMU can be seen to fault it.
@@ -340,6 +344,8 @@ unsafe fn apply_token(tok: &[u8]) {
         || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
     {
         // For nvme.sys and usbport, through the registry copy, like QUIET.
+    } else if tok == b"LEGIDE_DETECT" {
+        // For legide.sys, which asks VibeTripwireHasToken from DriverEntry.
     } else if tok == b"PCI_SEGMENT_SPLIT" {
         // For the arm64 HAL's ECAM (ecam.rs), asked when it first reads the MCFG.
     } else if tok == b"ITS_MISSTEER" {

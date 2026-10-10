@@ -30,7 +30,7 @@ pub static mut PciLocationInterface: PCI_INTERFACE = unsafe {
 
 #[no_mangle]
 pub unsafe extern "system" fn locintrf_Initializer(Instance: PVOID) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER!(Instance);
     ASSERTMSG(
         b"PCI locintrf_Initializer, unexpected call.\n\0".as_ptr() as *const i8,
         0u8,
