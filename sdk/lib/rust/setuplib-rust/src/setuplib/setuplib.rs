@@ -1429,9 +1429,36 @@ pub unsafe extern "system" fn InitializeSetup(
     #[cfg(target_arch = "x86")]
     let IsNEC_98: u32 = ((*(USER_SHARED_DATA as usize as *const KUSER_SHARED_DATA)).AlternativeArchitecture
         == NEC98x86) as u32;
-    (*pSetupData).ArchType = if IsNEC_98 != 0 { ARCH_NEC98x86 } else { ARCH_PcAT };
+    (*pSetupData).ArchType = if IsNEC_98 != 0 {
+        ARCH_NEC98x86
+    } else if BootedFromUefi() {
+        ARCH_Efi
+    } else {
+        ARCH_PcAT
+    };
 
     return ERROR_SUCCESS;
+}
+
+/// Whether the firmware that started this boot is UEFI, from `SystemBootEnvironmentInformation`
+/// (the loader block's `BootViaEFI`). Upstream hard-wires `ARCH_PcAT` here, which made every
+/// UEFI install write a BIOS boot sector the firmware never runs.
+unsafe fn BootedFromUefi() -> bool {
+    extern "system" {
+        fn NtQuerySystemInformation(Class: u32, Info: *mut core::ffi::c_void, Length: u32, ReturnLength: *mut u32) -> NTSTATUS;
+    }
+    const SYSTEM_BOOT_ENVIRONMENT_INFORMATION_CLASS: u32 = 90;
+    const FIRMWARE_TYPE_UEFI: u32 = 2;
+    // GUID BootIdentifier; FIRMWARE_TYPE FirmwareType (the Vista layout).
+    let mut info = [0u32; 5];
+    let status = NtQuerySystemInformation(
+        SYSTEM_BOOT_ENVIRONMENT_INFORMATION_CLASS,
+        info.as_mut_ptr().cast(),
+        core::mem::size_of_val(&info) as u32,
+        core::ptr::null_mut(),
+    );
+    DPRINT1!("Boot firmware: Status 0x%08lx, FirmwareType %lu\n", status, info[4]);
+    status >= 0 && info[4] == FIRMWARE_TYPE_UEFI
 }
 
 #[no_mangle]

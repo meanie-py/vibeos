@@ -6252,6 +6252,17 @@ and a `const fn` that assembles the name. Review hint: a C file with an arch `#i
 translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
 them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
 
+### An `#ifdef` that no target defines: the guarded line is dead in the C too
+The translation dropping it is then FAITHFUL, and so a diff against the C finds nothing.
+winldr.c sets the loader block's `BootViaEFI` under `#ifdef UEFIBOOT`, but that code lives in
+rosload.exe, one binary for both loaders, and no CMake file defines `UEFIBOOT` for it (or for
+anything else since the loader split). So nothing after the loader could tell a UEFI boot from
+a BIOS one; `SystemBootEnvironmentInformation` (kernel32's `GetFirmwareType`) was not even
+implemented, and setup hard-wired `ARCH_PcAT`, so UEFI installs could not exist. Fix: rosload
+asks the first-stage loader (`FrLdrIsUefiBoot`, in freeldr.spec), and the kernel answers class
+90 from the latched bit. Review hint: before trusting a guarded line as live, `grep -rn` the
+macro in `*.cmake`/`CMakeLists.txt` for the target that compiles the file.
+
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
 input that is NOT in the table. Cause: the C table ends in a terminator row (`L""`, `NULL`,

@@ -293,8 +293,9 @@ const SystemExtendedHandleInformation: ULONG = 64;
 const SystemObjectSecurityMode: ULONG = 70;
 const SystemLogicalProcessorInformation: ULONG = 73;
 const SystemFirmwareTableInformation: ULONG = 76;
+const SystemBootEnvironmentInformation: ULONG = 90;
 
-const MAX_SYSTEM_INFO_CLASS: ULONG = 77; // size of CALL_QS
+const MAX_SYSTEM_INFO_CLASS: ULONG = 91; // size of CALL_QS
 
 // NTSTATUS values not in ntkrnl_sys::base
 const STATUS_ILLEGAL_FUNCTION: NTSTATUS = 0xC00000AFu32 as NTSTATUS;
@@ -2138,6 +2139,29 @@ unsafe extern "C" fn QSI_SystemRangeStartInformation(Buffer: PVOID, Size: ULONG,
     STATUS_SUCCESS
 }
 
+/// The firmware that started the loader: the loader block's `BootViaEFI`, latched by
+/// ExpInitializeExecutive (the block itself is freed after phase 1).
+pub static mut ExpBootViaEfi: bool = false;
+
+// Class 90 Q -- SYSTEM_BOOT_ENVIRONMENT_INFORMATION (Vista+, kernel32's GetFirmwareType).
+// Setup reads it to choose between the BIOS boot sector and the UEFI loader file.
+unsafe extern "C" fn QSI_SystemBootEnvironmentInformation(Buffer: PVOID, Size: ULONG, ReqSize: *mut ULONG) -> NTSTATUS {
+    // GUID BootIdentifier, FIRMWARE_TYPE FirmwareType (+ ULONGLONG BootFlags from Win8).
+    const VISTA_SIZE: ULONG = 20;
+    const WIN8_SIZE: ULONG = 32;
+    let filled = if Size >= WIN8_SIZE { WIN8_SIZE } else { VISTA_SIZE };
+    if !ReqSize.is_null() {
+        *ReqSize = filled;
+    }
+    if Size < VISTA_SIZE {
+        return STATUS_INFO_LENGTH_MISMATCH;
+    }
+    core::ptr::write_bytes(Buffer as *mut u8, 0, filled as usize);
+    // FIRMWARE_TYPE: FirmwareTypeBios = 1, FirmwareTypeUefi = 2.
+    *((Buffer as *mut u8).add(16) as *mut ULONG) = if ExpBootViaEfi { 2 } else { 1 };
+    STATUS_SUCCESS
+}
+
 // Class 51 Q
 unsafe extern "C" fn QSI_SystemVerifierInformation(_Buffer: PVOID, _Size: ULONG, _ReqSize: *mut ULONG) -> NTSTATUS {
     STATUS_NOT_IMPLEMENTED
@@ -2536,6 +2560,7 @@ static CALL_QS: [QssiCalls; MAX_SYSTEM_INFO_CLASS as usize] = {
     t[70] = si_qx(QSI_SystemObjectSecurityMode);
     t[73] = si_qx(QSI_SystemLogicalProcessorInformation);
     t[76] = si_qx(QSI_SystemFirmwareTableInformation);
+    t[90] = si_qx(QSI_SystemBootEnvironmentInformation);
     t
 };
 
