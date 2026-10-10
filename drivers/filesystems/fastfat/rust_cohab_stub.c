@@ -188,7 +188,11 @@ extern const unsigned int FatIrpContextFlagsOffset;
 
 VOID FatBugCheck(ULONG_PTR A, ULONG_PTR B, ULONG_PTR C)
 {
-    /* FAT_FILE_SYSTEM = 0x23, FAT_BUG_CHECK_FATDATA = 0x00010000 */
+    /* FAT_FILE_SYSTEM = 0x23, FAT_BUG_CHECK_FATDATA = 0x00010000. Every Rust caller comes
+     * through here, so P1 names THIS line, not the caller's file and line (the C macro
+     * encodes the caller's): print the return address, the one thing that does. */
+    DbgPrint("FatBugCheck called from %p (%p, %p, %p)\n", __builtin_return_address(0),
+             (PVOID)A, (PVOID)B, (PVOID)C);
     KeBugCheckEx(0x23, 0x00010000 | (ULONG)(__LINE__), A, B, C);
     for(;;);
 }

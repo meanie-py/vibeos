@@ -2404,6 +2404,12 @@ baseline empty) refuses the cast; `--fix` rewrites it.
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
   wild pointer/offset. **A per-file hand-rolled struct view reading a bitfield at offset 0**
   silently disables the feature it gates.
+- **A bitfield struct translated as one WHOLE field per bitfield**, inside a union with the
+  raw word, compiles and reads zeros: writing the word fills only the first field. amd64's
+  `CPU_SIGNATURE` (Step:4 Model:4 Family:4 ...) became seven `u32`s, so every boot was
+  "AMD64 Family 0 Model 0" -- the CPU's PnP id (its install failed with error 31) and
+  `KeProcessorLevel` 0. Tell: a hand `#[repr(C)] union { Fields, AsULONG }` whose `Fields`
+  struct is bigger than the word. Fix: shift accessors over the word.
 - **A bitfield reached by bit INDEX (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
   accessor** is a guess at the layout. atapi passed a page code as the *width* (28 bits of a
   1-byte unit, an index panic the first time the CD was asked for a mode page) and put
