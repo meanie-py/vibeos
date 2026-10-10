@@ -225,7 +225,9 @@ pub unsafe extern "C" fn Sil680GetControllerProperties(
     PAGED_CODE!();
     ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_CMD);
 
-    if (*Controller).Pci.VendorID != (PCI_DEV_SIL0680 as u16) {
+    // Divergence from the C, which tests `VendorID != PCI_DEV_SIL0680`: the assert above has
+    // just required VendorID == PCI_VEN_CMD, so that is always true and no SiI680 ever matched.
+    if (*Controller).Pci.DeviceID != (PCI_DEV_SIL0680 as u16) {
         return STATUS_NO_MATCH;
     }
 
