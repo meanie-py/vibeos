@@ -615,9 +615,13 @@ def stage_cppapp(stem: str) -> None:
         f.read_text(errors="replace") for f in (_crate_dir(state) / "src").glob("types_*.rs")
     )
     island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
-    (crate_src / "cpp_classes.rs").write_text(cpp_app.render_classes(model, island_structs))
+    island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
+    island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
+    (crate_src / "cpp_classes.rs").write_text(
+        cpp_app.render_classes(model, island_structs, island_text)
+    )
     units: dict[str, str] = {}
-    for body_file, text in cpp_app.synthetic_tus(model).items():
+    for body_file, text in cpp_app.synthetic_tus(model, island_text).items():
         name = Path(body_file).name.replace(".", "_") + ".hpp"
         (out / name).write_text(text)
         via = body_file if body_file in cpp_tus else _including_tu(REPO / body_file, cpp_tus)
