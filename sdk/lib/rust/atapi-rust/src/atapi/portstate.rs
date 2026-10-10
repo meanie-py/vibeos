@@ -722,7 +722,7 @@ pub unsafe extern "C" fn AtaPortNotification_v(
             AtaPortOnRequestComplete(PortData, ap.arg::<ULONG>());
         }
         1 => {
-            ASSERT!((*PortData).Worker.Thread == ntkrnl_sys::mm::KeGetCurrentThread() as PKTHREAD);
+            ASSERT!((*PortData).Worker.Thread == KeGetCurrentThread());
             ASSERT!(((*PortData).InterruptFlags & PORT_INT_FLAG_IS_IO_ACTIVE as LONG) == 0);
             AtaPortOnResetNotification(PortData, ap.arg::<ULONG>());
         }
