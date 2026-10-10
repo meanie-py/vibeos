@@ -1658,3 +1658,26 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
         .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
         - 1
 }
+
+/// `InterlockedExchange`: returns the OLD value. An intrinsic on amd64/arm64 with no symbol to
+/// import; gdi32_vista's resolve copied a kernel shim's `_InterlockedExchange` extern instead,
+/// which no user-mode DLL can link.
+#[inline(always)]
+pub unsafe fn InterlockedExchange(target: *mut i32, value: i32) -> i32 {
+    (*(target as *const core::sync::atomic::AtomicI32))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when
+/// the current value equals `comperand`, and returns the value it found either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchange(destination: *mut i32, exchange: i32, comperand: i32) -> i32 {
+    match (*(destination as *const core::sync::atomic::AtomicI32)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) | Err(v) => v,
+    }
+}
