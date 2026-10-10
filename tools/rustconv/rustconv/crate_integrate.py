@@ -1438,7 +1438,9 @@ def drop_stale_sibling_imports(
             return ""
         return m.group(0)
 
-    code = re.sub(r"^use (crate::[A-Za-z0-9_:]+)::([A-Za-z_]\w*);[ \t]*\n", _stale, code, flags=re.M)
+    code = re.sub(
+        r"^use (crate::[A-Za-z0-9_:]+)::([A-Za-z_]\w*);[ \t]*\n", _stale, code, flags=re.M
+    )
     return code, notes
 
 

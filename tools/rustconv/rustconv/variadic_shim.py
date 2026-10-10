@@ -260,9 +260,7 @@ def _forwarding_locals(body: str) -> tuple[str, set[str]]:
             if not cloned.search(body) or re.search(rf"\b{v}\s*\.\s*arg\b", body):
                 continue
             start = cloned
-        body = body.replace(
-            m.group(0), f"let mut {v}: va_list = *(ap_list as *mut va_list);", 1
-        )
+        body = body.replace(m.group(0), f"let mut {v}: va_list = *(ap_list as *mut va_list);", 1)
         body = start.sub("", body)
         body = cloned.sub("", body)  # a body may carry both spellings
         body = re.sub(rf"\bva_end!?\s*\(\s*{v}\s*\)\s*;", "", body)

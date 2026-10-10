@@ -2133,7 +2133,9 @@ def _drop_sdk_macro_shadows(path: Path, c_file: Path) -> list[str]:
     from .sdk_macros import object_expansions
 
     text = path.read_text()
-    own = set(re.findall(r"(?m)^\s*#\s*define\s+([A-Za-z_]\w*)", c_file.read_text(errors="replace")))
+    own = set(
+        re.findall(r"(?m)^\s*#\s*define\s+([A-Za-z_]\w*)", c_file.read_text(errors="replace"))
+    )
     names = {m.group(1) for m in _TOP_CONST.finditer(text)} - own
     if not names:
         return []
@@ -2577,7 +2579,9 @@ def _c2rust_unnamed(path: Path, island: str) -> list[str]:
 _LONG_DOUBLE = re.compile(
     r"(?:(?:::)?(?:core|std)::ffi::|(?:::)?libc::)?\bc_longdouble(?:_placeholder)?\b"
 )
-_F128_TO_F64 = re.compile(r"(?:::)?f128::f128::new\(([^()]*(?:\([^()]*\))?[^()]*)\)\.to_f64\(\)\.unwrap\(\)")
+_F128_TO_F64 = re.compile(
+    r"(?:::)?f128::f128::new\(([^()]*(?:\([^()]*\))?[^()]*)\)\.to_f64\(\)\.unwrap\(\)"
+)
 
 
 def _long_double_f64(path: Path) -> int:
@@ -2922,7 +2926,9 @@ def stage_integrate(stem: str) -> None:
         pf = _c2rust_prelude_fields(path)
         if pf:
             changed += 1
-            print(f"integrate: {path.stem}: {pf} c2rust `_0` field rename(s) undone (bindgen's name)")
+            print(
+                f"integrate: {path.stem}: {pf} c2rust `_0` field rename(s) undone (bindgen's name)"
+            )
         ld = _long_double_f64(path)
         if ld:
             changed += 1
@@ -3280,9 +3286,7 @@ def _private_types(item: prelude_resolve.Item, visible: set[str]) -> set[str]:
     own: set[str] = set()
     for rs in source_files(root, "*.rs"):
         text = rs.read_text(errors="replace")
-        own |= {
-            n for n in unknown if re.search(rf"\b(?:type|struct|union|enum)\s+{n}\b", text)
-        }
+        own |= {n for n in unknown if re.search(rf"\b(?:type|struct|union|enum)\s+{n}\b", text)}
     return own
 
 
@@ -3332,7 +3336,6 @@ def _unicode_tchar(state: dict, prelude: Path) -> bool:
     the bytes the C has -- `RegEnumValueW` told 128 WCHARs into a 128-byte array. Written
     when every TU's real compile command carries -DUNICODE; a name the prelude already
     defines by hand is left to it."""
-    from .macro_authority import compile_argv
 
     unicode = _module_is_unicode(state)
     text = prelude.read_text()
@@ -4502,7 +4505,9 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
     wanted = sorted(
         n
         for n in undefined
-        if prelude_resolve.looks_constant(n) and n not in facts and n not in _COMPILER_BUILTIN_MACROS
+        if prelude_resolve.looks_constant(n)
+        and n not in facts
+        and n not in _COMPILER_BUILTIN_MACROS
     )
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))

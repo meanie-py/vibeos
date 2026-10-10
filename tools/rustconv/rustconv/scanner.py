@@ -1846,7 +1846,8 @@ def _scan_live(path: Path, live: str, result: ScanResult, lost: set[str]) -> Sca
     # An indented statement macro written without its `;` (`GET_CB(OpenThemeData)` --
     # the macro brings its own) makes tree-sitter fold the next definition into an ERROR.
     live = re.sub(
-        r"(?m)^([ \t]+(?!(?:if|while|for|switch|return|sizeof|else)\b)[A-Za-z_]\w*\s*\([^;{}\n]*\))[ \t]*$",
+        r"(?m)^([ \t]+(?!(?:if|while|for|switch|return|sizeof|else)\b)"
+        r"[A-Za-z_]\w*\s*\([^;{}\n]*\))[ \t]*$",
         r"\1;",
         live,
     )
@@ -1864,9 +1865,7 @@ def _scan_file(
     _local_renames: bool = False,
     _text: str | None = None,
 ) -> ScanResult:
-    raw = _expand_split_includes(
-        path, path.read_text(errors="replace") if _text is None else _text
-    )
+    raw = _expand_split_includes(path, path.read_text(errors="replace") if _text is None else _text)
     if _local_renames:
         raw = _apply_local_renames(raw)
     # portcls.h defines PORTCLASSAPI solely as DECLSPEC_IMPORT/DECLSPEC_EXPORT.
