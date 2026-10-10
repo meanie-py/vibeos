@@ -574,3 +574,17 @@ def test_token_pasting_macros_and_their_callers_are_hand_ports():
     kept, pasting = port._without_token_pasting(macros)
     assert list(kept) == ["ALIGN_DWORD"]
     assert pasting == ["CS_StrA", "CS_StrW", "CS_Wrap"]
+
+
+def test_each_source_list_gets_its_own_stub():
+    lines = [
+        "list(APPEND VISTA_SOURCE",
+        "     # wine/win.c  # replaced by Rust (x.rs)",
+        "     )",
+        "list(APPEND SOURCE",
+        "    # dpi.c  # replaced by Rust (y.rs)",
+        "    rust_cohab_stub.c",
+        "    )",
+    ]
+    assert not port._list_has_stub(lines, 1)
+    assert port._list_has_stub(lines, 4)

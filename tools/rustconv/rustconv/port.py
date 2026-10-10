@@ -980,6 +980,26 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
     return applied
 
 
+def _list_has_stub(lines: list[str], at: int) -> bool:
+    """Whether the source list holding line `at` already names the stub TU.
+
+    Per LIST, not per file: user32_vista's CMakeLists has two (SOURCE for user32_vista,
+    VISTA_SOURCE for user32_optional_vista). Flipping the second after the first saw the
+    stub in the file and left VISTA_SOURCE empty -- `add_library` with no sources.
+    """
+    start = at
+    while start > 0 and not re.match(
+        r"^\s*(list|set|add_library|add_executable)\s*\(", lines[start]
+    ):
+        start -= 1
+    end, depth = start, 0
+    for end in range(start, len(lines)):
+        depth += lines[end].count("(") - lines[end].count(")")
+        if depth <= 0 and end >= at:
+            break
+    return any(re.match(r"^\s*rust_cohab_stub\.c\b", ln) for ln in lines[start : end + 1])
+
+
 def flip_cmake(cml: str, state: dict) -> str:
     """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
 
@@ -1016,7 +1036,7 @@ def flip_cmake(cml: str, state: dict) -> str:
             lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
         last = max(last or 0, hit)
     text = "\n".join(lines)
-    if "rust_cohab_stub.c" not in text and last is not None:
+    if last is not None and not _list_has_stub(text.split("\n"), last):
         lines = text.split("\n")
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
         lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
