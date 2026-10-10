@@ -18,8 +18,7 @@ use ntkrnl_sys::ddk::{
     PUNICODE_STRING, PUNLOCK_ROUTINE, PVOID, PWCHAR, ULONG, ULONGLONG,
     _DRIVER_OBJECT,
 };
-use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion,
-    MmUnmapLockedPages};
+use ntkrnl_sys::ddk::{IofCallDriver, KeEnterCriticalRegion, KeLeaveCriticalRegion};
 
 // ---------------------------------------------------------------------------
 // Layer 1: real ntoskrnl exports absent from bindgen (ntifs.h surface).
@@ -256,13 +255,9 @@ pub unsafe fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS 
 
 //  mmfuncs.h MmPrepareMdlForReuse macro. #[no_mangle] so the per-file
 //  `extern "C" { fn MmPrepareMdlForReuse(...) }` decls resolve at link.
-const MDL_PARTIAL_HAS_BEEN_MAPPED: u16 = 0x0020; // mmtypes.h:23 (was 0x0004 = MDL_SOURCE_IS_NONPAGED_POOL)
-
 #[no_mangle]
 pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
-    if (*Mdl).MdlFlags as u16 & MDL_PARTIAL_HAS_BEEN_MAPPED != 0 {
-        MmUnmapLockedPages((*Mdl).MappedSystemVa, Mdl);
-    }
+    ntkrnl_sys::inline::mm::MmPrepareMdlForReuse(Mdl as _)
 }
 
 //  ARGUMENT_PRESENT macro: (ptr) != NULL

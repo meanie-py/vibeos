@@ -1257,6 +1257,19 @@ pub unsafe extern "system" fn InitDestinationPaths(
                 (*PartEntry).OnDiskPartitionNumber,
             );
             DPRINT1!("Fixed disk found by BIOS, using MULTI ARC path '%S'\n", PathBuffer.as_ptr());
+        } else if BootedFromUefi() {
+            // uefildr names only `multi(0)disk(0)rdisk(N)` disks, N in the firmware's handle
+            // order of root block devices (uefidisk.rs), which follows the bus order NT
+            // numbers disks in. A `scsi(...)` path is one it cannot open: the installed
+            // disk's first boot stopped at loading the SYSTEM hive.
+            Status = RtlStringCchPrintfW!(
+                PathBuffer.as_mut_ptr(),
+                ARRAYSIZE!(PathBuffer),
+                RUSTCONV_WSTR_28FB1027CC87.as_ptr(),
+                (*DiskEntry).DiskNumber,
+                (*PartEntry).OnDiskPartitionNumber,
+            );
+            DPRINT1!("UEFI fixed disk, using MULTI ARC path '%S'\n", PathBuffer.as_ptr());
         } else {
             Status = RtlStringCchPrintfW!(
                 PathBuffer.as_mut_ptr(),
@@ -1444,6 +1457,15 @@ pub unsafe extern "system" fn InitializeSetup(
 /// (the loader block's `BootViaEFI`). Upstream hard-wires `ARCH_PcAT` here, which made every
 /// UEFI install write a BIOS boot sector the firmware never runs.
 pub(crate) unsafe fn BootedFromUefi() -> bool {
+    // 0 = not asked yet, 1 = BIOS, 2 = UEFI. GetSystemDisk asks on every call.
+    static mut ANSWER: u8 = 0;
+    if ANSWER == 0 {
+        ANSWER = if QueryUefiBoot() { 2 } else { 1 };
+    }
+    ANSWER == 2
+}
+
+unsafe fn QueryUefiBoot() -> bool {
     extern "system" {
         fn NtQuerySystemInformation(Class: u32, Info: *mut core::ffi::c_void, Length: u32, ReturnLength: *mut u32) -> NTSTATUS;
     }

@@ -11485,6 +11485,24 @@ a flip's remaining C++ for `static_cast<`/`reinterpret_cast<` naming a Rust-owne
 you believe the flip is closure-complete — the retained closure will not show it, because a
 `static_cast` demands no symbol.
 
+### A DDK macro hand-shimmed per crate as an empty body leaks whatever the macro released
+**Symptom.** `NO_MORE_SYSTEM_PTES` (0x3F, 17 PTEs) about two minutes into i386 setup's file
+copy, then 0xC2 cascades. amd64 survives the same leak on its far larger PTE space, so only
+a long i386 disk workload ever shows it.
+**Cause.** `MmPrepareMdlForReuse` is a wdm.h macro: a reused partial MDL that has been
+mapped is unmapped first. classpnp reuses one partial MDL per transfer packet and scsiport's
+StartIo maps it (`MmGetSystemAddressForMdl`); classpnp-rust's `ddk_shims.rs` defined the macro
+as `{}`, so every split transfer leaked its pages' PTEs (43,695 of 45,023 held by that one
+chain). Four crates had their own copy: classpnp empty, cdrom clearing 0x8 instead of
+unmapping, fastfat and cdfs right. And the kernel set 0x10 (`MDL_PARTIAL` again) where it
+meant `MDL_PARTIAL_HAS_BEEN_MAPPED` (0x20), so even the right copies never fired.
+**Fix.** One copy, `ntkrnl_sys::inline::mm::MmPrepareMdlForReuse`, that the shims delegate to;
+the kernel sets 0x20. **Finding it:** count ownership, not totals — a reservation table keyed
+by `RtlWalkFrameChain` and released per PTE named the leaking chain in one run, where the
+free count alone only said "empty". Still empty and owed: classpnp's
+`FREE_PORT_ALLOCATED_SENSE_BUFFER(_EX)` (dead until a port sets `SRB_FLAGS_PORT_DRIVER_ALLOCSENSE`)
+and `ExInitialize{Set,Delete}TimerParameters` (the `ExSetTimer` path).
+
 ### A cohab shim declared VOID SWALLOWS the real function's return value
 
 **Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C

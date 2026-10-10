@@ -477,9 +477,9 @@ const STATUS_INTEGER_OVERFLOW_: NTSTATUS = 0xC0000095u32 as NTSTATUS;
 #[no_mangle] pub unsafe extern "C" fn InterlockedIncrement(p: *mut i32) -> i32 {
     (*(p as *const core::sync::atomic::AtomicI32)).fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1
 }
-// MmPrepareMdlForReuse (wdm.h macro): a partial MDL that has been mapped is unmapped before it
-// is rebuilt, which also clears MDL_PARTIAL_HAS_BEEN_MAPPED (0x20). This used to only clear
-// 0x0008 (MDL_ALLOCATED_FIXED_SIZE), so every reused, mapped partial MDL leaked its PTEs.
+// MmPrepareMdlForReuse (wdm.h macro). This used to only clear 0x0008 (MDL_ALLOCATED_FIXED_SIZE)
+// and never unmap, so every reused, mapped partial MDL leaked its PTEs.
+// (cdrom builds ntkrnl-sys without `inline`, so it cannot call ntkrnl_sys::inline::mm's copy.)
 #[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
     extern "system" {
         fn MmUnmapLockedPages(BaseAddress: *mut core::ffi::c_void, Mdl: PMDL);
