@@ -534,3 +534,10 @@ def test_a_static_method_called_through_an_object_is_an_associated_call(tmp_path
     ex.lower_pending()
     (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
     assert go == "{ TM::CreateBrush(1); TM::CreateBrush(toolsModel.x); }"
+
+
+def test_a_cpp_global_qualifier_is_not_a_crate_path():
+    rs = "if ::IsWindow(h) != 0 { ::core::ptr::null::<u8>(); x.f(::GetDC(h)); }"
+    assert cpp_app.drop_global_qualifier(rs) == (
+        "if IsWindow(h) != 0 { ::core::ptr::null::<u8>(); x.f(GetDC(h)); }"
+    )

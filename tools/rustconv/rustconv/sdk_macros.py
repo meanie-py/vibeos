@@ -243,6 +243,11 @@ class _Parser:
             # name KNOWN to be a type makes it a cast -- or a `*` inside the parens, which
             # no expression can end with (`(LVITEMW *)&_ms_lvi`).
             return tok in _INT or j > 2
+        if after == "(" and j == 2 and not re.fullmatch(r"[A-Z][A-Z0-9_]*", tok):
+            # `(SendMessageW)(h, ..)` -- windowsx.h's SetWindowFont, a PARENTHESIZED CALLEE.
+            # Win32 type names are ALL CAPS (WPARAM, HWND, DWORD_PTR); a mixed-case one with
+            # no `*` before `)` followed by `(` is a function.
+            return False
         return after is not None and (
             after in ("(", "~", "!") or re.fullmatch(r"\w+", after) is not None
         )

@@ -222,3 +222,14 @@ def test_a_cpp_global_scope_qualifier_is_dropped():
 
     out = lower_expansion("((void)::SendMessageW((h),185,(WPARAM)(UINT)(m),0))", {"WPARAM", "UINT"})
     assert "SendMessageW(" in out and "::SendMessageW" not in out
+
+
+def test_a_parenthesized_callee_is_a_call_not_a_cast():
+    """windowsx.h's SetWindowFont in a C++ TU: `(void)(::SendMessageW)((h),48,(WPARAM)(f),0)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion(
+        "(void)(::SendMessageW)(((h)),48,(WPARAM)(HFONT)((f)),(LPARAM)(BOOL)((r)))",
+        {"WPARAM", "LPARAM", "HFONT", "BOOL"},
+    )
+    assert "SendMessageW(" in out and "as SendMessageW" not in out, out

@@ -29,7 +29,7 @@ import re
 from dataclasses import dataclass
 
 from .cpp_core import c_type_to_rust
-from .cpp_model import ATL_BASE_ALIASES, ClassModel, Method, ModuleModel
+from .cpp_model import ATL_BASE_ALIASES, ATL_IMPL_METHODS, ClassModel, Method, ModuleModel
 
 
 class CppAppError(RuntimeError):
@@ -1318,7 +1318,11 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
     texts = [m.lowered or "" for c in model.classes.values() if not c.external for m in c.methods]
     texts += [t for c in model.classes.values() for m in c.methods for _, t in m.lowered_inits]
     texts += [f.lowered for f in model.functions]
-    called = set(_CALL_RE.findall("\n".join(texts)))
+    # CWindow's own Create/DefWindowProc/... : every module call of those names is a
+    # CWindowImpl/CDialogImpl subclass's, answered by its generated glue. Counting them
+    # translated ATL's raw CWindow::Create (_U_RECT, _AtlBaseModule) for nothing. A call on a
+    # PLAIN CWindow would then be missing, which fails to compile -- loud, never silent.
+    called = set(_CALL_RE.findall("\n".join(texts))) - ATL_IMPL_METHODS
     reached: set[tuple[str, str]] = set()
     while True:
         new = {
@@ -1535,6 +1539,20 @@ def qualify_static_calls(rust: str, model: ModuleModel) -> str:
         return f"{next(iter(owners[m.group(1)]))}::{m.group(0)}"
 
     return re.sub(rf"(?<![\w.:>])({alt})\s*\(", fix, rust)
+
+
+def drop_global_qualifier(rust: str) -> str:
+    """C++'s `::IsWindow(m_hWnd)` (the global function, not CWindow::IsWindow) copied into
+    Rust, where a leading `::` names a CRATE: `cannot find crate IsWindow`. Dropped unless
+    the name really is a crate (`::core::ptr`, `::atl_rust::`)."""
+
+    def fix(m: re.Match) -> str:
+        name = m.group(1)
+        if name in ("core", "std", "alloc") or name.endswith(("_rust", "_sys")):
+            return m.group(0)
+        return name
+
+    return re.sub(r"(?<![\w:>)\]])::([A-Za-z_]\w*)(?=\s*[(!])", fix, rust)
 
 
 def _fn_end(text: str, start: int) -> int:

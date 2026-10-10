@@ -7,43 +7,10 @@ pub static CPP_COM_WSTR_A9EDBA2FC474: [WCHAR; 3] = [0x0025, 0x0064, 0x0000];
 
 use core::ffi::c_void;
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// ShowError(INT, ...) itself is the C trampoline in rust_varargs_shim.c (see the prelude).
 #[no_mangle]
-pub unsafe extern "C" fn ShowError(stringID: INT, ...) {
-    let mut va: va_list;
-    va_start!(va, stringID);
+pub unsafe extern "C" fn ShowError_v(stringID: INT, ap: *mut core::ffi::c_void) {
+    let va = *(ap as *mut *mut core::ffi::c_void); // the caller's va_list value
 
     let mut strFormat = CStringW::new();
     let mut strText = CStringW::new();
@@ -54,7 +21,6 @@ pub unsafe extern "C" fn ShowError(stringID: INT, ...) {
     strProgramName.LoadStringW(IDS_PROGRAMNAME);
 
     mainWindow.__base0.MessageBoxW(strText.GetString(), strProgramName.GetString(), MB_ICONERROR);
-    va_end!(va);
 }
 
 unsafe extern "system" fn EnumFontFamProc(lpelf: *mut ENUMLOGFONTW, lpntm: *mut NEWTEXTMETRICW, FontType: INT, lParam: LPARAM) -> INT {

@@ -655,11 +655,13 @@ def _cppapp_assemble_all(state: dict) -> list[str]:
         if not out.is_file():
             continue
         text = out.read_text()
-        new = cpp_app.qualify_static_calls(
-            cpp_app.unthis_globals(
-                cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated), app
-            ),
-            app,
+        new = cpp_app.drop_global_qualifier(
+            cpp_app.qualify_static_calls(
+                cpp_app.unthis_globals(
+                    cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated), app
+                ),
+                app,
+            )
         )
         if new != text:
             out.write_text(new)

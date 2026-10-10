@@ -1227,6 +1227,21 @@ impl CStringW {
         self.GetBuffer(need)
     }
 
+    /// `FormatV(PCXSTR pszFormat, va_list args)` -- cstringt.h:846: the length from
+    /// `_vscwprintf`, then `_vswprintf` into `GetBuffer(nLength)`, then
+    /// `ReleaseBufferSetLength(nLength)`. `args` is the caller's `va_list` VALUE (a single
+    /// pointer on all three Windows targets), as C passes it.
+    pub unsafe fn FormatV(&mut self, pszFormat: *const WCHAR, args: *mut c_void) {
+        let n_length = _vscwprintf(pszFormat, args);
+        let buf = self.GetBuffer(n_length);
+        _vswprintf(buf, pszFormat, args);
+        // ReleaseBufferSetLength(nLength): the length is the count, not a re-measure.
+        self.m_nLength = n_length.max(0);
+        if !buf.is_null() {
+            *buf.add(self.m_nLength as usize) = 0;
+        }
+    }
+
     /// `Format(PCXSTR pszFormat, <one %s>)`.
     pub unsafe fn FormatStr(&mut self, pszFormat: *const WCHAR, a: *const WCHAR) {
         let need = _scwprintf(pszFormat, a);
@@ -1335,6 +1350,10 @@ extern "C" {
     /// arguments would produce, excluding the terminator. Negative on a bad format.
     #[doc(hidden)]
     pub fn _scwprintf(format: *const WCHAR, ...) -> INT;
+    /// msvcrt `_vscwprintf(format, va_list)` / `_vswprintf(dest, format, va_list)`: ATL's
+    /// wide StringTraits::FormatV pair.
+    fn _vscwprintf(format: *const WCHAR, args: *mut c_void) -> INT;
+    fn _vswprintf(dest: *mut WCHAR, format: *const WCHAR, args: *mut c_void) -> INT;
     /// msvcrt — case-insensitive wide compare, what ATL's W string traits use for
     /// `CompareNoCase`.
     fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;

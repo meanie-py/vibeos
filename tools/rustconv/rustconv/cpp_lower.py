@@ -45,6 +45,16 @@ ATL_IMPL_METHODS = frozenset(
 )
 
 
+# atlwin.h's defaults for the methods _render_atl_glue implements, by (name, full arity).
+# CWindowImpl::Create's 7th parameter (lpCreateParam) has no glue slot: its default is None,
+# so a call that relies on it is left for the audit rather than silently mis-arity'd.
+_ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
+    ("Create", 7): [None, "NULL", "NULL", "0", "0", "0U", None],
+    ("Create", 2): [None, "NULL"],  # CDialogImpl::Create(hWndParent, dwInitParam = NULL)
+    ("DoModal", 2): ["GetActiveWindow()", "NULL"],
+}
+
+
 @dataclass
 class Lowered:
     text: str
@@ -292,10 +302,19 @@ class Lowerer:
         )
         args = inner[1:]
         missing = [a for a in args if a.get("kind") == "CXXDefaultArgExpr"]
+        if info is None and missing and callee.get("kind") == "MemberExpr":
+            # An ATL template method the generated glue implements (CWindowImpl::Create):
+            # no decl id of ours, so its defaults come from atlwin.h's own declarations,
+            # told apart by full arity (written + defaulted).
+            table = _ATL_GLUE_DEFAULTS.get((callee.get("name"), len(args)))
+            if table is not None:
+                info = DeclInfo("", "method", callee["name"], callee["name"], table)
         if info is None or not missing:
             return
         written = len(args) - len(missing)
         texts = info.defaults[written : written + len(missing)]
+        while texts and texts[-1] is None and info.owner == "" and info.kind == "method":
+            texts = texts[:-1]  # an ATL glue table's slot the glue does not have
         if any(t is None for t in texts):
             return
         written_texts = [t for t in texts if t is not None]

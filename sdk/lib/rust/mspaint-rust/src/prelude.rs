@@ -296,7 +296,6 @@ pub use crate::mspaint::drawing_cpp_h::RectSel;
 pub use crate::mspaint::drawing_cpp_h::Replace;
 pub use crate::mspaint::dib_cpp_h::Rotate90DegreeBlt;
 pub use crate::mspaint::dib_cpp_h::SaveDIBToFile;
-pub use crate::mspaint::dialogs_cpp_h::ShowError;
 pub use crate::mspaint::main_cpp_h::ShowOutOfMemory;
 pub use crate::mspaint::dib_cpp_h::SkewDIB;
 pub use crate::mspaint::drawing_cpp_h::Text;
@@ -410,6 +409,26 @@ pub type LPTCH = LPWSTR;
 pub type PTCH = LPWSTR;
 // ==== end UNICODE TCHAR family ====
 
+// HAND-WRITTEN: dialogs.cpp's `void ShowError(INT stringID, ...)` is DEFINED by the C
+// trampoline base/applications/mspaint/rust_varargs_shim.c (stable Rust cannot define a
+// C-variadic function); its body is dialogs_cpp_h::ShowError_v. Callers use this.
+extern "C" {
+    pub fn ShowError(stringID: INT, ...);
+}
+
+// HAND-WRITTEN (outside the generated blocks, so `port macros` leaves it alone):
+// precomp.h:78 `#define DEG2RAD(degree) (((degree) * M_PI) / 180)`. In C `degree` (an int at
+// every call site) is promoted to double by `* M_PI`; the generated lowering multiplied i32
+// by f64.
+#[allow(unused_macros)]
+macro_rules! DEG2RAD {
+    ($degree:expr $(,)?) => {
+        ((($degree) as f64 * M_PI) / 180.0)
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use DEG2RAD;
+
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
 #[macro_export] macro_rules! ComboBox_AddString { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((323) as _), ((0) as _), (($p1) as LPARAM))) as DWORD)) as c_int) }; }
 #[macro_export] macro_rules! ComboBox_FindStringExact { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((344) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as DWORD)) as c_int) }; }
@@ -452,15 +471,6 @@ macro_rules! CHECKED_IF {
 }
 #[allow(unused_imports)]
 pub(crate) use CHECKED_IF;
-// base/applications/mspaint/precomp.h:78: #define DEG2RAD(degree) (((degree) * M_PI) / 180)
-#[allow(unused_macros)]
-macro_rules! DEG2RAD {
-    ($degree:expr $(,)?) => {
-        ((($degree) * M_PI) / 180.0)
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use DEG2RAD;
 // base/applications/mspaint/precomp.h:86: #define ENABLED_IF(bEnabled) ((bEnabled) ? (MF_ENABLED | MF_BYCOMMAND) : (MF_GRAYED | MF_BYCOMMAND))
 #[allow(unused_macros)]
 macro_rules! ENABLED_IF {
