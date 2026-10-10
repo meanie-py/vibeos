@@ -3275,8 +3275,10 @@ def _private_types(item: prelude_resolve.Item, visible: set[str]) -> set[str]:
     root = REPO / "sdk" / "lib" / "rust" / Path(*parts[: parts.index("src") + 1])
     if not root.is_dir():
         return set()
+    from tools.source_walk import source_files
+
     own: set[str] = set()
-    for rs in root.rglob("*.rs"):
+    for rs in source_files(root, "*.rs"):
         text = rs.read_text(errors="replace")
         own |= {
             n for n in unknown if re.search(rf"\b(?:type|struct|union|enum)\s+{n}\b", text)
