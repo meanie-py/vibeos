@@ -1039,11 +1039,15 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
                 continue;
             }
 
+            // Divergence from the C: its `continue` advances through `Entry->Flink` AFTER
+            // InitializeListHead has pointed the entry at itself, so a cancelled IRP spins this
+            // loop forever with the queue lock held. Take the successor while still linked.
+            let Next: PLIST_ENTRY = (*Entry).Flink;
             AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
             if IoSetCancelRoutine(Irp, None).is_none() {
                 InitializeListHead(&raw mut (*QueueEntry).ListEntry);
-                Entry = (*Entry).Flink;
+                Entry = Next;
                 continue;
             }
 
@@ -1072,11 +1076,15 @@ unsafe extern "C" fn AtaReqDeviceQueueDispatchNextRequest(
             ASSERT!(Srb);
             ASSERT!((*Srb).OriginalRequest == Irp as PVOID);
 
+            // Divergence from the C: its `continue` advances through `Entry->Flink` AFTER
+            // InitializeListHead has pointed the entry at itself, so a cancelled IRP spins this
+            // loop forever with the queue lock held. Take the successor while still linked.
+            let Next: PLIST_ENTRY = (*Entry).Flink;
             AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
             if IoSetCancelRoutine(Irp, None).is_none() {
                 InitializeListHead(&raw mut (*QueueEntry).ListEntry);
-                Entry = (*Entry).Flink;
+                Entry = Next;
                 continue;
             }
 
@@ -1229,21 +1237,27 @@ pub unsafe extern "C" fn AtaReqFlushDeviceQueue(Device: PATAPORT_IO_CONTEXT) {
 
     KeAcquireSpinLock(&mut (*Device).QueueLock, &mut OldLevel);
 
-    Entry = (*Device).DeviceQueueList.Flink;
-    while Entry != &mut (*Device).DeviceQueueList {
+    // Divergence from the C, which walks `Entry = Entry->Flink` after each body. Every body
+    // REMOVES its entry, and then either points it at itself (InitializeListHead, so the
+    // already-cancelled branch's `continue` lands on the same entry forever, spinlock held) or
+    // completes its IRP, which owns the entry (so the advance reads freed memory). Taking the
+    // head each time visits the same entries in the same order without either.
+    while IsListEmpty(&mut (*Device).DeviceQueueList) == 0 {
         let mut QueueEntry: PREQUEST_QUEUE_ENTRY;
         let mut Irp: PIRP;
         let mut Srb: PSCSI_REQUEST_BLOCK;
 
+        Entry = (*Device).DeviceQueueList.Flink;
         QueueEntry = CONTAINING_RECORD!(Entry, REQUEST_QUEUE_ENTRY, ListEntry);
         ASSERT!((*QueueEntry).Context == Device.cast());
 
         AtaReqDeviceQueueRemoveEntry(Device, QueueEntry);
 
+        // C: `if (!IoSetCancelRoutine(Irp, NULL))` -- no cancel routine left means the IRP is
+        // already being cancelled, and its cancel routine owns it.
         Irp = IRP_FROM_QUEUE_ENTRY!(QueueEntry);
-        if IoSetCancelRoutine(Irp, None).is_some() {
+        if IoSetCancelRoutine(Irp, None).is_none() {
             InitializeListHead(&mut (*QueueEntry).ListEntry);
-            Entry = (*Entry).Flink;
             continue;
         }
 
@@ -1259,7 +1273,6 @@ pub unsafe extern "C" fn AtaReqFlushDeviceQueue(Device: PATAPORT_IO_CONTEXT) {
         IoCompleteRequest(Irp, (IO_DISK_INCREMENT) as CCHAR);
 
         KeAcquireSpinLock(&mut (*Device).QueueLock, &mut OldLevel);
-        Entry = (*Entry).Flink;
     }
 
     Request = AtaReqRemovePortRequest(Device);
