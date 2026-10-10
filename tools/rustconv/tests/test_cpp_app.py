@@ -418,3 +418,27 @@ def test_a_nothrow_tag_new_lowers_like_new_and_a_buffer_placement_does_not(tmp_p
     assert "if __p.is_null() { return __p; } (*__p).__ctor_0(x)" in rs
     assert 'link_name = "_ZnwyRK10CicNoThrow"' in rs
     assert "pub unsafe fn cpp_alloc_CicNoThrow<T>()" in rs
+
+
+def test_an_override_two_levels_below_its_virtual_is_still_a_body():
+    """RubberTool : SmoothDrawTool : ToolBase, OnSpecialTweak declared only in ToolBase."""
+    from rustconv.cpp_model import Base, Method
+
+    def cls(name, base=None, methods=()):
+        c = ClassModel(name, name, "struct", "t.cpp")
+        c.bases = [Base(base, "public", False)] if base else []
+        c.methods = list(methods)
+        c.polymorphic = True
+        return c
+
+    tweak = Method("OnSpecialTweak", "method", [], "void", virtual=True)
+    over = Method("OnSpecialTweak", "method", [], "void")
+    m = ModuleModel()
+    for c in (
+        cls("ToolBase", methods=[tweak]),
+        cls("SmoothDrawTool", "ToolBase"),
+        cls("RubberTool", "SmoothDrawTool", [over]),
+    ):
+        m.classes[c.qualified] = c
+    h = cpp_app.Hierarchy(m)
+    assert h.is_virtual(m.classes["RubberTool"], over)
