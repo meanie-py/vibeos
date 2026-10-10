@@ -11708,6 +11708,24 @@ deterministically, not by soak:** a `gdb probe` with a hardware breakpoint at
 brackets a region with a save/restore of flags or IRQL, diff the Rust for BOTH halves -- a sweep
 of every Rust fn that disables interrupts without restoring found this one only.
 
+### A thread "switching" to itself spins forever on its own SwapBusy
+**Symptom:** amd64 `-smp 2` `HANG_TIMEOUT` after a 60 s `[WIN32K] STUCK SEND`, one CPU idle in
+`hlt`, the other parked at `.SwapBusySet` (`ctxswitch.S:181`) with **`RDX == R8`** in
+`hang-cpustate.txt` — `KiSwapContextInternal`'s old and new thread are the same KTHREAD. Usually
+preceded by `[RQRUNNING] queuing a RUNNING thread ... runningOnCPU=<this CPU>`. 1 of 3 boots with
+each vCPU pinned to its own host core (`stress --profile starved-smp --cores 2`), 2026-10-09.
+**Cause:** NT's wait-commit releases the dispatcher lock before `KiSwapThread` dethrones the
+waiter, so a cross-CPU readier may legally queue the still-running thread T onto T's own CPU;
+`KiSwapThread` then selects T. T set its own `SwapBusy` on the way in (every wait path calls
+`KiSetThreadSwapBusy`), the asm spins until the NEW thread's `SwapBusy` clears, and only
+`KiSwapContextResume` — after the spin — would clear it. Upstream's `CONFIG_SMP` never ran this.
+The §9.56 work found the mechanism in July and armed a 0x57 tripwire, which is off by default, so
+every unarmed boot still wedged silently. **Fix:** `KiSwapThreadImpl` treats NextThread ==
+CurrentThread as "keep running": release `SwapBusy` and report a deliverable kernel APC exactly as
+`KiSwapContextResume` would, skip the stack/CR3/TEB switch that is already T's. Proved by the path
+firing, not by a soak going quiet: `[SMP] self-swap #1 resolved in place on CPU1` followed by
+`CreateProcessW returned` and the desktop (run 20261009-210915-89vskrzs).
+
 ### A lock the C declares and never takes is a race the C never hit
 **Symptom:** arm64 `-smp 2`, 1 boot in 5: BUGCHECK 0x1E in `CmpCreateKeyControlBlock` reading
 a garbage `CM_KEY_NODE`, while the other CPU loops in `HvFreeCell` on a NULL bin.

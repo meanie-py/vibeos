@@ -2398,6 +2398,24 @@ class QemuVM:
         print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
         return new_cmd
 
+    def _arm_pc_sampler(self) -> None:
+        """VIBEOS_QEMU_PC_SAMPLE=<secs>: sample every vCPU's PC for the whole boot
+        (`vibeos-cli stress --sample-pcs`). Off by default; see cli/pcsample.py."""
+        from .cli import pcsample
+
+        period = pcsample.env_period()
+        if period is None:
+            return
+        out = self.live_log_path.parent / pcsample.SAMPLES_FILE
+        prev = self.on_qmp_ready
+
+        def _ready(qmp):
+            if prev is not None:
+                prev(qmp)
+            pcsample.start(qmp, out, period)
+
+        self.on_qmp_ready = _ready
+
     def _arm_rr_sampler(self, mode: str, trace_dir, cmd: list[str]) -> list[str]:
         """`rr record --sample` / `rr diverge`: fingerprint the guest over a second QMP.
 
@@ -2629,6 +2647,8 @@ class QemuVM:
                     cmd = self._build_native_cmd()
                 cmd = self._apply_record_replay(cmd)
                 cmd = apply_stress_knobs(cmd, self.config.arch)
+                if attempt == 0:
+                    self._arm_pc_sampler()
             finally:
                 _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")
@@ -3173,6 +3193,14 @@ class QemuVM:
         wide = len(fp_hex) > 8
         unit = "g" if wide else "w"
         lines = []
+        # `cpu N` is monitor state: no other thread's walk in between.
+        lock = getattr(self.qmp, "lock", None) or contextlib.nullcontext()
+        with lock:
+            return self._walk_frames_locked(cpu, fp_hex, limit, unit, lines)
+
+    def _walk_frames_locked(
+        self, cpu: int, fp_hex: str, limit: int, unit: str, lines: list[str]
+    ) -> str:
         try:
             self.qmp.hmp(f"cpu {cpu}")
         except Exception:

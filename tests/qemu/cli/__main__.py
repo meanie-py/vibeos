@@ -629,6 +629,13 @@ def build_parser() -> argparse.ArgumentParser:
         help=f"tight-clock: multiply the harness boot/silence budgets (default "
         f"{stress_mod.DEFAULT_TIMEOUT_SCALE})",
     )
+    stp.add_argument(
+        "--sample-pcs",
+        type=float,
+        metavar="SECS",
+        help="sample every vCPU's PC (+ halted flag, 3 callers) every SECS through each boot "
+        "and print where non-halted vCPUs were found; a slow-boot profiler, not a cycle count",
+    )
     stp.add_argument("--allow-stale", action="store_true")
     stp.set_defaults(fn=stress_mod.stress)
 
