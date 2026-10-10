@@ -259,6 +259,16 @@ pub unsafe extern "system" fn FatExceptionFilter(
     // if ( !ARGUMENT_PRESENT( IrpContext ) )
     if IrpContext.is_null() {
         if FsRtlIsNtstatusExpected(ExceptionCode as i32) == 0 {
+            // Diagnostic: the code and PC of the exception this is about to bugcheck on
+            // (i386 writable-root boot: FatFsdFlushBuffers, IrpContext still NULL).
+            extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+            DbgPrint(
+                c"[FASTFAT] unexpected exception %08lx at %p (no IrpContext), p0=%p p1=%p\n".as_ptr(),
+                ExceptionCode,
+                (*ExceptionRecord).ExceptionAddress,
+                (*ExceptionRecord).ExceptionInformation[0] as *mut core::ffi::c_void,
+                (*ExceptionRecord).ExceptionInformation[1] as *mut core::ffi::c_void,
+            );
             FatBugCheck(
                 ExceptionRecord as usize,
                 (*ExceptionPointer).ContextRecord as usize,

@@ -2307,7 +2307,10 @@ def _macro_kind(body: str) -> str:
     * ``literal``    — integer literal (possibly cast/parenthesised): emitted as a const
     * ``expression`` — references other identifiers: bindgen MAY fail to fold it
     """
-    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\s*)+\s*\)", "", body)  # drop casts
+    # `\b` after each identifier: without it `[A-Za-z_]\w*\s*` can split ONE word at every
+    # letter, and a long `(IDENT ...` with no closing paren backtracks exponentially --
+    # sndvol32's mixer #defines took 16-33 minutes per TU in this one line.
+    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\b\s*)+\s*\)", "", body)  # drop casts
     return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
 
 
@@ -2660,6 +2663,21 @@ def header_type_defs(path: Path) -> set[str]:
     return names - _ANON_AGGREGATE_NAMES
 
 
+def definition_guards(path: Path, name: str) -> set[str]:
+    """The `#ifndef G` ... `#define G` guards a header wraps its definition of `name` in.
+
+    d3d9types.h and dsound.h each define `_D3DVECTOR` inside `#ifndef D3DVECTOR_DEFINED`;
+    whichever is included first defines it and the other skips, so the two are ONE
+    definition. dxdiag was split into two islands over it and kept the first."""
+    text = _read(path)
+    pat = re.compile(
+        rf"#\s*ifndef\s+(\w+)\s*\n(?:(?!#\s*endif).)*?\b{re.escape(name)}\b"
+        rf"(?:(?!#\s*endif).)*?#\s*define\s+\1\b",
+        re.S,
+    )
+    return {m.group(1) for m in pat.finditer(text)}
+
+
 def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Path, Path]]:
     """Type names defined by two headers that NO SINGLE TU includes together.
 
@@ -2680,6 +2698,8 @@ def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Pat
             for b in paths[i + 1 :]:
                 if any(a in s and b in s for s in closure.per_tu.values()):
                     continue  # co-reachable in a real TU -> proven compatible
+                if definition_guards(a, name) & definition_guards(b, name):
+                    continue  # one shared include guard -> one definition, whoever is first
                 conflicts.append((name, a, b))
     return conflicts
 
@@ -2876,7 +2896,15 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
                 extra.append(d)
     if "_WIN32_WINNT" in set_by_module and "WINVER" not in set_by_module:
         ver["WINVER"] = ver["_WIN32_WINNT"]  # WINVER tracks _WIN32_WINNT unless set apart
-    ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
+    # A module header that redefines _WIN32_WINNT (clipbrd's precomp.h: `#undef` then 0x600)
+    # gets NTDDI_VERSION from sdkddkver.h exactly as its real compile does -- which passes no
+    # NTDDI_VERSION -- or the pinned 0x0502 one trips "NTDDI_VERSION and _WIN32_WINNT mismatch".
+    redefines = "NTDDI_VERSION" not in set_by_module and any(
+        re.search(r"^\s*#\s*define\s+_WIN32_WINNT\b", h.read_text(errors="replace"), re.M)
+        for h in module.module_dir.rglob("*.h")
+    )
+    if not redefines:
+        ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
     defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
     overridden = {d[2:].partition("=")[0] for d in extra}
     defs += [f"-D{d}" for d in _BASELINE_DEFS if d.partition("=")[0] not in overridden]
@@ -4360,13 +4388,15 @@ pub extern "C" fn rust_eh_personality() {{}}
     )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
     debug_block = (
-        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
-// out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
-// ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME): wine's own flag test on the default
+// channel, then ros_dbg_log -- win32macros-rust's WINE_*! macros, which expand HERE (the
+// channel storage and the ros_dbg_log extern are this crate's; `port resolve` writes them).
+// MACROS, never out-of-line fns: an out-of-line wrapper is an optimization barrier that
+// uncloaks latent ABI mismatches into ud2 (field manual §9.65).
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { win32macros_rust::WINE_TRACE!($($arg)*) }; }
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { win32macros_rust::WINE_ERR!($($arg)*) }; }
+#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
         else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns

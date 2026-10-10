@@ -316,6 +316,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cacls-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "cardlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -364,6 +375,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "charmap-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "classpnp-cargo"
 version = "0.1.0"
 dependencies = [
@@ -379,6 +401,17 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
+]
+
+[[package]]
+name = "clipbrd-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -487,6 +520,21 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
 ]
+
+[[package]]
+name = "control-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "conutils-h"
+version = "0.1.0"
 
 [[package]]
 name = "conutils-rust"
@@ -735,6 +783,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dxdiag-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dxg-rust"
 version = "0.1.0"
 dependencies = [
@@ -805,6 +864,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "extrac32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "fastfat-rust"
 version = "0.1.0"
 dependencies = [
@@ -817,6 +887,17 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "findstr-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "fltmc-rust"
@@ -835,6 +916,18 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "fontview-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1480,6 +1573,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
 
 [[package]]
+name = "logoff-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "logonui-rust"
 version = "0.1.0"
 dependencies = [
@@ -1568,6 +1672,17 @@ name = "luid"
 version = "0.1.0"
 
 [[package]]
+name = "magnify-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "main-rust"
 version = "0.1.0"
 dependencies = [
@@ -1633,6 +1748,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mmc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mmsys-rust"
 version = "0.1.0"
 dependencies = [
@@ -1676,6 +1803,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mplay32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mprapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -1694,6 +1832,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "msconfig-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "msfs-rust"
 version = "0.1.0"
 dependencies = [
@@ -1709,6 +1858,16 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "winlogon-sys",
+]
+
+[[package]]
+name = "mstsc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2095,6 +2254,16 @@ dependencies = [
 
 [[package]]
 name = "openglcfg-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "osk-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
@@ -2615,6 +2784,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "runas-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "rustversion"
 version = "1.0.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2664,6 +2844,16 @@ name = "samsrv-sys"
 version = "0.1.0"
 
 [[package]]
+name = "sc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "schannel-tls-difftest"
 version = "0.1.0"
 dependencies = [
@@ -2697,6 +2887,17 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "varargs-rust",
+]
+
+[[package]]
+name = "sdbinst-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2820,6 +3021,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8fadd59c855ef2080decdef8ff161eb6661b86933c9d82e5ba29dc602a55aba"
 
 [[package]]
+name = "shutdown-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "skiplist-rust"
 version = "0.1.0"
 dependencies = [
@@ -2883,6 +3095,18 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "sndvol32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
  "win32macros-rust",
 ]
 
@@ -3687,6 +3911,16 @@ name = "winsrv-sys"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+]
+
+[[package]]
+name = "winver-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]

@@ -21,8 +21,10 @@ a missing tool or an entry this cannot rewrite is an error, never the plain live
 from __future__ import annotations
 
 import argparse
+import fcntl
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -58,7 +60,9 @@ def rewrite_ini(text: str) -> str:
             section = m.group(1)
         elif section in ENTRIES and body.startswith("SystemPath="):
             if body != r"SystemPath=\reactos":
-                raise SystemExit(f"mk_writable_livecd: [{section}] {body!r} is not the expected \\reactos")
+                raise SystemExit(
+                    f"mk_writable_livecd: [{section}] {body!r} is not the expected \\reactos"
+                )
             body = r"SystemPath=ramdisk(0)\reactos"
         elif section in ENTRIES and body.startswith("Options="):
             body = f"{body} /RDPATH={RDPATH}"
@@ -73,7 +77,8 @@ def rewrite_ini(text: str) -> str:
 def _run(cmd: list[str]) -> None:
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
-        raise SystemExit(f"mk_writable_livecd: {cmd[0]} failed ({r.returncode}):\n{r.stderr[-2000:]}")
+        tail = r.stderr[-2000:]
+        raise SystemExit(f"mk_writable_livecd: {cmd[0]} failed ({r.returncode}):\n{tail}")
 
 
 def build(iso: Path, out: Path) -> None:
@@ -85,15 +90,17 @@ def build(iso: Path, out: Path) -> None:
         _run(["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", "/", str(tree)])
         # Extracted files keep the ISO's read-only mode; nothing here needs that.
         _run(["chmod", "-R", "u+w", str(tree)])
-        ini.write_bytes(rewrite_ini((tree / "freeldr.ini").read_bytes().decode("latin-1")).encode("latin-1"))
+        text = (tree / "freeldr.ini").read_bytes().decode("latin-1")
+        ini.write_bytes(rewrite_ini(text).encode("latin-1"))
         payload = [p for p in sorted(tree.iterdir()) if p.name.lower() not in NOT_ON_RAMDISK]
-        used = sum(f.stat().st_size for p in payload for f in ([p] if p.is_file() else p.rglob("*")) if f.is_file())
+        files = [f for p in payload for f in ([p] if p.is_file() else p.rglob("*"))]
+        used = sum(f.stat().st_size for f in files if f.is_file())
         size_mb = used // (1 << 20) + used // (1 << 20) // 10 + SLACK_MB
         with open(img, "wb") as f:
             f.truncate(size_mb << 20)
         _run(["mformat", "-i", str(img), "-F", "-v", "ROSRAMDISK", "::"])
         _run(["mcopy", "-s", "-Q", "-i", str(img), *map(str, payload), "::/"])
-        tmp_out = out.with_suffix(".iso.partial")
+        tmp_out = out.with_name(f"{out.name}.{os.getpid()}.partial")
         _run([
             "xorriso", "-indev", str(iso), "-outdev", str(tmp_out),
             "-boot_image", "any", "replay",
@@ -111,14 +118,18 @@ def ensure(build_dir: Path) -> Path:
         raise SystemExit(f"mk_writable_livecd: no {iso} (fix: ./vibeos-cli build --arch <arch>)")
     out, stamp = build_dir / OUT_NAME, build_dir / STAMP_NAME
     key = _source_key(iso)
-    try:
-        if out.is_file() and json.loads(stamp.read_text()).get("source") == key:
-            return out
-    except (OSError, ValueError):
-        pass
-    build(iso, out)
-    stamp.write_text(json.dumps({"source": key}))
-    return out
+    # Two boots of the same build (a 1G and a 2G run side by side) used to rebuild the ISO
+    # concurrently and truncate each other's output; the second one waits here instead.
+    with open(build_dir / "livecd-rw.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            if out.is_file() and json.loads(stamp.read_text()).get("source") == key:
+                return out
+        except (OSError, ValueError):
+            pass
+        build(iso, out)
+        stamp.write_text(json.dumps({"source": key}))
+        return out
 
 
 def main() -> int:
