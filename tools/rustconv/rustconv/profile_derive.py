@@ -62,6 +62,7 @@ import argparse
 import functools
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import date
@@ -521,6 +522,66 @@ def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+_FOREACH_RE = re.compile(
+    r"^[ \t]*foreach\s*\(\s*(\w+)\s+([^)]*)\)(.*?)^[ \t]*endforeach\s*\(\s*\w*\s*\)", re.M | re.S
+)
+
+
+def _unroll_target_foreach(text: str) -> str:
+    """Unroll a `foreach()` whose body DEFINES TARGETS, over a literal list.
+
+    dll/keyboard builds all 91 layout DLLs from one `foreach(_keyboard_layout
+    ${_keyboard_layouts})` around `add_library(${_keyboard_layout} MODULE ...)`. The parser
+    below is single-pass and saw one target literally named `${_keyboard_layout}`, so no
+    layout had a provable owner. Each iteration is pasted in with the loop variable
+    substituted -- CMake's own semantics, the variable scope being the enclosing one.
+
+    Only literal items, and `${LIST}` where every `set(LIST ..)` / `list(APPEND LIST ..)`
+    before the loop is literal. Anything else (a generated list, a nested `foreach`, `IN
+    LISTS`/`RANGE` forms) is left as it was: the old result, not a guess.
+    """
+
+    def literal_list(name: str, before: int) -> list[str] | None:
+        items: list[str] = []
+        for m in re.finditer(
+            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b"
+            rf"|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
+            text[:before],
+            re.M,
+        ):
+            if m.group(0).lstrip().startswith("set"):
+                items = []
+            words = m.group(1).split()
+            if any("$" in w or '"' in w for w in words):
+                return None
+            items.extend(words)
+        return items or None
+
+    def unroll(m: re.Match) -> str:
+        var, spec, body = m.group(1), m.group(2).split(), m.group(3)
+        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(
+            r"\bforeach\s*\(", body
+        ):
+            return m.group(0)
+        if spec and spec[0] in ("IN", "RANGE"):
+            return m.group(0)
+        items: list[str] = []
+        for word in spec:
+            ref = re.fullmatch(r"\$\{(\w+)\}", word)
+            if ref:
+                listed = literal_list(ref.group(1), m.start())
+                if listed is None:
+                    return m.group(0)
+                items.extend(listed)
+            elif "$" in word:
+                return m.group(0)
+            else:
+                items.append(word)
+        return "".join(body.replace("${" + var + "}", item) for item in items)
+
+    return _FOREACH_RE.sub(unroll, text)
+
+
 def _read_with_includes(path: Path, _seen: frozenset[Path] = frozenset()) -> str:
     """`_read`, but splicing `include(<file>.cmake)` in at the include site.
 
@@ -879,7 +940,7 @@ def parse_cmakelists(
     restored_sources: list[str] = []
     if flipped_sources:
         raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir, repo_root)
-    text = _strip_cmake_comments(raw_text)
+    text = _unroll_target_foreach(_strip_cmake_comments(raw_text))
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
         "REACTOS_SOURCE_DIR": [str(repo_root)],
@@ -1515,25 +1576,54 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
-def scan_preamble(
-    text: str, known_undefined: frozenset[str] = frozenset()
-) -> tuple[list[str], bool]:
-    """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
+_DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
+_FLAG_IN_CMAKE_RE = (
+    r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+)
 
-    Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
-    ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
-    if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
 
-    Guarded includes are the exception, and it is not cosmetic: this used to drop the
-    `#ifdef`/`#endif` while KEEPING the include between them, promoting a conditional
-    include to an unconditional one. wldap32 wraps OpenLDAP under `#ifdef HAVE_LDAP_H`,
-    which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
-    for a header that does not exist here and bindgen died on it.
+def _foreign_build_flags(
+    tus: list[Path], repo_root: Path, module_defines: set[str]
+) -> frozenset[str]:
+    """Prologue guard macros that only some OTHER target's compile flags define.
 
-    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
-    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
-    decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    apphelp's sdbwrite.c opens `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
+    <typedefs.h>`: the `#else` arm is the host tool's, which its own CMakeLists builds with
+    `-DSDBWRITE_HOSTTOOL`. Mirrored into apphelp's wrapper it asked bindgen for the host
+    tool's typedefs.h, which no target include path has. A macro is decidably undefined
+    here when this module's own -D set lacks it, no file in the tree `#define`s it, and some
+    CMakeLists does set it as a compile flag: a build switch, not something a header or the
+    compiler could supply (`_WIN64` and friends are predefined, and so never match the last
+    condition).
     """
+    named = {d[2:].split("=", 1)[0] for d in module_defines if d.startswith("-D")} | {
+        d.split("=", 1)[0] for d in module_defines if not d.startswith("-")
+    }
+    guards: set[str] = set()
+    for tu in tus:
+        for line in _prologue_lines(_read(tu)):
+            g = _guard_macro(line)
+            if g is not None:
+                guards.add(g[0])
+    out: set[str] = set()
+    for macro in sorted(guards - named):
+
+        def grep(pattern: str, *paths: str) -> bool:
+            r = subprocess.run(
+                ["git", "-C", str(repo_root), "grep", "-qE", "-e", pattern, "--", *paths],
+                capture_output=True,
+            )
+            return r.returncode == 0
+
+        if grep(_DEFINE_DIRECTIVE_RE.format(macro)):
+            continue
+        if grep(_FLAG_IN_CMAKE_RE.format(macro), "*CMakeLists.txt", "*.cmake"):
+            out.add(macro)
+    return frozenset(out)
+
+
+def _prologue_lines(text: str) -> list[str]:
+    """The TU's lines up to its last `#include` before the first real code line."""
     lines = text.splitlines()
     end = 0
     in_comment = False
@@ -1553,11 +1643,34 @@ def scan_preamble(
                 end = i + 1
             continue
         break  # first real code line ends the prologue
+    return lines[:end]
+
+
+def scan_preamble(
+    text: str, known_undefined: frozenset[str] = frozenset()
+) -> tuple[list[str], bool]:
+    """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
+
+    Mirroring the real prologue (including its ``#define WIN32_NO_STATUS`` /
+    ``#define NTOS_MODE_USER`` ordering) is what makes a wrapper guaranteed-legal:
+    if the ``.c`` compiles, that exact sequence is bindgen-able (§9.108).
+
+    Guarded includes are the exception, and it is not cosmetic: this used to drop the
+    `#ifdef`/`#endif` while KEEPING the include between them, promoting a conditional
+    include to an unconditional one. wldap32 wraps OpenLDAP under `#ifdef HAVE_LDAP_H`,
+    which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
+    for a header that does not exist here and bindgen died on it.
+
+    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
+    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
+    decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    """
+    lines = _prologue_lines(text)
     keep: list[str] = []
     conditional = False
     # stack of "this arm is dead" flags; None = undecided (keep both arms, as before)
     arms: list[bool | None] = []
-    for line in lines[:end]:
+    for line in lines:
         d = _DIRECTIVE_RE.match(line)
         if d is None:
             continue
@@ -2210,11 +2323,15 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         for m in re.finditer(rf"^[ \t]*#[ \t]*define[ \t]+({alt})\b(\()?([^\n]*)", text, re.M):
             name, paren, body = m.group(1), m.group(2), m.group(3).strip().rstrip("\\").strip()
             out.setdefault(name, ("function-like", body) if paren else (_macro_kind(body), body))
-        # enum members: one per line, `NAME[= ...]` followed by `,` or the closing `}`. The
-        # separator match must cross a NEWLINE: the LAST member of an enum has no trailing
-        # comma and its `}` sits on the next line (`DomainDisplayServer` in ntsam.h), which a
-        # same-line-only pattern reports as UNOWNED — another false §9.112 alarm.
-        for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
+        # enum members: `NAME[= ...]` followed by `,` or the closing `}`. The separator
+        # match must cross a NEWLINE: the LAST member of an enum has no trailing comma and
+        # its `}` sits on the next line (`DomainDisplayServer` in ntsam.h), which a
+        # same-line-only pattern reports as UNOWNED — another false §9.112 alarm. And a
+        # member need not start its line: cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on
+        # one, and every one after the first was reported UNOWNED.
+        for m in re.finditer(
+            rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M
+        ):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
         for name, kind in _cxx_consts(text, alt).items():
@@ -2312,7 +2429,11 @@ def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
 
 
 def sys_crate_consts(
-    repo_root: Path, usermode: bool, arch: str = "i386", crate: str | None = None
+    repo_root: Path,
+    usermode: bool,
+    arch: str = "i386",
+    crate: str | None = None,
+    enum_prefixes: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """``{const name: providing file stem}`` for the sibling -sys crate's exports.
 
@@ -2332,12 +2453,14 @@ def sys_crate_consts(
         return out
     other_arches = tuple(f"_{a}" for a in ARCHES if a != arch)
     files = sorted(base.glob("*bindgen*.rs"), key=lambda p: (p.stem not in primary, p.stem))
+    bare: set[str] = set()
     for f in files:
         if f.stem.endswith(other_arches):
             continue  # another arch's island
         text = _read(f)
         for name in re.findall(r"pub const (\w+)", text):
             out.setdefault(name, f.stem)
+            bare.add(name)
         # bindgen spells a C enumerator `<enum type>_<member>` (`_DEVICE_USAGE_NOTIFICATION_
         # TYPE_DeviceUsageTypePaging`), so the bare member the C switches on never appears
         # as a `pub const` of its own. It IS carried -- `port resolve` aliases the bare
@@ -2345,6 +2468,12 @@ def sys_crate_consts(
         # DeviceUsageType*/DeviceText* cases a blocking error.
         for _ty, member in re.findall(r"pub const (\w+?)_(\w+):\s*\1\s*=", text):
             out.setdefault(member, f.stem)
+            if enum_prefixes is not None:
+                enum_prefixes.setdefault(member, _ty)
+    if enum_prefixes is not None:
+        # Carried only PREFIXED: the bare name a `case` uses still needs the prelude alias.
+        for name in bare & enum_prefixes.keys():
+            del enum_prefixes[name]
     return out
 
 
@@ -2682,7 +2811,18 @@ def derive_source(
     only the remaining C after a partial flip silently excludes the requested file.
     """
     source = source.resolve()
-    for directory in source.parents:
+    # A TU shared upward (`../marshalling.c`, compiled by both spoolss/ and winspool/ under
+    # win32ss/printing/base) has its owners in SIBLING directories, which the ancestor walk
+    # below never visits; offer those first, the preferred target's own directory before all.
+    siblings = sorted(
+        (
+            c.parent
+            for c in source.parent.glob("*/CMakeLists.txt")
+            if f"../{source.name}" in _read(c)
+        ),
+        key=lambda d: d.name != preferred_target,
+    )
+    for directory in [*siblings, *source.parents]:
         cmake = directory / "CMakeLists.txt"
         if not cmake.is_file():
             continue
@@ -2877,7 +3017,8 @@ def derive(
     sys_crate = getattr(module, "sys_crate", None) or resolve_sys_crate(
         repo_root, module.name, module.is_usermode
     )
-    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
+    sys_enum_prefixes: dict[str, str] = {}
+    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate, sys_enum_prefixes)
     # A name the output crate's prelude already provides is resolved for every module of
     # the crate, which is exactly the fix SWITCH_CONST_IN_BASE_HEADER asks for -- so a
     # re-derive after transcribing must stop reporting it.
@@ -2955,6 +3096,23 @@ def derive(
             # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
             # so its (often huge) owning header does NOT need to be allowlisted.
             o.allowlisted = True
+            prefix = sys_enum_prefixes.get(o.ident) if o.sys_source != "prelude" else None
+            if prefix:
+                # The -sys crate carries the ENUM MEMBER only prefixed. Skipping this (the
+                # `continue` below) is why every kernel module recorded no switch_enums:
+                # their DDK enums all come from ntkrnl-sys, so pciidex's `BusQueryDeviceID =>`
+                # was never aliased and bound every IRP_MN_QUERY_ID.
+                o.enum_prefix = prefix
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_ENUM_PREFIXED",
+                        f"`{o.ident}` ({sys_crate}) is an ENUM MEMBER: the -sys crate emits "
+                        f"it as `{prefix}_{o.ident}`, never the bare name. Alias it in the "
+                        f"prelude — pub use {prefix}_{o.ident} as {o.ident}; — `port "
+                        "resolve` does so for every recorded one.",
+                    )
+                )
             if o.sys_source not in (f"bindgen_{arch}", "bindgen_common", "prelude"):
                 findings.append(
                     Finding(
@@ -3085,7 +3243,9 @@ def derive(
             )
 
     # ---- wrapper: mirror each TU's real prologue ----
-    known_undefined = _wine_config_undefs(repo_root)
+    known_undefined = _wine_config_undefs(repo_root) | _foreign_build_flags(
+        tus, repo_root, set(module.definitions) | set(db.module_defines if db else ())
+    )
     wrapper: list[str] = []
     for tu in tus:
         lines, conditional = scan_preamble(_read(tu), known_undefined)
@@ -3716,7 +3876,17 @@ _RUST_KEYWORDS = frozenset(
 
 
 def _rust_mod_ident(stem: str) -> str:
+    if stem[:1].isdigit():  # ndis's 30stubs.c: no raw identifier makes this one legal
+        return f"_{stem}"
     return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
+
+
+def _rust_mod_decl(stem: str) -> str:
+    """`pub mod x;` for a TU, with a #[path] when the file name is not an identifier."""
+    ident = _rust_mod_ident(stem)
+    if ident == f"_{stem}":
+        return f'#[path = "{stem}.rs"] pub mod {ident};'
+    return f"pub mod {ident};"
 
 
 #: Appended to a KERNEL crate's scaffold prelude: what every port of a WDM driver needs and
@@ -3982,7 +4152,7 @@ crate-type = ["staticlib"]
     mods = []
     for tu in m.compiled_tus:
         # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
-        mods.append(f"    pub mod {_rust_mod_ident(tu.stem)};")
+        mods.append(f"    {_rust_mod_decl(tu.stem)}")
     write(
         src / "lib.rs",
         f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.

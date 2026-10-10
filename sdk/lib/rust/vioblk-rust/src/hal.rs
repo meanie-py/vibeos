@@ -8,9 +8,11 @@
 //! contiguous buffer in the rare case one straddles a page (one physical address per
 //! descriptor, so a straddling buffer would DMA half into the wrong page).
 //!
-//! Cached memory and plain physical addresses are correct as they are: x86 DMA is
-//! cache-coherent, QEMU's `virt` PCIe host bridge is DMA-coherent on arm64, and QEMU
-//! has no IOMMU by default.
+//! A PCI function's arenas and virtqueues are common buffers of its DMA adapter, so
+//! behind an IOMMU they are what its domain maps (`dma.rs`); plain contiguous memory
+//! and physical addresses serve the virtio-mmio slots, which no IOMMU translates.
+//! Cached memory is correct either way: x86 DMA is cache-coherent, and QEMU's `virt`
+//! PCIe host bridge is DMA-coherent on arm64.
 
 use core::ptr::{self, NonNull};
 use core::sync::atomic::{AtomicUsize, Ordering};
@@ -35,8 +37,12 @@ fn phys(v: u64) -> LARGE_INTEGER {
 }
 
 /// Physically contiguous, zeroed, below 4 GiB (addressable whatever the device
-/// negotiated). Null on failure.
+/// negotiated). Null on failure. A common buffer of the PCI function's DMA adapter
+/// while HwFindAdapter has one current (`dma.rs`), with its device address.
 pub fn alloc_contiguous(bytes: usize) -> (*mut u8, u64) {
+    if let Some(buffer) = unsafe { crate::dma::alloc(bytes) } {
+        return buffer;
+    }
     let va = unsafe {
         MmAllocateContiguousMemorySpecifyCache(
             bytes as _,
@@ -135,7 +141,10 @@ unsafe impl Hal for VioHal {
         }
     }
 
-    unsafe fn dma_dealloc(_paddr: PhysAddr, vaddr: NonNull<u8>, _pages: usize) -> i32 {
+    unsafe fn dma_dealloc(paddr: PhysAddr, vaddr: NonNull<u8>, _pages: usize) -> i32 {
+        if crate::dma::free(vaddr.as_ptr(), paddr) {
+            return 0;
+        }
         MmFreeContiguousMemory(vaddr.as_ptr() as PVOID);
         0
     }

@@ -40,6 +40,7 @@ pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
         }
 
         PowerIrp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+        ASSERT!((*IoGetCurrentIrpStackLocation(PowerIrp)).MinorFunction == IRP_MN_SET_POWER);
 
         AtaPowerCompleteIrp(&mut (*DevExt).Common, PowerIrp, STATUS_NO_SUCH_DEVICE);
     }
@@ -154,6 +155,7 @@ pub unsafe extern "C" fn AtaPortDeviceProcessPowerChange(
     PowerIrp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 
     IoStack = IoGetCurrentIrpStackLocation(PowerIrp);
+    ASSERT!((*IoStack).MinorFunction == IRP_MN_SET_POWER);
 
     NewState = (*IoStack).Parameters.Power.State.DeviceState;
     if NewState as u32 == (*DevExt).Common.DevicePowerState as u32 {
@@ -214,6 +216,8 @@ pub unsafe extern "C" fn AtaPortCheckDevicePowerState(
          * The media access will result in a transition from the PM1:Idle/PM2:Standby state
          * to the PM0:Active state by the ATA spec.
          */
+        ERR!(b"CH %lu: Failed to power up device '%s' %lx\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber, (*DevExt).FriendlyName.as_ptr(), Status);
     } else {
         (*DevExt).Common.DevicePowerState = (PowerDeviceD0) as _;
     }
@@ -338,6 +342,8 @@ unsafe extern "C" fn AtaPdoPowerSetSystemPowerState(mut DevExt: PATAPORT_DEVICE_
     );
     if !NT_SUCCESS!(Status) {
         let mut IoStatusBlock: _IO_STATUS_BLOCK = { let mut __lit: _IO_STATUS_BLOCK = core::mem::zeroed(); __lit.__bindgen_anon_1.Status = 0; __lit.Information = 0; __lit };
+
+        ERR!(b"Failed to change power state for device '%s' %lx\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr(), Status);
 
         IoStatusBlock.__bindgen_anon_1.Status = Status;
         AtaPdoPowerSetSysStateWithDevStateComplete(

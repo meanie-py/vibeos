@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import socket
+import threading
 import time
 from collections import deque
 from typing import Any
@@ -44,6 +45,11 @@ class QmpClient:
         # Bounded: a long boot emits plenty, and this is a diagnostic tail, not a
         # log. Callers that need every event should consume as they go.
         self.events: deque[dict] = deque(maxlen=256)
+        # One command is a send + its reply; a second thread interleaving there
+        # reads the other's answer. Re-entrant so a caller can hold it across a
+        # multi-command sequence that depends on monitor state (`cpu N` then `x`),
+        # which is what the PC sampler and the frame walk both do.
+        self.lock = threading.RLock()
 
     def connect(self, path: str, timeout: float = 10.0) -> dict:
         """Connect and complete QMP handshake (greeting + qmp_capabilities).
@@ -91,8 +97,9 @@ class QmpClient:
         msg: dict[str, Any] = {"execute": command}
         if args:
             msg["arguments"] = args
-        self._send_json(msg)
-        resp = self._recv_json()
+        with self.lock:
+            self._send_json(msg)
+            resp = self._recv_json()
         if "error" in resp:
             raise QmpError(command, resp["error"])
         return resp

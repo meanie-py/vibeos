@@ -568,7 +568,8 @@ pub unsafe extern "system" fn MmMapLockedPagesSpecifyCache(
 
         PointerPte = MiReserveSystemPtes(PageCount, SystemPteSpace);
         if PointerPte.is_null() {
-            if ((*Mdl).MdlFlags & 0x00000004) != 0 {
+            // MDL_MAPPING_CAN_FAIL (0x2000); this tested 0x4, MDL_SOURCE_IS_NONPAGED_POOL.
+            if ((*Mdl).MdlFlags as u32 & 0x2000) != 0 {
                 return core::ptr::null_mut();
             }
 
@@ -612,7 +613,7 @@ pub unsafe extern "system" fn MmMapLockedPagesSpecifyCache(
         (*Mdl).MdlFlags |= MDL_MAPPED_TO_SYSTEM_VA as i16;
 
         if ((*Mdl).MdlFlags as u32 & MDL_PARTIAL) != 0 {
-            (*Mdl).MdlFlags |= 0x00000010 as i16;
+            (*Mdl).MdlFlags |= 0x0020 as i16; // MDL_PARTIAL_HAS_BEEN_MAPPED (see MmMapLockedPagesWithReservedMapping)
         }
 
         return Base;
@@ -1130,7 +1131,11 @@ pub unsafe extern "system" fn MmMapLockedPagesWithReservedMapping(
     (*Mdl).MdlFlags |= MDL_MAPPED_TO_SYSTEM_VA as i16;
 
     if ((*Mdl).MdlFlags as u32 & MDL_PARTIAL) != 0 {
-        (*Mdl).MdlFlags |= 0x00000010 as i16;
+        // MDL_PARTIAL_HAS_BEEN_MAPPED (0x20). This was 0x10, MDL_PARTIAL itself, so a mapped
+        // partial MDL was never marked mapped, IoFreeMdl's MmPrepareMdlForReuse never unmapped
+        // it, and every one leaked its system PTEs: NO_MORE_SYSTEM_PTES (0x3F) on i386 about
+        // two minutes into setup's file copy.
+        (*Mdl).MdlFlags |= 0x0020 as i16;
     }
 
     (MappingAddress as ULONG_PTR + (*Mdl).ByteOffset as ULONG_PTR) as PVOID

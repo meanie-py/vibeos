@@ -38,11 +38,6 @@ macro_rules! w {
     }};
 }
 
-// ARM64_UART_TRACE: C macro that expands to no-op on non-ARM64 (and to a UART
-// write on ARM64). Keep as no-op here — it's only useful for early kernel
-// debug tracing.
-#[inline(always)]
-unsafe fn ARM64_UART_TRACE(_msg: *const u8) {}
 
 // KEY_WRITE — defined in winreg.h as STANDARD_RIGHTS_WRITE | KEY_SET_VALUE | KEY_CREATE_SUB_KEY.
 const KEY_WRITE: ULONG = STANDARD_RIGHTS_WRITE | KEY_SET_VALUE | KEY_CREATE_SUB_KEY;
@@ -403,7 +398,7 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
     ObjectAttributes.SecurityDescriptor = core::ptr::null_mut();
     ObjectAttributes.SecurityQualityOfService = core::ptr::null_mut();
 
-    ARM64_UART_TRACE(b"[CFG] NtCreateKey DeviceMap\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] NtCreateKey DeviceMap\r\n\0".as_ptr());
     Status = NtCreateKey(
         &mut KeyHandle,
         KEY_READ | KEY_WRITE,
@@ -417,7 +412,7 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
         return Status;
     }
     NtClose(KeyHandle);
-    ARM64_UART_TRACE(b"[CFG] DeviceMap created\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] DeviceMap created\r\n\0".as_ptr());
 
     RtlInitUnicodeString(
         &mut KeyName,
@@ -454,15 +449,15 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    ARM64_UART_TRACE(b"[CFG] Description created\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] Description created\r\n\0".as_ptr());
 
-    ARM64_UART_TRACE(b"[CFG] ConfigurationRoot=\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] ConfigurationRoot=\0".as_ptr());
     if !(*LoaderBlock).ConfigurationRoot.is_null() {
-        ARM64_UART_TRACE(b"non-null\0".as_ptr());
+        ARM64_UART_TRACE!(b"non-null\0".as_ptr());
     } else {
-        ARM64_UART_TRACE(b"NULL\0".as_ptr());
+        ARM64_UART_TRACE!(b"NULL\0".as_ptr());
     }
-    ARM64_UART_TRACE(b"\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"\r\n\0".as_ptr());
     
     if !(*LoaderBlock).ConfigurationRoot.is_null() {
         Status = CmpSetupConfigurationTree(
@@ -475,12 +470,12 @@ pub unsafe extern "system" fn CmpInitializeHardwareConfiguration(
         Status = STATUS_SUCCESS;
     }
 
-    ARM64_UART_TRACE(b"[CFG] CmpSetupConfigurationTree done\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] CmpSetupConfigurationTree done\r\n\0".as_ptr());
 
     ExFreePoolWithTag(CmpConfigurationData as *mut core::ffi::c_void, 0x20206D43u32);
-    ARM64_UART_TRACE(b"[CFG] NtClose Description\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] NtClose Description\r\n\0".as_ptr());
     NtClose(KeyHandle);
-    ARM64_UART_TRACE(b"[CFG] CmpInitializeHardwareConfiguration returning\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CFG] CmpInitializeHardwareConfiguration returning\r\n\0".as_ptr());
     return Status;
 }
 

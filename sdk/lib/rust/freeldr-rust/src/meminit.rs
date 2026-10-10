@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_MEMORY; // meminit.c: DBG_DEFAULT_CHANNEL(MEMORY)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::mm::*;
@@ -9,11 +11,9 @@ extern "C" {
 }
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn printf(fmt: *const i8, ...);
 }
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
     fn FrLdrBugCheckWithMessage(code: ULONG, file: PCHAR, line: ULONG, format: PCHAR, ...);
         fn MmInitializeHeap(PageLookupTable: PVOID);
 }
@@ -70,12 +70,7 @@ pub unsafe extern "C" fn AddMemoryDescriptor(
     let mut DescriptCount: ULONG;
     let EndPage: PFN_NUMBER;
 
-    TRACE(
-        b"AddMemoryDescriptor(0x%Ix, 0x%Ix, %u)\n\0".as_ptr() as PCSTR,
-        BasePage,
-        PageCount,
-        MemoryType,
-    );
+    TRACE!("AddMemoryDescriptor(0x%Ix, 0x%Ix, %u)\n", BasePage, PageCount, MemoryType);
 
     EndPage = BasePage + PageCount;
 
@@ -96,15 +91,7 @@ pub unsafe extern "C" fn AddMemoryDescriptor(
     while (*List.offset(Index as isize)).PageCount != 0
         && (*List.offset(Index as isize)).BasePage < EndPage
     {
-        TRACE(
-            b"AddMemoryDescriptor conflict @%lu: new=[%lx:%lx], existing=[%lx,%lx]\n\0".as_ptr() as *const i8
-                as PCSTR,
-            Index,
-            BasePage,
-            PageCount,
-            (*List.offset(Index as isize)).BasePage,
-            (*List.offset(Index as isize)).PageCount,
-        );
+        TRACE!("AddMemoryDescriptor conflict @%lu: new=[%lx:%lx], existing=[%lx,%lx]\n", Index, BasePage, PageCount, (*List.offset(Index as isize)).BasePage, (*List.offset(Index as isize)).PageCount);
 
         if (*List.offset(Index as isize)).BasePage < BasePage {
             if (*List.offset(Index as isize)).BasePage + (*List.offset(Index as isize)).PageCount
@@ -205,7 +192,7 @@ unsafe fn MmCheckFreeldrImageFile() {
     {
         if NtHeaders.is_null() {
             crate::frldr::dbgcon_str(b"NULL!");
-            ERR(b"Could not get NtHeaders!\n\0".as_ptr() as PCHAR);
+            ERR!("Could not get NtHeaders!\n");
             FrLdrBugCheckWithMessage(
                 FREELDR_IMAGE_CORRUPTION,
                 b"meminit.c\0".as_ptr() as PCHAR,
@@ -233,7 +220,7 @@ unsafe fn MmCheckFreeldrImageFile() {
            ((*FileHeader).NumberOfSymbols != 0) ||
            ((*FileHeader).SizeOfOptionalHeader != core::mem::size_of::<IMAGE_OPTIONAL_HEADER>() as u16)
         {
-            ERR(b"FreeLdr FileHeader is invalid.\n\0".as_ptr() as PCHAR);
+            ERR!("FreeLdr FileHeader is invalid.\n");
             FrLdrBugCheckWithMessage(
                 FREELDR_IMAGE_CORRUPTION,
                 b"meminit.c\0".as_ptr() as PCHAR,
@@ -254,7 +241,7 @@ unsafe fn MmCheckFreeldrImageFile() {
            ((*OptionalHeader).SizeOfImage as usize > MAX_FREELDR_PE_SIZE) ||
            ((*OptionalHeader).SectionAlignment != (*OptionalHeader).FileAlignment)
         {
-            ERR(b"FreeLdr OptionalHeader is invalid.\n\0".as_ptr() as PCHAR);
+            ERR!("FreeLdr OptionalHeader is invalid.\n");
             FrLdrBugCheckWithMessage(
                 FREELDR_IMAGE_CORRUPTION,
                 b"meminit.c\0".as_ptr() as PCHAR,
@@ -279,7 +266,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     #[cfg(debug_assertions)]
     let mut MemoryDescriptor: *const FREELDR_MEMORY_DESCRIPTOR = core::ptr::null();
 
-    TRACE(b"Initializing Memory Manager.\n\0".as_ptr() as *const i8);
+    TRACE!("Initializing Memory Manager.\n");
 
     MmCheckFreeldrImageFile();
     dbgcon(b'C');
@@ -289,18 +276,13 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
 
     #[cfg(debug_assertions)]
     {
-        TRACE(b"System Memory Map (Base Address, Length, Type):\n\0".as_ptr() as *const i8);
+        TRACE!("System Memory Map (Base Address, Length, Type):\n");
         loop {
             MemoryDescriptor = ArcGetMemoryDescriptor(MemoryDescriptor);
             if MemoryDescriptor.is_null() {
                 break;
             }
-            TRACE(
-                b"%x\t %x\t %s\n\0".as_ptr() as *const i8,
-                (*MemoryDescriptor).BasePage * MM_PAGE_SIZE,
-                (*MemoryDescriptor).PageCount * MM_PAGE_SIZE,
-                MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType),
-            );
+            TRACE!("%x\t %x\t %s\n", (*MemoryDescriptor).BasePage * MM_PAGE_SIZE, (*MemoryDescriptor).PageCount * MM_PAGE_SIZE, MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType));
         }
     }
     dbgcon(b'2');
@@ -332,10 +314,7 @@ pub unsafe extern "C" fn MmInitializeMemoryManager() -> BOOLEAN {
     MmInitializeHeap(PageLookupTableAddress);
     dbgcon(b'8');
 
-    TRACE(
-        b"Memory Manager initialized. 0x%x pages available.\n\0".as_ptr() as *const i8,
-        FreePagesInLookupTable,
-    );
+    TRACE!("Memory Manager initialized. 0x%x pages available.\n", FreePagesInLookupTable);
 
     return 1u8;
 }
@@ -366,9 +345,9 @@ pub unsafe extern "C" fn MmGetAddressablePageCountIncludingHoles() -> PFN_NUMBER
         }
     }
 
-    TRACE(b"lo/hi %lx %lx\n\0".as_ptr() as *const i8, MmLowestPhysicalPage, MmHighestPhysicalPage);
+    TRACE!("lo/hi %lx %lx\n", MmLowestPhysicalPage, MmHighestPhysicalPage);
     PageCount = MmHighestPhysicalPage - MmLowestPhysicalPage;
-    TRACE(b"MmGetAddressablePageCountIncludingHoles() returning 0x%x\n\0".as_ptr() as *const i8, PageCount);
+    TRACE!("MmGetAddressablePageCountIncludingHoles() returning 0x%x\n", PageCount);
     PageCount
 }
 
@@ -415,10 +394,7 @@ pub unsafe extern "C" fn MmFindLocationForPageLookupTable(TotalPageCount: PFN_NU
 
     PageLookupTableMemAddress = ((PageLookupTableEndPage as usize * PAGE_SIZE as usize) - PageLookupTableSize) as PVOID;
 
-    TRACE(
-        b"MmFindLocationForPageLookupTable() returning 0x%x\n\0".as_ptr() as PCHAR,
-        PageLookupTableMemAddress,
-    );
+    TRACE!("MmFindLocationForPageLookupTable() returning 0x%x\n", PageLookupTableMemAddress);
 
     return PageLookupTableMemAddress;
 }
@@ -429,7 +405,7 @@ pub unsafe extern "C" fn MmInitPageLookupTable(PageLookupTable: PVOID, TotalPage
     let PageLookupTableStartPage: PFN_NUMBER;
     let PageLookupTablePageCount: PFN_NUMBER;
 
-    TRACE(b"MmInitPageLookupTable()\n\0".as_ptr() as *const i8);
+    TRACE!("MmInitPageLookupTable()\n");
 
     MmMarkPagesInLookupTable(PageLookupTable, MmLowestPhysicalPage, TotalPageCount, LoaderFirmwarePermanent);
 
@@ -440,12 +416,7 @@ pub unsafe extern "C" fn MmInitPageLookupTable(PageLookupTable: PVOID, TotalPage
         }
 
         if (*MemoryDescriptor).BasePage + (*MemoryDescriptor).PageCount <= TotalPageCount {
-            TRACE(
-                b"Marking pages 0x%lx-0x%lx as type %s\n\0".as_ptr() as *const i8,
-                (*MemoryDescriptor).BasePage,
-                (*MemoryDescriptor).BasePage + (*MemoryDescriptor).PageCount,
-                MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType)
-            );
+            TRACE!("Marking pages 0x%lx-0x%lx as type %s\n", (*MemoryDescriptor).BasePage, (*MemoryDescriptor).BasePage + (*MemoryDescriptor).PageCount, MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType));
             MmMarkPagesInLookupTable(
                 PageLookupTable,
                 (*MemoryDescriptor).BasePage,
@@ -453,12 +424,7 @@ pub unsafe extern "C" fn MmInitPageLookupTable(PageLookupTable: PVOID, TotalPage
                 (*MemoryDescriptor).MemoryType
             );
         } else {
-            TRACE(
-                b"Ignoring pages 0x%lx-0x%lx (%s)\n\0".as_ptr() as *const i8,
-                (*MemoryDescriptor).BasePage,
-                (*MemoryDescriptor).BasePage + (*MemoryDescriptor).PageCount,
-                MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType)
-            );
+            TRACE!("Ignoring pages 0x%lx-0x%lx (%s)\n", (*MemoryDescriptor).BasePage, (*MemoryDescriptor).BasePage + (*MemoryDescriptor).PageCount, MmGetSystemMemoryMapTypeString((*MemoryDescriptor).MemoryType));
         }
     }
 
@@ -466,11 +432,7 @@ pub unsafe extern "C" fn MmInitPageLookupTable(PageLookupTable: PVOID, TotalPage
     PageLookupTablePageCount = MmGetPageNumberFromAddress(
         (PageLookupTable as ULONG_PTR + ROUND_UP(TotalPageCount * core::mem::size_of::<PAGE_LOOKUP_TABLE_ITEM>() as PFN_NUMBER, MM_PAGE_SIZE)) as PVOID
     ) - PageLookupTableStartPage;
-    TRACE(
-        b"Marking the page lookup table pages as reserved StartPage: 0x%x PageCount: 0x%x\n\0".as_ptr() as *const i8,
-        PageLookupTableStartPage,
-        PageLookupTablePageCount
-    );
+    TRACE!("Marking the page lookup table pages as reserved StartPage: 0x%x PageCount: 0x%x\n", PageLookupTableStartPage, PageLookupTablePageCount);
     MmMarkPagesInLookupTable(PageLookupTable, PageLookupTableStartPage, PageLookupTablePageCount, LoaderFirmwareTemporary);
 }
 
@@ -483,18 +445,12 @@ pub unsafe extern "C" fn MmMarkPagesInLookupTable(
 ) {
     let RealPageLookupTable = PageLookupTable as PPAGE_LOOKUP_TABLE_ITEM;
     let mut Index: PFN_NUMBER;
-    TRACE(b"MmMarkPagesInLookupTable()\n\0".as_ptr() as *const i8);
+    TRACE!("MmMarkPagesInLookupTable()\n");
 
     if (StartPage < MmLowestPhysicalPage) ||
         ((StartPage.wrapping_add(PageCount).wrapping_sub(1)) > MmHighestPhysicalPage)
     {
-        ERR(
-            b"Memory (0x%lx:0x%lx) outside of lookup table! Valid range: 0x%lx-0x%lx.\n\0".as_ptr() as *const i8,
-            StartPage,
-            PageCount,
-            MmLowestPhysicalPage,
-            MmHighestPhysicalPage,
-        );
+        ERR!("Memory (0x%lx:0x%lx) outside of lookup table! Valid range: 0x%lx-0x%lx.\n", StartPage, PageCount, MmLowestPhysicalPage, MmHighestPhysicalPage);
         return;
     }
 
@@ -506,7 +462,7 @@ pub unsafe extern "C" fn MmMarkPagesInLookupTable(
             if PageAllocated != LoaderFree { 1 } else { 0 };
         Index = Index.wrapping_add(1);
     }
-    TRACE(b"MmMarkPagesInLookupTable() Done\n\0".as_ptr() as *const i8);
+    TRACE!("MmMarkPagesInLookupTable() Done\n");
 }
 
 #[no_mangle]
@@ -580,11 +536,7 @@ pub unsafe extern "C" fn MmFindAvailablePages(
             Index -= 1;
         }
     } else {
-        TRACE(
-            b"Alloc low memory, LastFreePageHint 0x%x, TPC 0x%x\n\0".as_ptr() as PCHAR,
-            LastFreePageHint,
-            TotalPageCount,
-        );
+        TRACE!("Alloc low memory, LastFreePageHint 0x%x, TPC 0x%x\n", LastFreePageHint, TotalPageCount);
         Index = 1;
         while Index < LastFreePageHint {
             if (*RealPageLookupTable.offset(Index as isize)).PageAllocated != LoaderFree {

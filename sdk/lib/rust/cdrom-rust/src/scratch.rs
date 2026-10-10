@@ -17,8 +17,6 @@ extern "system" {
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn RequestSenseInfoInterpretForScratchBuffer( DeviceExtension: *mut CDROM_DEVICE_EXTENSION, timesAlreadyRetried: u32, status: *mut i32, retryIn100nsUnits: *mut i64, ) -> u8;
 }
 unsafe extern "system" {

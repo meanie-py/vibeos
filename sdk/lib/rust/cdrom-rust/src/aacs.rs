@@ -6,8 +6,6 @@ use ntkrnl_sys::constants::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
 
-extern "C" {
-}
 extern "system" {
     fn ScratchBuffer_BeginUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
     fn ScratchBuffer_EndUse(DeviceExtension: *mut CDROM_DEVICE_EXTENSION);
@@ -17,8 +15,6 @@ extern "system" {
 }
 unsafe extern "C" {
     fn REVERSE_SHORT(p: *mut u16);
-}
-unsafe extern "C" {
 }
 
 const IOCTL_AACS_READ_MEDIA_KEY_BLOCK: u32 = 0x003350C4; // FIXED 2026-07-05: translation invented wrong value (verified vs psdk headers)

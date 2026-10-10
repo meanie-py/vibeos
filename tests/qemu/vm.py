@@ -484,6 +484,43 @@ def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     return smp_selected_iso(iso, work_dir) if smp_count() else iso
 
 
+def writable_root() -> bool:
+    """`VIBEOS_WRITABLE_ROOT=1`: boot x86 off a writable FAT ramdisk instead of the CD.
+
+    The plain livecd puts SystemRoot on read-only CDFS, so a guest that writes a file
+    there (most of the file/section kmtests) fails with ACCESS_DENIED and skips the
+    rest of its test. arm64 always boots a writable ramdisk. Conformance sets this.
+    """
+    return os.environ.get("VIBEOS_WRITABLE_ROOT", "").strip() == "1"
+
+
+def livecd_media(build_dir: Path) -> Path:
+    """The x86 boot ISO: livecd.iso, or its writable-root twin (tools/conformance/
+    mk_writable_livecd.py, rebuilt only when livecd.iso changes) under writable_root()."""
+    iso = build_dir / "livecd.iso"
+    if not writable_root():
+        return iso
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "mk_writable_livecd", PROJECT_DIR / "tools" / "conformance" / "mk_writable_livecd.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ensure(build_dir)
+
+
+def livecd_memory(memory: str) -> str:
+    """The whole ramdisk is loaded into guest RAM (~300-430MB) and the file cache sits on
+    top of it, so the writable-root boot gets 2G; the plain livecd keeps its configured
+    size. At 1G amd64 ran short: MmAllocatePagesForMdl got 166 of 512 pages (MmMdl
+    594/0 -> 211/7) and RtlException's stack-overflow probe took IN_PAGE_ERROR instead."""
+    if writable_root() and memory.upper().endswith("M") and int(memory[:-1]) < 2048:
+        return "2G"
+    return memory
+
+
 # --- `vibeos-cli stress` knobs ------------------------------------------------
 #
 # "Host load" is three different mechanisms, and each has a deterministic QEMU
@@ -798,6 +835,9 @@ class ArchConfig:
     # Validated by test_milestones after wait_for_boot completes.
     # Order is informational — we report which milestones were reached / missed.
     required_milestones: list[str] = field(default_factory=list)
+    # Attach the \\TEMP disk (`temp_disk_args`). A boot that lays out its own disks turns it
+    # off: the install smoke's target must be disk 0, and the extra disk would take its slot.
+    temp_disk: bool = True
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -1028,7 +1068,7 @@ class I386UefiConfig(I386Config):
     arch: str = "i386-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-i386"), work_dir)
         ovmf_code = QEMU_DIR / "OVMF32_CODE.fd"
         ovmf_vars_src = QEMU_DIR / "OVMF32_VARS.fd"
         # The writable VARS pflash must be qcow2: QMP savevm refuses to
@@ -1046,7 +1086,7 @@ class I386UefiConfig(I386Config):
         return [
             *self.machine_args,
             "-m",
-            self.memory,
+            livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
@@ -1261,7 +1301,7 @@ class Amd64UefiConfig(Amd64Config):
     arch: str = "amd64-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-amd64"), work_dir)
         ovmf_code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
         ovmf_vars_src = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
         # Writable VARS pflash must be qcow2 for QMP savevm (raw is rejected).
@@ -1287,7 +1327,7 @@ class Amd64UefiConfig(Amd64Config):
         return [
             *machine,
             "-m",
-            "6G" if "mem" in hazards else self.memory,
+            "6G" if "mem" in hazards else livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
@@ -1405,6 +1445,12 @@ def _unique_launch_port(picker: Callable[[], int]) -> int:
             _selected_launch_ports.add(port)
             return port
     raise RuntimeError("port allocator repeatedly returned a port already assigned to this QEMU")
+
+
+# QEMU trace events behind `--ahci`'s interrupt check (smoke._ahci_irq_check): a command
+# the device finished, and the controller's INTx going up and (the guest's ISR having
+# cleared PxIS/IS) back down.
+AHCI_TRACE_EVENTS = ("ahci_cmd_done", "ahci_irq_raise", "ahci_irq_lower")
 
 
 TEMP_DISK_MB = 64
@@ -2183,6 +2229,8 @@ class QemuVM:
         _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
+        if not self.config.temp_disk:
+            return []
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
@@ -2270,6 +2318,58 @@ class QemuVM:
             f"file={disk},format=qcow2,if=none,id=viommio0",
             "-device",
             "virtio-blk-device,drive=viommio0",
+        ]
+
+    def _ahci_args(self) -> list[str]:
+        """VIBEOS_AHCI_CD=1 on arm64 (`smoke --ahci`): an ich9-ahci controller with the
+        USB stick's 64M MBR + FAT16 image on port 0 and an empty CD drive on port 1. x86
+        moves its boot CD onto the controller instead (backend.rewrite_accel); arm64
+        boots a ramdisk, so there is no CD to move and the controller gets its own
+        disks. Pinned to PCI slot 10 for the reason xHCI and NVMe are pinned to 8 and 9:
+        auto-assigned, it would take slot 2 from the boot disk saved in efivars.
+
+        On every arch it also turns on QEMU's own AHCI trace events (to the QEMU stderr
+        log), from which smoke's `_ahci_irq_check` proves the guest driver ran on
+        interrupts: a driver that silently polled works just as well, only slower."""
+        if os.environ.get("VIBEOS_AHCI_CD", "").strip() != "1":
+            return []
+        trace = [a for ev in AHCI_TRACE_EVENTS for a in ("-trace", ev)]
+        if not self.config.arch.startswith("arm64"):
+            return trace
+        disk = self.scratch_path.parent / "ahcidisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "ich9-ahci,id=ahci0,addr=0xa",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=ahcihd",
+            "-device",
+            "ide-hd,bus=ahci0.0,drive=ahcihd",
+            "-device",
+            "ide-cd,bus=ahci0.1",
+            *trace,
+        ]
+
+    def _isa_ide_args(self) -> list[str]:
+        """VIBEOS_QEMU_ISA_IDE=1 on i386 (`smoke --isa-ide`): an ISA IDE controller on
+        the tertiary legacy channel (0x1E8/0x3EE, IRQ 11) holding the USB stick's 64M MBR +
+        FAT16 image. legide (i386, --ata-stack media) probes the four PC/AT channels, and
+        PIIX already owns the first two, so this is the only one it can find: without it,
+        its detection path never sees a device."""
+        flag = os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip()
+        if flag not in ("1", "true", "yes") or not self.config.arch.startswith("i386"):
+            return []
+        disk = self.scratch_path.parent / "isaidedisk.qcow2"
+        if not disk.exists():
+            make_usb_stick_image(disk)
+        return [
+            "-device",
+            "isa-ide,iobase=0x1e8,iobase2=0x3ee,irq=11,id=isaide",
+            "-drive",
+            f"file={disk},format=qcow2,if=none,id=isaidehd",
+            "-device",
+            "ide-hd,bus=isaide.0,drive=isaidehd",
         ]
 
     def _set_live_tee(self) -> None:
@@ -2430,6 +2530,24 @@ class QemuVM:
         print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
         return new_cmd
 
+    def _arm_pc_sampler(self) -> None:
+        """VIBEOS_QEMU_PC_SAMPLE=<secs>: sample every vCPU's PC for the whole boot
+        (`vibeos-cli stress --sample-pcs`). Off by default; see cli/pcsample.py."""
+        from .cli import pcsample
+
+        period = pcsample.env_period()
+        if period is None:
+            return
+        out = self.live_log_path.parent / pcsample.SAMPLES_FILE
+        prev = self.on_qmp_ready
+
+        def _ready(qmp):
+            if prev is not None:
+                prev(qmp)
+            pcsample.start(qmp, out, period)
+
+        self.on_qmp_ready = _ready
+
     def _arm_rr_sampler(self, mode: str, trace_dir, cmd: list[str]) -> list[str]:
         """`rr record --sample` / `rr diverge`: fingerprint the guest over a second QMP.
 
@@ -2498,6 +2616,8 @@ class QemuVM:
             *self._usb_disk_args(),
             *self._nvme_args(),
             *self._virtio_mmio_disk_args(),
+            *self._ahci_args(),
+            *self._isa_ide_args(),
             *self._temp_disk_args(),
         ]
         self._prepared_arch_args = (
@@ -2661,6 +2781,8 @@ class QemuVM:
                     cmd = self._build_native_cmd()
                 cmd = self._apply_record_replay(cmd)
                 cmd = apply_stress_knobs(cmd, self.config.arch)
+                if attempt == 0:
+                    self._arm_pc_sampler()
             finally:
                 _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")
@@ -3206,6 +3328,14 @@ class QemuVM:
         wide = len(fp_hex) > 8
         unit = "g" if wide else "w"
         lines = []
+        # `cpu N` is monitor state: no other thread's walk in between.
+        lock = getattr(self.qmp, "lock", None) or contextlib.nullcontext()
+        with lock:
+            return self._walk_frames_locked(cpu, fp_hex, limit, unit, lines)
+
+    def _walk_frames_locked(
+        self, cpu: int, fp_hex: str, limit: int, unit: str, lines: list[str]
+    ) -> str:
         try:
             self.qmp.hmp(f"cpu {cpu}")
         except Exception:

@@ -50,7 +50,6 @@ extern "system" {
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
 extern "C" {
-    fn WPP_INIT_TRACING( DriverObject: PDRIVER_OBJECT, RegistryPath: PUNICODE_STRING, );
     fn RtlStringCchPrintfW( pszDest: *mut u16, cchDest: usize, pszFormat: *const u16, ... ) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
@@ -770,7 +769,7 @@ pub unsafe extern "system" fn DriverEntry(
     let mut srbSupport: ULONG = 0;
     let mut status: NTSTATUS;
 
-    WPP_INIT_TRACING(DriverObject, RegistryPath);
+    ntkrnl_sys::WPP_INIT_TRACING!(DriverObject, RegistryPath);
 
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     DiskSaveDetectInfo(DriverObject);

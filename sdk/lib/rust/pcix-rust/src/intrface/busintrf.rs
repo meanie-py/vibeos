@@ -5,11 +5,16 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, PINTERFACE};
+use ntkrnl_sys::ddk::{BUS_INTERFACE_STANDARD, PBUS_INTERFACE_STANDARD, PINTERFACE, PDEVICE_DESCRIPTION,
+    PDMA_ADAPTER, PHYSICAL_ADDRESS, PPHYSICAL_ADDRESS, HalTranslateBusAddress, HalGetBusDataByOffset,
+    HalSetBusDataByOffset, IoGetDmaAdapter};
+use ntkrnl_sys::ddk::_INTERFACE_TYPE_PCIBus as PCIBus;
+use ntkrnl_sys::ddk::_BUS_DATA_TYPE_PCIConfiguration as PCIConfiguration;
 use ntkrnl_sys::ddk::PSTR;
 use ntkrnl_sys::driver_ddk::DbgPrint;
 use ntkrnl_sys::ke::DbgBreakPoint;
 use core::ffi::c_void;
+use ntkrnl_sys::interlocked::{InterlockedDecrement, InterlockedIncrement};
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -31,10 +36,97 @@ pub static mut BusHandlerInterface: PCI_INTERFACE = unsafe {
 pub const NDEBUG: bool = true;
 #[no_mangle]
 pub unsafe extern "system" fn busintrf_Initializer(Instance: PVOID) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER!(Instance);
     ASSERTMSG(b"PCI busintrf_Initializer, unexpected call.\n\0".as_ptr() as PSTR, 0u8);
     STATUS_UNSUCCESSFUL
 }
+// The PCI bus interface for a PDO (upstream 81f04b39ba4). Context is the PDO extension.
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_Reference(Context: PVOID) {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    InterlockedIncrement(&raw mut (*PdoExtension).BusInterfaceReferenceCount);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_Dereference(Context: PVOID) {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    InterlockedDecrement(&raw mut (*PdoExtension).BusInterfaceReferenceCount);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_TranslateBusAddress(
+    Context: PVOID,
+    BusAddress: PHYSICAL_ADDRESS,
+    Length: ULONG,
+    AddressSpace: PULONG,
+    TranslatedAddress: PPHYSICAL_ADDRESS,
+) -> BOOLEAN {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    let FdoExtension = (*PdoExtension).ParentFdoExtension;
+    let _ = Length;
+    HalTranslateBusAddress(
+        PCIBus,
+        (*FdoExtension).BaseBus as ULONG,
+        BusAddress,
+        AddressSpace,
+        TranslatedAddress,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_GetDmaAdapter(
+    Context: PVOID,
+    DeviceDescriptor: PDEVICE_DESCRIPTION,
+    NumberOfMapRegisters: PULONG,
+) -> PDMA_ADAPTER {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    let FdoExtension = (*PdoExtension).ParentFdoExtension;
+    if (*DeviceDescriptor).InterfaceType == PCIBus {
+        (*DeviceDescriptor).BusNumber = (*FdoExtension).BaseBus as ULONG;
+    }
+    IoGetDmaAdapter((*FdoExtension).PhysicalDeviceObject, DeviceDescriptor, NumberOfMapRegisters)
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_GetBusData(
+    Context: PVOID,
+    WhichSpace: ULONG,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+) -> ULONG {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    let _ = WhichSpace;
+    HalGetBusDataByOffset(
+        PCIConfiguration,
+        (*(*PdoExtension).ParentFdoExtension).BaseBus as ULONG,
+        (*PdoExtension).Slot.u.AsULONG,
+        Buffer,
+        Offset,
+        Length,
+    )
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciBusInterface_SetBusData(
+    Context: PVOID,
+    WhichSpace: ULONG,
+    Buffer: PVOID,
+    Offset: ULONG,
+    Length: ULONG,
+) -> ULONG {
+    let PdoExtension = Context as PPCI_PDO_EXTENSION;
+    let _ = WhichSpace;
+    HalSetBusDataByOffset(
+        PCIConfiguration,
+        (*(*PdoExtension).ParentFdoExtension).BaseBus as ULONG,
+        (*PdoExtension).Slot.u.AsULONG,
+        Buffer,
+        Offset,
+        Length,
+    )
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn busintrf_Constructor(
     DeviceExtension: *mut core::ffi::c_void,
@@ -44,21 +136,28 @@ pub unsafe extern "system" fn busintrf_Constructor(
     Size: u16,
     Interface: *mut core::ffi::c_void,
 ) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(DeviceExtension);
-    UNREFERENCED_PARAMETER(Instance);
-    UNREFERENCED_PARAMETER(InterfaceData);
-    UNREFERENCED_PARAMETER(Version as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Size as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Interface);
+    UNREFERENCED_PARAMETER!(Instance);
+    UNREFERENCED_PARAMETER!(InterfaceData);
+    UNREFERENCED_PARAMETER!(Version as *mut core::ffi::c_void);
+    PAGED_CODE!();
 
-    DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,
-        b"busintrf_Constructor\0".as_ptr() as *const core::ffi::c_char,
-        b"drivers/bus/pcix/intrface/busintrf.c\0"
-            .as_ptr() as *const core::ffi::c_char,
-        60i32,
-    );
-    DbgPrint(b"\0".as_ptr() as *const core::ffi::c_char);
-    DbgBreakPoint();
-    STATUS_NOT_IMPLEMENTED
+    if (Size as usize) < core::mem::size_of::<BUS_INTERFACE_STANDARD>() {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    let BusInterface = Interface as PBUS_INTERFACE_STANDARD;
+    let PdoExtension = DeviceExtension as PPCI_PDO_EXTENSION;
+
+    (*BusInterface).Size = core::mem::size_of::<BUS_INTERFACE_STANDARD>() as USHORT;
+    (*BusInterface).Version = 1;
+    (*BusInterface).Context = PdoExtension as PVOID;
+    (*BusInterface).InterfaceReference = Some(PciBusInterface_Reference);
+    (*BusInterface).InterfaceDereference = Some(PciBusInterface_Dereference);
+
+    (*BusInterface).TranslateBusAddress = Some(PciBusInterface_TranslateBusAddress);
+    (*BusInterface).GetDmaAdapter = Some(PciBusInterface_GetDmaAdapter);
+    (*BusInterface).SetBusData = Some(PciBusInterface_SetBusData);
+    (*BusInterface).GetBusData = Some(PciBusInterface_GetBusData);
+
+    STATUS_SUCCESS
 }

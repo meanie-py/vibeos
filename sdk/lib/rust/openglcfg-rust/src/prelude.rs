@@ -66,7 +66,6 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DB
 
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const IDD_PROPPAGEGENERAL: u32 = 100; // sysdm-rust/src/types_amd64.rs
-pub const MAX_KEY_LENGTH: u32 = 0x200; // fltmgr-rust/src/Filter.rs
 pub const PSCB_INITIALIZED: u32 = 1; // appwiz-rust/src/types_amd64.rs
 pub const PSH_PROPSHEETPAGE: u32 = 8; // appwiz-rust/src/types_amd64.rs
 pub const PSH_USECALLBACK: u32 = 256; // appwiz-rust/src/types_amd64.rs

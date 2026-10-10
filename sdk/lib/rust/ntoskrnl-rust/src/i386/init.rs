@@ -465,8 +465,8 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     old_irql = MiAcquirePfnLock();
     // DBG: after MiAcquirePfnLock
 
-    MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-    crate::ARM3::helpers::MI_SET_PROCESS2(b"Kernel\0".as_ptr() as PVOID);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
+    ntkrnl_sys::MI_SET_PROCESS2!(b"Kernel\0".as_ptr() as PVOID);
     page_frame_index = MiRemoveAnyPage(0);
     temp_pde.Long = ValidKernelPdeLocal.Long;
     temp_pde.set_page_frame_number(page_frame_index);
@@ -507,8 +507,8 @@ pub unsafe extern "system" fn MiInitMachineDependent(
     (*pfn1).set_share_count(0);
     (*pfn1).set_reference_count(0);
 
-    MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-    crate::ARM3::helpers::MI_SET_PROCESS2(b"Kernel WS List\0".as_ptr() as PVOID);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
+    ntkrnl_sys::MI_SET_PROCESS2!(b"Kernel WS List\0".as_ptr() as PVOID);
     page_frame_index = MiRemoveAnyPage(0);
     temp_pte.Long = ValidKernelPteLocal.Long;
     temp_pte.set_page_frame_number(page_frame_index);

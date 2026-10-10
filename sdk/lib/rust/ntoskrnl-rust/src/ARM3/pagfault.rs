@@ -667,18 +667,18 @@ unsafe fn MiResolveDemandZeroFault(
     #[cfg(feature = "MI_TRACE_PFNS")]
     {
         if UserPdeFault != 0 {
-            MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_TABLE);
         }
         if UserPdeFault == 0 {
-            MI_SET_USAGE(MI_USAGE_DEMAND_ZERO);
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_DEMAND_ZERO);
         }
     }
     if Process == HYDRA_PROCESS {
-        super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+        ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
     } else if !Process.is_null() {
-        super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+        ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
     } else {
-        super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+        ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
     }
 
     if Color != 0xFFFFFFFF {
@@ -881,8 +881,8 @@ unsafe fn MiResolvePageFileFault(
     ASSERT!(CurrentProcess > HYDRA_PROCESS);
     ASSERT!(*OldIrql != MM_NOIRQL);
 
-    MI_SET_USAGE(MI_USAGE_PAGE_FILE);
-    MI_SET_PROCESS(CurrentProcess as *mut c_void);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGE_FILE);
+    ntkrnl_sys::MI_SET_PROCESS!(CurrentProcess as *mut c_void);
 
     MI_ASSERT_PFN_LOCK_HELD();
 
@@ -1147,8 +1147,8 @@ unsafe fn MiResolveProtoPteFault(
         ASSERT!((TempPte.valid() as usize) == 1);
         ProtoPageFrameIndex = PFN_FROM_PTE(&mut TempPte as PMMPTE);
 
-        MI_SET_USAGE(MI_USAGE_COW);
-        MI_SET_PROCESS(Process as *mut c_void);
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_COW);
+        ntkrnl_sys::MI_SET_PROCESS!(Process as *mut c_void);
 
         let Color: ULONG;
         if Process > HYDRA_PROCESS {
@@ -2325,8 +2325,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
                 ASSERT!(MmAvailablePages > 0);
 
-                MI_SET_USAGE(MI_USAGE_COW);
-                MI_SET_PROCESS(CurrentProcess as *mut c_void);
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_COW);
+                ntkrnl_sys::MI_SET_PROCESS!(CurrentProcess as *mut c_void);
 
                 PageFrameIndex = MiRemoveAnyPage(MI_GET_NEXT_PROCESS_COLOR(CurrentProcess as *mut _EPROCESS as *mut c_void));
                 if PageFrameIndex == 0 {
@@ -2468,8 +2468,8 @@ pub unsafe extern "system" fn MmArmAccessFault(
 
             OldIrql = MiAcquirePfnLock();
 
-            MI_SET_USAGE(MI_USAGE_PEB_TEB);
-            super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PEB_TEB);
+            ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
             Color = MI_GET_NEXT_PROCESS_COLOR(CurrentProcess as *mut _EPROCESS as *mut c_void);
             PageFrameIndex = (MiRemoveZeroPageSafe(Color)) as usize;
             if PageFrameIndex == 0 {

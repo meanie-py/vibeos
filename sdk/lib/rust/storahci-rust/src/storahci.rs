@@ -30,7 +30,6 @@ extern "C" {
 
 
 const MAXIMUM_AHCI_PRDT_ENTRIES: ULONG = 0x20;
-const MAXIMUM_TRANSFER_LENGTH: ULONG = 0x400000;
 
 
 #[no_mangle]
@@ -1906,11 +1905,6 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
     const AHCI_DEVICE_TYPE_ATAPI: UCHAR = 2;
     const SCSIOP_READ: UCHAR = 0x28;
     const SCSIOP_WRITE: UCHAR = 0x2A;
-    const ATA_FUNCTION_ATA_READ: ULONG = 0x20;
-    const ATA_FLAGS_USE_DMA: ULONG = 1 << 1;
-    const ATA_FLAGS_DATA_IN: ULONG = 1 << 2;
-    const ATA_FLAGS_DATA_OUT: ULONG = 1 << 3;
-    const ATA_FLAGS_48BIT_COMMAND: ULONG = 1 << 4;
     const IDE_COMMAND_READ_DMA: UCHAR = 0xC8;
     const IDE_COMMAND_WRITE_DMA: UCHAR = 0xCA;
     const IDE_COMMAND_READ_DMA_EXT: UCHAR = 0x25;
@@ -2095,7 +2089,7 @@ pub unsafe extern "C" fn DeviceReportLuns(
 
     AhciDebugPrint!(b"DeviceReportLuns()\n\0".as_ptr() as *const i8);
 
-    UNREFERENCED_PARAMETER(Cdb as usize);
+    UNREFERENCED_PARAMETER!(Cdb as usize);
 
     PortExtension = core::ptr::addr_of_mut!(
         (*(*AdapterExtension).PortExtension.as_mut_ptr().offset((*Srb).PathId as isize))
@@ -2132,9 +2126,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
     const SCSIOP_INQUIRY: u32 = 0x12;
     const AHCI_DEVICE_TYPE_ATAPI: UCHAR = 2;
     const SRB_STATUS_SELECTION_TIMEOUT: UCHAR = 0x0A;
-    const ATA_FUNCTION_ATA_IDENTIFY: u32 = 0x200;
     const ATA_FLAGS_DATA_IN: u32 = 1 << 1;
-    const IDE_COMMAND_NOT_VALID: UCHAR = 0;
     const SRB_STATUS_PENDING: UCHAR = 0x00;
     const SRB_STATUS_INVALID_REQUEST: UCHAR = 0x06;
     const SRB_STATUS_SUCCESS: UCHAR = 0x01;

@@ -274,6 +274,7 @@ pub unsafe extern "C" fn AtaPortIdentifyDevice(
     }
 
     if AtaDevIsIdentifyDataValid(IdentifyData) == 0 {
+        ERR!(b"Identify data CRC error\n\0".as_ptr() as *const i8);
         return DEV_STATUS_FAILED;
     }
 

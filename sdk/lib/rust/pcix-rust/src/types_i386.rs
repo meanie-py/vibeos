@@ -2518,6 +2518,7 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static mut PciRunningDatacenter: BOOLEAN;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut InitSafeBootMode: BOOLEAN;
 }

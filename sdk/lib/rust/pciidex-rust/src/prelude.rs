@@ -385,11 +385,8 @@ pub const ATA_MAX_TRANSFER_LENGTH: u32 = 131072; // atapi-rust/src/types_amd64.r
 pub const ATA_SCONTROL: _SATA_SCR_REGISTER = _SATA_SCR_REGISTER_ATA_SCONTROL; // island enum
 pub const ATA_SERROR: _SATA_SCR_REGISTER = _SATA_SCR_REGISTER_ATA_SERROR; // island enum
 pub const ATA_SSTATUS: _SATA_SCR_REGISTER = _SATA_SCR_REGISTER_ATA_SSTATUS; // island enum
-pub const ATA_TIME_BUSY_POLL: ULONG = 500000; // freeldr-rust/src/hwide.rs
-pub const ATA_TIME_BUSY_RESET: u32 = 1000000; // legide-rust/src/legide/legide.rs
 pub const ATA_TIME_DRQ_ASSERT: ULONG = 15; // freeldr-rust/src/hwide.rs
 pub const ATA_TIME_DRQ_CLEAR: u32 = 1000; // legide-rust/src/legide/legide.rs
-pub const ATA_TIME_RESET_SELECT: u32 = 200000; // legide-rust/src/legide/legide.rs
 pub const AtaAsyncNotificationDetected: _PORT_NOTIFICATION_TYPE = _PORT_NOTIFICATION_TYPE_AtaAsyncNotificationDetected; // island enum
 pub const AtaBusChangeDetected: _PORT_NOTIFICATION_TYPE = _PORT_NOTIFICATION_TYPE_AtaBusChangeDetected; // island enum
 pub const AtaRequestComplete: _PORT_NOTIFICATION_TYPE = _PORT_NOTIFICATION_TYPE_AtaRequestComplete; // island enum
@@ -587,7 +584,10 @@ extern "system" {
     pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
 }
 // ==== end port resolve ====
-pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
+// ntkrnl-sys's ASSERT, not win32macros': DBG=1 here, so the C's ASSERT calls RtlAssert, which
+// prints and continues. win32macros' is the release-build no-op.
+pub use ntkrnl_sys::ASSERT;
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
 pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
@@ -1409,7 +1409,6 @@ pub use ntkrnl_sys::inline::mm::ExAllocatePoolZero;
 pub use ntkrnl_sys::ex::ExFreePoolWithTag;
 pub use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
 pub use ntkrnl_sys::inline::common::HalGetInterruptTranslator;
-pub use ntkrnl_sys::inline::common::InitSafeBootModeValue;
 pub use ntkrnl_sys::inline::common::InitializeListHead;
 pub use ntkrnl_sys::inline::common::InsertTailList;
 pub use ntkrnl_sys::ddk::IoAcquireRemoveLockEx;

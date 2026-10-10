@@ -18,8 +18,6 @@ use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
 use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA, _TRACK_MODE_TYPE_XAForm2 as XAForm2, _TRACK_MODE_TYPE_YellowMode2 as YellowMode2};
 
 extern "C" {
-}
-extern "C" {
     fn NT_ASSERT(condition: i32);
 }
 extern "C" {
@@ -59,7 +57,6 @@ extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value
     // these mimic the MSVC __try/__except/__end
     fn _SEH2_TRY();
 }
@@ -127,16 +124,13 @@ extern "system" {
     fn PsGetCurrentThread() -> *mut core::ffi::c_void;
 }
 extern "C" {
-    fn AssertVerifyDeviceIrp(Irp: PIRP);
 }
 extern "C" {
     fn CdFreeIoContext(IoContext: *mut CD_IO_CONTEXT);
 }
 extern "C" {
-    fn _Analysis_assume_(condition: bool);
 }
 extern "C" {
-    fn _Analysis_assume_lock_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMapUserBuffer(irp_context: *mut IRP_CONTEXT, user_buffer: *mut *mut core::ffi::c_void);
@@ -399,7 +393,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
         },
         |_, _| {
             if (*p_CleanupRunCount) != 0 {
-                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), (*p_CleanupRunCount), 1, 0);
+                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), *p_CleanupRunCount , 1, 0);
             }
         },
     );
@@ -633,7 +627,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
         },
         |_, _| {
             if (*p_cleanup_run_count) != 0 {
-                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), (*p_cleanup_run_count), 1, 0);
+                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), *p_cleanup_run_count , 1, 0);
             }
         },
     );
@@ -752,8 +746,8 @@ pub unsafe extern "C" fn CdCreateUserMdl(
 
     // PAGED_CODE(); // omitted – Rust cannot convey pageability
 
-    UNREFERENCED_PARAMETER(Operation as usize);
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER!(Operation as usize);
+    UNREFERENCED_PARAMETER!(IrpContext as usize);
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP((*IrpContext).Irp);
@@ -1949,7 +1943,7 @@ pub unsafe extern "system" fn CdMultiSyncCompletionRoutine(
         let IoContext = Context as *mut CD_IO_CONTEXT;
         // _Analysis_assume_(Context != NULL) -- intentional no-op
 
-        AssertVerifyDeviceIrp(Irp);
+        AssertVerifyDeviceIrp!(Irp);
 
         if !NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             // InterlockedExchange( &IoContext->Status, Irp->IoStatus.Status )
@@ -1982,7 +1976,7 @@ pub unsafe extern "system" fn CdMultiAsyncCompletionRoutine(
     let IoContext = Context as *mut CD_IO_CONTEXT;
     // _Analysis_assume_(Context != NULL); (annotation, omitted)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     // UNREFERENCED_PARAMETER( DeviceObject ); handled by prefix _DeviceObject
 
@@ -2026,7 +2020,7 @@ pub unsafe extern "system" fn CdSingleSyncCompletionRoutine(
     ntkrnl_sys::ASSERT!(!Context.is_null());
     let _ = DeviceObject;
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     if (*Irp).IoStatus.__bindgen_anon_1.Status < 0 {
         (*Irp).IoStatus.Information = 0;
@@ -2055,7 +2049,7 @@ pub unsafe extern "system" fn CdSingleAsyncCompletionRoutine(
 
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
-    AssertVerifyDeviceIrp(Irp);
+    AssertVerifyDeviceIrp!(Irp);
 
     (*Irp).IoStatus.Information = 0;
 

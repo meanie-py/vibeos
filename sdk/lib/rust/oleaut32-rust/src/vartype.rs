@@ -2,7 +2,7 @@ use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn _wcsnicmp(s1: *const u16, s2: *const u16, n: u32) -> i32;
+    fn _wcsnicmp(s1: *const u16, s2: *const u16, n: usize) -> i32;
     fn wcstoul(s: *const u16, endptr: *mut *mut u16, base: i32) -> u32;
     fn iswdigit(wc: u32) -> i32;
     fn iswalpha(wc: u32) -> i32;
@@ -4802,7 +4802,7 @@ pub unsafe extern "system" fn VarDateFromStr(
             let mut bFound = false;
             for i in 0..TOKEN_COUNT {
                 let dwLen = lstrlenW(tokens[i]) as u32;
-                if dwLen > 0 && _wcsnicmp(strIn, tokens[i], dwLen) == 0 {
+                if dwLen > 0 && _wcsnicmp(strIn, tokens[i], dwLen as usize) == 0 {
                     if i <= 25 {
                         if dp.dwCount >= 6 {
                             hRet = DISP_E_TYPEMISMATCH; // DISP_E_TYPEMISMATCH

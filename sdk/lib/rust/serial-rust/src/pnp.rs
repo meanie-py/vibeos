@@ -272,8 +272,6 @@ pub unsafe extern "system" fn SerialPnpStartDevice(
     const CmResourceTypePort: ::core::ffi::c_int = 1;
     const CmResourceTypeInterrupt: ::core::ffi::c_int = 2;
     const CM_RESOURCE_INTERRUPT_LATCHED: ::core::ffi::c_int = 1;
-    const SR_FCR_CLEAR_RCVR: ::core::ffi::c_int = 0x02;
-    const SR_FCR_CLEAR_XMIT: ::core::ffi::c_int = 0x04;
     const SR_IER_DATA_RECEIVED: ::core::ffi::c_int = 0x01;
     const SR_IER_THR_EMPTY: ::core::ffi::c_int = 0x02;
     const SR_IER_LSR_CHANGE: ::core::ffi::c_int = 0x04;

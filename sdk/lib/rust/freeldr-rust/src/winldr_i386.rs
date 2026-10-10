@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // winldr.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{LARGE_INTEGER, PLOADER_PARAMETER_BLOCK};
@@ -45,11 +47,9 @@ static mut TssBasePage: ULONG = 0;
 static mut GdtIdt: PVOID = core::ptr::null_mut();
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn __cpuid(info: *mut i32, function: i32);
     fn MachVideoGetFontsFromFirmware(fonts: *mut u32);
     fn MachGetExtendedBIOSData(area: *mut u32, size: *mut u32);
-    fn WARN(fmt: *const i8, ...);
     fn MmAllocateMemoryWithType(size: usize, memory_type: u32) -> *mut core::ffi::c_void;
     fn MmSetMemoryType(BaseAddress: *mut core::ffi::c_void, Size: SIZE_T, MemoryType: u32);
     fn MmGetTotalPagesInLookupTable() -> PFN_NUMBER;
@@ -60,9 +60,7 @@ extern "C" {
 unsafe fn DumpGDTEntry(Base: ULONG_PTR, Selector: ULONG) {
     let pGdt = (Base + Selector as ULONG_PTR) as PKGDTENTRY;
 
-    TRACE(
-        b"\nSelector 0x%04x\n===============\nLimitLow               = 0x%04x\nBaseLow                = 0x%04x\nHighWord.Bytes.BaseMid = 0x%02x\nHighWord.Bytes.Flags1  = 0x%02x\nHighWord.Bytes.Flags2  = 0x%02x\nHighWord.Bytes.BaseHi  = 0x%02x\n\n\0".as_ptr() as PCHAR, (Selector) as usize, ((*pGdt).LimitLow) as usize, ((*pGdt).BaseLow) as usize, ((*pGdt).HighWord.Bytes.BaseMid) as usize, ((*pGdt).HighWord.Bytes.Flags1) as usize, ((*pGdt).HighWord.Bytes.Flags2) as usize, ((*pGdt).HighWord.Bytes.BaseHi) as usize,
-    );
+    TRACE!("\nSelector 0x%04x\n===============\nLimitLow               = 0x%04x\nBaseLow                = 0x%04x\nHighWord.Bytes.BaseMid = 0x%02x\nHighWord.Bytes.Flags1  = 0x%02x\nHighWord.Bytes.Flags2  = 0x%02x\nHighWord.Bytes.BaseHi  = 0x%02x\n\n", (Selector) as usize, ((*pGdt).LimitLow) as usize, ((*pGdt).BaseLow) as usize, ((*pGdt).HighWord.Bytes.BaseMid) as usize, ((*pGdt).HighWord.Bytes.Flags1) as usize, ((*pGdt).HighWord.Bytes.Flags2) as usize, ((*pGdt).HighWord.Bytes.BaseHi) as usize);
 }
 
 unsafe fn MempAllocatePageTables() -> u8 {
@@ -72,7 +70,7 @@ unsafe fn MempAllocatePageTables() -> u8 {
 
     NumPageTables = ((MmGetTotalPagesInLookupTable() >> 10) as u32);
 
-    TRACE(b"NumPageTables = %d\n\0".as_ptr() as *const i8, (NumPageTables) as usize);
+    TRACE!("NumPageTables = %d\n", (NumPageTables) as usize);
 
     TotalSize = (1 + 1 + NumPageTables * 2) * ((MM_PAGE_SIZE) as u32);
 
@@ -86,7 +84,7 @@ unsafe fn MempAllocatePageTables() -> u8 {
     );
 
     if Buffer.add((TotalSize - NumPageTables * ((MM_PAGE_SIZE) as u32)) as usize) != PhysicalPageTablesBuffer {
-        TRACE(b"There was a problem allocating two adjacent blocks of memory!\n\0".as_ptr() as *const i8);
+        TRACE!("There was a problem allocating two adjacent blocks of memory!\n");
     }
 
     if Buffer.is_null() || PhysicalPageTablesBuffer.is_null() {
@@ -146,13 +144,11 @@ pub unsafe extern "C" fn MempSetupPaging(
     let mut Entry: PFN_COUNT;
     let mut Page: PFN_COUNT;
 
-    TRACE(
-        b"MempSetupPaging: SP 0x%X, Number: 0x%X, Kernel: %s\n\0".as_ptr() as *const i8, (StartPage) as usize, (NumberOfPages) as usize, (if KernelMapping != 0 {
+    TRACE!("MempSetupPaging: SP 0x%X, Number: 0x%X, Kernel: %s\n", (StartPage) as usize, (NumberOfPages) as usize, (if KernelMapping != 0 {
             b"yes\0".as_ptr()
         } else {
             b"no\0".as_ptr()
-        }) as usize,
-    );
+        }) as usize);
 
     if StartPage.wrapping_add(((NumberOfPages) as usize)) >= 0x80000 {
         return 1u8;
@@ -175,7 +171,7 @@ pub unsafe extern "C" fn MempSetupPaging(
 
         if KernelMapping != 0 {
             if (*KernelPT.add((Page & 0x3ff) as usize)).Valid() != 0 {
-                WARN(b"KernelPT already mapped\n\0".as_ptr() as *const i8);
+                WARN!("KernelPT already mapped\n");
             }
             (*KernelPT.add((Page & 0x3ff) as usize)).set_PageFrameNumber(Page as ULONG);
             (*KernelPT.add((Page & 0x3ff) as usize)).set_Valid(if Page != 0 { 1 } else { 0 } as ULONG);
@@ -223,7 +219,7 @@ unsafe fn WinLdrpMapApic() {
     MsrValue.QuadPart = __readmsr(0x1B) as i64;
     APICAddress = MsrValue.u.LowPart & 0xFFFFF000;
 
-    TRACE(b"Local APIC detected at address 0x%x\n\0".as_ptr() as *const i8, (APICAddress) as usize);
+    TRACE!("Local APIC detected at address 0x%x\n", (APICAddress) as usize);
 
     let index = ((APIC_BASE - 0xFFC00000) >> MM_PAGE_SHIFT as usize) as usize;
     (*HalPageTable.add(index)).set_PageFrameNumber((APICAddress >> MM_PAGE_SHIFT) as ULONG);
@@ -235,7 +231,7 @@ unsafe fn WinLdrpMapApic() {
 
 unsafe fn WinLdrMapSpecialPages() -> BOOLEAN {
 
-    TRACE(b"HalPageTable: 0x%X\n\0".as_ptr() as *const i8, (HalPageTable) as usize);
+    TRACE!("HalPageTable: 0x%X\n", (HalPageTable) as usize);
 
     (*HalPageTable.offset(((KI_USER_SHARED_DATA as ULONG).wrapping_sub(0xFFC00000) >> MM_PAGE_SHIFT) as isize)).set_PageFrameNumber(PcrBasePage.wrapping_add(1) as ULONG);
     (*HalPageTable.offset(((KI_USER_SHARED_DATA as ULONG).wrapping_sub(0xFFC00000) >> MM_PAGE_SHIFT) as isize)).set_Valid(1 as ULONG);
@@ -257,9 +253,9 @@ unsafe fn WinLdrSetupSpecialDataPointers() {
     MachGetExtendedBIOSData(ExtendedBIOSDataArea, ExtendedBIOSDataSize);
 
     if *ExtendedBIOSDataArea == 0 && *ExtendedBIOSDataSize == 0 {
-        WARN(b"Couldn't get address of extended BIOS data area\n\0".as_ptr() as *const i8);
+        WARN!("Couldn't get address of extended BIOS data area\n");
     } else {
-        TRACE(b"*ExtendedBIOSDataArea = 0x%lx\n\0".as_ptr() as *const i8, (*ExtendedBIOSDataArea) as usize);
+        TRACE!("*ExtendedBIOSDataArea = 0x%lx\n", (*ExtendedBIOSDataArea) as usize);
     }
 }
 
@@ -315,19 +311,19 @@ unsafe fn MempDump() {
     let mut i: i32;
     let mut j: i32;
 
-    TRACE(b"\nPDE\n\0".as_ptr() as *const i8);
+    TRACE!("\nPDE\n");
 
     i = 0;
     while i < 128 {
-        TRACE(b"0x%04X | \0".as_ptr() as *const i8, (i * 8) as usize);
+        TRACE!("0x%04X | ", (i * 8) as usize);
 
         j = 0;
         while j < 8 {
-            TRACE(b"0x%08X \0".as_ptr() as *const i8, (*PDE_Addr.offset((i * 8 + j) as isize)) as usize);
+            TRACE!("0x%08X ", (*PDE_Addr.offset((i * 8 + j) as isize)) as usize);
             j += 1;
         }
 
-        TRACE(b"\n\0".as_ptr() as *const i8);
+        TRACE!("\n");
         i += 1;
     }
 }
@@ -535,12 +531,7 @@ pub unsafe extern "C" fn WinLdrSetProcessorContext(OperatingSystemVersion: u16) 
     let Pcr: u32 = KIP0PCRADDRESS as u32;
     let Tss: u32 = (KSEG0_BASE as u32) | (TssBasePage << MM_PAGE_SHIFT);
 
-    TRACE(
-        b"GdtIdt %p, Pcr %p, Tss 0x%08x\n\0".as_ptr() as *const i8,
-        GdtIdt as usize,
-        Pcr as usize,
-        Tss as usize,
-    );
+    TRACE!("GdtIdt %p, Pcr %p, Tss 0x%08x\n", GdtIdt as usize, Pcr as usize, Tss as usize);
 
     /* Disable Interrupts */
     __i386_disable();

@@ -51,7 +51,7 @@ unsafe fn send_complete_impl(
     let mut BytesCopied: UINT;
     let mut HaltSendQueue: BOOLEAN;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(
         MID_TRACE,
@@ -283,7 +283,7 @@ unsafe fn packet_socket_send_complete_impl(
     let mut NextIrp: PIRP;
     let mut SendReq: PAFD_SEND_INFO;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(
         MID_TRACE,
@@ -357,8 +357,8 @@ pub unsafe extern "system" fn AfdConnectedSocketWriteData(
     let mut SendLength: u32;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
-    UNREFERENCED_PARAMETER(&Short as *const u8 as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(&Short as *const u8 as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
@@ -609,7 +609,7 @@ pub unsafe extern "system" fn AfdPacketSocketWriteData(
     let SendReq: PAFD_SEND_INFO_UDP;
     let mut LockMode: KPROCESSOR_MODE = 0;
 
-    UNREFERENCED_PARAMETER(DeviceObject as PVOID);
+    UNREFERENCED_PARAMETER!(DeviceObject as PVOID);
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 

@@ -940,6 +940,8 @@ pub unsafe extern "system" fn ExpInitializeExecutive(
         );
     }
 
+    crate::sysinfo::ExpBootViaEfi = (*(*LoaderBlock).Extension).BootViaEFI() != 0;
+
     ExInitPoolLookasidePointers();
 
     if Cpu != 0 {

@@ -450,7 +450,7 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     let mut NewStack: ULONG_PTR;
     let mut StackBegin: ULONG_PTR;
     let mut StackEnd: ULONG_PTR = 0;
-    let mut Eip: ULONG;
+    let mut Eip: ULONG_PTR; // the return address, pointer-wide (a ULONG truncated it on 64-bit)
     let Result: BOOLEAN;
     let mut StopSearch: BOOLEAN = 0u8;
     let mut i: ULONG = 0;
@@ -477,16 +477,12 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
         }
     }
 
+    // The walk below reads [frame] = caller's frame, [frame + ptr] = return address: the
+    // x86 EBP chain, and on AArch64 exactly the x29 frame record (fp, lr). It must start at
+    // x29 -- starting at sp read locals as frame records and returned 0 frames (RtlStack UM).
     #[cfg(target_arch = "aarch64")]
     {
-        #[cfg(target_env = "gnu")]
-        {
-            core::arch::asm!("mov {}, sp", out(reg) Stack);
-        }
-        #[cfg(not(target_env = "gnu"))]
-        {
-            Stack = core::ptr::addr_of!(Stack) as ULONG_PTR;
-        }
+        core::arch::asm!("mov {}, x29", out(reg) Stack);
     }
 
     StackBegin = Stack;
@@ -513,7 +509,7 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
             }
 
             NewStack = *(Stack as PULONG_PTR);
-            Eip = *((Stack + core::mem::size_of::<ULONG_PTR>() as ULONG_PTR) as PULONG_PTR) as ULONG;
+            Eip = *((Stack + core::mem::size_of::<ULONG_PTR>() as ULONG_PTR) as PULONG_PTR);
 
             if !((Stack < NewStack) && (NewStack < StackEnd)) {
                 StopSearch = 1u8;

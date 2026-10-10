@@ -313,10 +313,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument(
         "--ahci",
         action="store_true",
-        help="x86 only: put the boot CD on an ich9-ahci controller instead of IDE, "
-        "so an AHCI driver carries the whole boot: uniata's, or pciidex's on "
-        "--ata-stack media. The boot FAILS (AHCI_NOT_ENGAGED) unless uniata reports "
-        "finding the controller or pciide starts it with the CD enumerated under it",
+        help="an ich9-ahci controller: x86 moves the boot CD onto it, so an AHCI driver "
+        "carries the whole boot; arm64 gets it with a disk and an empty CD drive. The "
+        "driver is uniata's, or pciidex's on --ata-stack media. The boot FAILS "
+        "(AHCI_NOT_ENGAGED) unless uniata reports finding the controller or pciide starts "
+        "it with a CdRom enumerated under it, and (AHCI_POLLING / AHCI_IRQ_STUCK) unless "
+        "QEMU's own trace shows the driver's commands completing by interrupt",
+    )
+    s.add_argument(
+        "--isa-ide",
+        action="store_true",
+        help="i386 only: an ISA IDE controller on the tertiary legacy channel "
+        "(0x1E8/0x3EE, IRQ 11) with a disk, for legide on --ata-stack media. The boot "
+        "FAILS (LEGIDE_NOT_ENGAGED) unless legide reports the channel and atapi "
+        "enumerates the disk on it",
     )
     s.add_argument(
         "--gic",
@@ -591,9 +601,9 @@ def build_parser() -> argparse.ArgumentParser:
     f.add_argument(
         "--ahci",
         action="store_true",
-        help="soak with the boot CD on ich9-ahci (x86 only), same knob as "
-        "`smoke --ahci`; every boot must show uniata (or pciidex, on --ata-stack "
-        "media) driving AHCI",
+        help="soak with an ich9-ahci controller, same knob as `smoke --ahci`; every "
+        "boot must show uniata (or pciidex, on --ata-stack media) driving AHCI, on "
+        "interrupts",
     )
     f.add_argument(
         "--polite",
@@ -642,6 +652,13 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help=f"tight-clock: multiply the harness boot/silence budgets (default "
         f"{stress_mod.DEFAULT_TIMEOUT_SCALE})",
+    )
+    stp.add_argument(
+        "--sample-pcs",
+        type=float,
+        metavar="SECS",
+        help="sample every vCPU's PC (+ halted flag, 3 callers) every SECS through each boot "
+        "and print where non-halted vCPUs were found; a slow-boot profiler, not a cycle count",
     )
     stp.add_argument("--allow-stale", action="store_true")
     stp.set_defaults(fn=stress_mod.stress)

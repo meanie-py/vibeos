@@ -29,6 +29,7 @@ pub unsafe extern "C" fn AtiGetControllerProperties(
     let mut i: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_ATI);
 
     if (*Controller).Pci.DeviceID != (PCI_DEV_IXP200_IDE as u16)
         && (*Controller).Pci.DeviceID != (PCI_DEV_IXP300_IDE as u16)

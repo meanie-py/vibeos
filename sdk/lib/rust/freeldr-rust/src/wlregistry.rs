@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // wlregistry.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, BOOT_DRIVER_NODE, CmpAllocate, CmpFindDrivers, CmpFree, CmpFreeDriverList, CmpResolveDriverDependencies, CmpSortDriverList, FILEINFORMATION, PBOOT_DRIVER_LIST_ENTRY, PBOOT_DRIVER_NODE, PCSTR, PCUNICODE_STRING, PHBASE_BLOCK, PLOADER_PARAMETER_BLOCK, PUNICODE_STRING, RtlAppendUnicodeStringToString, RtlAppendUnicodeToString, RtlCompareUnicodeString, RtlCreateUnicodeString, RtlFreeUnicodeString, RtlInitEmptyUnicodeString, RtlInitUnicodeString, _UNICODE_STRING};
@@ -59,10 +61,8 @@ extern "C" {
     fn NtLdrOutputLoadMsg(Path: PCSTR, Name: PCSTR);
     fn PaToVa(Pa: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn RtlStringCbCatA(Dest: *mut u8, DestSize: usize, Src: PCSTR) -> NTSTATUS;
-    fn WARN(fmt: *const i8, ...);
     static mut BootFileSystem: PCSTR;
     fn RtlStringCbPrintfA(pszDest: *mut i8, cbDest: usize, pszFormat: PCSTR, ...) -> i32;
-    fn TRACE(fmt: *const i8, ...);
     fn UiMessageBox(fmt: PCSTR, ...);
     fn VaToPa(Va: *mut core::ffi::c_void) -> *mut core::ffi::c_void;
     fn wcslen(s: PCWSTR) -> usize;
@@ -114,14 +114,14 @@ unsafe fn WinLdrLoadSystemHive(
     NtLdrOutputLoadMsg(FullHiveName.as_ptr() as PCSTR, core::ptr::null());
     Status = ArcOpen(FullHiveName.as_ptr() as PCSTR, OpenReadOnly, &mut FileId);
     if Status != ESUCCESS {
-        WARN(b"Error while opening '%s', Status: %u\n\0".as_ptr() as PCSTR, (FullHiveName.as_ptr()) as usize, (Status) as usize);
+        WARN!("Error while opening '%s', Status: %u\n", (FullHiveName.as_ptr()) as usize, (Status) as usize);
         *Reason = BAD_HIVE_REASON::NoHive;
         return 0u8;
     }
 
     Status = ArcGetFileInformation(FileId, &mut FileInfo);
     if Status != ESUCCESS {
-        WARN(b"Hive file has 0 size!\n\0".as_ptr() as PCSTR);
+        WARN!("Hive file has 0 size!\n");
         *Reason = BAD_HIVE_REASON::CorruptHive;
         ArcClose(FileId);
         return 0u8;
@@ -134,7 +134,7 @@ unsafe fn WinLdrLoadSystemHive(
     );
 
     if HiveDataPhysical.is_null() {
-        WARN(b"Could not alloc memory for hive!\n\0".as_ptr() as PCSTR);
+        WARN!("Could not alloc memory for hive!\n");
         *Reason = BAD_HIVE_REASON::NoHiveAlloc;
         ArcClose(FileId);
         return 0u8;
@@ -147,7 +147,7 @@ unsafe fn WinLdrLoadSystemHive(
 
     Status = ArcRead(FileId, HiveDataPhysical, HiveFileSize, &mut BytesRead);
     if Status != ESUCCESS {
-        WARN(b"Error while reading '%s', Status: %u\n\0".as_ptr() as PCSTR, (FullHiveName.as_ptr()) as usize, (Status) as usize);
+        WARN!("Error while reading '%s', Status: %u\n", (FullHiveName.as_ptr()) as usize, (Status) as usize);
         *Reason = BAD_HIVE_REASON::CorruptHive;
         ArcClose(FileId);
         return 0u8;
@@ -181,7 +181,7 @@ pub unsafe extern "C" fn WinLdrInitSystemHive(
         HiveName = b"SYSTEM\0".as_ptr() as PCSTR;
     }
 
-    TRACE(b"WinLdrInitSystemHive: loading hive %s%s\n\0".as_ptr() as *const i8 , (SearchPath.as_ptr()) as usize, (HiveName) as usize);
+    TRACE!("WinLdrInitSystemHive: loading hive %s%s\n", (SearchPath.as_ptr()) as usize, (HiveName) as usize);
     Success = WinLdrLoadSystemHive(LoaderBlock, SearchPath.as_ptr() as *const i8 , HiveName, &mut Reason);
     if Success == 0 {
         if Reason == BAD_HIVE_REASON::CorruptHive || Reason == BAD_HIVE_REASON::NoHive {
@@ -198,7 +198,7 @@ pub unsafe extern "C" fn WinLdrInitSystemHive(
                 return 0u8;
             }
 
-            WARN(b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8 );
+            WARN!("SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n");
             ChunkBase = VaToPa((*LoaderBlock).RegistryBase);
             (*(ChunkBase as PHBASE_BLOCK)).BootRecover = 0x2u32;
         } else {
@@ -221,7 +221,7 @@ pub unsafe extern "C" fn WinLdrInitSystemHive(
                 return 0u8;
             }
 
-            WARN(b"SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n\0".as_ptr() as *const i8 );
+            WARN!("SYSTEM hive does not exist or is corrupt and SYSTEM.ALT has been loaded!\n");
             ChunkBase = VaToPa((*LoaderBlock).RegistryBase);
             (*(ChunkBase as PHBASE_BLOCK)).BootRecover = 0x2u32;
         }
@@ -288,9 +288,7 @@ pub unsafe extern "C" fn WinLdrScanSystemHive(
         return 0u8;
     }
 
-    TRACE(
-        b"NLS data: '%wZ' '%wZ' '%wZ' '%wZ'\n\0".as_ptr() as PCSTR, (core::ptr::addr_of!(AnsiFileName)) as usize, (core::ptr::addr_of!(OemFileName)) as usize, (core::ptr::addr_of!(LangFileName)) as usize, (core::ptr::addr_of!(OemHalFileName)) as usize,
-    );
+    TRACE!("NLS data: '%wZ' '%wZ' '%wZ' '%wZ'\n", (core::ptr::addr_of!(AnsiFileName)) as usize, (core::ptr::addr_of!(OemFileName)) as usize, (core::ptr::addr_of!(LangFileName)) as usize, (core::ptr::addr_of!(OemHalFileName)) as usize);
 
     RtlStringCbCopyA(
         SearchPath.as_mut_ptr() as *mut i8 ,
@@ -310,13 +308,11 @@ pub unsafe extern "C" fn WinLdrScanSystemHive(
         core::ptr::addr_of_mut!(LangFileName),
         core::ptr::addr_of_mut!(OemHalFileName),
     );
-    TRACE(
-        b"NLS data loading %s\n\0".as_ptr() as PCSTR, (if Success != 0 {
+    TRACE!("NLS data loading %s\n", (if Success != 0 {
             b"successful\0".as_ptr() as PCSTR
         } else {
             b"failed\0".as_ptr() as PCSTR
-        }) as usize,
-    );
+        }) as usize);
 
     1u8
 }
@@ -446,9 +442,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
     );
     Status = ArcOpen(FileName.as_ptr(), OpenReadOnly, &mut AnsiFileId);
     if Status != ESUCCESS {
-        WARN(
-            b"Error while opening '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-        );
+        WARN!("Error while opening '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
         'Quit: {
             if LangFileId != u32::MAX {
                 ArcClose(LangFileId);
@@ -495,7 +489,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         }
     }
     AnsiFileSize = FileInfo.EndingAddress.__bindgen_anon_1.LowPart;
-    TRACE(b"AnsiFileSize: %d\n\0".as_ptr() as PCSTR, (AnsiFileSize) as usize);
+    TRACE!("AnsiFileSize: %d\n", (AnsiFileSize) as usize);
 
     if AnsiEqualsOem != 0 {
         OemFileSize = 0;
@@ -509,9 +503,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         );
         Status = ArcOpen(FileName.as_ptr(), OpenReadOnly, &mut OemFileId);
         if Status != ESUCCESS {
-            WARN(
-                b"Error while opening '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-            );
+            WARN!("Error while opening '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
             'Quit: {
                 if LangFileId != u32::MAX {
                     ArcClose(LangFileId);
@@ -559,7 +551,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         }
         OemFileSize = FileInfo.EndingAddress.__bindgen_anon_1.LowPart;
     }
-    TRACE(b"OemFileSize: %d\n\0".as_ptr() as PCSTR, (OemFileSize) as usize);
+    TRACE!("OemFileSize: %d\n", (OemFileSize) as usize);
 
     RtlStringCbPrintfA(
         FileName.as_mut_ptr(),
@@ -570,9 +562,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
     );
     Status = ArcOpen(FileName.as_ptr(), OpenReadOnly, &mut LangFileId);
     if Status != ESUCCESS {
-        WARN(
-            b"Error while opening '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-        );
+        WARN!("Error while opening '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
         'Quit: {
             if LangFileId != u32::MAX {
                 ArcClose(LangFileId);
@@ -619,7 +609,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         }
     }
     LangFileSize = FileInfo.EndingAddress.__bindgen_anon_1.LowPart;
-    TRACE(b"LangFileSize: %d\n\0".as_ptr() as PCSTR, (LangFileSize) as usize);
+    TRACE!("LangFileSize: %d\n", (LangFileSize) as usize);
 
     TotalSize = MM_SIZE_TO_PAGES(AnsiFileSize)
         + MM_SIZE_TO_PAGES(OemFileSize)
@@ -682,9 +672,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         &mut BytesRead,
     );
     if Status != ESUCCESS {
-        WARN(
-            b"Error while reading '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-        );
+        WARN!("Error while reading '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
         'Quit: {
             if LangFileId != u32::MAX {
                 ArcClose(LangFileId);
@@ -723,9 +711,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
             &mut BytesRead,
         );
         if Status != ESUCCESS {
-            WARN(
-                b"Error while reading '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-            );
+            WARN!("Error while reading '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
             'Quit: {
                 if LangFileId != u32::MAX {
                     ArcClose(LangFileId);
@@ -764,9 +750,7 @@ pub unsafe extern "C" fn WinLdrLoadNLSData(
         &mut BytesRead,
     );
     if Status != ESUCCESS {
-        WARN(
-            b"Error while reading '%s', Status: %u\n\0".as_ptr() as PCSTR, (FileName.as_ptr()) as usize, (Status) as usize,
-        );
+        WARN!("Error while reading '%s', Status: %u\n", (FileName.as_ptr()) as usize, (Status) as usize);
         'Quit: {
             if LangFileId != u32::MAX {
                 ArcClose(LangFileId);

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // pchw.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{CM_INT13_DRIVE_PARAMETER, CM_PARTIAL_RESOURCE_LIST, PCM_FLOPPY_DEVICE_DATA, PCM_INT13_DRIVE_PARAMETER, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCONFIGURATION_COMPONENT_DATA, PCSTR};
@@ -48,13 +50,11 @@ extern "C" {
     // hwdisk.c external freeldr global (UCHAR per pchw.c declaration).
     static PcBiosDiskCount: UCHAR;
     fn DiskResetController(DriveNumber: UCHAR) -> BOOLEAN;
-    fn ERR(fmt: *const i8, ...);
     fn FldrCreateComponentKey( Parent: PCONFIGURATION_COMPONENT_DATA, Class: u32, Type: u32, Flags: u32, Key: ULONG, Affinity: ULONG, Identifier: PCHAR, Data: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, ComponentKey: *mut PCONFIGURATION_COMPONENT_DATA, ) -> BOOLEAN;
     fn FrLdrHeapAlloc(MemorySize: usize, Tag: ULONG) -> PVOID;
     fn RtlStringCbPrintfA(pszDest: PCHAR, cbDest: usize, pszFormat: PCHAR, ...) -> LONG;
     #[link_name = "MachGetFloppyCount"]
     fn MachGetFloppyCount__c() -> UCHAR;
-    fn TRACE(fmt: *const i8, ...);
     fn FldrSetConfigurationData( ComponentKey: PCONFIGURATION_COMPONENT_DATA, ResourceList: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, );
     fn GetHarddiskIdentifier(DriveNumber: UCHAR) -> PCSTR;
     fn MachDiskGetDriveGeometry(DriveNumber: UCHAR, Geometry: *mut GEOMETRY) -> BOOLEAN;
@@ -239,9 +239,7 @@ unsafe fn DetectBiosFloppyPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DAT
             + core::mem::size_of::<_CM_FLOPPY_DEVICE_DATA>() as ULONG;
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
-            ERR(
-                b"Failed to allocate resource descriptor! Ignoring remaining floppy peripherals. (FloppyNumber = %u)\n\0".as_ptr() as PCHAR, (FloppyNumber) as usize,
-            );
+            ERR!("Failed to allocate resource descriptor! Ignoring remaining floppy peripherals. (FloppyNumber = %u)\n", (FloppyNumber) as usize);
             return;
         }
 
@@ -298,7 +296,7 @@ unsafe fn DetectBiosFloppyController(BusKey: PCONFIGURATION_COMPONENT_DATA) -> P
     let FloppyCount: ULONG;
 
     FloppyCount = MachGetFloppyCount();
-    TRACE(b"Floppy count: %u\n\0".as_ptr() as PCHAR, (FloppyCount) as usize);
+    TRACE!("Floppy count: %u\n", (FloppyCount) as usize);
 
     // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]).
     // rustconv emitted `sizeof(CM_PARTIAL_RESOURCE_LIST) + 2 * sizeof(PCM_PARTIAL_RESOURCE_DESCRIPTOR)`
@@ -309,7 +307,7 @@ unsafe fn DetectBiosFloppyController(BusKey: PCONFIGURATION_COMPONENT_DATA) -> P
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]);
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate resource descriptor\n");
         return core::ptr::null_mut();
     }
 
@@ -381,7 +379,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
 
     ControllerKey = DetectBiosFloppyController(BusKey);
     if ControllerKey.is_null() {
-        ERR(b"Failed to detect BIOS disk controller\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to detect BIOS disk controller\n");
         return;
     }
 
@@ -390,7 +388,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
     
     PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -416,9 +414,7 @@ pub unsafe extern "C" fn DetectBiosDisks(
             (*Int13Drives.offset(i as isize)).MaxHeads = (Geometry.Heads - 1) as USHORT;
             (*Int13Drives.offset(i as isize)).NumberDrives = (DiskCount) as u16 ;
 
-            TRACE(
-                b"Disk %x: %u Cylinders  %u Heads  %u Sectors  %u Bytes\n\0".as_ptr() as PCSTR, (DriveNumber) as usize, (Geometry.Cylinders - 1) as usize, (Geometry.Heads - 1) as usize, (Geometry.SectorsPerTrack) as usize, (Geometry.BytesPerSector) as usize,
-            );
+            TRACE!("Disk %x: %u Cylinders  %u Heads  %u Sectors  %u Bytes\n", (DriveNumber) as usize, (Geometry.Cylinders - 1) as usize, (Geometry.Heads - 1) as usize, (Geometry.SectorsPerTrack) as usize, (Geometry.BytesPerSector) as usize);
         }
         i += 1;
     }

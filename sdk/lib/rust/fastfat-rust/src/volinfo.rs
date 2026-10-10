@@ -38,7 +38,6 @@ extern "system" {
 }
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
-    fn UNREFERENCED_PARAMETER(_: *mut core::ffi::c_void);
     fn FlagOn(flags: u32, flag: u32) -> u32;
     fn SetFlag(attr: *mut u32, flag: u32);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
@@ -56,7 +55,6 @@ extern "system" {
     fn FsRtlIsAnsiCharacterLegalFat( ch: UCHAR, second: BOOLEAN, ) -> BOOLEAN;
     fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
     fn NT_ASSERT(expr: BOOLEAN);
-    fn _Analysis_assume_(condition: i32);
     fn ASSERT(condition: i32);
     fn FsRtlGetSectorSizeInformation( DeviceObject: *mut core::ffi::c_void, Buffer: *mut FatFileFsSectorSizeInformation, ) -> i32;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN; // fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -163,7 +161,7 @@ unsafe extern "system" fn FatQueryFsSizeInfo(
 
     *Length = (*Length).wrapping_sub(core::mem::size_of::<FILE_FS_SIZE_INFORMATION>() as u32);
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     STATUS_SUCCESS as i32
 }
@@ -628,7 +626,7 @@ pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
     let Status: i32;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     ASSERT((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)

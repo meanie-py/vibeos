@@ -17,6 +17,7 @@ use crate::setuplib::bootcode::ReadBootCodeByHandle;
 use crate::setuplib::bootcode::ReadBootCodeFromFile;
 use crate::setuplib::bldrsup::SetBootStoreOptions;
 use crate::setuplib::filesup::SetupCopyFile;
+use crate::setuplib::filesup::SetupCreateDirectory;
 use crate::setuplib::devutils::pOpenDeviceEx_UStr;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
 use crate::prelude::*;
@@ -1791,6 +1792,90 @@ unsafe extern "C" fn InstallVBRToPartition(
     return STATUS_NOT_SUPPORTED;
 }
 
+/// `s` as a NUL-terminated UTF-16 array; `N` must be `s.len() + 1` (checked at compile time).
+const fn ascii_wide<const N: usize>(s: &str) -> [WCHAR; N] {
+    let b = s.as_bytes();
+    core::assert!(b.len() + 1 == N);
+    let mut out = [0 as WCHAR; N];
+    let mut i = 0;
+    while i < b.len() {
+        out[i] = b[i] as WCHAR;
+        i += 1;
+    }
+    out
+}
+
+// The removable-media path every UEFI firmware boots without an NVRAM entry, so an installed
+// disk boots the way the CD does. The bootcd carries uefildr.efi under the same name.
+#[cfg(target_arch = "x86")]
+const EFI_BOOT_FILE: &str = "\\EFI\\BOOT\\BOOTIA32.EFI";
+#[cfg(target_arch = "x86_64")]
+const EFI_BOOT_FILE: &str = "\\EFI\\BOOT\\BOOTX64.EFI";
+#[cfg(target_arch = "aarch64")]
+const EFI_BOOT_FILE: &str = "\\EFI\\BOOT\\BOOTAA64.EFI";
+static EFI_BOOT_PATH: [WCHAR; EFI_BOOT_FILE.len() + 1] = ascii_wide(EFI_BOOT_FILE);
+static EFI_BOOT_DIR: [WCHAR; 10] = ascii_wide("\\EFI\\BOOT");
+static ROSLOAD_SOURCE: [WCHAR; 20] = ascii_wide("\\loader\\rosload.exe");
+static ROSLOAD_TARGET: [WCHAR; 12] = ascii_wide("rosload.exe");
+static FREELDR_INI: [WCHAR; 12] = ascii_wide("freeldr.ini");
+static FS_FAT: [WCHAR; 4] = ascii_wide("FAT");
+static FS_FAT32: [WCHAR; 6] = ascii_wide("FAT32");
+
+/// The UEFI counterpart of the MBR + VBR install: uefildr.efi as the removable-media boot
+/// file, rosload.exe beside freeldr.ini at the partition root (where uefildr looks first),
+/// and the ReactOS entry in freeldr.ini. No boot code is written: the firmware itself reads
+/// the FAT system partition. Upstream returns STATUS_NOT_SUPPORTED for every non-BIOS arch.
+unsafe fn InstallUefiLoaderToPartition(
+    SystemRootPath: PCUNICODE_STRING,
+    SourceRootPath: PCUNICODE_STRING,
+    DestinationArcPath: PCUNICODE_STRING,
+    FileSystem: PCWSTR,
+) -> NTSTATUS {
+    let mut Status: NTSTATUS;
+    let mut SrcPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+    let mut DstPath: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+
+    // UEFI firmware reads FAT only.
+    if _wcsicmp(FileSystem as *const wchar_t, FS_FAT.as_ptr() as *const wchar_t) != 0
+        && _wcsicmp(FileSystem as *const wchar_t, FS_FAT32.as_ptr() as *const wchar_t) != 0
+    {
+        DPRINT1!(b"UEFI: system partition is %S, not FAT\n\0".as_ptr() as PCSTR, FileSystem);
+        return STATUS_NOT_SUPPORTED;
+    }
+
+    CombinePaths(DstPath.as_mut_ptr(), DstPath.len() as _, 2, (*SystemRootPath).Buffer, EFI_BOOT_DIR.as_ptr());
+    Status = SetupCreateDirectory(DstPath.as_ptr());
+    if Status < 0 && Status != STATUS_OBJECT_NAME_COLLISION {
+        DPRINT1!(b"UEFI: cannot create %S (Status 0x%08lx)\n\0".as_ptr() as PCSTR, DstPath.as_ptr(), Status);
+        return Status;
+    }
+
+    let copies: [(*const WCHAR, *const WCHAR); 2] = [
+        (EFI_BOOT_PATH.as_ptr(), EFI_BOOT_PATH.as_ptr()),
+        (ROSLOAD_SOURCE.as_ptr(), ROSLOAD_TARGET.as_ptr()),
+    ];
+    for (src, dst) in copies {
+        CombinePaths(SrcPath.as_mut_ptr(), SrcPath.len() as _, 2, (*SourceRootPath).Buffer, src);
+        CombinePaths(DstPath.as_mut_ptr(), DstPath.len() as _, 2, (*SystemRootPath).Buffer, dst);
+        DPRINT1!(b"UEFI: copy %S ==> %S\n\0".as_ptr() as PCSTR, SrcPath.as_ptr(), DstPath.as_ptr());
+        Status = SetupCopyFile(SrcPath.as_ptr(), DstPath.as_ptr(), FALSE as BOOLEAN);
+        if Status < 0 {
+            DPRINT1!(b"SetupCopyFile() failed (Status 0x%08lx)\n\0".as_ptr() as PCSTR, Status);
+            return Status;
+        }
+    }
+
+    Status = if DoesFileExist_2((*SystemRootPath).Buffer as PCWSTR, FREELDR_INI.as_ptr()) != 0 {
+        UpdateFreeLoaderIni((*SystemRootPath).Buffer as PCWSTR, (*DestinationArcPath).Buffer as PCWSTR)
+    } else {
+        CreateFreeLoaderIniForReactOS((*SystemRootPath).Buffer as PCWSTR, (*DestinationArcPath).Buffer as PCWSTR)
+    };
+    if Status < 0 {
+        DPRINT1!(b"UEFI: writing freeldr.ini failed (Status 0x%08lx)\n\0".as_ptr() as PCSTR, Status);
+    }
+    Status
+}
+
 unsafe extern "C" fn InstallBootManagerAndBootEntriesWorker(
     mut ArchType: ARCHITECTURE_TYPE,
     mut SystemRootPath: PCUNICODE_STRING,
@@ -1809,6 +1894,14 @@ unsafe extern "C" fn InstallBootManagerAndBootEntriesWorker(
             == ARCH_NEC98x86 as ::core::ffi::c_int as ::core::ffi::c_uint)
         as ::core::ffi::c_int as BOOLEAN;
     let mut InstallType: UCHAR = (Options & 0x03 as ULONG_PTR) as UCHAR;
+    if ArchType as ::core::ffi::c_uint == ARCH_Efi as ::core::ffi::c_uint && InstallType <= 1 {
+        return InstallUefiLoaderToPartition(
+            SystemRootPath,
+            SourceRootPath,
+            DestinationArcPath,
+            FileSystem,
+        );
+    }
     if IsBIOS == 0 {
         return STATUS_NOT_SUPPORTED;
     }

@@ -272,12 +272,18 @@ static int TestTopLevelFilter(void)
         DbgPrint("[SEH-USER] top-level filter: CreateProcess failed (FAIL)\n");
         return 0;
     }
-    wait = WaitForSingleObject(pi.hProcess, 60000);
+    /* The budget is GUEST time, and a starved host stretches the child's run without
+     * stretching the guest clock: `vibeos-cli stress` failed this at 60 s with the
+     * child's correct exit code already set (amd64 -smp 2 on one host core, and
+     * -icount shift=7), i.e. a slow child read as a broken filter. A hung child still
+     * fails, at 5 minutes, and a timeout now says so instead of looking like a FAIL. */
+    wait = WaitForSingleObject(pi.hProcess, 300000);
     GetExitCodeProcess(pi.hProcess, &code);
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
     ok = wait == 0 && code == (unsigned long)STATUS_ACCESS_VIOLATION;
-    DbgPrint("[SEH-USER] top-level filter: child exit=0x%lx (%s)\n", code, ok ? "PASS" : "FAIL");
+    DbgPrint("[SEH-USER] top-level filter: child exit=0x%lx%s (%s)\n", code,
+             wait == 0 ? "" : " (wait TIMED OUT)", ok ? "PASS" : "FAIL");
     return ok;
 }
 

@@ -356,7 +356,7 @@ failure (a lost boot says nothing about an assertion it never reached). Dirty-tr
 are listed separately and never graded, because their commit does not name the code. The
 evidence pointer says so when it pointed into `/tmp` and is gone.
 
-### `stress --arch A [--profile LIST] [--repeat N] [--shift S] [--smp N] [--cores C] [--timeout-scale F]`
+### `stress --arch A [--profile LIST] [--repeat N] [--shift S] [--smp N] [--cores C] [--timeout-scale F] [--sample-pcs SECS]`
 **Reproduce "host load" as named mechanisms** — not a gate stage. "It only fails
 under load" bundles three different things, and a loaded host is a bad instrument
 because it changes all three at once. `stress` boots the same media through a matrix
@@ -381,7 +381,23 @@ one boot per profile) already named one: `slow-cpu` turned the `[SEH-USER]` boot
 self-test red with `child exit=0x103` — sehtest waits 60,000 guest-ms for its child
 (`WaitForSingleObject(pi.hProcess, 60000)`), and under `shift=7` that budget is gone
 before the child finishes; the other four profiles, including a 534 s boot pinned to
-one core, were green.
+one core, were green. A starved `-smp 2` boot later failed it the same way with the
+child's correct exit code already set, so the budget is now 300,000 ms and a timeout
+prints `(wait TIMED OUT)` rather than passing for a broken filter.
+
+**`--sample-pcs SECS` profiles a SLOW boot**, which a hang capture cannot: a slow boot
+is spread over thousands of instants, none of them stuck. Every SECS it reads
+`info registers -a` over the harness's own QMP (under `QmpClient.lock`) and records
+each vCPU's PC, its x86 `HLT=` flag (idle vs spinning), the frame-pointer chain and a
+48-word stack scan; afterwards it ranks where non-halted vCPUs were found and their
+likely callers (`<run>/pcsample.txt`, raw rows in `boot0/pcsamples.jsonl`). The env
+form `VIBEOS_QEMU_PC_SAMPLE=0.5` works under any boot. A sample is where a vCPU was
+FOUND, not a cycle count: a vCPU the host descheduled reports where it was parked,
+which under starvation is the point. First use (2026-10-09): the 534 s `starved-smp`
+boot is the amd64 TLB-shootdown protocol — 92.5% of busy samples in `ki_tb_shootdown`,
+split between the ack-wait (`KiTbFlushWaitCount`) and the sender lock
+(`KiTbFlushLock`). Two vCPUs on one host core pay a host timeslice per round trip,
+because `pause` does not yield under TCG; one vCPU pinned the same way boots in 70-111 s.
 
 ### `gate [--arches i386,amd64,arm64] [--retries N] [--no-build] [--clean] [--no-net]`
 

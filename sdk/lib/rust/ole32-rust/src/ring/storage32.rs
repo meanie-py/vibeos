@@ -562,7 +562,7 @@ unsafe fn IEnumSTATSTGImpl_GetNextRef(
     let mut hr: HRESULT;
     let mut result_name: [u16; DIRENTRY_NAME_MAX_LEN] = [0; DIRENTRY_NAME_MAX_LEN];
 
-    TRACE(b"%p,%p\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%p,%p\n\0".as_ptr() as LPCSTR);
 
     hr = StorageBaseImpl_ReadDirEntry(
         (*This).parentStorage,
@@ -602,7 +602,7 @@ unsafe fn IEnumSTATSTGImpl_GetNextRef(
         }
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
     hr
 }
 
@@ -621,7 +621,7 @@ fn IEnumSTATSTGImpl_QueryInterface(
 
     let This = impl_from_IEnumSTATSTG(iface);
 
-    TRACE(b"%p,%s,%p\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%p,%s,%p\n\0".as_ptr() as LPCSTR);
 
     if ppvObject == core::ptr::null_mut() {
         return 0x80070057u32 as HRESULT;
@@ -632,11 +632,11 @@ fn IEnumSTATSTGImpl_QueryInterface(
     if IsEqualGUID(&IID_IUnknown, riid) || IsEqualGUID(&IID_IEnumSTATSTG, riid) {
         *ppvObject = core::ptr::addr_of_mut!((*This).IEnumSTATSTG_iface) as *mut core::ffi::c_void;
         IEnumSTATSTG_AddRef(core::ptr::addr_of_mut!((*This).IEnumSTATSTG_iface));
-        TRACE(b"<-- %p\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %p\n\0".as_ptr() as LPCSTR);
         return 0u32 as HRESULT;
     }
 
-    TRACE(b"<-- E_NOINTERFACE\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"<-- E_NOINTERFACE\n\0".as_ptr() as LPCSTR);
     0x80004002u32 as HRESULT
 }
 }
@@ -654,10 +654,10 @@ fn IEnumSTATSTGImpl_Reset(
 ) -> HRESULT {
     let This = impl_from_IEnumSTATSTG(iface);
 
-    TRACE(b"%p\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%p\n\0".as_ptr() as LPCSTR);
 
     if (*(*This).parentStorage).reverted != 0 {
-        TRACE(b"<-- STG_E_REVERTED\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- STG_E_REVERTED\n\0".as_ptr() as LPCSTR);
         return STG_E_REVERTED;
     }
 
@@ -727,7 +727,7 @@ fn StorageBaseImpl_QueryInterface(
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
 
-    TRACE(b"%p,%s,%p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%s,%p\n\0".as_ptr() as PCHAR);
 
     if ppvObject.is_null() {
         return E_INVALIDARG;
@@ -750,12 +750,12 @@ fn StorageBaseImpl_QueryInterface(
     }
     else
     {
-        TRACE(b"<-- E_NOINTERFACE\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- E_NOINTERFACE\n\0".as_ptr() as PCHAR);
         return E_NOINTERFACE;
     }
 
     IStorage_AddRef(iface);
-    TRACE(b"<-- %p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %p\n\0".as_ptr() as PCHAR);
     return S_OK;
 }
 }
@@ -765,7 +765,7 @@ fn StorageBaseImpl_AddRef(iface: *mut IStorage) -> u32 {
     let This = impl_from_IStorage(iface);
     let ref_ = InterlockedIncrement(&mut (*This).ref_);
     
-    TRACE(b"(%p) AddRef to %d\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p) AddRef to %d\n\0".as_ptr() as PCHAR);
     
     ref_ as u32
 }
@@ -779,7 +779,7 @@ fn StorageBaseImpl_Release(iface: *mut IStorage) -> ULONG {
 
     
 
-    TRACE(b"(%p) ReleaseRef to %d\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p) ReleaseRef to %d\n\0".as_ptr() as *const c_char);
 
     if ref_count == 0 {
         StorageBaseImpl_Destroy(This);
@@ -800,7 +800,7 @@ fn StorageBaseImpl_EnumElements(
     let This = impl_from_IStorage(iface);
     let newEnum: *mut IEnumSTATSTGImpl;
 
-    TRACE(b"(%p, %d, %p, %d, %p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p, %d, %p, %d, %p)\n\0".as_ptr() as LPCSTR);
 
     if ppenum.is_null() {
         return E_INVALIDARG;
@@ -832,7 +832,7 @@ fn StorageBaseImpl_SetClass(
 
     
 
-    TRACE(b"(%p, %s)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p, %s)\n\0".as_ptr() as *const c_char);
 
     if (*This).reverted != 0 {
         return STG_E_REVERTED;
@@ -890,7 +890,7 @@ fn StorageBaseImpl_Commit(
     grfCommitFlags: DWORD,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
-    TRACE(b"(%p %d)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p %d)\n\0".as_ptr() as PCHAR);
     StorageBaseImpl_Flush(This)
 }
 }
@@ -918,7 +918,7 @@ fn StorageInternalImpl_Commit(
     grfCommitFlags: DWORD,
 ) -> HRESULT {
     let This = impl_from_IStorage(iface);
-    TRACE(b"(%p,%x)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p,%x)\n\0".as_ptr() as LPCSTR);
     StorageBaseImpl_Flush(This)
 }
 }
@@ -935,7 +935,7 @@ unsafe extern "C" fn StorageInternalImpl_Invalidate(base: *mut StorageBaseImpl) 
     let This = base as *mut StorageInternalImpl;
 
     if (*This).base.reverted == 0 {
-        TRACE(b"Storage invalidated (stg=%p)\n\0".as_ptr() as PCHAR);
+        TRACE!(b"Storage invalidated (stg=%p)\n\0".as_ptr() as PCHAR);
 
         (*This).base.reverted = 1;
 
@@ -949,7 +949,7 @@ unsafe extern "C" fn StorageInternalImpl_Invalidate(base: *mut StorageBaseImpl) 
 
 unsafe extern "C" fn TransactedSnapshotImpl_Invalidate(This: *mut StorageBaseImpl) {
     if (*This).reverted == 0 {
-        TRACE(b"Storage invalidated (stg=%p)\n\0".as_ptr() as PCHAR);
+        TRACE!(b"Storage invalidated (stg=%p)\n\0".as_ptr() as PCHAR);
         
         (*This).reverted = 1;
         
@@ -960,7 +960,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_Invalidate(This: *mut StorageBaseImp
 unsafe extern "C" fn TransactedSharedImpl_Invalidate(This: *mut StorageBaseImpl) {
     if (*This).reverted == 0 {
         
-        TRACE(b"Storage invalidated (stg=%p)\n\0".as_ptr() as *const c_char);
+        TRACE!(b"Storage invalidated (stg=%p)\n\0".as_ptr() as *const c_char);
 
         (*This).reverted = 1;
 
@@ -974,7 +974,7 @@ fn TransactedSharedImpl_Revert(
 ) -> HRESULT {
     let This = impl_from_IStorage(iface) as *mut TransactedSharedImpl;
 
-    TRACE(b"(%p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p)\n\0".as_ptr() as LPCSTR);
 
     StorageBaseImpl_DeleteAll(&mut (*This).base);
 
@@ -1303,7 +1303,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_CreateDirEntry(
 
     *index = new_ref;
 
-    TRACE(b"%s l=%x r=%x d=%x <-- %x\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%s l=%x r=%x d=%x <-- %x\n\0".as_ptr() as LPCSTR);
 
     S_OK
 }
@@ -1336,7 +1336,7 @@ unsafe fn TransactedSnapshotImpl_FindNextChild(
 unsafe fn StorageBaseImpl_IsStreamOpen(stg: *mut StorageBaseImpl, streamEntry: DirRef) -> BOOL {
     let mut strm: *mut StgStreamImpl;
 
-    TRACE(b"%p,%d\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%d\n\0".as_ptr() as PCHAR);
 
     let head = core::ptr::addr_of_mut!((*stg).strmHead);
     let mut current = (*head).next;
@@ -1366,7 +1366,7 @@ unsafe fn StorageImpl_LoadFileHeader(This: *mut StorageImpl) -> HRESULT {
     let mut offset: ULARGE_INTEGER = core::mem::zeroed();
     let mut bytes_read: DWORD = 0;
 
-    TRACE(b"\n\0".as_ptr() as *const c_char);
+    TRACE!(b"\n\0".as_ptr() as *const c_char);
 
     /* Get a pointer to the big block of data containing the header. */
     offset.u.HighPart = 0;
@@ -1613,15 +1613,15 @@ fn StorageBaseImpl_Stat(
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let res: HRESULT;
 
-    TRACE(b"(%p, %p, %x)\n\0".as_ptr() as *const i8);
+    TRACE!(b"(%p, %p, %x)\n\0".as_ptr() as *const i8);
 
     if pstatstg.is_null() {
         res = E_INVALIDARG;
         'end: loop {
             if res == S_OK {
-                TRACE(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
+                TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
             }
-            TRACE(b"<-- %08x\n\0".as_ptr() as *const i8);
+            TRACE!(b"<-- %08x\n\0".as_ptr() as *const i8);
             return res;
         }
     }
@@ -1630,9 +1630,9 @@ fn StorageBaseImpl_Stat(
         res = STG_E_REVERTED;
         'end: loop {
             if res == S_OK {
-                TRACE(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
+                TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
             }
-            TRACE(b"<-- %08x\n\0".as_ptr() as *const i8);
+            TRACE!(b"<-- %08x\n\0".as_ptr() as *const i8);
             return res;
         }
     }
@@ -1648,9 +1648,9 @@ fn StorageBaseImpl_Stat(
 
     'end: loop {
         if res == S_OK {
-            TRACE(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
+            TRACE!(b"<-- STATSTG: pwcsName: %s, type: %d, cbSize.Low/High: %d/%d, grfMode: %08x, grfLocksSupported: %d, grfStateBits: %08x\n\0".as_ptr() as *const i8);
         }
-        TRACE(b"<-- %08x\n\0".as_ptr() as *const i8);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as *const i8);
         return res;
     }
 }
@@ -1683,7 +1683,7 @@ pub unsafe extern "system" fn SetConvertStg(storage: *mut IStorage, convert: BOO
 
     
 
-    TRACE(b"(%p, %d)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p, %d)\n\0".as_ptr() as *const c_char);
 
     hr = IStorage_OpenStream(
         storage,
@@ -1750,7 +1750,7 @@ pub unsafe extern "system" fn OleSaveToStream(pPStm: *mut IPersistStream, pStm: 
     let mut clsid: CLSID = core::mem::zeroed();
     let mut res: HRESULT;
 
-    TRACE(b"(%p,%p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char);
 
     res = IPersistStream_GetClassID(pPStm, &mut clsid);
 
@@ -1762,7 +1762,7 @@ pub unsafe extern "system" fn OleSaveToStream(pPStm: *mut IPersistStream, pStm: 
         }
     }
 
-    TRACE(b"Finished Save\n\0".as_ptr() as *const c_char);
+    TRACE!(b"Finished Save\n\0".as_ptr() as *const c_char);
     res
 }
 
@@ -1786,7 +1786,7 @@ unsafe fn STORAGE_WriteCompObj(
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     ];
 
-    TRACE(b"%p %s %s %s %s\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%p %s %s %s %s\n\0".as_ptr() as LPCSTR);
 
     r = IStorage_CreateStream(
         pstg,
@@ -1984,7 +1984,7 @@ pub unsafe extern "system" fn OleLoadFromStream(
     let mut clsid: CLSID = core::mem::zeroed();
     let mut xstm: LPVOID = core::ptr::null_mut();
 
-    TRACE(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p,%s,%p)\n\0".as_ptr() as *const c_char);
 
     let mut res = ReadClassStm(pStm, &mut clsid);
     if FAILED(res) {
@@ -2018,7 +2018,7 @@ pub unsafe extern "system" fn OleLoadFromStream(
 unsafe fn StorageBaseImpl_IsStorageOpen(stg: *mut StorageBaseImpl, storageEntry: DirRef) -> BOOL {
     let mut childstg: *mut StorageInternalImpl;
     
-    TRACE(b"%p,%d\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%d\n\0".as_ptr() as PCHAR);
     
     let list_head = core::ptr::addr_of_mut!((*stg).storageHead);
     let mut current = (*list_head).next;
@@ -2153,7 +2153,7 @@ fn StorageBaseImpl_OpenStream(
     let streamEntryRef: DirRef;
     let res: HRESULT;
 
-    TRACE(b"(%p, %s, %p, %x, %d, %p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p, %s, %p, %x, %d, %p)\n\0".as_ptr() as PCHAR);
 
     if pwcsName.is_null() || ppstm.is_null() {
         res = E_INVALIDARG;
@@ -2211,9 +2211,9 @@ fn StorageBaseImpl_OpenStream(
     res = STG_E_FILENOTFOUND;
 
     if res == S_OK {
-        TRACE(b"<-- IStream %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- IStream %p\n\0".as_ptr() as PCHAR);
     }
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     res
 }
 }
@@ -2319,7 +2319,7 @@ fn StorageBaseImpl_CreateStream(
 
     
 
-    TRACE(b"(%p, %s, %x, %d, %d, %p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p, %s, %x, %d, %d, %p)\n\0".as_ptr() as *const c_char);
 
     if ppstm.is_null() {
         return 0x80030009u32 as HRESULT;
@@ -2448,7 +2448,7 @@ fn StorageBaseImpl_CreateStorage(
     let mut newEntryRef: DirRef = DIRENTRY_NULL;
     let mut hr: HRESULT;
 
-    TRACE(b"(%p, %s, %x, %d, %d, %p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p, %s, %x, %d, %d, %p)\n\0".as_ptr() as PCHAR);
 
     if ppstg.is_null() {
         return STG_E_INVALIDPOINTER;
@@ -2465,7 +2465,7 @@ fn StorageBaseImpl_CreateStorage(
     *ppstg = core::ptr::null_mut();
 
     if FAILED(validateSTGM(grfMode)) || (grfMode & STGM_DELETEONRELEASE) != 0 {
-        WARN(b"bad grfMode: 0x%x\n\0".as_ptr() as PCHAR);
+        WARN!(b"bad grfMode: 0x%x\n\0".as_ptr() as PCHAR);
         return STG_E_INVALIDFLAG;
     }
 
@@ -2476,7 +2476,7 @@ fn StorageBaseImpl_CreateStorage(
     if ((*This).openFlags & STGM_TRANSACTED) == 0
         && STGM_ACCESS_MODE(grfMode) > STGM_ACCESS_MODE((*This).openFlags)
     {
-        WARN(b"access denied\n\0".as_ptr() as PCHAR);
+        WARN!(b"access denied\n\0".as_ptr() as PCHAR);
         return STG_E_ACCESSDENIED;
     }
 
@@ -2492,13 +2492,13 @@ fn StorageBaseImpl_CreateStorage(
                 return hr;
             }
         } else {
-            WARN(b"file already exists\n\0".as_ptr() as PCHAR);
+            WARN!(b"file already exists\n\0".as_ptr() as PCHAR);
             return STG_E_FILEALREADYEXISTS;
         }
     } else if ((*This).openFlags & STGM_TRANSACTED) == 0
         && STGM_ACCESS_MODE((*This).openFlags) == STGM_READ
     {
-        WARN(b"read-only storage\n\0".as_ptr() as PCHAR);
+        WARN!(b"read-only storage\n\0".as_ptr() as PCHAR);
         return STG_E_ACCESSDENIED;
     }
 
@@ -2571,14 +2571,14 @@ fn IEnumSTATSTGImpl_Next(
     let mut currentSearchNode: DirRef = 0;
     let mut hr: HRESULT = S_OK;
 
-    TRACE(b"%p,%u,%p,%p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%u,%p,%p\n\0".as_ptr() as PCHAR);
 
     if rgelt.is_null() || (celt != 1 && pceltFetched.is_null()) {
         return E_INVALIDARG;
     }
 
     if (*(*This).parentStorage).reverted != 0 {
-        TRACE(b"<-- STG_E_REVERTED\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- STG_E_REVERTED\n\0".as_ptr() as PCHAR);
         return STG_E_REVERTED;
     }
 
@@ -2626,7 +2626,7 @@ fn IEnumSTATSTGImpl_Next(
         hr = S_FALSE;
     }
 
-    TRACE(b"<-- %08x (asked %u, got %u)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x (asked %u, got %u)\n\0".as_ptr() as PCHAR);
     hr
 }
 }
@@ -2642,10 +2642,10 @@ fn IEnumSTATSTGImpl_Skip(
     let mut currentSearchNode: DirRef = 0;
     let mut hr: HRESULT = S_OK;
 
-    TRACE(b"%p,%u\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%u\n\0".as_ptr() as PCHAR);
 
     if (*(*This).parentStorage).reverted != 0 {
-        TRACE(b"<-- STG_E_REVERTED\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- STG_E_REVERTED\n\0".as_ptr() as PCHAR);
         return STG_E_REVERTED;
     }
 
@@ -2663,7 +2663,7 @@ fn IEnumSTATSTGImpl_Skip(
         return S_FALSE;
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     return hr;
 }
 }
@@ -2745,7 +2745,7 @@ fn TransactedSharedImpl_Commit(
     let mut hr: HRESULT;
     let mut transactionSig: ULONG = 0;
 
-    TRACE(b"(%p,%x)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p,%x)\n\0".as_ptr() as PCHAR);
 
     if STGM_ACCESS_MODE((*This).base.openFlags) == STGM_READ {
         return STG_E_ACCESSDENIED;
@@ -2814,7 +2814,7 @@ fn TransactedSharedImpl_Commit(
             (*This).lastTransactionSig = transactionSig + 1;
         }
     }
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     return hr;
 }
 }
@@ -3155,7 +3155,7 @@ stdmethod! {
 fn StorageBaseImpl_Revert(
     iface: *mut IStorage
 ) -> HRESULT {
-    TRACE(b"(%p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p)\n\0".as_ptr() as LPCSTR);
     S_OK
 }
 }
@@ -3280,7 +3280,7 @@ fn TransactedSnapshotImpl_Revert(
     let mut zero: ULARGE_INTEGER = core::mem::zeroed();
     let mut i: ULONG;
 
-    TRACE(b"(%p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p)\n\0".as_ptr() as LPCSTR);
 
     StorageBaseImpl_DeleteAll(&mut (*This).base);
 
@@ -3519,7 +3519,7 @@ fn StorageBaseImpl_RenameElement(
     let mut currentEntry: DirEntry = core::mem::zeroed();
     let mut currentEntryRef: DirRef;
 
-    TRACE(b"(%p, %s, %s)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p, %s, %s)\n\0".as_ptr() as PCHAR);
 
     if (*This).reverted != 0 {
         return STG_E_REVERTED;
@@ -3547,7 +3547,7 @@ fn StorageBaseImpl_RenameElement(
         if StorageBaseImpl_IsStreamOpen(This, currentEntryRef) != 0
             || StorageBaseImpl_IsStorageOpen(This, currentEntryRef) != 0
         {
-            WARN(b"Element is already open; cannot rename.\n\0".as_ptr() as PCHAR);
+            WARN!(b"Element is already open; cannot rename.\n\0".as_ptr() as PCHAR);
             return STG_E_ACCESSDENIED;
         }
 
@@ -3580,7 +3580,7 @@ fn StorageBaseImpl_DestroyElement(
     let mut entryToDelete: DirEntry = core::mem::zeroed();
     let entryToDeleteRef: DirRef;
 
-    TRACE(b"(%p, %s)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p, %s)\n\0".as_ptr() as PCHAR);
 
     if pwcsName.is_null() {
         return 0x80030009u32 as HRESULT;
@@ -3603,7 +3603,7 @@ fn StorageBaseImpl_DestroyElement(
     );
 
     if entryToDeleteRef == 0xFFFFFFFF {
-        TRACE(b"<-- STG_E_FILENOTFOUND\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- STG_E_FILENOTFOUND\n\0".as_ptr() as PCHAR);
         return 0x80030002u32 as HRESULT;
     }
 
@@ -3622,7 +3622,7 @@ fn StorageBaseImpl_DestroyElement(
     }
 
     if hr != 0 {
-        TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -3640,7 +3640,7 @@ fn StorageBaseImpl_DestroyElement(
         hr = StorageBaseImpl_Flush(This);
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     hr
 }
 }
@@ -3662,7 +3662,7 @@ unsafe fn StorageImpl_GetNextBlockInChain(
 
     if depotBlockCount >= (*This).bigBlockDepotCount {
         
-        WARN(b"depotBlockCount %d, bigBlockDepotCount %d\n\0".as_ptr() as *const c_char);
+        WARN!(b"depotBlockCount %d, bigBlockDepotCount %d\n\0".as_ptr() as *const c_char);
         return STG_E_READFAULT;
     }
 
@@ -3715,7 +3715,7 @@ unsafe fn deleteStorageContents(
     let mut hr: HRESULT;
     let mut destroyHr: HRESULT = S_OK;
     
-    TRACE(b"%p,%d\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p,%d\n\0".as_ptr() as PCHAR);
 
     /* Invalidate any open storage objects. */
     // (rustconv emitted the macro as a CALL and then turned its body into a bogus
@@ -3744,14 +3744,14 @@ unsafe fn deleteStorageContents(
     );
 
     if hr != S_OK {
-        TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
     hr = IStorage_EnumElements(childStorage, 0, core::ptr::null_mut(), 0, core::ptr::addr_of_mut!(elements));
     if FAILED(hr) {
         IStorage_Release(childStorage);
-        TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -3772,7 +3772,7 @@ unsafe fn deleteStorageContents(
     IStorage_Release(childStorage);
     IEnumSTATSTG_Release(elements);
 
-    TRACE(b"%08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%08x\n\0".as_ptr() as PCHAR);
     destroyHr
 }
 
@@ -3907,7 +3907,7 @@ unsafe extern "C" fn StorageImpl_Flush(storage: *mut StorageBaseImpl) -> HRESULT
     let mut i: i32;
     let mut hr: HRESULT;
     
-    TRACE(b"(%p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p)\n\0".as_ptr() as LPCSTR);
     
     hr = BlockChainStream_Flush((*This).smallBlockRootChain);
     
@@ -3952,11 +3952,11 @@ unsafe extern "C" fn TransactedSnapshotImpl_WriteDirEntry(
 
     
 
-    TRACE(b"%x %s l=%x r=%x d=%x\n\0".as_ptr() as *const i8);
+    TRACE!(b"%x %s l=%x r=%x d=%x\n\0".as_ptr() as *const i8);
 
     hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as *const i8);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as *const i8);
         return hr;
     }
 
@@ -3986,7 +3986,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_WriteDirEntry(
             (*(*This).entries.offset(index as isize)).newTransactedParentEntry = DIRENTRY_NULL;
         }
     }
-    TRACE(b"<-- S_OK\n\0".as_ptr() as *const i8);
+    TRACE!(b"<-- S_OK\n\0".as_ptr() as *const i8);
     S_OK
 }
 
@@ -3998,7 +3998,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_ReadDirEntry(
     let This = base as *mut TransactedSnapshotImpl;
     let hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
@@ -4008,7 +4008,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_ReadDirEntry(
         1,
     );
 
-    TRACE(b"%x %s l=%x r=%x d=%x\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%x %s l=%x r=%x d=%x\n\0".as_ptr() as LPCSTR);
 
     S_OK
 }
@@ -4025,13 +4025,13 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamLink(
 
     hr = TransactedSnapshotImpl_EnsureReadEntry(This, src);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
     hr = TransactedSnapshotImpl_EnsureReadEntry(This, dst);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
@@ -4060,13 +4060,13 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamWriteAt(
 
     hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
     hr = TransactedSnapshotImpl_MakeStreamDirty(This, index);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
@@ -4085,7 +4085,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamWriteAt(
         (*(*This).entries.offset(index as isize)).data.size.QuadPart = max(current_size, new_size);
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
     hr
 }
 
@@ -4099,7 +4099,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamSetSize(
 
     hr = TransactedSnapshotImpl_EnsureReadEntry(This, index);
     if FAILED(hr) {
-        TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
         return hr;
     }
 
@@ -4150,7 +4150,7 @@ unsafe extern "C" fn TransactedSnapshotImpl_StreamSetSize(
         (*(*This).entries.offset(index as isize)).data.size = newsize;
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as LPCSTR);
     hr
 }
 
@@ -4266,7 +4266,7 @@ unsafe fn deleteStreamContents(
         StrmListEntry,
         {
             if (*strm).dirEntry == indexToDelete {
-                TRACE(b"Stream deleted %p\n\0".as_ptr() as PCHAR);
+                TRACE!(b"Stream deleted %p\n\0".as_ptr() as PCHAR);
                 (*strm).parentStorage = core::ptr::null_mut();
                 list_remove(core::ptr::addr_of_mut!((*strm).StrmListEntry));
             }
@@ -4286,19 +4286,19 @@ unsafe fn deleteStreamContents(
     );
 
     if hr != S_OK {
-        TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
     hr = IStream_SetSize(pis, size);
 
     if hr != S_OK {
-        TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
     IStream_Release(pis);
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     S_OK
 }
 
@@ -4538,7 +4538,7 @@ unsafe extern "C" fn StorageImpl_Destroy(iface: *mut StorageBaseImpl) {
     let This = iface as *mut StorageImpl;
     let mut i: i32;
     
-    TRACE(b"(%p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p)\n\0".as_ptr() as PCHAR);
     
     StorageImpl_Flush(iface);
     
@@ -4590,7 +4590,7 @@ fn TransactedSnapshotImpl_Commit(
 
     zero.QuadPart = 0;
 
-    TRACE(b"(%p,%x)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p,%x)\n\0".as_ptr() as PCHAR);
 
     if STGM_ACCESS_MODE((*This).base.openFlags) == STGM_READ {
         return STG_E_ACCESSDENIED;
@@ -4625,7 +4625,7 @@ fn TransactedSnapshotImpl_Commit(
 
         if FAILED(hr) {
             StorageBaseImpl_UnlockTransaction((*This).transactedParent, 1);
-            TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
             return hr;
         }
 
@@ -4633,14 +4633,14 @@ fn TransactedSnapshotImpl_Commit(
 
         if (*root_entry).read == 0 {
             StorageBaseImpl_UnlockTransaction((*This).transactedParent, 1);
-            TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
             return hr;
         }
 
         hr = TransactedSnapshotImpl_CopyTree(This);
         if FAILED(hr) {
             StorageBaseImpl_UnlockTransaction((*This).transactedParent, 1);
-            TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
             return hr;
         }
 
@@ -4734,7 +4734,7 @@ fn TransactedSnapshotImpl_Commit(
         StorageBaseImpl_UnlockTransaction((*This).transactedParent, 1);
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     return hr;
 }
 }
@@ -4778,7 +4778,7 @@ unsafe fn StorageBaseImpl_DeleteAll(stg: *mut StorageBaseImpl) {
         StgStreamImpl,
         StrmListEntry,
         {
-            TRACE(b"Streams invalidated (stg=%p strm=%p next=%p prev=%p)\n\0".as_ptr() as LPCSTR);
+            TRACE!(b"Streams invalidated (stg=%p strm=%p next=%p prev=%p)\n\0".as_ptr() as LPCSTR);
             (*strm).parentStorage = core::ptr::null_mut();
             list_remove(addr_of_mut!((*strm).StrmListEntry));
         }
@@ -4952,7 +4952,7 @@ unsafe fn StorageBaseImpl_CopyChildEntryTo(
         );
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     hr
 }
 
@@ -4973,7 +4973,7 @@ fn StorageBaseImpl_OpenStorage(
     let storageEntryRef: DirRef;
     let mut res: HRESULT;
 
-    TRACE(b"(%p, %s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%p, %s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
 
     'end: loop {
         if pwcsName.is_null() || ppstg.is_null() {
@@ -5067,7 +5067,7 @@ fn StorageBaseImpl_OpenStorage(
         break 'end;
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     return res;
 }
 }
@@ -5100,7 +5100,7 @@ unsafe fn StorageBaseImpl_CopyStorageEntryTo(
         );
     }
 
-    TRACE(b"<-- %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x\n\0".as_ptr() as PCHAR);
     hr
 }
 
@@ -5117,7 +5117,7 @@ fn StorageBaseImpl_CopyTo(
     let mut skip_storage: BOOL = 0;
     let mut skip_stream: BOOL = 0;
 
-    TRACE(b"(%p, %d, %p, %p, %p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p, %d, %p, %p, %p)\n\0".as_ptr() as LPCSTR);
 
     if pstgDest.is_null() {
         return STG_E_INVALIDPOINTER;
@@ -5129,7 +5129,7 @@ fn StorageBaseImpl_CopyTo(
         } else if IsEqualGUID(&IID_IStream, &*rgiidExclude.add(i as usize)) {
             skip_stream = 1;
         } else {
-            WARN(b"Unknown excluded GUID: %s\n\0".as_ptr() as LPCSTR);
+            WARN!(b"Unknown excluded GUID: %s\n\0".as_ptr() as LPCSTR);
         }
     }
 
@@ -5312,7 +5312,7 @@ unsafe fn StorageImpl_ReadDirEntry(
             (*buffer).name.as_mut_ptr(),
             DIRENTRY_NAME_BUFFER_LEN as usize,
         );
-        TRACE(b"storage name: %s\n\0".as_ptr() as PCHAR);
+        TRACE!(b"storage name: %s\n\0".as_ptr() as PCHAR);
 
         core::ptr::copy_nonoverlapping(
             currentEntry.as_ptr().add(OFFSET_PS_STGTYPE as usize),
@@ -5524,7 +5524,7 @@ unsafe fn Storage32Impl_BigBlocksToSmallBlocks(
     let buffer: *mut BYTE;
     let sbTempChain: *mut SmallBlockChainStream;
 
-    TRACE(b"%p %p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p %p\n\0".as_ptr() as PCHAR);
 
     sbTempChain = SmallBlockChainStream_Construct(
         This,
@@ -5929,7 +5929,7 @@ unsafe fn StorageImpl_Refresh(This: *mut StorageImpl, new_object: BOOL, create: 
         i = 0;
         while i < (*This).extBigBlockDepotCount {
             if current_block == BLOCK_END_OF_CHAIN {
-                WARN(b"File has too few extended big block depot blocks.\n\0".as_ptr() as PCHAR);
+                WARN!(b"File has too few extended big block depot blocks.\n\0".as_ptr() as PCHAR);
                 return STG_E_DOCFILECORRUPT;
             }
             *(*This).extBigBlockDepotLocations.add(i as usize) = current_block;
@@ -6042,7 +6042,7 @@ unsafe extern "C" fn StorageImpl_GetTransactionSig(
             StorageUtl_ReadDWord(data.as_ptr(), 0, &mut (*This).transactionSig);
 
             if oldTransactionSig != (*This).transactionSig {
-                TRACE(b"signature changed\n\0".as_ptr() as PCHAR);
+                TRACE!(b"signature changed\n\0".as_ptr() as PCHAR);
 
                 hr = StorageImpl_Refresh(This, 0, 0);
             }
@@ -6291,7 +6291,7 @@ unsafe fn TransactedSharedImpl_Construct(
 }
 
 pub unsafe fn StorageBaseImpl_AddStream(stg: *mut StorageBaseImpl, strm: *mut StgStreamImpl) {
-    TRACE(b"Stream added (stg=%p strm=%p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"Stream added (stg=%p strm=%p)\n\0".as_ptr() as PCHAR);
     list_add_tail(
         core::ptr::addr_of_mut!((*stg).strmHead),
         core::ptr::addr_of_mut!((*strm).StrmListEntry)
@@ -6842,7 +6842,7 @@ unsafe fn BlockChainStream_ReadAt(
 }
 
 pub unsafe fn StorageBaseImpl_RemoveStream(_stg: *mut StorageBaseImpl, strm: *mut StgStreamImpl) {
-    TRACE(b"Stream removed (stg=%p strm=%p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"Stream removed (stg=%p strm=%p)\n\0".as_ptr() as PCHAR);
     list_remove(core::ptr::addr_of_mut!((*strm).StrmListEntry));
 }
 
@@ -7471,7 +7471,7 @@ unsafe fn create_storagefile(
 
     if FAILED(validateSTGM(grfMode)) {
         hr = STG_E_INVALIDFLAG;
-        TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7479,14 +7479,14 @@ unsafe fn create_storagefile(
         STGM_WRITE | STGM_READWRITE => {},
         _ => {
             hr = STG_E_INVALIDFLAG;
-            TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
             return hr;
         }
     }
 
     if (grfMode & STGM_TRANSACTED) == 0 && STGM_SHARE_MODE(grfMode) != STGM_SHARE_EXCLUSIVE {
         hr = STG_E_INVALIDFLAG;
-        TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7505,7 +7505,7 @@ unsafe fn create_storagefile(
             tempFileName.as_ptr()
         } else {
             hr = STG_E_INSUFFICIENTMEMORY;
-            TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
             return hr;
         }
     } else {
@@ -7545,7 +7545,7 @@ unsafe fn create_storagefile(
         } else {
             E_FAIL
         };
-        TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7561,7 +7561,7 @@ unsafe fn create_storagefile(
     );
 
     if FAILED(hr) {
-        TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7572,7 +7572,7 @@ unsafe fn create_storagefile(
     );
     IStorage_Release(core::ptr::addr_of_mut!((*newStorage).IStorage_iface));
 
-    TRACE(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %p  r = %08x\n\0".as_ptr() as PCHAR);
 
     hr
 }
@@ -7596,7 +7596,7 @@ pub unsafe extern "system" fn StgCreateDocfile(
 
     
 
-    TRACE(b"(%s, %x, %d, %p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%s, %x, %d, %p)\n\0".as_ptr() as LPCSTR);
 
     if ppstgOpen.is_null() {
         return STG_E_INVALIDPOINTER;
@@ -7628,7 +7628,7 @@ pub unsafe extern "system" fn StgCreateStorageEx(
 ) -> HRESULT {
     
     
-    TRACE(b"(%s, %x, %x, %x, %p, %p, %p, %p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%s, %x, %x, %x, %p, %p, %p, %p)\n\0".as_ptr() as LPCSTR);
 
     if stgfmt != STGFMT_FILE && grfAttrs != 0 {
         ERR(b"grfAttrs must be 0 if stgfmt != STGFMT_FILE\n\0".as_ptr() as LPCSTR);
@@ -7679,7 +7679,7 @@ pub unsafe extern "system" fn StgOpenStorageEx(
 ) -> HRESULT {
     
 
-    TRACE(b"(%s, %x, %x, %x, %p, %p, %p, %p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%s, %x, %x, %x, %p, %p, %p, %p)\n\0".as_ptr() as *const c_char);
 
     if stgfmt != STGFMT_DOCFILE && grfAttrs != 0 {
         ERR(b"grfAttrs must be 0 if stgfmt != STGFMT_DOCFILE\n\0".as_ptr() as *const c_char);
@@ -7703,7 +7703,7 @@ pub unsafe extern "system" fn StgOpenStorageEx(
         }
 
         STGFMT_ANY => {
-            WARN(b"STGFMT_ANY assuming storage\n\0".as_ptr() as *const c_char);
+            WARN!(b"STGFMT_ANY assuming storage\n\0".as_ptr() as *const c_char);
         }
 
         _ => {
@@ -7737,7 +7737,7 @@ pub unsafe extern "system" fn StgOpenStorage(
     let accessMode: DWORD;
     let mut temp_name: LPWSTR = core::ptr::null_mut();
 
-    TRACE(b"(%s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
+    TRACE!(b"(%s, %p, %x, %p, %d, %p)\n\0".as_ptr() as PCHAR);
 
     let mut pwcsName = pwcsName;
 
@@ -7748,11 +7748,11 @@ pub unsafe extern "system" fn StgOpenStorage(
             if !pstgPriority.is_null() {
                 IStorage_Release(pstgPriority);
             }
-            TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
             return hr;
         }
         pwcsName = temp_name;
-        TRACE(b"using filename %s\n\0".as_ptr() as PCHAR);
+        TRACE!(b"using filename %s\n\0".as_ptr() as PCHAR);
     }
 
     if pwcsName.is_null() {
@@ -7761,7 +7761,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7771,7 +7771,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7781,7 +7781,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7810,7 +7810,7 @@ pub unsafe extern "system" fn StgOpenStorage(
             if !pstgPriority.is_null() {
                 IStorage_Release(pstgPriority);
             }
-            TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+            TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
             return hr;
         }
     } else if (grfMode & (STGM_TRANSACTED | STGM_PRIORITY)) == 0 {
@@ -7822,7 +7822,7 @@ pub unsafe extern "system" fn StgOpenStorage(
                 if !pstgPriority.is_null() {
                     IStorage_Release(pstgPriority);
                 }
-                TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+                TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
                 return hr;
             }
         }
@@ -7834,7 +7834,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7848,7 +7848,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7893,7 +7893,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7904,7 +7904,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7927,7 +7927,7 @@ pub unsafe extern "system" fn StgOpenStorage(
         if !pstgPriority.is_null() {
             IStorage_Release(pstgPriority);
         }
-        TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+        TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
         return hr;
     }
 
@@ -7937,7 +7937,7 @@ pub unsafe extern "system" fn StgOpenStorage(
     if !pstgPriority.is_null() {
         IStorage_Release(pstgPriority);
     }
-    TRACE(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"<-- %08x, IStorage %p\n\0".as_ptr() as PCHAR);
     hr
 }
 
@@ -8031,7 +8031,7 @@ pub unsafe extern "system" fn StgSetTimes(
     let mut stg: *mut IStorage = core::ptr::null_mut();
     let mut r: HRESULT;
 
-    TRACE(b"%s %p %p %p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%s %p %p %p\n\0".as_ptr() as PCHAR);
 
     r = StgOpenStorage(
         str,
@@ -8050,7 +8050,7 @@ pub unsafe extern "system" fn StgSetTimes(
 }
 
 unsafe fn OLECONVERT_GetOLE20FromOLE10(pDestStorage: *mut IStorage, pBuffer: *const BYTE, nBufferLength: DWORD) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let hFile: HANDLE;
     let mut pTempStorage: *mut IStorage = core::ptr::null_mut();
     let mut dwNumOfBytesWritten: DWORD = 0;
@@ -8232,7 +8232,7 @@ pub unsafe extern "system" fn OleConvertOLESTREAMToIStorage(
 
     
 
-    TRACE(b"%p %p %p\n\0".as_ptr() as *const c_char);
+    TRACE!(b"%p %p %p\n\0".as_ptr() as *const c_char);
 
     memset(
         pOleStreamData.as_mut_ptr() as *mut core::ffi::c_void,
@@ -8330,7 +8330,7 @@ pub unsafe extern "system" fn OleConvertIStorageToOLESTREAM(
     let mut pOleStreamData: [OLECONVERT_OLESTREAM_DATA; 2] = core::mem::zeroed();
     static wstrStreamName: [u16; 13] = [1, 'O' as u16, 'l' as u16, 'e' as u16, '1' as u16, '0' as u16, 'N' as u16, 'a' as u16, 't' as u16, 'i' as u16, 'v' as u16, 'e' as u16, 0];
 
-    TRACE(b"%p %p\n\0".as_ptr() as PCHAR);
+    TRACE!(b"%p %p\n\0".as_ptr() as PCHAR);
 
     memset(pOleStreamData.as_mut_ptr() as *mut core::ffi::c_void, 0, core::mem::size_of_val(&pOleStreamData));
 
@@ -9174,7 +9174,7 @@ pub unsafe extern "system" fn StgCreatePropSetStg(
 ) -> HRESULT {
     
 
-    TRACE(b"(%p, 0x%x, %p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p, 0x%x, %p)\n\0".as_ptr() as *const c_char);
 
     if reserved != 0 {
         return STG_E_INVALIDPARAMETER;
@@ -9240,7 +9240,7 @@ pub unsafe extern "system" fn ReadClassStg(pstg: *mut IStorage, pclsid: *mut CLS
     let mut pstatstg: STATSTG = core::mem::zeroed();
     let hRes: HRESULT;
 
-    TRACE(b"(%p, %p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const c_char);
 
     if pstg.is_null() || pclsid.is_null() {
         return 0x80070057u32 as HRESULT;
@@ -9347,7 +9347,7 @@ unsafe fn STREAM_ReadString(stm: *mut IStream, string: *mut LPWSTR) -> HRESULT {
         return E_OUTOFMEMORY;
     }
 
-    TRACE(b"%d bytes\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"%d bytes\n\0".as_ptr() as LPCSTR);
 
     str = CoTaskMemAlloc((len as usize) as SIZE_T) as LPSTR;
     if str.is_null() {
@@ -9364,7 +9364,7 @@ unsafe fn STREAM_ReadString(stm: *mut IStream, string: *mut LPWSTR) -> HRESULT {
         return E_OUTOFMEMORY;
     }
 
-    TRACE(b"Read string %s\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"Read string %s\n\0".as_ptr() as LPCSTR);
 
     len = MultiByteToWideChar(CP_ACP, 0, str, count as i32, core::ptr::null_mut(), 0) as DWORD;
     wstr = CoTaskMemAlloc((((len + 1) * core::mem::size_of::<WCHAR>() as DWORD) as usize) as SIZE_T) as LPWSTR;
@@ -9387,7 +9387,7 @@ pub unsafe extern "system" fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT {
 
     
 
-    TRACE(b"%s\n\0".as_ptr() as *const c_char);
+    TRACE!(b"%s\n\0".as_ptr() as *const c_char);
     
     hf = CreateFileW(
         fn_,
@@ -9411,7 +9411,7 @@ pub unsafe extern "system" fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT {
         core::ptr::null_mut(),
     ) == 0
     {
-        WARN(b" unable to read file\n\0".as_ptr() as *const c_char);
+        WARN!(b" unable to read file\n\0".as_ptr() as *const c_char);
         CloseHandle(hf);
         return 0x00000001u32 as HRESULT;
     }
@@ -9419,7 +9419,7 @@ pub unsafe extern "system" fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT {
     CloseHandle(hf);
 
     if bytes_read != 8 {
-        TRACE(b" too short\n\0".as_ptr() as *const c_char);
+        TRACE!(b" too short\n\0".as_ptr() as *const c_char);
         return 0x00000001u32 as HRESULT;
     }
 
@@ -9429,17 +9429,17 @@ pub unsafe extern "system" fn StgIsStorageFile(fn_: LPCOLESTR) -> HRESULT {
         8,
     ) == 0
     {
-        TRACE(b" -> YES\n\0".as_ptr() as *const c_char);
+        TRACE!(b" -> YES\n\0".as_ptr() as *const c_char);
         return 0x00000000u32 as HRESULT;
     }
 
-    TRACE(b" -> Invalid header.\n\0".as_ptr() as *const c_char);
+    TRACE!(b" -> Invalid header.\n\0".as_ptr() as *const c_char);
     0x00000001u32 as HRESULT
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn WriteClassStm(pStm: *mut IStream, rclsid: *const CLSID) -> HRESULT {
-    TRACE(b"(%p,%p)\n\0".as_ptr() as LPCSTR);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as LPCSTR);
 
     if pStm.is_null() || rclsid.is_null() {
         return E_INVALIDARG;
@@ -9455,7 +9455,7 @@ pub unsafe extern "system" fn ReadClassStm(pStm: *mut IStream, pclsid: *mut CLSI
 
     
 
-    TRACE(b"(%p,%p)\n\0".as_ptr() as *const c_char);
+    TRACE!(b"(%p,%p)\n\0".as_ptr() as *const c_char);
 
     if pStm.is_null() || pclsid.is_null() {
         return E_INVALIDARG;
@@ -9749,7 +9749,7 @@ unsafe fn OLECONVERT_CreateOlePresStream(
     pData: *mut BYTE,
     dwDataLength: DWORD,
 ) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let mut pStream: *mut IStream = core::ptr::null_mut();
     static wstrStreamName: [u16; 12] = [2, b'O' as u16, b'l' as u16, b'e' as u16, b'P' as u16, b'r' as u16, b'e' as u16, b's' as u16, b'0' as u16, b'0' as u16, b'0' as u16, 0];
     static pOlePresStreamHeader: [BYTE; 28] = [
@@ -9818,7 +9818,7 @@ unsafe fn OLECONVERT_CreateOlePresStream(
 }
 
 unsafe fn OLECONVERT_CreateOle10NativeStream(pStorage: *mut IStorage, pData: *const u8, dwDataLength: u32) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let mut pStream: *mut IStream = core::ptr::null_mut();
     static wstrStreamName: [u16; 13] = [1, b'O' as u16, b'l' as u16, b'e' as u16, b'1' as u16, b'0' as u16, b'N' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, 0];
 
@@ -9922,7 +9922,7 @@ pub unsafe extern "system" fn GetConvertStg(stg: *mut IStorage) -> HRESULT {
 
     
 
-    TRACE(b"%p\n\0".as_ptr() as *const c_char);
+    TRACE!(b"%p\n\0".as_ptr() as *const c_char);
 
     if stg.is_null() {
         return 0x80070057u32 as HRESULT;

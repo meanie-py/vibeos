@@ -195,7 +195,6 @@ pub unsafe extern "system" fn SerialInterruptService(
 ) -> BOOLEAN {
 
     const SR_IIR_ID_MASK: i32 = 0x07;
-    const SR_IIR_SELF: i32 = 0x01;
     const SR_IIR_MSR_CHANGE: i32 = 0x00;
     const SR_IIR_THR_EMPTY: i32 = 0x02;
     const SR_IIR_DATA_RECEIVED: i32 = 0x04;
@@ -247,7 +246,7 @@ pub unsafe extern "system" fn SerialInterruptService(
         return TRUE;
     }
     Iir = (Iir as i32 & SR_IIR_ID_MASK) as UCHAR;
-    if (Iir as i32 & SR_IIR_SELF) != 0 {
+    if (Iir as u32 & SR_IIR_SELF) != 0 {
         return FALSE;
     }
 

@@ -158,22 +158,11 @@ extern "C" {
     pub static __ImageBase: u8;
 }
 
-// ---------------------------------------------------------------------------
-// Debug no-op symbols. C `TRACE`/`BugCheck` are DBG_DEFAULT_CHANNEL macros
-// (no real symbol). The translated code declares them as variadic
-// `extern "C" fn` so its call sites typecheck; we satisfy the link with a
-// non-variadic cdecl definition — caller-cleans-stack makes ignoring the
-// extra varargs ABI-safe on i386/amd64/arm64. THE systemic sweep fix.
-// ---------------------------------------------------------------------------
+// C `TRACE`/`ERR`/`WARN`/`FIXME` are debug.h macros over `DbgPrint2`, live in this DBG
+// build. They used to be four `#[no_mangle]` no-ops serving ~960 call sites through
+// variadic externs, so every loader diagnostic was dropped; the call sites now use the
+// `ffi.rs` macros (tools/fn_call_to_macro.py did the rewrite).
 
-#[no_mangle]
-extern "C" fn TRACE(_fmt: *const i8) { /* no-op (DBG channel disabled) */ }
-#[no_mangle]
-extern "C" fn ERR(_fmt: *const i8) { /* no-op */ }
-#[no_mangle]
-extern "C" fn WARN(_fmt: *const i8) { /* no-op */ }
-#[no_mangle]
-extern "C" fn FIXME(_fmt: *const i8) { /* no-op */ }
 // freeldr debug.h, DBG branch (this build): `DebugDumpBuffer(mask, buf, len)`, which
 // dumps only when that channel is enabled. Was an empty fn: every dump was dropped.
 #[no_mangle]

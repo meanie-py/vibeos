@@ -519,8 +519,10 @@ day: ten boot-path sites fixed -- roadmap.)
   ...). Unlike the macro case each needs the C beside it, since a C `while` with a trailing
   update is faithful and only a C `for` is a bug. Spot checks (win32k `ProcessTimers`, cc
   `CcRosFlushDirtyPages`) were both fine, because they advance before every `continue`.
+  **Closed 2026-10-09** (below): one bug, `scan_dowhile_continue` owns the shape.
 - `UNREFERENCED_PARAMETER` as an empty fn: 42 sites. Same class as PAGED_CODE, but
   `scan_macro_fn_shadow` only sees the copies in crates that also define the macro.
+  **Closed 2026-10-09** (below).
 - msafd `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are still the old stubs.rs bodies
   (`return 0` / `unimplemented!()`), but upstream has since given both real bodies in
   `dll/win32/msafd/misc/dllmain.c` and neither is ported. This is an upstream-sync gap,
@@ -651,7 +653,7 @@ msvcrt-crt-rust or crt-shared-rust warning at all, the next clean build (150818)
 content. A crate's warnings reach `full.log` only from the build that really compiles its
 content, probably because sccache serves the rest without them. (`NOT BUILT (no coverage)`
 in the same log is `scan_flex_array_panic`'s binary corpus, NOT cargo's, and says nothing
-about this.) **Owed: the census must check per-crate coverage**, by compiling each crate
+about this.) **Owed: the census must check per-crate coverage** (closed 2026-10-09, below), by compiling each crate
 it reports on or by refusing a log that lacks a crate's compile, before any total is
 trusted. The zero below was established crate by crate from the build that compiled each
 one's current content. The 27 were:
@@ -663,6 +665,107 @@ one's current content. The 27 were:
 - `create_locinfo`: current Wine overwrites `i = GetLocaleInfoEx(..)` with
   `i = WideCharToMultiByte(..)` at once. The tree's `locale.c` is the older A-version and
   is not the oracle here.
+
+**Four owed items closed (2026-10-09).**
+
+- **The census reads cargo's cache, not the log.** `tools/rust_warning_census.py build-i386
+  build-amd64 build-arm64` reads every unit's `.fingerprint/<crate>-<hash>/output-lib-*`.
+  That file is rustc's JSON, the one cargo replays for a fresh unit, and it names the lint,
+  so nothing is inferred. A unit counts only if no file in its dep-info is newer than its
+  `invoked.timestamp`, which is cargo's own freshness rule. A crate with no fresh unit is
+  refused (exit 3, `--allow-stale` to report the rest). msvcrt-crt-rust's cache held 357
+  warnings for the same content one clean log showed none of. Logs still work, with the
+  caveat printed. The first verified census (fresh ×3, 653 arch:crate units): **8,447
+  sites, 0 UB, 1,720 LOGIC, 6,727 NOISE**. `unnecessary_transmutes` is 5,322, not the
+  logs' 1,782. Seven LOGIC sites no log had ever carried were graded noise and fixed:
+  version-rust's NUL for a dropped WARN; an atapi `NT_VERIFY` and shell32's
+  `FAILED_UNEXPECTEDLY(hr2)`, both "report but don't fail" in the C; syssetup's
+  `DateTime_SetSystemtime` comparing where the C casts to BOOL; diskpart's three
+  `while true`. LOGIC is now `clashing_extern` (Phase 2), 12 fn-pointer comparisons
+  outside the audited allows (owed), and the graded kernel32 and pcix sites.
+- **Hand-written `while` that `continue`s past its step: 61 graded, 1 bug.** Two Haiku
+  agents read all 61 against the C, and I re-read the four they judged without it, plus
+  partmgr and se. The bug was cmlib `HvValidateHive`, whose C `for` runs `BlockIndex++;
+  continue;` on a NULL bin. The Rust spun forever there, under a comment calling it
+  "faithful to C". partmgr's restart-after-match is right and the C's `for` is not: the
+  step skips the head it just reset to, which can hand out a PDO number already in use.
+  The Rust now says so. Everything else is a C `while` with the same `continue` (17) or
+  advances before every `continue` (43). `scan_dowhile_continue` now flags the shape. An
+  update covers a `continue` only from a block still open at it, so a step in a sibling
+  `if` arm does not count. That rule cut the 61 to 26, all baselined as graded. Reading
+  each file once also made the scan about twice as fast.
+- **`UNREFERENCED_PARAMETER` is a `macro_rules!` in all 13 crates** that had it as an
+  empty fn or an extern declaration: 40 definitions and declarations gone, 102 calls now
+  `!`. Three of them were `#[no_mangle]` exports resolving the other crates' externs.
+  `scan_macro_fn_shadow` lists it in `DDK_MACROS`, so an extern declaration fires with no
+  in-crate macro. Before, the widened rule reported 35 files; now it reports 0.
+- **The `path_statements` were not all noise.** kernel32.h's `STUB` is
+  `SetLastError(ERROR_CALL_NOT_IMPLEMENTED); DPRINT1(..)`, but kernel32-rust had it as
+  `const STUB: () = ()`. So 11 live `STUB;` stubs, plus 13 more commented out as
+  "debug no-op", returned FALSE without saying why, and a caller's `GetLastError()` read
+  whatever came before. All 24, and `GetActiveProcessorGroupCount` (which is `STUB;
+  return 1;` in the C), now go through a `STUB!()` that sets it. `UNIMPLEMENTED` (debug.h,
+  a print only) and `NOTHING` really are empty. win32k's `STUB` is a `DbgPrint` alone.
+- **`clashing_extern` return mismatches: 78 graded, 0 bugs.** Every declaration that
+  disagrees on whether the function returns (40 functions) has its value discarded at
+  every Rust call and at the matching C call: statement calls, `let _ =`, `!` vs `()` on a
+  real noreturn. Still owed: 16 fastfat declarations give FatBugCheck 32-bit
+  arguments where the C passes `ULONG_PTR`, so on amd64 the upper halves of the bugcheck
+  parameters are garbage. Retyping it hits the call-site E0308 wall described above.
+
+**`clashing_extern` Phase 2 by width, the AcceptEx port, and the noise applier (2026-10-09).**
+
+- **Classified from the cache, not by eye:** 1,703 clashing sites. 1,531 differ only in
+  pointer target or signedness (same width), 14 differ in calling convention only on 64-bit
+  (where "C" and "system" agree), and 55 are the already-graded return set. Two Haiku
+  agents graded the other 102 (argument or return WIDTH, by-value struct, i386 ABI)
+  against the C. 73 were benign, 12 cosmetic, and these were real:
+  - **fastfat `CanFsdWait` returned garbage.** The macro (`IoIsOperationSynchronous(Irp)`,
+    fatprocs.h) was a `VOID` no-op in `rust_cohab_stub.c`, fastfat.sys's only definition.
+    So all 14 FSD entry points set their IrpContext's Wait flag from a leftover register.
+    The stub now returns the real answer, and the 11 Rust declarations read a BOOLEAN.
+  - **cdfs `CdIs8dot3Name`** is defined taking `UNICODE_STRING` by value, but dirsup.rs
+    declared a pointer and passed `addr_of_mut!`. It worked on amd64 by luck (a 16-byte
+    struct goes by hidden pointer) and read garbage on i386 (8 bytes on the stack) and
+    arm64 (two registers).
+  - **Width bugs:** fastfat `FatBugCheck` (16 declarations, 28 calls) and cdfs
+    `CdBugCheck` (the definition itself) took `u32` where the C passes `ULONG_PTR`, which
+    truncates bugcheck parameters on 64-bit. oleaut32's `_wcsnicmp` count was `u32`, not
+    `size_t`. user32 clipboard's `GlobalSize` returned `DWORD`, not `SIZE_T`.
+- **Still owed, from the same grading:** fastfat's `SetFlag` / `ClearFlag` are also
+  out-of-line stubs, `*(PULONG_PTR)x |= f`. On 64-bit that is an 8-byte read-modify-write
+  of a 4-byte (sometimes 1-byte) field and its neighbour: not atomic, and past the end at
+  the end of an allocation. `FlagOn` / `BooleanFlagOn` declarations narrow their arguments.
+  The fix is the PAGED_CODE treatment for the whole family (about 480 calls and 70
+  declarations): crate `macro_rules!` on the real lvalue, then delete the stubs. The
+  generated cdfs `types_i386.rs` also declares `CdCreateFcb`'s `FILE_ID` as a pointer,
+  where it is a `LARGE_INTEGER` by value; no live caller uses it, so the fix belongs in
+  the generator.
+- **AcceptEx (upstream a68bfa2fb41) is ported.** A Haiku agent drafted the afd half: 18
+  edits covering every C hunk (`SatisfySuperAccept`, `AfdSuperAccept`,
+  `AcceptExReceiveComplete`, the PREACCEPT dispatch and cancel paths, bind/connect state
+  checks). I reviewed it against the C. It compiled first time once `TDI_ADDRESS_INFO`
+  had a home (afd glue.rs). The afd islands were regenerated with gen_driver_types.sh
+  rather than hand-edited. That picked up `AcceptIrp` in `_AFD_FCB`, so the Rust FCB
+  layout matches the header again. msafd's `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are
+  ported by hand, `SIO_GET_EXTENSION_FUNCTION_POINTER` returns success for
+  GetAcceptExSockaddrs, and `SO_UPDATE_ACCEPT_CONTEXT` is accepted.
+- **`tools/apply_rustc_suggestions.py`** applies rustc's machine-applicable fixes from the
+  cache. It only applies a fix every arch that compiled the file agrees on, never inside a
+  macro expansion, and never in a generated file. It also refuses rustc's float
+  `from_bits` rewrite, which does not compile on the i386 no-SSE cell (that cost one
+  build). Applied: `unused_mut` 100 to 6 (the rest disagree by arch) and `unused_parens`
+  160 to 0. Not applied: `unused_imports` (an import used only under `#[cfg(test)]` reads
+  as unused here). Owed: regenerating the bindgen islands, which carry about 4,590 of the 4,602
+  `unnecessary_transmutes`; the afd regen (bindgen 0.73) emits none.
+- **The census counted a file twice** when a crate reaches another's source by path
+  (menuband: `../../shell32-rust/src/island_*.rs`). Paths are normalized now, and the
+  applier would otherwise have applied the same byte-offset edit twice. The verified total
+  is **7,530 sites: 0 UB, 1,699 LOGIC, 5,831 NOISE**. The 12 function-pointer
+  comparisons got audited allows, except ks's `SupportHandler != None`, which is now
+  `.is_some()`.
+- `apply_dead_assignments` keeps an initializer only if a raw borrow can see it: a plain
+  `x = ..;` in the `let`'s own block before every raw borrow now makes it removable.
 
 ## Owed follow-ups
 
@@ -681,7 +784,8 @@ one's current content. The 27 were:
     Mostly cosmetic, BUT the *missing-return* ones are real dropped-NTSTATUS bugs (e.g. cdrom
     `init.rs:69` `fn DeviceSetParameter(...);` drops the `-> NTSTATUS` the def returns). Reconciling
     types is the 80×-E0308 wall from the POC below — per-call-site work, supervised.
-  - **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
+  - **CLOSED (checked 2026-10-09): every definition and declaration of these is `extern "system"` now.**
+    **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
     `ForwardIrpAndForget`/`SerialCreate`/`AfdCancelHandler` defined cdecl but registered as stdcall
     callbacks → latent i386 stack bug. Fix = change the *definitions* to `extern "system"` + verify no
     direct-call site depends on cdecl. Real bug, not noise.

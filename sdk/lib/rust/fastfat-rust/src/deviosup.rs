@@ -49,7 +49,7 @@ extern "system" {
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
 }
 extern "system" {
-    fn FatBugCheck(a: u32, b: u32, c: u32) -> !;
+    fn FatBugCheck(a: usize, b: usize, c: usize) -> !;
     fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u8;
     fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32) -> u8;
     fn FatUpdateIOCountersPCW(is_write: u32, count: u64);
@@ -64,7 +64,6 @@ extern "system" {
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
-    fn _Analysis_assume_(expr: bool);
     fn DbgBreakPoint();
     } extern "C" { fn DbgPrint(fmt: *const i8, ...); } extern "system" {
     static mut FatBreakOnInterestingIoCompletion: i32;
@@ -606,7 +605,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     ) as u32;
 
     if MustSucceed == 0 {
-        FatBugCheck(Vbo, ByteCount, 0);
+        FatBugCheck(Vbo as usize, ByteCount as usize, 0);
     }
 
     if FatDiskAccountingEnabled != 0 {
@@ -662,7 +661,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
     ) as u32;
 
     if MustSucceed == 0 {
-        FatBugCheck(Vbo.wrapping_add(ByteCount).wrapping_sub(1), 1, 0);
+        FatBugCheck(Vbo.wrapping_add(ByteCount).wrapping_sub(1) as usize, 1, 0);
     }
 
     CurrentIndex = FirstIndex;

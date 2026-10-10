@@ -1485,8 +1485,8 @@ unsafe fn MiBuildPagedPool() {
 
     // DBG: before MiRemoveZeroPage
 
-    MI_SET_USAGE(MI_USAGE_PAGED_POOL);
-    super::helpers::MI_SET_PROCESS2(core::ptr::null_mut());
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGED_POOL);
+    ntkrnl_sys::MI_SET_PROCESS2!(core::ptr::null_mut());
     page_frame_index = MiRemoveZeroPage(0);
 
     // DBG: after MiRemoveZeroPage

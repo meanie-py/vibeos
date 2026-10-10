@@ -465,7 +465,7 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     let mut NewStack: ULONG_PTR;
     let mut StackBegin: ULONG_PTR;
     let mut StackEnd: ULONG_PTR = 0;
-    let mut Eip: ULONG;
+    let mut Eip: ULONG_PTR; // return address, pointer-wide (a ULONG truncated it on 64-bit)
     let Result: BOOLEAN;
     let mut StopSearch = false;
     let mut i: ULONG = 0;
@@ -489,9 +489,12 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
     {
         core::arch::asm!("mov {}, sp", out(reg) Stack);
     }
+    // The walk reads [frame] = caller's frame, [frame + ptr] = return address: the x86 EBP
+    // chain, and on AArch64 exactly the x29 frame record (fp, lr). Starting at sp read locals
+    // as frame records, so arm64 RtlWalkFrameChain returned 0 frames (RtlStackKM).
     #[cfg(target_arch = "aarch64")]
     {
-        core::arch::asm!("mov {}, sp", out(reg) Stack);
+        core::arch::asm!("mov {}, x29", out(reg) Stack);
     }
 
     StackBegin = Stack;
@@ -568,7 +571,7 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
             Err(_) => return 0,
         };
         Eip = match ntkrnl_sys::probe::probe_read_generic(
-            (Stack + core::mem::size_of::<ULONG_PTR>()) as *const ULONG,
+            (Stack + core::mem::size_of::<ULONG_PTR>()) as *const ULONG_PTR,
             1,
             0,
         ) {
@@ -584,7 +587,9 @@ pub unsafe extern "system" fn RtlWalkFrameChain(
             break;
         }
 
-        if (Flags == 0) && ((Eip & 0x80000000) == 0) {
+        // Kernel walk: stop at the first user-mode return address. The C's `Eip & 0x80000000`
+        // is the i386 kernel/user split; on 64-bit it is the top bit.
+        if (Flags == 0) && ((Eip >> (ULONG_PTR::BITS - 1)) == 0) {
             break;
         }
 

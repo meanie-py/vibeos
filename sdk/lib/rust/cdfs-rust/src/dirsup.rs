@@ -34,8 +34,6 @@ extern "C" {
     fn Int32x32To64(a: i32, b: i32) -> LONGLONG;
 }
 extern "C" {
-}
-extern "C" {
     fn CdConvertBigToLittleEndian(IrpContext: PIRP_CONTEXT, Src: *const u8, SrcLen: ULONG, Dst: *mut u8);
 }
 extern "C" {
@@ -54,16 +52,12 @@ extern "C" {
     fn NT_ASSERT(condition: u32);
 }
 extern "C" {
-    fn __analysis_assert(condition: u32);
 }
 extern "C" {
     fn CdCleanupDirContext(IrpContext: *mut IRP_CONTEXT, DirContext: *mut DIRENT_ENUM_CONTEXT);
 }
 extern "C" {
     fn CdCleanupDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT);
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -87,7 +81,7 @@ extern "C" {
     fn CdShortNameDirentOffset(IrpContext: *mut IRP_CONTEXT, FileName: *mut _UNICODE_STRING) -> u32;
 }
 extern "C" {
-    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: *mut _UNICODE_STRING) -> i32;
+    fn CdIs8dot3Name(IrpContext: *mut IRP_CONTEXT, Name: _UNICODE_STRING) -> i32;
 }
 extern "C" {
     fn CdGenerate8dot3Name(IrpContext: *mut IRP_CONTEXT, Source: *mut _UNICODE_STRING, Offset: u32, Buffer: *mut u16, Length: *mut u16);
@@ -438,7 +432,7 @@ pub unsafe extern "C" fn CdUpdateDirentName(
                 (*Dirent).FileNameLen,
             );
 
-            __analysis_assert(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
+            ntkrnl_sys::__analysis_assert!(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
             NT_ASSERT(((Status == STATUS_SUCCESS) as BOOLEAN) as _);
             (*Dirent).CdFileName.FileName.Length = Length as USHORT;
         } else {
@@ -581,7 +575,7 @@ pub unsafe extern "C" fn CdFindFile(
                 && (*Name).VersionString.Length as u32 == 0
                 && CdIs8dot3Name(
                     IrpContext,
-                    core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
+                    (*Dirent).CdFileName.FileName,
                 ) == 0
             {
                 CdGenerate8dot3Name(
@@ -772,7 +766,7 @@ pub unsafe extern "C" fn CdCleanupFileContext(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     loop {
         CurrentCompoundDirent = (core::ptr::addr_of_mut!((*FileContext).Dirents) as *mut COMPOUND_DIRENT).add(Count as usize);
@@ -797,7 +791,7 @@ pub unsafe extern "C" fn CdCheckRawDirentBounds(
     let RawDirent: *mut RAW_DIRENT;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(((((*DirContext).DataLength - (*DirContext).SectorOffset) >= 1) as BOOLEAN) as _);
 
@@ -930,7 +924,7 @@ pub unsafe extern "C" fn CdFindFileByShortName(
 
             if CdIs8dot3Name(
                 IrpContext,
-                core::ptr::addr_of_mut!((*Dirent).CdFileName.FileName),
+                (*Dirent).CdFileName.FileName,
             ) != 0 {
                 break;
             }

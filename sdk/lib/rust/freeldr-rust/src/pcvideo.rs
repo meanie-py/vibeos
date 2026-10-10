@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_UI; // pcvideo.c: DBG_DEFAULT_CHANNEL(UI)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::ui_keystone::{VIDEODISPLAYMODE, VideoTextMode, VideoGraphicsMode};
@@ -28,7 +30,6 @@ extern "C" {
     fn WRITE_PORT_UCHAR(Port: *mut UCHAR, Value: UCHAR);
     fn WRITE_PORT_USHORT(Port: *mut USHORT, Value: USHORT);
     fn READ_PORT_UCHAR(Port: *mut UCHAR) -> UCHAR;
-    fn TRACE(fmt: *const i8, ...);
     // freeldr debug printf family (external C: debug.c / ui). cdecl variadic.
     // TRACE_printf/printf are #[no_mangle]-defined in tui.rs (non-variadic
     // cdecl defs; caller-cleans → variadic call sites here are ABI-safe).
@@ -196,56 +197,56 @@ unsafe fn PcVideoVesaGetSVGAModeInformation(
         core::mem::size_of::<SVGA_MODE_INFORMATION>()
     );
 
-    TRACE(b"\n\0".as_ptr() as PCHAR);
-    TRACE(b"BiosVesaGetSVGAModeInformation(Mode 0x%x)\n\0".as_ptr() as PCHAR, (Mode) as usize);
-    TRACE(b"ModeAttributes = 0x%04x\n\0".as_ptr() as PCHAR, ((*ModeInformation).ModeAttributes) as usize);
-    TRACE(b"WindowAttributesA = 0x%02x\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowAttributesA) as usize);
-    TRACE(b"WindowAttributesB = 0x%02x\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowsAttributesB) as usize);
-    TRACE(b"WindowGranularity = %huKB\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowGranularity) as usize);
-    TRACE(b"WindowSize = %huKB\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowSize) as usize);
-    TRACE(b"WindowAStartSegment = 0x%04x\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowAStartSegment) as usize);
-    TRACE(b"WindowBStartSegment = 0x%04x\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowBStartSegment) as usize);
-    TRACE(b"WindowPositioningFunction = 0x%x\n\0".as_ptr() as PCHAR, ((*ModeInformation).WindowPositioningFunction) as usize);
-    TRACE(b"BytesPerScanLine = %hu\n\0".as_ptr() as PCHAR, ((*ModeInformation).BytesPerScanLine) as usize);
-    TRACE(b"WidthInPixels = %hu\n\0".as_ptr() as PCHAR, ((*ModeInformation).WidthInPixels) as usize);
-    TRACE(b"HeightInPixels = %hu\n\0".as_ptr() as PCHAR, ((*ModeInformation).HeightInPixels) as usize);
-    TRACE(b"CharacterWidthInPixels = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).CharacterWidthInPixels) as usize);
-    TRACE(b"CharacterHeightInPixels = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).CharacterHeightInPixels) as usize);
-    TRACE(b"NumberOfMemoryPlanes = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).NumberOfMemoryPlanes) as usize);
-    TRACE(b"BitsPerPixel = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).BitsPerPixel) as usize);
-    TRACE(b"NumberOfBanks = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).NumberOfBanks) as usize);
-    TRACE(b"MemoryModel = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).MemoryModel) as usize);
-    TRACE(b"BankSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).BankSize) as usize);
-    TRACE(b"NumberOfImagePanes = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).NumberOfImagePanes) as usize);
-    TRACE(b"Reserved1 = 0x%02x\n\0".as_ptr() as PCHAR, ((*ModeInformation).Reserved1) as usize);
-    TRACE(b"---VBE v1.2+ ---\n\0".as_ptr() as PCHAR);
-    TRACE(b"RedMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).RedMaskSize) as usize);
-    TRACE(b"RedMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).RedMaskPosition) as usize);
-    TRACE(b"GreenMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).GreenMaskSize) as usize);
-    TRACE(b"GreenMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).GreenMaskPosition) as usize);
-    TRACE(b"BlueMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).BlueMaskSize) as usize);
-    TRACE(b"BlueMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).BlueMaskPosition) as usize);
-    TRACE(b"ReservedMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).ReservedMaskSize) as usize);
-    TRACE(b"ReservedMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).ReservedMaskPosition) as usize);
-    TRACE(b"DirectColorModeInfo = 0x%02x\n\0".as_ptr() as PCHAR, ((*ModeInformation).DirectColorModeInfo) as usize);
-    TRACE(b"---VBE v2.0+ ---\n\0".as_ptr() as PCHAR);
-    TRACE(b"LinearVideoBufferAddress = 0x%x\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearVideoBufferAddress) as usize);
-    TRACE(b"OffscreenMemoryPointer = 0x%x\n\0".as_ptr() as PCHAR, ((*ModeInformation).OffscreenMemoryPointer) as usize);
-    TRACE(b"OffscreenMemorySize = %huKB\n\0".as_ptr() as PCHAR, ((*ModeInformation).OffscreenMemorySize) as usize);
-    TRACE(b"---VBE v3.0 ---\n\0".as_ptr() as PCHAR);
-    TRACE(b"LinearBytesPerScanLine = %hu\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearBytesPerScanLine) as usize);
-    TRACE(b"BankedNumberOfImages = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).BankedNumberOfImages) as usize);
-    TRACE(b"LinearNumberOfImages = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearNumberOfImages) as usize);
-    TRACE(b"LinearRedMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearRedMaskSize) as usize);
-    TRACE(b"LinearRedMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearRedMaskPosition) as usize);
-    TRACE(b"LinearGreenMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearGreenMaskSize) as usize);
-    TRACE(b"LinearGreenMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearGreenMaskPosition) as usize);
-    TRACE(b"LinearBlueMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearBlueMaskSize) as usize);
-    TRACE(b"LinearBlueMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearBlueMaskPosition) as usize);
-    TRACE(b"LinearReservedMaskSize = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearReservedMaskSize) as usize);
-    TRACE(b"LinearReservedMaskPosition = %u\n\0".as_ptr() as PCHAR, ((*ModeInformation).LinearReservedMaskPosition) as usize);
-    TRACE(b"MaximumPixelClock = %luHz\n\0".as_ptr() as PCHAR, ((*ModeInformation).MaximumPixelClock) as usize);
-    TRACE(b"\n\0".as_ptr() as PCHAR);
+    TRACE!("\n");
+    TRACE!("BiosVesaGetSVGAModeInformation(Mode 0x%x)\n", (Mode) as usize);
+    TRACE!("ModeAttributes = 0x%04x\n", ((*ModeInformation).ModeAttributes) as usize);
+    TRACE!("WindowAttributesA = 0x%02x\n", ((*ModeInformation).WindowAttributesA) as usize);
+    TRACE!("WindowAttributesB = 0x%02x\n", ((*ModeInformation).WindowsAttributesB) as usize);
+    TRACE!("WindowGranularity = %huKB\n", ((*ModeInformation).WindowGranularity) as usize);
+    TRACE!("WindowSize = %huKB\n", ((*ModeInformation).WindowSize) as usize);
+    TRACE!("WindowAStartSegment = 0x%04x\n", ((*ModeInformation).WindowAStartSegment) as usize);
+    TRACE!("WindowBStartSegment = 0x%04x\n", ((*ModeInformation).WindowBStartSegment) as usize);
+    TRACE!("WindowPositioningFunction = 0x%x\n", ((*ModeInformation).WindowPositioningFunction) as usize);
+    TRACE!("BytesPerScanLine = %hu\n", ((*ModeInformation).BytesPerScanLine) as usize);
+    TRACE!("WidthInPixels = %hu\n", ((*ModeInformation).WidthInPixels) as usize);
+    TRACE!("HeightInPixels = %hu\n", ((*ModeInformation).HeightInPixels) as usize);
+    TRACE!("CharacterWidthInPixels = %u\n", ((*ModeInformation).CharacterWidthInPixels) as usize);
+    TRACE!("CharacterHeightInPixels = %u\n", ((*ModeInformation).CharacterHeightInPixels) as usize);
+    TRACE!("NumberOfMemoryPlanes = %u\n", ((*ModeInformation).NumberOfMemoryPlanes) as usize);
+    TRACE!("BitsPerPixel = %u\n", ((*ModeInformation).BitsPerPixel) as usize);
+    TRACE!("NumberOfBanks = %u\n", ((*ModeInformation).NumberOfBanks) as usize);
+    TRACE!("MemoryModel = %u\n", ((*ModeInformation).MemoryModel) as usize);
+    TRACE!("BankSize = %u\n", ((*ModeInformation).BankSize) as usize);
+    TRACE!("NumberOfImagePanes = %u\n", ((*ModeInformation).NumberOfImagePanes) as usize);
+    TRACE!("Reserved1 = 0x%02x\n", ((*ModeInformation).Reserved1) as usize);
+    TRACE!("---VBE v1.2+ ---\n");
+    TRACE!("RedMaskSize = %u\n", ((*ModeInformation).RedMaskSize) as usize);
+    TRACE!("RedMaskPosition = %u\n", ((*ModeInformation).RedMaskPosition) as usize);
+    TRACE!("GreenMaskSize = %u\n", ((*ModeInformation).GreenMaskSize) as usize);
+    TRACE!("GreenMaskPosition = %u\n", ((*ModeInformation).GreenMaskPosition) as usize);
+    TRACE!("BlueMaskSize = %u\n", ((*ModeInformation).BlueMaskSize) as usize);
+    TRACE!("BlueMaskPosition = %u\n", ((*ModeInformation).BlueMaskPosition) as usize);
+    TRACE!("ReservedMaskSize = %u\n", ((*ModeInformation).ReservedMaskSize) as usize);
+    TRACE!("ReservedMaskPosition = %u\n", ((*ModeInformation).ReservedMaskPosition) as usize);
+    TRACE!("DirectColorModeInfo = 0x%02x\n", ((*ModeInformation).DirectColorModeInfo) as usize);
+    TRACE!("---VBE v2.0+ ---\n");
+    TRACE!("LinearVideoBufferAddress = 0x%x\n", ((*ModeInformation).LinearVideoBufferAddress) as usize);
+    TRACE!("OffscreenMemoryPointer = 0x%x\n", ((*ModeInformation).OffscreenMemoryPointer) as usize);
+    TRACE!("OffscreenMemorySize = %huKB\n", ((*ModeInformation).OffscreenMemorySize) as usize);
+    TRACE!("---VBE v3.0 ---\n");
+    TRACE!("LinearBytesPerScanLine = %hu\n", ((*ModeInformation).LinearBytesPerScanLine) as usize);
+    TRACE!("BankedNumberOfImages = %u\n", ((*ModeInformation).BankedNumberOfImages) as usize);
+    TRACE!("LinearNumberOfImages = %u\n", ((*ModeInformation).LinearNumberOfImages) as usize);
+    TRACE!("LinearRedMaskSize = %u\n", ((*ModeInformation).LinearRedMaskSize) as usize);
+    TRACE!("LinearRedMaskPosition = %u\n", ((*ModeInformation).LinearRedMaskPosition) as usize);
+    TRACE!("LinearGreenMaskSize = %u\n", ((*ModeInformation).LinearGreenMaskSize) as usize);
+    TRACE!("LinearGreenMaskPosition = %u\n", ((*ModeInformation).LinearGreenMaskPosition) as usize);
+    TRACE!("LinearBlueMaskSize = %u\n", ((*ModeInformation).LinearBlueMaskSize) as usize);
+    TRACE!("LinearBlueMaskPosition = %u\n", ((*ModeInformation).LinearBlueMaskPosition) as usize);
+    TRACE!("LinearReservedMaskSize = %u\n", ((*ModeInformation).LinearReservedMaskSize) as usize);
+    TRACE!("LinearReservedMaskPosition = %u\n", ((*ModeInformation).LinearReservedMaskPosition) as usize);
+    TRACE!("MaximumPixelClock = %luHz\n", ((*ModeInformation).MaximumPixelClock) as usize);
+    TRACE!("\n");
 
     1u8
 }
@@ -292,7 +293,7 @@ unsafe fn PcVideoGetDisplayMode() {
     if PcVideoVesaGetCurrentSVGAMode(&mut Mode) != 0 &&
        PcVideoVesaGetSVGAModeInformation(Mode, &mut VesaVideoModeInformation) != 0
     {
-        TRACE(b"VESA mode detected\n\0".as_ptr() as *const i8);
+        TRACE!("VESA mode detected\n");
         ScreenWidth = (VesaVideoModeInformation.WidthInPixels) as u32 ;
         ScreenHeight = (VesaVideoModeInformation.HeightInPixels) as u32 ;
         BytesPerScanLine = (VesaVideoModeInformation.BytesPerScanLine) as u32 ;
@@ -309,7 +310,7 @@ unsafe fn PcVideoGetDisplayMode() {
 
         let _BiosMode = (*(0x449 as *const UCHAR)) & 0x7F;
         BiosVideoMode = Mode;
-        TRACE(b"BIOS mode detected\n\0".as_ptr() as *const i8);
+        TRACE!("BIOS mode detected\n");
 
         ScreenWidth = (*(0x44A as *const USHORT)) as u32 ;
         ScreenHeight = 1 + *(0x484 as *const UCHAR) as ULONG;
@@ -323,7 +324,7 @@ unsafe fn PcVideoGetDisplayMode() {
     }
     else
     {
-        TRACE(b"Fallback mode detected\n\0".as_ptr() as *const i8);
+        TRACE!("Fallback mode detected\n");
         BiosVideoMode = VIDEOMODE_NORMAL_TEXT;
         ScreenWidth = 80;
         ScreenHeight = 25;
@@ -332,14 +333,12 @@ unsafe fn PcVideoGetDisplayMode() {
         VesaVideoMode = 0u8;
     }
 
-    TRACE(
-        b"This is a %s video mode\n\0".as_ptr() as *const i8, (if VesaVideoMode != 0 { b"VESA\0".as_ptr() } else { b"BIOS\0".as_ptr() }) as usize);
-    TRACE(b"BiosVideoMode    = 0x%x\n\0".as_ptr() as *const i8, (BiosVideoMode) as usize);
-    TRACE(
-        b"DisplayMode      = %sMode\n\0".as_ptr() as *const i8, (if DisplayMode == VideoTextMode { b"Text\0".as_ptr() } else { b"Graphics\0".as_ptr() }) as usize);
-    TRACE(b"ScreenWidth      = %lu\n\0".as_ptr() as *const i8, (ScreenWidth) as usize);
-    TRACE(b"ScreenHeight     = %lu\n\0".as_ptr() as *const i8, (ScreenHeight) as usize);
-    TRACE(b"BytesPerScanLine = %lu\n\0".as_ptr() as *const i8, (BytesPerScanLine) as usize);
+    TRACE!("This is a %s video mode\n", (if VesaVideoMode != 0 { b"VESA\0".as_ptr() } else { b"BIOS\0".as_ptr() }) as usize);
+    TRACE!("BiosVideoMode    = 0x%x\n", (BiosVideoMode) as usize);
+    TRACE!("DisplayMode      = %sMode\n", (if DisplayMode == VideoTextMode { b"Text\0".as_ptr() } else { b"Graphics\0".as_ptr() }) as usize);
+    TRACE!("ScreenWidth      = %lu\n", (ScreenWidth) as usize);
+    TRACE!("ScreenHeight     = %lu\n", (ScreenHeight) as usize);
+    TRACE!("BytesPerScanLine = %lu\n", (BytesPerScanLine) as usize);
 }
 
 unsafe fn PcVideoSetBiosVesaMode(Mode: USHORT) -> BOOLEAN {
@@ -1032,13 +1031,7 @@ pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFr
         ),
     };
     if let Some(fb) = chosen {
-        TRACE(
-            b"VBE framebuffer: mode 0x%x %ux%u at 0x%x\n\0".as_ptr() as PCHAR,
-            fb.Mode as usize,
-            fb.Data.ScreenWidth as usize,
-            fb.Data.ScreenHeight as usize,
-            fb.Base as usize,
-        );
+        TRACE!("VBE framebuffer: mode 0x%x %ux%u at 0x%x\n", fb.Mode as usize, fb.Data.ScreenWidth as usize, fb.Data.ScreenHeight as usize, fb.Base as usize);
     }
     VbeFramebuffer = chosen;
     chosen
@@ -1053,7 +1046,7 @@ pub unsafe extern "C" fn PcVideoPrepareForReactOS() {
         if PcVideoSetBiosVesaMode(fb.Mode | 0x4000) != 0 {
             return;
         }
-        TRACE(b"VBE set mode 0x%x failed; staying in text mode\n\0".as_ptr() as PCHAR, fb.Mode as usize);
+        TRACE!("VBE set mode 0x%x failed; staying in text mode\n", fb.Mode as usize);
     }
     PcVideoSetMode80x25();
     PcVideoHideShowTextCursor(0u8);

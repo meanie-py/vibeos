@@ -3,7 +3,7 @@
 import tree_sitter_rust
 from tree_sitter import Language, Parser
 
-_NAMES = {"DPRINT", "DPRINT1", "ERR", "WARN", "TRACE", "FIXME", "MESSAGE"}
+_NAMES = {"DPRINT", "DPRINT1", "ERR", "WARN", "TRACE", "FIXME", "MESSAGE", "ASSERT", "NT_ASSERT"}
 
 
 def preserve_debug_macros(code: str) -> str:

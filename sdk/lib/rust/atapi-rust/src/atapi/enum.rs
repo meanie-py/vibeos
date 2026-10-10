@@ -88,6 +88,8 @@ pub unsafe extern "C" fn AtaSwapIdString(
 ) {
     let mut Word: *mut u16 = Buffer as *mut u16;
 
+    ASSERT!(((Buffer as ULONG_PTR) & 1) == 0);
+
     let mut count = WordCount;
     while count != 0 {
         count = count.wrapping_sub(1);
@@ -200,6 +202,7 @@ unsafe extern "C" fn AtaPdoFillIdentificationStrings(mut DevExt: PATAPORT_DEVICE
             b"%2x\0" as *const u8 as *const i8,
             (*IdentifyData).SerialNumber[i as usize] as i32,
         );
+        ASSERT!(NT_SUCCESS!(Status));
         i = i.wrapping_add(1);
     }
 
@@ -219,6 +222,7 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
 
         if AtaDevHas48BitAddressFeature(IdentifyData) != 0 {
             TotalSectors = AtaDevUserAddressableSectors48Bit(IdentifyData);
+            ASSERT!(TotalSectors <= ATA_MAX_LBA_48 as ULONG64);
 
             (*DevExt).Device.DeviceFlags |= DEVICE_LBA48;
 
@@ -227,6 +231,7 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
             }
         } else {
             TotalSectors = (AtaDevUserAddressableSectors28Bit(IdentifyData)) as _;
+            ASSERT!(TotalSectors <= ATA_MAX_LBA_28 as ULONG64);
         }
     } else {
         let mut Cylinders: USHORT = core::mem::zeroed();
@@ -248,6 +253,8 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
     }
 
     if TotalSectors == 0 {
+        ERR!(b"Unknown geometry\n\0".as_ptr() as *const i8);
+
         TotalSectors = 1;
 
         (*DevExt).Device.SectorsPerTrack = 1;
@@ -257,6 +264,7 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
     (*DevExt).Device.TotalSectors = TotalSectors;
 
     (*DevExt).Device.__bindgen_anon_1.SectorSize = AtaDevBytesPerLogicalSector(IdentifyData);
+    ASSERT!((*DevExt).Device.__bindgen_anon_1.SectorSize >= ATA_MIN_SECTOR_SIZE);
     (*DevExt).Device.__bindgen_anon_1.SectorSize = max((*DevExt).Device.__bindgen_anon_1.SectorSize, ATA_MIN_SECTOR_SIZE);
 
     INFO!(
@@ -420,6 +428,7 @@ unsafe extern "C" fn AtaFdoEnumeratePort(mut ChanExt: PATAPORT_CHANNEL_EXTENSION
         if DevExt.is_null() {
             DevExt = (AtaPdoCreateDevice((ChanExt).cast(), AtaScsiAddress)).cast();
             if DevExt.is_null() {
+                ERR!(b"Failed to allocate PDO extension\n\0".as_ptr() as *const i8);
                 // C `continue` in a `for` still runs `++i`; without it this retried index i forever.
                 i = i.wrapping_add(1);
                 continue;
@@ -448,6 +457,8 @@ unsafe extern "C" fn AtaFdoEnumeratePort(mut ChanExt: PATAPORT_CHANNEL_EXTENSION
                 continue;
             }
             DEV_STATUS_SAME_DEVICE => {
+                ASSERT!(((*DevExt).Device.DeviceFlags & DEVICE_UNINITIALIZED) == 0);
+
                 (*DevExt).NotPresent = FALSE;
                 i = i.wrapping_add(1);
                 continue;
@@ -600,6 +611,7 @@ pub unsafe extern "C" fn AtaFdoQueryBusRelations(
 
     'cleanup: {
         if DeviceRelations.is_null() {
+            ERR!(b"Failed to allocate device relations\n\0".as_ptr() as *const i8);
             break 'cleanup;
         }
 
@@ -608,6 +620,12 @@ pub unsafe extern "C" fn AtaFdoQueryBusRelations(
         KeQuerySystemTime(core::ptr::addr_of_mut!(TimeFinish));
         EnumTimeMs = ((TimeFinish.QuadPart - TimeStart.QuadPart) / 10000) as u32;
         if EnumTimeMs >= 5000 {
+            WARN!(
+                b"%lu: QBR request took %lu ms, %lu devices\n\0".as_ptr() as *const i8,
+                (*ChanExt).ScsiPortNumber,
+                EnumTimeMs,
+                (*DeviceRelations).Count,
+            );
         } else {
             INFO!(
                 b"%lu: QBR request took %lu ms, %lu devices\n\0".as_ptr() as *const i8,

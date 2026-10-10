@@ -2449,24 +2449,30 @@ unsafe extern "C" {
 unsafe extern "C" {
     pub static GUID_PCI_PME_INTERFACE: GUID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
 unsafe extern "C" {
     pub fn c_assert() -> *mut [::core::ffi::c_char; 1usize];
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut KeNumberProcessors: CCHAR;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut PsInitialSystemProcess: PEPROCESS;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmHighestUserAddress: PVOID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmSystemRangeStart: PVOID;
 }
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 unsafe extern "C" {
     pub static mut MmUserProbeAddress: ULONG;
 }

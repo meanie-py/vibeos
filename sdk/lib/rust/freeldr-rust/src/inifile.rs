@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_INIFILE; // inifile.c: DBG_DEFAULT_CHANNEL(INIFILE)
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::PCSTR;
@@ -11,8 +13,6 @@ use crate::frldr::{
 };
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn _stricmp(s1: PCSTR, s2: PCSTR) -> i32;
     fn strncpy(dest: PCHAR, src: PCSTR, n: usize) -> PCHAR;
     fn strcpy(dest: *mut i8, src: *const i8) -> *mut i8;
@@ -30,7 +30,7 @@ pub unsafe extern "C" fn IniOpenSection(SectionName: PCSTR, SectionId: *mut ULON
 
     let mut Entry: PLIST_ENTRY;
 
-    TRACE(b"IniOpenSection() SectionName = %s\n\0".as_ptr() as PCSTR, SectionName);
+    TRACE!("IniOpenSection() SectionName = %s\n", SectionName);
 
     Entry = IniFileSectionListHead.Flink;
     while Entry != core::ptr::addr_of_mut!(IniFileSectionListHead) {
@@ -40,14 +40,14 @@ pub unsafe extern "C" fn IniOpenSection(SectionName: PCSTR, SectionId: *mut ULON
             if !SectionId.is_null() {
                 *SectionId = Section as ULONG_PTR;
             }
-            TRACE(b"IniOpenSection() Found it! SectionId = 0x%x\n\0".as_ptr() as PCSTR, SectionId);
+            TRACE!("IniOpenSection() Found it! SectionId = 0x%x\n", SectionId);
             return 1u8;
         }
 
         Entry = (*Entry).Flink;
     }
 
-    TRACE(b"IniOpenSection() Section not found.\n\0".as_ptr() as PCSTR);
+    TRACE!("IniOpenSection() Section not found.\n");
 
     return 0u8;
 }
@@ -56,8 +56,8 @@ pub unsafe extern "C" fn IniOpenSection(SectionName: PCSTR, SectionId: *mut ULON
 pub unsafe extern "C" fn IniGetNumSectionItems(SectionId: ULONG_PTR) -> ULONG {
     let Section = SectionId as PINI_SECTION;
 
-    TRACE(b"IniGetNumSectionItems() SectionId = 0x%x\n\0".as_ptr() as _, SectionId);
-    TRACE(b"IniGetNumSectionItems() Item count = %d\n\0".as_ptr() as _, (*Section).SectionItemCount);
+    TRACE!("IniGetNumSectionItems() SectionId = 0x%x\n", SectionId);
+    TRACE!("IniGetNumSectionItems() Item count = %d\n", (*Section).SectionItemCount);
 
     (*Section).SectionItemCount
 }
@@ -127,27 +127,27 @@ pub unsafe extern "C" fn IniReadSettingByNumber(
 
     const DPRINT_INIFILE: ULONG = 0;
 
-    TRACE(b".001 NameSize = %d ValueSize = %d\n\0".as_ptr() as *const i8, NameSize, ValueSize);
-    TRACE(b"IniReadSettingByNumber() SectionId = 0x%x\n\0".as_ptr() as *const i8, SectionId);
+    TRACE!(".001 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
+    TRACE!("IniReadSettingByNumber() SectionId = 0x%x\n", SectionId);
 
     let SectionItem = IniGetSettingByNumber(SectionId, SettingNumber);
     if SectionItem.is_null() {
-        TRACE(b"IniReadSettingByNumber() Setting number %d not found.\n\0".as_ptr() as *const i8, SettingNumber);
+        TRACE!("IniReadSettingByNumber() Setting number %d not found.\n", SettingNumber);
         return 0u8;
     }
 
-    TRACE(b"IniReadSettingByNumber() Setting number %d found.\n\0".as_ptr() as *const i8, SettingNumber);
-    TRACE(b"IniReadSettingByNumber() Setting name = %s\n\0".as_ptr() as *const i8, (*SectionItem).ItemName);
-    TRACE(b"IniReadSettingByNumber() Setting value = %s\n\0".as_ptr() as *const i8, (*SectionItem).ItemValue);
+    TRACE!("IniReadSettingByNumber() Setting number %d found.\n", SettingNumber);
+    TRACE!("IniReadSettingByNumber() Setting name = %s\n", (*SectionItem).ItemName);
+    TRACE!("IniReadSettingByNumber() Setting value = %s\n", (*SectionItem).ItemValue);
 
-    TRACE(b"1 NameSize = %d ValueSize = %d\n\0".as_ptr() as *const i8, NameSize, ValueSize);
-    TRACE(b"2 NameSize = %d ValueSize = %d\n\0".as_ptr() as *const i8, NameSize, ValueSize);
+    TRACE!("1 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
+    TRACE!("2 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
     strncpy(SettingName, (*SectionItem).ItemName, (NameSize - 1) as usize);
     *SettingName.offset((NameSize - 1) as isize) = b'\0' as i8;
-    TRACE(b"3 NameSize = %d ValueSize = %d\n\0".as_ptr() as *const i8, NameSize, ValueSize);
+    TRACE!("3 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
     strncpy(SettingValue, (*SectionItem).ItemValue, (ValueSize - 1) as usize);
     *SettingValue.offset((ValueSize - 1) as isize) = b'\0' as i8;
-    TRACE(b"4 NameSize = %d ValueSize = %d\n\0".as_ptr() as *const i8, NameSize, ValueSize);
+    TRACE!("4 NameSize = %d ValueSize = %d\n", NameSize, ValueSize);
     DbgDumpBuffer(DPRINT_INIFILE, SettingName, NameSize);
     DbgDumpBuffer(DPRINT_INIFILE, SettingValue, ValueSize);
 
@@ -161,15 +161,15 @@ pub unsafe extern "C" fn IniReadSettingByName(SectionId: ULONG_PTR, SettingName:
     let mut Entry: PLIST_ENTRY;
     let mut SectionItem: *mut INI_SECTION_ITEM;
 
-    TRACE(b"IniReadSettingByName() SectionId = 0x%x\n\0".as_ptr() as PCSTR, SectionId);
+    TRACE!("IniReadSettingByName() SectionId = 0x%x\n", SectionId);
 
     Entry = (*Section).SectionItemList.Flink;
     while Entry != core::ptr::addr_of_mut!((*Section).SectionItemList) {
         SectionItem = (Entry as *mut u8).offset(-(core::mem::offset_of!(INI_SECTION_ITEM, ListEntry) as isize)) as *mut INI_SECTION_ITEM;
 
         if _stricmp(SettingName, (*SectionItem).ItemName) == 0 {
-            TRACE(b"IniReadSettingByName() Setting '%s' found.\n\0".as_ptr() as PCSTR, SettingName);
-            TRACE(b"IniReadSettingByName() Setting value = %s\n\0".as_ptr() as PCSTR, (*SectionItem).ItemValue);
+            TRACE!("IniReadSettingByName() Setting '%s' found.\n", SettingName);
+            TRACE!("IniReadSettingByName() Setting value = %s\n", (*SectionItem).ItemValue);
 
             strncpy(Buffer, (*SectionItem).ItemValue, BufferSize as usize - 1);
             *Buffer.offset((BufferSize - 1) as isize) = 0;
@@ -180,7 +180,7 @@ pub unsafe extern "C" fn IniReadSettingByName(SectionId: ULONG_PTR, SettingName:
         Entry = (*Entry).Flink;
     }
 
-    WARN(b"IniReadSettingByName() Setting '%s' not found.\n\0".as_ptr() as PCSTR, SettingName);
+    WARN!("IniReadSettingByName() Setting '%s' not found.\n", SettingName);
 
     return 0u8;
 }

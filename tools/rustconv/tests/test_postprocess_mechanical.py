@@ -185,3 +185,11 @@ def test_all_three_wired_into_postprocess():
     assert "memoffset::" not in out
     assert "(*This).ref_ = 1;" in out
     assert "(*li).QuadPart;" in out
+
+
+def test_large_integer_u_member_is_not_rerouted():
+    """`x.u.HighPart` is LARGE_INTEGER's named member; only a bare `x.HighPart` is anonymous."""
+    from rustconv.postprocess import fix_bindgen_anon_field_access
+
+    assert fix_bindgen_anon_field_access("a.u.HighPart != 0") == "a.u.HighPart != 0"
+    assert fix_bindgen_anon_field_access("a.HighPart") == "a.__bindgen_anon_1.HighPart"

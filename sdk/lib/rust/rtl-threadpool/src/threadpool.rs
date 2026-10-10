@@ -1761,7 +1761,7 @@ pub unsafe extern "system" fn TpAllocWait(out: *mut *mut TP_WAIT, callback: PTP_
 #[no_mangle]
 pub unsafe extern "system" fn TpAllocWork(out: *mut *mut TP_WORK, callback: PTP_WORK_CALLBACK, userdata: PVOID, environment: *mut TP_CALLBACK_ENVIRON) -> NTSTATUS {
     let mut pool: *mut threadpool = core::ptr::null_mut();
-    let mut status: NTSTATUS;
+    let status: NTSTATUS;
 
     let object = RtlAllocateHeap(GetProcessHeap(), 0, core::mem::size_of::<threadpool_object>() as _) as *mut threadpool_object;
     if object.is_null() {

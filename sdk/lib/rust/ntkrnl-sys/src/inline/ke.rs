@@ -2187,7 +2187,7 @@ pub unsafe fn ki_check_not_running(thread: ddk::PKTHREAD, caller_line: u64) {
             // still-CurrentThread thread; the run-side SwapBusy spin in
             // ctxswitch.S is what makes that safe. The print stays as the
             // breadcrumb for the DOWNSTREAM hazard this window enables: the
-            // self-swap (0x57 tripwire in KiSwapThreadImpl).
+            // self-swap, which KiSwapThreadImpl now resolves by not swapping.
         }
     }
 }

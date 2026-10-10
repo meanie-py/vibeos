@@ -8,6 +8,11 @@ base/applications/notepad/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/
 base/applications/notepad/CMakeLists.txt	1	# text.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/text.rs)
 base/applications/sndrec32/CMakeLists.txt	1	#audio_producer.cpp
 base/applications/sndrec32/CMakeLists.txt	1	#audio_receiver.cpp
+base/services/audiosrv/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/main.rs)
+base/services/audiosrv/CMakeLists.txt	1	# pnp.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/pnp.rs)
+base/services/audiosrv/CMakeLists.txt	1	# pnp_list_lock.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/pnp_list_lock.rs)
+base/services/audiosrv/CMakeLists.txt	1	# pnp_list_manager.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/pnp_list_manager.rs)
+base/services/audiosrv/CMakeLists.txt	1	# services.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/services.rs)
 base/services/browser/CMakeLists.txt	1	# MIDL-generated browser_s.c / browser_stubs.c remain, which do not need (or use) the PCH.
 base/services/browser/CMakeLists.txt	1	# STILL C (correctly): the MIDL products browser_s.c + browser_stubs.c — generated wire
 base/services/browser/CMakeLists.txt	1	# browser.c (→ browser-rust src/browser/browser.rs — DllMain/SvchostPushServiceGlobals/ServiceMain)
@@ -37,6 +42,9 @@ base/services/dnsrslvr/CMakeLists.txt	1	# cache.c (→ dnsrslvr-rust src/dnsrslv
 base/services/dnsrslvr/CMakeLists.txt	1	# dnsrslvr.c (→ dnsrslvr-rust src/dnsrslvr/dnsrslvr.rs — DllMain + ServiceMain + control handler)
 base/services/dnsrslvr/CMakeLists.txt	1	# hostsfile.c (→ dnsrslvr-rust src/dnsrslvr/hostsfile.rs — ReadHostsFile)
 base/services/dnsrslvr/CMakeLists.txt	1	# rpcserver.c (→ dnsrslvr-rust src/dnsrslvr/rpcserver.rs — the R_Resolver* entry points)
+base/services/schedsvc/CMakeLists.txt	1	# job.c # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/job.rs)
+base/services/schedsvc/CMakeLists.txt	1	# rpcserver.c # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/rpcserver.rs)
+base/services/schedsvc/CMakeLists.txt	1	# schedsvc.c # replaced by Rust (sdk/lib/rust/schedsvc-rust/src/schedsvc/schedsvc.rs)
 base/services/tcpsvcs/CMakeLists.txt	1	# chargen.c (→ tcpsvcs-rust src/tcpsvcs/chargen.rs — RFC 864)
 base/services/tcpsvcs/CMakeLists.txt	1	# daytime.c (→ tcpsvcs-rust src/tcpsvcs/daytime.rs — RFC 867)
 base/services/tcpsvcs/CMakeLists.txt	1	# discard.c (→ tcpsvcs-rust src/tcpsvcs/discard.rs — RFC 863)
@@ -55,6 +63,9 @@ base/services/umpnpmgr/CMakeLists.txt	1	# install.c
 base/services/umpnpmgr/CMakeLists.txt	1	# pnp_s.c stays C: it is GENERATED (the MIDL server stubs), so there is nothing to translate —
 base/services/umpnpmgr/CMakeLists.txt	1	# rpcserver.c
 base/services/umpnpmgr/CMakeLists.txt	1	# umpnpmgr.c
+base/services/w32time/CMakeLists.txt	1	# ntpclient.c # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/ntpclient.rs)
+base/services/w32time/CMakeLists.txt	1	# register.c # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/register.rs)
+base/services/w32time/CMakeLists.txt	1	# w32time.c # replaced by Rust (sdk/lib/rust/w32time-rust/src/w32time/w32time.rs)
 base/services/wkssvc/CMakeLists.txt	1	# STILL C (correctly): the MIDL product wkssvc_s.c — generated wire marshalling for
 base/services/wkssvc/CMakeLists.txt	1	# domain.c — replaced by Rust (wkssvc-rust src/wkssvc/domain.rs — NetpJoinWorkgroup/NetpGetJoinInformation)
 base/services/wkssvc/CMakeLists.txt	1	# info.c — replaced by Rust (wkssvc-rust src/wkssvc/info.rs — Init/SaveWorkstationInfo + WKSTA_INFO_502)
@@ -175,6 +186,8 @@ base/system/diskpart/CMakeLists.txt	1	# select.c # replaced by Rust (sdk/lib/rus
 base/system/diskpart/CMakeLists.txt	1	# setid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/setid.rs)
 base/system/diskpart/CMakeLists.txt	1	# shrink.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/shrink.rs)
 base/system/diskpart/CMakeLists.txt	1	# uniqueid.c # replaced by Rust (sdk/lib/rust/diskpart-rust/src/diskpart/uniqueid.rs)
+base/system/logonui/CMakeLists.txt	1	# NT5design.c # replaced by Rust (sdk/lib/rust/logonui-rust/src/logonui/NT5design.rs)
+base/system/logonui/CMakeLists.txt	1	# logonui.c # replaced by Rust (sdk/lib/rust/logonui-rust/src/logonui/logonui.rs)
 base/system/lsass/CMakeLists.txt	1	# FULL flip + CARGO-DRIVEN LINK. lsass.c is replaced by Rust (lsass-rust), and
 base/system/lsass/CMakeLists.txt	1	# Keep lsass.c on disk (never delete the C — translation philosophy).
 base/system/sehtest/CMakeLists.txt	1	# _local_unwind2 come from libpseh.a's real i386/seh.s. Spawned by userinit at
@@ -313,6 +326,18 @@ boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/amd64/rtlmem.S
 boot/rtl/blrtl.cmake	1	## ${NTOS_RTL_SOURCE_DIR}/i386/res_asm.s
 boot/rtl/blrtl.cmake	1	## message.c
 boot/rtl/blrtl.cmake	1	## res.c ## Optional? Needs SEH
+dll/appcompat/shims/genral/CMakeLists.txt	1	# ignoredbgout.c # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/ignoredbgout.rs)
+dll/appcompat/shims/genral/CMakeLists.txt	1	# ignorefreelib.c # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/ignorefreelib.rs)
+dll/appcompat/shims/genral/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/main.rs)
+dll/appcompat/shims/genral/CMakeLists.txt	1	# shimtest.c # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/shimtest.rs)
+dll/appcompat/shims/genral/CMakeLists.txt	1	# themes.c # replaced by Rust (sdk/lib/rust/acgenral-rust/src/acgenral/themes.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# dispmode.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/dispmode.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# forcedxsetupsuccess.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/forcedxsetupsuccess.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# globalmemorystatus.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/globalmemorystatus.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# ignoreloadlibrary.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/ignoreloadlibrary.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/main.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# versionlie.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/versionlie.rs)
+dll/appcompat/shims/layer/CMakeLists.txt	1	# vmhorizon.c # replaced by Rust (sdk/lib/rust/aclayers-rust/src/aclayers/vmhorizon.rs)
 dll/cpl/access/CMakeLists.txt	1	# access.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/access.rs)
 dll/cpl/access/CMakeLists.txt	1	# display.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/display.rs)
 dll/cpl/access/CMakeLists.txt	1	# general.c # replaced by Rust (sdk/lib/rust/access-rust/src/access/general.rs)
@@ -1278,6 +1303,26 @@ drivers/ksfilter/swenum/CMakeLists.txt	1	# swenum.c (the KS software bus enumera
 drivers/network/afd/CMakeLists.txt	1	# afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
 drivers/network/afd/CMakeLists.txt	1	# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
+drivers/network/ndis/CMakeLists.txt	1	# ndis/30stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/30stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/40stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/40stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/50stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/50stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/buffer.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/buffer.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/cl.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/cl.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/cm.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/cm.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/co.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/co.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/config.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/config.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/control.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/control.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/efilter.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/efilter.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/guid.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/guid/mod.rs, generated: port data)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/hardware.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/hardware.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/io.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/io.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/main.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/main.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/memory.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/memory.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/miniport.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/miniport.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/misc.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/misc.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/protocol.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/protocol.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/string.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/string.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/time.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/time.rs)
 drivers/processor/processr/CMakeLists.txt	1	# processr.c/misc.c/pnp.c are translated to Rust (sdk/lib/rust/processr-rust,
 drivers/serial/pl011/CMakeLists.txt	1	# add_library(pl011 MODULE pl011.c) # body replaced by Rust; kept on disk
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.c (the minimal ARM64 PL011 UART driver) is translated to Rust
@@ -2296,6 +2341,8 @@ win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/printdrv.c — replaced by Rust (gd
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/region.c — replaced by Rust (gdi32-rust/src/objects/region.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/text.c — replaced by Rust (gdi32-rust/src/objects/text.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/utils.c — replaced by Rust (gdi32-rust/src/objects/utils.rs); cohab via libgdi32_rust.a
+win32ss/printing/processors/winprint/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/main.rs)
+win32ss/printing/processors/winprint/CMakeLists.txt	1	# raw.c # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/raw.rs)
 win32ss/reactx/dxg/CMakeLists.txt	1	# In the C build DriverEntry was an object (main.c.obj, linked before importlibs);
 win32ss/reactx/dxg/CMakeLists.txt	1	# d3d.c → dxg-rust/src/d3d.rs
 win32ss/reactx/dxg/CMakeLists.txt	1	# dd.c → dxg-rust/src/dd.rs

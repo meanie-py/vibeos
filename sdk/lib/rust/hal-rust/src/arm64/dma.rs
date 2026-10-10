@@ -109,7 +109,7 @@ pub unsafe extern "system" fn HalGetAdapter(
     DeviceDescription: ddk::PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: ddk::PULONG,
 ) -> ddk::PADAPTER_OBJECT {
-    new_adapter(NO_REQUESTER, NumberOfMapRegisters)
+    new_adapter(NO_REQUESTER, DeviceDescription, NumberOfMapRegisters)
 }
 
 /// pci.sys's BUS_INTERFACE_STANDARD.GetDmaAdapter: an adapter for the device with
@@ -121,10 +121,14 @@ pub unsafe extern "system" fn HalVibeosGetDmaAdapter(
     DeviceDescription: ddk::PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: ddk::PULONG,
 ) -> ddk::PDMA_ADAPTER {
-    new_adapter(RequesterId, NumberOfMapRegisters) as ddk::PDMA_ADAPTER
+    new_adapter(RequesterId, DeviceDescription, NumberOfMapRegisters) as ddk::PDMA_ADAPTER
 }
 
-unsafe fn new_adapter(requester: u32, NumberOfMapRegisters: ddk::PULONG) -> ddk::PADAPTER_OBJECT {
+unsafe fn new_adapter(
+    requester: u32,
+    DeviceDescription: ddk::PDEVICE_DESCRIPTION,
+    NumberOfMapRegisters: ddk::PULONG,
+) -> ddk::PADAPTER_OBJECT {
     let adapter = ddk::ExAllocatePoolWithTag(
         ddk::_POOL_TYPE_NonPagedPool,
         core::mem::size_of::<Arm64AdapterObject>() as ddk::SIZE_T,
@@ -139,9 +143,20 @@ unsafe fn new_adapter(requester: u32, NumberOfMapRegisters: ddk::PULONG) -> ddk:
     (*adapter).requester = requester;
 
     if !NumberOfMapRegisters.is_null() {
-        // "Map registers" are free here; report a generous per-transfer cap so
-        // callers size their SG machinery sanely (usbport asks and remembers).
-        *NumberOfMapRegisters = 256;
+        // "Map registers" are free here, but the count is also the caller's answer to
+        // "how many pages can one transfer of MaximumLength span", and drivers size
+        // per-transfer tables from it. So report what x86/dma.rs reports for a bus
+        // master, BYTES_TO_PAGES(MaximumLength) + 1, and 1 otherwise. A flat 256 made
+        // pciidex's AHCI command table (128 + 16 bytes per entry) larger than the page
+        // it packs tables into: zero tables per page, a 0-byte common buffer, and every
+        // AHCI port failed to start.
+        let master = !DeviceDescription.is_null() && (*DeviceDescription).Master != 0;
+        *NumberOfMapRegisters = if master {
+            let length = (*DeviceDescription).MaximumLength & 0x7FFF_FFFF;
+            ((length as usize + PAGE_SIZE - 1) >> PAGE_SHIFT) as ddk::ULONG + 1
+        } else {
+            1
+        };
     }
     adapter as ddk::PADAPTER_OBJECT
 }

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_INIFILE; // oslist.c: DBG_DEFAULT_CHANNEL(INIFILE)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCSTR, PSTR, TIMEINFO};
@@ -6,8 +8,6 @@ use core::ffi::c_void;
 use crate::ffi::{ESUCCESS, OpenReadOnly};
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> PSTR;
     fn strlen(s: PCSTR) -> usize;
     fn strcpy(dest: PSTR, src: PCSTR) -> PSTR;
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn InitOperatingSystemList(
                                SettingName.as_mut_ptr(), core::mem::size_of_val(&SettingName) as ULONG,
                                SettingValue.as_mut_ptr(), core::mem::size_of_val(&SettingValue) as ULONG);
         if *SettingName.as_ptr() == 0 {
-            ERR(b"Invalid OS entry %lu, skipping.\n\0".as_ptr() as PCSTR, i);
+            ERR!("Invalid OS entry %lu, skipping.\n", i);
             i += 1;
             continue;
         }
@@ -181,47 +181,47 @@ pub unsafe extern "C" fn InitOperatingSystemList(
             }
 
             if IniAddSection(SettingName.as_ptr(), &mut SectionId) == 0 {
-                ERR(b"Could not convert legacy OS entry %lu, skipping.\n\0".as_ptr() as PCSTR, i);
+                ERR!("Could not convert legacy OS entry %lu, skipping.\n", i);
                 i += 1;
                 continue;
             }
 
             if _stricmp(BootType.as_ptr(), b"BootSector\0".as_ptr() as *const i8) == 0 {
                 if IniAddSettingValueToSection(SectionId, b"BootSectorFile\0".as_ptr() as PCSTR, TempBuffer.as_ptr()) == 0 {
-                    ERR(b"Could not convert legacy OS entry %lu, skipping.\n\0".as_ptr() as PCSTR, i);
+                    ERR!("Could not convert legacy OS entry %lu, skipping.\n", i);
                     i += 1;
                     continue;
                 }
             } else if _stricmp(BootType.as_ptr(), b"Windows\0".as_ptr() as *const i8) == 0 {
                 if IniAddSettingValueToSection(SectionId, b"SystemPath\0".as_ptr() as PCSTR, TempBuffer.as_ptr()) == 0 {
-                    ERR(b"Could not convert legacy OS entry %lu, skipping.\n\0".as_ptr() as PCSTR, i);
+                    ERR!("Could not convert legacy OS entry %lu, skipping.\n", i);
                     i += 1;
                     continue;
                 }
             }
 
             if !OsLoadOptions.is_null() && IniAddSettingValueToSection(SectionId, b"Options\0".as_ptr() as PCSTR, OsLoadOptions) == 0 {
-                ERR(b"Could not convert legacy OS entry %lu, skipping.\n\0".as_ptr() as PCSTR, i);
+                ERR!("Could not convert legacy OS entry %lu, skipping.\n", i);
                 i += 1;
                 continue;
             }
         }
 
         if HadNoBootType != 0 && IniModifySettingValue(SectionId, b"BootType\0".as_ptr() as PCSTR, BootType.as_ptr()) == 0 {
-            ERR(b"Could not fixup the BootType entry for OS '%s', ignoring.\n\0".as_ptr() as PCSTR, SettingName.as_ptr());
+            ERR!("Could not fixup the BootType entry for OS '%s', ignoring.\n", SettingName.as_ptr());
         }
 
         if HadSection != 0 && !OsLoadOptions.is_null() && *OsLoadOptions != 0 {
             *TempBuffer.as_mut_ptr() = 0i8;
             if IniReadSettingByName(SectionId, b"Options\0".as_ptr() as PCSTR, TempBuffer.as_mut_ptr(), core::mem::size_of_val(&TempBuffer) as ULONG) == 0 {
-                TRACE(b"No 'Options' value found for OS '%s', ignoring.\n\0".as_ptr() as PCSTR, SettingName.as_ptr());
+                TRACE!("No 'Options' value found for OS '%s', ignoring.\n", SettingName.as_ptr());
             }
 
             RtlStringCbCatA(TempBuffer.as_mut_ptr(), core::mem::size_of_val(&TempBuffer), b" \0".as_ptr() as PCSTR);
             RtlStringCbCatA(TempBuffer.as_mut_ptr(), core::mem::size_of_val(&TempBuffer), OsLoadOptions);
 
             if IniModifySettingValue(SectionId, b"Options\0".as_ptr() as PCSTR, TempBuffer.as_ptr()) == 0 {
-                ERR(b"Could not modify the options for OS '%s', ignoring.\n\0".as_ptr() as PCSTR, SettingName.as_ptr());
+                ERR!("Could not modify the options for OS '%s', ignoring.\n", SettingName.as_ptr());
             }
         }
 

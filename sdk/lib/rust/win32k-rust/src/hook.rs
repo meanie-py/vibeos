@@ -52,9 +52,6 @@ unsafe fn ISITHOOKED(id: INT) -> u32 {
 macro_rules! IS_ATOM {
     ($x:expr) => {{ let v = ($x) as usize; ((v > 0) && (v < 0x10000)) as BOOL }};
 }
-// _Analysis_assume_(): SAL no-op.
-#[inline(always)]
-fn _Analysis_assume_() {}
 
 // IntToPtr(i): wParam-sized handle pack of an INT (basetsd.h).
 #[inline(always)]

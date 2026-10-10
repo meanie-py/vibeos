@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // machpc.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;  // supplies the ONE correct TAG_HW_RESOURCE_LIST
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_LIST, KAFFINITY, PCM_DISK_GEOMETRY_DEVICE_DATA, PCM_KEYBOARD_DEVICE_DATA, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCM_PNP_BIOS_DEVICE_NODE, PCM_PNP_BIOS_INSTALLATION_CHECK, PCM_SERIAL_DEVICE_DATA, PCONFIGURATION_COMPONENT_DATA, PCSTR};
@@ -297,7 +299,6 @@ pub unsafe extern "C" fn MachVideoPutChar(
 }
 
 extern "C" {
-    fn WARN(fmt: *const i8, ...);
     fn DbgPrint(fmt: *const i8, ...) -> i32;
 }
 
@@ -305,8 +306,6 @@ extern "C" {
     fn READ_PORT_UCHAR(Port: PUCHAR) -> UCHAR;
     fn WRITE_PORT_UCHAR(Port: PUCHAR, Value: UCHAR);
     fn StallExecutionProcessor(Microseconds: ULONG);
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn RtlStringCbPrintfA(dest: *mut i8, size: usize, fmt: *const i8, ...) -> i32;
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> *mut core::ffi::c_void;
     fn FldrCreateComponentKey( parent: PCONFIGURATION_COMPONENT_DATA, class: u32, type_: u32, flags: u32, key: u32, affinity: u32, identifier: *const i8, resource_list: PCM_PARTIAL_RESOURCE_LIST, size: u32, component_key: *mut PCONFIGURATION_COMPONENT_DATA, );
@@ -427,7 +426,7 @@ unsafe extern "C" fn PcGetExtendedBIOSData(ExtendedBIOSDataArea: PULONG, Extende
         *ExtendedBIOSDataArea = (BiosRegs.w.es as u32) << 4;
         *ExtendedBIOSDataSize = 1024;
     } else {
-        WARN(b"Int 15h AH=C1h call failed\n\0".as_ptr() as PCHAR);
+        WARN!("Int 15h AH=C1h call failed\n");
         *ExtendedBIOSDataArea = 0;
         *ExtendedBIOSDataSize = 0;
     }
@@ -444,7 +443,7 @@ unsafe fn PcGetHarddiskConfigurationData(DriveNumber: UCHAR, pSize: *mut ULONG) 
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + core::mem::size_of::<CM_DISK_GEOMETRY_DEVICE_DATA>() as ULONG;
     PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return core::ptr::null_mut();
     }
 
@@ -462,11 +461,11 @@ unsafe fn PcGetHarddiskConfigurationData(DriveNumber: UCHAR, pSize: *mut ULONG) 
         (*DiskGeometry).SectorsPerTrack = Geometry.SectorsPerTrack;
         (*DiskGeometry).NumberOfHeads = Geometry.Heads;
     } else {
-        TRACE(b"Reading disk geometry failed\n\0".as_ptr() as *const i8);
+        TRACE!("Reading disk geometry failed\n");
         FrLdrHeapFree(PartialResourceList as *mut core::ffi::c_void, TAG_HW_RESOURCE_LIST);
         return core::ptr::null_mut();
     }
-    TRACE(b"Disk %x: %u Cylinders  %u Heads  %u Sectors  %u Bytes\n\0".as_ptr() as *const i8, (DriveNumber) as usize, ((*DiskGeometry).NumberOfCylinders) as usize, ((*DiskGeometry).NumberOfHeads) as usize, ((*DiskGeometry).SectorsPerTrack) as usize, ((*DiskGeometry).BytesPerSector) as usize);
+    TRACE!("Disk %x: %u Cylinders  %u Heads  %u Sectors  %u Bytes\n", (DriveNumber) as usize, ((*DiskGeometry).NumberOfCylinders) as usize, ((*DiskGeometry).NumberOfHeads) as usize, ((*DiskGeometry).SectorsPerTrack) as usize, ((*DiskGeometry).BytesPerSector) as usize);
 
     *pSize = Size;
     return PartialResourceList;
@@ -489,7 +488,7 @@ unsafe fn DetectDockingStation(
     PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut()
     {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -512,10 +511,10 @@ unsafe fn DetectDockingStation(
         (*DockingState).DockLocationID = (*DockInfo).DockLocationID;
         (*DockingState).SerialNumber = (*DockInfo).SerialNumber;
         (*DockingState).Capabilities = (*DockInfo).Capabilities;
-        TRACE(b"System docked\n\0".as_ptr() as *const i8);
-        TRACE(b"Location: 0x%08lx\n\0".as_ptr() as *const i8, ((*DockInfo).DockLocationID) as usize);
-        TRACE(b"Serial: 0x%08lx\n\0".as_ptr() as *const i8, ((*DockInfo).SerialNumber) as usize);
-        TRACE(b"Capabilities: 0x%04hx\n\0".as_ptr() as *const i8, ((*DockInfo).Capabilities) as usize);
+        TRACE!("System docked\n");
+        TRACE!("Location: 0x%08lx\n", ((*DockInfo).DockLocationID) as usize);
+        TRACE!("Serial: 0x%08lx\n", ((*DockInfo).SerialNumber) as usize);
+        TRACE!("Capabilities: 0x%04hx\n", ((*DockInfo).Capabilities) as usize);
     }
 
     FldrCreateComponentKey(BusKey,
@@ -548,32 +547,32 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
 
     InstData = PnpBiosSupported() as PCM_PNP_BIOS_INSTALLATION_CHECK;
     if InstData == core::ptr::null_mut() || strncmp((*InstData).Signature.as_ptr() as *const i8, b"$PnP\0".as_ptr() as *const i8, 4) != 0 {
-        TRACE(b"PnP-BIOS not supported\n\0".as_ptr() as PCHAR);
+        TRACE!("PnP-BIOS not supported\n");
         return;
     }
 
-    TRACE(b"PnP-BIOS supported\n\0".as_ptr() as PCHAR);
-    TRACE(b"Signature '%c%c%c%c'\n\0".as_ptr() as PCHAR, ((*InstData).Signature[0]) as usize, ((*InstData).Signature[1]) as usize, ((*InstData).Signature[2]) as usize, ((*InstData).Signature[3]) as usize);
+    TRACE!("PnP-BIOS supported\n");
+    TRACE!("Signature '%c%c%c%c'\n", ((*InstData).Signature[0]) as usize, ((*InstData).Signature[1]) as usize, ((*InstData).Signature[2]) as usize, ((*InstData).Signature[3]) as usize);
 
     x = PnpBiosGetDeviceNodeCount(core::ptr::addr_of_mut!(NodeSize), core::ptr::addr_of_mut!(NodeCount));
     if x == 0x82 {
-        TRACE(b"PnP-BIOS function 'Get Number of System Device Nodes' not supported\n\0".as_ptr() as PCHAR);
+        TRACE!("PnP-BIOS function 'Get Number of System Device Nodes' not supported\n");
         return;
     }
 
     NodeCount &= 0xFF;
     if x != 0 || NodeSize == 0 || NodeCount == 0 {
-        ERR(b"PnP-BIOS failed to enumerate device nodes\n\0".as_ptr() as PCHAR);
+        ERR!("PnP-BIOS failed to enumerate device nodes\n");
         return;
     }
-    TRACE(b"MaxNodeSize %u  NodeCount %u\n\0".as_ptr() as PCHAR, (NodeSize) as usize, (NodeCount) as usize);
-    TRACE(b"Estimated buffer size %u\n\0".as_ptr() as PCHAR, (NodeSize * NodeCount) as usize);
+    TRACE!("MaxNodeSize %u  NodeCount %u\n", (NodeSize) as usize, (NodeCount) as usize);
+    TRACE!("Estimated buffer size %u\n", (NodeSize * NodeCount) as usize);
 
     PnpBufferSizeLimit = core::mem::size_of::<CM_PNP_BIOS_INSTALLATION_CHECK>() as ULONG + (NodeSize * NodeCount);
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + PnpBufferSizeLimit;
     PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList == core::ptr::null_mut() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -598,10 +597,10 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
         if x == 0 {
             DeviceNode = DiskReadBuffer as PCM_PNP_BIOS_DEVICE_NODE;
 
-            TRACE(b"Node: %u  Size %u (0x%x)\n\0".as_ptr() as PCHAR, ((*DeviceNode).Node) as usize, ((*DeviceNode).Size) as usize, ((*DeviceNode).Size) as usize);
+            TRACE!("Node: %u  Size %u (0x%x)\n", ((*DeviceNode).Node) as usize, ((*DeviceNode).Size) as usize, ((*DeviceNode).Size) as usize);
 
             if PnpBufferSize + (((*DeviceNode).Size) as u32) > PnpBufferSizeLimit {
-                ERR(b"Buffer too small! Ignoring remaining device nodes. (i = %d)\n\0".as_ptr() as PCHAR, (i) as usize);
+                ERR!("Buffer too small! Ignoring remaining device nodes. (i = %d)\n", (i) as usize);
                 break;
             }
 
@@ -621,8 +620,8 @@ unsafe fn DetectPnpBios(SystemKey: PCONFIGURATION_COMPONENT_DATA, BusNumber: *mu
     (*PartialResourceList).PartialDescriptors[0].u.DeviceSpecificData.DataSize = PnpBufferSize;
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + PnpBufferSize;
 
-    TRACE(b"Real buffer size: %u\n\0".as_ptr() as PCHAR, (PnpBufferSize) as usize);
-    TRACE(b"Resource size: %u\n\0".as_ptr() as PCHAR, (Size) as usize);
+    TRACE!("Real buffer size: %u\n", (PnpBufferSize) as usize);
+    TRACE!("Resource size: %u\n", (Size) as usize);
 
     FldrCreateComponentKey(SystemKey,
                            AdapterClass,
@@ -689,9 +688,7 @@ unsafe fn DetectSerialMouse(Port: PUCHAR) -> ULONG {
         i += 1;
     }
 
-    TRACE(
-        b"Mouse data: %x %x %x %x\n\0".as_ptr() as PCHAR, (Buffer[0]) as usize, (Buffer[1]) as usize, (Buffer[2]) as usize, (Buffer[3]) as usize,
-    );
+    TRACE!("Mouse data: %x %x %x %x\n", (Buffer[0]) as usize, (Buffer[1]) as usize, (Buffer[2]) as usize, (Buffer[3]) as usize);
 
     i = 0;
     while i < 4 {
@@ -704,15 +701,15 @@ unsafe fn DetectSerialMouse(Port: PUCHAR) -> ULONG {
 
             match Buffer[(i + 1) as usize] {
                 0x33 => {
-                    TRACE(b"Microsoft Mouse with 3-buttons detected\n\0".as_ptr() as PCHAR);
+                    TRACE!("Microsoft Mouse with 3-buttons detected\n");
                     return (MOUSE_TYPE_LOGITECH) as u32 ;
                 }
                 0x5a => {
-                    TRACE(b"Microsoft Wheel Mouse detected\n\0".as_ptr() as PCHAR);
+                    TRACE!("Microsoft Wheel Mouse detected\n");
                     return (MOUSE_TYPE_WHEELZ) as u32 ;
                 }
                 _ => {
-                    TRACE(b"Microsoft Mouse with 2-buttons detected\n\0".as_ptr() as PCHAR);
+                    TRACE!("Microsoft Mouse with 2-buttons detected\n");
                     return (MOUSE_TYPE_MICROSOFT) as u32 ;
                 }
             }
@@ -797,7 +794,7 @@ unsafe fn DetectSerialPointerPeripheral(
     let mut j: ULONG;
     let mut k: ULONG;
 
-    TRACE(b"DetectSerialPointerPeripheral()\n\0".as_ptr() as PCHAR);
+    TRACE!("DetectSerialPointerPeripheral()\n");
 
     Identifier[0] = 0;
 
@@ -806,7 +803,7 @@ unsafe fn DetectSerialPointerPeripheral(
 
     if MouseType != 0 {
         Length = GetSerialMousePnpId(Base, Buffer.as_mut_ptr());
-        TRACE(b"PnP ID length: %u\n\0".as_ptr() as PCHAR, (Length) as usize);
+        TRACE!("PnP ID length: %u\n", (Length) as usize);
 
         if Length != 0 {
             if Buffer[0] == 0x08 {
@@ -818,7 +815,7 @@ unsafe fn DetectSerialPointerPeripheral(
             }
             Buffer[Length as usize] = 0;
 
-            TRACE(b"PnP ID string: %s\n\0".as_ptr() as PCHAR, (Buffer.as_ptr()) as usize);
+            TRACE!("PnP ID string: %s\n", (Buffer.as_ptr()) as usize);
 
             i = 0;
             while i < 7 {
@@ -903,7 +900,7 @@ unsafe fn DetectSerialPointerPeripheral(
                 }
             }
 
-            TRACE(b"Identifier string: %s\n\0".as_ptr() as PCHAR, (Identifier.as_ptr()) as usize);
+            TRACE!("Identifier string: %s\n", (Identifier.as_ptr()) as usize);
         }
 
         if Length == 0 || strlen(Identifier.as_ptr()) < 11 {
@@ -919,7 +916,7 @@ unsafe fn DetectSerialPointerPeripheral(
         Size = core::mem::offset_of!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as ULONG;
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -1015,7 +1012,7 @@ unsafe fn DetectSerialPorts(
     let mut Size: ULONG;
     let PortBitmap: ULONG;
 
-    TRACE(b"DetectSerialPorts()\n\0".as_ptr() as PCHAR);
+    TRACE!("DetectSerialPorts()\n");
 
     PortBitmap = GetSerialMouseDetectionBitmap(Options);
 
@@ -1027,7 +1024,7 @@ unsafe fn DetectSerialPorts(
             continue;
         }
 
-        TRACE(b"Found COM%u port at 0x%x\n\0".as_ptr() as PCHAR, (i + 1) as usize, (Base) as usize);
+        TRACE!("Found COM%u port at 0x%x\n", (i + 1) as usize, (Base) as usize);
 
         RtlStringCbPrintfA(
             Identifier.as_mut_ptr(),
@@ -1039,9 +1036,7 @@ unsafe fn DetectSerialPorts(
         Size = (core::mem::size_of::<CM_PARTIAL_RESOURCE_LIST>() - core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() + 3 * core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() + core::mem::size_of::<CM_SERIAL_DEVICE_DATA>()) as ULONG;
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(
-                b"Failed to allocate resource descriptor! Ignoring remaining serial ports. (i = %lu, Count = %lu)\n\0".as_ptr() as PCHAR, (i) as usize, (Count) as usize,
-            );
+            ERR!("Failed to allocate resource descriptor! Ignoring remaining serial ports. (i = %lu, Count = %lu)\n", (i) as usize, (Count) as usize);
             break;
         }
 
@@ -1111,7 +1106,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     const MAX_LPT_PORTS: usize = 3;
 
-    TRACE(b"DetectParallelPorts() called\n\0".as_ptr() as *const i8);
+    TRACE!("DetectParallelPorts() called\n");
 
     BasePtr = 0x408 as *mut u16;
 
@@ -1124,9 +1119,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
             continue;
         }
 
-        TRACE(
-            b"Parallel port %u: %x\n\0".as_ptr() as *const i8, (ControllerNumber) as usize, (Base) as usize,
-        );
+        TRACE!("Parallel port %u: %x\n", (ControllerNumber) as usize, (Base) as usize);
 
         RtlStringCbPrintfA(
             Identifier.as_mut_ptr(),
@@ -1143,9 +1136,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(
-                b"Failed to allocate resource descriptor! Ignoring remaining parallel ports. (i = %lu)\n\0".as_ptr() as *const i8, (i) as usize,
-            );
+            ERR!("Failed to allocate resource descriptor! Ignoring remaining parallel ports. (i = %lu)\n", (i) as usize);
             break;
         }
 
@@ -1190,7 +1181,7 @@ unsafe fn DetectParallelPorts(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         i += 1;
     }
 
-    TRACE(b"DetectParallelPorts() done\n\0".as_ptr() as *const i8);
+    TRACE!("DetectParallelPorts() done\n");
 }
 
 unsafe fn DetectKeyboardDevice() -> u8 {
@@ -1260,7 +1251,7 @@ unsafe fn DetectKeyboardPeripheral(ControllerKey: PCONFIGURATION_COMPONENT_DATA)
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) as u32 + core::mem::size_of::<CM_KEYBOARD_DEVICE_DATA>() as u32;
         PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -1308,7 +1299,7 @@ unsafe fn DetectKeyboardController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[3]) as u32;
     PartialResourceList = FrLdrHeapAlloc((Size) as usize , TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -1433,7 +1424,7 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
     let mut Size: u32;
 
     if DetectPS2AuxPort() != 0 {
-        TRACE(b"Detected PS2 port\n\0".as_ptr() as *const i8);
+        TRACE!("Detected PS2 port\n");
 
         // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]).
         // rustconv emitted a `[u8; 20]` literal-size stand-in for
@@ -1442,7 +1433,7 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]);
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -1474,13 +1465,13 @@ unsafe fn DetectPS2Mouse(BusKey: PCONFIGURATION_COMPONENT_DATA) {
         );
 
         if DetectPS2AuxDevice() != 0 {
-            TRACE(b"Detected PS2 mouse\n\0".as_ptr() as *const i8);
+            TRACE!("Detected PS2 mouse\n");
 
             // C: Size = FIELD_OFFSET(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors).
             Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
             PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
             if PartialResourceList.is_null() {
-                ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+                ERR!("Failed to allocate resource descriptor\n");
                 return;
             }
 
@@ -1531,7 +1522,7 @@ unsafe fn CreateBusMousePeripheralKey(
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null()
     {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -1575,7 +1566,7 @@ unsafe fn CreateBusMousePeripheralKey(
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null()
     {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -1754,7 +1745,7 @@ unsafe fn CreateFramebufferDisplayKey(
     let PartialResourceList =
         FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
     core::ptr::write_bytes(PartialResourceList as *mut u8, 0, Size as usize);
@@ -1800,11 +1791,9 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     VesaVersion = BiosIsVesaSupported();
     if VesaVersion != 0 {
-        TRACE(
-            b"VESA version %c.%c\n\0".as_ptr() as PCSTR, (((VesaVersion >> 8) as u8 + b'0') as i32) as usize, (((VesaVersion & 0xFF) as u8 + b'0') as i32) as usize,
-        );
+        TRACE!("VESA version %c.%c\n", (((VesaVersion >> 8) as u8 + b'0') as i32) as usize, (((VesaVersion & 0xFF) as u8 + b'0') as i32) as usize);
     } else {
-        TRACE(b"VESA not supported\n\0".as_ptr() as PCSTR);
+        TRACE!("VESA not supported\n");
     }
 
     // A VBE linear framebuffer, described the way the UEFI loader describes GOP
@@ -1835,9 +1824,9 @@ unsafe fn DetectDisplayController(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     if VesaVersion != 0 {
         if BiosIsVesaDdcSupported() != 0 {
-            TRACE(b"VESA/DDC supported!\n\0".as_ptr() as PCSTR);
+            TRACE!("VESA/DDC supported!\n");
             if BiosVesaReadEdid() != 0 {
-                TRACE(b"EDID data read successfully!\n\0".as_ptr() as PCSTR);
+                TRACE!("EDID data read successfully!\n");
             }
         }
     }
@@ -1858,7 +1847,7 @@ unsafe fn DetectIsaBios(
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null()
     {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
 
@@ -1907,7 +1896,7 @@ pub unsafe extern "C" fn PcHwDetect(Options: PCSTR) -> PCONFIGURATION_COMPONENT_
     let mut SystemKey: PCONFIGURATION_COMPONENT_DATA = core::ptr::null_mut();
     let mut BusNumber: ULONG = 0;
 
-    TRACE(b"DetectHardware()\n\0".as_ptr() as *const i8);
+    TRACE!("DetectHardware()\n");
 
     FldrCreateSystemKey(core::ptr::addr_of_mut!(SystemKey), b"AT/AT COMPATIBLE\0".as_ptr() as PCSTR);
 
@@ -1920,7 +1909,7 @@ pub unsafe extern "C" fn PcHwDetect(Options: PCSTR) -> PCONFIGURATION_COMPONENT_
     DetectIsaBios(Options, SystemKey, core::ptr::addr_of_mut!(BusNumber));
     DetectAcpiBios(SystemKey, core::ptr::addr_of_mut!(BusNumber));
 
-    TRACE(b"DetectHardware() Done\n\0".as_ptr() as *const i8);
+    TRACE!("DetectHardware() Done\n");
     return SystemKey;
 }
 

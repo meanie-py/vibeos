@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // setupldr.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, PCSTR, PLOADER_PARAMETER_BLOCK, PSETUP_LOADER_BLOCK, PSTR, RtlCreateUnicodeStringFromAsciiz, RtlFreeUnicodeString, RtlInitEmptyUnicodeString, UINT8, _UNICODE_STRING, PLIST_ENTRY, PCUNICODE_STRING};
@@ -32,10 +34,6 @@ pub const SERVICE_ERROR_CRITICAL: ULONG = 0x00000003;
 // TAG_BOOT_OPTIONS 'pOtB' (C multi-char literal is big-endian)
 pub const TAG_BOOT_OPTIONS: ULONG = u32::from_be_bytes(*b"pOtB");
 
-#[allow(non_snake_case)]
-#[no_mangle]
-pub unsafe extern "system" fn UNREFERENCED_PARAMETER(_: PVOID) {}
-
 // setupldr.c file-local: list of options and their higher-priority counterparts.
 #[repr(C)]
 pub struct HighPriorOptionsMapEntry {
@@ -66,7 +64,6 @@ extern "C" {
     fn InfGetDataField(InfContext: PINFCONTEXT, FieldIndex: u32, Data: *mut PCSTR) -> BOOLEAN;
     fn PaToVa(PhysicalAddress: PVOID) -> PVOID;
     fn RtlStringCbCatA(pszDest: *mut u8, cbDest: usize, pszSrc: PCSTR) -> NTSTATUS;
-    fn WARN(fmt: *const i8, ...);
     fn WinLdrLoadModule(ModuleName: PCSTR, Size: *mut u32, MemoryType: u32) -> PVOID;
     fn NtLdrAddOptions(LoadOptions: PSTR, BufferSize: u32, Append: u8, OptionsToAdd: PCSTR);
     fn NtLdrGetNextOption(Options: *mut PCSTR, OptionLength: *mut u32) -> PCSTR;
@@ -79,7 +76,6 @@ extern "C" {
     fn NtLdrGetOptionExN(options: PCSTR, option: PCSTR, length: u32, OptionLength: *mut ULONG) -> usize;
     fn RTL_NUMBER_OF(arr: *const core::ffi::c_void) -> usize;
     fn AllocateAndInitLPB(version: u32, LoaderBlock: *mut PLOADER_PARAMETER_BLOCK);
-    fn ERR(fmt: *const i8, ...);
     fn GetArgumentValue(Argc: u32, Argv: *mut PSTR, name: PCSTR) -> PCSTR;
     fn InfCloseFile(InfHandle: HINF);
     fn InfOpenFile(InfHandle: *mut HINF, FileName: PCSTR, ErrorLine: *mut u32) -> u8;
@@ -87,7 +83,6 @@ extern "C" {
     fn NtLdrGetOption(BootOptions: PCSTR, option: PCSTR) -> usize;
     fn NtLdrGetOptionEx(BootOptions: PCSTR, option: PCSTR, length: *mut u32) -> PSTR;
     fn RamDiskInitialize(arg1: u8, BootOptions: PCSTR, SystemPartition: PCSTR) -> ARC_STATUS;
-    fn TRACE(fmt: *const i8, ...);
     fn UiDrawBackdrop(height: u32);
     fn UiDrawProgressBarCenter(text: PCSTR);
     fn UiDrawStatusText(text: PCSTR);
@@ -158,7 +153,7 @@ unsafe fn SetupLdrLoadNlsData(
         InfGetDataField(&mut InfContext, 1, &mut AnsiData) == 0 ||
         RtlCreateUnicodeStringFromAsciiz(&mut AnsiFileName, AnsiData) == 0
     {
-        ERR(b"Failed to find or get 'NLS/AnsiCodepage'\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to find or get 'NLS/AnsiCodepage'\n");
         return;
     }
 
@@ -166,7 +161,7 @@ unsafe fn SetupLdrLoadNlsData(
         InfGetDataField(&mut InfContext, 1, &mut AnsiData) == 0 ||
         RtlCreateUnicodeStringFromAsciiz(&mut OemFileName, AnsiData) == 0
     {
-        ERR(b"Failed to find or get 'NLS/OemCodepage'\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to find or get 'NLS/OemCodepage'\n");
         RtlFreeUnicodeString(&mut OemHalFileName);
         RtlFreeUnicodeString(&mut LangFileName);
         RtlFreeUnicodeString(&mut OemFileName);
@@ -178,7 +173,7 @@ unsafe fn SetupLdrLoadNlsData(
         InfGetDataField(&mut InfContext, 1, &mut AnsiData) == 0 ||
         RtlCreateUnicodeStringFromAsciiz(&mut LangFileName, AnsiData) == 0
     {
-        ERR(b"Failed to find or get 'NLS/UnicodeCasetable'\n\0".as_ptr() as PCSTR);
+        ERR!("Failed to find or get 'NLS/UnicodeCasetable'\n");
         RtlFreeUnicodeString(&mut OemHalFileName);
         RtlFreeUnicodeString(&mut LangFileName);
         RtlFreeUnicodeString(&mut OemFileName);
@@ -190,11 +185,11 @@ unsafe fn SetupLdrLoadNlsData(
         InfGetData(&mut InfContext, core::ptr::null_mut(), &mut AnsiData) == 0 ||
         RtlCreateUnicodeStringFromAsciiz(&mut OemHalFileName, AnsiData) == 0
     {
-        WARN(b"Failed to find or get 'NLS/OemHalFont'\n\0".as_ptr() as PCSTR);
+        WARN!("Failed to find or get 'NLS/OemHalFont'\n");
         RtlInitEmptyUnicodeString(&mut OemHalFileName, core::ptr::null_mut(), 0);
     }
 
-    TRACE(b"NLS data: '%wZ' '%wZ' '%wZ' '%wZ'\n\0".as_ptr() as PCSTR, (&AnsiFileName) as *const _ as usize, (&OemFileName) as *const _ as usize, (&LangFileName) as *const _ as usize, (&OemHalFileName) as *const _ as usize);
+    TRACE!("NLS data: '%wZ' '%wZ' '%wZ' '%wZ'\n", (&AnsiFileName) as *const _ as usize, (&OemFileName) as *const _ as usize, (&LangFileName) as *const _ as usize, (&OemHalFileName) as *const _ as usize);
 
     Success = WinLdrLoadNLSData(LoaderBlock,
                                 SearchPath,
@@ -202,7 +197,7 @@ unsafe fn SetupLdrLoadNlsData(
                                 &mut OemFileName,
                                 &mut LangFileName,
                                 &mut OemHalFileName);
-    TRACE(b"NLS data loading %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"successful\0".as_ptr() as PCSTR } else { b"failed\0".as_ptr() as PCSTR }) as usize);
+    TRACE!("NLS data loading %s\n", (if Success != 0 { b"successful\0".as_ptr() as PCSTR } else { b"failed\0".as_ptr() as PCSTR }) as usize);
 
     RtlFreeUnicodeString(&mut OemHalFileName);
     RtlFreeUnicodeString(&mut LangFileName);
@@ -223,11 +218,11 @@ unsafe fn SetupLdrInitErrataInf(
     let mut ErrataFilePath: [u8; 260] = [0; 260];
 
     if InfFindFirstLine(InfHandle, b"BiosInfo\0".as_ptr() as PCSTR, b"InfName\0".as_ptr() as PCSTR, &mut InfContext) == 0 {
-        WARN(b"Failed to find 'BiosInfo/InfName'\n\0".as_ptr() as PCSTR);
+        WARN!("Failed to find 'BiosInfo/InfName'\n");
         return 0u8;
     }
     if InfGetDataField(&mut InfContext, 1, &mut FileName) == 0 {
-        WARN(b"Failed to read 'InfName' value\n\0".as_ptr() as PCSTR);
+        WARN!("Failed to read 'InfName' value\n");
         return 0u8;
     }
 
@@ -236,7 +231,7 @@ unsafe fn SetupLdrInitErrataInf(
 
     PhysicalBase = WinLdrLoadModule(ErrataFilePath.as_ptr() as PCSTR, &mut FileSize, LoaderRegistryData);
     if PhysicalBase.is_null() {
-        WARN(b"Could not load '%s'\n\0".as_ptr() as PCSTR, (ErrataFilePath.as_ptr()) as usize);
+        WARN!("Could not load '%s'\n", (ErrataFilePath.as_ptr()) as usize);
         return 0u8;
     }
 
@@ -262,7 +257,7 @@ unsafe fn SetupLdrScanBootDrivers(
     let mut ImagePathW: [WCHAR; 260] = [0; 260];
     let mut DriverNameW: [WCHAR; 256] = [0; 256];
 
-    UNREFERENCED_PARAMETER(SearchPath as PVOID);
+    UNREFERENCED_PARAMETER!(SearchPath as PVOID);
 
     Pass = 0;
     while Pass <= 1 {
@@ -316,7 +311,7 @@ unsafe fn SetupLdrScanBootDrivers(
                         (-1i32) as u32,
                     );
                     if Success == 0 {
-                        ERR(b"Could not add boot driver '%s'\n\0".as_ptr() as PCSTR, (DriverName) as usize);
+                        ERR!("Could not add boot driver '%s'\n", (DriverName) as usize);
                     }
                 }
             }
@@ -330,7 +325,7 @@ unsafe fn SetupLdrScanBootDrivers(
     }
 
     if !BootFileSystem.is_null() {
-        TRACE(b"Adding filesystem driver %S\n\0".as_ptr() as PCSTR, (BootFileSystem) as usize);
+        TRACE!("Adding filesystem driver %S\n", (BootFileSystem) as usize);
         Success = WinLdrAddDriverToList(
             BootDriverListHead,
             0u8,
@@ -341,10 +336,10 @@ unsafe fn SetupLdrScanBootDrivers(
             (-1i32) as u32 ,
         );
         if Success == 0 {
-            ERR(b"Failed to add filesystem driver %S\n\0".as_ptr() as PCSTR, (BootFileSystem) as usize);
+            ERR!("Failed to add filesystem driver %S\n", (BootFileSystem) as usize);
         }
     } else {
-        TRACE(b"No required filesystem driver\n\0".as_ptr() as PCSTR);
+        TRACE!("No required filesystem driver\n");
     }
 }
 
@@ -588,17 +583,17 @@ pub unsafe extern "C" fn LoadReactOSSetup(
 
     ArgValue = GetArgumentValue(Argc, Argv, b"BootType\0".as_ptr() as PCSTR);
     if ArgValue.is_null() || *ArgValue == 0 {
-        ERR(b"No 'BootType' value, aborting!\n\0".as_ptr() as PCSTR);
+        ERR!("No 'BootType' value, aborting!\n");
         return EINVAL;
     }
     if _stricmp(ArgValue, b"ReactOSSetup\0".as_ptr() as PCSTR) != 0 {
-        ERR(b"Unknown 'BootType' value '%s', aborting!\n\0".as_ptr() as PCSTR, (ArgValue) as usize);
+        ERR!("Unknown 'BootType' value '%s', aborting!\n", (ArgValue) as usize);
         return EINVAL;
     }
 
     SystemPartition = GetArgumentValue(Argc, Argv, b"SystemPartition\0".as_ptr() as PCSTR);
     if SystemPartition.is_null() || *SystemPartition == 0 {
-        ERR(b"No 'SystemPartition' specified, aborting!\n\0".as_ptr() as PCSTR);
+        ERR!("No 'SystemPartition' specified, aborting!\n");
         return EINVAL;
     }
 
@@ -627,14 +622,14 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         RtlStringCbCatA(BootPath.as_mut_ptr() as PSTR as *mut u8 , BootPath.len(), b"\\\0".as_ptr() as PCSTR);
     }
 
-    TRACE(b"BootPath: '%s'\n\0".as_ptr() as PCSTR, (BootPath.as_ptr()) as usize);
+    TRACE!("BootPath: '%s'\n", (BootPath.as_ptr()) as usize);
 
     BootOptions = GetArgumentValue(Argc, Argv, b"Options\0".as_ptr() as PCSTR);
     if BootOptions.is_null() {
         BootOptions = b"\0".as_ptr() as PCSTR;
     }
 
-    TRACE(b"BootOptions: '%s'\n\0".as_ptr() as PCSTR, (BootOptions) as usize);
+    TRACE!("BootOptions: '%s'\n", (BootOptions) as usize);
 
     FileName = NtLdrGetOptionEx(BootOptions, b"RDPATH=\0".as_ptr() as PCSTR, &mut FileNameLength);
     if !FileName.is_null() && FileNameLength >= 7 {
@@ -667,7 +662,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         i += 1;
     }
 
-    TRACE(b"BootPath: '%s', SystemPath: '%s'\n\0".as_ptr() as PCSTR, (BootPath.as_ptr()) as usize, (SystemPath) as usize);
+    TRACE!("BootPath: '%s', SystemPath: '%s'\n", (BootPath.as_ptr()) as usize, (SystemPath) as usize);
 
     if NtLdrGetOption(BootOptions, b"SIFOPTIONSOVERRIDE\0".as_ptr() as PCSTR) != 0 {
         let OptionsToRemove: [PCSTR; 2] = [b"SIFOPTIONSOVERRIDE\0".as_ptr() as PCSTR, core::ptr::null()];
@@ -684,7 +679,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
 
         if InfFindFirstLine(InfHandle, b"SetupData\0".as_ptr() as PCSTR, b"OsLoadOptions\0".as_ptr() as PCSTR, &mut InfContext) != 0 {
             if InfGetDataField(&mut InfContext, 1, &mut LoadOptions) == 0 {
-                WARN(b"Failed to get load options\n\0".as_ptr() as PCSTR);
+                WARN!("Failed to get load options\n");
             }
         }
 
@@ -693,7 +688,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
             if NtLdrGetOption(BootOptions, b"DEBUG\0".as_ptr() as PCSTR) != 0 || NtLdrGetOption(BootOptions, b"DEBUG=\0".as_ptr() as PCSTR) != 0 {
                 if InfFindFirstLine(InfHandle, b"SetupData\0".as_ptr() as PCSTR, b"SetupDebugOptions\0".as_ptr() as PCSTR, &mut InfContext) != 0 {
                     if InfGetDataField(&mut InfContext, 1, &mut DbgLoadOptions) == 0 {
-                        WARN(b"Failed to get debug load options\n\0".as_ptr() as PCSTR);
+                        WARN!("Failed to get debug load options\n");
                     }
                 }
                 if DbgLoadOptions.is_null() {
@@ -706,7 +701,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         {
             if InfFindFirstLine(InfHandle, b"SetupData\0".as_ptr() as PCSTR, b"SetupDebugOptions\0".as_ptr() as PCSTR, &mut InfContext) != 0 {
                 if InfGetDataField(&mut InfContext, 1, &mut DbgLoadOptions) == 0 {
-                    WARN(b"Failed to get debug load options\n\0".as_ptr() as PCSTR);
+                    WARN!("Failed to get debug load options\n");
                 }
             }
             if DbgLoadOptions.is_null() {
@@ -761,7 +756,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
         BootOptions = UserBootOptions.as_ptr() as PCSTR;
     }
 
-    TRACE(b"BootOptions: '%s'\n\0".as_ptr() as PCSTR, (BootOptions) as usize);
+    TRACE!("BootOptions: '%s'\n", (BootOptions) as usize);
 
     SosEnabled = if NtLdrGetOption(BootOptions, b"SOS\0".as_ptr() as PCSTR) != 0 { 1u8 } else { 0u8 };
     if SosEnabled != 0 {
@@ -777,7 +772,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
 
     UiUpdateProgressBar(15, b"Loading setup system hive...\0".as_ptr() as PCSTR);
     let Success = WinLdrInitSystemHive(LoaderBlock, BootPath.as_ptr() as PCSTR, 1u8);
-    TRACE(b"Setup SYSTEM hive %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() as PCSTR } else { b"not loaded\0".as_ptr() as PCSTR }) as usize);
+    TRACE!("Setup SYSTEM hive %s\n", (if Success != 0 { b"loaded\0".as_ptr() as PCSTR } else { b"not loaded\0".as_ptr() as PCSTR }) as usize);
     if Success == 0 {
         return ENOEXEC;
     }
@@ -787,7 +782,7 @@ pub unsafe extern "C" fn LoadReactOSSetup(
     SetupLdrLoadNlsData(LoaderBlock, InfHandle, FilePath.as_ptr() as PCSTR);
 
     let Success = SetupLdrInitErrataInf(LoaderBlock, InfHandle, BootPath.as_ptr() as PCSTR);
-    TRACE(b"Firmware Errata file %s\n\0".as_ptr() as PCSTR, (if Success != 0 { b"loaded\0".as_ptr() as PCSTR } else { b"not loaded\0".as_ptr() as PCSTR }) as usize);
+    TRACE!("Firmware Errata file %s\n", (if Success != 0 { b"loaded\0".as_ptr() as PCSTR } else { b"not loaded\0".as_ptr() as PCSTR }) as usize);
 
     SetupLdrScanBootDrivers(core::ptr::addr_of_mut!((*LoaderBlock).BootDriverListHead), InfHandle, BootPath.as_ptr() as PCSTR);
 

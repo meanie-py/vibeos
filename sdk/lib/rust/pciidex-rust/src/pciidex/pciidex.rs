@@ -131,6 +131,8 @@ pub unsafe extern "C" fn AtaSleep() {
     let mut Timer: KTIMER = core::mem::zeroed();
     let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
 
+    ASSERT!((KeGetCurrentIrql() as u32) < (DISPATCH_LEVEL as u32));
+
     DueTime.QuadPart = (PORT_TIMER_TICK_MS as i64) * -10000i64; // C: `* -10000LL`
 
     KeInitializeTimer(&mut Timer);
@@ -185,6 +187,7 @@ pub unsafe extern "C" fn PciIdeXPnpRepeatRequest(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!(!IS_FDO!(CommonExt));
 
     TopDeviceObject = IoGetAttachedDeviceReference((*FdoExt).Self_);
 
@@ -391,6 +394,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         RUSTCONV_WSTR_6D9E94643474.as_ptr(),
         PciIdeControllerNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(DeviceName) as *mut _UNICODE_STRING,
@@ -408,6 +412,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
 
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject as *mut core::ffi::c_void)
         as PPCIIDEX_DRIVER_EXTENSION;
+    ASSERT!(DriverExtension);
 
     Status = RtlULongAdd(
         (*DriverExtension).MiniControllerExtensionSize,
@@ -415,6 +420,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         core::ptr::addr_of_mut!(DeviceExtensionSize),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Invalid miniport extension size %lx\n\0".as_ptr() as *const i8, (*DriverExtension).MiniControllerExtensionSize);
         return Status;
     }
 
@@ -428,6 +434,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         core::ptr::addr_of_mut!(Fdo),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create FDO 0x%lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -463,13 +470,19 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
             core::ptr::addr_of_mut!((*FdoExtension).Common.__bindgen_anon_1.LowerDeviceObject),
         );
         if !NT_SUCCESS!(Status) {
+            ERR!(b"Failed to attach FDO 0x%lx\n\0".as_ptr() as *const i8, Status);
             break 'failure_cleanup;
         }
 
         (*Fdo).AlignmentRequirement = (*(*FdoExtension).Common.__bindgen_anon_1.LowerDeviceObject).AlignmentRequirement;
         (*Fdo).AlignmentRequirement = max((*Fdo).AlignmentRequirement, ATA_MIN_BUFFER_ALIGNMENT);
 
-        if !ControllerContext.is_null() {
+        // ATA_DETECT_LEGACY_DEVICES (i386): legide's AddDevice passes a context out-pointer.
+        #[cfg(target_arch = "x86")]
+        let legacy = !ControllerContext.is_null();
+        #[cfg(not(target_arch = "x86"))]
+        let legacy = false;
+        if legacy {
             (*FdoExtension).Controller.Flags |= CTRL_FLAG_NON_PNP;
             *ControllerContext = FdoExtension as PVOID;
         } else {
@@ -483,6 +496,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
                 core::mem::size_of::<BUS_INTERFACE_STANDARD>() as ULONG,
             );
             if !NT_SUCCESS!(Status) {
+                ERR!(b"No PCI bus interface 0x%lx\n\0".as_ptr() as *const i8, Status);
                 break 'failure_cleanup;
             }
 
@@ -567,6 +581,22 @@ pub unsafe extern "system" fn PciIdeXInitialize(
         ExtensionSize,
     );
 
+    // ReactOS-specific: legide's legacy-detection magic. ATA_DETECT_LEGACY_DEVICES is
+    // defined for i386 only (CMakeLists.txt), as is legide, which is the only caller.
+    #[cfg(target_arch = "x86")]
+    let ExtensionSize = if ExtensionSize == PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE {
+        let ControllerInferface = HwGetControllerProperties
+            .map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void)
+            as PPCIIDEX_LEGACY_CONTROLLER_INTERFACE;
+        (*ControllerInferface).Version = PCIIDEX_INTERFACE_VERSION;
+        (*ControllerInferface).AddDevice = Some(PciIdeXAddDeviceEx);
+        (*ControllerInferface).StartDevice = Some(PciIdeXFdoStartDevice);
+        (*ControllerInferface).RemoveDevice = Some(PciIdeXFdoRemoveDevice);
+        0
+    } else {
+        ExtensionSize
+    };
+    #[cfg(not(target_arch = "x86"))]
     if ExtensionSize == PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE {
         return STATUS_NOT_SUPPORTED;
     }
