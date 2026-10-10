@@ -301,6 +301,50 @@ unsafe fn ReceiveActivity(FCB: PAFD_FCB, Irp: PIRP) -> NTSTATUS {
     RetStatus
 }
 
+// AcceptEx receive completion: the early data that followed the accepted connection has
+// arrived, so complete the held AcceptEx IRP (FCB->AcceptIrp) and resume receive activity.
+#[no_mangle]
+pub unsafe extern "system" fn AcceptExReceiveComplete(
+    _DeviceObject: PDEVICE_OBJECT,
+    Irp: PIRP,
+    Context: PVOID,
+) -> NTSTATUS {
+    let FCB: PAFD_FCB = Context as PAFD_FCB;
+    let AcceptIrp: PIRP;
+
+    if SocketAcquireStateLock(FCB) == 0 {
+        return STATUS_FILE_CLOSED;
+    }
+
+    ASSERT!((*FCB).ReceiveIrp.InFlightRequest == Irp);
+    ASSERT!(!(*FCB).AcceptIrp.is_null());
+    (*FCB).ReceiveIrp.InFlightRequest = core::ptr::null_mut();
+    (*FCB).SharedData.State = SOCKET_STATE_CONNECTED;
+
+    // Complete the AcceptEx IRP as the data has been received
+    AcceptIrp = (*FCB).AcceptIrp;
+    ntkrnl_sys::ddk::MmUnlockPages(
+        (*AcceptIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as ntkrnl_sys::ddk::PMDL,
+    );
+    ntkrnl_sys::ddk::IoFreeMdl(
+        (*AcceptIrp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[3] as ntkrnl_sys::ddk::PMDL,
+    );
+    (*AcceptIrp).IoStatus.Information = (*Irp).IoStatus.Information;
+    (*AcceptIrp).IoStatus.__bindgen_anon_1.Status = (*Irp).IoStatus.__bindgen_anon_1.Status;
+    if !(*AcceptIrp).MdlAddress.is_null() {
+        UnlockRequest(AcceptIrp, IoGetCurrentIrpStackLocation(AcceptIrp));
+    }
+    IoSetCancelRoutine(AcceptIrp, None);
+    IoCompleteRequest(AcceptIrp, IO_NETWORK_INCREMENT);
+    (*FCB).AcceptIrp = core::ptr::null_mut();
+
+    // Continue receive activity
+    ReceiveActivity(FCB, core::ptr::null_mut());
+
+    SocketStateUnlock(FCB);
+    STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn ReceiveComplete(
     DeviceObject: PDEVICE_OBJECT,

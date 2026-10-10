@@ -49,7 +49,7 @@ extern "system" {
     fn ExIsResourceAcquiredSharedLite(resource: *const ERESOURCE) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(resource: *const ERESOURCE) -> u8;
     fn FatDecodeFileObject( file_object: *mut FILE_OBJECT, vcb: *mut *mut VCB, fcb: *mut *mut FCB, ccb: *mut *mut CCB, ) -> u32;
-    fn FatBugCheck(code: u32, line: u32, file: u32);
+    fn FatBugCheck(code: usize, line: usize, file: usize);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn IoInitializePriorityInfo(PriorityInfo: *mut _IO_PRIORITY_INFO);
     fn IoRetrievePriorityInfo( Irp: *mut IRP, FileObject: *mut FILE_OBJECT, Thread: *mut core::ffi::c_void, PriorityInfo: *mut _IO_PRIORITY_INFO, ) -> NTSTATUS;
@@ -1160,7 +1160,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         _ => {
             DebugTrace(0 /* DEBUG_TRACE_ERROR */, 0, b"Illegal Mdl Complete.\n\0".as_ptr() as *const i8, 0);
             // #pragma prefast suppress omitted
-            FatBugCheck((*IrpContext).MajorFunction as u32, 0, 0);
+            FatBugCheck((*IrpContext).MajorFunction as usize, 0, 0);
         }
     }
 
