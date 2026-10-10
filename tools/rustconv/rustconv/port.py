@@ -163,17 +163,47 @@ def require_built(module_dir: Path) -> None:
         )
 
 
-def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.DerivedProfile:
+def recorded_mode(module_dir: Path, target: str | None) -> bool | None:
+    """The --usermode/--kernel a previous `port derive` of this module was given.
+
+    A static library whose consumers live in another CMakeLists (winegdi -> gdi32) has no
+    module type profile_derive can see, so the mode is asked for once and remembered: every
+    later stage re-derives, and making each of them repeat the flag is a recipe to forget.
+    """
+    rel = str(module_dir.resolve().relative_to(REPO))
+    found = set()
+    for p in sorted(STATE_ROOT.glob("*/state.json")):
+        st = json.loads(p.read_text())
+        # No --target means the directory's only target, which state records by name.
+        if st.get("module_dir") != rel or (target is not None and st.get("target") != target):
+            continue
+        if "mode_override" in st:
+            found.add(st["mode_override"])
+    return found.pop() if len(found) == 1 else None
+
+
+def derive(
+    module_dir: Path, target: str | None, arch: str = "i386", usermode: bool | None = None
+) -> pd.DerivedProfile:
     require_built(module_dir)
+    if usermode is None:
+        usermode = recorded_mode(module_dir, target)
     try:
-        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target)
+        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, usermode=usermode)
     except pd.ProfileDeriveError as e:
         # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
         # crate translates is still listed, commented out. Re-deriving (a new island rule,
         # say) must read THAT list, not refuse.
         if "already flipped" not in str(e):
             raise
-        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, flipped_sources=True)
+        dp = pd.derive(
+            module_dir.resolve(),
+            REPO,
+            arch=arch,
+            target=target,
+            usermode=usermode,
+            flipped_sources=True,
+        )
     blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
     if blocking:
         lines = "\n".join(str(f) for f in blocking)
@@ -257,9 +287,15 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
         )
 
 
-def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
+def stage_derive(
+    module_dir: Path,
+    target: str | None,
+    usermode: bool | None = None,
+    functions: str | None = None,
+    block: list[str] | None = None,
+) -> pd.DerivedProfile:
     started = time.time()
-    dp = derive(module_dir, target)
+    dp = derive(module_dir, target, usermode=usermode)
     stem = dp.module.crate_stem
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
@@ -275,6 +311,34 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         prior["real_unions"] = not re.search(rf"^  {re.escape(stem)}\)\n", script, re.M)
     if prior["real_unions"] and "REAL_UNIONS=1" not in arm:
         arm = re.sub(r"^(    USERMODE=1)$", r"\1\n    REAL_UNIONS=1", arm, count=1, flags=re.M)
+    # derive always emits BLOCKLIST_FUNCS=1 (the only safe answer before the crate has any
+    # #[no_mangle] for FROM_CRATE to subtract). Once a human settles it the other way --
+    # winegdi and opengl32 call ~110 gdi32/kernel32/advapi32 APIs no prelude declares -- the
+    # decision lives in the state, so a later re-derive (resolve's island-header pass does
+    # one) cannot quietly put the hand-written surface back.
+    if functions is not None:
+        prior["functions"] = functions
+    # Island items a module must never see, remembered like `functions`: winegdi's closure
+    # pulls wine's winternl.h, which declares RtlEqualSid & co. BOOL where ntdll defines
+    # BOOLEAN (scan_bool_width); winegdi calls none of them.
+    if block:
+        prior["island_block"] = sorted(set(prior.get("island_block", [])) | set(block))
+    if prior.get("island_block") and "EXTRA_BL_ITEMS=" not in arm:
+        arm = re.sub(
+            r"^(    DRIVER_DIR=.*)$",
+            lambda m: f"    EXTRA_BL_ITEMS=( {' '.join(prior['island_block'])} )\n{m.group(1)}",
+            arm,
+            count=1,
+            flags=re.M,
+        )
+    if prior.get("functions") == "from-crate":
+        arm = re.sub(
+            r"^    BLOCKLIST_FUNCS=1$",
+            "    BLOCKLIST_FUNCS=0\n    BLOCKLIST_FUNCS_FROM_CRATE=1",
+            arm,
+            count=1,
+            flags=re.M,
+        )
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
         GEN.write_text(updated)
@@ -295,7 +359,11 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
             if m
         ),
         real_unions=prior["real_unions"],
+        **({"functions": prior["functions"]} if "functions" in prior else {}),
+        **({"island_block": prior["island_block"]} if "island_block" in prior else {}),
     )
+    if usermode is not None:
+        state["mode_override"] = usermode
     _record(
         state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
     )
@@ -323,7 +391,13 @@ def _arch_only_tus(state: dict, tus: list[str]) -> dict[str, str]:
     per_arch: dict[str, set[str]] = {}
     for arch in ("arm64", "amd64", "i386"):
         try:
-            dp = pd.derive(module_dir, REPO, arch=arch, target=state.get("target"))
+            dp = pd.derive(
+                module_dir,
+                REPO,
+                arch=arch,
+                target=state.get("target"),
+                usermode=state.get("mode_override"),
+            )
         except Exception:  # an arch that cannot derive owns nothing
             per_arch[arch] = set()
             continue
@@ -880,6 +954,7 @@ def stage_translate(
     replay_only: bool = False,
     no_c2rust: list[str] | None = None,
     revisit: list[str] | None = None,
+    skip_fn: list[str] | None = None,
     units_override: dict[str, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
@@ -897,6 +972,12 @@ def stage_translate(
             raise PortError(f"--no-c2rust: not a TU of {stem}: {', '.join(unknown)}")
         state["no_c2rust"] = sorted(set(state.get("no_c2rust", [])) | set(no_c2rust))
         _record(state, "no-c2rust", started, tus=state["no_c2rust"])
+    # STICKY too: a function the model cannot produce (opengl32's IntGetIcdData degenerated
+    # to 32K tokens twice) is hand-written and banked with `port hand`; every later run must
+    # keep assembling its TU without it, or the TU goes back to NO BODY.
+    if skip_fn:
+        state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | set(skip_fn))
+        _record(state, "skip-fn", started, names=state["skip_fn"])
     picked = [t for t in _units(state) if not only or Path(t).name in only]
     vias: dict[str, str] = state.get("header_tus", {})
     # An escalation pass revisits TUs that already have output: their good bodies replay
@@ -999,6 +1080,11 @@ def stage_translate(
             for n in rebuy_fn or []
             if re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
         ]
+        skipped = [
+            n for n in state.get("skip_fn", []) if re.search(rf"\b{re.escape(n)}\s*\(", c_text)
+        ]
+        if skipped:
+            cmd += ["--skip-fn", *skipped]
         if mine:
             cmd += ["--rebuy-fn", *mine]
             if "--reassemble" not in cmd:
@@ -1156,6 +1242,26 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
     return applied
 
 
+def _list_has_stub(lines: list[str], at: int) -> bool:
+    """Whether the source list holding line `at` already names the stub TU.
+
+    Per LIST, not per file: user32_vista's CMakeLists has two (SOURCE for user32_vista,
+    VISTA_SOURCE for user32_optional_vista). Flipping the second after the first saw the
+    stub in the file and left VISTA_SOURCE empty -- `add_library` with no sources.
+    """
+    start = at
+    while start > 0 and not re.match(
+        r"^\s*(list|set|add_library|add_executable)\s*\(", lines[start]
+    ):
+        start -= 1
+    end, depth = start, 0
+    for end in range(start, len(lines)):
+        depth += lines[end].count("(") - lines[end].count(")")
+        if depth <= 0 and end >= at:
+            break
+    return any(re.match(r"^\s*rust_cohab_stub\.c\b", ln) for ln in lines[start : end + 1])
+
+
 def _explode_inline_sources(cml: str, target: str) -> str:
     """`add_executable(logonui logonui.c NT5design.c logonui.rc)`, one argument per line.
 
@@ -1215,10 +1321,22 @@ def flip_cmake(cml: str, state: dict) -> str:
             lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
         last = max(last or 0, hit)
     text = "\n".join(lines)
-    if "rust_cohab_stub.c" not in text and last is not None:
-        lines = text.split("\n")
+    # Re-located AFTER the rewrite: splitting a line whose `)` rode on it shifts every later
+    # line by one, so an index taken during the loop put ftfd's stub above the comment.
+    lines = text.split("\n")
+    flipped = [i for i, ln in enumerate(lines) if "# replaced by Rust (" in ln]
+    last = flipped[-1] if flipped else None
+    if last is not None:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
-        lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
+        extra = []
+        if not _list_has_stub(lines, last):
+            extra.append("rust_cohab_stub.c")
+        # integrate's C trampolines for the module's variadic entry points (ftfd's sprintf,
+        # FT_Message): without them in a source list the variadic symbols do not exist.
+        if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
+            extra.append("rust_varargs_shim.c")
+        for k, name in enumerate(extra):
+            lines.insert(last + 1 + k, f"{indent}{name}")
         text = "\n".join(lines)
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:
@@ -1237,7 +1355,17 @@ def flip_cmake(cml: str, state: dict) -> str:
             f"# disk. The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
-        if _crate_uses_float(crate):
+        # CMake refuses to mix target_link_libraries' plain and keyword signatures on one
+        # target; winegdi's CMakeLists already says `target_link_libraries(winegdi PRIVATE
+        # pseh)`, so a plain one here broke the configure. Match what is there.
+        kw = re.search(
+            rf"^target_link_libraries\(\s*{re.escape(target)}\s+(PRIVATE|PUBLIC|INTERFACE)\b",
+            text,
+            re.M,
+        )
+        # User code only: kernel code must never touch SSE state (ftfd is kernel and
+        # pulls doubles; it passes them by bit pattern instead).
+        if state.get("usermode", True) and _crate_uses_float(crate):
             # The workspace builds i686 with -sse,-sse2 (kernel code must not touch SSE
             # state), and rustc then rejects any function passing f32/f64 by value: sndrec32's
             # `fseconds_total() -> f32`. User code re-enables it for its own build only, the
@@ -1252,7 +1380,8 @@ def flip_cmake(cml: str, state: dict) -> str:
             )
         tail = (
             f"add_dependencies({target} rust_{variant})\n"
-            f"target_link_libraries({target} ${{{variant}_LIB}})\n"
+            f"target_link_libraries({target} {kw.group(1) + ' ' if kw else ''}"
+            f"${{{variant}_LIB}})\n"
         )
         text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
     return text
@@ -3862,6 +3991,28 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
         print(f"macros: SDK macro {name} NOT lowered, hand-port it: {why}")
 
 
+def _without_token_pasting(macros: dict) -> tuple[dict, list[str]]:
+    """Drop every macro that pastes with `##`, and every macro that reaches one.
+
+    `##` builds an identifier from an argument, which a macro_rules! cannot do on stable.
+    Sent to the model anyway, imm32's `CS_StrA(pCS, Name) ... (pCS)->dw##Name##Offset` came
+    back reading `(*pCS).Name` -- a field that does not exist, and with another argument one
+    that does and is the wrong one. These are hand ports; their callers stay errors until
+    they are written.
+    """
+    pasting = {n for n, m in macros.items() if "##" in m.body}
+    while True:
+        reach = {
+            n
+            for n, m in macros.items()
+            if n not in pasting and any(re.search(rf"\b{q}\b", m.body) for q in pasting)
+        }
+        if not reach:
+            break
+        pasting |= reach
+    return {n: m for n, m in macros.items() if n not in pasting}, sorted(pasting)
+
+
 def stage_macros(
     stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
 ) -> None:
@@ -3905,6 +4056,9 @@ def stage_macros(
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
+    macros, pasting = _without_token_pasting(macros)
+    if pasting:
+        print(f"macros: token-pasting (##), hand-port above the block: {', '.join(pasting)}")
     if not macros:
         print("macros: nothing to port")
         _record(state, "macros", started, ported=0, usd=0.0)
@@ -4855,7 +5009,9 @@ def main(args) -> int:
 def _main(args) -> int:
     try:
         if args.port_stage == "derive":
-            stage_derive(_module(args.module), args.target)
+            stage_derive(
+                _module(args.module), args.target, args.usermode, args.functions, args.block
+            )
         elif args.port_stage == "island":
             stage_island(args.stem)
         elif args.port_stage == "cppapp":
@@ -4880,6 +5036,7 @@ def _main(args) -> int:
                 rebuy_fn=args.rebuy_fn,
                 replay_only=args.replay_only,
                 no_c2rust=args.no_c2rust,
+                skip_fn=args.skip_fn,
             )
             if args.escalate and not args.dry_run:
                 # One cap for the whole invocation, and the escalation revisits only what
@@ -4966,6 +5123,31 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
+    mode = stages.choices["derive"].add_mutually_exclusive_group()
+    mode.add_argument(
+        "--usermode",
+        dest="usermode",
+        action="store_const",
+        const=True,
+        default=None,
+        help="a static library whose consumers are in another CMakeLists (remembered)",
+    )
+    mode.add_argument("--kernel", dest="usermode", action="store_const", const=False)
+    stages.choices["derive"].add_argument(
+        "--functions",
+        choices=("blocked", "from-crate"),
+        default=None,
+        help="island function declarations: blocked (BLOCKLIST_FUNCS=1, the default) or "
+        "from-crate (emit them minus the crate's own #[no_mangle]); remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--block",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="island items to blocklist (EXTRA_BL_ITEMS); remembered",
+    )
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
     stages.add_parser(
@@ -5069,6 +5251,15 @@ def add_parser(sub) -> None:
         metavar="TU",
         help="TU file names to translate without a c2rust anchor, as a deliberate choice "
         "when c2rust cannot transpile them on any arch (remembered in the port state)",
+    )
+    q.add_argument(
+        "--skip-fn",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="functions to assemble their TU without (hand-port them, then `port hand`); "
+        "remembered in the port state, and recorded as an audit finding by translate",
     )
     q.add_argument(
         "--replay-only",

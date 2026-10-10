@@ -488,6 +488,12 @@ dll/ntdll/CMakeLists.txt	1	# rtl/uilist.c — replaced by Rust (ntdll-rust/src/r
 dll/ntdll/CMakeLists.txt	1	# rtl/version.c — replaced by Rust (ntdll-rust/src/rtl/version.rs);
 dll/ntdll/nt_0600/CMakeLists.txt	1	# NOTE: ntdll_vista_static (an empty ldrnotify_rust_stub.c holder) + the cmake
 dll/ntdll/nt_0600/CMakeLists.txt	1	# reactos-link. ldrnotify_rust_stub.c / DllMain.c / the .c bodies stay on disk.
+dll/opengl/opengl32/CMakeLists.txt	1	# apistubs.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/apistubs.rs)
+dll/opengl/opengl32/CMakeLists.txt	1	# dllmain.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/dllmain.rs)
+dll/opengl/opengl32/CMakeLists.txt	1	# icdload.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/icdload.rs)
+dll/opengl/opengl32/CMakeLists.txt	1	# swimpl.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/swimpl.rs)
+dll/opengl/opengl32/CMakeLists.txt	1	# wgl.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/wgl.rs)
+dll/opengl/opengl32/CMakeLists.txt	1	# wgl_font.c # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/wgl_font.rs)
 dll/win32/CMakeLists.txt	1	# exports instead of forwarding to kernelbase_ros. combase.c externs
 dll/win32/aclui/CMakeLists.txt	1	# (rust_varargs_shim.c and the generated aclui_stubs.c) do not include precomp.h.
 dll/win32/aclui/CMakeLists.txt	1	# aclui.c
@@ -2326,6 +2332,14 @@ win32ss/CMakeLists.txt	1	# user/rtl/image.c # replaced by Rust (sdk/lib/rust/win
 win32ss/CMakeLists.txt	1	# user/rtl/text.c # replaced by Rust (sdk/lib/rust/win32k-rust/src/rtl_text.rs) — cohabitation [DrawTextExWorker/UserExtTextOutW + ellipsify/wordbreak]
 win32ss/drivers/displays/framebuf/CMakeLists.txt	1	# enable.c/palette.c/pointer.c/screen.c/surface.c (+ dd/ddenable) are translated
 win32ss/drivers/displays/framebuf/CMakeLists.txt	1	# framebuf.dll link is no longer cmake's add_library(MODULE) + rust_cohab_stub.c
+win32ss/drivers/font/bmfd/CMakeLists.txt	1	# enable.c # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/enable.rs)
+win32ss/drivers/font/bmfd/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/font.rs)
+win32ss/drivers/font/bmfd/CMakeLists.txt	1	# glyph.c # replaced by Rust (sdk/lib/rust/bmfd-rust/src/bmfd/glyph.rs)
+win32ss/drivers/font/ftfd/CMakeLists.txt	1	# enable.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/enable.rs)
+win32ss/drivers/font/ftfd/CMakeLists.txt	1	# font.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/font.rs)
+win32ss/drivers/font/ftfd/CMakeLists.txt	1	# glyph.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/glyph.rs)
+win32ss/drivers/font/ftfd/CMakeLists.txt	1	# rosglue.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/rosglue.rs)
+win32ss/drivers/font/ftfd/CMakeLists.txt	1	# sprintf.c # replaced by Rust (sdk/lib/rust/ftfd-rust/src/ftfd/sprintf.rs)
 win32ss/gdi/gdi32/CMakeLists.txt	1	# main/dllmain.c — replaced by Rust (gdi32-rust/src/main/dllmain.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# misc/gdientry.c — replaced by Rust (gdi32-rust/src/misc/gdientry.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# misc/heap.c — replaced by Rust (gdi32-rust/src/misc/heap.rs); cohab via libgdi32_rust.a
@@ -2355,6 +2369,14 @@ win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/printdrv.c — replaced by Rust (gd
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/region.c — replaced by Rust (gdi32-rust/src/objects/region.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/text.c — replaced by Rust (gdi32-rust/src/objects/text.rs); cohab via libgdi32_rust.a
 win32ss/gdi/gdi32/CMakeLists.txt	1	# objects/utils.c — replaced by Rust (gdi32-rust/src/objects/utils.rs); cohab via libgdi32_rust.a
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# emfdc.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/emfdc.rs)
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# emfdrv.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/emfdrv.rs)
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# enhmetafile.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/enhmetafile.rs)
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# metadc.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/metadc.rs)
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# metafile.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/metafile.rs)
+win32ss/gdi/gdi32/wine/CMakeLists.txt	1	# rosglue.c # replaced by Rust (sdk/lib/rust/winegdi-rust/src/winegdi/rosglue.rs)
+win32ss/gdi/gdi32_vista/CMakeLists.txt	1	# d3dkmt.c # replaced by Rust (sdk/lib/rust/gdi32_vista-rust/src/gdi32_vista/d3dkmt.rs)
+win32ss/gdi/gdi32_vista/CMakeLists.txt	1	# dc.c # replaced by Rust (sdk/lib/rust/gdi32_vista-rust/src/gdi32_vista/dc.rs)
 win32ss/printing/processors/winprint/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/main.rs)
 win32ss/printing/processors/winprint/CMakeLists.txt	1	# raw.c # replaced by Rust (sdk/lib/rust/winprint-rust/src/winprint/raw.rs)
 win32ss/reactx/dxg/CMakeLists.txt	1	# In the C build DriverEntry was an object (main.c.obj, linked before importlibs);
@@ -2368,6 +2390,21 @@ win32ss/reactx/dxg/CMakeLists.txt	1	# eng.c → dxg-rust/src/eng.rs
 win32ss/reactx/dxg/CMakeLists.txt	1	# historic.c → dxg-rust/src/historic.rs
 win32ss/reactx/dxg/CMakeLists.txt	1	# main.c ddhmg.c d3d.c dd.c ddraw.c ddsurf.c dxgallocator.c eng.c historic.c
 win32ss/reactx/dxg/CMakeLists.txt	1	# main.c → dxg-rust/src/driver_main.rs (+ gaDxgFuncs pdrvfn wiring)
+win32ss/user/imm32/CMakeLists.txt	1	# candidate.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/candidate.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# compstr.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/compstr.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# ctf.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/ctf.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# guideline.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/guideline.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# ime.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/ime.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# imemenu.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/imemenu.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# imepro.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/imepro.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# imm.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/imm.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# install.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/install.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# keymsg.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/keymsg.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# regword.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/regword.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# softkbd.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/softkbd.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# utils.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/utils.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# win3.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/win3.rs)
+win32ss/user/imm32/CMakeLists.txt	1	# win3send.c # replaced by Rust (sdk/lib/rust/imm32-rust/src/imm32/win3send.rs)
 win32ss/user/user32/CMakeLists.txt	1	# controls/appswitch.c — replaced by Rust (user32-rust/src/controls/appswitch.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# controls/button.c — replaced by Rust (user32-rust/src/controls/button.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# controls/combo.c — replaced by Rust (user32-rust/src/controls/combo.rs); cohab via libuser32_rust.a
@@ -2424,6 +2461,11 @@ win32ss/user/user32/CMakeLists.txt	1	# windows/spy.c — replaced by Rust (user3
 win32ss/user/user32/CMakeLists.txt	1	# windows/text.c — replaced by Rust (user32-rust/src/windows/text.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# windows/window.c — replaced by Rust (user32-rust/src/windows/window.rs); cohab via libuser32_rust.a
 win32ss/user/user32/CMakeLists.txt	1	# windows/winpos.c — replaced by Rust (user32-rust/src/windows/winpos.rs); cohab via libuser32_rust.a
+win32ss/user/user32_vista/CMakeLists.txt	1	# dpi.c # replaced by Rust (sdk/lib/rust/user32_vista-rust/src/user32_vista/dpi.rs)
+win32ss/user/user32_vista/CMakeLists.txt	1	# wine/input.c # replaced by Rust (sdk/lib/rust/user32_optional_vista-rust/src/user32_optional_vista/input.rs)
+win32ss/user/user32_vista/CMakeLists.txt	1	# wine/misc.c # replaced by Rust (sdk/lib/rust/user32_optional_vista-rust/src/user32_optional_vista/misc.rs)
+win32ss/user/user32_vista/CMakeLists.txt	1	# wine/sysparams.c # replaced by Rust (sdk/lib/rust/user32_optional_vista-rust/src/user32_optional_vista/sysparams.rs)
+win32ss/user/user32_vista/CMakeLists.txt	1	# wine/win.c # replaced by Rust (sdk/lib/rust/user32_optional_vista-rust/src/user32_optional_vista/win.rs)
 win32ss/user/winsrv/CMakeLists.txt	1	# (after lsass + userinit + winlogon + services + smss + csrsrv). init.c is
 win32ss/user/winsrv/concfg/CMakeLists.txt	1	# FULL flip (task #45): font.c + settings.c → Rust (concfg-rust crate). concfg
 win32ss/user/winsrv/concfg/CMakeLists.txt	1	# font.c — replaced by Rust (concfg-rust/src/font.rs)

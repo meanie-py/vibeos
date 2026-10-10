@@ -71,3 +71,16 @@ def test_a_type_whose_abi_differs_by_arch_is_refused():
     # ...except the one pointer-sized pair (ULONG_PTR).
     ptr = v.alias_maps([["pub type U = ::core::ffi::c_ulong;\n"], ["pub type U = u64;\n"]])
     assert v.c_primitive("U", ptr) == "__UINTPTR_TYPE__"
+
+
+def test_the_extern_keeps_a_mut_pointer_type():
+    # ftfd's sprintf: stripping every `mut` declared `buf: *i8`, which does not parse.
+    src = 'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...) -> i32 {\n    0\n}\n'
+    out = v.rewrite(src).text
+    assert "pub fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;" in out
+
+
+def test_a_sal_annotated_ellipsis_is_still_variadic():
+    # bmfd's own DbgPrint: integrate refused to generate its trampoline.
+    c = "ULONG\nDbgPrint(IN PCHAR Format, IN ...)\n{\n    return 0;\n}\n"
+    assert v.c_variadic_arity(c, "DbgPrint") == 1

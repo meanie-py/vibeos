@@ -111,7 +111,9 @@ def rewrite(text: str) -> Rewrite:
             f"{chr(10) if sep != ', ' else ''})"
             f"{' ' + ret if ret else ''} {body}"
         )
-        decl_params = " ".join(re.sub(r"\bmut\s+", "", fixed).split())
+        # Only a parameter's `mut` BINDING goes (`mut buf: T`); `*mut T` is the type. Stripping
+        # every `mut` declared ftfd's `sprintf(buf: *i8, ...)`, which is not Rust.
+        decl_params = " ".join(re.sub(r"(^|,)(\s*)mut\s+", r"\1\2", fixed).split())
         # The comment sits INSIDE the block so it rides with the declaration: integrate drops
         # the declaration when the island already has one, and must not orphan the comment.
         decl = (
@@ -135,7 +137,8 @@ def c_variadic_arity(c_text: str, name: str) -> int | None:
         if close is None or not c_text[close + 1 :].lstrip().startswith("{"):
             continue
         parts = [p.strip() for p in _split_top(c_text[m.end() : close])]
-        if parts and parts[-1] == "...":
+        # A SAL annotation may precede the ellipsis: bmfd's `DbgPrint(IN PCHAR Format, IN ...)`.
+        if parts and re.sub(r"^(?:(?:IN|OUT|OPTIONAL|_In_|_Inout_)\s+)+", "", parts[-1]) == "...":
             return len(parts) - 1
     return None
 

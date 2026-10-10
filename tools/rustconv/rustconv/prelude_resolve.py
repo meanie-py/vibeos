@@ -234,10 +234,35 @@ def is_test_source(rel: str) -> bool:
     return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
 
 
+def crate_mode(crate_dir: Path) -> str | None:
+    """ "kernel" / "user" from what the crate builds against; None for a mode-neutral crate."""
+    if crate_dir.name == "ntkrnl-sys":
+        return "kernel"
+    if crate_dir.name == "ntdll-sys":
+        return "user"
+    try:
+        manifest = (crate_dir / "Cargo.toml").read_text(errors="replace")
+    except OSError:
+        return None
+    if re.search(r"^ntkrnl-sys\s*=", manifest, re.M):
+        return "kernel"
+    if re.search(r"^ntdll-sys\s*=", manifest, re.M):
+        return "user"
+    return None
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
-    """Every tracked definition of each name: consts, type aliases, extern fn decls."""
+    """Every tracked definition of each name: consts, type aliases, extern fn decls.
+
+    Never across the kernel/user line: gdi32_vista and opengl32 (user-mode DLLs) were handed
+    `_InterlockedExchange` from disk-rust's DDK shims, an extern no user-mode image can link
+    (i386 LINK_FAIL). A donor built against the other -sys crate is skipped; mode-neutral
+    shared crates (win32macros-rust, strsafe-rust) donate to both.
+    """
     if not names:
         return {}
+    mine = crate_mode(exclude)
+    modes: dict[str, str | None] = {}
     pattern = "|".join(sorted(names))
     proc = subprocess.run(
         ["git", "grep", "-l", "-w", "-E", pattern, "--", "*.rs"],
@@ -253,6 +278,11 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
         # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
         if is_test_source(rel):
+            continue
+        top = rel.split("/", 1)[0]
+        if top not in modes:
+            modes[top] = crate_mode(workspace / top)
+        if mine is not None and modes[top] is not None and modes[top] != mine:
             continue
         try:
             src = path.read_text(errors="replace")
