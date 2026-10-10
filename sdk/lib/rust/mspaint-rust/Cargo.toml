@@ -15,4 +15,4 @@ strsafe-rust = { path = "../strsafe-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 win32macros-rust = { path = "../win32macros-rust" }
-atlclasses-rust = { path = "../atlclasses-rust" }
+atlclasses-rust = { path = "../atlclasses-rust", features = ["path"] }

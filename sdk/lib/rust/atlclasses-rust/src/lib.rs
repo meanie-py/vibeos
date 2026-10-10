@@ -67,6 +67,16 @@ extern "system" {
     fn LoadStringW(hInstance: *mut c_void, uID: UINT, lpBuffer: *mut WCHAR, cchBufferMax: INT)
         -> INT;
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> *mut c_void;
+    fn WideCharToMultiByte(
+        CodePage: u32,
+        dwFlags: u32,
+        lpWideCharStr: *const WCHAR,
+        cchWideChar: INT,
+        lpMultiByteStr: *mut u8,
+        cbMultiByte: INT,
+        lpDefaultChar: *const u8,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> INT;
 }
 
 // ole32's COM task allocator, only for a module that enables the `com` feature: imported
@@ -1437,6 +1447,125 @@ impl Clone for CStringW {
             s.SetString(self.as_ptr(), self.m_nLength);
             s
         }
+    }
+}
+
+/// `CStringA` (`CStringT<char, ..>`), as far as modules use it: built from a WIDE string
+/// (cstringt.h's ChTraitsCRT<char>::ConvertToBaseType: WideCharToMultiByte with
+/// `_AtlGetConversionACP()`, CP_THREAD_ACP) and read back as an `LPCSTR`.
+pub struct CStringA {
+    m_pszData: *mut u8,
+    m_nLength: i32,
+}
+
+impl CStringA {
+    pub fn new() -> Self {
+        CStringA { m_pszData: core::ptr::null_mut(), m_nLength: 0 }
+    }
+
+    /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
+    pub unsafe fn from_wide(pszSrc: *const WCHAR) -> Self {
+        let mut s = Self::new();
+        if pszSrc.is_null() {
+            return s;
+        }
+        // GetBaseTypeLength(LPCWSTR): the converted length, terminator excluded.
+        let n = WideCharToMultiByte(
+            CP_THREAD_ACP,
+            0,
+            pszSrc,
+            -1,
+            core::ptr::null_mut(),
+            0,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        ) - 1;
+        if n < 0 {
+            return s;
+        }
+        let p = <CLocalAllocator as CAllocator>::Reallocate(core::ptr::null_mut(), n as usize + 1)
+            as *mut u8;
+        if p.is_null() {
+            return s;
+        }
+        WideCharToMultiByte(
+            CP_THREAD_ACP,
+            0,
+            pszSrc,
+            wide_len(pszSrc) as INT + 1,
+            p,
+            n + 1,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        );
+        *p.add(n as usize) = 0;
+        s.m_pszData = p;
+        s.m_nLength = n;
+        s
+    }
+
+    /// `(LPCSTR)str` -- never NULL, like `CStringW::GetString`.
+    pub fn GetString(&self) -> *const u8 {
+        if self.m_pszData.is_null() {
+            b"\0".as_ptr()
+        } else {
+            self.m_pszData
+        }
+    }
+
+    pub fn GetLength(&self) -> i32 {
+        self.m_nLength
+    }
+}
+
+impl Default for CStringA {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CStringA {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.m_pszData.is_null() {
+                <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
+            }
+        }
+    }
+}
+
+/// `CPath` (atlpath.h's `CPathT<CStringW>`), as far as modules use it.
+#[cfg(feature = "path")]
+pub struct CPath {
+    pub m_strPath: CStringW,
+}
+
+#[cfg(feature = "path")]
+extern "system" {
+    fn PathCompactPathExW(pszOut: *mut WCHAR, pszSrc: *const WCHAR, cchMax: UINT, dwFlags: u32)
+        -> BOOL;
+}
+
+#[cfg(feature = "path")]
+impl CPath {
+    /// `CPathT(PCXSTR pszPath)`.
+    pub unsafe fn from_ptr(pszPath: *const WCHAR) -> Self {
+        CPath { m_strPath: CStringW::from_ptr(pszPath) }
+    }
+
+    /// atlpath.h:180 `CompactPathEx(UINT nMaxChars, DWORD dwFlags = 0)`, line for line.
+    pub unsafe fn CompactPathEx(&mut self, nMaxChars: UINT, dwFlags: u32) -> BOOL {
+        let mut strTemp = CStringW::new();
+        let str = strTemp.GetBuffer(nMaxChars as i32);
+        let result = PathCompactPathExW(str, self.m_strPath.GetString(), nMaxChars, dwFlags);
+        strTemp.ReleaseBuffer();
+        self.m_strPath = strTemp;
+        result
+    }
+
+    /// `operator PCXSTR()`.
+    pub fn GetString(&self) -> *const WCHAR {
+        self.m_strPath.GetString()
     }
 }
 

@@ -136,7 +136,7 @@ impl CPaletteWindow {
         let this_: *mut Self = self;
         let iColor: INT = (*this_).DoHitTest(GET_X_LPARAM!(lParam), GET_Y_LPARAM!(lParam));
         let mut rgbColor: COLORREF = paletteModel.GetFgColor();
-        if iColor != -1 && (mainWindow.ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0)
+        if iColor != -1 && mainWindow.ChooseColorW(core::ptr::addr_of_mut!(rgbColor)) != 0
         {
             paletteModel.SetColor((iColor) as UINT, rgbColor);
             paletteModel.SetFgColor(rgbColor);
@@ -147,7 +147,7 @@ impl CPaletteWindow {
         let this_: *mut Self = self;
         let iColor: INT = (*this_).DoHitTest(GET_X_LPARAM!(lParam), GET_Y_LPARAM!(lParam));
         let mut rgbColor: COLORREF = paletteModel.GetBgColor();
-        if iColor != -1 && mainWindow.ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0 {
+        if iColor != -1 && mainWindow.ChooseColorW(core::ptr::addr_of_mut!(rgbColor)) != 0 {
             paletteModel.SetColor((iColor) as UINT, rgbColor);
             paletteModel.SetBgColor(rgbColor);
         }

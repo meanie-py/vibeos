@@ -19,12 +19,18 @@ pub static CPP_COM_WSTR_16A2910FBF5B: [WCHAR; 9] = [0x0025, 0x006C, 0x0064, 0x00
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
+pub const NO_DIRECTION: DIRECTION = -1;
+pub const DIRECTION_HORIZONTAL: DIRECTION = 0;
+pub const DIRECTION_VERTICAL: DIRECTION = 1;
+pub const DIRECTION_DIAGONAL_RIGHT_DOWN: DIRECTION = 2;
+pub const DIRECTION_DIAGONAL_RIGHT_UP: DIRECTION = 3;
+
 pub static mut s_cPoints: SIZE_T = 0;
-pub static mut s_dynamicPoints: CHeapPtr<POINT, CLocalAllocator> = unsafe { core::mem::zeroed() };
+// CHeapPtr<POINT, CLocalAllocator>: default-constructed ATL smart pointer, modeled as its raw pointer (null).
+pub static mut s_dynamicPoints: *mut POINT = core::ptr::null_mut();
 pub static mut s_staticPoints: [POINT; 512] = unsafe { core::mem::zeroed() };
-pub const s_maxPoints_INIT: SIZE_T = 512;
 pub static mut s_maxPoints: SIZE_T = 512;
-pub static mut s_pPoints: LPPOINT = unsafe { core::ptr::addr_of_mut!(s_staticPoints) as *mut POINT };
+pub static mut s_pPoints: LPPOINT = core::ptr::addr_of_mut!(s_staticPoints) as *mut POINT;
 pub static mut g_ptStart: POINT = unsafe { core::mem::zeroed() };
 pub static mut g_ptEnd: POINT = unsafe { core::mem::zeroed() };
 
@@ -222,13 +228,13 @@ unsafe extern "C" fn pushToPoints(x: i32, y: i32) {
 
         if s_pPoints == (core::ptr::addr_of_mut!(s_staticPoints) as *mut POINT) {
             CopyMemory!(
-                (*core::ptr::addr_of_mut!(s_dynamicPoints)).m_pData as *mut core::ffi::c_void,
+                (*(*core::ptr::addr_of_mut!(s_dynamicPoints))).m_pData as *mut core::ffi::c_void,
                 core::ptr::addr_of_mut!(s_staticPoints) as *const core::ffi::c_void,
                 s_cPoints * (core::mem::size_of::<POINT>()) as _,
             );
         }
 
-        s_pPoints = (*core::ptr::addr_of_mut!(s_dynamicPoints)).m_pData;
+        s_pPoints = (*(*core::ptr::addr_of_mut!(s_dynamicPoints))).m_pData;
         s_maxPoints = (newMax) as _;
     }
 
@@ -1136,14 +1142,18 @@ impl TextTool {
     
         if registrySettings.ShowTextTool != 0 {
             if fontsDialog.__base0.IsWindow() == 0 {
-                fontsDialog.Create(core::ptr::null_mut());
+                fontsDialog.Create({ let _ = mainWindow; 0 }.op_to_HWND());
             }
     
             fontsDialog.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
         }
     
-        let mut rc: CRect = CRect__make_0();
-        rc = selectionModel.m_rc;
+        // CRect rc = COMMENT_TOKEN_ECHO____() = selectionModel.m_rc;
+        let mut rc: CRect = {
+            let slot: *mut CRect = CRect__make_0();
+            *slot = core::ptr::read(core::ptr::addr_of!(selectionModel.m_rc));
+            core::ptr::read(slot)
+        };
     
         // Enlarge if tool small
         let mut cxMin: INT = (CX_MINTEXTEDIT as i32);
@@ -1164,7 +1174,7 @@ impl TextTool {
         }
     
         textEditWindow.__base0.SetWindowTextW(core::ptr::null_mut());
-        textEditWindow.ValidateEditRect(&rc.__base0);
+        textEditWindow.ValidateEditRect(&((*core::ptr::addr_of_mut!(rc)).__base0));
         textEditWindow.__base0.ShowWindow((SW_SHOWNOACTIVATE) as i32);
         textEditWindow.__base0.SetFocus();
         return (TRUE) as BOOL;

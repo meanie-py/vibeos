@@ -22,7 +22,8 @@ pub use crate::{DPRINT, UNIMPLEMENTED, UNIMPLEMENTED_ONCE};
 
 // ================= ATL ========================================================================
 // ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.
-pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, CSimpleMap, CStringW, POSITION};
+pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, CSimpleMap, CStringA, CStringW, POSITION};
+pub use atl_rust::CPath;
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
@@ -402,6 +403,19 @@ pub type PCTSTR = LPCWSTR;
 pub type LPTCH = LPWSTR;
 pub type PTCH = LPWSTR;
 // ==== end UNICODE TCHAR family ====
+
+// HAND-WRITTEN: msvcrt's `__argc` / `__wargv` (`__targv` in a UNICODE build) are DATA
+// exports (`@ extern __argc`), so there is no `__argc` symbol to link -- only its import
+// slot, which holds the variable's address. i386 decorates the slot `__imp____argc`
+// (rustc prepends one `_` to a link_name there); amd64/arm64 spell it `__imp___argc`.
+extern "C" {
+    #[cfg_attr(target_arch = "x86", link_name = "_imp____argc")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___argc")]
+    pub static __imp___argc: *mut ::core::ffi::c_int;
+    #[cfg_attr(target_arch = "x86", link_name = "_imp____wargv")]
+    #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___wargv")]
+    pub static __imp___wargv: *mut *mut *mut u16;
+}
 
 // HAND-WRITTEN: dialogs.cpp's `void ShowError(INT stringID, ...)` is DEFINED by the C
 // trampoline base/applications/mspaint/rust_varargs_shim.c (stable Rust cannot define a
