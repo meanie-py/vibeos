@@ -1943,6 +1943,18 @@ reasons: the TCHAR-neutral `MAKEINTRESOURCE`, which is `-DUNICODE`-dependent and
 per-consumer property, and `ListView_*`/`PropSheet_*`, which expand against island *struct*
 types.
 
+### A generator's target predefines are not the build's: ACPI_SIZE was 32-bit on amd64
+- **Symptom.** `AcpiGetIrqRoutingTable(handle, {ACPI_ALLOCATE_BUFFER, NULL})` returned
+  `AE_BAD_PARAMETER` (0x1001) on a valid device handle, on amd64 only.
+- **Cause.** `acpica-sys` was generated for `x86_64-pc-windows-gnu`, which predefines
+  `WIN32`, so `acenv.h` chose `acwin.h` (`ACPI_MACHINE_WIDTH` 32). The real amd64 compile
+  defines no `WIN32` and takes `acwin64.h`: `ACPI_SIZE` is 8 bytes. Every Rust
+  `ACPI_BUFFER` had a 4-byte `Length` over uninitialised padding that ACPICA read as the
+  high half. arm64 and i386 really are 32-wide.
+- **Fix.** `-UWIN32` on the amd64 run of `generate_bindings.sh`. To check any generated
+  island, preprocess a probe with the REAL flags (`-E -dM` with a TU's command from
+  `compile_commands.json`, under `tools/canon-run.sh`); never reason from the target triple.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386

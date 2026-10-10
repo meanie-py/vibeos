@@ -34,7 +34,7 @@ DEFAULT_MINUTES = 30
 REFUSED = 75  # EX_TEMPFAIL; pico.sh already uses 3 for "unreachable"
 
 
-BOARDS = ("pi4", "pi5")
+BOARDS = ("pi4", "pi5", "optiplex")
 
 
 def board() -> str:

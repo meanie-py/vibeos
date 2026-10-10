@@ -6,7 +6,13 @@ use crate::ui_keystone::{VIDEODISPLAYMODE, VideoTextMode, VideoGraphicsMode};
 use ntkrnl_sys::ddk::{INT_PTR, PCSTR};
 // freeldr_ddk_imports dropped (not in ddk): Depth, Init, Red
 use core::ffi::c_void;
+
 use core::ptr::{addr_of, addr_of_mut};
+
+// freeldr's own (debug.rs): formats, and reaches COM1 whenever freeldr.ini sets Debug=.
+unsafe extern "C" {
+    fn DbgPrint(fmt: *const i8, ...) -> u32;
+}
 
 // settings.h _BOOTMGRINFO (external freeldr C global, defined in settings.c).
 #[repr(C)]
@@ -952,19 +958,26 @@ pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFr
         // Supported (bit 0), graphics (bit 4), linear framebuffer (bit 7);
         // direct-colour memory model (6) at 32 bpp.
         let attr = mi.ModeAttributes;
-        if attr & 0x0091 != 0x0091 || mi.MemoryModel != 6 || mi.BitsPerPixel != 32 {
-            continue;
-        }
         let base = mi.LinearVideoBufferAddress;
         let (w, h) = (mi.WidthInPixels as u32, mi.HeightInPixels as u32);
-        let score = VbeModeScore(w, h);
-        if base == 0 || score == 0 {
-            continue;
-        }
         // VBE 3.0 reports the linear-mode pitch and masks separately; older
         // BIOSes leave those zero and the banked fields describe both.
         let linear = VesaVersion >= 0x0300 && mi.LinearBytesPerScanLine != 0;
         let pitch = if linear { mi.LinearBytesPerScanLine } else { mi.BytesPerScanLine } as u32;
+        // Always on the debug port: which modes a real BIOS offers, and why each
+        // was passed over, is otherwise a full boot-and-guess per machine.
+        DbgPrint(
+            b"[FLDR] VBE mode 0x%x: %ux%u bpp %u model %u attr 0x%x pitch %u at 0x%x\n\0".as_ptr() as *const i8,
+            mode as usize, w as usize, h as usize, mi.BitsPerPixel as usize,
+            mi.MemoryModel as usize, attr as usize, pitch as usize, base as usize,
+        );
+        if attr & 0x0091 != 0x0091 || mi.MemoryModel != 6 || mi.BitsPerPixel != 32 {
+            continue;
+        }
+        let score = VbeModeScore(w, h);
+        if base == 0 || score == 0 {
+            continue;
+        }
         let (r, g, b, x) = if linear {
             (
                 VbeMask(mi.LinearRedMaskSize, mi.LinearRedMaskPosition),
@@ -1006,6 +1019,17 @@ pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFr
         }
     }
     let chosen = best.map(|(_, fb)| fb);
+    match chosen {
+        Some(fb) => DbgPrint(
+            b"[FLDR] VBE framebuffer: mode 0x%x %ux%u at 0x%x\n\0".as_ptr() as *const i8,
+            fb.Mode as usize, fb.Data.ScreenWidth as usize, fb.Data.ScreenHeight as usize, fb.Base as usize,
+        ),
+        None => DbgPrint(
+            b"[FLDR] VBE: none of %u modes is a usable linear framebuffer; the kernel gets no display\n\0".as_ptr()
+                as *const i8,
+            count,
+        ),
+    };
     if let Some(fb) = chosen {
         TRACE!("VBE framebuffer: mode 0x%x %ux%u at 0x%x\n", fb.Mode as usize, fb.Data.ScreenWidth as usize, fb.Data.ScreenHeight as usize, fb.Base as usize);
     }

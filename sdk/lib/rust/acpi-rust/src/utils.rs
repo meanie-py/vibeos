@@ -51,10 +51,9 @@ const AE_NO_MEMORY: ACPI_STATUS = 0x0004; // EXCEP_ENV(0x0004)
 const AE_SUPPORT: ACPI_STATUS = 0xF; // acpica/include/acexcep.h EXCEP_ENV(0x000F), AE_CODE_ENVIRONMENTAL=0
 const AE_NULL_ENTRY: ACPI_STATUS = 0x001F; // EXCEP_ENV(0x001F)
 
-// ACPI_ALLOCATE_BUFFER = (ACPI_SIZE) -1 (acpixf.h). ACPI_SIZE = u32 on i386 /
-// u64 on 64-bit; ACPI_BUFFER.Length is ACPI_SIZE, so use the matching width.
-// FIXME(integrator): confirm ACPI_ALLOCATE_BUFFER == (ACPI_SIZE)(-1).
-// (We build it from the field type so it is correct on every arch.)
+// ACPI_ALLOCATE_BUFFER = (ACPI_SIZE) -1 (acpixf.h). ACPI_SIZE follows the C build's
+// ACPI_MACHINE_WIDTH: 64 on amd64, 32 on i386 and arm64 (acpica-sys's
+// generate_bindings.sh). Build it from the field type so it is right on each.
 
 // Registry / object-attribute constants — NOT present in ntkrnl_sys::ddk for the
 // driver build (only in hal_bindgen). Values from the brief and verified against
@@ -210,7 +209,7 @@ pub unsafe extern "C" fn acpi_extract_package(
     }
 
     // --- Validate output buffer. ---
-    // ACPI_BUFFER.Length is ACPI_SIZE (u32 on i386, u64 on 64-bit). size_required
+    // ACPI_BUFFER.Length is ACPI_SIZE (u64 on amd64, u32 on i386/arm64). size_required
     // is u32; compare/store with the field's native width.
     let size_required_sz = size_required as u64;
     let buf_len = (*buffer).Length as u64;

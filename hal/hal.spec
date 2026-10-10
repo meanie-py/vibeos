@@ -28,6 +28,8 @@
 @ stdcall HalVibeosMessageRelease(long)
 @ stdcall HalVibeosMessageTarget(long long ptr ptr)
 @ stdcall -arch=arm64 HalVibeosQuiesceIrqlTripwire()
+@ stdcall -arch=i386,x86_64 HalVibeosIoApicInputs()
+@ stdcall -arch=i386,x86_64 HalVibeosSetInterruptLine(long long long)
 @ stdcall HalDisableSystemInterrupt(long long)
 @ stdcall HalDisplayString(str)
 @ stdcall HalEnableSystemInterrupt(long long long)

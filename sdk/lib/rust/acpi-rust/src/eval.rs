@@ -60,8 +60,8 @@ const STATUS_IO_TIMEOUT: NTSTATUS = 0xC00000B5_u32 as i32;
 const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185_u32 as i32;
 
 // ACPI_ALLOCATE_BUFFER = (ACPI_SIZE)(-1) (actypes.h, !ACPI_NO_MEM_ALLOCATIONS).
-// ACPI_SIZE = UINT32 on i386 / UINT64 on 64-bit in acpica-sys; build from the
-// field type so it is correct on every arch.
+// ACPI_SIZE is UINT64 on amd64, UINT32 on i386 and arm64 (the C build's
+// ACPI_MACHINE_WIDTH); build from the field type so it is correct on every arch.
 const ACPI_ALLOCATE_BUFFER: ACPI_SIZE = ACPI_SIZE::MAX; // (ACPI_SIZE)(-1)
 
 const ANSI_NULL: c_char = 0;

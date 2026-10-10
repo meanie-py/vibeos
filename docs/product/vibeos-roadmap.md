@@ -595,6 +595,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
+  32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
+  the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
+  (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
+  `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
+  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
+  wait's alertable check is the first place to look.
+
 - **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
   the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
   translating ndis: nothing else on our media reaches NDIS
