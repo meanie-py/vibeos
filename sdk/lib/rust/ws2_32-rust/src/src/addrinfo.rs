@@ -115,11 +115,10 @@ macro_rules! FreeAddrInfoW {
     };
 }
 
-const EAI_MEMORY: i32 = -10;
-const EAI_NONAME: i32 = -11;
-const EAI_AGAIN: i32 = -12;
-const EAI_FAIL: i32 = -13;
-const EAI_NODATA: i32 = -14;
+// EAI_MEMORY/EAI_NONAME/EAI_AGAIN/EAI_FAIL come from the island (ws2tcpip.h: the WSA error
+// codes, not glibc's negative EAI_* values). ws2tcpip.h:36 `#define EAI_NODATA EAI_NONAME`
+// is a macro alias bindgen cannot emit, so it is spelled here in terms of the island's value.
+const EAI_NODATA: u32 = EAI_NONAME;
 #[no_mangle]
 pub unsafe extern "system" fn Dns_Ip4AddressToReverseName_W(
     AddressBuffer: LPWSTR,
@@ -389,7 +388,7 @@ unsafe extern "system" fn CloneAddrInfo(Port: u16, ptResult: PADDRINFOW) -> i32 
     }
 
     if !Next.is_null() {
-        return EAI_MEMORY;
+        return EAI_MEMORY as i32;
     }
 
     return 0;
@@ -423,7 +422,7 @@ unsafe extern "system" fn QueryDNS(
                     (*(*Addresses as PIN_ADDR)).S_un.S_addr,
                 );
                 if (*Next).is_null() {
-                    return EAI_MEMORY;
+                    return EAI_MEMORY as i32;
                 }
                 Next = core::ptr::addr_of_mut!((**Next).ai_next);
                 Addresses = Addresses.offset(1);
@@ -436,11 +435,11 @@ unsafe extern "system" fn QueryDNS(
     }
 
     match GetLastError() {
-        WSAHOST_NOT_FOUND => EAI_NONAME,
-        WSATRY_AGAIN => EAI_AGAIN,
-        WSANO_RECOVERY => EAI_FAIL,
-        WSANO_DATA => EAI_NODATA,
-        _ => EAI_NONAME,
+        WSAHOST_NOT_FOUND => EAI_NONAME as i32,
+        WSATRY_AGAIN => EAI_AGAIN as i32,
+        WSANO_RECOVERY => EAI_FAIL as i32,
+        WSANO_DATA => EAI_NODATA as i32,
+        _ => EAI_NONAME as i32,
     }
 }
 unsafe extern "system" fn LookupNodeByAddr(
@@ -579,7 +578,7 @@ unsafe extern "system" fn LookupAddressForName(
             AliasCount += 1;
             AliasCount == 16
         } {
-            iError = EAI_FAIL;
+            iError = EAI_FAIL as i32;
             break;
         }
 
@@ -592,7 +591,7 @@ unsafe extern "system" fn LookupAddressForName(
         (**pptResult).ai_canonname = HeapAlloc(WsSockHeap, 0, 512) as PWSTR;
 
         if (**pptResult).ai_canonname.is_null() {
-            iError = EAI_MEMORY;
+            iError = EAI_MEMORY as i32;
         } else {
             MultiByteToWideChar(
                 CP_ACP,
@@ -641,7 +640,7 @@ unsafe extern "system" fn LookupAddressForName(
             AliasCount += 1;
             AliasCount == 16
         } {
-            iError = EAI_FAIL;
+            iError = EAI_FAIL as i32;
             break;
         }
 
@@ -654,7 +653,7 @@ unsafe extern "system" fn LookupAddressForName(
         (**pptResult).ai_canonname = HeapAlloc(WsSockHeap, 0, 512) as PWSTR;
 
         if (**pptResult).ai_canonname.is_null() {
-            iError = EAI_MEMORY;
+            iError = EAI_MEMORY as i32;
         } else {
             MultiByteToWideChar(
                 CP_ACP,
@@ -697,7 +696,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
 
     if pszNodeName.is_null() && pszServiceName.is_null() {
         SetLastError(EAI_NONAME as u32);
-        return EAI_NONAME;
+        return EAI_NONAME as i32;
     }
 
     if !ptHints.is_null() {
@@ -707,7 +706,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
             || !(*ptHints).ai_next.is_null()
         {
             SetLastError(EAI_FAIL as u32);
-            return EAI_FAIL;
+            return EAI_FAIL as i32;
         }
 
         iFlags = (*ptHints).ai_flags;
@@ -805,7 +804,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
         *pptResult = NewAddrInfo(iSocketType, iProtocol, wPort, dwAddress);
 
         if (*pptResult).is_null() {
-            iError = EAI_MEMORY;
+            iError = EAI_MEMORY as i32;
         }
 
         if iError == 0 && !pszNodeName.is_null() {
@@ -829,7 +828,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
                 ) as *mut u16;
 
                 if (**pptResult).ai_canonname.is_null() {
-                    iError = EAI_MEMORY;
+                    iError = EAI_MEMORY as i32;
                 } else {
                     core::ptr::copy_nonoverlapping(
                         CanonicalName.as_ptr(),
@@ -840,7 +839,7 @@ pub unsafe extern "system" fn GetAddrInfoW(
             }
         }
     } else if (iFlags & (AI_NUMERICHOST as i32)) != 0 {
-        iError = EAI_NONAME;
+        iError = EAI_NONAME as i32;
     } else {
         WideCharToMultiByte(
             CP_ACP as u32,
