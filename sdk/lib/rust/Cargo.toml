@@ -433,6 +433,7 @@ members = [
     "usrmgr-rust",
     "comctl32-rust",
     "inetcpl-rust",
+    "ndis-rust",
 ]
 resolver = "2"
 

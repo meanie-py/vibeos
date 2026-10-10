@@ -963,6 +963,59 @@ only for the channel it found an ATAPI device on. So the channel-state check ski
 primary is correct, not a bug. Measure `PciRead32(0x40)` and the raw status ports before
 suspecting the HAL. i386 (legide) and arm64 are next.
 
+### ndis.sys on Haiku 5.5: the first kernel driver on the new default (2026-10-09)
+
+246 functions for $0.35, then 722 → 0 errors per arch, and a $0 `port replay` reproduces
+0/0/0. Flipped and runtime-tested on all three arches by `--payload ndisprobe`. Every gap the
+port hit became a tool fix, so the replay needs only eight hand-banked functions:
+
+- **Digit-leading TU names** (`30stubs.c`) scaffold as `#[path = "30stubs.rs"] pub mod
+  _30stubs;` (no raw identifier makes `30stubs` legal).
+- **A prose preamble reply** ("The preamble contains only `#undef` directives ...") is stitched
+  as a comment with a loud warning; it was pasted as code and stopped the crate at the parser.
+- **MS anonymous base members under `#ifdef __cplusplus`** (ndis.h's
+  `NDIS50_PROTOCOL_CHARACTERISTICS` embeds the NDIS 4.0 struct only in its `#else` arm):
+  `bindgen_ms_anon_members.py` reads that arm and is given `ddk/ndis.h`. Every protocol handler
+  had been bindgen padding.
+- **SDK macros doing pointer arithmetic** on a pointer TYPEDEF (`(PUCHAR)p + off`) lower to
+  `wrapping_add`/`wrapping_sub`; pointer minus pointer is refused.
+- **The SDK-macro block is not sticky** for a name another generated block now owns (a
+  `macros` run before `resolve` had lowered the island's `NDIS_STATUS_*`; E0428 forever).
+- **`port check`'s catch-all detector** counts names the crate imports BY NAME
+  (`pub use ntkrnl_sys::driver_ddk::{IRP_MN_..}`); every PnP switch read as a catch-all.
+- **crate-repair:** `Some(f) as Option<fn(..)>` drops the cast (`as` never converts between
+  Option types); `.c2rust_unnamed(_N)` segments are deleted so the anon-field router sees C's
+  flattened spelling.
+- **`postprocess`'s blind `.HighPart` → `.__bindgen_anon_1.HighPart`** no longer fires after
+  `.u`, LARGE_INTEGER's NAMED member. (It still rewrites every bare `.Status`; crate-repair's
+  derived anon map is the right authority for that and should replace it.)
+- **`resolve` keeps the glob's declaration** of a function the bindgen glob declares when the
+  only substrate helper is another extern DECLARATION (ntkrnl-sys `ex`/`ke` are written in
+  `base`'s `ULONG_PTR = usize`, the glob in bindgen's `c_ulonglong`: every `as SIZE_T` argument
+  mismatched). An implementation (ke's amd64 `KeGetCurrentIrql`, `mov cr8`) still wins, per arch.
+- **`header_functions`** no longer reads a struct as a function (efilter.h's semicolon-less
+  `DECLARE_UNKNOWN_*(X)` lines before `typedef struct ETHI_FILTER {`), so the macros stage
+  stopped trying to buy a port of a struct.
+- **A hand-banked replacement of a `_v` twin** gets no C trampoline (the hand version defines
+  the C name; `NdisWriteErrorLogEntry` reads only its fixed arguments).
+- **`.expect("non-null function pointer")`** bound to a local and then called, or rewrapped in
+  `Some(..).unwrap_unchecked()`, becomes `unwrap_unchecked()`: 11 kernel panic paths C does
+  not have.
+- **`port data`** takes a header `DEFINE_GUID` that `initguid.h` instantiates in the TU, when
+  the crate uses it (`guid.c` is nothing else; `GUID_BUS_INTERFACE_STANDARD` was unresolved).
+- **ntkrnl-sys** gains `KeNumberProcessorsValue()` (a DATA export: a plain `extern static`
+  links on amd64 only) and the i386 `ExInterlocked{InsertHead,RemoveHead,AddUlong}` bridges.
+- **`resolve` never consensus-copies a name SOME arch's island defines** (and drops such a
+  copy from an existing block): the copy shadows the island on the arches that have it.
+  ndis's `SharedSystemTime` (KUSER_SHARED_DATA.SystemTime, kernel address) got storport's
+  `0x7ffe0008` -- InterruptTime at its user-mode address -- so NdisGetCurrentSystemTime
+  returned the uptime. storport's own `StorPortQuerySystemTime` had the same bug (fixed).
+- The strict lints earned their keep on the flip: `scan_irql_balance` found NdisMCreateLog
+  returning with the adapter spinlock held on both failure paths (an upstream C bug; the
+  Rust releases it), and `scan_const_vs_island` found the SharedSystemTime copy.
+  `scan_orphan_modules` now resolves a `#[path]` inside an inline module under it, and
+  `scan_macro_fn_shadow` exempts a `#[no_mangle]` .spec export whose C body is empty.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

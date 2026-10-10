@@ -164,3 +164,22 @@ def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
         (tmp_path / f"types_{arch}.rs").write_text(vtbl)
     out = sdk_macros.com_wrappers(tmp_path, {"IZone_Destroy"})["IZone_Destroy"]
     assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")
+
+
+def test_pointer_typedef_arithmetic_steps_elements(monkeypatch):
+    """ndis's NDIS_GET_PACKET_STATUS: `(PUCHAR)p + NdisPacketOobOffset` is pointer
+    arithmetic; a bare `+` on `*mut u8` does not compile, and PUCHAR names no `*`."""
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR", "PNDIS_PACKET_OOB_DATA"})
+    out = lower_expansion(
+        "((PNDIS_PACKET_OOB_DATA)((PUCHAR)(__rcv_p0__) + "
+        "(__rcv_p0__)->Private.NdisPacketOobOffset))->Status",
+        {"PUCHAR", "PNDIS_PACKET_OOB_DATA"},
+    )
+    assert ".wrapping_add(((*$p0).Private.NdisPacketOobOffset) as usize)" in out
+    assert " + (*$p0)" not in out
+
+
+def test_pointer_minus_pointer_is_refused(monkeypatch):
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR"})
+    with pytest.raises(LowerError):
+        lower_expansion("(PUCHAR)(__rcv_p0__) - (PUCHAR)(__rcv_p1__)", {"PUCHAR"})

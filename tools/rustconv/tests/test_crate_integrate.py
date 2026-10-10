@@ -309,3 +309,25 @@ def test_extern_block_in_trailing_c_comments_is_ignored(tmp_path):
     out, report = integrate(src, make_crate(tmp_path), module="m")
     assert report.blocks_removed == 0
     assert '// extern "C" {' in out  # the comment block is untouched
+
+
+def test_bound_fn_pointer_expect_becomes_unchecked():
+    from rustconv.crate_integrate import unchecked_fn_pointer_calls
+
+    src = (
+        "let f = (*d).Chars\n    .QueryInformationHandler\n"
+        '    .expect("non-null function pointer");\nStatus = f(a, b);\n'
+        'let g = (*d).Other.expect("non-null function pointer");\nstore(g);\n'
+    )
+    out, n = unchecked_fn_pointer_calls(src)
+    assert n == 1
+    assert ".QueryInformationHandler\n    .unwrap_unchecked();" in out
+    assert '(*d).Other.expect("non-null function pointer");' in out  # stored, not called
+
+
+def test_rewrapped_fn_pointer_expect_becomes_unchecked():
+    from rustconv.crate_integrate import unchecked_fn_pointer_calls
+
+    src = 'Some(\n  (*d).ISRHandler\n    .expect("non-null function pointer"),\n)\n.unwrap_unchecked()(a);'
+    out, n = unchecked_fn_pointer_calls(src)
+    assert n == 1 and "expect" not in out

@@ -96,10 +96,6 @@ pub use ntkrnl_sys::ddk::_MEMORY_CACHING_TYPE_MmNonCached as MmNonCached;
 // ============================================================================
 pub use ntkrnl_sys::ddk::_CM_SHARE_DISPOSITION_CmResourceShareShared as CmResourceShareShared;
 
-// ============================================================================
-// SharedSystemTime — address of InterruptTime in KUSER_SHARED_DATA (x86: 0x7ffe0008)
-// ============================================================================
-pub const SharedSystemTime: usize = 0x7ffe0008; // nolint: const-contradiction (user-mode alias of KUSER_SHARED_DATA+0x8, mapped in every process; the island has the kernel-mode address)
 
 // ============================================================================
 // SRB_STATUS macro: strips the queue-frozen bit (0x40) before comparison.

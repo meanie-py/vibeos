@@ -60,6 +60,7 @@ TWO WIDENINGS, from the PAGED_CODE sweep (2026-10-08).
 """
 
 import re
+import subprocess
 import sys
 from pathlib import Path
 
@@ -214,6 +215,37 @@ def rust_files() -> list[Path]:
     return [p for p in sorted(source_files(RUST_ROOT)) if not SKIP_FILE_RE.search(p.as_posix())]
 
 
+_SPEC_EXPORT_RE = re.compile(r"^\s*@\s+\w+(?:\s+-\S+)*\s+([A-Za-z_]\w*)", re.M)
+
+
+def spec_exports() -> frozenset[str]:
+    """Every name a tracked `.spec` file exports."""
+    out: set[str] = set()
+    listed = subprocess.run(
+        ["git", "ls-files", "*.spec"], cwd=REPO, capture_output=True, text=True
+    ).stdout.split()
+    for rel in listed:
+        try:
+            out |= set(_SPEC_EXPORT_RE.findall((REPO / rel).read_text(errors="replace")))
+        except OSError:
+            continue
+    return frozenset(out)
+
+
+def _no_mangle_at(path: Path, line: int) -> bool:
+    """Whether the fn starting at `line` (1-based) carries `#[no_mangle]`."""
+    try:
+        lines = path.read_text(errors="replace").splitlines()
+    except OSError:
+        return False
+    i = line - 2
+    while i >= 0 and lines[i].strip().startswith(("#[", "///", "//")):
+        if "no_mangle" in lines[i]:
+            return True
+        i -= 1
+    return "no_mangle" in lines[line - 1] if 0 < line <= len(lines) else False
+
+
 def scan(paths: list[Path]) -> list[tuple[str, str, int]]:
     """(relpath, macro name, line) for each empty `fn` shadowing a macro in its crate."""
     macros: dict[Path, set[str]] = {}
@@ -237,8 +269,15 @@ def scan(paths: list[Path]) -> list[tuple[str, str, int]]:
     # the no-op may sit in a shim crate that serves its callers' extern declarations, so no
     # crate-local key could ever see it (drvtrace-shim's DPRINT_URB, 2026-10-08).
     dead = dead_c_macros(C_ROOT) if shadows else frozenset()
+    exports = spec_exports() if shadows else frozenset()
     hits = []
     for path, name, line in shadows:
+        # An EXPORT whose C body is empty is the C's own shape, not a shadow: ndis.h has
+        # `#define NdisFreeSpinLock(..)` for callers and control.c #undefs it to define the
+        # ndis.spec export. A `#[no_mangle]` fn some .spec exports is an ABI obligation.
+        # (fastfat's DPRINT_URB, this scanner's motivating case, is in no .spec.)
+        if name in exports and _no_mangle_at(path, line):
+            continue
         if name in DDK_MACROS or name in dead or name in macros.get(crate_of(path), ()):
             try:
                 rel = path.relative_to(REPO).as_posix()
@@ -274,6 +313,22 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
             "pub fn LOWORD(l: u32) -> u16 { (l & 0xFFFF) as u16 }\n",
         },
         [],
+    ),
+    (
+        "a #[no_mangle] .spec EXPORT with an empty C body is the C's own shape (ndis)",
+        {
+            "m.rs": "macro_rules! NdisFreeSpinLock {\n    ($($a:tt)*) => {{}};\n}\n",
+            "c.rs": '#[no_mangle]\npub unsafe extern "system" fn NdisFreeSpinLock(_l: *mut u8) {}\n',
+        },
+        [],
+    ),
+    (
+        "the same export WITHOUT #[no_mangle] is still a shadow",
+        {
+            "m.rs": "macro_rules! NdisFreeSpinLock {\n    ($($a:tt)*) => {{}};\n}\n",
+            "c.rs": "pub unsafe fn NdisFreeSpinLock(_l: *mut u8) {}\n",
+        },
+        ["c.rs"],
     ),
     (
         "an empty fn whose name is no macro of this crate is not our business",

@@ -926,6 +926,21 @@ def _island_lengths(crate_src: Path, arch: str) -> dict[str, int]:
     }
 
 
+_GUID_TYPES = {"const GUID", "const IID", "const CLSID", "const struct _GUID"}
+
+
+def _crate_references(crate_src: Path) -> set[str]:
+    """Identifiers the crate's translated modules use (islands and the prelude excluded)."""
+    from tools.source_walk import source_files
+
+    names: set[str] = set()
+    for f in source_files(crate_src):
+        if f.parent == crate_src:
+            continue  # lib.rs, prelude.rs, types_*.rs
+        names |= set(re.findall(r"\b[A-Za-z_]\w*\b", f.read_text(errors="replace")))
+    return names
+
+
 def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
     ast = clang_ast(repo, arch, tu)
     _ENUMS.clear()
@@ -948,11 +963,19 @@ def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
     ctx = Ctx({}, records(ast), _island_consts(crate_src, arch), macros, set())
     ctx.island = island.read_text() if island.is_file() else ""
     out: list[Table] = []
+    referenced = _crate_references(crate_src)
     for d in ast.get("inner", []):
         if d.get("kind") != "VarDecl" or not d.get("init"):
             continue
         f = _decl_file(d)
-        if f is None or not Path(f).resolve().is_relative_to(scope):
+        if f is None:
+            continue
+        # A header DEFINE_GUID that `#include <initguid.h>` turns into a definition in THIS
+        # TU: ndis's guid.c is nothing else, and without it GUID_BUS_INTERFACE_STANDARD was an
+        # unresolved import. Only the ones the crate uses -- wdmguid.h alone instantiates dozens.
+        if not Path(f).resolve().is_relative_to(scope) and (
+            d["type"].get("qualType") not in _GUID_TYPES or d["name"] not in referenced
+        ):
             continue
         src = ctx.sources.setdefault(f, Path(f).read_bytes())
         try:

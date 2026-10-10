@@ -1160,16 +1160,16 @@ def wire_modules(state: dict) -> list[str]:
     block = re.search(rf"(?m)^pub mod {re.escape(state['stem'])} \{{\n(.*?)^\}}", text, re.S)
     if block is None:
         return []
-    present = set(re.findall(r"pub mod (?:r#)?(\w+);", block.group(1)))
+    present = set(re.findall(r"pub mod (?:r#|_(?=\d))?(\w+);", block.group(1)))
     added = [
         name
         for unit in _units(state)
         if (name := _module_name(unit)) not in present and _has_body(_tu_output(state, unit))
     ]
     if added:
-        from .profile_derive import _rust_mod_ident
+        from .profile_derive import _rust_mod_decl
 
-        lines = "".join(f"    pub mod {_rust_mod_ident(n)};\n" for n in added)
+        lines = "".join(f"    {_rust_mod_decl(n)}\n" for n in added)
         text = text[: block.end(1)] + lines + text[block.end(1) :]
         lib.write_text(text)
     return added
@@ -1183,6 +1183,21 @@ def wire_modules(state: dict) -> list[str]:
 #: (ddk/psdk/ndk/xdk/crt) are the -sys crates' job: one hand port there serves every module,
 #: where a per-crate copy would be the drift the shared crates exist to prevent.
 _PRIVATE_HEADER_ROOTS = ("sdk/include/reactos",)
+
+
+def _island_defined(crate_src: Path) -> dict[str, set[str]]:
+    """Value/type names each `types_<arch>.rs` island defines -> the arches that define it."""
+    out: dict[str, set[str]] = {}
+    for island in sorted(crate_src.glob("types_*.rs")):
+        arch = island.stem.removeprefix("types_")
+        text = island.read_text(errors="replace")
+        for m in re.finditer(
+            r"^\s*pub\s+(?:const|static(?:\s+mut)?|fn|type|struct|union)\s+([A-Za-z_]\w*)",
+            text,
+            re.M,
+        ):
+            out.setdefault(m.group(1), set()).add(arch)
+    return out
 
 
 def discover_header_units(state: dict) -> tuple[dict[str, str], dict[str, str]]:
@@ -1443,6 +1458,16 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
         all_twins.update(variadic_shim.twins(path.read_text()))
     for name, why in refused.items():
         print(f"integrate: variadic {name} left as is: {why}")
+    # A twin a hand-banked function replaces gets no trampoline: the hand version defines the
+    # C name itself (ndis's NdisWriteErrorLogEntry reads only its fixed arguments, so it is a
+    # plain fixed-arity `extern "C"` fn), and a trampoline would define it a second time.
+    replaced = set()
+    for entry in _hand_dir(stem).glob("*.json"):
+        try:
+            replaced.add(json.loads(entry.read_text())["name"])
+        except (OSError, ValueError, KeyError):
+            continue
+    all_twins = {n: v for n, v in all_twins.items() if f"{n}_v" not in replaced}
     if not all_twins:
         return done, refused
     units = [REPO / u for u in _units(state) if (REPO / u).is_file()]
@@ -2321,6 +2346,9 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         for k, v in prelude_resolve.existing_block(prelude).items()
         if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
         and k not in shared
+        # A copy of a name SOME arch's island defines shadows the island there (ndis's
+        # SharedSystemTime); dropped, and the gap reported by the pass below instead.
+        and k not in _island_defined(crate / "src")
         # A copy made before test harnesses stopped counting as consensus.
         and not prelude_resolve.is_test_source(v.path)
     }
@@ -2454,6 +2482,17 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             items[name] = [i for i in items[name] if i.kind == "type"]
         new = len(aliases)
         res.conflicting, res.undefined = {}, []
+        # A name SOME arch's island defines is an arch-specific gap, never tree consensus: a
+        # copied item shadows the island on the arches that have it too. ndis's
+        # `SharedSystemTime` (KUSER_SHARED_DATA.SystemTime, kernel address, amd64/arm64 only)
+        # got storport's `0x7ffe0008` -- InterruptTime, user mode -- on every arch.
+        in_island = _island_defined(crate / "src")
+        for name in sorted(todo & set(in_island)):
+            res.conflicting[name] = (
+                f"the island defines it on {', '.join(sorted(in_island[name]))} only: "
+                "an arch-specific gap, not tree consensus -- port its per-arch C"
+            )
+        todo -= set(in_island)
         for name in sorted(todo):
             found = items.get(name, [])
             if not found:
@@ -3395,6 +3434,8 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     # scaffold's `pub const NULL` once landed in this block too (mmsys, E0428), and then
     # subtracting the block's own names above handed NULL back to the lowering.
     hand |= sdk_macros.outside_block_names(prelude)
+    # A name another GENERATED block now owns (resolve's facts) is dropped from this one.
+    hand |= sdk_macros.outside_sdk_block_names(prelude)
     # A name a SHARED crate provides (win32macros-rust's LOWORD/MAKELONG/UlongToPtr) is never
     # lowered per crate: a local copy makes `refresh_shared_crates` drop the shared re-export,
     # and the duplicate then perpetuates itself on every replay.
