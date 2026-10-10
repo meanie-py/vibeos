@@ -277,7 +277,10 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
 
 
 def stage_derive(
-    module_dir: Path, target: str | None, usermode: bool | None = None
+    module_dir: Path,
+    target: str | None,
+    usermode: bool | None = None,
+    functions: str | None = None,
 ) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target, usermode=usermode)
@@ -296,6 +299,21 @@ def stage_derive(
         prior["real_unions"] = not re.search(rf"^  {re.escape(stem)}\)\n", script, re.M)
     if prior["real_unions"] and "REAL_UNIONS=1" not in arm:
         arm = re.sub(r"^(    USERMODE=1)$", r"\1\n    REAL_UNIONS=1", arm, count=1, flags=re.M)
+    # derive always emits BLOCKLIST_FUNCS=1 (the only safe answer before the crate has any
+    # #[no_mangle] for FROM_CRATE to subtract). Once a human settles it the other way --
+    # winegdi and opengl32 call ~110 gdi32/kernel32/advapi32 APIs no prelude declares -- the
+    # decision lives in the state, so a later re-derive (resolve's island-header pass does
+    # one) cannot quietly put the hand-written surface back.
+    if functions is not None:
+        prior["functions"] = functions
+    if prior.get("functions") == "from-crate":
+        arm = re.sub(
+            r"^    BLOCKLIST_FUNCS=1$",
+            "    BLOCKLIST_FUNCS=0\n    BLOCKLIST_FUNCS_FROM_CRATE=1",
+            arm,
+            count=1,
+            flags=re.M,
+        )
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
         GEN.write_text(updated)
@@ -316,6 +334,7 @@ def stage_derive(
             if m
         ),
         real_unions=prior["real_unions"],
+        **({"functions": prior["functions"]} if "functions" in prior else {}),
     )
     if usermode is not None:
         state["mode_override"] = usermode
@@ -4605,7 +4624,7 @@ def main(args) -> int:
 def _main(args) -> int:
     try:
         if args.port_stage == "derive":
-            stage_derive(_module(args.module), args.target, args.usermode)
+            stage_derive(_module(args.module), args.target, args.usermode, args.functions)
         elif args.port_stage == "island":
             stage_island(args.stem)
         elif args.port_stage == "scaffold":
@@ -4725,6 +4744,13 @@ def add_parser(sub) -> None:
         help="a static library whose consumers are in another CMakeLists (remembered)",
     )
     mode.add_argument("--kernel", dest="usermode", action="store_const", const=False)
+    stages.choices["derive"].add_argument(
+        "--functions",
+        choices=("blocked", "from-crate"),
+        default=None,
+        help="island function declarations: blocked (BLOCKLIST_FUNCS=1, the default) or "
+        "from-crate (emit them minus the crate's own #[no_mangle]); remembered",
+    )
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
     stages.add_parser(
