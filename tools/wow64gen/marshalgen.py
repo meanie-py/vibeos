@@ -677,7 +677,9 @@ PARAM_RANK = {"FLAT": 0, "IDENTICAL": 0, "SCALAR_WIDEN": 1, "WIDENING": 2, "SEMA
 # (tu_suffix used to look up flags in compile_commands.json, TU source)
 WIN32K_TUS = [
     ("user32_layout_probe.c", "#include <user32.h>\n"),
-    ("gdi32/wine/emfdc.c", "#include <precomp.h>\n"),
+    # winegdi is Rust now (its .c are commented out of the build); its stub TU keeps the
+    # same target flags and include path, which is all the probe borrows.
+    ("gdi32/wine/rust_cohab_stub.c", "#include <precomp.h>\n"),
 ]
 # ndk umbrella for the ntdll surface. This MIRRORS dll/ntdll/include/ntdll.h's
 # real include set rather than inventing a wrapper: a hand-rolled `<ntdef.h>` +

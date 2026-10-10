@@ -444,6 +444,8 @@ members = [
     "user32_optional_vista-rust",
     "bmfd-rust",
     "ftfd-rust",
+    "winegdi-rust",
+    "opengl32-rust",
     "winprint-rust",
     "logonui-rust",
     "aclayers-rust",

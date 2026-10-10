@@ -3862,7 +3862,7 @@ case "$DRIVER" in
     ;;
   winegdi|winegdi-types_1)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from win32ss/gdi/gdi32/wine/CMakeLists.txt
-    # (6 compiled TU(s), 227 headers in the include closure, 252 switch constant(s)).
+    # (7 compiled TU(s), 227 headers in the include closure, 252 switch constant(s)).
     # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
@@ -3871,6 +3871,7 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=0
     BLOCKLIST_FUNCS_FROM_CRATE=1
+    EXTRA_BL_ITEMS=( RtlEqualPrefixSid RtlEqualSid RtlQueryPerformanceCounter RtlQueryPerformanceFrequency )
     DRIVER_DIR="${SRC}/win32ss/gdi/gdi32/wine"
     case "$DRIVER" in
       # island types — 5 TU(s):
@@ -3903,6 +3904,14 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/winegdi-rust/src}"
     ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh winegdi
+  #   TYPES_STEM=types_1 gen_driver_types.sh winegdi-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:

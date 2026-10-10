@@ -2028,6 +2028,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
+name = "opengl32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "openglcfg-rust"
 version = "0.1.0"
 dependencies = [
@@ -3448,6 +3458,16 @@ dependencies = [
 [[package]]
 name = "winedebug-rust"
 version = "0.1.0"
+
+[[package]]
+name = "winegdi-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "winetrace-shim"

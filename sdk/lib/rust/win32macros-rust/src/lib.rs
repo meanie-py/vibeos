@@ -1049,14 +1049,18 @@ pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
 /// `minmax.h` / `stdlib.h` — `#define min(a,b) (((a) < (b)) ? (a) : (b))`. Generic because the
 /// macro is: the result has the CALLER's type, so nothing width-dependent is shared.
+///
+/// `extern "C"`, not the Rust ABI: i386 user code builds without SSE, where the Rust ABI
+/// cannot pass an f64 at all and rejects the `min::<f64>` instantiation at codegen (opengl32,
+/// winegdi). The C ABI passes it on the stack (field manual, "i386 no-SSE float ABI").
 #[inline]
-pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn min<T: PartialOrd>(a: T, b: T) -> T {
     if a < b { a } else { b }
 }
 
 /// `minmax.h` / `stdlib.h` — `#define max(a,b) (((a) > (b)) ? (a) : (b))`.
 #[inline]
-pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b { a } else { b }
 }
 

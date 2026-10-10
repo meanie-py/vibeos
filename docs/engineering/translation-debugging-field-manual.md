@@ -1083,6 +1083,11 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
   per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
   next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
+- **`f64::from_bits` / `to_bits` are themselves calls that pass an f64.** Moving a double
+  through a soft-float boundary as its bit pattern (ftfd's private vsprintf, i386 KERNEL code)
+  needs `core::mem::transmute::<u64, f64>`, which is not a call; `from_bits` hit the same
+  rejection from inside `core`. A varargs double is pulled as `arg::<u64>()`: on all three
+  targets `va_arg(double)` reads the same 8-byte slot.
 - **So a THIRD-PARTY float crate (`libm`) cannot build there at all** — it is all Rust-ABI,
   and you cannot `extern "C"` someone else's crate. ucrtbase solved it by dropping to the
   SSE2 baseline (no kernel consumer; Microsoft's x86 ucrtbase is `/arch:SSE2`). That makes
@@ -1137,6 +1142,11 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **A kernel DLL that imports only win32k cannot link `panic-common`'s `kernel` flavour.**
+  GDI font and display drivers (bmfd, ftfd: `add_importlibs(ftfd win32k)`) have no ntoskrnl
+  import library, so the panic path's `DbgPrint`, `KeBugCheckEx` and `RtlWalkFrameChain` are
+  undefined (arm64 LINK_FAIL on ftfd.dll). Use the zero-extern `raw` flavour; scaffold now
+  picks it from the target's `add_importlibs`.
 - **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
   two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
   flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
@@ -1371,6 +1381,11 @@ under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $
 (%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
 non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
 count or one multiplied by `size_of` (baseline empty).
+**And the ORDER flips too.** `RtlMoveMemory(dst, src, bytes)` is destination-first;
+`core::ptr::copy(src, dst, count)` is source-first. imm32's `Imm32FixLogFont` translated both
+of its face-name shifts with the C's argument order and the C's byte count, so each moved the
+string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
+nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 

@@ -190,7 +190,42 @@ def _transform(text: str) -> str:
             out.append(f'{indent}}}')
         i = j + 1
 
-    return '\n'.join(out) + ('\n' if text.endswith('\n') else '')
+    return _unwrap_union_accessors('\n'.join(out) + ('\n' if text.endswith('\n') else ''))
+
+
+_RAW_FIELD_RE = re.compile(
+    r'\(\*::core::ptr::(addr_of(?:_mut)?)!\(\(\*this\)\.(\w+)\)\)\.as_(?:ref|mut)\(\) as \*(const|mut) _'
+)
+_SELF_FIELD_RE = re.compile(r'\bself\.(\w+)\.as_(?:ref|mut)\(\)')
+
+
+def _unwrap_union_accessors(text: str) -> str:
+    """A converted union's bitfield accessors still call `__BindgenUnionField::as_ref()`.
+
+    bindgen emits accessors on the union itself (`self._bitfield_1.as_ref().get(..)`, and the
+    `*_raw` forms through `addr_of!((*this)._bitfield_1)).as_ref()`) because it wrapped the
+    field in `__BindgenUnionField`. After the conversion the field is the bare
+    `__BindgenBitfieldUnit`, so those calls resolve to nothing (winegdi's
+    `_RTL_BALANCED_NODE__bindgen_ty_2`, 8 errors per arch) -- and orphan rules keep a prelude
+    from patching around it. Rewritten only inside the `impl` of a union this pass produced.
+    """
+    unions = set(re.findall(r'^\s*pub union (\w+) \{', text, re.M))
+    if not unions:
+        return text
+    lines = text.split('\n')
+    out = []
+    inside = None
+    for ln in lines:
+        m = re.match(r'^(\s*)impl (\w+) \{$', ln)
+        if inside is None and m and m.group(2) in unions:
+            inside = m.group(1) + '}'
+        elif inside is not None and ln == inside:
+            inside = None
+        elif inside is not None:
+            ln = _RAW_FIELD_RE.sub(lambda r: f'::core::ptr::{r.group(1)}!((*this).{r.group(2)})', ln)
+            ln = _SELF_FIELD_RE.sub(r'self.\1', ln)
+        out.append(ln)
+    return '\n'.join(out)
 
 
 def main(argv):

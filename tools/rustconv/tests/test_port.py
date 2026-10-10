@@ -588,3 +588,16 @@ def test_each_source_list_gets_its_own_stub():
     ]
     assert not port._list_has_stub(lines, 1)
     assert port._list_has_stub(lines, 4)
+
+
+def test_flip_links_with_the_targets_own_link_signature():
+    state = {
+        "stem": "winegdi",
+        "crate": "winegdi-rust",
+        "target": "winegdi",
+        "module_dir": "win32ss/gdi/gdi32/wine",
+        "tus": [],
+    }
+    cml = "add_library(winegdi STATIC ${SOURCE})\ntarget_link_libraries(winegdi PRIVATE pseh)\n"
+    out = port.flip_cmake(cml, state)
+    assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out

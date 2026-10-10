@@ -281,6 +281,7 @@ def stage_derive(
     target: str | None,
     usermode: bool | None = None,
     functions: str | None = None,
+    block: list[str] | None = None,
 ) -> pd.DerivedProfile:
     started = time.time()
     dp = derive(module_dir, target, usermode=usermode)
@@ -306,6 +307,19 @@ def stage_derive(
     # one) cannot quietly put the hand-written surface back.
     if functions is not None:
         prior["functions"] = functions
+    # Island items a module must never see, remembered like `functions`: winegdi's closure
+    # pulls wine's winternl.h, which declares RtlEqualSid & co. BOOL where ntdll defines
+    # BOOLEAN (scan_bool_width); winegdi calls none of them.
+    if block:
+        prior["island_block"] = sorted(set(prior.get("island_block", [])) | set(block))
+    if prior.get("island_block") and "EXTRA_BL_ITEMS=" not in arm:
+        arm = re.sub(
+            r"^(    DRIVER_DIR=.*)$",
+            lambda m: f"    EXTRA_BL_ITEMS=( {' '.join(prior['island_block'])} )\n{m.group(1)}",
+            arm,
+            count=1,
+            flags=re.M,
+        )
     if prior.get("functions") == "from-crate":
         arm = re.sub(
             r"^    BLOCKLIST_FUNCS=1$",
@@ -335,6 +349,7 @@ def stage_derive(
         ),
         real_unions=prior["real_unions"],
         **({"functions": prior["functions"]} if "functions" in prior else {}),
+        **({"island_block": prior["island_block"]} if "island_block" in prior else {}),
     )
     if usermode is not None:
         state["mode_override"] = usermode
@@ -1112,9 +1127,18 @@ def flip_cmake(cml: str, state: dict) -> str:
             f"# disk. The target keeps a stub TU and links the Rust archive.\n"
             f'rust_staticlib_variant({variant} {crate} "" TRUE)\n'
         )
+        # CMake refuses to mix target_link_libraries' plain and keyword signatures on one
+        # target; winegdi's CMakeLists already says `target_link_libraries(winegdi PRIVATE
+        # pseh)`, so a plain one here broke the configure. Match what is there.
+        kw = re.search(
+            rf"^target_link_libraries\(\s*{re.escape(target)}\s+(PRIVATE|PUBLIC|INTERFACE)\b",
+            text,
+            re.M,
+        )
         tail = (
             f"add_dependencies({target} rust_{variant})\n"
-            f"target_link_libraries({target} ${{{variant}_LIB}})\n"
+            f"target_link_libraries({target} {kw.group(1) + ' ' if kw else ''}"
+            f"${{{variant}_LIB}})\n"
         )
         text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
     return text
@@ -4688,7 +4712,9 @@ def main(args) -> int:
 def _main(args) -> int:
     try:
         if args.port_stage == "derive":
-            stage_derive(_module(args.module), args.target, args.usermode, args.functions)
+            stage_derive(
+                _module(args.module), args.target, args.usermode, args.functions, args.block
+            )
         elif args.port_stage == "island":
             stage_island(args.stem)
         elif args.port_stage == "scaffold":
@@ -4814,6 +4840,14 @@ def add_parser(sub) -> None:
         default=None,
         help="island function declarations: blocked (BLOCKLIST_FUNCS=1, the default) or "
         "from-crate (emit them minus the crate's own #[no_mangle]); remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--block",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="island items to blocklist (EXTRA_BL_ITEMS); remembered",
     )
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
