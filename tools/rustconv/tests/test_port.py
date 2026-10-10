@@ -562,16 +562,15 @@ def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeyp
     assert port.recorded_mode(mod, None) is True  # the CLI omits --target for a lone target
 
 
-def test_c2rust_anonymous_member_hops_are_dropped(tmp_path):
-    src = tmp_path / "src"
-    (src / "m").mkdir(parents=True)
-    (src / "types_i386.rs").write_text("pub struct A { pub __bindgen_anon_1: B }\n")
-    f = src / "m" / "f.rs"
-    f.write_text(
-        "x = (*pIC).c2rust_unnamed.hWnd;\ny = (*w).head.c2rust_unnamed.c2rust_unnamed_0.h;\n"
-    )
-    assert port._drop_c2rust_anon_hops(f, src) == 3
-    assert f.read_text() == "x = (*pIC).hWnd;\ny = (*w).head.h;\n"
-    (src / "types_i386.rs").write_text("pub struct A { pub c2rust_unnamed: B }\n")
-    f.write_text("x = a.c2rust_unnamed.b;\n")
-    assert port._drop_c2rust_anon_hops(f, src) == 0
+def test_token_pasting_macros_and_their_callers_are_hand_ports():
+    from types import SimpleNamespace as M
+
+    macros = {
+        "CS_StrA": M(body="((LPCSTR)(pCS) + (pCS)->dw##Name##Offset)"),
+        "CS_StrW": M(body="((LPCWSTR)CS_StrA(pCS, Name))"),
+        "CS_Wrap": M(body="CS_StrW(p, n)"),
+        "ALIGN_DWORD": M(body="(((len) + 3) & ~3)"),
+    }
+    kept, pasting = port._without_token_pasting(macros)
+    assert list(kept) == ["ALIGN_DWORD"]
+    assert pasting == ["CS_StrA", "CS_StrW", "CS_Wrap"]

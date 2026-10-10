@@ -1672,6 +1672,26 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
+    from rustconv.crate_repair import RULE_C2RUST_HOP
+
+    src = b"fn f() {\n    (*pIC).c2rust_unnamed.hWnd = 0;\n    let h = w.c2rust_unnamed_1;\n}\n"
+    diags = []
+    for field in (b"c2rust_unnamed.", b"c2rust_unnamed_1;"):
+        at = src.index(field)
+        name = field[:-1]
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `INPUTCONTEXTDX`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+            )
+        )
+    plan = propose_edits(diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C2RUST_HOP])
+    # Only a hop with a field after it: a trailing `.c2rust_unnamed_1` names nothing to keep.
+    assert [(e.original, e.replacement) for e in plan.edits] == [(".c2rust_unnamed", "")]
+
+
 def test_a_c_bitfield_goes_through_bindgens_accessors():
     from rustconv.crate_repair import RULE_BITFIELD
 

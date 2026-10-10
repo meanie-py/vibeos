@@ -1934,27 +1934,6 @@ def _drop_macro_externs(path: Path, fn_macros: set[str]) -> list[str]:
     return dropped
 
 
-_C2RUST_ANON_HOP = re.compile(r"\.c2rust_unnamed(?:_\d+)?\b")
-
-
-def _drop_c2rust_anon_hops(path: Path, src: Path) -> int:
-    """`(*pIC).c2rust_unnamed.hWnd` -> `(*pIC).hWnd`, the C's own spelling.
-
-    c2rust names an anonymous member (a union, or an MS-extension embedded struct such as
-    imm32_undoc.h's `INPUTCONTEXT;`) `c2rust_unnamed`, and an anchored translation copies
-    that name. A bindgen island never has it: bindgen spells the member `__bindgen_anon_N`,
-    and crate-repair's anon_union_field rule already routes the bare field through it. imm32
-    carried 61 of these. Left alone when an island really does declare the name.
-    """
-    if any("c2rust_unnamed" in t.read_text(errors="replace") for t in src.glob("types*.rs")):
-        return 0
-    text = path.read_text()
-    new, n = _C2RUST_ANON_HOP.subn("", text)
-    if n:
-        path.write_text(new)
-    return n
-
-
 def stage_integrate(stem: str) -> None:
     """Move each translated file onto the crate's prelude (crate_integrate): the per-file
     substrate globs and hand-declared externs a standalone translation carries are WRONG
@@ -2002,10 +1981,6 @@ def stage_integrate(stem: str) -> None:
                 f"integrate: {path.stem}: wine debug channel storage is the prelude's: "
                 + ", ".join(wine)
             )
-        hops = _drop_c2rust_anon_hops(path, crate / "src")
-        if hops:
-            changed += 1
-            print(f"integrate: {path.stem}: {hops} c2rust anonymous-member hop(s) dropped")
         dropped = _drop_macro_externs(path, fn_macros)
         if dropped:
             changed += 1
@@ -3571,6 +3546,28 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
         print(f"macros: SDK macro {name} NOT lowered, hand-port it: {why}")
 
 
+def _without_token_pasting(macros: dict) -> tuple[dict, list[str]]:
+    """Drop every macro that pastes with `##`, and every macro that reaches one.
+
+    `##` builds an identifier from an argument, which a macro_rules! cannot do on stable.
+    Sent to the model anyway, imm32's `CS_StrA(pCS, Name) ... (pCS)->dw##Name##Offset` came
+    back reading `(*pCS).Name` -- a field that does not exist, and with another argument one
+    that does and is the wrong one. These are hand ports; their callers stay errors until
+    they are written.
+    """
+    pasting = {n for n, m in macros.items() if "##" in m.body}
+    while True:
+        reach = {
+            n
+            for n, m in macros.items()
+            if n not in pasting and any(re.search(rf"\b{q}\b", m.body) for q in pasting)
+        }
+        if not reach:
+            break
+        pasting |= reach
+    return {n: m for n, m in macros.items() if n not in pasting}, sorted(pasting)
+
+
 def stage_macros(
     stem: str, *, model: str, cost_cap: float, dry_run: bool, thinking: str = "on"
 ) -> None:
@@ -3611,6 +3608,9 @@ def stage_macros(
     skipped = sorted(names & ambiguous)
     if skipped:
         print(f"macros: defined differently in two places, hand-port: {', '.join(skipped)}")
+    macros, pasting = _without_token_pasting(macros)
+    if pasting:
+        print(f"macros: token-pasting (##), hand-port above the block: {', '.join(pasting)}")
     if not macros:
         print("macros: nothing to port")
         _record(state, "macros", started, ported=0, usd=0.0)
