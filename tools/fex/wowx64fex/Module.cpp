@@ -66,9 +66,11 @@
 
 #include <cstdint>
 #include <atomic>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
+#include <vector>
 #include <ntstatus.h>
 #include <windef.h>
 #include <winternl.h>
@@ -77,6 +79,7 @@ extern "C" {
 NTSTATUS STDMETHODCALLTYPE BTCpu64ProcessInit(const WOWX64_HOST_SERVICES* Host);
 NTSTATUS STDMETHODCALLTYPE BTCpu64ThreadInit();
 void STDMETHODCALLTYPE BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus);
+void STDMETHODCALLTYPE BTCpu64ProcessTerm(HANDLE Process, BOOL After, NTSTATUS Status);
 NTSTATUS STDMETHODCALLTYPE BTCpu64GetContext(HANDLE Thread, HANDLE Process, void* Reserved, WOWX64_CONTEXT* Context);
 NTSTATUS STDMETHODCALLTYPE BTCpu64SetContext(HANDLE Thread, HANDLE Process, void* Reserved, const WOWX64_CONTEXT* Context);
 void STDMETHODCALLTYPE BTCpu64Simulate();
@@ -89,6 +92,8 @@ void STDMETHODCALLTYPE BTCpu64NotifyMemoryFree(void* Address, SIZE_T Size, ULONG
 void STDMETHODCALLTYPE BTCpu64FlushInstructionCache2(const void* Address, SIZE_T Size);
 void STDMETHODCALLTYPE BTCpu64NotifyMemoryDirty(void* Address, SIZE_T Size);
 void STDMETHODCALLTYPE BTCpu64NotifyReadFile(HANDLE Handle, void* Address, SIZE_T Size, BOOL After, NTSTATUS Status);
+// Not in FEX's winternl.h.
+NTSTATUS WINAPI NtOpenThread(HANDLE* Thread, ACCESS_MASK Access, const OBJECT_ATTRIBUTES* Attributes, const CLIENT_ID* Client);
 }
 
 namespace ControlBits {
@@ -568,6 +573,89 @@ void BTCpu64ThreadTerm(HANDLE Thread, NTSTATUS ExitStatus) {
     reinterpret_cast<__TEB*>(NtCurrentTeb())->WOW32Reserved = nullptr;
     FEX::Windows::DeinitCRTThread();
   }
+}
+
+// NtTerminateProcess(NULL) kills every other thread wherever it is, including
+// between a Notify* Before (ThreadCreationMutex, and for a bracketed read the
+// code-invalidation mutex, taken) and its After: the lock is then held by a
+// dead thread, and the exiting thread deadlocks in its next memory call (osk's
+// ExitProcess hung freeing heap in msacm32's DLL_PROCESS_DETACH). Upstream
+// WOW64's BTCpuProcessTerm is empty and shares the hole.
+//
+// This is the Linux fork() discipline FEX already has (LockBeforeFork, then
+// StealAndDropActiveLocks in the lone child), adapted: Before takes both locks
+// if it can -- the exclusive code-invalidation lock also excludes JIT compiles,
+// so no victim dies mid-update -- but only for a bounded time, because a read
+// bracket holds both across a NtReadFile that may block forever, and exiting
+// must not wait on it. After waits for every victim to be gone, then rebuilds
+// both locks in place rather than unlocking: a victim killed while QUEUED on a
+// lock is still counted as a waiter, and an unlock would hand off to it.
+namespace {
+std::vector<HANDLE> TermVictims;
+bool TermLocked = false;
+} // namespace
+
+void BTCpu64ProcessTerm(HANDLE Process, BOOL After, NTSTATUS Status) {
+  if (Process) {
+    return; // only "every other thread" (NULL) kills threads that may hold our locks
+  }
+  auto& Invalidation = CTX->GetCodeInvalidationMutex();
+
+  if (!After) {
+    LARGE_INTEGER Pause {.QuadPart = -10 * 1000 * 10}; // 10 ms
+    for (int Try = 0; Try < 200 && !TermLocked; Try++) {
+      if (ThreadCreationMutex.try_lock()) {
+        if (Invalidation.try_lock()) {
+          TermLocked = true;
+          break;
+        }
+        ThreadCreationMutex.unlock();
+      }
+      NtDelayExecution(FALSE, &Pause);
+    }
+    // Unlocked reads are safe enough when the lock could not be had: the map
+    // changes only in ThreadInit/ThreadTerm, and whoever holds the lock is
+    // blocked in a bracketed syscall, not editing it.
+    const DWORD Self = GetCurrentThreadId();
+    for (const auto& [TID, State] : Threads) {
+      if (TID == Self) {
+        continue;
+      }
+      OBJECT_ATTRIBUTES Attributes;
+      InitializeObjectAttributes(&Attributes, nullptr, 0, nullptr, nullptr);
+      CLIENT_ID Client {nullptr, reinterpret_cast<HANDLE>(static_cast<uintptr_t>(TID))};
+      HANDLE Victim;
+      if (NT_SUCCESS(NtOpenThread(&Victim, SYNCHRONIZE, &Attributes, &Client))) {
+        TermVictims.push_back(Victim);
+      }
+    }
+    return;
+  }
+
+  bool AllGone = true;
+  for (HANDLE Victim : TermVictims) {
+    LARGE_INTEGER Timeout {.QuadPart = -10LL * 1000 * 1000 * 5}; // 5 s
+    if (NtWaitForSingleObject(Victim, FALSE, &Timeout) != STATUS_WAIT_0) {
+      AllGone = false;
+    }
+    NtClose(Victim);
+  }
+  TermVictims.clear();
+
+  if (NT_SUCCESS(Status) && AllGone) {
+    // We are the only thread left, and hold neither lock as anything but this
+    // bookkeeping: start both over, unlocked and with no waiters.
+    std::destroy_at(&Invalidation);
+    std::construct_at(&Invalidation);
+    std::destroy_at(&ThreadCreationMutex);
+    std::construct_at(&ThreadCreationMutex);
+  } else if (TermLocked) {
+    // The kill failed, or a victim outlived the wait: threads may still run,
+    // so hand the locks back the ordinary way.
+    Invalidation.unlock();
+    ThreadCreationMutex.unlock();
+  }
+  TermLocked = false;
 }
 
 NTSTATUS BTCpu64GetContext(HANDLE Thread, HANDLE Process, void* Reserved, WOWX64_CONTEXT* Context) {

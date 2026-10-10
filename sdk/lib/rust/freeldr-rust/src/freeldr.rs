@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // freeldr.c: DBG_DEFAULT_CHANNEL(WARNING)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCCH, PCCHAR, PCSTR, PLDR_DATA_TABLE_ENTRY, wchar_t, wctype_t, wint_t};
@@ -44,8 +46,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
 }
 
 // freeldr.c global: `CCHAR FrLdrBootPath[MAX_PATH] = ""` — MAX_PATH==260.
@@ -91,7 +91,7 @@ unsafe fn LoadRosload(
         RosloadPath,
     );
 
-    TRACE(b"Loading second stage loader '%s'\n\0".as_ptr() as *const i8, FullPath.as_ptr());
+    TRACE!("Loading second stage loader '%s'\n", FullPath.as_ptr());
 
     let Success = PeLdrLoadBootImage(
         FullPath.as_ptr() as PCSTR,
@@ -100,7 +100,7 @@ unsafe fn LoadRosload(
         DataTableEntry,
     );
     if Success == 0 {
-        WARN(b"Failed to load second stage loader '%s'\n\0".as_ptr() as *const i8, FullPath.as_ptr());
+        WARN!("Failed to load second stage loader '%s'\n", FullPath.as_ptr());
         return FALSE;
     }
     TRUE
@@ -155,7 +155,7 @@ pub unsafe extern "C" fn BootMain(CmdLine: PCCH) {
     MachInit(CmdLine);
     BM_DBGCON(b'M');
 
-    TRACE(b"BootMain() called.\n\0".as_ptr() as *const i8);
+    TRACE!("BootMain() called.\n");
 
     #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), not(feature = "uefi")))]
     {
@@ -289,4 +289,12 @@ pub unsafe extern "C" fn FrldrGetBootDrive() -> UCHAR {
 #[no_mangle]
 pub unsafe extern "C" fn FrldrGetBootPartition() -> ULONG {
     FrldrBootPartition
+}
+
+/// TRUE in uefildr.efi, FALSE in the BIOS freeldr.sys. rosload is one binary for both and
+/// asks, to set the loader block's `BootViaEFI`: winldr.c's `#ifdef UEFIBOOT` never fires
+/// in rosload, so without this nothing after the loader can tell the firmware apart.
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrIsUefiBoot() -> BOOLEAN {
+    cfg!(feature = "uefi") as BOOLEAN
 }

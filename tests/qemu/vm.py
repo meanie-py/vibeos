@@ -798,6 +798,9 @@ class ArchConfig:
     # Validated by test_milestones after wait_for_boot completes.
     # Order is informational — we report which milestones were reached / missed.
     required_milestones: list[str] = field(default_factory=list)
+    # Attach the \\TEMP disk (`temp_disk_args`). A boot that lays out its own disks turns it
+    # off: the install smoke's target must be disk 0, and the extra disk would take its slot.
+    temp_disk: bool = True
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -2189,6 +2192,8 @@ class QemuVM:
         _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
+        if not self.config.temp_disk:
+            return []
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:
@@ -2488,6 +2493,24 @@ class QemuVM:
         print(f"[QemuVM] record/replay: {mode} -> {trace_dir}")
         return new_cmd
 
+    def _arm_pc_sampler(self) -> None:
+        """VIBEOS_QEMU_PC_SAMPLE=<secs>: sample every vCPU's PC for the whole boot
+        (`vibeos-cli stress --sample-pcs`). Off by default; see cli/pcsample.py."""
+        from .cli import pcsample
+
+        period = pcsample.env_period()
+        if period is None:
+            return
+        out = self.live_log_path.parent / pcsample.SAMPLES_FILE
+        prev = self.on_qmp_ready
+
+        def _ready(qmp):
+            if prev is not None:
+                prev(qmp)
+            pcsample.start(qmp, out, period)
+
+        self.on_qmp_ready = _ready
+
     def _arm_rr_sampler(self, mode: str, trace_dir, cmd: list[str]) -> list[str]:
         """`rr record --sample` / `rr diverge`: fingerprint the guest over a second QMP.
 
@@ -2721,6 +2744,8 @@ class QemuVM:
                     cmd = self._build_native_cmd()
                 cmd = self._apply_record_replay(cmd)
                 cmd = apply_stress_knobs(cmd, self.config.arch)
+                if attempt == 0:
+                    self._arm_pc_sampler()
             finally:
                 _selected_launch_ports = None
             print(f"[QemuVM] {' '.join(cmd)}")
@@ -3266,6 +3291,14 @@ class QemuVM:
         wide = len(fp_hex) > 8
         unit = "g" if wide else "w"
         lines = []
+        # `cpu N` is monitor state: no other thread's walk in between.
+        lock = getattr(self.qmp, "lock", None) or contextlib.nullcontext()
+        with lock:
+            return self._walk_frames_locked(cpu, fp_hex, limit, unit, lines)
+
+    def _walk_frames_locked(
+        self, cpu: int, fp_hex: str, limit: int, unit: str, lines: list[str]
+    ) -> str:
         try:
             self.qmp.hmp(f"cpu {cpu}")
         except Exception:

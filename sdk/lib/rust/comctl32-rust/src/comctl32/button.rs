@@ -339,6 +339,7 @@ unsafe extern "C" fn BUTTON_BStoDT(mut style: DWORD, mut ex_style: DWORD) -> UIN
 
     return dtStyle;
 }
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "C" fn BUTTON_PaintWithTheme(theme: HTHEME, infoPtr: *const BUTTON_INFO, hParamDC: HDC, prfFlag: LPARAM) -> BOOL {
     let mut dwStyle: DWORD = 0;

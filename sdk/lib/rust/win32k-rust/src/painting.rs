@@ -28,9 +28,6 @@ unsafe fn UserHMGetHandle<T>(obj: *mut T) -> HWND {
     *(obj as *const HWND)
 }
 
-// ASSERT_REFS_CO — debug assertion, no-op in non-DBG build.
-macro_rules! ASSERT_REFS_CO { ($($t:tt)*) => {{}}; }
-
 // minwindef.h word macros.
 #[inline(always)]
 fn LOWORD(l: DWORD) -> DWORD { l & 0xffff }

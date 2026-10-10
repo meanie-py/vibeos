@@ -242,7 +242,7 @@ pub unsafe extern "C" fn _wchdir(newdir: *const wchar_t) -> core::ffi::c_int {
     let mut fulldir: [wchar_t; MAX_PATH as usize] = [MAX_PATH as wchar_t; MAX_PATH as usize];
     if GetCurrentDirectoryW(ARRAYSIZE!(fulldir) as DWORD, fulldir.as_mut_ptr()) >= 2 {
         if fulldir[1 as usize] == b':' as wchar_t {
-            let mut envvar: [wchar_t; 4 as usize] = [
+            let envvar: [wchar_t; 4 as usize] = [
                 b'=' as wchar_t,
                 towupper(fulldir[0 as usize] as _) as wchar_t,
                 b':' as wchar_t,
@@ -1520,7 +1520,7 @@ pub unsafe extern "C" fn _searchenv_s(
     buf: *mut core::ffi::c_char,
     count: usize,
 ) -> core::ffi::c_int {
-    let mut envVal: *mut core::ffi::c_char;
+    let envVal: *mut core::ffi::c_char;
     let mut penv: *mut core::ffi::c_char;
     let mut end: *mut core::ffi::c_char;
     let mut path: [core::ffi::c_char; MAX_PATH as usize] =

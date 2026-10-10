@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // uefisetup.c: DBG_DEFAULT_CHANNEL(WARNING)
 use core::ffi::c_void;
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
@@ -7,7 +9,6 @@ use ntkrnl_sys::ddk::{PCONFIGURATION_COMPONENT_DATA, PCSTR, TIMEINFO};
 // FreeLDR ERR no-op (variadic to typecheck format args; frldr.rs exports
 // the non-variadic cdecl body — caller-cleans makes the call ABI-safe).
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
 }
 
 // Full machine.h MACHVTBL (30 slots) — file-local shadow. arcemul.rs is
@@ -138,7 +139,7 @@ pub unsafe extern "C" fn MachInit(_CmdLine: *const i8) {
 
     /* Setup GOP */
     if UefiInitializeVideo() != EFI_SUCCESS {
-        ERR(b"Failed to setup GOP\n\0".as_ptr() as *const i8);
+        ERR!("Failed to setup GOP\n");
     }
 }
 

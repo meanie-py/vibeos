@@ -110,13 +110,31 @@ macro_rules! __freeldr_dbg {
     }};
 }
 #[macro_export]
-macro_rules! TRACE { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::TRACE_LEVEL, $($a)*) } }
-#[macro_export]
-macro_rules! WARN  { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::WARN_LEVEL,  $($a)*) } }
-#[macro_export]
 macro_rules! ERR   { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::ERR_LEVEL,   $($a)*) } }
 #[macro_export]
 macro_rules! FIXME { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::FIXME_LEVEL, $($a)*) } }
+
+// TRACE / WARN print only for a channel `/DEBUG=` opens (see above), so they are live in
+// the UEFI loader and rosload, which have room, and token-discarding (the C's non-DBG
+// form: nothing evaluated, nothing emitted) in the BIOS image, which does not.
+// freeldr.sys runs in real-mode memory below MEMORY_MARGIN and MmCheckFreeldrImageFile
+// bug-checks when SizeOfImage passes MAX_FREELDR_PE_SIZE (0x77000): restoring ~960
+// calls took it from 433,664 to 493,568 bytes and every amd64-bios boot hung at
+// "OptionalHeader is invalid" (merge-queue gate 20261010-003633-155v3erm). ERR and FIXME,
+// the levels that DO print on every boot, stay live everywhere -- ERR named that failure.
+// tools/check_freeldr_size.py now fails the BUILD instead.
+#[cfg(any(feature = "uefi", feature = "rosload"))]
+#[macro_export]
+macro_rules! TRACE { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::TRACE_LEVEL, $($a)*) } }
+#[cfg(any(feature = "uefi", feature = "rosload"))]
+#[macro_export]
+macro_rules! WARN  { ($($a:tt)*) => { $crate::__freeldr_dbg!($crate::frldr::WARN_LEVEL,  $($a)*) } }
+#[cfg(not(any(feature = "uefi", feature = "rosload")))]
+#[macro_export]
+macro_rules! TRACE { ($($a:tt)*) => { () } }
+#[cfg(not(any(feature = "uefi", feature = "rosload")))]
+#[macro_export]
+macro_rules! WARN  { ($($a:tt)*) => { () } }
 
 // ---------------------------------------------------------------------
 // freeldr-internal C externs — cdecl. (ARC_STATUS/OPENMODE/SEEKMODE/

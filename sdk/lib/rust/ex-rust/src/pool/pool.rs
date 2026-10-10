@@ -406,8 +406,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
             let old_irql = MiAcquirePfnLock();
             let mut remaining = page_table_count;
             while remaining > 0 {
-                MI_SET_USAGE(MI_USAGE_PAGED_POOL);
-                MI_SET_PROCESS2("Kernel");
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGED_POOL);
+                ntkrnl_sys::MI_SET_PROCESS2!("Kernel");
                 let page_frame_number = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
                 let mut temp_pde = temp_pde_template;
                 temp_pde.set_page_frame_number(page_frame_number);
@@ -652,8 +652,8 @@ pub unsafe extern "system" fn MiAllocatePoolPages(
     let mut remaining = size_in_pages;
     let mut pfn1: PMMPFN = null_mut();
     while remaining > 0 {
-        MI_SET_USAGE(MI_USAGE_PAGED_POOL);
-        MI_SET_PROCESS2("Kernel");
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_PAGED_POOL);
+        ntkrnl_sys::MI_SET_PROCESS2!("Kernel");
         let page_frame_number = MiRemoveAnyPage(MI_GET_NEXT_COLOR());
 
         pfn1 = MiGetPfnEntry(page_frame_number);

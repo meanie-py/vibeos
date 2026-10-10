@@ -779,8 +779,8 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
     let info: PMEDIA_CHANGE_DETECTION_INFO = (*fdoExtension).MediaChangeDetectionInfo;
 
     // Assertions
-    NT_ASSERT(!(*info).MediaChangeIrp.is_null() as u8);
-    NT_ASSERT((((*Srb).SrbStatus as u8 & (SRB_STATUS_QUEUE_FROZEN) as u8) == 0) as u8);
+    NT_ASSERT!(!(*info).MediaChangeIrp.is_null() as u8);
+    NT_ASSERT!((((*Srb).SrbStatus as u8 & (SRB_STATUS_QUEUE_FROZEN) as u8) == 0) as u8);
 
     TracePrint(
         5, // TRACE_LEVEL_VERBOSE
@@ -899,7 +899,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
     }
 
     // Remember the IRP and SRB for next time
-    NT_ASSERT(!IoGetNextIrpStackLocation(Irp).is_null() as u8);
+    NT_ASSERT!(!IoGetNextIrpStackLocation(Irp).is_null() as u8);
     let nextStack = IoGetNextIrpStackLocation(Irp);
     (*nextStack).Parameters.Scsi.Srb = Srb as *mut ntkrnl_sys::ddk::_SCSI_REQUEST_BLOCK;
 
@@ -960,7 +960,7 @@ pub unsafe extern "system" fn ClasspMediaChangeDetectionCompletion(
             Ok(v) => v,
             Err(v) => v,
         };
-        NT_ASSERT((irpWasInUse == 1) as u8);
+        NT_ASSERT!((irpWasInUse == 1) as u8);
 
         if retryImmediately != 0 {
             ClasspSendMediaStateIrp(fdoExtension, info, 0);
@@ -1353,7 +1353,7 @@ pub unsafe extern "C" fn ClasspSendMediaStateIrp(
             irpInUse = atomic
                 .compare_exchange(1, 0, Ordering::SeqCst, Ordering::SeqCst)
                 .unwrap_or_else(|e| e);
-            NT_ASSERT((irpInUse) as u8);
+            NT_ASSERT!((irpInUse) as u8);
         } else {
             let _ = atomic_in_use.compare_exchange(1, 0, Ordering::SeqCst, Ordering::SeqCst);
         }
@@ -3125,7 +3125,7 @@ pub unsafe extern "system" fn ClasspFailurePredict(
     let Info = Context as PFAILURE_PREDICTION_INFO;
 
     if Info.is_null() {
-        NT_ASSERT(!Info.is_null() as u8);
+        NT_ASSERT!(!Info.is_null() as u8);
         return;
     }
 

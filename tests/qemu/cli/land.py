@@ -245,7 +245,8 @@ def _warm_preflight(repo: Path, run: Run, args) -> None:
         "2026-09-26). Build first, which warms the cache for the gate:\n    "
         + "\n    ".join(f"./vibeos-cli build --arch {a}" for a in cold)
         + "\n  then `./vibeos-cli land` again. Commit exactly what you built: the receipt is "
-        "keyed on the tree's content (docs-only differences are fine).\n"
+        "keyed on the tree's content (docs, and tools/ or tests/ Python the build never runs, "
+        "may differ).\n"
         "  override (report every use): ./vibeos-cli land --cold"
     )
 

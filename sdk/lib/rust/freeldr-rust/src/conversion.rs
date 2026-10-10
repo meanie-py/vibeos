@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WINDOWS; // conversion.c: DBG_DEFAULT_CHANNEL(WINDOWS)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCONFIGURATION_COMPONENT_DATA};
@@ -13,7 +15,6 @@ use core::ffi::c_void;
 use crate::ffi::{PaToVa as PaToVaG, VaToPa as VaToPaG};
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
 }
 
 #[no_mangle]
@@ -51,7 +52,7 @@ pub unsafe extern "C" fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA)
     let mut Child: PCONFIGURATION_COMPONENT_DATA;
     let mut Sibling: PCONFIGURATION_COMPONENT_DATA;
 
-    TRACE(b"ConvertConfigToVA(Start 0x%X)\n\0".as_ptr() as *const i8, (Start) as usize);
+    TRACE!("ConvertConfigToVA(Start 0x%X)\n", (Start) as usize);
     Child = Start;
 
     while !Child.is_null() {
@@ -75,8 +76,7 @@ pub unsafe extern "C" fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA)
             (*Child).ComponentEntry.Identifier = PaToVaG((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
         }
 
-        TRACE(
-            b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Child) as usize, ((*Child).ComponentEntry.Class) as usize, ((*Child).ComponentEntry.Type) as usize, (VaToPaG((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Child).Parent) as usize);
+        TRACE!("Device 0x%X class %d type %d id '%s', parent %p\n", (Child) as usize, ((*Child).ComponentEntry.Class) as usize, ((*Child).ComponentEntry.Type) as usize, (VaToPaG((*Child).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Child).Parent) as usize);
 
         Sibling = VaToPaG((*Child).Sibling as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA;
         while !Sibling.is_null() {
@@ -100,8 +100,7 @@ pub unsafe extern "C" fn ConvertConfigToVA(Start: PCONFIGURATION_COMPONENT_DATA)
                 (*Sibling).ComponentEntry.Identifier = PaToVaG((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void) as *mut i8;
             }
 
-            TRACE(
-                b"Device 0x%X class %d type %d id '%s', parent %p\n\0".as_ptr() as *const i8, (Sibling) as usize, ((*Sibling).ComponentEntry.Class) as usize, ((*Sibling).ComponentEntry.Type) as usize, (VaToPaG((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Sibling).Parent) as usize);
+            TRACE!("Device 0x%X class %d type %d id '%s', parent %p\n", (Sibling) as usize, ((*Sibling).ComponentEntry.Class) as usize, ((*Sibling).ComponentEntry.Type) as usize, (VaToPaG((*Sibling).ComponentEntry.Identifier as *mut core::ffi::c_void)) as usize, ((*Sibling).Parent) as usize);
 
             if !VaToPaG((*Sibling).Child as *mut core::ffi::c_void).is_null() {
                 ConvertConfigToVA(VaToPaG((*Sibling).Child as *mut core::ffi::c_void) as PCONFIGURATION_COMPONENT_DATA);

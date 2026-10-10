@@ -396,7 +396,8 @@ SELF_TEST: list[tuple[str, dict[str, str], list[str]]] = [
         "a #[no_mangle] .spec EXPORT with an empty C body is the C's own shape (ndis)",
         {
             "m.rs": "macro_rules! NdisFreeSpinLock {\n    ($($a:tt)*) => {{}};\n}\n",
-            "c.rs": '#[no_mangle]\npub unsafe extern "system" fn NdisFreeSpinLock(_l: *mut u8) {}\n',
+            "c.rs": '#[no_mangle]\npub unsafe extern "system" fn NdisFreeSpinLock(_l: *mut u8) {}'
+            "\n",
         },
         [],
     ),

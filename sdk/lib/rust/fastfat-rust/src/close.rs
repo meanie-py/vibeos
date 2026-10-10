@@ -41,7 +41,7 @@ extern "C" {
 extern "system" {
     fn KeAreApcsDisabled() -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn FatBugCheck(type_of_open: TYPE_OF_OPEN, arg1: u32, arg2: u32) -> !;
+    fn FatBugCheck(type_of_open: usize, arg1: usize, arg2: usize) -> !;
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
@@ -707,7 +707,7 @@ pub unsafe extern "system" fn FatCommonClose(
                 FatDeleteCcb(p_ic, core::ptr::addr_of_mut!(Ccb));
             }
             _ => {
-                FatBugCheck(TypeOfOpen, 0, 0);
+                FatBugCheck(TypeOfOpen as usize, 0, 0);
             }
         }
 

@@ -32,19 +32,6 @@ pub unsafe extern "system" fn WSPJoinLeaf(
     0 as SOCKET
 }
 #[no_mangle]
-pub unsafe extern "system" fn WSPAcceptEx(
-    sListenSocket: SOCKET,
-    sAcceptSocket: SOCKET,
-    lpOutputBuffer: PVOID,
-    dwReceiveDataLength: DWORD,
-    dwLocalAddressLength: DWORD,
-    dwRemoteAddressLength: DWORD,
-    lpdwBytesReceived: LPDWORD,
-    lpOverlapped: LPOVERLAPPED,
-) -> BOOL {
-    0
-}
-#[no_mangle]
 pub unsafe extern "system" fn WSPDisconnectEx(
     hSocket: SOCKET,
     lpOverlapped: LPOVERLAPPED,
@@ -52,19 +39,6 @@ pub unsafe extern "system" fn WSPDisconnectEx(
     reserved: DWORD,
 ) -> BOOL {
     0
-}
-#[no_mangle]
-pub unsafe extern "system" fn WSPGetAcceptExSockaddrs(
-    lpOutputBuffer: PVOID,
-    dwReceiveDataLength: DWORD,
-    dwLocalAddressLength: DWORD,
-    dwRemoteAddressLength: DWORD,
-    LocalSockaddr: *mut *mut sockaddr,
-    LocalSockaddrLength: LPINT,
-    RemoteSockaddr: *mut *mut sockaddr,
-    RemoteSockaddrLength: LPINT,
-) {
-    unimplemented!();
 }
 
 

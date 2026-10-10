@@ -4,6 +4,10 @@
 //!   via `MmAllocateContiguousMemorySpecifyCache`. x86 DMA is cache-coherent,
 //!   so cached memory is correct (and faster) — no uncached/write-combine need.
 //! - **BAR mapping** (`mmio_phys_to_virt`): `MmMapIoSpace`, non-cached.
+//! - **The PCI NIC** (`dma.rs`): once bring-up has its DMA adapter, the rings are
+//!   common buffers and every frame is bounced through the adapter's pool, so
+//!   behind an IOMMU the device reaches only what its domain holds. The rest of
+//!   this file serves the platform NICs (GEM, GENET), which no IOMMU translates.
 //! - **share/unshare**: with no IOMMU (QEMU default) and coherent x86 DMA,
 //!   single-page buffers use their physical address directly. Buffers that
 //!   cross a page boundary are bounced through contiguous DMA memory because
@@ -101,6 +105,12 @@ pub struct NetHal;
 unsafe impl Hal for NetHal {
     fn dma_alloc(pages: usize, _direction: BufferDirection) -> (PhysAddr, NonNull<u8>) {
         let bytes = pages * PAGE_SIZE;
+        if crate::dma::attached() {
+            return match unsafe { crate::dma::alloc(bytes) } {
+                Some((va, device)) => (device, NonNull::new(va).unwrap_or(NonNull::dangling())),
+                None => (0, NonNull::dangling()),
+            };
+        }
         // Restrict to below 4 GiB: always DMA-addressable for virtio regardless
         // of whether the device negotiated 64-bit addressing.
         let vaddr = unsafe {
@@ -122,7 +132,10 @@ unsafe impl Hal for NetHal {
         (paddr, NonNull::new(vaddr as *mut u8).unwrap())
     }
 
-    unsafe fn dma_dealloc(_paddr: PhysAddr, vaddr: NonNull<u8>, _pages: usize) -> i32 {
+    unsafe fn dma_dealloc(paddr: PhysAddr, vaddr: NonNull<u8>, _pages: usize) -> i32 {
+        if crate::dma::free(vaddr.as_ptr(), paddr) {
+            return 0;
+        }
         MmFreeContiguousMemory(vaddr.as_ptr() as PVOID);
         0
     }
@@ -133,6 +146,15 @@ unsafe impl Hal for NetHal {
     }
 
     unsafe fn share(buffer: NonNull<[u8]>, direction: BufferDirection) -> PhysAddr {
+        if crate::dma::attached() {
+            // Every frame through the adapter's pool. 0 (a full pool) the queue op
+            // turns into a descriptor nothing can reach; the device then faults on
+            // it rather than reach memory its domain never held.
+            return crate::dma::share(buffer, direction != BufferDirection::DeviceToDriver).unwrap_or_else(|| {
+                crate::serial::emit(format_args!("[NETSTACK] the NIC's bounce pool is full: a frame gets no DMA address\n"));
+                0
+            });
+        }
         let ptr = buffer.as_ptr() as *mut u8 as PVOID;
         let len = buffer.len();
         if len == 0 || !crosses_page(ptr as usize, len) {
@@ -165,6 +187,9 @@ unsafe impl Hal for NetHal {
     }
 
     unsafe fn unshare(paddr: PhysAddr, buffer: NonNull<[u8]>, direction: BufferDirection) {
+        if crate::dma::unshare(paddr, buffer, direction != BufferDirection::DriverToDevice) {
+            return;
+        }
         let ptr = buffer.as_ptr() as *mut u8 as PVOID;
         if let Some(entry) = take_bounce(ptr as usize, paddr) {
             if direction != BufferDirection::DriverToDevice {

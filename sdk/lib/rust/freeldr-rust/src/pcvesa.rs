@@ -1,10 +1,9 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // pcvesa.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use core::ffi::c_void;
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
 }
 
@@ -66,7 +65,7 @@ pub unsafe extern "C" fn BiosIsVesaSupported() -> USHORT {
     let mut Regs: REGS = core::mem::zeroed();
     let SvgaInfo = BIOSCALLBUFFER as PVESA_SVGA_INFO;
 
-    TRACE(b"BiosIsVesaSupported()\n\0".as_ptr() as PCHAR);
+    TRACE!("BiosIsVesaSupported()\n");
 
     RtlZeroMemory(SvgaInfo as PVOID, core::mem::size_of::<VESA_SVGA_INFO>() as SIZE_T);
 
@@ -80,32 +79,32 @@ pub unsafe extern "C" fn BiosIsVesaSupported() -> USHORT {
     Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
     Int386(0x10, &mut Regs as *mut REGS, &mut Regs as *mut REGS);
 
-    TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);
-    TRACE(b"AH = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.ah) as usize);
+    TRACE!("AL = 0x%x\n", (Regs.b.al) as usize);
+    TRACE!("AH = 0x%x\n", (Regs.b.ah) as usize);
 
     if Regs.w.ax != 0x004F {
-        WARN(b"VBE Get SuperVGA information function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        WARN!("VBE Get SuperVGA information function not supported (AL=0x%x) or failed (AH=0x%x)\n", (Regs.b.al) as usize, (Regs.b.ah) as usize);
         return 0x0000;
     }
 
-    TRACE(b"Supported.\n\0".as_ptr() as PCHAR);
-    TRACE(b"SvgaInfo->Signature[4] = %c%c%c%c\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
-    TRACE(b"SvgaInfo->VesaVersion = v%d.%d\n\0".as_ptr() as PCHAR, ((((*SvgaInfo).VesaVersion >> 8) & 0xFF)) as usize, (((*SvgaInfo).VesaVersion & 0xFF)) as usize);
-    TRACE(b"SvgaInfo->OemNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).OemNamePtr) as usize);
-    TRACE(b"SvgaInfo->Capabilities = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Capabilities) as usize);
-    TRACE(b"SvgaInfo->VideoMemory = %dK\n\0".as_ptr() as PCHAR, ((*SvgaInfo).TotalVideoMemory * 64) as usize);
-    TRACE(b"---VBE v2.0 ---\n\0".as_ptr() as PCHAR);
-    TRACE(b"SvgaInfo->OemSoftwareVersion = v%d.%d\n\0".as_ptr() as PCHAR, ((((*SvgaInfo).OemSoftwareVersion >> 8) & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 12) & 0x0F) * 10)) as usize, (((*SvgaInfo).OemSoftwareVersion & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 4) & 0x0F) * 10)) as usize);
-    TRACE(b"SvgaInfo->VendorNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).VendorNamePtr) as usize);
-    TRACE(b"SvgaInfo->ProductNamePtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).ProductNamePtr) as usize);
-    TRACE(b"SvgaInfo->ProductRevisionStringPtr = 0x%x\n\0".as_ptr() as PCHAR, ((*SvgaInfo).ProductRevisionStringPtr) as usize);
-    TRACE(b"SvgaInfo->VBE/AF Version = 0x%x (BCD WORD)\n\0".as_ptr() as PCHAR, ((*SvgaInfo).VBE_AF_Version) as usize);
+    TRACE!("Supported.\n");
+    TRACE!("SvgaInfo->Signature[4] = %c%c%c%c\n", ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
+    TRACE!("SvgaInfo->VesaVersion = v%d.%d\n", ((((*SvgaInfo).VesaVersion >> 8) & 0xFF)) as usize, (((*SvgaInfo).VesaVersion & 0xFF)) as usize);
+    TRACE!("SvgaInfo->OemNamePtr = 0x%x\n", ((*SvgaInfo).OemNamePtr) as usize);
+    TRACE!("SvgaInfo->Capabilities = 0x%x\n", ((*SvgaInfo).Capabilities) as usize);
+    TRACE!("SvgaInfo->VideoMemory = %dK\n", ((*SvgaInfo).TotalVideoMemory * 64) as usize);
+    TRACE!("---VBE v2.0 ---\n");
+    TRACE!("SvgaInfo->OemSoftwareVersion = v%d.%d\n", ((((*SvgaInfo).OemSoftwareVersion >> 8) & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 12) & 0x0F) * 10)) as usize, (((*SvgaInfo).OemSoftwareVersion & 0x0F) + ((((*SvgaInfo).OemSoftwareVersion >> 4) & 0x0F) * 10)) as usize);
+    TRACE!("SvgaInfo->VendorNamePtr = 0x%x\n", ((*SvgaInfo).VendorNamePtr) as usize);
+    TRACE!("SvgaInfo->ProductNamePtr = 0x%x\n", ((*SvgaInfo).ProductNamePtr) as usize);
+    TRACE!("SvgaInfo->ProductRevisionStringPtr = 0x%x\n", ((*SvgaInfo).ProductRevisionStringPtr) as usize);
+    TRACE!("SvgaInfo->VBE/AF Version = 0x%x (BCD WORD)\n", ((*SvgaInfo).VBE_AF_Version) as usize);
 
     if (*SvgaInfo).Signature[0] != b'V' ||
         (*SvgaInfo).Signature[1] != b'E' ||
         (*SvgaInfo).Signature[2] != b'S' ||
         (*SvgaInfo).Signature[3] != b'A' {
-        ERR(b"Bad signature in VESA information (%c%c%c%c)\n\0".as_ptr() as PCHAR, ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
+        ERR!("Bad signature in VESA information (%c%c%c%c)\n", ((*SvgaInfo).Signature[0]) as usize, ((*SvgaInfo).Signature[1]) as usize, ((*SvgaInfo).Signature[2]) as usize, ((*SvgaInfo).Signature[3]) as usize);
         return 0x0000;
     }
 
@@ -116,7 +115,7 @@ pub unsafe extern "C" fn BiosIsVesaSupported() -> USHORT {
 pub unsafe extern "C" fn BiosIsVesaDdcSupported() -> BOOLEAN {
     let mut Regs: REGS = core::mem::zeroed();
 
-    TRACE(b"BiosIsVesaDdcSupported()\n\0".as_ptr() as *const i8);
+    TRACE!("BiosIsVesaDdcSupported()\n");
 
     Regs.w.ax = 0x4F15;
     Regs.b.bl = 0;
@@ -125,13 +124,13 @@ pub unsafe extern "C" fn BiosIsVesaDdcSupported() -> BOOLEAN {
     Regs.w.di = 0;
     Int386(0x10, &mut Regs, &mut Regs);
 
-    TRACE(b"AL = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.al) as usize);
-    TRACE(b"AH = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.ah) as usize);
+    TRACE!("AL = 0x%x\n", (Regs.b.al) as usize);
+    TRACE!("AH = 0x%x\n", (Regs.b.ah) as usize);
 
-    TRACE(b"BL = 0x%x\n\0".as_ptr() as *const i8, (Regs.b.bl) as usize);
+    TRACE!("BL = 0x%x\n", (Regs.b.bl) as usize);
 
     if Regs.w.ax != 0x004F {
-        WARN(b"VBE/DDC Installation check function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as *const i8, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        WARN!("VBE/DDC Installation check function not supported (AL=0x%x) or failed (AH=0x%x)\n", (Regs.b.al) as usize, (Regs.b.ah) as usize);
         return 0u8;
     }
 
@@ -142,7 +141,7 @@ pub unsafe extern "C" fn BiosIsVesaDdcSupported() -> BOOLEAN {
 pub unsafe extern "C" fn BiosVesaReadEdid() -> u8 {
     let mut Regs: REGS = core::mem::zeroed();
 
-    TRACE(b"BiosVesaReadEdid()\n\0".as_ptr() as PCHAR);
+    TRACE!("BiosVesaReadEdid()\n");
 
     RtlZeroMemory(BIOSCALLBUFFER as PVOID, 128);
 
@@ -154,11 +153,11 @@ pub unsafe extern "C" fn BiosVesaReadEdid() -> u8 {
     Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
     Int386(0x10, &mut Regs, &mut Regs);
 
-    TRACE(b"AL = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize);
-    TRACE(b"AH = 0x%x\n\0".as_ptr() as PCHAR, (Regs.b.ah) as usize);
+    TRACE!("AL = 0x%x\n", (Regs.b.al) as usize);
+    TRACE!("AH = 0x%x\n", (Regs.b.ah) as usize);
 
     if Regs.w.ax != 0x004F {
-        WARN(b"VBE/DDC Read EDID function not supported (AL=0x%x) or failed (AH=0x%x)\n\0".as_ptr() as PCHAR, (Regs.b.al) as usize, (Regs.b.ah) as usize);
+        WARN!("VBE/DDC Read EDID function not supported (AL=0x%x) or failed (AH=0x%x)\n", (Regs.b.al) as usize, (Regs.b.ah) as usize);
         return 0u8;
     }
 

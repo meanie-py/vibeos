@@ -73,6 +73,8 @@ _PYTEST_SUITES = [
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
+    # kmtest lists are hand-kept; a name the arch compiles out reads as a NO-END crash.
+    (".", ".", "tools/payloads/kmtest/test_kmtest_lists.py"),
     # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.
     (".", ".", "tools/payloads/modrun/test_modrun.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
@@ -113,6 +115,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_case_bitor_pattern.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),
+    (".", ".", "tools/test_apply_rustc_suggestions.py"),
     (".", ".", "tools/test_scan_byteptr_stride.py"),
     (".", ".", "tools/test_scan_gmem_flags.py"),
     (".", ".", "tools/test_scan_let_shadow.py"),
@@ -181,6 +184,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_vendor_move_plan.py"),
     (".", ".", "tools/test_hostdisk.py"),
     (".", ".", "tools/test_scan_flex_array_panic.py"),
+    (".", ".", "tools/test_fn_call_to_macro.py"),
+    (".", ".", "tools/test_check_freeldr_size.py"),
     (".", ".", "tools/test_rust_warning_census.py"),
     (".", ".", "tools/test_kernel_probe.py"),
     (".", ".", "tools/test_link_guard.py"),
