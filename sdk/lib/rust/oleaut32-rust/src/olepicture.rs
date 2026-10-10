@@ -3822,7 +3822,7 @@ fn OLEPictureImpl_EnumConnectionPoints(
     iface: *mut IConnectionPointContainer,
     ppEnum: *mut *mut IEnumConnectionPoints,
 ) -> HRESULT {
-    let _This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
+    let This: *mut OLEPictureImpl = impl_from_IConnectionPointContainer(iface);
     FIXME!(
         b"(%p,%p), stub!\n\0".as_ptr() as *const i8,
         This,
@@ -3916,7 +3916,7 @@ stdmethod! {
 fn OLEPictureImpl_IsDirty(
     iface: *mut IPersistStream
 ) -> HRESULT {
-    let _This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
+    let This: *mut OLEPictureImpl = impl_from_IPersistStream(iface);
     FIXME!(b"(%p),stub!\n\0".as_ptr() as *const i8, This);
     E_NOTIMPL
 }
@@ -4530,7 +4530,7 @@ unsafe extern "C" fn serializeBMP(
     let mut hBitmap = hBitmap;
     let mut hdib: HBITMAP = core::ptr::null_mut();
 
-    let mut success: i32 = 0;
+    let success: i32;
     let hDC: HDC;
     let pInfoBitmap: *mut BITMAPINFO;
     let mut iNumPaletteEntries: i32;
@@ -4733,7 +4733,7 @@ unsafe extern "C" fn serializeIcon(
 
         let pIconDir: *mut CURSORICONFILEDIR;
         let mut pIconEntry: *mut CURSORICONFILEDIRENTRY;
-        let mut pIconBitmapHeader: *mut BITMAPINFOHEADER;
+        let pIconBitmapHeader: *mut BITMAPINFOHEADER;
         let iOffsetPalette: u32;
         let iOffsetColorData: u32;
         let iOffsetMaskData: u32;
@@ -4796,9 +4796,6 @@ unsafe extern "C" fn serializeIcon(
         (*pIconBitmapHeader).biHeight *= 2;
         pIconData = HeapReAlloc(GetProcessHeap(), 0, pIconData as *mut core::ffi::c_void, iDataSize as SIZE_T) as *mut u8;
         pIconEntry = pIconData.offset((3 * core::mem::size_of::<u16>()) as isize) as *mut CURSORICONFILEDIRENTRY;
-        pIconBitmapHeader = pIconData
-            .offset((3 * core::mem::size_of::<u16>()) as isize)
-            .offset(core::mem::size_of::<CURSORICONFILEDIRENTRY>() as isize) as *mut BITMAPINFOHEADER;
         (*pIconEntry).dwDIBSize = iDataSize - (3 * core::mem::size_of::<u16>() + core::mem::size_of::<CURSORICONFILEDIRENTRY>()) as u32;
 
         GetDIBits(
@@ -5718,12 +5715,12 @@ pub unsafe extern "system" fn OleLoadPicture(
 #[no_mangle]
 pub unsafe extern "system" fn OleLoadPictureEx(
     lpstream: LPSTREAM,
-    _lSize: LONG,
+    lSize: LONG,
     fRunmode: BOOL,
     riid: REFIID,
-    _xsiz: DWORD,
-    _ysiz: DWORD,
-    _flags: DWORD,
+    xsiz: DWORD,
+    ysiz: DWORD,
+    flags: DWORD,
     ppvObj: *mut LPVOID,
 ) -> HRESULT {
     let mut ps: LPPERSISTSTREAM = core::ptr::null_mut();
@@ -6070,7 +6067,7 @@ fn SPCF_CreateInstance(
 }
 stdmethod! {
 fn SPCF_LockServer(iface: LPCLASSFACTORY, dolock: BOOL) -> HRESULT {
-    let _This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
+    let This: *mut IClassFactoryImpl = impl_from_IClassFactory(iface as *mut IClassFactory);
     FIXME!(b"(%p)->(%d),stub!\n\0".as_ptr() as *const i8, This, dolock);
     S_OK
 }

@@ -32,11 +32,10 @@ unsafe fn IsEqualGUIDAligned(a: *const GUID, b: *const GUID) -> bool {
         && (*a).Data3 == (*b).Data3
         && (*a).Data4 == (*b).Data4
 }
-// ASSERT / UNIMPLEMENTED DDK stubs.
-#[inline(always)]
-unsafe fn ASSERT<T>(_cond: T) {}
-#[allow(non_upper_case_globals)]
-const UNIMPLEMENTED: () = ();
+// UNIMPLEMENTED (debug.h) only prints, so it is empty in a retail build.
+macro_rules! UNIMPLEMENTED {
+    () => {};
+}
 
 // ks.h KSCREATE_ITEM_IRP_STORAGE(Irp): place expr aliasing DriverContext[0].
 macro_rules! KSCREATE_ITEM_IRP_STORAGE {
@@ -1058,7 +1057,7 @@ pub unsafe extern "system" fn KopDispatchCreate(
                         break;
                     }
                 } else {
-                    UNIMPLEMENTED;
+                    UNIMPLEMENTED!();
 
                     (*(*IoStack).FileObject).FsContext2 = Header as *mut core::ffi::c_void;
 
@@ -1497,7 +1496,7 @@ pub unsafe extern "C" fn KspCountEventSets(
 
     if (*AutomationTableA).EventItemSize != 0 && (*AutomationTableB).EventItemSize != 0 {
         /* sanity check */
-        ASSERT((*AutomationTableA).EventItemSize == (*AutomationTableB).EventItemSize);
+        ASSERT!((*AutomationTableA).EventItemSize == (*AutomationTableB).EventItemSize);
     }
 
     /* now iterate all Event sets and compare their guids */

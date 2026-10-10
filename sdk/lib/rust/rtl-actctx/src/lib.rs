@@ -18,10 +18,11 @@
 // rustconv-style transliteration keeps some explicit casts / dead locals.
 #![allow(unused_unsafe, unused_parens)]
 
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate (only the `cabi`
+// modules log).
+#[cfg(feature = "cabi")]
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod types;
 

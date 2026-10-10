@@ -10,5 +10,6 @@ edition = "2021"
 crate-type = ["rlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 ntdll-sys = { path = "../ntdll-sys" }
 winsrv-sys = { path = "../winsrv-sys" }

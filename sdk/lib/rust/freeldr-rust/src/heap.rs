@@ -641,10 +641,10 @@ pub unsafe extern "C" fn MmInitializeHeap(_PageLookupTable: PVOID) {
     TRACE(b"MmInitializeHeap()\n\0".as_ptr() as PCHAR);
 
     FrLdrDefaultHeap = FrLdrHeapCreate(DEFAULT_HEAP_SIZE, LoaderOsloaderHeap);
-    ASSERT(FrLdrDefaultHeap as usize != 0);
+    ASSERT!(FrLdrDefaultHeap as usize != 0);
 
     FrLdrTempHeap = FrLdrHeapCreate(TEMP_HEAP_SIZE, LoaderFirmwareTemporary);
-    ASSERT(FrLdrTempHeap as usize != 0);
+    ASSERT!(FrLdrTempHeap as usize != 0);
 
     // Dump default heap free list right after init.
     crate::frldr::dbgcon_str(b"\nHeapInit[def=");

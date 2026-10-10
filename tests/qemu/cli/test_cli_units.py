@@ -4520,6 +4520,56 @@ def test_gate_cohab_gap_blocks_stamp(tmp_path, monkeypatch):
     assert fake.calls, "smokes still run so the matrix stays informative"
 
 
+@pytest.mark.parametrize("canonical", [True, False])
+def test_gate_defers_tooling_only_while_a_build_will_recreate_its_dir(
+    tmp_path, monkeypatch, canonical
+):
+    """check-tooling reads build-<arch>/compile_commands.json and generated headers.
+
+    A build that must fresh-configure deletes its build dir first, so tooling run
+    beside it reads nothing: 2026-10-09 a green master went AUTO-held red on
+    MacroAuthorityError and five lanes stalled. That case submits tooling after the
+    builds; an already-configured tree keeps the overlap (tooling before builds end).
+    """
+    import threading
+
+    monkeypatch.setattr("tests.qemu.cli.artifacts.ARTIFACT_ROOT", tmp_path)
+    monkeypatch.setattr(
+        gate_mod, "_smoke_once", _fake_smoke({a: ["OK"] for a in ("i386", "amd64", "arm64")})
+    )
+    monkeypatch.setattr(gate_mod, "_lint_once", _lint_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_difftest_once", _difftest_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod, "_cohab_once", _cohab_once_stub(ok=True))
+    monkeypatch.setattr(gate_mod.canon, "is_canonical", lambda build_dir: canonical)
+    builds_done = threading.Event()
+    pending = {"n": 3}
+    lock = threading.Lock()
+
+    def build(repo, run, arch, args, **kw):
+        if canonical:
+            # Overlap: tooling must be able to start while this build is still running.
+            assert tooling_started.wait(10), "tooling should overlap a configured tree's builds"
+        with lock:
+            pending["n"] -= 1
+            if pending["n"] == 0:
+                builds_done.set()
+        return {"arch": arch, "ok": True, "exit": 0, "seconds": 0.01}
+
+    tooling_started = threading.Event()
+    order: list[bool] = []
+
+    def tooling(repo, root):
+        tooling_started.set()
+        order.append(builds_done.is_set())
+        return _tooling_once_stub(ok=True)(repo, root)
+
+    monkeypatch.setattr(gate_mod, "_build_once", build)
+    monkeypatch.setattr(gate_mod, "_tooling_once", tooling)
+    monkeypatch.setattr(gate_mod, "_write_gate_stamp", lambda *a, **k: None)
+    assert gate_mod.gate(_gate_args(no_lint=False, no_build=False), tmp_path) == 0
+    assert order == [not canonical], "tooling ran exactly once, after the builds iff fresh"
+
+
 def test_gate_cohab_needs_both_a_build_and_the_lint_opt_in(tmp_path, monkeypatch):
     """The stage judges artifacts THIS run produced, so it runs only when both opt-ins hold.
 
@@ -9739,6 +9789,18 @@ def test_ahci_boot_must_show_uniata_driving_ahci(monkeypatch):
     assert smoke_mod._ahci_check("[UNIATA] AhciDetect: exit found=0 GHC=0 chans=0\n")
     real = "[UNIATA] AhciDetect: exit found=1 GHC=80000000 chans=6\n"
     assert smoke_mod._ahci_check(real) is None
+    # --ata-stack media: pciide must START ich9-ahci AND a CdRom must enumerate under it.
+    started = (
+        "[DA] AddDevice PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&609b8881&05 "
+        "(drv \\Driver\\pciide) -> 0x0\n"
+        "[DA] START PCI\\VEN_8086&DEV_2922&SUBSYS_11001AF4&REV_02\\3&609b8881&05 -> 0x0\n"
+    )
+    cd = "[CDDB] check IDE\\CdRomQEMU_QEMU_DVD-ROM____2.5+____\\5&89c6c1e1&0.0.0\n"
+    assert smoke_mod._ahci_check(started + cd) is None
+    no_cd = smoke_mod._ahci_check(started)
+    assert no_cd and no_cd["classification"] == "AHCI_NOT_ENGAGED"
+    failed = started.replace("&05 -> 0x0\n", "&05 -> 0xc0000001\n", 1)
+    assert smoke_mod._ahci_check(failed + cd)
 
 
 def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
@@ -9746,6 +9808,75 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
 
     monkeypatch.delenv("VIBEOS_AHCI_CD", raising=False)
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
+
+
+def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
+    """An AHCI driver that polls still boots, so `--ahci` judges interrupt use from QEMU's
+    own trace: the firmware's polled commands before the first raise are fine, after it
+    every command must come with a raise, and the guest must lower the line."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    done, up, down = (
+        "ahci_cmd_done ahci(0x1)[0]: cmd done\n",
+        "ahci_irq_raise ahci(0x1): raise irq\n",
+        "ahci_irq_lower ahci(0x1): lower irq\n",
+    )
+    firmware = done * 50
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40) is None
+    # A driver that never enabled the interrupt.
+    never = smoke_mod._ahci_irq_check(firmware + done * 40)
+    assert never and never["classification"] == "AHCI_POLLING"
+    # One that did, then polled the rest.
+    later = smoke_mod._ahci_irq_check(firmware + done + up + down + done * 40)
+    assert later and later["classification"] == "AHCI_POLLING"
+    # An ISR that never acknowledged the HBA.
+    stuck = smoke_mod._ahci_irq_check(firmware + (done + up) * 40)
+    assert stuck and stuck["classification"] == "AHCI_IRQ_STUCK"
+    # A command in flight when the log is read is not a stuck line.
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40 + done + up) is None
+    # No trace at all is the harness's problem, not the guest's.
+    assert smoke_mod._ahci_irq_check("") is None
+    monkeypatch.delenv("VIBEOS_AHCI_CD")
+    assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
+
+
+def test_ata_health_check_fails_a_lost_interrupt():
+    """A timed-out ATA request is reset and retried and the boot carries on, so the
+    desktop alone would hide an ISR that never ran."""
+    from . import smoke as smoke_mod
+
+    ok = "(pciidex-rust/src/pciidex/acpi.rs:368) Failed to set device data, status 0xc0000010\n"
+    assert smoke_mod._ata_health_check(ok) is None
+    lost = (
+        "(atapi-rust/src/atapi/portstate.rs:861) CH 1: Slot 0 (00000001) timed out 0 (10s) 0 'x'\n"
+    )
+    bad = smoke_mod._ata_health_check(ok + lost)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    ahci = "(pciidex-rust/src/pciidex/ahci_hw.rs:560) CH 3: Internal request timed out\n"
+    bad = smoke_mod._ata_health_check(ahci)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    no_irq = "(pciidex-rust/src/pciidex/pdo.rs:188) CH 1: Could not connect to interrupt\n"
+    bad = smoke_mod._ata_health_check(no_irq)
+    assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
+    # The network stack's own timeouts are not the ATA stack's.
+    assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+
+
+def test_legide_check_needs_a_detected_channel(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_ISA_IDE", "1")
+    forced = "(legide-rust/src/legide/legide.rs:770) LEGIDE_DETECT: probing the channels\n"
+    found = "[DA] PiEnumerateDevice Root\\legide\\0000: 1 children (cs=0x0)\n"
+    assert smoke_mod._legide_check(forced + found) is None
+    bad = smoke_mod._legide_check(found)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    empty = "[DA] PiEnumerateDevice Root\\legide\\0000: 0 children (cs=0x0)\n"
+    bad = smoke_mod._legide_check(forced + empty)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    monkeypatch.delenv("VIBEOS_QEMU_ISA_IDE")
+    assert smoke_mod._legide_check("") is None
 
 
 def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
@@ -9796,6 +9927,11 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert bad and bad["classification"] == "NVME_NOT_BEHIND_BRIDGE"
     port = "[DA] START PCI\\VEN_1B36&DEV_000C&SUBSYS_00000000&REV_00\\1&f103bba4&48 -> 0x0\n"
     assert smoke_mod._nvme_check(port + working + test.format(8, 9)) is None
+    monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "segment")
+    bad = smoke_mod._nvme_check(port + working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_SEGMENT_NOT_PUBLISHED"
+    seg = "[HAL] PCI segment 1: root bus 128-255 published for pci.sys\n"
+    assert smoke_mod._nvme_check(seg + port + working + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_QEMU_NVME_BRIDGE")
     monkeypatch.delenv("VIBEOS_QEMU_NVME")
     assert smoke_mod._nvme_check(never_loaded) is None
@@ -9877,6 +10013,30 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     assert smoke_mod._gic_check(on + attached + caught) is None
     bad = smoke_mod._gic_check(on + attached + caught + fault.format(0x1_0000_1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
+    # nvme.sys is DMA-remapping compatible: with NVMe on, it gets a domain of its own.
+    monkeypatch.setenv("VIBEOS_QEMU_NVME", "1")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "SMMU=TRANSLATE NVME_STRAY_DMA=1")
+    bad = smoke_mod._gic_check(on + attached)
+    assert bad and bad["classification"] == "SMMU_NO_DOMAIN"
+    own = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0048 is StreamID 48 - "
+        "translating in a domain of its own (DMA-remapping compatible)\n"
+    )
+    bad = smoke_mod._gic_check(on + own)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    stray = "[NVME] tripwire: a stray Identify to RAM at 0x4a3f2000 {}\n"
+    landed = stray.format(
+        "completed; the controller WROTE 4096 byte(s) of a page it was never given"
+    )
+    bad = smoke_mod._gic_check(on + own + landed)
+    assert bad and bad["classification"] == "SMMU_STRAY_DMA_LANDED"
+    held = stray.format("failed; the page is untouched")
+    bad = smoke_mod._gic_check(on + own + held)
+    assert bad and bad["classification"] == "SMMU_MISSED_STRAY_DMA"
+    assert smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010)) is None
+    bad = smoke_mod._gic_check(on + own + held + fault.format(0x4A3F_2010) + fault.format(0x5000))
+    assert bad and bad["classification"] == "SMMU_FAULT"
+    monkeypatch.delenv("VIBEOS_QEMU_NVME")
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.delenv("VIBEOS_QEMU_SMMU")
 
@@ -9976,6 +10136,23 @@ def test_gic3_boot_must_show_the_hal_driving_a_gicv3(monkeypatch):
     assert (smoke_mod._gic_check(cpu0) or {}).get("classification") == "GIC_LPIS_ONE_CPU"
     assert smoke_mod._gic_check(cpu0 + "[GIC] CPU1: first LPI delivered (INTID 8193)\n") is None
     monkeypatch.delenv("VIBEOS_QEMU_SMP")
+
+
+def test_its_missteer_boot_must_move_an_lpi(monkeypatch):
+    """ITS_MISSTEER binds every LPI one CPU away from its interrupt object, so the
+    boot must show steer()'s MOVI putting one back; a desktop alone could be NVMe
+    polling."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.delenv("VIBEOS_QEMU_SMMU", raising=False)
+    monkeypatch.delenv("VIBEOS_QEMU_NVME", raising=False)
+    monkeypatch.setenv("VIBEOS_QEMU_GIC", "3")
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "ITS_MISSTEER")
+    v3 = "[GIC] GICv3: distributor 0000000008000000, 131072 bytes of redistributors\n"
+    bad = smoke_mod._gic_check(v3)
+    assert bad and bad["classification"] == "GIC_LPI_NOT_MOVED"
+    moved = v3 + "[HAL] GICv3 ITS 0: LPI 8193 moved from CPU2 to CPU1\n"
+    assert smoke_mod._gic_check(moved) is None
 
 
 def test_smmu_boot_must_show_the_smmu_bypassing(monkeypatch):
@@ -11044,6 +11221,48 @@ def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypat
     assert exe.read_text().strip() == "built"
     assert fresh.read_text() == "fresh"
     assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
+
+
+def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
+    """The stamp is smoke's only evidence of what the media carries. Written ahead of a
+    PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
+    passed payload-check and booted ×4 for a marker nothing could print."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import json, os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return [n for n in environ.get('VIBEOS_PAYLOAD', '').split(',') if n]\n"
+        "def ensure_built(names, arch):\n"
+        "    if 'broken' in names:\n"
+        "        print('payloads/compile.py: ERROR: refused', file=sys.stderr)\n"
+        "        sys.exit(1)\n"
+        "    return []\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    names = resolve_env_payloads(environ)\n"
+        "    (build_dir / 'payloads.json').write_text(json.dumps(names))\n"
+        "    return names\n"
+    )
+    build_dir = tmp_path / "build-arm64"
+    build_dir.mkdir()
+    stamp = build_dir / "payloads.json"
+    stamp.write_text('["old"]')
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "broken")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is None
+    assert run.classification == "PAYLOAD_BUILD_FAIL"
+    assert stamp.read_text() == '["old"]'
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "good")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == '["good"]'
+
+    # No selection still CLEARS the stamp (the doom-clobber rule).
+    monkeypatch.delenv("VIBEOS_PAYLOAD")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == "[]"
 
 
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):

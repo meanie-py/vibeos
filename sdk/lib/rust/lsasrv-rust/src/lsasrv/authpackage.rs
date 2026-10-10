@@ -1141,7 +1141,7 @@ unsafe fn LsapAddDefaultGroups(
 ) -> NTSTATUS {
     if TokenInformationType == LsaTokenInformationV1 {
         let token_info1: PLSA_TOKEN_INFORMATION_V1 = TokenInformation as PLSA_TOKEN_INFORMATION_V1;
-        let mut groups_ptr: PTOKEN_GROUPS = core::ptr::null_mut();
+        let groups_ptr: PTOKEN_GROUPS;
 
         if !(*token_info1).Groups.is_null() {
             let group_count = (*(*token_info1).Groups).GroupCount as usize;

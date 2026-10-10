@@ -1,10 +1,34 @@
 use win32k_sys::win32k::*;
 use ntkrnl_sys::ddk::{PsGetCurrentProcessWin32Process, ExFreePoolWithTag};
 
-// KeRosDumpStackFrames(Frames, Count) — win32k gdidebug.h macro; a no-op in the
-// non-DBG build (where it would otherwise call the ntoskrnl debug export).
+// KeRosDumpStackFrames(Frames, Count) — win32k gdidebug.h macro. This build is
+// `DBG && KDBG`, where it is `KdSystemDebugControl('DsoR', Frames, Count, NULL, 0,
+// NULL, KernelMode)`: the kernel debugger's dump-stack command (kd64 handles 'DsoR').
+// It was an empty fn here, so the one diagnostic on this path (SPI used before
+// initialisation) printed nothing.
+unsafe extern "system" {
+    fn KdSystemDebugControl(
+        Command: ULONG,
+        InputBuffer: PVOID,
+        InputBufferLength: ULONG,
+        OutputBuffer: PVOID,
+        OutputBufferLength: ULONG,
+        ReturnLength: *mut ULONG,
+        PreviousMode: i8,
+    ) -> NTSTATUS;
+}
 #[inline(always)]
-unsafe fn KeRosDumpStackFrames(_Frames: *mut ULONG_PTR, _Count: ULONG) {}
+unsafe fn KeRosDumpStackFrames(Frames: *mut ULONG_PTR, Count: ULONG) {
+    KdSystemDebugControl(
+        u32::from_be_bytes(*b"DsoR"),
+        Frames as PVOID,
+        Count,
+        core::ptr::null_mut(),
+        0,
+        core::ptr::null_mut(),
+        0, // KernelMode
+    );
+}
 use ntkrnl_sys::base::{NT_SUCCESS, STATUS_SUCCESS};
 #[allow(unused_imports)]
 use core::ffi::c_void;

@@ -7,5 +7,6 @@ edition = "2021"
 crate-type = ["staticlib"]
 
 [dependencies]
+winedebug-rust = { path = "../winedebug-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
 winlogon-sys = { path = "../winlogon-sys" }

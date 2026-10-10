@@ -125,15 +125,10 @@ unsafe extern "C" {
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG_PTR, );
-}
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize);
 }
 extern "system" {
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
@@ -444,7 +439,7 @@ pub unsafe extern "C" fn ReadQChannel(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(InputBufferLength);
+    UNREFERENCED_PARAMETER!(InputBufferLength);
 
     *DataLength = 0;
 
@@ -1095,7 +1090,6 @@ pub unsafe extern "C" fn RequestHandleGetMediaTypeEx(
                     media_info = media_info.add(1);
                     (*media_info).DeviceSpecific.RemovableDiskInfo.MediaCharacteristics |=
                         MEDIA_CURRENTLY_MOUNTED;
-                    media_info = media_info.sub(1);
                 } else {
                     (*media_info).DeviceSpecific.RemovableDiskInfo.MediaCharacteristics |=
                         MEDIA_CURRENTLY_MOUNTED;
@@ -4074,7 +4068,7 @@ pub unsafe extern "C" fn GetConfigurationDataConversionTypeAllToTypeOne(
 ) {
     let mut featureHeader: *mut FEATURE_HEADER;
     let mut thisFeature: FEATURE_NUMBER;
-    let mut totalLength: u32 = 0;
+    let mut totalLength: u32;
     let mut featureLength: u32 = 0;
     let mut headerLength: u32;
     let mut header: *mut GET_CONFIGURATION_HEADER;
@@ -4131,18 +4125,18 @@ pub unsafe extern "C" fn GetConfigurationDataSynthesize(
     RequestType: u32,
     DataLength: *mut usize,
 ) {
-    let mut featureHeader: *mut FEATURE_HEADER = core::ptr::null_mut();
+    let mut featureHeader: *mut FEATURE_HEADER;
     let mut validLength: u32 = 0;
-    let mut featureLength: u32 = 0;
-    let mut headerLength: u32 = 0;
-    let mut buffer: *mut u8 = core::ptr::null_mut();
-    let mut bytesRemaining: u32 = 0;
-    let mut featureCode: FEATURE_NUMBER = 0;
-    let mut shouldCopy: i32 = 0;
-    let mut copyLength: usize = 0;
-    let mut transferedLength: usize = 0;
-    let mut requiredLength: usize = 0;
-    let mut header: *mut GET_CONFIGURATION_HEADER = core::ptr::null_mut();
+    let mut featureLength: u32;
+    let mut headerLength: u32;
+    let mut buffer: *mut u8;
+    let mut bytesRemaining: u32;
+    let mut featureCode: FEATURE_NUMBER;
+    let mut shouldCopy: i32;
+    let mut copyLength: usize;
+    let mut transferedLength: usize;
+    let mut requiredLength: usize;
+    let mut header: *mut GET_CONFIGURATION_HEADER;
 
     PAGED_CODE!();
 
@@ -6922,7 +6916,7 @@ pub unsafe extern "C" fn DvdStartSessionReadKey(
     let mut status: i32 = STATUS_SUCCESS;
     let mut keyLength: u32 = 0;
     let mut result: u32 = 0;
-    let mut allocationLength: u32 = 0; // set to keyLength below (REPORT KEY alloc len)
+    let mut allocationLength: u32; // set to keyLength below (REPORT KEY alloc len)
     let mut fourByte: *mut FOUR_BYTE;
     let keyParameters: *mut DVD_COPY_PROTECT_KEY = InputBuffer as *mut DVD_COPY_PROTECT_KEY;
 

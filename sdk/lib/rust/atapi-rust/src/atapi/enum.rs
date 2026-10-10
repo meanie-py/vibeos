@@ -248,6 +248,8 @@ pub unsafe extern "C" fn AtaDeviceSetAddressingMode(DevExt: PATAPORT_DEVICE_EXTE
     }
 
     if TotalSectors == 0 {
+        ERR!(b"Unknown geometry\n\0".as_ptr() as *const i8);
+
         TotalSectors = 1;
 
         (*DevExt).Device.SectorsPerTrack = 1;
@@ -420,6 +422,7 @@ unsafe extern "C" fn AtaFdoEnumeratePort(mut ChanExt: PATAPORT_CHANNEL_EXTENSION
         if DevExt.is_null() {
             DevExt = (AtaPdoCreateDevice((ChanExt).cast(), AtaScsiAddress)).cast();
             if DevExt.is_null() {
+                ERR!(b"Failed to allocate PDO extension\n\0".as_ptr() as *const i8);
                 // C `continue` in a `for` still runs `++i`; without it this retried index i forever.
                 i = i.wrapping_add(1);
                 continue;
@@ -600,6 +603,7 @@ pub unsafe extern "C" fn AtaFdoQueryBusRelations(
 
     'cleanup: {
         if DeviceRelations.is_null() {
+            ERR!(b"Failed to allocate device relations\n\0".as_ptr() as *const i8);
             break 'cleanup;
         }
 
@@ -608,6 +612,12 @@ pub unsafe extern "C" fn AtaFdoQueryBusRelations(
         KeQuerySystemTime(core::ptr::addr_of_mut!(TimeFinish));
         EnumTimeMs = ((TimeFinish.QuadPart - TimeStart.QuadPart) / 10000) as u32;
         if EnumTimeMs >= 5000 {
+            WARN!(
+                b"%lu: QBR request took %lu ms, %lu devices\n\0".as_ptr() as *const i8,
+                (*ChanExt).ScsiPortNumber,
+                EnumTimeMs,
+                (*DeviceRelations).Count,
+            );
         } else {
             INFO!(
                 b"%lu: QBR request took %lu ms, %lu devices\n\0".as_ptr() as *const i8,

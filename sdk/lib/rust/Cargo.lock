@@ -45,6 +45,7 @@ dependencies = [
  "advapi32-sys",
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -220,6 +221,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -380,6 +382,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -476,6 +479,7 @@ name = "crt-shared-rust"
 version = "0.1.0"
 dependencies = [
  "msvcrt-sys",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -664,6 +668,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -729,6 +734,7 @@ name = "explorer-sys"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "winedebug-rust",
  "winsrv-sys",
 ]
 
@@ -1055,6 +1061,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1244,6 +1251,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
  "winetrace-shim",
  "winsrv-sys",
 ]
@@ -1382,6 +1390,7 @@ dependencies = [
  "panic-common",
  "samsrv-sys",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1454,6 +1463,7 @@ dependencies = [
  "com-sys",
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1525,6 +1535,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1533,6 +1544,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1560,6 +1572,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1584,6 +1597,7 @@ dependencies = [
  "msvcrt-sys",
  "varargs-rust",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1730,6 +1744,16 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "notepad-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1895,6 +1919,7 @@ version = "0.1.0"
 dependencies = [
  "com-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -1903,6 +1928,7 @@ version = "0.1.0"
 dependencies = [
  "com-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2155,6 +2181,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2163,6 +2190,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2171,6 +2199,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2228,6 +2257,7 @@ name = "rtl-actctx"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2394,6 +2424,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2447,6 +2478,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2457,6 +2489,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "samsrv-sys",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2521,6 +2554,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "secur32-sys",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2599,6 +2633,7 @@ dependencies = [
  "strsafe-rust",
  "va-slots-rust",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2669,6 +2704,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2791,6 +2827,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2809,6 +2846,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3073,6 +3111,7 @@ dependencies = [
  "panic-common",
  "win32k-sys",
  "win32macros-rust",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3163,6 +3202,7 @@ name = "version-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3276,6 +3316,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "winedebug-rust"
+version = "0.1.0"
+
+[[package]]
 name = "winetrace-shim"
 version = "0.1.0"
 
@@ -3292,6 +3336,7 @@ name = "winlogon-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+ "winedebug-rust",
  "winlogon-sys",
 ]
 
@@ -3339,6 +3384,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3347,6 +3393,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3355,6 +3402,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -3364,6 +3412,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "varargs-rust",
+ "winedebug-rust",
 ]
 
 [[package]]

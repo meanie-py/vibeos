@@ -17,8 +17,8 @@ def runner():
     return hostjobs.ensure(REPO)
 
 
-def run(cmd, cwd, env):
-    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=120)
+def run(cmd, cwd, env, timeout=120):
+    result = subprocess.run(cmd, cwd=cwd, env=env, capture_output=True, text=True, timeout=timeout)
     assert result.returncode == 0, result.stdout + result.stderr
     return result.stdout
 
@@ -39,6 +39,11 @@ def test_runner_process_contracts(runner, tmp_path):
         ],
         REPO,
         os.environ,
+        # ~10 s on this host at load average 40. Under pytest-timeout's 300 s (pyproject)
+        # on purpose: this budget raises TimeoutExpired WITH cargo's captured output, so a
+        # hang names the test it was in. pytest-timeout kills it with none -- which is how
+        # the 2026-10-09 gate reds read as "load" when they were a broker deadlock.
+        timeout=270,
     )
 
 

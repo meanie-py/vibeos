@@ -124,6 +124,9 @@ members = [
     # neither, so every translated module re-ported them by hand: LOWORD alone existed 32 times
     # in 8 spellings, and the RGB copies all dropped the header's per-component BYTE mask.
     "win32macros-rust",
+    # Wine's ERR/FIXME/WARN/TRACE (wine/debug.h). Thirty-one Wine-derived crates carried a
+    # byte-identical copy of the same 64-line module.
+    "winedebug-rust",
     # The System control panel: the General/Hardware/Advanced property sheets, the
     # environment/user-profile/hardware-profile/virtual-memory/startup-recovery dialogs, and the
     # SMBIOS/DMI reader that names the machine.
@@ -434,6 +437,7 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "ndis-rust",
+    "notepad-rust",
 ]
 resolver = "2"
 

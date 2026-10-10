@@ -1246,6 +1246,29 @@ pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
 }
 """
 
+# The DDK case: UNREFERENCED_PARAMETER is a macro in every DDK header, so an extern
+# declaration of it is a finding with no in-crate macro_rules! (cdfs, fastfat and cdrom
+# declared it in 30 files, resolved by whichever crate exported a no-op, 2026-10-09).
+_MACROSHADOW_DDK_BAD = """\
+extern "C" {
+    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+}
+"""
+
+_MACROSHADOW_DDK_GOOD = """\
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER!(IrpContext);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -2083,6 +2106,35 @@ pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
 
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
+# scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
+# `case TVGN_CARET|TVSI_NOSINGLEEXPAND:` is ONE value, the OR; the same text as a Rust
+# arm is an or-pattern matching EITHER constant. The GOOD case is the faithful guard.
+_CASE_BITOR_C = """\
+switch (action) {
+case TVGN_CARET|TVSI_NOSINGLEEXPAND:
+    bSingleExpand = FALSE;
+    break;
+}
+"""
+
+_CASE_BITOR_BAD = """\
+unsafe fn select(action: u32) {
+    match action {
+        TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
+_CASE_BITOR_GOOD = """\
+unsafe fn select(action: u32) {
+    match action {
+        x if x == TVGN_CARET | TVSI_NOSINGLEEXPAND => { single = 0; }
+        _ => {}
+    }
+}
+"""
+
 _DOWHILE_BAD = """\
 unsafe fn register(ctx: *mut Ctx) {
     loop {
@@ -2459,6 +2511,13 @@ CONTROLS: list[Control] = [
         good={"olesys.rs": _WINERR_GOOD},
     ),
     Control(
+        name="scan_case_bitor_pattern",
+        script="tools/scan_case_bitor_pattern.py",
+        argv=["--lint"],
+        bad={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_BAD},
+        good={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_GOOD},
+    ),
+    Control(
         name="scan_dowhile_continue",
         script="tools/scan_dowhile_continue.py",
         argv=["--lint"],
@@ -2585,6 +2644,14 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"recycle_bin.rs": _MACROSHADOW_BAD},
         good={"recycle_bin.rs": _MACROSHADOW_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"close.rs": _MACROSHADOW_DDK_BAD},
+        good={"close.rs": _MACROSHADOW_DDK_GOOD},
         pass_files=True,
     ),
     Control(

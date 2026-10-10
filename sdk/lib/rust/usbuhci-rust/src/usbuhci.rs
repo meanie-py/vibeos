@@ -951,14 +951,14 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
     CommandReg = core::ptr::addr_of_mut!((*BaseRegister).HcCommand.AsUSHORT) as PUSHORT;
 
     if UhciHardwarePresent(UhciExtension) == 0 {
-        // DPRINT removed
+        DbgPrint(b"UhciInterruptService: return FALSE\n\0".as_ptr() as PCSTR);
         return 0;
     }
 
     HcStatus.AsUSHORT = (READ_PORT_USHORT(StatusReg) as i32 & (UHCI_USB_STATUS_MASK as i32)) as USHORT;
 
     if HcStatus.HostSystemError() != 0 || HcStatus.HcProcessError() != 0 {
-        // DPRINT removed
+        DbgPrint(b"UhciInterruptService: Error [%p] HcStatus %X\n\0".as_ptr() as PCSTR, UhciExtension as *mut c_void, HcStatus.AsUSHORT as ULONG);
     } else if HcStatus.AsUSHORT != 0 {
         (*UhciExtension).HcScheduleError = 0;
     }
@@ -968,11 +968,11 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
         let intr: USHORT = READ_PORT_USHORT(InterruptEnableReg);
         let cmd: USHORT = READ_PORT_USHORT(CommandReg);
 
-        // DPRINT removed
-        // DPRINT removed
-        // DPRINT removed
-        // DPRINT removed
-        // DPRINT removed
+        DbgPrint(b"UhciInterruptService: HC ProcessError!\n\0".as_ptr() as PCSTR);
+        DbgPrint(b"UhciExtension %p, frame %X\n\0".as_ptr() as PCSTR, UhciExtension as *mut c_void, fn_0 as ULONG);
+        DbgPrint(b"HcCommand %X\n\0".as_ptr() as PCSTR, cmd as ULONG);
+        DbgPrint(b"HcStatus %X\n\0".as_ptr() as PCSTR, HcStatus.AsUSHORT as ULONG);
+        DbgPrint(b"HcInterruptEnable %X\n\0".as_ptr() as PCSTR, intr as ULONG);
 
         DbgBreakPoint();
     }
@@ -990,7 +990,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
         WRITE_PORT_USHORT(InterruptEnableReg, 0);
 
         if HcStatus.HostSystemError() != 0 {
-            // DPRINT removed
+            DbgPrint(b"UhciInterruptService: HostSystemError! HcStatus - %X\n\0".as_ptr() as PCSTR, HcStatus.AsUSHORT as ULONG);
 
             DbgBreakPoint();
         }
@@ -1042,7 +1042,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
         (*UhciExtension).HcScheduleError = (ScheduleError as core::ffi::c_ulong)
             .wrapping_add(1) as ULONG;
 
-        // DPRINT removed
+        DbgPrint(b"UhciInterruptService: [%p] ScheduleError %X\n\0".as_ptr() as PCSTR, UhciExtension as *mut c_void, ScheduleError as ULONG);
 
         if ScheduleError < UHCI_MAX_HC_SCHEDULE_ERRORS as core::ffi::c_ulong {
             Command.AsUSHORT = READ_PORT_USHORT(CommandReg);
@@ -1050,7 +1050,7 @@ pub unsafe extern "system" fn UhciInterruptService(uhciExtension: PVOID) -> BOOL
             WRITE_PORT_USHORT(CommandReg, Command.AsUSHORT);
         }
     } else if HcStatus.Interrupt() != 0 && (*UhciExtension).ExtensionLock != 0 {
-        // DPRINT removed
+        DbgPrint(b"UhciInterruptService: [%p] HcStatus %X\n\0".as_ptr() as PCSTR, UhciExtension as *mut c_void, HcStatus.AsUSHORT as ULONG);
 
         UhciCleanupFrameList(UhciExtension, 0);
     }
@@ -2359,7 +2359,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                 current_block = 15751724822426609728;
                 break;
             } else if NextTdPA != (*(*TD).NextHcdTD).PhysicalAddress {
-                ASSERT(0);
+                ASSERT!(0);
             }
         } else {
             if (*TD).NextHcdTD.is_null() {
@@ -2437,7 +2437,7 @@ pub unsafe extern "system" fn UhciPollNonIsoEndpoint(
                                 );
 
                                 if (*TD).__bindgen_anon_1.UhciTransfer != (*NextTD).__bindgen_anon_1.UhciTransfer {
-                                    ASSERT(((*TD).__bindgen_anon_1.UhciTransfer == (*NextTD).__bindgen_anon_1.UhciTransfer) as i32);
+                                    ASSERT!(((*TD).__bindgen_anon_1.UhciTransfer == (*NextTD).__bindgen_anon_1.UhciTransfer) as i32);
                                 }
 
                                 while !TD.is_null()

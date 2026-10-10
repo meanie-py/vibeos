@@ -2178,7 +2178,7 @@ unsafe fn tw_track_ctx_menu(
     _context: *mut c_void,
 ) -> HRESULT {
     let pt: POINT;
-    let mut params: TPMPARAMS = core::mem::zeroed();
+    let mut params: TPMPARAMS;
     let mut rc: RECT = core::mem::zeroed();
     let mut hr: HRESULT;
     let popup = CreatePopupMenu();

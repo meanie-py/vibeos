@@ -606,7 +606,7 @@ pub unsafe extern "system" fn GetSystemFileCacheSize(
     lpMaximumFileCacheSize: PSIZE_T,
     lpFlags: PDWORD,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0i32;
 }
 
@@ -616,7 +616,7 @@ pub unsafe extern "system" fn SetSystemFileCacheSize(
     MaximumFileCacheSize: SIZE_T,
     Flags: DWORD,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -625,7 +625,7 @@ pub unsafe extern "system" fn GetCurrentPackageId(
     BufferLength: *mut UINT32,
     Buffer: *mut BYTE,
 ) -> LONG {
-    // STUB;
+    STUB!();
     return APPMODEL_ERROR_NO_PACKAGE as LONG;
 }
 

@@ -110,12 +110,9 @@ pub struct TA_IP_ADDRESS {
 }
 pub type PTA_IP_ADDRESS = *mut TA_IP_ADDRESS;
 
-// UNREFERENCED_PARAMETER(x) and NT_VERIFY(x) are macros the C source uses as call
-// expressions. UNREFERENCED_PARAMETER is a no-op; NT_VERIFY evaluates+returns its
-// arg (the debug assertion is dropped under release). Generic so the per-call arg
-// types (PDEVICE_OBJECT / PVOID / u8 / ...) all resolve.
-#[inline(always)]
-pub fn UNREFERENCED_PARAMETER<T>(_x: T) {}
+// NT_VERIFY(x) is a macro the C source uses as a call expression: it evaluates and
+// returns its arg (the debug assertion is dropped under release). Generic so the
+// per-call arg types (PDEVICE_OBJECT / PVOID / u8 / ...) all resolve.
 #[inline(always)]
 pub fn NT_VERIFY<T>(expr: T) -> T {
     expr
@@ -161,9 +158,7 @@ pub const TAG_AFD_TDI_CONNECTION_INFORMATION: u32 = fourcc(b"cTfA");
 pub const TAG_AFD_WSA_BUFFER: u32 = fourcc(b"bWfA");
 
 // --- release-noop / value macros used as call expressions in the C source ---
-// ASSERT(x) is empty in release (NDEBUG); the C uses it as a statement-call.
-#[inline(always)]
-pub fn ASSERT<T>(_cond: T) {}
+// (ASSERT is the crate macro in lib.rs, debug_assert!-backed.)
 // MIN/MAX(a,b) — afd uses the min/max value macros.
 #[inline(always)]
 pub fn MIN<T: PartialOrd>(a: T, b: T) -> T {

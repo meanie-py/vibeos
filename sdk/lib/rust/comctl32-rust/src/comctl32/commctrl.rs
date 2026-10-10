@@ -98,23 +98,42 @@ static mut strCC32SubclassInfo: [WCHAR; 17] = [
     0 as ::core::ffi::c_int as WCHAR,
 ];
 
-static mut manifest_filename: [WCHAR; 94] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 188],
-        [WCHAR; 94],
-    >(
-        *b"a\0r\0m\x006\x004\0_\0m\0i\0c\0r\0o\0s\0o\0f\0t\0.\0w\0i\0n\0d\0o\0w\0s\0.\0c\0o\0m\0m\0o\0n\0-\0c\0o\0n\0t\0r\0o\0l\0s\0_\x006\x005\09\x005\0b\x006\x004\x001\x004\x004\0c\0c\0f\x001\0d\0f\0_\x006\0.\x000\0.\x002\x006\x000\x000\0.\x002\09\08\x002\0_\0n\0o\0n\0e\0_\0d\0e\0a\0d\0b\0e\0e\0f\0.\0m\0a\0n\0i\0f\0e\0s\0t\0\0\0",
-    )
-};
+// The C builds both names from `ARCH`, a per-target #define (x86/amd64/arm64). The
+// translation went through the preprocessor once, under the arm64 profile, and baked
+// "arm64_" into both arrays: i386 and amd64 then asked for arm64_*.manifest, CreateActCtxW
+// failed with ERROR_FILE_NOT_FOUND, and neither the v5 nor the v6 activation context existed.
+#[cfg(target_arch = "x86")]
+const ARCH: &str = "x86";
+#[cfg(target_arch = "x86_64")]
+const ARCH: &str = "amd64";
+#[cfg(target_arch = "aarch64")]
+const ARCH: &str = "arm64";
+const MANIFEST_MID: &str = "_microsoft.windows.common-controls_6595b64144ccf1df_";
+const MANIFEST_V6: &str = "6.0.2600.2982_none_deadbeef.manifest";
+const MANIFEST_V5: &str = "5.82.2600.2982_none_deadbeef.manifest";
 
-static mut manifest_filename_v5: [WCHAR; 95] = unsafe {
-    ::core::mem::transmute::<
-        [u8; 190],
-        [WCHAR; 95],
-    >(
-        *b"a\0r\0m\x006\x004\0_\0m\0i\0c\0r\0o\0s\0o\0f\0t\0.\0w\0i\0n\0d\0o\0w\0s\0.\0c\0o\0m\0m\0o\0n\0-\0c\0o\0n\0t\0r\0o\0l\0s\0_\x006\x005\09\x005\0b\x006\x004\x001\x004\x004\0c\0c\0f\x001\0d\0f\0_\x005\0.\08\x002\0.\x002\x006\x000\x000\0.\x002\09\08\x002\0_\0n\0o\0n\0e\0_\0d\0e\0a\0d\0b\0e\0e\0f\0.\0m\0a\0n\0i\0f\0e\0s\0t\0\0\0",
-    )
-};
+/// `ARCH L"_" NAME L"_" PUBLIC_KEY L"_" <version> L"_none_deadbeef.manifest"`, NUL-terminated.
+const fn manifest_name<const N: usize>(version: &str) -> [WCHAR; N] {
+    let mut out = [0 as WCHAR; N];
+    let parts = [ARCH.as_bytes(), MANIFEST_MID.as_bytes(), version.as_bytes()];
+    let (mut at, mut p) = (0, 0);
+    while p < parts.len() {
+        let mut i = 0;
+        while i < parts[p].len() {
+            out[at] = parts[p][i] as WCHAR;
+            at += 1;
+            i += 1;
+        }
+        p += 1;
+    }
+    core::assert!(at + 1 == N);
+    out
+}
+
+static manifest_filename: [WCHAR; ARCH.len() + MANIFEST_MID.len() + MANIFEST_V6.len() + 1] =
+    manifest_name(MANIFEST_V6);
+static manifest_filename_v5: [WCHAR; ARCH.len() + MANIFEST_MID.len() + MANIFEST_V5.len() + 1] =
+    manifest_name(MANIFEST_V5);
 
 // #define NO_SHLWAPI_STREAM (no Rust declaration needed)
 

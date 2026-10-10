@@ -1055,6 +1055,35 @@ pub unsafe extern "C" fn KiSynchronousExceptionHandler(
 
             FaultMode3 = if (*TrapFrame).__bindgen_anon_1.__bindgen_anon_1.PreviousMode == 1 { 1i8 } else { 0i8 };
 
+            // EC 0 ("Unknown") from EL0: the fetch translated and the decoder
+            // refused the word. Under FEX that is JIT output, so what the word
+            // IS separates the causes: 0x00000000 = the page lost its contents
+            // (MM), a valid opcode = stale code seen after a rewrite (FEX
+            // backpatches its code cache in place), anything else = a JIT
+            // encoding bug. Rare by construction, so printed unconditionally.
+            if EC == 0 && FaultMode3 == 1 {
+                let pc = (*TrapFrame).Pc;
+                TrapPuts(b"[UDF] PC="); TrapPutHex64(pc);
+                let pte_va = 0xFFFFF68000000000u64
+                    .wrapping_add(((pc as u64 >> 12) & 0xF_FFFF_FFFFu64) << 3);
+                let pte = core::ptr::read_volatile(pte_va as *const u64);
+                TrapPuts(b" PTE="); TrapPutHex64(pte);
+                TrapPuts(b" words");
+                // Only words on PC's own page: the fetch proved that page is
+                // mapped, its neighbours may not be.
+                let page = pc & !0xFFFu64;
+                let mut a = pc.wrapping_sub(16);
+                while a <= pc + 16 {
+                    if a & !0xFFFu64 == page {
+                        TrapPuts(if a == pc { b" [" } else { b" " });
+                        TrapPutHex32(core::ptr::read_volatile(a as *const u32));
+                        if a == pc { TrapPuts(b"]"); }
+                    }
+                    a += 4;
+                }
+                TrapPuts(b"\r\n");
+            }
+
             let mut ExRec: EXCEPTION_RECORD = core::mem::zeroed();
             ExRec.ExceptionCode = STATUS_ILLEGAL_INSTRUCTION;
             ExRec.ExceptionFlags = 0;

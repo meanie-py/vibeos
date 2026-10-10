@@ -141,7 +141,6 @@ extern "system" {
 }
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn UNREFERENCED_PARAMETER(param: *mut ());
     fn NT_ASSERT(condition: i32);
     fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );

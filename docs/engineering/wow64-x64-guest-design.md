@@ -241,3 +241,35 @@ New and owed: one run (`20261008-194633-hxs3riy7-smoke-arm64`; 0 of the 3 runs b
 appstorm.exe 30 s in with a native undefined-instruction fault (ESR 0x02000000) at
 0x7FFFADFD80C4. The address looks like FEX's code cache, but that is not proven. The guest saw it
 as `c000001d` on the `ret` after `NtReadFile`'s `syscall`.
+
+Then (2026-10-09). The code-cache attribution is now likely, though still inferred: the same
+range takes FEX's LDAR/STLR alignment fixups on guest addresses, which only JIT output does.
+LR is PC-0xF8, so the thread returned from the syscall call-out and ran 62 instructions of the
+block before the bad word. A `ret` block runs thousands of times, so the code most likely changed
+while the thread was blocked. `NtReadFile` is bracketed by `BTCpu64NotifyReadFile`, which
+invalidates code and zeroes every thread's call-ret stack (decommit + recommit). Our port matches
+upstream. Three kernel suspects were ruled out by reading the code:
+- decommit already flushes the TLB process-wide under the PFN lock;
+- recommit turns `MmDecommittedPte` back into demand-zero, so the wipe really zeroes;
+- user pages never enter the working-set list, so nothing trims them.
+
+Eight more sweeps (`20261009-162243-pc9vk8r4`, `20261009-191037-vsrxcvcf`) did not reproduce it.
+An EL0 EC-0 fault now prints a `[UDF]` line: PC, PTE, and the instruction words around PC. The
+word tells the causes apart: 0 means lost contents, a valid opcode means a rewrite was seen stale,
+anything else is a JIT encoding bug. Owed: the next hit.
+
+Owed, found on the way: `MiDecommitPages` overwrites a transition PTE with `MmDecommittedPte`
+without detaching the PFN, leaking the standby or modified frame. The C asserted the case away
+and the Rust dropped the asserts. Nothing reaches it while user pages are never trimmed, but the
+day they are, it is live.
+
+Owed, also an x64-guest flake: `osk` sometimes opens and then never closes (`close=TIMEOUT
+exit=0x103`), 2 of about 40 sweeps (`20261008-114135-_w0p3rum`, `20261009-191037-vsrxcvcf`
+payload4). Same shape as the taskmgr close hang above; not yet chased.
+
+The same runs found four applets that had never run as x64 guests: openglcfg, wined3dcfg, console
+and hotplug, added to appstorm on 2026-10-08. They were missing from the guest set; wowx64
+refused exactly those four (`NOT FOUND`). `lpk.dll` was missing too, and gdi32's `LoadLPK` retries
+it on every text call: 18929 refusals in one sweep, each one a blocking serial line. With both
+added, the four pass, lpk refusals drop to 0, and a sweep takes ~18 min against 33. Most of that
+is the four applets no longer timing out; how much lpk saved alone is not measured.

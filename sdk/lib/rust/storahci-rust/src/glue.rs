@@ -255,10 +255,6 @@ pub unsafe fn REVERSE_BYTES<D, S>(dest: *mut D, src: *const S) {
 #[inline]
 pub unsafe fn NT_ASSERT<T>(_condition: T) {}
 
-/// `UNREFERENCED_PARAMETER(x)` — suppress unused-param warning; evaluates to nothing.
-#[inline]
-pub unsafe fn UNREFERENCED_PARAMETER<T>(_param: T) {}
-
 // ---------------------------------------------------------------------------
 // StorPort FORCEINLINE wrappers and macro stubs
 // (storahci.h defines these as C macros / FORCEINLINE — no symbol in storport.sys)

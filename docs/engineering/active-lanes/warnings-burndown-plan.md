@@ -519,8 +519,10 @@ day: ten boot-path sites fixed -- roadmap.)
   ...). Unlike the macro case each needs the C beside it, since a C `while` with a trailing
   update is faithful and only a C `for` is a bug. Spot checks (win32k `ProcessTimers`, cc
   `CcRosFlushDirtyPages`) were both fine, because they advance before every `continue`.
+  **Closed 2026-10-09** (below): one bug, `scan_dowhile_continue` owns the shape.
 - `UNREFERENCED_PARAMETER` as an empty fn: 42 sites. Same class as PAGED_CODE, but
   `scan_macro_fn_shadow` only sees the copies in crates that also define the macro.
+  **Closed 2026-10-09** (below).
 - msafd `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are still the old stubs.rs bodies
   (`return 0` / `unimplemented!()`), but upstream has since given both real bodies in
   `dll/win32/msafd/misc/dllmain.c` and neither is ported. This is an upstream-sync gap,
@@ -634,6 +636,83 @@ The ranker relocated rows by snippet when the tree had moved since the build, an
 line). It now maps each log's lines through `git diff` against the tree that build compiled,
 which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
 
+**The last 175, and the crates the census had not covered (2026-10-09): `unused_assignments` → 0.**
+Two Haiku 5.5 subagents read the 175 against the C. They were read-only on the repo, and
+each wrote one JSONL row per site: a verdict plus an exact `old`/`new` edit. I reviewed and
+applied the edits centrally. Results: 147 faithful dead writes, 11 debug-only, 17 cdfs SEH
+flags written through their `p_X` pointer, and no bugs. The earlier hand read's bugs were
+already fixed. I also moved 14 more cdfs flag writes rustc never warned about onto their
+pointers. Haiku proposed one meaningless `let _ = (*p).field;` (dropped). It also removed
+four initializers that my raw-borrow rule would have kept. Each turned out to be written
+before its borrow, so the rule is stricter than it needs to be: the condition that matters
+is a raw borrow BEFORE the first write (owed: refine `apply_dead_assignments`).
+
+**A clean log does not carry every crate's warnings.** The 000251 clean ×3 logs held no
+msvcrt-crt-rust or crt-shared-rust warning at all, the next clean build (150818) held 27
+`unused_assignments` there, and the one after it (154317) held none again for unchanged
+content. A crate's warnings reach `full.log` only from the build that really compiles its
+content, probably because sccache serves the rest without them. (`NOT BUILT (no coverage)`
+in the same log is `scan_flex_array_panic`'s binary corpus, NOT cargo's, and says nothing
+about this.) **Owed: the census must check per-crate coverage** (closed 2026-10-09, below), by compiling each crate
+it reports on or by refusing a log that lacks a crate's compile, before any total is
+trusted. The zero below was established crate by crate from the build that compiled each
+one's current content. The 27 were:
+- i386 `cxx_frame_handler` had dropped `__EXCEPT_CTX(se_translation_filter, &ctx)` and
+  left `ctx` built and never read. It is restored as the `if _SEH2_Volatile0` guard that
+  x64 `except.rs` already uses. That is inert under DUMMY_PSEH, as in the C.
+- `_statusfp` / `_control87`: the `flags = 0` is dead on one arch set and in/out to
+  `_setfp` / `__control87_2` on the other, so each cfg arm now owns its initializer.
+- `create_locinfo`: current Wine overwrites `i = GetLocaleInfoEx(..)` with
+  `i = WideCharToMultiByte(..)` at once. The tree's `locale.c` is the older A-version and
+  is not the oracle here.
+
+**Four owed items closed (2026-10-09).**
+
+- **The census reads cargo's cache, not the log.** `tools/rust_warning_census.py build-i386
+  build-amd64 build-arm64` reads every unit's `.fingerprint/<crate>-<hash>/output-lib-*`.
+  That file is rustc's JSON, the one cargo replays for a fresh unit, and it names the lint,
+  so nothing is inferred. A unit counts only if no file in its dep-info is newer than its
+  `invoked.timestamp`, which is cargo's own freshness rule. A crate with no fresh unit is
+  refused (exit 3, `--allow-stale` to report the rest). msvcrt-crt-rust's cache held 357
+  warnings for the same content one clean log showed none of. Logs still work, with the
+  caveat printed. The first verified census (fresh ×3, 653 arch:crate units): **8,447
+  sites, 0 UB, 1,720 LOGIC, 6,727 NOISE**. `unnecessary_transmutes` is 5,322, not the
+  logs' 1,782. Seven LOGIC sites no log had ever carried were graded noise and fixed:
+  version-rust's NUL for a dropped WARN; an atapi `NT_VERIFY` and shell32's
+  `FAILED_UNEXPECTEDLY(hr2)`, both "report but don't fail" in the C; syssetup's
+  `DateTime_SetSystemtime` comparing where the C casts to BOOL; diskpart's three
+  `while true`. LOGIC is now `clashing_extern` (Phase 2), 12 fn-pointer comparisons
+  outside the audited allows (owed), and the graded kernel32 and pcix sites.
+- **Hand-written `while` that `continue`s past its step: 61 graded, 1 bug.** Two Haiku
+  agents read all 61 against the C, and I re-read the four they judged without it, plus
+  partmgr and se. The bug was cmlib `HvValidateHive`, whose C `for` runs `BlockIndex++;
+  continue;` on a NULL bin. The Rust spun forever there, under a comment calling it
+  "faithful to C". partmgr's restart-after-match is right and the C's `for` is not: the
+  step skips the head it just reset to, which can hand out a PDO number already in use.
+  The Rust now says so. Everything else is a C `while` with the same `continue` (17) or
+  advances before every `continue` (43). `scan_dowhile_continue` now flags the shape. An
+  update covers a `continue` only from a block still open at it, so a step in a sibling
+  `if` arm does not count. That rule cut the 61 to 26, all baselined as graded. Reading
+  each file once also made the scan about twice as fast.
+- **`UNREFERENCED_PARAMETER` is a `macro_rules!` in all 13 crates** that had it as an
+  empty fn or an extern declaration: 40 definitions and declarations gone, 102 calls now
+  `!`. Three of them were `#[no_mangle]` exports resolving the other crates' externs.
+  `scan_macro_fn_shadow` lists it in `DDK_MACROS`, so an extern declaration fires with no
+  in-crate macro. Before, the widened rule reported 35 files; now it reports 0.
+- **The `path_statements` were not all noise.** kernel32.h's `STUB` is
+  `SetLastError(ERROR_CALL_NOT_IMPLEMENTED); DPRINT1(..)`, but kernel32-rust had it as
+  `const STUB: () = ()`. So 11 live `STUB;` stubs, plus 13 more commented out as
+  "debug no-op", returned FALSE without saying why, and a caller's `GetLastError()` read
+  whatever came before. All 24, and `GetActiveProcessorGroupCount` (which is `STUB;
+  return 1;` in the C), now go through a `STUB!()` that sets it. `UNIMPLEMENTED` (debug.h,
+  a print only) and `NOTHING` really are empty. win32k's `STUB` is a `DbgPrint` alone.
+- **`clashing_extern` return mismatches: 78 graded, 0 bugs.** Every declaration that
+  disagrees on whether the function returns (40 functions) has its value discarded at
+  every Rust call and at the matching C call: statement calls, `let _ =`, `!` vs `()` on a
+  real noreturn. Still owed: 16 fastfat declarations give FatBugCheck 32-bit
+  arguments where the C passes `ULONG_PTR`, so on amd64 the upper halves of the bugcheck
+  parameters are garbage. Retyping it hits the call-site E0308 wall described above.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class
@@ -651,7 +730,8 @@ which the `warm-receipt` stage records, and calls a non-unique snippet STALE.
     Mostly cosmetic, BUT the *missing-return* ones are real dropped-NTSTATUS bugs (e.g. cdrom
     `init.rs:69` `fn DeviceSetParameter(...);` drops the `-> NTSTATUS` the def returns). Reconciling
     types is the 80×-E0308 wall from the POC below — per-call-site work, supervised.
-  - **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
+  - **CLOSED (checked 2026-10-09): every definition and declaration of these is `extern "system"` now.**
+    **serial/afd callback def-ABI bug (found this batch, reverted).** `SerialSendByte`/`SerialAddDevice`/
     `ForwardIrpAndForget`/`SerialCreate`/`AfdCancelHandler` defined cdecl but registered as stdcall
     callbacks → latent i386 stack bug. Fix = change the *definitions* to `extern "system"` + verify no
     direct-call site depends on cdecl. Real bug, not noise.

@@ -101,7 +101,6 @@ mod dprint_syms {
 }
 
 // ASSERT — NT_ASSERT, no-op in retail (NDEBUG).
-#[inline] pub fn ASSERT(_cond: i32) {}
 
 // ---- KeQuerySystemTime / SharedSystemTime — read KI_USER_SHARED_DATA.SystemTime ----
 #[inline]

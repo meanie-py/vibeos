@@ -2569,8 +2569,11 @@ def emit_wrappers(
         "#![no_builtins]",
         "#![allow(dead_code, non_snake_case, non_camel_case_types, unused_imports)]",
     ]
+    # `#[macro_use]`: a support module may be the shipping crate a candidate's macros come
+    # from (version.json's TRACE! is winedebug-rust's), and macro_rules! reaches `candidate`
+    # only textually. It is a no-op on a module that defines none.
     for name, path in data["rust_support"].items():
-        rust.append(f"#[path = {json.dumps(path)}] mod {name};")
+        rust.append(f"#[macro_use] #[path = {json.dumps(path)}] mod {name};")
     rust.append(f"#[path = {json.dumps(str(rust_source))}] mod candidate;")
     for index, fn in enumerate(data["functions"]):
         c_types = [

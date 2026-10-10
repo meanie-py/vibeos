@@ -309,7 +309,7 @@ pub unsafe extern "C" fn get_type_size(_pFlags: *mut ULONG, vt: VARTYPE) -> u32 
         VT_VARIANT => core::mem::size_of::<VARIANT>() as u32,
         VT_UNKNOWN | VT_DISPATCH | VT_RECORD => 0,
         _ => {
-            FIXME!(b"unhandled VT %d\n\0".as_ptr() as PCHAR, vt);
+            FIXME!(b"unhandled VT %d\n\0".as_ptr() as PCHAR, vt as core::ffi::c_uint);
             0
         }
     }
@@ -1376,7 +1376,7 @@ pub unsafe extern "system" fn LPSAFEARRAY_UserUnmarshal(
                 }
             }
             SF_RECORD => {
-                FIXME!(b"set record info\n\0".as_ptr() as _);
+                FIXME!("set record info\n");
             }
             SF_I8 => {
                 ALIGN_POINTER!(Buffer, 7);
@@ -2824,7 +2824,7 @@ pub unsafe extern "system" fn IPropertyBag_Read_Proxy(
     if (*V_VT_ref(pVar)) & (VT_BYREF | VT_ARRAY | VT_VECTOR) != 0 {
         FIXME!(
             b"Variant type %x is byref, array or vector. Not implemented.\n\0".as_ptr() as PCHAR,
-            (*V_VT_ref(pVar)),
+            (*V_VT_ref(pVar)) as core::ffi::c_uint,
         );
         return E_NOTIMPL;
     }
@@ -2843,7 +2843,7 @@ pub unsafe extern "system" fn IPropertyBag_Read_Proxy(
         _ => {
             FIXME!(
                 b"Unknown V_VT %d - support not yet implemented.\n\0".as_ptr() as PCHAR,
-                (*V_VT_ref(pVar)),
+                (*V_VT_ref(pVar)) as core::ffi::c_uint,
             );
             return E_NOTIMPL;
         }
@@ -2877,7 +2877,7 @@ pub unsafe extern "system" fn IPropertyBag_Read_Stub(
     if (varType & (VT_BYREF | VT_ARRAY | VT_VECTOR) as DWORD) != 0 {
         FIXME!(
             b"Variant type %x is byref, array or vector. Not implemented.\n\0".as_ptr() as *const i8,
-            (*V_VT_ref(pVar)),
+            (*V_VT_ref(pVar)) as core::ffi::c_uint,
         );
         return E_NOTIMPL;
     }

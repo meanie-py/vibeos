@@ -28,8 +28,6 @@ extern "C" {
     fn SetFlag(Flags: *mut u32, Flag: u32);
 }
 extern "C" {
-}
-extern "C" {
     fn CdAllocateFcbIndex(IrpContext: *mut IRP_CONTEXT) -> *mut FCB;
 }
 extern "C" {
@@ -52,9 +50,6 @@ extern "C" {
 }
 extern "C" {
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
 }
 extern "C" {
     fn _SEH2_AbnormalTermination() -> i32;
@@ -450,7 +445,7 @@ pub unsafe extern "C" fn CdInitializeVcb(
 ) {
     // PAGED_CODE();
     // UNREFERENCED_PARAMETER( IrpContext );
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     // RtlZeroMemory( Vcb, sizeof( VCB ));
     core::ptr::write_bytes(Vcb as *mut u8, 0, core::mem::size_of::<VCB>());
@@ -604,7 +599,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 if (*Vcb).BlockSize != SECTOR_SIZE {
                     if UnlockVcb {
                         CdUnlockVcb(IrpContext, Vcb);
-                        UnlockVcb = false;
+                        *p_UnlockVcb = false;
                     }
                     CdRaiseStatus(IrpContext, STATUS_DISK_CORRUPT_ERROR);
                 }
@@ -619,7 +614,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 if !RawIsoVd.is_null() {
                     // ISO volume descriptor present
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
 
                     let path_table_fcb = CdCreateFcb(
                         IrpContext,
@@ -630,7 +625,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).PathTableFcb = path_table_fcb;
                     CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     StartingBlock = CdRvdPtLoc(RawIsoVd, (*Vcb).VcbState);
                     ByteCount = CdRvdPtSz(RawIsoVd, (*Vcb).VcbState);
@@ -665,7 +660,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
                     // Root index
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
                     let root_index_fcb = CdCreateFcb(
                         IrpContext,
                         *(core::ptr::addr_of!(FileId) as *const FILE_ID),
@@ -675,7 +670,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).RootIndexFcb = root_index_fcb;
                     CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     CdSetFidPathTableOffset(
                         &raw mut (*root_index_fcb).FileId,
@@ -708,7 +703,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
                     // Volume dasd
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
                     let volume_dasd_fcb = CdCreateFcb(
                         IrpContext,
                         *(core::ptr::addr_of!(FileId) as *const FILE_ID),
@@ -718,7 +713,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
                     CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     StartingBlock = CdRvdVolSz(RawIsoVd, (*Vcb).VcbState);
                     (*fcb_hdr(volume_dasd_fcb)).FileSize.QuadPart = LlBytesFromBlocks(Vcb, StartingBlock);
@@ -752,7 +747,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                 } else if ((*Vcb).VcbState & VCB_STATE_AUDIO_DISK) != 0 {
                     // Audio disk branch
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
 
                     let path_table_fcb = CdCreateFcb(
                         IrpContext,
@@ -763,7 +758,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).PathTableFcb = path_table_fcb;
                     CdIncrementReferenceCounts(IrpContext, path_table_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     let dir_id_offset = core::mem::offset_of!(RAW_PATH_ISO, DirId) as LONGLONG;
                     (*fcb_hdr(path_table_fcb)).FileSize.QuadPart = dir_id_offset + 2;
@@ -781,7 +776,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
                     // Root index
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
                     let root_index_fcb = CdCreateFcb(
                         IrpContext,
                         *(core::ptr::addr_of!(FileId) as *const FILE_ID),
@@ -791,7 +786,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).RootIndexFcb = root_index_fcb;
                     CdIncrementReferenceCounts(IrpContext, root_index_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     CdSetFidPathTableOffset(
                         &raw mut (*root_index_fcb).FileId,
@@ -831,7 +826,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
 
                     // Volume dasd
                     CdLockVcb(IrpContext, Vcb);
-                    UnlockVcb = true;
+                    *p_UnlockVcb = true;
                     let volume_dasd_fcb = CdCreateFcb(
                         IrpContext,
                         *(core::ptr::addr_of!(FileId) as *const FILE_ID),
@@ -841,7 +836,7 @@ pub unsafe extern "C" fn CdUpdateVcbFromVolDescriptor(
                     (*Vcb).VolumeDasdFcb = volume_dasd_fcb;
                     CdIncrementReferenceCounts(IrpContext, volume_dasd_fcb, 1, 1);
                     CdUnlockVcb(IrpContext, Vcb);
-                    UnlockVcb = false;
+                    *p_UnlockVcb = false;
 
                     (*fcb_hdr(volume_dasd_fcb)).Resource = &raw mut (*Vcb).FileResource as *mut _;
                     (*volume_dasd_fcb).FileAttributes = FILE_ATTRIBUTE_READONLY;
@@ -879,7 +874,7 @@ pub unsafe extern "C" fn CdDeleteVcb(
         PAGED_CODE!();
         ASSERT_EXCLUSIVE_CDDATA();
         ASSERT_EXCLUSIVE_VCB(Vcb);
-        UNREFERENCED_PARAMETER(IrpContext);
+        UNREFERENCED_PARAMETER!(IrpContext);
 
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).SwapVpb) as *mut *mut core::ffi::c_void);
         CdFreePool(core::ptr::addr_of_mut!((*Vcb).Vpb) as *mut *mut core::ffi::c_void);
@@ -1161,7 +1156,7 @@ pub unsafe extern "C" fn CdCreateCcb(
     let mut NewCcb: *mut CCB;
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
 
     NewCcb = CdAllocateCcb(IrpContext);
     RtlZeroMemory(NewCcb as *mut core::ffi::c_void, core::mem::size_of::<CCB>());

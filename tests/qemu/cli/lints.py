@@ -816,6 +816,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # C `case A|B:` is one label, the bitwise OR; the same text in a Rust arm is an
+    # or-pattern matching EITHER. comctl32's TREEVIEW_SelectItem shipped it.
+    scb = repo / "tools" / "scan_case_bitor_pattern.py"
+    specs.append(
+        (
+            "scan_case_bitor_pattern",
+            [py, str(scb), "--lint"] if scb.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (

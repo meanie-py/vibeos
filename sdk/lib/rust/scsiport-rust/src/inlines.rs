@@ -295,8 +295,6 @@ mod port_io {
 }
 #[cfg(target_arch = "aarch64")]
 mod port_io {
-    unsafe extern "C" {
-    }
     unsafe extern "system" {
         pub fn READ_PORT_UCHAR(Port: *mut u8) -> u8;
         pub fn READ_PORT_USHORT(Port: *mut u16) -> u16;

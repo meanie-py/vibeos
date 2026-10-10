@@ -18,8 +18,6 @@ use crate::types::{RAW_DIRENT, RAW_PATH_ISO, SYSTEM_USE_XA};
 use crate::types::{RAW_READ_INFO, TRACK_MODE_TYPE, _TRACK_MODE_TYPE_CDDA as CDDA, _TRACK_MODE_TYPE_XAForm2 as XAForm2, _TRACK_MODE_TYPE_YellowMode2 as YellowMode2};
 
 extern "C" {
-}
-extern "C" {
     fn NT_ASSERT(condition: i32);
 }
 extern "C" {
@@ -59,7 +57,6 @@ extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: PIRP_CONTEXT);
 }
 extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize); // dummy signature; we'll pass pointer-sized value
     // these mimic the MSVC __try/__except/__end
     fn _SEH2_TRY();
 }
@@ -752,8 +749,8 @@ pub unsafe extern "C" fn CdCreateUserMdl(
 
     // PAGED_CODE(); // omitted – Rust cannot convey pageability
 
-    UNREFERENCED_PARAMETER(Operation as usize);
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER!(Operation as usize);
+    UNREFERENCED_PARAMETER!(IrpContext as usize);
 
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_IRP((*IrpContext).Irp);

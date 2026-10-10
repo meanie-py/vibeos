@@ -109,10 +109,22 @@ pub fn unmask_intx(df: DeviceFunction) {
 
 
 /// Read the PCI Interrupt Line (config byte 0x3C) — the IRQ the firmware routed
-/// this function's INTx pin to. 0xFF means "unrouted" → None. M10 (amd64) feeds
-/// this to `HalGetInterruptVector` to connect the RX interrupt.
+/// this function's INTx pin to. 0xFF means "unrouted" → None. M10 feeds this to
+/// `HalGetInterruptVector` to connect the RX interrupt.
+///
+/// arm64 (QEMU `virt`): the firmware leaves the line 0, and pci.sys writes the
+/// GIC INTID there when it enumerates the bus (pci-rust fdo.rs). netstack is not
+/// a PnP child of pci.sys, so if it gets here first it derives the same INTID
+/// from the board's fixed GPEX routing: INTA..INTD → INTIDs 35..38, swizzled by
+/// device number.
 pub fn read_interrupt_line(df: DeviceFunction) -> Option<u8> {
-    let line = (HalPciAccess.read_word(df, 0x3C) & 0xFF) as u8;
+    let line_pin = HalPciAccess.read_word(df, 0x3C);
+    let line = (line_pin & 0xFF) as u8;
+    #[cfg(target_arch = "aarch64")]
+    if line == 0 {
+        let pin = ((line_pin >> 8) & 0xFF) as u8; // 1-based, INTA = 1
+        return (df.bus == 0 && (1..=4).contains(&pin)).then(|| 35 + (df.device + pin - 1) % 4);
+    }
     if line == 0xFF {
         None
     } else {

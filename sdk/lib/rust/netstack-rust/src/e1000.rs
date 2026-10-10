@@ -6,8 +6,9 @@
 //! MMIO register file + legacy RX/TX descriptor rings, exactly like a metal
 //! driver would — no NDIS, no miniport, pure Rust on the PCI bus.
 //!
-//! Design mirrors `VirtioPhy` v1: polled (the engine's poll loop calls
-//! `receive`/`transmit`; interrupts stay masked via IMC), copy-based (RX
+//! Design mirrors `VirtioPhy`: the engine's worker calls `receive`/`transmit`
+//! and sleeps on an event that the INTx ISR (`irq_ack`) sets when a frame
+//! lands; with no interrupt it polls on a timeout. Copy-based (RX
 //! copies the frame out of the DMA buffer, TX copies into one), single
 //! contiguous DMA arena per ring (descriptors + buffers) allocated with
 //! `MmAllocateContiguousMemorySpecifyCache` like `hal.rs`. x86 DMA is
@@ -34,8 +35,10 @@ use virtio_drivers::transport::pci::bus::ConfigurationAccess;
 const CTRL: usize = 0x0000;
 const STATUS: usize = 0x0008;
 const EERD: usize = 0x0014;
+const IMS: usize = 0x00D0;
 const IMC: usize = 0x00D8;
 const ICR: usize = 0x00C0;
+const RDTR: usize = 0x2820;
 const RCTL: usize = 0x0100;
 const TCTL: usize = 0x0400;
 const TIPG: usize = 0x0410;
@@ -67,6 +70,15 @@ const TCTL_EN: u32 = 1 << 1;
 const TCTL_PSP: u32 = 1 << 3;
 const TCTL_CT_SHIFT: u32 = 4;
 const TCTL_COLD_SHIFT: u32 = 12;
+
+// ICR / IMS cause bits.
+const INT_LSC: u32 = 1 << 2; // link status change
+const INT_RXDMT0: u32 = 1 << 4; // RX descriptors below the minimum threshold
+const INT_RXO: u32 = 1 << 6; // RX overrun
+const INT_RXT0: u32 = 1 << 7; // RX timer: a frame landed
+/// The causes the worker acts on. TX completion is not one: the worker reclaims
+/// TX descriptors when it next sends.
+const INT_WAKE: u32 = INT_RXT0 | INT_RXO | INT_RXDMT0 | INT_LSC;
 
 const RXD_STAT_DD: u8 = 1 << 0;
 const RXD_STAT_EOP: u8 = 1 << 1;
@@ -165,6 +177,7 @@ unsafe fn dma_arena(bytes: usize) -> Option<(*mut u8, u64)> {
 }
 
 pub struct E1000 {
+    df: DeviceFunction,
     regs: *mut u32,
     mac: [u8; 6],
     rx_desc: *mut RxDesc,
@@ -191,6 +204,27 @@ impl E1000 {
 
     pub fn mac_address(&self) -> [u8; 6] {
         self.mac
+    }
+
+    /// The INTx line to connect (`pci::read_interrupt_line`).
+    pub fn interrupt_line(&self) -> Option<u8> {
+        crate::pci::read_interrupt_line(self.df)
+    }
+
+    /// The register window, the context `irq_ack` takes.
+    pub fn irq_ctx(&self) -> *mut u8 {
+        self.regs.cast()
+    }
+
+    /// Unmask the causes the worker acts on, then let the function assert INTx.
+    /// Call only once an ISR is connected: the line is shared, and an e1000
+    /// interrupt nobody claims would hold the level line asserted.
+    pub fn enable_interrupts(&self) {
+        unsafe {
+            let _ = self.rd(ICR);
+            self.wr(IMS, INT_WAKE);
+        }
+        crate::pci::unmask_intx(self.df);
     }
 
     /// Poll-side RX: is a completed frame waiting?
@@ -373,7 +407,11 @@ pub fn bringup() -> Option<E1000> {
             mac[0], mac[1], mac[2], mac[3], mac[4], mac[5], status, bar0
         );
 
+        // Interrupt as soon as a frame lands, without the receive-delay timer.
+        wr(RDTR, 0);
+
         Some(E1000 {
+            df,
             regs,
             mac,
             rx_desc,
@@ -384,6 +422,16 @@ pub fn bringup() -> Option<E1000> {
             tx_next: 0,
         })
     }
+}
+
+/// ISR-side acknowledge, for `isr::connect_line`. ICR is read-to-clear, which
+/// both reports the causes and deasserts INTx; the worker never reads it.
+pub unsafe fn irq_ack(regs: PVOID) -> crate::isr::Ack {
+    let icr = core::ptr::read_volatile(regs.cast::<u8>().add(ICR).cast::<u32>());
+    if icr == 0 {
+        return crate::isr::Ack::NotOurs;
+    }
+    if icr & INT_WAKE != 0 { crate::isr::Ack::Wake } else { crate::isr::Ack::Handled }
 }
 
 // --------------------------------------------------------- smoltcp adapter
@@ -397,6 +445,9 @@ impl E1000Phy {
     }
     pub fn mac(&self) -> [u8; 6] {
         self.dev.mac_address()
+    }
+    pub fn dev(&self) -> &E1000 {
+        &self.dev
     }
 }
 

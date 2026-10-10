@@ -694,6 +694,12 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
                 MRES_DMA,
             );
             if PciIdeIsDmaStatusValid(DmaStatus) == 0 {
+                WARN!(
+                    b"CH %lu: %p DMA 0x%02X\n\0".as_ptr() as *const i8,
+                    (*ChanData).__bindgen_anon_1.Channel,
+                    (*ChanData).Regs.Dma,
+                    DmaStatus as u32,
+                );
                 (*ChanData).__bindgen_anon_1.TransferModeSupported &= PIO_ALL;
             } else {
                 INFO!(
@@ -906,6 +912,11 @@ pub unsafe extern "C" fn PciIdeParseResources(
         Status = PciIdeAssignLegacyResources(ChanData, ResourcesTranslated);
     }
     if !NT_SUCCESS!(Status) {
+        ERR!(
+            b"CH %lu: Failed to assign I/O resources 0x%lx\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            Status,
+        );
         return Status;
     }
 
@@ -1097,6 +1108,11 @@ pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::
     );
 
     if !NT_SUCCESS!(Status) {
+        ERR!(
+            b"Could not connect to interrupt %lu, status 0x%lx\n\0".as_ptr() as *const i8,
+            (*InterruptDesc).u.Interrupt.Vector,
+            Status,
+        );
         return Status;
     }
 
@@ -1219,8 +1235,16 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
             || ((*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_IDE_CTLR as u8)
                 && (*Controller).Pci.SubClass != (PCI_SUBCLASS_MSC_RAID_CTLR as u8))
         {
+            ERR!(b"Unsupported controller\n\0".as_ptr() as *const i8);
             return Status;
         }
+
+        WARN!(
+            b"%04X:%04X.%02X: Using generic PCI IDE minidriver\n\0".as_ptr() as *const i8,
+            (*Controller).Pci.VendorID as u32,
+            (*Controller).Pci.DeviceID as u32,
+            (*Controller).Pci.RevisionID as u32,
+        );
 
         Status = PciIdeCreateChannelData(Controller, 0);
         if !NT_SUCCESS!(Status) {
@@ -1251,6 +1275,7 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
 
     if (*Controller).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
         if (*Controller).InterruptDesc.Type != CmResourceTypeInterrupt {
+            ERR!(b"No interrupt resource\n\0".as_ptr() as *const i8);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
     }
@@ -1265,6 +1290,8 @@ pub unsafe extern "C" fn PciIdeGetControllerProperties(
     }
 
     if (*Controller).Flags & CTRL_FLAG_IS_SIMPLEX != 0 {
+        WARN!(b"Sync access for hardware is required\n\0".as_ptr() as *const i8);
+
         (*Controller).HwSyncObject = IoCreateController(0);
         if (*Controller).HwSyncObject.is_null() {
             return STATUS_INSUFFICIENT_RESOURCES;

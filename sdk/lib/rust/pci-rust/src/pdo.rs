@@ -190,7 +190,7 @@ static GUID_BUS_TYPE_PCI: GUID = guid(
 // ---------------------------------------------------------------------------
 extern "system" {
     /// hal-rust message.rs: set up a device's DMA path (an SMMU stream) before it masters the bus.
-    fn HalVibeosDmaAttach(RequesterId: ULONG) -> BOOLEAN;
+    fn HalVibeosDmaAttach(RequesterId: ULONG, Strict: BOOLEAN) -> BOOLEAN;
     fn PciDuplicateUnicodeString(
         Flags: ULONG,
         SourceString: PCUNICODE_STRING,
@@ -1264,9 +1264,10 @@ unsafe extern "system" fn InterfaceBusGetDmaAdapter(
     DeviceDescription: PDEVICE_DESCRIPTION,
     NumberOfMapRegisters: *mut ULONG,
 ) -> PDMA_ADAPTER {
-    let _ = Context;
     DPRINT!("InterfaceBusGetDmaAdapter(...)\n");
-    HalGetAdapter(DeviceDescription, NumberOfMapRegisters) as PDMA_ADAPTER
+    // Context is the PDO: the HAL's adapter knows whose it is, so behind a
+    // DMA-remapping domain it can map what it hands out.
+    crate::dmar::adapter(Context as PDEVICE_OBJECT, DeviceDescription, NumberOfMapRegisters)
 }
 
 #[no_mangle]
@@ -1665,11 +1666,11 @@ unsafe fn PdoStartDevice(
 
     // Before bus mastering: behind a translating SMMU, the device's DMA needs its
     // stream table entry first. Same requester ID msix.rs computes.
+    // A DMA-remapping compatible driver gets a domain of its own.
     {
-        let dev = (*DeviceExtension).PciDevice;
-        let slot = (*dev).SlotNumber.u.AsULONG;
-        let requester = ((*dev).BusNumber & 0xFF_FFFF) << 8 | (slot & 0x1F) << 3 | (slot >> 5) & 7;
-        if HalVibeosDmaAttach(requester) == 0 {
+        let requester = crate::dmar::requester(DeviceExtension);
+        let strict = crate::dmar::remapping_compatible(DeviceObject);
+        if HalVibeosDmaAttach(requester, strict as BOOLEAN) == 0 {
             DPRINT1!("requester %06x: the HAL could not set up its DMA path\n", requester);
         }
     }

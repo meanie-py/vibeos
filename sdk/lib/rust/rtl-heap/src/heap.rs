@@ -1387,7 +1387,7 @@ pub unsafe extern "system" fn RtlCreateHeap(
     Lock: PVOID,
     mut Parameters: PRTL_HEAP_PARAMETERS,
 ) -> HANDLE {
-    let mut CommittedAddress: PVOID = core::ptr::null_mut();
+    let mut CommittedAddress: PVOID;
     let UncommittedAddress: PVOID;
     let mut Heap: PHEAP = core::ptr::null_mut();
     let mut SafeParams: RTL_HEAP_PARAMETERS = core::mem::zeroed();

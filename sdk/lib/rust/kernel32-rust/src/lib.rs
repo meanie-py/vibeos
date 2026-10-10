@@ -15,6 +15,22 @@
 // Fold-proof Wine TRACE/FIXME/WARN/ERR shims (§9.99) — see winetrace-shim.
 extern crate winetrace_shim;
 
+// kernel32.h's `STUB` is `SetLastError(ERROR_CALL_NOT_IMPLEMENTED); DPRINT1(..)`: an
+// unimplemented API fails AND says why, and a caller reading GetLastError() after the
+// FALSE depends on it. It was a unit const here, which dropped the SetLastError.
+// `UNIMPLEMENTED` (debug.h) is only the print, so it is empty in a retail build.
+macro_rules! STUB {
+    () => {
+        #[allow(unused_unsafe)]
+        unsafe {
+            $crate::k32_externs::SetLastError(::ntdll_sys::nt::ERROR_CALL_NOT_IMPLEMENTED)
+        }
+    };
+}
+macro_rules! UNIMPLEMENTED {
+    () => {};
+}
+
 // Crate-wide `w!("...")` — compile-time UTF-16, NUL-terminated wide string literal
 // (Wine/DDK idiom). All call sites pass ASCII; `.as_ptr()` yields the LPCWSTR.
 // Defined at crate root (before the mods) so every descendant module sees bare `w!`.
@@ -50,10 +66,9 @@ pub const fn to_w<const N: usize>(s: &str) -> [u16; N] {
 
 // Foundation: k32-internal types/constants, the cohab import surface (Base*/
 // Win32/SharedUserData/macros), proc.c's globals, and the aggregated substrate.
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod k32_externs;
 pub mod k32_globals;

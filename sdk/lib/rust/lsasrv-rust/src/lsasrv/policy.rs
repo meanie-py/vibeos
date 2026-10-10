@@ -168,7 +168,6 @@ pub unsafe extern "C" fn LsarQueryAuditEvents(
         ) as PLSAPR_POLICY_AUDIT_EVENTS_INFO;
         if p.is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
-            goto_done = true;
         } else {
             if AuditData.is_null() {
                 (*p).AuditingMode = 0u8;
@@ -242,7 +241,6 @@ pub unsafe extern "C" fn LsarQueryPrimaryDomain(
         return STATUS_INSUFFICIENT_RESOURCES;
     }
 
-    status = STATUS_SUCCESS;
 
     'body: {
         // Domain Name
@@ -476,7 +474,7 @@ pub unsafe extern "C" fn LsarQueryServerRole(
     PolicyInformation: *mut PLSAPR_POLICY_INFORMATION,
 ) -> NTSTATUS {
     let ServerRoleInfo: PPOLICY_LSA_SERVER_ROLE_INFO;
-    let mut AttributeSize: ULONG = 0;
+    let mut AttributeSize: ULONG;
     let mut Status: NTSTATUS;
 
     *PolicyInformation = core::ptr::null_mut::<_LSAPR_POLICY_INFORMATION>();

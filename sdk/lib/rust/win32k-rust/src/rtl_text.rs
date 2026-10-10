@@ -52,10 +52,9 @@ extern "C" {
     fn UserLeaveCo();
 }
 
-// C `assert(e)` macro (DBG) → `_font_assert`; no-op here (debug aid, not load-
-// bearing). Generic so it accepts the mixed bool/i32 scrutinees the C used.
-#[inline(always)]
-unsafe fn assert<T>(_e: T) {}
+// C `assert` (live under DBG) is debug_assert! -- the kernel's ASSERT convention:
+// checked in a debug build, never evaluated in release. It was an empty fn, which
+// never checked yet evaluated its argument on every call.
 
 // ---- file-scope preamble (translated) ----
 pub const TAB: i32 = 9;
@@ -291,7 +290,7 @@ unsafe fn TEXT_PathEllipsify(
         lastSlash = lastSlash.offset(-1);
         len_under += 1;
 
-        assert(*len_str != 0);
+        debug_assert!(*len_str != 0);
         *len_str -= 1;
     }
     (*pellip).before = lastSlash.offset_from(str) as i32;
@@ -344,8 +343,8 @@ unsafe fn TEXT_WordBreak(
     let mut p: LPWSTR;
     let mut word_fits: i32;
 
-    assert((format & DT_WORDBREAK) != 0);
-    assert(chars_fit < *len_str);
+    debug_assert!((format & DT_WORDBREAK) != 0);
+    debug_assert!(chars_fit < *len_str);
 
     p = str.add(chars_fit as usize);
     word_fits = 1;
@@ -715,7 +714,7 @@ unsafe fn TEXT_NextLineW(
             if before > (*pellip).before {
                 (*pellip).after = before - (*pellip).before - (*pellip).len;
             } else {
-                assert(((*pellip).under == 0 && (*pellip).after == 0) as i32);
+                debug_assert!((*pellip).under == 0 && (*pellip).after == 0);
                 (*pellip).before = before;
                 (*pellip).len = len_ellipsis;
             }

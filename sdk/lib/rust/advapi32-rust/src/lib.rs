@@ -67,10 +67,9 @@ macro_rules! widestring { ($s:literal) => { $crate::wide!($s) }; }
 
 // Foundation: the cohab import surface (NT base re-exports, security/RPC-client
 // types + consts, Win32 helpers). Body modules add `use crate::prelude::*;`.
-// Wine's ERR/FIXME/WARN/TRACE for the whole crate; `#[macro_use]` must precede the
-// modules that call them (macro_rules! is textually scoped).
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate.
 #[macro_use]
-mod winedebug;
+extern crate winedebug_rust;
 
 pub mod externs;
 pub mod prelude;

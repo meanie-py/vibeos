@@ -17,16 +17,6 @@ pub unsafe extern "C" fn KeGetCurrentPrcb() -> ntkrnl_sys::ddk::PKPRCB {
     ntkrnl_sys::inline::ke::KeGetCurrentPrcb()
 }
 
-// ---------------------------------------------------------------------------
-// TRACE_ / WARN_ / ERR_ — ReactOS debug.h macros → __noop in retail builds
-// (no real symbol). cdecl stubs so the rlib is self-contained.
-// ---------------------------------------------------------------------------
-#[no_mangle]
-pub unsafe extern "C" fn TRACE_(_component: u32, _fmt: *const core::ffi::c_char) {}
-#[no_mangle]
-pub unsafe extern "C" fn WARN_(_component: u32, _fmt: *const core::ffi::c_char) {}
-#[no_mangle]
-pub unsafe extern "C" fn ERR_(_component: u32, _fmt: *const core::ffi::c_char) {}
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

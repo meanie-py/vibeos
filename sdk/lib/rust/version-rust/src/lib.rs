@@ -4,15 +4,11 @@
 #[allow(unused_assignments)]
 #[allow(non_camel_case_types)]
 
-// Wine's TRACE/WARN/FIXME debug macros. In Wine these are C preprocessor macros that
-// compile away in release builds; the translation had made them no-op C-variadic fns,
-// which stable Rust cannot define (`c_variadic`, rust-lang#44930). As macros they keep
-// the original `TRACE!(...)` call syntax, still evaluate their arguments, cost nothing,
-// and need no C trampoline. Defined here (not below) because macro_rules! is visible
-// only AFTER its definition point.
-macro_rules! TRACE { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
-macro_rules! WARN  { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
-macro_rules! FIXME { ($($arg:expr),* $(,)?) => {{ $( let _ = &$arg; )* }}; }
+// Wine's ERR/FIXME/WARN/TRACE, shared by every Wine-derived crate. FIXME used to be a
+// local no-op here, but it is ON by default in Wine (libwine's default_flags), so every
+// "unsupported" path in this DLL was silent.
+#[macro_use]
+extern crate winedebug_rust;
 
 use core::ffi::c_void;
 
@@ -993,7 +989,7 @@ unsafe fn read_xx_header(lzfd: HFILE) -> i32 {
         return IMAGE_NT_SIGNATURE as i32;
     }
 
-    magic[2] = '\0' as i8;
+    // The C NUL-terminates `magic` here for this WARN only, which the build drops.
     WARN!("Can't handle %s files.\n\0".as_ptr() as *const i8, magic.as_ptr() as *const i8);
     return 0;
 }

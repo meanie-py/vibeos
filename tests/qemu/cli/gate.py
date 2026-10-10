@@ -65,7 +65,7 @@ import sys
 import time
 from pathlib import Path
 
-from . import archcfg, hostdisk, hostlock, lints
+from . import archcfg, canon, hostdisk, hostlock, lints
 from . import ladder as ladder_mod
 from .artifacts import Run, Stage, is_incomplete
 
@@ -995,14 +995,34 @@ def gate(args, repo: Path) -> int:
         or 1
     )
 
+    # check-tooling READS this worktree's build dirs: rustconv's tests resolve macros
+    # through build-<arch>/compile_commands.json and the generated headers. A build
+    # that must (re)configure from scratch deletes its build dir first (build.py
+    # _maybe_canonize), so tooling started beside it reads a tree with neither --
+    # 2026-10-09: test_deterministic_only failed MacroAuthorityError on a green
+    # master, the line auto-held red, and five lanes stalled. Only that case waits;
+    # an already-configured tree keeps the overlap.
+    tooling_waits = (
+        do_lint
+        and do_build
+        and any(not canon.is_canonical(repo / f"build-{a}") for a in build_order)
+    )
     with cf.ThreadPoolExecutor(max_workers=max_workers) as ex:
-        # check-tooling needs no build artifacts, so start it immediately — it
-        # overlaps the first build instead of adding wall-clock.
+        # check-tooling overlaps the builds -- unless one of them is about to recreate
+        # its build dir, in which case it is submitted once the builds settle (below).
         if do_lint:
             lfut[ex.submit(_lint_once, repo, "source-early", gate_root / "lint-source-early")] = (
                 "source-early"
             )
-            tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
+            if tooling_waits:
+                run.log(
+                    "check-tooling deferred until the builds finish: a fresh configure "
+                    "recreates build-<arch>/ (compile_commands.json, generated headers), "
+                    "which rustconv's tests read",
+                    header="tooling",
+                )
+            else:
+                tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
 
         difftest_ready: set[str] = set()
         difftest_dependencies = {"i386", "amd64"} & set(build_order)
@@ -1142,6 +1162,8 @@ def gate(args, repo: Path) -> int:
                     )
                     if kind and not run.classification:
                         run.classification = kind
+            if tooling_waits:
+                tfut[ex.submit(_tooling_once, repo, gate_root / "tooling")] = "tooling"
             built = {
                 s.name.split(":", 1)[1]
                 for s in run.stages

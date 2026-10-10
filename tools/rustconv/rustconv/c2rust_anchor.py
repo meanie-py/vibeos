@@ -392,6 +392,32 @@ def _c2rust_reason(stderr: str, stdout: str) -> str:
     return tail[0].strip()[:300] if tail else "(no output — c2rust said nothing)"
 
 
+#: cache key -> the build dir whose compile db actually produced the text. A transpile asked
+#: for one arch may come from ANOTHER arch's db (c2rust panics on i386's WINAPI attribute);
+#: that is a fine anchor for one translation and no evidence at all for an arch comparison.
+_TRANSPILE_ORIGIN: dict[tuple[str, float], str] = {}
+
+#: A width that is the pointer's on a 64-bit target: c2rust spells `size_t` this way. With an
+#: arch missing from a comparison, an item carrying one cannot be called arch-independent.
+_WIDTH_RE = re.compile(r"\b(?:c_ulonglong|c_longlong|u64|i64|usize|isize)\b")
+
+
+def _native_text(c_file: Path, arch: str) -> str | None:
+    """c2rust's text for `arch` from `arch`'s OWN compile db, else None.
+
+    The cross-arch agreement checks compare arches; a fallback transpile made i386's "text"
+    amd64's, so amd64 agreed with itself -- notepad's `wcslen` came back returning
+    `c_ulonglong` on i386 and its size_t was redefined at amd64's width."""
+    from .macro_authority import flags_source
+
+    text = _transpile_text(c_file, verbose=False, arch=arch)
+    if text is None:
+        return None
+    src = flags_source(c_file)
+    key = (f"{src.resolve()}:{arch}", src.stat().st_mtime)
+    return text if _TRANSPILE_ORIGIN.get(key) == f"build-{arch}" else None
+
+
 def _transpile_text(
     c_file: Path,
     timeout: int = 180,
@@ -462,6 +488,7 @@ def _transpile_text(
                     file=sys.stderr,
                 )
             _TRANSPILE_CACHE[key] = result
+            _TRANSPILE_ORIGIN[key] = build_dir.name
             return result
     _TRANSPILE_CACHE[key] = None
     _fail(
@@ -1004,7 +1031,7 @@ def local_types(
         return {}, {}
     per_arch: dict[str, dict[str, str]] = {}
     for arch in arches:
-        text = _transpile_text(c_file, verbose=False, arch=arch)
+        text = _native_text(c_file, arch)
         if text is None:
             continue
         items = _type_items(text)
@@ -1023,8 +1050,13 @@ def local_types(
     differs: dict[str, str] = {}
     for name in sorted(set().union(*(p.keys() for p in per_arch.values())) if per_arch else ()):
         texts = {a: p[name] for a, p in per_arch.items() if name in p}
-        if len(set(texts.values())) == 1 and len(texts) == len(per_arch):
-            agreed[name] = next(iter(texts.values()))
+        one = next(iter(texts.values()))
+        if (
+            len(set(texts.values())) == 1
+            and len(texts) == len(per_arch)
+            and (len(per_arch) == len(arches) or not _WIDTH_RE.search(one))
+        ):
+            agreed[name] = one
         else:
             differs[name] = "\0".join(f"{a}:{t}" for a, t in sorted(texts.items()))
     return agreed, differs
@@ -1051,7 +1083,7 @@ def anonymous_types(
     """
     per_arch: list[dict[str, str]] = []
     for arch in arches:
-        text = _transpile_text(c_file, verbose=False, arch=arch)
+        text = _native_text(c_file, arch)
         if text is None:
             return {}, {n: f"{arch}: no c2rust output" for n in fields}
         per_arch.append({k: v for k, v in _type_items(text).items() if _ANON_TYPE_RE.fullmatch(k)})
@@ -1087,7 +1119,7 @@ def definition_signatures(
     """
     per_arch: dict[str, dict[str, str]] = {}
     for arch in arches:
-        text = _transpile_text(c_file, verbose=False, arch=arch)
+        text = _native_text(c_file, arch)
         if text is None:
             continue
         found: dict[str, str] = {}
@@ -1120,7 +1152,7 @@ def extern_signatures(
     """
     per_arch: dict[str, dict[str, str]] = {}
     for arch in arches:
-        text = _transpile_text(c_file, verbose=False, arch=arch)
+        text = _native_text(c_file, arch)
         if text is None:
             continue
         found: dict[str, str] = {}
@@ -1137,5 +1169,7 @@ def extern_signatures(
     for name in names:
         texts = {p.get(name) for p in per_arch.values()}
         if len(texts) == 1 and None not in texts and per_arch:
-            out[name] = texts.pop()  # type: ignore[assignment]
+            sig = texts.pop()
+            if len(per_arch) == len(arches) or not _WIDTH_RE.search(sig or ""):
+                out[name] = sig  # type: ignore[assignment]
     return out

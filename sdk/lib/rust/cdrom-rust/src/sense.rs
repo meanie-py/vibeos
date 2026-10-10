@@ -13,8 +13,6 @@ use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations as BusRelations;
 use core::ffi::c_void;
 use core::ptr;
 
-extern "C" {
-}
 extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
@@ -37,8 +35,6 @@ extern "system" {
 unsafe extern "C" {
     fn SRB_STATUS(status: u8) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
-}
-unsafe extern "C" {
 }
 unsafe extern "C" {
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;
@@ -566,7 +562,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 b"SenseInfoInterpretByAdditionalSenseCode: Lun not ready\n\0".as_ptr() as *const i8,
             );
 
-            let mut need = 1; // TRUE
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_OPERATION_IN_PROGRESS => {
                     let mut not_ready: DEVICE_EVENT_BECOMING_READY = core::mem::zeroed();
@@ -715,7 +711,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0 // FALSE
         }
         SCSI_ADSENSE_INVALID_MEDIA => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_UNKNOWN_FORMAT => {
                     need = 0;
@@ -748,7 +744,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_NO_SEEK_COMPLETE => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 0x00 => {
                     need = 0;
@@ -766,7 +762,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             need
         }
         SCSI_ADSENSE_LUN_COMMUNICATION => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SESNEQ_COMM_CRC_ERROR => {
                     need = 0;
@@ -915,7 +911,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0
         }
         SCSI_ADSENSE_OPERATOR_REQUEST => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 SCSI_SENSEQ_MEDIUM_REMOVAL => {
                     need = 0;
@@ -1011,7 +1007,6 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
                 [0u8; core::mem::size_of::<u32>() + core::mem::size_of::<u8>()];
 
             (wmi_event_data.as_mut_ptr() as *mut u32).write_unaligned(core::mem::size_of::<u8>() as u32);
-            wmi_event_data[core::mem::size_of::<u32>()] = additional_sense_code_qual;
 
             *status = STATUS_SUCCESS as i32;
             *retry = 0;
@@ -1032,7 +1027,7 @@ pub unsafe extern "C" fn SenseInfoInterpretByAdditionalSenseCode(
             0
         }
         0x57 => {
-            let mut need = 1;
+            let mut need;
             match additional_sense_code_qual {
                 0x00 => {
                     need = 0;

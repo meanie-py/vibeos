@@ -224,7 +224,7 @@ pub(crate) unsafe fn qsort_rs(
         let mut pc = a.add((n - 1) * es);
         let mut pd = pc;
         loop {
-            let mut r: i32 = 0;
+            let mut r: i32;
             while pb <= pc && {
                 r = cmp(pb as _, a as _);
                 r <= 0

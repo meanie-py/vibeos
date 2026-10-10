@@ -406,3 +406,28 @@ def test_a_large_immediate_with_objdumps_trailing_comment_is_read(monkeypatch):
     length regex on end-of-line skipped every large immediate -- and the &Location
     argument is always one, so five sites reported no source location at all."""
     assert _run(monkeypatch, FLEX) == [("_Victim@8", 1)]
+
+
+def test_the_corpus_is_found_in_ONE_walk_of_the_build_tree(tmp_path, monkeypatch):
+    """It was one full walk per crate -- 240 descents, most of a cached run's time."""
+    for name in ("a", "b", "c"):
+        lib = tmp_path / "sdk" / name / f"lib{name}_rust.a"
+        lib.parent.mkdir(parents=True)
+        lib.write_bytes(b"")
+    walks: list[str] = []
+    real_walk = os.walk
+
+    def spy(top, *a, **kw):
+        walks.append(str(top))
+        yield from real_walk(top, *a, **kw)
+
+    monkeypatch.setattr(s.os, "walk", spy)
+    index = s.artifact_index(tmp_path)
+    found = [s.find_artifact(tmp_path, f"{n}-rust", index) for n in ("a", "b", "c", "zz")]
+    assert [p.name if p else None for p in found] == [
+        "liba_rust.a",
+        "libb_rust.a",
+        "libc_rust.a",
+        None,
+    ]
+    assert walks == [str(tmp_path)]

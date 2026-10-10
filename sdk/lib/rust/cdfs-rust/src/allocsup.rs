@@ -78,7 +78,6 @@ extern "C" {
 #[inline(always)] unsafe fn ASSERT_IRP_CONTEXT(_p: *const IRP_CONTEXT) {}
 #[inline(always)] unsafe fn ASSERT_FCB(_p: *const FCB) {}
 #[inline(always)] unsafe fn ASSERT_LOCKED_FCB(_p: *const FCB) {}
-#[inline(always)] fn UNREFERENCED_PARAMETER<T>(_p: T) {}
 
 // ---- cdfs private fn-macro inlines (cdprocs.h) ----
 //   __bindgen_anon_1 = { FSRTL_ADVANCED_FCB_HEADER Header; ... } — holds NodeTypeCode.
@@ -119,7 +118,7 @@ pub unsafe extern "C" fn CdAddAllocationFromDirent(
     let NewMcbArray: *mut core::ffi::c_void;
     let McbEntry: *mut CD_MCB_ENTRY;
 
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
     ASSERT_LOCKED_FCB(Fcb);
@@ -225,7 +224,7 @@ pub unsafe extern "C" fn CdInitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
 
@@ -241,7 +240,7 @@ pub unsafe extern "C" fn CdUninitializeMcb(
     Fcb: *mut FCB,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext);
+    UNREFERENCED_PARAMETER!(IrpContext);
     ASSERT_IRP_CONTEXT(IrpContext);
     ASSERT_FCB(Fcb);
 
@@ -392,7 +391,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                     //
 
                     CdLockFcb(IrpContext, Fcb);
-                    UnlockFcb = true;
+                    *p_UnlockFcb = true;
 
                     McbEntryOffset = CdFindMcbEntry(IrpContext, Fcb, FileOffset);
 
@@ -420,7 +419,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                     }
 
                     CdUnlockFcb(IrpContext, Fcb);
-                    UnlockFcb = false;
+                    *p_UnlockFcb = false;
 
                     //
                     //  Initialize the search dirent structures.
@@ -476,7 +475,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                         //
 
                         CdLockFcb(IrpContext, Fcb);
-                        UnlockFcb = true;
+                        *p_UnlockFcb = true;
 
                         if CurrentMcbOffset >= (*Fcb).Mcb.CurrentEntryCount {
                             CdAddAllocationFromDirent(
@@ -489,7 +488,7 @@ pub unsafe extern "C" fn CdLookupAllocation(
                         }
 
                         CdUnlockFcb(IrpContext, Fcb);
-                        UnlockFcb = false;
+                        *p_UnlockFcb = false;
 
                         //
                         //  If this is the last dirent for the file then exit.

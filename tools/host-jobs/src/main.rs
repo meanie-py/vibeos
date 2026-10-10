@@ -179,6 +179,17 @@ fn positive(key: &str, default: usize) -> io::Result<usize> {
         Err(e) => Err(io::Error::other(e)),
     }
 }
+/// Like `positive`, but 0 is a value: `VIBEOS_HOST_JOB_LAND_RESERVE=0` disables
+/// the landing reserve, the same as `VIBEOS_LAND_BOOT_RESERVE=0` for boots.
+fn non_negative(key: &str, default: usize) -> io::Result<usize> {
+    match env::var(key) {
+        Ok(s) => s
+            .parse::<usize>()
+            .map_err(|_| io::Error::other(format!("{key} must be a non-negative integer"))),
+        Err(env::VarError::NotPresent) => Ok(default),
+        Err(e) => Err(io::Error::other(e)),
+    }
+}
 fn quote(s: &str) -> String {
     let mut out = String::from("\"");
     for c in s.chars() {
@@ -292,16 +303,9 @@ impl Broker {
     fn ticket(&self, kind: &str, args: &[std::ffi::OsString]) -> io::Result<Ticket> {
         let _guard = self.mutex()?;
         let class = env::var("VIBEOS_JOB_CLASS").unwrap_or_else(|_| "interactive".into());
-        let rank = match class.as_str() {
-            "interactive" => 0,
-            "integration" => 1,
-            "background" => 2,
-            _ => {
-                return Err(io::Error::other(
-                    "VIBEOS_JOB_CLASS must be interactive, integration, or background",
-                ))
-            }
-        };
+        let rank = rank_of(&class).ok_or_else(|| {
+            io::Error::other("VIBEOS_JOB_CLASS must be interactive, integration, or background")
+        })?;
         let born = now();
         let pid = std::process::id();
         let path = self
@@ -428,6 +432,20 @@ impl Broker {
                 held += 1;
             }
         }
+        // A landing gate (job_class=integration) is the fleet's critical path: every
+        // queued lane waits on it, while a lane's own build only serves that lane's
+        // NEXT submission. While any integration job is present, non-landing jobs may
+        // hold at most `cpu_limit - reserve` slots between them, the same way the boot
+        // pool keeps half its permits for landing. With no gate running, lanes use every
+        // slot. A COUNT, not an index range: the first version fenced lanes into the low
+        // slot NUMBERS, so landing jobs sitting in those numbers left lanes no slot while
+        // the high ones idled (and deadlocked test_runner_process_contracts in the gate).
+        let land_present = rows.iter().any(|r| is_landing(&r.4));
+        let mut active_lanes = rows
+            .iter()
+            .filter(|r| occupied(&r.4) && !is_landing(&r.4))
+            .count();
+        let reserve = non_negative("VIBEOS_HOST_JOB_LAND_RESERVE", self.slots / 2)?;
         rows.sort_by_key(|r| (effective_rank(r.2, r.1, now()), r.1, r.0.clone()));
         for (path, _, _, kind, body) in rows {
             if !body.contains("\"state\":\"waiting\"") {
@@ -437,6 +455,10 @@ impl Broker {
                 number(&body, "cpu_limit").unwrap_or(self.slots) * (leases - held) / leases;
             let link_limit = number(&body, "link_limit").unwrap_or(self.links);
             if active_cpu >= cpu_limit || (kind == "link" && active_links >= link_limit) {
+                continue;
+            }
+            let landing = is_landing(&body);
+            if !may_start(active_lanes, cpu_limit, reserve, landing, land_present) {
                 continue;
             }
             let Some(cpu_pos) = cpus.iter().position(|i| *i < cpu_limit) else {
@@ -464,6 +486,9 @@ impl Broker {
             grant.push('}');
             fs::write(path, grant)?;
             active_cpu += 1;
+            if !landing {
+                active_lanes += 1;
+            }
         }
         self.wakeup
             .state()
@@ -537,6 +562,39 @@ fn number(body: &str, key: &str) -> Option<usize> {
         .next()?
         .parse()
         .ok()
+}
+/// Dispatch order by job class. A landing gate (integration) ranks FIRST: it is
+/// the merge queue's serialized critical path, and every queued lane waits on it,
+/// while an interactive build only serves its own lane's next submission. The
+/// reverse order (interactive first, 2026-07..10) stretched gates from ~530s to
+/// 1500-2100s whenever a few lanes were building, which the queue then paid per
+/// landing. Aging (`effective_rank`) still promotes every class after 120s, so
+/// a lane is delayed by a gate, never starved by one.
+fn rank_of(class: &str) -> Option<u8> {
+    match class {
+        "integration" => Some(0),
+        "interactive" => Some(1),
+        "background" => Some(2),
+        _ => None,
+    }
+}
+fn is_landing(body: &str) -> bool {
+    body.contains("\"job_class\":\"integration\"")
+}
+/// May a job start now? A landing job always may (the slot count is checked by the
+/// caller). While a landing job is present, non-landing jobs share at most
+/// `cpu_limit - reserve` slots; lanes already over that simply finish. The reserve
+/// never takes a lane's last slot, as the boot pool's land_boot_reserve does, so a
+/// gate delays a lane without ever stopping it.
+fn may_start(
+    active_lanes: usize,
+    cpu_limit: usize,
+    reserve: usize,
+    landing: bool,
+    land_present: bool,
+) -> bool {
+    let reserve = reserve.min(cpu_limit.saturating_sub(1));
+    landing || !land_present || active_lanes < cpu_limit - reserve
 }
 fn effective_rank(rank: u8, born: u64, current: u64) -> u8 {
     if current.saturating_sub(born) >= 120_000 {
@@ -689,6 +747,32 @@ mod tests {
     fn aging() {
         assert_eq!(effective_rank(2, 0, 119999), 2);
         assert_eq!(effective_rank(2, 0, 120000), 0);
+    }
+    #[test]
+    fn landing_ranks_first_and_unknown_classes_are_refused() {
+        assert_eq!(rank_of("integration"), Some(0));
+        assert_eq!(rank_of("interactive"), Some(1));
+        assert_eq!(rank_of("background"), Some(2));
+        assert_eq!(rank_of("urgent"), None);
+    }
+    #[test]
+    fn lanes_share_a_count_of_slots_while_a_gate_is_present() {
+        // 18 slots, 9 reserved: lanes may hold 9 between them while a gate is present.
+        assert!(may_start(8, 18, 9, false, true));
+        assert!(!may_start(9, 18, 9, false, true));
+        // A gate job is never held back by the lane count.
+        assert!(may_start(17, 18, 9, true, true));
+        // No gate present: lanes use every slot.
+        assert!(may_start(17, 18, 9, false, false));
+        // No reserve takes a lane's LAST slot.
+        assert!(may_start(0, 18, 40, false, true));
+        assert!(!may_start(1, 18, 40, false, true));
+        // Two slots, one reserved, gate jobs holding BOTH and one finishing: the lane
+        // gets the freed slot whichever number it is (the index-range version did not).
+        assert!(may_start(0, 2, 1, false, true));
+        // A one-slot broker and a reserve of 0 both mean "no reserve".
+        assert!(may_start(0, 1, 0, false, true));
+        assert!(may_start(17, 18, 0, false, true));
     }
     #[test]
     fn json() {

@@ -23,7 +23,7 @@ pub unsafe extern "system" fn AfdGetContext(
     let FCB: PAFD_FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut ContextSize: UINT = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -60,7 +60,7 @@ pub unsafe extern "system" fn AfdGetContextSize(
     let FileObject = (*IrpSp).FileObject;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -91,7 +91,7 @@ pub unsafe extern "system" fn AfdSetContext(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let Context = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);

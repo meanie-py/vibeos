@@ -2867,7 +2867,7 @@ pub unsafe extern "system" fn VarAnd(left: LPVARIANT, right: LPVARIANT, result: 
         }
         _ => {
             FIXME!(b"Couldn't bitwise AND variant types %d,%d\n\0".as_ptr() as *const i8,
-                leftvt, rightvt);
+                leftvt as core::ffi::c_uint, rightvt as core::ffi::c_uint);
         }
     }
 
@@ -3194,7 +3194,7 @@ pub unsafe extern "system" fn VarAdd(mut left: LPVARIANT, mut right: LPVARIANT, 
             (*V_R8_ref(&mut tv)) = (*V_R8_ref(&mut lv)) + (*V_R8_ref(&mut rv));
         }
         _ => {
-            ERR!(b"We shouldn't get here! tvt = %d!\n\0".as_ptr() as *const i8, tvt);
+            ERR!(b"We shouldn't get here! tvt = %d!\n\0".as_ptr() as *const i8, tvt as core::ffi::c_uint);
         }
     }
     if resvt != tvt {
@@ -3383,7 +3383,7 @@ pub unsafe extern "system" fn VarMul(left: LPVARIANT, right: LPVARIANT, result: 
                 (*V_R8_ref(&mut tv)) = (*V_R8_ref(&mut lv)) * (*V_R8_ref(&mut rv));
             }
             _ => {
-                ERR!(b"We shouldn't get here! tvt = %d!\n\0".as_ptr() as *const i8, tvt);
+                ERR!(b"We shouldn't get here! tvt = %d!\n\0".as_ptr() as *const i8, tvt as core::ffi::c_uint);
             }
         }
 
@@ -5218,7 +5218,7 @@ pub unsafe extern "system" fn VarRound(pVarIn: LPVARIANT, deci: i32, pVarOut: LP
 
         _ => {
             FIXME!(b"unimplemented part, (*V_VT_ref(pVarIn)) == 0x%X, deci == %d\n\0".as_ptr() as *const i8,
-                  (*V_VT_ref(pVarIn)) & VT_TYPEMASK, deci);
+                  ((*V_VT_ref(pVarIn)) & VT_TYPEMASK) as core::ffi::c_uint, deci);
             hRet = DISP_E_BADVARTYPE;
         }
     }
@@ -5346,7 +5346,7 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
                 }
             }
             _ => {
-                FIXME!(b"Couldn't integer divide variant types %d,%d\n\0".as_ptr() as *const i8, leftvt, rightvt);
+                FIXME!(b"Couldn't integer divide variant types %d,%d\n\0".as_ptr() as *const i8, leftvt as core::ffi::c_uint, rightvt as core::ffi::c_uint);
             }
         }
 
@@ -5363,7 +5363,7 @@ pub unsafe extern "system" fn VarIdiv(left: LPVARIANT, right: LPVARIANT, result:
 
 #[no_mangle]
 pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: LPVARIANT) -> HRESULT {
-    let mut lOk: BOOL = 1;
+    let lOk: BOOL;
     let mut rc: HRESULT;
     let resT: i32;
     let mut lv: VARIANT = core::mem::zeroed();
@@ -5539,13 +5539,13 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
 
         rc = VariantChangeType(&mut lv, left_ptr, 0, VT_I8);
         if FAILED(rc) {
-            FIXME!(b"Could not convert left type %d to %d? rc == 0x%X\n\0".as_ptr() as *const i8, (*V_VT_ref(left_ptr)), VT_I8, rc);
+            FIXME!(b"Could not convert left type %d to %d? rc == 0x%X\n\0".as_ptr() as *const i8, (*V_VT_ref(left_ptr)) as core::ffi::c_uint, VT_I8 as core::ffi::c_uint, rc);
             break 'end;
         }
 
         rc = VariantChangeType(&mut rv, right_ptr, 0, VT_I8);
         if FAILED(rc) {
-            FIXME!(b"Could not convert right type %d to %d? rc == 0x%X\n\0".as_ptr() as *const i8, (*V_VT_ref(right_ptr)), VT_I8, rc);
+            FIXME!(b"Could not convert right type %d to %d? rc == 0x%X\n\0".as_ptr() as *const i8, (*V_VT_ref(right_ptr)) as core::ffi::c_uint, VT_I8 as core::ffi::c_uint, rc);
             break 'end;
         }
 
@@ -5564,7 +5564,7 @@ pub unsafe extern "system" fn VarMod(left: LPVARIANT, right: LPVARIANT, result: 
 
         rc = VariantChangeType(result, result, 0, resT as u16);
         if FAILED(rc) {
-            FIXME!(b"Could not convert 0x%x to %d?\n\0".as_ptr() as *const i8, (*V_VT_ref(result)), resT);
+            FIXME!(b"Could not convert 0x%x to %d?\n\0".as_ptr() as *const i8, (*V_VT_ref(result)) as core::ffi::c_uint, resT);
         }
     }
 
@@ -5904,7 +5904,7 @@ pub unsafe extern "system" fn VarImp(left: LPVARIANT, right: LPVARIANT, result: 
             (*V_BOOL_ref(result)) = (!(*V_BOOL_ref(&mut lv))) | (*V_BOOL_ref(&mut rv));
         }
         _ => {
-            FIXME!(b"Couldn't perform bitwise implication on variant types %d,%d\n\0".as_ptr() as *const i8, leftvt, rightvt);
+            FIXME!(b"Couldn't perform bitwise implication on variant types %d,%d\n\0".as_ptr() as *const i8, leftvt as core::ffi::c_uint, rightvt as core::ffi::c_uint);
         }
     }
 

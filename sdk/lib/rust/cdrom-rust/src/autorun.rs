@@ -54,9 +54,6 @@ extern "system" {
     fn PoRegisterPowerSettingCallback( DeviceObject: *mut core::ffi::c_void, SettingGuid: *const core::ffi::c_void, Callback: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, Handle: *mut *mut core::ffi::c_void, ) -> NTSTATUS;
     fn WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE( attr: *mut WDF_OBJECT_ATTRIBUTES, context_type: *const core::ffi::c_void, );
 }
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize);
-}
 
 // These two are cdecl, NOT stdcall — they were mis-declared in the `extern "system"` block
 // above, while their DEFINITIONS (common.rs / pnppower.rs) are `extern "C"` and cdrom.h
@@ -2069,7 +2066,7 @@ pub unsafe extern "C" fn DeviceIsMediaChangeDisabledDueToHardwareLimitation(
                 &raw const device_unicode_string as *mut core::ffi::c_void,
                 core::ptr::null_mut(),
             );
-            UNREFERENCED_PARAMETER((status) as usize);
+            UNREFERENCED_PARAMETER!((status) as usize);
         }
     }
 
@@ -2359,8 +2356,8 @@ pub unsafe extern "system" fn RequestMcnSyncIrpCompletion(
 ) -> i32 {
     const STATUS_MORE_PROCESSING_REQUIRED: i32 = 0xC0000016u32 as i32;
 
-    let mut device_extension: *mut CDROM_DEVICE_EXTENSION = core::ptr::null_mut();
-    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO = core::ptr::null_mut();
+    let mut device_extension: *mut CDROM_DEVICE_EXTENSION;
+    let mut info: *mut MEDIA_CHANGE_DETECTION_INFO;
 
     if Context.is_null() {
         return STATUS_MORE_PROCESSING_REQUIRED;

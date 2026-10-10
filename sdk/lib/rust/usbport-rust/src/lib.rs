@@ -10,6 +10,11 @@
 //! The miniport substrate ehci/ohci/uhci register WITH; owns URB queue, endpoint/transfer
 //! state, PnP FDO/PDO, roothub PDO, USB2 bandwidth scheduler. Exports USBPORT_GetHciMn /
 //! USBPORT_RegisterUSBPortDriver (usbport.spec). NOT boot-loaded in smoke -> link-clean x3 bar.
+// ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
+// evaluated in release -- the kernel's convention. It was an empty fn here, which
+// never checked yet still evaluated its argument on every call.
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 // Fold-proof DPRINT/TRACE shims — see drvtrace-shim/src/lib.rs (§9.99).
 #[macro_use]
 extern crate drvtrace_shim;

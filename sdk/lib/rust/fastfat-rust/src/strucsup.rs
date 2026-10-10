@@ -50,7 +50,6 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
 extern "system" {
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
-    fn UNREFERENCED_PARAMETER(_: *const core::ffi::c_void);
     fn NT_ASSERT(cond: i32);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
@@ -1703,7 +1702,7 @@ pub unsafe extern "system" fn FatGetNextFcbBottomUp(
     let mut NextFcb: *mut FCB = core::ptr::null_mut();
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     NT_ASSERT(
         ((FatVcbAcquiredExclusive(IrpContext, (*TerminationFcb).Vcb) != 0)
@@ -1738,7 +1737,7 @@ pub unsafe extern "system" fn FatGetNextFcbTopDown(
     TerminationFcb: *mut FCB,
 ) -> *mut FCB {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *const core::ffi::c_void);
 
     let valid = if FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) != 0
         || FlagOn((*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_LOCKED) != 0
@@ -2149,7 +2148,6 @@ pub unsafe extern "system" fn FatCheckFreeDirentBitmap(
 ) {
     // Gap function declarations
     unsafe extern "system" {
-        fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
         fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
         fn FatReleaseDirectoryFileMutex(Vcb: *mut VCB);
         // External constants

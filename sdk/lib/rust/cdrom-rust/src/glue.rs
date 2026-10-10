@@ -9,9 +9,6 @@
 #[no_mangle]
 pub extern "system" fn NT_ASSERT(_expr: i32) {}
 
-#[no_mangle]
-pub extern "C" fn UNREFERENCED_PARAMETER(_x: usize) {}
-
 // SAL static-analysis annotation — no-op in compiled builds.
 #[no_mangle]
 pub extern "C" fn _Analysis_assume_(_cond: i32) {}

@@ -1425,7 +1425,9 @@ pub struct IShellFolderViewCBVtbl {
 
 // ── Small header macros / inlines reimplemented locally ──────────────────────────────────
 #[inline] fn max<T: PartialOrd>(a: T, b: T) -> T { if a >= b { a } else { b } }
-#[inline] fn assert(_cond: bool) {}
+// C `assert` (live under DBG) is debug_assert! -- the kernel's ASSERT convention:
+// checked in a debug build, never evaluated in release. It was an empty fn, which
+// never checked yet evaluated its argument on every call.
 #[inline] fn MAKEINTRESOURCEW(id: UINT) -> LPCWSTR { (id & 0xffff) as usize as LPCWSTR }
 #[inline] fn MAKE_HRESULT(sev: u32, fac: u32, code: u32) -> HRESULT { ((sev << 31) | (fac << 16) | code) as HRESULT }
 // shellutils.h:678  ((x)>0 ? S_GREATERTHAN(=S_FALSE) : (x)<0 ? S_LESSTHAN(=0xffff) : S_EQUAL(=S_OK))
@@ -2001,7 +2003,7 @@ pub unsafe fn CRecycleBin_GetUIObjectOf_body(this: *mut CRecycleBin, hwndOwner: 
     *ppv = core::ptr::null_mut();
 
     // assert(!cidl || (apidl && apidl[0]));
-    assert(
+    debug_assert!(
         (cidl == 0)
             || (!apidl.is_null() && !(*apidl).is_null()),
     );

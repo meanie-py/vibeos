@@ -10,55 +10,13 @@ pub type size_t = usize;
 pub use core::ptr::{addr_of, addr_of_mut};
 
 // ================= debug ======================================================================
-// wine/debug.h's TRACE/ERR/WARN/FIXME, as advapi32/kernel32's winedebug.rs spell them. ERR and
-// FIXME are ON by default (libwine's default_flags), so they print; WARN and TRACE are off
-// unless DEBUGCHANNEL opens the channel, so silence is the faithful default for those two.
-// Always macros, never out-of-line no-op fns (field manual §9.65).
+// wine/debug.h's TRACE/ERR/WARN/FIXME are the shared winedebug-rust ones (re-exported below).
+// `DbgPrint` stays declared here for the hand-ported TRACE_ON/debugstr helpers.
 extern "C" {
     /// ntdll's `DbgPrint` -- the serial sink `wine_dbg_log` ends up in anyway.
     pub fn DbgPrint(Format: *const c_char, ...) -> u32;
 }
-#[macro_export]
-macro_rules! ERR {
-    ($fmt:literal $(, $arg:expr)* $(,)?) => {
-        unsafe {
-            $crate::prelude::DbgPrint(
-                concat!("err:(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
-                $(, $arg)*,
-            )
-        }
-    };
-    // A format the translation already made a C pointer (`b"..\0".as_ptr()`).
-    ($fmt:expr $(, $arg:expr)* $(,)?) => {
-        unsafe {
-            $crate::prelude::DbgPrint(concat!("err:(", file!(), ":", line!(), ") \0").as_ptr() as *const _);
-            $crate::prelude::DbgPrint($fmt as *const _ $(, $arg)*)
-        }
-    };
-}
-#[macro_export]
-macro_rules! FIXME {
-    ($fmt:literal $(, $arg:expr)* $(,)?) => {
-        unsafe {
-            $crate::prelude::DbgPrint(
-                concat!("fixme:(", file!(), ":", line!(), ") ", $fmt, "\0").as_ptr() as *const _
-                $(, $arg)*,
-            )
-        }
-    };
-    // A format the translation already made a C pointer (`b"..\0".as_ptr()`).
-    ($fmt:expr $(, $arg:expr)* $(,)?) => {
-        unsafe {
-            $crate::prelude::DbgPrint(concat!("fixme:(", file!(), ":", line!(), ") \0").as_ptr() as *const _);
-            $crate::prelude::DbgPrint($fmt as *const _ $(, $arg)*)
-        }
-    };
-}
-// nolint: scan_dropped_prints (channel off by default -- see above)
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-// nolint: scan_dropped_prints (channel off by default -- see above)
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-pub use crate::{ERR, FIXME, TRACE, WARN};
+pub use winedebug_rust::{ERR, FIXME, TRACE, WARN};
 
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into

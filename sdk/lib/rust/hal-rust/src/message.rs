@@ -181,17 +181,19 @@ pub unsafe extern "system" fn HalVibeosMessageCapacity() -> ULONG {
 
 /// pci.sys, starting a device and before it turns on bus mastering: make the
 /// device's DMA reach memory. Behind a translating SMMU (arm64, `SMMU=TRANSLATE`)
-/// that is its stream table entry; everywhere else there is nothing to do. FALSE
+/// that is its stream table entry; everywhere else there is nothing to do.
+/// `Strict`: its driver is DMA-remapping compatible (maps every buffer through its
+/// DMA adapter), so it can have a domain of its own that reaches only those. FALSE
 /// when the device's DMA will not work.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn HalVibeosDmaAttach(RequesterId: ULONG) -> BOOLEAN {
+pub unsafe extern "system" fn HalVibeosDmaAttach(RequesterId: ULONG, Strict: BOOLEAN) -> BOOLEAN {
     #[cfg(target_arch = "aarch64")]
     {
-        unsafe { crate::arm64::smmuv3::attach(RequesterId) as BOOLEAN }
+        unsafe { crate::arm64::smmuv3::attach(RequesterId, Strict != 0) as BOOLEAN }
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        let _ = RequesterId;
+        let _ = (RequesterId, Strict);
         1
     }
 }

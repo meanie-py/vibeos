@@ -175,6 +175,12 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
 
     ATA_SELECT_DEVICE(ChanData, 0, (IDE_DRIVE_SELECT) as UCHAR);
 
+    WARN!(
+        b"CH %lu: Resetting IDE channel, devices map 0x%lx\n\0".as_ptr() as *const i8,
+        (*ChanData).__bindgen_anon_1.Channel,
+        DeviceBitmap,
+    );
+
     PataIssueSoftwareReset(ChanData);
 
     DeviceNumber = 0;
@@ -206,6 +212,12 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
                 i = i.wrapping_sub(1);
             }
             if i == 0 {
+                ERR!(
+                    b"CH %lu: Device %lu selection timeout %02x\n\0".as_ptr() as *const i8,
+                    (*ChanData).__bindgen_anon_1.Channel,
+                    DeviceNumber,
+                    (*ChanData).ReadStatus.unwrap_unchecked()(ChanData) as u32,
+                );
                 DeviceNumber = DeviceNumber.wrapping_add(1);
                 continue;
             }
@@ -227,6 +239,12 @@ pub unsafe extern "C" fn PataResetChannel(ChannelContext: PVOID) {
         }
 
         if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
+            ERR!(
+                b"CH %lu: Failed to reset device %lu, status %02x\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                DeviceNumber,
+                IdeStatus as u32,
+            );
         } else {
             INFO!(
                 b"CH %lu: Device %lu online with status %02x\n\0".as_ptr() as *const i8,
@@ -257,6 +275,12 @@ pub unsafe extern "C" fn PataIdentifyDevice(ChannelContext: PVOID, DeviceNumber:
         0,
     );
     if (IdeStatus as u32) & (IDE_STATUS_BUSY | IDE_STATUS_DRQ) != 0 {
+        WARN!(
+            b"CH %lu: Device %lu is busy %02x\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            DeviceNumber,
+            IdeStatus as u32,
+        );
         return ((CONN_STATUS_FAILURE)) as ATA_CONNECTION_STATUS;
     }
 
