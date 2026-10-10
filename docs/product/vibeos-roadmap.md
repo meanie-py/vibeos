@@ -619,11 +619,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
   on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
   i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
-  **i386 still boots the CD:** on the writable root it bugchecks, differently per run: 0x1A
-  in `MmDeleteRmap` (a system-space view unmapping a page its segment does not record, under
-  win32k's font load), and 0x23 -> 0xA in fastfat during `NtFlushBuffersFile`. Nothing else
-  in the fleet writes a FAT volume on i386, so expect more than one bug. Repro:
-  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; then add i386 to
+  **i386 still boots the CD.** Its writable-root boot found two loader bugs, fixed
+  2026-10-10: (1) any i386 UEFI boot with >= 1G RAM sized the kernel's boot image from the
+  firmware's top-of-RAM regions, so the reservation covered session space and the 0x1A in
+  `MmDeleteRmap` followed (it hit the CD boot at 1G too); (2) the 300MB ramdisk, loaded
+  bottom-up, pushed the boot drivers above it (456MB boot image, 0x7F). Field manual: "x86
+  UEFI boot bring-up", item 4. **Still open:** with those fixed, the writable root dies in
+  a different place each run: 0x23 -> 0xA in fastfat's `NtFlushBuffersFile`
+  (`FatExceptionFilter` with no IrpContext, then `FatProcessException` reading NULL+0x14),
+  or 0x50 at an unmapped kernel address. That looks like corruption rather than one bad
+  path; nothing else in the fleet writes a FAT volume on i386. A diagnostic in
+  `FatExceptionFilter` prints the exception code and PC. Repro:
+  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; once it sweeps, add i386 to
   `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**

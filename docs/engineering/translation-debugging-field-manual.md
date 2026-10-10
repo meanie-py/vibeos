@@ -14292,6 +14292,21 @@ Three gotchas latent in the C, which surface only once you actually boot UEFI:
 2. **Synthetic ACPI 2.0 RSDP is required**, else no PS/2 input. Tell: zero `[[I8K]]` lines and
    `Tables: [XSDT]` (vs BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.
 3. **freeldr-loaded DLLs must not use raw-dylib** (see the cohab section).
+4. **i386 UEFI with >= 1G RAM: the kernel's boot-image reservation swallows session space.**
+   Symptom: BUGCHECK 0x1A in `MmDeleteRmap` ("mapping-not-in-list", Process NULL) when a
+   ROS system view is unmapped, here win32k's font view at `0xbf7f0000`; at 512M nothing
+   happens, which is why only a bigger guest found it. Cause: `uefimem.rs` counted the
+   firmware's own `LoaderLoadedProgram` regions, which OVMF keeps at the top of RAM, into
+   `LoaderPagesSpanned`. The kernel sizes `MmBootImageSize` from that span, so a 1G guest
+   got 0x3F400000 and a KSEG0 reservation running to `0xBF400000`. That covered the
+   system-view and session reservations, so the ROS gap finder handed out session VAs that
+   ARM3 already had mapped. Fix (i386 only): leave identity-only types out of the span, and
+   let `MempSetupPagingForRegion` map them without the span gate. 1G CD boot: 0x3F400000 ->
+   0x4400000, and the sweep completes. Related, same span: a 300MB ramdisk loaded bottom-up
+   pushed every boot driver above it (456MB boot image, 0x7F), so the i386 ramdisk now comes
+   from the top of memory and `LoaderXIPRom` stays out of the span (ramdisk.sys maps it
+   physically). Tool: the kernel VAD-tree dump in `MmMapViewOfSegment` (fires when a fresh
+   kernel view finds a present PTE) showed the oversized first node at once.
 
 **Recipe:** i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 = the system `OVMF_CODE_4M.fd`.
 **`-device ide-cd,drive=cd0,bootindex=0`** — a bare `-cdrom` drops to the UEFI shell. The

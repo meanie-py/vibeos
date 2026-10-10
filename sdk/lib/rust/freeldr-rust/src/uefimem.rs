@@ -232,7 +232,15 @@ pub unsafe extern "C" fn UefiMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREE
             }
         }
 
-        if MemoryType == LoaderLoadedProgram {
+        // DIVERGES from the C on i386: the firmware's own loader regions (OVMF keeps them at
+        // the top of RAM) are identity-mapped only, never placed in KSEG0, so they must not
+        // size the kernel's KSEG0 boot-image reservation. Counted, a 1G i386 guest got
+        // MmBootImageSize 0x3F400000, a reservation from 0x80000000 to 0xBF400000 covering
+        // the system-view and session ranges; the ROS gap finder then handed out session VAs
+        // ARM3 had mapped (BUGCHECK 0x1A in MmDeleteRmap; any i386 UEFI boot with >= 1G).
+        // MempSetupPagingForRegion maps identity-only types without the span gate, so they
+        // stay mapped. 64-bit KSEG0 has room, and keeps the C behaviour.
+        if MemoryType == LoaderLoadedProgram && !cfg!(target_arch = "x86") {
             if (((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT) > ((LoaderPagesSpanned) as u64) {
                 LoaderPagesSpanned = ((((*MapEntry).PhysicalStart + ((*MapEntry).NumberOfPages * PAGE_SIZE as u64)) >> EFI_PAGE_SHIFT)) as usize ;
             }

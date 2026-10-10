@@ -3239,6 +3239,56 @@ unsafe fn MmMapViewOfSegment(
         return Status;
     }
 
+    // Diagnostic (i386 writable-root boot, 0x1A in MmDeleteRmap): a fresh kernel-space
+    // view must start with no present PTEs. One that does inherited a stale mapping,
+    // and unmapping it later frees a page the segment never held.
+    {
+        extern "system" {
+            fn MmIsPagePresent(Process: PEPROCESS, Address: PVOID) -> BOOLEAN;
+            fn MmGetKernelAddressSpace() -> PVOID;
+        }
+        if AddressSpace == MmGetKernelAddressSpace() {
+            let base = MA_GetStartingAddress(MArea);
+            let mut off: ULONG_PTR = 0;
+            while off < ViewSize as ULONG_PTR {
+                let va = (base + off) as PVOID;
+                if MmIsPagePresent(core::ptr::null_mut(), va) != 0 {
+                    // Once: dump the ROS kernel VAD tree from the system view range up, to
+                    // see whether the session reservation is still in it.
+                    static DUMPED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+                    if !DUMPED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+                        extern "system" {
+                            fn MiGetNextNode(Node: ntkrnl_sys::ddk::PMMADDRESS_NODE) -> ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        }
+                        let root = core::ptr::addr_of_mut!(crate::mm::marea::MiRosKernelVadRoot);
+                        let mut n = (*root).BalancedRoot.RightChild as ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        while !n.is_null() && !(*n).LeftChild.is_null() {
+                            n = (*n).LeftChild as ntkrnl_sys::ddk::PMMADDRESS_NODE;
+                        }
+                        while !n.is_null() {
+                            if (*n).EndingVpn as ULONG_PTR >= 0xb9000 {
+                                mm_guard_trip!(
+                                    "section.kernel-vad-tree node", 64,
+                                    "StartVpn" => (*n).StartingVpn as ULONG_PTR,
+                                    "EndVpn" => (*n).EndingVpn as ULONG_PTR,
+                                    "Type" => (*(n as PMEMORY_AREA)).Type as ULONG_PTR,
+                                );
+                            }
+                            n = MiGetNextNode(n);
+                        }
+                    }
+                    mm_guard_trip!(
+                        "section.MmMapViewOfSegment stale-pte-in-new-kernel-view", 8,
+                        "Address" => va as ULONG_PTR,
+                        "ViewBase" => base,
+                        "ViewSize" => ViewSize as ULONG_PTR,
+                    );
+                }
+                off += PAGE_SIZE as ULONG_PTR;
+            }
+        }
+    }
+
     InterlockedIncrement64((*Segment).ReferenceCount as *mut i64);
 
     (*MArea).SectionData.Segment = Segment;

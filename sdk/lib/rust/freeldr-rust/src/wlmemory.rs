@@ -131,7 +131,13 @@ unsafe fn MempSetupPagingForRegion(
 
     TRACE(b"MempSetupPagingForRegion(BasePage=0x%lx, PageCount=0x%lx, Type=%ld)\n\0".as_ptr() as *const i8, (BasePage) as usize, (PageCount) as usize, (Type) as usize);
 
-    if BasePage + PageCount > MmGetLoaderPagesSpanned() { return; }
+    // The span sizes the KSEG0 boot image, so it gates the KSEG0-mapped types. On i386 the
+    // identity-only types are not counted in it (uefimem.rs: the firmware's loader regions
+    // sit at the top of RAM), so they must not be gated by it either.
+    let identity_only = matches!(Type, LoaderLoadedProgram | LoaderOsloaderStack | LoaderFirmwareTemporary);
+    if BasePage + PageCount > MmGetLoaderPagesSpanned() && !(cfg!(target_arch = "x86") && identity_only) {
+        return;
+    }
 
     match Type {
         LoaderLoadedProgram | LoaderOsloaderStack | LoaderFirmwareTemporary => {
