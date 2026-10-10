@@ -11975,6 +11975,19 @@ port of an upstream fix that missed half of it) — a livelock no smoke boot had
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
 
+### An object linked into a shared list before it is initialized
+**Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in
+win32k `ProcessTimers`, on the raw input thread, after the desktop is up.
+**Cause:** `CreateTimer` linked a zeroed TIMER into `TimersListHead` and `IntSetTimer` filled it
+in afterwards, both without `TimerLock`, while the RIT walks that list under `TimerLock` every
+10 ms. On one CPU the walker can never run inside that window. On two it can: if the creating
+vCPU stalls for two ticks, one pass drives the zeroed countdown negative and the next reads
+`pti->TIF_flags` with `pti == NULL`. Upstream ReactOS has the identical code.
+**Fix:** link only after every field is set, under the lock the walker holds. The tell on a live
+VM: walk the list and look for an entry whose fields are all still zero except the ones the
+walker writes. When a C "create" helper links the object it returns, check whether anything
+walks that list on another thread.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
