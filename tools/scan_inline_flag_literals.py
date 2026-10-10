@@ -223,7 +223,12 @@ def scan_file(path, catalog):
             # several (`VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT /* VK_X | KBDEXT */ }`,
             # c_data_port's keyboard tables), and pairing the scan code 0x10 with VK_X
             # raised 4108 false findings. The field starts after the last `,`/`{`/`(`/`;`.
-            field_start = max(src.rfind(sep, 0, c.start_byte) for sep in (b",", b"{", b"(", b";"))
+            # A comment alone under a block opener annotates that whole line instead.
+            field_start = (
+                -1
+                if cline != c.start_point[0]
+                else max(src.rfind(sep, 0, c.start_byte) for sep in (b",", b"{", b"(", b";"))
+            )
             row = sorted(
                 (
                     L
