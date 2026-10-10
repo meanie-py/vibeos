@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
  // imports STATUS_SUCCESS, etc. use ntkrnl_sys::driver_ddk::*; // imports IRP_MJ_* // Local variables, matching the C let mut thread_context: THREAD_CONTEXT = core::mem::zeroed();
@@ -51,7 +52,6 @@ extern "C" {
     fn CdSetThreadContext(IrpContext: *mut IRP_CONTEXT, ThreadContext: *mut THREAD_CONTEXT);
 }
 extern "C" {
-    fn NT_ASSERT(condition: BOOLEAN);
 }
 extern "C" {
     fn SetFlag(Flags: *mut u32, Mask: u32);
@@ -121,7 +121,7 @@ pub unsafe extern "system" fn CdFspDispatch(
                     match (*irp_context).MajorFunction {
                         IRP_MJ_CREATE => CdCommonCreate(irp_context, irp),
 
-                        IRP_MJ_CLOSE => NT_ASSERT(0 /* FALSE */),
+                        IRP_MJ_CLOSE => NT_ASSERT!(0 /* FALSE */),
 
                         IRP_MJ_READ => CdCommonRead(irp_context, irp),
 
@@ -142,7 +142,7 @@ pub unsafe extern "system" fn CdFspDispatch(
                         IRP_MJ_CLEANUP => CdCommonCleanup(irp_context, irp),
 
                         IRP_MJ_PNP => {
-                            NT_ASSERT(0 /* FALSE */);
+                            NT_ASSERT!(0 /* FALSE */);
                             CdCommonPnp(irp_context, irp);
                         }
 

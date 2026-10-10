@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -22,7 +23,6 @@ extern "system" {
     fn FatAcquireExclusiveGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatLockVolumeInternal(IrpContext: *mut IRP_CONTEXT, Vcb: PVCB, arg3: *mut core::ffi::c_void) -> NTSTATUS;
     fn FlagOn(Flags: u32, Mask: u32) -> i32;
-    fn NT_ASSERT(cond: i32);
     fn NodeType(Ptr: *const core::ffi::c_void) -> u32;
     fn SetFlag(Flags: *mut u32, Flag: u32);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
@@ -190,7 +190,7 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
         // Drop and reacquire the resources in the right order.
         FatReleaseVcb(IrpContext, Vcb);
 
-        NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT));
+        NT_ASSERT!(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT));
 
         FatAcquireExclusiveGlobal(IrpContext);
         *p_global_held = 1i32;
@@ -238,7 +238,7 @@ pub unsafe extern "system" fn FatPnpQueryRemove(
             // Now if no one below us failed already, initiate the dismount
             if NT_SUCCESS(*p_status) {
                 *p_vcb_deleted = (((FatCheckForDismount(IrpContext, Vcb, ((1i32) as i32) as u8) as i32) as u8)) as i32; // TRUE
-                NT_ASSERT((*p_vcb_deleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32) as i32);
+                NT_ASSERT!((*p_vcb_deleted != 0 || (*Vcb).VcbCondition as i32 == VcbBad as i32) as i32);
             }
         }
     }, |_, _| {

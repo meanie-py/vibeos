@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{CcMapData, RtlOemToUnicodeN, FSRTL_ADVANCED_FCB_HEADER, _LARGE_INTEGER};
@@ -50,7 +51,6 @@ extern "C" {
     fn CdUpcaseName( IrpContext: *mut IRP_CONTEXT, InputName: *mut CD_NAME, OutputName: *mut CD_NAME, );
 }
 extern "C" {
-    fn NT_ASSERT(cond: BOOLEAN);
 }
 extern "C" {
 }
@@ -422,7 +422,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
     // Check for self entry (length 1 and first byte zero)
     if (*PathEntry).DirName.read() == 0 && (*PathEntry).DirNameLen == 1 {
         // Ensure no allocated buffer
-        NT_ASSERT((((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0) as BOOLEAN);
+        NT_ASSERT!((((*PathEntry).Flags & PATH_ENTRY_FLAG_ALLOC_BUFFER) == 0) as BOOLEAN);
 
         (*PathEntry).CdDirName.FileName = CdUnicodeDirectoryNames[0];
         (*PathEntry).CdDirName.VersionString.Length = 0;
@@ -475,7 +475,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
             (*PathEntry).DirName as *const i8,
             (*PathEntry).DirNameLen,
         );
-        NT_ASSERT((Status == 0) as BOOLEAN); // STATUS_SUCCESS
+        NT_ASSERT!((Status == 0) as BOOLEAN); // STATUS_SUCCESS
         ntkrnl_sys::__analysis_assert!((Status == 0) as BOOLEAN);
         (*PathEntry).CdDirName.FileName.Length = Length as u16;
     } else {

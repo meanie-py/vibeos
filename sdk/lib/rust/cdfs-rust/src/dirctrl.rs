@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{FILE_BOTH_DIR_INFORMATION, FILE_DIRECTORY_INFORMATION, FILE_FULL_DIR_INFORMATION, FILE_ID_BOTH_DIR_INFORMATION, FILE_ID_FULL_DIR_INFORMATION, FILE_NAMES_INFORMATION, IoGetCurrentIrpStackLocation, PIO_STACK_LOCATION, PIRP, PSTRING, RtlUpcaseUnicodeString};
@@ -60,7 +61,6 @@ extern "C" {
     fn CdVerifyOrCreateDirStreamFile(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn NT_ASSERT(expr: i32);
 }
 extern "system" {
     fn FsRtlAllocatePoolWithTag(PoolType: POOL_TYPE, NumberOfBytes: ULONG, Tag: ULONG) -> *mut core::ffi::c_void;
@@ -708,7 +708,7 @@ pub unsafe extern "C" fn CdInitializeEnumeration(
                 // __analysis_assert( Status == STATUS_SUCCESS );
                 // NT_ASSERT( Status == STATUS_SUCCESS );
                 // NT_ASSERT( Status == STATUS_SUCCESS );
-                NT_ASSERT((Status == STATUS_SUCCESS) as i32);
+                NT_ASSERT!((Status == STATUS_SUCCESS) as i32);
             } else {
                 // RtlCopyMemory
                 core::ptr::copy_nonoverlapping(

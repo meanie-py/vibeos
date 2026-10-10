@@ -137,7 +137,6 @@ pub unsafe extern "system" fn _InterlockedExchange(Target: *mut i32, Value: i32)
     *dst.add(2) = *src.add(1); *dst.add(3) = *src;
 }
 #[no_mangle] pub unsafe extern "C" fn CHECK_IRQL() {}
-#[no_mangle] pub unsafe extern "C" fn NT_ASSERT(_expression: i32) {}
 #[no_mangle] pub unsafe extern "C" fn FREE_POOL(Ptr: *mut c_void) {
     if !Ptr.is_null() { ntkrnl_sys::ddk::ExFreePool(Ptr); }
 }

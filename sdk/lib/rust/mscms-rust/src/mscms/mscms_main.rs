@@ -2,7 +2,6 @@ use ntdll_sys::nt::*;
 use core::ffi::c_void;
 
 extern "C" {
-    fn TRACE(format: *const c_char, ...);
     fn debugstr_a(text: *const c_char) -> *const c_char;
     fn cmsSetLogErrorHandler(handler: Option<unsafe extern "C" fn(ctx: *mut core::ffi::c_void, error: u32, text: *const i8)>);
     fn free_handle_tables();
@@ -15,7 +14,7 @@ extern "system" {
 static DEBUG_CHANNEL: &str = "mscms";
 
 unsafe fn lcms_error_handler(ctx: cmsContext, error: cmsUInt32Number, text: *const c_char) {
-    TRACE(b"%u %s\n\0".as_ptr() as *const c_char, error, debugstr_a(text));
+    TRACE!(b"%u %s\n\0".as_ptr() as *const c_char, error, debugstr_a(text));
 }
 
 #[no_mangle]

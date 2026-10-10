@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ddk::{GENERATE_NAME_CONTEXT, OEM_STRING, PUNICODE_STRING, RtlCompareMemory, RtlFreeOemString, RtlGenerate8dot3Name, RtlUnicodeStringToCountedOemString, RtlUnicodeStringToOemString, RtlUpcaseUnicodeString, STRING};
@@ -19,7 +20,6 @@ extern "C" {
     fn FlagOn(Value: u32, Flags: u32) -> i32;
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn FsRtlIsAnsiCharacterLegalHpfs(c: u16, strict: i32) -> i32;
@@ -148,7 +148,7 @@ pub unsafe extern "C" fn CdUpcaseName(
         0, // FALSE → 0
     );
 
-    NT_ASSERT((Status == STATUS_SUCCESS) as i32);
+    NT_ASSERT!((Status == STATUS_SUCCESS) as i32);
 
     // __analysis_assert( Status == STATUS_SUCCESS );
 
@@ -159,7 +159,7 @@ pub unsafe extern "C" fn CdUpcaseName(
             0,
         );
 
-        NT_ASSERT((Status == STATUS_SUCCESS) as i32);
+        NT_ASSERT!((Status == STATUS_SUCCESS) as i32);
         // __analysis_assert( Status == STATUS_SUCCESS );
     }
 }
@@ -236,7 +236,7 @@ pub unsafe extern "C" fn CdIs8dot3Name(
 
     UNREFERENCED_PARAMETER!(irp_context);
 
-    NT_ASSERT((file_name.Length != 0) as i32);
+    NT_ASSERT!((file_name.Length != 0) as i32);
     if file_name.Length as usize > BYTE_COUNT_8_DOT_3 {
         return 0;
     }
@@ -344,7 +344,7 @@ pub unsafe extern "C" fn CdGenerate8dot3Name(
     Status = RtlUnicodeStringToOemString(&mut OemName, &mut ShortName, 1);
 
     if !NT_SUCCESS(Status) {
-        NT_ASSERT((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
+        NT_ASSERT!((STATUS_INSUFFICIENT_RESOURCES == Status) as i32);
         CdRaiseStatus(IrpContext as PIRP_CONTEXT, Status as u32);
     }
 

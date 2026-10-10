@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{NT_ASSERTMSG};
+#[allow(unused_imports)] use crate::{DBGLOGFLUSHINFO};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -132,8 +134,6 @@ extern "C" {
     fn ClasspIsIdleRequestSupported(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, Irp: PIRP) -> BOOLEAN;
     fn ClasspMarkIrpAsIdle(Irp: PIRP, IsIdle: BOOLEAN);
     fn ClasspGetCurrentTime() -> LARGE_INTEGER;
-    fn DBGLOGFLUSHINFO(FdoData: *mut _CLASS_PRIVATE_FDO_DATA, IsFlush: BOOLEAN, IsSync: BOOLEAN, IsComplete: BOOLEAN);
-    fn NT_ASSERTMSG(Msg: *const i8, Expr: BOOLEAN);
 }
 unsafe extern "system" {
     fn PoUnregisterPowerSettingCallback(Handle: PVOID) -> u32;
@@ -802,16 +802,10 @@ pub unsafe extern "system" fn ClassDispatchPnp(
             IRP_MN_CANCEL_STOP_DEVICE | IRP_MN_CANCEL_REMOVE_DEVICE => {
                 if (*irp_stack).MinorFunction == IRP_MN_CANCEL_STOP_DEVICE {
                     status = (*dev_info).ClassStopDevice.expect("ClassStopDevice")(DeviceObject, (*irp_stack).MinorFunction);
-                    NT_ASSERTMSG(
-                        b"ClassDispatchPnp !! CANCEL_STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                        NT_SUCCESS(status) as BOOLEAN,
-                    );
+                    NT_ASSERTMSG!(b"ClassDispatchPnp !! CANCEL_STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8, NT_SUCCESS(status) as BOOLEAN);
                 } else {
                     status = (*dev_info).ClassRemoveDevice.expect("ClassRemoveDevice")(DeviceObject, (*irp_stack).MinorFunction);
-                    NT_ASSERTMSG(
-                        b"ClassDispatchPnp !! CANCEL_REMOVE_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                        NT_SUCCESS(status) as BOOLEAN,
-                    );
+                    NT_ASSERTMSG!(b"ClassDispatchPnp !! CANCEL_REMOVE_DEVICE should never be failed\n\0".as_ptr() as *const i8, NT_SUCCESS(status) as BOOLEAN);
                 }
 
                 (*Irp).IoStatus.__bindgen_anon_1.Status = status;
@@ -850,10 +844,7 @@ pub unsafe extern "system" fn ClassDispatchPnp(
                 ClasspDisableTimer(common_extension as *mut FUNCTIONAL_DEVICE_EXTENSION);
 
                 status = (*dev_info).ClassStopDevice.expect("ClassStopDevice")(DeviceObject, IRP_MN_STOP_DEVICE);
-                NT_ASSERTMSG(
-                    b"ClassDispatchPnp !! STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8,
-                    NT_SUCCESS(status) as BOOLEAN,
-                );
+                NT_ASSERTMSG!(b"ClassDispatchPnp !! STOP_DEVICE should never be failed\n\0".as_ptr() as *const i8, NT_SUCCESS(status) as BOOLEAN);
 
                 if is_fdo != 0 {
                     status = ClassForwardIrpSynchronous(common_extension, Irp);
@@ -2490,7 +2481,7 @@ pub unsafe extern "system" fn ClassIoComplete(
     {
         const SRB_FUNCTION_FLUSH: ULONG = 0x08; // typical
         if srbFunction == SRB_FUNCTION_FLUSH {
-            DBGLOGFLUSHINFO(fdoData, FALSE, FALSE, TRUE);
+            DBGLOGFLUSHINFO!(fdoData, FALSE, FALSE, TRUE);
         }
     }
 

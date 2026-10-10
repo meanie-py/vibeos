@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 // On i386 there is no separate 32-bit thunk struct — the native SCSI_PASS_THROUGH
 // *is* the 32-bit form. These aliases (only used in size_of bounds checks) keep the
@@ -125,7 +126,6 @@ extern "system" {
     fn RequestDummyCompletionRoutine( request: WDFREQUEST, target: WDFIOTARGET, params: *mut core::ffi::c_void, context: *mut core::ffi::c_void, );
     fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
-    fn NT_ASSERT(condition: i32);
     fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
     fn KeGetCurrentIrql() -> u8;
     fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -1644,7 +1644,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
             processed = RequestDispatchUnknownRequests(Device as WDFDEVICE, Request as WDFREQUEST, core::ptr::read(requestParameters_ptr));
         }
 
-        NT_ASSERT((processed != 0) as i32);
+        NT_ASSERT!((processed != 0) as i32);
         UNREFERENCED_PARAMETER!((processed as i32) as usize);
     } else if (*requestParameters_ptr).Type == WdfRequestTypeDeviceControlInternal {
         RequestProcessInternalDeviceControl(Request as WDFREQUEST, deviceExtension);
@@ -2537,7 +2537,7 @@ pub unsafe extern "C" fn RequestDispatchSyncWithSequentialQueue(
                         }
                         _ => {
                             // already validated in RequestValidateExclusiveAccess()
-                            NT_ASSERT(0); // FALSE
+                            NT_ASSERT!(0); // FALSE
                         }
                     }
                 }
@@ -3522,7 +3522,7 @@ pub unsafe extern "C" fn RequestIsIoctlBlockedByExclusiveAccess(
     // check and initialize parameter
     if IsBlocked.is_null() {
         // This is an internal function and this parameter must be supplied.
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
         return STATUS_INVALID_PARAMETER;
     } else {
         *IsBlocked = 0; // FALSE
@@ -3589,7 +3589,7 @@ pub unsafe extern "C" fn RequestIsIoctlBlockedByExclusiveAccess(
         }
     } else {
         // this should only be called with an IOCTL
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
         status = STATUS_INVALID_PARAMETER;
     }
 

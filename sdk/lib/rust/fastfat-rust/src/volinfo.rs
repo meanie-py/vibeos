@@ -54,8 +54,6 @@ extern "system" {
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn FsRtlIsAnsiCharacterLegalFat( ch: UCHAR, second: BOOLEAN, ) -> BOOLEAN;
     fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
-    fn NT_ASSERT(expr: BOOLEAN);
-    fn ASSERT(condition: i32);
     fn FsRtlGetSectorSizeInformation( DeviceObject: *mut core::ffi::c_void, Buffer: *mut FatFileFsSectorSizeInformation, ) -> i32;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN; // fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB) -> TYPE_OF_OPEN;
@@ -365,7 +363,6 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
             second: BOOLEAN,
         ) -> BOOLEAN;
         fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
-        fn NT_ASSERT(expr: i32);
         fn SetFlag(flags: *mut u8, flag: u8);
     }
 
@@ -527,7 +524,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                         &mut Status as *mut NTSTATUS as *mut i32,
                     );
 
-                    NT_ASSERT(NT_SUCCESS(Status) as i32);
+                    NT_ASSERT!(NT_SUCCESS(Status) as i32);
                 } else {
                     FatSetDirtyBcb(IrpContext, *p_dirent_bcb, Vcb, TRUE as u8);
                 }
@@ -577,7 +574,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
                         1u32,
                     ) != 0;
 
-                NT_ASSERT(condition as i32);
+                NT_ASSERT!(condition as i32);
 
                 // Clear bit in free dirent bitmap
                 RtlClearBits(
@@ -628,7 +625,7 @@ pub unsafe extern "system" fn FatQueryFsSectorSizeInfo(
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
-    ASSERT((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
+    ASSERT!((*Length as usize >= core::mem::size_of::<FatFileFsSectorSizeInformation>()) as i32);
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     Status = FsRtlGetSectorSizeInformation(
@@ -727,7 +724,7 @@ pub unsafe extern "system" fn FatCommonQueryVolumeInfo(IrpContext: PIRP_CONTEXT,
 
     FatDecodeFileObject((*IrpSp).FileObject, core::ptr::addr_of_mut!(Vcb), core::ptr::addr_of_mut!(Fcb), core::ptr::addr_of_mut!(Ccb));
 
-    NT_ASSERT(((Vcb as *mut core::ffi::c_void != core::ptr::null_mut()) as i32) as u8);
+    NT_ASSERT!(((Vcb as *mut core::ffi::c_void != core::ptr::null_mut()) as i32) as u8);
     // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
     // _SEH2_TRY / _SEH2_FINALLY
