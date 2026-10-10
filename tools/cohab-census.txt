@@ -1,6 +1,11 @@
 CMakeLists.txt	1	# and guid.c. Unusual among shell32's flips in being a WHOLE LIBRARY TARGET swap rather
 CMakeLists.txt	1	# recyclebin.c, recyclebin_generic{,_enumerator}.cpp, recyclebin_v5{,_enumerator}.cpp
 base/applications/msconfig_new/CMakeLists.txt	1	# startuppage.c
+base/applications/notepad/CMakeLists.txt	1	# dialog.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/dialog.rs)
+base/applications/notepad/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/main.rs)
+base/applications/notepad/CMakeLists.txt	1	# printing.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/printing.rs)
+base/applications/notepad/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/settings.rs)
+base/applications/notepad/CMakeLists.txt	1	# text.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/text.rs)
 base/applications/sndrec32/CMakeLists.txt	1	#audio_producer.cpp
 base/applications/sndrec32/CMakeLists.txt	1	#audio_receiver.cpp
 base/services/browser/CMakeLists.txt	1	# MIDL-generated browser_s.c / browser_stubs.c remain, which do not need (or use) the PCH.
