@@ -137,7 +137,8 @@ def c_variadic_arity(c_text: str, name: str) -> int | None:
         if close is None or not c_text[close + 1 :].lstrip().startswith("{"):
             continue
         parts = [p.strip() for p in _split_top(c_text[m.end() : close])]
-        if parts and parts[-1] == "...":
+        # A SAL annotation may precede the ellipsis: bmfd's `DbgPrint(IN PCHAR Format, IN ...)`.
+        if parts and re.sub(r"^(?:(?:IN|OUT|OPTIONAL|_In_|_Inout_)\s+)+", "", parts[-1]) == "...":
             return len(parts) - 1
     return None
 
