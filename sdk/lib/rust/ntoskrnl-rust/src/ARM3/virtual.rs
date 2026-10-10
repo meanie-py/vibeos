@@ -1864,7 +1864,7 @@ pub unsafe extern "system" fn MiGetPageProtection(
             // Check if the PDE is still valid
             if !(*MiAddressToPte(PointerPte as PVOID)).valid() {
                 // It's not, make it valid
-                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);
+                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);  // nolint: irql-balance (drops the PFN lock via OldIrql before it faults or waits, retakes it after)
             }
 
             // Now it's safe to read the PTE value again

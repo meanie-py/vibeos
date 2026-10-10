@@ -720,13 +720,13 @@ unsafe fn MiSegmentDelete(segment: PSEGMENT) {
     let old_irql = MiAcquirePfnLock();
     let mut pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
     if (*pte_for_proto).valid() == false {
-        MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
+        MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);  // nolint: irql-balance (drops the PFN lock via OldIrql before it faults or waits, retakes it after)
     }
     while pointer_pte < last_pte {
         if MiIsPteOnPdeBoundary(pointer_pte) && pointer_pte != (*subsection).SubsectionBase as PMMPTE {
             pte_for_proto = MiAddressToPte(pointer_pte as PVOID);
             if (*pte_for_proto).valid() == false {
-                MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);
+                MiMakeSystemAddressValidPfn(pointer_pte as PVOID, old_irql);  // nolint: irql-balance (drops the PFN lock via OldIrql before it faults or waits, retakes it after)
             }
         }
         let temp_pte = *pointer_pte;
