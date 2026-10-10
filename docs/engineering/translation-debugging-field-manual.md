@@ -1455,6 +1455,19 @@ call, only when notepad saved a file to FAT. The tell in the disassembly is a cd
 no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
 definition: two answers to one question are already wrong).
 
+One of the two "declarations" need not be an `extern` block in the crate. A `use
+ntkrnl_sys::ddk::{.., IoCopyCurrentIrpStackLocationToNext, ..}` brings bindgen's cdecl one in,
+and rustc merges it with a local `"system"` copy just the same. That was fastfat's flush.rs,
+in the very block where the fileinfo fix had moved `IoGetCurrentIrpStackLocation` to `"C"`;
+pnp.rs imported the helper from the ddk. The call sat in `FatCommonFlushBuffers`' finally, whose
+epilogue is esp-based (`add esp; pop esi/edi/ebx/ebp; ret`), so the 4-byte leak popped every
+saved register one slot off and `ret` jumped INTO THE STACK. Each crash looked different (0x23
+"unexpected exception at a stack address", 0x50, 0x1E, 0x7F), and all of them came at the first
+`NtFlushBuffersFile` on a writable FAT root (eventlog opening AppEvent.Evt). With EIP on the stack, the
+word at the faulting esp names whatever was just pushed or returned through; disassemble the
+function it points into and look for a call with no stack cleanup. The scanner now counts
+named `-sys` imports and qualified `x_sys::..::F(` calls as declarations.
+
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
 
@@ -4669,6 +4682,12 @@ the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way:
 A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
 left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
 macro, compare member lists against the header, not just the name.
+A dropped guard can also be REPLACED by a plausible-looking one. `ExReturnPoolQuota` swapped
+the C's `MmIsSpecialPoolAddress` early-out for `PAGE_ALIGN(p) == p`, and dropped the C's
+`BAD_POOL_CALLER` check that the billed process really is one. A special-pool block sits at
+the END of its page, so it passed the alignment test, and the function read a POOL_HEADER that
+does not exist: 0xA in `IoFreeIrp` at boot, but only with `SPECIALPOOL=*`, which is what
+you arm to hunt a different corruption.
 
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 

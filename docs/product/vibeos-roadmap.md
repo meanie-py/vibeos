@@ -619,27 +619,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
   hand; (1) is why the payload uses the e1000.
 
-- **x86 conformance never runs the kmtests that write a file** (amd64 FIXED 2026-10-10;
-  i386 OPEN; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+- **x86 conformance never runs the kmtests that write a file** (FIXED 2026-10-10, amd64 and
+  i386; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
   kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
-  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` now derives
-  `livecd-rw.iso` (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`)
-  and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
-  on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
-  i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
-  **i386 still boots the CD.** Its writable-root boot found two loader bugs, fixed
-  2026-10-10: (1) any i386 UEFI boot with >= 1G RAM sized the kernel's boot image from the
-  firmware's top-of-RAM regions, so the reservation covered session space and the 0x1A in
-  `MmDeleteRmap` followed (it hit the CD boot at 1G too); (2) the 300MB ramdisk, loaded
-  bottom-up, pushed the boot drivers above it (456MB boot image, 0x7F). Field manual: "x86
-  UEFI boot bring-up", item 4. **Still open:** with those fixed, the writable root dies in
-  a different place each run: 0x23 -> 0xA in fastfat's `NtFlushBuffersFile`
-  (`FatExceptionFilter` with no IrpContext, then `FatProcessException` reading NULL+0x14),
-  or 0x50 at an unmapped kernel address. That looks like corruption rather than one bad
-  path; nothing else in the fleet writes a FAT volume on i386. A diagnostic in
-  `FatExceptionFilter` prints the exception code and PC. Repro:
-  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; once it sweeps, add i386 to
-  `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` derives `livecd-rw.iso`
+  (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`) and
+  conformance boots it on both x86 arches (`WRITABLE_ROOT_ARCHES`). Both now match arm64 on
+  the section tests; IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's i386
+  `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot), two i386 loader bugs (any
+  i386 UEFI boot with >= 1G RAM reserved session space as boot image; the ramdisk pushed the
+  boot drivers above it), fastfat's flush (a stdcall view of a cdecl helper returned
+  `FatCommonFlushBuffers`' finally into its own stack at the first `NtFlushBuffersFile`, the
+  "corruption" that died in a different place each run), and `ExReturnPoolQuota` on special
+  pool. Field manual: "x86 UEFI boot bring-up" item 4, "The i386 driver-fleet ud2-bomb class",
+  "A dropped validation check fails OPEN".
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
