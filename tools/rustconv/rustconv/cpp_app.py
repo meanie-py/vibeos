@@ -126,15 +126,69 @@ def _namespaces(model: ModuleModel) -> list[str]:
 
 
 @dataclass
+class ComSlot:
+    name: str
+    params: list[tuple[str, str]]  # after `This`
+    ret: str  # "" for unit
+    optional: bool = True  # bindgen wraps each slot in Option<>; a hand-written table may not
+
+
+_VTBL_RE = re.compile(r"pub struct (\w+)Vtbl \{(.*?)\n\}", re.S)
+_VTBL_FIELD_RE = re.compile(
+    r"pub (\w+):\s*((?:::core::option::)?Option<)?\s*unsafe extern \"system\" fn\s*"
+    r"\((.*?)\)\s*(?:->\s*([^,>]+(?:<[^>]*>)?))?\s*>?,",
+    re.S,
+)
+
+
+def parse_com_vtbls(island: str) -> dict[str, list[ComSlot]]:
+    """`IFooVtbl` structs from the island (WIDL's flattened vtable: IUnknown first)."""
+    out: dict[str, list[ComSlot]] = {}
+    for m in _VTBL_RE.finditer(island):
+        slots = []
+        for f in _VTBL_FIELD_RE.finditer(m.group(2)):
+            params = [p.strip() for p in _split(f.group(3)) if p.strip()]
+            pairs = [tuple(x.strip() for x in p.split(":", 1)) for p in params[1:]]
+            slots.append(
+                ComSlot(
+                    f.group(1),
+                    [(a, b) for a, b in pairs],
+                    (f.group(4) or "").strip(),
+                    optional=bool(f.group(2)),
+                )
+            )
+        if slots:
+            out[m.group(1)] = slots
+    return out
+
+
+@dataclass
 class Slot:
     owner: str  # the class whose vtable struct declares this slot (short name)
     method: Method
 
 
 class Hierarchy:
-    def __init__(self, model: ModuleModel) -> None:
+    def __init__(self, model: ModuleModel, com: dict[str, list[ComSlot]] | None = None) -> None:
         self.model = model
         self.by_short: dict[str, ClassModel] = {short(q): c for q, c in model.classes.items()}
+        # COM interfaces the island lays out (`IFooVtbl`), by interface name.
+        self.com = com or {}
+
+    def com_bases(self, cls: ClassModel) -> list[tuple[int, str]]:
+        return [
+            (i, short(b.name))
+            for i, b in enumerate(cls.bases)
+            if short(b.name) not in self.by_short and short(b.name) in self.com
+        ]
+
+    def implements_com(self, cls: ClassModel, m: Method) -> bool:
+        """`m` is the class's implementation of a COM interface method: dispatched through
+        that interface's vtable (the island's IFooVtbl), never a slot of a vtable of ours."""
+        for _, iface in self.com_bases(cls):
+            if any(slot.name == m.name for slot in self.com[iface]):
+                return True
+        return any(self.implements_com(b, m) for _, b in self.module_bases(cls))
 
     def module_bases(self, cls: ClassModel) -> list[tuple[int, ClassModel]]:
         return [
@@ -148,6 +202,9 @@ class Hierarchy:
         already carry a vtable pointer it can share."""
         if not cls.polymorphic:
             return False
+        if self.com_bases(cls) and not self.new_slots(cls):
+            # Every virtual is an interface method: the interface's lpVtbl IS the vptr.
+            return False
         if cls.bases and short(cls.bases[0].name) in self.by_short:
             return not self.by_short[short(cls.bases[0].name)].polymorphic
         return not cls.bases or short(cls.bases[0].name) not in self.by_short
@@ -159,6 +216,8 @@ class Hierarchy:
         return cls
 
     def is_virtual(self, cls: ClassModel, m: Method) -> bool:
+        if self.implements_com(cls, m):
+            return False
         if m.virtual:
             return True
         for _, b in self.module_bases(cls):
@@ -219,6 +278,7 @@ class Hierarchy:
             and m.kind not in ("ctor", "dtor")
             and not m.static
             and not self.overrides_base(cls, m)
+            and not self.implements_com(cls, m)
         ]
 
     def owns_vt_type(self, cls: ClassModel) -> bool:
@@ -245,13 +305,21 @@ class Hierarchy:
             out.append(nxt)
         return out
 
+    def has_chain(self, cls: ClassModel) -> bool:
+        """A vtable of OURS on this class's primary chain (a class whose only virtuals are
+        COM interface methods has none: the interface's lpVtbl is its vptr)."""
+        if self.has_own_vtbl(cls):
+            return True
+        p = self.primary(cls)
+        return p is not None and p.polymorphic and self.has_chain(p)
+
     def tops(
         self, cls: ClassModel, path: str = "", own: bool = True
     ) -> list[tuple[str, ClassModel]]:
         """Every vtable-bearing subobject, as (path, the class whose primary chain it is):
         the object itself, then each NON-primary polymorphic base, recursively (a primary
         base shares its derived class's table)."""
-        out = [(path, cls)] if own and cls.polymorphic else []
+        out = [(path, cls)] if own and self.has_chain(cls) else []
         for i, b in self.module_bases(cls):
             out.extend(self.tops(b, f"{path}__base{i}.", own=i != 0))
         return out
@@ -279,11 +347,14 @@ def _ret(m: Method, model: ModuleModel) -> str:
     return "" if m.return_type in ("void", "") else f" -> {rust_type(m.return_type, model)}"
 
 
-def render_classes(model: ModuleModel, island_structs: frozenset[str] = frozenset()) -> str:
+def render_classes(
+    model: ModuleModel, island_structs: frozenset[str] = frozenset(), island: str = ""
+) -> str:
     """`island_structs`: names the crate's bindgen island already lays out. A plain struct
     (no methods, no bases, no vtable) the island has is the island's -- its C layout is the
-    authority, and a second definition makes every use of the name ambiguous (E0659)."""
-    h = Hierarchy(model)
+    authority, and a second definition makes every use of the name ambiguous (E0659).
+    `island`: its text, for the COM interfaces a class implements (their IFooVtbl)."""
+    h = Hierarchy(model, parse_com_vtbls(island))
     out: list[str] = [
         "//! The module's C++ classes: layout, vtables, dispatch, construction, destruction.",
         "//! GENERATED by rustconv.cpp_app from the clang class model (cpp_model) -- do not edit;",
@@ -420,6 +491,11 @@ def _render_class(
             f"        (*this).{rp}__vtbl = "
             f"&{n}__VTBL_{tag} as *const {vt}__vtbl as *const {rn}__vtbl;"
         )
+    for k, iface in h.com_bases(cls):
+        lines.extend(_com_vtable(cls, k, iface, h))
+        vt_install.append(
+            f"        (*this).__base{k}.lpVtbl = &{n}__{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
+        )
     impl.append(
         "    /// Point every vtable this object contains at this class's tables: what a C++"
     )
@@ -524,6 +600,38 @@ def h_path(h: Hierarchy, frm: ClassModel, to: ClassModel) -> str:
         if b is to:
             return f"__base{i}."
     return ""
+
+
+def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
+    """The island's IFooVtbl filled with this class's implementations, each behind a thunk
+    that turns `This` (the interface subobject) back into the object -- C++'s adjustor."""
+    n = cls.name
+    entries, thunks = [], []
+    for slot in h.com[iface]:
+        impl = next((m for m in cls.methods if m.name == slot.name), None)
+        owner = cls
+        if impl is None:
+            for _, b in h.module_bases(cls):
+                impl = next((m for m in b.methods if m.name == slot.name), None)
+                if impl is not None:
+                    owner = b
+                    break
+        if impl is None:
+            raise CppAppError(f"{cls.qualified} implements {iface} but defines no {slot.name}")
+        via = h_path(h, cls, owner).rstrip(".")
+        target = f"(*{_down(n, f'__base{k}.', 'This')})" + (f".{via}" if via else "")
+        sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
+        args = ", ".join(a for a, _ in slot.params)
+        ret = f" -> {slot.ret}" if slot.ret else ""
+        name = f"{n}__{iface}_{slot.name}"
+        thunks.append(
+            f'unsafe extern "system" fn {name}({sig}){ret} {{ {target}.{impl.rust_name}({args}) }}'
+        )
+        entries.append(f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}")
+    return [
+        *thunks,
+        f"pub static {n}__{iface}_VTBL: {iface}Vtbl = {iface}Vtbl {{ {', '.join(entries)} }};",
+    ]
 
 
 def _slot_home(h: Hierarchy, cls: ClassModel, m: Method) -> tuple[str, ClassModel, ClassModel]:
@@ -860,10 +968,12 @@ def _strip_ns(text: str, model: ModuleModel) -> str:
     return text
 
 
-def synthetic_tus(model: ModuleModel) -> dict[str, str]:
+def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     """{body file (repo-relative): C-like text}: every lowered body, grouped by the file
-    its text lives in, as free functions a worker can translate one at a time."""
-    h = Hierarchy(model)
+    its text lives in, as free functions a worker can translate one at a time. `island` as
+    for render_classes: a COM interface method is a plain body, not a `__body` behind a
+    dispatcher -- the two must agree or assemble's names miss the vtable's."""
+    h = Hierarchy(model, parse_com_vtbls(island))
     reached = external_reached(model)
     by_file: dict[str, list[str]] = {}
     for cls in model.classes.values():

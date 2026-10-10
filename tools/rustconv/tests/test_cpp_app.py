@@ -230,3 +230,63 @@ def test_an_sdk_struct_base_is_embedded_by_value():
     m.classes[c.qualified] = c
     rs = cpp_app.render_classes(m)
     assert "pub __base0: BITMAPINFO,\n    pub bmiColorsExtra: [RGBQUAD; 255 as usize]," in rs
+
+
+_ISLAND_VTBL = """
+#[repr(C)]
+pub struct IEmptyVolumeCacheCallBackVtbl {
+    pub QueryInterface: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IEmptyVolumeCacheCallBack,
+            riid: REFIID,
+            ppvObject: *mut *mut ::core::ffi::c_void,
+        ) -> HRESULT,
+    >,
+    pub AddRef: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IEmptyVolumeCacheCallBack) -> ULONG,
+    >,
+    pub Release: ::core::option::Option<
+        unsafe extern "system" fn(This: *mut IEmptyVolumeCacheCallBack) -> ULONG,
+    >,
+    pub ScanProgress: ::core::option::Option<
+        unsafe extern "system" fn(
+            This: *mut IEmptyVolumeCacheCallBack,
+            dwlSpaceUsed: DWORDLONG,
+            dwFlags: DWORD,
+            pcwszStatus: LPCWSTR,
+        ) -> HRESULT,
+    >,
+}
+"""
+
+
+def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
+    """cleanmgr's CEmptyVolumeCacheCallBack : IEmptyVolumeCacheCallBack."""
+    cb = ClassModel("CCallBack", "CCallBack", "class", "c.hpp", polymorphic=True)
+    cb.bases = [Base("IEmptyVolumeCacheCallBack", "public")]
+    cb.fields = [Field("m_cRef", "LONG")]
+    for name, params, ret in (
+        ("QueryInterface", [("riid", "REFIID"), ("ppv", "void **")], "HRESULT"),
+        ("AddRef", [], "ULONG"),
+        ("Release", [], "ULONG"),
+        ("ScanProgress", [("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")], "HRESULT"),
+    ):
+        cb.methods.append(_m(name, params=params, ret=ret, virtual=True, body=("c.hpp", 0, 1),
+                             lowered="{ return 0; }"))
+    _assign_names(cb)
+    m = ModuleModel()
+    m.classes[cb.qualified] = cb
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
+    # the interface struct IS the object's vptr: no vtable of ours, no dispatchers
+    assert "pub __vtbl" not in rs and "dispatch through the vtable" not in rs
+    assert "pub __base0: IEmptyVolumeCacheCallBack," in rs
+    assert (
+        'unsafe extern "system" fn CCallBack__IEmptyVolumeCacheCallBack_ScanProgress('
+        "This: *mut IEmptyVolumeCacheCallBack, dwlSpaceUsed: DWORDLONG, dwFlags: DWORD, "
+        "pcwszStatus: LPCWSTR) -> HRESULT" in rs
+    )
+    assert "AddRef: Some(CCallBack__IEmptyVolumeCacheCallBack_AddRef)" in rs
+    assert "(*this).__base0.lpVtbl = &CCallBack__IEmptyVolumeCacheCallBack_VTBL" in rs
+    # the bodies are plain methods (the COM vtable is their dispatch)
+    text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
+    assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
