@@ -167,6 +167,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "atlclasses-rust"
+version = "0.1.0"
+
+[[package]]
 name = "audiosrv-rust"
 version = "0.1.0"
 dependencies = [
@@ -857,6 +861,17 @@ name = "findstr-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "fltmc-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
@@ -2969,6 +2984,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sndrec32-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "sndvol32-rust"
 version = "0.1.0"
 dependencies = [
@@ -2987,6 +3013,28 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "sol-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "spider-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -3168,6 +3216,17 @@ version = "0.1.0"
 name = "timedate-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "tracert-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",

@@ -371,6 +371,16 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         # vetoes nor is copied -- the literals that agree are the evidence.
         return _most_common(literal), ""
     if fns and not consts:
+        # A bindgen island is the header's own transcript; a hand-written `extern` is a copy
+        # someone typed. But only an i386 island KNOWS a calling convention: x86_64 and arm64
+        # have one, so bindgen writes every WINAPI function there as `extern "C"`. So an i386
+        # island declaration outvotes everything, and a 64-bit one never votes on the ABI.
+        # Before this, one crate's `extern "C" { fn CloseHandle(..) }` (a stdcall import --
+        # the i386 link bug) vetoed CloseHandle/GetLastError for every new module.
+        island32 = [i for i in fns if _is_bindgen(i.path) and "i386" in i.path]
+        voters = island32 or [i for i in fns if not _is_bindgen(i.path)]
+        if voters:
+            fns = voters
         classes = {_abi_class(i.abi) for i in fns}
         if len(classes) != 1:
             return None, f"ABI disagreement ({', '.join(sorted(classes))})"
@@ -385,6 +395,14 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     if any(i.kind == "type" for i in items):
         return None, "a type: add its header to the island allowlist"
     return None, "mixed kinds"
+
+
+def _is_bindgen(path: str) -> bool:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    # shell32's islands are `island_<arch>.rs`; every other generator writes bindgen_/types_.
+    return name.startswith(("bindgen_", "hal_bindgen_")) or bool(
+        re.match(r"(?:types|island)_\w+\.rs$", name)
+    )
 
 
 def _arity(decl: str) -> int | None:
@@ -1413,6 +1431,11 @@ def render_externs(sigs: dict[str, tuple[str, str, str]]) -> str:
     out = [EXTERNS_BEGIN]
     by_abi: dict[str, list[tuple[str, str, str]]] = {}
     for name, (abi, sig, src) in sorted(sigs.items()):
+        if abi == "C" and _LONG_PTR_ALIAS.search(sig):
+            # Get/SetWindowLongPtrW and Get/SetClassLongPtrW are WINAPI. On i386 they are
+            # MACROS, so clang reports no calling convention for them and the default was "C":
+            # sol and spider then imported `GetWindowLongW` -- stdcall -- as cdecl.
+            abi = "system"
         by_abi.setdefault(abi, []).append((name, sig, src))
     for abi, items in sorted(by_abi.items()):
         if abi == "use":

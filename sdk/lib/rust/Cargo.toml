@@ -114,6 +114,7 @@ members = [
     # copies, one of which had dropped its bound (roadmap: msgina's stack overrun).
     "strsafe-rust",
     "conutils-h",
+    "atlclasses-rust",
     "strsafe-difftest",
     # Receiving C varargs on stable Rust (the slot-capture technique + its measured
     # bounds), ported ONCE. Three crates need it -- freeldr-rust, kd-rust and
@@ -460,6 +461,11 @@ members = [
     "sndvol32-rust",
     "extrac32-rust",
     "clipbrd-rust",
+    "fltmc-rust",
+    "sol-rust",
+    "spider-rust",
+    "tracert-rust",
+    "sndrec32-rust",
     "winprint-rust",
     "logonui-rust",
     "aclayers-rust",

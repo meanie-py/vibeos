@@ -1110,6 +1110,53 @@ port hit became a tool fix, so the replay needs only eight hand-banked functions
   `scan_orphan_modules` now resolves a `#[path]` inside an inline module under it, and
   `scan_macro_fn_shadow` exempts a `#[no_mangle]` .spec export whose C body is empty.
 
+### `port cppapp`: C++ classes from clang's AST (2026-10-10)
+
+The plain-C pipeline translates functions; a C++ application is mostly CLASSES, and the COM
+path (`--cpp-com --class`) accepts only the narrow, proven COM subset. `port cppapp <stem>`
+is the general class path, run after `derive`/`scaffold`/`island`. It costs nothing, and from
+then on `translate`, `integrate`, `resolve` and `replay` work on its output as usual.
+
+- **The model is clang's, not a regex's** (`cpp_model.py`). Each TU's real compile command
+  with `-Xclang -ast-dump=json`; kept are the classes, enums, globals and free functions
+  whose source is in the module directory, plus `EXTERNAL_CLASSES` (ATL's `CWindow`).
+  Header classes are seen once per TU, so decl ids are re-registered per AST.
+- **Bodies are LOWERED to explicit C before the model sees them** (`cpp_lower.py`). Every
+  C++ fact clang already resolved becomes text: implicit `this` → `this_->` plus the base
+  path (`this_->__base1.bytes_played_`), overloads → distinct names (`alloc_seconds__1`),
+  default arguments materialized, `new`/`delete`/locals/temporaries → explicit construction
+  calls, upcasts to a non-primary base spelled out, TCHAR-macro member spellings renamed to
+  the declared W function. An edit inside a macro expansion has no place in the text; it is
+  reported (`UNLOWERED`), never guessed.
+- **Layout and dispatch are generated** (`cpp_app.py` → `src/<stem>/cpp_classes.rs`):
+  `#[repr(C)]` structs with bases embedded (`__baseK`, primary first), vtables chained per
+  primary base the way C++ compilers lay them out (a derived class adding virtuals gets
+  `X__vtbl { __base: <base's table>, new slots }`), this-adjusting thunks via nested
+  `offset_of!`, virtual dispatchers (`m`) over translated bodies (`m__body`), constructors in
+  C++ order (bases, vtables, members in DECLARATION order, body), `Drop` from a non-empty
+  destructor (Rust then destroys bases and members, as C++ does), `Copy` for a class nothing
+  destroys, and the module's global objects constructed in a `__cxx_global_init` the entry
+  point calls first. A COM interface base embeds the island's interface struct and fills the
+  island's WIDL `IFooVtbl` with adjustor thunks. ATL windows/dialogs get `MessageMap` glue
+  from `BEGIN_MSG_MAP` (first match wins, as in atlwin.h) over `atl_rust::win`.
+- **Translation is the ordinary sealed per-function path** over synthetic headers (one per
+  body file), each through the TU that compiles it (`--via`, the `port headers` mechanism,
+  `--no-c2rust`, `--cpp-app-model` for the per-worker class context). `assemble` then moves
+  each translated `Class__m(this_: *mut Class, ..)` into `impl Class` as `m(&mut self, ..)`.
+  A worker that answers in method form anyway is put back by `restore_requested_name` at $0.
+- **ATL's types are one crate**, `atlclasses-rust` (lib `atl_rust`): CStringW, CComPtr,
+  CHeapPtr, CSimpleArray/Map, CAtlList (its `POSITION` re-exported over the island's), and
+  the window runtime. Workers get its API as a contract (`atl_contract.py`), not its source.
+  Only the ATL methods a module reaches are translated (`external_reached`: mspaint calls 54
+  of `CWindow`'s 134).
+
+First run, batch 1 (fltmc, sol, spider, tracert, sndrec32): $0.24 on Haiku 5.5. The
+C-in-.cpp four needed only the free-function path; sndrec32 (pure-virtual bases in other
+headers, multiple inheritance, init lists, global objects) went 569 → 0 errors per arch
+through tool fixes and one Haiku integrator pass. Not yet handled, each refused loudly:
+module class templates (cleanmgr's `CLocalPtr<T>`, rapps' `CPointerArray<T>`),
+`CAtlExeModuleT` (ATL's COM-module machinery), `CPropertyPageImpl`.
+
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 
 Call sealing makes a dropped call fail at translation time; crates translated before it

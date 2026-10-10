@@ -2507,8 +2507,8 @@ def test_fn_item_cast_drops_the_cast_off_some_f():
     diag = {
         "code": {"code": "E0605"},
         "message": (
-            "non-primitive cast: `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT) "
-            "{MainUnload}>` as `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT)>`"
+            'non-primitive cast: `Option<unsafe extern "system" fn(*mut _DRIVER_OBJECT) '
+            '{MainUnload}>` as `Option<unsafe extern "system" fn(*mut _DRIVER_OBJECT)>`'
         ),
         "spans": [
             {
@@ -2550,3 +2550,28 @@ def test_c2rust_anon_member_segment_is_deleted():
     e = edits[0]
     out = src[: e.byte_start] + e.replacement.encode() + src[e.byte_end :]
     assert b"".join(out.split()) == b"leth=(*b).Chars.ReceiveCompleteHandler;"
+
+
+def test_a_zero_argument_reported_in_a_child_note_becomes_null():
+    """Several bad arguments are one error; each argument's mismatch is a child note."""
+    from rustconv.crate_repair import _Ctx, _pointer_cast_rule
+
+    src = b"MessageBox(0, p, q, 0);"
+    diag = _diag(
+        "arguments to this function are incorrect",
+        spans=[_span("src/a.rs", 0, 10, is_primary=True)],
+        children=[
+            {
+                "message": "expected `*mut HWND__`, found `usize`",
+                "code": None,
+                "level": "note",
+                "spans": [_span("src/a.rs", 11, 12, is_primary=True)],
+                "children": [],
+                "rendered": None,
+            }
+        ],
+    )
+    edits, _, handled = _pointer_cast_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
+    assert handled and [(e.byte_start, e.replacement) for e in edits] == [
+        (11, "core::ptr::null_mut()")
+    ]
