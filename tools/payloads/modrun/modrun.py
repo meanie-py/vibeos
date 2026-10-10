@@ -18,6 +18,10 @@ A suite (tools/payloads/modrun/suites/<module>.yaml) is a module's runtime test:
         expect: ['Disk 0']         # substrings every variant must print
         timeout: 60
         xfail: 'why'               # a known bug: reported XFAIL; passing is then a failure
+        diverge:                   # a DELIBERATE difference from the oracle (the Rust exceeds
+          - why: 'UEFI system disk'  # the C): matching lines are dropped from the diff, the
+            rust: '^sysfind '        # case still has to match on everything else, and an entry
+                                     # that matches nothing fails (it went stale)
         arches: [amd64]            # optional, prefix-matched against the boot arch
 
 The grader passes a case when every variant ran to completion (no crash, no timeout),
@@ -58,6 +62,8 @@ class Case:
     timeout: int = 60
     normalize: list[tuple[str, str]] = field(default_factory=list)
     xfail: str = ""
+    # (why, {variant: line regex}): lines the variants are EXPECTED to disagree on.
+    diverge: list[tuple[str, dict[str, str]]] = field(default_factory=list)
 
 
 def _on(arches: list[str] | None, arch: str) -> bool:
@@ -97,6 +103,10 @@ def cases(arch: str) -> list[Case]:
                     timeout=int(c.get("timeout", spec.get("timeout", 60))),
                     normalize=norm + [(str(a), str(b)) for a, b in c.get("normalize") or []],
                     xfail=str(c.get("xfail", "")),
+                    diverge=[
+                        (str(d["why"]), {str(k): str(v) for k, v in d.items() if k != "why"})
+                        for d in c.get("diverge") or []
+                    ],
                 )
             )
     return out
@@ -201,6 +211,7 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
         ref_name = next(iter(c.variants))
         ref: list[str] | None = None
         ref_rc = None
+        hits = [0] * len(c.diverge)
         for v in c.variants:
             ex = exits.get((c.id, v))
             if ex is None:
@@ -227,6 +238,19 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
             for e in c.expect:
                 if not any(e in ln for ln in lines):
                     why.append(f"{v}: never printed {e!r}")
+            # Declared divergences leave the diff (the expects above saw every line).
+            kept = []
+            for ln in lines:
+                matched = [
+                    i
+                    for i, (_, pats) in enumerate(c.diverge)
+                    if v in pats and re.search(pats[v], ln)
+                ]
+                for i in matched:
+                    hits[i] += 1
+                if not matched:
+                    kept.append(ln)
+            lines = kept
             if ref is None:
                 ref, ref_rc = lines, code
                 continue
@@ -235,6 +259,9 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
             if lines != ref:
                 diff = list(difflib.unified_diff(ref, lines, ref_name, v, n=2, lineterm=""))
                 why.append(f"{v}: output differs from {ref_name}:\n    " + "\n    ".join(diff[:60]))
+        for (dwhy, _), hit in zip(c.diverge, hits, strict=True):
+            if not hit:
+                why.append(f"diverge {dwhy!r} matched no line: the difference is gone, drop it")
         n = len(out.get((c.id, ref_name), []))
         # A known bug stays visible without failing the run, and its fix announces itself:
         # an xfail case that passes is a FAIL until the suite stops expecting the bug.
@@ -251,7 +278,8 @@ def grade(serial: str, arch: str) -> tuple[list[str], list[str]]:
             report.append(f"FAIL {c.id}")
             report += [f"  {w}" for w in why]
         else:
-            report.append(f"PASS {c.id} ({len(c.variants)} variant(s), {n} line(s) each)")
+            note = f", {len(c.diverge)} declared divergence(s)" if c.diverge else ""
+            report.append(f"PASS {c.id} ({len(c.variants)} variant(s), {n} line(s) each{note})")
     return report, failures
 
 

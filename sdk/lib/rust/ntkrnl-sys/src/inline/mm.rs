@@ -63,6 +63,19 @@ pub unsafe fn MmGetSystemAddressForMdl(mdl: ddk::PMDL) -> PVOID {
     }
 }
 
+/// `MmPrepareMdlForReuse(Mdl)` (wdm.h macro): a partial MDL that has been mapped gets its
+/// system mapping torn down before the MDL is rebuilt; `MmUnmapLockedPages` also clears
+/// MDL_PARTIAL_HAS_BEEN_MAPPED. The ONE copy every driver should call: four crates had
+/// hand-written it, and classpnp's was an empty body, so every split disk transfer leaked
+/// the PTEs scsiport mapped it with (NO_MORE_SYSTEM_PTES on i386 during setup's file copy).
+#[inline]
+pub unsafe fn MmPrepareMdlForReuse(mdl: ddk::PMDL) {
+    const MDL_PARTIAL_HAS_BEEN_MAPPED: i16 = 0x0020;
+    if (*mdl).MdlFlags & MDL_PARTIAL_HAS_BEEN_MAPPED != 0 {
+        ddk::MmUnmapLockedPages((*mdl).MappedSystemVa, mdl);
+    }
+}
+
 // ============================================================================
 // MDL accessors (macros from mmfuncs.h)
 // ============================================================================

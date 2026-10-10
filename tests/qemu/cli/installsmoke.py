@@ -6,8 +6,10 @@ creation and boot-loader install, and the fastfat/Cc/Cm write paths under them -
 other gate. This verb drives tests/qemu/test_install.py (two VMs over one disk image; see
 its docstring) and reports one verdict + summary.json.
 
-amd64-bios only: usetup installs a BIOS FreeLdr. Under TCG the install runs about an hour,
-so it is its own verb rather than a gate stage.
+amd64-bios, amd64-uefi and i386-uefi (`amd64`/`i386` alias to UEFI, as for smoke): setup
+installs FreeLdr's boot sectors under BIOS and uefildr.efi under UEFI. arm64 has no IDE bus
+for the two-disk layout yet. Under TCG the install runs 10-60 minutes, so it is its own verb
+rather than a gate stage.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+from .archcfg import vm_arch
 from .artifacts import Run, Stage
 
 _TEST = "tests/qemu/test_install.py"
@@ -29,11 +32,14 @@ def _salient(stdout: str) -> list[str]:
 
 
 def install_smoke(args, repo: Path) -> int:
-    run = Run("install-smoke", args.arch)
-    if args.arch != "amd64-bios":
+    arch = vm_arch(args.arch)
+    run = Run("install-smoke", arch)
+    if arch not in ("amd64-bios", "amd64-uefi", "i386-uefi"):
         run.add(
             Stage(
-                "install", status="fail", detail="amd64-bios only (usetup installs a BIOS FreeLdr)"
+                "install",
+                status="fail",
+                detail="amd64-bios, amd64-uefi or i386-uefi (arm64 has no IDE bus for the disks)",
             )
         )
         return run.finalize(repo)
@@ -43,7 +49,7 @@ def install_smoke(args, repo: Path) -> int:
         "pytest",
         _TEST,
         "--arch",
-        args.arch,
+        arch,
         "-x",
         "-s",
         "-p",

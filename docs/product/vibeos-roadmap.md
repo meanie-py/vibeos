@@ -595,8 +595,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
-- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09 on the C
-  ndis.sys). The baseline for translating ndis: nothing else on our media reaches NDIS
+- **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
+  the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
+  translating ndis: nothing else on our media reaches NDIS
   (netstack drives virtio and e1000 100E/100F itself). The payload boots QEMU's e1000
   82544GC and, through ndisuio, binds, queries the MAC and link, sets the packet filter, sends
   an ARP who-has to slirp's gateway and reads the reply. Getting it green fixed ndisuio's read
@@ -605,7 +606,10 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   BARs, and arm64's `virt` machine maps its I/O BAR as memory, so `MiniportInitialize` fails;
   (2) ndis then still publishes the adapter to protocols: ndisuio bound to one named `\`,
   the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
-  (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
+  (2) is in the Rust too, as the C has it: NdisIPnPStartDevice puts the adapter on the global
+  list BEFORE MiniportInitialize and takes it off only on failure, so a protocol binding in
+  that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
+  hand; (1) is why the payload uses the e1000.
 
 - **x86 conformance never runs the kmtests that write a file** (OPEN, found 2026-10-09,
   conformance lane). i386/amd64 conformance boots the livecd, so `\SystemRoot` is read-only
@@ -658,8 +662,22 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   setup reboots the machine itself (run 49). The second installed boot then hit boot-start
   INF services for drivers setup never copied (machine.inf `isapnp`, hdc.inf `atapi`).
   Both fixed; the full run passes twice in a row (runs 50 and the `install-smoke` verb).
-  **Still owed:** i386 and UEFI installs; deciding whether it joins a scheduled run (it is
-  its own verb, ~10 min, not a gate stage).
+  **UEFI installs (2026-10-09): amd64-uefi PASSES** (`install-smoke --arch amd64-uefi`, 11m45s):
+  setup now installs uefildr.efi as `\EFI\BOOT\BOOT<arch>.EFI` when the loader block says
+  UEFI. That needed the firmware type to exist at all (rosload never set `BootViaEFI`; the
+  kernel now answers `SystemBootEnvironmentInformation`), a system disk with no BIOS
+  numbering, and a `multi()` ARC path uefildr can open. **i386-uefi is OWED**: it reaches the
+  end of the file copy (after fixing classpnp's empty `MmPrepareMdlForReuse`, which leaked
+  every split transfer's PTEs into a 0x3F, and txtsetup naming HALs this tree never builds),
+  then setup's registry flush faults: inside fastfat's `__finally` for
+  `FatCommonFlushBuffers` (sehtry.c's `RtlSehTryFinally` → `call_finally`), `ebp` comes back
+  holding a code address and execution lands on the stack (Eip = a stack address, then
+  0x23 from `FatExceptionFilter`). i386-only (amd64 runs the same flush). Ruled out with
+  tripwires: the SEH trampolines' bodies (callee-saved regs incl. ebp intact), every
+  `IofCallDriver` dispatch and completion routine (no esp drift), and Rust↔C stub link
+  conventions. The diagnostics are `~/vibeos-rust-staging/i386-flush-ebp-diag.patch`.
+  Still owed besides: deciding whether install-smoke joins a scheduled run (its own verb,
+  ~10 min, not a gate stage). arm64 needs a non-IDE disk layout first.
 
 - **27 constants defined with two values inside ONE crate, parked in a lint baseline**
   (TRIAGED 2026-10-09). `scan_const_contradictions` had reported userenv's
@@ -713,8 +731,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `rundll32 newdev` once per phantom, each with full `[PS]` tracing, which held the UART at
   ~10.6 KB/s. `ecam.rs` now probes only when the XSDT is QEMU's (OEM "BOCHS "). Settled desktop
   after the fix: serial 370 B/s, 0 install requests, ping 118/120. Found by restoring
-  umpnpmgr's `Installing: %S` print. Each real device without a `Class` value is still installed twice at
-  boot and newdev fails it with error 259 (QEMU too); bounded, but owed.
+  umpnpmgr's `Installing: %S` print. The double install was fixed (see below). The one device
+  whose install still failed on amd64 was the CPU, `ACPI\AuthenticAMD_-_AMD64_Family_0_Model_0`
+  (newdev error 31): the kernel misread CPUID's bitfields, so every amd64 boot reported family
+  and model 0 and `KeProcessorLevel` 0 -- fixed 2026-10-09. Error 259 is newdev's unattended
+  "no driver found" (`SW_HIDE` skips the wizard), upstream behaviour, not a bug.
 - **Pi 5: ping still lost ~8% for minutes after boot, and the serial console never went
   quiet** (FIXED 2026-10-08, after the phantom-PCI fix). Three causes, each measured:
   - **EEE.** The BCM54213PE advertised Energy Efficient Ethernet (MMD 7.60 = 0x6) and the
