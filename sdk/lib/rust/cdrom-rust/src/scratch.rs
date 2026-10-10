@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -11,7 +12,6 @@ use ntkrnl_sys::ddk::{ExFreePool, IoAllocateMdl, IoBuildPartialMdl, IoFreeMdl, I
 use core::ffi::c_void;
 
 extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn RequestGetContext(scratch_request: *mut core::ffi::c_void) -> *mut CDROM_REQUEST_CONTEXT;
     fn KeDelayExecutionThread( WaitMode: i32, Alertable: u8, Interval: *mut LARGE_INTEGER, ) -> i32;
     fn KeQueryPerformanceCounter(PerformanceFrequency: *mut i64) -> i64;
@@ -117,7 +117,7 @@ pub unsafe extern "C" fn ScratchBuffer_Deallocate(
     DeviceExtension: *mut CDROM_DEVICE_EXTENSION,
 ) {
     // PAGED_CODE();
-    NT_ASSERT(((*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
+    NT_ASSERT!(((*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
     if !(*DeviceExtension).ScratchContext.ScratchHistory.is_null() {
         ExFreePool((*DeviceExtension).ScratchContext.ScratchHistory as *mut core::ffi::c_void);
         (*DeviceExtension).ScratchContext.ScratchHistory = core::ptr::null_mut();
@@ -407,14 +407,14 @@ pub unsafe extern "system" fn ScratchBuffer_ResetItems(
 
     // NT_ASSERT checks
     let scratch = &(*DeviceExtension).ScratchContext;
-    NT_ASSERT(if scratch.ScratchHistory.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchSense.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchSrb.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchRequest.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchBufferSize != 0 { 1 } else { 0 });
-    NT_ASSERT(if scratch.ScratchBuffer.is_null() { 0 } else { 1 });
-    NT_ASSERT(if scratch.ScratchBufferMdl.is_null() { 0 } else { 1 });
-    NT_ASSERT(if !scratch.ScratchInUse.is_null() { 1 } else { 0 });
+    NT_ASSERT!(if scratch.ScratchHistory.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if scratch.ScratchSense.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if scratch.ScratchSrb.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if scratch.ScratchRequest.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if scratch.ScratchBufferSize != 0 { 1 } else { 0 });
+    NT_ASSERT!(if scratch.ScratchBuffer.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if scratch.ScratchBufferMdl.is_null() { 0 } else { 1 });
+    NT_ASSERT!(if !scratch.ScratchInUse.is_null() { 1 } else { 0 });
 
     irp = WdfRequestWdmGetIrp(scratch.ScratchRequest);
 
@@ -947,14 +947,14 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
     (*srb).SrbStatus = 0;
 
     if SynchronousSrb != 0 || !SrbHistoryItem.is_null() {
-        NT_ASSERT(((*history).UsedHistoryCount <= (*history).TotalHistoryCount) as i32);
+        NT_ASSERT!(((*history).UsedHistoryCount <= (*history).TotalHistoryCount) as i32);
 
         if (*history).UsedHistoryCount == (*history).TotalHistoryCount {
             CompressSrbHistoryData(history);
-            NT_ASSERT(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
+            NT_ASSERT!(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
         }
 
-        NT_ASSERT(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
+        NT_ASSERT!(((*history).UsedHistoryCount < (*history).TotalHistoryCount) as i32);
 
         (*history).UsedHistoryCount += 1;
 
@@ -1046,7 +1046,7 @@ pub unsafe extern "C" fn ScratchBuffer_SendSrb(
 #[no_mangle]
 pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY) {
     let mut i: u32;
-    NT_ASSERT(((*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount) as i32);
+    NT_ASSERT!(((*RequestHistory).UsedHistoryCount == (*RequestHistory).TotalHistoryCount) as i32);
     ValidateSrbHistoryDataPresumptions(RequestHistory as *const SRB_HISTORY);
 
     i = 0;
@@ -1075,7 +1075,7 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
                 } else {
                     (*toMatch).MillisecondsDelayOnRetry = ((*toMatch).MillisecondsDelayOnRetry).wrapping_add((*found).MillisecondsDelayOnRetry);
                 }
-                NT_ASSERT(((*found).ClassDriverUse == 0) as i32);
+                NT_ASSERT!(((*found).ClassDriverUse == 0) as i32);
                 (*toMatch).ClassDriverUse += 1;
 
                 if j != (*RequestHistory).UsedHistoryCount - 1 {
@@ -1103,7 +1103,7 @@ pub unsafe extern "C" fn CompressSrbHistoryData(RequestHistory: *mut SRB_HISTORY
         (*RequestHistory).UsedHistoryCount -= 1;
     }
 
-    NT_ASSERT(((*RequestHistory).UsedHistoryCount != (*RequestHistory).TotalHistoryCount) as i32);
+    NT_ASSERT!(((*RequestHistory).UsedHistoryCount != (*RequestHistory).TotalHistoryCount) as i32);
     {
         let mut bytesToZero: usize;
         bytesToZero = ((*RequestHistory).TotalHistoryCount as usize).wrapping_sub((*RequestHistory).UsedHistoryCount as usize);

@@ -1529,6 +1529,15 @@ Rust fn of that name in any crate, a shim crate included. Expect the conversion 
 uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
 `EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
 `scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
+The same bug also comes as an `extern` DECLARATION, `extern "C" { fn TRACE(fmt: *const i8, ...); }`,
+bound at link time to whatever no-op some crate or cohab stub happens to export. That form has
+no body for the empty-fn check to see. By 2026-10-10 that had hidden about 386 NT_ASSERT calls in
+five storage/FS drivers, plus 93 declarations of Wine TRACE/ERR, DPRINT, KdPrintEx and similar.
+fastfat's NT_ASSERT evaluated an operand that faults (cachesup.rs). `scan_macro_fn_shadow` flags these declarations now too. Convert with
+`tools/fn_call_to_macro.py`. When you write the replacement macro, never name it after a std
+macro: a crate-root `macro_rules! assert` shadows `core::assert!` in every module declared
+after it. cabinet's compile-time `FDINOTIFICATION` layout asserts silently became no-ops that
+way, and they still compiled.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool

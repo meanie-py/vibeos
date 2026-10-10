@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -145,7 +146,6 @@ extern "C" {
     fn CdLbnToMmSsFf(lbn: u32, dest: *mut u8);
 }
 extern "C" {
-    fn NT_ASSERT(condition: i32);
 }
 extern "C" {
     fn CdUninitializeMcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -1550,8 +1550,8 @@ pub unsafe extern "C" fn CdDeleteFcb(
 
     match (*fcb_hdr(Fcb)).NodeTypeCode as u32 {
         CDFS_NTC_FCB_PATH_TABLE | CDFS_NTC_FCB_INDEX => {
-            NT_ASSERT(((*fcb_idx(Fcb)).FileObject.is_null()) as i32);
-            NT_ASSERT(IsListEmpty(
+            NT_ASSERT!(((*fcb_idx(Fcb)).FileObject.is_null()) as i32);
+            NT_ASSERT!(IsListEmpty(
                 core::ptr::addr_of!((*fcb_idx(Fcb)).FcbQueue) as *mut LIST_ENTRY,
             ) as i32);
             if Fcb == (*(*Fcb).Vcb).RootIndexFcb {
@@ -1738,7 +1738,7 @@ pub unsafe extern "C" fn CdCreateFileLock(
     // Return or raise as appropriate.
     if FileLock.is_null() {
         if RaiseOnError != 0 {
-            NT_ASSERT((!IrpContext.is_null()) as i32); // ARGUMENT_PRESENT( IrpContext )
+            NT_ASSERT!((!IrpContext.is_null()) as i32); // ARGUMENT_PRESENT( IrpContext )
 
             CdRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
         }

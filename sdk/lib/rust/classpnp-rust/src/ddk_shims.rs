@@ -349,16 +349,6 @@ extern "fastcall" {
     }
 }
 
-/// NT_ASSERTMSG — assertion with message; fre-build semantics (report, don't halt).
-#[no_mangle] pub unsafe extern "C" fn NT_ASSERTMSG(Msg: *const i8, Expr: u8) {
-    if Expr == 0 {
-        ntkrnl_sys::driver_ddk::DbgPrint(
-            b"[CLASSPNP] NT_ASSERTMSG failed: %s\n\0".as_ptr() as *const i8,
-            Msg,
-        );
-    }
-}
-
 /// ClassQueryPnpCapabilities — faithful translation of classpnp class.c: route the
 /// QUERY_CAPABILITIES request to the class driver's Fdo/Pdo query routine, if any.
 #[no_mangle] pub unsafe extern "C" fn ClassQueryPnpCapabilities(

@@ -1272,7 +1272,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     vCPU. **Still owed:** the kernel-VA broadcasts (system-PTE reserve ~25%, zero-space wrap
     ~18%) need batching rather than scoping, and i386's packet transport has no scoping yet.
     Runs 20261009-212808-1of2ir0n (before), 20261009-214354-tejagsx_ (after).
-  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
+  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (WATCH: probable cause fixed 2026-10-09, see below;
     seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
     services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
     dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
@@ -1288,6 +1288,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     0/20, so the run says nothing about whether that fix touches this hang -- and the
     signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
     hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
+    2026-10-10, later: **probable cause found -- the cdrom-rust MCN sync IRP (fixed in
+    f3e634bb8cf, 10-09 00:19).** The hung run predates that fix, and its tree had the bug
+    live. Observed: `unknown ioctl code: 0x7C0C8` -- the driver's own sync IRP sent to
+    scsiport every timer tick -- appears 942 times across klr7vs60's 10 boots (709 in the
+    hung one) and 242 times across ep79fjwh's 10 (same day, pre-fix). It appears 0 times
+    across q7k3yfgl's 20 post-fix boots. While the bug was live, that one IRP was completed
+    at DISPATCH_LEVEL on either CPU, racing its reuse on the next tick, inside the cdrom
+    stack that serves the boot volume (cdfs on the isohybrid USB stick). Inferred, not
+    shown: a request lost there stalls the image read `CreateProcessW` waits on, and that
+    matches this hang (no fault, both CPUs idle). The census's `WrFreePage=1` is NOT a
+    lead: it is the zero-page thread's normal idle wait (`ARM3/zeropage.rs`). Status:
+    WATCH. Reopen on any `-smp 2` hang after `CreateProcessW` with no `0x7C0C8` chatter.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED

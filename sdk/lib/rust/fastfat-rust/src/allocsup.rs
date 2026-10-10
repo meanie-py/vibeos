@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::{PAGE_SIZE};
@@ -39,7 +40,6 @@ extern "system" {
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
 }
 extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn DbgDoit(value: *mut c_void);
     fn DebugUnwind(FunctionName: *const i8);
@@ -157,7 +157,7 @@ pub unsafe extern "system" fn FatSelectBestWindow(Vcb: *mut VCB) -> u32 {
     let mut FirstEmpty: u32 = u32::MAX;
     let ClustersPerWindow: u32 = 0x10000;
 
-    NT_ASSERT((1 != (*Vcb).NumberOfWindows) as i32);
+    NT_ASSERT!((1 != (*Vcb).NumberOfWindows) as i32);
 
     let windows_ptr = (*Vcb).Windows;
     let number_of_windows = (*Vcb).NumberOfWindows;
@@ -450,7 +450,7 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
     {
         *Allocated = 1;
 
-        NT_ASSERT(((*ByteCount != 0) as BOOLEAN) as i32);
+        NT_ASSERT!(((*ByteCount != 0) as BOOLEAN) as i32);
 
         //
         //  Detect the overflow case, trim and claim the condition.
@@ -603,13 +603,11 @@ pub unsafe extern "system" fn FatLookupFileAllocation(
                 //  ASSERT that CurrentVbo and CurrentLbo are now cluster aligned.
                 //
 
-                NT_ASSERT(
-                    ((((CurrentLbo
+                NT_ASSERT!(((((CurrentLbo
                         - (*Vcb).AllocationSupport.FileAreaLbo)
                         % (BytesPerCluster as i64)
                         == 0)
-                        && (CurrentVbo % BytesPerCluster == 0)) as BOOLEAN) as i32,
-                );
+                        && (CurrentVbo % BytesPerCluster == 0)) as BOOLEAN) as i32);
 
                 //
                 //  Starting from the first Vbo after the last Mcb entry, scan through
@@ -1170,7 +1168,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
     DebugTrace(0, (Dbg) as u32, b"  FcbOrDcb  =             %p\n\0".as_ptr() as *const i8, FcbOrDcb as usize);
     DebugTrace(0, (Dbg) as u32, b"  DesiredAllocationSize = %8lx\n\0".as_ptr() as *const i8, DesiredAllocationSize as usize);
 
-    NT_ASSERT(if (*FcbOrDcb).FcbCondition == (FcbGood) as u32 { 1 } else { 0 });
+    NT_ASSERT!(if (*FcbOrDcb).FcbCondition == (FcbGood) as u32 { 1 } else { 0 });
 
     if (*FcbOrDcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
         FatLookupFileAllocationSize(IrpContext, FcbOrDcb);
@@ -1210,7 +1208,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
             (*FcbOrDcb).Header.AllocationSize.QuadPart = DesiredAllocationSize as i64;
 
             if DesiredAllocationSize == 0 {
-                NT_ASSERT(if (*FcbOrDcb).FcbCondition == (FcbGood) as u32 { 1 } else { 0 });
+                NT_ASSERT!(if (*FcbOrDcb).FcbCondition == (FcbGood) as u32 { 1 } else { 0 });
 
                 FatGetDirentFromFcbOrDcb(
                     IrpContext,
@@ -2226,11 +2224,9 @@ pub unsafe extern "system" fn FatSplitAllocation(
 
     let BytesPerCluster: u32 = (1u32 << (*(Vcb as *mut VCB)).AllocationSupport.LogOfBytesPerCluster) as u32;
 
-    NT_ASSERT((((SplitAtVbo & (BytesPerCluster - 1)) == 0) as u8) as i32);
+    NT_ASSERT!((((SplitAtVbo & (BytesPerCluster - 1)) == 0) as u8) as i32);
 
-    NT_ASSERT(
-        ((!((SplitAtVbo != 0) && (FsRtlNumberOfRunsInLargeMcb(Mcb) == 0))) as u8) as i32,
-    );
+    NT_ASSERT!(((!((SplitAtVbo != 0) && (FsRtlNumberOfRunsInLargeMcb(Mcb) == 0))) as u8) as i32);
 
     //   NT_ASSERT( FsRtlNumberOfRunsInMcb( RemainingMcb ) == 0 );
 
@@ -2416,13 +2412,13 @@ pub unsafe extern "system" fn FatInterpretClusterType(
                 Entry &= FAT32_ENTRY_MASK;
             }
             12 => {
-                NT_ASSERT(((Entry <= 0xfff) as u8) as i32);
+                NT_ASSERT!(((Entry <= 0xfff) as u8) as i32);
                 if Entry >= 0x0ff0 {
                     Entry |= 0x0FFFF000;
                 }
             }
             16 | _ => {
-                NT_ASSERT(((Entry <= 0xffff) as u8) as i32);
+                NT_ASSERT!(((Entry <= 0xffff) as u8) as i32);
                 if Entry >= 0x0fff0 {
                     Entry |= 0x0FFF0000;
                 }
@@ -2730,7 +2726,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
 
             // If we still hold the mutex (only if abnormal termination)
             if *p_ReleaseMutex != 0 {
-                NT_ASSERT(abnormal as i32);
+                NT_ASSERT!(abnormal as i32);
                 FatUnlockFreeClusterBitMap(Vcb);
             }
 
@@ -3036,7 +3032,7 @@ pub unsafe extern "system" fn FatSetFatRun(
 
             // If we still somehow have the Mutex, release it.
             if *p_ReleaseMutex != 0 {
-                NT_ASSERT(abnormal as i32);
+                NT_ASSERT!(abnormal as i32);
                 FatUnlockFreeClusterBitMap(Vcb);
             }
 
@@ -3171,8 +3167,8 @@ pub unsafe extern "system" fn FatExamineFatEntries(
         // --- Setup phase ---
         fat_index_bit_size = (*vcb).AllocationSupport.FatIndexBitSize as u32;
 
-        NT_ASSERT(!(setup_windows != 0 && (!switch_to_window.is_null() || !bit_map_buffer.is_null())) as i32);
-        NT_ASSERT(!(setup_windows != 0 && fat_index_bit_size != 32) as i32);
+        NT_ASSERT!(!(setup_windows != 0 && (!switch_to_window.is_null() || !bit_map_buffer.is_null())) as i32);
+        NT_ASSERT!(!(setup_windows != 0 && fat_index_bit_size != 32) as i32);
 
         if (*vcb).NumberOfWindows > 1 {
             entries_per_window = MAX_CLUSTER_BITMAP_SIZE;
@@ -3183,7 +3179,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
         free_cluster_count = &mut (*vcb).AllocationSupport.NumberOfFreeClusters;
 
         if setup_windows != 0 {
-            NT_ASSERT(bit_map_buffer.is_null() as i32);
+            NT_ASSERT!(bit_map_buffer.is_null() as i32);
 
             bit_map = core::ptr::null_mut();
             current_window = (*vcb).Windows.add(0);
@@ -3191,7 +3187,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
             (*current_window).ClustersFree = 0;
         } else if bit_map_buffer.is_null() {
             // SwitchToWindow must be provided
-            NT_ASSERT(!switch_to_window.is_null() as i32);
+            NT_ASSERT!(!switch_to_window.is_null() as i32);
 
             current_window = switch_to_window;
             start_index = (*current_window).FirstCluster;
@@ -3224,7 +3220,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
             free_cluster_count = core::ptr::null_mut();
         }
 
-        NT_ASSERT((start_index >= 2) as i32);
+        NT_ASSERT!((start_index >= 2) as i32);
     }
 
     let p_bcb = core::ptr::addr_of_mut!(bcb);
@@ -3304,14 +3300,14 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                         (*current_window).LastCluster = fat_index - 1;
 
                         if current_run == RunType::FreeClusters {
-                            NT_ASSERT(!free_cluster_count.is_null() as i32);
+                            NT_ASSERT!(!free_cluster_count.is_null() as i32);
                             clusters_this_run = fat_index - start_index_of_this_run;
                             (*current_window).ClustersFree += clusters_this_run;
                             if !free_cluster_count.is_null() {
                                 *free_cluster_count += clusters_this_run;
                             }
                         } else {
-                            NT_ASSERT((current_run == RunType::AllocatedClusters) as i32);
+                            NT_ASSERT!((current_run == RunType::AllocatedClusters) as i32);
                         }
 
                         start_index_of_this_run = fat_index;
@@ -3455,7 +3451,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                 (*vcb).ClusterHint = u32::MAX; // -1 cast to unsigned
 
                 if !free_cluster_count.is_null() {
-                    NT_ASSERT((setup_windows == 0) as i32);
+                    NT_ASSERT!((setup_windows == 0) as i32);
                     (*(*vcb).CurrentWindow).ClustersFree = *free_cluster_count;
                 }
             }
@@ -3463,7 +3459,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
             // --- Post-conditions ---
             if setup_windows == 0 && bit_map_buffer.is_null() {
                 // ASSERT_CURRENT_WINDOW_GOOD inline expansion
-                NT_ASSERT(!(*vcb).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() as i32);
+                NT_ASSERT!(!(*vcb).FreeClusterBitMap.__bindgen_anon_1.__bindgen_anon_1.as_ref().Buffer.is_null() as i32);
                 let free_cluster_bitmap_clear = RtlNumberOfClearBits((&mut (*vcb).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP).cast());
                 let current_free = (*current_window).ClustersFree;
                 if current_free != free_cluster_bitmap_clear {
@@ -3474,14 +3470,12 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                         free_cluster_bitmap_clear,
                     );
                 }
-                NT_ASSERT((current_free == free_cluster_bitmap_clear) as i32);
+                NT_ASSERT!((current_free == free_cluster_bitmap_clear) as i32);
             }
 
-            NT_ASSERT(
-                ((*vcb).AllocationSupport.NumberOfFreeClusters
+            NT_ASSERT!(((*vcb).AllocationSupport.NumberOfFreeClusters
                     <= (*vcb).AllocationSupport.NumberOfClusters)
-                    as i32,
-            );
+                    as i32);
         },
         |_, _| {
             // Unpin the last bcb and drop the temporary bitmap buffer if it exists.

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::base::{STATUS_INSUFFICIENT_RESOURCES};
@@ -42,7 +43,6 @@ extern "system" {
     static IRP_PAGING_IO: u32;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     } extern "C" { fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...); } extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn FlagOn(Flags: u32, Flag: u32) -> i32;
     fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
@@ -984,7 +984,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
     );
 
     if UserByteCount != ByteCount {
-        NT_ASSERT((ByteCount > UserByteCount) as i32);
+        NT_ASSERT!((ByteCount > UserByteCount) as i32);
         // _Analysis_assume_ removed: SAL no-op annotation; argument must never be evaluated (0xB8 class)
 
         let Mdl = IoAllocateMdl(
@@ -1033,7 +1033,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
         FatPopUpFileCorrupt(IrpContext, FcbOrDcb);
         FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
     }
-    NT_ASSERT((NextByteCount != 0) as i32);
+    NT_ASSERT!((NextByteCount != 0) as i32);
 
     // Single run case
     if NextByteCount >= ByteCount - (if EndOnMax != 0 { 1 } else { 0 }) {
@@ -1093,12 +1093,12 @@ pub unsafe extern "system" fn FatNonCachedIo(
             io_runs_ptr = stack_io_runs.as_mut_ptr();
         }
 
-        NT_ASSERT((LastIndex != FirstIndex) as i32);
+        NT_ASSERT!((LastIndex != FirstIndex) as i32);
 
         let mut CurrentIndex = FirstIndex;
         while CurrentIndex <= LastIndex {
-            NT_ASSERT((NextByteCount != 0) as i32);
-            NT_ASSERT((ByteCount != 0) as i32);
+            NT_ASSERT!((NextByteCount != 0) as i32);
+            NT_ASSERT!((ByteCount != 0) as i32);
 
             if NextByteCount > ByteCount {
                 NextByteCount = ByteCount;
@@ -1117,7 +1117,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
 
             CurrentIndex += 1;
             if CurrentIndex <= LastIndex {
-                NT_ASSERT((ByteCount != 0) as i32);
+                NT_ASSERT!((ByteCount != 0) as i32);
 
                 let mut NextVbo: u32 = 0; // placeholder, value unused
                 FatGetNextMcbEntry(
@@ -1218,7 +1218,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
     OriginalStartingVbo = StartingVbo;
     SectorSize = ((*(*FcbOrDcb).Vcb).Bpb.BytesPerSector) as u32;
 
-    NT_ASSERT((FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) != 0) as i32);
+    NT_ASSERT!((FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT) != 0) as i32);
 
     FatLockUserBuffer(IrpContext, Irp, IoWriteAccess as LOCK_OPERATION, ByteCount);
     UserBuffer = FatMapUserBuffer(IrpContext, Irp) as *mut u8;
@@ -1288,7 +1288,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
                     }
 
                     // Assert sector alignment of remaining range start
-                    NT_ASSERT(((StartingVbo & (SectorSize - 1)) == 0) as i32);
+                    NT_ASSERT!(((StartingVbo & (SectorSize - 1)) == 0) as i32);
 
                     // Tail alignment handling
                     if (ByteCount & (SectorSize - 1)) != 0 {
@@ -1338,7 +1338,7 @@ pub unsafe extern "system" fn FatNonCachedNonAlignedRead(
                     }
 
                     // Assert both start and count are sector aligned
-                    NT_ASSERT((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
+                    NT_ASSERT!((((StartingVbo | ByteCount) & (SectorSize - 1)) == 0) as i32);
 
                     SavedMdl = ((*(Irp as *mut _IRP)).MdlAddress).cast();
                     (*(Irp as *mut _IRP)).MdlAddress = core::ptr::null_mut();
@@ -1744,7 +1744,7 @@ pub unsafe extern "system" fn FatPagingFileCompletionRoutine(
             MasterIrp,
         );
 
-        NT_ASSERT((!NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status)) as i32);
+        NT_ASSERT!((!NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status)) as i32);
 
         if (Irp as *mut core::ffi::c_void) != MasterIrp {
             let master = MasterIrp as *mut IRP;
@@ -1781,9 +1781,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
 
     // FatDoCompletionZero expansion
     if !(*Context).ZeroMdl.is_null() {
-        NT_ASSERT(
-            (((*(*Context).ZeroMdl).MdlFlags & ((MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) as u32 as i16)) != 0) as i32
-        );
+        NT_ASSERT!((((*(*Context).ZeroMdl).MdlFlags & ((MDL_MAPPED_TO_SYSTEM_VA | MDL_SOURCE_IS_NONPAGED_POOL) as u32 as i16)) != 0) as i32);
         if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
             core::ptr::write_bytes(
                 (*(*Context).ZeroMdl).MappedSystemVa,
@@ -1796,9 +1794,9 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
     }
 
     if ntkrnl_sys::base::NT_SUCCESS((*Irp).IoStatus.__bindgen_anon_1.Status) {
-        NT_ASSERT(((*Irp).IoStatus.Information != 0) as i32);
+        NT_ASSERT!(((*Irp).IoStatus.Information != 0) as i32);
         (*Irp).IoStatus.Information = (*Context).Wait.Async.as_ref().RequestedByteCount as _;
-        NT_ASSERT(((*Irp).IoStatus.Information != 0) as i32);
+        NT_ASSERT!(((*Irp).IoStatus.Information != 0) as i32);
 
         if FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0 {
             let major_function = (*IoGetCurrentIrpStackLocation(Irp)).MajorFunction;

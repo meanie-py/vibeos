@@ -28,7 +28,6 @@ extern "system" {
 }
 extern "C" {
     fn USBD_TRANSFER_DIRECTION_FLAG(TransferFlags: u32) -> u32;
-    fn DPRINT1(format: *const i8, ...);
 }
 
 // ---- file-scope preamble (translated) ----

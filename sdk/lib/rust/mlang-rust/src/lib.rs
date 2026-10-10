@@ -9,6 +9,20 @@
 #![allow(dead_code, unused_assignments, unused_variables, unused_mut)]
 #![allow(unused_parens, unused_unsafe, unused_imports)]
 
+// Wine debug channel macros — translated as no-op `extern "C" fn`s, converted back
+// to `macro_rules!` per AGENTS.md §"Translating a plain-C module", step 2.
+// Defined at crate root (before module declarations) so they're in scope for all modules.
+macro_rules! TRACE {
+    ($($arg:tt)*) => {
+        ()
+    };
+}
+macro_rules! WARN {
+    ($($arg:tt)*) => {
+        ()
+    };
+}
+
 #[path = "mlang/mlang.rs"]
 mod mlang;
 mod debug_shims;

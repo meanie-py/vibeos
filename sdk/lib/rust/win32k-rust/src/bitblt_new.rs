@@ -23,7 +23,6 @@ extern "system" {
     fn RECTL_bClipRectBySize(rcOut: *mut RECTL, rcIn: *const RECTL, size: *const SIZEL) -> u8;
     fn SURFOBJ_flags(pso: *const SURFOBJ) -> u32;
     fn GDIDEVFUNCS(pso: *const SURFOBJ) -> *const core::ffi::c_void;
-    fn ERR(msg: *const u8);
     fn SafeProbeForRead(Address: *const core::ffi::c_void, Length: usize, Alignment: u32) -> NTSTATUS;
 }
 
@@ -423,7 +422,7 @@ pub unsafe extern "system" fn IntEngBitBlt(
             && (*psoSrc_mut).hdev != (*psoTrg).hdev
             && (SURFOBJ_flags(psoSrc_mut) & HOOK_BITBLT) != 0
         {
-            ERR(b"Need to copy to standard bitmap format!\n\0".as_ptr());
+            ERR!("Need to copy to standard bitmap format!\n");
         }
 
         let gdi_funcs = GDIDEVFUNCS(psoTrg) as *const *const PFN_DrvBitBlt;

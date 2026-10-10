@@ -1,3 +1,4 @@
+use winedebug_rust::{TRACE};
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 use crate::string::nls_subst::*;
@@ -32,11 +33,6 @@ extern "system" {
 extern "C" {
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
-    // Wine TRACE macro — variadic, no-op. Local decl shadows the fixed-arg
-    // nls_subst #[no_mangle] body for the printf-style call sites here.
-    // (debugstr_w / wine_dbgstr_w resolve to the real Rust helpers re-exported
-    //  by nls_subst via the glob import above.)
-    fn TRACE(fmt: *const i8, ...);
     // snprintfW == _snwprintf (msvcrt). Variadic; resolves to the real ntdll export.
     // count is size_t (usize) — matches nls_subst/lcformat. Declaring it c_int here
     // fed garbage upper bits to the variadic callee on 64-bit (amd64/arm64).
@@ -95,7 +91,7 @@ unsafe fn load_message(mut module: HMODULE, id: UINT, lang: WORD) -> LPWSTR {
     let mut buffer: *mut WCHAR = core::ptr::null_mut();
     let status: NTSTATUS;
 
-    TRACE(b"module = %p, id = %08x\n\0" as *const u8 as *const i8, module, id);
+    TRACE!(b"module = %p, id = %08x\n\0" as *const u8 as *const i8, module, id);
 
     if module.is_null() {
         module = GetModuleHandleW(core::ptr::null());
@@ -149,7 +145,7 @@ unsafe fn load_message(mut module: HMODULE, id: UINT, lang: WORD) -> LPWSTR {
         );
     }
 
-    TRACE(b"returning %s\n\0" as *const u8 as *const i8, wine_dbgstr_w(buffer));
+    TRACE!(b"returning %s\n\0" as *const u8 as *const i8, wine_dbgstr_w(buffer));
     buffer
 }
 unsafe fn search_message(
@@ -698,16 +694,7 @@ pub unsafe extern "system" fn FormatMessageA(
     let mut destlength: DWORD = 0;
     let mut from: LPWSTR = core::ptr::null_mut();
 
-    TRACE(
-        b"(0x%x,%p,%d,0x%x,%p,%d,%p)\n\0".as_ptr() as *const i8,
-        dwFlags,
-        lpSource,
-        dwMessageId,
-        dwLanguageId,
-        lpBuffer,
-        nSize,
-        args,
-    );
+    TRACE!("(0x%x,%p,%d,0x%x,%p,%d,%p)\n", dwFlags, lpSource, dwMessageId, dwLanguageId, lpBuffer, nSize, args);
 
     if dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER != 0 {
         if lpBuffer.is_null() {
@@ -761,10 +748,7 @@ pub unsafe extern "system" fn FormatMessageA(
 
     target = format_message(0, dwFlags, from as LPCWSTR, &raw mut format_args);
     if !target.is_null() {
-        TRACE(
-            b"-- %s\n\0".as_ptr() as *const i8,
-            debugstr_w(target),
-        );
+        TRACE!("-- %s\n", debugstr_w(target));
 
         if *target != 0 {
             destlength = WideCharToMultiByte(
@@ -820,10 +804,7 @@ pub unsafe extern "system" fn FormatMessageA(
         HeapFree(GetProcessHeap(), 0, format_args.args as LPVOID);
     }
 
-    TRACE(
-        b"-- returning %u\n\0".as_ptr() as *const i8,
-        ret,
-    );
+    TRACE!("-- returning %u\n", ret);
     ret
 }
 
@@ -843,16 +824,7 @@ pub unsafe extern "system" fn FormatMessageW(
     let mut talloced: DWORD = 0;
     let mut from: LPWSTR = core::ptr::null_mut();
 
-    TRACE(
-        b"(0x%x,%p,%d,0x%x,%p,%d,%p)\n\0".as_ptr() as *const i8,
-        dwFlags,
-        lpSource,
-        dwMessageId,
-        dwLanguageId,
-        lpBuffer,
-        nSize,
-        args,
-    );
+    TRACE!("(0x%x,%p,%d,0x%x,%p,%d,%p)\n", dwFlags, lpSource, dwMessageId, dwLanguageId, lpBuffer, nSize, args);
 
     if lpBuffer.is_null() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -894,10 +866,7 @@ pub unsafe extern "system" fn FormatMessageW(
     target = format_message(1, dwFlags, from as LPCWSTR, &raw mut format_args);
     if !target.is_null() {
         talloced = (strlenW(target) + 1) as DWORD;
-        TRACE(
-            b"-- %s\n\0".as_ptr() as *const i8,
-            debugstr_w(target),
-        );
+        TRACE!("-- %s\n", debugstr_w(target));
 
         if dwFlags & FORMAT_MESSAGE_ALLOCATE_BUFFER != 0 {
             if *target != 0 {
@@ -926,10 +895,7 @@ pub unsafe extern "system" fn FormatMessageW(
     if dwFlags & FORMAT_MESSAGE_ARGUMENT_ARRAY == 0 {
         HeapFree(GetProcessHeap(), 0, format_args.args as LPVOID);
     }
-    TRACE(
-        b"-- returning %u\n\0".as_ptr() as *const i8,
-        ret,
-    );
+    TRACE!("-- returning %u\n", ret);
     ret
 }
 

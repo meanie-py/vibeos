@@ -9,7 +9,6 @@ extern "system" {
 }
 extern "C" {
     fn SockReenableAsyncSelectEvent(socket: PVOID, event: LONG);
-    fn TRACE(format: PCSTR, ...);
 }
 #[no_mangle]
 pub unsafe extern "system" fn WSPAsyncSelect(

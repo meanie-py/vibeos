@@ -87,7 +87,6 @@ pub const USBD_STATUS_DEVICE_NOT_RESPONDING: LONG = 0xC0000005u32 as LONG;
 // name in scope for modules that don't declare it themselves; the no-op symbols satisfy the
 // link (cdecl, caller cleans varargs). ----
 extern "C" {
-    pub fn DPRINT(fmt: *const ::core::ffi::c_char, ...);
     pub fn DPRINT_USB(fmt: *const ::core::ffi::c_char, ...);
 }
 mod dprint_syms {

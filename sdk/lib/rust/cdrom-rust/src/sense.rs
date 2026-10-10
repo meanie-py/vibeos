@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -51,7 +52,6 @@ extern "C" {
     fn DeviceReleaseQueue(device: *mut core::ffi::c_void);
 }
 extern "system" {
-    fn NT_ASSERT(Expression: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -2269,7 +2269,7 @@ pub unsafe extern "C" fn RequestSenseInfoInterpretForScratchBuffer(
     Status: *mut i32,
     RetryIntervalIn100ns: *mut i64,
 ) -> i32 {
-    NT_ASSERT((!(*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
+    NT_ASSERT!((!(*DeviceExtension).ScratchContext.ScratchInUse.is_null()) as i32);
     RequestSenseInfoInterpret(
         DeviceExtension,
         (*DeviceExtension).ScratchContext.ScratchRequest as *mut core::ffi::c_void,

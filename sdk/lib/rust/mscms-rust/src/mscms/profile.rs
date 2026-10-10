@@ -6,7 +6,6 @@ extern "C" {
     fn release_profile(profile: *mut profile);
     fn cmsGetTagCount(cmsprofile: *mut core::ffi::c_void) -> i32;
     fn cmsGetTagSignature(cmsprofile: *mut core::ffi::c_void, index: i32) -> u32;
-    fn TRACE(fmt: *const i8, arg1: HPROFILE, arg2: u32, arg3: *mut u32);
     fn get_profile_header(profile: *mut profile, header: *mut PROFILEHEADER);
     fn set_tag_data( profile: *mut profile, type_: TAGTYPE, offset: u32, buffer: *mut core::ffi::c_void, size: *mut u32, ) -> i32; // BOOL fn WARN(format: *const i8, ...);
     fn debugstr_w(str: *const u16) -> *const i8;
@@ -25,7 +24,6 @@ extern "C" {
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn InstallColorProfileW(machine: *const u16, profile: *const u16) -> i32;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn OpenColorProfileW(profile: *mut PROFILE, access: u32, share: u32, creation: u32) -> *mut core::ffi::c_void;
     #[no_mangle] #[no_mangle] #[no_mangle] pub unsafe extern "system" fn CloseColorProfile(handle: *mut core::ffi::c_void) -> i32;
-    fn WARN(format: *const i8, ...);
     unsafe fn profile_AtoW(profile: *const PROFILE, out: *mut PROFILE) -> BOOL;
     unsafe fn set_profile_device_key(profile: *const u16, data: *const u8, size: u32) -> i32;
     // Assume these forward declarations exist elsewhere #[no_mangle]
@@ -73,7 +71,6 @@ const ERROR_CALL_NOT_IMPLEMENTED: u32 = ntdll_sys::nt::ERROR_CALL_NOT_IMPLEMENTE
 
 unsafe extern "C" {
     fn FIXME(fmt: *const i8, ...);
-    fn TRACE(fmt: *const i8, ...);
     fn debugstr_w(s: *const u16) -> *const i8;
 }
 
@@ -149,12 +146,7 @@ pub unsafe extern "system" fn AssociateColorProfileWithDeviceA(
         let profileW: *mut u16;
         let deviceW: *mut u16;
 
-        TRACE(
-            b"( %s, %s, %s )\n\0".as_ptr() as *const i8,
-            debugstr_a(machine),
-            debugstr_a(profile),
-            debugstr_a(device),
-        );
+        TRACE!(b"( %s, %s, %s )\n\0".as_ptr() as *const i8, debugstr_a(machine), debugstr_a(profile), debugstr_a(device));
 
         if profile.is_null() || device.is_null() {
             SetLastError(ntdll_sys::nt::ERROR_INVALID_PARAMETER);
@@ -192,12 +184,7 @@ pub unsafe extern "system" fn AssociateColorProfileWithDeviceW(
 ) -> i32 {
     static DUMMY_VALUE: [u8; 12] = [0u8; 12];
 
-    TRACE(
-        b"( %s, %s, %s )\n\0".as_ptr() as *const i8,
-        debugstr_w(machine),
-        debugstr_w(profile),
-        debugstr_w(device),
-    );
+    TRACE!(b"( %s, %s, %s )\n\0".as_ptr() as *const i8, debugstr_w(machine), debugstr_w(profile), debugstr_w(device));
 
     if profile.is_null() || device.is_null() {
         SetLastError(ntdll_sys::nt::ERROR_INVALID_PARAMETER);
@@ -222,7 +209,7 @@ pub unsafe extern "system" fn DisassociateColorProfileFromDeviceA(machine: *cons
     let mut profileW: *mut u16 = core::ptr::null_mut();
     let mut deviceW: *mut u16 = core::ptr::null_mut();
 
-    TRACE(b"( %s, %s, %s )\n\0".as_ptr() as *const i8, debugstr_a(machine), debugstr_a(profile), debugstr_a(device));
+    TRACE!(b"( %s, %s, %s )\n\0".as_ptr() as *const i8, debugstr_a(machine), debugstr_a(profile), debugstr_a(device));
 
     if profile.is_null() || device.is_null() {
         SetLastError(87 /* ERROR_INVALID_PARAMETER */);
@@ -264,7 +251,7 @@ pub unsafe extern "system" fn GetColorDirectoryA(
     let mut ret: i32 = 0;
     let mut sizeW: u32 = 0;
 
-    TRACE(b"( %p, %p )\n\0".as_ptr() as *const i8, buffer, size);
+    TRACE!(b"( %p, %p )\n\0".as_ptr() as *const i8, buffer, size);
 
     if !machine.is_null() || size.is_null() {
         return 0;
@@ -327,15 +314,7 @@ pub unsafe extern "system" fn GetColorProfileElement(
     let mut ret: BOOL = 0;
     #[cfg(feature = "lcms2")]
     {
-        TRACE(
-            b"( %p, 0x%08x, %d, %p, %p, %p )\n\0".as_ptr() as *const i8,
-            handle as *const core::ffi::c_void,
-            type_,
-            offset as i32,
-            size as *const core::ffi::c_void,
-            buffer as *const core::ffi::c_void,
-            ref_ as *const core::ffi::c_void,
-        );
+        TRACE!(b"( %p, 0x%08x, %d, %p, %p, %p )\n\0".as_ptr() as *const i8, handle as *const core::ffi::c_void, type_, offset as i32, size as *const core::ffi::c_void, buffer as *const core::ffi::c_void, ref_ as *const core::ffi::c_void);
 
         let profile: *mut profile = grab_profile(handle);
 
@@ -372,7 +351,7 @@ pub unsafe extern "system" fn GetColorProfileElementTag(
     let profile: *mut profile = grab_profile(handle);
     let num_tags: i32;
 
-    TRACE(b"(%p, %d, %p)\n\0".as_ptr() as *const i8, handle, index, type_);
+    TRACE!(b"(%p, %d, %p)\n\0".as_ptr() as *const i8, handle, index, type_);
 
     if profile.is_null() {
         return 0;
@@ -411,7 +390,7 @@ pub unsafe extern "system" fn GetColorProfileFromHandle(
         let profile: *mut profile = grab_profile(handle);
         let mut header: PROFILEHEADER = core::mem::zeroed();
 
-        TRACE(b" (%p, %p, %p)\n\0".as_ptr() as *const i8, handle as *mut u8, buffer as *mut u8, size as *mut u8);
+        TRACE!(b" (%p, %p, %p)\n\0".as_ptr() as *const i8, handle as *mut u8, buffer as *mut u8, size as *mut u8);
 
         if profile.is_null() {
             return 0;
@@ -465,7 +444,7 @@ pub unsafe extern "system" fn GetCountColorProfileElements(handle: HPROFILE, cou
     let profile: *mut profile = grab_profile(handle);
     let num_tags: i32;
 
-    TRACE(b"( %p, %p )\n\0".as_ptr() as *const i8, handle, count);
+    TRACE!(b"( %p, %p )\n\0".as_ptr() as *const i8, handle, count);
 
     if profile.is_null() {
         return 0;
@@ -500,12 +479,7 @@ pub unsafe extern "system" fn GetStandardColorSpaceProfileA(
         let mut ret: i32 = 0;
         let mut sizeW: u32;
 
-        TRACE(
-            b"( 0x%08x, %p, %p )\n\0".as_ptr() as *const i8,
-            id,
-            profile as *const core::ffi::c_void,
-            size as *const core::ffi::c_void,
-        );
+        TRACE!(b"( 0x%08x, %p, %p )\n\0".as_ptr() as *const i8, id, profile as *const core::ffi::c_void, size as *const core::ffi::c_void);
 
         if !machine.is_null() {
             SetLastError(ERROR_NOT_SUPPORTED);
@@ -594,14 +568,7 @@ pub unsafe extern "system" fn EnumColorProfilesW(
     let mut data: WIN32_FIND_DATAW = core::mem::zeroed();
     let mut find: *mut core::ffi::c_void;
 
-    TRACE(
-        b"( %p, %p, %p, %p, %p )\n\0".as_ptr() as *const i8,
-        machine,
-        record,
-        buffer,
-        size,
-        number,
-    );
+    TRACE!(b"( %p, %p, %p, %p, %p )\n\0".as_ptr() as *const i8, machine, record, buffer, size, number);
 
     if !machine.is_null()
         || record.is_null()
@@ -614,7 +581,7 @@ pub unsafe extern "system" fn EnumColorProfilesW(
 
     ret = GetColorDirectoryW(machine, colordir.as_mut_ptr(), &mut len);
     if ret == 0 || len + SPEC.len() as u32 > MAX_PATH as u32 {
-        WARN(b"Can't retrieve color directory\n\0".as_ptr() as *const i8);
+        WARN!(b"Can't retrieve color directory\n\0".as_ptr() as *const i8);
         return 0;
     }
 
@@ -645,10 +612,7 @@ pub unsafe extern "system" fn EnumColorProfilesW(
             if (*profiles.add(count as usize)).is_null() {
                 goto exit;
             } else {
-                TRACE(
-                    b"matching profile: %s\n\0".as_ptr() as *const i8,
-                    debugstr_w(data.cFileName.as_ptr()),
-                );
+                TRACE!(b"matching profile: %s\n\0".as_ptr() as *const i8, debugstr_w(data.cFileName.as_ptr()));
                 lstrcpyW(*profiles.add(count as usize), data.cFileName.as_ptr());
                 totalsize += len;
                 count += 1;
@@ -682,10 +646,7 @@ pub unsafe extern "system" fn EnumColorProfilesW(
             if (*profiles.add(count as usize)).is_null() {
                 goto exit;
             } else {
-                TRACE(
-                    b"matching profile: %s\n\0".as_ptr() as *const i8,
-                    debugstr_w(data.cFileName.as_ptr()),
-                );
+                TRACE!(b"matching profile: %s\n\0".as_ptr() as *const i8, debugstr_w(data.cFileName.as_ptr()));
                 lstrcpyW(*profiles.add(count as usize), data.cFileName.as_ptr());
                 totalsize += len;
                 count += 1;
@@ -741,7 +702,7 @@ pub unsafe extern "system" fn InstallColorProfileA(
     let mut profileW: *mut u16;
     let mut ret: i32 = 0;
 
-    TRACE(c"( %s )\n".as_ptr() as *const i8, debugstr_a(profile));
+    TRACE!(c"( %s )\n".as_ptr() as *const i8, debugstr_a(profile));
 
     if !machine.is_null() || profile.is_null() {
         return 0;
@@ -783,12 +744,7 @@ pub unsafe extern "system" fn IsColorProfileTagPresent(
     if cfg!(feature = "lcms2") {
         let profile: *mut profile = grab_profile(handle);
 
-        TRACE(
-            b"( %p, 0x%08x, %p )\n\0".as_ptr() as *const i8,
-            handle as *mut core::ffi::c_void,
-            type_,
-            present as *mut core::ffi::c_void,
-        );
+        TRACE!(b"( %p, 0x%08x, %p )\n\0".as_ptr() as *const i8, handle as *mut core::ffi::c_void, type_, present as *mut core::ffi::c_void);
 
         if profile.is_null() {
             return 0;
@@ -812,7 +768,7 @@ pub unsafe extern "system" fn IsColorProfileValid(handle: HPROFILE, valid: PBOOL
     let mut ret: BOOL = 0; // FALSE
     if cfg!(feature = "lcms2") {
         let profile = grab_profile(handle);
-        TRACE(b"( %p, %p )\n\0".as_ptr() as *const i8, handle as *const _, valid as *const _);
+        TRACE!(b"( %p, %p )\n\0".as_ptr() as *const i8, handle as *const _, valid as *const _);
         if profile.is_null() {
             return 0;
         }
@@ -856,7 +812,7 @@ pub unsafe extern "system" fn SetColorProfileElement(
 pub unsafe extern "system" fn SetColorProfileHeader(handle: HPROFILE, header: PPROFILEHEADER) -> i32 {
     if cfg!(feature = "lcms2") {
         let profile = grab_profile(handle);
-        TRACE(b"( %p, %p )\n\0".as_ptr() as *const i8, handle, header);
+        TRACE!(b"( %p, %p )\n\0".as_ptr() as *const i8, handle, header);
         if profile.is_null() {
             return 0;
         }
@@ -878,7 +834,7 @@ pub unsafe extern "system" fn UninstallColorProfileA(machine: *const i8, profile
     let profileW: *mut u16;
     let mut ret: i32 = 0;
 
-    TRACE(b"( %s, %x )\n\0".as_ptr() as *const i8, debugstr_a(profile), delete);
+    TRACE!(b"( %s, %x )\n\0".as_ptr() as *const i8, debugstr_a(profile), delete);
 
     if !machine.is_null() || profile.is_null() {
         return 0;
@@ -898,7 +854,7 @@ pub unsafe extern "system" fn UninstallColorProfileA(machine: *const i8, profile
 
 #[no_mangle]
 pub unsafe extern "system" fn UninstallColorProfileW(machine: PCWSTR, profile: PCWSTR, delete: i32) -> i32 {
-    TRACE(b"( %s, %x )\n".as_ptr() as *const i8, debugstr_w(profile), delete);
+    TRACE!(b"( %s, %x )\n".as_ptr() as *const i8, debugstr_w(profile), delete);
     if !machine.is_null() || profile.is_null() {
         return 0;
     }
@@ -972,16 +928,7 @@ pub unsafe extern "system" fn WcsOpenColorProfileA(
     let mut gmmpW: PROFILE = core::mem::zeroed();
     let mut ret: *mut core::ffi::c_void = core::ptr::null_mut();
 
-    TRACE(
-        b"%p, %p, %p, %08x, %08x, %08x, %08x\n\0".as_ptr() as *const i8,
-        cdm,
-        camp,
-        gmmp,
-        access,
-        sharing,
-        creation,
-        flags,
-    );
+    TRACE!(b"%p, %p, %p, %08x, %08x, %08x, %08x\n\0".as_ptr() as *const i8, cdm, camp, gmmp, access, sharing, creation, flags);
 
     if cdm.is_null() || profile_AtoW(cdm as *const PROFILE, &raw mut cdmW) == 0 {
         return core::ptr::null_mut();

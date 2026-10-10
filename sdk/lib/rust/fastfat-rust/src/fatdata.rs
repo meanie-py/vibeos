@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -30,7 +31,6 @@ extern "system" {
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
     fn DebugDump(str: *const i8, level: u32, p: *mut core::ffi::c_void);
-    fn NT_ASSERT(condition: i32);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, ExceptionCode: NTSTATUS);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
@@ -305,12 +305,8 @@ pub unsafe extern "system" fn FatExceptionFilter(
             );
         }
     } else {
-        NT_ASSERT(
-            ((*IrpContext).ExceptionStatus == (ExceptionCode) as i32) as i32,
-        );
-        NT_ASSERT(
-            (FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0) as i32,
-        );
+        NT_ASSERT!(((*IrpContext).ExceptionStatus == (ExceptionCode) as i32) as i32);
+        NT_ASSERT!((FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0) as i32);
     }
 
     EXCEPTION_EXECUTE_HANDLER

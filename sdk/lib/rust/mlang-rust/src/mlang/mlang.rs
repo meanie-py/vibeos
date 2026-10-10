@@ -1859,10 +1859,8 @@ unsafe extern "C" {
 #[inline] fn min(a: LONG, b: LONG) -> LONG { core::cmp::min(a, b) }
 
 extern "C" {
-    fn TRACE(format: *const i8, ...);
     fn swprintf(buffer: *mut u16, format: *const u16, ...) -> i32;
     fn FIXME(format: *const core::ffi::c_char, ...);
-    fn WARN(fmt: *const core::ffi::c_char, ...);
 }
 
 unsafe extern "C" fn DetectJapaneseCode(input: *const u8, count: u32) -> u32 {
@@ -2028,7 +2026,7 @@ pub unsafe extern "system" fn DllMain(hInstDLL: HINSTANCE, fdwReason: DWORD, lpv
 }
 
 unsafe extern "C" fn GetFamilyCodePage(uiCodePage: u32, puiFamilyCodePage: *mut u32) -> HRESULT {
-    TRACE(b"%u %p\n\0".as_ptr() as *const i8, uiCodePage, puiFamilyCodePage);
+    TRACE!(b"%u %p\n\0".as_ptr() as *const i8, uiCodePage, puiFamilyCodePage);
 
     if puiFamilyCodePage.is_null() {
         return S_FALSE;
@@ -2294,10 +2292,7 @@ pub unsafe extern "C" fn MLANGCF_QueryInterface(
     riid: *const GUID,
     ppobj: *mut *mut core::ffi::c_void,
 ) -> i32 {
-    TRACE(
-        b"%s\n\0".as_ptr() as *const i8,
-        debugstr_guid(riid),
-    );
+    TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_guid(riid));
 
     if IsEqualGUID(riid, &IID_IUnknown) != 0 || IsEqualGUID(riid, &IID_IClassFactory) != 0 {
         IClassFactory_AddRef(iface);
@@ -2306,12 +2301,7 @@ pub unsafe extern "C" fn MLANGCF_QueryInterface(
     }
 
     *ppobj = core::ptr::null_mut();
-    WARN(
-        b"(%p)->(%s,%p), not found\n\0".as_ptr() as *const i8,
-        iface as *mut core::ffi::c_void,
-        debugstr_guid(riid),
-        ppobj as *mut core::ffi::c_void,
-    );
+    WARN!(b"(%p)->(%s,%p), not found\n\0".as_ptr() as *const i8, iface as *mut core::ffi::c_void, debugstr_guid(riid), ppobj as *mut core::ffi::c_void);
     return 0x80004002u32 as i32; // E_NOINTERFACE
 }
 
@@ -2324,12 +2314,7 @@ pub unsafe extern "system" fn DllGetClassObject(
     let mut i: usize = 0;
     let factory: *mut IClassFactoryImpl;
 
-    TRACE(
-        b"%s %s %p\n\0".as_ptr() as *const core::ffi::c_char,
-        debugstr_guid(rclsid),
-        debugstr_guid(iid),
-        ppv as *const core::ffi::c_void,
-    );
+    TRACE!(b"%s %s %p\n\0".as_ptr() as *const core::ffi::c_char, debugstr_guid(rclsid), debugstr_guid(iid), ppv as *const core::ffi::c_void);
 
     if IsEqualGUID(core::ptr::addr_of!(IID_IClassFactory), iid) == 0
         && IsEqualGUID(core::ptr::addr_of!(IID_IUnknown), iid) == 0
@@ -2352,10 +2337,7 @@ pub unsafe extern "system" fn DllGetClassObject(
         return CLASS_E_CLASSNOTAVAILABLE;
     }
 
-    TRACE(
-        b"Creating a class factory for %s\n\0".as_ptr() as *const core::ffi::c_char,
-        object_creation[i].szClassName,
-    );
+    TRACE!(b"Creating a class factory for %s\n\0".as_ptr() as *const core::ffi::c_char, object_creation[i].szClassName);
 
     factory = HeapAlloc(
         GetProcessHeap(),
@@ -2373,11 +2355,7 @@ pub unsafe extern "system" fn DllGetClassObject(
 
     *ppv = core::ptr::addr_of_mut!((*factory).IClassFactory_iface) as *mut core::ffi::c_void;
 
-    TRACE(
-        b"(%p) <- %p\n\0".as_ptr() as *const core::ffi::c_char,
-        ppv as *const core::ffi::c_void,
-        core::ptr::addr_of!((*factory).IClassFactory_iface) as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p) <- %p\n\0".as_ptr() as *const core::ffi::c_char, ppv as *const core::ffi::c_void, core::ptr::addr_of!((*factory).IClassFactory_iface) as *const core::ffi::c_void);
 
     S_OK
 }
@@ -2399,7 +2377,7 @@ unsafe extern "C" fn EnumScript_create(
     LangId: LANGID,
     ppEnumScript: *mut *mut IEnumScript,
 ) -> HRESULT {
-    TRACE("%p, %08x, %04x, %p\n\0".as_ptr() as *const i8, mlang, dwFlags, LangId as u32, ppEnumScript);
+    TRACE!("%p, %08x, %04x, %p\n\0".as_ptr() as *const i8, mlang, dwFlags, LangId as u32, ppEnumScript);
 
     if dwFlags == 0 {
         dwFlags = SCRIPTCONTF_SCRIPT_USER | SCRIPTCONTF_SCRIPT_HIDE | SCRIPTCONTF_SCRIPT_SYSTEM;
@@ -2452,7 +2430,7 @@ unsafe extern "C" fn EnumScript_create(
         );
     }
 
-    TRACE("enumerated %d scripts with flags %08x\n\0".as_ptr() as *const i8, (*es_ptr).total, dwFlags);
+    TRACE!("enumerated %d scripts with flags %08x\n\0".as_ptr() as *const i8, (*es_ptr).total, dwFlags);
 
     *ppEnumScript = core::ptr::addr_of_mut!((*es_ptr).IEnumScript_iface) as *mut IEnumScript;
 
@@ -2477,7 +2455,7 @@ unsafe extern "C" fn EnumRfc1766_create(LangId: u16, ppEnum: *mut *mut IEnumRfc1
     let rfc: *mut EnumRfc1766_impl;
     let mut data: enum_locales_data = core::mem::zeroed();
 
-    TRACE(b"%04x, %p\n\0".as_ptr() as *const i8, LangId as u32, ppEnum);
+    TRACE!(b"%04x, %p\n\0".as_ptr() as *const i8, LangId as u32, ppEnum);
 
     rfc = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<EnumRfc1766_impl>()) as *mut EnumRfc1766_impl;
     (*rfc).IEnumRfc1766_iface.lpVtbl = &IEnumRfc1766_vtbl;
@@ -2497,7 +2475,7 @@ unsafe extern "C" fn EnumRfc1766_create(LangId: u16, ppEnum: *mut *mut IEnumRfc1
     EnumSystemLocalesW(Some(enum_locales_proc), 0);
     TlsSetValue(MLANG_tls_index, core::ptr::null_mut());
 
-    TRACE(b"enumerated %d rfc1766 structures\n\0".as_ptr() as *const i8, data.total);
+    TRACE!(b"enumerated %d rfc1766 structures\n\0".as_ptr() as *const i8, data.total);
 
     if data.total == 0 {
         HeapFree(GetProcessHeap(), 0, data.info as *mut core::ffi::c_void);
@@ -2592,19 +2570,7 @@ unsafe extern "C" fn fill_cp_info(ml_data: *const mlang_data, index: u32, mime_c
             / core::mem::size_of_val(&(*mime_cp_info).wszProportionalFont[0])) as i32,
     );
 
-    TRACE(
-        b"%08x %u %u %s %s %s %s %s %s %d\n\0".as_ptr() as *const i8,
-        (*mime_cp_info).dwFlags,
-        (*mime_cp_info).uiCodePage,
-        (*mime_cp_info).uiFamilyCodePage,
-        wine_dbgstr_w((*mime_cp_info).wszDescription.as_ptr()),
-        wine_dbgstr_w((*mime_cp_info).wszWebCharset.as_ptr()),
-        wine_dbgstr_w((*mime_cp_info).wszHeaderCharset.as_ptr()),
-        wine_dbgstr_w((*mime_cp_info).wszBodyCharset.as_ptr()),
-        wine_dbgstr_w((*mime_cp_info).wszFixedWidthFont.as_ptr()),
-        wine_dbgstr_w((*mime_cp_info).wszProportionalFont.as_ptr()),
-        (*mime_cp_info).bGDICharset as i32,
-    );
+    TRACE!(b"%08x %u %u %s %s %s %s %s %s %d\n\0".as_ptr() as *const i8, (*mime_cp_info).dwFlags, (*mime_cp_info).uiCodePage, (*mime_cp_info).uiFamilyCodePage, wine_dbgstr_w((*mime_cp_info).wszDescription.as_ptr()), wine_dbgstr_w((*mime_cp_info).wszWebCharset.as_ptr()), wine_dbgstr_w((*mime_cp_info).wszHeaderCharset.as_ptr()), wine_dbgstr_w((*mime_cp_info).wszBodyCharset.as_ptr()), wine_dbgstr_w((*mime_cp_info).wszFixedWidthFont.as_ptr()), wine_dbgstr_w((*mime_cp_info).wszProportionalFont.as_ptr()), (*mime_cp_info).bGDICharset as i32);
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_ConvertStringReset(iface: *mut IMultiLanguage3) -> HRESULT {
@@ -2661,13 +2627,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageDescription(
     let mut i: u32;
     let mut n: u32;
 
-    TRACE(
-        b"%u, %04x, %p, %d\n\0".as_ptr() as *const i8,
-        uiCodePage,
-        lcid,
-        lpWideCharStr as *const core::ffi::c_void,
-        cchWideChar,
-    );
+    TRACE!(b"%u, %04x, %p, %d\n\0".as_ptr() as *const i8, uiCodePage, lcid, lpWideCharStr as *const core::ffi::c_void, cchWideChar);
 
     i = 0;
     while (i as usize) < mlang_data.len() {
@@ -2693,7 +2653,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageDescription(
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_IsCodePageInstallable(iface: *mut IMultiLanguage3, uiCodePage: u32) -> HRESULT {
-    TRACE(b"%u\n\0".as_ptr() as *const i8, uiCodePage);
+    TRACE!(b"%u\n\0".as_ptr() as *const i8, uiCodePage);
     // FIXME: the installable set is usually larger than the set of valid codepages
     return IMultiLanguage3_ValidateCodePageEx(iface, uiCodePage, 0isize, CPIOD_PEEK);
 }
@@ -2723,13 +2683,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontUnicodeRanges(
     let mut size: u32;
     let mut gs: *mut GLYPHSET;
 
-    TRACE(
-        b"(%p)->%p %p %p\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        hDC as *mut core::ffi::c_void,
-        puiRanges as *mut core::ffi::c_void,
-        pUranges as *mut core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->%p %p %p\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, hDC as *mut core::ffi::c_void, puiRanges as *mut core::ffi::c_void, pUranges as *mut core::ffi::c_void);
 
     if puiRanges.is_null() {
         return E_INVALIDARG;
@@ -2775,14 +2729,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetScriptFontInfo(
     let mut i: UINT;
     let mut j: UINT;
 
-    TRACE(
-        b"(%p)->%u %x %p %p\n\0".as_ptr() as *const i8,
-        This,
-        sid,
-        dwFlags,
-        puiFonts,
-        pScriptFont,
-    );
+    TRACE!(b"(%p)->%u %x %p %p\n\0".as_ptr() as *const i8, This, sid, dwFlags, puiFonts, pScriptFont);
 
     if dwFlags == 0 {
         dwFlags = SCRIPTCONTF_PROPORTIONAL_FONT;
@@ -2834,10 +2781,9 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePageToScriptID(
     pSid: *mut u32,
 ) -> i32 {
     extern "C" {
-        fn TRACE(fmt: *const i8, ...);
     }
     unsafe {
-        TRACE(b"(%p)->%i %p\n\0".as_ptr() as *const i8, This, uiCodePage, pSid);
+        TRACE!(b"(%p)->%i %p\n\0".as_ptr() as *const i8, This, uiCodePage, pSid);
     }
     if uiCodePage == 1200 /* CP_UNICODE */ {
         return -2147467259i32; /* E_FAIL */
@@ -3179,7 +3125,7 @@ unsafe extern "C" fn ConvertSJIS2JIS(input: *const i8, count: u32, output: *mut 
 }
 
 unsafe extern "C" fn MultiLanguage_create(pUnkOuter: *mut IUnknown, ppObj: *mut *mut core::ffi::c_void) -> HRESULT {
-    TRACE(b"Creating MultiLanguage object\n\0".as_ptr().cast());
+    TRACE!(b"Creating MultiLanguage object\n\0".as_ptr().cast());
     if !pUnkOuter.is_null() {
         return CLASS_E_NOAGGREGATION;
     }
@@ -3201,7 +3147,7 @@ unsafe extern "C" fn MultiLanguage_create(pUnkOuter: *mut IUnknown, ppObj: *mut 
 
     (*mlang).ref_ = 1;
     *ppObj = core::ptr::addr_of!((*mlang).IMultiLanguage_iface) as *mut core::ffi::c_void;
-    TRACE(b"returning %p\n\0".as_ptr().cast(), mlang as *mut core::ffi::c_void);
+    TRACE!(b"returning %p\n\0".as_ptr().cast(), mlang as *mut core::ffi::c_void);
 
     LockModule();
 
@@ -3249,7 +3195,7 @@ pub unsafe extern "system" fn IsConvertINetStringAvailable(
     let mut src_family: u32 = 0;
     let mut dst_family: u32 = 0;
 
-    TRACE(b"%d %d\n\0".as_ptr() as *const i8, dwSrcEncoding as i32, dwDstEncoding as i32);
+    TRACE!(b"%d %d\n\0".as_ptr() as *const i8, dwSrcEncoding as i32, dwDstEncoding as i32);
 
     if GetFamilyCodePage(dwSrcEncoding, core::ptr::addr_of_mut!(src_family)) != S_OK
         || GetFamilyCodePage(dwDstEncoding, core::ptr::addr_of_mut!(dst_family)) != S_OK
@@ -3283,7 +3229,7 @@ pub unsafe extern "system" fn LcidToRfc1766A(
     pszRfc1766: *mut i8,
     nChar: i32,
 ) -> i32 {
-    TRACE(b"%04x %p %u\n\0".as_ptr() as *const i8, lcid, pszRfc1766 as *const core::ffi::c_void, nChar as u32);
+    TRACE!(b"%04x %p %u\n\0".as_ptr() as *const i8, lcid, pszRfc1766 as *const core::ffi::c_void, nChar as u32);
 
     if pszRfc1766.is_null() {
         return E_INVALIDARG;
@@ -3300,7 +3246,7 @@ pub unsafe extern "system" fn LcidToRfc1766W(
 ) -> i32 {
     {
         let format = b"%04x %p %u\n\0".as_ptr() as *const i8;
-        TRACE(format, lcid, pszRfc1766, nChar);
+        TRACE!(format, lcid, pszRfc1766, nChar);
     }
     if pszRfc1766.is_null() {
         return 0x80070057u32 as i32; // E_INVALIDARG
@@ -3314,7 +3260,7 @@ unsafe extern "C" fn enum_locales_proc(locale: LPCWSTR) -> i32 {
         let data = TlsGetValue(MLANG_tls_index) as *mut enum_locales_data;
         let info: *mut RFC1766INFO;
 
-        TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_w(locale));
+        TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_w(locale));
 
         if (*data).total >= (*data).allocated {
             (*data).allocated += 32;
@@ -3342,11 +3288,7 @@ unsafe extern "C" fn enum_locales_proc(locale: LPCWSTR) -> i32 {
         (*info).wszLocaleName[0] = 0u16;
         GetLocaleInfoW((*info).lcid, LOCALE_SLANGUAGE, (*info).wszLocaleName.as_mut_ptr(), MAX_LOCALE_NAME as i32);
 
-        TRACE(
-            b"ISO639: %s SLANGUAGE: %s\n\0".as_ptr() as *const i8,
-            wine_dbgstr_w((*info).wszRfc1766.as_ptr()),
-            wine_dbgstr_w((*info).wszLocaleName.as_ptr()),
-        );
+        TRACE!(b"ISO639: %s SLANGUAGE: %s\n\0".as_ptr() as *const i8, wine_dbgstr_w((*info).wszRfc1766.as_ptr()), wine_dbgstr_w((*info).wszLocaleName.as_ptr()));
 
         (*data).total += 1;
 
@@ -3361,12 +3303,7 @@ pub unsafe extern "C" fn fnIMultiLanguage_GetRfc1766Info(
 ) -> HRESULT {
     let mut type_: u32 = LOCALE_SLANGUAGE;
 
-    TRACE(
-        b"(%p, 0x%04x, %p)\n\0".as_ptr() as *const i8,
-        iface,
-        Locale,
-        pRfc1766Info,
-    );
+    TRACE!(b"(%p, 0x%04x, %p)\n\0".as_ptr() as *const i8, iface, Locale, pRfc1766Info);
 
     if pRfc1766Info.is_null() {
         return E_INVALIDARG;
@@ -3381,7 +3318,7 @@ pub unsafe extern "C" fn fnIMultiLanguage_GetRfc1766Info(
         }
     } else {
         if ((Locale >> 10) as u16) == 0 {
-            TRACE(b"SUBLANGID missing in 0x%04x\n\0".as_ptr() as *const i8, Locale);
+            TRACE!(b"SUBLANGID missing in 0x%04x\n\0".as_ptr() as *const i8, Locale);
             return E_FAIL;
         }
     }
@@ -3418,12 +3355,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766FromLcid(
     // TRACE("%p %04x %p\n", iface, lcid, pbstrRfc1766);
     let fmt = b"%p %04x %p\n\0".as_ptr() as *const i8;
     unsafe {
-        TRACE(
-            fmt,
-            iface as *mut u8,
-            lcid,
-            pbstrRfc1766 as *mut u8,
-        );
+        TRACE!(fmt, iface as *mut u8, lcid, pbstrRfc1766 as *mut u8);
     }
 
     if pbstrRfc1766.is_null() {
@@ -3460,13 +3392,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
         static mut last_lang: LANGID = 0xFFFF;
         let mut type_: LCTYPE = LOCALE_SLANGUAGE;
 
-        TRACE(
-            b"(%p, 0x%04x, 0x%04x, %p)\n\0".as_ptr() as *const i8,
-            iface,
-            Locale,
-            LangId as u32,
-            pRfc1766Info,
-        );
+        TRACE!(b"(%p, 0x%04x, 0x%04x, %p)\n\0".as_ptr() as *const i8, iface, Locale, LangId as u32, pRfc1766Info);
 
         if pRfc1766Info.is_null() {
             return E_INVALIDARG;
@@ -3484,10 +3410,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_GetRfc1766Info(
             }
         } else {
             if sub_locale == 0 {
-                TRACE(
-                    b"SUBLANGID missing in 0x%04x\n\0".as_ptr() as *const i8,
-                    Locale,
-                );
+                TRACE!(b"SUBLANGID missing in 0x%04x\n\0".as_ptr() as *const i8, Locale);
                 return E_FAIL;
             }
         }
@@ -3531,12 +3454,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetLcidFromRfc1766(
     let mut hr: i32;
     let mut rfc1766: *mut IEnumRfc1766 = core::ptr::null_mut();
 
-    TRACE(
-        b"%p %p %s\n\0".as_ptr() as *const i8,
-        iface as *mut core::ffi::c_void,
-        pLocale as *mut core::ffi::c_void,
-        debugstr_w(bstrRfc1766),
-    );
+    TRACE!(b"%p %p %s\n\0".as_ptr() as *const i8, iface as *mut core::ffi::c_void, pLocale as *mut core::ffi::c_void, debugstr_w(bstrRfc1766));
 
     if pLocale.is_null() || bstrRfc1766.is_null() {
         return E_INVALIDARG;
@@ -3560,14 +3478,7 @@ unsafe extern "C" fn fnIMLangFontLink_MapFont(
     hSrcFont: HFONT,
     phDestFont: *mut HFONT,
 ) -> HRESULT {
-    TRACE(
-        b"(%p)->%p %08x %p %p\n\0".as_ptr() as *const i8,
-        iface as *mut core::ffi::c_void,
-        hDC as *mut core::ffi::c_void,
-        dwCodePages,
-        hSrcFont as *mut core::ffi::c_void,
-        phDestFont as *mut core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->%p %08x %p %p\n\0".as_ptr() as *const i8, iface as *mut core::ffi::c_void, hDC as *mut core::ffi::c_void, dwCodePages, hSrcFont as *mut core::ffi::c_void, phDestFont as *mut core::ffi::c_void);
     return map_font(hDC, dwCodePages, hSrcFont, phDestFont);
 }
 
@@ -3581,7 +3492,7 @@ pub unsafe extern "C" fn fnIMLangFontLink2_MapFont(
 ) -> i32 {
     let mut old_font: *mut c_void = core::ptr::null_mut();
     let fmt1 = b"(%p)->%p %08x %04x %p\n\0".as_ptr() as *const i8;
-    TRACE(fmt1, This as *const c_void, hDC as *const c_void, dwCodePages, chSrc as u32, pFont as *const c_void);
+    TRACE!(fmt1, This as *const c_void, hDC as *const c_void, dwCodePages, chSrc as u32, pFont as *const c_void);
 
     if hDC.is_null() {
         return E_FAIL;
@@ -3604,7 +3515,7 @@ unsafe extern "C" fn fnIMLangFontLink_ReleaseFont(
     iface: *mut IMLangFontLink,
     hFont: HFONT,
 ) -> HRESULT {
-    TRACE(b"(%p)->%p\n\0".as_ptr() as *const i8, iface, hFont);
+    TRACE!(b"(%p)->%p\n\0".as_ptr() as *const i8, iface, hFont);
     return release_font(hFont);
 }
 
@@ -3612,26 +3523,19 @@ unsafe extern "C" fn fnIMLangFontLink2_ReleaseFont(
     This: *mut IMLangFontLink2,
     hFont: HFONT,
 ) -> HRESULT {
-    TRACE(
-        b"(%p)->%p\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        hFont as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->%p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, hFont as *const core::ffi::c_void);
     release_font(hFont)
 }
 
 unsafe extern "C" fn fnIMLangFontLink_ResetFontMapping(iface: *mut IMLangFontLink) -> HRESULT {
-    TRACE(b"(%p)\n\0".as_ptr() as *const i8, iface);
+    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, iface);
     return clear_font_cache();
 }
 
 unsafe extern "C" fn fnIMLangFontLink2_ResetFontMapping(
     This: *mut IMLangFontLink2,
 ) -> HRESULT {
-    TRACE(
-        b"(%p)\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void);
 
     clear_font_cache()
 }
@@ -3646,7 +3550,7 @@ unsafe extern "C" fn MLANGCF_Release(iface: *mut IClassFactory) -> u32 {
     let ref_val = InterlockedDecrement(&raw mut (*This).ref_) as u32;
 
     if ref_val == 0 {
-        TRACE(b"Destroying %p\n\0".as_ptr() as *const i8, This);
+        TRACE!(b"Destroying %p\n\0".as_ptr() as *const i8, This);
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
     }
 
@@ -3663,7 +3567,7 @@ unsafe extern "C" fn MLANGCF_CreateInstance(
     let mut hres: HRESULT;
     let mut punk: *mut IUnknown = core::ptr::null_mut();
 
-    TRACE(b"(%p)->(%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char, This as *const core::ffi::c_void, pOuter as *const core::ffi::c_void, debugstr_guid(riid), ppobj as *const core::ffi::c_void);
+    TRACE!(b"(%p)->(%p,%s,%p)\n\0".as_ptr() as *const core::ffi::c_char, This as *const core::ffi::c_void, pOuter as *const core::ffi::c_void, debugstr_guid(riid), ppobj as *const core::ffi::c_void);
 
     *ppobj = core::ptr::null_mut();
     hres = ((*This).pfnCreateInstance)(pOuter, &mut punk as *mut *mut IUnknown as *mut *mut core::ffi::c_void);
@@ -3672,7 +3576,7 @@ unsafe extern "C" fn MLANGCF_CreateInstance(
         IUnknown_Release(punk);
     }
 
-    TRACE(b"returning (%p) -> %x\n\0".as_ptr() as *const core::ffi::c_char, *ppobj, hres);
+    TRACE!(b"returning (%p) -> %x\n\0".as_ptr() as *const core::ffi::c_char, *ppobj, hres);
 
     hres
 }
@@ -3684,31 +3588,18 @@ unsafe extern "C" fn fnIEnumCodePage_QueryInterface(
 ) -> HRESULT {
     let This: *mut EnumCodePage_impl = impl_from_IEnumCodePage(iface);
 
-    TRACE(
-        b"%p -> %s\n\0".as_ptr() as *const core::ffi::c_char,
-        This as *mut core::ffi::c_void,
-        debugstr_guid(riid),
-    );
+    TRACE!(b"%p -> %s\n\0".as_ptr() as *const core::ffi::c_char, This as *mut core::ffi::c_void, debugstr_guid(riid));
 
     if IsEqualGUID(riid, &IID_IUnknown as *const GUID) != 0
         || IsEqualGUID(riid, &IID_IEnumCodePage as *const GUID) != 0
     {
         IEnumCodePage_AddRef(iface);
-        TRACE(
-            b"Returning IID_IEnumCodePage %p ref = %d\n\0".as_ptr() as *const core::ffi::c_char,
-            This as *mut core::ffi::c_void,
-            (*This).ref_,
-        );
+        TRACE!(b"Returning IID_IEnumCodePage %p ref = %d\n\0".as_ptr() as *const core::ffi::c_char, This as *mut core::ffi::c_void, (*This).ref_);
         *ppvObject = core::ptr::addr_of_mut!((*This).IEnumCodePage_iface) as *mut core::ffi::c_void;
         return 0; // S_OK
     }
 
-    WARN(
-        b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const core::ffi::c_char,
-        This as *mut core::ffi::c_void,
-        debugstr_guid(riid),
-        ppvObject as *mut core::ffi::c_void,
-    );
+    WARN!(b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const core::ffi::c_char, This as *mut core::ffi::c_void, debugstr_guid(riid), ppvObject as *mut core::ffi::c_void);
     return 0x80004002u32 as HRESULT; // E_NOINTERFACE
 }
 
@@ -3722,16 +3613,9 @@ unsafe extern "C" fn fnIEnumCodePage_AddRef(iface: *mut IEnumCodePage) -> u32 {
 unsafe extern "C" fn fnIEnumCodePage_Release(iface: *mut IEnumCodePage) -> u32 {
     let This = impl_from_IEnumCodePage(iface);
     let ref_val = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_));
-    TRACE(
-        b"%p ref = %d\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        ref_val as i32,
-    );
+    TRACE!(b"%p ref = %d\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val as i32);
     if ref_val == 0 {
-        TRACE(
-            b"Destroying %p\n\0".as_ptr() as *const i8,
-            This as *const core::ffi::c_void,
-        );
+        TRACE!(b"Destroying %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, (*This).cpinfo as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
     }
@@ -3756,13 +3640,7 @@ unsafe extern "C" fn fnIEnumCodePage_Next(
     let mut celt = celt;
     let This: *mut EnumCodePage_impl = impl_from_IEnumCodePage(iface);
 
-    TRACE(
-        b"%p %u %p %p\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        celt,
-        rgelt as *const core::ffi::c_void,
-        pceltFetched as *const core::ffi::c_void,
-    );
+    TRACE!(b"%p %u %p %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, celt, rgelt as *const core::ffi::c_void, pceltFetched as *const core::ffi::c_void);
 
     if pceltFetched.is_null() {
         return 1; // S_FALSE
@@ -3792,20 +3670,7 @@ unsafe extern "C" fn fnIEnumCodePage_Next(
     let mut i: u32 = 0;
     while i < celt {
         let r = &*rgelt.add(i as usize);
-        TRACE(
-            b"#%u: %08x %u %u %s %s %s %s %s %s %d\n\0".as_ptr() as *const i8,
-            i,
-            r.dwFlags,
-            r.uiCodePage,
-            r.uiFamilyCodePage,
-            wine_dbgstr_w(r.wszDescription.as_ptr()),
-            wine_dbgstr_w(r.wszWebCharset.as_ptr()),
-            wine_dbgstr_w(r.wszHeaderCharset.as_ptr()),
-            wine_dbgstr_w(r.wszBodyCharset.as_ptr()),
-            wine_dbgstr_w(r.wszFixedWidthFont.as_ptr()),
-            wine_dbgstr_w(r.wszProportionalFont.as_ptr()),
-            r.bGDICharset as i32,
-        );
+        TRACE!(b"#%u: %08x %u %u %s %s %s %s %s %s %d\n\0".as_ptr() as *const i8, i, r.dwFlags, r.uiCodePage, r.uiFamilyCodePage, wine_dbgstr_w(r.wszDescription.as_ptr()), wine_dbgstr_w(r.wszWebCharset.as_ptr()), wine_dbgstr_w(r.wszHeaderCharset.as_ptr()), wine_dbgstr_w(r.wszBodyCharset.as_ptr()), wine_dbgstr_w(r.wszFixedWidthFont.as_ptr()), wine_dbgstr_w(r.wszProportionalFont.as_ptr()), r.bGDICharset as i32);
         i += 1;
     }
 
@@ -3815,7 +3680,7 @@ unsafe extern "C" fn fnIEnumCodePage_Next(
 #[no_mangle]
 pub unsafe extern "C" fn fnIEnumCodePage_Reset(iface: *mut IEnumCodePage) -> HRESULT {
     let This: *mut EnumCodePage_impl = impl_from_IEnumCodePage(iface);
-    TRACE(b"%p\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"%p\n\0".as_ptr() as *const i8, This);
     (*This).pos = 0;
     0 // S_OK
 }
@@ -3823,7 +3688,7 @@ pub unsafe extern "C" fn fnIEnumCodePage_Reset(iface: *mut IEnumCodePage) -> HRE
 unsafe extern "C" fn fnIEnumCodePage_Skip(iface: *mut IEnumCodePage, celt: u32) -> i32 {
     unsafe {
         let This = impl_from_IEnumCodePage(iface);
-        TRACE(b"%p %u\n\0".as_ptr() as *const i8, This, celt);
+        TRACE!(b"%p %u\n\0".as_ptr() as *const i8, This, celt);
         if celt >= (*This).total {
             return 1;
         }
@@ -3839,31 +3704,18 @@ unsafe extern "C" fn fnIEnumScript_QueryInterface(
 ) -> i32 {
     let This: *mut EnumScript_impl = impl_from_IEnumScript(iface);
 
-    TRACE(
-        b"%p -> %s\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        debugstr_guid(riid),
-    );
+    TRACE!(b"%p -> %s\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, debugstr_guid(riid));
 
     if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown)) != 0
         || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumScript)) != 0
     {
         IEnumScript_AddRef(iface);
-        TRACE(
-            b"Returning IID_IEnumScript %p ref = %d\n\0".as_ptr() as *const i8,
-            This as *mut core::ffi::c_void,
-            (*This).ref_,
-        );
+        TRACE!(b"Returning IID_IEnumScript %p ref = %d\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, (*This).ref_);
         *ppvObject = core::ptr::addr_of_mut!((*This).IEnumScript_iface) as *mut core::ffi::c_void;
         return S_OK;
     }
 
-    WARN(
-        b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        debugstr_guid(riid),
-        ppvObject as *mut core::ffi::c_void,
-    );
+    WARN!(b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, debugstr_guid(riid), ppvObject as *mut core::ffi::c_void);
     E_NOINTERFACE
 }
 
@@ -3876,16 +3728,9 @@ unsafe extern "C" fn fnIEnumScript_Release(iface: *mut IEnumScript) -> u32 {
     let This: *mut EnumScript_impl = impl_from_IEnumScript(iface);
     let ref_: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
 
-    TRACE(
-        b"%p ref = %d\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        ref_ as i32,
-    );
+    TRACE!(b"%p ref = %d\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, ref_ as i32);
     if ref_ == 0 {
-        TRACE(
-            b"Destroying %p\n\0".as_ptr() as *const i8,
-            This as *mut core::ffi::c_void,
-        );
+        TRACE!(b"Destroying %p\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, (*This).script_info as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
     }
@@ -3911,7 +3756,7 @@ pub unsafe extern "C" fn fnIEnumScript_Next(
 ) -> HRESULT {
     let This = impl_from_IEnumScript(iface);
 
-    TRACE(b"%p %u %p %p\n\0".as_ptr() as *const i8, This, celt, rgelt, pceltFetched);
+    TRACE!(b"%p %u %p %p\n\0".as_ptr() as *const i8, This, celt, rgelt, pceltFetched);
 
     if pceltFetched.is_null() || rgelt.is_null() {
         return 0x80004005u32 as i32; /* E_FAIL */
@@ -3946,10 +3791,9 @@ unsafe extern "C" fn fnIEnumScript_Reset(
     let This = impl_from_IEnumScript(iface);
 
     extern "C" {
-        fn TRACE(fmt: *const i8, ...);
     }
 
-    TRACE(b"%p\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"%p\n\0".as_ptr() as *const i8, This);
 
     (*This).pos = 0;
     return 0; // S_OK
@@ -3960,7 +3804,7 @@ unsafe extern "C" fn fnIEnumScript_Skip(
     celt: u32,
 ) -> i32 {
     let This = impl_from_IEnumScript(iface);
-    TRACE(b"%p %u\n\0".as_ptr() as *const i8, This as *const c_void, celt);
+    TRACE!(b"%p %u\n\0".as_ptr() as *const i8, This as *const c_void, celt);
     if celt >= (*This).total {
         return S_FALSE;
     }
@@ -4096,10 +3940,9 @@ unsafe extern "C" fn fnIMultiLanguage_GetNumberOfCodePageInfo(
     unsafe extern "system" {
     }
     unsafe extern "C" {
-        fn TRACE(format: *const i8, ...);
     }
     let This = impl_from_IMultiLanguage(iface);
-    TRACE(b"(%p, %p)\n\0".as_ptr() as *const i8, This, cp);
+    TRACE!(b"(%p, %p)\n\0".as_ptr() as *const i8, This, cp);
     IMultiLanguage3_GetNumberOfCodePageInfo(
         core::ptr::addr_of_mut!((*This).IMultiLanguage3_iface),
         cp,
@@ -4243,29 +4086,16 @@ unsafe extern "C" fn fnIEnumRfc1766_QueryInterface(
 ) -> i32 {
     unsafe {
         let this = impl_from_IEnumRfc1766(iface);
-        TRACE(
-            b"%p -> %s\n\0".as_ptr() as *const i8,
-            this as *const core::ffi::c_void,
-            debugstr_guid(riid),
-        );
+        TRACE!(b"%p -> %s\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, debugstr_guid(riid));
         if IsEqualGUID(riid, core::ptr::addr_of!(IID_IUnknown)) != 0
             || IsEqualGUID(riid, core::ptr::addr_of!(IID_IEnumRfc1766)) != 0
         {
             IEnumRfc1766_AddRef(iface);
-            TRACE(
-                b"Returning IID_IEnumRfc1766 %p ref = %d\n\0".as_ptr() as *const i8,
-                this as *const core::ffi::c_void,
-                (*this).ref_,
-            );
+            TRACE!(b"Returning IID_IEnumRfc1766 %p ref = %d\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, (*this).ref_);
             *ppvObject = core::ptr::addr_of_mut!((*this).IEnumRfc1766_iface) as *mut core::ffi::c_void;
             return S_OK;
         }
-        WARN(
-            b"(%p) -> (%s,%p), not found\n\0".as_ptr() as *const i8,
-            this as *const core::ffi::c_void,
-            debugstr_guid(riid),
-            ppvObject,
-        );
+        WARN!(b"(%p) -> (%s,%p), not found\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, debugstr_guid(riid), ppvObject);
         return E_NOINTERFACE;
     }
 }
@@ -4281,9 +4111,9 @@ unsafe extern "C" fn fnIEnumRfc1766_Release(
     let this = impl_from_IEnumRfc1766(iface);
     let ref_count = InterlockedDecrement(core::ptr::addr_of_mut!((*this).ref_)) as u32;
 
-    TRACE(b"%p ref = %d\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, ref_count as i32);
+    TRACE!(b"%p ref = %d\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, ref_count as i32);
     if ref_count == 0 {
-        TRACE(b"Destroying %p\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void);
+        TRACE!(b"Destroying %p\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, (*this).info as *mut core::ffi::c_void);
         HeapFree(GetProcessHeap(), 0, this as *mut core::ffi::c_void);
     }
@@ -4308,13 +4138,7 @@ pub unsafe extern "C" fn fnIEnumRfc1766_Next(
 ) -> i32 {
     let This = impl_from_IEnumRfc1766(iface);
 
-    TRACE(
-        b"%p %u %p %p\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        celt,
-        rgelt as *const core::ffi::c_void,
-        pceltFetched as *const core::ffi::c_void,
-    );
+    TRACE!(b"%p %u %p %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, celt, rgelt as *const core::ffi::c_void, pceltFetched as *const core::ffi::c_void);
 
     if pceltFetched.is_null() {
         return 1; // S_FALSE
@@ -4349,13 +4173,7 @@ pub unsafe extern "C" fn fnIEnumRfc1766_Next(
         let s2 = wine_dbgstr_w(
             &raw const entry.wszLocaleName as *const u16,
         );
-        TRACE(
-            b"#%u: %08x %s %s\n\0".as_ptr() as *const i8,
-            i,
-            entry.lcid,
-            s1,
-            s2,
-        );
+        TRACE!(b"#%u: %08x %s %s\n\0".as_ptr() as *const i8, i, entry.lcid, s1, s2);
     }
 
     return 0; // S_OK
@@ -4365,7 +4183,7 @@ unsafe extern "C" fn fnIEnumRfc1766_Reset(
     iface: *mut IEnumRfc1766,
 ) -> i32 {
     let This: *mut EnumRfc1766_impl = impl_from_IEnumRfc1766(iface);
-    TRACE(b"%p\n\0".as_ptr() as *const i8, This);
+    TRACE!(b"%p\n\0".as_ptr() as *const i8, This);
     (*This).pos = 0;
     return 0i32;
 }
@@ -4386,7 +4204,7 @@ pub unsafe extern "system" fn Rfc1766ToLcidW(pLocale: *mut u32, pszRfc1766: *con
     let mut hr: i32;
 
     unsafe {
-        TRACE(b"(%p, %s)\n\0".as_ptr() as *const i8, pLocale as *const core::ffi::c_void, debugstr_w(pszRfc1766));
+        TRACE!(b"(%p, %s)\n\0".as_ptr() as *const i8, pLocale as *const core::ffi::c_void, debugstr_w(pszRfc1766));
 
         if pLocale.is_null() || pszRfc1766.is_null() {
             return E_INVALIDARG;
@@ -4409,7 +4227,7 @@ unsafe extern "C" fn fnIMultiLanguage_EnumRfc1766(
     ppEnumRfc1766: *mut *mut IEnumRfc1766,
 ) -> HRESULT {
     let This = impl_from_IMultiLanguage(iface);
-    TRACE(b"%p %p\n\0".as_ptr() as *const i8, This, ppEnumRfc1766);
+    TRACE!(b"%p %p\n\0".as_ptr() as *const i8, This, ppEnumRfc1766);
     return EnumRfc1766_create(0, ppEnumRfc1766);
 }
 
@@ -4420,12 +4238,7 @@ unsafe extern "C" fn fnIMultiLanguage3_QueryInterface(
 ) -> HRESULT {
     let this: *mut MLang_impl = impl_from_IMultiLanguage3(iface);
 
-    TRACE(
-        b"(%p)->(%s %p)\n\0".as_ptr() as *const i8,
-        this as *const core::ffi::c_void,
-        debugstr_guid(riid),
-        obj as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->(%s %p)\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, debugstr_guid(riid), obj as *const core::ffi::c_void);
 
     if IsEqualGUID(riid, &raw const IID_IUnknown) != 0
         || IsEqualGUID(riid, &raw const IID_IMultiLanguage) != 0
@@ -4444,12 +4257,7 @@ unsafe extern "C" fn fnIMultiLanguage3_QueryInterface(
     } else if IsEqualGUID(riid, &raw const IID_IMLangLineBreakConsole) != 0 {
         *obj = core::ptr::addr_of_mut!((*this).IMLangLineBreakConsole_iface) as *mut core::ffi::c_void;
     } else {
-        WARN(
-            b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const i8,
-            this as *const core::ffi::c_void,
-            debugstr_guid(riid),
-            obj as *const core::ffi::c_void,
-        );
+        WARN!(b"(%p)->(%s,%p),not found\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, debugstr_guid(riid), obj as *const core::ffi::c_void);
         *obj = core::ptr::null_mut();
         return E_NOINTERFACE;
     }
@@ -4466,7 +4274,7 @@ unsafe extern "C" fn fnIMultiLanguage3_AddRef(iface: *mut IMultiLanguage3) -> u3
 unsafe extern "C" fn fnIMultiLanguage3_Release(iface: *mut IMultiLanguage3) -> u32 {
     let This = impl_from_IMultiLanguage3(iface);
     let ref_val = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
-    TRACE(b"(%p)->(%d)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val as i32);
+    TRACE!(b"(%p)->(%d)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val as i32);
     if ref_val == 0 {
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
         UnlockModule();
@@ -4479,7 +4287,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetNumberOfCodePageInfo(
     pcCodePage: *mut UINT,
 ) -> HRESULT {
     let This = impl_from_IMultiLanguage3(iface);
-    TRACE(b"%p, %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, pcCodePage as *const core::ffi::c_void);
+    TRACE!(b"%p, %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, pcCodePage as *const core::ffi::c_void);
     if pcCodePage.is_null() {
         return E_INVALIDARG;
     }
@@ -4494,12 +4302,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCharsetInfo(
 ) -> HRESULT {
     let This = impl_from_IMultiLanguage3(iface);
 
-    TRACE(
-        b"%p %s %p\n\0".as_ptr() as *const i8,
-        This as *const _,
-        debugstr_w(Charset) as *const _,
-        pCharsetInfo as *const _,
-    );
+    TRACE!(b"%p %s %p\n\0".as_ptr() as *const i8, This as *const _, debugstr_w(Charset) as *const _, pCharsetInfo as *const _);
 
     if pCharsetInfo.is_null() {
         return E_FAIL;
@@ -4575,17 +4378,13 @@ pub unsafe extern "C" fn fnIMultiLanguage3_EnumRfc1766(
     ppEnumRfc1766: *mut *mut IEnumRfc1766,
 ) -> HRESULT {
     let This: *mut MLang_impl = impl_from_IMultiLanguage3(iface);
-    TRACE(
-        b"%p %p\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        ppEnumRfc1766 as *mut core::ffi::c_void,
-    );
+    TRACE!(b"%p %p\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, ppEnumRfc1766 as *mut core::ffi::c_void);
     return EnumRfc1766_create(LangId, ppEnumRfc1766);
 }
 
 unsafe extern "C" fn fnIMultiLanguage3_GetNumberOfScripts(iface: *mut IMultiLanguage3, pnScripts: *mut u32) -> i32 {
     let This: *mut MLang_impl = impl_from_IMultiLanguage3(iface);
-    TRACE(b"%p %p\n\0".as_ptr() as *const i8, This, pnScripts);
+    TRACE!(b"%p %p\n\0".as_ptr() as *const i8, This, pnScripts);
     if pnScripts.is_null() {
         return 1;
     }
@@ -4602,7 +4401,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_EnumScripts(
 ) -> HRESULT {
     unsafe {
         let This = impl_from_IMultiLanguage3(iface);
-        TRACE(b"%p %08x %04x %p\n\0".as_ptr() as *const i8, This, dwFlags, LangId as u32, ppEnumScript);
+        TRACE!(b"%p %08x %04x %p\n\0".as_ptr() as *const i8, This, dwFlags, LangId as u32, ppEnumScript);
         return EnumScript_create(This, dwFlags, LangId, ppEnumScript);
     }
 }
@@ -4614,7 +4413,7 @@ unsafe extern "C" fn fnIMultiLanguage3_ValidateCodePageEx(
     dwfIODControl: u32,
 ) -> i32 {
     let This: *mut MLang_impl = impl_from_IMultiLanguage3(iface);
-    TRACE(b"%p %u %p %08x\n\0".as_ptr() as *const i8, This, uiCodePage, hwnd, dwfIODControl);
+    TRACE!(b"%p %u %p %08x\n\0".as_ptr() as *const i8, This, uiCodePage, hwnd, dwfIODControl);
     if IsValidCodePage(uiCodePage) != 0 {
         return S_OK;
     }
@@ -4706,13 +4505,7 @@ pub unsafe extern "C" fn EnumCodePage_create(
     let mut i: u32;
     let mut n: u32;
 
-    TRACE(
-        b"%p, %08x, %04x, %p\n\0".as_ptr() as *const core::ffi::c_char,
-        mlang as *mut core::ffi::c_void,
-        grfFlags,
-        LangId as u32,
-        ppEnumCodePage as *mut core::ffi::c_void,
-    );
+    TRACE!(b"%p, %08x, %04x, %p\n\0".as_ptr() as *const core::ffi::c_char, mlang as *mut core::ffi::c_void, grfFlags, LangId as u32, ppEnumCodePage as *mut core::ffi::c_void);
 
     if grfFlags == 0 {
         /* enumerate internal data base of encodings */
@@ -4767,11 +4560,7 @@ pub unsafe extern "C" fn EnumCodePage_create(
         i += 1;
     }
 
-    TRACE(
-        b"enumerated %d codepages with flags %08x\n\0".as_ptr() as *const core::ffi::c_char,
-        (*ecp).total,
-        grfFlags,
-    );
+    TRACE!(b"enumerated %d codepages with flags %08x\n\0".as_ptr() as *const core::ffi::c_char, (*ecp).total, grfFlags);
 
     *ppEnumCodePage = &mut (*ecp).IEnumCodePage_iface as *mut IEnumCodePage;
 
@@ -4785,12 +4574,7 @@ unsafe extern "C" fn fnIMultiLanguage_GetCodePageInfo(
 ) -> i32 {
     let This: *mut MLang_impl = impl_from_IMultiLanguage(iface);
 
-    TRACE(
-        b"%p, %u, %p\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        uiCodePage,
-        pCodePageInfo as *const core::ffi::c_void,
-    );
+    TRACE!(b"%p, %u, %p\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, uiCodePage, pCodePageInfo as *const core::ffi::c_void);
 
     let mut i: u32 = 0;
     while (i as usize) < mlang_data.len() {
@@ -4821,13 +4605,7 @@ unsafe extern "C" fn fnIMultiLanguage3_GetCodePageInfo(
 ) -> i32 {
     let this = impl_from_IMultiLanguage3(iface);
 
-    TRACE(
-        b"%p, %u, %04x, %p\n\0".as_ptr() as *const i8,
-        this,
-        uiCodePage,
-        LangId as u32,
-        pCodePageInfo,
-    );
+    TRACE!(b"%p, %u, %04x, %p\n\0".as_ptr() as *const i8, this, uiCodePage, LangId as u32, pCodePageInfo);
 
     let array_len = core::mem::size_of_val(&mlang_data) / core::mem::size_of_val(&mlang_data[0]);
 
@@ -4877,12 +4655,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetCharCodePages(
     ret_codepages: *mut u32,
 ) -> i32 {
     let This = impl_from_IMLangFontLink2(iface);
-    TRACE(
-        b"(%p)->(%s %p)\n\0".as_ptr() as *const i8,
-        This,
-        debugstr_wn(&ch_src as *const u16, 1),
-        ret_codepages,
-    );
+    TRACE!(b"(%p)->(%s %p)\n\0".as_ptr() as *const i8, This, debugstr_wn(&ch_src as *const u16, 1), ret_codepages);
     *ret_codepages = 0;
     let array_size = core::mem::size_of_val(&mlang_data) / core::mem::size_of_val(&mlang_data[0]);
     let mut i: u32 = 0;
@@ -4923,7 +4696,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetStrCodePages(
     let mut i: LONG;
     let mut cps: DWORD = 0;
 
-    TRACE(b"(%p)->(%s:%d %x %p %p)\n\0".as_ptr() as *const i8, This, debugstr_wn(src, src_len), src_len, priority_cp, codepages, ret_len);
+    TRACE!(b"(%p)->(%s:%d %x %p %p)\n\0".as_ptr() as *const i8, This, debugstr_wn(src, src_len), src_len, priority_cp, codepages, ret_len);
 
     if !codepages.is_null() {
         *codepages = 0;
@@ -4975,17 +4748,17 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePageToCodePages(iface: *mut IMLangFon
     let mut cs: CHARSETINFO = core::mem::zeroed();
     let mut rc: i32 = 0;
 
-    TRACE(b"(%p)->(%u %p)\n\0".as_ptr() as *const i8, This, codepage, codepages);
+    TRACE!(b"(%p)->(%u %p)\n\0".as_ptr() as *const i8, This, codepage, codepages);
 
     let src: *mut u32 = codepage as usize as *mut u32;
     rc = TranslateCharsetInfo(src, &mut cs as *mut CHARSETINFO, TCI_SRCCODEPAGE);
     if rc != 0 {
         *codepages = cs.fs.fsCsb[0];
-        TRACE(b"resulting codepages 0x%x\n\0".as_ptr() as *const i8, *codepages);
+        TRACE!(b"resulting codepages 0x%x\n\0".as_ptr() as *const i8, *codepages);
         return S_OK;
     }
 
-    TRACE(b"codepage not found\n\0".as_ptr() as *const i8);
+    TRACE!(b"codepage not found\n\0".as_ptr() as *const i8);
     *codepages = 0;
     return E_FAIL;
 }
@@ -5011,13 +4784,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
         let mut rc: i32;
         let mut i: u32;
 
-        TRACE(
-            b"(%p)->(0x%x %u %p)\n\0" as *const u8 as *const i8,
-            This,
-            codepages,
-            def_codepage,
-            codepage,
-        );
+        TRACE!(b"(%p)->(0x%x %u %p)\n\0" as *const u8 as *const i8, This, codepages, def_codepage, codepage);
 
         *codepage = 0;
 
@@ -5027,7 +4794,7 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
             TCI_SRCCODEPAGE,
         );
         if (rc != 0) && ((codepages & cs.fs.fsCsb[0]) != 0) {
-            TRACE(b"Found Default Codepage\n\0" as *const u8 as *const i8);
+            TRACE!(b"Found Default Codepage\n\0" as *const u8 as *const i8);
             *codepage = def_codepage;
             return S_OK;
         }
@@ -5042,16 +4809,13 @@ unsafe extern "C" fn fnIMLangFontLink2_CodePagesToCodePage(
                 if rc == 0 {
                     continue;
                 }
-                TRACE(
-                    b"Falling back to least significant found CodePage %u\n\0" as *const u8 as *const i8,
-                    cs.ciACP,
-                );
+                TRACE!(b"Falling back to least significant found CodePage %u\n\0" as *const u8 as *const i8, cs.ciACP);
                 *codepage = cs.ciACP;
                 return S_OK;
             }
         }
 
-        TRACE(b"no codepage found\n\0" as *const u8 as *const i8);
+        TRACE!(b"no codepage found\n\0" as *const u8 as *const i8);
         return E_FAIL;
     }
 }
@@ -5066,13 +4830,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontCodePages(
     let mut fontsig: core::mem::MaybeUninit<FONTSIGNATURE> = core::mem::MaybeUninit::uninit();
     let old_font: HFONT;
 
-    TRACE(
-        b"(%p)->(%p %p %p)\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        hdc as *const core::ffi::c_void,
-        hfont as *const core::ffi::c_void,
-        codepages as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->(%p %p %p)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, hdc as *const core::ffi::c_void, hfont as *const core::ffi::c_void, codepages as *const core::ffi::c_void);
 
     // mlang.c zeroes the optional out-param first and fails when the font cannot be
     // selected; both were dropped. Its final store is unguarded (a NULL crashes the C on
@@ -5092,10 +4850,7 @@ unsafe extern "C" fn fnIMLangFontLink2_GetFontCodePages(
     if !codepages.is_null() {
         *codepages = fontsig.fsCsb[0];
     }
-    TRACE(
-        b"ret 0x%x\n\0".as_ptr() as *const i8,
-        fontsig.fsCsb[0],
-    );
+    TRACE!(b"ret 0x%x\n\0".as_ptr() as *const i8, fontsig.fsCsb[0]);
 
     return 0; // S_OK
 }
@@ -5132,12 +4887,7 @@ unsafe extern "C" fn MLangConvertCharset_QueryInterface(
 ) -> i32 {
     let This = impl_from_IMLangConvertCharset(iface);
 
-    TRACE(
-        b"(%p)->(%s %p)\n\0".as_ptr() as *const i8,
-        This as *const core::ffi::c_void,
-        debugstr_guid(riid),
-        obj as *const core::ffi::c_void,
-    );
+    TRACE!(b"(%p)->(%s %p)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, debugstr_guid(riid), obj as *const core::ffi::c_void);
 
     if IsEqualIID(riid, core::ptr::addr_of!(IID_IUnknown)) != 0
         || IsEqualIID(riid, core::ptr::addr_of!(IID_IMLangConvertCharset)) != 0
@@ -5154,13 +4904,12 @@ unsafe extern "C" fn MLangConvertCharset_QueryInterface(
 unsafe extern "C" fn MLangConvertCharset_AddRef(iface: *mut IMLangConvertCharset) -> u32 {
     let This = impl_from_IMLangConvertCharset(iface);
     let ref_val = InterlockedIncrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
-    TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val);
+    TRACE!(b"(%p)->(%u)\n\0".as_ptr() as *const i8, This as *const core::ffi::c_void, ref_val);
     ref_val
 }
 
 unsafe extern "C" fn MLangConvertCharset_Release(iface: *mut IMLangConvertCharset) -> u32 {
     extern "C" {
-        fn TRACE(format: *const core::ffi::c_char, ...);
     }
     extern "system" {
         fn GetProcessHeap() -> *mut core::ffi::c_void;
@@ -5168,7 +4917,7 @@ unsafe extern "C" fn MLangConvertCharset_Release(iface: *mut IMLangConvertCharse
     }
     let This: *mut convert_charset = impl_from_IMLangConvertCharset(iface);
     let ref_: u32 = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_)) as u32;
-    TRACE(b"(%p)->(%u)\n\0".as_ptr() as *const core::ffi::c_char, This, ref_);
+    TRACE!(b"(%p)->(%u)\n\0".as_ptr() as *const core::ffi::c_char, This, ref_);
     if ref_ == 0 {
         HeapFree(GetProcessHeap(), 0, This as *mut core::ffi::c_void);
         UnlockModule();
@@ -5188,13 +4937,7 @@ unsafe extern "C" fn MLangConvertCharset_Initialize(
 
     unsafe {
         let This: *mut convert_charset = impl_from_IMLangConvertCharset(iface);
-        TRACE(
-            b"(%p)->(%u %u 0x%08x)\n\0".as_ptr() as *const i8,
-            This as *mut core::ffi::c_void,
-            src_cp,
-            dst_cp,
-            prop,
-        );
+        TRACE!(b"(%p)->(%u %u 0x%08x)\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, src_cp, dst_cp, prop);
         let mut prop = prop;
         prop &= !MLCONVCHARF_USEDEFCHAR;
         if prop != 0 {
@@ -5215,7 +4958,7 @@ unsafe extern "C" fn MLangConvertCharset_GetSourceCodePage(
 ) -> i32 {
     let This = impl_from_IMLangConvertCharset(iface);
 
-    TRACE(b"(%p)->(%p)\n\0".as_ptr() as *const i8, This, src_cp);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, This, src_cp);
 
     if src_cp.is_null() {
         return E_INVALIDARG;
@@ -5226,7 +4969,7 @@ unsafe extern "C" fn MLangConvertCharset_GetSourceCodePage(
 
 unsafe extern "C" fn MLangConvertCharset_GetDestinationCodePage(iface: *mut IMLangConvertCharset, dst_cp: *mut u32) -> i32 {
     let this = impl_from_IMLangConvertCharset(iface);
-    TRACE(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, dst_cp as *const core::ffi::c_void);
+    TRACE!(b"(%p)->(%p)\n\0".as_ptr() as *const i8, this as *const core::ffi::c_void, dst_cp as *const core::ffi::c_void);
     if dst_cp.is_null() {
         return E_INVALIDARG;
     }
@@ -5276,10 +5019,7 @@ unsafe extern "C" fn ConvertJISJapaneseToUnicode(
     let sjis_string = HeapAlloc(GetProcessHeap(), 0, count as usize);
     let mut rc: u32 = ConvertJIS2SJIS(input, count, sjis_string as *mut i8);
     if rc != 0 {
-        TRACE(
-            b"%s\n\0".as_ptr() as *const i8,
-            debugstr_an(sjis_string as *const i8, rc as i32),
-        );
+        TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string as *const i8, rc as i32));
         if !output.is_null() {
             rc = MultiByteToWideChar(
                 932,
@@ -5308,7 +5048,7 @@ unsafe extern "C" fn ConvertUnknownJapaneseToUnicode(input: *const i8, count: u3
     let mut sjis_string: *mut i8;
     let mut rc: u32 = 0;
     let code: u32 = DetectJapaneseCode(input as *const u8, count);
-    TRACE(b"Japanese code %i\n\0".as_ptr() as *const i8, code);
+    TRACE!(b"Japanese code %i\n\0".as_ptr() as *const i8, code);
 
     match code {
         0 => {
@@ -5336,7 +5076,7 @@ unsafe extern "C" fn ConvertUnknownJapaneseToUnicode(input: *const i8, count: u3
             sjis_string = HeapAlloc(GetProcessHeap(), 0, count as usize) as *mut i8;
             rc = ConvertJIS2SJIS(input, count, sjis_string);
             if rc != 0 {
-                TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, rc as i32));
+                TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, rc as i32));
                 if !output.is_null() {
                     rc = MultiByteToWideChar(932, 0, sjis_string, rc as i32, output, out_count as i32) as u32;
                 } else {
@@ -5365,7 +5105,7 @@ unsafe extern "C" fn ConvertJapaneseUnicodeToJIS(
         len = WideCharToMultiByte(932, 0, input, count as i32, core::ptr::null_mut(), 0, core::ptr::null(), core::ptr::null_mut());
         sjis_string = HeapAlloc(GetProcessHeap(), 0, len as usize) as *mut i8;
         WideCharToMultiByte(932, 0, input, count as i32, sjis_string, len, core::ptr::null(), core::ptr::null_mut());
-        TRACE(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, len));
+        TRACE!(b"%s\n\0".as_ptr() as *const i8, debugstr_an(sjis_string, len));
 
         rc = ConvertSJIS2JIS(sjis_string, len as u32, core::ptr::null_mut());
         if out_count >= rc {
@@ -5385,7 +5125,7 @@ unsafe extern "C" fn fnIMultiLanguage3_CreateConvertCharset(
 ) -> HRESULT {
     let hr: HRESULT;
 
-    TRACE(b"(%u %u 0x%08x %p)\n\0".as_ptr() as *const i8, src_cp, dst_cp, prop, convert_charset);
+    TRACE!(b"(%u %u 0x%08x %p)\n\0".as_ptr() as *const i8, src_cp, dst_cp, prop, convert_charset);
 
     hr = MLangConvertCharset_create(core::ptr::null_mut() as *mut IUnknown, convert_charset as *mut *mut core::ffi::c_void);
     // FAILED(hr) equivalent: check if HRESULT is negative
@@ -5434,7 +5174,7 @@ unsafe extern "C" fn fnIMultiLanguage_EnumCodePages(
     ppEnumCodePage: *mut *mut IEnumCodePage,
 ) -> HRESULT {
     let This = impl_from_IMultiLanguage(iface);
-    TRACE(b"%p %08x %p\n\0".as_ptr() as *const i8, This, grfFlags, ppEnumCodePage);
+    TRACE!(b"%p %08x %p\n\0".as_ptr() as *const i8, This, grfFlags, ppEnumCodePage);
     return EnumCodePage_create(This, grfFlags, 0, ppEnumCodePage);
 }
 
@@ -5445,17 +5185,10 @@ unsafe extern "C" fn fnIMultiLanguage3_EnumCodePages(
     ppEnumCodePage: *mut *mut IEnumCodePage,
 ) -> HRESULT {
     extern "C" {
-        fn TRACE(fmt: *const i8, ...);
     }
 
     let This: *mut MLang_impl = impl_from_IMultiLanguage3(iface);
-    TRACE(
-        b"%p %08x %04x %p\n\0".as_ptr() as *const i8,
-        This as *mut core::ffi::c_void,
-        grfFlags as u32,
-        LangId as u32,
-        ppEnumCodePage as *mut *mut IEnumCodePage,
-    );
+    TRACE!(b"%p %08x %04x %p\n\0".as_ptr() as *const i8, This as *mut core::ffi::c_void, grfFlags as u32, LangId as u32, ppEnumCodePage as *mut *mut IEnumCodePage);
     EnumCodePage_create(This, grfFlags, LangId as u32, ppEnumCodePage)
 }
 
@@ -5476,15 +5209,7 @@ pub unsafe extern "system" fn ConvertINetUnicodeToMultiByte(
 
     let result: i32;
     'outer: loop {
-        TRACE(
-            b"%p %d %s %p %p %p\n\0".as_ptr() as *const i8,
-            pdwMode,
-            dwEncoding,
-            debugstr_w(pSrcStr),
-            pcSrcSize,
-            pDstStr,
-            pcDstSize,
-        );
+        TRACE!(b"%p %d %s %p %p %p\n\0".as_ptr() as *const i8, pdwMode, dwEncoding, debugstr_w(pSrcStr), pcSrcSize, pDstStr, pcDstSize);
 
         if pcDstSize.is_null() {
             result = S_OK;
@@ -5665,14 +5390,7 @@ unsafe extern "C" fn MLangConvertCharset_DoConversionToUnicode(
 ) -> i32 {
     unsafe {
         let This = impl_from_IMLangConvertCharset(iface);
-        TRACE(
-            b"(%p)->(%p %p %p %p)\n\0".as_ptr() as *const i8,
-            This,
-            src,
-            src_size,
-            dest,
-            dest_size,
-        );
+        TRACE!(b"(%p)->(%p %p %p %p)\n\0".as_ptr() as *const i8, This, src, src_size, dest, dest_size);
         ConvertINetMultiByteToUnicode(
             core::ptr::null_mut(),
             (*This).src_cp,
@@ -5732,16 +5450,7 @@ pub unsafe extern "system" fn ConvertINetString(
 
     unsafe {
         let ds = debugstr_a(pSrcStr);
-        TRACE(
-            b"%p %d %d %s %p %p %p\n\0".as_ptr() as *const i8,
-            pdwMode as *const core::ffi::c_void,
-            dwSrcEncoding as i32,
-            dwDstEncoding as i32,
-            ds,
-            pcSrcSize as *const core::ffi::c_void,
-            pDstStr as *const core::ffi::c_void,
-            pcDstSize as *const core::ffi::c_void,
-        );
+        TRACE!(b"%p %d %d %s %p %p %p\n\0".as_ptr() as *const i8, pdwMode as *const core::ffi::c_void, dwSrcEncoding as i32, dwDstEncoding as i32, ds, pcSrcSize as *const core::ffi::c_void, pDstStr as *const core::ffi::c_void, pcDstSize as *const core::ffi::c_void);
 
         if dwSrcEncoding == CP_UNICODE {
             let mut cSrcSizeW: i32 = 0;
@@ -5776,12 +5485,7 @@ pub unsafe extern "system" fn ConvertINetString(
             let mut hr: HRESULT;
 
             let ds2 = debugstr_a(pSrcStr);
-            TRACE(
-                b"convert %s from %d to %d\n\0".as_ptr() as *const i8,
-                ds2,
-                dwSrcEncoding as i32,
-                dwDstEncoding as i32,
-            );
+            TRACE!(b"convert %s from %d to %d\n\0".as_ptr() as *const i8, ds2, dwSrcEncoding as i32, dwDstEncoding as i32);
 
             hr = ConvertINetMultiByteToUnicode(
                 pdwMode,
@@ -5856,7 +5560,6 @@ unsafe extern "C" fn MLangConvertCharset_DoConversionFromUnicode(
     dest_size: *mut u32,
 ) -> HRESULT {
     extern "C" {
-        fn TRACE(fmt: *const i8, ...);
     }
     extern "system" {
         fn ConvertINetUnicodeToMultiByte(
@@ -5869,7 +5572,7 @@ unsafe extern "C" fn MLangConvertCharset_DoConversionFromUnicode(
         ) -> HRESULT;
     }
     let This: *mut convert_charset = impl_from_IMLangConvertCharset(iface);
-    TRACE(b"(%p)->(%p %p %p %p)\n\0".as_ptr() as *const i8, This, src, src_size, dest, dest_size);
+    TRACE!(b"(%p)->(%p %p %p %p)\n\0".as_ptr() as *const i8, This, src, src_size, dest, dest_size);
     return ConvertINetUnicodeToMultiByte(
         core::ptr::null(),
         (*This).dst_cp,
@@ -5919,16 +5622,7 @@ pub unsafe extern "C" fn fnIMultiLanguage3_ConvertStringInIStream(
     let mut stat: STATSTG = core::mem::zeroed();
     let mut hr: i32;
 
-    TRACE(
-        b"%p %0x8 %s %u %u %p %p\n\0".as_ptr() as *const i8,
-        pdwMode as *mut core::ffi::c_void,
-        dwFlag,
-        debugstr_w(lpFallBack),
-        dwSrcEncoding,
-        dwDstEncoding,
-        pstmIn as *mut core::ffi::c_void,
-        pstmOut as *mut core::ffi::c_void,
-    );
+    TRACE!(b"%p %0x8 %s %u %u %p %p\n\0".as_ptr() as *const i8, pdwMode as *mut core::ffi::c_void, dwFlag, debugstr_w(lpFallBack), dwSrcEncoding, dwDstEncoding, pstmIn as *mut core::ffi::c_void, pstmOut as *mut core::ffi::c_void);
 
     FIXME(b"dwFlag and lpFallBack not handled\n\0".as_ptr() as *const i8);
 
@@ -6017,15 +5711,7 @@ pub unsafe extern "system" fn ConvertINetMultiByteToUnicode(
     unsafe {
         let mut src_len: i32 = -1;
 
-        TRACE(
-            b"%p %d %s %p %p %p\n\0" as *const _ as *const i8,
-            pdwMode as *const core::ffi::c_void,
-            dwEncoding,
-            debugstr_a(pSrcStr),
-            pcSrcSize as *const core::ffi::c_void,
-            pDstStr as *const core::ffi::c_void,
-            pcDstSize as *const core::ffi::c_void,
-        );
+        TRACE!(b"%p %d %s %p %p %p\n\0" as *const _ as *const i8, pdwMode as *const core::ffi::c_void, dwEncoding, debugstr_a(pSrcStr), pcSrcSize as *const core::ffi::c_void, pDstStr as *const core::ffi::c_void, pcDstSize as *const core::ffi::c_void);
 
         if pcDstSize.is_null() {
             return E_FAIL;

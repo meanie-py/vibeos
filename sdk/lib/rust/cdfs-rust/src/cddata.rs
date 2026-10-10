@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ke::*;
@@ -16,7 +17,6 @@ extern "C" {
 extern "C" {
 }
 extern "C" {
-    fn NT_ASSERT(cond: i32);
 }
 extern "C" {
     fn CdBugCheck(param1: usize, param2: usize, param3: usize);
@@ -363,7 +363,7 @@ pub unsafe extern "C" fn CdRaiseStatusEx(
             core::ptr::addr_of!(CdTestRaisedStatus) as *const core::ffi::c_void,
             core::ptr::addr_of!(CdBreakOnAnyRaise) as *const core::ffi::c_void,
         );
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
     }
     if NormalizeStatus != 0 {
         (*IrpContext).ExceptionStatus =
@@ -479,7 +479,7 @@ pub unsafe extern "C" fn CdProcessException(
             if Device.is_null() {
                 Device = IoGetDeviceToVerify(PsGetCurrentThread());
                 IoSetDeviceToVerify(PsGetCurrentThread(), core::ptr::null_mut());
-                NT_ASSERT((!Device.is_null()) as i32);
+                NT_ASSERT!((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {
@@ -512,7 +512,7 @@ pub unsafe extern "C" fn CdProcessException(
             if Device.is_null() {
                 Thread = PsGetCurrentThread();
                 Device = IoGetDeviceToVerify(Thread);
-                NT_ASSERT((!Device.is_null()) as i32);
+                NT_ASSERT!((!Device.is_null()) as i32);
             }
 
             if !(*IrpContext).Vcb.is_null() {

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -57,7 +58,6 @@ extern "system" {
     fn KeCancelTimer(Timer: *mut KEVENT) -> u8;
     fn KeRemoveQueueDpc(Dpc: *mut KDPC) -> u8;
     fn ExIsResourceAcquiredExclusiveLite(Resource: *mut ERESOURCE) -> u8;
-    fn NT_ASSERT(condition: u32);
     // rust_cohab_stub.c returns the MASK (ULONG_PTR x & f). Declared `-> BOOLEAN`, every
     // flag above bit 7 read as clear: CCB_FLAG_MANAGE_VOLUME_ACCESS (0x20000) among them,
     // so FSCTL_LOCK_VOLUME failed INVALID_PARAMETER and setup's chkdsk could not run.
@@ -489,7 +489,7 @@ pub unsafe extern "system" fn FatGetNextMcbEntry(
         }
         *ByteCount = (LiSectorCount as u32) << log;
         if *ByteCount == 0 && LiSectorCount != 0 {
-            NT_ASSERT((RunIndex == 0) as u32);
+            NT_ASSERT!((RunIndex == 0) as u32);
             *ByteCount = 0xFFFFFFFF_u32;
         }
     }
@@ -592,7 +592,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
             // try block
             let AllowRawMount = BooleanFlagOn(((*IrpSp).Flags) as u32, 0x1 /* SL_ALLOW_RAW_MOUNT */);
 
-            NT_ASSERT((*Vcb).VerifyThread.is_null() as u32);
+            NT_ASSERT!((*Vcb).VerifyThread.is_null() as u32);
             (*Vcb).VerifyThread = (KeGetCurrentThread()).cast();
 
             if FlagOn((*(*Vpb).RealDevice).Flags, 0x2 /* DO_VERIFY_VOLUME */) == 0 {
@@ -901,7 +901,7 @@ pub unsafe extern "system" fn FatVerifyVolume(
         }
 
         //  Show that we are done with this volume.
-        NT_ASSERT(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as u32);
+        NT_ASSERT!(((*Vcb).VerifyThread == (KeGetCurrentThread()).cast()) as u32);
         (*Vcb).VerifyThread = core::ptr::null_mut();
 
         if *ReleaseEntireVolume_ptr {
@@ -1629,7 +1629,7 @@ pub unsafe extern "system" fn FatMoveFile(
 
                 KeInitializeEvent(&mut IoEvent, _EVENT_TYPE_NotificationEvent, 0);
 
-                NT_ASSERT((LargeTargetLbo.QuadPart >= (*Vcb).AllocationSupport.FileAreaLbo as i64) as u32);
+                NT_ASSERT!((LargeTargetLbo.QuadPart >= (*Vcb).AllocationSupport.FileAreaLbo as i64) as u32);
 
                 IoIrp = IoBuildSynchronousFsdRequest(
                     IRP_MJ_READ as u32,
@@ -1719,7 +1719,7 @@ pub unsafe extern "system" fn FatMoveFile(
             }
 
             if FirstSpliceSourceCluster == 0 {
-                NT_ASSERT((NodeType(FcbOrDcb as _) == FAT_NTC_FCB) as u32);
+                NT_ASSERT!((NodeType(FcbOrDcb as _) == FAT_NTC_FCB) as u32);
 
                 FatGetDirentFromFcbOrDcb(
                     IrpContext,
@@ -1937,7 +1937,7 @@ pub unsafe extern "system" fn FatComputeMoveFileParameter(
             &mut RunIndex,
         );
 
-        NT_ASSERT(RunAllocated as u32);
+        NT_ASSERT!(RunAllocated as u32);
 
         if RunByteCount < *BytesToReallocate {
             *BytesToReallocate = RunByteCount;
@@ -1947,7 +1947,7 @@ pub unsafe extern "system" fn FatComputeMoveFileParameter(
 
         ClusterSize = 1u32 << (*(*FcbOrDcb).Vcb).AllocationSupport.LogOfBytesPerCluster;
 
-        NT_ASSERT((ClusterSize <= BufferSize) as u32);
+        NT_ASSERT!((ClusterSize <= BufferSize) as u32);
 
         ClusterAlignedVDL = (ValidDataLength + (ClusterSize - 1)) & !(ClusterSize - 1);
 
@@ -2034,7 +2034,7 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
     }
 
     if Result == 0 {
-        NT_ASSERT(0u32);
+        NT_ASSERT!(0u32);
         FatRaiseStatus(IrpContext, STATUS_FILE_CORRUPT_ERROR);
     }
 
@@ -2055,10 +2055,10 @@ pub unsafe extern "system" fn FatComputeMoveFileSplicePoints(
                 &mut SourceLbo,
                 &mut SourceBytesInRun,
             );
-            NT_ASSERT(Result as u32);
+            NT_ASSERT!(Result as u32);
         }
 
-        NT_ASSERT((SourceVbo == SourceMcbVbo + FileOffset) as u32);
+        NT_ASSERT!((SourceVbo == SourceMcbVbo + FileOffset) as u32);
 
         SourceMcbBytesInRun = if SourceBytesInRun < SourceBytesRemaining {
             SourceBytesInRun
@@ -2587,7 +2587,7 @@ pub unsafe extern "system" fn FatVerifyLookupFatEntry(
 pub unsafe extern "system" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) {
     PAGED_CODE!();
 
-    NT_ASSERT(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
+    NT_ASSERT!(FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
 
     FatAcquireExclusiveGlobal(IrpContext);
 
@@ -2712,11 +2712,9 @@ pub unsafe extern "system" fn FatLockVolumeInternal(
     let RemainingUserReferences: u32 = if !FileObject.is_null() { 1 } else { 0 };
     let ExpectedOpenCount: CLONG = RemainingUserReferences as CLONG;
 
-    NT_ASSERT(
-        (ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource as *mut _) != 0
+    NT_ASSERT!((ExIsResourceAcquiredExclusiveLite(&raw mut (*Vcb).Resource as *mut _) != 0
             && ExIsResourceAcquiredExclusiveLite(&raw mut FatData.Resource as *mut _) == 0)
-            as u32,
-    );
+            as u32);
 
     (*IrpContext).Flags |= IRP_CONTEXT_FLAG_WAIT;
 
@@ -2777,7 +2775,7 @@ pub unsafe extern "system" fn FatLockVolumeInternal(
         (*Vcb).VcbState &= !VCB_STATE_FLAG_VOLUME_DIRTY;
     }
 
-    NT_ASSERT((!NT_SUCCESS(Status) || (*Vcb).OpenFileCount == ExpectedOpenCount) as u32);
+    NT_ASSERT!((!NT_SUCCESS(Status) || (*Vcb).OpenFileCount == ExpectedOpenCount) as u32);
 
     Status
 }
@@ -2993,7 +2991,7 @@ pub unsafe extern "system" fn FatIsVolumeMounted(IrpContext: PIRP_CONTEXT, Irp: 
         &raw mut Ccb,
     );
 
-    NT_ASSERT(!Vcb.is_null() as u32);
+    NT_ASSERT!(!Vcb.is_null() as u32);
 
     // Disable PopUps, we want to return any error.
     (*IrpContext).Flags |= IRP_CONTEXT_FLAG_DISABLE_POPUPS;
@@ -3208,7 +3206,7 @@ pub unsafe extern "system" fn FatPerformVerifyDiskRead(
 
     // The override above is exactly what makes this assertion meaningful: having
     // suppressed verify, the driver must never come back asking for one.
-    NT_ASSERT((Status != STATUS_VERIFY_REQUIRED) as u32);
+    NT_ASSERT!((Status != STATUS_VERIFY_REQUIRED) as u32);
 
     // STATUS_INVALID_PARAMETER is reported as a plain FALSE regardless of
     // ReturnOnError — a read past the end of a small volume is not exceptional.
@@ -11855,8 +11853,8 @@ pub unsafe extern "system" fn FatMountVolume(
     DebugTrace(0, Dbg, b"TargetDeviceObject = %p\n\0".as_ptr() as _, TargetDeviceObject as ULONG_PTR);
     DebugTrace(0, Dbg, b"Vpb                = %p\n\0".as_ptr() as _, Vpb as ULONG_PTR);
 
-    NT_ASSERT((FlagOn(((*IrpContext).Flags) as u32, IRP_CONTEXT_FLAG_WAIT) != 0) as u32);
-    NT_ASSERT((FatDeviceIsFatFsdo(FsDeviceObject) != 0) as u32);
+    NT_ASSERT!((FlagOn(((*IrpContext).Flags) as u32, IRP_CONTEXT_FLAG_WAIT) != 0) as u32);
+    NT_ASSERT!((FatDeviceIsFatFsdo(FsDeviceObject) != 0) as u32);
 
     if FlagOn(((*TargetDeviceObject).Characteristics) as u32, FILE_REMOVABLE_MEDIA) != 0 {
         Status = FatPerformDevIoCtrl(
@@ -12180,7 +12178,7 @@ pub unsafe extern "system" fn FatMountVolume(
             (**p_vcb).TargetDeviceObject = (**p_old_vcb).TargetDeviceObject;
             (**p_old_vcb).TargetDeviceObject = TargetDeviceObject;
 
-            NT_ASSERT((FlagOn(((**p_old_vcb).VcbState) as u32, VCB_STATE_FLAG_VPB_MUST_BE_FREED) == 0) as u32);
+            NT_ASSERT!((FlagOn(((**p_old_vcb).VcbState) as u32, VCB_STATE_FLAG_VPB_MUST_BE_FREED) == 0) as u32);
 
             FatSetVcbCondition(*p_old_vcb, VcbGood);
             (*OldVpb).RealDevice = (*Vpb).RealDevice;
@@ -12199,7 +12197,7 @@ pub unsafe extern "system" fn FatMountVolume(
                 *IrpVpb = OldVpb;
             }
 
-            NT_ASSERT(((**p_vcb).Vpb == Vpb) as u32);
+            NT_ASSERT!(((**p_vcb).Vpb == Vpb) as u32);
 
             Vpb = core::ptr::null_mut();
             SetFlag(&mut ((**p_vcb).VcbState), VCB_STATE_FLAG_VPB_MUST_BE_FREED);
