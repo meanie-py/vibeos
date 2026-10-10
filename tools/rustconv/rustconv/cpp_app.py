@@ -28,6 +28,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from . import cpp_templates
 from .cpp_core import c_type_to_rust
 from .cpp_model import ATL_BASE_ALIASES, ClassModel, Method, ModuleModel
 
@@ -85,6 +86,11 @@ def rust_type(c: str, model: ModuleModel, *, field: bool = False) -> str:
         return "f32"
     if c in ("double",):
         return "f64"
+    if "<" in c:
+        # A field or global of a registered template type (`CicArray<GUID> m_array`).
+        tb = cpp_templates.template_base(c, lambda a: rust_type(a, model))
+        if tb is not None:
+            return tb.rust_type
     t = c_type_to_rust(c)
     if field and t.startswith("&"):
         t = (
@@ -397,7 +403,7 @@ def _render_class(
         if bn in h.by_short:
             lines.append(f"    pub __base{i}: {bn},")
         else:
-            lines.append(f"    pub __base{i}: {_external_base(b.name)},")
+            lines.append(f"    pub __base{i}: {_external_base(b.name, model)},")
     for f in cls.fields:
         if f.static:
             continue
@@ -908,12 +914,15 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     return "\n".join(lines)
 
 
-def _external_base(name: str) -> str:
+def _external_base(name: str, model: ModuleModel | None = None) -> str:
     """A base class the module does not define. ATL's window templates never get here (they
     alias to the module's CWindow); what does is a plain C struct from the SDK --
     `BITMAPINFOEX : BITMAPINFO` -- which is embedded by value as the island lays it out. A
     zero-size placeholder here would shift every field after it, silently."""
     if "<" in name:
+        tb = cpp_templates.template_base(name, lambda a: rust_type(a, model) if model else a)
+        if tb is not None:
+            return tb.rust_type
         raise CppAppError(f"external template base {name} has no Rust layout; port it first")
     return name.split("::")[-1].strip()
 
@@ -1288,7 +1297,9 @@ def _class_api(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
         lines.append(f"    pub __vtbl: *const {cls.name}__vtbl,")
     for i, b in enumerate(cls.bases):
         bn = short(b.name)
-        lines.append(f"    pub __base{i}: {bn if bn in h.by_short else _external_base(b.name)},")
+        lines.append(
+            f"    pub __base{i}: {bn if bn in h.by_short else _external_base(b.name, model)},"
+        )
     for f in cls.fields:
         if not f.static:
             lines.append(f"    pub {_ident(f.name)}: {rust_type(f.c_type, model, field=True)},")
