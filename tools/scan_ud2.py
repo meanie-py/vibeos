@@ -203,19 +203,6 @@ KNOWN_DRIVER_UD2: dict[str, set[str]] = {
     # heuristic. Boots green daily.
     "rosload.exe": {"LoadAndBootWindowsCommon"},
     "freeldr.exe": {"LoadAndBootWindowsCommon"},
-    # pcix-rust's arbiters are `UNIMPLEMENTED; loop {}` because they were translated
-    # BEFORE upstream #9502 (023d8af5566, "Implement the PCIX Arbiters") gave the C
-    # real bodies; the Rust never absorbed it. Seen on arm64 since 2026-10-03, when
-    # its corpus became the livecd set (x86's sweep reads ud2, not `b .`). Unreached
-    # there (arm64 binds pci.sys, not pcix.sys). OWED: port #9502 into pcix-rust
-    # (roadmap, "pcix-rust predates upstream's arbiters"), then delete this entry.
-    "pcix.sys": {
-        "PciArbiterDestructor",
-        "ario_ApplyBrokenVideoHack",
-        "ario_Constructor",
-        "armem_Constructor",
-        "arbusno_Constructor",
-    },
     # Do NOT add new entries without a written root-cause attempt; every
     # 2026-07-18 first-sweep latent (user32 SwitchWndProc_common §9.103
     # null-blind deref, kernel32 seqlock spins §9.106, win32k

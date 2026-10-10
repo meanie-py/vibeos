@@ -4978,7 +4978,7 @@ def _file_reader(root: Path) -> FileReader:
 
 #: `fn NAME(params) [-> ret]` — extern-block decls and plain definitions alike. Bodies are
 #: irrelevant here; only the parameter list is read.
-_RE_FN_DECL = re.compile(rb"\bfn\s+(\w+)\s*(?:<[^>]*>)?\s*\(", re.S)
+_RE_FN_DECL = re.compile(rb"\bfn\s+(\w+)\s*(?:<([^>]*)>)?\s*\(", re.S)
 _RE_TRY_INTO_UNWRAP = re.compile(rb"\.try_into\(\)\s*\.unwrap\(\)")
 
 
@@ -5060,6 +5060,13 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
                     params.append("")
                     continue
                 params.append(part.split(":", 1)[1].strip())
+            # A generic parameter is no type NAME to cast to: `fn min<T>(a: T, b: T)` once got
+            # `(MAXLONG) as T` written into two pnpmgr arbiters. Unknown, so no authority.
+            generics = {
+                g.split(":", 1)[0].strip()
+                for g in (match.group(2) or b"").decode("utf-8", "replace").split(",")
+            }
+            params = ["" if p in generics else p for p in params]
             if name in found and found[name] != params:
                 found[name] = None
             else:

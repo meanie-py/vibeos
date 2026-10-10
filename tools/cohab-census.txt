@@ -2070,9 +2070,14 @@ sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
-sdk/lib/drivers/arbiter/CMakeLists.txt	1	# add_library(arbiter arbiter.c) # body replaced by Rust; kept on disk
 sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter (PnP resource arbiter) — Rust cohabitation flip (arbiter.c -> arbiter-rust)
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter.c
 sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter.c is translated to Rust (arbiter-rust, kept on disk per the never-delete
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# entry.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# handler.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# ordering.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# range.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# transaction.c
 sdk/lib/drivers/csq/CMakeLists.txt	1	# add_library(csq csq.c) # body replaced by Rust; kept on disk
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq (Cancel-Safe IRP Queue) — Rust cohabitation flip (csq.c -> csq-rust)
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per

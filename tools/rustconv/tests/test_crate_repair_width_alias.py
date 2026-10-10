@@ -227,3 +227,14 @@ def test_a_public_ntdll_glob_lends_ntdll_sys_signatures(tmp_path):
     # A private (kernel-style) glob is not followed.
     (crate / "src" / "types_amd64.rs").write_text("use ntdll_sys::nt::*;\n")
     assert "RtlAllocateHeap" not in _local_authorities(crate)[0]
+
+
+def test_generic_parameter_is_not_a_cast_authority():
+    """`fn min<T>(a: T, b: T)` declares `T`, which is no type name a caller can cast to."""
+    from rustconv.crate_repair import harvest_signatures
+
+    sigs = harvest_signatures(
+        {"p.rs": b"pub fn min<T: PartialOrd>(a: T, b: T) -> T { a }\nfn f(x: ULONG) {}\n"}
+    )
+    assert sigs["min"] == ["", ""]
+    assert sigs["f"] == ["ULONG"]

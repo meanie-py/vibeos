@@ -1411,9 +1411,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
-  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
-    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
-    pci.sys, so they are unreached there.
+  - **The arbiter stack is ported but nothing drives it yet** (2026-10-10). arbiter-rust is
+    upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
+    arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
+    (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. pcix.sys
+    is only copied to the CD (txtsetup) -- every arch binds pci.sys -- so its arbiters are
+    link-verified, never booted. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
+    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
+    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
+    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
+    were picked by hand in 22 places.
   - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
     2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
     assigns them, so a legacy detector that runs first sees free ports: legide's
@@ -1422,7 +1429,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
     boot configs through its arbiters at enumeration. Not a one-line fix: the map check
     cannot tell the requesting device from the owner, so writing a PDO's boot config there
-    makes its own later assignment conflict. Belongs with the arbiter work above.
+    makes its own later assignment conflict. Needs the PnP manager to reserve boot configs
+    through the (now real) root arbiters, which upstream has not done either.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and

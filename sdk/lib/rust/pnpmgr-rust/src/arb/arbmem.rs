@@ -1,199 +1,246 @@
-use ntkrnl_sys::globals::*;
-use ntkrnl_sys::constants::*;
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::ddk::{
-    ARBITER_INSTANCE, INT32, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PIO_RESOURCE_DESCRIPTOR,
-    PUINT32, PUINT64, UINT64,
-};
+use super::prelude::*;
+// Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
+pub static RUSTCONV_WSTR_31DC8C1B8FC3: [u16; 11] = [
+    0x0052u16, 0x006F, 0x006F, 0x0074, 0x004D, 0x0065, 0x006D, 0x006F, 0x0072, 0x0079,
+    0x0000,
+];
+pub static RUSTCONV_WSTR_45D9BF3DA53D: [u16; 5] = [0x0052u16, 0x006F, 0x006F, 0x0074, 0x0000];
 
-const CmResourceTypeMemory: i32 = 3;
+use ntkrnl_sys::ddk::{HalTranslateBusAddress, INT32, PARBITER_ALLOCATION_STATE, PARBITER_INSTANCE, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PHYSICAL_ADDRESS, PIO_RESOURCE_DESCRIPTOR, PPHYSICAL_ADDRESS, PUINT64, PULONGLONG, RtlAddRange, RtlCmDecodeMemIoResource, RtlIoDecodeMemIoResource, UINT64};
 
-extern "system" {
-    static mut IopRootMemArbiter: ARBITER_INSTANCE;
-    fn ArbInitializeArbiterInstance( Arbiter: *mut ARBITER_INSTANCE, BusDeviceObject: PVOID, ResourceType: i32, Name: *const u16, OrderingName: *const u16, TranslateOrdering: PVOID, ) -> NTSTATUS;
+// ---- file-scope preamble (translated) ----
+pub const MEMORY_24_BIT_MAX_ADDRESS: i32 = 0xFFFFFF;
+unsafe extern "C" fn IopArbMemTranslateAddress(
+    SourceType: u8,
+    SourceAddress: PHYSICAL_ADDRESS,
+    TranslatedAddress: PPHYSICAL_ADDRESS,
+    TranslatedType: *mut u8,
+) -> NTSTATUS {
+    let mut AddressSpace: u32;
+
+    PAGED_CODE!();
+
+    if SourceType == CmResourceTypeMemory || SourceType == CmResourceTypeMemoryLarge {
+        AddressSpace = 0;
+    } else if SourceType == CmResourceTypePort {
+        AddressSpace = 1;
+    } else {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if HalTranslateBusAddress(
+        Isa,
+        0,
+        SourceAddress,
+        &mut AddressSpace,
+        TranslatedAddress,
+    ) == 0
+    {
+        return STATUS_UNSUCCESSFUL;
+    }
+
+    if AddressSpace == 1 {
+        *TranslatedType = CmResourceTypePort;
+    } else if AddressSpace == 0 {
+        *TranslatedType = if SourceType == CmResourceTypeMemoryLarge {
+            CmResourceTypeMemoryLarge
+        } else {
+            CmResourceTypeMemory
+        };
+    } else {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    STATUS_SUCCESS
 }
-
 #[no_mangle]
 pub unsafe extern "system" fn IopArbMemUnpackRequirements(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     OutMinimumAddress: PUINT64,
     OutMaximumAddress: PUINT64,
-    OutLength: PUINT32,
-    OutAlignment: PUINT32,
+    OutLength: PUINT64,
+    OutAlignment: PUINT64,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+    *OutLength = RtlIoDecodeMemIoResource(
+        IoDescriptor,
+        OutAlignment,
+        OutMinimumAddress,
+        OutMaximumAddress,
+    );
 
+    if *OutAlignment == 0 {
+        *OutAlignment = 1;
+    }
+
+    if (*IoDescriptor).Type == CmResourceTypeMemory
+        && ((*IoDescriptor).Flags & CM_RESOURCE_MEMORY_24) != 0
+        && *OutMaximumAddress > (MEMORY_24_BIT_MAX_ADDRESS as u64)
+    {
+        *OutMaximumAddress = (MEMORY_24_BIT_MAX_ADDRESS as u64);
+    }
+
+    STATUS_SUCCESS
+}
 #[no_mangle]
 pub unsafe extern "system" fn IopArbMemPackResource(
     IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
     Start: UINT64,
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+    (*CmDescriptor).Type = (*IoDescriptor).Type;
+    (*CmDescriptor).Flags = (*IoDescriptor).Flags;
+    (*CmDescriptor).ShareDisposition = (*IoDescriptor).ShareDisposition;
 
+    (*CmDescriptor).u.Generic.Start.QuadPart = Start as _;
+    (*CmDescriptor).u.Generic.Length = (*IoDescriptor).u.Generic.Length;
+
+    STATUS_SUCCESS
+}
 #[no_mangle]
 pub unsafe extern "system" fn IopArbMemUnpackResource(
     CmDescriptor: PCM_PARTIAL_RESOURCE_DESCRIPTOR,
     Start: PUINT64,
-    OutLength: PUINT32,
+    OutLength: PUINT64,
 ) -> NTSTATUS {
-    STATUS_NOT_IMPLEMENTED
-}
+    *OutLength = RtlCmDecodeMemIoResource(CmDescriptor, Start);
 
+    return STATUS_SUCCESS;
+}
 #[no_mangle]
-pub unsafe extern "system" fn IopArbMemScoreRequirement(
-    IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
-) -> INT32 {
-    0
-}
+pub unsafe extern "system" fn IopArbMemScoreRequirement(IoDescriptor: PIO_RESOURCE_DESCRIPTOR) -> INT32 {
+    let mut Length: UINT64;
+    let mut Alignment: UINT64 = 0;
+    let mut Minimum: UINT64 = 0;
+    let mut Maximum: UINT64 = 0;
+    let mut AlignedMinimum: UINT64;
+    let mut Span: UINT64;
+    let mut Placements: UINT64;
 
+    PAGED_CODE!();
+
+    Length = RtlIoDecodeMemIoResource(
+        IoDescriptor,
+        core::ptr::addr_of_mut!(Alignment),
+        core::ptr::addr_of_mut!(Minimum),
+        core::ptr::addr_of_mut!(Maximum),
+    );
+
+    if Alignment == 0 {
+        Alignment = 1;
+    }
+
+    AlignedMinimum = Minimum
+        .wrapping_add(Alignment)
+        .wrapping_sub(1)
+        & !(Alignment.wrapping_sub(1));
+    if AlignedMinimum < Minimum || AlignedMinimum > Maximum {
+        return -1;
+    }
+
+    Span = Maximum.wrapping_sub(AlignedMinimum);
+
+    if Length != 0 {
+        if Length.wrapping_sub(1) > Span {
+            return -1;
+        }
+
+        Span = Span.wrapping_sub(Length.wrapping_sub(1));
+    }
+
+    Placements = (Span / Alignment).wrapping_add(1);
+    return min(Placements, MAXLONG as ULONGLONG) as INT32;
+}
+#[no_mangle]
+pub unsafe extern "system" fn IopArbMemTranslateOrdering(
+    OutIoDescriptor: PIO_RESOURCE_DESCRIPTOR,
+    IoDescriptor: PIO_RESOURCE_DESCRIPTOR,
+) -> NTSTATUS {
+    let mut SourceType: u8;
+    let mut MinimumType: u8;
+    let mut MaximumType: u8;
+
+    *OutIoDescriptor = *IoDescriptor;
+
+    SourceType = (*IoDescriptor).Type;
+    if SourceType != CmResourceTypePort
+        && SourceType != CmResourceTypeMemory
+        && SourceType != CmResourceTypeMemoryLarge
+    {
+        return STATUS_SUCCESS;
+    }
+
+    MinimumType = SourceType;
+    MaximumType = SourceType;
+
+    if !NT_SUCCESS(IopArbMemTranslateAddress(
+        SourceType,
+        (*IoDescriptor).u.Generic.MinimumAddress,
+        core::ptr::addr_of_mut!((*OutIoDescriptor).u.Generic.MinimumAddress),
+        &mut MinimumType,
+    )) || !NT_SUCCESS(IopArbMemTranslateAddress(
+        SourceType,
+        (*IoDescriptor).u.Generic.MaximumAddress,
+        core::ptr::addr_of_mut!((*OutIoDescriptor).u.Generic.MaximumAddress),
+        &mut MaximumType,
+    )) {
+        (*OutIoDescriptor).Type = CmResourceTypeNull;
+    } else {
+        (*OutIoDescriptor).Type = MaximumType;
+    }
+
+    STATUS_SUCCESS
+}
+#[no_mangle]
+pub unsafe extern "system" fn IopArbMemFindSuitableRange(
+    Arbiter: PARBITER_INSTANCE,
+    ArbState: PARBITER_ALLOCATION_STATE,
+) -> u8 {
+    PAGED_CODE!();
+
+    if !(*ArbState).Entry.is_null() && ((*(*ArbState).Entry).Flags & ARBITER_FLAG_BOOT_CONFIG) != 0 {
+        (*ArbState).RangeAvailableAttributes |= ARBITER_RANGE_BOOT_ALLOCATED;
+    }
+
+    ArbiterLibFindSuitableRange(Arbiter, ArbState)
+}
 #[no_mangle]
 pub unsafe extern "system" fn IopArbMemInitialize() -> NTSTATUS {
-    static ROOT_MEMORY: [u16; 11] = [
-        b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, b'M' as u16, b'e' as u16,
-        b'm' as u16, b'o' as u16, b'r' as u16, b'y' as u16, 0,
-    ];
-    static ROOT: [u16; 5] = [b'R' as u16, b'o' as u16, b'o' as u16, b't' as u16, 0];
+    let mut Status: NTSTATUS;
 
-    IopRootMemArbiter.Name = ROOT_MEMORY.as_ptr();
-    IopRootMemArbiter.UnpackRequirement = core::mem::transmute(IopArbMemUnpackRequirements as usize);
-    IopRootMemArbiter.PackResource = core::mem::transmute(IopArbMemPackResource as usize);
-    IopRootMemArbiter.UnpackResource = core::mem::transmute(IopArbMemUnpackResource as usize);
-    IopRootMemArbiter.ScoreRequirement = core::mem::transmute(IopArbMemScoreRequirement as usize);
+    PAGED_CODE!();
 
-    let Status = ArbInitializeArbiterInstance(
+    IopRootMemArbiter.Name = RUSTCONV_WSTR_31DC8C1B8FC3.as_ptr() as _;
+    IopRootMemArbiter.UnpackRequirement = Some(IopArbMemUnpackRequirements);
+    IopRootMemArbiter.PackResource = Some(IopArbMemPackResource);
+    IopRootMemArbiter.UnpackResource = Some(IopArbMemUnpackResource);
+    IopRootMemArbiter.ScoreRequirement = Some(IopArbMemScoreRequirement);
+    IopRootMemArbiter.FindSuitableRange = Some(IopArbMemFindSuitableRange);
+
+    Status = ArbiterLibInitializeInstance(
         core::ptr::addr_of_mut!(IopRootMemArbiter),
         core::ptr::null_mut(),
-        CmResourceTypeMemory,
-        ROOT_MEMORY.as_ptr(),
-        ROOT.as_ptr(),
+        CmResourceTypeMemory as CM_RESOURCE_TYPE,
+        IopRootMemArbiter.Name,
+        RUSTCONV_WSTR_45D9BF3DA53D.as_ptr(),
+        Some(IopArbMemTranslateOrdering),
+    );
+    if !NT_SUCCESS(Status) {
+        DPRINT1!("IopArbMemInitialize: Failed with %X\n", Status);
+        return Status;
+    }
+
+    Status = RtlAddRange(
+        IopRootMemArbiter.Allocation,
+        0,
+        0xFFF,
+        0,
+        0,
+        core::ptr::null_mut(),
         core::ptr::null_mut(),
     );
+    if !NT_SUCCESS(Status) {
+        DPRINT1!("IopArbMemInitialize: Reserving page 0 failed with %X\n", Status);
+    }
 
     Status
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * PROJECT:     ReactOS Kernel
-//  * LICENSE:     MIT (https://spdx.org/licenses/MIT)
-//  * PURPOSE:     PnP manager Root Memory Arbiter
-//  * COPYRIGHT:   Copyright 2025 Justin Miller <justin.miller@reactos.org>
-//  */
-//
-// /* INCLUDES *****************************************************************/
-//
-// #include <ntoskrnl.h>
-// #define NDEBUG
-// #include <debug.h>
-//
-// /* GLOBALS *******************************************************************/
-//
-// extern ARBITER_INSTANCE IopRootMemArbiter;
-//
-// /* FUNCTIONS *****************************************************************/
-//
-// NTSTATUS
-// NTAPI
-// IopArbMemUnpackRequirements(
-//     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor,
-//     _Out_ PUINT64 OutMinimumAddress,
-//     _Out_ PUINT64 OutMaximumAddress,
-//     _Out_ PUINT32 OutLength,
-//     _Out_ PUINT32 OutAlignment)
-// {
-//     PAGED_CODE();
-//     DPRINT("IopArbMemUnpackRequirements: IoDescriptor: %p, OutMinimumAddress: %p, OutMaximumAddress: %p, OutLength: %p, OutAlignment: %p\n",
-//            IoDescriptor,
-//            OutMinimumAddress,
-//            OutMaximumAddress,
-//            OutLength,
-//            OutAlignment);
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// NTSTATUS
-// NTAPI
-// IopArbMemPackResource(
-//     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor,
-//     _In_ UINT64 Start,
-//     _Out_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor)
-// {
-//     PAGED_CODE();
-//     DPRINT("IopArbMemPackResource: IoDescriptor: %p, Start: %p, CmDescriptor: %p\n",
-//            IoDescriptor,
-//            Start,
-//            CmDescriptor);
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// NTSTATUS
-// NTAPI
-// IopArbMemUnpackResource(
-//     _In_ PCM_PARTIAL_RESOURCE_DESCRIPTOR CmDescriptor,
-//     _Out_ PUINT64 Start,
-//     _Out_ PUINT32 OutLength)
-// {
-//     PAGED_CODE();
-//     DPRINT("IopArbMemUnpackResource: CmDescriptor: %p, Start: %p, OutLength: %p\n",
-//            CmDescriptor,
-//            Start,
-//            OutLength);
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// INT32
-// NTAPI
-// IopArbMemScoreRequirement(
-//     _In_ PIO_RESOURCE_DESCRIPTOR IoDescriptor)
-// {
-//     PAGED_CODE();
-//     DPRINT("IopArbMemScoreRequirement: IoDescriptor: %p\n",
-//            IoDescriptor);
-//
-//     UNIMPLEMENTED;
-//     return 0;
-// }
-//
-// NTSTATUS
-// NTAPI
-// IopArbMemInitialize(VOID)
-// {
-//     NTSTATUS Status = STATUS_UNSUCCESSFUL;
-//
-//     PAGED_CODE();
-//     IopRootMemArbiter.Name = L"RootMemory";
-//     IopRootMemArbiter.UnpackRequirement = IopArbMemUnpackRequirements;
-//     IopRootMemArbiter.PackResource = IopArbMemPackResource;
-//     IopRootMemArbiter.UnpackResource = IopArbMemUnpackResource;
-//     IopRootMemArbiter.ScoreRequirement = IopArbMemScoreRequirement;
-//
-//     Status = ArbInitializeArbiterInstance(&IopRootMemArbiter,
-//                                           NULL,
-//                                           CmResourceTypeBusNumber,
-//                                           IopRootMemArbiter.Name,
-//                                           L"Root",
-//                                           NULL);
-//     if (!NT_SUCCESS(Status))
-//     {
-//         DPRINT1("IopArbDmaInitialize: Failed with %X", Status);
-//     }
-//
-//     return Status;
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================
