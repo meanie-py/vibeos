@@ -1540,7 +1540,18 @@ def _cpp_reference_arg(
     def same(a: str) -> str:  # `cpp_classes::CRect` and `CRect` are one type
         return a.strip().split("::")[-1]
 
-    if m is None or same(m.group(2)) != same(found) or found.lstrip().startswith(("&", "*")):
+    def matches(want: str, have: str) -> bool:
+        if same(want) == same(have):
+            return True
+        # A generic parameter rustc has not inferred is `_` (`&mut Option<_>` for
+        # CImageDx::get_fn<F>): a wildcard, matched against the found type.
+        if "_" not in re.sub(r"\w_|_\w", "", want):
+            return False
+        pat = re.escape(re.sub(r"\s+", " ", want.strip())).replace(r"\_", "_")
+        pat = re.sub(r"(?<![\w])_(?![\w])", ".+", pat)
+        return re.fullmatch(pat, re.sub(r"\s+", " ", have.strip())) is not None
+
+    if m is None or not matches(m.group(2), found) or found.lstrip().startswith(("&", "*")):
         return None
     mutable = m.group(1) in ("&mut ", "*mut ")
     file_name = str(span.get("file_name") or "")

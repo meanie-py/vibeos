@@ -4377,6 +4377,15 @@ def hand_span(text: str, name: str, *, where: str) -> tuple[int, int]:
         body = text[m.end() : close]
         if m.group(1) == f"{name}_export" or name in _VA_ENTRY.findall(body):
             spans.append((m.start(), close + 1))
+    # A hand-written method in its OWN `impl Class { fn name .. }` block (a cppapp class's
+    # member template, CImageDx::get_fn): the block is the item, when it holds only `name`.
+    for m in re.finditer(r"(?m)^impl\s+\w+\s*\{", text):
+        close = cf._matching_brace(text, m.end() - 1)
+        if close is None:
+            continue
+        fns = re.findall(r"\bfn\s+(\w+)", text[m.end() : close])
+        if fns == [name]:
+            spans.append((m.start(), close + 1))
     # Drop an item nested inside another (item_spans also matches an indented
     # `static NAME` inside the extern block it belongs to).
     spans = sorted(set(spans))

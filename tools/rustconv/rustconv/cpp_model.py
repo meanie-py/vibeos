@@ -640,6 +640,17 @@ class _Extractor:
         anon_fields = iter(f for f in cls.fields if f.name.startswith("__anon"))
         for c in n.get("inner", []):
             k = c.get("kind")
+            if k == "FunctionTemplateDecl":
+                # A static member TEMPLATE (atlimagedx.h's get_fn<FN_T>): never generated --
+                # it is hand-ported once -- but a bare call inside the class still means
+                # `Class::get_fn(..)`. Calls reference the INSTANTIATION's decl id, and clang
+                # lists each instantiation under the template, so all of them are mapped.
+                for d in c.get("inner", []):
+                    if d.get("kind") == "CXXMethodDecl" and d.get("storageClass") == "static":
+                        self.decls[d["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "method", d["name"], d["name"], static=True
+                        )
+                continue
             if k == "EnumDecl" and c.get("name"):
                 # A NAMED enum nested in the class: bindgen spells its constants
                 # Outer_Enum_CONST (`RegistrySettings_WallpaperStyle_TILED`), and C++ writes
