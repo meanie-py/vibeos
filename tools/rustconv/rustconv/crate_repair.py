@@ -2256,6 +2256,7 @@ _BINDGEN_KEYWORDS = frozenset(
     }
 )
 _RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
+_RE_NO_FIELD_NAMED = re.compile(r"has no field named `(?P<field>\w+)`")
 
 
 _RE_C2RUST_ANON = re.compile(r"c2rust_unnamed(?:_\d+)?")
@@ -2319,9 +2320,13 @@ def _keyword_field_rule(
     `Self_`; the model spelled the C name (26 sites) or c2rust's (5). Only a keyword is renamed,
     and to bindgen's one spelling, so a field that really is missing stays an error.
     """
-    if (diagnostic.get("code") or {}).get("code") != "E0609":
+    # E0609 is a field ACCESS (`.type_0`); E0560 the same name in a struct LITERAL
+    # (`reg_type_rels { type_0: REG_SZ, .. }`, reg.exe's type table).
+    code = (diagnostic.get("code") or {}).get("code")
+    if code not in ("E0609", "E0560"):
         return [], [], False
-    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    msg = str(diagnostic.get("message") or "")
+    m = _RE_NO_FIELD_NAME.search(msg) or _RE_NO_FIELD_NAMED.search(msg)
     if m is None:
         return [], [], False
     field_name = m.group("field")

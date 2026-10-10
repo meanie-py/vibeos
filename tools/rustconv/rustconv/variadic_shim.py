@@ -26,7 +26,12 @@ _DEF = re.compile(
     r"(?P<attrs>(?:#\[[^\]]*\]\s*)*)(?P<vis>pub(?:\([^)]*\))?\s+)?unsafe\s+extern\s+\"C\"\s+fn\s+"
     r"(?P<name>[A-Za-z_]\w*)\s*\("
 )
-_VARIADIC_PARAM = re.compile(r",?\s*(?:mut\s+)?(?P<arg>[A-Za-z_]\w*)\s*:\s*\.\.\.\s*,?\s*$")
+# The name is optional: net.exe's `PrintMessageStringV(dwMessage: DWORD, ...)` came back with
+# the C's bare `...`, which rustc parses and this used to skip, leaving a nightly-only
+# definition in the crate.
+_VARIADIC_PARAM = re.compile(
+    r",?\s*(?:(?:mut\s+)?(?P<arg>[A-Za-z_]\w*)\s*:\s*)?\.\.\.\s*,?\s*$"
+)
 _VALIST_TYPE = re.compile(r"(?:::)?(?:core::ffi::)?VaList(?:Impl)?\b(?:\s*<[^>]*>)?")
 
 # c2rust's `core::ffi::VaList` as a parameter, field or fn-pointer TYPE (a C `va_list` taken by
@@ -171,7 +176,8 @@ def rewrite(text: str) -> Rewrite:
         body_close = _close_brace(out.text, body_open)
         if body_close is None:
             return out
-        name, arg = m.group("name"), v.group("arg")
+        # An unnamed `...` has no binding the body could walk or forward.
+        name, arg = m.group("name"), v.group("arg") or "__unnamed_variadic"
         fixed = params[: v.start()].rstrip().rstrip(",")
         ret = out.text[close_p + 1 : body_open].strip()
         body = out.text[body_open : body_close + 1]
