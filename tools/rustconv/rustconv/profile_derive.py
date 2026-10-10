@@ -2156,7 +2156,10 @@ def _macro_kind(body: str) -> str:
     * ``literal``    — integer literal (possibly cast/parenthesised): emitted as a const
     * ``expression`` — references other identifiers: bindgen MAY fail to fold it
     """
-    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\s*)+\s*\)", "", body)  # drop casts
+    # `\b` after each identifier: without it `[A-Za-z_]\w*\s*` can split ONE word at every
+    # letter, and a long `(IDENT ...` with no closing paren backtracks exponentially --
+    # sndvol32's mixer #defines took 16-33 minutes per TU in this one line.
+    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\b\s*)+\s*\)", "", body)  # drop casts
     return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
 
 
@@ -2217,6 +2220,16 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         for m in re.finditer(rf"^[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
+        # ...and members sharing a line: extrac32's function-local
+        # `enum {OUTSIDE_ARG, INSIDE_ARG, INSIDE_QUOTED_ARG} state;` read as UNOWNED.
+        for m in _ENUM_RE.finditer(text):
+            end = text.find("}", m.end())
+            if end < 0:
+                continue
+            for member in text[m.end() : end].split(","):
+                mm = re.match(r"\s*([A-Za-z_]\w*)", member)
+                if mm and mm.group(1) in wanted:
+                    out.setdefault(mm.group(1), ("enum", member.strip()))
         for name, kind in _cxx_consts(text, alt).items():
             out.setdefault(name, kind)
         return out
@@ -2450,6 +2463,21 @@ def header_type_defs(path: Path) -> set[str]:
     return names - _ANON_AGGREGATE_NAMES
 
 
+def definition_guards(path: Path, name: str) -> set[str]:
+    """The `#ifndef G` ... `#define G` guards a header wraps its definition of `name` in.
+
+    d3d9types.h and dsound.h each define `_D3DVECTOR` inside `#ifndef D3DVECTOR_DEFINED`;
+    whichever is included first defines it and the other skips, so the two are ONE
+    definition. dxdiag was split into two islands over it and kept the first."""
+    text = _read(path)
+    pat = re.compile(
+        rf"#\s*ifndef\s+(\w+)\s*\n(?:(?!#\s*endif).)*?\b{re.escape(name)}\b"
+        rf"(?:(?!#\s*endif).)*?#\s*define\s+\1\b",
+        re.S,
+    )
+    return {m.group(1) for m in pat.finditer(text)}
+
+
 def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Path, Path]]:
     """Type names defined by two headers that NO SINGLE TU includes together.
 
@@ -2470,6 +2498,8 @@ def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Pat
             for b in paths[i + 1 :]:
                 if any(a in s and b in s for s in closure.per_tu.values()):
                     continue  # co-reachable in a real TU -> proven compatible
+                if definition_guards(a, name) & definition_guards(b, name):
+                    continue  # one shared include guard -> one definition, whoever is first
                 conflicts.append((name, a, b))
     return conflicts
 
@@ -2659,7 +2689,15 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
                 extra.append(d)
     if "_WIN32_WINNT" in set_by_module and "WINVER" not in set_by_module:
         ver["WINVER"] = ver["_WIN32_WINNT"]  # WINVER tracks _WIN32_WINNT unless set apart
-    ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
+    # A module header that redefines _WIN32_WINNT (clipbrd's precomp.h: `#undef` then 0x600)
+    # gets NTDDI_VERSION from sdkddkver.h exactly as its real compile does -- which passes no
+    # NTDDI_VERSION -- or the pinned 0x0502 one trips "NTDDI_VERSION and _WIN32_WINNT mismatch".
+    redefines = "NTDDI_VERSION" not in set_by_module and any(
+        re.search(r"^\s*#\s*define\s+_WIN32_WINNT\b", h.read_text(errors="replace"), re.M)
+        for h in module.module_dir.rglob("*.h")
+    )
+    if not redefines:
+        ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
     defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
     defs += extra
     if module.unicode:

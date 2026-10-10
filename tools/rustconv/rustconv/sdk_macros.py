@@ -662,7 +662,15 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
-    return emit(_Parser(tokenize(expansion), types).parse())
+    # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
+    # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
+    # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup
+    # that does not exist (dxdiag's IDirectSound8_Release, E0599).
+    return re.sub(
+        r"\.lpVtbl\)\.([A-Za-z_]\w*)\(",
+        r".lpVtbl).\1.unwrap_unchecked()(",
+        emit(_Parser(tokenize(expansion), types).parse()),
+    )
 
 
 _DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)\(([^)]*)\)", re.M)
@@ -811,6 +819,26 @@ def outside_block_names(prelude: Path) -> set[str]:
     ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", text))
 
 
+def other_block_names(prelude: Path) -> set[str]:
+    """Items another generated block of the prelude already defines.
+
+    `port resolve` runs first and copies a name it finds the tree agreeing on (w32time's
+    `E_FAIL`, `S_OK`, `HKEY_LOCAL_MACHINE`) into its own block; lowering the same name into
+    this one too is E0428, three times over.
+    """
+    text = prelude.read_text() if prelude.is_file() else ""
+    text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), "", text, flags=re.S)
+    blocks = "".join(re.findall(r"(?ms)^// ==== (?!end).*?^// ==== end[^\n]*\n", text))
+    return set(
+        re.findall(
+            r"^\s*(?:#\[macro_export\]\s*)?(?:pub(?:\([^)]*\))?\s+)?"
+            r"(?:const|static(?:\s+mut)?|type|fn|struct|union)\s+([A-Za-z_]\w*)",
+            blocks,
+            re.M,
+        )
+    ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", blocks))
+
+
 def existing_items(prelude: Path) -> dict[str, set[str]]:
     """The block's object-like items: {"type": names, "value": names}."""
     text = prelude.read_text() if prelude.is_file() else ""
@@ -951,7 +979,13 @@ def object_items(
             # `__MINGW_NAME_AW(LVITEM)` -> `LVITEMW`): the expansion is the final name. A
             # value use of a type (`PROPSHEETHEADER` where the model dropped its sizeof)
             # gets the alias too, so the sizeof pass can see it is a type.
-            if re.fullmatch(r"[A-Za-z_]\w*", expansion) and (as_type or expansion in island):
+            # ...but a C type KEYWORD is not a Rust name: `#define VOID void` became
+            # `pub type VOID = void;` (audiosrv). Those take the type parser below.
+            if (
+                re.fullmatch(r"[A-Za-z_]\w*", expansion)
+                and expansion not in _C_TYPE_WORDS
+                and (as_type or expansion in island)
+            ):
                 out[n] = f"pub type {n} = {expansion};"
                 continue
             if as_type:

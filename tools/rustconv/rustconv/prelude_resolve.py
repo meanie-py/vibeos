@@ -148,7 +148,7 @@ def _visible_value_names(workspace: Path, crate: str) -> set[str]:
         from tools.source_walk import source_files
 
     roots = [workspace / crate / "src", workspace / "ntdll-sys" / "src"]
-    roots += [workspace / d / "src" for d in ("win32macros-rust", "strsafe-rust")]
+    roots += [workspace / d / "src" for _ident, d, _paths in SHARED_CRATES]
     out: set[str] = set()
     for root in roots:
         for p in source_files(root, "*.rs") if root.is_dir() else []:
@@ -514,6 +514,17 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
                 r'|^pub unsafe (?:extern "\w+" )?fn (String[A-Za-z]+)\b',
             ),
             ("ntstrsafe", r"^pub unsafe fn (RtlString[A-Za-z]+)\b"),
+        ),
+    ),
+    (
+        "conutils_h",
+        "conutils-h",
+        (
+            (
+                "",
+                r"^\s*pub (?:unsafe )?fn ([A-Za-z_]\w*)|^\s*pub static mut ([A-Za-z_]\w*)"
+                r"|^pub const ([A-Za-z_]\w*)|^pub type ([A-Za-z_]\w*)|^pub struct ([A-Za-z_]\w*)",
+            ),
         ),
     ),
 )

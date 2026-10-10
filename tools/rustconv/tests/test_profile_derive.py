@@ -1551,3 +1551,47 @@ def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
     h.write_text("typedef struct _S {\n    union {\n        int a;\n    } DUMMYUNIONNAME1;\n} S;\n")
     # inetcpl was split into two islands over this name alone.
     assert header_type_defs(h) == {"_S", "S"}
+
+
+def test_one_line_enum_members_are_owned(tmp_path):
+    """extrac32: `enum {OUTSIDE_ARG, INSIDE_ARG, INSIDE_QUOTED_ARG} state;` inside a function."""
+    from rustconv.profile_derive import header_symbols
+
+    c = tmp_path / "x.c"
+    c.write_text(
+        "void f(void)\n{\n    enum {OUTSIDE_ARG, INSIDE_ARG, INSIDE_QUOTED_ARG} state;\n}\n"
+    )
+    got = header_symbols(c, frozenset({"INSIDE_ARG", "INSIDE_QUOTED_ARG", "NOPE"}))
+    assert set(got) == {"INSIDE_ARG", "INSIDE_QUOTED_ARG"}
+
+
+def test_a_shared_definition_guard_is_not_a_conflict(tmp_path):
+    """dxdiag: d3d9types.h and dsound.h both define _D3DVECTOR inside #ifndef D3DVECTOR_DEFINED."""
+    from rustconv.profile_derive import definition_guards
+
+    body = "#ifndef D3DVECTOR_DEFINED\ntypedef struct _D3DVECTOR {\n float x;\n} D3DVECTOR;\n#define D3DVECTOR_DEFINED\n#endif\n"
+    a = tmp_path / "a.h"
+    a.write_text(body)
+    b = tmp_path / "b.h"
+    b.write_text("/* other */\n" + body)
+    c = tmp_path / "c.h"
+    c.write_text("typedef struct _D3DVECTOR { int y; } D3DVECTOR;\n")
+    assert definition_guards(a, "_D3DVECTOR") & definition_guards(b, "_D3DVECTOR") == {
+        "D3DVECTOR_DEFINED"
+    }
+    assert not definition_guards(c, "_D3DVECTOR")
+
+
+def test_macro_kind_is_linear_on_an_unclosed_identifier_run():
+    """sndvol32: a long `(IDENT | ...` with no `)` after the identifiers backtracked
+    exponentially in the cast-stripping regex (16-33 minutes per TU)."""
+    import time
+
+    from rustconv.profile_derive import _macro_kind
+
+    t = time.time()
+    assert (
+        _macro_kind("(MIXERCONTROL_CONTROLTYPE_BOOLEANMETER_WITH_A_LONG_NAME | 3") == "expression"
+    )
+    assert time.time() - t < 1
+    assert _macro_kind("((unsigned long)(0x10) | (DWORD) 5)") == "literal"

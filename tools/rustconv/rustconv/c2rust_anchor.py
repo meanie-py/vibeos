@@ -1091,13 +1091,16 @@ def anonymous_types(
     differs: dict[str, str] = {}
     for name, want in sorted(fields.items()):
         bodies: set[str] = set()
+        counts: list[int] = []
         for items in per_arch:
             hits = [v for v in items.values() if frozenset(_ANON_FIELD_RE.findall(v)) == want]
             bodies |= {re.sub(r"\bC2RustUnnamed\w*", "\0", h, count=1) for h in hits}
-            if len(hits) != 1:
-                bodies.add(f"{len(hits)} candidates")
+            counts.append(len(hits))
         nested = any(_ANON_TYPE_RE.search(b.replace("\0", "")) for b in bodies)
-        if not want or len(bodies) != 1 or nested:
+        # Exactly one match on EVERY arch. The miss used to be recorded as a body string,
+        # `"0 candidates"`, and when every arch missed alike the set held that one string --
+        # "agreed" -- and it was written into mmc's mscfile.rs as the type (E: expected item).
+        if not want or any(c != 1 for c in counts) or len(bodies) != 1 or nested:
             differs[name] = f"fields {sorted(want)}: {len(bodies)} distinct match(es)"
             continue
         agreed[name] = bodies.pop().replace("\0", name)

@@ -105,6 +105,28 @@ PAIRS = [
     ("sdk/lib/rust/wshirda-rust/src/wshirda", "dll/win32/wshirda"),
     ("sdk/lib/rust/wshtcpip-rust/src/wshtcpip", "dll/win32/wshtcpip"),
     ("sdk/lib/rust/wsock32-rust/src/wsock32", "dll/win32/wsock32"),
+    # Applications (base/applications), ported with `rustconv port` 2026-10-09/10.
+    ("sdk/lib/rust/notepad-rust/src/notepad", "base/applications/notepad"),
+    ("sdk/lib/rust/cacls-rust/src/cacls", "base/applications/cacls"),
+    ("sdk/lib/rust/charmap-rust/src/charmap", "base/applications/charmap"),
+    ("sdk/lib/rust/clipbrd-rust/src/clipbrd", "base/applications/clipbrd"),
+    ("sdk/lib/rust/control-rust/src/control", "base/applications/control"),
+    ("sdk/lib/rust/dxdiag-rust/src/dxdiag", "base/applications/dxdiag"),
+    ("sdk/lib/rust/extrac32-rust/src/extrac32", "base/applications/extrac32"),
+    ("sdk/lib/rust/findstr-rust/src/findstr", "base/applications/findstr"),
+    ("sdk/lib/rust/fontview-rust/src/fontview", "base/applications/fontview"),
+    ("sdk/lib/rust/logoff-rust/src/logoff", "base/applications/logoff"),
+    ("sdk/lib/rust/magnify-rust/src/magnify", "base/applications/magnify"),
+    ("sdk/lib/rust/mmc-rust/src/mmc", "base/applications/mmc"),
+    ("sdk/lib/rust/mplay32-rust/src/mplay32", "base/applications/mplay32"),
+    ("sdk/lib/rust/msconfig-rust/src/msconfig", "base/applications/msconfig"),
+    ("sdk/lib/rust/mstsc-rust/src/mstsc", "base/applications/mstsc"),
+    ("sdk/lib/rust/osk-rust/src/osk", "base/applications/osk"),
+    ("sdk/lib/rust/runas-rust/src/runas", "base/applications/runas"),
+    ("sdk/lib/rust/sc-rust/src/sc", "base/applications/sc"),
+    ("sdk/lib/rust/sdbinst-rust/src/sdbinst", "base/applications/sdbinst"),
+    ("sdk/lib/rust/shutdown-rust/src/shutdown", "base/applications/shutdown"),
+    ("sdk/lib/rust/winver-rust/src/winver", "base/applications/winver"),
 ]
 
 DEBUG_CHANNELS = (

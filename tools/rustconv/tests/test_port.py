@@ -541,3 +541,89 @@ def test_a_definition_spelled_with_an_sdk_alias_exports_the_real_name(tmp_path, 
     out = rs.read_text()
     assert '#[export_name = "wWinMain"]\npub unsafe extern "system" fn _tWinMain(' in out
     assert '#[no_mangle]\npub unsafe extern "C" fn Helper()' in out
+
+
+def test_crt_data_is_read_through_its_accessor(tmp_path):
+    # clipbrd/mplay32: `__argc`/`__wargv` are dllimport data, reachable only via the IAT slot.
+    rs = tmp_path / "main.rs"
+    rs.write_text(
+        "fn f() {\n    let n = __argc;\n    let a = *__wargv.offset(1);\n    __p___argc();\n}\n"
+    )
+    assert port._crt_data_globals(rs) == ["__argc x1", "__wargv x1"]
+    out = rs.read_text()
+    assert "let n = (*__p___argc());" in out and "*(*__p___wargv()).offset(1)" in out
+    assert "    __p___argc();" in out  # an existing accessor call is untouched
+    local = tmp_path / "local.rs"
+    local.write_text("fn f(__argc: i32) -> i32 { __argc }\n")
+    assert port._crt_data_globals(local) == []
+
+
+def test_trace_on_names_the_channel_static(tmp_path):
+    # TRACE_ON(ch) pastes `&__wine_dbch_##ch`, which macro_rules cannot.
+    rs = tmp_path / "x.rs"
+    rs.write_text("fn f() { if TRACE_ON(extrac32) != 0 {} if WINE_WARN_ON(foo) != 0 {} }\n")
+    port._wine_debug_storage(rs)
+    out = rs.read_text()
+    assert "TRACE_ON!(__wine_dbch_extrac32)" in out and "WARN_ON!(__wine_dbch_foo)" in out
+
+
+def test_stdio_streams_are_the_iob_entries(tmp_path):
+    rs = tmp_path / "f.rs"
+    rs.write_text("fn f() { fprintf(stderr, m); fgetws(b, 9, stdin); }\n")
+    assert port._crt_data_globals(rs) == ["stdin x1", "stderr x1"]
+    assert "fprintf(__iob_func().add(2), m)" in rs.read_text()
+    assert "fgetws(b, 9, __iob_func().add(0))" in rs.read_text()
+
+
+def test_an_all_zero_array_field_takes_its_length_from_the_type(tmp_path):
+    # mplay32: c2rust froze amd64's 6-byte TBBUTTON.bReserved; i386's is 2.
+    rs = tmp_path / "t.rs"
+    rs.write_text(
+        "static B: [T; 1] = [T { a: 1, bReserved: [0 as ::core::ffi::c_int as BYTE, 0, 0, 0, 0, 0], c: [1, 0] }];\n"
+    )
+    assert port._zero_array_literals(rs) == ["bReserved"]
+    out = rs.read_text()
+    assert "bReserved: unsafe { ::core::mem::zeroed() }" in out and "c: [1, 0]" in out
+
+
+def test_c2rust_anonymous_members_take_bindgen_names(tmp_path):
+    island = (
+        "pub struct _NID {\n    pub cbSize: u32,\n    pub __bindgen_anon_1: _NID__bindgen_ty_1,\n}\n"
+        "pub union _NID__bindgen_ty_1 {\n    pub uTimeout: u32,\n    pub uVersion: u32,\n}\n"
+    )
+    rs = tmp_path / "m.rs"
+    rs.write_text(
+        "static mut nid: NID = _NID { cbSize: 0, c2rust_unnamed: C2RustUnnamed { uTimeout: 0 }, };\n"
+        "fn f() { let a = si.c2rust_unnamed.c2rust_unnamed.wProcessorArchitecture; }\n"
+    )
+    port._c2rust_unnamed(rs, island)
+    out = rs.read_text()
+    assert "__bindgen_anon_1: _NID__bindgen_ty_1 { uTimeout: 0 }" in out
+    assert "let a = si.wProcessorArchitecture;" in out
+
+
+def test_an_anonymous_type_no_arch_finds_is_not_agreed(tmp_path, monkeypatch):
+    # mmc: every arch found 0 matches, the miss was recorded as the string "0 candidates",
+    # the set held one string -- "agreed" -- and it was written into mscfile.rs.
+    from rustconv import c2rust_anchor
+
+    monkeypatch.setattr(
+        c2rust_anchor, "_native_text", lambda f, arch: "pub struct Other { pub a: i32 }\n"
+    )
+    agreed, differs = c2rust_anchor.anonymous_types(
+        tmp_path / "x.c", {"C2RustUnnamed_7": frozenset({"x", "y"})}
+    )
+    assert agreed == {} and "C2RustUnnamed_7" in differs
+
+
+def test_a_rust_str_passed_to_c_gets_its_nul(tmp_path):
+    # magnify: "1".as_ptr() to CB_ADDSTRING read on past the literal.
+    rs = tmp_path / "m.rs"
+    rs.write_text(
+        'fn f() { g("1".as_ptr()); MessageBox(h, TEXT!("Help").as_ptr() as LPCSTR); '
+        'k(b"ok\\0".as_ptr()); j("done\\0".as_ptr()); }\n'
+    )
+    assert port._c_str_literals(rs) == ["1", "Help"]
+    out = rs.read_text()
+    assert 'g(b"1\\0".as_ptr())' in out and 'MessageBox(h, b"Help\\0".as_ptr() as LPCSTR)' in out
+    assert 'k(b"ok\\0".as_ptr())' in out and 'j("done\\0".as_ptr())' in out
