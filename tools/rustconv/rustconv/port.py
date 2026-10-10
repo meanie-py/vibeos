@@ -1036,10 +1036,22 @@ def flip_cmake(cml: str, state: dict) -> str:
             lines[hit] = f"{m.group(1)}# {rel}  # replaced by Rust ({rs})\n{m.group(1)})"
         last = max(last or 0, hit)
     text = "\n".join(lines)
-    if last is not None and not _list_has_stub(text.split("\n"), last):
-        lines = text.split("\n")
+    # Re-located AFTER the rewrite: splitting a line whose `)` rode on it shifts every later
+    # line by one, so an index taken during the loop put ftfd's stub above the comment.
+    lines = text.split("\n")
+    flipped = [i for i, ln in enumerate(lines) if "# replaced by Rust (" in ln]
+    last = flipped[-1] if flipped else None
+    if last is not None:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
-        lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
+        extra = []
+        if not _list_has_stub(lines, last):
+            extra.append("rust_cohab_stub.c")
+        # integrate's C trampolines for the module's variadic entry points (ftfd's sprintf,
+        # FT_Message): without them in a source list the variadic symbols do not exist.
+        if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
+            extra.append("rust_varargs_shim.c")
+        for k, name in enumerate(extra):
+            lines.insert(last + 1 + k, f"{indent}{name}")
         text = "\n".join(lines)
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:
