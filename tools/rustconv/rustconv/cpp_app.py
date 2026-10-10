@@ -863,6 +863,7 @@ def synthetic_tus(model: ModuleModel) -> dict[str, str]:
     """{body file (repo-relative): C-like text}: every lowered body, grouped by the file
     its text lives in, as free functions a worker can translate one at a time."""
     h = Hierarchy(model)
+    reached = external_reached(model)
     by_file: dict[str, list[str]] = {}
     for cls in model.classes.values():
         for m in cls.methods:
@@ -870,6 +871,8 @@ def synthetic_tus(model: ModuleModel) -> dict[str, str]:
                 continue
             if m.kind == "dtor" and _empty_body(m):
                 continue  # no Drop is rendered for it (has_drop)
+            if cls.external and m.kind != "ctor" and (cls.name, m.rust_name) not in reached:
+                continue  # an ATL method the module never calls: never translated
             by_file.setdefault(m.body[0], []).append(_synthetic_method(cls, m, h, model))
         if not any(x.kind == "ctor" for x in cls.methods):
             by_file.setdefault(cls.file, []).append(_implicit_ctor(cls, h, model))
@@ -903,6 +906,38 @@ def synthetic_tus(model: ModuleModel) -> dict[str, str]:
             raise CppAppError("module globals need construction but no entry point was found")
         by_file.setdefault(entry, []).append(init)
     return {k: "\n".join(v) for k, v in by_file.items()}
+
+
+_CALL_RE = re.compile(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*\(")
+
+
+def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
+    """(class, method) pairs of EXTERNAL classes (ATL's CWindow: 134 inline methods) that the
+    module's code calls, directly or through another reached method. Only these are
+    translated -- mspaint reaches about 45 -- and a name shared with a module method is
+    included rather than missed."""
+    ext = [c for c in model.classes.values() if c.external]
+    if not ext:
+        return set()
+    texts = [m.lowered or "" for c in model.classes.values() if not c.external for m in c.methods]
+    texts += [t for c in model.classes.values() for m in c.methods for _, t in m.lowered_inits]
+    texts += [f.lowered for f in model.functions]
+    called = set(_CALL_RE.findall("\n".join(texts)))
+    reached: set[tuple[str, str]] = set()
+    while True:
+        new = {
+            (c.name, m.rust_name)
+            for c in ext
+            for m in c.methods
+            if m.rust_name in called and (c.name, m.rust_name) not in reached
+        }
+        if not new:
+            return reached
+        reached |= new
+        for c in ext:
+            for m in c.methods:
+                if (c.name, m.rust_name) in new:
+                    called |= set(_CALL_RE.findall(m.lowered or ""))
 
 
 def _c_declarator(c_type: str, name: str) -> str:
@@ -1147,8 +1182,11 @@ def _class_api(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
             lines.append(f"    pub {_ident(f.name)}: {rust_type(f.c_type, model, field=True)},")
     lines.append("}")
     lines.append(f"// methods, called on a `{cls.name}` object `o` as `o.m(args)`:")
+    reached = external_reached(model) if cls.external else set()
     for m in cls.methods:
         if m.kind == "dtor" or m.static:
+            continue
+        if cls.external and (cls.name, m.rust_name) not in reached:
             continue
         params = ", ".join(f"{a}: {t}" for a, t in _params(m, model))
         lines.append(f"//   {m.rust_name}({params}){_ret(m, model)}")

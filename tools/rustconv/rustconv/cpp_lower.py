@@ -88,8 +88,15 @@ class Lowerer:
         self.classes = classes  # qualified name -> ClassModel
         self.base_path = base_path  # (from_class_short, to_class_short) -> "__base1." | ""
         self.ctor_index = {}  # (class short, ctorType qualType) -> N
+        self._span: tuple[str, int, int] = ("", 0, 0)
+
+    def _token_text(self, loc: dict) -> str | None:
+        f, lo, hi = self._span
+        t = _tok(loc, f, lo, hi)
+        return None if t is None else cdp_text(f, t[0], t[0] + t[1])
 
     def lower(self, node: dict, span: tuple[str, int, int], this_class: str | None) -> Lowered:
+        self._span = span
         f, lo, hi = span
         text = cdp_text(f, lo, hi)
         edits: list[tuple[int, int, str]] = []
@@ -169,9 +176,13 @@ class Lowerer:
         # (`p->name`, and for an implicit `this` the range is that one token).
         name_loc = n["range"]["end"]
         prefix = ("this_->" if implicit_this else "") + path
-        renamed = info.rust_name if info.rust_name != info.name else None
+        # Rename when the WRITTEN token differs from the Rust name: an overload
+        # (`alloc_seconds` -> `alloc_seconds__1`), or a TCHAR macro spelling whose declaration
+        # is the W function (`SendMessage` written, CWindow::SendMessageW declared).
+        written = self._token_text(name_loc)
+        renamed = info.rust_name if written is not None and written != info.rust_name else None
         if prefix or renamed:
-            put(name_loc, len(info.name) if renamed else 0, prefix + (renamed or ""), info.name)
+            put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
 
     def _defaults(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:
         inner = n.get("inner", [])

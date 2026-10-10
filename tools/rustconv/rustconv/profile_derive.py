@@ -4004,12 +4004,22 @@ def scaffold_crate(
     if is_cpp:
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
-        deps += 'atl-rust = { path = "../atl-rust" }\n'
+        com = any(
+            re.search(r"\bCComHeapPtr\b", tu.read_text(errors="replace"))
+            for tu in m.compiled_tus
+            if tu.is_file()
+        )
+        # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
+        deps += (
+            'atl-rust = { path = "../atl-rust", features = ["com"] }\n'
+            if com
+            else 'atl-rust = { path = "../atl-rust" }\n'
+        )
         atl_block = (
             "\n// ================= ATL =========================================================="
             "==============\n// ATL's CStringW/CComPtr/containers, ported once in atl-rust.\n"
             "pub use atl_rust::{atl_format, CComPtr, CHeapPtr, CSimpleArray, CSimpleMap, "
-            "CStringW};\n"
+            "CStringW};\n" + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases

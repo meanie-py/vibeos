@@ -488,7 +488,7 @@ class _Extractor:
             elif k == "VarDecl":  # a static data member
                 cls.fields.append(Field(c["name"], c["type"]["qualType"], access, True, None))
             elif k in _METHOD_KINDS and not c.get("isImplicit"):
-                m = self.method(c, access)
+                m = self.method(c, access, external=cls.external)
                 if m is not None:
                     m.inline = m.body is not None
                     cls.methods.append(m)
@@ -508,7 +508,7 @@ class _Extractor:
                     cls.qualified, "field", c["name"], c["name"]
                 )
             elif k in _METHOD_KINDS and not c.get("isImplicit"):
-                if self.method(c, "public", probe=True) is None:
+                if self.method(c, "public", probe=True, external=cls.external) is None:
                     continue
                 m = next(methods)
                 self.method_by_id[c["id"]] = m
@@ -536,11 +536,17 @@ class _Extractor:
                 if not x["inner"][0].get("isImplicit"):
                     self.pending_inits.append((m, target, x["inner"][0], owner))
 
-    def method(self, c: dict, access: str, probe: bool = False) -> Method | None:
+    def method(
+        self, c: dict, access: str, probe: bool = False, external: bool = False
+    ) -> Method | None:
         # A macro-generated method (BEGIN_MSG_MAP's ProcessWindowMessage) is rendered from
-        # the map, never translated as text.
-        if "spellingLoc" in c.get("loc", {}) and not self.mine(
-            c["loc"]["spellingLoc"].get("_file")
+        # the map, never translated as text. Not for an EXTERNAL class: CWindow's
+        # `SendMessage` is spelled through winuser.h's TCHAR macro, and that filter dropped
+        # SendMessage, MessageBox and every other TCHAR-named member mspaint calls.
+        if (
+            not external
+            and "spellingLoc" in c.get("loc", {})
+            and not self.mine(c["loc"]["spellingLoc"].get("_file"))
         ):
             return None
         if probe:
