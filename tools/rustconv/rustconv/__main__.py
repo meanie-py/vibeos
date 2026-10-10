@@ -5,6 +5,8 @@ import collections
 import difflib
 import json
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -2434,9 +2436,6 @@ def _class_declaration_scope(cls) -> str:
 def _rust_parse_error(code: str) -> str | None:
     """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
     style check: rustfmt reformats what it can parse and fails only on what it cannot."""
-    import shutil
-    import subprocess
-
     exe = shutil.which("rustfmt")
     if exe is None:
         raise RuntimeError("rustfmt not found: the preamble parse gate cannot run")

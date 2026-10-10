@@ -89,9 +89,7 @@ class TestPreambleDecls:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.skipif(
-    not PAID_PREAMBLE.is_file(), reason="storage32 preamble fixture missing"
-)
+@pytest.mark.skipif(not PAID_PREAMBLE.is_file(), reason="storage32 preamble fixture missing")
 class TestAgainstTheRealPaidPreamble:
     RUST = PAID_PREAMBLE.read_text(encoding="utf-8") if PAID_PREAMBLE.is_file() else ""
 

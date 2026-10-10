@@ -567,7 +567,8 @@ class _Extractor:
                 and (_file_of(n) or "").endswith((".cpp", ".cxx", ".cc"))
             ):
                 text = self.src.typedef_text(_span(n))
-                entry = (self.rel(_file_of(n)), text) if text else None
+                src_file = _file_of(n)
+                entry = (self.rel(src_file), text) if text and src_file else None
                 if entry and entry not in self.model.typedefs:
                     self.model.typedefs.append(entry)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):
@@ -997,13 +998,14 @@ class _Extractor:
             out = low.lower(node, span, owner)
             target.lowered = cpp_lower.unicode_text_macros(out.text) if self.unicode else out.text
             target.unplaced = out.unplaced
-            target.calls = [list(c) for c in out.calls]
+            target.calls = [(a, b) for a, b in out.calls]
         for m, member, node, owner in self.pending_inits:
             span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            m.calls = sorted({*map(tuple, m.calls), *out.calls})
+            # `calls` round-trips through JSON as lists: back to (class, method) pairs.
+            m.calls = sorted({*((a, b) for a, b in m.calls), *out.calls})
             text = _ctor_args(out.text, (member, owner.split("::")[-1]))
             if text is not None:
                 m.lowered_inits.append((member, text))

@@ -11894,6 +11894,7 @@ def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path
     spec = importlib.util.spec_from_file_location(
         "scc", Path(__file__).resolve().parents[3] / "tools" / "scan_const_contradictions.py"
     )
+    assert spec is not None and spec.loader is not None
     scc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(scc)
     crate = tmp_path / "sdk" / "lib" / "rust" / "x-rust" / "src"

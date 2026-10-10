@@ -384,10 +384,15 @@ class Lowerer:
         edits.append((span[1], 0, f").{info.rust_name}()"))
         # A method call needs no upcast: autoderef reaches CWindow's op_to_HWND through the
         # generated Deref, and _upcast's `.__base0` would land outside the call.
-        while obj.get("kind") == "ImplicitCastExpr" and obj.get("castKind") in (
-            "DerivedToBase",
-            "UncheckedDerivedToBase",
-            "NoOp",
+        while (
+            obj is not None
+            and obj.get("kind") == "ImplicitCastExpr"
+            and obj.get("castKind")
+            in (
+                "DerivedToBase",
+                "UncheckedDerivedToBase",
+                "NoOp",
+            )
         ):
             obj = (obj.get("inner") or [obj])[0]
         return obj
@@ -586,6 +591,8 @@ class Lowerer:
             # constructor's argument list. Swap them for parens; the arguments keep their
             # own edits (a member path inside one), so only the two delimiters change.
             m = re.match(r"\s*(=\s*)?\{", tail)
+            if m is None:
+                return
             depth, i = 0, m.end() - 1
             while i < len(tail):
                 depth += (tail[i] == "{") - (tail[i] == "}")

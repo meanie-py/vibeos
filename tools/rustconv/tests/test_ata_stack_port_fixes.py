@@ -164,7 +164,9 @@ def test_integrate_keeps_a_definition_the_prelude_reexports_from_this_module(tmp
     src_dir = tmp_path / "src"
     (src_dir / "cmd").mkdir(parents=True)
     (src_dir / "prelude.rs").write_text("pub use crate::cmd::dir::_DirSwitchesFlags;\n")
-    body = "use crate::prelude::*;\n#[repr(C)]\npub struct _DirSwitchesFlags {\n    pub b: i32,\n}\n"
+    body = (
+        "use crate::prelude::*;\n#[repr(C)]\npub struct _DirSwitchesFlags {\n    pub b: i32,\n}\n"
+    )
     crate_integrate._PROVIDED_CACHE.clear()
     kept, _ = crate_integrate.integrate(body, tmp_path, module="dir")
     assert "pub struct _DirSwitchesFlags" in kept

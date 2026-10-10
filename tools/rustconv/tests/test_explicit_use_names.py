@@ -25,5 +25,3 @@ use ntkrnl_sys::ddk::Foo as BAR_CONST;
 
 def test_a_glob_is_not_a_by_name_import():
     assert _explicit_use_names("pub use ntkrnl_sys::ddk::*;") == set()
-
-

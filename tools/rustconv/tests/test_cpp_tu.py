@@ -76,14 +76,16 @@ def test_cpp_tu_accepts_exact_local_raii_marker_in_discovered_owner():
 
 def test_cpp_tu_finds_integrated_printers_enum_factory():
     report = analyze_translation_unit(SHELL32 / "folders/CPrinterFolder.cpp", REACTOS_ROOT)
-    assert any(cls.name == "CPrinterFolder" and cls.ownership == "rust-owned" for cls in report.classes)
-    assert any(cls.name == "CPrintersEnum" and cls.ownership == "rust-owned" for cls in report.classes)
+    assert any(
+        cls.name == "CPrinterFolder" and cls.ownership == "rust-owned" for cls in report.classes
+    )
+    assert any(
+        cls.name == "CPrintersEnum" and cls.ownership == "rust-owned" for cls in report.classes
+    )
 
 
 def test_cpp_tu_does_not_treat_extern_factory_import_as_rust_ownership(tmp_path):
     source = tmp_path / "sdk/lib/rust/shell32-rust/src/import.rs"
     source.parent.mkdir(parents=True)
-    source.write_text(
-        'extern "system" { fn CImported_CreateInstance(outer: *mut IUnknown); }\n'
-    )
+    source.write_text('extern "system" { fn CImported_CreateInstance(outer: *mut IUnknown); }\n')
     assert _find_rust_factory(tmp_path, "CImported") is None

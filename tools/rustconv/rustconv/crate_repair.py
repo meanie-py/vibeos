@@ -2613,6 +2613,7 @@ def _int_float_arith_rule(
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
+    assert m is not None  # `got` is None without it
     if data[start:end].strip() not in (b"/", b"*", b"+", b"-"):
         return [], [], False
     op = start
@@ -2655,33 +2656,6 @@ def _merge_rules(diagnostic, load, ctx, *rules):
     return edits, skipped, claimed
 
 
-def _receiver_start(data: bytes, dot: int) -> int | None:
-    """Start of the receiver expression that ends just before `.` at `dot`: a path, a call
-    or a parenthesized group, chained (`CImageDx::_shared()`, `(*p).q`, `a.b`)."""
-    i = dot
-    while True:
-        j = i
-        while j > 0 and data[j - 1 : j] in b" \t":
-            j -= 1
-        if j > 0 and data[j - 1 : j] == b")":
-            depth, k = 0, j - 1
-            while k >= 0:
-                c = data[k : k + 1]
-                depth += (c == b")") - (c == b"(")
-                if depth == 0:
-                    break
-                k -= 1
-            if k < 0:
-                return None
-            j = k
-        m = re.search(rb"[A-Za-z_][\w:]*\Z", data[:j])
-        i = m.start() if m else j
-        if i > 0 and data[i - 1 : i] == b".":
-            i -= 1
-            continue
-        return i if i < dot else None
-
-
 def _raw_receiver_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2698,6 +2672,7 @@ def _raw_receiver_rule(
     if got is None:
         return [], [], False
     span, file_name, data, _masked, start, end = got
+    assert m is not None  # `got` is None without it
     if data[start:end].decode("utf-8", "replace") != m.group(1):
         return [], [], False
     dot = data.rfind(b".", 0, start)
@@ -4584,7 +4559,7 @@ def _unsigned_negate_rule(
     lit = re.fullmatch(r"\(?\s*-\s*\(?\s*(\d+|0[xX][0-9a-fA-F]+)\s*\)?\s*\)?", text)
     named = re.fullmatch(r"\(?\s*-\s*\(?\s*([A-Za-z_]\w*)\s*\)?\s*\)?", text)
     value = ctx.constants.get(named.group(1)) if named else None
-    if lit is None and value is not None and 0 <= value <= 0x7FFF_FFFF:
+    if lit is None and named is not None and value is not None and 0 <= value <= 0x7FFF_FFFF:
         # `-GRIP_SIZE` of a `#define GRIP_SIZE 3`: C's macro is an `int`, so the negation
         # is signed and `-GRIP_SIZE / 2` is -1. bindgen's `u32` is the literal's width only;
         # wrapping in u32 would make that division 0x7FFF_FFFE.
@@ -4671,6 +4646,8 @@ def _option_fn_as_ptr_rule(
         return [edit], [], True
     cast = re.fullmatch(r"(?s)(?P<e>.+?)\s+as\s+(?P<t>\*(?:mut|const)\s+[\w:]+)", text)
     if cast is None or not _balanced(cast.group("e").encode()):
+        return [], [], False
+    if m is None:
         return [], [], False
     null = "core::ptr::null_mut()" if m.group(1) == "mut" else "core::ptr::null()"
     rep = f"({cast.group('e')}).map_or({null}, |f| f as {cast.group('t')})"

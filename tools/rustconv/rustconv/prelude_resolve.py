@@ -1415,7 +1415,7 @@ def fact_rust_type(
     return "u32" if value < 2**32 else "u64"
 
 
-def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
+def render_facts(facts: dict[str, tuple[str, int | str, str]]) -> str:
     """name -> (rust type, value, source TU)."""
     out = [FACTS_BEGIN]
     for name, (ty, value, src) in sorted(facts.items()):
@@ -1423,6 +1423,7 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
         if ty in ("f32", "f64"):
             out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
             continue
+        assert isinstance(value, int)  # only a floating fact carries its literal text
         if ty.startswith("*"):
             ty = ty[1:]
             literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
@@ -1435,7 +1436,7 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
+def existing_facts(prelude: Path) -> dict[str, tuple[str, int | str, str]]:
     text = prelude.read_text()
     m = re.search(re.escape(FACTS_BEGIN) + r"(.*?)" + re.escape(FACTS_END), text, re.S)
     if not m:

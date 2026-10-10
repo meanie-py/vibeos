@@ -737,7 +737,7 @@ def test_a_stale_import_of_a_variadic_entry_is_dropped(tmp_path):
 
 def test_a_derived_arm_keeps_the_old_arms_hand_section():
     old = (
-        "case \"$DRIVER\" in\n"
+        'case "$DRIVER" in\n'
         "  cmd)\n    BLOCKLIST_FUNCS=0\n"
         "    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n    # <<< hand\n"
         "    ;;\n"

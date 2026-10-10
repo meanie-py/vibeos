@@ -5,7 +5,9 @@ from rustconv.__main__ import _preamble_has_translatable_content as real
 
 def test_header_switches_are_not_file_scope_content():
     # setuplib genlist.c: the model correctly answered nothing and the run hard-failed
-    assert not real('#include "precomp.h"\n#include "genlist.h"\n\n#define NDEBUG\n#include <debug.h>\n')
+    assert not real(
+        '#include "precomp.h"\n#include "genlist.h"\n\n#define NDEBUG\n#include <debug.h>\n'
+    )
     assert not real("#define WIN32_NO_STATUS\n#include <windef.h>\n#undef WIN32_NO_STATUS\n")
 
 

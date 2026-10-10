@@ -1497,7 +1497,7 @@ def _ctor_call(base: ClassModel, arg: str) -> tuple[int, str]:
     for i, m in enumerate(ctors):
         n = len(written)
         if len(m.params) >= n and all(p.default is not None for p in m.params[n:]):
-            full = [w.strip() for w in written] + [p.default for p in m.params[n:]]
+            full = [w.strip() for w in written] + [p.default or "" for p in m.params[n:]]
             return i, "(" + ", ".join(full) + ")"
     return _match_ctor(base, arg), arg
 
