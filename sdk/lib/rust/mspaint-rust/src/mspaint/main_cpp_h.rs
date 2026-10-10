@@ -243,7 +243,7 @@ pub unsafe extern "C" fn OpenMailer(hWnd: HWND, mut pszPathName: LPCWSTR) -> BOO
     }
 
     FreeLibrary(hMAPI);
-    return FALSE; // Failure
+    return (FALSE) as BOOL; // Failure
 }
 
 unsafe extern "C" fn DoHtmlHelpW(hwndCaller: HWND, pszFile: LPCWSTR, uCommand: UINT, dwData: DWORD_PTR) -> HWND {

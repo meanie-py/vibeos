@@ -650,6 +650,11 @@ class _Extractor:
                         self.decls[d["id"]] = cpp_lower.DeclInfo(
                             cls.qualified, "method", d["name"], d["name"], static=True
                         )
+                        if first and not any(m.name == d["name"] for m in cls.methods):
+                            # Known to the model (so integrate can qualify a bare call), but
+                            # body-less: nothing is generated or translated for a template.
+                            cls.methods.append(Method(d["name"], "method", [], "void", static=True))
+                            cls.methods[-1].rust_name = d["name"]
                 continue
             if k == "EnumDecl" and c.get("name"):
                 # A NAMED enum nested in the class: bindgen spells its constants

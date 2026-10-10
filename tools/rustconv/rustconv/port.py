@@ -4260,6 +4260,8 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     edit lasts until the next replay and is then gone, silently. `file.rs:Name` captures the
     function `Name` from `src/<stem>/file.rs` and puts it back over `Name` on replay;
     `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
+    `file.rs:+Name` banks an ADDED item -- one with no C/C++ origin, such as a hand-ported
+    member template (CImageDx::get_fn) -- which a replay appends when the file lacks it.
     """
 
     state = load_state(stem)
@@ -4269,7 +4271,8 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     hand.mkdir(parents=True, exist_ok=True)
     for spec in specs:
         fname, _, names = spec.partition(":")
-        name, _, replaces = names.partition("=")
+        added = names.startswith("+")
+        name, _, replaces = names.removeprefix("+").partition("=")
         replaces = replaces or name
         entry = hand / f"{Path(fname).stem}.{replaces}.json"
         if drop:
@@ -4279,7 +4282,9 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         text = (modules / fname).read_text()
         lo, hi = hand_span(text, name, where=f"hand: {spec}")
         body = text[lo:hi]
-        entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
+        entry.write_text(
+            json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
+        )
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
 
@@ -4427,6 +4432,18 @@ def apply_hand(stem: str) -> int:
         path = modules / h["file"]
         text = path.read_text()
         if h["text"] in text:  # already applied (replay runs this before and after fix)
+            applied += 1
+            continue
+        if h.get("added"):
+            try:
+                lo, hi = hand_span(text, h["name"], where="")
+            except PortError:
+                # An added item has nothing of its own in a replayed file: append it.
+                path.write_text(text.rstrip("\n") + "\n\n" + h["text"] + "\n")
+                applied += 1
+                continue
+            if text[lo:hi] != h["text"]:
+                path.write_text(text[:lo] + h["text"] + text[hi:])
             applied += 1
             continue
         # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
