@@ -1332,7 +1332,9 @@ def flip_cmake(cml: str, state: dict) -> str:
     lines = _explode_inline_sources(cml, target).split("\n")
     last = None
     for tu in state["tus"]:
-        rel = str((REPO / tu).relative_to(module))
+        # `../marshalling.c` (spoolss): a TU shared upward is listed relative to the module,
+        # which `relative_to` cannot express.
+        rel = os.path.relpath(REPO / tu, module)
         rs = _flip_output(state, tu).relative_to(REPO)
         pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
         hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)

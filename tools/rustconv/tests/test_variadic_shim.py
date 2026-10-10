@@ -73,9 +73,33 @@ def test_a_type_whose_abi_differs_by_arch_is_refused():
     assert v.c_primitive("U", ptr) == "__UINTPTR_TYPE__"
 
 
+def test_a_forwarded_va_list_starts_from_the_trampolines():
+    """progman's PrintString: C `va_start(args, szStr); PrintStringV(szStr, args); va_end(args);`,
+    translated with a local va_list and the lowered va_start!/va_end!, which mean nothing in a
+    Rust twin. The trampoline already did va_start, so the local is `*ap_list`."""
+    from rustconv import variadic_shim
+
+    src = (
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn PrintString(szStr: LPCWSTR, args: ...) {\n'
+        "    let mut args_va: va_list;\n"
+        "    va_start!(args_va, szStr);\n"
+        "    PrintStringV(szStr, args_va);\n"
+        "    va_end!(args_va);\n"
+        "}\n"
+    )
+    out = variadic_shim.rewrite(src)
+    assert out.names == ["PrintString"]
+    assert "let args_va: va_list = *(ap_list as *mut va_list);" in out.text
+    assert "va_start!" not in out.text and "va_end!" not in out.text
+
+
 def test_the_extern_keeps_a_mut_pointer_type():
     # ftfd's sprintf: stripping every `mut` declared `buf: *i8`, which does not parse.
-    src = 'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...) -> i32 {\n    0\n}\n'
+    src = (
+        'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...)'
+        " -> i32 {\n    0\n}\n"
+    )
     out = v.rewrite(src).text
     assert "pub fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;" in out
 

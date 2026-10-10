@@ -242,6 +242,46 @@ unsafe fn StringCopyNExWorkerW(
     hr
 }
 
+/// strsafe.h:184 `StringCchCopyExW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCchCopyExW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyExWorkerW(
+        pszDest,
+        cchDest,
+        cchDest * core::mem::size_of::<WCHAR>(),
+        pszSrc,
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+    )
+}
+
+/// strsafe.h:255 `StringCbCopyNW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyNW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    cbToCopy: usize,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let cchToCopy = cbToCopy / core::mem::size_of::<WCHAR>();
+    if cchDest > STRSAFE_MAX_CCH || cchToCopy > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
 /// strsafe.h:1646 `StringVPrintfExWorkerW`.
 #[allow(clippy::too_many_arguments)]
 unsafe fn StringVPrintfExWorkerW(
@@ -791,6 +831,27 @@ macro_rules! StringCbPrintfW {
             $(, $arg)*
         )
     };
+}
+
+/// strsafe.h:585 `StringCchPrintfExW(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfExW {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                pszDest, cchDest, cchDest * core::mem::size_of::<$crate::WCHAR>(),
+                $ppszDestEnd as _, $pcchRemaining as _,
+                $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
 }
 
 /// strsafe.h `StringCbPrintfExW(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags,

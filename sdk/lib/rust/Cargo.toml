@@ -481,6 +481,15 @@ members = [
     "audiosrv-rust",
     "w32time-rust",
     "schedsvc-rust",
+    "spoolss-rust",
+    "localmon-rust",
+    "localspl-rust",
+    "winspool-rust",
+    "spoolsv-rust",
+    "apphelp-rust",
+    "eventlog-rust",
+    "progman-rust",
+    "svchost-rust",
     "kbdlayouts-rust",
 ]
 resolver = "2"

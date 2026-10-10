@@ -3619,7 +3619,9 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]winsplp\.h'
                   --allowlist-file '.*[/\\]winspool\.h'
                   --allowlist-file '.*[/\\]winspool_c\.h'
-                  --allowlist-file '.*winspool[/\\].*\.h' )
+                  --allowlist-file '.*winspool[/\\].*\.h'
+                  --allowlist-file '.*[/\\]precomp\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/win32ss/printing/base/winspool" -I"${SRC}/build-i386/win32ss/printing/base/winspool" )
@@ -3685,7 +3687,8 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
                   --allowlist-file '.*[/\\]winver\.h'
-                  --allowlist-file '.*apphelp[/\\].*\.h' )
+                  --allowlist-file '.*apphelp[/\\].*\.h'
+                  --allowlist-file '.*[/\\]verrsrc\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/dll/appcompat/apphelp" -I"${SRC}/build-i386/dll/appcompat/apphelp" )
@@ -3714,7 +3717,8 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]rpcndr\.h'
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]winsvc\.h'
-                  --allowlist-file '.*eventlog[/\\].*\.h' )
+                  --allowlist-file '.*eventlog[/\\].*\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/services/eventlog" -I"${SRC}/build-i386/base/services/eventlog" )
@@ -3742,7 +3746,8 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]windowsx\.h'
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*progman[/\\].*\.h' )
+                  --allowlist-file '.*progman[/\\].*\.h'
+                  --allowlist-file '.*[/\\]progman\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/shell/progman" -I"${SRC}/build-i386/base/shell/progman" )
@@ -3769,7 +3774,9 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]objidl\.h'
                   --allowlist-file '.*[/\\]rpc\.h'
                   --allowlist-file '.*[/\\]svc\.h'
-                  --allowlist-file '.*svchost[/\\].*\.h' )
+                  --allowlist-file '.*svchost[/\\].*\.h'
+                  --allowlist-file '.*[/\\]rpcdce\.h'
+                  --allowlist-file '.*[/\\]winsvc\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/services/svchost" -I"${SRC}/build-i386/base/services/svchost" )

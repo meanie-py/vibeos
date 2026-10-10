@@ -246,8 +246,8 @@ const HEAP_ZERO_MEMORY: u32 = 0x8; // standard HeapAlloc flag
 /// Pool tags: ' flE' = 0x456c6620 and 'BflE' = 0x456c6642.
 /// (The LLM used 0x464C4545 / 0 — both wrong; these are debug-only but
 ///  we fix them for correctness.)
-const TAG_ELF: u32 = 0x456c6620;     // ' flE' reversed LE byte order
-const TAG_ELF_BUF: u32 = 0x456c6642; // 'BflE'
+const TAG_ELF: u32 = 0x20666C45; // ' flE': a C multi-char constant packs its first char highest
+const TAG_ELF_BUF: u32 = 0x42666C45; // 'BflE'
 
 /// STATUS_EVENTLOG_FILE_CORRUPT = 0xC000018E.
 /// (The LLM used 0xC0000188 in InitExistingFile and 0xC0000189 in
