@@ -3827,6 +3827,19 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             f"resolve: {len(stale)} fact(s) dropped, the island or a module defines them now: "
             + ", ".join(stale)
         )
+    # An integer fact whose macro is a FLOAT literal was truncated by the old value probe
+    # (mspaint's `M_PI: u32 = 3`): replace it from the preprocessor's own definition.
+    by_src: dict[str, list[str]] = {}
+    for name, (ty, _, src) in facts.items():
+        if ty not in ("f32", "f64"):
+            by_src.setdefault(src, []).append(name)
+    for src, names in sorted(by_src.items()):
+        tu = next((t for t in state["tus"] if Path(t).name == src), None)
+        if tu is None:
+            continue
+        for name, lit in sdk_facts.float_macro_literals(REPO, REPO / tu, names).items():
+            print(f"resolve: {name} was truncated to {facts[name][1]}; it is {lit}")
+            facts[name] = ("f64", lit, src)
     wanted = sorted(n for n in undefined if prelude_resolve.looks_constant(n) and n not in facts)
     if not wanted:
         prelude_resolve.write_facts(prelude, prelude_resolve.render_facts(facts))
@@ -3847,6 +3860,11 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             unresolved.update({n: "probe failed" for n in names})
             continue
         for f in r.facts:
+            if f.literal is not None:  # a floating constant: its literal, never (long long)
+                canonical = (f.c_type or "").partition("|")[2] or f.c_type or ""
+                ty = "f32" if canonical.removeprefix("const ").strip() == "float" else "f64"
+                facts[f.name] = (ty, f.literal, Path(tu).name)
+                continue
             ty = prelude_resolve.fact_rust_type(
                 f.c_type, f.value, known_types, bare_int_unsigned=not state.get("usermode", True)
             )

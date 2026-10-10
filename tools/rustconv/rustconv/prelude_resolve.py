@@ -1319,6 +1319,9 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
     out = [FACTS_BEGIN]
     for name, (ty, value, src) in sorted(facts.items()):
         literal = str(value)
+        if ty in ("f32", "f64"):
+            out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
+            continue
         if ty.startswith("*"):
             ty = ty[1:]
             literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
@@ -1336,8 +1339,12 @@ def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
     m = re.search(re.escape(FACTS_BEGIN) + r"(.*?)" + re.escape(FACTS_END), text, re.S)
     if not m:
         return {}
-    out = {}
+    out: dict = {}
     for line in m.group(1).splitlines():
+        fl = re.match(r"^pub const (\w+): (f32|f64) = ([-+0-9.eE]+); // clang, (\S+)", line.strip())
+        if fl:
+            out[fl.group(1)] = (fl.group(2), fl.group(3), fl.group(4))
+            continue
         f = re.match(
             r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+|usize as \w+)?(-?\d+)?;"
             r" // clang, (\S+)",

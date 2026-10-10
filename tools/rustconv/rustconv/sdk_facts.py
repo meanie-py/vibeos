@@ -103,6 +103,8 @@ class Fact:
     #: the C type clang reports, typedef name kept: `NTSTATUS|long` (sugar|canonical) or
     #: `int` when there is no sugar. None if not probed.
     c_type: str | None = None
+    #: a FLOATING constant's literal, from the preprocessor (value is then meaningless).
+    literal: str | None = None
 
 
 @dataclass
@@ -267,8 +269,50 @@ def resolve(
                 f"{a}={v}" for a, v in sorted(seen.items())
             )
             continue
-        facts.append(Fact(name, distinct.pop(), types.get(name)))
+        c_type = types.get(name)
+        if c_type and _FLOATING.fullmatch(c_type.partition("|")[2] or c_type):
+            # The value probe is `(long long)(X)`: a double truncates silently, and mspaint
+            # shipped `M_PI: u32 = 3`. A float takes its literal from the preprocessor.
+            lit = float_macro_literals(repo_root, tu, [name]).get(name)
+            if lit is None:
+                unresolved[name] = f"floating constant ({c_type}) that is not a plain literal"
+                continue
+            facts.append(Fact(name, 0, c_type, literal=lit))
+            continue
+        facts.append(Fact(name, distinct.pop(), c_type))
     return Resolution(facts, unresolved)
+
+
+_FLOATING = re.compile(r"(?:const )?(?:float|double|long double)")
+# A FLOAT literal: a decimal point or an exponent is required. Plain digits are an integer
+# macro (`IDS_PROGRAMNAME 900`), and reading one as 900.0 would turn every int fact float.
+_FLOAT_LIT = re.compile(
+    r"\(?\s*([-+]?(?:(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?|\d+[eE][-+]?\d+))[fFlL]?\s*\)?"
+)
+
+
+def float_macro_literals(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """`#define M_PI 3.14159265358979323846` -> {"M_PI": "3.14159265358979323846"}, read
+    from the TU's own `-E -dM` (so the include closure is the compile's). A body that is
+    not a plain float literal is left out: the caller reports it, it is never guessed."""
+    argv = None
+    for arch in _ARCHES:
+        argv = _probe_entry(repo_root, arch, tu)
+        if argv is not None:
+            break
+    if argv is None:
+        return {}
+    src = flags_source(tu)
+    cmd = [a for a in _syntax_argv(argv, src) if a != "-fsyntax-only"] + ["-E", "-dM"]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    found: dict[str, str] = {}
+    for line in out.splitlines():
+        m = re.match(r"#define (\w+) (.+)$", line)
+        if m and m.group(1) in names:
+            lit = _FLOAT_LIT.fullmatch(m.group(2).strip())
+            if lit:
+                found[m.group(1)] = lit.group(1)
+    return found
 
 
 def rust_type(value: int) -> str:
