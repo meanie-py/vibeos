@@ -3146,6 +3146,13 @@ function-local `const`s inside `machpc.rs` shadowing the correct glob-imported o
 `const` silently SHADOWS a glob import" above — same class, and `machpc.c:172` frees with that
 tag, so a shadowed alloc could never match an unshadowed free).
 
+**Not only pool tags: a reversed ACPI method name fails without a word.** pciidex's `_GTM` and
+`_SDD` evaluations were spelled `'M' | 'T'<<8 | 'G'<<16 | '_'<<24` and `0x5F534444` — the C's
+`'MTG_'` / `'DDS_'` byte-reversed — so they asked ACPI for methods named `MTG_` and `DDS_`, and
+every PATA channel just ran as if its firmware had no timing data. `_STM` and `_GTF`, sealed as
+decimal literals, were right. There is no rendezvous to catch this one: the other half is the
+firmware's AML. Check `MethodNameAsUlong` against the C's literal by value.
+
 `scan_const_contradictions` exists precisely for "one name, two values, both ours" and reported
 neither, because its `CONST_RE` matched only integer literals: every `u32::from_*_bytes(*b"..")`
 constant in the tree was invisible to it — pool tags, the largest duplicated-constant family we
@@ -4608,6 +4615,23 @@ which correctly fixed the first bug and turned the second into a hang.
 **Generalize.** A translation that repairs a C bug has to re-read the code the bug was
 guarding. Here, code that only ran because a comparison now succeeds. In particular, check
 any `index--; continue;` for whether the loop body actually removed the entry.
+
+### A driver's `ERR`/`WARN` stripped before translation, so its error paths fail in silence
+
+**Symptom:** a driver fails or degrades with no message at all. On arm64 every AHCI port's
+`START` returned `0xC000009A` and the serial log said nothing; on x86 nothing could show
+whether atapi's requests completed by interrupt or by its timeout-and-reset path, since
+`AtaPortTimeout` printed nothing and the Rust had empty `if … {} else {}` arms where the C
+dumped the CDB.
+**Cause:** rustconv strips the debug macros (`TRACE`/`WARN`/`ERR`/`FIXME`/`MESSAGE`) from each
+body before it seals and translates it (`call_seal.py`). For Wine's `TRACE` noise that is
+right; in the new ATA stack `ERR` and `WARN` are DBG-only prints that report every timeout,
+reset, DMA failure and spurious interrupt. atapi kept 5 of its 52, pciidex 9 of 86, and three
+of pciidex's had come back as `INFO!`, which prints nothing.
+**Fix:** restore them against the C — format string byte for byte, each argument widened the
+way C varargs promote it, at the same point in the control flow. With them back, the arm64
+failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`). Owed:
+rustconv should keep `ERR`/`WARN` for kernel modules instead of stripping them.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 
@@ -6105,6 +6129,17 @@ SCSIPORT adapter had ever interrupted on arm64; vioblk's first one (2026-10-06) 
 DISPATCH-level spinlock in `RtlPcToFileHeader` — and then `BUGCHECK 0xB8`. The tell is
 `kernel-fault-pc` in the flight recorder landing in `WRITE_PORT_*`. Carry the guard as
 `#[cfg(target_arch = "x86")]` (`_M_IX86` is i386 only, not amd64).
+
+**Variant: a `-D` define set only for ONE arch, translated as if it were never set.** pciidex
+compiles three branches under `ATA_DETECT_LEGACY_DEVICES`, which its CMakeLists defines for
+i386 only: `PciIdeXInitialize` filling legide's controller interface, `PciIdeXAddDeviceEx`
+marking the FDO non-PnP, and `PciIdeXFdoStartDevice` taking resources from the detected list
+instead of PCI config space. The translation kept the `#else` of the first (`return
+STATUS_NOT_SUPPORTED`) on every arch, dropped the third, and compiled the second everywhere. So
+on i386, legide could never register a channel it found, and nothing failed, because QEMU's PIIX
+owns both channels legide probes. Carry it as `#[cfg(target_arch = "x86")]`. The tell: a
+`CMakeLists` that adds a `-D` inside `if(ARCH STREQUAL ...)` names code the other arches never
+compile, so grep the C for that macro and check that each `#if` has an arch-gated twin in the Rust.
 
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
@@ -12003,6 +12038,31 @@ list"), from which the upstream writer followed.
 ---
 
 ## arm64: SEH, unwind & bring-up
+
+### arm64: uncached RAM mapped as Device memory alignment-faults on a merged store
+
+**Symptom:** BUGCHECK 0x1E on arm64 only, in a driver writing to its own DMA buffer. ESR
+`0x96000061` (data abort, DFSC 0x21 alignment fault), an odd FAR, and `[ALIGN]` showing PTE
+AttrIndx 1. atapi's SATL faulted building a VPD page: `stur w9, [x8, #5]`.
+**Cause:** `MiPlatformCacheAttributes`'s RAM row mapped `MmNonCached` to `MiNonCached`, which on
+arm64 is MAIR slot 1, Device-nGnRnE. Device memory faults on any unaligned access, and LLVM merges
+the C's byte stores into unaligned word stores freely. The buffer came from
+`MmAllocateContiguousMemorySpecifyCache(…, MmNonCached)`; x86 never notices, because PCD
+memory has no alignment rule.
+**Fix:** on arm64 the RAM row maps uncached types to `MiWriteCombined`, which is MAIR slot 2,
+Normal Non-cacheable. That is what Linux uses for coherent DMA, and it never aliases RAM with a
+Device type. I/O space keeps Device.
+
+### arm64 HAL: a DMA adapter must report map registers for the length asked
+
+**Symptom:** every AHCI port fails START with `0xC000009A`, and pciidex prints
+`CH n: Unable to allocate DMA memory`.
+**Cause:** the arm64 HAL's `new_adapter` reported 256 map registers whatever the
+`DEVICE_DESCRIPTION` said. Drivers size per-transfer tables from that number. pciidex's AHCI
+command table (128 bytes plus 16 per entry) became bigger than a page, it packed zero tables per
+page, and it asked for a 0-byte common buffer.
+**Fix:** report `BYTES_TO_PAGES(MaximumLength) + 1` for a bus master and 1 otherwise, as
+`x86/dma.rs` does. "Map registers are free here" is true of the hardware, not of the contract.
 
 ### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
 - **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the

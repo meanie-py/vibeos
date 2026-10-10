@@ -441,6 +441,8 @@ def _boot_vm(
                 or _headless_check(text)
                 or _virtio_mmio_check(text, arch)
                 or _ahci_irq_check(_qemu_stderr(vm))
+                or _ata_health_check(text)
+                or _legide_check(text)
             )
             if smp_fail is not None:
                 return {
@@ -956,6 +958,69 @@ def _irq_stats(vm: QemuVM, arch: str) -> str:
         return str(vm.qmp.hmp("info irq")).strip()
     except Exception:
         return ""
+
+
+# The new ATA stack's own reports of a lost interrupt: atapi's AtaPortTimeout (a request
+# outlived its timeout, so the port is reset) and pciidex's polled AHCI internal request.
+# Both are ERR lines (DPRINT1 format) and neither fires on a healthy boot. uniata media
+# never prints them.
+_ATA_TIMEOUT_RE = re.compile(
+    r"\((?:atapi|pciidex)-rust/[^)]*\) CH \d+: "
+    r"(?:Slot \d+ \(\w+\) timed out|Internal request timed out)"
+)
+_ATA_NO_IRQ_RE = re.compile(r"\(pciidex-rust/[^)]*\) CH \d+: Could not connect to interrupt")
+
+
+def _ata_health_check(text: str) -> dict | None:
+    """Fail a boot whose ATA stack ran without its interrupt. A request that times out is
+    reset and retried, and a channel that could not connect its interrupt is simply left
+    out, so the desktop comes up either way: only these lines say a disk was served by
+    the timeout path, or not at all."""
+    lost = [ln.strip() for ln in text.splitlines() if _ATA_TIMEOUT_RE.search(ln)]
+    if lost:
+        return {
+            "classification": "ATA_TIMEOUT",
+            "salient": [f"{len(lost)} ATA request(s) timed out (a lost interrupt)", *lost[:4]],
+        }
+    no_irq = [ln.strip() for ln in text.splitlines() if _ATA_NO_IRQ_RE.search(ln)]
+    if no_irq:
+        return {
+            "classification": "ATA_NO_INTERRUPT",
+            "salient": [
+                "an ATA channel could not connect its interrupt and was not started",
+                *no_irq[:4],
+            ],
+        }
+    return None
+
+
+_LEGIDE_FORCED = "LEGIDE_DETECT: probing"
+_LEGIDE_CHANNEL_RE = re.compile(r"\[DA\] PiEnumerateDevice Root\\legide\\\d+: [1-9]\d* children")
+
+
+def _legide_check(text: str) -> dict | None:
+    """Prove an `--isa-ide` boot ran legide's detection to the end: the tripwire let it
+    probe, it found the ISA channel and reported it (Root\\legide), pciidex's legacy
+    interface started it, and atapi enumerated the disk on it. Without the rig nothing
+    in a boot reaches that code."""
+    if os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip() != "1":
+        return None
+    if _LEGIDE_FORCED not in text:
+        problem = (
+            "legide never forced its probe: LEGIDE_DETECT did not reach the tripwire, "
+            "or legide did not load"
+        )
+    elif not _LEGIDE_CHANNEL_RE.search(text):
+        problem = "legide probed but reported no channel with a device (Root\\legide\\NNNN)"
+    else:
+        return None
+    return {
+        "classification": "LEGIDE_NOT_ENGAGED",
+        "salient": [
+            problem,
+            *[ln.strip() for ln in text.splitlines() if "legide" in ln.lower()][-4:],
+        ],
+    }
 
 
 def _qemu_stderr(vm: QemuVM) -> str:
@@ -1645,7 +1710,9 @@ def smoke(args, repo: Path) -> int:
             Stage(
                 "ahci",
                 status="warn",
-                detail="disk + CD drive on ich9-ahci" if arch == "arm64" else "boot CD on ich9-ahci",
+                detail="disk + CD drive on ich9-ahci"
+                if arch == "arm64"
+                else "boot CD on ich9-ahci",
             )
         )
 
@@ -1657,6 +1724,11 @@ def smoke(args, repo: Path) -> int:
             run.add(Stage("isa-ide", status="fail", detail="--isa-ide is i386-only (legide)"))
             return run.finalize(repo)
         os.environ["VIBEOS_QEMU_ISA_IDE"] = "1"
+        # The ACPI HAL tells legide to leave detection to PnP (DisableFirmwareMapper);
+        # the tripwire makes it probe anyway, or the rig would prove nothing.
+        tokens = os.environ.get("VIBEOS_TRIPWIRE", "").split()
+        if "LEGIDE_DETECT" not in tokens:
+            os.environ["VIBEOS_TRIPWIRE"] = " ".join([*tokens, "LEGIDE_DETECT"])
         run.add(Stage("isa-ide", status="warn", detail="disk on ISA IDE 0x1E8 IRQ 11"))
 
     # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and

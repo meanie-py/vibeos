@@ -965,7 +965,7 @@ suspecting the HAL.
 
 **i386 (2026-10-09)** boots the same way with no further fixes: it is UEFI too (OVMF32), so the
 same single channel shows up. legide loads as a boot driver and finds nothing, because nothing
-sits on the legacy primary ports. Its detection path still has no test that finds a device.
+sits on the legacy primary ports (see below for the `--isa-ide` rig that exercises it).
 Both arches print three classpnp "SRB and IRP result transfer lengths don't match" lines on
 MODE SENSE. That is the C: on an underrun atapi sets `SRB_STATUS_DATA_OVERRUN` and
 `Irp->IoStatus.Information` but never writes the real length back to
@@ -976,9 +976,41 @@ noise, not a failure.
 ich9-ahci, also with no fixes. pciide starts 8086:2922 through pciidex's `ahci_*` chipset code,
 the controller reports 6 ports, and atapi enumerates the DVD-ROM on port 0. smoke's
 `_ahci_check` now accepts that chain (pciide START of 2922 plus an `IDE\CdRom` under it), as
-well as uniata's `AhciDetect: exit found=1`. arm64's smoke VM (`virt`, virtio-blk) has no ATA
-controller, so the stack is reached there only through AHCI, and `--ahci` attaches ich9-ahci
-on x86 only today.
+well as uniata's `AhciDetect: exit found=1`.
+
+**arm64, interrupts, legide (2026-10-09).** `smoke --ahci` now works on arm64 too: the `virt`
+machine gets ich9-ahci at PCI slot 10, with a 64M FAT disk on port 0 and an empty CD drive on
+port 1 (`vm.py _ahci_args`). Two fixes outside the ATA drivers made it boot:
+- **The arm64 HAL** reported a flat 256 map registers. pciidex sizes each AHCI command table
+  from that number, so a table outgrew its page and every port failed to start. The HAL now
+  reports `BYTES_TO_PAGES(MaximumLength) + 1`, as x86 does.
+- **The arm64 MM** mapped `MmNonCached` RAM as Device memory, so atapi's SATL faulted (0x1E) on
+  an unaligned store into its local buffer. Uncached RAM is now Normal Non-cacheable.
+
+The restored `ERR`/`WARN` diagnostics are what named the first failure.
+
+Every `--ahci` boot now proves interrupt-driven I/O from QEMU's own trace
+(`ahci_cmd_done`/`ahci_irq_raise`/`ahci_irq_lower` → `_ahci_irq_check`):
+
+| boot | commands after the driver's first interrupt | raises | lowers |
+|---|---|---|---|
+| amd64 (CD on AHCI) | 6549 | 6566 | 13133 |
+| arm64 (disk + DVD) | 80 | 165 | 303 |
+
+There were never two completions in a row without a raise. The 2248 commands before the first
+raise on amd64 are OVMF's polled reads. The driver polls only IDENTIFY and its internal
+reset/port-multiplier requests. On PIIX, x86 boots now log `info irq`: amd64's CD channel took
+6685 interrupts on IRQ 15. Every boot also fails `ATA_TIMEOUT` / `ATA_NO_INTERRUPT` if atapi or
+pciidex reports a timed-out request or an interrupt it could not connect. A lost interrupt
+shows up only there, because the request is reset and retried and the boot carries on.
+
+legide's detection can't run on any boot we ship. The x86 HAL is ACPI-only, it sets
+`DisableFirmwareMapper`, and legide then leaves detection to PnP, as upstream intends.
+`smoke --isa-ide` (i386) attaches an ISA IDE disk on the tertiary channel (0x1E8, IRQ 11) and
+sets the `LEGIDE_DETECT` tripwire, which forces the probe and skips the two compatibility
+channels, since those belong to the PCI IDE function. legide finds the disk and pciidex's legacy
+interface starts the channel. That interface was dead until this pass: the translation had
+resolved `ATA_DETECT_LEGACY_DEVICES` away. atapi then enumerates the disk.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

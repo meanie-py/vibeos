@@ -9841,6 +9841,44 @@ def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
     assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
 
 
+def test_ata_health_check_fails_a_lost_interrupt():
+    """A timed-out ATA request is reset and retried and the boot carries on, so the
+    desktop alone would hide an ISR that never ran."""
+    from . import smoke as smoke_mod
+
+    ok = "(pciidex-rust/src/pciidex/acpi.rs:368) Failed to set device data, status 0xc0000010\n"
+    assert smoke_mod._ata_health_check(ok) is None
+    lost = (
+        "(atapi-rust/src/atapi/portstate.rs:861) CH 1: Slot 0 (00000001) timed out 0 (10s) 0 'x'\n"
+    )
+    bad = smoke_mod._ata_health_check(ok + lost)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    ahci = "(pciidex-rust/src/pciidex/ahci_hw.rs:560) CH 3: Internal request timed out\n"
+    bad = smoke_mod._ata_health_check(ahci)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    no_irq = "(pciidex-rust/src/pciidex/pdo.rs:188) CH 1: Could not connect to interrupt\n"
+    bad = smoke_mod._ata_health_check(no_irq)
+    assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
+    # The network stack's own timeouts are not the ATA stack's.
+    assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+
+
+def test_legide_check_needs_a_detected_channel(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_ISA_IDE", "1")
+    forced = "(legide-rust/src/legide/legide.rs:770) LEGIDE_DETECT: probing the channels\n"
+    found = "[DA] PiEnumerateDevice Root\\legide\\0000: 1 children (cs=0x0)\n"
+    assert smoke_mod._legide_check(forced + found) is None
+    bad = smoke_mod._legide_check(found)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    empty = "[DA] PiEnumerateDevice Root\\legide\\0000: 0 children (cs=0x0)\n"
+    bad = smoke_mod._legide_check(forced + empty)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    monkeypatch.delenv("VIBEOS_QEMU_ISA_IDE")
+    assert smoke_mod._legide_check("") is None
+
+
 def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
     loaded, or brought the controller up and found nothing, reaches the desktop
