@@ -2306,8 +2306,8 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
             return STATUS_MM_RESTART_OPERATION;
         }
 
-        MI_SET_USAGE(MI_USAGE_SECTION);
-        MI_SET_PROCESS2("");
+        ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_SECTION);
+        ntkrnl_sys::MI_SET_PROCESS2!("");
         Status = MmRequestPageMemoryConsumer(MC_USER, 1u8, &mut Page);
         if Status < 0 {
             return STATUS_NO_MEMORY;
@@ -2357,8 +2357,8 @@ pub unsafe extern "system" fn MmNotPresentFaultSectionView(
     if Entry == 0 {
         if (Offset.QuadPart >= PAGE_ROUND_UP((*Segment).RawLength.QuadPart as usize) as i64)
             && ((*MemoryArea).VadNode.u.VadFlags.VadType() as u32 == VadImageMap) {
-            MI_SET_USAGE(MI_USAGE_SECTION);
-            MI_SET_PROCESS2("");
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_SECTION);
+            ntkrnl_sys::MI_SET_PROCESS2!("");
             Status = MmRequestPageMemoryConsumer(MC_USER, 0u8, &mut Page);
             if Status < 0 {
                 MmUnlockSectionSegment(Segment as PVOID);

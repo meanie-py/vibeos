@@ -55,7 +55,6 @@ extern "system" {
     fn FsRtlIsAnsiCharacterLegalFat( ch: UCHAR, second: BOOLEAN, ) -> BOOLEAN;
     fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
     fn NT_ASSERT(expr: BOOLEAN);
-    fn _Analysis_assume_(condition: i32);
     fn ASSERT(condition: i32);
     fn FsRtlGetSectorSizeInformation( DeviceObject: *mut core::ffi::c_void, Buffer: *mut FatFileFsSectorSizeInformation, ) -> i32;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN; // fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);

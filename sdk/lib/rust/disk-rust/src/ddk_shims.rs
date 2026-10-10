@@ -181,7 +181,6 @@ pub unsafe extern "C" fn DiskDriverReinitialization(_drv: *mut c_void, _nothing:
 // Error/warning levels forward the raw format string to debug serial so disk.sys
 // failure paths aren't silent; %-specifiers print literally (identifies the site).
 // TracePrint MOVED to drvtrace-shim (fold-proof separate LLVM module — see that crate).
-#[no_mangle] pub unsafe extern "C" fn WPP_INIT_TRACING(_drv: PDRIVER_OBJECT, _reg: PUNICODE_STRING) {}
 
 // ---------- SRB_EX accessors (srbhelper.h inlines; logic mirrors classpnp srblib) ----------
 use crate::types::{PSTORAGE_REQUEST_BLOCK, STORAGE_REQUEST_BLOCK, PSRBEX_DATA,

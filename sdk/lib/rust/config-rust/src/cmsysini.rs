@@ -513,8 +513,6 @@ pub const STATUS_WRONG_PASSWORD: NTSTATUS = 0xC000006A_u32 as NTSTATUS;
 // Macro / inline shims
 // ============================================================================
 
-#[inline(always)]
-unsafe fn ARM64_UART_TRACE(_msg: *const u8) {}
 
 #[inline(always)]
 unsafe fn CMP_ASSERT_EXCLUSIVE_REGISTRY_LOCK() {}
@@ -1502,15 +1500,15 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
     CmpLoadOptions.Length += core::mem::size_of::<WCHAR>() as USHORT;
 
     HiveBase = (*LoaderBlock).RegistryBase;
-    ARM64_UART_TRACE(b"[CM] SysHive: HiveBase=\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] SysHive: HiveBase=\0".as_ptr());
     if !HiveBase.is_null() {
-        ARM64_UART_TRACE(b"non-null\0".as_ptr());
+        ARM64_UART_TRACE!(b"non-null\0".as_ptr());
     } else {
-        ARM64_UART_TRACE(b"NULL\0".as_ptr());
+        ARM64_UART_TRACE!(b"NULL\0".as_ptr());
     }
-    ARM64_UART_TRACE(b"\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"\r\n\0".as_ptr());
 
-    ARM64_UART_TRACE(b"[CM] SysHive: CmpInitializeHive\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] SysHive: CmpInitializeHive\r\n\0".as_ptr());
     Status = CmpInitializeHive(
         core::ptr::addr_of_mut!(SystemHive),
         if !HiveBase.is_null() {
@@ -1536,7 +1534,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
         return 0u8;
     }
 
-    ARM64_UART_TRACE(b"[CM] SysHive: CmpInitializeHive done\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] SysHive: CmpInitializeHive done\r\n\0".as_ptr());
 
     if RtlCreateUnicodeString(
         core::ptr::addr_of_mut!((*SystemHive).FileFullPath),
@@ -1567,7 +1565,7 @@ pub unsafe extern "system" fn CmpInitializeSystemHive(
 
     SecurityDescriptor = CmpHiveRootSecurityDescriptor();
 
-    ARM64_UART_TRACE(b"[CM] SysHive: CmpLinkHiveToMaster\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] SysHive: CmpLinkHiveToMaster\r\n\0".as_ptr());
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(KeyName),
         w!("\\Registry\\Machine\\SYSTEM").as_ptr(),
@@ -2202,13 +2200,13 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     CmpSystemProcess = PsGetCurrentProcess();
 
-    ARM64_UART_TRACE(b"[CM] CmpCreateObjectTypes\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpCreateObjectTypes\r\n\0".as_ptr());
     Status = CmpCreateObjectTypes();
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 1, Status as ULONG_PTR, 0);
     }
 
-    ARM64_UART_TRACE(b"[CM] CmpInitializeHive (master)\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeHive (master)\r\n\0".as_ptr());
     Status = CmpInitializeHive(
         &raw mut CmiVolatileHive,
         HINIT_CREATE,
@@ -2226,14 +2224,14 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 2, Status as ULONG_PTR, 0);
     }
 
-    ARM64_UART_TRACE(b"[CM] CmpCreateRegistryRoot\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpCreateRegistryRoot\r\n\0".as_ptr());
     if CmpCreateRegistryRoot() == 0 {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 3, 0, 0);
     }
 
     SecurityDescriptor = CmpHiveRootSecurityDescriptor();
 
-    ARM64_UART_TRACE(b"[CM] NtCreateKey MACHINE\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] NtCreateKey MACHINE\r\n\0".as_ptr());
     RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY\\MACHINE").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -2256,7 +2254,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     NtClose(KeyHandle);
 
-    ARM64_UART_TRACE(b"[CM] NtCreateKey USER\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] NtCreateKey USER\r\n\0".as_ptr());
     RtlInitUnicodeString(&mut KeyName, w!("\\REGISTRY\\USER").as_ptr());
     ObjectAttributes.Length = core::mem::size_of::<_OBJECT_ATTRIBUTES>() as ULONG;
     ObjectAttributes.RootDirectory = core::ptr::null_mut();
@@ -2281,18 +2279,18 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     CmpNoVolatileCreates = 1u8;
 
-    ARM64_UART_TRACE(b"[CM] CmpInitializeSystemHive\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeSystemHive\r\n\0".as_ptr());
     if CmpInitializeSystemHive(KeLoaderBlock) == 0 {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 7, 0, 0);
     }
 
-    ARM64_UART_TRACE(b"[CM] CmpCreateControlSet\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpCreateControlSet\r\n\0".as_ptr());
     Status = CmpCreateControlSet(KeLoaderBlock);
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 8, Status as ULONG_PTR, 0);
     }
 
-    ARM64_UART_TRACE(b"[CM] CmpInitializeHive (hardware)\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeHive (hardware)\r\n\0".as_ptr());
     Status = CmpInitializeHive(
         &mut HardwareHive,
         HINIT_CREATE,
@@ -2328,14 +2326,14 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     ExFreePoolWithTag(SecurityDescriptor as PVOID, TAG_CMSD);
 
-    ARM64_UART_TRACE(b"[CM] CmpInitializeHardwareConfiguration\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeHardwareConfiguration\r\n\0".as_ptr());
     Status = CmpInitializeHardwareConfiguration(KeLoaderBlock);
-    ARM64_UART_TRACE(b"[CM] CmpInitializeHardwareConfiguration returned\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeHardwareConfiguration returned\r\n\0".as_ptr());
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 13, Status as ULONG_PTR, 0);
     }
 
-    ARM64_UART_TRACE(b"[CM] CmpInitializeMachineDependentConfiguration\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmpInitializeMachineDependentConfiguration\r\n\0".as_ptr());
     Status = CmpInitializeMachineDependentConfiguration(KeLoaderBlock);
     if !NT_SUCCESS(Status) {
         KeBugCheckEx(CONFIG_INITIALIZATION_FAILED, 1, 14, Status as ULONG_PTR, 0);
@@ -2348,7 +2346,7 @@ pub unsafe extern "system" fn CmInitSystem1() -> BOOLEAN {
 
     ExFreePoolWithTag(CmpLoadOptions.Buffer as PVOID, TAG_CM);
 
-    ARM64_UART_TRACE(b"[CM] CmInitSystem1 done\r\n\0".as_ptr());
+    ARM64_UART_TRACE!(b"[CM] CmInitSystem1 done\r\n\0".as_ptr());
     1u8
 }
 

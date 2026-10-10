@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // miscboot.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{PCSTR, PSTR};
@@ -12,7 +14,6 @@ const EIO: ARC_STATUS = 8; // nolint: const-contradiction (ARC_CODES enumerator,
 extern "C" {
     fn GetArgumentValue(Argc: u32, Argv: *mut PSTR, ArgName: PCSTR) -> PCSTR;
     fn _stricmp(s1: PCSTR, s2: PCSTR) -> i32;
-    fn ERR(fmt: *const i8, ...);
     fn UiShowMessageBoxesInArgv(Argc: u32, Argv: *mut PSTR);
     fn DriveMapGetBiosDriveNumber(Name: PCSTR) -> u8;
     fn atoi(s: PCSTR) -> i32;
@@ -64,10 +65,7 @@ pub unsafe extern "C" fn LoadAndBootSector(
     {
         ArgValue = GetArgumentValue(Argc, Argv, b"BootType\0".as_ptr() as PCSTR);
         if ArgValue.is_null() || *ArgValue == 0 || _stricmp(ArgValue, b"BootSector\0".as_ptr() as PCSTR) != 0 {
-            ERR(
-                b"Unexpected boot type '%s', aborting\n\0".as_ptr() as PCSTR,
-                if !ArgValue.is_null() { ArgValue } else { b"n/a\0".as_ptr() as PCSTR },
-            );
+            ERR!("Unexpected boot type '%s', aborting\n", if !ArgValue.is_null() { ArgValue } else { b"n/a\0".as_ptr() as PCSTR });
             return EINVAL;
         }
     }

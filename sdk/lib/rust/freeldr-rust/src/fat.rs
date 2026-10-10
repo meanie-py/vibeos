@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_FILESYSTEM; // fat.c: DBG_DEFAULT_CHANNEL(FILESYSTEM)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, LIST_ENTRY, PCSTR, PUINT32, UINT32, UINT8, ULARGE_INTEGER};
@@ -248,7 +250,6 @@ fn SWAPD(x: ULONG) -> ULONG { x }
 extern "C" {
     fn strncmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
     fn FsGetDeviceSpecific(FileId: ULONG) -> PFAT_FILE_INFO;
-    fn TRACE(fmt: *const i8, ...);
     fn _strnicmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
     fn strlen(s: *const i8) -> usize;
     fn _stricmp(s1: *const i8, s2: *const i8) -> i32;
@@ -258,7 +259,6 @@ extern "C" {
     fn ArcRead(DeviceId: ULONG, Buffer: PVOID, Length: ULONG, Count: *mut ULONG) -> ARC_STATUS;
     fn RtlEqualMemory(Source1: *const VOID, Source2: *const VOID, Length: usize) -> BOOLEAN;
     fn ArcGetFileInformation(DeviceId: ULONG, FileInformation: *mut FILEINFORMATION) -> ARC_STATUS;
-    fn ERR(fmt: *const i8, ...);
     fn FsGetNumPathParts(path: PCSTR) -> ULONG;
     fn FsGetFirstNameFromPath(dest: PCHAR, src: PCSTR);
     fn FsGetDeviceId(fileid: ULONG) -> ULONG;
@@ -382,79 +382,79 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
     let Fat32VolumeBootSector: PFAT32_BOOTSECTOR = BootSector as PFAT32_BOOTSECTOR;
     let FatXVolumeBootSector: PFATX_BOOTSECTOR = BootSector as PFATX_BOOTSECTOR;
 
-    TRACE(b"FatOpenVolume() DeviceId = %d\n\0".as_ptr() as PCHAR, ((*Volume).DeviceId) as usize);
+    TRACE!("FatOpenVolume() DeviceId = %d\n", ((*Volume).DeviceId) as usize);
 
     (*Volume).FatType = (FatDetermineFatType(FatVolumeBootSector, PartitionSectorCount)) as u8 ;
 
-    TRACE(b"Dumping boot sector:\n\0".as_ptr() as PCHAR);
+    TRACE!("Dumping boot sector:\n");
     if ISFATX(((*Volume).FatType) as u32 ) != 0 {
         FatSwapFatXBootSector(FatXVolumeBootSector);
-        TRACE(b"sizeof(FATX_BOOTSECTOR) = 0x%x.\n\0".as_ptr() as PCHAR, (core::mem::size_of::<FATX_BOOTSECTOR>()) as usize);
+        TRACE!("sizeof(FATX_BOOTSECTOR) = 0x%x.\n", (core::mem::size_of::<FATX_BOOTSECTOR>()) as usize);
 
-        TRACE(b"FileSystemType: %c%c%c%c.\n\0".as_ptr() as PCHAR, ((*FatXVolumeBootSector).FileSystemType[0]) as usize, ((*FatXVolumeBootSector).FileSystemType[1]) as usize, ((*FatXVolumeBootSector).FileSystemType[2]) as usize, ((*FatXVolumeBootSector).FileSystemType[3]) as usize);
-        TRACE(b"VolumeSerialNumber: 0x%x\n\0".as_ptr() as PCHAR, ((*FatXVolumeBootSector).VolumeSerialNumber) as usize);
-        TRACE(b"SectorsPerCluster: %d\n\0".as_ptr() as PCHAR, ((*FatXVolumeBootSector).SectorsPerCluster) as usize);
-        TRACE(b"NumberOfFats: %d\n\0".as_ptr() as PCHAR, ((*FatXVolumeBootSector).NumberOfFats) as usize);
-        TRACE(b"Unknown: 0x%x\n\0".as_ptr() as PCHAR, ((*FatXVolumeBootSector).Unknown) as usize);
+        TRACE!("FileSystemType: %c%c%c%c.\n", ((*FatXVolumeBootSector).FileSystemType[0]) as usize, ((*FatXVolumeBootSector).FileSystemType[1]) as usize, ((*FatXVolumeBootSector).FileSystemType[2]) as usize, ((*FatXVolumeBootSector).FileSystemType[3]) as usize);
+        TRACE!("VolumeSerialNumber: 0x%x\n", ((*FatXVolumeBootSector).VolumeSerialNumber) as usize);
+        TRACE!("SectorsPerCluster: %d\n", ((*FatXVolumeBootSector).SectorsPerCluster) as usize);
+        TRACE!("NumberOfFats: %d\n", ((*FatXVolumeBootSector).NumberOfFats) as usize);
+        TRACE!("Unknown: 0x%x\n", ((*FatXVolumeBootSector).Unknown) as usize);
 
-        TRACE(b"FatType %s\n\0".as_ptr() as PCHAR, (if (*Volume).FatType == ((FATX16) as u8) { b"FATX16\0".as_ptr() } else { b"FATX32\0".as_ptr() }) as usize);
+        TRACE!("FatType %s\n", (if (*Volume).FatType == ((FATX16) as u8) { b"FATX16\0".as_ptr() } else { b"FATX32\0".as_ptr() }) as usize);
     } else if (*Volume).FatType == ((FAT32) as u8) {
         FatSwapFat32BootSector(Fat32VolumeBootSector);
-        TRACE(b"sizeof(FAT32_BOOTSECTOR) = 0x%x.\n\0".as_ptr() as PCHAR, (core::mem::size_of::<FAT32_BOOTSECTOR>()) as usize);
+        TRACE!("sizeof(FAT32_BOOTSECTOR) = 0x%x.\n", (core::mem::size_of::<FAT32_BOOTSECTOR>()) as usize);
 
-        TRACE(b"JumpBoot: 0x%x 0x%x 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).JumpBoot[0]) as usize, ((*Fat32VolumeBootSector).JumpBoot[1]) as usize, ((*Fat32VolumeBootSector).JumpBoot[2]) as usize);
-        TRACE(b"OemName: %c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).OemName[0]) as usize, ((*Fat32VolumeBootSector).OemName[1]) as usize, ((*Fat32VolumeBootSector).OemName[2]) as usize, ((*Fat32VolumeBootSector).OemName[3]) as usize, ((*Fat32VolumeBootSector).OemName[4]) as usize, ((*Fat32VolumeBootSector).OemName[5]) as usize, ((*Fat32VolumeBootSector).OemName[6]) as usize, ((*Fat32VolumeBootSector).OemName[7]) as usize);
-        TRACE(b"BytesPerSector: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).BytesPerSector) as usize);
-        TRACE(b"SectorsPerCluster: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).SectorsPerCluster) as usize);
-        TRACE(b"ReservedSectors: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).ReservedSectors) as usize);
-        TRACE(b"NumberOfFats: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).NumberOfFats) as usize);
-        TRACE(b"RootDirEntries: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).RootDirEntries) as usize);
-        TRACE(b"TotalSectors: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).TotalSectors) as usize);
-        TRACE(b"MediaDescriptor: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).MediaDescriptor) as usize);
-        TRACE(b"SectorsPerFat: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).SectorsPerFat) as usize);
-        TRACE(b"SectorsPerTrack: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).SectorsPerTrack) as usize);
-        TRACE(b"NumberOfHeads: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).NumberOfHeads) as usize);
-        TRACE(b"HiddenSectors: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).HiddenSectors) as usize);
-        TRACE(b"TotalSectorsBig: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).TotalSectorsBig) as usize);
-        TRACE(b"SectorsPerFatBig: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).SectorsPerFatBig) as usize);
-        TRACE(b"ExtendedFlags: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).ExtendedFlags) as usize);
-        TRACE(b"FileSystemVersion: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).FileSystemVersion) as usize);
-        TRACE(b"RootDirStartCluster: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).RootDirStartCluster) as usize);
-        TRACE(b"FsInfo: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).FsInfo) as usize);
-        TRACE(b"BackupBootSector: %d\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).BackupBootSector) as usize);
-        TRACE(b"Reserved: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).Reserved.as_ptr()) as usize);
-        TRACE(b"DriveNumber: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).DriveNumber) as usize);
-        TRACE(b"Reserved1: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).Reserved1) as usize);
-        TRACE(b"BootSignature: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).BootSignature) as usize);
-        TRACE(b"VolumeSerialNumber: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).VolumeSerialNumber) as usize);
-        TRACE(b"VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).VolumeLabel[0]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[1]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[2]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[3]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[4]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[5]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[6]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[7]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[8]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[9]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[10]) as usize);
-        TRACE(b"FileSystemType: %c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).FileSystemType[0]) as usize, ((*Fat32VolumeBootSector).FileSystemType[1]) as usize, ((*Fat32VolumeBootSector).FileSystemType[2]) as usize, ((*Fat32VolumeBootSector).FileSystemType[3]) as usize, ((*Fat32VolumeBootSector).FileSystemType[4]) as usize, ((*Fat32VolumeBootSector).FileSystemType[5]) as usize, ((*Fat32VolumeBootSector).FileSystemType[6]) as usize, ((*Fat32VolumeBootSector).FileSystemType[7]) as usize);
-        TRACE(b"BootSectorMagic: 0x%x\n\0".as_ptr() as PCHAR, ((*Fat32VolumeBootSector).BootSectorMagic) as usize);
+        TRACE!("JumpBoot: 0x%x 0x%x 0x%x\n", ((*Fat32VolumeBootSector).JumpBoot[0]) as usize, ((*Fat32VolumeBootSector).JumpBoot[1]) as usize, ((*Fat32VolumeBootSector).JumpBoot[2]) as usize);
+        TRACE!("OemName: %c%c%c%c%c%c%c%c\n", ((*Fat32VolumeBootSector).OemName[0]) as usize, ((*Fat32VolumeBootSector).OemName[1]) as usize, ((*Fat32VolumeBootSector).OemName[2]) as usize, ((*Fat32VolumeBootSector).OemName[3]) as usize, ((*Fat32VolumeBootSector).OemName[4]) as usize, ((*Fat32VolumeBootSector).OemName[5]) as usize, ((*Fat32VolumeBootSector).OemName[6]) as usize, ((*Fat32VolumeBootSector).OemName[7]) as usize);
+        TRACE!("BytesPerSector: %d\n", ((*Fat32VolumeBootSector).BytesPerSector) as usize);
+        TRACE!("SectorsPerCluster: %d\n", ((*Fat32VolumeBootSector).SectorsPerCluster) as usize);
+        TRACE!("ReservedSectors: %d\n", ((*Fat32VolumeBootSector).ReservedSectors) as usize);
+        TRACE!("NumberOfFats: %d\n", ((*Fat32VolumeBootSector).NumberOfFats) as usize);
+        TRACE!("RootDirEntries: %d\n", ((*Fat32VolumeBootSector).RootDirEntries) as usize);
+        TRACE!("TotalSectors: %d\n", ((*Fat32VolumeBootSector).TotalSectors) as usize);
+        TRACE!("MediaDescriptor: 0x%x\n", ((*Fat32VolumeBootSector).MediaDescriptor) as usize);
+        TRACE!("SectorsPerFat: %d\n", ((*Fat32VolumeBootSector).SectorsPerFat) as usize);
+        TRACE!("SectorsPerTrack: %d\n", ((*Fat32VolumeBootSector).SectorsPerTrack) as usize);
+        TRACE!("NumberOfHeads: %d\n", ((*Fat32VolumeBootSector).NumberOfHeads) as usize);
+        TRACE!("HiddenSectors: %d\n", ((*Fat32VolumeBootSector).HiddenSectors) as usize);
+        TRACE!("TotalSectorsBig: %d\n", ((*Fat32VolumeBootSector).TotalSectorsBig) as usize);
+        TRACE!("SectorsPerFatBig: %d\n", ((*Fat32VolumeBootSector).SectorsPerFatBig) as usize);
+        TRACE!("ExtendedFlags: 0x%x\n", ((*Fat32VolumeBootSector).ExtendedFlags) as usize);
+        TRACE!("FileSystemVersion: 0x%x\n", ((*Fat32VolumeBootSector).FileSystemVersion) as usize);
+        TRACE!("RootDirStartCluster: %d\n", ((*Fat32VolumeBootSector).RootDirStartCluster) as usize);
+        TRACE!("FsInfo: %d\n", ((*Fat32VolumeBootSector).FsInfo) as usize);
+        TRACE!("BackupBootSector: %d\n", ((*Fat32VolumeBootSector).BackupBootSector) as usize);
+        TRACE!("Reserved: 0x%x\n", ((*Fat32VolumeBootSector).Reserved.as_ptr()) as usize);
+        TRACE!("DriveNumber: 0x%x\n", ((*Fat32VolumeBootSector).DriveNumber) as usize);
+        TRACE!("Reserved1: 0x%x\n", ((*Fat32VolumeBootSector).Reserved1) as usize);
+        TRACE!("BootSignature: 0x%x\n", ((*Fat32VolumeBootSector).BootSignature) as usize);
+        TRACE!("VolumeSerialNumber: 0x%x\n", ((*Fat32VolumeBootSector).VolumeSerialNumber) as usize);
+        TRACE!("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", ((*Fat32VolumeBootSector).VolumeLabel[0]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[1]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[2]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[3]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[4]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[5]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[6]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[7]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[8]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[9]) as usize, ((*Fat32VolumeBootSector).VolumeLabel[10]) as usize);
+        TRACE!("FileSystemType: %c%c%c%c%c%c%c%c\n", ((*Fat32VolumeBootSector).FileSystemType[0]) as usize, ((*Fat32VolumeBootSector).FileSystemType[1]) as usize, ((*Fat32VolumeBootSector).FileSystemType[2]) as usize, ((*Fat32VolumeBootSector).FileSystemType[3]) as usize, ((*Fat32VolumeBootSector).FileSystemType[4]) as usize, ((*Fat32VolumeBootSector).FileSystemType[5]) as usize, ((*Fat32VolumeBootSector).FileSystemType[6]) as usize, ((*Fat32VolumeBootSector).FileSystemType[7]) as usize);
+        TRACE!("BootSectorMagic: 0x%x\n", ((*Fat32VolumeBootSector).BootSectorMagic) as usize);
     } else {
         FatSwapFatBootSector(FatVolumeBootSector);
-        TRACE(b"sizeof(FAT_BOOTSECTOR) = 0x%x.\n\0".as_ptr() as PCHAR, (core::mem::size_of::<FAT_BOOTSECTOR>()) as usize);
+        TRACE!("sizeof(FAT_BOOTSECTOR) = 0x%x.\n", (core::mem::size_of::<FAT_BOOTSECTOR>()) as usize);
 
-        TRACE(b"JumpBoot: 0x%x 0x%x 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).JumpBoot[0]) as usize, ((*FatVolumeBootSector).JumpBoot[1]) as usize, ((*FatVolumeBootSector).JumpBoot[2]) as usize);
-        TRACE(b"OemName: %c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).OemName[0]) as usize, ((*FatVolumeBootSector).OemName[1]) as usize, ((*FatVolumeBootSector).OemName[2]) as usize, ((*FatVolumeBootSector).OemName[3]) as usize, ((*FatVolumeBootSector).OemName[4]) as usize, ((*FatVolumeBootSector).OemName[5]) as usize, ((*FatVolumeBootSector).OemName[6]) as usize, ((*FatVolumeBootSector).OemName[7]) as usize);
-        TRACE(b"BytesPerSector: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).BytesPerSector) as usize);
-        TRACE(b"SectorsPerCluster: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).SectorsPerCluster) as usize);
-        TRACE(b"ReservedSectors: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).ReservedSectors) as usize);
-        TRACE(b"NumberOfFats: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).NumberOfFats) as usize);
-        TRACE(b"RootDirEntries: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).RootDirEntries) as usize);
-        TRACE(b"TotalSectors: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).TotalSectors) as usize);
-        TRACE(b"MediaDescriptor: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).MediaDescriptor) as usize);
-        TRACE(b"SectorsPerFat: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).SectorsPerFat) as usize);
-        TRACE(b"SectorsPerTrack: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).SectorsPerTrack) as usize);
-        TRACE(b"NumberOfHeads: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).NumberOfHeads) as usize);
-        TRACE(b"HiddenSectors: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).HiddenSectors) as usize);
-        TRACE(b"TotalSectorsBig: %d\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).TotalSectorsBig) as usize);
-        TRACE(b"DriveNumber: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).DriveNumber) as usize);
-        TRACE(b"Reserved1: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).Reserved1) as usize);
-        TRACE(b"BootSignature: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).BootSignature) as usize);
-        TRACE(b"VolumeSerialNumber: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).VolumeSerialNumber) as usize);
-        TRACE(b"VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).VolumeLabel[0]) as usize, ((*FatVolumeBootSector).VolumeLabel[1]) as usize, ((*FatVolumeBootSector).VolumeLabel[2]) as usize, ((*FatVolumeBootSector).VolumeLabel[3]) as usize, ((*FatVolumeBootSector).VolumeLabel[4]) as usize, ((*FatVolumeBootSector).VolumeLabel[5]) as usize, ((*FatVolumeBootSector).VolumeLabel[6]) as usize, ((*FatVolumeBootSector).VolumeLabel[7]) as usize, ((*FatVolumeBootSector).VolumeLabel[8]) as usize, ((*FatVolumeBootSector).VolumeLabel[9]) as usize, ((*FatVolumeBootSector).VolumeLabel[10]) as usize);
-        TRACE(b"FileSystemType: %c%c%c%c%c%c%c%c\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).FileSystemType[0]) as usize, ((*FatVolumeBootSector).FileSystemType[1]) as usize, ((*FatVolumeBootSector).FileSystemType[2]) as usize, ((*FatVolumeBootSector).FileSystemType[3]) as usize, ((*FatVolumeBootSector).FileSystemType[4]) as usize, ((*FatVolumeBootSector).FileSystemType[5]) as usize, ((*FatVolumeBootSector).FileSystemType[6]) as usize, ((*FatVolumeBootSector).FileSystemType[7]) as usize);
-        TRACE(b"BootSectorMagic: 0x%x\n\0".as_ptr() as PCHAR, ((*FatVolumeBootSector).BootSectorMagic) as usize);
+        TRACE!("JumpBoot: 0x%x 0x%x 0x%x\n", ((*FatVolumeBootSector).JumpBoot[0]) as usize, ((*FatVolumeBootSector).JumpBoot[1]) as usize, ((*FatVolumeBootSector).JumpBoot[2]) as usize);
+        TRACE!("OemName: %c%c%c%c%c%c%c%c\n", ((*FatVolumeBootSector).OemName[0]) as usize, ((*FatVolumeBootSector).OemName[1]) as usize, ((*FatVolumeBootSector).OemName[2]) as usize, ((*FatVolumeBootSector).OemName[3]) as usize, ((*FatVolumeBootSector).OemName[4]) as usize, ((*FatVolumeBootSector).OemName[5]) as usize, ((*FatVolumeBootSector).OemName[6]) as usize, ((*FatVolumeBootSector).OemName[7]) as usize);
+        TRACE!("BytesPerSector: %d\n", ((*FatVolumeBootSector).BytesPerSector) as usize);
+        TRACE!("SectorsPerCluster: %d\n", ((*FatVolumeBootSector).SectorsPerCluster) as usize);
+        TRACE!("ReservedSectors: %d\n", ((*FatVolumeBootSector).ReservedSectors) as usize);
+        TRACE!("NumberOfFats: %d\n", ((*FatVolumeBootSector).NumberOfFats) as usize);
+        TRACE!("RootDirEntries: %d\n", ((*FatVolumeBootSector).RootDirEntries) as usize);
+        TRACE!("TotalSectors: %d\n", ((*FatVolumeBootSector).TotalSectors) as usize);
+        TRACE!("MediaDescriptor: 0x%x\n", ((*FatVolumeBootSector).MediaDescriptor) as usize);
+        TRACE!("SectorsPerFat: %d\n", ((*FatVolumeBootSector).SectorsPerFat) as usize);
+        TRACE!("SectorsPerTrack: %d\n", ((*FatVolumeBootSector).SectorsPerTrack) as usize);
+        TRACE!("NumberOfHeads: %d\n", ((*FatVolumeBootSector).NumberOfHeads) as usize);
+        TRACE!("HiddenSectors: %d\n", ((*FatVolumeBootSector).HiddenSectors) as usize);
+        TRACE!("TotalSectorsBig: %d\n", ((*FatVolumeBootSector).TotalSectorsBig) as usize);
+        TRACE!("DriveNumber: 0x%x\n", ((*FatVolumeBootSector).DriveNumber) as usize);
+        TRACE!("Reserved1: 0x%x\n", ((*FatVolumeBootSector).Reserved1) as usize);
+        TRACE!("BootSignature: 0x%x\n", ((*FatVolumeBootSector).BootSignature) as usize);
+        TRACE!("VolumeSerialNumber: 0x%x\n", ((*FatVolumeBootSector).VolumeSerialNumber) as usize);
+        TRACE!("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", ((*FatVolumeBootSector).VolumeLabel[0]) as usize, ((*FatVolumeBootSector).VolumeLabel[1]) as usize, ((*FatVolumeBootSector).VolumeLabel[2]) as usize, ((*FatVolumeBootSector).VolumeLabel[3]) as usize, ((*FatVolumeBootSector).VolumeLabel[4]) as usize, ((*FatVolumeBootSector).VolumeLabel[5]) as usize, ((*FatVolumeBootSector).VolumeLabel[6]) as usize, ((*FatVolumeBootSector).VolumeLabel[7]) as usize, ((*FatVolumeBootSector).VolumeLabel[8]) as usize, ((*FatVolumeBootSector).VolumeLabel[9]) as usize, ((*FatVolumeBootSector).VolumeLabel[10]) as usize);
+        TRACE!("FileSystemType: %c%c%c%c%c%c%c%c\n", ((*FatVolumeBootSector).FileSystemType[0]) as usize, ((*FatVolumeBootSector).FileSystemType[1]) as usize, ((*FatVolumeBootSector).FileSystemType[2]) as usize, ((*FatVolumeBootSector).FileSystemType[3]) as usize, ((*FatVolumeBootSector).FileSystemType[4]) as usize, ((*FatVolumeBootSector).FileSystemType[5]) as usize, ((*FatVolumeBootSector).FileSystemType[6]) as usize, ((*FatVolumeBootSector).FileSystemType[7]) as usize);
+        TRACE!("BootSectorMagic: 0x%x\n", ((*FatVolumeBootSector).BootSectorMagic) as usize);
     }
 
     if ISFATX(((*Volume).FatType) as u32 ) == 0 && (*FatVolumeBootSector).BootSectorMagic != 0xaa55 {
@@ -518,7 +518,7 @@ unsafe fn FatOpenVolume(Volume: PFAT_VOLUME_INFO, BootSector: PFAT_BOOTSECTOR, P
     }
 
     (*Volume).FatCacheSize = min((*Volume).SectorsPerFat, FAT_MAX_CACHE_SIZE / (((*Volume).BytesPerSector) as u32));
-    TRACE(b"FAT cache is %d sectors, %d bytes\n\0".as_ptr() as PCHAR, ((*Volume).FatCacheSize) as usize, ((*Volume).FatCacheSize * (((*Volume).BytesPerSector) as u32)) as usize);
+    TRACE!("FAT cache is %d sectors, %d bytes\n", ((*Volume).FatCacheSize) as usize, ((*Volume).FatCacheSize * (((*Volume).BytesPerSector) as u32)) as usize);
 
     (*Volume).FatCache = FrLdrTempAlloc(((*Volume).FatCacheSize * (((*Volume).BytesPerSector) as u32)) as usize, TAG_FAT_CACHE) as *mut u8;
     if (*Volume).FatCache.is_null() {
@@ -599,13 +599,11 @@ unsafe fn FatBufferDirectory(
     let mut DirectoryStartCluster = DirectoryStartCluster;
     let mut RootDirectory = RootDirectory;
 
-    TRACE(
-        b"FatBufferDirectory() DirectoryStartCluster = %d RootDirectory = %s\n\0".as_ptr() as PCHAR, (DirectoryStartCluster) as usize, (if RootDirectory != 0 {
+    TRACE!("FatBufferDirectory() DirectoryStartCluster = %d RootDirectory = %s\n", (DirectoryStartCluster) as usize, (if RootDirectory != 0 {
             b"TRUE\0".as_ptr() as PCHAR
         } else {
             b"FALSE\0".as_ptr() as PCHAR
-        }) as usize,
-    );
+        }) as usize);
 
     if RootDirectory != 0 && (*Volume).FatType == ((FAT32) as u8) {
         DirectoryStartCluster = (*Volume).RootDirStartCluster;
@@ -631,7 +629,7 @@ unsafe fn FatBufferDirectory(
         if (*DirectoryBuffer).Volume == Volume as *mut core::ffi::c_void
             && (*DirectoryBuffer).DirectoryStartCluster == DirectoryStartCluster
         {
-            TRACE(b"Found cached buffer\n\0".as_ptr() as PCHAR);
+            TRACE!("Found cached buffer\n");
             *DirectorySize = (*DirectoryBuffer).DirectorySize;
             return core::ptr::addr_of_mut!((*DirectoryBuffer).Data) as PVOID;
         }
@@ -647,9 +645,7 @@ unsafe fn FatBufferDirectory(
             * (((*Volume).BytesPerSector) as u32);
     }
 
-    TRACE(
-        b"Trying to allocate (DirectorySize) %d bytes.\n\0".as_ptr() as PCHAR, (*DirectorySize) as usize,
-    );
+    TRACE!("Trying to allocate (DirectorySize) %d bytes.\n", (*DirectorySize) as usize);
     DirectoryBuffer = FrLdrTempAlloc(
         (*DirectorySize + core::mem::size_of::<DIRECTORY_BUFFER>() as ULONG) as usize,
         TAG_FAT_BUFFER,
@@ -713,9 +709,7 @@ unsafe fn FatSearchDirectoryBufferForFile(
 
     let EntryCount: ULONG = DirectorySize / core::mem::size_of::<DIRENTRY>() as ULONG;
 
-    TRACE(
-        b"FatSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n\0".as_ptr() as *const i8, (DirectoryBuffer) as usize, (EntryCount) as usize, (FileName) as usize,
-    );
+    TRACE!("FatSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", (DirectoryBuffer) as usize, (EntryCount) as usize, (FileName) as usize);
 
     RtlZeroMemory(
         ShortNameBuffer.as_mut_ptr() as *mut core::ffi::c_void,
@@ -845,22 +839,20 @@ unsafe fn FatSearchDirectoryBufferForFile(
             (*FatFileInfoPointer).CurrentCluster = StartCluster;
             (*FatFileInfoPointer).StartCluster = StartCluster;
 
-            TRACE(b"MSDOS Directory Entry:\n\0".as_ptr() as *const i8);
-            TRACE(
-                b"FileName[11] = %c%c%c%c%c%c%c%c%c%c%c\n\0".as_ptr() as *const i8, ((*DirEntry).FileName[0]) as usize, ((*DirEntry).FileName[1]) as usize, ((*DirEntry).FileName[2]) as usize, ((*DirEntry).FileName[3]) as usize, ((*DirEntry).FileName[4]) as usize, ((*DirEntry).FileName[5]) as usize, ((*DirEntry).FileName[6]) as usize, ((*DirEntry).FileName[7]) as usize, ((*DirEntry).FileName[8]) as usize, ((*DirEntry).FileName[9]) as usize, ((*DirEntry).FileName[10]) as usize,
-            );
-            TRACE(b"Attr = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).Attr) as usize);
-            TRACE(b"ReservedNT = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).ReservedNT) as usize);
-            TRACE(b"TimeInTenths = %d\n\0".as_ptr() as *const i8, ((*DirEntry).TimeInTenths) as usize);
-            TRACE(b"CreateTime = %d\n\0".as_ptr() as *const i8, ((*DirEntry).CreateTime) as usize);
-            TRACE(b"CreateDate = %d\n\0".as_ptr() as *const i8, ((*DirEntry).CreateDate) as usize);
-            TRACE(b"LastAccessDate = %d\n\0".as_ptr() as *const i8, ((*DirEntry).LastAccessDate) as usize);
-            TRACE(b"ClusterHigh = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).ClusterHigh) as usize);
-            TRACE(b"Time = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Time) as usize);
-            TRACE(b"Date = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Date) as usize);
-            TRACE(b"ClusterLow = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).ClusterLow) as usize);
-            TRACE(b"Size = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Size) as usize);
-            TRACE(b"StartCluster = 0x%x\n\0".as_ptr() as *const i8, (StartCluster) as usize);
+            TRACE!("MSDOS Directory Entry:\n");
+            TRACE!("FileName[11] = %c%c%c%c%c%c%c%c%c%c%c\n", ((*DirEntry).FileName[0]) as usize, ((*DirEntry).FileName[1]) as usize, ((*DirEntry).FileName[2]) as usize, ((*DirEntry).FileName[3]) as usize, ((*DirEntry).FileName[4]) as usize, ((*DirEntry).FileName[5]) as usize, ((*DirEntry).FileName[6]) as usize, ((*DirEntry).FileName[7]) as usize, ((*DirEntry).FileName[8]) as usize, ((*DirEntry).FileName[9]) as usize, ((*DirEntry).FileName[10]) as usize);
+            TRACE!("Attr = 0x%x\n", ((*DirEntry).Attr) as usize);
+            TRACE!("ReservedNT = 0x%x\n", ((*DirEntry).ReservedNT) as usize);
+            TRACE!("TimeInTenths = %d\n", ((*DirEntry).TimeInTenths) as usize);
+            TRACE!("CreateTime = %d\n", ((*DirEntry).CreateTime) as usize);
+            TRACE!("CreateDate = %d\n", ((*DirEntry).CreateDate) as usize);
+            TRACE!("LastAccessDate = %d\n", ((*DirEntry).LastAccessDate) as usize);
+            TRACE!("ClusterHigh = 0x%x\n", ((*DirEntry).ClusterHigh) as usize);
+            TRACE!("Time = %d\n", ((*DirEntry).Time) as usize);
+            TRACE!("Date = %d\n", ((*DirEntry).Date) as usize);
+            TRACE!("ClusterLow = 0x%x\n", ((*DirEntry).ClusterLow) as usize);
+            TRACE!("Size = %d\n", ((*DirEntry).Size) as usize);
+            TRACE!("StartCluster = 0x%x\n", (StartCluster) as usize);
 
             return 1u8;
         }
@@ -896,9 +888,7 @@ unsafe fn FatXSearchDirectoryBufferForFile(
 
     EntryCount = DirectorySize / core::mem::size_of::<FATX_DIRENTRY>() as ULONG;
 
-    TRACE(
-        b"FatXSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n\0".as_ptr() as *const i8, (DirectoryBuffer) as usize, (EntryCount) as usize, (FileName) as usize,
-    );
+    TRACE!("FatXSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", (DirectoryBuffer) as usize, (EntryCount) as usize, (FileName) as usize);
 
     FileNameLen = strlen(FileName);
 
@@ -923,29 +913,17 @@ unsafe fn FatXSearchDirectoryBufferForFile(
             (*FatFileInfoPointer).CurrentCluster = (*DirEntry).StartCluster;
             (*FatFileInfoPointer).StartCluster = (*DirEntry).StartCluster;
 
-            TRACE(b"FATX Directory Entry:\n\0".as_ptr() as *const i8);
-            TRACE(
-                b"FileNameSize = %d\n\0".as_ptr() as *const i8, ((*DirEntry).FileNameSize) as usize,
-            );
-            TRACE(b"Attr = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).Attr) as usize);
-            TRACE(
-                b"StartCluster = 0x%x\n\0".as_ptr() as *const i8, ((*DirEntry).StartCluster) as usize,
-            );
-            TRACE(b"Size = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Size) as usize);
-            TRACE(b"Time = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Time) as usize);
-            TRACE(b"Date = %d\n\0".as_ptr() as *const i8, ((*DirEntry).Date) as usize);
-            TRACE(
-                b"CreateTime = %d\n\0".as_ptr() as *const i8, ((*DirEntry).CreateTime) as usize,
-            );
-            TRACE(
-                b"CreateDate = %d\n\0".as_ptr() as *const i8, ((*DirEntry).CreateDate) as usize,
-            );
-            TRACE(
-                b"LastAccessTime = %d\n\0".as_ptr() as *const i8, ((*DirEntry).LastAccessTime) as usize,
-            );
-            TRACE(
-                b"LastAccessDate = %d\n\0".as_ptr() as *const i8, ((*DirEntry).LastAccessDate) as usize,
-            );
+            TRACE!("FATX Directory Entry:\n");
+            TRACE!("FileNameSize = %d\n", ((*DirEntry).FileNameSize) as usize);
+            TRACE!("Attr = 0x%x\n", ((*DirEntry).Attr) as usize);
+            TRACE!("StartCluster = 0x%x\n", ((*DirEntry).StartCluster) as usize);
+            TRACE!("Size = %d\n", ((*DirEntry).Size) as usize);
+            TRACE!("Time = %d\n", ((*DirEntry).Time) as usize);
+            TRACE!("Date = %d\n", ((*DirEntry).Date) as usize);
+            TRACE!("CreateTime = %d\n", ((*DirEntry).CreateTime) as usize);
+            TRACE!("CreateDate = %d\n", ((*DirEntry).CreateDate) as usize);
+            TRACE!("LastAccessTime = %d\n", ((*DirEntry).LastAccessTime) as usize);
+            TRACE!("LastAccessDate = %d\n", ((*DirEntry).LastAccessDate) as usize);
 
             return 1u8;
         }
@@ -971,7 +949,7 @@ pub unsafe extern "C" fn FatLookupFile(
     let mut FatFileInfo: FAT_FILE_INFO = core::mem::zeroed();
     let mut FileName = FileName;
 
-    TRACE(b"FatLookupFile() FileName = %s\n\0".as_ptr() as PCHAR, (FileName) as usize);
+    TRACE!("FatLookupFile() FileName = %s\n", (FileName) as usize);
 
     core::ptr::write_bytes(FatFileInfoPointer, 0, 1);
 
@@ -1131,9 +1109,9 @@ unsafe fn FatGetFatSector(Volume: PFAT_VOLUME_INFO, FatSectorNumber: UINT32) -> 
             i += 1;
         }
 
-        TRACE(b"FAT cache miss: read sector 0x%x from disk\n\0".as_ptr() as PCHAR, (SectorNumAbsolute) as usize);
+        TRACE!("FAT cache miss: read sector 0x%x from disk\n", (SectorNumAbsolute) as usize);
     } else {
-        TRACE(b"FAT cache hit: sector 0x%x present\n\0".as_ptr() as PCHAR, (SectorNumAbsolute) as usize);
+        TRACE!("FAT cache hit: sector 0x%x present\n", (SectorNumAbsolute) as usize);
     }
 
     (*Volume).FatCache.add((CacheIndex * (((*Volume).BytesPerSector) as u32)) as usize)
@@ -1147,7 +1125,7 @@ unsafe fn FatGetFatEntry(Volume: PFAT_VOLUME_INFO, Cluster: UINT32, ClusterPoint
     let mut fat: UINT32;
     let ReadBuffer: PUCHAR;
 
-    TRACE(b"FatGetFatEntry() Retrieving FAT entry for cluster %d.\n\0".as_ptr() as PCHAR, (Cluster) as usize);
+    TRACE!("FatGetFatEntry() Retrieving FAT entry for cluster %d.\n", (Cluster) as usize);
 
     match (*Volume).FatType as ULONG {
         FAT12 => {
@@ -1155,9 +1133,9 @@ unsafe fn FatGetFatEntry(Volume: PFAT_VOLUME_INFO, Cluster: UINT32, ClusterPoint
             ThisFatSecNum = FatOffset / (((*Volume).BytesPerSector) as u32);
             ThisFatEntOffset = FatOffset % (((*Volume).BytesPerSector) as u32);
 
-            TRACE(b"FatOffset: %d\n\0".as_ptr() as PCHAR, (FatOffset) as usize);
-            TRACE(b"ThisFatSecNum: %d\n\0".as_ptr() as PCHAR, (ThisFatSecNum) as usize);
-            TRACE(b"ThisFatEntOffset: %d\n\0".as_ptr() as PCHAR, (ThisFatEntOffset) as usize);
+            TRACE!("FatOffset: %d\n", (FatOffset) as usize);
+            TRACE!("ThisFatSecNum: %d\n", (ThisFatSecNum) as usize);
+            TRACE!("ThisFatEntOffset: %d\n", (ThisFatEntOffset) as usize);
 
             ReadBuffer = FatGetFatSector(Volume, ThisFatSecNum);
             if ReadBuffer.is_null() {
@@ -1202,12 +1180,12 @@ unsafe fn FatGetFatEntry(Volume: PFAT_VOLUME_INFO, Cluster: UINT32, ClusterPoint
         }
 
         _ => {
-            ERR(b"Unknown FAT type %d\n\0".as_ptr() as PCHAR, ((*Volume).FatType) as usize);
+            ERR!("Unknown FAT type %d\n", ((*Volume).FatType) as usize);
             return 0u8;
         }
     }
 
-    TRACE(b"FAT entry is 0x%x.\n\0".as_ptr() as PCHAR, (fat) as usize);
+    TRACE!("FAT entry is 0x%x.\n", (fat) as usize);
 
     *ClusterPointer = fat;
 
@@ -1218,7 +1196,7 @@ unsafe fn FatCountClustersInChain(Volume: PFAT_VOLUME_INFO, mut StartCluster: UI
 
     let mut ClusterCount: ULONG = 0;
 
-    TRACE(b"FatCountClustersInChain() StartCluster = %d\n\0".as_ptr() as PCHAR, (StartCluster) as usize);
+    TRACE!("FatCountClustersInChain() StartCluster = %d\n", (StartCluster) as usize);
 
     loop {
         if FAT_IS_END_CLUSTER(Volume, StartCluster) != 0 {
@@ -1232,7 +1210,7 @@ unsafe fn FatCountClustersInChain(Volume: PFAT_VOLUME_INFO, mut StartCluster: UI
         }
     }
 
-    TRACE(b"FatCountClustersInChain() ClusterCount = %d\n\0".as_ptr() as PCHAR, (ClusterCount) as usize);
+    TRACE!("FatCountClustersInChain() ClusterCount = %d\n", (ClusterCount) as usize);
 
     return ClusterCount;
 }
@@ -1290,9 +1268,7 @@ unsafe fn FatReadClusterChain(
     let mut StartClusterNumber = StartClusterNumber;
     let mut Buffer = Buffer;
 
-    TRACE(
-        b"FatReadClusterChain() StartClusterNumber = %d NumberOfClusters = %d Buffer = 0x%x\n\0".as_ptr() as PCHAR, (StartClusterNumber) as usize, (NumberOfClusters) as usize, (Buffer) as usize,
-    );
+    TRACE!("FatReadClusterChain() StartClusterNumber = %d NumberOfClusters = %d Buffer = 0x%x\n", (StartClusterNumber) as usize, (NumberOfClusters) as usize, (Buffer) as usize);
 
     while FatReadAdjacentClusters(
         Volume,
@@ -1362,7 +1338,7 @@ unsafe fn FatReadFile(FatFileInfo: PFAT_FILE_INFO, BytesToRead: ULONG, BytesRead
     let mut BytesToRead = BytesToRead;
     let mut Buffer = Buffer;
 
-    TRACE(b"FatReadFile() BytesToRead=%u FileSize=%u FilePointer=%u CurrentCluster=0x%x\n\0".as_ptr() as PCHAR, (BytesToRead) as usize, ((*FatFileInfo).FileSize) as usize, ((*FatFileInfo).FilePointer) as usize, ((*FatFileInfo).CurrentCluster) as usize);
+    TRACE!("FatReadFile() BytesToRead=%u FileSize=%u FilePointer=%u CurrentCluster=0x%x\n", (BytesToRead) as usize, ((*FatFileInfo).FileSize) as usize, ((*FatFileInfo).FilePointer) as usize, ((*FatFileInfo).CurrentCluster) as usize);
 
     if !BytesRead.is_null() {
         *BytesRead = 0;
@@ -1398,14 +1374,14 @@ unsafe fn FatReadFile(FatFileInfo: PFAT_FILE_INFO, BytesToRead: ULONG, BytesRead
             }
 
             (*FatFileInfo).CurrentCluster = NextClusterNumber;
-            TRACE(b"FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n\0".as_ptr() as PCHAR, ((*FatFileInfo).CurrentCluster) as usize);
+            TRACE!("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", ((*FatFileInfo).CurrentCluster) as usize);
         }
     }
 
     if BytesToRead > 0 {
         let NumberOfClusters: UINT32 = BytesToRead / BytesPerCluster;
 
-        TRACE(b"Going to read: %u clusters\n\0".as_ptr() as PCHAR, (NumberOfClusters) as usize);
+        TRACE!("Going to read: %u clusters\n", (NumberOfClusters) as usize);
 
         if NumberOfClusters > 0 {
             let BytesReadHere: UINT32 = NumberOfClusters * BytesPerCluster;
@@ -1422,7 +1398,7 @@ unsafe fn FatReadFile(FatFileInfo: PFAT_FILE_INFO, BytesToRead: ULONG, BytesRead
 
             (*FatFileInfo).FilePointer += BytesReadHere;
             (*FatFileInfo).CurrentCluster = NextClusterNumber;
-            TRACE(b"FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n\0".as_ptr() as PCHAR, ((*FatFileInfo).CurrentCluster) as usize);
+            TRACE!("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", ((*FatFileInfo).CurrentCluster) as usize);
         }
     }
 
@@ -1452,7 +1428,7 @@ unsafe fn FatReadVolumeSectors(
     Position.QuadPart = ((SectorNumber as ULONGLONG) * ((*Volume).BytesPerSector as ULONGLONG)) as i64 ;
     Status = ArcSeek((*Volume).DeviceId, &mut Position, SeekAbsolute);
     if Status != ESUCCESS {
-        TRACE(b"FatReadVolumeSectors() Failed to seek\n\0".as_ptr() as PCHAR);
+        TRACE!("FatReadVolumeSectors() Failed to seek\n");
         return 0u8;
     }
 
@@ -1463,7 +1439,7 @@ unsafe fn FatReadVolumeSectors(
         &mut Count,
     );
     if Status != ESUCCESS || Count != SectorCount * (((*Volume).BytesPerSector) as u32) {
-        TRACE(b"FatReadVolumeSectors() Failed to read\n\0".as_ptr() as PCHAR);
+        TRACE!("FatReadVolumeSectors() Failed to read\n");
         return 0u8;
     }
 
@@ -1499,8 +1475,7 @@ pub unsafe extern "C" fn FatGetFileInformation(FileId: u32, Information: *mut FI
     );
     (*Information).FileName[(*Information).FileNameLength as usize] = 0;
 
-    TRACE(
-        b"FatGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n\0".as_ptr() as *const i8, (FileId) as usize, ((*Information).EndingAddress.u.LowPart) as usize, ((*Information).CurrentAddress.u.LowPart) as usize);
+    TRACE!("FatGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n", (FileId) as usize, ((*Information).EndingAddress.u.LowPart) as usize, ((*Information).CurrentAddress.u.LowPart) as usize);
 
     0
 }
@@ -1522,7 +1497,7 @@ pub unsafe extern "C" fn FatOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut U
     DeviceId = FsGetDeviceId(*FileId);
     FatVolume = FatVolumes[DeviceId as usize];
 
-    TRACE(b"FatOpen() FileName = %s (DeviceId=%u)\n\0".as_ptr() as PCHAR, (Path) as usize, (DeviceId) as usize);
+    TRACE!("FatOpen() FileName = %s (DeviceId=%u)\n", (Path) as usize, (DeviceId) as usize);
 
     core::ptr::write_bytes(&mut TempFileInfo as *mut FAT_FILE_INFO, 0, 1);
     Status = FatLookupFile(FatVolume, Path, &mut TempFileInfo);
@@ -1585,13 +1560,13 @@ pub unsafe extern "C" fn FatSeek(FileId: ULONG, Position: *mut LARGE_INTEGER, Se
         return EINVAL;
     }
 
-    TRACE(b"FatSeek() NewPosition = %u, OldPointer = %u, SeekMode = %d\n\0".as_ptr() as PCHAR, (NewPosition.u.LowPart) as usize, ((*FileHandle).FilePointer) as usize, (SeekMode) as usize);
+    TRACE!("FatSeek() NewPosition = %u, OldPointer = %u, SeekMode = %d\n", (NewPosition.u.LowPart) as usize, ((*FileHandle).FilePointer) as usize, (SeekMode) as usize);
 
     {
         let OldClusterIdx: UINT32 = (*FileHandle).FilePointer / (((*Volume).SectorsPerCluster as u32) * ((*Volume).BytesPerSector as u32));
         let NewClusterIdx: UINT32 = NewPosition.u.LowPart / (((*Volume).SectorsPerCluster as u32) * ((*Volume).BytesPerSector as u32));
 
-        TRACE(b"FatSeek() OldClusterIdx: %u, NewClusterIdx: %u\n\0".as_ptr() as PCHAR, (OldClusterIdx) as usize, (NewClusterIdx) as usize);
+        TRACE!("FatSeek() OldClusterIdx: %u, NewClusterIdx: %u\n", (OldClusterIdx) as usize, (NewClusterIdx) as usize);
 
         if NewClusterIdx != OldClusterIdx {
             let mut CurrentClusterIdx: UINT32;
@@ -1629,7 +1604,7 @@ pub unsafe extern "C" fn FatGetVolumeSize(DeviceId: ULONG) -> ULONGLONG {
 #[no_mangle]
 pub unsafe extern "C" fn FatMount(DeviceId: ULONG) -> *const DEVVTBL {
 
-    TRACE(b"Enter FatMount(%lu)\n\0".as_ptr() as PCHAR, (DeviceId) as usize);
+    TRACE!("Enter FatMount(%lu)\n", (DeviceId) as usize);
 
     let Volume: PFAT_VOLUME_INFO = FrLdrTempAlloc(core::mem::size_of::<FAT_VOLUME_INFO>(), TAG_FAT_VOLUME) as PFAT_VOLUME_INFO;
     if Volume.is_null() {
@@ -1685,7 +1660,7 @@ pub unsafe extern "C" fn FatMount(DeviceId: ULONG) -> *const DEVVTBL {
 
     FatVolumes[DeviceId as usize] = Volume;
 
-    TRACE(b"FatMount(%lu) success\n\0".as_ptr() as PCHAR, (DeviceId) as usize);
+    TRACE!("FatMount(%lu) success\n", (DeviceId) as usize);
     if ISFATX(((*Volume).FatType) as u32 ) != 0u8 {
         &FatXFuncTable
     } else {

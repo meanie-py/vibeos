@@ -63,8 +63,8 @@ pub unsafe extern "system" fn MmZeroPageThread() {
                 }
 
                 page_index = MmFreePageListHead.Flink;
-                MI_SET_USAGE(MI_USAGE_ZERO_LOOP);
-                MI_SET_PROCESS2("Kernel 0 Loop");
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_ZERO_LOOP);
+                ntkrnl_sys::MI_SET_PROCESS2!("Kernel 0 Loop");
                 free_page = MiRemoveAnyPage(MI_GET_PAGE_COLOR(page_index as ULONG));
 
                 if free_page != page_index {
