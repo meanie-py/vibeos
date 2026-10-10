@@ -191,3 +191,15 @@ def test_file_and_line_get_their_c_types():
         "(line!() as core::ffi::c_int));"
     )
     assert c_source_location(out) == out  # idempotent
+
+
+def test_a_unicode_module_reads_only_its_w_arm(tmp_path):
+    # calc.h: the A/W switch is one macro in a UNICODE build, not "defined differently twice".
+    (tmp_path / "calc.h").write_text(
+        "#ifndef UNICODE\n#define calc_HtmlHelp calc_HtmlHelpA\n#else\n"
+        "#define calc_HtmlHelp calc_HtmlHelpW\n#endif\n"
+    )
+    files = [tmp_path / "calc.h"]
+    assert "calc_HtmlHelp" in lm.module_macros(files, tmp_path)[1]
+    found, ambiguous = lm.module_macros(files, tmp_path, {"UNICODE": 1})
+    assert not ambiguous and found["calc_HtmlHelp"].body == "calc_HtmlHelpW"

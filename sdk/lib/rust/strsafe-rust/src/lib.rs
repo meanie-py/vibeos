@@ -504,6 +504,22 @@ pub unsafe extern "system" fn StringCchCopyNW(
     StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
 }
 
+/// strsafe.h `StringCbCopyNW`: the byte-counted `StringCchCopyNW` (both counts halve).
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyNW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    cbToCopy: usize,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let cchToCopy = cbToCopy / core::mem::size_of::<WCHAR>();
+    if cchDest > STRSAFE_MAX_CCH || cchToCopy > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
 /// strsafe.h:996 `StringCopyExWorkerW` -- copy until the source's NUL, with the Ex flags.
 unsafe fn StringCopyExWorkerW(
     pszDest: *mut WCHAR,
@@ -821,6 +837,25 @@ macro_rules! StringCbPrintfExW {
     }};
 }
 
+/// strsafe.h:585 `StringCchPrintfExW(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfExW {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                $pszDest as _, cchDest, cchDest * core::mem::size_of::<$crate::WCHAR>(),
+                $ppszDestEnd as _, $pcchRemaining as _, $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
+}
+
 // ---- the printf family: fixed-arity twins of the variadic entry points ----
 // Each `_v` takes a POINTER to the caller's va_list, which is what
 // `varargs-rust/rust_varargs_shim.c.template` hands over. `_vsnwprintf`'s last parameter is a
@@ -889,6 +924,17 @@ pub unsafe extern "system" fn StringCchVPrintfW(
         pszFormat,
         &mut by_value as *mut *mut c_void as *mut c_void,
     )
+}
+
+/// strsafe.h `StringCbVPrintfW`: the byte-counted `StringCchVPrintfW`, `va_list` by value.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbVPrintfW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszFormat: *const WCHAR,
+    ap: *mut c_void,
+) -> HRESULT {
+    StringCchVPrintfW(pszDest, cbDest / core::mem::size_of::<WCHAR>(), pszFormat, ap)
 }
 
 /// strsafe.h:623 `StringCbPrintfExW`, minus the `va_start` its trampoline does.

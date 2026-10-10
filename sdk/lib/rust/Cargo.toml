@@ -482,6 +482,10 @@ members = [
     "w32time-rust",
     "schedsvc-rust",
     "kbdlayouts-rust",
+    "calc-rust",
+    "taskmgr-rust",
+    "regedit-rust",
+    "clb-rust",
 ]
 resolver = "2"
 

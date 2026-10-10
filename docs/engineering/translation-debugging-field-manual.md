@@ -4020,6 +4020,21 @@ of them were **ours**, not the model's:
   never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
   (statements are not safe to drop by pattern; hand-port them with `port hand`).
 
+  **Both arms kept, gated on something Rust never sets, so the DEAD arm compiles.** A
+  translation that carries `#ifdef __REACTOS__` / `#else` invents a gate: `cfg!(feature =
+  "reactos")`, `#[cfg(reactos)]`, a local `const REACTOS: bool = false`, even `#[cfg(any())]`
+  on the ReactOS arm. Every one is false, so Wine's arm is what ships: regedit's regproc.rs
+  called Wine's `swprintf(buf, count, fmt)` -- under regedit's `_CRT_NON_CONFORMING_SWPRINTFS`
+  that puts the count in the FORMAT slot -- plus `RegDeleteTreeW` and a process-ending
+  `error_exit` where ReactOS calls StringCchPrintfW, SHDeleteKey and `output_message; return`.
+  Batch A's mstsc lost its branch the same way. `port integrate` now settles every such gate to
+  the live arm (the `if <gate> {A} else {B}` form loses B outright, since an `if false` arm is
+  still type-checked); `#[cfg(any())]` is not a gate name, so that pairing stays a hand port --
+  the dead-region WARNING above names it. A landed sweep found cdfs (has a real `reactos`
+  feature, default on), comctl32 (`const REACTOS: bool = true`) and oleaut32 (gated arms
+  byte-identical) all behave as the C; fastfat's `#[cfg(not(reactos))]` only computes an unused
+  `IsAWrite`.
+
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
   `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,

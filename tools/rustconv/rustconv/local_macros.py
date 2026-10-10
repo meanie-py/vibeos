@@ -80,15 +80,25 @@ def _strip_comments(s: str) -> str:
     return re.sub(r"//.*$", "", s)
 
 
-def module_macros(files: list[Path], root: Path) -> tuple[dict[str, CMacro], set[str]]:
-    """Function-like macros these files define: (unambiguous defs, names defined twice apart)."""
+def module_macros(
+    files: list[Path], root: Path, defined: dict[str, int] | None = None
+) -> tuple[dict[str, CMacro], set[str]]:
+    """Function-like macros these files define: (unambiguous defs, names defined twice apart).
+
+    `defined` names macros every TU of the module has on its command line; a `#define` in an
+    arm they make dead (or that __REACTOS__ does) is not a definition of this build."""
+    from .dead_regions import never_compiled_lines
+
     found: dict[str, list[CMacro]] = {}
     for f in files:
         try:
             text = f.read_text(errors="replace")
         except OSError:
             continue
+        dead = never_compiled_lines(text, defined)
         for no, line in _logical_lines(text):
+            if no in dead:
+                continue
             rel = f.relative_to(root) if f.is_relative_to(root) else f
             m = _DEFINE.match(line)
             if m:

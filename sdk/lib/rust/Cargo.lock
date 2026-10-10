@@ -316,6 +316,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "calc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "cardlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -390,6 +401,17 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
+]
+
+[[package]]
+name = "clb-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2505,6 +2527,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "regedit-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3200,6 +3234,17 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "va-slots-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "taskmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 

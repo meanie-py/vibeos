@@ -158,6 +158,13 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
                 }[op]
             )
             continue
+        # A `defined(X)` the tree fixes (KNOWN_DEFINED: every compile has -D__REACTOS__).
+        # calc's winmain.c: `#if defined(__GNUC__) && !defined(__REACTOS__)` is false however
+        # __GNUC__ stands, and its arm holds a second header for the `_tWinMain` body.
+        d = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", term)
+        if d is not None and d.group(2) in KNOWN_DEFINED:
+            verdicts.append(d.group(1) is None)
+            continue
         # A bare `DBG` / `!DBG` is C's truth test on the macro's value.
         b = re.fullmatch(r"(!)?\s*\(?\s*([A-Za-z_]\w*)\s*\)?", term)
         if b is not None and b.group(2) in pinned:
@@ -208,9 +215,7 @@ def cond_truth(
         m2.group(2) in KNOWN_DEFINED or m2.group(2) in local or (pinned and m2.group(2) in pinned)
     ):
         return m2.group(1) is None
-    if pinned:
-        return eval_int_guard(rest, pinned)
-    return None
+    return eval_int_guard(rest, pinned or {})
 
 
 _LOCAL_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*(define|undef)[ \t]+([A-Za-z_]\w*)\b(?!\()")

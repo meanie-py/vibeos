@@ -3577,7 +3577,9 @@ def _shadowed_const_rule(
     """
     if (diagnostic.get("code") or {}).get("code") != "E0530":
         return [], [], False
-    if "cannot shadow constants" not in str(diagnostic.get("message") or ""):
+    # Statics too: taskmgr's `ULONG SessionId;` local met ntdll-sys's glob-imported
+    # `static mut SessionId` -- same C scoping, same rename.
+    if not re.search(r"cannot shadow (?:constants|statics)", str(diagnostic.get("message") or "")):
         return [], [], False
     span = _primary(diagnostic)
     file_name = str((span or {}).get("file_name") or "")
@@ -3618,7 +3620,7 @@ def _shadowed_const_rule(
                 replacement=fresh,
                 rule=RULE_SHADOWED_CONST,
                 authority=(
-                    f"rustc E0530: local `{name}` shadows a constant; C scoping makes every "
+                    f"rustc E0530: local `{name}` shadows a constant/static; C scoping makes every "
                     "later mention in this block the local, so the local is renamed"
                 ),
                 original=name,

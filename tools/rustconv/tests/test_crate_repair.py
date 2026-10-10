@@ -1993,6 +1993,18 @@ def test_a_local_shadowing_a_constant_is_renamed_for_its_block():
     assert "g(AdapterType_local);" in out and "h(AdapterType);" in out
 
 
+def test_a_local_shadowing_a_glob_static_is_renamed_too():
+    # taskmgr's PerfDataGetSessionId: `ULONG SessionId;` vs ntdll-sys's `static mut SessionId`.
+    src = (
+        "fn f(i: u32) -> u32 {\n    let mut SessionId: ULONG = 0;\n"
+        "    SessionId = (*p.add(i as usize)).SessionId;\n    return SessionId;\n}\n"
+    )
+    _, out = _one_site(src, "SessionId", "let bindings cannot shadow statics", "E0530", nth=0)
+    assert "let mut SessionId_local: ULONG = 0;" in out
+    assert "SessionId_local = (*p.add(i as usize)).SessionId;" in out
+    assert "return SessionId_local;" in out
+
+
 def test_sizeof_of_a_constant_is_the_size_of_its_value():
     src = "fn f() -> bool { n < core::mem::size_of::<UNICODE_NULL>() as u16 }\n"
     _, out = _one_site(src, "UNICODE_NULL", "constant provided when a type was expected", "E0747")
