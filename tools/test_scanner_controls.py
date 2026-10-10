@@ -3254,6 +3254,28 @@ def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monke
     assert seen == [[module.RUST_WS], [target]]
 
 
+def test_irql_a_passive_only_wait_does_not_make_its_callers_sleep(tmp_path):
+    """KeSynchronizeExecution waits only for a passive-level interrupt, which may be
+    synchronized only at PASSIVE_LEVEL; every caller holding a spin lock around it
+    (scsiport's) would otherwise be an IRQL_SLEEP_WHILE_HELD."""
+    spec = importlib.util.spec_from_file_location(
+        "irql_conditional_control", REPO / "tools/scan_irql_balance.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    src = tmp_path / "ke.rs"
+    src.write_text(
+        "fn KeSynchronizeExecution() { IopSync(); }\n"
+        "fn IopSync() { KeWaitForSingleObject(); }\n"
+        "fn Caller() { KeSynchronizeExecution(); }\n"
+    )
+    may_sleep, _, _ = module.build_summaries([src], {})
+    assert "IopSync" in may_sleep
+    assert "KeSynchronizeExecution" not in may_sleep
+    assert "Caller" not in may_sleep
+
+
 @pytest.mark.parametrize(
     "ctl",
     [pytest.param(c, marks=pytest.mark.slow) if c.slow else c for c in CONTROLS],
