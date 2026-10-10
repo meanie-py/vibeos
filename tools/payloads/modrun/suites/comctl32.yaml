@@ -1,5 +1,6 @@
 # comctl32 (dll/win32/comctl32 -> comctl32-rust). Smoke only proves the listview draws the
-# desktop; this drives the non-window logic smoke never reaches. One probe
+# desktop; this drives the logic smoke never reaches -- DPA/DSA, strings, ImageList, and the
+# treeview and listview by message (navigation, selection, sorting, find, WM_NOTIFY). One probe
 # (probes/comctl32.c), staged twice: as comctl32_c.exe it loads the pre-flip C
 # (comctl32_c.dll, from c_oracle.cmake) beside it, under any other name the system
 # comctl32.dll. Both print only values, so the outputs must match byte for byte.
@@ -14,5 +15,6 @@ stage:
   - {src: 'build-{arch}/dll/win32/comctl32/comctl32_c.dll', dest: bin/modrun/comctl32_c.dll}
 cases:
   - id: logic
-    expect: ['sort asc 1', 'dsa deleteall 1', 'getptr nodest', 'probe done']
+    expect: ['sort asc 1', 'dsa deleteall 1', 'getptr nodest', 'tv created 1', 'tv empty count=0',
+             'lv created 1', 'lv empty count=0', 'probe done']
     timeout: 120

@@ -389,7 +389,9 @@ extern "fastcall" {
 #[no_mangle] pub unsafe extern "C" fn MmGetMdlVirtualAddress(Mdl: PMDL) -> PVOID {
     ((*Mdl).StartVa as *mut u8).add((*Mdl).ByteOffset as usize) as PVOID
 }
-#[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {}
+#[no_mangle] pub unsafe extern "C" fn MmPrepareMdlForReuse(Mdl: PMDL) {
+    ntkrnl_sys::inline::mm::MmPrepareMdlForReuse(Mdl as _)
+}
 // KeGetCurrentNodeNumber / KeQueryHighestNodeNumber / KeSetCoalescableTimer and
 // IoQueueWorkItemEx come from ntoskrnl-vista-rust, which classpnp-cargo links on every
 // arch (as C classpnp links libntoskrnl_vista.a). Copies here were duplicate definitions

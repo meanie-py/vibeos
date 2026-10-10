@@ -798,6 +798,9 @@ class ArchConfig:
     # Validated by test_milestones after wait_for_boot completes.
     # Order is informational — we report which milestones were reached / missed.
     required_milestones: list[str] = field(default_factory=list)
+    # Attach the \\TEMP disk (`temp_disk_args`). A boot that lays out its own disks turns it
+    # off: the install smoke's target must be disk 0, and the extra disk would take its slot.
+    temp_disk: bool = True
 
     def qemu_args(self, work_dir: Path) -> list[str]:
         """Build full QEMU command line. Subclasses override via callbacks."""
@@ -2189,6 +2192,8 @@ class QemuVM:
         _scratch_device_args), and partmgr expects a table.
         No bootindex, so OVMF never tries it ahead of the CD. qcow2 so savevm works.
         """
+        if not self.config.temp_disk:
+            return []
         return temp_disk_args(self.config.arch, self.scratch_path.parent)
 
     def _usb_disk_args(self) -> list[str]:

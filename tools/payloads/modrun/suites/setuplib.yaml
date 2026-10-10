@@ -14,3 +14,10 @@ cases:
   - id: probe
     expect: ['probe done', 'installdir "WINNT" 1', 'partlist destroyed']
     timeout: 120
+    diverge:
+      # GetSystemDisk only knows BIOS disk numbering; under UEFI (every modrun boot) the C
+      # finds no system disk and the Rust takes the first fixed disk, which is what lets
+      # setup install on UEFI at all (setuplib partlist.rs GetSystemDisk).
+      - why: 'UEFI system disk'
+        c: '^sysfind none$'
+        rust: '^\s*sysfind (found|part )'

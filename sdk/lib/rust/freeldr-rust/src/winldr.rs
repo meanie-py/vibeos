@@ -70,6 +70,7 @@ pub static mut NoExecuteEnabled: BOOLEAN = 0;
 extern "C" {
     fn RtlStringCbPrintfA(pszDest: *mut u8, cbDest: usize, pszFormat: PCSTR, ...) -> i32;
     fn TRACE(fmt: *const i8, ...);
+    fn FrLdrIsUefiBoot() -> u8; // the first-stage loader (freeldr.spec)
     fn UiDrawStatusText(text: PCSTR);
     fn printf(fmt: *const i8, ...) -> i32;
     // Returns the option's PCSTR (ntldropts.c). Read as a byte, an option found at an
@@ -213,6 +214,12 @@ pub unsafe extern "C" fn AllocateAndInitLPB(
     (*Extension).Size = core::mem::size_of::<LOADER_PARAMETER_EXTENSION>() as u32;
     (*Extension).MajorVersion = ((VersionToBoot & 0xFF00) >> 8) as u32 ;
     (*Extension).MinorVersion = (VersionToBoot & 0xFF) as u32;
+
+    // C: `#ifdef UEFIBOOT Extension->BootViaEFI = 1;`, which never fires: this code is
+    // rosload, one binary for both loaders, and nothing defines UEFIBOOT for it. Ask the
+    // first-stage loader instead. The bit is the only record past the loader of which
+    // firmware booted us (setup installs a boot sector or a UEFI loader file by it).
+    (*Extension).set_BootViaEFI(FrLdrIsUefiBoot() as u32);
 
     InitializeListHead(core::ptr::addr_of_mut!((*LoaderBlock).LoadOrderListHead));
     InitializeListHead(core::ptr::addr_of_mut!((*LoaderBlock).MemoryDescriptorListHead));
