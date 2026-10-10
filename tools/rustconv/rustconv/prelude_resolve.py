@@ -323,6 +323,9 @@ _CORE_ALIAS_RHS = re.compile(
 )
 
 
+_ALIAS_DEF = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type ([A-Za-z_]\w*)\s*=\s*([^;]+);", re.M)
+
+
 def _inline_core_aliases(decl: str, crate_dir: Path, cache: dict[Path, dict[str, str]]) -> str:
     """A copied declaration names its source crate's private aliases: ucrt-rust's
     `qsort(.., comp: Compare)` reached cmd and net with `Compare` undefined, because types
@@ -332,12 +335,14 @@ def _inline_core_aliases(decl: str, crate_dir: Path, cache: dict[Path, dict[str,
     """
     if crate_dir not in cache:
         found: dict[str, str] = {}
-        for rs in (crate_dir / "src").rglob("*.rs"):
+        from tools.source_walk import source_files  # repo-root package: imported at use
+
+        for rs in source_files(crate_dir / "src", "*.rs"):
             try:
                 text = rs.read_text(errors="replace")
             except OSError:
                 continue
-            for m in re.finditer(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type ([A-Za-z_]\w*)\s*=\s*([^;]+);", text, re.M):
+            for m in _ALIAS_DEF.finditer(text):
                 rhs = " ".join(m.group(2).split())
                 if _CORE_ALIAS_RHS.fullmatch(rhs) and found.get(m.group(1), rhs) == rhs:
                     found[m.group(1)] = rhs
@@ -1474,9 +1479,11 @@ def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
         # `type_`: reg.exe's `data_type` came out `type_0` while its body read `.type_`.
         text = re.sub(
             r"(\bpub\s+)(\w+)_0(\s*:)",
-            lambda m: m.group(1) + m.group(2) + "_" + m.group(3)
-            if m.group(2) in _BINDGEN_KEYWORDS
-            else m.group(0),
+            lambda m: (
+                m.group(1) + m.group(2) + "_" + m.group(3)
+                if m.group(2) in _BINDGEN_KEYWORDS
+                else m.group(0)
+            ),
             text,
         )
         out.append(variadic_shim.lower_va_list_types(text)[0])

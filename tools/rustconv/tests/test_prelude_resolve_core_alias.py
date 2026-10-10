@@ -9,7 +9,7 @@ def test_a_core_only_alias_is_inlined(tmp_path):
     src = tmp_path / "ucrt-rust" / "src" / "stdlib"
     src.mkdir(parents=True)
     (src / "search.rs").write_text(
-        "pub type Compare = Option<unsafe extern \"C\" fn(*const c_void, *const c_void) -> c_int>;\n"
+        'pub type Compare = Option<unsafe extern "C" fn(*const c_void, *const c_void) -> c_int>;\n'
         "pub type Island = *mut _SOME_STRUCT;\n"
     )
     cache: dict = {}
@@ -40,7 +40,9 @@ def test_a_private_alias_counts_too(tmp_path):
     (src / "font.rs").write_text(
         'type QsortCmp = unsafe extern "C" fn(*const c_void, *const c_void) -> c_int;\n'
     )
-    out = _inline_core_aliases("pub fn qsort(b: *mut c_void, compar: QsortCmp);", tmp_path / "gdi32-rust", {})
+    out = _inline_core_aliases(
+        "pub fn qsort(b: *mut c_void, compar: QsortCmp);", tmp_path / "gdi32-rust", {}
+    )
     assert "compar: unsafe extern" in out
 
 

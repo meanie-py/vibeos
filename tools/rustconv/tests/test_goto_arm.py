@@ -94,7 +94,11 @@ def test_a_goto_flag_tested_after_the_match_is_the_jump():
             "        }\n"
             "        _ => {}\n"
             "    }\n"
-            + (f"    if {flag} {{\n        return Complete(Irp, Status);\n    }}\n" if tested else "")
+            + (
+                f"    if {flag} {{\n        return Complete(Irp, Status);\n    }}\n"
+                if tested
+                else ""
+            )
             + "    return IoCallDriver(Lower, Irp);\n}\n"
         )
 

@@ -29,9 +29,7 @@ _DEF = re.compile(
 # The name is optional: net.exe's `PrintMessageStringV(dwMessage: DWORD, ...)` came back with
 # the C's bare `...`, which rustc parses and this used to skip, leaving a nightly-only
 # definition in the crate.
-_VARIADIC_PARAM = re.compile(
-    r",?\s*(?:(?:mut\s+)?(?P<arg>[A-Za-z_]\w*)\s*:\s*)?\.\.\.\s*,?\s*$"
-)
+_VARIADIC_PARAM = re.compile(r",?\s*(?:(?:mut\s+)?(?P<arg>[A-Za-z_]\w*)\s*:\s*)?\.\.\.\s*,?\s*$")
 _VALIST_TYPE = re.compile(r"(?:::)?(?:core::ffi::)?VaList(?:Impl)?\b(?:\s*<[^>]*>)?")
 
 # c2rust's `core::ffi::VaList` as a parameter, field or fn-pointer TYPE (a C `va_list` taken by
