@@ -61,22 +61,22 @@ pub unsafe extern "system" fn IopArbMemUnpackRequirements(
     OutLength: PUINT64,
     OutAlignment: PUINT64,
 ) -> NTSTATUS {
-    *OutLength = RtlIoDecodeMemIoResource(
+    core::ptr::write_volatile(OutLength, RtlIoDecodeMemIoResource(
         IoDescriptor,
         OutAlignment,
         OutMinimumAddress,
         OutMaximumAddress,
-    );
+    ));
 
     if *OutAlignment == 0 {
-        *OutAlignment = 1;
+        core::ptr::write_volatile(OutAlignment, 1);
     }
 
     if (*IoDescriptor).Type == CmResourceTypeMemory
         && ((*IoDescriptor).Flags & CM_RESOURCE_MEMORY_24) != 0
         && *OutMaximumAddress > (MEMORY_24_BIT_MAX_ADDRESS as u64)
     {
-        *OutMaximumAddress = (MEMORY_24_BIT_MAX_ADDRESS as u64);
+        core::ptr::write_volatile(OutMaximumAddress, (MEMORY_24_BIT_MAX_ADDRESS as u64));
     }
 
     STATUS_SUCCESS
@@ -102,7 +102,7 @@ pub unsafe extern "system" fn IopArbMemUnpackResource(
     Start: PUINT64,
     OutLength: PUINT64,
 ) -> NTSTATUS {
-    *OutLength = RtlCmDecodeMemIoResource(CmDescriptor, Start);
+    core::ptr::write_volatile(OutLength, RtlCmDecodeMemIoResource(CmDescriptor, Start));
 
     return STATUS_SUCCESS;
 }
@@ -159,7 +159,7 @@ pub unsafe extern "system" fn IopArbMemTranslateOrdering(
     let mut MinimumType: u8;
     let mut MaximumType: u8;
 
-    *OutIoDescriptor = *IoDescriptor;
+    core::ptr::write_volatile(OutIoDescriptor, *IoDescriptor);
 
     SourceType = (*IoDescriptor).Type;
     if SourceType != CmResourceTypePort

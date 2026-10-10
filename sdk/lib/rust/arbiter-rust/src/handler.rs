@@ -58,22 +58,22 @@ pub unsafe extern "system" fn ArbiterLibHandler(
     let P = core::ptr::addr_of_mut!((*Parameters).Parameters);
     match Action {
         ArbiterActionTestAllocation => {
-            Status = (*Arbiter).TestAllocation.unwrap()(Arbiter, (*P).TestAllocation.ArbitrationList);
+            Status = (*Arbiter).TestAllocation.unwrap_unchecked()(Arbiter, (*P).TestAllocation.ArbitrationList);
         }
         ArbiterActionRetestAllocation => {
-            Status = (*Arbiter).RetestAllocation.unwrap()(Arbiter, (*P).RetestAllocation.ArbitrationList);
+            Status = (*Arbiter).RetestAllocation.unwrap_unchecked()(Arbiter, (*P).RetestAllocation.ArbitrationList);
         }
         ArbiterActionCommitAllocation => {
-            Status = (*Arbiter).CommitAllocation.unwrap()(Arbiter);
+            Status = (*Arbiter).CommitAllocation.unwrap_unchecked()(Arbiter);
         }
         ArbiterActionRollbackAllocation => {
-            Status = (*Arbiter).RollbackAllocation.unwrap()(Arbiter);
+            Status = (*Arbiter).RollbackAllocation.unwrap_unchecked()(Arbiter);
         }
         ArbiterActionBootAllocation => {
-            Status = (*Arbiter).BootAllocation.unwrap()(Arbiter, (*P).BootAllocation.ArbitrationList);
+            Status = (*Arbiter).BootAllocation.unwrap_unchecked()(Arbiter, (*P).BootAllocation.ArbitrationList);
         }
         ArbiterActionQueryConflict => {
-            Status = (*Arbiter).QueryConflict.unwrap()(
+            Status = (*Arbiter).QueryConflict.unwrap_unchecked()(
                 Arbiter,
                 (*P).QueryConflict.PhysicalDeviceObject,
                 (*P).QueryConflict.ConflictingResource,
@@ -82,7 +82,7 @@ pub unsafe extern "system" fn ArbiterLibHandler(
             );
         }
         ArbiterActionQueryArbitrate => {
-            Status = (*Arbiter).QueryArbitrate.unwrap()(Arbiter, (*P).QueryArbitrate.ArbitrationList);
+            Status = (*Arbiter).QueryArbitrate.unwrap_unchecked()(Arbiter, (*P).QueryArbitrate.ArbitrationList);
         }
         // Actions the interface defines but this arbiter does not carry out. AddReserved is
         // one: the instance slot exists and is defaulted, but nothing routes to it.
@@ -139,7 +139,7 @@ unsafe extern "C" fn ArbpSeedRangeList(
         {
             (*Arbiter)
                 .UnpackResource
-                .expect("non-null function pointer")(
+                .unwrap_unchecked()(
                 Resources.add(Index as usize),
                 &mut Start,
                 &mut Length,

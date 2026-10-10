@@ -17,7 +17,7 @@ unsafe extern "C" fn ArbpBuildAlternative(
     let mut Status: NTSTATUS;
 
     (*Alternative).Descriptor = Descriptor;
-    Status = ((*Arbiter).UnpackRequirement.expect("non-null function pointer"))(
+    Status = ((*Arbiter).UnpackRequirement.unwrap_unchecked())(
         Descriptor,
         core::ptr::addr_of_mut!((*Alternative).Minimum),
         core::ptr::addr_of_mut!((*Alternative).Maximum),
@@ -223,7 +223,7 @@ unsafe extern "C" fn ArbpTestAllocation(
             break 'failure;
         }
 
-        Status = (*Arbiter).AllocateEntry.expect("non-null function pointer")(
+        Status = (*Arbiter).AllocateEntry.unwrap_unchecked()(
             Arbiter,
             (*Arbiter).AllocationStack,
         );
@@ -304,7 +304,7 @@ unsafe extern "C" fn ArbpRetestAllocation(
             State.Entry = Entry;
             State.WorkSpace = 0;
 
-            Status = (*Arbiter).UnpackResource.expect("non-null function pointer")(
+            Status = (*Arbiter).UnpackResource.unwrap_unchecked()(
                 (*Entry).Assignment,
                 core::ptr::addr_of_mut!(State.Start),
                 core::ptr::addr_of_mut!(Length),
@@ -314,7 +314,7 @@ unsafe extern "C" fn ArbpRetestAllocation(
             }
             State.End = State.Start + Length - 1;
 
-            Status = (*Arbiter).PreprocessEntry.expect("non-null function pointer")(
+            Status = (*Arbiter).PreprocessEntry.unwrap_unchecked()(
                 Arbiter,
                 core::ptr::addr_of_mut!(State),
             );
@@ -323,7 +323,7 @@ unsafe extern "C" fn ArbpRetestAllocation(
             }
 
             if Length != 0 {
-                (*Arbiter).AddAllocation.expect("non-null function pointer")(
+                (*Arbiter).AddAllocation.unwrap_unchecked()(
                     Arbiter,
                     core::ptr::addr_of_mut!(State),
                 );
@@ -436,20 +436,20 @@ unsafe extern "C" fn ArbpBootAllocation(
             State.End = Alternative.Maximum;
             State.CurrentMaximum = State.End;
 
-            if !NT_SUCCESS((*Arbiter).PreprocessEntry.expect("non-null function pointer")(
+            if !NT_SUCCESS((*Arbiter).PreprocessEntry.unwrap_unchecked()(
                 Arbiter,
                 core::ptr::addr_of_mut!(State),
             )) {
                 break 'body;
             }
 
-            (*Arbiter).AddAllocation.expect("non-null function pointer")(
+            (*Arbiter).AddAllocation.unwrap_unchecked()(
                 Arbiter,
                 core::ptr::addr_of_mut!(State),
             );
 
             if (*Arbiter).PackResource.is_some() && !(*Entry).Assignment.is_null() {
-                let _ = (*Arbiter).PackResource.expect("non-null function pointer")(
+                let _ = (*Arbiter).PackResource.unwrap_unchecked()(
                     Alternative.Descriptor,
                     State.Start,
                     (*Entry).Assignment,
@@ -560,7 +560,7 @@ unsafe extern "C" fn ArbpQueryConflict(
 
         Status = (*Arbiter)
             .PreprocessEntry
-            .expect("non-null function pointer")(
+            .unwrap_unchecked()(
             Arbiter,
             core::ptr::addr_of_mut!(State),
         );
@@ -579,7 +579,7 @@ unsafe extern "C" fn ArbpQueryConflict(
 
             if (*Arbiter)
                 .FindSuitableRange
-                .expect("non-null function pointer")(
+                .unwrap_unchecked()(
                 Arbiter,
                 core::ptr::addr_of_mut!(State),
             ) != 0

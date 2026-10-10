@@ -371,7 +371,7 @@ unsafe extern "C" fn ArbpForEachRegistryRange(
                  * is dropped by the type test below.
                  */
                 if Translate.is_some() {
-                    Status = Translate.unwrap()(&raw mut Window, Descriptor);
+                    Status = Translate.unwrap_unchecked()(&raw mut Window, Descriptor);
                     if !NT_SUCCESS(Status) {
                         break 'lp;
                     }
@@ -387,7 +387,7 @@ unsafe extern "C" fn ArbpForEachRegistryRange(
                  * Decode through the arbiter's own callback: the bounds live in a
                  * different union member for every resource type.
                  */
-                Status = (*Arbiter).UnpackRequirement.expect("non-null function pointer")(
+                Status = (*Arbiter).UnpackRequirement.unwrap_unchecked()(
                     &raw mut Window,
                     &raw mut Minimum,
                     &raw mut Maximum,
@@ -397,7 +397,7 @@ unsafe extern "C" fn ArbpForEachRegistryRange(
                 if !NT_SUCCESS(Status) {
                     break 'lp;
                 }
-                Callback.unwrap()(Arbiter, Context, Minimum, Maximum);
+                Callback.unwrap_unchecked()(Arbiter, Context, Minimum, Maximum);
             }
             Index = Index.wrapping_add(1);
         }

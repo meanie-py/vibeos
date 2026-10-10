@@ -16,10 +16,10 @@ pub unsafe extern "system" fn IopArbDmaUnpackRequirements(
     OutLength: PUINT64,
     OutAlignment: PUINT64,
 ) -> NTSTATUS {
-    *OutMinimumAddress = ((*IoDescriptor).u.Dma.MinimumChannel) as _;
-    *OutMaximumAddress = ((*IoDescriptor).u.Dma.MaximumChannel) as _;
-    *OutLength = 1;
-    *OutAlignment = 1;
+    core::ptr::write_volatile(OutMinimumAddress, ((*IoDescriptor).u.Dma.MinimumChannel) as _);
+    core::ptr::write_volatile(OutMaximumAddress, ((*IoDescriptor).u.Dma.MaximumChannel) as _);
+    core::ptr::write_volatile(OutLength, 1);
+    core::ptr::write_volatile(OutAlignment, 1);
 
     return STATUS_SUCCESS;
 }
@@ -47,8 +47,8 @@ pub unsafe extern "system" fn IopArbDmaUnpackResource(
     Start: PUINT64,
     OutLength: PUINT64,
 ) -> NTSTATUS {
-    *Start = (*CmDescriptor).u.Dma.Channel as UINT64;
-    *OutLength = 1;
+    core::ptr::write_volatile(Start, (*CmDescriptor).u.Dma.Channel as UINT64);
+    core::ptr::write_volatile(OutLength, 1);
 
     return STATUS_SUCCESS;
 }

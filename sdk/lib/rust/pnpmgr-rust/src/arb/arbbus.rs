@@ -17,10 +17,10 @@ pub unsafe extern "system" fn IopArbBusNumberUnpackRequirements(
     OutLength: PUINT64,
     OutAlignment: PUINT64,
 ) -> NTSTATUS {
-    *OutMinimumAddress = ((*IoDescriptor).u.BusNumber.MinBusNumber) as _;
-    *OutMaximumAddress = ((*IoDescriptor).u.BusNumber.MaxBusNumber) as _;
-    *OutLength = ((*IoDescriptor).u.BusNumber.Length) as _;
-    *OutAlignment = 1;
+    core::ptr::write_volatile(OutMinimumAddress, ((*IoDescriptor).u.BusNumber.MinBusNumber) as _);
+    core::ptr::write_volatile(OutMaximumAddress, ((*IoDescriptor).u.BusNumber.MaxBusNumber) as _);
+    core::ptr::write_volatile(OutLength, ((*IoDescriptor).u.BusNumber.Length) as _);
+    core::ptr::write_volatile(OutAlignment, 1);
 
     return STATUS_SUCCESS;
 }
@@ -44,8 +44,8 @@ pub unsafe extern "system" fn IopArbBusNumberUnpackResource(
     Start: PUINT64,
     OutLength: PUINT64,
 ) -> NTSTATUS {
-    *Start = (*CmDescriptor).u.BusNumber.Start as UINT64;
-    *OutLength = (*CmDescriptor).u.BusNumber.Length as UINT64;
+    core::ptr::write_volatile(Start, (*CmDescriptor).u.BusNumber.Start as UINT64);
+    core::ptr::write_volatile(OutLength, (*CmDescriptor).u.BusNumber.Length as UINT64);
 
     STATUS_SUCCESS
 }

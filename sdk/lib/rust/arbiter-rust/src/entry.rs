@@ -164,7 +164,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
             return STATUS_UNSUCCESSFUL;
         }
 
-        Status = (*Arbiter).PreprocessEntry.expect("non-null function pointer")(
+        Status = (*Arbiter).PreprocessEntry.unwrap_unchecked()(
             Arbiter, Current,
         );
         if !NT_SUCCESS(Status) {
@@ -186,7 +186,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
                     break 'attempt;
                 }
 
-                (*Arbiter).BacktrackAllocation.expect("non-null function pointer")(
+                (*Arbiter).BacktrackAllocation.unwrap_unchecked()(
                     Arbiter, Current,
                 );
 
@@ -214,7 +214,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
 
             loop {
                 if RetrySameRange == 0 {
-                    if (*Arbiter).GetNextAllocationRange.expect("non-null function pointer")(
+                    if (*Arbiter).GetNextAllocationRange.unwrap_unchecked()(
                         Arbiter, Current,
                     ) == 0
                     {
@@ -223,7 +223,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
                 }
                 RetrySameRange = FALSE;
 
-                if (*Arbiter).FindSuitableRange.expect("non-null function pointer")(
+                if (*Arbiter).FindSuitableRange.unwrap_unchecked()(
                     Arbiter, Current,
                 ) != 0
                 {
@@ -234,7 +234,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
 
             if Found != 0 {
                 if (*(*Current).CurrentAlternative).Length != 0 {
-                    (*Arbiter).AddAllocation.expect("non-null function pointer")(
+                    (*Arbiter).AddAllocation.unwrap_unchecked()(
                         Arbiter, Current,
                     );
                 } else {
@@ -288,7 +288,7 @@ pub unsafe extern "system" fn ArbiterLibAllocateEntry(
         (*(*Current).Entry).SelectedAlternative = (*(*Current).CurrentAlternative).Descriptor;
 
         if !(*(*Current).Entry).Assignment.is_null() && (*Arbiter).PackResource.is_some() {
-            Status = (*Arbiter).PackResource.expect("non-null function pointer")(
+            Status = (*Arbiter).PackResource.unwrap_unchecked()(
                 (*(*Current).CurrentAlternative).Descriptor,
                 (*Current).Start,
                 (*(*Current).Entry).Assignment,

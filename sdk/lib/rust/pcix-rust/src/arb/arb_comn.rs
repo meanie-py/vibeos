@@ -93,7 +93,9 @@ pub unsafe extern "system" fn PciInitializeArbiters(FdoExtension: PPCI_FDO_EXTEN
 
     // Loop all the arbiters
     let mut ArbiterType = PciArb_Io;
-    while ArbiterType as u32 <= PciArb_BusNumber as u32 {
+    // The C for-step (ArbiterType++) runs at the top of this loop, so `continue` skips only
+    // the trailing `Status = STATUS_SUCCESS` -- exactly as the C `continue` does.
+    while ArbiterType as u32 <= PciArb_BusNumber as u32 { // nolint: dowhile-continue (for-step at top)
         let This = ArbiterType;
         ArbiterType = (ArbiterType as u32 + 1) as PCI_SIGNATURE;
 
@@ -158,7 +160,7 @@ pub unsafe extern "system" fn PciInitializeArbiters(FdoExtension: PPCI_FDO_EXTEN
         );
 
         // Call the interface initializer for it
-        Status = ((*CurrentInterface).Initializer.unwrap())(ArbiterInterface as PVOID);
+        Status = ((*CurrentInterface).Initializer.unwrap_unchecked())(ArbiterInterface as PVOID);
         if !NT_SUCCESS(Status) {
             break;
         }
@@ -231,7 +233,7 @@ pub unsafe extern "system" fn PciInitializeArbiterRanges(
             // Hand it the resources this bus was started with. They describe
             // the windows the bus actually decodes, which is what bounds the
             // addresses it may hand out to the devices behind it.
-            let Status = ((*Instance).CommonInstance.StartArbiter.unwrap())(
+            let Status = ((*Instance).CommonInstance.StartArbiter.unwrap_unchecked())(
                 core::ptr::addr_of_mut!((*Instance).CommonInstance),
                 Resources,
             );

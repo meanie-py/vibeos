@@ -86,15 +86,15 @@ pub unsafe extern "system" fn IopArbPortUnpackRequirements(
 ) -> NTSTATUS {
     PAGED_CODE!();
 
-    *OutLength = RtlIoDecodeMemIoResource(
+    core::ptr::write_volatile(OutLength, RtlIoDecodeMemIoResource(
         IoDescriptor,
         OutAlignment,
         OutMinimumAddress,
         OutMaximumAddress,
-    );
+    ));
 
     if *OutAlignment == 0 {
-        *OutAlignment = 1;
+        core::ptr::write_volatile(OutAlignment, 1);
     }
 
     return STATUS_SUCCESS;
@@ -120,7 +120,7 @@ pub unsafe extern "system" fn IopArbPortUnpackResource(
     Start: PUINT64,
     OutLength: PUINT64,
 ) -> NTSTATUS {
-    *OutLength = RtlCmDecodeMemIoResource(CmDescriptor, Start);
+    core::ptr::write_volatile(OutLength, RtlCmDecodeMemIoResource(CmDescriptor, Start));
 
     STATUS_SUCCESS
 }
@@ -167,7 +167,7 @@ pub unsafe extern "system" fn IopArbPortTranslateOrdering(
     let mut MinimumType: UCHAR;
     let mut MaximumType: UCHAR;
 
-    *OutIoDescriptor = *IoDescriptor;
+    core::ptr::write_volatile(OutIoDescriptor, *IoDescriptor);
 
     SourceType = (*IoDescriptor).Type;
     if SourceType != CmResourceTypePort

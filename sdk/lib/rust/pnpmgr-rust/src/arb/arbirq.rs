@@ -14,10 +14,10 @@ pub unsafe extern "system" fn IopArbIrqUnpackRequirements(
     OutLength: PUINT64,
     OutAlignment: PUINT64,
 ) -> NTSTATUS {
-    *OutMinimumAddress = (*IoDescriptor).u.Interrupt.MinimumVector as UINT64;
-    *OutMaximumAddress = (*IoDescriptor).u.Interrupt.MaximumVector as UINT64;
-    *OutLength = 1;
-    *OutAlignment = 1;
+    core::ptr::write_volatile(OutMinimumAddress, (*IoDescriptor).u.Interrupt.MinimumVector as UINT64);
+    core::ptr::write_volatile(OutMaximumAddress, (*IoDescriptor).u.Interrupt.MaximumVector as UINT64);
+    core::ptr::write_volatile(OutLength, 1);
+    core::ptr::write_volatile(OutAlignment, 1);
 
     return STATUS_SUCCESS;
 }
@@ -43,8 +43,8 @@ pub unsafe extern "system" fn IopArbIrqUnpackResource(
     Start: PUINT64,
     OutLength: PUINT64,
 ) -> NTSTATUS {
-    *Start = (*CmDescriptor).u.Interrupt.Vector as UINT64;
-    *OutLength = 1;
+    core::ptr::write_volatile(Start, (*CmDescriptor).u.Interrupt.Vector as UINT64);
+    core::ptr::write_volatile(OutLength, 1);
 
     return STATUS_SUCCESS;
 }
@@ -62,7 +62,7 @@ pub unsafe extern "system" fn IopArbIrqTranslateOrdering(
     let mut Irql: KIRQL = 0;
     let mut Affinity: KAFFINITY = 0;
 
-    *OutIoDescriptor = *IoDescriptor;
+    core::ptr::write_volatile(OutIoDescriptor, *IoDescriptor);
 
     if (*IoDescriptor).Type != CmResourceTypeInterrupt {
         return STATUS_SUCCESS;
@@ -90,7 +90,7 @@ pub unsafe extern "system" fn IopArbIrqTranslateOrdering(
     }
 
     if Affinity == 0 {
-        *OutIoDescriptor = *IoDescriptor;
+        core::ptr::write_volatile(OutIoDescriptor, *IoDescriptor);
     }
 
     STATUS_SUCCESS
