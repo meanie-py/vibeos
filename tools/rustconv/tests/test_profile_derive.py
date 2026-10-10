@@ -34,6 +34,7 @@ from rustconv.profile_derive import (
     find_switch_constants,
     header_symbols,
     is_shim_tu,
+    merge_prologue,
     parse_cmakelists,
     resolve_sys_crate,
     scaffold_crate,
@@ -1055,6 +1056,27 @@ class TestPrologueFidelity:
         lines, _ = scan_preamble(src, undefs)
         assert lines == ['#include "fallback.h"']
 
+    def test_a_merged_prologue_keeps_each_tus_own_order(self, tmp_path: Path):
+        merged: list[str] = []
+        merge_prologue(merged, ['#include "config.h"', '#include "gdi_private.h"'])
+        merge_prologue(merged, ['#include "config.h"', '#include "wine/port.h"'])
+        assert merged == [
+            '#include "config.h"',
+            '#include "wine/port.h"',
+            '#include "gdi_private.h"',
+        ]
+
+    def test_a_reactos_guard_drops_the_wine_arm(self, tmp_path: Path):
+        """user32_vista's win.c keeps wine's user_private.h under `#else` of
+        `#ifdef __REACTOS__`; that header does not exist here."""
+        src = (
+            '#ifdef __REACTOS__\n#include "user32_vista.h"\n#else\n'
+            '#include "user_private.h"\n#endif\n#ifndef __REACTOS__\n#include "dbt.h"\n#endif\n'
+        )
+        lines, conditional = scan_preamble(src, frozenset())
+        assert lines == ['#include "user32_vista.h"']
+        assert not conditional
+
     def test_an_undecidable_guard_still_keeps_both_arms_and_warns(self, tmp_path: Path):
         src = "#ifdef SOME_UNKNOWN\n#include <a.h>\n#else\n#include <b.h>\n#endif\n"
         lines, conditional = scan_preamble(src, frozenset())
@@ -1551,3 +1573,19 @@ def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
     h.write_text("typedef struct _S {\n    union {\n        int a;\n    } DUMMYUNIONNAME1;\n} S;\n")
     # inetcpl was split into two islands over this name alone.
     assert header_type_defs(h) == {"_S", "S"}
+
+
+def test_xmacro_enumerators_own_their_generated_members(tmp_path):
+    from rustconv.profile_derive import xmacro_enumerators
+
+    (tmp_path / "keys.h").write_text(
+        "DEFINE_K(48, 0x09, K_TAB, VK_TAB, TRUE)\nDEFINE_K(50, 0x0D, K_ENTER, VK_RETURN, TRUE)\n"
+    )
+    (tmp_path / "kbd.c").write_text(
+        "#define DEFINE_K(code, vk, name, vkname, special) \\\n    name = code,\n"
+        'typedef enum {\n#include "keys.h"\n} KEY;\n#undef DEFINE_K\n'
+        "#define DEFINE_K(code, vk, name, vkname, special) vk,\n"
+        'static const int vks[] = {\n#include "keys.h"\n};\n'
+    )
+    got = xmacro_enumerators(tmp_path / "kbd.c", frozenset({"K_TAB", "K_ENTER", "VK_TAB"}))
+    assert got == {"K_TAB": ("enum", "48"), "K_ENTER": ("enum", "50")}

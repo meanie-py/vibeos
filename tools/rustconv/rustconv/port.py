@@ -152,17 +152,47 @@ def require_built(module_dir: Path) -> None:
         )
 
 
-def derive(module_dir: Path, target: str | None, arch: str = "i386") -> pd.DerivedProfile:
+def recorded_mode(module_dir: Path, target: str | None) -> bool | None:
+    """The --usermode/--kernel a previous `port derive` of this module was given.
+
+    A static library whose consumers live in another CMakeLists (winegdi -> gdi32) has no
+    module type profile_derive can see, so the mode is asked for once and remembered: every
+    later stage re-derives, and making each of them repeat the flag is a recipe to forget.
+    """
+    rel = str(module_dir.resolve().relative_to(REPO))
+    found = set()
+    for p in sorted(STATE_ROOT.glob("*/state.json")):
+        st = json.loads(p.read_text())
+        # No --target means the directory's only target, which state records by name.
+        if st.get("module_dir") != rel or (target is not None and st.get("target") != target):
+            continue
+        if "mode_override" in st:
+            found.add(st["mode_override"])
+    return found.pop() if len(found) == 1 else None
+
+
+def derive(
+    module_dir: Path, target: str | None, arch: str = "i386", usermode: bool | None = None
+) -> pd.DerivedProfile:
     require_built(module_dir)
+    if usermode is None:
+        usermode = recorded_mode(module_dir, target)
     try:
-        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target)
+        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, usermode=usermode)
     except pd.ProfileDeriveError as e:
         # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
         # crate translates is still listed, commented out. Re-deriving (a new island rule,
         # say) must read THAT list, not refuse.
         if "already flipped" not in str(e):
             raise
-        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, flipped_sources=True)
+        dp = pd.derive(
+            module_dir.resolve(),
+            REPO,
+            arch=arch,
+            target=target,
+            usermode=usermode,
+            flipped_sources=True,
+        )
     blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
     if blocking:
         lines = "\n".join(str(f) for f in blocking)
@@ -246,9 +276,11 @@ def _seed_switch_facts(state: dict, prelude: Path) -> None:
         )
 
 
-def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
+def stage_derive(
+    module_dir: Path, target: str | None, usermode: bool | None = None
+) -> pd.DerivedProfile:
     started = time.time()
-    dp = derive(module_dir, target)
+    dp = derive(module_dir, target, usermode=usermode)
     stem = dp.module.crate_stem
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
@@ -285,6 +317,8 @@ def stage_derive(module_dir: Path, target: str | None) -> pd.DerivedProfile:
         ),
         real_unions=prior["real_unions"],
     )
+    if usermode is not None:
+        state["mode_override"] = usermode
     _record(
         state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
     )
@@ -312,7 +346,13 @@ def _arch_only_tus(state: dict, tus: list[str]) -> dict[str, str]:
     per_arch: dict[str, set[str]] = {}
     for arch in ("arm64", "amd64", "i386"):
         try:
-            dp = pd.derive(module_dir, REPO, arch=arch, target=state.get("target"))
+            dp = pd.derive(
+                module_dir,
+                REPO,
+                arch=arch,
+                target=state.get("target"),
+                usermode=state.get("mode_override"),
+            )
         except Exception:  # an arch that cannot derive owns nothing
             per_arch[arch] = set()
             continue
@@ -4496,7 +4536,7 @@ def main(args) -> int:
 def _main(args) -> int:
     try:
         if args.port_stage == "derive":
-            stage_derive(_module(args.module), args.target)
+            stage_derive(_module(args.module), args.target, args.usermode)
         elif args.port_stage == "island":
             stage_island(args.stem)
         elif args.port_stage == "scaffold":
@@ -4605,6 +4645,16 @@ def add_parser(sub) -> None:
         q = stages.add_parser(name)
         q.add_argument("module", help="module directory (holding CMakeLists.txt)")
         q.add_argument("--target", default=None, help="CMake target, when there are several")
+    mode = stages.choices["derive"].add_mutually_exclusive_group()
+    mode.add_argument(
+        "--usermode",
+        dest="usermode",
+        action="store_const",
+        const=True,
+        default=None,
+        help="a static library whose consumers are in another CMakeLists (remembered)",
+    )
+    mode.add_argument("--kernel", dest="usermode", action="store_const", const=False)
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")
     stages.add_parser(

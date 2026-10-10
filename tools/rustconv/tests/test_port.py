@@ -541,3 +541,22 @@ def test_a_definition_spelled_with_an_sdk_alias_exports_the_real_name(tmp_path, 
     out = rs.read_text()
     assert '#[export_name = "wWinMain"]\npub unsafe extern "system" fn _tWinMain(' in out
     assert '#[no_mangle]\npub unsafe extern "C" fn Helper()' in out
+
+
+def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeypatch):
+    # winegdi links into gdi32 from another CMakeLists, so derive cannot infer its mode;
+    # the --usermode given once must reach every later re-derive without being repeated.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    monkeypatch.setattr(port, "STATE_ROOT", tmp_path / "state")
+    mod = tmp_path / "win32ss" / "gdi" / "gdi32" / "wine"
+    mod.mkdir(parents=True)
+    for stem, target, extra in (
+        ("winegdi", "winegdi", {"mode_override": True}),
+        ("other", "other", {"usermode": False}),
+    ):
+        (tmp_path / "state" / stem).mkdir(parents=True)
+        state = {"stem": stem, "module_dir": "win32ss/gdi/gdi32/wine", "target": target}
+        (tmp_path / "state" / stem / "state.json").write_text(json.dumps({**state, **extra}))
+    assert port.recorded_mode(mod, "winegdi") is True
+    assert port.recorded_mode(mod, "other") is None  # an inferred mode is not an override
+    assert port.recorded_mode(mod, None) is True  # the CLI omits --target for a lone target
