@@ -111,7 +111,9 @@ def rewrite(text: str) -> Rewrite:
             f"{chr(10) if sep != ', ' else ''})"
             f"{' ' + ret if ret else ''} {body}"
         )
-        decl_params = " ".join(re.sub(r"\bmut\s+", "", fixed).split())
+        # Only a parameter's `mut` BINDING goes (`mut buf: T`); `*mut T` is the type. Stripping
+        # every `mut` declared ftfd's `sprintf(buf: *i8, ...)`, which is not Rust.
+        decl_params = " ".join(re.sub(r"(^|,)(\s*)mut\s+", r"\1\2", fixed).split())
         # The comment sits INSIDE the block so it rides with the declaration: integrate drops
         # the declaration when the island already has one, and must not orphan the comment.
         decl = (
