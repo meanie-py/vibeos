@@ -452,6 +452,7 @@ members = [
     "w32time-rust",
     "schedsvc-rust",
     "kbdlayouts-rust",
+    "mspaint-rust",
 ]
 resolver = "2"
 
