@@ -13,8 +13,6 @@ use ntkrnl_sys::ddk::_DEVICE_RELATION_TYPE_BusRelations as BusRelations;
 use core::ffi::c_void;
 use core::ptr;
 
-extern "C" {
-}
 extern "system" {
     fn SET_FLAG(flags: *mut u32, flag: u32);
     fn TEST_FLAG(flags: u32, flag: u32) -> i32;
@@ -37,8 +35,6 @@ extern "system" {
 unsafe extern "C" {
     fn SRB_STATUS(status: u8) -> u32;
     fn RTL_SIZEOF_THROUGH_FIELD_SENSE_DATA_AdditionalSenseCodeQualifier() -> usize;
-}
-unsafe extern "C" {
 }
 unsafe extern "C" {
     fn MediaReadCapacity(Device: *mut core::ffi::c_void) -> i32;

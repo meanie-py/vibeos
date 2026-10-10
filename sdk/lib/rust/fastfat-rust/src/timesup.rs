@@ -11,7 +11,6 @@ extern "system" {
     fn KeGetCurrentIrql() -> KIRQL;
     } extern "C" { fn DbgPrint(format: PCSTR, ...); } extern "system" {
     fn RtlAssert( assert_expression: PVOID, source_file: PVOID, line_number: ULONG, message: PVOID, );
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
     static mut SharedSystemTime: u64;
 }
 
@@ -223,7 +222,7 @@ pub unsafe extern "system" fn FatFatTimeToNtTime(
         );
     }
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     return Time;
 }

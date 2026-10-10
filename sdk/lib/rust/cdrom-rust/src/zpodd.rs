@@ -19,13 +19,9 @@ extern "C" {
     static D3COLD_SUPPORT_INTERFACE_VERSION: u16;
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
 }
-extern "C" {
-}
 extern "system" {
     fn DeviceSendSrbSynchronously(device: PDEVICE_OBJECT, srb: *mut SCSI_REQUEST_BLOCK, buffer: *mut core::ffi::c_void, length: u32, request_sense: u8, sense_info: *mut u8) -> NTSTATUS;
     fn DeviceGetConfigurationWithAlloc( Device: PDEVICE_OBJECT, Buffer: *mut *mut core::ffi::c_void, BufferSize: *mut ULONG, Feature: u32, RequestType: u32, ) -> NTSTATUS;
-}
-unsafe extern "C" {
 }
 unsafe extern "C" {
     fn DeviceSendIoctlAsynchronously( DeviceExtension: PCDROM_DEVICE_EXTENSION, IoControlCode: u32, LowerPdo: PDEVICE_OBJECT, );

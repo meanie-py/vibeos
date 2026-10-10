@@ -7,16 +7,11 @@ use ntkrnl_sys::ddk::{FILE_OBJECT, IRP};
 // resolve_imports.py: explicit kernel/private-type imports
 use crate::glue::{CDFS_BUG_CHECK_RESRCSUP};
 
-extern "C" {
-}
 extern "system" {
     fn IoGetTopLevelIrp() -> *mut IRP;
 }
 extern "system" {
     fn IoSetTopLevelIrp(Irp: *mut IRP);
-}
-extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
 }
 extern "C" {
     fn NT_ASSERT(condition: i32);
@@ -102,7 +97,7 @@ pub unsafe extern "system" fn CdNoopAcquire(
 #[no_mangle]
 pub unsafe extern "system" fn CdNoopRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(Fcb);
+    UNREFERENCED_PARAMETER!(Fcb);
 }
 
 // CdReleaseFromCache: NTAPI cache-manager release callback. The C body lived in

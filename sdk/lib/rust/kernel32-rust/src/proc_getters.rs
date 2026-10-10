@@ -17,6 +17,7 @@ const THEONLYGROUP: WORD = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn GetActiveProcessorGroupCount() -> WORD {
+    STUB!(); // FIXME: Real group support
     1
 }
 

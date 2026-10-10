@@ -55,7 +55,9 @@ unsafe extern "C" fn AtaDeviceSetPioTransferMode(
     let Status: NTSTATUS;
     let mut Mode: ULONG = core::mem::zeroed();
 
-    NT_VERIFY!(
+    // A free build's NT_VERIFY evaluates the scan for its side effect; the C discards the
+    // result here.
+    let _ = NT_VERIFY!(
         _BitScanReverse(
             &raw mut Mode,
             (*DevExt).TransferModeSelectedBitmap & PIO_ALL,

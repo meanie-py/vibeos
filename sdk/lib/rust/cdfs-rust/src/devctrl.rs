@@ -18,8 +18,6 @@ extern "C" {
 }
 
 extern "C" {
-}
-extern "C" {
     fn CdVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {

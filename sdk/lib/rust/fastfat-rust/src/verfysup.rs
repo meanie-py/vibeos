@@ -63,7 +63,6 @@ extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn NodeType(Fcb: PFCB) -> u32;
-    fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
     fn FatAcquireExclusiveGlobal(IrpContext: PIRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
     fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
@@ -155,7 +154,7 @@ pub unsafe extern "system" fn FatMatchFileSize(
 ) -> BOOLEAN {
     const FAT_NTC_FCB: u32 = 0x0502;
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     if NodeType(Fcb) != FAT_NTC_FCB {
         return 1;

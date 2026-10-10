@@ -9,14 +9,10 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ExFreePool, IoAllocateIrp, IoAllocateMdl, IoFreeIrp, IoFreeMdl};
 use core::ffi::c_void;
 
-extern "C" {
-}
 extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
     fn NT_ASSERT(condition: i32);
-}
-unsafe extern "C" {
 }
 
 // WPP tracing constants. These are C *compile-time* constants (`storswtr.h`), NOT linkable

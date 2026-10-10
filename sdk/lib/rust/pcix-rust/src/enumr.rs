@@ -64,8 +64,6 @@ unsafe fn PCI_MULTIFUNCTION_DEVICE(PciData: PPCI_COMMON_HEADER) -> u8 {
 macro_rules! UNIMPLEMENTED { () => {{}}; }
 
 extern "C" {
-}
-extern "C" {
     fn DbgPrint( format: *const i8, ... );
 }
 unsafe extern "system" {

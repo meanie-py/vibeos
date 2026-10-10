@@ -16,7 +16,6 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlU
 
 extern "system" {
     } extern "C" { fn DebugTrace(severity: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn UNREFERENCED_PARAMETER(ptr: *mut core::ffi::c_void);
     fn Fat8dot3ToString( irp_context: *mut IRP_CONTEXT, dirent: *const DIRENT, flag: i32, filename: *mut OEM_STRING, );
     fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
@@ -1209,7 +1208,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER((FileName).cast());
+    UNREFERENCED_PARAMETER!(FileName);
 
     if EaHandle < MIN_EA_HANDLE || EaHandle > MAX_EA_HANDLE {
         DebugTrace(-1, Dbg, b"FatDeleteEaSet: Illegal handle value\n\0".as_ptr() as *const i8, 0);
@@ -2240,7 +2239,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
 
         DebugTrace(-1, Dbg, (b"FatDeletePackedEa -> VOID\n\0".as_ptr() as *const u8).cast(), 0);
 
-        UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+        UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
     }
 }
 #[no_mangle]
@@ -2506,7 +2505,7 @@ pub unsafe extern "system" fn FatMarkEaRangeDirty(
     EaRange: *mut EA_RANGE,
 ) {
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     if (*EaRange).AuxilaryBuffer == 1 {
         let mut LargeVbo: LARGE_INTEGER = core::mem::zeroed();

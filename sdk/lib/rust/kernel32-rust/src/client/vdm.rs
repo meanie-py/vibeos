@@ -1094,7 +1094,7 @@ pub unsafe extern "system" fn GetBinaryTypeA(
 pub unsafe extern "system" fn CmdBatNotification(
     Unknown_: DWORD,
 ) -> BOOL {
-    // STUB; (DPRINT1 unimplemented marker - debug no-op)
+    STUB!();
     return 0i32;
 }
 
@@ -1581,7 +1581,7 @@ pub unsafe extern "system" fn RegisterConsoleVDM(
 pub unsafe extern "system" fn RegisterWowBaseHandlers(
     Unknown0: DWORD,
 ) -> BOOL {
-    // STUB; (DPRINT1 unimplemented marker - debug no-op)
+    STUB!();
     return 0;
 }
 
@@ -1589,7 +1589,7 @@ pub unsafe extern "system" fn RegisterWowBaseHandlers(
 pub unsafe extern "system" fn RegisterWowExec(
     Unknown0: DWORD,
 ) -> BOOL {
-    // STUB; (DPRINT1 unimplemented marker - debug no-op)
+    STUB!();
     return 0i32;
 }
 
@@ -1636,7 +1636,7 @@ pub unsafe extern "system" fn VDMConsoleOperation(
     iFunction: DWORD,
     lpData: LPVOID,
 ) -> BOOL {
-    // STUB;
+    STUB!();
     return 0i32;
 }
 

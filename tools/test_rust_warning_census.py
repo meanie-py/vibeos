@@ -121,3 +121,84 @@ def test_the_same_site_on_two_arches_is_one_site_seen_twice():
 def test_the_arch_is_read_from_the_run_dir():
     log = Path("/tmp/vibeos-cli/20261008-011558-ngiwyrng-build-arm64/full.log")
     assert c.arch_of(log) == "arm64"
+
+
+def _diag(path: str, line: int, lint: str, msg: str) -> str:
+    import json
+
+    return json.dumps(
+        {
+            "$message_type": "diagnostic",
+            "message": msg,
+            "code": {"code": lint, "explanation": None},
+            "level": "warning",
+            "spans": [
+                {
+                    "file_name": path,
+                    "line_start": line,
+                    "column_start": 5,
+                    "is_primary": True,
+                    "text": [{"text": "    x = 0;"}],
+                }
+            ],
+            "children": [],
+        }
+    )
+
+
+def _unit(target: Path, crate: str, h: str, deps: list[str], output: list[str] | None):
+    fp = target / ".fingerprint" / f"{crate}-{h}"
+    fp.mkdir(parents=True)
+    lib = crate.replace("-", "_")
+    (fp / f"lib-{lib}.json").write_text("{}")
+    if output is not None:
+        (fp / f"output-lib-{lib}").write_text("\n".join(output) + "\n")
+    (target / "deps").mkdir(exist_ok=True)
+    (target / "deps" / f"{lib}-{h}.d").write_text(
+        f"/tmp/vibeos/build-i386/x/deps/{lib}-{h}.d: {' '.join(deps)}\n\n"
+    )
+    (fp / "invoked.timestamp").write_text("")
+    return fp
+
+
+def test_a_build_dir_reports_fresh_units_and_refuses_edited_ones(tmp_path):
+    import os
+
+    repo = tmp_path / "repo"
+    src = repo / "sdk" / "lib" / "rust"
+    for f in ("good-rust/src/lib.rs", "clean-rust/src/lib.rs", "edited-rust/src/lib.rs"):
+        (src / f).parent.mkdir(parents=True, exist_ok=True)
+        (src / f).write_text("")
+        os.utime(src / f, (1000, 1000))
+    target = repo / "build-i386" / "t" / "i686" / "release"
+    good = _unit(
+        target,
+        "good-rust",
+        "0" * 16,
+        ["good-rust/src/lib.rs"],
+        [
+            _diag(
+                "good-rust/src/lib.rs",
+                7,
+                "unused_assignments",
+                "value assigned to `x` is never read",
+            )
+        ],
+    )
+    clean = _unit(target, "clean-rust", "1" * 16, ["clean-rust/src/lib.rs"], None)
+    edited = _unit(target, "edited-rust", "2" * 16, ["edited-rust/src/lib.rs"], [])
+    for fp in (good, clean, edited):
+        os.utime(fp / "invoked.timestamp", (2000, 2000))
+    os.utime(src / "edited-rust/src/lib.rs", (3000, 3000))  # edited after its build
+
+    units = {u.crate: u for u in c.read_build_dir(repo / "build-i386", repo)}
+    assert [(s.path, s.line, s.lint) for s in units["good-rust"].sites] == [
+        ("good-rust/src/lib.rs", 7, "unused_assignments")
+    ]
+    assert units["clean-rust"].sites == [] and not units["clean-rust"].stale
+    fresh, stale = c.coverage(list(units.values()))
+    assert fresh == {"good-rust", "clean-rust"}
+    assert "changed since the build" in stale["edited-rust"]
+    assert c.main([str(repo / "build-i386")]) == 3  # refuses a total missing a crate
+    os.utime(src / "edited-rust/src/lib.rs", (1000, 1000))
+    assert c.main([str(repo / "build-i386")]) == 0

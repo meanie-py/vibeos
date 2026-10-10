@@ -43,7 +43,7 @@ type Bcb = BCB;
 
 extern "system" {
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
-    fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE) fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
+    fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE)
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, DirentsNeeded: u32, BypassHint: i32, ) -> u32;
     fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: u8, Flush: u8, Status: *mut NTSTATUS);
@@ -70,7 +70,6 @@ extern "system" {
     fn NT_ASSERT(condition: i32);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
-    fn UNREFERENCED_PARAMETER(x: c_void);
     fn ARGUMENT_PRESENT(x: *mut c_void) -> u8;
     fn ExFreePool(P: *mut c_void);
     fn RtlAreBitsSet( BitMapHeader: *mut RTL_BITMAP, StartingIndex: u32, Length: u32, ) -> u8;
