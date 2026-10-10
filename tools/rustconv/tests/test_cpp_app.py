@@ -367,3 +367,41 @@ def test_an_anonymous_union_member_keeps_its_slot(tmp_path):
     (body,) = [m.lowered for m in sink.methods if m.name == "Set"]
     assert "this_->__anon0.m_uFlags = f" in body and "o->__anon0.m_fn = 0" in body
     assert "pub union Sink__anon0 {" in cpp_app.render_classes(ex.model)
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_nothrow_tag_new_lowers_like_new_and_a_buffer_placement_does_not(tmp_path):
+    """CTF's `new(cicNoThrow) T(args)` (~130 audit rejects across msutb/cicuif/msctf)."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef __SIZE_TYPE__ size_t; struct CicNoThrow { };\n"
+        "#define cicNoThrow CicNoThrow{}\n"
+        "void* operator new(size_t size, const CicNoThrow&) noexcept;\n"
+        "void* operator new(size_t, void* p) noexcept { return p; }\n"
+        "class Item { public: int v; Item(int x) : v(x) {} };\n"
+        "Item* make(int a) { Item *p = new(cicNoThrow) Item(a); return p; }\n"
+        "Item* inplace(void *buf) { return new(buf) Item(1); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    by = {f.name: f.lowered for f in ex.model.functions}
+    assert "Item *p = Item__new_0(a);" in by["make"]
+    assert "new(buf) Item(1)" in by["inplace"]
+    rs = cpp_app.render_classes(ex.model)
+    assert "if __p.is_null() { return __p; } (*__p).__ctor_0(x)" in rs

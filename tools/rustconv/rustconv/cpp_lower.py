@@ -239,6 +239,20 @@ class Lowerer:
         if span is None:
             return
         t = cdp_text(f, lo + span[0], lo + span[1])
+        if n.get("isPlacement"):
+            # `new(cicNoThrow) T(args)`: a TAG-dispatched allocator (`operator new(size_t,
+            # const CicNoThrow&) noexcept`, CTF's idiom) is allocate-or-NULL, i.e. a plain
+            # `new` whose result the caller null-checks -- and the generated __new_N returns
+            # NULL rather than constructing into it. A placement into a BUFFER (`new(buf) T`,
+            # `operator new(size_t, void*)`) constructs in place: a different operation, left
+            # unlowered so the audit rejects it loudly instead of allocating fresh memory.
+            sig = n.get("operatorNewDecl", {}).get("type", {}).get("qualType", "")
+            if not re.fullmatch(r"void \*\(size_t, const \w+ &\) noexcept", sig):
+                return
+            pm = re.match(r"new\s*\((?:[^()]|\([^()]*\))*\)\s*", t)
+            if pm is None:
+                return
+            t = "new " + t[pm.end() :]
         alloc = _strip_type(n.get("type", {}).get("qualType", ""))
         if n.get("isArray"):
             m = re.match(r"new\s+(.+?)\s*\[(.*)\]\s*$", t, re.S)

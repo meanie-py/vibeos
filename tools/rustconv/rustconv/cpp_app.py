@@ -579,7 +579,8 @@ def _render_class(
         )
         lines.append(
             f"pub unsafe fn {n}__new_0() -> *mut {n} {{ "
-            f"let __p = cpp_alloc::<{n}>(); (*__p).__ctor_0(); __p }}"
+            f"let __p = cpp_alloc::<{n}>(); if __p.is_null() {{ return __p; }} "
+            f"(*__p).__ctor_0(); __p }}"
         )
     for i, m in enumerate(ctors):
         params = _params(m, model)
@@ -591,7 +592,7 @@ def _render_class(
         )
         lines.append(
             f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ let __p = cpp_alloc::<{n}>(); "
-            f"(*__p).__ctor_{i}({args}); __p }}"
+            f"if __p.is_null() {{ return __p; }} (*__p).__ctor_{i}({args}); __p }}"
         )
     if h.virtual_dtor(cls):
         root_path, root = _vtbl_path(h, cls)
@@ -1055,6 +1056,7 @@ pub unsafe fn cpp_free(p: *mut core::ffi::c_void) { free(p) }
 /// `new T(v)` for a non-class T.
 pub unsafe fn cpp_new<T>(v: T) -> *mut T {
     let p = calloc(1, core::mem::size_of::<T>()) as *mut T;
+    if p.is_null() { return p; } // a nothrow new's NULL; never construct into it
     core::ptr::write(p, v);
     p
 }
@@ -1085,7 +1087,21 @@ pub fn cpp_pure_virtual_call(what: &str) -> ! { panic!("pure virtual call: {}", 
 
 
 def _strip_ns(text: str, model: ModuleModel) -> str:
+    """Drop namespace qualifiers (`snd::audio_membuffer`): Rust names a class by its short
+    name. A CLASS that merely encloses another (`CImageDx::SHARED`) loses its qualifier only
+    before a nested type -- `CImageDx::_shared()` is a static call and keeps it, or it reads
+    as a free function that does not exist (33 mspaint errors)."""
     for ns in _namespaces(model):
+        if ns in model.classes:
+            nested = sorted(
+                (q[len(ns) + 2 :] for q in model.classes if q.startswith(ns + "::")),
+                key=len,
+                reverse=True,
+            )
+            if nested:
+                alt = "|".join(re.escape(n) for n in nested)
+                text = re.sub(rf"\b{re.escape(ns)}::(?=(?:{alt})\b)", "", text)
+            continue
         text = re.sub(rf"\b{re.escape(ns)}::", "", text)
     return text
 

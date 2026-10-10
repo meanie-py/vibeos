@@ -29,6 +29,7 @@ deliberate step once `check` is green on every arch.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -578,6 +579,55 @@ def _unit_files(crate: Path, stem: str) -> list[Path]:
     ]
 
 
+def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
+    """Replace the island's bindgen copy of each class cpp_classes.rs renders with a
+    re-export of it. Two definitions of one class can disagree, and bindgen's cannot even
+    compile: mspaint's `CFullscreenWindow { _base: ATL_CWindowImpl<ATL_CWindow> }` derives
+    Copy over a template base that has none (28 errors). The class model is the authority
+    on a C++ class; the island keeps only what it alone describes (plain C structs, which
+    cpp_classes leaves to it). Island items that name a class (`IMAGE_PART { m_rcPart:
+    CRect }`, `extern static mainWindow: CMainWindow`) then resolve to the one definition."""
+    names = set(re.findall(r"^pub (?:struct|union) (\w+)", generated, re.M))
+    done: set[str] = set()
+    for island in sorted(src.glob("types_*.rs")):
+        lines = island.read_text().split("\n")
+        out: list[str] = []
+        i = 0
+        while i < len(lines):
+            m = re.match(r"pub (?:struct|union) (\w+)\s*\{", lines[i])
+            if not m or m.group(1) not in names:
+                out.append(lines[i])
+                i += 1
+                continue
+            while out and re.match(r"\s*(#\[|///)", out[-1]):
+                out.pop()  # its #[derive]/#[repr]/doc lines
+            depth = 0
+            while i < len(lines):
+                depth += lines[i].count("{") - lines[i].count("}")
+                i += 1
+                if depth <= 0:
+                    break
+            out.append(f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it")
+            done.add(m.group(1))
+        island.write_text("\n".join(out))
+    return sorted(done)
+
+
+def _unit_hash(tu: str) -> str:
+    return hashlib.sha256((REPO / tu).read_bytes()).hexdigest()[:16]
+
+
+def _unit_stale(state: dict, tu: str) -> bool:
+    """A cppapp unit whose text changed since it was translated: cppapp re-lowers bodies
+    (a CRect overload now spelled InflateRect__0, a bare `_shared()` now qualified), and a
+    unit with output was never revisited, so 49 mspaint bodies kept the old spelling. The
+    re-run buys only the changed bodies; the rest replay from the bank for $0. A unit with
+    no recorded hash counts as changed (its replay is free)."""
+    if not state.get("cppapp") or tu not in state.get("header_tus", {}):
+        return False
+    return state.get("unit_hash", {}).get(tu) != _unit_hash(tu)
+
+
 def _cppapp_assemble_all(state: dict) -> list[str]:
     """Move every cppapp unit's `Class__m` functions into their classes. Idempotent, and run
     by integrate because translate's own hook runs once per subprocess: a reject-retry pass
@@ -645,9 +695,11 @@ def stage_cppapp(stem: str) -> None:
     island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
-    (crate_src / "cpp_classes.rs").write_text(
-        cpp_app.render_classes(model, island_structs, island_text)
-    )
+    generated = cpp_app.render_classes(model, island_structs, island_text)
+    (crate_src / "cpp_classes.rs").write_text(generated)
+    deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
+    if deferred:
+        print(f"cppapp: island defers {len(deferred)} class(es) to cpp_classes.rs")
     units: dict[str, str] = {}
     for body_file, text in cpp_app.synthetic_tus(model, island_text).items():
         name = Path(body_file).name.replace(".", "_") + ".hpp"
@@ -965,7 +1017,9 @@ def stage_translate(
         else [
             t
             for t in picked
-            if not _has_body(_tu_output(state, t)) or Path(t).name in (revisit or [])
+            if not _has_body(_tu_output(state, t))
+            or Path(t).name in (revisit or [])
+            or _unit_stale(state, t)
         ]
     )
     spent = 0.0
@@ -1095,6 +1149,14 @@ def stage_translate(
             )
             cost += _run_cost(proc.stdout + proc.stderr)
         spent += cost
+        if tu in vias and state.get("cppapp") and not (dry_run or replay_only):
+            if proc.returncode == 0:
+                state.setdefault("unit_hash", {})[tu] = _unit_hash(tu)
+            if out.is_file():  # the retry rewrote the output after the hook above
+                from . import cpp_app, cpp_model
+
+                app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+                out.write_text(cpp_app.assemble(out.read_text(), app))
         fns, tok_in, tok_out = _tokens(log.read_text())
         done.append(
             {
@@ -1111,7 +1173,16 @@ def stage_translate(
         to_buy = _to_buy(log.read_text())
         done[-1]["to_buy"] = to_buy
         status = (
-            f"would buy {to_buy} fn(s)" if dry_run else ("body" if _has_body(out) else "NO BODY")
+            f"would buy {to_buy} fn(s)"
+            if dry_run
+            else (
+                "body"
+                if _has_body(out)
+                # A header unit whose functions are all class members: nothing was owed.
+                else "nothing to translate"
+                if "found no classless function" in log.read_text()
+                else "NO BODY"
+            )
         )
         if dry_run and proc.returncode:
             status = f"REFUSED (see {log})"
