@@ -243,6 +243,33 @@ class _Sources:
     def __init__(self) -> None:
         self._cache: dict[str, bytes] = {}
 
+    def node_text(self, node: dict) -> str | None:
+        """A node's source text. A function-like MACRO call (`RGB(255, 255, 255)` as an
+        initializer) has its expansion END reported at the macro NAME by clang's JSON, so
+        the span is just `RGB`: extend it through the call's balanced parentheses."""
+        span = _span(node)
+        text = self.text(span)
+        if span is None or text is None:
+            return text
+        end = (node.get("range") or {}).get("end", {})
+        if "expansionLoc" not in end or not re.fullmatch(r"[\s\S]*\b\w+", text):
+            return text
+        f, b, e = span
+        data = self._cache[f]
+        i = e
+        while i < len(data) and data[i : i + 1] in (b" ", b"\t"):
+            i += 1
+        if data[i : i + 1] != b"(":
+            return text
+        depth = 0
+        while i < len(data):
+            c = data[i : i + 1]
+            depth += (c == b"(") - (c == b")")
+            i += 1
+            if depth == 0:
+                return data[b:i].decode("utf-8", errors="replace")
+        return text
+
     def text(self, span: tuple[str, int, int] | None) -> str | None:
         if span is None:
             return None
@@ -442,6 +469,7 @@ class _Extractor:
         self.decls: dict[str, cpp_lower.DeclInfo] = {}
         self._anon_seen: set[str] = set()
         self._anon_registered: set[str] = set()
+        self._fn_defaults: dict[str, list[str | None]] = {}
         self.method_by_id: dict[str, Method] = {}
         # (Method | FreeFunc, CompoundStmt node, this class) to lower once the TU is walked:
         # a body can name a member of a class defined LATER in the same TU.
@@ -486,6 +514,7 @@ class _Extractor:
                 if self.mine(_file_of(n)):
                     self.free_function(n)
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
+                self._register_function(n)
                 self.free_function(n)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):
                 self.enum(n)
@@ -538,7 +567,7 @@ class _Extractor:
             elif k == "FieldDecl":
                 init = None
                 if c.get("hasInClassInitializer") and c.get("inner"):
-                    init = self.src.text(_span(c["inner"][-1]))
+                    init = self.src.node_text(c["inner"][-1])
                 cls.fields.append(Field(c["name"], c["type"]["qualType"], access, False, init))
             elif k == "EnumDecl" and not c.get("name"):
                 for e in c.get("inner", []):
@@ -602,6 +631,17 @@ class _Extractor:
         anon_fields = iter(f for f in cls.fields if f.name.startswith("__anon"))
         for c in n.get("inner", []):
             k = c.get("kind")
+            if k == "EnumDecl" and c.get("name"):
+                # A NAMED enum nested in the class: bindgen spells its constants
+                # Outer_Enum_CONST (`RegistrySettings_WallpaperStyle_TILED`), and C++ writes
+                # them `RegistrySettings::TILED` or, inside the class, bare `TILED`.
+                prefix = cls.qualified.replace("::", "_") + "_" + c["name"]
+                for e in c.get("inner", []):
+                    if e.get("kind") == "EnumConstantDecl":
+                        self.decls[e["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "enumconst", e["name"], f"{prefix}_{e['name']}"
+                        )
+                continue
             if k == "FieldDecl" and not c.get("name"):
                 af = next(anon_fields, None)
                 rec = next(
@@ -682,7 +722,7 @@ class _Extractor:
             Param(
                 p.get("name", f"arg{i}"),
                 p["type"]["qualType"],
-                self.src.text(_span(p["inner"][0])) if p.get("init") and p.get("inner") else None,
+                self.src.node_text(p["inner"][0]) if p.get("init") and p.get("inner") else None,
             )
             for i, p in enumerate(x for x in c.get("inner", []) if x["kind"] == "ParmVarDecl")
         ]
@@ -697,7 +737,7 @@ class _Extractor:
                     "qualType", "?"
                 )
                 if x.get("inner") and not x["inner"][0].get("isImplicit"):
-                    text = _ctor_args(self.src.text(_span(x["inner"][0])), (target, c["name"]))
+                    text = _ctor_args(self.src.node_text(x["inner"][0]), (target, c["name"]))
                     if text is not None:
                         inits.append((target, text))
         return Method(
@@ -771,6 +811,23 @@ class _Extractor:
                 self.rel(_file_of(n) or ""),
             )
         )
+
+    def _register_function(self, n: dict) -> None:
+        """A module free function's declaration (a prototype in dib.h counts), for its
+        default arguments: `CopyDIBImage(hbm, cx, cy)` must be called with dib.h's
+        `stretchMode = STRETCH_HALFTONE` written out, as for a member call."""
+        params = [x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"]
+        defaults = [
+            self.src.node_text(p["inner"][0]) if p.get("init") and p.get("inner") else None
+            for p in params
+        ]
+        if any(d is not None for d in defaults):
+            self._fn_defaults[n["name"]] = defaults
+        # A redeclaration (the definition in dib.cpp) repeats no defaults, but a call may
+        # reference it: it carries the prototype's.
+        known = self._fn_defaults.get(n["name"])
+        if known is not None and len(known) == len(defaults):
+            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], n["name"], known)
 
     def free_function(self, n: dict) -> None:
         body = next((x for x in n.get("inner", []) if x["kind"] == "CompoundStmt"), None)
@@ -850,7 +907,7 @@ class _Extractor:
         name = n["name"]
         init = None
         if n.get("inner"):
-            init = _ctor_args(self.src.text(_span(n["inner"][0])), (name,))
+            init = _ctor_args(self.src.node_text(n["inner"][0]), (name,))
         if any(g.name == name for g in self.model.globals):
             return
         self.model.globals.append(

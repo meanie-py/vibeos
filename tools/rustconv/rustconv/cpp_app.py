@@ -1377,10 +1377,8 @@ def _ctor_prologue(
         if base is None:
             continue
         arg = inits.get(b.name) or inits.get(bn)
-        idx = 0
-        if arg is not None:
-            idx = _match_ctor(base, arg)
-        lines.append(f"    this_->__base{i}.__ctor_{idx}{arg or '()'};")
+        idx, call = _ctor_call(base, arg or "()")
+        lines.append(f"    this_->__base{i}.__ctor_{idx}{call};")
     if cls.polymorphic:
         lines.append("    this_->__init_vtables();")
     for f in cls.fields:
@@ -1394,6 +1392,20 @@ def _ctor_prologue(
             v = f.default_init.lstrip("=").strip()
             lines.append(f"    this_->{f.name} = {v};")
     return lines
+
+
+def _ctor_call(base: ClassModel, arg: str) -> tuple[int, str]:
+    """(constructor index, argument list) for constructing `base` with `arg` as written,
+    trailing DEFAULT arguments filled in: a base left to default-construct through
+    `CWindow(HWND hWnd = NULL)` is `__ctor_0(NULL)`, never `__ctor_0()`."""
+    written = [] if arg.strip() in ("()", "") else _split(arg.strip()[1:-1])
+    ctors = [m for m in base.methods if m.kind == "ctor"]
+    for i, m in enumerate(ctors):
+        n = len(written)
+        if len(m.params) >= n and all(p.default is not None for p in m.params[n:]):
+            full = [w.strip() for w in written] + [p.default for p in m.params[n:]]
+            return i, "(" + ", ".join(full) + ")"
+    return _match_ctor(base, arg), arg
 
 
 def _match_ctor(base: ClassModel, arg: str) -> int:

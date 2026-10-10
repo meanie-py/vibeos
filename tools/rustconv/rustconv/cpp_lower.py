@@ -195,9 +195,17 @@ class Lowerer:
         """A STATIC member named without its class (`_shared()` inside CImageDx): after
         assembly it is an associated fn, reachable only as `CImageDx::_shared()`."""
         info = self.decls.get(n.get("referencedDecl", {}).get("id", ""))
+        if info is not None and info.kind == "enumconst":
+            # The whole reference, qualifier included, is the island's flat name.
+            span = _node_span(n, f, lo, hi)
+            if span is not None:
+                edits.append((span[0], span[1] - span[0], info.rust_name))
+            return
         if info is None or not info.static or info.kind != "method":
             return
-        t = _tok(n["range"]["begin"], f, lo, hi)
+        # The range END is the name token: `RegistrySettings::SetWallpaper(..)` BEGINS
+        # at its qualifier, and qualifying that token wrote `X::SetWallpaper::SetWallpaper`.
+        t = _tok(n["range"]["end"], f, lo, hi)
         if t is None:
             return
         before = cdp_text(f, max(lo, t[0] - 2), t[0])
@@ -343,9 +351,23 @@ class Lowerer:
             return
         idx = self._ctor_n(cls, init)
         after = name[0] - lo + name[1]
-        rest = cdp_text(f, name[0] + name[1], min(hi, name[0] + name[1] + 64)).lstrip()
+        tail = cdp_text(f, name[0] + name[1], hi)
+        rest = tail.lstrip()
         if rest.startswith("("):
             edits.append((after, 0, f" = {cls.name}__make_{idx}"))
+        elif re.match(r"(=\s*)?\{", rest):
+            # List-initialization, `CRect rc = { 0, 0, w, h };`: the braces are the
+            # constructor's argument list. Swap them for parens; the arguments keep their
+            # own edits (a member path inside one), so only the two delimiters change.
+            m = re.match(r"\s*(=\s*)?\{", tail)
+            depth, i = 0, m.end() - 1
+            while i < len(tail):
+                depth += (tail[i] == "{") - (tail[i] == "}")
+                if depth == 0:
+                    break
+                i += 1
+            edits.append((after, m.end(), f" = {cls.name}__make_{idx}("))
+            edits.append((after + i, 1, ")"))
         else:
             edits.append((after, 0, f" = {cls.name}__make_{idx}()"))
 
