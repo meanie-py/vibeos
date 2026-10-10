@@ -2840,6 +2840,15 @@ they must be the same expression. Treat a sum of member sizes that stands in for
 `FIELD_OFFSET` as a bug until proven otherwise. The 32-bit targets are where alignment
 padding appears.
 
+**Same class, other direction: a union hand-padded to its 64-bit size.** iomgr's copy of
+`RAMDISK_CREATE_INPUT` replaced the C union with one variant plus `_pad: [u8; 14]`, which is
+right only where `ULONG_PTR` is 8 bytes. On i386 the struct came to 64 bytes against C's 56,
+and ramdisk.sys refuses a request unless `Version == sizeof(RAMDISK_CREATE_INPUT)`, so the
+boot ramdisk could never be created (BUGCHECK 0xF8, P1=3 RD_FSCTL_FAILED). Nothing booted an
+x86 ramdisk until conformance's writable root did. **Fix:** declare the union as C does, and
+assert the size per target against C's own `sizeof` (the pinned clang compiles a two-line
+`_Static_assert` for each triple in a second).
+
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
 its capability list, and got 64 bytes back, so every capability looked absent. Nothing
@@ -10061,6 +10070,9 @@ multi(0)disk(0)cdrom(0)`), so `\SystemRoot` is read-only CDFS and every kmtest t
 file there bails at setup (`0xc0000022`): ZwCreateSection, MmSection and the file halves of
 ZwMapViewOfSection and IoFilesystem. arm64 boots a writable FAT ramdisk and ran them all. The
 bugs it found (the missing view-protection checks in `MmMapViewOfSection`) were in shared code.
+amd64 conformance now boots a writable root too (`VIBEOS_WRITABLE_ROOT=1`,
+`tools/conformance/mk_writable_livecd.py`); its `summary.json` records `writable_root`, read
+off the boot line rather than the request.
 **Before calling a failure arch-specific, compare `pass+fail` across arches** — the arch that
 "passes" may simply never have reached the assertion.
 

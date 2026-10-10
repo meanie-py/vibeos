@@ -75,6 +75,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
     # kmtest lists are hand-kept; a name the arch compiles out reads as a NO-END crash.
     (".", ".", "tools/payloads/kmtest/test_kmtest_lists.py"),
+    # x86 conformance's writable root: a missed entry silently boots the read-only CD again.
+    (".", ".", "tools/conformance/test_mk_writable_livecd.py"),
     # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.
     (".", ".", "tools/payloads/modrun/test_modrun.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while
