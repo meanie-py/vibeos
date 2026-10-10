@@ -45,6 +45,7 @@ WHAT COUNTS AS A DOOMED CMakeLists
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -71,11 +72,16 @@ def repo_root() -> Path:
 def find_doomed_cmakelists(root: Path) -> list[Path]:
     """CMakeLists carrying the SSE flag + the builtin triple + no custom json target."""
     hits: list[Path] = []
-    for path in root.rglob("CMakeLists.txt"):
-        # skip anything under a build-* / target dir
-        parts = set(path.parts)
-        if any(p.startswith("build-") or p == "target" for p in parts):
+    # Prune build-*/target/.git BEFORE descending: rglob walked into them and only then
+    # filtered, and a concurrent cargo build deleting a target dir mid-walk raised
+    # FileNotFoundError out of rglob (the merge queue's gate, beside its own build).
+    for dirpath, dirnames, filenames in os.walk(root, onerror=lambda _e: None):
+        dirnames[:] = [
+            d for d in dirnames if not (d.startswith("build-") or d in ("target", ".git"))
+        ]
+        if "CMakeLists.txt" not in filenames:
             continue
+        path = Path(dirpath) / "CMakeLists.txt"
         try:
             text = path.read_text(errors="replace")
         except OSError:
