@@ -473,7 +473,7 @@ pub(super) static mut dead_key_names: [DEADKEY_LPWSTR; 21] = [
     wstr!("\u{b4}AKUT").as_ptr() as DEADKEY_LPWSTR,
     wstr!("`GRAVIS").as_ptr() as DEADKEY_LPWSTR,
     wstr!("\u{af}MAKRON").as_ptr() as DEADKEY_LPWSTR,
-    (&[0x02d9u16, 0xdcbeu16, 0x0052u16, 0x0050u16, 0x0055u16, 0x004eu16, 0x004bu16, 0x0054u16, 0x0000u16]).as_ptr() as DEADKEY_LPWSTR,
+    wstr!("\u{2d9}\u{dc}BERPUNKT").as_ptr() as DEADKEY_LPWSTR,
     wstr!("^ZIRKUMFLEX").as_ptr() as DEADKEY_LPWSTR,
     wstr!("\u{2dd}DOPPELAKUT").as_ptr() as DEADKEY_LPWSTR,
     wstr!("\u{2c7}HATSCHEK").as_ptr() as DEADKEY_LPWSTR,
