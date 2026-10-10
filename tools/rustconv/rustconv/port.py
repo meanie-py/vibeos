@@ -456,6 +456,12 @@ def stage_island(stem: str) -> None:
             f"gen_driver_types.sh {stem} failed (rc {proc.returncode}); log {log}\n{tail}"
         )
     print(f"island: {', '.join(islands)}")
+    generated = _crate_dir(state) / "src" / stem / "cpp_classes.rs"
+    if state.get("cppapp") and generated.is_file():
+        # A re-island (resolve widening the allowlist does one) brings bindgen's copies of
+        # the module's classes back; cpp_classes.rs stays their one definition.
+        deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated.read_text())
+        print(f"island: {len(deferred)} class(es) deferred to cpp_classes.rs")
 
 
 def stage_scaffold(module_dir: Path, target: str | None) -> None:
@@ -2796,6 +2802,14 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     prelude = crate / "src" / "prelude.rs"
     workspace = REPO / "sdk" / "lib" / "rust"
     pending = _c_defined_names([REPO / t for t in state["tus"]])
+    if state.get("cppapp"):
+        # C++: a text scan of the TUs reads class members (`HDC GetDC()` inside a class) as
+        # module functions, and then refused to import user32's GetDC. The class model knows
+        # which definitions are FREE functions.
+        from . import cpp_model
+
+        app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+        pending = {f.name for f in app.functions}
     shared = set().union(*prelude_resolve.shared_provides(workspace).values())
     # A name that is a function-like MACRO to this module's own preprocessor is never an
     # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:

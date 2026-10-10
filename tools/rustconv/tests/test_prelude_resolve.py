@@ -368,3 +368,16 @@ def test_long_ptr_aliases_are_winapi_even_when_clang_saw_a_macro():
     )
     assert 'extern "system" {' in block and 'extern "C"' not in block
     assert 'link_name = "GetWindowLongW"' in block
+
+
+def test_an_extern_static_is_copied_from_the_island():
+    """uuid's GUID_NULL: an island `static GUID_NULL: GUID;` beats a crate's const copy."""
+    from rustconv.prelude_resolve import Item, consensus, render
+
+    items = [
+        Item("static", "static GUID_NULL: GUID;", '"C"', "audiosrv-rust/src/types_i386.rs"),
+        Item("const", "const GUID_NULL: GUID = GUID { Data1: 0 };", None, "x-rust/src/lib.rs"),
+    ]
+    pick, why = consensus("GUID_NULL", items)
+    assert pick is items[0], why
+    assert 'extern "C" {\n    pub static GUID_NULL: GUID;' in render({"GUID_NULL": pick})

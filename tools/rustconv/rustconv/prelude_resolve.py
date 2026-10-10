@@ -276,6 +276,12 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
                 if m and m.group(1) in present:
                     found[m.group(1)].append(Item("fn", _norm(decl), abi, rel))
+                    continue
+                # An extern DATA symbol (uuid's `static GUID_NULL: GUID;`).
+                m = re.search(r"\bstatic\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:[^;]+;", decl)
+                if m and m.group(1) in present:
+                    text = re.sub(r"^.*?\bstatic\b", "static", _norm(decl))
+                    found[m.group(1)].append(Item("static", text, abi, rel))
         for name, decl, abi in exported_definitions(src, present):
             found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
@@ -362,6 +368,15 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     """
     consts = [i for i in items if i.kind == "const"]
     fns = [i for i in items if i.kind == "fn" and not _placeholder_decl(i)]
+    statics = [i for i in items if i.kind == "static"]
+    if statics and not fns:
+        # An extern DATA symbol: the island's declaration is the header's own transcript. It
+        # outranks a crate's `const GUID_NULL: GUID = ..` copy, which is not the symbol.
+        voters = [i for i in statics if _is_bindgen(i.path)] or statics
+        types = {re.sub(r"\s+", "", i.text.split(":", 1)[1]) for i in voters}
+        if len(types) != 1:
+            return None, f"extern static type disagreement ({len(types)} types)"
+        return _most_common(voters), ""
     if consts and not fns:
         literal = [i for i in consts if const_value(i) is not None]
         values = {const_value(i) for i in literal}
@@ -1240,7 +1255,7 @@ def render(copied: dict[str, Item]) -> str:
     consts = [i for i in copied.values() if i.kind in ("const", "type")]
     fns: dict[str, list[Item]] = {}
     for i in copied.values():
-        if i.kind == "fn":
+        if i.kind in ("fn", "static"):
             fns.setdefault(i.abi or '"C"', []).append(i)
     out = [BEGIN]
     for i in sorted(consts, key=lambda i: i.text):
@@ -1248,7 +1263,11 @@ def render(copied: dict[str, Item]) -> str:
     for abi, items in sorted(fns.items()):
         out.append(f"extern {abi} {{")
         for i in sorted(items, key=lambda i: i.text):
-            text = i.text if i.text.startswith("fn") else re.sub(r"^.*?\bfn\b", "fn", i.text)
+            text = (
+                i.text
+                if i.text.startswith(("fn", "static"))
+                else re.sub(r"^.*?\bfn\b", "fn", i.text)
+            )
             out.append(f"{_x86_alias(text)}    pub {text} // {i.path}")
         out.append("}")
     out.append(END)
@@ -1284,7 +1303,7 @@ def existing_block(prelude: Path) -> dict[str, Item]:
             continue
         body, _, src = s.partition(" // ")
         body = re.sub(r"^pub\s+", "", body)
-        n = re.search(r"\b(?:const|type|fn)\s+([A-Za-z_]\w*)", body)
+        n = re.search(r"\b(?:const|type|fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)", body)
         if n:
             kind = "fn" if body.startswith("fn") else body.split()[0]
             out[n.group(1)] = Item(kind, body, abi, src)
