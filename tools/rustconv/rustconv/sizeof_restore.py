@@ -45,7 +45,19 @@ def restore(rust: str, c_file: Path, types: set[str]) -> tuple[str, list[str]]:
         new = body
         for t in sorted(wanted):
             pat = re.compile(rf"(?<=[=(,])(\s*){re.escape(t)}(?=\s*(?:as\b|,|\)|;))")
-            new, n = pat.subn(rf"\1core::mem::size_of::<{t}>()", new)
+
+            def sub(m: re.Match[str], t: str = t, text: str = new) -> str:
+                # A macro's first argument is a TYPE slot (`FIELD_OFFSET!(METARECORD, f)`,
+                # `offset_of!(T, f)`): rewriting it handed winegdi and both font drivers a
+                # `size_of::<T>()` where the macro wants the type, breaking the parse.
+                if re.search(r"!\s*\($", text[: m.start()].rstrip(" \t")):
+                    return m.group(0)
+                return f"{m.group(1)}core::mem::size_of::<{t}>()"
+
+            spelled = f"core::mem::size_of::<{t}>()"
+            before = new.count(spelled)
+            new = pat.sub(sub, new)
+            n = new.count(spelled) - before
             if n:
                 fixed.append(f"{name}: sizeof({t}) x{n}")
         if new != body:
