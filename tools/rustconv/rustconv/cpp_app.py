@@ -1290,7 +1290,29 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     names = frozenset(
         re.findall(r"^\s*pub (?:type|struct|union|enum|const|static(?: mut)?) (\w+)", island, re.M)
     )
-    return {k: _flatten_island_ns("\n".join(v), names) for k, v in by_file.items()}
+    return {
+        k: "\n".join(_flatten_island_ns(_apply_using(c, names), names) for c in v)
+        for k, v in by_file.items()
+    }
+
+
+def _apply_using(chunk: str, island_names: frozenset[str]) -> str:
+    """A function-scope `using namespace Gdiplus;` (atlimagedx.h's LoadDx): its bare names
+    (`GpBitmap`, `Status`) are the island's `Gdiplus_GpBitmap`, `Gdiplus_Status`. One chunk
+    is one function, which is exactly the directive's scope; the directive is dropped."""
+    spaces = re.findall(r"\busing\s+namespace\s+([\w:]+)\s*;", chunk)
+    if not spaces:
+        return chunk
+    chunk = re.sub(r"[ \t]*\busing\s+namespace\s+[\w:]+\s*;[ \t]*\n?", "", chunk)
+    prefixes = [n.replace("::", "_") for n in spaces]
+
+    def fix(m: re.Match) -> str:
+        w = m.group(0)
+        if w in island_names:
+            return w
+        return next((f"{p}_{w}" for p in prefixes if f"{p}_{w}" in island_names), w)
+
+    return re.sub(r"(?<![\w:.>])[A-Za-z_]\w*\b", fix, chunk)
 
 
 def _flatten_island_ns(text: str, island_names: frozenset[str]) -> str:
@@ -1318,18 +1340,21 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
     texts = [m.lowered or "" for c in model.classes.values() if not c.external for m in c.methods]
     texts += [t for c in model.classes.values() for m in c.methods for _, t in m.lowered_inits]
     texts += [f.lowered for f in model.functions]
-    # CWindow's own Create/DefWindowProc/... : every module call of those names is a
+    # CWindow's own Create/DefWindowProc/... (below): every module call of those names is a
     # CWindowImpl/CDialogImpl subclass's, answered by its generated glue. Counting them
     # translated ATL's raw CWindow::Create (_U_RECT, _AtlBaseModule) for nothing. A call on a
     # PLAIN CWindow would then be missing, which fails to compile -- loud, never silent.
-    called = set(_CALL_RE.findall("\n".join(texts))) - ATL_IMPL_METHODS
+    called = set(_CALL_RE.findall("\n".join(texts)))
     reached: set[tuple[str, str]] = set()
     while True:
         new = {
             (c.name, m.rust_name)
             for c in ext
             for m in c.methods
-            if m.rust_name in called and (c.name, m.rust_name) not in reached
+            if m.rust_name in called
+            # Only CWindow: CRegKey::Create is a real call (registry.cpp).
+            and not (c.name == "CWindow" and m.rust_name in ATL_IMPL_METHODS)
+            and (c.name, m.rust_name) not in reached
         }
         if not new:
             return reached

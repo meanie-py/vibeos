@@ -58,8 +58,8 @@ impl CImageDx {
     }
     pub unsafe fn GetResolution(&mut self, pImage: *mut GpImage, pxDpi: *mut f32, pyDpi: *mut f32) -> BOOL {
         let this_: *mut Self = self;
-        if get_fn((*CImageDx::_shared()).m_GetImageHorizontalResolution, b"GdipGetImageHorizontalResolution\0".as_ptr() as *const i8) == 0 ||
-            get_fn((*CImageDx::_shared()).m_GetImageVerticalResolution, b"GdipGetImageVerticalResolution\0".as_ptr() as *const i8) == 0
+        if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageHorizontalResolution, b"GdipGetImageHorizontalResolution\0".as_ptr() as *const i8) ||
+            !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageVerticalResolution, b"GdipGetImageVerticalResolution\0".as_ptr() as *const i8)
         {
             return (FALSE) as BOOL;
         }
@@ -75,7 +75,7 @@ impl CImageDx {
     }
     pub unsafe fn SetResolution(&mut self, pBitmap: *mut Gdiplus_GpBitmap, xDpi: f32, yDpi: f32) -> BOOL {
         let this_: *mut Self = self;
-            if get_fn((*CImageDx::_shared()).m_BitmapSetResolution, b"GdipBitmapSetResolution\0".as_ptr() as *const i8) == 0 {
+            if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_BitmapSetResolution, b"GdipBitmapSetResolution\0".as_ptr() as *const i8) {
                 return (FALSE) as BOOL;
             }
     
@@ -86,9 +86,9 @@ impl CImageDx {
         let this_: *mut Self = self;
         (*CImageDx::_shared()).AddRef();
     
-        if get_fn(((*CImageDx::_shared()).m_CreateBitmapFromFile), b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8) == 0 ||
-            get_fn(((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap), b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8) == 0 ||
-            get_fn(((*CImageDx::_shared()).m_DisposeImage), b"GdipDisposeImage\0".as_ptr() as *const i8) == 0
+        if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateBitmapFromFile, b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8) ||
+            !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateHBITMAPFromBitmap, b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8) ||
+            !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8)
         {
             (*CImageDx::_shared()).Release();
             return E_FAIL;
@@ -128,9 +128,9 @@ impl CImageDx {
         let this_: *mut Self = self;
         (*CImageDx::_shared()).AddRef();
     
-        if get_fn((*CImageDx::_shared()).m_CreateBitmapFromHBITMAP, b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8) == 0
-            || get_fn((*CImageDx::_shared()).m_SaveImageToFile, b"GdipSaveImageToFile\0".as_ptr() as *const i8) == 0
-            || get_fn((*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8) == 0
+        if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateBitmapFromHBITMAP, b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8)
+            || !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_SaveImageToFile, b"GdipSaveImageToFile\0".as_ptr() as *const i8)
+            || !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8)
         {
             (*CImageDx::_shared()).Release();
             return E_FAIL;
@@ -194,8 +194,8 @@ impl CImageDx {
         let mut ret: *mut Gdiplus_ImageCodecInfo = core::ptr::null_mut();
         let mut total_size: u32;
     
-        if (get_fn((*CImageDx::_shared()).m_GetImageEncodersSize, b"GdipGetImageEncodersSize\0".as_ptr() as *const i8) == 0)
-            || (get_fn((*CImageDx::_shared()).m_GetImageEncoders, b"GdipGetImageEncoders\0".as_ptr() as *const i8) == 0)
+        if (!CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageEncodersSize, b"GdipGetImageEncodersSize\0".as_ptr() as *const i8))
+            || (!CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageEncoders, b"GdipGetImageEncoders\0".as_ptr() as *const i8))
         {
             *cEncoders = 0;
             return core::ptr::null_mut();
@@ -356,5 +356,21 @@ impl SHARED {
         (*this_).m_DisposeImage = core::mem::zeroed();
         (*this_).m_GetImageEncodersSize = core::mem::zeroed();
         (*this_).m_GetImageEncoders = core::mem::zeroed();
+    }
+}
+
+impl CImageDx {
+    /// atlimagedx.h's member TEMPLATE `template <typename FN_T> static bool get_fn(FN_T& fn,
+    /// const char *name)`, hand-ported (cppapp does not generate templates): resolve `fn`
+    /// from gdiplus.dll on first use. `F` is the field's function-pointer type; FARPROC and
+    /// it are the same size, as the C++ reinterpret_cast assumes.
+    pub unsafe fn get_fn<F: Copy>(fn_: &mut Option<F>, name: *const i8) -> bool {
+        if fn_.is_some() {
+            return true;
+        }
+        let hGdiPlus: HINSTANCE = (*CImageDx::_shared()).Init();
+        let p = GetProcAddress(hGdiPlus as _, name as _);
+        *fn_ = core::mem::transmute_copy(&p);
+        fn_.is_some()
     }
 }

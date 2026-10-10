@@ -31,23 +31,24 @@ impl CMiniatureWindow {
             return (*this_).__base0.m_hWnd;
         }
     
-        let rc: RECT = RECT {
-            left: registrySettings.ThumbXPos as i32,
-            top: registrySettings.ThumbYPos as i32,
-            right: (registrySettings.ThumbXPos + registrySettings.ThumbWidth) as i32,
-            bottom: (registrySettings.ThumbYPos + registrySettings.ThumbHeight) as i32,
+        let mut rc: RECT = RECT {
+            left: registrySettings.ThumbXPos as LONG,
+            top: registrySettings.ThumbYPos as LONG,
+            right: (registrySettings.ThumbXPos + registrySettings.ThumbWidth) as LONG,
+            bottom: (registrySettings.ThumbYPos + registrySettings.ThumbHeight) as LONG,
         };
     
-        let mut strTitle: [WCHAR; 100] = [0 as WCHAR; 100];
+        let mut strTitle: [u16; 100] = [0u16; 100];
         LoadStringW(g_hinstExe, IDS_MINIATURETITLE, strTitle.as_mut_ptr(), (_countof!(strTitle)) as i32);
     
-        let style: u32 = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
-        return (*this_).Create(hwndParent, &mut rc, strTitle.as_mut_ptr(), style, WS_EX_PALETTEWINDOW);
+        let style: DWORD = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME;
+        return (*this_).Create(hwndParent, &mut rc, strTitle.as_mut_ptr(), style, WS_EX_PALETTEWINDOW, 0);
     }
     pub unsafe fn OnMove(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if (*this_).__base0.IsWindowVisible() != 0 && (*this_).__base0.IsIconic() == 0 && (*this_).__base0.IsZoomed() == 0 {
-            let mut rc: CRect = CRect__make_0();
+        if (*this_).__base0.IsWindowVisible() != 0 && !((*this_).__base0.IsIconic() != 0) && !((*this_).__base0.IsZoomed() != 0)
+        {
+            let mut rc = CRect__make_0();
             (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc.__base0));
             registrySettings.ThumbXPos = (rc.__base0.left) as u32;
             registrySettings.ThumbYPos = (rc.__base0.top) as u32;
@@ -56,7 +57,7 @@ impl CMiniatureWindow {
     }
     pub unsafe fn OnSize(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if (*this_).__base0.IsWindowVisible() != 0 && !((*this_).__base0.IsIconic() != 0) && !((*this_).__base0.IsZoomed() != 0) {
+        if (*this_).__base0.IsWindowVisible() != 0 && (*this_).__base0.IsIconic() == 0 && (*this_).__base0.IsZoomed() == 0 {
             let mut rc: CRect = CRect__make_0();
             (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc.__base0));
             registrySettings.ThumbWidth = (rc.Width()) as u32;

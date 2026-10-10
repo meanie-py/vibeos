@@ -134,8 +134,8 @@ impl CTextEditWindow {
         let this_: *mut Self = self;
         let mut rc: RECT = core::mem::zeroed();
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rc));
-        ::MapWindowPoints(core::ptr::null_mut(), (*this_).m_hwndParent, core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
-        ::InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rc), TRUE);
+        MapWindowPoints(core::ptr::null_mut(), (*this_).m_hwndParent, core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
+        InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rc), (TRUE) as BOOL);
     
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rc));
         (*this_).__base0.MapWindowPoints__0((canvasWindow).op_to_HWND(), core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
@@ -436,7 +436,7 @@ impl CTextEditWindow {
         let nHitTest: UINT = (LOWORD!(lParam)) as u32;
         if nHitTest == HTCAPTION
         {
-            SetCursor(::LoadCursorW(core::ptr::null_mut(), (IDC_SIZEALL as usize) as LPCWSTR)); // Enable drag move
+            SetCursor(LoadCursorW(core::ptr::null_mut(), (IDC_SIZEALL as usize) as LPCWSTR)); // Enable drag move
             return (FALSE) as LRESULT;
         }
         return (*this_).DefWindowProc(nMsg, wParam, lParam);

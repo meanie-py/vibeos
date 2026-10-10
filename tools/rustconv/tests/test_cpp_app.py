@@ -541,3 +541,11 @@ def test_a_cpp_global_qualifier_is_not_a_crate_path():
     assert cpp_app.drop_global_qualifier(rs) == (
         "if IsWindow(h) != 0 { ::core::ptr::null::<u8>(); x.f(GetDC(h)); }"
     )
+
+
+def test_a_function_scope_using_namespace_maps_bare_names_to_the_island():
+    from rustconv.cpp_app import _apply_using
+
+    chunk = "void f(){\n    using namespace Gdiplus;\n    GpBitmap *p = NULL; x.GpBitmap;\n}"
+    out = _apply_using(chunk, frozenset({"Gdiplus_GpBitmap"}))
+    assert out == "void f(){\n    Gdiplus_GpBitmap *p = NULL; x.GpBitmap;\n}"

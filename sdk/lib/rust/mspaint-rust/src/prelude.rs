@@ -443,7 +443,7 @@ pub(crate) use DEG2RAD;
 #[macro_export] macro_rules! MAKELPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM) }; }
 #[macro_export] macro_rules! MAKEROP4 { ($p0:expr, $p1:expr $(,)?) => { ((((($p1 << 8) & 0xFF000000) | $p0)) as DWORD) }; }
 #[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; }
-#[macro_export] macro_rules! SetWindowFont { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { { let _ = (({ $p0; 48; (($p1) as WPARAM); (((($p2) as BOOL)) as LPARAM) }) as SendMessageW); } }; }
+#[macro_export] macro_rules! SetWindowFont { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { { let _ = SendMessageW((($p0) as _), ((48) as _), (($p1) as WPARAM), (((($p2) as BOOL)) as LPARAM)); } }; }
 #[macro_export] macro_rules! va_end { ($p0:expr $(,)?) => { __builtin_va_end((($p0) as _)) }; }
 #[macro_export] macro_rules! va_start { ($p0:expr, $p1:expr $(,)?) => { __builtin_va_start((($p0) as _), (($p1) as _)) }; }
 pub const HWND_DESKTOP: HWND = 0x0usize as HWND;

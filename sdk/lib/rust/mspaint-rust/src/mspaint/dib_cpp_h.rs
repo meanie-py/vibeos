@@ -221,7 +221,7 @@ pub unsafe extern "C" fn SetFileInfo(name: LPCWSTR, pFound: LPWIN32_FIND_DATAW, 
             core::ptr::null_mut(),
         );
         // The following code won't work correctly when (name == g_szFileName):
-        //   ::GetFullPathNameW(name, _countof(g_szFileName), g_szFileName, NULL);
+        //   GetFullPathNameW(name, _countof(g_szFileName), g_szFileName, NULL);
     } else {
         LoadStringW(
             g_hinstExe,

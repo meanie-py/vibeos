@@ -9,23 +9,12 @@ use core::ffi::c_void;
 impl CFullscreenWindow {
     pub unsafe fn DoCreate(&mut self) -> HWND {
         let this_: *mut Self = self;
-        if !(*this_).__base0.m_hWnd.is_null() {
+        if (*this_).__base0.m_hWnd as usize != 0 {
             return (*this_).__base0.m_hWnd;
         }
     
-        let rc = RECT {
-            left: 0,
-            top: 0,
-            right: 0,
-            bottom: 0,
-        }; // Rely on SW_SHOWMAXIMIZED
-        return (*this_).Create(
-            HWND_DESKTOP,
-            &mut rc,
-            core::ptr::null_mut(),
-            WS_POPUPWINDOW,
-            WS_EX_TOPMOST,
-        );
+        let mut rc: RECT = RECT { left: 0, top: 0, right: 0, bottom: 0 }; // Rely on SW_SHOWMAXIMIZED
+        return (*this_).Create(HWND_DESKTOP, &mut rc, core::ptr::null_mut(), WS_POPUPWINDOW, WS_EX_TOPMOST, 0);
     }
     pub unsafe fn OnCreate(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;

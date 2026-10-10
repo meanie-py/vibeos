@@ -14,7 +14,7 @@ impl SelectionModel {
         let this_: *mut Self = self;
         (*this_).m_hbmColor = core::ptr::null_mut();
         (*this_).m_hbmMask = core::ptr::null_mut();
-        (*this_).m_rgbBack = RGB!(255, 255, 255);
+        (*this_).m_rgbBack = RGB;
         (*this_).m_bShow = (FALSE) as i32;
         (*this_).m_bContentChanged = (FALSE) as i32;
         {
@@ -30,7 +30,7 @@ impl SelectionModel {
     }
     pub unsafe fn SetRectFromPoints(&mut self, ptFrom: &POINT, ptTo: &POINT) {
         let this_: *mut Self = self;
-        (*this_).m_rc = CRect__make_5(*ptFrom, *ptTo);
+        (*this_).m_rc = CRect__make_5(ptFrom, ptTo);
         (*this_).m_rc.NormalizeRect();
     }
     pub unsafe fn setMask(&mut self, rc: &CRect, hbmMask: HBITMAP) {
@@ -140,7 +140,7 @@ impl SelectionModel {
         rcSelection = (*this_).m_rc;
         canvasWindow.ImageToCanvas__1((rcSelection).__base0);
         rcSelection.InflateRect__0((GRIP_SIZE as i32), (GRIP_SIZE as i32));
-        drawSizeBoxes(hCanvasDC, core::ptr::addr_of!(rcSelection.__base0) as LPCRECT, (TRUE) as BOOL, core::ptr::null());
+        drawSizeBoxes(hCanvasDC, core::ptr::addr_of_mut!(rcSelection.__base0), (TRUE) as BOOL, core::ptr::null_mut());
     }
     pub unsafe fn moveSelection(&mut self, xDelta: INT, yDelta: INT) {
         let this_: *mut Self = self;
@@ -365,7 +365,7 @@ impl SelectionModel {
             AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), SkewDIB(hDC, hbmMask, nSkewDegX, (FALSE) as BOOL, (TRUE) as BOOL));
             SelectObject(hDC, hbmOld);
         }
-
+    
         if nSkewDegY != 0 {
             hbmOld = SelectObject(hDC, (hbmColor).cast());
             AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), SkewDIB(hDC, hbmColor, nSkewDegY, (TRUE) as BOOL, (FALSE) as BOOL));
