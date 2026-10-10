@@ -433,6 +433,8 @@ unsafe extern "C" fn AmdSetTransferMode(mut Controller: PATA_CONTROLLER, mut Cha
 unsafe extern "C" fn AmdControllerStart(mut Controller: PATA_CONTROLLER) {
     let mut ConfigReg: UCHAR;
 
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_AMD);
+
     /* Initialize controller before issuing the identify command */
     ConfigReg = PciRead8(Controller, AMD_REG_CONFIG_PREFETCH!(AMD_CONFIG_BASE));
     ConfigReg &= (!(AMD_CONFIG_PREFETCH!(0) | AMD_CONFIG_PREFETCH!(1))) as u8;
@@ -479,6 +481,7 @@ pub unsafe extern "C" fn AmdGetControllerProperties(
     let mut SupportedMode: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_AMD || (*Controller).Pci.VendorID as u32 == PCI_VEN_NVIDIA);
 
     i = 0;
     while i < RTL_NUMBER_OF!(AmdControllerList) {

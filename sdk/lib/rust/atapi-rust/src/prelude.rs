@@ -595,6 +595,7 @@ pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrint
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
+pub const ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE: u32 = 0x426F6541; // acpiioct.h 'BoeA' (pciidex's clang fact), dev_config.c ASSERT
 pub const ATAPORT_TAG: u32 = 0x50656449; // clang, atapi.c
 pub const ATA_DEVICE_REQUEST_SIGNATURE: u32 = 0x72415441; // clang, fdo.c
 pub const IOCTL_ATA_PASS_THROUGH: u32 = 0x4D02C; // clang, ioctl.c
@@ -866,6 +867,13 @@ pub unsafe fn AtaPacketCommandUseDma(OpCode: UCHAR) -> BOOLEAN {
      (OpCode) as u32 == SCSIOP_WRITE16 ||
      (OpCode) as u32 == SCSIOP_READ_CD ||
      (OpCode) as u32 == SCSIOP_READ_CD_MSF)) as u8
+}
+// drivers/storage/ide/atapi/atapi.h:603: header-inline `IsPowerOfTwo` -- its only caller is
+// scsi.c's AtaReqAllocateSlot ASSERT. Zero is excluded, as in the C.
+#[allow(dead_code)]
+#[inline]
+pub fn IsPowerOfTwo(x: ULONG) -> BOOLEAN {
+    ((x != 0) && ((x & x.wrapping_sub(1)) == 0)) as u8
 }
 // drivers/storage/ide/atapi/atapi.h:567: header-inline `AtaPortQueueEmpty`
 #[allow(dead_code)]

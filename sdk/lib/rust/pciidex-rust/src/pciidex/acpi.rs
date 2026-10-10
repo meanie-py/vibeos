@@ -61,6 +61,8 @@ unsafe extern "C" fn AtaAcpiEvaluateObject(
         );
 
         if !OutputBuffer.is_null() && NT_SUCCESS!(Status) {
+            ASSERT!((*OutputBuffer).Signature == ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE);
+
             if (*OutputBuffer).Signature != ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE
                 || (*OutputBuffer).Count == 0
             {
@@ -105,6 +107,8 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
     );
 
     if !NT_SUCCESS!(Status) {
+        ASSERT!(Status != STATUS_BUFFER_OVERFLOW);
+
         return FALSE;
     }
 
@@ -240,6 +244,8 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
     let mut Status: NTSTATUS = 0;
 
     PAGED_CODE!();
+    // C: `PsGetCurrentProcess()`, which psfuncs.h defines as IoGetCurrentProcess.
+    ASSERT!(crate::types::IoGetCurrentProcess() == PsInitialSystemProcess);
 
     InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 1179928415u32;
     InputBuffer.Signature = ACPI_EVAL_INPUT_BUFFER_SIGNATURE;
@@ -327,6 +333,8 @@ pub unsafe extern "C" fn AtaAcpiSetDeviceData(
     let mut InputSize: ULONG = 0;
 
     PAGED_CODE!();
+    // C: `PsGetCurrentProcess()`, which psfuncs.h defines as IoGetCurrentProcess.
+    ASSERT!(crate::types::IoGetCurrentProcess() == PsInitialSystemProcess);
 
     InputSize = (FIELD_OFFSET!(ACPI_EVAL_INPUT_BUFFER_COMPLEX, Argument) as usize
         + ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<IDENTIFY_DEVICE_DATA>()))

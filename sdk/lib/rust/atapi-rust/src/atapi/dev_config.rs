@@ -207,6 +207,8 @@ unsafe extern "C" fn AtaDeviceExecuteAcpiTaskFile(
         return STATUS_SUCCESS;
     }
 
+    ASSERT!((*GtfDataBuffer).Signature == ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE);
+
     AcpiTaskFile = ((*GtfDataBuffer).Argument[0].__bindgen_anon_1.Data).as_mut_ptr() as PATA_ACPI_TASK_FILE;
 
     i = 0;

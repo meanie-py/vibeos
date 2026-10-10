@@ -1300,6 +1300,7 @@ pub unsafe extern "C" fn AtaAhciIdentifyDevice(ChannelContext: PVOID, DeviceNumb
             return (ConnectionStatus) as ATA_CONNECTION_STATUS;
         }
     } else {
+        ASSERT!(DeviceNumber == 0);
     }
 
     Signature = AHCI_PORT_READ((*ChanData).IoBase, PxSignature);
@@ -1463,6 +1464,9 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
                     != 0) as u8,
             );
             Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
+            ASSERT!(Request);
+            ASSERT!((*Request).Slot == FailedSlot);
+            ASSERT!((*Request).Flags & REQUEST_FLAG_NCQ);
             break 'done;
         }
 
@@ -1497,6 +1501,8 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
         );
 
         Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
+        ASSERT!(Request);
+        ASSERT!((*Request).Slot == FailedSlot);
 
         (*Request).SrbStatus = (SRB_STATUS_ERROR as u8);
         (*Request).Output.__bindgen_anon_1.Status = ((TaskFileData & AHCI_PXTFD_STATUS_MASK)) as u8;
