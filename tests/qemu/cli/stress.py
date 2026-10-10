@@ -46,7 +46,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import archcfg, provenance
+from . import archcfg, pcsample, provenance
 from .artifacts import Run
 from .farm import _extract_evidence, _git_state, _preserve_failure
 from .smoke import _one_boot
@@ -204,6 +204,7 @@ _KNOB_ENV = (
     "VIBEOS_TCG_THREAD",
     "VIBEOS_BOOT_TIMEOUT_SCALE",
     "VIBEOS_QEMU_SMP",
+    pcsample.SAMPLE_ENV_VAR,
 )
 
 
@@ -282,6 +283,17 @@ def _boot(repo: Path, arch: str, profile: Profile, idx: int, sha: str, dirty: bo
         "timings": r.get("timings", {}),
     }
     rec.update(_extract_evidence(run.dir, rec["salient"]))
+    samples = run.dir / "boot0" / pcsample.SAMPLES_FILE
+    if samples.is_file():
+        serial = run.dir / "boot0" / "serial.log"
+        try:
+            lines = pcsample.report(
+                repo, arch, samples, serial.read_text(errors="replace") if serial.is_file() else ""
+            )
+        except FileNotFoundError as exc:  # no symbol index: say so, keep the raw samples
+            lines = [f"[pc-sample] {exc}"]
+        (run.dir / "pcsample.txt").write_text("\n".join(lines) + "\n")
+        rec["pc_sample"] = lines
     if not rec["ok"]:
         rec["preserved"] = _preserve_failure(run.dir, rec)
     return rec
@@ -355,6 +367,12 @@ def stress(args, repo: Path) -> int:
         print(f"[stress] {arch}: STALE media — build first (or --allow-stale)")
         return 1
     plan = profiles(args)
+    period = getattr(args, "sample_pcs", None)
+    if period:
+        if not 0.05 <= float(period) <= 60:
+            raise SystemExit(f"stress: --sample-pcs {period}: want 0.05..60 seconds")
+        for p in plan:
+            p.env[pcsample.SAMPLE_ENV_VAR] = str(period)
     sha, dirty = _git_state(repo)
     root = Run("stress", arch)
     rows_path = root.dir / "rows.jsonl"
@@ -368,6 +386,8 @@ def stress(args, repo: Path) -> int:
         for i in range(1, repeat + 1):
             rec = _boot(repo, arch, profile, i, sha, dirty)
             rows.append(rec)
+            for line in rec.get("pc_sample", []):
+                print(line, flush=True)
             with rows_path.open("a") as f:
                 f.write(json.dumps(rec) + "\n")
             state = "ok" if rec["ok"] else (rec["classification"] or rec["outcome"])
