@@ -1235,6 +1235,8 @@ def _crate_uses_float(crate: str) -> bool:
     from tools.source_walk import source_files
 
     src = REPO / "sdk" / "lib" / "rust" / crate / "src"
+    if not src.is_dir():
+        return False
     return any(
         re.search(r"\b(?:f32|f64)\b", p.read_text(errors="replace"))
         for p in source_files(src)
