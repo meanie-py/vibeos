@@ -138,6 +138,7 @@ def _installed_args(self, work_dir: Path) -> list[str]:
 def _stage(arch: str, disk: Path, installed: bool) -> ArchConfig:
     """The arch's smoke config with the install stage's media, marker and budgets."""
     base = vm_mod.ARCH_CONFIGS[arch]
+    assert isinstance(base, type), f"{arch}: ARCH_CONFIGS entry is not a config class"
     cls = type(
         f"_{'Installed' if installed else 'Setup'}Stage",
         (base,),
