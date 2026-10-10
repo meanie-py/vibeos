@@ -595,6 +595,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
+  32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
+  the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
+  (`queue-batch-01791615634859147470`, rejecting a89a87f06a30), and twice on arm64 in
+  `flake-report`; the same tree then passed 6/6 `smoke --arch amd64 --ladder`, and the rung
+  passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
+  wait's alertable check is the first place to look.
+
 - **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
   the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
   translating ndis: nothing else on our media reaches NDIS
@@ -611,16 +619,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
   hand; (1) is why the payload uses the e1000.
 
-- **x86 conformance never runs the kmtests that write a file** (OPEN, found 2026-10-09,
-  conformance lane). i386/amd64 conformance boots the livecd, so `\SystemRoot` is read-only
-  CDFS and every kmtest that creates a file there fails setup with `0xc0000022` and bails:
-  ZwCreateSection runs 9 assertions on x86 vs 330 on arm64 (writable FAT ramdisk), MmSection
-  ~90 vs ~370, and the file halves of ZwMapViewOfSection/IoFilesystem likewise. The shared-MM
-  bugs arm64 surfaced (the dropped view-protection checks in `MmMapViewOfSection`, fixed) were
-  invisible on x86 for exactly this reason. Fix owed: give x86 conformance a writable system
-  volume (boot the installed disk, or a writable ramdisk like arm64's) and re-seed the x86 rows,
-  which will move a lot of them; see the field manual's "A conformance score is not a defect
-  count".
+- **x86 conformance never runs the kmtests that write a file** (amd64 FIXED 2026-10-10;
+  i386 OPEN; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+  kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` now derives
+  `livecd-rw.iso` (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`)
+  and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
+  on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
+  i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
+  **i386 still boots the CD:** on the writable root it bugchecks, differently per run: 0x1A
+  in `MmDeleteRmap` (a system-space view unmapping a page its segment does not record, under
+  win32k's font load), and 0x23 -> 0xA in fastfat during `NtFlushBuffersFile`. Nothing else
+  in the fleet writes a FAT volume on i386, so expect more than one bug. Repro:
+  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; then add i386 to
+  `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
@@ -1263,6 +1275,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
     --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
     read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
+    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
+    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
+    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
+    0/20, so the run says nothing about whether that fix touches this hang -- and the
+    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
+    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -1389,6 +1407,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
     still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
     pci.sys, so they are unreached there.
+  - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
+    2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
+    assigns them, so a legacy detector that runs first sees free ports: legide's
+    IoReportResourceForDetection (a real Silent=TRUE check) ran before PIIX was added and
+    took 0x1F0 (i386 `smoke --isa-ide` run 20261009-204110, before the 0x1F0/0x170 skip;
+    PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
+    boot configs through its arbiters at enumeration. Not a one-line fix: the map check
+    cannot tell the requesting device from the owner, so writing a PDO's boot config there
+    makes its own later assignment conflict. Belongs with the arbiter work above.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and

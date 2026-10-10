@@ -580,6 +580,8 @@ unsafe fn FdoStartDevice(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     (*device_extension).DeviceListCount = 0;
     (*device_extension).State = dsStarted;
 
+    crate::irqroute::fdo_query_routing(DeviceObject);
+
     ExInterlockedInsertTailList(
         &mut (*DriverExtension).BusListHead,
         &mut (*device_extension).ListEntry,

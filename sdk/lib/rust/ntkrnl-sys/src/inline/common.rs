@@ -1023,33 +1023,6 @@ extern "C" {
 
 #[cfg(target_arch = "x86_64")]
 extern "C" {
-    #[link_name = "__imp_InitSafeBootMode"]
-    static InitSafeBootMode_imp: *const ULONG;
-}
-#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-extern "C" {
-    #[link_name = "InitSafeBootMode"]
-    static InitSafeBootMode_data: ULONG;
-}
-
-/// ntoskrnl's `InitSafeBootMode` DATA export (`@ extern` in ntoskrnl.spec), read from a
-/// DRIVER through its import slot -- a plain `extern static` of the name is an undefined
-/// symbol at a driver's link (pciidex.sys's safe-boot check).
-#[inline(always)]
-pub unsafe fn InitSafeBootModeValue() -> ULONG {
-    #[cfg(target_arch = "x86_64")]
-    {
-        *InitSafeBootMode_imp
-    }
-    #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-    {
-        core::ptr::addr_of!(InitSafeBootMode_data).read_volatile()
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-extern "C" {
     #[link_name = "__imp_KeNumberProcessors"]
     static KeNumberProcessors_imp: *const i8;
 }
@@ -1061,7 +1034,7 @@ extern "C" {
 }
 
 /// `KeNumberProcessors` (a `CCHAR` DATA export, `@ extern` in ntoskrnl.spec) read by a DRIVER
-/// through its import, as InitSafeBootModeValue is: a plain `extern static` of the name links
+/// through its import: a plain `extern static` of the name links
 /// on amd64 only by accident and is undefined on i386/arm64 (ndis.sys).
 #[inline(always)]
 pub unsafe fn KeNumberProcessorsValue() -> i8 {

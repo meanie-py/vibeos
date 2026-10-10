@@ -484,6 +484,43 @@ def _maybe_smp_iso(iso: Path, work_dir: Path) -> Path:
     return smp_selected_iso(iso, work_dir) if smp_count() else iso
 
 
+def writable_root() -> bool:
+    """`VIBEOS_WRITABLE_ROOT=1`: boot x86 off a writable FAT ramdisk instead of the CD.
+
+    The plain livecd puts SystemRoot on read-only CDFS, so a guest that writes a file
+    there (most of the file/section kmtests) fails with ACCESS_DENIED and skips the
+    rest of its test. arm64 always boots a writable ramdisk. Conformance sets this.
+    """
+    return os.environ.get("VIBEOS_WRITABLE_ROOT", "").strip() == "1"
+
+
+def livecd_media(build_dir: Path) -> Path:
+    """The x86 boot ISO: livecd.iso, or its writable-root twin (tools/conformance/
+    mk_writable_livecd.py, rebuilt only when livecd.iso changes) under writable_root()."""
+    iso = build_dir / "livecd.iso"
+    if not writable_root():
+        return iso
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "mk_writable_livecd", PROJECT_DIR / "tools" / "conformance" / "mk_writable_livecd.py"
+    )
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.ensure(build_dir)
+
+
+def livecd_memory(memory: str) -> str:
+    """The whole ramdisk is loaded into guest RAM (~300-430MB) and the file cache sits on
+    top of it, so the writable-root boot gets 2G; the plain livecd keeps its configured
+    size. At 1G amd64 ran short: MmAllocatePagesForMdl got 166 of 512 pages (MmMdl
+    594/0 -> 211/7) and RtlException's stack-overflow probe took IN_PAGE_ERROR instead."""
+    if writable_root() and memory.upper().endswith("M") and int(memory[:-1]) < 2048:
+        return "2G"
+    return memory
+
+
 # --- `vibeos-cli stress` knobs ------------------------------------------------
 #
 # "Host load" is three different mechanisms, and each has a deterministic QEMU
@@ -1031,7 +1068,7 @@ class I386UefiConfig(I386Config):
     arch: str = "i386-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-i386" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-i386"), work_dir)
         ovmf_code = QEMU_DIR / "OVMF32_CODE.fd"
         ovmf_vars_src = QEMU_DIR / "OVMF32_VARS.fd"
         # The writable VARS pflash must be qcow2: QMP savevm refuses to
@@ -1049,7 +1086,7 @@ class I386UefiConfig(I386Config):
         return [
             *self.machine_args,
             "-m",
-            self.memory,
+            livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",
@@ -1264,7 +1301,7 @@ class Amd64UefiConfig(Amd64Config):
     arch: str = "amd64-uefi"
 
     def qemu_args(self, work_dir: Path) -> list[str]:
-        iso = _maybe_smp_iso(PROJECT_DIR / "build-amd64" / "livecd.iso", work_dir)
+        iso = _maybe_smp_iso(livecd_media(PROJECT_DIR / "build-amd64"), work_dir)
         ovmf_code = Path("/usr/share/OVMF/OVMF_CODE_4M.fd")
         ovmf_vars_src = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
         # Writable VARS pflash must be qcow2 for QMP savevm (raw is rejected).
@@ -1290,7 +1327,7 @@ class Amd64UefiConfig(Amd64Config):
         return [
             *machine,
             "-m",
-            "6G" if "mem" in hazards else self.memory,
+            "6G" if "mem" in hazards else livecd_memory(self.memory),
             "-drive",
             f"if=pflash,format=raw,file={ovmf_code},readonly=on",
             "-drive",

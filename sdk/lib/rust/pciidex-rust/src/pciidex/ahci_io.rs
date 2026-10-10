@@ -145,6 +145,8 @@ pub unsafe extern "C" fn AtaAhciPrepareIo(ChannelContext: PVOID, Request: PATA_D
     Control |= DEV_NUMBER!((*Request).Device) << AHCI_COMMAND_HEADER_PMP_SHIFT;
 
     if (*Request).Flags & (REQUEST_FLAG_DATA_IN | REQUEST_FLAG_DATA_OUT) != 0 {
+        ASSERT!((*Request).Flags & REQUEST_FLAG_HAS_SG_LIST);
+
         Control |= (*(*Request).SgList).NumberOfElements << AHCI_COMMAND_HEADER_PRDT_LENGTH_SHIFT;
 
         if (*Request).Flags & REQUEST_FLAG_DATA_OUT != 0 {
@@ -190,11 +192,18 @@ pub unsafe extern "C" fn AtaAhciPreparePrdTable(ChannelContext: PVOID, Request: 
     let Is64BitDma: u8 = ((*((*ChanData).__bindgen_anon_1.Controller)).AhciCapabilities & AHCI_CAP_S64A != 0) as u8;
 
     ASSUME!((*SgList).NumberOfElements > 0);
+    ASSERT!((*SgList).NumberOfElements < AHCI_MAX_PRDT_ENTRIES);
 
     PrdTableEntry = (*(*(*ChanData).CommandTable.as_ptr().offset((*Request).Slot as isize))).PrdTable.as_ptr() as *mut AHCI_PRD_TABLE_ENTRY;
 
     i = 0;
     while i < (*SgList).NumberOfElements {
+        ASSERT!((*(*SgList).Elements.as_ptr().offset(i as isize)).Length != 0);
+        ASSERT!((*(*SgList).Elements.as_ptr().offset(i as isize)).Length < AHCI_MAX_PRD_LENGTH);
+        ASSERT!(((*(*SgList).Elements.as_ptr().offset(i as isize)).Length & ATA_MIN_BUFFER_ALIGNMENT) == 0);
+        ASSERT!(Is64BitDma != 0 || ((*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.HighPart == 0));
+        ASSERT!(i < (*ChanData).__bindgen_anon_1.MaximumPhysicalPages);
+
         (*PrdTableEntry).DataBaseLow = (*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.LowPart;
         (*PrdTableEntry).DataBaseHigh = ((*(*SgList).Elements.as_ptr().offset(i as isize)).Address.__bindgen_anon_1.HighPart) as u32;
         (*PrdTableEntry).ByteCount = (*(*SgList).Elements.as_ptr().offset(i as isize)).Length - 1;
@@ -246,6 +255,8 @@ unsafe extern "C" fn AtaAhciPortCompleteCommands(
         CommandsCompleted &= !(1 << Slot);
 
         Request = *(*ChanData).__bindgen_anon_1.Slots.offset(Slot as isize);
+        ASSERT!(Request);
+        ASSERT!((*Request).Slot == Slot);
 
         SrbStatus = (SRB_STATUS_SUCCESS as u8);
 

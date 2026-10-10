@@ -17,6 +17,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "acgenral-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "aclayers-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "aclui-rust"
 version = "0.1.0"
 dependencies = [
@@ -149,6 +169,16 @@ dependencies = [
 [[package]]
 name = "atlclasses-rust"
 version = "0.1.0"
+
+[[package]]
+name = "audiosrv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "authz-rust"
@@ -1122,6 +1152,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "kbdlayouts-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "kd-rust"
 version = "0.1.0"
 dependencies = [
@@ -1357,6 +1395,16 @@ name = "log"
 version = "0.4.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "953f07c43838f8e6f9758cab68bf5bed85465e7587ebe0b823f1bcd81978ad3a"
+
+[[package]]
+name = "logonui-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "loom"
@@ -2519,6 +2567,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "schedsvc-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "scoped-tls"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3304,6 +3362,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "w32time-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "win32k-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3402,6 +3470,16 @@ dependencies = [
 [[package]]
 name = "winlogon-sys"
 version = "0.1.0"
+
+[[package]]
+name = "winprint-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "winreg-stub"

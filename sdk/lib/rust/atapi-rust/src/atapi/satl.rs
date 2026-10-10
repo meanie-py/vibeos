@@ -88,6 +88,9 @@ pub unsafe extern "C" fn AtaReqDmaTransferToPioTransfer(
 ) -> BOOLEAN {
     let Device: PATAPORT_IO_CONTEXT = (*Request).Device as PATAPORT_IO_CONTEXT;
 
+    ASSERT!(((*Device).DeviceFlags & DEVICE_PIO_VIA_DMA) == 0);
+    ASSERT!((*Request).Flags & REQUEST_DMA_FLAGS);
+
     if (*Request).Flags & REQUEST_FLAG_PACKET_COMMAND != 0 {
         (*Request).Flags &= !REQUEST_DMA_FLAGS;
         return TRUE;
@@ -212,6 +215,8 @@ pub unsafe extern "C" fn AtaReqSetFixedAtaSenseData(
     let mut ASK: UCHAR = core::mem::zeroed();
     let mut ASCQ: UCHAR = core::mem::zeroed();
 
+    ASSERT!(((*Request).SrbStatus as u32 & SRB_STATUS_AUTOSENSE_VALID as u32) == 0);
+
     if ((AtaReqTranslateFixedError(
         Request,
         &mut SK,
@@ -244,6 +249,7 @@ unsafe extern "C" fn AtaReqCopySatlBuffer(
     let mut BytesCount: ULONG;
 
     Mdl = (*(*Request).Irp).MdlAddress;
+    ASSERT!(Mdl);
 
     BaseAddress = MmGetSystemAddressForMdlSafe(Mdl, HighPagePriority);
     if BaseAddress.is_null() {
@@ -288,6 +294,9 @@ pub unsafe extern "C" fn AtaReqTerminateInvalidFieldParameter(
 
 unsafe extern "C" fn AtaReqTerminateInvalidRange(mut Srb: PSCSI_REQUEST_BLOCK) -> UCHAR {
     let mut SenseCode: SCSI_SENSE_CODE = { let mut __lit: SCSI_SENSE_CODE = core::mem::zeroed(); __lit.__bindgen_anon_1.SrbStatus = 0; __lit.__bindgen_anon_1.SenseKey = 0; __lit.__bindgen_anon_1.AdditionalSenseCode = 0; __lit.__bindgen_anon_1.AdditionalSenseCodeQualifier = 0; __lit };
+
+    ASSERT!(FALSE);
+
     SenseCode.SrbStatus = (SRB_STATUS_INVALID_REQUEST) as u8;
     SenseCode.SenseKey = (SCSI_SENSE_ILLEGAL_REQUEST) as u8;
     SenseCode.AdditionalSenseCode = (SCSI_ADSENSE_ILLEGAL_BLOCK) as u8;
@@ -350,6 +359,8 @@ unsafe extern "C" fn AtaReqBuildLbaTaskFile(
 ) -> BOOLEAN {
     let mut TaskFile: PATA_TASKFILE = &raw mut (*Request).__bindgen_anon_2.TaskFile;
     let mut DriveSelect: UCHAR = 0;
+
+    ASSERT!(SectorCount <= ATA_MAX_SECTORS_PER_IO);
 
     if SectorCount > ATA_MAX_SECTORS_PER_IO {
         return FALSE;
@@ -436,6 +447,11 @@ unsafe extern "C" fn AtaReqBuildNcqReadWriteTaskFile(
     SectorCount: ULONG,
 ) -> BOOLEAN {
     let TaskFile: PATA_TASKFILE = &raw mut (*Request).__bindgen_anon_2.TaskFile;
+
+    ASSERT!((*(*DevExt).Device.PortData).PortFlags & PORT_FLAG_NCQ);
+    ASSERT!(((*DevExt).Device.DeviceFlags & DEVICE_PIO_ONLY) == 0);
+
+    ASSERT!(SectorCount <= ATA_MAX_SECTORS_PER_IO);
 
     if SectorCount > ATA_MAX_SECTORS_PER_IO {
         return FALSE;

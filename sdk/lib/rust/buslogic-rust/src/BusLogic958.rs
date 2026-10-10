@@ -1325,7 +1325,6 @@ pub unsafe extern "system" fn BT958HwStartIO(
 ) -> BOOLEAN {
 
     const BusLogic_CDB_MaxLength: ::core::ffi::c_int = 12;
-    const BUSLOGIC_MAXIMUM_TAGS: ::core::ffi::c_int = 192;
 
     let mut deviceExtension: PHW_DEVICE_EXTENSION = HwDeviceExtension as PHW_DEVICE_EXTENSION;
     let mut HostAdapter: *mut BusLogic_HostAdapter_T = core::ptr::addr_of_mut!((*deviceExtension).hcs);
@@ -1390,7 +1389,7 @@ pub unsafe extern "system" fn BT958HwStartIO(
             } else if (*TargetFlags).TaggedQueuingActive() as ::core::ffi::c_int != 0
                 && ((*HostAdapter).ActiveCommandsPerLun[(*Srb).TargetId as usize]
                     [(*Srb).Lun as usize] as ::core::ffi::c_int)
-                    < BUSLOGIC_MAXIMUM_TAGS
+                    < BUSLOGIC_MAXIMUM_TAGS as ::core::ffi::c_int
             {
                 ScsiPortNotification(
                     NextLuRequest,
@@ -1438,7 +1437,7 @@ pub unsafe extern "system" fn BT958HwStartIO(
                 if (*TargetFlags).TaggedQueuingActive() as ::core::ffi::c_int != 0
                     && ((*HostAdapter).ActiveCommandsPerLun[(*Srb).TargetId as usize]
                         [(*Srb).Lun as usize] as ::core::ffi::c_int)
-                        < BUSLOGIC_MAXIMUM_TAGS
+                        < BUSLOGIC_MAXIMUM_TAGS as ::core::ffi::c_int
                 {
                     ScsiPortNotification(
                         NextLuRequest,
@@ -1491,7 +1490,7 @@ pub unsafe extern "system" fn BT958HwStartIO(
             if (*TargetFlags).TaggedQueuingActive() as ::core::ffi::c_int != 0
                 && ((*HostAdapter).ActiveCommandsPerLun[(*Srb).TargetId as usize]
                     [(*Srb).Lun as usize] as ::core::ffi::c_int)
-                    < BUSLOGIC_MAXIMUM_TAGS
+                    < BUSLOGIC_MAXIMUM_TAGS as ::core::ffi::c_int
             {
                 ScsiPortNotification(
                     NextLuRequest,

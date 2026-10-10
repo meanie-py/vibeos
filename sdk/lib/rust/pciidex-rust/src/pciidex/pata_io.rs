@@ -8,6 +8,9 @@ pub unsafe extern "C" fn AtaWriteBlock16(
     Count: u32,
     MmioFlags: u32,
 ) {
+    ASSERT!(!Buffer.is_null());
+    ASSERT!(Count != 0);
+
     if MmioFlags != 0 {
         WRITE_REGISTER_BUFFER_USHORT(Port, Buffer, Count);
     } else {
@@ -21,6 +24,9 @@ pub unsafe extern "C" fn AtaReadBlock16(
     Count: u32,
     MmioFlags: u32,
 ) {
+    ASSERT!(!Buffer.is_null());
+    ASSERT!(Count != 0);
+
     if MmioFlags != 0 {
         READ_REGISTER_BUFFER_USHORT(Port, Buffer, Count);
     } else {
@@ -34,6 +40,9 @@ pub unsafe extern "C" fn AtaWriteBlock32(
     Count: ULONG,
     MmioFlags: ULONG,
 ) {
+    ASSERT!(!Buffer.is_null());
+    ASSERT!(Count != 0);
+
     if MmioFlags != 0 {
         WRITE_REGISTER_BUFFER_ULONG(Port, Buffer, Count);
     } else {
@@ -47,6 +56,9 @@ pub unsafe extern "C" fn AtaReadBlock32(
     Count: ULONG,
     MmioFlags: ULONG,
 ) {
+    ASSERT!(!Buffer.is_null());
+    ASSERT!(Count != 0);
+
     if MmioFlags != 0 {
         READ_REGISTER_BUFFER_ULONG(Port, Buffer, Count);
     } else {
@@ -207,6 +219,8 @@ unsafe extern "C" fn PciIdeDmaStart(
     mut Request: PATA_DEVICE_REQUEST,
 ) {
     let mut Command: UCHAR = 0;
+
+    ASSERT!((*Request).Flags & REQUEST_FLAG_HAS_SG_LIST);
 
     /* Transfer direction */
     if (*Request).Flags & REQUEST_FLAG_DATA_IN != 0 {
@@ -552,6 +566,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
                     SrbStatus = (SRB_STATUS_ERROR as u8);
                 } else if (*ChanData).BytesToTransfer != 0 {
+                    ASSERT!((*Request).DataTransferLength >= (*ChanData).BytesToTransfer);
                     (*Request).DataTransferLength =
                         (*Request).DataTransferLength.wrapping_sub((*ChanData).BytesToTransfer);
                     SrbStatus = (SRB_STATUS_DATA_OVERRUN as u8);
@@ -564,6 +579,7 @@ unsafe extern "C" fn PataProcessAtapiRequest(
             if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
                 SrbStatus = (SRB_STATUS_ERROR as u8);
             } else if (*ChanData).BytesToTransfer != 0 {
+                ASSERT!((*Request).DataTransferLength >= (*ChanData).BytesToTransfer);
                 (*Request).DataTransferLength =
                     (*Request).DataTransferLength.wrapping_sub((*ChanData).BytesToTransfer);
                 SrbStatus = (SRB_STATUS_DATA_OVERRUN as u8);
@@ -686,6 +702,8 @@ unsafe extern "C" fn PataProcessRequest(
     let Request: PATA_DEVICE_REQUEST = *(*ChanData).__bindgen_anon_1.Slots.add((PATA_CHANNEL_SLOT as usize));
     let mut SrbStatus: UCHAR;
 
+    ASSERT!((IdeStatus & (IDE_STATUS_BUSY as u8)) == 0);
+
     match (*ChanData).CommandFlags & CMD_FLAG_TRANSFER_MASK {
         CMD_FLAG_DMA_TRANSFER => {
             if (DmaStatus & (PCIIDE_DMA_STATUS_ERROR as u8)) != 0
@@ -703,6 +721,7 @@ unsafe extern "C" fn PataProcessRequest(
             SrbStatus = PataProcessAtapiRequest(ChanData, Request, IdeStatus);
         }
         _ => {
+            ASSERT!(FALSE);
             UNREACHABLE!();
         }
     }
@@ -971,12 +990,19 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(ChannelContext: PVOID, Request: P
 
         ASSUME!(Length != 0);
 
+        ASSERT!((*core::ptr::addr_of!((*SgList).Elements[0]).add(i as usize)).Address.__bindgen_anon_1.HighPart == 0);
+
+        ASSERT!((Address & ATA_MIN_BUFFER_ALIGNMENT) == 0);
+
         while Length > 0 {
             let mut TransferLength: u32;
 
             TransferLength = PCIIDE_PRD_LIMIT - (Address & (PCIIDE_PRD_LIMIT - 1));
             TransferLength = if TransferLength < Length { TransferLength } else { Length };
 
+            ASSERT!((TransferLength as usize % core::mem::size_of::<USHORT>()) == 0);
+
+            ASSERT!(DescriptorNumber < (*ChanData).__bindgen_anon_1.MaximumPhysicalPages);
             DescriptorNumber += 1;
 
             (*PrdTableEntry).Address = Address;
@@ -990,6 +1016,8 @@ pub unsafe extern "C" fn PciIdePreparePrdTable(ChannelContext: PVOID, Request: P
 
         i += 1;
     }
+
+    ASSERT!((DescriptorNumber as usize * core::mem::size_of::<PCIIDE_PRD_TABLE_ENTRY>()) < PCIIDE_PRD_LIMIT as usize);
 
     PrdTableEntry = PrdTableEntry.offset(-1);
     (*PrdTableEntry).Length |= PCIIDE_PRD_END_OF_TABLE;

@@ -638,6 +638,27 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
 
 // ---- Discover framebuffer from ARC config tree ----
 
+/// Append `value` in decimal at `at`; returns the new end.
+fn push_decimal(buf: &mut [u16], mut at: usize, value: u32) -> usize {
+    let mut digits = [0u16; 10];
+    let mut v = value;
+    let mut k = 0;
+    loop {
+        digits[k] = b'0' as u16 + (v % 10) as u16;
+        k += 1;
+        v /= 10;
+        if v == 0 {
+            break;
+        }
+    }
+    while k > 0 {
+        k -= 1;
+        buf[at] = digits[k];
+        at += 1;
+    }
+    at
+}
+
 unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut hDisplay: HANDLE = core::ptr::null_mut();
@@ -648,55 +669,31 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
     let mut Found = false;
 
     // ARC config tree: HARDWARE\DESCRIPTION\System\MultifunctionAdapter
-    //   \<N>\DisplayController\<M>. Try adapter 0..3, instance 0..1.
-    // (No RtlStringCchPrintfW in ntkrnl-sys; build each path with a digit
-    //  substitution into a template buffer.)
-    let template = wsz!(
-        b"\\Registry\\Machine\\HARDWARE\\DESCRIPTION\\System\\MultifunctionAdapter\\0\\DisplayController\\0"
-    );
-    // Index of the two '0' placeholders within the template (last two ASCII
-    // '0' chars). Compute once at compile time would be ideal; locate at
-    // runtime to stay robust to template edits.
-    let mut path: [u16; 96] = [0; 96];
-    let tlen = template.len();
-    // copy template (incl NUL) into the working buffer
-    let mut k = 0;
-    while k < tlen && k < path.len() {
-        path[k] = template[k];
-        k += 1;
-    }
-    // Locate the two '0' placeholders directly: the template contains
-    // exactly two ASCII '0' chars (adapter index, then instance index) and
-    // no other digits, so the first '0' is the adapter slot and the second
-    // is the instance slot. (An earlier version scanned for the last
-    // backslash and used last_bslash-1, which pointed at the 'r' in
-    // "DisplayController" — corrupting every probe path so all 8 ZwOpenKey
-    // calls failed → DriverEntry bailed → no DEVICEMAP\VIDEO →
-    // EngpUpdateGraphicsDeviceList 0xc0000034 → BUGCHECK 0xB4.)
-    let zero: u16 = b'0' as u16;
-    let mut pos_adapter = 0usize;
-    let mut pos_instance = 0usize;
-    let mut found0 = 0u8;
-    let mut idx = 0usize;
-    while idx < tlen {
-        if path[idx] == zero {
-            if found0 == 0 {
-                pos_adapter = idx;
-                found0 = 1;
-            } else {
-                pos_instance = idx;
-                break;
-            }
-        }
-        idx += 1;
-    }
+    //   \<N>\DisplayController\<M>. The loader hangs the display off its ISA
+    // (BIOS) or UEFI adapter, and N counts every adapter written before it: the
+    // PCI BIOS key plus ONE PER PCI BUS, then ACPI. A board with a few bridges
+    // (the OptiPlex 9020's root ports) puts it at 4 or later, past the 0..3 this
+    // used to try, and the boot ended in BUGCHECK 0xB4 with a working VBE
+    // framebuffer described in the tree. Walk every index the loader could use.
+    // (No RtlStringCchPrintfW in ntkrnl-sys: the path is assembled by hand.)
+    let prefix = wsz!(b"\\Registry\\Machine\\HARDWARE\\DESCRIPTION\\System\\MultifunctionAdapter\\");
+    let middle = wsz!(b"\\DisplayController\\");
+    let mut path: [u16; 128] = [0; 128];
 
-    let mut AdapterIdx: u32 = 0;
-    'outer: while AdapterIdx < 4 && !Found {
-        let mut InstanceIdx: u32 = 0;
-        while InstanceIdx < 2 && !Found {
-            path[pos_adapter] = zero + AdapterIdx as u16;
-            path[pos_instance] = zero + InstanceIdx as u16;
+    'outer: for AdapterIdx in 0u32..64 {
+        for InstanceIdx in 0u32..2 {
+            let mut n = 0usize;
+            for &c in &prefix[..prefix.len() - 1] {
+                path[n] = c;
+                n += 1;
+            }
+            n = push_decimal(&mut path, n, AdapterIdx);
+            for &c in &middle[..middle.len() - 1] {
+                path[n] = c;
+                n += 1;
+            }
+            n = push_decimal(&mut path, n, InstanceIdx);
+            path[n] = 0;
 
             RtlInitUnicodeString(&mut KeyName, path.as_ptr());
             InitializeObjectAttributes(
@@ -713,9 +710,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
                 Found = true;
                 break 'outer;
             }
-            InstanceIdx += 1;
         }
-        AdapterIdx += 1;
     }
 
     if !Found {

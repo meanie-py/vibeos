@@ -1156,6 +1156,29 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
     return applied
 
 
+def _explode_inline_sources(cml: str, target: str) -> str:
+    """`add_executable(logonui logonui.c NT5design.c logonui.rc)`, one argument per line.
+
+    The flip comments sources out line by line, so a source list written inline in the
+    target's own call (logonui's whole CMakeLists is four lines) had no line to comment and
+    the flip refused. Only a one-line call is rewritten; a multi-line one is left alone.
+    """
+    m = re.search(
+        rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M
+    )
+    if m is None:
+        return cml
+    call = m.group(0)
+    head, args = call[: call.index("(") + 1], call[call.index("(") + 1 : call.rindex(")")].split()
+    if not any(a.endswith((".c", ".cpp")) for a in args[1:]):
+        return cml
+    keep = [a for a in args[1:] if a.upper() in ("WIN32", "MODULE", "SHARED", "STATIC")]
+    rest = [a for a in args[1:] if a not in keep]
+    first = " ".join([head + args[0], *keep])
+    body = "".join(f"\n    {a}" for a in rest)
+    return cml[: m.start()] + f"{first}{body})" + cml[m.end() :]
+
+
 def flip_cmake(cml: str, state: dict) -> str:
     """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
 
@@ -1166,7 +1189,7 @@ def flip_cmake(cml: str, state: dict) -> str:
     """
     stem, crate, target = state["stem"], state["crate"], state["target"]
     module = REPO / state["module_dir"]
-    lines = cml.split("\n")
+    lines = _explode_inline_sources(cml, target).split("\n")
     last = None
     for tu in state["tus"]:
         rel = str((REPO / tu).relative_to(module))

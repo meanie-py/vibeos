@@ -85,6 +85,7 @@ from .config import (
 )
 from .cpp_bridge import validate_reference, write_bridge
 from .cpp_com import (
+    KEPT_DIAGNOSTICS_STRIPPED,
     CppComError,
     analyze_class,
     apply_interface_method_signatures,
@@ -757,7 +758,11 @@ def _extend_cpp_class_scan(scan, source: Path, class_name: str, local_bases: tup
 
 
 def _cache_suffix(
-    args, fact_seal_enabled: bool, call_seal_enabled: bool, wide_seal_enabled: bool = False
+    args,
+    fact_seal_enabled: bool,
+    call_seal_enabled: bool,
+    wide_seal_enabled: bool = False,
+    diagnostics_kept: bool = False,
 ) -> str:
     """Namespace the resume cache by the seals that were active when it was filled.
 
@@ -774,11 +779,19 @@ def _cache_suffix(
         suffix += "__callseal_v1"
     if wide_seal_enabled:
         suffix += "__wideseal_v1"
+    if diagnostics_kept:
+        suffix += "__diag_v1"
     return suffix
 
 
 def _open_response_cache(
-    args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled=False
+    args,
+    subsystem,
+    c_file,
+    fact_seal_enabled,
+    call_seal_enabled,
+    wide_seal_enabled=False,
+    diagnostics_kept=False,
 ):
     """Durable per-function resume cache → re-run to resume a killed/capped run for $0.
 
@@ -786,11 +799,19 @@ def _open_response_cache(
     (per-run, kill-safe streaming); this one is the stable cross-run skip layer.
     `--no-resume` forces fresh.
     """
-    suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+    suffix = _cache_suffix(
+        args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled, diagnostics_kept
+    )
     base = bank_base(subsystem, c_file, suffix, REACTOS_ROOT)
     if not getattr(args, "dry_run", False):
         require_no_namespace_rebuy(base, base + suffix)
         claim_bank(base + suffix, c_file, REACTOS_ROOT)
+    else:
+        # The plan's "N to buy" would otherwise be the only signal, and the real run refuses.
+        try:
+            require_no_namespace_rebuy(base, base + suffix)
+        except ValueError as refusal:
+            print(f"  WARNING: the real run will refuse. {refusal}", file=sys.stderr)
     return ResponseCache(base + suffix)
 
 
@@ -2778,6 +2799,15 @@ def cmd_translate(args):
             file=sys.stderr,
         )
         wide_seal_enabled = False
+    # ERR and WARN are what a field failure prints: atapi and pciidex shipped with 9% and 10%
+    # of the C's left, and the arm64 port failure had nothing to say until they came back.
+    # TRACE/FIXME/MESSAGE stay stripped -- compiled out of a release build, so they are
+    # tokens, not behaviour. Its own cache token, so a bank bought stripped refuses loudly
+    # (require_no_namespace_rebuy) instead of being bought again; `--no-keep-diagnostics`
+    # replays one. Not on the COM path, whose audits are built around its own stripping.
+    diagnostics_kept = bool(getattr(args, "keep_diagnostics", False)) and not (
+        cpp_com_mode or free_functions
+    )
     for file_idx, c_file in enumerate(c_files, 1):
         print(f"\n{'=' * 60}", file=sys.stderr)
         print(f"[{file_idx}/{total_files}] {c_file.name}", file=sys.stderr)
@@ -3015,7 +3045,12 @@ def cmd_translate(args):
                     f"  [macros] expanded in the C: {', '.join(sorted(expanded_names))}",
                     file=sys.stderr,
                 )
-        model_bodies = {dep.name: strip_debug_statements(dep.body_text) for dep in sorted_deps}
+        model_bodies = {
+            dep.name: strip_debug_statements(
+                dep.body_text, KEPT_DIAGNOSTICS_STRIPPED if diagnostics_kept else None
+            )
+            for dep in sorted_deps
+        }
         # FIRST of the three, so the fact seal sees an identifier where a literal was and
         # never has to reason about string contents, and so a wide literal's own array
         # BOUND (`WCHAR k[200] = L"..."`) is still a plain integer when this reads it.
@@ -3379,7 +3414,7 @@ def cmd_translate(args):
                 preview = {
                     name: low.shape
                     for name, low in trivial_c.lower_trivial_c_functions(
-                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file)
+                        sorted_deps, typedefs.pointer_typedefs_for_source(c_file), diagnostics_kept
                     ).items()
                 }
             for i, dep in enumerate(sorted_deps, 1):
@@ -3411,7 +3446,13 @@ def cmd_translate(args):
             # invalidation visible BEFORE it re-bills: a seal or contract change
             # that voids banked work shows up here as a collapsed hit count.
             dry_cache = _open_response_cache(
-                args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+                args,
+                subsystem,
+                c_file,
+                fact_seal_enabled,
+                call_seal_enabled,
+                wide_seal_enabled,
+                diagnostics_kept,
             )
             banked = [
                 dep.name
@@ -3511,7 +3552,9 @@ def cmd_translate(args):
             # the model instead, which is exactly the kind of degradation nobody notices.
             ptr_typedefs = typedefs.pointer_typedefs_for_source(c_file)
             print(typedefs.describe(ptr_typedefs, c_file))
-            lowerings = trivial_c.lower_trivial_c_functions(sorted_deps, ptr_typedefs)
+            lowerings = trivial_c.lower_trivial_c_functions(
+                sorted_deps, ptr_typedefs, diagnostics_kept
+            )
             for name, lowering in lowerings.items():
                 translated[name] = lowering.rust
                 deterministic_workers.add(name)
@@ -3529,9 +3572,17 @@ def cmd_translate(args):
             file_res, scan, subsystem, target=rustconv_target, cpp_com=cpp_com_mode
         )
 
-        cache_suffix = _cache_suffix(args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled)
+        cache_suffix = _cache_suffix(
+            args, fact_seal_enabled, call_seal_enabled, wide_seal_enabled, diagnostics_kept
+        )
         cache = _open_response_cache(
-            args, subsystem, c_file, fact_seal_enabled, call_seal_enabled, wide_seal_enabled
+            args,
+            subsystem,
+            c_file,
+            fact_seal_enabled,
+            call_seal_enabled,
+            wide_seal_enabled,
+            diagnostics_kept,
         )
 
         # A completed model stream can fail a deterministic audit and remain as
@@ -5899,6 +5950,16 @@ def main():
         "terminator; five modules shipped one of those. Plain C only: shell32 --cpp-com has "
         "its own frozen lowering. 98%% of the tree's literals seal; the rest are reported as "
         "UNSEALED WIDE LITERAL audit findings rather than passed off as protected.",
+    )
+    p.add_argument(
+        "--keep-diagnostics",
+        dest="keep_diagnostics",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Plain C: send ERR/WARN/ASSERT statements to the model so the Rust keeps them (TRACE, "
+        "FIXME and MESSAGE are still stripped). Stripping them is how atapi and pciidex lost "
+        "90%% of their error output. Banks bought before this are namespaced without it, so "
+        "they refuse rather than re-buy; pass --no-keep-diagnostics to replay one.",
     )
     p.add_argument(
         "--expand-local-macros",
