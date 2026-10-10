@@ -498,27 +498,41 @@ pub unsafe extern "C" fn PciIdeXFdoStartDevice(
     (*Controller).Stop = None;
     (*Controller).__bindgen_anon_1.ChannelEnableBits = core::ptr::null_mut();
 
-    Status = AtaCtrlPciCollectInformation(FdoExt, ResourcesTranslated);
-    if !NT_SUCCESS!(Status) {
-        ERR!(b"Failed to collect PCI information 0x%lx\n\0".as_ptr() as *const i8, Status);
-        return Status;
-    }
+    // ATA_DETECT_LEGACY_DEVICES (i386 only): a channel legide found has no PCI function
+    // behind it, so its resources come from the detected list, not config space.
+    #[cfg(target_arch = "x86")]
+    let legacy: Option<NTSTATUS> = if (*Controller).Flags & CTRL_FLAG_NON_PNP != 0 {
+        Some(crate::pciidex::pata_legacy::PataGetControllerProperties(Controller, ResourcesTranslated))
+    } else {
+        None
+    };
+    #[cfg(not(target_arch = "x86"))]
+    let legacy: Option<NTSTATUS> = None;
+    if let Some(LegacyStatus) = legacy {
+        Status = LegacyStatus;
+    } else {
+        Status = AtaCtrlPciCollectInformation(FdoExt, ResourcesTranslated);
+        if !NT_SUCCESS!(Status) {
+            ERR!(b"Failed to collect PCI information 0x%lx\n\0".as_ptr() as *const i8, Status);
+            return Status;
+        }
 
-    INFO!(
-        b"Starting controller %04X:%04X.%02X-%04X.%04X-%02X.%02X.%02X\n\0".as_ptr() as *const i8,
-        (*Controller).Pci.VendorID,
-        (*Controller).Pci.DeviceID,
-        (*Controller).Pci.RevisionID,
-        (*Controller).Pci.SubVendorID,
-        (*Controller).Pci.SubSystemID,
-        (*Controller).Pci.BaseClass,
-        (*Controller).Pci.SubClass,
-        (*Controller).Pci.ProgIf,
-    );
+        INFO!(
+            b"Starting controller %04X:%04X.%02X-%04X.%04X-%02X.%02X.%02X\n\0".as_ptr() as *const i8,
+            (*Controller).Pci.VendorID,
+            (*Controller).Pci.DeviceID,
+            (*Controller).Pci.RevisionID,
+            (*Controller).Pci.SubVendorID,
+            (*Controller).Pci.SubSystemID,
+            (*Controller).Pci.BaseClass,
+            (*Controller).Pci.SubClass,
+            (*Controller).Pci.ProgIf,
+        );
 
-    Status = AhciGetControllerProperties(Controller);
-    if Status == STATUS_NO_MATCH {
-        Status = PciIdeGetControllerProperties(Controller);
+        Status = AhciGetControllerProperties(Controller);
+        if Status == STATUS_NO_MATCH {
+            Status = PciIdeGetControllerProperties(Controller);
+        }
     }
 
     if !NT_SUCCESS!(Status) {

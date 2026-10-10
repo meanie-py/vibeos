@@ -501,10 +501,14 @@ unsafe extern "C" fn AtaPortRunStateMachine(PortData: PATAPORT_PORT_DATA) {
             break;
         }
 
-        if (*PortData).Worker.StateLoopCount.wrapping_add(1) > 1500 {
-            (*PortData).Worker.StateLoopCount = (*PortData).Worker.StateLoopCount.wrapping_add(1);
+        // C: `StateLoopCount++ > 1500` -- the counter moves on every pass, and the old
+        // value is compared.
+        let StateLoopCount = (*PortData).Worker.StateLoopCount;
+        (*PortData).Worker.StateLoopCount = StateLoopCount.wrapping_add(1);
+        if StateLoopCount > 1500 {
             ERR!(b"CH %lu: Loop detected %lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber,
                  (*PortData).Worker.EventsPending);
+            ASSERT!(false);
         }
 
         match Action {

@@ -92,7 +92,7 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
                  ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>(),
     );
 
-    InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 'M' as u32 | ('T' as u32) << 8 | ('G' as u32) << 16 | ('_' as u32) << 24;
+    InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 0x4D54475Fu32; // C 'MTG_': "_GTM" in memory
     InputBuffer.Signature = ACPI_EVAL_INPUT_BUFFER_SIGNATURE;
 
     Status = AtaAcpiEvaluateObject(
@@ -342,7 +342,7 @@ pub unsafe extern "C" fn AtaAcpiSetDeviceData(
         return;
     }
 
-    (*InputBuffer).__bindgen_anon_1.MethodNameAsUlong = 0x5F534444u32; // '_SDD'
+    (*InputBuffer).__bindgen_anon_1.MethodNameAsUlong = 0x4444535Fu32; // C 'DDS_': "_SDD" in memory
     (*InputBuffer).Signature = ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE;
     (*InputBuffer).ArgumentCount = 1;
     (*InputBuffer).Size = InputSize;

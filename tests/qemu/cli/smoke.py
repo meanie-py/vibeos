@@ -421,6 +421,9 @@ def _boot_vm(
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch, boot_arch)
+        irq_stats = _irq_stats(vm, arch)
+        if irq_stats:
+            run.log(irq_stats, header=f"{label} info irq")
         dbg_raw = ""
         try:
             dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
@@ -437,6 +440,7 @@ def _boot_vm(
                 or _boot_nvme_check(text)
                 or _headless_check(text)
                 or _virtio_mmio_check(text, arch)
+                or _ahci_irq_check(_qemu_stderr(vm))
             )
             if smp_fail is not None:
                 return {
@@ -933,6 +937,84 @@ def _ahci_check(text: str) -> dict | None:
             "AHCI mode (PCI#CC_0106: hivesys.inf, or ata_stack.inf on --ata-stack media)",
         ],
     }
+
+
+# Measured on amd64 --ata-stack (2026-10-09): OVMF reads the CD polled (2248 commands, no
+# raise), then pciidex's 6549 commands came with 6566 raises, never two completions in a row
+# without one, and the line ended low. A polled command gets no raise (its port interrupt is
+# masked); the driver polls only its internal reset/port-multiplier requests, a handful.
+_AHCI_POLLED_RUN_MAX = 8
+
+
+def _irq_stats(vm: QemuVM, arch: str) -> str:
+    """QEMU's per-line interrupt counts (`info irq`: the i8259 and the ioapic), kept in
+    the log so a storage or NIC driver that quietly polls shows up as a line that never
+    fired. x86 only: arm64's GIC keeps no such statistics. Diagnostic: never fails."""
+    if arch == "arm64":
+        return ""
+    try:
+        return str(vm.qmp.hmp("info irq")).strip()
+    except Exception:
+        return ""
+
+
+def _qemu_stderr(vm: QemuVM) -> str:
+    """The whole QEMU stderr log (trace events land there), or "" when there is none."""
+    path = getattr(vm, "_stderr_path", None)
+    try:
+        return path.read_text(errors="replace") if path is not None else ""
+    except OSError:
+        return ""
+
+
+def _ahci_irq_check(stderr_text: str) -> dict | None:
+    """Prove the guest's AHCI driver ran on interrupts, from QEMU's own trace (vm.py
+    AHCI_TRACE_EVENTS) rather than the driver's account of itself. A driver that polled,
+    or whose ISR never acknowledged the HBA, still boots: its requests just complete on
+    the poll or the timeout, and only the boot time moves. Counted from the first raise:
+    the firmware before it is meant to poll."""
+    if not ahci_requested():
+        return None
+    events = [ln.split(None, 1)[0] for ln in stderr_text.splitlines() if ln.startswith("ahci_")]
+    if "ahci_cmd_done" not in events:
+        # No trace at all means the events never reached the log, which is the harness's
+        # bug, not the guest's; _ahci_check already failed a boot with no driver.
+        return None
+    if "ahci_irq_raise" not in events:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"{events.count('ahci_cmd_done')} AHCI commands completed and the controller "
+                "never raised its interrupt: the guest driver never enabled it (GHC.IE/PxIE)",
+            ],
+        }
+    after = events[events.index("ahci_irq_raise") :]
+    done, raised = after.count("ahci_cmd_done"), after.count("ahci_irq_raise")
+    run = longest = 0
+    for ev in after:
+        if ev == "ahci_cmd_done":
+            run += 1
+            longest = max(longest, run)
+        elif ev == "ahci_irq_raise":
+            run = 0
+    if longest > _AHCI_POLLED_RUN_MAX:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"after the driver's first interrupt, {longest} AHCI commands completed in a "
+                f"row with no interrupt ({done} commands, {raised} raises): it is polling",
+            ],
+        }
+    # Not "ends raised": a command can be in flight when the log is read.
+    if "ahci_irq_lower" not in after:
+        return {
+            "classification": "AHCI_IRQ_STUCK",
+            "salient": [
+                "the AHCI interrupt was raised and never lowered: the guest's ISR never "
+                f"cleared PxIS/IS ({done} commands, {raised} raises)",
+            ],
+        }
+    return None
 
 
 def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
@@ -1553,18 +1635,29 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
 
-    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
-    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
-    # ramdisk and has no IDE CD to move.
+    # AHCI channel: an ich9-ahci controller, and every boot must then show a driver
+    # running it (_ahci_check). x86 moves its boot CD onto it (backend.py); arm64 boots
+    # a ramdisk, so it gets the controller with a disk and an empty CD drive of its own
+    # (vm.py _ahci_args).
     if getattr(args, "ahci", False):
-        if arch == "arm64":
-            run.classification = "BAD_ARGS"
-            run.add(
-                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
-            )
-            return run.finalize(repo)
         os.environ["VIBEOS_AHCI_CD"] = "1"
-        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+        run.add(
+            Stage(
+                "ahci",
+                status="warn",
+                detail="disk + CD drive on ich9-ahci" if arch == "arm64" else "boot CD on ich9-ahci",
+            )
+        )
+
+    # legide channel: an ISA IDE controller on the tertiary legacy channel (vm.py
+    # _isa_ide_args), and every boot must then show legide finding it (_legide_check).
+    if getattr(args, "isa_ide", False):
+        if arch != "i386":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("isa-ide", status="fail", detail="--isa-ide is i386-only (legide)"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_ISA_IDE"] = "1"
+        run.add(Stage("isa-ide", status="warn", detail="disk on ISA IDE 0x1E8 IRQ 11"))
 
     # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and
     # every boot must then show the HAL driving it as one (_gic_check).

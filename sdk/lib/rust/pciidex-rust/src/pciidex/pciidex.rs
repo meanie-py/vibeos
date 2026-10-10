@@ -472,7 +472,12 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         (*Fdo).AlignmentRequirement = (*(*FdoExtension).Common.__bindgen_anon_1.LowerDeviceObject).AlignmentRequirement;
         (*Fdo).AlignmentRequirement = max((*Fdo).AlignmentRequirement, ATA_MIN_BUFFER_ALIGNMENT);
 
-        if !ControllerContext.is_null() {
+        // ATA_DETECT_LEGACY_DEVICES (i386): legide's AddDevice passes a context out-pointer.
+        #[cfg(target_arch = "x86")]
+        let legacy = !ControllerContext.is_null();
+        #[cfg(not(target_arch = "x86"))]
+        let legacy = false;
+        if legacy {
             (*FdoExtension).Controller.Flags |= CTRL_FLAG_NON_PNP;
             *ControllerContext = FdoExtension as PVOID;
         } else {
@@ -571,6 +576,22 @@ pub unsafe extern "system" fn PciIdeXInitialize(
         ExtensionSize,
     );
 
+    // ReactOS-specific: legide's legacy-detection magic. ATA_DETECT_LEGACY_DEVICES is
+    // defined for i386 only (CMakeLists.txt), as is legide, which is the only caller.
+    #[cfg(target_arch = "x86")]
+    let ExtensionSize = if ExtensionSize == PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE {
+        let ControllerInferface = HwGetControllerProperties
+            .map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void)
+            as PPCIIDEX_LEGACY_CONTROLLER_INTERFACE;
+        (*ControllerInferface).Version = PCIIDEX_INTERFACE_VERSION;
+        (*ControllerInferface).AddDevice = Some(PciIdeXAddDeviceEx);
+        (*ControllerInferface).StartDevice = Some(PciIdeXFdoStartDevice);
+        (*ControllerInferface).RemoveDevice = Some(PciIdeXFdoRemoveDevice);
+        0
+    } else {
+        ExtensionSize
+    };
+    #[cfg(not(target_arch = "x86"))]
     if ExtensionSize == PCIIDEX_GET_CONTROLLER_INTERFACE_SIGNATURE {
         return STATUS_NOT_SUPPORTED;
     }

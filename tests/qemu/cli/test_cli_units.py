@@ -9810,6 +9810,37 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
 
 
+def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
+    """An AHCI driver that polls still boots, so `--ahci` judges interrupt use from QEMU's
+    own trace: the firmware's polled commands before the first raise are fine, after it
+    every command must come with a raise, and the guest must lower the line."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    done, up, down = (
+        "ahci_cmd_done ahci(0x1)[0]: cmd done\n",
+        "ahci_irq_raise ahci(0x1): raise irq\n",
+        "ahci_irq_lower ahci(0x1): lower irq\n",
+    )
+    firmware = done * 50
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40) is None
+    # A driver that never enabled the interrupt.
+    never = smoke_mod._ahci_irq_check(firmware + done * 40)
+    assert never and never["classification"] == "AHCI_POLLING"
+    # One that did, then polled the rest.
+    later = smoke_mod._ahci_irq_check(firmware + done + up + down + done * 40)
+    assert later and later["classification"] == "AHCI_POLLING"
+    # An ISR that never acknowledged the HBA.
+    stuck = smoke_mod._ahci_irq_check(firmware + (done + up) * 40)
+    assert stuck and stuck["classification"] == "AHCI_IRQ_STUCK"
+    # A command in flight when the log is read is not a stuck line.
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40 + done + up) is None
+    # No trace at all is the harness's problem, not the guest's.
+    assert smoke_mod._ahci_irq_check("") is None
+    monkeypatch.delenv("VIBEOS_AHCI_CD")
+    assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
+
+
 def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
     loaded, or brought the controller up and found nothing, reaches the desktop
