@@ -1232,11 +1232,13 @@ def flip_cmake(cml: str, state: dict) -> str:
 
 
 def _crate_uses_float(crate: str) -> bool:
+    from tools.source_walk import source_files
+
     src = REPO / "sdk" / "lib" / "rust" / crate / "src"
     return any(
         re.search(r"\b(?:f32|f64)\b", p.read_text(errors="replace"))
-        for p in src.rglob("*.rs")
-        if not p.name.startswith("types")
+        for p in source_files(src)
+        if p.suffix == ".rs" and not p.name.startswith("types")
     )
 
 
