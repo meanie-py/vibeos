@@ -110,12 +110,9 @@ pub struct TA_IP_ADDRESS {
 }
 pub type PTA_IP_ADDRESS = *mut TA_IP_ADDRESS;
 
-// UNREFERENCED_PARAMETER(x) and NT_VERIFY(x) are macros the C source uses as call
-// expressions. UNREFERENCED_PARAMETER is a no-op; NT_VERIFY evaluates+returns its
-// arg (the debug assertion is dropped under release). Generic so the per-call arg
-// types (PDEVICE_OBJECT / PVOID / u8 / ...) all resolve.
-#[inline(always)]
-pub fn UNREFERENCED_PARAMETER<T>(_x: T) {}
+// NT_VERIFY(x) is a macro the C source uses as a call expression: it evaluates and
+// returns its arg (the debug assertion is dropped under release). Generic so the
+// per-call arg types (PDEVICE_OBJECT / PVOID / u8 / ...) all resolve.
 #[inline(always)]
 pub fn NT_VERIFY<T>(expr: T) -> T {
     expr

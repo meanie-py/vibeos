@@ -28,7 +28,6 @@ use ntkrnl_sys::ddk::{MDL};
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatRemoveMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Bytes: u32, );
-    fn UNREFERENCED_PARAMETER(_: usize);
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
     fn FatReservedBytes(Bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerFat(Bpb: *const core::ffi::c_void) -> u32;
@@ -360,7 +359,7 @@ pub unsafe extern "system" fn FatTearDownAllocationSupport(
         0usize,
     );
 
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER!(IrpContext as usize);
 }
 
 #[no_mangle]

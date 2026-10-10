@@ -90,8 +90,6 @@ unsafe fn IsFreeCell(Cell: PHCELL) -> i32 {
 fn CM_CHECK_REGISTRY_SUCCESS(status: CM_CHECK_REGISTRY_STATUS) -> i32 {
     (status == 0) as i32
 }
-#[inline]
-fn UNREFERENCED_PARAMETER(_param: u8) {}
 
 // ---- file-scope preamble (translated) ----
 #[repr(C)]
@@ -777,7 +775,7 @@ unsafe fn CmpValidateKey(
 
     ASSERT!(((CurrentCell != HCELL_NIL) as BOOLEAN));
 
-    UNREFERENCED_PARAMETER(SecurityDefaulted);
+    UNREFERENCED_PARAMETER!(SecurityDefaulted);
 
     if HvIsCellAllocated(Hive, CurrentCell) == 0 {
         // DPRINT removed
@@ -1121,10 +1119,7 @@ pub unsafe extern "system" fn HvValidateHive(Hive: *mut HHIVE) -> CM_CHECK_REGIS
             let block_list = (*Hive).Storage[StorageIndex as usize].BlockList;
             /* Go to the next if this bin does not exist */
             if (*block_list.add(BlockIndex as usize)).BinAddress == 0 {
-                // NOTE: faithful to C — the C loop `continue`s without
-                // advancing BlockIndex here (BlockIndex only advances at the
-                // bottom via Bin->Size). A genuinely NULL BinAddress would spin,
-                // but in practice BinAddress is populated for in-range blocks.
+                BlockIndex += 1;
                 continue;
             }
 

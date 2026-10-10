@@ -29,7 +29,7 @@ pub unsafe extern "system" fn AfdGetConnectOptions(
     let FCB = (*FileObject).FsContext as PAFD_FCB;
     let mut BufferSize = (*IrpSp).Parameters.DeviceIoControl.OutputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -66,7 +66,7 @@ pub unsafe extern "system" fn AfdSetConnectOptions(
     let ConnectOptions = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let ConnectOptionsSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -192,7 +192,7 @@ pub unsafe extern "system" fn AfdSetConnectData(
     let ConnectData = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut());
     let ConnectDataSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -241,7 +241,7 @@ pub unsafe extern "system" fn AfdSetConnectDataSize(
     let ConnectDataSize = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as *mut UINT;
     let BufferSize = (*IrpSp).Parameters.DeviceIoControl.InputBufferLength;
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -622,7 +622,7 @@ pub unsafe extern "system" fn AfdStreamSocketConnect(
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -838,7 +838,7 @@ pub unsafe extern "system" fn AfdStreamSocketSuperConnect(
 
     AFD_DbgPrint!(MID_TRACE, b"Called on %p\n\0".as_ptr() as PCHAR, FCB);
 
-    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER!(DeviceObject);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);

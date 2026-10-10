@@ -125,15 +125,10 @@ unsafe extern "C" {
     fn MSF_TO_LBA(m: u8, s: u8, f: u8) -> u32;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn MediaReadCapacity(DeviceObject: PDEVICE_OBJECT) -> NTSTATUS;
 }
 unsafe extern "C" {
     fn RequestCompletion( device_extension: *mut CDROM_DEVICE_EXTENSION, request: WDFREQUEST, status: NTSTATUS, info: ULONG_PTR, );
-}
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize);
 }
 extern "system" {
     fn RequestDummyCompletionRoutine( Request: WDFREQUEST, ioTarget: WDFIOTARGET, CompletionParams: *mut WDF_REQUEST_COMPLETION_PARAMS, CompletionContext: WDFCONTEXT, );
@@ -444,7 +439,7 @@ pub unsafe extern "C" fn ReadQChannel(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(InputBufferLength);
+    UNREFERENCED_PARAMETER!(InputBufferLength);
 
     *DataLength = 0;
 

@@ -502,8 +502,8 @@ pub unsafe extern "system" fn PPBridge_ResetDevice(
     PdoExtension: PPCI_PDO_EXTENSION,
     PciData: PPCI_COMMON_HEADER,
 ) {
-    UNREFERENCED_PARAMETER(PdoExtension as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(PciData as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(PdoExtension as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(PciData as *mut core::ffi::c_void);
     UNIMPLEMENTED_DBGBREAK();
 }
 #[no_mangle]

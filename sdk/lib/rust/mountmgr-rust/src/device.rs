@@ -5982,8 +5982,6 @@ unsafe extern "C" {
 unsafe extern "C" {
     fn memmove(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
 }
-unsafe extern "system" {
-}
 // MountMgrDeviceControl(IN PDEVICE_OBJECT DeviceObject,
 //                       IN PIRP Irp)
 // {

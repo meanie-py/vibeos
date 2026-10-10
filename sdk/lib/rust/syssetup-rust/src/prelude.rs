@@ -371,7 +371,7 @@ macro_rules! DateTime_SetSystemtime {
         // `*const _`, not `*mut _`: DTM_SETSYSTEMTIME only READS the SYSTEMTIME, and the callers
         // pass a shared `&LocalTime`, which has no `*mut` cast. The pointee kind still has to be
         // inferable for the `as LPARAM` int-cast, which `_` gets from the argument.
-        $crate::prelude::SendMessageW($hwnd, DTM_SETSYSTEMTIME, $flag as WPARAM, $st as *const _ as LPARAM) != 0
+        $crate::prelude::SendMessageW($hwnd, DTM_SETSYSTEMTIME, $flag as WPARAM, $st as *const _ as LPARAM) as BOOL
     };
 }
 pub use crate::DateTime_SetSystemtime;
