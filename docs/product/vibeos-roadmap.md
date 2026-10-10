@@ -1267,6 +1267,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
     --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
     read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
+    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
+    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
+    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
+    0/20, so the run says nothing about whether that fix touches this hang -- and the
+    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
+    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
