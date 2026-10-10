@@ -724,12 +724,15 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
-/// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()` (clang/gcc,
-/// which is how this tree builds). The C promises the point is never reached; so does this.
+/// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()`. The C makes
+/// reaching it undefined behaviour; this stops loudly instead (`unreachable!()`), because
+/// `unreachable_unchecked` licenses LLVM to delete the very check that would have caught a
+/// broken assumption (scan_assert_to_ub). Same meaning when the C is right; a crash, not
+/// silent corruption, when it is not.
 #[macro_export]
 macro_rules! UNREACHABLE {
     () => {
-        core::hint::unreachable_unchecked()
+        unreachable!()
     };
 }
 

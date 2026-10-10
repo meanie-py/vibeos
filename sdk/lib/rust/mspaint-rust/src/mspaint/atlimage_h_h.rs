@@ -316,11 +316,14 @@ impl CInitGDIPlus {
                 let mut input: Gdiplus_GdiplusStartupInput = core::mem::zeroed();
                 input.GdiplusVersion = 1;
                 let mut output: Gdiplus_GdiplusStartupOutput = core::mem::zeroed();
-                ((*this_).Startup.unwrap())(
-                    core::ptr::addr_of_mut!((*this_).m_dwToken),
-                    core::ptr::addr_of_mut!(input),
-                    core::ptr::addr_of_mut!(output),
-                );
+                // `Startup` was resolved non-NULL by the `_get_fun` chain just above.
+                if let Some(startup) = (*this_).Startup {
+                    startup(
+                        core::ptr::addr_of_mut!((*this_).m_dwToken),
+                        core::ptr::addr_of_mut!(input),
+                        core::ptr::addr_of_mut!(output),
+                    );
+                }
             }
         }
     

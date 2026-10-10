@@ -840,7 +840,7 @@ impl FreeSelTool {
         let this_: *mut Self = self;
         (*this_).__base0.OnDrawOverlayOnImage(hdc);
     
-        if (!(selectionModel.m_bShow != 0) as i32 != 0) && (*this_).__base0.m_bDrawing != 0 {
+        if selectionModel.m_bShow == 0 && (*this_).__base0.m_bDrawing != 0 {
             /* Draw the freehand selection inverted/xored */
             Poly__0(hdc, s_pPoints, s_cPoints as i32, (0 as COLORREF), (0 as COLORREF), 2, 0, (FALSE) as BOOL, (TRUE) as BOOL);
         }
@@ -1075,7 +1075,7 @@ impl TextTool {
         let this_: *mut Self = self;
         if canvasWindow.m_drawing != 0 {
             let rc: &mut CRect = &mut *core::ptr::addr_of_mut!(selectionModel.m_rc);
-            if !rc.IsRectEmpty() != 0 {
+            if rc.IsRectEmpty() == 0 {
                 RectSel(hdc, rc.__base0.left, rc.__base0.top, rc.__base0.right, rc.__base0.bottom);
             }
         }
@@ -1089,7 +1089,7 @@ impl TextTool {
     }
     pub unsafe fn OnButtonDown__body(&mut self, bLeftButton: BOOL, x: LONG, y: LONG, bDoubleClick: BOOL) {
         let this_: *mut Self = self;
-        if !textEditWindow.__base0.IsWindow() != 0 {
+        if textEditWindow.__base0.IsWindow() == 0 {
             textEditWindow.Create(canvasWindow.op_to_HWND());
         }
     
