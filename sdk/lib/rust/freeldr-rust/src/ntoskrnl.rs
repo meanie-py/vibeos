@@ -12,8 +12,6 @@ pub use ntkrnl_sys::ddk::EVENT_TYPE;
 pub const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
 pub const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as NTSTATUS;
 
-extern "C" {
-}
 // freeldr.spec declares these cdecl — use extern "C" (NOT extern "system")
 // to match the cdecl decoration (no `@N` suffix) emitted by freeldr.sys.
 extern "C" {

@@ -655,7 +655,7 @@ pub unsafe extern "system" fn SetVolumeMountPointW(
     lpszVolumeMountPoint: LPCWSTR,
     lpszVolumeName: LPCWSTR,
 ) -> BOOL {
-    STUB;
+    STUB!();
     0
 }
 
@@ -664,7 +664,7 @@ pub unsafe extern "system" fn SetVolumeMountPointA(
     lpszVolumeMountPoint: LPCSTR,
     lpszVolumeName: LPCSTR,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -679,7 +679,7 @@ pub unsafe extern "system" fn DeleteVolumeMountPointA(
 pub unsafe extern "system" fn DeleteVolumeMountPointW(
     lpszVolumeMountPoint: LPCWSTR,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -689,7 +689,7 @@ pub unsafe extern "system" fn FindFirstVolumeMountPointW(
     lpszVolumeMountPoint: LPWSTR,
     cchBufferLength: DWORD,
 ) -> HANDLE {
-    STUB;
+    STUB!();
     return 0 as HANDLE;
 }
 
@@ -699,7 +699,7 @@ pub unsafe extern "system" fn FindFirstVolumeMountPointA(
     lpszVolumeMountPoint: LPSTR,
     cchBufferLength: DWORD,
 ) -> HANDLE {
-    STUB;
+    STUB!();
     return 0 as HANDLE;
 }
 
@@ -709,7 +709,7 @@ pub unsafe extern "system" fn FindNextVolumeMountPointA(
     lpszVolumeMountPoint: LPSTR,
     cchBufferLength: DWORD,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -719,7 +719,7 @@ pub unsafe extern "system" fn FindNextVolumeMountPointW(
     lpszVolumeMountPoint: LPWSTR,
     cchBufferLength: DWORD,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -727,7 +727,7 @@ pub unsafe extern "system" fn FindNextVolumeMountPointW(
 pub unsafe extern "system" fn FindVolumeMountPointClose(
     hFindVolumeMountPoint: HANDLE,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 

@@ -138,7 +138,7 @@ pub use crate::k32_externs::{
 
 #[no_mangle]
 pub unsafe extern "system" fn BasepInitializeTermsrvFpns() -> NTSTATUS {
-    UNIMPLEMENTED;
+    UNIMPLEMENTED!();
     return STATUS_NOT_IMPLEMENTED;
 }
 
@@ -1193,7 +1193,7 @@ pub unsafe extern "system" fn DelayLoadFailureHook(
     pszDllName: LPCSTR,
     pszProcName: LPCSTR,
 ) -> FARPROC {
-    // STUB;
+    STUB!();
     None
 }
 
@@ -1207,13 +1207,13 @@ pub unsafe extern "system" fn UTRegister(
     pfnUT32CallBack: FARPROC,
     lpBuff: LPVOID,
 ) -> BOOL {
-    // STUB;
+    STUB!();
     return 0;
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn UTUnRegister(hModule: HMODULE) {
-    // STUB - no-op in original C
+    STUB!();
 }
 
 #[no_mangle]

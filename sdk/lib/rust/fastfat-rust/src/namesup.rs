@@ -22,7 +22,6 @@ extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn NT_ASSERT(cond: i32);
-    fn UNREFERENCED_PARAMETER(p: *mut IRP_CONTEXT);
     fn FsRtlIsLeadDbcsCharacter(character: u8) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatIsNameShortOemValid( irp: *mut core::ffi::c_void, oem: ntkrnl_sys::ddk::OEM_STRING, arg1: u8, arg2: u8, arg3: u8, ) -> u8;
@@ -255,7 +254,7 @@ pub unsafe extern "system" fn Fat8dot3ToString(
 
         DebugTrace(-1, 0u32, b"Fat8dot3ToString, OutputString = \"%Z\" -> VOID\n\0".as_ptr() as *const i8, OutputString as *const OEM_STRING);
 
-        UNREFERENCED_PARAMETER(IrpContext);
+        UNREFERENCED_PARAMETER!(IrpContext);
     }
     return;
 }

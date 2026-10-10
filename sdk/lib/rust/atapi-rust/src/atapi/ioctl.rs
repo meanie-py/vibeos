@@ -246,6 +246,7 @@ unsafe extern "C" fn AtaPdoHandleStorageQueryProperty(
     PAGED_CODE!();
 
     if !AtaVerifyInBuffer!(IoStack, (core::mem::size_of::<STORAGE_PROPERTY_QUERY>()) as _) {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -293,6 +294,7 @@ unsafe extern "C" fn AtaPdoHandleGetScsiAddress(
     if !((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize
         >= core::mem::size_of::<SCSI_ADDRESS>() as usize)
     {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -418,11 +420,13 @@ unsafe extern "C" fn AtaPdoHandleScsiMiniport(
     PAGED_CODE!();
 
     if !AtaVerifyInBuffer!(IoStack, (core::mem::size_of::<SRB_IO_CONTROL>()) as _) {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
     SrbControl = (*Irp).AssociatedIrp.SystemBuffer as PSRB_IO_CONTROL;
     if (*SrbControl).HeaderLength != core::mem::size_of::<SRB_IO_CONTROL>() as ULONG {
+        ERR!(b"Unknown structure size %lu\n\0".as_ptr() as *const i8, (*SrbControl).HeaderLength);
         return STATUS_REVISION_MISMATCH;
     }
 
@@ -432,6 +436,7 @@ unsafe extern "C" fn AtaPdoHandleScsiMiniport(
         &mut BufferSize,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Too large buffer 0x%lx\n\0".as_ptr() as *const i8, (*SrbControl).Length);
         return Status;
     }
 
@@ -441,6 +446,7 @@ unsafe extern "C" fn AtaPdoHandleScsiMiniport(
         (*IoStack).Parameters.DeviceIoControl.OutputBufferLength,
     );
     if CmdBufferSize < BufferSize {
+        ERR!(b"Cmd buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -612,6 +618,7 @@ unsafe extern "C" fn AtaFdoHandleStorageQueryProperty(
     PAGED_CODE!();
 
     if !AtaVerifyInBuffer!(IoStack, (core::mem::size_of::<STORAGE_PROPERTY_QUERY>()) as _) {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -639,6 +646,7 @@ unsafe extern "C" fn AtaFdoHandleGetScsiCapabilities(
     if !((*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize
         >= core::mem::size_of::<_IO_SCSI_CAPABILITIES>() as usize)
     {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -791,6 +799,7 @@ unsafe extern "C" fn AtaFdoHandleScsiPassthrough(
     PAGED_CODE!();
 
     if !AtaVerifyInBuffer!(IoStack, (RTL_SIZEOF_THROUGH_FIELD!(SCSI_PASS_THROUGH, Lun)) as u32) {
+        ERR!(b"Buffer too small\n\0".as_ptr() as *const i8);
         return STATUS_BUFFER_TOO_SMALL;
     }
 

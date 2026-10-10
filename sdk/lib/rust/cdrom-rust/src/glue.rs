@@ -8,6 +8,3 @@
 
 #[no_mangle]
 pub extern "system" fn NT_ASSERT(_expr: i32) {}
-
-#[no_mangle]
-pub extern "C" fn UNREFERENCED_PARAMETER(_x: usize) {}

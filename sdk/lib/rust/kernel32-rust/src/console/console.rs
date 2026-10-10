@@ -2639,7 +2639,7 @@ pub unsafe extern "system" fn GetConsoleCharType(
     Coord: COORD,
     Type: PDWORD,
 ) -> BOOL {
-    STUB;
+    STUB!();
     return 0;
 }
 
@@ -2649,7 +2649,7 @@ pub unsafe extern "system" fn GetConsoleCursorMode(
     pUnknown1: PBOOL,
     pUnknown2: PBOOL,
 ) -> BOOL {
-    // STUB
+    STUB!();
     return 0;
 }
 
@@ -2659,7 +2659,7 @@ pub unsafe extern "system" fn SetConsoleCursorMode(
     Unknown1: BOOL,
     Unknown2: BOOL,
 ) -> BOOL {
-    // STUB;
+    STUB!();
     0
 }
 
@@ -2668,7 +2668,7 @@ pub unsafe extern "system" fn GetConsoleNlsMode(
     hConsole: HANDLE,
     lpMode: LPDWORD,
 ) -> BOOL {
-    // STUB
+    STUB!();
     return 0;
 }
 
@@ -2677,7 +2677,7 @@ pub unsafe extern "system" fn SetConsoleNlsMode(
     hConsole: HANDLE,
     dwMode: DWORD,
 ) -> BOOL {
-    // STUB
+    STUB!();
     return 0;
 }
 
@@ -2688,7 +2688,7 @@ pub unsafe extern "system" fn SetConsoleLocalEUDC(
     cFontSize: COORD,
     lpSB: PCHAR,
 ) -> BOOL {
-    // STUB;
+    STUB!();
     0
 }
 unsafe fn IntRegisterConsoleIME(

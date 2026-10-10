@@ -19,7 +19,6 @@ extern "system" {
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn KeGetCurrentIrql() -> u8;
     fn DbgBreakPoint();
-    fn UNREFERENCED_PARAMETER(p: *mut core::ffi::c_void);
 }
 
 // Forward declarations for symbols not imported
@@ -525,7 +524,7 @@ pub unsafe extern "system" fn FatNoOpRelease(Fcb: *mut core::ffi::c_void) {
     PAGED_CODE!();
     NT_ASSERT((IoGetTopLevelIrp() as *mut core::ffi::c_void == (FSRTL_CACHE_TOP_LEVEL_IRP).cast()) as i32);
     IoSetTopLevelIrp(core::ptr::null_mut());
-    UNREFERENCED_PARAMETER(Fcb);
+    UNREFERENCED_PARAMETER!(Fcb);
 }
 
 #[no_mangle]

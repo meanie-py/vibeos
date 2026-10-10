@@ -1246,6 +1246,29 @@ pub unsafe fn CRecycleBin_Parse(pbc: *mut u8) {
 }
 """
 
+# The DDK case: UNREFERENCED_PARAMETER is a macro in every DDK header, so an extern
+# declaration of it is a finding with no in-crate macro_rules! (cdfs, fastfat and cdrom
+# declared it in 30 files, resolved by whichever crate exported a no-op, 2026-10-09).
+_MACROSHADOW_DDK_BAD = """\
+extern "C" {
+    fn UNREFERENCED_PARAMETER(param: *mut core::ffi::c_void);
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+}
+"""
+
+_MACROSHADOW_DDK_GOOD = """\
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
+pub unsafe fn CdCommonClose(IrpContext: *mut u8) {
+    UNREFERENCED_PARAMETER!(IrpContext);
+}
+"""
+
 _MASKDRIFT_BAD = """\
 const KEY_WOW64_RES: ACCESS_MASK = 0x00000300;
 const CR4_PGE: ULONG = 0x00000080;
@@ -2621,6 +2644,14 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"recycle_bin.rs": _MACROSHADOW_BAD},
         good={"recycle_bin.rs": _MACROSHADOW_GOOD},
+        pass_files=True,
+    ),
+    Control(
+        name="scan_macro_fn_shadow",
+        script="tools/scan_macro_fn_shadow.py",
+        argv=["--lint"],
+        bad={"close.rs": _MACROSHADOW_DDK_BAD},
+        good={"close.rs": _MACROSHADOW_DDK_GOOD},
         pass_files=True,
     ),
     Control(

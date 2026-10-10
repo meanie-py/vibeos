@@ -765,9 +765,9 @@ pub unsafe extern "system" fn PciPdoIrpSurpriseRemoval(
     IoStackLocation: PIO_STACK_LOCATION,
     DeviceExtension: PPCI_PDO_EXTENSION,
 ) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(Irp);
-    UNREFERENCED_PARAMETER(IoStackLocation);
-    UNREFERENCED_PARAMETER(DeviceExtension);
+    UNREFERENCED_PARAMETER!(Irp);
+    UNREFERENCED_PARAMETER!(IoStackLocation);
+    UNREFERENCED_PARAMETER!(DeviceExtension);
     UNIMPLEMENTED_DBGBREAK();
     return STATUS_NOT_SUPPORTED;
 }

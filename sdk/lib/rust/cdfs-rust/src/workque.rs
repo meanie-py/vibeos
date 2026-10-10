@@ -18,8 +18,6 @@ const IoWriteAccess: u32 = 1;
 const CriticalWorkQueue: WORK_QUEUE_TYPE = 0;
 
 extern "C" {
-}
-extern "C" {
     fn ASSERT_IRP_CONTEXT(IrpContext: *mut IRP_CONTEXT);
 }
 extern "C" {

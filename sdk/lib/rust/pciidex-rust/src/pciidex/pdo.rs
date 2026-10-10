@@ -102,11 +102,13 @@ unsafe extern "C" fn PciIdeXPdoInitDma(
 
     (*ChanData).DmaAdapter = PciIdeXPdoGetDmaAdapter(FdoExt, ChanData);
     if (*ChanData).DmaAdapter.is_null() {
+        WARN!(b"CH %lu: Unable to get DMA adapter\n\0".as_ptr() as *const i8, (*ChanData).Channel);
         return FALSE;
     }
 
     Status = (((*ChanData).AllocateMemory).unwrap_unchecked())((ChanData).cast());
     if !NT_SUCCESS!(Status) {
+        WARN!(b"CH %lu: Unable to allocate DMA memory %lx\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
         PciIdeXPdoFreeDmaResources(ChanData);
         return FALSE;
     }
@@ -148,6 +150,7 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
         if (*Controller).Flags & CTRL_FLAG_MANUAL_RES == 0 {
             Status = PciIdeParseResources(PataData, ResourcesTranslated);
             if !NT_SUCCESS!(Status) {
+                ERR!(b"CH %lu: Failed to parse resources 0x%lx\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
                 return Status;
             }
         }
@@ -171,6 +174,7 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
 
     if (*ChanData).DmaAdapter.is_null() {
         if (*ChanData).ChanInfo & CHANNEL_FLAG_PIO_VIA_DMA != 0 {
+            ERR!(b"CH %lu: Unable to fall back to PIO mode\n\0".as_ptr() as *const i8, (*ChanData).Channel);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -180,6 +184,8 @@ unsafe extern "C" fn PciIdeXPdoStartDevice(
     if (*Controller).Flags & CTRL_FLAG_IS_AHCI == 0 {
         Status = PciIdeConnectInterrupt((ChanData).cast());
         if !NT_SUCCESS!(Status) {
+            // The C passes Status with no conversion for it in the format; mirrored as-is.
+            ERR!(b"CH %lu: Could not connect to interrupt\n\0".as_ptr() as *const i8, (*ChanData).Channel, Status);
             return Status;
         }
 

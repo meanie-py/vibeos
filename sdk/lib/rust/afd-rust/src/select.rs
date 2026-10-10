@@ -352,7 +352,7 @@ pub unsafe extern "system" fn AfdEventSelect(
     let EventSelectInfo = LockRequest(Irp, IrpSp, 0u8, core::ptr::null_mut()) as PAFD_EVENT_SELECT_INFO;
     let FCB = (*FileObject).FsContext as PAFD_FCB;
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
 
     if SocketAcquireStateLock(FCB) == 0 {
         return LostSocket(Irp);
@@ -433,7 +433,7 @@ pub unsafe extern "system" fn AfdEnumEvents(
     let mut UserEvent: PKEVENT = core::ptr::null_mut();
     let Status: NTSTATUS;
 
-    UNREFERENCED_PARAMETER(DeviceObject as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(DeviceObject as *mut core::ffi::c_void);
 
     AFD_DbgPrint!(MID_TRACE, b"Called (FCB %p)\n\0".as_ptr() as *const i8, FCB);
 

@@ -475,7 +475,6 @@ use ntkrnl_sys::ddk::{PIO_STACK_LOCATION, IoIsOperationSynchronous, BOOLEAN as D
 use crate::types::{FCB, TYPE_OF_ACQUIRE, _TYPE_OF_ACQUIRE_AcquireShared, PIRP_CONTEXT};
 
 // ntddk.h: UNREFERENCED_PARAMETER(P) — retail no-op (grind lowered to stdcall fn).
-#[no_mangle] pub extern "C" fn UNREFERENCED_PARAMETER(_Param: PVOID) {}
 
 // cdfs debug ASSERT macros — retail no-ops.
 #[no_mangle] pub extern "C" fn ASSERT_IRP_CONTEXT(_Irp: *mut IRP_CONTEXT) {}

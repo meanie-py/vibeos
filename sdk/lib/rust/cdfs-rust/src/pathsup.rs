@@ -44,8 +44,6 @@ extern "C" {
     fn WordAlign(Value: u32) -> u32;
 }
 extern "C" {
-}
-extern "C" {
     fn CdConvertBigToLittleEndian( IrpContext: *mut IRP_CONTEXT, DiskName: *const u8, DiskNameLen: u32, Buffer: *mut u8, );
 }
 extern "C" {

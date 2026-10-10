@@ -2212,6 +2212,13 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
+  FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
+  just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
+  missed it. notepad registered its Find/Replace message from those bytes read as UTF-16 and
+  Find Next never fired. `widen_island_constants.py` now widens an A/W name through its `W`
+  target when the island's own `pub type TCHAR = WCHAR` says it was generated UNICODE; an
+  island that does not say keeps the bytes.
 - **A `b"..."` behind a wide pointer is TWO different bugs, and only one of them is a bug.**
   `b"A\0S\0U\0S\0\0\0" as PCWSTR` is the content-correct one: hand-encoded UTF-16 whose only
   defect is ALIGNMENT 1. **That is a style problem, not a latent fault, and the older framing
@@ -3145,6 +3152,13 @@ to BOTH; and `TAG_HW_RESOURCE_LIST` existed in **seven** spellings, two of them
 function-local `const`s inside `machpc.rs` shadowing the correct glob-imported one (see "A local
 `const` silently SHADOWS a glob import" above — same class, and `machpc.c:172` frees with that
 tag, so a shadowed alloc could never match an unshadowed free).
+
+**Not only pool tags: a reversed ACPI method name fails without a word.** pciidex's `_GTM` and
+`_SDD` evaluations were spelled `'M' | 'T'<<8 | 'G'<<16 | '_'<<24` and `0x5F534444` — the C's
+`'MTG_'` / `'DDS_'` byte-reversed — so they asked ACPI for methods named `MTG_` and `DDS_`, and
+every PATA channel just ran as if its firmware had no timing data. `_STM` and `_GTF`, sealed as
+decimal literals, were right. There is no rendezvous to catch this one: the other half is the
+firmware's AML. Check `MethodNameAsUlong` against the C's literal by value.
 
 `scan_const_contradictions` exists precisely for "one name, two values, both ours" and reported
 neither, because its `CONST_RE` matched only integer literals: every `u32::from_*_bytes(*b"..")`
@@ -4478,6 +4492,16 @@ such an attribute, on amd64/arm64 it is nothing. Two fixes, in this order:
    prints which db actually produced the anchor and why the requested one could not. Not a
    silent degrade — an anchor from another arch is still compiler-exact, but its pointer
    widths and conventions are that arch's, so the caller is told.
+   **Except a caller that passes `verbose=False` and then COMPARES arches.** `extern_signatures`,
+   `local_types` and `definition_signatures` ask each arch in turn and accept what agrees;
+   notepad's main.c fails on i386, its "i386" text was build-amd64's, amd64 agreed with
+   itself, and `port resolve` declared `wcslen -> c_ulonglong` and a second `size_t =
+   c_ulonglong` for every arch. Those checks now read `_native_text` (the arch's OWN db or
+   nothing), and with an arch missing they refuse any item carrying a 64-bit width. The same
+   shape bit `sdk_macros.object_expansions`: it probed only the arches where a name IS a
+   macro, so `SetWindowLongPtrW` (a macro on i386 alone) had one expansion and was called
+   unanimous -- notepad's 64-bit subclassing went through `SetWindowLongW`. **An arch that is
+   absent from a comparison is not an arch that agreed.**
 2. On a non-i386 target only, the anchor also erases `__thiscall`. The 64-bit compiler
    ignores that keyword outright, so erasing it there is a no-op rather than a semantic edit;
    on i386 it is real ABI and is never touched.
@@ -4608,6 +4632,23 @@ which correctly fixed the first bug and turned the second into a hang.
 **Generalize.** A translation that repairs a C bug has to re-read the code the bug was
 guarding. Here, code that only ran because a comparison now succeeds. In particular, check
 any `index--; continue;` for whether the loop body actually removed the entry.
+
+### A driver's `ERR`/`WARN` stripped before translation, so its error paths fail in silence
+
+**Symptom:** a driver fails or degrades with no message at all. On arm64 every AHCI port's
+`START` returned `0xC000009A` and the serial log said nothing; on x86 nothing could show
+whether atapi's requests completed by interrupt or by its timeout-and-reset path, since
+`AtaPortTimeout` printed nothing and the Rust had empty `if … {} else {}` arms where the C
+dumped the CDB.
+**Cause:** rustconv strips the debug macros (`TRACE`/`WARN`/`ERR`/`FIXME`/`MESSAGE`) from each
+body before it seals and translates it (`call_seal.py`). For Wine's `TRACE` noise that is
+right; in the new ATA stack `ERR` and `WARN` are DBG-only prints that report every timeout,
+reset, DMA failure and spurious interrupt. atapi kept 5 of its 52, pciidex 9 of 86, and three
+of pciidex's had come back as `INFO!`, which prints nothing.
+**Fix:** restore them against the C — format string byte for byte, each argument widened the
+way C varargs promote it, at the same point in the control flow. With them back, the arm64
+failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`). Owed:
+rustconv should keep `ERR`/`WARN` for kernel modules instead of stripping them.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 
@@ -6105,6 +6146,17 @@ SCSIPORT adapter had ever interrupted on arm64; vioblk's first one (2026-10-06) 
 DISPATCH-level spinlock in `RtlPcToFileHeader` — and then `BUGCHECK 0xB8`. The tell is
 `kernel-fault-pc` in the flight recorder landing in `WRITE_PORT_*`. Carry the guard as
 `#[cfg(target_arch = "x86")]` (`_M_IX86` is i386 only, not amd64).
+
+**Variant: a `-D` define set only for ONE arch, translated as if it were never set.** pciidex
+compiles three branches under `ATA_DETECT_LEGACY_DEVICES`, which its CMakeLists defines for
+i386 only: `PciIdeXInitialize` filling legide's controller interface, `PciIdeXAddDeviceEx`
+marking the FDO non-PnP, and `PciIdeXFdoStartDevice` taking resources from the detected list
+instead of PCI config space. The translation kept the `#else` of the first (`return
+STATUS_NOT_SUPPORTED`) on every arch, dropped the third, and compiled the second everywhere. So
+on i386, legide could never register a channel it found, and nothing failed, because QEMU's PIIX
+owns both channels legide probes. Carry it as `#[cfg(target_arch = "x86")]`. The tell: a
+`CMakeLists` that adds a `-D` inside `if(ARCH STREQUAL ...)` names code the other arches never
+compile, so grep the C for that macro and check that each `#if` has an arch-gated twin in the Rust.
 
 Three things that bite:
 - **Guards are plural.** wldap32 branches on EIGHT (`HAVE_LDAP`, `HAVE_LDAP_H`, and six
@@ -12003,6 +12055,31 @@ list"), from which the upstream writer followed.
 ---
 
 ## arm64: SEH, unwind & bring-up
+
+### arm64: uncached RAM mapped as Device memory alignment-faults on a merged store
+
+**Symptom:** BUGCHECK 0x1E on arm64 only, in a driver writing to its own DMA buffer. ESR
+`0x96000061` (data abort, DFSC 0x21 alignment fault), an odd FAR, and `[ALIGN]` showing PTE
+AttrIndx 1. atapi's SATL faulted building a VPD page: `stur w9, [x8, #5]`.
+**Cause:** `MiPlatformCacheAttributes`'s RAM row mapped `MmNonCached` to `MiNonCached`, which on
+arm64 is MAIR slot 1, Device-nGnRnE. Device memory faults on any unaligned access, and LLVM merges
+the C's byte stores into unaligned word stores freely. The buffer came from
+`MmAllocateContiguousMemorySpecifyCache(…, MmNonCached)`; x86 never notices, because PCD
+memory has no alignment rule.
+**Fix:** on arm64 the RAM row maps uncached types to `MiWriteCombined`, which is MAIR slot 2,
+Normal Non-cacheable. That is what Linux uses for coherent DMA, and it never aliases RAM with a
+Device type. I/O space keeps Device.
+
+### arm64 HAL: a DMA adapter must report map registers for the length asked
+
+**Symptom:** every AHCI port fails START with `0xC000009A`, and pciidex prints
+`CH n: Unable to allocate DMA memory`.
+**Cause:** the arm64 HAL's `new_adapter` reported 256 map registers whatever the
+`DEVICE_DESCRIPTION` said. Drivers size per-transfer tables from that number. pciidex's AHCI
+command table (128 bytes plus 16 per entry) became bigger than a page, it packed zero tables per
+page, and it asked for a 0-byte common buffer.
+**Fix:** report `BYTES_TO_PAGES(MaximumLength) + 1` for a bus master and 1 otherwise, as
+`x86/dma.rs` does. "Map registers are free here" is true of the hardware, not of the contract.
 
 ### A UEFI boot with no display hangs in the loader (and then bugchecks 0xB4)
 - **Symptom:** with no display device (a server; `smoke --arch arm64 --headless`) the

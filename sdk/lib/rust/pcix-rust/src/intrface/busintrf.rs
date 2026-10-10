@@ -31,7 +31,7 @@ pub static mut BusHandlerInterface: PCI_INTERFACE = unsafe {
 pub const NDEBUG: bool = true;
 #[no_mangle]
 pub unsafe extern "system" fn busintrf_Initializer(Instance: PVOID) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(Instance);
+    UNREFERENCED_PARAMETER!(Instance);
     ASSERTMSG(b"PCI busintrf_Initializer, unexpected call.\n\0".as_ptr() as PSTR, 0u8);
     STATUS_UNSUCCESSFUL
 }
@@ -44,12 +44,12 @@ pub unsafe extern "system" fn busintrf_Constructor(
     Size: u16,
     Interface: *mut core::ffi::c_void,
 ) -> NTSTATUS {
-    UNREFERENCED_PARAMETER(DeviceExtension);
-    UNREFERENCED_PARAMETER(Instance);
-    UNREFERENCED_PARAMETER(InterfaceData);
-    UNREFERENCED_PARAMETER(Version as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Size as *mut core::ffi::c_void);
-    UNREFERENCED_PARAMETER(Interface);
+    UNREFERENCED_PARAMETER!(DeviceExtension);
+    UNREFERENCED_PARAMETER!(Instance);
+    UNREFERENCED_PARAMETER!(InterfaceData);
+    UNREFERENCED_PARAMETER!(Version as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Size as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Interface);
 
     DbgPrint(
         b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const core::ffi::c_char,

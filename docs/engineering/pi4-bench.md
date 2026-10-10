@@ -1,5 +1,9 @@
 # Raspberry Pi 4B bench
 
+> **Retired 2026-10-09.** Its plug, Pico (`picousb5`) and capture card now drive
+> the OptiPlex 9020: see `optiplex-bench.md`. This doc stays for when the Pi 4 is
+> rewired.
+
 How to wire up and drive a physical Pi 4B for VibeOS arm64 bring-up, remotely
 and without card swaps. Read this before touching the board. What has been
 found *on* the board, and where the port stands, lives in the lane doc
