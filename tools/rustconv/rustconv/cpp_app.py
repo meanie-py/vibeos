@@ -800,12 +800,13 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
 
 
 def _external_base(name: str) -> str:
-    t = short(name)
-    return {
-        "CWindowImpl": "atl_rust::CWindowImplState",
-        "CDialogImpl": "atl_rust::CDialogImplState",
-        "CWindow": "atl_rust::CWindowState",
-    }.get(t, f"[u8; 0] /* external base {name} */")
+    """A base class the module does not define. ATL's window templates never get here (they
+    alias to the module's CWindow); what does is a plain C struct from the SDK --
+    `BITMAPINFOEX : BITMAPINFO` -- which is embedded by value as the island lays it out. A
+    zero-size placeholder here would shift every field after it, silently."""
+    if "<" in name:
+        raise CppAppError(f"external template base {name} has no Rust layout; port it first")
+    return name.split("::")[-1].strip()
 
 
 def _render_globals(model: ModuleModel, h: Hierarchy) -> str:

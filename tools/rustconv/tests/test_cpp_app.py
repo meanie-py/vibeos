@@ -219,3 +219,14 @@ def test_a_derived_class_extends_its_primary_bases_vtable():
     # dispatch reads the table as the type that declared the slot
     assert "let vt = (*sub).__vtbl as *const SmoothDrawTool__vtbl;" in rs
     assert "offset_of!(PenTool, __base0.__base0)" in rs
+
+
+def test_an_sdk_struct_base_is_embedded_by_value():
+    """mspaint's BITMAPINFOEX : BITMAPINFO -- a zero-size placeholder would shift every field."""
+    c = ClassModel("BITMAPINFOEX", "BITMAPINFOEX", "struct", "d.h")
+    c.bases = [Base("BITMAPINFO", "public")]
+    c.fields = [Field("bmiColorsExtra", "RGBQUAD[255]")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = cpp_app.render_classes(m)
+    assert "pub __base0: BITMAPINFO,\n    pub bmiColorsExtra: [RGBQUAD; 255 as usize]," in rs
