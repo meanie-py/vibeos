@@ -3419,9 +3419,10 @@ case "$DRIVER" in
     REAL_UNIONS=1
     # BLOCKLIST_FUNCS, MEASURED: 47 external prototype(s) declared by the include closure, 39 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
     DRIVER_DIR="${SRC}/dll/opengl/opengl32"
-    WRAPPER_INC=$'#include "opengl32.h"\n#include <winreg.h>\n#include <context.h>\n#include <matrix.h>\n#include <pseh/pseh2.h>\n#include <math.h>'
+    WRAPPER_INC=$'#include "opengl32.h"\n#include <math.h>\n#include <pseh/pseh2.h>\n#include <context.h>\n#include <matrix.h>\n#include <winreg.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]GL[/\\]gl\.h' --allowlist-file '.*[/\\]context\.h'
                   --allowlist-file '.*[/\\]matrix\.h'
                   --allowlist-file '.*[/\\]pseh[/\\]pseh2\.h'
@@ -3446,7 +3447,8 @@ case "$DRIVER" in
     REAL_UNIONS=1
     # BLOCKLIST_FUNCS, MEASURED: 200 external prototype(s) declared by the include closure, 13 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
     DRIVER_DIR="${SRC}/win32ss/gdi/gdi32/wine"
     case "$DRIVER" in
       # island types — 5 TU(s):
@@ -3457,7 +3459,8 @@ case "$DRIVER" in
                       --allowlist-file '.*[/\\]wingdi\.h'
                       --allowlist-file '.*[/\\]winnls\.h'
                       --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*wine[/\\].*\.h' )
+                      --allowlist-file '.*wine[/\\].*\.h'
+                      --allowlist-file '.*[/\\]ntgdihdl\.h' )
         ;;
       # island types_1 — 1 TU(s):
       # rosglue.c
@@ -3467,7 +3470,8 @@ case "$DRIVER" in
                       --allowlist-file '.*[/\\]wingdi\.h'
                       --allowlist-file '.*[/\\]winnls\.h'
                       --allowlist-file '.*[/\\]winreg\.h'
-                      --allowlist-file '.*wine[/\\].*\.h' )
+                      --allowlist-file '.*wine[/\\].*\.h'
+                      --allowlist-file '.*[/\\]ntgdihdl\.h' )
         ;;
     esac
     EXTRA_INC=( -I"${SRC}/win32ss/gdi/gdi32/wine" -I"${SRC}/build-i386/win32ss/gdi/gdi32/wine" -I"${SRC}/win32ss/gdi/gdi32/include" )
@@ -3477,6 +3481,22 @@ case "$DRIVER" in
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NO_POSIX_ERROR_CODES )
     OUT_CRATE_DIR="${OUT_CRATE_DIR:-${SRC}/sdk/lib/rust/winegdi-rust/src}"
     ;;
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh winegdi
+  #   TYPES_STEM=types_1 gen_driver_types.sh winegdi-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
+
+  # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
+  # generate one pass per group — all into the same crate:
+  #   gen_driver_types.sh winegdi
+  #   TYPES_STEM=types_1 gen_driver_types.sh winegdi-types_1
+  # Then dispatch them from the crate: one `mod <stem>;` per island, and each
+  # translated module imports from the island its own C include set belongs to
+  # (names legitimately overlap between islands — never glob both into scope).
 
   # MULTI-ISLAND: these TUs do NOT share one legal include set (§9.108), so
   # generate one pass per group — all into the same crate:

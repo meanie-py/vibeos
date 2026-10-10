@@ -437,6 +437,12 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "notepad-rust",
+    "imm32-rust",
+    "gdi32_vista-rust",
+    "user32_vista-rust",
+    "user32_optional_vista-rust",
+    "bmfd-rust",
+    "ftfd-rust",
 ]
 resolver = "2"
 

@@ -2,7 +2,7 @@ use win32k_sys::win32k::*;
 
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
-    fn CLIPOBJ_bEnum(clip: *mut CLIPOBJ, cj: u32, pv: *mut core::ffi::c_void) -> u8;
+    fn CLIPOBJ_bEnum(clip: *mut CLIPOBJ, cj: u32, pv: *mut core::ffi::c_void) -> i32;
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;
 }
 extern "C" {

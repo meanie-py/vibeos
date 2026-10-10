@@ -200,6 +200,17 @@ name = "bitmap"
 version = "0.1.0"
 
 [[package]]
+name = "bmfd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "bootvid-cargo"
 version = "0.1.0"
 dependencies = [
@@ -817,11 +828,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "ftfd-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
  "win32k-sys",
+]
+
+[[package]]
+name = "gdi32_vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -996,6 +1028,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
 dependencies = [
  "lazy_static",
+]
+
+[[package]]
+name = "imm32-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -3109,6 +3151,26 @@ name = "user32-wsprintf-rust"
 version = "0.1.0"
 dependencies = [
  "panic-common",
+]
+
+[[package]]
+name = "user32_optional_vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "user32_vista-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
