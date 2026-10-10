@@ -61,8 +61,44 @@ def restore_requested_name(rust: str, name: str) -> str:
         return rust
     twins = [d for d in defs if d.lower() == name.lower()]
     if len(twins) != 1:
-        return rust
+        return _restore_method_form(rust, name, defs)
     return re.sub(rf"\b{re.escape(twins[0])}\b", name, rust)
+
+
+_SELF_HEAD_RE = r"fn\s+{m}\s*\(\s*&\s*(?:mut\s+)?self\s*(,?)\s*"
+
+
+def _restore_method_form(rust: str, name: str, defs: set[str]) -> str:
+    """A cpp_app worker `audio_format__byte_rate(this_: *mut audio_format)` answered as the
+    METHOD it will become, `byte_rate(&mut self)`: the model saw the class's API and wrote
+    the destination shape. The body is the requested one, so put it back in the requested
+    form (assemble moves it into the class again). Only ever a definition whose name is the
+    part after the class and that takes `self` -- every other spelling is still refused."""
+    cls, sep, method = name.partition("__")
+    if not sep or not method or method not in defs:
+        return rust
+    head = re.search(_SELF_HEAD_RE.format(m=re.escape(method)), rust)
+    if head is None:
+        return rust
+    start = rust.rfind("\n", 0, head.start()) + 1
+    brace = rust.index("{", head.end())
+    depth, i = 0, brace
+    while i < len(rust):
+        depth += {"{": 1, "}": -1}.get(rust[i], 0)
+        if depth == 0:
+            break
+        i += 1
+    fn = rust[start : i + 1]
+    fn = re.sub(
+        _SELF_HEAD_RE.format(m=re.escape(method)),
+        lambda m: f"fn {name}(this_: *mut {cls}" + (", " if m.group(1) else ""),
+        fn,
+        count=1,
+    )
+    fn = fn.replace("(*self)", "(*this_)")
+    fn = re.sub(r"\bself\s*\.", "(*this_).", fn)
+    fn = re.sub(r"\bself\b", "this_", fn)
+    return rust[:start] + fn + rust[i + 1 :]
 
 
 def require_c_plan(source: str, planned: Iterable[str]) -> None:

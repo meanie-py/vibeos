@@ -329,3 +329,42 @@ def test_a_crate_local_path_is_not_copied_into_another_crate():
     assert pr._norm(
         "pub const IDC_WAIT: crate::island::LPCWSTR = 32514isize as crate::island::LPCWSTR;"
     ) == ("const IDC_WAIT: LPCWSTR = 32514isize as LPCWSTR;")
+
+
+def test_bindgen_declarations_outvote_a_hand_written_extern():
+    """One crate's `extern "C" { fn CloseHandle }` (a stdcall import) vetoed every module."""
+    pick, why = consensus(
+        "CloseHandle",
+        [
+            F("fn CloseHandle(hObject: HANDLE) -> BOOL;", '"C"', "x-rust/src/prelude.rs"),
+            F("fn CloseHandle(arg1: HANDLE) -> BOOL;", '"system"', "w-sys/src/bindgen_i386.rs"),
+            F("fn CloseHandle(arg1: HANDLE) -> BOOL;", '"C"', "y-rust/src/types_amd64.rs"),
+        ],
+    )
+    assert pick is not None and pick.abi == '"system"', why
+    # a 64-bit island's "C" is not evidence: it has no stdcall to write
+    pick, why = consensus(
+        "HeapFree",
+        [
+            F("fn HeapFree(a: HANDLE) -> BOOL;", '"system"', "x-rust/src/prelude.rs"),
+            F("fn HeapFree(a: HANDLE) -> BOOL;", '"C"', "y-rust/src/types_amd64.rs"),
+        ],
+    )
+    assert pick is not None and pick.abi == '"system"', why
+    # without bindgen evidence the disagreement still refuses
+    pick, why = consensus("F", [F("fn F();", '"C"', "a.rs"), F("fn F();", '"system"', "b.rs")])
+    assert pick is None and "ABI disagreement" in why
+
+
+def test_long_ptr_aliases_are_winapi_even_when_clang_saw_a_macro():
+    block = pr.render_externs(
+        {
+            "GetWindowLongPtrW": (
+                "C",
+                "fn GetWindowLongPtrW(arg1: HWND, arg2: c_int) -> LONG_PTR;",
+                "x",
+            )
+        }
+    )
+    assert 'extern "system" {' in block and 'extern "C"' not in block
+    assert 'link_name = "GetWindowLongW"' in block

@@ -22,7 +22,9 @@ C_LANG = Language(tsc.language())
 CPP_LANG = Language(tscpp.language())
 
 # Extensions that select the C++ grammar.
-_CPP_SUFFIXES = (".cpp", ".cc", ".cxx", ".c++", ".cpp")
+# `.hpp`/`.hxx` are C++ headers: parsed as C, a function returning a reference (`audio_format &
+# audio_membuffer__audinfo(..)`) vanished from the plan without a word.
+_CPP_SUFFIXES = (".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hxx", ".hh")
 
 # Every macro that ALIASES a calling convention, from the ONE shared table
 # (conventions.py — verified against the real SDK headers by tools/verify_conv_macros.py).

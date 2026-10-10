@@ -1,11 +1,25 @@
 CMakeLists.txt	1	# and guid.c. Unusual among shell32's flips in being a WHOLE LIBRARY TARGET swap rather
 CMakeLists.txt	1	# recyclebin.c, recyclebin_generic{,_enumerator}.cpp, recyclebin_v5{,_enumerator}.cpp
+base/applications/fltmc/CMakeLists.txt	1	# fltmc.cpp is replaced by Rust (sdk/lib/rust/fltmc-rust/src/fltmc/fltmc.rs, `rustconv port`);
+base/applications/games/solitaire/CMakeLists.txt	1	# solcreate.cpp # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solcreate.rs)
+base/applications/games/solitaire/CMakeLists.txt	1	# solgame.cpp # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solgame.rs)
+base/applications/games/solitaire/CMakeLists.txt	1	# solitaire.cpp # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solitaire.rs)
+base/applications/games/solitaire/CMakeLists.txt	1	# solundo.cpp # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solundo.rs)
+base/applications/games/spider/CMakeLists.txt	1	# spider.cpp # replaced by Rust (sdk/lib/rust/spider-rust/src/spider/spider.rs)
+base/applications/games/spider/CMakeLists.txt	1	# spigame.cpp # replaced by Rust (sdk/lib/rust/spider-rust/src/spider/spigame.rs)
 base/applications/msconfig_new/CMakeLists.txt	1	# startuppage.c
+base/applications/network/tracert/CMakeLists.txt	1	# tracert.cpp is replaced by Rust (sdk/lib/rust/tracert-rust/src/tracert/tracert.rs, `rustconv
 base/applications/notepad/CMakeLists.txt	1	# dialog.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/dialog.rs)
 base/applications/notepad/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/main.rs)
 base/applications/notepad/CMakeLists.txt	1	# printing.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/printing.rs)
 base/applications/notepad/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/settings.rs)
 base/applications/notepad/CMakeLists.txt	1	# text.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/text.rs)
+base/applications/sndrec32/CMakeLists.txt	1	# audio_format.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/cpp_classes.rs: its globals)
+base/applications/sndrec32/CMakeLists.txt	1	# audio_membuffer.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_membuffer_cpp_h.rs)
+base/applications/sndrec32/CMakeLists.txt	1	# audio_resampler_acm.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_resampler_acm_cpp_h.rs)
+base/applications/sndrec32/CMakeLists.txt	1	# audio_wavein.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_wavein_cpp_h.rs)
+base/applications/sndrec32/CMakeLists.txt	1	# audio_waveout.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_waveout_cpp_h.rs)
+base/applications/sndrec32/CMakeLists.txt	1	# sndrec32.cpp # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/sndrec32_cpp_h.rs)
 base/applications/sndrec32/CMakeLists.txt	1	#audio_producer.cpp
 base/applications/sndrec32/CMakeLists.txt	1	#audio_receiver.cpp
 base/services/audiosrv/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/audiosrv-rust/src/audiosrv/main.rs)
