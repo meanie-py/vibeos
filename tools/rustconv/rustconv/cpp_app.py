@@ -347,6 +347,28 @@ def _ret(m: Method, model: ModuleModel) -> str:
     return "" if m.return_type in ("void", "") else f" -> {rust_type(m.return_type, model)}"
 
 
+def drop_generated_statics(text: str, generated: set[str]) -> str:
+    """Remove a translated unit's own definition of a static that cpp_classes.rs renders
+    (aggregate_static): two definitions are E0428, and the model's copy is the one that
+    guessed the field names."""
+    out, i = [], 0
+    for m in re.finditer(r"^pub static (?:mut )?(\w+)\s*:", text, re.M):
+        if m.group(1) not in generated or m.start() < i:
+            continue
+        depth, j = 0, m.end()
+        while j < len(text):
+            c = text[j]
+            depth += (c in "([{") - (c in ")]}")
+            if c == ";" and depth == 0:
+                break
+            j += 1
+        out.append(text[i : m.start()])
+        i = j + 1
+        if text[i : i + 1] == "\n":
+            i += 1
+    return "".join(out) + text[i:]
+
+
 def render_classes(
     model: ModuleModel, island_structs: frozenset[str] = frozenset(), island: str = ""
 ) -> str:
@@ -366,6 +388,10 @@ def render_classes(
         _HELPERS,
     ]
     for e in model.enums:
+        if re.search(rf"^\s*pub type {re.escape(e.name)}\b", island, re.M):
+            # The island has it (mspaint's HITTEST, as c_uint): an i32 copy here made every
+            # prelude alias of its members a type error, 255 of them.
+            continue
         ty = rust_type(e.underlying, model)
         out.append(f"pub type {e.name} = {ty};")
         for name, val in e.members:
@@ -389,7 +415,8 @@ def _render_class(
     # Rust the implicit copy constructor's semantics, so `fmt = A44100_16BIT_STEREO` is a
     # copy rather than a move out of a static.
     derive = "" if has_drop(cls, h) else "#[derive(Clone, Copy)]\n"
-    lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub struct {n} {{"]
+    kw = "union" if cls.tag == "union" else "struct"
+    lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub {kw} {n} {{"]
     if h.has_own_vtbl(cls):
         lines.append(f"    pub __vtbl: *const {n}__vtbl,")
     for i, b in enumerate(cls.bases):
@@ -529,28 +556,42 @@ def _render_class(
     lines.append("")
     if atl_template(cls):
         lines.append(_render_atl_glue(cls, h, model))
-    # construction / destruction
+    elif cls.bases and short(cls.bases[0].name) not in h.by_short and not h.com_bases(cls):
+        # An SDK struct base (CRect : tagRECT): C++ reaches its fields as the class's own
+        # (`rc.top`), so the class derefs to it.
+        base = _external_base(cls.bases[0].name)
+        lines.append(
+            f"impl core::ops::Deref for {n} {{ type Target = {base}; "
+            f"fn deref(&self) -> &{base} {{ &self.__base0 }} }}"
+        )
+        lines.append(
+            f"impl core::ops::DerefMut for {n} {{ "
+            f"fn deref_mut(&mut self) -> &mut {base} {{ &mut self.__base0 }} }}"
+        )
+    # construction / destruction (locals are `__`-named: a ctor parameter `t` or `p`,
+    # CRect(l, t, r, b), would shadow them)
     ctors = [m for m in cls.methods if m.kind == "ctor"]
     lines.append(f"pub unsafe fn {n}__zeroed() -> {n} {{ core::mem::zeroed() }}")
     if not ctors:
         lines.append(
-            f"pub unsafe fn {n}__make_0() -> {n} {{ let mut t = {n}__zeroed(); t.__ctor_0(); t }}"
+            f"pub unsafe fn {n}__make_0() -> {n} {{ "
+            f"let mut __obj = {n}__zeroed(); __obj.__ctor_0(); __obj }}"
         )
         lines.append(
             f"pub unsafe fn {n}__new_0() -> *mut {n} {{ "
-            f"let p = cpp_alloc::<{n}>(); (*p).__ctor_0(); p }}"
+            f"let __p = cpp_alloc::<{n}>(); (*__p).__ctor_0(); __p }}"
         )
     for i, m in enumerate(ctors):
         params = _params(m, model)
         sig = ", ".join(f"{a}: {t}" for a, t in params)
         args = ", ".join(a for a, _ in params)
         lines.append(
-            f"pub unsafe fn {n}__make_{i}({sig}) -> {n} {{ let mut t = {n}__zeroed(); "
-            f"t.__ctor_{i}({args}); t }}"
+            f"pub unsafe fn {n}__make_{i}({sig}) -> {n} {{ let mut __obj = {n}__zeroed(); "
+            f"__obj.__ctor_{i}({args}); __obj }}"
         )
         lines.append(
-            f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ let p = cpp_alloc::<{n}>(); "
-            f"(*p).__ctor_{i}({args}); p }}"
+            f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ let __p = cpp_alloc::<{n}>(); "
+            f"(*__p).__ctor_{i}({args}); __p }}"
         )
     if h.virtual_dtor(cls):
         root_path, root = _vtbl_path(h, cls)
@@ -578,9 +619,19 @@ def _empty_body(m: Method) -> bool:
     return not text.replace("{", "").replace("}", "").strip()
 
 
+# atl_rust types that own something (they implement Drop): a member of one makes its class
+# non-Copy, exactly as a member with a user destructor does in C++.
+_ATL_OWNING = re.compile(
+    r"\b(?:CStringW|CAtlStringW|CString|CAtlString|CComPtr|CComHeapPtr|CHeapPtr|"
+    r"CSimpleArray|CSimpleMap|CAtlList|CRegKey)\b"
+)
+
+
 def has_drop(cls: ClassModel, h: Hierarchy) -> bool:
     """A destructor with a body that does something, here or in any base or member."""
     if any(m.kind == "dtor" and m.body and not _empty_body(m) for m in cls.methods):
+        return True
+    if any(not f.static and _ATL_OWNING.search(f.c_type) for f in cls.fields):
         return True
     if any(has_drop(b, h) for _, b in h.module_bases(cls)):
         return True
@@ -749,7 +800,7 @@ def _handler(cls: ClassModel, name: str, arity: int) -> str:
 
 
 def _render_msg_map(cls: ClassModel, h: Hierarchy) -> list[str]:
-    out = ["        let mut handled: BOOL;"]
+    out = ["        let mut handled: BOOL = 1;"]
     for e in cls.msg_map or []:
         if e.macro in _MSG_ENTRY:
             nargs, cond, call = _MSG_ENTRY[e.macro]
@@ -918,10 +969,73 @@ def _external_base(name: str) -> str:
     return name.split("::")[-1].strip()
 
 
+def aggregate_static(g, h: Hierarchy, model: ModuleModel) -> str | None:
+    """A module struct (or array of them) with a brace initializer, as a Rust static:
+    positional C values zipped with the struct's DECLARED field order. The model, given
+    `{ID_FREESEL, TOOL_FREESEL}`, invented the field names (`nCommand`, `nTool` for `id`,
+    `tool`). None when the initializer is not plain enough to zip here (strings, nesting
+    deeper than one struct, a class with constructors or bases): the model gets it."""
+    if not g.init or not g.init.lstrip().startswith("{"):
+        return None
+    t = " ".join(g.c_type.split())
+    const = t.startswith("const ")
+    t = t.removeprefix("const ").strip()
+    arr = re.fullmatch(r"(\w+)\s*\[(\d*)\]", t)
+    cls = h.by_short.get(arr.group(1) if arr else t)
+    if cls is None or cls.bases or any(m.kind == "ctor" for m in cls.methods):
+        return None
+    fields = [f for f in cls.fields if not f.static]
+    if '"' in g.init or "'" in g.init:
+        return None
+
+    def split(text: str) -> list[str]:  # top-level commas; braces nest too
+        out, depth, cur = [], 0, []
+        for ch in text:
+            depth += (ch in "({[") - (ch in ")}]")
+            if ch == "," and depth == 0:
+                out.append("".join(cur))
+                cur = []
+            else:
+                cur.append(ch)
+        return [*out, "".join(cur)]
+
+    def one(text: str) -> str | None:
+        text = text.strip()
+        if not (text.startswith("{") and text.endswith("}")):
+            return None
+        vals = [v.strip() for v in split(text[1:-1]) if v.strip()]
+        if len(vals) > len(fields) or any("{" in v for v in vals):
+            return None
+        parts = [
+            f"{_ident(f.name)}: ({_strip_ns(v, model)}) as _"
+            for f, v in zip(fields, vals, strict=False)
+        ]
+        if len(vals) < len(fields):
+            parts.append("..unsafe { core::mem::zeroed() }")
+        return f"{cls.name} {{ {', '.join(parts)} }}"
+
+    body = g.init.strip()
+    mut = "" if const else "mut "
+    if arr:
+        items = [v for v in split(body[1:-1]) if v.strip()]
+        rendered = [one(v) for v in items]
+        if any(r is None for r in rendered):
+            return None
+        n = arr.group(2) or str(len(rendered))
+        lines = ",\n    ".join(r for r in rendered if r)
+        return f"pub static {mut}{g.name}: [{cls.name}; {n}] = [\n    {lines},\n];"
+    single = one(body)
+    return None if single is None else f"pub static {mut}{g.name}: {cls.name} = {single};"
+
+
 def _render_globals(model: ModuleModel, h: Hierarchy) -> str:
     """Module globals of CLASS type, zeroed until `__cxx_global_init` constructs them."""
     out = []
     for g in model.globals:
+        agg = aggregate_static(g, h, model)
+        if agg is not None:
+            out.append(agg)
+            continue
         cls = h.by_short.get(short(g.c_type.replace("*", "").strip()))
         if cls is None or "*" in g.c_type:
             continue
@@ -953,6 +1067,13 @@ pub unsafe fn cpp_delete<T>(p: *mut T) {
     if !p.is_null() { core::ptr::drop_in_place(p); free(p as *mut _); }
 }
 pub unsafe fn cpp_delete_array<T>(p: *mut T) { if !p.is_null() { free(p as *mut _); } }
+/// atlbase.h's ATLASSERT: a DEBUG assertion, so a no-op MACRO (never an out-of-line no-op fn,
+/// which is an optimization barrier that has uncloaked ABI bugs before).
+macro_rules! ATLASSERT { ($($t:tt)*) => {}; }
+pub(crate) use ATLASSERT;
+/// atltrace.h's ATLTRACE: debug output, compiled out in a release ReactOS build. No-op macro.
+macro_rules! ATLTRACE { ($($t:tt)*) => {}; }
+pub(crate) use ATLTRACE;
 /// A pure virtual reached at runtime: the C++ runtime's `_purecall` terminates the process.
 pub fn cpp_pure_virtual_call(what: &str) -> ! { panic!("pure virtual call: {}", what) }
 """
@@ -996,6 +1117,8 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
         cls = h.by_short.get(short(g.c_type))
         if cls is not None and "*" not in g.c_type and "[" not in g.c_type:
             continue
+        if aggregate_static(g, h, model) is not None:
+            continue  # rendered in cpp_classes.rs, field by field
         decl = _c_declarator(g.c_type, g.name)
         init = f" = {g.init}" if g.init and not g.init.startswith("(") else ""
         heads.setdefault(g.file, []).append(

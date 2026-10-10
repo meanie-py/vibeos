@@ -60,6 +60,7 @@ class DeclInfo:
     name: str
     rust_name: str
     defaults: list[str | None] = field(default_factory=list)  # per param
+    static: bool = False
 
 
 def _tok(loc: dict, body_file: str, lo: int, hi: int) -> tuple[int, int] | None:
@@ -121,6 +122,8 @@ class Lowerer:
                 put(n["range"]["begin"], 4, "this_", "this")
             elif k == "MemberExpr":
                 self._member(n, put, this_class)
+            elif k == "DeclRefExpr":
+                self._static_ref(n, f, lo, hi, edits)
             elif k in ("CXXMemberCallExpr", "CallExpr"):
                 self._defaults(n, put, f, lo, hi, edits)
             elif k == "CXXNewExpr":
@@ -148,8 +151,12 @@ class Lowerer:
     # -- rules -------------------------------------------------------------------------
 
     def _member(self, n: dict, put, this_class: str | None) -> None:
+        if not n.get("name"):
+            return  # the implicit hop through an anonymous union: the field's rename spells it
         info = self.decls.get(n.get("referencedMemberDecl", ""))
         base = (n.get("inner") or [{}])[0]
+        while base.get("kind") == "MemberExpr" and not base.get("name"):
+            base = (base.get("inner") or [{}])[0]
         this_node = _unwrap_casts(base)
         implicit_this = this_node.get("kind") == "CXXThisExpr" and _implicit(this_node)
         if info is None:
@@ -183,6 +190,23 @@ class Lowerer:
         renamed = info.rust_name if written is not None and written != info.rust_name else None
         if prefix or renamed:
             put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
+
+    def _static_ref(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
+        """A STATIC member named without its class (`_shared()` inside CImageDx): after
+        assembly it is an associated fn, reachable only as `CImageDx::_shared()`."""
+        info = self.decls.get(n.get("referencedDecl", {}).get("id", ""))
+        if info is None or not info.static or info.kind != "method":
+            return
+        t = _tok(n["range"]["begin"], f, lo, hi)
+        if t is None:
+            return
+        before = cdp_text(f, max(lo, t[0] - 2), t[0])
+        if before.endswith("::"):
+            return  # already `Class::name`
+        cls = info.owner.split("::")[-1]
+        written = cdp_text(f, t[0], t[0] + t[1])
+        repl = info.rust_name if written != info.rust_name else written
+        edits.append((t[0] - lo, t[1], f"{cls}::{repl}"))
 
     def _defaults(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:
         inner = n.get("inner", [])

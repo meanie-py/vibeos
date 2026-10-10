@@ -29,6 +29,11 @@ from . import c_data_port as cdp
 from . import cpp_lower
 
 
+def _anon_field(anon: ClassModel) -> str:
+    """`CTextEventSink__anon0` -> its member name in the class, `__anon0`."""
+    return "__" + anon.name.rsplit("__", 1)[1]
+
+
 class CppModelError(RuntimeError):
     pass
 
@@ -271,7 +276,16 @@ def _split_top(text: str) -> list[str]:
 
 
 # Classes outside the module a module class derives from, by the header that defines them.
-EXTERNAL_CLASSES = {"CWindow": "sdk/lib/atl/atlwin.h"}
+EXTERNAL_CLASSES = {
+    "CWindow": "sdk/lib/atl/atlwin.h",
+    # atltypes.h: value types over the SDK structs (CRect : tagRECT), used by value.
+    "CRect": "sdk/lib/atl/atltypes.h",
+    "CPoint": "sdk/lib/atl/atltypes.h",
+    "CSize": "sdk/lib/atl/atltypes.h",
+    # atlbase.h: CRegKey holds an HKEY, which is island-NOMINAL: translated per module, it
+    # uses that module's own HKEY rather than a shared crate's guess at it.
+    "CRegKey": "sdk/lib/atl/atlbase.h",
+}
 # ATL's window templates are, for layout and member lookup, their CWindow: the template's own
 # machinery (thunk, Create, DefWindowProc, message routing) is atl_rust::win plus the per-class
 # glue cpp_app generates, never a translated body.
@@ -399,6 +413,8 @@ class _Extractor:
         # Per TU: decl ids mean nothing outside the AST that produced them.
         self.by_id: dict[str, str] = {}  # record decl id -> qualified class name
         self.decls: dict[str, cpp_lower.DeclInfo] = {}
+        self._anon_seen: set[str] = set()
+        self._anon_registered: set[str] = set()
         self.method_by_id: dict[str, Method] = {}
         # (Method | FreeFunc, CompoundStmt node, this class) to lower once the TU is walked:
         # a body can name a member of a class defined LATER in the same TU.
@@ -475,6 +491,10 @@ class _Extractor:
             k = c.get("kind")
             if k == "AccessSpecDecl":
                 access = c["access"]
+            elif k == "FieldDecl" and not c.get("name"):
+                anon = self._anon_record(n, c, cls)
+                if anon is not None:
+                    cls.fields.append(Field(_anon_field(anon), anon.name, access, False, None))
             elif k == "FieldDecl":
                 init = None
                 if c.get("hasInClassInitializer") and c.get("inner"):
@@ -497,12 +517,73 @@ class _Extractor:
         _assign_names(cls)
         self._register(n, cls, scope, first=True)
 
+    def _anon_record(self, n: dict, fdecl: dict, cls: ClassModel) -> ClassModel | None:
+        """An anonymous `union { UINT m_uFlags; FN_LAYOUTCHANGE m_fnLayoutChange; };` member
+        (msctfime's CTextEventSink) as a generated `{Class}__anonK` union, embedded where C++
+        puts it. Skipping it would shift every later field. Its members are reached as
+        `this->m_uFlags` in C++, so _register maps them to `__anonK.m_uFlags`."""
+        rec = next(
+            (
+                r
+                for r in n.get("inner", [])
+                if r.get("kind") == "CXXRecordDecl"
+                and not r.get("name")
+                and r.get("completeDefinition")
+                and f"anonymous {r.get('tagUsed', '?')}" in fdecl["type"]["qualType"]
+                and r["id"] not in self._anon_seen
+            ),
+            None,
+        )
+        if rec is None:
+            raise CppModelError(
+                f"{cls.qualified}: an unnamed field whose record cannot be found "
+                f"({fdecl['type']['qualType']}); its layout cannot be skipped"
+            )
+        self._anon_seen.add(rec["id"])
+        k = sum(1 for f in cls.fields if f.name.startswith("__anon"))
+        anon = ClassModel(
+            name=f"{cls.name}__anon{k}",
+            qualified=f"{cls.qualified}__anon{k}",
+            tag=rec.get("tagUsed", "union"),
+            file=cls.file,
+        )
+        for f in rec.get("inner", []):
+            if f.get("kind") == "FieldDecl":
+                if not f.get("name"):
+                    raise CppModelError(f"{cls.qualified}: nested anonymous member")
+                anon.fields.append(Field(f["name"], f["type"]["qualType"]))
+        self.model.classes[anon.qualified] = anon
+        return anon
+
     def _register(self, n: dict, cls: ClassModel, scope: str, first: bool = False) -> None:
         """Map this AST's member decl ids to the class model, and queue inline bodies."""
         methods = iter(cls.methods)
         fields = {f.name for f in cls.fields}
+        anon_fields = iter(f for f in cls.fields if f.name.startswith("__anon"))
         for c in n.get("inner", []):
             k = c.get("kind")
+            if k == "FieldDecl" and not c.get("name"):
+                af = next(anon_fields, None)
+                rec = next(
+                    (
+                        r
+                        for r in n.get("inner", [])
+                        if r.get("kind") == "CXXRecordDecl"
+                        and not r.get("name")
+                        and r.get("completeDefinition")
+                        and r.get("id") not in self._anon_registered
+                    ),
+                    None,
+                )
+                if af is None or rec is None:
+                    continue
+                self._anon_registered.add(rec["id"])
+                for f in rec.get("inner", []):
+                    if f.get("kind") == "FieldDecl" and f.get("name"):
+                        self.decls[f["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "field", f["name"], f"{af.name}.{f['name']}"
+                        )
+                continue
             if k in ("FieldDecl", "VarDecl") and c.get("name") in fields:
                 self.decls[c["id"]] = cpp_lower.DeclInfo(
                     cls.qualified, "field", c["name"], c["name"]
@@ -513,7 +594,12 @@ class _Extractor:
                 m = next(methods)
                 self.method_by_id[c["id"]] = m
                 self.decls[c["id"]] = cpp_lower.DeclInfo(
-                    cls.qualified, m.kind, m.name, m.rust_name, [p.default for p in m.params]
+                    cls.qualified,
+                    m.kind,
+                    m.name,
+                    m.rust_name,
+                    [p.default for p in m.params],
+                    m.static,
                 )
                 if first and m.body is not None:
                     self._queue(m, c, cls.qualified)
@@ -614,7 +700,7 @@ class _Extractor:
                 # A call AFTER this definition names the definition's own decl id (clang
                 # refers to the most recent redeclaration), so it resolves too.
                 self.decls[n["id"]] = cpp_lower.DeclInfo(
-                    owner, m.kind, m.name, m.rust_name, [p.default for p in m.params]
+                    owner, m.kind, m.name, m.rust_name, [p.default for p in m.params], m.static
                 )
                 self._queue(m, n, owner)
                 return
@@ -761,6 +847,7 @@ def extract(
         ast = cdp.clang_ast(repo, arch, tu)
         # ids are per-AST; record() re-registers them on each TU
         ex.by_id, ex.decls, ex.method_by_id = {}, {}, {}
+        ex._anon_seen, ex._anon_registered = set(), set()
         ex.walk(ast.get("inner", []))
         ex.lower_pending()
         del ast

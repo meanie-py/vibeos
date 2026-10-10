@@ -1,3 +1,7 @@
+import shutil
+
+import pytest
+
 from rustconv import cpp_app, cpp_lower
 from rustconv.cpp_model import (
     Base,
@@ -271,8 +275,16 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
         ("Release", [], "ULONG"),
         ("ScanProgress", [("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")], "HRESULT"),
     ):
-        cb.methods.append(_m(name, params=params, ret=ret, virtual=True, body=("c.hpp", 0, 1),
-                             lowered="{ return 0; }"))
+        cb.methods.append(
+            _m(
+                name,
+                params=params,
+                ret=ret,
+                virtual=True,
+                body=("c.hpp", 0, 1),
+                lowered="{ return 0; }",
+            )
+        )
     _assign_names(cb)
     m = ModuleModel()
     m.classes[cb.qualified] = cb
@@ -290,3 +302,68 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
     # the bodies are plain methods (the COM vtable is their dispatch)
     text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
     assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
+
+
+def test_a_struct_table_is_zipped_with_its_declared_fields():
+    """mspaint's CommandToToolMapping: the model guessed `nCommand`/`nTool` for `id`/`tool`."""
+    from rustconv.cpp_model import GlobalVar
+
+    c = ClassModel("COMMAND_TO_TOOL", "COMMAND_TO_TOOL", "struct", "t.cpp")
+    c.fields = [Field("id", "UINT"), Field("tool", "TOOLTYPE")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    m.globals = [
+        GlobalVar(
+            "CommandToToolMapping",
+            "const COMMAND_TO_TOOL[2]",
+            "t.cpp",
+            "{\n    { ID_FREESEL, TOOL_FREESEL },\n    { ID_RECTSEL, TOOL_RECTSEL },\n}",
+        )
+    ]
+    rs = cpp_app.render_classes(m)
+    assert "pub static CommandToToolMapping: [COMMAND_TO_TOOL; 2] = [" in rs
+    assert "COMMAND_TO_TOOL { id: (ID_FREESEL) as _, tool: (TOOL_FREESEL) as _ }" in rs
+    assert "CommandToToolMapping" not in "".join(cpp_app.synthetic_tus(m).values())
+
+
+def test_a_translated_copy_of_a_generated_static_is_dropped():
+    rs = "pub static T: [X; 2] = [\n    X { a: 1 },\n    X { a: 2 },\n];\nfn f() { T[0]; }\n"
+    assert cpp_app.drop_generated_statics(rs, {"T"}) == "fn f() { T[0]; }\n"
+    assert cpp_app.drop_generated_statics(rs, {"U"}) == rs
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_anonymous_union_member_keeps_its_slot(tmp_path):
+    """msctfime's CTextEventSink: `union { UINT m_uFlags; FN m_fn; };` between two fields.
+    Skipping it would shift every later field; its members are reached through `__anon0`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef unsigned int UINT; typedef int (*FN)(int);\n"
+        "class Sink { long m_cRefs; union { UINT m_uFlags; FN m_fn; }; void *m_after;\n"
+        "public: void Set(UINT f); };\n"
+        "void Sink::Set(UINT f) { m_uFlags = f; Sink *o = this; o->m_fn = 0; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    sink = ex.model.classes["Sink"]
+    assert [f.name for f in sink.fields] == ["m_cRefs", "__anon0", "m_after"]
+    assert ex.model.classes["Sink__anon0"].tag == "union"
+    (body,) = [m.lowered for m in sink.methods if m.name == "Set"]
+    assert "this_->__anon0.m_uFlags = f" in body and "o->__anon0.m_fn = 0" in body
+    assert "pub union Sink__anon0 {" in cpp_app.render_classes(ex.model)

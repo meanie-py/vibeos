@@ -578,6 +578,34 @@ def _unit_files(crate: Path, stem: str) -> list[Path]:
     ]
 
 
+def _cppapp_assemble_all(state: dict) -> list[str]:
+    """Move every cppapp unit's `Class__m` functions into their classes. Idempotent, and run
+    by integrate because translate's own hook runs once per subprocess: a reject-retry pass
+    rewrote mspaint's CWindow unit afterwards, and 54 methods stayed free functions."""
+    if not state.get("cppapp"):
+        return []
+    from . import cpp_app, cpp_model
+
+    app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+    gen_rs = _crate_dir(state) / "src" / state["stem"] / "cpp_classes.rs"
+    generated = (
+        set(re.findall(r"^pub static (?:mut )?(\w+)", gen_rs.read_text(), re.M))
+        if gen_rs.is_file()
+        else set()
+    )
+    done = []
+    for unit in state.get("header_tus", {}):
+        out = _tu_output(state, unit)
+        if not out.is_file():
+            continue
+        text = out.read_text()
+        new = cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated)
+        if new != text:
+            out.write_text(new)
+            done.append(out.stem)
+    return done
+
+
 def _cppapp_dir(stem: str) -> Path:
     return STATE_ROOT / stem / "cppapp"
 
@@ -675,11 +703,38 @@ def _cppapp_wire_crate(state: dict) -> None:
     lib.write_text(text[: block.start(1)] + "\n".join(kept) + "\n" + text[block.end(1) :])
     prelude = crate / "src" / "prelude.rs"
     ptext = prelude.read_text()
-    line = f"pub use crate::{stem}::cpp_classes::*;"
-    if line not in ptext:
-        prelude.write_text(
-            ptext.rstrip("\n") + "\n\n// The module's C++ classes (port cppapp).\n" + line + "\n"
+    # By NAME as well as by glob: the island renders the module's own non-template classes
+    # and declares its globals `extern` (mspaint's CCanvasWindow, toolsModel), so two globs
+    # made every one of them E0659-ambiguous -- 600 errors. An explicit `use` outranks a glob.
+    generated = (crate / "src" / stem / "cpp_classes.rs").read_text(errors="replace")
+    names = sorted(
+        set(
+            re.findall(
+                r"^pub (?:unsafe fn|fn|struct|static mut|static|type|const) (\w+)", generated, re.M
+            )
         )
+    )
+    block = (
+        f"{_CPPAPP_BEGIN}\npub use crate::{stem}::cpp_classes::*;\n"
+        + (f"pub use crate::{stem}::cpp_classes::{{{', '.join(names)}}};\n" if names else "")
+        + f"{_CPPAPP_END}\n"
+    )
+    old = re.search(re.escape(_CPPAPP_BEGIN) + r".*?" + re.escape(_CPPAPP_END) + r"\n", ptext, re.S)
+    if old:
+        ptext = ptext[: old.start()] + block + ptext[old.end() :]
+    else:
+        legacy = (
+            "\n\n// The module's C++ classes (port cppapp).\n"
+            f"pub use crate::{stem}::cpp_classes::*;\n"
+        )
+        ptext = ptext.replace(legacy, "\n").rstrip("\n") + "\n\n" + block
+    prelude.write_text(ptext)
+
+
+_CPPAPP_BEGIN = (
+    "// ==== port cppapp: the module's C++ classes (generated -- `rustconv port cppapp`) ===="
+)
+_CPPAPP_END = "// ==== end port cppapp ===="
 
 
 # --------------------------------------------------------------------------------------
@@ -2209,6 +2264,9 @@ def stage_integrate(stem: str) -> None:
     unprovided: dict[str, list[str]] = {}
     dead_used: dict[str, list[str]] = {}
     changed = 0
+    assembled = _cppapp_assemble_all(state)
+    if assembled:
+        print(f"integrate: assembled {', '.join(assembled)} into their classes")
     ptr_types, decls = _pointer_decls(state)
     ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []
