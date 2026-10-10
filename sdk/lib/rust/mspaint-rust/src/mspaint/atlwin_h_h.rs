@@ -10,8 +10,8 @@ impl CWindow {
     }
     pub unsafe fn op_to_HWND(&mut self) -> HWND {
         let this_: *mut Self = self;
-        return (*this_).m_hWnd;
-    }
+            return (*this_).m_hWnd;
+        }
     pub unsafe fn Attach(&mut self, hWndNew: HWND) {
         let this_: *mut Self = self;
         (*this_).m_hWnd = hWndNew;
@@ -28,19 +28,40 @@ impl CWindow {
     }
     pub unsafe fn CheckRadioButton(&mut self, nIDFirstButton: i32, nIDLastButton: i32, nIDCheckButton: i32) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
-        return CheckRadioButton((*this_).m_hWnd, nIDFirstButton, nIDLastButton, nIDCheckButton);
-    }
+            ATLASSERT!(IsWindow((*this_).m_hWnd));
+            return CheckRadioButton((*this_).m_hWnd, nIDFirstButton, nIDLastButton, nIDCheckButton);
+        }
     pub unsafe fn ClientToScreen__0(&mut self, lpPoint: LPPOINT) -> BOOL {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd));
         return ClientToScreen((*this_).m_hWnd, lpPoint);
     }
+    pub unsafe fn Create(&mut self, lpstrWndClass: LPCTSTR, hWndParent: HWND, rect: _U_RECT, szWindowName: LPCTSTR, dwStyle: DWORD, dwExStyle: DWORD, MenuOrID: _U_MENUorID, lpCreateParam: LPVOID) -> HWND {
+        let this_: *mut Self = self;
+        let hWnd: HWND;
+        ATLASSERT!((*this_).m_hWnd == core::ptr::null_mut());
+        hWnd = CreateWindowEx(dwExStyle,
+                                lpstrWndClass,
+                                szWindowName,
+                                dwStyle,
+                                (*rect.m_lpRect).left,
+                                (*rect.m_lpRect).top,
+                                (*rect.m_lpRect).right - (*rect.m_lpRect).left,
+                                (*rect.m_lpRect).bottom - (*rect.m_lpRect).top,
+                                hWndParent,
+                                MenuOrID.m_hMenu,
+                                _AtlBaseModule.GetModuleInstance(),
+                                lpCreateParam);
+        if hWnd != core::ptr::null_mut() {
+            (*this_).m_hWnd = hWnd;
+        }
+        return hWnd;
+    }
     pub unsafe fn DestroyWindow(&mut self) -> BOOL {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd));
     
-        if (DestroyWindow((*this_).m_hWnd) == 0) {
+        if !(DestroyWindow((*this_).m_hWnd)) != 0 {
             return (FALSE) as BOOL;
         }
     
@@ -49,7 +70,7 @@ impl CWindow {
     }
     pub unsafe fn Detach(&mut self) -> HWND {
         let this_: *mut Self = self;
-            let hWnd: HWND = (*this_).m_hWnd;
+            let mut hWnd: HWND = (*this_).m_hWnd;
             (*this_).m_hWnd = core::ptr::null_mut();
             return hWnd;
         }
@@ -60,7 +81,7 @@ impl CWindow {
     }
     pub unsafe fn GetClientRect(&mut self, lpRect: LPRECT) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return GetClientRect((*this_).m_hWnd, lpRect);
     }
     pub unsafe fn GetDC(&mut self) -> HDC {
@@ -99,12 +120,12 @@ impl CWindow {
     }
     pub unsafe fn GetFont(&mut self) -> HFONT {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return SendMessage((*this_).m_hWnd, WM_GETFONT, 0, 0) as HFONT;
     }
     pub unsafe fn GetMenu(&mut self) -> HMENU {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return GetMenu((*this_).m_hWnd);
     }
     pub unsafe fn GetParent(&mut self) -> CWindow {
@@ -114,17 +135,17 @@ impl CWindow {
     }
     pub unsafe fn GetScrollInfo(&mut self, nBar: i32, lpScrollInfo: LPSCROLLINFO) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
-        return GetScrollInfo((*this_).m_hWnd, nBar, lpScrollInfo);
-    }
+            ASSERT!(IsWindow((*this_).m_hWnd));
+            return GetScrollInfo((*this_).m_hWnd, nBar, lpScrollInfo);
+        }
     pub unsafe fn GetScrollPos(&mut self, nBar: i32) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        ASSERT!(IsWindow((*this_).m_hWnd));
         return GetScrollPos((*this_).m_hWnd, nBar);
     }
     pub unsafe fn GetWindowPlacement(&mut self, lpwndpl: *mut WINDOWPLACEMENT) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd) != 0);
         return GetWindowPlacement((*this_).m_hWnd, lpwndpl);
     }
     pub unsafe fn GetWindowRect(&mut self, lpRect: LPRECT) -> BOOL {
@@ -151,12 +172,12 @@ impl CWindow {
     }
     pub unsafe fn Invalidate(&mut self, bErase: BOOL) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return InvalidateRect((*this_).m_hWnd, core::ptr::null_mut(), bErase);
     }
     pub unsafe fn IsDialogMessageW(&mut self, lpMsg: LPMSG) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return IsDialogMessage((*this_).m_hWnd, lpMsg);
     }
     pub unsafe fn IsDlgButtonChecked(&mut self, nIDButton: i32) -> UINT {
@@ -175,7 +196,7 @@ impl CWindow {
     }
     pub unsafe fn IsWindowVisible(&mut self) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return IsWindowVisible((*this_).m_hWnd);
     }
     pub unsafe fn IsZoomed(&mut self) -> BOOL {
@@ -185,19 +206,24 @@ impl CWindow {
     }
     pub unsafe fn MapWindowPoints__0(&mut self, hWndTo: HWND, lpPoint: LPPOINT, nCount: UINT) -> i32 {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        ASSERT!(IsWindow((*this_).m_hWnd));
         return MapWindowPoints((*this_).m_hWnd, hWndTo, lpPoint, nCount);
     }
     pub unsafe fn MapWindowPoints__1(&mut self, hWndTo: HWND, lpRect: LPRECT) -> i32 {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd) != 0);
-        return MapWindowPoints((*this_).m_hWnd, hWndTo, lpRect as LPPOINT, (core::mem::size_of::<RECT>() / core::mem::size_of::<POINT>()) as UINT) as i32;
+        return MapWindowPoints(
+            (*this_).m_hWnd,
+            hWndTo,
+            lpRect as LPPOINT,
+            (core::mem::size_of::<RECT>() / (core::mem::size_of::<POINT>() as usize)) as UINT,
+        );
     }
     pub unsafe fn MessageBoxW(&mut self, lpszText: LPCTSTR, lpszCaption: LPCTSTR, nType: UINT) -> i32 {
         let this_: *mut Self = self;
-            ATLASSERT!(IsWindow((*this_).m_hWnd));
-            return MessageBox((*this_).m_hWnd, lpszText, lpszCaption, nType);
-        }
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        return MessageBox((*this_).m_hWnd, lpszText, lpszCaption, nType);
+    }
     pub unsafe fn MoveWindow(&mut self, x: i32, y: i32, nWidth: i32, nHeight: i32, bRepaint: BOOL) -> BOOL {
         let this_: *mut Self = self;
         ATLASSERT!(IsWindow((*this_).m_hWnd));
@@ -210,9 +236,9 @@ impl CWindow {
     }
     pub unsafe fn PostMessageW(&mut self, message: UINT, wParam: WPARAM, lParam: LPARAM) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
-        return PostMessage((*this_).m_hWnd, message, wParam, lParam);
-    }
+            ATLASSERT!(IsWindow((*this_).m_hWnd));
+            return PostMessage((*this_).m_hWnd, message, wParam, lParam);
+        }
     pub unsafe fn ReleaseDC(&mut self, hDC: HDC) -> i32 {
         let this_: *mut Self = self;
         ASSERT!(IsWindow((*this_).m_hWnd));
@@ -245,27 +271,27 @@ impl CWindow {
     }
     pub unsafe fn SetFocus(&mut self) -> HWND {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return SetFocus((*this_).m_hWnd);
     }
     pub unsafe fn SetMenu(&mut self, hMenu: HMENU) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        ASSERT!(IsWindow((*this_).m_hWnd));
         return SetMenu((*this_).m_hWnd, hMenu);
     }
     pub unsafe fn SetScrollInfo(&mut self, nBar: i32, lpScrollInfo: LPSCROLLINFO, bRedraw: BOOL) -> i32 {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
-        return SetScrollInfo((*this_).m_hWnd, nBar, lpScrollInfo, bRedraw);
-    }
+            ATLASSERT!(IsWindow((*this_).m_hWnd));
+            return SetScrollInfo((*this_).m_hWnd, nBar, lpScrollInfo, bRedraw);
+        }
     pub unsafe fn SetScrollPos(&mut self, nBar: i32, nPos: i32, bRedraw: BOOL) -> i32 {
         let this_: *mut Self = self;
-            ATLASSERT!(IsWindow((*this_).m_hWnd));
+            ASSERT!(IsWindow((*this_).m_hWnd));
             return SetScrollPos((*this_).m_hWnd, nBar, nPos, bRedraw);
         }
     pub unsafe fn SetWindowLongPtr(&mut self, nIndex: i32, dwNewLong: LONG_PTR) -> LONG_PTR {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return SetWindowLongPtr((*this_).m_hWnd, nIndex, dwNewLong);
     }
     pub unsafe fn SetWindowPos(&mut self, hWndInsertAfter: HWND, x: i32, y: i32, cx: i32, cy: i32, nFlags: UINT) -> BOOL {
@@ -280,12 +306,12 @@ impl CWindow {
     }
     pub unsafe fn ShowScrollBar(&mut self, nBar: UINT, bShow: BOOL) -> BOOL {
         let this_: *mut Self = self;
-        ASSERT!(IsWindow((*this_).m_hWnd));
+        ATLASSERT!(IsWindow((*this_).m_hWnd));
         return ShowScrollBar((*this_).m_hWnd, (nBar) as i32, bShow);
     }
     pub unsafe fn ShowWindow(&mut self, nCmdShow: i32) -> BOOL {
         let this_: *mut Self = self;
-        ATLASSERT!(IsWindow((*this_).m_hWnd));
+        ASSERT!(IsWindow((*this_).m_hWnd));
         return ShowWindow((*this_).m_hWnd, nCmdShow);
     }
 }

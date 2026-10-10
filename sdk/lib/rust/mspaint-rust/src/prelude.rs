@@ -263,12 +263,10 @@ extern "system" {
 // ==== end port resolve ====
 
 // ==== port resolve: cross-TU definitions (generated) ====
-pub use crate::mspaint::drawing_cpp_h::Airbrush;
-pub use crate::mspaint::drawing_cpp_h::Bezier;
 pub use crate::mspaint::dib_cpp_h::BitmapFromClipboardDIB;
 pub use crate::mspaint::dib_cpp_h::BitmapFromHEMF;
 pub use crate::mspaint::dib_cpp_h::BitmapToClipboardDIB;
-pub use crate::mspaint::drawing_cpp_h::Brush;
+pub use crate::mspaint::drawing_cpp_h::Brush__0;
 pub use crate::mspaint::dib_cpp_h::CachedBufferDIB;
 pub use crate::mspaint::drawing_cpp_h::ColorKeyedMaskBlt;
 pub use crate::mspaint::dib_cpp_h::ConvertToBlackAndWhite;
@@ -280,27 +278,23 @@ pub use crate::mspaint::drawing_cpp_h::CreateDitherBrush;
 pub use crate::mspaint::dib_cpp_h::CreateMonoBitmap;
 pub use crate::mspaint::dib_cpp_h::DoLoadImageFile;
 pub use crate::mspaint::drawing_cpp_h::DrawXorRect;
-pub use crate::mspaint::drawing_cpp_h::Ellp;
-pub use crate::mspaint::drawing_cpp_h::Erase;
-pub use crate::mspaint::drawing_cpp_h::Fill;
+pub use crate::mspaint::drawing_cpp_h::Erase__0;
 pub use crate::mspaint::dib_cpp_h::GetDIBHeight;
 pub use crate::mspaint::dib_cpp_h::GetDIBWidth;
 pub use crate::mspaint::dib_cpp_h::InitializeImage;
 pub use crate::mspaint::dib_cpp_h::IsBitmapBlackAndWhite;
-pub use crate::mspaint::drawing_cpp_h::Line;
-pub use crate::mspaint::drawing_cpp_h::Poly;
 pub use crate::mspaint::dib_cpp_h::PpcmFromDpi;
-pub use crate::mspaint::drawing_cpp_h::RRect;
-pub use crate::mspaint::drawing_cpp_h::Rect;
 pub use crate::mspaint::drawing_cpp_h::RectSel;
-pub use crate::mspaint::drawing_cpp_h::Replace;
+pub use crate::mspaint::drawing_cpp_h::Rect__0;
 pub use crate::mspaint::dib_cpp_h::Rotate90DegreeBlt;
 pub use crate::mspaint::dib_cpp_h::SaveDIBToFile;
 pub use crate::mspaint::main_cpp_h::ShowOutOfMemory;
 pub use crate::mspaint::dib_cpp_h::SkewDIB;
-pub use crate::mspaint::drawing_cpp_h::Text;
-pub use crate::mspaint::toolsmodel_h_h::UnZoomed;
-pub use crate::mspaint::toolsmodel_h_h::Zoomed;
+pub use crate::mspaint::toolsmodel_h_h::UnZoomed__1;
+pub use crate::mspaint::toolsmodel_h_h::UnZoomed__2;
+pub use crate::mspaint::toolsmodel_h_h::Zoomed__0;
+pub use crate::mspaint::toolsmodel_h_h::Zoomed__1;
+pub use crate::mspaint::toolsmodel_h_h::Zoomed__2;
 pub use crate::mspaint::sizebox_cpp_h::drawSizeBoxes;
 pub use crate::mspaint::sizebox_cpp_h::getSizeBoxHitTest;
 pub use crate::mspaint::dib_cpp_h::getSubImage;

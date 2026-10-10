@@ -596,63 +596,52 @@ impl CMainWindow {
             return 0;
         }
     
-        let textShown: BOOL = ((toolsModel.GetActiveTool() == TOOL_TEXT && IsWindowVisible(textEditWindow.op_to_HWND()) != 0) as BOOL);
+        let textShown: BOOL = (toolsModel.GetActiveTool() == TOOL_TEXT && IsWindowVisible((textEditWindow).op_to_HWND()) != 0) as BOOL;
         'sw: {
             match (LOWORD!(wParam)) as u32 {
                 IDM_HELPINFO => {
-                    let mut infotitle = [0u16; 100];
-                    let mut infotext = [0u16; 200];
+                    let mut infotitle = [0 as WCHAR; 100];
+                    let mut infotext = [0 as WCHAR; 200];
                     LoadStringW(g_hinstExe, IDS_INFOTITLE, infotitle.as_mut_ptr(), (_countof!(infotitle)) as i32);
                     LoadStringW(g_hinstExe, IDS_INFOTEXT, infotext.as_mut_ptr(), (_countof!(infotext)) as i32);
-                    ShellAboutW((*this_).__base0.m_hWnd, infotitle.as_mut_ptr(), infotext.as_mut_ptr(),
+                    ShellAboutW((*this_).__base0.m_hWnd, infotitle.as_ptr(), infotext.as_ptr(),
                         LoadIconW(g_hinstExe, MAKEINTRESOURCEW!(IDI_APPICON)));
-                    break 'sw;
                 }
                 IDM_HELPHELPTOPICS => {
                     DoHtmlHelpW((*this_).__base0.m_hWnd, CPP_COM_WSTR_461B74EEBD9E.as_ptr(), HH_DISPLAY_TOPIC, 0);
-                    break 'sw;
                 }
                 IDM_FILEEXIT => {
                     (*this_).__base0.SendMessageW__0(WM_CLOSE, wParam, lParam);
-                    break 'sw;
                 }
                 IDM_FILENEW => {
                     if (*this_).ConfirmSave() != 0 {
                         InitializeImage(core::ptr::null_mut(), core::ptr::null_mut(), (FALSE) as BOOL);
                     }
-                    break 'sw;
                 }
                 IDM_FILEOPEN => {
-                    {
-                        let mut szFileName = [0u16; (MAX_LONG_PATH) as _];
-                        core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr(), szFileName.as_mut_ptr(), (MAX_LONG_PATH) as _);
-                        if (*this_).ConfirmSave() != 0 && (*this_).GetOpenFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                            DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_mut_ptr(), (TRUE) as BOOL);
-                        }
-                        break 'sw;
+                    let mut szFileName: [WCHAR; (MAX_LONG_PATH) as _] = core::ptr::read(CPP_COM_WSTR_96A296D224F2.as_ptr() as *const [WCHAR; (MAX_LONG_PATH) as _]);
+                    if (*this_).ConfirmSave() != 0 && (*this_).GetOpenFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
+                        DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_ptr(), (TRUE) as BOOL);
                     }
                 }
                 IDM_FILESAVE => {
                     (*this_).saveImage((TRUE) as BOOL);
-                    break 'sw;
                 }
                 IDM_FILESAVEAS => {
                     (*this_).saveImage((FALSE) as BOOL);
-                    break 'sw;
                 }
                 IDM_FILEPAGESETUP => {
                     // DUMMY: Shows the dialog only, no functionality
                     let mut psd: PAGESETUPDLG = core::mem::zeroed();
-                    core::ptr::write_bytes(core::ptr::addr_of_mut!(psd), 0, 1);
+                    ZeroMemory!(core::ptr::addr_of_mut!(psd) as *mut core::ffi::c_void, core::mem::size_of::<PAGESETUPDLG>());
                     psd.lStructSize = core::mem::size_of::<PAGESETUPDLG>() as DWORD;
                     psd.hwndOwner = (*this_).__base0.m_hWnd;
                     PageSetupDlg(core::ptr::addr_of_mut!(psd));
-                    break 'sw;
                 }
                 IDM_FILEPRINT => {
                     // TODO: Test whether it actually works
                     let mut pd: PRINTDLG = core::mem::zeroed();
-                    core::ptr::write_bytes(core::ptr::addr_of_mut!(pd), 0, 1);
+                    ZeroMemory!(core::ptr::addr_of_mut!(pd) as *mut core::ffi::c_void, core::mem::size_of::<PRINTDLG>());
                     pd.lStructSize = core::mem::size_of::<PRINTDLG>() as DWORD;
                     pd.hwndOwner = (*this_).__base0.m_hWnd;
                     pd.hDevMode = core::ptr::null_mut();  // freed by user
@@ -667,39 +656,33 @@ impl CMainWindow {
                         BitBlt(pd.hDC, 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), imageModel.GetDC(), 0, 0, SRCCOPY);
                         DeleteDC(pd.hDC);
                     }
-                    if (pd.hDevMode as usize) != 0 {
+                    if !pd.hDevMode.is_null() {
                         GlobalFree(pd.hDevMode);
                     }
-                    if (pd.hDevNames as usize) != 0 {
+                    if !pd.hDevNames.is_null() {
                         GlobalFree(pd.hDevNames);
                     }
-                    break 'sw;
                 }
                 IDM_FILESEND => {
                     canvasWindow.OnEndDraw((FALSE) as BOOL);
-                    if OpenMailer((*this_).__base0.m_hWnd, core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR) == 0 {
+                    if OpenMailer((*this_).__base0.m_hWnd, g_szFileName.as_ptr()) == 0 {
                         ShowError((IDS_CANTSENDMAIL) as INT);
                     }
-                    break 'sw;
                 }
                 IDM_FILEASWALLPAPERPLANE => {
-                    RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_TILED);
-                    break 'sw;
+                    RegistrySettings::SetWallpaper(g_szFileName.as_ptr(), RegistrySettings_WallpaperStyle_TILED);
                 }
                 IDM_FILEASWALLPAPERCENTERED => {
-                    RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_CENTERED);
-                    break 'sw;
+                    RegistrySettings::SetWallpaper(g_szFileName.as_ptr(), RegistrySettings_WallpaperStyle_CENTERED);
                 }
                 IDM_FILEASWALLPAPERSTRETCHED => {
-                    RegistrySettings::SetWallpaper(core::ptr::addr_of_mut!(g_szFileName) as *mut WCHAR, RegistrySettings_WallpaperStyle_STRETCHED);
-                    break 'sw;
+                    RegistrySettings::SetWallpaper(g_szFileName.as_ptr(), RegistrySettings_WallpaperStyle_STRETCHED);
                 }
                 IDM_FILE1 | IDM_FILE2 | IDM_FILE3 | IDM_FILE4 => {
-                    let iFile: INT = (LOWORD!(wParam) as INT) - (IDM_FILE1 as i32);
+                    let iFile: INT = LOWORD!(wParam) as INT - (IDM_FILE1 as i32);
                     if (*this_).ConfirmSave() != 0 {
-                        DoLoadImageFile((*this_).__base0.m_hWnd, &registrySettings.strFiles[iFile as usize], (TRUE) as BOOL);
+                        DoLoadImageFile((*this_).__base0.m_hWnd, registrySettings.strFiles[iFile as usize].GetString(), (TRUE) as BOOL);
                     }
-                    break 'sw;
                 }
                 IDM_EDITUNDO => {
                     if textShown != 0 {
@@ -708,7 +691,6 @@ impl CMainWindow {
                     }
                     canvasWindow.OnEndDraw((FALSE) as BOOL);
                     imageModel.Undo((FALSE) as BOOL);
-                    break 'sw;
                 }
                 IDM_EDITREDO => {
                     if textShown != 0 {
@@ -717,7 +699,6 @@ impl CMainWindow {
                     }
                     canvasWindow.OnEndDraw((FALSE) as BOOL);
                     imageModel.Redo();
-                    break 'sw;
                 }
                 IDM_EDITCOPY => {
                     if textShown != 0 {
@@ -733,9 +714,9 @@ impl CMainWindow {
                     selectionModel.TakeOff();
     
                     {
-                        let hbmCopy: HBITMAP = selectionModel.GetSelectionContents();
-                        let hGlobal: HGLOBAL = BitmapToClipboardDIB(hbmCopy);
-                        if (hGlobal as usize) != 0 {
+                        let hbmCopy = selectionModel.GetSelectionContents();
+                        let hGlobal = BitmapToClipboardDIB(hbmCopy);
+                        if !hGlobal.is_null() {
                             SetClipboardData(CF_DIB, hGlobal);
                         } else {
                             ShowOutOfMemory();
@@ -745,7 +726,6 @@ impl CMainWindow {
                     }
     
                     CloseClipboard();
-                    break 'sw;
                 }
                 IDM_EDITCUT => {
                     if textShown != 0 {
@@ -756,7 +736,6 @@ impl CMainWindow {
                     (*this_).__base0.SendMessageW__0(WM_COMMAND, (IDM_EDITCOPY) as WPARAM, 0);
                     /* Delete selection */
                     (*this_).__base0.SendMessageW__0(WM_COMMAND, (IDM_EDITDELETESELECTION) as WPARAM, 0);
-                    break 'sw;
                 }
                 IDM_EDITPASTE => {
                     if textShown != 0 {
@@ -770,11 +749,11 @@ impl CMainWindow {
     
                     // In many cases, CF_ENHMETAFILE provides a better image than CF_DIB
                     if IsClipboardFormatAvailable(CF_ENHMETAFILE) != 0 {
-                        let hEMF: HENHMETAFILE = GetClipboardData(CF_ENHMETAFILE) as HENHMETAFILE;
-                        if (hEMF as usize) != 0 {
-                            let hbm: HBITMAP = BitmapFromHEMF(hEMF);
+                        let hEMF = GetClipboardData(CF_ENHMETAFILE) as HENHMETAFILE;
+                        if !hEMF.is_null() {
+                            let hbm = BitmapFromHEMF(hEMF);
                             DeleteEnhMetaFile(hEMF);
-                            if (hbm as usize) != 0 {
+                            if !hbm.is_null() {
                                 (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                                 CloseClipboard();
                                 break 'sw;
@@ -784,8 +763,8 @@ impl CMainWindow {
     
                     // In many cases, CF_DIB provides a better image than CF_BITMAP
                     if IsClipboardFormatAvailable(CF_DIB) != 0 {
-                        let hbm: HBITMAP = BitmapFromClipboardDIB(GetClipboardData(CF_DIB));
-                        if (hbm as usize) != 0 {
+                        let hbm = BitmapFromClipboardDIB(GetClipboardData(CF_DIB));
+                        if !hbm.is_null() {
                             (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                             CloseClipboard();
                             break 'sw;
@@ -794,8 +773,8 @@ impl CMainWindow {
     
                     // The last resort
                     if IsClipboardFormatAvailable(CF_BITMAP) != 0 {
-                        let hbm: HBITMAP = GetClipboardData(CF_BITMAP) as HBITMAP;
-                        if (hbm as usize) != 0 {
+                        let hbm = GetClipboardData(CF_BITMAP) as HBITMAP;
+                        if !hbm.is_null() {
                             (*this_).InsertSelectionFromHBITMAP(hbm, (*this_).__base0.m_hWnd);
                             CloseClipboard();
                             break 'sw;
@@ -812,330 +791,251 @@ impl CMainWindow {
                     }
     
                     CloseClipboard();
-                    break 'sw;
                 }
                 IDM_CROPSELECTION => {
-                    {
-                        let hbmSelection: HBITMAP = selectionModel.GetSelectionContents();
-                        if (hbmSelection as usize) != 0 {
-                            imageModel.PushImageForUndo__1(hbmSelection);
-                            selectionModel.HideSelection();
-                            imageModel.NotifyImageChanged();
-                        }
-                        break 'sw;
+                    let hbmSelection = selectionModel.GetSelectionContents();
+                    if !hbmSelection.is_null() {
+                        imageModel.PushImageForUndo__1(hbmSelection);
+                        selectionModel.HideSelection();
+                        imageModel.NotifyImageChanged();
                     }
                 }
                 IDM_EDITDELETESELECTION => {
-                    {
-                        if textShown != 0 {
-                            textEditWindow.__base0.SendMessageW__0(WM_CLEAR, 0, 0);
-                            break 'sw;
-                        }
-                        'isw: {
-                            match toolsModel.GetActiveTool() {
-                                TOOL_FREESEL | TOOL_RECTSEL => {
-                                    selectionModel.DeleteSelection();
-                                    break 'isw;
-                                }
-    
-                                TOOL_TEXT => {
-                                    canvasWindow.OnEndDraw((TRUE) as BOOL);
-                                    break 'isw;
-                                }
-                                _ => {
-                                    break 'isw;
-                                }
-                            }
-                        }
+                    if textShown != 0 {
+                        textEditWindow.__base0.SendMessageW__0(WM_CLEAR, 0, 0);
                         break 'sw;
+                    }
+                    match toolsModel.GetActiveTool() {
+                        TOOL_FREESEL | TOOL_RECTSEL => {
+                            selectionModel.DeleteSelection();
+                        }
+                        TOOL_TEXT => {
+                            canvasWindow.OnEndDraw((TRUE) as BOOL);
+                        }
+                        _ => {}
                     }
                 }
                 IDM_EDITSELECTALL => {
-                    {
-                        if textShown != 0 {
-                            textEditWindow.__base0.SendMessageW__0(EM_SETSEL, 0, -1);
-                            break 'sw;
-                        }
-                        let hToolbar: HWND = FindWindowEx(toolBoxContainer.__base0.m_hWnd, core::ptr::null_mut(), TOOLBARCLASSNAME, core::ptr::null_mut());
-                        SendMessageW(hToolbar, TB_CHECKBUTTON, (ID_RECTSEL) as WPARAM, MAKELPARAM!(TRUE, 0));
-                        toolsModel.selectAll();
-                        canvasWindow.__base0.Invalidate((TRUE) as BOOL);
+                    if textShown != 0 {
+                        textEditWindow.__base0.SendMessageW__0(EM_SETSEL, 0, -1);
                         break 'sw;
                     }
+                    let hToolbar = FindWindowEx(toolBoxContainer.__base0.m_hWnd, core::ptr::null_mut(), TOOLBARCLASSNAME, core::ptr::null_mut());
+                    SendMessageW(hToolbar, TB_CHECKBUTTON, (ID_RECTSEL) as WPARAM, MAKELPARAM!(TRUE, 0));
+                    toolsModel.selectAll();
+                    canvasWindow.__base0.Invalidate((TRUE) as BOOL);
                 }
                 IDM_EDITCOPYTO => {
-                    {
-                        let mut szFileName = [0u16; (MAX_LONG_PATH) as _];
-                        LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, szFileName.as_mut_ptr(), (_countof!(szFileName)) as i32);
-                        if (*this_).GetSaveFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                            let hbmSelection: HBITMAP = selectionModel.GetSelectionContents();
-                            if (hbmSelection as usize) == 0 {
-                                ShowOutOfMemory();
-                                imageModel.ClearHistory();
-                                break 'sw;
-                            }
-                            SaveDIBToFile(hbmSelection, szFileName.as_mut_ptr(), (FALSE) as BOOL, &GUID_NULL);
-                            DeleteObject((hbmSelection).cast());
+                    let mut szFileName = [0 as WCHAR; (MAX_LONG_PATH) as _];
+                    LoadStringW(g_hinstExe, IDS_DEFAULTFILENAME, szFileName.as_mut_ptr(), (_countof!(szFileName)) as i32);
+                    if (*this_).GetSaveFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
+                        let hbmSelection = selectionModel.GetSelectionContents();
+                        if hbmSelection.is_null() {
+                            ShowOutOfMemory();
+                            imageModel.ClearHistory();
+                            break 'sw;
                         }
-                        break 'sw;
+                        SaveDIBToFile(hbmSelection, szFileName.as_ptr(), (FALSE) as BOOL, &GUID_NULL);
+                        DeleteObject((hbmSelection).cast());
                     }
                 }
                 IDM_EDITPASTEFROM => {
-                    {
-                        let mut szFileName = [0u16; (MAX_LONG_PATH) as _];
-                        core::ptr::copy_nonoverlapping(CPP_COM_WSTR_96A296D224F2.as_ptr(), szFileName.as_mut_ptr(), (MAX_LONG_PATH) as _);
-                        if (*this_).GetOpenFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
-                            let hbmNew: HBITMAP = DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_mut_ptr(), (FALSE) as BOOL);
-                            if (hbmNew as usize) != 0 {
-                                (*this_).InsertSelectionFromHBITMAP(hbmNew, (*this_).__base0.m_hWnd);
-                            }
+                    let mut szFileName: [WCHAR; (MAX_LONG_PATH) as _] = core::ptr::read(CPP_COM_WSTR_96A296D224F2.as_ptr() as *const [WCHAR; (MAX_LONG_PATH) as _]);
+                    if (*this_).GetOpenFileName(szFileName.as_mut_ptr(), _countof!(szFileName)) != 0 {
+                        let hbmNew = DoLoadImageFile((*this_).__base0.m_hWnd, szFileName.as_ptr(), (FALSE) as BOOL);
+                        if !hbmNew.is_null() {
+                            (*this_).InsertSelectionFromHBITMAP(hbmNew, (*this_).__base0.m_hWnd);
                         }
-                        break 'sw;
                     }
                 }
                 IDM_COLORSEDITPALETTE => {
-                    {
-                        let mut rgbColor: COLORREF = paletteModel.GetFgColor();
-                        if (*this_).ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0 {
-                            paletteModel.SetFgColor(rgbColor);
-                        }
-                        break 'sw;
+                    let mut rgbColor: COLORREF = paletteModel.GetFgColor();
+                    if (*this_).ChooseColor(core::ptr::addr_of_mut!(rgbColor)) != 0 {
+                        paletteModel.SetFgColor(rgbColor);
                     }
                 }
                 IDM_COLORSMODERNPALETTE => {
                     paletteModel.SelectPalette(PAL_MODERN);
-                    break 'sw;
                 }
                 IDM_COLORSOLDPALETTE => {
                     paletteModel.SelectPalette(PAL_OLDTYPE);
-                    break 'sw;
                 }
                 IDM_COLORSGRAYSCALE => {
                     paletteModel.SelectPalette(PAL_GRAYSCALE);
-                    break 'sw;
                 }
                 IDM_COLORSMONOCHROME => {
                     paletteModel.SelectPalette(PAL_MONOCHROME);
-                    break 'sw;
                 }
                 IDM_IMAGEINVERTCOLORS => {
-                    {
-                        if selectionModel.m_bShow != 0 {
-                            selectionModel.InvertSelection();
-                        } else {
-                            imageModel.InvertColors();
-                        }
-                        break 'sw;
+                    if selectionModel.m_bShow != 0 {
+                        selectionModel.InvertSelection();
+                    } else {
+                        imageModel.InvertColors();
                     }
                 }
                 IDM_IMAGEDELETEIMAGE => {
                     imageModel.PushImageForUndo__0();
-                    Rect(imageModel.GetDC(), 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), paletteModel.GetBgColor(), paletteModel.GetBgColor(), 0, (TRUE) as i32);
+                    Rect__0(imageModel.GetDC(), 0, 0, imageModel.GetWidth(), imageModel.GetHeight(), paletteModel.GetBgColor(), paletteModel.GetBgColor(), 0, (TRUE) as i32);
                     imageModel.NotifyImageChanged();
-                    break 'sw;
                 }
                 IDM_IMAGEROTATEMIRROR => {
                     {
-                        let waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
                         canvasWindow.updateScrollPos(0, 0);
-                        'msw: {
-                            match mirrorRotateDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) {
-                                1 => { /* flip horizontally */
-                                    {
-                                        if selectionModel.m_bShow != 0 {
-                                            selectionModel.FlipHorizontally();
-                                        } else {
-                                            imageModel.FlipHorizontally();
-                                        }
-                                        break 'msw;
-                                    }
+                        match mirrorRotateDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) {
+                            1 => { /* flip horizontally */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.FlipHorizontally();
+                                } else {
+                                    imageModel.FlipHorizontally();
                                 }
-                                2 => { /* flip vertically */
-                                    {
-                                        if selectionModel.m_bShow != 0 {
-                                            selectionModel.FlipVertically();
-                                        } else {
-                                            imageModel.FlipVertically();
-                                        }
-                                        break 'msw;
-                                    }
-                                }
-                                3 => { /* rotate 90 degrees */
-                                    {
-                                        if selectionModel.m_bShow != 0 {
-                                            selectionModel.RotateNTimes90Degrees(1);
-                                        } else {
-                                            imageModel.RotateNTimes90Degrees(1);
-                                        }
-                                        break 'msw;
-                                    }
-                                }
-                                4 => { /* rotate 180 degrees */
-                                    {
-                                        if selectionModel.m_bShow != 0 {
-                                            selectionModel.RotateNTimes90Degrees(2);
-                                        } else {
-                                            imageModel.RotateNTimes90Degrees(2);
-                                        }
-                                        break 'msw;
-                                    }
-                                }
-                                5 => { /* rotate 270 degrees */
-                                    {
-                                        if selectionModel.m_bShow != 0 {
-                                            selectionModel.RotateNTimes90Degrees(3);
-                                        } else {
-                                            imageModel.RotateNTimes90Degrees(3);
-                                        }
-                                        break 'msw;
-                                    }
-                                }
-                                _ => {}
                             }
+                            2 => { /* flip vertically */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.FlipVertically();
+                                } else {
+                                    imageModel.FlipVertically();
+                                }
+                            }
+                            3 => { /* rotate 90 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(1);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(1);
+                                }
+                            }
+                            4 => { /* rotate 180 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(2);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(2);
+                                }
+                            }
+                            5 => { /* rotate 270 degrees */
+                                if selectionModel.m_bShow != 0 {
+                                    selectionModel.RotateNTimes90Degrees(3);
+                                } else {
+                                    imageModel.RotateNTimes90Degrees(3);
+                                }
+                            }
+                            _ => {}
                         }
                     }
-                    break 'sw;
                 }
                 IDM_IMAGEATTRIBUTES => {
-                    {
-                        if attributesDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) != 0 {
-                            let waitCursor: CWaitCursor = CWaitCursor__make_0();
-                            if attributesDialog.m_bBlackAndWhite != 0 && imageModel.IsBlackAndWhite() == 0 {
-                                let strText = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_LOSECOLOR));
-                                let strTitle = CStringW::from_ptr(MAKEINTRESOURCEW!(IDS_PROGRAMNAME));
-                                let id: INT = (*this_).__base0.MessageBoxW(strText.GetString(), strTitle.GetString(), MB_ICONINFORMATION | MB_YESNOCANCEL);
-                                if (id) as u32 != IDYES {
-                                    break 'sw;
-                                }
-    
-                                imageModel.PushBlackAndWhite();
+                    if attributesDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) != 0 {
+                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        if attributesDialog.m_bBlackAndWhite != 0 && imageModel.IsBlackAndWhite() == 0 {
+                            let mut strText = CStringW::from_resource(IDS_LOSECOLOR);
+                            let mut strTitle = CStringW::from_resource(IDS_PROGRAMNAME);
+                            let id: INT = (*this_).__base0.MessageBoxW(strText.GetString(), strTitle.GetString(), MB_ICONINFORMATION | MB_YESNOCANCEL);
+                            if (id) as u32 != IDYES {
+                                break 'sw;
                             }
     
-                            if imageModel.GetWidth() != attributesDialog.newWidth ||
-                                imageModel.GetHeight() != attributesDialog.newHeight
-                            {
-                                imageModel.Crop(attributesDialog.newWidth, attributesDialog.newHeight, 0, 0);
-                            }
+                            imageModel.PushBlackAndWhite();
                         }
-                        break 'sw;
+    
+                        if imageModel.GetWidth() != attributesDialog.newWidth ||
+                            imageModel.GetHeight() != attributesDialog.newHeight {
+                            imageModel.Crop(attributesDialog.newWidth, attributesDialog.newHeight, 0, 0);
+                        }
                     }
                 }
                 IDM_IMAGESTRETCHSKEW => {
-                    {
-                        if stretchSkewDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) != 0 {
-                            let waitCursor: CWaitCursor = CWaitCursor__make_0();
-                            if selectionModel.m_bShow != 0 {
-                                selectionModel.StretchSkew(stretchSkewDialog.percentage.x, stretchSkewDialog.percentage.y,
-                                                           stretchSkewDialog.angle.x, stretchSkewDialog.angle.y);
-                            } else {
-                                imageModel.StretchSkew(stretchSkewDialog.percentage.x, stretchSkewDialog.percentage.y,
+                    if stretchSkewDialog.DoModal(mainWindow.__base0.m_hWnd, core::ptr::null_mut()) != 0 {
+                        let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
+                        if selectionModel.m_bShow != 0 {
+                            selectionModel.StretchSkew(stretchSkewDialog.percentage.x, stretchSkewDialog.percentage.y,
                                                        stretchSkewDialog.angle.x, stretchSkewDialog.angle.y);
-                            }
+                        } else {
+                            imageModel.StretchSkew(stretchSkewDialog.percentage.x, stretchSkewDialog.percentage.y,
+                                                   stretchSkewDialog.angle.x, stretchSkewDialog.angle.y);
                         }
-                        break 'sw;
                     }
                 }
                 IDM_IMAGEDRAWOPAQUE => {
                     toolsModel.SetBackgroundTransparent((toolsModel.IsBackgroundTransparent() == 0) as BOOL);
-                    break 'sw;
                 }
                 IDM_IMAGECROP => {
-                    {
-                        let hbmCopy: HBITMAP = selectionModel.GetSelectionContents();
-                        imageModel.PushImageForUndo__1(hbmCopy);
-                        selectionModel.HideSelection();
-                        break 'sw;
-                    }
+                    let hbmCopy = selectionModel.GetSelectionContents();
+                    imageModel.PushImageForUndo__1(hbmCopy);
+                    selectionModel.HideSelection();
                 }
                 IDM_VIEWTOOLBOX => {
                     registrySettings.ShowToolBox = (toolBoxContainer.__base0.IsWindowVisible() == 0) as DWORD;
                     toolBoxContainer.__base0.ShowWindow(if registrySettings.ShowToolBox != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw;
                 }
                 IDM_VIEWCOLORPALETTE => {
                     registrySettings.ShowPalette = (paletteWindow.__base0.IsWindowVisible() == 0) as DWORD;
                     paletteWindow.__base0.ShowWindow(if registrySettings.ShowPalette != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw;
                 }
                 IDM_VIEWSTATUSBAR => {
                     registrySettings.ShowStatusBar = (IsWindowVisible(g_hStatusBar) == 0) as DWORD;
-                    ShowWindow(g_hStatusBar, (if registrySettings.ShowStatusBar != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 }));
+                    ShowWindow(g_hStatusBar, if registrySettings.ShowStatusBar != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
                     (*this_).alignChildrenToMainWindow();
-                    break 'sw;
                 }
                 IDM_FORMATICONBAR => {
                     if toolsModel.GetActiveTool() == TOOL_TEXT {
                         if fontsDialog.__base0.IsWindow() == 0 {
-                            fontsDialog.Create({ let _ = &mainWindow; core::ptr::null_mut() }.op_to_HWND());
+                            // comma expression (mainWindow, NULL) yields NULL
+                            fontsDialog.Create(core::ptr::null_mut());
                         }
-                        registrySettings.ShowTextTool = (IsWindowVisible(fontsDialog.op_to_HWND()) == 0) as DWORD;
+                        registrySettings.ShowTextTool = (IsWindowVisible((fontsDialog).op_to_HWND()) == 0) as DWORD;
                         fontsDialog.__base0.ShowWindow(if registrySettings.ShowTextTool != 0 { (SW_SHOW) as i32 } else { (SW_HIDE) as i32 });
                         fontsDialog.__base0.SendMessageW__0(DM_REPOSITION, 0, 0);
                     }
-                    break 'sw;
                 }
                 IDM_VIEWSHOWGRID => {
                     g_showGrid = (g_showGrid == 0) as BOOL;
                     canvasWindow.__base0.Invalidate((FALSE) as BOOL);
-                    break 'sw;
                 }
                 IDM_VIEWSHOWMINIATURE => {
-                    registrySettings.ShowThumbnail = (IsWindowVisible(miniature.op_to_HWND()) == 0) as DWORD;
+                    registrySettings.ShowThumbnail = (IsWindowVisible((miniature).op_to_HWND()) == 0) as DWORD;
                     miniature.DoCreate((*this_).__base0.m_hWnd);
                     miniature.__base0.ShowWindow(if registrySettings.ShowThumbnail != 0 { (SW_SHOWNOACTIVATE) as i32 } else { (SW_HIDE) as i32 });
-                    break 'sw;
                 }
     
                 IDM_VIEWZOOM125 => {
                     canvasWindow.zoomTo(125, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM25 => {
                     canvasWindow.zoomTo(250, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM50 => {
                     canvasWindow.zoomTo(500, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM100 => {
                     canvasWindow.zoomTo(1000, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM200 => {
                     canvasWindow.zoomTo(2000, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM400 => {
                     canvasWindow.zoomTo(4000, 0, 0);
-                    break 'sw;
                 }
                 IDM_VIEWZOOM800 => {
                     canvasWindow.zoomTo(8000, 0, 0);
-                    break 'sw;
                 }
     
                 IDM_VIEWFULLSCREEN => {
                     // Create and show the fullscreen window
                     fullscreenWindow.DoCreate();
                     fullscreenWindow.__base0.ShowWindow((SW_SHOWMAXIMIZED) as i32);
-                    break 'sw;
                 }
     
                 IDM_CTRL_PLUS => {
                     toolsModel.SpecialTweak((FALSE) as BOOL);
-                    break 'sw;
                 }
                 IDM_CTRL_MINUS => {
                     toolsModel.SpecialTweak((TRUE) as BOOL);
-                    break 'sw;
                 }
                 _ => {}
             }
         }
-        return 0;
+        0
     }
     pub unsafe fn OnMouseWheel(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;

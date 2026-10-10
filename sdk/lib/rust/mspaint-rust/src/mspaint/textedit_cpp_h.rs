@@ -99,10 +99,10 @@ impl CTextEditWindow {
         let mut rcWnd = CRect__make_0();
         let mut rcText = CRect__make_0();
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rcWnd.__base0));
-        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(rcWnd), core::ptr::addr_of_mut!(rcText), 1);
+        rcText = rcWnd;
     
-        let hDC = (*this_).__base0.GetDC();
-        if hDC as usize != 0 {
+        let hDC: HDC = (*this_).__base0.GetDC();
+        if !hDC.is_null() {
             SelectObject(hDC, ((*this_).m_hFontZoomed).cast());
             let mut tm: TEXTMETRIC = core::mem::zeroed();
             GetTextMetrics(hDC, core::ptr::addr_of_mut!(tm));
@@ -116,10 +116,10 @@ impl CTextEditWindow {
             (*this_).__base0.ReleaseDC(hDC);
         }
     
-        UnionRect(core::ptr::addr_of_mut!(rc.__base0), core::ptr::addr_of_mut!(rcText.__base0), core::ptr::addr_of_mut!(rcWnd.__base0));
+        UnionRect(core::ptr::addr_of_mut!(rc.__base0), core::ptr::addr_of!(rcText.__base0), core::ptr::addr_of!(rcWnd.__base0));
         MapWindowPoints(core::ptr::null_mut(), (*this_).m_hwndParent, core::ptr::addr_of_mut!(rc) as LPPOINT, 2);
     
-        core::ptr::copy_nonoverlapping(core::ptr::addr_of!(rc), core::ptr::addr_of_mut!(rcWnd), 1);
+        rcWnd = rc;
         GetClientRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rcParent));
         rc.IntersectRect(core::ptr::addr_of!(rcParent), core::ptr::addr_of!(rcWnd.__base0));
     
@@ -128,7 +128,7 @@ impl CTextEditWindow {
         (*this_).DefWindowProc(WM_HSCROLL, (SB_LEFT) as WPARAM, 0);
         (*this_).DefWindowProc(WM_VSCROLL, (SB_TOP) as WPARAM, 0);
     
-        InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of_mut!(rc.__base0), (TRUE) as BOOL);
+        InvalidateRect((*this_).m_hwndParent, core::ptr::addr_of!(rc.__base0), (TRUE) as BOOL);
     }
     pub unsafe fn InvalidateEditRect(&mut self) {
         let this_: *mut Self = self;
@@ -156,13 +156,13 @@ impl CTextEditWindow {
         let mut lf: LOGFONTW = core::mem::zeroed();
         ZeroMemory!(core::ptr::addr_of_mut!(lf) as *mut _, core::mem::size_of::<LOGFONTW>());
         lf.lfCharSet = (DEFAULT_CHARSET as u8); // registrySettings.CharSet; // Ignore
-        lf.lfWeight = if registrySettings.Bold != 0 { (FW_BOLD as i32) } else { (FW_NORMAL as i32) };
-        lf.lfItalic = registrySettings.Italic as u8;
-        lf.lfUnderline = registrySettings.Underline as u8;
+        lf.lfWeight = if ((registrySettings.Bold) != 0) { (FW_BOLD as i32) } else { (FW_NORMAL as i32) };
+        lf.lfItalic = registrySettings.Italic as BYTE;
+        lf.lfUnderline = registrySettings.Underline as BYTE;
         StringCchCopyW(
             core::ptr::addr_of_mut!(lf.lfFaceName) as *mut u16,
-            _countof!(core::ptr::addr_of!(lf.lfFaceName)),
-            core::ptr::addr_of!(registrySettings.strFontName) as LPCWSTR,
+            (_countof!(lf.lfFaceName)) as _,
+            registrySettings.strFontName,
         );
     
         let hdc: HDC = (*this_).__base0.GetDC();
@@ -178,7 +178,7 @@ impl CTextEditWindow {
     
         (*this_).m_hFont = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
     
-        lf.lfHeight = Zoomed(lf.lfHeight);
+        lf.lfHeight = Zoomed__0(lf.lfHeight);
         (*this_).m_hFontZoomed = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
     
         SetWindowFont!((*this_).__base0.m_hWnd, (*this_).m_hFontZoomed, TRUE);
@@ -355,7 +355,7 @@ impl CTextEditWindow {
             return 0;
         }
     
-        let mut szText = CStringW::new();
+        let mut szText: CStringW = CStringW::new();
         (*this_).__base0.GetWindowTextW__1(&mut szText);
     
         let ret: LRESULT = (*this_).DefWindowProc(nMsg, wParam, lParam);

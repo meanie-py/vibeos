@@ -3,6 +3,7 @@ use core::ffi::c_void;
 
 
 
+
 impl CWaitCursor {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
@@ -29,5 +30,8 @@ impl CWaitCursor {
             SetCursor(CWaitCursor__s_hOldCursor);
             CWaitCursor__s_hOldCursor = core::ptr::null_mut();
         }
+    }
+    pub unsafe fn IsWaiting() -> BOOL {
+        return (CWaitCursor__s_nLock > 0) as BOOL;
     }
 }

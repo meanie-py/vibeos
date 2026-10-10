@@ -1122,7 +1122,9 @@ def stage_translate(
         mine = [
             n
             for n in rebuy_fn or []
-            if re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
+            # `__preamble__` is no function definition, but every TU has one.
+            if n == "__preamble__"
+            or re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
         ]
         if mine:
             cmd += ["--rebuy-fn", *mine]

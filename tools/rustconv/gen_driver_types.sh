@@ -4024,8 +4024,10 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]atlpath\.h'
                   --allowlist-file '.*[/\\]atlsimpstr\.h'
                   --allowlist-file '.*[/\\]atlstr\.h'
+                  --allowlist-file '.*[/\\]gdiplusbrush\.h'
                   --allowlist-file '.*[/\\]gdipluscolor\.h'
                   --allowlist-file '.*[/\\]gdiplusimaging\.h'
+                  --allowlist-file '.*[/\\]gdiplustypes\.h'
                   --allowlist-file '.*[/\\]registry\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"

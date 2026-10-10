@@ -199,7 +199,7 @@ impl SelectionModel {
             return;
         }
     
-        Rect(hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_rcOld.right, (*this_).m_rcOld.bottom, crBg, crBg, 0, 1);
+        Rect__0(hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_rcOld.right, (*this_).m_rcOld.bottom, crBg, crBg, 0, 1);
     }
     pub unsafe fn DrawSelection__0(&mut self, hDCImage: HDC, crBg: COLORREF, bBgTransparent: BOOL, rc: &CRect, hbm: HBITMAP) {
         let this_: *mut Self = self;

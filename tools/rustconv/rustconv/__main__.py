@@ -4520,7 +4520,7 @@ def cmd_translate(args):
             )
             pre_sink = None
             if not no_resume:
-                cache.refuse_repurchase(PREAMBLE_KEY)
+                cache.refuse_repurchase(PREAMBLE_KEY, explicit=_rebuy_requested(PREAMBLE_KEY))
             if getattr(args, "replay_only", False):
                 raise ValueError("--replay-only: no accepted cached preamble")
             if archive is not None:

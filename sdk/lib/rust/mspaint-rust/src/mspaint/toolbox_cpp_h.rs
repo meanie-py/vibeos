@@ -25,7 +25,7 @@ impl CPaintToolBar {
         };
         let style: DWORD = WS_CHILD | WS_VISIBLE | CCS_NOPARENTALIGN | CCS_VERT | CCS_NORESIZE |
                       TBSTYLE_TOOLTIPS | TBSTYLE_FLAT;
-        if (*this_).__base0.Create(TOOLBARCLASSNAMEW, hwndParent, toolbarPos, core::ptr::null_mut(), style, 0, 0, core::ptr::null_mut()) == 0 {
+        if (*this_).__base0.Create(TOOLBARCLASSNAMEW, hwndParent, toolbarPos, core::ptr::null_mut(), style, 0, 0, core::ptr::null_mut()) == core::ptr::null_mut() {
             return (FALSE) as BOOL;
         }
     
@@ -58,7 +58,7 @@ impl CPaintToolBar {
         (*this_).__base0.SendMessageW__0(TB_SETMAXTEXTROWS, 0 as WPARAM, 0);
         (*this_).__base0.SendMessageW__0(TB_SETBUTTONSIZE, 0 as WPARAM, MAKELPARAM!(CXY_TB_BUTTON, CXY_TB_BUTTON));
     
-        (*this_).__base0.SetWindowLongPtr(GWLP_USERDATA, (*this_).__base0.SetWindowLongPtr(GWLP_WNDPROC, CPaintToolBar__ToolBarWndProc as usize as LONG_PTR));
+        (*this_).__base0.SetWindowLongPtr(GWLP_USERDATA, (*this_).__base0.SetWindowLongPtr(GWLP_WNDPROC, CPaintToolBar::ToolBarWndProc as usize as LONG_PTR));
         return (TRUE) as BOOL;
     }
     pub unsafe fn ToolBarWndProc(hwnd: HWND, uMsg: u32, wParam: WPARAM, lParam: LPARAM) -> LRESULT {

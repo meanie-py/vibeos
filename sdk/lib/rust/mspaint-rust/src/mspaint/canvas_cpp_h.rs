@@ -118,9 +118,9 @@ impl CStyledCursor {
     
             // Draw brush or erase with black color
             if is_rubber != 0 {
-                Erase(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, RGB!(0, 0, 0), radius + 1);
+                Erase__0(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, RGB!(0, 0, 0), radius + 1);
             } else {
-                Brush(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, RGB!(0, 0, 0), style, diameter);
+                Brush__0(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, RGB!(0, 0, 0), style, diameter);
             }
     
             if is_rubber != 0 {
@@ -140,13 +140,13 @@ impl CStyledCursor {
     
             if is_rubber != 0 {
                 // Draw for rubber border
-                let avg: INT = ((GetRValue!(color) as INT) + (GetGValue!(color) as INT) + (GetBValue!(color) as INT)) / 3;
+                let avg: INT = (GetRValue!(color) as INT + GetGValue!(color) as INT + GetBValue!(color) as INT) / 3;
                 let color2: COLORREF = if avg > 255 / 2 {
                     RGB!(0, 0, 0)
                 } else {
                     RGB!(255, 255, 255)
                 };
-                Erase(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color2, radius + 1);
+                Erase__0(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color2, radius + 1);
             } else {
                 // Draw crosshair with white pen
                 SelectObject(hdcMem, (GetStockObject((WHITE_PEN as i32)) as HPEN).cast());
@@ -162,9 +162,9 @@ impl CStyledCursor {
     
             // Draw brush or erase with color
             if is_rubber != 0 {
-                Erase(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color, radius);
+                Erase__0(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color, radius);
             } else {
-                Brush(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color, style, diameter);
+                Brush__0(hdcMem, hotX as INT, hotY as INT, hotX as INT, hotY as INT, color, style, diameter);
             }
     
             SelectObject(hdcMem, (hbmOld).cast());
@@ -176,8 +176,8 @@ impl CStyledCursor {
         if zoom != (DEFAULT_ZOOM as i32) {
             let newWidth: INT = width * zoom / (DEFAULT_ZOOM as i32);
             let newHeight: INT = height * zoom / (DEFAULT_ZOOM as i32);
-            let hbmMaskNew: HBITMAP = CopyMonoImage(hbmMask, newWidth, newHeight, (STRETCH_DELETESCANS) as INT);
-            let hbmColorNew: HBITMAP = CopyDIBImage(hbmColor, newWidth, newHeight, (STRETCH_DELETESCANS as i32));
+            let hbmMaskNew: HBITMAP = CopyMonoImage(hbmMask, newWidth, newHeight, (STRETCH_DELETESCANS) as INT) as HBITMAP;
+            let hbmColorNew: HBITMAP = CopyDIBImage(hbmColor, newWidth, newHeight, (STRETCH_DELETESCANS as i32)) as HBITMAP;
             DeleteObject((hbmMask).cast());
             DeleteObject((hbmColor).cast());
             hbmMask = hbmMaskNew;
@@ -222,8 +222,8 @@ impl CCanvasWindow {
     
         let mut sizePage: CSize = CSize__make_1(rcClient.__base0.right, rcClient.__base0.bottom);
         let mut sizeZoomed: CSize = CSize__make_1(
-            Zoomed(imageModel.GetWidth()),
-            Zoomed(imageModel.GetHeight()),
+            Zoomed__0(imageModel.GetWidth()),
+            Zoomed__0(imageModel.GetHeight()),
         );
         let mut sizeWhole: CSize = CSize__make_1(
             sizeZoomed.__base0.cx + ((GRIP_SIZE * 2)) as i32,
@@ -259,25 +259,25 @@ impl CCanvasWindow {
     }
     pub unsafe fn ImageToCanvas__0(&mut self, pt: &mut POINT) {
         let this_: *mut Self = self;
-        Zoomed(pt);
+        Zoomed__1(pt);
         pt.x += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32;
         pt.y += (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32;
     }
     pub unsafe fn ImageToCanvas__1(&mut self, rc: &mut RECT) {
         let this_: *mut Self = self;
-        Zoomed(rc);
+        Zoomed__2(rc);
         OffsetRect(rc as *mut RECT, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32, (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32);
     }
     pub unsafe fn CanvasToImage__0(&mut self, pt: &mut POINT, bRound: BOOL) {
         let this_: *mut Self = self;
         pt.x -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_HORZ) as i32)) as u32) as i32;
         pt.y -= (GRIP_SIZE - ((*this_).__base0.GetScrollPos((SB_VERT) as i32)) as u32) as i32;
-        UnZoomed(pt, bRound);
+        UnZoomed__1(pt, bRound);
     }
     pub unsafe fn CanvasToImage__1(&mut self, rc: &mut RECT, bRound: BOOL) {
         let this_: *mut Self = self;
-        OffsetRect(rc as *mut RECT, (*this_).__base0.GetScrollPos((SB_HORZ) as i32) - (GRIP_SIZE as i32), (*this_).__base0.GetScrollPos((SB_VERT) as i32) - (GRIP_SIZE as i32));
-        UnZoomed(*rc, bRound);
+        OffsetRect(core::ptr::addr_of_mut!(*rc), (*this_).__base0.GetScrollPos((SB_HORZ) as i32) - (GRIP_SIZE as i32), (*this_).__base0.GetScrollPos((SB_VERT) as i32) - (GRIP_SIZE as i32));
+        UnZoomed__2(rc, bRound);
     }
     pub unsafe fn GetImageRect(&mut self, rc: &mut RECT) {
         let this_: *mut Self = self;

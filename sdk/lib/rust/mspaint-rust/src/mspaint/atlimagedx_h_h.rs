@@ -60,8 +60,8 @@ impl CImageDx {
     }
     pub unsafe fn GetResolution(&mut self, pImage: *mut GpImage, pxDpi: *mut f32, pyDpi: *mut f32) -> BOOL {
         let this_: *mut Self = self;
-        if CImageDx::get_fn((*CImageDx::_shared()).m_GetImageHorizontalResolution, b"GdipGetImageHorizontalResolution\0".as_ptr() as *const i8) == false
-            || CImageDx::get_fn((*CImageDx::_shared()).m_GetImageVerticalResolution, b"GdipGetImageVerticalResolution\0".as_ptr() as *const i8) == false
+        if CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageHorizontalResolution, b"GdipGetImageHorizontalResolution\0".as_ptr() as *const i8) == false
+            || CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageVerticalResolution, b"GdipGetImageVerticalResolution\0".as_ptr() as *const i8) == false
         {
             return (FALSE) as BOOL;
         }
@@ -90,9 +90,9 @@ impl CImageDx {
     
         (*CImageDx::_shared()).AddRef();
     
-        if CImageDx::get_fn((*CImageDx::_shared()).m_CreateBitmapFromFile, b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8) == false ||
-            CImageDx::get_fn((*CImageDx::_shared()).m_CreateHBITMAPFromBitmap, b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8) == false ||
-            CImageDx::get_fn((*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8) == false
+        if CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateBitmapFromFile, b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8) == false ||
+            CImageDx::get_fn(&mut (*CImageDx::_shared()).m_CreateHBITMAPFromBitmap, b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8) == false ||
+            CImageDx::get_fn(&mut (*CImageDx::_shared()).m_DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8) == false
         {
             (*CImageDx::_shared()).Release();
             return E_FAIL;
@@ -211,8 +211,8 @@ impl CImageDx {
         let mut ret: *mut Gdiplus_ImageCodecInfo = core::ptr::null_mut();
         let mut total_size: u32 = 0;
     
-        if !CImageDx::get_fn((*CImageDx::_shared()).m_GetImageEncodersSize, b"GdipGetImageEncodersSize\0".as_ptr() as *const i8) ||
-            !CImageDx::get_fn((*CImageDx::_shared()).m_GetImageEncoders, b"GdipGetImageEncoders\0".as_ptr() as *const i8)
+        if !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageEncodersSize, b"GdipGetImageEncodersSize\0".as_ptr() as *const i8) ||
+            !CImageDx::get_fn(&mut (*CImageDx::_shared()).m_GetImageEncoders, b"GdipGetImageEncoders\0".as_ptr() as *const i8)
         {
             *cEncoders = 0;
             return core::ptr::null_mut();

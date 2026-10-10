@@ -15577,6 +15577,402 @@ pub type CStretchSkewDialog__bindgen_ty_1 = ::core::ffi::c_uint;
 pub use crate::mspaint::cpp_classes::CFontsDialog; // port cppapp owns it
 pub const CFontsDialog_IDD: CFontsDialog__bindgen_ty_1 = 760;
 pub type CFontsDialog__bindgen_ty_1 = ::core::ffi::c_uint;
+pub const Gdiplus_BrushType_BrushTypeSolidColor: Gdiplus_BrushType = 0;
+pub const Gdiplus_BrushType_BrushTypeHatchFill: Gdiplus_BrushType = 1;
+pub const Gdiplus_BrushType_BrushTypeTextureFill: Gdiplus_BrushType = 2;
+pub const Gdiplus_BrushType_BrushTypePathGradient: Gdiplus_BrushType = 3;
+pub const Gdiplus_BrushType_BrushTypeLinearGradient: Gdiplus_BrushType = 4;
+pub type Gdiplus_BrushType = ::core::ffi::c_uint;
+pub const Gdiplus_MatrixOrder_MatrixOrderPrepend: Gdiplus_MatrixOrder = 0;
+pub const Gdiplus_MatrixOrder_MatrixOrderAppend: Gdiplus_MatrixOrder = 1;
+pub type Gdiplus_MatrixOrder = ::core::ffi::c_uint;
+pub const Gdiplus_WrapMode_WrapModeTile: Gdiplus_WrapMode = 0;
+pub const Gdiplus_WrapMode_WrapModeTileFlipX: Gdiplus_WrapMode = 1;
+pub const Gdiplus_WrapMode_WrapModeTileFlipY: Gdiplus_WrapMode = 2;
+pub const Gdiplus_WrapMode_WrapModeTileFlipXY: Gdiplus_WrapMode = 3;
+pub const Gdiplus_WrapMode_WrapModeClamp: Gdiplus_WrapMode = 4;
+pub type Gdiplus_WrapMode = ::core::ffi::c_uint;
+pub const Gdiplus_LinearGradientMode_LinearGradientModeHorizontal: Gdiplus_LinearGradientMode = 0;
+pub const Gdiplus_LinearGradientMode_LinearGradientModeVertical: Gdiplus_LinearGradientMode = 1;
+pub const Gdiplus_LinearGradientMode_LinearGradientModeForwardDiagonal: Gdiplus_LinearGradientMode =
+    2;
+pub const Gdiplus_LinearGradientMode_LinearGradientModeBackwardDiagonal:
+    Gdiplus_LinearGradientMode = 3;
+pub type Gdiplus_LinearGradientMode = ::core::ffi::c_uint;
+pub const Gdiplus_HatchStyle_HatchStyleHorizontal: Gdiplus_HatchStyle = 0;
+pub const Gdiplus_HatchStyle_HatchStyleVertical: Gdiplus_HatchStyle = 1;
+pub const Gdiplus_HatchStyle_HatchStyleForwardDiagonal: Gdiplus_HatchStyle = 2;
+pub const Gdiplus_HatchStyle_HatchStyleBackwardDiagonal: Gdiplus_HatchStyle = 3;
+pub const Gdiplus_HatchStyle_HatchStyleCross: Gdiplus_HatchStyle = 4;
+pub const Gdiplus_HatchStyle_HatchStyleDiagonalCross: Gdiplus_HatchStyle = 5;
+pub const Gdiplus_HatchStyle_HatchStyle05Percent: Gdiplus_HatchStyle = 6;
+pub const Gdiplus_HatchStyle_HatchStyle10Percent: Gdiplus_HatchStyle = 7;
+pub const Gdiplus_HatchStyle_HatchStyle20Percent: Gdiplus_HatchStyle = 8;
+pub const Gdiplus_HatchStyle_HatchStyle25Percent: Gdiplus_HatchStyle = 9;
+pub const Gdiplus_HatchStyle_HatchStyle30Percent: Gdiplus_HatchStyle = 10;
+pub const Gdiplus_HatchStyle_HatchStyle40Percent: Gdiplus_HatchStyle = 11;
+pub const Gdiplus_HatchStyle_HatchStyle50Percent: Gdiplus_HatchStyle = 12;
+pub const Gdiplus_HatchStyle_HatchStyle60Percent: Gdiplus_HatchStyle = 13;
+pub const Gdiplus_HatchStyle_HatchStyle70Percent: Gdiplus_HatchStyle = 14;
+pub const Gdiplus_HatchStyle_HatchStyle75Percent: Gdiplus_HatchStyle = 15;
+pub const Gdiplus_HatchStyle_HatchStyle80Percent: Gdiplus_HatchStyle = 16;
+pub const Gdiplus_HatchStyle_HatchStyle90Percent: Gdiplus_HatchStyle = 17;
+pub const Gdiplus_HatchStyle_HatchStyleLightDownwardDiagonal: Gdiplus_HatchStyle = 18;
+pub const Gdiplus_HatchStyle_HatchStyleLightUpwardDiagonal: Gdiplus_HatchStyle = 19;
+pub const Gdiplus_HatchStyle_HatchStyleDarkDownwardDiagonal: Gdiplus_HatchStyle = 20;
+pub const Gdiplus_HatchStyle_HatchStyleDarkUpwardDiagonal: Gdiplus_HatchStyle = 21;
+pub const Gdiplus_HatchStyle_HatchStyleWideDownwardDiagonal: Gdiplus_HatchStyle = 22;
+pub const Gdiplus_HatchStyle_HatchStyleWideUpwardDiagonal: Gdiplus_HatchStyle = 23;
+pub const Gdiplus_HatchStyle_HatchStyleLightVertical: Gdiplus_HatchStyle = 24;
+pub const Gdiplus_HatchStyle_HatchStyleLightHorizontal: Gdiplus_HatchStyle = 25;
+pub const Gdiplus_HatchStyle_HatchStyleNarrowVertical: Gdiplus_HatchStyle = 26;
+pub const Gdiplus_HatchStyle_HatchStyleNarrowHorizontal: Gdiplus_HatchStyle = 27;
+pub const Gdiplus_HatchStyle_HatchStyleDarkVertical: Gdiplus_HatchStyle = 28;
+pub const Gdiplus_HatchStyle_HatchStyleDarkHorizontal: Gdiplus_HatchStyle = 29;
+pub const Gdiplus_HatchStyle_HatchStyleDashedDownwardDiagonal: Gdiplus_HatchStyle = 30;
+pub const Gdiplus_HatchStyle_HatchStyleDashedUpwardDiagonal: Gdiplus_HatchStyle = 31;
+pub const Gdiplus_HatchStyle_HatchStyleDashedHorizontal: Gdiplus_HatchStyle = 32;
+pub const Gdiplus_HatchStyle_HatchStyleDashedVertical: Gdiplus_HatchStyle = 33;
+pub const Gdiplus_HatchStyle_HatchStyleSmallConfetti: Gdiplus_HatchStyle = 34;
+pub const Gdiplus_HatchStyle_HatchStyleLargeConfetti: Gdiplus_HatchStyle = 35;
+pub const Gdiplus_HatchStyle_HatchStyleZigZag: Gdiplus_HatchStyle = 36;
+pub const Gdiplus_HatchStyle_HatchStyleWave: Gdiplus_HatchStyle = 37;
+pub const Gdiplus_HatchStyle_HatchStyleDiagonalBrick: Gdiplus_HatchStyle = 38;
+pub const Gdiplus_HatchStyle_HatchStyleHorizontalBrick: Gdiplus_HatchStyle = 39;
+pub const Gdiplus_HatchStyle_HatchStyleWeave: Gdiplus_HatchStyle = 40;
+pub const Gdiplus_HatchStyle_HatchStylePlaid: Gdiplus_HatchStyle = 41;
+pub const Gdiplus_HatchStyle_HatchStyleDivot: Gdiplus_HatchStyle = 42;
+pub const Gdiplus_HatchStyle_HatchStyleDottedGrid: Gdiplus_HatchStyle = 43;
+pub const Gdiplus_HatchStyle_HatchStyleDottedDiamond: Gdiplus_HatchStyle = 44;
+pub const Gdiplus_HatchStyle_HatchStyleShingle: Gdiplus_HatchStyle = 45;
+pub const Gdiplus_HatchStyle_HatchStyleTrellis: Gdiplus_HatchStyle = 46;
+pub const Gdiplus_HatchStyle_HatchStyleSphere: Gdiplus_HatchStyle = 47;
+pub const Gdiplus_HatchStyle_HatchStyleSmallGrid: Gdiplus_HatchStyle = 48;
+pub const Gdiplus_HatchStyle_HatchStyleSmallCheckerBoard: Gdiplus_HatchStyle = 49;
+pub const Gdiplus_HatchStyle_HatchStyleLargeCheckerBoard: Gdiplus_HatchStyle = 50;
+pub const Gdiplus_HatchStyle_HatchStyleOutlinedDiamond: Gdiplus_HatchStyle = 51;
+pub const Gdiplus_HatchStyle_HatchStyleSolidDiamond: Gdiplus_HatchStyle = 52;
+pub const Gdiplus_HatchStyle_HatchStyleTotal: Gdiplus_HatchStyle = 53;
+pub const Gdiplus_HatchStyle_HatchStyleLargeGrid: Gdiplus_HatchStyle = 4;
+pub const Gdiplus_HatchStyle_HatchStyleMin: Gdiplus_HatchStyle = 0;
+pub const Gdiplus_HatchStyle_HatchStyleMax: Gdiplus_HatchStyle = 52;
+pub type Gdiplus_HatchStyle = ::core::ffi::c_uint;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetBkColor: Gdiplus_EmfPlusRecordType = 66049;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetBkMode: Gdiplus_EmfPlusRecordType = 65794;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetMapMode: Gdiplus_EmfPlusRecordType = 65795;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetROP2: Gdiplus_EmfPlusRecordType = 65796;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetRelAbs: Gdiplus_EmfPlusRecordType = 65797;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetPolyFillMode: Gdiplus_EmfPlusRecordType = 65798;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetStretchBltMode: Gdiplus_EmfPlusRecordType =
+    65799;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetTextCharExtra: Gdiplus_EmfPlusRecordType =
+    65800;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetTextColor: Gdiplus_EmfPlusRecordType = 66057;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetTextJustification: Gdiplus_EmfPlusRecordType =
+    66058;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetWindowOrg: Gdiplus_EmfPlusRecordType = 66059;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetWindowExt: Gdiplus_EmfPlusRecordType = 66060;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetViewportOrg: Gdiplus_EmfPlusRecordType = 66061;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetViewportExt: Gdiplus_EmfPlusRecordType = 66062;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeOffsetWindowOrg: Gdiplus_EmfPlusRecordType = 66063;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeScaleWindowExt: Gdiplus_EmfPlusRecordType = 66576;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeOffsetViewportOrg: Gdiplus_EmfPlusRecordType =
+    66065;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeScaleViewportExt: Gdiplus_EmfPlusRecordType =
+    66578;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeLineTo: Gdiplus_EmfPlusRecordType = 66067;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeMoveTo: Gdiplus_EmfPlusRecordType = 66068;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeExcludeClipRect: Gdiplus_EmfPlusRecordType = 66581;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeIntersectClipRect: Gdiplus_EmfPlusRecordType =
+    66582;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeArc: Gdiplus_EmfPlusRecordType = 67607;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeEllipse: Gdiplus_EmfPlusRecordType = 66584;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeFloodFill: Gdiplus_EmfPlusRecordType = 66585;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePie: Gdiplus_EmfPlusRecordType = 67610;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeRectangle: Gdiplus_EmfPlusRecordType = 66587;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeRoundRect: Gdiplus_EmfPlusRecordType = 67100;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePatBlt: Gdiplus_EmfPlusRecordType = 67101;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSaveDC: Gdiplus_EmfPlusRecordType = 65566;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetPixel: Gdiplus_EmfPlusRecordType = 66591;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeOffsetClipRgn: Gdiplus_EmfPlusRecordType = 66080;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeTextOut: Gdiplus_EmfPlusRecordType = 66849;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeBitBlt: Gdiplus_EmfPlusRecordType = 67874;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeStretchBlt: Gdiplus_EmfPlusRecordType = 68387;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePolygon: Gdiplus_EmfPlusRecordType = 66340;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePolyline: Gdiplus_EmfPlusRecordType = 66341;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeEscape: Gdiplus_EmfPlusRecordType = 67110;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeRestoreDC: Gdiplus_EmfPlusRecordType = 65831;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeFillRegion: Gdiplus_EmfPlusRecordType = 66088;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeFrameRegion: Gdiplus_EmfPlusRecordType = 66601;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeInvertRegion: Gdiplus_EmfPlusRecordType = 65834;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePaintRegion: Gdiplus_EmfPlusRecordType = 65835;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSelectClipRegion: Gdiplus_EmfPlusRecordType =
+    65836;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSelectObject: Gdiplus_EmfPlusRecordType = 65837;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetTextAlign: Gdiplus_EmfPlusRecordType = 65838;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeDrawText: Gdiplus_EmfPlusRecordType = 67119;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeChord: Gdiplus_EmfPlusRecordType = 67632;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetMapperFlags: Gdiplus_EmfPlusRecordType = 66097;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeExtTextOut: Gdiplus_EmfPlusRecordType = 68146;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetDIBToDev: Gdiplus_EmfPlusRecordType = 68915;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSelectPalette: Gdiplus_EmfPlusRecordType = 66100;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeRealizePalette: Gdiplus_EmfPlusRecordType = 65589;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeAnimatePalette: Gdiplus_EmfPlusRecordType = 66614;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetPalEntries: Gdiplus_EmfPlusRecordType = 65591;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypePolyPolygon: Gdiplus_EmfPlusRecordType = 66872;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeResizePalette: Gdiplus_EmfPlusRecordType = 65849;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeDIBBitBlt: Gdiplus_EmfPlusRecordType = 67904;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeDIBStretchBlt: Gdiplus_EmfPlusRecordType = 68417;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeDIBCreatePatternBrush: Gdiplus_EmfPlusRecordType =
+    65858;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeStretchDIB: Gdiplus_EmfPlusRecordType = 69443;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeExtFloodFill: Gdiplus_EmfPlusRecordType = 66888;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeSetLayout: Gdiplus_EmfPlusRecordType = 65865;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeResetDC: Gdiplus_EmfPlusRecordType = 65868;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeStartDoc: Gdiplus_EmfPlusRecordType = 65869;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeStartPage: Gdiplus_EmfPlusRecordType = 65615;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeEndPage: Gdiplus_EmfPlusRecordType = 65616;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeAbortDoc: Gdiplus_EmfPlusRecordType = 65618;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeEndDoc: Gdiplus_EmfPlusRecordType = 65630;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeDeleteObject: Gdiplus_EmfPlusRecordType = 66032;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreatePalette: Gdiplus_EmfPlusRecordType = 65783;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateBrush: Gdiplus_EmfPlusRecordType = 65784;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreatePatternBrush: Gdiplus_EmfPlusRecordType =
+    66041;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreatePenIndirect: Gdiplus_EmfPlusRecordType =
+    66298;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateFontIndirect: Gdiplus_EmfPlusRecordType =
+    66299;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateBrushIndirect: Gdiplus_EmfPlusRecordType =
+    66300;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateBitmapIndirect: Gdiplus_EmfPlusRecordType =
+    66301;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateBitmap: Gdiplus_EmfPlusRecordType = 67326;
+pub const Gdiplus_EmfPlusRecordType_WmfRecordTypeCreateRegion: Gdiplus_EmfPlusRecordType = 67327;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeHeader: Gdiplus_EmfPlusRecordType = 1;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyBezier: Gdiplus_EmfPlusRecordType = 2;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolygon: Gdiplus_EmfPlusRecordType = 3;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyline: Gdiplus_EmfPlusRecordType = 4;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyBezierTo: Gdiplus_EmfPlusRecordType = 5;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyLineTo: Gdiplus_EmfPlusRecordType = 6;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyPolyline: Gdiplus_EmfPlusRecordType = 7;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyPolygon: Gdiplus_EmfPlusRecordType = 8;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetWindowExtEx: Gdiplus_EmfPlusRecordType = 9;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetWindowOrgEx: Gdiplus_EmfPlusRecordType = 10;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetViewportExtEx: Gdiplus_EmfPlusRecordType = 11;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetViewportOrgEx: Gdiplus_EmfPlusRecordType = 12;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetBrushOrgEx: Gdiplus_EmfPlusRecordType = 13;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeEOF: Gdiplus_EmfPlusRecordType = 14;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetPixelV: Gdiplus_EmfPlusRecordType = 15;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetMapperFlags: Gdiplus_EmfPlusRecordType = 16;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetMapMode: Gdiplus_EmfPlusRecordType = 17;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetBkMode: Gdiplus_EmfPlusRecordType = 18;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetPolyFillMode: Gdiplus_EmfPlusRecordType = 19;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetROP2: Gdiplus_EmfPlusRecordType = 20;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetStretchBltMode: Gdiplus_EmfPlusRecordType = 21;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetTextAlign: Gdiplus_EmfPlusRecordType = 22;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetColorAdjustment: Gdiplus_EmfPlusRecordType = 23;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetTextColor: Gdiplus_EmfPlusRecordType = 24;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetBkColor: Gdiplus_EmfPlusRecordType = 25;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeOffsetClipRgn: Gdiplus_EmfPlusRecordType = 26;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeMoveToEx: Gdiplus_EmfPlusRecordType = 27;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetMetaRgn: Gdiplus_EmfPlusRecordType = 28;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExcludeClipRect: Gdiplus_EmfPlusRecordType = 29;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeIntersectClipRect: Gdiplus_EmfPlusRecordType = 30;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeScaleViewportExtEx: Gdiplus_EmfPlusRecordType = 31;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeScaleWindowExtEx: Gdiplus_EmfPlusRecordType = 32;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSaveDC: Gdiplus_EmfPlusRecordType = 33;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeRestoreDC: Gdiplus_EmfPlusRecordType = 34;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetWorldTransform: Gdiplus_EmfPlusRecordType = 35;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeModifyWorldTransform: Gdiplus_EmfPlusRecordType =
+    36;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSelectObject: Gdiplus_EmfPlusRecordType = 37;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreatePen: Gdiplus_EmfPlusRecordType = 38;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreateBrushIndirect: Gdiplus_EmfPlusRecordType =
+    39;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeDeleteObject: Gdiplus_EmfPlusRecordType = 40;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeAngleArc: Gdiplus_EmfPlusRecordType = 41;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeEllipse: Gdiplus_EmfPlusRecordType = 42;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeRectangle: Gdiplus_EmfPlusRecordType = 43;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeRoundRect: Gdiplus_EmfPlusRecordType = 44;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeArc: Gdiplus_EmfPlusRecordType = 45;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeChord: Gdiplus_EmfPlusRecordType = 46;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePie: Gdiplus_EmfPlusRecordType = 47;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSelectPalette: Gdiplus_EmfPlusRecordType = 48;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreatePalette: Gdiplus_EmfPlusRecordType = 49;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetPaletteEntries: Gdiplus_EmfPlusRecordType = 50;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeResizePalette: Gdiplus_EmfPlusRecordType = 51;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeRealizePalette: Gdiplus_EmfPlusRecordType = 52;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtFloodFill: Gdiplus_EmfPlusRecordType = 53;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeLineTo: Gdiplus_EmfPlusRecordType = 54;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeArcTo: Gdiplus_EmfPlusRecordType = 55;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyDraw: Gdiplus_EmfPlusRecordType = 56;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetArcDirection: Gdiplus_EmfPlusRecordType = 57;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetMiterLimit: Gdiplus_EmfPlusRecordType = 58;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeBeginPath: Gdiplus_EmfPlusRecordType = 59;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeEndPath: Gdiplus_EmfPlusRecordType = 60;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCloseFigure: Gdiplus_EmfPlusRecordType = 61;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeFillPath: Gdiplus_EmfPlusRecordType = 62;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeStrokeAndFillPath: Gdiplus_EmfPlusRecordType = 63;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeStrokePath: Gdiplus_EmfPlusRecordType = 64;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeFlattenPath: Gdiplus_EmfPlusRecordType = 65;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeWidenPath: Gdiplus_EmfPlusRecordType = 66;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSelectClipPath: Gdiplus_EmfPlusRecordType = 67;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeAbortPath: Gdiplus_EmfPlusRecordType = 68;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeReserved_069: Gdiplus_EmfPlusRecordType = 69;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeGdiComment: Gdiplus_EmfPlusRecordType = 70;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeFillRgn: Gdiplus_EmfPlusRecordType = 71;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeFrameRgn: Gdiplus_EmfPlusRecordType = 72;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeInvertRgn: Gdiplus_EmfPlusRecordType = 73;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePaintRgn: Gdiplus_EmfPlusRecordType = 74;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtSelectClipRgn: Gdiplus_EmfPlusRecordType = 75;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeBitBlt: Gdiplus_EmfPlusRecordType = 76;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeStretchBlt: Gdiplus_EmfPlusRecordType = 77;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeMaskBlt: Gdiplus_EmfPlusRecordType = 78;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePlgBlt: Gdiplus_EmfPlusRecordType = 79;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetDIBitsToDevice: Gdiplus_EmfPlusRecordType = 80;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeStretchDIBits: Gdiplus_EmfPlusRecordType = 81;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtCreateFontIndirect: Gdiplus_EmfPlusRecordType =
+    82;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtTextOutA: Gdiplus_EmfPlusRecordType = 83;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtTextOutW: Gdiplus_EmfPlusRecordType = 84;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyBezier16: Gdiplus_EmfPlusRecordType = 85;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolygon16: Gdiplus_EmfPlusRecordType = 86;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyline16: Gdiplus_EmfPlusRecordType = 87;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyBezierTo16: Gdiplus_EmfPlusRecordType = 88;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolylineTo16: Gdiplus_EmfPlusRecordType = 89;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyPolyline16: Gdiplus_EmfPlusRecordType = 90;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyPolygon16: Gdiplus_EmfPlusRecordType = 91;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyDraw16: Gdiplus_EmfPlusRecordType = 92;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreateMonoBrush: Gdiplus_EmfPlusRecordType = 93;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreateDIBPatternBrushPt:
+    Gdiplus_EmfPlusRecordType = 94;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtCreatePen: Gdiplus_EmfPlusRecordType = 95;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyTextOutA: Gdiplus_EmfPlusRecordType = 96;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePolyTextOutW: Gdiplus_EmfPlusRecordType = 97;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetICMMode: Gdiplus_EmfPlusRecordType = 98;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreateColorSpace: Gdiplus_EmfPlusRecordType = 99;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetColorSpace: Gdiplus_EmfPlusRecordType = 100;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeDeleteColorSpace: Gdiplus_EmfPlusRecordType = 101;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeGLSRecord: Gdiplus_EmfPlusRecordType = 102;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeGLSBoundedRecord: Gdiplus_EmfPlusRecordType = 103;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypePixelFormat: Gdiplus_EmfPlusRecordType = 104;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeDrawEscape: Gdiplus_EmfPlusRecordType = 105;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeExtEscape: Gdiplus_EmfPlusRecordType = 106;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeStartDoc: Gdiplus_EmfPlusRecordType = 107;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSmallTextOut: Gdiplus_EmfPlusRecordType = 108;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeForceUFIMapping: Gdiplus_EmfPlusRecordType = 109;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeNamedEscape: Gdiplus_EmfPlusRecordType = 110;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeColorCorrectPalette: Gdiplus_EmfPlusRecordType =
+    111;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetICMProfileA: Gdiplus_EmfPlusRecordType = 112;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetICMProfileW: Gdiplus_EmfPlusRecordType = 113;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeAlphaBlend: Gdiplus_EmfPlusRecordType = 114;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetLayout: Gdiplus_EmfPlusRecordType = 115;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeTransparentBlt: Gdiplus_EmfPlusRecordType = 116;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeReserved_117: Gdiplus_EmfPlusRecordType = 117;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeGradientFill: Gdiplus_EmfPlusRecordType = 118;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetLinkedUFIs: Gdiplus_EmfPlusRecordType = 119;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeSetTextJustification: Gdiplus_EmfPlusRecordType =
+    120;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeColorMatchToTargetW: Gdiplus_EmfPlusRecordType =
+    121;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeCreateColorSpaceW: Gdiplus_EmfPlusRecordType = 122;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeMax: Gdiplus_EmfPlusRecordType = 122;
+pub const Gdiplus_EmfPlusRecordType_EmfRecordTypeMin: Gdiplus_EmfPlusRecordType = 1;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeInvalid: Gdiplus_EmfPlusRecordType = 16384;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeHeader: Gdiplus_EmfPlusRecordType = 16385;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeEndOfFile: Gdiplus_EmfPlusRecordType = 16386;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeComment: Gdiplus_EmfPlusRecordType = 16387;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeGetDC: Gdiplus_EmfPlusRecordType = 16388;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMultiFormatStart: Gdiplus_EmfPlusRecordType =
+    16389;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMultiFormatSection: Gdiplus_EmfPlusRecordType =
+    16390;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMultiFormatEnd: Gdiplus_EmfPlusRecordType =
+    16391;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeObject: Gdiplus_EmfPlusRecordType = 16392;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeClear: Gdiplus_EmfPlusRecordType = 16393;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillRects: Gdiplus_EmfPlusRecordType = 16394;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawRects: Gdiplus_EmfPlusRecordType = 16395;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillPolygon: Gdiplus_EmfPlusRecordType = 16396;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawLines: Gdiplus_EmfPlusRecordType = 16397;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillEllipse: Gdiplus_EmfPlusRecordType = 16398;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawEllipse: Gdiplus_EmfPlusRecordType = 16399;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillPie: Gdiplus_EmfPlusRecordType = 16400;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawPie: Gdiplus_EmfPlusRecordType = 16401;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawArc: Gdiplus_EmfPlusRecordType = 16402;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillRegion: Gdiplus_EmfPlusRecordType = 16403;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillPath: Gdiplus_EmfPlusRecordType = 16404;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawPath: Gdiplus_EmfPlusRecordType = 16405;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeFillClosedCurve: Gdiplus_EmfPlusRecordType =
+    16406;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawClosedCurve: Gdiplus_EmfPlusRecordType =
+    16407;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawCurve: Gdiplus_EmfPlusRecordType = 16408;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawBeziers: Gdiplus_EmfPlusRecordType = 16409;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawImage: Gdiplus_EmfPlusRecordType = 16410;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawImagePoints: Gdiplus_EmfPlusRecordType =
+    16411;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawString: Gdiplus_EmfPlusRecordType = 16412;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetRenderingOrigin: Gdiplus_EmfPlusRecordType =
+    16413;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetAntiAliasMode: Gdiplus_EmfPlusRecordType =
+    16414;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetTextRenderingHint:
+    Gdiplus_EmfPlusRecordType = 16415;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetTextContrast: Gdiplus_EmfPlusRecordType =
+    16416;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetInterpolationMode:
+    Gdiplus_EmfPlusRecordType = 16417;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetPixelOffsetMode: Gdiplus_EmfPlusRecordType =
+    16418;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetCompositingMode: Gdiplus_EmfPlusRecordType =
+    16419;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetCompositingQuality:
+    Gdiplus_EmfPlusRecordType = 16420;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSave: Gdiplus_EmfPlusRecordType = 16421;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeRestore: Gdiplus_EmfPlusRecordType = 16422;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeBeginContainer: Gdiplus_EmfPlusRecordType =
+    16423;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeBeginContainerNoParams:
+    Gdiplus_EmfPlusRecordType = 16424;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeEndContainer: Gdiplus_EmfPlusRecordType =
+    16425;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetWorldTransform: Gdiplus_EmfPlusRecordType =
+    16426;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeResetWorldTransform:
+    Gdiplus_EmfPlusRecordType = 16427;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMultiplyWorldTransform:
+    Gdiplus_EmfPlusRecordType = 16428;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeTranslateWorldTransform:
+    Gdiplus_EmfPlusRecordType = 16429;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeScaleWorldTransform:
+    Gdiplus_EmfPlusRecordType = 16430;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeRotateWorldTransform:
+    Gdiplus_EmfPlusRecordType = 16431;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetPageTransform: Gdiplus_EmfPlusRecordType =
+    16432;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeResetClip: Gdiplus_EmfPlusRecordType = 16433;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetClipRect: Gdiplus_EmfPlusRecordType = 16434;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetClipPath: Gdiplus_EmfPlusRecordType = 16435;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetClipRegion: Gdiplus_EmfPlusRecordType =
+    16436;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeOffsetClip: Gdiplus_EmfPlusRecordType = 16437;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeDrawDriverString: Gdiplus_EmfPlusRecordType =
+    16438;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeStrokeFillPath: Gdiplus_EmfPlusRecordType =
+    16439;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSerializableObject: Gdiplus_EmfPlusRecordType =
+    16440;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetTSGraphics: Gdiplus_EmfPlusRecordType =
+    16441;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeSetTSClip: Gdiplus_EmfPlusRecordType = 16442;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTotal: Gdiplus_EmfPlusRecordType = 16443;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMax: Gdiplus_EmfPlusRecordType = 16442;
+pub const Gdiplus_EmfPlusRecordType_EmfPlusRecordTypeMin: Gdiplus_EmfPlusRecordType = 16385;
+pub type Gdiplus_EmfPlusRecordType = ::core::ffi::c_uint;
+pub type Gdiplus_REAL = f32;
 pub const Gdiplus_Status_Ok: Gdiplus_Status = 0;
 pub const Gdiplus_Status_GenericError: Gdiplus_Status = 1;
 pub const Gdiplus_Status_InvalidParameter: Gdiplus_Status = 2;
@@ -15600,6 +15996,77 @@ pub const Gdiplus_Status_PropertyNotFound: Gdiplus_Status = 19;
 pub const Gdiplus_Status_PropertyNotSupported: Gdiplus_Status = 20;
 pub const Gdiplus_Status_ProfileNotFound: Gdiplus_Status = 21;
 pub type Gdiplus_Status = ::core::ffi::c_uint;
+pub type Gdiplus_ImageAbort =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut ::core::ffi::c_void) -> BOOL>;
+pub type Gdiplus_DrawImageAbort = Gdiplus_ImageAbort;
+pub type Gdiplus_GetThumbnailImageAbort = Gdiplus_ImageAbort;
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_GdiplusAbort {
+    _unused: [u8; 0],
+}
+pub type Gdiplus_EnumerateMetafileProc = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: Gdiplus_EmfPlusRecordType,
+        arg2: UINT,
+        arg3: UINT,
+        arg4: *const BYTE,
+        arg5: *mut ::core::ffi::c_void,
+    ) -> BOOL,
+>;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Gdiplus_Point {
+    pub X: INT,
+    pub Y: INT,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_PointF {
+    pub X: Gdiplus_REAL,
+    pub Y: Gdiplus_REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Gdiplus_PathData {
+    pub Count: INT,
+    pub Points: *mut Gdiplus_PointF,
+    pub Types: *mut BYTE,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_SizeF {
+    pub Width: Gdiplus_REAL,
+    pub Height: Gdiplus_REAL,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_RectF {
+    pub X: Gdiplus_REAL,
+    pub Y: Gdiplus_REAL,
+    pub Width: Gdiplus_REAL,
+    pub Height: Gdiplus_REAL,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Gdiplus_Size {
+    pub Width: INT,
+    pub Height: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Gdiplus_Rect {
+    pub X: INT,
+    pub Y: INT,
+    pub Width: INT,
+    pub Height: INT,
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Gdiplus_CharacterRange {
+    pub First: INT,
+    pub Length: INT,
+}
 pub const Gdiplus_DebugEventLevel_DebugEventLevelFatal: Gdiplus_DebugEventLevel = 0;
 pub const Gdiplus_DebugEventLevel_DebugEventLevelWarning: Gdiplus_DebugEventLevel = 1;
 pub type Gdiplus_DebugEventLevel = ::core::ffi::c_uint;
@@ -15931,13 +16398,103 @@ pub const Gdiplus_Color_YellowGreen: Gdiplus_Color__bindgen_ty_3 = 4288335154;
 pub type Gdiplus_Color__bindgen_ty_3 = ::core::ffi::c_uint;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpBrush {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpHatch {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpSolidFill {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpMatrix {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct Gdiplus_GpImage {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpImageAttributes {
     pub _address: u8,
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct Gdiplus_GpBitmap {
     pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpLineGradient {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GpTexture {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Gdiplus_GdiplusBase {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_Matrix {
+    pub nativeMatrix: *mut Gdiplus_GpMatrix,
+    pub lastStatus: Gdiplus_Status,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_ImageAttributes {
+    pub nativeImageAttr: *mut Gdiplus_GpImageAttributes,
+    pub lastStatus: Gdiplus_Status,
+}
+#[repr(C)]
+pub struct Gdiplus_Brush__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_Brush {
+    pub vtable_: *const Gdiplus_Brush__bindgen_vtable,
+    pub nativeBrush: *mut Gdiplus_GpBrush,
+    pub lastStatus: Gdiplus_Status,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_HatchBrush {
+    pub _base: Gdiplus_Brush,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_LinearGradientBrush {
+    pub _base: Gdiplus_Brush,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_SolidBrush {
+    pub _base: Gdiplus_Brush,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_TextureBrush {
+    pub _base: Gdiplus_Brush,
+}
+#[repr(C)]
+pub struct Gdiplus_Image__bindgen_vtable(::core::ffi::c_void);
+#[repr(C)]
+#[derive(Debug)]
+pub struct Gdiplus_Image {
+    pub vtable_: *const Gdiplus_Image__bindgen_vtable,
+    pub nativeImage: *mut Gdiplus_GpImage,
+    pub lastStatus: Gdiplus_Status,
 }
 pub use crate::mspaint::cpp_classes::CImageDx; // port cppapp owns it
 pub type CImageDx_FN_Startup = ::core::option::Option<

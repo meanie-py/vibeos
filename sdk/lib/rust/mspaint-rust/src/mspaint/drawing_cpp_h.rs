@@ -8,57 +8,156 @@ unsafe extern "C" fn CreateGeometricPen(rgbColor: COLORREF, thickness: INT) -> H
     return ExtCreatePen(PS_GEOMETRIC | PS_SOLID | PS_ENDCAP_ROUND | PS_JOIN_ROUND, thickness as u32, core::ptr::addr_of_mut!(logbrush), 0, core::ptr::null_mut());
 }
 #[no_mangle]
-pub unsafe extern "C" fn Line(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, color: COLORREF, thickness: i32) {
+pub unsafe extern "C" fn Line__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, color: COLORREF, thickness: i32) {
     let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, color)).cast()) as HPEN;
     MoveToEx(hdc, x1, y1, core::ptr::null_mut());
     LineTo(hdc, x2, y2);
     SetPixelV(hdc, x2, y2, color);
-    DeleteObject(SelectObject(hdc, oldPen as HGDIOBJ));
-}
-#[no_mangle]
-pub unsafe extern "C" fn Rect(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
-    let mut oldBrush: HBRUSH;
-    let mut logbrush: LOGBRUSH = core::mem::zeroed();
-    let oldPen: HPEN = SelectObject(hdc, CreatePen((PS_SOLID as i32), thickness, fg) as HGDIOBJ) as HPEN;
-    logbrush.lbStyle = if style == 0 { BS_HOLLOW } else { BS_SOLID };
-    logbrush.lbColor = if style == 2 { fg } else { bg };
-    logbrush.lbHatch = 0;
-    oldBrush = SelectObject(hdc, CreateBrushIndirect(core::ptr::addr_of_mut!(logbrush)) as HGDIOBJ) as HBRUSH;
-    Rectangle(hdc, x1, y1, x2, y2);
-    DeleteObject(SelectObject(hdc, oldBrush as HGDIOBJ));
-    DeleteObject(SelectObject(hdc, oldPen as HGDIOBJ));
-}
-#[no_mangle]
-pub unsafe extern "C" fn Ellp(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
-    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, fg)).cast()) as HPEN;
-    let mut logbrush: LOGBRUSH = core::mem::zeroed();
-    logbrush.lbStyle = if style == 0 { BS_HOLLOW } else { BS_SOLID };
-    logbrush.lbColor = if style == 2 { fg } else { bg };
-    logbrush.lbHatch = 0;
-    let oldBrush: HBRUSH = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of_mut!(logbrush))).cast()) as HBRUSH;
-    Ellipse(hdc, x1, y1, x2, y2);
-    DeleteObject(SelectObject(hdc, (oldBrush).cast()));
     DeleteObject(SelectObject(hdc, (oldPen).cast()));
 }
 #[no_mangle]
-pub unsafe extern "C" fn RRect(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
-    let mut logbrush: LOGBRUSH = core::mem::zeroed();
+pub unsafe extern "C" fn Line__1(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, hBrush: HBRUSH, thickness: INT) {
+    let oldPen: HGDIOBJ = SelectObject(hdc, (CreateGeometricPen(0, thickness)).cast());
+    BeginPath(hdc);
+    MoveToEx(hdc, x1, y1, core::ptr::null_mut());
+    LineTo(hdc, x2, y2);
+    EndPath(hdc);
+    SetPolyFillMode(hdc, (WINDING as i32));
+    WidenPath(hdc);
+    DeleteObject(SelectObject(hdc, oldPen));
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hBrush);
+    DeleteObject((hRgn).cast());
+
+    let mut rc: RECT = RECT {
+        left: x2,
+        top: y2,
+        right: x2 + 1,
+        bottom: y2 + 1,
+    };
+    FillRect(hdc, core::ptr::addr_of!(rc), hBrush);
+}
+#[no_mangle]
+pub unsafe extern "C" fn Rect__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
     let mut oldBrush: HBRUSH;
+    let mut logbrush: LOGBRUSH = core::mem::zeroed();
+    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, fg)).cast()) as HPEN;
+    logbrush.lbStyle = if style == 0 { BS_HOLLOW } else { BS_SOLID };
+    logbrush.lbColor = if style == 2 { fg } else { bg };
+    logbrush.lbHatch = 0;
+    oldBrush = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of_mut!(logbrush))).cast()) as HBRUSH;
+    Rectangle(hdc, x1, y1, x2, y2);
+    DeleteObject(SelectObject(hdc, oldBrush as _));
+    DeleteObject(SelectObject(hdc, oldPen as _));
+}
+#[no_mangle]
+pub unsafe extern "C" fn Rect__1(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, hFgBrush: HBRUSH, hBgBrush: HBRUSH, thickness: i32, style: i32) {
+    let mut hPenOld: HGDIOBJ;
+    if style != 0 {
+        let hBrushOld: HGDIOBJ = SelectObject(hdc, if style == 2 { (hFgBrush).cast() } else { (hBgBrush).cast() });
+        hPenOld = SelectObject(hdc, GetStockObject((NULL_PEN as i32)));
+        Rectangle(hdc, x1, y1, x2, y2);
+        SelectObject(hdc, hBrushOld);
+        SelectObject(hdc, hPenOld);
+    }
+
+    let hPen: HPEN = CreateGeometricPen(0, thickness);
+    hPenOld = SelectObject(hdc, (hPen).cast());
+    BeginPath(hdc);
+    Rectangle(hdc, x1, y1, x2, y2);
+    EndPath(hdc);
+    SetPolyFillMode(hdc, (WINDING as i32));
+    WidenPath(hdc);
+    SelectObject(hdc, hPenOld);
+    DeleteObject((hPen).cast());
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hFgBrush);
+    DeleteObject((hRgn).cast());
+}
+#[no_mangle]
+pub unsafe extern "C" fn Ellp__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
+    let oldBrush: HBRUSH;
+    let mut logbrush: LOGBRUSH = core::mem::zeroed();
+    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), (thickness as u32) as i32, fg)).cast()) as HPEN;
+    (*core::ptr::addr_of_mut!(logbrush)).lbStyle = if style == 0 { BS_HOLLOW } else { BS_SOLID };
+    (*core::ptr::addr_of_mut!(logbrush)).lbColor = if style == 2 { fg } else { bg };
+    (*core::ptr::addr_of_mut!(logbrush)).lbHatch = 0;
+    oldBrush = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of!(logbrush))).cast()) as HBRUSH;
+    Ellipse(hdc, x1, y1, x2, y2);
+    DeleteObject(SelectObject(hdc, oldBrush as _));
+    DeleteObject(SelectObject(hdc, oldPen as _));
+}
+#[no_mangle]
+pub unsafe extern "C" fn Ellp__1(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, hFgBrush: HBRUSH, hBgBrush: HBRUSH, thickness: INT, style: INT) {
+    let mut hPenOld: HGDIOBJ;
+    if style != 0 {
+        let hBrushOld: HGDIOBJ = SelectObject(hdc, if style == 2 { hFgBrush as HGDIOBJ } else { hBgBrush as HGDIOBJ });
+        hPenOld = SelectObject(hdc, GetStockObject((NULL_PEN as i32)));
+        Ellipse(hdc, x1, y1, x2, y2);
+        SelectObject(hdc, hBrushOld);
+        SelectObject(hdc, hPenOld);
+    }
+
+    let hPen: HPEN = CreateGeometricPen(0, thickness);
+    hPenOld = SelectObject(hdc, hPen as HGDIOBJ);
+    BeginPath(hdc);
+    Ellipse(hdc, x1, y1, x2, y2);
+    EndPath(hdc);
+    SetPolyFillMode(hdc, (WINDING as i32));
+    WidenPath(hdc);
+    SelectObject(hdc, hPenOld);
+    DeleteObject(hPen as HGDIOBJ);
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hFgBrush);
+    DeleteObject(hRgn as HGDIOBJ);
+}
+#[no_mangle]
+pub unsafe extern "C" fn RRect__0(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32) {
+    let mut logbrush: LOGBRUSH = core::mem::zeroed();
+    let oldBrush: HBRUSH;
     let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, fg)).cast()) as HPEN;
     logbrush.lbStyle = if style == 0 { BS_HOLLOW } else { BS_SOLID };
     logbrush.lbColor = if style == 2 { fg } else { bg };
     logbrush.lbHatch = 0;
     oldBrush = SelectObject(hdc, (CreateBrushIndirect(core::ptr::addr_of_mut!(logbrush))).cast()) as HBRUSH;
     RoundRect(hdc, x1, y1, x2, y2, 16, 16);
-    DeleteObject(SelectObject(hdc, oldBrush as _) as HGDIOBJ);
-    DeleteObject(SelectObject(hdc, oldPen as _) as HGDIOBJ);
+    DeleteObject(SelectObject(hdc, (oldBrush).cast()));
+    DeleteObject(SelectObject(hdc, (oldPen).cast()));
 }
 #[no_mangle]
-pub unsafe extern "C" fn Poly(hdc: HDC, lpPoints: *mut POINT, nCount: i32, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32, closed: BOOL, inverted: BOOL) {
+pub unsafe extern "C" fn RRect__1(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, hFgBrush: HBRUSH, hBgBrush: HBRUSH, thickness: i32, style: i32) {
+    let mut hPenOld: HGDIOBJ;
+    if style != 0 {
+        let hBrushOld: HGDIOBJ = SelectObject(hdc, if style == 2 { hFgBrush as HGDIOBJ } else { hBgBrush as HGDIOBJ });
+        hPenOld = SelectObject(hdc, GetStockObject((NULL_PEN as i32)));
+        RoundRect(hdc, x1, y1, x2, y2, 16, 16);
+        SelectObject(hdc, hBrushOld);
+        SelectObject(hdc, hPenOld);
+    }
+
+    let hPen: HPEN = CreateGeometricPen(0, thickness);
+    hPenOld = SelectObject(hdc, hPen as HGDIOBJ);
+    BeginPath(hdc);
+    RoundRect(hdc, x1, y1, x2, y2, 16, 16);
+    EndPath(hdc);
+    SetPolyFillMode(hdc, (WINDING as i32));
+    WidenPath(hdc);
+    SelectObject(hdc, hPenOld);
+    DeleteObject(hPen as HGDIOBJ);
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hFgBrush);
+    DeleteObject(hRgn as HGDIOBJ);
+}
+#[no_mangle]
+pub unsafe extern "C" fn Poly__0(hdc: HDC, lpPoints: *mut POINT, nCount: i32, fg: COLORREF, bg: COLORREF, thickness: i32, style: i32, closed: BOOL, inverted: BOOL) {
     let mut logbrush: LOGBRUSH = core::mem::zeroed();
-    let mut oldBrush: HBRUSH = core::ptr::null_mut();
-    let oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, fg)).cast()) as HPEN;
-    let oldRop: UINT = (GetROP2(hdc)) as u32;
+    let mut oldBrush: HBRUSH;
+    let mut oldPen: HPEN = SelectObject(hdc, (CreatePen((PS_SOLID as i32), thickness, fg)).cast()) as HPEN;
+    let mut oldRop: UINT = (GetROP2(hdc)) as u32;
 
     if inverted != 0 {
         SetROP2(hdc, (R2_NOTXORPEN as i32));
@@ -73,47 +172,132 @@ pub unsafe extern "C" fn Poly(hdc: HDC, lpPoints: *mut POINT, nCount: i32, fg: C
     } else {
         Polyline(hdc, lpPoints, nCount);
     }
-    DeleteObject(SelectObject(hdc, (oldBrush).cast()));
-    DeleteObject(SelectObject(hdc, (oldPen).cast()));
+    DeleteObject(SelectObject(hdc, oldBrush as _));
+    DeleteObject(SelectObject(hdc, oldPen as _));
+
+    SetROP2(hdc, oldRop as i32);
+}
+#[no_mangle]
+pub unsafe extern "C" fn Poly__1(hdc: HDC, lpPoints: *mut POINT, nCount: INT, hFgBrush: HBRUSH, hBgBrush: HBRUSH, thickness: INT, style: INT, closed: BOOL, inverted: BOOL) {
+    let oldRop: UINT = (GetROP2(hdc)) as u32;
+    if inverted != 0 {
+        SetROP2(hdc, (R2_NOTXORPEN as i32));
+    }
+
+    let mut hPenOld: HGDIOBJ;
+    if style != 0 {
+        let hBrushOld: HGDIOBJ = SelectObject(hdc, (if style == 2 { hFgBrush } else { hBgBrush }) as HGDIOBJ);
+        hPenOld = SelectObject(hdc, GetStockObject((NULL_PEN as i32)));
+        if closed != 0 {
+            Polygon(hdc, lpPoints, nCount);
+        } else {
+            Polyline(hdc, lpPoints, nCount);
+        }
+        SelectObject(hdc, hBrushOld);
+        SelectObject(hdc, hPenOld);
+    }
+
+    let hPen: HPEN = CreateGeometricPen(0, thickness);
+    hPenOld = SelectObject(hdc, hPen as HGDIOBJ);
+    BeginPath(hdc);
+    if closed != 0 {
+        Polygon(hdc, lpPoints, nCount);
+    } else {
+        Polyline(hdc, lpPoints, nCount);
+    }
+    EndPath(hdc);
+    SetPolyFillMode(hdc, (WINDING as i32));
+    WidenPath(hdc);
+    SelectObject(hdc, hPenOld);
+    DeleteObject(hPen as HGDIOBJ);
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hFgBrush);
+    DeleteObject(hRgn as HGDIOBJ);
 
     SetROP2(hdc, (oldRop) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn Bezier(hdc: HDC, p1: POINT, p2: POINT, p3: POINT, p4: POINT, color: COLORREF, thickness: i32) {
-    let mut oldPen: HPEN;
+pub unsafe extern "C" fn Bezier__0(hdc: HDC, p1: POINT, p2: POINT, p3: POINT, p4: POINT, color: COLORREF, thickness: i32) {
+    let oldPen: HPEN;
     let mut fourPoints: [POINT; 4] = core::mem::zeroed();
-    fourPoints[0] = p1;
-    fourPoints[1] = p2;
-    fourPoints[2] = p3;
-    fourPoints[3] = p4;
-    oldPen = SelectObject(hdc, CreatePen((PS_SOLID as i32), thickness, color) as HGDIOBJ) as HPEN;
-    PolyBezier(hdc, fourPoints.as_ptr(), 4);
-    DeleteObject(SelectObject(hdc, oldPen as HGDIOBJ) as HGDIOBJ);
+    fourPoints[0 as usize] = p1;
+    fourPoints[1 as usize] = p2;
+    fourPoints[2 as usize] = p3;
+    fourPoints[3 as usize] = p4;
+    oldPen = SelectObject(hdc, CreatePen(PS_SOLID as i32, thickness, color) as HGDIOBJ) as HPEN;
+    PolyBezier(hdc, fourPoints.as_ptr(), 4 as u32);
+    DeleteObject(SelectObject(hdc, oldPen as HGDIOBJ));
 }
 #[no_mangle]
-pub unsafe extern "C" fn Fill(hdc: HDC, x: i32, y: i32, color: COLORREF) {
-    let hBrush: HBRUSH = CreateSolidBrush(color);
-    Fill(hdc, x, y, hBrush);
-    DeleteObject((hBrush).cast());
-}
-#[no_mangle]
-pub unsafe extern "C" fn Erase(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, color: COLORREF, radius: LONG) {
-    let hBrush: HBRUSH = CreateSolidBrush(color);
-    Erase(hdc, x1, y1, x2, y2, hBrush, radius);
-    DeleteObject((hBrush).cast());
-}
-#[no_mangle]
-pub unsafe extern "C" fn Replace(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, radius: LONG) {
-    let mut b: LONG = max(1, max(labs(x2 - x1), labs(y2 - y1)));
+pub unsafe extern "C" fn Bezier__1(hdc: HDC, p1: POINT, p2: POINT, p3: POINT, p4: POINT, hBrush: HBRUSH, thickness: INT) {
+    let mut oldPen: HPEN;
+    let mut fourPoints: [POINT; 4 as usize] = core::mem::zeroed();
+    fourPoints[0 as usize] = p1;
+    fourPoints[1 as usize] = p2;
+    fourPoints[2 as usize] = p3;
+    fourPoints[3 as usize] = p4;
+    oldPen = SelectObject(hdc, CreateGeometricPen(0, thickness) as HGDIOBJ) as HPEN;
+    BeginPath(hdc);
+    PolyBezier(hdc, fourPoints.as_ptr(), 4 as DWORD);
+    EndPath(hdc);
+    SetPolyFillMode(hdc, WINDING as INT);
+    WidenPath(hdc);
 
-    let mut a: LONG = 0;
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hBrush);
+    DeleteObject((hRgn).cast());
+
+    DeleteObject(SelectObject(hdc, oldPen as HGDIOBJ));
+}
+#[no_mangle]
+pub unsafe extern "C" fn Fill__0(hdc: HDC, x: LONG, y: LONG, color: COLORREF) {
+    let hBrush: HBRUSH = CreateSolidBrush(color);
+    Fill__1(hdc, x, y, hBrush);
+    DeleteObject((hBrush).cast());
+}
+#[no_mangle]
+pub unsafe extern "C" fn Fill__1(hdc: HDC, x: LONG, y: LONG, hBrush: HBRUSH) {
+    let oldBrush: HBRUSH = SelectObject(hdc, hBrush as HGDIOBJ) as HBRUSH;
+    ExtFloodFill(hdc, x, y, GetPixel(hdc, x, y), FLOODFILLSURFACE);
+    SelectObject(hdc, oldBrush as HGDIOBJ);
+}
+#[no_mangle]
+pub unsafe extern "C" fn Erase__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, color: COLORREF, radius: LONG) {
+    let hBrush: HBRUSH = CreateSolidBrush(color);
+    Erase__1(hdc, x1, y1, x2, y2, hBrush, radius);
+    DeleteObject((hBrush).cast());
+}
+#[no_mangle]
+pub unsafe extern "C" fn Erase__1(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, hBrush: HBRUSH, radius: i32) {
+    let mut b: i32 = max(1, max(labs(x2 - x1), labs(y2 - y1)));
+
+    let mut a: i32 = 0;
     while a <= b {
-        let cx: LONG = (x1 * (b - a) + x2 * a) / b;
-        let cy: LONG = (y1 * (b - a) + y2 * a) / b;
-        let rc: RECT = RECT { left: cx - radius, top: cy - radius, right: cx + radius, bottom: cy + radius };
-        let mut y: LONG = rc.top;
+        let cx: i32 = (x1 * (b - a) + x2 * a) / b;
+        let cy: i32 = (y1 * (b - a) + y2 * a) / b;
+        let mut rc: RECT = RECT { left: cx - radius, top: cy - radius, right: cx + radius, bottom: cy + radius };
+        FillRect(hdc, core::ptr::addr_of_mut!(rc), hBrush);
+        a += 1;
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn Replace__0(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, fg: COLORREF, bg: COLORREF, radius: i32) {
+    let mut b: i32 = max(1, max(labs(x2 - x1), labs(y2 - y1)));
+
+    let mut a: i32 = 0;
+    while a <= b {
+        let cx: i32 = (x1 * (b - a) + x2 * a) / b;
+        let cy: i32 = (y1 * (b - a) + y2 * a) / b;
+        let mut rc: RECT = RECT {
+            left: cx - radius,
+            top: cy - radius,
+            right: cx + radius,
+            bottom: cy + radius,
+        };
+        let mut y: i32 = rc.top;
         while y < rc.bottom {
-            let mut x: LONG = rc.left;
+            let mut x: i32 = rc.left;
             while x < rc.right {
                 if GetPixel(hdc, x, y) == fg {
                     SetPixelV(hdc, x, y, bg);
@@ -126,13 +310,67 @@ pub unsafe extern "C" fn Replace(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LON
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn Airbrush(hdc: HDC, x: LONG, y: LONG, color: COLORREF, r: LONG) {
-    let mut dy: LONG = -r;
+pub unsafe extern "C" fn Replace__1(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, hBgBrush: HBRUSH, radius: LONG) {
+    let mut b: LONG = max(1, max(labs(x2 - x1), labs(y2 - y1)));
+
+    let mut a: LONG = 0;
+    while a <= b {
+        let cx: LONG = (x1 * (b - a) + x2 * a) / b;
+        let cy: LONG = (y1 * (b - a) + y2 * a) / b;
+        let rc: RECT = RECT {
+            left: cx - radius,
+            top: cy - radius,
+            right: cx + radius,
+            bottom: cy + radius,
+        };
+        let mut y: LONG = rc.top;
+        while y < rc.bottom {
+            let mut x: LONG = rc.left;
+            while x < rc.right {
+                if GetPixel(hdc, x, y) == fg {
+                    let mut rc: RECT = RECT {
+                        left: x,
+                        top: y,
+                        right: x + 1,
+                        bottom: y + 1,
+                    };
+                    FillRect(hdc, core::ptr::addr_of_mut!(rc), hBgBrush);
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+        a += 1;
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn Airbrush__0(hdc: HDC, x: i32, y: i32, color: COLORREF, r: i32) {
+    let mut dy: i32 = -r;
     while dy <= r {
-        let mut dx: LONG = -r;
+        let mut dx: i32 = -r;
         while dx <= r {
             if (dx * dx + dy * dy <= r * r) && (rand() % r == 0) {
                 SetPixelV(hdc, x + dx, y + dy, color);
+            }
+            dx += 1;
+        }
+        dy += 1;
+    }
+}
+#[no_mangle]
+pub unsafe extern "C" fn Airbrush__1(hdc: HDC, x: i32, y: i32, hBrush: HBRUSH, r: i32) {
+    let mut dy: i32 = -r;
+    while dy <= r {
+        let mut dx: i32 = -r;
+        while dx <= r {
+            if (dx * dx + dy * dy <= r * r) && (rand() % r == 0) {
+                let mut rc: RECT = RECT {
+                    left: x + dx,
+                    top: y + dy,
+                    right: x + dx + 1,
+                    bottom: y + dy + 1,
+                };
+                FillRect(hdc, core::ptr::addr_of_mut!(rc), hBrush);
             }
             dx += 1;
         }
@@ -193,10 +431,23 @@ unsafe extern "C" fn BrushInternal(hdc: HDC, x1: LONG, y1: LONG, mut x2: LONG, y
     }
 }
 #[no_mangle]
-pub unsafe extern "C" fn Brush(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, color: COLORREF, style: i32, thickness: i32) {
+pub unsafe extern "C" fn Brush__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, color: COLORREF, style: LONG, thickness: INT) {
     let hBrush: HBRUSH = CreateSolidBrush(color);
-    Brush(hdc, x1, y1, x2, y2, hBrush, style, thickness);
+    Brush__1(hdc, x1, y1, x2, y2, hBrush, style, thickness);
     DeleteObject((hBrush).cast());
+}
+#[no_mangle]
+pub unsafe extern "C" fn Brush__1(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, hBrush: HBRUSH, style: LONG, thickness: INT) {
+    if thickness <= 1 {
+        Line__1(hdc, x1, y1, x2, y2, hBrush, thickness);
+        return;
+    }
+
+    let oldPen: HGDIOBJ = SelectObject(hdc, GetStockObject((NULL_PEN as i32))); // 1px off
+    let oldBrush: HGDIOBJ = SelectObject(hdc, (hBrush).cast());
+    BrushInternal(hdc, x1, y1, x2, y2, style, thickness);
+    SelectObject(hdc, oldBrush);
+    SelectObject(hdc, oldPen);
 }
 #[no_mangle]
 pub unsafe extern "C" fn RectSel(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG) {
@@ -218,10 +469,10 @@ pub unsafe extern "C" fn RectSel(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LON
     SetROP2(hdc, (oldRop) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn Text(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, lpchText: LPCWSTR, font: HFONT, style: LONG) {
+pub unsafe extern "C" fn Text__0(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, lpchText: LPCWSTR, font: HFONT, style: LONG) {
     let iSaveDC: INT = SaveDC(hdc); // We will modify the clipping region. Save now.
 
-    let mut rc: CRect = CRect__make_1(x1, y1, x2, y2);
+    let mut rc = CRect__make_1(x1, y1, x2, y2);
 
     if style == 0 // Transparent
     {
@@ -244,6 +495,34 @@ pub unsafe extern "C" fn Text(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, 
     let uFormat: UINT = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
                          DT_EXPANDTABS | DT_WORDBREAK;
     DrawTextW(hdc, lpchText, -1, core::ptr::addr_of_mut!(rc.__base0), uFormat);
+    SelectObject(hdc, hFontOld);
+
+    RestoreDC(hdc, iSaveDC); // Restore
+}
+#[no_mangle]
+pub unsafe extern "C" fn Text__1(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, hFgBrush: HBRUSH, hBgBrush: HBRUSH, lpchText: LPCWSTR, font: HFONT, style: i32) {
+    let iSaveDC: i32 = SaveDC(hdc); // We will modify the clipping region. Save now.
+
+    let mut rc = CRect__make_1(x1, y1, x2, y2);
+
+    SetBkMode(hdc, (TRANSPARENT as i32));
+    if style != 0 { // Not Transparent
+        FillRect(hdc, core::ptr::addr_of_mut!(rc.__base0), hBgBrush); // Fill the background
+    }
+
+    IntersectClipRect(hdc, rc.__base0.left, rc.__base0.top, rc.__base0.right, rc.__base0.bottom);
+
+    let hFontOld: HGDIOBJ = SelectObject(hdc, (font).cast());
+    let uFormat: u32 = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
+                         DT_EXPANDTABS | DT_WORDBREAK;
+    BeginPath(hdc);
+    DrawTextW(hdc, lpchText, -1, core::ptr::addr_of_mut!(rc.__base0), uFormat);
+    EndPath(hdc);
+
+    let hRgn: HRGN = PathToRegion(hdc);
+    FillRgn(hdc, hRgn, hFgBrush);
+    DeleteObject((hRgn).cast());
+
     SelectObject(hdc, hFontOld);
 
     RestoreDC(hdc, iSaveDC); // Restore
