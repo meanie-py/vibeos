@@ -1,3 +1,5 @@
+import pytest
+
 from rustconv import variadic_shim as v
 
 RUST = """\
@@ -108,3 +110,15 @@ def test_a_sal_annotated_ellipsis_is_still_variadic():
     # bmfd's own DbgPrint: integrate refused to generate its trampoline.
     c = "ULONG\nDbgPrint(IN PCHAR Format, IN ...)\n{\n    return 0;\n}\n"
     assert v.c_variadic_arity(c, "DbgPrint") == 1
+
+
+def test_a_module_local_pointer_typedef_spells_void_star():
+    # cmd's DirPrintf(LPDIRSWITCHFLAGS, ...): the typedef lives in dir.rs, not the island.
+    # integrate lists the twin's own file FIRST, so it resolves and shadows the island.
+    local = "pub type LPDIRSWITCHFLAGS = *mut DIRSWITCHFLAGS;\npub type T = u16;\n"
+    island = "pub type T = u32;\n"
+    maps = v.alias_maps([[local, island]] * 3)
+    assert v.c_primitive("LPDIRSWITCHFLAGS", maps) == "void *"
+    assert v.c_primitive("T", maps) == v.c_primitive("u16", maps)
+    with pytest.raises(ValueError, match="stuck at `LPDIRSWITCHFLAGS`"):
+        v.c_primitive("LPDIRSWITCHFLAGS", v.alias_maps([[island]] * 3))

@@ -655,9 +655,11 @@ def test_token_pasting_macros_and_their_callers_are_hand_ports():
         "CS_StrW": M(body="((LPCWSTR)CS_StrA(pCS, Name))"),
         "CS_Wrap": M(body="CS_StrW(p, n)"),
         "ALIGN_DWORD": M(body="(((len) + 3) & ~3)"),
+        # cmd's console.h: GNU's comma swallow, not pasting.
+        "ConOutPrintf": M(body="ConPrintf(StdOut, (szStr), ##__VA_ARGS__)"),
     }
     kept, pasting = port._without_token_pasting(macros)
-    assert list(kept) == ["ALIGN_DWORD"]
+    assert list(kept) == ["ALIGN_DWORD", "ConOutPrintf"]
     assert pasting == ["CS_StrA", "CS_StrW", "CS_Wrap"]
 
 

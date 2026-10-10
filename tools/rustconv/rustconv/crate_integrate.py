@@ -750,7 +750,13 @@ def _swap_substrate(src: str, report: Report) -> str:
 # parse error that hides every other error in the file -- so fold it to its value. Two to
 # four printable ASCII characters between quotes is never valid Rust, so nothing else matches.
 # Guarded both ways against lifetimes: `<'a, 'b>` would otherwise read `'a, '` as one.
-_MULTICHAR_RE = re.compile(r"(?<![<&\w])'([\x20-\x26\x28-\x5b\x5d-\x7e]{2,4})'(?![\w])")
+# A real one-char Rust literal is matched FIRST and kept, so the scan resumes after its closing
+# quote: in cmd's `[' ', '%', '%']` the `', '` BETWEEN two char literals read as a multi-char
+# constant and became `' 0x00002C20 /* ', ' */%'`, a parse error.
+_MULTICHAR_RE = re.compile(
+    r"'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'"
+    r"|(?<![<&\w])'([\x20-\x26\x28-\x5b\x5d-\x7e]{2,4})'(?![\w])"
+)
 
 
 def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
@@ -758,7 +764,10 @@ def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
     out: list[str] = []
     for line in src.splitlines(keepends=True):
         code, sep, comment = line.partition("//")
-        if '"' in code:  # a string could hold the pattern; leave the line to the model
+        # A string could hold the pattern; leave the line to the model. So could the body of
+        # a multi-line block comment, which a per-line scan cannot see the opener of (cmd's
+        # goto.rs `* any label containing '/?' in it.`).
+        if '"' in code or code.lstrip().startswith("*"):
             out.append(line)
             continue
 
@@ -767,7 +776,7 @@ def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
         blocks = [b.span() for b in re.finditer(r"/\*.*?\*/", code)]
 
         def repl(m: re.Match, blocks: list[tuple[int, int]] = blocks) -> str:
-            if any(lo <= m.start() < hi for lo, hi in blocks):
+            if m.group(1) is None or any(lo <= m.start() < hi for lo, hi in blocks):
                 return m.group(0)
             value = 0
             for ch in m.group(1):

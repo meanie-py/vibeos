@@ -1988,6 +1988,31 @@ def _outermost_call_site(span: Mapping[str, Any]) -> dict[str, Any]:
     return dict(span)
 
 
+def _is_whole_macro_arm(masked: bytes, start: int, end: int) -> bool:
+    """True when ``[start, end)`` is the ENTIRE body of the `=> { ... }` arm around it.
+
+    Then the macro's value IS that expression, and a C conversion belongs to each use, not
+    to the definition: cmd's `_istspace!` is `iswctype(..)`, an int, used as a condition at
+    one site and as a number elsewhere -- `!= 0` in the body fixed one and broke the rest.
+    """
+    arrow = masked.rfind(b"=>", 0, start)
+    if arrow < 0:
+        return False
+    open_at = masked.find(b"{", arrow)
+    if open_at < 0 or open_at > start:
+        return False
+    depth = 0
+    for pos in range(open_at, len(masked)):
+        byte = masked[pos : pos + 1]
+        if byte == b"{":
+            depth += 1
+        elif byte == b"}":
+            depth -= 1
+            if depth == 0:
+                return masked[open_at + 1 : pos].strip() == masked[start:end].strip()
+    return False
+
+
 def _c_truthiness_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2078,10 +2103,13 @@ def _c_truthiness_rule(
             span = _outermost_call_site(span)
         elif span.get("expansion"):
             own = load(str(span.get("file_name") or ""))
+            own_masked = _mask_lexical(own) if own is not None else b""
+            span_at = (int(span.get("byte_start") or 0), int(span.get("byte_end") or 0))
             in_own_macro = (
                 own is not None
                 and _is_own(ctx, str(span.get("file_name") or ""))
-                and _in_macro_definition(_mask_lexical(own), int(span.get("byte_start") or 0))
+                and _in_macro_definition(own_masked, span_at[0])
+                and not _is_whole_macro_arm(own_masked, *span_at)
             )
             if not in_own_macro:
                 span = _outermost_call_site(span)

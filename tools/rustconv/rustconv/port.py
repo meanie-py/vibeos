@@ -973,6 +973,13 @@ def failing_audit_tus(state: dict) -> list[str]:
     return out
 
 
+def _bank_predates_kept_diagnostics(target: str, tu: str) -> bool:
+    """True when the TU's sealed bank exists only without the `__diag_v1` token."""
+    responses = REPO / "tools" / "rustconv" / ".responses"
+    base = f"{target}__{Path(tu).stem}__factseal_v1__callseal_v1__wideseal_v1"
+    return (responses / base).is_dir() and not (responses / f"{base}__diag_v1").is_dir()
+
+
 def stage_translate(
     stem: str,
     *,
@@ -1104,6 +1111,11 @@ def stage_translate(
         if replay_only:
             # Reassemble from the bank after a stitcher/postprocess fix: never a purchase.
             cmd += ["--replay-only", "--reassemble"]
+        if _bank_predates_kept_diagnostics(state.get("target") or stem, tu):
+            # Ask the bank the question it was BOUGHT with: cmd's TUs were banked before
+            # ERR/WARN/ASSERT were kept, and translate refuses (correctly) to replay or extend
+            # a stripped bank under the kept namespace -- which would re-buy every body.
+            cmd.append("--no-keep-diagnostics")
         # Only the names THIS TU defines: translate reports a name its worklist never
         # missed, and every other TU's names would be exactly that.
         c_text = (REPO / tu).read_text(errors="replace")
@@ -1902,6 +1914,7 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     done: list[str] = []
     refused: dict[str, str] = {}
     all_twins: dict[str, tuple[list[tuple[str, str]], str]] = {}
+    twin_texts: list[str] = []
     for path in _unit_files(crate, stem):
         rw = variadic_shim.rewrite(path.read_text())
         refused.update(rw.refused)
@@ -1920,7 +1933,9 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
         )
         if stripped != text:
             path.write_text(stripped)
-        all_twins.update(variadic_shim.twins(path.read_text()))
+        if found := variadic_shim.twins(path.read_text()):
+            all_twins.update(found)
+            twin_texts.append(path.read_text(errors="replace"))
     for name, why in refused.items():
         print(f"integrate: variadic {name} left as is: {why}")
     # A twin a hand-banked function replaces gets no trampoline: the hand version defines the
@@ -1937,9 +1952,17 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
         return done, refused
     units = [REPO / u for u in _units(state) if (REPO / u).is_file()]
     sys_src = prelude_resolve.island_substrate(crate / "src", REPO / "sdk" / "lib" / "rust")
+    # The twins' own files come FIRST (alias_maps keeps the first spelling), then the crate's
+    # prelude: a module-local typedef such as cmd's `LPDIRSWITCHFLAGS` (dir.c's DirPrintf) is
+    # declared in the unit and later hoisted to the prelude by resolve -- never in the island
+    # -- and a local alias shadows an island one exactly as Rust's scope does.
+    prelude = crate / "src" / "prelude.rs"
+    if prelude.is_file():
+        twin_texts.append(prelude.read_text(errors="replace"))
     maps = variadic_shim.alias_maps(
         [
-            [
+            twin_texts
+            + [
                 p.read_text(errors="replace")
                 for p in (
                     crate / "src" / f"types_{suffix}.rs",
@@ -4267,7 +4290,12 @@ def _without_token_pasting(macros: dict) -> tuple[dict, list[str]]:
     that does and is the wrong one. These are hand ports; their callers stay errors until
     they are written.
     """
-    pasting = {n for n, m in macros.items() if "##" in m.body}
+    # `, ##__VA_ARGS__` is GNU's comma swallow, not pasting: it builds no identifier, and
+    # macro_rules! spells it `$(, $a:expr)*`. cmd's ConOutPrintf/ConErrResPrintf family
+    # (~140 call sites) is nothing else, and was refused as a hand port.
+    pasting = {
+        n for n, m in macros.items() if "##" in re.sub(r",\s*##\s*__VA_ARGS__", "", m.body)
+    }
     while True:
         reach = {
             n

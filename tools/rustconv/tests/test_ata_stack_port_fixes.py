@@ -134,3 +134,25 @@ def test_kernel_modules_translate_through_their_registered_target():
         {"stem": "setuplib", "crate": "setuplib-rust", "usermode": True, "module_dir": "base/x"}
     )
     assert user[:2] == ["--target", "setuplib:base/x"]
+
+
+def test_multichar_fold_skips_the_gap_between_char_literals():
+    # cmd's parser.rs: `', '` between two one-char literals is not a multi-char constant.
+    src = "    let f = [' ', '%', '%', '%', 'c', ' ', 'i', 'n', '\\'', '\\u{2c}', 0];\n"
+    assert crate_integrate.fold_multichar_literals(src) == (src, [])
+    folded, names = crate_integrate.fold_multichar_literals("    let t = 'PedI'; let c = ' ';\n")
+    assert names == ["PedI"] and "0x50656449 /* 'PedI' */" in folded and "' '" in folded
+    comment = "    /*\n     * any label containing '/?' in it.\n     */\n"
+    assert crate_integrate.fold_multichar_literals(comment) == (comment, [])
+
+
+def test_a_bank_bought_before_kept_diagnostics_stays_in_its_namespace(tmp_path, monkeypatch):
+    # cmd: 55 TUs banked stripped; extending or replaying under __diag_v1 is refused.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    responses = tmp_path / "tools" / "rustconv" / ".responses"
+    old = responses / "cmd__copy__factseal_v1__callseal_v1__wideseal_v1"
+    old.mkdir(parents=True)
+    assert port._bank_predates_kept_diagnostics("cmd", "base/shell/cmd/copy.c")
+    (responses / f"{old.name}__diag_v1").mkdir()
+    assert not port._bank_predates_kept_diagnostics("cmd", "base/shell/cmd/copy.c")
+    assert not port._bank_predates_kept_diagnostics("cmd", "base/shell/cmd/new.c")
