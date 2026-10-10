@@ -25,7 +25,7 @@ ATL_RUST = Path(__file__).resolve().parents[3] / "sdk" / "lib" / "rust" / "atl-r
 # would make that wrong, and `rust_type_for` refuses rather than guess (see `unicode`).
 _STRING_SPELLINGS = ("CAtlStringW", "CStringW", "CAtlString", "CString")
 _TCHAR_SPELLINGS = frozenset({"CAtlString", "CString"})
-_DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap")
+_DIRECT = ("CComPtr", "CHeapPtr", "CComHeapPtr", "CSimpleArray", "CSimpleMap", "CAtlList")
 
 
 @cache
