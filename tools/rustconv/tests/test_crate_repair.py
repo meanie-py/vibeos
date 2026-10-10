@@ -1673,6 +1673,26 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
+    from rustconv.crate_repair import RULE_C2RUST_HOP
+
+    src = b"fn f() {\n    (*pIC).c2rust_unnamed.hWnd = 0;\n    let h = w.c2rust_unnamed_1;\n}\n"
+    diags = []
+    for field in (b"c2rust_unnamed.", b"c2rust_unnamed_1;"):
+        at = src.index(field)
+        name = field[:-1]
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `INPUTCONTEXTDX`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+            )
+        )
+    plan = propose_edits(diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C2RUST_HOP])
+    # Only a hop with a field after it: a trailing `.c2rust_unnamed_1` names nothing to keep.
+    assert [(e.original, e.replacement) for e in plan.edits] == [(".c2rust_unnamed", "")]
+
+
 def test_a_c_bitfield_goes_through_bindgens_accessors():
     from rustconv.crate_repair import RULE_BITFIELD
 
@@ -1916,6 +1936,34 @@ def test_truthiness_fixes_our_macro_body_and_never_stacks():
     )
     # the macro body is fixed in place; the already-converted call site is left alone
     assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]
+
+
+def test_truthiness_converts_at_the_call_when_the_macro_body_is_the_whole_value():
+    # cmd's `_istspace!` is `iswctype(..)`: an int used as a number at most sites and as a
+    # condition at one. `!= 0` written into the body broke the numeric uses (+45 errors).
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"macro_rules! S { ($c:expr) => { iswctype($c, 8) }; }\nfn f() {\n    if S!(x) {}\n}\n"
+    body_at = src.index(b"iswctype($c, 8)")
+    body = _span(
+        "src/a.rs",
+        body_at,
+        body_at + len(b"iswctype($c, 8)"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
+    call_at = src.index(b"S!(x)")
+    body["expansion"] = {
+        "span": _span("src/a.rs", call_at, call_at + len(b"S!(x)")),
+        "macro_decl_name": "S!",
+    }
+    plan = propose_edits(
+        [_diag("mismatched types", code="E0308", spans=[body])],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(call_at, "((S!(x)) != 0)")]
 
 
 def test_an_edit_outside_the_repaired_crate_is_refused(tmp_path):

@@ -46,7 +46,9 @@ DEF_RE = re.compile(
 )
 # printf-family names that take a variadic tail in C. The v-forms take a va_list and are
 # the RIGHT shape for a Rust def, so they are excluded by name and by parameter type.
-PRINTF_NAME_RE = re.compile(r"printf", re.I)
+# A real `printf` (lowercase f) not running on into a lowercase word: apphelp's
+# `SeiPrintFunctionName` is "Print" + "FunctionName", not a printf.
+PRINTF_NAME_RE = re.compile(r"[Pp]rintf(?![a-z])")
 VFORM_RE = re.compile(r"(^|_)v\w*printf|VPrintf", re.I)
 FORMAT_PARAM_RE = re.compile(r"^(?:mut\s+)?(\w*(?:fmt|format)\w*)\s*:", re.I)
 

@@ -132,6 +132,18 @@ def test_a_sibling_definition_is_imported_and_promoted(tmp_path):
     assert pr.existing_siblings(p) == {"INF_GetData": "infsupp"}
 
 
+def test_a_sibling_struct_is_found_for_a_hoisted_alias(tmp_path):
+    # cmd: the prelude's LPDIRSWITCHFLAGS = *mut _DirSwitchesFlags, the struct in dir.rs.
+    mods = tmp_path / "cmd"
+    mods.mkdir()
+    (mods / "dir.rs").write_text("#[repr(C)]\npub struct _DirSwitchesFlags {\n    pub b: i32,\n}\n")
+    (mods / "vol.rs").write_text("#[repr(C)]\nstruct Private {\n    x: i32,\n}\n")
+    found = pr.sibling_definitions({"_DirSwitchesFlags", "Private"}, mods)
+    assert found == {"_DirSwitchesFlags": [("dir", True)], "Private": [("vol", False)]}
+    assert pr.promote_pub(mods / "vol.rs", "Private")
+    assert "pub struct Private" in (mods / "vol.rs").read_text()
+
+
 def test_shared_constants_are_reexported_unless_the_prelude_defines_them(tmp_path):
     src = tmp_path / "src"
     src.mkdir()

@@ -31,6 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import variadic_shim
 from .crate_integrate import _LITERAL_OR_COMMENT as _LITERAL_OR_COMMENT_RE
 from .crate_integrate import extern_block_spans, split_decls
 
@@ -148,7 +149,7 @@ def _visible_value_names(workspace: Path, crate: str) -> set[str]:
         from tools.source_walk import source_files
 
     roots = [workspace / crate / "src", workspace / "ntdll-sys" / "src"]
-    roots += [workspace / d / "src" for d in ("win32macros-rust", "strsafe-rust")]
+    roots += [workspace / d / "src" for _ident, d, _paths in SHARED_CRATES]
     out: set[str] = set()
     for root in roots:
         for p in source_files(root, "*.rs") if root.is_dir() else []:
@@ -234,10 +235,35 @@ def is_test_source(rel: str) -> bool:
     return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
 
 
+def crate_mode(crate_dir: Path) -> str | None:
+    """ "kernel" / "user" from what the crate builds against; None for a mode-neutral crate."""
+    if crate_dir.name == "ntkrnl-sys":
+        return "kernel"
+    if crate_dir.name == "ntdll-sys":
+        return "user"
+    try:
+        manifest = (crate_dir / "Cargo.toml").read_text(errors="replace")
+    except OSError:
+        return None
+    if re.search(r"^ntkrnl-sys\s*=", manifest, re.M):
+        return "kernel"
+    if re.search(r"^ntdll-sys\s*=", manifest, re.M):
+        return "user"
+    return None
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
-    """Every tracked definition of each name: consts, type aliases, extern fn decls."""
+    """Every tracked definition of each name: consts, type aliases, extern fn decls.
+
+    Never across the kernel/user line: gdi32_vista and opengl32 (user-mode DLLs) were handed
+    `_InterlockedExchange` from disk-rust's DDK shims, an extern no user-mode image can link
+    (i386 LINK_FAIL). A donor built against the other -sys crate is skipped; mode-neutral
+    shared crates (win32macros-rust, strsafe-rust) donate to both.
+    """
     if not names:
         return {}
+    mine = crate_mode(exclude)
+    modes: dict[str, str | None] = {}
     pattern = "|".join(sorted(names))
     proc = subprocess.run(
         ["git", "grep", "-l", "-w", "-E", pattern, "--", "*.rs"],
@@ -253,6 +279,11 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
         # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
         if is_test_source(rel):
+            continue
+        top = rel.split("/", 1)[0]
+        if top not in modes:
+            modes[top] = crate_mode(workspace / top)
+        if mine is not None and modes[top] is not None and modes[top] != mine:
             continue
         try:
             src = path.read_text(errors="replace")
@@ -565,6 +596,17 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ("ntstrsafe", r"^pub unsafe fn (RtlString[A-Za-z]+)\b"),
         ),
     ),
+    (
+        "conutils_h",
+        "conutils-h",
+        (
+            (
+                "",
+                r"^\s*pub (?:unsafe )?fn ([A-Za-z_]\w*)|^\s*pub static mut ([A-Za-z_]\w*)"
+                r"|^pub const ([A-Za-z_]\w*)|^pub type ([A-Za-z_]\w*)|^pub struct ([A-Za-z_]\w*)",
+            ),
+        ),
+    ),
 )
 
 
@@ -643,7 +685,9 @@ SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
 SIBLING_END = "// ==== end cross-TU definitions ===="
 _DEF = re.compile(
     r"^(?P<pub>pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
-    r"(?P<kind>fn|static(?:\s+mut)?|const)\s+(?P<name>[A-Za-z_]\w*)\b",
+    # Types too: a local-type alias resolve hoists into the prelude (cmd's LPDIRSWITCHFLAGS =
+    # *mut _DirSwitchesFlags) names a struct one module defines, and was "defined nowhere".
+    r"(?P<kind>fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+(?P<name>[A-Za-z_]\w*)\b",
     re.M,
 )
 
@@ -669,9 +713,8 @@ def promote_pub(path: Path, name: str) -> bool:
     """Make a top-level definition of `name` in `path` `pub`. True if it changed."""
     text = path.read_text()
     pat = re.compile(
-        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:fn|static(?:\s+mut)?|const)\s+"
-        + re.escape(name)
-        + r"\b)",
+        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+        r"(?:fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+" + re.escape(name) + r"\b)",
         re.M,
     )
     new, n = pat.subn(r"pub \1", text, count=1)
@@ -1448,7 +1491,7 @@ def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
     out = [LOCAL_TYPES_BEGIN]
     for name, (text, src) in sorted(items.items()):
         out.append(f"// {name}: c2rust, {src}")
-        out.append(text)
+        out.append(variadic_shim.lower_va_list_types(text)[0])
     out.append(LOCAL_TYPES_END)
     block = "\n".join(out) + "\n"
     text = prelude.read_text()

@@ -695,7 +695,15 @@ def lower_expansion(expansion: str, types: set[str]) -> str:
     # A C++ TU expands windowsx.h's macros to `::SendMessageW(..)`: the global-scope
     # qualifier names the same function, and Rust has no use for it.
     expansion = re.sub(r"(?<![\w:>])::(?=[A-Za-z_])", "", expansion)
-    return emit(_Parser(tokenize(expansion), types).parse())
+    # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
+    # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
+    # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup
+    # that does not exist (dxdiag's IDirectSound8_Release, E0599).
+    return re.sub(
+        r"\.lpVtbl\)\.([A-Za-z_]\w*)\(",
+        r".lpVtbl).\1.unwrap_unchecked()(",
+        emit(_Parser(tokenize(expansion), types).parse()),
+    )
 
 
 _DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)\(([^)]*)\)", re.M)
@@ -1127,31 +1135,31 @@ def widening_macros(repo: Path, tus: list[Path], names: set[str]) -> set[str]:
         return set()
     # Per NAME, across TUs: `_T` exists only in the TU that includes <tchar.h> (main's
     # mouse.c), and stopping at the first TU that preprocesses at all missed it.
+    # One probe PER NAME: a candidate of another arity (cmd's two-argument
+    # `__WINE_IS_DEBUG_ON`) makes `NAME("rcv")` a preprocessor error, and in a shared probe
+    # that error failed every TU for every name -- `_T` was never widened (725 call sites).
     widening: set[str] = set()
-    left = set(names)
-    for tu in tus:
-        if not left:
-            break
-        found: dict[str, set[str]] = {}
-        ok = True
-        for arch in _ARCHES:
-            argv = compile_argv(repo, arch, tu)
-            if argv is None:
-                ok = False
+    for n in sorted(names):
+        for tu in tus:
+            seen: set[str] = set()
+            ok = True
+            for arch in _ARCHES:
+                argv = compile_argv(repo, arch, tu)
+                if argv is None:
+                    ok = False
+                    break
+                try:
+                    text = _preprocess(argv, tu, f'__RCV_BEGIN__ {n}("rcv") __RCV_END__')
+                except LowerError:
+                    ok = False
+                    break
+                m = re.search(r"__RCV_BEGIN__(.*?)__RCV_END__", text, re.S)
+                seen.add(m.group(1).strip() if m else "")
+            # Keep looking past a TU where NAME is simply undefined (`_T` exists only where
+            # <tchar.h> is included -- main's mouse.c).
+            if ok and seen == {'L"rcv"'}:
+                widening.add(n)
                 break
-            probe = "\n".join(f'__RCV_BEGIN_{n}__ {n}("rcv") __RCV_END__' for n in sorted(left))
-            try:
-                text = _preprocess(argv, tu, probe)
-            except LowerError:
-                ok = False
-                break
-            for n in left:
-                m = re.search(rf"__RCV_BEGIN_{n}__(.*?)__RCV_END__", text, re.S)
-                found.setdefault(n, set()).add(m.group(1).strip() if m else "")
-        if ok:
-            hit = {n for n, ex in found.items() if ex == {'L"rcv"'}}
-            widening |= hit
-            left -= hit
     return widening
 
 
@@ -1173,7 +1181,10 @@ def widen_call_sites(rust: str, names: set[str]) -> tuple[str, int]:
                 return m.group(0)
             count += 1
             body = ", ".join(f"0x{u:04x}" for u in units)
-            return f'(&[{body}u16]).as_ptr() /* {n} "{m.group(1)[:60]}" */'
+            # The note is a block comment: a literal holding `*/` (cmd's set.c
+            # `_T("*/%+-&^|")`) closed it early and left the rest as an unterminated string.
+            note = m.group(1)[:60].replace("*/", "*\\/").replace("/*", "/\\*")
+            return f'(&[{body}u16]).as_ptr() /* {n} "{note}" */'
 
         rust = re.sub(rf"\b{re.escape(n)}!?\(\s*{_STR_CALL}\s*\)", repl_s, rust)
 

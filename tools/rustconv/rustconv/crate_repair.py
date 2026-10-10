@@ -56,6 +56,7 @@ RULE_POINTER_CAST = "raw_pointer_cast"
 RULE_FLEX_ARRAY = "flex_array_index"
 RULE_PANICKING_CAST = "panicking_cast"
 RULE_ANON_UNION = "anon_union_field"
+RULE_C2RUST_HOP = "c2rust_anon_hop"
 RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
 RULE_MATCH_ARM_GUARD = "match_arm_c_conversion"
 RULE_PACKED_FIELD_PTR = "packed_field_ptr"
@@ -136,6 +137,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_OPTION_FN_AS_PTR,
     RULE_SOME_FN_ITEM,
     RULE_KEYWORD_FIELD,
+    RULE_C2RUST_HOP,
     RULE_LITERAL_MUT,
     RULE_BITFIELD,
     RULE_C2RUST_ANON,
@@ -2114,6 +2116,31 @@ def _outermost_call_site(span: Mapping[str, Any]) -> dict[str, Any]:
     return dict(span)
 
 
+def _is_whole_macro_arm(masked: bytes, start: int, end: int) -> bool:
+    """True when ``[start, end)`` is the ENTIRE body of the `=> { ... }` arm around it.
+
+    Then the macro's value IS that expression, and a C conversion belongs to each use, not
+    to the definition: cmd's `_istspace!` is `iswctype(..)`, an int, used as a condition at
+    one site and as a number elsewhere -- `!= 0` in the body fixed one and broke the rest.
+    """
+    arrow = masked.rfind(b"=>", 0, start)
+    if arrow < 0:
+        return False
+    open_at = masked.find(b"{", arrow)
+    if open_at < 0 or open_at > start:
+        return False
+    depth = 0
+    for pos in range(open_at, len(masked)):
+        byte = masked[pos : pos + 1]
+        if byte == b"{":
+            depth += 1
+        elif byte == b"}":
+            depth -= 1
+            if depth == 0:
+                return masked[open_at + 1 : pos].strip() == masked[start:end].strip()
+    return False
+
+
 def _c_truthiness_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2204,10 +2231,13 @@ def _c_truthiness_rule(
             span = _outermost_call_site(span)
         elif span.get("expansion"):
             own = load(str(span.get("file_name") or ""))
+            own_masked = _mask_lexical(own) if own is not None else b""
+            span_at = (int(span.get("byte_start") or 0), int(span.get("byte_end") or 0))
             in_own_macro = (
                 own is not None
                 and _is_own(ctx, str(span.get("file_name") or ""))
-                and _in_macro_definition(_mask_lexical(own), int(span.get("byte_start") or 0))
+                and _in_macro_definition(own_masked, span_at[0])
+                and not _is_whole_macro_arm(own_masked, *span_at)
             )
             if not in_own_macro:
                 span = _outermost_call_site(span)
@@ -2774,6 +2804,61 @@ def _keyword_field_rule(
                 rule=RULE_KEYWORD_FIELD,
                 authority="bindgen renames a keyword-named C field with a trailing underscore",
                 original=field_name,
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
+_RE_C2RUST_ANON = re.compile(r"c2rust_unnamed(?:_\d+)?")
+
+
+def _c2rust_hop_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`(*pIC).c2rust_unnamed.hWnd` on a type with no such field -> `(*pIC).hWnd`.
+
+    c2rust names an anonymous member `c2rust_unnamed[_N]` and an anchored translation copies
+    it. Islands use that spelling only where bindgen_unions_to_real converted a union; an MS
+    embedded base struct (imm32_undoc.h's `INPUTCONTEXTDX { INPUTCONTEXT; }`) is restored as
+    `__bindgen_anon_1`, so imm32 carried 61 hops onto a field that does not exist. rustc names
+    the type that lacks it; dropping the hop leaves the C's own spelling, which
+    anon_union_field then routes on the next pass -- or which stays an error if C would not
+    reach it either.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    if m is None or not _RE_C2RUST_ANON.fullmatch(m.group("field")):
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if (
+        data is None
+        or start < 1
+        or data[start - 1 : start] != b"."
+        or data[end : end + 1] != b"."
+        or data[start:end].decode("utf-8", "replace") != m.group("field")
+    ):
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=start - 1,
+                byte_end=end,
+                replacement="",
+                rule=RULE_C2RUST_HOP,
+                authority="rustc: the receiver type has no c2rust anonymous-member field",
+                original=f".{m.group('field')}",
                 line=int(span.get("line_start") or 0),
                 column=int(span.get("column_start") or 0),
                 targets=(ctx.target,),
@@ -4985,6 +5070,7 @@ _RULE_TABLE: dict[
     RULE_OPTION_FN_AS_PTR: _option_fn_as_ptr_rule,
     RULE_SOME_FN_ITEM: _some_fn_item_rule,
     RULE_KEYWORD_FIELD: _keyword_field_rule,
+    RULE_C2RUST_HOP: _c2rust_hop_rule,
     RULE_BITFIELD: _bitfield_rule,
     RULE_C2RUST_ANON: _c2rust_anon_rule,
     RULE_FLOAT_LITERAL: _float_literal_rule,

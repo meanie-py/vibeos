@@ -1,3 +1,5 @@
+EXTRA: sdk/lib/rust/extrac32-rust/src/extrac32/extrac32.rs: 'Extract' appears 1x here and 0x in extrac32.c
+EXTRA: sdk/lib/rust/extrac32-rust/src/extrac32/extrac32.rs: 'Overwrite \\"%s\\"?' appears 1x here and 0x in extrac32.c
 EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file.c: file_crit.crit' appears 1x here and 0x in file.c
 EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: 'file_crit.crit' appears 1x here and 0x in file.c
 EXTRA: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: 'C' appears 7x here and 6x in locale.c
@@ -7,26 +9,17 @@ EXTRA: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'INetCfgCompon
 EXTRA: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'SYSTEM\\\\CurrentControlSet\\\\Services\\\\Tcpip\\\\Parameters' appears 3x here and 2x in tcpipconf_notify.c
 EXTRA: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'SYSTEM\\\\CurrentControlSet\\\\Services\\\\Tcpip\\\\Parameters\\\\Interfaces\\\\%s' appears 3x here and 2x in tcpipconf_notify.c
 EXTRA: sdk/lib/rust/ntmarta-rust/src/ntmarta/ntmarta.rs: 'CURRENT_USER' appears 3x here and 2x in ntmarta.c
+EXTRA: sdk/lib/rust/osk-rust/src/osk/main.rs: 'OSKMainWindow' appears 1x here and 0x in main.c
 EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/advanced.rs: 'http://jira.reactos.org/' appears 1x here and 0x in advanced.c
 EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'ABIT' appears 3x here and 2x in smbios.c
 EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/smbios.rs: 'http://www.abit.com.tw/' appears 1x here and 0x in smbios.c
-EXTRA: sdk/lib/rust/sysdm-rust/src/sysdm/virtmem.rs: '' appears 3x here and 2x in virtmem.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'AdjustTokenPrivileges() failed!' appears 1x here and 0x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Failed to load LiveCD! You can shutdown your computer, or press ENTER to reboot.' appears 2x here and 1x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'LookupPrivilegeValue() failed!' appears 1x here and 0x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'OpenProcessToken() failed!' appears 1x here and 0x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'ReactOS LiveCD' appears 2x here and 1x in install.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'SeBackupPrivilege' appears 2x here and 0x in install.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: '\\\\$winnt$.inf' appears 1x here and 0x in install.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '%04x' appears 1x here and 0x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '%08lx' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'DisableGeckoInst' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'END_SECTION' appears 3x here and 1x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallWizard' appears 4x here and 2x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Installation Sources' appears 5x here and 3x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Layout Id' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'ProductOption' appears 1x here and 0x in wizard.c
-EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\Keyboard Layouts\\\\' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'appwiz.cpl,,install_gecko' appears 1x here and 0x in wizard.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'MININT' appears 1x here and 0x in umpnpmgr.c
 EXTRA: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control' appears 1x here and 0x in umpnpmgr.c
@@ -49,33 +42,17 @@ EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHIoctl unimplemented
 EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHNotify unimplemented\\n' appears 1x here and 0x in wshirda.c
 EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHOpenSocket unimplemented\\n' appears 1x here and 0x in wshirda.c
 EXTRA: sdk/lib/rust/wshirda-rust/src/wshirda/wshirda.rs: 'WSHSetSocketInformation unimplemented\\n' appears 1x here and 0x in wshirda.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) DbgPrint() failed!\\n' appears 2x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Get: Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '(%s:%d) Unknown level/option name: %d %d\\n' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WARNING:  %s at %s:%d is unimplemented!()\\n' appears 7x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHAddressToString' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHEnumProtocols' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetProviderGuid' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetSocketInformation' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHGetWSAProtocolInfo' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHJoinLeaf' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'WSHStringToAddress' appears 1x here and 0x in wshtcpip.c
 EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\RawIp' appears 1x here and 0x in wshtcpip.c
 EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Tcp' appears 1x here and 0x in wshtcpip.c
 EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: '\\\\Device\\\\Udp' appears 1x here and 0x in wshtcpip.c
-EXTRA: sdk/lib/rust/wshtcpip-rust/src/wshtcpip/wshtcpip.rs: 'dll/win32/wshtcpip/wshtcpip.c' appears 11x here and 0x in wshtcpip.c
-MISSING: sdk/lib/rust/desk-rust/src/desk/monslctl.rs: 'MONITORSELWNDCLASS' appears 1x in monslctl.c and 0x here
-MISSING: sdk/lib/rust/desk-rust/src/desk/preview.rs: 'PreviewWndClass' appears 1x in preview.c and 0x here
-MISSING: sdk/lib/rust/desk-rust/src/desk/screensaver.rs: 'SSDemoParent' appears 1x in screensaver.c and 0x here
 MISSING: sdk/lib/rust/desk-rust/src/desk/theme.rs: '%d' appears 1x in theme.c and 0x here
 MISSING: sdk/lib/rust/desk-rust/src/desk/theme.rs: 'Shell Icon Size' appears 2x in theme.c and 1x here
-MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: '@:\\\\' appears 1x in dir.c and 0x here
-MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:' appears 1x in dir.c and 0x here
-MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/dir.rs: 'A:\\\\' appears 1x in dir.c and 0x here
+MISSING: sdk/lib/rust/extrac32-rust/src/extrac32/extrac32.rs: "','%','s','" appears 1x in extrac32.c and 0x here
+MISSING: sdk/lib/rust/mmc-rust/src/mmc/console.rs: 'MSC Files\\0*.msc' appears 1x in console.c and 0x here
+MISSING: sdk/lib/rust/mstsc-rust/src/mstsc/connectdialog.rs: 'Remote Desktop Files (*.RDP)\\0*.rdp' appears 2x in connectdialog.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/exit.rs: ': MSVCRT_onexit_cs' appears 1x in exit.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': MSVCRT_file_cs' appears 1x in file.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/file.rs: ': file_crit.crit' appears 2x in file.c and 0x here
-MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '' appears 1x in locale.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/locale.rs: '.' appears 1x in locale.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: ', %ax\\n\\t' appears 2x in math.c and 0x here
 MISSING: sdk/lib/rust/msvcrt-crt-rust/src/msvcrt/math.rs: '.cfi_adjust_cfa_offset -4\\n\\t' appears 1x in math.c and 0x here
@@ -104,7 +81,6 @@ MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/netcfg_iface.rs: 'LowerRange' app
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/netcfg_iface.rs: 'NDI\\\\Interfaces' appears 1x in netcfg_iface.c and 0x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/netcfg_iface.rs: 'UpperRange' appears 2x in netcfg_iface.c and 0x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: '%hu' appears 1x in tcpipconf_notify.c and 0x here
-MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: '' appears 9x in tcpipconf_notify.c and 3x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: '0.0.0.0' appears 4x in tcpipconf_notify.c and 2x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'ActiveConfigurations' appears 1x in tcpipconf_notify.c and 0x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'DNS' appears 1x in tcpipconf_notify.c and 0x here
@@ -120,17 +96,11 @@ MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'Options' ap
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'SYSTEM\\\\CurrentControlSet\\\\Services\\\\DHCP\\\\Configurations\\\\Alternate_%s' appears 1x in tcpipconf_notify.c and 0x here
 MISSING: sdk/lib/rust/netcfgx-rust/src/netcfgx/tcpipconf_notify.rs: 'SubnetMask' appears 4x in tcpipconf_notify.c and 2x here
 MISSING: sdk/lib/rust/snmpapi-rust/src/snmpapi/main.rs: '<null oid>' appears 2x in main.c and 1x here
-MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/environment.rs: '' appears 3x in environment.c and 1x here
 MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/general.rs: ' ' appears 1x in general.c and 0x here
 MISSING: sdk/lib/rust/sysdm-rust/src/sysdm/virtmem.rs: 'Unknown architecture' appears 1x in virtmem.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: '' appears 2x in install.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Arguments' appears 1x in install.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'DetachedProgram' appears 1x in install.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Dhcp' appears 2x in install.c and 1x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Dnscache' appears 2x in install.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'GuiUnattended' appears 2x in install.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'MS_TCPIP' appears 2x in install.c and 1x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'Tcpip' appears 2x in install.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/install.rs: 'rosbrand.dll' appears 1x in install.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'Application Log' appears 2x in security.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'Event Audit' appears 2x in security.c and 1x here
@@ -141,17 +111,11 @@ MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'System Access' ap
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'System Log' appears 2x in security.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: 'defltwk.inf' appears 2x in security.c and 1x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: ' ' appears 4x in wizard.c and 3x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '' appears 14x in wizard.c and 9x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '0000' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '00000409' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: '1' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Client' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'InstallationType' appears 2x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Keyboard Layout\\\\Preload' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Keyboard Layout\\\\Substitutes' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'RappsDownload' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'SOFTWARE\\\\Microsoft\\\\Windows NT\\\\CurrentVersion' appears 1x in wizard.c and 0x here
-MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\Keyboard Layouts\\\\%s' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Server Core' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'Server' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'ServerNT' appears 2x in wizard.c and 1x here
@@ -162,8 +126,5 @@ MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'UserExecute' appear
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'You must enter a password !' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/syssetup-rust/src/syssetup/wizard.rs: 'cmd.exe' appears 1x in wizard.c and 0x here
 MISSING: sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/umpnpmgr.rs: 'SYSTEM\\\\CurrentControlSet\\\\Control\\\\MiniNT' appears 1x in umpnpmgr.c and 0x here
-MISSING: sdk/lib/rust/userenv-rust/src/userenv/desktop.rs: '%HOMEDRIVE%%HOMEPATH%' appears 2x in desktop.c and 0x here
-MISSING: sdk/lib/rust/wkssvc-rust/src/wkssvc/rpcserver.rs: '' appears 1x in rpcserver.c and 0x here
-MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/error.rs: '' appears 1x in error.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ' ' appears 1x in init.c and 0x here
 MISSING: sdk/lib/rust/wldap32-rust/src/wldap32/init.rs: ':%d' appears 1x in init.c and 0x here

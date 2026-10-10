@@ -2088,15 +2088,6 @@ pub unsafe extern "system" fn UniataAhciBeginTransaction(
         }
     }
 
-    DbgPrint(b"[UNIATA] AhciBeginTx ch=%u: GHC=%08x hIS=%08x PxIE=%08x PxIS=%08x CI=%08x\n\0"
-        .as_ptr().cast(),
-        lChannel,
-        UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_GHC as ULONG),
-        UniataAhciReadHostPort4(deviceExtension, IDX_AHCI_IS as ULONG),
-        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_IE as ULONG),
-        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_IS as ULONG),
-        UniataAhciReadChannelPort4(chan, IDX_AHCI_P_CI as ULONG)); // ahci marker
-
     IDE_STATUS_IDLE as UCHAR
 }
 

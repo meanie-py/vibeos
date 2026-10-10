@@ -384,7 +384,7 @@ ROSDATA DEADKEY_LPWSTR dead_key_names[] = {
     L"\x00b4" L"AKUT",
     L"`"      L"GRAVIS",
     L"\x00af" L"MAKRON",
-    L"\x02d9" L"\x00dcBERPUNKT",
+    L"\x02d9" L"\x00dc" L"BERPUNKT",
     L"^"      L"ZIRKUMFLEX",
     L"\x02dd" L"DOPPELAKUT",
     L"\x02c7" L"HATSCHEK",

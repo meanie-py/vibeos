@@ -1104,6 +1104,11 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
   per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
   next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
+- **`f64::from_bits` / `to_bits` are themselves calls that pass an f64.** Moving a double
+  through a soft-float boundary as its bit pattern (ftfd's private vsprintf, i386 KERNEL code)
+  needs `core::mem::transmute::<u64, f64>`, which is not a call; `from_bits` hit the same
+  rejection from inside `core`. A varargs double is pulled as `arg::<u64>()`: on all three
+  targets `va_arg(double)` reads the same 8-byte slot.
 - **So a THIRD-PARTY float crate (`libm`) cannot build there at all** — it is all Rust-ABI,
   and you cannot `extern "C"` someone else's crate. ucrtbase solved it by dropping to the
   SSE2 baseline (no kernel consumer; Microsoft's x86 ucrtbase is `/arch:SSE2`). That makes
@@ -1158,6 +1163,11 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **A kernel DLL that imports only win32k cannot link `panic-common`'s `kernel` flavour.**
+  GDI font and display drivers (bmfd, ftfd: `add_importlibs(ftfd win32k)`) have no ntoskrnl
+  import library, so the panic path's `DbgPrint`, `KeBugCheckEx` and `RtlWalkFrameChain` are
+  undefined (arm64 LINK_FAIL on ftfd.dll). Use the zero-extern `raw` flavour; scaffold now
+  picks it from the target's `add_importlibs`.
 - **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
   (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
   spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
@@ -1399,6 +1409,11 @@ under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $
 (%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
 non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
 count or one multiplied by `size_of` (baseline empty).
+**And the ORDER flips too.** `RtlMoveMemory(dst, src, bytes)` is destination-first;
+`core::ptr::copy(src, dst, count)` is source-first. imm32's `Imm32FixLogFont` translated both
+of its face-name shifts with the C's argument order and the C's byte count, so each moved the
+string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
+nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -2254,6 +2269,11 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **And a Rust `&str` handed to C has no NUL at all.** magnify (an ANSI module, where
+  `TEXT("1")` lowers to `"1"`) passed `"1".as_ptr()` to CB_ADDSTRING: the control read on
+  through rodata, and picking an item copied that run-on into a 2-char stack buffer. `port
+  integrate` now rewrites `"x".as_ptr()` (and `TEXT!("x").as_ptr()`) to `b"x\0".as_ptr()`; in a
+  UNICODE module the same spelling is a u8/u16 type error, which is the loud outcome.
   **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
   FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
   just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
@@ -14346,6 +14366,21 @@ Three gotchas latent in the C, which surface only once you actually boot UEFI:
 2. **Synthetic ACPI 2.0 RSDP is required**, else no PS/2 input. Tell: zero `[[I8K]]` lines and
    `Tables: [XSDT]` (vs BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.
 3. **freeldr-loaded DLLs must not use raw-dylib** (see the cohab section).
+4. **i386 UEFI with >= 1G RAM: the kernel's boot-image reservation swallows session space.**
+   Symptom: BUGCHECK 0x1A in `MmDeleteRmap` ("mapping-not-in-list", Process NULL) when a
+   ROS system view is unmapped, here win32k's font view at `0xbf7f0000`; at 512M nothing
+   happens, which is why only a bigger guest found it. Cause: `uefimem.rs` counted the
+   firmware's own `LoaderLoadedProgram` regions, which OVMF keeps at the top of RAM, into
+   `LoaderPagesSpanned`. The kernel sizes `MmBootImageSize` from that span, so a 1G guest
+   got 0x3F400000 and a KSEG0 reservation running to `0xBF400000`. That covered the
+   system-view and session reservations, so the ROS gap finder handed out session VAs that
+   ARM3 already had mapped. Fix (i386 only): leave identity-only types out of the span, and
+   let `MempSetupPagingForRegion` map them without the span gate. 1G CD boot: 0x3F400000 ->
+   0x4400000, and the sweep completes. Related, same span: a 300MB ramdisk loaded bottom-up
+   pushed every boot driver above it (456MB boot image, 0x7F), so the i386 ramdisk now comes
+   from the top of memory and `LoaderXIPRom` stays out of the span (ramdisk.sys maps it
+   physically). Tool: the kernel VAD-tree dump in `MmMapViewOfSegment` (fires when a fresh
+   kernel view finds a present PTE) showed the oversized first node at once.
 
 **Recipe:** i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 = the system `OVMF_CODE_4M.fd`.
 **`-device ide-cd,drive=cd0,bootindex=0`** — a bare `-cdrom` drops to the UEFI shell. The

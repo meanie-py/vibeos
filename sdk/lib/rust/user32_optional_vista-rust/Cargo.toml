@@ -1,0 +1,17 @@
+# user32_optional_vista-rust — see src/lib.rs for the module map.
+[package]
+name = "user32_optional_vista-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+
+[lib]
+name = "user32_optional_vista_rust"
+path = "src/lib.rs"
+crate-type = ["staticlib"]
+
+[dependencies]
+strsafe-rust = { path = "../strsafe-rust" }
+panic-common = { path = "../panic-common", features = ["user"] }
+ntdll-sys = { path = "../ntdll-sys" }
+win32macros-rust = { path = "../win32macros-rust" }

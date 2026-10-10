@@ -377,7 +377,9 @@ pub unsafe extern "system" fn CLIPOBJ_bEnum(
     pco: *mut CLIPOBJ,
     cj: u32,
     pulEnumRects: *mut u32,
-) -> u8 {
+) -> i32 {
+    // winddi.h: `BOOL APIENTRY CLIPOBJ_bEnum(...)` -- a 32-bit BOOL. Returning u8 left the
+    // upper bits of the return register undefined for every C display driver that tests it.
     let Clip = pco as *mut XCLIPOBJ;
     let pERects = pulEnumRects as *mut ENUMRECTS;
 
@@ -390,7 +392,7 @@ pub unsafe extern "system" fn CLIPOBJ_bEnum(
     );
 
     if nCopy == 0 {
-        return 0u8;
+        return 0;
     }
 
     let src = (*Clip).Rects.add((*Clip).EnumPos as usize);
@@ -405,9 +407,9 @@ pub unsafe extern "system" fn CLIPOBJ_bEnum(
     (*Clip).EnumPos += nCopy;
 
     if (*Clip).EnumPos < (*Clip).RectCount {
-        1u8
+        1
     } else {
-        0u8
+        0
     }
 }
 

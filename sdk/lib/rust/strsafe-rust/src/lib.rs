@@ -52,6 +52,13 @@ extern "C" {
     /// msvcrt's `_vsnwprintf`. Variadic only in its `va_list` argument, so — unlike the `...`
     /// entry points — this IS expressible in stable Rust.
     fn _vsnwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ap: *mut c_void) -> c_int;
+    /// msvcrt's `_vsnprintf`, the narrow twin.
+    fn _vsnprintf(
+        buf: *mut core::ffi::c_char,
+        n: usize,
+        fmt: *const core::ffi::c_char,
+        ap: *mut c_void,
+    ) -> c_int;
     /// Imported, never hand-written: LLVM folds any byte-copy loop back into a call to the
     /// function itself, which is an infinite self-recursion (AGENTS.md).
     fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void;
@@ -242,6 +249,46 @@ unsafe fn StringCopyNExWorkerW(
     hr
 }
 
+/// strsafe.h:184 `StringCchCopyExW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCchCopyExW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyExWorkerW(
+        pszDest,
+        cchDest,
+        cchDest * core::mem::size_of::<WCHAR>(),
+        pszSrc,
+        ppszDestEnd,
+        pcchRemaining,
+        dwFlags,
+    )
+}
+
+/// strsafe.h:255 `StringCbCopyNW`.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyNW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    cbToCopy: usize,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let cchToCopy = cbToCopy / core::mem::size_of::<WCHAR>();
+    if cchDest > STRSAFE_MAX_CCH || cchToCopy > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
 /// strsafe.h:1646 `StringVPrintfExWorkerW`.
 #[allow(clippy::too_many_arguments)]
 unsafe fn StringVPrintfExWorkerW(
@@ -428,6 +475,40 @@ pub unsafe extern "system" fn StringCchLengthW(
     StringLengthWorkerW(psz, cchMax, pcchLength)
 }
 
+/// strsafe.h `StringLengthWorkerA` -- StringLengthWorkerW over CHAR.
+unsafe fn StringLengthWorkerA(
+    mut psz: *const core::ffi::c_char,
+    mut cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let cchMaxPrev = cchMax;
+    while cchMax != 0 && *psz != 0 {
+        psz = psz.add(1);
+        cchMax -= 1;
+    }
+    if cchMax == 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    }
+    if !pcchLength.is_null() {
+        *pcchLength = if hr >= 0 { cchMaxPrev - cchMax } else { 0 };
+    }
+    hr
+}
+
+/// strsafe.h `StringCchLengthA` (imm32's utils.c and regword.c).
+#[no_mangle]
+pub unsafe extern "system" fn StringCchLengthA(
+    psz: *const core::ffi::c_char,
+    cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    if psz.is_null() || cchMax > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringLengthWorkerA(psz, cchMax, pcchLength)
+}
+
 /// strsafe.h:1083 `StringCopyNWorkerW` -- copy at most `cchToCopy` characters, always
 /// terminating; a destination that fills is truncated and reported INSUFFICIENT_BUFFER.
 unsafe fn StringCopyNWorkerW(
@@ -468,6 +549,128 @@ pub unsafe extern "system" fn StringCchCopyNW(
         return STRSAFE_E_INVALID_PARAMETER;
     }
     StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
+/// strsafe.h:996 `StringCopyExWorkerW` -- copy until the source's NUL, with the Ex flags.
+unsafe fn StringCopyExWorkerW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    mut pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let mut pszDestEnd: *mut WCHAR = pszDest;
+    let mut cchRemaining: usize = 0;
+    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    } else {
+        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
+            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
+                hr = STRSAFE_E_INVALID_PARAMETER;
+            }
+            if pszSrc.is_null() {
+                pszSrc = EMPTY.as_ptr();
+            }
+        }
+        if hr >= 0 {
+            if cchDest == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = 0;
+                if *pszSrc != 0 {
+                    hr = if pszDest.is_null() {
+                        STRSAFE_E_INVALID_PARAMETER
+                    } else {
+                        STRSAFE_E_INSUFFICIENT_BUFFER
+                    };
+                }
+            } else {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+                while cchRemaining != 0 && *pszSrc != 0 {
+                    *pszDestEnd = *pszSrc;
+                    pszDestEnd = pszDestEnd.add(1);
+                    pszSrc = pszSrc.add(1);
+                    cchRemaining -= 1;
+                }
+                if cchRemaining > 0 {
+                    if dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 {
+                        memset(
+                            pszDestEnd.add(1) as *mut c_void,
+                            fill_pattern(dwFlags),
+                            (cchRemaining - 1) * core::mem::size_of::<WCHAR>()
+                                + (cbDest % core::mem::size_of::<WCHAR>()),
+                        );
+                    }
+                } else {
+                    pszDestEnd = pszDestEnd.sub(1);
+                    cchRemaining += 1;
+                    hr = STRSAFE_E_INSUFFICIENT_BUFFER;
+                }
+                *pszDestEnd = 0;
+            }
+        }
+    }
+    if hr < 0 && !pszDest.is_null() {
+        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
+            memset(pszDest as *mut c_void, fill_pattern(dwFlags), cbDest);
+            if fill_pattern(dwFlags) == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+            } else if cchDest > 0 {
+                pszDestEnd = pszDest.add(cchDest - 1);
+                cchRemaining = 1;
+                *pszDestEnd = 0;
+            }
+        }
+        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
+            pszDestEnd = pszDest;
+            cchRemaining = cchDest;
+            *pszDestEnd = 0;
+        }
+    }
+    if hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDestEnd;
+        }
+        if !pcchRemaining.is_null() {
+            *pcchRemaining = cchRemaining;
+        }
+    }
+    hr
+}
+
+/// strsafe.h:210 `StringCbCopyExW` (mplay32).
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyExW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcbRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let mut cchRemaining: usize = 0;
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let hr = StringCopyExWorkerW(
+        pszDest,
+        cchDest,
+        cbDest,
+        pszSrc,
+        ppszDestEnd,
+        &mut cchRemaining,
+        dwFlags,
+    );
+    if (hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER) && !pcbRemaining.is_null() {
+        *pcbRemaining = cchRemaining * core::mem::size_of::<WCHAR>()
+            + (cbDest % core::mem::size_of::<WCHAR>());
+    }
+    hr
 }
 
 /// strsafe.h:1395 `StringCatNWorkerW` -- append at most `cchToAppend` characters.
@@ -637,6 +840,27 @@ macro_rules! StringCbPrintfW {
     };
 }
 
+/// strsafe.h:585 `StringCchPrintfExW(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfExW {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut $crate::WCHAR = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            $crate::printf_ex_worker(
+                pszDest, cchDest, cchDest * core::mem::size_of::<$crate::WCHAR>(),
+                $ppszDestEnd as _, $pcchRemaining as _,
+                $dwFlags as _, $pszFormat as _,
+                |d, n, f| $crate::_snwprintf(d, n, f $(, $arg)*),
+            )
+        }
+    }};
+}
+
 /// strsafe.h `StringCbPrintfExW(pszDest, cbDest, ppszDestEnd, pcbRemaining, dwFlags,
 /// pszFormat, ...)` as a macro call. Evaluates to the `HRESULT`.
 #[macro_export]
@@ -697,6 +921,58 @@ pub unsafe extern "C" fn StringCchPrintfW_v(
         }
     }
     hr
+}
+
+/// strsafe.h `StringCchVPrintfA` (narrow `StringCchVPrintfW`): `ap` is the `va_list` BY VALUE,
+/// `char *` on every Windows target. Not exported: strsafe.h's is `static __inline`, so no
+/// module links against the symbol, and an unmangled one could collide with a local copy.
+pub unsafe fn StringCchVPrintfA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszFormat: *const core::ffi::c_char,
+    ap: *mut c_void,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let iRet = _vsnprintf(pszDest, cchDest - 1, pszFormat, ap);
+    printf_worker_finish_a(pszDest, cchDest, iRet)
+}
+
+/// strsafe.h `StringVPrintfWorkerA` after its `_vsnprintf` call: `printf_worker_finish`'s
+/// narrow twin.
+#[doc(hidden)]
+pub unsafe fn printf_worker_finish_a(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    iRet: c_int,
+) -> HRESULT {
+    let cchMax = cchDest - 1;
+    if iRet < 0 || (iRet as usize) > cchMax {
+        *pszDest.add(cchMax) = 0;
+        STRSAFE_E_INSUFFICIENT_BUFFER
+    } else {
+        if (iRet as usize) == cchMax {
+            *pszDest.add(cchMax) = 0;
+        }
+        S_OK
+    }
+}
+
+/// strsafe.h `StringCchPrintfA(pszDest, cchDest, pszFormat, ...)` as a macro call, calling
+/// msvcrt's variadic `_snprintf` directly like `StringCchPrintfW!`. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfA {
+    ($pszDest:expr, $cchDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut core::ffi::c_char = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH || cchDest == 0 {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            let iRet = $crate::_snprintf(pszDest, cchDest - 1, $pszFormat as _ $(, $arg)*);
+            $crate::printf_worker_finish_a(pszDest, cchDest, iRet)
+        }
+    }};
 }
 
 /// The byte-counted twin.

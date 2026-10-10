@@ -233,3 +233,8 @@ def test_a_parenthesized_callee_is_a_call_not_a_cast():
         {"WPARAM", "LPARAM", "HFONT", "BOOL"},
     )
     assert "SendMessageW(" in out and "as SendMessageW" not in out, out
+
+
+def test_a_vtable_call_goes_through_the_option_slot():
+    out = low("(__rcv_p0__)->lpVtbl->Release(__rcv_p0__)")
+    assert ".lpVtbl).Release.unwrap_unchecked()(" in out

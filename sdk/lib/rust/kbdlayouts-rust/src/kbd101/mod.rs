@@ -443,7 +443,7 @@ pub(super) static mut extended_key_names: [VSC_LPWSTR; 21] = [
     VSC_LPWSTR { vsc: 0, pwsz: core::ptr::null_mut() },
 ];
 
-pub(super) static mut keyboard_layout_table: KBDTABLES_FE = KBDTABLES_FE { Base: KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: core::ptr::null_mut(), pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: core::ptr::null_mut(), pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 128 as BYTE /* RTL_NUMBER_OF */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 0, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() }, dwType: 4, dwSubType: 0 };
+pub(super) static mut keyboard_layout_table: KBDTABLES_FE = KBDTABLES_FE { Base: KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: core::ptr::null_mut(), pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: core::ptr::null_mut(), pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 128 as BYTE /* RTL_NUMBER_OF(scancode_to_vk) */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 0, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() }, dwType: 4, dwSubType: 0 };
 
 pub(super) static mut vk_to_function_table: [VK_F; 2] = [
     VK_F { Vk: 20 as BYTE /* VK_CAPITAL */, NLSFEProcType: KBDNLS_TYPE_TOGGLE as BYTE, NLSFEProcCurrent: KBDNLS_INDEX_NORMAL as BYTE, NLSFEProcSwitch: 0x08 as BYTE, NLSFEProc: [
@@ -486,7 +486,7 @@ pub(super) static mut vk_to_function_table: [VK_F; 2] = [
         ] },
 ];
 
-pub(super) static mut nls_layout_table: KBDNLSTABLES = KBDNLSTABLES { OEMIdentifier: 0, LayoutInformation: 0, NumOfVkToF: 2 as ULONG /* RTL_NUMBER_OF */, pVkToF: &raw const vk_to_function_table as PVK_F, NumOfMouseVKey: 0, pusMouseVKey: core::ptr::null_mut() };
+pub(super) static mut nls_layout_table: KBDNLSTABLES = KBDNLSTABLES { OEMIdentifier: 0, LayoutInformation: 0, NumOfVkToF: 2 as ULONG /* RTL_NUMBER_OF(vk_to_function_table) */, pVkToF: &raw const vk_to_function_table as PVK_F, NumOfMouseVKey: 0, pusMouseVKey: core::ptr::null_mut() };
 
 /// `kbd101.dll` export `KbdLayerDescriptor`: the layout's tables. The name is per layout so that
 /// every layout can live in one staticlib; its .spec maps it onto the real name.

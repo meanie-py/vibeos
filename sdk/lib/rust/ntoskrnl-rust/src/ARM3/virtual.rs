@@ -108,6 +108,7 @@ const HighPagePriority: u32 = 32; // header value; the hand copy said 2
 const IoReadAccess: u32 = 0;
 
 extern "system" {
+    fn MmRebalanceMemoryConsumersAndWait();
     fn ObDereferenceObject(Object: PVOID);
     fn MmMdlPagesAreZero(Mdl: PMDL) -> BOOLEAN;
     fn MiFlushTbAndCapture(
@@ -332,7 +333,12 @@ pub unsafe extern "system" fn MiMakeSystemAddressValid(
         );
 
         Status = MmAccessFault(0u32, PageTableVirtualAddress, 0i8, core::ptr::null_mut());
-        if Status < 0 {
+        // Out of pages is a wait, not an in-page error: the C bugchecks on any
+        // failure ("should not fail"), which turned an exhausted VM into 0x7A.
+        // The while re-tests validity after the wait.
+        if Status == STATUS_NO_MEMORY {
+            MmRebalanceMemoryConsumersAndWait();
+        } else if Status < 0 {
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 1,
@@ -368,7 +374,10 @@ pub unsafe extern "system" fn MiMakeSystemAddressValidPfn(
         MiReleasePfnLock(OldIrql);
 
         Status = MmAccessFault(0u32, VirtualAddress, 0i8, core::ptr::null_mut());
-        if Status < 0 {
+        // As MiMakeSystemAddressValid: out of pages is a wait, not 0x7A.
+        if Status == STATUS_NO_MEMORY {
+            MmRebalanceMemoryConsumersAndWait();
+        } else if Status < 0 {
             KeBugCheckEx(
                 ntkrnl_sys::bugcodes::KERNEL_DATA_INPAGE_ERROR,
                 3,
@@ -1855,7 +1864,7 @@ pub unsafe extern "system" fn MiGetPageProtection(
             // Check if the PDE is still valid
             if !(*MiAddressToPte(PointerPte as PVOID)).valid() {
                 // It's not, make it valid
-                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);
+                MiMakeSystemAddressValidPfn(PointerPte as PVOID, OldIrql);  // nolint: irql-balance (drops the PFN lock via OldIrql before it faults or waits, retakes it after)
             }
 
             // Now it's safe to read the PTE value again

@@ -12,12 +12,13 @@ if(OPENGL32_USE_TLS)
 endif()
 
 list(APPEND SOURCE
-    apistubs.c
-    dllmain.c
-    icdload.c
-    swimpl.c
-    wgl.c
-    wgl_font.c
+    # apistubs.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/apistubs.rs)
+    # dllmain.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/dllmain.rs)
+    # icdload.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/icdload.rs)
+    # swimpl.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/swimpl.rs)
+    # wgl.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/wgl.rs)
+    # wgl_font.c  # replaced by Rust (sdk/lib/rust/opengl32-rust/src/opengl32/wgl_font.rs)
+    rust_cohab_stub.c
     opengl32.h
     ${CMAKE_CURRENT_BINARY_DIR}/opengl32_stubs.c)
 
@@ -30,10 +31,15 @@ if(ARCH STREQUAL "i386")
     )
 endif()
 
+# Every translation unit is Rust now (opengl32-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(opengl32_rust opengl32-rust "" TRUE)
 add_library(opengl32 MODULE
     ${SOURCE}
     ${opengl32_asm}
     ${CMAKE_CURRENT_BINARY_DIR}/opengl32.def)
+add_dependencies(opengl32 rust_opengl32_rust)
+target_link_libraries(opengl32 ${opengl32_rust_LIB})
 add_pch(opengl32 opengl32.h SOURCE)
 
 target_link_libraries(opengl32 mesa wine ${PSEH_LIB})

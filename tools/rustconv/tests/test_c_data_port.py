@@ -428,3 +428,83 @@ def test_clang_prints_a_swallowable_escape_as_two_literals_and_each_decodes_alon
     narrow = {"kind": "StringLiteral", "value": '"\\xAB""CD\\"E"'}
     assert cdp._clang_string_value(narrow) == b'\xabCD"E'
     assert cdp._split_printed('a\\"b""c') == ['a\\"b', "", "c"]
+
+
+# --------------------------------------------------------------------------------------
+# statics from a named header, offsetof, per-arch variants
+# --------------------------------------------------------------------------------------
+
+
+def _marshalling_repo(tmp_path: Path):
+    repo = tmp_path
+    inc = repo / "inc" / "marshalling"
+    inc.mkdir(parents=True)
+    base = repo / "base"
+    base.mkdir()
+    (inc / "m.h").write_text(
+        "typedef unsigned long DWORD; typedef int BOOL; typedef void *PVOID;\n"
+        "typedef struct _INFO { DWORD off; DWORD size; BOOL adj; } INFO;\n"
+        "typedef struct _M { DWORD cb; INFO pInfo[]; } M;\n"
+        "typedef struct _S { DWORD flags; PVOID name; struct { DWORD a, b; } in; } S;\n"
+        "#define FIELD_OFFSET(t, f) ((long)__builtin_offsetof(t, f))\n"
+        "#define FSIZE(t, f) sizeof(((t *)0)->f)\n"
+        "static const M SM = { sizeof(S), {\n"
+        "  { FIELD_OFFSET(S, flags), FSIZE(S, flags), 1 },\n"
+        "  { FIELD_OFFSET(S, name), FSIZE(S, name), 2 },\n"
+        "  { FIELD_OFFSET(S, in.b), 4, 3 },\n"
+        "  { 0xFFFFFFFF, 0, 0 } } };\n"
+        "static const M *pSM[] = { 0, &SM };\n"
+    )
+    tu = base / "x.c"
+    tu.write_text("#include <marshalling/m.h>\nstatic int own = 3;\nint own2 = 4;\n")
+    for arch, target in (("i386", "i686-w64-mingw32"), ("amd64", "x86_64-w64-mingw32")):
+        (repo / f"build-{arch}").mkdir()
+        (repo / f"build-{arch}" / "compile_commands.json").write_text(
+            json.dumps(
+                [
+                    {
+                        "directory": str(repo),
+                        "file": str(tu),
+                        "command": f"{_clang()} --target={target} -I{repo / 'inc'} -c {tu} -o t.o",
+                    }
+                ]
+            )
+        )
+    crate = repo / "src"
+    crate.mkdir()
+    return repo, tu, crate
+
+
+@pytest.mark.skipif(_clang() is None, reason="no clang on this host")
+def test_header_statics_offsetof_and_per_arch_variants(tmp_path):
+    repo, tu, crate = _marshalling_repo(tmp_path)
+    # the default refuses data that differs per arch, loudly
+    with pytest.raises(cdp.DataPortError, match="per_arch"):
+        cdp.port(repo, tu, crate, ("i386", "amd64"), headers=("marshalling/m.h",))
+    files = cdp.port(
+        repo,
+        tu,
+        crate,
+        ("i386", "amd64"),
+        headers=("marshalling/m.h",),
+        scope_tables=False,
+        per_arch=True,
+        public=True,
+    )
+    m = files["m.rs"]
+    assert (
+        "static mut own" not in files["mod.rs"] and "own2" not in files["mod.rs"]
+    )  # headers only: the TU's own statics are not ported
+    x86 = m[m.index('#[cfg(target_arch = "x86")]\npub static mut SM') :]
+    x64 = m[m.index('#[cfg(target_arch = "x86_64")]\npub static mut SM') :]
+    # FIELD_OFFSET / sizeof((T*)0)->f / nested member path, as clang laid them out per arch
+    assert "dwOffset" not in m  # (fields here are off/size/adj)
+    assert "off: 4 as DWORD" in x86 and "size: 4 as DWORD" in x86  # name at 4, 4 bytes
+    assert "off: 8 as DWORD" in x64 and "size: 8 as DWORD" in x64  # name at 8, 8 bytes
+    assert "off: 20 as DWORD" in x64 and "off: 12 as DWORD" in x86  # in.b
+    assert "cb: core::mem::size_of::<S>() as DWORD /* 24 */" in x64
+    # pointer array: identical on both arches in shape, twin cast to the island's type
+    assert "pub static mut pSM: [*const M; 2]" in m
+    assert "&raw const SM as *const M" in m
+    assert m.count("pub struct M_x4") == 1  # the layout twin is arch-free: written once
+    assert "pub static mut SM: M_x4" in m and "pub(super)" not in m

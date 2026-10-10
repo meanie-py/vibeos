@@ -172,7 +172,23 @@ unsafe fn RamDiskLoadVirtualFile(
     } else {
         PercentPerChunk = 100 * ChunkSize / RamDiskFileSize as u32;
     }
-    RamDiskBase = MmAllocateMemoryWithType((RamDiskFileSize) as usize , LoaderXIPRom);
+    // i386: take the image from the TOP of memory. Allocated bottom-up (the C), a ~300MB
+    // writable-root ramdisk pushed every boot driver loaded after it above it, so the
+    // loader span -- the kernel's KSEG0 boot-image reservation -- grew to 456MB and the
+    // boot died (0x7F/0x50). The image is reached through MmMapIoSpace of its physical base,
+    // so where it sits does not matter; where the KSEG0-mapped images sit does.
+    #[cfg(target_arch = "x86")]
+    {
+        RamDiskBase = crate::mm::MmAllocateHighestMemoryBelowAddress(
+            RamDiskFileSize as usize,
+            usize::MAX as PVOID,
+            LoaderXIPRom,
+        );
+    }
+    #[cfg(not(target_arch = "x86"))]
+    {
+        RamDiskBase = MmAllocateMemoryWithType((RamDiskFileSize) as usize , LoaderXIPRom);
+    }
     if RamDiskBase.is_null() {
         RamDiskFileSize = 0;
         ArcClose(RamFileId);

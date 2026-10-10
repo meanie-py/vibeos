@@ -105,6 +105,28 @@ PAIRS = [
     ("sdk/lib/rust/wshirda-rust/src/wshirda", "dll/win32/wshirda"),
     ("sdk/lib/rust/wshtcpip-rust/src/wshtcpip", "dll/win32/wshtcpip"),
     ("sdk/lib/rust/wsock32-rust/src/wsock32", "dll/win32/wsock32"),
+    # Applications (base/applications), ported with `rustconv port` 2026-10-09/10.
+    ("sdk/lib/rust/notepad-rust/src/notepad", "base/applications/notepad"),
+    ("sdk/lib/rust/cacls-rust/src/cacls", "base/applications/cacls"),
+    ("sdk/lib/rust/charmap-rust/src/charmap", "base/applications/charmap"),
+    ("sdk/lib/rust/clipbrd-rust/src/clipbrd", "base/applications/clipbrd"),
+    ("sdk/lib/rust/control-rust/src/control", "base/applications/control"),
+    ("sdk/lib/rust/dxdiag-rust/src/dxdiag", "base/applications/dxdiag"),
+    ("sdk/lib/rust/extrac32-rust/src/extrac32", "base/applications/extrac32"),
+    ("sdk/lib/rust/findstr-rust/src/findstr", "base/applications/findstr"),
+    ("sdk/lib/rust/fontview-rust/src/fontview", "base/applications/fontview"),
+    ("sdk/lib/rust/logoff-rust/src/logoff", "base/applications/logoff"),
+    ("sdk/lib/rust/magnify-rust/src/magnify", "base/applications/magnify"),
+    ("sdk/lib/rust/mmc-rust/src/mmc", "base/applications/mmc"),
+    ("sdk/lib/rust/mplay32-rust/src/mplay32", "base/applications/mplay32"),
+    ("sdk/lib/rust/msconfig-rust/src/msconfig", "base/applications/msconfig"),
+    ("sdk/lib/rust/mstsc-rust/src/mstsc", "base/applications/mstsc"),
+    ("sdk/lib/rust/osk-rust/src/osk", "base/applications/osk"),
+    ("sdk/lib/rust/runas-rust/src/runas", "base/applications/runas"),
+    ("sdk/lib/rust/sc-rust/src/sc", "base/applications/sc"),
+    ("sdk/lib/rust/sdbinst-rust/src/sdbinst", "base/applications/sdbinst"),
+    ("sdk/lib/rust/shutdown-rust/src/shutdown", "base/applications/shutdown"),
+    ("sdk/lib/rust/winver-rust/src/winver", "base/applications/winver"),
 ]
 
 DEBUG_CHANNELS = (
@@ -317,6 +339,10 @@ def _c_strings(src: str) -> list[str]:
         # is why a whitespace-only test silently merged nothing in this tree: every literal
         # worth comparing here is an `L"..."`.
         gap = src[prev_end : m.start()].strip() if prev_end is not None else None
+        # ...and the TCHAR spelling: `_T("a")\n_T("b")` is one string as well -- sc's usage
+        # text is a run of 19 of them per message, and read as 167 findings unjoined.
+        if gap is not None and re.fullmatch(r"\)\s*(?:_T|TEXT|_TEXT)\s*\(\s*L?", gap):
+            gap = ""
         if gap is not None and gap in ("", "L", "u", "U", "u8"):
             out[-1] += m.group(1)
         else:
@@ -553,13 +579,21 @@ def rust_literals(path: Path) -> Counter:
     text = strip_rust_attributes(text)
     text = strip_calls(text, ("cfg!", "cfg_attr!"))
 
+    # A CHARACTER literal `'"'` is not a string delimiter: sc's hand-encoded usage text
+    # (`'"' as u16`) made the string scans below read `"' as u16, '"` as a literal.
+    # The u16-array decoder still gets the original text, where that char belongs.
+    arrays_text = text
+    text = re.sub(r"""b?'"'""", " ", text)
+    # A DPRINT1 expanded into its DbgPrint call (mmc) carries __FILE__ and a debug format;
+    # the C side strips those calls, so the Rust side does too.
+    text = strip_calls(text, ("DbgPrint",))
     lits = []
     for m in re.findall(r'b"((?:[^"\\\n]|\\.)*)"', text):
         # C string literals are NUL-terminated by the compiler; the Rust spells the NUL.
         lits.append(_dewiden(m))
     for m in re.findall(r'(?<![b\w])"((?:[^"\\\n]|\\.)*)"', text):
         lits.append(_dewiden(m))
-    lits += _u16_array_literals(text)
+    lits += _u16_array_literals(arrays_text)
     return Counter(_norm_escapes(x) for x in lits)
 
 
@@ -585,13 +619,18 @@ def rust_literals(path: Path) -> Counter:
 # printable ASCII is a wide string literal, however it is bound. The terminator plus the
 # printable-only rule is what keeps ordinary numeric tables out -- they do not end in 0 and do
 # not read as text.
+# A 16-bit element type is spelled by its alias as often as `u16`: notepad's hand-encoded
+# `_T("Notepad")` is `['N' as TCHAR, ..., 0 as TCHAR]`, and every such string read as MISSING.
+_W16 = r"(?:u16|TCHAR|WCHAR|wchar_t|USHORT|WORD)"
 _ARRAY_ELEM = re.compile(
-    r"""b?'(\\.|[^'])'\s*as\s*u16|0[xX]([0-9a-fA-F]+)(?:u\d+)?|(\d+)(?:u\d+)?"""
+    rf"""b?'(\\.|[^'])'\s*as\s*{_W16}|0[xX]([0-9a-fA-F]+)(?:u\d+)?(?:\s*as\s*{_W16})?"""
+    rf"""|(\d+)(?:u\d+)?(?:\s*as\s*{_W16})?"""
 )
-_ARRAY_ELEM_ONLY = re.compile(
-    r"""\A\s*(?:(?:b?'(?:\\.|[^'])'\s*as\s*u16|0[xX][0-9a-fA-F]+(?:u\d+)?|\d+(?:u\d+)?)"""
-    r"""\s*,\s*)*(?:b?'(?:\\.|[^'])'\s*as\s*u16|0[xX][0-9a-fA-F]+(?:u\d+)?|\d+(?:u\d+)?)?\s*\Z"""
+_ELEM = (
+    rf"""(?:b?'(?:\\.|[^'])'\s*as\s*{_W16}|0[xX][0-9a-fA-F]+(?:u\d+)?(?:\s*as\s*{_W16})?"""
+    rf"""|\d+(?:u\d+)?(?:\s*as\s*{_W16})?)"""
 )
+_ARRAY_ELEM_ONLY = re.compile(rf"""\A\s*(?:{_ELEM}\s*,\s*)*{_ELEM}?\s*,?\s*\Z""")
 _ELEM_ESCAPES = {"\\\\": "\\", "\\'": "'", '\\"': '"', "\\n": "\n", "\\r": "\r", "\\t": "\t"}
 # Re-escape a decoded char back to the SOURCE spelling both sides are captured in. `c_literals`
 # and `rust_literals` both keep escapes uninterpreted (a C `"a\\b"` is captured as the four
@@ -653,8 +692,32 @@ def _u16_array_literals(text: str) -> list[str]:
     return out
 
 
+def _utf16le_text(lit: str) -> str | None:
+    """`{\\00\\0F\\0...` -- a byte string holding UTF-16LE (every second byte an escaped NUL)
+    -- as the text it spells, else None. dxdiag's provider GUIDs are spelled this way."""
+    parts = lit.split("\\0")
+    while len(parts) > 1 and parts[-1] == "":
+        parts.pop()  # the terminator and any NUL padding after it
+    if len(parts) < 2 or any(len(p) != 1 for p in parts):
+        return None
+    return "".join(parts)
+
+
+def _normalize(cl: Counter, rl: Counter) -> tuple[Counter, Counter]:
+    """Drop what carries no text on either side: the C's empty `L""` (its Rust is a lone NUL,
+    which no decoder reports) and a Rust zero-fill buffer (`b"\\0\\0..."`). And read a
+    UTF-16LE byte string as the text it holds."""
+    cl = Counter({k: v for k, v in cl.items() if k != ""})
+    out: Counter = Counter()
+    for k, v in rl.items():
+        if k == "" or re.fullmatch(r"(?:\\0)+", k):
+            continue
+        out[_utf16le_text(k) or k] += v
+    return cl, out
+
+
 def check_pair(rs: Path, c: Path, companions: list[Path] | None = None) -> list[str]:
-    cl, rl = c_literals(c), rust_literals(rs)
+    cl, rl = _normalize(c_literals(c), rust_literals(rs))
     findings = []
     # A hand-written SUBSTRATE COMPANION (`<stem>_<suffix>.rs` with no `.c` of its own) is
     # part of the same port and can legitimately carry a literal the C spells in <stem>.c:
@@ -668,7 +731,7 @@ def check_pair(rs: Path, c: Path, companions: list[Path] | None = None) -> list[
     # cannot see, so its extras are unverifiable against this pair rather than wrong.
     rl_seen = rl.copy()  # rl + companions: used ONLY to cancel MISSING, never to add EXTRA
     for comp in companions or []:
-        rl_seen = rl_seen + rust_literals(comp)
+        rl_seen = rl_seen + _normalize(Counter(), rust_literals(comp))[1]
     # Repo-relative when it can be (findings must match a baseline captured in any
     # worktree), raw otherwise -- a fixture pair under /tmp is how the controls exercise
     # this, and a checker that cannot be pointed at a fixture cannot be shown to work.

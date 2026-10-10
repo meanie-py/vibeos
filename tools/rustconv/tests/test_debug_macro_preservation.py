@@ -18,3 +18,10 @@ def test_unimplemented_is_a_diagnostic_not_a_rust_panic():
 def test_strings_and_macro_definitions_are_opaque():
     source = 'const X: &str = "DPRINT1(x)"; macro_rules! M { () => { DPRINT1(x) }; }'
     assert fix_debug_macros(source) == source
+
+
+def test_a_bare_unimplemented_once_becomes_a_macro_call():
+    from rustconv.debug_macros import preserve_debug_macros
+
+    # user32_vista's dpi.c: `UNIMPLEMENTED_ONCE;` stayed a bare path, rustc E0423.
+    assert "UNIMPLEMENTED_ONCE!();" in preserve_debug_macros("fn A() { UNIMPLEMENTED_ONCE; }")

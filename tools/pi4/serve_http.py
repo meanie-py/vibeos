@@ -29,6 +29,13 @@ CHUNK = 1 << 20
 
 class Handler(http.server.BaseHTTPRequestHandler):
     root = "."
+    # Keep-alive: a sanboot reads the image as thousands of small ranges (freeldr
+    # asks for 62 KB at a time), and under HTTP/1.0 each one paid a new TCP
+    # handshake and slow start. Every response below carries a Content-Length.
+    protocol_version = "HTTP/1.1"
+    # Headers and body go out as separate writes; don't let Nagle hold the body
+    # back for the client's delayed ACK of the headers.
+    disable_nagle_algorithm = True
 
     def _resolve(self):
         rel = self.path.split("?", 1)[0].lstrip("/")
@@ -55,6 +62,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if start >= size or start > end:
             self.send_response(416)
             self.send_header("Content-Range", f"bytes */{size}")
+            self.send_header("Content-Length", "0")
             self.end_headers()
             return None
         return start, end, True

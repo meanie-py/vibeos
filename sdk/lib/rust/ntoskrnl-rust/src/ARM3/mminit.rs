@@ -1636,6 +1636,15 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MiScanMemoryDescriptors(loader_block);
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiScanMemoryDescriptors done\r\n");
+        // One line per boot: on real hardware, how much of the board's RAM the
+        // loader handed over is otherwise invisible until a GUI is up to ask.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[MM] physical memory: %lu MiB (%lu pages, %lu descriptors, highest PFN %#lx)\n\0".as_ptr() as *const i8,
+            (MmNumberOfPhysicalPages >> (20 - PAGE_SHIFT)) as ULONG,
+            MmNumberOfPhysicalPages as ULONG,
+            MiNumberDescriptors as ULONG,
+            MmHighestPhysicalPage as ULONG,
+        );
 
         KeInitializeEvent(
             core::ptr::addr_of_mut!(MiTempEvent),
