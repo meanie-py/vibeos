@@ -647,6 +647,7 @@ def test_a_rust_str_passed_to_c_gets_its_nul(tmp_path):
     assert 'g(b"1\\0".as_ptr())' in out and 'MessageBox(h, b"Help\\0".as_ptr() as LPCSTR)' in out
     assert 'k(b"ok\\0".as_ptr())' in out and 'j("done\\0".as_ptr())' in out
 
+
 def test_a_derive_mode_override_is_remembered_for_later_stages(tmp_path, monkeypatch):
     # winegdi links into gdi32 from another CMakeLists, so derive cannot infer its mode;
     # the --usermode given once must reach every later re-derive without being repeated.
@@ -674,9 +675,11 @@ def test_token_pasting_macros_and_their_callers_are_hand_ports():
         "CS_StrW": M(body="((LPCWSTR)CS_StrA(pCS, Name))"),
         "CS_Wrap": M(body="CS_StrW(p, n)"),
         "ALIGN_DWORD": M(body="(((len) + 3) & ~3)"),
+        # cmd's console.h: GNU's comma swallow, not pasting.
+        "ConOutPrintf": M(body="ConPrintf(StdOut, (szStr), ##__VA_ARGS__)"),
     }
     kept, pasting = port._without_token_pasting(macros)
-    assert list(kept) == ["ALIGN_DWORD"]
+    assert list(kept) == ["ALIGN_DWORD", "ConOutPrintf"]
     assert pasting == ["CS_StrA", "CS_StrW", "CS_Wrap"]
 
 
@@ -798,3 +801,31 @@ def test_a_static_the_c_only_declares_extern_is_not_a_second_definition(tmp_path
     c.write_text("extern WCHAR Suggestions[256];\nHMENU hMenuFrame;\n")
     assert port._extern_only_statics(rs, c) == ["Suggestions"]
     assert "Suggestions" not in rs.read_text() and "hMenuFrame" in rs.read_text()
+
+
+def test_a_stale_import_of_a_variadic_entry_is_dropped(tmp_path):
+    # cmd: dir.rs had `use crate::cmd::console::ConOutPrintfPaging;` (E0603 once console.rs's
+    # extern block moved to the prelude); an ordinary sibling import stays.
+    rs = tmp_path / "dir.rs"
+    rs.write_text(
+        "use crate::cmd::console::ConOutPrintfPaging;\n"
+        "use crate::cmd::console::ConOutResPaging;\n"
+        "use crate::prelude::*;\n"
+    )
+    port._drop_stale_variadic_imports([rs], {"ConOutPrintfPaging", "ErrorMessage"})
+    assert rs.read_text() == "use crate::cmd::console::ConOutResPaging;\nuse crate::prelude::*;\n"
+
+
+def test_a_derived_arm_keeps_the_old_arms_hand_section():
+    old = (
+        "case \"$DRIVER\" in\n"
+        "  cmd)\n    BLOCKLIST_FUNCS=0\n"
+        "    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n    # <<< hand\n"
+        "    ;;\n"
+        '  *) echo "unknown driver"\n'
+    )
+    new_arm = "  cmd)\n    BLOCKLIST_FUNCS=1\n    ;;\n"
+    out = port.upsert_profile_arm(old, new_arm, "cmd")
+    assert "BLOCKLIST_FUNCS=1\n    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n" in out
+    assert "BLOCKLIST_FUNCS=0" not in out and out.count("# >>> hand") == 1
+    assert port.upsert_profile_arm(out, new_arm, "cmd") == out  # stable on re-derive

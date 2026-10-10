@@ -1,0 +1,18 @@
+# wcwidth-rust — Markus Kuhn's wcwidth.c, which the tree carries twice byte-identically
+# (base/shell/cmd/wcwidth.c, #included by console.c; win32ss/user/winsrv/consrv/frontends/
+# wcwidth.c), ported once.
+[package]
+name = "wcwidth-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+# rlib, like strsafe-rust: the `#[no_mangle]` entry points reach each consumer's staticlib.
+crate-type = ["rlib"]
+
+# No dependencies: the only C type is wchar_t, a u16 on every Windows target.
+[dependencies]

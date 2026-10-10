@@ -1093,11 +1093,69 @@ def cmake_target_defines(source: Path) -> dict[str, str]:
     return {name: next(iter(vals)) for name, vals in seen.items() if len(vals) == 1}
 
 
-def _eval_pp_cond(kw: str, expr: str, defines: dict[str, str] | None = None) -> bool | None:
+_TU_DEFINE = re.compile(r"^[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)(?![\w(])[ \t]*(.*?)[ \t]*$")
+_TU_OFF_SWITCH = re.compile(r"^[ \t]*//[ \t]*#[ \t]*define[ \t]+([A-Za-z_]\w*)\b", re.M)
+_DEFINED_TERM = re.compile(r"defined\s*\(\s*([A-Za-z_]\w*)\s*\)|defined\s+([A-Za-z_]\w*)")
+
+
+def tu_switches(path: Path, raw: str) -> tuple[dict[str, str], frozenset[str]]:
+    """Feature switches the TU ITSELF settles: (defined -> value, deliberately off).
+
+    cmd.exe's parser.c/for.c wrap statements in `#ifdef MSCMD_*` arms that split braces
+    (`if (..) {` opens in one arm and closes in another). With both arms kept, tree-sitter
+    cannot find the function, and the planner drops it. The switches are decidable from the
+    file: `#define MSCMD_X` at file scope (outside any conditional) is ON; a switch is OFF
+    only with positive evidence -- the TU carries a commented-out `// #define NAME` toggle,
+    and NAME is defined by no active line in the TU and mentioned by no header in its
+    directory nor its CMakeLists.txt. Anything else stays undecided and keeps both arms,
+    exactly as before.
+    """
+    defined: dict[str, str] = {}
+    depth = 0
+    for line in raw.splitlines():
+        m = re.match(r"^[ \t]*#[ \t]*(if|ifdef|ifndef|endif)\b", line)
+        if m:
+            depth += -1 if m.group(1) == "endif" else 1
+            continue
+        if depth == 0:
+            d = _TU_DEFINE.match(line)
+            if d and not d.group(2).endswith("\\"):  # a continued body is a macro, not a switch
+                val = re.sub(r"/\*.*?\*/", "", d.group(2)).split("//")[0].strip()
+                defined[d.group(1)] = val or "1"
+    off = set(_TU_OFF_SWITCH.findall(raw)) - defined.keys()
+    if off:
+        others = []
+        for h in (*sorted(path.parent.glob("*.h")), path.parent / "CMakeLists.txt"):
+            try:
+                others.append(h.read_text(errors="replace"))
+            except OSError:
+                pass
+        for name in sorted(off):
+            active = re.compile(rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}\b", re.M)
+            mention = re.compile(rf"\b{re.escape(name)}\b")
+            if active.search(raw) or any(mention.search(t) for t in others):
+                off.discard(name)
+    return defined, frozenset(off)
+
+
+def _eval_pp_cond(
+    kw: str,
+    expr: str,
+    defines: dict[str, str] | None = None,
+    off: frozenset[str] = frozenset(),
+) -> bool | None:
     """Resolve a preprocessor condition to True/False, or None if unknown."""
     expr = expr.split("//")[0].split("/*")[0].strip()
     defines = defines or {}
+    if kw != "if":
+        sym0 = expr.split()[0] if expr.split() else ""
+        if sym0 in off:
+            return kw == "ifndef"
     if kw == "if":
+        if off:
+            expr = _DEFINED_TERM.sub(
+                lambda m: "0" if (m.group(1) or m.group(2)) in off else m.group(0), expr
+            )
         v = {"0": False, "1": True}.get(expr)
         if v is not None:
             return v
@@ -1128,7 +1186,9 @@ def _eval_pp_cond(kw: str, expr: str, defines: dict[str, str] | None = None) -> 
     return None
 
 
-def _resolve_known_preproc(text: str, defines: dict[str, str] | None = None) -> str:
+def _resolve_known_preproc(
+    text: str, defines: dict[str, str] | None = None, off: frozenset[str] = frozenset()
+) -> str:
     """Resolve body-internal `#if 0`/`#if 1` and `#if(n)def` of known-undefined
     feature macros — keep the live branch, drop the dead branch + the directive
     lines — so tree-sitter parses function bodies that contain them. Leaves any
@@ -1147,7 +1207,7 @@ def _resolve_known_preproc(text: str, defines: dict[str, str] | None = None) -> 
             out.append(lines[i])
             i += 1
             continue
-        cond = _eval_pp_cond(m.group(1), m.group(2), defines)
+        cond = _eval_pp_cond(m.group(1), m.group(2), defines, off)
         if cond is None:
             out.append(lines[i])
             i += 1
@@ -1832,6 +1892,9 @@ def _scan_file(
     # case every identifier-bearing `#if` stays undecidable and the scan is byte-identical
     # to before -- so this cannot quietly change any module it does not apply to.
     build_defines = cmake_target_defines(path)
+    tu_defined, tu_off = tu_switches(path, raw)
+    for _k, _v in tu_defined.items():
+        build_defines.setdefault(_k, _v)
 
     def _prepare(defines: dict[str, str]) -> str:
         return _normalize_callbacks(
@@ -1841,7 +1904,9 @@ def _scan_file(
                         _strip_sal(
                             _expand_csr_api(
                                 _expand_case_macros(
-                                    _resolve_known_preproc(_strip_known_off_ifdefs(raw), defines)
+                                    _resolve_known_preproc(
+                                        _strip_known_off_ifdefs(raw), defines, tu_off
+                                    )
                                 )
                             )
                         )

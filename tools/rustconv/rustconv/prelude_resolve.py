@@ -31,6 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import variadic_shim
 from .crate_integrate import _LITERAL_OR_COMMENT as _LITERAL_OR_COMMENT_RE
 from .crate_integrate import extern_block_spans, split_decls
 
@@ -697,7 +698,9 @@ SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
 SIBLING_END = "// ==== end cross-TU definitions ===="
 _DEF = re.compile(
     r"^(?P<pub>pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
-    r"(?P<kind>fn|static(?:\s+mut)?|const)\s+(?P<name>[A-Za-z_]\w*)\b",
+    # Types too: a local-type alias resolve hoists into the prelude (cmd's LPDIRSWITCHFLAGS =
+    # *mut _DirSwitchesFlags) names a struct one module defines, and was "defined nowhere".
+    r"(?P<kind>fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+(?P<name>[A-Za-z_]\w*)\b",
     re.M,
 )
 
@@ -723,9 +726,8 @@ def promote_pub(path: Path, name: str) -> bool:
     """Make a top-level definition of `name` in `path` `pub`. True if it changed."""
     text = path.read_text()
     pat = re.compile(
-        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:fn|static(?:\s+mut)?|const)\s+"
-        + re.escape(name)
-        + r"\b)",
+        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+        r"(?:fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+" + re.escape(name) + r"\b)",
         re.M,
     )
     new, n = pat.subn(r"pub \1", text, count=1)
@@ -1459,7 +1461,7 @@ def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
     out = [LOCAL_TYPES_BEGIN]
     for name, (text, src) in sorted(items.items()):
         out.append(f"// {name}: c2rust, {src}")
-        out.append(text)
+        out.append(variadic_shim.lower_va_list_types(text)[0])
     out.append(LOCAL_TYPES_END)
     block = "\n".join(out) + "\n"
     text = prelude.read_text()

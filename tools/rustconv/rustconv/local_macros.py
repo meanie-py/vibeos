@@ -325,6 +325,14 @@ def c_source_location(text: str) -> str:
         text,
     )
     text = re.sub(r"(?<![\w!])line!\(\)(?!\s*as\b)", "(line!() as core::ffi::c_int)", text)
+    # C's `__FUNCTION__`/`__func__` (cmd's ERR/WARN/TRACE pass it to CmdTrace) has no stable
+    # Rust spelling; the caller's module path is the nearest, as the same NUL-terminated
+    # `char *`. A divergence in the logged text only, never in what the macro does.
+    text = re.sub(
+        r"(?<![\w!])__(?:FUNCTION|func)__(?!\w)",
+        lambda _m: 'concat!(module_path!(), "\\0").as_ptr() as *const core::ffi::c_char',
+        text,
+    )
     # C's `NULL` converts to any pointer; the prelude's `NULL` is a typed `*mut c_void`
     # (console's UpdateFontPreview(.., NULL, ..) wanted an HFONT). `null_mut()` infers.
     return re.sub(r"(?<![\w:])NULL(?![\w(])", "core::ptr::null_mut()", text)

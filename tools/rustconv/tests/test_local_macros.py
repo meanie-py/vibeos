@@ -191,6 +191,12 @@ def test_file_and_line_get_their_c_types():
         "(line!() as core::ffi::c_int));"
     )
     assert c_source_location(out) == out  # idempotent
+    # cmd's ERR!/TRACE! hand CmdTrace the C's __FUNCTION__.
+    fn = c_source_location("CmdTrace(1, __FUNCTION__, $fmt)")
+    assert fn == (
+        'CmdTrace(1, concat!(module_path!(), "\\0").as_ptr() as *const core::ffi::c_char, $fmt)'
+    )
+    assert c_source_location(fn) == fn
 
 
 def test_a_unicode_module_reads_only_its_w_arm(tmp_path):

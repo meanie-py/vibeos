@@ -214,9 +214,26 @@ In isolation that took the fifteen from 4 passes to 9-10 per run, the misses all
 sweep on a host saturated by integration builds (`20261008-114135-_w0p3rum-smoke-arm64`, mspaint
 164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; per-syscall cost under
 FEX, which is what every slow applet is paying; memory (a 1 GB VM leaves ~30 MB before the sweep,
-so the payload asks for 2 GB; ~1 MB per x86-64 app is kept; exhaustion bugchecks 0x7A instead of
-failing the allocation); the guest user32 reading native procs from `gpsi` (pfnclient.rs); and
-remote `NtSetContextThread` on a guest thread.
+so the payload asks for 2 GB; ~1 MB per x86-64 app is kept); the guest user32 reading native procs
+from `gpsi` (pfnclient.rs); and remote `NtSetContextThread` on a guest thread.
+
+Memory exhaustion (2026-10-10). The 0x7A was `MiMakeSystemAddressValid` bugchecking on the
+`STATUS_NO_MEMORY` its page-table fault returned (P1=1, P2=C0000017, ~8 MB free;
+`20261008-003644-ghnmlian`, `-005837-s33duoyg`). It now waits for the balancer and retries, and so
+does `MiMakeSystemAddressValidPfn`. User faults still fail on `STATUS_NO_MEMORY` instead of
+retrying as the C does: retrying every fault turned exhaustion into a whole-machine stall, because
+nothing frees pages until a process exits. Failing the fault kills only the starving app. Measured
+at 768 MB (`20261010-075717-s6lsafno`): no bugcheck; rapps and iexplore died `c0000005` at ~18 MB
+free; the sweep ran on past them. Owed:
+- **explorer wedged afterwards** on a win32k-space gate whose holder never signalled (also in
+  `20261010-054207-p5m0hi2a`). Something died or failed holding it. The 2 s user-lock hold trace
+  cannot see it, because it reports at RELEASE.
+- **The real fix is commit accounting.** `MmTotalCommittedPages` is never updated (as upstream) and
+  `MmTotalCommitLimit` is never checked, so user commits can exhaust physical memory outright instead
+  of failing at allocation. Not started: it touches every commit site on every arch.
+- Census `STUCK` lines now carry a kernel backtrace (`[CENSUS]   bt`). On arm64 the frame-pointer
+  walk past the first two frames is unreliable through Rust code. `ETHREAD.StartAddress` reads back
+  garbage there (a wait-path return address, `0x7ff00000000`); that layout is owed a check.
 
 **Then (2026-10-08, evening): taskmgr.** Two bugs in taskmgr itself, both upstream, both visible
 only when the guest is slow:

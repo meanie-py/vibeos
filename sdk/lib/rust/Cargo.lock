@@ -90,6 +90,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "apphelp-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "appwiz-rust"
 version = "0.1.0"
 dependencies = [
@@ -430,6 +441,19 @@ name = "cmboot-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "cmd-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "wcwidth-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -826,6 +850,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "eventlog-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1545,6 +1579,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1116a951fd9d5110720bb2ae66f72ce5d7b10bd8aa8744924677157089ce13f"
 dependencies = [
  "zlib-rs",
+]
+
+[[package]]
+name = "localmon-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "localspl-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2433,6 +2487,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "progman-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "ps-rust"
 version = "0.1.0"
 dependencies = [
@@ -3128,6 +3193,26 @@ name = "splaytree"
 version = "0.1.0"
 
 [[package]]
+name = "spoolss-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "spoolsv-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3169,6 +3254,16 @@ dependencies = [
  "midl-rt",
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "svchost-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -3713,6 +3808,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wcwidth-rust"
+version = "0.1.0"
+
+[[package]]
 name = "win32k-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3842,6 +3941,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "winspool-rust"
+version = "0.1.0"
+dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "winsrv-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3856,6 +3965,7 @@ dependencies = [
  "concfg-rust",
  "ntdll-sys",
  "panic-common",
+ "wcwidth-rust",
  "winsrv-sys",
 ]
 
