@@ -133,4 +133,3 @@ pub type PTCH = LPWSTR;
 pub use crate::spoolss::memory::DllAllocSplMem;
 pub use crate::spoolss::memory::DllFreeSplMem;
 // ==== end cross-TU definitions ====
-

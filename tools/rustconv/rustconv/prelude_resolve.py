@@ -148,7 +148,7 @@ def _visible_value_names(workspace: Path, crate: str) -> set[str]:
         from tools.source_walk import source_files
 
     roots = [workspace / crate / "src", workspace / "ntdll-sys" / "src"]
-    roots += [workspace / d / "src" for d in ("win32macros-rust", "strsafe-rust")]
+    roots += [workspace / d / "src" for _ident, d, _paths in SHARED_CRATES]
     out: set[str] = set()
     for root in roots:
         for p in source_files(root, "*.rs") if root.is_dir() else []:
@@ -234,10 +234,35 @@ def is_test_source(rel: str) -> bool:
     return "/tests/" in f"/{rel}" or bool(re.search(r"(?:^|/)[\w-]*-difftest/", rel))
 
 
+def crate_mode(crate_dir: Path) -> str | None:
+    """ "kernel" / "user" from what the crate builds against; None for a mode-neutral crate."""
+    if crate_dir.name == "ntkrnl-sys":
+        return "kernel"
+    if crate_dir.name == "ntdll-sys":
+        return "user"
+    try:
+        manifest = (crate_dir / "Cargo.toml").read_text(errors="replace")
+    except OSError:
+        return None
+    if re.search(r"^ntkrnl-sys\s*=", manifest, re.M):
+        return "kernel"
+    if re.search(r"^ntdll-sys\s*=", manifest, re.M):
+        return "user"
+    return None
+
+
 def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str, list[Item]]:
-    """Every tracked definition of each name: consts, type aliases, extern fn decls."""
+    """Every tracked definition of each name: consts, type aliases, extern fn decls.
+
+    Never across the kernel/user line: gdi32_vista and opengl32 (user-mode DLLs) were handed
+    `_InterlockedExchange` from disk-rust's DDK shims, an extern no user-mode image can link
+    (i386 LINK_FAIL). A donor built against the other -sys crate is skipped; mode-neutral
+    shared crates (win32macros-rust, strsafe-rust) donate to both.
+    """
     if not names:
         return {}
+    mine = crate_mode(exclude)
+    modes: dict[str, str | None] = {}
     pattern = "|".join(sorted(names))
     proc = subprocess.run(
         ["git", "grep", "-l", "-w", "-E", pattern, "--", "*.rs"],
@@ -253,6 +278,11 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         # Test harnesses are not the tree's declarations: diskpart got `_wfopen` and `fgetws`
         # from msvcrt-difftest/tests/file.rs, typed with that file's private `FILEP`.
         if is_test_source(rel):
+            continue
+        top = rel.split("/", 1)[0]
+        if top not in modes:
+            modes[top] = crate_mode(workspace / top)
+        if mine is not None and modes[top] is not None and modes[top] != mine:
             continue
         try:
             src = path.read_text(errors="replace")
@@ -371,6 +401,16 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         # vetoes nor is copied -- the literals that agree are the evidence.
         return _most_common(literal), ""
     if fns and not consts:
+        # A bindgen island is the header's own transcript; a hand-written `extern` is a copy
+        # someone typed. But only an i386 island KNOWS a calling convention: x86_64 and arm64
+        # have one, so bindgen writes every WINAPI function there as `extern "C"`. So an i386
+        # island declaration outvotes everything, and a 64-bit one never votes on the ABI.
+        # Before this, one crate's `extern "C" { fn CloseHandle(..) }` (a stdcall import --
+        # the i386 link bug) vetoed CloseHandle/GetLastError for every new module.
+        island32 = [i for i in fns if _is_bindgen(i.path) and "i386" in i.path]
+        voters = island32 or [i for i in fns if not _is_bindgen(i.path)]
+        if voters:
+            fns = voters
         classes = {_abi_class(i.abi) for i in fns}
         if len(classes) != 1:
             return None, f"ABI disagreement ({', '.join(sorted(classes))})"
@@ -385,6 +425,14 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     if any(i.kind == "type" for i in items):
         return None, "a type: add its header to the island allowlist"
     return None, "mixed kinds"
+
+
+def _is_bindgen(path: str) -> bool:
+    name = path.replace("\\", "/").rsplit("/", 1)[-1]
+    # shell32's islands are `island_<arch>.rs`; every other generator writes bindgen_/types_.
+    return name.startswith(("bindgen_", "hal_bindgen_")) or bool(
+        re.match(r"(?:types|island)_\w+\.rs$", name)
+    )
 
 
 def _arity(decl: str) -> int | None:
@@ -530,6 +578,17 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
                 r'|^pub unsafe (?:extern "\w+" )?fn (String[A-Za-z]+)\b',
             ),
             ("ntstrsafe", r"^pub unsafe fn (RtlString[A-Za-z]+)\b"),
+        ),
+    ),
+    (
+        "conutils_h",
+        "conutils-h",
+        (
+            (
+                "",
+                r"^\s*pub (?:unsafe )?fn ([A-Za-z_]\w*)|^\s*pub static mut ([A-Za-z_]\w*)"
+                r"|^pub const ([A-Za-z_]\w*)|^pub type ([A-Za-z_]\w*)|^pub struct ([A-Za-z_]\w*)",
+            ),
         ),
     ),
 )
@@ -1402,6 +1461,11 @@ def render_externs(sigs: dict[str, tuple[str, str, str]]) -> str:
     out = [EXTERNS_BEGIN]
     by_abi: dict[str, list[tuple[str, str, str]]] = {}
     for name, (abi, sig, src) in sorted(sigs.items()):
+        if abi == "C" and _LONG_PTR_ALIAS.search(sig):
+            # Get/SetWindowLongPtrW and Get/SetClassLongPtrW are WINAPI. On i386 they are
+            # MACROS, so clang reports no calling convention for them and the default was "C":
+            # sol and spider then imported `GetWindowLongW` -- stdcall -- as cdecl.
+            abi = "system"
         by_abi.setdefault(abi, []).append((name, sig, src))
     for abi, items in sorted(by_abi.items()):
         if abi == "use":

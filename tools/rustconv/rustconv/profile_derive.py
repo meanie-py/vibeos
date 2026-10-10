@@ -68,7 +68,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 
-from .dead_regions import (  # noqa: F401  (KNOWN_DEFINED re-exported)
+from .dead_regions import (
     KNOWN_DEFINED,
     cond_truth,
     eval_int_guard,
@@ -363,6 +363,10 @@ class IncludeEnv:
             return "module"
         if self.module_build_dir is not None and _is_within(path, self.module_build_dir):
             return "generated"
+        if not _is_within(path, self.repo_root):
+            # The compiler's own headers (llvm-mingw's libc++ via the compile db's
+            # -isystem): never a ReactOS type surface.
+            return "toolchain"
         parts = path.parts
         if "idl" in parts:
             return "idl"
@@ -1576,6 +1580,25 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
     return frozenset(_CONFIG_UNDEF_RE.findall(text))
 
 
+def merge_prologue(merged: list[str], lines: list[str]) -> None:
+    """Fold one TU's prologue into the module wrapper, keeping THAT TU's order.
+
+    Appending unseen lines at the end reorders a TU whose prologue differs from the first
+    one's: winegdi's enhmetafile.c includes wine/port.h straight after config.h, but the
+    merge put it after gdi_private.h, which by then had pulled in wine/exception.h and its
+    `#define sigsetjmp(buf,sigs) setjmp(buf)` -- port.h's sigsetjmp prototype then expanded
+    to a second `_setjmp` declaration on amd64. An unseen line goes right after the nearest
+    line that precedes it in its own TU.
+    """
+    anchor = -1
+    for line in lines:
+        if line in merged:
+            anchor = max(anchor, merged.index(line))
+            continue
+        anchor += 1
+        merged.insert(anchor, line)
+
+
 _DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
 _FLAG_IN_CMAKE_RE = (
     r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
@@ -1647,7 +1670,9 @@ def _prologue_lines(text: str) -> list[str]:
 
 
 def scan_preamble(
-    text: str, known_undefined: frozenset[str] = frozenset()
+    text: str,
+    known_undefined: frozenset[str] = frozenset(),
+    known_defined: frozenset[str] = KNOWN_DEFINED,
 ) -> tuple[list[str], bool]:
     """The TU's include PROLOGUE, verbatim, plus "had UNDECIDED conditional directives".
 
@@ -1661,9 +1686,15 @@ def scan_preamble(
     which wine's config.h `#undef`s for this tree — the mirrored wrapper therefore asked
     for a header that does not exist here and bindgen died on it.
 
-    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list).
-    A guard on a macro in it is resolved and the dead arm dropped; a guard we cannot
+    *known_undefined* is the decidable set (in practice wine's config.h `#undef` list), and
+    *known_defined* its mirror (``__REACTOS__``): wine-sourced TUs keep ReactOS headers under
+    `#ifdef __REACTOS__` and wine's user_private.h/winternl.h under the `#else`, which do
+    not exist here, so keeping both arms asked bindgen for headers it can never find.
+    A guard on a macro in either is resolved and the dead arm dropped; a guard we cannot
     decide keeps BOTH arms as before and sets the "conditional" flag so the caller warns.
+    *known_defined* is the other half: macros every compile of this TU defines. fltmc's
+    `#ifdef __REACTOS__ ... #else #include <Windows.h> #endif` kept the MSVC arm, and the
+    island asked a case-sensitive host for a `Windows.h` that no ReactOS compile opens.
     """
     lines = _prologue_lines(text)
     keep: list[str] = []
@@ -1680,6 +1711,8 @@ def scan_preamble(
             if guard is not None and guard[0] in known_undefined:
                 # dead when the arm wanted it DEFINED
                 arms.append(guard[1])
+            elif guard is not None and guard[0] in known_defined:
+                arms.append(not guard[1])
             else:
                 conditional = True
                 arms.append(None)
@@ -1780,7 +1813,12 @@ def walk_includes(tus: list[Path], env: IncludeEnv) -> Closure:
                     ref.includers.append(includer)
                 ref.tus.add(tu_key)
                 reached.add(target)
-                if target not in seen_files:
+                # The toolchain's own headers (libc++'s <vector>, <map>) are recorded but never
+                # descended into: they feed no allowlist (see the kind filter in derive), and
+                # their internals select platform arms by `#if` the lexical walker cannot
+                # evaluate -- drwtsn32's <map> reached libc++'s android.h and pthread.h and
+                # failed the derive on headers no ReactOS compile ever opens.
+                if target not in seen_files and ref.kind != "toolchain":
                     seen_files.add(target)
                     queue.append((target, depth + 1))
             # macro-spelled includes (`#include SOME_MACRO`) cannot be walked lexically
@@ -2269,7 +2307,10 @@ def _macro_kind(body: str) -> str:
     * ``literal``    — integer literal (possibly cast/parenthesised): emitted as a const
     * ``expression`` — references other identifiers: bindgen MAY fail to fold it
     """
-    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\s*)+\s*\)", "", body)  # drop casts
+    # `\b` after each identifier: without it `[A-Za-z_]\w*\s*` can split ONE word at every
+    # letter, and a long `(IDENT ...` with no closing paren backtracks exponentially --
+    # sndvol32's mixer #defines took 16-33 minutes per TU in this one line.
+    core = re.sub(r"\(\s*(?:[A-Za-z_]\w*\b\s*)+\s*\)", "", body)  # drop casts
     return "literal" if re.fullmatch(r"[-+~()\s0-9a-fA-FxXLlUu|&<>*/+]*", core) else "expression"
 
 
@@ -2295,6 +2336,46 @@ def _cxx_consts(text: str, alt: str) -> dict[str, tuple[str, str]]:
         m.group(1): ("cxx-const", m.group(2).strip())
         for m in re.finditer(_CXX_CONST_RE.format(name=alt), text, re.M)
     }
+
+
+def xmacro_enumerators(tu: Path, wanted: frozenset[str]) -> dict[str, tuple[str, str]]:
+    """``{name: ("enum", value)}`` for enumerators a TU generates with an X-macro.
+
+    imm32's softkbd.c defines ``DEFINE_T1K(code, vk, name, vk_name, special)`` as
+    ``name = code,`` inside an ``enum {`` and then ``#include "t1keys.h"``, whose
+    ``DEFINE_T1K(48, 0x09, T1K_TAB, VK_TAB, TRUE)`` rows are the members. No header SPELLS
+    ``T1K_TAB = 48``, so the plain owner search reports every one UNOWNED -- a false §9.112
+    alarm on constants that do exist (in the TU's preprocessed enum). Each ``#define`` of a
+    function-like macro whose body is ``<param> = <param>,`` is applied to the headers the TU
+    includes after it (until its ``#undef``).
+    """
+    out: dict[str, tuple[str, str]] = {}
+    if not wanted:
+        return out
+    text = _strip_c_comments(_read(tu))
+    defs = list(
+        re.finditer(
+            r"^[ \t]*#[ \t]*define[ \t]+(\w+)\(([^)]*)\)[ \t]*\\?\s*(\w+)[ \t]*=[ \t]*(\w+)[ \t]*,",
+            text,
+            re.M,
+        )
+    )
+    for d in defs:
+        macro, params = d.group(1), [p.strip() for p in d.group(2).split(",")]
+        if d.group(3) not in params or d.group(4) not in params:
+            continue
+        name_i, value_i = params.index(d.group(3)), params.index(d.group(4))
+        undef = re.search(rf"^[ \t]*#[ \t]*undef[ \t]+{macro}\b", text[d.end() :], re.M)
+        scope = text[d.end() : d.end() + undef.start()] if undef else text[d.end() :]
+        for inc in re.finditer(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', scope, re.M):
+            header = tu.parent / inc.group(1)
+            if not header.is_file():
+                continue
+            for row in re.finditer(rf"\b{macro}\s*\(([^)]*)\)", _strip_c_comments(_read(header))):
+                args = [a.strip() for a in row.group(1).split(",")]
+                if len(args) == len(params) and args[name_i] in wanted:
+                    out.setdefault(args[name_i], ("enum", args[value_i]))
+    return out
 
 
 def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str, tuple[str, str]]:
@@ -2510,6 +2591,9 @@ def own_constants(
     tu_local: dict[str, tuple[str, str]] = {}
     for tu in tus:
         tu_local.update(header_symbols(tu, wanted))
+        tu_local.update(
+            {k: v for k, v in xmacro_enumerators(tu, wanted).items() if k not in tu_local}
+        )
     ordered = sorted(closure.headers.items(), key=lambda kv: (kv[1].depth, kv[1].name))
     per_header: dict[Path, dict[str, tuple[str, str]]] = {}
     remaining = set(wanted)
@@ -2579,6 +2663,21 @@ def header_type_defs(path: Path) -> set[str]:
     return names - _ANON_AGGREGATE_NAMES
 
 
+def definition_guards(path: Path, name: str) -> set[str]:
+    """The `#ifndef G` ... `#define G` guards a header wraps its definition of `name` in.
+
+    d3d9types.h and dsound.h each define `_D3DVECTOR` inside `#ifndef D3DVECTOR_DEFINED`;
+    whichever is included first defines it and the other skips, so the two are ONE
+    definition. dxdiag was split into two islands over it and kept the first."""
+    text = _read(path)
+    pat = re.compile(
+        rf"#\s*ifndef\s+(\w+)\s*\n(?:(?!#\s*endif).)*?\b{re.escape(name)}\b"
+        rf"(?:(?!#\s*endif).)*?#\s*define\s+\1\b",
+        re.S,
+    )
+    return {m.group(1) for m in pat.finditer(text)}
+
+
 def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Path, Path]]:
     """Type names defined by two headers that NO SINGLE TU includes together.
 
@@ -2599,6 +2698,8 @@ def find_conflicts(closure: Closure, headers: list[Path]) -> list[tuple[str, Pat
             for b in paths[i + 1 :]:
                 if any(a in s and b in s for s in closure.per_tu.values()):
                     continue  # co-reachable in a real TU -> proven compatible
+                if definition_guards(a, name) & definition_guards(b, name):
+                    continue  # one shared include guard -> one definition, whoever is first
                 conflicts.append((name, a, b))
     return conflicts
 
@@ -2759,6 +2860,13 @@ _NTDDI_FOR = {
 }
 
 
+# The root CMakeLists' add_definitions() beyond the version macros that change what a header
+# DECLARES. compile_commands.json isolation strips them as repo-wide, so without these an
+# island sees d3dukmdt.h's WDDM 3.0 default and vendor/libdxg's d3dkmthk.h then names a type
+# it never defines (D3DKMT_DISPLAYPORT_OPERATION_HEADER) -- every win32k-family island failed.
+_BASELINE_DEFS = ("D3D_UMD_INTERFACE_VERSION=0x000C", "DXGKDDI_INTERFACE_VERSION=0x1052")
+
+
 def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list[str]:
     """VER_DEFS mirroring the module's real compile, plus the bindgen-side extras.
 
@@ -2788,8 +2896,18 @@ def _default_ver_defs(module: CMakeModule, db_defines: list[str] | None) -> list
                 extra.append(d)
     if "_WIN32_WINNT" in set_by_module and "WINVER" not in set_by_module:
         ver["WINVER"] = ver["_WIN32_WINNT"]  # WINVER tracks _WIN32_WINNT unless set apart
-    ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
+    # A module header that redefines _WIN32_WINNT (clipbrd's precomp.h: `#undef` then 0x600)
+    # gets NTDDI_VERSION from sdkddkver.h exactly as its real compile does -- which passes no
+    # NTDDI_VERSION -- or the pinned 0x0502 one trips "NTDDI_VERSION and _WIN32_WINNT mismatch".
+    redefines = "NTDDI_VERSION" not in set_by_module and any(
+        re.search(r"^\s*#\s*define\s+_WIN32_WINNT\b", h.read_text(errors="replace"), re.M)
+        for h in module.module_dir.rglob("*.h")
+    )
+    if not redefines:
+        ver.setdefault("NTDDI_VERSION", _NTDDI_FOR.get(ver["_WIN32_WINNT"], "0x05020400"))
     defs = [f"-D{name}={ver[name]}" for name in _VERSION_MACROS if name in ver]
+    overridden = {d[2:].partition("=")[0] for d in extra}
+    defs += [f"-D{d}" for d in _BASELINE_DEFS if d.partition("=")[0] not in overridden]
     defs += extra
     if module.unicode:
         defs += ["-DUNICODE", "-D_UNICODE"]
@@ -2960,6 +3078,11 @@ def derive(
             "section that reads as a pass.\n  To re-audit the C the Rust replaced:\n\n"
             "    --flipped-sources\n"
         )
+    # Past the refusal, scaffolding is never translation surface: a re-derive of a flipped
+    # module (with --flipped-sources) still lists rust_cohab_stub.c / rust_varargs_shim.c, and
+    # mirrored the shim's `#include <stdarg.h>` into bmfd's wrapper and both files into ftfd's
+    # island TU list.
+    tus = [tu for tu in tus if not is_shim_tu(tu)]
 
     # The compile db is loaded FIRST so its real `-I` list can seed the search path: it is the
     # only place that knows a module reaching outside its own directory (afd includes
@@ -3248,7 +3371,14 @@ def derive(
     )
     wrapper: list[str] = []
     for tu in tus:
-        lines, conditional = scan_preamble(_read(tu), known_undefined)
+        # Defined by EVERY compile of this TU: the global ReactOS definition, the language,
+        # and the module's character set (set_module_type ... UNICODE).
+        known_defined = frozenset(
+            {"__REACTOS__"}
+            | ({"__cplusplus"} if str(tu).lower().endswith(CPP_SUFFIXES) else set())
+            | ({"UNICODE", "_UNICODE"} if module.unicode else set())
+        )
+        lines, conditional = scan_preamble(_read(tu), known_undefined, known_defined)
         if conditional:
             findings.append(
                 Finding(
@@ -3258,9 +3388,7 @@ def derive(
                     "wrapper keeps both arms; review",
                 )
             )
-        for line in lines:
-            if line not in wrapper:
-                wrapper.append(line)
+        merge_prologue(wrapper, lines)
     if module.pch_header is not None and any(t not in module.pch_skip for t in tus):
         pch_line = f'#include "{module.pch_header.name}"'
         if pch_line not in wrapper:
@@ -3268,6 +3396,12 @@ def derive(
 
     # ---- islands / conflicts ----
     conflicts = find_conflicts(closure, sorted(closure.headers))
+    if any(str(t).lower().endswith(CPP_SUFFIXES) for t in tus):
+        # A C++ module takes ATL from atl-rust (atl_contract), not from its island: bindgen's
+        # rendering of ATL's own classes (CAtlStringMgr, CStringT) does not even compile
+        # (`derive(Copy)` on a class with a non-Copy member, E0204).
+        for rx in [rx for rx in allow_reasons if re.search(r"atl\w*\\\.h", rx)]:
+            del allow_reasons[rx]
     allow_files = sorted(allow_reasons)
     tu_by_key = {_rel(p, repo_root): p for p in tus}
 
@@ -3278,9 +3412,7 @@ def derive(
             src = tu_by_key.get(key)
             if src is None:
                 continue
-            for line in scan_preamble(_read(src), known_undefined)[0]:
-                if line not in lines:
-                    lines.append(line)
+            merge_prologue(lines, scan_preamble(_read(src), known_undefined)[0])
         # Only if a TU in THIS island actually compiles with the PCH. wldap32 splits
         # exactly along that line: ber.c is the PCH-skipped TU and it is also the one
         # whose headers conflict with precomp.h's.
@@ -3527,6 +3659,9 @@ def opaque_types_to_unblock(dp: DerivedProfile, arch: str = "amd64") -> list[str
     return out
 
 
+CPP_SUFFIXES = (".cpp", ".cc", ".cxx")
+
+
 def emit_profile(dp: DerivedProfile) -> str:
     """The ready-to-paste ``case`` arm for ``gen_driver_types.sh``.
 
@@ -3579,8 +3714,21 @@ def emit_profile(dp: DerivedProfile) -> str:
                 "    # The count does NOT settle the flag — island it both ways and run one "
                 "cargo check each. See the report."
             )
-        out.append("    BLOCKLIST_FUNCS=1")
+        if any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus):
+            # A C++ cell keeps the SDK's prototypes (fltmc's FilterLoad is in no other crate):
+            # the module's OWN functions are `_Z`-mangled without `extern "C"` and the -x c++
+            # post-pass strips them, so nothing it defines can clash. FROM_CRATE drops any
+            # `extern "C"` one it also defines.
+            out.append("    BLOCKLIST_FUNCS=0")
+            out.append("    BLOCKLIST_FUNCS_FROM_CRATE=1")
+        else:
+            out.append("    BLOCKLIST_FUNCS=1")
     out.append(f'    DRIVER_DIR="${{SRC}}/{rel}"')
+    if any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus):
+        # A C++ TU's include closure declares classes (`class CCanvasWindow : public
+        # CWindowImpl<...>`), which a C parse rejects as an unknown type name: the island
+        # must be parsed the way the TU is compiled.
+        out.append("    LANG_ARGS=( -x c++ -std=gnu++17 )")
     if not multi:
         out.append(f"    WRAPPER_INC=$'{wrapper}'")
         out.extend(_allow_files_lines(dp.allow_files))
@@ -4048,6 +4196,20 @@ pub fn max<T: PartialOrd>(a: T, b: T) -> T {
 """
 
 
+def _kernel_panic(m: CMakeModule) -> str:
+    """panic-common's flavour for a kernel module: "kernel" reports through DbgPrint and halts
+    with KeBugCheckEx, both ntoskrnl imports. A GDI font/display driver imports win32k ONLY
+    (bmfd, ftfd: `add_importlibs(ftfd win32k)`), so those link nothing and need "raw"."""
+    try:
+        text = (m.module_dir / "CMakeLists.txt").read_text(errors="replace")
+    except OSError:
+        return "kernel"
+    imports = re.findall(rf"add_importlibs\(\s*{re.escape(m.name)}\b([^)]*)\)", text, re.S)
+    if imports and not any(re.search(r"\bntoskrnl\b", i) for i in imports):
+        return "raw"
+    return "kernel"
+
+
 def scaffold_crate(
     dp: DerivedProfile,
     out_dir: Path,
@@ -4109,11 +4271,35 @@ def scaffold_crate(
         'panic-common = { path = "../panic-common", features = ["user"] }\n'
         'ntdll-sys = { path = "../ntdll-sys" }\n'
         if m.is_usermode
-        else 'panic-common = { path = "../panic-common", features = ["kernel"] }\n'
+        else f'panic-common = {{ path = "../panic-common", features = ["{_kernel_panic(m)}"] }}\n'
         'ntkrnl-sys = { path = "../ntkrnl-sys" }\n'
         # Kernel crates too: DPRINT1 is win32macros' (DbgPrint is cdecl in ntoskrnl exactly
         # as in ntdll), and the rest are header macros kernel C uses as much as user C.
     ) + 'win32macros-rust = { path = "../win32macros-rust" }\n'
+    is_cpp = any(str(tu).lower().endswith(CPP_SUFFIXES) for tu in m.compiled_tus)
+    atl_block = ""
+    if is_cpp:
+        # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
+        # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
+        com = any(
+            re.search(r"\bCComHeapPtr\b", tu.read_text(errors="replace"))
+            for tu in m.compiled_tus
+            if tu.is_file()
+        )
+        # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
+        deps += (
+            'atlclasses-rust = { path = "../atlclasses-rust", features = ["com"] }\n'
+            if com
+            else 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
+        )
+        atl_block = (
+            "\n// ================= ATL =========================================================="
+            "==============\n"
+            "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
+            "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
+            "CSimpleMap, CStringW, POSITION};\n"
+            + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+        )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
     # (HANDLE, WCHAR) into the prelude next to the island's, and every use of either
@@ -4202,13 +4388,15 @@ pub extern "C" fn rust_eh_personality() {{}}
     )
     uses_wine = any("wine/debug.h" in w for w in dp.wrapper_inc)
     debug_block = (
-        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME). Kept as no-op MACROS, never
-// out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
-// ABI mismatches into ud2 (field manual §9.65).
-#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+        """// The wine/debug.h channel (TRACE/ERR/WARN/FIXME): wine's own flag test on the default
+// channel, then ros_dbg_log -- win32macros-rust's WINE_*! macros, which expand HERE (the
+// channel storage and the ros_dbg_log extern are this crate's; `port resolve` writes them).
+// MACROS, never out-of-line fns: an out-of-line wrapper is an optimization barrier that
+// uncloaks latent ABI mismatches into ud2 (field manual §9.65).
+#[macro_export] macro_rules! TRACE { ($($arg:tt)*) => { win32macros_rust::WINE_TRACE!($($arg)*) }; }
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { win32macros_rust::WINE_ERR!($($arg)*) }; }
+#[macro_export] macro_rules! WARN  { ($($arg:tt)*) => { win32macros_rust::WINE_WARN!($($arg)*) }; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { win32macros_rust::WINE_FIXME!($($arg)*) }; }
 pub use crate::{ERR, FIXME, TRACE, WARN};"""
         if uses_wine
         else """// reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
@@ -4236,7 +4424,7 @@ pub use core::ptr::{{addr_of, addr_of_mut}};
 
 // ================= debug ======================================================================
 {debug_block}
-
+{atl_block}
 // ================= CRT ========================================================================
 // NEVER hand-write memcpy/memset/memmove/memcmp in Rust: LLVM folds any byte-copy loop back into
 // a call to the function itself → infinite self-recursion → silent hang. Import them (AGENTS.md).

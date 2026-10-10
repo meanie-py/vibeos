@@ -10,7 +10,7 @@ use core::ffi::c_void;
 extern "system" {
     fn BRUSHOBJ_psoMask(pbo: *mut BRUSHOBJ) -> *mut SURFOBJ;
     fn BRUSHOBJ_psoPattern(pbo: *mut BRUSHOBJ) -> *mut SURFOBJ;
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> i32;
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
     fn ROP4_BKGND(rop4: ROP4) -> ULONG;
     fn ROP4_FGND(rop4: ROP4) -> ULONG;

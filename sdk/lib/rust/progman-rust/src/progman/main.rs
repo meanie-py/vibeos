@@ -213,7 +213,7 @@ pub const WC_MDICLIENTW: *const u16 = {
 
 pub const WC_MDICLIENT: *const u16 = WC_MDICLIENTW;
 
-pub const BUFFER_SIZE: i32 = 1024;
+pub const BUFFER_SIZE: i32 = 1024; // nolint: const-contradiction (progman main.c's own #define)
 #[no_mangle]
 pub unsafe extern "C" fn Alloc(dwFlags: DWORD, dwBytes: SIZE_T) -> PVOID {
     return HeapAlloc(GetProcessHeap(), dwFlags, dwBytes);

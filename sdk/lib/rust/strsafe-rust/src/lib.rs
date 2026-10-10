@@ -242,98 +242,6 @@ unsafe fn StringCopyNExWorkerW(
     hr
 }
 
-/// strsafe.h:996 `StringCopyExWorkerW`, ported in full (all flags), like its `N` sibling.
-#[allow(clippy::too_many_arguments)]
-unsafe fn StringCopyExWorkerW(
-    pszDest: *mut WCHAR,
-    cchDest: usize,
-    cbDest: usize,
-    mut pszSrc: *const WCHAR,
-    ppszDestEnd: *mut *mut WCHAR,
-    pcchRemaining: *mut usize,
-    dwFlags: DWORD,
-) -> HRESULT {
-    let mut hr: HRESULT = S_OK;
-    let mut pszDestEnd: *mut WCHAR = pszDest;
-    let mut cchRemaining: usize = 0;
-    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
-        hr = STRSAFE_E_INVALID_PARAMETER;
-    } else {
-        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
-            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
-                hr = STRSAFE_E_INVALID_PARAMETER;
-            }
-            if pszSrc.is_null() {
-                pszSrc = EMPTY.as_ptr();
-            }
-        }
-        if hr >= 0 {
-            if cchDest == 0 {
-                pszDestEnd = pszDest;
-                cchRemaining = 0;
-                if *pszSrc != 0 {
-                    hr = if pszDest.is_null() {
-                        STRSAFE_E_INVALID_PARAMETER
-                    } else {
-                        STRSAFE_E_INSUFFICIENT_BUFFER
-                    };
-                }
-            } else {
-                pszDestEnd = pszDest;
-                cchRemaining = cchDest;
-                while cchRemaining != 0 && *pszSrc != 0 {
-                    *pszDestEnd = *pszSrc;
-                    pszDestEnd = pszDestEnd.add(1);
-                    pszSrc = pszSrc.add(1);
-                    cchRemaining -= 1;
-                }
-                if cchRemaining > 0 {
-                    if dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 {
-                        memset(
-                            pszDestEnd.add(1) as *mut c_void,
-                            fill_pattern(dwFlags),
-                            (cchRemaining - 1) * core::mem::size_of::<WCHAR>()
-                                + (cbDest % core::mem::size_of::<WCHAR>()),
-                        );
-                    }
-                } else {
-                    pszDestEnd = pszDestEnd.sub(1);
-                    cchRemaining += 1;
-                    hr = STRSAFE_E_INSUFFICIENT_BUFFER;
-                }
-                *pszDestEnd = 0;
-            }
-        }
-    }
-    if hr < 0 && !pszDest.is_null() {
-        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
-            memset(pszDest as *mut c_void, fill_pattern(dwFlags), cbDest);
-            if fill_pattern(dwFlags) == 0 {
-                pszDestEnd = pszDest;
-                cchRemaining = cchDest;
-            } else if cchDest > 0 {
-                pszDestEnd = pszDest.add(cchDest - 1);
-                cchRemaining = 1;
-                *pszDestEnd = 0;
-            }
-        }
-        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
-            pszDestEnd = pszDest;
-            cchRemaining = cchDest;
-            *pszDestEnd = 0;
-        }
-    }
-    if hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER {
-        if !ppszDestEnd.is_null() {
-            *ppszDestEnd = pszDestEnd;
-        }
-        if !pcchRemaining.is_null() {
-            *pcchRemaining = cchRemaining;
-        }
-    }
-    hr
-}
-
 /// strsafe.h:184 `StringCchCopyExW`.
 #[no_mangle]
 pub unsafe extern "system" fn StringCchCopyExW(
@@ -560,6 +468,40 @@ pub unsafe extern "system" fn StringCchLengthW(
     StringLengthWorkerW(psz, cchMax, pcchLength)
 }
 
+/// strsafe.h `StringLengthWorkerA` -- StringLengthWorkerW over CHAR.
+unsafe fn StringLengthWorkerA(
+    mut psz: *const core::ffi::c_char,
+    mut cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let cchMaxPrev = cchMax;
+    while cchMax != 0 && *psz != 0 {
+        psz = psz.add(1);
+        cchMax -= 1;
+    }
+    if cchMax == 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    }
+    if !pcchLength.is_null() {
+        *pcchLength = if hr >= 0 { cchMaxPrev - cchMax } else { 0 };
+    }
+    hr
+}
+
+/// strsafe.h `StringCchLengthA` (imm32's utils.c and regword.c).
+#[no_mangle]
+pub unsafe extern "system" fn StringCchLengthA(
+    psz: *const core::ffi::c_char,
+    cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    if psz.is_null() || cchMax > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringLengthWorkerA(psz, cchMax, pcchLength)
+}
+
 /// strsafe.h:1083 `StringCopyNWorkerW` -- copy at most `cchToCopy` characters, always
 /// terminating; a destination that fills is truncated and reported INSUFFICIENT_BUFFER.
 unsafe fn StringCopyNWorkerW(
@@ -600,6 +542,128 @@ pub unsafe extern "system" fn StringCchCopyNW(
         return STRSAFE_E_INVALID_PARAMETER;
     }
     StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
+}
+
+/// strsafe.h:996 `StringCopyExWorkerW` -- copy until the source's NUL, with the Ex flags.
+unsafe fn StringCopyExWorkerW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    cbDest: usize,
+    mut pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let mut pszDestEnd: *mut WCHAR = pszDest;
+    let mut cchRemaining: usize = 0;
+    if dwFlags & !STRSAFE_VALID_FLAGS != 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    } else {
+        if dwFlags & STRSAFE_IGNORE_NULLS != 0 {
+            if pszDest.is_null() && (cchDest != 0 || cbDest != 0) {
+                hr = STRSAFE_E_INVALID_PARAMETER;
+            }
+            if pszSrc.is_null() {
+                pszSrc = EMPTY.as_ptr();
+            }
+        }
+        if hr >= 0 {
+            if cchDest == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = 0;
+                if *pszSrc != 0 {
+                    hr = if pszDest.is_null() {
+                        STRSAFE_E_INVALID_PARAMETER
+                    } else {
+                        STRSAFE_E_INSUFFICIENT_BUFFER
+                    };
+                }
+            } else {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+                while cchRemaining != 0 && *pszSrc != 0 {
+                    *pszDestEnd = *pszSrc;
+                    pszDestEnd = pszDestEnd.add(1);
+                    pszSrc = pszSrc.add(1);
+                    cchRemaining -= 1;
+                }
+                if cchRemaining > 0 {
+                    if dwFlags & STRSAFE_FILL_BEHIND_NULL != 0 {
+                        memset(
+                            pszDestEnd.add(1) as *mut c_void,
+                            fill_pattern(dwFlags),
+                            (cchRemaining - 1) * core::mem::size_of::<WCHAR>()
+                                + (cbDest % core::mem::size_of::<WCHAR>()),
+                        );
+                    }
+                } else {
+                    pszDestEnd = pszDestEnd.sub(1);
+                    cchRemaining += 1;
+                    hr = STRSAFE_E_INSUFFICIENT_BUFFER;
+                }
+                *pszDestEnd = 0;
+            }
+        }
+    }
+    if hr < 0 && !pszDest.is_null() {
+        if dwFlags & STRSAFE_FILL_ON_FAILURE != 0 {
+            memset(pszDest as *mut c_void, fill_pattern(dwFlags), cbDest);
+            if fill_pattern(dwFlags) == 0 {
+                pszDestEnd = pszDest;
+                cchRemaining = cchDest;
+            } else if cchDest > 0 {
+                pszDestEnd = pszDest.add(cchDest - 1);
+                cchRemaining = 1;
+                *pszDestEnd = 0;
+            }
+        }
+        if dwFlags & (STRSAFE_NULL_ON_FAILURE | STRSAFE_NO_TRUNCATION) != 0 && cchDest > 0 {
+            pszDestEnd = pszDest;
+            cchRemaining = cchDest;
+            *pszDestEnd = 0;
+        }
+    }
+    if hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER {
+        if !ppszDestEnd.is_null() {
+            *ppszDestEnd = pszDestEnd;
+        }
+        if !pcchRemaining.is_null() {
+            *pcchRemaining = cchRemaining;
+        }
+    }
+    hr
+}
+
+/// strsafe.h:210 `StringCbCopyExW` (mplay32).
+#[no_mangle]
+pub unsafe extern "system" fn StringCbCopyExW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    ppszDestEnd: *mut *mut WCHAR,
+    pcbRemaining: *mut usize,
+    dwFlags: DWORD,
+) -> HRESULT {
+    let cchDest = cbDest / core::mem::size_of::<WCHAR>();
+    let mut cchRemaining: usize = 0;
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let hr = StringCopyExWorkerW(
+        pszDest,
+        cchDest,
+        cbDest,
+        pszSrc,
+        ppszDestEnd,
+        &mut cchRemaining,
+        dwFlags,
+    );
+    if (hr >= 0 || hr == STRSAFE_E_INSUFFICIENT_BUFFER) && !pcbRemaining.is_null() {
+        *pcbRemaining = cchRemaining * core::mem::size_of::<WCHAR>()
+            + (cbDest % core::mem::size_of::<WCHAR>());
+    }
+    hr
 }
 
 /// strsafe.h:1395 `StringCatNWorkerW` -- append at most `cchToAppend` characters.

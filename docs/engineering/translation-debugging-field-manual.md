@@ -159,6 +159,17 @@ invisible to spec/bindgen cross-checks, and if it is declared only once (wrongly
 "appears under both ABIs" scan misses it too. The scan that catches these is **decl-ABI vs
 def-ABI per symbol, over the crate's own symbols.**
 
+### A 64-bit bindgen island declares every WINAPI function `extern "C"`
+**Symptom:** `port resolve` refuses a plain Win32 import as "ABI disagreement (C, system)"
+(CloseHandle, GetLastError, HeapFree for a new module), or copies one as `extern "C"` and the
+i386 link fails on the undecorated name. **Cause:** x86_64 and arm64 have one calling
+convention, so bindgen writes WINAPI there as `"C"`; only an **i386** island records stdcall.
+A hand-written `extern "C"` copy of a stdcall import (an old prelude) votes the same way.
+**Fix (in `prelude_resolve.consensus`):** an i386 island declaration outvotes everything, a
+64-bit island never votes on the ABI, and shell32's `island_<arch>.rs` counts as bindgen.
+Get/SetWindow/ClassLongPtr are macros on i386, so clang reports no convention for them:
+the externs renderer files them under `"system"` by name.
+
 ### A `#[cfg(target_arch)]` pair is not automatically an ABI fork
 
 **Symptom.** Folding cfg-gated twins into one `extern "system"` item (`collapse_abi_twins.py`)
@@ -1045,6 +1056,12 @@ hand flips the error to the other two.
   UserName)` calls had it too. `scan_variadic_array_arg` (`vibeos-cli check`, empty baseline)
   resolves each `(*v).f` argument through v's declared type, since `name` is an array in
   `interface_info` and a pointer in the two dhcpcsvc structs beside it.
+  Fifth (2026-10-10), the shape the gate could not see: a bare array VARIABLE through an
+  ALIAS. sndrec32 passed `static mut str_mono: [u16; 10]` to `gprintf` (`pub use
+  .._snwprintf as gprintf`) inside an `if c { str_mono } else { str_stereo }`, and died at
+  0x00740073 ("st" of "stereo") painting its window on i386 only. The scanner now also flags
+  a bare `static`/`let` array argument (a parameter or local of the name shadows it), follows
+  `pub use .. as` aliases of a variadic, and checks both arms of an inline if/else.
 - **`extern CCHAR Foo[N]` declared as `*const i8`** — Rust reads the first bytes of the buffer
   *as* the pointer (`"mult"` = 0x746C756D). Mirror the array type, or use a C accessor.
 - **Cross-DLL DATA import indirection.** Under `raw-dylib` the `__imp_` load already yields the
@@ -1074,6 +1091,10 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   4-byte FLOAT on the stack, bit-identical to a `u32`; amd64/arm64 pass it in a vector register
   and need the native `f32`. A plain `f32` won't compile on i386; a plain `u32` corrupts the
   others (`SetMiterLimit`).
+- **User-mode crate route: re-enable SSE for that crate's build only.**
+  `rust_staticlib_variant(... ENV "RUSTFLAGS=-C target-feature=+sse,+sse2")` on i386, the
+  oleaut32/msvcrt pattern; sndrec32's `fseconds_total() -> f32` methods needed it. `port flip`
+  now emits it for a crate whose code uses `f32`/`f64`. Never for kernel code.
 - **A crate-PRIVATE helper is not exempt — give it `extern "C"`.** The `"Rust"` ABI passes
   f64 in xmm on x86, so a plain `fn helper(x: f64, xx: f64) -> f64` in a libm crate is rejected
   even though nothing outside the crate calls it; `extern "C"` uses x87/stack and compiles.
@@ -1083,6 +1104,11 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   amd64 + arm64 build proves nothing here); and the check fires per-ABI-classification, not
   per-mention, so a sibling `fn f(x: f64) -> (f64, f64)` returning through sret can sit right
   next to the rejected one and compile — don't conclude from it that plain `fn` is fine.
+- **`f64::from_bits` / `to_bits` are themselves calls that pass an f64.** Moving a double
+  through a soft-float boundary as its bit pattern (ftfd's private vsprintf, i386 KERNEL code)
+  needs `core::mem::transmute::<u64, f64>`, which is not a call; `from_bits` hit the same
+  rejection from inside `core`. A varargs double is pulled as `arg::<u64>()`: on all three
+  targets `va_arg(double)` reads the same 8-byte slot.
 - **So a THIRD-PARTY float crate (`libm`) cannot build there at all** — it is all Rust-ABI,
   and you cannot `extern "C"` someone else's crate. ucrtbase solved it by dropping to the
   SSE2 baseline (no kernel consumer; Microsoft's x86 ucrtbase is `/arch:SSE2`). That makes
@@ -1137,6 +1163,18 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
   real.
 
 ### Cohab link plumbing
+- **A kernel DLL that imports only win32k cannot link `panic-common`'s `kernel` flavour.**
+  GDI font and display drivers (bmfd, ftfd: `add_importlibs(ftfd win32k)`) have no ntoskrnl
+  import library, so the panic path's `DbgPrint`, `KeBugCheckEx` and `RtlWalkFrameChain` are
+  undefined (arm64 LINK_FAIL on ftfd.dll). Use the zero-extern `raw` flavour; scaffold now
+  picks it from the target's `add_importlibs`.
+- **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
+  (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
+  spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
+- **A unit's global that the module's own header declares `extern`** (`extern CARDWINDOW
+  *SolWnd;`) reaches every other unit through the ISLAND's extern declaration, so the defining
+  unit must export it `#[no_mangle]` under its C name, or the other units' references are
+  undefined. `port integrate` adds it (sol had 28).
 - **WIRING a translated TU is already a PARTIAL COHAB FLIP, and an uncontrolled one.** The
   two-step everyone reaches for — "wire the module in now so it compiles and is lint-covered,
   flip the `.cpp` out later" — is not safe when the C++ is still live. shell32's `utils.rs`
@@ -1371,6 +1409,11 @@ under the `modrun` payload) bugchecked. The disassembly says it outright (`shl $
 (%rax,%rax,2)` before `memcpy`). `scan_typed_byte_copy` gates the general form: an explicit
 non-byte cast, or `_` resolved through the source variable's declared type, with a byte-named
 count or one multiplied by `size_of` (baseline empty).
+**And the ORDER flips too.** `RtlMoveMemory(dst, src, bytes)` is destination-first;
+`core::ptr::copy(src, dst, count)` is source-first. imm32's `Imm32FixLogFont` translated both
+of its face-name shifts with the C's argument order and the C's byte count, so each moved the
+string the wrong way by twice its length (`scan_silent_failures` caught the `size_of` count;
+nothing catches the order). Read every `copy`/`copy_nonoverlapping` against its C call.
 
 ## LLVM folds: ud2, captures(none), and the CGU lottery
 
@@ -2226,6 +2269,11 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **And a Rust `&str` handed to C has no NUL at all.** magnify (an ANSI module, where
+  `TEXT("1")` lowers to `"1"`) passed `"1".as_ptr()` to CB_ADDSTRING: the control read on
+  through rodata, and picking an item copied that run-on into a 2-char stack buffer. `port
+  integrate` now rewrites `"x".as_ptr()` (and `TEXT!("x").as_ptr()`) to `b"x\0".as_ptr()`; in a
+  UNICODE module the same spelling is a u8/u16 type error, which is the loud outcome.
   **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
   FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
   just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
@@ -7739,6 +7787,14 @@ Prefer read-only tools for inspection — `llvm-readobj --sections`, `llvm-objdu
 .text`. If it has already happened, restore from a staged copy whose hash you recorded (the
 ramdisk/ISO is a faithful archive of what was built), or force a relink by deleting the output
 — an mtime-newer-than-inputs file will not relink on its own.
+
+### A shared crate named like a module is read as that module's Rust port
+**Symptom:** `build` fails `BUILD_INCOMPLETE`: `dll/win32/atl/atl.dll: stale — atl-rust has
+.rs newer than the built binary (cohab flip not rebuilt)`, for a DLL nobody flipped.
+**Cause:** the staleness net pairs workspace member `<stem>-rust` with the staged `<stem>.dll`
+by convention (provenance.py `_crate_for_stem`). A SHARED crate (ATL's C++ classes) named
+`atl-rust` collided with atl.dll. **Fix:** name a shared crate so no module shares its stem
+(`atlclasses-rust`), keeping the Rust path with `[lib] name = "atl_rust"`.
 
 ### A correct staleness oracle and a build graph that cannot act on it
 
@@ -14310,6 +14366,21 @@ Three gotchas latent in the C, which surface only once you actually boot UEFI:
 2. **Synthetic ACPI 2.0 RSDP is required**, else no PS/2 input. Tell: zero `[[I8K]]` lines and
    `Tables: [XSDT]` (vs BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.
 3. **freeldr-loaded DLLs must not use raw-dylib** (see the cohab section).
+4. **i386 UEFI with >= 1G RAM: the kernel's boot-image reservation swallows session space.**
+   Symptom: BUGCHECK 0x1A in `MmDeleteRmap` ("mapping-not-in-list", Process NULL) when a
+   ROS system view is unmapped, here win32k's font view at `0xbf7f0000`; at 512M nothing
+   happens, which is why only a bigger guest found it. Cause: `uefimem.rs` counted the
+   firmware's own `LoaderLoadedProgram` regions, which OVMF keeps at the top of RAM, into
+   `LoaderPagesSpanned`. The kernel sizes `MmBootImageSize` from that span, so a 1G guest
+   got 0x3F400000 and a KSEG0 reservation running to `0xBF400000`. That covered the
+   system-view and session reservations, so the ROS gap finder handed out session VAs that
+   ARM3 already had mapped. Fix (i386 only): leave identity-only types out of the span, and
+   let `MempSetupPagingForRegion` map them without the span gate. 1G CD boot: 0x3F400000 ->
+   0x4400000, and the sweep completes. Related, same span: a 300MB ramdisk loaded bottom-up
+   pushed every boot driver above it (456MB boot image, 0x7F), so the i386 ramdisk now comes
+   from the top of memory and `LoaderXIPRom` stays out of the span (ramdisk.sys maps it
+   physically). Tool: the kernel VAD-tree dump in `MmMapViewOfSegment` (fires when a fresh
+   kernel view finds a present PTE) showed the oversized first node at once.
 
 **Recipe:** i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 = the system `OVMF_CODE_4M.fd`.
 **`-device ide-cd,drive=cd0,bootindex=0`** — a bare `-cdrom` drops to the UEFI shell. The

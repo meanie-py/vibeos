@@ -607,9 +607,7 @@ pub unsafe extern "C" fn InitializePrintProcessorList() -> BOOL {
                 }
 
                 // Get all supported datatypes.
-                (*pPrintProcessor).pfnEnumPrintProcessorDatatypesW.expect(
-                    "non-null function pointer",
-                )(
+                (*pPrintProcessor).pfnEnumPrintProcessorDatatypesW.unwrap_unchecked()(
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                     1,
@@ -638,9 +636,7 @@ pub unsafe extern "C" fn InitializePrintProcessorList() -> BOOL {
                     break 'cleanup;
                 }
 
-                if (*pPrintProcessor).pfnEnumPrintProcessorDatatypesW.expect(
-                    "non-null function pointer",
-                )(
+                if (*pPrintProcessor).pfnEnumPrintProcessorDatatypesW.unwrap_unchecked()(
                     core::ptr::null_mut(),
                     core::ptr::null_mut(),
                     1,

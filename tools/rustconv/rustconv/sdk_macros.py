@@ -687,7 +687,15 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
-    return emit(_Parser(tokenize(expansion), types).parse())
+    # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
+    # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
+    # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup
+    # that does not exist (dxdiag's IDirectSound8_Release, E0599).
+    return re.sub(
+        r"\.lpVtbl\)\.([A-Za-z_]\w*)\(",
+        r".lpVtbl).\1.unwrap_unchecked()(",
+        emit(_Parser(tokenize(expansion), types).parse()),
+    )
 
 
 _DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)\(([^)]*)\)", re.M)

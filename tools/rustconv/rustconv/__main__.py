@@ -15,10 +15,13 @@ from dataclasses import replace
 from pathlib import Path
 
 from . import (
+    atl_contract,
     callout_annotate,
     candidate_oracle,
+    cpp_app,
     cpp_com,
     cpp_core,
+    cpp_model,
     cpp_tu,
     crate_repair,
     difftest_contract,
@@ -224,6 +227,29 @@ def _strip_vtbl_statics(rust: str) -> str:
             continue
         out.append(ln)
     return "\n".join(out)
+
+
+# A line that can open (or continue) a Rust item at file scope.
+_RUST_ITEM_LINE_RE = re.compile(
+    r"^\s*(//|/\*|\*|#!?\[|(pub(\([^)]*\))?\s+)?(unsafe\s+)?(extern|use|const|static|type|"
+    r"struct|union|enum|fn|impl|mod|macro_rules!|trait)\b|[}\])]|$)"
+)
+
+
+def _comment_out_prose_preamble(rust: str) -> str:
+    """A preamble reply that holds no Rust at all becomes comments, not code.
+
+    Asked to translate a file scope with nothing to emit, the model sometimes EXPLAINS
+    that in prose instead of replying empty. imm32's candidate.c (WINE_DEFAULT_DEBUG_CHANNEL
+    plus a function-like ROUNDUP4) came back as one English paragraph, which was stitched in
+    front of the first function; the stitch then could not see that function and rejected the
+    whole TU as missing it. Only an ALL-prose reply is rewritten, and its text is kept, so a
+    reply that mixes prose into real items still fails loudly downstream.
+    """
+    lines = rust.splitlines()
+    if not rust.strip() or any(_RUST_ITEM_LINE_RE.match(ln) and ln.strip() for ln in lines):
+        return rust
+    return "\n".join(f"// {ln}".rstrip() for ln in lines)
 
 
 def _preamble_is_function_macros_only(src: str) -> bool:
@@ -3215,6 +3241,19 @@ def cmd_translate(args):
             for dep in sorted_deps:
                 if re.search(rf"\b{raii_name}\b", dep.body_text):
                     deterministic_contracts[dep.name] += raii_block
+        if getattr(args, "cpp_app_model", None):
+            # A synthetic TU from cpp_app: each worker gets the generated class context.
+            app_model = cpp_model.ModuleModel.from_json(Path(args.cpp_app_model).read_text())
+            for dep in sorted_deps:
+                deterministic_contracts[dep.name] += cpp_app.worker_contract(
+                    app_model, dep.name, dep.body_text
+                )
+        if cpp_class_target:
+            # Shared ATL types (CStringW, CComPtr, ...) from atl-rust: the API only, per
+            # worker that names one. A --local-raii lowering of the same name wins.
+            for dep in sorted_deps:
+                if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
+                    deterministic_contracts[dep.name] += atl_contract.contract(dep.body_text)
         if cpp_com_cls is not None:
             container_fields = [
                 state
@@ -4575,6 +4614,8 @@ def cmd_translate(args):
                     "  cached in .responses/, so the retry only re-pays for the preamble)."
                 )
 
+        preamble_rust = _comment_out_prose_preamble(preamble_rust)
+
         # c2rust's vtbl tables are NOT usable: it hardcodes each slot as
         # `f as unsafe extern "C" fn(..)`, which is the amd64 spelling. On i386 the
         # bindgen slot is `extern "stdcall"`, so the cast is simply wrong there.
@@ -5867,6 +5908,12 @@ def main():
         help="Translate one shell32 C++ COM class after deterministic ABI preflight",
     )
     p.add_argument("--class", dest="class_name", help="Class selected by --cpp-com")
+    p.add_argument(
+        "--cpp-app-model",
+        dest="cpp_app_model",
+        default=None,
+        help="cpp_model.json for a cpp_app synthetic TU: hand each worker its class context",
+    )
     p.add_argument(
         "--free-functions",
         dest="free_functions",

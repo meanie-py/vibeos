@@ -2034,6 +2034,29 @@ unsafe fn send_discover(ipp: *mut c_void, u: *mut universe) {
 }
 """
 
+# The bare-variable half (2026-10-10): sndrec32 passed `static mut str_mono: [u16; 10]` to
+# `gprintf`, its alias of the variadic `_snwprintf`; i386 read "st" as the %s pointer.
+_VARIADIC_ARRAY_BARE_BAD = """\
+extern "C" { pub fn _snwprintf(b: *mut u16, n: usize, f: *const u16, ...) -> i32; }
+pub use crate::prelude::_snwprintf as gprintf;
+pub static mut str_mono: [u16; 10] = [0; 10];
+pub static mut str_stereo: [u16; 10] = [0; 10];
+unsafe fn paint(t: *mut u16, f: *const u16, two: bool) {
+    gprintf(t, 100, f, if two { str_stereo } else { str_mono });
+}
+"""
+_VARIADIC_ARRAY_BARE_GOOD = """\
+extern "C" { pub fn _snwprintf(b: *mut u16, n: usize, f: *const u16, ...) -> i32; }
+pub use crate::prelude::_snwprintf as gprintf;
+pub static mut str_mono: [u16; 10] = [0; 10];
+pub static mut scroll: [u8; 4] = [0; 4];
+unsafe fn paint(t: *mut u16, f: *const u16, scroll: i32) {
+    gprintf(t, 100, f, str_mono.as_ptr());
+    gprintf(t, 100, f, scroll);
+    /* gprintf(t, 100, f, str_mono) */
+}
+"""
+
 # scan_byteptr_stride. Seeded from oleaut32 IRecordInfoImpl_RecordCopy (2026-10-04): the C's
 # `((BYTE*)src_rec) + offset` translated through `*mut PBYTE`, an 8x stride.
 _BYTEPTR_BAD = """\
@@ -2907,6 +2930,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"bad.rs": _VARIADIC_ARRAY_BAD},
         good={"good.rs": _VARIADIC_ARRAY_GOOD},
+    ),
+    Control(
+        name="scan_variadic_array_arg",
+        script="tools/scan_variadic_array_arg.py",
+        argv=["--lint"],
+        bad={"bad.rs": _VARIADIC_ARRAY_BARE_BAD},
+        good={"good.rs": _VARIADIC_ARRAY_BARE_GOOD},
     ),
     Control(
         name="scan_magic_offsets",
@@ -3788,3 +3818,24 @@ def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
     catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
     hits = module.scan_file(rs, catalog)
     assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]
+
+
+def test_formatless_printf_name_needs_a_real_printf(tmp_path):
+    """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
+    parameter and its name contains Print+F(unctionName); it is not a printf, and the old
+    case-insensitive `printf` match flagged it. A real one must still flag."""
+    spec = importlib.util.spec_from_file_location(
+        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "x.rs"
+    rs.write_text(
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn SeiPrintFunctionName(p: LPCSTR, szOrdProcFmt: *mut i8)'
+        " -> LPCSTR { p }\n"
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
+    )
+    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]

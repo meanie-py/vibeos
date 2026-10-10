@@ -1049,14 +1049,18 @@ pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
 /// `minmax.h` / `stdlib.h` — `#define min(a,b) (((a) < (b)) ? (a) : (b))`. Generic because the
 /// macro is: the result has the CALLER's type, so nothing width-dependent is shared.
+///
+/// `extern "C"`, not the Rust ABI: i386 user code builds without SSE, where the Rust ABI
+/// cannot pass an f64 at all and rejects the `min::<f64>` instantiation at codegen (opengl32,
+/// winegdi). The C ABI passes it on the stack (field manual, "i386 no-SSE float ABI").
 #[inline]
-pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn min<T: PartialOrd>(a: T, b: T) -> T {
     if a < b { a } else { b }
 }
 
 /// `minmax.h` / `stdlib.h` — `#define max(a,b) (((a) > (b)) ? (a) : (b))`.
 #[inline]
-pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b { a } else { b }
 }
 
@@ -1150,6 +1154,20 @@ pub unsafe fn debugstr_an(s: *const core::ffi::c_char, n: i32) -> *const core::f
 /// `wine/debug.h` — `wine_dbgstr_an(s, -1)`.
 #[inline]
 pub unsafe fn debugstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_an(s, -1) }
+}
+
+/// wine/debug.h: `static __inline const char *wine_dbgstr_w(const WCHAR *s) { return
+/// wine_dbgstr_wn(s, -1); }`. An inline in the header, exported by nothing: extrac32 took a
+/// tree-consensus `extern fn wine_dbgstr_w` and failed to link on all three arches.
+#[inline(always)]
+pub unsafe fn wine_dbgstr_w(s: *const u16) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_wn(s, -1) }
+}
+
+/// wine/debug.h: `wine_dbgstr_a(s)` is `wine_dbgstr_an(s, -1)`, an inline like the above.
+#[inline(always)]
+pub unsafe fn wine_dbgstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
     unsafe { wine_dbgstr_an(s, -1) }
 }
 
@@ -1657,4 +1675,167 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
     (*(addend as *const core::sync::atomic::AtomicI32))
         .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
         - 1
+}
+
+// ================= wine/debug.h: WINE_TRACE / WINE_ERR / ..._ON(ch) =================
+// `__WINE_DPRINTF`: a flag test on the channel, then `ros_dbg_log`. MACROS (never out-of-line
+// fns, field manual §9.65), expanded in the CONSUMER, so `__wine_dbch___default`,
+// `__wine_debug_channel` and `ros_dbg_log` are the consumer's own (port resolve writes the
+// channel storage; the extern comes from tree consensus). extrac32 spelled these and found
+// them defined nowhere. Class values are wine/debug.h's enum: FIXME 0, ERR 1, WARN 2, TRACE 3.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __wine_dprintf {
+    ($cls:expr, $dbch:expr, $fmt:expr $(, $a:expr)* $(,)?) => {{
+        let __dbch: *mut __wine_debug_channel = $dbch;
+        if (*__dbch).flags as core::ffi::c_int & (1 << $cls) != 0 {
+            ros_dbg_log($cls as _, __dbch, concat!(file!(), "\0").as_ptr() as *const core::ffi::c_char,
+                b"\0".as_ptr() as *const core::ffi::c_char, line!() as core::ffi::c_int, $fmt $(, $a)*);
+        }
+    }};
+}
+#[macro_export]
+macro_rules! WINE_FIXME { ($($a:tt)*) => { $crate::__wine_dprintf!(0, __wine_dbch___default, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_ERR { ($($a:tt)*) => { $crate::__wine_dprintf!(1, __wine_dbch___default, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_WARN { ($($a:tt)*) => { $crate::__wine_dprintf!(2, __wine_dbch___default, $($a)*) }; }
+#[macro_export]
+macro_rules! WINE_TRACE { ($($a:tt)*) => { $crate::__wine_dprintf!(3, __wine_dbch___default, $($a)*) }; }
+
+// `__WINE_IS_DEBUG_ON(dbcl, &__wine_dbch_##ch)`, as an `int` like the C. The argument is the
+// channel STATIC (`TRACE_ON!(__wine_dbch_extrac32)`): macro_rules cannot paste `##ch`, so
+// `port integrate` rewrites the C spelling `TRACE_ON(extrac32)` to that.
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __wine_is_debug_on {
+    ($cls:expr, $dbch:ident) => {
+        ((((*core::ptr::addr_of_mut!($dbch)).flags as core::ffi::c_int & (1 << $cls)) != 0
+            && (__wine_dbg_get_channel_flags(core::ptr::addr_of_mut!($dbch)) as core::ffi::c_int
+                & (1 << $cls))
+                != 0) as core::ffi::c_int)
+    };
+}
+#[macro_export]
+macro_rules! FIXME_ON { ($dbch:ident) => { $crate::__wine_is_debug_on!(0, $dbch) }; }
+#[macro_export]
+macro_rules! ERR_ON { ($dbch:ident) => { $crate::__wine_is_debug_on!(1, $dbch) }; }
+#[macro_export]
+macro_rules! WARN_ON { ($dbch:ident) => { $crate::__wine_is_debug_on!(2, $dbch) }; }
+#[macro_export]
+macro_rules! TRACE_ON { ($dbch:ident) => { $crate::__wine_is_debug_on!(3, $dbch) }; }
+
+// ================= stdlib.h: the CRT's exported data (__argc, __wargv, _environ, ...) =========
+// `_CRTIMP extern int __argc;` is dllimport DATA: the import library carries only the
+// `__imp_` IAT slot, holding the variable's ADDRESS (crt-startup-rust's IMP_ACMDLN pattern;
+// i686-windows-gnu prepends `_` to a link_name, so the i386 spelling has one fewer). The
+// accessors are named after stdlib.h's own `_M_CEE_PURE` form, `#define __argc
+// (*__p___argc())`, and `port integrate` rewrites a bare `__argc` to exactly that (clipbrd
+// and mplay32 found `__argc`/`__wargv` defined nowhere). msvcrt.spec exports `__p___argc`
+// itself on i386 only, so these are this crate's, not imports.
+mod crt_data {
+    extern "C" {
+        #[cfg_attr(target_arch = "x86", link_name = "_imp____argc")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___argc")]
+        pub static IMP_ARGC: *mut core::ffi::c_int;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp____argv")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___argv")]
+        pub static IMP_ARGV: *mut *mut *mut core::ffi::c_char;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp____wargv")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp___wargv")]
+        pub static IMP_WARGV: *mut *mut *mut u16;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp___environ")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__environ")]
+        pub static IMP_ENVIRON: *mut *mut *mut core::ffi::c_char;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp___wenviron")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__wenviron")]
+        pub static IMP_WENVIRON: *mut *mut *mut u16;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp___pgmptr")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__pgmptr")]
+        pub static IMP_PGMPTR: *mut *mut core::ffi::c_char;
+        #[cfg_attr(target_arch = "x86", link_name = "_imp___wpgmptr")]
+        #[cfg_attr(not(target_arch = "x86"), link_name = "__imp__wpgmptr")]
+        pub static IMP_WPGMPTR: *mut *mut u16;
+    }
+}
+#[inline(always)]
+pub unsafe fn __p___argc() -> *mut core::ffi::c_int {
+    unsafe { crt_data::IMP_ARGC }
+}
+#[inline(always)]
+pub unsafe fn __p___argv() -> *mut *mut *mut core::ffi::c_char {
+    unsafe { crt_data::IMP_ARGV }
+}
+#[inline(always)]
+pub unsafe fn __p___wargv() -> *mut *mut *mut u16 {
+    unsafe { crt_data::IMP_WARGV }
+}
+#[inline(always)]
+pub unsafe fn __p__environ() -> *mut *mut *mut core::ffi::c_char {
+    unsafe { crt_data::IMP_ENVIRON }
+}
+#[inline(always)]
+pub unsafe fn __p__wenviron() -> *mut *mut *mut u16 {
+    unsafe { crt_data::IMP_WENVIRON }
+}
+#[inline(always)]
+pub unsafe fn __p__pgmptr() -> *mut *mut core::ffi::c_char {
+    unsafe { crt_data::IMP_PGMPTR }
+}
+#[inline(always)]
+pub unsafe fn __p__wpgmptr() -> *mut *mut u16 {
+    unsafe { crt_data::IMP_WPGMPTR }
+}
+
+// ================= winerror.h: HRESULT_FROM_WIN32 =================
+// `#define __HRESULT_FROM_WIN32(x) ((HRESULT)(x) > 0 ? ((HRESULT)(((x) & 0x0000FFFF) |
+// (FACILITY_WIN32 << 16) | 0x80000000)) : (HRESULT)(x))`. Lowered per crate it kept C's
+// `0x80000000` -- an `unsigned int` literal in C, out of range for `i32` in Rust (sdbinst).
+// The OR is done in u32 as C's usual arithmetic conversions do, then reinterpreted.
+#[macro_export]
+macro_rules! HRESULT_FROM_WIN32 {
+    ($x:expr $(,)?) => {{
+        let __x = ($x) as i32;
+        if __x > 0 {
+            (((__x as u32) & 0x0000_FFFF) | (7u32 << 16) | 0x8000_0000) as i32
+        } else {
+            __x
+        }
+    }};
+}
+#[macro_export]
+macro_rules! __HRESULT_FROM_WIN32 { ($($t:tt)*) => { $crate::HRESULT_FROM_WIN32!($($t)*) }; }
+
+#[cfg(test)]
+mod hresult_tests {
+    #[test]
+    fn hresult_from_win32_matches_winerror_h() {
+        assert_eq!(HRESULT_FROM_WIN32!(0u32), 0);
+        assert_eq!(HRESULT_FROM_WIN32!(5u32), 0x8007_0005u32 as i32); // ERROR_ACCESS_DENIED
+        assert_eq!(HRESULT_FROM_WIN32!(122), 0x8007_007Au32 as i32); // ERROR_INSUFFICIENT_BUFFER
+        assert_eq!(HRESULT_FROM_WIN32!(0x8007_0002u32), 0x8007_0002u32 as i32); // already an HRESULT
+    }
+}
+
+/// `InterlockedExchange`: returns the OLD value. An intrinsic on amd64/arm64 with no symbol to
+/// import; gdi32_vista's resolve copied a kernel shim's `_InterlockedExchange` extern instead,
+/// which no user-mode DLL can link.
+#[inline(always)]
+pub unsafe fn InterlockedExchange(target: *mut i32, value: i32) -> i32 {
+    (*(target as *const core::sync::atomic::AtomicI32))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when
+/// the current value equals `comperand`, and returns the value it found either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchange(destination: *mut i32, exchange: i32, comperand: i32) -> i32 {
+    match (*(destination as *const core::sync::atomic::AtomicI32)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) | Err(v) => v,
+    }
 }

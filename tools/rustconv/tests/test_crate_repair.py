@@ -1672,6 +1672,26 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
+    from rustconv.crate_repair import RULE_C2RUST_HOP
+
+    src = b"fn f() {\n    (*pIC).c2rust_unnamed.hWnd = 0;\n    let h = w.c2rust_unnamed_1;\n}\n"
+    diags = []
+    for field in (b"c2rust_unnamed.", b"c2rust_unnamed_1;"):
+        at = src.index(field)
+        name = field[:-1]
+        diags.append(
+            _diag(
+                f"no field `{name.decode()}` on type `INPUTCONTEXTDX`",
+                code="E0609",
+                spans=[_span("src/a.rs", at, at + len(name), is_primary=True)],
+            )
+        )
+    plan = propose_edits(diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C2RUST_HOP])
+    # Only a hop with a field after it: a trailing `.c2rust_unnamed_1` names nothing to keep.
+    assert [(e.original, e.replacement) for e in plan.edits] == [(".c2rust_unnamed", "")]
+
+
 def test_a_c_bitfield_goes_through_bindgens_accessors():
     from rustconv.crate_repair import RULE_BITFIELD
 
@@ -2507,8 +2527,8 @@ def test_fn_item_cast_drops_the_cast_off_some_f():
     diag = {
         "code": {"code": "E0605"},
         "message": (
-            "non-primitive cast: `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT) "
-            "{MainUnload}>` as `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT)>`"
+            'non-primitive cast: `Option<unsafe extern "system" fn(*mut _DRIVER_OBJECT) '
+            '{MainUnload}>` as `Option<unsafe extern "system" fn(*mut _DRIVER_OBJECT)>`'
         ),
         "spans": [
             {
@@ -2550,3 +2570,28 @@ def test_c2rust_anon_member_segment_is_deleted():
     e = edits[0]
     out = src[: e.byte_start] + e.replacement.encode() + src[e.byte_end :]
     assert b"".join(out.split()) == b"leth=(*b).Chars.ReceiveCompleteHandler;"
+
+
+def test_a_zero_argument_reported_in_a_child_note_becomes_null():
+    """Several bad arguments are one error; each argument's mismatch is a child note."""
+    from rustconv.crate_repair import _Ctx, _pointer_cast_rule
+
+    src = b"MessageBox(0, p, q, 0);"
+    diag = _diag(
+        "arguments to this function are incorrect",
+        spans=[_span("src/a.rs", 0, 10, is_primary=True)],
+        children=[
+            {
+                "message": "expected `*mut HWND__`, found `usize`",
+                "code": None,
+                "level": "note",
+                "spans": [_span("src/a.rs", 11, 12, is_primary=True)],
+                "children": [],
+                "rendered": None,
+            }
+        ],
+    )
+    edits, _, handled = _pointer_cast_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
+    assert handled and [(e.byte_start, e.replacement) for e in edits] == [
+        (11, "core::ptr::null_mut()")
+    ]

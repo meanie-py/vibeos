@@ -704,6 +704,33 @@ strsafe-rust gained `StringCchCatNW`. Review fixes beyond the C: a UTF-16BE save
 stack bytes past its buffer (`&buffer[dwPos]`, a WCHAR index into a BYTE array), a
 command-line check that read before the string, and `unwrap_unchecked` on a NULL edit proc.
 
+**Batch A: twenty applications, one gate (2026-10-10).** ~$1.45 of Haiku for 20 modules
+(~420 functions). The residue was almost entirely $0 tooling, each a class:
+- **Shared crates over per-module copies:** `conutils-h` (conutils' header surface: streams,
+  `StdOut`, `ConInitStdStreams`, Puts/Printf -- turned cacls/logoff/runas/shutdown green at
+  $0); win32macros-rust gained wine's `WINE_*!`/`TRACE_ON!`, `HRESULT_FROM_WIN32!`, and the
+  CRT's dllimport data (`__argc`, `__wargv`, `_environ`) through their `__imp_` slots.
+- **integrate passes:** a bare `__argc`/`stdin` becomes the header's own accessor
+  expansion; `TRACE_ON(ch)` names the channel static; an all-zero array field becomes
+  `zeroed()` (c2rust froze amd64's 6-byte TBBUTTON padding into i386's 2); c2rust's
+  `c2rust_unnamed` members take bindgen's `__bindgen_anon_N`; a Rust `"x".as_ptr()` handed to
+  C gets its NUL; `NAME!(` is dropped back to a call when the prelude's NAME is a function.
+- **The variadic stage declares the trampolines** it generates, so a replay no longer loses
+  the `extern "C" { fn ErrorMsgBox(.., ...) }` a translation carried by hand.
+- **derive:** vendored TUs (vendor.yaml) stay C -- mstsc's 18 `vendor/rdesktop` files were
+  scaffolded as modules and `port check` reported "0 errors (+18 not translated)", which a
+  script reading only the error count calls green; one-line enum members are owned; a module
+  header that redefines `_WIN32_WINNT` gets sdkddkver's NTDDI; two headers defining a type
+  under ONE `#ifndef X_DEFINED` guard are not a conflict (dxdiag's D3DVECTOR).
+- **c2rust_anchor:** an anonymous type no arch matched was "agreed" as the string
+  `0 candidates` and written into mmc's source.
+- **sdk_macros:** a WIDL vtable call lowers to `.Method.unwrap_unchecked()(..)`.
+
+Two read-only reviews then found eleven translation bugs the compiler could not (see
+rust-port-status.md); `verify_translation_literals` now pairs every port module and caught sc's
+hand-encoded `_T("..")` columns. Owed: seal `_T()`/`TEXT()` literals in UNICODE modules the way
+`L"..."` is, so the model never hand-encodes them.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR
@@ -1082,6 +1109,53 @@ port hit became a tool fix, so the replay needs only eight hand-banked functions
   Rust releases it), and `scan_const_vs_island` found the SharedSystemTime copy.
   `scan_orphan_modules` now resolves a `#[path]` inside an inline module under it, and
   `scan_macro_fn_shadow` exempts a `#[no_mangle]` .spec export whose C body is empty.
+
+### `port cppapp`: C++ classes from clang's AST (2026-10-10)
+
+The plain-C pipeline translates functions; a C++ application is mostly CLASSES, and the COM
+path (`--cpp-com --class`) accepts only the narrow, proven COM subset. `port cppapp <stem>`
+is the general class path, run after `derive`/`scaffold`/`island`. It costs nothing, and from
+then on `translate`, `integrate`, `resolve` and `replay` work on its output as usual.
+
+- **The model is clang's, not a regex's** (`cpp_model.py`). Each TU's real compile command
+  with `-Xclang -ast-dump=json`; kept are the classes, enums, globals and free functions
+  whose source is in the module directory, plus `EXTERNAL_CLASSES` (ATL's `CWindow`).
+  Header classes are seen once per TU, so decl ids are re-registered per AST.
+- **Bodies are LOWERED to explicit C before the model sees them** (`cpp_lower.py`). Every
+  C++ fact clang already resolved becomes text: implicit `this` → `this_->` plus the base
+  path (`this_->__base1.bytes_played_`), overloads → distinct names (`alloc_seconds__1`),
+  default arguments materialized, `new`/`delete`/locals/temporaries → explicit construction
+  calls, upcasts to a non-primary base spelled out, TCHAR-macro member spellings renamed to
+  the declared W function. An edit inside a macro expansion has no place in the text; it is
+  reported (`UNLOWERED`), never guessed.
+- **Layout and dispatch are generated** (`cpp_app.py` → `src/<stem>/cpp_classes.rs`):
+  `#[repr(C)]` structs with bases embedded (`__baseK`, primary first), vtables chained per
+  primary base the way C++ compilers lay them out (a derived class adding virtuals gets
+  `X__vtbl { __base: <base's table>, new slots }`), this-adjusting thunks via nested
+  `offset_of!`, virtual dispatchers (`m`) over translated bodies (`m__body`), constructors in
+  C++ order (bases, vtables, members in DECLARATION order, body), `Drop` from a non-empty
+  destructor (Rust then destroys bases and members, as C++ does), `Copy` for a class nothing
+  destroys, and the module's global objects constructed in a `__cxx_global_init` the entry
+  point calls first. A COM interface base embeds the island's interface struct and fills the
+  island's WIDL `IFooVtbl` with adjustor thunks. ATL windows/dialogs get `MessageMap` glue
+  from `BEGIN_MSG_MAP` (first match wins, as in atlwin.h) over `atl_rust::win`.
+- **Translation is the ordinary sealed per-function path** over synthetic headers (one per
+  body file), each through the TU that compiles it (`--via`, the `port headers` mechanism,
+  `--no-c2rust`, `--cpp-app-model` for the per-worker class context). `assemble` then moves
+  each translated `Class__m(this_: *mut Class, ..)` into `impl Class` as `m(&mut self, ..)`.
+  A worker that answers in method form anyway is put back by `restore_requested_name` at $0.
+- **ATL's types are one crate**, `atlclasses-rust` (lib `atl_rust`): CStringW, CComPtr,
+  CHeapPtr, CSimpleArray/Map, CAtlList (its `POSITION` re-exported over the island's), and
+  the window runtime. Workers get its API as a contract (`atl_contract.py`), not its source.
+  Only the ATL methods a module reaches are translated (`external_reached`: mspaint calls 54
+  of `CWindow`'s 134).
+
+First run, batch 1 (fltmc, sol, spider, tracert, sndrec32): $0.24 on Haiku 5.5. The
+C-in-.cpp four needed only the free-function path; sndrec32 (pure-virtual bases in other
+headers, multiple inheritance, init lists, global objects) went 569 → 0 errors per arch
+through tool fixes and one Haiku integrator pass. Not yet handled, each refused loudly:
+module class templates (cleanmgr's `CLocalPtr<T>`, rapps' `CPointerArray<T>`),
+`CAtlExeModuleT` (ATL's COM-module machinery), `CPropertyPageImpl`.
 
 ## `body-audit`: did a pre-seal body keep its C's calls? (2026-09-26)
 

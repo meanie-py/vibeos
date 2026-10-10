@@ -13,7 +13,7 @@ extern "C" {
 }
 extern "system" {
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
-    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> u8;
+    fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> i32;
 }
 extern "C" {
     static DibFunctionsForBitmapFormat: [DIB_FUNCTIONS; 11];
