@@ -73,6 +73,8 @@ _PYTEST_SUITES = [
     # at random under pipefail, so it must not become a new untested oracle.
     (".", ".", "tools/payloads/test_pecheck.py"),
     (".", ".", "tools/payloads/olewinetest/test_classify_failures.py"),
+    # kmtest lists are hand-kept; a name the arch compiles out reads as a NO-END crash.
+    (".", ".", "tools/payloads/kmtest/test_kmtest_lists.py"),
     # modrun's grader is the whole verdict (the guest only reports), so it gets an oracle.
     (".", ".", "tools/payloads/modrun/test_modrun.py"),
     # The payload drain budget. `launch_drain_secs` counted READ ITERATIONS while

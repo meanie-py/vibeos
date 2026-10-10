@@ -607,6 +607,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   the MAC query returned garbage and setting the packet filter bugchecked 0xA in the HAL.
   (2) is an ndis bug to fix in the translation; (1) is why the payload uses the e1000.
 
+- **x86 conformance never runs the kmtests that write a file** (OPEN, found 2026-10-09,
+  conformance lane). i386/amd64 conformance boots the livecd, so `\SystemRoot` is read-only
+  CDFS and every kmtest that creates a file there fails setup with `0xc0000022` and bails:
+  ZwCreateSection runs 9 assertions on x86 vs 330 on arm64 (writable FAT ramdisk), MmSection
+  ~90 vs ~370, and the file halves of ZwMapViewOfSection/IoFilesystem likewise. The shared-MM
+  bugs arm64 surfaced (the dropped view-protection checks in `MmMapViewOfSection`, fixed) were
+  invisible on x86 for exactly this reason. Fix owed: give x86 conformance a writable system
+  volume (boot the installed disk, or a writable ramdisk like arm64's) and re-seed the x86 rows,
+  which will move a lot of them; see the field manual's "A conformance score is not a defect
+  count".
+
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
   the disk boots alone to Explorer (`tests/qemu/test_install.py`). Its first runs found, in order, every
