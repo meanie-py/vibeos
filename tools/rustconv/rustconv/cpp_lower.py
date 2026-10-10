@@ -247,27 +247,32 @@ class Lowerer:
             # `operator new(size_t, void*)`) constructs in place: a different operation, left
             # unlowered so the audit rejects it loudly instead of allocating fresh memory.
             sig = n.get("operatorNewDecl", {}).get("type", {}).get("qualType", "")
-            if not re.fullmatch(r"void \*\(size_t, const \w+ &\) noexcept", sig):
-                return
+            tm = re.fullmatch(r"void \*\(size_t, const (\w+) &\) noexcept", sig)
             pm = re.match(r"new\s*\((?:[^()]|\([^()]*\))*\)\s*", t)
-            if pm is None:
+            if tm is None or pm is None:
                 return
+            tag = tm.group(1)  # its allocator: cpp_alloc_<Tag> (cpp_app._allocator_helpers)
             t = "new " + t[pm.end() :]
+        else:
+            tag = None
         alloc = _strip_type(n.get("type", {}).get("qualType", ""))
         if n.get("isArray"):
             m = re.match(r"new\s+(.+?)\s*\[(.*)\]\s*$", t, re.S)
             if m:
-                edits.append(
-                    (span[0], span[1] - span[0], f"cpp_new_array<{m.group(1)}>({m.group(2)})")
-                )
+                # The untagged spelling is what every banked body was bought against: a
+                # change of it alone would re-buy them all.
+                fn = f"cpp_new_array_{tag}::" if tag else "cpp_new_array"
+                edits.append((span[0], span[1] - span[0], f"{fn}<{m.group(1)}>({m.group(2)})"))
             return
         cls = self._class(alloc)
         if cls is None:
             m = re.match(r"new\s+([\w:\s\*]+?)\s*(\((.*)\))?\s*$", t, re.S)
             if m:
-                edits.append(
-                    (span[0], span[1] - span[0], f"cpp_new<{m.group(1)}>({m.group(3) or ''})")
+                ty, v = m.group(1), m.group(3) or ""
+                repl = (
+                    f"cpp_new_in(cpp_alloc_{tag}::<{ty}>(), {v})" if tag else f"cpp_new<{ty}>({v})"
                 )
+                edits.append((span[0], span[1] - span[0], repl))
             return
         construct = next((x for x in n.get("inner", []) if "Construct" in x.get("kind", "")), None)
         idx = self._ctor_n(cls, construct)
@@ -275,6 +280,11 @@ class Lowerer:
         if m is None:
             return
         rest = t[m.end() :] or "()"
+        if tag:
+            inner = rest.strip()[1:-1].strip()
+            args = f"cpp_alloc_{tag}::<{cls.name}>()" + (f", {inner}" if inner else "")
+            edits.append((span[0], span[1] - span[0], f"{cls.name}__new_in_{idx}({args})"))
+            return
         edits.append((span[0], span[1] - span[0], f"{cls.name}__new_{idx}{rest}"))
 
     def _delete(self, n: dict, put, f: str, lo: int, hi: int, edits) -> None:

@@ -180,6 +180,7 @@ from .response_cache import (
     claim_bank,
     require_no_namespace_rebuy,
 )
+from .response_cache import _hash as _response_body_hash
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -3472,6 +3473,22 @@ def cmd_translate(args):
                 f"   [{dry_cache.dir.name}]",
                 file=sys.stderr,
             )
+            # By name, and why: a body banked for a different CONTRACT (the class context
+            # moved under it) needs `--rebuy-fn <names>`, and the live run refuses at the
+            # first such name -- so a count alone sent you hunting one name per run.
+            held = set(banked) | set(preview)
+            for dep in sorted_deps:
+                if dep.name in held:
+                    continue
+                entry = dry_cache._manifest.get(dep.name)
+                why = (
+                    "new"
+                    if entry is None
+                    else "C body changed"
+                    if entry.get("hash") != _response_body_hash(dep.body_text)
+                    else "banked for another contract/seal: needs --rebuy-fn"
+                )
+                print(f"    to buy: {dep.name} ({why})", file=sys.stderr)
 
             # Show estimated tokens for first function
             if sorted_deps:

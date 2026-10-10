@@ -390,7 +390,16 @@ def test_a_nothrow_tag_new_lowers_like_new_and_a_buffer_placement_does_not(tmp_p
     )
     ast = json.loads(
         subprocess.run(
-            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            [
+                "clang",
+                "--target=i686-w64-mingw32",
+                "-x",
+                "c++",
+                "-fsyntax-only",
+                "-Xclang",
+                "-ast-dump=json",
+                str(src),
+            ],
             capture_output=True,
             text=True,
             check=True,
@@ -401,7 +410,11 @@ def test_a_nothrow_tag_new_lowers_like_new_and_a_buffer_placement_does_not(tmp_p
     ex.walk(ast["inner"])
     ex.lower_pending()
     by = {f.name: f.lowered for f in ex.model.functions}
-    assert "Item *p = Item__new_0(a);" in by["make"]
+    # The tag's allocator, by its mangled name, so a C++ half and a Rust half share a heap.
+    assert "Item *p = Item__new_in_0(cpp_alloc_CicNoThrow::<Item>(), a);" in by["make"]
     assert "new(buf) Item(1)" in by["inplace"]
+    assert ex.model.allocators["new:CicNoThrow"] == "_ZnwjRK10CicNoThrow"
     rs = cpp_app.render_classes(ex.model)
     assert "if __p.is_null() { return __p; } (*__p).__ctor_0(x)" in rs
+    assert 'link_name = "_ZnwyRK10CicNoThrow"' in rs
+    assert "pub unsafe fn cpp_alloc_CicNoThrow<T>()" in rs

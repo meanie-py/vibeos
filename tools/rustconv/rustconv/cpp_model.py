@@ -157,6 +157,12 @@ class ModuleModel:
     globals: list[GlobalVar] = field(default_factory=list)
     functions: list[FreeFunc] = field(default_factory=list)
     enums: list[EnumModel] = field(default_factory=list)
+    # User-declared global allocation operators (cicbase.h's LocalAlloc pair), by role --
+    # "new", "new[]", "delete", "delete[]", "new:<Tag>", "new[]:<Tag>" -- to their i386
+    # Itanium name without the C decoration underscore (`_ZnwjRK10CicNoThrow`). The
+    # generated cpp_alloc/cpp_free call THESE, so a C++ half and a Rust half of one heap
+    # never cross allocators mid-flip.
+    allocators: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -186,7 +192,28 @@ class ModuleModel:
             EnumModel(e["name"], e["underlying"], [tuple(m) for m in e["members"]], e["file"])
             for e in raw.get("enums", [])
         ]
+        out.allocators = raw.get("allocators", {})
         return out
+
+
+_ALLOC_ROLE = [
+    (re.compile(r"void \*\(size_t\)"), "{op}"),
+    (re.compile(r"void \*\(size_t, const (\w+) &\) noexcept"), "{op}:{tag}"),
+    (re.compile(r"void \(void \*\)(?: noexcept)?"), "{op}"),
+]
+
+
+def allocator_role(name: str, qual_type: str) -> str | None:
+    """`operator new` + `void *(size_t, const CicNoThrow &) noexcept` -> "new:CicNoThrow".
+    None for a shape nothing calls by role (sized delete, placement into a buffer)."""
+    op = name.removeprefix("operator ").replace(" ", "")
+    if op not in ("new", "new[]", "delete", "delete[]"):
+        return None
+    for pat, role in _ALLOC_ROLE:
+        m = pat.fullmatch(qual_type)
+        if m and (op.startswith("new") == ("size_t" in qual_type)):
+            return role.format(op=op, tag=m.group(1) if m.groups() else "")
+    return None
 
 
 # ---------------------------------------------------------------------------------------
@@ -445,6 +472,19 @@ class _Extractor:
                     self.record(n, scope, record)
             elif kind in _METHOD_KINDS and record is None:
                 self.out_of_line(n)
+            elif (
+                kind == "FunctionDecl"
+                and record is None
+                and n.get("name", "").startswith("operator ")
+                and not n.get("isImplicit")
+                and ".build-tools" not in (_file_of(n) or "/.build-tools/")
+            ):
+                role = allocator_role(n["name"], n.get("type", {}).get("qualType", ""))
+                if role and n.get("mangledName"):
+                    # i386 adds the C decoration underscore; rustc adds it itself.
+                    self.model.allocators[role] = "_" + n["mangledName"].lstrip("_")
+                if self.mine(_file_of(n)):
+                    self.free_function(n)
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
                 self.free_function(n)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):

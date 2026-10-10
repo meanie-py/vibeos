@@ -386,6 +386,7 @@ def render_classes(
         "use crate::prelude::*;",
         "",
         _HELPERS,
+        _allocator_helpers(model),
     ]
     for e in model.enums:
         if re.search(rf"^\s*pub type {re.escape(e.name)}\b", island, re.M):
@@ -578,9 +579,11 @@ def _render_class(
             f"let mut __obj = {n}__zeroed(); __obj.__ctor_0(); __obj }}"
         )
         lines.append(
-            f"pub unsafe fn {n}__new_0() -> *mut {n} {{ "
-            f"let __p = cpp_alloc::<{n}>(); if __p.is_null() {{ return __p; }} "
-            f"(*__p).__ctor_0(); __p }}"
+            f"pub unsafe fn {n}__new_in_0(__p: *mut {n}) -> *mut {n} "
+            f"{{ if __p.is_null() {{ return __p; }} (*__p).__ctor_0(); __p }}"
+        )
+        lines.append(
+            f"pub unsafe fn {n}__new_0() -> *mut {n} {{ {n}__new_in_0(cpp_alloc::<{n}>()) }}"
         )
     for i, m in enumerate(ctors):
         params = _params(m, model)
@@ -591,8 +594,12 @@ def _render_class(
             f"__obj.__ctor_{i}({args}); __obj }}"
         )
         lines.append(
-            f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ let __p = cpp_alloc::<{n}>(); "
-            f"if __p.is_null() {{ return __p; }} (*__p).__ctor_{i}({args}); __p }}"
+            f"pub unsafe fn {n}__new_in_{i}(__p: *mut {n}{', ' if sig else ''}{sig}) -> *mut {n} "
+            f"{{ if __p.is_null() {{ return __p; }} (*__p).__ctor_{i}({args}); __p }}"
+        )
+        lines.append(
+            f"pub unsafe fn {n}__new_{i}({sig}) -> *mut {n} {{ "
+            f"{n}__new_in_{i}(cpp_alloc::<{n}>(){', ' if args else ''}{args}) }}"
         )
     if h.virtual_dtor(cls):
         root_path, root = _vtbl_path(h, cls)
@@ -1050,25 +1057,16 @@ extern "C" {
     fn calloc(n: usize, size: usize) -> *mut core::ffi::c_void;
     fn free(p: *mut core::ffi::c_void);
 }
-/// `operator new` for a class: zeroed storage, constructed by the caller.
-pub unsafe fn cpp_alloc<T>() -> *mut T { calloc(1, core::mem::size_of::<T>()) as *mut T }
-pub unsafe fn cpp_free(p: *mut core::ffi::c_void) { free(p) }
-/// `new T(v)` for a non-class T.
-pub unsafe fn cpp_new<T>(v: T) -> *mut T {
-    let p = calloc(1, core::mem::size_of::<T>()) as *mut T;
+/// `new T(v)` for a non-class T, into storage from an allocator (NULL stays NULL).
+pub unsafe fn cpp_new_in<T>(p: *mut T, v: T) -> *mut T {
     if p.is_null() { return p; } // a nothrow new's NULL; never construct into it
     core::ptr::write(p, v);
     p
 }
-/// `new T[n]` -- msvcrt's `operator new[]` is malloc; value-initialized like `new T[n]()`.
-pub unsafe fn cpp_new_array<T>(n: impl TryInto<usize>) -> *mut T {
-    let n: usize = n.try_into().unwrap_or(0);
-    calloc(n.max(1), core::mem::size_of::<T>()) as *mut T
-}
+pub unsafe fn cpp_new<T>(v: T) -> *mut T { cpp_new_in(cpp_alloc::<T>(), v) }
 pub unsafe fn cpp_delete<T>(p: *mut T) {
-    if !p.is_null() { core::ptr::drop_in_place(p); free(p as *mut _); }
+    if !p.is_null() { core::ptr::drop_in_place(p); cpp_free(p as *mut _); }
 }
-pub unsafe fn cpp_delete_array<T>(p: *mut T) { if !p.is_null() { free(p as *mut _); } }
 /// atlbase.h's ATLASSERT: a DEBUG assertion, so a no-op MACRO (never an out-of-line no-op fn,
 /// which is an optimization barrier that has uncloaked ABI bugs before).
 macro_rules! ATLASSERT { ($($t:tt)*) => {}; }
@@ -1084,6 +1082,80 @@ pub fn cpp_pure_virtual_call(what: &str) -> ! { panic!("pure virtual call: {}", 
 # ---------------------------------------------------------------------------------------
 # synthetic TUs
 # ---------------------------------------------------------------------------------------
+
+
+def _link_name(i386: str, alias: str, sig: str) -> str:
+    """An extern for an Itanium-mangled operator: `size_t` is `j` on i386, `y` on 64-bit."""
+    wide = re.sub(r"^(_Z(?:nw|na))j", r"\1y", i386)
+    wide = re.sub(r"^(_Zd[la]Pv)j$", r"\1y", wide)
+    return (
+        f'    #[cfg_attr(target_pointer_width = "32", link_name = "{i386}")]\n'
+        f'    #[cfg_attr(target_pointer_width = "64", link_name = "{wide}")]\n'
+        f"    fn {alias}{sig};"
+    )
+
+
+def _allocator_helpers(model: ModuleModel) -> str:
+    """cpp_alloc/cpp_free and friends. Where the module (or a library it links, cicero's
+    cicbase.h) REPLACES a global allocation operator, they call that operator by its mangled
+    name -- what the C++ calls -- so an object a C++ half allocates and a Rust half frees
+    (or the reverse) stays on one heap while a static lib's users flip one at a time. The
+    defaults are msvcrt's calloc/free, zeroed as before."""
+    a = model.allocators
+    ext: list[str] = []
+    out: list[str] = []
+    void = "*mut core::ffi::c_void"
+    if "new" in a:
+        ext.append(_link_name(a["new"], "__cxx_op_new", f"(n: usize) -> {void}"))
+        alloc = "__cxx_op_new(core::mem::size_of::<T>())"
+    else:
+        alloc = "calloc(1, core::mem::size_of::<T>())"
+    out.append("/// `operator new` for a class: storage, constructed by the caller.")
+    out.append(f"pub unsafe fn cpp_alloc<T>() -> *mut T {{ {alloc} as *mut T }}")
+    if "delete" in a:
+        ext.append(_link_name(a["delete"], "__cxx_op_delete", f"(p: {void})"))
+        out.append(f"pub unsafe fn cpp_free(p: {void}) {{ __cxx_op_delete(p) }}")
+    else:
+        out.append(f"pub unsafe fn cpp_free(p: {void}) {{ free(p) }}")
+    if "new[]" in a:
+        ext.append(_link_name(a["new[]"], "__cxx_op_new_array", f"(n: usize) -> {void}"))
+        arr = "__cxx_op_new_array(n.max(1) * core::mem::size_of::<T>())"
+    else:
+        arr = "calloc(n.max(1), core::mem::size_of::<T>())"
+    out.append("/// `new T[n]` (trivial T: no cookie, no per-element construction).")
+    out.append(
+        "pub unsafe fn cpp_new_array<T>(n: impl TryInto<usize>) -> *mut T { "
+        f"let n: usize = n.try_into().unwrap_or(0); {arr} as *mut T }}"
+    )
+    free_arr = "__cxx_op_delete_array(p as *mut _)" if "delete[]" in a else "free(p as *mut _)"
+    if "delete[]" in a:
+        ext.append(_link_name(a["delete[]"], "__cxx_op_delete_array", f"(p: {void})"))
+    out.append(
+        f"pub unsafe fn cpp_delete_array<T>(p: *mut T) {{ if !p.is_null() {{ {free_arr}; }} }}"
+    )
+    tag_ptr = "core::ptr::NonNull::<u8>::dangling().as_ptr() as *const core::ffi::c_void"
+    for role, mangled in sorted(a.items()):
+        op, _, tag = role.partition(":")
+        if not tag:
+            continue
+        alias = f"__cxx_op_{'new_array' if op == 'new[]' else 'new'}_{tag}"
+        ext.append(
+            _link_name(mangled, alias, f"(n: usize, tag: *const core::ffi::c_void) -> {void}")
+        )
+        if op == "new":
+            out.append(f"/// `new({tag}{{}}) T`: {tag}'s allocator, NULL on failure.")
+            out.append(
+                f"pub unsafe fn cpp_alloc_{tag}<T>() -> *mut T {{ "
+                f"{alias}(core::mem::size_of::<T>(), {tag_ptr}) as *mut T }}"
+            )
+        else:
+            out.append(
+                f"pub unsafe fn cpp_new_array_{tag}<T>(n: impl TryInto<usize>) -> *mut T {{ "
+                "let n: usize = n.try_into().unwrap_or(0); "
+                f"{alias}(n.max(1) * core::mem::size_of::<T>(), {tag_ptr}) as *mut T }}"
+            )
+    head = 'extern "C" {\n' + "\n".join(ext) + "\n}\n" if ext else ""
+    return head + "\n".join(out) + "\n"
 
 
 def _strip_ns(text: str, model: ModuleModel) -> str:
