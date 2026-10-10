@@ -208,8 +208,8 @@ pub unsafe extern "system" fn MiAllocatePagesForMdl(
 
     if (low_page == 0) && (high_page == MmHighestPhysicalPage) {
         while pages_found < page_count {
-            MI_SET_USAGE(MI_USAGE_MDL);
-            MI_SET_PROCESS2("Kernel");
+            ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_MDL);
+            ntkrnl_sys::MI_SET_PROCESS2!("Kernel");
 
             page = 0;
             if MmAvailablePages != 0 {
@@ -254,8 +254,8 @@ pub unsafe extern "system" fn MiAllocatePagesForMdl(
                     continue;
                 }
 
-                MI_SET_USAGE(MI_USAGE_MDL);
-                MI_SET_PROCESS2("Kernel");
+                ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_MDL);
+                ntkrnl_sys::MI_SET_PROCESS2!("Kernel");
                 MiUnlinkFreeOrZeroedPage(pfn1);
 
                 (*pfn1).set_reference_count(1);

@@ -2,10 +2,10 @@
 //! Loaded via `#[macro_use] mod macros;` at the top of lib.rs so the bare names
 //! are in scope for every later module.
 
-/// NT_ASSERT — debug assertion; a no-op in the Rust translation (the C asserts are
-/// debug aids; failures elsewhere surface through the smoke harness).
+/// NT_ASSERT — a debug assertion, as ntoskrnl's `ASSERT!` is: checked when debug
+/// assertions are on, type-checked always, evaluated never in the release build.
 #[macro_export]
-macro_rules! NT_ASSERT { ($($t:tt)*) => {{}} }
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) } }
 
 /// FREE_POOL — the crate's pool-free helper (shims::FREE_POOL wraps ExFreePool).
 #[macro_export]

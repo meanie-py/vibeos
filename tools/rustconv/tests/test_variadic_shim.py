@@ -81,7 +81,7 @@ def test_a_forwarded_va_list_starts_from_the_trampolines():
 
     src = (
         "#[no_mangle]\n"
-        "pub unsafe extern \"C\" fn PrintString(szStr: LPCWSTR, args: ...) {\n"
+        'pub unsafe extern "C" fn PrintString(szStr: LPCWSTR, args: ...) {\n'
         "    let mut args_va: va_list;\n"
         "    va_start!(args_va, szStr);\n"
         "    PrintStringV(szStr, args_va);\n"

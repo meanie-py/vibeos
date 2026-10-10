@@ -180,3 +180,58 @@ def test_a_docs_only_lane_needs_no_build(lane):
     (lane / "README.md").write_text("docs\n")
     _commit_all(lane)
     assert _stage(_preflight(lane)) == "skip"
+
+
+# ── Python the build never runs does not cool the cache ───────────────────────
+
+
+def test_a_tools_script_the_build_never_runs_is_still_warm(repo):
+    """smp-bringup, 2026-10-09: a lint finding in a NEW tool, fixed after a green build,
+    was refused as "not BUILT" -- three no-op rebuilds for a file no compiler sees."""
+    (repo / "tools").mkdir()
+    (repo / "tools" / "mytool.py").write_text("print('v1')\n")
+    _build_all(repo)
+    (repo / "tools" / "mytool.py").write_text("print('v2')\n")
+    tree = _commit_all(repo)
+    assert warmth.missing(repo, tree, ARCHES, _is_inert) == []
+
+
+def test_a_generator_the_build_runs_is_cold(repo):
+    (repo / "tools").mkdir()
+    (repo / "tools" / "gen_x.py").write_text("print('v1')\n")
+    (repo / "CMakeLists.txt").write_text(
+        "add_custom_command(COMMAND python ${SRC}/tools/gen_x.py)\n"
+    )
+    _build_all(repo)
+    (repo / "tools" / "gen_x.py").write_text("print('v2')\n")
+    tree = _commit_all(repo)
+    assert warmth.missing(repo, tree, ARCHES, _is_inert) == list(ARCHES)
+
+
+def test_a_helper_a_generator_imports_is_cold(repo):
+    """Reachability follows imports: changing what a generator imports changes its output."""
+    (repo / "tools").mkdir()
+    (repo / "tools" / "gen_x.py").write_text("from tools.helper import f\n")
+    (repo / "tools" / "helper.py").write_text("def f(): return 1\n")
+    (repo / "build.rs").write_text('fn main() { run("-m tools.gen_x"); }\n')
+    _build_all(repo)
+    (repo / "tools" / "helper.py").write_text("def f(): return 2\n")
+    tree = _commit_all(repo)
+    assert warmth.missing(repo, tree, ARCHES, _is_inert) == list(ARCHES)
+
+
+@pytest.mark.parametrize("referenced", [True, False])
+def test_this_worktrees_build_ninja_counts_as_a_reference(repo, referenced):
+    """The control (`referenced=False`) is what makes this meaningful: the same edit is
+    warm when the generated build graph does not name the script."""
+    (repo / ".gitignore").write_text("build-*/\n")
+    (repo / "tools").mkdir()
+    (repo / "tools" / "post.py").write_text("print('v1')\n")
+    (repo / "build-amd64").mkdir()
+    cmd = "python /x/tools/post.py" if referenced else "ninja -t restat"
+    (repo / "build-amd64" / "build.ninja").write_text(f"  command = {cmd}\n")
+    _commit_all(repo)
+    _build_all(repo)
+    (repo / "tools" / "post.py").write_text("print('v2')\n")
+    tree = _commit_all(repo)
+    assert warmth.missing(repo, tree, ARCHES, _is_inert) == (list(ARCHES) if referenced else [])

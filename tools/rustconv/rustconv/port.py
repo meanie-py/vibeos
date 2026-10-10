@@ -935,7 +935,9 @@ def _explode_inline_sources(cml: str, target: str) -> str:
     target's own call (logonui's whole CMakeLists is four lines) had no line to comment and
     the flip refused. Only a one-line call is rewritten; a multi-line one is left alone.
     """
-    m = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M)
+    m = re.search(
+        rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M
+    )
     if m is None:
         return cml
     call = m.group(0)
@@ -997,7 +999,10 @@ def flip_cmake(cml: str, state: dict) -> str:
     # PrintString, apphelp's ShimDbgPrint). Listed beside the stub.
     if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
         text = re.sub(
-            r"(?m)^(\s*)rust_cohab_stub\.c$", r"\1rust_cohab_stub.c\n\1rust_varargs_shim.c", text, count=1
+            r"(?m)^(\s*)rust_cohab_stub\.c$",
+            r"\1rust_cohab_stub.c\n\1rust_varargs_shim.c",
+            text,
+            count=1,
         )
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:

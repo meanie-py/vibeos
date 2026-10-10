@@ -891,7 +891,9 @@ def test_crate_for_stem_ignores_a_member_crate_no_cmake_links_yet(arm64_cohab_re
     (rust / "inwork-rust").mkdir()
     (rust / "inwork-rust" / "Cargo.toml").write_text("[package]\nname = 'inwork-rust'\n")
     manifest = rust / "Cargo.toml"
-    manifest.write_text(manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",'))
+    manifest.write_text(
+        manifest.read_text().replace('"foo-rust",', '"foo-rust",\n    "inwork-rust",')
+    )
     provenance._workspace_members.cache_clear()
     provenance._cmake_named_crates.cache_clear()
     assert provenance._crate_for_stem(arm64_cohab_repo, "inwork") is None
@@ -9882,6 +9884,11 @@ def test_ata_health_check_fails_a_lost_interrupt():
     assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
     # The network stack's own timeouts are not the ATA stack's.
     assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+    fired = "*** ASSERT FAILED: !Srb.is_null() at atapi-rust/src/atapi/scsi.rs:1257\n"
+    bad = smoke_mod._ata_health_check(fired)
+    assert bad and bad["classification"] == "ATA_ASSERT"
+    # Someone else's assert is not the ATA stack's.
+    assert smoke_mod._ata_health_check("*** ASSERT FAILED: x at fastfat-rust/src/a.rs:1\n") is None
 
 
 def test_legide_check_needs_a_detected_channel(monkeypatch):

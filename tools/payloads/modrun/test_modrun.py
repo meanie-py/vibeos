@@ -24,6 +24,8 @@ def suites(tmp_path, monkeypatch):
         "  - {id: differs}\n"
         "  - {id: crash, arches: [amd64]}\n"
         "  - {id: known, xfail: 'bug 7'}\n"
+        "  - id: better\n"
+        "    diverge: [{why: 'rust finds it', c: '^find ', rust: '^find '}]\n"
     )
     monkeypatch.setattr(mr, "SUITES", tmp_path)
     return tmp_path
@@ -122,3 +124,38 @@ def test_a_torn_copy_is_recovered_and_a_lost_record_is_transport_not_a_diff(suit
     report, failures = mr.grade("\n".join(lost), "i386")
     assert any("TRANSPORT" in f for f in failures)
     assert not any("output differs" in r for r in report)
+
+
+def test_a_declared_divergence_leaves_the_diff_and_a_stale_one_fails(suites):
+    serial = _serial(
+        "[MODRUN:m.better:c] find none",
+        "[MODRUN:m.better:c] tail",
+        "[MODRUN] exit m.better c rc=0x00000000 ms=5",
+        "[MODRUN:m.better:rust] find disk0",
+        "[MODRUN:m.better:rust] tail",
+        "[MODRUN] exit m.better rust rc=0x00000000 ms=5",
+    )
+    report, failures = mr.grade(serial, "amd64-uefi")
+    assert "PASS m.better (2 variant(s), 2 line(s) each, 1 declared divergence(s))" in report
+    assert not any(f.startswith("m.better") for f in failures)
+
+    # Everything else must still match...
+    other = _serial(
+        "[MODRUN:m.better:c] find none",
+        "[MODRUN:m.better:c] tail",
+        "[MODRUN] exit m.better c rc=0x00000000 ms=5",
+        "[MODRUN:m.better:rust] find disk0",
+        "[MODRUN:m.better:rust] TAIL",
+        "[MODRUN] exit m.better rust rc=0x00000000 ms=5",
+    )
+    _, failures = mr.grade(other, "amd64-uefi")
+    assert any(f.startswith("m.better: rust: output differs") for f in failures)
+    # ...and once neither side prints the line, the entry is stale.
+    stale = _serial(
+        "[MODRUN:m.better:c] tail",
+        "[MODRUN] exit m.better c rc=0x00000000 ms=5",
+        "[MODRUN:m.better:rust] tail",
+        "[MODRUN] exit m.better rust rc=0x00000000 ms=5",
+    )
+    _, failures = mr.grade(stale, "amd64-uefi")
+    assert any("m.better: diverge 'rust finds it' matched no line" in f for f in failures)

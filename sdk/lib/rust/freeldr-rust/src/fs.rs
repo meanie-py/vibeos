@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_FILESYSTEM; // fs.c: DBG_DEFAULT_CHANNEL(FILESYSTEM)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, LIST_ENTRY, PCCH, PCSTR, PSTR, PULONGLONG};
@@ -57,10 +59,8 @@ static FileSystems: [PFS_MOUNT; 2] = [IsoMount, FatMount];
 
 extern "C" {
     fn DbgPrint(fmt: *const i8, ...) -> NTSTATUS;
-    fn ERR(fmt: *const i8, ...);
     fn UiMessageBox(msg: PCSTR);
     fn strlen(s: *const i8) -> usize;
-    fn TRACE(fmt: *const i8, ...);
 }
 
 // fs.c:54 `#define IS_VALID_FILEID(FileId) \
@@ -144,7 +144,7 @@ pub unsafe extern "C" fn FsGetVolumeSize(
         core::ptr::null()
     };
     if ServiceName.is_null() {
-        ERR(b"Non-mounted device %lu\n\0".as_ptr() as PCHAR, (DeviceId) as usize);
+        ERR!("Non-mounted device %lu\n", (DeviceId) as usize);
         return ENXIO;
     }
 
@@ -298,7 +298,7 @@ pub unsafe extern "C" fn ArcOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG
     let DeviceOpenMode: OPENMODE;
     let mut DeviceId: u32;
 
-    TRACE(b"Opening file '%s'...\n\0".as_ptr() as PCCH, (Path) as usize);
+    TRACE!("Opening file '%s'...\n", (Path) as usize);
 
     *FileId = INVALID_FILE_ID;
 
@@ -522,7 +522,7 @@ pub unsafe extern "C" fn ArcGetFileInformation(
 #[no_mangle]
 pub unsafe extern "C" fn FileSystemError(ErrorString: PCSTR) {
     
-    ERR(b"%s\n\0".as_ptr() as PCSTR, (ErrorString) as usize);
+    ERR!("%s\n", (ErrorString) as usize);
     UiMessageBox(ErrorString);
 }
 
@@ -591,7 +591,7 @@ pub unsafe extern "C" fn FsOpenFile(
     }
 
     if pFsGetVolumeSize.is_none() {
-        ERR(b"Unsupported file system '%S' on storage device %lu\n\0".as_ptr() as PCHAR, (ServiceName) as usize, (DeviceId) as usize);
+        ERR!("Unsupported file system '%S' on storage device %lu\n", (ServiceName) as usize, (DeviceId) as usize);
         return EIO;
     }
 
@@ -617,7 +617,7 @@ pub unsafe extern "C" fn FsGetNumPathParts(Path: PCSTR) -> ULONG {
     }
     num += 1;
 
-    TRACE(b"FsGetNumPathParts() Path = %s NumPathParts = %d\n\0".as_ptr() as *const i8, (Path) as usize, (num) as usize);
+    TRACE!("FsGetNumPathParts() Path = %s NumPathParts = %d\n", (Path) as usize, (num) as usize);
 
     return num;
 }
@@ -640,7 +640,7 @@ pub unsafe extern "C" fn FsGetFirstNameFromPath(Buffer: PCHAR, Path: PCSTR) {
 
     *Buffer.add(i) = 0;
 
-    TRACE(b"FsGetFirstNameFromPath() Path = %s FirstName = %s\n\0".as_ptr() as PCSTR, (Path) as usize, (Buffer) as usize);
+    TRACE!("FsGetFirstNameFromPath() Path = %s FirstName = %s\n", (Path) as usize, (Buffer) as usize);
 }
 
 #[no_mangle]
@@ -652,7 +652,7 @@ pub unsafe extern "C" fn FsRegisterDevice(
     let pNewEntry: *mut DEVICE;
     let Length: usize;
 
-    TRACE(b"FsRegisterDevice(%s)\n\0".as_ptr() as *const i8, (DeviceName) as usize);
+    TRACE!("FsRegisterDevice(%s)\n", (DeviceName) as usize);
 
     Length = strlen(DeviceName as *const i8) + 1;
     pNewEntry = FrLdrTempAlloc(

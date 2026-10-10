@@ -25,7 +25,7 @@ use crate::workque::FatOplockComplete;
 extern "system" {
     fn FsRtlPostStackOverflow(Context: *mut core::ffi::c_void, Event: PKEVENT, StackOverflowRoutine: *const core::ffi::c_void);
     fn FsRtlCheckLockForReadAccess(FileLock: *const core::ffi::c_void, Irp: PIRP) -> BOOLEAN;
-    fn FatBugCheck(arg1: ULONG_PTR, arg2: ULONG_PTR, arg3: ULONG_PTR) -> !;
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FsRtlCheckOplock(Oplock: *mut core::ffi::c_void, Irp: PIRP, Context: *mut core::ffi::c_void, CompletionRoutine: *const core::ffi::c_void, PostIrpRoutine: *const core::ffi::c_void) -> NTSTATUS;
 }
 

@@ -125,4 +125,3 @@ pub type PCTSTR = LPCWSTR;
 pub type LPTCH = LPWSTR;
 pub type PTCH = LPWSTR;
 // ==== end UNICODE TCHAR family ====
-

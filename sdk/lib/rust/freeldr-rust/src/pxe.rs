@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_FILESYSTEM; // pxe.c: DBG_DEFAULT_CHANNEL(FILESYSTEM)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR, UINT16};
@@ -21,8 +23,6 @@ pub use ntkrnl_sys::ddk::_SEEKMODE_SeekAbsolute as SeekAbsolute;
 
 extern "C" {
     fn memcmp(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> i32;
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn StallExecutionProcessor(microseconds: ULONG);
     fn strlen(s: *const i8) -> usize;
     fn tolower(c: i32) -> i32;
@@ -199,7 +199,7 @@ unsafe fn FindPxeStructure() -> PPXE {
             continue;
         }
 
-        TRACE(b"!PXE structure found at %p\n\0".as_ptr() as *const i8 , (Ptr) as usize);
+        TRACE!("!PXE structure found at %p\n", (Ptr) as usize);
         return Ptr;
     }
 
@@ -225,16 +225,16 @@ unsafe fn CallPxe(Service: UINT16, Parameter: PVOID) -> BOOLEAN {
 
     if Service != PXENV_TFTP_READ {
         StallExecutionProcessor(100 * 1000);
-        TRACE(b"PxeCall(0x%x, %p)\n\0".as_ptr() as *const i8, (Service) as usize, (Parameter) as usize);
+        TRACE!("PxeCall(0x%x, %p)\n", (Service) as usize, (Parameter) as usize);
     }
 
     let exit = PxeCallApi((*pxe).EntryPointSP.segment, (*pxe).EntryPointSP.offset, (Service) as u16 , Parameter);
     if exit != PXENV_EXIT_SUCCESS {
-        ERR(b"PxeCall(0x%x, %p) failed with exit=%d status=0x%x\n\0".as_ptr() as *const i8, (Service) as usize, (Parameter) as usize, (exit) as usize, (*(Parameter as *const PXENV_STATUS)) as usize);
+        ERR!("PxeCall(0x%x, %p) failed with exit=%d status=0x%x\n", (Service) as usize, (Parameter) as usize, (exit) as usize, (*(Parameter as *const PXENV_STATUS)) as usize);
         return 0u8;
     }
     if *(Parameter as *const PXENV_STATUS) != PXENV_STATUS_SUCCESS {
-        ERR(b"PxeCall(0x%x, %p) succeeded, but returned error status 0x%x\n\0".as_ptr() as *const i8, (Service) as usize, (Parameter) as usize, (*(Parameter as *const PXENV_STATUS)) as usize);
+        ERR!("PxeCall(0x%x, %p) succeeded, but returned error status 0x%x\n", (Service) as usize, (Parameter) as usize, (*(Parameter as *const PXENV_STATUS)) as usize);
         return 0u8;
     }
     1u8
@@ -283,7 +283,7 @@ unsafe extern "C" fn PxeGetFileInformation(FileId: u32, Information: *mut FILEIN
     core::ptr::copy_nonoverlapping(FileName as *const u8, (*Information).FileName.as_mut_ptr() as *mut u8 , (*Information).FileNameLength as usize);
     *core::ptr::addr_of_mut!((*Information).FileName).cast::<u8>().add((*Information).FileNameLength as usize) = 0;
 
-    TRACE(b"PxeGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n\0".as_ptr() as PCSTR, (FileId) as usize, ((*Information).EndingAddress.__bindgen_anon_1.LowPart) as usize, ((*Information).CurrentAddress.__bindgen_anon_1.LowPart) as usize);
+    TRACE!("PxeGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n", (FileId) as usize, ((*Information).EndingAddress.__bindgen_anon_1.LowPart) as usize, ((*Information).CurrentAddress.__bindgen_anon_1.LowPart) as usize);
 
     ESUCCESS
 }
@@ -334,7 +334,7 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
         core::mem::size_of_val(&_OpenFileName),
     );
     if CallPxe(PXENV_TFTP_GET_FSIZE, &mut sizeData as *mut _ as PVOID) == 0 {
-        ERR(b"Failed to get '%s' size\n\0".as_ptr() as *const i8, (Path) as usize);
+        ERR!("Failed to get '%s' size\n", (Path) as usize);
         return EIO;
     }
 

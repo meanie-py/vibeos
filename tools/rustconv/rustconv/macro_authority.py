@@ -43,9 +43,13 @@ CANONICAL_BUILD_ROOT = "/tmp/vibeos"
 _DEFINE_FN_LIKE = re.compile(r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)\(", re.M)
 # `#define NAME OTHER` where the whole body is one bare identifier -- an ALIAS. It is
 # object-like, so `_DEFINE_FN_LIKE` cannot see it, but invoking it invokes whatever it
-# names, so an alias to a function-like macro IS function-like at every call site.
+# names, so an alias to a function-like macro IS function-like at every call site. A
+# leading cast is still an alias: wdm.h's `#define ASSERT (void)RTL_VERIFY` made ASSERT
+# a sealed "runtime call" the moment plain C stopped stripping it.
 _DEFINE_ALIAS = re.compile(
-    r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)[ \t]+([A-Za-z_]\w*)[ \t]*$", re.M
+    r"^[ \t]*#[ \t]*define\s+([A-Za-z_]\w*)[ \t]+(?:\([ \t]*[A-Za-z_]\w*[ \t]*\)[ \t]*)?"
+    r"([A-Za-z_]\w*)[ \t]*$",
+    re.M,
 )
 _ARCHES = ("i386", "amd64", "arm64")
 
@@ -368,7 +372,9 @@ def _borrow_dirs(repo_root: Path, source: Path) -> list[Path]:
         # CMakeLists is the one left carrying their flags.
         from .profile_derive import _unroll_target_foreach
 
-        if str(source.relative_to(ancestor)) in _unroll_target_foreach(cml.read_text(errors="replace")):
+        if str(source.relative_to(ancestor)) in _unroll_target_foreach(
+            cml.read_text(errors="replace")
+        ):
             dirs.append(ancestor.relative_to(repo_root))
             break
     return dirs

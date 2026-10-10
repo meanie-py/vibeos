@@ -824,11 +824,15 @@ pub unsafe fn MI_GET_NEXT_COLOR() -> ULONG {
     MI_GET_PAGE_COLOR(MmSystemPageColor)
 }
 
-/// MI_SET_USAGE / MI_SET_PROCESS2 — no-ops in free builds.
-#[inline]
-pub fn MI_SET_USAGE(_usage: ULONG) {}
-#[inline]
-pub fn MI_SET_PROCESS2(_name: &str) {}
+/// `MI_SET_USAGE` / `MI_SET_PROCESS` / `MI_SET_PROCESS2` (mm.h): PFN-tracing hooks that
+/// expand to NOTHING unless `MI_TRACE_PFNS`, which this build never sets -- so their
+/// arguments are never evaluated. Macros for that reason: an empty fn evaluates them.
+#[macro_export]
+macro_rules! MI_SET_USAGE { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! MI_SET_PROCESS { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! MI_SET_PROCESS2 { ($($t:tt)*) => { () }; }
 
 // MI_USAGE_PAGED_POOL / MI_USAGE_NONPAGED_POOL — see MI_PFN_USAGES enum below
 

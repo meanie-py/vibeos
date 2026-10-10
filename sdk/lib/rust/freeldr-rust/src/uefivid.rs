@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_UI; // uefivid.c: DBG_DEFAULT_CHANNEL(UI)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::PCSTR;
@@ -12,8 +14,6 @@ pub const VideoGraphicsMode: VIDEODISPLAYMODE = 1;
 pub type PVIDEODISPLAYMODE = *mut VIDEODISPLAYMODE;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
 }
 
 extern "C" {
@@ -106,7 +106,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
         &mut gop as *mut _ as *mut *mut core::ffi::c_void,
     );
     if Status != EFI_SUCCESS {
-        TRACE(b"Failed to find GOP with status %d\n\0".as_ptr() as PCHAR, (Status) as usize);
+        TRACE!("Failed to find GOP with status %d\n", (Status) as usize);
         return Status;
     }
 
@@ -130,7 +130,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
         }
 
         PixelBltOnly | _ => {
-            ERR(b"Unsupported UEFI GOP format %lu\n\0".as_ptr() as PCHAR, (PixelFormat) as usize);
+            ERR!("Unsupported UEFI GOP format %lu\n", (PixelFormat) as usize);
             pPixelBitmask = core::ptr::null_mut();
             BitsPerPixel = 0;
         }
@@ -149,7 +149,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
         pPixelBitmask as PPIXEL_BITMASK,
     ) == 0
     {
-        ERR(b"Couldn't initialize video framebuffer\n\0".as_ptr() as PCHAR);
+        ERR!("Couldn't initialize video framebuffer\n");
         Status = EFI_UNSUPPORTED;
     }
     Status

@@ -29,7 +29,7 @@ extern "system" {
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
     fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
-    fn CanFsdWait(Irp: PIRP) -> i32;
+    fn CanFsdWait(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(irp: *mut IRP, wait: i32,) -> *mut IRP_CONTEXT;
 }
 
@@ -69,7 +69,7 @@ pub unsafe extern "system" fn FatFsdPnp(
         let Wait: i32 = if (*stack_loc).FileObject.is_null() {
             1
         } else {
-            CanFsdWait(Irp)
+            CanFsdWait(Irp) as i32
         };
 
         *p_irp_context = FatCreateIrpContext(Irp, Wait);

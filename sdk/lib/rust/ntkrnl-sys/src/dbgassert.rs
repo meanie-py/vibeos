@@ -68,3 +68,20 @@ macro_rules! nt_assertmsg {
         debug_assert!($crate::dbgassert::truthy($e), "{:?}", $msg)
     };
 }
+
+/// SAL and WPP annotations that expand to NOTHING in this build: no_sal2.h /
+/// concurrencysal.h / specstrings.h (no `_PREFAST_`), storswtr.h (no WPP). Their
+/// operands are never evaluated, so these discard their tokens -- an empty `fn` would
+/// evaluate every one of them, out of line.
+#[macro_export]
+macro_rules! _Analysis_assume_ { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! _Analysis_assume_lock_held_ { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! _Analysis_assume_lock_not_held_ { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! __analysis_assert { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! WPP_INIT_TRACING { ($($t:tt)*) => { () }; }
+#[macro_export]
+macro_rules! WPP_CLEANUP { ($($t:tt)*) => { () }; }

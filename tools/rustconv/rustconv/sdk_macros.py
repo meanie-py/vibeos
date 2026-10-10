@@ -274,7 +274,7 @@ class _Parser:
         ty = base
         for n in range(stars):
             ty = ("*const " if const and n == 0 else "*mut ") + ty
-        return ty, stars > 0
+        return ty, stars > 0 or base in _POINTER_TYPES
 
     def unary(self) -> Node:
         tok = self.peek()
@@ -405,6 +405,10 @@ _INT = {
     "LONG_PTR": ("P", True),
     "INT_PTR": ("P", True),
 }
+
+
+#: `_emit`'s type for an expression cast to a pointer type: arithmetic on it is element-wise.
+_PTR = "<pointer>"
 
 
 def _promoted(ty: str | None) -> str | None:
@@ -542,8 +546,8 @@ def _emit(node: Node) -> tuple[str, str | None]:
             # Give the literal its C type: Rust infers it from the cast TARGET, so
             # `0x80000001 as LONG` is an out-of-range i32 literal (HKEY_CURRENT_USER), where C
             # reads an `unsigned int` and then converts.
-            return f"(({_c_literal(inner.text)}) as {ty})", (None if _ptr else ty)
-        return f"(({_emit(inner)[0]}) as {ty})", (None if _ptr else ty)
+            return f"(({_c_literal(inner.text)}) as {ty})", (_PTR if _ptr else ty)
+        return f"(({_emit(inner)[0]}) as {ty})", (_PTR if _ptr else ty)
     if k == "call":
         fn, *args = node.kids
         params = _SIGS.get(fn.text, []) if fn.kind == "ident" else []
@@ -591,6 +595,16 @@ def _emit(node: Node) -> tuple[str, str | None]:
         if op in ("&&", "||"):
             # C: each operand is tested against zero, and the result is an int 0/1.
             return f"((((({ta}) as isize) != 0) {op} ((({tb}) as isize) != 0)) as c_int)", "c_int"
+        if _PTR in (ya, yb) and op in ("+", "-"):
+            # C pointer arithmetic: `(PUCHAR)p + n` steps n elements of the pointee, as
+            # `wrapping_add` does (ndis's NDIS_GET_PACKET_STATUS: `p + NdisPacketOobOffset`).
+            # pointer - pointer is a distance, not this; refused rather than guessed.
+            if ya == _PTR and yb != _PTR:
+                step = "wrapping_add" if op == "+" else "wrapping_sub"
+                return f"({ta}).{step}(({tb}) as usize)", _PTR
+            if yb == _PTR and ya != _PTR and op == "+":
+                return f"({tb}).wrapping_add(({ta}) as usize)", _PTR
+            raise LowerError("pointer - pointer")
         pa, pb = _promoted(ya), _promoted(yb)
         if op in ("==", "!=", "<", ">", "<=", ">="):
             if pa in _INT and pb in _INT:
@@ -631,6 +645,7 @@ def _emit(node: Node) -> tuple[str, str | None]:
 # otherwise; lower_for_crate loads it before lowering.
 _SIGS: dict[str, list[str]] = {}
 _OPTION_TYPES: set[str] = set()
+_POINTER_TYPES: set[str] = set()
 _FN_DECL = re.compile(r"\bpub fn ([A-Za-z_]\w*)\s*\(([^)]*)\)")
 _TYPE_DECL = re.compile(r"^pub type (\w+) = ([^;]+);", re.M)
 
@@ -659,6 +674,16 @@ def load_signatures(crate_src: Path) -> None:
     _SIGS.update(sigs)
     _OPTION_TYPES.clear()
     _OPTION_TYPES.update(options)
+    # Pointer typedefs (`PUCHAR = *mut UCHAR`), aliases followed: a cast to one is a pointer
+    # cast, so `(PUCHAR)p + n` is pointer arithmetic, which a bare `+` is not in Rust.
+    pointers = {n for n, v in types.items() if v.startswith(("*mut ", "*const "))}
+    changed = True
+    while changed:
+        new = {n for n, v in types.items() if v in pointers and n not in pointers}
+        pointers |= new
+        changed = bool(new)
+    _POINTER_TYPES.clear()
+    _POINTER_TYPES.update(pointers)
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
@@ -811,24 +836,26 @@ def outside_block_names(prelude: Path) -> set[str]:
     ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", text))
 
 
-def other_block_names(prelude: Path) -> set[str]:
-    """Items another generated block of the prelude already defines.
+def outside_sdk_block_names(prelude: Path) -> set[str]:
+    """Items the prelude defines anywhere but THIS block -- other generated blocks included.
 
-    `port resolve` runs first and copies a name it finds the tree agreeing on (w32time's
-    `E_FAIL`, `S_OK`, `HKEY_LOCAL_MACHINE`) into its own block; lowering the same name into
-    this one too is E0428, three times over.
+    ndis: after a replay `port macros` ran before `port resolve`, so the island's
+    `NDIS_STATUS_*` were briefly unresolved and got lowered here; resolve then put them in
+    its facts block, and because block items are re-wanted on every run, the duplicates
+    (E0428) never went away. A name another block owns is not this block's to keep.
     """
     text = prelude.read_text() if prelude.is_file() else ""
-    text = re.sub(re.escape(BEGIN) + r".*?" + re.escape(END), "", text, flags=re.S)
-    blocks = "".join(re.findall(r"(?ms)^// ==== (?!end).*?^// ==== end[^\n]*\n", text))
+    start, end = text.find(BEGIN), text.find(END)
+    if start >= 0 and end > start:
+        text = text[:start] + text[end + len(END) :]
     return set(
         re.findall(
             r"^\s*(?:#\[macro_export\]\s*)?(?:pub(?:\([^)]*\))?\s+)?"
             r"(?:const|static(?:\s+mut)?|type|fn|struct|union)\s+([A-Za-z_]\w*)",
-            blocks,
+            text,
             re.M,
         )
-    ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", blocks))
+    ) | set(re.findall(r"macro_rules!\s*([A-Za-z_]\w*)", text))
 
 
 def existing_items(prelude: Path) -> dict[str, set[str]]:

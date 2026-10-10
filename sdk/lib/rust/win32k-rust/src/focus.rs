@@ -130,9 +130,6 @@ unsafe fn WndSetLastActive(pwnd: PWND, pwndLastActive: PWND) {
     ReplaceWndPtr(core::ptr::addr_of_mut!((*pwnd).spwndLastActive), pwndLastActive);
 }
 
-// ASSERT_REFS_CO — debug-only assertion, no-op in release (matches scrollex.rs).
-#[inline(always)]
-unsafe fn ASSERT_REFS_CO(_Window: PWND) {}
 
 // IntReferenceThreadInfo / IntDereferenceThreadInfo (win32.h macros): inc/dec the
 // RefCount in the flattened W32THREAD prefix; on 0 delete (matches object.rs).
@@ -1351,7 +1348,7 @@ unsafe fn co_IntSetForegroundAndFocusWindow_impl(
     let mut Ret: BOOL = 0;
 
     if !Wnd.is_null() {
-        ASSERT_REFS_CO(Wnd);
+        ASSERT_REFS_CO!(Wnd);
     }
 
     PrevForegroundQueue = IntGetFocusMessageQueue();
@@ -1479,7 +1476,7 @@ unsafe fn co_IntSetActiveWindow_impl(
         return 0;
     }
 
-    ASSERT_REFS_CO(Wnd);
+    ASSERT_REFS_CO!(Wnd);
     hWnd = UserHMGetHandle(Wnd);
 
     if (*Wnd).ExStyle & WS_EX_NOACTIVATE != 0 {
@@ -2069,7 +2066,7 @@ pub unsafe extern "C" fn co_IntSetForegroundWindow(Window: PWND) -> BOOL {
 
 unsafe fn co_IntSetForegroundWindow_impl(Window: PWND) -> BOOL {
     if !Window.is_null() {
-        ASSERT_REFS_CO(Window);
+        ASSERT_REFS_CO!(Window);
     }
 
     co_IntSetForegroundAndFocusWindow(Window, 0, 1)
@@ -2089,7 +2086,7 @@ pub unsafe extern "C" fn co_IntSetForegroundWindowMouse(Window: PWND) -> BOOL {
 
 unsafe fn co_IntSetForegroundWindowMouse_impl(Window: PWND) -> BOOL {
     if !Window.is_null() {
-        ASSERT_REFS_CO(Window);
+        ASSERT_REFS_CO!(Window);
     }
 
     co_IntSetForegroundAndFocusWindow(Window, 1 as BOOL, 0 as BOOL)

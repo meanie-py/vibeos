@@ -54,7 +54,7 @@ extern "system" {
     fn FatFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
     fn FatMarkVolume(IrpContext: PIRP_CONTEXT, Vcb: PVCB, state: u32);
     fn FatToggleMediaEjectDisable(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Disable: BOOLEAN) -> u32;
-    fn FatBugCheck(p1: u32, p2: u32, p3: u32) -> !;
+    fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
     fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
@@ -327,7 +327,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                     FlushVolume = true;
                 }
                 _ => {
-                    FatBugCheck(TypeOfOpen as u32, 0, 0);
+                    FatBugCheck(TypeOfOpen as usize, 0, 0);
                 }
             }
 

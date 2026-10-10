@@ -8,7 +8,6 @@ use core::ffi::c_void;
 extern "C" {
     fn printf(fmt: *const i8, ...) -> i32;
     fn strlen(s: *const i8) -> usize;
-    fn TRACE(fmt: *const i8, ...);
     fn MachConsGetCh();
 }
 

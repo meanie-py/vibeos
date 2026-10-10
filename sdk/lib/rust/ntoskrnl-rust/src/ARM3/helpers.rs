@@ -756,14 +756,8 @@ pub fn mmpfn_increment_reference_count(pfn: PMMPFN) {
 }
 
 // ============================================================================
-// MI_SET_PROCESS / MI_IS_ROS_PFN / MI_IS_MEMORY_AREA_VAD
+// MI_IS_ROS_PFN / MI_IS_MEMORY_AREA_VAD
 // ============================================================================
-
-#[inline]
-pub fn MI_SET_PROCESS(_process: PVOID) {}
-
-#[inline]
-pub fn MI_SET_PROCESS2(_name: PVOID) {}
 
 #[inline]
 pub unsafe fn MI_IS_ROS_PFN(pfn: PMMPFN) -> bool {

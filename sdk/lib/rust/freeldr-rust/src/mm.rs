@@ -1,12 +1,11 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_MEMORY; // mm.c: DBG_DEFAULT_CHANNEL(MEMORY)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::meminit::*;
 use crate::heap::*;
 use core::ffi::c_void;
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
 }
 
 extern "C" {
@@ -24,7 +23,7 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     let mut MemorySize = MemorySize;
 
     if MemorySize == 0 {
-        WARN(b"MmAllocateMemory() called for 0 bytes. Returning NULL.\n\0".as_ptr() as PCHAR);
+        WARN!("MmAllocateMemory() called for 0 bytes. Returning NULL.\n");
         UiMessageBoxCritical(b"Memory allocation failed: MmAllocateMemory() called for 0 bytes.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -34,7 +33,7 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     PagesNeeded = ROUND_UP(MemorySize, MM_PAGE_SIZE) / MM_PAGE_SIZE;
 
     if FreePagesInLookupTable < PagesNeeded {
-        ERR(b"Memory allocation failed in MmAllocateMemory(). Not enough free memory to allocate %d bytes.\n\0".as_ptr() as PCHAR, MemorySize);
+        ERR!("Memory allocation failed in MmAllocateMemory(). Not enough free memory to allocate %d bytes.\n", MemorySize);
         UiMessageBoxCritical(b"Memory allocation failed: out of memory.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -42,7 +41,7 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     FirstFreePageFromEnd = MmFindAvailablePages(PageLookupTableAddress, TotalPagesInLookupTable, PagesNeeded, 0u8);
 
     if FirstFreePageFromEnd == 0 {
-        ERR(b"Memory allocation failed in MmAllocateMemory(). Not enough free memory to allocate %d bytes.\n\0".as_ptr() as PCHAR, MemorySize);
+        ERR!("Memory allocation failed in MmAllocateMemory(). Not enough free memory to allocate %d bytes.\n", MemorySize);
         UiMessageBoxCritical(b"Memory allocation failed: out of memory.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -52,9 +51,8 @@ pub unsafe extern "C" fn MmAllocateMemoryWithType(
     FreePagesInLookupTable -= PagesNeeded;
     MemPointer = (FirstFreePageFromEnd * MM_PAGE_SIZE) as PVOID;
 
-    TRACE(b"Allocated %d bytes (%d pages) of memory (type %ld) starting at page 0x%lx.\n\0".as_ptr() as PCHAR,
-          MemorySize, PagesNeeded, MemoryType, FirstFreePageFromEnd);
-    TRACE(b"Memory allocation pointer: 0x%x\n\0".as_ptr() as PCHAR, MemPointer);
+    TRACE!("Allocated %d bytes (%d pages) of memory (type %ld) starting at page 0x%lx.\n", MemorySize, PagesNeeded, MemoryType, FirstFreePageFromEnd);
+    TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
     if ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned {
         LoaderPagesSpanned = ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) as PFN_NUMBER;
@@ -70,7 +68,7 @@ pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAdd
     let MemPointer: *mut core::ffi::c_void;
 
     if MemorySize == 0 {
-        WARN(b"MmAllocateMemoryAtAddress() called for 0 bytes. Returning NULL.\n\0".as_ptr() as *const i8);
+        WARN!("MmAllocateMemoryAtAddress() called for 0 bytes. Returning NULL.\n");
         UiMessageBoxCritical(b"Memory allocation failed: MmAllocateMemoryAtAddress() called for 0 bytes.\0".as_ptr() as *const i8);
         return core::ptr::null_mut();
     }
@@ -80,15 +78,13 @@ pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAdd
     StartPageNumber = MmGetPageNumberFromAddress(DesiredAddress);
 
     if FreePagesInLookupTable < PagesNeeded {
-        ERR(b"Memory allocation failed in MmAllocateMemoryAtAddress(). Not enough free memory to allocate %d bytes (requesting %d pages but have only %d). \n\0".as_ptr() as *const i8, 
-            MemorySize, PagesNeeded, FreePagesInLookupTable);
+        ERR!("Memory allocation failed in MmAllocateMemoryAtAddress(). Not enough free memory to allocate %d bytes (requesting %d pages but have only %d). \n", MemorySize, PagesNeeded, FreePagesInLookupTable);
         UiMessageBoxCritical(b"Memory allocation failed: out of memory.\0".as_ptr() as *const i8);
         return core::ptr::null_mut();
     }
 
     if MmAreMemoryPagesAvailable(PageLookupTableAddress, TotalPagesInLookupTable, DesiredAddress, PagesNeeded) == 0u8 {
-        WARN(b"Memory allocation failed in MmAllocateMemoryAtAddress(). Not enough free memory to allocate %d bytes at address %p.\n\0".as_ptr() as *const i8,
-             MemorySize, DesiredAddress);
+        WARN!("Memory allocation failed in MmAllocateMemoryAtAddress(). Not enough free memory to allocate %d bytes at address %p.\n", MemorySize, DesiredAddress);
 
         return core::ptr::null_mut();
     }
@@ -98,8 +94,8 @@ pub unsafe extern "C" fn MmAllocateMemoryAtAddress(MemorySize: usize, DesiredAdd
     FreePagesInLookupTable -= PagesNeeded;
     MemPointer = (StartPageNumber * MM_PAGE_SIZE) as *mut core::ffi::c_void;
 
-    TRACE(b"Allocated %d bytes (%d pages) of memory starting at page %d.\n\0".as_ptr() as *const i8, MemorySize, PagesNeeded, StartPageNumber);
-    TRACE(b"Memory allocation pointer: 0x%x\n\0".as_ptr() as *const i8, MemPointer);
+    TRACE!("Allocated %d bytes (%d pages) of memory starting at page %d.\n", MemorySize, PagesNeeded, StartPageNumber);
+    TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
     if ((MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT) > LoaderPagesSpanned  {
         LoaderPagesSpanned = (MemPointer as usize + MemorySize + PAGE_SIZE - 1) >> PAGE_SHIFT ;
@@ -132,7 +128,7 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     let MemPointer: PVOID;
 
     if MemorySize == 0 {
-        WARN(b"MmAllocateHighestMemoryBelowAddress() called for 0 bytes. Returning NULL.\n\0".as_ptr() as PCHAR);
+        WARN!("MmAllocateHighestMemoryBelowAddress() called for 0 bytes. Returning NULL.\n");
         UiMessageBoxCritical(b"Memory allocation failed: MmAllocateHighestMemoryBelowAddress() called for 0 bytes.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -142,7 +138,7 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     DesiredAddressPageNumber = (DesiredAddress as ULONG_PTR) / MM_PAGE_SIZE;
 
     if FreePagesInLookupTable < PagesNeeded {
-        ERR(b"Memory allocation failed in MmAllocateHighestMemoryBelowAddress(). Not enough free memory to allocate %d bytes.\n\0".as_ptr() as PCHAR, MemorySize);
+        ERR!("Memory allocation failed in MmAllocateHighestMemoryBelowAddress(). Not enough free memory to allocate %d bytes.\n", MemorySize);
         UiMessageBoxCritical(b"Memory allocation failed: out of memory.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -150,7 +146,7 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     FirstFreePageFromEnd = MmFindAvailablePagesBeforePage(PageLookupTableAddress, TotalPagesInLookupTable, PagesNeeded, DesiredAddressPageNumber);
 
     if FirstFreePageFromEnd == 0 {
-        ERR(b"Memory allocation failed in MmAllocateHighestMemoryBelowAddress(). Not enough free memory to allocate %d bytes.\n\0".as_ptr() as PCHAR, MemorySize);
+        ERR!("Memory allocation failed in MmAllocateHighestMemoryBelowAddress(). Not enough free memory to allocate %d bytes.\n", MemorySize);
         UiMessageBoxCritical(b"Memory allocation failed: out of memory.\0".as_ptr() as PCHAR);
         return core::ptr::null_mut();
     }
@@ -160,8 +156,8 @@ pub unsafe extern "C" fn MmAllocateHighestMemoryBelowAddress(
     FreePagesInLookupTable -= PagesNeeded;
     MemPointer = (FirstFreePageFromEnd * MM_PAGE_SIZE) as PVOID;
 
-    TRACE(b"Allocated %d bytes (%d pages) of memory starting at page %d.\n\0".as_ptr() as PCHAR, MemorySize, PagesNeeded, FirstFreePageFromEnd);
-    TRACE(b"Memory allocation pointer: 0x%x\n\0".as_ptr() as PCHAR, MemPointer);
+    TRACE!("Allocated %d bytes (%d pages) of memory starting at page %d.\n", MemorySize, PagesNeeded, FirstFreePageFromEnd);
+    TRACE!("Memory allocation pointer: 0x%x\n", MemPointer);
 
     if (((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT) > LoaderPagesSpanned {
         LoaderPagesSpanned = ((MemPointer as ULONG_PTR) + MemorySize) >> PAGE_SHIFT ;

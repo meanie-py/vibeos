@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, FIXME, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_MEMORY; // pcmem.c: DBG_DEFAULT_CHANNEL(MEMORY)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 // freeldr_ddk_imports dropped (not in ddk): Type
@@ -11,12 +13,8 @@ pub use ntkrnl_sys::ddk::_TYPE_OF_MEMORY_LoaderSpecialMemory as LoaderSpecialMem
 
 extern "C" {
     fn AddMemoryDescriptor( MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxCount: ULONG, BasePage: PFN_NUMBER, PageCount: PFN_NUMBER, MemoryType: TYPE_OF_MEMORY, ) -> ULONG;
-    fn ERR(fmt: *const i8, ...);
-    fn FIXME(fmt: *const i8, ...);
     fn INT386_SUCCESS(regs: REGS) -> BOOLEAN;
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
-    fn TRACE(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
     fn MmGetSystemMemoryMapTypeString(MemoryType: TYPE_OF_MEMORY) -> PCHAR;
     fn READ_PORT_UCHAR(Port: PUCHAR) -> UCHAR;
     fn WRITE_PORT_UCHAR(Port: PUCHAR, Value: UCHAR);
@@ -46,12 +44,6 @@ pub unsafe extern "C" fn ULONGLONG_ALIGN_UP_BY(
 ) -> ULONGLONG {
     ULONGLONG_ALIGN_DOWN_BY(size + align - 1, align)
 }
-
-// ndk/rtlfuncs.h:256 `#define ASSERTMSG(msg,exp) ((void)0)` in the
-// NDEBUG freeldr build — rustconv made it `extern { fn ASSERTMSG }`.
-// Real cdecl no-op. UNIQUE (C macro).
-#[no_mangle]
-pub unsafe extern "C" fn ASSERTMSG(_msg: PCHAR, _condition: BOOLEAN) {}
 
 // x86common.h realmode BSS-layout #defines (dropped by rustconv).
 const STACKLOW: ULONG_PTR = 0x8000;
@@ -85,7 +77,7 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
     let mut RegsIn: REGS = core::mem::zeroed();
     let mut RegsOut: REGS = core::mem::zeroed();
 
-    TRACE(b"GetExtendedMemoryConfiguration()\n\0".as_ptr() as PCHAR);
+    TRACE!("GetExtendedMemoryConfiguration()\n");
 
     *pMemoryAtOneMB = 0;
     *pMemoryAtSixteenMB = 0;
@@ -93,12 +85,12 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
     RegsIn.w.ax = 0xE801;
     Int386(0x15, &mut RegsIn, &mut RegsOut);
 
-    TRACE(b"Int15h AX=E801h\n\0".as_ptr() as PCHAR);
-    TRACE(b"AX = 0x%x\n\0".as_ptr() as PCHAR, (RegsOut.w.ax) as usize);
-    TRACE(b"BX = 0x%x\n\0".as_ptr() as PCHAR, (RegsOut.w.bx) as usize);
-    TRACE(b"CX = 0x%x\n\0".as_ptr() as PCHAR, (RegsOut.w.cx) as usize);
-    TRACE(b"DX = 0x%x\n\0".as_ptr() as PCHAR, (RegsOut.w.dx) as usize);
-    TRACE(b"CF set = %s\n\0".as_ptr() as PCHAR, (if (RegsOut.x.eflags & EFLAGS_CF) != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
+    TRACE!("Int15h AX=E801h\n");
+    TRACE!("AX = 0x%x\n", (RegsOut.w.ax) as usize);
+    TRACE!("BX = 0x%x\n", (RegsOut.w.bx) as usize);
+    TRACE!("CX = 0x%x\n", (RegsOut.w.cx) as usize);
+    TRACE!("DX = 0x%x\n", (RegsOut.w.dx) as usize);
+    TRACE!("CF set = %s\n", (if (RegsOut.x.eflags & EFLAGS_CF) != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
 
     if INT386_SUCCESS(RegsOut) != 0 {
         if RegsOut.w.ax == 0 {
@@ -115,9 +107,9 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
     RegsIn.b.ah = 0x88;
     Int386(0x15, &mut RegsIn, &mut RegsOut);
 
-    TRACE(b"Int15h AH=88h\n\0".as_ptr() as PCHAR);
-    TRACE(b"AX = 0x%x\n\0".as_ptr() as PCHAR, (RegsOut.w.ax) as usize);
-    TRACE(b"CF set = %s\n\0".as_ptr() as PCHAR, (if (RegsOut.x.eflags & EFLAGS_CF) != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
+    TRACE!("Int15h AH=88h\n");
+    TRACE!("AX = 0x%x\n", (RegsOut.w.ax) as usize);
+    TRACE!("CF set = %s\n", (if (RegsOut.x.eflags & EFLAGS_CF) != 0 { b"TRUE\0".as_ptr() as PCHAR } else { b"FALSE\0".as_ptr() as PCHAR }) as usize);
 
     if INT386_SUCCESS(RegsOut) != 0 && RegsOut.w.ax != 0 {
         *pMemoryAtOneMB = (RegsOut.w.ax) as u32 ;
@@ -129,8 +121,8 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
     *pMemoryAtOneMB = *pMemoryAtOneMB & 0xFFFF ;
     *pMemoryAtOneMB = *pMemoryAtOneMB << 8 ;
 
-    TRACE(b"Int15h Failed\n\0".as_ptr() as PCHAR);
-    TRACE(b"CMOS reports: 0x%lx\n\0".as_ptr() as PCHAR, (*pMemoryAtOneMB) as usize);
+    TRACE!("Int15h Failed\n");
+    TRACE!("CMOS reports: 0x%lx\n", (*pMemoryAtOneMB) as usize);
 
     if *pMemoryAtOneMB != 0 {
         return 1u8;
@@ -142,13 +134,13 @@ unsafe fn GetExtendedMemoryConfiguration(pMemoryAtOneMB: *mut ULONG, pMemoryAtSi
 unsafe fn PcMemGetConventionalMemorySize() -> ULONG {
     let mut Regs: REGS = core::mem::zeroed();
 
-    TRACE(b"PcMemGetConventionalMemorySize()\n\0".as_ptr() as PCHAR);
+    TRACE!("PcMemGetConventionalMemorySize()\n");
 
     Regs.w.ax = 0;
     Int386(0x12, &mut Regs, &mut Regs);
 
-    TRACE(b"Int12h\n\0".as_ptr() as PCHAR);
-    TRACE(b"AX = 0x%x\n\0".as_ptr() as PCHAR, (Regs.w.ax) as usize);
+    TRACE!("Int12h\n");
+    TRACE!("AX = 0x%x\n", (Regs.w.ax) as usize);
 
     Regs.w.ax as ULONG
 }
@@ -159,7 +151,7 @@ unsafe fn GetEbdaLocation(
 ) -> BOOLEAN {
     let mut Regs: REGS = core::mem::zeroed();
 
-    TRACE(b"GetEbdaLocation()\n\0".as_ptr() as PCHAR);
+    TRACE!("GetEbdaLocation()\n");
 
     Regs.x.eax = 0x0000C100;
     Int386(0x15, &mut Regs, &mut Regs);
@@ -177,7 +169,7 @@ unsafe fn PcMemCheckUsableMemorySize() {
     let Size: ULONG;
     let RequiredSize: ULONG;
 
-    TRACE(b"PcMemCheckUsableMemorySize()\n\0".as_ptr() as PCHAR);
+    TRACE!("PcMemCheckUsableMemorySize()\n");
 
     Size = (*(0x413 as ULONG_PTR as *const USHORT) as ULONG) * 1024;
     RequiredSize = (FREELDR_BASE + FrLdrImageSize + PAGE_SIZE) as u32 ;
@@ -200,7 +192,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
     let mut RealSize: ULONGLONG;
     let mut MemoryType: TYPE_OF_MEMORY;
 
-    TRACE(b"PcMemGetBiosMemoryMap()\n\0".as_ptr() as PCHAR);
+    TRACE!("PcMemGetBiosMemoryMap()\n");
 
     Regs.x.ebx = 0x00000000;
 
@@ -215,36 +207,32 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
         Regs.w.di = (BIOSCALLBUFOFFSET) as u16 ;
         Int386(0x15, &mut Regs, &mut Regs);
 
-        TRACE(b"Memory Map Entry %lu\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize);
-        TRACE(b"Int15h AX=E820h\n\0".as_ptr() as PCHAR);
-        TRACE(b"EAX = 0x%lx\n\0".as_ptr() as PCHAR, (Regs.x.eax) as usize);
-        TRACE(b"EBX = 0x%lx\n\0".as_ptr() as PCHAR, (Regs.x.ebx) as usize);
-        TRACE(b"ECX = %lu\n\0".as_ptr() as PCHAR, (Regs.x.ecx) as usize);
-        TRACE(
-            b"CF set = %s\n\0".as_ptr() as PCHAR, (if (Regs.x.eflags & EFLAGS_CF) != 0 {
+        TRACE!("Memory Map Entry %lu\n", (PcBiosMapCount) as usize);
+        TRACE!("Int15h AX=E820h\n");
+        TRACE!("EAX = 0x%lx\n", (Regs.x.eax) as usize);
+        TRACE!("EBX = 0x%lx\n", (Regs.x.ebx) as usize);
+        TRACE!("ECX = %lu\n", (Regs.x.ecx) as usize);
+        TRACE!("CF set = %s\n", (if (Regs.x.eflags & EFLAGS_CF) != 0 {
                 b"TRUE\0".as_ptr() as PCHAR
             } else {
                 b"FALSE\0".as_ptr() as PCHAR
-            }) as usize,
-        );
+            }) as usize);
 
         if Regs.x.eax != 0x534D4150 {
-            WARN(b"BIOS doesn't support Int15h AX=E820h!\n\0".as_ptr() as PCHAR);
+            WARN!("BIOS doesn't support Int15h AX=E820h!\n");
             break;
         }
 
         if INT386_SUCCESS(Regs) == 0 {
-            TRACE(b"End of System Memory Map! (Past last)\n\0".as_ptr() as PCHAR);
+            TRACE!("End of System Memory Map! (Past last)\n");
             break;
         }
 
         if Regs.x.ecx == 0 {
-            TRACE(
-                b"Discarding empty entry. (would-be-PcBiosMapCount = %lu)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize,
-            );
+            TRACE!("Discarding empty entry. (would-be-PcBiosMapCount = %lu)\n", (PcBiosMapCount) as usize);
             'nextRange: loop {
                 if Regs.x.ebx == 0x00000000 {
-                    TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                    TRACE!("End of System Memory Map! (Reset)\n");
                     break 'outer;
                 }
                 break 'nextRange;
@@ -255,9 +243,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
         if Regs.x.ecx < ((crate::RTL_SIZEOF_THROUGH_FIELD!(BIOS_MEMORY_MAP, Type)) as u32)
             || Regs.x.ecx > ((core::mem::size_of::<BIOS_MEMORY_MAP>()) as u32)
         {
-            ERR(
-                b"Int 15h AX=E820h returned an invalid entry length! (would-be-PcBiosMapCount = %lu, Entry length = (%Iu <=) %lu (<= %Iu))\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (crate::RTL_SIZEOF_THROUGH_FIELD!(BIOS_MEMORY_MAP, Type)) as usize, (Regs.x.ecx) as usize, (core::mem::size_of::<BIOS_MEMORY_MAP>()) as usize,
-            );
+            ERR!("Int 15h AX=E820h returned an invalid entry length! (would-be-PcBiosMapCount = %lu, Entry length = (%Iu <=) %lu (<= %Iu))\n", (PcBiosMapCount) as usize, (crate::RTL_SIZEOF_THROUGH_FIELD!(BIOS_MEMORY_MAP, Type)) as usize, (Regs.x.ecx) as usize, (core::mem::size_of::<BIOS_MEMORY_MAP>()) as usize);
             if PcBiosMapCount > 0 || Regs.x.ecx > ((core::mem::size_of::<BIOS_MEMORY_MAP>()) as u32) {
                 ASSERTMSG!(
                     b"Int 15h AX=E820h returned an invalid entry length!\n\0".as_ptr() as PCHAR,
@@ -268,12 +254,10 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
         }
 
         if ((*(BIOSCALLBUFFER as PBIOS_MEMORY_MAP)).ExtendedAttributesAsULONG & 1) == 0 {
-            WARN(
-                b"Discarding disabled/invalid entry. (would-be-PcBiosMapCount = %lu)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize,
-            );
+            WARN!("Discarding disabled/invalid entry. (would-be-PcBiosMapCount = %lu)\n", (PcBiosMapCount) as usize);
             'nextRange: loop {
                 if Regs.x.ebx == 0x00000000 {
-                    TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                    TRACE!("End of System Memory Map! (Reset)\n");
                     break 'outer;
                 }
                 break 'nextRange;
@@ -287,29 +271,17 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
             core::mem::size_of::<BIOS_MEMORY_MAP>(),
         );
 
-        TRACE(
-            b"BaseAddress: 0x%llx\n\0".as_ptr() as PCHAR, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize,
-        );
-        TRACE(
-            b"Length: 0x%llx\n\0".as_ptr() as PCHAR, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize,
-        );
-        TRACE(
-            b"Type: 0x%lx\n\0".as_ptr() as PCHAR, (PcBiosMemoryMap[PcBiosMapCount as usize].Type) as usize,
-        );
-        TRACE(
-            b"ExtendedAttributesAsULONG: 0x%08lx\n\0".as_ptr() as PCHAR, (PcBiosMemoryMap[PcBiosMapCount as usize].ExtendedAttributesAsULONG) as usize,
-        );
+        TRACE!("BaseAddress: 0x%llx\n", (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize);
+        TRACE!("Length: 0x%llx\n", (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize);
+        TRACE!("Type: 0x%lx\n", (PcBiosMemoryMap[PcBiosMapCount as usize].Type) as usize);
+        TRACE!("ExtendedAttributesAsULONG: 0x%08lx\n", (PcBiosMemoryMap[PcBiosMapCount as usize].ExtendedAttributesAsULONG) as usize);
 
         if ((PcBiosMemoryMap[PcBiosMapCount as usize].ExtendedAttributesAsULONG >> 3) & 1) == 1 {
-            FIXME(
-                b"EA.ErrorLog = 1. Please report this to CORE-14150. (PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx, Type = 0x%lx, ExtendedAttributesAsULONG = 0x%08lx)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Type) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].ExtendedAttributesAsULONG) as usize,
-            );
+            FIXME!("EA.ErrorLog = 1. Please report this to CORE-14150. (PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx, Type = 0x%lx, ExtendedAttributesAsULONG = 0x%08lx)\n", (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Type) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].ExtendedAttributesAsULONG) as usize);
         }
 
         if PcBiosMemoryMap[PcBiosMapCount as usize].Length == 0 {
-            TRACE(
-                b"Discarding empty range. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize,
-            );
+            TRACE!("Discarding empty range. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0)\n", (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize);
             // C `goto nextRange;` (DISCARD) skips PcBiosMapCount++ — the
             // slot is reused for the next BIOS entry. rustconv wrongly
             // appended `PcBiosMapCount += 1;` here (counts a discarded
@@ -317,7 +289,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
             // array overflow / bogus zero ranges). Mirror C: ebx-term
             // check then continue, NO increment.
             if Regs.x.ebx == 0x00000000 {
-                TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                TRACE!("End of System Memory Map! (Reset)\n");
                 break 'outer;
             }
             continue;
@@ -336,12 +308,10 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
             EndAddress = ULONGLONG_ALIGN_DOWN_BY(EndAddress, PAGE_SIZE as ULONGLONG);
 
             if EndAddress <= RealBaseAddress {
-                TRACE(
-                    b"Skipping aligned range < PAGE_SIZE. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize,
-                );
+                TRACE!("Skipping aligned range < PAGE_SIZE. (would-be-PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx)\n", (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize);
                 // C `goto nextRange;` (DISCARD) — no PcBiosMapCount++.
                 if Regs.x.ebx == 0x00000000 {
-                    TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+                    TRACE!("End of System Memory Map! (Reset)\n");
                     break 'outer;
                 }
                 continue;
@@ -367,13 +337,9 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
         }
 
         if RealSize < MM_PAGE_SIZE as ULONGLONG {
-            TRACE(
-                b"Skipping aligned range < MM_PAGE_SIZE. (PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize,
-            );
+            TRACE!("Skipping aligned range < MM_PAGE_SIZE. (PcBiosMapCount = %lu, BaseAddress = 0x%llx, Length = 0x%llx)\n", (PcBiosMapCount) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].BaseAddress) as usize, (PcBiosMemoryMap[PcBiosMapCount as usize].Length) as usize);
         } else if PcMapCount >= MaxMemoryMapSize {
-            ERR(
-                b"PcMemoryMap is already full! (PcBiosMapCount = %lu, PcMapCount = %lu (>= %lu))\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (PcMapCount) as usize, (MaxMemoryMapSize) as usize,
-            );
+            ERR!("PcMemoryMap is already full! (PcBiosMapCount = %lu, PcMapCount = %lu (>= %lu))\n", (PcBiosMapCount) as usize, (PcMapCount) as usize, (MaxMemoryMapSize) as usize);
         } else {
             PcMapCount = AddMemoryDescriptor(
                 PcMemoryMap.as_mut_ptr(),
@@ -387,7 +353,7 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
         PcBiosMapCount += 1;
 
         if Regs.x.ebx == 0x00000000 {
-            TRACE(b"End of System Memory Map! (Reset)\n\0".as_ptr() as PCHAR);
+            TRACE!("End of System Memory Map! (Reset)\n");
             break;
         }
     }
@@ -395,14 +361,10 @@ unsafe fn PcMemGetBiosMemoryMap(_MemoryMap: PFREELDR_MEMORY_DESCRIPTOR, MaxMemor
     // C: straight-line post-loop check (rustconv modeled it as a run-once
     // 'outer: loop { ... break; } which collided with the main loop label).
     if PcBiosMapCount >= ((MAX_BIOS_DESCRIPTORS) as u32) && Regs.x.ebx != 0x00000000 {
-        ERR(
-            b"PcBiosMemoryMap is already full! (PcBiosMapCount = %lu (>= %lu), PcMapCount = %lu)\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize, (MAX_BIOS_DESCRIPTORS) as usize, (PcMapCount) as usize,
-        );
+        ERR!("PcBiosMemoryMap is already full! (PcBiosMapCount = %lu (>= %lu), PcMapCount = %lu)\n", (PcBiosMapCount) as usize, (MAX_BIOS_DESCRIPTORS) as usize, (PcMapCount) as usize);
     }
 
-    TRACE(
-        b"PcMemGetBiosMemoryMap end: PcBiosMapCount = %lu\n\0".as_ptr() as PCHAR, (PcBiosMapCount) as usize,
-    );
+    TRACE!("PcMemGetBiosMemoryMap end: PcBiosMapCount = %lu\n", (PcBiosMapCount) as usize);
     PcBiosMapCount
 }
 
@@ -495,7 +457,7 @@ pub unsafe fn PcMemFinalizeMemoryMap(
         i += 1;
     }
 
-    TRACE(b"DiskReadBuffer=0x%p, DiskReadBufferSize=0x%lx\n\0".as_ptr() as PCHAR, (DiskReadBuffer) as usize, (DiskReadBufferSize) as usize);
+    TRACE!("DiskReadBuffer=0x%p, DiskReadBufferSize=0x%lx\n", (DiskReadBuffer) as usize, (DiskReadBufferSize) as usize);
 
     ReserveMemory(MemoryMap,
                   DiskReadBuffer as ULONG_PTR,
@@ -503,10 +465,10 @@ pub unsafe fn PcMemFinalizeMemoryMap(
                   LoaderFirmwareTemporary,
                   b"Disk read buffer\0".as_ptr() as PCHAR);
 
-    TRACE(b"Dumping resulting memory map:\n\0".as_ptr() as PCHAR);
+    TRACE!("Dumping resulting memory map:\n");
     i = 0;
     while i < PcMapCount {
-        TRACE(b"BasePage=0x%lx, PageCount=0x%lx, Type=%s\n\0".as_ptr() as PCHAR, ((*MemoryMap.offset(i as isize)).BasePage) as usize, ((*MemoryMap.offset(i as isize)).PageCount) as usize, (MmGetSystemMemoryMapTypeString((*MemoryMap.offset(i as isize)).MemoryType)) as usize);
+        TRACE!("BasePage=0x%lx, PageCount=0x%lx, Type=%s\n", ((*MemoryMap.offset(i as isize)).BasePage) as usize, ((*MemoryMap.offset(i as isize)).PageCount) as usize, (MmGetSystemMemoryMapTypeString((*MemoryMap.offset(i as isize)).MemoryType)) as usize);
         i += 1;
     }
     PcMapCount
@@ -520,7 +482,7 @@ pub unsafe extern "C" fn PcMemGetMemoryMap(MemoryMapSize: *mut ULONG) -> PFREELD
     let mut EbdaBase: ULONG = 0;
     let mut EbdaSize: ULONG = 0;
 
-    TRACE(b"PcMemGetMemoryMap()\n\0".as_ptr() as PCHAR);
+    TRACE!("PcMemGetMemoryMap()\n");
 
     PcMemCheckUsableMemorySize();
 

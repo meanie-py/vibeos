@@ -544,7 +544,8 @@ def _unroll_target_foreach(text: str) -> str:
     def literal_list(name: str, before: int) -> list[str] | None:
         items: list[str] = []
         for m in re.finditer(
-            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
+            rf"^[ \t]*(?:set\s*\(\s*{re.escape(name)}\b"
+            rf"|list\s*\(\s*APPEND\s+{re.escape(name)}\b)([^)]*)\)",
             text[:before],
             re.M,
         ):
@@ -558,7 +559,9 @@ def _unroll_target_foreach(text: str) -> str:
 
     def unroll(m: re.Match) -> str:
         var, spec, body = m.group(1), m.group(2).split(), m.group(3)
-        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(r"\bforeach\s*\(", body):
+        if not re.search(r"\badd_(?:library|executable)\s*\(", body) or re.search(
+            r"\bforeach\s*\(", body
+        ):
             return m.group(0)
         if spec and spec[0] in ("IN", "RANGE"):
             return m.group(0)
@@ -1574,10 +1577,14 @@ def _wine_config_undefs(repo_root: Path) -> frozenset[str]:
 
 
 _DEFINE_DIRECTIVE_RE = r"^\s*#\s*define\s+{}\b"
-_FLAG_IN_CMAKE_RE = r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+_FLAG_IN_CMAKE_RE = (
+    r"-D{0}\b|(add_definitions|add_compile_definitions|target_compile_definitions)\([^)]*\b{0}\b"
+)
 
 
-def _foreign_build_flags(tus: list[Path], repo_root: Path, module_defines: set[str]) -> frozenset[str]:
+def _foreign_build_flags(
+    tus: list[Path], repo_root: Path, module_defines: set[str]
+) -> frozenset[str]:
     """Prologue guard macros that only some OTHER target's compile flags define.
 
     apphelp's sdbwrite.c opens `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
@@ -1600,6 +1607,7 @@ def _foreign_build_flags(tus: list[Path], repo_root: Path, module_defines: set[s
                 guards.add(g[0])
     out: set[str] = set()
     for macro in sorted(guards - named):
+
         def grep(pattern: str, *paths: str) -> bool:
             r = subprocess.run(
                 ["git", "-C", str(repo_root), "grep", "-qE", "-e", pattern, "--", *paths],
@@ -2321,7 +2329,9 @@ def header_symbols(path: Path, wanted: frozenset[str] | None = None) -> dict[str
         # same-line-only pattern reports as UNOWNED — another false §9.112 alarm. And a
         # member need not start its line: cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on
         # one, and every one after the first was reported UNOWNED.
-        for m in re.finditer(rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M):
+        for m in re.finditer(
+            rf"(?:^|(?<=[,{{]))[ \t]*({alt})\b[ \t]*(=[^,}}\n]*)?\s*[,}}]", text, re.M
+        ):
             if "enum" in text:
                 out.setdefault(m.group(1), ("enum", m.group(0).strip()))
         for name, kind in _cxx_consts(text, alt).items():
@@ -2419,7 +2429,11 @@ def resolve_sys_crate(repo_root: Path, module_name: str, usermode: bool) -> str:
 
 
 def sys_crate_consts(
-    repo_root: Path, usermode: bool, arch: str = "i386", crate: str | None = None
+    repo_root: Path,
+    usermode: bool,
+    arch: str = "i386",
+    crate: str | None = None,
+    enum_prefixes: dict[str, str] | None = None,
 ) -> dict[str, str]:
     """``{const name: providing file stem}`` for the sibling -sys crate's exports.
 
@@ -2439,12 +2453,14 @@ def sys_crate_consts(
         return out
     other_arches = tuple(f"_{a}" for a in ARCHES if a != arch)
     files = sorted(base.glob("*bindgen*.rs"), key=lambda p: (p.stem not in primary, p.stem))
+    bare: set[str] = set()
     for f in files:
         if f.stem.endswith(other_arches):
             continue  # another arch's island
         text = _read(f)
         for name in re.findall(r"pub const (\w+)", text):
             out.setdefault(name, f.stem)
+            bare.add(name)
         # bindgen spells a C enumerator `<enum type>_<member>` (`_DEVICE_USAGE_NOTIFICATION_
         # TYPE_DeviceUsageTypePaging`), so the bare member the C switches on never appears
         # as a `pub const` of its own. It IS carried -- `port resolve` aliases the bare
@@ -2452,6 +2468,12 @@ def sys_crate_consts(
         # DeviceUsageType*/DeviceText* cases a blocking error.
         for _ty, member in re.findall(r"pub const (\w+?)_(\w+):\s*\1\s*=", text):
             out.setdefault(member, f.stem)
+            if enum_prefixes is not None:
+                enum_prefixes.setdefault(member, _ty)
+    if enum_prefixes is not None:
+        # Carried only PREFIXED: the bare name a `case` uses still needs the prelude alias.
+        for name in bare & enum_prefixes.keys():
+            del enum_prefixes[name]
     return out
 
 
@@ -2793,7 +2815,11 @@ def derive_source(
     # win32ss/printing/base) has its owners in SIBLING directories, which the ancestor walk
     # below never visits; offer those first, the preferred target's own directory before all.
     siblings = sorted(
-        (c.parent for c in source.parent.glob("*/CMakeLists.txt") if f"../{source.name}" in _read(c)),
+        (
+            c.parent
+            for c in source.parent.glob("*/CMakeLists.txt")
+            if f"../{source.name}" in _read(c)
+        ),
         key=lambda d: d.name != preferred_target,
     )
     for directory in [*siblings, *source.parents]:
@@ -2991,7 +3017,8 @@ def derive(
     sys_crate = getattr(module, "sys_crate", None) or resolve_sys_crate(
         repo_root, module.name, module.is_usermode
     )
-    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate)
+    sys_enum_prefixes: dict[str, str] = {}
+    sys_consts = sys_crate_consts(repo_root, module.is_usermode, arch, sys_crate, sys_enum_prefixes)
     # A name the output crate's prelude already provides is resolved for every module of
     # the crate, which is exactly the fix SWITCH_CONST_IN_BASE_HEADER asks for -- so a
     # re-derive after transcribing must stop reporting it.
@@ -3069,6 +3096,23 @@ def derive(
             # already a const in ntdll-sys/ntkrnl-sys: it resolves through the crate glob,
             # so its (often huge) owning header does NOT need to be allowlisted.
             o.allowlisted = True
+            prefix = sys_enum_prefixes.get(o.ident) if o.sys_source != "prelude" else None
+            if prefix:
+                # The -sys crate carries the ENUM MEMBER only prefixed. Skipping this (the
+                # `continue` below) is why every kernel module recorded no switch_enums:
+                # their DDK enums all come from ntkrnl-sys, so pciidex's `BusQueryDeviceID =>`
+                # was never aliased and bound every IRP_MN_QUERY_ID.
+                o.enum_prefix = prefix
+                findings.append(
+                    Finding(
+                        "warn",
+                        "SWITCH_CONST_ENUM_PREFIXED",
+                        f"`{o.ident}` ({sys_crate}) is an ENUM MEMBER: the -sys crate emits "
+                        f"it as `{prefix}_{o.ident}`, never the bare name. Alias it in the "
+                        f"prelude — pub use {prefix}_{o.ident} as {o.ident}; — `port "
+                        "resolve` does so for every recorded one.",
+                    )
+                )
             if o.sys_source not in (f"bindgen_{arch}", "bindgen_common", "prelude"):
                 findings.append(
                     Finding(
@@ -3832,7 +3876,17 @@ _RUST_KEYWORDS = frozenset(
 
 
 def _rust_mod_ident(stem: str) -> str:
+    if stem[:1].isdigit():  # ndis's 30stubs.c: no raw identifier makes this one legal
+        return f"_{stem}"
     return f"r#{stem}" if stem in _RUST_KEYWORDS else stem
+
+
+def _rust_mod_decl(stem: str) -> str:
+    """`pub mod x;` for a TU, with a #[path] when the file name is not an identifier."""
+    ident = _rust_mod_ident(stem)
+    if ident == f"_{stem}":
+        return f'#[path = "{stem}.rs"] pub mod {ident};'
+    return f"pub mod {ident};"
 
 
 #: Appended to a KERNEL crate's scaffold prelude: what every port of a WDM driver needs and
@@ -4098,7 +4152,7 @@ crate-type = ["staticlib"]
     mods = []
     for tu in m.compiled_tus:
         # `enum.c` (atapi) is a Rust keyword: a raw identifier still names enum.rs.
-        mods.append(f"    pub mod {_rust_mod_ident(tu.stem)};")
+        mods.append(f"    {_rust_mod_decl(tu.stem)}")
     write(
         src / "lib.rs",
         f"""//! {m.crate_stem} — Rust translation of {m.module_dir.relative_to(dp.env.repo_root)}.

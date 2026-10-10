@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_INIFILE; // parse.c: DBG_DEFAULT_CHANNEL(INIFILE)
 use ntkrnl_sys::base::*;
 use core::ffi::c_void;
 use crate::frldr::{
@@ -9,8 +11,6 @@ use crate::frldr::{
 };
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn strlen(s: *const i8) -> usize;
 }
 
@@ -24,7 +24,7 @@ pub unsafe extern "C" fn IniParseFile(IniFileData: PCHAR, IniFileSize: ULONG) ->
     let mut CurrentSection: PINI_SECTION = core::ptr::null_mut();
     let mut CurrentItem: PINI_SECTION_ITEM = core::ptr::null_mut();
 
-    TRACE(b"IniParseFile() IniFileSize: %d\n\0".as_ptr() as PCHAR, IniFileSize);
+    TRACE!("IniParseFile() IniFileSize: %d\n", IniFileSize);
 
     if IniFileSectionInitialized == 0 {
         InitializeListHead(&mut IniFileSectionListHead);
@@ -85,7 +85,7 @@ pub unsafe extern "C" fn IniParseFile(IniFileData: PCHAR, IniFileSize: ULONG) ->
 
         if IniIsSetting(IniFileLine, LineLength) != 0 {
             if CurrentSection.is_null() {
-                ERR(b"Error: freeldr.ini:%lu: Setting '%s' found outside of a [section].\n\0".as_ptr() as PCHAR, CurrentLineNumber, IniFileLine);
+                ERR!("Error: freeldr.ini:%lu: Setting '%s' found outside of a [section].\n", CurrentLineNumber, IniFileLine);
 
                 CurrentLineNumber += 1;
                 continue;
@@ -130,8 +130,8 @@ pub unsafe extern "C" fn IniParseFile(IniFileData: PCHAR, IniFileSize: ULONG) ->
 
     FrLdrTempFree(IniFileLine as *mut c_void, TAG_INI_FILE);
 
-    TRACE(b"Parsed %d sections and %d settings.\n\0".as_ptr() as PCHAR, IniFileSectionCount, IniFileSettingCount);
-    TRACE(b"IniParseFile() done.\n\0".as_ptr() as PCHAR);
+    TRACE!("Parsed %d sections and %d settings.\n", IniFileSectionCount, IniFileSettingCount);
+    TRACE!("IniParseFile() done.\n");
 
     return 1u8;
 }

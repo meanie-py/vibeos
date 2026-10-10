@@ -238,7 +238,9 @@ add_custom_target(hybridcd
     VERBATIM)
 
 if(DEFINED EFI_PLATFORM_ID)
-    # For things like flashing USB drives, we also add the efi file into efi/boot.
+    # For things like flashing USB drives, we also add the efi file into efi/boot. The bootcd
+    # carries it too: a UEFI install copies it to the system partition from there (setuplib
+    # InstallUefiLoaderToPartition).
     # The El Torito EFI image is for CD boot; the arm64 ramdisk's boot.img carries
     # BOOTAA64.EFI itself, and efisys needs the BIOS FAT boot sector arm64 never builds.
     if(ARCH STREQUAL "arm64")
@@ -256,5 +258,5 @@ if(DEFINED EFI_PLATFORM_ID)
         DESTINATION efi/boot
         NO_CAB
         NAME_ON_CD boot${EFI_PLATFORM_ID}.efi
-        FOR livecd hybridcd)
+        FOR bootcd regtest livecd hybridcd)
 endif()

@@ -1054,10 +1054,12 @@ hand flips the error to the other two.
   driver referencing kernel **data** (`KeLoaderBlock`) needs `raw-dylib` on i386/arm64 (PE data
   imports need an `__imp_` thunk); amd64 tolerates a plain extern static and hides it. Declare
   it crate-locally — don't change shared `globals.rs`, the kernel needs the local form.
-  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches);
-  the driver-facing readers are `ntkrnl_sys::inline::common::{InitSafeBootModeValue,
-  HalGetInterruptTranslator}`. Owed: `port resolve` should route an island `pub static` that
-  the import lib exports as `extern` (DATA) to such a reader by itself.
+  pciidex.sys hit it with `InitSafeBootMode` and `HALDISPATCH` (undefined on all three arches).
+  A kernel island now does this itself: `gen_driver_types.sh` runs
+  `bindgen_data_imports.py`, which gives every `@ extern` (DATA) export of ntoskrnl.spec /
+  hal.spec its own raw-dylib `+verbatim` extern block, so the translation reads the C's plain
+  name. raw-dylib is right on **amd64 too** (pciidex.sys: one ntoskrnl.exe descriptor,
+  `cmpl $0x1, (%r8)` through the slot); the hand-bound `__imp_` form there was never needed.
 - **`[T; 0]` extern-array decl** `[§9.35]` — Rust bounds-checks the *declared* length, so the C unsized-
   extern idiom panics at index 0. Declare the real per-arch size.
 
@@ -1941,6 +1943,18 @@ reasons: the TCHAR-neutral `MAKEINTRESOURCE`, which is `-DUNICODE`-dependent and
 per-consumer property, and `ListView_*`/`PropSheet_*`, which expand against island *struct*
 types.
 
+### A generator's target predefines are not the build's: ACPI_SIZE was 32-bit on amd64
+- **Symptom.** `AcpiGetIrqRoutingTable(handle, {ACPI_ALLOCATE_BUFFER, NULL})` returned
+  `AE_BAD_PARAMETER` (0x1001) on a valid device handle, on amd64 only.
+- **Cause.** `acpica-sys` was generated for `x86_64-pc-windows-gnu`, which predefines
+  `WIN32`, so `acenv.h` chose `acwin.h` (`ACPI_MACHINE_WIDTH` 32). The real amd64 compile
+  defines no `WIN32` and takes `acwin64.h`: `ACPI_SIZE` is 8 bytes. Every Rust
+  `ACPI_BUFFER` had a 4-byte `Length` over uninitialised padding that ACPICA read as the
+  high half. arm64 and i386 really are 32-wide.
+- **Fix.** `-UWIN32` on the amd64 run of `generate_bindings.sh`. To check any generated
+  island, preprocess a probe with the REAL flags (`-E -dM` with a TU's command from
+  `compile_commands.json`, under `tools/canon-run.sh`); never reason from the target triple.
+
 ### bindgen drops things silently — know what
 - **`__attribute__((aligned(N)))`.** Losing `__ALIGNED(16)` on `EX_PUSH_LOCK_WAIT_BLOCK` `[§9.24]` broke
   the pushlock word's 4 flag bits (which live in the low bits of the block *pointer*) → i386
@@ -2411,6 +2425,12 @@ baseline empty) refuses the cast; `--fix` rewrites it.
 - **A C `:31` bitfield read as a full DWORD** lets the high flag bit corrupt the value into a
   wild pointer/offset. **A per-file hand-rolled struct view reading a bitfield at offset 0**
   silently disables the feature it gates.
+- **A bitfield struct translated as one WHOLE field per bitfield**, inside a union with the
+  raw word, compiles and reads zeros: writing the word fills only the first field. amd64's
+  `CPU_SIGNATURE` (Step:4 Model:4 Family:4 ...) became seven `u32`s, so every boot was
+  "AMD64 Family 0 Model 0" -- the CPU's PnP id (its install failed with error 31) and
+  `KeProcessorLevel` 0. Tell: a hand `#[repr(C)] union { Fields, AsULONG }` whose `Fields`
+  struct is bigger than the word. Fix: shift accessors over the word.
 - **A bitfield reached by bit INDEX (`_bitfield_1.set(0, 1, v)`) instead of bindgen's named
   accessor** is a guess at the layout. atapi passed a page code as the *width* (28 bits of a
   1-byte unit, an index panic the first time the CD was asked for a mode page) and put
@@ -2839,6 +2859,15 @@ and the write.
 they must be the same expression. Treat a sum of member sizes that stands in for
 `FIELD_OFFSET` as a bug until proven otherwise. The 32-bit targets are where alignment
 padding appears.
+
+**Same class, other direction: a union hand-padded to its 64-bit size.** iomgr's copy of
+`RAMDISK_CREATE_INPUT` replaced the C union with one variant plus `_pad: [u8; 14]`, which is
+right only where `ULONG_PTR` is 8 bytes. On i386 the struct came to 64 bytes against C's 56,
+and ramdisk.sys refuses a request unless `Version == sizeof(RAMDISK_CREATE_INPUT)`, so the
+boot ramdisk could never be created (BUGCHECK 0xF8, P1=3 RD_FSCTL_FAILED). Nothing booted an
+x86 ramdisk until conformance's writable root did. **Fix:** declare the union as C does, and
+assert the size per target against C's own `sizeof` (the pinned clang compiles a two-line
+`_Static_assert` for each triple in a second).
 
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
@@ -4579,6 +4608,20 @@ crate when a `continue` that belongs to a loop is reached with no write to the l
 since the loop's `{`. Hand-written loops that advance the variable earlier on the path, or
 shrink the bound instead (cmcheck's `ListCount -= 1`), are not flagged.
 
+### A dropped validation check fails OPEN: the bad request succeeds and nothing faults
+**Symptom:** a kmtest expects an error status and gets `STATUS_SUCCESS`; the boot and every
+smoke stay green, because nobody makes the bad request in normal operation.
+**Cause:** the port dropped a validation step without a trace. `MmMapViewOfSection`'s data path
+lost all three of the C's `/* check for write/read/execute access */` blocks, so a
+PAGE_READONLY section mapped PAGE_READWRITE or PAGE_EXECUTE succeeded (44 ZwCreateSection
+assertions). The same function's `PAGE_FLAGS_VALID_FOR_SECTION` copy lost the last two members of
+the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way: a legal
+`PAGE_READONLY | PAGE_NOCACHE` map returned STATUS_INVALID_PAGE_PROTECTION.
+**Fix:** diff the C function's status returns against the Rust's (`grep -n STATUS_` on both).
+A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
+left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
+macro, compare member lists against the header, not just the name.
+
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 
 **Symptom:** none visible at boot. pciidex's START_DEVICE handler sent the IRP down the stack
@@ -4647,8 +4690,12 @@ reset, DMA failure and spurious interrupt. atapi kept 5 of its 52, pciidex 9 of 
 of pciidex's had come back as `INFO!`, which prints nothing.
 **Fix:** restore them against the C — format string byte for byte, each argument widened the
 way C varargs promote it, at the same point in the control flow. With them back, the arm64
-failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`). Owed:
-rustconv should keep `ERR`/`WARN` for kernel modules instead of stripping them.
+failure named itself on the next boot (`CH 0: Unable to allocate DMA memory c000009a`).
+`ASSERT` went the same way (atapi, pciidex and legide kept 33 of 234), and those 33 were
+win32macros' release-build no-op; the ATA crates now take ntkrnl-sys's `ASSERT!`, which calls
+RtlAssert (print and continue) as the DBG=1 C does. rustconv now keeps `ERR`/`WARN`/`ASSERT`
+for plain C (`--keep-diagnostics`, default on, its own `__diag_v1` bank namespace), and
+`macro_authority` treats `#define ASSERT (void)RTL_VERIFY` as the function-like macro it is.
 
 ### A dropped owner filter in a "release all of MINE" loop releases everyone's
 
@@ -6303,6 +6350,17 @@ reading an amd64 modrun serial log for something else. Fix: `#[cfg(target_arch)]
 and a `const fn` that assembles the name. Review hint: a C file with an arch `#if` whose
 translation has no `target_arch` anywhere has baked in one branch, or deliberately unified
 them (winlogon's wlx.c took the secured-desktop path everywhere). Say which in a comment.
+
+### An `#ifdef` that no target defines: the guarded line is dead in the C too
+The translation dropping it is then FAITHFUL, and so a diff against the C finds nothing.
+winldr.c sets the loader block's `BootViaEFI` under `#ifdef UEFIBOOT`, but that code lives in
+rosload.exe, one binary for both loaders, and no CMake file defines `UEFIBOOT` for it (or for
+anything else since the loader split). So nothing after the loader could tell a UEFI boot from
+a BIOS one; `SystemBootEnvironmentInformation` (kernel32's `GetFirmwareType`) was not even
+implemented, and setup hard-wired `ARCH_PcAT`, so UEFI installs could not exist. Fix: rosload
+asks the first-stage loader (`FrLdrIsUefiBoot`, in freeldr.spec), and the kernel answers class
+90 from the latched bit. Review hint: before trusting a guarded line as live, `grep -rn` the
+macro in `*.cmake`/`CMakeLists.txt` for the target that compiles the file.
 
 ### A translated table lost its SENTINEL row, but the loop still walks to the sentinel
 Symptom: `*** RUST PANIC ... index out of bounds: the len is 7 but the index is 7`, on the first
@@ -10040,6 +10098,19 @@ budget work against driving a row to zero, without an upstream reference measure
 zero is reachable. Cross-*arch* comparison is still fair game (it is the same codebase), which
 is why "arm64 fails 9 where i386 fails 4" is a real signal while "arm64 fails 9" is not.
 
+**3. Cross-arch comparison needs equal denominators too.** "arm64 fails 48, amd64 fails 3" read
+as an arm64-only section bug for months. The x86 row was `pass=4 fail=3 skip=2` — nine
+assertions out of 330 — because x86 conformance boots the livecd (`ArcBootDeviceName=
+multi(0)disk(0)cdrom(0)`), so `\SystemRoot` is read-only CDFS and every kmtest that creates a
+file there bails at setup (`0xc0000022`): ZwCreateSection, MmSection and the file halves of
+ZwMapViewOfSection and IoFilesystem. arm64 boots a writable FAT ramdisk and ran them all. The
+bugs it found (the missing view-protection checks in `MmMapViewOfSection`) were in shared code.
+amd64 conformance now boots a writable root too (`VIBEOS_WRITABLE_ROOT=1`,
+`tools/conformance/mk_writable_livecd.py`); its `summary.json` records `writable_root`, read
+off the boot line rather than the request.
+**Before calling a failure arch-specific, compare `pass+fail` across arches** — the arch that
+"passes" may simply never have reached the assertion.
+
 ### No ratio can catch a cost the harness stubs away — count, don't measure `[§9.76]`
 Every instrument was green and the OS booted **3× slower**: the Rust folded each character
 through `_towlower_l(c, NULL)`, and a NULL locale means **three Win32 calls per character**, in
@@ -11526,6 +11597,24 @@ a flip's remaining C++ for `static_cast<`/`reinterpret_cast<` naming a Rust-owne
 you believe the flip is closure-complete — the retained closure will not show it, because a
 `static_cast` demands no symbol.
 
+### A DDK macro hand-shimmed per crate as an empty body leaks whatever the macro released
+**Symptom.** `NO_MORE_SYSTEM_PTES` (0x3F, 17 PTEs) about two minutes into i386 setup's file
+copy, then 0xC2 cascades. amd64 survives the same leak on its far larger PTE space, so only
+a long i386 disk workload ever shows it.
+**Cause.** `MmPrepareMdlForReuse` is a wdm.h macro: a reused partial MDL that has been
+mapped is unmapped first. classpnp reuses one partial MDL per transfer packet and scsiport's
+StartIo maps it (`MmGetSystemAddressForMdl`); classpnp-rust's `ddk_shims.rs` defined the macro
+as `{}`, so every split transfer leaked its pages' PTEs (43,695 of 45,023 held by that one
+chain). Four crates had their own copy: classpnp empty, cdrom clearing 0x8 instead of
+unmapping, fastfat and cdfs right. And the kernel set 0x10 (`MDL_PARTIAL` again) where it
+meant `MDL_PARTIAL_HAS_BEEN_MAPPED` (0x20), so even the right copies never fired.
+**Fix.** One copy, `ntkrnl_sys::inline::mm::MmPrepareMdlForReuse`, that the shims delegate to;
+the kernel sets 0x20. **Finding it:** count ownership, not totals — a reservation table keyed
+by `RtlWalkFrameChain` and released per PTE named the leaking chain in one run, where the
+free count alone only said "empty". Still empty and owed: classpnp's
+`FREE_PORT_ALLOCATED_SENSE_BUFFER(_EX)` (dead until a port sets `SRB_FLAGS_PORT_DRIVER_ALLOCSENSE`)
+and `ExInitialize{Set,Delete}TimerParameters` (the `ExSetTimer` path).
+
 ### A cohab shim declared VOID SWALLOWS the real function's return value
 
 **Symptom.** Callers branch on a value the callee never delivered. Nothing warns: the C
@@ -12154,6 +12243,12 @@ page, and it asked for a 0-byte common buffer.
   once guarded) `[§9.105a]`. The quarantine note's stated root cause was **wrong** and cost real
   time; the smoking gun was an **off-by-one in the trace, not an address**. The guard is
   deliberately **cfg-gated to i386 and self-retiring** — guarding all arches measurably costs.
+- **arm64 `RtlWalkFrameChain` started its walk at `sp`, not `x29`.** The generic walk reads
+  `[frame]` = caller's frame and `[frame + ptr]` = return address: the x86 EBP chain, and on
+  AArch64 exactly the x29 frame record. Starting at `sp` read locals as frame records, so it
+  returned 0 frames (RtlStackKM 13/27, user-mode RtlStack 16/24, in rtlk and ntdll alike). Two
+  more x86-isms rode along: the return address was read as a 32-bit `ULONG`, and the kernel
+  walk's "stop at user mode" test was `Eip & 0x80000000`; on 64-bit it is the top bit.
 - **arm64 user-mode SEH never delivers first-chance** — `RtlRaiseException` is unimplemented for
   arm64 (OPEN; needs a `#[naked]` capture stub).
 
@@ -14085,6 +14180,27 @@ introduced at any heap exit — it is an external stray write.**
   Now the UEFI loader reports the bus from the ACPI MCFG and programs `InterruptLine` with
   the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
   resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
+
+### A time function returns the uptime: `SharedSystemTime` is 0x7FFE0008
+- **Symptom:** a driver's "current system time" is a small number that grows from boot, and
+  only while a process with the user shared page is current.
+- **Cause:** amd64/arm64 `KeQuerySystemTime` is a macro over `KI_USER_SHARED_DATA + 0x14`
+  (SystemTime, kernel address 0xFFFFF78000000014). storport's glue declared `SharedSystemTime
+  = 0x7ffe0008`, which is +0x8 (InterruptTime) at the USER-mode address, and `port resolve`
+  copied it into ndis as tree consensus, shadowing the island's correct per-arch constant.
+- **Fix:** call `KeQuerySystemTime` (ntkrnl-sys `inline::ke` on amd64/arm64, the export on
+  i386), as the C does. `resolve` no longer copies a name any island arch defines.
+
+### A driver links on amd64 and says `undefined symbol: KeNumberProcessors` on i386/arm64
+- **Symptom:** `ld.lld: error: undefined symbol: KeNumberProcessors` (arm64) or
+  `_KeNumberProcessors: i386 cdecl -- missing symbol` (i386), referenced from a Rust driver
+  crate's `.refptr`; the same crate links on amd64.
+- **Cause:** a DATA export (`@ extern KeNumberProcessors` in ntoskrnl.spec) read through a plain
+  `extern { static X: T; }`, which is what every bindgen island declares. The import library
+  has only `__imp_X`; amd64's linker auto-imports the plain name, i386 and arm64 do not.
+- **Fix:** read it through the import, per arch, as `ntkrnl_sys::inline::common::
+  InitSafeBootModeValue` / `KeNumberProcessorsValue` do (`__imp_X` pointer on amd64, a
+  `raw-dylib` data import on i386/arm64). ndis.sys hit it twice.
 
 ### A NIC works through NDIS on x86 and calls address 0 on arm64
 - **Symptom:** `ndisprobe` with an e1000 on arm64: bind, MAC and filter pass, then the first

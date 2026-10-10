@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_INIFILE; // ini_init.c: DBG_DEFAULT_CHANNEL(INIFILE)
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION};
 use crate::frldr::{TAG_INI_FILE, FrLdrTempAlloc, FrLdrTempFree};
@@ -8,8 +10,6 @@ const ESUCCESS: ARC_STATUS = 0;
 const OpenReadOnly: u32 = 0;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn FsOpenFile(FileName: *const i8, DeviceName: *const i8, OpenMode: u32, FileId: *mut u32) -> ARC_STATUS;
     fn ArcGetFileInformation(FileId: u32, Info: *mut FILEINFORMATION) -> ARC_STATUS;
     fn ArcClose(FileId: u32) -> ARC_STATUS;
@@ -33,7 +33,7 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
     let mut Status: ARC_STATUS;
     let Success: u8;
 
-    TRACE(b"IniFileInitialize()\n\0".as_ptr() as *const i8);
+    TRACE!("IniFileInitialize()\n");
 
     let boot_path = FrLdrGetBootPath();
 
@@ -44,10 +44,7 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
         &mut FileId,
     );
     if Status != ESUCCESS {
-        ERR(
-            b"Error while opening freeldr.ini, Status: %d\n\0".as_ptr() as *const i8,
-            Status,
-        );
+        ERR!("Error while opening freeldr.ini, Status: %d\n", Status);
 
         Status = FsOpenFile(
             b"boot.ini\0".as_ptr() as *const i8,
@@ -56,10 +53,7 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
             &mut FileId,
         );
         if Status != ESUCCESS {
-            ERR(
-                b"Error while opening boot.ini, Status: %d\n\0".as_ptr() as *const i8,
-                Status,
-            );
+            ERR!("Error while opening boot.ini, Status: %d\n", Status);
             UiMessageBoxCritical(b"Error opening freeldr.ini/boot.ini or file not found.\nYou need to re-install FreeLoader.\0".as_ptr() as *const i8);
             return 0u8;
         }
@@ -82,10 +76,7 @@ pub unsafe extern "C" fn IniFileInitialize() -> u8 {
 
     Status = ArcRead(FileId, FreeLoaderIniFileData, FreeLoaderIniFileSize, &mut Count);
     if Status != ESUCCESS || Count != FreeLoaderIniFileSize {
-        ERR(
-            b"Error while reading freeldr.ini, Status: %d\n\0".as_ptr() as *const i8,
-            Status,
-        );
+        ERR!("Error while reading freeldr.ini, Status: %d\n", Status);
         UiMessageBoxCritical(b"Error while reading freeldr.ini.\0".as_ptr() as *const i8);
         ArcClose(FileId);
         FrLdrTempFree(FreeLoaderIniFileData, TAG_INI_FILE);

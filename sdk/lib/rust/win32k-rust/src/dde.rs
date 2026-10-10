@@ -29,9 +29,6 @@ const USERTAG_DDE:  u32 = u32::from_le_bytes(*b"UsdE");
 const USERTAG_DDE1: u32 = u32::from_le_bytes(*b"Usd1");
 const USERTAG_DDE5: u32 = u32::from_le_bytes(*b"Usd5");
 
-// NT_ASSERT — kernel macro, no exported symbol. No-op (asserts only in checked builds).
-macro_rules! NT_ASSERT { ($($t:tt)*) => {{}}; }
-
 // UserHMGetHandle(obj) = obj->head.h (HANDLE at offset 0). FORCEINLINE macro,
 // no kernel symbol — reimplement inline (matches clipboard.rs/timer.rs).
 #[inline(always)]

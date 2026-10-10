@@ -1986,11 +1986,15 @@ pub unsafe extern "C" fn GetSystemDisk(List: PPARTLIST) -> PDISKENTRY {
         return (*(*List).SystemPartition).DiskEntry;
     }
 
+    // The disk the BIOS boots from. UEFI has no BIOS disk numbering at all (no INT13
+    // 'Configuration Data', so no disk is ever BiosFound) and boots whichever disk carries
+    // the removable-media loader file, so there the first fixed disk is the system disk.
+    let uefi = crate::setuplib::setuplib::BootedFromUefi();
     Entry = (*List).DiskListHead.Flink;
     while Entry != &raw mut (*List).DiskListHead {
         DiskEntry = CONTAINING_RECORD!(Entry, DISKENTRY, ListEntry);
 
-        if (*DiskEntry).MediaType == FixedMedia && (*DiskEntry).BiosFound != 0 {
+        if (*DiskEntry).MediaType == FixedMedia && ((*DiskEntry).BiosFound != 0 || uefi) {
             break;
         }
         Entry = (*Entry).Flink;

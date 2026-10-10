@@ -526,18 +526,18 @@ pub unsafe extern "C" fn CdLookupAllocation(
             };
         },
         |_, _| {
-            if (*p_CleanupParent) {
+            if *p_CleanupParent  {
                 //
                 //  Release the parent and cleanup the dirent structures.
                 //
 
-                CdReleaseFile(IrpContext, (*p_ParentFcb));
+                CdReleaseFile(IrpContext, *p_ParentFcb );
 
                 CdCleanupDirContext(IrpContext, &mut (*p_DirContext));
                 CdCleanupDirent(IrpContext, &mut (*p_Dirent));
             }
 
-            if (*p_UnlockFcb) {
+            if *p_UnlockFcb  {
                 CdUnlockFcb(IrpContext, Fcb);
             }
         },

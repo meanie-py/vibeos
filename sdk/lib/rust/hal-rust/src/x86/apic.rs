@@ -818,7 +818,7 @@ pub unsafe extern "system" fn HalpAllocateSystemInterrupt(Irq: UCHAR, Vector: UC
     redir.set_vector(Vector);
     redir.set_message_type(APIC_MT_LOWEST_PRIORITY);
     redir.set_destination_mode(APIC_DM_LOGICAL);
-    redir.set_polarity(0);
+    redir.set_polarity(LineActiveLow[Irq as usize] as u32);
     redir.set_remote_irr(0);
     redir.set_trigger_mode(APIC_TGM_EDGE);
     redir.set_mask(1);
@@ -841,6 +841,19 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
     OutIrql: PKIRQL,
     OutAffinity: PKAFFINITY,
 ) -> ULONG {
+    // The level is an I/O APIC input (a GSI; one I/O APIC, based at 0). Past the
+    // last input there is no redirection entry to read or program: an index cast
+    // to UCHAR would alias another register, so refuse it and say why.
+    if BusInterruptLevel >= APIC_MAX_IRQ as ULONG {
+        DbgPrint(
+            b"[HAL] interrupt line %lu is past the I/O APIC's %u inputs: no vector\n\0".as_ptr(),
+            BusInterruptLevel,
+            APIC_MAX_IRQ as u32,
+        );
+        core::ptr::write_volatile(OutAffinity, 0);
+        core::ptr::write_volatile(OutIrql, 0);
+        return 0;
+    }
     let mut vector = HalpIrqToVector(BusInterruptLevel as UCHAR);
 
     if vector != APIC_FREE_VECTOR {
@@ -872,6 +885,63 @@ pub unsafe extern "system" fn HalpGetRootInterruptVector(
 
     core::ptr::write_volatile(OutAffinity, HalpDefaultInterruptAffinity);
     vector as ULONG
+}
+
+// ---------------------------------------------------------------------------
+// Interrupt line polarity, as the firmware describes it. A redirection entry's
+// polarity is a property of the wire, which only ACPI knows: a PCI INTx routed
+// straight to an input (an Intel PCH's PIRQs on inputs 16-23) is active-low,
+// while QEMU's q35 GSI links and i440fx PIRQ links declare active-high, and a
+// mismatch either never fires or fires forever. acpi.sys resolves each PCI
+// device's _PRT entry and reports the line here before the device's interrupt
+// resource is translated, so the entry is allocated with the right polarity.
+// Inputs nobody describes stay active-high, the ISA convention the HAL always
+// used. The trigger mode is the connecting driver's (HalEnableSystemInterrupt).
+// ---------------------------------------------------------------------------
+
+static mut LineActiveLow: [bool; APIC_MAX_IRQ as usize] = [false; APIC_MAX_IRQ as usize];
+
+/// How many interrupt inputs this HAL routes through an I/O APIC. Nonzero tells
+/// acpi.sys to select the APIC interrupt model (`\_PIC(1)`) and route PCI INTx
+/// by GSI; the 8259 flavor returns 0.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosIoApicInputs() -> ULONG {
+    APIC_MAX_IRQ as ULONG
+}
+
+/// Record the polarity of I/O APIC input `Gsi`. FALSE when the input does not
+/// exist. An entry already allocated is updated in place (still masked or not),
+/// since a second sharer of a line describes the same wire.
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn HalVibeosSetInterruptLine(Gsi: ULONG, LevelSensitive: BOOLEAN, ActiveLow: BOOLEAN) -> BOOLEAN {
+    if Gsi >= APIC_MAX_IRQ as ULONG {
+        DbgPrint(
+            b"[HAL] firmware routes an interrupt to GSI %lu, past the I/O APIC's %u inputs\n\0".as_ptr(),
+            Gsi,
+            APIC_MAX_IRQ as u32,
+        );
+        return 0;
+    }
+    let low = ActiveLow != 0;
+    let eflags = read_eflags();
+    cli();
+    let changed = LineActiveLow[Gsi as usize] != low;
+    LineActiveLow[Gsi as usize] = low;
+    let mut redir = apic_read_io_redirection_entry(Gsi as UCHAR);
+    if redir.vector() != APIC_FREE_VECTOR {
+        redir.set_polarity(low as u32);
+        apic_write_io_redirection_entry(Gsi as UCHAR, redir);
+    }
+    write_eflags(eflags);
+    if changed {
+        DbgPrint(
+            b"[HAL] GSI %lu: %s, active-%s\n\0".as_ptr(),
+            Gsi,
+            if LevelSensitive != 0 { b"level\0".as_ptr() } else { b"edge\0".as_ptr() },
+            if low { b"low\0".as_ptr() } else { b"high\0".as_ptr() },
+        );
+    }
+    1
 }
 
 // ---------------------------------------------------------------------------

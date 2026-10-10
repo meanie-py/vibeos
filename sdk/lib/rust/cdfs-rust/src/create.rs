@@ -857,7 +857,7 @@ pub unsafe extern "C" fn CdOpenDirectoryFromPathEntry(
                     CdUnlockVcb(IrpContext, Vcb);
                 }
                 if !(*p_ParentFcb).is_null() {
-                    CdReleaseFcb(IrpContext, (*p_ParentFcb));
+                    CdReleaseFcb(IrpContext, *p_ParentFcb );
                 }
             },
         );
@@ -1020,7 +1020,7 @@ pub unsafe extern "C" fn CdOpenFileFromFileContext(
                 CdUnlockVcb(irp_context, vcb);
             }
             if !(*p_parent_fcb).is_null() {
-                CdReleaseFcb(irp_context, (*p_parent_fcb));
+                CdReleaseFcb(irp_context, *p_parent_fcb );
             }
         },
     );
@@ -1898,14 +1898,14 @@ pub unsafe extern "C" fn CdCommonCreate(
             //  Cleanup the PathEntry if initialized.
             //
             if (*p_CleanupCompoundPathEntry) != 0 {
-                CdCleanupCompoundPathEntry((*p_IrpContext), &mut (*p_CompoundPathEntry));
+                CdCleanupCompoundPathEntry(*p_IrpContext , &mut (*p_CompoundPathEntry));
             }
 
             //
             //  Cleanup the FileContext if initialized.
             //
             if (*p_CleanupFileContext) != 0 {
-                CdCleanupFileContext((*p_IrpContext), &mut (*p_FileContext));
+                CdCleanupFileContext(*p_IrpContext , &mut (*p_FileContext));
             }
 
             //
@@ -1919,7 +1919,7 @@ pub unsafe extern "C" fn CdCommonCreate(
                 if !(*p_CurrentFcb).is_null() && ((*p_CurrentFcb) != (*Vcb).VolumeDasdFcb) {
                     let mut RemovedFcb: u8 = 0;
 
-                    CdTeardownStructures((*p_IrpContext), (*p_CurrentFcb), &mut RemovedFcb);
+                    CdTeardownStructures(*p_IrpContext , *p_CurrentFcb , &mut RemovedFcb);
 
                     if RemovedFcb != 0 {
                         (*p_CurrentFcb) = null_mut();
@@ -1945,18 +1945,18 @@ pub unsafe extern "C" fn CdCommonCreate(
             //  Release the Current Fcb if still acquired.
             //
             if !(*p_CurrentFcb).is_null() {
-                CdReleaseFcb((*p_IrpContext), (*p_CurrentFcb));
+                CdReleaseFcb(*p_IrpContext , *p_CurrentFcb );
             }
 
             //
             //  Release the Vcb.
             //
-            CdReleaseVcb((*p_IrpContext), Vcb);
+            CdReleaseVcb(*p_IrpContext , Vcb);
 
             //
             //  Call our completion routine.
             //
-            CdCompleteRequest((*p_IrpContext) as *mut core::ffi::c_void, (*p_Irp), (*p_Status));
+            CdCompleteRequest((*p_IrpContext) as *mut core::ffi::c_void, *p_Irp , *p_Status );
         },
     );
 

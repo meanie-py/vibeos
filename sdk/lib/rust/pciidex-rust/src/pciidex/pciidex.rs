@@ -131,6 +131,8 @@ pub unsafe extern "C" fn AtaSleep() {
     let mut Timer: KTIMER = core::mem::zeroed();
     let mut DueTime: LARGE_INTEGER = core::mem::zeroed();
 
+    ASSERT!((KeGetCurrentIrql() as u32) < (DISPATCH_LEVEL as u32));
+
     DueTime.QuadPart = (PORT_TIMER_TICK_MS as i64) * -10000i64; // C: `* -10000LL`
 
     KeInitializeTimer(&mut Timer);
@@ -185,6 +187,7 @@ pub unsafe extern "C" fn PciIdeXPnpRepeatRequest(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!(!IS_FDO!(CommonExt));
 
     TopDeviceObject = IoGetAttachedDeviceReference((*FdoExt).Self_);
 
@@ -391,6 +394,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
         RUSTCONV_WSTR_6D9E94643474.as_ptr(),
         PciIdeControllerNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(DeviceName) as *mut _UNICODE_STRING,
@@ -408,6 +412,7 @@ unsafe extern "C" fn PciIdeXAddDeviceEx(
 
     DriverExtension = IoGetDriverObjectExtension(DriverObject, DriverObject as *mut core::ffi::c_void)
         as PPCIIDEX_DRIVER_EXTENSION;
+    ASSERT!(DriverExtension);
 
     Status = RtlULongAdd(
         (*DriverExtension).MiniControllerExtensionSize,

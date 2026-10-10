@@ -83,11 +83,7 @@ def _forwarded_va_list(body: str) -> str:
     if m is None:
         return body
     v = m.group("v")
-    body = (
-        body[: m.start()]
-        + f"let {v}: va_list = *(ap_list as *mut va_list);"
-        + body[m.end() :]
-    )
+    body = body[: m.start()] + f"let {v}: va_list = *(ap_list as *mut va_list);" + body[m.end() :]
     return re.sub(rf"\s*va_end!\s*\(\s*{v}\s*\)\s*;", "", body)
 
 

@@ -1329,6 +1329,26 @@ drivers/ksfilter/swenum/CMakeLists.txt	1	# swenum.c (the KS software bus enumera
 drivers/network/afd/CMakeLists.txt	1	# afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
 drivers/network/afd/CMakeLists.txt	1	# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
+drivers/network/ndis/CMakeLists.txt	1	# ndis/30stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/30stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/40stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/40stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/50stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/50stubs.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/buffer.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/buffer.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/cl.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/cl.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/cm.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/cm.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/co.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/co.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/config.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/config.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/control.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/control.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/efilter.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/efilter.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/guid.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/guid/mod.rs, generated: port data)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/hardware.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/hardware.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/io.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/io.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/main.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/main.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/memory.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/memory.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/miniport.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/miniport.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/misc.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/misc.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/protocol.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/protocol.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/string.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/string.rs)
+drivers/network/ndis/CMakeLists.txt	1	# ndis/time.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/time.rs)
 drivers/processor/processr/CMakeLists.txt	1	# processr.c/misc.c/pnp.c are translated to Rust (sdk/lib/rust/processr-rust,
 drivers/serial/pl011/CMakeLists.txt	1	# add_library(pl011 MODULE pl011.c) # body replaced by Rust; kept on disk
 drivers/serial/pl011/CMakeLists.txt	1	# pl011.c (the minimal ARM64 PL011 UART driver) is translated to Rust

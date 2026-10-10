@@ -60,7 +60,6 @@ extern "C" {
     fn CdCleanupIrpContext(IrpContext: *mut IRP_CONTEXT, b: BOOLEAN);
 }
 extern "C" {
-    fn __analysis_assert(condition: BOOLEAN);
 }
 extern "system" {
     static IRP_CONTEXT_FSP_FLAGS: u32;
@@ -208,7 +207,7 @@ pub unsafe extern "system" fn CdFspDispatch(
 
         irp = (*irp_context).Irp;
         irp_sp = IoGetCurrentIrpStackLocation(irp);
-        __analysis_assert((!irp_sp.is_null()) as BOOLEAN);
+        ntkrnl_sys::__analysis_assert!((!irp_sp.is_null()) as BOOLEAN);
 
         // Continue the outer loop
     }

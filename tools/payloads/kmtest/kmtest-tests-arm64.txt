@@ -42,7 +42,9 @@ FsRtlLegal
 FsRtlMcb
 FsRtlRemoveDotsFromPath
 FsRtlTunnel
-HalPortIo
+# NOT BUILT HERE (2026-10-09): HalPortIo is `#if defined(_M_IX86) || defined(_M_AMD64)` in
+# kmtest_drv/testlist.c, so kmtest reports error 0x7b (no such test) and the row read NO-END.
+# HalPortIo
 HalSystemInfo
 # QUARANTINED 2026-07-10 (amd64 sweep 1): BUGCHECK 0x1E — RtlRaiseStatus(0xC0000005) from a
 # kmtest_drv PC, escapes __try (calls-only native-SEH coverage). RE-TESTED 2026-07-18 after the
@@ -226,7 +228,9 @@ ZwMapViewOfSection
 # UN-QUARANTINED 2026-07-17 (§9.93): NtWaitForMultipleObjects handle-array capture now goes through
 # the fault-tolerant KmProtectedCopyMemory on arm64 (validated HW-fault SEH). Same fix as amd64.
 ZwWaitForMultipleObjects
-RtlCaptureContextKM
+# NOT BUILT HERE (2026-10-09): RtlCaptureContextKM/UM are `#ifdef _M_AMD64` in both testlists
+# (CMake only adds them for amd64), so kmtest reports error 0x7b and the row read NO-END.
+# RtlCaptureContextKM
 FileAttributes
 FindFile
 HidPDescription
@@ -314,4 +318,4 @@ TcpIpTdi
 # UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
 # agreed (row banked in kmtest.txt). The history above is the audit trail.
 TcpIpConnect
-RtlCaptureContextUM
+# RtlCaptureContextUM -- amd64-only, see RtlCaptureContextKM above

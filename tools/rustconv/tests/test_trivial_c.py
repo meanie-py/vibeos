@@ -29,8 +29,8 @@ def dep(body: str, *, name: str, ret: str = "DWORD", params=(), static=False, cp
     )
 
 
-def lower(body: str, **kwargs):
-    return lower_trivial_c_function(dep(body, **kwargs))
+def lower(body: str, keep_diagnostics: bool = False, **kwargs):
+    return lower_trivial_c_function(dep(body, **kwargs), keep_diagnostics=keep_diagnostics)
 
 
 # --------------------------------------------------------------------------- #
@@ -848,3 +848,52 @@ def test_matcher_oracle_disagreement_fails_loud(monkeypatch):
     )
     with pytest.raises(TrivialLoweringError, match="failed its own oracle"):
         trivial_c.lower_trivial_c_function(case)
+
+
+def test_kept_diagnostic_is_re_emitted_as_the_crates_macro():
+    result = lower(
+        'DWORD WINAPI Stub(INT level)\n{\n    ERR("bad  level %d\\n", level);\n    return 0;\n}',
+        name="Stub",
+        params=[("INT", "level")],
+        keep_diagnostics=True,
+    )
+    assert result is not None
+    assert result.shape == "constant_return"
+    # Raw, so the format string's double space survives.
+    assert 'ERR!("bad  level %d\\n", level);' in result.rust
+    assert "// ERR" not in result.rust
+
+
+def test_kept_diagnostic_calling_a_helper_goes_to_the_model():
+    assert (
+        lower(
+            'DWORD WINAPI Stub(LPCSTR s)\n{\n    WARN("%s\\n", debugstr_a(s));\n    return 0;\n}',
+            name="Stub",
+            params=[("LPCSTR", "s")],
+            keep_diagnostics=True,
+        )
+        is None
+    )
+
+
+def test_kept_channel_form_goes_to_the_model():
+    assert (
+        lower(
+            'DWORD WINAPI Stub(void)\n{\n    ERR_(winediag)("nope\\n");\n    return 1;\n}',
+            name="Stub",
+            keep_diagnostics=True,
+        )
+        is None
+    )
+
+
+def test_trace_is_still_dropped_when_diagnostics_are_kept():
+    result = lower(
+        'VOID WINAPI Stub(INT level)\n{\n    TRACE("(%d)\\n", level);\n}',
+        name="Stub",
+        ret="VOID",
+        params=[("INT", "level")],
+        keep_diagnostics=True,
+    )
+    assert result is not None
+    assert '// TRACE("(%d)\\n", level);' in result.rust

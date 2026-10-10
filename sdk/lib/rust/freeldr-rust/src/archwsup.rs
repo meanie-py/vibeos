@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // archwsup.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 // CONFIGURATION_COMPONENT / CONFIGURATION_CLASS / CONFIGURATION_TYPE /
@@ -9,7 +11,6 @@ use ntkrnl_sys::ddk::{CONFIGURATION_COMPONENT, CONFIGURATION_COMPONENT_DATA,
     PCSTR, PSTR};
 use core::ffi::c_void;
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
 }
 
 extern "C" {
@@ -252,9 +253,7 @@ pub unsafe extern "C" fn FldrCreateComponentKey(
         FldrSetConfigurationData(ComponentData, ResourceList, Size);
     }
 
-    TRACE(
-        b"Created key: %s\\%d\n\0".as_ptr() as PCSTR, (ArcTypes[min(Type as usize, MaximumType as usize)]) as usize, (Key) as usize,
-    );
+    TRACE!("Created key: %s\\%d\n", (ArcTypes[min(Type as usize, MaximumType as usize)]) as usize, (Key) as usize);
 
     *ComponentKey = ComponentData;
 }

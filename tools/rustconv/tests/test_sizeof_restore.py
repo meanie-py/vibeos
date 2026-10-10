@@ -11,11 +11,13 @@ def test_a_macros_type_argument_is_not_a_dropped_sizeof(tmp_path):
     `size_of::<..>()`, which no macro arm accepts."""
     c = tmp_path / "main.c"
     c.write_text(
-        "DWORD F(void)\n{\n    return n * sizeof(DATATYPES_INFO_1W) + FIELD_OFFSET(DATATYPES_INFO_1W, pName);\n}\n"
+        "DWORD F(void)\n{\n    return n * sizeof(DATATYPES_INFO_1W)"
+        " + FIELD_OFFSET(DATATYPES_INFO_1W, pName);\n}\n"
     )
     rust = (
-        "pub unsafe extern \"system\" fn F() -> DWORD {\n"
-        "    n.wrapping_mul(DATATYPES_INFO_1W as DWORD).wrapping_add(FIELD_OFFSET!(DATATYPES_INFO_1W, pName) as DWORD)\n"
+        'pub unsafe extern "system" fn F() -> DWORD {\n'
+        "    n.wrapping_mul(DATATYPES_INFO_1W as DWORD)"
+        ".wrapping_add(FIELD_OFFSET!(DATATYPES_INFO_1W, pName) as DWORD)\n"
         "}\n"
     )
     out, fixed = sizeof_restore.restore(rust, c, {"DATATYPES_INFO_1W"})

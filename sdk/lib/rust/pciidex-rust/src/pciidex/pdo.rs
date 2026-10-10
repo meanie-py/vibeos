@@ -722,6 +722,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                         (*FdoExtension).Controller.Pci.DeviceID as core::ffi::c_uint,
                     );
                 }
+                ASSERT!(NT_SUCCESS!(Status));
 
                 INFO!("  '%S'\n", Buffer);
 
@@ -739,6 +740,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_8D44D4323B7D.as_ptr(),
                 b"Internal_IDE_Channel\0".as_ptr() as *const i8,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -755,6 +757,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_D217C45C6798.as_ptr(),
                 IdeCompatibleId.as_ptr(),
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("  '%S'\n", IdStart);
 
@@ -805,6 +808,7 @@ unsafe extern "C" fn PciIdeXPdoQueryId(
                 RUSTCONV_WSTR_F3C6A8F2AC47.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Instance ID: '%S'\n", Buffer);
         }
@@ -850,6 +854,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
                 RUSTCONV_WSTR_00E24D9CDAB6.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Device Description: '%S'\n\0".as_ptr() as *const i8, Buffer);
         }
@@ -874,6 +879,7 @@ unsafe extern "C" fn PciIdeXPdoQueryDeviceText(
                 RUSTCONV_WSTR_7D85A404D734.as_ptr(),
                 (*PdoExtension).Channel,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             INFO!("Device Location: '%S'\n\0".as_ptr() as *const i8, Buffer);
         }
