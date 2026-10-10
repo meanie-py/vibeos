@@ -78,6 +78,7 @@ def read_serial(path: Path) -> str:
 
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
+WRITABLE_ROOT_ARCHES = {"amd64"}  # arm64 boots a writable ramdisk regardless
 
 
 def _load_parser(repo: Path):
@@ -650,6 +651,14 @@ def _conformance_once(args, repo: Path) -> int:
     # wedge, leaving a run dir with serial and nothing else.
     env["VIBEOS_ARTIFACT_DIR"] = str(run_dir)
     env["VIBEOS_SERIAL_TIMESTAMPS"] = "1"  # see read_serial
+    # Boot off a WRITABLE root (vm.livecd_media). On the plain livecd \SystemRoot is
+    # read-only CDFS and every kmtest that creates a file bails at setup -- amd64 ran 9
+    # of ZwCreateSection's 330 assertions that way. arm64's ramdisk is always writable.
+    # i386 is not on yet: its ramdisk boot still bugchecks (0x1A in MmDeleteRmap under
+    # win32k's font load, 0x23/0xA in a FAT flush -- roadmap "x86 conformance never runs
+    # the kmtests that write a file"). An explicit VIBEOS_WRITABLE_ROOT in env wins.
+    if base in WRITABLE_ROOT_ARCHES:
+        env.setdefault("VIBEOS_WRITABLE_ROOT", "1")
     env["VIBEOS_TRIPWIRE"] = with_quiet_token(env.get("VIBEOS_TRIPWIRE", ""))
     sweep_cmd = [
         sys.executable,
@@ -870,6 +879,9 @@ def _conformance_once(args, repo: Path) -> int:
         # explicitly"); this is that, and the same expression is computed three
         # lines from here for symbolication.
         "mp_kernel": "ntkrnlmp.exe" in serial_text,
+        # Read off the boot, not the env: a writable-root request that silently booted
+        # the CD would re-seed the same partial rows.
+        "writable_root": "ArcBootDeviceName=ramdisk(0)" in serial_text,
         "launched": len(results),
         "ok": ok,
         "bad": bad,

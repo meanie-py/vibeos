@@ -173,7 +173,7 @@ unsafe fn queue_timer_expire(q: *mut timer_queue) {
 }
 
 unsafe fn queue_get_timeout(q: *mut timer_queue) -> ULONG {
-    let mut t: *mut queue_timer;
+    let t: *mut queue_timer;
     let mut timeout: ULONG = INFINITE;
 
     RtlEnterCriticalSection(core::ptr::addr_of_mut!((*q).cs));

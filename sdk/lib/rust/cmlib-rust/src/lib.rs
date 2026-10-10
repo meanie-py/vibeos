@@ -18,6 +18,13 @@
 #![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 // ASSERT is debug_assert! (ntkrnl_sys::dbgassert): checked in a debug build, never
 // evaluated in release -- the kernel's convention. It was an empty fn here, which
 // never checked yet still evaluated its argument on every call.
@@ -55,15 +62,6 @@ fn panic(_info: &core::panic::PanicInfo) -> ! {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_eh_personality() {}
-
-// No-op shims for the cmlib.h debug macros (ASSERT / PAGED_CODE). In C these are
-// NDEBUG no-ops with no symbol; a few translated modules still reference them via
-// local `extern "C"` declarations, so provide the _ASSERT / _PAGED_CODE symbols
-// here to keep the crate self-contained on both the kernel and loader links.
-// (glue.rs also has crate-local inline ASSERT(bool)/PAGED_CODE() for the modules
-// that import them directly; those emit no symbol, so there is no clash.)
-#[unsafe(no_mangle)]
-pub extern "C" fn ASSERT(_cond: i32) {}
 
 mod glue;
 mod hivesum;

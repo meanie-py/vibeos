@@ -7,6 +7,13 @@
 //! storahci.sys — AHCI storport miniport, faithful C→Rust cohab translation
 //! (rustconv opus + c2rust anchor) of drivers/storage/port/storahci/storahci.c.
 
+// UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
+// optimization barrier that can uncloak an ABI mismatch.
+#[allow(unused_macros)]
+macro_rules! UNREFERENCED_PARAMETER {
+    ($($p:expr),* $(,)?) => {{ $( let _ = $p; )* }};
+}
+
 /// `AhciDebugPrint(format, ...)` — in C this was never a function at all, just a
 /// DbgPrint macro (`storahci.h:85`). The translation turned it into a no-op
 /// C-variadic *fn*, which stable Rust cannot define (`c_variadic`,

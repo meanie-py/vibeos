@@ -170,8 +170,6 @@ extern "system" {
     fn ObDereferenceObject(Object: *mut core::ffi::c_void);
 }
 extern "C" {
-}
-extern "C" {
     fn CdCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
 }
 extern "C" {

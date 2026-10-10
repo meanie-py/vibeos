@@ -23,7 +23,7 @@ extern "system" {
     fn GdiCreateLocalMetaFilePict(h: HANDLE) -> HANDLE;
     fn GlobalAlloc(uFlags: UINT, dwBytes: SIZE_T) -> HANDLE;
     fn GlobalLock(h: HANDLE) -> LPVOID;
-    fn GlobalSize(h: HANDLE) -> DWORD;
+    fn GlobalSize(h: HANDLE) -> SIZE_T;
     fn GlobalUnlock(h: HANDLE) -> i32;
     fn GlobalFree(h: HANDLE) -> HANDLE;
     fn GlobalHandle(pMem: LPCVOID) -> HANDLE;
@@ -439,7 +439,7 @@ pub unsafe extern "system" fn SetClipboardData(uFormat: UINT, hMem: HANDLE) -> H
         }
     } else {
         pMem = GlobalLock(hMem);
-        dwSize = GlobalSize(hMem);
+        dwSize = GlobalSize(hMem) as DWORD; // the C truncates into its DWORD dwSize too
 
         if !pMem.is_null()
             || uFormat == CF_DIB

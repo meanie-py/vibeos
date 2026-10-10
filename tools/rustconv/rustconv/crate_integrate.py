@@ -1040,7 +1040,34 @@ def unchecked_fn_pointer_calls(src: str) -> tuple[str, int]:
     rewritten: an `.unwrap()` whose result is not immediately called is left for review.
     """
     out, n = _PANICKING_FN_CALL.subn(lambda m: f".unwrap_unchecked(){m.group(1)}(", src)
-    return out, n
+    # `Some(X.expect(..)).unwrap_unchecked()(args)`: an earlier repair wrapped the panicking
+    # unwrap instead of replacing it (ndis io.rs ISRHandler); the inner one still panics.
+    out, k = _REWRAPPED_FN_EXPECT.subn(lambda m: ".unwrap_unchecked()" + m.group(1), out)
+    n += k
+    # The same call split across a binding (ndis, 11 sites):
+    #     let f = (*Drv).Chars.QueryInformationHandler.expect("non-null function pointer");
+    #     Status = f(..);
+    # c2rust's phrase marks a function-pointer call; rewritten only when the bound name is
+    # then CALLED, so a pointer that is stored or compared is left for review.
+    pieces, last, m2 = [], 0, 0
+    for m in _BOUND_FN_EXPECT.finditer(out):
+        stmt = out.rfind(";", 0, m.start())
+        stmt = max(stmt, out.rfind("{", 0, m.start()), out.rfind("}", 0, m.start()))
+        bound = re.match(r"\s*let\s+(?:mut\s+)?(\w+)\b", out[stmt + 1 : m.start()])
+        if bound is None or not re.search(rf"\b{re.escape(bound.group(1))}\s*\(", out[m.end() :]):
+            continue
+        pieces += [out[last : m.start()], ".unwrap_unchecked()"]
+        last = m.end() - 1  # keep the `;`
+        m2 += 1
+    if m2:
+        out = "".join(pieces) + out[last:]
+    return out, n + m2
+
+
+_REWRAPPED_FN_EXPECT = re.compile(
+    r"\.expect\(\s*\"non-null function pointer\"\s*\)(\s*,?\s*\)\s*\.unwrap_unchecked\(\)\s*\()"
+)
+_BOUND_FN_EXPECT = re.compile(r"\.expect\(\s*\"non-null function pointer\"\s*\)\s*;")
 
 
 def integrate(

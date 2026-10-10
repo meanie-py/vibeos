@@ -63,7 +63,6 @@ extern "system" {
     fn paged_code();
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn NodeType(Fcb: PFCB) -> u32;
-    fn UNREFERENCED_PARAMETER(x: *mut core::ffi::c_void);
     fn FatAcquireExclusiveGlobal(IrpContext: PIRP_CONTEXT);
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
     fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
@@ -76,7 +75,7 @@ extern "system" {
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
     fn DebugDump(Message: *const i8, Component: u32, Object: *mut core::ffi::c_void);
-    fn FatBugCheck(ExitCode: u32, Param1: u32, Param2: u32) -> !;
+    fn FatBugCheck(ExitCode: usize, Param1: usize, Param2: usize) -> !;
     fn FatAcquireSharedGlobal(irp_context: *mut IRP_CONTEXT);
     fn FatToggleMediaEjectDisable(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, enable: u8) -> u32;
     fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT);
@@ -155,7 +154,7 @@ pub unsafe extern "system" fn FatMatchFileSize(
 ) -> BOOLEAN {
     const FAT_NTC_FCB: u32 = 0x0502;
 
-    UNREFERENCED_PARAMETER(IrpContext as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
     if NodeType(Fcb) != FAT_NTC_FCB {
         return 1;
@@ -585,7 +584,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
         }
         _ => {
             DebugDump(b"Invalid FcbCondition\n\0".as_ptr() as *const i8, 0, Fcb as *mut core::ffi::c_void);
-            FatBugCheck((*Fcb).FcbCondition as u32, 0, 0);
+            FatBugCheck((*Fcb).FcbCondition as usize, 0, 0);
         }
     }
 
@@ -873,7 +872,7 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
                 Vcb as *mut core::ffi::c_void,
             );
             // #pragma prefast( suppress:28159, "things are seriously wrong if we get here" )
-            FatBugCheck((*Vcb).VcbCondition, 0, 0);
+            FatBugCheck((*Vcb).VcbCondition as usize, 0, 0);
         }
     }
 }

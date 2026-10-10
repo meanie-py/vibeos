@@ -249,7 +249,7 @@ pub unsafe extern "system" fn DbgDrvRealizeBrush(
     iHatch: ULONG,
 ) -> BOOL {
     let ppdev: PPDEVOBJ = (*psoTarget).hdev as PPDEVOBJ;
-    NT_ASSERT(0u8);
+    NT_ASSERT!(0u8);
     0
 }
 
@@ -965,7 +965,7 @@ pub unsafe extern "system" fn DbgDrvAlphaBlend(
 }
 
 pub unsafe extern "system" fn DbgSynthesizeFont() {
-    NT_ASSERT(0u8);
+    NT_ASSERT!(0u8);
 }
 
 unsafe extern "C" fn DbgGetSynthesizedFontFiles() {

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // hwdisk.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER};
@@ -80,9 +82,7 @@ extern "C" {
     fn FsGetDeviceSpecific(FileId: ULONG) -> *mut DISKCONTEXT;
     fn MachDiskReadLogicalSectors( DriveNumber: ULONG, SectorOffset: ULONGLONG, ReadSectors: ULONG, Buffer: *mut VOID, ) -> BOOLEAN;
     fn DiskDetectPartitionType(DriveNumber: u8);
-    fn ERR(fmt: *const i8, ...);
     fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;
-    fn TRACE(fmt: *const i8, ...);
     fn AddReactOSArcDiskInfo(ArcName: *const i8, GptDiskGuid: *const core::ffi::c_void, Signature: u32, Checksum: u32, ValidPartitionTable: u8);
     fn FsRegisterDevice(ArcName: *const i8, Vtbl: *const core::ffi::c_void);
     fn DiskReportError(Enable: u8);
@@ -141,7 +141,7 @@ unsafe extern "C" fn DiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut ULO
     let mut PartitionTableEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
     if DiskReadBufferSize == 0 {
-        ERR(b"DiskOpen(): DiskReadBufferSize is 0, something is wrong.\n\0".as_ptr() as PCHAR);
+        ERR!("DiskOpen(): DiskReadBufferSize is 0, something is wrong.\n");
         return ENOMEM;
     }
 
@@ -170,7 +170,7 @@ unsafe extern "C" fn DiskOpen(Path: PCHAR, _OpenMode: OPENMODE, FileId: *mut ULO
         }
 
         if SectorSize != Geometry.BytesPerSector {
-            ERR(b"SectorSize (%lu) != Geometry.BytesPerSector (%lu), expect problems!\n\0".as_ptr() as PCHAR);
+            ERR!("SectorSize (%lu) != Geometry.BytesPerSector (%lu), expect problems!\n");
         }
 
         SectorOffset = 0;
@@ -293,7 +293,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
     DiskDetectPartitionType(DriveNumber);
 
     if MachDiskReadLogicalSectors((DriveNumber) as u32 , 0u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0 {
-        ERR(b"Reading MBR failed\n\0".as_ptr() as *const i8);
+        ERR!("Reading MBR failed\n");
         sprintf(Identifier as *mut i8, b"BIOSDISK%d\0".as_ptr() as *const i8, (DriveNumber - FIRST_BIOS_DISK + 1) as i32);
         return;
     }
@@ -302,7 +302,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
     Mbr = DiskReadBuffer as *mut MASTER_BOOT_RECORD;
 
     Signature = (*Mbr).Signature;
-    TRACE(b"Signature: %x\n\0".as_ptr() as *const i8, (Signature) as usize);
+    TRACE!("Signature: %x\n", (Signature) as usize);
 
     Checksum = 0;
     i = 0;
@@ -311,7 +311,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
         i += 1;
     }
     Checksum = (!Checksum).wrapping_add(1);
-    TRACE(b"Checksum: %x\n\0".as_ptr() as *const i8, (Checksum) as usize);
+    TRACE!("Checksum: %x\n", (Checksum) as usize);
 
     ValidPartitionTable = if (*Mbr).MasterBootRecordMagic == 0xAA55 { 1 } else { 0 };
 
@@ -352,7 +352,7 @@ unsafe fn GetHarddiskInformation(DriveNumber: u8) {
     *Identifier.offset(17) = b'-';
     *Identifier.offset(18) = if ValidPartitionTable != 0 { b'A' } else { b'X' };
     *Identifier.offset(19) = 0;
-    TRACE(b"Identifier: %s\n\0".as_ptr() as *const i8, (Identifier) as usize);
+    TRACE!("Identifier: %s\n", (Identifier) as usize);
 }
 
 unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
@@ -379,7 +379,7 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
             i += 1;
         }
         if Changed == 0 {
-            TRACE(b"BIOS reports success for disk %d (0x%02X) but data didn't change\n\0".as_ptr() as *const i8, (DiskCount as i32) as usize, (DriveNumber as i32) as usize);
+            TRACE!("BIOS reports success for disk %d (0x%02X) but data didn't change\n", (DiskCount as i32) as usize, (DriveNumber as i32) as usize);
             break;
         }
 
@@ -398,7 +398,7 @@ unsafe fn EnumerateHarddisks(BootDriveReported: PBOOLEAN) -> u8 {
     DiskReportError(1u8);
 
     PcBiosDiskCount = DiskCount;
-    TRACE(b"BIOS reports %d harddisk%s\n\0".as_ptr() as *const i8, (DiskCount as i32) as usize, (if DiskCount == 1 { b"\0".as_ptr() } else { b"s\0".as_ptr() }) as usize);
+    TRACE!("BIOS reports %d harddisk%s\n", (DiskCount as i32) as usize, (if DiskCount == 1 { b"\0".as_ptr() } else { b"s\0".as_ptr() }) as usize);
 
     DiskCount
 }
@@ -440,7 +440,7 @@ unsafe fn DiskGetBootPath(IsPxe: BOOLEAN) -> BOOLEAN {
         let mut PartitionEntry: PARTITION_TABLE_ENTRY = core::mem::zeroed();
 
         if DiskGetBootPartitionEntry((FrldrBootDrive) as u32 , &mut PartitionEntry, &mut BootPartition) == 0 {
-            ERR(b"Failed to get boot partition entry\n\0".as_ptr() as *const i8);
+            ERR!("Failed to get boot partition entry\n");
             return 0u8;
         }
 
@@ -485,7 +485,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         let mut i: ULONG;
 
         if MachDiskReadLogicalSectors((FrldrBootDrive) as u32 , 16u64, 1, DiskReadBuffer as *mut core::ffi::c_void) == 0u8 {
-            ERR(b"Reading MBR failed\n\0".as_ptr() as *const i8);
+            ERR!("Reading MBR failed\n");
             return 0u8;
         }
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'6');
@@ -494,7 +494,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         Mbr = DiskReadBuffer as PMASTER_BOOT_RECORD;
 
         Signature = (*Mbr).Signature;
-        TRACE(b"Signature: %x\n\0".as_ptr() as *const i8, (Signature) as usize);
+        TRACE!("Signature: %x\n", (Signature) as usize);
 
         i = 0;
         while i < 2048 / core::mem::size_of::<ULONG>() as ULONG {
@@ -502,7 +502,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
             i += 1;
         }
         Checksum = (!Checksum).wrapping_add(1);
-        TRACE(b"Checksum: %x\n\0".as_ptr() as *const i8, (Checksum) as usize);
+        TRACE!("Checksum: %x\n", (Checksum) as usize);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'7');
 
         AddReactOSArcDiskInfo(FrLdrBootPath.as_ptr() as PCHAR, core::ptr::null(), Signature, Checksum, 1u8);
@@ -511,7 +511,7 @@ pub unsafe extern "C" fn PcInitializeBootDevices() -> BOOLEAN {
         FsRegisterDevice(FrLdrBootPath.as_ptr() as PCHAR, &DiskVtbl as *const _ as *const core::ffi::c_void);
         crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'9');
         DiskCount = DiskCount.wrapping_add(1);
-        TRACE(b"Additional boot drive detected: 0x%02X\n\0".as_ptr() as *const i8, (FrldrBootDrive as i32) as usize);
+        TRACE!("Additional boot drive detected: 0x%02X\n", (FrldrBootDrive as i32) as usize);
     }
     crate::frldr::dbgcon(b'B'); crate::frldr::dbgcon(b'D'); crate::frldr::dbgcon(b'Z');
 

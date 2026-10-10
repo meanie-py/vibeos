@@ -421,6 +421,9 @@ def _boot_vm(
                 run.log(ladder_txt[-8000:], header=f"{label} ladder serial")
         # Always capture a PNG screenshot (pass or fail), while the VM is alive.
         shot = _screenshot(vm, work, repo, arch, boot_arch)
+        irq_stats = _irq_stats(vm, arch)
+        if irq_stats:
+            run.log(irq_stats, header=f"{label} info irq")
         dbg_raw = ""
         try:
             dbg_raw = vm.read_debugcon().decode("ascii", errors="replace")
@@ -437,6 +440,9 @@ def _boot_vm(
                 or _boot_nvme_check(text)
                 or _headless_check(text)
                 or _virtio_mmio_check(text, arch)
+                or _ahci_irq_check(_qemu_stderr(vm))
+                or _ata_health_check(text)
+                or _legide_check(text)
             )
             if smp_fail is not None:
                 return {
@@ -935,6 +941,156 @@ def _ahci_check(text: str) -> dict | None:
     }
 
 
+# Measured on amd64 --ata-stack (2026-10-09): OVMF reads the CD polled (2248 commands, no
+# raise), then pciidex's 6549 commands came with 6566 raises, never two completions in a row
+# without one, and the line ended low. A polled command gets no raise (its port interrupt is
+# masked); the driver polls only its internal reset/port-multiplier requests, a handful.
+_AHCI_POLLED_RUN_MAX = 8
+
+
+def _irq_stats(vm: QemuVM, arch: str) -> str:
+    """QEMU's per-line interrupt counts (`info irq`: the i8259 and the ioapic), kept in
+    the log so a storage or NIC driver that quietly polls shows up as a line that never
+    fired. x86 only: arm64's GIC keeps no such statistics. Diagnostic: never fails."""
+    if arch == "arm64":
+        return ""
+    try:
+        return str(vm.qmp.hmp("info irq")).strip()
+    except Exception:
+        return ""
+
+
+# The new ATA stack's own reports of a lost interrupt: atapi's AtaPortTimeout (a request
+# outlived its timeout, so the port is reset) and pciidex's polled AHCI internal request.
+# Both are ERR lines (DPRINT1 format) and neither fires on a healthy boot. uniata media
+# never prints them.
+_ATA_TIMEOUT_RE = re.compile(
+    r"\((?:atapi|pciidex)-rust/[^)]*\) CH \d+: "
+    r"(?:Slot \d+ \(\w+\) timed out|Internal request timed out)"
+)
+_ATA_NO_IRQ_RE = re.compile(r"\(pciidex-rust/[^)]*\) CH \d+: Could not connect to interrupt")
+# rtl-diag's RtlAssert: `*** ASSERT FAILED: <expr> at <file!()>:<line>`, print and continue.
+_ATA_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at (?:atapi|pciidex|legide)-rust/")
+
+
+def _ata_health_check(text: str) -> dict | None:
+    """Fail a boot whose ATA stack ran without its interrupt. A request that times out is
+    reset and retried, and a channel that could not connect its interrupt is simply left
+    out, so the desktop comes up either way: only these lines say a disk was served by
+    the timeout path, or not at all."""
+    asserts = [ln.strip() for ln in text.splitlines() if _ATA_ASSERT_RE.search(ln)]
+    if asserts:
+        # DBG=1: the C's ASSERTs are live and print and continue, so the boot goes on.
+        return {
+            "classification": "ATA_ASSERT",
+            "salient": [f"{len(asserts)} ATA stack assertion(s) failed", *asserts[:4]],
+        }
+    lost = [ln.strip() for ln in text.splitlines() if _ATA_TIMEOUT_RE.search(ln)]
+    if lost:
+        return {
+            "classification": "ATA_TIMEOUT",
+            "salient": [f"{len(lost)} ATA request(s) timed out (a lost interrupt)", *lost[:4]],
+        }
+    no_irq = [ln.strip() for ln in text.splitlines() if _ATA_NO_IRQ_RE.search(ln)]
+    if no_irq:
+        return {
+            "classification": "ATA_NO_INTERRUPT",
+            "salient": [
+                "an ATA channel could not connect its interrupt and was not started",
+                *no_irq[:4],
+            ],
+        }
+    return None
+
+
+_LEGIDE_FORCED = "LEGIDE_DETECT: probing"
+_LEGIDE_CHANNEL_RE = re.compile(r"\[DA\] PiEnumerateDevice Root\\legide\\\d+: [1-9]\d* children")
+
+
+def _legide_check(text: str) -> dict | None:
+    """Prove an `--isa-ide` boot ran legide's detection to the end: the tripwire let it
+    probe, it found the ISA channel and reported it (Root\\legide), pciidex's legacy
+    interface started it, and atapi enumerated the disk on it. Without the rig nothing
+    in a boot reaches that code."""
+    if os.environ.get("VIBEOS_QEMU_ISA_IDE", "").strip() != "1":
+        return None
+    if _LEGIDE_FORCED not in text:
+        problem = (
+            "legide never forced its probe: LEGIDE_DETECT did not reach the tripwire, "
+            "or legide did not load"
+        )
+    elif not _LEGIDE_CHANNEL_RE.search(text):
+        problem = "legide probed but reported no channel with a device (Root\\legide\\NNNN)"
+    else:
+        return None
+    return {
+        "classification": "LEGIDE_NOT_ENGAGED",
+        "salient": [
+            problem,
+            *[ln.strip() for ln in text.splitlines() if "legide" in ln.lower()][-4:],
+        ],
+    }
+
+
+def _qemu_stderr(vm: QemuVM) -> str:
+    """The whole QEMU stderr log (trace events land there), or "" when there is none."""
+    path = getattr(vm, "_stderr_path", None)
+    try:
+        return path.read_text(errors="replace") if path is not None else ""
+    except OSError:
+        return ""
+
+
+def _ahci_irq_check(stderr_text: str) -> dict | None:
+    """Prove the guest's AHCI driver ran on interrupts, from QEMU's own trace (vm.py
+    AHCI_TRACE_EVENTS) rather than the driver's account of itself. A driver that polled,
+    or whose ISR never acknowledged the HBA, still boots: its requests just complete on
+    the poll or the timeout, and only the boot time moves. Counted from the first raise:
+    the firmware before it is meant to poll."""
+    if not ahci_requested():
+        return None
+    events = [ln.split(None, 1)[0] for ln in stderr_text.splitlines() if ln.startswith("ahci_")]
+    if "ahci_cmd_done" not in events:
+        # No trace at all means the events never reached the log, which is the harness's
+        # bug, not the guest's; _ahci_check already failed a boot with no driver.
+        return None
+    if "ahci_irq_raise" not in events:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"{events.count('ahci_cmd_done')} AHCI commands completed and the controller "
+                "never raised its interrupt: the guest driver never enabled it (GHC.IE/PxIE)",
+            ],
+        }
+    after = events[events.index("ahci_irq_raise") :]
+    done, raised = after.count("ahci_cmd_done"), after.count("ahci_irq_raise")
+    run = longest = 0
+    for ev in after:
+        if ev == "ahci_cmd_done":
+            run += 1
+            longest = max(longest, run)
+        elif ev == "ahci_irq_raise":
+            run = 0
+    if longest > _AHCI_POLLED_RUN_MAX:
+        return {
+            "classification": "AHCI_POLLING",
+            "salient": [
+                f"after the driver's first interrupt, {longest} AHCI commands completed in a "
+                f"row with no interrupt ({done} commands, {raised} raises): it is polling",
+            ],
+        }
+    # Not "ends raised": a command can be in flight when the log is read.
+    if "ahci_irq_lower" not in after:
+        return {
+            "classification": "AHCI_IRQ_STUCK",
+            "salient": [
+                "the AHCI interrupt was raised and never lowered: the guest's ISR never "
+                f"cleared PxIS/IS ({done} commands, {raised} raises)",
+            ],
+        }
+    return None
+
+
 def _net_suite_env(artifact_dir: Path) -> dict[str, str]:
     """The net suite's environment: ours, minus the NVMe rig. The suite snapshots
     its VM (savevm), and QEMU's nvme device refuses migration ("State blocked by
@@ -981,6 +1137,8 @@ _SEGMENT_ROOT = re.compile(r"\[HAL\] PCI segment 1: root bus 128-255 published")
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+# ...and, under NVME_PASSIVE_ISR, its messages connected passive (pnp.rs `connect`).
+_NVME_PASSIVE = "message(s) connected at passive level"
 # ...and this after its start-time self-test: one 1 MiB read, which the I/O path
 # cuts into commands and runs at once, by DMA to the reader's pages (pnp.rs `self_test`).
 _NVME_SELF_TEST = re.compile(
@@ -1156,6 +1314,9 @@ _SMMU_TRANSLATING = re.compile(r"\[HAL\] SMMUv3 at \S+: TRANSLATING")
 _SMMU_ATTACHED = re.compile(r"\[HAL\] SMMUv3 at \S+: requester \S+ is StreamID \S+ - translating")
 # ...and nvme.sys, whose service is DMA-remapping compatible, in a domain of its own.
 _SMMU_OWN_DOMAIN = "translating in a domain of its own"
+# ...and one a driver that found its device outside PnP claimed (smmuv3.rs `attach`).
+_SMMU_CLAIMED = "claimed by its driver)"
+_VIOBLK_PCI = re.compile(r"\[VIOBLK\] [0-9a-f]{2}:[0-9a-f]{2}\.\d dev ")
 # nvme-rust nvme.rs stray_identify (the NVME_STRAY_DMA tripwire).
 _STRAY = re.compile(r"tripwire: a stray Identify to RAM at 0x([0-9a-fA-F]+) \w+; (.*)$", re.M)
 
@@ -1184,6 +1345,18 @@ def _smmu_translate_check(text: str) -> dict | None:
             "classification": "SMMU_NO_DOMAIN",
             "salient": [
                 "nvme.sys is DMA-remapping compatible, but no device got a domain of its own",
+                *lines,
+            ],
+        }
+    # vioblk and netstack find their PCI functions themselves and claim their
+    # domains (HalVibeosDmaAttach); every arm64 rig boots from a virtio-blk disk.
+    if _VIOBLK_PCI.search(text) and _SMMU_CLAIMED not in text:
+        return {
+            "classification": "SMMU_UNCLAIMED",
+            "salient": [
+                "vioblk drove a PCI function, but no driver claimed a domain of its own "
+                "for one (vioblk-rust / netstack-rust dma.rs)",
+                *[ln.strip() for ln in text.splitlines() if "VIOBLK] 00:" in ln][-2:],
                 *lines,
             ],
         }
@@ -1352,6 +1525,18 @@ def _nvme_check(text: str) -> dict | None:
             "salient": [
                 f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
                 "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    # NVME_PASSIVE_ISR: nvme.sys connects with CONNECT_MESSAGE_BASED_PASSIVE, so its
+    # routines run on iomgr's worker thread; "interrupts working" above then proves
+    # a completion got from the ISR through the DPC and the worker to the driver.
+    if "NVME_PASSIVE_ISR" in os.environ.get("VIBEOS_TRIPWIRE", "") and (_NVME_PASSIVE not in text):
+        return {
+            "classification": "NVME_NOT_PASSIVE",
+            "salient": [
+                f"NVME_PASSIVE_ISR boot, but nvme.sys never printed `{_NVME_PASSIVE}`: "
+                "its messages were not connected passive (iomgr irq.rs)",
                 *lines,
             ],
         }
@@ -1553,18 +1738,36 @@ def smoke(args, repo: Path) -> int:
         os.environ["VIBEOS_QEMU_SMP"] = str(smp)
         run.add(Stage("smp", status="warn", detail=f"-smp {smp}"))
 
-    # AHCI channel: the boot CD on ich9-ahci (backend.py), and every boot must
-    # then show uniata driving it (_ahci_check). x86 only: arm64 boots a
-    # ramdisk and has no IDE CD to move.
+    # AHCI channel: an ich9-ahci controller, and every boot must then show a driver
+    # running it (_ahci_check). x86 moves its boot CD onto it (backend.py); arm64 boots
+    # a ramdisk, so it gets the controller with a disk and an empty CD drive of its own
+    # (vm.py _ahci_args).
     if getattr(args, "ahci", False):
-        if arch == "arm64":
-            run.classification = "BAD_ARGS"
-            run.add(
-                Stage("ahci", status="fail", detail="--ahci is x86-only (arm64 boots a ramdisk)")
-            )
-            return run.finalize(repo)
         os.environ["VIBEOS_AHCI_CD"] = "1"
-        run.add(Stage("ahci", status="warn", detail="boot CD on ich9-ahci"))
+        run.add(
+            Stage(
+                "ahci",
+                status="warn",
+                detail="disk + CD drive on ich9-ahci"
+                if arch == "arm64"
+                else "boot CD on ich9-ahci",
+            )
+        )
+
+    # legide channel: an ISA IDE controller on the tertiary legacy channel (vm.py
+    # _isa_ide_args), and every boot must then show legide finding it (_legide_check).
+    if getattr(args, "isa_ide", False):
+        if arch != "i386":
+            run.classification = "BAD_ARGS"
+            run.add(Stage("isa-ide", status="fail", detail="--isa-ide is i386-only (legide)"))
+            return run.finalize(repo)
+        os.environ["VIBEOS_QEMU_ISA_IDE"] = "1"
+        # The ACPI HAL tells legide to leave detection to PnP (DisableFirmwareMapper);
+        # the tripwire makes it probe anyway, or the rig would prove nothing.
+        tokens = os.environ.get("VIBEOS_TRIPWIRE", "").split()
+        if "LEGIDE_DETECT" not in tokens:
+            os.environ["VIBEOS_TRIPWIRE"] = " ".join([*tokens, "LEGIDE_DETECT"])
+        run.add(Stage("isa-ide", status="warn", detail="disk on ISA IDE 0x1E8 IRQ 11"))
 
     # GIC channel: arm64's virt machine at gic-version=3 (vm.py gic_version), and
     # every boot must then show the HAL driving it as one (_gic_check).

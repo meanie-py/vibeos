@@ -15,6 +15,7 @@ extern crate alloc;
 pub mod kalloc;
 pub mod serial;
 pub mod time;
+pub mod dma;
 pub mod hal;
 pub mod pci;
 pub mod device;
@@ -98,8 +99,9 @@ unsafe fn publish_nic_presence() {
 #[no_mangle]
 pub unsafe extern "system" fn DriverEntry(
     DriverObject: *mut DRIVER_OBJECT,
-    _RegistryPath: *mut UNICODE_STRING,
+    RegistryPath: *mut UNICODE_STRING,
 ) -> NTSTATUS {
+    dma::read_parameters(RegistryPath);
     serial::emit(core::format_args!(
         "[NETSTACK] DriverEntry: netstack.sys loaded\n"
     ));

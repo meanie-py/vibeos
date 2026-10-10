@@ -46,7 +46,7 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import macro_authority as ma
@@ -516,7 +516,7 @@ _INT_BITS = {
 
 # The arch under translation (pointer width) and the clang record layouts of the TU, for
 # `sizeof`: set by `tables`, read by `c_sizeof`.
-_ARCH: dict = {"ptr": 4, "layouts": None, "ctx": None}
+_ARCH = {"ptr": 4, "layouts": None}
 
 
 def _int_type(t: dict) -> tuple[int, bool] | None:
@@ -553,8 +553,8 @@ def c_sizeof(qual: str) -> int:
 
 
 _LAYOUT_BLOCK = re.compile(
-    r"Type: ((?:struct|union) [^\n]+?)\s*\n\s*Layout: <ASTRecordLayout\s+Size:(\d+)"
-    r"\s+DataSize:\d+\s+Alignment:(\d+)\s+FieldOffsets: \[([\d, ]*)\]"
+    r"Type: ((?:struct|union) \S+)\s+Layout: <ASTRecordLayout\s+Size:(\d+)\s+DataSize:\d+\s+"
+    r"Alignment:(\d+)\s+FieldOffsets: \[([\d, ]*)\]"
 )
 
 
@@ -586,68 +586,6 @@ def record_layouts(argv: list[str]) -> dict[str, dict]:
     return out
 
 
-def _call_text(n: dict, ctx: Ctx) -> str:
-    """The source text of the call a node begins: its name and the balanced parentheses after
-    it. A function-like macro's expansion range ends at the macro NAME, not its `)`."""
-    b = _loc(n.get("range", {}).get("begin", {}))
-    f = b.get("_file")
-    if f is None or "offset" not in b:
-        raise DataPortError(f"{ctx.where}: an expression with no source location")
-    src = ctx.sources.setdefault(f, Path(f).read_bytes())
-    i = b["offset"]
-    m = re.compile(rb"[A-Za-z_]\w*\s*\(").match(src, i)
-    if m is None:
-        raise DataPortError(f"{ctx.where}: expected a call at {Path(f).name}:{b.get('line', '?')}")
-    depth, j = 1, m.end()
-    while j < len(src) and depth:
-        depth += {40: 1, 41: -1}.get(src[j], 0)
-        j += 1
-    return " ".join(src[i:j].decode("latin-1").split())
-
-
-def _anon_layout(lay: dict, key: str) -> dict | None:
-    """The layout of an anonymous member's record: the AST calls it `struct (unnamed struct
-    at F:L:C)`, the layout dump `struct _S::(unnamed at F:L:C)` (or `anonymous`)."""
-    m = re.fullmatch(r"(struct|union) \((?:unnamed|anonymous) (?:struct |union )?at (.+)\)", key)
-    if m is None:
-        return None
-    for k, v in lay.items():
-        if k.startswith(m.group(1) + " ") and k.endswith(f"at {m.group(2)})") and "::(" in k:
-            return v
-    return None
-
-
-def _offsetof(n: dict) -> int:
-    """`offsetof(T, a.b)` / `FIELD_OFFSET(T, a.b)`: clang's JSON prints an OffsetOfExpr with
-    no value and no operands, so the TYPE and MEMBER PATH are read from the call's source text
-    and the number from clang's own record layout of that type (bit-fields are refused)."""
-    ctx: Ctx | None = _ARCH["ctx"]
-    lay = _ARCH["layouts"]
-    if ctx is None or lay is None:
-        raise DataPortError("offsetof outside a TU render: no clang layouts to read")
-    text = _call_text(n, ctx)
-    m = re.search(r"\(\s*(.+?)\s*,\s*([A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*)\s*\)\s*\)?$", text)
-    if m is None:
-        raise DataPortError(f"{ctx.where}: cannot read the type and member of `{text[:80]}`")
-    qual = m.group(1)
-    total = 0
-    for member in re.split(r"\s*\.\s*", m.group(2)):
-        key = desugar(qual)
-        rec = ctx.records.get(qual) or ctx.records.get(key)
-        info = lay.get(key) or _anon_layout(lay, key)
-        if rec is None or info is None:
-            raise DataPortError(f"{ctx.where}: offsetof into {qual!r}: no record layout")
-        names = [f.name for f in rec.fields]
-        if member not in names or len(info["bit_offsets"]) != len(names):
-            raise DataPortError(f"{ctx.where}: offsetof({qual}, {member}): not a laid-out field")
-        i = names.index(member)
-        if rec.fields[i].bits is not None or info["bit_offsets"][i] % 8:
-            raise DataPortError(f"{ctx.where}: offsetof({qual}, {member}) is a bit-field")
-        total += info["bit_offsets"][i] // 8
-        qual = rec.fields[i].qual
-    return total
-
-
 def clang_int(node: dict, root: bool = True) -> int:
     """clang's integer value of a constant expression tree. An integral cast WRAPS to its
     type (`(WORD)0x12345` is 0x2345, as MAKELONG's pieces rely on), except an implicit one
@@ -664,8 +602,6 @@ def clang_int(node: dict, root: bool = True) -> int:
     if k == "UnaryExprOrTypeTraitExpr" and n.get("name") == "sizeof":
         t = n.get("argType") or n["inner"][0]["type"]
         return c_sizeof(t.get("desugaredQualType") or t["qualType"])
-    if k == "OffsetOfExpr":
-        return _offsetof(n)
     if k in ("IntegerLiteral", "CharacterLiteral"):
         return int(n["value"])
     if k == "ImplicitValueInitExpr":  # a member a designated initializer left out: C's zero
@@ -765,11 +701,6 @@ def _render(node: dict, qual: str, ctx: Ctx, indent: str) -> str:
             rs = re.sub(r"\b(0[xX][0-9a-fA-F]+|\d+)[uUlL]+\b", r"\1", spelling)
             rs = re.sub(r"\b0X", "0x", rs)
             return f"{rs} as {rt}" if re.fullmatch(r"\w+", rs) else f"({rs}) as {rt}"
-    if re.fullmatch(r"[A-Za-z_]\w*", spelling):  # a function-like macro's range stops at its name
-        try:
-            spelling = _call_text(inner if ik == "OffsetOfExpr" else node, ctx)
-        except DataPortError:
-            pass
     if "/*" in spelling or "*/" in spelling or len(spelling) > 72:
         spelling = ""  # a macro call spanning comments or a whole table row is no label
     note = f" /* {spelling} */" if spelling else ""
@@ -1166,7 +1097,6 @@ class Table:
     refs: set[str]
     helpers: set[str] = field(default_factory=set)
     defs: list[str] = field(default_factory=list)  # type definitions the init needs
-    cfg: str | None = None  # a `#[cfg(..)]` predicate when the table differs per arch
 
 
 def _island_consts(crate_src: Path, arch: str) -> dict[str, int]:
@@ -1191,17 +1121,22 @@ def _island_lengths(crate_src: Path, arch: str) -> dict[str, int]:
     }
 
 
-def tables(
-    repo: Path,
-    arch: str,
-    tu: Path,
-    crate_src: Path,
-    headers: tuple[str, ...] = (),
-    scope_tables: bool = True,
-) -> list[Table]:
-    """The TU's data tables on `arch`. `headers` (path suffixes such as `marshalling/forms.h`)
-    adds the statics DEFINED in those headers of the TU's include closure; `scope_tables=False`
-    drops the TU's own directory, leaving only them."""
+_GUID_TYPES = {"const GUID", "const IID", "const CLSID", "const struct _GUID"}
+
+
+def _crate_references(crate_src: Path) -> set[str]:
+    """Identifiers the crate's translated modules use (islands and the prelude excluded)."""
+    from tools.source_walk import source_files
+
+    names: set[str] = set()
+    for f in source_files(crate_src):
+        if f.parent == crate_src:
+            continue  # lib.rs, prelude.rs, types_*.rs
+        names |= set(re.findall(r"\b[A-Za-z_]\w*\b", f.read_text(errors="replace")))
+    return names
+
+
+def tables(repo: Path, arch: str, tu: Path, crate_src: Path) -> list[Table]:
     ast = clang_ast(repo, arch, tu)
     _ENUMS.clear()
     _ENUMS.update(enum_constants(ast))
@@ -1223,18 +1158,22 @@ def tables(
     ctx = Ctx({}, records(ast), _island_consts(crate_src, arch), macros, set())
     ctx.layouts = record_layouts(argv)
     _ARCH["layouts"] = ctx.layouts
-    _ARCH["ctx"] = ctx
     _ARCH["ptr"] = 8 if arch in ("amd64", "arm64") else 4
     ctx.island = island.read_text() if island.is_file() else ""
     out: list[Table] = []
+    referenced = _crate_references(crate_src)
     for d in ast.get("inner", []):
         if d.get("kind") != "VarDecl" or not d.get("init"):
             continue
         f = _decl_file(d)
         if f is None:
             continue
-        in_header = any(Path(f).resolve().as_posix().endswith("/" + h.lstrip("/")) for h in headers)
-        if not in_header and not (scope_tables and Path(f).resolve().is_relative_to(scope)):
+        # A header DEFINE_GUID that `#include <initguid.h>` turns into a definition in THIS
+        # TU: ndis's guid.c is nothing else, and without it GUID_BUS_INTERFACE_STANDARD was an
+        # unresolved import. Only the ones the crate uses -- wdmguid.h alone instantiates dozens.
+        if not Path(f).resolve().is_relative_to(scope) and (
+            d["type"].get("qualType") not in _GUID_TYPES or d["name"] not in referenced
+        ):
             continue
         src = ctx.sources.setdefault(f, Path(f).read_bytes())
         try:
@@ -1418,17 +1357,14 @@ def module_name(header: str) -> str:
     return re.sub(r"\W", "_", Path(header).stem).lower()
 
 
-def render_module(tu: Path, tabs: list[Table], repo: Path, public: bool = False) -> dict[str, str]:
+def render_module(tu: Path, tabs: list[Table], repo: Path) -> dict[str, str]:
     """{relative file name: text} -- `mod.rs` for the TU's own tables plus the module list,
     one file per header the tables come from.
 
     Each file globs the crate prelude for types and constants. The tables it points at in
     a SIBLING file are imported by name: the crate island also declares the extern tables
     (that is how the crate's code reaches them), so a second glob would make every such
-    name ambiguous, while an explicit import -- like a local definition -- outranks a glob.
-
-    `public`: a C `static` becomes `pub static mut` (the crate's other modules name it),
-    where the default is `pub(super)`. A table with a `cfg` is written under that predicate."""
+    name ambiguous, while an explicit import -- like a local definition -- outranks a glob."""
     by_file: dict[str, list[Table]] = {}
     for t in tabs:
         by_file.setdefault(t.file, []).append(t)
@@ -1463,16 +1399,14 @@ def render_module(tu: Path, tabs: list[Table], repo: Path, public: bool = False)
             head += helpers_text(helpers) + "\n"  # before the first table that expands one
         body = []
         for t in ts:
-            for d in t.defs:  # a layout-twin's text is arch-free: written once, ungated
+            for d in t.defs:
                 if d not in body:
                     body.append(d)
         for t in ts:
-            gate = f"#[cfg({t.cfg})]\n" if t.cfg else ""
-            if t.linkage == "static":
-                vis = "pub static mut" if public else "pub(super) static mut"
-            else:
-                vis = "#[no_mangle]\npub static mut"
-            body.append(f"{gate}{vis} {t.name}: {t.rust_ty} = {t.init};\n")
+            vis = (
+                "pub(super) static mut" if t.linkage == "static" else "#[no_mangle]\npub static mut"
+            )
+            body.append(f"{vis} {t.name}: {t.rust_ty} = {t.init};\n")
         if is_tu:
             files["mod.rs"] = head + "\n".join(body)
         else:
@@ -1491,66 +1425,11 @@ def render_module(tu: Path, tabs: list[Table], repo: Path, public: bool = False)
     return files
 
 
-_CFG_ARCH = {"i386": "x86", "amd64": "x86_64", "arm64": "aarch64"}
-
-
-def merge_arches(per: dict[str, list[Table]]) -> list[Table]:
-    """One table list from the per-arch ones: a table every arch renders identically is
-    written once; one that differs (pointer-sized offsets, `sizeof(void *)` fields) is written
-    once per group of arches that agree, each under its `#[cfg(target_arch = ..)]`."""
-    arches = list(per)
-    order: list[tuple[str, str]] = []
-    seen: dict[tuple[str, str], dict[str, Table]] = {}
-    for a in arches:
-        for t in per[a]:
-            key = (t.file, t.name)
-            if key not in seen:
-                order.append(key)
-            seen.setdefault(key, {})[a] = t
-    out: list[Table] = []
-    for key in order:
-        groups: list[tuple[list[str], Table]] = []
-        for a in arches:
-            t = seen[key].get(a)
-            if t is None:
-                continue
-            sig = (t.linkage, t.rust_ty, t.length, t.init, tuple(t.defs))
-            for ga, gt in groups:
-                if (gt.linkage, gt.rust_ty, gt.length, gt.init, tuple(gt.defs)) == sig:
-                    ga.append(a)
-                    break
-            else:
-                groups.append(([a], t))
-        for ga, gt in groups:
-            if len(ga) == len(arches):
-                cfg = None
-            else:
-                parts = [f'target_arch = "{_CFG_ARCH[x]}"' for x in ga]
-                cfg = parts[0] if len(parts) == 1 else f"any({', '.join(parts)})"
-            out.append(replace(gt, cfg=cfg))
-    return out
-
-
-def port(
-    repo: Path,
-    tu: Path,
-    crate_src: Path,
-    arches: tuple[str, ...] = ARCHES,
-    headers: tuple[str, ...] = (),
-    scope_tables: bool = True,
-    per_arch: bool = False,
-    public: bool = False,
-) -> dict[str, str]:
-    """Generate on every arch and require one answer -- or, with `per_arch`, one answer per
-    group of agreeing arches under `#[cfg(target_arch)]` (never a silent pick of one arch)."""
-    if per_arch:
-        per = {a: tables(repo, a, tu, crate_src, headers, scope_tables) for a in arches}
-        return render_module(tu, merge_arches(per), repo, public)
+def port(repo: Path, tu: Path, crate_src: Path, arches: tuple[str, ...] = ARCHES) -> dict[str, str]:
+    """Generate on every arch and require one answer."""
     outs = {}
     for arch in arches:
-        outs[arch] = render_module(
-            tu, tables(repo, arch, tu, crate_src, headers, scope_tables), repo, public
-        )
+        outs[arch] = render_module(tu, tables(repo, arch, tu, crate_src), repo)
     first = outs[arches[0]]
     for arch in arches[1:]:
         if outs[arch] != first:
@@ -1559,7 +1438,7 @@ def port(
             )
             raise DataPortError(
                 f"{tu.name}: the tables differ between {arches[0]} and {arch} in {diff[:5]} -- "
-                "pass per_arch=True (--per-arch) to write cfg'd variants"
+                "arch-dependent data needs cfg'd variants, which this tool does not write yet"
             )
     return first
 
@@ -1577,22 +1456,6 @@ def main(argv: list[str] | None = None) -> int:
         "--out", type=Path, required=True, help="directory for mod.rs + per-header files"
     )
     p.add_argument("--arches", default=",".join(ARCHES))
-    p.add_argument(
-        "--header",
-        action="append",
-        default=[],
-        help="also port the statics defined in this header (path suffix, repeatable)",
-    )
-    p.add_argument(
-        "--headers-only", action="store_true", help="port ONLY --header statics, not the TU's own"
-    )
-    p.add_argument("--per-arch", action="store_true", help="cfg'd variants where arches differ")
-    p.add_argument("--public", action="store_true", help="C statics become `pub`, not `pub(super)`")
-    p.add_argument(
-        "--no-mod",
-        action="store_true",
-        help="do not write mod.rs (the caller owns the module list)",
-    )
     a = p.parse_args(argv)
     repo = Path(__file__).resolve().parents[3]
     try:
@@ -1601,18 +1464,12 @@ def main(argv: list[str] | None = None) -> int:
             a.tu.resolve(),
             repo / "sdk" / "lib" / "rust" / a.crate / "src",
             tuple(a.arches.split(",")),
-            tuple(a.header),
-            not a.headers_only,
-            a.per_arch,
-            a.public,
         )
     except DataPortError as e:
         print(f"data-port: {e}")
         return 1
     a.out.mkdir(parents=True, exist_ok=True)
     for name, text in files.items():
-        if name == "mod.rs" and a.no_mod:
-            continue
         (a.out / name).write_text(text)
     print(f"data-port: {len(files)} file(s) in {a.out}")
     return 0

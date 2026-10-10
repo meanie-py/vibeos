@@ -257,8 +257,6 @@ pub const EnableOfflineDiags: usize = 5;
 pub const SmartEventGuid: usize = 4;
 pub const SmartThresholdsGuid: usize = 5;
 pub const ScsiInfoExceptionsGuid: usize = 6;
-pub const WMIREG_FLAG_EXPENSIVE: u32 = 0x00000002;
-pub const WMIREG_FLAG_EVENT_ONLY_GUID: u32 = 0x00000004;
 
 const APC_LEVEL: u8 = 1;
 const SMART_CMD: u8 = 0xB0;
@@ -1789,7 +1787,6 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
     const SRB_SIMPLE_TAG_REQUEST: u16 = 0x20;
     // ddk/srb.h:55 -- (UCHAR)~0 is 0xFF, not a 32-bit ~0.
     const SP_UNTAGGED: u32 = 0xFF;
-    const MAXIMUM_RETRIES: u32 = 3;
     const STATUS_VERIFY_REQUIRED: NTSTATUS = 0x80000016u32 as i32;
     const STATUS_IO_DEVICE_ERROR: NTSTATUS = 0xC0000185u32 as i32 ;
     const IRP_MJ_SCSI: u8 = 0x0F;

@@ -124,7 +124,7 @@ unsafe extern "C" fn build_argv(wargv: *mut *mut wchar_t) -> *mut *mut i8 {
     argv
 }
 unsafe extern "C" fn cmdline_to_argv(src: *const wchar_t, ret_argc: *mut i32) -> *mut *mut wchar_t {
-    let mut argv: *mut *mut wchar_t;
+    let argv: *mut *mut wchar_t;
     let mut arg: *mut wchar_t;
     let mut dst: *mut wchar_t;
     let mut argc: i32;
@@ -144,7 +144,7 @@ unsafe extern "C" fn cmdline_to_argv(src: *const wchar_t, ret_argc: *mut i32) ->
     argc = 0;
     let mut src_mut = src;
     while *src_mut != 0 {
-        if ((*src_mut == ' ' as wchar_t || *src_mut == '\t' as wchar_t) && in_quotes == 0) {
+        if (*src_mut == ' ' as wchar_t || *src_mut == '\t' as wchar_t) && in_quotes == 0  {
             while *src_mut == ' ' as wchar_t || *src_mut == '\t' as wchar_t {
                 src_mut = src_mut.offset(1);
             }
@@ -194,7 +194,7 @@ unsafe extern "C" fn cmdline_to_argv(src: *const wchar_t, ret_argc: *mut i32) ->
     argv
 }
 unsafe extern "C" fn cmdline_to_argvA(src: *const i8, ret_argc: *mut i32) -> *mut *mut i8 {
-    let mut argv: *mut *mut i8;
+    let argv: *mut *mut i8;
     let mut arg: *mut i8;
     let mut dst: *mut i8;
     let mut argc: i32;
@@ -215,7 +215,7 @@ unsafe extern "C" fn cmdline_to_argvA(src: *const i8, ret_argc: *mut i32) -> *mu
 
     let mut src = src as *mut i8;
     while *src != 0 {
-        if ((*src == b' ' as i8 || *src == b'\t' as i8) && in_quotes == 0) {
+        if (*src == b' ' as i8 || *src == b'\t' as i8) && in_quotes == 0  {
             while *src == b' ' as i8 || *src == b'\t' as i8 {
                 src = src.offset(1);
             }

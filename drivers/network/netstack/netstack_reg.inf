@@ -8,3 +8,6 @@ HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Group",0x00000000,"NDIS Wrapp
 HKLM,"SYSTEM\CurrentControlSet\Services\netstack","ImagePath",0x00020000,"system32\drivers\netstack.sys"
 HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Start",0x00010001,0x00000001
 HKLM,"SYSTEM\CurrentControlSet\Services\netstack","Type",0x00010001,0x00000001
+; DMA-remapping compatible: the virtio-net NIC reaches only common buffers of its DMA
+; adapter (netstack-rust dma.rs), so it can have an SMMU domain of its own.
+HKLM,"SYSTEM\CurrentControlSet\Services\netstack\Parameters","DmaRemappingCompatible",0x00010001,0x00000001

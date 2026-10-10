@@ -264,7 +264,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
     let _ = (Dpc, SystemArgument1, SystemArgument2);
 
     if fdoExtension.is_null() {
-        NT_ASSERT((!fdoExtension.is_null()) as u8);
+        NT_ASSERT!((!fdoExtension.is_null()) as u8);
         return;
     }
 
@@ -277,7 +277,7 @@ pub unsafe extern "system" fn ClasspIdleTimerDpc(
 
         pCurrentTime = core::ptr::addr_of_mut!(currentTime);
         if ClasspIdleDurationSufficient(fdoData, &raw mut pCurrentTime) != 0 {
-            NT_ASSERT((!pCurrentTime.is_null()) as u8);
+            NT_ASSERT!((!pCurrentTime.is_null()) as u8);
             (*fdoData).AntiStarvationStartTime = *pCurrentTime;
             ClasspServiceIdleRequest(fdoExtension, 0u8);
         }
@@ -402,7 +402,7 @@ pub unsafe extern "C" fn ClasspDequeueIdleRequest(
 
     if (*fdoData).IdleIoCount > 0 {
         listEntry = RemoveHeadList(core::ptr::addr_of_mut!((*fdoData).IdleIrpList));
-        NT_ASSERT((listEntry != core::ptr::addr_of_mut!((*fdoData).IdleIrpList)) as u8);
+        NT_ASSERT!((listEntry != core::ptr::addr_of_mut!((*fdoData).IdleIrpList)) as u8);
         (*fdoData).IdleIoCount -= 1;
         if (*fdoData).IdleIoCount == 0 {
             ClasspStopIdleTimer(fdoData);
@@ -410,7 +410,7 @@ pub unsafe extern "C" fn ClasspDequeueIdleRequest(
         irp = ((listEntry as *const u8 as usize)
             .wrapping_sub(core::mem::offset_of!(IRP, Tail.Overlay.__bindgen_anon_2.ListEntry)))
             as *mut IRP;
-        NT_ASSERT(((*irp).Type == (IO_TYPE_IRP) as i16) as u8);
+        NT_ASSERT!(((*irp).Type == (IO_TYPE_IRP) as i16) as u8);
         InitializeListHead(core::ptr::addr_of_mut!((*irp).Tail.Overlay.__bindgen_anon_2.ListEntry));
     }
 

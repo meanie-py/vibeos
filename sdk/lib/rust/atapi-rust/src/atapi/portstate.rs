@@ -8,6 +8,8 @@ unsafe extern "C" fn AtaPortQueueEvent(
     mut FailedRequest: PATA_DEVICE_REQUEST,
     mut Action: ATA_PORT_ACTION,
 ) {
+    ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
+
     if Action & (ACTION_PORT_RESET | ACTION_DEVICE_ERROR) != 0 {
         if Action & ACTION_DEVICE_ERROR != 0 {
             if !FailedRequest.is_null() {
@@ -18,6 +20,7 @@ unsafe extern "C" fn AtaPortQueueEvent(
                 if (*FailedRequest).Flags & REQUEST_FLAG_INTERNAL != 0 {
                     Action &= !ACTION_DEVICE_ERROR;
                 } else {
+                    ASSERT!((*PortData).Worker.FailedRequest.is_null());
                     (*PortData).Worker.FailedRequest = FailedRequest;
                 }
             } else {
@@ -139,6 +142,8 @@ unsafe extern "C" fn AtaPortOnAsyncNotification(
     PortData: PATAPORT_PORT_DATA,
     DeviceBitmap: ULONG,
 ) {
+    ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
+
     KeInsertQueueDpc(
         &raw mut (*PortData).Worker.NotificationDpc,
         UlongToPtr!(DeviceBitmap),
@@ -201,6 +206,8 @@ unsafe extern "C" fn AtaPortOnRequestComplete(
 ) {
     let mut Slot: ULONG = 0;
 
+    ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
+
     (*PortData).ActiveSlotsBitmap &= !CommandsCompleted;
 
     while _BitScanForward(&mut Slot, CommandsCompleted) != 0 {
@@ -210,6 +217,7 @@ unsafe extern "C" fn AtaPortOnRequestComplete(
 
         Request = (*PortData).Slots[Slot as usize];
         ASSERT_REQUEST!(Request);
+        ASSERT!((*Request).Slot as ULONG == Slot);
 
         InterlockedPushEntrySList((&raw mut AtapCompletionQueueList).cast(), (&raw mut (*Request).__bindgen_anon_1.CompletionEntry).cast());
     }
@@ -223,6 +231,10 @@ unsafe extern "C" fn AtaPortMarkDeviceFailed(
 ) {
     (*DevExt).Worker.ResetRetryCount = (*DevExt).Worker.ResetRetryCount.wrapping_add(1);
     if (*DevExt).Worker.ResetRetryCount >= 4 {
+        ERR!(b"CH %lu: Too many reset attempts for the device %u, giving up\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as u32);
+
         (*DevExt).Worker.Flags |= DEV_WORKER_FLAG_REMOVED;
         (*PortData).Worker.BadDeviceBitmap |= 1
             << (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as ULONG;
@@ -304,6 +316,7 @@ unsafe extern "C" fn AtaPortResetPort(PortData: PATAPORT_PORT_DATA) -> NTSTATUS 
 
     (*PortData).Worker.ResetRetryCount = (*PortData).Worker.ResetRetryCount.wrapping_add(1);
     if (*PortData).Worker.ResetRetryCount >= 10 {
+        ERR!(b"CH %lu: Too many port reset attempts, giving up\n\0".as_ptr() as *const i8, (*PortData).PortNumber);
         (*PortData).Worker.BadDeviceBitmap = MAXULONG;
     }
 
@@ -318,6 +331,7 @@ unsafe extern "C" fn AtaPortEnumerateDevice(
 
     if Action == ACTION_ENUM_DEVICE_NEW {
         DevExt = (*PortData).Worker.EnumDevExt;
+        ASSERT!(DevExt);
         AtaReqFreezeQueue(DevExt, QUEUE_FLAG_FROZEN_PORT_BUSY);
     } else {
         DevExt = AtaPortFindDeviceForAction(PortData, Action);
@@ -447,6 +461,7 @@ unsafe extern "C" fn AtaPortGetNextEvent(
     if Success == 0 {
         let mut Request: PATA_DEVICE_REQUEST;
 
+        ASSERT!(((*PortData).InterruptFlags & PORT_INT_FLAG_IS_IO_ACTIVE as LONG) == 0);
         _InterlockedOr(
             &raw mut (*PortData).InterruptFlags,
             PORT_INT_FLAG_IS_IO_ACTIVE as ::core::ffi::c_long,
@@ -470,6 +485,7 @@ unsafe extern "C" fn AtaPortGetNextEvent(
             {
                 Request = (*PortData).Slots[i as usize];
                 ASSERT_REQUEST!(Request);
+                ASSERT!(Request != &raw mut (*PortData).Worker.InternalRequest);
 
                 (*Request).SrbStatus = SRB_STATUS_BUSY as UCHAR;
                 (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = REQUEST_STATE_REQUEUE as UCHAR;
@@ -496,8 +512,14 @@ unsafe extern "C" fn AtaPortRunStateMachine(PortData: PATAPORT_PORT_DATA) {
             break;
         }
 
-        if (*PortData).Worker.StateLoopCount.wrapping_add(1) > 1500 {
-            (*PortData).Worker.StateLoopCount = (*PortData).Worker.StateLoopCount.wrapping_add(1);
+        // C: `StateLoopCount++ > 1500` -- the counter moves on every pass, and the old
+        // value is compared.
+        let StateLoopCount = (*PortData).Worker.StateLoopCount;
+        (*PortData).Worker.StateLoopCount = StateLoopCount.wrapping_add(1);
+        if StateLoopCount > 1500 {
+            ERR!(b"CH %lu: Loop detected %lx\n\0".as_ptr() as *const i8, (*PortData).PortNumber,
+                 (*PortData).Worker.EventsPending);
+            ASSERT!(false);
         }
 
         match Action {
@@ -566,6 +588,8 @@ unsafe extern "C" fn AtaPortEnterStateMachine(mut PortData: PATAPORT_PORT_DATA) 
         AsULONG: 0,
     };
     ChanExt = CONTAINING_RECORD!(PortData, ATAPORT_CHANNEL_EXTENSION, PortData);
+    ASSERT!(IS_FDO!(ChanExt));
+
     AtaScsiAddress.AsULONG = 0;
     loop {
         let mut DevExt: PATAPORT_DEVICE_EXTENSION =
@@ -698,9 +722,13 @@ pub unsafe extern "C" fn AtaPortNotification_v(
             AtaPortOnRequestComplete(PortData, ap.arg::<ULONG>());
         }
         1 => {
+            ASSERT!((*PortData).Worker.Thread == KeGetCurrentThread());
+            ASSERT!(((*PortData).InterruptFlags & PORT_INT_FLAG_IS_IO_ACTIVE as LONG) == 0);
             AtaPortOnResetNotification(PortData, ap.arg::<ULONG>());
         }
         2 => {
+            ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
+
             if !((*PortData).InterruptFlags & PORT_INT_FLAG_IGNORE_LINK_IRQ as LONG != 0) {
                 AtaPortQueueEvent(
                     PortData,
@@ -745,6 +773,7 @@ pub unsafe extern "C" fn AtaPortCompleteInternalRequest(
     let Device: *mut ATAPORT_IO_CONTEXT = (*Request).Device as *mut ATAPORT_IO_CONTEXT;
     let PortData: *mut ATAPORT_PORT_DATA = (*Device).PortData;
 
+    ASSERT!((*Request).Flags & REQUEST_FLAG_INTERNAL);
     KeSetEvent(
         &raw mut (*PortData).Worker.CompletionEvent,
         (IO_NO_INCREMENT) as KPRIORITY,
@@ -841,6 +870,8 @@ pub unsafe extern "C" fn AtaPortTimeout(
     let mut Request: *mut ATA_DEVICE_REQUEST = core::ptr::null_mut();
     let mut DevExt: *mut ATAPORT_DEVICE_EXTENSION = core::ptr::null_mut();
 
+    ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
+
     Request = (*PortData).Slots[Slot as usize];
     ASSERT_REQUEST!(Request);
 
@@ -850,8 +881,34 @@ pub unsafe extern "C" fn AtaPortTimeout(
         Device,
     );
 
+    ERR!(b"CH %lu: Slot %lu (%08lx) timed out %lx (%lus) %u '%s'\n\0".as_ptr() as *const i8,
+         (*PortData).PortNumber,
+         Slot,
+         (1 as i32) << Slot,
+         (*Request).Flags,
+         (*Request).TimeOut,
+         (*DevExt).Device.AtaScsiAddress.__bindgen_anon_1.TargetId as u32,
+         (*DevExt).FriendlyName.as_ptr());
     if (*Request).Flags & REQUEST_FLAG_PACKET_COMMAND != 0 {
+        ERR!(b"CH %lu: CDB %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*Request).__bindgen_anon_2.Cdb[0] as u32,
+             (*Request).__bindgen_anon_2.Cdb[1] as u32,
+             (*Request).__bindgen_anon_2.Cdb[2] as u32,
+             (*Request).__bindgen_anon_2.Cdb[3] as u32,
+             (*Request).__bindgen_anon_2.Cdb[4] as u32,
+             (*Request).__bindgen_anon_2.Cdb[5] as u32,
+             (*Request).__bindgen_anon_2.Cdb[6] as u32);
     } else {
+        ERR!(b"CH %lu: TF %02x:%02x:%02x:%02x:%02x:%02x:%02x\n\0".as_ptr() as *const i8,
+             (*PortData).PortNumber,
+             (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_1.Command as u32,
+             (*Request).__bindgen_anon_2.TaskFile.__bindgen_anon_2.Feature as u32,
+             (*Request).__bindgen_anon_2.TaskFile.SectorCount as u32,
+             (*Request).__bindgen_anon_2.TaskFile.LowLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.MidLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.HighLba as u32,
+             (*Request).__bindgen_anon_2.TaskFile.DriveSelect as u32);
     }
 
     (*Request).SrbStatus = (SRB_STATUS_TIMEOUT) as u8;

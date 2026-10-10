@@ -593,17 +593,9 @@ pub const GCS_VERBW: DWORD = 0x00000004;
 
 pub const GHND: DWORD = 66;
 
-pub const IDM_COPY: DWORD = 15;
-
-pub const IDM_CREATELINK: DWORD = 2290;
-
-pub const IDM_CUT: DWORD = 16;
-
-pub const IDM_DELETE: DWORD = 17;
-
-pub const IDM_PROPERTIES: DWORD = 28;
-
-pub const IDM_RENAME: DWORD = 85;
+// IDM_CUT/COPY/CREATELINK/DELETE/RENAME/PROPERTIES come from the island: shresdef.h:905-914
+// (FCIDM_SHVIEW_* - 0x7000), the ids the MENU_SHV_FILE resource uses -- not mshtmcid.h's
+// unrelated MSHTML command ids, which these hand constants had copied.
 
 pub const KEY_READ: DWORD = 0x20019;
 

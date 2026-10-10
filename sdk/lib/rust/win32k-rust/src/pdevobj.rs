@@ -149,7 +149,6 @@ extern "C" {
 }
 
 // C macros — silenced via macro_rules! (variadic no-op).
-macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
 // RtlEqualMemory is `#define RtlEqualMemory(a,b,n) (!memcmp(a,b,n))` (winnt.h).
 #[inline(always)]
 unsafe fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, n: usize) -> u32 {

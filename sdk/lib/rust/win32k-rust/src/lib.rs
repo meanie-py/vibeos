@@ -50,6 +50,20 @@ macro_rules! fastcall_fn {
 // win32k's ERR/FIXME/WARN/TRACE (win32kdebug.h) + debug.h's DPRINT/DPRINT1 for the
 // whole crate; `#[macro_use]` must precede the modules that call them
 // (macro_rules! is textually scoped).
+// `NT_ASSERT(x)` and userfuncs.h's `ASSERT_REFS_CO(obj)` are DBG assertions: debug
+// assertions here, as ntoskrnl's `ASSERT!` is. Defined once, ahead of every module, so
+// none lowers them to an empty fn -- which evaluates the operands the C macro discards.
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+macro_rules! ASSERT_REFS_CO {
+    ($obj:expr $(,)?) => {
+        debug_assert!(
+            unsafe { (*($obj as win32k_sys::win32k::PHEAD)).cLockObj } >= 1,
+            "ASSERT_REFS_CO: obj {:p}",
+            $obj
+        )
+    };
+}
+
 #[macro_use]
 mod win32kdebug;
 

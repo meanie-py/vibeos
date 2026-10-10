@@ -17,7 +17,7 @@ use crate::ddk_shims::{ARGUMENT_PRESENT, FsRtlAddLargeMcbEntry, FsRtlAddToTunnel
 
 extern "system" {
     fn FatDeleteEa( IrpContext: *mut IRP_CONTEXT, Vcb: *mut core::ffi::c_void, ExtendedAttributes: u16, OemName: *const OEM_STRING, );
-    fn FatBugCheck(a: u32, b: u32, c: u32);
+    fn FatBugCheck(a: usize, b: usize, c: usize);
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, LowPriority: u8, ReturnMapped: u8, Status: *mut NTSTATUS);
     fn FatIsFat32(Vcb: *mut core::ffi::c_void) -> u8;

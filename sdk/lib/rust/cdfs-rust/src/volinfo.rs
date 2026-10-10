@@ -30,11 +30,6 @@ extern "C" {
 }
 
 extern "C" {
-    fn UNREFERENCED_PARAMETER(param: *const core::ffi::c_void);
-}
-extern "C" {
-}
-extern "C" {
     fn LlSectorsFromBytes(bytes: i64) -> i64;
 }
 extern "system" {
@@ -162,7 +157,7 @@ pub unsafe extern "C" fn CdQueryFsVolumeInfo(
 
     PAGED_CODE!();
 
-    UNREFERENCED_PARAMETER(IrpContext as *const core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(IrpContext as *const core::ffi::c_void);
 
     (*Buffer).VolumeCreationTime =
         *(&raw mut (*((*Vcb).VolumeDasdFcb)).CreationTime as PLARGE_INTEGER);
@@ -254,7 +249,7 @@ pub unsafe extern "C" fn CdQueryFsAttributeInfo(
     let mut Status: i32 = 0; // STATUS_SUCCESS
 
     PAGED_CODE!();
-    UNREFERENCED_PARAMETER(Vcb as *mut core::ffi::c_void);
+    UNREFERENCED_PARAMETER!(Vcb as *mut core::ffi::c_void);
 
     // Fill out the fixed portion of the buffer
     (*Buffer).FileSystemAttributes = FILE_CASE_SENSITIVE_SEARCH

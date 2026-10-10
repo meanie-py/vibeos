@@ -241,3 +241,51 @@ New and owed: one run (`20261008-194633-hxs3riy7-smoke-arm64`; 0 of the 3 runs b
 appstorm.exe 30 s in with a native undefined-instruction fault (ESR 0x02000000) at
 0x7FFFADFD80C4. The address looks like FEX's code cache, but that is not proven. The guest saw it
 as `c000001d` on the `ret` after `NtReadFile`'s `syscall`.
+
+Then (2026-10-09). The code-cache attribution is now likely, though still inferred: the same
+range takes FEX's LDAR/STLR alignment fixups on guest addresses, which only JIT output does.
+LR is PC-0xF8, so the thread returned from the syscall call-out and ran 62 instructions of the
+block before the bad word. A `ret` block runs thousands of times, so the code most likely changed
+while the thread was blocked. `NtReadFile` is bracketed by `BTCpu64NotifyReadFile`, which
+invalidates code and zeroes every thread's call-ret stack (decommit + recommit). Our port matches
+upstream. Three kernel suspects were ruled out by reading the code:
+- decommit already flushes the TLB process-wide under the PFN lock;
+- recommit turns `MmDecommittedPte` back into demand-zero, so the wipe really zeroes;
+- user pages never enter the working-set list, so nothing trims them.
+
+Eight more sweeps (`20261009-162243-pc9vk8r4`, `20261009-191037-vsrxcvcf`) did not reproduce it.
+An EL0 EC-0 fault now prints a `[UDF]` line: PC, PTE, and the instruction words around PC. The
+word tells the causes apart: 0 means lost contents, a valid opcode means a rewrite was seen stale,
+anything else is a JIT encoding bug. Owed: the next hit.
+
+Found on the way, then fixed: `MiDecommitPages` overwrote a transition PTE with `MmDecommittedPte`
+without detaching the PFN, leaking the standby/modified frame (the C asserted the case away, the Rust
+dropped the asserts). It now detaches it as `MiDeletePte` does, and any other unexpected invalid PTE
+trips an `mm_guard`. Unreached while user pages are never trimmed.
+
+`osk` sometimes opened and never closed (`close=TIMEOUT exit=0x103`, ~1 in 20 x64 launches;
+`20261008-114135-_w0p3rum`, `20261009-191037-vsrxcvcf` payload4). The parked-thread sample showed
+`ExitProcess` -> `LdrShutdownProcess` -> msacm32's `DLL_PROCESS_DETACH` -> `RtlFreeHeap`, parked
+on the return from `ZwFreeVirtualMemory`, i.e. inside our `NtFreeVirtualMemory` bracket. The
+cause: `ExitProcess` first calls `NtTerminateProcess(NULL)`, which kills every other thread
+wherever it is, including between a `BTCpu64Notify*` Before (FEX's `ThreadCreationMutex` taken)
+and its After. The exiting thread then deadlocks on a lock held by a dead thread. osk's
+warning-dialog thread is the usual victim. Upstream's `BTCpuProcessTerm` is empty, so upstream
+has the same hole. Fix (contract v4): `BTCpu64ProcessTerm` brackets that call, using FEX's own
+fork discipline:
+- Before: take `ThreadCreationMutex` and the code-invalidation lock if possible within ~2 s. A read
+  bracket can hold both across a blocking `NtReadFile`, so the wait is bounded.
+- After: wait for every victim to die, then rebuild both locks in place rather than unlocking. A
+  victim killed while queued is still counted as a waiter, and an unlock would hand off to it.
+
+Measured: osk x25 x4 boots (`20261009-214309-hxbaw3uw`), 100/100 closed, and the bracket fired on
+every exit (52 per boot). The CPU layer is built out of tree, so a `Module.cpp` edit used to ship
+the OLD plugin from a green build; arm64 builds now rebuild it when its sources are newer, or fail
+(`wowx64-cpu`, `CPU_LAYER_BUILD_FAIL`).
+
+The same runs found four applets that had never run as x64 guests: openglcfg, wined3dcfg, console
+and hotplug, added to appstorm on 2026-10-08. They were missing from the guest set; wowx64
+refused exactly those four (`NOT FOUND`). `lpk.dll` was missing too, and gdi32's `LoadLPK` retries
+it on every text call: 18929 refusals in one sweep, each one a blocking serial line. With both
+added, the four pass, lpk refusals drop to 0, and a sweep takes ~18 min against 33. Most of that
+is the four applets no longer timing out; how much lpk saved alone is not measured.

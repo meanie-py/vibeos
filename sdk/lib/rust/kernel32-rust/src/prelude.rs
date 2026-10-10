@@ -112,10 +112,6 @@ extern "C" {
 // lstrlenW lives in nls_subst (extern import) — re-export so all files see it.
 pub use crate::string::nls_subst::lstrlenW;
 
-// STUB / UNIMPLEMENTED — ReactOS stub markers used as `STUB;` statements. Unit consts
-// so the statement compiles to a no-op (the enclosing fn is an unimplemented stub).
-pub const STUB: () = ();
-pub const UNIMPLEMENTED: () = ();
 
 // DUMMY_PSEH: SEH filters/handlers are dead code; this only appears in such handlers.
 #[inline] pub fn _SEH2_GetExceptionCode() -> LONG { 0 }

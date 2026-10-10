@@ -38,7 +38,6 @@ extern "system" {
     fn IoSetTopLevelIrp(Irp: PIRP);
     fn FsRtlEnterFileSystem();
     fn FsRtlExitFileSystem();
-    fn UNREFERENCED_PARAMETER(p: PVOLUME_DEVICE_OBJECT);
     fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: NTSTATUS) -> NTSTATUS;
 }
 
@@ -218,7 +217,7 @@ pub unsafe extern "system" fn FatFsdDeviceControl(
         b"FatFsdDeviceControl -> %08lx\n\0".as_ptr() as *const i8,
         Status,
     );
-    UNREFERENCED_PARAMETER(VolumeDeviceObject);
+    UNREFERENCED_PARAMETER!(VolumeDeviceObject);
 
     Status
 }

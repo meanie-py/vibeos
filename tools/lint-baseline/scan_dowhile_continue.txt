@@ -1,29 +1,53 @@
 sdk/lib/rust/cc-rust/src/copy.rs: fn CcPostDeferredWrites: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/cdfs-rust/src/deviosup.rs: fn CdNonCachedXARead: `continue` skips the while loop's trailing `user_buffer_offset` update
 sdk/lib/rust/cdfs-rust/src/dirsup.rs: fn CdFindDirectory: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/cdfs-rust/src/dirsup.rs: fn CdFindFile: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/cmlib-rust/src/cmcheck.rs: fn CmpValidateValueListByCount: `continue` skips the while loop's trailing `list_count_index` update
+sdk/lib/rust/config-rust/src/cmkcbncb.rs: fn CmpFlushNotifiesOnKeyBodyList: `continue` skips the while loop's trailing `NextEntry` update
 sdk/lib/rust/ex-rust/src/handle.rs: fn ExpAllocateHandleTableEntry: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExAllocatePoolWithTag: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ex-rust/src/pool/expool.rs: fn ExpInsertPoolTracker: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/explorer-rust/src/explorer/startup.rs: fn AutoStartupApplications: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/framebuf-rust/src/screen.rs: fn DrvGetModes: `continue` skips the while loop's trailing `OutputSize` update
 sdk/lib/rust/iphlpapi-rust/src/iphlpapi/iphlpapi_main.rs: fn NhGetGuidFromInterfaceName: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/kdbg-rust/src/kdb_cli.rs: fn KdbpCliMainLoop: `continue` skips the while loop's trailing `Continue` update
 sdk/lib/rust/kdbg-rust/src/kdb_cli.rs: fn KdbpCmdBreakPointList: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ke-inlines/src/lib.rs: fn _rs_KxUnwaitThread: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ke-inlines/src/lib.rs: fn _rs_KxUnwaitThreadForEvent: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/kernel32-rust/src/file/filename.rs: fn GetTempFileNameW: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/kernel32-rust/src/string/sortkey.rs: fn compare_case_weights: `continue` skips the while loop's trailing `len2` update
+sdk/lib/rust/kernel32-rust/src/string/sortkey.rs: fn compare_diacritic_weights: `continue` skips the while loop's trailing `len2` update
+sdk/lib/rust/kernel32-rust/src/string/sortkey.rs: fn compare_unicode_weights: `continue` skips the while loop's trailing `len2` update
 sdk/lib/rust/netcfgx-rust/src/netcfgx/netinstall.rs: fn ScanForInfFile: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/ntdll-rust/src/ldr/ldrinit.rs: fn LdrpInitializeTls: `continue` skips the while loop's trailing `LdrpNumberOfTlsEntries` update
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/contmem.rs: fn MiFindContiguousPages: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/ntoskrnl-rust/src/ARM3/mdlsup.rs: fn MmTryProbeAndLockPages: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/ntoskrnl-rust/src/mm/section.rs: fn MmPurgeSegment: `continue` skips the while loop's trailing `purge_start.QuadPart` update
 sdk/lib/rust/ob-rust/src/oblife.rs: fn ObpReapObject: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/ole32-rust/src/ring/comcat.rs: fn CATIDEnumGUID_Next: `continue` skips the while loop's trailing `rgelt` update
+sdk/lib/rust/ole32-rust/src/ring/comcat.rs: fn CLSIDEnumGUID_Next: `continue` skips the while loop's trailing `rgelt` update
+sdk/lib/rust/ole32-rust/src/ring/comcat.rs: fn COMCAT_IEnumCATEGORYINFO_Next: `continue` skips the while loop's trailing `rgelt` update
+sdk/lib/rust/pci-rust/src/pdo.rs: fn PdoQueryResourceRequirements: `continue` skips the while loop's trailing `Descriptor` update
+sdk/lib/rust/pci-rust/src/pdo.rs: fn PdoQueryResources: `continue` skips the while loop's trailing `Descriptor` update
 sdk/lib/rust/pnpmgr-rust/src/devaction.rs: fn PiDevNodeStateMachine: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/pnpmgr-rust/src/pnpmgr.rs: fn IopCreateDeviceKeyPath: `continue` skips the while loop's trailing `KeyName.Buffer` update
+sdk/lib/rust/po-rust/src/povolume.rs: fn PopFlushVolumes: `continue` skips the while loop's trailing `volume_count` update
 sdk/lib/rust/rtl-except/src/amd64/unwind.rs: fn RtlpUnwindInternal: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/rtl-except/src/i386/except.rs: fn RtlDispatchException: `continue` skips the while loop's trailing `RegistrationFrame` update
 sdk/lib/rust/rtl-threadpool/src/threadpool.rs: fn timerqueue_thread_proc: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/se-rust/src/tokenlif.rs: fn SepPerformTokenFiltering: `continue` skips the while loop's trailing `privs_in_token` update
+sdk/lib/rust/serial-rust/src/rw.rs: fn SerialWrite: `continue` skips the while loop's trailing `Information` update
+sdk/lib/rust/shell32-rust/src/layout.rs: fn _layout_InitLayouts: `continue` skips the while loop's trailing `(*pInfo).m_margin2.cy` update
+sdk/lib/rust/shell32-rust/src/query_associations.rs: fn string_cch_format_one_w: `continue` skips the while loop's trailing `input` update
 sdk/lib/rust/shell32-rust/src/wine/shellord.rs: fn SHCreatePropSheetExtArrayEx: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/shell32-rust/src/wine/shellpath.rs: fn PathQualifyExW: `continue` skips the while loop's trailing `*pch_path` update
 sdk/lib/rust/sysdm-rust/src/sysdm/userprofile.rs: fn GetProfileSize: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/syssetup-rust/src/syssetup/netinstall.rs: fn ScanForInfFile: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/syssetup-rust/src/syssetup/security.rs: fn ApplyAuditEvents: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/umpnpmgr-rust/src/umpnpmgr/event.rs: fn PnpEventThread: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/user32-rust/src/controls/edit.rs: fn EDIT_BuildLineDefs_ML: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/user32-rust/src/controls/scrollbar.rs: fn ScrollTrackScrollBar_impl: loop ends in a do-while condition that `continue` skips
+sdk/lib/rust/user32-rust/src/windows/mdi.rs: fn CascadeWindows: `continue` skips the while loop's trailing `ret` update
 sdk/lib/rust/win32k-rust/src/freetype.rs: fn IntDeleteRegFontEntries: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/win32k-rust/src/gradient.rs: fn IntEngGradientFillRect: loop ends in a do-while condition that `continue` skips
 sdk/lib/rust/win32k-rust/src/ntmouse.rs: fn NtUserGetMouseMovePointsEx: loop ends in a do-while condition that `continue` skips

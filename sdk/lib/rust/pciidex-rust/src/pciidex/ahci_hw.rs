@@ -38,7 +38,7 @@ pub unsafe extern "C" fn AtaAhciEnableInterrupts(ChannelContext: PVOID, Enable: 
 
     INFO!(
         b"CH %lu: %sble interrupts\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         if Enable != 0 {
             b"Ena\0".as_ptr() as *const i8
         } else {
@@ -71,6 +71,12 @@ unsafe extern "C" fn AtaAhciIsHbaHotRemoved(mut ChanData: PCHANNEL_DATA_AHCI) ->
     WasRemoved = (AHCI_HBA_READ(((*Controller).IoBase).cast(), HbaAhciVersion)
         == 0xFFFFFFFF) as BOOLEAN;
     if WasRemoved != 0 {
+        ERR!(
+            b"CH %lu: AHCI controller %04X:%04X is gone\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            (*Controller).Pci.VendorID as u32,
+            (*Controller).Pci.DeviceID as u32,
+        );
     }
     return WasRemoved;
 }
@@ -79,7 +85,7 @@ unsafe extern "C" fn AtaAhciSendComReset(mut ChanData: PCHANNEL_DATA_AHCI) {
     let mut SataControl: ULONG = 0;
     INFO!(
         b"CH %lu: Transmit a COMRESET on the interface\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
     );
     AHCI_PORT_WRITE((*ChanData).IoBase, PxSataError, 0xFFFFFFFF);
     SataControl = AHCI_PORT_READ((*ChanData).IoBase, PxSataControl);
@@ -184,6 +190,11 @@ unsafe extern "C" fn AtaAhciStartFisReceiveProcessAndWait(mut ChanData: PCHANNEL
         AHCI_DELAY_FR_START_STOP,
     )) == 0) {
         /* Ignore timeouts, on some AHCI controllers the FR bit never becomes set */
+        WARN!(
+            b"CH %lx: Failed to start the FIS Receive DMA engine %08lx\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            AHCI_PORT_READ((*ChanData).IoBase, PxCmdStatus),
+        );
     }
 }
 
@@ -197,7 +208,7 @@ unsafe extern "C" fn AtaAhciPhyEnterListenMode(ChanData: PCHANNEL_DATA_AHCI) {
 
     INFO!(
         b"CH %lu: Enter listen mode\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
     );
 
     AtaAhciStopCommandListProcessAndWait(ChanData);
@@ -285,9 +296,13 @@ unsafe extern "C" fn AtaAhciFbsControl(
         (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_FBS_ENABLED;
         INFO!(
             b"CH %lu: FBS enabled\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
         );
     } else {
+        WARN!(
+            b"CH %lu: Unable to enable FIS-based switching\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+        );
     }
 }
 
@@ -298,10 +313,20 @@ unsafe extern "C" fn AtaAhciEnterIdleState(ChanData: PCHANNEL_DATA_AHCI) -> BOOL
         return TRUE;
     }
     if AtaAhciStopCommandListProcessAndWait(ChanData) == 0 {
+        WARN!(
+            b"CH %lu: Failed to stop the command list DMA engine %08lx\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            AHCI_PORT_READ((*ChanData).IoBase, PxCmdStatus),
+        );
         return FALSE;
     }
     AtaAhciPerformCommandListOverride(ChanData);
     if AtaAhciStopFisReceiveProcessAndWait(ChanData) == 0 {
+        WARN!(
+            b"CH %lu: Failed to stop the FIS Receive DMA engine %08lx\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            AHCI_PORT_READ((*ChanData).IoBase, PxCmdStatus),
+        );
         return FALSE;
     }
     return TRUE;
@@ -426,6 +451,14 @@ unsafe extern "C" fn AtaAhciWaitForDeviceReady(
             if AtaAhciIsHbaHotRemoved(ChanData) != 0 {
                 return FALSE;
             }
+
+            WARN!(
+                b"CH %lu: Device is busy %08lx, trying to recover %lu\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                TaskFileData,
+                i,
+            );
+
             AHCI_PORT_WRITE((*ChanData).IoBase, PxSataError, 0xFFFFFFFF);
         }
         AtaSleep();
@@ -471,9 +504,9 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
             TimeOutMs / PORT_TIMER_TICK_MS,
         ) == 0
         {
-            INFO!(
+            ERR!(
                 b"CH %lu: Internal request timed out\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
 
             AtaAhciStopCommandListProcessAndWait(ChanData);
@@ -488,9 +521,9 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
 
         if (InterruptStatus & AHCI_PXIRQ_FATAL_ERROR) != 0 {
             if AtaAhciStopCommandListProcessAndWait(ChanData) == 0 {
-                INFO!(
+                ERR!(
                     b"CH %lu: Failed to stop the command list DMA engine\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                 );
 
                 SrbStatus = (SRB_STATUS_TIMEOUT as u8);
@@ -499,9 +532,9 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
 
             TaskFileData = AHCI_PORT_READ((*ChanData).IoBase, PxTaskFileData);
             if (TaskFileData & (IDE_STATUS_BUSY | IDE_STATUS_DRQ)) != 0 {
-                INFO!(
+                ERR!(
                     b"CH %lu: Busy TFD %08lx\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                     TaskFileData,
                 );
 
@@ -527,12 +560,12 @@ unsafe extern "C" fn AtaAhciPostRequestPolled(
     if SrbStatus == (SRB_STATUS_SUCCESS as u8) {
         TRACE!(
             b"CH %lu: Completed internal request\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
         );
     } else {
         INFO!(
             b"CH %lu: Internal request failed %02x\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
             SrbStatus,
         );
     }
@@ -730,7 +763,7 @@ unsafe extern "C" fn AtaAhciPmpIdentifyPmp(
 
     INFO!(
         b"CH %lu: PMP %08lX:%08lX %lu ports\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         ProductId,
         RevisionInfo,
         PortCount,
@@ -782,6 +815,12 @@ unsafe extern "C" fn AtaAhciPmpDetect(
     AtaAhciPerformCommandListOverride(ChanData);
     AtaAhciStartCommandListProcess(ChanData);
     if AtaAhciWaitForDeviceReady(ChanData, AHCI_DELAY_PMP_READY_DRIVE) == 0 {
+        WARN!(
+            b"CH %lu: Wait for ready failed %08lx\n\0".as_ptr() as *const i8,
+            (*ChanData).__bindgen_anon_1.Channel,
+            AHCI_PORT_READ((*ChanData).IoBase, PxTaskFileData),
+        );
+
         AtaAhciSendComReset(ChanData);
         return CONN_STATUS_FAILURE;
     }
@@ -794,14 +833,14 @@ unsafe extern "C" fn AtaAhciPmpDetect(
     if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         INFO!(
             b"CH %lu: Soft reset failed %02x\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
             SrbStatus,
         );
         if SrbStatus as ::core::ffi::c_int == (SRB_STATUS_TIMEOUT as i32) {
             *CheckForPmp = FALSE;
             INFO!(
                 b"CH %lu: Seems to have no PMP device\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
         }
         return CONN_STATUS_FAILURE;
@@ -816,14 +855,14 @@ unsafe extern "C" fn AtaAhciPmpDetect(
     if SrbStatus as ::core::ffi::c_int != (SRB_STATUS_SUCCESS as i32) {
         INFO!(
             b"CH %lu: Soft reset failed %02x\n\0".as_ptr() as *const i8,
-            (*ChanData).Channel,
+            (*ChanData).__bindgen_anon_1.Channel,
             SrbStatus,
         );
         if SrbStatus as ::core::ffi::c_int == (SRB_STATUS_TIMEOUT as i32) {
             *CheckForPmp = FALSE;
             INFO!(
                 b"CH %lu: Seems to have no PMP device\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
         }
         return CONN_STATUS_FAILURE;
@@ -832,7 +871,7 @@ unsafe extern "C" fn AtaAhciPmpDetect(
     Signature = AHCI_PORT_READ((*ChanData).IoBase, PxSignature);
     INFO!(
         b"CH %lu: Received signature %08lx\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         Signature,
     );
     if Signature != AHCI_PXSIG_PMP {
@@ -861,7 +900,7 @@ unsafe extern "C" fn AtaAhciPhyCheckConnection(
             if AtaAhciPhyCheckDevicePresence(ChanData) == 0 {
                 INFO!(
                     b"CH %lu: Device not connected %08lx\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                     AHCI_PORT_READ((*ChanData).IoBase, PxSataStatus),
                 );
                 ConnectionStatus = CONN_STATUS_NO_DEVICE;
@@ -870,21 +909,31 @@ unsafe extern "C" fn AtaAhciPhyCheckConnection(
 
             INFO!(
                 b"CH %lu: Link up %08lx\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
                 AHCI_PORT_READ((*ChanData).IoBase, PxSataStatus),
             );
 
             if AtaAhciPhyWaitForReady(ChanData) == 0 {
+                WARN!(
+                    b"CH %lu: Unable to establish link %08lx\n\0".as_ptr() as *const i8,
+                    (*ChanData).__bindgen_anon_1.Channel,
+                    AHCI_PORT_READ((*ChanData).IoBase, PxSataStatus),
+                );
                 ConnectionStatus = CONN_STATUS_FAILURE;
             } else {
                 AHCI_PORT_WRITE((*ChanData).IoBase, PxSataError, 0xFFFFFFFF);
 
                 if AtaAhciWaitForDeviceReady(ChanData, AHCI_DELAY_READY_DRIVE) == 0 {
+                    WARN!(
+                        b"CH %lu: Wait for ready failed %08lx\n\0".as_ptr() as *const i8,
+                        (*ChanData).__bindgen_anon_1.Channel,
+                        AHCI_PORT_READ((*ChanData).IoBase, PxTaskFileData),
+                    );
                     ConnectionStatus = CONN_STATUS_FAILURE;
                 } else {
                     INFO!(
                         b"CH %lu: Device is ready %08lx\n\0".as_ptr() as *const i8,
-                        (*ChanData).Channel,
+                        (*ChanData).__bindgen_anon_1.Channel,
                         AHCI_PORT_READ((*ChanData).IoBase, PxTaskFileData),
                     );
                     ConnectionStatus = CONN_STATUS_DEV_UNKNOWN;
@@ -933,7 +982,7 @@ pub unsafe extern "C" fn AtaAhciEnumerateChannel(ChannelContext: PVOID) -> ULONG
         {
             INFO!(
                 b"CH %lu: Trying to detect PMP\n\0".as_ptr() as *const i8,
-                (*ChanData).Channel,
+                (*ChanData).__bindgen_anon_1.Channel,
             );
 
             ConnectionStatus = AtaAhciPmpDetect(ChanData, &mut CheckForPmp as *mut i32 as *mut u8);
@@ -945,7 +994,7 @@ pub unsafe extern "C" fn AtaAhciEnumerateChannel(ChannelContext: PVOID) -> ULONG
             if ConnectionStatus == CONN_STATUS_DEV_UNKNOWN {
                 INFO!(
                     b"CH %lu: Discovered a Port Multiplier\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                 );
 
                 (*ChanData).__bindgen_anon_1.ChanInfo |= CHANNEL_FLAG_IS_PMP;
@@ -986,7 +1035,7 @@ unsafe extern "C" fn AtaAhciPmpCheckSendComReset(
     let mut SrbStatus: UCHAR = 0;
     INFO!(
         b"CH %lu: Transmit a COMRESET on the interface\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
     );
     SrbStatus = AtaAhciPmpWrite(
         ChanData,
@@ -1123,7 +1172,7 @@ unsafe extern "C" fn AtaPmpCheckConnection(
 
     INFO!(
         b"CH %lu: Reset PMP port %lu\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         PortNumber,
     );
 
@@ -1251,12 +1300,13 @@ pub unsafe extern "C" fn AtaAhciIdentifyDevice(ChannelContext: PVOID, DeviceNumb
             return (ConnectionStatus) as ATA_CONNECTION_STATUS;
         }
     } else {
+        ASSERT!(DeviceNumber == 0);
     }
 
     Signature = AHCI_PORT_READ((*ChanData).IoBase, PxSignature);
     INFO!(
         b"CH %lu: Received signature %08lx\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         Signature,
     );
 
@@ -1385,11 +1435,19 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
             i = i.wrapping_sub(1);
         }
         if i == 0 {
+            /* The interface is hung */
+            ERR!(
+                b"CH %lu: Failed to stop the command list DMA engine %08lx\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                CmdStatus,
+            );
             break 'done;
         }
 
         TaskFileData = AHCI_PORT_READ((*ChanData).IoBase, PxTaskFileData);
         if (TaskFileData & (IDE_STATUS_BUSY | IDE_STATUS_DRQ)) != 0 {
+            /* Put the device to the idle state */
+            ERR!(b"CH %lu: Busy TFD %08lx\n\0".as_ptr() as *const i8, (*ChanData).__bindgen_anon_1.Channel, TaskFileData);
             break 'done;
         }
 
@@ -1406,6 +1464,9 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
                     != 0) as u8,
             );
             Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
+            ASSERT!(Request);
+            ASSERT!((*Request).Slot == FailedSlot);
+            ASSERT!((*Request).Flags & REQUEST_FLAG_NCQ);
             break 'done;
         }
 
@@ -1418,7 +1479,18 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
             SlotsBitmap = 1 << CurrentCommandSlot;
         } else {
             if (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap != 0 {
+                ERR!(
+                    b"CH %lu: Invalid slot received from the HBA %08lX --> %08lX\n\0".as_ptr() as *const i8,
+                    (*ChanData).__bindgen_anon_1.Channel,
+                    (*ChanData).__bindgen_anon_1.ActiveSlotsBitmap,
+                    1i32 << CurrentCommandSlot,
+                );
             } else {
+                WARN!(
+                    b"CH %lu: Spurious error interrupt %08lX\n\0".as_ptr() as *const i8,
+                    (*ChanData).__bindgen_anon_1.Channel,
+                    AHCI_PORT_READ((*ChanData).IoBase, PxInterruptStatus),
+                );
             }
             break 'done;
         }
@@ -1429,6 +1501,8 @@ pub unsafe extern "C" fn AtaAhciHandleFatalError(mut ChanData: PCHANNEL_DATA_AHC
         );
 
         Request = *(*ChanData).__bindgen_anon_1.Slots.add(FailedSlot as usize);
+        ASSERT!(Request);
+        ASSERT!((*Request).Slot == FailedSlot);
 
         (*Request).SrbStatus = (SRB_STATUS_ERROR as u8);
         (*Request).Output.__bindgen_anon_1.Status = ((TaskFileData & AHCI_PXTFD_STATUS_MASK)) as u8;
@@ -1455,6 +1529,11 @@ pub unsafe extern "C" fn AtaAhciHandlePortStateChange(
             if InterruptStatus & AHCI_PXIRQ_DMPS != 0 {
                 let CmdStatus = AHCI_PORT_READ((*ChanData).IoBase, PxCmdStatus);
                 if CmdStatus & AHCI_PXCMD_MPSP != 0 {
+                    WARN!(
+                        b"CH %lu: Mechanical presence switch has changed %08lx\n\0".as_ptr() as *const i8,
+                        (*ChanData).__bindgen_anon_1.Channel,
+                        CmdStatus,
+                    );
                     break 'notify;
                 }
             }
@@ -1463,13 +1542,13 @@ pub unsafe extern "C" fn AtaAhciHandlePortStateChange(
             if SataStatus == AHCI_PXSSTS_DET_PHY_OK {
                 INFO!(
                     b"CH %lu: Device hot plug detected %08lx\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                     SataStatus,
                 );
             } else {
                 INFO!(
                     b"CH %lu: Device removal detected %08lx\n\0".as_ptr() as *const i8,
-                    (*ChanData).Channel,
+                    (*ChanData).__bindgen_anon_1.Channel,
                     SataStatus,
                 );
             }
@@ -1497,6 +1576,12 @@ pub unsafe extern "C" fn AtaAhciDowngradeInterfaceSpeed(
             SataControl &= !AHCI_PXCTL_SPD_MASK;
             SataControl |= SataSpeed - AHCI_PXCTL_SPD_LIMIT_LEVEL;
 
+            WARN!(
+                b"CH %lu: Downgrading interface speed to %08lx\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                SataControl,
+            );
+
             AHCI_PORT_WRITE((*ChanData).IoBase, PxSataControl, SataControl);
             return TRUE;
         }
@@ -1504,7 +1589,7 @@ pub unsafe extern "C" fn AtaAhciDowngradeInterfaceSpeed(
 
     INFO!(
         b"CH %lu: Unable to downgrade interface speed %08lx\n\0".as_ptr() as *const i8,
-        (*ChanData).Channel,
+        (*ChanData).__bindgen_anon_1.Channel,
         SataSpeed,
     );
     return FALSE;

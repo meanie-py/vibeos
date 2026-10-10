@@ -43,8 +43,6 @@ extern "system" {
     fn ExAllocatePoolWithTag(PoolType: u32, NumberOfBytes: SIZE_T, Tag: u32) -> *mut core::ffi::c_void;
     fn ExFreePool(P: *mut core::ffi::c_void);
 }
-unsafe extern "C" {
-}
 extern "system" {
     // WDF completion callback: NTAPI/stdcall on i386, C on amd64/arm64.
     // Defined in common.rs as `extern "system"`; declare it with a matching ABI
@@ -1289,10 +1287,10 @@ pub unsafe extern "C" fn ScanForSpecialHandler(
 
     // CLEAR_FLAG(HackFlags, CDROM_HACK_INVALID_FLAGS) – macro expanded to bitwise clear
     // Because CLEAR_FLAG is a macro and not a callable function, we manually expand it.
-    // CDROM_HACK_INVALID_FLAGS is not supplied; using a placeholder value.
-    const CDROM_HACK_INVALID_FLAGS: usize = 0; // TODO: define real value
+    // CDROM_HACK_INVALID_FLAGS is cdrom.h's (~CDROM_HACK_VALID_FLAGS), an int; C sign-extends
+    // it to ULONG_PTR, so the clear keeps exactly CDROM_HACK_VALID_FLAGS (0x3fff).
     let mut flags = HackFlags;
-    flags &= !CDROM_HACK_INVALID_FLAGS;
+    flags &= !(CDROM_HACK_INVALID_FLAGS as usize);
 
     (*DeviceExtension).DeviceAdditionalData.HackFlags = flags as ntkrnl_sys::ddk::ULONG_PTR;
 }

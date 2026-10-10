@@ -176,7 +176,9 @@ pub unsafe extern "system" fn SHGetAttributesFromDataObject(
                     data.cItems = apidl.GetSize() as u32;
 
                     let hr2 = DataObject_SetData(pDataObject, g_DataObjectAttributes, &mut data as *mut _ as *mut c_void, core::mem::size_of::<DataObjectAttributes>() as SIZE_T);
-                    FAILED_UNEXPECTEDLY!(hr2);
+                    // Report cache failure but don't fail the function: a free build's
+                    // FAILED_UNEXPECTEDLY only traces.
+                    let _ = hr2;
                 }
             }
 

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_WARNING; // uefildr.c: DBG_DEFAULT_CHANNEL(WARNING)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use crate::settings::BootMgrInfo;
@@ -26,8 +28,6 @@ pub struct EFI_SIMPLE_TEXT_OUTPUT_PROTOCOL {
 // non-variadic real bodies (cdecl, caller-cleans). Variadic call-form
 // here typechecks the format-string + args without changing link.
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
 }
 
 // uefildr.c is the OWNER of the uefildr.exe binary entry (EfiEntry) — it
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn EfiEntry(
 
 #[cfg_attr(feature = "uefildr-rust-entry", no_mangle)]
 pub unsafe extern "C" fn ExecuteLoaderCleanly(PreviousStack: PVOID) -> ! {
-    TRACE(b"ExecuteLoaderCleanly Entry\n\0".as_ptr() as *const i8);
+    TRACE!("ExecuteLoaderCleanly Entry\n");
     // KEEP THESE. "Switching stack..." used to be the last line a non-ATAPI boot
     // ever printed, and the silence after it read as a crash AT the stack switch
     // -- it is not, it is the output CHANNEL changing: everything from here on
@@ -182,7 +182,7 @@ pub unsafe extern "C" fn ExecuteLoaderCleanly(PreviousStack: PVOID) -> ! {
 
     RunLoader();
 
-    WARN(b"RunLoader returned, halting\n\0".as_ptr() as *const i8);
+    WARN!("RunLoader returned, halting\n");
     fldr_conout(crate::wide!("[FLDR] RunLoader RETURNED (no boot config)\r\n\0"));
     Reboot();
 }
@@ -210,7 +210,7 @@ pub(crate) unsafe fn fldr_conout(msg: *const u16) {
 pub unsafe extern "C" fn Reboot() -> ! {
     // Upstream 2a74f5e794d "Implement missing cold reset in Reboot()": the menu's reboot
     // entry and every "RunLoader returned" path used to halt here forever.
-    WARN(b"Performing cold reset\n\0".as_ptr() as *const i8);
+    WARN!("Performing cold reset\n");
 
     if !GlobalSystemTable.is_null() && !(*GlobalSystemTable).RuntimeServices.is_null() {
         // EFI_RESET_SYSTEM: (ResetType, ResetStatus, DataSize, ResetData), EFIAPI.

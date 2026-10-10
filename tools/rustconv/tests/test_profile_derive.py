@@ -522,6 +522,23 @@ def test_sys_crate_consts_carries_bindgen_enum_members_by_bare_name(tmp_path):
     assert got["PLAIN"] == "bindgen_i386"
 
 
+def test_sys_enum_members_carried_only_prefixed_are_reported(tmp_path):
+    """A kernel module's DDK enums all come from ntkrnl-sys. Treating "in the -sys crate" as
+    resolved recorded no switch_enums for any kernel module, so pciidex's bare
+    `BusQueryDeviceID =>` was never aliased and bound every IRP_MN_QUERY_ID."""
+    from rustconv.profile_derive import sys_crate_consts
+
+    src = tmp_path / "sdk/lib/rust/ntkrnl-sys/src"
+    src.mkdir(parents=True)
+    (src / "bindgen_i386.rs").write_text(
+        "pub const _BUS_QUERY_ID_TYPE_BusQueryDeviceID: _BUS_QUERY_ID_TYPE = 0;\n"
+        "pub const _BOTH_Both: _BOTH = 0;\npub const Both: u32 = 0;\n"
+    )
+    prefixes: dict[str, str] = {}
+    sys_crate_consts(tmp_path, usermode=False, arch="i386", enum_prefixes=prefixes)
+    assert prefixes == {"BusQueryDeviceID": "_BUS_QUERY_ID_TYPE"}
+
+
 def test_macro_expression_const_is_flagged_for_verification(tmp_path):
     root = _basic_module(tmp_path)
     _write(
@@ -1102,7 +1119,10 @@ class TestMostlyDeadBodies:
 
     def test_a_module_that_is_mostly_a_disabled_ifdef_is_flagged(self, tmp_path: Path):
         dead = "\n".join(f"    int x{i} = {i};" for i in range(60))
-        body = f"int go(void) {{\n    int ret = 0;\n#ifdef HAVE_LDAP\n{dead}\n#endif\n    return ret;\n}}\n"
+        body = (
+            f"int go(void) {{\n    int ret = 0;\n#ifdef HAVE_LDAP\n{dead}\n#endif\n"
+            "    return ret;\n}}\n"
+        )
         root = self._tree_with_config(tmp_path, body)
         dp = derive(_mod(tmp_path), root)
         hits = [f for f in dp.findings if f.code == "MOSTLY_DEAD_BODIES"]
@@ -1595,3 +1615,44 @@ def test_macro_kind_is_linear_on_an_unclosed_identifier_run():
     )
     assert time.time() - t < 1
     assert _macro_kind("((unsigned long)(0x10) | (DWORD) 5)") == "literal"
+
+
+def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
+    """cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on one line: every member after the
+    first was reported UNOWNED, a false §9.112 alarm that blocked the module."""
+    from rustconv.profile_derive import header_symbols
+
+    h = tmp_path / "cmd.h"
+    h.write_text(
+        "typedef enum _T\n{\n    C_COMMAND,\n    C_MULTI, C_OR, C_AND, C_PIPE,\n"
+        "    C_FOR, C_IF, C_REM\n} T;\n"
+    )
+    wanted = frozenset({"C_MULTI", "C_OR", "C_PIPE", "C_IF", "C_REM"})
+    assert set(header_symbols(h, wanted)) == wanted
+
+
+def test_a_prologue_arm_only_another_target_compiles_is_dropped(tmp_path):
+    """apphelp's sdbwrite.c: `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
+    <typedefs.h>`, the host tool's arm, which only xml2sdb's CMakeLists defines. Mirrored
+    into the wrapper it asked bindgen for a header no target include path has."""
+    import subprocess
+
+    from rustconv.profile_derive import _foreign_build_flags, scan_preamble
+
+    (tmp_path / "tool").mkdir()
+    (tmp_path / "tool" / "CMakeLists.txt").write_text("add_definitions(-DHOSTTOOL=1)\n")
+    tu = tmp_path / "write.c"
+    tu.write_text(
+        '#if !defined(HOSTTOOL)\n#include "windef.h"\n#else\n#include <typedefs.h>\n#endif\n'
+        '#ifdef _WIN64\n#include "wide.h"\n#endif\nint x;\n'
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    undefined = _foreign_build_flags([tu], tmp_path, set())
+    # _WIN64 is the compiler's, never a CMake flag: undecided, so both arms stay.
+    assert undefined == {"HOSTTOOL"}
+    keep, _ = scan_preamble(tu.read_text(), undefined)
+    assert '#include "windef.h"' in keep and "#include <typedefs.h>" not in keep
+    assert '#include "wide.h"' in keep
+    # A module that defines it itself keeps the host arm decidable the other way round.
+    assert _foreign_build_flags([tu], tmp_path, {"-DHOSTTOOL=1"}) == frozenset()

@@ -158,7 +158,6 @@ const PARTITION0_LIST_SIZE: ULONG = 4; // example constant
 // scsi.h:596 `sizeof(SENSE_DATA_EX)` -- take it from the type, not from a guess.
 const SENSE_BUFFER_SIZE_EX: SIZE_T = core::mem::size_of::<SENSE_DATA_EX>() as SIZE_T;
 const SCSI_DISK_TIMEOUT: ULONG = 0x0A;
-const DISK_DEFAULT_FAILURE_POLLING_PERIOD: ULONG = 600;
 // disk.h:75: `#define NonPagedPoolNxCacheAligned NonPagedPoolCacheAligned` under
 // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
 // Windows value (0x200/0x204) is not what any TU here compiles.

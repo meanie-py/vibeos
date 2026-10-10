@@ -42,6 +42,8 @@ binaries:
 # The apps and applets appstorm launches, plus everything they import, out of build-amd64.
 # rundll32 hosts every applet control.exe opens. The .cpl files and the modules at the END of
 # the list are loaded by name at run time, so no import walk finds them:
+#   lpk         the language pack user32/gdi32 load by name; refused, they retry on every
+#               text call (18929 refusals, each a blocking serial line, in one sweep)
 #   apphelp     kernel32's app-compat check at every process create
 #   schannel    secur32's TLS provider (rapps's database download is https)
 #   rsaenh      the crypto provider schannel's CryptAcquireContext opens by its registry
@@ -99,6 +101,11 @@ guest_sets:
       - dll/cpl/powercfg/powercfg.cpl
       - dll/cpl/inetcpl/inetcpl.cpl
       - dll/cpl/joy/joy.cpl
+      - dll/cpl/openglcfg/openglcfg.cpl
+      - dll/cpl/wined3dcfg/wined3dcfg.cpl
+      - dll/cpl/console/console.dll
+      - dll/cpl/hotplug/hotplug.dll
+      - dll/win32/lpk/lpk.dll
       - dll/appcompat/apphelp/apphelp.dll
       - dll/win32/schannel/schannel.dll
       - dll/win32/rsaenh/rsaenh.dll

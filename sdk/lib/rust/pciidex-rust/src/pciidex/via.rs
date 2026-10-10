@@ -370,6 +370,10 @@ unsafe extern "C" fn ViaSataSetTransferMode(mut Controller: PATA_CONTROLLER, mut
                     2,
                 ) == 0
                 {
+                    WARN!(
+                        b"Enabling workaround for the '%s' drive\n\0".as_ptr() as *const i8,
+                        (*Device).FriendlyName,
+                    );
                     SataControl =
                         (SataControl as ::core::ffi::c_int | (VT6421A_FIFO_WATERMARK_64DW as i32)) as UCHAR;
                     PciWrite8(Controller, (VT6421A_REG_SATA_CTRL) as ULONG, SataControl);
@@ -911,6 +915,8 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
 
     if HwFlags & (HW_FLAGS_CHECK_BRIDGE as u32) != 0 {
         if ((PciFindDevice(Some(ViaQuerySouthBridgeInformation), (&raw mut HwFlags).cast())) == 0) {
+            ERR!(b"Unable to find the VIA bridge\n\0".as_ptr() as *const i8);
+            ASSERT!(FALSE);
             return STATUS_NO_MATCH;
         }
     }
@@ -1044,6 +1050,7 @@ pub unsafe extern "C" fn ViaGetControllerProperties(
     let mut HwFlags: ULONG = 0;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_VIA);
 
     if (*Controller).Pci.DeviceID == PCI_DEV_VT6421A_RAID {
         return Via6421GetControllerProperties(Controller);

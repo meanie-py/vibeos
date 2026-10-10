@@ -1875,7 +1875,7 @@ pub unsafe extern "system" fn RtlpPageHeapAllocate(
 #[no_mangle]
 pub unsafe extern "system" fn RtlpPageHeapFree(
     HeapPtr: HANDLE,
-    mut Flags: ULONG,
+    Flags: ULONG,
     Ptr: PVOID,
 ) -> BOOLEAN {
     let DphRoot: PDPH_HEAP_ROOT;

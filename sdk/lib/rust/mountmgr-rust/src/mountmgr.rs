@@ -89,7 +89,7 @@ const Executive: i32 = 0;
 const ALLOC_TAG: u32 = 0x41746E4D; // nolint: const-contradiction ('AtnM' -- mntmgr.h:153; framebuf's unrelated ALLOC_TAG is 'FUBF')
 const PAGED_POOL: u32 = 1;
 
-const GPT_BASIC_DATA_ATTRIBUTE_NO_DRIVE_LETTER: u64 = 0x8000000000000000;
+const GPT_BASIC_DATA_ATTRIBUTE_NO_DRIVE_LETTER: u64 = 0x8000000000000000; // nolint: const-contradiction (GPT bit 63 per winioctl.h:314 and the on-disk attributes partmgr returns; the island takes ntdddisk.h:361 0x80000000, bit 31, a header bug the C inherits; ramdisk-rust also uses bit 63)
 
 const PARTITION_NTFT: i32 = 0x80;
 const VALID_NTFT: i32 = 0xC0;

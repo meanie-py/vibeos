@@ -3,8 +3,9 @@
 //! them as macros; the Rust needs real items). They are plain Rust fns reached through
 //! the prelude — NOT #[no_mangle] link symbols, because nothing links against them.
 //!
-//! Policy (matches oleaut32-rust + the compobj/marshal lanes): TRACE/WARN are
-//! no-ops; ERR/FIXME print the raw format string (no interpolation) to the
+//! Policy (matches oleaut32-rust + the compobj/marshal lanes): TRACE/WARN are the
+//! token-discarding `TRACE!`/`WARN!` of winemacros.rs -- never fns here, because an
+//! empty fn still evaluates every argument the C macro discards; ERR/FIXME print the raw format string (no interpolation) to the
 //! debugger so failures stay loud. debugstr_* return a static placeholder —
 //! their results are only ever consumed as TRACE/WARN varargs.
 //!
@@ -28,10 +29,6 @@ use core::ffi::c_char;
 extern "system" {
     fn OutputDebugStringA(lpOutputString: *const c_char);
 }
-
-pub unsafe fn TRACE(_fmt: *const c_char) {}
-
-pub unsafe fn WARN(_fmt: *const c_char) {}
 
 pub unsafe fn ERR(fmt: *const c_char) {
     OutputDebugStringA(b"ole32-rust ERR: \0".as_ptr() as *const c_char);

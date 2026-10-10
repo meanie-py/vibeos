@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // hwapm.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_LIST, PCM_PARTIAL_RESOURCE_LIST, PCONFIGURATION_COMPONENT_DATA, PCSTR};
@@ -8,8 +10,6 @@ use core::ffi::c_void;
 pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE_MultiFunctionAdapter as MultiFunctionAdapter;
 
 extern "C" {
-    fn TRACE(fmt: *const CHAR, ...);
-    fn ERR(fmt: *const CHAR, ...);
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS);
     fn FrLdrHeapAlloc(size: usize, tag: u32) -> *mut core::ffi::c_void;
     fn FldrCreateComponentKey(
@@ -39,17 +39,17 @@ unsafe fn FindApmBios() -> BOOLEAN {
     RegsIn.w.bx = 0x0000;
     Int386(0x15, &mut RegsIn, &mut RegsOut);
     if INT386_SUCCESS(RegsOut) != 0 && RegsOut.w.bx == 0x504D {
-        TRACE(b"Found APM BIOS\n\0".as_ptr() as *const CHAR);
-        TRACE(b"AH: %x\n\0".as_ptr() as *const CHAR, RegsOut.b.ah as u32);
-        TRACE(b"AL: %x\n\0".as_ptr() as *const CHAR, RegsOut.b.al as u32);
-        TRACE(b"BH: %x\n\0".as_ptr() as *const CHAR, RegsOut.b.bh as u32);
-        TRACE(b"BL: %x\n\0".as_ptr() as *const CHAR, RegsOut.b.bl as u32);
-        TRACE(b"CX: %x\n\0".as_ptr() as *const CHAR, RegsOut.w.cx as u32);
+        TRACE!("Found APM BIOS\n");
+        TRACE!("AH: %x\n", RegsOut.b.ah as u32);
+        TRACE!("AL: %x\n", RegsOut.b.al as u32);
+        TRACE!("BH: %x\n", RegsOut.b.bh as u32);
+        TRACE!("BL: %x\n", RegsOut.b.bl as u32);
+        TRACE!("CX: %x\n", RegsOut.w.cx as u32);
 
         return 1;
     }
 
-    TRACE(b"No APM BIOS found\n\0".as_ptr() as *const CHAR);
+    TRACE!("No APM BIOS found\n");
 
     return 0;
 }
@@ -67,7 +67,7 @@ pub unsafe extern "C" fn DetectApmBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
     Size = core::mem::offset_of!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors) as ULONG;
     PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
     if PartialResourceList.is_null() {
-        ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const CHAR);
+        ERR!("Failed to allocate resource descriptor\n");
         return;
     }
     RtlZeroMemory(PartialResourceList as *mut core::ffi::c_void, Size as usize);

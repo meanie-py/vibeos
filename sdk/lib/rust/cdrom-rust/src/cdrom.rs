@@ -97,7 +97,6 @@ extern "C" {
 }
 extern "system" {
     fn CdromSequentialQueueEvtIoReadWrite(queue: WDFQUEUE, request: WDFREQUEST, length: usize);
-    fn WPP_CLEANUP(DriverObject: PDRIVER_OBJECT);
     fn DriverGetExtension(Driver: WDFDRIVER) -> *mut CDROM_DRIVER_EXTENSION;
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn IoGetDevicePropertyData( PDO: *mut DEVICE_OBJECT, propertyKey: *const c_void, lcid: u32, flags: u32, size: u32, data: *mut c_void, requiredSize: *mut u32, dataType: *mut u32, ) -> NTSTATUS;
@@ -127,7 +126,6 @@ extern "system" {
     fn RequestGetContext(Request: *mut c_void) -> PCDROM_REQUEST_CONTEXT;
     fn WDF_REQUEST_PARAMETERS_INIT(params: *mut WDF_REQUEST_PARAMETERS);
     fn NT_ASSERT(condition: i32);
-    fn WPP_INIT_TRACING(DriverObject: ntkrnl_sys::ddk::PDRIVER_OBJECT, RegistryPath: ntkrnl_sys::ddk::PUNICODE_STRING);
     fn WDF_DRIVER_CONFIG_INIT( Config: *mut WDF_DRIVER_CONFIG, EvtDeviceAdd: PFN_WDF_DRIVER_DEVICE_ADD, );
     fn KeGetCurrentIrql() -> u8;
     fn RequestHandleVolumeOnline( dev: *mut CDROM_DEVICE_EXTENSION, req: WDFREQUEST, params: WDF_REQUEST_PARAMETERS, info: *mut usize, ) -> i32;
@@ -213,8 +211,6 @@ unsafe extern "C" {
     fn DEVICE_TYPE_FROM_CTL_CODE(io_control_code: u32) -> u32;
 }
 unsafe extern "C" {
-}
-unsafe extern "C" {
     fn DeviceCreateWellKnownName(ext: *mut CDROM_DEVICE_EXTENSION) -> NTSTATUS;
 }
 unsafe extern "C" {
@@ -228,9 +224,6 @@ unsafe extern "C" {
 }
 unsafe extern "C" {
     fn DeviceRegisterInterface(ext: *mut CDROM_DEVICE_EXTENSION, InterfaceType: i32) -> NTSTATUS;
-}
-unsafe extern "C" {
-    fn UNREFERENCED_PARAMETER(param: usize);
 }
 unsafe extern "C" {
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
@@ -489,7 +482,7 @@ pub unsafe extern "system" fn DriverEntry(
     let mut driverObject: WDFDRIVER = core::ptr::null_mut();
 
     PagedCode();
-    WPP_INIT_TRACING(DriverObject, RegistryPath);
+    ntkrnl_sys::WPP_INIT_TRACING!(DriverObject, RegistryPath);
 
     {
         let level = TRACE_LEVEL_INFORMATION;
@@ -528,7 +521,7 @@ pub unsafe extern "system" fn DriverEntry(
             let flags = TRACE_FLAG_INIT;
             let fmt = b"WdfDriverCreate failed. %x\n\0".as_ptr() as *const i8;
             TracePrint!(level, flags, fmt, status as usize);
-            WPP_CLEANUP(DriverObject);
+            ntkrnl_sys::WPP_CLEANUP!(DriverObject);
         }
     } else {
         let driverExtension: *mut CDROM_DRIVER_EXTENSION = DriverGetExtension(driverObject);
@@ -562,7 +555,7 @@ pub unsafe extern "system" fn DriverEvtCleanup(Driver: WDFOBJECT) {
         driver,
     );
 
-    WPP_CLEANUP(WdfDriverWdmGetDriverObject(driver));
+    ntkrnl_sys::WPP_CLEANUP!(WdfDriverWdmGetDriverObject(driver));
 
     return;
 }
@@ -1165,7 +1158,7 @@ pub unsafe extern "system" fn DeviceEvtSelfManagedIoCleanup(Device: *mut core::f
     // Release device unless surprise removed
     if (*deviceExtension).SurpriseRemoved == 0 {
         status = DeviceClaimRelease(deviceExtension, 1 /* TRUE */);
-        UNREFERENCED_PARAMETER((status) as usize); // defensive coding
+        UNREFERENCED_PARAMETER!((status) as usize); // defensive coding
     }
 
     // Flush queued DPCs
@@ -1296,7 +1289,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
         let mut secondsRemaining: u32 = 0;
         let mut watchdogTimeSupported: i32 = 0; // BOOL
         PoQueryWatchdogTime((*deviceExtension).LowerPdo as *mut core::ffi::c_void, &mut secondsRemaining as *mut u32);
-        UNREFERENCED_PARAMETER(0);
+        UNREFERENCED_PARAMETER!(0);
     }
 
     (*deviceExtension).PowerDownInProgress = 1; // TRUE
@@ -1322,7 +1315,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
     // Step 2. QUIESCE QUEUE
     if ntkrnl_sys::base::NT_SUCCESS(status) && (TargetState != WdfPowerDeviceD3Final) {
         DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
-        UNREFERENCED_PARAMETER(0);
+        UNREFERENCED_PARAMETER!(0);
         // We don't care about the status.
         status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
@@ -1332,7 +1325,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
     // Step 3. SYNC CACHE
     if ntkrnl_sys::base::NT_SUCCESS(status) && (*deviceExtension).DeviceAdditionalData.Mmc.WriteAllowed != 0 {
         DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
-        UNREFERENCED_PARAMETER(0);
+        UNREFERENCED_PARAMETER!(0);
         status = ntkrnl_sys::base::STATUS_SUCCESS;
     }
 
@@ -1341,7 +1334,7 @@ pub unsafe extern "system" fn DeviceEvtD0Exit(Device: WDFDEVICE, TargetState: WD
     // Step 4. STOP UNIT
     if ntkrnl_sys::base::NT_SUCCESS(status) && (TEST_FLAG((*deviceExtension).ScanForSpecialFlags, CDROM_SPECIAL_DISABLE_SPIN_DOWN) == 0) {
         DeviceSendPowerDownProcessRequest(deviceExtension, core::ptr::null_mut(), core::ptr::null_mut());
-        UNREFERENCED_PARAMETER(0);
+        UNREFERENCED_PARAMETER!(0);
     }
 
     if TargetState == WdfPowerDeviceD3Final {
@@ -1609,7 +1602,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
         if !(*cdData).ExclusiveOwner.is_null() && (*cdData).ExclusiveOwner != fileObject {
             let mut isBlocked: u8 = 0;
             status = RequestIsIoctlBlockedByExclusiveAccess(Request, &mut isBlocked as *mut u8);
-            UNREFERENCED_PARAMETER((status) as usize);
+            UNREFERENCED_PARAMETER!((status) as usize);
 
             if isBlocked != 0 {
                 if (*requestParameters_ptr).Parameters.DeviceIoControl.as_ref().IoControlCode == IOCTL_STORAGE_EVENT_NOTIFICATION
@@ -1652,7 +1645,7 @@ pub unsafe extern "system" fn DeviceEvtIoInCallerContext(
         }
 
         NT_ASSERT((processed != 0) as i32);
-        UNREFERENCED_PARAMETER((processed as i32) as usize);
+        UNREFERENCED_PARAMETER!((processed as i32) as usize);
     } else if (*requestParameters_ptr).Type == WdfRequestTypeDeviceControlInternal {
         RequestProcessInternalDeviceControl(Request as WDFREQUEST, deviceExtension);
     } else {
@@ -2577,7 +2570,7 @@ pub unsafe extern "C" fn RequestDispatchSyncWithSequentialQueue(
             // should bypass verify required then retry the request.
             //
             status = STATUS_IO_DEVICE_ERROR;
-            UNREFERENCED_PARAMETER((status) as usize); // disables prefast warning; defensive coding...
+            UNREFERENCED_PARAMETER!((status) as usize); // disables prefast warning; defensive coding...
 
             processed = RequestDispatchSyncWithSequentialQueue(Device, Request, RequestParameters);
         } else {
@@ -2782,7 +2775,7 @@ pub unsafe extern "C" fn RequestDispatchSpecialIoctls(
             // If the status is verified required and this request
             // should bypass verify required then retry the request.
             status = STATUS_IO_DEVICE_ERROR;
-            UNREFERENCED_PARAMETER((status) as usize); // disables prefast warning; defensive coding...
+            UNREFERENCED_PARAMETER!((status) as usize); // disables prefast warning; defensive coding...
 
             processed = RequestDispatchSpecialIoctls(Device, Request, RequestParameters);
         } else {
@@ -2813,7 +2806,7 @@ pub unsafe extern "C" fn RequestDispatchUnknownRequests(
             RequestCompletion(deviceExtension, Request, status, 0);
         }
     }
-    UNREFERENCED_PARAMETER((status) as usize);
+    UNREFERENCED_PARAMETER!((status) as usize);
     1u8
 }
 #[no_mangle]
@@ -3029,9 +3022,9 @@ pub unsafe extern "system" fn SequentialQueueEvtIoDeviceControl(
 
     CdromDbgPrint1(b"[IOCTL-IN] code=%lx\n\0".as_ptr() as *const i8, IoControlCode as usize);
 
-    UNREFERENCED_PARAMETER((OutputBufferLength as i32) as usize);
-    UNREFERENCED_PARAMETER((InputBufferLength as i32) as usize);
-    UNREFERENCED_PARAMETER((IoControlCode as i32) as usize);
+    UNREFERENCED_PARAMETER!((OutputBufferLength as i32) as usize);
+    UNREFERENCED_PARAMETER!((InputBufferLength as i32) as usize);
+    UNREFERENCED_PARAMETER!((IoControlCode as i32) as usize);
 
     // get the request parameters
     WDF_REQUEST_PARAMETERS_INIT(requestParameters.as_mut_ptr());

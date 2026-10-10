@@ -1,8 +1,9 @@
+#[allow(unused_imports)] use crate::{ERR, FIXME, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_DISK; // partition.c: DBG_DEFAULT_CHANNEL(DISK)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use core::ffi::c_void;
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
 }
 
 // --- partition.c file-local content (rustconv drops non-fn content). ---
@@ -33,8 +34,6 @@ static XboxPartitions: [XBOX_PARTITION_TABLE_ENTRY; 5] = [
 ];
 
 extern "C" {
-    fn FIXME(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn UefiGetGptPartitionEntry( DriveNumber: UCHAR, PartitionNumber: ULONG, PartitionTableEntry: PPARTITION_TABLE_ENTRY, ) -> BOOLEAN;
 }
 
@@ -54,24 +53,24 @@ unsafe fn DiskReadBootRecord(
         core::mem::size_of::<MASTER_BOOT_RECORD>(),
     );
 
-    TRACE(b"Dumping partition table for drive 0x%x:\n\0".as_ptr() as PCHAR, (DriveNumber) as usize);
-    TRACE(b"Boot record logical start sector = %d\n\0".as_ptr() as PCHAR, (LogicalSectorNumber) as usize);
-    TRACE(b"sizeof(MASTER_BOOT_RECORD) = 0x%x.\n\0".as_ptr() as PCHAR, (core::mem::size_of::<MASTER_BOOT_RECORD>()) as usize);
+    TRACE!("Dumping partition table for drive 0x%x:\n", (DriveNumber) as usize);
+    TRACE!("Boot record logical start sector = %d\n", (LogicalSectorNumber) as usize);
+    TRACE!("sizeof(MASTER_BOOT_RECORD) = 0x%x.\n", (core::mem::size_of::<MASTER_BOOT_RECORD>()) as usize);
 
     Index = 0;
     while Index < 4 {
-        TRACE(b"-------------------------------------------\n\0".as_ptr() as PCHAR);
-        TRACE(b"Partition %d\n\0".as_ptr() as PCHAR, (Index + 1) as usize);
-        TRACE(b"BootIndicator: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].BootIndicator) as usize);
-        TRACE(b"StartHead: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].StartHead) as usize);
-        TRACE(b"StartSector (Plus 2 cylinder bits): 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].StartSector) as usize);
-        TRACE(b"StartCylinder: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].StartCylinder) as usize);
-        TRACE(b"SystemIndicator: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].SystemIndicator) as usize);
-        TRACE(b"EndHead: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].EndHead) as usize);
-        TRACE(b"EndSector (Plus 2 cylinder bits): 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].EndSector) as usize);
-        TRACE(b"EndCylinder: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].EndCylinder) as usize);
-        TRACE(b"SectorCountBeforePartition: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].SectorCountBeforePartition) as usize);
-        TRACE(b"PartitionSectorCount: 0x%x\n\0".as_ptr() as PCHAR, ((*BootRecord).PartitionTable[Index as usize].PartitionSectorCount) as usize);
+        TRACE!("-------------------------------------------\n");
+        TRACE!("Partition %d\n", (Index + 1) as usize);
+        TRACE!("BootIndicator: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].BootIndicator) as usize);
+        TRACE!("StartHead: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].StartHead) as usize);
+        TRACE!("StartSector (Plus 2 cylinder bits): 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].StartSector) as usize);
+        TRACE!("StartCylinder: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].StartCylinder) as usize);
+        TRACE!("SystemIndicator: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].SystemIndicator) as usize);
+        TRACE!("EndHead: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].EndHead) as usize);
+        TRACE!("EndSector (Plus 2 cylinder bits): 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].EndSector) as usize);
+        TRACE!("EndCylinder: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].EndCylinder) as usize);
+        TRACE!("SectorCountBeforePartition: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].SectorCountBeforePartition) as usize);
+        TRACE!("PartitionSectorCount: 0x%x\n", ((*BootRecord).PartitionTable[Index as usize].PartitionSectorCount) as usize);
         Index += 1;
     }
 
@@ -168,10 +167,10 @@ unsafe fn DiskGetActivePartitionEntry(
     }
 
     if BootablePartitionCount == 0 {
-        ERR(b"No bootable (active) partitions found.\n\0".as_ptr() as PCHAR);
+        ERR!("No bootable (active) partitions found.\n");
         return 0u8;
     } else if BootablePartitionCount != 1 {
-        ERR(b"Too many bootable (active) partitions found.\n\0".as_ptr() as PCHAR);
+        ERR!("Too many bootable (active) partitions found.\n");
         return 0u8;
     }
 
@@ -315,28 +314,22 @@ pub unsafe extern "C" fn DiskDetectPartitionType(DriveNumber: UCHAR) {
         if PartitionCount == 1 && GPTProtect != 0 {
             DiskPartitionType[DriveNumber as usize] = PARTITION_STYLE_GPT;
         }
-        TRACE(
-            b"Drive 0x%X partition type %s\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (if DiskPartitionType[DriveNumber as usize] == PARTITION_STYLE_MBR {
+        TRACE!("Drive 0x%X partition type %s\n", (DriveNumber) as usize, (if DiskPartitionType[DriveNumber as usize] == PARTITION_STYLE_MBR {
                 b"MBR\0".as_ptr() as PCHAR
             } else {
                 b"GPT\0".as_ptr() as PCHAR
-            }) as usize,
-        );
+            }) as usize);
         return;
     }
 
     if DiskGetBrfrPartitionEntry(DriveNumber, FATX_DATA_PARTITION, &mut PartitionTableEntry) != 0 {
         DiskPartitionType[DriveNumber as usize] = PARTITION_STYLE_BRFR;
-        TRACE(
-            b"Drive 0x%X partition type Xbox-BRFR\n\0".as_ptr() as PCHAR, (DriveNumber) as usize,
-        );
+        TRACE!("Drive 0x%X partition type Xbox-BRFR\n", (DriveNumber) as usize);
         return;
     }
 
     DiskPartitionType[DriveNumber as usize] = PARTITION_STYLE_RAW;
-    TRACE(
-        b"Drive 0x%X partition type unknown\n\0".as_ptr() as PCHAR, (DriveNumber) as usize,
-    );
+    TRACE!("Drive 0x%X partition type unknown\n", (DriveNumber) as usize);
 }
 
 #[no_mangle]
@@ -350,11 +343,11 @@ pub unsafe extern "C" fn DiskGetBootPartitionEntry(
             return DiskGetActivePartitionEntry(DriveNumber, PartitionTableEntry, BootPartition);
         }
         PARTITION_STYLE_GPT => {
-            FIXME(b"DiskGetBootPartitionEntry() unimplemented for GPT\n\0".as_ptr() as PCHAR);
+            FIXME!("DiskGetBootPartitionEntry() unimplemented for GPT\n");
             return 0u8;
         }
         PARTITION_STYLE_RAW => {
-            FIXME(b"DiskGetBootPartitionEntry() unimplemented for RAW\n\0".as_ptr() as PCHAR);
+            FIXME!("DiskGetBootPartitionEntry() unimplemented for RAW\n");
             return 0u8;
         }
         PARTITION_STYLE_BRFR => {
@@ -365,7 +358,7 @@ pub unsafe extern "C" fn DiskGetBootPartitionEntry(
             return 0u8;
         }
         _ => {
-            ERR(b"Drive 0x%X partition type = %d, should not happen!\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize);
+            ERR!("Drive 0x%X partition type = %d, should not happen!\n", (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize);
             ntkrnl_sys::ASSERT!(false);
         }
     }
@@ -389,21 +382,19 @@ pub unsafe extern "C" fn DiskGetPartitionEntry(
             }
             #[cfg(not(feature = "uefi"))]
             {
-                FIXME(b"DiskGetPartitionEntry() unimplemented for GPT\n\0".as_ptr() as PCHAR);
+                FIXME!("DiskGetPartitionEntry() unimplemented for GPT\n");
                 return 0u8;
             }
         }
         PARTITION_STYLE_RAW => {
-            FIXME(b"DiskGetPartitionEntry() unimplemented for RAW\n\0".as_ptr() as PCHAR);
+            FIXME!("DiskGetPartitionEntry() unimplemented for RAW\n");
             return 0u8;
         }
         PARTITION_STYLE_BRFR => {
             return DiskGetBrfrPartitionEntry(DriveNumber, PartitionNumber, PartitionTableEntry);
         }
         _ => {
-            ERR(
-                b"Drive 0x%X partition type = %d, should not happen!\n\0".as_ptr() as PCHAR, (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize,
-            );
+            ERR!("Drive 0x%X partition type = %d, should not happen!\n", (DriveNumber) as usize, (DiskPartitionType[DriveNumber as usize]) as usize);
             ntkrnl_sys::ASSERT!(false);
         }
     }

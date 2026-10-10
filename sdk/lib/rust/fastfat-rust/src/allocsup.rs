@@ -28,14 +28,13 @@ use ntkrnl_sys::ddk::{MDL};
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatRemoveMcbEntry( Vcb: *mut VCB, Mcb: *mut ntkrnl_sys::ddk::LARGE_MCB, Vbo: u32, Bytes: u32, );
-    fn UNREFERENCED_PARAMETER(_: usize);
     fn FatVerifyIndexIsValid(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, FatIndex: u32);
     fn FatReservedBytes(Bpb: *const core::ffi::c_void) -> u32;
     fn FatBytesPerFat(Bpb: *const core::ffi::c_void) -> u32;
     fn FatLookup12BitEntry(PinnedPage: *mut u8, FatIndex: u32, FatEntry: *mut u32);
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, ByteLength: u32, Bcb: *mut *mut core::ffi::c_void, PinnedPage: *mut *mut u8, );
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
-    fn FatBugCheck(value: u32, log: u32, zero: u32);
+    fn FatBugCheck(value: usize, log: usize, zero: usize);
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
 }
@@ -360,7 +359,7 @@ pub unsafe extern "system" fn FatTearDownAllocationSupport(
         0usize,
     );
 
-    UNREFERENCED_PARAMETER(IrpContext as usize);
+    UNREFERENCED_PARAMETER!(IrpContext as usize);
 }
 
 #[no_mangle]
@@ -1785,19 +1784,19 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                             RtlClearBits(
                                 &mut (*Vcb).FreeClusterBitMap as *mut RTL_BITMAP_DBG as *mut RTL_BITMAP,
                                 fat_index - 2,
-                                (*p_ClustersFound),
+                                *p_ClustersFound ,
                             );
                             if fat_index < (*Vcb).ClusterHint {
                                 (*Vcb).ClusterHint = fat_index;
                             }
                         }
 
-                        (*(*p_Window)).ClustersFree += (*p_ClustersFound);
-                        (*Vcb).AllocationSupport.NumberOfFreeClusters += (*p_ClustersFound);
+                        (*(*p_Window)).ClustersFree += *p_ClustersFound ;
+                        (*Vcb).AllocationSupport.NumberOfFreeClusters += *p_ClustersFound ;
 
                         FatUnlockFreeClusterBitMap(Vcb);
 
-                        FatRemoveMcbEntry(Vcb, Mcb, (*p_CurrentVbo), (*p_BytesFound));
+                        FatRemoveMcbEntry(Vcb, Mcb, *p_CurrentVbo , *p_BytesFound );
                     } else {
                         FatUnlockFreeClusterBitMap(Vcb);
                     }
@@ -3084,7 +3083,7 @@ pub unsafe extern "system" fn FatLogOf(mut value: u32) -> u8 {
         DebugTrace(0, Dbg, c"  Value = %8lx\n".as_ptr() as *const i8, (orig_value) as usize);
         DebugTrace(0, Dbg, c"Received non power of 2.\n".as_ptr() as *const i8, 0);
         DebugTrace(-1, Dbg, c"LogOf -> %8lx\n".as_ptr() as *const i8, (log as u32) as usize);
-        FatBugCheck(value, log as u32, 0);
+        FatBugCheck(value as usize, log as usize, 0);
     }
 
     log

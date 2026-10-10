@@ -61,9 +61,13 @@ unsafe extern "C" fn AtaAcpiEvaluateObject(
         );
 
         if !OutputBuffer.is_null() && NT_SUCCESS!(Status) {
+            ASSERT!((*OutputBuffer).Signature == ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE);
+
             if (*OutputBuffer).Signature != ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE
                 || (*OutputBuffer).Count == 0
             {
+                ERR!(b"Invalid ACPI output buffer\n\0".as_ptr() as *const i8);
+
                 Status = STATUS_ACPI_INVALID_DATA;
             }
         }
@@ -90,7 +94,7 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
                  ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>())) as usize]>(),
     );
 
-    InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 'M' as u32 | ('T' as u32) << 8 | ('G' as u32) << 16 | ('_' as u32) << 24;
+    InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 0x4D54475Fu32; // C 'MTG_': "_GTM" in memory
     InputBuffer.Signature = ACPI_EVAL_INPUT_BUFFER_SIGNATURE;
 
     Status = AtaAcpiEvaluateObject(
@@ -103,14 +107,22 @@ pub unsafe extern "C" fn AtaAcpiGetTimingMode(
     );
 
     if !NT_SUCCESS!(Status) {
+        ASSERT!(Status != STATUS_BUFFER_OVERFLOW);
+
         return FALSE;
     }
 
     if ((*OutputBuffer).Argument[0].DataLength as usize) < core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>() {
+        ERR!(
+            b"Buffer too small, size %u/%u\n\0".as_ptr() as *const i8,
+            (*OutputBuffer).Argument[0].DataLength as u32,
+            core::mem::size_of::<_IDE_ACPI_TIMING_MODE_BLOCK>(),
+        );
         return FALSE;
     }
 
     if (*OutputBuffer).Argument[0].Type != ACPI_METHOD_ARGUMENT_BUFFER as USHORT {
+        ERR!(b"Unexpected method type %u\n\0".as_ptr() as *const i8, (*OutputBuffer).Argument[0].Type as u32);
         return FALSE;
     }
 
@@ -147,6 +159,7 @@ pub unsafe extern "C" fn AtaAcpiSetTimingMode(
         ) as PACPI_EVAL_INPUT_BUFFER_COMPLEX;
 
         if InputBuffer.is_null() {
+            ERR!(b"Failed to allocate memory\n\0".as_ptr() as *const i8);
             return STATUS_INSUFFICIENT_RESOURCES;
         }
 
@@ -231,6 +244,8 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
     let mut Status: NTSTATUS = 0;
 
     PAGED_CODE!();
+    // C: `PsGetCurrentProcess()`, which psfuncs.h defines as IoGetCurrentProcess.
+    ASSERT!(crate::types::IoGetCurrentProcess() == PsInitialSystemProcess);
 
     InputBuffer.__bindgen_anon_1.MethodNameAsUlong = 1179928415u32;
     InputBuffer.Signature = ACPI_EVAL_INPUT_BUFFER_SIGNATURE;
@@ -251,6 +266,7 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
             TAG_PCIIDEX,
         ) as PACPI_EVAL_OUTPUT_BUFFER;
         if OutputBuffer.is_null() {
+            ERR!(b"Failed to allocate memory of size %lu\n\0".as_ptr() as *const i8, OutputSize);
             return core::ptr::null_mut();
         }
 
@@ -278,6 +294,7 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
         }
 
         if (*OutputBuffer).Argument[0].Type != (ACPI_METHOD_ARGUMENT_BUFFER as u16) {
+            ERR!(b"Unexpected method type %u\n\0".as_ptr() as *const i8, (*OutputBuffer).Argument[0].Type as u32);
             break 'cleanup;
         }
 
@@ -285,10 +302,15 @@ pub unsafe extern "C" fn AtaAcpiGetTaskFile(
             % core::mem::size_of::<ATA_ACPI_TASK_FILE>()
             != 0
         {
+            ERR!(
+                b"Incorrect command stream length %u\n\0".as_ptr() as *const i8,
+                (*OutputBuffer).Argument[0].DataLength as u32,
+            );
             break 'cleanup;
         }
 
         if (*OutputBuffer).Argument[0].DataLength == 0 {
+            WARN!(b"Empty command list\n\0".as_ptr() as *const i8);
             break 'cleanup;
         }
 
@@ -311,6 +333,8 @@ pub unsafe extern "C" fn AtaAcpiSetDeviceData(
     let mut InputSize: ULONG = 0;
 
     PAGED_CODE!();
+    // C: `PsGetCurrentProcess()`, which psfuncs.h defines as IoGetCurrentProcess.
+    ASSERT!(crate::types::IoGetCurrentProcess() == PsInitialSystemProcess);
 
     InputSize = (FIELD_OFFSET!(ACPI_EVAL_INPUT_BUFFER_COMPLEX, Argument) as usize
         + ACPI_METHOD_ARGUMENT_LENGTH!(core::mem::size_of::<IDENTIFY_DEVICE_DATA>()))
@@ -322,10 +346,11 @@ pub unsafe extern "C" fn AtaAcpiSetDeviceData(
         TAG_PCIIDEX,
     ) as PACPI_EVAL_INPUT_BUFFER_COMPLEX;
     if InputBuffer.is_null() {
+        ERR!(b"Failed to allocate memory\n\0".as_ptr() as *const i8);
         return;
     }
 
-    (*InputBuffer).__bindgen_anon_1.MethodNameAsUlong = 0x5F534444u32; // '_SDD'
+    (*InputBuffer).__bindgen_anon_1.MethodNameAsUlong = 0x4444535Fu32; // C 'DDS_': "_SDD" in memory
     (*InputBuffer).Signature = ACPI_EVAL_INPUT_BUFFER_COMPLEX_SIGNATURE;
     (*InputBuffer).ArgumentCount = 1;
     (*InputBuffer).Size = InputSize;

@@ -213,6 +213,7 @@ pub unsafe extern "C" fn AtaGetRegistryKey(
                 RUSTCONV_WSTR_447B6E0274D3.as_ptr(),
                 TargetId as i32,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             RtlInitUnicodeString(
                 core::ptr::addr_of_mut!(TargetKeyName),
@@ -287,6 +288,7 @@ pub unsafe extern "C" fn AtaSetRegistryKey(
                                         core::mem::size_of::<[WCHAR; 9]>(),
                                         RUSTCONV_WSTR_447B6E0274D3.as_ptr(),
                                         TargetId as core::ffi::c_int);
+        ASSERT!(NT_SUCCESS!(Status));
 
         RtlInitUnicodeString(core::ptr::addr_of_mut!(TargetKeyName),
                                TargetKeyBuffer.as_ptr());
@@ -485,6 +487,7 @@ pub unsafe extern "system" fn AtaStorageNotificationlDpc(
 
         WorkItem = IoAllocateWorkItem((*DevExt).Common.Self_);
         if WorkItem.is_null() {
+            ERR!(b"Failed to allocate workitem\0".as_ptr() as *const i8);
         } else {
             IoQueueWorkItem(
                 WorkItem,
@@ -573,6 +576,7 @@ pub unsafe extern "C" fn AtaPnpRepeatRequest(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!(!IS_FDO!(CommonExt));
 
     TopDeviceObject = IoGetAttachedDeviceReference((*FdoExt).Self_);
 
@@ -725,6 +729,7 @@ pub unsafe extern "system" fn AtaAddChannel(
         FdoFormat.as_ptr(),
         AtapFdoNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(DeviceName),
@@ -749,6 +754,7 @@ pub unsafe extern "system" fn AtaAddChannel(
         core::ptr::addr_of_mut!(Fdo),
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create the FDO with status 0x%lx\n\0".as_ptr() as *const i8, Status);
         return Status;
     }
 
@@ -763,6 +769,7 @@ pub unsafe extern "system" fn AtaAddChannel(
 
     (*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject = IoAttachDeviceToDeviceStack(Fdo, PhysicalDeviceObject);
     if (*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject.is_null() {
+        ERR!(b"Failed to attach the FDO\n\0".as_ptr() as *const i8);
         Status = STATUS_DEVICE_REMOVED;
         if !(*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject.is_null() {
             IoDetachDevice((*ChanExt).Common.__bindgen_anon_1.LowerDeviceObject);
