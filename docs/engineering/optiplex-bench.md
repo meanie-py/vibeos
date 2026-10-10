@@ -2,15 +2,15 @@
 
 The x64 hardware bench: a Dell OptiPlex 9020 SFF (Haswell, Lynx Point PCH, Intel
 I217-LM) running Libreboot. It took over the Pi 4 bench's plug, Pico and capture
-card on 2026-10-09, so the `tools/pi4` scripts drive it with these overrides
-until it has its own wrapper:
+card on 2026-10-09. `tools/optiplex/` drives it: `env.sh` points the `tools/pi4`
+machinery at this board (its own lease, `VIBEOS_BENCH_BOARD=optiplex`).
 
 | Part | What | How to reach it |
 |---|---|---|
-| Power | The Pi 4's Shelly plug | `tools/pi4/power.sh status / cycle` |
-| Keyboard, mouse, disk | Pico `picousb5` | `tools/pi4/pico.sh ...` (its default) |
-| Screen | Capture card `vid_345f` behind a VGA-to-HDMI converter (the 9020 has VGA and DisplayPort, no HDMI; the converter needs its USB power lead) | `PI4_HDMI_VID=345f tools/pi4/hdmi.sh out.png` |
-| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1 | coreboot logs every boot here at `debug_level = Debug` |
+| Power | The Pi 4's Shelly plug | `tools/optiplex/power.sh status / cycle` |
+| Keyboard, mouse, disk | Pico `picousb5` | `tools/optiplex/pico.sh ...` |
+| Screen | Capture card `vid_345f` behind a VGA-to-HDMI converter (the 9020 has VGA and DisplayPort, no HDMI; the converter needs its USB power lead) | `tools/optiplex/hdmi.sh out.png` |
+| Serial | The 9020's COM1, RS-232 to a Prolific PL2303GT on the host: Windows **COM7**, 115200 8N1. coreboot logs every boot here (`debug_level = Debug`), and VibeOS's loader and kernel debug output follow (`/DEBUGPORT=COM1 /BAUDRATE=115200`) | `tools/optiplex/serial.sh up / status`; the live capture is named in `<bench>/serial-current.json` |
 
 The Pi 5 keeps the other card (`vid_534d`, `tools/pi5/env.sh`).
 
