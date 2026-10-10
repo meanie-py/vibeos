@@ -283,4 +283,3 @@ pub static mut EnhancedKeyboard: KEYBOARD_STRUCT = KEYBOARD_STRUCT { Keys: &raw 
 
 #[no_mangle]
 pub static mut StandardKeyboard: KEYBOARD_STRUCT = KEYBOARD_STRUCT { Keys: &raw const StandardKeyboardKeys as PKEY, KeyCount: 104 as INT /* _countof(StandardKeyboardKeys) */, Size: SIZE { cx: 586, cy: 193 }, LedTextStart: POINT { x: 588, y: 6 }, LedTextSize: SIZE { cx: 40, cy: 15 }, LedTextOffset: 40, LedStart: POINT { x: 596, y: 25 }, LedSize: SIZE { cx: 7, cy: 5 }, LedGap: 40 };
-
