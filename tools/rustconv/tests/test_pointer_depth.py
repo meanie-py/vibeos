@@ -81,3 +81,14 @@ def test_consecutive_declarations_are_all_seen():
     c = "{\n    PBAR Bar = x;\n    PFOO Foo = y;\n}\n"
     d = pd.c_declarations("Get", [], c, TYPES)
     assert d.names == {"Bar": ("PBAR", 0), "Foo": ("PFOO", 0)}
+
+
+def test_a_cpp_reference_parameter_is_one_level_of_indirection():
+    decls = pd.c_declarations(
+        "GetResponseStats",
+        [("PVOID", "ReplyBuffer"), ("PVOID&", "AddressInfo")],
+        "ULONG GetResponseStats(PVOID ReplyBuffer, PVOID& AddressInfo) { return 0; }",
+        {"PVOID"},
+    )
+    assert decls.names["AddressInfo"] == ("PVOID", 1)
+    assert decls.names["ReplyBuffer"] == ("PVOID", 0)

@@ -147,6 +147,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "atl-rust"
+version = "0.1.0"
+
+[[package]]
 name = "authz-rust"
 version = "0.1.0"
 dependencies = [
@@ -679,6 +683,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "drwtsn32-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dxg-rust"
 version = "0.1.0"
 dependencies = [
@@ -751,6 +765,17 @@ name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
+
+[[package]]
+name = "fltmc-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
 
 [[package]]
 name = "fltmgr-rust"
@@ -1563,6 +1588,16 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "winlogon-sys",
+]
+
+[[package]]
+name = "mspaint-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2699,12 +2734,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "sndrec32-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "snmpapi-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+]
+
+[[package]]
+name = "sol-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "spider-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2886,6 +2954,17 @@ version = "0.1.0"
 name = "timedate-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "tracert-rust"
+version = "0.1.0"
+dependencies = [
+ "atl-rust",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",

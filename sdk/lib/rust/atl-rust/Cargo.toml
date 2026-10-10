@@ -1,0 +1,21 @@
+# atl-rust — ATL's smart pointers, containers and CStringW, ported once for every C++ module.
+# See src/lib.rs for why, and for what is deliberately NOT here (island-bound types).
+[package]
+name = "atl-rust"
+version = "0.1.0"
+edition = "2021"
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+
+[lib]
+crate-type = ["rlib"]
+
+# No dependencies ON PURPOSE: the type basis is core primitives, the strsafe-rust shape.
+[dependencies]
+
+[features]
+# CComAllocator / CComHeapPtr: ole32's task allocator. Off by default so a module with no COM
+# never imports ole32.
+com = []

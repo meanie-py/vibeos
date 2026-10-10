@@ -763,6 +763,29 @@ def test_scaffold_writes_the_crate_skeleton(tmp_path):
     assert "compile_error!" in (out / "src/types_i386.rs").read_text()
 
 
+def _cpp_module(tmp_path):
+    """widget.dll with one C++ TU: the island must parse as C++, the crate gets atl-rust."""
+    root = _basic_module(tmp_path, cmake=CMAKE_USERMODE.replace("helper.c", "helper.cpp"))
+    _write(_mod(tmp_path) / "helper.cpp", "int helper(void){return 0;}\n")
+    return root
+
+
+def test_cpp_module_island_parses_as_cpp(tmp_path):
+    root = _cpp_module(tmp_path)
+    assert "LANG_ARGS=( -x c++ -std=gnu++17 )" in emit_profile(derive(_mod(tmp_path), root))
+    # and a pure-C module does not get it
+    assert "LANG_ARGS" not in emit_profile(derive(_mod(tmp_path), _basic_module(tmp_path)))
+
+
+def test_cpp_module_scaffold_wires_atl_rust(tmp_path):
+    root = _cpp_module(tmp_path)
+    out = tmp_path / "widget-rust"
+    scaffold_crate(derive(_mod(tmp_path), root), out)
+    assert 'atl-rust = { path = "../atl-rust" }' in (out / "Cargo.toml").read_text()
+    prelude = (out / "src/prelude.rs").read_text()
+    assert "pub use atl_rust::{atl_format," in prelude and "CStringW}" in prelude
+
+
 def test_scaffold_refuses_to_clobber(tmp_path):
     root = _basic_module(tmp_path)
     dp = derive(_mod(tmp_path), root)
