@@ -26,6 +26,7 @@ def preserve_debug_macros(code: str) -> str:
             # `__builtin_unreachable()`), which the new ATA stack uses after exhaustive switches.
             if child.type == "identifier" and data[child.start_byte : child.end_byte] in (
                 b"UNIMPLEMENTED",
+                b"UNIMPLEMENTED_ONCE",  # user32_vista's dpi.c
                 b"UNREACHABLE",
             ):
                 edits.append((child.end_byte, b"!()"))
