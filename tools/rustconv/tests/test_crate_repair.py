@@ -2575,3 +2575,29 @@ def test_a_zero_argument_reported_in_a_child_note_becomes_null():
     assert handled and [(e.byte_start, e.replacement) for e in edits] == [
         (11, "core::ptr::null_mut()")
     ]
+
+
+def test_a_cpp_reference_argument_is_borrowed():
+    """mspaint: `ImageToCanvas(POINT& pt)` called with the POINT itself; a `&mut` wants a
+    place, a const reference also binds a temporary, and a call result stays red for `&mut`."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"f(pt); g(rc.__base0); h(make());"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+
+    e = _cpp_reference_arg(_span("a.rs", 2, 4), "&mut tagPOINT", "tagPOINT", load, ctx)
+    assert e is not None and e.replacement == "&mut pt"
+    e = _cpp_reference_arg(_span("a.rs", 9, 19), "*const tagRECT", "tagRECT", load, ctx)
+    assert e is not None and e.replacement == "&rc.__base0"
+    assert _cpp_reference_arg(_span("a.rs", 24, 30), "&mut X", "X", load, ctx) is None
+    e = _cpp_reference_arg(_span("a.rs", 24, 30), "&X", "X", load, ctx)
+    assert e is not None and e.replacement == "&(make())"
+    assert _cpp_reference_arg(_span("a.rs", 2, 4), "&mut tagPOINT", "tagRECT", load, ctx) is None
+
+
+def test_a_method_receiver_is_not_an_argument_position():
+    from rustconv.crate_repair import harvest_signatures
+
+    src = b"impl W { pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) {} }"
+    assert harvest_signatures({"a.rs": src})["DefWindowProc"] == ["UINT", "WPARAM", "LPARAM"]

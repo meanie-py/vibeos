@@ -87,6 +87,7 @@ RULE_LITERAL_MUT = "c_literal_to_mut_param"
 RULE_BITFIELD = "bitfield_accessor"
 RULE_CONST_OPERAND = "c_constant_operand"
 RULE_C2RUST_ANON = "c2rust_anon_member"
+RULE_CPP_REFERENCE_ARG = "cpp_reference_argument"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -1522,6 +1523,53 @@ def _ref_to_void_pointer(
     )
 
 
+_PLACE = re.compile(r"(?:\(\*\s*[\w.]+\)|[A-Za-z_]\w*)(?:\s*\.\s*\w+|\[[^\[\]]+\])*")
+
+
+def _cpp_reference_arg(
+    span: Mapping[str, Any], expected: str, found: str, load: FileReader, ctx: _Ctx
+) -> Edit | None:
+    """A C++ REFERENCE parameter (`POINT& pt`, `const RECT& rc`), passed the object:
+    `expected &mut tagPOINT, found tagPOINT` -> `&mut pt`; `&T`/`*const T` -> `&(expr)`
+    (a const reference binds a temporary too); `*mut T` takes `&mut place` (Rust coerces
+    the reference to the pointer). Plain C cannot produce this shape -- passing a struct
+    where its pointer is wanted does not compile -- so only a reference reaches it. A
+    `&mut` wants a PLACE; anything else (a call's result) stays red."""
+    m = re.fullmatch(r"(&mut |&|\*mut |\*const )(.+)", expected)
+
+    def same(a: str) -> str:  # `cpp_classes::CRect` and `CRect` are one type
+        return a.strip().split("::")[-1]
+
+    if m is None or same(m.group(2)) != same(found) or found.lstrip().startswith(("&", "*")):
+        return None
+    mutable = m.group(1) in ("&mut ", "*mut ")
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or end <= start:
+        return None
+    masked = _mask_lexical(data)
+    if _in_macro_definition(masked, start) or not _balanced(masked[start:end]):
+        return None
+    text = data[start:end].decode("utf-8", "replace").strip()
+    if mutable and not _PLACE.fullmatch(text):
+        return None
+    repl = f"&mut {text}" if mutable else (f"&{text}" if _PLACE.fullmatch(text) else f"&({text})")
+    return Edit(
+        file_name=file_name,
+        byte_start=start,
+        byte_end=end,
+        replacement=repl,
+        rule=RULE_CPP_REFERENCE_ARG,
+        authority=f"a C++ reference parameter binds the object itself; expected `{expected}`",
+        original=text,
+        line=int(span.get("line_start") or 0),
+        column=int(span.get("column_start") or 0),
+        requires_target_agreement=False,
+        targets=(ctx.target,),
+    )
+
+
 def _pointer_cast_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -1553,6 +1601,11 @@ def _pointer_cast_rule(
         void_edit = _ref_to_void_pointer(span, expected, found, load, ctx)
         if void_edit is not None:
             edits.append(void_edit)
+            claimed = True
+            continue
+        ref_edit = _cpp_reference_arg(span, expected, found, load, ctx)
+        if ref_edit is not None:
+            edits.append(ref_edit)
             claimed = True
             continue
         want = _RAW_POINTER.match(expected)
@@ -4949,6 +5002,12 @@ _RE_FN_DEF = re.compile(
 )
 
 
+# A method's receiver is not an argument position: `obj.DefWindowProc(msg, w, l)` passes
+# `w` as argument 1, which is parameter 2 of `fn DefWindowProc(&mut self, msg, w, l)`.
+# Counting `&mut self` checked every WPARAM argument against `msg: UINT` (mspaint: 41).
+_SELF_RECEIVER = re.compile(r"(?:&\s*(?:'\w+\s+)?(?:mut\s+)?|mut\s+)?self(?:\s*:.*)?", re.S)
+
+
 def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
     """``fn name -> [param type, ...]``, preferring the DEFINITION over declarations.
 
@@ -4978,7 +5037,9 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             # declaration was silently unresolvable, and nothing said so.
             raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             defined[match.group(1).decode("utf-8", "replace")] = [
-                part.split(":", 1)[1].strip() if ":" in part else "" for part in _split_params(raw)
+                part.split(":", 1)[1].strip() if ":" in part else ""
+                for part in _split_params(raw)
+                if not _SELF_RECEIVER.fullmatch(part.strip())
             ]
 
     found: dict[str, list[str] | None] = {}
@@ -4997,7 +5058,9 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
             raw = data[open_paren + 1 : close - 1].decode("utf-8", "replace")
             params = []
             for part in _split_params(raw):
-                # `name: Type` -> Type; `&self`/`mut self` and `...` carry no type.
+                if _SELF_RECEIVER.fullmatch(part.strip()):
+                    continue  # see _SELF_RECEIVER
+                # `name: Type` -> Type; `...` carries no type.
                 if ":" not in part:
                     params.append("")
                     continue

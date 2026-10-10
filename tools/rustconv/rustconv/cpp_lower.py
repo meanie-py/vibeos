@@ -138,6 +138,11 @@ class Lowerer:
                 # member name, and wrapping the object too would walk the path twice.
                 if not (parent and parent.get("kind") == "MemberExpr"):
                     self._upcast(n, f, lo, hi, edits, unplaced)
+            elif k == "ImplicitCastExpr" and n.get("castKind") == "UserDefinedConversion":
+                obj = self._conversion(n, f, lo, hi, edits)
+                if obj is not None:
+                    walk(obj, None)  # the object only: the implicit member is ours
+                    return
             elif k == "VarDecl":
                 self._local(n, f, lo, hi, edits)
             elif k in ("CXXTemporaryObjectExpr", "CXXFunctionalCastExpr"):
@@ -190,6 +195,33 @@ class Lowerer:
         renamed = info.rust_name if written is not None and written != info.rust_name else None
         if prefix or renamed:
             put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
+
+    def _conversion(self, n: dict, f: str, lo: int, hi: int, edits) -> dict | None:
+        """C++'s implicit user-defined conversion, `IsWindowVisible(textEditWindow)` through
+        `CWindow::operator HWND()`, made an explicit call: `(textEditWindow).op_to_HWND()`.
+        Returns the object node (whose own edits still apply), or None if not this shape."""
+        call = _unwrap_casts((n.get("inner") or [{}])[0])
+        if call.get("kind") != "CXXMemberCallExpr":
+            return None
+        me = (call.get("inner") or [{}])[0]
+        if me.get("kind") != "MemberExpr":
+            return None
+        info = self.decls.get(me.get("referencedMemberDecl", ""))
+        obj = (me.get("inner") or [None])[0]
+        span = _node_span(obj, f, lo, hi) if obj else None
+        if info is None or span is None:
+            return None
+        edits.append((span[0], 0, "("))
+        edits.append((span[1], 0, f").{info.rust_name}()"))
+        # A method call needs no upcast: autoderef reaches CWindow's op_to_HWND through the
+        # generated Deref, and _upcast's `.__base0` would land outside the call.
+        while obj.get("kind") == "ImplicitCastExpr" and obj.get("castKind") in (
+            "DerivedToBase",
+            "UncheckedDerivedToBase",
+            "NoOp",
+        ):
+            obj = (obj.get("inner") or [obj])[0]
+        return obj
 
     def _static_ref(self, n: dict, f: str, lo: int, hi: int, edits) -> None:
         """A STATIC member named without its class (`_shared()` inside CImageDx): after

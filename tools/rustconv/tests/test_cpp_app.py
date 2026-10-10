@@ -467,3 +467,39 @@ def test_a_bare_call_to_a_unique_static_method_is_qualified():
     rs = "get((*_shared()).x); CImageDx::_shared(); o._shared(); fn _shared() {}"
     out = cpp_app.qualify_static_calls(rs, m)
     assert out.startswith("get((*CImageDx::_shared()).x); CImageDx::_shared(); o._shared();")
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_implicit_conversion_operator_is_an_explicit_call(tmp_path):
+    """mspaint's `IsWindowVisible(textEditWindow)` through CWindow::operator HWND()."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef struct HWND__ *HWND; int IsWindowVisible(HWND);\n"
+        "class CWindow { public: HWND m_hWnd; operator HWND() const { return m_hWnd; } };\n"
+        "class CEdit : public CWindow { public: void Go(); };\n"
+        "CEdit textEditWindow;\n"
+        "void CEdit::Go() { IsWindowVisible(textEditWindow); IsWindowVisible(*this); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["CEdit"].methods if m.name == "Go"]
+    assert go == (
+        "{ IsWindowVisible((textEditWindow).op_to_HWND()); "
+        "IsWindowVisible((*this_).op_to_HWND()); }"
+    )

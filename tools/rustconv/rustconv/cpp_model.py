@@ -396,7 +396,13 @@ def _assign_names(cls: ClassModel) -> None:
         elif m.kind == "dtor":
             m.rust_name = "__dtor"
         elif m.kind == "operator":
-            m.rust_name = _OPERATOR_NAMES.get(m.name[len("operator") :].strip(), "op_unknown")
+            op = m.name[len("operator") :].strip()
+            # A conversion operator (`operator HWND`) is `op_to_HWND`; cpp_lower calls it
+            # where C++ converts implicitly.
+            conv = "op_to_" + re.sub(r"\W+", "_", op).strip("_")
+            m.rust_name = _OPERATOR_NAMES.get(
+                op, conv if re.match(r"[A-Za-z_]", op) else "op_unknown"
+            )
         elif counts[m.name] > 1:
             m.rust_name = f"{m.name}__{seen.get(m.name, 0)}"
         else:
@@ -458,7 +464,7 @@ def _method_kind(node: dict) -> str:
     return "method"
 
 
-_METHOD_KINDS = ("CXXMethodDecl", "CXXConstructorDecl", "CXXDestructorDecl")
+_METHOD_KINDS = ("CXXMethodDecl", "CXXConstructorDecl", "CXXDestructorDecl", "CXXConversionDecl")
 
 
 class _Extractor:
