@@ -428,7 +428,7 @@ def test_an_anonymous_type_is_matched_by_shape_in_its_own_tu(tmp_path, monkeypat
         "amd64": item("C2RustUnnamed_162", bridge) + item("C2RustUnnamed_163", other),
         "arm64": item("C2RustUnnamed_163", bridge) + item("C2RustUnnamed_164", other),
     }
-    monkeypatch.setattr(c2rust_anchor, "_transpile_text", lambda f, verbose, arch: texts[arch])
+    monkeypatch.setattr(c2rust_anchor, "_native_text", lambda f, arch: texts[arch])
     code = (
         "static mut L: [C2RustUnnamed_163; 1] = [C2RustUnnamed_163 {\n"
         "    DeviceID: 1 as USHORT, MinimumRevisionID: f(0, 1), Flags: 3 as UCHAR,\n}];\n"
@@ -480,7 +480,7 @@ def test_definition_signatures_read_a_static_function_from_its_own_definition(mo
         'pub unsafe extern "C" fn PataStartIo(mut c: PVOID, mut r: PATA_DEVICE_REQUEST)'
         " -> BOOLEAN {\n    0\n}\n"
     )
-    monkeypatch.setattr(c2rust_anchor, "_transpile_text", lambda f, verbose, arch: text)
+    monkeypatch.setattr(c2rust_anchor, "_native_text", lambda f, arch: text)
     sigs = c2rust_anchor.definition_signatures(
         Path("pata.c"), {"PataEnableInterrupts", "PataStartIo"}
     )
@@ -505,3 +505,39 @@ def test_a_constant_used_only_as_a_match_pattern_is_found(tmp_path):
     found = port._pattern_idents(mods)
     assert found == {"IOCTL_KNOWN", "IOCTL_A", "IOCTL_B", "BusQueryDeviceID"}
     assert port._undefined_pattern_constants(src, mods, None) == {"IOCTL_A", "IOCTL_B"}
+
+
+def test_an_arch_comparison_never_counts_a_fallback_transpile(monkeypatch):
+    # notepad's main.c fails c2rust on i386 and anchored from build-amd64; extern_signatures
+    # then compared amd64 with itself and declared `wcslen -> c_ulonglong` for i386.
+    from rustconv import c2rust_anchor
+
+    sig = "    pub fn wcslen(_Str: *const wchar_t) -> ::core::ffi::c_ulonglong;\n"
+    narrow = "    pub fn wcsncpy(_Dest: *mut wchar_t, _Source: *const wchar_t, _Count: size_t) -> *mut wchar_t;\n"
+    texts = {
+        "i386": None,
+        "amd64": f'extern "C" {{\n{sig}{narrow}}}\n',
+        "arm64": f'extern "C" {{\n{sig}{narrow}}}\n',
+    }
+    monkeypatch.setattr(c2rust_anchor, "_native_text", lambda f, arch: texts[arch])
+    got = c2rust_anchor.extern_signatures(Path("main.c"), {"wcslen", "wcsncpy"})
+    assert "wcslen" not in got  # a 64-bit width with i386 unheard is not agreement
+    assert "wcsncpy" in got
+
+
+def test_a_definition_spelled_with_an_sdk_alias_exports_the_real_name(tmp_path, monkeypatch):
+    # notepad defines `_tWinMain`; tchar.h makes it `wWinMain`, which the CRT startup calls.
+    from rustconv import macro_authority
+
+    rs = tmp_path / "main.rs"
+    rs.write_text(
+        '#[no_mangle]\npub unsafe extern "system" fn _tWinMain(h: HINSTANCE) -> i32 {\n    0\n}\n'
+        '#[no_mangle]\npub unsafe extern "C" fn Helper() {}\n'
+    )
+    monkeypatch.setattr(
+        macro_authority, "identifier_aliases", lambda _r, _c: {"_tWinMain": "wWinMain"}
+    )
+    assert port._aw_export_names(rs, tmp_path / "main.c") == ["_tWinMain -> wWinMain"]
+    out = rs.read_text()
+    assert '#[export_name = "wWinMain"]\npub unsafe extern "system" fn _tWinMain(' in out
+    assert '#[no_mangle]\npub unsafe extern "C" fn Helper()' in out

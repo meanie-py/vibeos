@@ -200,6 +200,10 @@ def _norm(text: str) -> str:
     text = re.sub(r"//[^\n]*", "", text)
     text = re.sub(r"#\[[^\]]*\]", "", text)
     text = re.sub(r"\bpub(\([^)]*\))?\s+", "", text)
+    # `crate::island::LPCWSTR` names the DEFINING crate's module; copied into another
+    # crate it resolves to nothing (notepad got shell32's IDC_WAIT that way). Bare names
+    # resolve through the receiving prelude's island glob.
+    text = re.sub(r"\bcrate::(?:\w+::)+", "", text)
     return " ".join(text.split())
 
 

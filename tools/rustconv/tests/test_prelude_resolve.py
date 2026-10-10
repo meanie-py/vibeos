@@ -321,3 +321,11 @@ def test_clang_param_count_reads_past_the_calling_convention():
     )
     assert param_count("void (*)(SHORT, SHORT, LPCSTR, ...)") == 4
     assert param_count("int (*)(int (*)(int, int), char)") == 2
+
+
+def test_a_crate_local_path_is_not_copied_into_another_crate():
+    """shell32's `IDC_WAIT: crate::island::LPCWSTR` named shell32's own module; copied into
+    notepad it resolved to nothing."""
+    assert pr._norm(
+        "pub const IDC_WAIT: crate::island::LPCWSTR = 32514isize as crate::island::LPCWSTR;"
+    ) == ("const IDC_WAIT: LPCWSTR = 32514isize as LPCWSTR;")

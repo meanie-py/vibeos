@@ -470,6 +470,40 @@ pub unsafe extern "system" fn StringCchCopyNW(
     StringCopyNWorkerW(pszDest, cchDest, pszSrc, cchToCopy)
 }
 
+/// strsafe.h:1395 `StringCatNWorkerW` -- append at most `cchToAppend` characters.
+unsafe fn StringCatNWorkerW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    cchToAppend: usize,
+) -> HRESULT {
+    let mut cchDestLength: usize = 0;
+    let mut hr = StringLengthWorkerW(pszDest, cchDest, &mut cchDestLength);
+    if hr >= 0 {
+        hr = StringCopyNWorkerW(
+            pszDest.add(cchDestLength),
+            cchDest - cchDestLength,
+            pszSrc,
+            cchToAppend,
+        );
+    }
+    hr
+}
+
+/// strsafe.h:407 `StringCchCatNW` (notepad).
+#[no_mangle]
+pub unsafe extern "system" fn StringCchCatNW(
+    pszDest: *mut WCHAR,
+    cchDest: usize,
+    pszSrc: *const WCHAR,
+    cchToAppend: usize,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCatNWorkerW(pszDest, cchDest, pszSrc, cchToAppend)
+}
+
 /// strsafe.h:275 `StringCchCopyNExW`.
 #[no_mangle]
 pub unsafe extern "system" fn StringCchCopyNExW(
