@@ -437,6 +437,24 @@ members = [
     "comctl32-rust",
     "inetcpl-rust",
     "notepad-rust",
+    "winprint-rust",
+    "logonui-rust",
+    "aclayers-rust",
+    "acgenral-rust",
+    "audiosrv-rust",
+    "w32time-rust",
+    "schedsvc-rust",
+    "spoolss-rust",
+    "localmon-rust",
+    "localspl-rust",
+    "winspool-rust",
+    "spoolsv-rust",
+    "apphelp-rust",
+    "eventlog-rust",
+    "progman-rust",
+    "svchost-rust",
+    "cmd-rust",
+    "kbdlayouts-rust",
 ]
 resolver = "2"
 
@@ -504,6 +522,15 @@ debug = 1
 # [profile.release.package.ntoskrnl-rust]
 # debug-assertions = true
 # overflow-checks = false   # NB: defaults to FOLLOWING debug-assertions; must be explicit
+
+# The appcompat shim DLLs register their shims as `.shm$BBB` records that only shimlib's section
+# walk ever reads, so the DLL reaches each crate through ONE anchor symbol (lib.rs). One codegen
+# unit keeps every record in the anchor's object; split, the records' objects stay unlinked.
+[profile.release.package.aclayers-rust]
+codegen-units = 1
+
+[profile.release.package.acgenral-rust]
+codegen-units = 1
 
 # msvcrt.dll's CRT body is the ONE place in this workspace where throughput is a
 # correctness-adjacent contract: `memset`/`memcpy`/`memcmp`/`strlen` are served to

@@ -360,7 +360,15 @@ def _borrow_dirs(repo_root: Path, source: Path) -> list[Path]:
         if ancestor == repo_root or repo_root not in ancestor.parents:
             break
         cml = ancestor / "CMakeLists.txt"
-        if cml.is_file() and str(source.relative_to(ancestor)) in cml.read_text(errors="replace"):
+        if not cml.is_file():
+            continue
+        # dll/keyboard names all 89 layouts through `foreach(_keyboard_layout ...)`, so
+        # `kbdus/kbdus.c` appears only once the loop is unrolled (the flipped line is still
+        # there, commented); once every layout is flipped, the stub TU beside that
+        # CMakeLists is the one left carrying their flags.
+        from .profile_derive import _unroll_target_foreach
+
+        if str(source.relative_to(ancestor)) in _unroll_target_foreach(cml.read_text(errors="replace")):
             dirs.append(ancestor.relative_to(repo_root))
             break
     return dirs

@@ -928,6 +928,27 @@ def apply_hand_bodies(crate: Path, stem: str) -> list[str]:
     return applied
 
 
+def _explode_inline_sources(cml: str, target: str) -> str:
+    """`add_executable(logonui logonui.c NT5design.c logonui.rc)`, one argument per line.
+
+    The flip comments sources out line by line, so a source list written inline in the
+    target's own call (logonui's whole CMakeLists is four lines) had no line to comment and
+    the flip refused. Only a one-line call is rewritten; a multi-line one is left alone.
+    """
+    m = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b[^\n()]*\)[ \t]*$", cml, re.M)
+    if m is None:
+        return cml
+    call = m.group(0)
+    head, args = call[: call.index("(") + 1], call[call.index("(") + 1 : call.rindex(")")].split()
+    if not any(a.endswith((".c", ".cpp")) for a in args[1:]):
+        return cml
+    keep = [a for a in args[1:] if a.upper() in ("WIN32", "MODULE", "SHARED", "STATIC")]
+    rest = [a for a in args[1:] if a not in keep]
+    first = " ".join([head + args[0], *keep])
+    body = "".join(f"\n    {a}" for a in rest)
+    return cml[: m.start()] + f"{first}{body})" + cml[m.end() :]
+
+
 def flip_cmake(cml: str, state: dict) -> str:
     """The module's CMakeLists with every translated TU replaced by the Rust staticlib.
 
@@ -938,10 +959,12 @@ def flip_cmake(cml: str, state: dict) -> str:
     """
     stem, crate, target = state["stem"], state["crate"], state["target"]
     module = REPO / state["module_dir"]
-    lines = cml.split("\n")
+    lines = _explode_inline_sources(cml, target).split("\n")
     last = None
     for tu in state["tus"]:
-        rel = str((REPO / tu).relative_to(module))
+        # `../marshalling.c` (spoolss): a TU shared upward is listed relative to the module,
+        # which `relative_to` cannot express.
+        rel = os.path.relpath(REPO / tu, module)
         rs = _tu_output(state, tu).relative_to(REPO)
         pat = re.compile(rf"^(\s*){re.escape(rel)}(\s*\)?)\s*$")
         hit = next((i for i, ln in enumerate(lines) if pat.match(ln)), None)
@@ -969,6 +992,13 @@ def flip_cmake(cml: str, state: dict) -> str:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
         lines.insert(last + 1, f"{indent}rust_cohab_stub.c")
         text = "\n".join(lines)
+    # integrate's C-variadic trampolines (variadic_shim): stable Rust cannot define the
+    # `...` entry points, so the module must compile the generated shim (progman's
+    # PrintString, apphelp's ShimDbgPrint). Listed beside the stub.
+    if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
+        text = re.sub(
+            r"(?m)^(\s*)rust_cohab_stub\.c$", r"\1rust_cohab_stub.c\n\1rust_varargs_shim.c", text, count=1
+        )
     variant = f"{stem}_rust"
     if f"rust_staticlib_variant({variant} " not in text:
         add = re.search(rf"^add_(?:executable|library)\(\s*{re.escape(target)}\b", text, re.M)
@@ -3473,6 +3503,7 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     # scaffold's `pub const NULL` once landed in this block too (mmsys, E0428), and then
     # subtracting the block's own names above handed NULL back to the lowering.
     hand |= sdk_macros.outside_block_names(prelude)
+    hand |= sdk_macros.other_block_names(prelude)
     # A name a SHARED crate provides (win32macros-rust's LOWORD/MAKELONG/UlongToPtr) is never
     # lowered per crate: a local copy makes `refresh_shared_crates` drop the shared re-export,
     # and the duplicate then perpetuates itself on every replay.

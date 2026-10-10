@@ -1551,3 +1551,41 @@ def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
     h.write_text("typedef struct _S {\n    union {\n        int a;\n    } DUMMYUNIONNAME1;\n} S;\n")
     # inetcpl was split into two islands over this name alone.
     assert header_type_defs(h) == {"_S", "S"}
+
+
+def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
+    """cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on one line: every member after the
+    first was reported UNOWNED, a false §9.112 alarm that blocked the module."""
+    from rustconv.profile_derive import header_symbols
+
+    h = tmp_path / "cmd.h"
+    h.write_text("typedef enum _T\n{\n    C_COMMAND,\n    C_MULTI, C_OR, C_AND, C_PIPE,\n    C_FOR, C_IF, C_REM\n} T;\n")
+    wanted = frozenset({"C_MULTI", "C_OR", "C_PIPE", "C_IF", "C_REM"})
+    assert set(header_symbols(h, wanted)) == wanted
+
+
+def test_a_prologue_arm_only_another_target_compiles_is_dropped(tmp_path):
+    """apphelp's sdbwrite.c: `#if !defined(SDBWRITE_HOSTTOOL)` ... `#else #include
+    <typedefs.h>`, the host tool's arm, which only xml2sdb's CMakeLists defines. Mirrored
+    into the wrapper it asked bindgen for a header no target include path has."""
+    import subprocess
+
+    from rustconv.profile_derive import _foreign_build_flags, scan_preamble
+
+    (tmp_path / "tool").mkdir()
+    (tmp_path / "tool" / "CMakeLists.txt").write_text("add_definitions(-DHOSTTOOL=1)\n")
+    tu = tmp_path / "write.c"
+    tu.write_text(
+        "#if !defined(HOSTTOOL)\n#include \"windef.h\"\n#else\n#include <typedefs.h>\n#endif\n"
+        "#ifdef _WIN64\n#include \"wide.h\"\n#endif\nint x;\n"
+    )
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "-A"], check=True)
+    undefined = _foreign_build_flags([tu], tmp_path, set())
+    # _WIN64 is the compiler's, never a CMake flag: undecided, so both arms stay.
+    assert undefined == {"HOSTTOOL"}
+    keep, _ = scan_preamble(tu.read_text(), undefined)
+    assert '#include "windef.h"' in keep and "#include <typedefs.h>" not in keep
+    assert '#include "wide.h"' in keep
+    # A module that defines it itself keeps the host arm decidable the other way round.
+    assert _foreign_build_flags([tu], tmp_path, {"-DHOSTTOOL=1"}) == frozenset()
