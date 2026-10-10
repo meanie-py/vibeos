@@ -1260,6 +1260,8 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
     # main_win;`, `snd::audio_membuffer *AUD_BUF;`. They head their file's unit, where the
     # translator's file-scope preamble pass turns them into statics.
     heads: dict[str, list[str]] = {}
+    for file, text in model.typedefs:  # before the globals that use them (s_pHtmlHelpW)
+        heads.setdefault(file, []).append(text)
     for g in model.globals:
         cls = h.by_short.get(short(g.c_type))
         if cls is not None and "*" not in g.c_type and "[" not in g.c_type:

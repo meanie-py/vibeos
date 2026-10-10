@@ -1525,9 +1525,7 @@ def _ref_to_void_pointer(
 
 # A place: a name or a DEREFERENCE -- `(*p)`, `(*CImageDx::_shared())` (a deref is a place
 # whatever the pointer came from) -- then fields and indexes.
-_PLACE = re.compile(
-    r"(?:\(\*\s*[\w.:]+(?:\(\))?\s*\)|[A-Za-z_]\w*)(?:\s*\.\s*\w+|\[[^\[\]]+\])*"
-)
+_PLACE = re.compile(r"(?:\(\*\s*[\w.:]+(?:\(\))?\s*\)|[A-Za-z_]\w*)(?:\s*\.\s*\w+|\[[^\[\]]+\])*")
 
 
 def _cpp_reference_arg(

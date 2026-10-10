@@ -163,6 +163,9 @@ class ModuleModel:
     # generated cpp_alloc/cpp_free call THESE, so a C++ half and a Rust half of one heap
     # never cross allocators mid-flip.
     allocators: dict[str, str] = field(default_factory=dict)
+    # File-scope typedefs of the module's .cpp files, as (file, text): main.cpp's
+    # `typedef HWND (WINAPI *FN_HtmlHelpW)(..)`. A header's are the island's.
+    typedefs: list[tuple[str, str]] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -193,6 +196,7 @@ class ModuleModel:
             for e in raw.get("enums", [])
         ]
         out.allocators = raw.get("allocators", {})
+        out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         return out
 
 
@@ -242,6 +246,22 @@ def _span(node: dict) -> tuple[str, int, int] | None:
 class _Sources:
     def __init__(self) -> None:
         self._cache: dict[str, bytes] = {}
+
+    def typedef_text(self, span: tuple[str, int, int] | None) -> str | None:
+        """A typedef through its `;`: clang's range for a function-pointer typedef ENDS at
+        the name (`typedef HWND (WINAPI *FN_HtmlHelpW`), short of its parameter list."""
+        if span is None or self.text(span) is None:
+            return None
+        f, b, _e = span
+        data = self._cache[f]
+        depth, i = 0, b
+        while i < len(data):
+            c = data[i : i + 1]
+            depth += (c == b"(") - (c == b")")
+            if c == b";" and depth == 0:
+                return data[b : i + 1].decode("utf-8", errors="replace")
+            i += 1
+        return None
 
     def node_text(self, node: dict) -> str | None:
         """A node's source text. A function-like MACRO call (`RGB(255, 255, 255)` as an
@@ -526,6 +546,16 @@ class _Extractor:
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
                 self._register_function(n)
                 self.free_function(n)
+            elif (
+                kind == "TypedefDecl"
+                and record is None
+                and self.mine(_file_of(n))
+                and (_file_of(n) or "").endswith((".cpp", ".cxx", ".cc"))
+            ):
+                text = self.src.typedef_text(_span(n))
+                entry = (self.rel(_file_of(n)), text) if text else None
+                if entry and entry not in self.model.typedefs:
+                    self.model.typedefs.append(entry)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):
                 self.enum(n)
             elif kind == "VarDecl" and record is None and self.mine(_file_of(n)):
@@ -735,10 +765,19 @@ class _Extractor:
         # the map, never translated as text. Not for an EXTERNAL class: CWindow's
         # `SendMessage` is spelled through winuser.h's TCHAR macro, and that filter dropped
         # SendMessage, MessageBox and every other TCHAR-named member mspaint calls.
+        # Macro-GENERATED means the whole declaration came from the macro: its name AND its
+        # first token are spelled outside the module. A TCHAR-renamed method,
+        # `BOOL GetOpenFileName(..)` in mspaint's main.h, has only its NAME spelled in
+        # commdlg.h (`#define GetOpenFileName GetOpenFileNameW`): the name-only test dropped
+        # CMainWindow's GetOpenFileName/GetSaveFileName/ChooseColor entirely. STDMETHOD(Foo)
+        # is the converse (begin in objbase.h, name the module's own) and is kept too.
+        begin = (c.get("range") or {}).get("begin", {})
         if (
             not external
             and "spellingLoc" in c.get("loc", {})
             and not self.mine(c["loc"]["spellingLoc"].get("_file"))
+            and "spellingLoc" in begin
+            and not self.mine(begin["spellingLoc"].get("_file"))
         ):
             return None
         if probe:

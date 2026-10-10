@@ -50,8 +50,9 @@ ATL_IMPL_METHODS = frozenset(
 # so a call that relies on it is left for the audit rather than silently mis-arity'd.
 _ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
     ("Create", 7): [None, "NULL", "NULL", "0", "0", "0U", None],
-    ("Create", 2): [None, "NULL"],  # CDialogImpl::Create(hWndParent, dwInitParam = NULL)
-    ("DoModal", 2): ["GetActiveWindow()", "NULL"],
+    # CDialogImpl::Create/DoModal's dwInitParam is an LPARAM: `0`, not a pointer NULL.
+    ("Create", 2): [None, "0"],
+    ("DoModal", 2): ["GetActiveWindow()", "0"],
 }
 
 
