@@ -560,6 +560,40 @@ pub unsafe extern "system" fn StringCchLengthW(
     StringLengthWorkerW(psz, cchMax, pcchLength)
 }
 
+/// strsafe.h `StringLengthWorkerA` -- StringLengthWorkerW over CHAR.
+unsafe fn StringLengthWorkerA(
+    mut psz: *const core::ffi::c_char,
+    mut cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    let cchMaxPrev = cchMax;
+    while cchMax != 0 && *psz != 0 {
+        psz = psz.add(1);
+        cchMax -= 1;
+    }
+    if cchMax == 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    }
+    if !pcchLength.is_null() {
+        *pcchLength = if hr >= 0 { cchMaxPrev - cchMax } else { 0 };
+    }
+    hr
+}
+
+/// strsafe.h `StringCchLengthA` (imm32's utils.c and regword.c).
+#[no_mangle]
+pub unsafe extern "system" fn StringCchLengthA(
+    psz: *const core::ffi::c_char,
+    cchMax: usize,
+    pcchLength: *mut usize,
+) -> HRESULT {
+    if psz.is_null() || cchMax > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringLengthWorkerA(psz, cchMax, pcchLength)
+}
+
 /// strsafe.h:1083 `StringCopyNWorkerW` -- copy at most `cchToCopy` characters, always
 /// terminating; a destination that fills is truncated and reported INSUFFICIENT_BUFFER.
 unsafe fn StringCopyNWorkerW(

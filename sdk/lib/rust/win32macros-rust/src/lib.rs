@@ -1049,14 +1049,18 @@ pub const INVALID_HANDLE_VALUE: HANDLE = -1isize as HANDLE;
 
 /// `minmax.h` / `stdlib.h` — `#define min(a,b) (((a) < (b)) ? (a) : (b))`. Generic because the
 /// macro is: the result has the CALLER's type, so nothing width-dependent is shared.
+///
+/// `extern "C"`, not the Rust ABI: i386 user code builds without SSE, where the Rust ABI
+/// cannot pass an f64 at all and rejects the `min::<f64>` instantiation at codegen (opengl32,
+/// winegdi). The C ABI passes it on the stack (field manual, "i386 no-SSE float ABI").
 #[inline]
-pub fn min<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn min<T: PartialOrd>(a: T, b: T) -> T {
     if a < b { a } else { b }
 }
 
 /// `minmax.h` / `stdlib.h` — `#define max(a,b) (((a) > (b)) ? (a) : (b))`.
 #[inline]
-pub fn max<T: PartialOrd>(a: T, b: T) -> T {
+pub extern "C" fn max<T: PartialOrd>(a: T, b: T) -> T {
     if a > b { a } else { b }
 }
 
@@ -1657,4 +1661,27 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
     (*(addend as *const core::sync::atomic::AtomicI32))
         .fetch_sub(1, core::sync::atomic::Ordering::SeqCst)
         - 1
+}
+
+/// `InterlockedExchange`: returns the OLD value. An intrinsic on amd64/arm64 with no symbol to
+/// import; gdi32_vista's resolve copied a kernel shim's `_InterlockedExchange` extern instead,
+/// which no user-mode DLL can link.
+#[inline(always)]
+pub unsafe fn InterlockedExchange(target: *mut i32, value: i32) -> i32 {
+    (*(target as *const core::sync::atomic::AtomicI32))
+        .swap(value, core::sync::atomic::Ordering::SeqCst)
+}
+
+/// `InterlockedCompareExchange(Destination, Exchange, Comperand)`: stores `exchange` only when
+/// the current value equals `comperand`, and returns the value it found either way.
+#[inline(always)]
+pub unsafe fn InterlockedCompareExchange(destination: *mut i32, exchange: i32, comperand: i32) -> i32 {
+    match (*(destination as *const core::sync::atomic::AtomicI32)).compare_exchange(
+        comperand,
+        exchange,
+        core::sync::atomic::Ordering::SeqCst,
+        core::sync::atomic::Ordering::SeqCst,
+    ) {
+        Ok(v) | Err(v) => v,
+    }
 }

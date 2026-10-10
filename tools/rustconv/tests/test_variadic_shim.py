@@ -92,3 +92,16 @@ def test_a_forwarded_va_list_starts_from_the_trampolines():
     assert out.names == ["PrintString"]
     assert "let args_va: va_list = *(ap_list as *mut va_list);" in out.text
     assert "va_start!" not in out.text and "va_end!" not in out.text
+
+
+def test_the_extern_keeps_a_mut_pointer_type():
+    # ftfd's sprintf: stripping every `mut` declared `buf: *i8`, which does not parse.
+    src = 'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...) -> i32 {\n    0\n}\n'
+    out = v.rewrite(src).text
+    assert "pub fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;" in out
+
+
+def test_a_sal_annotated_ellipsis_is_still_variadic():
+    # bmfd's own DbgPrint: integrate refused to generate its trampoline.
+    c = "ULONG\nDbgPrint(IN PCHAR Format, IN ...)\n{\n    return 0;\n}\n"
+    assert v.c_variadic_arity(c, "DbgPrint") == 1

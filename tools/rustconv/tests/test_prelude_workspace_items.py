@@ -72,3 +72,20 @@ def test_a_copied_long_ptr_extern_gets_its_i386_alias():
         in block
     )
     assert block.count("cfg_attr") == 1
+
+
+def test_a_user_mode_crate_never_borrows_a_kernel_declaration(tmp_path):
+    # gdi32_vista was handed disk-rust's DDK-shim `_InterlockedExchange`: i386 LINK_FAIL.
+    decl = 'extern "C" {\n    pub fn _InterlockedExchange(t: *mut i32, v: i32) -> i32;\n}\n'
+    ws = _repo(
+        tmp_path,
+        {
+            "disk-rust/Cargo.toml": 'ntkrnl-sys = { path = "../ntkrnl-sys" }\n',
+            "disk-rust/src/ddk_shims.rs": decl,
+            "shared-rust/src/lib.rs": decl,
+            "mine-rust/Cargo.toml": 'ntdll-sys = { path = "../ntdll-sys" }\n',
+            "mine-rust/src/lib.rs": "",
+        },
+    )
+    found = workspace_items({"_InterlockedExchange"}, ws, ws / "mine-rust")
+    assert [i.path for i in found["_InterlockedExchange"]] == ["shared-rust/src/lib.rs"]

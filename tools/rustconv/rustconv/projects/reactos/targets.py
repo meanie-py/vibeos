@@ -491,6 +491,39 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # bmfd.dll — the GDI font driver for bitmap (.fon) fonts (win32ss/drivers/font/bmfd).
+    # A kerneldll loaded into session space by win32k: it imports only win32k's Eng* surface
+    # (winddi.h, which its own island carries) plus libcntpr, so ntkrnl-sys is the substrate.
+    "bmfd": Target(
+        name="bmfd",
+        source_dir=WIN32SS_DIR / "drivers" / "font" / "bmfd",
+        output_crate=RUST_DIR / "bmfd-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ftfd.dll — the GDI font driver for TrueType/OpenType over the vendored FreeType
+    # (win32ss/drivers/font/ftfd).
+    # A kerneldll loaded into session space by win32k: it imports only win32k's Eng* surface
+    # (winddi.h, which its own island carries) plus libcntpr, so ntkrnl-sys is the substrate.
+    "ftfd": Target(
+        name="ftfd",
+        source_dir=WIN32SS_DIR / "drivers" / "font" / "ftfd",
+        output_crate=RUST_DIR / "ftfd-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # atapi.sys — upstream's 2026 ATA port driver (drivers/storage/ide/atapi, ~11K LOC, 15
     # .c: atapi/fdo/pdo/enum/satl/scsi/ioctl/portstate/dev_*/smart/wmi). NOT the NT4-DDK
     # SCSIPORT miniport the name used to mean (that translation is parked as

@@ -229,6 +229,29 @@ def _strip_vtbl_statics(rust: str) -> str:
     return "\n".join(out)
 
 
+# A line that can open (or continue) a Rust item at file scope.
+_RUST_ITEM_LINE_RE = re.compile(
+    r"^\s*(//|/\*|\*|#!?\[|(pub(\([^)]*\))?\s+)?(unsafe\s+)?(extern|use|const|static|type|"
+    r"struct|union|enum|fn|impl|mod|macro_rules!|trait)\b|[}\])]|$)"
+)
+
+
+def _comment_out_prose_preamble(rust: str) -> str:
+    """A preamble reply that holds no Rust at all becomes comments, not code.
+
+    Asked to translate a file scope with nothing to emit, the model sometimes EXPLAINS
+    that in prose instead of replying empty. imm32's candidate.c (WINE_DEFAULT_DEBUG_CHANNEL
+    plus a function-like ROUNDUP4) came back as one English paragraph, which was stitched in
+    front of the first function; the stitch then could not see that function and rejected the
+    whole TU as missing it. Only an ALL-prose reply is rewritten, and its text is kept, so a
+    reply that mixes prose into real items still fails loudly downstream.
+    """
+    lines = rust.splitlines()
+    if not rust.strip() or any(_RUST_ITEM_LINE_RE.match(ln) and ln.strip() for ln in lines):
+        return rust
+    return "\n".join(f"// {ln}".rstrip() for ln in lines)
+
+
 def _preamble_is_function_macros_only(src: str) -> bool:
     """True when every logical line of a preamble is a function-like `#define`."""
     text = re.sub(r"/\*.*?\*/", " ", src, flags=re.S)
@@ -4590,6 +4613,8 @@ def cmd_translate(args):
                     "  file-scope struct/typedef/table. Re-run (the per-function work is\n"
                     "  cached in .responses/, so the retry only re-pays for the preamble)."
                 )
+
+        preamble_rust = _comment_out_prose_preamble(preamble_rust)
 
         # c2rust's vtbl tables are NOT usable: it hardcodes each slot as
         # `f as unsafe extern "C" fn(..)`, which is the amd64 spelling. On i386 the
