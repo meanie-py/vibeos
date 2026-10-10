@@ -115,6 +115,7 @@ pub const TOOL_RUBBER: TOOLTYPE = TOOLTYPE_TOOL_RUBBER; // island enum
 pub const TOOL_SHAPE: TOOLTYPE = TOOLTYPE_TOOL_SHAPE; // island enum
 pub const TOOL_TEXT: TOOLTYPE = TOOLTYPE_TOOL_TEXT; // island enum
 pub const TOOL_ZOOM: TOOLTYPE = TOOLTYPE_TOOL_ZOOM; // island enum
+pub const ULONG_MAX: u32 = 4294967295; // msv1_0-rust/src/types_amd64.rs
 extern "C" {
     pub fn _wtoi(s: *const u16) -> i32; // userinit-rust/src/preamble.rs
     pub fn abs(x: i32) -> i32; // cmlib-rust/src/cmcheck.rs
@@ -144,6 +145,7 @@ extern "system" {
     pub fn CreateIconIndirect(arg1: PICONINFO) -> HICON; // aclui-rust/src/types_i386.rs
     pub fn CreateWindowExW( dwExStyle: DWORD, lpClassName: LPCWSTR, lpWindowName: LPCWSTR, dwStyle: DWORD, X: ::core::ffi::c_int, Y: ::core::ffi::c_int, nWidth: ::core::ffi::c_int, nHeight: ::core::ffi::c_int, hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE, lpParam: LPVOID, ) -> HWND; // aclui-rust/src/types_i386.rs
     pub fn DeferWindowPos( arg1: HDWP, arg2: HWND, arg3: HWND, arg4: ::core::ffi::c_int, arg5: ::core::ffi::c_int, arg6: ::core::ffi::c_int, arg7: ::core::ffi::c_int, arg8: UINT, ) -> HDWP; // aclui-rust/src/types_i386.rs
+    pub fn DeleteCriticalSection(arg1: PCRITICAL_SECTION); // aclui-rust/src/types_i386.rs
     pub fn DeleteFileW(arg1: LPCWSTR) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn DestroyAcceleratorTable(arg1: HACCEL) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn DestroyCursor(arg1: HCURSOR) -> BOOL; // aclui-rust/src/types_i386.rs
@@ -160,6 +162,7 @@ extern "system" {
     pub fn EndDeferWindowPos(arg1: HDWP) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn EndDialog(arg1: HWND, arg2: INT_PTR) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn EndPaint(arg1: HWND, arg2: *const PAINTSTRUCT) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn EnterCriticalSection(arg1: LPCRITICAL_SECTION); // aclui-rust/src/types_i386.rs
     pub fn EqualRect(arg1: LPCRECT, arg2: LPCRECT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn FileTimeToLocalFileTime(arg1: *const FILETIME, arg2: LPFILETIME) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn FileTimeToSystemTime(arg1: *const FILETIME, arg2: LPSYSTEMTIME) -> BOOL; // aclui-rust/src/types_i386.rs
@@ -203,6 +206,7 @@ extern "system" {
     pub fn GlobalLock(arg1: HGLOBAL) -> LPVOID; // aclui-rust/src/types_i386.rs
     pub fn GlobalUnlock(arg1: HGLOBAL) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn InflateRect(arg1: LPRECT, arg2: ::core::ffi::c_int, arg3: ::core::ffi::c_int) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn InitializeCriticalSection(arg1: LPCRITICAL_SECTION); // aclui-rust/src/types_i386.rs
     pub fn IntersectRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn InvalidateRect(arg1: HWND, arg2: LPCRECT, arg3: BOOL) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn InvertRect(arg1: HDC, arg2: LPCRECT) -> BOOL; // aclui-rust/src/types_i386.rs
@@ -213,6 +217,7 @@ extern "system" {
     pub fn IsWindow(arg1: HWND) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn IsWindowVisible(arg1: HWND) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn IsZoomed(arg1: HWND) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn LeaveCriticalSection(arg1: LPCRITICAL_SECTION); // aclui-rust/src/types_i386.rs
     pub fn LoadAcceleratorsW(arg1: HINSTANCE, arg2: LPCWSTR) -> HACCEL; // aclui-rust/src/types_i386.rs
     pub fn LoadCursorW(arg1: HINSTANCE, arg2: LPCWSTR) -> HCURSOR; // aclui-rust/src/types_i386.rs
     pub fn LoadIconW(hInstance: HINSTANCE, lpIconName: LPCWSTR) -> HICON; // aclui-rust/src/types_i386.rs
@@ -291,6 +296,7 @@ pub use crate::mspaint::dib_cpp_h::Rotate90DegreeBlt;
 pub use crate::mspaint::dib_cpp_h::SaveDIBToFile;
 pub use crate::mspaint::main_cpp_h::ShowOutOfMemory;
 pub use crate::mspaint::dib_cpp_h::SkewDIB;
+pub use crate::mspaint::toolsmodel_h_h::UnZoomed__0;
 pub use crate::mspaint::toolsmodel_h_h::UnZoomed__1;
 pub use crate::mspaint::toolsmodel_h_h::UnZoomed__2;
 pub use crate::mspaint::toolsmodel_h_h::Zoomed__0;
@@ -337,6 +343,7 @@ pub const Y_TOOLSETTINGS: i32 = 0xCB; // clang, toolsettings.cpp
 extern "system" {
     pub fn CallWindowProcW( arg1: WNDPROC, arg2: HWND, arg3: UINT, arg4: WPARAM, arg5: LPARAM, ) -> LRESULT; // aclui-rust/src/types_i386.rs
     pub fn CharLowerW(arg1: LPWSTR) -> LPWSTR; // aclui-rust/src/types_i386.rs
+    pub fn ChooseColorW(arg1: LPCHOOSECOLORW) -> BOOL; // desk-rust/src/types_i386.rs
     pub fn CreateFontIndirectW(arg1: *const LOGFONTW) -> HFONT; // aclui-rust/src/types_i386.rs
     pub fn DispatchMessageW(arg1: *const MSG) -> LRESULT; // aclui-rust/src/types_i386.rs
     pub fn DragQueryFileW(hDrop: HDROP, iFile: UINT, lpszFile: LPWSTR, cch: UINT) -> UINT; // desk-rust/src/types_i386.rs
@@ -361,6 +368,7 @@ extern "system" {
 }
 pub use crate::prelude::CallWindowProcW as CallWindowProc; // sdk alias
 pub use crate::prelude::CharLowerW as CharLower; // sdk alias
+pub use crate::prelude::ChooseColorW as ChooseColor; // sdk alias
 pub use crate::prelude::CreateFontIndirectW as CreateFontIndirect; // sdk alias
 pub use crate::prelude::CreateWindowExW as CreateWindowEx; // sdk alias
 pub use crate::prelude::DispatchMessageW as DispatchMessage; // sdk alias
@@ -375,6 +383,7 @@ pub use crate::prelude::ImageList_LoadImageW as ImageList_LoadImage; // sdk alia
 pub use crate::prelude::InsertMenuW as InsertMenu; // sdk alias
 pub use crate::prelude::IsDialogMessageW as IsDialogMessage; // sdk alias
 pub use crate::prelude::LoadCursorW as LoadCursor; // sdk alias
+pub use crate::prelude::LoadLibraryW as LoadLibrary; // sdk alias
 pub use crate::prelude::MessageBoxW as MessageBox; // sdk alias
 pub use crate::prelude::PageSetupDlgW as PageSetupDlg; // sdk alias
 pub use crate::prelude::PathFindFileNameW as PathFindFileName; // sdk alias

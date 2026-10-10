@@ -187,7 +187,7 @@ impl CRegKey {
             }
         }
         count += 1;
-        ATLASSERT!(count * core::mem::size_of::<TCHAR>() <= ULONG_MAX);
+        ATLASSERT!(count * core::mem::size_of::<TCHAR>() <= (ULONG_MAX) as _);
         return (count as ULONG) * (core::mem::size_of::<TCHAR>() as ULONG);
     }
 }

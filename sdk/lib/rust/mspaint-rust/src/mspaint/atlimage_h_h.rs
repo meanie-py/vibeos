@@ -3,9 +3,6 @@ use core::ffi::c_void;
 
 extern "C" {
     fn CGdiPlusToken__ReleaseGDIPlus(this: *mut core::ffi::c_void);
-    fn CImage__s_gdiplus_GetImageDecodersSize(numDecoders: *mut UINT, size: *mut UINT) -> i32;
-    fn CImage__s_gdiplus_GetImageDecoders(numDecoders: UINT, size: UINT, decoders: *mut Gdiplus_ImageCodecInfo) -> i32;
-    fn cpp_new_array_Gdiplus_ImageCodecInfo(count: usize) -> *mut Gdiplus_ImageCodecInfo;
 }
 
 
@@ -341,43 +338,45 @@ impl CImage {
         }
         return CLSID_NULL;
     }
-    pub unsafe fn _getAllEncoders(cEncoders: *mut u32) -> *mut Gdiplus_ImageCodecInfo {
-        let mut total_size: u32 = 0;
-        CImage__s_gdiplus.GetImageEncodersSize(cEncoders, core::ptr::addr_of_mut!(total_size));
+    pub unsafe fn _getAllEncoders(cEncoders: *mut UINT) -> *mut Gdiplus_ImageCodecInfo {
+        let mut total_size: UINT = 0;
+        (CImage__s_gdiplus.GetImageEncodersSize)(cEncoders, &mut total_size);
         if total_size == 0 {
             return core::ptr::null_mut(); // failure
         }
     
         let mut ret: *mut Gdiplus_ImageCodecInfo;
-        let _ = 0 as usize;
+        let _elem_index: usize = 0 as usize;
         ret = cpp_new_array::<Gdiplus_ImageCodecInfo>(
-            total_size as usize / core::mem::size_of::<Gdiplus_ImageCodecInfo>(),
+            total_size / core::mem::size_of::<Gdiplus_ImageCodecInfo>() as UINT,
         );
         if ret.is_null() {
             *cEncoders = 0;
             return core::ptr::null_mut(); // failure
         }
     
-        CImage__s_gdiplus.GetImageEncoders(*cEncoders, total_size, ret);
+        (CImage__s_gdiplus.GetImageEncoders)(*cEncoders, total_size, ret);
         return ret; // needs delete[]
     }
     pub unsafe fn _getAllDecoders(cDecoders: *mut UINT) -> *mut Gdiplus_ImageCodecInfo {
         let mut total_size: UINT = 0;
-        CImage__s_gdiplus_GetImageDecodersSize(cDecoders, core::ptr::addr_of_mut!(total_size));
+        ((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecodersSize)(cDecoders, &mut total_size as *mut UINT);
         if total_size == 0 {
-            return core::ptr::null_mut(); // failure
+            return core::ptr::null_mut();
         }
     
         let mut ret: *mut Gdiplus_ImageCodecInfo;
-        let elem_size: usize = core::mem::size_of_val(&*(core::ptr::null::<Gdiplus_ImageCodecInfo>().wrapping_add(0)));
-        ret = cpp_new_array_Gdiplus_ImageCodecInfo((total_size as usize) / elem_size);
+        let _elem_size_probe = || core::mem::size_of_val(&*core::ptr::null::<Gdiplus_ImageCodecInfo>().add(0));
+        ret = cpp_new_array::<Gdiplus_ImageCodecInfo>(
+            (total_size as usize) / core::mem::size_of::<Gdiplus_ImageCodecInfo>(),
+        );
         if ret.is_null() {
             *cDecoders = 0;
-            return core::ptr::null_mut(); // failure
+            return core::ptr::null_mut();
         }
     
-        CImage__s_gdiplus_GetImageDecoders(*cDecoders, total_size, ret);
-        return ret; // needs delete[]
+        ((*core::ptr::addr_of_mut!(CImage__s_gdiplus)).GetImageDecoders)(*cDecoders, total_size, ret);
+        return ret;
     }
     pub unsafe fn AttachInternal(&mut self, hBitmap: HBITMAP, mut eOrientation: DIBOrientation, iTransColor: LONG) {
         let this_: *mut Self = self;
@@ -527,27 +526,27 @@ impl CInitGDIPlus {
     
         if (*this_).m_dwToken == 0 {
             if (*this_).m_hInst.is_null() {
-                let gdiplus_name: [u16; 12] = ['g' as u16, 'd' as u16, 'i' as u16, 'p' as u16, 'l' as u16, 'u' as u16, 's' as u16, '.' as u16, 'd' as u16, 'l' as u16, 'l' as u16, 0];
-                (*this_).m_hInst = LoadLibrary(TEXT(gdiplus_name.as_ptr()));
+                let name: [u16; 12] = ['g' as u16, 'd' as u16, 'i' as u16, 'p' as u16, 'l' as u16, 'u' as u16, 's' as u16, '.' as u16, 'd' as u16, 'l' as u16, 'l' as u16, 0];
+                (*this_).m_hInst = LoadLibrary(TEXT(name.as_ptr()));
             }
     
             if !(*this_).m_hInst.is_null()
-                && (*this_)._get_fun((*this_).Startup, b"GdiplusStartup\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).Shutdown, b"GdiplusShutdown\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).CreateBitmapFromFile, b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).CreateBitmapFromHBITMAP, b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).CreateBitmapFromStream, b"GdipCreateBitmapFromStream\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).CreateHBITMAPFromBitmap, b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).DisposeImage, b"GdipDisposeImage\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).GetImageDecoders, b"GdipGetImageDecoders\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).GetImageDecodersSize, b"GdipGetImageDecodersSize\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).GetImageEncoders, b"GdipGetImageEncoders\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).GetImageEncodersSize, b"GdipGetImageEncodersSize\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).SaveImageToFile, b"GdipSaveImageToFile\0".as_ptr() as *const i8)
-                && (*this_)._get_fun((*this_).SaveImageToStream, b"GdipSaveImageToStream\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Startup), b"GdiplusStartup\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Shutdown), b"GdiplusShutdown\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromFile), b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromHBITMAP), b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromStream), b"GdipCreateBitmapFromStream\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateHBITMAPFromBitmap), b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).DisposeImage), b"GdipDisposeImage\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecoders), b"GdipGetImageDecoders\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecodersSize), b"GdipGetImageDecodersSize\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncoders), b"GdipGetImageEncoders\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncodersSize), b"GdipGetImageEncodersSize\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToFile), b"GdipSaveImageToFile\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToStream), b"GdipSaveImageToStream\0".as_ptr() as *const i8)
             {
-                let mut input: Gdiplus_GdiplusStartupInput = core::mem::zeroed();
-                let mut output: Gdiplus_GdiplusStartupOutput = core::mem::zeroed();
+                let mut input: Gdiplus_GdiplusStartupInput = Gdiplus_GdiplusStartupInput__zeroed();
+                let mut output: Gdiplus_GdiplusStartupOutput = Gdiplus_GdiplusStartupOutput__zeroed();
                 ((*this_).Startup)(
                     core::ptr::addr_of_mut!((*this_).m_dwToken),
                     core::ptr::addr_of_mut!(input),
@@ -559,7 +558,7 @@ impl CInitGDIPlus {
         let ret: bool = (*this_).m_dwToken != 0;
         LeaveCriticalSection(core::ptr::addr_of_mut!((*this_).m_sect));
     
-        ret
+        return ret;
     }
     pub unsafe fn ReleaseGDIPlus(&mut self) {
         let this_: *mut Self = self;

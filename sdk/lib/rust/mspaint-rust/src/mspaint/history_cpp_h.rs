@@ -309,8 +309,8 @@ impl ImageModel {
     }
     pub unsafe fn Clamp(&mut self, pt: &mut POINT) {
         let this_: *mut Self = self;
-        pt.x = max(0, min(pt.x, (*(*(*(*this_).this_).this_).this_).GetWidth()));
-        pt.y = max(0, min(pt.y, (*(*(*(*this_).this_).this_).this_).GetHeight()));
+        (*pt).x = max(0, min((*pt).x, (*this_).GetWidth()));
+        (*pt).y = max(0, min((*pt).y, (*this_).GetHeight()));
     }
     pub unsafe fn NotifyImageChanged(&mut self) {
         let this_: *mut Self = self;

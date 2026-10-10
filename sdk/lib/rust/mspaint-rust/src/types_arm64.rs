@@ -11726,6 +11726,173 @@ pub struct ATL__ATL_WNDCLASSINFOW {
 }
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
+pub struct ATL_CSimpleArrayEqualHelper {
+    pub _address: u8,
+}
+#[repr(C)]
+#[derive(Debug)]
+pub struct ATL_CSimpleArray<T> {
+    pub _phantom_0: ::core::marker::PhantomData<::core::cell::UnsafeCell<T>>,
+    pub m_pData: *mut T,
+    pub m_nCount: ::core::ffi::c_int,
+    pub m_nCapacity: ::core::ffi::c_int,
+}
+pub type ATL_CSimpleArray__ArrayElementType<T> = T;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct ATL_CSimpleArray_ConstructImpl<T> {
+    pub _phantom_0: ::core::marker::PhantomData<::core::cell::UnsafeCell<T>>,
+    pub m_ConstructHelper: T,
+}
+#[repr(C)]
+pub struct ATL_CImage__bindgen_vtable(::core::ffi::c_void);
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ATL_CImage {
+    pub vtable_: *const ATL_CImage__bindgen_vtable,
+    pub m_hBitmap: HBITMAP,
+    pub m_hOldBitmap: HBITMAP,
+    pub m_nWidth: INT,
+    pub m_nHeight: INT,
+    pub m_nPitch: INT,
+    pub m_nBPP: INT,
+    pub m_pBits: LPVOID,
+    pub m_bHasAlphaChannel: BOOL,
+    pub m_bIsDIBSection: BOOL,
+    pub m_clrTransparentColor: COLORREF,
+    pub m_hDC: HDC,
+    pub m_nDCRefCount: LONG,
+}
+pub const ATL_CImage_createAlphaChannel: ATL_CImage__bindgen_ty_1 = 1;
+pub type ATL_CImage__bindgen_ty_1 = ::core::ffi::c_uint;
+pub const ATL_CImage_DIBOrientation_DIBOR_DEFAULT: ATL_CImage_DIBOrientation = 0;
+pub const ATL_CImage_DIBOrientation_DIBOR_TOPDOWN: ATL_CImage_DIBOrientation = 1;
+pub const ATL_CImage_DIBOrientation_DIBOR_BOTTOMUP: ATL_CImage_DIBOrientation = 2;
+pub type ATL_CImage_DIBOrientation = ::core::ffi::c_uint;
+pub const ATL_CImage_ExcludeFlags_excludeGIF: ATL_CImage_ExcludeFlags = 1;
+pub const ATL_CImage_ExcludeFlags_excludeBMP: ATL_CImage_ExcludeFlags = 2;
+pub const ATL_CImage_ExcludeFlags_excludeEMF: ATL_CImage_ExcludeFlags = 4;
+pub const ATL_CImage_ExcludeFlags_excludeWMF: ATL_CImage_ExcludeFlags = 8;
+pub const ATL_CImage_ExcludeFlags_excludeJPEG: ATL_CImage_ExcludeFlags = 16;
+pub const ATL_CImage_ExcludeFlags_excludePNG: ATL_CImage_ExcludeFlags = 32;
+pub const ATL_CImage_ExcludeFlags_excludeTIFF: ATL_CImage_ExcludeFlags = 64;
+pub const ATL_CImage_ExcludeFlags_excludeIcon: ATL_CImage_ExcludeFlags = 128;
+pub const ATL_CImage_ExcludeFlags_excludeOther: ATL_CImage_ExcludeFlags = 2147483648;
+pub const ATL_CImage_ExcludeFlags_excludeDefaultLoad: ATL_CImage_ExcludeFlags = 0;
+pub const ATL_CImage_ExcludeFlags_excludeDefaultSave: ATL_CImage_ExcludeFlags = 140;
+pub type ATL_CImage_ExcludeFlags = ::core::ffi::c_uint;
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ATL_CImage_MYBITMAPINFOEX {
+    pub _base: BITMAPINFO,
+    pub bmiColorsExtra: [RGBQUAD; 255usize],
+}
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ATL_CImage_CInitGDIPlus {
+    pub m_hInst: HINSTANCE,
+    pub m_dwToken: ULONG_PTR,
+    pub m_sect: CRITICAL_SECTION,
+    pub m_nCImageObjects: LONG,
+    pub m_dwLastError: DWORD,
+    pub Startup: ATL_CImage_CInitGDIPlus_FUN_Startup,
+    pub Shutdown: ATL_CImage_CInitGDIPlus_FUN_Shutdown,
+    pub CreateBitmapFromFile: ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromFile,
+    pub CreateBitmapFromHBITMAP: ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromHBITMAP,
+    pub CreateBitmapFromStream: ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromStream,
+    pub CreateHBITMAPFromBitmap: ATL_CImage_CInitGDIPlus_FUN_CreateHBITMAPFromBitmap,
+    pub DisposeImage: ATL_CImage_CInitGDIPlus_FUN_DisposeImage,
+    pub GetImageDecoders: ATL_CImage_CInitGDIPlus_FUN_GetImageDecoder,
+    pub GetImageDecodersSize: ATL_CImage_CInitGDIPlus_FUN_GetImageDecoderSize,
+    pub GetImageEncoders: ATL_CImage_CInitGDIPlus_FUN_GetImageEncoder,
+    pub GetImageEncodersSize: ATL_CImage_CInitGDIPlus_FUN_GetImageEncoderSize,
+    pub SaveImageToFile: ATL_CImage_CInitGDIPlus_FUN_SaveImageToFile,
+    pub SaveImageToStream: ATL_CImage_CInitGDIPlus_FUN_SaveImageToStream,
+}
+pub type ATL_CImage_CInitGDIPlus_FUN_Startup = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut ::core::ffi::c_ulonglong,
+        arg2: *const Gdiplus_GdiplusStartupInput,
+        arg3: *mut Gdiplus_GdiplusStartupOutput,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_Shutdown =
+    ::core::option::Option<unsafe extern "system" fn(arg1: ::core::ffi::c_ulonglong)>;
+pub type ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromFile = ::core::option::Option<
+    unsafe extern "system" fn(arg1: *const u16, arg2: *mut *mut Gdiplus_GpBitmap) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromHBITMAP = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut HBITMAP__,
+        arg2: *mut HPALETTE__,
+        arg3: *mut *mut Gdiplus_GpBitmap,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_CreateBitmapFromStream = ::core::option::Option<
+    unsafe extern "system" fn(arg1: *mut IStream, arg2: *mut *mut Gdiplus_GpBitmap) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_CreateHBITMAPFromBitmap = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut Gdiplus_GpBitmap,
+        arg2: *mut *mut HBITMAP__,
+        arg3: ::core::ffi::c_ulong,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_DisposeImage =
+    ::core::option::Option<unsafe extern "system" fn(arg1: *mut Gdiplus_GpImage) -> Gdiplus_Status>;
+pub type ATL_CImage_CInitGDIPlus_FUN_GetImageDecoder = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: ::core::ffi::c_uint,
+        arg2: ::core::ffi::c_uint,
+        arg3: *mut Gdiplus_ImageCodecInfo,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_GetImageDecoderSize = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut ::core::ffi::c_uint,
+        arg2: *mut ::core::ffi::c_uint,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_GetImageEncoder = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: ::core::ffi::c_uint,
+        arg2: ::core::ffi::c_uint,
+        arg3: *mut Gdiplus_ImageCodecInfo,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_GetImageEncoderSize = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut ::core::ffi::c_uint,
+        arg2: *mut ::core::ffi::c_uint,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_SaveImageToFile = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut Gdiplus_GpImage,
+        arg2: *const u16,
+        arg3: *const _GUID,
+        arg4: *const Gdiplus_EncoderParameters,
+    ) -> Gdiplus_Status,
+>;
+pub type ATL_CImage_CInitGDIPlus_FUN_SaveImageToStream = ::core::option::Option<
+    unsafe extern "system" fn(
+        arg1: *mut Gdiplus_GpImage,
+        arg2: *mut IStream,
+        arg3: *const _GUID,
+        arg4: *const Gdiplus_EncoderParameters,
+    ) -> Gdiplus_Status,
+>;
+#[repr(C)]
+pub struct ATL_CImageDC__bindgen_vtable(::core::ffi::c_void);
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct ATL_CImageDC {
+    pub vtable_: *const ATL_CImageDC__bindgen_vtable,
+    pub m_image: *const ATL_CImage,
+    pub m_hDC: HDC,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
 pub struct IRegistrarBase {
     pub _base: IUnknown,
 }

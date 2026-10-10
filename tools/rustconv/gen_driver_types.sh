@@ -4020,6 +4020,7 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]winreg\.h'
                   --allowlist-file '.*mspaint[/\\].*\.h'
                   --allowlist-file '.*[/\\]atlbase\.h'
+                  --allowlist-file '.*[/\\]atlimage\.h'
                   --allowlist-file '.*[/\\]atlimagedx\.h'
                   --allowlist-file '.*[/\\]atlpath\.h'
                   --allowlist-file '.*[/\\]atlsimpstr\.h'

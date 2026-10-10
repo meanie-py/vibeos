@@ -154,8 +154,8 @@ pub unsafe extern "C" fn roundTo8Directions(x0: LONG, y0: LONG, x1: *mut LONG, y
 }
 #[no_mangle]
 pub unsafe extern "C" fn nearlyEqualPoints(x0: i32, y0: i32, x1: i32, y1: i32) -> i32 {
-    let cxThreshold: i32 = toolsModel.GetLineWidth() + UnZoomed__0(GetSystemMetrics((SM_CXDRAG) as i32), FALSE);
-    let cyThreshold: i32 = toolsModel.GetLineWidth() + UnZoomed__0(GetSystemMetrics((SM_CYDRAG) as i32), FALSE);
+    let cxThreshold: i32 = toolsModel.GetLineWidth() + UnZoomed__0(GetSystemMetrics((SM_CXDRAG) as i32), (FALSE) as BOOL);
+    let cyThreshold: i32 = toolsModel.GetLineWidth() + UnZoomed__0(GetSystemMetrics((SM_CYDRAG) as i32), (FALSE) as BOOL);
     return if (abs(x1 - x0) <= cxThreshold) && (abs(y1 - y0) <= cyThreshold) { 1 } else { 0 };
 }
 #[no_mangle]
