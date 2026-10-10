@@ -124,3 +124,20 @@ def test_raw_borrowed_init_is_kept(tmp_path):
     src = "fn f() {\n    let mut Length: u32 = 0;\n    q(&raw mut Length);\n    Length = 4;\n}\n"
     out, skips = run(tmp_path, src, "let mut Length", "DEAD_INIT", "Length")
     assert out == src and "raw-borrowed" in skips[0]
+
+
+def test_init_overwritten_before_any_raw_borrow_is_dropped(tmp_path):
+    """acpi `old_status`: written in straight-line code before its address is ever taken,
+    so no borrow can see the initial value."""
+    src = "fn f() {\n    let mut s: u32 = 0;\n    s = g();\n    q(&raw mut s);\n}\n"
+    out, skips = run(tmp_path, src, "let mut s", "DEAD_INIT", "s")
+    assert "let mut s: u32;" in out and not skips
+
+
+def test_a_write_in_a_branch_does_not_dominate_the_borrow(tmp_path):
+    src = (
+        "fn f(c: bool) {\n    let mut s: u32 = 0;\n"
+        "    if c {\n        s = g();\n    }\n    q(&raw mut s);\n}\n"
+    )
+    out, skips = run(tmp_path, src, "let mut s", "DEAD_INIT", "s")
+    assert out == src and "raw-borrowed" in skips[0]

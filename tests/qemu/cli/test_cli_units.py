@@ -9921,6 +9921,11 @@ def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     assert bad and bad["classification"] == "NVME_NOT_RESET"
     reset = "[NVME] controller 0: self-test: 1 reset(s), 1 command(s) failed back by them\n"
     assert smoke_mod._nvme_check(working + test.format(8, 9) + reset) is None
+    monkeypatch.setenv("VIBEOS_TRIPWIRE", "QUIET NVME_PASSIVE_ISR=1")
+    bad = smoke_mod._nvme_check(working + test.format(8, 9))
+    assert bad and bad["classification"] == "NVME_NOT_PASSIVE"
+    passive = working.replace("at level 7", "at passive level")
+    assert smoke_mod._nvme_check(passive + test.format(8, 9)) is None
     monkeypatch.delenv("VIBEOS_TRIPWIRE")
     monkeypatch.setenv("VIBEOS_QEMU_NVME_BRIDGE", "1")
     bad = smoke_mod._nvme_check(working + test.format(8, 9))
@@ -10003,6 +10008,15 @@ def test_smmu_translate_boot_must_attach_and_fault_only_on_purpose(monkeypatch):
     bad = smoke_mod._gic_check(on)
     assert bad and bad["classification"] == "SMMU_NOT_ATTACHED"
     assert smoke_mod._gic_check(on + attached) is None
+    # vioblk scans PCI itself, so it must claim its function's domain.
+    vioblk = "[VIOBLK] 00:02.0 dev 1001: 704512 sectors (344 MiB), read-only\n"
+    bad = smoke_mod._gic_check(on + attached + vioblk)
+    assert bad and bad["classification"] == "SMMU_UNCLAIMED"
+    claimed = (
+        "[HAL] SMMUv3 at 0000000009050000: requester 0010 is StreamID 10 - translating in a "
+        "domain of its own (DMA-remapping compatible, claimed by its driver)\n"
+    )
+    assert smoke_mod._gic_check(on + attached + vioblk + claimed) is None
     fault = "[HAL] SMMUv3 at 0000000009050000: FAULT type 10 StreamID 48 address {:016x}\n"
     bad = smoke_mod._gic_check(on + attached + fault.format(0x1000))
     assert bad and bad["classification"] == "SMMU_FAULT"
@@ -11221,6 +11235,31 @@ def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypat
     assert exe.read_text().strip() == "built"
     assert fresh.read_text() == "fresh"
     assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
+
+
+def test_wowx64_cpu_layer_older_than_its_sources_is_stale(tmp_path):
+    """mkramdisk stages whatever libwowx64fex.dll is on disk, so an edited Module.cpp
+    shipped the old plugin from a green build and every x86-64 guest died at launch
+    on the contract-version mismatch, a whole boot later."""
+    import os
+
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []  # no DLL: mkramdisk says MISSING
+    dll = tmp_path / build_mod.WOWX64_CPU_DLL
+    dll.parent.mkdir(parents=True)
+    dll.write_text("plugin")
+    os.utime(dll, (2_000_000, 2_000_000))
+    src = tmp_path / "tools" / "fex" / "wowx64fex"
+    src.mkdir(parents=True)
+    (src / "Module.cpp").write_text("old")
+    os.utime(src / "Module.cpp", (1_000_000, 1_000_000))
+    header = tmp_path / "sdk" / "include" / "reactos" / "wowx64" / "btcpu64.h"
+    header.parent.mkdir(parents=True)
+    header.write_text("v3")
+    os.utime(header, (1_000_000, 1_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == []
+
+    os.utime(header, (3_000_000, 3_000_000))
+    assert build_mod.wowx64_cpu_stale(tmp_path) == ["sdk/include/reactos/wowx64/btcpu64.h"]
 
 
 def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):

@@ -272,6 +272,34 @@ pub unsafe fn ExInterlockedInsertTailList(
 #[cfg(not(target_arch = "x86"))]
 pub use crate::ddk::ExInterlockedInsertTailList;
 
+// The rest of the family, the same way (ndis uses all four).
+#[cfg(target_arch = "x86")]
+use crate::ddk::{
+    ExfInterlockedAddUlong, ExfInterlockedInsertHeadList, ExfInterlockedRemoveHeadList, PULONG,
+    ULONG,
+};
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn ExInterlockedInsertHeadList(
+    ListHead: PLIST_ENTRY,
+    ListEntry: PLIST_ENTRY,
+    Lock: PKSPIN_LOCK,
+) -> PLIST_ENTRY {
+    ExfInterlockedInsertHeadList(ListHead, ListEntry, Lock)
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn ExInterlockedRemoveHeadList(ListHead: PLIST_ENTRY, Lock: PKSPIN_LOCK) -> PLIST_ENTRY {
+    ExfInterlockedRemoveHeadList(ListHead, Lock)
+}
+#[cfg(target_arch = "x86")]
+#[inline(always)]
+pub unsafe fn ExInterlockedAddUlong(Addend: PULONG, Increment: ULONG, Lock: PKSPIN_LOCK) -> ULONG {
+    ExfInterlockedAddUlong(Addend, Increment, Lock)
+}
+#[cfg(not(target_arch = "x86"))]
+pub use crate::ddk::{ExInterlockedAddUlong, ExInterlockedInsertHeadList, ExInterlockedRemoveHeadList};
+
 // MmGetSystemAddressForMdlSafe is a FORCEINLINE (wdm.h): an MDL that is already
 // mapped, or that describes nonpaged pool (MmBuildMdlForNonPagedPool), already
 // has its system address in MappedSystemVa; only otherwise does it map, via

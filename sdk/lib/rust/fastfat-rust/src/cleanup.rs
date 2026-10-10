@@ -41,7 +41,7 @@ extern "system" {
     fn FatResetExceptionState(IrpContext: PIRP_CONTEXT);
     fn FsRtlNotifyCleanup(Sync: *mut c_void, List: *mut c_void, Context: *mut c_void);
     fn FsRtlNotifyFullChangeDirectory( Sync: *mut c_void, List: *mut c_void, Context: *mut c_void, FullDirectoryName: *const c_void, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: u32, NotifyIrp: PIRP, TraverseCallback: *const c_void, SubjectContext: *const c_void, );
-    fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32);
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
     fn FatFlushFat(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> NTSTATUS;
     fn FatIsFat12(Vcb: PVCB) -> BOOLEAN;
     fn FatHijackIrpAndFlushDevice(IrpContext: PIRP_CONTEXT, Irp: PIRP, TargetDeviceObject: *mut c_void) -> NTSTATUS;
@@ -592,7 +592,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                 CcUninitializeCacheMap(FileObject, TruncateSize, ptr::null_mut());
             }
             _ => {
-                FatBugCheck(TypeOfOpen as u32, 0, 0);
+                FatBugCheck(TypeOfOpen as usize, 0, 0);
             }
         }
 

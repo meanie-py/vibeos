@@ -976,6 +976,65 @@ def _refresh_wow64_guests(run, repo: Path) -> bool:
     return True
 
 
+WOWX64_CPU_DLL = Path("build-fex-hello/wowx64fex/libwowx64fex.dll")
+WOWX64_CPU_SOURCES = ("tools/fex/wowx64fex", "sdk/include/reactos/wowx64/btcpu64.h")
+
+
+def wowx64_cpu_stale(repo: Path) -> list[str]:
+    """The x86-64 CPU layer's sources newer than the DLL mkramdisk stages ([] =
+    current, or no DLL at all, which mkramdisk already reports as MISSING)."""
+    dll = repo / WOWX64_CPU_DLL
+    if not dll.is_file():
+        return []
+    built = dll.stat().st_mtime
+    newer = []
+    for src in WOWX64_CPU_SOURCES:
+        p = repo / src
+        for f in sorted(p.rglob("*")) if p.is_dir() else [p]:
+            if f.is_file() and f.stat().st_mtime > built:
+                newer.append(str(f.relative_to(repo)))
+    return newer
+
+
+def _refresh_wowx64_cpu(run, repo: Path) -> bool:
+    """Rebuild libwowx64fex.dll when its sources moved. False = hard failure.
+
+    It is built out of tree (tools/fex/build-hello-compute.sh) and mkramdisk stages
+    whatever DLL is there, so an edited Module.cpp shipped the OLD plugin with a
+    green build: the new contract version or export is then missing at run time and
+    every x86-64 guest dies at launch, a whole boot later (2026-10-09, contract v4).
+    """
+    stale = wowx64_cpu_stale(repo)
+    if not stale:
+        run.add(Stage("wowx64-cpu", status="ok", detail="current"))
+        return True
+    # The script's toolchain, for a cmake re-run the edit triggers.
+    env = dict(os.environ)
+    env["PATH"] = f"{repo / '.build-tools/llvm-mingw/bin'}{os.pathsep}{env.get('PATH', '')}"
+    cp = run.run(
+        ["ninja", "-C", str(repo / WOWX64_CPU_DLL.parent)],
+        cwd=repo,
+        env=env,
+        stage="wowx64-cpu",
+        timeout=900,
+    )
+    left = wowx64_cpu_stale(repo)
+    if cp.returncode != 0 or left:
+        run.classification = "CPU_LAYER_BUILD_FAIL"
+        run.add(
+            Stage(
+                "wowx64-cpu",
+                exit=cp.returncode,
+                status="fail",
+                detail=f"{WOWX64_CPU_DLL} older than its sources and the rebuild did not fix it",
+                salient=[*(left or stale)[:4], "run: tools/fex/build-hello-compute.sh"],
+            )
+        )
+        return False
+    run.add(Stage("wowx64-cpu", status="ok", detail=f"rebuilt ({len(stale)} source(s) newer)"))
+    return True
+
+
 def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: bool) -> int:
     if not _isolation_preflight(run, repo, build_dir):
         return run.finalize(repo)
@@ -1141,6 +1200,8 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
         and not getattr(args, "no_wow64_stage", False)
         and not _refresh_wow64_guests(run, repo)
     ):
+        return run.finalize(repo)
+    if arch == "arm64" and not _refresh_wowx64_cpu(run, repo):
         return run.finalize(repo)
 
     # --- generated-header barrier ---

@@ -9,8 +9,12 @@
  * Covered: DPA (insert/set/delete/grow/clone, sort, sorted + linear search with the insert
  * flags, merge with every DPAM_ mode, enum/destroy callbacks), DSA (insert/set/get/delete,
  * callbacks), the comctl32 string exports, and ImageList bookkeeping (add/remove/replace/
- * set-count/copy/merge/duplicate, sizes and image rects). Smoke never reaches most of it:
- * explorer only sorts and searches. */
+ * set-count/copy/merge/duplicate, sizes and image rects), and the treeview and listview
+ * driven by message from a hidden parent: navigation (every TVGN_/LVNI_ code, including
+ * `TVGN_CARET | TVSI_NOSINGLEEXPAND`, the flag combination a translation once turned into a
+ * Rust or-pattern), expand/collapse, sorting with callbacks, find, selection state and the
+ * WM_NOTIFY stream each operation sends. Smoke never reaches most of it: explorer only
+ * sorts and searches, and never navigates a tree. */
 #include <windows.h>
 #include <commctrl.h>
 #include <stdio.h>
@@ -518,6 +522,392 @@ static void il_tests(void)
     }
 }
 
+/* ---- window controls: a hidden parent records the WM_NOTIFY stream ---- */
+
+static HWND tree, list;
+static int notify_quiet;
+
+static void tv_text(HTREEITEM h, char *out, int cch)
+{
+    WCHAR w[64];
+    TVITEMW it = {0};
+    if (!h)
+    {
+        lstrcpynA(out, "(null)", cch);
+        return;
+    }
+    it.mask = TVIF_TEXT | TVIF_HANDLE;
+    it.hItem = h;
+    it.pszText = w;
+    it.cchTextMax = 64;
+    w[0] = 0;
+    if (!SendMessageW(tree, TVM_GETITEMW, 0, (LPARAM)&it))
+    {
+        lstrcpynA(out, "(bad)", cch);
+        return;
+    }
+    WideCharToMultiByte(CP_ACP, 0, w, -1, out, cch, NULL, NULL);
+}
+
+static LRESULT CALLBACK parent_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp)
+{
+    if (msg == WM_NOTIFY && !notify_quiet)
+    {
+        NMHDR *hdr = (NMHDR *)lp;
+        char a[32], b[32];
+        if (hdr->hwndFrom == tree)
+        {
+            NMTREEVIEWW *nm = (NMTREEVIEWW *)lp;
+            switch (hdr->code)
+            {
+            case TVN_SELCHANGINGW: case TVN_SELCHANGEDW:
+            case TVN_ITEMEXPANDINGW: case TVN_ITEMEXPANDEDW:
+                tv_text(nm->itemOld.hItem, a, sizeof(a));
+                tv_text(nm->itemNew.hItem, b, sizeof(b));
+                printf("  tvn %d action=%u old=%s new=%s newstate=0x%x\n", (int)hdr->code,
+                       nm->action, a, b, nm->itemNew.state & 0xffff);
+                break;
+            case TVN_DELETEITEMW:
+                printf("  tvn delete lparam=%ld\n", (long)nm->itemOld.lParam);
+                break;
+            }
+        }
+        else if (hdr->hwndFrom == list)
+        {
+            NMLISTVIEW *nm = (NMLISTVIEW *)lp;
+            switch (hdr->code)
+            {
+            case LVN_ITEMCHANGING: case LVN_ITEMCHANGED:
+                printf("  lvn %d item=%d sub=%d new=0x%x old=0x%x changed=0x%x\n",
+                       (int)hdr->code, nm->iItem, nm->iSubItem, nm->uNewState, nm->uOldState,
+                       nm->uChanged);
+                break;
+            case LVN_INSERTITEM: case LVN_DELETEITEM: case LVN_DELETEALLITEMS:
+                printf("  lvn %d item=%d lparam=%ld\n", (int)hdr->code, nm->iItem,
+                       (long)nm->lParam);
+                break;
+            }
+        }
+        fflush(stdout);
+    }
+    return DefWindowProcW(hwnd, msg, wp, lp);
+}
+
+static HTREEITEM tv_insert(HTREEITEM parent, HTREEITEM after, const WCHAR *text, LPARAM lp)
+{
+    TVINSERTSTRUCTW is = {0};
+    is.hParent = parent;
+    is.hInsertAfter = after;
+    is.item.mask = TVIF_TEXT | TVIF_PARAM;
+    is.item.pszText = (LPWSTR)text;
+    is.item.lParam = lp;
+    return (HTREEITEM)SendMessageW(tree, TVM_INSERTITEMW, 0, (LPARAM)&is);
+}
+
+static void tv_walk(const char *what)
+{
+    /* Depth-first over every item, children whether or not expanded. */
+    HTREEITEM stack[32], h = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_ROOT, 0);
+    int depth = 0;
+    char s[32];
+    printf("%s count=%ld:", what, (long)SendMessageW(tree, TVM_GETCOUNT, 0, 0));
+    while (h)
+    {
+        HTREEITEM child = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_CHILD, (LPARAM)h);
+        tv_text(h, s, sizeof(s));
+        printf(" %d:%s/0x%x", depth, s,
+               (unsigned)SendMessageW(tree, TVM_GETITEMSTATE, (WPARAM)h, 0xffff));
+        if (child && depth < 31)
+        {
+            stack[depth++] = h;
+            h = child;
+            continue;
+        }
+        while (h && !(child = (HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, TVGN_NEXT, (LPARAM)h)))
+            h = depth ? stack[--depth] : NULL;
+        h = h ? child : NULL;
+    }
+    printf("\n");
+}
+
+static void tv_nav(const char *what, UINT code, HTREEITEM from)
+{
+    char s[32];
+    tv_text((HTREEITEM)SendMessageW(tree, TVM_GETNEXTITEM, code, (LPARAM)from), s, sizeof(s));
+    printf("tv next %s = %s\n", what, s);
+}
+
+static int CALLBACK tv_sort_cb(LPARAM a, LPARAM b, LPARAM dir)
+{
+    return dir ? (int)(b - a) : (int)(a - b);
+}
+
+static void tree_tests(HWND parent)
+{
+    HTREEITEM a, b, c, a1, a2, a3, b1;
+    char s[32];
+    TVSORTCB sort;
+
+    tree = CreateWindowExW(0, WC_TREEVIEWW, L"", WS_CHILD | TVS_HASBUTTONS | TVS_LINESATROOT,
+                           0, 0, 200, 300, parent, NULL, NULL, NULL);
+    printf("tv created %d\n", tree != NULL);
+    if (!tree)
+        return;
+    a = tv_insert(TVI_ROOT, TVI_LAST, L"alpha", 10);
+    c = tv_insert(TVI_ROOT, TVI_LAST, L"charlie", 30);
+    b = tv_insert(TVI_ROOT, TVI_SORT, L"bravo", 20);
+    a2 = tv_insert(a, TVI_LAST, L"a2", 12);
+    a1 = tv_insert(a, TVI_FIRST, L"a1", 11);
+    a3 = tv_insert(a, a2, L"a3", 13);
+    b1 = tv_insert(b, TVI_LAST, L"b1", 21);
+    tv_walk("tv built");
+
+    tv_nav("root", TVGN_ROOT, NULL);
+    tv_nav("alpha.next", TVGN_NEXT, a);
+    tv_nav("charlie.prev", TVGN_PREVIOUS, c);
+    tv_nav("a3.parent", TVGN_PARENT, a3);
+    tv_nav("alpha.child", TVGN_CHILD, a);
+    tv_nav("charlie.next", TVGN_NEXT, c);
+    tv_nav("firstvisible", TVGN_FIRSTVISIBLE, NULL);
+    tv_nav("alpha.nextvisible", TVGN_NEXTVISIBLE, a);
+    tv_nav("caret", TVGN_CARET, NULL);
+    tv_nav("lastvisible", TVGN_LASTVISIBLE, NULL);
+
+    printf("tv expand alpha %ld\n", (long)SendMessageW(tree, TVM_EXPAND, TVE_EXPAND, (LPARAM)a));
+    tv_nav("alpha.nextvisible", TVGN_NEXTVISIBLE, a);
+    tv_nav("bravo.prevvisible", TVGN_PREVIOUSVISIBLE, b);
+    printf("tv toggle bravo %ld\n", (long)SendMessageW(tree, TVM_EXPAND, TVE_TOGGLE, (LPARAM)b));
+    printf("tv collapse alpha %ld\n",
+           (long)SendMessageW(tree, TVM_EXPAND, TVE_COLLAPSE, (LPARAM)a));
+    tv_walk("tv expanded");
+
+    printf("tv select a1 %ld\n", (long)SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, (LPARAM)a1));
+    tv_nav("caret", TVGN_CARET, NULL);
+    printf("tv select b1 nosingle %ld\n",
+           (long)SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET | TVSI_NOSINGLEEXPAND, (LPARAM)b1));
+    tv_nav("caret", TVGN_CARET, NULL);
+    printf("tv drophilite charlie %ld\n",
+           (long)SendMessageW(tree, TVM_SELECTITEM, TVGN_DROPHILITE, (LPARAM)c));
+    tv_nav("drophilite", TVGN_DROPHILITE, NULL);
+    printf("tv select null %ld\n", (long)SendMessageW(tree, TVM_SELECTITEM, TVGN_CARET, 0));
+    tv_nav("caret", TVGN_CARET, NULL);
+    tv_walk("tv selected");
+
+    sort.hParent = a;
+    sort.lpfnCompare = tv_sort_cb;
+    sort.lParam = 1;
+    printf("tv sortcb alpha desc %ld\n", (long)SendMessageW(tree, TVM_SORTCHILDRENCB, 0, (LPARAM)&sort));
+    tv_walk("tv sorted desc");
+    printf("tv sort alpha %ld\n", (long)SendMessageW(tree, TVM_SORTCHILDREN, 0, (LPARAM)a));
+    tv_walk("tv sorted text");
+
+    {
+        TVITEMW it = {0};
+        it.mask = TVIF_TEXT | TVIF_STATE | TVIF_HANDLE;
+        it.hItem = a2;
+        it.pszText = (LPWSTR)L"a2-renamed";
+        it.state = TVIS_BOLD;
+        it.stateMask = TVIS_BOLD;
+        printf("tv setitem %ld\n", (long)SendMessageW(tree, TVM_SETITEMW, 0, (LPARAM)&it));
+        it.mask = TVIF_PARAM | TVIF_HANDLE;
+        SendMessageW(tree, TVM_GETITEMW, 0, (LPARAM)&it);
+        tv_text(a2, s, sizeof(s));
+        printf("tv getitem %s lparam=%ld\n", s, (long)it.lParam);
+    }
+    printf("tv indent set %ld\n", (long)SendMessageW(tree, TVM_SETINDENT, 25, 0));
+    printf("tv indent %ld\n", (long)SendMessageW(tree, TVM_GETINDENT, 0, 0));
+    printf("tv itemheight old %ld\n", (long)SendMessageW(tree, TVM_SETITEMHEIGHT, 21, 0));
+    printf("tv itemheight %ld\n", (long)SendMessageW(tree, TVM_GETITEMHEIGHT, 0, 0));
+
+    printf("tv delete alpha %ld\n", (long)SendMessageW(tree, TVM_DELETEITEM, 0, (LPARAM)a));
+    tv_walk("tv deleted");
+    printf("tv deleteall %ld\n", (long)SendMessageW(tree, TVM_DELETEITEM, 0, (LPARAM)TVI_ROOT));
+    tv_walk("tv empty");
+    notify_quiet = 1;
+    DestroyWindow(tree);
+    notify_quiet = 0;
+}
+
+static int lv_insert(int at, const WCHAR *text, LPARAM lp)
+{
+    LVITEMW it = {0};
+    it.mask = LVIF_TEXT | LVIF_PARAM;
+    it.iItem = at;
+    it.pszText = (LPWSTR)text;
+    it.lParam = lp;
+    return (int)SendMessageW(list, LVM_INSERTITEMW, 0, (LPARAM)&it);
+}
+
+static void lv_dump(const char *what)
+{
+    int i, n = (int)SendMessageW(list, LVM_GETITEMCOUNT, 0, 0);
+    printf("%s count=%d sel=%ld:", what, n, (long)SendMessageW(list, LVM_GETSELECTEDCOUNT, 0, 0));
+    for (i = 0; i < n; i++)
+    {
+        WCHAR w[32], w2[32];
+        char s[32], s2[32];
+        LVITEMW it = {0};
+        it.iSubItem = 0;
+        it.pszText = w;
+        it.cchTextMax = 32;
+        w[0] = 0;
+        SendMessageW(list, LVM_GETITEMTEXTW, i, (LPARAM)&it);
+        it.iSubItem = 1;
+        it.pszText = w2;
+        w2[0] = 0;
+        SendMessageW(list, LVM_GETITEMTEXTW, i, (LPARAM)&it);
+        it.mask = LVIF_PARAM;
+        it.iItem = i;
+        it.iSubItem = 0;
+        SendMessageW(list, LVM_GETITEMW, 0, (LPARAM)&it);
+        WideCharToMultiByte(CP_ACP, 0, w, -1, s, sizeof(s), NULL, NULL);
+        WideCharToMultiByte(CP_ACP, 0, w2, -1, s2, sizeof(s2), NULL, NULL);
+        printf(" %s|%s/%ld/0x%x", s, s2, (long)it.lParam,
+               (unsigned)SendMessageW(list, LVM_GETITEMSTATE, i, LVIS_SELECTED | LVIS_FOCUSED));
+    }
+    printf("\n");
+}
+
+static int CALLBACK lv_sort_param(LPARAM a, LPARAM b, LPARAM dir)
+{
+    return dir ? (int)(b - a) : (int)(a - b);
+}
+
+static int CALLBACK lv_sort_index(LPARAM a, LPARAM b, LPARAM l)
+{
+    /* SORTITEMSEX passes indices: order by the item's text, reversed. */
+    WCHAR wa[32], wb[32];
+    LVITEMW it = {0};
+    it.pszText = wa;
+    it.cchTextMax = 32;
+    SendMessageW(list, LVM_GETITEMTEXTW, a, (LPARAM)&it);
+    it.pszText = wb;
+    SendMessageW(list, LVM_GETITEMTEXTW, b, (LPARAM)&it);
+    return lstrcmpW(wb, wa);
+}
+
+static void lv_find(const char *what, UINT flags, const WCHAR *text, LPARAM lp, int start)
+{
+    LVFINDINFOW fi = {0};
+    fi.flags = flags;
+    fi.psz = text;
+    fi.lParam = lp;
+    printf("lv find %s = %ld\n", what, (long)SendMessageW(list, LVM_FINDITEMW, start, (LPARAM)&fi));
+}
+
+static void lv_select(int i, UINT state, UINT mask)
+{
+    LVITEMW it = {0};
+    it.state = state;
+    it.stateMask = mask;
+    printf("lv setstate %d 0x%x/0x%x %ld\n", i, state, mask,
+           (long)SendMessageW(list, LVM_SETITEMSTATE, i, (LPARAM)&it));
+}
+
+static void list_tests(HWND parent)
+{
+    static const WCHAR *names[] = { L"pear", L"apple", L"fig", L"banana", L"cherry", L"apricot" };
+    static const WCHAR *sizes[] = { L"3", L"10", L"7", L"1", L"5", L"2" };
+    LVCOLUMNW col = {0};
+    int i;
+
+    list = CreateWindowExW(0, WC_LISTVIEWW, L"", WS_CHILD | LVS_REPORT | LVS_SHOWSELALWAYS,
+                           0, 0, 300, 200, parent, NULL, NULL, NULL);
+    printf("lv created %d\n", list != NULL);
+    if (!list)
+        return;
+    col.mask = LVCF_TEXT | LVCF_WIDTH;
+    col.cx = 100;
+    col.pszText = (LPWSTR)L"Name";
+    printf("lv col0 %ld\n", (long)SendMessageW(list, LVM_INSERTCOLUMNW, 0, (LPARAM)&col));
+    col.pszText = (LPWSTR)L"Size";
+    col.cx = 60;
+    printf("lv col1 %ld\n", (long)SendMessageW(list, LVM_INSERTCOLUMNW, 1, (LPARAM)&col));
+    printf("lv header items %ld\n",
+           (long)SendMessageW((HWND)SendMessageW(list, LVM_GETHEADER, 0, 0), HDM_GETITEMCOUNT, 0, 0));
+    for (i = 0; i < 6; i++)
+    {
+        LVITEMW it = {0};
+        int at = lv_insert(i % 2 ? 0 : 0x7fff, names[i], (i + 1) * 100);
+        it.iSubItem = 1;
+        it.pszText = (LPWSTR)sizes[i];
+        printf("lv insert %d at %d subitem %ld\n", i, at,
+               (long)SendMessageW(list, LVM_SETITEMTEXTW, at, (LPARAM)&it));
+    }
+    lv_dump("lv built");
+
+    lv_find("string fig", LVFI_STRING, L"fig", 0, -1);
+    lv_find("string FIG", LVFI_STRING, L"FIG", 0, -1);
+    lv_find("partial ap", LVFI_PARTIAL | LVFI_STRING, L"ap", 0, -1);
+    lv_find("partial ap from 1", LVFI_PARTIAL | LVFI_STRING, L"ap", 0, 1);
+    lv_find("partial ap wrap from 5", LVFI_PARTIAL | LVFI_STRING | LVFI_WRAP, L"ap", 0, 5);
+    lv_find("partial ap nowrap from 5", LVFI_PARTIAL | LVFI_STRING, L"ap", 0, 5);
+    lv_find("param 400", LVFI_PARAM, NULL, 400, -1);
+    lv_find("param 999", LVFI_PARAM, NULL, 999, -1);
+
+    lv_select(1, LVIS_SELECTED | LVIS_FOCUSED, LVIS_SELECTED | LVIS_FOCUSED);
+    lv_select(3, LVIS_SELECTED, LVIS_SELECTED);
+    lv_dump("lv selected");
+    printf("lv next selected from -1 %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, -1, LVNI_SELECTED));
+    printf("lv next selected from 1 %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, 1, LVNI_SELECTED));
+    printf("lv next focused %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, -1, LVNI_FOCUSED));
+    printf("lv next all from 2 %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, 2, LVNI_ALL));
+    printf("lv next below 2 %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, 2, LVNI_BELOW));
+    printf("lv next above 2 %ld\n", (long)SendMessageW(list, LVM_GETNEXTITEM, 2, LVNI_ABOVE));
+    printf("lv next selected|below 0 %ld\n",
+           (long)SendMessageW(list, LVM_GETNEXTITEM, 0, LVNI_SELECTED | LVNI_BELOW));
+    lv_select(-1, 0, LVIS_SELECTED);
+    lv_dump("lv deselected all");
+
+    printf("lv sort param desc %ld\n", (long)SendMessageW(list, LVM_SORTITEMS, 1, (LPARAM)lv_sort_param));
+    lv_dump("lv sorted param");
+    printf("lv sortex text desc %ld\n", (long)SendMessageW(list, LVM_SORTITEMSEX, 0, (LPARAM)lv_sort_index));
+    lv_dump("lv sorted text");
+
+    printf("lv colwidth %ld\n", (long)SendMessageW(list, LVM_GETCOLUMNWIDTH, 1, 0));
+    printf("lv setcolwidth %ld\n", (long)SendMessageW(list, LVM_SETCOLUMNWIDTH, 1, 75));
+    printf("lv colwidth %ld\n", (long)SendMessageW(list, LVM_GETCOLUMNWIDTH, 1, 0));
+    printf("lv exstyle old 0x%lx\n", (long)SendMessageW(list, LVM_SETEXTENDEDLISTVIEWSTYLE,
+           LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES, LVS_EX_FULLROWSELECT));
+    printf("lv exstyle 0x%lx\n", (long)SendMessageW(list, LVM_GETEXTENDEDLISTVIEWSTYLE, 0, 0));
+
+    printf("lv delete 2 %ld\n", (long)SendMessageW(list, LVM_DELETEITEM, 2, 0));
+    printf("lv delete 99 %ld\n", (long)SendMessageW(list, LVM_DELETEITEM, 99, 0));
+    lv_dump("lv deleted");
+    printf("lv deletecol 0 %ld\n", (long)SendMessageW(list, LVM_DELETECOLUMN, 0, 0));
+    lv_dump("lv col deleted");
+    printf("lv deleteall %ld\n", (long)SendMessageW(list, LVM_DELETEALLITEMS, 0, 0));
+    lv_dump("lv empty");
+    notify_quiet = 1;
+    DestroyWindow(list);
+    notify_quiet = 0;
+}
+
+static void control_tests(void)
+{
+    typedef BOOL(WINAPI * ICCEX_t)(const INITCOMMONCONTROLSEX *);
+    ICCEX_t iccex = (ICCEX_t)GetProcAddress(dll, "InitCommonControlsEx");
+    INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_TREEVIEW_CLASSES | ICC_LISTVIEW_CLASSES };
+    WNDCLASSW wc = {0};
+    HWND parent;
+
+    printf("iccex %d\n", iccex && iccex(&icc));
+    wc.lpfnWndProc = parent_proc;
+    wc.hInstance = GetModuleHandleW(NULL);
+    wc.lpszClassName = L"modrun_comctl32_parent";
+    RegisterClassW(&wc);
+    parent = CreateWindowExW(0, wc.lpszClassName, L"", WS_OVERLAPPEDWINDOW, 0, 0, 400, 400,
+                             NULL, NULL, wc.hInstance, NULL);
+    printf("parent created %d\n", parent != NULL);
+    if (!parent)
+        return;
+    tree_tests(parent);
+    fflush(stdout);
+    list_tests(parent);
+    fflush(stdout);
+    DestroyWindow(parent);
+}
+
 int main(void)
 {
     WCHAR self[MAX_PATH], *slash;
@@ -564,6 +954,8 @@ int main(void)
     str_tests();
     fflush(stdout);
     il_tests();
+    fflush(stdout);
+    control_tests();
     printf("probe done\n");
     fflush(stdout);
     return 0;

@@ -99,11 +99,18 @@ stub first). Real subsystem work, not stubs:
    only what its DMA adapter maps (common buffers, MapTransfer runs, scatter/gather
    lists), refcounted per page and TLB-invalidated on release. nvme.sys takes every
    address from its adapter now and declares itself compatible; `NVME_STRAY_DMA=1`
-   proves a DMA to RAM it was never given faults and leaves the page untouched. Owed:
-   `CONNECT_MESSAGE_BASED_PASSIVE`, which nothing calls (KMDF 1.17 connects only
-   `CONNECT_FULLY_SPECIFIED(_GROUP)` and does passive handling itself), and the other
-   drivers (usbport, the virtio ones) still on physical addresses, so on the shared
-   identity map. MOVI is proven by `--tripwire ITS_MISSTEER`, a segment past 0 by
+   proves a DMA to RAM it was never given faults and leaves the page untouched.
+   usbxhci (usbport now flushes every transfer it maps), vioblk and netstack's
+   virtio-net are compatible too (2026-10-09); the last two find their devices by
+   scanning PCI, not through PnP, so they take an adapter for the requester ID from
+   the HAL and claim the domain themselves, and pci.sys starting the PDO later keeps
+   it. virtio-mmio devices sit behind no SMMU. `CONNECT_MESSAGE_BASED_PASSIVE`
+   (2026-10-09): each message's ISR only marks it pending and queues a DPC, which
+   wakes the connection's worker thread to call the driver at PASSIVE_LEVEL under a
+   mutex that KeSynchronizeExecution takes too; with no messages it falls back to
+   the line, masked until the routine has run. `--tripwire NVME_PASSIVE_ISR=1` runs
+   nvme.sys on it (KMDF 1.17 connects only `CONNECT_FULLY_SPECIFIED(_GROUP)` and does
+   passive handling itself). MOVI is proven by `--tripwire ITS_MISSTEER`, a segment past 0 by
    `--nvme-segment`. The arm64 HAL's PCI config space comes from the MCFG since
    2026-10-08: every bus of every segment, bus numbers being PCI_SEGMENT_BUS_NUMBERs
    (pci.sys keeps the segment through bridges and in the requester ID the ITS routes

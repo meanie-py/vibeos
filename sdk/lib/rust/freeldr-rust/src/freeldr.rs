@@ -290,3 +290,11 @@ pub unsafe extern "C" fn FrldrGetBootDrive() -> UCHAR {
 pub unsafe extern "C" fn FrldrGetBootPartition() -> ULONG {
     FrldrBootPartition
 }
+
+/// TRUE in uefildr.efi, FALSE in the BIOS freeldr.sys. rosload is one binary for both and
+/// asks, to set the loader block's `BootViaEFI`: winldr.c's `#ifdef UEFIBOOT` never fires
+/// in rosload, so without this nothing after the loader can tell the firmware apart.
+#[no_mangle]
+pub unsafe extern "C" fn FrLdrIsUefiBoot() -> BOOLEAN {
+    cfg!(feature = "uefi") as BOOLEAN
+}

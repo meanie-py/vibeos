@@ -8050,7 +8050,7 @@ pub unsafe extern "system" fn StgSetTimes(
 }
 
 unsafe fn OLECONVERT_GetOLE20FromOLE10(pDestStorage: *mut IStorage, pBuffer: *const BYTE, nBufferLength: DWORD) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let hFile: HANDLE;
     let mut pTempStorage: *mut IStorage = core::ptr::null_mut();
     let mut dwNumOfBytesWritten: DWORD = 0;
@@ -9749,7 +9749,7 @@ unsafe fn OLECONVERT_CreateOlePresStream(
     pData: *mut BYTE,
     dwDataLength: DWORD,
 ) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let mut pStream: *mut IStream = core::ptr::null_mut();
     static wstrStreamName: [u16; 12] = [2, b'O' as u16, b'l' as u16, b'e' as u16, b'P' as u16, b'r' as u16, b'e' as u16, b's' as u16, b'0' as u16, b'0' as u16, b'0' as u16, 0];
     static pOlePresStreamHeader: [BYTE; 28] = [
@@ -9818,7 +9818,7 @@ unsafe fn OLECONVERT_CreateOlePresStream(
 }
 
 unsafe fn OLECONVERT_CreateOle10NativeStream(pStorage: *mut IStorage, pData: *const u8, dwDataLength: u32) {
-    let mut hRes: HRESULT;
+    let hRes: HRESULT;
     let mut pStream: *mut IStream = core::ptr::null_mut();
     static wstrStreamName: [u16; 13] = [1, b'O' as u16, b'l' as u16, b'e' as u16, b'1' as u16, b'0' as u16, b'N' as u16, b'a' as u16, b't' as u16, b'i' as u16, b'v' as u16, b'e' as u16, 0];
 

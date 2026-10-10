@@ -3136,6 +3136,7 @@ unsafe extern "C" fn EDIT_EM_SetTabStops(
     return TRUE as BOOL;
 }
 
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 unsafe extern "C" fn EDIT_EM_SetWordBreakProc(mut es: *mut EDITSTATE, mut wbp: EDITWORDBREAKPROCW) {
     if (*es).word_break_proc == wbp {
         return;

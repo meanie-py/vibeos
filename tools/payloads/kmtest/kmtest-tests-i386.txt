@@ -202,7 +202,9 @@ ZwMapViewOfSection
 # ObSymbolicLink above — the handle-array capture is the identical unprotected-memcpy
 # shape. OK pass=4 fail=0.
 ZwWaitForMultipleObjects
-RtlCaptureContextKM
+# NOT BUILT HERE (2026-10-09): RtlCaptureContextKM/UM are `#ifdef _M_AMD64` in both testlists
+# (CMake only adds them for amd64), so kmtest reports error 0x7b and the row read NO-END.
+# RtlCaptureContextKM
 FileAttributes
 FindFile
 HidPDescription
@@ -277,4 +279,4 @@ TcpIpTdi
 # UN-QUARANTINED 2026-10-08: `conformance_probe --auto` verdict OK, then two full sweeps
 # agreed (row banked in kmtest.txt). The history above is the audit trail.
 TcpIpConnect
-RtlCaptureContextUM
+# RtlCaptureContextUM -- amd64-only, see RtlCaptureContextKM above

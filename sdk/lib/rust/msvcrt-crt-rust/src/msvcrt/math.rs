@@ -1386,7 +1386,7 @@ pub unsafe extern "C" fn _set_controlfp(newval: u32, mask: u32) {
 
 #[no_mangle]
 pub unsafe extern "C" fn _controlfp_s(cur: *mut u32, newval: u32, mask: u32) -> i32 {
-    const all_flags: u32 = (_MCW_EM | _MCW_IC | _MCW_RC | _MCW_PC | _MCW_DN);
+    const all_flags: u32 = _MCW_EM | _MCW_IC | _MCW_RC | _MCW_PC | _MCW_DN;
     let val: u32;
 
     if MSVCRT_CHECK_PMT!((newval & mask & !all_flags) == 0) == 0 {

@@ -77,9 +77,9 @@ unsafe extern "C" fn msvcrt_search_executable(name: *const wchar_t, fullname: *m
     let mut buffer: [wchar_t; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut env: *const wchar_t;
     let mut p: *const wchar_t;
-    let mut end: *const wchar_t;
+    let end: *const wchar_t;
     let mut i: u32;
-    let mut name_len: u32;
+    let name_len: u32;
     let mut path_len: u32;
     let mut extension: i32 = 1;
 
@@ -443,7 +443,7 @@ unsafe extern "C" fn msvcrt_valisttos_aw(arg0: *const i8, mut alist: va_list, de
     ret
 }
 unsafe extern "C" fn msvcrt_get_comspec() -> *mut wchar_t {
-    let mut ret: *mut wchar_t;
+    let ret: *mut wchar_t;
     let mut len: u32;
 
     len = GetEnvironmentVariableW(win32macros_rust::wide_bytes!(b"C\0O\0M\0S\0P\0E\0C\0\0\0") as *const wchar_t, core::ptr::null_mut(), 0);
@@ -918,9 +918,9 @@ pub unsafe extern "C" fn _spawnvpe(
     argv: *const *const i8,
     envv: *const *const i8,
 ) -> isize {
-    let mut nameW: *mut wchar_t;
-    let mut args: *mut wchar_t;
-    let mut envs: *mut wchar_t;
+    let nameW: *mut wchar_t;
+    let args: *mut wchar_t;
+    let envs: *mut wchar_t;
     let ret: isize;
 
     nameW = wstrdupa_utf8(name);
@@ -989,19 +989,19 @@ pub unsafe extern "C" fn msvcrt_free_popen_data() {
 // ============================================================================
 #[no_mangle]
 pub unsafe extern "C" fn _wpopen(command: *const wchar_t, mode: *const wchar_t) -> *mut FILE {
-    let mut comspec: *mut wchar_t;
-    let mut fullcmd: *mut wchar_t;
+    let comspec: *mut wchar_t;
+    let fullcmd: *mut wchar_t;
     let mut fullname: [wchar_t; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut textmode: i32 = 0;
     let mut fds: [i32; 2] = [0; 2];
     let fd_parent: i32;
-    let mut fd_child: i32;
+    let fd_child: i32;
     let mut container: *mut popen_handle;
     let mut pi: PROCESS_INFORMATION;
     let mut si: STARTUPINFOW;
     let mut read_pipe: BOOL = TRUE as BOOL;
     let mut p: *const wchar_t;
-    let mut len: u32;
+    let len: u32;
     let ret: *mut FILE;
     let mut i: DWORD;
     let r: BOOL;
@@ -1151,9 +1151,9 @@ pub unsafe extern "C" fn _wpopen(command: *const wchar_t, mode: *const wchar_t) 
 
 #[no_mangle]
 pub unsafe extern "C" fn _popen(command: LPCSTR, mode: LPCSTR) -> *mut FILE {
-    let mut ret: *mut FILE;
-    let mut cmdW: *mut wchar_t;
-    let mut modeW: *mut wchar_t;
+    let ret: *mut FILE;
+    let cmdW: *mut wchar_t;
+    let modeW: *mut wchar_t;
 
     if command.is_null() || mode.is_null() {
         return core::ptr::null_mut();
@@ -1178,7 +1178,7 @@ pub unsafe extern "C" fn _popen(command: LPCSTR, mode: LPCSTR) -> *mut FILE {
 
 #[no_mangle]
 pub unsafe extern "C" fn _pclose(file: *mut FILE) -> i32 {
-    let mut h: HANDLE;
+    let h: HANDLE;
     let mut i: DWORD;
 
     if MSVCRT_CHECK_PMT!(file != core::ptr::null_mut()) == 0 {

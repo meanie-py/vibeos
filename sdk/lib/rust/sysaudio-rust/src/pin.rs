@@ -313,9 +313,9 @@ pub unsafe extern "system" fn InstantiatePins(
     let mut Status: NTSTATUS;
     let mut RealPinHandle: *mut core::ffi::c_void = core::ptr::null_mut::<core::ffi::c_void>();
     let InputFormat: PKSDATAFORMAT_WAVEFORMATEX;
-    let mut OutputFormat: PKSDATAFORMAT_WAVEFORMATEX =
+    let OutputFormat: PKSDATAFORMAT_WAVEFORMATEX =
         core::ptr::null_mut::<KSDATAFORMAT_WAVEFORMATEX>();
-    let mut MixerPinConnect: PKSPIN_CONNECT = core::ptr::null_mut::<KSPIN_CONNECT>();
+    let MixerPinConnect: PKSPIN_CONNECT = core::ptr::null_mut::<KSPIN_CONNECT>();
     let mut PinInstances: KSPIN_CINSTANCES = KSPIN_CINSTANCES {
         PossibleCount: 0,
         CurrentCount: 0,
@@ -382,10 +382,10 @@ pub unsafe extern "system" fn InstantiatePins(
 }
 #[no_mangle]
 pub unsafe extern "C" fn GetConnectRequest(Irp: PIRP, Result: *mut PKSPIN_CONNECT) -> NTSTATUS {
-    let mut IoStack: PIO_STACK_LOCATION;
-    let mut ObjectLength: ULONG;
-    let mut ParametersLength: ULONG;
-    let mut Buffer: PVOID;
+    let IoStack: PIO_STACK_LOCATION;
+    let ObjectLength: ULONG;
+    let ParametersLength: ULONG;
+    let Buffer: PVOID;
 
     IoStack = IoGetCurrentIrpStackLocation(Irp);
 

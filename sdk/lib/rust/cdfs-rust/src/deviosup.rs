@@ -393,7 +393,7 @@ pub unsafe extern "C" fn CdNonCachedRead(
         },
         |_, _| {
             if (*p_CleanupRunCount) != 0 {
-                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), (*p_CleanupRunCount), 1, 0);
+                CdFinishBuffers(IrpContext, (*p_IoRuns).as_mut_ptr(), *p_CleanupRunCount , 1, 0);
             }
         },
     );
@@ -627,7 +627,7 @@ pub unsafe extern "C" fn CdNonCachedXARead(
         },
         |_, _| {
             if (*p_cleanup_run_count) != 0 {
-                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), (*p_cleanup_run_count), 1, 0);
+                CdFinishBuffers(irp_context, (*p_io_runs).as_mut_ptr(), *p_cleanup_run_count , 1, 0);
             }
         },
     );

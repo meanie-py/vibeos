@@ -142,7 +142,7 @@ pub unsafe extern "C" fn FindPropertyHandler(
                         *Flags = 0;
                         (*IoStatus).Information = core::mem::size_of::<ULONG>() as _;
 
-                        if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SupportHandler != None {
+                        if (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SupportHandler.is_some() {
                             *PropertyHandler = (*(*PropertySet.offset(Index as isize)).PropertyItem.offset(ItemIndex as isize)).SupportHandler;
                             return STATUS_SUCCESS;
                         }

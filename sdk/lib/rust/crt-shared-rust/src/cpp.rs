@@ -948,7 +948,7 @@ pub unsafe extern "C" fn __RTDynamicCast(
 
 #[no_mangle]
 pub unsafe extern "C" fn __RTCastToVoid(cppobj: *mut core::ffi::c_void) -> *mut core::ffi::c_void {
-    let mut ret: *mut core::ffi::c_void;
+    let ret: *mut core::ffi::c_void;
 
     if cppobj.is_null() {
         return core::ptr::null_mut();

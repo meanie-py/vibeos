@@ -2460,6 +2460,18 @@ pub unsafe extern "system" fn USBPORT_InvalidateEndpoint(
     return 0;
 }
 
+/// The direction a transfer is mapped and flushed in. Our xHCI miniport never DMAs
+/// into the transfer's MDL: it moves the bytes through its own common-buffer arena
+/// and copies completed IN data into MappedSystemVa itself, overwriting the S/G
+/// addresses (usbxhci endpoint.rs). So its transfers are mapped as if the device only
+/// read them: a HAL that bounces (x86, a buffer past the adapter's limit) then never
+/// copies its stale bounce buffer back over the bytes usbxhci stored, and the flush
+/// can always run, which an IOMMU domain needs to drop the mapping (arm64 dma.rs).
+unsafe fn USBPORT_MapsAsWrite(FdoExtension: PUSBPORT_DEVICE_EXTENSION, Transfer: PUSBPORT_TRANSFER) -> BOOLEAN {
+    ((*Transfer).Direction == USBPORT_DMA_DIRECTION_TO_DEVICE as ULONG
+        || (*(*FdoExtension).MiniPortInterface).Packet.MiniPortVersion == USB_MINIPORT_VERSION_XHCI) as BOOLEAN
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus: USBD_STATUS) {
     let UrbTransfer: *mut _URB_CONTROL_TRANSFER;
@@ -2492,31 +2504,22 @@ pub unsafe extern "system" fn USBPORT_CompleteTransfer(Urb: PURB, TransferStatus
         FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
         DmaOperations = (*(*FdoExtension).DmaAdapter).DmaOperations as PDMA_OPERATIONS;
 
-        WriteToDevice = ((*Transfer).Direction == USBPORT_DMA_DIRECTION_TO_DEVICE as u32) as BOOLEAN;
+        WriteToDevice = USBPORT_MapsAsWrite(FdoExtension, Transfer);
         Mdl = (*UrbTransfer).TransferBufferMDL;
         CurrentVa = MmGetMdlVirtualAddress(Mdl) as ULONG_PTR;
-        TransferLength = (*UrbTransfer).TransferBufferLength as SIZE_T;
+        // What USBPORT_MapTransfer mapped, not what completed: a short IN transfer
+        // would otherwise leave the tail of its mapping behind (FlushAdapterBuffers
+        // must be given the same range as MapTransfer).
+        TransferLength = (*Transfer).TransferParameters.TransferBufferLength as SIZE_T;
 
-        // Our xHCI miniport DMAs only into its private common-buffer arena and
-        // copies completed IN bytes into MappedSystemVa itself. The S/G mapping
-        // above still supplies offsets for SplitTransfer, but receives no DMA.
-        // Flushing it here could copy a stale HAL bounce buffer over the data
-        // usbxhci just returned (x86 buffers beyond the adapter's address limit).
-        // Keep FreeMapRegisters below: the unused mapping still owns registers.
-        IsFlushSuccess = if (*(*FdoExtension).MiniPortInterface).Packet.MiniPortVersion
-            == USB_MINIPORT_VERSION_XHCI
-        {
-            1
-        } else {
-            ((*DmaOperations).FlushAdapterBuffers.expect("non-null function pointer"))(
-                (*FdoExtension).DmaAdapter,
-                Mdl,
-                (*Transfer).MapRegisterBase,
-                CurrentVa as PVOID,
-                TransferLength as ULONG,
-                WriteToDevice,
-            )
-        };
+        IsFlushSuccess = ((*DmaOperations).FlushAdapterBuffers.expect("non-null function pointer"))(
+            (*FdoExtension).DmaAdapter,
+            Mdl,
+            (*Transfer).MapRegisterBase,
+            CurrentVa as PVOID,
+            TransferLength as ULONG,
+            WriteToDevice,
+        );
 
         if IsFlushSuccess == 0 {
             // DPRINT("USBPORT_CompleteTransfer: no FlushAdapterBuffers !!!\n");
@@ -2625,7 +2628,7 @@ pub unsafe extern "system" fn USBPORT_MapTransfer(
     CurrentLength = 0;
 
     loop {
-        WriteToDevice = ((*Transfer).Direction == USBPORT_DMA_DIRECTION_TO_DEVICE as ULONG) as BOOLEAN;
+        WriteToDevice = USBPORT_MapsAsWrite(FdoExtension, Transfer);
         // ASSERT(Transfer->Direction != 0)
 
         PhAddress = ((*DmaOperations).MapTransfer.expect("non-null function pointer"))(

@@ -2494,3 +2494,59 @@ def test_truthiness_converts_a_foreign_macros_argument_not_its_result():
         [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_C_TRUTHINESS]
     )
     assert [e.replacement for e in plan.edits] == ["((ok as INT) != 0)"]
+
+
+def test_fn_item_cast_drops_the_cast_off_some_f():
+    """ndis: `DriverUnload = Some(MainUnload) as PDRIVER_UNLOAD` -- `as` never converts
+    between Option types, even with identical signatures; `Some(f)` coerces by itself."""
+    from rustconv.crate_repair import _Ctx, _fn_item_cast_rule
+
+    src = b"    (*d).DriverUnload = Some(MainUnload) as PDRIVER_UNLOAD;\n"
+    start = src.index(b"Some(")
+    end = src.index(b";")
+    diag = {
+        "code": {"code": "E0605"},
+        "message": (
+            "non-primitive cast: `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT) "
+            "{MainUnload}>` as `Option<unsafe extern \"system\" fn(*mut _DRIVER_OBJECT)>`"
+        ),
+        "spans": [
+            {
+                "file_name": "x.rs",
+                "byte_start": start,
+                "byte_end": end,
+                "is_primary": True,
+                "line_start": 1,
+                "column_start": start + 1,
+            }
+        ],
+    }
+    edits, _, handled = _fn_item_cast_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
+    assert handled and edits[0].replacement == "Some(MainUnload)"
+
+
+def test_c2rust_anon_member_segment_is_deleted():
+    """ndis: `Chars\n    .c2rust_unnamed\n    .ReceiveCompleteHandler` -> C's flattened spelling."""
+    from rustconv.crate_repair import _c2rust_anon_rule, _Ctx
+
+    src = b"let h = (*b).Chars\n        .c2rust_unnamed\n        .ReceiveCompleteHandler;\n"
+    start = src.index(b"c2rust_unnamed")
+    diag = {
+        "code": {"code": "E0609"},
+        "message": "no field `c2rust_unnamed` on type `_NDIS50_PROTOCOL_CHARACTERISTICS`",
+        "spans": [
+            {
+                "file_name": "x.rs",
+                "byte_start": start,
+                "byte_end": start + len(b"c2rust_unnamed"),
+                "is_primary": True,
+                "line_start": 2,
+                "column_start": 10,
+            }
+        ],
+    }
+    edits, _, handled = _c2rust_anon_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
+    assert handled
+    e = edits[0]
+    out = src[: e.byte_start] + e.replacement.encode() + src[e.byte_end :]
+    assert b"".join(out.split()) == b"leth=(*b).Chars.ReceiveCompleteHandler;"

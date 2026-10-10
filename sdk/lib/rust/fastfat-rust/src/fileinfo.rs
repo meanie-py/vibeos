@@ -134,7 +134,7 @@ extern "system" {
     static IRP_CONTEXT_FLAG_WAIT: u32;
     static FAT_NTC_ROOT_DCB: NODE_TYPE_CODE;
     static UserVolumeOpen: TYPE_OF_OPEN;
-    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
+    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> u8;
     fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: u32) -> i32;
@@ -170,7 +170,7 @@ extern "system" {
     fn FatSetFileSizeInDirent( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
     fn FatSetFileSizeInDirentNoRaise( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, null: *const c_void, );
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
-    fn FatBugCheck(a: u32, b: u32, c: u32);
+    fn FatBugCheck(a: usize, b: usize, c: usize);
     fn FatCreateFcb( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetDcb: *mut DCB, LfnOffset: u32, DirentOffset: u32, Dirent: *mut DIRENT, Lfn: *mut _UNICODE_STRING, other: *mut _UNICODE_STRING, flag1: u8, flag2: u8, ) -> *mut FCB;
     fn FatDeleteFcb( IrpContext: *mut IRP_CONTEXT, Fcb: *mut *mut FCB, );
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
@@ -2759,7 +2759,7 @@ pub unsafe extern "system" fn FatFsdSetInformation(
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
     if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut core::ffi::c_void, || {
-        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
         *p_status = FatCommonSetInformation(*p_irp_context as *mut _, Irp as *mut _);
     }) {
         Status = FatProcessException(IrpContext, Irp, code as u32);
@@ -3276,7 +3276,7 @@ unsafe extern "system" fn FatDeleteFile(
 ) {
     // Forward declarations for unknown gap functions/macros
     extern "system" {
-        fn FatBugCheck(a: u32, b: u32, c: u32);
+        fn FatBugCheck(a: usize, b: usize, c: usize);
         fn FatCreateFcb(
             IrpContext: *mut IRP_CONTEXT,
             Vcb: *mut VCB,
@@ -8557,7 +8557,7 @@ pub unsafe extern "system" fn FatFsdQueryInformation(
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
     if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut core::ffi::c_void, || {
-        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp));
+        *p_irp_context = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
         *p_status = FatCommonQueryInformation(*p_irp_context as PIRP_CONTEXT, Irp as PIRP);
     }) {
         Status = FatProcessException(IrpContext, Irp, code as u32);
