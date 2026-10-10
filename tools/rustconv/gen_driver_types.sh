@@ -3796,7 +3796,7 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/shell/cmd"
-    WRAPPER_INC=$'#include "precomp.h"\n#include <reactos/buildno.h>\n#include <reactos/version.h>\n#include <ndk/psfuncs.h>\n#include <cjkcode.h>\n#include <direct.h> // For _getdrive().'
+    WRAPPER_INC=$'#include "precomp.h"\n#include <direct.h> // For _getdrive().\n#include <cjkcode.h>\n#include <reactos/buildno.h>\n#include <reactos/version.h>\n#include <ndk/psfuncs.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]cjkcode\.h' --allowlist-file '.*[/\\]conutils\.h'
                   --allowlist-file '.*[/\\]reactos[/\\]buildno\.h'
                   --allowlist-file '.*[/\\]reactos[/\\]version\.h'
@@ -3804,14 +3804,23 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*cmd[/\\].*\.h' )
+                  --allowlist-file '.*cmd[/\\].*\.h'
+                  --allowlist-file '.*[/\\]pager\.h'
+                  --allowlist-file '.*[/\\]wincon\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/shell/cmd" -I"${SRC}/build-i386/base/shell/cmd" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/lib/conutils" -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES -DNTOS_MODE_USER )
+    # >>> hand
+    # stream.h's CON_STREAM is conutils-h's: StdOut/StdErr and ConPrintf carry that type, and
+    # the island's own `_CON_STREAM` made the same C struct a second Rust type (E0308 at every
+    # ConFormatMessage(StdErr, ..)). One definition, re-exported under the C's three names.
+    EXTRA_BL_ITEMS=( _CON_STREAM CON_STREAM PCON_STREAM )
+    EXTRA_RAW_LINES=( 'pub use conutils_h::CON_STREAM;' 'pub use conutils_h::CON_STREAM as _CON_STREAM;' 'pub type PCON_STREAM = *mut conutils_h::CON_STREAM;' )
+    # <<< hand
     ;;
   kbdlayouts)
     # Hand-written (2026-10-10) from profile_derive's arm for target kbdus: every layout DLL

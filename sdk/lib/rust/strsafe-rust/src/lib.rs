@@ -52,6 +52,13 @@ extern "C" {
     /// msvcrt's `_vsnwprintf`. Variadic only in its `va_list` argument, so — unlike the `...`
     /// entry points — this IS expressible in stable Rust.
     fn _vsnwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ap: *mut c_void) -> c_int;
+    /// msvcrt's `_vsnprintf`, the narrow twin.
+    fn _vsnprintf(
+        buf: *mut core::ffi::c_char,
+        n: usize,
+        fmt: *const core::ffi::c_char,
+        ap: *mut c_void,
+    ) -> c_int;
     /// Imported, never hand-written: LLVM folds any byte-copy loop back into a call to the
     /// function itself, which is an infinite self-recursion (AGENTS.md).
     fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void;
@@ -914,6 +921,58 @@ pub unsafe extern "C" fn StringCchPrintfW_v(
         }
     }
     hr
+}
+
+/// strsafe.h `StringCchVPrintfA` (narrow `StringCchVPrintfW`): `ap` is the `va_list` BY VALUE,
+/// `char *` on every Windows target. Not exported: strsafe.h's is `static __inline`, so no
+/// module links against the symbol, and an unmangled one could collide with a local copy.
+pub unsafe fn StringCchVPrintfA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszFormat: *const core::ffi::c_char,
+    ap: *mut c_void,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let iRet = _vsnprintf(pszDest, cchDest - 1, pszFormat, ap);
+    printf_worker_finish_a(pszDest, cchDest, iRet)
+}
+
+/// strsafe.h `StringVPrintfWorkerA` after its `_vsnprintf` call: `printf_worker_finish`'s
+/// narrow twin.
+#[doc(hidden)]
+pub unsafe fn printf_worker_finish_a(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    iRet: c_int,
+) -> HRESULT {
+    let cchMax = cchDest - 1;
+    if iRet < 0 || (iRet as usize) > cchMax {
+        *pszDest.add(cchMax) = 0;
+        STRSAFE_E_INSUFFICIENT_BUFFER
+    } else {
+        if (iRet as usize) == cchMax {
+            *pszDest.add(cchMax) = 0;
+        }
+        S_OK
+    }
+}
+
+/// strsafe.h `StringCchPrintfA(pszDest, cchDest, pszFormat, ...)` as a macro call, calling
+/// msvcrt's variadic `_snprintf` directly like `StringCchPrintfW!`. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfA {
+    ($pszDest:expr, $cchDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut core::ffi::c_char = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH || cchDest == 0 {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            let iRet = $crate::_snprintf(pszDest, cchDest - 1, $pszFormat as _ $(, $arg)*);
+            $crate::printf_worker_finish_a(pszDest, cchDest, iRet)
+        }
+    }};
 }
 
 /// The byte-counted twin.

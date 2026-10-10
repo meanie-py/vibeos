@@ -422,6 +422,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cmd-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "wcwidth-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "cmlib-rust"
 version = "0.1.0"
 dependencies = [
@@ -3750,6 +3763,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wcwidth-rust"
+version = "0.1.0"
+
+[[package]]
 name = "win32k-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3903,6 +3920,7 @@ dependencies = [
  "concfg-rust",
  "ntdll-sys",
  "panic-common",
+ "wcwidth-rust",
  "winsrv-sys",
 ]
 

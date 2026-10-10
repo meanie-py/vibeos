@@ -1,3 +1,5 @@
+import pytest
+
 from rustconv import variadic_shim as v
 
 RUST = """\
@@ -90,7 +92,7 @@ def test_a_forwarded_va_list_starts_from_the_trampolines():
     )
     out = variadic_shim.rewrite(src)
     assert out.names == ["PrintString"]
-    assert "let args_va: va_list = *(ap_list as *mut va_list);" in out.text
+    assert "let mut args_va: va_list = *(ap_list as *mut va_list);" in out.text
     assert "va_start!" not in out.text and "va_end!" not in out.text
 
 
@@ -108,3 +110,64 @@ def test_a_sal_annotated_ellipsis_is_still_variadic():
     # bmfd's own DbgPrint: integrate refused to generate its trampoline.
     c = "ULONG\nDbgPrint(IN PCHAR Format, IN ...)\n{\n    return 0;\n}\n"
     assert v.c_variadic_arity(c, "DbgPrint") == 1
+
+
+def test_a_module_local_pointer_typedef_spells_void_star():
+    # cmd's DirPrintf(LPDIRSWITCHFLAGS, ...): the typedef lives in dir.rs, not the island.
+    # integrate lists the twin's own file FIRST, so it resolves and shadows the island.
+    local = "pub type LPDIRSWITCHFLAGS = *mut DIRSWITCHFLAGS;\npub type T = u16;\n"
+    island = "pub type T = u32;\n"
+    maps = v.alias_maps([[local, island]] * 3)
+    assert v.c_primitive("LPDIRSWITCHFLAGS", maps) == "void *"
+    assert v.c_primitive("T", maps) == v.c_primitive("u16", maps)
+    with pytest.raises(ValueError, match="stuck at `LPDIRSWITCHFLAGS`"):
+        v.c_primitive("LPDIRSWITCHFLAGS", v.alias_maps([[island]] * 3))
+
+
+def test_a_va_list_parameter_or_field_type_is_the_pointer_it_is_on_windows():
+    # cmd's ConPrintfVPaging(.., arg_ptr: VaList) and Wine's dbg_vlog field: c_variadic.
+    src = (
+        'pub dbg_vlog: Option<unsafe extern "C" fn(*const c_char, ::core::ffi::VaList) -> c_int>,\n'
+        "fn P(p: BOOL, arg_ptr: ::core::ffi::VaList<'_, '_>) -> BOOL {\n"
+        "    let mut ap: ::core::ffi::VaListImpl;\n}\n"
+    )
+    out, n = v.lower_va_list_types(src)
+    assert n == 2
+    assert "fn(*const c_char, *mut ::core::ffi::c_void)" in out
+    assert "arg_ptr: *mut ::core::ffi::c_void)" in out
+    assert "VaListImpl" in out  # a twin body's walking is the variadic rewrite's
+    # cmd's dir.rs `as *const ::core::ffi::VaList`: never split the path's own `::`.
+    out, n = v.lower_va_list_types("read(p as *const ::core::ffi::VaList)")
+    assert (out, n) == ("read(p as *const *mut ::core::ffi::c_void)", 1)
+
+
+def test_an_existing_twin_loses_its_va_start_even_when_it_is_not_adjacent():
+    # cmd's ErrorMessage_v after the paid fix stage: the list is started inside an `if`.
+    src = (
+        'pub unsafe extern "C" fn ErrorMessage_v(e: DWORD, szFormat: PCWSTR, '
+        "ap_list: *mut ::core::ffi::c_void) {\n"
+        "    let mut arg_ptr: va_list;\n"
+        "    if !szFormat.is_null() {\n"
+        "        va_start!(arg_ptr, szFormat);\n"
+        "        _vswprintf(buf, szFormat, arg_ptr);\n"
+        "        va_end!(arg_ptr);\n"
+        "    }\n}\n"
+    )
+    out, n = v.lower_twin_va_starts(src)
+    assert n == 1
+    assert "arg_ptr = *(ap_list as *mut va_list);" in out
+    assert "va_start!" not in out and "va_end!" not in out
+    assert "let mut arg_ptr: va_list;" in out
+    assert v.lower_twin_va_starts(out) == (out, 0)
+
+
+def test_a_static_variadics_twin_is_still_unmangled():
+    # cmd's `static BOOL DirPrintf(LPDIRSWITCHFLAGS, LPTSTR, ...)`: the trampoline calls
+    # DirPrintf_v by name, so the twin needs #[no_mangle] the definition never had.
+    src = (
+        'unsafe extern "C" fn DirPrintf(f: LPDIRSWITCHFLAGS, s: LPTSTR, mut args: ...)'
+        " -> BOOL {\n    0\n}\n"
+    )
+    out = v.rewrite(src)
+    assert out.names == ["DirPrintf"]
+    assert '#[no_mangle]\nunsafe extern "C" fn DirPrintf_v(' in out.text
