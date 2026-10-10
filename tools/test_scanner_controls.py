@@ -3758,3 +3758,27 @@ def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
     decls, aliases = module.collect(tmp_path)
     hits = [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
     assert hits and all("wide-rust" in h[1] for h in hits)
+
+
+def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
+    """c_data_port's keyboard tables: `VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT
+    /* VK_MEDIA_PREV_TRACK | KBDEXT */ }`. The comment annotates 433 alone (0xB1 | 0x100);
+    pairing the scan code 0x10 with the VK, and an |-list whose KBDEXT the catalog does not
+    know, were 4108 false findings."""
+    spec = importlib.util.spec_from_file_location(
+        "inline_flag_field_control", REPO / "tools/scan_inline_flag_literals.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "t.rs"
+    rs.write_text(
+        "static T: [VSC_VK; 2] = [\n"
+        "    VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT /* VK_MEDIA_PREV_TRACK | KBDEXT */ },\n"
+        "    VSC_VK { Vsc: 0x47 as BYTE, Vk: 3108 as USHORT /* VK_HOME | KNUMS */ },\n"
+        "];\n"
+        "const BAD: u32 = 0x25; // VK_HOME\n"
+    )
+    catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
+    hits = module.scan_file(rs, catalog)
+    assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]
