@@ -1048,6 +1048,33 @@ pub unsafe fn InitSafeBootModeValue() -> ULONG {
     }
 }
 
+#[cfg(target_arch = "x86_64")]
+extern "C" {
+    #[link_name = "__imp_KeNumberProcessors"]
+    static KeNumberProcessors_imp: *const i8;
+}
+#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+extern "C" {
+    #[link_name = "KeNumberProcessors"]
+    static KeNumberProcessors_data: i8;
+}
+
+/// `KeNumberProcessors` (a `CCHAR` DATA export, `@ extern` in ntoskrnl.spec) read by a DRIVER
+/// through its import, as InitSafeBootModeValue is: a plain `extern static` of the name links
+/// on amd64 only by accident and is undefined on i386/arm64 (ndis.sys).
+#[inline(always)]
+pub unsafe fn KeNumberProcessorsValue() -> i8 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        core::ptr::read_volatile(KeNumberProcessors_imp)
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
+    {
+        core::ptr::addr_of!(KeNumberProcessors_data).read_volatile()
+    }
+}
+
 /// haltypes.h `HALDISPATCH` as seen from a DRIVER (never from ntoskrnl itself).
 #[inline(always)]
 unsafe fn driver_hal_dispatch() -> *mut ddk::HAL_DISPATCH {

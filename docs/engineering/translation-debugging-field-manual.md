@@ -14151,6 +14151,27 @@ introduced at any heap exit — it is an external stray write.**
   the GIC INTID from QEMU virt's INTx swizzle (`uefihw.rs`), and the arm64 HAL assigns slot
   resources over ECAM. The arm64 HAL treats a PCI interrupt level as the INTID.
 
+### A time function returns the uptime: `SharedSystemTime` is 0x7FFE0008
+- **Symptom:** a driver's "current system time" is a small number that grows from boot, and
+  only while a process with the user shared page is current.
+- **Cause:** amd64/arm64 `KeQuerySystemTime` is a macro over `KI_USER_SHARED_DATA + 0x14`
+  (SystemTime, kernel address 0xFFFFF78000000014). storport's glue declared `SharedSystemTime
+  = 0x7ffe0008`, which is +0x8 (InterruptTime) at the USER-mode address, and `port resolve`
+  copied it into ndis as tree consensus, shadowing the island's correct per-arch constant.
+- **Fix:** call `KeQuerySystemTime` (ntkrnl-sys `inline::ke` on amd64/arm64, the export on
+  i386), as the C does. `resolve` no longer copies a name any island arch defines.
+
+### A driver links on amd64 and says `undefined symbol: KeNumberProcessors` on i386/arm64
+- **Symptom:** `ld.lld: error: undefined symbol: KeNumberProcessors` (arm64) or
+  `_KeNumberProcessors: i386 cdecl -- missing symbol` (i386), referenced from a Rust driver
+  crate's `.refptr`; the same crate links on amd64.
+- **Cause:** a DATA export (`@ extern KeNumberProcessors` in ntoskrnl.spec) read through a plain
+  `extern { static X: T; }`, which is what every bindgen island declares. The import library
+  has only `__imp_X`; amd64's linker auto-imports the plain name, i386 and arm64 do not.
+- **Fix:** read it through the import, per arch, as `ntkrnl_sys::inline::common::
+  InitSafeBootModeValue` / `KeNumberProcessorsValue` do (`__imp_X` pointer on amd64, a
+  `raw-dylib` data import on i386/arm64). ndis.sys hit it twice.
+
 ### A NIC works through NDIS on x86 and calls address 0 on arm64
 - **Symptom:** `ndisprobe` with an e1000 on arm64: bind, MAC and filter pass, then the first
   send bugchecks 0x1E with `TrapFrame.Pc = 0`, `TrapFrame.Lr = ndis.sys!ProSend`. The same

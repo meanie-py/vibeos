@@ -171,6 +171,25 @@ def test_a_callback_parameter_arrow_does_not_end_the_slot(tmp_path):
     assert "(This, cb, n)" in out and out.split("{")[0].rstrip().endswith("-> HRESULT")
 
 
+def test_pointer_typedef_arithmetic_steps_elements(monkeypatch):
+    """ndis's NDIS_GET_PACKET_STATUS: `(PUCHAR)p + NdisPacketOobOffset` is pointer
+    arithmetic; a bare `+` on `*mut u8` does not compile, and PUCHAR names no `*`."""
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR", "PNDIS_PACKET_OOB_DATA"})
+    out = lower_expansion(
+        "((PNDIS_PACKET_OOB_DATA)((PUCHAR)(__rcv_p0__) + "
+        "(__rcv_p0__)->Private.NdisPacketOobOffset))->Status",
+        {"PUCHAR", "PNDIS_PACKET_OOB_DATA"},
+    )
+    assert ".wrapping_add(((*$p0).Private.NdisPacketOobOffset) as usize)" in out
+    assert " + (*$p0)" not in out
+
+
+def test_pointer_minus_pointer_is_refused(monkeypatch):
+    monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR"})
+    with pytest.raises(LowerError):
+        lower_expansion("(PUCHAR)(__rcv_p0__) - (PUCHAR)(__rcv_p1__)", {"PUCHAR"})
+
+
 def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
     """winuser.h makes `SetWindowLongPtrW` a macro on i386 only. One arch's expansion is not
     unanimity: notepad's 64-bit subclassing was routed through the 32-bit SetWindowLongW."""

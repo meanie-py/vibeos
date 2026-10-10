@@ -1734,6 +1734,8 @@ pub unsafe extern "system" fn StorPortPauseDevice(
     return 0 as BOOLEAN;
 }
 
+// storport.c: `#if defined(_M_AMD64)` -- the export exists on amd64 only (storport.spec).
+#[cfg(target_arch = "x86_64")]
 #[no_mangle]
 pub unsafe extern "system" fn StorPortQuerySystemTime(mut CurrentTime: PLARGE_INTEGER) {
     if DbgPrint(
@@ -1751,7 +1753,10 @@ pub unsafe extern "system" fn StorPortQuerySystemTime(mut CurrentTime: PLARGE_IN
             1256 as ::core::ffi::c_int,
         );
     }
-    *(CurrentTime as *mut ULONG64) = *(SharedSystemTime as *const ULONG64);
+    // The C calls KeQuerySystemTime. This read `SharedSystemTime` = 0x7FFE0008, which is
+    // KUSER_SHARED_DATA.InterruptTime at its USER-mode address: it returned the uptime as the
+    // system time (and only worked while the current process maps the user page).
+    ntkrnl_sys::inline::ke::KeQuerySystemTime(CurrentTime as *mut _);
 }
 
 #[no_mangle]

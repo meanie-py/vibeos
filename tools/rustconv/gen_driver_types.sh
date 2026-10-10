@@ -3258,6 +3258,38 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x600 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_WINE -D__ROS_LONG64__ -D_COMCTL32_ -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  ndis)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-09 from drivers/network/ndis/CMakeLists.txt
+    # (21 compiled TU(s), 86 headers in the include closure, 27 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=0
+    REAL_UNIONS=1
+    DRIVER_DIR="${SRC}/drivers/network/ndis"
+    WRAPPER_INC=$'#include "ndissys.h"\n#include <afilter.h>\n#include <atm.h>\n#include <ndissys.h>\n#include <ndistapi.h>\n#include <ntifs.h>\n#include <ntdef.h>\n#include <initguid.h>\n#include <ioevent.h>\n#include <wdmguid.h>\n#include <ndisguid.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]afilter\.h' --allowlist-file '.*[/\\]atm\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]ioevent\.h'
+                  --allowlist-file '.*[/\\]ndis\.h'
+                  --allowlist-file '.*[/\\]ndisguid\.h'
+                  --allowlist-file '.*[/\\]ndistapi\.h'
+                  --allowlist-file '.*[/\\]wdmguid\.h'
+                  --allowlist-file '.*ndis[/\\].*\.h'
+                  --allowlist-file '.*[/\\]buffer\.h'
+                  --allowlist-file '.*[/\\]efilter\.h'
+                  --allowlist-file '.*[/\\]guiddef\.h'
+                  --allowlist-file '.*[/\\]miniport\.h'
+                  --allowlist-file '.*[/\\]ntddk\.h'
+                  --allowlist-file '.*[/\\]ntddndis\.h'
+                  --allowlist-file '.*[/\\]ntdef\.h'
+                  --allowlist-file '.*[/\\]protocol\.h'
+                  --allowlist-file '.*[/\\]wdm\.h' )
+    EXTRA_INC=( -I"${SRC}/drivers/network/ndis" -I"${SRC}/drivers/network/ndis/include" -I"${SRC}/build-i386/drivers/network/ndis" -I"${SRC}/drivers/network/ndis/include" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DNDIS_WRAPPER -DNDIS51 -DNDIS51_MINIPORT -DNDIS_MINIPORT_DRIVER -DNDIS_LEGACY_DRIVER=1 -DNDIS_LEGACY_MINIPORT=1 -DNDIS_LEGACY_PROTOCOL=1 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   notepad)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-09 from base/applications/notepad/CMakeLists.txt
     # (5 compiled TU(s), 165 headers in the include closure, 70 switch constant(s)).
@@ -3486,10 +3518,18 @@ run_arch() {
 import sys, re
 raw, final = sys.argv[1], sys.argv[2]
 s = open(raw).read()
-local = set(re.findall(r"^pub (?:struct|enum|union|type) (_[A-Za-z0-9_]+)", s, re.M))
-out = [ln for ln in s.splitlines(keepends=True)
-       if not (re.match(r"^pub use self::(_[A-Za-z0-9_]+) as [A-Za-z0-9_]+;", ln)
-               and re.match(r"^pub use self::(_[A-Za-z0-9_]+) as", ln).group(1) not in local)]
+local = set(re.findall(r"^pub (?:struct|enum|union|type) ([A-Za-z0-9_]+)", s, re.M))
+out = []
+for ln in s.splitlines(keepends=True):
+    m = re.match(r"^pub use self::([A-Za-z0-9_]+) as ([A-Za-z0-9_]+);", ln)
+    if m and m.group(1) not in local:
+        if m.group(1).startswith("_"):
+            continue
+        # ndis.h: `typedef KINTERRUPT_MODE NDIS_INTERRUPT_MODE;` -- the ALIAS is the
+        # module-specific name (no kernel crate carries it), so keep it as a type alias, which
+        # may name a glob-imported item where a re-export may not.
+        ln = f"pub type {m.group(2)} = {m.group(1)};\n"
+    out.append(ln)
 open(final, "w").write("".join(out))
 ' "$RAW" "$FINAL"
   # C++ drivers (LANG_ARGS has `-x c++`): the driver's OWN functions are declared without
@@ -3514,7 +3554,7 @@ open(final, "w").write("".join(out))
   # of bindgen as opaque padding; restore them by name from the driver's own headers. A no-op
   # for every driver whose headers have none. See the tool.
   python3 "$(dirname "$0")/bindgen_ms_anon_members.py" "$FINAL" "${DRIVER_DIR}"/*.h \
-    "${SRC}"/sdk/include/reactos/drivers/ata/*.h
+    "${SRC}"/sdk/include/reactos/drivers/ata/*.h "${SRC}"/sdk/include/ddk/ndis.h
   # MACRO_SIGNED post-pass: re-force the genuinely-DWORD/IN_ADDR high-bit consts back to u32.
   # Under --default-macro-constant-type signed these flip to negative i32 (same bits) but are
   # used in u32 contexts (IN_ADDR.s_addr masks, DeviceIoControl ioctl codes, DWORD timeouts) —

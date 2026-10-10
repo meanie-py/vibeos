@@ -245,9 +245,16 @@ def crate_live_files(crate_dir, _cache={}):  # noqa: B006 — deliberate memo ca
         fdir = os.path.dirname(f)
         stem = os.path.splitext(os.path.basename(f))[0]
         base = fdir if stem in ("lib", "main", "mod") else os.path.join(fdir, stem)
-        for _name, paths in paths_by_name:
+        # A `#[path]` inside an INLINE module resolves against that module's directory (the
+        # Rust reference: the file's directory, plus `stem/` for a non-mod-rs file, plus the
+        # inline module names). ndis's `pub mod ndis { #[path = "30stubs.rs"] pub mod
+        # _30stubs; }` is src/ndis/30stubs.rs, and read as src/30stubs.rs it was an orphan.
+        encl_of = {name: encl for name, encl in declarations}
+        for name, paths in paths_by_name:
+            encl = inline + encl_of.get(name, [])
+            pdir = os.path.join(base, *encl) if encl else fdir
             for rel in paths:
-                queue.append((os.path.normpath(os.path.join(fdir, rel)), []))
+                queue.append((os.path.normpath(os.path.join(pdir, rel)), []))
         for include in includes:
             queue.append((os.path.normpath(os.path.join(fdir, include)), []))
         for name, encl in declarations:
