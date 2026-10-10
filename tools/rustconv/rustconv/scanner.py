@@ -1829,7 +1829,7 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
         from .dead_regions import never_compiled_lines as _ncl
 
         text0 = _apply_local_renames(raw) if renames else raw
-        dead0 = _ncl(text0, _pinned_ints(path))
+        dead0 = _ncl(text0, *_scan_switches(path, raw))
         live0 = "\n".join("" if n in dead0 else ln for n, ln in enumerate(text0.splitlines(), 1))
         lost0 = _cf(live0) - {f.name for f in result.functions}
         return _scan_live(path, live0, result, lost0)
@@ -1844,7 +1844,7 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
     from .dead_regions import never_compiled_lines
 
     live_raw = _apply_local_renames(raw) if renames else raw
-    dead = never_compiled_lines(live_raw, _pinned_ints(path))
+    dead = never_compiled_lines(live_raw, *_scan_switches(path, raw))
     live = "\n".join("" if n in dead else ln for n, ln in enumerate(live_raw.splitlines(), 1))
     have = {f.name for f in result.functions}
     lost = c_functions(live) - have
@@ -1879,6 +1879,21 @@ def _pinned_ints(path: Path) -> dict[str, int]:
         except (TypeError, ValueError):
             continue
     return out
+
+
+def _scan_switches(path: Path, raw: str) -> tuple[dict[str, int], frozenset[str]]:
+    """The dead-line decision the scan itself makes: the module's pinned `-D` ints plus the
+    TU's own switches (tu_switches: file-scope `#define`s ON, `//#define` toggles OFF,
+    cmd.exe's config.h included). A "lost" definition is only lost if it is live by THESE --
+    filecomp.c's CompleteUnix sits under a config.h toggle that is off."""
+    pinned = _pinned_ints(path)
+    defined, off = tu_switches(path, raw)
+    for k, v in defined.items():
+        try:
+            pinned.setdefault(k, int(str(v).rstrip("uUlL") or "1", 0))
+        except ValueError:
+            pinned.setdefault(k, 1)
+    return pinned, off
 
 
 def _scan_live(path: Path, live: str, result: ScanResult, lost: set[str]) -> ScanResult:

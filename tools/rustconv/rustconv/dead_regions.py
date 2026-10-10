@@ -183,7 +183,10 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
 
 
 def cond_truth(
-    line: str, pinned: dict[str, int] | None = None, local: frozenset[str] = frozenset()
+    line: str,
+    pinned: dict[str, int] | None = None,
+    local: frozenset[str] = frozenset(),
+    off: frozenset[str] = frozenset(),
 ) -> bool | None:
     """``True``/``False`` when a preprocessor condition is FIXED for this tree, else ``None``.
 
@@ -205,6 +208,8 @@ def cond_truth(
         sym = rest.split()[0] if rest.split() else ""
         if sym in KNOWN_DEFINED or sym in local or (pinned and sym in pinned):
             return kind == "ifdef"
+        if sym in off:
+            return kind == "ifndef"
         return None
     if re.fullmatch(r"\(?\s*0+\s*\)?", rest):
         return False
@@ -215,13 +220,17 @@ def cond_truth(
         m2.group(2) in KNOWN_DEFINED or m2.group(2) in local or (pinned and m2.group(2) in pinned)
     ):
         return m2.group(1) is None
+    if m2 and m2.group(2) in off:
+        return m2.group(1) is not None
     return eval_int_guard(rest, pinned or {})
 
 
 _LOCAL_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*(define|undef)[ \t]+([A-Za-z_]\w*)\b(?!\()")
 
 
-def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set[int]:
+def never_compiled_lines(
+    text: str, pinned: dict[str, int] | None = None, off: frozenset[str] = frozenset()
+) -> set[int]:
     """The 1-based line numbers this tree's compiler never sees.
 
     A function whose definition starts on one of these lines does not exist in any object
@@ -262,7 +271,7 @@ def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set
             continue
         directive = m.group(1)
         if directive in ("if", "ifdef", "ifndef"):
-            truth = cond_truth(line, pinned, frozenset(local))
+            truth = cond_truth(line, pinned, frozenset(local), off - local)
             stack.append((truth is False, truth is not None, truth is True))
         elif directive in ("else", "elif") and stack:
             _, known, taken = stack[-1]
