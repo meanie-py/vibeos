@@ -193,6 +193,35 @@ def _missing_boot_drivers(arch: str) -> list[str]:
     return missing
 
 
+def _missing_computer_files(arch: str) -> list[str]:
+    """[Files.<computer>] rows, for every computer type this arch offers, naming a source the
+    CD does not carry. Setup picks the type by hardware detection and copies that row's
+    kernel and HAL; a missing source is logged and skipped, so the install "succeeds" with
+    no hal.dll (i386's rows named upstream's halacpi/halapic flavors, which this tree never
+    builds) and the installed disk cannot boot.
+    """
+    listing = (_build(arch) / "boot" / "bootcdregtest.stripped.lst").read_text().lower()
+    on_cd = set(re.findall(r"/([^/=\n]+)=", listing))
+    nt = {"amd64": "ntamd64", "i386": "ntx86"}[base_arch(arch)]
+    section, types, files = "", set(), {}
+    for raw in (
+        (PROJECT_DIR / "boot" / "bootdata" / "txtsetup.sif").read_text("latin-1").splitlines()
+    ):
+        line = raw.split(";")[0].strip()
+        if line.startswith("["):
+            section = line.strip("[]").lower()
+        elif "=" in line and section == f"computer.{nt}":
+            types.add(line.split("=", 1)[0].strip().lower())
+        elif "=" in line and section.startswith("files."):
+            files.setdefault(section[len("files.") :], []).append(line.split("=", 1)[0].strip())
+    return sorted(
+        f"{kind}: {name}"
+        for kind in types
+        for name in files.get(kind, [])
+        if name.lower() not in on_cd
+    )
+
+
 def _uninstalled_service_images(arch: str) -> list[str]:
     """hivesys.inf services whose image the CD carries but setup never copies to the disk.
 
@@ -301,6 +330,8 @@ def install_disk(arch: str, tmp_path_factory: pytest.TempPathFactory) -> Path:
     )
     missing = _missing_boot_drivers(arch)
     assert not missing, f"txtsetup.sif lists boot drivers the CD does not carry: {missing}"
+    computer = _missing_computer_files(arch)
+    assert not computer, f"txtsetup.sif computer types name files the CD lacks: {computer}"
     images = _uninstalled_service_images(arch)
     assert not images, f"hive services whose image setup never installs: {images}"
     services = _missing_display_services()
