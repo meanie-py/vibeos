@@ -1237,6 +1237,47 @@ impl CStringW {
         self.GetBuffer(need)
     }
 
+    /// `Replace(XCHAR chOld, XCHAR chNew)` -- cstringt.h:925, line for line. FindChar is
+    /// `wcschr`: it stops at the terminator, so a `|` -> NUL pass (mspaint's file filter
+    /// strings) works left to right and the length stays nLength, embedded NULs included.
+    pub unsafe fn Replace(&mut self, chOld: WCHAR, chNew: WCHAR) -> i32 {
+        unsafe fn find_char(mut p: *mut WCHAR, ch: WCHAR) -> *mut WCHAR {
+            loop {
+                if *p == ch {
+                    return p;
+                }
+                if *p == 0 {
+                    return core::ptr::null_mut();
+                }
+                p = p.add(1);
+            }
+        }
+        if self.m_pszData.is_null() {
+            return 0; // GetString() is L"": nothing to find
+        }
+        let pszString = self.m_pszData;
+        let mut pszFirst = find_char(pszString, chOld);
+        if pszFirst.is_null() {
+            return 0;
+        }
+        let nLength = self.m_nLength;
+        let mut nCount = 0;
+        let pszBuffer = self.GetBuffer(nLength);
+        pszFirst = pszBuffer.offset(pszFirst.offset_from(pszString));
+        loop {
+            *pszFirst = chNew;
+            nCount += 1;
+            pszFirst = find_char(pszFirst.add(1), chOld);
+            if pszFirst.is_null() {
+                break;
+            }
+        }
+        // ReleaseBufferSetLength(nLength)
+        self.m_nLength = nLength;
+        *self.m_pszData.add(nLength as usize) = 0;
+        nCount
+    }
+
     /// `FormatV(PCXSTR pszFormat, va_list args)` -- cstringt.h:846: the length from
     /// `_vscwprintf`, then `_vswprintf` into `GetBuffer(nLength)`, then
     /// `ReleaseBufferSetLength(nLength)`. `args` is the caller's `va_list` VALUE (a single

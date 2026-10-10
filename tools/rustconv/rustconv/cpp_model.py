@@ -362,6 +362,9 @@ EXTERNAL_CLASSES = {
     # ReactOS's RAII wait cursor: its ctor/dtor swap the cursor, so it must be modeled, not
     # stubbed. Its static members are DECLSPEC_SELECTANY zero/NULL.
     "CWaitCursor": "sdk/include/reactos/ui/CWaitCursor.h",
+    # atlimage.h: mspaint calls CImage's STATIC GetImporterFilterString/
+    # GetExporterFilterString (GDI+ codec lists); only what is reached is translated.
+    "CImage": "sdk/lib/atl/atlimage.h",
 }
 # ATL's window templates are, for layout and member lookup, their CWindow: the template's own
 # machinery (thunk, Create, DefWindowProc, message routing) is atl_rust::win plus the per-class

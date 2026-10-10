@@ -1328,6 +1328,7 @@ def _flatten_island_ns(text: str, island_names: frozenset[str]) -> str:
     return re.sub(r"\b[A-Za-z_]\w*(?:::[A-Za-z_]\w*)+\b", fix, text)
 
 
+_QUALIFIED_CALL_RE = re.compile(r"\b\w+::\s*([A-Za-z_]\w*)\s*\(")
 _CALL_RE = re.compile(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*\(")
 
 
@@ -1349,7 +1350,7 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
     joined = "\n".join(texts)
     called = set(_CALL_RE.findall(joined))
     # A static call is `Class::name(` (CWaitCursor::IsWaiting()), not `.name(`.
-    called |= set(re.findall(r"\b\w+::\s*([A-Za-z_]\w*)\s*\(", joined))
+    called |= set(_QUALIFIED_CALL_RE.findall(joined))
     # A module class on PLAIN CWindow (CPaintToolBar : CWindow) calls ATL's own Create; only
     # CWindowImpl/CDialogImpl subclasses have glue answering those names.
     plain_cwindow = any(
@@ -1375,6 +1376,8 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
             for m in c.methods:
                 if (c.name, m.rust_name) in new:
                     called |= set(_CALL_RE.findall(m.lowered or ""))
+                    # and its static calls, lowered `CImage::InitGDIPlus()`
+                    called |= set(_QUALIFIED_CALL_RE.findall(m.lowered or ""))
 
 
 def _c_declarator(c_type: str, name: str) -> str:

@@ -138,7 +138,10 @@ class Lowerer:
             elif k == "DeclRefExpr":
                 self._static_ref(n, f, lo, hi, edits)
             elif k in ("CXXMemberCallExpr", "CallExpr"):
-                self._defaults(n, put, f, lo, hi, edits)
+                # Into `late`: a default argument goes after the LAST written argument, and
+                # that argument's own edits at the same offset (a conversion's
+                # `).op_to_HWND()`) must land in front of it, i.e. be discovered first.
+                self._defaults(n, put, f, lo, hi, late)
             elif k == "CXXNewExpr":
                 self._new(n, put, f, lo, hi, edits)
             elif k == "CXXDeleteExpr":
@@ -163,7 +166,9 @@ class Lowerer:
             for key in ("inner",):
                 walk(n.get(key, []), n)
 
+        late: list = []
         walk(node)
+        edits.extend(late)
         return Lowered(_apply(text, edits), unplaced)
 
     # -- rules -------------------------------------------------------------------------
