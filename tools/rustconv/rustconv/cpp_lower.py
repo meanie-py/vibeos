@@ -114,12 +114,21 @@ class Lowerer:
         edits: list[tuple[int, int, str]] = []
         unplaced: list[str] = []
 
+        placed: set[tuple[int, int, str]] = set()
+
         def put(loc: dict, length: int | None, repl: str, what: str) -> None:
             t = _tok(loc, f, lo, hi)
             if t is None:
                 unplaced.append(what)
                 return
-            edits.append((t[0] - lo, t[1] if length is None else length, repl))
+            edit = (t[0] - lo, t[1] if length is None else length, repl)
+            # A macro that repeats its argument (`min(a, b)` expands `b` twice) yields one
+            # AST node per copy, all spelled at the same token: one edit, not one per copy.
+            # history.cpp's `min(pt.x, GetWidth())` became `this_->this_->this_->this_->`.
+            if edit in placed:
+                return
+            placed.add(edit)
+            edits.append(edit)
 
         def walk(n: object, parent: dict | None = None) -> None:
             if isinstance(n, list):
@@ -137,6 +146,8 @@ class Lowerer:
                 self._member(n, put, this_class)
             elif k == "DeclRefExpr":
                 self._static_ref(n, f, lo, hi, edits)
+            elif k == "CallExpr" and self._fn_pointer_member_call(n, f, lo, hi, edits):
+                self._defaults(n, put, f, lo, hi, late)
             elif k in ("CXXMemberCallExpr", "CallExpr"):
                 # Into `late`: a default argument goes after the LAST written argument, and
                 # that argument's own edits at the same offset (a conversion's
@@ -234,6 +245,29 @@ class Lowerer:
             return False
         cls = info.owner.split("::")[-1]
         edits.append((span[0], name[0] - lo - span[0] + name[1], f"{cls}::{info.rust_name}"))
+        return True
+
+    def _fn_pointer_member_call(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
+        """`p->m_fn(args)` where `m_fn` is a DATA member of function-pointer type
+        (atlimagedx.h's `_shared()->m_GetImageHorizontalResolution(..)`, CInitGDIPlus's
+        Startup/...): a call THROUGH the field, written `(p->m_fn)(args)` so it does not
+        read as a method call -- a worker turned it into `(*p).m_fn(..)`, a method that
+        does not exist."""
+        callee = (n.get("inner") or [{}])[0]
+        while callee.get("kind") in ("ImplicitCastExpr", "ParenExpr") and callee.get("inner"):
+            if callee.get("kind") == "ParenExpr":
+                return False  # already `(p->m_fn)(..)`
+            callee = callee["inner"][0]
+        if callee.get("kind") != "MemberExpr":
+            return False
+        qt = callee.get("type", {}).get("qualType", "")
+        if "(*)" not in qt and not re.search(r"\bFN_|\bFUN_|PROC\b", qt):
+            return False
+        span = _node_span(callee, f, lo, hi)
+        if span is None:
+            return False
+        edits.append((span[0], 0, "("))
+        edits.append((span[1], 0, ")"))
         return True
 
     def _conversion(self, n: dict, f: str, lo: int, hi: int, edits) -> dict | None:
@@ -540,6 +574,18 @@ def _apply(text: str, edits: list[tuple[int, int, str]]) -> str:
     """Apply right to left. Two insertions at one offset keep their discovery order: the
     later one is applied first, so the earlier one ends up in front of it."""
     out = text
+    # An identical REPLACEMENT twice is one macro argument seen once per expansion copy
+    # (`min(a, b)` repeats `b`): applying it twice would replace text it already replaced.
+    # Identical insertions can be legitimate (nested conversions each insert `(`), so only
+    # `put` dedupes those, for the member-path edits that are known to come from copies.
+    seen: set[tuple[int, int, str]] = set()
+    kept = []
+    for e in edits:
+        if e[1] > 0 and e in seen:
+            continue
+        seen.add(e)
+        kept.append(e)
+    edits = kept
     for i in sorted(range(len(edits)), key=lambda i: (edits[i][0], i), reverse=True):
         off, length, repl = edits[i]
         out = out[:off] + repl + out[off + length :]
