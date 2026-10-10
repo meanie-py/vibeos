@@ -2592,9 +2592,14 @@ pub unsafe extern "system" fn MmArmAccessFault(
     MiUnlockProcessWorkingSet(CurrentProcess, CurrentThread);
 
     if Status == STATUS_NO_MEMORY {
+        // The C retries here (goto UserFault). Deliberately not: with no commit
+        // limit and no pagefile, out of pages means out for good until a process
+        // exits, and a retrying fault never lets one. Retrying every user fault
+        // turned exhaustion into a whole-machine stall (appstorm and explorer
+        // parked in faults for 2h at 768M, 20261010-054207-p5m0hi2a). Failing the
+        // fault kills only the starving app, whose exit frees the pages that
+        // kernel-internal waiters (MiMakeSystemAddressValid) retry for.
         MmRebalanceMemoryConsumersAndWait();
-        // Note: C code does goto UserFault to retry, but for now just return the error.
-        // This is acceptable since STATUS_NO_MEMORY during boot is very rare.
     }
 
     Status

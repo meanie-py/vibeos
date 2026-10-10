@@ -324,6 +324,11 @@ unsafe fn scan(next: &mut [Sighting; MAX_SIGHTINGS], next_count: &mut usize) {
                 if stuck {
                     if state == GateWait {
                         report(eproc, kthread, object);
+                        // Where it parked: a gate wait named only a tid, which for a
+                        // System thread is nothing (low-memory stall, 2026-10-10).
+                        // ETHREAD.StartAddress is no substitute on arm64: it read back
+                        // a wait-path return address, and 0x7ff00000000 for user threads.
+                        report_stack(kthread);
                         reported += 1;
                     } else {
                         // Histogram every repeat; name only the kernel-lock
