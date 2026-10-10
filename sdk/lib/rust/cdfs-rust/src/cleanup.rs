@@ -37,7 +37,7 @@ extern "C" {
     fn CdAcquireFileExclusive(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
 }
 extern "C" {
-    fn CdBugCheck(Arg1: u32, Arg2: u32, Arg3: u32);
+    fn CdBugCheck(Arg1: usize, Arg2: usize, Arg3: usize);
 }
 extern "C" {
     fn CdCheckForDismount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Arg: u32) -> u32;
@@ -279,7 +279,7 @@ pub unsafe extern "C" fn CdCommonCleanup(
                     }
                     UserVolumeOpen => { }
                     _ => {
-                        CdBugCheck(TypeOfOpen, 0, 0);
+                        CdBugCheck(TypeOfOpen as usize, 0, 0);
                     }
                 }
 

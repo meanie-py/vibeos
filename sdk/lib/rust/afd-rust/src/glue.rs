@@ -43,6 +43,15 @@ pub type _FILE_OBJECT = FILE_OBJECT;
 
 // --- TDI flags (tdi.h) — not in the kernel bindgen -------------------------
 pub const TDI_RECEIVE_NORMAL: u32 = 0x00000020;
+
+/// tdi.h `TDI_ADDRESS_INFO`, the TdiQueryInformation(TDI_QUERY_ADDRESS_INFO) output; hand-written
+/// for the same reason as TDI_ADDRESS_IP: no -sys island carries tdi.h.
+#[repr(C)]
+pub struct TDI_ADDRESS_INFO {
+    pub ActivityCount: ULONG,
+    pub Address: crate::types::TRANSPORT_ADDRESS,
+}
+pub type PTDI_ADDRESS_INFO = *mut TDI_ADDRESS_INFO;
 pub const TDI_RECEIVE_PEEK: u32 = 0x00000080;
 pub const TDI_DISCONNECT_ABORT: u32 = 0x0002;
 pub const TDI_DISCONNECT_RELEASE: u32 = 0x0004;

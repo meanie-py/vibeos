@@ -12,6 +12,7 @@ static mut free_timeouts: *mut timeout = core::ptr::null_mut();
 pub static mut bootp_packet_handler: Option<unsafe extern "C" fn(*mut interface_info, *mut dhcp_packet, i32, u32, iaddr, *mut hardware)> = None;
 
 // ---- dispatch ----
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 #[no_mangle]
 pub unsafe extern "system" fn dispatch(hStopEvent: HANDLE) {
     let mut count: i32;
@@ -112,6 +113,7 @@ pub unsafe extern "system" fn dispatch(hStopEvent: HANDLE) {
 }
 
 // ---- add_timeout ----
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 pub unsafe fn add_timeout(when: time_t, where_: unsafe extern "C" fn(*mut core::ffi::c_void), what: *mut core::ffi::c_void) {
     let mut t: *mut _timeout;
     let mut q: *mut _timeout;
@@ -182,6 +184,7 @@ pub unsafe fn add_timeout(when: time_t, where_: unsafe extern "C" fn(*mut core::
 }
 
 // ---- cancel_timeout ----
+#[allow(unpredictable_function_pointer_comparisons)] // FNPTR-CMP(audited): intentional identity compare mirroring the C source; revisit -> core::ptr::fn_addr_eq (see docs/engineering/active-lanes/warnings-burndown-plan.md)
 pub unsafe fn cancel_timeout(where_: unsafe extern "C" fn(*mut core::ffi::c_void), what: *mut core::ffi::c_void) {
     let mut t: *mut timeout = core::ptr::null_mut();
     let mut q: *mut timeout = timeouts;

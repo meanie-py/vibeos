@@ -435,7 +435,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 //   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
 //   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
 const CDFS_FILE_SYSTEM: u32 = 0x26;
-#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: u32, B: u32, C: u32) {
+#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: usize, B: usize, C: usize) {
     KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
 }
 

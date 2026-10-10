@@ -134,6 +134,19 @@ pub const IOCTL_AFD_DEFER_ACCEPT: u32 = afd_ctl(35, 3);
 pub const IOCTL_AFD_GET_PENDING_CONNECT_DATA: u32 = afd_ctl(41, 3);
 pub const IOCTL_AFD_VALIDATE_GROUP: u32 = afd_ctl(42, 3);
 pub const IOCTL_AFD_SUPER_CONNECT: u32 = afd_ctl(49, 3);
+pub const IOCTL_AFD_SUPER_ACCEPT: u32 = afd_ctl(32, 3);
+
+/// shared.h `AFD_SUPER_ACCEPT_INFO` (upstream a68bfa2fb41, newer than the bindgen islands).
+#[repr(C)]
+#[derive(Copy, Clone)]
+pub struct AFD_SUPER_ACCEPT_INFO {
+    pub SanActive: BOOLEAN,
+    pub FixAddressAlignment: BOOLEAN,
+    pub AcceptHandle: HANDLE,
+    pub ReceiveDataLength: ULONG,
+    pub LocalAddressLength: ULONG,
+    pub RemoteAddressLength: ULONG,
+}
 
 // --- Win32 value-macros (LOBYTE/HIBYTE/MAKEWORD/MAKELONG/WSAMAKESELECTREPLY/IsEqualGUID) -
 // The C source uses these as call expressions, so they're inline fns (not macro_rules).
@@ -254,6 +267,5 @@ pub use crate::misc::sndrcv::{
     WSPSendDisconnect, WSPSendTo,
 };
 pub use crate::misc::stubs::{
-    WSPAcceptEx, WSPCancelBlockingCall, WSPDisconnectEx, WSPGetAcceptExSockaddrs, WSPGetQOSByName,
-    WSPJoinLeaf,
+    WSPCancelBlockingCall, WSPDisconnectEx, WSPGetQOSByName, WSPJoinLeaf,
 };

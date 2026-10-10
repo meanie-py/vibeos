@@ -499,9 +499,12 @@ BOOLEAN IsFileWriteThrough(PFILE_OBJECT f, PDEVICE_OBJECT d)
 /* IsBpbFat32: now implemented in Rust (verfysup.rs). The old stub here read
  * a GUESSED offset (+28 = HiddenSectors) instead of RootEntries (+6). */
 
-VOID CanFsdWait(PIRP_CONTEXT IrpContext)
+/* fatprocs.h: #define CanFsdWait(IRP) IoIsOperationSynchronous(Irp). This was a VOID no-op
+ * taking an IrpContext, so all 14 Rust callers built their IrpContext's Wait flag from
+ * whatever was left in the return register. */
+BOOLEAN CanFsdWait(PIRP Irp)
 {
-    (void)IrpContext; /* no-op; real semantics in strucsup.rs */
+    return IoIsOperationSynchronous(Irp);
 }
 
 /* ======================================================================

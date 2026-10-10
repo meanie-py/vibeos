@@ -323,7 +323,7 @@ unsafe extern "C" fn str_array_push(
     len: core::ffi::c_int,
     a: *mut array,
 ) -> u8 {
-    let mut new: *mut *mut core::ffi::c_char;
+    let new: *mut *mut core::ffi::c_char;
 
     assert!(!ptr.is_null());
     assert!(!a.is_null());
@@ -368,7 +368,7 @@ unsafe extern "C" fn str_array_get_ref(cref: *mut array, idx: u32) -> *mut i8 {
     *(*cref).elts.offset(((*cref).start + idx) as isize)
 }
 unsafe extern "C" fn get_number(sym: *mut parsed_symbol) -> *const i8 {
-    let mut ptr: *mut i8;
+    let ptr: *mut i8;
     let mut sgn: u8 = FALSE;
 
     if *(*sym).current == b'?' as i8 {
@@ -422,7 +422,7 @@ unsafe extern "C" fn get_args(
     let mut ct: datatype_t = core::mem::zeroed();
     let mut arg_collect: array = core::mem::zeroed();
     let mut args_str: *mut core::ffi::c_char = core::ptr::null_mut();
-    let mut last: *mut core::ffi::c_char;
+    let last: *mut core::ffi::c_char;
     let mut i: core::ffi::c_uint;
     let mut p: *const core::ffi::c_char;
 
@@ -613,7 +613,7 @@ unsafe extern "C" fn get_extended_qualifier(sym: *mut parsed_symbol, xdt: *mut d
 }
 unsafe extern "C" fn get_qualifier(sym: *mut parsed_symbol, xdt: *mut datatype_t, pclass: *mut *const i8) -> u8 {
     let ch: i8;
-    let mut qualif: *const i8;
+    let qualif: *const i8;
 
     get_extended_qualifier(sym, xdt);
     ch = *(*sym).current;
@@ -1058,7 +1058,7 @@ unsafe extern "C" fn demangle_datatype(
     ct: *mut datatype_t,
     flags: datatype_flags,
 ) -> u8 {
-    let mut dt: i8;
+    let dt: i8;
 
     assert!(!ct.is_null());
     (*ct).left = core::ptr::null();
@@ -1384,7 +1384,7 @@ unsafe extern "C" fn handle_data(sym: *mut parsed_symbol) -> u8 {
         flags: 0,
     };
     let mut ct: datatype_t = core::mem::zeroed();
-    let mut name: *mut i8;
+    let name: *mut i8;
     let mut ret: u8 = FALSE;
 
     'done: {
@@ -1432,7 +1432,7 @@ unsafe extern "C" fn handle_data(sym: *mut parsed_symbol) -> u8 {
                     break 'done;
                 }
                 if *(*sym).current != (b'@') as i8 {
-                    let mut cls: *mut i8;
+                    let cls: *mut i8;
 
                     cls = get_class_name(sym);
                     if cls.is_null() {
@@ -1476,7 +1476,7 @@ unsafe extern "C" fn handle_data(sym: *mut parsed_symbol) -> u8 {
     ret
 }
 unsafe extern "C" fn handle_method(sym: *mut parsed_symbol, cast_op: u8) -> u8 {
-    let mut accmem: i8;
+    let accmem: i8;
     let mut access: *const i8 = core::ptr::null();
     let mut access_id: i32 = -1;
     let mut member_type: *const i8 = core::ptr::null();
