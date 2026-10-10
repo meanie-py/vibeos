@@ -14,7 +14,7 @@ impl SelectionModel {
         let this_: *mut Self = self;
         (*this_).m_hbmColor = core::ptr::null_mut();
         (*this_).m_hbmMask = core::ptr::null_mut();
-        (*this_).m_rgbBack = RGB(255, 255, 255);
+        (*this_).m_rgbBack = RGB!(255, 255, 255);
         (*this_).m_bShow = (FALSE) as i32;
         (*this_).m_bContentChanged = (FALSE) as i32;
         {

@@ -257,7 +257,7 @@ impl CAttributesDialog {
     }
     pub unsafe fn OnEdit1(&mut self, wNotifyCode: WORD, wID: WORD, hWndCtl: HWND, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if Edit_GetModify(hWndCtl) != 0 {
+        if Edit_GetModify!(hWndCtl) != 0 {
             let mut tempS: [WCHAR; 100] = core::mem::zeroed();
             if (*this_).__base0.IsDlgButtonChecked((IDD_ATTRIBUTESRB1 as i32)) != 0 {
                 (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as i32);
@@ -271,13 +271,13 @@ impl CAttributesDialog {
                 (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT1 as i32), tempS.as_mut_ptr(), (_countof!(tempS)) as i32);
                 (*this_).newWidth = max(1, _wtoi(tempS.as_mut_ptr()));
             }
-            Edit_SetModify(hWndCtl, FALSE);
+            Edit_SetModify!(hWndCtl, FALSE);
         }
         return 0;
     }
     pub unsafe fn OnEdit2(&mut self, wNotifyCode: WORD, wID: WORD, hWndCtl: HWND, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        if Edit_GetModify(hWndCtl) != 0 {
+        if Edit_GetModify!(hWndCtl) != 0 {
             let mut tempS: [u16; 100] = [0u16; 100];
             if (*this_).__base0.IsDlgButtonChecked((IDD_ATTRIBUTESRB1 as i32)) != 0 {
                 (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT2 as i32), tempS.as_mut_ptr(), _countof!(tempS) as i32);
@@ -291,7 +291,7 @@ impl CAttributesDialog {
                 (*this_).__base0.GetDlgItemTextW__0((IDD_ATTRIBUTESEDIT2 as i32), tempS.as_mut_ptr(), _countof!(tempS) as i32);
                 (*this_).newHeight = max(1, _wtoi(tempS.as_ptr()));
             }
-            Edit_SetModify(hWndCtl, FALSE);
+            Edit_SetModify!(hWndCtl, FALSE);
         }
         return 0;
     }
@@ -376,7 +376,7 @@ impl CFontsDialog {
         SendMessageW(hwndNames, CB_RESETCONTENT, 0, 0);
         let mut i: INT = 0;
         while i < arrFontNames.GetSize() {
-            ComboBox_AddString(hwndNames, (*arrFontNames.GetAt(i)).GetString() as LPARAM);
+            ComboBox_AddString!(hwndNames, (*arrFontNames.GetAt(i)).GetString() as LPARAM);
             i += 1;
         }
     
@@ -389,20 +389,20 @@ impl CFontsDialog {
         ];
     
         let hwndSizes: HWND = (*this_).__base0.GetDlgItem((IDD_FONTSSIZES as i32));
-        ComboBox_ResetContent(hwndSizes);
+        ComboBox_ResetContent!(hwndSizes);
     
         let mut szText: [WCHAR; 16] = [0 as WCHAR; 16];
         let mut i: UINT = 0;
         while (i as usize) < _countof!(s_sizes) as usize {
             StringCchPrintfW!(szText.as_mut_ptr(), _countof!(szText) as usize, CPP_COM_WSTR_A9EDBA2FC474.as_ptr(), s_sizes[i as usize]);
-            let iItem: INT = ComboBox_AddString(hwndSizes, szText.as_mut_ptr());
+            let iItem: INT = ComboBox_AddString!(hwndSizes, szText.as_mut_ptr());
             if s_sizes[i as usize] == (registrySettings.PointSize as INT) {
-                ComboBox_SetCurSel(hwndSizes, iItem);
+                ComboBox_SetCurSel!(hwndSizes, iItem);
             }
             i += 1;
         }
     
-        if ComboBox_GetCurSel(hwndSizes) == CB_ERR {
+        if ComboBox_GetCurSel!(hwndSizes) == CB_ERR {
             StringCchPrintfW!(szText.as_mut_ptr(), _countof!(szText) as usize, CPP_COM_WSTR_A9EDBA2FC474.as_ptr(), registrySettings.PointSize as INT);
             SetWindowTextW(hwndSizes, szText.as_mut_ptr());
         }
@@ -603,9 +603,9 @@ impl CFontsDialog {
             }
     
             let mut szText = [0 as WCHAR; (LF_FACESIZE as usize)];
-            if ((ComboBox_GetLBTextLen(hwndItem, (*pDrawItem).itemID)) as UINT) < (_countof!(szText) as UINT) {
+            if ((ComboBox_GetLBTextLen!(hwndItem, (*pDrawItem).itemID)) as UINT) < (_countof!(szText) as UINT) {
                 szText[0] = 0;
-                ComboBox_GetLBText(hwndItem, (*pDrawItem).itemID, szText.as_mut_ptr());
+                ComboBox_GetLBText!(hwndItem, (*pDrawItem).itemID, szText.as_mut_ptr());
     
                 rcItem.left += 24;
                 DrawTextW(
@@ -635,10 +635,10 @@ impl CFontsDialog {
     
         match codeNotify {
             CBN_SELCHANGE => {
-                iItem = ComboBox_GetCurSel(hwndSizes);
-                cch = ComboBox_GetLBTextLen(hwndSizes, iItem);
+                iItem = ComboBox_GetCurSel!(hwndSizes);
+                cch = ComboBox_GetLBTextLen!(hwndSizes, iItem);
                 if iItem != CB_ERR && 0 < cch && cch < _countof!(szText) as UINT {
-                    ComboBox_GetLBText(hwndSizes, iItem, szText.as_mut_ptr());
+                    ComboBox_GetLBText!(hwndSizes, iItem, szText.as_mut_ptr());
                     PointSize = _wtoi(szText.as_ptr());
                 }
             }
@@ -664,14 +664,14 @@ impl CFontsDialog {
         let mut szText: [WCHAR; (LF_FACESIZE as usize)] = core::mem::zeroed();
     
         if codeNotify == CBN_SELCHANGE {
-            iItem = ComboBox_GetCurSel(hwndNames);
-            cch = ComboBox_GetLBTextLen(hwndNames, iItem);
+            iItem = ComboBox_GetCurSel!(hwndNames);
+            cch = ComboBox_GetLBTextLen!(hwndNames, iItem);
             if iItem != CB_ERR && 0 < cch && cch < _countof!(szText) {
-                ComboBox_GetLBText(hwndNames, iItem, szText.as_mut_ptr());
+                ComboBox_GetLBText!(hwndNames, iItem, szText.as_mut_ptr());
             }
         } else if codeNotify == CBN_EDITCHANGE {
             (*this_).__base0.GetDlgItemTextW__0((IDD_FONTSNAMES as i32), szText.as_mut_ptr(), (_countof!(szText)) as i32);
-            iItem = ComboBox_FindStringExact(hwndNames, -1, szText.as_ptr());
+            iItem = ComboBox_FindStringExact!(hwndNames, -1, szText.as_ptr());
         }
     
         if iItem != CB_ERR && registrySettings.strFontName.CompareNoCase(szText.as_ptr()) != 0 {

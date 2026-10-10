@@ -13,11 +13,11 @@ use core::ffi::c_void;
 
 
 
-unsafe extern "C" fn Zoomed(xy: i32) -> i32 {
+pub unsafe extern "C" fn Zoomed(xy: i32) -> i32 {
     return MulDiv(xy, toolsModel.GetZoom(), (DEFAULT_ZOOM as i32));
 }
 
-unsafe extern "C" fn UnZoomed(xy: i32, bRound: i32) -> i32 {
+pub unsafe extern "C" fn UnZoomed(xy: i32, bRound: i32) -> i32 {
     if bRound != 0 {
         return MulDiv(xy, (DEFAULT_ZOOM as i32), toolsModel.GetZoom());
     }

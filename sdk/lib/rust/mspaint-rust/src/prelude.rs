@@ -88,6 +88,7 @@ pub const HIT_UPPER_CENTER: HITTEST = HITTEST_HIT_UPPER_CENTER; // island enum
 pub const HIT_UPPER_LEFT: HITTEST = HITTEST_HIT_UPPER_LEFT; // island enum
 pub const HIT_UPPER_RIGHT: HITTEST = HITTEST_HIT_UPPER_RIGHT; // island enum
 pub const HKEY_CURRENT_USER: HKEY = 0x8000_0001usize as HKEY; // access-rust/src/prelude.rs
+pub const IDC_WAIT: LPWSTR = 0x7f02usize as LPWSTR; // notepad-rust/src/prelude.rs
 pub const LOCALE_USER_DEFAULT: DWORD = 0x0400; // comctl32-rust/src/prelude.rs
 pub const NM_CUSTOMDRAW: u32 = 0xFFFFFFF4; // comctl32-rust/src/prelude.rs
 pub const PAL_GRAYSCALE: PAL_TYPE = PAL_TYPE_PAL_GRAYSCALE; // island enum
@@ -124,6 +125,9 @@ extern "C" {
     pub fn wcscmp(a: *const u16, b: *const u16) -> c_int; // browser-rust/src/prelude.rs
     pub fn wcslen(s: *const u16) -> usize; // access-rust/src/prelude.rs
     pub fn wcstod(str_: *const u16, end: *mut *mut u16) -> f64; // msvcrt-crt-rust/src/fpnum.rs
+    pub static CLSID_NULL: GUID; // shell32-rust/src/cfs_folder.rs
+    pub static GUID_NULL: GUID; // audiosrv-rust/src/types_amd64.rs
+    pub static mut __argc: ::core::ffi::c_int; // ntkrnl-sys/src/hal_bindgen_amd64.rs
 }
 extern "system" {
     pub fn BeginDeferWindowPos(arg1: ::core::ffi::c_int) -> HDWP; // aclui-rust/src/types_i386.rs
@@ -134,6 +138,7 @@ extern "system" {
     pub fn ClientToScreen(arg1: HWND, arg2: LPPOINT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn CloseClipboard() -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn CopyFileW( lpExistingFileName: LPCWSTR, lpNewFileName: LPCWSTR, bFailIfExists: BOOL, ) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn CopyIcon(arg1: HICON) -> HICON; // aclui-rust/src/types_i386.rs
     pub fn CopyImage( arg1: HANDLE, arg2: UINT, arg3: ::core::ffi::c_int, arg4: ::core::ffi::c_int, arg5: UINT, ) -> HANDLE; // aclui-rust/src/types_i386.rs
     pub fn CreateIconIndirect(arg1: PICONINFO) -> HICON; // aclui-rust/src/types_i386.rs
     pub fn CreateWindowExW( dwExStyle: DWORD, lpClassName: LPCWSTR, lpWindowName: LPCWSTR, dwStyle: DWORD, X: ::core::ffi::c_int, Y: ::core::ffi::c_int, nWidth: ::core::ffi::c_int, nHeight: ::core::ffi::c_int, hWndParent: HWND, hMenu: HMENU, hInstance: HINSTANCE, lpParam: LPVOID, ) -> HWND; // aclui-rust/src/types_i386.rs
@@ -166,6 +171,7 @@ extern "system" {
     pub fn GetClientRect(arg1: HWND, arg2: LPRECT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn GetClipboardData(arg1: UINT) -> HANDLE; // aclui-rust/src/types_i386.rs
     pub fn GetCursorPos(arg1: LPPOINT) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn GetDC(arg1: HWND) -> HDC; // aclui-rust/src/types_i386.rs
     pub fn GetDCEx(arg1: HWND, arg2: HRGN, arg3: DWORD) -> HDC; // aclui-rust/src/types_i386.rs
     pub fn GetDlgItem(arg1: HWND, arg2: ::core::ffi::c_int) -> HWND; // aclui-rust/src/types_i386.rs
     pub fn GetDlgItemInt(arg1: HWND, arg2: ::core::ffi::c_int, arg3: PBOOL, arg4: BOOL) -> UINT; // aclui-rust/src/types_i386.rs
@@ -229,7 +235,6 @@ extern "system" {
     pub fn ReleaseDC(arg1: HWND, arg2: HDC) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
     pub fn RemoveMenu(arg1: HMENU, arg2: UINT, arg3: UINT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn ScreenToClient(arg1: HWND, arg2: LPPOINT) -> BOOL; // aclui-rust/src/types_i386.rs
-    pub fn SendMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT; // aclui-rust/src/types_i386.rs
     pub fn SetCapture(hWnd: HWND) -> HWND; // aclui-rust/src/types_i386.rs
     pub fn SetClipboardData(arg1: UINT, arg2: HANDLE) -> HANDLE; // aclui-rust/src/types_i386.rs
     pub fn SetCursor(arg1: HCURSOR) -> HCURSOR; // aclui-rust/src/types_i386.rs
@@ -250,6 +255,7 @@ extern "system" {
     pub fn ShowWindow(arg1: HWND, arg2: ::core::ffi::c_int) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn SystemParametersInfoW( uiAction: UINT, uiParam: UINT, pvParam: PVOID, fWinIni: UINT, ) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn TrackMouseEvent(arg1: LPTRACKMOUSEEVENT) -> BOOL; // aclui-rust/src/types_i386.rs
+    pub fn TrackPopupMenu( arg1: HMENU, arg2: UINT, arg3: ::core::ffi::c_int, arg4: ::core::ffi::c_int, arg5: ::core::ffi::c_int, arg6: HWND, arg7: LPCRECT, ) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn TranslateAcceleratorW(arg1: HWND, arg2: HACCEL, arg3: LPMSG) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
     pub fn TranslateMessage(arg1: *const MSG) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn UnionRect(arg1: LPRECT, arg2: LPCRECT, arg3: LPCRECT) -> BOOL; // aclui-rust/src/types_i386.rs
@@ -355,6 +361,7 @@ extern "system" {
     pub fn RegOpenKeyExW( arg1: HKEY, arg2: LPCWSTR, arg3: DWORD, arg4: REGSAM, arg5: PHKEY, ) -> LSTATUS; // desk-rust/src/types_i386.rs
     pub fn RegQueryValueExW( hKey: HKEY, lpValueName: LPCWSTR, lpReserved: LPDWORD, lpType: LPDWORD, lpData: LPBYTE, lpcbData: LPDWORD, ) -> LSTATUS; // desk-rust/src/types_i386.rs
     pub fn RegSetValueExW( hKey: HKEY, lpValueName: LPCWSTR, Reserved: DWORD, dwType: DWORD, lpData: *const BYTE, cbData: DWORD, ) -> LSTATUS; // desk-rust/src/types_i386.rs
+    pub fn SendMessageW(arg1: HWND, arg2: UINT, arg3: WPARAM, arg4: LPARAM) -> LRESULT; // aclui-rust/src/types_i386.rs
     pub fn SetDlgItemTextW(arg1: HWND, arg2: ::core::ffi::c_int, arg3: LPCWSTR) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn lstrlenW(arg1: LPCWSTR) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
 }
@@ -404,10 +411,20 @@ pub type PTCH = LPWSTR;
 // ==== end UNICODE TCHAR family ====
 
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
+#[macro_export] macro_rules! ComboBox_AddString { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((323) as _), ((0) as _), (($p1) as LPARAM))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_FindStringExact { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((344) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_GetCurSel { ($p0:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((327) as _), ((0) as _), ((0) as _))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_GetLBText { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((328) as _), (((($p1) as c_int)) as WPARAM), (($p2) as LPARAM))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_GetLBTextLen { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((329) as _), (((($p1) as c_int)) as WPARAM), ((0) as _))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_ResetContent { ($p0:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((331) as _), ((0) as _), ((0) as _))) as DWORD)) as c_int) }; }
+#[macro_export] macro_rules! ComboBox_SetCurSel { ($p0:expr, $p1:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((334) as _), (((($p1) as c_int)) as WPARAM), ((0) as _))) as DWORD)) as c_int) }; }
 #[macro_export] macro_rules! CopyCursor { ($p0:expr $(,)?) => { ((CopyIcon((($p0) as HICON))) as HCURSOR) }; }
+#[macro_export] macro_rules! Edit_GetModify { ($p0:expr $(,)?) => { ((((SendMessageW((($p0) as _), ((184) as _), ((0) as _), ((0) as _))) as DWORD)) as BOOL) }; }
+#[macro_export] macro_rules! Edit_SetModify { ($p0:expr, $p1:expr $(,)?) => { { let _ = SendMessageW((($p0) as _), ((185) as _), (((($p1) as UINT)) as WPARAM), ((0) as _)); } }; }
 #[macro_export] macro_rules! MAKELPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as LPARAM) }; }
 #[macro_export] macro_rules! MAKEROP4 { ($p0:expr, $p1:expr $(,)?) => { ((((($p1 << 8) & 0xFF000000) | $p0)) as DWORD) }; }
 #[macro_export] macro_rules! MAKEWPARAM { ($p0:expr, $p1:expr $(,)?) => { (((((((((((((($p0) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) | (((((((($p1) as DWORD_PTR) & 0xffff)) as WORD)) as DWORD) << 16))) as LONG)) as DWORD)) as WPARAM) }; }
+#[macro_export] macro_rules! SetWindowFont { ($p0:expr, $p1:expr, $p2:expr $(,)?) => { { let _ = (({ $p0; 48; (($p1) as WPARAM); (((($p2) as BOOL)) as LPARAM) }) as SendMessageW); } }; }
 #[macro_export] macro_rules! va_end { ($p0:expr $(,)?) => { __builtin_va_end((($p0) as _)) }; }
 #[macro_export] macro_rules! va_start { ($p0:expr, $p1:expr $(,)?) => { __builtin_va_start((($p0) as _), (($p1) as _)) }; }
 pub const HWND_DESKTOP: HWND = 0x0usize as HWND;
@@ -418,7 +435,7 @@ pub const STATUSCLASSNAME: *const u16 = (&[0x006d, 0x0073, 0x0063, 0x0074, 0x006
 pub const TOOLBARCLASSNAME: *const u16 = (&[0x0054, 0x006f, 0x006f, 0x006c, 0x0062, 0x0061, 0x0072, 0x0057, 0x0069, 0x006e, 0x0064, 0x006f, 0x0077, 0x0033, 0x0032, 0x0000u16]).as_ptr(); // L"ToolbarWindow32"
 pub const TRACKBAR_CLASS: *const u16 = (&[0x006d, 0x0073, 0x0063, 0x0074, 0x006c, 0x0073, 0x005f, 0x0074, 0x0072, 0x0061, 0x0063, 0x006b, 0x0062, 0x0061, 0x0072, 0x0033, 0x0032, 0x0000u16]).as_ptr(); // L"msctls_trackbar32"
 pub const WC_EDIT: *const u16 = (&[0x0045, 0x0064, 0x0069, 0x0074, 0x0000u16]).as_ptr(); // L"Edit"
-pub use crate::{CopyCursor, MAKELPARAM, MAKEROP4, MAKEWPARAM, va_end, va_start};
+pub use crate::{ComboBox_AddString, ComboBox_FindStringExact, ComboBox_GetCurSel, ComboBox_GetLBText, ComboBox_GetLBTextLen, ComboBox_ResetContent, ComboBox_SetCurSel, CopyCursor, Edit_GetModify, Edit_SetModify, MAKELPARAM, MAKEROP4, MAKEWPARAM, SetWindowFont, va_end, va_start};
 // ==== end SDK header macros ====
 
 // ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
@@ -439,8 +456,7 @@ pub(crate) use CHECKED_IF;
 #[allow(unused_macros)]
 macro_rules! DEG2RAD {
     ($degree:expr $(,)?) => {
-        // C: `degree` (an int) is promoted to double by `* M_PI`.
-        ((($degree) as f64 * M_PI) / 180.0)
+        ((($degree) * M_PI) / 180.0)
     };
 }
 #[allow(unused_imports)]

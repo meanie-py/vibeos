@@ -212,7 +212,7 @@ impl ImageModel {
     }
     pub unsafe fn SaveImage(&mut self, lpFileName: LPCWSTR) {
         let this_: *mut Self = self;
-        SaveDIBToFile((*this_).m_hbmMaster, lpFileName, (TRUE) as BOOL, GUID_NULL);
+        SaveDIBToFile((*this_).m_hbmMaster, lpFileName, (TRUE) as BOOL, &GUID_NULL);
     }
     pub unsafe fn IsImageSaved(&mut self) -> i32 {
         let this_: *mut Self = self;

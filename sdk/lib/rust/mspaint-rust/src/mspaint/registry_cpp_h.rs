@@ -127,7 +127,7 @@ impl RegistrySettings {
         if ((hr) < 0) {
             return;
         }
-        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, TEXT(['\\' as u16, 'W' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'p' as u16, 'a' as u16, 'p' as u16, 'e' as u16, 'r' as u16, '1' as u16, '.' as u16, 'b' as u16, 'm' as u16, 'p' as u16, 0u16].as_ptr()));
+        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, (['\\' as u16, 'W' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'p' as u16, 'a' as u16, 'p' as u16, 'e' as u16, 'r' as u16, '1' as u16, '.' as u16, 'b' as u16, 'm' as u16, 'p' as u16, 0u16].as_ptr()));
         if ((hr) < 0) {
             return;
         }
@@ -136,7 +136,7 @@ impl RegistrySettings {
         let mut img = CImageDx__make_0();
         let hbmLocked: HBITMAP = imageModel.LockBitmap();
         img.Attach(hbmLocked);
-        hr = img.SaveDx(szWallpaper.as_ptr(), GUID_NULL, 0, 0);
+        hr = img.SaveDx(szWallpaper.as_ptr(), &GUID_NULL, 0, 0);
         img.Detach();
         imageModel.UnlockBitmap(hbmLocked);
         if ((hr) < 0) {

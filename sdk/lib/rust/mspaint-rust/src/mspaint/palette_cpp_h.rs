@@ -1,10 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-// Constants from palette.h
-const CXY_COLORBOX: i32 = 16;      /* width / height of a normal color box */
-const CXY_BIGBOX: i32 = 32;        /* width / height of the big box (CXY_COLORBOX * 2) */
-
 
 
 
@@ -27,10 +23,9 @@ unsafe extern "C" fn drawColorBox(hDC: HDC, prc: LPCRECT, hbr: HBRUSH, nBorder: 
 unsafe extern "C" fn getColorBoxRect(prc: LPRECT, rcClient: LPCRECT, iColor: i32) {
     let dx: i32 = (iColor % HALF_COLOR_COUNT) * (CXY_COLORBOX as i32); /* delta x */
     let dy: i32 = (iColor / HALF_COLOR_COUNT) * (CXY_COLORBOX as i32); /* delta y */
-    let y_margin: i32 = ((*rcClient).bottom / 2) - CXY_COLORBOX; /* center position minus one color box */
     (*prc).left = X_COLORBOX_OFFSET + dx;
     (*prc).right = (*prc).left + (CXY_COLORBOX as i32);
-    (*prc).top = y_margin + dy;
+    (*prc).top = Y_MARGIN + dy;
     (*prc).bottom = (*prc).top + (CXY_COLORBOX as i32);
 }
 
@@ -56,25 +51,22 @@ impl CPaletteWindow {
         let mut rc: RECT = core::mem::zeroed();
         let mut rcClient: RECT = core::mem::zeroed();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient));
-
+    
         let mut ps: PAINTSTRUCT = core::mem::zeroed();
         let hDC: HDC = (*this_).__base0.BeginPaint(core::ptr::addr_of_mut!(ps));
-
+    
         /* To avoid flickering, we use a memory bitmap.
            The left and top values are zeros in client rectangle */
         let hMemDC: HDC = CreateCompatibleDC(hDC);
         (*this_).m_hbmCached = CachedBufferDIB((*this_).m_hbmCached, rcClient.right, rcClient.bottom);
         let hbmOld: HGDIOBJ = SelectObject(hMemDC, ((*this_).m_hbmCached).cast());
-
+    
         /* Fill the background (since WM_ERASEBKGND handling is disabled) */
-        FillRect(hMemDC, core::ptr::addr_of_mut!(rcClient), (COLOR_3DFACE + 1) as usize as HBRUSH);
-
-        /* Y_MARGIN = center position minus one color box */
-        let y_margin: i32 = (rcClient.bottom / 2) - CXY_COLORBOX;
-
+        FillRect(hMemDC, core::ptr::addr_of!(rcClient), (COLOR_3DFACE + 1) as HBRUSH);
+    
         /* Draw the big box that contains the black box and the white box */
-        rc = RECT { left: X_MARGIN, top: y_margin, right: X_MARGIN + (CXY_BIGBOX as i32), bottom: y_margin + CXY_BIGBOX };
-        DrawEdge(hMemDC, core::ptr::addr_of_mut!(rc), EDGE_SUNKEN as u32, BF_RECT | BF_ADJUST);
+        rc = RECT { left: X_MARGIN, top: Y_MARGIN, right: X_MARGIN + (CXY_BIGBOX as i32), bottom: Y_MARGIN + CXY_BIGBOX };
+        DrawEdge(hMemDC, core::ptr::addr_of_mut!(rc), EDGE_SUNKEN, BF_RECT | BF_ADJUST);
         let rgbLight: COLORREF = GetSysColor((COLOR_3DHIGHLIGHT) as i32);
         let mut y: INT = rc.top;
         while y < rc.bottom {
@@ -89,29 +81,29 @@ impl CPaletteWindow {
             }
             y += 1;
         }
-
+    
         /* Draw the white box in the big box, at 5/8 position */
         rc.left = X_MARGIN + ((CXY_BIGBOX * 5 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
-        rc.top = y_margin + (CXY_BIGBOX * 5 / 8) - (CXY_SELECTEDBOX / 2);
+        rc.top = Y_MARGIN + (CXY_BIGBOX * 5 / 8) - (CXY_SELECTEDBOX / 2);
         rc.right = rc.left + CXY_SELECTEDBOX;
         rc.bottom = rc.top + CXY_SELECTEDBOX;
-        drawColorBox(hMemDC, core::ptr::addr_of_mut!(rc), toolsModel.GetBgBrush(), BDR_RAISEDINNER);
-
+        drawColorBox(hMemDC, core::ptr::addr_of!(rc), (*toolsModel).GetBgBrush(), BDR_RAISEDINNER);
+    
         /* Draw the black box (overlapping the white box), at 3/8 position */
         rc.left = X_MARGIN + ((CXY_BIGBOX * 3 / 8)) as i32 - (CXY_SELECTEDBOX / 2);
-        rc.top = y_margin + (CXY_BIGBOX * 3 / 8) - (CXY_SELECTEDBOX / 2);
+        rc.top = Y_MARGIN + (CXY_BIGBOX * 3 / 8) - (CXY_SELECTEDBOX / 2);
         rc.right = rc.left + CXY_SELECTEDBOX;
         rc.bottom = rc.top + CXY_SELECTEDBOX;
-        drawColorBox(hMemDC, core::ptr::addr_of_mut!(rc), toolsModel.GetFgBrush(), BDR_RAISEDINNER);
+        drawColorBox(hMemDC, core::ptr::addr_of!(rc), (*toolsModel).GetFgBrush(), BDR_RAISEDINNER);
     
         /* Draw the normal color boxes */
-        let palette: PAL_TYPE = paletteModel.SelectedPalette();
+        let palette: PAL_TYPE = (*paletteModel).SelectedPalette();
         let mut i: INT = 0;
         while i < COLOR_COUNT {
             getColorBoxRect(core::ptr::addr_of_mut!(rc), core::ptr::addr_of!(rcClient), i);
-            let hbr: HBRUSH = ToolsModel::CreateBrush(palette, paletteModel.GetColor((i) as u32));
-            drawColorBox(hMemDC, core::ptr::addr_of_mut!(rc), hbr, BDR_SUNKENOUTER);
-            DeleteObject(hbr.cast());
+            let hbr: HBRUSH = ToolsModel::CreateBrush(palette, (*paletteModel).GetColor(i));
+            drawColorBox(hMemDC, core::ptr::addr_of!(rc), hbr, BDR_SUNKENOUTER);
+            DeleteObject((hbr).cast());
             i += 1;
         }
     
@@ -205,23 +197,20 @@ impl CPaletteWindow {
         let this_: *mut Self = self;
         let mut rcClient: RECT = core::mem::zeroed();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient));
-
-        /* Y_MARGIN = center position minus one color box */
-        let y_margin: i32 = (rcClient.bottom / 2) - CXY_COLORBOX;
-
+    
         /* delta x and y */
         let dx: INT = xPos - X_COLORBOX_OFFSET;
-        let dy: INT = yPos - y_margin;
-
+        let dy: INT = yPos - Y_MARGIN;
+    
         /* horizontal and vertical indexes */
         let ix: INT = dx / (CXY_COLORBOX as i32);
         let iy: INT = dy / (CXY_COLORBOX as i32);
-
+    
         /* Is it inside of a color box? */
         if 0 <= ix && ix < HALF_COLOR_COUNT && 0 <= iy && iy < 2 {
             return ix + (iy * HALF_COLOR_COUNT); /* return the color index */
         }
-
+    
         return -1; /* Not found */
     }
 }

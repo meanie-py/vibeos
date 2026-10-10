@@ -181,7 +181,7 @@ impl CTextEditWindow {
         lf.lfHeight = Zoomed(lf.lfHeight);
         (*this_).m_hFontZoomed = CreateFontIndirect(core::ptr::addr_of_mut!(lf));
     
-        SetWindowFont((*this_).__base0.m_hWnd, (*this_).m_hFontZoomed, TRUE);
+        SetWindowFont!((*this_).__base0.m_hWnd, (*this_).m_hFontZoomed, TRUE);
         (*this_).DefWindowProc(
             EM_SETMARGINS,
             (EC_LEFTMARGIN | EC_RIGHTMARGIN) as WPARAM,
@@ -496,14 +496,14 @@ impl CTextEditWindow {
             HIT_UPPER_RIGHT => { return (HTTOPRIGHT) as INT; }
             HIT_MIDDLE_LEFT => { return (HTLEFT) as INT; }
             HIT_MIDDLE_RIGHT => { return (HTRIGHT) as INT; }
-            HIT_LOWER_LEFT => { return HTBOTTOMLEFT; }
-            HIT_LOWER_CENTER => { return HTBOTTOM; }
-            HIT_LOWER_RIGHT => { return HTBOTTOMRIGHT; }
-            HIT_BORDER => { return HTCAPTION; } // Enable drag move
-            HIT_INNER => { return HTCLIENT; }
+            HIT_LOWER_LEFT => { return (HTBOTTOMLEFT) as INT; }
+            HIT_LOWER_CENTER => { return (HTBOTTOM) as INT; }
+            HIT_LOWER_RIGHT => { return (HTBOTTOMRIGHT) as INT; }
+            HIT_BORDER => { return (HTCAPTION) as INT; } // Enable drag move
+            HIT_INNER => { return (HTCLIENT) as INT; }
             _ => {}
         }
-        return HTNOWHERE;
+        return (HTNOWHERE) as INT;
     }
     pub unsafe fn DrawGrip(&mut self, hDC: HDC, rc: &mut RECT) {
         let this_: *mut Self = self;

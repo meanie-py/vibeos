@@ -239,7 +239,7 @@ pub unsafe extern "C" fn OpenMailer(hWnd: HWND, mut pszPathName: LPCWSTR) -> BOO
     }
 
     FreeLibrary(hMAPI);
-    return FALSE; // Failure
+    return (FALSE) as BOOL; // Failure
 }
 
 unsafe extern "C" fn DoHtmlHelpW(hwndCaller: HWND, pszFile: LPCWSTR, uCommand: UINT, dwData: DWORD_PTR) -> HWND {
@@ -357,8 +357,8 @@ impl CMainWindow {
         let hSubMenu: HMENU = GetSubMenu(hMenu, iSubMenu);
     
         SetForegroundWindow((*this_).__base0.m_hWnd);
-        let id: INT_PTR = TrackPopupMenu(hSubMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
-                                      ptScreen.x, ptScreen.y, 0, (*this_).__base0.m_hWnd, core::ptr::null_mut());
+        let id: INT_PTR = (TrackPopupMenu(hSubMenu, TPM_RIGHTBUTTON | TPM_RETURNCMD,
+                                      ptScreen.x, ptScreen.y, 0, (*this_).__base0.m_hWnd, core::ptr::null_mut())) as _;
         (*this_).__base0.PostMessageW(WM_NULL, 0, 0);
         if id != 0 {
             (*this_).__base0.PostMessageW(WM_COMMAND, id, 0);
@@ -896,7 +896,7 @@ impl CMainWindow {
                                 imageModel.ClearHistory();
                                 break 'sw;
                             }
-                            SaveDIBToFile(hbmSelection, szFileName.as_ptr(), (FALSE) as BOOL, GUID_NULL);
+                            SaveDIBToFile(hbmSelection, szFileName.as_ptr(), (FALSE) as BOOL, &GUID_NULL);
                             DeleteObject((hbmSelection).cast());
                         }
                         break 'sw;
