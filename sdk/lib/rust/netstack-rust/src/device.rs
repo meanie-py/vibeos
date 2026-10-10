@@ -48,6 +48,11 @@ pub struct NetDev {
 /// Find, claim, and initialise the virtio-net device.
 pub fn bringup() -> Option<NetDev> {
     let df = find_virtio_net()?;
+    // Its DMA adapter before bus mastering and before any queue: the queues and
+    // every frame come from it (dma.rs).
+    if !unsafe { crate::dma::attach(df) } {
+        return None;
+    }
     enable_bus_master(df);
     let mut root = PciRoot::new(HalPciAccess);
     let mut transport = PciTransport::new::<NetHal, _>(&mut root, df).ok()?;
