@@ -3293,6 +3293,19 @@ unsafe extern "C" fn MmFreeSectionPage(
         MmFreeSwapPage(SwapEntry);
     } else if Page != 0 {
         if IS_SWAP_FROM_SSE(Entry) || Page != PFN_FROM_SSE(Entry) {
+            // C: ASSERT(Process != NULL) -- a system-space view never holds a private
+            // page. Say what the segment held when it does (i386 writable-root boot).
+            if Process.is_null() {
+                mm_guard_trip!(
+                    "section.MmFreeSectionPage private-page-in-system-view", 4,
+                    "Page" => Page,
+                    "Entry" => Entry,
+                    "OffsetLo" => Offset.QuadPart as ULONG_PTR,
+                    "Address" => Address as ULONG_PTR,
+                    "SegFlags" => *(*Segment).Flags as ULONG_PTR,
+                    "ViewOffsetLo" => (*MemoryArea).SectionData.ViewOffset as ULONG_PTR,
+                );
+            }
             SavedSwapEntry = MmGetSavedSwapEntryPage(Page);
             if SavedSwapEntry != 0 {
                 MmFreeSwapPage(SavedSwapEntry);

@@ -611,16 +611,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
   hand; (1) is why the payload uses the e1000.
 
-- **x86 conformance never runs the kmtests that write a file** (OPEN, found 2026-10-09,
-  conformance lane). i386/amd64 conformance boots the livecd, so `\SystemRoot` is read-only
-  CDFS and every kmtest that creates a file there fails setup with `0xc0000022` and bails:
-  ZwCreateSection runs 9 assertions on x86 vs 330 on arm64 (writable FAT ramdisk), MmSection
-  ~90 vs ~370, and the file halves of ZwMapViewOfSection/IoFilesystem likewise. The shared-MM
-  bugs arm64 surfaced (the dropped view-protection checks in `MmMapViewOfSection`, fixed) were
-  invisible on x86 for exactly this reason. Fix owed: give x86 conformance a writable system
-  volume (boot the installed disk, or a writable ramdisk like arm64's) and re-seed the x86 rows,
-  which will move a lot of them; see the field manual's "A conformance score is not a defect
-  count".
+- **x86 conformance never runs the kmtests that write a file** (amd64 FIXED 2026-10-10;
+  i386 OPEN; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+  kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` now derives
+  `livecd-rw.iso` (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`)
+  and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
+  on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
+  i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
+  **i386 still boots the CD:** on the writable root it bugchecks, differently per run: 0x1A
+  in `MmDeleteRmap` (a system-space view unmapping a page its segment does not record, under
+  win32k's font load), and 0x23 -> 0xA in fastfat during `NtFlushBuffersFile`. Nothing else
+  in the fleet writes a FAT volume on i386, so expect more than one bug. Repro:
+  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; then add i386 to
+  `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
