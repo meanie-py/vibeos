@@ -152,12 +152,28 @@ def _visible_value_names(workspace: Path, crate: str) -> set[str]:
     out: set[str] = set()
     for root in roots:
         for p in source_files(root, "*.rs") if root.is_dir() else []:
-            out |= set(
-                re.findall(
-                    r"\b(?:const|static(?:\s+mut)?)\s+([A-Z][A-Z0-9_]*)\s*:",
-                    p.read_text(errors="replace"),
-                )
-            )
+            text = p.read_text(errors="replace")
+            out |= set(re.findall(r"\b(?:const|static(?:\s+mut)?)\s+([A-Z][A-Z0-9_]*)\s*:", text))
+            if root == roots[0]:
+                out |= _explicit_use_names(text)
+    return out
+
+
+def _explicit_use_names(text: str) -> set[str]:
+    """UPPER_CASE names a crate imports BY NAME (`pub use ntkrnl_sys::driver_ddk::{IRP_MN_..}`).
+
+    The kernel prelude brings wdm.h's IRP_MN_* in this way because the `ddk` glob does not
+    carry them; without this every ndis/pciidex PnP switch read as a catch-all. A glob is
+    deliberately NOT counted: a name a glob does not reach is exactly the catch-all.
+    """
+    out: set[str] = set()
+    for m in re.finditer(r"\buse\s+[\w:]+::\{([^}]*)\}", text):
+        out |= set(re.findall(r"\b([A-Z][A-Z0-9_]*)\b(?!\s*as\b)", m.group(1)))
+        out |= set(re.findall(r"\bas\s+([A-Z][A-Z0-9_]*)\b", m.group(1)))
+    for m in re.finditer(r"\buse\s+[\w:]+::([A-Z][A-Z0-9_]*)\s*;", text):
+        out.add(m.group(1))
+    for m in re.finditer(r"\buse\s+[\w:]+\s+as\s+([A-Z][A-Z0-9_]*)\s*;", text):
+        out.add(m.group(1))
     return out
 
 
@@ -825,7 +841,9 @@ def substrate_items(
                 out.append((m.group("macro"), "macro", both))
         elif m.group("fn"):
             if all(kind == "extern" for kind, _ in stack) and both:
-                out.append((m.group("fn"), "fn", both))
+                # "decl": declared in an extern block, no body -- another declaration of an
+                # import, not a helper with an implementation of its own.
+                out.append((m.group("fn"), "decl" if stack else "fn", both))
             # The body's `{` opens under the fn's own cfg, already applied.
             pending = _ALL_ARCHES
             export = False
@@ -909,6 +927,8 @@ def substrate_helpers(
     """
     features = default_features(sys_src.parent / "Cargo.toml")
     index: dict[str, list[tuple[str, frozenset[str]]]] = {}
+    decls: set[tuple[str, str, str]] = set()  # (name, module, arch): an extern declaration
+    bodied: set[tuple[str, str, str]] = set()  # ... an implementation (fn with a body, macro)
     for f, (mod, mod_arches) in _module_paths(sys_src, features).items():
         if mod_arches is None or _NOT_HELPERS.search(f.stem):
             continue
@@ -916,6 +936,12 @@ def substrate_helpers(
             if name in names and arches & mod_arches:
                 path = "" if kind == "macro" else mod
                 index.setdefault(name, []).append((path, arches & mod_arches))
+                if kind == "decl":
+                    for arch in arches & mod_arches:
+                        decls.add((name, path, arch))
+                else:
+                    for arch in arches & mod_arches:
+                        bodied.add((name, path, arch))
     globs = {
         arch: "\n".join(
             p.read_text(errors="replace")
@@ -932,6 +958,21 @@ def substrate_helpers(
             paths = {p for p, a in index[name] if arch in a}
             inline = {p for p in paths if p.startswith("inline::")}
             paths = inline or paths
+            # A helper OUTSIDE inline:: for a function the bindgen glob already declares is
+            # only a second extern declaration, written in ntkrnl-sys's hand `base` types
+            # (`ULONG_PTR = usize`) where the glob, and so the island, has bindgen's
+            # (`c_ulonglong` on amd64). Importing it over the glob made every `as SIZE_T` /
+            # `as ULONG_PTR` argument the C wrote a mismatch (ndis: ExAllocatePoolWithTag,
+            # KeBugCheckEx). The glob's declaration is the island's own universe: keep it.
+            # (Only a DECLARATION: ke.rs's amd64 KeGetCurrentIrql is an implementation, `mov
+            # cr8`, and the glob's extern of it links to nothing on amd64.)
+            if (
+                not inline
+                and paths
+                and all((name, p, arch) in decls and (name, p, arch) not in bodied for p in paths)
+                and re.search(rf"^\s*pub\s+fn\s+{re.escape(name)}\b", globs[arch], re.M)
+            ):
+                paths = set()
             if len(paths) == 1:
                 per[arch] = paths.pop()
             elif paths:

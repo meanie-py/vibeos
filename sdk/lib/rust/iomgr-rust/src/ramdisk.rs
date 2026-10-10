@@ -127,8 +127,12 @@ const RAMDISK_OPTION_NO_DOS_DEVICE: ULONG = 1 << 3;
 const RAMDISK_OPTION_HIDDEN: ULONG = 1 << 4;
 const RAMDISK_OPTION_EXPORT_AS_CD: ULONG = 1 << 5;
 
-/// Must match C layout from ntddrdsk.h exactly.
-/// We use the {BasePage, DriveLetter} variant + padding.
+/// Must match C layout from ntddrdsk.h exactly: ramdisk.sys refuses the request unless
+/// `Version == sizeof(RAMDISK_CREATE_INPUT)`. The union used to be hand-padded to its
+/// 64-bit size (24 bytes), so on i386 this struct was 64 bytes against C's 56 and the
+/// boot ramdisk could never be created (BUGCHECK 0xF8, RD_FSCTL_FAILED) -- unseen until
+/// x86 first booted a ramdisk (conformance's writable root, 2026-10-10). Declare the
+/// union as C does and let the compiler size it per target.
 #[repr(C)]
 struct _RAMDISK_CREATE_INPUT {
     Version: ULONG,
@@ -137,11 +141,35 @@ struct _RAMDISK_CREATE_INPUT {
     Options: RAMDISK_CREATE_OPTIONS,
     DiskLength: _ULARGE_INTEGER,
     DiskOffset: LONG,
-    // union: using the BasePage+DriveLetter variant + padding
+    u: _RAMDISK_CREATE_INPUT_U,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct _RAMDISK_CREATE_INPUT_VIEW {
+    ViewCount: ULONG,
+    ViewLength: SIZE_T,
+    FileName: [WCHAR; 1],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+struct _RAMDISK_CREATE_INPUT_BASE {
     BasePage: ULONG_PTR,
     DriveLetter: WCHAR,
-    _pad: [u8; 14], // pad union to 24 bytes (8+2+14=24)
 }
+
+#[repr(C)]
+union _RAMDISK_CREATE_INPUT_U {
+    view: _RAMDISK_CREATE_INPUT_VIEW,
+    base: _RAMDISK_CREATE_INPUT_BASE,
+}
+
+// C's sizeof(RAMDISK_CREATE_INPUT) per target, from ntddrdsk.h.
+#[cfg(target_pointer_width = "32")]
+const _: () = assert!(core::mem::size_of::<_RAMDISK_CREATE_INPUT>() == 56);
+#[cfg(target_pointer_width = "64")]
+const _: () = assert!(core::mem::size_of::<_RAMDISK_CREATE_INPUT>() == 72);
 
 const FSCTL_CREATE_RAM_DISK: ULONG = 0x240000; // CTL_CODE(FILE_DEVICE_VIRTUAL_DISK, 0, METHOD_BUFFERED, FILE_ANY_ACCESS)
 
@@ -214,12 +242,12 @@ pub unsafe extern "system" fn IopStartRamdisk(
     );
     RamdiskCreate.Version = core::mem::size_of::<_RAMDISK_CREATE_INPUT>() as ULONG;
     RamdiskCreate.DiskType = RAMDISK_BOOT_DISK;
-    RamdiskCreate.BasePage = (*MemoryDescriptor).BasePage as ULONG_PTR;
+    RamdiskCreate.u.base.BasePage = (*MemoryDescriptor).BasePage as ULONG_PTR;
     RamdiskCreate.DiskOffset = 0;
     RamdiskCreate.DiskLength.QuadPart =
         ((*MemoryDescriptor).PageCount << PAGE_SHIFT) as u64;
     RamdiskCreate.DiskGuid = RAMDISK_BOOTDISK_GUID;
-    RamdiskCreate.DriveLetter = b'C' as u16;
+    RamdiskCreate.u.base.DriveLetter = b'C' as u16;
     RamdiskCreate.Options.Bits = RAMDISK_OPTION_FIXED;
 
     CommandLine = (*LoaderBlock).LoadOptions as *mut i8;

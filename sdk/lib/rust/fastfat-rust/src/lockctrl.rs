@@ -29,7 +29,7 @@ extern "system" {
     fn FsRtlAreThereWaitingFileLocks( FileLock: PFILE_LOCK, ) -> BOOLEAN;
     fn FatOplockComplete( IrpContext: PIRP_CONTEXT, Irp: PIRP, ) -> NTSTATUS;
     fn FatReleaseFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
-    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> i32;
+    fn CanFsdWait(Irp: *mut core::ffi::c_void) -> u8;
     fn FatCreateIrpContext(Irp: *mut core::ffi::c_void, CanWait: i32) -> *mut core::ffi::c_void;
     fn FatIsIrpTopLevel(Irp: *mut core::ffi::c_void) -> u8;
     fn FatProcessException(IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ExceptionCode: i32) -> i32;
@@ -71,7 +71,7 @@ pub unsafe extern "system" fn FatFsdLockControl(
     let p_status = core::ptr::addr_of_mut!(Status);
     let p_irp_context = core::ptr::addr_of_mut!(IrpContext);
     if let Err(code) = crate::seh::fat_try_except(p_irp_context as *const *mut core::ffi::c_void, || {
-        let can_wait = CanFsdWait(Irp);
+        let can_wait = CanFsdWait(Irp) as i32;
         *p_irp_context = FatCreateIrpContext(Irp, can_wait);
         *p_status = FatCommonLockControl(*p_irp_context as PIRP_CONTEXT, Irp as PIRP);
     }) {

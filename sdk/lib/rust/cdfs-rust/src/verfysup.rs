@@ -46,7 +46,6 @@ extern "C" {
     fn CdReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
 }
 extern "C" {
-    fn _Analysis_assume_lock_not_held_(lock: *mut core::ffi::c_void);
 }
 extern "C" {
     fn CdMarkRealDevForVerify(Device: *mut DEVICE_OBJECT);

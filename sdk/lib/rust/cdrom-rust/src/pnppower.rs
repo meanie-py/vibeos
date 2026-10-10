@@ -24,7 +24,6 @@ extern "system" {
 }
 unsafe extern "C" {
     fn TimeOutValueGetCapValue(timeOutValue: u32, value: u32) -> u32;
-    fn _Analysis_assume_(cond: i32);
 }
 unsafe extern "system" {
     fn KeQueryTickCount(TickCount: *mut ntkrnl_sys::ddk::LARGE_INTEGER);

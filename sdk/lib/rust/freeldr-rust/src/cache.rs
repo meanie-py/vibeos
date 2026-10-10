@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_CACHE; // cache.c: DBG_DEFAULT_CHANNEL(CACHE)
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
@@ -15,7 +17,6 @@ use crate::blocklist::{CacheInternalGetBlockPointer, CacheInternalFreeBlock};
 // TRACE: DBG_DEFAULT_CHANNEL macro in C (no real symbol) — kept variadic for
 // call typecheck, satisfied at link by the cdecl no-op in crate::frldr.
 extern "C" {
-    fn TRACE(format: *const i8, ...);
 }
 
 #[no_mangle]
@@ -37,9 +38,9 @@ pub unsafe extern "C" fn CacheInitializeDrive(DriveNumber: u8) -> u8 {
     {
         CacheManagerInitialized = 0u8;
 
-        TRACE(b"CacheBlockCount: %d\n\0".as_ptr() as PCHAR, CacheBlockCount);
-        TRACE(b"CacheSizeLimit: %d\n\0".as_ptr() as PCHAR, CacheSizeLimit);
-        TRACE(b"CacheSizeCurrent: %d\n\0".as_ptr() as PCHAR, CacheSizeCurrent);
+        TRACE!("CacheBlockCount: %d\n", CacheBlockCount);
+        TRACE!("CacheSizeLimit: %d\n", CacheSizeLimit);
+        TRACE!("CacheSizeCurrent: %d\n", CacheSizeCurrent);
 
         while !IsListEmpty(core::ptr::addr_of_mut!(CacheManagerDrive.CacheBlockHead))
         {
@@ -69,10 +70,10 @@ pub unsafe extern "C" fn CacheInitializeDrive(DriveNumber: u8) -> u8 {
 
     CacheManagerInitialized = 1u8;
 
-    TRACE(b"Initializing BIOS drive 0x%x.\n\0".as_ptr() as PCHAR, DriveNumber as u32);
-    TRACE(b"BytesPerSector: %d.\n\0".as_ptr() as PCHAR, CacheManagerDrive.BytesPerSector);
-    TRACE(b"BlockSize: %d.\n\0".as_ptr() as PCHAR, CacheManagerDrive.BlockSize);
-    TRACE(b"CacheSizeLimit: %d.\n\0".as_ptr() as PCHAR, CacheSizeLimit);
+    TRACE!("Initializing BIOS drive 0x%x.\n", DriveNumber as u32);
+    TRACE!("BytesPerSector: %d.\n", CacheManagerDrive.BytesPerSector);
+    TRACE!("BlockSize: %d.\n", CacheManagerDrive.BlockSize);
+    TRACE!("CacheSizeLimit: %d.\n", CacheSizeLimit);
 
     return 1u8;
 }
@@ -99,13 +100,7 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
     let mut Idx: ULONG;
     let mut Buffer = Buffer;
 
-    TRACE(
-        b"CacheReadDiskSectors() DiskNumber: 0x%x StartSector: %I64u SectorCount: %u Buffer: 0x%x\n\0".as_ptr() as PCHAR,
-        DiskNumber as u32,
-        StartSector,
-        SectorCount,
-        Buffer,
-    );
+    TRACE!("CacheReadDiskSectors() DiskNumber: 0x%x StartSector: %I64u SectorCount: %u Buffer: 0x%x\n", DiskNumber as u32, StartSector, SectorCount, Buffer);
 
     if CacheManagerInitialized == 0u8 {
         return 0u8;
@@ -121,15 +116,7 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
     EndBlock = ((StartSector + (SectorCount - 1) as ULONGLONG) / CacheManagerDrive.BlockSize as ULONGLONG) as ULONG;
     SectorOffsetInEndBlock = (1 + (StartSector + (SectorCount - 1) as ULONGLONG) % CacheManagerDrive.BlockSize as ULONGLONG) as ULONG;
     BlockCount = (EndBlock - StartBlock) + 1;
-    TRACE(
-        b"StartBlock: %d SectorOffsetInStartBlock: %d CopyLengthInStartBlock: %d EndBlock: %d SectorOffsetInEndBlock: %d BlockCount: %d\n\0".as_ptr() as PCHAR,
-        StartBlock,
-        SectorOffsetInStartBlock,
-        CopyLengthInStartBlock,
-        EndBlock,
-        SectorOffsetInEndBlock,
-        BlockCount,
-    );
+    TRACE!("StartBlock: %d SectorOffsetInStartBlock: %d CopyLengthInStartBlock: %d EndBlock: %d SectorOffsetInEndBlock: %d BlockCount: %d\n", StartBlock, SectorOffsetInStartBlock, CopyLengthInStartBlock, EndBlock, SectorOffsetInEndBlock, BlockCount);
 
     if BlockCount > 0 {
         CacheBlock = CacheInternalGetBlockPointer(core::ptr::addr_of_mut!(CacheManagerDrive), StartBlock);
@@ -142,12 +129,7 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
             ((*CacheBlock).BlockData as ULONG_PTR + (SectorOffsetInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR) as PVOID,
             (CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector) as SIZE_T,
         );
-        TRACE(
-            b"1 - RtlCopyMemory(0x%x, 0x%x, %d)\n\0".as_ptr() as PCHAR,
-            Buffer,
-            (*CacheBlock).BlockData as ULONG_PTR + (SectorOffsetInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR ,
-            CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector ,
-        );
+        TRACE!("1 - RtlCopyMemory(0x%x, 0x%x, %d)\n", Buffer, (*CacheBlock).BlockData as ULONG_PTR + (SectorOffsetInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR, CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector);
 
         Buffer = (Buffer as ULONG_PTR + (CopyLengthInStartBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR) as PVOID;
 
@@ -166,12 +148,7 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
             (*CacheBlock).BlockData,
             (CacheManagerDrive.BlockSize * CacheManagerDrive.BytesPerSector) as SIZE_T,
         );
-        TRACE(
-            b"2 - RtlCopyMemory(0x%x, 0x%x, %d)\n\0".as_ptr() as PCHAR,
-            Buffer,
-            (*CacheBlock).BlockData,
-            CacheManagerDrive.BlockSize * CacheManagerDrive.BytesPerSector,
-        );
+        TRACE!("2 - RtlCopyMemory(0x%x, 0x%x, %d)\n", Buffer, (*CacheBlock).BlockData, CacheManagerDrive.BlockSize * CacheManagerDrive.BytesPerSector);
 
         Buffer = (Buffer as ULONG_PTR + (CacheManagerDrive.BlockSize * CacheManagerDrive.BytesPerSector) as ULONG_PTR) as PVOID;
 
@@ -190,12 +167,7 @@ pub unsafe extern "C" fn CacheReadDiskSectors(
             (*CacheBlock).BlockData,
             (SectorOffsetInEndBlock * CacheManagerDrive.BytesPerSector) as SIZE_T,
         );
-        TRACE(
-            b"3 - RtlCopyMemory(0x%x, 0x%x, %d)\n\0".as_ptr() as PCHAR,
-            Buffer,
-            (*CacheBlock).BlockData,
-            SectorOffsetInEndBlock * CacheManagerDrive.BytesPerSector,
-        );
+        TRACE!("3 - RtlCopyMemory(0x%x, 0x%x, %d)\n", Buffer, (*CacheBlock).BlockData, SectorOffsetInEndBlock * CacheManagerDrive.BytesPerSector);
 
         Buffer = (Buffer as ULONG_PTR + (SectorOffsetInEndBlock * CacheManagerDrive.BytesPerSector) as ULONG_PTR) as PVOID;
 
@@ -217,12 +189,7 @@ pub unsafe extern "C" fn CacheForceDiskSectorsIntoCache(
     let BlockCount: ULONG;
     let mut Idx: ULONG;
 
-    TRACE(
-        b"CacheForceDiskSectorsIntoCache() DiskNumber: 0x%x StartSector: %d SectorCount: %d\n\0".as_ptr() as PCHAR,
-        DiskNumber as u32,
-        StartSector,
-        SectorCount,
-    );
+    TRACE!("CacheForceDiskSectorsIntoCache() DiskNumber: 0x%x StartSector: %d SectorCount: %d\n", DiskNumber as u32, StartSector, SectorCount);
 
     if CacheManagerInitialized == 0u8 {
         return 0u8;
@@ -250,7 +217,7 @@ pub unsafe extern "C" fn CacheForceDiskSectorsIntoCache(
 pub unsafe extern "C" fn CacheReleaseMemory(MinimumAmountToRelease: ULONG) -> BOOLEAN {
     let mut AmountReleased: ULONG;
 
-    TRACE(b"CacheReleaseMemory() MinimumAmountToRelease = %d\n\0".as_ptr() as PCHAR, MinimumAmountToRelease);
+    TRACE!("CacheReleaseMemory() MinimumAmountToRelease = %d\n", MinimumAmountToRelease);
 
     if CacheManagerInitialized == 0u8 {
         return 0u8;

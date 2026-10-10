@@ -121,6 +121,15 @@ SLEEP_SEEDS = {
     "wait_for",
     "wait_for_armed",
 }
+# Functions that reach a wait only on a path their own contract confines to
+# PASSIVE_LEVEL, so a caller holding a raise is not sleeping: KeSynchronizeExecution
+# takes a KMUTEX only for a CONNECT_MESSAGE_BASED_PASSIVE interrupt (iomgr irq.rs
+# IopSynchronizePassiveInterrupt), which Windows lets be synchronized only at PASSIVE.
+# Every other interrupt it synchronizes by raising and spinning. They never become
+# may-sleep, and so never propagate it to their callers.
+SLEEP_CONDITIONAL = {
+    "KeSynchronizeExecution",
+}
 
 _IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # Path/macro/keyword tokens that wrap an out-param lvalue but are NOT the
@@ -379,7 +388,7 @@ def build_summaries(files, tree_cache, sleep_depth=None):
             if not (previous & calls[f]):
                 continue
             for name, body, _raises, _lowers in summary_facts(src):
-                if name in may_sleep:
+                if name in may_sleep or name in SLEEP_CONDITIONAL:
                     continue
                 if previous & body:
                     may_sleep.add(name)

@@ -419,10 +419,6 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 // wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
 #[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
 
-// cdfs debug ASSERT macros — retail no-ops.
-#[no_mangle] pub extern "C" fn ASSERT_OPTIONAL_IRP(_Irp: PIRP) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDevice(_IrpContext: *mut IRP_CONTEXT, _Status: i32) {}
-#[no_mangle] pub extern "C" fn AssertVerifyDeviceIrp(_Irp: PIRP) {}
 
 // nodetype.h: CdBugCheck(A,B,C) = KeBugCheckEx(CDFS_FILE_SYSTEM, BugCheckFileId|__LINE__, A,B,C).
 //   CDFS_FILE_SYSTEM = 0x26 (sdk/include/reactos/mc/bugcodes.mc).
@@ -430,7 +426,7 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
 //   grind lowered the macro to a 3-arg fn; param1 is passed 0 here (file/line lost,
 //   acceptable on this never-returns crash path). Faithful to the KeBugCheckEx call.
 const CDFS_FILE_SYSTEM: u32 = 0x26;
-#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: u32, B: u32, C: u32) {
+#[no_mangle] pub unsafe extern "C" fn CdBugCheck(A: usize, B: usize, C: usize) {
     KeBugCheckEx(CDFS_FILE_SYSTEM, 0 as ULONG_PTR, A as ULONG_PTR, B as ULONG_PTR, C as ULONG_PTR);
 }
 

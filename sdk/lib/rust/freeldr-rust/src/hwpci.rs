@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // hwpci.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_LIST, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCONFIGURATION_COMPONENT_DATA};
@@ -10,8 +12,6 @@ pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE_MultiFunctionAdapter as MultiFuncti
 pub use ntkrnl_sys::ddk::_CONFIGURATION_CLASS_PeripheralClass as PeripheralClass;
 pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE_RealModeIrqRoutingTable as RealModeIrqRoutingTable;
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn Int386(interrupt: i32, in_regs: *mut REGS, out_regs: *mut REGS) -> i32;
     fn FrLdrHeapAlloc(size: usize, tag: ULONG) -> *mut u8;
     fn FldrCreateComponentKey( Parent: PCONFIGURATION_COMPONENT_DATA, Class: u32, Type: u32, Flags: ULONG, Key: ULONG, Affinity: ULONG, Identifier: *const i8, ConfigData: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, ComponentKey: *mut PCONFIGURATION_COMPONENT_DATA, ) -> i32;
@@ -80,11 +80,11 @@ unsafe fn GetPciIrqRoutingTable() -> PPCI_IRQ_ROUTING_TABLE {
     
     while (Table as ULONG_PTR) < 0x100000 {
         if (*Table).Signature == 0x52495024 {
-            TRACE(b"Found signature\n\0".as_ptr() as PCHAR);
+            TRACE!("Found signature\n");
 
             if ((*Table).TableSize as u32) < crate::FIELD_OFFSET!(PCI_IRQ_ROUTING_TABLE, Slot) ||
                 (*Table).TableSize % 16 != 0 {
-                ERR(b"Invalid routing table size (%u) at 0x%p. Continue searching...\n\0".as_ptr() as PCHAR, ((*Table).TableSize) as usize, (Table) as usize);
+                ERR!("Invalid routing table size (%u) at 0x%p. Continue searching...\n", ((*Table).TableSize) as usize, (Table) as usize);
                 Table = ((Table as ULONG_PTR) + 0x10) as PPCI_IRQ_ROUTING_TABLE;
                 continue;
             }
@@ -96,9 +96,9 @@ unsafe fn GetPciIrqRoutingTable() -> PPCI_IRQ_ROUTING_TABLE {
             }
 
             if (Sum & 0xFF) != 0 {
-                ERR(b"Invalid routing table checksum (%#lx) at 0x%p. Continue searching...\n\0".as_ptr() as PCHAR, (Sum & 0xFF) as usize, (Table) as usize);
+                ERR!("Invalid routing table checksum (%#lx) at 0x%p. Continue searching...\n", (Sum & 0xFF) as usize, (Table) as usize);
             } else {
-                TRACE(b"Valid checksum (%#lx): found routing table at 0x%p\n\0".as_ptr() as PCHAR, (Sum & 0xFF) as usize, (Table) as usize);
+                TRACE!("Valid checksum (%#lx): found routing table at 0x%p\n", (Sum & 0xFF) as usize, (Table) as usize);
                 return Table;
             }
         }
@@ -106,7 +106,7 @@ unsafe fn GetPciIrqRoutingTable() -> PPCI_IRQ_ROUTING_TABLE {
         Table = ((Table as ULONG_PTR) + 0x10) as PPCI_IRQ_ROUTING_TABLE;
     }
 
-    ERR(b"No valid routing table found!\n\0".as_ptr() as PCHAR);
+    ERR!("No valid routing table found!\n");
 
     core::ptr::null_mut()
 }
@@ -125,12 +125,12 @@ pub unsafe extern "C" fn PcFindPciBios(BusData: PPCI_REGISTRY_INFO) -> BOOLEAN {
         RegsOut.d.edx == 0x20494350 &&
         RegsOut.b.ah == 0
     {
-        TRACE(b"Found PCI bios\n\0".as_ptr() as PCHAR);
+        TRACE!("Found PCI bios\n");
 
-        TRACE(b"AL: %x\n\0".as_ptr() as PCHAR, (RegsOut.b.al) as usize);
-        TRACE(b"BH: %x\n\0".as_ptr() as PCHAR, (RegsOut.b.bh) as usize);
-        TRACE(b"BL: %x\n\0".as_ptr() as PCHAR, (RegsOut.b.bl) as usize);
-        TRACE(b"CL: %x\n\0".as_ptr() as PCHAR, (RegsOut.b.cl) as usize);
+        TRACE!("AL: %x\n", (RegsOut.b.al) as usize);
+        TRACE!("BH: %x\n", (RegsOut.b.bh) as usize);
+        TRACE!("BL: %x\n", (RegsOut.b.bl) as usize);
+        TRACE!("CL: %x\n", (RegsOut.b.cl) as usize);
 
         (*BusData).NoBuses = RegsOut.b.cl + 1;
         (*BusData).MajorRevision = RegsOut.b.bh;
@@ -140,7 +140,7 @@ pub unsafe extern "C" fn PcFindPciBios(BusData: PPCI_REGISTRY_INFO) -> BOOLEAN {
         return 1u8;
     }
 
-    TRACE(b"No PCI bios found\n\0".as_ptr() as PCHAR);
+    TRACE!("No PCI bios found\n");
 
     return 0u8;
 }
@@ -154,12 +154,12 @@ unsafe fn DetectPciIrqRoutingTable(BusKey: PCONFIGURATION_COMPONENT_DATA) {
 
     Table = GetPciIrqRoutingTable();
     if Table != core::ptr::null_mut() {
-        TRACE(b"Table size: %u\n\0".as_ptr() as PCHAR, ((*Table).TableSize) as usize);
+        TRACE!("Table size: %u\n", ((*Table).TableSize) as usize);
 
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[2]) + (((*Table).TableSize) as u32);
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -214,7 +214,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
         Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList == core::ptr::null_mut() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as PCHAR);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -246,8 +246,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
                 Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors[1]) + core::mem::size_of::<PCI_REGISTRY_INFO>() as ULONG;
                 PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
                 if PartialResourceList == core::ptr::null_mut() {
-                    ERR(
-                        b"Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n\0".as_ptr() as PCHAR, (i) as usize, (BusData.NoBuses as ULONG) as usize);
+                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, (BusData.NoBuses as ULONG) as usize);
                     return;
                 }
 
@@ -270,8 +269,7 @@ pub unsafe extern "C" fn DetectPciBios(SystemKey: PCONFIGURATION_COMPONENT_DATA,
                 Size = crate::FIELD_OFFSET!(CM_PARTIAL_RESOURCE_LIST, PartialDescriptors);
                 PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
                 if PartialResourceList == core::ptr::null_mut() {
-                    ERR(
-                        b"Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n\0".as_ptr() as PCHAR, (i) as usize, (BusData.NoBuses as ULONG) as usize);
+                    ERR!("Failed to allocate resource descriptor! Ignoring remaining PCI buses. (i = %lu, NoBuses = %lu)\n", (i) as usize, (BusData.NoBuses as ULONG) as usize);
                     return;
                 }
 

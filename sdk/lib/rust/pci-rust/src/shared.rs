@@ -59,6 +59,9 @@ pub struct _PCI_DEVICE {
     pub EnableIoSpace: BOOLEAN,
     pub EnableBusMaster: BOOLEAN,
     pub IsDebuggingDevice: BOOLEAN,
+    /// VibeOS: the ACPI routing of this function's INTx (irqroute.rs).
+    pub IrqRouteState: UCHAR,
+    pub IrqRouteGsi: ULONG,
 }
 pub type PCI_DEVICE = _PCI_DEVICE;
 pub type PPCI_DEVICE = *mut _PCI_DEVICE;
@@ -113,6 +116,8 @@ pub struct _FDO_DEVICE_EXTENSION {
     pub DeviceListCount: ULONG,
     pub DeviceListLock: KSPIN_LOCK,
     pub Ldo: PDEVICE_OBJECT,
+    /// VibeOS: acpi.sys's INTx routing, on a root bus (irqroute.rs).
+    pub IrqRouting: crate::irqroute::IrqRoutingInterface,
 }
 pub type FDO_DEVICE_EXTENSION = _FDO_DEVICE_EXTENSION;
 pub type PFDO_DEVICE_EXTENSION = *mut _FDO_DEVICE_EXTENSION;

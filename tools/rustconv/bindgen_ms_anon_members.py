@@ -38,8 +38,24 @@ _PADDING_RE = (
 )
 
 
+# ndis.h spells the base-struct idiom for both languages:
+#     #ifdef __cplusplus
+#       NDIS40_PROTOCOL_CHARACTERISTICS Ndis40Chars;
+#     #else
+#       NDIS40_PROTOCOL_CHARACTERISTICS;
+#     #endif
+# bindgen parses C, so the #else arm is the one it laid out. Only a conditional with no nested
+# directive is unwrapped.
+_CPLUSPLUS_ARMS_RE = re.compile(
+    r"^[ \t]*#\s*ifdef\s+__cplusplus\b[^\n]*\n(?:(?!^[ \t]*#).*\n)*?"
+    r"^[ \t]*#\s*else\b[^\n]*\n((?:(?!^[ \t]*#).*\n)*?)^[ \t]*#\s*endif\b[^\n]*\n",
+    re.M,
+)
+
+
 def bare_first_members(header_text: str) -> dict[str, str]:
     """{struct tag: embedded TYPE} for structs whose first member is a bare type name."""
+    header_text = _CPLUSPLUS_ARMS_RE.sub(lambda m: m.group(1), header_text)
     out: dict[str, str] = {}
     for m in _STRUCT_RE.finditer(header_text):
         first = _FIRST_MEMBER_RE.match(header_text, m.end())

@@ -5,7 +5,7 @@
 //! because nothing links against them (every raw extern decl rustconv emitted is
 //! stripped at integration).
 //!
-//! Policy: TRACE/WARN are no-ops; ERR/FIXME print the raw format string (no
+//! Policy: TRACE/WARN are winemacros.rs's token-discarding macros, never fns; ERR/FIXME print the raw format string (no
 //! interpolation) to the debugger so failures stay loud. debugstr_* return a
 //! static placeholder — their results are only ever consumed as TRACE/WARN args.
 //!
@@ -83,10 +83,6 @@ extern "C" {
     /// are `#define`d straight to it (debug.h:381-382). cdecl + varargs.
     pub fn wine_dbg_printf(format: *const c_char, ...) -> c_int;
 }
-
-pub unsafe fn TRACE(_fmt: *const c_char) {}
-
-pub unsafe fn WARN(_fmt: *const c_char) {}
 
 pub unsafe fn ERR(fmt: *const c_char) {
     OutputDebugStringA(b"oleaut32-rust ERR: \0".as_ptr() as *const c_char);

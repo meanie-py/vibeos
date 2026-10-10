@@ -392,7 +392,6 @@ pub const KeepObject: _IO_ALLOCATION_ACTION = _IO_ALLOCATION_ACTION_KeepObject; 
 pub const KeyValuePartialInformation: u32 = 2; // config-rust/src/cmsysini.rs
 pub const MAXULONG: u32 = 4294967295; // legide-rust/src/types_amd64.rs
 pub const MAX_IDE_DEVICE: u32 = 2; // legide-rust/src/prelude.rs
-pub const MAX_SLOTS: usize = 16; // usbxhci-rust/src/controller.rs
 pub const MODE_DSP_FUA_SUPPORTED: u32 = 16; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_DSP_WRITE_PROTECT: u32 = 128; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_PAGE_CACHING: u32 = 8; // atapi-legacy-rust/src/types_amd64.rs
@@ -587,11 +586,21 @@ extern "system" {
     pub fn RtlAssert( FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: *mut CHAR, ); // mountmgr-rust/src/mountmgr.rs
 }
 // ==== end port resolve ====
-pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ASSERT, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
+// ntkrnl-sys's ASSERT, not win32macros': DBG=1 here, so the C's ASSERT calls RtlAssert, which
+// prints and continues. win32macros' is the release-build no-op.
+pub use ntkrnl_sys::ASSERT;
+// KeGetCurrentThread: an amd64 FORCEINLINE (PRCB read), a real ntoskrnl export elsewhere. Not
+// ntkrnl_sys::mm's, whose arm64 arm reads through KeGetCurrentPrcb, which a driver cannot import.
+#[cfg(target_arch = "x86_64")]
+pub use ntkrnl_sys::inline::tier1::KeGetCurrentThread;
+#[cfg(not(target_arch = "x86_64"))]
+pub use crate::types::KeGetCurrentThread;
+pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, C_ASSERT, CopyMemory, DBG_UNREFERENCED_LOCAL_VARIABLE, DWLP_DLGPROC, DWLP_MSGRESULT, DWLP_USER, FIELD_OFFSET, GET_X_LPARAM, GET_Y_LPARAM, GetBValue, GetGValue, GetRValue, HIBYTE, HIWORD, IDE_SET_ADVANCE_PIO_MODE, IDE_SET_DEFAULT_PIO_MODE, IDE_SET_MWDMA_MODE, IDE_SET_SWDMA_MODE, IDE_SET_UDMA_MODE, INVALID_HANDLE_VALUE, InitializeObjectAttributes, IsContainerPartition, IsEqualGUID, IsFTPartition, IsRecognizedPartition, LANGIDFROMLCID, LOBYTE, LOWORD, MAKEINTRESOURCEA, MAKEINTRESOURCEW, MAKELANGID, MAKELCID, MAKELONG, MAKEWORD, MoveMemory, PAGE_ROUND_UP, PRIMARYLANGID, PtrToUlong, RGB, RTL_CONSTANT_STRING, RTL_CONTAINS_FIELD, RTL_FIELD_SIZE, RTL_NUMBER_OF, RTL_NUMBER_OF_FIELD, RTL_SIZEOF_THROUGH_FIELD, RtlCopyMemory, RtlFillMemory, RtlGetProcessHeap, RtlMoveMemory, RtlZeroMemory, SORTIDFROMLCID, SRB_STATUS, SUBLANGID, UNICODE_NULL, UNREFERENCED_PARAMETER, UlongToPtr, ZeroMemory, _countof, iswalnum, iswalpha, iswcntrl, iswdigit, iswgraph, iswlower, iswprint, iswpunct, iswspace, iswupper, iswxdigit, wide_bytes};
 pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatW, StringCbCopyNExW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCchCatW, StringCchCopyNExW, StringCchCopyW, StringCchLengthW, StringCchPrintfW, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
+pub const ACPI_EVAL_OUTPUT_BUFFER_SIGNATURE: u32 = 0x426F6541; // acpiioct.h 'BoeA' (pciidex's clang fact), dev_config.c ASSERT
 pub const ATAPORT_TAG: u32 = 0x50656449; // clang, atapi.c
 pub const ATA_DEVICE_REQUEST_SIGNATURE: u32 = 0x72415441; // clang, fdo.c
 pub const IOCTL_ATA_PASS_THROUGH: u32 = 0x4D02C; // clang, ioctl.c
@@ -863,6 +872,13 @@ pub unsafe fn AtaPacketCommandUseDma(OpCode: UCHAR) -> BOOLEAN {
      (OpCode) as u32 == SCSIOP_WRITE16 ||
      (OpCode) as u32 == SCSIOP_READ_CD ||
      (OpCode) as u32 == SCSIOP_READ_CD_MSF)) as u8
+}
+// drivers/storage/ide/atapi/atapi.h:603: header-inline `IsPowerOfTwo` -- its only caller is
+// scsi.c's AtaReqAllocateSlot ASSERT. Zero is excluded, as in the C.
+#[allow(dead_code)]
+#[inline]
+pub fn IsPowerOfTwo(x: ULONG) -> BOOLEAN {
+    ((x != 0) && ((x & x.wrapping_sub(1)) == 0)) as u8
 }
 // drivers/storage/ide/atapi/atapi.h:567: header-inline `AtaPortQueueEmpty`
 #[allow(dead_code)]

@@ -797,8 +797,13 @@ unsafe fn PdoQueryResourceRequirements(
             (*Descriptor).ShareDisposition = CmResourceShareShared;
             (*Descriptor).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
 
-            (*Descriptor).u.Interrupt.MinimumVector = 0;
-            (*Descriptor).u.Interrupt.MaximumVector = 0xFF;
+            // An ACPI-routed pin has exactly one place to go.
+            let (min, max) = match crate::irqroute::routed_line(DeviceExtension, PciConfigPtr) {
+                Some(gsi) => (gsi, gsi),
+                None => (0, 0xFF),
+            };
+            (*Descriptor).u.Interrupt.MinimumVector = min;
+            (*Descriptor).u.Interrupt.MaximumVector = max;
         }
     } else if PCI_CONFIGURATION_TYPE(PciConfigPtr) == PCI_BRIDGE_TYPE {
         let mut Bar: u8 = 0;
@@ -925,6 +930,21 @@ unsafe fn PdoQueryResourceRequirements(
     STATUS_SUCCESS
 }
 
+/// The interrupt a function's boot configuration names: where ACPI routes its
+/// pin, else the Interrupt Line the firmware wrote (0 and 0xFF mean none).
+unsafe fn boot_interrupt(DeviceExtension: PPDO_DEVICE_EXTENSION, PciConfigPtr: *const PCI_COMMON_HEADER) -> Option<ULONG> {
+    if (*PciConfigPtr).u.type0.InterruptPin == 0 {
+        return None;
+    }
+    if let Some(gsi) = crate::irqroute::routed_line(DeviceExtension, PciConfigPtr) {
+        return Some(gsi);
+    }
+    match (*PciConfigPtr).u.type0.InterruptLine {
+        0 | 0xFF => None,
+        line => Some(line as ULONG),
+    }
+}
+
 unsafe fn PdoQueryResources(
     DeviceObject: PDEVICE_OBJECT,
     Irp: PIRP,
@@ -980,10 +1000,7 @@ unsafe fn PdoQueryResources(
             }
         }
 
-        if (*PciConfigPtr).u.type0.InterruptPin != 0
-            && (*PciConfigPtr).u.type0.InterruptLine != 0
-            && (*PciConfigPtr).u.type0.InterruptLine != 0xFF
-        {
+        if boot_interrupt(DeviceExtension, PciConfigPtr).is_some() {
             ResCount += 1;
         }
     } else if PCI_CONFIGURATION_TYPE(PciConfigPtr) == PCI_BRIDGE_TYPE {
@@ -1111,17 +1128,12 @@ unsafe fn PdoQueryResources(
         }
 
         /* Add interrupt resource */
-        if (*PciConfigPtr).u.type0.InterruptPin != 0
-            && (*PciConfigPtr).u.type0.InterruptLine != 0
-            && (*PciConfigPtr).u.type0.InterruptLine != 0xFF
-        {
+        if let Some(line) = boot_interrupt(DeviceExtension, PciConfigPtr) {
             (*Descriptor).Type = CmResourceTypeInterrupt;
             (*Descriptor).ShareDisposition = CmResourceShareShared;
             (*Descriptor).Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
-            (*Descriptor).u.Interrupt.Level =
-                (*PciConfigPtr).u.type0.InterruptLine as ULONG;
-            (*Descriptor).u.Interrupt.Vector =
-                (*PciConfigPtr).u.type0.InterruptLine as ULONG;
+            (*Descriptor).u.Interrupt.Level = line;
+            (*Descriptor).u.Interrupt.Vector = line;
             (*Descriptor).u.Interrupt.Affinity = 0xFFFF_FFFF;
         }
 

@@ -36,6 +36,7 @@ pub struct CpuLayer {
     pub NotifyReadFile: unsafe extern "system" fn(HANDLE, PVOID, SIZE_T, BOOL, NTSTATUS),
     pub ThreadInit: unsafe extern "system" fn() -> NTSTATUS,
     pub ThreadTerm: unsafe extern "system" fn(HANDLE, NTSTATUS),
+    pub ProcessTerm: unsafe extern "system" fn(HANDLE, BOOL, NTSTATUS),
     pub Simulate: unsafe extern "system" fn(),
 }
 
@@ -282,6 +283,7 @@ pub unsafe extern "system" fn WowX64LdrpInitialize(_Context: PCONTEXT) {
         NotifyReadFile: core::mem::transmute(Resolve(Fex, b"BTCpu64NotifyReadFile\0")),
         ThreadInit: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadInit\0")),
         ThreadTerm: core::mem::transmute(Resolve(Fex, b"BTCpu64ThreadTerm\0")),
+        ProcessTerm: core::mem::transmute(Resolve(Fex, b"BTCpu64ProcessTerm\0")),
         Simulate: core::mem::transmute(Resolve(Fex, b"BTCpu64Simulate\0")),
     });
     let Cpu = Cpu();

@@ -969,6 +969,8 @@ _ATA_TIMEOUT_RE = re.compile(
     r"(?:Slot \d+ \(\w+\) timed out|Internal request timed out)"
 )
 _ATA_NO_IRQ_RE = re.compile(r"\(pciidex-rust/[^)]*\) CH \d+: Could not connect to interrupt")
+# rtl-diag's RtlAssert: `*** ASSERT FAILED: <expr> at <file!()>:<line>`, print and continue.
+_ATA_ASSERT_RE = re.compile(r"\*\*\* ASSERT FAILED: .* at (?:atapi|pciidex|legide)-rust/")
 
 
 def _ata_health_check(text: str) -> dict | None:
@@ -976,6 +978,13 @@ def _ata_health_check(text: str) -> dict | None:
     reset and retried, and a channel that could not connect its interrupt is simply left
     out, so the desktop comes up either way: only these lines say a disk was served by
     the timeout path, or not at all."""
+    asserts = [ln.strip() for ln in text.splitlines() if _ATA_ASSERT_RE.search(ln)]
+    if asserts:
+        # DBG=1: the C's ASSERTs are live and print and continue, so the boot goes on.
+        return {
+            "classification": "ATA_ASSERT",
+            "salient": [f"{len(asserts)} ATA stack assertion(s) failed", *asserts[:4]],
+        }
     lost = [ln.strip() for ln in text.splitlines() if _ATA_TIMEOUT_RE.search(ln)]
     if lost:
         return {
@@ -1128,6 +1137,8 @@ _SEGMENT_ROOT = re.compile(r"\[HAL\] PCI segment 1: root bus 128-255 published")
 _NVME_MSIX = "[NVME] controller 0: MSI-X: "
 # ...this once a completion arrived by interrupt (nvme-rust nvme.rs `tally`)...
 _NVME_INTERRUPTS = "[NVME] controller 0: interrupts working"
+# ...and, under NVME_PASSIVE_ISR, its messages connected passive (pnp.rs `connect`).
+_NVME_PASSIVE = "message(s) connected at passive level"
 # ...and this after its start-time self-test: one 1 MiB read, which the I/O path
 # cuts into commands and runs at once, by DMA to the reader's pages (pnp.rs `self_test`).
 _NVME_SELF_TEST = re.compile(
@@ -1303,6 +1314,9 @@ _SMMU_TRANSLATING = re.compile(r"\[HAL\] SMMUv3 at \S+: TRANSLATING")
 _SMMU_ATTACHED = re.compile(r"\[HAL\] SMMUv3 at \S+: requester \S+ is StreamID \S+ - translating")
 # ...and nvme.sys, whose service is DMA-remapping compatible, in a domain of its own.
 _SMMU_OWN_DOMAIN = "translating in a domain of its own"
+# ...and one a driver that found its device outside PnP claimed (smmuv3.rs `attach`).
+_SMMU_CLAIMED = "claimed by its driver)"
+_VIOBLK_PCI = re.compile(r"\[VIOBLK\] [0-9a-f]{2}:[0-9a-f]{2}\.\d dev ")
 # nvme-rust nvme.rs stray_identify (the NVME_STRAY_DMA tripwire).
 _STRAY = re.compile(r"tripwire: a stray Identify to RAM at 0x([0-9a-fA-F]+) \w+; (.*)$", re.M)
 
@@ -1331,6 +1345,18 @@ def _smmu_translate_check(text: str) -> dict | None:
             "classification": "SMMU_NO_DOMAIN",
             "salient": [
                 "nvme.sys is DMA-remapping compatible, but no device got a domain of its own",
+                *lines,
+            ],
+        }
+    # vioblk and netstack find their PCI functions themselves and claim their
+    # domains (HalVibeosDmaAttach); every arm64 rig boots from a virtio-blk disk.
+    if _VIOBLK_PCI.search(text) and _SMMU_CLAIMED not in text:
+        return {
+            "classification": "SMMU_UNCLAIMED",
+            "salient": [
+                "vioblk drove a PCI function, but no driver claimed a domain of its own "
+                "for one (vioblk-rust / netstack-rust dma.rs)",
+                *[ln.strip() for ln in text.splitlines() if "VIOBLK] 00:" in ln][-2:],
                 *lines,
             ],
         }
@@ -1499,6 +1525,18 @@ def _nvme_check(text: str) -> dict | None:
             "salient": [
                 f"the namespace was published but nvme.sys never printed `{_NVME_INTERRUPTS}`: "
                 "no completion arrived by interrupt, so the driver ran on its poll",
+                *lines,
+            ],
+        }
+    # NVME_PASSIVE_ISR: nvme.sys connects with CONNECT_MESSAGE_BASED_PASSIVE, so its
+    # routines run on iomgr's worker thread; "interrupts working" above then proves
+    # a completion got from the ISR through the DPC and the worker to the driver.
+    if "NVME_PASSIVE_ISR" in os.environ.get("VIBEOS_TRIPWIRE", "") and (_NVME_PASSIVE not in text):
+        return {
+            "classification": "NVME_NOT_PASSIVE",
+            "salient": [
+                f"NVME_PASSIVE_ISR boot, but nvme.sys never printed `{_NVME_PASSIVE}`: "
+                "its messages were not connected passive (iomgr irq.rs)",
                 *lines,
             ],
         }

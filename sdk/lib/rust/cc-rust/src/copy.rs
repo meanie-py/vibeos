@@ -102,7 +102,7 @@ pub static mut CcDataFlushes: ULONG = 0;
 
 #[no_mangle]
 pub unsafe extern "system" fn CcInitCacheZeroPage() {
-    MI_SET_USAGE(MI_USAGE_CACHE);
+    ntkrnl_sys::MI_SET_USAGE!(MI_USAGE_CACHE);
     let mut page: PFN_NUMBER = 0;
     let status = MmRequestPageMemoryConsumer(MC_SYSTEM, 1u8, core::ptr::addr_of_mut!(page));
     CcZeroPage = page;

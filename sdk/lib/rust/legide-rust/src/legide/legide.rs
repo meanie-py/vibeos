@@ -398,6 +398,7 @@ unsafe extern "C" fn AtaLegacyChannelTranslateResources(
         (*Descriptor).u.Port.Start.QuadPart = ControlPortBase as ULONG_PTR as LONGLONG;
         Descriptor = Descriptor.add(1);
     }
+    ASSERT!((*Descriptor).Type == CmResourceTypeInterrupt);
 
     (*Descriptor).u.Interrupt.Vector = HalGetInterruptVector(
         Isa,

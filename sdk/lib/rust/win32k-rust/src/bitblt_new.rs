@@ -12,7 +12,6 @@ extern "system" {
     fn BRUSHOBJ_psoPattern(pbo: *mut BRUSHOBJ) -> *mut SURFOBJ;
     fn CLIPOBJ_bEnum(pco: *mut CLIPOBJ, cj: ULONG, pv: *mut ULONG) -> i32;
     fn CLIPOBJ_cEnumStart(pco: *mut CLIPOBJ, bAll: i32, iType: u32, iDirection: u32, cMaxRects: u32,) -> u32;
-    fn NT_ASSERT(expr: BOOL);
     fn ROP4_BKGND(rop4: ROP4) -> ULONG;
     fn ROP4_FGND(rop4: ROP4) -> ULONG;
     fn ROP4_USES_DEST(rop4: ROP4) -> BOOL;
@@ -191,7 +190,7 @@ pub unsafe extern "system" fn EngBitBlt(
     bltdata.siDst.jBpp = gajBitsPerFormat[(*psoTrg).iBitmapFormat as usize];
 
     if ROP4_USES_PATTERN(rop4_local) != 0 {
-        NT_ASSERT(!pbo.is_null());
+        NT_ASSERT!(!pbo.is_null());
 
         bltdata.ulSolidColor = (*pbo).iSolidColor;
 
@@ -223,7 +222,7 @@ pub unsafe extern "system" fn EngBitBlt(
 
     if ROP4_USES_MASK(rop4_local) != 0 {
         if psoMask_local.is_null() {
-            NT_ASSERT(!pbo.is_null());
+            NT_ASSERT!(!pbo.is_null());
 
             psoMask_local = BRUSHOBJ_psoMask(pbo);
             if psoMask_local.is_null() {

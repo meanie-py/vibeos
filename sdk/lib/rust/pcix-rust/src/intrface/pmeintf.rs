@@ -5,11 +5,12 @@
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
-use ntkrnl_sys::ddk::{PCI_PME_INTERFACE, PINTERFACE};
+use ntkrnl_sys::ddk::{PCI_PME_INTERFACE, PINTERFACE, PDEVICE_OBJECT};
 use ntkrnl_sys::ddk::{PSTR, RtlAssert};
 use ntkrnl_sys::driver_ddk::DbgPrint;
 use ntkrnl_sys::ke::DbgBreakPoint;
 use core::ffi::c_void;
+use ntkrnl_sys::interlocked::{InterlockedDecrement, InterlockedIncrement};
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
@@ -41,6 +42,25 @@ pub unsafe extern "system" fn PciPmeInterfaceInitializer(Instance: PVOID) -> NTS
     }
     STATUS_UNSUCCESSFUL
 }
+// The PME interface for an FDO (upstream 81f04b39ba4). Context is the FDO extension.
+#[no_mangle]
+pub unsafe extern "system" fn PciPmeInterface_Reference(Context: PVOID) {
+    let FdoExtension = Context as PPCI_FDO_EXTENSION;
+    InterlockedIncrement(&raw mut (*FdoExtension).PciPmeInterfaceCount);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciPmeInterface_Dereference(Context: PVOID) {
+    let FdoExtension = Context as PPCI_FDO_EXTENSION;
+    InterlockedDecrement(&raw mut (*FdoExtension).PciPmeInterfaceCount);
+}
+
+#[no_mangle]
+pub unsafe extern "system" fn PciPmeInterface_UpdateEnable(DeviceObject: PDEVICE_OBJECT, Enable: BOOLEAN) {
+    let _ = (DeviceObject, Enable);
+    DbgPrint(b"PciPmeInterface_UpdateEnable is not yet implemented\n\0".as_ptr() as *const i8);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn PciPmeInterfaceConstructor(
     DeviceExtension: *mut core::ffi::c_void,
@@ -50,16 +70,20 @@ pub unsafe extern "system" fn PciPmeInterfaceConstructor(
     Size: u16,
     Interface: PINTERFACE,
 ) -> NTSTATUS {
-    if Version as i32 != PCI_PME_INTRF_STANDARD_VER as i32 {
-        return STATUS_NOINTERFACE;
+    let _ = (Instance, InterfaceData, Version);
+    PAGED_CODE!();
+
+    if (Size as usize) < core::mem::size_of::<PCI_PME_INTERFACE>() {
+        return STATUS_UNSUCCESSFUL;
     }
-    DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"PciPmeInterfaceConstructor\0".as_ptr() as *const i8,
-        b"drivers/bus/pcix/intrface/pmeintf.c\0".as_ptr() as *const i8,
-        62i32,
-    );
-    DbgPrint(b"\0".as_ptr() as *const i8);
-    DbgBreakPoint();
-    STATUS_NOT_IMPLEMENTED
+
+    let PmeInterface = Interface as *mut PCI_PME_INTERFACE;
+    (*PmeInterface).Size = core::mem::size_of::<PCI_PME_INTERFACE>() as USHORT;
+    (*PmeInterface).Version = PCI_PME_INTRF_STANDARD_VER as USHORT;
+    (*PmeInterface).Context = DeviceExtension;
+    (*PmeInterface).InterfaceReference = Some(PciPmeInterface_Reference);
+    (*PmeInterface).InterfaceDereference = Some(PciPmeInterface_Dereference);
+    (*PmeInterface).UpdateEnable = Some(PciPmeInterface_UpdateEnable);
+
+    STATUS_SUCCESS
 }

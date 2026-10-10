@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE, WARN};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_FILESYSTEM; // iso.c: DBG_DEFAULT_CHANNEL(FILESYSTEM)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{ARC_STATUS, FILEINFORMATION, LARGE_INTEGER, PCSTR};
@@ -135,13 +137,10 @@ static Iso9660FuncTable: DEVVTBL = DEVVTBL {
 };
 // ---- end restored ----
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
 }
 
 extern "C" {
     fn FsGetDeviceSpecific(FileId: u32) -> PISO_FILE_INFO;
-    fn TRACE(fmt: *const i8, ...);
     fn FsGetFirstNameFromPath(Path: PCHAR, FileName: PCSTR);
     fn FsGetNumPathParts(Path: PCSTR) -> ULONG;
     fn RtlEqualMemory(Source1: PVOID, Source2: PVOID, Length: usize) -> BOOLEAN;
@@ -173,9 +172,7 @@ unsafe fn IsoSearchDirectoryBufferForFile(
     let mut i: ULONG;
     let mut Name: [CHAR; 32] = [0; 32];
 
-    TRACE(
-        b"IsoSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x DirectoryLength = %d FileName = %s\n\0".as_ptr() as PCHAR, (DirectoryBuffer) as usize, (DirectoryLength) as usize, (FileName) as usize,
-    );
+    TRACE!("IsoSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x DirectoryLength = %d FileName = %s\n", (DirectoryBuffer) as usize, (DirectoryLength) as usize, (FileName) as usize);
 
     Offset = 0;
     Record = DirectoryBuffer as PDIR_RECORD;
@@ -198,9 +195,9 @@ unsafe fn IsoSearchDirectoryBufferForFile(
         let file_id_ptr = (*Record).FileId.as_ptr();
         let id0 = if (*Record).FileIdLength >= 1 { *file_id_ptr } else { 0 };
         if (*Record).FileIdLength == 1 && id0 == 0 {
-            TRACE(b"Name '.'\n\0".as_ptr() as PCHAR);
+            TRACE!("Name '.'\n");
         } else if (*Record).FileIdLength == 1 && id0 == 1 {
-            TRACE(b"Name '..'\n\0".as_ptr() as PCHAR);
+            TRACE!("Name '..'\n");
         } else {
             i = 0;
             while i < (*Record).FileIdLength as ULONG {
@@ -210,7 +207,7 @@ unsafe fn IsoSearchDirectoryBufferForFile(
                 i += 1;
             }
             Name[i as usize] = 0;
-            TRACE(b"Name '%s'\n\0".as_ptr() as PCHAR, (Name.as_ptr()) as usize);
+            TRACE!("Name '%s'\n", (Name.as_ptr()) as usize);
 
             if _stricmp(FileName, Name.as_ptr()) == 0 {
                 (*IsoFileInfoPointer).FileStart = (*Record).ExtentLocationL;
@@ -235,18 +232,12 @@ unsafe fn IsoBufferDirectory(
     let mut Count: ULONG = 0;
     let mut Status: ARC_STATUS = ESUCCESS;
 
-    TRACE(
-        b"IsoBufferDirectory() DirectoryStartSector = %d DirectoryLength = %d\n\0".as_ptr() as PCHAR, (DirectoryStartSector) as usize, (DirectoryLength) as usize,
-    );
+    TRACE!("IsoBufferDirectory() DirectoryStartSector = %d DirectoryLength = %d\n", (DirectoryStartSector) as usize, (DirectoryLength) as usize);
 
     SectorCount = (ROUND_UP(DirectoryLength, SECTORSIZE) / SECTORSIZE) as u32 ;
-    TRACE(
-        b"Trying to read (DirectoryCount) %d sectors.\n\0".as_ptr() as PCHAR, (SectorCount) as usize,
-    );
+    TRACE!("Trying to read (DirectoryCount) %d sectors.\n", (SectorCount) as usize);
 
-    TRACE(
-        b"Trying to allocate (DirectoryLength) %d bytes.\n\0".as_ptr() as PCHAR, (DirectoryLength) as usize,
-    );
+    TRACE!("Trying to allocate (DirectoryLength) %d bytes.\n", (DirectoryLength) as usize);
     DirectoryBuffer = FrLdrTempAlloc((DirectoryLength) as usize , TAG_ISO_BUFFER);
     if DirectoryBuffer.is_null() {
         return ENOMEM;
@@ -285,7 +276,7 @@ unsafe fn IsoLookupFile(mut FileName: PCSTR, DeviceId: ULONG, IsoFileInfo: PISO_
     let DoFullLookup: BOOLEAN;
     let FileAttributes: UCHAR;
 
-    TRACE(b"IsoLookupFile() FileName = %s\n\0".as_ptr() as PCHAR, (FileName) as usize);
+    TRACE!("IsoLookupFile() FileName = %s\n", (FileName) as usize);
 
     Volume = IsoVolumes[DeviceId as usize];
 
@@ -415,8 +406,7 @@ unsafe extern "C" fn IsoGetFileInformation(FileId: u32, Information: *mut FILEIN
     );
     (*Information).FileName[(*Information).FileNameLength as usize] = 0;
 
-    TRACE(
-        b"IsoGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n\0".as_ptr() as *const i8, (FileId) as usize, ((*Information).EndingAddress.u.LowPart) as usize, ((*Information).CurrentAddress.u.LowPart) as usize);
+    TRACE!("IsoGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n", (FileId) as usize, ((*Information).EndingAddress.u.LowPart) as usize, ((*Information).CurrentAddress.u.LowPart) as usize);
 
     0
 }
@@ -432,7 +422,7 @@ unsafe extern "C" fn IsoOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: PULONG) ->
 
     DeviceId = FsGetDeviceId(*FileId);
 
-    TRACE(b"IsoOpen() FileName = %s\n\0".as_ptr() as PCHAR, (Path) as usize);
+    TRACE!("IsoOpen() FileName = %s\n", (Path) as usize);
 
     FileHandle = FrLdrTempAlloc(core::mem::size_of::<ISO_FILE_INFO>(), TAG_ISO_FILE) as PISO_FILE_INFO;
     if FileHandle.is_null() {
@@ -463,7 +453,7 @@ unsafe extern "C" fn IsoRead(FileId: u32, Buffer: *mut core::ffi::c_void, N: u32
     let mut Buffer = Buffer;
     let mut Status: ARC_STATUS = ESUCCESS;
 
-    TRACE(b"IsoRead() Buffer = %p, N = %lu\n\0".as_ptr() as _, (Buffer) as usize, (N) as usize);
+    TRACE!("IsoRead() Buffer = %p, N = %lu\n", (Buffer) as usize, (N) as usize);
 
     DeviceId = FsGetDeviceId(FileId);
     *Count = 0;
@@ -538,7 +528,7 @@ unsafe extern "C" fn IsoRead(FileId: u32, Buffer: *mut core::ffi::c_void, N: u32
         (*FileHandle).FilePointer += N;
     }
 
-    TRACE(b"IsoRead() done\n\0".as_ptr() as _);
+    TRACE!("IsoRead() done\n");
 
     return ESUCCESS;
 }
@@ -589,7 +579,7 @@ pub unsafe extern "C" fn IsoMount(DeviceId: u32) -> *const DEVVTBL {
     let mut Status: ARC_STATUS = ESUCCESS;
     let Volume: PISO_VOLUME_INFO;
 
-    TRACE(b"Enter IsoMount(%lu)\n\0".as_ptr() as *const i8, (DeviceId) as usize);
+    TRACE!("Enter IsoMount(%lu)\n", (DeviceId) as usize);
 
     Position.QuadPart = (16 * SECTORSIZE) as i64;
     Status = ArcSeek(DeviceId, &mut Position, SeekAbsolute);
@@ -602,16 +592,16 @@ pub unsafe extern "C" fn IsoMount(DeviceId: u32) -> *const DEVVTBL {
     }
 
     if !((*Pvd).VdType == 1 && RtlEqualMemory((*Pvd).StandardId.as_ptr() as *mut core::ffi::c_void, b"CD001\0".as_ptr() as *mut core::ffi::c_void, 5usize) != 0 && (*Pvd).VdVersion == 1) {
-        WARN(b"Unrecognized CD-ROM format\n\0".as_ptr() as *const i8);
+        WARN!("Unrecognized CD-ROM format\n");
         return core::ptr::null();
     }
     if (*Pvd).LogicalBlockSizeL != SECTORSIZE as u16 {
-        ERR(b"Unsupported LogicalBlockSize %u\n\0".as_ptr() as *const i8, ((*Pvd).LogicalBlockSizeL) as usize);
+        ERR!("Unsupported LogicalBlockSize %u\n", ((*Pvd).LogicalBlockSizeL) as usize);
         return core::ptr::null();
     }
 
     Count = ((*Pvd).VolumeSpaceSizeL as u64 * SECTORSIZE as u64 / 1024 / 1024) as u32;
-    TRACE(b"Recognized ISO9660 drive, size %lu MB (%lu sectors)\n\0".as_ptr() as *const i8, (Count) as usize, ((*Pvd).VolumeSpaceSizeL) as usize);
+    TRACE!("Recognized ISO9660 drive, size %lu MB (%lu sectors)\n", (Count) as usize, ((*Pvd).VolumeSpaceSizeL) as usize);
 
     Volume = FrLdrTempAlloc(core::mem::size_of::<ISO_VOLUME_INFO>(), TAG_ISO_VOLUME) as PISO_VOLUME_INFO;
     if Volume.is_null() {

@@ -329,11 +329,51 @@ def _crate_for_stem(repo: Path, stem: str) -> Path | None:
     """
     rust = repo / "sdk" / "lib" / "rust"
     members = _workspace_members(str(repo))
+    linked = _cmake_named_crates(str(repo))
     for name in (f"{stem}-rust", f"{stem.replace('_', '-')}-rust"):
         c = rust / name
-        if (c / "Cargo.toml").is_file() and (members is None or name in members):
+        if (
+            (c / "Cargo.toml").is_file()
+            and (members is None or name in members)
+            and (linked is None or name in linked)
+        ):
             return c
     return None
+
+
+@functools.lru_cache(maxsize=4)
+def _cmake_named_crates(repo: str) -> frozenset[str] | None:
+    """Every `<name>-rust` crate some CMake file names (a cohab flip's
+    `rust_staticlib_variant(..)`, a cargo module's BODY_CRATE).
+
+    Membership alone stopped being enough once `rustconv port` arrived: it makes a crate a
+    workspace member when work on it STARTS (cargo check needs that), long before the flip.
+    So spoolsv.exe, still built from C, was paired with spoolsv-rust mid-integration and the
+    arm64 build reported `cohab flip not rebuilt` for a flip that had not happened. A crate
+    no CMake file names is not linked into anything yet. None when git cannot answer.
+    """
+    try:
+        out = subprocess.run(
+            [
+                "git",
+                "-C",
+                repo,
+                "grep",
+                "-ohE",
+                r"[A-Za-z0-9_-]+-rust\b",
+                "--",
+                "*CMakeLists.txt",
+                "*.cmake",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None
+    names = frozenset(out.stdout.split()) if out.returncode == 0 else frozenset()
+    # A tree whose CMake names no crate at all cannot answer this question.
+    return names or None
 
 
 def _newest_rs_mtime(crate: Path) -> float:

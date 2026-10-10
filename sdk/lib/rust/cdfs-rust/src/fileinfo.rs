@@ -905,7 +905,7 @@ pub unsafe extern "C" fn CdQueryAlternateNameInfo(
                 CdCleanupFileContext(IrpContext, &mut (*p_FileContext));
             }
             if (*p_ReleaseParentFcb) != 0 {
-                CdReleaseFile(IrpContext, (*p_ParentFcb));
+                CdReleaseFile(IrpContext, *p_ParentFcb );
             }
         },
     );

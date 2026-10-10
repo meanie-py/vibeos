@@ -23,6 +23,16 @@ macro_rules! ASSERT {
     };
 }
 
+/// ke.h `ARM64_UART_TRACE(s)`: `do { } while(0)` / `((void)0)` unless
+/// `ARM64_UART_TRACE_ENABLE`, which is commented out -- the string is never evaluated.
+/// (cminit.rs instead calls the kernel's exported UART writer by `extern`, on purpose.)
+#[allow(unused_macros)]
+macro_rules! ARM64_UART_TRACE {
+    ($($t:tt)*) => {
+        ()
+    };
+}
+
 // Debug-print / format macros hoisted to the dbgprint-rust leaf. Re-export at this
 // crate's root so config's `crate::dbg_print!(…)` / `crate::wstr!(…)` /
 // `crate::rtl_string_cb_printf_a!(…)` / `crate::rtl_string_cb_printf_w!(…)` call sites

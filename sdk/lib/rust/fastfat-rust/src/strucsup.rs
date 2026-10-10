@@ -84,7 +84,7 @@ extern "system" {
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoctlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, InternalDeviceIoControl: i32, RemapStatus: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
     fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8;
     fn DebugDump(format: *const u8, arg: i32, fcb: *mut FCB);
-    fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32) -> !;
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn DebugDoit(value: u32);
     fn FatDeviceIsFatFsdo(device_object: *mut DEVICE_OBJECT) -> u8;
@@ -562,7 +562,7 @@ pub unsafe extern "system" fn FatInitializeVcb(
 
         if abnormal {
             if !(*p_unwind_cache_map).is_null() {
-                let _ = FatSyncUninitializeCacheMap(irp_context, (*p_unwind_cache_map));
+                let _ = FatSyncUninitializeCacheMap(irp_context, *p_unwind_cache_map );
             }
             if !(*p_unwind_file_object).is_null() {
                 ObDereferenceObject((*p_unwind_file_object) as *mut core::ffi::c_void);
@@ -760,7 +760,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
             TAG_FCB,
         );
         *p_Dcb = alloc as *mut DCB;
-        (*Vcb).RootDcb = (*p_Dcb);
+        (*Vcb).RootDcb = *p_Dcb ;
         (*p_UnwindStorage)[0] = alloc;
 
         RtlZeroMemory((*p_Dcb) as *mut core::ffi::c_void, core::mem::size_of::<DCB>());
@@ -840,7 +840,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
 
         if FatIsFat32(Vcb) != 0 {
             (**p_Dcb).Header.AllocationSize.__bindgen_anon_1.LowPart = 0xFFFFFFFFu32;
-            FatLookupFileAllocationSize(IrpContext, (*p_Dcb));
+            FatLookupFileAllocationSize(IrpContext, *p_Dcb );
             (**p_Dcb).Header.FileSize.QuadPart = (**p_Dcb).Header.AllocationSize.QuadPart;
         } else {
             let dir_size = FatRootDirectorySize(core::ptr::addr_of!((*Vcb).Bpb)) as u64;
@@ -862,7 +862,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
                 0,
             );
         }
-        FatCheckFreeDirentBitmap(IrpContext, (*p_Dcb));
+        FatCheckFreeDirentBitmap(IrpContext, *p_Dcb );
 
         #[cfg(ntddi_ge_ntddi_win8)]
         {
@@ -895,7 +895,7 @@ pub unsafe extern "system" fn FatCreateRootDcb(
             (*Vcb).RootDcb = core::ptr::null_mut();
         }
 
-        DebugTrace(-1, 0, b"FatCreateRootDcb -> %p\n\0".as_ptr() as *const i8, (*p_Dcb));
+        DebugTrace(-1, 0, b"FatCreateRootDcb -> %p\n\0".as_ptr() as *const i8, *p_Dcb );
     });
 }
 #[no_mangle]
@@ -986,14 +986,14 @@ pub unsafe extern "system" fn FatCreateFcb(
 
         // Allocate main resource
         *p_unwind_resource = FatAllocateResource();
-        (**p_fcb).Header.Resource = (*p_unwind_resource);
+        (**p_fcb).Header.Resource = *p_unwind_resource ;
 
         // Allocate paging I/O resource (or share)
         if SingleResource != 0 {
             (**p_fcb).Header.PagingIoResource = (**p_fcb).Header.Resource;
         } else {
             *p_unwind_resource2 = FatAllocateResource();
-            (**p_fcb).Header.PagingIoResource = (*p_unwind_resource2);
+            (**p_fcb).Header.PagingIoResource = *p_unwind_resource2 ;
         }
 
         // Insert into parent's DCB queue
@@ -1112,7 +1112,7 @@ pub unsafe extern "system" fn FatCreateFcb(
         // Build names (must be last)
         FatConstructNamesInFcb(
             IrpContext,
-            (*p_fcb),
+            *p_fcb ,
             Dirent,
             Lfn,
         );
@@ -1149,7 +1149,7 @@ pub unsafe extern "system" fn FatCreateFcb(
             }
         }
 
-        DebugTrace(-1, DEBUG_TRACE_STRUCSUP, b"FatCreateFcb -> %p\n\0".as_ptr() as *const i8, (*p_fcb));
+        DebugTrace(-1, DEBUG_TRACE_STRUCSUP, b"FatCreateFcb -> %p\n\0".as_ptr() as *const i8, *p_fcb );
     });
 
     fcb
@@ -1297,7 +1297,7 @@ pub unsafe extern "system" fn FatCreateDcb(
             *p_UnwindOplock = oplock;
         }
 
-        FatConstructNamesInFcb(IrpContext, (*p_Dcb), Dirent, Lfn);
+        FatConstructNamesInFcb(IrpContext, *p_Dcb , Dirent, Lfn);
         (**p_Dcb).ShortName.FileNameDos = 1;
     }, |_, abnormal| {
         if abnormal {

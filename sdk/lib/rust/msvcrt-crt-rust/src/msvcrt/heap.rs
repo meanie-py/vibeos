@@ -111,8 +111,8 @@ unsafe extern "C" fn msvcrt_heap_realloc(flags: u32, ptr: *mut core::ffi::c_void
         heap = (*(*NtCurrentTeb()).Peb).ProcessHeap;
     }
     if !sb_heap.is_null() && !ptr.is_null() && RtlValidateHeap(heap, 0, ptr) == 0 {
-        let mut memblock: *mut core::ffi::c_void;
-        let mut temp: *mut core::ffi::c_void;
+        let memblock: *mut core::ffi::c_void;
+        let temp: *mut core::ffi::c_void;
         let mut saved: *mut *mut core::ffi::c_void;
         let old_padding: usize;
         let new_padding: usize;
@@ -502,9 +502,9 @@ pub unsafe extern "C" fn _aligned_offset_malloc(
     alignment: usize,
     offset: usize,
 ) -> *mut core::ffi::c_void {
-    let mut memblock: *mut core::ffi::c_void;
-    let mut temp: *mut core::ffi::c_void;
-    let mut saved: *mut *mut core::ffi::c_void;
+    let memblock: *mut core::ffi::c_void;
+    let temp: *mut core::ffi::c_void;
+    let saved: *mut *mut core::ffi::c_void;
 
     if (alignment & (alignment.wrapping_sub(1))) != 0 {
         *_errno() = (EINVAL) as i32;
@@ -550,9 +550,9 @@ pub unsafe extern "C" fn _aligned_offset_realloc(
     alignment: usize,
     offset: usize,
 ) -> *mut core::ffi::c_void {
-    let mut temp: *mut core::ffi::c_void;
+    let temp: *mut core::ffi::c_void;
     let mut saved: *mut *mut core::ffi::c_void;
-    let mut old_padding: usize;
+    let old_padding: usize;
     let new_padding: usize;
     let mut old_size: usize;
 

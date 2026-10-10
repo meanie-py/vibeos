@@ -43,6 +43,9 @@
 //!   NVME_BAD_DMA=<hex>  not read by the kernel: nvme.sys's bring-up sends one
 //!                       Identify whose data goes to <hex> (not memory), so a
 //!                       translating SMMU can be seen to fault it.
+//!   NVME_PASSIVE_ISR=1  not read by the kernel: nvme.sys connects its interrupts
+//!                       with CONNECT_MESSAGE_BASED_PASSIVE, so its routines run
+//!                       at PASSIVE_LEVEL on iomgr's worker thread.
 //!   NVME_STRAY_DMA=1    not read by the kernel: nvme.sys's bring-up aims one
 //!                       Identify at a RAM page its DMA adapter never handed out
 //!                       and says whether the controller wrote it.
@@ -341,6 +344,7 @@ unsafe fn apply_token(tok: &[u8]) {
         || token_val(tok, b"NVME_FAIL_START").is_some()
         || token_val(tok, b"NVME_BAD_DMA").is_some()
         || token_val(tok, b"NVME_STRAY_DMA").is_some()
+        || token_val(tok, b"NVME_PASSIVE_ISR").is_some()
         || token_val(tok, b"XHCI_MSI_MESSAGES").is_some()
     {
         // For nvme.sys and usbport, through the registry copy, like QUIET.

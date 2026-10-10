@@ -579,7 +579,7 @@ pub unsafe extern "C" fn _localtime64(secs: *const __time64_t) -> *mut tm {
 
 #[no_mangle]
 pub unsafe extern "C" fn _localtime32(secs: *const __time32_t) -> *mut tm {
-    let mut secs64: __time64_t;
+    let secs64: __time64_t;
 
     if secs.is_null() {
         return core::ptr::null_mut();
@@ -591,7 +591,7 @@ pub unsafe extern "C" fn _localtime32(secs: *const __time32_t) -> *mut tm {
 
 #[no_mangle]
 pub unsafe extern "C" fn _localtime32_s(time: *mut tm, secs: *const __time32_t) -> i32 {
-    let mut secs64: __time64_t;
+    let secs64: __time64_t;
 
     if time.is_null() || secs.is_null() || *secs < 0 {
         if !time.is_null() {
@@ -611,7 +611,7 @@ pub unsafe extern "C" fn _gmtime64_s(res: *mut tm, secs: *const __time64_t) -> e
     let mut i: i32;
     let mut ft: FILETIME = core::mem::zeroed();
     let mut st: SYSTEMTIME = core::mem::zeroed();
-    let mut time: u64;
+    let time: u64;
 
     if res.is_null() || secs.is_null() || *secs < MIN_GMTIME64_TIME || *secs > MAX_GMTIME64_TIME {
         if !res.is_null() {
@@ -665,7 +665,7 @@ pub unsafe extern "C" fn _gmtime64(secs: *const __time64_t) -> *mut tm {
 
 #[no_mangle]
 pub unsafe extern "C" fn _gmtime32_s(res: *mut tm, secs: *const __time32_t) -> errno_t {
-    let mut secs64: __time64_t;
+    let secs64: __time64_t;
 
     if !secs.is_null() {
         secs64 = *secs as __time64_t;
@@ -676,7 +676,7 @@ pub unsafe extern "C" fn _gmtime32_s(res: *mut tm, secs: *const __time32_t) -> e
 
 #[no_mangle]
 pub unsafe extern "C" fn _gmtime32(secs: *const __time32_t) -> *mut tm {
-    let mut secs64: __time64_t;
+    let secs64: __time64_t;
 
     if secs.is_null() {
         return core::ptr::null_mut();
@@ -888,7 +888,7 @@ pub unsafe extern "C" fn _ftime32_s(buf: *mut __timeb32) -> i32 {
 
 #[no_mangle]
 pub unsafe extern "C" fn _time64(buf: *mut __time64_t) -> __time64_t {
-    let mut curtime: __time64_t;
+    let curtime: __time64_t;
     let mut tb: __timeb64 = core::mem::zeroed();
 
     _ftime64(&mut tb);
@@ -1014,7 +1014,7 @@ unsafe extern "C" fn strftime_int(
 ) -> BOOL {
     let len: usize;
 
-    if MSVCRT_CHECK_PMT!((src >= l && src <= h)) == 0 {
+    if MSVCRT_CHECK_PMT!( src >= l && src <= h ) == 0 {
         *str = 0;
         return (FALSE) as i32;
     }
@@ -1086,7 +1086,7 @@ unsafe extern "C" fn strftime_format(
             }
             b'd' => {
                 if count > 2 {
-                    if MSVCRT_CHECK_PMT!(((*mstm).tm_wday >= 0 && (*mstm).tm_wday <= 6)) == 0 {
+                    if MSVCRT_CHECK_PMT!( (*mstm).tm_wday >= 0 && (*mstm).tm_wday <= 6 ) == 0 {
                         *str = 0;
                         return (FALSE) as i32;
                     }
@@ -1108,7 +1108,7 @@ unsafe extern "C" fn strftime_format(
             }
             b'M' => {
                 if count > 2 {
-                    if MSVCRT_CHECK_PMT!(((*mstm).tm_mon >= 0 && (*mstm).tm_mon <= 11)) == 0 {
+                    if MSVCRT_CHECK_PMT!( (*mstm).tm_mon >= 0 && (*mstm).tm_mon <= 11 ) == 0 {
                         *str = 0;
                         return (FALSE) as i32;
                     }
@@ -1130,7 +1130,7 @@ unsafe extern "C" fn strftime_format(
             }
             b'y' => {
                 if count > 1 {
-                    if MSVCRT_CHECK_PMT!(((*mstm).tm_year >= 0)) == 0 {
+                    if MSVCRT_CHECK_PMT!( (*mstm).tm_year >= 0 ) == 0 {
                         *str = 0;
                         return (FALSE) as i32;
                     }
@@ -1155,7 +1155,7 @@ unsafe extern "C" fn strftime_format(
                 }
             }
             b'h' => {
-                if MSVCRT_CHECK_PMT!(((*mstm).tm_hour >= 0 && (*mstm).tm_hour <= 23)) == 0 {
+                if MSVCRT_CHECK_PMT!( (*mstm).tm_hour >= 0 && (*mstm).tm_hour <= 23 ) == 0 {
                     *str = 0;
                     return (FALSE) as i32;
                 }
@@ -1191,7 +1191,7 @@ unsafe extern "C" fn strftime_format(
                 }
             }
             b'a' | b'A' | b't' => {
-                if MSVCRT_CHECK_PMT!(((*mstm).tm_hour >= 0 && (*mstm).tm_hour <= 23)) == 0 {
+                if MSVCRT_CHECK_PMT!( (*mstm).tm_hour >= 0 && (*mstm).tm_hour <= 23 ) == 0 {
                     *str = 0;
                     return (FALSE) as i32;
                 }
@@ -1745,8 +1745,8 @@ unsafe extern "C" fn wcsftime_helper(
     time_data: *mut __lc_time_data,
     loc: _locale_t,
 ) -> usize {
-    let mut s: *mut i8;
-    let mut fmt: *mut i8;
+    let s: *mut i8;
+    let fmt: *mut i8;
     let mut len: usize;
 
     len = _wcstombs_l(core::ptr::null_mut(), format, 0, loc) + 1;
@@ -1997,7 +1997,7 @@ pub unsafe extern "C" fn _wctime64_s(
     time: *const __time64_t,
 ) -> i32 {
     let mut tm: tm = core::mem::zeroed();
-    let mut ret: i32;
+    let ret: i32;
 
     if MSVCRT_CHECK_PMT!(buf != core::ptr::null_mut()) == 0 {
         return (EINVAL) as i32;

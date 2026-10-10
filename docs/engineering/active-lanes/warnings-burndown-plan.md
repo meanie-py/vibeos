@@ -713,6 +713,60 @@ one's current content. The 27 were:
   arguments where the C passes `ULONG_PTR`, so on amd64 the upper halves of the bugcheck
   parameters are garbage. Retyping it hits the call-site E0308 wall described above.
 
+**`clashing_extern` Phase 2 by width, the AcceptEx port, and the noise applier (2026-10-09).**
+
+- **Classified from the cache, not by eye:** 1,703 clashing sites. 1,531 differ only in
+  pointer target or signedness (same width), 14 differ in calling convention only on 64-bit
+  (where "C" and "system" agree), and 55 are the already-graded return set. Two Haiku
+  agents graded the other 102 (argument or return WIDTH, by-value struct, i386 ABI)
+  against the C. 73 were benign, 12 cosmetic, and these were real:
+  - **fastfat `CanFsdWait` returned garbage.** The macro (`IoIsOperationSynchronous(Irp)`,
+    fatprocs.h) was a `VOID` no-op in `rust_cohab_stub.c`, fastfat.sys's only definition.
+    So all 14 FSD entry points set their IrpContext's Wait flag from a leftover register.
+    The stub now returns the real answer, and the 11 Rust declarations read a BOOLEAN.
+  - **cdfs `CdIs8dot3Name`** is defined taking `UNICODE_STRING` by value, but dirsup.rs
+    declared a pointer and passed `addr_of_mut!`. It worked on amd64 by luck (a 16-byte
+    struct goes by hidden pointer) and read garbage on i386 (8 bytes on the stack) and
+    arm64 (two registers).
+  - **Width bugs:** fastfat `FatBugCheck` (16 declarations, 28 calls) and cdfs
+    `CdBugCheck` (the definition itself) took `u32` where the C passes `ULONG_PTR`, which
+    truncates bugcheck parameters on 64-bit. oleaut32's `_wcsnicmp` count was `u32`, not
+    `size_t`. user32 clipboard's `GlobalSize` returned `DWORD`, not `SIZE_T`.
+- **Still owed, from the same grading:** fastfat's `SetFlag` / `ClearFlag` are also
+  out-of-line stubs, `*(PULONG_PTR)x |= f`. On 64-bit that is an 8-byte read-modify-write
+  of a 4-byte (sometimes 1-byte) field and its neighbour: not atomic, and past the end at
+  the end of an allocation. `FlagOn` / `BooleanFlagOn` declarations narrow their arguments.
+  The fix is the PAGED_CODE treatment for the whole family (about 480 calls and 70
+  declarations): crate `macro_rules!` on the real lvalue, then delete the stubs. The
+  generated cdfs `types_i386.rs` also declares `CdCreateFcb`'s `FILE_ID` as a pointer,
+  where it is a `LARGE_INTEGER` by value; no live caller uses it, so the fix belongs in
+  the generator.
+- **AcceptEx (upstream a68bfa2fb41) is ported.** A Haiku agent drafted the afd half: 18
+  edits covering every C hunk (`SatisfySuperAccept`, `AfdSuperAccept`,
+  `AcceptExReceiveComplete`, the PREACCEPT dispatch and cancel paths, bind/connect state
+  checks). I reviewed it against the C. It compiled first time once `TDI_ADDRESS_INFO`
+  had a home (afd glue.rs). The afd islands were regenerated with gen_driver_types.sh
+  rather than hand-edited. That picked up `AcceptIrp` in `_AFD_FCB`, so the Rust FCB
+  layout matches the header again. msafd's `WSPAcceptEx` / `WSPGetAcceptExSockaddrs` are
+  ported by hand, `SIO_GET_EXTENSION_FUNCTION_POINTER` returns success for
+  GetAcceptExSockaddrs, and `SO_UPDATE_ACCEPT_CONTEXT` is accepted.
+- **`tools/apply_rustc_suggestions.py`** applies rustc's machine-applicable fixes from the
+  cache. It only applies a fix every arch that compiled the file agrees on, never inside a
+  macro expansion, and never in a generated file. It also refuses rustc's float
+  `from_bits` rewrite, which does not compile on the i386 no-SSE cell (that cost one
+  build). Applied: `unused_mut` 100 to 6 (the rest disagree by arch) and `unused_parens`
+  160 to 0. Not applied: `unused_imports` (an import used only under `#[cfg(test)]` reads
+  as unused here). Owed: regenerating the bindgen islands, which carry about 4,590 of the 4,602
+  `unnecessary_transmutes`; the afd regen (bindgen 0.73) emits none.
+- **The census counted a file twice** when a crate reaches another's source by path
+  (menuband: `../../shell32-rust/src/island_*.rs`). Paths are normalized now, and the
+  applier would otherwise have applied the same byte-offset edit twice. The verified total
+  is **7,530 sites: 0 UB, 1,699 LOGIC, 5,831 NOISE**. The 12 function-pointer
+  comparisons got audited allows, except ks's `SupportHandler != None`, which is now
+  `.is_some()`.
+- `apply_dead_assignments` keeps an initializer only if a raw borrow can see it: a plain
+  `x = ..;` in the `let`'s own block before every raw borrow now makes it removable.
+
 ## Owed follow-ups
 
 - **`clashing_extern_declarations` Phase 2 (task #4) — the audit-heavy tail after the safe ABI-class

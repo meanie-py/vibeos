@@ -3560,7 +3560,6 @@ pub unsafe extern "system" fn ClassReleaseChildLock(
     FdoExtension: PFUNCTIONAL_DEVICE_EXTENSION
 ) {
     extern "system" {
-        fn NT_ASSERT(condition: u8);
     }
 
     NT_ASSERT!(((*FdoExtension).ChildLockOwner == (KeGetCurrentThread()).cast()) as u32);
@@ -3972,7 +3971,6 @@ pub unsafe extern "system" fn ClassSendIrpSynchronous(
 
     extern "C" {
         
-        fn _Analysis_assume_(cond: BOOLEAN);
         fn TracePrint(level: u32, flags: u32, format: PCSTR, ...);
     }
 
@@ -4112,7 +4110,7 @@ pub unsafe extern "system" fn ClassSendSrbAsynchronous(
 
             MmBuildMdlForNonPagedPool((*Irp).MdlAddress);
         } else {
-            NT_ASSERT!(BufferAddress == MmGetMdlVirtualAddress((*Irp).MdlAddress));
+            NT_ASSERT!(BufferAddress == MmGetMdlVirtualAddress((*Irp).MdlAddress as PVOID));
         }
 
         SrbAssignSrbFlags(
@@ -4232,7 +4230,7 @@ pub unsafe extern "system" fn ClassSendSrbSynchronous(
     }
 
     NT_ASSERT!(
-        (((*((*fdoExtension).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType == SRB_TYPE_SCSI_REQUEST_BLOCK)
+        (((*((*fdoExtension).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType == SRB_TYPE_SCSI_REQUEST_BLOCK as u8)
             && ((*Srb).Function == (SRB_FUNCTION_EXECUTE_SCSI) as u8))
             || (((*((*fdoExtension).AdapterDescriptor as *mut crate::types::_STORAGE_ADAPTER_DESCRIPTOR)).SrbType == SRB_TYPE_STORAGE_REQUEST_BLOCK as u8)
                 && ((*Srb).Function == (SRB_FUNCTION_STORAGE_REQUEST_BLOCK) as u8))
@@ -4634,7 +4632,6 @@ extern "C" {
     
 }
 extern "system" {
-    fn NT_ASSERT(condition: BOOLEAN);
     fn SrbAssignSrbFlags(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Flags: ULONG);
     fn SrbSetDataBuffer(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Buffer: PVOID);
     fn SrbSetRequestAttribute(Srb: PSTORAGE_REQUEST_BLOCK_HEADER, Attribute: UCHAR);

@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_CACHE; // blocklist.c: DBG_DEFAULT_CHANNEL(CACHE)
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::rtl::*;
 use core::ffi::c_void;
@@ -12,7 +14,6 @@ use crate::frldr::{
 // variadic decls so call sites typecheck; satisfied at link by the
 // non-variadic cdecl no-op symbols in crate::frldr.
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn BugCheck(message: *const i8);
 }
 
@@ -21,17 +22,17 @@ pub unsafe extern "C" fn CacheInternalGetBlockPointer(CacheDrive: PCACHE_DRIVE, 
 
     let mut CacheBlock: PCACHE_BLOCK = core::ptr::null_mut();
 
-    TRACE(b"CacheInternalGetBlockPointer() BlockNumber = %d\n\0".as_ptr() as *const i8, BlockNumber);
+    TRACE!("CacheInternalGetBlockPointer() BlockNumber = %d\n", BlockNumber);
 
     CacheBlock = CacheInternalFindBlock(CacheDrive, BlockNumber);
 
     if CacheBlock != core::ptr::null_mut() {
-        TRACE(b"Cache hit! BlockNumber: %d CacheBlock->BlockNumber: %d\n\0".as_ptr() as *const i8, BlockNumber, (*CacheBlock).BlockNumber);
+        TRACE!("Cache hit! BlockNumber: %d CacheBlock->BlockNumber: %d\n", BlockNumber, (*CacheBlock).BlockNumber);
 
         return CacheBlock;
     }
 
-    TRACE(b"Cache miss! BlockNumber: %d\n\0".as_ptr() as *const i8, BlockNumber);
+    TRACE!("Cache miss! BlockNumber: %d\n", BlockNumber);
 
     CacheBlock = CacheInternalAddBlockToCache(CacheDrive, BlockNumber);
 
@@ -44,7 +45,7 @@ pub unsafe extern "C" fn CacheInternalGetBlockPointer(CacheDrive: PCACHE_DRIVE, 
 pub unsafe extern "C" fn CacheInternalFindBlock(CacheDrive: PCACHE_DRIVE, BlockNumber: ULONG) -> PCACHE_BLOCK {
     let mut CacheBlock: PCACHE_BLOCK = core::ptr::null_mut();
 
-    TRACE(b"CacheInternalFindBlock() BlockNumber = %d\n\0".as_ptr() as PCHAR, BlockNumber);
+    TRACE!("CacheInternalFindBlock() BlockNumber = %d\n", BlockNumber);
 
     if !IsListEmpty(core::ptr::addr_of_mut!((*CacheDrive).CacheBlockHead)) {
         CacheBlock = ((*CacheDrive).CacheBlockHead.Flink as *mut u8).offset(-(core::mem::offset_of!(_CACHE_BLOCK, ListEntry) as isize)) as PCACHE_BLOCK;
@@ -67,7 +68,7 @@ pub unsafe extern "C" fn CacheInternalAddBlockToCache(CacheDrive: PCACHE_DRIVE, 
 
     let mut CacheBlock: PCACHE_BLOCK = core::ptr::null_mut();
 
-    TRACE(b"CacheInternalAddBlockToCache() BlockNumber = %d\n\0".as_ptr() as *const i8, BlockNumber);
+    TRACE!("CacheInternalAddBlockToCache() BlockNumber = %d\n", BlockNumber);
 
     CacheInternalCheckCacheSizeLimits(CacheDrive);
 
@@ -105,7 +106,7 @@ pub unsafe extern "C" fn CacheInternalAddBlockToCache(CacheDrive: PCACHE_DRIVE, 
 pub unsafe extern "C" fn CacheInternalFreeBlock(CacheDrive: PCACHE_DRIVE) -> BOOLEAN {
     let mut CacheBlockToFree: PCACHE_BLOCK;
 
-    TRACE(b"CacheInternalFreeBlock()\n\0".as_ptr() as *const i8);
+    TRACE!("CacheInternalFreeBlock()\n");
 
     CacheBlockToFree = ((*CacheDrive).CacheBlockHead.Blink as *mut u8).offset(
         -(core::mem::offset_of!(_CACHE_BLOCK, ListEntry) as isize)
@@ -137,7 +138,7 @@ pub unsafe extern "C" fn CacheInternalFreeBlock(CacheDrive: PCACHE_DRIVE) -> BOO
 pub unsafe extern "C" fn CacheInternalCheckCacheSizeLimits(CacheDrive: PCACHE_DRIVE) {
     let NewCacheSize: usize;
 
-    TRACE(b"CacheInternalCheckCacheSizeLimits()\n\0".as_ptr() as *const i8);
+    TRACE!("CacheInternalCheckCacheSizeLimits()\n");
 
     NewCacheSize = ((CacheBlockCount + 1) * ((*CacheDrive).BlockSize * (*CacheDrive).BytesPerSector)) as usize;
 
@@ -152,20 +153,20 @@ pub unsafe extern "C" fn CacheInternalDumpBlockList(CacheDrive: PCACHE_DRIVE) {
 
     let mut CacheBlock: PCACHE_BLOCK;
 
-    TRACE(b"Dumping block list for BIOS drive 0x%x.\n\0".as_ptr() as *const i8, (*CacheDrive).DriveNumber as u32);
-    TRACE(b"BytesPerSector: %d.\n\0".as_ptr() as *const i8, (*CacheDrive).BytesPerSector);
-    TRACE(b"BlockSize: %d.\n\0".as_ptr() as *const i8, (*CacheDrive).BlockSize);
-    TRACE(b"CacheSizeLimit: %d.\n\0".as_ptr() as *const i8, CacheSizeLimit);
-    TRACE(b"CacheSizeCurrent: %d.\n\0".as_ptr() as *const i8, CacheSizeCurrent);
-    TRACE(b"CacheBlockCount: %d.\n\0".as_ptr() as *const i8, CacheBlockCount);
+    TRACE!("Dumping block list for BIOS drive 0x%x.\n", (*CacheDrive).DriveNumber as u32);
+    TRACE!("BytesPerSector: %d.\n", (*CacheDrive).BytesPerSector);
+    TRACE!("BlockSize: %d.\n", (*CacheDrive).BlockSize);
+    TRACE!("CacheSizeLimit: %d.\n", CacheSizeLimit);
+    TRACE!("CacheSizeCurrent: %d.\n", CacheSizeCurrent);
+    TRACE!("CacheBlockCount: %d.\n", CacheBlockCount);
 
     CacheBlock = (((*CacheDrive).CacheBlockHead.Flink as *const u8).offset(-(core::mem::offset_of!(CACHE_BLOCK, ListEntry) as isize))) as PCACHE_BLOCK;
     while core::ptr::addr_of_mut!((*CacheBlock).ListEntry) != core::ptr::addr_of_mut!((*CacheDrive).CacheBlockHead) {
-        TRACE(b"Cache Block: CacheBlock: 0x%x\n\0".as_ptr() as *const i8, CacheBlock);
-        TRACE(b"Cache Block: Block Number: %d\n\0".as_ptr() as *const i8, (*CacheBlock).BlockNumber);
-        TRACE(b"Cache Block: Access Count: %d\n\0".as_ptr() as *const i8, (*CacheBlock).AccessCount);
-        TRACE(b"Cache Block: Block Data: 0x%x\n\0".as_ptr() as *const i8, (*CacheBlock).BlockData);
-        TRACE(b"Cache Block: Locked In Cache: %d\n\0".as_ptr() as *const i8, (*CacheBlock).LockedInCache as u32);
+        TRACE!("Cache Block: CacheBlock: 0x%x\n", CacheBlock);
+        TRACE!("Cache Block: Block Number: %d\n", (*CacheBlock).BlockNumber);
+        TRACE!("Cache Block: Access Count: %d\n", (*CacheBlock).AccessCount);
+        TRACE!("Cache Block: Block Data: 0x%x\n", (*CacheBlock).BlockData);
+        TRACE!("Cache Block: Locked In Cache: %d\n", (*CacheBlock).LockedInCache as u32);
 
         if (*CacheBlock).BlockData == core::ptr::null_mut() {
             BugCheck(b"CacheBlock->BlockData == NULL\n\0".as_ptr() as *const i8);
@@ -178,7 +179,7 @@ pub unsafe extern "C" fn CacheInternalDumpBlockList(CacheDrive: PCACHE_DRIVE) {
 #[no_mangle]
 pub unsafe extern "C" fn CacheInternalOptimizeBlockList(CacheDrive: PCACHE_DRIVE, CacheBlock: PCACHE_BLOCK) {
     
-    TRACE(b"CacheInternalOptimizeBlockList()\n\0".as_ptr() as *const i8);
+    TRACE!("CacheInternalOptimizeBlockList()\n");
 
     if core::ptr::addr_of_mut!((*CacheBlock).ListEntry) != (*CacheDrive).CacheBlockHead.Flink as *mut _ {
         RemoveEntryList(core::ptr::addr_of_mut!((*CacheBlock).ListEntry));

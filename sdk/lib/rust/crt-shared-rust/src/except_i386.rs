@@ -233,7 +233,7 @@ unsafe extern "C" fn call_catch_block(
     let mut handler: *mut core::ffi::c_void;
     let object = (*rec).ExceptionInformation[1] as *mut core::ffi::c_void;
     let mut nested_frame: catch_func_nested_frame = core::mem::zeroed();
-    let mut trylevel = (*frame).trylevel;
+    let trylevel = (*frame).trylevel;
     let save_esp = *((frame as *mut u32).offset(-(1 as isize)));
     let data = msvcrt_get_thread_data();
 
@@ -370,7 +370,7 @@ pub unsafe extern "C" fn cxx_frame_handler(
     descr: *const cxx_function_descr,
     nested_frame: *mut catch_func_nested_frame,
 ) -> u32 {
-    let mut exc_type: *mut cxx_exception_type;
+    let exc_type: *mut cxx_exception_type;
 
     if (*descr).magic() < CXX_FRAME_MAGIC_VC6 || (*descr).magic() > CXX_FRAME_MAGIC_VC8 {
         ERR!("seh:invalid frame magic %x

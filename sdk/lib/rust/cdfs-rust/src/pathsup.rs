@@ -53,7 +53,6 @@ extern "C" {
     fn NT_ASSERT(cond: BOOLEAN);
 }
 extern "C" {
-    fn __analysis_assert(cond: BOOLEAN);
 }
 extern "C" {
     // Defined `-> u32` (cdmacros.rs). Declaring it `-> i64` here makes i386 read EDX:EAX
@@ -477,7 +476,7 @@ pub unsafe extern "C" fn CdUpdatePathEntryName(
             (*PathEntry).DirNameLen,
         );
         NT_ASSERT((Status == 0) as BOOLEAN); // STATUS_SUCCESS
-        __analysis_assert((Status == 0) as BOOLEAN);
+        ntkrnl_sys::__analysis_assert!((Status == 0) as BOOLEAN);
         (*PathEntry).CdDirName.FileName.Length = Length as u16;
     } else {
         CdConvertBigToLittleEndian(

@@ -103,6 +103,10 @@ pub unsafe extern "system" fn AfdBindSocket(
         return UnlockAndMaybeComplete(FCB, STATUS_NO_MEMORY, Irp, 0);
     }
 
+    if (*FCB).SharedData.State != SOCKET_STATE_CREATED {
+        return UnlockAndMaybeComplete(FCB, STATUS_INVALID_PARAMETER, Irp, 0);
+    }
+
     if !(*FCB).LocalAddress.is_null() {
         ExFreePoolWithTag((*FCB).LocalAddress as PVOID, TAG_AFD_TRANSPORT_ADDRESS);
     }

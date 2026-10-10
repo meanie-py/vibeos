@@ -18,6 +18,8 @@ from .crate_fix import c_function_text
 from .function_coverage import rust_definition_bodies
 
 _SIZEOF = re.compile(r"\bsizeof\s*\(\s*([A-Za-z_]\w*)\s*\)")
+# `name!(` ending right where the candidate starts: it is the macro's first argument.
+_MACRO_OPEN = re.compile(r"[A-Za-z_]\w*!\(\s*\Z")
 
 
 def crate_types(crate_src: Path) -> set[str]:
@@ -45,21 +47,20 @@ def restore(rust: str, c_file: Path, types: set[str]) -> tuple[str, list[str]]:
         new = body
         for t in sorted(wanted):
             pat = re.compile(rf"(?<=[=(,])(\s*){re.escape(t)}(?=\s*(?:as\b|,|\)|;))")
+            count = 0
 
-            def sub(m: re.Match[str], t: str = t, text: str = new) -> str:
-                # A macro's first argument is a TYPE slot (`FIELD_OFFSET!(METARECORD, f)`,
-                # `offset_of!(T, f)`): rewriting it handed winegdi and both font drivers a
-                # `size_of::<T>()` where the macro wants the type, breaking the parse.
-                if re.search(r"!\s*\($", text[: m.start()].rstrip(" \t")):
+            def put_back(m: re.Match, t: str = t) -> str:
+                nonlocal count
+                # The first argument of a macro takes a TYPE there by design:
+                # `FIELD_OFFSET!(DATATYPES_INFO_1W, pName)` (winprint) is not a sizeof.
+                if _MACRO_OPEN.search(m.string, 0, m.start()):
                     return m.group(0)
+                count += 1
                 return f"{m.group(1)}core::mem::size_of::<{t}>()"
 
-            spelled = f"core::mem::size_of::<{t}>()"
-            before = new.count(spelled)
-            new = pat.sub(sub, new)
-            n = new.count(spelled) - before
-            if n:
-                fixed.append(f"{name}: sizeof({t}) x{n}")
+            new = pat.sub(put_back, new)
+            if count:
+                fixed.append(f"{name}: sizeof({t}) x{count}")
         if new != body:
             rust = rust.replace(body, new, 1)
     return rust, fixed

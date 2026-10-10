@@ -63,7 +63,6 @@ extern "C" {
     
 }
 extern "system" {
-    fn NT_ASSERT(b: u8);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -871,7 +870,7 @@ pub unsafe extern "C" fn ClasspPerfIncrementSuccessfulIo(FdoExtension: PFUNCTION
     if (*FdoExtension).ErrorCount != 0 && (*fdoData).Perf.ReEnableThreshhold <= (succeeded) as u32 {
         (*fdoData).Perf.SuccessfulIO = 0;
 
-        NT_ASSERT(((*FdoExtension).ErrorCount > 0) as u8);
+        NT_ASSERT!(((*FdoExtension).ErrorCount > 0) as u8);
 
         // InterlockedDecrement equivalent
         {
@@ -1140,7 +1139,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
 
     'fnexit: {
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+            NT_ASSERT!((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
             status = STATUS_INVALID_LEVEL;
             break 'fnexit;
         }
@@ -1217,7 +1216,7 @@ pub unsafe extern "C" fn ClasspDuidQueryProperty(
             }
         } else if info_found != 0u8 {
             status = STATUS_SUCCESS;
-            NT_ASSERT((DuidExactMatch == CompareStorageDuids(
+            NT_ASSERT!((DuidExactMatch == CompareStorageDuids(
                 (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER,
                 (*Irp).AssociatedIrp.SystemBuffer as *mut _STORAGE_DEVICE_UNIQUE_IDENTIFIER)) as u8);
         } else {
@@ -1677,7 +1676,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
 
     // Request validation
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT(((KeGetCurrentIrql() < DISPATCH_LEVEL) as i32) as u8);
+        NT_ASSERT!(((KeGetCurrentIrql() < DISPATCH_LEVEL) as i32) as u8);
         status = STATUS_INVALID_LEVEL;
         (*Irp).IoStatus.Information = ((information) as u64) as _;
         (*Irp).IoStatus.__bindgen_anon_1.Status = status;
@@ -1761,7 +1760,7 @@ pub unsafe extern "C" fn ClasspAccessAlignmentProperty(
                 break 'work;
             }
             _CLASS_FUNCTION_SUPPORT_STATE_Supported => {
-                NT_ASSERT((0i32) as u8);
+                NT_ASSERT!((0i32) as u8);
                 status = STATUS_INTERNAL_ERROR;
                 break 'work;
             }
@@ -1837,7 +1836,7 @@ pub unsafe extern "C" fn ClasspDeviceMediaTypeProperty(
         }
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+            NT_ASSERT!((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
             TracePrint(
                 TRACE_LEVEL_ERROR,
                 TRACE_FLAG_IOCTL,
@@ -2159,7 +2158,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBProvisioningVPDPage(
                 if NT_SUCCESS(status) {
                     (*(Srb as *mut STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
                 } else {
-                    NT_ASSERT(0u8);
+                    NT_ASSERT!(0u8);
                 }
             } else {
                 core::ptr::write_bytes(Srb as *mut u8, 0u8, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -2344,7 +2343,7 @@ pub unsafe extern "C" fn ClasspDeviceGetBlockLimitsVPDPage(
                     (*(srb as *mut STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
                 } else {
                     // Should not occur
-                    NT_ASSERT(FALSE);
+                    NT_ASSERT!(FALSE);
                 }
             } else {
                 core::ptr::write_bytes(srb as *mut u8, 0, core::mem::size_of::<SCSI_REQUEST_BLOCK>());
@@ -2626,7 +2625,7 @@ pub unsafe extern "C" fn ClasspDeviceLBProvisioningProperty(
         }
 
         if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-            NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+            NT_ASSERT!((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
             status = STATUS_INVALID_LEVEL;
             information = 0;
             break 'exit;
@@ -2847,7 +2846,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             b"DeviceProcessDsmTrimRequest (%p): Max Block Descriptor count is Zero\n\0".as_ptr() as PCSZ,
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
         );
-        NT_ASSERT(0u8);
+        NT_ASSERT!(0u8);
         status = STATUS_DATA_ERROR;
         return status;
     }
@@ -2860,7 +2859,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
             b"DeviceProcessDsmTrimRequest (%p): Max LBA count is Zero\n\0".as_ptr() as PCSZ,
             (*FdoExtension).__bindgen_anon_1.CommonExtension.as_ref().DeviceObject,
         );
-        NT_ASSERT(0u8);
+        NT_ASSERT!(0u8);
         status = STATUS_DATA_ERROR;
         return status;
     }
@@ -2929,7 +2928,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                 let transferSize: u16 = (blockDescrIndex as usize * core::mem::size_of::<_UNMAP_BLOCK_DESCRIPTOR>()
                     + core::mem::size_of::<_UNMAP_LIST_HEADER>()) as u16;
                 if transferSize > bufferLength as u16 {
-                    NT_ASSERT(0u8);
+                    NT_ASSERT!(0u8);
                     status = STATUS_BUFFER_TOO_SMALL;
                     break 'exit;
                 }
@@ -2954,7 +2953,7 @@ pub unsafe extern "C" fn DeviceProcessDsmTrimRequest(
                     if NT_SUCCESS(status) {
                         (*(Srb as *mut _STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
                     } else {
-                        NT_ASSERT(0u8);
+                        NT_ASSERT!(0u8);
                         break 'exit;
                     }
                 } else {
@@ -3038,7 +3037,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
     // Request validation
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+        NT_ASSERT!((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
         let status: NTSTATUS = STATUS_INVALID_LEVEL;
         // goto Exit
         {
@@ -3079,10 +3078,10 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
 
                 if ClasspLowerLayerNotSupport(status) {
                     if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.LBProvisioning() == (1u8) as u32 {
-                        NT_ASSERT(((*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.CommandStatus != -1) as u8);
+                        NT_ASSERT!(((*(*fdoExtension).FunctionSupportInfo).LBProvisioningData.CommandStatus != -1) as u8);
                     }
                     if (*(*fdoExtension).FunctionSupportInfo).ValidInquiryPages.BlockLimits() == (1u8) as u32 {
-                        NT_ASSERT(((*(*fdoExtension).FunctionSupportInfo).BlockLimitsData.CommandStatus != -1) as u8);
+                        NT_ASSERT!(((*(*fdoExtension).FunctionSupportInfo).BlockLimitsData.CommandStatus != -1) as u8);
                     }
                 } else {
                     (*(*fdoExtension).FunctionSupportInfo).LowerLayerSupport.TrimProcess = Supported;
@@ -3203,7 +3202,7 @@ pub unsafe extern "C" fn ClasspDeviceTrimProcess(
             }
 
             Supported => {
-                NT_ASSERT(0u8); // FALSE
+                NT_ASSERT!(0u8); // FALSE
                 break 'exit;
             }
 
@@ -3478,7 +3477,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
     'lba_exit: {
 
     if KeGetCurrentIrql() >= DISPATCH_LEVEL {
-        NT_ASSERT((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
+        NT_ASSERT!((KeGetCurrentIrql() < DISPATCH_LEVEL) as u8);
         status = STATUS_INVALID_LEVEL;
         break 'lba_exit;
     }
@@ -3623,7 +3622,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
             DeviceObject,
             lbaStatusSize,
         );
-        NT_ASSERT(!lbaStatusListHeader.is_null() as u8);
+        NT_ASSERT!(!lbaStatusListHeader.is_null() as u8);
         status = STATUS_INSUFFICIENT_RESOURCES;
         break 'lba_exit;
     }
@@ -3781,7 +3780,7 @@ pub unsafe extern "C" fn ClasspDeviceGetLBAStatusWorker(
                                  .as_ptr() as PCSZ,
                             DeviceObject,
                         );
-                        NT_ASSERT((commandProcessedSlabs != 0) as u8);
+                        NT_ASSERT!((commandProcessedSlabs != 0) as u8);
                         doneProcessing = 1;
                         status = STATUS_UNSUCCESSFUL;
                     }
@@ -3895,7 +3894,7 @@ pub unsafe extern "C" fn ClassGetLBProvisioningLogPage(
         if NT_SUCCESS(status) {
             (*(Srb as *mut STORAGE_REQUEST_BLOCK)).SrbFunction = SRB_FUNCTION_EXECUTE_SCSI;
         } else {
-            NT_ASSERT(0u8);
+            NT_ASSERT!(0u8);
         }
     } else {
         RtlZeroMemory(Srb as *mut c_void, (core::mem::size_of::<SCSI_REQUEST_BLOCK>() as u32) as usize);
@@ -4396,7 +4395,7 @@ unsafe extern "system" fn ClasspLogIOEventWithContext(
     let mut stringsBufferLength: ULONG = 0;
     let mut pdoNameLength: ULONG = 0;
 
-    NT_ASSERT((!ioLogMessageContextHeader.is_null()) as u8);
+    NT_ASSERT!((!ioLogMessageContextHeader.is_null()) as u8);
 
     match (*ioLogMessageContextHeader).ErrorCode as i32 {
         IO_ERROR_IO_HARDWARE_ERROR | IO_WARNING_IO_OPERATION_RETRIED => {
@@ -4943,7 +4942,7 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
             (*Srb).TargetId = (*storAddrBtl8).Target;
             (*Srb).Lun = (*storAddrBtl8).Lun;
         } else {
-            NT_ASSERT(0u8);
+            NT_ASSERT!(0u8);
         }
     }
 
@@ -4954,7 +4953,7 @@ pub unsafe extern "C" fn ClasspConvertToScsiRequestBlock(
         for i in 0..(*SrbEx).NumSrbExData {
             if (*(&raw const (*SrbEx).SrbExDataOffset[0]).add(i as usize)) as usize == 0 ||
                 ((*(&raw const (*SrbEx).SrbExDataOffset[0]).add(i as usize)) as usize) < core::mem::size_of::<_STORAGE_REQUEST_BLOCK>() {
-                NT_ASSERT(0u8);
+                NT_ASSERT!(0u8);
                 continue;
             }
 
@@ -5310,10 +5309,8 @@ pub unsafe extern "C" fn ClasspGetTokenOperationCommandBufferLength(
         Fdo,
     );
 
-    NT_ASSERT(
-        ((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0
-            && NT_SUCCESS((*(*fdoExt).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus)) as u8,
-    );
+    NT_ASSERT!(((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0
+            && NT_SUCCESS((*(*fdoExt).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus)) as u8);
 
     if ServiceAction == SERVICE_ACTION_POPULATE_TOKEN {
         tokenOperationHeaderSize = core::mem::offset_of!(POPULATE_TOKEN_HEADER, BlockDeviceRangeDescriptor);
@@ -5399,10 +5396,8 @@ pub unsafe extern "C" fn ClasspGetTokenOperationDescriptorLimits(
         Fdo,
     );
 
-    NT_ASSERT(
-        ((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0
-            && ((*(*fdoExt).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus as i32) >= 0) as u8,
-    );
+    NT_ASSERT!(((*(*fdoExt).FunctionSupportInfo).ValidInquiryPages.BlockDeviceRODLimits() != 0
+            && ((*(*fdoExt).FunctionSupportInfo).BlockDeviceRODLimitsData.CommandStatus as i32) >= 0) as u8);
 
     *MaxBlockDescriptorsCount = (MaxParameterBufferLength - token_operation_header_size)
         / (core::mem::size_of::<BLOCK_DEVICE_RANGE_DESCRIPTOR>() as u32);
@@ -5444,7 +5439,7 @@ pub unsafe fn ClasspConvertDataSetRangeToBlockDescr(
     let maxLbaPerDescr: ULONG = 0;
 
     if optimalLbaPerDescr != 0 && maxLbaPerDescr != 0 {
-        NT_ASSERT((optimalLbaPerDescr <= maxLbaPerDescr) as u8);
+        NT_ASSERT!((optimalLbaPerDescr <= maxLbaPerDescr) as u8);
     }
 
     while (*DataSetRange).LengthInBytes > 0
@@ -5479,7 +5474,7 @@ pub unsafe fn ClasspConvertDataSetRangeToBlockDescr(
             }
         }
 
-        NT_ASSERT((sectorCount <= MAXULONG as ULONGLONG) as u8);
+        NT_ASSERT!((sectorCount <= MAXULONG as ULONGLONG) as u8);
 
         let idx = *CurrentBlockDescrIndex as usize;
         // REVERSE_BYTES_QUAD expanded: write big-endian starting sector into [u8;8]
@@ -5750,8 +5745,8 @@ pub unsafe extern "C" fn ClasspPowerActivateDevice(DeviceObject: *mut _DEVICE_OB
     let mut status: NTSTATUS = STATUS_UNSUCCESSFUL;
     let fdoExtension = (*DeviceObject).DeviceExtension as *mut _FUNCTIONAL_DEVICE_EXTENSION;
 
-    NT_ASSERT(((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0) as u8);
-    NT_ASSERT(((*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0u32) as u8);
+    NT_ASSERT!(((*fdoExtension).__bindgen_anon_1.CommonExtension.as_ref().__bindgen_anon_1.IsFdo() != 0) as u8);
+    NT_ASSERT!(((*(*fdoExtension).FunctionSupportInfo).IdlePower.IdlePowerEnabled() != 0u32) as u8);
 
     let mut event: KEVENT = core::mem::zeroed();
     let mut ioStatus: _IO_STATUS_BLOCK = core::mem::zeroed();
@@ -6234,7 +6229,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
         if ((*firmwareDownload).ImageBuffer as usize % (*(*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo).ImagePayloadAlignment as usize != 0) {
             bufferSize = (ALIGN_UP_BY((*firmwareDownload).BufferSize, (*(*(*fdoExtension).FunctionSupportInfo).HwFirmwareInfo).ImagePayloadAlignment)) as u32;
 
-            NT_ASSERT((lockHeld != 0) as u8);
+            NT_ASSERT!((lockHeld != 0) as u8);
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 
@@ -6247,7 +6242,7 @@ pub unsafe extern "C" fn ClassDeviceHwFirmwareDownloadProcess(
             core::ptr::write_bytes(firmwareImageBuffer, 0, bufferSize as usize);
             core::ptr::copy_nonoverlapping((*firmwareDownload).ImageBuffer as *const u8, firmwareImageBuffer, (*firmwareDownload).BufferSize as usize);
         } else {
-            NT_ASSERT((lockHeld != 0) as u8);
+            NT_ASSERT!((lockHeld != 0) as u8);
             KeReleaseInStackQueuedSpinLock(&mut lockHandle);
             lockHeld = 0;
 

@@ -10,7 +10,6 @@ extern "system" {
 }
 
 // C debug macros — silenced via macro_rules! (variadic no-op).
-#[allow(unused_macros)] macro_rules! NT_ASSERT { ($($t:tt)*) => { () }; }
 
 // These are real exported kernel symbols. ntkrnl-sys declares them too, but
 // nominally typed against ntkrnl-sys's own bindgen structs (distinct nominal
@@ -327,16 +326,6 @@ extern "system" {
 // reference compiles identically (it is never invoked at runtime in this build).
 #[inline(always)]
 unsafe fn DbgGdiHTIntegrityCheck() {}
-
-// NT_ASSERT / ASSERT_* — all expand to `((void)0)` in the non-DBG build
-// (rtlfuncs.h NT_ASSERT_NOASSUME, gdiobj.c ASSERT_*_OBJECT_TYPE). No-ops.
-// The expression argument is still evaluated below as in C `(void)(expr)`-style
-// macros would NOT be — NT_ASSERT_NOASSUME is `((void)0)` and does not evaluate
-// its argument, so we accept and discard it without evaluating side effects here
-// is impossible in Rust call syntax; the arg is a value that was already formed.
-// All call sites pass pure predicate expressions (no side effects), matching C.
-#[inline(always)]
-fn NT_ASSERT<T>(_condition: T) {}
 
 #[no_mangle]
 pub static mut gpvGdiHdlTblSection: PVOID = core::ptr::null_mut();

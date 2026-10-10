@@ -1145,6 +1145,13 @@ pub unsafe extern "system" fn USBPORT_ParseResources(
                     (*InterruptDescriptor).u.Interrupt.Vector,
                     (*InterruptDescriptor).u.Interrupt.Level,
                 );
+            } else {
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"[USBPORT] interrupt: line vector %u at IRQL %u, %s\n\0".as_ptr() as _,
+                    (*InterruptDescriptor).u.Interrupt.Vector,
+                    (*InterruptDescriptor).u.Interrupt.Level,
+                    if (*UsbPortResources).InterruptMode != 0 { b"edge\0".as_ptr() } else { b"level\0".as_ptr() },
+                );
             }
         }
     } else {

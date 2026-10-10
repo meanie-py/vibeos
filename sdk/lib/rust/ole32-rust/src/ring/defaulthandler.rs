@@ -433,7 +433,7 @@ unsafe fn release_delegates(This: *mut DefaultHandler) {
 
 unsafe fn DefaultHandler_Stop(This: *mut DefaultHandler) {
     let mut cache_ctrl: *mut IOleCacheControl = core::ptr::null_mut();
-    let mut hr: HRESULT;
+    let hr: HRESULT;
 
     if (*This).object_state == object_state_not_running {
         return;

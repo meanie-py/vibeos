@@ -125,9 +125,6 @@ unsafe fn GreCreateRectRgnIndirect(prc: *const RECTL) -> HRGN {
     NtGdiCreateRectRgn((*prc).left, (*prc).top, (*prc).right, (*prc).bottom)
 }
 
-// ASSERT_REFS_CO (userfuncs.h macro) — debug-only cLockObj assert; no-op in release.
-#[inline(always)]
-unsafe fn ASSERT_REFS_CO(_obj: PWND) {}
 // IntIsWindowSnapped (winpos.h FORCEINLINE; mirrors nonclient.rs).
 #[inline(always)]
 unsafe fn IntIsWindowSnapped(Wnd: PWND) -> BOOLEAN {
@@ -2112,7 +2109,7 @@ unsafe fn co_WinPosSetWindowPos(
     let mut PosChanged: BOOL = 0;
     let pti: PTHREADINFO = PsGetCurrentThreadWin32Thread() as PTHREADINFO;
 
-    ASSERT_REFS_CO(Window);
+    ASSERT_REFS_CO!(Window);
 
     #[cfg(DBG)]
     dump_winpos_flags(flags);

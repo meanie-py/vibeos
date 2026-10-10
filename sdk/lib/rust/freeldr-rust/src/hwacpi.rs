@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{ERR, TRACE};
+#[allow(dead_code, non_upper_case_globals)] const DbgDefaultChannel: u32 = crate::frldr::DPRINT_HWDETECT; // hwacpi.c: DBG_DEFAULT_CHANNEL(HWDETECT)
 use ntkrnl_sys::base::*;
 use crate::frldr::*;
 use ntkrnl_sys::ddk::{CM_PARTIAL_RESOURCE_DESCRIPTOR, CM_PARTIAL_RESOURCE_LIST, PCM_PARTIAL_RESOURCE_DESCRIPTOR, PCM_PARTIAL_RESOURCE_LIST, PCONFIGURATION_COMPONENT_DATA};
@@ -46,9 +48,7 @@ pub use ntkrnl_sys::ddk::_CM_SHARE_DISPOSITION_CmResourceShareUndetermined as Cm
 pub use ntkrnl_sys::ddk::_CONFIGURATION_TYPE_MultiFunctionAdapter as MultiFunctionAdapter;
 
 extern "C" {
-    fn TRACE(fmt: *const i8, ...);
     fn memcmp(s1: *const i8, s2: *const i8, n: usize) -> i32;
-    fn ERR(fmt: *const i8, ...);
     fn FldrCreateComponentKey( Parent: PCONFIGURATION_COMPONENT_DATA, Class: u32, Type: u32, Flags: ULONG, Key: ULONG, Affinity: ULONG, Identifier: *const i8, ConfigData: PCM_PARTIAL_RESOURCE_LIST, Size: ULONG, ComponentKey: *mut PCONFIGURATION_COMPONENT_DATA, ) -> i32;
     fn FrLdrHeapAlloc(size: usize, tag: ULONG) -> *mut u8;
 }
@@ -64,14 +64,14 @@ unsafe fn FindAcpiBios() -> PRSDP_DESCRIPTOR {
 
     while (Ptr as ULONG_PTR) < 0x100000 {
         if memcmp(Ptr as *const i8, b"RSD PTR \0".as_ptr() as *const i8, 8) == 0 {
-            TRACE(b"ACPI supported\n\0".as_ptr() as *const i8);
+            TRACE!("ACPI supported\n");
             return Ptr as PRSDP_DESCRIPTOR;
         }
 
         Ptr = ((Ptr as ULONG_PTR) + 0x10) as PUCHAR;
     }
 
-    TRACE(b"ACPI not supported\n\0".as_ptr() as *const i8);
+    TRACE!("ACPI not supported\n");
 
     core::ptr::null_mut()
 }
@@ -102,7 +102,7 @@ pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA
             core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>() as ULONG + TableSize;
         PartialResourceList = FrLdrHeapAlloc(Size as usize, TAG_HW_RESOURCE_LIST) as PCM_PARTIAL_RESOURCE_LIST;
         if PartialResourceList.is_null() {
-            ERR(b"Failed to allocate resource descriptor\n\0".as_ptr() as *const i8);
+            ERR!("Failed to allocate resource descriptor\n");
             return;
         }
 
@@ -119,10 +119,10 @@ pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA
         AcpiBiosData = (PartialDescriptor.offset(1)) as PACPI_BIOS_DATA;
 
         if (*Rsdp).revision > 0 {
-            TRACE(b"ACPI >1.0, using XSDT address\n\0".as_ptr() as *const i8);
+            TRACE!("ACPI >1.0, using XSDT address\n");
             (*AcpiBiosData).RSDTAddress.QuadPart = ((*Rsdp).xsdt_physical_address) as i64 ;
         } else {
-            TRACE(b"ACPI 1.0, using RSDT address\n\0".as_ptr() as *const i8);
+            TRACE!("ACPI 1.0, using RSDT address\n");
             (*AcpiBiosData).RSDTAddress.s.LowPart = (*Rsdp).rsdt_physical_address;
         }
 
@@ -133,9 +133,7 @@ pub unsafe extern "C" fn DetectAcpiBios(SystemKey: PCONFIGURATION_COMPONENT_DATA
             (PcBiosMapCount * core::mem::size_of::<BIOS_MEMORY_MAP>() as ULONG) as usize,
         );
 
-        TRACE(
-            b"RSDT %p, data size %x\n\0".as_ptr() as *const i8, ((*Rsdp).rsdt_physical_address as *const u8) as usize, (TableSize) as usize,
-        );
+        TRACE!("RSDT %p, data size %x\n", ((*Rsdp).rsdt_physical_address as *const u8) as usize, (TableSize) as usize);
 
         FldrCreateComponentKey(
             SystemKey,

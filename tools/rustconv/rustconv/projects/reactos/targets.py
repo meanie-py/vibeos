@@ -51,6 +51,7 @@ from ...config import (
     MOUCLASS_DIR,
     MOUNTMGR_DIR,
     MSAFD_DIR,
+    NDIS_DIR,
     NTDLL_BINDGEN_FILES,
     NTDLL_DIR,
     NTOSKRNL_DIR,
@@ -535,6 +536,24 @@ TARGETS = {
         bindgen_files=BINDGEN_FILES,
         hal_bindgen_files={},
         spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
+    # ndis.sys — the NDIS wrapper (drivers/network/ndis, ~11K LOC, 20 .c): miniport and
+    # protocol registration, packet/buffer pools over MDLs, OID requests, interrupts/DPCs,
+    # send/receive queues, CoNDIS stubs. EXPORT driver (ndis.spec, ~290 exports that must
+    # survive the flip). Exercised end to end only by `--payload ndisprobe` (e1000 82544GC
+    # + ndisuio); a plain smoke runs DriverEntry alone.
+    "ndis": Target(
+        name="ndis",
+        source_dir=NDIS_DIR,
+        output_crate=RUST_DIR / "ndis-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=NDIS_DIR / "ndis.spec",
         system_prompt=TEMPLATES_DIR / "system_prompt.md",
         src_subdir=Path("src"),
         cmake_deps_file=None,

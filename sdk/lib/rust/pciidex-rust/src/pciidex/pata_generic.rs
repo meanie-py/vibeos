@@ -125,6 +125,8 @@ unsafe extern "C" fn AtaCalculateTimings(
     let mut DataCycleTime: ATATIM = 0;
     let mut CmdCycleTime: ATATIM = 0;
 
+    ASSERT!(Mode < RTL_NUMBER_OF!(*(&raw const AtapTimingTable)));
+
     (*Timing).AddressSetup = AtaGetClocks(AtapTimingTable[Mode as usize].AddressSetup, ClockPeriodPs);
     (*Timing).CmdActive = AtaGetClocks(AtapTimingTable[Mode as usize].CmdActive, ClockPeriodPs);
     (*Timing).CmdRecovery = AtaGetClocks(AtapTimingTable[Mode as usize].CmdRecovery, ClockPeriodPs);
@@ -286,6 +288,7 @@ unsafe extern "C" fn AtaAcpiFindModeForCycleTime(
     );
 
     if _BitScanReverse(BestMode, CurrentModesBitmap) != 0 {
+        ASSERT!(*BestMode < RTL_NUMBER_OF!(*(&raw const AtapModeToCycleTime)));
         *BestCycleTime = AtapModeToCycleTime[*BestMode as usize];
     } else {
         *BestCycleTime = IDE_ACPI_TIMING_MODE_NOT_SUPPORTED;
@@ -302,6 +305,8 @@ unsafe extern "C" fn PciIdeAcpiSetTransferMode(
     let mut NewMode: IDE_ACPI_TIMING_MODE_BLOCK = core::mem::zeroed();
     let mut Status: NTSTATUS = 0;
     let mut i: ULONG = 0;
+
+    ASSERT!((*ChanData).__bindgen_anon_1.ChanInfo & CHANNEL_FLAG_HAS_ACPI_GTM);
 
     NewMode.ModeFlags = (*CurrentMode).ModeFlags;
 
@@ -688,6 +693,8 @@ unsafe extern "C" fn PciIdeControllerInitDma(mut Controller: PATA_CONTROLLER) ->
         let mut DmaStatus: UCHAR = 0;
 
         if !((*ChanData).__bindgen_anon_1.TransferModeSupported & !PIO_ALL as ULONG == 0) {
+            ASSERT!(!(*ChanData).Regs.Dma.is_null());
+
             DmaStatus = ATA_READ!(
                 (*ChanData).Regs.Dma.offset(PCIIDE_DMA_STATUS as isize),
                 ChanData,
@@ -906,6 +913,8 @@ pub unsafe extern "C" fn PciIdeParseResources(
 
     PAGED_CODE!();
 
+    ASSERT!((*ChanData).__bindgen_anon_1.Channel < 2);
+
     if (*Controller).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
         Status = PciIdeAssignNativeResources(Controller, ChanData);
     } else {
@@ -953,6 +962,8 @@ pub unsafe extern "C" fn PciIdeGetChannelState(
     if (*Controller).Flags & CTRL_FLAG_NATIVE_PCI != 0 {
         if (*Controller).Flags & CTRL_FLAG_MANUAL_RES == 0 {
             let BarIndex: ULONG = Channel.wrapping_mul(2);
+
+            ASSERT!(Channel < 2);
 
             if (*Controller).AccessRange[BarIndex as usize].Flags & RANGE_IS_VALID == 0 {
                 return ChannelDisabled;
@@ -1082,6 +1093,7 @@ pub unsafe extern "C" fn PciIdeConnectInterrupt(ChannelContext: *mut core::ffi::
     } else {
         InterruptDesc = &raw mut (*ChanData).__bindgen_anon_1.InterruptDesc as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
     }
+    ASSERT!(InterruptDesc);
 
     if !(*ChanData).Regs.Dma.is_null() {
         IsrHandler = Some(PciIdeChannelIsr);
@@ -1136,6 +1148,8 @@ pub unsafe extern "C" fn PciIdeCreateChannelData(
     let mut ChanData: *mut CHANNEL_DATA_PATA;
     let mut i: u32;
     let mut Size: u32;
+
+    ASSERT!((*Controller).MaxChannels != 0);
 
     Size = core::mem::offset_of!(CHANNEL_DATA_PATA, HwExt) as u32 + HwExtensionSize;
     ChanData = ExAllocatePoolZero(

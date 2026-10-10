@@ -70,24 +70,6 @@ from tools.source_walk import source_files
 REPO = Path(__file__).resolve().parent.parent
 
 SKIP_FILE_RE = re.compile(r"(/target/|/\.responses/)")
-CHARSET_GENERIC = frozenset(
-    {
-        "TCHAR",
-        "_TCHAR",
-        "TBYTE",
-        "BCHAR",
-        "PTCHAR",
-        "PTBYTE",
-        "LPTCH",
-        "PTCH",
-        "LPTSTR",
-        "LPCTSTR",
-        "PTSTR",
-        "PCTSTR",
-        "PBCHAR",
-    }
-)
-
 NOLINT_RE = re.compile(r"//\s*nolint(?::\s*type-alias-contradiction\b|\s*$|:?\s*\()")
 
 # [pub[(…)]] type NAME = RHS;   — no generics, no `where`; those are not the
@@ -266,12 +248,6 @@ def alias_facts(text: str):
             continue
         if "<" in rhs or "dyn " in rhs or "impl " in rhs or "fn(" in rhs:
             continue
-        # Charset-generic typedefs follow each module's own UNICODE define (winnt.h's TCHAR,
-        # winddi.h's BCHAR): a UNICODE module's island says WCHAR, an ANSI one's BYTE/CHAR.
-        # Both are right for their module, and the islands are generated, so a per-line
-        # nolint would not survive a regen (imm32 vs bmfd, 26 "contradictions").
-        if name in CHARSET_GENERIC:
-            continue
         decls.append((name, rhs))
     return decls, aliases
 
@@ -307,12 +283,35 @@ def collect(root: Path):
     return decls, aliases_by_arch
 
 
+# The TCHAR family is the one place a name is SUPPOSED to have two widths in this tree: winnt.h
+# spells it WCHAR under -DUNICODE and BYTE/char without, and every crate's island is generated
+# from its own module's flags. So it only contradicts itself WITHIN a crate (aclui's TCHAR
+# once resolved to the ANSI one in a UNICODE module); across crates it is two correct answers
+# to two different compiles, and every newly ported ANSI module (the appcompat shims) flagged.
+UNICODE_SWITCHED = frozenset({"TCHAR", "_TCHAR", "TBYTE", "BCHAR", "_TUCHAR", "_TSCHAR", "_TXCHAR"})
+
+
+def crate_of(rel: str) -> str:
+    """`sdk/lib/rust/<crate>/...` -> `<crate>` (the whole path when it is not under one)."""
+    m = re.search(r"(?:^|/)sdk/lib/rust/([^/]+)/", rel)
+    return m.group(1) if m else rel
+
+
 def contradictions(decls, aliases_by_arch):
     """[(name, rel, rhs, width)] where one arch bucket holds two known widths."""
     out = []
     common = aliases_by_arch.get("common", {})
     tables = {arch: {**common, **aliases} for arch, aliases in aliases_by_arch.items()}
+    groups = []
     for name, sites in decls.items():
+        if name in UNICODE_SWITCHED:
+            per_crate: dict[str, list] = defaultdict(list)
+            for site in sites:
+                per_crate[crate_of(site[0])].append(site)
+            groups.extend((name, group) for group in per_crate.values())
+        else:
+            groups.append((name, sites))
+    for name, sites in groups:
         if len(sites) < 2:
             continue
         by_arch: dict[str, set] = defaultdict(set)

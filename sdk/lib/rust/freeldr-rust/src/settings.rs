@@ -3,7 +3,6 @@ use crate::frldr::*;
 use ntkrnl_sys::ddk::PCSTR;
 use core::ffi::c_void;
 extern "C" {
-    fn ERR(fmt: *const i8, ...);
 }
 
 extern "C" {

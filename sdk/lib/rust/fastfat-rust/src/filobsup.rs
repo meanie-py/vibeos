@@ -22,7 +22,7 @@ extern "system" {
     fn NodeType(ptr: *mut core::ffi::c_void) -> u32;
     fn SetFlag(flags: *mut u32, flag: u32);
     fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> u8;
-    fn FatBugCheck(arg1: u32, arg2: u32, arg3: u32) -> !;
+    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn ClearFlag(State: *mut u32, Bit: u32);
@@ -265,7 +265,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                         // #ifdef _MSC_VER
                         // #pragma prefast(suppress:28159, "things are seriously wrong if we get here")
                         // #endif
-                        FatBugCheck(NodeType(FsContext), 0, 0);
+                        FatBugCheck(NodeType(FsContext) as usize, 0, 0);
                     }
                 }
             }
@@ -273,7 +273,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                 // #ifdef _MSC_VER
                 // #pragma prefast(suppress:28159, "things are seriously wrong if we get here")
                 // #endif
-                FatBugCheck(NodeType(FsContext), 0, 0);
+                FatBugCheck(NodeType(FsContext) as usize, 0, 0);
             }
         }
     }

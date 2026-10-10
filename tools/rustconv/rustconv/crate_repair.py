@@ -87,6 +87,7 @@ RULE_KEYWORD_FIELD = "bindgen_keyword_field"
 RULE_LITERAL_MUT = "c_literal_to_mut_param"
 RULE_BITFIELD = "bitfield_accessor"
 RULE_CONST_OPERAND = "c_constant_operand"
+RULE_C2RUST_ANON = "c2rust_anon_member"
 
 #: Rules driven by rustc diagnostics. ``RULE_WIDTH_ALIAS`` is FIRST on purpose: it and
 #: ``RULE_NUMERIC_CAST`` fire on the same E0308 int->int shape, and the alias is the better
@@ -136,6 +137,7 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_C2RUST_HOP,
     RULE_LITERAL_MUT,
     RULE_BITFIELD,
+    RULE_C2RUST_ANON,
 )
 #: Rules driven by source + a generated declaration (rustc cannot see these: an out-of-bounds
 #: index on a bindgen ``[T; 1]`` flexible-array member is a RUNTIME panic, and the
@@ -2217,6 +2219,58 @@ _BINDGEN_KEYWORDS = frozenset(
 _RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
 
 
+_RE_C2RUST_ANON = re.compile(r"c2rust_unnamed(?:_\d+)?")
+
+
+def _c2rust_anon_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`.c2rust_unnamed` / `.c2rust_unnamed_0`: c2rust's name for an anonymous member -> gone.
+
+    The model copies its c2rust anchor's spelling of C's anonymous struct/union members
+    (ndis: `Chars.c2rust_unnamed.c2rust_unnamed_0.SendCompleteHandler`, `IoStatus.
+    c2rust_unnamed.__bindgen_anon_1.Status`). Bindgen names them `__bindgen_anon_N`, with its
+    own numbering, so the segment is DELETED, leaving C's flattened spelling -- which
+    RULE_ANON_UNION then routes from the island's own declarations, or which compiles as is.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0609":
+        return [], [], False
+    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    if m is None or not _RE_C2RUST_ANON.fullmatch(m.group("field")):
+        return [], [], False
+    span = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if span is None:
+        return [], [], False
+    file_name = str(span.get("file_name") or "")
+    start, end = int(span.get("byte_start") or 0), int(span.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or data[start:end].decode("utf-8", "replace") != m.group("field"):
+        return [], [], False
+    dot = start
+    while dot > 0 and data[dot - 1 : dot] in (b" ", b"\t", b"\n", b"\r"):
+        dot -= 1
+    if data[dot - 1 : dot] != b".":
+        return [], [], False
+    return (
+        [
+            Edit(
+                file_name=file_name,
+                byte_start=dot - 1,
+                byte_end=end,
+                replacement="",
+                rule=RULE_C2RUST_ANON,
+                authority="c2rust's name for an anonymous member; C injects the member's fields",
+                original=data[dot - 1 : end].decode("utf-8", "replace"),
+                line=int(span.get("line_start") or 0),
+                column=int(span.get("column_start") or 0),
+                targets=(ctx.target,),
+            )
+        ],
+        [],
+        True,
+    )
+
+
 def _keyword_field_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -3622,7 +3676,7 @@ def _sizeof_const_rule(
 
 #: E0605 on a fn ITEM (rustc prints its type with the item's path in braces: `... {VfatFormat}`).
 _RE_FN_ITEM_CAST = re.compile(
-    r"^non-primitive cast: `[^`]*\bfn\([^`]*\{(?P<item>[\w:]+)\}` as `[^`]*\bfn\("
+    r"^non-primitive cast: `[^`]*\bfn\([^`]*\{(?P<item>[\w:]+)\}>?` as `[^`]*\bfn\("
 )
 
 
@@ -3655,15 +3709,22 @@ def _fn_item_cast_rule(
         return [], [], False
     item = m.group("item").split("::")[-1]
     head = re.match(rb"\s*(" + re.escape(item.encode()) + rb")\s+as\s", masked[start:end])
-    if head is None:
+    # The same conversion already wrapped for an `Option<fn>` slot: `Some(f) as Option<fn(..)>`.
+    # `as` never converts between Option types, even with identical signatures (ndis's
+    # `DriverUnload = Some(MainUnload) as PDRIVER_UNLOAD`); `Some(f)` coerces on its own.
+    some = re.match(
+        rb"\s*(Some\(\s*" + re.escape(item.encode()) + rb"\s*,?\s*\))\s+as\s", masked[start:end]
+    )
+    if head is None and some is None:
         return [], [], False
+    replacement = item if head is not None else f"Some({item})"
     return (
         [
             Edit(
                 file_name=file_name,
                 byte_start=start,
                 byte_end=end,
-                replacement=item,
+                replacement=replacement,
                 rule=RULE_FN_ITEM_CAST,
                 authority=(
                     f"rustc E0605: `{item}` is a function; C converts it to the pointer "
@@ -4352,6 +4413,7 @@ _RULE_TABLE: dict[
     RULE_KEYWORD_FIELD: _keyword_field_rule,
     RULE_C2RUST_HOP: _c2rust_hop_rule,
     RULE_BITFIELD: _bitfield_rule,
+    RULE_C2RUST_ANON: _c2rust_anon_rule,
     RULE_CONST_OPERAND: _constant_operand_rule,
 }
 

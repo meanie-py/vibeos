@@ -4,6 +4,7 @@ EXPORTS
   BTCpu64ProcessInit
   BTCpu64ThreadInit
   BTCpu64ThreadTerm
+  BTCpu64ProcessTerm
   BTCpu64GetContext
   BTCpu64SetContext
   BTCpu64Simulate

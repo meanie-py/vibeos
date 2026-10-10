@@ -1,29 +1,26 @@
-"""sizeof_restore: put back a dropped sizeof, never inside a macro's type slot."""
+"""sizeof_restore: put back a `sizeof` the model dropped around a type name."""
 
-from rustconv.sizeof_restore import restore
+from __future__ import annotations
 
-C = """
-DWORD f(void)
-{
-    DWORD size = sizeof(METARECORD);
-    size = FIELD_OFFSET(METARECORD, rdParm[2]);
-    return size;
-}
-"""
-
-RUST = """pub unsafe extern "C" fn f() -> DWORD {
-    let mut size: DWORD = METARECORD as DWORD;
-    size = FIELD_OFFSET!(METARECORD, rdParm[2]) as DWORD;
-    return size;
-}
-"""
+from rustconv import sizeof_restore
 
 
-def test_a_bare_type_in_value_position_gets_its_sizeof_back(tmp_path):
-    c = tmp_path / "metadc.c"
-    c.write_text(C)
-    out, fixed = restore(RUST, c, {"METARECORD"})
-    assert "core::mem::size_of::<METARECORD>() as DWORD;" in out
-    # winegdi's metadc.c: the macro's TYPE argument must stay a type.
-    assert "FIELD_OFFSET!(METARECORD, rdParm[2])" in out
-    assert fixed == ["f: sizeof(METARECORD) x1"]
+def test_a_macros_type_argument_is_not_a_dropped_sizeof(tmp_path):
+    """winprint: `FIELD_OFFSET(DATATYPES_INFO_1W, pName)` beside a real
+    `sizeof(DATATYPES_INFO_1W)`; the type in FIELD_OFFSET!'s first slot was rewritten into
+    `size_of::<..>()`, which no macro arm accepts."""
+    c = tmp_path / "main.c"
+    c.write_text(
+        "DWORD F(void)\n{\n    return n * sizeof(DATATYPES_INFO_1W)"
+        " + FIELD_OFFSET(DATATYPES_INFO_1W, pName);\n}\n"
+    )
+    rust = (
+        'pub unsafe extern "system" fn F() -> DWORD {\n'
+        "    n.wrapping_mul(DATATYPES_INFO_1W as DWORD)"
+        ".wrapping_add(FIELD_OFFSET!(DATATYPES_INFO_1W, pName) as DWORD)\n"
+        "}\n"
+    )
+    out, fixed = sizeof_restore.restore(rust, c, {"DATATYPES_INFO_1W"})
+    assert "wrapping_mul(core::mem::size_of::<DATATYPES_INFO_1W>() as DWORD)" in out
+    assert "FIELD_OFFSET!(DATATYPES_INFO_1W, pName)" in out
+    assert fixed == ["F: sizeof(DATATYPES_INFO_1W) x1"]

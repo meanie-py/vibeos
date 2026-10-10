@@ -3178,6 +3178,12 @@ UNCOVERED: dict[str, str] = {
         "island_disagreements(), is a pure function over two dicts, driven in "
         "tools/test_scan_const_vs_island.py with the fsrtl swap as the positive control."
     ),
+    "scan_const_vs_own_island": (
+        "needs the whole tree's per-crate islands as its oracle. The decision, "
+        "own_island_shadows(), is a pure function over two dicts, driven in "
+        "tools/test_scan_const_vs_island.py with atapi's MAX_SLOTS (16 copied from usbxhci, "
+        "its island says 32) as the positive control."
+    ),
     "scan_bindgen_padding_index": (
         "a regex over single source lines with no tree model, so a fixture dir would only "
         "restate its unit tests. tools/test_scan_bindgen_padding_index.py drives scan_text "
@@ -3283,6 +3289,28 @@ def test_irql_cli_default_still_builds_whole_workspace_summaries(tmp_path, monke
     target = tmp_path / "selected.rs"
     assert module.main(["--lint", str(target)]) == 0
     assert seen == [[module.RUST_WS], [target]]
+
+
+def test_irql_a_passive_only_wait_does_not_make_its_callers_sleep(tmp_path):
+    """KeSynchronizeExecution waits only for a passive-level interrupt, which may be
+    synchronized only at PASSIVE_LEVEL; every caller holding a spin lock around it
+    (scsiport's) would otherwise be an IRQL_SLEEP_WHILE_HELD."""
+    spec = importlib.util.spec_from_file_location(
+        "irql_conditional_control", REPO / "tools/scan_irql_balance.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    src = tmp_path / "ke.rs"
+    src.write_text(
+        "fn KeSynchronizeExecution() { IopSync(); }\n"
+        "fn IopSync() { KeWaitForSingleObject(); }\n"
+        "fn Caller() { KeSynchronizeExecution(); }\n"
+    )
+    may_sleep, _, _ = module.build_summaries([src], {})
+    assert "IopSync" in may_sleep
+    assert "KeSynchronizeExecution" not in may_sleep
+    assert "Caller" not in may_sleep
 
 
 @pytest.mark.parametrize(
@@ -3712,3 +3740,51 @@ def test_bitwise_not_after_a_keyword_is_flagged():
             assert scan_line(line)
     assert not scan_line("    if success == 0 {")
     assert not scan_line("    assert!(x != 0);")
+
+
+def test_type_alias_tchar_family_is_compared_within_a_crate_only(tmp_path):
+    """BCHAR is WCHAR in a -DUNICODE module's island and BYTE in an ANSI one's (the
+    appcompat shims): two right answers to two compiles, not a contradiction. Inside ONE
+    crate the two widths are still a bug (aclui's TCHAR once came from the ANSI glob)."""
+    spec = importlib.util.spec_from_file_location(
+        "alias_tchar_control", REPO / "tools/scan_type_alias_contradictions.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rust = tmp_path / "sdk" / "lib" / "rust"
+    for crate, rhs in (("wide-rust", "WCHAR"), ("ansi-rust", "BYTE")):
+        (rust / crate / "src").mkdir(parents=True)
+        (rust / crate / "src" / "types.rs").write_text(
+            f"pub type WCHAR = u16;\npub type BYTE = u8;\npub type BCHAR = {rhs};\n"
+        )
+    decls, aliases = module.collect(tmp_path)
+    assert not [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    (rust / "wide-rust" / "src" / "prelude.rs").write_text("pub type BCHAR = u8;\n")
+    decls, aliases = module.collect(tmp_path)
+    hits = [h for h in module.contradictions(decls, aliases) if h[0] == "BCHAR"]
+    assert hits and all("wide-rust" in h[1] for h in hits)
+
+
+def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
+    """c_data_port's keyboard tables: `VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT
+    /* VK_MEDIA_PREV_TRACK | KBDEXT */ }`. The comment annotates 433 alone (0xB1 | 0x100);
+    pairing the scan code 0x10 with the VK, and an |-list whose KBDEXT the catalog does not
+    know, were 4108 false findings."""
+    spec = importlib.util.spec_from_file_location(
+        "inline_flag_field_control", REPO / "tools/scan_inline_flag_literals.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "t.rs"
+    rs.write_text(
+        "static T: [VSC_VK; 2] = [\n"
+        "    VSC_VK { Vsc: 0x10 as BYTE, Vk: 433 as USHORT /* VK_MEDIA_PREV_TRACK | KBDEXT */ },\n"
+        "    VSC_VK { Vsc: 0x47 as BYTE, Vk: 3108 as USHORT /* VK_HOME | KNUMS */ },\n"
+        "];\n"
+        "const BAD: u32 = 0x25; // VK_HOME\n"
+    )
+    catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
+    hits = module.scan_file(rs, catalog)
+    assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]

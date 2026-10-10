@@ -40,6 +40,7 @@ pub unsafe extern "C" fn AtaDeviceFlushPowerIrpQueue(
         }
 
         PowerIrp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
+        ASSERT!((*IoGetCurrentIrpStackLocation(PowerIrp)).MinorFunction == IRP_MN_SET_POWER);
 
         AtaPowerCompleteIrp(&mut (*DevExt).Common, PowerIrp, STATUS_NO_SUCH_DEVICE);
     }
@@ -154,6 +155,7 @@ pub unsafe extern "C" fn AtaPortDeviceProcessPowerChange(
     PowerIrp = CONTAINING_RECORD!(Entry, IRP, Tail.Overlay.__bindgen_anon_2.ListEntry);
 
     IoStack = IoGetCurrentIrpStackLocation(PowerIrp);
+    ASSERT!((*IoStack).MinorFunction == IRP_MN_SET_POWER);
 
     NewState = (*IoStack).Parameters.Power.State.DeviceState;
     if NewState as u32 == (*DevExt).Common.DevicePowerState as u32 {

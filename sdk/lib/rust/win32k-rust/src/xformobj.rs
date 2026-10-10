@@ -11,8 +11,6 @@ fn FIX2LONG(x: i32) -> i32 { (x + 8) >> 4 }
 #[inline(always)]
 fn LONG2FIX(x: i32) -> i32 { x << 4 }
 #[inline(always)]
-fn NT_ASSERT(_expr: i32) {}
-#[inline(always)]
 unsafe fn RtlCopyMemory(dst: *mut c_void, src: *const c_void, len: usize) {
     core::ptr::copy_nonoverlapping(src as *const u8, dst as *mut u8, len);
 }
@@ -410,7 +408,7 @@ unsafe fn XFORMOBJ_bXformFixPoints(
             if FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM12), &mut lM12) == 0
                 || FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM21), &mut lM21) == 0
             {
-                NT_ASSERT(0);
+                NT_ASSERT!(0);
                 return 0;
             }
 
@@ -438,7 +436,7 @@ unsafe fn XFORMOBJ_bXformFixPoints(
             if FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM11), &mut lM11) == 0
                 || FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM22), &mut lM22) == 0
             {
-                NT_ASSERT(0);
+                NT_ASSERT!(0);
                 return 0;
             }
 
@@ -468,7 +466,7 @@ unsafe fn XFORMOBJ_bXformFixPoints(
                 || FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM21), &mut lM21) == 0
                 || FLOATOBJ_bConvertToLong(core::ptr::addr_of!((*pmx).efM22), &mut lM22) == 0
             {
-                NT_ASSERT(0);
+                NT_ASSERT!(0);
                 return 0;
             }
 

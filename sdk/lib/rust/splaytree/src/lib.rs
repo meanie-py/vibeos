@@ -154,7 +154,7 @@ unsafe fn swap_splay_links(mut link_a: *mut SplayLinks, mut link_b: *mut SplayLi
 
 /// Splay a node to the root of the tree.
 pub unsafe fn splay(links: *mut SplayLinks) -> *mut SplayLinks {
-    let mut n = links;
+    let n = links;
 
     while !is_root(n) {
         let p = parent(n);
