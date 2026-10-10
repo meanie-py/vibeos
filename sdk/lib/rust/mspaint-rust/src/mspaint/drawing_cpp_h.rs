@@ -218,18 +218,17 @@ pub unsafe extern "C" fn RectSel(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LON
     SetROP2(hdc, (oldRop) as i32);
 }
 #[no_mangle]
-pub unsafe extern "C" fn Text(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, fg: COLORREF, bg: COLORREF, lpchText: LPCWSTR, font: HFONT, style: i32) {
-    let iSaveDC: i32 = SaveDC(hdc); // We will modify the clipping region. Save now.
+pub unsafe extern "C" fn Text(hdc: HDC, x1: LONG, y1: LONG, x2: LONG, y2: LONG, fg: COLORREF, bg: COLORREF, lpchText: LPCWSTR, font: HFONT, style: LONG) {
+    let iSaveDC: INT = SaveDC(hdc); // We will modify the clipping region. Save now.
 
-    let mut rc: CRect = CRect__make_1();
-    rc.__base0.left = x1;
-    rc.__base0.top = y1;
-    rc.__base0.right = x2;
-    rc.__base0.bottom = y2;
+    let mut rc: CRect = CRect__make_1(x1, y1, x2, y2);
 
-    if style == 0 { // Transparent
+    if style == 0 // Transparent
+    {
         SetBkMode(hdc, (TRANSPARENT as i32));
-    } else { // Opaque
+    }
+    else // Opaque
+    {
         SetBkMode(hdc, (OPAQUE as i32));
         SetBkColor(hdc, bg);
 
@@ -242,8 +241,8 @@ pub unsafe extern "C" fn Text(hdc: HDC, x1: i32, y1: i32, x2: i32, y2: i32, fg: 
 
     let hFontOld: HGDIOBJ = SelectObject(hdc, (font).cast());
     SetTextColor(hdc, fg);
-    let uFormat: u32 = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
-                       DT_EXPANDTABS | DT_WORDBREAK;
+    let uFormat: UINT = DT_LEFT | DT_TOP | DT_EDITCONTROL | DT_NOPREFIX | DT_NOCLIP |
+                         DT_EXPANDTABS | DT_WORDBREAK;
     DrawTextW(hdc, lpchText, -1, core::ptr::addr_of_mut!(rc.__base0), uFormat);
     SelectObject(hdc, hFontOld);
 

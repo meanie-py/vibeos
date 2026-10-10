@@ -14,7 +14,7 @@ impl SelectionModel {
         let this_: *mut Self = self;
         (*this_).m_hbmColor = core::ptr::null_mut();
         (*this_).m_hbmMask = core::ptr::null_mut();
-        (*this_).m_rgbBack = RGB;
+        (*this_).m_rgbBack = RGB!(255, 255, 255);
         (*this_).m_bShow = (FALSE) as i32;
         (*this_).m_bContentChanged = (FALSE) as i32;
         {
@@ -30,7 +30,7 @@ impl SelectionModel {
     }
     pub unsafe fn SetRectFromPoints(&mut self, ptFrom: &POINT, ptTo: &POINT) {
         let this_: *mut Self = self;
-        (*this_).m_rc = CRect__make_5(ptFrom, ptTo);
+        (*this_).m_rc = CRect__make_5(*ptFrom, *ptTo);
         (*this_).m_rc.NormalizeRect();
     }
     pub unsafe fn setMask(&mut self, rc: &CRect, hbmMask: HBITMAP) {
@@ -84,7 +84,7 @@ impl SelectionModel {
                 core::ptr::addr_of!((*this_).m_rc) as LPCRECT,
                 core::ptr::addr_of!((*this_).m_rcOld) as LPCRECT,
             );
-            imageModel.PushImageForUndo__2(rc.__base0);
+            imageModel.PushImageForUndo__2(&rc.__base0);
     
             canvasWindow.m_drawing = (FALSE) as i32;
             toolsModel.OnDrawOverlayOnImage(imageModel.GetDC());
@@ -123,12 +123,12 @@ impl SelectionModel {
         if (*this_).m_bShow == 0 {
             return HIT_NONE;
         }
-    
+
         let mut rcSelection: CRect = CRect__make_0();
         rcSelection = (*this_).m_rc;
-        canvasWindow.ImageToCanvas__1(rcSelection.__base0);
+        canvasWindow.ImageToCanvas__1(&mut rcSelection.__base0);
         rcSelection.InflateRect__0((GRIP_SIZE as i32), (GRIP_SIZE as i32));
-        return getSizeBoxHitTest(ptCanvas, (*core::ptr::addr_of_mut!(rcSelection)).__base0);
+        return getSizeBoxHitTest(ptCanvas, core::ptr::addr_of!(rcSelection.__base0) as LPCRECT);
     }
     pub unsafe fn drawFrameOnCanvas(&mut self, hCanvasDC: HDC) {
         let this_: *mut Self = self;
@@ -138,9 +138,9 @@ impl SelectionModel {
     
         let mut rcSelection: CRect = CRect__make_0();
         rcSelection = (*this_).m_rc;
-        canvasWindow.ImageToCanvas__1(&mut rcSelection.__base0);
+        canvasWindow.ImageToCanvas__1(rcSelection.__base0);
         rcSelection.InflateRect__0((GRIP_SIZE as i32), (GRIP_SIZE as i32));
-        drawSizeBoxes(hCanvasDC, (*core::ptr::addr_of_mut!(rcSelection)).__base0, (TRUE) as BOOL);
+        drawSizeBoxes(hCanvasDC, core::ptr::addr_of!(rcSelection.__base0) as LPCRECT, (TRUE) as BOOL, core::ptr::null());
     }
     pub unsafe fn moveSelection(&mut self, xDelta: INT, yDelta: INT) {
         let this_: *mut Self = self;
@@ -155,22 +155,18 @@ impl SelectionModel {
     pub unsafe fn GetSelectionContents(&mut self) -> HBITMAP {
         let this_: *mut Self = self;
         let hbmWhole = imageModel.LockBitmap();
-        let hbmPart = getSubImage(hbmWhole, if (*this_).IsLanded() != 0 { (*this_).m_rc.__base0 } else { (*this_).m_rcOld.__base0 });
+        let hbmPart = getSubImage(hbmWhole, if (*this_).IsLanded() != 0 { &(*this_).m_rc.__base0 } else { &(*this_).m_rcOld.__base0 });
         imageModel.UnlockBitmap(hbmWhole);
         if hbmPart.is_null() {
             return core::ptr::null_mut();
         }
     
-        let mut rc: CRect = CRect__make_1();
-        rc.__base0.left = 0;
-        rc.__base0.top = 0;
-        rc.__base0.right = (*this_).m_rc.Width();
-        rc.__base0.bottom = (*this_).m_rc.Height();
+        let mut rc: CRect = CRect__make_1(0, 0, (*this_).m_rc.Width(), (*this_).m_rc.Height());
     
         let hdcMem = CreateCompatibleDC(core::ptr::null_mut());
         let hbmNew = CreateColorDIB(rc.Width(), rc.Height(), paletteModel.GetBgColor());
         let hbmOld = SelectObject(hdcMem, (hbmNew).cast());
-        selectionModel.DrawSelection__0(hdcMem, paletteModel.GetBgColor(), (TRUE) as COLORREF, rc, hbmPart);
+        selectionModel.DrawSelection__0(hdcMem, paletteModel.GetBgColor(), (TRUE) as BOOL, &rc, hbmPart);
         SelectObject(hdcMem, hbmOld);
         DeleteDC(hdcMem);
     
@@ -205,14 +201,14 @@ impl SelectionModel {
     
         Rect(hDCImage, (*this_).m_rcOld.left, (*this_).m_rcOld.top, (*this_).m_rcOld.right, (*this_).m_rcOld.bottom, crBg, crBg, 0, 1);
     }
-    pub unsafe fn DrawSelection__0(&mut self, hDCImage: HDC, crBg: COLORREF, bBgTransparent: BOOL, rc: &CRect, hbm: HBITMAP) {
+    pub unsafe fn DrawSelection__0(&mut self, hDCImage: HDC, crBg: COLORREF, bBgTransparent: BOOL, rc: &mut CRect, hbm: HBITMAP) {
         let this_: *mut Self = self;
         if rc.IsRectEmpty() != 0 {
             return;
         }
     
         let mut bm: BITMAP = core::mem::zeroed();
-        if GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>(), &mut bm as *mut BITMAP as *mut core::ffi::c_void) == 0 {
+        if GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, &mut bm as *mut BITMAP as *mut core::ffi::c_void) == 0 {
             return;
         }
     
@@ -341,37 +337,37 @@ impl SelectionModel {
     
         (*this_).TakeOff();
     
-        let mut oldWidth: i32 = (*this_).m_rc.Width();
-        let mut oldHeight: i32 = (*this_).m_rc.Height();
-        let mut newWidth: i32 = oldWidth * nStretchPercentX / 100;
-        let mut newHeight: i32 = oldHeight * nStretchPercentY / 100;
+        let oldWidth: i32 = (*this_).m_rc.Width();
+        let oldHeight: i32 = (*this_).m_rc.Height();
+        let newWidth: i32 = oldWidth * nStretchPercentX / 100;
+        let newHeight: i32 = oldHeight * nStretchPercentY / 100;
     
         let mut hbmColor: HBITMAP = (*this_).m_hbmColor;
         let mut hbmMask: HBITMAP = (*this_).m_hbmMask;
     
-        if hbmMask == core::ptr::null_mut() {
+        if hbmMask.is_null() {
             hbmMask = CreateMonoBitmap(oldWidth, oldHeight, (TRUE) as BOOL);
         }
     
         if oldWidth != newWidth || oldHeight != newHeight {
-            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), CopyDIBImage(hbmColor, newWidth, newHeight));
-            AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), CopyMonoImage(hbmMask, newWidth, newHeight));
+            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), CopyDIBImage(hbmColor, newWidth, newHeight, (STRETCH_HALFTONE as i32)));
+            AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), CopyMonoImage(hbmMask, newWidth, newHeight, (STRETCH_HALFTONE) as INT));
         }
     
-        let mut hbmOld: HGDIOBJ = core::mem::zeroed();
+        let mut hbmOld: HGDIOBJ = core::ptr::null_mut();
         let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
     
         if nSkewDegX != 0 {
             hbmOld = SelectObject(hDC, (hbmColor).cast());
-            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), SkewDIB(hDC, hbmColor, nSkewDegX, (FALSE) as BOOL));
+            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), SkewDIB(hDC, hbmColor, nSkewDegX, (FALSE) as BOOL, (FALSE) as BOOL));
             SelectObject(hDC, (hbmMask).cast());
             AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), SkewDIB(hDC, hbmMask, nSkewDegX, (FALSE) as BOOL, (TRUE) as BOOL));
             SelectObject(hDC, hbmOld);
         }
-    
+
         if nSkewDegY != 0 {
             hbmOld = SelectObject(hDC, (hbmColor).cast());
-            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), SkewDIB(hDC, hbmColor, nSkewDegY, (TRUE) as BOOL));
+            AttachHBITMAP(core::ptr::addr_of_mut!(hbmColor), SkewDIB(hDC, hbmColor, nSkewDegY, (TRUE) as BOOL, (FALSE) as BOOL));
             SelectObject(hDC, (hbmMask).cast());
             AttachHBITMAP(core::ptr::addr_of_mut!(hbmMask), SkewDIB(hDC, hbmMask, nSkewDegY, (TRUE) as BOOL, (TRUE) as BOOL));
             SelectObject(hDC, hbmOld);

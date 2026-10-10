@@ -68,7 +68,7 @@ impl CRegKey {
     
             let mut hKey: HKEY = core::ptr::null_mut();
             let mut lRes: LONG = RegOpenKeyEx(hKeyParent, lpszKeyName, 0, samDesired, &mut hKey);
-            if lRes == ERROR_SUCCESS {
+            if (lRes) as u32 == ERROR_SUCCESS {
                 (*this_).Close();
                 (*this_).m_hKey = hKey;
             }
@@ -83,7 +83,7 @@ impl CRegKey {
         let mut lRes: LONG = RegCreateKeyEx(hKeyParent, lpszKeyName, 0, lpszClass,
                                      dwOptions, samDesired, lpSecAttr, core::ptr::addr_of_mut!(hKey),
                                      lpdwDisposition);
-        if lRes == ERROR_SUCCESS {
+        if (lRes) as u32 == ERROR_SUCCESS {
             (*this_).Close();
             (*this_).m_hKey = hKey;
         }
@@ -149,7 +149,7 @@ impl CRegKey {
         let length: SIZE_T;
         match dwType {
             REG_SZ | REG_EXPAND_SZ => {
-                length = (_tcslen(pszValue) + 1) * core::mem::size_of::<TCHAR>();
+                length = ((_tcslen(pszValue) + 1) * core::mem::size_of::<TCHAR>()) as _;
                 return (*this_).SetValue__0(pszValueName, dwType, pszValue as *const core::ffi::c_void, length as ULONG);
             }
             REG_MULTI_SZ => {
@@ -166,7 +166,7 @@ impl CRegKey {
     }
     pub unsafe fn SetMultiStringValue(&mut self, pszValueName: LPCTSTR, pszValue: LPCTSTR) -> LONG {
         let this_: *mut Self = self;
-        let mut dwSize: ULONG = _GetMultiStringSize(pszValue);
-        return (*this_).SetValue__0(pszValueName, REG_MULTI_SZ, pszValue as *const core::ffi::c_void, dwSize);
-    }
+            let dwSize: ULONG = CRegKey::_GetMultiStringSize(pszValue);
+            return (*this_).SetValue__0(pszValueName, REG_MULTI_SZ, pszValue as *const core::ffi::c_void, dwSize);
+        }
 }

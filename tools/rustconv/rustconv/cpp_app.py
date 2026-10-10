@@ -1287,7 +1287,21 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
         if entry is None:
             raise CppAppError("module globals need construction but no entry point was found")
         by_file.setdefault(entry, []).append(init)
-    return {k: "\n".join(v) for k, v in by_file.items()}
+    names = frozenset(
+        re.findall(r"^\s*pub (?:type|struct|union|enum|const|static(?: mut)?) (\w+)", island, re.M)
+    )
+    return {k: _flatten_island_ns("\n".join(v), names) for k, v in by_file.items()}
+
+
+def _flatten_island_ns(text: str, island_names: frozenset[str]) -> str:
+    """`Gdiplus::GpImage` -> the island's `Gdiplus_GpImage` (bindgen flattens a namespace
+    path with `_`). Only where the island has that exact name; the rest is untouched."""
+
+    def fix(m: re.Match) -> str:
+        flat = m.group(0).replace("::", "_")
+        return flat if flat in island_names else m.group(0)
+
+    return re.sub(r"\b[A-Za-z_]\w*(?:::[A-Za-z_]\w*)+\b", fix, text)
 
 
 _CALL_RE = re.compile(r"(?:\.|->)\s*([A-Za-z_]\w*)\s*\(")
@@ -1485,6 +1499,42 @@ def assemble(rust: str, model: ModuleModel) -> str:
     for cls, fns in impls.items():
         out.append(f"\nimpl {cls} {{\n" + "\n".join(fns) + "\n}\n")
     return "".join(out)
+
+
+def unthis_globals(rust: str, model: ModuleModel) -> str:
+    """`(*this_).selectionModel` -> `selectionModel` where `selectionModel` is a module
+    GLOBAL and no class has a field of that name: the lowered C says `selectionModel.x`,
+    and a worker that invents the member (mspaint's OnCommand, 100+ sites) is wrong in a
+    way that has exactly one reading."""
+    fields = {f.name for c in model.classes.values() for f in c.fields}
+    names = {g.name for g in model.globals} - fields
+    if not names:
+        return rust
+    alt = "|".join(sorted(map(re.escape, names), key=len, reverse=True))
+    return re.sub(rf"\(\*this_\)\.(?=(?:{alt})\b)", "", rust)
+
+
+def qualify_static_calls(rust: str, model: ModuleModel) -> str:
+    """A bare `_shared()` where `_shared` is a static method of exactly one class and
+    nothing else in the module (no free function, no other class's method) is that class's
+    `CImageDx::_shared()`: the lowered C said so, and a worker inside `impl CImageDx`
+    dropped the qualifier, which Rust does not allow for an associated fn."""
+    owners: dict[str, set[str]] = {}
+    for c in model.classes.values():
+        for m in c.methods:
+            owners.setdefault(m.rust_name or m.name, set()).add(c.name if m.static else "")
+    free = {f.name for f in model.functions} | {g.name for g in model.globals}
+    names = {n for n, o in owners.items() if len(o) == 1 and "" not in o and n not in free}
+    if not names:
+        return rust
+    alt = "|".join(sorted(map(re.escape, names), key=len, reverse=True))
+
+    def fix(m: re.Match) -> str:
+        if re.search(r"\bfn\s+$", rust[max(0, m.start() - 8) : m.start()]):
+            return m.group(0)  # the definition itself
+        return f"{next(iter(owners[m.group(1)]))}::{m.group(0)}"
+
+    return re.sub(rf"(?<![\w.:>])({alt})\s*\(", fix, rust)
 
 
 def _fn_end(text: str, start: int) -> int:

@@ -199,7 +199,7 @@ impl CStyledCursor {
 impl CCanvasWindow {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
-        (*this_).__base0.__ctor_0();
+        (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
         (*this_).m_drawing = (FALSE) as i32;
         (*this_).m_hitCanvasSizeBox = HIT_NONE;
@@ -220,35 +220,36 @@ impl CCanvasWindow {
         let mut rcClient: CRect = CRect__make_0();
         (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient.__base0));
     
-        let mut sizePage: CSize = CSize__make_1(rcClient.right, rcClient.bottom);
-        let mut sizeZoomed: CSize = CSize__make_1();
-        sizeZoomed.cx = Zoomed(imageModel.GetWidth());
-        sizeZoomed.cy = Zoomed(imageModel.GetHeight());
-        let mut sizeWhole: CSize = CSize__make_1();
-        sizeWhole.cx = sizeZoomed.cx + ((GRIP_SIZE * 2)) as i32;
-        sizeWhole.cy = sizeZoomed.cy + ((GRIP_SIZE * 2)) as i32;
+        let mut sizePage: CSize = CSize__make_1(rcClient.__base0.right, rcClient.__base0.bottom);
+        let mut sizeZoomed: CSize = CSize__make_1(
+            Zoomed(imageModel.GetWidth()),
+            Zoomed(imageModel.GetHeight()),
+        );
+        let mut sizeWhole: CSize = CSize__make_1(
+            sizeZoomed.__base0.cx + ((GRIP_SIZE * 2)) as i32,
+            sizeZoomed.__base0.cy + ((GRIP_SIZE * 2)) as i32,
+        );
     
         // show/hide the scrollbars
-        (*this_).__base0.ShowScrollBar(SB_HORZ, (sizePage.cx < sizeWhole.cx) as BOOL);
-        (*this_).__base0.ShowScrollBar(SB_VERT, (sizePage.cy < sizeWhole.cy) as BOOL);
+        (*this_).__base0.ShowScrollBar(SB_HORZ, (sizePage.__base0.cx < sizeWhole.__base0.cx) as i32);
+        (*this_).__base0.ShowScrollBar(SB_VERT, (sizePage.__base0.cy < sizeWhole.__base0.cy) as i32);
     
-        if sizePage.cx < sizeWhole.cx || sizePage.cy < sizeWhole.cy
-        {
+        if sizePage.__base0.cx < sizeWhole.__base0.cx || sizePage.__base0.cy < sizeWhole.__base0.cy {
             (*this_).__base0.GetClientRect(core::ptr::addr_of_mut!(rcClient.__base0)); // Scrollbars might change, get client rectangle again
-            sizePage = CSize__make_1(rcClient.right, rcClient.bottom);
+            sizePage = CSize__make_1(rcClient.__base0.right, rcClient.__base0.bottom);
         }
     
         let mut si: SCROLLINFO = core::mem::zeroed();
         si.cbSize = core::mem::size_of::<SCROLLINFO>() as u32;
         si.fMask = SIF_PAGE | SIF_RANGE;
-        si.nMin   = 0;
+        si.nMin = 0;
     
-        si.nMax   = sizeWhole.cx;
-        si.nPage  = (sizePage.cx) as u32;
+        si.nMax = sizeWhole.__base0.cx;
+        si.nPage = sizePage.__base0.cx as u32;
         (*this_).__base0.SetScrollInfo((SB_HORZ) as i32, core::ptr::addr_of_mut!(si), (TRUE) as i32);
     
-        si.nMax   = sizeWhole.cy;
-        si.nPage  = (sizePage.cy) as u32;
+        si.nMax = sizeWhole.__base0.cy;
+        si.nPage = sizePage.__base0.cy as u32;
         (*this_).__base0.SetScrollInfo((SB_VERT) as i32, core::ptr::addr_of_mut!(si), (TRUE) as i32);
     }
     pub unsafe fn updateScrollPos(&mut self, x: INT, y: INT) {
@@ -280,7 +281,7 @@ impl CCanvasWindow {
     }
     pub unsafe fn GetImageRect(&mut self, rc: &mut RECT) {
         let this_: *mut Self = self;
-        *rc = RECT { left: 0, top: 0, right: (*this_).imageModel.GetWidth(), bottom: (*this_).imageModel.GetHeight() };
+        *rc = RECT { left: 0, top: 0, right: imageModel.GetWidth(), bottom: imageModel.GetHeight() };
     }
     pub unsafe fn getNewZoomRect(&mut self, rcView: &mut CRect, newZoom: INT, ptTarget: CPoint) {
         let this_: *mut Self = self;
@@ -541,9 +542,10 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnMouseMove(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        let mut pt = POINT { x: GET_X_LPARAM!(lParam), y: GET_Y_LPARAM!(lParam) };
+        let mut pt: POINT = POINT { x: GET_X_LPARAM!(lParam), y: GET_Y_LPARAM!(lParam) };
     
-        if (*this_).m_nMouseDownMsg == WM_MBUTTONDOWN {
+        if (*this_).m_nMouseDownMsg == WM_MBUTTONDOWN
+        {
             let x: INT = (*this_).__base0.GetScrollPos((SB_HORZ) as i32) - (pt.x - (*this_).m_ptOrig.x);
             let y: INT = (*this_).__base0.GetScrollPos((SB_VERT) as i32) - (pt.y - (*this_).m_ptOrig.y);
             (*this_).__base0.SendMessageW__0(WM_HSCROLL, MAKEWPARAM!(SB_THUMBPOSITION, x), 0);
@@ -554,11 +556,13 @@ impl CCanvasWindow {
     
         (*this_).CanvasToImage__0(&mut pt, (TRUE) as i32);
     
-        if toolsModel.GetActiveTool() == TOOL_ZOOM {
+        if toolsModel.GetActiveTool() == TOOL_ZOOM
+        {
             (*this_).__base0.Invalidate((TRUE) as i32);
         }
     
-        if (*this_).m_drawing == 0 || toolsModel.GetActiveTool() <= TOOL_AIRBRUSH {
+        if (*this_).m_drawing == 0 || toolsModel.GetActiveTool() <= TOOL_AIRBRUSH
+        {
             let mut tme: TRACKMOUSEEVENT = core::mem::zeroed();
             tme.cbSize = core::mem::size_of::<TRACKMOUSEEVENT>() as DWORD;
             tme.dwFlags = TME_LEAVE;
@@ -566,24 +570,28 @@ impl CCanvasWindow {
             tme.dwHoverTime = 0;
             TrackMouseEvent(core::ptr::addr_of_mut!(tme));
     
-            if (*this_).m_drawing == 0 {
-                let mut rcImage = CRect__make_0();
+            if (*this_).m_drawing == 0
+            {
+                let mut rcImage: CRect = CRect__make_0();
                 (*this_).GetImageRect(&mut rcImage.__base0);
     
-                let mut strCoord = CStringW::new();
-                if rcImage.PtInRect(pt) != 0 {
+                let mut strCoord: CStringW = CStringW::new();
+                if rcImage.PtInRect(pt) != 0
+                {
                     atl_format!(strCoord, CPP_COM_WSTR_16A2910FBF5B.as_ptr(), pt.x, pt.y);
                 }
                 SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 1, strCoord.GetString() as LPARAM);
             }
         }
     
-        if (*this_).m_drawing != 0 || toolsModel.IsSelection() != 0 {
+        if (*this_).m_drawing != 0 || toolsModel.IsSelection() != 0
+        {
             toolsModel.DrawWithMouseTool(pt, wParam);
             return 0;
         }
     
-        if (*this_).m_hitCanvasSizeBox == HIT_NONE || GetCapture() != (*this_).__base0.m_hWnd {
+        if (*this_).m_hitCanvasSizeBox == HIT_NONE || GetCapture() != (*this_).__base0.m_hWnd
+        {
             return 0;
         }
     
@@ -592,28 +600,46 @@ impl CCanvasWindow {
         let mut cyImage: INT = imageModel.GetHeight();
         let cxDelta: INT = pt.x - (*this_).m_ptOrig.x;
         let cyDelta: INT = pt.y - (*this_).m_ptOrig.y;
-        let hit = (*this_).m_hitCanvasSizeBox;
-        if hit == HIT_UPPER_LEFT {
+        // switch (this_->m_hitCanvasSizeBox)
+        let hit: HITTEST = (*this_).m_hitCanvasSizeBox;
+        if hit == HIT_UPPER_LEFT
+        {
             cxImage -= cxDelta;
             cyImage -= cyDelta;
-        } else if hit == HIT_UPPER_CENTER {
+        }
+        else if hit == HIT_UPPER_CENTER
+        {
             cyImage -= cyDelta;
-        } else if hit == HIT_UPPER_RIGHT {
+        }
+        else if hit == HIT_UPPER_RIGHT
+        {
             cxImage += cxDelta;
             cyImage -= cyDelta;
-        } else if hit == HIT_MIDDLE_LEFT {
+        }
+        else if hit == HIT_MIDDLE_LEFT
+        {
             cxImage -= cxDelta;
-        } else if hit == HIT_MIDDLE_RIGHT {
+        }
+        else if hit == HIT_MIDDLE_RIGHT
+        {
             cxImage += cxDelta;
-        } else if hit == HIT_LOWER_LEFT {
+        }
+        else if hit == HIT_LOWER_LEFT
+        {
             cxImage -= cxDelta;
             cyImage += cyDelta;
-        } else if hit == HIT_LOWER_CENTER {
+        }
+        else if hit == HIT_LOWER_CENTER
+        {
             cyImage += cyDelta;
-        } else if hit == HIT_LOWER_RIGHT {
+        }
+        else if hit == HIT_LOWER_RIGHT
+        {
             cxImage += cxDelta;
             cyImage += cyDelta;
-        } else {
+        }
+        else
+        {
             return 0;
         }
     
@@ -624,25 +650,36 @@ impl CCanvasWindow {
         cyImage = min((MAXWORD) as i32, cyImage);
     
         // Display new size
-        let mut strSize = CStringW::new();
+        let mut strSize: CStringW = CStringW::new();
         atl_format!(strSize, CPP_COM_WSTR_9768A8408F0A.as_ptr(), cxImage, cyImage);
         SendMessageW(g_hStatusBar, (SB_SETTEXT) as UINT, 2, strSize.GetString() as LPARAM);
     
         // Dragging now... Fix the position...
-        let mut rcResizing = CRect__make_1();
-        rcResizing.__base0 = tagRECT { left: 0, top: 0, right: cxImage, bottom: cyImage };
-    
-        let hit2 = (*this_).m_hitCanvasSizeBox;
-        if hit2 == HIT_UPPER_LEFT {
+        let mut rcResizing: CRect = CRect__make_1(0, 0, cxImage, cyImage);
+        // switch (this_->m_hitCanvasSizeBox)
+        let hit2: HITTEST = (*this_).m_hitCanvasSizeBox;
+        if hit2 == HIT_UPPER_LEFT
+        {
             rcResizing.OffsetRect__0(cxDelta, cyDelta);
-        } else if hit2 == HIT_UPPER_CENTER {
+        }
+        else if hit2 == HIT_UPPER_CENTER
+        {
             rcResizing.OffsetRect__0(0, cyDelta);
-        } else if hit2 == HIT_UPPER_RIGHT {
+        }
+        else if hit2 == HIT_UPPER_RIGHT
+        {
             rcResizing.OffsetRect__0(0, cyDelta);
-        } else if hit2 == HIT_MIDDLE_LEFT {
+        }
+        else if hit2 == HIT_MIDDLE_LEFT
+        {
             rcResizing.OffsetRect__0(cxDelta, 0);
-        } else if hit2 == HIT_LOWER_LEFT {
+        }
+        else if hit2 == HIT_LOWER_LEFT
+        {
             rcResizing.OffsetRect__0(cxDelta, 0);
+        }
+        else
+        {
         }
         (*this_).ImageToCanvas__1(&mut rcResizing.__base0);
         (*this_).m_rcResizing = rcResizing;
@@ -762,7 +799,7 @@ impl CCanvasWindow {
     }
     pub unsafe fn OnCtlColorEdit(&mut self, nMsg: UINT, wParam: WPARAM, lParam: LPARAM, bHandled: &mut BOOL) -> LRESULT {
         let this_: *mut Self = self;
-        SetTextColor(wParam as HDC, (*this_).paletteModel.GetFgColor());
+        SetTextColor(wParam as HDC, paletteModel.GetFgColor());
         SetBkMode(wParam as HDC, (TRANSPARENT as i32));
         return GetStockObject((NULL_BRUSH as i32)) as LRESULT;
     }

@@ -107,7 +107,7 @@ impl CWindow {
         ASSERT!(IsWindow((*this_).m_hWnd));
         return GetDlgItemText((*this_).m_hWnd, nID, lpStr, nMaxCount);
     }
-    pub unsafe fn GetDlgItemTextW__1(&mut self, nID: i32, strText: &mut CSimpleString) -> UINT {
+    pub unsafe fn GetDlgItemTextW__1(&mut self, nID: i32, strText: &mut ATL_CSimpleString) -> UINT {
         let this_: *mut Self = self;
         let item: HWND = (*this_).GetDlgItem(nID);
         if item.is_null() {
@@ -156,7 +156,7 @@ impl CWindow {
             ATLASSERT!(IsWindow((*this_).m_hWnd) != 0);
             return GetWindowText((*this_).m_hWnd, lpszStringBuf, nMaxCount);
         }
-    pub unsafe fn GetWindowTextW__1(&mut self, strText: &mut CSimpleString) -> i32 {
+    pub unsafe fn GetWindowTextW__1(&mut self, strText: &mut ATL_CSimpleString) -> i32 {
         let this_: *mut Self = self;
         let mut len: i32 = (*this_).GetWindowTextLengthW();
         len = (*this_).GetWindowTextW__0(strText.GetBuffer(len + 1), len + 1);

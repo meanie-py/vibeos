@@ -113,7 +113,7 @@ impl CToolBox {
         let mut i: usize = 0;
         while i < _countof!(CommandToToolMapping) {
             if CommandToToolMapping[i].id == id {
-                (*this_).toolsModel.SetActiveTool(CommandToToolMapping[i].tool);
+                toolsModel.SetActiveTool(CommandToToolMapping[i].tool);
                 break;
             }
             i += 1;

@@ -100,24 +100,23 @@ impl ImageModel {
         let this_: *mut Self = self;
         ATLTRACE!(b"%s: %d\n\0".as_ptr() as *const i8, __FUNCTION__, (*this_).m_currInd);
     
-        let part: *mut IMAGE_PART = core::ptr::addr_of_mut!((*this_).m_historyItems[(*this_).m_currInd as usize]);
+        let part: &mut IMAGE_PART = &mut (*this_).m_historyItems[(*this_).m_currInd as usize];
         (*part).clear();
         (*part).m_bPartial = (TRUE) as i32;
         (*part).m_rcPart.__base0 = *rcPartial;
     
-        let mut rcImage = CRect__make_1();
-        rcImage.SetRect(0, 0, (*this_).GetWidth(), (*this_).GetHeight());
-        let rc: *mut CRect = core::ptr::addr_of_mut!((*part).m_rcPart);
-        if (*rc).IntersectRect(
-            core::ptr::addr_of!((*rc).__base0),
+        let rcImage: CRect = CRect__make_1(0, 0, (*this_).GetWidth(), (*this_).GetHeight());
+        let rc: &mut CRect = &mut (*part).m_rcPart;
+        if rc.IntersectRect(
+            core::ptr::addr_of!(rc.__base0),
             core::ptr::addr_of!(rcImage.__base0),
         ) == 0
         {
-            (*rc).SetRect(-1, -1, 0, 0);
+            rc.SetRect(-1, -1, 0, 0);
         }
     
-        let hbmMaster = (*this_).LockBitmap();
-        (*part).m_hbmImage = getSubImage(hbmMaster, (*rc).__base0);
+        let hbmMaster: HBITMAP = (*this_).LockBitmap();
+        (*part).m_hbmImage = getSubImage(hbmMaster, rc.__base0);
         (*this_).UnlockBitmap(hbmMaster);
     
         (*this_).PushDone();
@@ -213,7 +212,7 @@ impl ImageModel {
     }
     pub unsafe fn SaveImage(&mut self, lpFileName: LPCWSTR) {
         let this_: *mut Self = self;
-        SaveDIBToFile((*this_).m_hbmMaster, lpFileName, (TRUE) as BOOL);
+        SaveDIBToFile((*this_).m_hbmMaster, lpFileName, (TRUE) as BOOL, GUID_NULL);
     }
     pub unsafe fn IsImageSaved(&mut self) -> i32 {
         let this_: *mut Self = self;
@@ -226,15 +225,15 @@ impl ImageModel {
         let newWidth: i32 = oldWidth * nStretchPercentX / 100;
         let newHeight: i32 = oldHeight * nStretchPercentY / 100;
         if oldWidth != newWidth || oldHeight != newHeight {
-            let hbm0: HBITMAP = CopyDIBImage((*this_).m_hbmMaster, newWidth, newHeight);
+            let hbm0: HBITMAP = CopyDIBImage((*this_).m_hbmMaster, newWidth, newHeight, (STRETCH_HALFTONE as i32));
             (*this_).PushImageForUndo__1(hbm0);
         }
         if nSkewDegX != 0 {
-            let hbm1: HBITMAP = SkewDIB((*this_).m_hDrawingDC, (*this_).m_hbmMaster, nSkewDegX, (FALSE) as BOOL);
+            let hbm1: HBITMAP = SkewDIB((*this_).m_hDrawingDC, (*this_).m_hbmMaster, nSkewDegX, (FALSE) as BOOL, (FALSE) as BOOL);
             (*this_).PushImageForUndo__1(hbm1);
         }
         if nSkewDegY != 0 {
-            let hbm2: HBITMAP = SkewDIB((*this_).m_hDrawingDC, (*this_).m_hbmMaster, nSkewDegY, (TRUE) as BOOL);
+            let hbm2: HBITMAP = SkewDIB((*this_).m_hDrawingDC, (*this_).m_hbmMaster, nSkewDegY, (TRUE) as BOOL, (FALSE) as BOOL);
             (*this_).PushImageForUndo__1(hbm2);
         }
         (*this_).NotifyImageChanged();
@@ -250,7 +249,7 @@ impl ImageModel {
     pub unsafe fn CopyBitmap(&mut self) -> HBITMAP {
         let this_: *mut Self = self;
         let hBitmap: HBITMAP = (*this_).LockBitmap();
-        let ret: HBITMAP = CopyDIBImage(hBitmap);
+        let ret: HBITMAP = CopyDIBImage(hBitmap, 0, 0, (STRETCH_HALFTONE as i32));
         (*this_).UnlockBitmap(hBitmap);
         return ret;
     }

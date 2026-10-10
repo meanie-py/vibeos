@@ -339,6 +339,9 @@ EXTERNAL_CLASSES = {
     # atlbase.h: CRegKey holds an HKEY, which is island-NOMINAL: translated per module, it
     # uses that module's own HKEY rather than a shared crate's guess at it.
     "CRegKey": "sdk/lib/atl/atlbase.h",
+    # ReactOS's RAII wait cursor: its ctor/dtor swap the cursor, so it must be modeled, not
+    # stubbed. Its static members are DECLSPEC_SELECTANY zero/NULL.
+    "CWaitCursor": "sdk/include/reactos/ui/CWaitCursor.h",
 }
 # ATL's window templates are, for layout and member lookup, their CWindow: the template's own
 # machinery (thunk, Create, DefWindowProc, message routing) is atl_rust::win plus the per-class
@@ -666,7 +669,7 @@ class _Extractor:
                 continue
             if k in ("FieldDecl", "VarDecl") and c.get("name") in fields:
                 self.decls[c["id"]] = cpp_lower.DeclInfo(
-                    cls.qualified, "field", c["name"], c["name"]
+                    cls.qualified, "field", c["name"], c["name"], static=k == "VarDecl"
                 )
             elif k in _METHOD_KINDS and not c.get("isImplicit"):
                 if self.method(c, "public", probe=True, external=cls.external) is None:

@@ -413,7 +413,7 @@ impl ToolBase {
             }
             _ => {}
         }
-        UNREACHABLE!();
+        unreachable!();
         core::ptr::null_mut()
     }
 }
@@ -509,7 +509,7 @@ impl ToolsModel {
             if ((*this_).m_activeTool >= TOOL_TEXT) || (*this_).IsSelection() != 0 {
                 let mut strSize = CStringW::new();
                 if ((*this_).m_activeTool >= TOOL_LINE)
-                    && (GetAsyncKeyState(VK_SHIFT) < 0)
+                    && (GetAsyncKeyState((VK_SHIFT) as i32) < 0)
                 {
                     yRel = xRel;
                 }
@@ -951,13 +951,13 @@ impl ZoomTool {
         let this_: *mut Self = self;
         let mut pt: CPoint = CPoint__make_0();
         GetCursorPos(core::ptr::addr_of_mut!((pt).__base0));
-        (*this_).canvasWindow.__base0.ScreenToClient(core::ptr::addr_of_mut!((pt).__base0));
+        canvasWindow.__base0.ScreenToClient(core::ptr::addr_of_mut!((pt).__base0));
     
-        (*this_).canvasWindow.getNewZoomRect(rcView, newZoom, pt);
+        canvasWindow.getNewZoomRect(rcView, newZoom, pt);
     
         let mut rc: CRect = CRect__make_0();
-        (*this_).canvasWindow.GetImageRect(core::ptr::addr_of_mut!((rc).__base0));
-        (*this_).canvasWindow.ImageToCanvas__1(core::ptr::addr_of_mut!((rc).__base0));
+        canvasWindow.GetImageRect(core::ptr::addr_of_mut!((rc).__base0));
+        canvasWindow.ImageToCanvas__1(core::ptr::addr_of_mut!((rc).__base0));
     
         return rc.PtInRect((pt).__base0);
     }
@@ -1091,8 +1091,8 @@ impl TextTool {
     }
     pub unsafe fn OnButtonDown__body(&mut self, bLeftButton: BOOL, x: LONG, y: LONG, bDoubleClick: BOOL) {
         let this_: *mut Self = self;
-        if !(*this_).textEditWindow.__base0.IsWindow() {
-            (*this_).textEditWindow.Create(canvasWindow);
+        if ((textEditWindow.__base0.IsWindow()) == 0) {
+            textEditWindow.Create(canvasWindow);
         }
     
         (*this_).UpdatePoint(x, y);

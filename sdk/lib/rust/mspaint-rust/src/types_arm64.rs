@@ -15488,11 +15488,7 @@ pub struct tagHH_GLOBAL_PROPERTY {
     pub var: VARIANT,
 }
 pub type HH_GLOBAL_PROPERTY = tagHH_GLOBAL_PROPERTY;
-#[repr(C)]
-#[derive(Debug)]
-pub struct CWaitCursor {
-    pub _address: u8,
-}
+pub use crate::mspaint::cpp_classes::CWaitCursor; // port cppapp owns it
 pub const s_nLock: LONG = 0;
 pub const HITTEST_HIT_NONE: HITTEST = 0;
 pub const HITTEST_HIT_UPPER_LEFT: HITTEST = 1;

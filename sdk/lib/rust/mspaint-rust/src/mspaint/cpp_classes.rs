@@ -232,6 +232,32 @@ pub unsafe fn CRect__new_in_5(__p: *mut CRect, topLeft: POINT, bottomRight: POIN
 pub unsafe fn CRect__new_5(topLeft: POINT, bottomRight: POINT) -> *mut CRect { CRect__new_in_5(cpp_alloc::<CRect>(), topLeft, bottomRight) }
 pub unsafe fn CRect__delete(p: *mut CRect) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
 
+// ---- CWaitCursor (sdk/include/reactos/ui/CWaitCursor.h)
+#[repr(C)]
+pub struct CWaitCursor {
+}
+
+pub static mut CWaitCursor__s_nLock: LONG = unsafe { core::mem::zeroed() };
+pub static mut CWaitCursor__s_hOldCursor: HCURSOR = unsafe { core::mem::zeroed() };
+pub static mut CWaitCursor__s_hWaitCursor: HCURSOR = unsafe { core::mem::zeroed() };
+impl CWaitCursor {
+    /// Point every vtable this object contains at this class's tables: what a C++
+    /// constructor does after its bases are built and before its members are.
+    pub unsafe fn __init_vtables(&mut self) {
+        let this: *mut Self = self;
+        let _ = this;
+    }
+}
+
+pub unsafe fn CWaitCursor__zeroed() -> CWaitCursor { core::mem::zeroed() }
+pub unsafe fn CWaitCursor__make_0() -> CWaitCursor { let mut __obj = CWaitCursor__zeroed(); __obj.__ctor_0(); __obj }
+pub unsafe fn CWaitCursor__new_in_0(__p: *mut CWaitCursor) -> *mut CWaitCursor { if __p.is_null() { return __p; } (*__p).__ctor_0(); __p }
+pub unsafe fn CWaitCursor__new_0() -> *mut CWaitCursor { CWaitCursor__new_in_0(cpp_alloc::<CWaitCursor>()) }
+pub unsafe fn CWaitCursor__delete(p: *mut CWaitCursor) { if p.is_null() { return; } core::ptr::drop_in_place(p); cpp_free(p as *mut core::ffi::c_void); }
+impl Drop for CWaitCursor {
+    fn drop(&mut self) { unsafe { self.__dtor__body() } }
+}
+
 // ---- CFullscreenWindow (base/applications/mspaint/fullscreen.h)
 #[derive(Clone, Copy)]
 #[repr(C)]

@@ -195,6 +195,14 @@ class Lowerer:
         """A STATIC member named without its class (`_shared()` inside CImageDx): after
         assembly it is an associated fn, reachable only as `CImageDx::_shared()`."""
         info = self.decls.get(n.get("referencedDecl", {}).get("id", ""))
+        if info is not None and info.kind == "field" and info.static:
+            # A static data member, `s_nLock` or `CWaitCursor::s_nLock`: cpp_classes.rs
+            # renders it as the static `CWaitCursor__s_nLock`.
+            span = _node_span(n, f, lo, hi)
+            if span is not None:
+                cls = info.owner.split("::")[-1]
+                edits.append((span[0], span[1] - span[0], f"{cls}__{info.name}"))
+            return
         if info is not None and info.kind == "enumconst":
             # The whole reference, qualifier included, is the island's flat name.
             span = _node_span(n, f, lo, hi)

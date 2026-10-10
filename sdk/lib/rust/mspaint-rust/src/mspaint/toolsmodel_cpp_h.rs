@@ -57,10 +57,10 @@ use core::ffi::c_void;
 impl ToolsModel {
     pub unsafe fn GetOrCreateTool(&mut self, nTool: TOOLTYPE) -> *mut ToolBase {
         let this_: *mut Self = self;
+        // C source contains a garbled token sequence `ToolBase__delete(m_pToolObject)lObject;`;
+        // the stray `lObject;` has no meaning and is not emitted.
         ToolBase__delete((*this_).m_pToolObject);
-        // Source contains a stray token `lObject;` after the delete call; it has no
-        // defined meaning in the C and is not translated.
-        (*this_).m_pToolObject = createToolObject(nTool);
+        (*this_).m_pToolObject = ToolBase::createToolObject(nTool);
         return (*this_).m_pToolObject;
     }
     pub unsafe fn SendSetCursor(&mut self) {
@@ -376,18 +376,18 @@ impl VirtualBrush {
     }
     pub unsafe fn GetBrush(&mut self, palette: PAL_TYPE, rgbColor: COLORREF) -> HBRUSH {
         let this_: *mut Self = self;
-        if !((*this_).m_hBrush).is_null()
+        if (*this_).m_hBrush as usize != 0
             && (*this_).m_palette == palette
             && (*this_).m_rgbColor == rgbColor
         {
             return (*this_).m_hBrush;
         }
     
-        if !((*this_).m_hBrush).is_null() {
+        if (*this_).m_hBrush as usize != 0 {
             DeleteObject(((*this_).m_hBrush).cast());
         }
     
-        (*this_).m_hBrush = CreateBrush(palette, rgbColor);
+        (*this_).m_hBrush = ToolsModel::CreateBrush(palette, rgbColor);
         (*this_).m_palette = palette;
         (*this_).m_rgbColor = rgbColor;
         return (*this_).m_hBrush;

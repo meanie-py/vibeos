@@ -351,7 +351,7 @@ impl CStretchSkewDialog {
 impl CFontsDialog {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
-        (*this_).__base0.__ctor_0();
+        (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
         {
         }
@@ -380,7 +380,7 @@ impl CFontsDialog {
             i += 1;
         }
     
-        SetWindowTextW(hwndNames, (*this_).registrySettings.strFontName.GetString());
+        SetWindowTextW(hwndNames, registrySettings.strFontName.GetString());
     }
     pub unsafe fn InitFontSizes(&mut self) {
         let this_: *mut Self = self;

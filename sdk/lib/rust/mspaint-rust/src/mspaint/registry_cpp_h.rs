@@ -122,18 +122,20 @@ impl RegistrySettings {
     pub unsafe fn SetWallpaper(szFileName: LPCWSTR, style: WallpaperStyle) {
         // Build the local path to the converted cached BMP wallpaper
         let mut hr: HRESULT;
-        let mut szWallpaper: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
+        let mut szWallpaper = [0u16; (MAX_PATH) as _];
         hr = SHGetFolderPathW(core::ptr::null_mut(), (CSIDL_LOCAL_APPDATA | CSIDL_FLAG_CREATE) as i32, core::ptr::null_mut(), 0, szWallpaper.as_mut_ptr());
         if hr < 0 {
             return;
         }
-        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, TEXT("\\Wallpaper1.bmp"));
+        // TEXT("\\Wallpaper1.bmp")
+        let wallpaper_suffix: [u16; 16] = ['\\' as u16, 'W' as u16, 'a' as u16, 'l' as u16, 'l' as u16, 'p' as u16, 'a' as u16, 'p' as u16, 'e' as u16, 'r' as u16, '1' as u16, '.' as u16, 'b' as u16, 'm' as u16, 'p' as u16, 0];
+        hr = StringCchCatW(szWallpaper.as_mut_ptr(), (_countof!(szWallpaper)) as _, wallpaper_suffix.as_ptr());
         if hr < 0 {
             return;
         }
     
         // Save the converted wallpaper BMP
-        let mut img: CImageDx = CImageDx__make_0();
+        let mut img = CImageDx__make_0();
         let hbmLocked: HBITMAP = imageModel.LockBitmap();
         img.Attach(hbmLocked);
         hr = img.SaveDx(szWallpaper.as_ptr(), GUID_NULL, 0, 0);
@@ -144,19 +146,12 @@ impl RegistrySettings {
         }
     
         // Write the wallpaper settings to the registry
-        let mut desktop: CRegKey = CRegKey__make_0();
-        if (desktop.Open(HKEY_CURRENT_USER, CPP_COM_WSTR_C47486B2BD9A.as_ptr(), KEY_READ | KEY_WRITE)) as u32 == ERROR_SUCCESS {
+        let mut desktop = CRegKey__make_0();
+        if (desktop.Open(HKEY_CURRENT_USER, CPP_COM_WSTR_C47486B2BD9A.as_ptr(), KEY_READ | KEY_WRITE)) as u32 == ERROR_SUCCESS
+        {
             desktop.SetStringValue(CPP_COM_WSTR_05C4CD71421F.as_ptr(), szFileName, REG_SZ);
-            desktop.SetStringValue(
-                CPP_COM_WSTR_FE91285D5262.as_ptr(),
-                if style == RegistrySettings::STRETCHED { CPP_COM_WSTR_85DD751867E3.as_ptr() } else { CPP_COM_WSTR_4F8320D91E97.as_ptr() },
-                REG_SZ,
-            );
-            desktop.SetStringValue(
-                CPP_COM_WSTR_C38D02A5A162.as_ptr(),
-                if style == RegistrySettings::TILED { CPP_COM_WSTR_60864AAE2645.as_ptr() } else { CPP_COM_WSTR_4F8320D91E97.as_ptr() },
-                REG_SZ,
-            );
+            desktop.SetStringValue(CPP_COM_WSTR_FE91285D5262.as_ptr(), if style == RegistrySettings_WallpaperStyle_STRETCHED { CPP_COM_WSTR_85DD751867E3.as_ptr() } else { CPP_COM_WSTR_4F8320D91E97.as_ptr() }, REG_SZ);
+            desktop.SetStringValue(CPP_COM_WSTR_C38D02A5A162.as_ptr(), if style == RegistrySettings_WallpaperStyle_TILED { CPP_COM_WSTR_60864AAE2645.as_ptr() } else { CPP_COM_WSTR_4F8320D91E97.as_ptr() }, REG_SZ);
             desktop.SetStringValue(CPP_COM_WSTR_22DC4F543687.as_ptr(), szWallpaper.as_ptr(), REG_SZ);
             desktop.SetStringValue(CPP_COM_WSTR_6736AEE203A6.as_ptr(), szFileName, REG_SZ);
         }
@@ -168,12 +163,12 @@ impl RegistrySettings {
         let this_: *mut Self = self;
         (*this_).LoadPresets(nCmdShow);
     
-        let mut paint: CRegKey = CRegKey__make_0();
+        let mut paint = CRegKey__make_0();
         if (paint.Open(HKEY_CURRENT_USER, CPP_COM_WSTR_3BA6431A3ECF.as_ptr(), KEY_READ)) as u32 != ERROR_SUCCESS {
             return;
         }
     
-        let mut view: CRegKey = CRegKey__make_0();
+        let mut view = CRegKey__make_0();
         if (view.Open(paint.m_hKey, CPP_COM_WSTR_8E637B93C326.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut view, CPP_COM_WSTR_5637D6D9B722.as_ptr(), &mut (*this_).BMPHeight);
             ReadDWORD(&mut view, CPP_COM_WSTR_ADC82F9D93FF.as_ptr(), &mut (*this_).BMPWidth);
@@ -196,18 +191,18 @@ impl RegistrySettings {
             );
         }
     
-        let mut files: CRegKey = CRegKey__make_0();
+        let mut files = CRegKey__make_0();
         if (files.Open(paint.m_hKey, CPP_COM_WSTR_6AAEE4F6F310.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
-            let mut szName: [u16; 64 as usize] = [0u16; 64 as usize];
+            let mut szName = [0u16; 64 as usize];
             let mut i: INT = 0;
             while i < (MAX_RECENT_FILES as i32) {
                 StringCchPrintfW!(szName.as_mut_ptr(), _countof!(szName), CPP_COM_WSTR_23EB6AA79FD7.as_ptr(), i + 1);
-                ReadString(&mut files, szName.as_mut_ptr(), &mut (*this_).strFiles[i as usize]);
+                ReadString(&mut files, szName.as_ptr(), &mut (*this_).strFiles[i as usize], CPP_COM_WSTR_96A296D224F2.as_ptr());
                 i += 1;
             }
         }
     
-        let mut text: CRegKey = CRegKey__make_0();
+        let mut text = CRegKey__make_0();
         if (text.Open(paint.m_hKey, CPP_COM_WSTR_61F885AFBBFF.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut text, CPP_COM_WSTR_F9733F036A48.as_ptr(), &mut (*this_).Bold);
             ReadDWORD(&mut text, CPP_COM_WSTR_06A6605715D2.as_ptr(), &mut (*this_).Italic);
@@ -217,25 +212,25 @@ impl RegistrySettings {
             ReadDWORD(&mut text, CPP_COM_WSTR_75C1D54D3AAD.as_ptr(), &mut (*this_).FontsPositionX);
             ReadDWORD(&mut text, CPP_COM_WSTR_F2CE9334849C.as_ptr(), &mut (*this_).FontsPositionY);
             ReadDWORD(&mut text, CPP_COM_WSTR_5394C414C1C0.as_ptr(), &mut (*this_).ShowTextTool);
-            ReadString(&mut text, CPP_COM_WSTR_5AFD201798EE.as_ptr(), &mut (*this_).strFontName, (*this_).strFontName);
+            ReadString(&mut text, CPP_COM_WSTR_5AFD201798EE.as_ptr(), &mut (*this_).strFontName, (*this_).strFontName.as_ptr());
         }
     
-        let mut bar1: CRegKey = CRegKey__make_0();
+        let mut bar1 = CRegKey__make_0();
         if (bar1.Open(paint.m_hKey, CPP_COM_WSTR_ADF960B697D7.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut bar1, CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), &mut (*this_).Bar1ID);
         }
     
-        let mut bar2: CRegKey = CRegKey__make_0();
+        let mut bar2 = CRegKey__make_0();
         if (bar2.Open(paint.m_hKey, CPP_COM_WSTR_14F6F8E408B3.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut bar2, CPP_COM_WSTR_9D4FF7E56B6C.as_ptr(), &mut (*this_).Bar2ID);
         }
     
-        let mut bar3: CRegKey = CRegKey__make_0();
+        let mut bar3 = CRegKey__make_0();
         if (bar3.Open(paint.m_hKey, CPP_COM_WSTR_3AE1A3A3354B.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut bar3, CPP_COM_WSTR_EFDA06104782.as_ptr(), &mut (*this_).ShowToolBox);
         }
     
-        let mut bar4: CRegKey = CRegKey__make_0();
+        let mut bar4 = CRegKey__make_0();
         if (bar4.Open(paint.m_hKey, CPP_COM_WSTR_9A40F31D852F.as_ptr(), KEY_READ)) as u32 == ERROR_SUCCESS {
             ReadDWORD(&mut bar4, CPP_COM_WSTR_EFDA06104782.as_ptr(), &mut (*this_).ShowPalette);
         }

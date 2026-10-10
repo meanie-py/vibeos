@@ -170,7 +170,7 @@ pub unsafe extern "C" fn SaveDIBToFile(hBitmap: HBITMAP, FileName: LPCWSTR, fIsM
 
     let mut img = CImageDx__make_0();
     img.Attach(hBitmap);
-    let mut hr: HRESULT = img.SaveDx(FileName, guidFileType, g_xDpi, g_yDpi);
+    let hr: HRESULT = img.SaveDx(FileName, guidFileType, g_xDpi, g_yDpi);
     img.Detach();
 
     if ((hr) < 0)
@@ -179,13 +179,13 @@ pub unsafe extern "C" fn SaveDIBToFile(hBitmap: HBITMAP, FileName: LPCWSTR, fIsM
         return (FALSE) as BOOL;
     }
 
-    if !(fIsMainFile != 0)
+    if fIsMainFile == 0
     {
         return (TRUE) as BOOL;
     }
 
     let mut find: WIN32_FIND_DATAW = core::mem::zeroed();
-    let mut hFind: HANDLE = FindFirstFileW(FileName, core::ptr::addr_of_mut!(find));
+    let hFind: HANDLE = FindFirstFileW(FileName, core::ptr::addr_of_mut!(find));
     if hFind == INVALID_HANDLE_VALUE
     {
         ShowError((IDS_SAVEERROR) as INT, FileName);
@@ -376,31 +376,29 @@ pub unsafe extern "C" fn Rotate90DegreeBlt(hDC1: HDC, cx: INT, cy: INT, bRight: 
     return hbm2;
 }
 #[no_mangle]
-pub unsafe extern "C" fn SkewDIB(hDC1: HDC, hbm: HBITMAP, nDegree: INT, bVertical: BOOL, bMono: BOOL) -> HBITMAP {
-    // CWaitCursor waitCursor;  (C++ RAII cursor guard; no Rust equivalent, no Drop used)
+pub unsafe extern "C" fn SkewDIB(hDC1: HDC, hbm: HBITMAP, nDegree: i32, bVertical: BOOL, bMono: BOOL) -> HBITMAP {
+    let waitCursor = CWaitCursor__make_0();
 
     if nDegree == 0 {
-        return CopyDIBImage(hbm);
+        return CopyDIBImage(hbm, 0, 0, (STRETCH_HALFTONE as i32));
     }
 
-    let eTan: f64 = tan(
-        (abs(nDegree) as f64) * M_PI as f64 / 180 as f64,
-    );
+    let eTan: f64 = tan((abs(nDegree) as f64) * M_PI / 180);
 
     let mut bm: BITMAP = core::mem::zeroed();
-    GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as *mut _);
-    let cx: INT = bm.bmWidth;
-    let cy: INT = bm.bmHeight;
-    let mut dx: INT = 0;
-    let mut dy: INT = 0;
+    GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, (core::ptr::addr_of_mut!(bm)).cast());
+    let cx: i32 = bm.bmWidth;
+    let cy: i32 = bm.bmHeight;
+    let mut dx: i32 = 0;
+    let mut dy: i32 = 0;
     if bVertical != 0 {
-        dy = INT((cx as f64) * eTan) as INT;
+        dy = INT((cx as f64) * eTan) as i32;
     } else {
-        dx = INT((cy as f64) * eTan) as INT;
+        dx = INT((cy as f64) * eTan) as i32;
     }
 
     if dx == 0 && dy == 0 {
-        return CopyDIBImage(hbm);
+        return CopyDIBImage(hbm, 0, 0, (STRETCH_HALFTONE as i32));
     }
 
     let hbmNew: HBITMAP;
@@ -416,9 +414,9 @@ pub unsafe extern "C" fn SkewDIB(hDC1: HDC, hbm: HBITMAP, nDegree: INT, bVertica
     let hDC2: HDC = CreateCompatibleDC(core::ptr::null_mut());
     let hbm2Old: HGDIOBJ = SelectObject(hDC2, hbmNew as HGDIOBJ);
     if bVertical != 0 {
-        let mut x: INT = 0;
+        let mut x: i32 = 0;
         while x < cx {
-            let delta: INT = INT((x as f64) * eTan) as INT;
+            let delta: i32 = INT((x as f64) * eTan) as i32;
             if nDegree > 0 {
                 BitBlt(hDC2, x, dy - delta, 1, cy, hDC1, x, 0, SRCCOPY);
             } else {
@@ -427,9 +425,9 @@ pub unsafe extern "C" fn SkewDIB(hDC1: HDC, hbm: HBITMAP, nDegree: INT, bVertica
             x += 1;
         }
     } else {
-        let mut y: INT = 0;
+        let mut y: i32 = 0;
         while y < cy {
-            let delta: INT = INT((y as f64) * eTan) as INT;
+            let delta: i32 = INT((y as f64) * eTan) as i32;
             if nDegree > 0 {
                 BitBlt(hDC2, dx - delta, y, cx, 1, hDC1, 0, y, SRCCOPY);
             } else {
@@ -441,7 +439,7 @@ pub unsafe extern "C" fn SkewDIB(hDC1: HDC, hbm: HBITMAP, nDegree: INT, bVertica
 
     SelectObject(hDC2, hbm2Old);
     DeleteDC(hDC2);
-    hbmNew
+    return hbmNew;
 }
 #[no_mangle]
 pub unsafe extern "C" fn getSubImage(hbmWhole: HBITMAP, rcPartial: &RECT) -> HBITMAP {
@@ -480,68 +478,68 @@ pub unsafe extern "C" fn BitmapToClipboardDIB(hBitmap: HBITMAP) -> HGLOBAL {
     let mut waitCursor = CWaitCursor__make_0();
 
     let mut bm: BITMAP = core::mem::zeroed();
-    if GetObjectW((hBitmap).cast(), core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as *mut _) == 0 {
-        CWaitCursor__delete(core::ptr::addr_of_mut!(waitCursor));
+    if GetObjectW(hBitmap as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID) == 0 {
         return core::ptr::null_mut();
     }
 
     let mut bmi: BITMAPINFODX = BITMAPINFODX__make_0();
-    ZeroMemory!(core::ptr::addr_of_mut!(bmi) as *mut _, core::mem::size_of::<BITMAPINFODX>());
-    bmi.bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as DWORD;
-    bmi.bmiHeader.biWidth = bm.bmWidth;
-    bmi.bmiHeader.biHeight = bm.bmHeight;
-    bmi.bmiHeader.biPlanes = 1 as WORD;
-    bmi.bmiHeader.biBitCount = bm.bmBitsPixel;
-    bmi.bmiHeader.biCompression = BI_RGB as DWORD;
-    bmi.bmiHeader.biSizeImage = (bm.bmWidthBytes * bm.bmHeight) as DWORD;
+    ZeroMemory!(core::ptr::addr_of_mut!(bmi) as LPVOID, core::mem::size_of::<BITMAPINFODX>());
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as DWORD;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biWidth = bm.bmWidth;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biHeight = bm.bmHeight;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biPlanes = 1 as WORD;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biBitCount = bm.bmBitsPixel;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biCompression = BI_RGB as DWORD;
+    (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biSizeImage = (bm.bmWidthBytes * bm.bmHeight) as DWORD;
 
     let mut cColors: INT;
-    if bm.bmBitsPixel < 16 {
-        cColors = 1 << bm.bmBitsPixel;
+    if bm.bmBitsPixel < 16 as WORD {
+        cColors = (1 as INT) << (bm.bmBitsPixel as INT);
     } else {
-        cColors = 0;
+        cColors = 0 as INT;
     }
 
     let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
 
     if cColors != 0 {
-        let hbmOld: HGDIOBJ = SelectObject(hDC, (hBitmap).cast());
-        cColors = GetDIBColorTable(hDC, 0 as UINT, cColors as UINT, bmi.bmiColors.as_mut_ptr()) as INT;
+        let hbmOld: HGDIOBJ = SelectObject(hDC, hBitmap as HGDIOBJ);
+        cColors = GetDIBColorTable(
+            hDC,
+            0 as UINT,
+            cColors as UINT,
+            core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(bmi)).__base0.bmiColors) as *mut RGBQUAD,
+        ) as INT;
         SelectObject(hDC, hbmOld);
     }
 
-    let cbColors: DWORD = (cColors as DWORD).wrapping_mul(core::mem::size_of::<RGBQUAD>() as DWORD);
+    let cbColors: DWORD = (cColors as DWORD) * (core::mem::size_of::<RGBQUAD>() as DWORD);
     let dwSize: DWORD = (core::mem::size_of::<BITMAPINFOHEADER>() as DWORD)
-        .wrapping_add(cbColors)
-        .wrapping_add(bmi.bmiHeader.biSizeImage);
+        + cbColors
+        + (*core::ptr::addr_of_mut!(bmi)).__base0.bmiHeader.biSizeImage;
     let mut hGlobal: HGLOBAL = GlobalAlloc(
-        (GHND | GMEM_SHARE) as UINT,
-        (dwSize) as SIZE_T,
+        (GHND as UINT) | (GMEM_SHARE as UINT),
+        dwSize as SIZE_T,
     );
     if !hGlobal.is_null() {
         let mut pb: LPBYTE = GlobalLock(hGlobal) as LPBYTE;
         if !pb.is_null() {
-            CopyMemory!(
-                pb as *mut _,
-                core::ptr::addr_of_mut!(bmi) as *const _,
-                core::mem::size_of::<BITMAPINFOHEADER>() as usize,
-            );
+            CopyMemory!(pb as LPVOID, core::ptr::addr_of_mut!(bmi) as LPVOID, core::mem::size_of::<BITMAPINFOHEADER>() as usize);
             pb = pb.add(core::mem::size_of::<BITMAPINFOHEADER>() as usize);
 
             CopyMemory!(
-                pb as *mut _,
-                bmi.bmiColors.as_ptr() as *const _,
+                pb as LPVOID,
+                core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(bmi)).__base0.bmiColors) as LPVOID,
                 cbColors as usize,
             );
             pb = pb.add(cbColors as usize);
 
             GetDIBits(
                 hDC,
-                hBitmap,
+                (hBitmap as HGDIOBJ).cast(),
                 0 as UINT,
                 bm.bmHeight as UINT,
-                pb as *mut _,
-                core::ptr::addr_of_mut!(bmi.__base0) as *mut BITMAPINFO,
+                pb as LPVOID,
+                core::ptr::addr_of_mut!((*core::ptr::addr_of_mut!(bmi)).__base0) as *mut BITMAPINFO,
                 DIB_RGB_COLORS as UINT,
             );
 
@@ -554,12 +552,12 @@ pub unsafe extern "C" fn BitmapToClipboardDIB(hBitmap: HBITMAP) -> HGLOBAL {
 
     DeleteDC(hDC);
 
-    CWaitCursor__delete(core::ptr::addr_of_mut!(waitCursor));
-    return hGlobal;
+    hGlobal
 }
+
 #[no_mangle]
 pub unsafe extern "C" fn BitmapFromClipboardDIB(hGlobal: HGLOBAL) -> HBITMAP {
-    let _waitCursor = CWaitCursor::new();
+    let mut waitCursor = CWaitCursor__make_0();
 
     let mut pb: LPBYTE = GlobalLock(hGlobal) as LPBYTE;
     if pb.is_null() {
@@ -569,21 +567,21 @@ pub unsafe extern "C" fn BitmapFromClipboardDIB(hGlobal: HGLOBAL) -> HBITMAP {
     let pbmi: LPBITMAPINFO = pb as LPBITMAPINFO;
     pb = pb.add((*pbmi).bmiHeader.biSize as usize);
 
-    let mut cColors: INT = 0 as INT;
-    let mut cbColors: INT = 0 as INT;
-    if (*pbmi).bmiHeader.biSize == core::mem::size_of::<BITMAPCOREHEADER>() as DWORD {
+    let mut cColors: i32 = 0;
+    let mut cbColors: i32 = 0;
+    if (*pbmi).bmiHeader.biSize == core::mem::size_of::<BITMAPCOREHEADER>() as u32 {
         let pbmci: LPBITMAPCOREINFO = pbmi as LPBITMAPCOREINFO;
-        let BitCount: WORD = (*pbmci).bmciHeader.bcBitCount;
-        if BitCount < 16 as WORD {
-            cColors = (1 << BitCount) as INT;
-            cbColors = cColors * core::mem::size_of::<RGBTRIPLE>() as INT;
+        let BitCount: u16 = (*pbmci).bmciHeader.bcBitCount;
+        if BitCount < 16 {
+            cColors = 1 << BitCount;
+            cbColors = cColors * core::mem::size_of::<RGBTRIPLE>() as i32;
             pb = pb.add(cbColors as usize);
         }
-    } else if (*pbmi).bmiHeader.biSize >= core::mem::size_of::<BITMAPINFOHEADER>() as DWORD {
-        let BitCount: WORD = (*pbmi).bmiHeader.biBitCount;
-        if BitCount < 16 as WORD {
-            cColors = (1 << BitCount) as INT;
-            cbColors = cColors * core::mem::size_of::<RGBQUAD>() as INT;
+    } else if (*pbmi).bmiHeader.biSize >= core::mem::size_of::<BITMAPINFOHEADER>() as u32 {
+        let BitCount: u16 = (*pbmi).bmiHeader.biBitCount;
+        if BitCount < 16 {
+            cColors = 1 << BitCount;
+            cbColors = cColors * core::mem::size_of::<RGBQUAD>() as i32;
             pb = pb.add(cbColors as usize);
         }
     }
@@ -591,70 +589,62 @@ pub unsafe extern "C" fn BitmapFromClipboardDIB(hGlobal: HGLOBAL) -> HBITMAP {
     let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
     let hBitmap: HBITMAP = CreateDIBSection(
         hDC,
-        (pbmi as *const core::ffi::c_void).cast(),
-        DIB_RGB_COLORS as UINT,
+        pbmi,
+        DIB_RGB_COLORS,
         core::ptr::null_mut(),
         core::ptr::null_mut(),
-        0 as DWORD,
+        0,
     );
     if !hBitmap.is_null() {
         SetDIBits(
             hDC,
             hBitmap,
-            0 as UINT,
-            labs((*pbmi).bmiHeader.biHeight) as UINT,
-            pb as *const core::ffi::c_void,
-            (pbmi as *const core::ffi::c_void).cast(),
-            DIB_RGB_COLORS as UINT,
+            0,
+            (labs((*pbmi).bmiHeader.biHeight)) as UINT,
+            pb as LPVOID,
+            pbmi,
+            DIB_RGB_COLORS,
         );
     }
     DeleteDC(hDC);
 
     GlobalUnlock(hGlobal);
 
-    hBitmap
+    return hBitmap;
 }
 #[no_mangle]
 pub unsafe extern "C" fn BitmapFromHEMF(hEMF: HENHMETAFILE) -> HBITMAP {
-    let mut waitCursor: CWaitCursor = CWaitCursor__zeroed();
-    let mut result: HBITMAP = core::ptr::null_mut();
+    let mut waitCursor: CWaitCursor = CWaitCursor__make_0();
 
-    'quit: {
-        let mut header: ENHMETAHEADER = core::mem::zeroed();
-        if GetEnhMetaFileHeader(hEMF, core::mem::size_of::<ENHMETAHEADER>() as u32, core::ptr::addr_of_mut!(header)) == 0 {
-            result = core::ptr::null_mut();
-            break 'quit;
-        }
-
-        let mut rc: CRect = CRect {
-            __base0: *(core::ptr::addr_of_mut!(header.rclBounds) as LPRECT),
-        };
-        let cx: i32 = rc.Width();
-        let cy: i32 = rc.Height();
-        let hbm: HBITMAP = CreateColorDIB(cx, cy, RGB!(255, 255, 255));
-        if hbm.is_null() {
-            result = core::ptr::null_mut();
-            break 'quit;
-        }
-
-        let hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
-        let hbmOld: HGDIOBJ = SelectObject(hDC, hbm as HGDIOBJ);
-        PlayEnhMetaFile(hDC, hEMF, core::ptr::addr_of_mut!(rc.__base0));
-        SelectObject(hDC, hbmOld);
-        DeleteDC(hDC);
-
-        result = hbm;
+    let mut header: ENHMETAHEADER = core::mem::zeroed();
+    if GetEnhMetaFileHeader(hEMF, core::mem::size_of::<ENHMETAHEADER>() as u32, core::ptr::addr_of_mut!(header)) == 0 {
+        return core::ptr::null_mut();
     }
 
-    CWaitCursor__delete(core::ptr::addr_of_mut!(waitCursor));
-    return result;
+    let mut rc: CRect = CRect {
+        __base0: *(core::ptr::addr_of!(header.rclBounds) as LPRECT),
+    };
+    let mut cx: i32 = rc.Width();
+    let mut cy: i32 = rc.Height();
+    let mut hbm: HBITMAP = CreateColorDIB(cx, cy, RGB!(255, 255, 255));
+    if hbm.is_null() {
+        return core::ptr::null_mut();
+    }
+
+    let mut hDC: HDC = CreateCompatibleDC(core::ptr::null_mut());
+    let mut hbmOld: HGDIOBJ = SelectObject(hDC, (hbm).cast());
+    PlayEnhMetaFile(hDC, hEMF, core::ptr::addr_of_mut!(rc.__base0) as *const RECT);
+    SelectObject(hDC, hbmOld);
+    DeleteDC(hDC);
+
+    return hbm;
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsBitmapBlackAndWhite(hbm: HBITMAP) -> BOOL {
-    let mut waitCursor = CWaitCursor__zeroed();
+    let mut waitCursor = CWaitCursor__make_0();
 
     let mut bm: BITMAP = core::mem::zeroed();
-    if GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as *mut _) == 0 {
+    if GetObjectW(hbm as HGDIOBJ, core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID) == 0 {
         return (FALSE) as BOOL;
     }
 
@@ -662,27 +652,27 @@ pub unsafe extern "C" fn IsBitmapBlackAndWhite(hbm: HBITMAP) -> BOOL {
         return (TRUE) as BOOL;
     }
 
-    let mut bmi = BITMAPINFOEX__make_0();
-    ZeroMemory!(core::ptr::addr_of_mut!(bmi) as *mut _, core::mem::size_of::<BITMAPINFOEX>());
+    let mut bmi: BITMAPINFOEX = BITMAPINFOEX__make_0();
+    core::ptr::write_bytes(core::ptr::addr_of_mut!(bmi) as *mut u8, 0, core::mem::size_of::<BITMAPINFOEX>());
     bmi.__base0.bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as DWORD;
     bmi.__base0.bmiHeader.biWidth = bm.bmWidth;
     bmi.__base0.bmiHeader.biHeight = bm.bmHeight;
     bmi.__base0.bmiHeader.biPlanes = 1;
     bmi.__base0.bmiHeader.biBitCount = 24;
 
-    let mut widthbytes: DWORD = WIDTHBYTES!(24 * bm.bmWidth) as DWORD;
-    let mut cbBits: DWORD = widthbytes.wrapping_mul(bm.bmHeight as DWORD);
-    let mut pbBits: LPBYTE = cpp_new_array::<BYTE>(cbBits);
+    let widthbytes: DWORD = WIDTHBYTES!(24 * bm.bmWidth) as DWORD;
+    let cbBits: DWORD = widthbytes * (bm.bmHeight as DWORD);
+    let pbBits: LPBYTE = cpp_new_array::<BYTE>(cbBits) as LPBYTE;
 
-    let mut hdc: HDC = CreateCompatibleDC(core::ptr::null_mut());
-    GetDIBits(hdc, hbm, 0, bm.bmHeight as u32, (pbBits).cast(), core::ptr::addr_of_mut!(bmi.__base0) as *mut BITMAPINFO, DIB_RGB_COLORS);
+    let hdc: HDC = CreateCompatibleDC(core::ptr::null_mut());
+    GetDIBits(hdc, hbm, 0, bm.bmHeight as UINT, pbBits as LPVOID, core::ptr::addr_of_mut!(bmi.__base0) as *mut BITMAPINFO, DIB_RGB_COLORS);
     DeleteDC(hdc);
 
     let mut bBlackAndWhite: BOOL = (TRUE) as i32;
     'finish: {
         let mut y: LONG = 0;
         while y < bm.bmHeight {
-            let mut pbLine: LPBYTE = pbBits.add(widthbytes.wrapping_mul(y as DWORD) as usize);
+            let mut pbLine: LPBYTE = pbBits.add((widthbytes as usize) * (y as usize));
             let mut x: LONG = 0;
             while x < bm.bmWidth {
                 let Blue: BYTE = *pbLine;
@@ -702,39 +692,39 @@ pub unsafe extern "C" fn IsBitmapBlackAndWhite(hbm: HBITMAP) -> BOOL {
         }
     }
 
+    // Finish:
     cpp_delete_array(pbBits);
 
     return bBlackAndWhite;
 }
-
 #[no_mangle]
 pub unsafe extern "C" fn ConvertToBlackAndWhite(hbm: HBITMAP) -> HBITMAP {
-    let mut waitCursor: CWaitCursor = CWaitCursor__zeroed();
+    let mut waitCursor = CWaitCursor__make_0();
 
     let mut bm: BITMAP = core::mem::zeroed();
-    if GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, (core::ptr::addr_of_mut!(bm)).cast()) == 0 {
+    if !(GetObjectW((hbm).cast(), core::mem::size_of::<BITMAP>() as i32, core::ptr::addr_of_mut!(bm) as LPVOID) != 0) {
         return core::ptr::null_mut();
     }
 
     let mut bmi: BITMAPINFOEX = BITMAPINFOEX__make_0();
     ZeroMemory!(core::ptr::addr_of_mut!(bmi) as LPVOID, core::mem::size_of::<BITMAPINFOEX>());
-    bmi.__base0.bmiHeader.biSize = (core::mem::size_of::<BITMAPINFOHEADER>()) as _;
-    bmi.__base0.bmiHeader.biWidth = bm.bmWidth;
-    bmi.__base0.bmiHeader.biHeight = bm.bmHeight;
-    bmi.__base0.bmiHeader.biPlanes = 1;
-    bmi.__base0.bmiHeader.biBitCount = 1;
-    (*core::ptr::addr_of_mut!(bmi.__base0.bmiColors[0]).add(1 as usize)).rgbBlue = 255;
-    (*core::ptr::addr_of_mut!(bmi.__base0.bmiColors[0]).add(1 as usize)).rgbGreen = 255;
-    (*core::ptr::addr_of_mut!(bmi.__base0.bmiColors[0]).add(1 as usize)).rgbRed = 255;
+    bmi.bmiHeader.biSize = core::mem::size_of::<BITMAPINFOHEADER>() as u32;
+    bmi.bmiHeader.biWidth = bm.bmWidth;
+    bmi.bmiHeader.biHeight = bm.bmHeight;
+    bmi.bmiHeader.biPlanes = 1 as u16;
+    bmi.bmiHeader.biBitCount = 1 as u16;
+    (*core::ptr::addr_of_mut!(bmi.bmiColors[0]).add(1 as usize)).rgbBlue = 255 as u8;
+    (*core::ptr::addr_of_mut!(bmi.bmiColors[0]).add(1 as usize)).rgbGreen = 255 as u8;
+    (*core::ptr::addr_of_mut!(bmi.bmiColors[0]).add(1 as usize)).rgbRed = 255 as u8;
     let hdc: HDC = CreateCompatibleDC(core::ptr::null_mut());
     let mut pvMonoBits: LPVOID = core::ptr::null_mut();
     let hMonoBitmap: HBITMAP = CreateDIBSection(
         hdc,
-        core::ptr::addr_of_mut!(bmi.__base0),
-        DIB_RGB_COLORS,
+        core::ptr::addr_of_mut!(bmi.__base0) as *const BITMAPINFO,
+        DIB_RGB_COLORS as u32,
         core::ptr::addr_of_mut!(pvMonoBits),
         core::ptr::null_mut(),
-        0,
+        0 as u32,
     );
     if hMonoBitmap.is_null() {
         DeleteDC(hdc);
@@ -746,23 +736,23 @@ pub unsafe extern "C" fn ConvertToBlackAndWhite(hbm: HBITMAP) -> HBITMAP {
         GetDIBits(
             hdc,
             hbm,
-            0,
-            (bm.bmHeight) as UINT,
+            0 as u32,
+            bm.bmHeight as u32,
             pvMonoBits,
-            core::ptr::addr_of_mut!(bmi.__base0),
-            DIB_RGB_COLORS,
+            core::ptr::addr_of_mut!(bmi.__base0) as *mut BITMAPINFO,
+            DIB_RGB_COLORS as u32,
         );
         SetDIBits(
             hdc,
             hNewBitmap,
-            0,
-            (bm.bmHeight) as UINT,
+            0 as u32,
+            bm.bmHeight as u32,
             pvMonoBits,
-            core::ptr::addr_of_mut!(bmi.__base0),
-            DIB_RGB_COLORS,
+            core::ptr::addr_of_mut!(bmi.__base0) as *const BITMAPINFO,
+            DIB_RGB_COLORS as u32,
         );
     }
-    DeleteObject((hMonoBitmap).cast());
+    DeleteObject(hMonoBitmap as HGDIOBJ);
     DeleteDC(hdc);
 
     hNewBitmap

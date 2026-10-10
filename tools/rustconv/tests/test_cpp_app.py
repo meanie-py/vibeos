@@ -442,3 +442,28 @@ def test_an_override_two_levels_below_its_virtual_is_still_a_body():
         m.classes[c.qualified] = c
     h = cpp_app.Hierarchy(m)
     assert h.is_virtual(m.classes["RubberTool"], over)
+
+
+def test_an_invented_this_member_for_a_global_is_dropped():
+    from rustconv.cpp_model import GlobalVar
+
+    c = ClassModel("CMainWindow", "CMainWindow", "class", "t.cpp")
+    c.fields = [Field("m_hMenu", "HMENU")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    m.globals = [GlobalVar("selectionModel", "SelectionModel", "t.cpp", None)]
+    rs = "(*this_).selectionModel.moveSelection(-1, 0); (*this_).m_hMenu = x;"
+    assert (
+        cpp_app.unthis_globals(rs, m)
+        == "selectionModel.moveSelection(-1, 0); (*this_).m_hMenu = x;"
+    )
+
+
+def test_a_bare_call_to_a_unique_static_method_is_qualified():
+    c = ClassModel("CImageDx", "CImageDx", "class", "t.cpp")
+    c.methods = [_m("_shared", ret="SHARED *", static=True), _m("Attach")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = "get((*_shared()).x); CImageDx::_shared(); o._shared(); fn _shared() {}"
+    out = cpp_app.qualify_static_calls(rs, m)
+    assert out.startswith("get((*CImageDx::_shared()).x); CImageDx::_shared(); o._shared();")

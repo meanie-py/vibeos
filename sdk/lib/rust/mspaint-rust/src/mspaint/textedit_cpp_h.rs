@@ -45,7 +45,7 @@ extern "system" {
 impl CTextEditWindow {
     pub unsafe fn __ctor_0(&mut self) {
         let this_: *mut Self = self;
-        (*this_).__base0.__ctor_0();
+        (*this_).__base0.__ctor_0(core::ptr::null_mut());
         (*this_).__init_vtables();
         (*this_).m_hFont = core::ptr::null_mut();
         (*this_).m_hFontZoomed = core::ptr::null_mut();
@@ -258,9 +258,9 @@ impl CTextEditWindow {
         let mut rcMoving: CRect = CRect { __base0: *prcMoving };
     
         let mut rcImage: CRect = CRect__make_0();
-        (*this_).canvasWindow.GetImageRect(&mut rcImage.__base0);
-        (*this_).canvasWindow.ImageToCanvas__1(&mut rcImage.__base0);
-        (*this_).canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), core::ptr::addr_of_mut!(rcImage.__base0));
+        canvasWindow.GetImageRect(&mut rcImage.__base0);
+        canvasWindow.ImageToCanvas__1(&mut rcImage.__base0);
+        canvasWindow.__base0.MapWindowPoints__1(core::ptr::null_mut(), core::ptr::addr_of_mut!(rcImage.__base0));
     
         let mut rcWnd: CRect = CRect__make_0();
         (*this_).__base0.GetWindowRect(core::ptr::addr_of_mut!(rcWnd.__base0));
