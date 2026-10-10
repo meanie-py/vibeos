@@ -554,26 +554,28 @@ unsafe extern "system" fn IopPassiveWorker(Context: PVOID) {
 
 /// KeSynchronizeExecution on a passive connection's KINTERRUPT: its routines run at
 /// PASSIVE_LEVEL under the connection's mutex, which raising IRQL and taking the
-/// KINTERRUPT's spin lock would not exclude. Returns FALSE when `Interrupt` is not
-/// passive, for the caller to do the usual.
+/// KINTERRUPT's spin lock would not exclude. Returns the routine's BOOLEAN, or
+/// [`NOT_PASSIVE`] when `Interrupt` is not passive, for the caller to do the usual.
 #[no_mangle]
 pub unsafe extern "system" fn IopSynchronizePassiveInterrupt(
     Interrupt: PKINTERRUPT,
     Routine: PKSYNCHRONIZE_ROUTINE,
     Context: PVOID,
-    Result: *mut BOOLEAN,
-) -> BOOLEAN {
+) -> ULONG {
     let Some(p) = passive_of(Interrupt) else {
-        return 0;
+        return NOT_PASSIVE;
     };
     KeWaitForSingleObject(&mut (*p).lock as *mut KMUTEX as PVOID, 0, 0, 0, core::ptr::null_mut());
-    *Result = match Routine {
+    let result = match Routine {
         Some(routine) => routine(Context),
         None => 0,
     };
     KeReleaseMutex(&mut (*p).lock, 0);
-    1
+    result as ULONG
 }
+
+/// IopSynchronizePassiveInterrupt: the interrupt is not a passive connection's.
+const NOT_PASSIVE: ULONG = u32::MAX;
 
 /// Undo a passive connection: the worker first, so it can unmask no line after the
 /// line is disconnected; then the interrupts; then any DPC they queued meanwhile.

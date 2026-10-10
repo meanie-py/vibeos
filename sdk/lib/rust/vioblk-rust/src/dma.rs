@@ -37,9 +37,9 @@ static REMAPPING_COMPATIBLE: AtomicBool = AtomicBool::new(false);
 /// context, and adapters are found one at a time at PASSIVE_LEVEL.
 static CURRENT: AtomicPtr<DMA_ADAPTER> = AtomicPtr::new(ptr::null_mut());
 
-const MAX_BUFFERS: usize = 64;
+const DISK_COMMON_BUFFERS: usize = 64;
 /// Every common buffer handed out, to free it by its address: (va, adapter, length).
-static mut BUFFERS: [(usize, usize, u32); MAX_BUFFERS] = [(0, 0, 0); MAX_BUFFERS];
+static mut BUFFERS: [(usize, usize, u32); DISK_COMMON_BUFFERS] = [(0, 0, 0); DISK_COMMON_BUFFERS];
 
 /// The requester ID of a segment-0 function (SCSIPORT scans no other segment).
 pub fn requester(bus: u8, device: u8, function: u8) -> u32 {

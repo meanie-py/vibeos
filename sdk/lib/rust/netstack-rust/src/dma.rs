@@ -41,19 +41,19 @@ static REMAPPING_COMPATIBLE: AtomicBool = AtomicBool::new(false);
 static ADAPTER: AtomicPtr<DMA_ADAPTER> = AtomicPtr::new(ptr::null_mut());
 
 /// A frame bounce slot: a virtio-net buffer (crate::device::BUF_LEN) fits one.
-pub const SLOT: usize = 2048;
+pub const FRAME_SLOT: usize = 2048;
 /// Every receive buffer stays shared while it is queued (device::QUEUE_SIZE of them),
 /// with room for as many frames in flight the other way.
-const SLOTS: usize = 64;
+const FRAME_SLOTS: usize = 64;
 static mut POOL_VA: usize = 0;
 static mut POOL_DEVICE: u64 = 0;
 /// Which buffer each slot bounces (its address; 0 free), and how many slots it spans.
-static mut OWNER: [(usize, u16); SLOTS] = [(0, 0); SLOTS];
+static mut OWNER: [(usize, u16); FRAME_SLOTS] = [(0, 0); FRAME_SLOTS];
 static mut POOL_LOCK: KSPIN_LOCK = 0;
 
-const MAX_BUFFERS: usize = 16;
+const NIC_COMMON_BUFFERS: usize = 16;
 /// The common buffers `alloc` handed out, to free one by its address: (va, length).
-static mut BUFFERS: [(usize, u32); MAX_BUFFERS] = [(0, 0); MAX_BUFFERS];
+static mut BUFFERS: [(usize, u32); NIC_COMMON_BUFFERS] = [(0, 0); NIC_COMMON_BUFFERS];
 
 /// An ASCII literal as UTF-16, at compile time.
 const fn wide<const N: usize>(s: &[u8; N]) -> [u16; N] {
@@ -125,7 +125,7 @@ pub unsafe fn attach(df: DeviceFunction) -> bool {
         // device before making new queues, so whatever the last one left shared (its
         // receive buffers, which nothing unshares when the queues go) is dead.
         let _lock = SpinLockGuard::acquire(&raw mut POOL_LOCK);
-        *(&raw mut OWNER) = [(0, 0); SLOTS];
+        *(&raw mut OWNER) = [(0, 0); FRAME_SLOTS];
         return true;
     }
     let requester = (df.bus as u32) << 8 | (df.device as u32) << 3 | df.function as u32;
@@ -137,7 +137,7 @@ pub unsafe fn attach(df: DeviceFunction) -> bool {
     // Below 4 GiB: addressable whether or not the device negotiated 64-bit.
     d.Dma32BitAddresses = 1;
     d.InterfaceType = PCI_BUS as _;
-    d.MaximumLength = SLOT as u32;
+    d.MaximumLength = FRAME_SLOT as u32;
     let mut map_registers = 0u32;
     let adapter = HalVibeosGetDmaAdapter(requester, &mut d, &mut map_registers);
     if adapter.is_null() {
@@ -145,7 +145,7 @@ pub unsafe fn attach(df: DeviceFunction) -> bool {
         return false;
     }
     ADAPTER.store(adapter, Ordering::Release);
-    let Some((va, device)) = alloc(SLOTS * SLOT) else {
+    let Some((va, device)) = alloc(FRAME_SLOTS * FRAME_SLOT) else {
         crate::serial::emit(format_args!("[NETSTACK] no memory for the NIC's bounce pool\n"));
         ADAPTER.store(ptr::null_mut(), Ordering::Release);
         return false;
@@ -209,38 +209,38 @@ pub unsafe fn free(va: *mut u8, device_address: u64) -> bool {
 pub unsafe fn share(buffer: NonNull<[u8]>, to_device: bool) -> Option<u64> {
     let addr = buffer.as_ptr() as *mut u8 as usize;
     let len = buffer.len();
-    let need = len.div_ceil(SLOT).max(1);
+    let need = len.div_ceil(FRAME_SLOT).max(1);
     let first = {
         let _lock = SpinLockGuard::acquire(&raw mut POOL_LOCK);
         let owners = &mut *(&raw mut OWNER);
-        let first = (0..=SLOTS.checked_sub(need)?).find(|&i| owners[i..i + need].iter().all(|o| o.0 == 0))?;
+        let first = (0..=FRAME_SLOTS.checked_sub(need)?).find(|&i| owners[i..i + need].iter().all(|o| o.0 == 0))?;
         owners[first] = (addr, need as u16);
         for o in &mut owners[first + 1..first + need] {
             *o = (addr, 0);
         }
         first
     };
-    let bounce = (POOL_VA + first * SLOT) as *mut u8;
+    let bounce = (POOL_VA + first * FRAME_SLOT) as *mut u8;
     if to_device {
         ptr::copy_nonoverlapping(addr as *const u8, bounce, len);
     }
-    Some(POOL_DEVICE + (first * SLOT) as u64)
+    Some(POOL_DEVICE + (first * FRAME_SLOT) as u64)
 }
 
 /// Undo `share`: the bytes copied back when the device wrote them. False when
 /// `device_address` is not a pool slot.
 pub unsafe fn unshare(device_address: u64, buffer: NonNull<[u8]>, from_device: bool) -> bool {
-    if device_address < POOL_DEVICE || device_address >= POOL_DEVICE + (SLOTS * SLOT) as u64 {
+    if device_address < POOL_DEVICE || device_address >= POOL_DEVICE + (FRAME_SLOTS * FRAME_SLOT) as u64 {
         return false;
     }
-    let first = ((device_address - POOL_DEVICE) as usize) / SLOT;
+    let first = ((device_address - POOL_DEVICE) as usize) / FRAME_SLOT;
     if from_device {
-        ptr::copy_nonoverlapping((POOL_VA + first * SLOT) as *const u8, buffer.as_ptr() as *mut u8, buffer.len());
+        ptr::copy_nonoverlapping((POOL_VA + first * FRAME_SLOT) as *const u8, buffer.as_ptr() as *mut u8, buffer.len());
     }
     let _lock = SpinLockGuard::acquire(&raw mut POOL_LOCK);
     let owners = &mut *(&raw mut OWNER);
     let span = owners[first].1.max(1) as usize;
-    for o in &mut owners[first..(first + span).min(SLOTS)] {
+    for o in &mut owners[first..(first + span).min(FRAME_SLOTS)] {
         *o = (0, 0);
     }
     true
