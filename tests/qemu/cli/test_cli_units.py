@@ -10936,6 +10936,48 @@ def test_payload_borrowed_binary_is_judged_at_its_build_arch(tmp_path, monkeypat
     assert pc.manifest(["guest"], "arm64") == {"reactos/run.exe": exe.resolve()}
 
 
+def test_a_failed_payload_build_leaves_the_old_stamp(tmp_path, monkeypatch):
+    """The stamp is smoke's only evidence of what the media carries. Written ahead of a
+    PAYLOAD_BUILD_FAIL, it claimed appstorm64 on media that never got it: the next smoke
+    passed payload-check and booted ×4 for a marker nothing could print."""
+    (tmp_path / "tools" / "payloads").mkdir(parents=True)
+    (tmp_path / "tools" / "payloads" / "compile.py").write_text(
+        "import json, os, sys\n"
+        "def resolve_env_payloads(environ=os.environ):\n"
+        "    return [n for n in environ.get('VIBEOS_PAYLOAD', '').split(',') if n]\n"
+        "def ensure_built(names, arch):\n"
+        "    if 'broken' in names:\n"
+        "        print('payloads/compile.py: ERROR: refused', file=sys.stderr)\n"
+        "        sys.exit(1)\n"
+        "    return []\n"
+        "def write_stamp(build_dir, environ=os.environ):\n"
+        "    names = resolve_env_payloads(environ)\n"
+        "    (build_dir / 'payloads.json').write_text(json.dumps(names))\n"
+        "    return names\n"
+    )
+    build_dir = tmp_path / "build-arm64"
+    build_dir.mkdir()
+    stamp = build_dir / "payloads.json"
+    stamp.write_text('["old"]')
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "broken")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is None
+    assert run.classification == "PAYLOAD_BUILD_FAIL"
+    assert stamp.read_text() == '["old"]'
+
+    monkeypatch.setenv("VIBEOS_PAYLOAD", "good")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == '["good"]'
+
+    # No selection still CLEARS the stamp (the doom-clobber rule).
+    monkeypatch.delenv("VIBEOS_PAYLOAD")
+    run = Run("build", "arm64", ts=1700000000)
+    assert build_mod._stage_payloads(run, tmp_path, build_dir, "arm64") is not None
+    assert stamp.read_text() == "[]"
+
+
 def test_payload_committed_data_entry_is_not_a_build_output(tmp_path, monkeypatch):
     """kmtest lists its committed kmtest-tests-<arch>.txt under `binaries`. build.sh never
     writes it, so treating it as stale failed every gate with PAYLOAD_BUILD_FAIL."""
