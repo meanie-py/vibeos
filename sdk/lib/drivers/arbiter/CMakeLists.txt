@@ -40,8 +40,16 @@ add_custom_command(
     VERBATIM)
 add_custom_target(rust_arbiter DEPENDS ${ARBITER_RUST_LIB})
 
-# add_library(arbiter arbiter.c)  # body replaced by Rust; kept on disk
-add_library(arbiter rust_cohab_stub.c)
+# Upstream's arbiter engine (#9484): bodies replaced by Rust, kept on disk.
+list(APPEND SOURCE
+    # arbiter.c
+    # entry.c
+    # handler.c
+    # ordering.c
+    # range.c
+    # transaction.c
+    rust_cohab_stub.c)
+add_library(arbiter STATIC ${SOURCE})
 # upstream publishes arbiter.h through the target (its consumers, e.g. pcix, dropped
 # their own include_directories line in the same commit). Mirror that here.
 target_include_directories(arbiter INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})

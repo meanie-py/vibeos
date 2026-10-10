@@ -18,7 +18,7 @@
 #   driver-name ∈ { acpi | classpnp | cdrom | cdfs | pcix | partmgr }  (config table below)
 set -euo pipefail
 
-DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|vioblk|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
+DRIVER="${1:?usage: gen_driver_types.sh <shell32|acpi|arbiter|classpnp|cdrom|cdfs|afd|msafd|ws2_32|wshtcpip|disk|pcix|partmgr|fs_rec|pciidex|scsiport|atapi|buslogic|vioblk|usbaudio|ks|usbstor|usbccgp|usbhub|usbehci|usbohci|usbuhci|usbxhci|usbport|uniata>}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 SRC="$(cd "$SCRIPT_DIR/../.." && pwd)"
 TOOLCHAIN="${SRC}/.build-tools/llvm-mingw"
@@ -445,6 +445,22 @@ case "$DRIVER" in
     # after them, and hoisting one ahead swaps which header an include resolves to.
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  arbiter)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from sdk/lib/drivers/arbiter/CMakeLists.txt
+    # (--flipped-sources: 6 TUs, upstream's #9484 engine). arbiter.h's private defines and
+    # tags (TAG_ARBITER, ARBITER_STATE_FLAG_*, ARBITER_MAXIMUM_ADDRESS) are not in the kernel
+    # bindgen; ARBITER_INSTANCE etc. keep their single ntkrnl-sys identity via the blocklist.
+    USERMODE=0
+    REAL_UNIONS=1
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/sdk/lib/drivers/arbiter"
+    WRAPPER_INC=$'#include <ntifs.h>\n#include <ndk/rtlfuncs.h>\n#include "arbiter.h"\n#define NDEBUG\n#include <debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*arbiter[/\\].*\.h' --allowlist-var 'RTL_RANGE_.*' --allowlist-var 'CmResourceType.*' --allowlist-var 'IO_RESOURCE_.*' --allowlist-var 'CM_RESOURCE_.*'
+                  --allowlist-var REG_RESOURCE_REQUIREMENTS_LIST )
+    EXTRA_INC=( -I"${SRC}/sdk/lib/drivers/arbiter" )
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -D_NTSYSTEM_ -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
   usbaudio)
     # USB Audio class driver (drivers/usb/usbaudio, 4 .c). A KS/PortCls audio miniport:

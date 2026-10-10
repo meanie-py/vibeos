@@ -3,11 +3,20 @@
 #![allow(clippy::missing_safety_doc)]
 
 // arbiter.a — Rust translation of the PnP resource arbiter library
-// (sdk/lib/drivers/arbiter/arbiter.c). crate-type=staticlib → libarbiter_rust.a,
-// linked into ntoskrnl + pcix.sys in place of the C `arbiter` lib (kept on disk).
-// Own panic_handler/eh_personality absorbed by --allow-multiple-definition on the
-// kernel link (same as cmlib-rust). DeepSeek+c2rust translation (Batch 4).
+// (sdk/lib/drivers/arbiter, upstream's #9484 engine: arbiter.c entry.c handler.c ordering.c
+// range.c transaction.c). crate-type=staticlib → libarbiter_rust.a, linked into ntoskrnl +
+// pcix.sys in place of the C `arbiter` lib (kept on disk). Own panic_handler/eh_personality
+// absorbed by --allow-multiple-definition on the kernel link (same as cmlib-rust).
+
+pub mod prelude;
+pub mod types;
+
 pub mod arbiter;
+pub mod entry;
+pub mod handler;
+pub mod ordering;
+pub mod range;
+pub mod transaction;
 
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {

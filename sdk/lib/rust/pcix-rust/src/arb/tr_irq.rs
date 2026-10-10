@@ -154,7 +154,7 @@ pub unsafe extern "system" fn tranirq_Constructor(
     // HALDISPATCH->HalGetInterruptTranslator(...)
     ((*core::ptr::addr_of!(HalDispatchTable))
         .HalGetInterruptTranslator
-        .unwrap())(
+        .unwrap_unchecked())(
         ParentInterface,
         ParentBus,
         PCIBus,
