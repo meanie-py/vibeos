@@ -4019,7 +4019,8 @@ def scaffold_crate(
             "\n// ================= ATL =========================================================="
             "==============\n// ATL's CStringW/CComPtr/containers, ported once in atl-rust.\n"
             "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
-            "CSimpleMap, CStringW, POSITION};\n" + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+            "CSimpleMap, CStringW, POSITION};\n"
+            + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases

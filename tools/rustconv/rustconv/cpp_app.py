@@ -494,7 +494,8 @@ def _render_class(
     for k, iface in h.com_bases(cls):
         lines.extend(_com_vtable(cls, k, iface, h))
         vt_install.append(
-            f"        (*this).__base{k}.lpVtbl = &{n}__{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
+            f"        (*this).__base{k}.lpVtbl = "
+            f"&{n}__{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
         )
     impl.append(
         "    /// Point every vtable this object contains at this class's tables: what a C++"
