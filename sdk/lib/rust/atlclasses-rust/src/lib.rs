@@ -148,21 +148,30 @@ macro_rules! atl_format {
             [__a0 __a1 __a2 __a3 __a4 __a5 __a6 __a7 __a8 __a9 __a10 __a11 __a12 __a13 __a14
              __a15] $(, $a)*)
     };
+    // Every value is bound as a `match` SCRUTINEE, never a `let`: a temporary in a scrutinee
+    // lives until the end of the match, a temporary in a `let` initializer dies at its `;`.
+    // `atl_format!(s, CStringW::from_resource(IDS_X).GetString(), ..)` (mspaint's SetFileInfo)
+    // read a freed buffer through `let __fmt = ..` and set an empty window title.
     (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$n:ident $($names:ident)*], $a:expr
-        $(, $rest:expr)*) => {{
-        let $n = $crate::VaPromote::va_promote($a);
-        $crate::atl_format!(@bind $s, $fmt, [$($done)* $n], [$($names)*] $(, $rest)*)
-    }};
-    (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$($names:ident)*]) => {{
-        let __fmt: *const u16 = $fmt;
-        let __s: &mut $crate::CStringW = &mut $s;
-        let __need = $crate::_scwprintf(__fmt $(, $done)*);
-        let __buf = __s.format_begin_pub(__need);
-        if !__buf.is_null() {
-            $crate::swprintf(__buf, __fmt $(, $done)*);
-            __s.ReleaseBuffer();
+        $(, $rest:expr)*) => {
+        match $crate::VaPromote::va_promote($a) {
+            $n => $crate::atl_format!(@bind $s, $fmt, [$($done)* $n], [$($names)*] $(, $rest)*),
         }
-    }};
+    };
+    (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$($names:ident)*]) => {
+        match $fmt {
+            __fmt => {
+                let __fmt: *const u16 = __fmt;
+                let __s: &mut $crate::CStringW = &mut $s;
+                let __need = $crate::_scwprintf(__fmt $(, $done)*);
+                let __buf = __s.format_begin_pub(__need);
+                if !__buf.is_null() {
+                    $crate::swprintf(__buf, __fmt $(, $done)*);
+                    __s.ReleaseBuffer();
+                }
+            }
+        }
+    };
 }
 
 /// C's default argument promotions for a `...` argument: float becomes double, and the
