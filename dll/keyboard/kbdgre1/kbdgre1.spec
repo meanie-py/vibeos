@@ -1,1 +1,1 @@
-@ stdcall KbdLayerDescriptor()
+@ stdcall KbdLayerDescriptor() kbdgre1_KbdLayerDescriptor
