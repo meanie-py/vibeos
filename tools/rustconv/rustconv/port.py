@@ -712,6 +712,7 @@ def stage_translate(
     replay_only: bool = False,
     no_c2rust: list[str] | None = None,
     revisit: list[str] | None = None,
+    skip_fn: list[str] | None = None,
     units_override: dict[str, str] | None = None,
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
@@ -729,6 +730,12 @@ def stage_translate(
             raise PortError(f"--no-c2rust: not a TU of {stem}: {', '.join(unknown)}")
         state["no_c2rust"] = sorted(set(state.get("no_c2rust", [])) | set(no_c2rust))
         _record(state, "no-c2rust", started, tus=state["no_c2rust"])
+    # STICKY too: a function the model cannot produce (opengl32's IntGetIcdData degenerated
+    # to 32K tokens twice) is hand-written and banked with `port hand`; every later run must
+    # keep assembling its TU without it, or the TU goes back to NO BODY.
+    if skip_fn:
+        state["skip_fn"] = sorted(set(state.get("skip_fn", [])) | set(skip_fn))
+        _record(state, "skip-fn", started, names=state["skip_fn"])
     picked = [t for t in _units(state) if not only or Path(t).name in only]
     vias: dict[str, str] = state.get("header_tus", {})
     # An escalation pass revisits TUs that already have output: their good bodies replay
@@ -816,6 +823,11 @@ def stage_translate(
         # missed, and every other TU's names would be exactly that.
         c_text = (REPO / tu).read_text(errors="replace")
         mine = [n for n in rebuy_fn or [] if re.search(rf"^\s*{re.escape(n)}\s*\(", c_text, re.M)]
+        skipped = [
+            n for n in state.get("skip_fn", []) if re.search(rf"\b{re.escape(n)}\s*\(", c_text)
+        ]
+        if skipped:
+            cmd += ["--skip-fn", *skipped]
         if mine:
             cmd += ["--rebuy-fn", *mine]
             if "--reassemble" not in cmd:
@@ -4584,6 +4596,7 @@ def _main(args) -> int:
                 rebuy_fn=args.rebuy_fn,
                 replay_only=args.replay_only,
                 no_c2rust=args.no_c2rust,
+                skip_fn=args.skip_fn,
             )
             if args.escalate and not args.dry_run:
                 # One cap for the whole invocation, and the escalation revisits only what
@@ -4780,6 +4793,15 @@ def add_parser(sub) -> None:
         metavar="TU",
         help="TU file names to translate without a c2rust anchor, as a deliberate choice "
         "when c2rust cannot transpile them on any arch (remembered in the port state)",
+    )
+    q.add_argument(
+        "--skip-fn",
+        action="extend",
+        nargs="*",
+        default=[],
+        metavar="NAME",
+        help="functions to assemble their TU without (hand-port them, then `port hand`); "
+        "remembered in the port state, and recorded as an audit finding by translate",
     )
     q.add_argument(
         "--replay-only",
