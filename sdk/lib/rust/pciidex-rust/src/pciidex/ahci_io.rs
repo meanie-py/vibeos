@@ -313,6 +313,12 @@ unsafe extern "C" fn AtaAhciPortHandleInterrupt(mut ChanData: PCHANNEL_DATA_AHCI
         if Message != 0 {
             AHCI_PORT_WRITE((*ChanData).IoBase, PxSataNotification, Message);
 
+            WARN!(
+                b"CH %lu: Notification %08lx arrived\n\0".as_ptr() as *const i8,
+                (*ChanData).__bindgen_anon_1.Channel,
+                Message,
+            );
+
             if let Some(notification) = (*ChanData).__bindgen_anon_1.PortNotification {
                 notification(
                     AtaAsyncNotificationDetected,

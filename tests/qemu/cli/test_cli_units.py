@@ -9810,6 +9810,75 @@ def test_ahci_check_is_silent_on_a_plain_boot(monkeypatch):
     assert smoke_mod._ahci_check("[EXPLORER] _tWinMain entered\n") is None
 
 
+def test_ahci_irq_check_reads_qemus_trace_not_the_driver(monkeypatch):
+    """An AHCI driver that polls still boots, so `--ahci` judges interrupt use from QEMU's
+    own trace: the firmware's polled commands before the first raise are fine, after it
+    every command must come with a raise, and the guest must lower the line."""
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_AHCI_CD", "1")
+    done, up, down = (
+        "ahci_cmd_done ahci(0x1)[0]: cmd done\n",
+        "ahci_irq_raise ahci(0x1): raise irq\n",
+        "ahci_irq_lower ahci(0x1): lower irq\n",
+    )
+    firmware = done * 50
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40) is None
+    # A driver that never enabled the interrupt.
+    never = smoke_mod._ahci_irq_check(firmware + done * 40)
+    assert never and never["classification"] == "AHCI_POLLING"
+    # One that did, then polled the rest.
+    later = smoke_mod._ahci_irq_check(firmware + done + up + down + done * 40)
+    assert later and later["classification"] == "AHCI_POLLING"
+    # An ISR that never acknowledged the HBA.
+    stuck = smoke_mod._ahci_irq_check(firmware + (done + up) * 40)
+    assert stuck and stuck["classification"] == "AHCI_IRQ_STUCK"
+    # A command in flight when the log is read is not a stuck line.
+    assert smoke_mod._ahci_irq_check(firmware + (done + up + down) * 40 + done + up) is None
+    # No trace at all is the harness's problem, not the guest's.
+    assert smoke_mod._ahci_irq_check("") is None
+    monkeypatch.delenv("VIBEOS_AHCI_CD")
+    assert smoke_mod._ahci_irq_check(firmware + done * 40) is None
+
+
+def test_ata_health_check_fails_a_lost_interrupt():
+    """A timed-out ATA request is reset and retried and the boot carries on, so the
+    desktop alone would hide an ISR that never ran."""
+    from . import smoke as smoke_mod
+
+    ok = "(pciidex-rust/src/pciidex/acpi.rs:368) Failed to set device data, status 0xc0000010\n"
+    assert smoke_mod._ata_health_check(ok) is None
+    lost = (
+        "(atapi-rust/src/atapi/portstate.rs:861) CH 1: Slot 0 (00000001) timed out 0 (10s) 0 'x'\n"
+    )
+    bad = smoke_mod._ata_health_check(ok + lost)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    ahci = "(pciidex-rust/src/pciidex/ahci_hw.rs:560) CH 3: Internal request timed out\n"
+    bad = smoke_mod._ata_health_check(ahci)
+    assert bad and bad["classification"] == "ATA_TIMEOUT"
+    no_irq = "(pciidex-rust/src/pciidex/pdo.rs:188) CH 1: Could not connect to interrupt\n"
+    bad = smoke_mod._ata_health_check(no_irq)
+    assert bad and bad["classification"] == "ATA_NO_INTERRUPT"
+    # The network stack's own timeouts are not the ATA stack's.
+    assert smoke_mod._ata_health_check(" [NETSTACK] TDI op timed out - IRP still pending\n") is None
+
+
+def test_legide_check_needs_a_detected_channel(monkeypatch):
+    from . import smoke as smoke_mod
+
+    monkeypatch.setenv("VIBEOS_QEMU_ISA_IDE", "1")
+    forced = "(legide-rust/src/legide/legide.rs:770) LEGIDE_DETECT: probing the channels\n"
+    found = "[DA] PiEnumerateDevice Root\\legide\\0000: 1 children (cs=0x0)\n"
+    assert smoke_mod._legide_check(forced + found) is None
+    bad = smoke_mod._legide_check(found)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    empty = "[DA] PiEnumerateDevice Root\\legide\\0000: 0 children (cs=0x0)\n"
+    bad = smoke_mod._legide_check(forced + empty)
+    assert bad and bad["classification"] == "LEGIDE_NOT_ENGAGED"
+    monkeypatch.delenv("VIBEOS_QEMU_ISA_IDE")
+    assert smoke_mod._legide_check("") is None
+
+
 def test_nvme_boot_must_show_the_namespace_published(monkeypatch):
     """The boot never needs the NVMe disk, so an --nvme boot where nvme.sys never
     loaded, or brought the controller up and found nothing, reaches the desktop

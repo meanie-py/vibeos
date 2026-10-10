@@ -466,6 +466,12 @@ unsafe extern "C" fn PataProcessAtapiRequest(
     match (InterruptReason) as u32 {
         ATAPI_INT_REASON_AWAIT_CDB => {
             if (*ChanData).CommandFlags & CMD_FLAG_AWAIT_CDB == 0 {
+                WARN!(
+                    b"Invalid interrupt reason %02x %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                    InterruptReason as u32,
+                    IdeStatus as u32,
+                    (*ChanData).CommandFlags,
+                );
                 SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 (*ChanData).CommandFlags &= !CMD_FLAG_AWAIT_CDB;
@@ -482,6 +488,12 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 & (CMD_FLAG_DATA_OUT | CMD_FLAG_AWAIT_CDB)
                 != 0
             {
+                WARN!(
+                    b"Invalid interrupt reason %02x %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                    InterruptReason as u32,
+                    IdeStatus as u32,
+                    (*ChanData).CommandFlags,
+                );
                 SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 ByteCount = ATA_READ!(
@@ -504,6 +516,12 @@ unsafe extern "C" fn PataProcessAtapiRequest(
                 & (CMD_FLAG_DATA_IN | CMD_FLAG_AWAIT_CDB)
                 != 0
             {
+                WARN!(
+                    b"Invalid interrupt reason %02x %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                    InterruptReason as u32,
+                    IdeStatus as u32,
+                    (*ChanData).CommandFlags,
+                );
                 SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 ByteCount = ATA_READ!(
@@ -523,6 +541,12 @@ unsafe extern "C" fn PataProcessAtapiRequest(
         }
         ATAPI_INT_REASON_STATUS_NEC => {
             if (*(*Request).Device).TransportFlags & DEVICE_IS_NEC_CDR260 == 0 {
+                WARN!(
+                    b"Invalid interrupt reason %02x %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                    InterruptReason as u32,
+                    IdeStatus as u32,
+                    (*ChanData).CommandFlags,
+                );
                 SrbStatus = (SRB_STATUS_BUS_RESET as u8);
             } else {
                 if IdeStatus & ((IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as u8) != 0 {
@@ -548,6 +572,12 @@ unsafe extern "C" fn PataProcessAtapiRequest(
             }
         }
         _ => {
+            WARN!(
+                b"Invalid interrupt reason %02x %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                InterruptReason as u32,
+                IdeStatus as u32,
+                (*ChanData).CommandFlags,
+            );
             SrbStatus = (SRB_STATUS_BUS_RESET as u8);
         }
     }
@@ -562,6 +592,7 @@ unsafe extern "C" fn PataProcessAtaRequest(
 ) -> UCHAR {
     if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as i32 != 0 {
         if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            ERR!(b"DRQ not cleared, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
             return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
             return (SRB_STATUS_ERROR) as UCHAR;
@@ -572,6 +603,7 @@ unsafe extern "C" fn PataProcessAtaRequest(
             IdeStatus &= (!IDE_STATUS_DRQ) as u8;
         }
         if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            ERR!(b"DRQ not cleared, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
             return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
             return (SRB_STATUS_SUCCESS) as UCHAR;
@@ -601,6 +633,7 @@ unsafe extern "C" fn PataProcessAtaRequest(
                     (IDE_STATUS_DRQ) as UCHAR,
                 );
                 if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) == 0 {
+                    ERR!(b"DRQ not set, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
                     return (SRB_STATUS_BUS_RESET) as UCHAR;
                 }
             }
@@ -616,6 +649,7 @@ unsafe extern "C" fn PataProcessAtaRequest(
             0,
         );
         if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_BUSY | IDE_STATUS_DRQ) as i32 != 0 {
+            ERR!(b"DRQ not cleared, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
             return (SRB_STATUS_BUS_RESET) as UCHAR;
         }
         if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_ERROR | IDE_STATUS_DEVICE_FAULT) as i32 != 0 {
@@ -625,12 +659,19 @@ unsafe extern "C" fn PataProcessAtaRequest(
     }
     if (*ChanData).BytesToTransfer == 0 {
         if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) != 0 {
+            ERR!(b"DRQ not cleared, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
             return (SRB_STATUS_BUS_RESET) as UCHAR;
         } else {
             return (SRB_STATUS_SUCCESS) as UCHAR;
         }
     }
     if IdeStatus as ::core::ffi::c_int & (IDE_STATUS_DRQ as i32) == 0 {
+        ERR!(
+            b"DRQ not set, status 0x%02x %lu/%lu\n\0".as_ptr() as *const i8,
+            IdeStatus as u32,
+            (*ChanData).BytesToTransfer,
+            (*Request).DataTransferLength,
+        );
         return (SRB_STATUS_BUS_RESET) as UCHAR;
     }
     PataPioDataOut(ChanData, (*ChanData).DrqByteCount);
@@ -862,6 +903,7 @@ pub unsafe extern "C" fn PataStartIo(ChannelContext: PVOID, Request: PATA_DEVICE
 
     IdeStatus = ATA_WAIT(ChanData, ATA_TIME_BUSY_SELECT, (IDE_STATUS_BUSY) as UCHAR, 0);
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
+        WARN!(b"Device is busy 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
         PataCompleteCommand(ChanData, IdeStatus, (SRB_STATUS_SELECTION_TIMEOUT) as UCHAR);
         return ((TRUE as i32)) as BOOLEAN;
     }
@@ -891,6 +933,7 @@ pub unsafe extern "C" fn PataStartIo(ChannelContext: PVOID, Request: PATA_DEVICE
 
     IdeStatus = ATA_WAIT(ChanData, ATA_TIME_BUSY_NORMAL, (IDE_STATUS_BUSY) as UCHAR, 0);
     if IdeStatus & (IDE_STATUS_BUSY as u8) != 0 {
+        ERR!(b"BSY timeout, status 0x%02x\n\0".as_ptr() as *const i8, IdeStatus as u32);
         PataCompleteCommand(ChanData, IdeStatus, (SRB_STATUS_BUS_RESET) as UCHAR);
         return ((TRUE as i32)) as BOOLEAN;
     }
@@ -1005,6 +1048,12 @@ pub unsafe extern "system" fn PciIdeChannelIsr(Interrupt: *mut _KINTERRUPT, Cont
         || IdeStatus as i32 & (IDE_STATUS_BUSY as i32) != 0
     {
         if WasCleared != 0 {
+            WARN!(
+                b"Spurious bus-master interrupt %02x, %02x, flags %08lx\n\0".as_ptr() as *const i8,
+                IdeStatus as u32,
+                DmaStatus as u32,
+                (*ChanData).CommandFlags,
+            );
         }
         return (WasCleared) as BOOLEAN;
     }
@@ -1032,6 +1081,11 @@ pub unsafe extern "system" fn PataChannelIsr(Interrupt: *mut _KINTERRUPT, Contex
         || (*ChanData).CommandFlags & CMD_FLAG_AWAIT_INTERRUPT == 0
         || (IdeStatus as i32 & (IDE_STATUS_BUSY as i32)) != 0
     {
+        WARN!(
+            b"Spurious IDE interrupt %02x, flags %08lx\n\0".as_ptr() as *const i8,
+            IdeStatus as u32,
+            (*ChanData).CommandFlags,
+        );
         return ((FALSE as i32)) as BOOLEAN;
     }
 

@@ -715,6 +715,7 @@ pub unsafe extern "C" fn AtaPdoCreateDevice(
         &mut Pdo,
     );
     if !NT_SUCCESS!(Status) {
+        ERR!(b"Failed to create PDO '%wZ' with status 0x%lx\n\0".as_ptr() as *const i8, &raw mut DeviceName, Status);
         return core::ptr::null_mut();
     }
 

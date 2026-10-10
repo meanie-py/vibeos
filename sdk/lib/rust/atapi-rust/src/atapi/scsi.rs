@@ -70,7 +70,7 @@ unsafe extern "C" fn AtaDeviceCheckPowerState(Device: PATAPORT_IO_CONTEXT) {
     );
 
     if !NT_SUCCESS!(Status) {
-        ERR!(b"Failed to power up device '%s' %lx\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName, Status);
+        ERR!(b"Failed to power up device '%s' %lx\n\0".as_ptr() as *const i8, (*DevExt).FriendlyName.as_ptr(), Status);
     }
 }
 
@@ -113,6 +113,9 @@ unsafe extern "C" fn AtaReqRequeueRequest(
         if SRB_GET_FLAGS!((*Request).Srb) & (SRB_FLAG_LOW_MEM_RETRY) as ULONG_PTR != 0 {
             return (COMPLETE_IRP) as i32;
         }
+
+        WARN!(b"Retrying operation\n\0".as_ptr() as *const i8);
+
         SRB_SET_FLAGS!((*Request).Srb, SRB_FLAG_LOW_MEM_RETRY);
     }
     if AtaReqDeviceQueueAddSrb(Device, (*Request).Srb) != STATUS_PENDING {
@@ -507,6 +510,7 @@ unsafe extern "C" fn AtaReqGetScatterGatherList(
         return TRUE;
     }
 
+    WARN!(b"Failed to get the S/G list with status %lx\n\0".as_ptr() as *const i8, Status);
     return FALSE;
 }
 #[no_mangle]
