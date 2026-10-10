@@ -392,7 +392,6 @@ pub const KeepObject: _IO_ALLOCATION_ACTION = _IO_ALLOCATION_ACTION_KeepObject; 
 pub const KeyValuePartialInformation: u32 = 2; // config-rust/src/cmsysini.rs
 pub const MAXULONG: u32 = 4294967295; // legide-rust/src/types_amd64.rs
 pub const MAX_IDE_DEVICE: u32 = 2; // legide-rust/src/prelude.rs
-pub const MAX_SLOTS: usize = 16; // usbxhci-rust/src/controller.rs
 pub const MODE_DSP_FUA_SUPPORTED: u32 = 16; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_DSP_WRITE_PROTECT: u32 = 128; // atapi-legacy-rust/src/types_amd64.rs
 pub const MODE_PAGE_CACHING: u32 = 8; // atapi-legacy-rust/src/types_amd64.rs

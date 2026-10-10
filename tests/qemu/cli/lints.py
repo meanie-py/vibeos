@@ -714,6 +714,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # Same scanner, the crate's OWN island: a hand constant there shadows the island's glob
+    # import with no warning, and the any-island oracle above accepts a value copied from
+    # another crate. atapi's MAX_SLOTS came from usbxhci (16 for 32) and pciidex's reset loops
+    # from legide (1000x). One right answer per crate, so the baseline only shrinks.
+    specs.append(
+        (
+            "scan_const_vs_own_island",
+            [py, str(scc), "--vs-own-island"] if scc.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # Same scanner, narrowest scope: one NAME with two VALUES inside ONE crate. One copy is
     # wrong by construction. userenv's IDS_PROFILEPATH (0 vs 1) sat in the cross-crate
     # baseline above while it stopped GUI setup on every install, so this half is gated
