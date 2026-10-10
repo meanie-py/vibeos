@@ -69,9 +69,10 @@ _EXCLUDED = {
     "_countof",
 }
 # Never worth naming in the envelope's "these have no token" list: `sizeof` is a C
-# KEYWORD, and the debug macros are stripped from the body before sealing, so the model
-# never sees either as a call it might try to tokenize.
-_NEVER_DISCLOSED = {"sizeof", "TRACE", "WARN", "ERR", "FIXME", "MESSAGE"}
+# KEYWORD, and these debug macros are stripped from the body before sealing, so the model
+# never sees either as a call it might try to tokenize. ERR and WARN are not here: plain C
+# keeps them (--keep-diagnostics), and then the model must be told they carry no token.
+_NEVER_DISCLOSED = {"sizeof", "TRACE", "FIXME", "MESSAGE"}
 _PURE_REUSABLE_CALLS = {"strlen", "wcslen"}
 _ANY_SEAL_TOKEN_RE = re.compile(r"\b__RUSTCONV_(?:CALL|FACT|WIDE)_[0-9]{4}__\b")
 

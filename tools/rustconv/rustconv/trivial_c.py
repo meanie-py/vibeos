@@ -188,6 +188,25 @@ DEBUG_STATEMENT_MACROS = frozenset(
     }
 )
 
+# The subset that PRINTS in our build (DBG=1, and the kernel's ERR/WARN are DPRINT1).
+# Under ``keep_diagnostics`` these are not dropped but re-emitted as the crate's macro
+# with the C arguments verbatim -- ``ERR("x %lu\n", v);`` -> ``ERR!("x %lu\n", v);`` --
+# which is only proven safe when the arguments call nothing: a ``debugstr_a`` has no
+# Rust counterpart to name, so such a body goes to the model instead. atapi and
+# pciidex lost ~90% of their error output to stripping these.
+KEPT_DEBUG_MACROS = frozenset({"ERR", "WARN", "WINE_ERR", "WINE_WARN", "DPRINT1"})
+
+_RE_KEPT_STATEMENT = re.compile(rf"^({'|'.join(sorted(KEPT_DEBUG_MACROS))})\s*\((.*)\)\s*;$", re.S)
+
+
+def _kept_rendering(statement: str) -> str | None:
+    """The Rust macro statement a kept C diagnostic becomes, or None if it is dropped."""
+    match = _RE_KEPT_STATEMENT.match(statement)
+    if match is None:
+        return None
+    return f"{match.group(1)}!({match.group(2)});"
+
+
 # The only calls allowed *inside* a dropped debug statement's arguments. Wine's
 # debugstr_* family formats into a per-thread ring buffer and is used for no
 # other purpose, so removing the call along with its statement removes nothing
@@ -422,6 +441,13 @@ def _debug_statement_spans(masked: str) -> list[tuple[int, int, str | None]]:
     return spans
 
 
+def masked_name_is_kept(statement: str) -> bool:
+    """True when this debug statement's macro (any form, channel included) still prints."""
+    # `ERR_(chan)` is ERR too: same exclusion as the span finder, letters and digits only.
+    names = "|".join(sorted(KEPT_DEBUG_MACROS, key=len, reverse=True))
+    return re.match(rf"\s*(?:{names})(?![A-Za-z0-9])", statement) is not None
+
+
 def _debug_arguments_are_pure(args: str | None) -> bool:
     """True when deleting this debug statement deletes nothing observable."""
     if args is None:
@@ -436,7 +462,9 @@ def _debug_arguments_are_pure(args: str | None) -> bool:
     )
 
 
-def _residual_body(c_body: str) -> tuple[str, tuple[str, ...]] | None:
+def _residual_body(
+    c_body: str, keep_diagnostics: bool = False
+) -> tuple[str, tuple[str, ...]] | None:
     """Reduce a whole C function definition to its residual statement text.
 
     Returns ``(residual, dropped_debug_statements)``, or ``None`` when the
@@ -468,7 +496,14 @@ def _residual_body(c_body: str) -> tuple[str, tuple[str, ...]] | None:
     for start, end, args in reversed(_debug_statement_spans(body_masked)):
         if not _debug_arguments_are_pure(args):
             return None
-        dropped.append(" ".join(body[start:end].split()))
+        text = " ".join(body[start:end].split())
+        if keep_diagnostics and masked_name_is_kept(body_masked[start:end]):
+            # Re-emitted verbatim -- raw, since collapsing whitespace would edit the format
+            # string -- so it must be a plain `NAME(args);` calling nothing.
+            text = body[start:end]
+            if _kept_rendering(text) is None or (args and re.search(rf"{_IDENT}\s*\(", args)):
+                return None
+        dropped.append(text)
         blank = " " * (end - start)
         body = body[:start] + blank + body[end:]
         body_masked = body_masked[:start] + blank + body_masked[end:]
@@ -817,8 +852,12 @@ def _render_item(
     statements: str,
     dropped_debug: Sequence[str],
     is_static: bool,
+    keep_diagnostics: bool = False,
 ) -> str:
-    lines = [f"// {text}" for text in dropped_debug]
+    lines = [
+        (_kept_rendering(text) if keep_diagnostics else None) or f"// {text}"
+        for text in dropped_debug
+    ]
     if statements:
         lines.append(statements)
     body = "{\n" + "".join(f"    {line}\n" for line in lines) + "}" if lines else "{}"
@@ -842,6 +881,7 @@ def lower_trivial_c_function(
     # assignable to dict[str, Sequence[...]].
     siblings: Mapping[str, Sequence[tuple[str, str]]] | None = None,
     pointer_typedefs: Mapping[str, str] | None = None,
+    keep_diagnostics: bool = False,
 ) -> TrivialLowering | None:
     """Lower one trivial C function to Rust for $0, or ``None`` to pay the model.
 
@@ -863,7 +903,7 @@ def lower_trivial_c_function(
         # `abi_enforce._find_defs` (it greps `fn <name>`), so the downstream ABI
         # enforcement would silently skip the function. Not worth the shape.
         return None
-    residual_pair = _residual_body(dep.body_text)
+    residual_pair = _residual_body(dep.body_text, keep_diagnostics)
     if residual_pair is None:
         return None
     residual, dropped = residual_pair
@@ -895,11 +935,12 @@ def lower_trivial_c_function(
         statements,
         dropped,
         dep.is_static,
+        keep_diagnostics,
     )
     head = rust.index("{", rust.index(f"fn {dep.name}"))
     lowering = TrivialLowering(dep.name, shape, rust[:head].rstrip(), rust, dropped)
 
-    findings = verify_trivial_lowering(dep, lowering)
+    findings = verify_trivial_lowering(dep, lowering, keep_diagnostics)
     if findings:
         raise TrivialLoweringError(
             f"{dep.name}: deterministic lowering failed its own oracle "
@@ -912,6 +953,7 @@ def lower_trivial_c_function(
 def lower_trivial_c_functions(
     deps: Iterable[FunctionDep],
     pointer_typedefs: Mapping[str, str] | None = None,
+    keep_diagnostics: bool = False,
 ) -> dict[str, TrivialLowering]:
     """Lower every function in ``deps`` that is provably trivial.
 
@@ -929,7 +971,7 @@ def lower_trivial_c_functions(
     siblings = {dep.name: _normalized_params(dep.params) for dep in deps if dep.cpp_class is None}
     lowered: dict[str, TrivialLowering] = {}
     for dep in deps:
-        lowering = lower_trivial_c_function(dep, siblings, pointer_typedefs)
+        lowering = lower_trivial_c_function(dep, siblings, pointer_typedefs, keep_diagnostics)
         if lowering is not None:
             lowered[dep.name] = lowering
     return lowered
@@ -1002,7 +1044,9 @@ def _c_probe(residual: str) -> tuple[Node, bytes, str] | None:
     return (block, encoded, text) if block is not None else None
 
 
-def verify_trivial_lowering(dep: FunctionDep, lowering: TrivialLowering) -> list[str]:
+def verify_trivial_lowering(
+    dep: FunctionDep, lowering: TrivialLowering, keep_diagnostics: bool = False
+) -> list[str]:
     """Re-prove a lowering against the C body, independently of the matcher.
 
     Nothing here reuses the shape regexes. The only machinery shared with
@@ -1041,7 +1085,7 @@ def verify_trivial_lowering(dep: FunctionDep, lowering: TrivialLowering) -> list
     Returns a list of findings; empty means proven.
     """
     findings: list[str] = []
-    residual_pair = _residual_body(dep.body_text)
+    residual_pair = _residual_body(dep.body_text, keep_diagnostics)
     if residual_pair is None:
         return ["residual C body is no longer recoverable"]
     residual, dropped = residual_pair
@@ -1052,6 +1096,15 @@ def verify_trivial_lowering(dep: FunctionDep, lowering: TrivialLowering) -> list
     if rust_parsed is None:
         return [*findings, "generated Rust has no function block"]
     _, _, rust_inner_raw = rust_parsed
+    # A kept diagnostic is the C statement re-spelled as a macro, not part of the residual
+    # the checks below compare: it must be present exactly as rendered, and is then removed.
+    for text in dropped:
+        kept = _kept_rendering(text) if keep_diagnostics else None
+        if kept is None:
+            continue
+        if kept not in rust_inner_raw:
+            findings.append(f"kept diagnostic missing from the Rust: {kept}")
+        rust_inner_raw = rust_inner_raw.replace(kept, " " * len(kept), 1)
     # Canonicalize the one atom whose spellings cannot match (see the docstring).
     # Re-parse from the rewritten text so the node offsets belong to what we compare.
     # Both Rust spellings fold: `core::ptr::null_mut()` (forwarder_with_null) and a
