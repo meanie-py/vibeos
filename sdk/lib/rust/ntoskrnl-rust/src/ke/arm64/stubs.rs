@@ -585,6 +585,15 @@ pub unsafe extern "C" fn KeSaveStateForHibernate(State: PVOID) {
 pub unsafe extern "system" fn KeSetDmaIoCoherency(Coherency: ULONG) {
 }
 
+extern "system" {
+    fn IopSynchronizePassiveInterrupt(
+        Interrupt: PKINTERRUPT,
+        Routine: PKSYNCHRONIZE_ROUTINE,
+        Context: PVOID,
+        Result: *mut BOOLEAN,
+    ) -> BOOLEAN;
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn KeSynchronizeExecution(
     Interrupt: PKINTERRUPT,
@@ -593,6 +602,12 @@ pub unsafe extern "system" fn KeSynchronizeExecution(
 ) -> BOOLEAN {
     let Interrupt = opaque_ptr(Interrupt);
     let SynchronizeContext = opaque_ptr(SynchronizeContext);
+    // A passive-level connection (IoConnectInterruptEx, CONNECT_MESSAGE_BASED_PASSIVE)
+    // synchronizes on its own mutex, at PASSIVE_LEVEL; iomgr irq.rs owns it.
+    let mut Passive: BOOLEAN = 0;
+    if IopSynchronizePassiveInterrupt(Interrupt, SynchronizeRoutine, SynchronizeContext, &mut Passive) != 0 {
+        return Passive;
+    }
     let mut OldIrql: KIRQL = 0;
     KeRaiseIrql((*Interrupt).SynchronizeIrql, core::ptr::addr_of_mut!(OldIrql));
 

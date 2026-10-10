@@ -23,7 +23,29 @@ use ntkrnl_sys::ddk::{
     PKMESSAGE_SERVICE_ROUTINE,
     PEXTENDED_DEVOBJ_EXTENSION,
     PDEVICE_OBJECT,
+    PKSYNCHRONIZE_ROUTINE,
+    KDPC,
+    KEVENT,
+    KMUTEX,
+    HANDLE,
+    KeInitializeDpc,
+    KeInsertQueueDpc,
+    KeRemoveQueueDpc,
+    KeFlushQueuedDpcs,
+    KeInitializeEvent,
+    KeSetEvent,
+    KeInitializeMutex,
+    KeReleaseMutex,
+    KeWaitForSingleObject,
+    KeSetPriorityThread,
+    PsGetCurrentThread,
+    PsCreateSystemThread,
+    ObReferenceObjectByHandle,
+    ObfDereferenceObject,
+    ZwClose,
+    _EVENT_TYPE_SynchronizationEvent,
 };
+use core::sync::atomic::{AtomicBool, Ordering};
 use ntkrnl_sys::{opaque_ptr, opaque_ptr_const};
 
 type CCHAR = i8;
@@ -43,6 +65,8 @@ extern "system" {
     /// `RequesterId` u32::MAX: unknown here; pci.sys bound each vector to its device
     /// when it programmed the table, which happened at START, before this.
     fn HalVibeosMessageTarget(Vector: ULONG, RequesterId: ULONG, Address: *mut u64, Data: *mut ULONG) -> BOOLEAN;
+    fn HalDisableSystemInterrupt(Vector: ULONG, Irql: KIRQL);
+    fn HalEnableSystemInterrupt(Vector: ULONG, Irql: KIRQL, Mode: KINTERRUPT_MODE) -> BOOLEAN;
 }
 
 const TAG_IO_INTERRUPT: ULONG = 0x6E696F49;
@@ -210,6 +234,8 @@ const CONNECT_FULLY_SPECIFIED: ULONG = 1;
 const CONNECT_LINE_BASED: ULONG = 2;
 const CONNECT_MESSAGE_BASED: ULONG = 3;
 const CONNECT_FULLY_SPECIFIED_GROUP: ULONG = 4;
+/// Windows 8's; our wdm.h stops at 4. Same parameters as CONNECT_MESSAGE_BASED.
+const CONNECT_MESSAGE_BASED_PASSIVE: ULONG = 5;
 
 const CM_RESOURCE_TYPE_INTERRUPT: u8 = 2;
 const CM_RESOURCE_SHARE_SHARED: u8 = 3;
@@ -250,7 +276,7 @@ unsafe fn assigned<'a>(Pdo: PDEVICE_OBJECT, translated: bool) -> &'a [CM_PARTIAL
 /// Every message the device was assigned, in order, as (vector, IRQL, affinity). An
 /// MSI block is one descriptor whose raw twin carries its MessageCount; its message k
 /// is the translated vector + k (the HAL hands a block out as consecutive vectors).
-unsafe fn assigned_messages(Pdo: PDEVICE_OBJECT) -> impl Iterator<Item = (ULONG, KIRQL, KAFFINITY)> {
+unsafe fn assigned_messages(Pdo: PDEVICE_OBJECT) -> impl Iterator<Item = (ULONG, KIRQL, KAFFINITY)> + Clone {
     let translated = assigned(Pdo, true);
     let raw = assigned(Pdo, false);
     translated.iter().enumerate().filter(|(_, d)| is_interrupt(d, true)).flat_map(move |(i, d)| {
@@ -299,6 +325,14 @@ struct MessageTrampoline {
     routine: PKMESSAGE_SERVICE_ROUTINE,
     context: PVOID,
     message_id: ULONG,
+    // Passive connections only (null/None/false otherwise):
+    passive: *mut Passive,
+    /// The line fallback's routine, which takes no message ID.
+    line_routine: PKSERVICE_ROUTINE,
+    /// The KINTERRUPT the routine is handed (its first, when it has one per CPU).
+    interrupt: PKINTERRUPT,
+    /// Raised by the ISR, taken by the worker: the message fired since it last ran.
+    pending: AtomicBool,
 }
 
 unsafe extern "system" fn message_trampoline(Interrupt: PKINTERRUPT, Context: PVOID) -> BOOLEAN {
@@ -412,6 +446,317 @@ unsafe fn IopConnectInterruptExMessageBased(Parameters: PIO_CONNECT_INTERRUPT_PA
     STATUS_SUCCESS
 }
 
+/// CONNECT_MESSAGE_BASED_PASSIVE: the driver's routine runs at PASSIVE_LEVEL, on a
+/// worker thread of the connection's own. What the hardware raises is still an
+/// interrupt at DIRQL; its KINTERRUPT's service routine is `IopPassiveInterruptService`,
+/// which only notes which message fired and queues a DPC, the DPC wakes the worker
+/// (KeSetEvent is not callable at DIRQL), and the worker calls the driver, holding the
+/// connection's mutex, which KeSynchronizeExecution on any of its KINTERRUPTs takes too.
+/// Messages are edge-triggered and the device's own, so nothing is masked: one that
+/// fires while its routine runs is pending again and is called again. A device with no
+/// messages falls back to its line through FallBackServiceRoutine, at passive level too,
+/// and there the line has to be masked from the ISR until the routine has run, or a
+/// level-triggered line would fire forever. As on Windows, SpinLock must be NULL and
+/// SynchronizeIrql PASSIVE_LEVEL: nothing at passive level can hold a spin lock across
+/// a driver routine that may block.
+struct Passive {
+    lock: KMUTEX,
+    wake: KEVENT,
+    dpc: KDPC,
+    /// The worker's ETHREAD, referenced, so disconnecting can wait for it to exit.
+    thread: PVOID,
+    stop: AtomicBool,
+    count: usize,
+    trampolines: *mut MessageTrampoline,
+    /// The line fallback: masked by the ISR, unmasked by the worker.
+    line: Option<(ULONG, KIRQL, KINTERRUPT_MODE)>,
+    /// The pool block all of this lives in (an IO_INTERRUPT_MESSAGE_INFO first).
+    block: *mut u8,
+}
+
+/// The block a passive connection lives in: `message_block_layout`'s, then a Passive.
+fn passive_block_layout(count: usize) -> (usize, usize, usize) {
+    let (trampolines, end) = message_block_layout(count);
+    let align = core::mem::align_of::<Passive>();
+    let passive = (end + align - 1) & !(align - 1);
+    (trampolines, passive, passive + core::mem::size_of::<Passive>())
+}
+
+/// The passive connection a KINTERRUPT belongs to, if it is one.
+unsafe fn passive_of(Interrupt: PKINTERRUPT) -> Option<*mut Passive> {
+    if Interrupt.is_null()
+        || (*Interrupt).ServiceRoutine.map(|f| f as usize) != Some(IopPassiveInterruptService as usize)
+    {
+        return None;
+    }
+    Some((*((*Interrupt).ServiceContext as *mut MessageTrampoline)).passive)
+}
+
+/// The ISR every passive connection's KINTERRUPTs run, at DIRQL.
+unsafe extern "system" fn IopPassiveInterruptService(_Interrupt: PKINTERRUPT, Context: PVOID) -> BOOLEAN {
+    let t = Context as *mut MessageTrampoline;
+    let p = (*t).passive;
+    if let Some((vector, irql, _)) = (*p).line {
+        HalDisableSystemInterrupt(vector, irql);
+    }
+    (*t).pending.store(true, Ordering::Release);
+    KeInsertQueueDpc(&mut (*p).dpc, core::ptr::null_mut(), core::ptr::null_mut());
+    1
+}
+
+unsafe extern "system" fn IopPassiveDpc(_Dpc: *mut KDPC, Context: PVOID, _A: PVOID, _B: PVOID) {
+    KeSetEvent(&mut (*(Context as *mut Passive)).wake, 0, 0);
+}
+
+/// LOW_REALTIME_PRIORITY, as Windows runs its passive-level interrupt threads: above
+/// every ordinary thread, so a busy desktop cannot starve a device of its interrupt.
+const PASSIVE_INTERRUPT_PRIORITY: i32 = 16;
+
+unsafe extern "system" fn IopPassiveWorker(Context: PVOID) {
+    let p = Context as *mut Passive;
+    // An ETHREAD begins with its KTHREAD (Tcb); KeGetCurrentThread is inline-only on amd64.
+    KeSetPriorityThread(PsGetCurrentThread().cast(), PASSIVE_INTERRUPT_PRIORITY as _);
+    loop {
+        KeWaitForSingleObject(&mut (*p).wake as *mut KEVENT as PVOID, 0, 0, 0, core::ptr::null_mut());
+        if (*p).stop.load(Ordering::Acquire) {
+            break;
+        }
+        // Until a pass finds nothing pending: a message that fires again while its
+        // routine runs is called again, never lost.
+        let mut again = true;
+        while again {
+            again = false;
+            for id in 0..(*p).count {
+                let t = (*p).trampolines.add(id);
+                if !(*t).pending.swap(false, Ordering::AcqRel) {
+                    continue;
+                }
+                again = true;
+                KeWaitForSingleObject(&mut (*p).lock as *mut KMUTEX as PVOID, 0, 0, 0, core::ptr::null_mut());
+                match ((*t).routine, (*t).line_routine) {
+                    (Some(routine), _) => {
+                        routine((*t).interrupt, (*t).context, (*t).message_id);
+                    }
+                    (None, Some(routine)) => {
+                        routine((*t).interrupt, (*t).context);
+                    }
+                    (None, None) => {}
+                }
+                KeReleaseMutex(&mut (*p).lock, 0);
+                if let Some((vector, irql, mode)) = (*p).line {
+                    HalEnableSystemInterrupt(vector, irql, mode);
+                }
+            }
+        }
+    }
+    // Returning ends a system thread (PspSystemThreadStartup terminates it).
+}
+
+/// KeSynchronizeExecution on a passive connection's KINTERRUPT: its routines run at
+/// PASSIVE_LEVEL under the connection's mutex, which raising IRQL and taking the
+/// KINTERRUPT's spin lock would not exclude. Returns FALSE when `Interrupt` is not
+/// passive, for the caller to do the usual.
+#[no_mangle]
+pub unsafe extern "system" fn IopSynchronizePassiveInterrupt(
+    Interrupt: PKINTERRUPT,
+    Routine: PKSYNCHRONIZE_ROUTINE,
+    Context: PVOID,
+    Result: *mut BOOLEAN,
+) -> BOOLEAN {
+    let Some(p) = passive_of(Interrupt) else {
+        return 0;
+    };
+    KeWaitForSingleObject(&mut (*p).lock as *mut KMUTEX as PVOID, 0, 0, 0, core::ptr::null_mut());
+    *Result = match Routine {
+        Some(routine) => routine(Context),
+        None => 0,
+    };
+    KeReleaseMutex(&mut (*p).lock, 0);
+    1
+}
+
+/// Undo a passive connection: the worker first, so it can unmask no line after the
+/// line is disconnected; then the interrupts; then any DPC they queued meanwhile.
+unsafe fn IopDisconnectPassive(p: *mut Passive) {
+    if !(*p).thread.is_null() {
+        (*p).stop.store(true, Ordering::Release);
+        KeSetEvent(&mut (*p).wake, 0, 0);
+        KeWaitForSingleObject((*p).thread, 0, 0, 0, core::ptr::null_mut());
+        ObfDereferenceObject((*p).thread);
+    }
+    for id in 0..(*p).count {
+        let object = (*(*p).trampolines.add(id)).interrupt;
+        if !object.is_null() {
+            IoDisconnectInterrupt(object);
+        }
+    }
+    KeRemoveQueueDpc(&mut (*p).dpc);
+    KeFlushQueuedDpcs();
+    ExFreePoolWithTag((*p).block as PVOID, TAG_IO_MESSAGE);
+}
+
+/// One interrupt a passive connection takes: (vector, IRQL, affinity, mode, shared).
+type PassiveSource = (ULONG, KIRQL, KAFFINITY, KINTERRUPT_MODE, bool);
+
+/// An iterator of known length (`assigned_messages` counts by walking).
+#[derive(Clone)]
+struct Counted<I>(I, usize);
+
+impl<I: Iterator> Iterator for Counted<I> {
+    type Item = I::Item;
+    fn next(&mut self) -> Option<I::Item> {
+        let item = self.0.next()?;
+        self.1 = self.1.saturating_sub(1);
+        Some(item)
+    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (self.1, Some(self.1))
+    }
+}
+
+impl<I: Iterator> ExactSizeIterator for Counted<I> {}
+
+unsafe fn IopConnectPassive(
+    sources: impl ExactSizeIterator<Item = PassiveSource> + Clone,
+    message_routine: PKMESSAGE_SERVICE_ROUTINE,
+    line_routine: PKSERVICE_ROUTINE,
+    context: PVOID,
+    floating_save: BOOLEAN,
+) -> Result<*mut Passive, NTSTATUS> {
+    let count = sources.len();
+    let (trampolines_at, passive_at, size) = passive_block_layout(count);
+    let block = ExAllocatePoolZero(NonPagedPool, size as _, TAG_IO_MESSAGE) as *mut u8;
+    if block.is_null() {
+        return Err(STATUS_INSUFFICIENT_RESOURCES);
+    }
+    let p = block.add(passive_at) as *mut Passive;
+    (*p).count = count;
+    (*p).trampolines = block.add(trampolines_at) as *mut MessageTrampoline;
+    (*p).block = block;
+    if line_routine.is_some() {
+        (*p).line = sources.clone().next().map(|(vector, irql, _, mode, _)| (vector, irql, mode));
+    }
+    KeInitializeMutex(&mut (*p).lock, 0);
+    KeInitializeEvent(&mut (*p).wake, _EVENT_TYPE_SynchronizationEvent, 0);
+    KeInitializeDpc(&mut (*p).dpc, Some(IopPassiveDpc), p as PVOID);
+    for id in 0..count {
+        let t = (*p).trampolines.add(id);
+        (*t).routine = message_routine;
+        (*t).line_routine = line_routine;
+        (*t).context = context;
+        (*t).message_id = id as ULONG;
+        (*t).passive = p;
+    }
+
+    // The worker before the interrupts, so the first one has somewhere to go.
+    let mut handle: HANDLE = core::ptr::null_mut();
+    let status = PsCreateSystemThread(
+        &mut handle,
+        0x001F_FFFF, // THREAD_ALL_ACCESS
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        core::ptr::null_mut(),
+        // PKSTART_ROUTINE's spelling differs per arch; the convention is NTAPI on all.
+        core::mem::transmute(IopPassiveWorker as usize),
+        p as PVOID,
+    );
+    if status < 0 {
+        ExFreePoolWithTag(block as PVOID, TAG_IO_MESSAGE);
+        return Err(status);
+    }
+    let status = ObReferenceObjectByHandle(handle, 0, core::ptr::null_mut(), 0, &mut (*p).thread, core::ptr::null_mut());
+    ZwClose(handle);
+    if status < 0 {
+        // Unreachable with a handle just made; but without the object the worker
+        // could not be waited for, so it is told to stop and left to exit.
+        (*p).stop.store(true, Ordering::Release);
+        KeSetEvent(&mut (*p).wake, 0, 0);
+        return Err(status);
+    }
+
+    for (id, (vector, irql, affinity, mode, shared)) in sources.enumerate() {
+        let t = (*p).trampolines.add(id);
+        let status = IoConnectInterrupt(
+            &mut (*t).interrupt,
+            Some(IopPassiveInterruptService),
+            t as PVOID,
+            core::ptr::null_mut(),
+            vector,
+            irql,
+            irql,
+            mode,
+            shared as BOOLEAN,
+            affinity,
+            floating_save,
+        );
+        if status < 0 {
+            IopDisconnectPassive(p);
+            return Err(status);
+        }
+    }
+    Ok(p)
+}
+
+unsafe fn IopConnectInterruptExPassive(Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS) -> NTSTATUS {
+    let p = &mut (*Parameters).__bindgen_anon_1.MessageBased;
+    if !p.SpinLock.is_null() || p.SynchronizeIrql != 0 {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let count = assigned_messages(p.PhysicalDeviceObject).count();
+    if count == 0 {
+        if p.FallBackServiceRoutine.is_none() {
+            return STATUS_NOT_FOUND;
+        }
+        let Some(line) = assigned_interrupts(p.PhysicalDeviceObject).iter().find(|d| is_interrupt(d, false)) else {
+            return STATUS_NOT_FOUND;
+        };
+        let source = (
+            line.u.Interrupt.Vector,
+            line.u.Interrupt.Level as KIRQL,
+            line.u.Interrupt.Affinity,
+            if line.Flags & CM_RESOURCE_INTERRUPT_LATCHED != 0 { LATCHED } else { LEVEL_SENSITIVE },
+            line.ShareDisposition == CM_RESOURCE_SHARE_SHARED,
+        );
+        return match IopConnectPassive([source].into_iter(), None, p.FallBackServiceRoutine, p.ServiceContext, p.FloatingSave) {
+            Ok(passive) => {
+                *p.ConnectionContext.InterruptObject = (*(*passive).trampolines).interrupt;
+                (*Parameters).Version = CONNECT_LINE_BASED;
+                STATUS_SUCCESS
+            }
+            Err(status) => status,
+        };
+    }
+    if p.MessageServiceRoutine.is_none() {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    let sources = assigned_messages(p.PhysicalDeviceObject).map(|(vector, irql, affinity)| (vector, irql, affinity, LATCHED, false));
+    let sources = Counted(sources, count);
+    let passive = match IopConnectPassive(sources.clone(), p.MessageServiceRoutine, None, p.ServiceContext, p.FloatingSave) {
+        Ok(passive) => passive,
+        Err(status) => return status,
+    };
+    let table = (*passive).block as PIO_INTERRUPT_MESSAGE_INFO;
+    let entries = core::ptr::addr_of_mut!((*table).MessageInfo) as *mut IO_INTERRUPT_MESSAGE_INFO_ENTRY;
+    (*table).UnifiedIrql = 0; // PASSIVE_LEVEL: what every routine runs at
+    (*table).MessageCount = count as ULONG;
+    for (id, (vector, irql, affinity, _, _)) in sources.enumerate() {
+        let e = &mut *entries.add(id);
+        e.InterruptObject = (*(*passive).trampolines.add(id)).interrupt;
+        e.Vector = vector;
+        e.Irql = irql;
+        e.TargetProcessorSet = affinity;
+        e.Mode = LATCHED;
+        e.Polarity = 0; // InterruptPolarityUnknown
+        let mut address = 0u64;
+        if HalVibeosMessageTarget(vector, u32::MAX, &mut address, &mut e.MessageData) != 0 {
+            e.MessageAddress.QuadPart = address as i64;
+        }
+    }
+    *p.ConnectionContext.InterruptMessageTable = table;
+    STATUS_SUCCESS
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IoConnectInterruptEx(
     Parameters: PIO_CONNECT_INTERRUPT_PARAMETERS,
@@ -433,7 +778,7 @@ pub unsafe extern "system" fn IoConnectInterruptEx(
             )
         }
         CONNECT_MESSAGE_BASED => IopConnectInterruptExMessageBased(Parameters),
-        // CONNECT_MESSAGE_BASED_PASSIVE (5) and anything newer.
+        CONNECT_MESSAGE_BASED_PASSIVE => IopConnectInterruptExPassive(Parameters),
         _ => STATUS_NOT_SUPPORTED,
     }
 }
@@ -443,15 +788,21 @@ pub unsafe extern "system" fn IoDisconnectInterruptEx(
     Parameters: PIO_DISCONNECT_INTERRUPT_PARAMETERS,
 ) {
     match (*Parameters).Version {
-        CONNECT_MESSAGE_BASED => {
+        CONNECT_MESSAGE_BASED | CONNECT_MESSAGE_BASED_PASSIVE => {
             let table = (*Parameters).ConnectionContext.InterruptMessageTable;
-            if !table.is_null() {
+            if table.is_null() {
+            } else if let Some(passive) = passive_of((*table).MessageInfo[0].InterruptObject) {
+                IopDisconnectPassive(passive);
+            } else {
                 IopDisconnectMessages(table);
             }
         }
         _ => {
             let object = (*Parameters).ConnectionContext.InterruptObject;
-            if !object.is_null() {
+            if let Some(passive) = passive_of(object) {
+                // A passive connection that fell back to the line.
+                IopDisconnectPassive(passive);
+            } else if !object.is_null() {
                 IoDisconnectInterrupt(object);
             }
         }
