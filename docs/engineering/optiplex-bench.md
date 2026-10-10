@@ -38,7 +38,7 @@ bytes differ from the stock image (the option bit and the CMOS checksum).
 - Verified: coreboot logs `Set power on after power failure.`, and after
   `power.sh cycle 10` the box draws ~54 W within 5 s of the plug coming back.
 
-## Known gaps
+## Pico notes
 
 - **The Pico drives SeaBIOS and Ventoy since picousb `0f43f4f`** (2026-10-09). A
   BIOS polls only the boot keyboard; the old firmware queued a mouse release per
@@ -54,5 +54,31 @@ bytes differ from the stock image (the option bit and the CMOS checksum).
   itself and rejoins Wi-Fi in ~15 s with its configuration intact. Stage the UF2
   somewhere root-owned (`/run`), not `/dev/shm`: logind's `RemoveIPC` deletes a
   user's `/dev/shm` files when the SSH session that wrote them ends.
-- No netboot yet. The disk is disposable (its Ubuntu died in a power cut); a Ventoy
-  stick with Debian and Ubuntu ISOs is plugged in.
+
+## Netboot
+
+Hands-free from a plug cycle: SeaBIOS boots the NVMe, whose GRUB (`/boot/grub/grub.cfg`,
+first entry, 3 s timeout) chainloads `ipxe.lkrn` (iPXE v2.0.0, **i386** build; the
+x86_64 one reboot-loops here) with an embedded script that chains
+`http://192.168.1.183:8069/optiplex.ipxe`, which `sanboot`s `vibeos-amd64.iso` from the
+bench HTTP server's payload directory.
+
+```bash
+./vibeos-cli build --arch amd64
+tools/optiplex/netboot.sh            # build the RAM-disk image, copy + verify it
+tools/optiplex/power.sh cycle 10     # boot it; watch COM7 (serial.sh)
+```
+
+`netboot.sh` does not stage the plain livecd. iPXE's SAN disk is an INT 13h device that
+freeldr reads but the kernel cannot see, so the livecd loads its kernel and then has no
+boot volume. The staged image holds the loader and `livecd/livecd.iso`, and its only
+`freeldr.ini` entry loads that into a RAM disk exported as a CD (`/RDPATH ...
+/RDEXPORTASCD`, the SMP kernel pair, debug on COM1). It reached the desktop on
+2026-10-10: ~6.5 min pulling the 400 MB image at ~1 MB/s, then ~1 min to `shell ready`.
+
+## Known gaps
+
+- The RAM-disk pull is ~1 MB/s (iPXE serving freeldr's INT 13h reads over HTTP).
+- 1024x768 in the corner of the 1080p panel. libgfxinit sets 1920x1080 and SeaBIOS's
+  coreboot-framebuffer VGA offers 16 "modes" that are all windows onto it (same 7680-byte
+  pitch); freeldr prefers 1024x768. Prefer the native mode when every mode shares a pitch.

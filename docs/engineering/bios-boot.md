@@ -112,7 +112,22 @@ loads `nvme.sys` as a boot driver, and the boot fails unless the namespace is pu
 ## Real hardware
 
 QEMU's SeaBIOS is the oracle here. A real machine adds its own VGA option ROM, its
-own EBDA size, and USB or SATA boot media. Expected first problems on the 9020:
+own EBDA size, and USB or SATA boot media. The 9020 reached the desktop on 2026-10-10
+over netboot (`optiplex-bench.md`). What it took beyond QEMU:
+
+- **PCI INTx routing from ACPI `_PRT`.** The Interrupt Line register is the 8259 number
+  (here 0x80, "unrouted", for almost everything); under the I/O APIC the PCH delivers
+  INTx on inputs 16-23, active-low. EHCI's interrupt never arrived and USB enumeration
+  hung. acpi.sys now runs `\_PIC(1)` and resolves each function's pin
+  (`acpi-rust/src/pciroute.rs`, `pci-rust/src/irqroute.rs`), and the HAL programs the
+  polarity ACPI gives (`HalVibeosSetInterruptLine`). QEMU q35 exercises the same path
+  (GSIs 16-23, active-high); i440fx goes through its LNKx link devices.
+- **The display node's adapter index.** freeldr writes a MultifunctionAdapter key per
+  PCI bus before the ISA adapter that carries the DisplayController, so a board with
+  bridges puts it past index 3; the framebuffer driver now searches every index. freeldr
+  logs each VBE mode it sees on COM1 (`[FLDR] VBE mode ...`).
+
+Expected first problems before that run, kept for the next machine:
 
 - whether its Intel VBE ROM offers a 32-bpp linear mode in the preferred list
 - which controller serves the stick. Intel 8-series chipsets route their ports to EHCI
