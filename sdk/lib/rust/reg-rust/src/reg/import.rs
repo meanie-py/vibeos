@@ -57,8 +57,8 @@ static mut parser_funcs: [parser_state_func; 17] = unsafe {
 
 pub const HEADER: parser_state = 0;
 pub const PARSE_WIN31_LINE: parser_state = 1;
-pub const LINE_START: parser_state = 2;
-pub const KEY_NAME: parser_state = 3;
+pub const LINE_START: parser_state = 2; // nolint: const-contradiction (reg.exe's own import.c enum parser_state; inflib's same-named states are another enum)
+pub const KEY_NAME: parser_state = 3; // nolint: const-contradiction (reg.exe's own import.c enum parser_state; inflib's same-named states are another enum)
 pub const DELETE_KEY: parser_state = 4;
 pub const DEFAULT_VALUE_NAME: parser_state = 5;
 pub const QUOTED_VALUE_NAME: parser_state = 6;
@@ -68,11 +68,11 @@ pub const DATA_TYPE: parser_state = 9;
 pub const STRING_DATA: parser_state = 10;
 pub const DWORD_DATA: parser_state = 11;
 pub const HEX_DATA: parser_state = 12;
-pub const EOL_BACKSLASH: parser_state = 13;
+pub const EOL_BACKSLASH: parser_state = 13; // nolint: const-contradiction (reg.exe's own import.c enum parser_state; inflib's same-named states are another enum)
 pub const HEX_MULTILINE: parser_state = 14;
 pub const UNKNOWN_DATA: parser_state = 15;
 pub const SET_VALUE: parser_state = 16;
-pub const NB_PARSER_STATES: parser_state = 17;
+pub const NB_PARSER_STATES: parser_state = 17; // nolint: const-contradiction (reg.exe's own import.c enum parser_state; inflib's same-named states are another enum)
 pub type parser_state = i32;
 
 #[repr(C)]
