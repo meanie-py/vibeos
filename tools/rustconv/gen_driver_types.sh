@@ -3510,6 +3510,12 @@ open(final, "w").write("".join(out))
     # declaration or unbalance braces, so a silent truncation cannot ship.
     python3 "$(dirname "$0")/bindgen_unions_to_real.py" "$FINAL" >/dev/null
   fi
+  # ntoskrnl/hal DATA exports (`extern __declspec(dllimport) ULONG InitSafeBootMode;`) come out
+  # as plain statics, an undefined symbol at a driver's link. Give them raw-dylib, which is the
+  # dllimport, so the translation reads them as the C does. Kernel islands only. See the tool.
+  if [ "${USERMODE:-0}" != 1 ]; then
+    python3 "$(dirname "$0")/bindgen_data_imports.py" "$FINAL" "$ARCH" "$SRC"
+  fi
   # MS anonymous struct members (`CHANNEL_DATA_COMMON;` as a struct's first member) come out
   # of bindgen as opaque padding; restore them by name from the driver's own headers. A no-op
   # for every driver whose headers have none. See the tool.

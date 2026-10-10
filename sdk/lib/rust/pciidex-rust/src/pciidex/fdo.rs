@@ -112,8 +112,7 @@ pub unsafe extern "C" fn AtaCtrlSetTransferMode(ChannelContext: PVOID, DeviceLis
             (*Device).SupportedModes &= PIO_ALL;
         }
 
-        // C reads the ntoskrnl DATA export directly; a driver goes through its import slot.
-        if InitSafeBootModeValue() == 1 {
+        if InitSafeBootMode == 1 {
             if ((*ChanData).ChanInfo & CHANNEL_FLAG_PIO_VIA_DMA) == 0 && (*Device).IsFixedDisk == 0 {
                 (*Device).SupportedModes &= PIO_ALL;
             }

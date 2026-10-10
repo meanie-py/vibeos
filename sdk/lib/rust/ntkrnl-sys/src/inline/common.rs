@@ -1021,33 +1021,6 @@ extern "C" {
     static mut HalDispatchTable_data: ddk::HAL_DISPATCH;
 }
 
-#[cfg(target_arch = "x86_64")]
-extern "C" {
-    #[link_name = "__imp_InitSafeBootMode"]
-    static InitSafeBootMode_imp: *const ULONG;
-}
-#[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
-extern "C" {
-    #[link_name = "InitSafeBootMode"]
-    static InitSafeBootMode_data: ULONG;
-}
-
-/// ntoskrnl's `InitSafeBootMode` DATA export (`@ extern` in ntoskrnl.spec), read from a
-/// DRIVER through its import slot -- a plain `extern static` of the name is an undefined
-/// symbol at a driver's link (pciidex.sys's safe-boot check).
-#[inline(always)]
-pub unsafe fn InitSafeBootModeValue() -> ULONG {
-    #[cfg(target_arch = "x86_64")]
-    {
-        *InitSafeBootMode_imp
-    }
-    #[cfg(any(target_arch = "x86", target_arch = "aarch64"))]
-    {
-        core::ptr::addr_of!(InitSafeBootMode_data).read_volatile()
-    }
-}
-
 /// haltypes.h `HALDISPATCH` as seen from a DRIVER (never from ntoskrnl itself).
 #[inline(always)]
 unsafe fn driver_hal_dispatch() -> *mut ddk::HAL_DISPATCH {

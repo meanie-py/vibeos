@@ -1412,7 +1412,6 @@ pub use ntkrnl_sys::inline::mm::ExAllocatePoolZero;
 pub use ntkrnl_sys::ex::ExFreePoolWithTag;
 pub use ntkrnl_sys::inline::ex::ExInitializeFastMutex;
 pub use ntkrnl_sys::inline::common::HalGetInterruptTranslator;
-pub use ntkrnl_sys::inline::common::InitSafeBootModeValue;
 pub use ntkrnl_sys::inline::common::InitializeListHead;
 pub use ntkrnl_sys::inline::common::InsertTailList;
 pub use ntkrnl_sys::ddk::IoAcquireRemoveLockEx;
