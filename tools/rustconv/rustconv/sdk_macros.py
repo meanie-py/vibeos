@@ -687,6 +687,9 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
+    # A C++ TU expands windowsx.h's macros to `::SendMessageW(..)`: the global-scope
+    # qualifier names the same function, and Rust has no use for it.
+    expansion = re.sub(r"(?<![\w:>])::(?=[A-Za-z_])", "", expansion)
     return emit(_Parser(tokenize(expansion), types).parse())
 
 

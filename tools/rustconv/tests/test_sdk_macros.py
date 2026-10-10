@@ -214,3 +214,11 @@ def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
         tmp_path, tmp_path / "x.c", {"SetWindowLongPtrW", "StringCchCopy"}
     )
     assert got == {"StringCchCopy": "StringCchCopyW"}
+
+
+def test_a_cpp_global_scope_qualifier_is_dropped():
+    """windowsx.h's Edit_SetModify, expanded in a C++ TU: `::SendMessageW(..)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion("((void)::SendMessageW((h),185,(WPARAM)(UINT)(m),0))", {"WPARAM", "UINT"})
+    assert "SendMessageW(" in out and "::SendMessageW" not in out

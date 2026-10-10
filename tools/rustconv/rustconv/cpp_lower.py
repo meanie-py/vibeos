@@ -120,6 +120,8 @@ class Lowerer:
             k = n.get("kind")
             if k == "CXXThisExpr" and not _implicit(n):
                 put(n["range"]["begin"], 4, "this_", "this")
+            elif k == "MemberExpr" and self._static_via_object(n, f, lo, hi, edits):
+                return  # `obj.f` is now `Class::f`: the object is gone, so is its walk
             elif k == "MemberExpr":
                 self._member(n, put, this_class)
             elif k == "DeclRefExpr":
@@ -195,6 +197,28 @@ class Lowerer:
         renamed = info.rust_name if written is not None and written != info.rust_name else None
         if prefix or renamed:
             put(name_loc, None if renamed else 0, prefix + (renamed or ""), info.name)
+
+    def _static_via_object(self, n: dict, f: str, lo: int, hi: int, edits) -> bool:
+        """`toolsModel.CreateBrush(..)` where CreateBrush is STATIC: C++ allows the object
+        form, Rust's associated fn does not -> `ToolsModel::CreateBrush(..)`. Only for an
+        object with no side effects (a name or member chain); C++ evaluates the object
+        anyway, so dropping a call there would drop behaviour."""
+        info = self.decls.get(n.get("referencedMemberDecl", ""))
+        if info is None or not info.static or info.kind != "method":
+            return False
+        obj = (n.get("inner") or [{}])[0]
+        node = obj
+        while node.get("kind") in ("MemberExpr", "ImplicitCastExpr", "ParenExpr"):
+            node = (node.get("inner") or [{}])[0]
+        if node.get("kind") not in ("DeclRefExpr", "CXXThisExpr"):
+            return False
+        span = _node_span(n, f, lo, hi)
+        name = _tok(n["range"]["end"], f, lo, hi)
+        if span is None or name is None:
+            return False
+        cls = info.owner.split("::")[-1]
+        edits.append((span[0], name[0] - lo - span[0] + name[1], f"{cls}::{info.rust_name}"))
+        return True
 
     def _conversion(self, n: dict, f: str, lo: int, hi: int, edits) -> dict | None:
         """C++'s implicit user-defined conversion, `IsWindowVisible(textEditWindow)` through

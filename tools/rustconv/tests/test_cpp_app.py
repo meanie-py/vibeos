@@ -503,3 +503,34 @@ def test_an_implicit_conversion_operator_is_an_explicit_call(tmp_path):
         "{ IsWindowVisible((textEditWindow).op_to_HWND()); "
         "IsWindowVisible((*this_).op_to_HWND()); }"
     )
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_static_method_called_through_an_object_is_an_associated_call(tmp_path):
+    """mspaint's `toolsModel.CreateBrush(..)`, a static method: Rust needs `ToolsModel::`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "class TM { public: static int CreateBrush(int a); int x; };\nTM toolsModel;\n"
+        "class P { public: TM m; void Go(); };\n"
+        "void P::Go() { toolsModel.CreateBrush(1); m.CreateBrush(toolsModel.x); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ TM::CreateBrush(1); TM::CreateBrush(toolsModel.x); }"

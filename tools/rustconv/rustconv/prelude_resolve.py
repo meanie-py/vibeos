@@ -1015,9 +1015,44 @@ def module_exports(module_dir: Path, repo: Path) -> set[str] | None:
         specs += [repo / f for f in found]
     per_arch = [
         set().union(*(parse_spec(spec, arch).keys() for spec in specs))
+        | _static_lib_symbols(cmake.read_text(), repo, arch)
         for arch in ("i386", "amd64", "arm64")
     ]
     return set.intersection(*per_arch) if per_arch else None
+
+
+_LINKLIBS = re.compile(r"target_link_libraries\(\s*\S+\s+([^)]*)\)")
+
+
+def _static_lib_symbols(cmake_text: str, repo: Path, arch: str) -> set[str]:
+    """What the module's STATIC libraries define (`target_link_libraries(mspaint uuid ..)`):
+    uuid's GUID_NULL is a data symbol no .spec exports, yet it links. Read off THIS tree's
+    built archive with llvm-nm, never guessed; an archive not built yet contributes nothing
+    (the name then stays unresolved, loudly)."""
+    nm = repo / ".build-tools" / "llvm-mingw" / "bin" / "llvm-nm"
+    if not nm.is_file():
+        return set()
+    out: set[str] = set()
+    for m in _LINKLIBS.finditer(cmake_text):
+        for lib in m.group(1).split():
+            if not re.fullmatch(r"[\w-]+", lib):
+                continue
+            hits = sorted((repo / f"build-{arch}" / "sdk" / "lib").glob(f"**/lib{lib}.a"))
+            if not hits:
+                continue
+            res = subprocess.run(
+                [str(nm), "--defined-only", "--extern-only", str(hits[0])],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 3:
+                    sym = parts[2]
+                    # i386 decorates C symbols with one leading underscore.
+                    out.add(sym[1:] if arch == "i386" and sym.startswith("_") else sym)
+    return out
 
 
 def called_names(modules_dir: Path) -> set[str]:
