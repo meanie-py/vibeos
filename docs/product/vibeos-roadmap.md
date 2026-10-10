@@ -1341,6 +1341,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
     still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
     pci.sys, so they are unreached there.
+  - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
+    2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
+    assigns them, so a legacy detector that runs first sees free ports: legide's
+    IoReportResourceForDetection (a real Silent=TRUE check) ran before PIIX was added and
+    took 0x1F0 (i386 `smoke --isa-ide` run 20261009-204110, before the 0x1F0/0x170 skip;
+    PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
+    boot configs through its arbiters at enumeration. Not a one-line fix: the map check
+    cannot tell the requesting device from the owner, so writing a PDO's boot config there
+    makes its own later assignment conflict. Belongs with the arbiter work above.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and
