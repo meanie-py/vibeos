@@ -223,6 +223,7 @@ pub unsafe extern "C" fn Sil680GetControllerProperties(
     let mut i: ULONG;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_CMD);
 
     if (*Controller).Pci.VendorID != (PCI_DEV_SIL0680 as u16) {
         return STATUS_NO_MATCH;

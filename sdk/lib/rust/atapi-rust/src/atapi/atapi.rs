@@ -213,6 +213,7 @@ pub unsafe extern "C" fn AtaGetRegistryKey(
                 RUSTCONV_WSTR_447B6E0274D3.as_ptr(),
                 TargetId as i32,
             );
+            ASSERT!(NT_SUCCESS!(Status));
 
             RtlInitUnicodeString(
                 core::ptr::addr_of_mut!(TargetKeyName),
@@ -287,6 +288,7 @@ pub unsafe extern "C" fn AtaSetRegistryKey(
                                         core::mem::size_of::<[WCHAR; 9]>(),
                                         RUSTCONV_WSTR_447B6E0274D3.as_ptr(),
                                         TargetId as core::ffi::c_int);
+        ASSERT!(NT_SUCCESS!(Status));
 
         RtlInitUnicodeString(core::ptr::addr_of_mut!(TargetKeyName),
                                TargetKeyBuffer.as_ptr());
@@ -574,6 +576,7 @@ pub unsafe extern "C" fn AtaPnpRepeatRequest(
     let mut Status: NTSTATUS;
 
     PAGED_CODE!();
+    ASSERT!(!IS_FDO!(CommonExt));
 
     TopDeviceObject = IoGetAttachedDeviceReference((*FdoExt).Self_);
 
@@ -726,6 +729,7 @@ pub unsafe extern "system" fn AtaAddChannel(
         FdoFormat.as_ptr(),
         AtapFdoNumber,
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         core::ptr::addr_of_mut!(DeviceName),

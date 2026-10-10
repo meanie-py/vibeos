@@ -916,6 +916,7 @@ unsafe extern "C" fn ViaPataGetControllerProperties(
     if HwFlags & (HW_FLAGS_CHECK_BRIDGE as u32) != 0 {
         if ((PciFindDevice(Some(ViaQuerySouthBridgeInformation), (&raw mut HwFlags).cast())) == 0) {
             ERR!(b"Unable to find the VIA bridge\n\0".as_ptr() as *const i8);
+            ASSERT!(FALSE);
             return STATUS_NO_MATCH;
         }
     }
@@ -1049,6 +1050,7 @@ pub unsafe extern "C" fn ViaGetControllerProperties(
     let mut HwFlags: ULONG = 0;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_VIA);
 
     if (*Controller).Pci.DeviceID == PCI_DEV_VT6421A_RAID {
         return Via6421GetControllerProperties(Controller);

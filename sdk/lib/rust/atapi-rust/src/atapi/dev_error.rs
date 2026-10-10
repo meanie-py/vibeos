@@ -110,6 +110,7 @@ unsafe extern "C" fn AtaDeviceSendRequestSense(
     let Cdb: PCDB;
 
     ASSERT_REQUEST!(FailedRequest);
+    ASSERT!((*(*FailedRequest).Srb).SenseInfoBufferLength > 0);
 
     (*Request).Flags = REQUEST_FLAG_DATA_IN |
                        REQUEST_FLAG_PACKET_COMMAND |
@@ -339,6 +340,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     let mut OldIrql: KIRQL;
 
     ASSERT_REQUEST!(Request);
+    ASSERT!(Request != &raw mut (*PortData).Worker.InternalRequest);
 
     SrbStatus = (SRB_STATUS!((*Request).SrbStatus)) as u8;
 
@@ -348,6 +350,7 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
     SRB_SET_FLAGS!((*Request).Srb, RetryCount);
 
     if RetryCount > 3 {
+        ASSERT!((SrbStatus as u32) != SRB_STATUS_BUSY);
     } else {
         match (SrbStatus) as u32 {
             SRB_STATUS_BUS_RESET | SRB_STATUS_TIMEOUT => {
@@ -374,10 +377,13 @@ unsafe extern "C" fn AtaDeviceCompleteFailedRequest(PortData: PATAPORT_PORT_DATA
         return;
     }
 
+    ASSERT!(SRB_STATUS!(SrbStatus) != (SRB_STATUS_SUCCESS as i32));
+
     (*Request).__bindgen_anon_3.__bindgen_anon_1.InternalState = (REQUEST_STATE_FREEZE_QUEUE) as u8;
 
     OldIrql = KeAcquireInterruptSpinLock((*PortData).InterruptObject);
 
+    ASSERT!((*PortData).Worker.PausedSlotsBitmap & (1 << (*Request).Slot));
     (*PortData).Worker.PausedSlotsBitmap &= !(1 << (*Request).Slot);
 
     KeReleaseInterruptSpinLock((*PortData).InterruptObject, OldIrql);

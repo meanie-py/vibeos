@@ -212,6 +212,7 @@ pub unsafe extern "C" fn SvwSataGetControllerProperties(
     let mut IoBase: PUCHAR;
 
     PAGED_CODE!();
+    ASSERT!((*Controller).Pci.VendorID as u32 == PCI_VEN_SERVERWORKS);
 
     i = 0;
     while i < RTL_NUMBER_OF!(SvwSataControllerList) {

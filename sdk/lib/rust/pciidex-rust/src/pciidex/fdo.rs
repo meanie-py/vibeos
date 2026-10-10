@@ -80,6 +80,7 @@ pub unsafe extern "C" fn AtaChanEnableInterruptsSync(
     } else {
         InterruptObject = (*ChanData).InterruptObject;
     }
+    ASSERT!(InterruptObject);
 
     OldIrql = KeAcquireInterruptSpinLock(InterruptObject);
     (((*ChanData).EnableInterrupts).unwrap_unchecked())(ChanData as *mut core::ffi::c_void, Enable);
@@ -207,6 +208,8 @@ pub unsafe extern "C" fn AtaCtrlDowngradeInterfaceSpeed(ChannelContext: PVOID) -
 #[no_mangle]
 pub unsafe extern "C" fn AtaCtrlAbortChannel(ChannelContext: PVOID, DisableInterrupts: BOOLEAN) {
     let ChanData: *mut CHANNEL_DATA_COMMON = ChannelContext as *mut CHANNEL_DATA_COMMON;
+
+    ASSERT!((KeGetCurrentIrql() as u32) > (DISPATCH_LEVEL as u32));
 
     (*ChanData).ActiveSlotsBitmap = 0;
     (*ChanData).ActiveQueuedSlotsBitmap = 0;
@@ -652,6 +655,7 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
             fresh
         },
     );
+    ASSERT!(NT_SUCCESS!(Status));
 
     RtlInitUnicodeString(
         &mut DeviceName,
@@ -700,6 +704,7 @@ unsafe extern "C" fn PciIdeXPdoCreateDevice(
 
     (*PdoExtension).Channel = ChannelNumber;
     (*PdoExtension).ChanData = ((*FdoExtension).Controller.Channels[ChannelNumber as usize]).cast();
+    ASSERT!((*PdoExtension).ChanData);
 
     (*(*PdoExtension).ChanData).PdoExt = PdoExtension;
 
