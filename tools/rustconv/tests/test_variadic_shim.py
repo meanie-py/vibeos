@@ -96,7 +96,10 @@ def test_a_forwarded_va_list_starts_from_the_trampolines():
 
 def test_the_extern_keeps_a_mut_pointer_type():
     # ftfd's sprintf: stripping every `mut` declared `buf: *i8`, which does not parse.
-    src = 'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...) -> i32 {\n    0\n}\n'
+    src = (
+        'pub unsafe extern "C" fn sprintf(mut buf: *mut i8, fmt: *const i8, mut args: ...)'
+        " -> i32 {\n    0\n}\n"
+    )
     out = v.rewrite(src).text
     assert "pub fn sprintf(buf: *mut i8, fmt: *const i8, ...) -> i32;" in out
 
