@@ -358,7 +358,7 @@ impl SHARED {
 }
 
 impl CImageDx {
-    /// atlimagedx.h's member TEMPLATE `template <typename FN_T> static bool get_fn(FN_T& fn,
+    /// atlimagedx.h's member TEMPLATE `template <typename FN_T> static bool CImageDx::get_fn(FN_T& fn,
     /// const char *name)`, hand-ported (cppapp does not generate templates): resolve `fn`
     /// from gdiplus.dll on first use. `F` is the field's function-pointer type; FARPROC and
     /// it are the same size, as the C++ reinterpret_cast assumes.

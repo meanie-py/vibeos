@@ -1340,6 +1340,10 @@ def external_reached(model: ModuleModel) -> set[tuple[str, str]]:
     ext = [c for c in model.classes.values() if c.external]
     if not ext:
         return set()
+    if any(m.calls for c in model.classes.values() for m in c.methods) or any(
+        f.calls for f in model.functions
+    ):
+        return _reached_by_calls(model, ext)
     texts = [m.lowered or "" for c in model.classes.values() if not c.external for m in c.methods]
     texts += [t for c in model.classes.values() for m in c.methods for _, t in m.lowered_inits]
     texts += [f.lowered for f in model.functions]
@@ -1588,6 +1592,46 @@ def qualify_static_calls(rust: str, model: ModuleModel) -> str:
         return f"{next(iter(owners[m.group(1)]))}::{m.group(0)}"
 
     return re.sub(rf"(?<![\w.:>])({alt})\s*\(", fix, rust)
+
+
+def _reached_by_calls(model: ModuleModel, ext: list[ClassModel]) -> set[tuple[str, str]]:
+    """External reach from the calls the AST RESOLVED (cpp_lower records them), not from
+    names: `img.Attach(..)` on a CImageDx no longer reaches CImage::Attach. mspaint reached
+    21 CImage methods by name and needs 8. An unresolved call ("*", name) -- an inherited
+    ATL window-template member through an implicit `this` -- is CWindow's."""
+    ext_names = {c.name for c in ext}
+    by = {(c.name, m.rust_name): m for c in ext for m in c.methods}
+    plain_cwindow = any(
+        not c.external and not atl_template(c) and any(short(b.name) == "CWindow" for b in c.bases)
+        for c in model.classes.values()
+    )
+    glue_only = frozenset() if plain_cwindow else ATL_IMPL_METHODS
+
+    def targets(calls) -> set[tuple[str, str]]:
+        out: set[tuple[str, str]] = set()
+        for cls, name in calls:
+            if cls == "*":
+                # Unresolved only through an ATL window template base: CWindow's member.
+                out |= {k for k in by if k[0] == "CWindow" and k[1] == name}
+            elif cls in ext_names:
+                out.add((cls, name))
+        return {k for k in out if k in by and not (k[0] == "CWindow" and k[1] in glue_only)}
+
+    todo = set()
+    for c in model.classes.values():
+        if not c.external:
+            for m in c.methods:
+                todo |= targets(m.calls)
+    for f in model.functions:
+        todo |= targets(f.calls)
+    reached: set[tuple[str, str]] = set()
+    while todo:
+        k = todo.pop()
+        if k in reached:
+            continue
+        reached.add(k)
+        todo |= targets(by[k].calls) - reached
+    return reached
 
 
 def static_paths(rust: str, model: ModuleModel) -> str:

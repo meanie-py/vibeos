@@ -67,6 +67,8 @@ class Method:
     lowered: str | None = None  # the body after cpp_lower, what a worker translates
     lowered_inits: list[tuple[str, str]] = field(default_factory=list)
     unplaced: list[str] = field(default_factory=list)
+    # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
+    calls: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def signature_key(self) -> str:
@@ -149,6 +151,8 @@ class FreeFunc:
     lowered: str
     static: bool = False
     unplaced: list[str] = field(default_factory=list)
+    # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
+    calls: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -986,11 +990,13 @@ class _Extractor:
             out = low.lower(node, span, owner)
             target.lowered = out.text
             target.unplaced = out.unplaced
+            target.calls = [list(c) for c in out.calls]
         for m, member, node, owner in self.pending_inits:
             span = _span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
+            m.calls = sorted({*map(tuple, m.calls), *out.calls})
             text = _ctor_args(out.text, (member, owner.split("::")[-1]))
             if text is not None:
                 m.lowered_inits.append((member, text))

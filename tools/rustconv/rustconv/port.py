@@ -4370,6 +4370,28 @@ def hand_span(text: str, name: str, *, where: str) -> tuple[int, int]:
     only; anything else between them is refused rather than captured or dropped."""
     from . import crate_fix as cf
 
+    if "::" in name:
+        # `Class::method`: one method inside an assembled `impl Class { .. }` (cppapp), e.g.
+        # a hand-repaired CInitGDIPlus::Init -- the impl holds the class's other methods too.
+        cls, meth = name.split("::", 1)
+        for m in re.finditer(rf"(?m)^impl\s+{re.escape(cls)}\s*\{{", text):
+            close = cf._matching_brace(text, m.end() - 1)
+            if close is None:
+                continue
+            fm = re.search(
+                rf"(?m)^[ \t]*(?:pub[ \t]+)?(?:unsafe[ \t]+)?fn[ \t]+{re.escape(meth)}\s*[<(]",
+                text[m.end() : close],
+            )
+            if fm is None:
+                continue
+            start = m.end() + fm.start()
+            brace = text.index("{", start)
+            end = cf._matching_brace(text, brace)
+            if end is None:
+                continue
+            return _with_leading_comments(text, start), end + 1
+        raise PortError(f"{where} 0 items named {name} -- re-capture or drop it")
+
     spans = list(item_spans(text, name))
     for m in _EXTERN_BLOCK.finditer(text):
         close = cf._matching_brace(text, m.end() - 1)

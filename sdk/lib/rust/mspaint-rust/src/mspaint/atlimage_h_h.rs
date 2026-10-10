@@ -526,28 +526,36 @@ impl CInitGDIPlus {
     
         if (*this_).m_dwToken == 0 {
             if (*this_).m_hInst.is_null() {
-                let name: [u16; 12] = ['g' as u16, 'd' as u16, 'i' as u16, 'p' as u16, 'l' as u16, 'u' as u16, 's' as u16, '.' as u16, 'd' as u16, 'l' as u16, 'l' as u16, 0];
-                (*this_).m_hInst = LoadLibrary(TEXT(name.as_ptr()));
+                // `::LoadLibrary(TEXT("gdiplus.dll"))`, NUL-terminated.
+                let name: [u16; 12] = [
+                    'g' as u16, 'd' as u16, 'i' as u16, 'p' as u16, 'l' as u16, 'u' as u16,
+                    's' as u16, '.' as u16, 'd' as u16, 'l' as u16, 'l' as u16, 0,
+                ];
+                (*this_).m_hInst = LoadLibraryW(name.as_ptr());
             }
     
             if !(*this_).m_hInst.is_null()
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Startup), b"GdiplusStartup\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Shutdown), b"GdiplusShutdown\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromFile), b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromHBITMAP), b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromStream), b"GdipCreateBitmapFromStream\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateHBITMAPFromBitmap), b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).DisposeImage), b"GdipDisposeImage\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecoders), b"GdipGetImageDecoders\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecodersSize), b"GdipGetImageDecodersSize\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncoders), b"GdipGetImageEncoders\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncodersSize), b"GdipGetImageEncodersSize\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToFile), b"GdipSaveImageToFile\0".as_ptr() as *const i8)
-                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToStream), b"GdipSaveImageToStream\0".as_ptr() as *const i8)
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Startup), b"GdiplusStartup\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).Shutdown), b"GdiplusShutdown\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromFile), b"GdipCreateBitmapFromFile\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromHBITMAP), b"GdipCreateBitmapFromHBITMAP\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateBitmapFromStream), b"GdipCreateBitmapFromStream\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).CreateHBITMAPFromBitmap), b"GdipCreateHBITMAPFromBitmap\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).DisposeImage), b"GdipDisposeImage\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecoders), b"GdipGetImageDecoders\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageDecodersSize), b"GdipGetImageDecodersSize\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncoders), b"GdipGetImageEncoders\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).GetImageEncodersSize), b"GdipGetImageEncodersSize\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToFile), b"GdipSaveImageToFile\0".as_ptr() as *const i8).is_some()
+                && (*this_)._get_fun(core::ptr::addr_of_mut!((*this_).SaveImageToStream), b"GdipSaveImageToStream\0".as_ptr() as *const i8).is_some()
             {
-                let mut input: Gdiplus_GdiplusStartupInput = Gdiplus_GdiplusStartupInput__zeroed();
-                let mut output: Gdiplus_GdiplusStartupOutput = Gdiplus_GdiplusStartupOutput__zeroed();
-                ((*this_).Startup)(
+                // `GdiplusStartupInput input;` runs gdiplusinit.h's constructor with its
+                // defaults: GdiplusVersion = 1, no callback, no suppression. Zeroed, the
+                // version 0 makes GdiplusStartup refuse. Output has no constructor.
+                let mut input: Gdiplus_GdiplusStartupInput = core::mem::zeroed();
+                input.GdiplusVersion = 1;
+                let mut output: Gdiplus_GdiplusStartupOutput = core::mem::zeroed();
+                ((*this_).Startup.unwrap())(
                     core::ptr::addr_of_mut!((*this_).m_dwToken),
                     core::ptr::addr_of_mut!(input),
                     core::ptr::addr_of_mut!(output),
@@ -591,5 +599,18 @@ impl CInitGDIPlus {
             (*this_).ReleaseGDIPlus();
         }
         LeaveCriticalSection(core::ptr::addr_of_mut!((*this_).m_sect));
+    }
+}
+
+impl CInitGDIPlus {
+    /// atlimage.h's member TEMPLATE `template <typename T_FUN> T_FUN _get_fun(T_FUN& fun,
+    /// LPCSTR name)`, hand-ported (cppapp does not generate templates): resolve `fun` from
+    /// m_hInst if it is still NULL, and return it (the caller tests it for non-NULL).
+    pub unsafe fn _get_fun<F: Copy>(&mut self, fun: *mut Option<F>, name: *const i8) -> Option<F> {
+        if (*fun).is_none() {
+            let p = GetProcAddress(self.m_hInst as _, name as _);
+            *fun = core::mem::transmute_copy(&p);
+        }
+        *fun
     }
 }

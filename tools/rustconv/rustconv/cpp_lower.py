@@ -60,6 +60,10 @@ _ATL_GLUE_DEFAULTS: dict[tuple[str, int], list[str | None]] = {
 class Lowered:
     text: str
     unplaced: list[str] = field(default_factory=list)
+    # (class short name, rust method name) of every member call the AST resolved: what the
+    # body really calls, for external reach. ("*", name) where the callee was not resolved
+    # (an inherited ATL template member through an implicit `this`).
+    calls: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -113,6 +117,7 @@ class Lowerer:
         text = cdp_text(f, lo, hi)
         edits: list[tuple[int, int, str]] = []
         unplaced: list[str] = []
+        self._calls: set[tuple[str, str]] = set()
 
         placed: set[tuple[int, int, str]] = set()
 
@@ -180,7 +185,7 @@ class Lowerer:
         late: list = []
         walk(node)
         edits.extend(late)
-        return Lowered(_apply(text, edits), unplaced)
+        return Lowered(_apply(text, edits), unplaced, sorted(self._calls))
 
     # -- rules -------------------------------------------------------------------------
 
@@ -188,6 +193,10 @@ class Lowerer:
         if not n.get("name"):
             return  # the implicit hop through an anonymous union: the field's rename spells it
         info = self.decls.get(n.get("referencedMemberDecl", ""))
+        if info is not None and info.kind != "field":
+            self._calls.add((info.owner.split("::")[-1], info.rust_name))
+        elif info is None and n.get("name"):
+            self._calls.add(("*", n["name"]))
         base = (n.get("inner") or [{}])[0]
         while base.get("kind") == "MemberExpr" and not base.get("name"):
             base = (base.get("inner") or [{}])[0]
@@ -244,6 +253,7 @@ class Lowerer:
         if span is None or name is None:
             return False
         cls = info.owner.split("::")[-1]
+        self._calls.add((cls, info.rust_name))
         edits.append((span[0], name[0] - lo - span[0] + name[1], f"{cls}::{info.rust_name}"))
         return True
 
@@ -285,6 +295,7 @@ class Lowerer:
         span = _node_span(obj, f, lo, hi) if obj else None
         if info is None or span is None:
             return None
+        self._calls.add((info.owner.split("::")[-1], info.rust_name))
         edits.append((span[0], 0, "("))
         edits.append((span[1], 0, f").{info.rust_name}()"))
         # A method call needs no upcast: autoderef reaches CWindow's op_to_HWND through the
@@ -324,6 +335,7 @@ class Lowerer:
             return
         if info is None or not info.static or info.kind != "method":
             return
+        self._calls.add((info.owner.split("::")[-1], info.rust_name))
         # The range END is the name token: `RegistrySettings::SetWallpaper(..)` BEGINS
         # at its qualifier, and qualifying that token wrote `X::SetWallpaper::SetWallpaper`.
         t = _tok(n["range"]["end"], f, lo, hi)
