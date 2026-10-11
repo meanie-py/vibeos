@@ -18,8 +18,6 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 extern "system" {
     fn FatDecodeFileObject(FileObject: *mut FILE_OBJECT, Vcb: *mut *mut VCB, Fcb: *mut *mut FCB, Ccb: *mut *mut CCB) -> u32;
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
-    fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
     } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
     fn FatCommonCreate(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
     fn FatCommonClose(Vcb: *mut VCB, Fcb: *mut FCB, Ccb: *mut CCB, TypeOfOpen: u32, arg1: u8, arg2: u8, VcbDeleted: *mut u8) -> NTSTATUS;
@@ -63,10 +61,7 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
     let mut major_function: u8 = 0;
 
     // Set the wait and in-FSP flags
-    SetFlag(
-        addr_of_mut!((*irp_context).Flags) as *mut u32,
-        IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_IN_FSP,
-    );
+    SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_IN_FSP);
 
     // If a file object exists, locate the volume device object via CONTAINING_RECORD
     if !(*irp_sp).FileObject.is_null() {
@@ -218,10 +213,7 @@ pub unsafe extern "system" fn FatFspDispatch(Context: *mut core::ffi::c_void) {
                 + core::mem::offset_of!(WORK_QUEUE_ITEM, List);
             let irp_context_new = (entry as *mut u8).sub(offset) as *mut IRP_CONTEXT;
             irp_context = irp_context_new;
-            SetFlag(
-                addr_of_mut!((*irp_context).Flags) as *mut u32,
-                IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_IN_FSP,
-            );
+            SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_IN_FSP);
             irp = (*irp_context).OriginatingIrp;
             irp_sp = IoGetCurrentIrpStackLocation(irp);
             continue;
@@ -752,3 +744,10 @@ pub unsafe extern "system" fn FatRemoveOverflowEntry(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> i32 {
+    (Flags as u64 & Flag as u64) as i32
+}

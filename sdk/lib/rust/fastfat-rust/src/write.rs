@@ -25,7 +25,6 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlEnterFileSystem, FsRtlExit
 extern "system" {
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...) -> i32; } extern "system" {
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, FcbOrDcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn FatIsIoRangeValid(Vcb: PVCB, StartingByte: LARGE_INTEGER, ByteCount: u32) -> u8;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
@@ -4563,3 +4562,10 @@ pub unsafe extern "system" fn FatCommonWrite(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}

@@ -53,14 +53,11 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 extern "system" {
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn NodeType(Fcb: *mut FCB) -> u32;
     fn FatGetFirstChild(Fcb: *mut FCB) -> *mut FCB;
     fn FatGetNextSibling(Fcb: *mut FCB) -> *mut FCB;
     } extern "C" { fn DebugTrace(level: i32, component: u32, message: *const i8, ...); } extern "system" {
     fn DebugUnwind(name: *const i8);
-    fn ClearFlag(flags: *mut u32, bits: u32);
-    fn SetFlag(flags: *mut u32, bits: u32);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
@@ -84,7 +81,6 @@ extern "system" {
     fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
     fn DbgDoit(val: i32);
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoctlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, InternalDeviceIoControl: i32, RemapStatus: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
-    fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8;
     fn DebugDump(format: *const u8, arg: i32, fcb: *mut FCB);
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -980,10 +976,7 @@ pub unsafe extern "system" fn FatCreateFcb(
 
         // If paging file, set flags
         if IsPagingFile != 0 {
-            SetFlag(
-                core::ptr::addr_of_mut!((**p_fcb).FcbState),
-                FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE,
-            );
+            SetFlag!((**p_fcb).FcbState, FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE);
         }
 
         // Allocate main resource
@@ -1641,7 +1634,7 @@ pub unsafe extern "system" fn FatCreateIrpContext(
                 && BooleanFlagOn((*irp).Flags, IRP_NOCACHE) != 0
                 && BooleanFlagOn(((*irp_sp).Flags) as u32, SL_WRITE_THROUGH) != 0)
         {
-            SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
+            SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
         }
     } else if (*irp_context).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8 {
         (*irp_context).RealDevice = (*(*irp_sp).Parameters.MountVolume.Vpb).RealDevice;
@@ -1651,14 +1644,14 @@ pub unsafe extern "system" fn FatCreateIrpContext(
     //  Set the wait parameter
     //
     if wait != 0 {
-        SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT);
+        SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     //
     //  Set the recursive file system call parameter.
     //
     if IoGetTopLevelIrp() != irp {
-        SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL);
+        SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL);
     }
 
     //
@@ -1832,10 +1825,7 @@ pub unsafe extern "system" fn FatSwapVpb(
             // the swap.
             (*Vcb).SwapVpb = core::ptr::null_mut();
             FatSetVcbCondition(Vcb, VcbBad);
-            SetFlag(
-                core::ptr::addr_of_mut!((*Vcb).VcbState),
-                VCB_STATE_FLAG_VPB_MUST_BE_FREED,
-            );
+            SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_VPB_MUST_BE_FREED);
 
             Result = 1; // TRUE
         }
@@ -1878,25 +1868,19 @@ pub unsafe extern "system" fn FatCheckForDismount(
         FatSwapVpb(IrpContext, Vcb);
 
         // Clear the VPB_MOUNTED bit.
-        ClearFlag((&mut (*Vpb).Flags as *mut u16) as *mut u32, VPB_MOUNTED);
+        ClearFlag!((*Vpb).Flags, VPB_MOUNTED);
 
         // Clear VPB_LOCKED and VPB_DIRECT_WRITES_ALLOWED.
-        ClearFlag(
-            (&mut (*Vpb).Flags as *mut u16) as *mut u32,
-            VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED,
-        );
+        ClearFlag!((*Vpb).Flags, VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED);
 
         IoReleaseVpbSpinLock(SavedIrql);
 
         // Mark dismount in progress.
         NT_ASSERT!(((FlagOn(
-            ((*Vcb).VcbState as u8) as u32,
+            (*Vcb).VcbState as u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         ) == 0) as BOOLEAN) as i32);
-        SetFlag(
-            core::ptr::addr_of_mut!((*Vcb).VcbState),
-            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-        );
+        SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS);
 
         // Close down internal opens.
         FatTearDownVcb(IrpContext, Vcb);
@@ -1922,14 +1906,11 @@ pub unsafe extern "system" fn FatCheckForDismount(
         } else {
             IoReleaseVpbSpinLock(SavedIrql);
 
-            NT_ASSERT!((FlagOn(
-                ((*Vcb).VcbState as u8) as u32,
+            NT_ASSERT!(((FlagOn(
+                (*Vcb).VcbState as u32,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-            ) as BOOLEAN) as i32);
-            ClearFlag(
-                &mut (*Vcb).VcbState as *mut u32,
-                VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-            );
+            ) != 0) as BOOLEAN) as i32);
+            ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS);
         }
     } else if Force != 0 {
         // Forcing the dismount; swap the VPB.
@@ -6386,3 +6367,15 @@ pub unsafe extern "system" fn FatScanForDataTrack(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Mask: u32) -> i32 {
+    (Flags as u64 & Mask as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8 {
+    ((Flags as u64 & Bit as u64) != 0) as u8
+}
