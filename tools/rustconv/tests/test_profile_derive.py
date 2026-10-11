@@ -1674,6 +1674,7 @@ def test_macro_kind_is_linear_on_an_unclosed_identifier_run():
     assert time.time() - t < 1
     assert _macro_kind("((unsigned long)(0x10) | (DWORD) 5)") == "literal"
 
+
 def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     from rustconv.profile_derive import xmacro_enumerators
 
@@ -1688,6 +1689,8 @@ def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     )
     got = xmacro_enumerators(tmp_path / "kbd.c", frozenset({"K_TAB", "K_ENTER", "VK_TAB"}))
     assert got == {"K_TAB": ("enum", "48"), "K_ENTER": ("enum", "50")}
+
+
 def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
     """cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on one line: every member after the
     first was reported UNOWNED, a false §9.112 alarm that blocked the module."""

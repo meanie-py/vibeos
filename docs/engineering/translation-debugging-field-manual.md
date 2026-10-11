@@ -12990,6 +12990,19 @@ or generated C shim is this hazard**, and it is invisible from the Rust side —
 correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
 an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
 
+### A temporary's `.GetString()` bound by a macro's `let` is a dangling pointer
+**Symptom.** A formatted string comes out empty or garbled although the format and arguments
+are right at the call site. Rust mspaint opened with an empty title bar; appstorm scored it
+PASS (`first=""`), so only the screenshot showed it.
+**Cause.** `atl_format!(s, CStringW::from_resource(IDS_WINDOWTITLE).GetString(), ..)`: the
+macro bound its format as `let __fmt: *const u16 = $fmt;`. A temporary in a `let`
+initializer is dropped at that `;`, so the pointer is to freed memory by the time
+`_scwprintf`/`swprintf` read it. Neither rustc nor any lint flags it: the value is a raw pointer.
+**Fix.** Bind macro arguments as `match` scrutinees (`match $fmt { __fmt => { .. } }`), whose
+temporaries live to the end of the match; atlclasses' `atl_format!` now does this for the
+format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
+taking `.GetString()`.
+
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
 call anywhere near. The syscall that did it **succeeded** and returned the right value in the

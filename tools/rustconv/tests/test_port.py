@@ -543,6 +543,37 @@ def test_a_definition_spelled_with_an_sdk_alias_exports_the_real_name(tmp_path, 
     assert '#[no_mangle]\npub unsafe extern "C" fn Helper()' in out
 
 
+def test_a_struct_holding_a_non_copy_struct_is_not_copy():
+    from rustconv.port import drop_impossible_copy
+
+    island = (
+        "#[repr(C)]\n#[derive(Debug)]\npub struct ATL_IAtlStringMgr {\n"
+        "    pub vtable_: *const u8,\n}\n"
+        "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct ATL_CAtlStringMgr {\n"
+        "    pub _base: ATL_IAtlStringMgr,\n    pub m_MemMgr: *mut ATL_IAtlMemMgr,\n}\n"
+        "#[derive(Debug, Copy, Clone)]\npub struct Holder {\n    pub m: ATL_CAtlStringMgr,\n}\n"
+        "#[derive(Debug, Copy, Clone)]\npub struct ByPtr {\n    pub p: *mut ATL_IAtlStringMgr,\n}\n"
+    )
+    out = drop_impossible_copy(island)
+    assert "#[derive(Copy, Clone)]\n#[repr(C)]\npub struct ATL_CAtlStringMgr" not in out
+    assert "#[derive(Debug)]\npub struct Holder" in out
+    assert "#[derive(Debug, Copy, Clone)]\npub struct ByPtr" in out
+    assert drop_impossible_copy(out) == out
+
+
+def test_flip_lists_the_variadic_shim_when_integrate_wrote_one(tmp_path, monkeypatch):
+    """mspaint's flip commented out the C++ and left rust_varargs_shim.c out of the target:
+    ShowError's trampoline would never have been compiled."""
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    (tmp_path / "m").mkdir()
+    (tmp_path / "m" / "rust_varargs_shim.c").write_text("/* shim */\n")
+    state = {"stem": "m", "crate": "m-rust", "target": "m", "module_dir": "m", "tus": ["m/a.c"]}
+    cml = "list(APPEND SOURCE\n    a.c\n    m.h)\n\nadd_executable(m ${SOURCE} m.rc)\n"
+    out = port.flip_cmake(cml, state)
+    assert "    rust_cohab_stub.c\n    rust_varargs_shim.c\n    m.h)" in out
+    assert port.flip_cmake(out, state) == out, "idempotent"
+
+
 def test_crt_data_is_read_through_its_accessor(tmp_path):
     # clipbrd/mplay32: `__argc`/`__wargv` are dllimport data, reachable only via the IAT slot.
     rs = tmp_path / "main.rs"
@@ -818,7 +849,7 @@ def test_a_stale_import_of_a_variadic_entry_is_dropped(tmp_path):
 
 def test_a_derived_arm_keeps_the_old_arms_hand_section():
     old = (
-        "case \"$DRIVER\" in\n"
+        'case "$DRIVER" in\n'
         "  cmd)\n    BLOCKLIST_FUNCS=0\n"
         "    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n    # <<< hand\n"
         "    ;;\n"

@@ -179,9 +179,7 @@ def test_plain_forwarder_without_null_still_works():
 
 def test_batch_builds_the_sibling_map_itself():
     """`lower_trivial_c_functions` must supply signatures without the caller helping."""
-    callee = dep(
-        "g", "int", [("int", "a"), ("struct lc*", "l")], "return 0;"
-    )
+    callee = dep("g", "int", [("int", "a"), ("struct lc*", "l")], "return 0;")
     caller = dep("f", "int", [("int", "a")], "return g(a, NULL);", callees=["g"])
     out = lower_trivial_c_functions([callee, caller])
     assert out["f"].shape == "forwarder_with_null"

@@ -40,13 +40,19 @@ def test_deterministic_only_spends_nothing_and_still_assembles(tmp_path):
     out = tmp_path / "mathf.rs"
     proc = subprocess.run(
         [
-            sys.executable, "-m", "rustconv", "translate",
+            sys.executable,
+            "-m",
+            "rustconv",
+            "translate",
             str(SUBJECT.relative_to(REPO_ROOT)),
-            "--target", "msvcrt",
-            "--output-crate", "msvcrt-crt-rust",
+            "--target",
+            "msvcrt",
+            "--output-crate",
+            "msvcrt-crt-rust",
             "--deterministic-only",
             "--no-resume",  # no cache to hide behind: a paid call would have to be made
-            "-o", str(out),
+            "-o",
+            str(out),
         ],
         cwd=REPO_ROOT,
         env=env,
