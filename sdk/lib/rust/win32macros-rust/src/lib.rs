@@ -1208,6 +1208,50 @@ pub unsafe fn wine_dbgstr_w(s: *const u16) -> *const core::ffi::c_char {
     unsafe { wine_dbgstr_wn(s, -1) }
 }
 
+extern "C" {
+    fn wine_dbg_sprintf(format: *const core::ffi::c_char, ...) -> *const core::ffi::c_char;
+}
+
+/// GUID's layout: fixed-width fields, the same on every target (shareable, unlike `HWND`).
+#[repr(C)]
+struct GuidLayout {
+    data1: u32,
+    data2: u16,
+    data3: u16,
+    data4: [u8; 8],
+}
+
+/// wine/debug.h:181 `wine_dbgstr_guid`, an inline no library exports (rpcss found it defined
+/// nowhere; comctl32 carries its own copy). Generic over the pointee so each island's own
+/// `GUID` passes straight in.
+pub unsafe fn wine_dbgstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
+    if id.is_null() {
+        return b"(null)\0".as_ptr() as *const core::ffi::c_char;
+    }
+    if (id as usize) >> 16 == 0 {
+        return unsafe {
+            wine_dbg_sprintf(b"<guid-0x%04lx>\0".as_ptr() as *const core::ffi::c_char, (id as usize) & 0xffff)
+        };
+    }
+    let g = unsafe { &*(id as *const GuidLayout) };
+    let d = g.data4;
+    unsafe {
+        wine_dbg_sprintf(
+            b"{%08x-%04x-%04x-%02x%02x-%02x%02x%02x%02x%02x%02x}\0".as_ptr() as *const core::ffi::c_char,
+            g.data1 as core::ffi::c_uint, g.data2 as core::ffi::c_uint, g.data3 as core::ffi::c_uint,
+            d[0] as core::ffi::c_uint, d[1] as core::ffi::c_uint, d[2] as core::ffi::c_uint,
+            d[3] as core::ffi::c_uint, d[4] as core::ffi::c_uint, d[5] as core::ffi::c_uint,
+            d[6] as core::ffi::c_uint, d[7] as core::ffi::c_uint,
+        )
+    }
+}
+
+/// wine/debug.h:392 `debugstr_guid(id)` is `wine_dbgstr_guid(id)`.
+#[inline(always)]
+pub unsafe fn debugstr_guid<T>(id: *const T) -> *const core::ffi::c_char {
+    unsafe { wine_dbgstr_guid(id) }
+}
+
 /// wine/debug.h: `wine_dbgstr_a(s)` is `wine_dbgstr_an(s, -1)`, an inline like the above.
 #[inline(always)]
 pub unsafe fn wine_dbgstr_a(s: *const core::ffi::c_char) -> *const core::ffi::c_char {
@@ -1729,6 +1773,12 @@ pub unsafe fn InterlockedDecrement(addend: *mut i32) -> i32 {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __wine_dprintf {
+    // A translation keeps C's format as a Rust string literal (`WARN!("x %lu\n", e)`); the
+    // callee is C printf, so it gets the NUL-terminated bytes.
+    ($cls:expr, $dbch:expr, $fmt:literal $(, $a:expr)* $(,)?) => {
+        $crate::__wine_dprintf!($cls, $dbch,
+            concat!($fmt, "\0").as_ptr() as *const core::ffi::c_char $(, $a)*)
+    };
     ($cls:expr, $dbch:expr, $fmt:expr $(, $a:expr)* $(,)?) => {{
         let __dbch: *mut __wine_debug_channel = $dbch;
         if (*__dbch).flags as core::ffi::c_int & (1 << $cls) != 0 {

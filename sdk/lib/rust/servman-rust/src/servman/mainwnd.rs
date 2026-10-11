@@ -942,7 +942,7 @@ unsafe extern "system" fn MainWndProc(
 
                         let _ = Header_SetItem!((*Info).hHeader, (*pnmv).iSubItem, core::ptr::addr_of_mut!(hdi));
 
-                        let _ = ListView_SortItemsEx!((*Info).hListView, CompareFunc, Info as LPARAM);
+                        let _ = ListView_SortItemsEx!((*Info).hListView, Some(CompareFunc), Info as LPARAM);
                     }
 
                     __c if __c == LVN_ITEMCHANGED as u32 => {

@@ -18,7 +18,6 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 extern "system" {
     static mut FatDisableParentCheck: i32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, msg: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
     static mut FatData: FAT_DATA;
     fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
@@ -43,7 +42,6 @@ extern "system" {
     static FatDiskAccountingEnabled: BOOLEAN;
     fn CcSetAdditionalCacheAttributesEx(FileObject: PFILE_OBJECT, Flags: u32);
     fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> i64; // LBO
-    fn FlagOn(flags: u32, mask: u32) -> i32;
     fn DbgDoit(pin: u32);
     fn PagedCode();
     fn ExIsResourceAcquiredSharedLite(resource: *const ERESOURCE) -> u8;
@@ -586,7 +584,7 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // Accept this assertion at face value.  It comes from GetDirentForFcbOrDcb,
     // and is reliable.
-    if FlagOn(((*irp_context).Flags as u8) as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
+    if FlagOn((*irp_context).Flags as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
         return 1;
     }
 
@@ -922,7 +920,6 @@ const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
 const FAT_NTC_FCB: u32 = 0x0502; // placeholder, must be correct value
 
 unsafe extern "system" {
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn FatNormalizeAndRaiseStatus(irp_context: *mut IRP_CONTEXT, status: i32);
 }
 
@@ -1050,10 +1047,7 @@ pub unsafe extern "system" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT
 
     if !NT_SUCCESS(raise_iosb.__bindgen_anon_1.Status) {
         if force_verify != 0 && !file_object.is_null() {
-            SetFlag(
-                &mut (*(*file_object).DeviceObject).Flags,
-                DO_VERIFY_VOLUME,
-            );
+            SetFlag!((*(*file_object).DeviceObject).Flags, DO_VERIFY_VOLUME);
             IoSetHardErrorOrVerifyDevice(
                 (*irp_context).OriginatingIrp,
                 (*file_object).DeviceObject,
@@ -1148,7 +1142,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         },
         IRP_MJ_WRITE => {
             let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-            NT_ASSERT!(FlagOn(((*IrpContext).Flags as u8) as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
+            NT_ASSERT!(FlagOn((*IrpContext).Flags as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
             CcMdlWriteComplete(
                 FileObject,
                 core::ptr::addr_of_mut!((*IrpSp).Parameters.Write.ByteOffset),
@@ -3526,3 +3520,15 @@ pub unsafe extern "system" fn FatSetDirtyBcb(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(flags: u32, flag: u32) -> u8 {
+    ((flags as u64 & flag as u64) != 0) as u8
+}
+
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, mask: u32) -> i32 {
+    (flags as u64 & mask as u64) as i32
+}

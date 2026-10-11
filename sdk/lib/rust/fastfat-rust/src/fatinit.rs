@@ -144,7 +144,7 @@ static FAT_CDROM_DEVICE_NAME: [u16; 10] = [0x5C, 0x46, 0x61, 0x74, 0x43, 0x64, 0
 // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
 // Windows value (0x200/0x204) is not what any TU here compiles.
 const NonPagedPoolNx: ULONG = 0;
-const POOL_NX_ALLOCATION: ULONG = 512;
+const POOL_NX_ALLOCATION: ULONG = 0; // fatprocs.h downgrades it to 0 under __REACTOS__
 const POOL_RAISE_IF_ALLOCATION_FAILURE: ULONG = 0x10;
 const PAGE_SIZE: SIZE_T = 0x1000;
 #[no_mangle]

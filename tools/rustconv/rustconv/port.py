@@ -41,6 +41,7 @@ from pathlib import Path
 from . import (
     crate_integrate,
     dead_regions,
+    default_arm,
     flex_index,
     goto_arm,
     local_macros,
@@ -574,8 +575,16 @@ def stage_island(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
     env = dict(os.environ, OUT_CRATE_DIR=str(_crate_dir(state) / "src"))
+    # From a snapshot, never the file: bash reads a script AS IT RUNS, and a concurrent derive
+    # or resolve of another module rewrites this one (its arms) mid-run. shsvcs and deskmon
+    # resumed at a shifted offset after i386 (`i686-pc-windows-gnu: command not found`), so
+    # amd64/arm64 kept the old island and normalize_island_abi never ran.
+    snapshot = STATE_ROOT / stem / "gen_driver_types.snapshot.sh"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(GEN.read_text())
+    env["GEN_SCRIPT_DIR"] = str(GEN.parent)
     proc = subprocess.run(
-        ["bash", str(GEN), stem], cwd=REPO, env=env, capture_output=True, text=True
+        ["bash", str(snapshot), stem], cwd=REPO, env=env, capture_output=True, text=True
     )
     log = STATE_ROOT / stem / "island.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -3235,6 +3244,10 @@ def stage_integrate(stem: str) -> None:
                 print(
                     f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
                 )
+        defaults = default_arm.rewrite_file(path)
+        if defaults:
+            changed += 1
+            print(f"integrate: {path.stem}: C `default:` arm(s) moved last in a match: {defaults}")
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
@@ -3362,6 +3375,30 @@ _WINE_BEGIN = "// ==== port resolve: wine debug channels (generated) ===="
 _WINE_END = "// ==== end wine debug channels ===="
 
 
+def _macro_only_names(modules_dir: Path) -> set[str]:
+    """Names the module's bodies invoke as `NAME!(` and never call as `NAME(`."""
+    text = "\n".join(p.read_text(errors="replace") for p in modules_dir.glob("*.rs"))
+    bang = set(re.findall(r"\b([A-Za-z_]\w*)!\s*[(\[{]", text))
+    called = set(re.findall(r"(?<![\w!:.])([A-Za-z_]\w*)\s*\(", text))
+    return bang - called
+
+
+def _prelude_definitions_outside_consensus(prelude: Path) -> set[str]:
+    """Names the prelude DEFINES outside the tree-consensus block. An `extern` declaration
+    is not a definition; a static with an initializer, a const, a type and a fn body are."""
+    text = prelude.read_text() if prelude.is_file() else ""
+    pat = re.escape(prelude_resolve.BEGIN) + r".*?" + re.escape(prelude_resolve.END)
+    text = re.sub(pat, "", text, flags=re.S)
+    return set(re.findall(r"^\s*pub\s+static\s+(?:mut\s+)?(\w+)\s*:[^;]*=", text, re.M)) | set(
+        re.findall(
+            r"^\s*pub(?:\([^)]*\))?\s+(?:const|type|struct|union|(?:unsafe\s+)?"
+            r"(?:extern\s+\"\w+\"\s+)?fn)\s+(\w+)[^;]*?[={(<]",
+            text,
+            re.M,
+        )
+    )
+
+
 def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     """wine/debug.h's `WINE_DEFAULT_DEBUG_CHANNEL(ch)` / `WINE_DECLARE_DEBUG_CHANNEL(ch)`:
     `static struct __wine_debug_channel __wine_dbch_ch = { (unsigned char)~0, "ch" }` and,
@@ -3391,14 +3428,17 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     )
     # win32macros-rust's WINE_TRACE!/TRACE!-family name the default channel in their
     # EXPANSION, which this text scan never sees: a call is a use of it.
+    # So is the bare `TRACE!`/`ERR!` a translation keeps, which the prelude aliases to them
+    # (`pub use win32macros_rust::WINE_ERR as ERR`): seclogon/netlogon/shsvcs called only those.
     uses_default = "__wine_dbch___default" in src or bool(
         re.search(r"\bWINE_(?:TRACE|WARN|FIXME|ERR)!?\s*\(", src)
+        or re.search(r"\b(?:TRACE|WARN|FIXME|ERR)!\s*\(", src)
     )
     lines: list[str] = []
     for ch in declared:
         name = f"__wine_dbch_{ch}"
         needed = name in src or (ch == default and uses_default)
-        if not needed or re.search(rf"\bstatic\s+(?:mut\s+)?{name}\b", outside + src):
+        if not needed or re.search(rf"\bstatic\s+(?:mut\s+)?{name}\b[^;]*=", outside + src):
             continue
         raw = ch.encode()[:14] + b"\0" * (15 - len(ch.encode()[:14]))
         lit = "".join(f"\\x{b:02x}" for b in raw)
@@ -3412,7 +3452,9 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     if (
         default
         and uses_default
-        and not re.search(r"\bstatic\s+(?:mut\s+)?__wine_dbch___default\b", outside)
+        # An initializer makes it a definition: tree consensus copies appwiz's `extern`
+        # DECLARATION, which links to nothing (resolve drops it once this defines the name).
+        and not re.search(r"\bstatic\s+(?:mut\s+)?__wine_dbch___default\b[^;]*=", outside)
     ):
         lines.append(
             "pub static mut __wine_dbch___default: *mut __wine_debug_channel =\n"
@@ -3712,11 +3754,21 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # (PSN_RESET still came from the island), and crate-repair stacked `as i32) as u32` forty
     # deep alternating between them. The island is the module's own header.
     shared |= _island_constants(state)
+    # ...and never a name another part of the prelude now DEFINES: the wine-channel block
+    # writes `__wine_dbch___default = &__wine_dbch_ch` beside the `extern` DECLARATION a
+    # copy brought from appwiz, and the pair was E0428 forever (shsvcs, netlogon).
+    defined_elsewhere = _prelude_definitions_outside_consensus(prelude)
+    # A name the bodies only ever CALL AS A MACRO (`FIXME!(..)`) is never satisfied by a fn:
+    # srvsvc got mlang's stray `fn FIXME(format, ...)` declaration where the SDK alias pass
+    # would have written `pub use win32macros_rust::WINE_FIXME as FIXME`.
+    macro_only = _macro_only_names(crate / "src" / stem)
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
         if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
         and k not in shared
+        and k not in defined_elsewhere
+        and not (v.kind == "fn" and k in macro_only)
         # A copy of a name SOME arch's island defines shadows the island there (ndis's
         # SharedSystemTime); dropped, and the gap reported by the pass below instead.
         and k not in _island_defined(crate / "src")
@@ -3754,6 +3806,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # glob import of F -- E0603 "private function import" -- and nothing else revisits it.
     live = prelude_resolve.sibling_definitions(set(siblings), modules_dir)
     stale = {n for n, mod in siblings.items() if mod not in {m for m, _ in live.get(n, [])}}
+    # ...and an import of a name the prelude now defines itself (a later stage's port).
+    stale |= set(siblings) & prelude_resolve.defined_outside_siblings(prelude)
     if stale:
         siblings = {n: m for n, m in siblings.items() if n not in stale}
         prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
@@ -3885,6 +3939,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             found = items.get(name, [])
             # A copied declaration must speak this crate's types (ucrt's private `Compare`).
             found = [i for i in found if i.kind != "fn" or not _private_types(i, visible_types)]
+            if name in macro_only:
+                found = [i for i in found if i.kind != "fn"]
             if not found:
                 res.undefined.append(name)
                 continue
@@ -4737,6 +4793,25 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
         for name, lit in sdk_facts.float_macro_literals(REPO, REPO / tu, names).items():
             print(f"resolve: {name} was truncated to {facts[name][1]}; it is {lit}")
             facts[name] = ("f64", lit, src)
+        # Re-probe every carried integer fact: a fact is only as right as the probe that made
+        # it. rpcss kept `IROT_PROTSEQ: i32 = 0` -- an array initializer the old probe read
+        # through clang's error recovery -- after the probe learned to reject it.
+        ints = [n for n in names if n in facts and facts[n][0] not in ("f32", "f64")]
+        try:
+            again = sdk_facts.resolve(REPO, REPO / tu, ints)
+        except MacroAuthorityError:
+            continue
+        values = {f.name: f.value for f in again.facts}
+        for name in ints:
+            if name not in values:
+                print(
+                    f"resolve: fact {name} dropped, clang no longer evaluates it: "
+                    f"{again.unresolved.get(name, 'no value')}"
+                )
+                del facts[name]
+            elif values[name] != facts[name][1]:
+                print(f"resolve: fact {name} was {facts[name][1]}, clang says {values[name]}")
+                facts[name] = (facts[name][0], values[name], src)
     wanted = sorted(
         n
         for n in undefined

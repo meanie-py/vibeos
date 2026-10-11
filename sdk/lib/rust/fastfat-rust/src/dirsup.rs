@@ -33,8 +33,6 @@ extern "system" {
 extern "system" {
     fn FatConstructDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
     fn FatConstructDotDot( IrpContext: *mut IRP_CONTEXT, dcb: *mut DCB, parent_dirent: *mut DIRENT, dirent: *mut DIRENT, );
-    fn FlagOn(state: u32, mask: u32) -> u32;
-    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn FatDirectoryKey(dcb: *mut core::ffi::c_void) -> u64;
     fn FatReadDirent( irp_context: *mut IRP_CONTEXT, dcb: *mut DCB, vbo: u32, bcb: *mut *mut BCB, dirent: *mut *mut DIRENT, status: *mut i32, );
     fn FatPinMappedData( irp_context: *mut IRP_CONTEXT, dcb: *mut DCB, byte_offset: u32, length: u32, bcb: *mut *mut BCB, );
@@ -60,7 +58,6 @@ extern "system" {
     fn Fat8dot3ToString(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, uppercase: u32, Name: *mut OEM_STRING);
     fn FatIsNameInExpression( IrpContext: *mut IRP_CONTEXT, Expression: OEM_STRING, Name: OEM_STRING, ) -> BOOLEAN;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> ();
-    fn SetFlag(Flags: *mut u32, Flag: u32) -> ();
 }
 
 // ---- file-scope preamble (translated) ----
@@ -1028,7 +1025,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                                 *FileNameDos = 1;
                             }
 
-                            SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
+                            SetFlag!((*(Ccb as *mut CCB)).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
 
                             break;
                         }
@@ -1045,7 +1042,7 @@ pub unsafe extern "system" fn FatLocateDirent(
                                 *FileNameDos = 1;
                             }
 
-                            SetFlag(core::ptr::addr_of_mut!((*(Ccb as *mut CCB)).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
+                            SetFlag!((*(Ccb as *mut CCB)).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
 
                             break;
                         }
@@ -1475,16 +1472,10 @@ pub unsafe extern "system" fn FatConstructDirent(
     (*Dirent).NtByte = 0;
 
     if ComponentReallyLowercase != 0 {
-        SetFlag(
-            (core::ptr::addr_of_mut!((*Dirent).NtByte) as *mut u8).cast(),
-            FAT_DIRENT_NT_BYTE_8_LOWER_CASE,
-        );
+        SetFlag!((*Dirent).NtByte, FAT_DIRENT_NT_BYTE_8_LOWER_CASE);
     }
     if ExtensionReallyLowercase != 0 {
-        SetFlag(
-            (core::ptr::addr_of_mut!((*Dirent).NtByte) as *mut u8).cast(),
-            FAT_DIRENT_NT_BYTE_3_LOWER_CASE,
-        );
+        SetFlag!((*Dirent).NtByte, FAT_DIRENT_NT_BYTE_3_LOWER_CASE);
     }
 
     if !Lfn.is_null() {
@@ -6172,3 +6163,15 @@ pub unsafe extern "system" fn FatDefragDirectory(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(state: u32, mask: u32) -> u32 {
+    (state as u64 & mask as u64) as u32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(flags: u32, flag: u32) -> u8 {
+    ((flags as u64 & flag as u64) != 0) as u8
+}

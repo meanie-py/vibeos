@@ -534,7 +534,10 @@ HDA_ResetController(
     Control = READ_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL));
     WRITE_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL), Control & ~GLOBAL_CONTROL_RESET);
 
-    for (int timeout = 0; timeout < 10; timeout++) {
+    // Both reset transitions get 100 ms, as Linux's azx_reset allows: 1 ms (10 x
+    // 100us, the old bound) is too short for the Lynx Point PCH's controller on the
+    // OptiPlex 9020, which then failed START with "unable to exit reset".
+    for (int timeout = 0; timeout < 1000; timeout++) {
         KeStallExecutionProcessor(100);
 
         Control = READ_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL));
@@ -551,7 +554,7 @@ HDA_ResetController(
     Control = READ_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL));
     WRITE_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL), Control | GLOBAL_CONTROL_RESET);
 
-    for (int timeout = 0; timeout < 10; timeout++) {
+    for (int timeout = 0; timeout < 1000; timeout++) {
         KeStallExecutionProcessor(100);
 
         Control = READ_REGISTER_ULONG((PULONG)(DeviceExtension->RegBase + HDAC_GLOBAL_CONTROL));
@@ -711,14 +714,20 @@ HDA_FDORemoveDevice(
 
     IoDetachDevice(DeviceExtension->LowerDevice);
 
+    /* Disconnect before unmapping: the line is shared, and the ISR reads the
+     * registers. In the other order an interrupt from a sibling device in between
+     * ran HDA_InterruptService on unmapped memory (BUGCHECK 0xA at device IRQL on
+     * the OptiPlex 9020, after the controller failed to come out of reset). */
+    if (DeviceExtension->Interrupt != NULL)
+    {
+        IoDisconnectInterrupt(DeviceExtension->Interrupt);
+        DeviceExtension->Interrupt = NULL;
+    }
     if (DeviceExtension->RegBase != NULL)
     {
         MmUnmapIoSpace(DeviceExtension->RegBase,
                        DeviceExtension->RegLength);
-    }
-    if (DeviceExtension->Interrupt != NULL)
-    {
-        IoDisconnectInterrupt(DeviceExtension->Interrupt);
+        DeviceExtension->RegBase = NULL;
     }
     if (DeviceExtension->CorbBase != NULL)
     {

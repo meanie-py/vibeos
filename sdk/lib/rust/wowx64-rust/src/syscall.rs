@@ -23,7 +23,7 @@
 
 use core::ffi::c_void;
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 use ntdll_sys::nt::*;
 
@@ -85,7 +85,16 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const 
     let Saved = ((*Rec).SyscallRsp, (*Rec).SyscallService);
     (*Rec).SyscallService = Service as u64;
     core::ptr::write_volatile(&mut (*Rec).SyscallRsp, GuestRsp);
+    // Set, not counted down: NtCallbackReturn and NtContinue never come back
+    // here, so the outer call's exit is what puts the depth right.
+    let Depth = (*Rec).SyscallDepth;
+    (*Rec).SyscallDepth = Depth + 1;
+    let Entry = if Depth == 0 { Profile::Enter(Rec, Service) } else { 0 };
     let Ret = Dispatch(Service, &mut Args);
+    if Depth == 0 {
+        Profile::Leave(Rec, Service, Entry);
+    }
+    (*Rec).SyscallDepth = Depth;
     core::ptr::write_volatile(&mut (*Rec).SyscallRsp, Saved.0);
     (*Rec).SyscallService = Saved.1;
 
@@ -108,6 +117,127 @@ pub unsafe extern "C" fn WowX64SystemService(Service: u32, RegisterArgs: *const 
     Ret
 }
 
+/// Where a guest's time goes, split at each thread's outermost syscall and said
+/// once at process exit, in total and for the services that cost the most:
+/// `kernel` is the native service itself (a win32k callback's guest code
+/// included), `wowx64` the rest of our side of the call (the CPU layer's
+/// Notify* brackets included), and `before` everything from the thread's
+/// previous syscall return to this call's entry -- guest code plus the CPU
+/// layer's exit from and re-entry into its JIT. Generic timer, a few reads a
+/// call.
+mod Profile {
+    use super::*;
+
+    /// One slot per service: 1024 per table, the NT table then win32k's.
+    const SLOTS: usize = 2048;
+    const CALLS: usize = 0;
+    const IN_SERVICE: usize = 1;
+    const KERNEL: usize = 2;
+    const BEFORE: usize = 3;
+    static Slots: [[AtomicU64; 4]; SLOTS] = [const { [const { AtomicU64::new(0) }; 4] }; SLOTS];
+
+    fn Slot(Service: u32) -> Option<&'static [AtomicU64; 4]> {
+        let (Table, Index) = ((Service >> 12) as usize, (Service & 0xFFF) as usize);
+        if Table > 1 || Index >= SLOTS / 2 {
+            return None;
+        }
+        Some(&Slots[Table * SLOTS / 2 + Index])
+    }
+
+    #[inline(always)]
+    pub fn Ticks() -> u64 {
+        let T: u64;
+        unsafe { core::arch::asm!("mrs {}, cntvct_el0", out(reg) T, options(nomem, nostack)) };
+        T
+    }
+
+    pub unsafe fn Enter(Rec: *mut crate::thread::ThreadRecord, Service: u32) -> u64 {
+        let Now = Ticks();
+        if let (Some(S), true) = (Slot(Service), (*Rec).SyscallLastExit != 0) {
+            S[BEFORE].fetch_add(Now - (*Rec).SyscallLastExit, Ordering::Relaxed);
+        }
+        Now
+    }
+
+    pub unsafe fn Leave(Rec: *mut crate::thread::ThreadRecord, Service: u32, Entry: u64) {
+        let Now = Ticks();
+        if let Some(S) = Slot(Service) {
+            S[CALLS].fetch_add(1, Ordering::Relaxed);
+            S[IN_SERVICE].fetch_add(Now - Entry, Ordering::Relaxed);
+        }
+        (*Rec).SyscallLastExit = Now;
+    }
+
+    /// The native call, timed when it is the thread's outermost syscall.
+    pub unsafe fn Native(Service: u32, Args: &[u64; WOWX64_SERVICE_ARGS]) -> u64 {
+        if (*crate::thread::Record()).SyscallDepth != 1 {
+            return NativeSyscall(Service, Args.as_ptr());
+        }
+        let T0 = Ticks();
+        let Ret = NativeSyscall(Service, Args.as_ptr());
+        if let Some(S) = Slot(Service) {
+            S[KERNEL].fetch_add(Ticks() - T0, Ordering::Relaxed);
+        }
+        Ret
+    }
+
+    static Reported: AtomicU32 = AtomicU32::new(0);
+    /// Services itemised beneath the total, the costliest first, for a process
+    /// busy enough to be worth it: every x86-64 exit says the total, and on real
+    /// hardware each serial line is paid for inside the trap path.
+    const ITEMISED: usize = 5;
+    const ITEMISE_FROM: u64 = 1000;
+
+    /// Said once: ExitProcess makes two terminate calls, NULL then self.
+    pub unsafe fn Report() {
+        if Reported.swap(1, Ordering::Relaxed) != 0 {
+            return;
+        }
+        let Freq: u64;
+        core::arch::asm!("mrs {}, cntfrq_el0", out(reg) Freq, options(nomem, nostack));
+        let Us = |T: u64| if Freq == 0 { 0 } else { (T as u128 * 1_000_000 / Freq as u128) as u64 };
+        let Ns = |T: u64, N: u64| if Freq == 0 || N == 0 { 0 } else { (T as u128 * 1_000_000_000 / Freq as u128 / N as u128) as u64 };
+        let Get = |i: usize, f: usize| Slots[i][f].load(Ordering::Relaxed);
+        let Cost = |i: usize| Get(i, IN_SERVICE) + Get(i, BEFORE);
+
+        let (mut N, mut S, mut K, mut B) = (0u64, 0u64, 0u64, 0u64);
+        for i in 0..SLOTS {
+            N += Get(i, CALLS);
+            S += Get(i, IN_SERVICE);
+            K += Get(i, KERNEL);
+            B += Get(i, BEFORE);
+        }
+        crate::trace!(
+            "pid %u syscall profile: %I64u calls; kernel %I64u us, wowx64 %I64u us, before calls %I64u us",
+            (*NtCurrentTeb()).ClientId.UniqueProcess as usize as u32,
+            N,
+            Us(K),
+            Us(S - K),
+            Us(B),
+        );
+        if N < ITEMISE_FROM {
+            return;
+        }
+        let mut Shown = [false; SLOTS];
+        for _ in 0..ITEMISED {
+            let Some(i) = (0..SLOTS).filter(|&i| !Shown[i] && Get(i, CALLS) != 0).max_by_key(|&i| Cost(i)) else {
+                break;
+            };
+            Shown[i] = true;
+            let n = Get(i, CALLS);
+            crate::trace!(
+                "  service %#x: %I64u calls, %I64u us; per call kernel %I64u ns, wowx64 %I64u ns, before %I64u ns",
+                (((i / (SLOTS / 2)) << 12) | (i % (SLOTS / 2))) as u32,
+                n,
+                Us(Cost(i)),
+                Ns(Get(i, KERNEL), n),
+                Ns(Get(i, IN_SERVICE) - Get(i, KERNEL), n),
+                Ns(Get(i, BEFORE), n),
+            );
+        }
+    }
+}
+
 /// Storage for a redirected path, alive across the native call that reads it.
 struct Shadow {
     Oa: OBJECT_ATTRIBUTES,
@@ -117,7 +247,9 @@ struct Shadow {
 
 unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
     let Cpu = Cpu();
-    let mut Shadow: Shadow = core::mem::zeroed();
+    // Filled only by the path services that use it: zeroing 1 KB on EVERY guest
+    // syscall was most of what a cheap one cost while memset was a byte loop.
+    let mut Shadow = core::mem::MaybeUninit::<Shadow>::uninit();
 
     match Service {
         svc::SVC_NtContinue => {
@@ -141,13 +273,14 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 Args[1] as u32,
                 Ctx.Rip as *const c_void,
             );
+            Profile::Report();
             if Args[0] == 0 {
                 // Every OTHER thread dies here, wherever it is -- possibly between a
                 // Notify* Before (CPU-layer lock taken) and its After. The exiting
                 // thread then deadlocks on that lock in its next memory call: osk's
                 // ExitProcess hung in msacm32's DLL_PROCESS_DETACH heap free.
                 (Cpu.ProcessTerm)(null_mut(), 0, 0);
-                let Status = NativeSyscall(Service, Args.as_ptr());
+                let Status = Profile::Native(Service, Args);
                 (Cpu.ProcessTerm)(null_mut(), 1, Status as NTSTATUS);
                 return Status;
             }
@@ -187,12 +320,16 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
                 if IsKnownDlls(Oa) {
                     return STATUS_OBJECT_NAME_NOT_FOUND;
                 }
-            } else if Redirect(Oa, &mut Shadow) {
-                Args[2] = &Shadow.Oa as *const _ as u64;
+            } else {
+                let Shadow = Shadow.write(core::mem::zeroed());
+                if Redirect(Oa, Shadow) {
+                    Args[2] = &Shadow.Oa as *const _ as u64;
+                }
             }
         }
         svc::SVC_NtQueryAttributesFile | svc::SVC_NtQueryFullAttributesFile => {
-            if Redirect(Args[0] as *const OBJECT_ATTRIBUTES, &mut Shadow) {
+            let Shadow = Shadow.write(core::mem::zeroed());
+            if Redirect(Args[0] as *const OBJECT_ATTRIBUTES, Shadow) {
                 Args[0] = &Shadow.Oa as *const _ as u64;
             }
         }
@@ -201,7 +338,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             let Size = Args[3] as *mut SIZE_T;
             let (Type, Prot) = (Args[4] as ULONG, Args[5] as ULONG);
             (Cpu.NotifyMemoryAlloc)(*Base, *Size, Type, Prot, 0, 0);
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyMemoryAlloc)(*Base, *Size, Type, Prot, 1, Status as u32);
             return Status;
         }
@@ -210,7 +347,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             let Size = Args[2] as *mut SIZE_T;
             let Prot = Args[3] as ULONG;
             (Cpu.NotifyMemoryProtect)(*Base, *Size, Prot, 0, 0);
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyMemoryProtect)(*Base, *Size, Prot, 1, Status as u32);
             return Status;
         }
@@ -219,12 +356,12 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
             let Size = Args[2] as *mut SIZE_T;
             let Type = Args[3] as ULONG;
             (Cpu.NotifyMemoryFree)(*Base, *Size, Type, 0, 0);
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyMemoryFree)(*Base, *Size, Type, 1, Status as u32);
             return Status;
         }
         svc::SVC_NtMapViewOfSection if IsSelf(Args[1]) => {
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             if (Status as NTSTATUS) >= 0 {
                 let Base = *(Args[2] as *const PVOID);
                 let Size = *(Args[6] as *const SIZE_T);
@@ -239,7 +376,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         svc::SVC_NtUnmapViewOfSection if IsSelf(Args[0]) => {
             let Base = Args[1] as PVOID;
             (Cpu.NotifyUnmapViewOfSection)(Base, 0, 0);
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyUnmapViewOfSection)(Base, 1, Status as u32);
             return Status;
         }
@@ -249,18 +386,18 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         svc::SVC_NtReadFile => {
             let (File, Buffer, Length) = (Args[0] as HANDLE, Args[5] as PVOID, Args[6] as SIZE_T);
             (Cpu.NotifyReadFile)(File, Buffer, Length, 0, 0);
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyReadFile)(File, Buffer, Length, 1, Status as NTSTATUS);
             return Status;
         }
         svc::SVC_NtWriteVirtualMemory if IsSelf(Args[0]) => {
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyMemoryDirty)(Args[1] as PVOID, Args[3] as SIZE_T);
             return Status;
         }
         svc::SVC_NtReadVirtualMemory => {
             // The destination is always in THIS process, whichever is read.
-            let Status = NativeSyscall(Service, Args.as_ptr());
+            let Status = Profile::Native(Service, Args);
             (Cpu.NotifyMemoryDirty)(Args[2] as PVOID, Args[3] as SIZE_T);
             return Status;
         }
@@ -269,7 +406,7 @@ unsafe fn Dispatch(Service: u32, Args: &mut [u64; WOWX64_SERVICE_ARGS]) -> u64 {
         }
         _ => {}
     }
-    NativeSyscall(Service, Args.as_ptr())
+    Profile::Native(Service, Args)
 }
 
 static FallbackCount: AtomicU32 = AtomicU32::new(0);

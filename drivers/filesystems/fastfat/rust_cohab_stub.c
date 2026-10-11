@@ -35,10 +35,6 @@
 #undef FsRtlCurrentOplockH
 #undef FsRtlOplockIsSharedRequest
 #undef FsRtlGetSectorSizeInformation
-#undef FlagOn
-#undef SetFlag
-#undef ClearFlag
-#undef BooleanFlagOn
 #undef Add2Ptr
 #undef QuadAlign
 #undef BlockAlignTruncate
@@ -337,10 +333,6 @@ VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext;
  * 2. FAT helper macros → real symbols
  * ====================================================================== */
 
-ULONG_PTR FlagOn(ULONG_PTR x, ULONG_PTR f)        { return x & f; }
-VOID      SetFlag(PULONG_PTR x, ULONG_PTR f)       { *x |= f; }
-VOID      ClearFlag(PULONG_PTR x, ULONG_PTR f)     { *x &= ~f; }
-BOOLEAN   BooleanFlagOn(ULONG_PTR x, ULONG_PTR f)  { return !!(x & f); }
 PVOID     Add2Ptr(PVOID p, ULONG_PTR n)             { return (PUCHAR)p + n; }
 ULONG_PTR QuadAlign(ULONG_PTR v)                    { return (v + 7) & ~(ULONG_PTR)7; }
 ULONG_PTR BlockAlignTruncate(ULONG_PTR v, ULONG_PTR a) { return v & ~(a - 1); }

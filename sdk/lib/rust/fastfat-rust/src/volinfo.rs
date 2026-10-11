@@ -38,8 +38,6 @@ extern "system" {
 }
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, fmt: *const i8, ...); } extern "system" {
-    fn FlagOn(flags: u32, flag: u32) -> u32;
-    fn SetFlag(attr: *mut u32, flag: u32);
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn DebugUnwind(name: *const i8);
     fn FatConstructLabelDirent( IrpContext: PIRP_CONTEXT, Dirent: *mut DIRENT, OemLabel: *mut OEM_STRING, );
@@ -229,10 +227,7 @@ pub unsafe extern "system" fn FatQueryFsAttributeInfo(
     (*Buffer).FileSystemAttributes = FILE_CASE_PRESERVED_NAMES | FILE_UNICODE_ON_DISK;
 
     if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
-        SetFlag(
-            &mut (*Buffer).FileSystemAttributes as *mut u32,
-            FILE_READ_ONLY_VOLUME,
-        );
+        SetFlag!((*Buffer).FileSystemAttributes, FILE_READ_ONLY_VOLUME);
     }
 
     (*Buffer).MaximumComponentNameLength = if (*&raw const FatData).ChicagoMode() != 0 { 255 } else { 12 };
@@ -363,7 +358,6 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
             second: BOOLEAN,
         ) -> BOOLEAN;
         fn FsRtlIsLeadDbcsCharacter(ch: UCHAR) -> BOOLEAN;
-        fn SetFlag(flags: *mut u8, flag: u8);
     }
 
     // Unknown constants
@@ -480,10 +474,7 @@ pub unsafe extern "system" fn FatSetFsLabelInfo(
     DirentBcb = core::ptr::null_mut();
 
     // Mark write through
-    SetFlag(
-        &mut (*IrpContext).Flags as *mut ULONG as *mut u8,
-        IRP_CONTEXT_FLAG_WRITE_THROUGH as u8,
-    );
+    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
 
     // _SEH2_TRY / _SEH2_FINALLY
     let p_dirent_bcb = core::ptr::addr_of_mut!(DirentBcb);
@@ -2330,4 +2321,11 @@ pub unsafe extern "system" fn FatFsdQueryVolumeInformation(
     DebugTrace((-1i32) as u32, Dbg as u32, b"FatFsdQueryVolumeInformation -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
     let _ = VolumeDeviceObject;
     Status
+}
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, flag: u32) -> u32 {
+    (flags as u64 & flag as u64) as u32
 }

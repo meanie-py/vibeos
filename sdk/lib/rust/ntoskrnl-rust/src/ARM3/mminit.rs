@@ -1616,10 +1616,10 @@ pub unsafe extern "system" fn MmArmInitSystem(
     }
 
     // vibeos tripwire channel: read per-boot debug knobs (special pool arming)
-    // from QEMU fw_cfg BEFORE system-PTE sizing and MiInitializeSpecialPool so
-    // an armed MmSpecialPoolTag influences both. No-op without -fw_cfg.
+    // from QEMU fw_cfg, or a /TRIPWIRE= boot option, BEFORE system-PTE sizing and
+    // MiInitializeSpecialPool so an armed MmSpecialPoolTag influences both.
     if phase == 0 {
-        crate::tripwire::vibe_tripwire_init();
+        crate::tripwire::vibe_tripwire_init((*KeLoaderBlock).LoadOptions as *const u8);
     }
 
     for i in 0..LoaderMaximum {

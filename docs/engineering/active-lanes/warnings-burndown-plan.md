@@ -732,7 +732,7 @@ one's current content. The 27 were:
     `CdBugCheck` (the definition itself) took `u32` where the C passes `ULONG_PTR`, which
     truncates bugcheck parameters on 64-bit. oleaut32's `_wcsnicmp` count was `u32`, not
     `size_t`. user32 clipboard's `GlobalSize` returned `DWORD`, not `SIZE_T`.
-- **Still owed, from the same grading:** fastfat's `SetFlag` / `ClearFlag` are also
+- **CLOSED 2026-10-11 (see "fastfat flag macros" below).** Was owed: fastfat's `SetFlag` / `ClearFlag` are also
   out-of-line stubs, `*(PULONG_PTR)x |= f`. On 64-bit that is an 8-byte read-modify-write
   of a 4-byte (sometimes 1-byte) field and its neighbour: not atomic, and past the end at
   the end of an allocation. `FlagOn` / `BooleanFlagOn` declarations narrow their arguments.
@@ -766,6 +766,46 @@ one's current content. The 27 were:
   `.is_some()`.
 - `apply_dead_assignments` keeps an initializer only if a raw borrow can see it: a plain
   `x = ..;` in the `let`'s own block before every raw borrow now makes it removable.
+
+## fastfat flag macros and the bugs behind them (2026-10-11)
+
+- **`SetFlag` / `ClearFlag` are crate macros on the real lvalue** (185 live calls), so the
+  `rust_cohab_stub.c` stubs are gone. Each call used to be an 8-byte read-modify-write
+  through a `PULONG_PTR`, and the pointer casts at the call sites hid the true width: the
+  IO_STACK_LOCATION's UCHAR `Flags` (`.cast()`), the VPB's USHORT `Flags`
+  (`as *mut u16 as *mut u32`), `VcbState as *mut u8`. A compound assignment can't infer
+  `as _`, so the macros go through a `Flag` trait (`flags.rs`) that truncates like C.
+  `FlagOn` / `BooleanFlagOn` are now module-local inline fns with each module's declared
+  signature, computed at u64. The C stub took ULONG_PTR, so it read undefined upper bits
+  of a 32-bit argument.
+- **A Haiku audit of about 300 live `FlagOn` calls found a truncation class.**
+  `FlagOn((X as u8) as u32, F)` narrowed the field before the test, at 21 sites. It was
+  live where F >= 0x100: cachesup's `IRP_CONTEXT_FLAG_PARENT_BY_CHILD` (0x80000000)
+  never fired, deviosup's `VCB_STATE_FLAG_REMOVAL_PREVENTED`, create's `DELETE` /
+  `MAXIMUM_ALLOWED` access mask, strucsup's `DISMOUNT_IN_PROGRESS` asserts. Also
+  `FlagOn(..) as u8|BOOLEAN` returned 0 for USER_IO (0x400), at 3 sites; those are now
+  `!= 0`.
+- **A second Haiku audit checked about 1,140 fastfat consts against the C.** Real:
+  - flush.rs `VolumeClean = 2`, which is `VolumeDirtyWithSurfaceTest`, so the flush
+    path marked the volume for a surface test instead of clean.
+  - `IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES = 1` (real 0x53C000).
+  - `MdlMappingNoExecute` / `POOL_NX_ALLOCATION` carried the Windows values, where
+    fatprocs.h zeroes both under `__REACTOS__`. classpnp's `POOL_NX_ALLOCATION` was the
+    same bug.
+  - Dead but wrong: `DOS_QM`, a second `FAT_CLUSTER_BAD`, fatdata's `Dbg`.
+- **`verify_constants` couldn't see either.** `MdlMappingNoExecute` and
+  `POOL_NX_ALLOCATION` are now applied after the headers, like the `NonPagedPoolNx`
+  seed. `ntifs.template.h` joined the CTL_CODE headers (FSCTL / volsnap), so the 1 now
+  fails.
+- **Still owed:**
+  - About 15 function-local `Dbg` consts are 0/1 where the C has a DEBUG_TRACE bit. That
+    only matters for trace output.
+  - The agent's INVENTED list. Most are Rust-local helper names; `SET_PURGE_FAILURE_MODE_*`,
+    `IRP_MN_FLUSH_DATA_ONLY` / `_NO_SYNC` and `CC_ENABLE_DISK_IO_ACCOUNTING` have no
+    definition in the tree to check against.
+  - fastfat's remaining `clashing_extern` (284 sites, census).
+  - Carried over from the closed entry above: cdfs's generated `types_i386.rs` `CdCreateFcb`
+    `FILE_ID` declared as a pointer, which is the generator's to fix.
 
 ## Owed follow-ups
 

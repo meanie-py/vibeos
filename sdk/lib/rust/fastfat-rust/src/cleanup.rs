@@ -29,9 +29,6 @@ extern "system" {
 extern "system" {
     fn FatDecodeFileObject( FileObject: PFILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn FlagOn(flags: u32, mask: u32) -> u32;
-    fn ClearFlag(flags: *mut u32, mask: u32);
-    fn SetFlag(flags: *mut u32, mask: u32);
     fn NodeType(node: *const c_void) -> u32;
     fn FatAcquireExclusiveFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB) -> u8;
     fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
@@ -215,8 +212,8 @@ pub unsafe extern "system" fn FatCommonCleanup(
 
         if FlagOn((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE) != 0 {
             NT_ASSERT!((NodeType(Fcb as *const c_void) != FAT_NTC_ROOT_DCB) as u8);
-            SetFlag(&mut (*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
-            ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
+            SetFlag!((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
+            ClearFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             #[cfg(ntddi_ge_ntddi_win8)]
             {
                 ProcessingDeleteOnClose = TRUE;
@@ -302,7 +299,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             );
             if *p_status != STATUS_SUCCESS {
                 if *p_status == STATUS_PENDING {
-                    SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_CLEANUP_BREAKING_OPLOCK);
+                    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_CLEANUP_BREAKING_OPLOCK);
                     return; // try_return( Status )
                 } else {
                     FatNormalizeAndRaiseStatus(IrpContext, *p_status);
@@ -323,7 +320,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     FatCheckForDismount(IrpContext, Vcb, TRUE);
                 } else if (*FileObject).WriteAccess != 0 && FlagOn((*FileObject).Flags, FO_FILE_MODIFIED) != 0 {
                     FatHijackIrpAndFlushDevice(IrpContext, Irp, ((*Vcb).TargetDeviceObject).cast());
-                    SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
+                    SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                 }
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0 && (*Vcb).FileObjectWithVcbLocked == FileObject {
                     FatAutoUnlock(IrpContext, Vcb);
@@ -345,12 +342,12 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     && FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) == 0
                     && (*Fcb).FcbCondition == FcbGood
                 {
-                    SetFlag(&mut (*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
+                    SetFlag!((*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
                 }
 
                 if FlagOn((*Fcb).FcbState, FCB_STATE_DENY_DEFRAG) != 0 && FlagOn((*Ccb).Flags, CCB_FLAG_DENY_DEFRAG) != 0 {
-                    ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_DENY_DEFRAG);
-                    ClearFlag(&mut (*Fcb).FcbState, FCB_STATE_DENY_DEFRAG);
+                    ClearFlag!((*Ccb).Flags, CCB_FLAG_DENY_DEFRAG);
+                    ClearFlag!((*Fcb).FcbState, FCB_STATE_DENY_DEFRAG);
                 }
 
                 if (*Vcb).VcbCondition == VcbGood && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_SHUTDOWN) == 0 {
@@ -363,7 +360,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
                         && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) == 0
                     {
                         if FatIsDirectoryEmpty(IrpContext, Fcb) == 0 {
-                            ClearFlag(&mut (*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
+                            ClearFlag!((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
                         } else {
                             //  Even if something goes wrong, we cannot turn back!
                             if crate::seh::try_except(&mut (), |_| {
@@ -427,12 +424,12 @@ pub unsafe extern "system" fn FatCommonCleanup(
                     && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0
                     && (*Fcb).FcbCondition == FcbGood
                 {
-                    SetFlag(&mut (*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
+                    SetFlag!((*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
                 }
 
                 if FlagOn((*Fcb).FcbState, FCB_STATE_DENY_DEFRAG) != 0 && FlagOn((*Ccb).Flags, CCB_FLAG_DENY_DEFRAG) != 0 {
-                    ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_DENY_DEFRAG);
-                    ClearFlag(&mut (*Fcb).FcbState, FCB_STATE_DENY_DEFRAG);
+                    ClearFlag!((*Ccb).Flags, CCB_FLAG_DENY_DEFRAG);
+                    ClearFlag!((*Fcb).FcbState, FCB_STATE_DENY_DEFRAG);
                 }
 
                 FsRtlFastUnlockAll(
@@ -608,7 +605,7 @@ pub unsafe extern "system" fn FatCommonCleanup(
             (*Fcb).Header.IsFastIoPossible = FatIsFastIoPossible(Fcb);
         }
 
-        SetFlag(&mut (*FileObject).Flags as *mut u32, FO_CLEANUP_COMPLETE);
+        SetFlag!((*FileObject).Flags, FO_CLEANUP_COMPLETE);
         *p_status = STATUS_SUCCESS;
         FatUnpinRepinnedBcbs(IrpContext);
 
@@ -1859,3 +1856,10 @@ pub unsafe extern "system" fn FatAutoUnlock(IrpContext: *mut IRP_CONTEXT, Vcb: *
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, mask: u32) -> u32 {
+    (flags as u64 & mask as u64) as u32
+}

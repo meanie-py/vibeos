@@ -281,9 +281,7 @@ pub type OSVERSIONINFOEX = OSVERSIONINFOEXW;
 #[macro_export] macro_rules! va_end { ($p0:expr $(,)?) => { __builtin_va_end((($p0) as _)) }; }
 #[macro_export] macro_rules! va_start { ($p0:expr, $p1:expr $(,)?) => { __builtin_va_start((($p0) as _), (($p1) as _)) }; }
 pub type NET_API_STATUS = DWORD;
-// winsvc.h: SERVICES_ACTIVE_DATABASE is the TCHAR form; this module is -DUNICODE, and the
-// island's glob carries the ANSI one (`&[u8; 15]`).
-pub const SERVICES_ACTIVE_DATABASE: *const u16 = SERVICES_ACTIVE_DATABASEW;
+pub const SERVICES_ACTIVE_DATABASE: *const u16 = (&[0x0053, 0x0065, 0x0072, 0x0076, 0x0069, 0x0063, 0x0065, 0x0073, 0x0041, 0x0063, 0x0074, 0x0069, 0x0076, 0x0065, 0x0000u16]).as_ptr(); // L"ServicesActive"
 pub const SERVICES_ACTIVE_DATABASEW: *const u16 = (&[0x0053, 0x0065, 0x0072, 0x0076, 0x0069, 0x0063, 0x0065, 0x0073, 0x0041, 0x0063, 0x0074, 0x0069, 0x0076, 0x0065, 0x0000u16]).as_ptr(); // L"ServicesActive"
 pub const SERVICE_SERVER: *const u16 = (&[0x004c, 0x0061, 0x006e, 0x006d, 0x0061, 0x006e, 0x0053, 0x0065, 0x0072, 0x0076, 0x0065, 0x0072, 0x0000u16]).as_ptr(); // L"LanmanServer"
 pub const SERVICE_WORKSTATION: *const u16 = (&[0x004c, 0x0061, 0x006e, 0x006d, 0x0061, 0x006e, 0x0057, 0x006f, 0x0072, 0x006b, 0x0073, 0x0074, 0x0061, 0x0074, 0x0069, 0x006f, 0x006e, 0x0000u16]).as_ptr(); // L"LanmanWorkstation"
