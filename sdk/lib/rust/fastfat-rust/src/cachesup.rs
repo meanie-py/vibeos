@@ -1256,6 +1256,7 @@ pub unsafe extern "system" fn FatPinMappedData(
     );
 }
 
+#[cfg(ntddi_ge_ntddi_win8)]
 #[no_mangle]
 pub unsafe extern "system" fn FatPrefetchPages(
     IrpContext: *mut IRP_CONTEXT,

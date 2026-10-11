@@ -124,7 +124,7 @@ unsafe fn FatWindowOfCluster(C: u32) -> u32 {
 
 // FAT_ENUMERATION_CONTEXT: local pinned-page state for FatLookupFatEntry
 #[repr(C)]
-struct FAT_ENUMERATION_CONTEXT {
+pub struct FAT_ENUMERATION_CONTEXT {
     VboOfPinnedPage: u32,
     Bcb: PBCB,
     PinnedPage: *mut core::ffi::c_void,
@@ -3241,7 +3241,8 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                     prefetch_pages = ((page + FAT_PREFETCH_PAGE_COUNT - 1) & !(FAT_PREFETCH_PAGE_COUNT - 1)) - page;
                 }
 
-                // NTDDI_VERSION >= NTDDI_WIN8 is assumed true
+                // Gated like the C #if (NTDDI_VERSION >= NTDDI_WIN8) block: compiled out at WS03.
+                #[cfg(ntddi_ge_ntddi_win8)]
                 FatPrefetchPages(irp_context, (*vcb).VirtualVolumeFile, page, prefetch_pages);
 
                 FatReadVolumeFile(irp_context, vcb, offset, PAGE_SIZE as u32, &raw mut bcb, &raw mut pv);
@@ -3321,6 +3322,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
                             if prefetch_pages > FAT_PREFETCH_PAGE_COUNT {
                                 prefetch_pages = FAT_PREFETCH_PAGE_COUNT;
                             }
+                            #[cfg(ntddi_ge_ntddi_win8)]
                             FatPrefetchPages(irp_context, (*vcb).VirtualVolumeFile, page, prefetch_pages);
                         }
 

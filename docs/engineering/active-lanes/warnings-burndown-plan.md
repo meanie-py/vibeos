@@ -833,8 +833,16 @@ one's current content. The 27 were:
   Rust runs the compiled-out side. Examples: `FSCTL_REQUEST_OPLOCK` dispatched,
   `FILE_OPEN_REQUIRING_OPLOCK` honored, oplock-H breaks on sharing violations, the
   purge-failure and zero-on-dealloc FSCTLs, FAT prefetch. Method: evaluate each C `#if` at
-  NTDDI 0x05020000, then diff against the same-stem Rust fn. **Owed, next commit:** make those paths match
-  WS03.
+  NTDDI 0x05020000, then diff against the same-stem Rust fn. **Fixed in the next commit.**
+  27 gates use the crate's never-set cfgs (`ntddi_ge_ntddi_{vista,win7,win8,winthreshold}`, now
+  all declared), or `cfg!()` inside a condition. Where the C has an `#else`, it is translated:
+  the control-code shared test, and `FsRtlAreThereCurrentFileLocks`, a header macro, inline.
+  The same pass found `#[cfg(not(reactos))]` for the C's `#ifndef __REACTOS__`. `reactos` is
+  never set, so that code compiled IN; it is now an explicit never-set `not_reactos`. With
+  `DBG`, `alpha` and the never-enabled wow64/FASTFATDBG features declared, **fastfat-rust has
+  0 warnings on all three arches.**
+- **Owed:** a scanner for the NTDDI class (like `scan_cfg_vs_c` for arch). Every MS-architecture
+  driver with `#if NTDDI_VERSION` (cdfs, classpnp, disk, cdrom) can carry the same drift.
 - **Still owed:** crate-repair's `width_alias_cast` named a callee-module-local alias
   (`FAT_FLUSH_TYPE`) that the call site cannot see (3 sites, fixed by hand).
 

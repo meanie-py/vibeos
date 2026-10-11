@@ -355,7 +355,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     let irp_sp: PIO_STACK_LOCATION;
     let mdl: PMDL;
     let saved_mdl: PMDL;
-    #[cfg(not(reactos))]
+    #[cfg(not_reactos)] // C `#ifndef __REACTOS__`: compiled out here
     let mut is_a_write: bool = false;
 
     PAGED_CODE!();
@@ -427,7 +427,7 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     (*irp_sp).Parameters.Read.Length = byte_count;
     (*irp_sp).Parameters.Read.ByteOffset.QuadPart = lbo;
 
-    #[cfg(not(reactos))]
+    #[cfg(not_reactos)] // C `#ifndef __REACTOS__`: compiled out here
     {
         is_a_write = (*irp_sp).MajorFunction == (IRP_MJ_WRITE) as u8;
     }

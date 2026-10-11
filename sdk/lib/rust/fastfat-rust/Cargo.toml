@@ -16,9 +16,24 @@ crate-type = ["staticlib"]
 panic-common = { path = "../panic-common", features = ["kernel"] }
 ntkrnl-sys = { path = "../ntkrnl-sys" }
 
-# fastfat builds for NTDDI < WIN8 (the ReactOS default), so the C's
-# `#if (NTDDI_VERSION >= NTDDI_WIN8)` blocks are compiled out. Their Rust translations sit
-# behind this cfg, which nothing sets: pre-WIN8 the FCB layout differs (OPLOCK lives in
-# Specific.Fcb, and a DCB has no oplock at all), so running them reads and writes DCB fields.
+# fastfat builds at _WIN32_WINNT=0x502 (NTDDI WS03, the ReactOS default), so every
+# `#if (NTDDI_VERSION >= NTDDI_VISTA / WIN7 / WIN8 / WINTHRESHOLD)` block is compiled out of
+# the C. Their Rust translations sit behind these cfgs, which nothing sets. It matters: before
+# WIN8 the FCB layout differs (OPLOCK lives in Specific.Fcb, and a DCB has no oplock at all),
+# so running the WIN8 code reads and writes DCB fields.
 [lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(ntddi_ge_ntddi_win8)'] }
+unexpected_cfgs = { level = "warn", check-cfg = [
+    'cfg(ntddi_ge_ntddi_vista)', 'cfg(ntddi_ge_ntddi_win7)', 'cfg(ntddi_ge_ntddi_win8)',
+    'cfg(ntddi_ge_ntddi_winthreshold)',
+    # `#if DBG` (checked build) and the C's _ALPHA_ arms: never set, as in a free x86/ARM build.
+    'cfg(DBG)', 'cfg(target_arch, values("alpha"))',
+    # `#ifndef __REACTOS__`: __REACTOS__ is always defined, so this is never set.
+    'cfg(not_reactos)',
+] }
+
+# The C's optional build switches, none of which this tree defines: BUILD_WOW64_ENABLED
+# (`_WIN64 && BUILD_WOW64_ENABLED` thunking) and FASTFATDBG (fatdata.h debug state).
+[features]
+wow64 = []
+BUILD_WOW64_ENABLED = []
+FASTFATDBG = []

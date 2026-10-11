@@ -1064,8 +1064,9 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
         | FSCTL_OPBATCH_ACK_CLOSE_PENDING
         | FSCTL_OPLOCK_BREAK_NOTIFY
         | FSCTL_OPLOCK_BREAK_ACK_NO_2
-        | FSCTL_REQUEST_FILTER_OPLOCK
-        | FSCTL_REQUEST_OPLOCK => FatOplockRequest(IrpContext, Irp),
+        | FSCTL_REQUEST_FILTER_OPLOCK => FatOplockRequest(IrpContext, Irp),
+        #[cfg(ntddi_ge_ntddi_win7)]
+        FSCTL_REQUEST_OPLOCK => FatOplockRequest(IrpContext, Irp),
 
         FSCTL_LOCK_VOLUME => FatLockVolume(IrpContext, Irp),
         FSCTL_UNLOCK_VOLUME => FatUnlockVolume(IrpContext, Irp),
@@ -1077,14 +1078,18 @@ pub unsafe extern "system" fn FatUserFsCtrl(IrpContext: PIRP_CONTEXT, Irp: PIRP)
         FSCTL_QUERY_RETRIEVAL_POINTERS => FatQueryRetrievalPointers(IrpContext, Irp),
         FSCTL_QUERY_FAT_BPB => FatQueryBpb(IrpContext, Irp),
         FSCTL_FILESYSTEM_GET_STATISTICS => FatGetStatistics(IrpContext, Irp),
+        #[cfg(ntddi_ge_ntddi_win7)]
         FSCTL_GET_RETRIEVAL_POINTER_BASE => (FatGetRetrievalPointerBase)(IrpContext, Irp),
+        #[cfg(ntddi_ge_ntddi_win7)]
         FSCTL_GET_BOOT_AREA_INFO => FatGetBootAreaInfo(IrpContext, Irp),
         FSCTL_GET_VOLUME_BITMAP => FatGetVolumeBitmap(IrpContext, Irp),
         FSCTL_GET_RETRIEVAL_POINTERS => FatGetRetrievalPointers(IrpContext, Irp),
         FSCTL_MOVE_FILE => (FatMoveFile)(IrpContext, Irp),
         FSCTL_ALLOW_EXTENDED_DASD_IO => FatAllowExtendedDasdIo(IrpContext, Irp),
         FSCTL_MARK_HANDLE => FatMarkHandle(IrpContext, Irp),
+        #[cfg(ntddi_ge_ntddi_win8)]
         FSCTL_SET_PURGE_FAILURE_MODE => FatSetPurgeFailureMode(IrpContext, Irp),
+        #[cfg(ntddi_ge_ntddi_win7)]
         FSCTL_SET_ZERO_ON_DEALLOCATION => FatSetZeroOnDeallocate(IrpContext, Irp),
         _ => {
             DebugTrace!(0, Dbg, b"Invalid control code -> %08lx\n\0".as_ptr() as *const i8, FsControlCode);
@@ -1149,7 +1154,7 @@ pub unsafe extern "system" fn FatOplockRequest(
         return STATUS_INVALID_PARAMETER;
     }
 
-    if FsControlCode == FSCTL_REQUEST_OPLOCK {
+    if cfg!(ntddi_ge_ntddi_win7) && FsControlCode == FSCTL_REQUEST_OPLOCK {
         InputBufferLength = (*IrpSp).Parameters.FileSystemControl.InputBufferLength;
         InputBuffer = (*Irp).AssociatedIrp.SystemBuffer as *mut REQUEST_OPLOCK_INPUT_BUFFER;
         OutputBufferLength = (*IrpSp).Parameters.FileSystemControl.OutputBufferLength;
@@ -1168,7 +1173,8 @@ pub unsafe extern "system" fn FatOplockRequest(
         }
     }
 
-    if (TypeOfOpen == UserDirectoryOpen)
+    if cfg!(ntddi_ge_ntddi_win7)
+        && (TypeOfOpen == UserDirectoryOpen)
         && (FsControlCode != FSCTL_REQUEST_OPLOCK || FsRtlOplockIsSharedRequest(Irp) == 0)
     {
         (FatCompleteRequest)(IrpContext, Irp, STATUS_INVALID_PARAMETER);
@@ -1194,7 +1200,8 @@ pub unsafe extern "system" fn FatOplockRequest(
             || (FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)
             || (FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)
             || (FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_2)
-            || ((FsControlCode == FSCTL_REQUEST_OPLOCK)
+            || (cfg!(ntddi_ge_ntddi_win7)
+                && FsControlCode == FSCTL_REQUEST_OPLOCK
                 && FlagOn((*InputBuffer).Flags, REQUEST_OPLOCK_INPUT_FLAG_REQUEST) != 0)
         {
             FatAcquireSharedVcb((IrpContext).cast(), (*Fcb).Vcb);
@@ -1202,14 +1209,26 @@ pub unsafe extern "system" fn FatOplockRequest(
             (FatAcquireExclusiveFcb)(IrpContext, Fcb);
             *p_acquired_fcb = 1;
 
-            if FsRtlOplockIsSharedRequest(*p_irp) != 0 {
+            // fsctrl.c:3102: FsRtlOplockIsSharedRequest from WIN7, the control code before.
+            let SharedRequest = if cfg!(ntddi_ge_ntddi_win7) {
+                FsRtlOplockIsSharedRequest(*p_irp) != 0
+            } else {
+                FsControlCode == FSCTL_REQUEST_OPLOCK_LEVEL_2
+            };
+            if SharedRequest {
                 if TypeOfOpen == UserFileOpen {
                     // (ULONG) !FsRtlCheckLockForOplockRequest(...): nonzero when FsRtl
                     // DENIES the oplock. The translation had the negation inverted.
-                    OplockCount = (FsRtlCheckLockForOplockRequest(
-                        &mut (*Fcb).Specific.Fcb.as_mut().FileLock as *mut FILE_LOCK,
-                        &(*Fcb).Header.AllocationSize as *const LARGE_INTEGER,
-                    ) == 0) as ULONG;
+                    if cfg!(ntddi_ge_ntddi_win8) {
+                        OplockCount = (FsRtlCheckLockForOplockRequest(
+                            &mut (*Fcb).Specific.Fcb.as_mut().FileLock as *mut FILE_LOCK,
+                            &(*Fcb).Header.AllocationSize as *const LARGE_INTEGER,
+                        ) == 0) as ULONG;
+                    } else {
+                        OplockCount = FsRtlAreThereCurrentFileLocks(
+                            &mut (*Fcb).Specific.Fcb.as_mut().FileLock as *mut FILE_LOCK,
+                        ) as ULONG;
+                    }
                 }
             } else {
                 OplockCount = (*Fcb).UncleanCount;
@@ -1218,12 +1237,13 @@ pub unsafe extern "system" fn FatOplockRequest(
             || (FsControlCode == FSCTL_OPBATCH_ACK_CLOSE_PENDING)
             || (FsControlCode == FSCTL_OPLOCK_BREAK_NOTIFY)
             || (FsControlCode == FSCTL_OPLOCK_BREAK_ACK_NO_2)
-            || ((FsControlCode == FSCTL_REQUEST_OPLOCK)
+            || (cfg!(ntddi_ge_ntddi_win7)
+                && FsControlCode == FSCTL_REQUEST_OPLOCK
                 && FlagOn((*InputBuffer).Flags, REQUEST_OPLOCK_INPUT_FLAG_ACK) != 0)
         {
             FatAcquireSharedFcb(IrpContext, Fcb);
             *p_acquired_fcb = 1;
-        } else if FsControlCode == FSCTL_REQUEST_OPLOCK {
+        } else if cfg!(ntddi_ge_ntddi_win7) && FsControlCode == FSCTL_REQUEST_OPLOCK {
             *p_status = STATUS_INVALID_PARAMETER;
             return; // try_leave
         } else {
@@ -1233,7 +1253,8 @@ pub unsafe extern "system" fn FatOplockRequest(
         // Check DELETE_ON_CLOSE
         if (FsControlCode == FSCTL_REQUEST_FILTER_OPLOCK)
             || (FsControlCode == FSCTL_REQUEST_BATCH_OPLOCK)
-            || ((FsControlCode == FSCTL_REQUEST_OPLOCK)
+            || (cfg!(ntddi_ge_ntddi_win7)
+                && FsControlCode == FSCTL_REQUEST_OPLOCK
                 && FlagOn((*InputBuffer).RequestedOplockLevel, OPLOCK_LEVEL_CACHE_HANDLE) != 0)
         {
             if FlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0 {
@@ -2129,6 +2150,7 @@ pub unsafe extern "system" fn FatAllowExtendedDasdIo(
     STATUS_SUCCESS
 }
 #[no_mangle]
+#[cfg(ntddi_ge_ntddi_win7)]
 pub unsafe extern "system" fn FatGetRetrievalPointerBase(
     IrpContext: PIRP_CONTEXT,
     Irp: PIRP,
@@ -2188,6 +2210,7 @@ pub unsafe extern "system" fn FatGetRetrievalPointerBase(
     STATUS_SUCCESS
 }
 #[no_mangle]
+#[cfg(ntddi_ge_ntddi_win7)]
 pub unsafe extern "system" fn FatGetBootAreaInfo(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
@@ -2333,6 +2356,7 @@ pub unsafe extern "system" fn FatFlushAndCleanVolume(
     }
 }
 #[no_mangle]
+#[cfg(ntddi_ge_ntddi_win8)]
 pub unsafe extern "system" fn FatSetPurgeFailureMode(
     mut IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
@@ -2616,6 +2640,7 @@ pub unsafe extern "system" fn FatScanForDismountedVcb(IrpContext: PIRP_CONTEXT) 
     return;
 }
 #[no_mangle]
+#[cfg(ntddi_ge_ntddi_win7)]
 pub unsafe extern "system" fn FatSetZeroOnDeallocate(
     IrpContext: *mut IRP_CONTEXT,
     Irp: *mut IRP,
@@ -12419,4 +12444,11 @@ unsafe fn FlagOn(Flags: u32, Flag: u32) -> u32 {
 #[inline(always)]
 unsafe fn BooleanFlagOn(Flags: u32, Bit: u32) -> bool {
     (Flags as u64 & Bit as u64) != 0
+}
+
+/// fsrtlfuncs.h `FsRtlAreThereCurrentFileLocks(FL)`: `((FL)->FastIoIsQuestionable)`. A macro,
+/// so inline here; the WS03 side of FatOplockRequest's lock check uses it.
+#[inline(always)]
+unsafe fn FsRtlAreThereCurrentFileLocks(FileLock: *mut FILE_LOCK) -> BOOLEAN {
+    (*FileLock).FastIoIsQuestionable
 }

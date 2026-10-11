@@ -412,7 +412,7 @@ pub unsafe extern "system" fn FatProcessException(
         // FatPrePostIrp does is mark the Irp pending, so we must return PENDING.
         // A verify cannot be done at APC level: it waits for Io to complete.
         if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_RECURSIVE_CALL) == 0
-            && (((*p_code == STATUS_VERIFY_REQUIRED) && KeAreAllApcsDisabled() != 0)
+            && (((*p_code == STATUS_VERIFY_REQUIRED) && (if cfg!(ntddi_ge_ntddi_vista) { KeAreAllApcsDisabled() != 0 } else { KeGetCurrentIrql() >= (APC_LEVEL) as u8 }))
                 || (*p_code == STATUS_CANT_WAIT))
         {
             *p_code = FatFsdPostRequest(IrpContext, Irp);

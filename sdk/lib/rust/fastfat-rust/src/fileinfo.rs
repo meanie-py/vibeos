@@ -1820,7 +1820,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
                     if (*TempFcb).UncleanCount != 0 {
                         if FatIsFileOplockable(TempFcb) != 0
                             && (FsRtlCurrentBatchOplock(FatGetFcbOplock(TempFcb)) != 0
-                                || FsRtlCurrentOplockH(FatGetFcbOplock(TempFcb)) != 0)
+                                || (cfg!(ntddi_ge_ntddi_win7) && FsRtlCurrentOplockH(FatGetFcbOplock(TempFcb)) != 0))
                         {
                             BatchOplockCount += 1;
                             if BatchOplockFcb.is_null() {
@@ -2053,7 +2053,7 @@ pub unsafe extern "system" fn FatSetRenameInfo(
                         Status = STATUS_ACCESS_DENIED;
                         if FatIsFileOplockable(TempFcb) != 0
                             && (FsRtlCurrentBatchOplock(FatGetFcbOplock(TempFcb)) != 0
-                                || FsRtlCurrentOplockH(FatGetFcbOplock(TempFcb)) != 0)
+                                || (cfg!(ntddi_ge_ntddi_win7) && FsRtlCurrentOplockH(FatGetFcbOplock(TempFcb)) != 0))
                         {
                             FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!((*p_target_dirent_bcb)) as *mut *mut core::ffi::c_void);
                             Status = FsRtlCheckOplock(

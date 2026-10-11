@@ -491,7 +491,7 @@ pub unsafe extern "system" fn FatCommonCreate(
     let NoIntermediateBuffering = FlagOn(Options, FILE_NO_INTERMEDIATE_BUFFERING) != 0;
     let NoEaKnowledge = FlagOn(Options, FILE_NO_EA_KNOWLEDGE) != 0;
     let DeleteOnClose = FlagOn(Options, FILE_DELETE_ON_CLOSE) != 0;
-    let OpenRequiringOplock = FlagOn(Options, FILE_OPEN_REQUIRING_OPLOCK) != 0;
+    let OpenRequiringOplock = cfg!(ntddi_ge_ntddi_win7) && FlagOn(Options, FILE_OPEN_REQUIRING_OPLOCK) != 0;
     let TemporaryFile = FlagOn((*IrpSp).Parameters.Create.FileAttributes as u32, FILE_ATTRIBUTE_TEMPORARY as u32) != 0;
     let CreateDisposition = (Options >> 24) & 0xFF;
     let IsPagingFile = FlagOn(((*IrpSp).Flags) as u32, SL_OPEN_PAGING_FILE) != 0;
@@ -2047,17 +2047,20 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
         'try_scope_body: loop {
             *OplockPostIrp = 0;
 
-            // Oplock key check
-            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
-                FatGetFcbOplock(Fcb),
-                (*IrpContext).OriginatingIrp,
-                OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
-                core::ptr::null_mut(),
-                None,
-                None,
-            );
-            if Iosb.__bindgen_anon_1.Status != 0 /* STATUS_SUCCESS */ {
-                break 'try_scope_body;
+            #[cfg(ntddi_ge_ntddi_win7)]
+            {
+                // Oplock key check
+                Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
+                    FatGetFcbOplock(Fcb),
+                    (*IrpContext).OriginatingIrp,
+                    OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
+                    core::ptr::null_mut(),
+                    None,
+                    None,
+                );
+                if Iosb.__bindgen_anon_1.Status != 0 /* STATUS_SUCCESS */ {
+                    break 'try_scope_body;
+                }
             }
 
             // Batch oplock check
@@ -2125,7 +2128,8 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             Iosb.__bindgen_anon_1.Status = FatCheckShareAccess(IrpContext, FileObject, Fcb, DesiredAccess, (ShareAccess) as u32);
             if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) == 0 {
                 let mut OplockBreakStatus: i32 = 0;
-                if Iosb.__bindgen_anon_1.Status == 0xC0000043_u32 as i32 /* STATUS_SHARING_VIOLATION */
+                if cfg!(ntddi_ge_ntddi_win7)
+                    && Iosb.__bindgen_anon_1.Status == 0xC0000043_u32 as i32 /* STATUS_SHARING_VIOLATION */
                     && FlagOn((*IrpSp).Parameters.Create.Options, 0x100 /* FILE_COMPLETE_IF_OPLOCKED */) == 0
                 {
                     OplockBreakStatus = FsRtlOplockBreakH(
@@ -2632,26 +2636,29 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 FatLookupFileAllocationSize(IrpContext, *Fcb);
             }
 
-            Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
-                FatGetFcbOplock(*Fcb),
-                (*IrpContext).OriginatingIrp,
-                OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
-                core::ptr::null_mut(),
-                None,
-                None,
-            );
-            if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
-                Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
+            #[cfg(ntddi_ge_ntddi_win7)]
+            {
+                Iosb.__bindgen_anon_1.Status = FsRtlCheckOplockEx(
                     FatGetFcbOplock(*Fcb),
                     (*IrpContext).OriginatingIrp,
-                    (*(*Fcb)).UncleanCount + 1,
+                    OPLOCK_FLAG_OPLOCK_KEY_CHECK_ONLY,
+                    core::ptr::null_mut(),
+                    None,
+                    None,
                 );
-            }
+                if OpenRequiringOplock != 0 && Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS {
+                    Iosb.__bindgen_anon_1.Status = FsRtlOplockFsctrl(
+                        FatGetFcbOplock(*Fcb),
+                        (*IrpContext).OriginatingIrp,
+                        (*(*Fcb)).UncleanCount + 1,
+                    );
+                }
 
-            if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                NT_ASSERT!((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
-                FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
-                // unreachable
+                if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
+                    NT_ASSERT!((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
+                    FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
+                    // unreachable
+                }
             }
 
             match CreateDisposition {
@@ -4017,8 +4024,9 @@ pub unsafe extern "system" fn FatCheckShareAccess(
 ) -> NTSTATUS {
     PAGED_CODE!();
 
-    // NTDDI_VERSION >= NTDDI_VISTA block (unconditionally included; in practice always true for modern targets)
-    if NodeType!(FcbOrDcb as *const c_void) == (FAT_NTC_FCB as u16)
+    // NTDDI_VERSION >= NTDDI_VISTA only (create.c:6905): compiled out at WS03
+    if cfg!(ntddi_ge_ntddi_vista)
+        && NodeType!(FcbOrDcb as *const c_void) == (FAT_NTC_FCB as u16)
         && FlagOn(ShareAccess as u32, FILE_SHARE_WRITE) == 0
         && FlagOn(
             *DesiredAccess as u32,
