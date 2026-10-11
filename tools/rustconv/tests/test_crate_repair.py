@@ -3143,3 +3143,28 @@ def test_an_interface_method_on_a_com_ptr_goes_through_the_pointer():
     )
     plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
     assert [e.replacement for e in plan.edits] == ["(*(*this_).m_spProgress.p)"]
+
+
+def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
+    """cleanmgr: `m_HandlerListControl = GetDlgItem(IDC_HANDLERLIST)` -- CWindow's
+    operator=(HWND)."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_ctl = (*this_).__base0.GetDlgItem(7);\n"
+    a = src.index(b"(*this_).__base0")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b";"),
+                is_primary=True,
+                label="expected `CWindow`, found `*mut HWND__`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == [
+        "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
+    ]

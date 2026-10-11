@@ -428,6 +428,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "cleanmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "clipbrd-rust"
 version = "0.1.0"
 dependencies = [

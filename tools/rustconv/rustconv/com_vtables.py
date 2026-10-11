@@ -74,7 +74,7 @@ def merge(island: str, c_pass: str) -> tuple[str, list[str]]:
     c_bodies = {n: t for n, t in c_items if n in ifaces and re.search(r"\blpVtbl\b", t) is not None}
     out: list[str] = []
     for n, t in items(island):
-        out.append(c_bodies.get(n, t))
+        out.append(c_bodies.get(n, t) if n else t)
     have = {n for n, _ in items(island) if n}
     added = [t for n, t in c_items if n and n not in have]
     tail = "".join(out) + (

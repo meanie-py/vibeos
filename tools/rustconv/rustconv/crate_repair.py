@@ -2799,6 +2799,28 @@ def _raw_receiver_rule(
     )
 
 
+def _hwnd_to_cwindow_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`m_ctl = GetDlgItem(id)` / `CWindow w = GetDlgItem(id)`: C++ converts the HWND with
+    `CWindow(HWND)` / `operator=(HWND)`, both of which only set `m_hWnd`. cppapp generates
+    that constructor as `CWindow__make_0`."""
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    if str(span.get("label") or "") != "expected `CWindow`, found `*mut HWND__`":
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    note = "rustc: an HWND where a CWindow is expected; C++ converts with CWindow(HWND)"
+    repl = f"CWindow__make_0({text})"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, repl, note, span, ctx)],
+        [],
+        True,
+    )
+
+
 def _com_ptr_receiver_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -5215,6 +5237,7 @@ _RULE_TABLE: dict[
         _guid_eq_rule,
         _heap_ptr_conversion_rule,
         _com_ptr_receiver_rule,
+        _hwnd_to_cwindow_rule,
     ),
     RULE_CONST_OPERAND: _constant_operand_rule,
 }
