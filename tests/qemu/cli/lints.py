@@ -837,6 +837,16 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A wine/list.h walk lowered to start AT the head it stops at runs zero times: rpcss's
+    # running-object table never found a registered object (2026-10-11).
+    slw = repo / "tools" / "scan_list_walk_from_head.py"
+    specs.append(
+        (
+            "scan_list_walk_from_head",
+            [py, str(slw), "--lint"] if slw.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     sdc = repo / "tools" / "scan_dowhile_continue.py"
     specs.append(
         (

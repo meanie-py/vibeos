@@ -3794,6 +3794,14 @@ def emit_profile(dp: DerivedProfile) -> str:
         )
         out.append("    # this module's C, so the island emits the real layout (fields reachable).")
         out.append('    UNBLOCK="' + " ".join(unblock) + '"')
+    if m.is_usermode and any(
+        str(h).replace("\\", "/").endswith("/wine/list.h") for h in dp.closure.headers
+    ):
+        # wine/list.h's `struct list` is winelist-rust's, so the list_* helpers resolve
+        # imports from it operate on the same type as this module's struct fields.
+        out.append("    # wine/list.h: `struct list` and its helpers are winelist-rust's.")
+        out.append("    EXTRA_BL_ITEMS=( list )")
+        out.append("    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )")
     out.append("    EXTRA_INC=( " + " ".join(dp.extra_inc) + " )")
     if dp.late_inc:
         out.append(

@@ -567,6 +567,9 @@ members = [
     "wlanconf-rust",
     "dwnl-rust",
     "dbgprint_app-rust",
+    "wordpad-rust",
+    "winhlp32-rust",
+    "eventvwr-rust",
 ]
 resolver = "2"
 

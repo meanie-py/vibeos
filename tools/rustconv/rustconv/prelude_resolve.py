@@ -627,17 +627,25 @@ def island_enum_aliases(
             rf"^pub const (_?[A-Za-z][A-Za-z0-9_]*)_{re.escape(name)}\s*:\s*([A-Za-z_]\w*)\s*=",
             re.M,
         )
-        enums: set[str] = set()
+        enums: set[tuple[str, str]] = set()
         ok = True
         for text in texts:
-            hits = {m.group(1) for m in pat.finditer(text) if m.group(1) == m.group(2)}
+            # ...or an anonymous enum nested in a struct: bindgen prefixes the STRUCT's name
+            # and types it `<struct>__bindgen_ty_N` (winhlp32's `enum {hlp_link_link, ..}
+            # cookie;` inside tagHlpFileLink).
+            hits = {
+                (m.group(1), m.group(2))
+                for m in pat.finditer(text)
+                if m.group(1) == m.group(2)
+                or re.fullmatch(rf"{re.escape(m.group(1))}__bindgen_ty_\d+", m.group(2))
+            }
             if len(hits) != 1:
                 ok = False
                 break
             enums |= hits
         if ok and len(enums) == 1:
-            e = enums.pop()
-            out[name] = Item("const", f"const {name}: {e} = {e}_{name};", None, "island enum")
+            prefix, ty = enums.pop()
+            out[name] = Item("const", f"const {name}: {ty} = {prefix}_{name};", None, "island enum")
     return out
 
 
@@ -718,7 +726,35 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ),
         ),
     ),
+    (
+        "winelist_rust",
+        "winelist-rust",
+        (("", r"^pub unsafe fn (list_\w+)\b"),),
+    ),
 )
+
+#: Shared crates a prelude takes only when the crate CALLS one of their names (or already
+#: depends on them). wine/list.h's helpers operate on winelist-rust's `struct list`, so a
+#: crate takes them together with that type: its island blocklists `list` and re-exports
+#: `winelist_rust::*` (profile_derive emits both when wine/list.h is in the include closure).
+#: Without the entry every wine-derived crate re-ported the header -- six copies -- and rpcss
+#: got cabinet-rust's crate-internal #[no_mangle] copies as externs, which do not link.
+OPT_IN_SHARED = frozenset({"winelist_rust"})
+
+
+def _crate_calls(crate_dir: Path, names: set[str]) -> set[str]:
+    """Which of `names` the crate's modules call (the prelude itself excluded)."""
+    if not names:
+        return set()
+    call = re.compile(rf"(?<![\w:])({'|'.join(map(re.escape, sorted(names)))})\s*\(")
+    from tools.source_walk import source_files
+
+    out: set[str] = set()
+    for rs in source_files(crate_dir / "src", "*.rs"):
+        if rs.name == "prelude.rs":
+            continue
+        out |= set(call.findall(rs.read_text(errors="replace")))
+    return out
 
 
 def shared_provides(workspace: Path) -> dict[tuple[str, str], set[str]]:
@@ -761,7 +797,14 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
         own.update(n.strip().split(" as ")[-1] for n in (m.group(2) or m.group(3)).split(","))
     own.discard("")
     changed: list[str] = []
+    manifest = (crate_dir / "Cargo.toml").read_text()
     for (ident, module), names in shared_provides(workspace).items():
+        if (
+            ident in OPT_IN_SHARED
+            and not re.search(rf"^{re.escape(ident.replace('_', '-'))}\s*=", manifest, re.M)
+            and not _crate_calls(crate_dir, names - own)
+        ):
+            continue
         keep = sorted(names - own)
         path = f"{ident}::{module}" if module else ident
         line_re = re.compile(rf"^pub use {re.escape(path)}::\{{[^}}]*\}};$", re.M)
@@ -1169,7 +1212,7 @@ _DECLARED = r"^\s*pub\s+(?:fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)\b[^{;=]*;"
 _IMPORTLIBS = re.compile(r"add_importlibs\(\s*\S+\s+([^)]*)\)")
 
 
-def module_exports(module_dir: Path, repo: Path) -> set[str] | None:
+def module_exports(module_dir: Path, repo: Path, every_arch: bool = True) -> set[str] | None:
     """Names the module's import libraries export on EVERY arch; None when unknowable.
 
     The authority for "can this be an extern at all". A wdm.h FORCEINLINE (InitializeListHead,
@@ -1201,7 +1244,11 @@ def module_exports(module_dir: Path, repo: Path) -> set[str] | None:
         | _static_lib_symbols(cmake.read_text(), repo, arch)
         for arch in ("i386", "amd64", "arm64")
     ]
-    return set.intersection(*per_arch) if per_arch else None
+    if not per_arch:
+        return None
+    # every_arch=False: exported on SOME arch -- i386's GetWindowLongPtrW is a user32.h macro
+    # for GetWindowLongW, which the prelude's per-arch link_name settles.
+    return set.intersection(*per_arch) if every_arch else set.union(*per_arch)
 
 
 _LINKLIBS = re.compile(r"target_link_libraries\(\s*\S+\s+([^)]*)\)")

@@ -118,6 +118,7 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_ptr_highword_mask.py"),
     (".", ".", "tools/test_scan_hresult_literals.py"),
     (".", ".", "tools/test_scan_dowhile_continue.py"),
+    (".", ".", "tools/test_scan_list_walk_from_head.py"),
     (".", ".", "tools/test_scan_case_bitor_pattern.py"),
     (".", ".", "tools/test_rank_unused_assignments.py"),
     (".", ".", "tools/test_apply_dead_assignments.py"),

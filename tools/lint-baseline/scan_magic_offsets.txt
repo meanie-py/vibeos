@@ -24,6 +24,37 @@
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/ntoskrnl-rust/src/ke/i386/cpu.rs:1302: let IdtEntry = &mut *(*(KeGetPcr() as PKIPCR)).IDT.add(0x13);
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2449: *vffi = buf.offset(0x14) as *mut VS_FIXEDFILEINFO;
 [TYPED_PTR_HEX_ARITH] sdk/lib/rust/version-rust/src/lib.rs:2451: *vffi = buf.offset(0x28) as *mut VS_FIXEDFILEINFO;
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:1975: if buf.offset(0x15 as isize) >= (*hlpfile).topic_end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:1988: match (*buf.offset(0x14 as isize) as ::core::ffi::c_int) as u32 {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:2012: *buf.offset(0x14 as isize) as ::core::ffi::c_int,
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:2406: (buf as *mut ::core::ffi::c_char).offset(0x15 as isize);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:2425: ptr = buf.offset(0x15 as isize);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:2546: .offset(0x16 as isize),
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3025: .offset(0x13 as isize)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3039: buf.offset(0x13 as isize)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3093: buf.offset(0x13 as isize)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3343: if ptr.offset(0x44 as isize) > end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3348: ptr.offset(0xc as isize),
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3372: if ptr.offset(0x44 as isize) > end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3378: ptr.offset(0xc as isize),
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3414: .offset(0x0C as isize)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3580: if buf.offset(0x19 as isize) > end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3585: tmp = buf.offset(0x15 as isize);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3586: if *buf.offset(0x14 as isize) as ::core::ffi::c_int == HLP_DISPLAY as ::core::ffi::c_int
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3587: || *buf.offset(0x14 as isize) as ::core::ffi::c_int == HLP_TABLE as ::core::ffi::c_int
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3678: if buf.offset(0x15 as isize) >= (*hlpfile).topic_end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3690: match (*buf.offset(0x14 as isize) as ::core::ffi::c_int) as u32 {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3715: *buf.offset(0x14 as isize) as ::core::ffi::c_int,
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3813: if buf.offset(0x19 as ::core::ffi::c_int as isize) > end {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3860: format = buf.offset(0x15 as ::core::ffi::c_int as isize);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3862: WINE_TRACE!("Record type (buf[0x14]) = 0x%x\n", *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int);
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3863: if *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == (HLP_DISPLAY as i32)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3864: || *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == (HLP_TABLE as i32)
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:3869: if *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int == (HLP_TABLE as i32) {
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:4026: WINE_TRACE!("looking for format at offset %lu in column %d\n", format .offset_from(buf.offset(0x15 as ::core::ffi::c_int as isize)) as ::core::ffi::c_longlong a
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:4033: if *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:4064: if *buf.offset(0x14 as ::core::ffi::c_int as isize) as ::core::ffi::c_int
+[TYPED_PTR_HEX_ARITH] sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs:4507: if *buf.offset(0x14 as ::core::ffi::c_int as isize)
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1087: let p = (self as *const _ as *const u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1093: let p = (self as *mut _ as *mut u8).add(pfn_offsets_orig_pte::ORIGINAL_PTE);
 [U8_BYTE_ARITH] sdk/lib/rust/ntkrnl-sys/src/mm.rs:1403: let p = (pfn as *mut u8).add(pfn_offsets::PTE_ADDRESS);
