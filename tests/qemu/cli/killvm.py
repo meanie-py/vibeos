@@ -27,7 +27,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import signal
+import subprocess
 import time
 from pathlib import Path
 
@@ -152,6 +154,52 @@ def win_uid_of(info: dict) -> str:
     return ""
 
 
+_HARNESS_UID = re.compile(r"(?:^|\s)-name\s+(vibeos-(\d+)-\d+)(?=\s|$)")
+
+
+def windows_orphans(locks: list[dict], procs: list[dict]) -> list[dict]:
+    """Windows-side QEMUs no lockfile accounts for, whose launcher is gone.
+
+    The lockfile registry cannot see these by construction: they exist because a stop()
+    dropped the lock without confirming the kill. Only the harness's own
+    `vibeos-<launcher pid>-<port>` tag qualifies, and only when that launcher is dead
+    and no lock with a live owner names the uid (a kept --attach-on-fail VM is re-locked
+    under the debugging session, so it stays protected). `vibeos-dbg-*` (gdb start) and
+    QEMUs launched by hand never match: `gdb stop` and their owners handle those."""
+    owned = {win_uid_of(i) for i in locks if i.get("owner_alive")}
+    out: list[dict] = []
+    for p in procs:
+        m = _HARNESS_UID.search(str(p.get("cmd") or ""))
+        if not m or m.group(1) in owned or _pid_alive(int(m.group(2))):
+            continue
+        image = str(p.get("name") or "")
+        out.append(
+            {
+                "qemu_pid": None,
+                "win_pid": p.get("pid"),
+                "launcher_pid": int(m.group(2)),
+                "owner_alive": False,
+                "arch": image.removeprefix("qemu-system-").removesuffix(".exe") or "?",
+                "created": p.get("created"),
+                "cmd": ["-name", m.group(1)],
+                "untracked": True,
+            }
+        )
+    return out
+
+
+def untracked_windows_orphans() -> tuple[list[dict], str]:
+    """(orphans, error). Off windows-host there is nothing to look at; when PowerShell
+    cannot answer, say so instead of reporting none."""
+    if not shutil.which("powershell.exe"):
+        return [], ""
+    try:
+        procs = be.windows_qemus()
+    except (OSError, ValueError, subprocess.SubprocessError) as e:
+        return [], f"could not list Windows QEMUs: {str(e).splitlines()[0][:120]}"
+    return windows_orphans(running_vms(), procs), ""
+
+
 def select(vms: list[dict], args) -> tuple[list[dict], str]:
     """Resolve the selector to a concrete VM list. Returns (selected, description)."""
     pids = {int(p) for p in (getattr(args, "pids", None) or [])}
@@ -181,8 +229,14 @@ def kill_one(info: dict, *, dry_run: bool = False) -> str:
         return f"would kill {what}" + (f" via uid {uid}" if uid else " via SIGTERM")
     if uid:
         # windows-host: the process lives on the Windows side; the uid tag is the only
-        # precise handle (its Linux-side pid is the interop shim, not qemu.exe).
-        be.kill_by_uid(uid)
+        # precise handle (its Linux-side pid is the interop shim, not qemu.exe). The
+        # reaper keeps a VM's lock when this says FAILED/STILL ALIVE, so it must never
+        # say "killed" without having looked.
+        left = be.kill_by_uid(uid)
+        if left is None:
+            return f"FAILED {what}: PowerShell could not confirm uid {uid} is gone"
+        if left:
+            return f"STILL ALIVE {what}: {left} process(es) with uid {uid} after Stop-Process"
         return f"killed {what} (uid {uid})"
     try:
         os.kill(qpid, signal.SIGTERM)
@@ -229,6 +283,14 @@ def kill_one(info: dict, *, dry_run: bool = False) -> str:
 def cmd_kill(args, repo: Path) -> int:
     run = Run("kill", getattr(args, "arch", None) or "vms")
     vms = [v for v in running_vms() if v["alive"]]
+    if getattr(args, "stale", False):
+        # The lock registry cannot see a qemu.exe whose lock was dropped without a
+        # confirmed kill, so --stale also asks Windows. Not being able to ask is a
+        # failure: "no orphans" would be a claim about processes nobody looked at.
+        orphans, err = untracked_windows_orphans()
+        vms += orphans
+        if err:
+            run.add(Stage("windows", status="fail", detail=err))
     if not vms:
         # Same distinction as the `not chosen` branch below, one level earlier:
         # "no QEMUs running" is a fine answer to a sweep and a WRONG answer to
@@ -312,12 +374,15 @@ def cmd_kill(args, repo: Path) -> int:
     outcomes = [kill_one(v, dry_run=dry) for v in chosen]
     for line in outcomes:
         print(line)
+    unconfirmed = [
+        o for o in outcomes if o.startswith(("FAILED", "STILL ALIVE")) or "SIGKILL FAILED" in o
+    ]
     run.add(
         Stage(
             "kill",
-            status="ok",
+            status="fail" if unconfirmed else "ok",
             detail=f"{'would stop' if dry else 'stopped'} {len(chosen)} VM(s) — {how}",
-            salient=outcomes[:5],
+            salient=(unconfirmed + [o for o in outcomes if o not in unconfirmed])[:5],
         )
     )
     run.extra["killed"] = [v["qemu_pid"] for v in chosen]

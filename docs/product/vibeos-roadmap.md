@@ -595,6 +595,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Windows-host QEMU launch fails all three attempts: conformance `L:no-guest-serial`, smoke
+  `LAUNCH_FAIL` (FLAKE, host side, partly fixed 2026-10-11).** About 4% of conformance rounds
+  over 10-10/11 (10 artifacts under `~/vibeos-flake-farm/fails/auto/*L_no-guest-serial`, every
+  one `handshake_seconds` 15.00x with `UtilAcceptVsock: accept4 failed 110`). The guest never
+  ran: WSL interop did not start `qemu-system-*.exe`. Fixed: retries shared a staging dir
+  (attempt 2 died on attempt 1's still-open files), and an unconfirmed kill dropped the VM's
+  lock, which leaked nine qemu.exe processes (about four cores, some for eight days; killed
+  with the new `kill --stale`). OPEN: why one round's three attempts all fail while other
+  launches in the same minute succeed. Field manual: "`L:no-guest-serial`: the guest never ran".
+
 - **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
   32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
