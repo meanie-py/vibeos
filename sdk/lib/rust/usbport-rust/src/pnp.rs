@@ -595,6 +595,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     if !NT_SUCCESS(Status) {
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -607,8 +608,12 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     );
 
     if BytesRead != PCI_COMMON_HDR_LENGTH {
+        DbgPrint(b"USBPORT_StartDevice: Failed to get pci config information!\n\0".as_ptr() as PCSTR);
+        // The C jumps to ExitWithError with Status still STATUS_SUCCESS.
+        Status = STATUS_UNSUCCESSFUL;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -643,9 +648,11 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     (*FdoExtension).DmaAdapter = DmaAdapter;
 
     if DmaAdapter.is_null() {
+        DbgPrint(b"USBPORT_StartDevice: Failed to get DmaAdapter!\n\0".as_ptr() as PCSTR);
         Status = STATUS_INSUFFICIENT_RESOURCES;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -653,6 +660,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     if !NT_SUCCESS(Status) {
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -663,6 +671,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     if !NT_SUCCESS(Status) {
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -680,6 +689,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     if !NT_SUCCESS(Status) {
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -880,8 +890,12 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     ) as *mut USBPORT_IRP_TABLE;
 
     if (*FdoExtension).ActiveIrpTable.is_null() {
+        DbgPrint(b"USBPORT_StartDevice: Allocate ActiveIrpTable failed!\n\0".as_ptr() as PCSTR);
+        // The C jumps to ExitWithError with Status still STATUS_SUCCESS.
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -897,8 +911,12 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     ) as *mut USBPORT_IRP_TABLE;
 
     if (*FdoExtension).PendingIrpTable.is_null() {
+        DbgPrint(b"USBPORT_StartDevice: Allocate PendingIrpTable failed!\n\0".as_ptr() as PCSTR);
+        // The C jumps to ExitWithError with Status still STATUS_SUCCESS.
+        Status = STATUS_INSUFFICIENT_RESOURCES;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -922,8 +940,10 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     );
 
     if !NT_SUCCESS(Status) {
+        DbgPrint(b"USBPORT_StartDevice: IoConnectInterrupt failed!\n\0".as_ptr() as PCSTR);
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
@@ -944,9 +964,11 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
         HeaderBuffer = USBPORT_AllocateCommonBuffer(FdoDevice, (*Packet).MiniPortResourcesSize as _);
 
         if HeaderBuffer.is_null() {
+            DbgPrint(b"USBPORT_StartDevice: Failed to AllocateCommonBuffer!\n\0".as_ptr() as PCSTR);
             Status = STATUS_INSUFFICIENT_RESOURCES;
             USBPORT_StopWorkerThread(FdoDevice);
             USBPORT_StopDevice(FdoDevice);
+            DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
             return Status;
         }
 
@@ -995,11 +1017,12 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
         // usbhub then waits forever for a root hub that never comes up. Fail
         // the START instead.
         DbgPrint(
-            b"[USBPORT] FDO start: miniport StartController failed (%x)\n\0".as_ptr() as PCSTR,
+            b"USBPORT_StartDevice: Failed to Start MiniPort. MiniPortStatus - %x\n\0".as_ptr() as PCSTR,
             MiniPortStatus,
         );
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, STATUS_UNSUCCESSFUL);
         return STATUS_UNSUCCESSFUL;
     } else {
         (*FdoExtension).MiniPortFlags |= USBPORT_MPFLAG_INTERRUPTS_ENABLED;
@@ -1017,6 +1040,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     );
 
     if !NT_SUCCESS(Status) {
+        DbgPrint(b"USBPORT_StartDevice: RegisterDeviceInterface failed!\n\0".as_ptr() as PCSTR);
         // The timer and the interrupt both point into this FDO, which PnP
         // deletes once the START fails.
         ntkrnl_sys::ddk::KeCancelTimer(core::ptr::addr_of_mut!((*FdoExtension).TimerObject) as _);
@@ -1026,6 +1050,7 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
         (*FdoExtension).Flags &= !USBPORT_FLAG_INT_CONNECTED;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
+        DbgPrint(b"USBPORT_StartDevice: ExitWithError Status - %lx\n\0".as_ptr() as PCSTR, Status);
         return Status;
     }
 
