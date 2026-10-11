@@ -57,3 +57,36 @@ def test_dd_rounds_a_partial_last_mib_up():
 def test_dd_refuses_an_unaligned_partition():
     with pytest.raises(ValueError):
         winref.dd_window(512, 1 << 20)
+
+
+def _fake_base(d, content: bytes) -> None:
+    d.mkdir(parents=True, exist_ok=True)
+    (d / "base.qcow2").write_bytes(content)
+    (d / "base-vars.fd").write_bytes(b"vars-" + content)
+    (d / "state.json").write_text('{"setup": "build=26200"}')
+
+
+def test_snapshot_survives_a_reinstall_and_restores(tmp_path, monkeypatch):
+    """The point of the snapshot: a later `install --force` rewrites base.qcow2, and a
+    ~2 h TCG install is too expensive to lose to that."""
+    monkeypatch.setattr(winref, "WINREF_DIR", tmp_path)
+    _fake_base(tmp_path, b"pristine")
+    snap = winref._snapshot(winref.POST_INSTALL)
+    assert (snap / "base.qcow2").read_bytes() == b"pristine"
+    _fake_base(tmp_path, b"clobbered")  # what a reinstall or a base change does
+    args = type("A", (), {"name": winref.POST_INSTALL})()
+    assert winref.cmd_restore(args, tmp_path) == 0
+    assert (tmp_path / "base.qcow2").read_bytes() == b"pristine"
+    assert (tmp_path / "base-vars.fd").read_bytes() == b"vars-pristine"
+
+
+def test_snapshot_never_overwrites_silently(tmp_path, monkeypatch):
+    monkeypatch.setattr(winref, "WINREF_DIR", tmp_path)
+    _fake_base(tmp_path, b"one")
+    winref._snapshot("x")
+    _fake_base(tmp_path, b"two")
+    with pytest.raises(FileExistsError):
+        winref._snapshot("x")
+    assert (tmp_path / "snapshots" / "x" / "base.qcow2").read_bytes() == b"one"
+    winref._snapshot("x", overwrite=True)
+    assert (tmp_path / "snapshots" / "x" / "base.qcow2").read_bytes() == b"two"

@@ -68,6 +68,7 @@ def _paths() -> dict[str, Path]:
         "code": WINREF_DIR / "OVMF_CODE.fd",
         "state": WINREF_DIR / "state.json",
         "runs": WINREF_DIR / "runs",
+        "snapshots": WINREF_DIR / "snapshots",
     }
 
 
@@ -364,7 +365,68 @@ def cmd_install(args, repo: Path) -> int:
     p["state"].write_text(json.dumps(state, indent=2))
     run.extra["winref"] = state
     run.add(artifacts.Stage("install", detail=state["setup"], salient=setup))
+    # An install costs ~2 h under TCG; keep the pristine result apart from the live base,
+    # which a later `install --force` or a deliberate base change would overwrite.
+    snap = _snapshot(POST_INSTALL)
+    run.add(artifacts.Stage("snapshot", detail=str(snap)))
     return run.finalize(repo)
+
+
+POST_INSTALL = "post-install"
+SNAPSHOT_FILES = ("base", "vars", "state")
+
+
+def _snapshot(name: str, *, overwrite: bool = False) -> Path:
+    """Full copies of the base disk, its UEFI variables and state.json into snapshots/<name>.
+
+    Copies, not qcow2 internal snapshots: an internal snapshot lives INSIDE base.qcow2, so
+    the reinstall it is meant to survive deletes it along with the file.
+    """
+    p = _paths()
+    dst = p["snapshots"] / name
+    if dst.exists() and not overwrite:
+        raise FileExistsError(f"snapshot {name!r} exists at {dst}")
+    tmp = p["snapshots"] / f".{name}.partial"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    for key in SNAPSHOT_FILES:
+        if p[key].is_file():
+            shutil.copyfile(p[key], tmp / p[key].name)
+    if dst.exists():
+        shutil.rmtree(dst)
+    os.replace(tmp, dst)
+    return dst
+
+
+def cmd_snapshot(args, repo: Path) -> int:
+    p = _paths()
+    if not p["base"].is_file():
+        print("winref snapshot: no base image to snapshot")
+        return 1
+    try:
+        dst = _snapshot(args.name, overwrite=args.force)
+    except FileExistsError as e:
+        print(f"winref snapshot: {e} (--force replaces it)")
+        return 1
+    print(f"winref snapshot: {dst}")
+    return 0
+
+
+def cmd_restore(args, repo: Path) -> int:
+    p = _paths()
+    src = p["snapshots"] / args.name
+    if not (src / p["base"].name).is_file():
+        have = sorted(d.name for d in p["snapshots"].iterdir()) if p["snapshots"].is_dir() else []
+        print(f"winref restore: no snapshot {args.name!r} (have: {', '.join(have) or 'none'})")
+        return 1
+    for key in SNAPSHOT_FILES:
+        f = src / p[key].name
+        if f.is_file():
+            tmp = p[key].with_name(p[key].name + ".restoring")
+            shutil.copyfile(f, tmp)
+            os.replace(tmp, p[key])
+    print(f"winref restore: base <- {src}")
+    return 0
 
 
 def cmd_run(args, repo: Path) -> int:
@@ -603,6 +665,11 @@ def add_parser(sub) -> None:
     r.add_argument("--keep", action="store_true", help="keep the overlay for inspection")
     vm_opts(r)
     verbs.add_parser("status", help="installed base image and its Windows build")
+    sn = verbs.add_parser("snapshot", help="full copy of the base image into snapshots/<name>")
+    sn.add_argument("name", nargs="?", default=POST_INSTALL)
+    sn.add_argument("--force", action="store_true", help="replace an existing snapshot")
+    rs = verbs.add_parser("restore", help="put snapshots/<name> back as the base image")
+    rs.add_argument("name", nargs="?", default=POST_INSTALL)
     lg = verbs.add_parser("logs", help="copy Setup logs + C:\\winref off a stopped VM's disk")
     lg.add_argument("--image", help="qcow2 to read (default: install.qcow2, else base)")
     lg.add_argument("--out", help="destination directory (a /mnt/<drive> path)")
@@ -614,4 +681,6 @@ def command(args, repo: Path) -> int:
         "run": cmd_run,
         "status": cmd_status,
         "logs": cmd_logs,
+        "snapshot": cmd_snapshot,
+        "restore": cmd_restore,
     }[args.winref_cmd](args, repo)
