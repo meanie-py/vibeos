@@ -368,7 +368,7 @@ pub unsafe extern "system" fn NtSetSystemTime(
         }
 
         if !PreviousTime.is_null() {
-            if let Err(status) = probe_user_buffer(
+            if let Err(status) = probe_user_buffer_write(
                 PreviousTime as *const core::ffi::c_void,
                 core::mem::size_of::<LARGE_INTEGER>(),
                 core::mem::align_of::<LARGE_INTEGER>(),
@@ -435,7 +435,7 @@ pub unsafe extern "system" fn NtQuerySystemTime(SystemTime: PLARGE_INTEGER) -> N
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i32 as i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             SystemTime as *const core::ffi::c_void,
             core::mem::size_of::<LARGE_INTEGER>(),
             core::mem::align_of::<LARGE_INTEGER>(),
@@ -486,7 +486,7 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i32 as i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             MinimumResolution as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),
@@ -494,7 +494,7 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
         ) {
             return status;
         }
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             MaximumResolution as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),
@@ -502,7 +502,7 @@ pub unsafe extern "system" fn NtQueryTimerResolution(
         ) {
             return status;
         }
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             ActualResolution as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),
@@ -542,7 +542,7 @@ pub unsafe extern "system" fn NtSetTimerResolution(
     let NewResolution: ULONG;
 
     if PreviousMode != 0i32 as i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             CurrentResolution as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),

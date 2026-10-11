@@ -65,7 +65,7 @@ when BOTH sides exist — identical to `scan_dropped_prints`, including the
 `_impl`/`_body` suffix folding, because translation routinely splits one C
 function into an exported wrapper plus the real body.
 
-TWO KINDS.
+THREE KINDS.
 
   ALL      the C probes and the live function never validates anything. This is
            the high-confidence kind and the one to burn down first.
@@ -74,6 +74,16 @@ TWO KINDS.
            structure field by field where the Rust probes the whole buffer once,
            so 4 becomes 1 with nothing lost. Kept anyway, because it is also the
            shape of a function that probes the header and forgets the body.
+
+  WEAK     the C write-probes a pointer (ProbeForWrite, ProbeForWriteUlong, ...) and
+           the live function checks that pointer only with the range-only
+           `probe_user_buffer`. ProbeForWrite also TOUCHES every page, so an in-range
+           but unmapped or read-only buffer fails at the probe; the range check passes
+           it on. NtReadFile shipped this way: a NULL buffer with a non-zero length
+           reached the driver as an IRP instead of failing STATUS_ACCESS_VIOLATION
+           (151 IoReadWrite kmtest assertions). Fix: `probe_user_buffer_write`.
+           Pointers pair on their last identifier, so `Iosb as *const c_void` and
+           `(PVOID)Iosb` match.
 
 FALSE POSITIVES ARE EXPECTED AND ARE THE POINT OF THE BASELINE. The commonest is
 a callee whose caller already captured the buffer into pool — `CmpSetValueKeyNew`
@@ -121,6 +131,7 @@ PROBE_ALTS = (
     r"[A-Za-z0-9_]*ProbeAndLock[A-Za-z0-9_]*",
     r"ProbeArrayFor[A-Za-z0-9_]*",
     r"ProbeAndZeroHandle",
+    r"probe_user_buffer_write",
     r"probe_user_buffer",
     r"probe_read_user",
     r"probe_write_user",
@@ -169,6 +180,73 @@ NOT_A_PROBE_RE = re.compile(
 PREFILTER_RE = re.compile(rb"Probe(?:For|And|Array)")
 
 
+# --- WEAK: a C write-probe translated to the range-only check -----------------------
+
+# The C calls that TOUCH the buffer they validate: ProbeForWrite and its typed
+# ProbeForWriteUlong/Handle/IoStatusBlock/... forms all write-test the memory.
+C_WRITE_PROBE_RE = re.compile(r"(?<![A-Za-z0-9_])ProbeForWrite[A-Za-z0-9_]*\s*\(")
+# The live range-only check: right for ProbeForRead, too weak for ProbeForWrite.
+RANGE_ONLY_RE = re.compile(r"(?<![A-Za-z0-9_])probe_user_buffer\s*\(")
+# Live probes that do touch the memory (or write it outright), so a key one of them
+# covers is not weak even when a range-only check of it also appears.
+LIVE_WRITE_RE = re.compile(
+    r"(?<![A-Za-z0-9_])(?:probe_user_buffer_write|probe_write_[a-z_]+|write_user(?:_nofail)?"
+    r"|safe_copy_to_user|ProbeForWrite[A-Za-z0-9_]*|probe_for_write|copy_to_user)"
+    r"\s*(?:::\s*<[^;{}()]*>\s*)?\("
+)
+# Words that are casts, paths or macros, never the name of the probed pointer.
+NOT_A_KEY = {
+    "as",
+    "const",
+    "mut",
+    "core",
+    "ffi",
+    "c_void",
+    "ptr",
+    "addr_of",
+    "addr_of_mut",
+    "size_of",
+    "mem",
+    "sizeof",
+    "PVOID",
+    "PCHAR",
+    "PUCHAR",
+    "ULONG",
+    "ULONG_PTR",
+    "_",
+}
+
+
+def first_arg(text: str, start: int) -> str:
+    """The first argument of the call whose `(` ends just before `start`."""
+    depth, j = 0, start
+    while j < len(text):
+        c = text[j]
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif c == "," and depth == 0:
+            break
+        j += 1
+    return text[start:j]
+
+
+def probe_key(arg: str) -> str | None:
+    """The pointer an argument names: its LAST identifier once casts are stripped, so
+    `IoStatusBlock as *const c_void`, `(PVOID)IoStatusBlock` and `&(*Irp).UserBuffer`
+    all key on the name both sides share."""
+    ids = [i for i in re.findall(r"[A-Za-z_]\w*", re.sub(r"\bas\b.*$", "", arg, flags=re.S))]
+    ids = [i for i in ids if i not in NOT_A_KEY]
+    return ids[-1] if ids else None
+
+
+def call_keys(text: str, call_re: re.Pattern[str]) -> set[str]:
+    return {k for m in call_re.finditer(text) if (k := probe_key(first_arg(text, m.end())))}
+
+
 def count_probes(text: str) -> int:
     """Validation calls in a span, with the other senses of "probe" removed."""
     return len(PROBE_RE.findall(text)) - len(NOT_A_PROBE_RE.findall(text))
@@ -178,20 +256,23 @@ def suppressed(text: str) -> bool:
     return any(m.group(1).lower() in NOLINT_IDS for m in NOLINT_RE.finditer(text))
 
 
-def rust_probe_counts(src: bytes, live: str) -> dict[str, tuple[int, int, int]]:
-    """{fn name: (validation count, decl_start, body_end)}, folded over base names."""
-    out: dict[str, tuple[int, int, int]] = {}
+def rust_probe_counts(src: bytes, live: str) -> dict[str, tuple[int, int, int, str]]:
+    """{fn name: (validation count, decl_start, body_end, live body text)}, folded over
+    base names."""
+    out: dict[str, tuple[int, int, int, str]] = {}
     for name, node, body in rust_function_items(src):
-        n = count_probes(live[body.start_byte : body.end_byte])
+        text = live[body.start_byte : body.end_byte]
+        n = count_probes(text)
         for key in base_names(name):
             prev = out.get(key)
             if prev is None:
-                out[key] = (n, node.start_byte, body.end_byte)
+                out[key] = (n, node.start_byte, body.end_byte, text)
             else:
                 out[key] = (
                     prev[0] + n,
                     min(prev[1], node.start_byte),
                     max(prev[2], body.end_byte),
+                    prev[3] + text,
                 )
     return out
 
@@ -208,8 +289,10 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
     live, craw = split_regions(src)
 
     cfuncs: dict[str, int] = {}
+    cwrites: dict[str, set[str]] = {}
     for name, body in c_function_bodies(craw):
         cfuncs[name] = cfuncs.get(name, 0) + count_probes(body)
+        cwrites.setdefault(name, set()).update(call_keys(body, C_WRITE_PROBE_RE))
     if not any(v > 0 for v in cfuncs.values()):
         return []
 
@@ -234,14 +317,18 @@ def scan_file(path: Path, rel: str) -> list[tuple[str, str, str, str]]:
             if len(cand) != 1 or len(ci_c.get(cname.lower(), [])) != 1:
                 continue
             rname = cand[0]
-        rn, decl, end = rfuncs[rname]
-        if rn >= cn:
-            continue
+        rn, decl, end, body = rfuncs[rname]
         if suppressed(text[max(0, decl - 240) : end]):
             continue
-        kind = "ALL" if rn == 0 else "PARTIAL"
-        detail = f"C validates {cn}x, live {rn}x"
-        out.append((rel, cname, kind, detail))
+        if rn < cn:
+            kind = "ALL" if rn == 0 else "PARTIAL"
+            out.append((rel, cname, kind, f"C validates {cn}x, live {rn}x"))
+        weak = (cwrites.get(cname, set()) & call_keys(body, RANGE_ONLY_RE)) - call_keys(
+            body, LIVE_WRITE_RE
+        )
+        if weak:
+            detail = "C write-probes, live range-checks: " + ", ".join(sorted(weak))
+            out.append((rel, cname, "WEAK", detail))
     return out
 
 
@@ -364,6 +451,31 @@ pub unsafe fn NtOpenThing(oa: POBJECT_ATTRIBUTES) -> NTSTATUS {
 }
 // NTSTATUS NtOpenThing(POBJECT_ATTRIBUTES oa)
 // { ProbeAndCaptureObjectAttributes(oa); return 0; }
+""",
+        [],
+    ),
+    (
+        "the IoReadWrite specimen: ProbeForWrite became the range-only check",
+        """
+pub unsafe fn NtReadFile(Buffer: PVOID, Length: ULONG) -> NTSTATUS {
+    probe_user_buffer(Buffer, Length as usize, 1, PreviousMode)?;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtReadFile(PVOID Buffer, ULONG Length)
+// { ProbeForWrite(Buffer, Length, 1); return 0; }
+""",
+        ["NtReadFile WEAK"],
+    ),
+    (
+        "the touching probe, and a range check of a READ buffer, are both right",
+        """
+pub unsafe fn NtWriteFile(Buffer: PVOID, Iosb: PVOID) -> NTSTATUS {
+    probe_user_buffer_write(Iosb as *const c_void, 8, 4, PreviousMode)?;
+    probe_user_buffer(Buffer as *const c_void, 4, 1, PreviousMode)?;
+    STATUS_SUCCESS
+}
+// NTSTATUS NtWriteFile(PVOID Buffer, PVOID Iosb)
+// { ProbeForWriteIoStatusBlock(Iosb); ProbeForRead(Buffer, 4, 1); return 0; }
 """,
         [],
     ),

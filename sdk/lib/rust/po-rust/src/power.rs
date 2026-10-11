@@ -1057,7 +1057,7 @@ pub unsafe extern "system" fn NtPowerInformation(
         {
             return status;
         }
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             OutputBuffer,
             OutputBufferLength as usize,
             core::mem::size_of::<ULONG>(),

@@ -358,7 +358,7 @@ pub unsafe extern "system" fn NtOpenProcessTokenEx(
     let mut Status: NTSTATUS;
 
     if PreviousMode != KernelMode {
-        if let Err(s) = probe_user_buffer(TokenHandle as *const core::ffi::c_void, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(TokenHandle as *const core::ffi::c_void, core::mem::size_of::<HANDLE>(), core::mem::align_of::<HANDLE>(), PreviousMode) {
             return s;
         }
     }
