@@ -105,6 +105,16 @@ First runs (measured against Windows 10.0.26100):
 Imports resolved at runtime through `GetProcAddress` are invisible to `gap`; that half
 still needs loader logging.
 
+**10.0.26100 is Windows 11** (the 24H2 base; the measuring host reports 25H2, build 26200,
+which shares it). Windows 11 kept NT 10.0 and `_WIN32_WINNT` 0x0A00, which is why the tier
+and the tool say "Win10": every number above is the gap to Windows 11, and the Windows 10
+gap is a subset that cannot be measured without a Windows 10 install. What export tables
+cannot show is the same for both: WinRT activation through `combase`
+(`RoActivateInstance` + `.winmd` metadata) for WinUI 3 / Windows App SDK apps, and new
+attribute VALUES passed to existing functions (`DwmSetWindowAttribute` for Mica and rounded
+corners), which degrade cosmetically rather than fail. Windows 11 has no 32-bit edition, so
+i386 is a WoW64 (SysWOW64) target there, not a kernel one.
+
 Known contents, from the design discussion: the newer pool and MDL APIs
 (`ExAllocatePool2/3`, `MmMapIoSpaceEx`, no-execute MDL mappings), processor-group calls
 (trivially one group), `EtwRegister` and WPP plumbing (stub success first),
