@@ -10,3 +10,4 @@
 
 # Local manual backups (e.g. pre-c2rust response snapshots). Never committed.
 .responses-backup*/
+gen_driver_types.sh.lock

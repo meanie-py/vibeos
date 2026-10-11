@@ -12205,7 +12205,13 @@ the count is still exactly its own. `QueueNextRequest` releases the slot
 cancel routines retired requests that never held the slot and keep the C behaviour, because
 releasing it there would start a second command beside the running one. Sweep for the shape:
 `if (InterlockedCompareExchange(&X, 1, 0)) return;` or "if busy, return" with no re-check
-after the holder releases.
+after the holder releases. Also the counter form, `if (InterlockedIncrement(&X) != 0) {
+InterlockedDecrement(&X); return; }` with `X` starting at -1, which a CAS grep misses. A skip is
+only a bug when nothing retries it: usbport's `EndpointWorker` returns TRUE when busy and its
+callers put the endpoint back on `WorkerList`, and `DpcHandler`'s skip of a busy endpoint is
+re-polled by the 500 ms `USBPORT_TimerDpc`. The repo-wide sweep (2026-10-11: CAS and counter
+try-locks, busy-flag early returns, every `IoStartPacket` driver, usbxhci's ISR-to-DPC latches)
+found no third instance.
 **Finding it** took the IRPs, not the census. The census's `Suspended=1` was usbport's worker
 thread, which waits with `Suspended` as a generic wait reason (so do kbdclass, mouclass, atapi
 and iomgr), and it was in 42 of 44 hang histograms only because passing boots end before the

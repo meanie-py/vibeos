@@ -1054,6 +1054,9 @@ pub unsafe extern "system" fn PciAddDevice(
                     /* Map this bus for extended configuration space access */
                     PciInitializeEcam(FdoExtension);
 
+                    /* VibeOS: where the firmware routes this root's INTx pins */
+                    crate::irqroute::fdo_query_routing(FdoExtension);
+
                     Status = PciInitializeArbiters(FdoExtension);
                     if Status >= 0i32 {
                         (*FdoExtension).Fake = 0u8;

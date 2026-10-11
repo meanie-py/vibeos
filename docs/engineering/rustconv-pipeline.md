@@ -757,6 +757,22 @@ Owed: an `#ifdef X` where X is defined by nothing the TU sees (calc's `USE_KEYBO
 `DISABLE_HTMLHELP_SUPPORT`) is still sent to the model; the preprocessor's own `-dM` table
 can decide it.
 
+**Batch C: 33 command-line tools, subagent integration (2026-10-10).** ~$0.72 of Haiku. The
+model work was cheap (15 modules green straight out of translate); the time went to residue,
+which three Haiku subagents worked per module under a written brief (paid steps capped at
+$0.02, only their own crates, bank every fix, report repeats as PATTERNS) while every pattern
+became a central fix: concurrent re-derives raced on gen_driver_types.sh (now a locked
+`os.replace`), `split_decls` ran a decl on past its trailing `// source` comment (net-rust's
+CRT block copied as ONE declaration of private shadows), preamble narration commented out,
+keyword stems (`where`) raw in lib.rs, conutils' `StdOut` is a value, `_T!` literals get their
+NUL, a const array whose pointer escapes becomes a static, `extern static _iob` goes with its
+uses, variadic trampolines read `*-h` crates' types and `va_start` on the parameter itself,
+c2rust local types and macro twins skip names a shared crate or alias provides, derive refuses
+a crate name another crate owns (dbgprint), and a stem derive never wrote fails loud. The
+scanner's "lose nothing" test counted DEAD definitions, so taskkill planned two functions short
+and its check read `errors=0 (+1 not translated)` -- green to any script reading only the
+count; read the suffix (or `port check`'s rc, which was right all along).
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR

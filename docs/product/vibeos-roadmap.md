@@ -1463,9 +1463,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     `Root\*PNP0A03`); pcix takes the root's base bus from its boot configuration; and the PnP
     manager returns an assigned list in requirements order with each requirement's share
     disposition (pcix maps assignments onto BARs by that order, and had zeroed arm64's
-    virtio-disk BARs under the running driver). Before pcix can be the default: it does not
-    use VibeOS's `_PRT` routing interface (`acpi-rust/pciroute.rs`, which pci.sys uses on
-    real Intel boards), and RootBusCapability (_OSC) is not provided. The HAL legacy PIR arbiter (cf89458d9e2) is
+    virtio-disk BARs under the running driver). pcix routes INTx (2026-10-11,
+    `pcix-rust/irqroute.rs`): a root FDO asks the PDO below for VibeOS's routing interface
+    (acpi.sys's `_PRT` walk, `acpi-rust/pciroute.rs`; on arm64 the HAL answers with QEMU
+    virt's GPEX map) and each function's interrupt requirement names exactly its routed GSI,
+    or its Interrupt Line where nothing routes it. Upstream's C asked for any vector and left
+    `_PRT` to acpi.sys's interrupt arbiter, which ReactOS never had. Still owed before pcix
+    can be the default: RootBusCapability (_OSC) is not provided. Owed later: that arbiter
+    itself (8259-mode link `_SRS`, line accounting, MSI) behind pcix's stubbed
+    `INT_ROUTE_INTERFACE_STANDARD` (`routeintrf_Constructor` breaks in). The HAL legacy PIR arbiter (cf89458d9e2) is
     **blocked, not owed work**: it serves only the legacy (non-ACPI) x86 HAL's root PDO, and
     vibeos builds no legacy HAL flavor (`legacy_halpnpdd` is `#[cfg(any())]`; every arch boots
     the ACPI HAL with acpi.sys as root bus), so a port would be dead code. Port it with the
