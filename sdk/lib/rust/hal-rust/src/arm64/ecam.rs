@@ -313,9 +313,14 @@ mod live {
     pub(crate) unsafe fn all() -> impl Iterator<Item = Window> {
         windows().iter().flatten().copied()
     }
+
+    /// Whether this is QEMU's `virt` board, whose root complex is the generic GPEX.
+    pub(crate) unsafe fn on_qemu() -> bool {
+        is_qemu(XSDT_PA.load(Ordering::Relaxed))
+    }
 }
 #[cfg(target_arch = "aarch64")]
-pub(crate) use live::{all, function, root_complex_segment, wrote};
+pub(crate) use live::{all, function, on_qemu, root_complex_segment, wrote};
 
 #[cfg(test)]
 mod tests {
