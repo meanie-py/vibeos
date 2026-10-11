@@ -37,7 +37,6 @@ extern "system" {
     fn FatReleaseGlobal(IrpContext: *mut IRP_CONTEXT);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: NTSTATUS);
     fn FatFlushVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, flush: u32) -> u32;
-    fn FlagOn(flags: u32, mask: u32) -> u32;
     fn FsRtlExitFileSystem();
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
 }
@@ -541,3 +540,10 @@ pub unsafe extern "system" fn FatCommonShutdown(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, mask: u32) -> u32 {
+    (flags as u64 & mask as u64) as u32
+}

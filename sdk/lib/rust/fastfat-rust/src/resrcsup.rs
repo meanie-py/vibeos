@@ -9,10 +9,8 @@ use crate::types::{CCB, FCB, FatData, IRP_CONTEXT, _TYPE_OF_OPEN_DirectoryFile a
 use ntkrnl_sys::ddk::{DEVICE_OBJECT, FILE_OBJECT, FSRTL_COMMON_FCB_HEADER, IRP};
 
 extern "system" {
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatVerifyOperationIsLegal(IrpContext: *mut IRP_CONTEXT);
     fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
     fn ExAcquireResourceSharedLite(Resource: *mut ERESOURCE, Wait: u8) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn NodeType(fcb: *mut FCB) -> u32;
@@ -1529,3 +1527,15 @@ pub unsafe extern "system" fn FatFilterCallbackAcquireForCreateSection(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}
+
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> u32 {
+    (Flags as u64 & Flag as u64) as u32
+}

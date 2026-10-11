@@ -27,7 +27,9 @@ pub const NonPagedPoolNx: POOL_TYPE = 0;
 // `#ifdef __REACTOS__` -- NX pool is NT6.2 and this kernel has none, so the
 // Windows value (0x200/0x204) is not what any TU here compiles.
 pub const NonPagedPoolNxCacheAligned: POOL_TYPE = 4;
-pub const POOL_NX_ALLOCATION: u32 = 0x0200;
+// classp.h / dictlib.c `#define POOL_NX_ALLOCATION 0` under `#ifdef __REACTOS__`, like the
+// pool types above: 0x200 is the Windows value, which no TU here compiles.
+pub const POOL_NX_ALLOCATION: u32 = 0;
 // C: dictlib.c `#define DICTIONARY_SIGNATURE 'tciD'` = 0x74636944 (big-endian).
 // 0x44696374 is those bytes REVERSED, and only InitializeDictionary used it --
 // TestDictionarySignature compared against a function-local shadow holding the

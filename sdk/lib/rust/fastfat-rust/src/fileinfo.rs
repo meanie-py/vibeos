@@ -55,8 +55,6 @@ extern "system" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     static mut FatJanOne1980: LARGE_INTEGER;
-    fn FlagOn(flags: u32, flag: u32) -> i32;
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn NodeType(fcb: *mut FCB) -> u16;
     fn FatLookupFileAllocationSize(IrpContext: *mut IRP_CONTEXT, fcb: *mut FCB);
     fn PagedCode();
@@ -143,7 +141,6 @@ extern "system" {
 }
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -244,8 +241,8 @@ pub unsafe extern "system" fn FatQueryBasicInfo(
 
     (*Buffer).FileAttributes = (*Fcb).DirentFatFlags as u32;
 
-    if FlagOn(((*Fcb).FcbState as u8) as u32, FCB_STATE_TEMPORARY) != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes), FILE_ATTRIBUTE_TEMPORARY);
+    if FlagOn((*Fcb).FcbState as u32, FCB_STATE_TEMPORARY) != 0 {
+        SetFlag!((*Buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -600,7 +597,7 @@ pub unsafe extern "system" fn FatQueryNetworkInfo(
 
     if FlagOn((*Fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
         let attr_ptr = core::ptr::addr_of_mut!((*Buffer).FileAttributes);
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes), 0x100u32);
+        SetFlag!((*Buffer).FileAttributes, 0x100u32);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -678,26 +675,17 @@ unsafe extern "system" fn FatSetBasicInfo(
     let mut NotifyFilter: u32 = 0;
 
     if (*Buffer).LastWriteTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_LAST_WRITE,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_WRITE);
         (*Buffer).LastWriteTime.QuadPart = 0;
     }
 
     if (*Buffer).LastAccessTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_LAST_ACCESS,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_ACCESS);
         (*Buffer).LastAccessTime.QuadPart = 0;
     }
 
     if (*Buffer).CreationTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_CREATION,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_CREATION);
         (*Buffer).CreationTime.QuadPart = 0;
     }
 
@@ -845,19 +833,13 @@ unsafe extern "system" fn FatSetBasicInfo(
                     *p_status = STATUS_INVALID_PARAMETER;
                     return; // try_return
                 }
-                SetFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TEMPORARY);
+                SetFlag!((*Fcb).FcbState, FCB_STATE_TEMPORARY);
                 let stack = IoGetCurrentIrpStackLocation(Irp);
-                SetFlag(
-                    core::ptr::addr_of_mut!((*(*stack).FileObject).Flags),
-                    FO_TEMPORARY_FILE,
-                );
+                SetFlag!((*(*stack).FileObject).Flags, FO_TEMPORARY_FILE);
             } else {
-                ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TEMPORARY);
+                ClearFlag!((*Fcb).FcbState, FCB_STATE_TEMPORARY);
                 let stack = IoGetCurrentIrpStackLocation(Irp);
-                ClearFlag(
-                    core::ptr::addr_of_mut!((*(*stack).FileObject).Flags),
-                    FO_TEMPORARY_FILE,
-                );
+                ClearFlag!((*(*stack).FileObject).Flags, FO_TEMPORARY_FILE);
             }
 
             if (*Dirent).Attributes != Attributes {
@@ -879,10 +861,7 @@ unsafe extern "system" fn FatSetBasicInfo(
             (*Fcb).CreationTime.QuadPart =
                 (((*Fcb).CreationTime.QuadPart + ALMOST_TEN_MSEC) / TEN_MSEC) * TEN_MSEC;
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_CREATION,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_CREATION);
         }
 
         if ModifyLastAccess {
@@ -902,10 +881,7 @@ unsafe extern "system" fn FatSetBasicInfo(
                 core::ptr::addr_of_mut!((*Fcb).LastAccessTime),
             );
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_LAST_ACCESS,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_ACCESS);
         }
 
         if ModifyLastWrite {
@@ -917,10 +893,7 @@ unsafe extern "system" fn FatSetBasicInfo(
             (*Fcb).LastWriteTime.QuadPart =
                 (((*Fcb).LastWriteTime.QuadPart + ALMOST_TWO_SECONDS) / TWO_SECONDS) * TWO_SECONDS;
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_LAST_WRITE,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_WRITE);
         }
 
         if NotifyFilter != 0 {
@@ -1291,7 +1264,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
     (*Fcb).FcbState |= FCB_STATE_TRUNCATE_ON_CLOSE;
 
     // Now mark that the time on the dirent needs to be updated on close.
-    SetFlag(&mut (*FileObject).Flags, FO_FILE_MODIFIED);
+    SetFlag!((*FileObject).Flags, FO_FILE_MODIFIED);
 
     // _SEH2_TRY / _SEH2_FINALLY
     let p_status = core::ptr::addr_of_mut!(Status);
@@ -2680,7 +2653,7 @@ pub unsafe extern "system" fn FatSetEndOfFileInfo(
                     FILE_ACTION_MODIFIED,
                 );
 
-                SetFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TRUNCATE_ON_CLOSE);
+                SetFlag!((*Fcb).FcbState, FCB_STATE_TRUNCATE_ON_CLOSE);
             }
 
             (*FileObject).Flags |= FO_FILE_MODIFIED;
@@ -8559,4 +8532,11 @@ pub unsafe extern "system" fn FatFsdQueryInformation(
     FsRtlExitFileSystem();
     DebugTrace(-1, Dbg, b"FatFsdQueryInformation -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
     Status
+}
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, flag: u32) -> i32 {
+    (flags as u64 & flag as u64) as i32
 }

@@ -36,12 +36,10 @@ extern "system" {
     fn PagedCode();
     fn SizeOfFullEa(ea: *mut FILE_FULL_EA_INFORMATION) -> u32;
     fn FatUpcaseEaName( IrpContext: *mut IRP_CONTEXT, Source: *mut OEM_STRING, Destination: *mut OEM_STRING, ) -> ();
-    fn FlagOn(flags: u8, bit: u32) -> i32;
     fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: i32) -> u8;
     fn FsRtlIsLeadDbcsCharacter(Character: u8) -> u8;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, ErrorStatus: NTSTATUS);
     fn Add2Ptr(Ptr: *mut core::ffi::c_void, Bytes: u32) -> *mut core::ffi::c_void;
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn DebugUnwind(fn_name: usize);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
@@ -6444,3 +6442,15 @@ pub unsafe extern "system" fn FatUnpinEaRange(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u8, bit: u32) -> i32 {
+    (flags as u64 & bit as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}
