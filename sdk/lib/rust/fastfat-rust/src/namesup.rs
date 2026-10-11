@@ -1,5 +1,13 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatIsNameShortOemValid;
+use crate::externs::FatUnpinBcb;
+// fastfat's own functions: the definition is the declaration.
+use crate::dirsup::FatLocateDirent;
+use crate::dirsup::FatLocateSimpleOemDirent;
+use crate::seh::FatNormalizeAndRaiseStatus;
+use crate::seh::FatRaiseStatus;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
@@ -15,17 +23,11 @@ use crate::glue::{DEBUG_TRACE_NAMESUP, STATUS_UNMAPPABLE_CHARACTER, TAG_FILENAME
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 
 extern "system" {
-    fn FatLocateDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Ccb: *mut CCB, OffsetWithinDirectory: u32, param5: *mut core::ffi::c_void, Dirent: *mut *mut DIRENT, DirentBcb: *mut *mut BCB, DirentByteOffset: *mut core::ffi::c_void, param8: *mut core::ffi::c_void, Lfn: *mut _UNICODE_STRING, param10: *mut core::ffi::c_void, );
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
 }
 extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
+    } extern "system" {
     fn FsRtlIsLeadDbcsCharacter(character: u8) -> u8;
-    fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    fn FatIsNameShortOemValid( irp: *mut core::ffi::c_void, oem: ntkrnl_sys::ddk::OEM_STRING, arg1: u8, arg2: u8, arg3: u8, ) -> u8;
-    fn FatLocateSimpleOemDirent( irp: *mut core::ffi::c_void, parent: *mut core::ffi::c_void, name: *mut ntkrnl_sys::ddk::OEM_STRING, dirent: *mut *mut core::ffi::c_void, bcb: *mut *mut core::ffi::c_void, byte_offset: *mut core::ffi::c_void, );
 }
 
 // ---- file-scope preamble (translated) ----
@@ -98,8 +100,8 @@ pub unsafe extern "system" fn FatStringTo8dot3(
 ) {
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, b"FatStringTo8dot3\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b"InputString = %Z\n\0".as_ptr() as *const i8, &InputString as *const OEM_STRING);
+    DebugTrace!(1, Dbg, b"FatStringTo8dot3\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b"InputString = %Z\n\0".as_ptr() as *const i8, &InputString as *const OEM_STRING);
 
     NT_ASSERT!((InputString.Length <= 12) as i32);
 
@@ -138,7 +140,7 @@ pub unsafe extern "system" fn FatStringTo8dot3(
         (*Output8dot3)[0] = FAT_DIRENT_REALLY_0E5;
     }
 
-    DebugTrace(-1, Dbg, b"FatStringTo8dot3 -> (VOID)\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatStringTo8dot3 -> (VOID)\n\0".as_ptr() as *const i8, 0);
 
     let _ = IrpContext; // UNREFERENCED_PARAMETER
 }
@@ -163,7 +165,7 @@ pub unsafe extern "system" fn Fat8dot3ToString(
 
         PAGED_CODE!();
 
-        DebugTrace(1, 0u32, b"Fat8dot3ToString\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(1, 0u32, b"Fat8dot3ToString\n\0".as_ptr() as *const i8, 0);
 
         BaseLength = 8;
         while BaseLength > 0 {
@@ -252,7 +254,7 @@ pub unsafe extern "system" fn Fat8dot3ToString(
             (*OutputString).Length = BaseLength as u16;
         }
 
-        DebugTrace(-1, 0u32, b"Fat8dot3ToString, OutputString = \"%Z\" -> VOID\n\0".as_ptr() as *const i8, OutputString as *const OEM_STRING);
+        DebugTrace!(-1, 0u32, b"Fat8dot3ToString, OutputString = \"%Z\" -> VOID\n\0".as_ptr() as *const i8, OutputString as *const OEM_STRING);
 
         UNREFERENCED_PARAMETER!(IrpContext);
     }
@@ -294,7 +296,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
         core::ptr::null_mut(),
         &raw mut dirent,
         &raw mut dirent_bcb,
-        &raw mut dirent_byte_offset as *mut core::ffi::c_void,
+        (&raw mut dirent_byte_offset as *mut core::ffi::c_void).cast(),
         core::ptr::null_mut(),
         Lfn,
         core::ptr::null_mut(),
@@ -485,7 +487,7 @@ pub unsafe extern "system" fn FatSelectNames(
 
     if (*OemName).Length == 0
         || FatIsNameShortOemValid(
-            IrpContext,
+            (IrpContext).cast(),
             *OemName,
             0u8,
             0u8,
@@ -548,12 +550,12 @@ pub unsafe extern "system" fn FatSelectNames(
                 NT_ASSERT!(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
 
                 FatLocateSimpleOemDirent(
-                    IrpContext,
-                    Parent,
+                    (IrpContext).cast(),
+                    (Parent).cast(),
                     ShortName,
-                    &mut Dirent as *mut *mut DIRENT as *mut *mut c_void,
-                    p_bcb as *mut *mut c_void,
-                    &mut ByteOffset as *mut u32 as *mut c_void,
+                    (&mut Dirent as *mut *mut DIRENT as *mut *mut c_void).cast(),
+                    (p_bcb as *mut *mut c_void).cast(),
+                    (&mut ByteOffset as *mut u32 as *mut c_void).cast(),
                 );
 
                 if (*p_bcb).is_null() {

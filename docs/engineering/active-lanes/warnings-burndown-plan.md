@@ -797,15 +797,46 @@ one's current content. The 27 were:
   `POOL_NX_ALLOCATION` are now applied after the headers, like the `NonPagedPoolNx`
   seed. `ntifs.template.h` joined the CTL_CODE headers (FSCTL / volsnap), so the 1 now
   fails.
-- **Still owed:**
-  - About 15 function-local `Dbg` consts are 0/1 where the C has a DEBUG_TRACE bit. That
-    only matters for trace output.
-  - The agent's INVENTED list. Most are Rust-local helper names; `SET_PURGE_FAILURE_MODE_*`,
-    `IRP_MN_FLUSH_DATA_ONLY` / `_NO_SYNC` and `CC_ENABLE_DISK_IO_ACCOUNTING` have no
-    definition in the tree to check against.
-  - fastfat's remaining `clashing_extern` (284 sites, census).
-  - Carried over from the closed entry above: cdfs's generated `types_i386.rs` `CdCreateFcb`
-    `FILE_ID` declared as a pointer, which is the generator's to fix.
+- **Owed items from this entry, all closed 2026-10-11:** see the next section.
+
+## fastfat `clashing_extern` 284 -> 0, the trace macros, and the NTDDI finding (2026-10-11)
+
+- **fastfat's own functions** (64 symbols, 311 redeclarations) are now `use crate::<mod>::<fn>`,
+  so every call type-checks against the real definition. The 242 resulting type errors were
+  graded: crate-repair took the mechanical ones, and two Haiku agents graded the 40 left
+  against the C. The real ones were mistyped pointer-sized locals (fileinfo's BCBs were
+  `*mut PBCB` where the C has `PBCB`), plus flush.rs's opaque `struct IRP_CONTEXT { _unused }`
+  leaking into its pub API. `FatData` is the real static everywhere now.
+- **External symbols** (56) have ONE declaration in `externs.rs`: kernel exports re-exported
+  from ntkrnl-sys (bindgen of the real headers), and the cohab shims transcribed from
+  rust_cohab_stub.c / rust_cohab_fat.c. A Haiku grader called 14 of the old declarations UB.
+  Each was checked against the code, and none was live:
+  - FastMutex was cfg-split.
+  - IoSetCompletionRoutine has a cdecl trampoline.
+  - FatGetIndexFromLbo's caller truncates to USHORT in the C.
+  - FsRtlCheckOplockEx's calls pass NULLs or the C argument order.
+  - DbgDoit's callee ignores its argument.
+- **fatdata.h's `DebugTrace` / `DebugUnwind` / `DebugDump` / `DbgDoit` are `{NOTHING;}` in a
+  free build.** They were about 880 FFI calls into no-op C stubs, the "debug macro as an
+  out-of-line fn" class. They are crate macros now, and so is `NodeType` (nodetype.h). That
+  also closes the 0/1 `Dbg` consts item: nothing reads them anymore.
+- **crate-repair's `raw_pointer_cast` now refuses an indirection-depth change**
+  (`*mut *mut *mut c_void` for `*mut *mut c_void`) unless one side is a bare void pointer. It
+  had been `.cast()`ing them silently. That is the shape the fileinfo BCB locals had.
+- **cdfs `CdCreateFcb`:** 94898d07b5a hand-edited the generated islands from bindgen's
+  by-value `FILE_ID` to `*mut c_void`. That edit is reverted, and create.rs uses the
+  definition. The same commit's five BOOLEAN-to-u32 edits are consistent: no C caller
+  remains.
+- **NTDDI: the "invented" constants were WIN8-only code.** fastfat builds at
+  `_WIN32_WINNT=0x502` (NTDDI WS03), so every `NTDDI_VERSION >= VISTA/WIN7/WIN8` block is
+  compiled out of the C. Two Haiku audits of all ~100 gated sites found about 40 where the
+  Rust runs the compiled-out side. Examples: `FSCTL_REQUEST_OPLOCK` dispatched,
+  `FILE_OPEN_REQUIRING_OPLOCK` honored, oplock-H breaks on sharing violations, the
+  purge-failure and zero-on-dealloc FSCTLs, FAT prefetch. Method: evaluate each C `#if` at
+  NTDDI 0x05020000, then diff against the same-stem Rust fn. **Owed, next commit:** make those paths match
+  WS03.
+- **Still owed:** crate-repair's `width_alias_cast` named a callee-module-local alias
+  (`FAT_FLUSH_TYPE`) that the call site cannot see (3 sites, fixed by hand).
 
 ## Owed follow-ups
 

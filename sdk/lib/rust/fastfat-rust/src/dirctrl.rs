@@ -1,5 +1,30 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::CanFsdWait;
+use crate::externs::FatBugCheck;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatIsNameShortOemValid;
+use crate::externs::FatReleaseFcb;
+use crate::externs::FatUnpinBcb;
+// fastfat's own functions: the definition is the declaration.
+use crate::fatdata::FatData;
+use crate::namesup::Fat8dot3ToString;
+use crate::resrcsup::FatAcquireExclusiveFcb;
+use crate::resrcsup::FatAcquireSharedFcb;
+use crate::strucsup::FatCreateIrpContext;
+use crate::filobsup::FatDecodeFileObject;
+use crate::strucsup::FatFreeStringBuffer;
+use crate::workque::FatFsdPostRequest;
+use crate::fatdata::FatIsIrpTopLevel;
+use crate::dirsup::FatLocateDirent;
+use crate::deviosup::FatMapUserBuffer;
+use crate::fatdata::FatProcessException;
+use crate::seh::FatRaiseStatus;
+use crate::seh::FatResetExceptionState;
+use crate::namesup::FatStringTo8dot3;
+use crate::verfysup::FatVerifyFcb;
+use crate::ddk_shims::FsRtlNotifyFullChangeDirectory;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
 use ntkrnl_sys::base::*;
@@ -18,46 +43,22 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlDoesNameContainWildCards, 
 use ntkrnl_sys::ddk::{_UNICODE_STRING};
 
 extern "system" {
-    static mut FatData: FAT_DATA;
     static FatJanOne1980: ntkrnl_sys::ddk::LARGE_INTEGER;
     fn UInt32x32To64(a: u32, b: u32) -> u64;
     static Fat8QMdot3QM: [u16; 12];
     static Dbg: u32;
-    } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Status: i32);
+    } extern "system" {
 }
 extern "system" {
-    fn DebugUnwind(name: *const i8) -> ();
-    fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut VCB, Dcb: *mut *mut DCB, Ccb: *mut *mut CCB) -> u32;
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> u8;
-    fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS) -> !;
-    fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut c_void) -> ();
-    fn FatFreeStringBuffer(String: *mut c_void) -> ();
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
-    fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
-    fn FsRtlNotifyFullChangeDirectory( NotifySync: PNOTIFY_SYNC, NotifyList: PLIST_ENTRY, FsContext: *mut c_void, FullDirectoryName: PSTRING, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: ULONG, NotifyIrp: *mut IRP, TraverseCallback: PVOID, SubjectContext: *mut c_void, ) -> ();
-    fn Fat8dot3ToString( IrpContext: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Upcase: u8, String: *mut OEM_STRING, );
-    fn FatAcquireSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, ) -> u8;
-    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
     fn FatConvertToSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, );
     fn FatGetEaLength( IrpContext: *mut core::ffi::c_void, Vcb: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, EaSize: *mut u32, );
-    fn FatIsNameShortOemValid( IrpContext: *mut core::ffi::c_void, OemString: OEM_STRING, ContainsWildCards: u8, AllowWildCards: u8, IsConstant: u8, ) -> u8;
-    fn FatLocateDirent( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, Ccb: *mut core::ffi::c_void, CurrentVbo: u32, MatchFlags: *mut u32, Dirent: *mut *mut core::ffi::c_void, Bcb: *mut *mut core::ffi::c_void, NextVbo: *mut u32, FileNameDos: *mut u8, LongFileName: *mut _UNICODE_STRING, OrigFileName: *mut _UNICODE_STRING, );
-    fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
-    fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
-    fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
     // try_return was a no-op cohab stub — it is C's `try_return(X)` macro
     // (Status = X; goto try_exit), now inlined as `return;`/do_return at each
     // call site (see FatQueryDirectory). Do NOT re-introduce it as an extern fn.
-    fn CanFsdWait(Irp: PIRP) -> u8;
-    fn FatIsIrpTopLevel(Irp: PIRP) -> u8;
-    fn FatCreateIrpContext(Irp: PIRP, CanWait: i32) -> PIRP_CONTEXT;
-    fn FatProcessException(IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: u32) -> NTSTATUS;
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -122,7 +123,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
     let mut IrpContext: PIRP_CONTEXT = core::ptr::null_mut();
 
     PAGED_CODE!();
-    DebugTrace(1, Dbg, b"FatFsdDirectoryControl\n\0".as_ptr() as *const i8);
+    DebugTrace!(1, Dbg, b"FatFsdDirectoryControl\n\0".as_ptr() as *const i8);
 
     FsRtlEnterFileSystem();
 
@@ -134,10 +135,10 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
     let p_ic = core::ptr::addr_of_mut!(IrpContext);
     let p_status = core::ptr::addr_of_mut!(Status);
     if let Err(code) = crate::seh::fat_try_except(p_ic as *const PIRP_CONTEXT, || {
-        *p_ic = FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32);
+        *p_ic = (FatCreateIrpContext(Irp, CanFsdWait(Irp) as i32)).cast();
         *p_status = FatCommonDirectoryControl(*p_ic as *mut IRP_CONTEXT, Irp);
     }) {
-        Status = FatProcessException(IrpContext, Irp, code as u32);
+        Status = FatProcessException((IrpContext).cast(), Irp, (code) as NTSTATUS);
     }
 
     if TopLevel != 0 {
@@ -146,7 +147,7 @@ pub unsafe extern "system" fn FatFsdDirectoryControl(
 
     FsRtlExitFileSystem();
 
-    DebugTrace(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status);
+    DebugTrace!(-1, Dbg, b"FatFsdDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status);
 
     UNREFERENCED_PARAMETER!(VolumeDeviceObject);
 
@@ -163,9 +164,9 @@ pub unsafe extern "system" fn FatCommonDirectoryControl(
 
     let IrpSp: *mut IO_STACK_LOCATION = IoGetCurrentIrpStackLocation(Irp);
 
-    DebugTrace(1, Dbg, b"FatCommonDirectoryControl\n\0".as_ptr() as *const i8, 0_i32);
-    DebugTrace(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *mut core::ffi::c_void);
-    DebugTrace(0, Dbg, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).MinorFunction as u32);
+    DebugTrace!(1, Dbg, b"FatCommonDirectoryControl\n\0".as_ptr() as *const i8, 0_i32);
+    DebugTrace!(0, Dbg, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *mut core::ffi::c_void);
+    DebugTrace!(0, Dbg, b"MinorFunction = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).MinorFunction as u32);
 
     let Status: i32;
 
@@ -180,7 +181,7 @@ pub unsafe extern "system" fn FatCommonDirectoryControl(
             Status = FatNotifyChangeDirectory(IrpContext as *mut IRP_CONTEXT, Irp);
         }
         _ => {
-            DebugTrace(
+            DebugTrace!(
                 0,
                 Dbg,
                 b"Invalid Directory Control Minor Function %08lx\n\0".as_ptr() as *const i8,
@@ -191,7 +192,7 @@ pub unsafe extern "system" fn FatCommonDirectoryControl(
         }
     }
 
-    DebugTrace(-1_i32, Dbg, b"FatCommonDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
+    DebugTrace!(-1_i32, Dbg, b"FatCommonDirectoryControl -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
 
     Status
 }
@@ -245,17 +246,17 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DebugTrace(1, Dbg, b"FatQueryDirectory...\n\0".as_ptr() as *const i8, 0);
-    DebugTrace(0, Dbg, b" Wait                   = %08lx\n\0".as_ptr() as *const i8, FlagOn((*(IrpContext as *mut IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT));
-    DebugTrace(0, Dbg, b" Irp                    = %p\n\0".as_ptr() as *const i8, Irp);
-    DebugTrace(0, Dbg, b" ->Length               = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.Length);
-    DebugTrace(0, Dbg, b" ->FileName             = %wZ\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileName);
-    DebugTrace(0, Dbg, b" ->FileInformationClass = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileInformationClass);
-    DebugTrace(0, Dbg, b" ->FileIndex            = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileIndex);
-    DebugTrace(0, Dbg, b" ->UserBuffer           = %p\n\0".as_ptr() as *const i8, (*Irp).AssociatedIrp.SystemBuffer);
-    DebugTrace(0, Dbg, b" ->RestartScan          = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_RESTART_SCAN));
-    DebugTrace(0, Dbg, b" ->ReturnSingleEntry    = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_RETURN_SINGLE_ENTRY));
-    DebugTrace(0, Dbg, b" ->IndexSpecified       = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_INDEX_SPECIFIED));
+    DebugTrace!(1, Dbg, b"FatQueryDirectory...\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg, b" Wait                   = %08lx\n\0".as_ptr() as *const i8, FlagOn((*(IrpContext as *mut IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT));
+    DebugTrace!(0, Dbg, b" Irp                    = %p\n\0".as_ptr() as *const i8, Irp);
+    DebugTrace!(0, Dbg, b" ->Length               = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.Length);
+    DebugTrace!(0, Dbg, b" ->FileName             = %wZ\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileName);
+    DebugTrace!(0, Dbg, b" ->FileInformationClass = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileInformationClass);
+    DebugTrace!(0, Dbg, b" ->FileIndex            = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.QueryDirectory.FileIndex);
+    DebugTrace!(0, Dbg, b" ->UserBuffer           = %p\n\0".as_ptr() as *const i8, (*Irp).AssociatedIrp.SystemBuffer);
+    DebugTrace!(0, Dbg, b" ->RestartScan          = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_RESTART_SCAN));
+    DebugTrace!(0, Dbg, b" ->ReturnSingleEntry    = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_RETURN_SINGLE_ENTRY));
+    DebugTrace!(0, Dbg, b" ->IndexSpecified       = %08lx\n\0".as_ptr() as *const i8, FlagOn(((*IrpSp).Flags) as u32, SL_INDEX_SPECIFIED));
 
     UserBufferLength = (*IrpSp).Parameters.QueryDirectory.Length;
     FileInformationClass = (*IrpSp).Parameters.QueryDirectory.FileInformationClass;
@@ -272,7 +273,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             && (*UniArgFileName).Length % core::mem::size_of::<u16>() as u16 != 0)
     {
         FatCompleteRequest(IrpContext as *mut IRP_CONTEXT, Irp, STATUS_INVALID_PARAMETER);
-        DebugTrace(-1, Dbg, b"FatQueryDirectory -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatQueryDirectory -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -296,9 +297,9 @@ pub unsafe extern "system" fn FatQueryDirectory(
 
     if InitialQuery != 0 || RestartScan != 0 {
         if FatAcquireExclusiveFcb(IrpContext as *mut IRP_CONTEXT, Dcb) == 0 {
-            DebugTrace(0, Dbg, b"FatQueryDirectory -> Enqueue to Fsp\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Enqueue to Fsp\n\0".as_ptr() as *const i8, 0);
             Status = FatFsdPostRequest(IrpContext as *mut IRP_CONTEXT, Irp);
-            DebugTrace(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, Status);
+            DebugTrace!(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, Status);
             return Status;
         }
         if RestartScan == 0 && !(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer.is_null() {
@@ -306,10 +307,10 @@ pub unsafe extern "system" fn FatQueryDirectory(
             FatConvertToSharedFcb(IrpContext, Dcb as *mut c_void);
         }
     } else {
-        if FatAcquireSharedFcb(IrpContext, Dcb as *mut c_void) == 0 {
-            DebugTrace(0, Dbg, b"FatQueryDirectory -> Enqueue to Fsp\n\0".as_ptr() as *const i8, 0);
+        if FatAcquireSharedFcb((IrpContext).cast(), (Dcb as *mut c_void).cast()) == 0 {
+            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Enqueue to Fsp\n\0".as_ptr() as *const i8, 0);
             Status = FatFsdPostRequest(IrpContext as *mut IRP_CONTEXT, Irp);
-            DebugTrace(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, Status);
+            DebugTrace!(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, Status);
             return Status;
         }
     }
@@ -324,8 +325,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
         let mut BaseLength: u32 = 0;
         let mut BytesConverted: u32 = 0;
 
-        Buffer = FatMapUserBuffer(IrpContext, (Irp).cast());
-        FatVerifyFcb(IrpContext as *mut IRP_CONTEXT, Dcb);
+        Buffer = (FatMapUserBuffer((IrpContext).cast(), (Irp).cast())).cast();
+        FatVerifyFcb((IrpContext as *mut IRP_CONTEXT).cast(), Dcb);
 
         if IndexSpecified != 0 {
             *p_CurrentVbo = FileIndex as VBO + core::mem::size_of::<DIRENT>() as VBO;
@@ -439,7 +440,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 }
 
                 if FlagOn((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE) == 0
-                    && FatIsNameShortOemValid(IrpContext, LocalBestFit, (*Ccb).ContainsWildCards, 0, 0) == 0
+                    && FatIsNameShortOemValid((IrpContext).cast(), LocalBestFit, (*Ccb).ContainsWildCards, 0, 0) == 0
                 {
                     if ExtendedName != 0 {
                         RtlFreeOemString(&mut LocalBestFit);
@@ -452,7 +453,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     if (*Ccb).ContainsWildCards != 0 {
                         *(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Wild.as_mut() = LocalBestFit;
                     } else {
-                        FatStringTo8dot3(IrpContext, LocalBestFit, (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Constant.as_mut() as *mut _ as *mut OEM_STRING);
+                        FatStringTo8dot3(IrpContext, LocalBestFit, ((*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Constant.as_mut() as *mut _ as *mut OEM_STRING).cast());
                         if FlagOn((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
                             RtlFreeOemString(&mut LocalBestFit);
                             ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
@@ -525,20 +526,20 @@ pub unsafe extern "system" fn FatQueryDirectory(
             let mut BytesRemainingInBuffer: u32 = 0;
             let mut FileNameDos: u8 = 0;
 
-            DebugTrace(0, Dbg, b"FatQueryDirectory -> Top of loop\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Top of loop\n\0".as_ptr() as *const i8, 0);
 
             if ReturnSingleEntry != 0 && NextEntry != 0 {
                 return; // try_returnStatus
             }
 
             FatLocateDirent(
-                IrpContext,
-                Dcb as *mut c_void,
-                Ccb as *mut c_void,
+                (IrpContext).cast(),
+                (Dcb as *mut c_void).cast(),
+                Ccb,
                 (*p_CurrentVbo) as u32,
                 &mut MatchFlags,
-                &mut Dirent as *mut *mut DIRENT as *mut *mut c_void,
-                &mut (*p_Bcb),
+                (&mut Dirent as *mut *mut DIRENT as *mut *mut c_void).cast(),
+                (p_Bcb).cast(),
                 &mut NextVbo,
                 &mut FileNameDos,
                 &mut (*p_LongFileName),
@@ -546,7 +547,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             );
 
             if Dirent.is_null() {
-                DebugTrace(0, Dbg, b"FatQueryDirectory -> No dirent\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"FatQueryDirectory -> No dirent\n\0".as_ptr() as *const i8, 0);
                 if NextEntry == 0 {
                     *p_UpdateCcb = 0;
                     if InitialQuery != 0 {
@@ -566,7 +567,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             let mut do_return = false;
             let inner_result = crate::seh::try_except(&mut (), |_| {
                 // SEH_TRY: start
-                Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 1, &mut Fat8Dot3String);
+                Fat8dot3ToString((IrpContext).cast(), (Dirent as *mut c_void).cast(), 1, &mut Fat8Dot3String);
 
                 if (*p_LongFileName).Length == 0 {
                     // First block: short name path
@@ -577,7 +578,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         && (BaseLength + FileNameLength > BytesRemainingInBuffer
                             || (UserBufferLength as u32) < NextEntry)
                     {
-                        DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
+                        DebugTrace!(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
                         // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
                         *p_Status = STATUS_SUCCESS;
                         do_return = true;
@@ -598,7 +599,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     match FileInformationClass {
                         FIC_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
                             if FileInformationClass != FIC_DIRECTORY {
-                                DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
+                                DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
                                 FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
                                 // inner SEH_TRY for GetEaLength
                                 // _SEH2_TRY { FatGetEaLength } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
@@ -606,7 +607,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                     FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
                                 }, |_, _pointers| crate::seh::EXCEPTION_EXECUTE_HANDLER);
                                 if ea_result.is_err() {
-                                    FatResetExceptionState(IrpContext);
+                                    FatResetExceptionState((IrpContext).cast());
                                     (*FullDirInfo).EaSize = 0;
                                 }
                             }
@@ -627,17 +628,17 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             }
                             (*DirInfo).FileIndex = (NextVbo) as u32;
                             (*DirInfo).FileNameLength = FileNameLength;
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         FIC_NAMES => {
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
                             NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
                             (*NamesInfo).FileNameLength = FileNameLength;
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         _ => {
-                            FatBugCheck(FileInformationClass as usize, 0, 0);
+                            FatBugCheck((FileInformationClass) as ULONG_PTR, 0, 0);
                         }
                     }
 
@@ -675,7 +676,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         && (BaseLength + FileNameLength > BytesRemainingInBuffer
                             || (UserBufferLength as u32) < NextEntry)
                     {
-                        DebugTrace(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
+                        DebugTrace!(0, Dbg, b"Next entry won't fit\n\0".as_ptr() as *const i8, 0);
                         // try_return(Status = STATUS_SUCCESS) — inner closure: flag + break loop
                         *p_Status = STATUS_SUCCESS;
                         do_return = true;
@@ -695,7 +696,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         FIC_BOTH_DIRECTORY | FIC_ID_BOTH_DIRECTORY | FIC_FULL_DIRECTORY | FIC_ID_FULL_DIRECTORY | FIC_DIRECTORY => {
                             if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
                                 BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
-                                Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
+                                Fat8dot3ToString((IrpContext).cast(), (Dirent as *mut c_void).cast(), 0, &mut Fat8Dot3String);
                                 NT_ASSERT!((Fat8Dot3String.Length <= 12) as u8);
                                 *p_Status = RtlOemToUnicodeN(
                                     &mut (*BothDirInfo).ShortName[0],
@@ -715,14 +716,14 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                 }
                             }
                             if FileInformationClass != FIC_DIRECTORY {
-                                DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
+                                DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file full directory information\n\0".as_ptr() as *const i8, 0);
                                 FullDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_FULL_DIR_INFORMATION);
                                 // _SEH2_TRY { FatGetEaLength } _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
                                 let ea_result = crate::seh::try_except(&mut (), |_| {
                                     FatGetEaLength(IrpContext, Vcb as *mut c_void, Dirent as *mut c_void, &mut (*FullDirInfo).EaSize);
                                 }, |_, _pointers| crate::seh::EXCEPTION_EXECUTE_HANDLER);
                                 if ea_result.is_err() {
-                                    FatResetExceptionState(IrpContext);
+                                    FatResetExceptionState((IrpContext).cast());
                                     (*FullDirInfo).EaSize = 0;
                                 }
                             }
@@ -743,17 +744,17 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             }
                             (*DirInfo).FileIndex = (NextVbo) as u32;
                             (*DirInfo).FileNameLength = FileNameLength;
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         FIC_NAMES => {
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Getting file names information\n\0".as_ptr() as *const i8, 0);
                             NamesInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_NAMES_INFORMATION);
                             (*NamesInfo).FileIndex = (NextVbo) as u32;
                             (*NamesInfo).FileNameLength = FileNameLength;
-                            DebugTrace(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
+                            DebugTrace!(0, Dbg, b"FatQueryDirectory -> Name = \"%Z\"\n\0".as_ptr() as *const i8, &Fat8Dot3String);
                         }
                         _ => {
-                            FatBugCheck(FileInformationClass as usize, 0, 0);
+                            FatBugCheck((FileInformationClass) as ULONG_PTR, 0, 0);
                         }
                     }
 
@@ -843,7 +844,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
             FatCompleteRequest(IrpContext as *mut IRP_CONTEXT, Irp, *p_Status);
         }
 
-        DebugTrace(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, *p_Status);
+        DebugTrace!(-1, Dbg, b"FatQueryDirectory -> %08lx\n\0".as_ptr() as *const i8, *p_Status);
     });
 
     return Status;
@@ -952,10 +953,10 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
 
     IrpSp = IoGetCurrentIrpStackLocation(Irp);
 
-    DebugTrace(1, Dbg, b"FatNotifyChangeDirectory...\n\0".as_ptr() as *const i8, 0u32);
-    DebugTrace(0, Dbg, b" Wait               = %08lx\n\0".as_ptr() as *const i8, FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
-    DebugTrace(0, Dbg, b" Irp                = %p\n\0".as_ptr() as *const i8, Irp as u32);
-    DebugTrace(0, Dbg, b" ->CompletionFilter = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.NotifyDirectory.CompletionFilter);
+    DebugTrace!(1, Dbg, b"FatNotifyChangeDirectory...\n\0".as_ptr() as *const i8, 0u32);
+    DebugTrace!(0, Dbg, b" Wait               = %08lx\n\0".as_ptr() as *const i8, FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) as u32);
+    DebugTrace!(0, Dbg, b" Irp                = %p\n\0".as_ptr() as *const i8, Irp as u32);
+    DebugTrace!(0, Dbg, b" ->CompletionFilter = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.NotifyDirectory.CompletionFilter);
 
     SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
@@ -963,7 +964,7 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
 
     if FatDecodeFileObject((*IrpSp).FileObject, &mut Vcb, &mut Dcb, &mut Ccb) != UserDirectoryOpen {
         FatCompleteRequest(IrpContext, Irp, STATUS_INVALID_PARAMETER);
-        DebugTrace(-1, Dbg, b"FatQueryDirectory -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0u32);
+        DebugTrace!(-1, Dbg, b"FatQueryDirectory -> STATUS_INVALID_PARAMETER\n\0".as_ptr() as *const i8, 0u32);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -971,9 +972,9 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
     WatchTree = BooleanFlagOn(((*IrpSp).Flags) as u32, SL_WATCH_TREE) as u8;
 
     if FatAcquireExclusiveFcb(IrpContext, Dcb) == 0 {
-        DebugTrace(0, Dbg, b"FatNotifyChangeDirectory -> Cannot Acquire Fcb\n\0".as_ptr() as *const i8, 0u32);
+        DebugTrace!(0, Dbg, b"FatNotifyChangeDirectory -> Cannot Acquire Fcb\n\0".as_ptr() as *const i8, 0u32);
         Status = FatFsdPostRequest(IrpContext, Irp);
-        DebugTrace(-1, Dbg, b"FatNotifyChangeDirectory -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
+        DebugTrace!(-1, Dbg, b"FatNotifyChangeDirectory -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
         return Status;
     }
 
@@ -981,7 +982,7 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
     let p_Status = core::ptr::addr_of_mut!(Status);
     let p_CompleteRequest = core::ptr::addr_of_mut!(CompleteRequest);
     crate::seh::try_finally(&mut (), |_| {
-        FatVerifyFcb(IrpContext, Dcb);
+        FatVerifyFcb((IrpContext).cast(), Dcb);
         FatSetFullFileNameInFcb(IrpContext, Dcb);
 
         if FlagOn((*Dcb).FcbState, FCB_STATE_DELETE_ON_CLOSE) != 0 {
@@ -997,21 +998,21 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
             0, // FALSE
             CompletionFilter,
             Irp,
-            core::ptr::null_mut(),
+            None,
             core::ptr::null_mut(),
         );
 
         *p_Status = STATUS_PENDING;
         *p_CompleteRequest = 1; // TRUE
     }, |_, _abnormal| {
-        DebugUnwind(b"FatNotifyChangeDirectory\0".as_ptr() as *const i8);
+        DebugUnwind!(b"FatNotifyChangeDirectory\0".as_ptr() as *const i8);
         FatReleaseFcb(IrpContext, Dcb);
 
         if *p_CompleteRequest != 0 {
             FatCompleteRequest(IrpContext, core::ptr::null_mut(), 0);
         }
 
-        DebugTrace(-1, Dbg, b"FatNotifyChangeDirectory -> %08lx\n\0".as_ptr() as *const i8, *p_Status as u32);
+        DebugTrace!(-1, Dbg, b"FatNotifyChangeDirectory -> %08lx\n\0".as_ptr() as *const i8, *p_Status as u32);
     });
     return Status;
 }

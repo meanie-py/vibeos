@@ -1,5 +1,18 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatBugCheck;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatDeviceIsFatFsdo;
+use crate::externs::FatReleaseVcb;
+use crate::externs::ExAcquireResourceSharedLite;
+// fastfat's own functions: the definition is the declaration.
+use crate::filobsup::FatDecodeFileObject;
+use crate::workque::FatFsdPostRequest;
+use crate::verfysup::FatMarkVolume;
+use crate::seh::FatResetExceptionState;
+use crate::cachesup::FatUnpinRepinnedBcbs;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -18,22 +31,13 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem, FsRtlFastCheck
 use ntkrnl_sys::ddk::ExReleaseResourceLite;
 
 extern "system" {
-    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
-    fn FatDecodeFileObject( FileObject: *mut FILE_OBJECT, Vcb: *mut PVCB, Fcb: *mut PFCB, Ccb: *mut PCCB, ) -> TYPE_OF_OPEN;
-    fn NodeType(Node: *mut core::ffi::c_void) -> u32;
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     static FAT_NTC_ROOT_DCB: i32;
     static STATUS_FILE_CORRUPT_ERROR: i32;
 }
 extern "system" {
-    } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
-    fn DebugDump(str: *const i8, level: u32, p: *mut core::ffi::c_void);
-    fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, ExceptionCode: NTSTATUS);
-    fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
-    fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
-    fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
+    } extern "system" {
     fn FatDeleteIrpContext(IrpContext: PIRP_CONTEXT);
-    fn ExAcquireResourceSharedLite(resource: *mut ERESOURCE, wait: i32) -> u8;
     // ExReleaseResourceLite via ntkrnl_sys::ddk (kernel FASTCALL export — §9.99)
 }
 
@@ -192,21 +196,18 @@ pub unsafe extern "system" fn FatBugCheckExceptionFilter(
     }
 
     FatBugCheck(
-        (*ExceptionPointer).ExceptionRecord as usize,
-        (*ExceptionPointer).ContextRecord as usize,
-        (*(*ExceptionPointer).ExceptionRecord).ExceptionAddress as usize,
+        ((*ExceptionPointer).ExceptionRecord) as ULONG_PTR,
+        ((*ExceptionPointer).ContextRecord) as ULONG_PTR,
+        ((*(*ExceptionPointer).ExceptionRecord).ExceptionAddress) as ULONG_PTR,
             );
 
-    // return EXCEPTION_EXECUTE_HANDLER; // unreachable
-    // Satisfy the return type in the unreachable path
-    1
+    // return EXCEPTION_EXECUTE_HANDLER; -- FatBugCheck does not return
 }
 /// Diagnostic (i386 writable-root hunt): the exception FatExceptionFilter is about to
 /// bugcheck on. Twice it was raised AT A STACK ADDRESS, i.e. something called or
 /// returned into the stack; on i386 the words at the faulting Esp then hold the return
 /// address of that call, and the Ebp chain names the frames above it.
 unsafe fn diag_unexpected_exception(ExceptionPointer: *mut EXCEPTION_POINTERS, HaveIrpContext: bool) {
-    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
     let Record = (*ExceptionPointer).ExceptionRecord;
     DbgPrint(
         c"[FASTFAT] unexpected exception %08lx at %p (IrpContext=%d), p0=%p p1=%p\n".as_ptr(),
@@ -259,13 +260,13 @@ pub unsafe extern "system" fn FatExceptionFilter(
     let ExceptionRecord = (*ExceptionPointer).ExceptionRecord;
     ExceptionCode = ((*ExceptionRecord).ExceptionCode) as u32;
 
-    DebugTrace(
+    DebugTrace!(
         0,
         DEBUG_TRACE_UNWIND,
         c"FatExceptionFilter %X\n".as_ptr() as *const i8,
         ExceptionCode,
     );
-    DebugDump(
+    DebugDump!(
         c"FatExceptionFilter\n".as_ptr() as *const i8,
         Dbg,
         core::ptr::null_mut(),
@@ -295,9 +296,9 @@ pub unsafe extern "system" fn FatExceptionFilter(
             // (i386 writable-root boot: FatFsdFlushBuffers, IrpContext still NULL).
             diag_unexpected_exception(ExceptionPointer, false);
             FatBugCheck(
-                ExceptionRecord as usize,
-                (*ExceptionPointer).ContextRecord as usize,
-                (*ExceptionRecord).ExceptionAddress as usize,
+                (ExceptionRecord) as ULONG_PTR,
+                ((*ExceptionPointer).ContextRecord) as ULONG_PTR,
+                ((*ExceptionRecord).ExceptionAddress) as ULONG_PTR,
             );
         }
         return EXCEPTION_EXECUTE_HANDLER;
@@ -319,9 +320,9 @@ pub unsafe extern "system" fn FatExceptionFilter(
         } else {
             diag_unexpected_exception(ExceptionPointer, true);
             FatBugCheck(
-                ExceptionRecord as usize,
-                (*ExceptionPointer).ContextRecord as usize,
-                (*ExceptionRecord).ExceptionAddress as usize,
+                (ExceptionRecord) as ULONG_PTR,
+                ((*ExceptionPointer).ContextRecord) as ULONG_PTR,
+                ((*ExceptionRecord).ExceptionAddress) as ULONG_PTR,
             );
         }
     } else {
@@ -357,11 +358,8 @@ pub unsafe extern "system" fn FatProcessException(
         VCB_STATE_FLAG_MOUNTED_DIRTY};
     extern "system" {
         fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
-        fn FatDeviceIsFatFsdo(DeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
         fn FatPerformVerify(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, Device: PDEVICE_OBJECT) -> NTSTATUS;
-        fn FatMarkVolume(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, VolumeState: i32);
         fn FatAcquireExclusiveVcb_Real(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, NoOpCheck: BOOLEAN) -> BOOLEAN;
-        fn FatReleaseVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     }
     use ntkrnl_sys::ddk::{IoGetDeviceToVerify, IoRaiseHardError, IoSetDeviceToVerify,
         PsGetCurrentThread};
@@ -371,7 +369,7 @@ pub unsafe extern "system" fn FatProcessException(
 
     // PAGED_CODE();
 
-    DebugTrace(0, Dbg as u32, b"FatProcessException\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(0, Dbg as u32, b"FatProcessException\n\0".as_ptr() as *const i8, 0);
 
     // If there is not an irp context, we must have had insufficient resources.
     if IrpContext.is_null() {
@@ -450,7 +448,7 @@ pub unsafe extern "system" fn FatProcessException(
     if IoIsErrorUserInduced(ExceptionCode) != 0 {
         // Error conditions that can be caused by, and possibly resolved by, the user.
         if ExceptionCode == STATUS_VERIFY_REQUIRED {
-            DebugTrace(0, Dbg as u32, b"Perform Verify Operation\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg as u32, b"Perform Verify Operation\n\0".as_ptr() as *const i8, 0);
 
             // We are at the top level file system entry point: clear the device to
             // verify out of the thread local storage.
@@ -727,7 +725,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
     FsRtlEnterFileSystem();
 
     if FlagOn((*fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
-        if ExAcquireResourceSharedLite((*fcb).Header.Resource, wait) == 0 {
+        if ExAcquireResourceSharedLite((*fcb).Header.Resource, (wait) as u8) == 0 {
             FsRtlExitFileSystem();
             return results;
         }
@@ -744,7 +742,7 @@ pub unsafe extern "system" fn FatFastQueryBasicInfo(
 
         (*buffer).FileAttributes = 0;
 
-        if NodeType((fcb).cast()) != (FAT_NTC_ROOT_DCB) as u32 {
+        if (NodeType!((fcb).cast())) as u32 != (FAT_NTC_ROOT_DCB) as u32 {
             (*buffer).LastWriteTime = (*fcb).LastWriteTime;
             (*buffer).CreationTime = (*fcb).CreationTime;
             (*buffer).LastAccessTime = (*fcb).LastAccessTime;
@@ -816,7 +814,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
 
     let fcb_acquired: u8;
     if FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
-        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, (Wait) as i32) == 0 {
+        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, ((Wait) as i32) as u8) == 0 {
             FsRtlExitFileSystem();
             return Results;
         }
@@ -836,7 +834,7 @@ pub unsafe extern "system" fn FatFastQueryStdInfo(
         (*Buffer).NumberOfLinks = 1;
         (*Buffer).DeletePending = BooleanFlagOn((*Fcb).FcbState, FCB_STATE_DELETE_ON_CLOSE);
 
-        if NodeType(Fcb as *mut core::ffi::c_void) == FAT_NTC_FCB {
+        if NodeType!(Fcb as *mut core::ffi::c_void) == (FAT_NTC_FCB as u16) {
             // FCB_LOOKUP_ALLOCATIONSIZE_HINT is ((LONGLONG) -1), not MAXLONGLONG.
             if (*Fcb).Header.AllocationSize.QuadPart == -1_i64 {
                 // try_return(Results)
@@ -924,7 +922,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
 
     // Acquire Fcb only if not paging file
     if FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
-        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, Wait) == 0 {
+        if ExAcquireResourceSharedLite((*Fcb).Header.Resource, (Wait) as u8) == 0 {
             FsRtlExitFileSystem();
             return Results;
         }
@@ -965,7 +963,7 @@ pub unsafe extern "system" fn FatFastQueryNetworkOpenInfo(
             (*Buffer).FileAttributes = FILE_ATTRIBUTE_NORMAL;
         }
 
-        if NodeType(Fcb as *mut core::ffi::c_void) == FAT_NTC_FCB {
+        if NodeType!(Fcb as *mut core::ffi::c_void) == (FAT_NTC_FCB as u16) {
             if (*Fcb).Header.AllocationSize.QuadPart == FCB_LOOKUP_ALLOCATIONSIZE_HINT {
                 return; // try_return(Results)
             }
@@ -998,7 +996,7 @@ pub unsafe extern "system" fn FatPopUpFileCorrupt(
     PAGED_CODE!();
 
     // Check if this is the root directory; if so, skip popup
-    if NodeType((Fcb).cast()) == (FAT_NTC_ROOT_DCB) as u32 {
+    if (NodeType!((Fcb).cast())) as u32 == (FAT_NTC_ROOT_DCB) as u32 {
         return;
     }
 

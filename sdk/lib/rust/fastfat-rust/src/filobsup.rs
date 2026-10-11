@@ -1,5 +1,15 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatBugCheck;
+use crate::externs::FatReleaseFcb;
+use crate::externs::FatVcbAcquiredExclusive;
+use crate::externs::CcPurgeCacheSection;
+use crate::externs::MmFlushImageSection;
+// fastfat's own functions: the definition is the declaration.
+use crate::resrcsup::FatAcquireExclusiveFcb;
+use crate::strucsup::FatGetNextFcbTopDown;
+use crate::seh::FatRaiseStatus;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::ddk::{PFILE_OBJECT, PSECTION_OBJECT_POINTERS};
@@ -13,20 +23,11 @@ use crate::glue::{DEBUG_TRACE_FILOBSUP};
 use crate::types::{DCB};
 
 extern "system" {
-    } extern "C" { fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...); } extern "system" {
+    } extern "system" {
     fn FatFspClose(vcb: *mut VCB);
-    fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
 }
 extern "system" {
-    fn NodeType(ptr: *mut core::ffi::c_void) -> u32;
     fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> u8;
-    fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
-    fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn CcPurgeCacheSection( Section: *mut SECTION_OBJECT_POINTERS, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: i32, ) -> u8;
-    fn MmFlushImageSection( Section: *mut SECTION_OBJECT_POINTERS, FlushType: u32, ) -> u8;
     fn FatFlushFile( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, FlushType: FAT_FLUSH_TYPE, ) -> i32;
 }
 
@@ -78,7 +79,7 @@ pub unsafe extern "system" fn FatSetFileObject(
         // PAGED_CODE(); (not available, assume call)
         PAGED_CODE!();
 
-        DebugTrace(
+        DebugTrace!(
             1,
             Dbg,
             b"FatSetFileObject, FileObject = %p\n\0".as_ptr() as *const i8,
@@ -87,7 +88,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 
         // NT_ASSERT((Ccb == NULL) || (NodeType(Ccb) == FAT_NTC_CCB))
         {
-            let cond_ccb: i32 = if Ccb.is_null() || (NodeType(Ccb as *mut core::ffi::c_void) == FAT_NTC_CCB) {
+            let cond_ccb: i32 = if Ccb.is_null() || ((NodeType!(Ccb as *mut core::ffi::c_void)) as u32 == FAT_NTC_CCB) {
                 1
             } else {
                 0
@@ -98,30 +99,30 @@ pub unsafe extern "system" fn FatSetFileObject(
         // Complex type-of-open assertion
         {
             let node_type: u32 = if !Ccb.is_null() {
-                NodeType(Ccb as *mut core::ffi::c_void)
+                (NodeType!(Ccb as *mut core::ffi::c_void)) as _
             } else {
                 0 // won't be used in the null branch
             };
             let cond = (TypeOfOpen == (UnopenedFileObject) as u32)
                 || ((TypeOfOpen == (UserFileOpen) as u32)
-                    && (NodeType(VcbOrFcbOrDcb) == FAT_NTC_FCB)
+                    && (NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_FCB as u16))
                     && !Ccb.is_null())
                 || ((TypeOfOpen == (EaFile) as u32)
-                    && (NodeType(VcbOrFcbOrDcb) == FAT_NTC_FCB)
+                    && (NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_FCB as u16))
                     && Ccb.is_null())
                 || ((TypeOfOpen == (UserDirectoryOpen) as u32)
-                    && ((NodeType(VcbOrFcbOrDcb) == FAT_NTC_DCB)
-                        || (NodeType(VcbOrFcbOrDcb) == FAT_NTC_ROOT_DCB))
+                    && ((NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_DCB as u16))
+                        || (NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_ROOT_DCB as u16)))
                     && !Ccb.is_null())
                 || ((TypeOfOpen == (UserVolumeOpen) as u32)
-                    && (NodeType(VcbOrFcbOrDcb) == FAT_NTC_VCB)
+                    && ((NodeType!(VcbOrFcbOrDcb)) as u32 == FAT_NTC_VCB)
                     && !Ccb.is_null())
                 || ((TypeOfOpen == (VirtualVolumeFile) as u32)
-                    && (NodeType(VcbOrFcbOrDcb) == FAT_NTC_VCB)
+                    && ((NodeType!(VcbOrFcbOrDcb)) as u32 == FAT_NTC_VCB)
                     && Ccb.is_null())
                 || ((TypeOfOpen == (DirectoryFile) as u32)
-                    && ((NodeType(VcbOrFcbOrDcb) == FAT_NTC_DCB)
-                        || (NodeType(VcbOrFcbOrDcb) == FAT_NTC_ROOT_DCB))
+                    && ((NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_DCB as u16))
+                        || (NodeType!(VcbOrFcbOrDcb) == (FAT_NTC_ROOT_DCB as u16)))
                     && Ccb.is_null());
 
             NT_ASSERT!(if cond { 1 } else { 0 });
@@ -132,7 +133,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 
         // NT_ASSERT((Ccb == NULL) || (NodeType(Ccb) == FAT_NTC_CCB))
         {
-            let cond_ccb: i32 = if Ccb.is_null() || (NodeType(Ccb as *mut core::ffi::c_void) == FAT_NTC_CCB) {
+            let cond_ccb: i32 = if Ccb.is_null() || ((NodeType!(Ccb as *mut core::ffi::c_void)) as u32 == FAT_NTC_CCB) {
                 1
             } else {
                 0
@@ -142,7 +143,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 
         if !VcbOrFcbOrDcb.is_null() {
             // Set Vpb
-            if NodeType(VcbOrFcbOrDcb) == FAT_NTC_VCB {
+            if (NodeType!(VcbOrFcbOrDcb)) as u32 == FAT_NTC_VCB {
                 (*(FileObject)).Vpb = (*(VcbOrFcbOrDcb as *mut VCB)).Vpb;
             } else {
                 (*(FileObject)).Vpb = (*((*(VcbOrFcbOrDcb as *mut FCB)).Vcb)).Vpb;
@@ -157,7 +158,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 
         // NT_ASSERT((Ccb == NULL) || (NodeType(Ccb) == FAT_NTC_CCB))
         {
-            let cond_ccb: i32 = if Ccb.is_null() || (NodeType(Ccb as *mut core::ffi::c_void) == FAT_NTC_CCB) {
+            let cond_ccb: i32 = if Ccb.is_null() || ((NodeType!(Ccb as *mut core::ffi::c_void)) as u32 == FAT_NTC_CCB) {
                 1
             } else {
                 0
@@ -173,7 +174,7 @@ pub unsafe extern "system" fn FatSetFileObject(
 
         // NT_ASSERT((Ccb == NULL) || (NodeType(Ccb) == FAT_NTC_CCB))
         {
-            let cond_ccb: i32 = if Ccb.is_null() || (NodeType(Ccb as *mut core::ffi::c_void) == FAT_NTC_CCB) {
+            let cond_ccb: i32 = if Ccb.is_null() || ((NodeType!(Ccb as *mut core::ffi::c_void)) as u32 == FAT_NTC_CCB) {
                 1
             } else {
                 0
@@ -181,7 +182,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             NT_ASSERT!(cond_ccb);
         }
 
-        DebugTrace(-1, Dbg, b"FatSetFileObject -> VOID\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatSetFileObject -> VOID\n\0".as_ptr() as *const i8, 0);
         // return;
     }
 }
@@ -207,7 +208,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
         *Vcb = core::ptr::null_mut();
         TypeOfOpen = (UnopenedFileObject) as u32;
     } else {
-        match NodeType(FsContext) {
+        match (NodeType!(FsContext)) as u32 {
             FAT_NTC_VCB => {
                 *Ccb = FsContext2 as *mut CCB;
                 *FcbOrDcb = core::ptr::null_mut();
@@ -227,7 +228,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                 } else {
                     TypeOfOpen = (UserDirectoryOpen) as u32;
                 }
-                DebugTrace(
+                DebugTrace!(
                     0,
                     Dbg,
                     b"Referencing directory: %wZ\n\0".as_ptr() as *const i8,
@@ -240,7 +241,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                 *Vcb = (*(*FcbOrDcb)).Vcb;
                 if !(*Ccb).is_null() {
                     TypeOfOpen = (UserFileOpen) as u32;
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         Dbg,
                         b"Referencing file: %wZ\n\0".as_ptr() as *const i8,
@@ -249,7 +250,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                 } else {
                     if *FcbOrDcb == (*(*Vcb)).EaFcb {
                         TypeOfOpen = (EaFile) as u32;
-                        DebugTrace(
+                        DebugTrace!(
                             0,
                             Dbg,
                             b"Referencing EA file: %wZ\n\0".as_ptr() as *const i8,
@@ -259,7 +260,7 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                         // #ifdef _MSC_VER
                         // #pragma prefast(suppress:28159, "things are seriously wrong if we get here")
                         // #endif
-                        FatBugCheck(NodeType(FsContext) as usize, 0, 0);
+                        FatBugCheck((NodeType!(FsContext)) as ULONG_PTR, 0, 0);
                     }
                 }
             }
@@ -267,30 +268,30 @@ pub unsafe extern "system" fn FatDecodeFileObject(
                 // #ifdef _MSC_VER
                 // #pragma prefast(suppress:28159, "things are seriously wrong if we get here")
                 // #endif
-                FatBugCheck(NodeType(FsContext) as usize, 0, 0);
+                FatBugCheck((NodeType!(FsContext)) as ULONG_PTR, 0, 0);
             }
         }
     }
 
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"FatDecodeFileObject -> VCB(%p)\n\0".as_ptr() as *const i8,
         *Vcb,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"FatDecodeFileObject -> FCB(%p)\n\0".as_ptr() as *const i8,
         *FcbOrDcb,
     );
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"FatDecodeFileObject -> CCB(%p)\n\0".as_ptr() as *const i8,
         *Ccb,
     );
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg,
         b"FatDecodeFileObject -> TypeOfOpen = %08lx\n\0".as_ptr() as *const i8,
@@ -311,7 +312,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
 
     PAGED_CODE!();
 
-    DebugTrace(
+    DebugTrace!(
         1,
         Dbg,
         b"FatPurgeReferencedFileObjects, Fcb = %p\n\0".as_ptr() as *const i8,
@@ -343,7 +344,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
         Fcb = NextFcb;
     }
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg,
         b"FatPurgeReferencedFileObjects (VOID)\n\0".as_ptr() as *const i8,
@@ -387,7 +388,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
 
     let mut queue_ptr: *mut LIST_ENTRY = core::ptr::null_mut();
 
-    if NodeType((Fcb).cast()) != FAT_NTC_FCB
+    if NodeType!((Fcb).cast()) != (FAT_NTC_FCB as u16)
         && !IsListEmpty(
             core::ptr::addr_of!((*Fcb).Specific.Dcb.as_ref().ParentDcbQueue) as *mut LIST_ENTRY,
         )
@@ -462,7 +463,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
             if DataSectionExists != 0 {
                 let _ = CcPurgeCacheSection(
                     Section,
-                    core::ptr::null_mut::<LARGE_INTEGER>(),
+                    (core::ptr::null_mut::<LARGE_INTEGER>()).cast(),
                     0,
                     0,
                 );

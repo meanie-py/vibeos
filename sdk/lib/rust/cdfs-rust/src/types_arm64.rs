@@ -3375,7 +3375,12 @@ unsafe extern "C" {
     pub fn CdDeleteVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
 }
 unsafe extern "C" {
-    pub fn CdCreateFcb(IrpContext: PIRP_CONTEXT, FileId: *mut core::ffi::c_void, NodeTypeCode: u16, FcbExisted: PBOOLEAN) -> PFCB;
+    pub fn CdCreateFcb(
+        IrpContext: PIRP_CONTEXT,
+        FileId: FILE_ID,
+        NodeTypeCode: NODE_TYPE_CODE,
+        FcbExisted: PBOOLEAN,
+    ) -> PFCB;
 }
 unsafe extern "C" {
     pub fn CdInitializeFcbFromPathEntry(

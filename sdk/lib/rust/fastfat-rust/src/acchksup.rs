@@ -1,4 +1,5 @@
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::ob::*;
@@ -50,8 +51,7 @@ pub unsafe extern "system" fn FatCheckFileAccess(
 
     // Declare external functions
     unsafe extern "system" {
-        } extern "C" { fn DebugTrace(level: i32, mask: u32, format: *const i8, ...); } extern "system" {
-        fn DebugUnwind(fn_name: usize);
+        } extern "system" {
     }
 
     PAGED_CODE!();
@@ -61,14 +61,14 @@ pub unsafe extern "system" fn FatCheckFileAccess(
 
     // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
     crate::seh::try_finally(&mut (), |_| loop {
-        DebugTrace(1, Dbg, b"FatCheckFileAccess\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(0, Dbg, b"DirentAttributes = %8lx\n\0".as_ptr() as *const i8, DirentAttributes as usize);
-        DebugTrace(0, Dbg, b"DesiredAccess    = %8lx\n\0".as_ptr() as *const i8, *DesiredAccess as usize);
+        DebugTrace!(1, Dbg, b"FatCheckFileAccess\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg, b"DirentAttributes = %8lx\n\0".as_ptr() as *const i8, DirentAttributes as usize);
+        DebugTrace!(0, Dbg, b"DesiredAccess    = %8lx\n\0".as_ptr() as *const i8, *DesiredAccess as usize);
 
         // Check for Volume ID or Device Dirents, no user access
         if (DirentAttributes & FAT_DIRENT_ATTR_VOLUME_ID) != 0 ||
            (DirentAttributes & FAT_DIRENT_ATTR_DEVICE) != 0 {
-            DebugTrace(0, Dbg, b"Cannot access volume id or device\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"Cannot access volume id or device\n\0".as_ptr() as *const i8, 0);
             *p_result = 0;
             break;
         }
@@ -91,7 +91,7 @@ pub unsafe extern "system" fn FatCheckFileAccess(
             | FILE_APPEND_DATA
             | MAXIMUM_ALLOWED;
         if (*DesiredAccess & !allowed_mask) != 0 {
-            DebugTrace(0, Dbg, b"Cannot open object\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"Cannot open object\n\0".as_ptr() as *const i8, 0);
             *p_result = 0;
             break;
         }
@@ -119,7 +119,7 @@ pub unsafe extern "system" fn FatCheckFileAccess(
             }
 
             if (*DesiredAccess & !access_mask) != 0 {
-                DebugTrace(0, Dbg, b"Cannot open readonly\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"Cannot open readonly\n\0".as_ptr() as *const i8, 0);
                 *p_result = 0;
                 break;
             }
@@ -128,8 +128,8 @@ pub unsafe extern "system" fn FatCheckFileAccess(
         // Normal exit from try block
         break;
     }, |_, _abnormal| {
-        DebugUnwind(FatCheckFileAccess as usize);
-        DebugTrace(-1, Dbg, b"FatCheckFileAccess -> %08lx\n\0".as_ptr() as *const i8, *p_result as usize);
+        DebugUnwind!(FatCheckFileAccess as usize);
+        DebugTrace!(-1, Dbg, b"FatCheckFileAccess -> %08lx\n\0".as_ptr() as *const i8, *p_result as usize);
     });
 
     // UNREFERENCED_PARAMETER( IrpContext )

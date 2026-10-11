@@ -1,4 +1,5 @@
 use ntkrnl_sys::globals::*;
+use crate::externs::DbgPrint;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -43,7 +44,7 @@ use crate::ddk_shims::{FsRtlCopyRead, FsRtlCopyWrite, FsRtlMdlReadCompleteDev, F
 extern "C" {
     static KeNumberProcessors: core::ffi::c_char;
 }
-extern "C" { fn DbgPrint(format: *const u8, ...) -> i32; }
+
 extern "system" {
     fn ZwOpenKey( KeyHandle: *mut *mut core::ffi::c_void, DesiredAccess: u32, ObjectAttributes: *mut _OBJECT_ATTRIBUTES, ) -> i32;
     fn ZwQueryValueKey( KeyHandle: *mut core::ffi::c_void, ValueName: *mut _UNICODE_STRING, KeyValueInformationClass: u32, KeyValueInformation: *mut core::ffi::c_void, Length: u32, ResultLength: *mut u32, ) -> i32;
@@ -531,7 +532,7 @@ pub unsafe extern "system" fn FatGetCompatibilityModeValue(
         );
         if !(Status != STATUS_BUFFER_OVERFLOW) {
             DbgPrint(
-                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8,
+                b"Assertion failed at %s(%d): %s\n\0".as_ptr() as *const u8 as *const i8,
                 b"drivers/filesystems/fastfat/fatinit.c\0"
                     .as_ptr() as *const u8,
                 553 as core::ffi::c_int,

@@ -1,5 +1,26 @@
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatGetIndexFromLbo;
+use crate::externs::FatIsFat32;
+use crate::externs::FatReleaseFcb;
+use crate::externs::FatUnpinBcb;
+use crate::externs::FsRtlIsAnsiCharacterLegalFat;
+use crate::externs::CcFlushCache;
+// fastfat's own functions: the definition is the declaration.
+use crate::namesup::Fat8dot3ToString;
+use crate::resrcsup::FatAcquireExclusiveFcb;
+use crate::resrcsup::FatAcquireSharedFcb;
+use crate::dirsup::FatConstructDirent;
+use crate::dirsup::FatCreateNewDirent;
+use crate::dirsup::FatDeleteDirent;
+use crate::dirsup::FatGetDirentFromFcbOrDcb;
+use crate::dirsup::FatLocateSimpleOemDirent;
+use crate::fsctrl::FatLookupMcbEntry;
+use crate::cachesup::FatPrepareWriteDirectoryFile;
+use crate::seh::FatRaiseStatus;
+use crate::cachesup::FatSetDirtyBcb;
+use crate::verfysup::FatVerifyFcb;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::mm::*;
@@ -16,10 +37,7 @@ use crate::glue::{TAG_EA_DATA};
 use crate::ddk_shims::{FsRtlAllocatePoolWithTag, FsRtlInitializeLargeMcb, FsRtlUninitializeLargeMcb};
 
 extern "system" {
-    } extern "C" { fn DebugTrace(severity: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn Fat8dot3ToString( irp_context: *mut IRP_CONTEXT, dirent: *const DIRENT, flag: i32, filename: *mut OEM_STRING, );
-    fn FatUnpinBcb(irp_context: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
-    fn FatReleaseFcb(irp_context: *mut IRP_CONTEXT, fcb: *mut FCB);
+    } extern "system" {
 }
 
 /// `SizeOfPackedEa` (`fat.h:738`) is a MACRO, never a function. The `extern` that used
@@ -36,32 +54,15 @@ extern "system" {
     fn PagedCode();
     fn SizeOfFullEa(ea: *mut FILE_FULL_EA_INFORMATION) -> u32;
     fn FatUpcaseEaName( IrpContext: *mut IRP_CONTEXT, Source: *mut OEM_STRING, Destination: *mut OEM_STRING, ) -> ();
-    fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: i32) -> u8;
     fn FsRtlIsLeadDbcsCharacter(Character: u8) -> u8;
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, ErrorStatus: NTSTATUS);
     fn Add2Ptr(Ptr: *mut core::ffi::c_void, Bytes: u32) -> *mut core::ffi::c_void;
-    fn DebugUnwind(fn_name: usize);
-    fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
-    fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAllocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Hint: u32, AllocationSize: *mut u32, IsDirectory: u8, Mcb: *mut LARGE_MCB, );
-    fn FatConstructDirent(IrpContext: *mut IRP_CONTEXT, Dirent: *mut DIRENT, FileName: *mut OEM_STRING, IsDirectory: u8, IsExtended: u8, Lbo: *mut LARGE_INTEGER, Attributes: u16, Initialize: u8, SetCreationTime: *const LARGE_INTEGER);
-    fn FatCreateNewDirent(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, DirentIndex: u32, IsExtended: u32) -> u32;
     fn FatDeallocateDiskSpace( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, IsDirectory: u8, );
-    fn FatDeleteDirent(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, EaHandle: *mut u16, DeleteFile: u32);
-    fn FatGetDirentFromFcbOrDcb(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, Unpin: u32, EaDirent: *mut *mut DIRENT, EaBcb: *mut *mut BCB);
-    fn FatGetIndexFromLbo(Vcb: *mut VCB, Lbo: i64) -> u16;
-    fn FatLocateSimpleOemDirent( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, FileName: *mut OEM_STRING, EaDirent: *mut *mut DIRENT, EaBcb: *mut *mut BCB, ByteOffset: *mut u32, );
     fn FatLookupFileAllocationSize(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn FatLookupMcbEntry(Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: *mut i64, Offset: *mut u32, Length: *mut u32) -> u8;
     fn FatOpenEaFile(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> *mut FILE_OBJECT;
     fn FatPinMappedData( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, );
-    fn FatPrepareWriteDirectoryFile( IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, UpdateSize: u8, Initialize: u8, Status: *mut i32, );
-    fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
-    fn FatSetDirtyBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut BCB, Vcb: *mut VCB, Dirty: u8);
     fn FatSplitAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, NewMcb: *mut LARGE_MCB);
     fn FatMergeAllocation(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, TargetMcb: *mut LARGE_MCB, SourceMcb: *mut LARGE_MCB);
-    fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn CcFlushCache( SectionObjectPointer: *mut core::ffi::c_void, FileOffset: *mut LARGE_INTEGER, Length: u32, IoStatus: *mut _IO_STATUS_BLOCK, );
 }
 
 /// fat.h `GetcbList` macro: the unaligned little-endian ULONG in cbList. (This was an
@@ -136,7 +137,7 @@ pub unsafe extern "system" fn FatGetEaLength(
 
     PAGED_CODE!();
 
-    DebugTrace(
+    DebugTrace!(
         1,
         (Dbg) as u32,
         b"FatGetEaLength ...\n\0".as_ptr() as *const i8,
@@ -146,7 +147,7 @@ pub unsafe extern "system" fn FatGetEaLength(
     // If this is Fat32 volume, or handle is 0 then the Ea length is 0.
     if FatIsFat32(Vcb as *mut VCB) != 0 || (*Dirent).__bindgen_anon_1.bindgen_union_field == 0 {
         *EaLength = 0;
-        DebugTrace(
+        DebugTrace!(
             -1,
             (Dbg) as u32,
             b"FatGetEaLength -> %08lx\n\0".as_ptr() as *const i8,
@@ -182,7 +183,7 @@ pub unsafe extern "system" fn FatGetEaLength(
 
         // If we didn't get the file because it doesn't exist, the disk is corrupted.
         if (*Vcb).VirtualEaFile.is_null() {
-            DebugTrace(
+            DebugTrace!(
                 0,
                 (Dbg) as u32,
                 b"FatGetEaLength:  Ea file doesn't exist\n\0".as_ptr() as *const i8,
@@ -210,14 +211,14 @@ pub unsafe extern "system" fn FatGetEaLength(
         // CopyUchar4( EaLength, EaSetHeader->cbList ). The extern this called passed the
         // VALUE where the stub dereferences a source pointer.
         *EaLength = u32::from_le_bytes((*EaSetHeader).cbList);
-        DebugTrace(
+        DebugTrace!(
             0,
             (Dbg) as u32,
             b"FatGetEaLength:  Length of Ea is -> %08lx\n\0".as_ptr() as *const i8,
             *EaLength,
         );
     }, |_, _abnormal| {
-        DebugUnwind(FatGetEaLength as usize);
+        DebugUnwind!(FatGetEaLength as usize);
 
         // Unpin the EaDirent and the EaSetHeader if pinned.
         FatUnpinBcb(IrpContext, core::ptr::addr_of_mut!(*p_EaBcb) as *mut *mut core::ffi::c_void);
@@ -229,7 +230,7 @@ pub unsafe extern "system" fn FatGetEaLength(
             FatReleaseFcb(IrpContext, (*Vcb).EaFcb);
         }
 
-        DebugTrace(
+        DebugTrace!(
             -1,
             (Dbg) as u32,
             b"FatGetEaLength:  Ea length -> %08lx\n\0".as_ptr() as *const i8,
@@ -260,11 +261,11 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
 
         // PAGED_CODE();  -- left as comment, expands to nothing in release
         const Dbg: u32 = 0; // DEBUG_TRACE_EA
-        DebugTrace(1, Dbg, b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8 , 0i32);
+        DebugTrace!(1, Dbg, b"FatGetNeedEaCount ...\n\0".as_ptr() as *const i8 , 0i32);
 
         if (*Dirent).__bindgen_anon_1.bindgen_union_field == 0 {
             *NeedEaCount = 0;
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatGetNeedEaCount -> %08lx\n\0".as_ptr() as *const i8 ,
@@ -300,7 +301,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
             *p_LockedEaFcb = 1; // TRUE
 
             if (*Vcb).VirtualEaFile.is_null() {
-                DebugTrace(
+                DebugTrace!(
                     0,
                     Dbg,
                     b"FatGetNeedEaCount:  Ea file doesn't exist\n\0".as_ptr() as *const i8 ,
@@ -315,7 +316,7 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
             Fat8dot3ToString(
                 IrpContext as *mut IRP_CONTEXT,
                 Dirent as *mut DIRENT,
-                (0u8) as i32, // FALSE as u8
+                (0u8) as BOOLEAN, // FALSE as u8
                 &mut ThisFilename as *mut OEM_STRING,
             );
 
@@ -332,13 +333,13 @@ pub unsafe extern "system" fn FatGetNeedEaCount(
 
             *NeedEaCount = (*EaSetHeader).NeedEaCount;
         }, |_, _abnormal| {
-            DebugUnwind(b"FatGetNeedEaCount\0".as_ptr() as usize);
+            DebugUnwind!(b"FatGetNeedEaCount\0".as_ptr() as usize);
             FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(*p_EaBcb) as *mut *mut core::ffi::c_void);
             FatUnpinEaRange(IrpContext as *mut IRP_CONTEXT, &mut (*p_EaSetRange) as PEA_RANGE);
             if (*p_LockedEaFcb) != 0 {
                 FatReleaseFcb(IrpContext as *mut IRP_CONTEXT, (*Vcb).EaFcb);
             }
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatGetNeedEaCount:  NeedEaCount -> %08lx\n\0".as_ptr() as *const i8 ,
@@ -423,7 +424,7 @@ pub unsafe extern "system" fn FatCreateEa(
                 };
 
                 if FatIsEaNameValid(irp_context, ea_name) == 0 {
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         Dbg,
                         b"FatCreateEa:  Invalid Ea Name -> %Z\n\0".as_ptr() as *const i8,
@@ -451,7 +452,7 @@ pub unsafe extern "system" fn FatCreateEa(
                     &mut ea_name_copy as *mut OEM_STRING,
                     &mut ea_offset,
                 ) != 0 {
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         Dbg,
                         b"FatCreateEa:  Duplicate name found\n\0".as_ptr() as *const i8,
@@ -465,7 +466,7 @@ pub unsafe extern "system" fn FatCreateEa(
                 }
 
                 if (*full_ea).EaValueLength == 0 {
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         Dbg,
                         b"FatCreateEa:  Empty ea\n\0".as_ptr() as *const i8,
@@ -503,7 +504,7 @@ pub unsafe extern "system" fn FatCreateEa(
             // ---------- after loop ----------
             if packed_eas_length != 0 {
                 if packed_eas_length + 4 > MAXIMUM_EA_SIZE {
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         Dbg,
                         b"Ea length is greater than maximum\n\0".as_ptr() as *const i8,
@@ -564,7 +565,7 @@ pub unsafe extern "system" fn FatCreateEa(
         }
     }, |_, _abnormal| {
         // ---------- _SEH2_FINALLY ----------
-        DebugUnwind(b"FatCreateEa\0".as_ptr() as usize);
+        DebugUnwind!(b"FatCreateEa\0".as_ptr() as usize);
 
         if !(*ea_set_header_ptr).is_null() {
             ExFreePool(*ea_set_header_ptr as *mut c_void);
@@ -577,7 +578,7 @@ pub unsafe extern "system" fn FatCreateEa(
         FatUnpinBcb(irp_context, p_ea_bcb as *mut *mut core::ffi::c_void);
         FatUnpinEaRange(irp_context, (ea_set_range_ptr).cast());
 
-        DebugTrace(-1, Dbg, b"FatCreateEa -> Exit\n\0".as_ptr() as *const i8);
+        DebugTrace!(-1, Dbg, b"FatCreateEa -> Exit\n\0".as_ptr() as *const i8);
     });
     // ---------- _SEH2_END ----------
 }
@@ -593,7 +594,7 @@ pub unsafe extern "system" fn FatDeleteEa(
 
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, b"FatDeleteEa...\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatDeleteEa...\n\0".as_ptr() as *const i8, 0);
 
     EaBcb = core::ptr::null_mut();
     LockedEaFcb = 0;
@@ -616,7 +617,7 @@ pub unsafe extern "system" fn FatDeleteEa(
         *p_LockedEaFcb = 1;
 
         if (*p_EaBcb).is_null() {
-            DebugTrace(
+            DebugTrace!(
                 0,
                 Dbg,
                 b"FatDeleteEa:  No Ea file exists\n\0".as_ptr() as *const i8,
@@ -635,13 +636,13 @@ pub unsafe extern "system" fn FatDeleteEa(
         );
 
         CcFlushCache(
-            (*(* (Vcb as *mut VCB) ).VirtualEaFile).SectionObjectPointer as *mut c_void,
+            ((*(* (Vcb as *mut VCB) ).VirtualEaFile).SectionObjectPointer as *mut c_void).cast(),
             core::ptr::null_mut(),
             0,
             core::ptr::null_mut(),
         );
     }, |_, _abnormal| {
-        DebugUnwind(b"FatDeleteEa\0".as_ptr() as usize);
+        DebugUnwind!(b"FatDeleteEa\0".as_ptr() as usize);
 
         if (*p_LockedEaFcb) != 0 {
             FatReleaseFcb(
@@ -652,7 +653,7 @@ pub unsafe extern "system" fn FatDeleteEa(
 
         FatUnpinBcb(IrpContext as *mut IRP_CONTEXT, core::ptr::addr_of_mut!(*p_EaBcb) as *mut *mut core::ffi::c_void);
 
-        DebugTrace(-1, Dbg, b"FatDeleteEa -> Exit\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatDeleteEa -> Exit\n\0".as_ptr() as *const i8, 0);
     });
 
     return;
@@ -678,7 +679,7 @@ pub unsafe extern "system" fn FatGetEaFile(
 
     // PAGED_CODE(); — pageability directive, ignored in Rust
 
-    DebugTrace(1, DEBUG_TRACE_EA, b"FatGetEaFile ...\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, DEBUG_TRACE_EA, b"FatGetEaFile ...\n\0".as_ptr() as *const i8, 0);
 
     RtlZeroMemory(
         core::ptr::addr_of_mut!(EaFileRange) as *mut c_void,
@@ -701,7 +702,7 @@ pub unsafe extern "system" fn FatGetEaFile(
         if (*Vcb).VirtualEaFile.is_null() {
             // Always lock the Ea file exclusively if we have to create the file
             if FatAcquireExclusiveFcb(IrpContext, (*Vcb).EaFcb) == 0 {
-                DebugTrace(
+                DebugTrace!(
                     0,
                     DEBUG_TRACE_EA,
                     b"FatGetEaFile:  Can't grab exclusive\n\0".as_ptr() as *const i8,
@@ -717,7 +718,7 @@ pub unsafe extern "system" fn FatGetEaFile(
                 || (ExclusiveFcb == 0
                     && FatAcquireSharedFcb(IrpContext, (*Vcb).EaFcb) == 0)
             {
-                DebugTrace(
+                DebugTrace!(
                     0,
                     DEBUG_TRACE_EA,
                     b"FatGetEaFile:  Can't grab EaFcb\n\0".as_ptr() as *const i8,
@@ -734,7 +735,7 @@ pub unsafe extern "system" fn FatGetEaFile(
                 *p_UnwindLockedEaFcb = 0;
 
                 if FatAcquireExclusiveFcb(IrpContext, (*Vcb).EaFcb) == 0 {
-                    DebugTrace(
+                    DebugTrace!(
                         0,
                         DEBUG_TRACE_EA,
                         b"FatGetEaFile:  Can't grab EaFcb\n\0".as_ptr() as *const i8,
@@ -748,7 +749,7 @@ pub unsafe extern "system" fn FatGetEaFile(
 
         // If the file object is now there we only need to get the dirent
         if !(*Vcb).VirtualEaFile.is_null() {
-            FatVerifyFcb(IrpContext, (*Vcb).EaFcb);
+            FatVerifyFcb((IrpContext).cast(), (*Vcb).EaFcb);
             FatGetDirentFromFcbOrDcb(
                 IrpContext,
                 (*Vcb).EaFcb,
@@ -834,7 +835,7 @@ pub unsafe extern "system" fn FatGetEaFile(
                 let mut Index: u32 = 0;
                 let mut Status: i32 = STATUS_SUCCESS;
 
-                DebugTrace(
+                DebugTrace!(
                     0,
                     DEBUG_TRACE_EA,
                     b"FatGetEaFile:  Creating local IrpContext\n\0".as_ptr()
@@ -881,8 +882,8 @@ pub unsafe extern "system" fn FatGetEaFile(
                     (*(*Vcb).EaFcb).ParentDcb,
                     (*(*Vcb).EaFcb).DirentOffsetWithinDirectory,
                     core::mem::size_of::<DIRENT>() as u32,
-                    EaBcb,
-                    EaDirent,
+                    (EaBcb).cast(),
+                    (EaDirent).cast(),
                     0,
                     1,
                     core::ptr::addr_of_mut!(Status),
@@ -925,13 +926,13 @@ pub unsafe extern "system" fn FatGetEaFile(
                         Vcb,
                         core::ptr::addr_of_mut!((*(*Vcb).EaFcb).Mcb),
                         0,
-                        core::ptr::addr_of_mut!(FirstLboOfFile),
+                        (core::ptr::addr_of_mut!(FirstLboOfFile)).cast(),
                         core::ptr::null_mut(),
                         core::ptr::null_mut(),
                     );
 
                     (*(*EaDirent)).FirstClusterOfFile =
-                        FatGetIndexFromLbo(Vcb, FirstLboOfFile);
+                        (FatGetIndexFromLbo(Vcb, FirstLboOfFile)) as u16;
                 }
 
                 (*(*Vcb).EaFcb).FirstClusterOfFile =
@@ -991,7 +992,7 @@ pub unsafe extern "system" fn FatGetEaFile(
             }
         }
     }, |_, abnormal| {
-        DebugUnwind(FatGetEaFile as usize);
+        DebugUnwind!(FatGetEaFile as usize);
 
         // If abnormal termination and disk space allocated, deallocate it
         if abnormal {
@@ -1035,7 +1036,7 @@ pub unsafe extern "system" fn FatGetEaFile(
         // If the Ea file header is locked down, unpin it now
         FatUnpinEaRange(IrpContext, (core::ptr::addr_of_mut!(*p_EaFileRange)).cast());
 
-        DebugTrace(
+        DebugTrace!(
             -1,
             DEBUG_TRACE_EA,
             b"FatGetEaFile:  Exit\n\0".as_ptr() as *const i8,
@@ -1066,11 +1067,11 @@ pub unsafe extern "system" fn FatReadEaSet(
 
     let _ = &FileName;
 
-    DebugTrace(1, Dbg, (b"FatReadEaSet\n\0").as_ptr() as *const core::ffi::c_char, 0);
-    DebugTrace(0, Dbg, (b"  Vcb      = %p\n\0").as_ptr() as *const core::ffi::c_char, 0, Vcb);
+    DebugTrace!(1, Dbg, (b"FatReadEaSet\n\0").as_ptr() as *const core::ffi::c_char, 0);
+    DebugTrace!(0, Dbg, (b"  Vcb      = %p\n\0").as_ptr() as *const core::ffi::c_char, 0, Vcb);
 
     if EaHandle < 1 /* MIN_EA_HANDLE */ || EaHandle > 0x77FF /* MAX_EA_HANDLE */ {
-        DebugTrace(-1, Dbg, (b"FatReadEaSet: Illegal handle value\n\0").as_ptr() as *const core::ffi::c_char, 0);
+        DebugTrace!(-1, Dbg, (b"FatReadEaSet: Illegal handle value\n\0").as_ptr() as *const core::ffi::c_char, 0);
         FatRaiseStatus(IrpContext, 0xC0000051_u32 as i32); // STATUS_NONEXISTENT_EA_ENTRY
     }
 
@@ -1105,7 +1106,7 @@ pub unsafe extern "system" fn FatReadEaSet(
         ea_offset_cluster = *(((*p_ea_offset_range).Data as *mut u16).add((EaHandle & (128 /* MAX_EA_OFFSET_INDEX */ - 1)) as usize));
 
         if ea_offset_cluster == 0xFFFF /* UNUSED_EA_HANDLE */ {
-            DebugTrace(0, Dbg, (b"FatReadEaSet: Ea handle is unused\n\0").as_ptr() as *const core::ffi::c_char, 0);
+            DebugTrace!(0, Dbg, (b"FatReadEaSet: Ea handle is unused\n\0").as_ptr() as *const core::ffi::c_char, 0);
             FatRaiseStatus(IrpContext, 0xC0000051_u32 as i32 /* STATUS_NONEXISTENT_EA_ENTRY */);
         }
 
@@ -1128,7 +1129,7 @@ pub unsafe extern "system" fn FatReadEaSet(
         let ea_set: *mut EA_SET_HEADER = (*EaSetRange).Data as *mut EA_SET_HEADER;
 
         if (*ea_set).Signature != 0x4145 /* EA_SET_SIGNATURE */ || (*ea_set).OwnEaHandle != EaHandle {
-            DebugTrace(0, Dbg, (b"FatReadEaSet: Ea set header is corrupt\n\0").as_ptr() as *const core::ffi::c_char, 0);
+            DebugTrace!(0, Dbg, (b"FatReadEaSet: Ea set header is corrupt\n\0").as_ptr() as *const core::ffi::c_char, 0);
             FatRaiseStatus(IrpContext, 0xC000003E_u32 as i32 /* STATUS_DATA_ERROR */);
         }
 
@@ -1152,12 +1153,12 @@ pub unsafe extern "system" fn FatReadEaSet(
             );
         }
     }, |_, _abnormal| {
-        DebugUnwind(b"FatReadEaSet\0".as_ptr() as usize);
+        DebugUnwind!(b"FatReadEaSet\0".as_ptr() as usize);
 
         FatUnpinEaRange(IrpContext, (core::ptr::addr_of_mut!(*p_ea_header_range)).cast());
         FatUnpinEaRange(IrpContext, (core::ptr::addr_of_mut!(*p_ea_offset_range)).cast());
 
-        DebugTrace(-1, Dbg, (b"FatReadEaSet:  Exit\n\0").as_ptr() as *const core::ffi::c_char, 0);
+        DebugTrace!(-1, Dbg, (b"FatReadEaSet:  Exit\n\0").as_ptr() as *const core::ffi::c_char, 0);
     });
 }
 #[no_mangle]
@@ -1209,7 +1210,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
     UNREFERENCED_PARAMETER!(FileName);
 
     if EaHandle < MIN_EA_HANDLE || EaHandle > MAX_EA_HANDLE {
-        DebugTrace(-1, Dbg, b"FatDeleteEaSet: Illegal handle value\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatDeleteEaSet: Illegal handle value\n\0".as_ptr() as *const i8, 0);
         FatRaiseStatus(IrpContext, STATUS_NONEXISTENT_EA_ENTRY);
     }
 
@@ -1261,7 +1262,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
         EaOffsetCluster = *(((*p_EaOffsetRange).Data as *mut u16).add(EaOffsetIndex as usize));
 
         if EaOffsetCluster == UNUSED_EA_HANDLE {
-            DebugTrace(0, Dbg, b"FatReadEaSet: Ea handle is unused\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"FatReadEaSet: Ea handle is unused\n\0".as_ptr() as *const i8, 0);
             FatRaiseStatus(IrpContext, STATUS_NONEXISTENT_EA_ENTRY);
         }
 
@@ -1285,7 +1286,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
         EaSet = (*p_EaSetRange).Data as *mut EA_SET_HEADER;
 
         if (*EaSet).Signature != (EA_SET_SIGNATURE) as u16 || (*EaSet).OwnEaHandle != EaHandle {
-            DebugTrace(0, Dbg, b"FatReadEaSet: Ea set header is corrupt\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"FatReadEaSet: Ea set header is corrupt\n\0".as_ptr() as *const i8, 0);
             FatRaiseStatus(IrpContext, STATUS_DATA_ERROR);
         }
 
@@ -1298,7 +1299,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
 
         if EaSetLength > BytesPerCluster {
             if (*EaFcb).Header.FileSize.__bindgen_anon_1.LowPart.wrapping_sub(*p_EaSetVbo) < EaSetLength {
-                DebugTrace(0, Dbg, b"FatDeleteEaSet: Full Ea set not contained in file\n\0".as_ptr() as *const i8, 0);
+                DebugTrace!(0, Dbg, b"FatDeleteEaSet: Full Ea set not contained in file\n\0".as_ptr() as *const i8, 0);
                 FatRaiseStatus(IrpContext, STATUS_DATA_ERROR);
             }
         }
@@ -1323,7 +1324,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
                 // CcFlushCache( Sop, NULL /* FileOffset */, 0, &Iosb ): the translation passed
                 // the Iosb as the FileOffset.
                 CcFlushCache(
-                    (*VirtualEaFile).SectionObjectPointer as *mut c_void,
+                    ((*VirtualEaFile).SectionObjectPointer as *mut c_void).cast(),
                     core::ptr::null_mut(),
                     0,
                     core::ptr::addr_of_mut!(Iosb),
@@ -1410,7 +1411,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
 
         (*EaDirent).FileSize = (*EaFcb).Header.FileSize.__bindgen_anon_1.LowPart;
 
-        FatSetDirtyBcb(IrpContext, EaBcb, Vcb, 1);
+        FatSetDirtyBcb(IrpContext, (EaBcb).cast(), Vcb, 1);
 
         RtlZeroMemory(core::ptr::addr_of_mut!(*p_EaHeaderRange) as *mut core::ffi::c_void, core::mem::size_of::<EA_RANGE>());
 
@@ -1480,7 +1481,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
             0,
         );
     }, |_, abnormal| {
-        DebugUnwind(b"FatDeleteEaSet\0".as_ptr() as usize);
+        DebugUnwind!(b"FatDeleteEaSet\0".as_ptr() as usize);
 
         if abnormal && (*p_UnwindModifiedEaHeader) == 0 {
             if (*p_UnwindPrevFileSize) != 0 {
@@ -1537,7 +1538,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
             FsRtlUninitializeLargeMcb(core::ptr::addr_of_mut!(*p_TailMcb));
         }
 
-        DebugTrace(-1, Dbg, b"FatDeleteEaSet -> Exit\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatDeleteEaSet -> Exit\n\0".as_ptr() as *const i8, 0);
     });
 }
 #[no_mangle]
@@ -1699,7 +1700,7 @@ pub unsafe extern "system" fn FatAddEaSet(
         }
 
         if NewEaIndex > MAX_EA_HANDLE {
-            DebugTrace(-1, Dbg as u32, b"FatAddEaSet: Illegal handle value for new handle\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatAddEaSet: Illegal handle value for new handle\n\0".as_ptr() as *const i8, 0);
             FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
         }
 
@@ -1717,7 +1718,7 @@ pub unsafe extern "system" fn FatAddEaSet(
             .wrapping_sub((*EaFcb).Header.FileSize.__bindgen_anon_1.LowPart))
             < NewAllocation
         {
-            DebugTrace(-1, Dbg as u32, b"FatAddEaSet: New Ea file size is too large\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(-1, Dbg as u32, b"FatAddEaSet: New Ea file size is too large\n\0".as_ptr() as *const i8, 0);
             FatRaiseStatus(IrpContext, STATUS_INSUFFICIENT_RESOURCES);
         }
 
@@ -1772,7 +1773,7 @@ pub unsafe extern "system" fn FatAddEaSet(
                 Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
                 // CcFlushCache( Sop, NULL /* FileOffset */, 0, &Iosb ).
                 CcFlushCache(
-                    (*VirtualEaFile).SectionObjectPointer as *mut c_void,
+                    ((*VirtualEaFile).SectionObjectPointer as *mut c_void).cast(),
                     core::ptr::null_mut(),
                     0,
                     core::ptr::addr_of_mut!(Iosb),
@@ -1981,8 +1982,8 @@ pub unsafe extern "system" fn FatAddEaSet(
 
         *EaHandle = NewEaIndex;
 
-        DebugTrace(0, Dbg as u32, b"FatAddEaSet: Return values\n\0".as_ptr() as *const i8, 0);
-        DebugTrace(0, Dbg as u32, b"FatAddEaSet: New Handle -> %x\n\0".as_ptr() as *const i8, *EaHandle as u32);
+        DebugTrace!(0, Dbg as u32, b"FatAddEaSet: Return values\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(0, Dbg as u32, b"FatAddEaSet: New Handle -> %x\n\0".as_ptr() as *const i8, *EaHandle as u32);
     }, |_, abnormal| {
         if abnormal && (*p_UnwindAllocatedNewAllocation) != 0 {
             {
@@ -2096,7 +2097,7 @@ pub unsafe extern "system" fn FatAddEaSet(
             FsRtlUninitializeLargeMcb(core::ptr::addr_of_mut!(*p_EaInitialEaMcb) as *mut LARGE_MCB);
         }
 
-        DebugTrace(-1, Dbg as u32, b"FatAddEaSet ->  Exit\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg as u32, b"FatAddEaSet ->  Exit\n\0".as_ptr() as *const i8, 0);
     });
 }
 
@@ -2118,7 +2119,7 @@ pub unsafe extern "system" fn FatAppendPackedEa(
 
     PagedCode();
 
-    DebugTrace(
+    DebugTrace!(
         1i32,
         0u32, // DEBUG_TRACE_EA
         b"FatAppendPackedEa...\n\0".as_ptr() as *const i8,
@@ -2128,7 +2129,7 @@ pub unsafe extern "system" fn FatAppendPackedEa(
     PackedEaSize = SizeOfFullEa(FullEa) - 4u32;
 
     if PackedEaSize + *PackedEasLength > *AllocationLength {
-        DebugTrace(
+        DebugTrace!(
             0i32,
             0u32, // DEBUG_TRACE_EA
             b"Allocate a new ea list buffer\n\0".as_ptr() as *const i8,
@@ -2197,7 +2198,7 @@ pub unsafe extern "system" fn FatAppendPackedEa(
 
     *PackedEasLength = (*PackedEasLength).wrapping_add(PackedEaSize);
 
-    DebugTrace(
+    DebugTrace!(
         -1i32,
         0u32, // DEBUG_TRACE_EA
         b"FatAppendPackedEa -> VOID\n\0".as_ptr() as *const i8,
@@ -2216,7 +2217,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
     unsafe {
         PAGED_CODE!();
 
-        DebugTrace(1, Dbg, (b"FatDeletePackedEa, Offset = %08lx\n\0".as_ptr() as *const u8).cast(), Offset);
+        DebugTrace!(1, Dbg, (b"FatDeletePackedEa, Offset = %08lx\n\0".as_ptr() as *const u8).cast(), Offset);
 
         let packed_ea: *mut PACKED_EA = (*EaSetHeader).PackedEas.as_mut_ptr().add(Offset as usize) as *mut PACKED_EA;
         let mut packed_ea_size: u32 = 0;
@@ -2235,7 +2236,7 @@ pub unsafe extern "system" fn FatDeletePackedEa(
 
         *PackedEasLength -= packed_ea_size;
 
-        DebugTrace(-1, Dbg, (b"FatDeletePackedEa -> VOID\n\0".as_ptr() as *const u8).cast(), 0);
+        DebugTrace!(-1, Dbg, (b"FatDeletePackedEa -> VOID\n\0".as_ptr() as *const u8).cast(), 0);
 
         UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
     }
@@ -2249,10 +2250,10 @@ pub unsafe extern "system" fn FatLocateNextEa(
 ) -> u32 {
     // PAGED_CODE();
 
-    DebugTrace(1, Dbg, b"FatLocateNextEa, PreviousOffset = %08lx\n\0".as_ptr() as *const i8, PreviousOffset);
+    DebugTrace!(1, Dbg, b"FatLocateNextEa, PreviousOffset = %08lx\n\0".as_ptr() as *const i8, PreviousOffset);
 
     if PreviousOffset >= PackedEasLength {
-        DebugTrace(-1, Dbg, b"FatLocateNextEa -> 0xffffffff\n\0".as_ptr() as *const i8, 0);
+        DebugTrace!(-1, Dbg, b"FatLocateNextEa -> 0xffffffff\n\0".as_ptr() as *const i8, 0);
         return 0xffffffff;
     }
 
@@ -2266,7 +2267,7 @@ pub unsafe extern "system" fn FatLocateNextEa(
         offset = 0xffffffff;
     }
 
-    DebugTrace(-1, Dbg, b"FatLocateNextEa -> %08lx\n\0".as_ptr() as *const i8, offset);
+    DebugTrace!(-1, Dbg, b"FatLocateNextEa -> %08lx\n\0".as_ptr() as *const i8, offset);
 
     let _ = IrpContext;
 
@@ -2282,7 +2283,7 @@ pub unsafe extern "system" fn FatLocateEaByName(
 ) -> i32 {
     // PAGED_CODE();
 
-    DebugTrace(
+    DebugTrace!(
         1,
         Dbg,
         b"FatLocateEaByName, EaName = %Z\n\0".as_ptr() as *const i8,
@@ -2299,7 +2300,7 @@ pub unsafe extern "system" fn FatLocateEaByName(
         name.MaximumLength = ((*packed_ea).EaNameLength) as u16;
 
         if RtlCompareString(EaName, core::ptr::addr_of!(name), 1) == 0 {
-            DebugTrace(
+            DebugTrace!(
                 -1,
                 Dbg,
                 b"FatLocateEaByName -> TRUE, *Offset = %08lx\n\0".as_ptr() as *const i8,
@@ -2311,7 +2312,7 @@ pub unsafe extern "system" fn FatLocateEaByName(
         *Offset = FatLocateNextEa((IrpContext).cast(), FirstPackedEa, PackedEasLength, *Offset);
     }
 
-    DebugTrace(-1, Dbg, b"FatLocateEaByName -> FALSE\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatLocateEaByName -> FALSE\n\0".as_ptr() as *const i8, 0);
     return 0;
 }
 #[no_mangle]

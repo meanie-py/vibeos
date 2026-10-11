@@ -1,6 +1,35 @@
 #[allow(unused_imports)] use crate::{KdPrintEx};
 #[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
+// One declaration per external symbol: externs.rs.
+use crate::externs::FatAcquireExclusiveGlobal;
+use crate::externs::FatAcquireExclusiveVcb;
+use crate::externs::FatBugCheck;
+use crate::externs::FatBytesPerFat;
+use crate::externs::FatCompleteRequest;
+use crate::externs::FatIsFat32;
+use crate::externs::FatReleaseGlobal;
+use crate::externs::FatReleaseVcb;
+use crate::externs::FatReservedBytes;
+use crate::externs::FatUnpinBcb;
+use crate::externs::FatVcbAcquiredExclusive;
+use crate::externs::IoSetCompletionRoutine;
+use crate::externs::IoSetTopLevelIrp;
+use crate::externs::KeWaitForSingleObject;
+// fastfat's own functions: the definition is the declaration.
+use crate::fatdata::FatData;
+use crate::namesup::Fat8dot3ToString;
+use crate::resrcsup::FatAcquireSharedVcb;
+use crate::fatdata::FatExceptionFilter;
+use crate::workque::FatFsdPostRequest;
+use crate::dirsup::FatGetDirentFromFcbOrDcb;
+use crate::strucsup::FatGetNextFcbTopDown;
+use crate::seh::FatNormalizeAndRaiseStatus;
+use crate::fatdata::FatProcessException;
+use crate::seh::FatRaiseStatus;
+use crate::cachesup::FatReadVolumeFile;
+use crate::deviosup::FatToggleMediaEjectDisable;
+use crate::cachesup::FatUnpinRepinnedBcbs;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::driver_ddk::*;
@@ -24,18 +53,12 @@ use ntkrnl_sys::inline::ex::ExInitializeWorkItem;
 use crate::ddk_shims::FsRtlIsNtstatusExpected;
 
 extern "system" {
-    } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
+    } extern "system" {
 }
 extern "system" {
-    fn DbgDoit(condition: i32);
-    fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
-    fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatSetFatEntry(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Index: u32, Value: u32);
-    fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, Bcb: *mut *mut core::ffi::c_void);
     fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> u8;
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
-    fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     // Param 4 is `Flags: ULONG` (PIN_WAIT/PIN_EXCLUSIVE/PIN_NO_READ/PIN_IF_BCB), NOT
     // the NT4-era `BOOLEAN Wait`. Declared as u8 the callee read 32 bits where the
@@ -44,47 +67,24 @@ extern "system" {
     fn CcPinRead( FileObject: *mut FILE_OBJECT, FileOffset: *const LARGE_INTEGER, Length: u32, Flags: u32, Bcb: *mut *mut c_void, Buffer: *mut *mut c_void, ) -> u8;
     fn IoBuildAsynchronousFsdRequest( MajorFunction: u32, DeviceObject: *mut DEVICE_OBJECT, Buffer: *mut c_void, Length: u32, StartingOffset: *const LARGE_INTEGER, IoStatusBlock: *mut _IO_STATUS_BLOCK, ) -> *mut IRP;
     fn IoCallDriver(DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP) -> NTSTATUS;
-    fn KeWaitForSingleObject( Object: *mut c_void, WaitReason: u32, WaitMode: u32, Alertable: u8, Timeout: *const LARGE_INTEGER, ) -> NTSTATUS;
     fn MmUnlockPages(Mdl: *mut MDL);
     fn IoFreeMdl(Mdl: *mut MDL);
     fn IoFreeIrp(Irp: *mut IRP);
-    fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, ); // VBO = u32 (was i64: i386 stdcall stack imbalance)
+// VBO = u32 (was i64: i386 stdcall stack imbalance)
     // IsBpbFat32 defined below in Rust (was a C stub reading the WRONG offset)
     } extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_IoSetCompletionRoutine`), bindgen
     // class — the "system" decls here were §9.99 folds.
-    fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
     fn IoGetNextIrpStackLocation(Irp: *mut IRP) -> *mut IO_STACK_LOCATION;
     } extern "system" {
     fn paged_code();
-    fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
-    fn NodeType(Fcb: PFCB) -> u32;
-    fn FatAcquireExclusiveGlobal(IrpContext: PIRP_CONTEXT);
-    fn FatAcquireExclusiveVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> BOOLEAN;
-    fn FatAcquireSharedVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB) -> u32;
     fn FatCheckForDismount( IrpContext: PIRP_CONTEXT, Vcb: PVCB, Force: BOOLEAN, ) -> BOOLEAN;
-    fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn FatExceptionFilter( IrpContext: PIRP_CONTEXT, ExceptionInfo: *mut EXCEPTION_POINTERS, ) -> LONG;
-    fn FatFsdPostRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP) -> NTSTATUS;
-    fn FatProcessException( IrpContext: PIRP_CONTEXT, Irp: PIRP, ExceptionCode: NTSTATUS, ) -> NTSTATUS;
-    fn FatReleaseGlobal(IrpContext: PIRP_CONTEXT);
-    fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn IoIsErrorUserInduced(Status: NTSTATUS) -> BOOLEAN;
-    fn DebugDump(Message: *const i8, Component: u32, Object: *mut core::ffi::c_void);
-    fn FatBugCheck(ExitCode: usize, Param1: usize, Param2: usize) -> !;
     fn FatAcquireSharedGlobal(irp_context: *mut IRP_CONTEXT);
-    fn FatToggleMediaEjectDisable(irp_context: *mut IRP_CONTEXT, vcb: *mut VCB, enable: u8) -> u32;
-    fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT);
-    fn IoSetTopLevelIrp(irp: *mut core::ffi::c_void);
     fn ExFreePool(pool: *mut core::ffi::c_void);
-    static FatData: FAT_DATA;
     fn KeSetEvent(event: PKEVENT, increment: i32, wait: i32);
     fn IoCompleteRequest(irp: PIRP, priority_boost: i32);
-    fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatIsFastIoPossible(Fcb: *mut FCB) -> u8;
-    fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
-    fn FatGetDirentFromFcbOrDcb(irpctx: *mut IRP_CONTEXT, fcb: *mut FCB, arg2: u32, dirent: *mut *mut DIRENT, direntBcb: *mut *mut BCB);
-    fn Fat8dot3ToString(irpctx: *mut IRP_CONTEXT, dirent: *mut DIRENT, arg3: u32, name: *mut OEM_STRING);
     // IsFileDeleted defined below in Rust (was an always-FALSE C stub)
     fn KeGetCurrentThread() -> *mut c_void;
 }
@@ -118,7 +118,7 @@ pub unsafe extern "system" fn FatResetFcb(
         IsRealPagingFile = 0; // FALSE
     }
 
-    if (NodeType(Fcb) != FAT_NTC_ROOT_DCB || FatIsFat32((*Fcb).Vcb) != 0) &&
+    if (NodeType!((Fcb).cast()) != (FAT_NTC_ROOT_DCB as u16) || FatIsFat32((*Fcb).Vcb) != 0) &&
         IsRealPagingFile == 0
     {
         FsRtlRemoveLargeMcbEntry(
@@ -134,7 +134,7 @@ pub unsafe extern "system" fn FatResetFcb(
         }
     }
 
-    if NodeType(Fcb) == FAT_NTC_DCB || NodeType(Fcb) == FAT_NTC_ROOT_DCB {
+    if NodeType!((Fcb).cast()) == (FAT_NTC_DCB as u16) || NodeType!((Fcb).cast()) == (FAT_NTC_ROOT_DCB as u16) {
         (*Fcb).Specific.Dcb.as_mut().UnusedDirentVbo = 0xffffffff;
         (*Fcb).Specific.Dcb.as_mut().DeletedDirentHint = 0xffffffff;
     }
@@ -152,7 +152,7 @@ pub unsafe extern "system" fn FatMatchFileSize(
 
     UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
-    if NodeType(Fcb) != FAT_NTC_FCB {
+    if NodeType!((Fcb).cast()) != (FAT_NTC_FCB as u16) {
         return 1;
     }
 
@@ -187,7 +187,7 @@ pub unsafe extern "system" fn FatDetermineAndMarkFcbCondition(
     //  by definition that it is good since it is fixed in the volume
     //  structure.
     //
-    if NodeType(Fcb) == FAT_NTC_ROOT_DCB {
+    if NodeType!((Fcb).cast()) == (FAT_NTC_ROOT_DCB as u16) {
         FatMarkFcbCondition(IrpContext, Fcb, FcbGood as i32, 0/*FALSE*/);
         return;
     }
@@ -285,7 +285,7 @@ pub unsafe extern "system" fn FatDeferredCleanVolume(
 ) {
     // PAGED_CODE();
 
-    DebugTrace(1, Dbg, c"FatDeferredCleanVolume\n".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, c"FatDeferredCleanVolume\n".as_ptr() as *const i8, 0);
 
     let packet = Parameter as *mut CLEAN_AND_DIRTY_VOLUME_PACKET;
     let vcb = (*packet).Vcb;
@@ -489,7 +489,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
 
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, c"FatVerifyVcb, Vcb = %p\n".as_ptr() as *const i8, Vcb);
+    DebugTrace!(1, Dbg, c"FatVerifyVcb, Vcb = %p\n".as_ptr() as *const i8, Vcb);
 
     DevMarkedForVerify = BooleanFlagOn(
         (*(*(*Vcb).Vpb).RealDevice).Flags,
@@ -510,7 +510,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
     }
 
     if DevMarkedForVerify != 0 {
-        DebugTrace(0, Dbg, c"The Vcb needs to be verified\n".as_ptr() as *const i8, 0i32);
+        DebugTrace!(0, Dbg, c"The Vcb needs to be verified\n".as_ptr() as *const i8, 0i32);
 
         IoSetHardErrorOrVerifyDevice(
             (*IrpContext).OriginatingIrp,
@@ -522,7 +522,7 @@ pub unsafe extern "system" fn FatVerifyVcb(
 
     FatQuickVerifyVcb(IrpContext, Vcb);
 
-    DebugTrace(-1, Dbg, c"FatVerifyVcb -> VOID\n".as_ptr() as *const i8, 0i32);
+    DebugTrace!(-1, Dbg, c"FatVerifyVcb -> VOID\n".as_ptr() as *const i8, 0i32);
 }
 #[no_mangle]
 pub unsafe extern "system" fn FatVerifyFcb(
@@ -533,7 +533,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
 
     PAGED_CODE!();
 
-    DebugTrace(1, Dbg, b"FatVerifyFcb, Vcb = %p\n\0".as_ptr() as *const i8, Fcb as *const c_void);
+    DebugTrace!(1, Dbg, b"FatVerifyFcb, Vcb = %p\n\0".as_ptr() as *const i8, Fcb as *const c_void);
 
     // Always refuse operations on dismounted volumes.
     if FlagOn((*(*Fcb).Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) != 0 {
@@ -542,7 +542,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
 
     // If this is the Fcb of a deleted dirent or our parent is deleted...
     if IsFileDeleted(IrpContext.cast(), Fcb) != 0 ||
-        (NodeType(Fcb) != FAT_NTC_ROOT_DCB) &&
+        (NodeType!((Fcb).cast()) != (FAT_NTC_ROOT_DCB as u16)) &&
         IsFileDeleted(IrpContext.cast(), (*Fcb).ParentDcb) != 0 {
         return;
     }
@@ -555,7 +555,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
     // Now based on the condition of the Fcb...
     match (*Fcb).FcbCondition {
         __n if __n == FcbGood as u32 => {
-            DebugTrace(0, Dbg, b"The Fcb is good\n\0".as_ptr() as *const i8);
+            DebugTrace!(0, Dbg, b"The Fcb is good\n\0".as_ptr() as *const i8);
         }
         __n if __n == FcbBad as u32 => {
             FatRaiseStatus((IrpContext).cast(), STATUS_FILE_INVALID);
@@ -567,7 +567,7 @@ pub unsafe extern "system" fn FatVerifyFcb(
                 FatDetermineAndMarkFcbCondition((IrpContext).cast(), CurrentFcb);
 
                 if (*CurrentFcb).FcbCondition != (FcbGood) as u32 ||
-                    NodeType(CurrentFcb) == FAT_NTC_ROOT_DCB {
+                    NodeType!((CurrentFcb).cast()) == (FAT_NTC_ROOT_DCB as u16) {
                     break;
                 }
 
@@ -579,12 +579,12 @@ pub unsafe extern "system" fn FatVerifyFcb(
             }
         }
         _ => {
-            DebugDump(b"Invalid FcbCondition\n\0".as_ptr() as *const i8, 0, Fcb as *mut core::ffi::c_void);
-            FatBugCheck((*Fcb).FcbCondition as usize, 0, 0);
+            DebugDump!(b"Invalid FcbCondition\n\0".as_ptr() as *const i8, 0, Fcb as *mut core::ffi::c_void);
+            FatBugCheck(((*Fcb).FcbCondition) as ULONG_PTR, 0, 0);
         }
     }
 
-    DebugTrace(-1, Dbg, b"FatVerifyFcb -> VOID\n\0".as_ptr() as *const i8);
+    DebugTrace!(-1, Dbg, b"FatVerifyFcb -> VOID\n\0".as_ptr() as *const i8);
     // return;
 }
 #[no_mangle]
@@ -646,7 +646,7 @@ pub unsafe extern "system" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut c
     let Vcb: PVCB = (*Packet).Vcb;
     let Irp: PIRP = (*Packet).Irp;
 
-    DebugTrace(1, Dbg, b"FatFspMarkVolumeDirtyWithRecover\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(1, Dbg, b"FatFspMarkVolumeDirtyWithRecover\n\0".as_ptr() as *const i8, 0);
 
     // Zero-initialize IrpContext (RtlZeroMemory)
     let mut irpcontext_uninit = core::mem::MaybeUninit::<IRP_CONTEXT>::uninit();
@@ -683,7 +683,7 @@ pub unsafe extern "system" fn FatFspMarkVolumeDirtyWithRecover(Parameter: *mut c
         IoCompleteRequest(Irp, IO_DISK_INCREMENT);
     }
 
-    DebugTrace(-1, Dbg, b"FatFspMarkVolumeDirtyWithRecover\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatFspMarkVolumeDirtyWithRecover\n\0".as_ptr() as *const i8, 0);
 }
 
 #[no_mangle]
@@ -795,7 +795,7 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
     let real_device = (*(*Vcb).Vpb).RealDevice;
     let flags = (*real_device).Flags;
     if FlagOn(flags, DO_VERIFY_VOLUME) != 0 {
-        DebugTrace(
+        DebugTrace!(
             0,
             Dbg,
             b"The Vcb needs to be verified\n\0".as_ptr() as *const i8,
@@ -808,7 +808,7 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
     let vcb_condition = (*Vcb).VcbCondition;
     match vcb_condition {
         VcbGood => {
-            DebugTrace(0, Dbg, b"The Vcb is good\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"The Vcb is good\n\0".as_ptr() as *const i8, 0);
 
             let write_protected = FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0;
             let major = (*IrpContext).MajorFunction;
@@ -833,12 +833,12 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
             }
         }
         __n if __n == VcbNotMounted as u32 => {
-            DebugTrace(0, Dbg, b"The Vcb is not mounted\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"The Vcb is not mounted\n\0".as_ptr() as *const i8, 0);
             IoSetHardErrorOrVerifyDevice((*IrpContext).OriginatingIrp, real_device);
             FatRaiseStatus(IrpContext, STATUS_WRONG_VOLUME);
         }
         __n if __n == VcbBad as u32 => {
-            DebugTrace(0, Dbg, b"The Vcb is bad\n\0".as_ptr() as *const i8, 0);
+            DebugTrace!(0, Dbg, b"The Vcb is bad\n\0".as_ptr() as *const i8, 0);
             if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DISMOUNTED) != 0 {
                 FatRaiseStatus(IrpContext, STATUS_VOLUME_DISMOUNTED);
             } else {
@@ -846,13 +846,13 @@ pub unsafe extern "system" fn FatQuickVerifyVcb(
             }
         }
         _ => {
-            DebugDump(
+            DebugDump!(
                 b"Invalid VcbCondition\n\0".as_ptr() as *const i8,
                 0,
                 Vcb as *mut core::ffi::c_void,
             );
             // #pragma prefast( suppress:28159, "things are seriously wrong if we get here" )
-            FatBugCheck((*Vcb).VcbCondition as usize, 0, 0);
+            FatBugCheck(((*Vcb).VcbCondition) as ULONG_PTR, 0, 0);
         }
     }
 }
@@ -882,7 +882,7 @@ pub unsafe extern "system" fn FatPerformVerify(
         return FatFsdPostRequest(IrpContext, Irp);
     }
 
-    DebugTrace(
+    DebugTrace!(
         0,
         0x0120, /* Dbg - DEBUG_TRACE_VERFYSUP */
         b"Verify Required, DeviceObject = %p\n\0".as_ptr() as *const i8,
@@ -914,7 +914,7 @@ pub unsafe extern "system" fn FatPerformVerify(
         *p_status = IoVerifyVolume(Device, AllowRawMount);
 
         // Acquire the Vcb so we're working with a stable Vcb condition.
-        FatAcquireSharedVcb(IrpContext, Vcb);
+        FatAcquireSharedVcb((IrpContext).cast(), Vcb);
 
         if (*p_status == STATUS_WRONG_VOLUME) && ((*Vcb).VcbCondition == VcbGood) {
             *p_status = STATUS_SUCCESS;
@@ -1012,7 +1012,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     const FcbGood: u32 = 1;
     // PAGED_CODE();  -- skipped, no equivalent
 
-    DebugTrace(
+    DebugTrace!(
         1,
         Dbg,
         b"FatMarkFcbCondition, Fcb = %p\n\0".as_ptr() as *const i8,
@@ -1036,7 +1036,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
 
     (*Fcb).FcbCondition = FcbCondition as u32;
 
-    DebugTrace(
+    DebugTrace!(
         0,
         Dbg,
         b"MarkFcb: %wZ\n\0".as_ptr() as *const i8,
@@ -1066,7 +1066,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
                 break;
             }
 
-            DebugTrace(
+            DebugTrace!(
                 0,
                 Dbg,
                 b"MarkFcb: %wZ\n\0".as_ptr() as *const i8,
@@ -1084,7 +1084,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
         }
     }
 
-    DebugTrace(
+    DebugTrace!(
         -1,
         Dbg,
         b"FatMarkFcbCondition -> VOID\n\0".as_ptr() as *const i8,
@@ -1122,7 +1122,7 @@ pub unsafe extern "system" fn FatMarkVolume(
     let mut Offset: LARGE_INTEGER = core::mem::zeroed();
     let mut abort: i32 = 0;
 
-    DebugTrace(1, Dbg, b"FatMarkVolume, Vcb = %p\n\0".as_ptr() as *const i8, Vcb as *const _);
+    DebugTrace!(1, Dbg, b"FatMarkVolume, Vcb = %p\n\0".as_ptr() as *const i8, Vcb as *const _);
 
     let p_sector = core::ptr::addr_of_mut!(Sector);
     let p_bcb = core::ptr::addr_of_mut!(Bcb);
@@ -1156,7 +1156,7 @@ pub unsafe extern "system" fn FatMarkVolume(
 
             if (*Vcb).AllocationSupport.FatIndexBitSize == 12 {
                 PinLength =
-                    FatReservedBytes(core::ptr::addr_of!((*Vcb).Bpb)) + FatBytesPerFat(core::ptr::addr_of!((*Vcb).Bpb));
+                    FatReservedBytes(core::ptr::addr_of_mut!((*Vcb).Bpb)) + FatBytesPerFat(core::ptr::addr_of_mut!((*Vcb).Bpb));
                 WriteLength = (*Vcb).Bpb.BytesPerSector as u32;
             } else {
                 WriteLength = (*Vcb).Bpb.BytesPerSector as u32;
@@ -1191,7 +1191,7 @@ pub unsafe extern "system" fn FatMarkVolume(
                 (*IrpContext).PinCount += 1;
                 (*IrpContext).PinCount
             };
-            DbgDoit(pin_count as i32);
+            DbgDoit!(pin_count as i32);
 
             if this_pass == 0 {
                 if FatIsBootSectorFat(*p_sector as *mut PACKED_BOOT_SECTOR) == 0 {
@@ -1250,10 +1250,7 @@ pub unsafe extern "system" fn FatMarkVolume(
 
             IoSetCompletionRoutine(
                 *p_irp,
-                core::mem::transmute::<
-                    unsafe extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS,
-                    extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS,
-                >(FatMarkVolumeCompletionRoutine),
+                Some(FatMarkVolumeCompletionRoutine),
                 p_event as *mut c_void,
                 1,
                 1,
@@ -1265,9 +1262,9 @@ pub unsafe extern "system" fn FatMarkVolume(
                 KeWaitForSingleObject(
                     p_event as *mut c_void,
                     _KWAIT_REASON_Executive as u32,
-                    KernelMode as u32,
+                    (KernelMode as u32) as i8,
                     0,
-                    core::ptr::null(),
+                    core::ptr::null_mut(),
                 );
             }
         }, |_, _| {
@@ -1296,7 +1293,7 @@ pub unsafe extern "system" fn FatMarkVolume(
         }
     }
 
-    DebugTrace(-1, Dbg, b"FatMarkVolume -> VOID\n\0".as_ptr() as *const i8, 0);
+    DebugTrace!(-1, Dbg, b"FatMarkVolume -> VOID\n\0".as_ptr() as *const i8, 0);
 }
 
 // ============================================================================
