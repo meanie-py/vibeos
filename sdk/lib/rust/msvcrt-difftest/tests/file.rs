@@ -4699,6 +4699,8 @@ unsafe fn utime_rows() {
         let t64 = [at, mt];
         let t32 = [at as i32, mt as i32];
 
+        // Each side's own times before the call: a bad descriptor must leave them alone.
+        let before = stat_both(&w);
         let (sfd, rfd) = if bad {
             (4096, 4096)
         } else {
@@ -4722,7 +4724,20 @@ unsafe fn utime_rows() {
             _close(sfd);
             ref__close(rfd);
         }
-        let (gi, ni) = stat_both(&w);
+        let (mut gi, mut ni) = stat_both(&w);
+        if bad {
+            // Nothing was stamped, so the times are each file's own creation time: two
+            // files made on either side of a second boundary differ by one, and rejected a
+            // lane that touched no msvcrt code (2026-10-11, mt=2147483647). What a bad fd
+            // must NOT do is stamp, and that is a per-side fact: graded as "unchanged",
+            // then the cross-side words are masked.
+            let gu = stat_times(&before.0) == stat_times(&gi);
+            let nu = stat_times(&before.1) == stat_times(&ni);
+            mask_stat_times(&mut gi);
+            mask_stat_times(&mut ni);
+            gi.push(gu as u8);
+            ni.push(nu as u8);
+        }
         let tags = vec![
             if bad { "badfd" } else { "ok" },
             if at == 0 || mt == 0 { "epoch" } else { "" },
@@ -4753,6 +4768,18 @@ unsafe fn stat_both(w: &World) -> (Vec<u8>, Vec<u8>) {
     gi.extend_from_slice(&sr.to_le_bytes());
     ni.extend_from_slice(&rr.to_le_bytes());
     (gi, ni)
+}
+
+/// `st_atime`/`st_mtime`/`st_ctime` in a `stat_both` image: the leading guard `u64`, then
+/// the `_stat64` offsets 32/40/48 that `refstub/msvcrt_crt_layout.h` asserts.
+const STAT_TIMES: core::ops::Range<usize> = 8 + 32..8 + 56;
+
+fn stat_times(img: &[u8]) -> Vec<u8> {
+    img[STAT_TIMES].to_vec()
+}
+
+fn mask_stat_times(img: &mut [u8]) {
+    img[STAT_TIMES].fill(0);
 }
 
 unsafe fn global_stream_rows() {
