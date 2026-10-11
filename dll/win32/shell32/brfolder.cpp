@@ -843,6 +843,10 @@ BrFolder_OnInitDialog(HWND hWnd, BrFolder *info)
             ILFree(pidl);
         }
     }
+    else
+    {
+        info->pidlRet = ILClone(lpBrowseInfo->pidlRoot);
+    }
 
     BrFolder_Callback(info->lpBrowseInfo, hWnd, BFFM_INITIALIZED, 0);
 

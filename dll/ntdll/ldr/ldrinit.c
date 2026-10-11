@@ -1002,12 +1002,14 @@ LdrShutdownProcess(VOID)
     /* Enter the Loader Lock */
     RtlEnterCriticalSection(&LdrpLoaderLock);
 
+#if (NTDDI_VERSION < NTDDI_VISTA)
     /* Cleanup trace logging data (Etw) */
     if (SharedUserData->TraceLogging)
     {
         /* FIXME */
         DPRINT1("We don't support Etw yet.\n");
     }
+#endif
 
     /* Start at the end */
     ListHead = &Peb->Ldr->InInitializationOrderModuleList;
@@ -1121,12 +1123,14 @@ LdrShutdownThread(VOID)
     DPRINT("LdrShutdownThread() called for %wZ\n",
             &LdrpImageEntry->BaseDllName);
 
+#if (NTDDI_VERSION < NTDDI_VISTA)
     /* Cleanup trace logging data (Etw) */
     if (SharedUserData->TraceLogging)
     {
         /* FIXME */
         DPRINT1("We don't support Etw yet.\n");
     }
+#endif
 
     /* Get the Ldr Lock */
     RtlEnterCriticalSection(&LdrpLoaderLock);
@@ -1269,7 +1273,11 @@ LdrShutdownThread(VOID)
     }
 
     /* Check for Fiber data */
-    if (Teb->HasFiberData)
+#if (NTDDI_VERSION < NTDDI_LONGHORN)
+    if (!Teb->HasFiberData)
+#else
+    if (!Teb->DbgHasFiberData)
+#endif
     {
         /* Free Fiber data*/
         RtlFreeHeap(RtlGetProcessHeap(), 0, Teb->NtTib.FiberData);

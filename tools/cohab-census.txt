@@ -1788,6 +1788,7 @@ drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ahci_io.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/amd.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/ati.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/cmd.c
+drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/hpt.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/intel.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_generic.c
 drivers/storage/ide/pciidex/CMakeLists.txt	1	# chipset/pata_hw.c

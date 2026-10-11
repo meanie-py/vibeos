@@ -380,7 +380,10 @@ HRESULT CALLBACK DrivesContextMenuCallback(IShellFolder *psf,
         }
 
         if (idCmd)
-            pqcminfo->idCmdFirst = ++idCmd; // Note: This assumes the items above are added in ascending id order
+            pqcminfo->idCmdFirst = (idCmd + 2); // Note: This assumes the items above are added in ascending id order.
+                                                // CORE-18577: We add 2 instead of 1 because the other is for our separator!
+                                                // Our CDefaultContextMenu::QueryContextMenu incorrectly assumes
+                                                // all DFM_MERGECONTEXTMENU added items have IDs.
         hr = S_OK;
     }
     else if (uMsg == DFM_INVOKECOMMAND)
@@ -744,6 +747,9 @@ HRESULT WINAPI CDrivesFolder::ParseDisplayName(HWND hwndOwner, LPBC pbc, LPOLEST
          (L'a' <= lpszDisplayName[0] && lpszDisplayName[0] <= L'z')) &&
         lpszDisplayName[1] == L':' && (lpszDisplayName[2] == L'\\' || !lpszDisplayName[2]))
     {
+        if (!lpszDisplayName[2] && LOBYTE(GetVersion()) < 6)
+            return E_INVALIDARG; // NT5 does not support parsing "c:"
+
         // "C:\..."
         WCHAR szRoot[8];
         PathBuildRootW(szRoot, ((*lpszDisplayName - 1) & 0x1F));
@@ -1214,25 +1220,22 @@ HRESULT CDrivesFolder::SetDriveLabel(HWND hwndOwner, PCWSTR DrivePath, PCWSTR La
 
 HRESULT WINAPI CDrivesFolder::GetDefaultSearchGUID(GUID * pguid)
 {
-    FIXME("(%p)\n", this);
-    return E_NOTIMPL;
+    if (LOBYTE(GetVersion()) >= 6)
+        return E_NOTIMPL;
+    *pguid = CLSID_ShellSearchExt;
+    return S_OK;
 }
 
 HRESULT WINAPI CDrivesFolder::EnumSearches(IEnumExtraSearch ** ppenum)
 {
-    FIXME("(%p)\n", this);
+    *ppenum = NULL;
     return E_NOTIMPL;
 }
 
 HRESULT WINAPI CDrivesFolder::GetDefaultColumn (DWORD dwRes, ULONG *pSort, ULONG *pDisplay)
 {
     TRACE("(%p)\n", this);
-
-    if (pSort)
-        *pSort = 0;
-    if (pDisplay)
-        *pDisplay = 0;
-    return S_OK;
+    return E_NOTIMPL; // Not required when column 0 is our default.
 }
 
 HRESULT WINAPI CDrivesFolder::GetDefaultColumnState(UINT iColumn, SHCOLSTATEF * pcsFlags)
