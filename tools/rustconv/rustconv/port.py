@@ -5694,6 +5694,21 @@ def _hold(name: str):
 def main(args) -> int:
     if args.port_stage == "status":  # read-only: never waits on, or blocks, a running stage
         return _main(args)
+    stem = getattr(args, "stem", None)
+    if stem and not _state_path(stem).is_file():
+        # A stem derive never wrote: `port replay help` for the module derive named after
+        # its CMake target (`cmd_help`) made an empty state and died on KeyError: 'tus'.
+        near = sorted(
+            p.parent.name
+            for p in STATE_ROOT.glob("*/state.json")
+            if stem in p.parent.name or p.parent.name in stem
+        )
+        print(
+            f"port: no port state for stem {stem!r} -- run `port derive <module dir>` first"
+            + (f" (did you mean: {', '.join(near)}?)" if near else ""),
+            file=sys.stderr,
+        )
+        return 1
     try:
         held = _hold(getattr(args, "stem", None) or _module(args.module).resolve().name)
     except PortError as e:
