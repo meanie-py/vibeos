@@ -894,6 +894,23 @@ pub struct _PCI_LOCK {
 pub type PCI_LOCK = _PCI_LOCK;
 pub type PPCI_LOCK = *mut _PCI_LOCK;
 #[repr(C)]
+pub struct _VIBEOS_PCI_IRQ_ROUTE {
+    pub Gsi: ULONG,
+    pub LevelSensitive: BOOLEAN,
+    pub ActiveLow: BOOLEAN,
+}
+pub type VIBEOS_PCI_IRQ_ROUTE = _VIBEOS_PCI_IRQ_ROUTE;
+pub type PVIBEOS_PCI_IRQ_ROUTE = *mut _VIBEOS_PCI_IRQ_ROUTE;
+pub type PVIBEOS_ROUTE_INTERRUPT = ::core::option::Option<
+    unsafe extern "system" fn(
+        Context: PVOID,
+        Path: *const UCHAR,
+        Depth: ULONG,
+        Pin: ULONG,
+        Route: PVIBEOS_PCI_IRQ_ROUTE,
+    ) -> NTSTATUS,
+>;
+#[repr(C)]
 pub struct _PCI_FDO_EXTENSION {
     pub List: SINGLE_LIST_ENTRY,
     pub ExtensionType: ULONG,
@@ -928,6 +945,8 @@ pub struct _PCI_FDO_EXTENSION {
     pub BusHackFlags: LONG,
     pub PciPmeInterfaceCount: LONG,
     pub RootBusHardwareCapability: PCI_ROOT_BUS_HARDWARE_CAPABILITY,
+    pub IrqRoutingContext: PVOID,
+    pub IrqRouteInterrupt: PVIBEOS_ROUTE_INTERRUPT,
 }
 #[repr(C)]
 pub struct _PCI_FDO_EXTENSION__bindgen_ty_1 {
@@ -1239,6 +1258,8 @@ pub struct _PCI_PDO_EXTENSION {
     pub ExpressDeviceType: UCHAR,
     pub IsExtendedConfigReachable: BOOLEAN,
     pub ResizableBarState: PCI_RESIZABLE_BAR_STATE,
+    pub IrqRouteState: UCHAR,
+    pub IrqRoute: VIBEOS_PCI_IRQ_ROUTE,
 }
 pub type PCI_PDO_EXTENSION = _PCI_PDO_EXTENSION;
 pub type PPCI_PDO_EXTENSION = *mut _PCI_PDO_EXTENSION;
