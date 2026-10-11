@@ -4398,7 +4398,7 @@ pub mod types; // bindgen island, per arch (gen_driver_types.sh {m.crate_stem})
 pub mod prelude; // the ONE import surface: types glob + debug macros + CRT externs
 
 #[allow(clippy::module_inception)]
-pub mod {m.crate_stem} {{
+pub mod {_rust_mod_ident(m.crate_stem)} {{
 {chr(10).join(mods)}
 }}
 

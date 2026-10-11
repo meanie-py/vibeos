@@ -94,8 +94,13 @@ def split_decls(block: str) -> list[str]:
     decls, cur, depth = [], [], 0
     for line in block.splitlines():
         cur.append(line)
-        depth += line.count("(") - line.count(")")
-        if depth <= 0 and line.rstrip().endswith(";"):
+        # A trailing `// source` comment is not code: resolve writes one after every copied
+        # declaration, and `endswith(";")` on the raw line ran each such decl on into the
+        # next -- net-rust's whole CRT block parsed as ONE ConMsgPrintfV, copied into attrib
+        # as `pub fn ConMsgPrintfV(..); fn _wcsicmp(..); ..` (private shadows of every name).
+        code = line.split("//", 1)[0]
+        depth += code.count("(") - code.count(")")
+        if depth <= 0 and code.rstrip().endswith(";"):
             decls.append("\n".join(cur))
             cur, depth = [], 0
     if cur and "".join(cur).strip():

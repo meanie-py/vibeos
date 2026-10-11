@@ -385,9 +385,7 @@ def stage_derive(
             f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
             f"({crate_dir.relative_to(REPO)}); port it under another stem/target name"
         )
-    updated = upsert_profile_arm(script, arm, stem)
-    if updated != script:
-        GEN.write_text(updated)
+    arm_changed = _write_gen_arm(arm, stem)
     state = load_state(stem)
     # A VENDORED source (vendor.yaml) is not a translation target: it stays C, in the CMake
     # source list, beside the module's own Rust. mstsc's target compiles 18 vendor/rdesktop
@@ -425,12 +423,10 @@ def stage_derive(
     )
     if usermode is not None:
         state["mode_override"] = usermode
-    _record(
-        state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
-    )
+    _record(state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=arm_changed)
     print(
         f"derive: {stem} — {len(dp.module.compiled_tus)} TU(s), crate {dp.crate_name}"
-        f"{' (arm written)' if updated != script else ' (arm unchanged)'}"
+        f"{' (arm written)' if arm_changed else ' (arm unchanged)'}"
     )
     return dp
 
@@ -500,6 +496,36 @@ def _target_args(state: dict) -> list[str]:
 
 def _crate_dir(state: dict) -> Path:
     return REPO / "sdk" / "lib" / "rust" / state["crate"]
+
+
+def _write_gen_arm(arm: str, stem: str) -> bool:
+    """Upsert one arm into gen_driver_types.sh: under a lock, re-read, atomic replace.
+
+    Concurrent replays (three integration agents) each re-derive when resolve widens an
+    island allowlist. A plain read-modify-write loses another run's arm, and an in-place
+    rewrite while a sibling's `bash gen_driver_types.sh` is executing it hands bash a file
+    that changed under its read offset: `syntax error near unexpected token ')'` at a line
+    that is fine on disk a second later. os.replace swaps the inode, so a running bash keeps
+    reading the script it started with."""
+    import fcntl
+    import tempfile
+
+    with open(GEN.with_suffix(".sh.lock"), "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        current = GEN.read_text()
+        updated = upsert_profile_arm(current, arm, stem)
+        if updated == current:
+            return False
+        fd, tmp = tempfile.mkstemp(dir=GEN.parent, prefix=".gen_driver_types.", suffix=".sh")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(updated)
+            os.chmod(tmp, GEN.stat().st_mode & 0o7777)
+            os.replace(tmp, GEN)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+    return True
 
 
 def _add_island_headers(dp: pd.DerivedProfile, extra: dict[str, str]) -> None:
@@ -2358,6 +2384,16 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     prelude = crate / "src" / "prelude.rs"
     if prelude.is_file():
         twin_texts.append(prelude.read_text(errors="replace"))
+    # ...and the header crates the module depends on: label's ConFormatMessage takes a
+    # `PCON_STREAM`, which conutils-h (not the island) defines -- "no primitive C spelling".
+    for dep in re.findall(
+        r'^([\w-]+-h)\s*=\s*\{\s*path\s*=\s*"\.\./([\w-]+)"',
+        (crate / "Cargo.toml").read_text(errors="replace"),
+        re.M,
+    ):
+        lib = REPO / "sdk" / "lib" / "rust" / dep[1] / "src" / "lib.rs"
+        if lib.is_file():
+            twin_texts.append(lib.read_text(errors="replace"))
     maps = variadic_shim.alias_maps(
         [
             twin_texts
@@ -2848,12 +2884,17 @@ def _crt_data_globals(path: Path) -> list[str]:
     # The stream ARRAY itself, by address: regedit's regproc.c reads `&_iob[1]` (stdout) for
     # `-` as a file name. msvcrt exports `_iob` as DATA, a dllimport only `__imp__iob`
     # reaches; `__iob_func()` is the same array's address (undefined `_iob` at link before).
-    if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", text):
+    # An `extern { static mut _iob: FILE; }` is the same import misspelled, not a module of
+    # its own (finger's net.rs): it goes, and its uses take the accessor.
+    undeclared = re.sub(
+        r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:\s*[^;=]+;[ \t]*\n", "", text
+    )
+    if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", undeclared):
         new, n = re.subn(
             r"(?:&raw\s+(?:mut|const)\s+_iob\b|(?:core::ptr::)?addr_of(?:_mut)?!\(\s*_iob\s*\)"
             r"|\b_iob\.as_mut_ptr\(\))",
             "__iob_func()",
-            text,
+            undeclared,
         )
         if n:
             text = new
@@ -2988,6 +3029,40 @@ def _builtin_location_macros(path: Path) -> int:
     return a + b
 
 
+_CONST_ARRAY = re.compile(
+    r"(?m)^(?P<vis>pub(?:\([^)]*\))?\s+)?const\s+(?P<name>[A-Za-z_]\w*)\s*:\s*\["
+)
+
+
+def _pointed_const_arrays(path: Path) -> list[str]:
+    """A module `const NAME: [T; N]` whose POINTER is taken becomes a `static`.
+
+    A const is inlined at each use, so `NAME.as_ptr()` points into a temporary that dies
+    at the end of the statement. attrib kept `pszFileName = ALL_FILES_PATTERN.as_mut_ptr()`
+    and handed the dangling "*.*" to AttribEnumFiles; the C's string literal is static
+    storage. `as_mut_ptr` needs a `static mut` (the crate allows its references)."""
+    text = path.read_text()
+    code = _strip_rust_comments(text)
+    changed: list[str] = []
+
+    def one(m: re.Match[str]) -> str:
+        name = m.group("name")
+        mut = re.search(rf"\b{name}\s*\)?\s*\.\s*as_mut_ptr\s*\(", code)
+        ptr = mut or re.search(
+            rf"\b{name}\s*\)?\s*\.\s*as_ptr\s*\(|addr_of(?:_mut)?!\(\s*{name}\s*\)|&raw\s+(?:const|mut)\s+{name}\b",
+            code,
+        )
+        if not ptr:
+            return m.group(0)
+        changed.append(name)
+        return f"{m.group('vis') or ''}static {'mut ' if mut else ''}{name}: ["
+
+    new = _CONST_ARRAY.sub(one, text)
+    if new != text:
+        path.write_text(new)
+    return changed
+
+
 _RX_GATE = r'(?:feature\s*=\s*"(?:reactos|__REACTOS__)"|reactos|__REACTOS__)'
 _RX_CFG_MACRO_NOT = re.compile(rf"cfg!\(\s*not\(\s*{_RX_GATE}\s*\)\s*\)")
 _RX_CFG_MACRO = re.compile(rf"cfg!\(\s*{_RX_GATE}\s*\)")
@@ -3105,6 +3180,28 @@ def _extern_only_statics(path: Path, c_file: Path) -> list[str]:
 _C2RUST_PRELUDE_FIELD = re.compile(r"\.(Option|Some|None|Ok|Err|Result|Box|Vec|String)_0\b")
 
 
+_CON_ADDR = (
+    r"(?:(?:core::ptr::)?addr_of(?:_mut)?!\(\s*(?P<{g}>StdIn|StdOut|StdErr)\s*\)"
+    r"|&raw\s+(?:mut|const)\s+(?P<{h}>StdIn|StdOut|StdErr)\b)"
+)
+_CON_STREAM_ADDR = re.compile(
+    r"\(\s*" + _CON_ADDR.format(g="a", h="b") + r"\s*\)(?:\s*\.cast\(\))?"
+    r"|" + _CON_ADDR.format(g="c", h="d") + r"(?:\s*\.cast\(\))?"
+)
+
+
+def _con_stream_values(path: Path) -> int:
+    """`addr_of_mut!(StdOut)` -> `StdOut`: conutils' stream.h says `#define StdOut
+    (&csStdOut)`, so the name is ALREADY the `PCON_STREAM` (conutils-h's `pub const`), and the
+    model's address-of is of a constant (E0745) -- or, cast, a pointer to the pointer.
+    netstat, route and timeout each had it."""
+    text = path.read_text()
+    new, n = _CON_STREAM_ADDR.subn(lambda m: m["a"] or m["b"] or m["c"] or m["d"], text)
+    if n:
+        path.write_text(new)
+    return n
+
+
 def _c2rust_prelude_fields(path: Path) -> int:
     """`.Option_0` -> `.Option`: c2rust renames a C member that collides with a Rust prelude
     name, bindgen keeps it. regedit's IO_RESOURCE_DESCRIPTOR reads came back as
@@ -3117,7 +3214,9 @@ def _c2rust_prelude_fields(path: Path) -> int:
     return n
 
 
-_STR_AS_PTR = re.compile(r'(?<![\w"])(?:TEXT!\(\s*)?"((?:[^"\\\n]|\\.)*)"(\s*\))?\.as_ptr\(\)')
+_STR_AS_PTR = re.compile(
+    r'(?<![\w"])(?:(?:TEXT|_T)!\(\s*)?"((?:[^"\\\n]|\\.)*)"(\s*\))?\.as_ptr\(\)'
+)
 
 
 def _c_str_literals(path: Path) -> list[str]:
@@ -3132,7 +3231,8 @@ def _c_str_literals(path: Path) -> list[str]:
 
     def one(m: re.Match[str]) -> str:
         body = m.group(1)
-        if m.group(0).startswith("TEXT!") != bool(m.group(2)):
+        # arp (ANSI) spells it `_T!("%s").as_ptr()`: the identity macro, NUL-less too.
+        if m.group(0).startswith(("TEXT!", "_T!")) != bool(m.group(2)):
             return m.group(0)  # unbalanced TEXT!( ... ) -- not this shape
         if body.endswith("\\0") or not body.isascii():
             return m.group(0)
@@ -3286,10 +3386,21 @@ def stage_integrate(stem: str) -> None:
         if loc:
             changed += 1
             print(f"integrate: {path.stem}: {loc} __FILE__/__LINE__ as file!()/line!()")
+        pc = _pointed_const_arrays(path)
+        if pc:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: const array(s) whose pointer escapes -> static: "
+                + ", ".join(pc)
+            )
         rx = _reactos_gates(path)
         if rx:
             changed += 1
             print(f"integrate: {path.stem}: {rx} __REACTOS__ gate(s) settled to the live arm")
+        cs = _con_stream_values(path)
+        if cs:
+            changed += 1
+            print(f"integrate: {path.stem}: {cs} conutils stream address-of(s) -> the stream")
         pf = _c2rust_prelude_fields(path)
         if pf:
             changed += 1
@@ -4747,6 +4858,10 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
         }
     names |= opaque
     names -= island - opaque
+    # ...nor one a shared header crate provides: replace's c2rust `PCON_STREAM = *mut
+    # _CON_STREAM` (its island's struct) shadowed conutils-h's, and every StdOut handed to
+    # ConFormatMessage was the other crate's type (E0308).
+    names -= set().union(*prelude_resolve.shared_provides(REPO / "sdk" / "lib" / "rust").values())
     # ...nor one the prelude's hand-written part defines: the scaffold's `size_t = usize`
     # got a second, c2rust `size_t = c_ulonglong` beside it (E0428, and amd64's width).
     hand = re.sub(
@@ -5246,6 +5361,9 @@ def stage_macros(
     _sdk_macros(state, crate, prelude, names - set(defs))
     wanted = called | local_macros.existing(prelude)
     hand = local_macros.hand_ported(prelude)
+    # An object-like `#define str_clone _wcsdup` that resolve already spells as
+    # `pub use _wcsdup as str_clone` is not a macro to port too (where: E0252).
+    hand |= set(re.findall(r"^pub use [\w:]+ as (\w+);", prelude.read_text(), re.M))
     macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
     skipped = sorted(names & ambiguous)
     if skipped:
@@ -6237,6 +6355,21 @@ def _hold(name: str):
 def main(args) -> int:
     if args.port_stage == "status":  # read-only: never waits on, or blocks, a running stage
         return _main(args)
+    stem = getattr(args, "stem", None)
+    if stem and not _state_path(stem).is_file():
+        # A stem derive never wrote: `port replay help` for the module derive named after
+        # its CMake target (`cmd_help`) made an empty state and died on KeyError: 'tus'.
+        near = sorted(
+            p.parent.name
+            for p in STATE_ROOT.glob("*/state.json")
+            if stem in p.parent.name or p.parent.name in stem
+        )
+        print(
+            f"port: no port state for stem {stem!r} -- run `port derive <module dir>` first"
+            + (f" (did you mean: {', '.join(near)}?)" if near else ""),
+            file=sys.stderr,
+        )
+        return 1
     try:
         held = _hold(getattr(args, "stem", None) or _module(args.module).resolve().name)
     except PortError as e:

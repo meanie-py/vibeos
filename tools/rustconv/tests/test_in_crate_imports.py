@@ -254,3 +254,15 @@ def test_an_unknown_single_substrate_import_is_dropped(tmp_path, monkeypatch):
     new, dropped = ci.drop_unknown_substrate_imports(src, tmp_path)
     assert dropped == ["Channel"]
     assert new == "use crate::prelude::*;\nuse ntkrnl_sys::ddk::PCSTR;\n"
+
+
+def test_split_decls_ends_a_decl_before_its_trailing_comment():
+    from rustconv.crate_integrate import split_decls
+
+    body = (
+        "\n    pub fn A(x: u32) -> i32; // a-rust/src/prelude.rs\n"
+        "    pub fn B(\n        y: u32,\n    ) -> i32; // b-rust\n"
+        "    pub fn C(); // c-rust\n"
+    )
+    decls = [d.strip() for d in split_decls(body) if d.strip()]
+    assert len(decls) == 3 and decls[0].startswith("pub fn A") and decls[2].startswith("pub fn C")

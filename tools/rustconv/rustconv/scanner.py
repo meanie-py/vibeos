@@ -1865,6 +1865,10 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
     live = "\n".join("" if n in dead else ln for n, ln in enumerate(live_raw.splitlines(), 1))
     have = {f.name for f in result.functions}
     lost = c_functions(live) - have
+    # "Losing nothing" means nothing LIVE: the plain scan also finds definitions in dead
+    # arms (taskkill's `#ifndef __REACTOS__` find_parent), which the resolved scan rightly
+    # drops -- requiring them made the better scan unacceptable and the TU untranslatable.
+    have &= c_functions(live)
     if result.preamble_swallowed_functions:
         retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
         again = {f.name for f in retry.functions}
