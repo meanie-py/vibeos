@@ -159,9 +159,8 @@ pub const TooManySameOption: PARSER_ERROR = 7;
 #[allow(non_upper_case_globals)]
 pub const MandatoryOptionAbsent: PARSER_ERROR = 8;
 
-// Variadic function pointer (__cdecl VOID (*)(PARSER_ERROR, ...)); stored as an opaque pointer
-// because variadic fn-pointer types are not usable on stable Rust.
-pub type PRINT_ERROR_FUNC = *mut core::ffi::c_void;
+// C: typedef VOID (__cdecl *PRINT_ERROR_FUNC)(IN PARSER_ERROR, ...); (OPTIONAL: may be NULL)
+pub type PRINT_ERROR_FUNC = Option<unsafe extern "C" fn(PARSER_ERROR, ...)>;
 #[no_mangle]
 pub unsafe extern "C" fn PrintError(dwError: DWORD) {
     if dwError == ERROR_SUCCESS {
@@ -688,7 +687,7 @@ pub unsafe extern "C" fn DoParse(
             /// A hack-fix is to repeat this check after the 'for'-loop.
             if (Option as ULONG) != NumOptions {
                 if PrintErrorFunc.is_some() {
-                    PrintErrorFunc(ValueRequired, OptionStr);
+                    PrintErrorFunc.unwrap()(ValueRequired, OptionStr);
                 }
                 return (FALSE) as BOOL;
             }
@@ -718,7 +717,7 @@ pub unsafe extern "C" fn DoParse(
 
             if (Option as ULONG) >= NumOptions {
                 if PrintErrorFunc.is_some() {
-                    PrintErrorFunc(InvalidOption, OptionStr);
+                    PrintErrorFunc.unwrap()(InvalidOption, OptionStr);
                 }
                 return (FALSE) as BOOL;
             }
@@ -730,7 +729,7 @@ pub unsafe extern "C" fn DoParse(
                     >= (*Options.offset(Option as isize)).MaxOfInstances
             {
                 if PrintErrorFunc.is_some() {
-                    PrintErrorFunc(
+                    PrintErrorFunc.unwrap()(
                         TooManySameOption,
                         OptionStr,
                         (*Options.offset(Option as isize)).MaxOfInstances,
@@ -782,7 +781,7 @@ pub unsafe extern "C" fn DoParse(
                 0 => {
                     /* There must be no associated value */
                     if PrintErrorFunc.is_some() {
-                        PrintErrorFunc(ValueNotAllowed, OptionStr);
+                        PrintErrorFunc.unwrap()(ValueNotAllowed, OptionStr);
                     }
                     return (FALSE) as BOOL;
                 }
@@ -804,7 +803,7 @@ pub unsafe extern "C" fn DoParse(
                     {
                         /* Value cannot be empty */
                         if PrintErrorFunc.is_some() {
-                            PrintErrorFunc(ValueIsEmpty, OptionStr);
+                            PrintErrorFunc.unwrap()(ValueIsEmpty, OptionStr);
                         }
                         return (FALSE) as BOOL;
                     }
@@ -819,7 +818,7 @@ pub unsafe extern "C" fn DoParse(
                         if AllowedValues.is_null() {
                             /* The array is empty, no allowed values */
                             if PrintErrorFunc.is_some() {
-                                PrintErrorFunc(InvalidValue, *pStr, OptionStr);
+                                PrintErrorFunc.unwrap()(InvalidValue, *pStr, OptionStr);
                             }
                             return (FALSE) as BOOL;
                         }
@@ -854,7 +853,7 @@ pub unsafe extern "C" fn DoParse(
                         if *Scan == 0 {
                             /* The value is not allowed */
                             if PrintErrorFunc.is_some() {
-                                PrintErrorFunc(InvalidValue, *pStr, OptionStr);
+                                PrintErrorFunc.unwrap()(InvalidValue, *pStr, OptionStr);
                             }
                             return (FALSE) as BOOL;
                         }
@@ -875,7 +874,7 @@ pub unsafe extern "C" fn DoParse(
                     if *pszNext != 0 {
                         /* The value is not a valid numeric value and is not allowed */
                         if PrintErrorFunc.is_some() {
-                            PrintErrorFunc(
+                            PrintErrorFunc.unwrap()(
                                 InvalidValue,
                                 *argv.offset(i as isize),
                                 OptionStr,
@@ -902,7 +901,7 @@ pub unsafe extern "C" fn DoParse(
     /// HACK-fix for the check done inside the 'for'-loop.
     if (Option as ULONG) != NumOptions {
         if PrintErrorFunc.is_some() {
-            PrintErrorFunc(ValueRequired, OptionStr);
+            PrintErrorFunc.unwrap()(ValueRequired, OptionStr);
         }
         return (FALSE) as BOOL;
     }
@@ -921,7 +920,7 @@ pub unsafe extern "C" fn DoParse(
             {
                 /* A non-exclusive option is present on the command-line, fail */
                 if PrintErrorFunc.is_some() {
-                    PrintErrorFunc(InvalidSyntax);
+                    PrintErrorFunc.unwrap()(InvalidSyntax);
                 }
                 return (FALSE) as BOOL;
             }
@@ -940,7 +939,7 @@ pub unsafe extern "C" fn DoParse(
             && ((*Options.offset(i as isize)).Instances == 0)
         {
             if PrintErrorFunc.is_some() {
-                PrintErrorFunc(
+                PrintErrorFunc.unwrap()(
                     MandatoryOptionAbsent,
                     (*Options.offset(i as isize)).OptionName,
                 );
@@ -1130,7 +1129,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
     ConInitStdStreams();
 
     /* Parse command line for options */
-    if DoParse(argc as INT, argv, core::ptr::addr_of_mut!(Options) as POPTION, ARRAYSIZE!(Options) as ULONG, (PrintParserError as unsafe extern "C" fn(PARSER_ERROR, ...) -> ()) as PVOID) == 0 {
+    if DoParse(argc as INT, argv, core::ptr::addr_of_mut!(Options) as POPTION, ARRAYSIZE!(Options) as ULONG, Some(PrintParserError as unsafe extern "C" fn(PARSER_ERROR, ...))) == 0 {
         return EXIT_FAILURE as ::core::ffi::c_int;
     }
 
@@ -1150,20 +1149,20 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
     if !szSystem.is_null() || !szDomainUser.is_null() || !szPassword.is_null() {
         // TODO: Implement!
         if !szSystem.is_null() {
-            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, OPT_SYSTEM.OptionStr);
+            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, Options[1].OptionStr);
         }
         if !szDomainUser.is_null() {
-            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, OPT_USER.OptionStr);
+            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, Options[2].OptionStr);
         }
         if !szPassword.is_null() {
-            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, OPT_PASSWD.OptionStr);
+            ConResPrintf(core::ptr::addr_of_mut!(csStdOut), IDS_SWITCH_UNIMPLEMENTED, Options[3].OptionStr);
         }
         return EXIT_FAILURE as ::core::ffi::c_int;
     }
 
     if ulEventIdentifier < EVENT_ID_MIN as ULONG || ulEventIdentifier > EVENT_ID_MAX as ULONG {
         /* Invalid event identifier */
-        ConResPrintf(core::ptr::addr_of_mut!(csStdErr), IDS_BADSYNTAX_7, OPT_EVTID.OptionStr, EVENT_ID_MIN, EVENT_ID_MAX);
+        ConResPrintf(core::ptr::addr_of_mut!(csStdErr), IDS_BADSYNTAX_7, Options[8].OptionStr, EVENT_ID_MIN, EVENT_ID_MAX);
         ConResPuts(core::ptr::addr_of_mut!(csStdErr), IDS_USAGE);
         return EXIT_FAILURE as ::core::ffi::c_int;
     }

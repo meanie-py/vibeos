@@ -27,13 +27,6 @@ pub const STATE_CONTEXT: INTERPRETER_STATE = 3;
 pub const STATE_PARENT_CONTEXT: INTERPRETER_STATE = 4;
 pub const STATE_DONE: INTERPRETER_STATE = 5;
 
-pub const STATE_ANALYZE: i32 = 0;
-pub const STATE_COMMAND: i32 = 1;
-pub const STATE_GROUP: i32 = 2;
-pub const STATE_CONTEXT: i32 = 3;
-pub const STATE_PARENT_CONTEXT: i32 = 4;
-pub const STATE_DONE: i32 = 5;
-
 unsafe extern "C" fn GetGroupCommand(
     mut pszCommand: PWSTR,
     mut pGroup: PCOMMAND_GROUP,

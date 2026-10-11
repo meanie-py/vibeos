@@ -171,6 +171,18 @@ pub type LPTCH = LPWSTR;
 pub type PTCH = LPWSTR;
 // ==== end UNICODE TCHAR family ====
 
+// ================= netsh hand port (above the generated blocks) ==============================
+// C: #define NETSH_ROOT_GUID {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}} (sdk/include/psdk/netsh.h)
+pub const NETSH_ROOT_GUID: GUID = GUID { Data1: 0, Data2: 0, Data3: 0, Data4: [0; 8] };
+// conutils (sdk/lib/conutils/outstream.h) V-variants; the C side is linked, not in this crate.
+extern "C" {
+    // C: DWORD CDECL PrintError(HANDLE hModule, DWORD dwErrId, ...) -- variadic, defined by the shim.
+    pub fn PrintError(hModule: HANDLE, dwErrId: DWORD, ...) -> DWORD;
+    pub fn ConMsgPrintfV(Stream: *mut CON_STREAM, dwFlags: DWORD, lpSource: LPCVOID, dwMessageId: DWORD, dwLanguageId: DWORD, Arguments: *mut va_list) -> INT;
+    pub fn ConResMsgPrintfExV(Stream: *mut CON_STREAM, hInstance: HINSTANCE, dwFlags: DWORD, uID: UINT, LanguageId: LANGID, Arguments: *mut va_list) -> INT;
+}
+// ================= end netsh hand port ========================================================
+
 // ==== port macros: SDK header macros, lowered from the preprocessor's own expansion (generated -- re-run `rustconv port macros`) ====
 #[macro_export] macro_rules! V_BSTR { ($p0:expr $(,)?) => { (*$p0).n1.n2.n3.bstrVal }; }
 #[macro_export] macro_rules! V_UINT { ($p0:expr $(,)?) => { (*$p0).n1.n2.n3.uintVal }; }
@@ -206,9 +218,6 @@ pub use crate::{V_BSTR, V_UINT, min, va_end, va_start};
 // ==== port variadic: C-variadic entry points, trampolines in the module's rust_varargs_shim.c (generated -- `rustconv port integrate`) ====
 extern "C" {
     pub fn MakeString(hModule: HANDLE, dwMsgId: DWORD, ...) -> LPWSTR;
-    pub fn PrintError(hModule: HANDLE, dwErrId: DWORD, ...) -> DWORD;
-    pub fn PrintMessage(pwszFormat: LPCWSTR, ...) -> DWORD;
-    pub fn PrintMessageFromModule(hModule: HANDLE, dwMsgId: DWORD, ...) -> DWORD;
 }
 // ==== end port variadic ====
 

@@ -129,7 +129,7 @@ unsafe extern "system" fn CBindStatusCallback_AddRef(iface: *mut IBindStatusCall
 }
 
 unsafe extern "system" fn CBindStatusCallback_Release(iface: *mut IBindStatusCallback) -> ULONG {
-    let This: *mut CBindStatusCallback = interface_to_impl(iface, core::mem::size_of::<IBindStatusCallback>());
+    let This: *mut CBindStatusCallback = CBindStatusCallback::from_iface(iface);
     let mut ret: ULONG;
 
     ret = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG;
@@ -150,14 +150,14 @@ unsafe extern "system" fn CBindStatusCallback_QueryInterface(
     iid: REFIID,
     pvObject: *mut PVOID,
 ) -> HRESULT {
-    let This: *mut CBindStatusCallback = interface_to_impl(iface, core::mem::size_of::<IBindStatusCallback>());
+    let This: *mut CBindStatusCallback = CBindStatusCallback::from_iface(iface);
 
     *pvObject = core::ptr::null_mut();
 
     if IsEqualIID!(iid, core::ptr::addr_of!(IID_IBindStatusCallback)) != 0
         || IsEqualIID!(iid, core::ptr::addr_of!(IID_IUnknown)) != 0
     {
-        *pvObject = impl_to_interface(This, core::mem::size_of::<IBindStatusCallback>()) as PVOID;
+        *pvObject = CBindStatusCallback::to_iface(This) as PVOID;
     } else {
         return E_NOINTERFACE;
     }

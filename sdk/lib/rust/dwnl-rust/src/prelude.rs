@@ -9,6 +9,32 @@ pub use core::ffi::{c_char, c_int, c_long, c_short, c_uchar, c_uint, c_ushort, c
 pub type size_t = usize;
 pub use core::ptr::{addr_of, addr_of_mut};
 
+// ================= dwnl CBindStatusCallback (hand port, above the generated blocks) ===========
+// C: UINT bResolving:1 (bit 0), bConnecting:1 (bit 1), bSendingReq:1 (bit 2), bBeginTransfer:1 (bit 3).
+// All four live in the single UINT `bitfields` word of the struct; C stores TRUE/FALSE into them.
+// C macros: interface_to_impl(iface, IBindStatusCallback) and impl_to_interface(impl, IBindStatusCallback).
+impl crate::dwnl::dwnl::CBindStatusCallback {
+    #[inline] pub unsafe fn bResolving(&self) -> UINT { self.bitfields & 1 }
+    #[inline] pub unsafe fn bConnecting(&self) -> UINT { (self.bitfields >> 1) & 1 }
+    #[inline] pub unsafe fn bSendingReq(&self) -> UINT { (self.bitfields >> 2) & 1 }
+    #[inline] pub unsafe fn bBeginTransfer(&self) -> UINT { (self.bitfields >> 3) & 1 }
+    #[inline] pub unsafe fn set_bResolving(&mut self, v: UINT) { self.bitfields = (self.bitfields & !1) | (v & 1); }
+    #[inline] pub unsafe fn set_bConnecting(&mut self, v: UINT) { self.bitfields = (self.bitfields & !(1 << 1)) | ((v & 1) << 1); }
+    #[inline] pub unsafe fn set_bSendingReq(&mut self, v: UINT) { self.bitfields = (self.bitfields & !(1 << 2)) | ((v & 1) << 2); }
+    #[inline] pub unsafe fn set_bBeginTransfer(&mut self, v: UINT) { self.bitfields = (self.bitfields & !(1 << 3)) | ((v & 1) << 3); }
+    /// C: interface_to_impl(iface, IBindStatusCallback)
+    pub unsafe fn from_iface(iface: *mut IBindStatusCallback) -> *mut Self {
+        (iface as ULONG_PTR)
+            .wrapping_sub(core::mem::offset_of!(crate::dwnl::dwnl::CBindStatusCallback, lpIBindStatusCallbackVtbl) as ULONG_PTR)
+            as *mut Self
+    }
+    /// C: impl_to_interface(impl, IBindStatusCallback)
+    pub unsafe fn to_iface(this: *mut Self) -> *mut IBindStatusCallback {
+        core::ptr::addr_of_mut!((*this).lpIBindStatusCallbackVtbl) as *mut IBindStatusCallback
+    }
+}
+// ================= end dwnl hand port =========================================================
+
 // ================= debug ======================================================================
 // reactos/debug.h DPRINT/UNIMPLEMENTED — no-op MACROS, never out-of-line fns
 // (field manual §9.65: an out-of-line no-op is an optimization barrier). debug_macros.py

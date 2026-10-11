@@ -215,7 +215,7 @@ pub unsafe extern "C" fn wmain(
                     if g_pszMachine.is_null()
                     {
                         dwError = ERROR_NOT_ENOUGH_MEMORY;
-                        PrintError((g_hModule).cast(), dwError);
+                        PrintError(g_hModule as HANDLE, dwError);
                         break 'done;
                     }
 
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn wmain(
                     if pszCommand.is_null()
                     {
                         dwError = ERROR_NOT_ENOUGH_MEMORY;
-                        PrintError((g_hModule).cast(), dwError);
+                        PrintError(g_hModule as HANDLE, dwError);
                         break 'done;
                     }
 
@@ -732,8 +732,8 @@ pub unsafe extern "C" fn PrintMessageFromModule_v(
 ) -> DWORD {
     let mut Length: INT;
     let mut ap: va_list = *(ap_list as *mut va_list);
-    Length = ConResMsgPrintfExV(StdOut, hModule, 0, dwMsgId,
-                                LANG_USER_DEFAULT, core::ptr::addr_of_mut!(ap));
+    Length = ConResMsgPrintfExV(StdOut, (hModule).cast(), 0, dwMsgId,
+                                (LANG_USER_DEFAULT) as LANGID, core::ptr::addr_of_mut!(ap));
 
     return Length as DWORD;
 }
@@ -743,11 +743,9 @@ pub unsafe extern "C" fn PrintMessageFromModule_v(
 #[no_mangle]
 pub unsafe extern "C" fn PrintMessage_v(pwszFormat: LPCWSTR, ap_list: *mut ::core::ffi::c_void) -> DWORD {
     let mut Length: INT;
-    let mut ap: va_list;
-
-    ap = va_start!(varargs_rust::VaArgs::from_ptr(ap_list), pwszFormat);
-    Length = ConPrintfV(StdOut, pwszFormat, ap);
-    va_end!(ap);
+    // C: va_start(ap, pwszFormat). The shim hands us the started va_list by pointer (as in PrintError_v).
+    let mut ap: va_list = *(ap_list as *mut va_list);
+    Length = ConPrintfV(core::ptr::addr_of_mut!(csStdOut), pwszFormat, ap);
 
     return Length as DWORD;
 }

@@ -476,7 +476,7 @@ pub unsafe extern "C" fn PrintCommandHelp(pContext: PCONTEXT_ENTRY, pGroup: PCOM
         (*pContext).hModule as HINSTANCE,
         FORMAT_MESSAGE_ARGUMENT_ARRAY,
         (*pCommand).dwCmdHlpToken,
-        LANG_USER_DEFAULT,
+        LANG_USER_DEFAULT as LANGID,
         core::ptr::addr_of_mut!(Args) as *mut va_list,
     );
     ConPuts(core::ptr::addr_of_mut!(csStdOut), RUSTCONV_WSTR_075DE2B906DB.as_ptr());

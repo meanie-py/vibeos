@@ -622,7 +622,7 @@ pub unsafe extern "system" fn DeleteHelperCommand(pwszMachine: LPCWSTR, ppwcArgu
     return ERROR_SUCCESS;
 }
 
-unsafe extern "C" fn PrintHelpers(pHelperList: PHELPER_ENTRY, mut dwLevel: DWORD) {
+unsafe extern "C" fn PrintHelpers(pHelperListHeadArg: PHELPER_ENTRY, mut dwLevel: DWORD) {
     let mut pHelper: PHELPER_ENTRY;
     let mut pContext: PCONTEXT_ENTRY;
     let mut szIndent: [WCHAR; 22] = [0; 22];
@@ -636,7 +636,7 @@ unsafe extern "C" fn PrintHelpers(pHelperList: PHELPER_ENTRY, mut dwLevel: DWORD
     }
     szIndent[dwLevel.wrapping_mul(2 as DWORD) as usize] = UNICODE_NULL as WCHAR;
 
-    pHelper = pHelperList;
+    pHelper = pHelperListHeadArg;
     while !pHelper.is_null() {
         DPRINT!("Helper GUID: %lx\n", (*pHelper).Attributes.guidHelper.Data1);
 
