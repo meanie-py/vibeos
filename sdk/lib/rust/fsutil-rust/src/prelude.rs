@@ -70,7 +70,7 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 #[allow(unused_macros)]
 macro_rules! DUMP_VALUE {
     ($stats:expr, $value:ident $(,)?) => {
-        (fprintf(stdout, b"%s: %lu\n\0".as_ptr() as *const i8, concat!(stringify!($value), "\0").as_ptr() as *const i8, (*$stats).$value))
+        (fprintf(__iob_func().add(1), b"%s: %lu\n\0".as_ptr() as *const i8, concat!(stringify!($value), "\0").as_ptr() as *const i8, (*$stats).$value))
     };
 }
 #[allow(unused_imports)]

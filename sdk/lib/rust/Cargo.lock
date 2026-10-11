@@ -1285,15 +1285,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ftp-rust"
-version = "0.1.0"
-dependencies = [
- "ntdll-sys",
- "panic-common",
- "win32macros-rust",
-]
-
-[[package]]
 name = "gdi32-rust"
 version = "0.1.0"
 dependencies = [

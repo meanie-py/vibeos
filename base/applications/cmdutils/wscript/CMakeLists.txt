@@ -1,11 +1,18 @@
 
 list(APPEND SOURCE
-    arguments.c
-    host.c
-    main.c
+    # arguments.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/arguments.rs)
+    # host.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/host.rs)
+    # main.c  # replaced by Rust (sdk/lib/rust/wscript-rust/src/wscript/main.rs)
+    rust_cohab_stub.c
+    rust_varargs_shim.c
     precomp.h)
 
+# Every translation unit is Rust now (wscript-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(wscript_rust wscript-rust "" TRUE)
 add_executable(wscript ${SOURCE} rsrc.rc)
+add_dependencies(wscript rust_wscript_rust)
+target_link_libraries(wscript ${wscript_rust_LIB})
 add_idl_headers(wscript_idlheader ihost.idl)
 add_typelib(ihost.idl)
 set_source_files_properties(rsrc.rc PROPERTIES OBJECT_DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/ihost.tlb)

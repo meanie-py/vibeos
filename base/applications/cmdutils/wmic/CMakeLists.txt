@@ -1,5 +1,14 @@
 
-add_executable(wmic main.c wmic.rc)
+# Every translation unit is Rust now (wmic-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(wmic_rust wmic-rust "" TRUE)
+add_executable(wmic
+    # main.c  # replaced by Rust (sdk/lib/rust/wmic-rust/src/wmic/main.rs)
+    rust_cohab_stub.c
+    rust_varargs_shim.c
+    wmic.rc)
+add_dependencies(wmic rust_wmic_rust)
+target_link_libraries(wmic ${wmic_rust_LIB})
 target_link_libraries(wmic wine)
 set_module_type(wmic win32cui UNICODE)
 add_importlibs(wmic oleaut32 ole32 user32 msvcrt kernel32 ntdll)

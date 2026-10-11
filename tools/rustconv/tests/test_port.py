@@ -1039,3 +1039,17 @@ def test_a_hand_fixed_twin_keeps_its_trampoline(tmp_path):
     (tmp_path / "a.json").write_text(json.dumps({"name": "PrintMessage_v", "text": twin}))
     (tmp_path / "b.json").write_text(json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain}))
     assert port._hand_replaced_twins(tmp_path) == {"NdisWriteErrorLogEntry_v"}
+
+
+def test_extern_declared_crt_streams_take_the_accessor(tmp_path):
+    # fsutil's fsinfo.rs: `extern { static mut stdout: *mut FILE; static mut _iob: [u8; 0]; }`
+    # -- msvcrt exports neither name, and the link failed on all three arches.
+    rs = tmp_path / "fsinfo.rs"
+    rs.write_text(
+        'extern "C" {\n    static mut stdout: *mut FILE;\n    static mut _iob: [u8; 0];\n}\n'
+        "fn f() { _ftprintf(stdout, s); g((&raw mut _iob as *mut FILE).offset(1)); }\n"
+    )
+    assert port._crt_data_globals(rs) == ["stdout x1", "_iob x1"]
+    out = rs.read_text()
+    assert "static mut" not in out
+    assert "_ftprintf(__iob_func().add(1), s)" in out and "(__iob_func() as *mut FILE)" in out

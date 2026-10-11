@@ -560,7 +560,6 @@ members = [
     "wmic-rust",
     "xcopy-rust",
     "wscript-rust",
-    "ftp-rust",
     "netsh-rust",
     "nslookup-rust",
     "ipconfig-rust",

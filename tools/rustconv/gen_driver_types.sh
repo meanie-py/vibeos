@@ -6706,26 +6706,6 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
-  ftp)
-    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/network/ftp/CMakeLists.txt
-    # (7 compiled TU(s), 159 headers in the include closure, 14 switch constant(s)).
-    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
-    # that exact sequence is bindgen-able). Review the WHY notes in the report.
-    USERMODE=1
-    REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 61 external prototype(s) declared by the include closure, 10 called but declared nowhere in it.
-    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
-    BLOCKLIST_FUNCS=1
-    DRIVER_DIR="${SRC}/base/applications/network/ftp"
-    WRAPPER_INC=$'#include "precomp.h"\n#include <fcntl.h>\n#include <signal.h>\n#include <wincon.h>\n#include "pathnames.h"'
-    ALLOW_FILES=( --allowlist-file '.*[/\\]wingdi\.h' --allowlist-file '.*[/\\]winsock\.h'
-                  --allowlist-file '.*ftp[/\\].*\.h' )
-    EXTRA_INC=( -I"${SRC}/base/applications/network/ftp" -I"${SRC}/build-i386/base/applications/network/ftp" )
-    # LOWER priority than the standard SDK dirs -- the real compile lists these
-    # after them, and hoisting one ahead swaps which header an include resolves to.
-    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
-    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -Dlint -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
-    ;;
   netsh)
     # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/network/netsh/CMakeLists.txt
     # (7 compiled TU(s), 202 headers in the include closure, 9 switch constant(s)).

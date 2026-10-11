@@ -2946,6 +2946,14 @@ def _crt_data_globals(path: Path) -> list[str]:
             text = new
             done.append(f"{name} x{n}")
     for name, idx in _CRT_STREAMS.items():
+        # An `extern { static mut stdout: *mut FILE; }` (no initializer) is the CRT's macro
+        # misspelled as an import, not a module static: msvcrt exports no `stdout`, and
+        # fsutil's fsinfo.rs failed the link on all three arches. It goes; its uses are rewritten.
+        text = re.sub(
+            rf"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+{name}\s*:\s*\*mut\s+[\w:]*FILE\s*;[ \t]*\n",
+            "",
+            text,
+        )
         if not re.search(rf"\b{name}\b", text) or re.search(
             rf"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+{name}\b|\b{name}\s*:", text
         ):
@@ -2959,8 +2967,9 @@ def _crt_data_globals(path: Path) -> list[str]:
     # reaches; `__iob_func()` is the same array's address (undefined `_iob` at link before).
     # An `extern { static mut _iob: FILE; }` is the same import misspelled, not a module of
     # its own (finger's net.rs): it goes, and its uses take the accessor.
+    # To the line's end, not the first `;`: fsutil declared it `[u8; 0]`.
     undeclared = re.sub(
-        r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:\s*[^;=]+;[ \t]*\n", "", text
+        r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:[^=\n]*;[ \t]*\n", "", text
     )
     if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", undeclared):
         new, n = re.subn(
