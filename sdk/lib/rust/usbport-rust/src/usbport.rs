@@ -1364,6 +1364,16 @@ pub unsafe extern "system" fn USBPORT_WorkerThreadHandler(FdoDevice: PDEVICE_OBJ
     USBPORT_FlushClosedEndpointList(FdoDevice);
 }
 
+/// One line per step of the root-hub-ready callback, for the first few calls of a
+/// boot: on the OptiPlex one controller's callback never runs, and usbhub then
+/// retries that root hub's relations forever.
+unsafe fn rh_trace(fmt: &[u8], fdo: PDEVICE_OBJECT) {
+    static N: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+    if N.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 48 {
+        ntkrnl_sys::driver_ddk::DbgPrint(fmt.as_ptr() as *const i8, fdo);
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn USBPORT_DoRootHubCallback(FdoDevice: PDEVICE_OBJECT) {
     let mut FdoExtension: PUSBPORT_DEVICE_EXTENSION;
@@ -1386,6 +1396,12 @@ pub unsafe extern "system" fn USBPORT_DoRootHubCallback(FdoDevice: PDEVICE_OBJEC
         (*PdoExtension).RootHubInitContext = core::ptr::null_mut();
 
         if RootHubInitCallback.is_some() {
+            // usbhub enumerates a root hub only after this runs; until then its bus
+            // relations retry once a second (the OptiPlex's stuck USB 3 card).
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[USBPORT] root hub ready: callback for FDO %p\n\0".as_ptr() as *const i8,
+                FdoDevice,
+            );
             RootHubInitCallback.expect("non-null function pointer")(RootHubInitContext);
         }
     }
@@ -1433,6 +1449,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeRootHubCallback(
     }
 
     if ((*FdoExtension).Flags as ULONG & USBPORT_FLAG_COMPANION_HC) == 0 {
+        rh_trace(b"[USBPORT] root hub callback: FDO %p waits for its controller semaphore\n\0", FdoDevice);
         KeWaitForSingleObject(
             core::ptr::addr_of_mut!((*FdoExtension).ControllerSemaphore) as PVOID,
             _KWAIT_REASON_Executive,
@@ -1460,6 +1477,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeRootHubCallback(
             0 as BOOLEAN,
         );
 
+        rh_trace(b"[USBPORT] root hub callback: FDO %p powered and chirped its ports\n\0", FdoDevice);
         CompanionControllersList =
             USBPORT_FindCompanionControllers(FdoDevice, 0 as BOOLEAN, 1 as BOOLEAN);
 
@@ -1569,11 +1587,17 @@ pub unsafe extern "system" fn USBPORT_WorkerThread(StartContext: PVOID) {
                 & USBPORT_FLAG_RH_INIT_CALLBACK as core::ffi::c_ulong
                 != 0
             {
+                rh_trace(b"[USBPORT] worker runs the root hub callback for FDO %p\n\0", FdoDevice);
                 let mut USB2FdoDevice: PDEVICE_OBJECT = core::ptr::null_mut();
 
                 USB2FdoDevice = USBPORT_FindUSB2Controller(FdoDevice);
                 USBPORT_SynchronizeRootHubCallback(FdoDevice, USB2FdoDevice);
             }
+        } else if (*FdoExtension).Flags as core::ffi::c_ulong
+            & USBPORT_FLAG_RH_INIT_CALLBACK as core::ffi::c_ulong
+            != 0
+        {
+            rh_trace(b"[USBPORT] worker: FDO %p has a root hub callback due, but its interrupts are off\n\0", FdoDevice);
         }
 
         USBPORT_WorkerThreadHandler(FdoDevice);
@@ -1719,6 +1743,7 @@ pub unsafe extern "system" fn USBPORT_SynchronizeControllersStart(FdoDevice: PDE
         ) == 0
     {
         (*FdoExtension).Flags |= USBPORT_FLAG_RH_INIT_CALLBACK;
+        rh_trace(b"[USBPORT] root hub callback scheduled for FDO %p\n\0", FdoDevice);
         USBPORT_SignalWorkerThread(FdoDevice);
 
         if !USB2FdoDevice.is_null() {

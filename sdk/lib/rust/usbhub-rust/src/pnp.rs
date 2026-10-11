@@ -1270,6 +1270,18 @@ pub unsafe extern "system" fn USBH_FdoQueryBusRelations(
         Status = STATUS_UNSUCCESSFUL;
     } else if (*HubExtension).HubFlags & USBHUB_FDO_FLAG_DO_ENUMERATION == 0 {
         let mut Interval: LARGE_INTEGER = core::mem::zeroed();
+        // A root hub waits here for usbport's root-hub-ready callback, retrying every
+        // second on the PnP worker thread; say so a few times, so a hub that never
+        // gets it reads as that rather than as a silent stall.
+        static WAITS: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        let n = WAITS.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n % 60 == 0 {
+            ntkrnl_sys::driver_ddk::DbgPrint(
+                b"[USBHUB] hub %p: bus relations before enumeration is allowed (wait %u)\n\0".as_ptr() as *const i8,
+                HubExtension,
+                n,
+            );
+        }
         Status = STATUS_SUCCESS;
         IoInvalidateDeviceRelations((*HubExtension).LowerPDO, BusRelations);
         Interval.QuadPart = -10000i64 * 1000;

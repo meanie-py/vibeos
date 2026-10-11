@@ -19,11 +19,13 @@
 #
 #   tools/optiplex/netboot.sh [stage]   build it and copy it to the payload dir
 #   tools/optiplex/netboot.sh build     build it only (prints the path)
+#
+# OPTIPLEX_TRIPWIRE=<cfg> arms the kernel's tripwire for that image, as smoke
+# --tripwire does in QEMU, with commas between tokens: SPECIALPOOL=*,QUIET.
 set -euo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 . "$HERE/env.sh"
 ROOT=$(cd "$HERE/../.." && pwd)
-PS=/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe
 LIVECD=${OPTIPLEX_LIVECD:-$ROOT/build-amd64/livecd.iso}
 OUT=${OPTIPLEX_NETBOOT_ISO:-$ROOT/build-amd64/optiplex-netboot.iso}
 
@@ -33,7 +35,9 @@ build() {
     work=$(mktemp -d "${TMPDIR:-/tmp}/optiplex-netboot.XXXXXX")
     trap 'rm -rf "$work"' RETURN
     # Same kernel/HAL pair and debug port as the livecd's default entry (LiveCD_SMP).
-    cat > "$work/freeldr.ini" <<'EOF'
+    local tripwire=""
+    [ -n "${OPTIPLEX_TRIPWIRE:-}" ] && tripwire=" /TRIPWIRE=$OPTIPLEX_TRIPWIRE"
+    cat > "$work/freeldr.ini" <<EOF
 [FREELOADER]
 DefaultOS=LiveCD_RamDisk_SMP
 TimeOut=0
@@ -49,7 +53,7 @@ LiveCD_RamDisk_SMP="LiveCD in RAM, SMP kernel (Debug)"
 [LiveCD_RamDisk_SMP]
 BootType=Windows2003
 SystemPath=ramdisk(0)\reactos
-Options=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll /DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /FASTDETECT /MININT /RDPATH=livecd\livecd.iso /RDEXPORTASCD
+Options=/KERNEL=ntkrnlmp.exe /HAL=halmp.dll /DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /FASTDETECT /MININT /RDPATH=livecd\\livecd.iso /RDEXPORTASCD$tripwire
 EOF
     xorriso -osirrox on -indev "$LIVECD" -extract /loader "$work/loader" >/dev/null 2>&1
     chmod -R u+w "$work/loader"
@@ -69,15 +73,20 @@ EOF
 # Copy one file into the payload dir, check it arrived intact, print its sha256.
 put() {
     local src=$1 dest="$OPTIPLEX_PAYLOAD/$2" want got
-    if [ "$(stat -c %s "$src")" -lt $((64 << 20)) ]; then
-        cp "$src" "$dest"
-    else
-        # drvfs cp of a file this size fails ENOMEM; Windows copies it fine.
-        timeout 300 "$PS" -NoProfile -Command "Copy-Item -LiteralPath '$(wslpath -w "$src")' -Destination '$(wslpath -w "$dest")' -Force" </dev/null ||
-            { echo "netboot: copying $2 to the payload dir failed (Windows interop; rerun)" >&2; exit 1; }
-    fi
+    # dd in 16 KB blocks: under host memory pressure drvfs fails a large
+    # write with ENOMEM (`cp` of the 400 MB image; dd at 4M, 256K and 64K,
+    # 2026-10-10), and the PowerShell Copy-Item tried before dies whenever WSL
+    # interop's vsock times out. Written beside the target and renamed, so the
+    # HTTP server never serves a half-copied image.
+    dd if="$src" of="$dest.part" bs=16K status=none ||
+        { echo "netboot: copying $2 to the payload dir failed" >&2; exit 1; }
+    mv -f "$dest.part" "$dest"
     want=$(sha256sum "$src" | cut -d' ' -f1)
-    got=$(sha256sum "$dest" | cut -d' ' -f1)
+    # Reading it back can hit the same transient ENOMEM; that is not a mismatch.
+    for _ in 1 2 3; do
+        got=$(sha256sum "$dest" 2>/dev/null | cut -d' ' -f1) && [ -n "$got" ] && break
+        sleep 2
+    done
     [ "$want" = "$got" ] || { echo "netboot: staged $2 differs ($got vs $want)" >&2; exit 1; }
     echo "$want"
 }

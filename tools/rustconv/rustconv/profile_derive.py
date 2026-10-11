@@ -4198,8 +4198,18 @@ pub unsafe fn IoReleaseRemoveLockAndWait(RemoveLock: PIO_REMOVE_LOCK, Tag: PVOID
 }
 pub use crate::{NT_VERIFY, PAGED_CODE, UNREACHABLE};
 
-// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64).
-pub use ntkrnl_sys::portio::*;
+// HAL port/register I/O (hal.dll exports on i386/arm64, inline on amd64). By name, not by
+// glob: an i386 island declares some of these as externs too, and two globs naming one item
+// are ambiguous (E0659, e1000's WRITE_PORT_ULONG); an explicit import beats any glob.
+pub use ntkrnl_sys::portio::{
+    READ_PORT_UCHAR, READ_PORT_USHORT, READ_PORT_ULONG, READ_PORT_BUFFER_UCHAR,
+    READ_PORT_BUFFER_USHORT, READ_PORT_BUFFER_ULONG, WRITE_PORT_UCHAR, WRITE_PORT_USHORT,
+    WRITE_PORT_ULONG, WRITE_PORT_BUFFER_UCHAR, WRITE_PORT_BUFFER_USHORT,
+    WRITE_PORT_BUFFER_ULONG, READ_REGISTER_UCHAR, READ_REGISTER_USHORT, READ_REGISTER_ULONG,
+    READ_REGISTER_BUFFER_UCHAR, READ_REGISTER_BUFFER_USHORT, READ_REGISTER_BUFFER_ULONG,
+    WRITE_REGISTER_UCHAR, WRITE_REGISTER_USHORT, WRITE_REGISTER_ULONG,
+    WRITE_REGISTER_BUFFER_UCHAR, WRITE_REGISTER_BUFFER_USHORT, WRITE_REGISTER_BUFFER_ULONG,
+};
 // C's TRUE/FALSE are ints; in kernel code they land in BOOLEAN (UCHAR) far more than BOOL.
 pub const TRUE: BOOLEAN = 1;
 pub const FALSE: BOOLEAN = 0;
@@ -4321,7 +4331,8 @@ def scaffold_crate(
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
             "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, "
-            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
+            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION, "
+            "_AtlBaseModule};\n"
             # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
             # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
             "pub use atl_rust::CStringW as CSimpleString;\n"

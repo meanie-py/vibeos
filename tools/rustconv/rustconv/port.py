@@ -41,6 +41,7 @@ from pathlib import Path
 from . import (
     crate_integrate,
     dead_regions,
+    default_arm,
     flex_index,
     goto_arm,
     local_macros,
@@ -54,9 +55,10 @@ from . import (
     variadic_shim,
 )
 from . import profile_derive as pd
+from .config import REACTOS_ROOT
 from .profile_derive import CPP_SUFFIXES
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = REACTOS_ROOT  # the invoked tree, not this file's checkout
 GEN = REPO / "tools" / "rustconv" / "gen_driver_types.sh"
 STATE_ROOT = Path(
     os.environ.get("RUSTCONV_PORT_STATE", Path.home() / "vibeos-rust-staging" / "port")
@@ -600,8 +602,16 @@ def stage_island(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
     env = dict(os.environ, OUT_CRATE_DIR=str(_crate_dir(state) / "src"))
+    # From a snapshot, never the file: bash reads a script AS IT RUNS, and a concurrent derive
+    # or resolve of another module rewrites this one (its arms) mid-run. shsvcs and deskmon
+    # resumed at a shifted offset after i386 (`i686-pc-windows-gnu: command not found`), so
+    # amd64/arm64 kept the old island and normalize_island_abi never ran.
+    snapshot = STATE_ROOT / stem / "gen_driver_types.snapshot.sh"
+    snapshot.parent.mkdir(parents=True, exist_ok=True)
+    snapshot.write_text(GEN.read_text())
+    env["GEN_SCRIPT_DIR"] = str(GEN.parent)
     proc = subprocess.run(
-        ["bash", str(GEN), stem], cwd=REPO, env=env, capture_output=True, text=True
+        ["bash", str(snapshot), stem], cwd=REPO, env=env, capture_output=True, text=True
     )
     log = STATE_ROOT / stem / "island.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -789,6 +799,8 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
     cpp_classes leaves to it). Island items that name a class (`IMAGE_PART { m_rcPart:
     CRect }`, `extern static mainWindow: CMainWindow`) then resolve to the one definition."""
     names = set(re.findall(r"^pub (?:struct|union) (\w+)", generated, re.M))
+    # ...and a path DEPENDENCY's classes the same way (see _dep_classes).
+    deps = {k: v for k, v in _dep_classes(src.parent).items() if k not in names}
     done: set[str] = set()
     for island in sorted(src.glob("types_*.rs")):
         lines = island.read_text().split("\n")
@@ -796,7 +808,8 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
         i = 0
         while i < len(lines):
             m = re.match(r"pub (?:struct|union) (\w+)\s*\{", lines[i])
-            if not m or m.group(1) not in names:
+            dep = deps.get(m.group(1)) if m else None
+            if not m or (m.group(1) not in names and dep is None):
                 out.append(lines[i])
                 i += 1
                 continue
@@ -808,10 +821,76 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
                 i += 1
                 if depth <= 0:
                     break
-            out.append(f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it")
+            out.append(
+                dep or f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it"
+            )
             done.add(m.group(1))
         island.write_text("\n".join(out))
     return sorted(done)
+
+
+def _dep_classes(crate_dir: Path) -> dict[str, str]:
+    """Classes a path DEPENDENCY's cppapp renders, as the island line that re-exports them.
+
+    msutb's `CTipbarWnd : CUIFWindow` builds on cicero's classes, and msutb's island carries
+    bindgen's copy of each: an opaque vptr, no methods (`QueryDword` x32, `m_hWnd` x26 against
+    msutb). The class model of the crate that owns the header is the authority, as it is for
+    the module's own classes; one definition, so a `*mut CUIFWindow` means the same type on
+    both sides of the crate boundary."""
+    cargo = crate_dir / "Cargo.toml"
+    if not cargo.is_file():
+        return {}
+    out: dict[str, str] = {}
+    for dep, rel in re.findall(
+        r'^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', cargo.read_text(), re.M
+    ):
+        for gen in sorted((crate_dir / rel).resolve().glob("src/*/cpp_classes.rs")):
+            mod = gen.parent.name
+            ident = dep.replace("-", "_")
+            for name in re.findall(r"^pub (?:struct|union) (\w+)", gen.read_text(), re.M):
+                out.setdefault(
+                    name, f"pub use {ident}::{mod}::cpp_classes::{name}; // {dep} owns it"
+                )
+    return out
+
+
+_DEP_BEGIN = "// ==== port resolve: path-dependency definitions (generated) ===="
+_DEP_END = "// ==== end path-dependency definitions ===="
+
+
+def _dep_definitions(names: set[str], crate: Path) -> dict[str, str]:
+    """`{name: "dep_ident::module::file"}` for each name exactly one module of a path
+    dependency defines `pub` at column 0. Ambiguous or private ones are left to report."""
+    cargo = crate / "Cargo.toml"
+    if not names or not cargo.is_file():
+        return {}
+    hits: dict[str, set[str]] = {}
+    for dep, rel in re.findall(
+        r'^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', cargo.read_text(), re.M
+    ):
+        root = (crate / rel).resolve() / "src"
+        ident = dep.replace("-", "_")
+        for rs in sorted(root.glob("*/*.rs")):
+            for m in prelude_resolve._DEF.finditer(rs.read_text(errors="replace")):
+                if m.group("name") in names and m.group("pub"):
+                    hits.setdefault(m.group("name"), set()).add(
+                        f"{ident}::{rs.parent.name}::{rs.stem}"
+                    )
+    return {k: next(iter(v)) for k, v in hits.items() if len(v) == 1}
+
+
+def _write_dep_block(prelude: Path, wired: dict[str, str]) -> None:
+    by_path: dict[str, list[str]] = {}
+    for name, path in wired.items():
+        by_path.setdefault(path, []).append(name)
+    body = "\n".join(
+        f"pub use {p}::{{{', '.join(sorted(ns))}}};" for p, ns in sorted(by_path.items())
+    )
+    block = f"{_DEP_BEGIN}\n{body}\n{_DEP_END}\n"
+    text = prelude.read_text()
+    m = re.search(rf"{re.escape(_DEP_BEGIN)}.*?{re.escape(_DEP_END)}\n?", text, re.S)
+    text = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n" + block
+    prelude.write_text(text)
 
 
 # Bump when what translate SEALS in a cppapp unit changes (2: the island's mixed-case
@@ -1090,16 +1169,55 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
     own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    # A GUID uuid.lib already defines is that library's, when the target links it: the C's
+    # INITGUID copy is DECLSPEC_SELECTANY and folds into uuid's at link, but a Rust
+    # `#[no_mangle]` static is a strong second definition (msctfime: GUID_TFCAT_TIP_KEYBOARD,
+    # also in sdk/lib/uuid/msctf_g.c -- link-guard's duplicate symbol on all three arches).
+    cml = module_dir / "CMakeLists.txt"
+    if cml.is_file() and re.search(
+        r"target_link_libraries\([^)]*\buuid\b", cml.read_text(errors="replace")
+    ):
+        # Both its checked-in sources and the `*_i.c` it generates from the SDK's IDLs (msctf.idl
+        # gives IID_ITfSource & co): the latter exist only in this worktree's build tree.
+        uuid_dirs = [str(d) for d in sorted(REPO.glob("build-*/sdk/lib/uuid"))[:1]]
+
+        def _uuid_defines(n: str) -> bool:
+            if not subprocess.run(
+                ["git", "grep", "-q", "-w", n, "--", "sdk/lib/uuid/*.c"], cwd=REPO, check=False
+            ).returncode:
+                return True
+            return any(
+                not subprocess.run(["grep", "-rqw", "--include=*.c", n, d], check=False).returncode
+                for d in uuid_dirs
+            )
+
+        want = {n for n in want if not _uuid_defines(n)}
     out: dict[str, str] = {}
     refused: list[str] = []
     for name in sorted(want):
+        # By the NAME, not `DEFINE_GUID(name,` on one line: cicero's cicutb.h wraps after the
+        # parenthesis, so GUID_TFCAT_DISPLAYATTRIBUTEPROPERTY got no storage and msctfime failed
+        # to link. _DEFINE_GUID_RE (whitespace-tolerant) then reads the value.
         files = subprocess.run(
-            ["git", "grep", "-l", f"DEFINE_GUID({name},", "--", "*.h"],
+            ["git", "grep", "-l", "-w", name, "--", "*.h"],
             cwd=REPO,
             capture_output=True,
             text=True,
             check=False,
         ).stdout.split()
+        if not files:
+            # A MIDL-generated header (msctf_undoc.h from msctf_undoc.idl: IID_ITfRangeAnchor)
+            # exists only in this worktree's build tree; precomp.h's <initguid.h> gave the C
+            # storage for its IIDs too. One build dir is enough -- the IDL is not per-arch.
+            for build in sorted(REPO.glob("build-*/sdk/include")):
+                files = subprocess.run(
+                    ["grep", "-rlw", "--include=*.h", name, str(build)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout.split()
+                if files:
+                    break
         values = set()
         for f in files:
             for m in _DEFINE_GUID_RE.finditer((REPO / f).read_text(errors="replace")):
@@ -1467,6 +1585,39 @@ def stage_translate(
         applied = apply_hand_bodies(_crate_dir(state), state["stem"])
         if applied:
             print(f"translate: {len(applied)} hand-ported body(ies) applied: {', '.join(applied)}")
+    if replay_only:
+        # Loud: a unit the bank cannot reassemble keeps whatever its file held before, and the
+        # replay went on to report error counts for THAT. msutb's unit gained bodies nobody had
+        # bought (its COM classes changed), so every "rebuild from the banks" for hours kept a
+        # stale file -- with a subagent's unbanked edits still in it. Keyed on rc, not on one
+        # refusal message: msctfime's bridge unit refused through a second one (a banked
+        # preamble that no longer replays) and went just as quietly. The one rc=2 that rebuilt
+        # nothing because nothing was owed is a header unit with no classless function.
+        why = []
+        for d in done:
+            log = (
+                STATE_ROOT
+                / state["stem"]
+                / f"translate-{_module_name(d['tu'])}-thinking-{thinking}.log"
+            )
+            text = log.read_text() if log.is_file() else ""
+            refused = [
+                ln.strip()
+                for ln in text.splitlines()
+                if ln.startswith("--replay-only:") or "did not replay" in ln
+            ]
+            # A refused PREAMBLE does not even fail the unit (msutb: rc=0, written without its
+            # 40 file-scope globals), so the refusal line counts whatever the rc says.
+            if not refused and (not d["rc"] or "found no classless function" in text):
+                continue
+            reason = refused[-1] if refused else f"rc={d['rc']}"
+            why.append(f"{Path(d['tu']).name}: {reason}")
+        if why:
+            raise PortError(
+                "replay: unit(s) the bank cannot fully reassemble -- each file is stale, or "
+                "rebuilt without its refused preamble. Buy the missing bodies first "
+                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why)
+            )
     return spent, [Path(d["tu"]).name for d in done]
 
 
@@ -1547,7 +1698,7 @@ def _list_has_stub(lines: list[str], at: int) -> bool:
         depth += lines[end].count("(") - lines[end].count(")")
         if depth <= 0 and end >= at:
             break
-    return any(re.match(r"^\s*rust_cohab_stub\.c\b", ln) for ln in lines[start : end + 1])
+    return any(re.match(r"^\s*rust_cohab_stub\.c(?:pp)?\b", ln) for ln in lines[start : end + 1])
 
 
 def _explode_inline_sources(cml: str, target: str) -> str:
@@ -1620,7 +1771,7 @@ def flip_cmake(cml: str, state: dict) -> str:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
         extra = []
         if not _list_has_stub(lines, last):
-            extra.append("rust_cohab_stub.c")
+            extra.append(_stub_name(state))
         # integrate's C trampolines for the module's variadic entry points (ftfd's sprintf,
         # FT_Message): without them in a source list the variadic symbols do not exist.
         if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
@@ -1701,13 +1852,23 @@ def _crate_uses_float(crate: str) -> bool:
     )
 
 
+def _stub_name(state: dict) -> str:
+    """The stub TU in the MODULE'S language. Once every TU is flipped, the stub is the only
+    compile command left in the directory, and the tools borrow its flags to preprocess the
+    flipped sources (macro_authority's sibling fallback). A C stub of a C++ module carries no
+    C++-only include directories -- ATL's arrive as `$<COMPILE_LANGUAGE:CXX>` -- so after
+    msutb's flip every re-run of `port replay` failed to preprocess, and a resolve emptied
+    the prelude's extern block without a word."""
+    return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
+
+
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
     module = REPO / state["module_dir"]
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
-    stub = module / "rust_cohab_stub.c"
+    stub = module / _stub_name(state)
     if not stub.exists():
         stub.write_text(
             f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
@@ -3346,6 +3507,10 @@ def stage_integrate(stem: str) -> None:
                 print(
                     f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
                 )
+        defaults = default_arm.rewrite_file(path)
+        if defaults:
+            changed += 1
+            print(f"integrate: {path.stem}: C `default:` arm(s) moved last in a match: {defaults}")
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
@@ -3473,6 +3638,30 @@ _WINE_BEGIN = "// ==== port resolve: wine debug channels (generated) ===="
 _WINE_END = "// ==== end wine debug channels ===="
 
 
+def _macro_only_names(modules_dir: Path) -> set[str]:
+    """Names the module's bodies invoke as `NAME!(` and never call as `NAME(`."""
+    text = "\n".join(p.read_text(errors="replace") for p in modules_dir.glob("*.rs"))
+    bang = set(re.findall(r"\b([A-Za-z_]\w*)!\s*[(\[{]", text))
+    called = set(re.findall(r"(?<![\w!:.])([A-Za-z_]\w*)\s*\(", text))
+    return bang - called
+
+
+def _prelude_definitions_outside_consensus(prelude: Path) -> set[str]:
+    """Names the prelude DEFINES outside the tree-consensus block. An `extern` declaration
+    is not a definition; a static with an initializer, a const, a type and a fn body are."""
+    text = prelude.read_text() if prelude.is_file() else ""
+    pat = re.escape(prelude_resolve.BEGIN) + r".*?" + re.escape(prelude_resolve.END)
+    text = re.sub(pat, "", text, flags=re.S)
+    return set(re.findall(r"^\s*pub\s+static\s+(?:mut\s+)?(\w+)\s*:[^;]*=", text, re.M)) | set(
+        re.findall(
+            r"^\s*pub(?:\([^)]*\))?\s+(?:const|type|struct|union|(?:unsafe\s+)?"
+            r"(?:extern\s+\"\w+\"\s+)?fn)\s+(\w+)[^;]*?[={(<]",
+            text,
+            re.M,
+        )
+    )
+
+
 def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     """wine/debug.h's `WINE_DEFAULT_DEBUG_CHANNEL(ch)` / `WINE_DECLARE_DEBUG_CHANNEL(ch)`:
     `static struct __wine_debug_channel __wine_dbch_ch = { (unsigned char)~0, "ch" }` and,
@@ -3502,14 +3691,17 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     )
     # win32macros-rust's WINE_TRACE!/TRACE!-family name the default channel in their
     # EXPANSION, which this text scan never sees: a call is a use of it.
+    # So is the bare `TRACE!`/`ERR!` a translation keeps, which the prelude aliases to them
+    # (`pub use win32macros_rust::WINE_ERR as ERR`): seclogon/netlogon/shsvcs called only those.
     uses_default = "__wine_dbch___default" in src or bool(
         re.search(r"\bWINE_(?:TRACE|WARN|FIXME|ERR)!?\s*\(", src)
+        or re.search(r"\b(?:TRACE|WARN|FIXME|ERR)!\s*\(", src)
     )
     lines: list[str] = []
     for ch in declared:
         name = f"__wine_dbch_{ch}"
         needed = name in src or (ch == default and uses_default)
-        if not needed or re.search(rf"\bstatic\s+(?:mut\s+)?{name}\b", outside + src):
+        if not needed or re.search(rf"\bstatic\s+(?:mut\s+)?{name}\b[^;]*=", outside + src):
             continue
         raw = ch.encode()[:14] + b"\0" * (15 - len(ch.encode()[:14]))
         lit = "".join(f"\\x{b:02x}" for b in raw)
@@ -3523,7 +3715,9 @@ def _wine_debug_channels(state: dict, prelude: Path) -> list[str]:
     if (
         default
         and uses_default
-        and not re.search(r"\bstatic\s+(?:mut\s+)?__wine_dbch___default\b", outside)
+        # An initializer makes it a definition: tree consensus copies appwiz's `extern`
+        # DECLARATION, which links to nothing (resolve drops it once this defines the name).
+        and not re.search(r"\bstatic\s+(?:mut\s+)?__wine_dbch___default\b[^;]*=", outside)
     ):
         lines.append(
             "pub static mut __wine_dbch___default: *mut __wine_debug_channel =\n"
@@ -3823,11 +4017,21 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # (PSN_RESET still came from the island), and crate-repair stacked `as i32) as u32` forty
     # deep alternating between them. The island is the module's own header.
     shared |= _island_constants(state)
+    # ...and never a name another part of the prelude now DEFINES: the wine-channel block
+    # writes `__wine_dbch___default = &__wine_dbch_ch` beside the `extern` DECLARATION a
+    # copy brought from appwiz, and the pair was E0428 forever (shsvcs, netlogon).
+    defined_elsewhere = _prelude_definitions_outside_consensus(prelude)
+    # A name the bodies only ever CALL AS A MACRO (`FIXME!(..)`) is never satisfied by a fn:
+    # srvsvc got mlang's stray `fn FIXME(format, ...)` declaration where the SDK alias pass
+    # would have written `pub use win32macros_rust::WINE_FIXME as FIXME`.
+    macro_only = _macro_only_names(crate / "src" / stem)
     copied = {
         k: v
         for k, v in prelude_resolve.existing_block(prelude).items()
         if not (v.kind == "fn" and (k in c_macros or k in id_aliases))
         and k not in shared
+        and k not in defined_elsewhere
+        and not (v.kind == "fn" and k in macro_only)
         # A copy of a name SOME arch's island defines shadows the island there (ndis's
         # SharedSystemTime); dropped, and the gap reported by the pass below instead.
         and k not in _island_defined(crate / "src")
@@ -3865,6 +4069,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # glob import of F -- E0603 "private function import" -- and nothing else revisits it.
     live = prelude_resolve.sibling_definitions(set(siblings), modules_dir)
     stale = {n for n, mod in siblings.items() if mod not in {m for m, _ in live.get(n, [])}}
+    # ...and an import of a name the prelude now defines itself (a later stage's port).
+    stale |= set(siblings) & prelude_resolve.defined_outside_siblings(prelude)
     if stale:
         siblings = {n: m for n, m in siblings.items() if n not in stale}
         prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
@@ -3888,6 +4094,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
     seen_names: set[str] = set()
+    dep_wired: dict[str, str] = {}
     for n in range(1, max_passes + 1):
         wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
@@ -3923,6 +4130,16 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         # E0255. regedit kept access-rust's HKEY_* copies after regproc.rs came to define them.
         for name in set(copied) & set(siblings):
             del copied[name]
+        # ...then a path DEPENDENCY's: msctf calls cicero's header inlines (cicMemFree x28,
+        # cicIsNullPtr x12), which cicero-rust translated and exports. `headers` leaves a
+        # header outside the module dir alone, so nothing else would ever import them.
+        found_dep = _dep_definitions(names - set(dep_wired), crate)
+        if found_dep:
+            dep_wired.update(found_dep)
+            wired += len(found_dep)
+        if dep_wired:
+            _write_dep_block(prelude, dep_wired)
+        names -= set(dep_wired)
         # A header helper the kernel -sys crate implements in Rust is imported from it, before
         # tree consensus is asked -- C macros included, since the substrate's port IS the
         # macro's Rust form. atapi's InsertTailList (16 copies, two ABIs), KeQuerySystemTime
@@ -3996,6 +4213,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             found = items.get(name, [])
             # A copied declaration must speak this crate's types (ucrt's private `Compare`).
             found = [i for i in found if i.kind != "fn" or not _private_types(i, visible_types)]
+            if name in macro_only:
+                found = [i for i in found if i.kind != "fn"]
             if not found:
                 res.undefined.append(name)
                 continue
@@ -4348,6 +4567,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     todo = (todo - set(sdk_alias) - set(sigs)) | {
         t for t in sdk_alias.values() if t not in declared
     }
+    failed: list[str] = []
     for tu in state["tus"]:
         if not todo:
             break
@@ -4356,7 +4576,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             found = c2rust_anchor.extern_signatures(c_file, todo)
             abis = sdk_facts.function_abis(REPO, c_file, sorted(found)) if found else {}
         except (c2rust_anchor.C2RustError, MacroAuthorityError) as e:
-            print(f"resolve: externs of {tu}: {str(e).splitlines()[0][:120]}")
+            failed.append(f"{tu}: {str(e).splitlines()[0][:160]}")
             continue
         for name, sig in found.items():
             if name not in abis:
@@ -4394,6 +4614,15 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     lost = sorted(f"{n} -> {t}" for n, t in sdk_alias.items() if n not in sigs)
     if lost:
         print(f"resolve: SDK alias target declared nowhere, hand-declare it: {', '.join(lost)}")
+    if failed:
+        # Loud: writing the block from the TUs that DID preprocess drops every declaration the
+        # others owed. After msutb's flip left only a C stub to borrow flags from, this wrote
+        # an empty block and 20 externs (RegOpenKeyEx, CreateWindowEx, ...) vanished silently.
+        raise PortError(
+            "resolve: could not derive the extern declarations of "
+            + "; ".join(failed)
+            + " -- the prelude's extern block is left as it was"
+        )
     prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
     if sigs:
         print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")
@@ -4852,6 +5081,25 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
         for name, lit in sdk_facts.float_macro_literals(REPO, REPO / tu, names).items():
             print(f"resolve: {name} was truncated to {facts[name][1]}; it is {lit}")
             facts[name] = ("f64", lit, src)
+        # Re-probe every carried integer fact: a fact is only as right as the probe that made
+        # it. rpcss kept `IROT_PROTSEQ: i32 = 0` -- an array initializer the old probe read
+        # through clang's error recovery -- after the probe learned to reject it.
+        ints = [n for n in names if n in facts and facts[n][0] not in ("f32", "f64")]
+        try:
+            again = sdk_facts.resolve(REPO, REPO / tu, ints)
+        except MacroAuthorityError:
+            continue
+        values = {f.name: f.value for f in again.facts}
+        for name in ints:
+            if name not in values:
+                print(
+                    f"resolve: fact {name} dropped, clang no longer evaluates it: "
+                    f"{again.unresolved.get(name, 'no value')}"
+                )
+                del facts[name]
+            elif values[name] != facts[name][1]:
+                print(f"resolve: fact {name} was {facts[name][1]}, clang says {values[name]}")
+                facts[name] = (facts[name][0], values[name], src)
     wanted = sorted(
         n
         for n in undefined
@@ -5010,6 +5258,23 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     )
     items.update(com)
     refused.update(item_refused)
+    # A lowered body calls what the C expansion calls; when that callee is itself a MACRO
+    # here (msctfime's IsEqualIID -> `IsEqualGUID(a, b)`, and win32macros-rust ports
+    # IsEqualGUID as `macro_rules!`), the call needs its `!` -- crate-repair's macro_call_bang
+    # deliberately leaves macro bodies alone.
+    shared = REPO / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
+    macro_names = set(lowered) | set(re.findall(r"macro_rules!\s+(\w+)", prelude.read_text()))
+    for rs in shared.glob("*.rs") if shared.is_dir() else ():
+        macro_names |= set(re.findall(r"macro_rules!\s+(\w+)", rs.read_text(errors="replace")))
+    if macro_names:
+        call = re.compile(rf"(?<![\w!:])({'|'.join(map(re.escape, sorted(macro_names)))})\(")
+        for name, text in lowered.items():
+            head, sep, body = text.partition("=> {")
+            if sep and call.search(body):
+                # The C callee took typed parameters, so the lowering cast each argument
+                # `as _`; handed to a macro, those casts have nothing to infer from (E0282).
+                body = re.sub(r"\(\(\$p(\d+)\) as _\)", r"($p\1)", call.sub(r"\1!(", body))
+            lowered[name] = head + sep + body if sep else text
     if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
         print(
             f"macros: {len(lowered)} SDK header macro(s) and {len(items)} type/pointer "
@@ -5484,9 +5749,9 @@ def apply_hand(stem: str) -> int:
         h = json.loads(entry.read_text())
         path = modules / h["file"]
         text = path.read_text()
-        if h["text"] in text:  # already applied (replay runs this before and after fix)
-            applied += 1
-            continue
+        # Applied-ness is judged at the item's OWN span below, never `h["text"] in text`
+        # anywhere: cicero's CUIFColorTableSys::DoneBrush passed as applied because
+        # CUIFColorTableOff10's identical, already-fixed body was in the file.
         if h.get("added"):
             try:
                 lo, hi = hand_span(text, h["name"], where="")

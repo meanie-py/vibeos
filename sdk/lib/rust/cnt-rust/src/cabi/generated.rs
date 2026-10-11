@@ -8,7 +8,7 @@
 
 mod m_atoi64 {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _atoi64(const char *nptr)`
     /// preserved misfeature: NULL→0; i64 wrapping accumulate, NO overflow error; no (int) trunc (unlike atoi)
@@ -24,7 +24,7 @@ pub use m_atoi64::*;
 
 mod m_i64toa {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* _i64toa(__int64 value, char *string, int radix)`
     /// preserved misfeature: no radix validation, no buffer-size check, no NULL guard (narrow memcpy is unconditional); sign only for radix==10, else i64 bit pattern as u64
@@ -46,7 +46,7 @@ pub use m_i64toa::*;
 
 mod m_i64toa_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _i64toa_s(__int64 value, char *str, size_t size, int radix)`
     /// preserved misfeature: ERANGE writes a right-aligned REVERSED partial (units-first) sans sign, then clobbers str[0]=NUL — not a clean truncation; _LIBCNT_ no errno
@@ -84,7 +84,7 @@ pub use m_i64toa_s::*;
 
 mod m_i64tow {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* _i64tow(__int64 value, wchar_t *string, int radix)`
     /// preserved misfeature: NULL dst accepted (computes nothing, returns NULL); no radix/bounds validation; sign only radix==10 else i64 bit pattern as u64
@@ -108,7 +108,7 @@ pub use m_i64tow::*;
 
 mod m_i64tow_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _i64tow_s(__int64 value, wchar_t *str, size_t size, int radix)`
     /// preserved misfeature: same ERANGE reverse-fill as _i64toa_s, u16 elements; _LIBCNT_ no errno
@@ -146,7 +146,7 @@ pub use m_i64tow_s::*;
 
 mod m_itoa {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* _itoa(int value, char *string, int radix)`
     /// preserved misfeature: _itoa→_ltoa: 32-bit width, neg+radix!=10 → u32 reinterpret; no validation/NULL guard
@@ -168,7 +168,7 @@ pub use m_itoa::*;
 
 mod m_itoa_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _itoa_s(int value, char *str, size_t size, int radix)`
     /// preserved misfeature: _itoa_s→_ltoa_s; same ERANGE reverse-fill; neg+radix!=10 → u32 reinterpret
@@ -206,7 +206,7 @@ pub use m_itoa_s::*;
 
 mod m_itow {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* _itow(int value, wchar_t *string, int radix)`
     /// preserved misfeature: _itow→_ltow: 32-bit width, neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned
@@ -230,7 +230,7 @@ pub use m_itow::*;
 
 mod m_itow_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _itow_s(int value, wchar_t *str, size_t size, int radix)`
     /// preserved misfeature: _itow_s→_ltow_s; same ERANGE reverse-fill; neg+radix!=10 → u32 reinterpret
@@ -268,7 +268,7 @@ pub use m_itow_s::*;
 
 mod m_ltoa {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* _ltoa(long value, char *string, int radix)`
     /// preserved misfeature: 32-bit width (LP32 long): neg+radix!=10 → (unsigned long)value = u32 bit pattern (NOT u64 like _i64toa); no validation/NULL guard
@@ -290,7 +290,7 @@ pub use m_ltoa::*;
 
 mod m_ltoa_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _ltoa_s(long value, char *str, size_t size, int radix)`
     /// preserved misfeature: same ERANGE reverse-fill; LP32 long (neg+radix!=10 → u32 reinterpret)
@@ -328,7 +328,7 @@ pub use m_ltoa_s::*;
 
 mod m_ltow {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* _ltow(long value, wchar_t *string, int radix)`
     /// preserved misfeature: 32-bit width (LP32): neg+radix!=10 → u32 reinterpret; NULL dst accepted/returned; no validation
@@ -352,7 +352,7 @@ pub use m_ltow::*;
 
 mod m_ltow_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _ltow_s(long value, wchar_t *str, size_t size, int radix)`
     /// preserved misfeature: same ERANGE reverse-fill; LP32 long (neg+radix!=10 → u32 reinterpret)
@@ -390,7 +390,7 @@ pub use m_ltow_s::*;
 
 mod m_makepath {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void _makepath(char *path, const char *drive, const char *dir, const char *fname, const char *ext)`
     /// preserved misfeature: NULL path = clean no-op; component skipped if NULL OR empty (X && X[0]); drive uses ONLY drive[0]+':'; dir always gets trailing '\\' unless already ended /\\ (forward slash preserved); fname bare-concat (no sep/dot); ext '.' prepended only if ext[0]!='.'; zero bounds checking
@@ -411,7 +411,7 @@ pub use m_makepath::*;
 
 mod m_memccpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void *_memccpy(void *to, const void *from, int c, size_t count)`
     /// preserved misfeature: NUL test PRECEDES c test → c==0 always returns NULL (NUL break wins); the `t==c` match is signed-char `t` vs int `c` (memchr deal: byte 0x90 matches only c==-112, never 0x90); count==0 copies nothing → NULL
@@ -430,7 +430,7 @@ pub use m_memccpy::*;
 
 mod m_memicmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _memicmp(const void *s1, const void *s2, size_t n)`
     /// preserved misfeature: ASCII toupper fold (a..z only; >=0x80 untouched) for the COMPARE but returns the RAW unfolded unsigned-char diff *p1-*p2 (not the folded one); n==0 → 0; the Vista (OSMajorVersion>=6) NULL/_NLSCMPERROR guard is dead under the NT 5.x kernel → NULL never validly passed (not modeled)
@@ -446,7 +446,7 @@ pub use m_memicmp::*;
 
 mod m_splitpath {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void _splitpath(const char *path, char *drive, char *dir, char *fname, char *ext)`
     /// preserved misfeature: drive = single char path[1]==':' only (no UNC/\\?\); drive synthesized not sliced; dir INCLUDES trailing sep; ext INCLUDES leading '.'; leading-dot filename IS ext (fname empty); dot in dir component discarded (ext_start<file_start); no sep => whole tail is fname; trailing sep => empty fname+ext; NO MBCS (_LIBCNT_ strips _ismbblead); empty path => all ""; INT_MAX copy caps unreachable (not modeled)
@@ -481,7 +481,7 @@ pub use m_splitpath::*;
 
 mod m_stricmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl _stricmp(char const* _String1, char const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (locale-independent, NT variant — NOT the toupper() stricmp.c); signed-char raw difference, not clamped
@@ -497,7 +497,7 @@ pub use m_stricmp::*;
 
 mod m_strlwr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *_strlwr(char *_String)`
     /// preserved misfeature: ASCII-only (literal 'A'..'Z'); NO NULL guard (<string.h>, not precomp) → NULL crashes in C, never fuzzed; signed-char compare is moot for ASCII range
@@ -514,7 +514,7 @@ pub use m_strlwr::*;
 
 mod m_strnicmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl _strnicmp(char const* _String1, char const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _stricmp + count-bounded; n==0 → 0 (while(remaining--!=0)); equal-NUL still breaks early within n
@@ -530,7 +530,7 @@ pub use m_strnicmp::*;
 
 mod m_strnset {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *_strnset(char *szToFill, int szFill, size_t sizeMaxFill)`
     /// preserved misfeature: sizeMaxFill cast to signed int: (int)sizeMaxFill <= 0 (incl. size_t > INT_MAX wrapping negative) → fills NOTHING; stops at NUL even if count not reached; szFill low-byte trunc
@@ -549,7 +549,7 @@ pub use m_strnset::*;
 
 mod m_strrev {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *_strrev(char *s)`
     /// preserved misfeature: len 0/1 natural no-op (C walks to NUL then swaps inward, b<e guards); NO NULL guard (precomp but while(*e) derefs) → NULL crashes in C, never fuzzed
@@ -566,7 +566,7 @@ pub use m_strrev::*;
 
 mod m_strset {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *_strset(char *szToFill, int szFill)`
     /// preserved misfeature: szFill int truncated to char (low byte); empty → no writes; NO NULL guard → NULL crashes in C, never fuzzed
@@ -583,7 +583,7 @@ pub use m_strset::*;
 
 mod m_strtoi64 {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _strtoi64(const char *nptr, char **endptr, int base)`
     /// preserved misfeature: overflow CLAMPS to _I64_MAX/_I64_MIN (NOT wrap, unlike _atoi64); _LIBCNT_ sets no errno; endptr=original-nptr when no digit (leading ws/sign not reflected)
@@ -602,7 +602,7 @@ pub use m_strtoi64::*;
 
 mod m_strtoi64_l {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _strtoi64_l(const char *nptr, char **endptr, int base, _locale_t locale)`
     /// preserved misfeature: identical to _strtoi64 (it delegates); locale unused
@@ -621,7 +621,7 @@ pub use m_strtoi64_l::*;
 
 mod m_strtoul_l {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned long _strtoul_l(const char* nptr, char** end, int base, _locale_t locale)`
     /// preserved misfeature: signed parse via _strtoi64_l then asymmetric clamp: >ULONG_MAX→ULONG_MAX, < -(i64)ULONG_MAX→1 (NOT 0); _LIBCNT_ no errno; truncate to 32-bit unsigned long
@@ -645,7 +645,7 @@ pub use m_strtoul_l::*;
 
 mod m_strupr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *_strupr(char *_String)`
     /// preserved misfeature: ASCII-only; NULL-guarded: _invalid_parameter(NULL,L"_strupr",..) then return NULL (handler is a relaxed no-op slot under _LIBCNT_, observable result = NULL)
@@ -663,7 +663,7 @@ pub use m_strupr::*;
 
 mod m_ui64toa {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* _ui64toa(unsigned __int64 value, char *string, int radix)`
     /// preserved misfeature: no radix validation, no buffer-size check, no NULL guard; pure unsigned (never negative)
@@ -685,7 +685,7 @@ pub use m_ui64toa::*;
 
 mod m_ui64toa_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _ui64toa_s(unsigned __int64 value, char *str, size_t size, int radix)`
     /// preserved misfeature: unlike _i64toa_s: NO str[0]=0 on bad param, returns EINVAL (22) not ERANGE on too-small, NO partial fill; pure unsigned
@@ -708,7 +708,7 @@ pub use m_ui64toa_s::*;
 
 mod m_ui64tow {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* _ui64tow(unsigned __int64 value, wchar_t *string, int radix)`
     /// preserved misfeature: NULL dst accepted/returned; no validation; pure unsigned
@@ -732,7 +732,7 @@ pub use m_ui64tow::*;
 
 mod m_ui64tow_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _ui64tow_s(unsigned __int64 value, wchar_t *str, size_t size, int radix)`
     /// preserved misfeature: the genuine byte-count bug: memcpy copies ndigits+1 BYTES not *sizeof(wchar_t) — only ~half the wide string lands; NO str[0]=0 on bad param; EINVAL (not ERANGE) on too-small
@@ -759,7 +759,7 @@ pub use m_ui64tow_s::*;
 
 mod m_ultoa {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* _ultoa(unsigned long value, char *string, int radix)`
     /// preserved misfeature: u32, no radix validation, no buffer-size check, no NULL guard
@@ -781,7 +781,7 @@ pub use m_ultoa::*;
 
 mod m_ultow {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* _ultow(unsigned long value, wchar_t *string, int radix)`
     /// preserved misfeature: u32; NULL dst accepted/returned; no validation
@@ -805,7 +805,7 @@ pub use m_ultow::*;
 
 mod m_wcsicmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl _wcsicmp(wchar_t const* _String1, wchar_t const* _String2)`
     /// preserved misfeature: ASCII-only A..Z fold (no Unicode/locale); RAW u16 difference promoted to int (value-preserving, NOT signed-16, NOT clamped to {-1,0,1})
@@ -821,7 +821,7 @@ pub use m_wcsicmp::*;
 
 mod m_wcslwr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t *_wcslwr(wchar_t *_String)`
     /// preserved misfeature: wide but ASCII-ONLY fold (C tests 'A'..'Z' only — À etc. NOT folded); NULL-guarded → NULL
@@ -839,7 +839,7 @@ pub use m_wcslwr::*;
 
 mod m_wcsnicmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl _wcsnicmp(wchar_t const* _String1, wchar_t const* _String2, size_t _MaxCount)`
     /// preserved misfeature: as _wcsicmp + count-bounded; n==0 → 0; equal-NUL breaks early within n
@@ -855,7 +855,7 @@ pub use m_wcsnicmp::*;
 
 mod m_wcstoi64 {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _wcstoi64(const wchar_t *nptr, wchar_t **endptr, int base)`
     /// preserved misfeature: per-digit clamp to _I64_MAX/_I64_MIN (NOT wrap), keeps consuming after clamp; endptr ALWAYS = final nptr (unlike narrow _strtoi64 got_digit?nptr:p); NULL→0 no endptr; _LIBCNT_ no errno
@@ -875,7 +875,7 @@ pub use m_wcstoi64::*;
 
 mod m_wcstoi64_l {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _wcstoi64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
     /// preserved misfeature: identical to _wcstoi64 (real impl; _wcstoi64 delegates with NULL locale); locale unused
@@ -895,7 +895,7 @@ pub use m_wcstoi64_l::*;
 
 mod m_wcstoui64 {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned __int64 _wcstoui64(const wchar_t *nptr, wchar_t **endptr, int base)`
     /// preserved misfeature: per-digit clamp to _UI64_MAX, keeps consuming; final negative ? -(__int64)ret : ret (== 0u64.wrapping_sub(ret)); endptr ALWAYS = final nptr; NULL→0 no endptr; _LIBCNT_ no errno
@@ -915,7 +915,7 @@ pub use m_wcstoui64::*;
 
 mod m_wcstoui64_l {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned __int64 _wcstoui64_l(const wchar_t *nptr, wchar_t **endptr, int base, _locale_t locale)`
     /// preserved misfeature: identical to _wcstoui64 (real impl; _wcstoui64 delegates with NULL locale); locale unused
@@ -935,7 +935,7 @@ pub use m_wcstoui64_l::*;
 
 mod m_wcsupr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t *_wcsupr(wchar_t *_String)`
     /// preserved misfeature: wide but ASCII-ONLY fold; NO NULL guard (<string.h>) → NULL crashes in C, never fuzzed
@@ -952,7 +952,7 @@ pub use m_wcsupr::*;
 
 mod m_wmakepath {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void _wmakepath(wchar_t *path, const wchar_t *drive, const wchar_t *dir, const wchar_t *fname, const wchar_t *ext)`
     /// preserved misfeature: byte-identical to _makepath over wchar_t
@@ -973,7 +973,7 @@ pub use m_wmakepath::*;
 
 mod m_wsplitpath {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void _wsplitpath(const wchar_t *path, wchar_t *drive, wchar_t *dir, wchar_t *fname, wchar_t *ext)`
     /// preserved misfeature: byte-identical to _splitpath over wchar_t (the _ismbblead block was already off via _LIBCNT_; _UNICODE only swaps _TCHAR)
@@ -1008,7 +1008,7 @@ pub use m_wsplitpath::*;
 
 mod m_wtoi {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int _wtoi(const wchar_t *str)`
     /// preserved misfeature: _wtoi = (int)_wtoi64 (atoi.c _UNICODE): i64 wrapping accumulate then (int) truncation; iswctype _SPACE skip; stops at first non-digit; NO NULL guard in C (never fuzzed)
@@ -1024,7 +1024,7 @@ pub use m_wtoi::*;
 
 mod m_wtoi64 {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _wtoi64(const wchar_t *str)`
     /// preserved misfeature: wtoi64.c: i64 wrapping accumulate, NO overflow error, no (int) trunc; iswctype _SPACE skip; NO NULL guard in C (never fuzzed)
@@ -1040,7 +1040,7 @@ pub use m_wtoi64::*;
 
 mod m_wtoi64_l {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `__int64 _wtoi64_l(const wchar_t *str, _locale_t locale)`
     /// preserved misfeature: identical to _wtoi64 (it is the real impl; _wtoi64 delegates with NULL locale); locale unused
@@ -1056,7 +1056,7 @@ pub use m_wtoi64_l::*;
 
 mod m_wtol {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `long _wtol(const wchar_t *str)`
     /// preserved misfeature: wine wtol.c: decimal-only u32 wrapping (Win unsigned long=32-bit), bMinus?0-RunningTotal:RunningTotal; NULL→0; no base/0x/overflow detection; host unsigned long is 64-bit so the ref (int)-truncates
@@ -1071,7 +1071,7 @@ pub use m_wtol::*;
 
 mod matoi {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int atoi(const char *s)`
     /// preserved misfeature: NO overflow detection: i64 wrapping accumulate, then (int) truncation; leading isspace skipped; stops at first non-digit; NULL→0
@@ -1087,7 +1087,7 @@ pub use matoi::*;
 
 mod matol {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `long atol(const char *str)`
     /// preserved misfeature: atol = (long)_atoi64; long is 32-bit (Win i386) → i64 wrap then i32 trunc, no overflow error
@@ -1103,7 +1103,7 @@ pub use matol::*;
 
 mod mmbstowcs {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t mbstowcs(wchar_t *wcstr, const char *mbstr, size_t count)`
     /// preserved misfeature: NO NUL termination on convert (RtlMultiByteToUnicodeN writes only converted chars); query mode returns Size/sizeof(wchar_t); single-byte CP ⇒ wchars == mb length
@@ -1121,7 +1121,7 @@ pub use mmbstowcs::*;
 
 mod mmbtowc {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int mbtowc(wchar_t *wchar, const char *mbchar, size_t count)`
     /// preserved misfeature: space-guard: returns -1 (no *wchar write) if decoded==L' ' but mbarr[0]!=' ' (CP1252 never triggers it — only 0x20→U+0020 — but structurally pinned); count==0 → reads {0} → *wchar=0, ret 1
@@ -1141,7 +1141,7 @@ pub use mmbtowc::*;
 
 mod mmemchr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void* __cdecl memchr(const void *s, int c, size_t n)`
     /// preserved misfeature: n==0 → return NULL without deref; signed-char vs int compare (high-bit c)
@@ -1159,7 +1159,7 @@ pub use mmemchr::*;
 
 mod mmemcmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl memcmp(const void *s1, const void *s2, size_t n)`
     /// preserved misfeature: UNSIGNED-char diff, raw (not clamped to {-1,0,1}): 0xFF vs 0x00 → 255
@@ -1175,7 +1175,7 @@ pub use mmemcmp::*;
 
 mod mmemcpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void *memcpy(void *dst, const void *src, size_t n)`
     /// preserved misfeature: overlap-SAFE memcpy (textbook libc: overlap is UB). ReactOS memcpy.c handles it like memmove — must replicate or kernel callers relying on it break
@@ -1190,7 +1190,7 @@ pub use mmemcpy::*;
 
 mod mmemmove {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void* __cdecl memmove(void *dest, const void *src, size_t count)`
     /// preserved misfeature: none (textbook overlap-safe; identical body to memcpy.c)
@@ -1205,17 +1205,13 @@ pub use mmemmove::*;
 
 mod mmemset {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void* __cdecl memset(void* src, int val, size_t count)`
     /// preserved misfeature: none (textbook; val truncated to u8)
     #[no_mangle]
     pub unsafe extern "C" fn memset(src: *mut core::ffi::c_void, val: i32, count: usize) -> *mut core::ffi::c_void {
-        let src_s = raw_mut_slice(src as *mut u8, count);
-        let __b = val as u8;
-        for __x in src_s.iter_mut() {
-            core::ptr::write_volatile(__x as *mut u8, __b);
-        }
+        raw_fill(src as *mut u8, val as u8, count);
         src
     }
 
@@ -1224,7 +1220,7 @@ pub use mmemset::*;
 
 mod mqsort {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void qsort(void *a, size_t n, size_t es, int (__cdecl *cmp)(const void*, const void*))`
     /// preserved misfeature: Bentley-McIlroy (Engineering a Sort Function): median-of-3 (ninther for n>40), insertion-sort for n<7 + the no-swap fast path, equal keys partitioned to both ends then vecswap'd to the middle, recurse-left/iterate-right; UNSTABLE — equal-key final order IS this exact element-swap sequence (replicated faithfully; the swaptype long/byte choice is result-irrelevant so the port byte-swaps)
@@ -1238,7 +1234,7 @@ pub use mqsort::*;
 
 mod mrand {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int rand(void)`
     /// preserved misfeature: LCG next = next*0x5deece66d + 11; returns bits 16..30 (RAND_MAX=0x7fff, NOT the host 0x7fffffff); non-reentrant hidden static (AtomicU64, single-threaded-equivalent)
@@ -1256,7 +1252,7 @@ pub use mrand::*;
 
 mod msrand {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `void srand(unsigned int seed)`
     /// preserved misfeature: seed zero-extended into the 64-bit state with NO scrambling (next = seed directly)
@@ -1271,7 +1267,7 @@ pub use msrand::*;
 
 mod mstrcat {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* strcat(char *s, const char *append)`
     /// preserved misfeature: no bounds check (tcscat.h); appends through+incl. NUL at the existing terminator
@@ -1290,7 +1286,7 @@ pub use mstrcat::*;
 
 mod mstrchr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strchr(const char *s, int c)`
     /// preserved misfeature: the terminating NUL is a valid target: c==0 returns ptr to the NUL (Some(len)), not NULL; c truncated to char
@@ -1308,7 +1304,7 @@ pub use mstrchr::*;
 
 mod mstrcmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int strcmp(const char *a, const char *b)`
     /// preserved misfeature: returns signed byte difference (sign-only is portable; magnitude is ReactOS-specific) — pin exact value
@@ -1324,7 +1320,7 @@ pub use mstrcmp::*;
 
 mod mstrcpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* strcpy(char *to, const char *from)`
     /// preserved misfeature: no bounds check (tcscpy.h trusts the dst buffer); copies through and incl. the terminating NUL
@@ -1342,7 +1338,7 @@ pub use mstrcpy::*;
 
 mod mstrcspn {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t strcspn(const char *s, const char *reject)`
     /// preserved misfeature: complement of strspn (_x inverted); empty reject → strlen(s)
@@ -1358,7 +1354,7 @@ pub use mstrcspn::*;
 
 mod mstrlen {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t strlen(const char *s)`
     /// preserved misfeature: strlen(NULL) == 0 (textbook libc: UB) — tcslen.h explicit NULL guard
@@ -1373,7 +1369,7 @@ pub use mstrlen::*;
 
 mod mstrncat {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* strncat(char *dst, const char *src, size_t n)`
     /// preserved misfeature: n==0 writes nothing at all (no terminator) and returns dst unchanged (tcsncat.h); otherwise always terminates after ≤n appended
@@ -1393,7 +1389,7 @@ pub use mstrncat::*;
 
 mod mstrncmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int strncmp(const char *s1, const char *s2, size_t n)`
     /// preserved misfeature: signed-char diff (tcsncmp.h _TCHAR=signed char); n==0→0; stops at first NUL
@@ -1409,7 +1405,7 @@ pub use mstrncmp::*;
 
 mod mstrncpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strncpy(char *dst, const char *src, size_t n)`
     /// preserved misfeature: no NUL-termination when src len >= n (the classic strncpy footgun) — tcsncpy.h
@@ -1426,7 +1422,7 @@ pub use mstrncpy::*;
 
 mod mstrnlen {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t strnlen(const char *str, size_t maxlen)`
     /// preserved misfeature: NULL→0 (tcsnlen.h guard); never reads past maxlen; result = min(strlen,maxlen)
@@ -1441,7 +1437,7 @@ pub use mstrnlen::*;
 
 mod mstrpbrk {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char* strpbrk(const char *s1, const char *s2)`
     /// preserved misfeature: first s1 char in s2 else NULL; empty s2→NULL. strpbrk.c's 3+-char path bitmap is sized by BIT_SIZE=sizeof(unsigned long)*8 (LP32=32 on target). Core models the correct first-in-set; diff fuzzes set≤2 only (the strchr fast paths — host-correct; 3+ UBs `1<<>=32` on LP64 host, unfuzzable, same caveat class as itoa long-family / strtoul ULONG_MAX). set size doesn't change find_any's code path so ≤2 fully pins it.
@@ -1460,7 +1456,7 @@ pub use mstrpbrk::*;
 
 mod mstrrchr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strrchr(const char *s, int c)`
     /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (Some(len)); c truncated to char
@@ -1478,7 +1474,7 @@ pub use mstrrchr::*;
 
 mod mstrspn {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t strspn(const char *s, const char *accept)`
     /// preserved misfeature: bitmap over unsigned-char (0..255); empty accept → 0; NUL terminates both (never in set)
@@ -1494,7 +1490,7 @@ pub use mstrspn::*;
 
 mod mstrstr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strstr(const char *hay, const char *needle)`
     /// preserved misfeature: empty needle → returns hay (Some(0)), not NULL
@@ -1513,7 +1509,7 @@ pub use mstrstr::*;
 
 mod mstrtok {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strtok(char *str, const char *delim)`
     /// preserved misfeature: non-reentrant hidden state (genuine thread_data_t::strtok_next → here a process-global AtomicPtr, single-threaded-equivalent); str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (stale pointer persists); token-to-end leaves saved on the terminating NUL; NULL delim is C UB (never fuzzed)
@@ -1543,7 +1539,7 @@ pub use mstrtok::*;
 
 mod mstrtok_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `char *strtok_s(char *str, const char *delim, char **ctx)`
     /// preserved misfeature: param validation (delim!=NULL, ctx!=NULL, str!=NULL||*ctx!=NULL) → NULL (MSVCRT_CHECK_PMT, _LIBCNT_ = bare predicate, no handler); UNLIKE strtok/wcstok the no-token path DOES set *ctx = str (pointer to the NUL); resumes from *ctx when str==NULL
@@ -1571,7 +1567,7 @@ pub use mstrtok_s::*;
 
 mod mstrtol {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `long strtol(const char *nptr, char **endptr, int base)`
     /// preserved misfeature: BSD signed-long clamp: overflow → LONG_MIN/LONG_MAX (32-bit Win long); neg non-overflow = 0u32.wrapping_sub(acc); cutoff = neg?(ULONG)LONG_MAX+1:LONG_MAX; base 0 ⇒ 0x→16/0→8/else 10; no base validation; _LIBCNT_ no errno
@@ -1590,7 +1586,7 @@ pub use mstrtol::*;
 
 mod mstrtoul {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned long strtoul(const char* nptr, char** end, int base)`
     /// preserved misfeature: delegates to _strtoul_l — same asymmetric clamp incl. neg>ULONG_MAX→1
@@ -1614,7 +1610,7 @@ pub use mstrtoul::*;
 
 mod mstrtoull {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned long long strtoull(const char *nptr, char **endptr, int base)`
     /// preserved misfeature: BSD u64 clamp: overflow → ULLONG_MAX; neg → 0u64.wrapping_sub(acc); cutoff=ULLONG_MAX/base; host unsigned long long == target u64 (no LP32 trick); base 0 prefix logic; _LIBCNT_ no errno
@@ -1633,7 +1629,7 @@ pub use mstrtoull::*;
 
 mod mtolower {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int tolower(int _C)`
     /// preserved misfeature: fold DECISION uses signed-char low byte ((char)_C) but returns FULL int +32: tolower(0x141)==0x161; low-byte>=0x80 (neg as signed char) returned unchanged regardless of high bits
@@ -1647,7 +1643,7 @@ pub use mtolower::*;
 
 mod mtoupper_nt_mb {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int __cdecl toupper_nt_mb(int _C)`
     /// preserved misfeature: packs the multibyte result: mbSize==2 → chr[1]|chr[0]<<8, ==1 → chr[0], else (WCHAR)_C; single-byte CP ⇒ always the ==1 branch (upcased byte, '?' if upcase escapes CP1252 e.g. µ→Μ); the ==2 DBCS branch is structurally present but unexercised
@@ -1661,7 +1657,7 @@ pub use mtoupper_nt_mb::*;
 
 mod mtowupper {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wint_t towupper(wint_t _C)`
     /// preserved misfeature: NLS upcase = RtlUpcaseUnicodeChar((WCHAR)_C); default-install model = CP1252/Rtl (shared with Wave E2 toupper_nt_mb): a..z & Latin-1 À-range -= 0x20, ÿ→Ÿ, µ→Μ, Š/Œ/Ž ligatures; (WCHAR) truncates _C to 16-bit
@@ -1675,7 +1671,7 @@ pub use mtowupper::*;
 
 mod mwcscat {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcscat(wchar_t *s, const wchar_t *append)`
     /// preserved misfeature: no bounds check (tcscat.h, wide)
@@ -1694,7 +1690,7 @@ pub use mwcscat::*;
 
 mod mwcschr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcschr(const wchar_t *s, wchar_t c)`
     /// preserved misfeature: terminating NUL is a valid target: c==0 → ptr to the NUL (tcschr.h); _XINT=wchar_t (no truncation, unlike strchr's char cast)
@@ -1712,7 +1708,7 @@ pub use mwcschr::*;
 
 mod mwcscmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int wcscmp(const wchar_t *s1, const wchar_t *s2)`
     /// preserved misfeature: raw element difference *s1-*s2 with wchar_t unsigned 16-bit (value-preserving to int) — NOT signed-char like strcmp, NOT clamped
@@ -1728,7 +1724,7 @@ pub use mwcscmp::*;
 
 mod mwcscpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcscpy(wchar_t *to, const wchar_t *from)`
     /// preserved misfeature: no bounds check (tcscpy.h, wide)
@@ -1746,7 +1742,7 @@ pub use mwcscpy::*;
 
 mod mwcscspn {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t wcscspn(const wchar_t *str, const wchar_t *reject)`
     /// preserved misfeature: wide twin of strcspn; empty reject → wcslen
@@ -1762,7 +1758,7 @@ pub use mwcscspn::*;
 
 mod mwcslen {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t wcslen(const wchar_t *str)`
     /// preserved misfeature: wcslen(NULL) == 0 (tcslen.h NULL guard) — same as strlen
@@ -1777,7 +1773,7 @@ pub use mwcslen::*;
 
 mod mwcsncat {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcsncat(wchar_t *dst, const wchar_t *src, size_t n)`
     /// preserved misfeature: n==0 → nothing + return dst (tcsncat.h, wide)
@@ -1797,7 +1793,7 @@ pub use mwcsncat::*;
 
 mod mwcsncmp {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int wcsncmp(const wchar_t *s1, const wchar_t *s2, size_t n)`
     /// preserved misfeature: unsigned-u16 diff; n==0→0; stops at first NUL (tcsncmp.h)
@@ -1813,7 +1809,7 @@ pub use mwcsncmp::*;
 
 mod mwcsncpy {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcsncpy(wchar_t *dst, const wchar_t *src, size_t n)`
     /// preserved misfeature: no NUL-termination when src len >= n (the strncpy footgun) — tcsncpy.h, wide
@@ -1830,7 +1826,7 @@ pub use mwcsncpy::*;
 
 mod mwcsnlen {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t wcsnlen(const wchar_t *str, size_t count)`
     /// preserved misfeature: NULL→0 (tcsnlen.h); never reads past count; min(wcslen,count)
@@ -1845,7 +1841,7 @@ pub use mwcsnlen::*;
 
 mod mwcsrchr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcsrchr(const wchar_t *s, wchar_t c)`
     /// preserved misfeature: last occurrence; c==0 → ptr to terminating NUL (tcsrchr.h); _XINT=wchar_t
@@ -1863,7 +1859,7 @@ pub use mwcsrchr::*;
 
 mod mwcsspn {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t wcsspn(const wchar_t *str, const wchar_t *accept)`
     /// preserved misfeature: wide twin of strspn (linear-scan membership, same result); empty accept → 0
@@ -1879,7 +1875,7 @@ pub use mwcsspn::*;
 
 mod mwcsstr {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t* wcsstr(const wchar_t *s, const wchar_t *b)`
     /// preserved misfeature: empty needle → NULL (the while(*x) body never runs for 0-len b) — DISTINCT from narrow strstr empty→hay
@@ -1898,7 +1894,7 @@ pub use mwcsstr::*;
 
 mod mwcstok {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t *wcstok(wchar_t *str, const wchar_t *delim)`
     /// preserved misfeature: non-reentrant hidden state; str==NULL && saved==NULL → NULL; no-token path returns NULL WITHOUT updating saved (wcstok_s asymmetry inherited); NULL delim C UB (never fuzzed)
@@ -1928,7 +1924,7 @@ pub use mwcstok::*;
 
 mod mwcstok_s {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `wchar_t *wcstok_s(wchar_t *str, const wchar_t *delim, wchar_t **next_token)`
     /// preserved misfeature: param validation → NULL (+ _set_errno EINVAL, _LIBCNT_ no-op); no-token path does NOT update *next_token (differs from strtok_s which sets *ctx); strchrW = wcschr (matches the terminator for c==0, never reached under the *str&& guard)
@@ -1956,7 +1952,7 @@ pub use mwcstok_s::*;
 
 mod mwcstol {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `long wcstol(const wchar_t *nptr, wchar_t **endptr, int base)`
     /// preserved misfeature: wide twin of strtol (iswctype ASCII-equivalent); same signed-long clamp + endptr
@@ -1975,7 +1971,7 @@ pub use mwcstol::*;
 
 mod mwcstombs {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `size_t wcstombs(char *mbstr, const wchar_t *wcstr, size_t count)`
     /// preserved misfeature: NO NUL termination; unmappable wchar → '?'; query returns Size; single-byte CP ⇒ bytes == wchar length
@@ -1993,7 +1989,7 @@ pub use mwcstombs::*;
 
 mod mwcstoul {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `unsigned long wcstoul(const wchar_t *nptr, wchar_t **endptr, int base)`
     /// preserved misfeature: overflow saturates to ULONG_MAX but STILL advances endptr past every digit (sticky any=-1); leading '-' parses then result negated unsigned at end → -1→0xFFFFFFFF, negated-overflow→1 (NOT ULONG_MAX); base 0 ⇒ 0x→16 / 0→8 / else 10; no base validation
@@ -2012,7 +2008,7 @@ pub use mwcstoul::*;
 
 mod mwctomb {
     #[allow(unused_imports)]
-    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
+    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, wraw_mut_slice};
 
     /// `int wctomb(char *mbchar, wchar_t wchar)`
     /// preserved misfeature: single-byte CP ⇒ always Size==1 (RtlUnicodeToMultiByteN writes the default char '?' for unmappable and still counts it); NULL → 0 (state-independent marker)

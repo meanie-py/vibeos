@@ -878,21 +878,22 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
     FdoDevice = (*Endpoint).FdoDevice;
     FdoExtension = (*FdoDevice).DeviceExtension as PUSBPORT_DEVICE_EXTENSION;
 
-    // InterlockedCompareExchange expanded inline
-    {
-        let _dst = core::ptr::addr_of_mut!((*Endpoint).FlushPendingLock) as *mut core::ffi::c_long;
-        let _old: core::ffi::c_long = {
-            let a = &*(_dst as *const core::sync::atomic::AtomicI32);
-            match a.compare_exchange(0, 1, core::sync::atomic::Ordering::SeqCst, core::sync::atomic::Ordering::SeqCst) {
-                Ok(v) | Err(v) => v,
-            }
-        };
-        if _old != 0 {
-            DPRINT_CORE!(
-                b"USBPORT_FlushPendingTransfers: Endpoint Locked \n\0".as_ptr() as *const i8,
-            );
-            return;
-        }
+    // Diverges from the C, whose FlushPendingLock is a try-lock (CAS 0 -> 1, else return).
+    // On SMP that loses work: CPU A is flushing this endpoint and has already found
+    // PendingTransferList empty; CPU B queues a transfer (USBPORT_QueueTransferUrb queues
+    // first, then calls here), fails the CAS and returns; A releases and leaves. Nothing
+    // flushes this endpoint again, so the transfer sits pending forever -- caught live on
+    // amd64 -smp 2 as usbstor's CBW stranded on its bulk-out endpoint (pending=1,
+    // active=0, lock 0, endpoint idle) and all USB storage I/O stopped. Now the lock is a
+    // count: a caller that finds it held bumps it and returns, and the holder makes
+    // another pass instead of releasing while any such request is outstanding.
+    let FlushLock = &*(core::ptr::addr_of_mut!((*Endpoint).FlushPendingLock)
+        as *const core::sync::atomic::AtomicI32);
+    if FlushLock.fetch_add(1, core::sync::atomic::Ordering::SeqCst) != 0 {
+        DPRINT_CORE!(
+            b"USBPORT_FlushPendingTransfers: Endpoint Locked \n\0".as_ptr() as *const i8,
+        );
+        return;
     }
 
     loop {
@@ -1086,10 +1087,16 @@ pub unsafe extern "system" fn USBPORT_FlushPendingTransfers(mut Endpoint: PUSBPO
 
         // Next:
         if IsEnd != 0 {
-            InterlockedDecrement(
-                core::ptr::addr_of_mut!((*Endpoint).FlushPendingLock) as *mut core::ffi::c_long
-                    as *mut i32,
-            );
+            if FlushLock
+                .compare_exchange(1, 0, core::sync::atomic::Ordering::SeqCst, core::sync::atomic::Ordering::SeqCst)
+                .is_err()
+            {
+                // Someone queued a transfer while this pass ran: absorb every such
+                // request and look at the lists again.
+                FlushLock.store(1, core::sync::atomic::Ordering::SeqCst);
+                IsEnd = 0 as BOOLEAN;
+                continue;
+            }
             DPRINT_CORE!(
                 b"USBPORT_FlushPendingTransfers: Endpoint Unlocked. Exit\n\0".as_ptr() as *const i8,
             );

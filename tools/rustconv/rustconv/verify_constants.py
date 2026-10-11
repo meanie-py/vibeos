@@ -106,6 +106,16 @@ WDK_CONSTANT_SEED = {
     "NonPagedPoolSessionNx": 544,  # 0x220 = NonPagedPoolNx + 32
 }
 
+# The same NT6.2 downgrade for names the ReactOS headers DO define, so a header value would
+# otherwise win: every in-tree consumer `#undef`s and zeroes them under `__REACTOS__`
+# (fastfat/fatprocs.h:46-50, cdrom/cdrom.h:67-71, classpnp/classp.h:67-71 and dictlib.c:31-35,
+# disk/disk.h:74-78; cdfs/cdprocs.h:61 for the MDL flag). Applied AFTER the headers. fastfat
+# and classpnp both shipped POOL_NX_ALLOCATION = 0x200, a value no TU here compiles.
+REACTOS_DOWNGRADED = {
+    "POOL_NX_ALLOCATION": 0,
+    "MdlMappingNoExecute": 0,
+}
+
 
 def _eval_enum_expr(expr: str, scope: dict[str, int]) -> int | None:
     """Evaluate a C enum initializer: int/hex literals, prior enum names,
@@ -182,6 +192,9 @@ CTL_CODE_HEADERS = (
     "sdk/include/psdk/ntddscsi.h",
     "sdk/include/psdk/ntddvol.h",
     "sdk/include/reactos/drivers/ntddrdsk.h",
+    # FSCTL_* and the volsnap IOCTLs. Its absence let fastfat ship
+    # IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES = 1 (real 0x53C000), a match arm that never fired.
+    "sdk/include/xdk/ntifs.template.h",
     # Wrapper-macro IOCTL families (each bottoms out in CTL_CODE or its own
     # bit-packing — all handled generically by the func-macro expander):
     "sdk/include/reactos/drivers/afd/shared.h",  # _AFD_CONTROL_CODE → IOCTL_AFD_*
@@ -515,6 +528,7 @@ def build_c_catalog(reactos_root: Path, include_enums: bool = False) -> dict[str
         for name, vals in enum_acc.items():
             if len(vals) == 1:
                 catalog.setdefault(name, next(iter(vals)))
+    catalog.update(REACTOS_DOWNGRADED)
 
     # ── CTL_CODE device-control codes (IOCTL_*/FSCTL_*) ──────────────────
     # Build an evaluation scope: catalog literals (incl. FILE_DEVICE_* from

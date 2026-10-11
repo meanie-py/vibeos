@@ -603,6 +603,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
   wait's alertable check is the first place to look.
 
+- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (OPEN,
+  2026-10-11).** With the USB-C hub on the Renesas uPD720201 card, some cold boots never see
+  the hub: usbport's root-hub-ready callback does not run for that controller, so usbhub's
+  bus-relations handler retries once a second on the PnP worker thread forever (387 times in
+  one boot) and nothing later in PnP starts, netstack included. Other boots enumerate the hub
+  and reach the desktop. `[USBPORT] root hub ready` and `[USBHUB] ... before enumeration is
+  allowed` now say which side is missing. Also open: usbhub has no SuperSpeed hub support
+  (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's I217 has
+  no interrupt (Interrupt Line 128; it polls). See `docs/engineering/optiplex-bench.md`.
+
+- **ntkrnl-sys `PCI_COMMON_CONFIG` has no header fields (OPEN, owed).** bindgen dropped the
+  `PCI_COMMON_HEADER DUMMYSTRUCTNAME;` member, leaving a 192-byte `{ DeviceSpecific }` and a
+  `size_of == 192` assertion that checks the wrong layout. Every user works around it
+  (pci-rust's own struct, hal-rust's alias, e1000-rust reads the header type, atapi-legacy,
+  acpi). The fix is running `bindgen_ms_anon_members.py` in ntkrnl-sys's own generation and
+  deleting the workarounds.
+
 - **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
   the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
   translating ndis: nothing else on our media reaches NDIS
@@ -1183,6 +1200,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: boot wedges at a service START, `RQRUNNING` warnings first** (FIXED
+    2026-10-11: the same silent wedge as the EventLog/services entry below, whose root cause
+    is two lost-handoff races in usbport and usbstor). `flake-report` had graded it 6 of 157
+    `smoke:amd64-bios` runs (3.8%); it rejected an innocent lane at the merge queue (research
+    `22f22594238a`). Runs: `fails/auto/20261010-234505-spgv3441-smoke-amd64-bios-HANG_TIMEOUT`
+    (Spooler), `20261010-031022-mwjaap28` (SamSs), `20261008-213019-klr7vs60` (EventLog). The
+    `RQRUNNING` lead was not one: those warnings fire on 136 of 148 PASSING amd64-bios boots
+    (all smoke summaries under /tmp/vibeos-cli since 10-07).
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-08, root cause;
     the 10-07 fix below was real but not this bug). It came back: 35 of 65 amd64-bios boots on
     10-08 failed, 19 of 33 merge-queue gates retried the lane (a HANG_TIMEOUT costs ~13 min)
@@ -1276,42 +1301,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     decrements the zeroed countdown, then dereferences the NULL pti. Fix
     (`win32k-rust/src/timer.rs`): link the timer only once it is initialized, under
     `TimerLock`.
-  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN, now a FAMILY -- see the last paragraph;
-    seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
-    services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
-    dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
-    sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
-    no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
-    10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
-    established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
-    --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
-    read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
-    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
-    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
-    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
-    0/20, so the run says nothing about whether that fix touches this hang -- and the
-    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
-    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
-    2026-10-10, later: a contributor in THIS run was the cdrom-rust MCN sync IRP (fixed in
-    f3e634bb8cf, 10-09 00:19). The hung run predates that fix, and its tree had the bug
-    live. Observed: `unknown ioctl code: 0x7C0C8` -- the driver's own sync IRP sent to
-    scsiport every timer tick -- appears 942 times across klr7vs60's 10 boots (709 in the
-    hung one) and 242 times across ep79fjwh's 10 (same day, pre-fix). It appears 0 times
-    across q7k3yfgl's 20 post-fix boots. While the bug was live, that one IRP was completed
-    at DISPATCH_LEVEL on either CPU, racing its reuse on the next tick, inside the cdrom
-    stack that serves the boot volume (cdfs on the isohybrid USB stick). Inferred, not
-    shown: a request lost there stalls the image read `CreateProcessW` waits on, and that
-    matches this hang (no fault, both CPUs idle). The census's `WrFreePage=1` is NOT a
-    lead: it is the zero-page thread's normal idle wait (`ARM3/zeropage.rs`).
-    **The same silent wedge recurs WITHOUT the chatter, so the MCN bug does not explain the
-    family.** Two gates after the fix: queue gate 20261010-030035 (services.exe stops after
-    `ScmStartUserModeService(SamSs)`), and 20261010-170505 (smp-bringup afd1d37f2524: csrss
-    stops after `LoadServerDll 'winsrv'`, kernel32 attached). Both show 0 `0x7C0C8` lines,
-    both CPUs in `KiIdleLoop`, no fault, and the census shows the same `Suspended=1`. The
-    common shape is a user-mode image load or a service start that never completes, at a
-    different point each time. Next step: the stuck thread's stack, from
-    `smoke --smp 2 --attach-on-fail` and `vibeos-cli gdb inspect <run> list-threads` /
-    `dump-thread` (the `raw` verb with `--timeout 300` works when the default 60 s does not).
+  - **amd64-bios `-smp 2`: the boot goes silent at a service start or image load** (FIXED
+    2026-10-11; first seen 2026-10-08 as services.exe stuck in `CreateProcessW(EventLog)`).
+    Rate: about 7% of gate boots on 10-09/10-10 (2/34, 3/37), about 0% solo, because it needs
+    the host load of a gate's parallel boots to widen the window. It stopped at a different
+    place each time (EventLog `CreateProcessW`, SamSs/Spooler START, csrss `LoadServerDll
+    'winsrv'`), both CPUs in `KiIdleLoop`, no fault. Root cause, read off three kept VMs
+    (`smoke --smp 2 --attach-on-fail`, 4x10 in parallel: 3 wedges in 17 boots): **every stuck
+    thread waits for a read from the boot volume** (cdfs on the USB stick): page-ins at
+    APC_LEVEL, and creates whose `IOCTL_CDROM_CHECK_VERIFY` is pending in disk.sys. The xHCI
+    controller was idle with an empty event ring. Two upstream ReactOS races, each a busy check
+    that drops the request instead of handing it to the CPU that is busy:
+    - usbport `USBPORT_FlushPendingTransfers` (2 VMs): its try-lock returned when another CPU
+      held it, after that CPU had already found the pending list empty, so usbstor's CBW sat on
+      the bulk endpoint's `PendingTransferList` forever (pending=1, active=0, lock 0).
+    - usbstor `USBSTOR_QueueNextRequest` (1 VM): returned on `ActiveSrb != NULL` without
+      `IoStartNextPacket`, when a request on the other CPU had claimed `ActiveSrb` between the
+      finished request's terminate and that check; the claimant waited behind a StartIo slot
+      no one released (`CurrentIrp` a recycled IRP, device queue Busy holding the claimant).
+    Fixes: the flush lock is a request count, and the holder makes another pass if anyone asked
+    while it ran (`usbport-rust/src/queue.rs`). `QueueNextRequest` releases the slot when its
+    caller retired the slot owner (`usbstor-rust/src/queue.rs`). After: 40/40 under heavier
+    load than a gate (4x10 in parallel during two builds, load average 80-93; runs
+    20261011-025249-0qf6e8t_, -025252-x0hlm2yj, -025255-w5frwzbg, -025258-nfmt1cgl).
+    Two earlier readings were wrong. The cdrom MCN IRP (fixed f3e634bb8cf) was not the cause,
+    since the wedge recurred without it. The census's `Suspended=1` was usbport's worker
+    thread, which uses `Suspended` as a generic wait reason: passing boots end before the
+    census prints a histogram, which made it look like a discriminator (field manual, "A busy
+    check that drops the request instead of handing it to the CPU that is busy").
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -1439,20 +1456,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
     arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
     (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. Every arch
-    still binds pci.sys. A boot with pcix.sys bound instead (2026-10-10, Pci `ImagePath`)
-    works on **i386 only**: there the legacy HAL has a PCI bus handler, and pcix
-    enumerated the bus (host bridge, PIIX ISA/IDE, VGA, NIC), started the IDE controller and
-    initialized its bus arbiters, smoke green. On amd64 and arm64 the root AddDevice fails
-    in PciGetConfigHandlers: nothing below the root PDO (ACPI's PNP0A03/08 on amd64, the
-    root-enumerated PDO on arm64) answers GUID_PCI_BUS_INTERFACE_STANDARD, and neither HAL
-    has a PCI bus handler to fall back on, so pcix unloads and PnP enumerates no PCI devices.
-    Upstream is the same: only the legacy HAL's root PDO provides that interface. **Owed for
-    pcix on ACPI arches:** a PCI_BUS_INTERFACE_STANDARD provider for root buses (ReadConfig/
-    WriteConfig over HalGet/SetBusDataByOffset; RootBusCapability from _OSC). Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
-    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
-    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
-    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
-    were picked by hand in 22 places.
+    still binds pci.sys, but pcix.sys now boots as the PCI bus driver on all three
+    (2026-10-11, Pci `ImagePath` -> pcix.sys, smoke green, amd64 net green). What it took:
+    acpi.sys answers GUID_PCI_BUS_INTERFACE_STANDARD on PNP0A03/08 (`acpi-rust/pcibus.rs`)
+    and the arm64 HAL on its root buses, segment 0 included (no longer a hive-seeded
+    `Root\*PNP0A03`); pcix takes the root's base bus from its boot configuration; and the PnP
+    manager returns an assigned list in requirements order with each requirement's share
+    disposition (pcix maps assignments onto BARs by that order, and had zeroed arm64's
+    virtio-disk BARs under the running driver). Before pcix can be the default: it does not
+    use VibeOS's `_PRT` routing interface (`acpi-rust/pciroute.rs`, which pci.sys uses on
+    real Intel boards), and RootBusCapability (_OSC) is not provided. The HAL legacy PIR arbiter (cf89458d9e2) is
+    **blocked, not owed work**: it serves only the legacy (non-ACPI) x86 HAL's root PDO, and
+    vibeos builds no legacy HAL flavor (`legacy_halpnpdd` is `#[cfg(any())]`; every arch boots
+    the ACPI HAL with acpi.sys as root bus), so a port would be dead code. Port it with the
+    legacy HAL if that flavor ever returns. Resolved 2026-10-11: cmtypes.h's resource
+    constants are `ntkrnl_sys::cmres` on every arch (the arbiter prelude imports them), and
+    rustconv decides `#if NTDDI_VERSION >= NTDDI_VISTA` at the module's profile, so the dead
+    arm never reaches the model (the arbiter port had 22 hand fixes for it).
   - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
     2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
     assigns them, so a legacy detector that runs first sees free ports: legide's

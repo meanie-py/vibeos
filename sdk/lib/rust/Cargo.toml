@@ -127,6 +127,7 @@ members = [
     # neither, so every translated module re-ported them by hand: LOWORD alone existed 32 times
     # in 8 spellings, and the RGB copies all dropped the header's per-component BYTE mask.
     "win32macros-rust",
+    "winelist-rust",
     # Wine's ERR/FIXME/WARN/TRACE (wine/debug.h). Thirty-one Wine-derived crates carried a
     # byte-identical copy of the same 64-line module.
     "winedebug-rust",
@@ -493,6 +494,12 @@ members = [
     "svchost-rust",
     "cmd-rust",
     "kbdlayouts-rust",
+    "cicero-rust",
+    "ctfmon-rust",
+    "msutb-rust",
+    "msctfime-rust",
+    "msctf-rust",
+    "e1000-rust",
     "mspaint-rust",
     "calc-rust",
     "taskmgr-rust",
@@ -534,6 +541,18 @@ members = [
     "write-rust",
     "regedt32-rust",
     "iexplore-rust",
+    "cleanmgr-rust",
+    "rpcss-rust",
+    "srvsvc-rust",
+    "netlogon-rust",
+    "seclogon-rust",
+    "shsvcs-rust",
+    "dcomlaunch-rust",
+    "wmisvc-rust",
+    "msiexec-rust",
+    "deskadp-rust",
+    "deskmon-rust",
+    "netplwiz-rust",
 ]
 resolver = "2"
 

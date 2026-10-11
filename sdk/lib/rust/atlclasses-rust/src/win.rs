@@ -153,7 +153,13 @@ unsafe fn object<T>(hwnd: HWND) -> *mut T {
     GetPropW(hwnd, PROP_THIS.as_ptr()) as *mut T
 }
 
-unsafe fn route<T: MessageMap>(this: *mut T, hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+unsafe fn route<T: MessageMap>(
+    this: *mut T,
+    hwnd: HWND,
+    msg: u32,
+    w: WPARAM,
+    l: LPARAM,
+) -> LRESULT {
     let mut result: LRESULT = 0;
     if (*this).process_window_message(hwnd, msg, w, l, &mut result, 0) {
         return result;
@@ -194,7 +200,13 @@ pub unsafe fn def_window_proc(hwnd: HWND, msg: u32, w: WPARAM, l: LPARAM) -> LRE
     if sup.is_null() {
         DefWindowProcW(hwnd, msg, w, l)
     } else {
-        CallWindowProcW(core::mem::transmute::<*mut c_void, WndProc>(sup), hwnd, msg, w, l)
+        CallWindowProcW(
+            core::mem::transmute::<*mut c_void, WndProc>(sup),
+            hwnd,
+            msg,
+            w,
+            l,
+        )
     }
 }
 
@@ -268,9 +280,36 @@ unsafe extern "system" fn dialog_proc<T: MessageMap>(
     w: WPARAM,
     l: LPARAM,
 ) -> isize {
+    // A dialog's object rides WM_INITDIALOG's lParam (DialogBoxParam's dwInitParam).
+    dialog_message::<T>(hwnd, msg, w, l, l as *mut T)
+}
+
+unsafe extern "system" fn page_dialog_proc<T: PropertyPage>(
+    hwnd: HWND,
+    msg: u32,
+    w: WPARAM,
+    l: LPARAM,
+) -> isize {
+    // A property page's WM_INITDIALOG lParam is comctl32's COPY of the PROPSHEETPAGE; the
+    // object is that copy's lParam, which `create_property_page` set.
+    let init = if msg == WM_INITDIALOG && l != 0 {
+        (*(l as *const PropSheetPageV1)).l_param as *mut T
+    } else {
+        core::ptr::null_mut()
+    };
+    dialog_message::<T>(hwnd, msg, w, l, init)
+}
+
+unsafe fn dialog_message<T: MessageMap>(
+    hwnd: HWND,
+    msg: u32,
+    w: WPARAM,
+    l: LPARAM,
+    init: *mut T,
+) -> isize {
     let mut this = object::<T>(hwnd);
-    if this.is_null() && msg == WM_INITDIALOG {
-        this = l as *mut T;
+    if this.is_null() && msg == WM_INITDIALOG && !init.is_null() {
+        this = init;
         SetPropW(hwnd, PROP_THIS.as_ptr(), this as *mut c_void);
         *(*this).hwnd_slot() = hwnd;
     }
@@ -279,27 +318,29 @@ unsafe extern "system" fn dialog_proc<T: MessageMap>(
     }
     let mut result: LRESULT = 0;
     let handled = (*this).process_window_message(hwnd, msg, w, l, &mut result, 0);
+    // ReactOS ATL's CDialogImplBaseT::DialogProc: a handled message's result goes to
+    // DWLP_MSGRESULT AND is returned. user32's DefDlgProc returns the procedure's own value only
+    // for WM_COMPAREITEM/VKEYTOITEM/CHARTOITEM/QUERYDRAGICON/INITDIALOG and reads
+    // DWLP_MSGRESULT for everything else -- WM_NOTIFY included, so a PSN_APPLY handler's
+    // PSNRET_INVALID is lost unless it is stored there.
+    if handled && msg != WM_NCDESTROY {
+        SetWindowLongPtrW(hwnd, DWLP_MSGRESULT, result);
+    }
     if msg == WM_NCDESTROY {
         RemovePropW(hwnd, PROP_THIS.as_ptr());
         *(*this).hwnd_slot() = core::ptr::null_mut();
         (*this).on_final_message(hwnd);
     }
-    if !handled {
-        return 0;
-    }
-    // ATL's CDialogImplBaseT::DialogProc: these messages return their result directly; every
-    // other handled message answers through DWLP_MSGRESULT and returns TRUE.
-    match msg {
-        0x0133..=0x0138 | 0x0019 | 0x004E | 0x002B | 0x002C | 0x0110 | 0x0116 | 0x0129 => result,
-        _ => {
-            SetWindowLongPtrW(hwnd, DWLP_MSGRESULT, result);
-            1
-        }
-    }
+    result
 }
 
 /// `CDialogImpl::DoModal`.
-pub unsafe fn do_modal<T: MessageMap>(this: *mut T, idd: u16, parent: HWND, _init: LPARAM) -> isize {
+pub unsafe fn do_modal<T: MessageMap>(
+    this: *mut T,
+    idd: u16,
+    parent: HWND,
+    _init: LPARAM,
+) -> isize {
     DialogBoxParamW(
         crate::resource_instance(),
         idd as usize as *const u16,
@@ -318,4 +359,183 @@ pub unsafe fn create_dialog<T: MessageMap>(this: *mut T, idd: u16, parent: HWND)
         dialog_proc::<T>,
         this as LPARAM,
     )
+}
+
+/// `PROPSHEETPAGEW` through `pcRefParent` -- `PROPSHEETPAGEW_V1_SIZE`, which every comctl32
+/// accepts. The C++ passes `sizeof(PROPSHEETPAGE)` of whatever `_WIN32_IE` it compiled
+/// against; none of the later fields (header titles, activation context, header bitmap) are
+/// set by `CPropertyPageImpl`, so the V1 size says exactly what the C says.
+#[repr(C)]
+struct PropSheetPageV1 {
+    dw_size: u32,
+    dw_flags: u32,
+    h_instance: *mut c_void,
+    psz_template: *const u16,
+    h_icon: *mut c_void,
+    psz_title: *const u16,
+    pfn_dlg_proc: Option<DlgProc>,
+    l_param: LPARAM,
+    pfn_callback: Option<PageCallback>,
+    pc_ref_parent: *mut u32,
+}
+
+type PageCallback = unsafe extern "system" fn(HWND, u32, *mut PropSheetPageV1) -> u32;
+
+const PSP_USETITLE: u32 = 0x0008;
+const PSP_USECALLBACK: u32 = 0x0080;
+const PSPCB_ADDREF: u32 = 0;
+const PSPCB_RELEASE: u32 = 1;
+const PSPCB_CREATE: u32 = 2;
+
+#[repr(C)]
+struct NmHdr {
+    hwnd_from: HWND,
+    id_from: usize,
+    code: u32,
+}
+
+extern "system" {
+    fn CreatePropertySheetPageW(page: *const PropSheetPageV1) -> *mut c_void;
+    fn GetParent(h: HWND) -> HWND;
+}
+
+/// ReactOS `CPropertyPageImpl<T>` (rosdlgs.h): the overridables its callback and its
+/// `WM_NOTIFY` handler dispatch to. Each default is the C++ base's; `cpp_app` overrides the
+/// ones the module's class declares.
+#[allow(unused_variables)]
+pub trait PropertyPage: MessageMap {
+    unsafe fn on_page_create(&mut self) -> i32 {
+        1
+    }
+    unsafe fn on_page_add_ref(&mut self) {}
+    unsafe fn on_page_release(&mut self) {}
+    unsafe fn on_set_active(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_kill_active(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_apply(&mut self) -> i32 {
+        0 // PSNRET_NOERROR
+    }
+    unsafe fn on_reset(&mut self) {}
+    unsafe fn on_help(&mut self) {}
+    unsafe fn on_wizard_back(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_wizard_next(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_wizard_finish(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_query_cancel(&mut self) -> i32 {
+        0
+    }
+    unsafe fn on_get_object(&mut self, notify: LPARAM) -> i32 {
+        0
+    }
+    unsafe fn on_translate_accelerator(&mut self, msg: LPARAM) -> i32 {
+        0 // PSNRET_NOERROR
+    }
+    unsafe fn on_query_initial_focus(&mut self, focus: HWND) -> HWND {
+        core::ptr::null_mut()
+    }
+}
+
+/// `CPropertyPageImpl::Create`: the page's `HPROPSHEETPAGE`. comctl32 copies the struct, so
+/// it need not outlive the call; the object must outlive the sheet, as in the C++.
+pub unsafe fn create_property_page<T: PropertyPage>(
+    this: *mut T,
+    idd: u16,
+    title: *const u16,
+) -> *mut c_void {
+    let page = PropSheetPageV1 {
+        dw_size: core::mem::size_of::<PropSheetPageV1>() as u32,
+        dw_flags: PSP_USECALLBACK | if title.is_null() { 0 } else { PSP_USETITLE },
+        h_instance: crate::resource_instance(),
+        psz_template: idd as usize as *const u16,
+        h_icon: core::ptr::null_mut(),
+        psz_title: title,
+        pfn_dlg_proc: Some(page_dialog_proc::<T>),
+        l_param: this as LPARAM,
+        pfn_callback: Some(page_callback::<T>),
+        pc_ref_parent: core::ptr::null_mut(),
+    };
+    CreatePropertySheetPageW(&page)
+}
+
+unsafe extern "system" fn page_callback<T: PropertyPage>(
+    _hwnd: HWND,
+    msg: u32,
+    page: *mut PropSheetPageV1,
+) -> u32 {
+    let this = (*page).l_param as *mut T;
+    match msg {
+        PSPCB_CREATE => return (*this).on_page_create() as u32,
+        PSPCB_ADDREF => (*this).on_page_add_ref(),
+        PSPCB_RELEASE => (*this).on_page_release(),
+        _ => {}
+    }
+    0
+}
+
+/// `CPropertyPageImpl`'s own message map -- `MESSAGE_HANDLER(WM_NOTIFY, OnNotify)` -- which a
+/// page reaches by `CHAIN_MSG_MAP(CPropertyPageImpl<T>)`. TRUE when handled.
+pub unsafe fn property_page_map<T: PropertyPage>(
+    this: *mut T,
+    hwnd: HWND,
+    msg: u32,
+    l: LPARAM,
+    result: &mut LRESULT,
+) -> bool {
+    const WM_NOTIFY: u32 = 0x004E;
+    if msg != WM_NOTIFY {
+        return false;
+    }
+    let nm = &*(l as *const NmHdr);
+    if nm.hwnd_from != GetParent(hwnd) && nm.hwnd_from != hwnd {
+        *result = 1; // the C++ returns TRUE with bHandled = FALSE
+        return false;
+    }
+    let t = &mut *this;
+    *result = match nm.code as i32 {
+        -200 => t.on_set_active() as LRESULT,  // PSN_SETACTIVE
+        -201 => t.on_kill_active() as LRESULT, // PSN_KILLACTIVE
+        -202 => t.on_apply() as LRESULT,       // PSN_APPLY
+        -203 => {
+            t.on_reset(); // PSN_RESET
+            0
+        }
+        -205 => {
+            t.on_help(); // PSN_HELP
+            0
+        }
+        -206 => t.on_wizard_back() as LRESULT,   // PSN_WIZBACK
+        -207 => t.on_wizard_next() as LRESULT,   // PSN_WIZNEXT
+        -208 => t.on_wizard_finish() as LRESULT, // PSN_WIZFINISH
+        -209 => t.on_query_cancel() as LRESULT,  // PSN_QUERYCANCEL
+        -210 => t.on_get_object(l) as LRESULT,   // PSN_GETOBJECT
+        -212 => t.on_translate_accelerator(l) as LRESULT, // PSN_TRANSLATEACCELERATOR
+        -213 => t.on_query_initial_focus(l as HWND) as LRESULT, // PSN_QUERYINITIALFOCUS
+        _ => {
+            *result = 0;
+            return false;
+        }
+    };
+    true
+}
+
+/// `CPropertyPageImpl::SetModified`.
+pub unsafe fn property_page_set_modified(hwnd: HWND, changed: bool) {
+    extern "system" {
+        fn SendMessageW(h: HWND, m: u32, w: WPARAM, l: LPARAM) -> LRESULT;
+    }
+    // PSM_CHANGED / PSM_UNCHANGED
+    SendMessageW(
+        GetParent(hwnd),
+        if changed { 0x0468 } else { 0x046D },
+        hwnd as WPARAM,
+        0,
+    );
 }

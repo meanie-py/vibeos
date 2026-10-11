@@ -69,6 +69,9 @@ class Method:
     unplaced: list[str] = field(default_factory=list)
     # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
     calls: list[tuple[str, str]] = field(default_factory=list)
+    # "system" for a WINAPI/CALLBACK (stdcall) member: a static one is handed to the OS as a
+    # callback (`EnumWindows(EnumSingleInstanceCallback, ..)`), so its Rust ABI must match.
+    abi: str = ""
 
     @property
     def signature_key(self) -> str:
@@ -167,6 +170,10 @@ class ModuleModel:
     # generated cpp_alloc/cpp_free call THESE, so a C++ half and a Rust half of one heap
     # never cross allocators mid-flip.
     allocators: dict[str, str] = field(default_factory=dict)
+    # role -> the translatable name of the module's OWN definition of that operator
+    # (`cxx_operator_new`): cpp_classes exports it under the mangled symbol, so the operator
+    # is Rust too and no C++ half has to stay behind to provide it (cicero's cicbase.cpp).
+    allocator_fns: dict[str, str] = field(default_factory=dict)
     # File-scope typedefs of the module's .cpp files, as (file, text): main.cpp's
     # `typedef HWND (WINAPI *FN_HtmlHelpW)(..)`. A header's are the island's.
     typedefs: list[tuple[str, str]] = field(default_factory=list)
@@ -200,6 +207,7 @@ class ModuleModel:
             for e in raw.get("enums", [])
         ]
         out.allocators = raw.get("allocators", {})
+        out.allocator_fns = raw.get("allocator_fns", {})
         out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         return out
 
@@ -261,7 +269,7 @@ class _Sources:
         depth, i = 0, b
         while i < len(data):
             c = data[i : i + 1]
-            depth += (c == b"(") - (c == b")")
+            depth += (c in (b"(", b"{")) - (c in (b")", b"}"))
             if c == b";" and depth == 0:
                 return data[b : i + 1].decode("utf-8", errors="replace")
             i += 1
@@ -384,6 +392,10 @@ ATL_BASE_ALIASES = {
     "CDialogImpl": "CWindow",
     "CWindowImplBaseT": "CWindow",
     "CDialogImplBaseT": "CWindow",
+    # ReactOS rosdlgs.h: `CPropertyPageImpl<T> : CDialogImplBaseT<CWindow>`. Its `m_psp` is not
+    # a field here -- comctl32 copies the page at CreatePropertySheetPage, so the glue builds it
+    # on the stack (atl_rust::win::create_property_page).
+    "CPropertyPageImpl": "CWindow",
 }
 # Their methods a subclass calls through an implicit `this`: they stay on the object, where the
 # generated glue answers them, instead of resolving to CWindow (whose `Create` takes a class
@@ -557,6 +569,8 @@ class _Extractor:
                     self.model.allocators[role] = "_" + n["mangledName"].lstrip("_")
                 if self.mine(_file_of(n)):
                     self.free_function(n)
+                    if role:
+                        self.model.allocator_fns[role] = self.fn_rust_name(n)
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
                 self._register_function(n)
                 self.free_function(n)
@@ -793,6 +807,11 @@ class _Extractor:
             and not self.mine(c["loc"]["spellingLoc"].get("_file"))
             and "spellingLoc" in begin
             and not self.mine(begin["spellingLoc"].get("_file"))
+            # ...unless the name is a macro ARGUMENT, i.e. the module's own method renamed by
+            # a TCHAR macro inside STDMETHOD_: cicero's `STDMETHOD_(LPCTSTR, GetClassName)()`
+            # begins in objbase.h AND spells `GetClassNameW` in winuser.h, and dropping it left
+            # CUIFWindow's vtable a slot short of the C++ one.
+            and not c["loc"].get("expansionLoc", {}).get("isMacroArgExpansion")
         ):
             return None
         if probe:
@@ -832,7 +851,20 @@ class _Extractor:
             access=access,
             body=body,
             inits=inits,
+            abi=self._abi(c, qt),
         )
+
+    _STDCALL_WORDS = re.compile(r"\b(?:CALLBACK|WINAPI|APIENTRY|__stdcall|PASCAL|NTAPI)\b")
+
+    def _abi(self, c: dict, qt: str) -> str:
+        """`system` when the member is stdcall: clang spells it in the type on i386, and on
+        64-bit (where it is ignored) the declaration still SAYS so -- the same Rust either
+        way, `extern "system"` being stdcall on i386 and the C ABI elsewhere."""
+        if "stdcall" in qt:
+            return "system"
+        text = self.src.node_text(c) or ""
+        head = text.split(c.get("name", "\0"), 1)[0]
+        return "system" if self._STDCALL_WORDS.search(head) else ""
 
     def out_of_line(self, n: dict) -> None:
         """`void CCanvasWindow::OnPaint(...) { ... }` in a .cpp: attach the body."""
@@ -906,12 +938,17 @@ class _Extractor:
                 self.scan_overloads(n.get("inner", []))
 
     def fn_rust_name(self, n: dict) -> str:
-        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it."""
+        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it. An operator is
+        `cxx_operator_new[_array]`: `operator new` is no name a C function can have, and
+        translate could not extract the body (cicbase.cpp went unbought three times)."""
         sigs = self._overloads.get(n["name"], [])
+        base = n["name"]
+        if base.startswith("operator "):
+            base = "cxx_" + base.replace("operator ", "operator_").replace("[]", "_array")
         if len(sigs) < 2:
-            return n["name"]
+            return base
         qt = n.get("type", {}).get("qualType", "")
-        return f"{n['name']}__{sigs.index(qt) if qt in sigs else len(sigs)}"
+        return f"{base}__{sigs.index(qt) if qt in sigs else len(sigs)}"
 
     def _register_function(self, n: dict) -> None:
         """A module free function's declaration (a prototype in dib.h counts), for its
@@ -996,7 +1033,8 @@ class _Extractor:
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            target.lowered = cpp_lower.unicode_text_macros(out.text) if self.unicode else out.text
+            text = cpp_lower.ppv_arg_macros(out.text)
+            target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
             target.calls = [(a, b) for a, b in out.calls]
         for m, member, node, owner in self.pending_inits:

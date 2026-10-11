@@ -581,6 +581,14 @@ pub unsafe fn process_events(x: &mut XhciExtension) -> EventSummary {
             }
             TRB_EV_PORT_STATUS_CHANGE => {
                 s.port_change = true;
+                // The first events of a boot, with the port's state: a port whose
+                // change bits keep re-arming shows up here, not in usbhub.
+                static LOGGED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+                if LOGGED.fetch_add(1, Ordering::Relaxed) < 64 {
+                    let hw = (param as u32) >> 24;
+                    let v = if hw >= 1 { rd32(x.op, PORTSC_BASE + 0x10 * (hw as usize - 1)) } else { 0 };
+                    xlog!("port change event: hw port %u, PORTSC %x (op %p)", hw, v, x.op);
+                }
             }
             TRB_EV_TRANSFER => {
                 crate::endpoint::on_transfer_event(x, param, status, control);

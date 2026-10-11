@@ -57,6 +57,8 @@ from pathlib import Path
 
 from tree_sitter import Node, Parser
 
+from .config import REACTOS_ROOT
+
 # The dead-branch rule and the include-path walker both already exist, are already tested,
 # and are already the tree's answer to "what does the compiler actually see". A second copy
 # here would be a second thing to keep true.
@@ -68,7 +70,7 @@ from .profile_derive import (
 )
 from .scanner import CPP_LANG
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
+REPO_ROOT = REACTOS_ROOT  # the invoked tree, not this file's checkout
 
 NULL_MUT = "core::ptr::null_mut()"
 NULL_CONST = "core::ptr::null()"

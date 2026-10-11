@@ -761,6 +761,19 @@ pub const STANDARD_SEPS: *const u16 = (&[0x002c, 0x003b, 0x003d, 0x0000u16]).as_
 pub use crate::{IsCJKCodePage, __iscsym, __iscsymf, _alloca, _istalpha, _istcntrl, _istdigit, _istprint, _istspace, cmd_alloc, cmd_dup, cmd_free, cmd_realloc, max, min, va_end, va_start};
 // ==== end SDK header macros ====
 
+// Hand port, kept OUTSIDE the generated block so `port macros` leaves it alone: the banked
+// item reads `bCtrlBreak` (a BOOL) as a bool and `(*Cmd).For` through PARSED_COMMAND's
+// anonymous union, neither of which compiles.
+// base/shell/cmd/for.c:81: #define Exiting(Cmd) (bCtrlBreak || (fc != (Cmd)->For.Context))
+#[allow(unused_macros)]
+macro_rules! Exiting {
+    ($Cmd:expr $(,)?) => {
+        ((bCtrlBreak != 0) || (fc != (*$Cmd).__bindgen_anon_1.For.Context))
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use Exiting;
+
 // ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
 // base/shell/cmd/console.h:56: #define ConErrFormatMessage(MessageId, ...) ConFormatMessage(StdErr, (MessageId), ##__VA_ARGS__)
 #[allow(unused_macros)]
@@ -861,16 +874,6 @@ macro_rules! ERR {
 }
 #[allow(unused_imports)]
 pub(crate) use ERR;
-// base/shell/cmd/for.c:81: #define Exiting(Cmd) (bCtrlBreak || (fc != (Cmd)->For.Context))
-#[allow(unused_macros)]
-macro_rules! Exiting {
-    ($Cmd:expr $(,)?) => {
-        // C's `bCtrlBreak || ...` on a BOOL; For lives in PARSED_COMMAND's anonymous union.
-        ((bCtrlBreak != 0) || (fc != (*$Cmd).__bindgen_anon_1.For.Context))
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use Exiting;
 // base/shell/cmd/for.c:85: #define ExitingOrGoto(Cmd) (Exiting(Cmd) || (bc && bc->current == NULL))
 #[allow(unused_macros)]
 macro_rules! ExitingOrGoto {

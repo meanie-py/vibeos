@@ -173,6 +173,9 @@ const DNF_NON_STOPPED_REBALANCE: ULONG = 0x00000800;
 const DNF_LEGACY_DRIVER: ULONG = 0x00001000;
 const DNF_HAS_PROBLEM: ULONG = 0x00002000;
 const DNF_DEVICE_GONE: ULONG = 0x00010000;
+/// VibeOS-private (no NT DNF_ uses the top bit): the device node's reference on its PDO
+/// has been dropped by a REMOVE (IopSendRemoveDevice).
+const DNF_PDO_REFERENCE_DROPPED: ULONG = 0x80000000;
 
 // Device node user flags (DNUF_*)
 const DNUF_DONT_SHOW_IN_UI: ULONG = 0x0002;
@@ -1952,7 +1955,17 @@ unsafe extern "system" fn IopSendRemoveDevice(DeviceObject: PDEVICE_OBJECT) {
 
     PiSetDevNodeState(DeviceNode, DeviceNodeRemoved);
     PiNotifyTargetDeviceChange(&GUID_TARGET_DEVICE_REMOVE_COMPLETE as *const _ as *mut _, DeviceObject, core::ptr::null_mut());
-    ObDereferenceObject(DeviceObject as PVOID);
+    // The device node holds ONE reference on its PDO (the one enumeration took), so it
+    // is dropped by the first REMOVE only. A node can be removed twice: a device that
+    // fails START is removed while still present (its bus driver keeps the PDO), and when
+    // the bus later stops reporting that PDO the node is removed again as gone. The C drops
+    // the reference both times; on the OptiPlex a USB 3 hub that failed START did exactly
+    // that, the second drop freed the PDO and its device node mid-IopRemoveDevice, and the
+    // GUID_DEVICE_SAFE_REMOVAL event read the freed InstancePath (BUGCHECK 0x50/0x1E).
+    if (*DeviceNode).Flags & DNF_PDO_REFERENCE_DROPPED == 0 {
+        (*DeviceNode).Flags |= DNF_PDO_REFERENCE_DROPPED;
+        ObDereferenceObject(DeviceObject as PVOID);
+    }
 }
 
 #[no_mangle]

@@ -98,9 +98,19 @@ _COND_ANY_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if|elif|else|endif)\b(.*
 
 # One `MACRO <op> <int>` comparison. The literal may be decimal or hex, with an
 # optional L/U suffix, because a version macro is routinely spelled `0x0601` or `100L`.
+# The right side may also be a pinned macro: `NTDDI_VERSION >= NTDDI_VISTA` names one on
+# each side, and while it was undecidable the arbiter library's Vista-only definitions
+# read as live, "lost", and sent the scanner to a fallback that parsed the Vista arms.
 _INT_CMP_RE = re.compile(
-    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*\)*$"
+    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*"
+    r"(0[xX][0-9a-fA-F]+[uUlL]*|\d+[uUlL]*|[A-Za-z_]\w*)\s*\)*$"
 )
+
+
+def _int_operand(token: str, pinned: dict[str, int]) -> int | None:
+    if token[0].isdigit():
+        return int(token.rstrip("uUlL"), 0)
+    return pinned.get(token)
 
 
 def pinned_int_macros(definitions: object) -> dict[str, int]:
@@ -145,8 +155,9 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
     for term in terms:
         term = term.strip()
         m = _INT_CMP_RE.match(term)
-        if m is not None and m.group(1) in pinned:
-            lhs, op, rhs = pinned[m.group(1)], m.group(2), int(m.group(3), 0)
+        rhs = _int_operand(m.group(3), pinned) if m is not None else None
+        if m is not None and m.group(1) in pinned and rhs is not None:
+            lhs, op = pinned[m.group(1)], m.group(2)
             verdicts.append(
                 {
                     "==": lhs == rhs,

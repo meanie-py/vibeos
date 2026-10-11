@@ -22,15 +22,18 @@ import pytest
 
 from rustconv.crate_repair import (
     RULE_ANON_UNION,
+    RULE_CPP_BASE_FIELD,
     RULE_FLEX_ARRAY,
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
+    RULE_MACRO_PLACE_DEREF,
     RULE_MATCH_ARM_GUARD,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
     RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
+    RULE_REFGUID_DEREF,
     RULE_SIZEOF_TYPE,
     RULE_VARIADIC_PROMOTION,
     CargoCheckRun,
@@ -1338,6 +1341,151 @@ def _packed_diag(place: bytes, src: bytes = _PACKED_SRC) -> dict:
         code="E0793",
         spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
     )
+
+
+def _base_field_diag(src: bytes, field: bytes, paths: list[str]) -> dict:
+    at = src.index(b"." + field) + 1
+    return _diag(
+        f"no field `{field.decode()}` on type `CicIMCLock`",
+        code="E0609",
+        spans=[_span("src/a.rs", at, at + len(field), is_primary=True)],
+        children=[
+            _diag(
+                "one of the expressions' fields has a field of the same name",
+                code=None,
+                level="help",
+                spans=[_span("src/a.rs", at, at, replacement=p) for p in paths],
+            )
+        ],
+    )
+
+
+def test_cpp_base_field_goes_through_the_base_subobject():
+    """msctfime's `imcLock.m_hr`: `m_hr` is CIC_IMCC_LOCK's, two bases up."""
+    src = b"if imcLock.m_hr < 0 { }"
+    plan = propose_edits(
+        [_base_field_diag(src, b"m_hr", ["__base0.__base0."])],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CPP_BASE_FIELD],
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(11, "__base0.__base0.")]
+
+
+def test_cpp_base_method_goes_through_a_secondary_base():
+    """msutb's CUTBMenuItem : CTipbarAccItem, CUIFMenuItem -- `Check` is the second base's."""
+    src = b"(*p).Check(TRUE);"
+    at = src.index(b"Check")
+    diag = _diag(
+        "no method named `Check` found for struct `CUTBMenuItem` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + 5, is_primary=True)],
+        children=[
+            _diag(
+                "one of the expressions' fields has a method of the same name",
+                code=None,
+                level="help",
+                spans=[_span("src/a.rs", at, at, replacement="__base1.")],
+            )
+        ],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_CPP_BASE_FIELD]
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(at, "__base1.")]
+
+
+def test_cpp_base_field_refuses_a_non_base_path_or_two_candidates():
+    src = b"if imcLock.m_hr < 0 { }"
+    for paths in (["anon."], ["__base0.", "__base1."]):
+        plan = propose_edits(
+            [_base_field_diag(src, b"m_hr", paths)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_CPP_BASE_FIELD],
+        )
+        assert not plan.edits, paths
+
+
+def _refguid_diag(src: bytes, arg: bytes, label: str) -> dict:
+    at = src.index(arg)
+    return _diag(
+        "mismatched types",
+        spans=[_span("src/a.rs", at, at + len(arg), is_primary=True, label=label)],
+    )
+
+
+def test_refguid_pointer_binds_as_a_reference():
+    """msctfime's QueryInterface thunks: C++ `REFIID riid` is `const IID &`."""
+    src = b"(*o).QueryInterface(riid, ppv)"
+    plan = propose_edits(
+        [_refguid_diag(src, b"riid", "expected `&_GUID`, found `*const _GUID`")],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_REFGUID_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == ["&*(riid)"]
+
+
+def test_refguid_pointer_binds_as_a_reference_among_several_arguments():
+    """The multi-argument shape: each mismatched argument is a child, its label the message."""
+    src = b"(*o).QueryInterface(riid, ppv)"
+    at = src.index(b"riid")
+    diag = _diag(
+        "arguments to this method are incorrect",
+        spans=[_span("src/a.rs", 5, 19, is_primary=True)],
+        children=[
+            _diag(
+                "expected `&_GUID`, found `*const _GUID`",
+                code=None,
+                level="note",
+                spans=[_span("src/a.rs", at, at + 4, is_primary=True)],
+            )
+        ],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_REFGUID_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["&*(riid)"]
+
+
+def test_refguid_rule_leaves_other_pointers_and_const_to_mut_alone():
+    src = b"f(p)"
+    for label in (
+        "expected `&u32`, found `*const u32`",
+        "expected `&mut _GUID`, found `*const _GUID`",
+    ):
+        plan = propose_edits(
+            [_refguid_diag(src, b"p", label)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_REFGUID_DEREF],
+        )
+        assert not plan.edits, label
+
+
+def test_deref_of_a_macro_that_yields_a_scalar_place_is_dropped():
+    """`*V_VT!(&v) = VT_I4`: V_VT is the C lvalue `(p)->n1.n2.vt`, already a u16 place."""
+    src = b"    *V_VT!(core::ptr::addr_of_mut!(v)) = VT_I4;"
+    at = src.index(b"*V_VT")
+    end = src.index(b" = ")
+    diag = _diag(
+        "type `u16` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, end, is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_MACRO_PLACE_DEREF]
+    )
+    assert [(e.byte_start, e.byte_end, e.replacement) for e in plan.edits] == [(at, at + 1, "")]
+    ptr = _diag(
+        "type `*mut u16` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, end, is_primary=True)],
+    )
+    assert not propose_edits(
+        [ptr], _reader({"src/a.rs": src}), target="i386", rules=[RULE_MACRO_PLACE_DEREF]
+    ).edits
 
 
 def test_packed_field_as_ptr_becomes_addr_of():
@@ -3052,3 +3200,119 @@ def test_an_uninferable_constant_cast_takes_the_siblings_type():
         constants={"MK_LBUTTON": 1},
     )
     assert [e.replacement for e in plan.edits] == ["WPARAM"]
+
+
+def test_a_guid_comparison_is_is_equal_guid():
+    """cleanmgr: `*riid == IID_IUnknown` -- C++'s guiddef.h operator==, i.e. IsEqualGUID."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"if *riid == IID_IUnknown || *riid != IID_X { }\n"
+    diags = []
+    for op, rhs in ((b"==", b"IID_IUnknown"), (b"!=", b"IID_X")):
+        o = src.index(op)
+        lhs_at = src.rindex(b"*riid", 0, o)
+        r = src.index(rhs, o)
+        diags.append(
+            _diag(
+                f"binary operation `{op.decode()}` cannot be applied to type `_GUID`",
+                code="E0369",
+                spans=[
+                    _span("src/a.rs", lhs_at, lhs_at + 5, label="_GUID"),
+                    _span("src/a.rs", r, r + len(rhs), label="_GUID"),
+                    _span("src/a.rs", o, o + 2, is_primary=True),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "!IsEqualGUID!(&(*riid), &(IID_X))",
+        "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
+    ]
+
+
+def test_a_heap_ptr_where_a_pointer_is_wanted_is_its_held_pointer():
+    """cleanmgr: `SetWindowTextW((*h).wszBtnText)` on a CComHeapPtr<WCHAR> field."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"w.SetWindowTextW((*h).wszBtnText);\n"
+    a = src.index(b"(*h)")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b");"),
+                is_primary=True,
+                label="expected `*const u16`, found `CHeapPtr<u16, CComAllocator>`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*h).wszBtnText.m_pData"]
+
+
+def test_a_resource_id_format_is_found_through_the_macro_expansion():
+    """cleanmgr: rustc reports `atl_format!(s, IDS_X, ..)`'s mismatch at the macro's own `$fmt`
+    use inside atlclasses-rust; the edit belongs at the outermost invocation in the module."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    atl_format!(Caption, IDS_CALCULATING, s.GetString());\n"
+    at = src.index(b"atl_format!")
+    call = _span("src/a.rs", at, src.index(b";"))
+    inner = _span(
+        "/x/atlclasses-rust/src/lib.rs",
+        7798,
+        7803,
+        is_primary=True,
+        label="expected `*const u16`, found `u32`",
+    )
+    inner["expansion"] = {"span": {**_span("/x/lib.rs", 6821, 6983), "expansion": {"span": call}}}
+    d = _diag("mismatched types", spans=[inner])
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [(e.replacement, e.file_name, e.byte_start) for e in plan.edits] == [
+        ("atl_format_id!", "src/a.rs", at)
+    ]
+
+
+def test_an_interface_method_on_a_com_ptr_goes_through_the_pointer():
+    """cleanmgr: `self.m_spProgress.SetTitle(t)` -- C++'s `m_spProgress->SetTitle(t)`."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_spProgress.SetTitle(t);\n"
+    at = src.index(b"SetTitle")
+    d = _diag(
+        "no method named `SetTitle` found for struct `atl_rust::CComPtr<types_arch::"
+        "IProgressDialog>` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"SetTitle"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*(*this_).m_spProgress.p)"]
+
+
+def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
+    """cleanmgr: `m_HandlerListControl = GetDlgItem(IDC_HANDLERLIST)` -- CWindow's
+    operator=(HWND)."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_ctl = (*this_).__base0.GetDlgItem(7);\n"
+    a = src.index(b"(*this_).__base0")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b";"),
+                is_primary=True,
+                label="expected `CWindow`, found `*mut HWND__`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == [
+        "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
+    ]

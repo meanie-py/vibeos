@@ -40,7 +40,6 @@ extern "system" {
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: u32);
 }
 extern "system" {
-    fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn DbgDoit(value: *mut c_void);
     fn DebugUnwind(FunctionName: *const i8);
     fn FatAddMcbEntry( Vcb: *mut VCB, Mcb: *mut LARGE_MCB, Vbo: u32, Lbo: i64, SectorCount: u32, ) -> i32;
@@ -48,8 +47,6 @@ extern "system" {
     fn FatPrepareWriteVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Offset: u32, Length: u32, Bcb: *mut *mut BCB, PinnedFat: *mut *mut c_void, RegularOperation: i32, WriteThrough: i32, );
     fn FatSet12BitEntry(PinnedFat: *mut c_void, FatIndex: u32, FatEntry: u32);
     fn FatUnlockFreeClusterBitMap(Vcb: *mut VCB);
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
-    fn SetFlag(Flags: *mut u32, Flag: u32);
     fn CcRepinBcb(Bcb: *mut BCB);
     fn CcUnpinData(Bcb: *mut BCB);
     fn CcUnpinRepinnedBcb(Bcb: *mut BCB, WriteThrough: i32, IoStatus: *mut _IO_STATUS_BLOCK);
@@ -1073,10 +1070,7 @@ pub unsafe extern "system" fn FatAddFileAllocation(
             DebugUnwind(b"FatAddFileAllocation\0".as_ptr() as *const i8);
 
             // Give FlushFileBuffer/Cleanup a clue here, regardless of success/fail.
-            SetFlag(
-                &mut (*FcbOrDcb).FcbState as *mut u32,
-                FCB_STATE_FLUSH_FAT,
-            );
+            SetFlag!((*FcbOrDcb).FcbState, FCB_STATE_FLUSH_FAT);
 
             // If we were dogged trying to complete this operation, back things out.
             if abnormal {
@@ -1289,7 +1283,7 @@ pub unsafe extern "system" fn FatTruncateFileAllocation(
             }
 
             FatUnpinBcb((IrpContext).cast(), p_Bcb as *mut *mut core::ffi::c_void);
-            SetFlag(&mut (*FcbOrDcb).FcbState as *mut u32, FCB_STATE_FLUSH_FAT);
+            SetFlag!((*FcbOrDcb).FcbState, FCB_STATE_FLUSH_FAT);
             DebugTrace(-1, (Dbg) as u32, b"FatTruncateFileAllocation -> (VOID)\n\0".as_ptr() as *const i8, (0i32) as usize);
         },
     );
@@ -1414,7 +1408,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                         &mut (),
                         |_| {
                             *p_Wait = if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 { 1 } else { 0 };
-                            SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+                            SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
                             // Change to the new window and scan it.
                             FatExamineFatEntries(
@@ -1429,7 +1423,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                         },
                         |_, abnormal| {
                             if *p_Wait == 0 {
-                                ClearFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+                                ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
                             }
                             if abnormal {
                                 // We raised failing to pick up the FAT chunk for this
@@ -1691,7 +1685,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                             }
 
                             Wait = if ((*IrpContext).Flags & IRP_CONTEXT_FLAG_WAIT) != 0 { 1 } else { 0 };
-                            SetFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+                            SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
                             FatExamineFatEntries(
                                 IrpContext,
@@ -1704,7 +1698,7 @@ pub unsafe extern "system" fn FatAllocateDiskSpace(
                             );
 
                             if Wait == 0 {
-                                ClearFlag(core::ptr::addr_of_mut!((*IrpContext).Flags), IRP_CONTEXT_FLAG_WAIT);
+                                ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
                             }
                             // loop back to retry with new window
                         } else {
@@ -1836,7 +1830,7 @@ pub unsafe extern "system" fn FatDeallocateDiskSpace(
     let mut Window: *mut FAT_WINDOW = core::ptr::null_mut();
     let mut ZeroingStatus: i32 = STATUS_SUCCESS;
 
-    const MdlMappingNoExecute: u32 = 0x40000000;
+    const MdlMappingNoExecute: u32 = 0; // fatprocs.h downgrades it to 0 under __REACTOS__
 
     // DebugTrace calls (mapped to DbgPrint for illustration; real code would use DebugTrace)
     // We'll keep DebugTrace calls as per original but with a stub.
@@ -2586,10 +2580,7 @@ pub unsafe extern "system" fn FatSetFatEntry(
         }
 
         WasWait = FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
-        SetFlag(
-            &mut (*IrpContext).Flags,
-            IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_DISABLE_DIRTY,
-        );
+        SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT | IRP_CONTEXT_FLAG_DISABLE_DIRTY);
     } else {
         ntkrnl_sys::ASSERT!((FatEntry & !0x0FFFFFFF) == 0); // !FAT32_ENTRY_MASK = 0xF0000000 approx
         FatVerifyIndexIsValid(IrpContext, Vcb, FatIndex);
@@ -2717,11 +2708,11 @@ pub unsafe extern "system" fn FatSetFatEntry(
             DebugUnwind(b"FatSetFatEntry\0".as_ptr() as *const i8);
 
             // Clear the disable-dirty flag
-            ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_DIRTY);
+            ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_DIRTY);
 
             // Restore asynchronous state if needed
             if WasWait == 0 {
-                ClearFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
+                ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
             }
 
             // If we still hold the mutex (only if abnormal termination)
@@ -3110,7 +3101,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
     enum CLUSTER_TYPE {
         FatClusterBad = 7,
     }
-    const FAT_CLUSTER_BAD: u32 = CLUSTER_TYPE::FatClusterBad as u32;
+    const FAT_CLUSTER_BAD: u32 = 0x0ffffff7; // fat.h; the CLUSTER_TYPE discriminant is not the FAT entry value
     type PUSHORT = *mut u16;
     type PVCB = *mut VCB; // opaque
 
@@ -3407,7 +3398,7 @@ pub unsafe extern "system" fn FatExamineFatEntries(
             // (fat_index is now end_index + 1 after the loop)
 
             // --- Post-loop finalization ---
-            SetFlag(&mut (*vcb).VcbState as *mut u32, VCB_STATE_FLAG_BAD_BLOCKS_POPULATED);
+            SetFlag!((*vcb).VcbState, VCB_STATE_FLAG_BAD_BLOCKS_POPULATED);
 
             clusters_this_run = fat_index - start_index_of_this_run;
 
@@ -8800,3 +8791,10 @@ pub unsafe extern "system" fn FatExamineFatEntries(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Mask: u32) -> i32 {
+    (Flags as u64 & Mask as u64) as i32
+}

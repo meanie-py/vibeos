@@ -112,7 +112,10 @@ def kernel_names(root: Path = REPO) -> dict[str, dict[str, str]]:
             rest = [t for t in toks if not t.startswith("-")]
             if not rest:
                 continue
-            if "-stub" in flags:
+            # A stub has no body in the kernel, so a crate defining the name shadows
+            # nothing. Both spellings: the `stub` directive (what spec2def generates,
+            # and every win10_surface line) and the `-stub` flag on a typed line.
+            if "-stub" in flags or m.group(1) == "stub":
                 continue
             export = re.split(r"[(\s]", rest[0], maxsplit=1)[0]
             names = {export}

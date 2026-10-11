@@ -957,6 +957,13 @@ pub unsafe extern "system" fn ExReturnPoolQuota(p: PVOID) {
     if PAGE_ALIGN(p as usize) == p as usize {
         return;
     }
+    // A special-pool block has no pool header in front of it (overrun mode puts it at
+    // the end of its page, after fill pattern) and carries no quota. Reading the pattern
+    // as a header sent the quota-pointer read past the block onto the guard page:
+    // BUGCHECK 0x50 from IoFreeIrp on any SPECIALPOOL=* boot that freed an IRP.
+    if MmIsSpecialPoolAddress(p) != 0 {
+        return;
+    }
 
     let entry = pool_entry(p);
     let pool_type = (*entry).PoolType().wrapping_sub(1) as POOL_TYPE;

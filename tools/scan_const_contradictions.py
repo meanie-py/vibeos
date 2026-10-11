@@ -290,9 +290,17 @@ ISLAND_CONST_RE = re.compile(
 )
 
 
+# Names every in-tree consumer zeroes under `#ifdef __REACTOS__` (NX is NT6.2), so the island's
+# Windows value is one no TU here compiles. Same table as verify_constants.REACTOS_DOWNGRADED;
+# test_scan_const_vs_island keeps the two equal.
+REACTOS_DOWNGRADED = {"POOL_NX_ALLOCATION": 0, "MdlMappingNoExecute": 0}
+
+
 def island_values() -> dict[str, set[int]]:
     """name -> every value the bindgen islands give it (all crates, all arches)."""
     out: dict[str, set[int]] = defaultdict(set)
+    for name, val in REACTOS_DOWNGRADED.items():
+        out[name].add(val)
     for path in sorted(source_files(RUST_ROOT)):
         if "/target/" in str(path) or not ISLAND_FILE_RE.search(str(path)):
             continue

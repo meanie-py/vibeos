@@ -43,7 +43,6 @@ extern "system" {
     static IRP_PAGING_IO: u32;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     } extern "C" { fn DebugTrace(level: i32, dbg: i32, format: *const i8, ...); } extern "system" {
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
     fn FatLookupFileAllocation( IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB, StartingVbo: u32, NextLbo: *mut i64, NextByteCount: *mut u32, NextIsAllocated: *mut u8, EndOnMax: *mut u8, p: *mut c_void, );
     fn FatPopUpFileCorrupt(IrpContext: *mut IRP_CONTEXT, FcbOrDcb: *mut FCB);
     fn KeFlushIoBuffers(Mdl: *mut MDL, ReadOperation: i32, DmaOperation: i32);
@@ -53,15 +52,12 @@ extern "system" {
     fn FatLookupMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, vbo: u32, next_lbo: *mut u64, next_byte_count: *mut u32, first_index: *mut u32) -> u8;
     fn FatGetNextMcbEntry(vcb: *mut core::ffi::c_void, mcb: *mut core::ffi::c_void, current_index: u32, next_vbo: *mut u32, next_lbo: *mut u64, next_byte_count: *mut u32) -> u8;
     fn FatUpdateIOCountersPCW(is_write: u32, count: u64);
-    fn SetFlag(flags: *mut u32, bit: u32);
     fn PsUpdateDiskCounters(process: *mut core::ffi::c_void, bytes_read: u64, bytes_written: u64, read_ops: u32, write_ops: u32, flags: u32);
-    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn DebugUnwind(function: *const core::ffi::c_void);
     fn FatLowLevelReadWrite( IrpContext: *mut IRP_CONTEXT, DeviceObject: *mut DEVICE_OBJECT, Irp: *mut IRP, Vcb: *mut VCB, ) -> i32; // returns NTSTATUS but (VOID) cast fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
     fn MmUnlockPages(mdl: PMDL);
     fn FsRtlUpdateDiskCounters(read: u64, write: u64);
     fn FsRtlIsTotalDeviceFailure(NtStatus: NTSTATUS) -> BOOLEAN;
-    fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatCreateIrpContext(Irp: PIRP, RecursiveCall: i32) -> *mut IRP_CONTEXT;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: PIRP) -> u32;
     fn DbgBreakPoint();
@@ -435,10 +431,10 @@ pub unsafe extern "system" fn FatSingleNonAlignedSync(
     }
 
     if (*vcb).VerifyThread == KeGetCurrentThread() as *mut _ {
-        SetFlag(&raw mut (*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+        SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
     if FlagOn((*irp_context).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY) != 0 {
-        SetFlag((&raw mut (*irp_sp).Flags).cast(), SL_OVERRIDE_VERIFY_VOLUME);
+        SetFlag!((*irp_sp).Flags, SL_OVERRIDE_VERIFY_VOLUME);
     }
 
     FatIoCallDriverCount += 1;
@@ -503,7 +499,7 @@ const IRP_MJ_WRITE: u32 = 4;
 
 const STATUS_INVALID_USER_BUFFER: i32 = 0xC00000E8_u32 as i32;
 
-const MdlMappingNoExecute: u32 = 0x40000000;
+const MdlMappingNoExecute: u32 = 0; // fatprocs.h downgrades it to 0 under __REACTOS__
 
 unsafe extern "system" {
     fn BlockAlignTruncate(length: u32, alignment: u32) -> u32;
@@ -630,7 +626,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
         (*NextIrpSp).Parameters.Read.Length = ByteCount;
         (*NextIrpSp).Parameters.Read.ByteOffset.QuadPart = NextLbo as i64;
 
-        SetFlag((addr_of_mut!((*NextIrpSp).Flags)).cast() , SL_OVERRIDE_VERIFY_VOLUME);
+        SetFlag!((*NextIrpSp).Flags, SL_OVERRIDE_VERIFY_VOLUME);
 
         ntkrnl_sys::ddk::IoSetCompletionRoutine(
             Irp,
@@ -787,7 +783,7 @@ pub unsafe extern "system" fn FatPagingFileIo(Irp: PIRP, Fcb: PFCB) {
 
         NextIrpSp = ntkrnl_sys::ddk::IoGetNextIrpStackLocation(AssocIrp);
 
-        SetFlag((addr_of_mut!((*NextIrpSp).Flags)).cast() , SL_OVERRIDE_VERIFY_VOLUME);
+        SetFlag!((*NextIrpSp).Flags, SL_OVERRIDE_VERIFY_VOLUME);
 
         (*NextIrpSp).MajorFunction = (*IrpSp).MajorFunction;
         (*NextIrpSp).Parameters.Read.Length = NextByteCount;
@@ -1041,7 +1037,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
             CollectDiskIoStats(
                 (*FcbOrDcb).Vcb,
                 (*IrpContext).MajorFunction as u32,
-                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) as u8,
+                (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) != 0) as u8,
                 1,
             );
         } else {
@@ -1142,7 +1138,7 @@ pub unsafe extern "system" fn FatNonCachedIo(
             CollectDiskIoStats(
                 (*FcbOrDcb).Vcb,
                 (*IrpContext).MajorFunction as u32,
-                FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) as u8,
+                (FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_USER_IO) != 0) as u8,
                 NextRun,
             );
         }
@@ -1411,7 +1407,7 @@ pub unsafe extern "system" fn FatMultipleAsync(
 
     // If this I/O originating during FatVerifyVolume, bypass the verify logic.
     if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
-        SetFlag(addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+        SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
 
     // Set up things according to whether this is truly async.
@@ -1620,7 +1616,7 @@ pub unsafe extern "system" fn FatSingleAsync(
     DebugTrace(0, (Dbg) as i32, b"Irp           = %p\n\0".as_ptr() as *const i8, Irp as *const core::ffi::c_void);
 
     if (*(Vcb as *mut _VCB)).VerifyThread == KeGetCurrentThread() as *mut _ {
-        SetFlag(addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
+        SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_OVERRIDE_VERIFY);
     }
 
     let completion_routine: Option<unsafe extern "system" fn(PDEVICE_OBJECT, PIRP, *mut core::ffi::c_void) -> NTSTATUS> =
@@ -1800,14 +1796,11 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
 
         if FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0 {
             let major_function = (*IoGetCurrentIrpStackLocation(Irp)).MajorFunction;
-            SetFlag(
-                addr_of_mut!((*(*Context).Wait.Async.as_ref().FileObject).Flags),
-                if major_function == IRP_MJ_READ as u8 {
+            SetFlag!((*(*Context).Wait.Async.as_ref().FileObject).Flags, if major_function == IRP_MJ_READ as u8 {
                     FO_FILE_FAST_IO_READ
                 } else {
                     FO_FILE_MODIFIED
-                },
-            );
+                });
         }
     } else {
         #[cfg(debug_assertions)]
@@ -1864,7 +1857,7 @@ pub unsafe extern "system" fn FatSingleAsyncCompletionRoutine(
         let p_status = addr_of_mut!(Status);
         let _ = crate::seh::fat_try_except(addr_of!(NoIrpContext), || {
             let IrpContext = FatCreateIrpContext(Irp, 1);
-            ClearFlag(addr_of_mut!((*IrpContext).Flags), crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL);
+            ClearFlag!((*IrpContext).Flags, crate::types::IRP_CONTEXT_FLAG_RECURSIVE_CALL);
             FatFsdPostRequest(IrpContext, Irp);
             *p_status = STATUS_MORE_PROCESSING_REQUIRED;
         });
@@ -2021,7 +2014,7 @@ pub unsafe extern "system" fn FatToggleMediaEjectDisable(
         &mut SavedIrql,
     );
 
-    if (PreventRemoval ^ (BooleanFlagOn(((*(Vcb as *mut _VCB)).VcbState as u8) as u32, VCB_STATE_FLAG_REMOVAL_PREVENTED)) as u8) == 0 {
+    if (PreventRemoval ^ (BooleanFlagOn((*(Vcb as *mut _VCB)).VcbState as u32, VCB_STATE_FLAG_REMOVAL_PREVENTED)) as u8) == 0 {
         KeReleaseSpinLock(
             (core::ptr::addr_of_mut!(FatData.GeneralSpinLock)).cast(),
             SavedIrql,
@@ -6108,3 +6101,15 @@ pub unsafe extern "system" fn FatWaitSync(IrpContext: *mut IRP_CONTEXT) {
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> i32 {
+    (Flags as u64 & Flag as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(flags: u32, flag: u32) -> u8 {
+    ((flags as u64 & flag as u64) != 0) as u8
+}

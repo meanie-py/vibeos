@@ -178,6 +178,7 @@ class TestRealCatalog:
         "IOCTL_TDI_CONNECT": 0x210004,
         "IOCTL_TDI_SEND": 0x21001D,
         "IOCTL_NDIS_QUERY_GLOBAL_STATS": 0x170002,
+        "IOCTL_VOLSNAP_FLUSH_AND_HOLD_WRITES": 0x53C000,  # ntifs.template.h
     }
 
     def test_known_values(self):
@@ -223,3 +224,14 @@ class TestVerifyFileFlagsGarbageIoctl:
         names = {m["name"] for m in ms}
         assert "FSCTL_CREATE_RAM_DISK" in names
         assert "IOCTL_DISK_CHECK_VERIFY" not in names
+
+
+class TestReactosDowngrade:
+    def test_nx_names_take_the_value_the_tree_compiles(self, tmp_path: Path):
+        # iotypes.h says 0x200, but every in-tree consumer zeroes it under __REACTOS__.
+        cat = build_c_catalog(REACTOS_ROOT)
+        assert cat["POOL_NX_ALLOCATION"] == 0
+        assert cat["MdlMappingNoExecute"] == 0
+        rs = tmp_path / "drv.rs"
+        rs.write_text("pub const POOL_NX_ALLOCATION: u32 = 0x0200;\n")
+        assert {m["name"] for m in verify_file(rs, cat)} == {"POOL_NX_ALLOCATION"}
