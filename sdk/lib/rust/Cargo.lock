@@ -315,6 +315,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -1861,6 +1862,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -2832,6 +2834,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3190,6 +3193,7 @@ dependencies = [
  "panic-common",
  "secur32-sys",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]

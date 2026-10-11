@@ -718,7 +718,33 @@ SHARED_CRATES: tuple[tuple[str, str, tuple[tuple[str, str], ...]], ...] = (
             ),
         ),
     ),
+    (
+        "winelist_rust",
+        "winelist-rust",
+        (("", r"^pub unsafe fn (list_\w+)\b"),),
+    ),
 )
+
+#: Shared crates a prelude takes only when the crate CALLS one of their names (or already
+#: depends on them). wine/list.h's helpers operate on winelist-rust's `struct list`, so a
+#: crate takes them together with that type: its island blocklists `list` and re-exports
+#: `winelist_rust::*` (profile_derive emits both when wine/list.h is in the include closure).
+#: Without the entry every wine-derived crate re-ported the header -- six copies -- and rpcss
+#: got cabinet-rust's crate-internal #[no_mangle] copies as externs, which do not link.
+OPT_IN_SHARED = frozenset({"winelist_rust"})
+
+
+def _crate_calls(crate_dir: Path, names: set[str]) -> set[str]:
+    """Which of `names` the crate's modules call (the prelude itself excluded)."""
+    if not names:
+        return set()
+    call = re.compile(rf"(?<![\w:])({'|'.join(map(re.escape, sorted(names)))})\s*\(")
+    out: set[str] = set()
+    for rs in (crate_dir / "src").rglob("*.rs"):
+        if rs.name == "prelude.rs":
+            continue
+        out |= set(call.findall(rs.read_text(errors="replace")))
+    return out
 
 
 def shared_provides(workspace: Path) -> dict[tuple[str, str], set[str]]:
@@ -761,7 +787,14 @@ def refresh_shared_crates(crate_dir: Path, workspace: Path) -> list[str]:
         own.update(n.strip().split(" as ")[-1] for n in (m.group(2) or m.group(3)).split(","))
     own.discard("")
     changed: list[str] = []
+    manifest = (crate_dir / "Cargo.toml").read_text()
     for (ident, module), names in shared_provides(workspace).items():
+        if (
+            ident in OPT_IN_SHARED
+            and not re.search(rf"^{re.escape(ident.replace('_', '-'))}\s*=", manifest, re.M)
+            and not _crate_calls(crate_dir, names - own)
+        ):
+            continue
         keep = sorted(names - own)
         path = f"{ident}::{module}" if module else ident
         line_re = re.compile(rf"^pub use {re.escape(path)}::\{{[^}}]*\}};$", re.M)

@@ -5126,6 +5126,9 @@ case "$DRIVER" in
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/services/rpcss"
+    # wine/list.h: `struct list` and its helpers are winelist-rust's.
+    EXTRA_BL_ITEMS=( list )
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
     case "$DRIVER" in
       # island types — 3 TU(s):
       # epmp.c irotp.c rpcss_main.c

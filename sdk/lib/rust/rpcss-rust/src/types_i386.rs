@@ -5,6 +5,7 @@
 // base field types resolved via the sibling -sys glob below (kernel: private
 // ntkrnl_sys::ddk; usermode: public ntdll_sys::nt — see USERMODE in the script).
 pub use ntdll_sys::nt::*;
+pub use winelist_rust::*;
 
 #[derive(PartialEq, Eq, Copy, Clone, Debug, Hash)]
 #[repr(C, align(8))]

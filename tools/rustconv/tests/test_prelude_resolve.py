@@ -181,6 +181,29 @@ def test_shared_crates_are_reexported_by_path_and_depended_on(tmp_path):
     assert pr.refresh_shared_crates(crate, ws) == []
 
 
+def test_winelist_is_taken_only_by_a_crate_that_calls_it(tmp_path):
+    # wine/list.h's helpers are opt-in: every crate getting `list_*` and a winelist-rust
+    # dependency would be noise, but a crate that calls one must import it, never copy it
+    # (rpcss got cabinet-rust's #[no_mangle] copies as externs, which do not link).
+    ws = tmp_path
+    (ws / "winelist-rust" / "src").mkdir(parents=True)
+    (ws / "winelist-rust" / "src" / "lib.rs").write_text(
+        "pub struct list {}\npub unsafe fn list_init() {}\npub unsafe fn list_add_tail() {}\n"
+    )
+    for name, body in (("quiet-rust", "fn f() {}\n"), ("walker-rust", "fn f() { list_init(h); }\n")):
+        crate = ws / name
+        (crate / "src").mkdir(parents=True)
+        (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\n')
+        (crate / "src" / "prelude.rs").write_text("// prelude\n")
+        (crate / "src" / "m.rs").write_text(body)
+        pr.refresh_shared_crates(crate, ws)
+    assert "winelist" not in (ws / "quiet-rust" / "src" / "prelude.rs").read_text()
+    assert "winelist" not in (ws / "quiet-rust" / "Cargo.toml").read_text()
+    walker = (ws / "walker-rust" / "src" / "prelude.rs").read_text()
+    assert "pub use winelist_rust::{list_add_tail, list_init};" in walker
+    assert "winelist-rust = " in (ws / "walker-rust" / "Cargo.toml").read_text()
+
+
 def test_a_shared_name_the_prelude_already_imports_is_not_imported_again(tmp_path):
     ws = tmp_path
     (ws / "win32macros-rust" / "src").mkdir(parents=True)

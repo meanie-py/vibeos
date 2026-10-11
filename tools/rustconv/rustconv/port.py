@@ -609,6 +609,10 @@ def stage_island(stem: str) -> None:
         fixed = drop_impossible_copy(text)
         if fixed != text:
             island.write_text(fixed)
+        # A shared crate the island re-exports (`pub use winelist_rust::*;`, the profile's
+        # EXTRA_RAW_LINES) is a dependency of the crate, or the island does not compile.
+        for dep in re.findall(r"^pub use (\w+_rust)::", fixed, re.M):
+            prelude_resolve._ensure_dependency(_crate_dir(state) / "Cargo.toml", dep.replace("_", "-"))
 
 
 _STRUCT_ITEM = re.compile(
@@ -3979,6 +3983,19 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     link_wanted: set[str] = set()
     if kernel_sys is not None and exported is not None:
         link_wanted = prelude_resolve.called_names(modules_dir) - exported
+    # A user-mode extern copy an earlier run made is held to the same rule as a new one (the
+    # consensus pass below): exported by an import library this module links, or dropped.
+    unlinkable: set[str] = set()
+    if kernel_sys is None and exported is not None:
+        unlinkable = {k for k, v in copied.items() if v.kind == "fn" and k not in exported}
+    if unlinkable:
+        for name in unlinkable:
+            del copied[name]
+        prelude_resolve.write_block(prelude, prelude_resolve.render(copied))
+        print(
+            f"resolve: dropped {len(unlinkable)} extern copy(ies) no import library exports: "
+            + ", ".join(sorted(unlinkable))
+        )
     res = prelude_resolve.Resolution()
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
@@ -4110,6 +4127,22 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
             pick, why = prelude_resolve.consensus(name, found)
             if pick is None:
                 res.conflicting[name] = why
+                continue
+            # A user-mode extern must be something the module's import libraries (or the
+            # static libraries it links) export. rpcss got `list_add_tail`/`list_remove` as
+            # externs from cabinet-rust's crate-internal #[no_mangle] copies: it compiled on
+            # every arch and failed to link on i386. (Kernel crates are judged by the
+            # substrate's link check below.)
+            if (
+                pick.kind == "fn"
+                and kernel_sys is None
+                and exported is not None
+                and name not in exported
+            ):
+                res.conflicting[name] = (
+                    "no import library this module links exports it -- a header inline "
+                    "(port it, or import it from a shared crate), not an extern"
+                )
                 continue
             copied[name] = pick
             new += 1
@@ -4726,9 +4759,19 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
     sys_island = REPO / "sdk" / "lib" / "rust" / sys_crate / "src" / "bindgen_amd64.rs"
     for isl in [*prelude.parent.glob("types_*.rs"), sys_island]:
         if isl.is_file():
-            island |= set(
-                re.findall(r"^pub (?:struct|union|enum|type) (\w+)", isl.read_text(), re.M)
-            )
+            text = isl.read_text()
+            island |= set(re.findall(r"^pub (?:struct|union|enum|type) (\w+)", text, re.M))
+            # ...and the types of a shared crate the island glob-re-exports in place of its own
+            # (`pub use winelist_rust::*;` for wine/list.h's blocklisted `struct list`): a
+            # c2rust copy here would shadow it, and its list_* helpers would no longer
+            # accept this crate's list fields.
+            for dep in set(re.findall(r"^pub use (\w+_rust)::\*;", text, re.M)):
+                for rs in (REPO / "sdk" / "lib" / "rust" / dep.replace("_", "-") / "src").glob(
+                    "*.rs"
+                ):
+                    island |= set(
+                        re.findall(r"^pub (?:struct|union|enum|type) (\w+)", rs.read_text(), re.M)
+                    )
     # ...nor a base type the -sys crate owns (pciidex had ULONG/PVOID/NTSTATUS pinned here).
     # Except an OPAQUE island stub (`_unused: [u8; 0]`): a header that only forward-declares
     # `struct _CFFILE` gives bindgen nothing more, while usetup's cabinet.c defines the whole

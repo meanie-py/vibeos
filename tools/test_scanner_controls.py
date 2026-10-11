@@ -2142,6 +2142,21 @@ _WINERR_GOOD = """\
 pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
 """
 
+# scan_list_walk_from_head. Seeded from rpcss IrotIsRunning (2026-10-11): the cursor
+# started at the list head it stops at, so the walk ran zero times.
+_LISTWALK_BAD = """\
+unsafe fn find(data: u32) -> i32 {
+    e = (core::ptr::addr_of_mut!(Table) as *mut u8).sub(core::mem::offset_of!(item, entry)) as *mut item;
+    while core::ptr::addr_of_mut!((*e).entry) != core::ptr::addr_of_mut!(Table) {
+        e = ((*e).entry.next as *mut u8).sub(core::mem::offset_of!(item, entry)) as *mut item;
+    }
+    0
+}
+"""
+_LISTWALK_GOOD = _LISTWALK_BAD.replace(
+    "(core::ptr::addr_of_mut!(Table) as *mut u8)", "(Table.next as *mut u8)"
+)
+
 # scan_dowhile_continue. Seeded from syssetup RegisterTypeLibraries (2026-10-04): a C
 # do-while's `continue` re-ran the same INF line forever once translated to `loop`.
 # scan_case_bitor_pattern. Seeded from comctl32 TREEVIEW_SelectItem (2026-10-09): C's
@@ -2554,6 +2569,13 @@ CONTROLS: list[Control] = [
         argv=["--lint"],
         bad={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_BAD},
         good={"treeview.c": _CASE_BITOR_C, "treeview.rs": _CASE_BITOR_GOOD},
+    ),
+    Control(
+        name="scan_list_walk_from_head",
+        script="tools/scan_list_walk_from_head.py",
+        argv=["--lint"],
+        bad={"irotp.rs": _LISTWALK_BAD},
+        good={"irotp.rs": _LISTWALK_GOOD},
     ),
     Control(
         name="scan_dowhile_continue",

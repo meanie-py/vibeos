@@ -1179,6 +1179,14 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
   (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
   spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
+- **A tree-consensus extern that no import library exports links to nothing, or to the
+  wrong thing.** rpcss got `list_add_tail`/`list_remove` as externs copied from cabinet-rust's
+  crate-internal `#[no_mangle]` copies of wine/list.h's inlines; i386 failed to link.
+  `port resolve` now refuses a user-mode consensus `fn` that the module's import libraries
+  (and the static libraries it links) do not export, and drops such copies from an earlier
+  run. wine/list.h itself is `winelist-rust`: `profile_derive` blocklists `struct list` in the
+  island and re-exports the shared crate, and resolve imports the `list_*` helpers a crate
+  calls.
 - **A unit's global that the module's own header declares `extern`** (`extern CARDWINDOW
   *SolWnd;`) reaches every other unit through the ISLAND's extern declaration, so the defining
   unit must export it `#[no_mangle]` under its C name, or the other units' references are
@@ -1386,6 +1394,17 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A list walk that starts at the head it stops at
+
+**Symptom:** a lookup in a wine/list.h list never finds anything, or a count is always 0.
+Nothing crashes. rpcss's IrotIsRunning and IrotGetObject never found a registered object.
+
+**Cause:** `LIST_FOR_EACH_ENTRY` lowered with the cursor set to the container of `&head`
+itself instead of `head->next`. The `while cursor->field != &head` test then fails before the
+first iteration.
+
+**Fix:** start at `head.next`. `scan_list_walk_from_head` (`vibeos-cli check`) flags the shape.
 
 ### A list walk that reads `Flink` after freeing the entry
 

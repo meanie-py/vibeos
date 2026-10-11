@@ -11,6 +11,7 @@ crate-type = ["staticlib"]
 panic-common = { path = "../panic-common", features = ["user"] }
 ntdll-sys = { path = "../ntdll-sys" }
 winedebug-rust = { path = "../winedebug-rust" }
+winelist-rust = { path = "../winelist-rust" }
 # Pure-Rust C-ABI zlib (Trifecta zlib-rs). no_std (default-features=false drops
 # std + rust-allocator); `export-symbols` emits the unprefixed C names
 # (deflateInit2/deflate/deflateEnd) cabinet's fci.rs extern "C" block calls.

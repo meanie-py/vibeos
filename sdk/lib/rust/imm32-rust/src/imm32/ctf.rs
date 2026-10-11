@@ -124,8 +124,9 @@ unsafe extern "C" fn Imm32IsInteractiveUserLogon() -> BOOL {
     let mut bOK: BOOL = 0;
     let mut IsMember: BOOL = FALSE as BOOL;
     let mut pSid: PSID = ::core::ptr::null_mut::<::core::ffi::c_void>();
+    // SECURITY_NT_AUTHORITY is the aggregate initializer `{0,0,0,0,0,5}`, not a scalar.
     let mut IdentAuth: SID_IDENTIFIER_AUTHORITY = _SID_IDENTIFIER_AUTHORITY {
-        Value: [0, 0, 0, 0, 0, (SECURITY_NT_AUTHORITY as u8)],
+        Value: [0, 0, 0, 0, 0, 5],
     };
     if AllocateAndInitializeSid(
         &raw mut IdentAuth,
