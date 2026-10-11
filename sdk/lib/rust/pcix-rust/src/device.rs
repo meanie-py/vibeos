@@ -45,7 +45,12 @@ pub unsafe extern "system" fn Device_SaveCurrentSettings(Context: PPCI_CONFIGURA
             continue;
         }
         (*CmDescriptor).Flags = (*IoDescriptor).Flags;
-        (*CmDescriptor).ShareDisposition = (*IoDescriptor).ShareDisposition;
+        // Divergence from the C, which copies the limit's disposition: the limits never
+        // set one (0, undetermined), so the boot configuration claimed a BAR could be
+        // shared, and PciComputeNewCurrentSettings skips non-exclusive descriptors when
+        // it maps an assigned list back onto BARs. A BAR decodes for one function only;
+        // the requirements list already says so (PciBuildRequirementsList).
+        (*CmDescriptor).ShareDisposition = CmResourceShareDeviceExclusive as u8;
         (*CmDescriptor).u.Generic.Start.__bindgen_anon_1.HighPart = 0;
         (*CmDescriptor).u.Generic.Length = (*IoDescriptor).u.Generic.Length;
 

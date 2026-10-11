@@ -11,6 +11,8 @@ use ntkrnl_sys::ex::*;
 use ntkrnl_sys::ke::*;
 use ntkrnl_sys::mm::*;
 use ntkrnl_sys::rtl::*;
+/// `CmResourceTypeBusNumber` (wdm.h).
+const CM_RESOURCE_TYPE_BUS_NUMBER: u8 = 6;
 use ntkrnl_sys::ddk::{IoAttachDeviceToDeviceStack, IoCreateDevice, IoDeleteDevice, IoDetachDevice, IoOpenDeviceRegistryKey, KEY_VALUE_PARTIAL_INFORMATION, KeInitializeEvent, PCM_RESOURCE_LIST, PDEVICE_CAPABILITIES, PDEVICE_OBJECT, PDEVICE_RELATIONS, PDRIVER_OBJECT, PIO_STACK_LOCATION, PIRP, PKEY_VALUE_PARTIAL_INFORMATION, RtlInitUnicodeString, _EVENT_TYPE_SynchronizationEvent, ZwClose, ZwQueryValueKey};
 use ntkrnl_sys::ddk::{
     _DEVICE_RELATION_TYPE_BusRelations as BusRelations,
@@ -979,28 +981,46 @@ pub unsafe extern "system" fn PciAddDevice(
                     );
                     if !(Status >= 0i32) {
                         Descriptor = core::ptr::null_mut();
-                    } else {
-                        DbgPrint(
-                            (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
-                            b"PciAddDevice\0".as_ptr() as *const i8,
-                            b"drivers/bus/pcix/fdo.c\0"
-                                .as_ptr() as *const i8,
-                            577i32,
-                        );
-                        DbgPrint((b"Encountered during setup\n\0".as_ptr() as PCSTR).cast());
-                        DbgBreakPoint();
-                        Descriptor = core::ptr::null_mut();
                     }
+                    // Divergence from the C, where a root PDO with a boot configuration is
+                    // UNIMPLEMENTED ("Root PDO in ReactOS does not assign boot resources").
+                    // ACPI's PNP0A03/08 and the arm64 HAL's root buses do: their bus range
+                    // is a CmResourceTypeBusNumber descriptor, as on Windows, where the
+                    // root's base bus comes from exactly there.
                     if !Descriptor.is_null() {
-                        DbgPrint(
-                            (b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR).cast(),
-                            b"PciAddDevice\0".as_ptr() as *const i8,
-                            b"drivers/bus/pcix/fdo.c\0"
-                                .as_ptr() as *const i8,
-                            584i32,
-                        );
-                        DbgPrint((b"\0".as_ptr() as PCSTR).cast());
-                        DbgBreakPoint();
+                        let mut found = false;
+                        let full = &raw mut (*Descriptor).List[0];
+                        let list = &raw mut (*full).PartialResourceList;
+                        let parts = (*list).PartialDescriptors.as_mut_ptr();
+                        for i in 0..(*list).Count as usize {
+                            let d = parts.add(i);
+                            if (*d).Type == CM_RESOURCE_TYPE_BUS_NUMBER {
+                                (*FdoExtension).BaseBus = (*d).u.BusNumber.Start as u8;
+                                found = true;
+                                break;
+                            }
+                        }
+                        ExFreePoolWithTag(Descriptor as PVOID, 0);
+                        Descriptor = core::ptr::null_mut();
+                        if found {
+                            DbgPrint(
+                                (b"PCI   Root bus base %u from its boot configuration.\n\0".as_ptr() as PCSTR).cast(),
+                                (*FdoExtension).BaseBus as u32,
+                            );
+                        } else {
+                            DbgPrint((b"PCI   Root boot configuration has no bus number.\n\0".as_ptr() as PCSTR).cast());
+                            if PciBreakOnDefault != 0u8 {
+                                KeBugCheckEx(
+                                    PCI_BUS_DRIVER_INTERNAL,
+                                    0xdead0010usize as ULONG_PTR,
+                                    DeviceObject as ULONG_PTR,
+                                    0usize as ULONG_PTR,
+                                    0usize as ULONG_PTR,
+                                );
+                            }
+                            PciBreakOnDefault = 1u8;
+                            (*FdoExtension).BaseBus = 0u8;
+                        }
                     } else {
                         if PciBreakOnDefault != 0u8 {
                             KeBugCheckEx(

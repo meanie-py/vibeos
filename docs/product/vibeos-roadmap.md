@@ -1451,16 +1451,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
     arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
     (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. Every arch
-    still binds pci.sys. A boot with pcix.sys bound instead (2026-10-10, Pci `ImagePath`)
-    works on **i386 only**: there the legacy HAL has a PCI bus handler, and pcix
-    enumerated the bus (host bridge, PIIX ISA/IDE, VGA, NIC), started the IDE controller and
-    initialized its bus arbiters, smoke green. On amd64 and arm64 the root AddDevice fails
-    in PciGetConfigHandlers: nothing below the root PDO (ACPI's PNP0A03/08 on amd64, the
-    root-enumerated PDO on arm64) answers GUID_PCI_BUS_INTERFACE_STANDARD, and neither HAL
-    has a PCI bus handler to fall back on, so pcix unloads and PnP enumerates no PCI devices.
-    Upstream is the same: only the legacy HAL's root PDO provides that interface. **Owed for
-    pcix on ACPI arches:** a PCI_BUS_INTERFACE_STANDARD provider for root buses (ReadConfig/
-    WriteConfig over HalGet/SetBusDataByOffset; RootBusCapability from _OSC). Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
+    still binds pci.sys, but pcix.sys now boots as the PCI bus driver on all three
+    (2026-10-11, Pci `ImagePath` -> pcix.sys, smoke green, amd64 net green). What it took:
+    acpi.sys answers GUID_PCI_BUS_INTERFACE_STANDARD on PNP0A03/08 (`acpi-rust/pcibus.rs`)
+    and the arm64 HAL on its root buses, segment 0 included (no longer a hive-seeded
+    `Root\*PNP0A03`); pcix takes the root's base bus from its boot configuration; and the PnP
+    manager returns an assigned list in requirements order with each requirement's share
+    disposition (pcix maps assignments onto BARs by that order, and had zeroed arm64's
+    virtio-disk BARs under the running driver). Before pcix can be the default: it does not
+    use VibeOS's `_PRT` routing interface (`acpi-rust/pciroute.rs`, which pci.sys uses on
+    real Intel boards), and RootBusCapability (_OSC) is not provided. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
     hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
     kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
     still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
