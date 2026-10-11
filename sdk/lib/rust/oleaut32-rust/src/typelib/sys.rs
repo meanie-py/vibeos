@@ -348,82 +348,10 @@ extern "C" {
 // wine/list.h — doubly linked list (byte-compatible with the C)
 // ---------------------------------------------------------------------------
 
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-
-#[inline]
-pub unsafe fn list_init(l: *mut list) {
-    (*l).next = l;
-    (*l).prev = l;
-}
-#[inline]
-pub unsafe fn list_add_after(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = (*elem).next;
-    (*to_add).prev = elem;
-    (*(*elem).next).prev = to_add;
-    (*elem).next = to_add;
-}
-#[inline]
-pub unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = elem;
-    (*to_add).prev = (*elem).prev;
-    (*(*elem).prev).next = to_add;
-    (*elem).prev = to_add;
-}
-#[inline]
-pub unsafe fn list_add_head(l: *mut list, elem: *mut list) {
-    list_add_after(l, elem);
-}
-#[inline]
-pub unsafe fn list_add_tail(l: *mut list, elem: *mut list) {
-    list_add_before(l, elem);
-}
-#[inline]
-pub unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
-}
-#[inline]
-pub unsafe fn list_next(l: *const list, elem: *const list) -> *mut list {
-    if (*elem).next as *const list == l {
-        core::ptr::null_mut()
-    } else {
-        (*elem).next
-    }
-}
-#[inline]
-pub unsafe fn list_prev(l: *const list, elem: *const list) -> *mut list {
-    if (*elem).prev as *const list == l {
-        core::ptr::null_mut()
-    } else {
-        (*elem).prev
-    }
-}
-#[inline]
-pub unsafe fn list_head(l: *const list) -> *mut list {
-    list_next(l, l)
-}
-#[inline]
-pub unsafe fn list_tail(l: *const list) -> *mut list {
-    list_prev(l, l)
-}
-#[inline]
-pub unsafe fn list_empty(l: *const list) -> bool {
-    (*l).next as *const list == l
-}
-#[inline]
-pub unsafe fn list_count(l: *const list) -> UINT {
-    let mut count: UINT = 0;
-    let mut ptr = (*l).next;
-    while ptr as *const list != l {
-        count += 1;
-        ptr = (*ptr).next;
-    }
-    count
-}
+pub use winelist_rust::{
+    list, list_add_after, list_add_before, list_add_head, list_add_tail, list_count, list_empty,
+    list_head, list_init, list_next, list_prev, list_remove, list_tail,
+};
 
 /// `LIST_ENTRY(elem, Type, field)` — container_of.
 macro_rules! list_entry {

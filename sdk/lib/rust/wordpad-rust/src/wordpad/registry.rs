@@ -310,6 +310,14 @@ unsafe extern "C" fn format_filelist_filename(file: LPWSTR, out: LPWSTR) {
     truncpos1 = core::ptr::null_mut();
     truncpos2 = core::ptr::null_mut();
 
+    // The C writes pos_basename[-1] unconditionally; for a recent-files entry with no
+    // directory (or only a leading separator) file_basename returns `file` itself and that
+    // store lands before the buffer. Such a name has nothing to truncate.
+    if pos_basename == file {
+        lstrcatW(out, file as LPCWSTR);
+        return;
+    }
+
     *pos_basename.offset(-(1 as isize)) = 0 as WCHAR;
     if lstrcmpiW(file as LPCWSTR, core::ptr::addr_of_mut!(myDocs) as LPCWSTR) == 0
         || lstrlenW(pos_basename as LPCWSTR) > (FILELIST_ENTRY_LENGTH as i32)

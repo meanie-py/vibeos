@@ -548,6 +548,14 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         arities = {_arity(i.text) for i in fns} - {None}
         if len(arities) > 1:
             return None, f"signature disagreement ({len(arities)} arities)"
+        # Nor may a vote pick a C `char *`'s pointee: `i8`, `u8` and `c_char` differ on some
+        # target (c_char is u8 on arm64), and crates hand-typed all three. winhlp32 got
+        # ucrt-rust's `strrchr(s: *const u8, ..) -> *mut u8` by count and needed a `.cast()`
+        # at every call. The prototype route spells the header's own `c_char`.
+        # Compared position by position, so a `BYTE *` beside a `char *` is not a split.
+        spellings = {_char_pointees(i.text) for i in fns}
+        if len({len(s) for s in spellings}) == 1 and len(spellings) > 1:
+            return None, "signature disagreement (char pointee: i8/u8/c_char)"
         return _most_common(fns), ""
     if any(i.kind == "type" for i in items):
         return None, "a type: add its header to the island allowlist"
@@ -586,6 +594,21 @@ def _arity(decl: str) -> int | None:
     if depth:
         return None
     return n + (1 if seen else 0)
+
+
+_CHAR_PTR = re.compile(
+    r"\*\s*(?:const|mut)\s+(?:(?:::)?core::ffi::)?(i8|u8|c_char|CHAR)\b"
+    r"|\b(L?P(?:C)?STR|PC?CHAR|PC?CH)\b"
+)
+
+
+def _char_pointees(decl: str) -> tuple[str, ...]:
+    """The pointee spelling of each byte/char pointer in a declaration, in order: `i8`,
+    `u8` or `c_char` (`CHAR` and the `PSTR` family are c_char)."""
+    return tuple(
+        "c_char" if m.group(2) or m.group(1) == "CHAR" else m.group(1)
+        for m in _CHAR_PTR.finditer(decl)
+    )
 
 
 def _most_common(items: list[Item]) -> Item:

@@ -38,79 +38,12 @@ macro_rules! MAKELANGID {
 const CP_ACP: UINT = 0;
 const INVALID_HANDLE_VALUE: isize = -1;
 
-// ---- wine/list.h intrusive doubly-linked-list (faithful to wine list.h) ----
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-
-#[inline]
-unsafe fn list_init(list: *mut list) {
-    (*list).next = list;
-    (*list).prev = list;
-}
-#[inline]
-unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
-    (*elem).prev = (*list).prev;
-    (*elem).next = list;
-    (*(*list).prev).next = elem;
-    (*list).prev = elem;
-}
-#[inline]
-unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = elem;
-    (*to_add).prev = (*elem).prev;
-    (*(*elem).prev).next = to_add;
-    (*elem).prev = to_add;
-}
-#[inline]
-unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
-}
-#[inline]
-unsafe fn list_next(list: *const list, elem: *const list) -> *mut list {
-    let ret = (*elem).next;
-    if ret == list as *mut list { core::ptr::null_mut() } else { ret }
-}
-#[inline]
-unsafe fn list_head(list: *const list) -> *mut list {
-    list_next(list, list)
-}
-
-/// wine list.h `LIST_ENTRY(ptr, type, field)` — container_of. (Macro namespace
-/// is distinct from the `LIST_ENTRY` type alias, so both coexist.)
-macro_rules! LIST_ENTRY {
-    ($ptr:expr, $ty:ty, $field:ident) => {
-        (($ptr as *mut u8).offset(-(core::mem::offset_of!($ty, $field) as isize))
-            as *mut $ty)
-    };
-}
-
-/// wine list.h `LIST_FOR_EACH_ENTRY(elem, list, type, field) { body }`.
-/// Expands the C `for` loop. Its increment must run on `continue` too, so it sits at the
-/// TOP of a `loop` rather than after `$body` in a `while`: there, a `continue` in the body
-/// skipped the advance and spun on the same entry forever -- add_resource_dir_entry and
-/// add_resource_data_entry both `continue` past every entry that sorts before the new one,
-/// so UpdateResource hung on the second resource it added.
-macro_rules! LIST_FOR_EACH_ENTRY {
-    ($elem:ident, $head:expr, $ty:ty, $field:ident, $body:block) => {{
-        let __head: *mut list = ($head) as *const list as *mut list;
-        $elem = LIST_ENTRY!((*__head).next, $ty, $field);
-        let mut __advance = false;
-        loop {
-            if __advance {
-                $elem = LIST_ENTRY!((*$elem).$field.next, $ty, $field);
-            }
-            __advance = true;
-            if &mut (*$elem).$field as *mut list == __head {
-                break;
-            }
-            $body
-        }
-    }};
-}
+// wine/list.h: the shared port (its LIST_FOR_EACH_ENTRY runs its step on `continue`, which
+// this file's own copy had learned from UpdateResource hanging on its second resource).
+use winelist_rust::{
+    list, list_add_before, list_add_tail, list_head, list_init, list_remove, LIST_ENTRY,
+    LIST_FOR_EACH_ENTRY,
+};
 
 extern "system" {
     fn GetModuleHandleA(lpModuleName: *const u8) -> HINSTANCE;
@@ -1652,20 +1585,20 @@ unsafe fn get_resource_sizes(updates: *mut QUEUEDUPDATES, si: *mut resource_size
 
     memset(si as *mut core::ffi::c_void, 0, core::mem::size_of::<resource_size_info>());
 
-    LIST_FOR_EACH_ENTRY!(types, &(*updates).root, resource_dir_entry, entry, {
+    LIST_FOR_EACH_ENTRY!(types, &raw mut (*updates).root, resource_dir_entry, entry, {
         num_types += 1;
         if IS_INTRESOURCE!((*types).id) == 0 {
             strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*types).id) as DWORD * core::mem::size_of::<WCHAR>() as DWORD;
         }
 
-        LIST_FOR_EACH_ENTRY!(names, &(*types).children, resource_dir_entry, entry, {
+        LIST_FOR_EACH_ENTRY!(names, &raw mut (*types).children, resource_dir_entry, entry, {
             num_names += 1;
 
             if IS_INTRESOURCE!((*names).id) == 0 {
                 strings_size += core::mem::size_of::<WORD>() as DWORD + lstrlenW((*names).id) as DWORD * core::mem::size_of::<WCHAR>() as DWORD;
             }
 
-            LIST_FOR_EACH_ENTRY!(data, &(*names).children, resource_data, entry, {
+            LIST_FOR_EACH_ENTRY!(data, &raw mut (*names).children, resource_data, entry, {
                 num_langs += 1;
                 data_size += ((*data).cbData + 3) & !3;
             });

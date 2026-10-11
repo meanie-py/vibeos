@@ -1288,10 +1288,15 @@ pub unsafe extern "C" fn GetMessageStringFromDll(
         ASSERT!(!lpMsgBuf.is_null());
 
         /* Trim any trailing whitespace */
+        // The C has no lower bound: an all-whitespace message walks off the front of the
+        // buffer. Stop at its first character.
         ptr = lpMsgBuf
             .offset(dwLength as isize - ((1) as isize));
         while iswspace((*ptr as u32) as u16) != 0 {
             *ptr = (UNICODE_NULL) as WCHAR;
+            if ptr == lpMsgBuf {
+                break;
+            }
             ptr = ptr.offset(-1);
         }
     }
@@ -2052,11 +2057,13 @@ pub unsafe extern "C" fn TrimNulls(s: LPWSTR) {
     let mut c: PWCHAR = core::ptr::null_mut();
 
     if !s.is_null() {
-        c = s.offset(wcslen(s) as isize - 1 as isize);
-        while c >= s && iswspace(*c) != 0 {
-            c = c.offset(-1);
+        // The C steps `c` to s-1 (and starts there for an empty string) before testing
+        // `c >= s`; count down by index so the cursor never leaves the string.
+        let mut n = wcslen(s);
+        while n > 0 && iswspace(*s.add(n - 1)) != 0 {
+            n -= 1;
         }
-        c = c.offset(1);
+        c = s.add(n);
         *c = 0x0000u16;
     }
 }

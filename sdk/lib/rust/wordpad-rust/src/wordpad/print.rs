@@ -697,7 +697,9 @@ unsafe extern "C" fn print(pd: LPPRINTDLGW, wszFileName: LPWSTR) {
         ) as LONG;
 
         if ((*pd).Flags & (PD_PAGENUMS as DWORD)) != 0 {
-            char_from_pagenum(hEditorWnd, core::ptr::addr_of_mut!(fr), (*pd).nToPage as ::core::ffi::c_int);
+            // The C passes nToPage, so a "pages 2-4" job starts at page 4 and prints 4-6; the
+            // loop below counts nToPage - nFromPage + 1 pages from here, so start at the first.
+            char_from_pagenum(hEditorWnd, core::ptr::addr_of_mut!(fr), (*pd).nFromPage as ::core::ffi::c_int);
         }
     }
 

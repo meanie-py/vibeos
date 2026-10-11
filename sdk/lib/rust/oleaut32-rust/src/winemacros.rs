@@ -293,69 +293,15 @@ macro_rules! MESSAGE {
 
 // ---- wine/list.h — the doubly-linked list olefont.c keeps its HFONT cache in ----
 // `struct list` and its operations are `static inline` in the header (list.h:37-40, 78-113):
-// they are NOT exported symbols, so they have to exist as Rust bodies. Transcribed
-// verbatim from the header; the pointer dances are load-bearing.
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-unsafe impl Sync for list {}
+// they are NOT exported symbols; winelist-rust is the shared port of them.
+pub use winelist_rust::{
+    list, list_add_after, list_add_before, list_add_head, list_add_tail, list_head, list_init,
+    list_next, list_remove,
+};
 /// rustconv spells `struct list *` as `*mut list_entry` in olefont.rs's extern block;
 /// same type, different name. (Not to be confused with winnt's `LIST_ENTRY`, which is a
 /// *different* struct — Flink/Blink — already mirrored in prelude.rs.)
 pub type list_entry = list;
-
-/// list.h:78 — add an element after the specified one
-#[inline]
-pub unsafe fn list_add_after(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = (*elem).next;
-    (*to_add).prev = elem;
-    (*(*elem).next).prev = to_add;
-    (*elem).next = to_add;
-}
-/// list.h:87 — add an element before the specified one
-#[inline]
-pub unsafe fn list_add_before(elem: *mut list, to_add: *mut list) {
-    (*to_add).next = elem;
-    (*to_add).prev = (*elem).prev;
-    (*(*elem).prev).next = to_add;
-    (*elem).prev = to_add;
-}
-/// list.h:96 — add element at the head of the list
-#[inline]
-pub unsafe fn list_add_head(list: *mut list, elem: *mut list) {
-    list_add_after(list, elem);
-}
-/// list.h:102 — add element at the tail of the list
-#[inline]
-pub unsafe fn list_add_tail(list: *mut list, elem: *mut list) {
-    list_add_before(list, elem);
-}
-/// list.h:108 — remove an element from its list
-#[inline]
-pub unsafe fn list_remove(elem: *mut list) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
-}
-/// list.h:115 — get the next element (NULL at the end)
-#[inline]
-pub unsafe fn list_next(list: *const list, elem: *const list) -> *mut list {
-    let ret = (*elem).next;
-    if (*elem).next == list as *mut list { core::ptr::null_mut() } else { ret }
-}
-/// list.h:131 — get the first element
-#[inline]
-pub unsafe fn list_head(list: *const list) -> *mut list {
-    list_next(list, list)
-}
-/// list.h:149 — initialize a list
-#[inline]
-pub unsafe fn list_init(list: *mut list) {
-    (*list).next = list;
-    (*list).prev = list;
-}
 
 // ---- C `min(a, b)` (windef.h macro) → generic free fn (the `max` above's twin) ----
 #[inline]
