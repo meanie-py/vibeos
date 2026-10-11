@@ -53,6 +53,58 @@ driver**:
   Windows 10 WDK assumes Windows 10 layouts, and a mismatch is silent corruption. Extend
   the offset verifiers to check our layouts against a Windows 10 WDK.
 
+**Built (2026-10-10): `tools/win10_surface.py`.** It reads the export tables of a real Windows
+install (WSL's `/mnt/c/Windows`: x64 `System32`, x86 `SysWOW64`, `System32\drivers`) and
+compares them with our `.spec`s. There are four subcommands:
+
+- `reference` reads the install into a cache.
+- `stubs --apply` writes every missing name into its module's `.spec` as a `@ stub`.
+- `verify` proves those stubs are dormant.
+- `gap <dirs>` ranks what a set of programs or driver packages imports that we don't export.
+
+The stub surface is **lined out, not implemented**: 16,874 stubs plus 124 data exports
+across 226 specs. Data exports are listed for an `extern` and get no stub. All of them sit
+in a generated block, measured against Windows 10.0.26100. Every line is
+`-version=0xA00+`, so the shipping 0x502 build never sees one, and `verify` checks that
+rather than assuming it: spec2def's output at 0x502 is byte-identical with and without the
+block on all three arches. The tier means "present in that build", not "introduced in
+Win10": nothing in an export table dates a name. Edit the hand-written part of a spec and
+re-run `stubs --apply`; never edit the block itself.
+
+`gap` labels each missing function with why it is missing:
+
+| Label | Meaning |
+|---|---|
+| `gated` | A real line exists behind a newer `-version`, so the work may be done |
+| `arch` | Exported on other arches only, often as arm64 forwards to `kernel32_vista` / `ntdll_vista` |
+| `stub` | Declared, but only as a stub |
+| `surface-only` | Only in the generated block |
+
+First runs (measured against Windows 10.0.26100):
+
+- **38 desktop apps, 2,385 images** (7-Zip, Blender, Git, VLC, Chrome, Paint.NET, Steam, …):
+  - **474 missing functions**, of which 126 are already in the tree as `gated` or `arch`:
+    SRW locks, condition variables, `InitOnce` and `GetTickCount64`, each imported by 11–19
+    apps. 92 are stubs and 256 are untouched.
+  - The CRT api sets (`api-ms-win-crt-*`) are imported by 15 apps, and we ship no api-set
+    DLLs.
+  - Missing modules: `ncrypt` (5 apps), Media Foundation (`mf`, `mfplat`, `mfreadwrite`)
+    and `wevtapi`.
+- **478 vendor driver packages, 1,099 images** (the host's `DriverStore`):
+  - **1,457 missing functions**, 1,272 of them untouched. The top entries:
+    - `KeInitializeSpinLock` (210 packages; our spec exports it on i386 only)
+    - `ExAllocatePool2` (176)
+    - ETW registration and writes (~146)
+    - the `RtlQueryFeatureConfiguration` / `RtlRegisterFeatureUsageProvider` family (117,
+      the WDK's static-library boilerplate)
+    - the NDIS 6 NetBufferList and miniport API (~60–90 each)
+  - Missing modules: `wpprecorder.sys` (128 packages), `cng.sys` (17), `werkernel.sys`
+    (14). KMDF's loader is *not* a gap: our `wdfldr.sys` declares all ten of the Windows
+    one's exports.
+
+Imports resolved at runtime through `GetProcAddress` are invisible to `gap`; that half
+still needs loader logging.
+
 Known contents, from the design discussion: the newer pool and MDL APIs
 (`ExAllocatePool2/3`, `MmMapIoSpaceEx`, no-execute MDL mappings), processor-group calls
 (trivially one group), `EtwRegister` and WPP plumbing (stub success first),

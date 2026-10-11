@@ -97,6 +97,10 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_probe_then_deref.py"),
     (".", ".", "tools/test_fix_probe_then_deref.py"),
     (".", ".", "tools/test_gen_suites.py"),
+    # win10_surface writes generated blocks into ~226 specs. Its failure modes are all
+    # quiet: a data export lined out as code, a name declared twice, its own block read
+    # back as "already declared", or the hand-written part of a spec re-flowed.
+    (".", ".", "tools/test_win10_surface.py"),
     # Same reason, one layer out: verify_cohab_coverage gates the merge train but reads
     # OBJECT FILES, so it cannot join test_scanner_controls (which drives source-only
     # `check` lints from fixture dirs) and would otherwise have no oracle at all.
