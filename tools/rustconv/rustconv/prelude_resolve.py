@@ -747,8 +747,10 @@ def _crate_calls(crate_dir: Path, names: set[str]) -> set[str]:
     if not names:
         return set()
     call = re.compile(rf"(?<![\w:])({'|'.join(map(re.escape, sorted(names)))})\s*\(")
+    from tools.source_walk import source_files
+
     out: set[str] = set()
-    for rs in (crate_dir / "src").rglob("*.rs"):
+    for rs in source_files(crate_dir / "src", "*.rs"):
         if rs.name == "prelude.rs":
             continue
         out |= set(call.findall(rs.read_text(errors="replace")))

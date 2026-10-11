@@ -348,7 +348,7 @@ pub const EVENT_MESSAGE_EVENTTEXT_BUFFER: usize = 1024 * 10; // NOTE: Used by ev
 
 pub const EVENT_MESSAGE_FILE_BUFFER: usize = 1024 * 10;
 
-pub const MAX_LOADSTRING: usize = 255;
+pub const MAX_LOADSTRING: usize = 255; // nolint: const-contradiction (eventvwr.c defines 255; regedit/magnify 100)
 
 pub const SPLIT_WIDTH: i32 = 4;
 
