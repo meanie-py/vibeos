@@ -2032,9 +2032,12 @@ Everything else is a cohab flip (body in a `*-rust` crate, thin C residue —
 (uniata, scsiport, classpnp, disk, cdrom, ramdisk, storport, storahci, **buslogic**,
 atapi, pciide(x), mountmgr, partmgr), all boot-path filesystems (fastfat, cdfs, fs_rec,
 mup, msfs, npfs), input (i8042prt, kbdclass, mouclass, arm64input), bus (pci, pcix, acpi
-glue), display (framebuf, arm64vid, bootvid), **afd**, **ks**, ksecdd, fltmgr, and the USB
-HC/hub/function stack. **Still pure C (not targets):** `videoprt.sys` (legacy INT10, dark
-under UEFI), the vendored **ACPICA** core (155 `.c` inside acpi.sys, kept by policy), and
+glue), display (framebuf, sysfb — arm64vid until 2026-10-11 —, bootvid, watchdog), **afd**,
+**ks**, ksecdd, fltmgr, and the USB HC/hub/function stack. `videoprt.sys` is **out of the
+build** (2026-10-11): every miniport it served went in the VGA/INT10 prune, and its only
+importer, dxapi, called nothing in it. Its Haiku translation ($0.28; `videoprt.c` never
+assembled) is parked at `~/vibeos-rust-staging/parked/videoprt-rust`, with the banks in
+`.responses/`. **Still pure C (not targets):** the vendored **ACPICA** core (155 `.c` inside acpi.sys, kept by policy), and
 the legacy **NDIS/tcpip/tdi** stack (dead, superseded by netstack).
 
 ## Beyond a port — Rust-native capabilities & correctness (the differentiators)

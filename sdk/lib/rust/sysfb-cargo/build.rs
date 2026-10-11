@@ -1,16 +1,16 @@
-//! Cargo-driven `arm64vid.sys` link (i386 + amd64 + arm64). Manifest for the
+//! Cargo-driven `sysfb.sys` link (i386 + amd64 + arm64). Manifest for the
 //! shared `reactos-link` engine. Sibling of `null-cargo`.
 //!
-//! Despite the historical name, arm64vid is the live GOP/linear-framebuffer
+//! Despite the historical name, sysfb is the live GOP/linear-framebuffer
 //! video device on ALL three UEFI arches (it renders the desktop), so it links
 //! per-arch like any kernelmodedriver.
 //!
-//! Mirrors the cmake `arm64vid.sys` link (set_module_type kernelmodedriver):
+//! Mirrors the cmake `sysfb.sys` link (set_module_type kernelmodedriver):
 //!   subsystem `native:5.01`, `-shared` (kerneldll), `--exclude-all-symbols`
 //!             + 0x1000 align, no `--gc-sections`.
 //!   entry  `DriverEntry@8` — i386 `_DriverEntry@8`; amd64/arm64 `DriverEntry`.
 //!   base   i386/amd64 `0x00010000`; arm64 `0x7FFB00000000`.
-//!   libs   ntoskrnl + hal import libs (cmake `add_importlibs(arm64vid ntoskrnl
+//!   libs   ntoskrnl + hal import libs (cmake `add_importlibs(sysfb ntoskrnl
 //!          hal)`). No leaf static libs (RtlZeroMemory etc → compiler-builtins).
 //!
 //! The cohab build used the user target `i686-pc-windows-gnu -sse,-sse2`; the
@@ -28,11 +28,11 @@ fn main() {
         "x86" => ("i686-kernel.json", "_DriverEntry@8", 0x0001_0000),
         "x86_64" => ("x86_64-pc-windows-gnu", "DriverEntry", 0x0001_0000),
         "aarch64" => ("aarch64-pc-windows-gnullvm", "DriverEntry", 0x7FFB_0000_0000),
-        other => panic!("arm64vid-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
+        other => panic!("sysfb-cargo: unsupported arch {other} (i386/amd64/arm64 only)"),
     };
 
     Linker::new(target_json)
-        .rust_staticlib("arm64vid-rust")
+        .rust_staticlib("sysfb-rust")
         .import_lib("ntoskrnl/ntoskrnl.spec", "ntoskrnl.exe", "ntoskrnl")
         .import_lib("hal/hal.spec", "hal.dll", "hal")
         .link(ModuleKind::KernelDll {

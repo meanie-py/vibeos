@@ -8,6 +8,6 @@
  * per the never-delete-a-translation rule. All 8 kdrosdbg.spec exports
  * (KdD0Transition, KdD3Transition, KdDebuggerInitialize0/1, KdSendPacket,
  * KdReceivePacket, KdSave, KdRestore) come from the linked Rust staticlib.
- * Mirrors the i8042prt-rust / framebuf-rust / arm64vid-rust cohabitation.
+ * Mirrors the i8042prt-rust / framebuf-rust / sysfb-rust cohabitation.
  */
 typedef int kdcom_rust_cohab_placeholder;

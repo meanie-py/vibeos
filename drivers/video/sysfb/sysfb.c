@@ -1,5 +1,5 @@
 /*
- * arm64vid.sys — Standalone ARM64 video device driver for QEMU ramfb/GOP framebuffer
+ * sysfb.sys — Standalone ARM64 video device driver for QEMU ramfb/GOP framebuffer
  *
  * Reads framebuffer info from ARC config tree (populated by FreeLDR from UEFI GOP),
  * creates \Device\Video0, writes DEVICEMAP\VIDEO registry entries, and handles
@@ -16,7 +16,7 @@
 #define DPRINT1 DbgPrint
 
 /* Device extension */
-typedef struct _ARM64VID_DEVICE_EXTENSION {
+typedef struct _SYSFB_DEVICE_EXTENSION {
     PHYSICAL_ADDRESS FrameBufferPhysical;
     ULONG            FrameBufferSize;
     ULONG            ScreenWidth;
@@ -35,14 +35,14 @@ typedef struct _ARM64VID_DEVICE_EXTENSION {
     /* Win32k callback info */
     PVOID            PhysDisp;
     PVOID            Callout;
-} ARM64VID_DEVICE_EXTENSION, *PARM64VID_DEVICE_EXTENSION;
+} SYSFB_DEVICE_EXTENSION, *PSYSFB_DEVICE_EXTENSION;
 
 /* Forward declarations */
-static NTSTATUS NTAPI Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-static NTSTATUS NTAPI Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
-static NTSTATUS Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt);
-static NTSTATUS Arm64VidWriteDeviceMap(void);
-static NTSTATUS Arm64VidWriteServiceConfig(PARM64VID_DEVICE_EXTENSION DevExt);
+static NTSTATUS NTAPI SysFbCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+static NTSTATUS NTAPI SysFbDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp);
+static NTSTATUS SysFbDiscoverFramebuffer(PSYSFB_DEVICE_EXTENSION DevExt);
+static NTSTATUS SysFbWriteDeviceMap(void);
+static NTSTATUS SysFbWriteServiceConfig(PSYSFB_DEVICE_EXTENSION DevExt);
 
 /* Helper: set REG_SZ value */
 static NTSTATUS
@@ -98,23 +98,23 @@ DriverEntry(
     NTSTATUS Status;
     PDEVICE_OBJECT DeviceObject;
     UNICODE_STRING DeviceName, SymlinkName;
-    PARM64VID_DEVICE_EXTENSION DevExt;
+    PSYSFB_DEVICE_EXTENSION DevExt;
 
-    DPRINT1("[arm64vid] DriverEntry\n");
+    DPRINT1("[sysfb] DriverEntry\n");
 
     /* Set up dispatch routines */
-    DriverObject->MajorFunction[IRP_MJ_CREATE] = Arm64VidCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_CLOSE] = Arm64VidCreateClose;
-    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = Arm64VidDeviceControl;
+    DriverObject->MajorFunction[IRP_MJ_CREATE] = SysFbCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_CLOSE] = SysFbCreateClose;
+    DriverObject->MajorFunction[IRP_MJ_DEVICE_CONTROL] = SysFbDeviceControl;
 
     /* Create \Device\Video0 */
     RtlInitUnicodeString(&DeviceName, L"\\Device\\Video0");
-    Status = IoCreateDevice(DriverObject, sizeof(ARM64VID_DEVICE_EXTENSION),
+    Status = IoCreateDevice(DriverObject, sizeof(SYSFB_DEVICE_EXTENSION),
                             &DeviceName, FILE_DEVICE_VIDEO, 0, FALSE,
                             &DeviceObject);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] IoCreateDevice failed: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] IoCreateDevice failed: 0x%08lx\n", Status);
         return Status;
     }
 
@@ -123,16 +123,16 @@ DriverEntry(
     Status = IoCreateSymbolicLink(&SymlinkName, &DeviceName);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] IoCreateSymbolicLink failed: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] IoCreateSymbolicLink failed: 0x%08lx\n", Status);
         /* Non-fatal — continue */
     }
 
     /* Initialize device extension */
-    DevExt = (PARM64VID_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
-    RtlZeroMemory(DevExt, sizeof(ARM64VID_DEVICE_EXTENSION));
+    DevExt = (PSYSFB_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+    RtlZeroMemory(DevExt, sizeof(SYSFB_DEVICE_EXTENSION));
 
     /* Discover framebuffer from ARC config tree in registry */
-    Status = Arm64VidDiscoverFramebuffer(DevExt);
+    Status = SysFbDiscoverFramebuffer(DevExt);
     if (!NT_SUCCESS(Status))
     {
         /* No GOP/linear framebuffer in the ARC config tree. This is the
@@ -143,34 +143,34 @@ DriverEntry(
          * BIOS. On a UEFI boot the framebuffer is always present, so this
          * path is only taken when there is genuinely nothing for us to drive.
          */
-        DPRINT1("[arm64vid] No ARC framebuffer (BIOS/no-GOP boot): 0x%08lx — "
+        DPRINT1("[sysfb] No ARC framebuffer (BIOS/no-GOP boot): 0x%08lx — "
                 "bailing, leaving display to VGA\n", Status);
         IoDeleteSymbolicLink(&SymlinkName);
         IoDeleteDevice(DeviceObject);
         return Status;
     }
 
-    DPRINT1("[arm64vid] Framebuffer: %ldx%ld %ld BPP, phys=0x%I64x, size=0x%lx, stride=%ld\n",
+    DPRINT1("[sysfb] Framebuffer: %ldx%ld %ld BPP, phys=0x%I64x, size=0x%lx, stride=%ld\n",
             DevExt->ScreenWidth, DevExt->ScreenHeight, DevExt->BitsPerPixel,
             DevExt->FrameBufferPhysical.QuadPart, DevExt->FrameBufferSize,
             DevExt->ScreenStride);
 
     /* Write DEVICEMAP\VIDEO registry entries */
-    Status = Arm64VidWriteDeviceMap();
+    Status = SysFbWriteDeviceMap();
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Failed to write DEVICEMAP\\VIDEO: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Failed to write DEVICEMAP\\VIDEO: 0x%08lx\n", Status);
         /* Non-fatal — win32k may not find us but driver still works */
     }
 
     /* Write service config (InstalledDisplayDrivers etc.) */
-    Status = Arm64VidWriteServiceConfig(DevExt);
+    Status = SysFbWriteServiceConfig(DevExt);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Failed to write service config: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Failed to write service config: 0x%08lx\n", Status);
     }
 
-    DPRINT1("[arm64vid] DriverEntry SUCCESS\n");
+    DPRINT1("[sysfb] DriverEntry SUCCESS\n");
     return STATUS_SUCCESS;
 }
 
@@ -178,7 +178,7 @@ DriverEntry(
  * IRP_MJ_CREATE / IRP_MJ_CLOSE — just succeed
  */
 static NTSTATUS NTAPI
-Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+SysFbCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     Irp->IoStatus.Status = STATUS_SUCCESS;
     Irp->IoStatus.Information = 0;
@@ -190,10 +190,10 @@ Arm64VidCreateClose(PDEVICE_OBJECT DeviceObject, PIRP Irp)
  * IRP_MJ_DEVICE_CONTROL — handle video IOCTLs
  */
 static NTSTATUS NTAPI
-Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
+SysFbDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 {
     PIO_STACK_LOCATION IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    PARM64VID_DEVICE_EXTENSION DevExt = DeviceObject->DeviceExtension;
+    PSYSFB_DEVICE_EXTENSION DevExt = DeviceObject->DeviceExtension;
     ULONG IoControlCode = IrpSp->Parameters.DeviceIoControl.IoControlCode;
     PVOID InputBuffer = Irp->AssociatedIrp.SystemBuffer;
     PVOID OutputBuffer = Irp->AssociatedIrp.SystemBuffer;
@@ -208,7 +208,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     {
         PVIDEO_WIN32K_CALLBACKS pCallbacks;
 
-        DPRINT1("[arm64vid] IOCTL_VIDEO_INIT_WIN32K_CALLBACKS\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_INIT_WIN32K_CALLBACKS\n");
 
         if (InputLength < sizeof(VIDEO_WIN32K_CALLBACKS) ||
             OutputLength < sizeof(VIDEO_WIN32K_CALLBACKS))
@@ -236,7 +236,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     {
         PVIDEO_NUM_MODES pModes;
 
-        DPRINT1("[arm64vid] IOCTL_VIDEO_QUERY_NUM_AVAIL_MODES\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_QUERY_NUM_AVAIL_MODES\n");
 
         if (OutputLength < sizeof(VIDEO_NUM_MODES))
         {
@@ -256,7 +256,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     {
         PVIDEO_MODE_INFORMATION pModeInfo;
 
-        DPRINT1("[arm64vid] IOCTL_VIDEO_QUERY_%s_MODE(S)\n",
+        DPRINT1("[sysfb] IOCTL_VIDEO_QUERY_%s_MODE(S)\n",
                 IoControlCode == IOCTL_VIDEO_QUERY_AVAIL_MODES ? "AVAIL" : "CURRENT");
 
         if (OutputLength < sizeof(VIDEO_MODE_INFORMATION))
@@ -295,7 +295,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
     case IOCTL_VIDEO_SET_CURRENT_MODE:
     {
-        DPRINT1("[arm64vid] IOCTL_VIDEO_SET_CURRENT_MODE\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_SET_CURRENT_MODE\n");
         /* Mode already set by UEFI GOP — nothing to do */
         Status = STATUS_SUCCESS;
         break;
@@ -305,7 +305,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     {
         PVIDEO_MEMORY_INFORMATION pVideoMemoryInfo;
 
-        DPRINT1("[arm64vid] IOCTL_VIDEO_MAP_VIDEO_MEMORY\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_MAP_VIDEO_MEMORY\n");
 
         if (InputLength < sizeof(VIDEO_MEMORY) ||
             OutputLength < sizeof(VIDEO_MEMORY_INFORMATION))
@@ -318,7 +318,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
         if (DevExt->FrameBufferPhysical.QuadPart == 0)
         {
-            DPRINT1("[arm64vid] No framebuffer physical address!\n");
+            DPRINT1("[sysfb] No framebuffer physical address!\n");
             Status = STATUS_UNSUCCESSFUL;
             break;
         }
@@ -334,13 +334,13 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
             if (!DevExt->FrameBufferMapped)
             {
-                DPRINT1("[arm64vid] MmMapIoSpace failed for 0x%I64x size 0x%lx\n",
+                DPRINT1("[sysfb] MmMapIoSpace failed for 0x%I64x size 0x%lx\n",
                         DevExt->FrameBufferPhysical.QuadPart, DevExt->FrameBufferMappedSize);
                 Status = STATUS_UNSUCCESSFUL;
                 break;
             }
 
-            DPRINT1("[arm64vid] Framebuffer mapped at %p (size 0x%lx)\n",
+            DPRINT1("[sysfb] Framebuffer mapped at %p (size 0x%lx)\n",
                     DevExt->FrameBufferMapped, DevExt->FrameBufferMappedSize);
         }
 
@@ -355,7 +355,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
 
     case IOCTL_VIDEO_UNMAP_VIDEO_MEMORY:
     {
-        DPRINT1("[arm64vid] IOCTL_VIDEO_UNMAP_VIDEO_MEMORY\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_UNMAP_VIDEO_MEMORY\n");
 
         if (DevExt->FrameBufferMapped)
         {
@@ -367,12 +367,12 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     }
 
     case IOCTL_VIDEO_RESET_DEVICE:
-        DPRINT1("[arm64vid] IOCTL_VIDEO_RESET_DEVICE\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_RESET_DEVICE\n");
         /* No-op */
         break;
 
     case IOCTL_VIDEO_SET_COLOR_REGISTERS:
-        DPRINT1("[arm64vid] IOCTL_VIDEO_SET_COLOR_REGISTERS (no-op for 32bpp)\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_SET_COLOR_REGISTERS (no-op for 32bpp)\n");
         /* No-op for 32bpp direct color */
         break;
 
@@ -380,7 +380,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     {
         PVIDEO_COLOR_CAPABILITIES pColorCaps;
 
-        DPRINT1("[arm64vid] IOCTL_VIDEO_QUERY_COLOR_CAPABILITIES\n");
+        DPRINT1("[sysfb] IOCTL_VIDEO_QUERY_COLOR_CAPABILITIES\n");
 
         if (OutputLength < sizeof(VIDEO_COLOR_CAPABILITIES))
         {
@@ -414,7 +414,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
     }
 
     default:
-        DPRINT1("[arm64vid] Unhandled IOCTL 0x%08lx\n", IoControlCode);
+        DPRINT1("[sysfb] Unhandled IOCTL 0x%08lx\n", IoControlCode);
         Status = STATUS_NOT_IMPLEMENTED;
         break;
     }
@@ -433,7 +433,7 @@ Arm64VidDeviceControl(PDEVICE_OBJECT DeviceObject, PIRP Irp)
  *     [1] CmResourceTypeDeviceSpecific: CM_FRAMEBUF_DEVICE_DATA
  */
 static NTSTATUS
-Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
+SysFbDiscoverFramebuffer(PSYSFB_DEVICE_EXTENSION DevExt)
 {
     NTSTATUS Status;
     HANDLE hDisplay = NULL;
@@ -472,7 +472,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
             Status = ZwOpenKey(&hDisplay, KEY_READ, &ObjectAttributes);
             if (NT_SUCCESS(Status))
             {
-                DPRINT1("[arm64vid] Found DisplayController at adapter %lu instance %lu\n",
+                DPRINT1("[sysfb] Found DisplayController at adapter %lu instance %lu\n",
                         AdapterIdx, InstanceIdx);
                 Found = TRUE;
             }
@@ -481,7 +481,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
 
     if (!Found)
     {
-        DPRINT1("[arm64vid] DisplayController not found in ARC config tree\n");
+        DPRINT1("[sysfb] DisplayController not found in ARC config tree\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -491,7 +491,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
                              NULL, 0, &ResultLength);
     if (Status != STATUS_BUFFER_TOO_SMALL && Status != STATUS_BUFFER_OVERFLOW)
     {
-        DPRINT1("[arm64vid] No Configuration Data value: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] No Configuration Data value: 0x%08lx\n", Status);
         ZwClose(hDisplay);
         return STATUS_NOT_FOUND;
     }
@@ -510,7 +510,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
 
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Failed to read Configuration Data: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Failed to read Configuration Data: 0x%08lx\n", Status);
         ExFreePoolWithTag(Buffer, 'diVA');
         return Status;
     }
@@ -520,7 +520,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
 
     if (ValueInfo->DataLength < sizeof(CM_FULL_RESOURCE_DESCRIPTOR))
     {
-        DPRINT1("[arm64vid] Configuration Data too small: %lu bytes\n", ValueInfo->DataLength);
+        DPRINT1("[sysfb] Configuration Data too small: %lu bytes\n", ValueInfo->DataLength);
         ExFreePoolWithTag(Buffer, 'diVA');
         return STATUS_INVALID_PARAMETER;
     }
@@ -528,7 +528,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
     FullResDesc = (PCM_FULL_RESOURCE_DESCRIPTOR)ValueInfo->Data;
     PartialList = &FullResDesc->PartialResourceList;
 
-    DPRINT1("[arm64vid] Configuration Data: %lu partial descriptors\n", PartialList->Count);
+    DPRINT1("[sysfb] Configuration Data: %lu partial descriptors\n", PartialList->Count);
 
     /* Walk partial descriptors looking for Memory + DeviceSpecific */
     for (i = 0; i < PartialList->Count; i++)
@@ -539,7 +539,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
         {
             DevExt->FrameBufferPhysical.QuadPart = PartialDesc->u.Memory.Start.QuadPart;
             DevExt->FrameBufferSize = PartialDesc->u.Memory.Length;
-            DPRINT1("[arm64vid] Memory resource: phys=0x%I64x, size=0x%lx\n",
+            DPRINT1("[sysfb] Memory resource: phys=0x%I64x, size=0x%lx\n",
                     DevExt->FrameBufferPhysical.QuadPart, DevExt->FrameBufferSize);
         }
         else if (PartialDesc->Type == CmResourceTypeDeviceSpecific)
@@ -557,7 +557,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
             /* Calculate stride */
             DevExt->ScreenStride = DevExt->PixelsPerScanLine * (DevExt->BitsPerPixel / 8);
 
-            DPRINT1("[arm64vid] Display: %lux%lu, %lu BPP, stride=%lu, R=0x%lx G=0x%lx B=0x%lx\n",
+            DPRINT1("[sysfb] Display: %lux%lu, %lu BPP, stride=%lu, R=0x%lx G=0x%lx B=0x%lx\n",
                     DevExt->ScreenWidth, DevExt->ScreenHeight, DevExt->BitsPerPixel,
                     DevExt->ScreenStride, DevExt->RedMask, DevExt->GreenMask, DevExt->BlueMask);
         }
@@ -568,7 +568,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
     /* Validate we got both memory and display info */
     if (DevExt->FrameBufferPhysical.QuadPart == 0 || DevExt->ScreenWidth == 0)
     {
-        DPRINT1("[arm64vid] Incomplete framebuffer info from ARC tree\n");
+        DPRINT1("[sysfb] Incomplete framebuffer info from ARC tree\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -586,7 +586,7 @@ Arm64VidDiscoverFramebuffer(PARM64VID_DEVICE_EXTENSION DevExt)
  * This is what EngpUpdateGraphicsDeviceList reads to discover video devices.
  */
 static NTSTATUS
-Arm64VidWriteDeviceMap(void)
+SysFbWriteDeviceMap(void)
 {
     NTSTATUS Status;
     HANDLE hDeviceMap = NULL, hVideo = NULL;
@@ -595,7 +595,7 @@ Arm64VidWriteDeviceMap(void)
     Status = RegCreateKey(NULL, L"\\Registry\\Machine\\HARDWARE\\DEVICEMAP", &hDeviceMap);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Cannot create DEVICEMAP key: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Cannot create DEVICEMAP key: 0x%08lx\n", Status);
         return Status;
     }
 
@@ -603,56 +603,56 @@ Arm64VidWriteDeviceMap(void)
     ZwClose(hDeviceMap);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Cannot create VIDEO key: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Cannot create VIDEO key: 0x%08lx\n", Status);
         return Status;
     }
 
     /* \Device\Video0 → registry path for driver service Device0 key */
     Status = RegSetSz(hVideo, L"\\Device\\Video0",
-                      L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\arm64vid\\Device0");
+                      L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\sysfb\\Device0");
     if (!NT_SUCCESS(Status))
-        DPRINT1("[arm64vid] Failed to write \\Device\\Video0 value: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Failed to write \\Device\\Video0 value: 0x%08lx\n", Status);
 
     /* MaxObjectNumber = 0 (one device) */
     Status = RegSetDword(hVideo, L"MaxObjectNumber", 0);
     if (!NT_SUCCESS(Status))
-        DPRINT1("[arm64vid] Failed to write MaxObjectNumber: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Failed to write MaxObjectNumber: 0x%08lx\n", Status);
 
     ZwClose(hVideo);
 
-    DPRINT1("[arm64vid] DEVICEMAP\\VIDEO written\n");
+    DPRINT1("[sysfb] DEVICEMAP\\VIDEO written\n");
     return STATUS_SUCCESS;
 }
 
 /*
  * Write driver service config:
- *   HKLM\SYSTEM\CurrentControlSet\Services\arm64vid\Device0\
+ *   HKLM\SYSTEM\CurrentControlSet\Services\sysfb\Device0\
  *     InstalledDisplayDrivers = REG_MULTI_SZ "framebuf\0"
  *     Device Description = REG_SZ "QEMU ARM64 Framebuffer"
  *     DefaultSettings.* = display settings
  */
 static NTSTATUS
-Arm64VidWriteServiceConfig(PARM64VID_DEVICE_EXTENSION DevExt)
+SysFbWriteServiceConfig(PSYSFB_DEVICE_EXTENSION DevExt)
 {
     NTSTATUS Status;
-    HANDLE hArm64vid = NULL, hDevice0 = NULL;
+    HANDLE hService = NULL, hDevice0 = NULL;
     /* "framebuf\0\0" — double-null terminated MULTI_SZ */
     static const WCHAR MultiSzFramebuf[] = L"framebuf\0";
 
     /* Open Services key */
-    Status = RegCreateKey(NULL, L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\arm64vid", &hArm64vid);
+    Status = RegCreateKey(NULL, L"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\sysfb", &hService);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Cannot open/create arm64vid service key: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Cannot open/create sysfb service key: 0x%08lx\n", Status);
         return Status;
     }
 
     /* Create Device0 subkey */
-    Status = RegCreateKey(hArm64vid, L"Device0", &hDevice0);
-    ZwClose(hArm64vid);
+    Status = RegCreateKey(hService, L"Device0", &hDevice0);
+    ZwClose(hService);
     if (!NT_SUCCESS(Status))
     {
-        DPRINT1("[arm64vid] Cannot create Device0 key: 0x%08lx\n", Status);
+        DPRINT1("[sysfb] Cannot create Device0 key: 0x%08lx\n", Status);
         return Status;
     }
 
@@ -674,7 +674,7 @@ Arm64VidWriteServiceConfig(PARM64VID_DEVICE_EXTENSION DevExt)
 
     ZwClose(hDevice0);
 
-    DPRINT1("[arm64vid] Service config written (framebuf, %lux%lu %lubpp)\n",
+    DPRINT1("[sysfb] Service config written (framebuf, %lux%lu %lubpp)\n",
             DevExt->ScreenWidth, DevExt->ScreenHeight, DevExt->BitsPerPixel);
     return STATUS_SUCCESS;
 }
