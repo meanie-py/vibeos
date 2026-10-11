@@ -595,6 +595,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Windows-host QEMU launch fails all three attempts: conformance `L:no-guest-serial`, smoke
+  `LAUNCH_FAIL` (FLAKE, host side, partly fixed 2026-10-11).** About 4% of conformance rounds
+  over 10-10/11 (10 artifacts under `~/vibeos-flake-farm/fails/auto/*L_no-guest-serial`, every
+  one `handshake_seconds` 15.00x with `UtilAcceptVsock: accept4 failed 110`). The guest never
+  ran: WSL interop did not start `qemu-system-*.exe`. Fixed: retries shared a staging dir
+  (attempt 2 died on attempt 1's still-open files), and an unconfirmed kill dropped the VM's
+  lock, which leaked nine qemu.exe processes (about four cores, some for eight days; killed
+  with the new `kill --stale`). OPEN: why one round's three attempts all fail while other
+  launches in the same minute succeed. Field manual: "`L:no-guest-serial`: the guest never ran".
+
 - **`apc32.exe` rung 4 "APC to a waiting thread lost" (FLAKE, open).** The WoW64 ladder's
   32-bit APC guest sometimes sees an APC queued to a thread in an alertable wait never run:
   the sleeper returns 0 and the guest exits 0xBA41. Seen 2026-10-10 in one amd64 queue gate
@@ -603,15 +613,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
   wait's alertable check is the first place to look.
 
-- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (OPEN,
-  2026-10-11).** With the USB-C hub on the Renesas uPD720201 card, some cold boots never see
-  the hub: usbport's root-hub-ready callback does not run for that controller, so usbhub's
-  bus-relations handler retries once a second on the PnP worker thread forever (387 times in
-  one boot) and nothing later in PnP starts, netstack included. Other boots enumerate the hub
-  and reach the desktop. `[USBPORT] root hub ready` and `[USBHUB] ... before enumeration is
-  allowed` now say which side is missing. Also open: usbhub has no SuperSpeed hub support
-  (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's I217 has
-  no interrupt (Interrupt Line 128; it polls). See `docs/engineering/optiplex-bench.md`.
+- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (FIXED
+  2026-10-11, rare trigger not yet seen again on the board).** The stalled boot's log shows
+  `[XHCI] start: controller did not halt (USBSTS 10)`: usbxhci gave the Renesas card 20 ms
+  to halt, and usbport reported the failed START as success (upstream's C does the same), so usbhub
+  waited forever on a root hub with no controller behind it. usbxhci now waits 200 ms and
+  resets anyway, and usbport fails the START. Forcing the failure in QEMU found two more
+  upstream bugs on that path (usbport never disconnects its interrupt; scsiport ignores a
+  failed interrupt connect and bugchecks 0xA), both fixed (field manual, "A USB controller
+  starts, and usbhub waits for its root hub forever"). Four cold boots since then had every
+  root hub ready and no halt miss. Still open on that card: usbhub has no SuperSpeed hub
+  support (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's
+  I217 has no interrupt (Interrupt Line 128; it polls). Also seen in those boots: serial goes
+  silent for about 3 minutes after `[SYSDRV] loading` Ndisuio/Afd/Netio while the box answers
+  ping, then the boot finishes; not yet run down. See `docs/engineering/optiplex-bench.md`.
 
 - **ntkrnl-sys `PCI_COMMON_CONFIG` has no header fields (OPEN, owed).** bindgen dropped the
   `PCI_COMMON_HEADER DUMMYSTRUCTNAME;` member, leaving a 192-byte `{ DeviceSpecific }` and a

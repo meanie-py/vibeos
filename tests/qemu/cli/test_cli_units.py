@@ -10397,6 +10397,7 @@ def test_kill_still_succeeds_when_a_SWEEP_matches_nothing(tmp_path, monkeypatch)
     from . import killvm
 
     monkeypatch.setattr(killvm, "running_vms", lambda: [])
+    monkeypatch.setattr(killvm, "untracked_windows_orphans", lambda: ([], ""))
 
     class _A:
         pids: ClassVar[list[int]] = []
@@ -10422,6 +10423,54 @@ def test_kill_reports_a_zombie_as_exited_not_as_unkillable(tmp_path, monkeypatch
 
     (proc / "status").write_text("Name:\tqemu\nState:\tR (running)\nPid:\t4242\n")
     assert not killvm._pid_is_zombie(4242)
+
+
+@pytest.mark.parametrize(("left", "prefix"), [(0, "killed"), (1, "STILL ALIVE"), (None, "FAILED")])
+def test_a_windows_kill_reports_what_powershell_confirmed(monkeypatch, left, prefix):
+    """kill_one said "killed" for every uid kill without looking, so the reaper's
+    keep-the-lock-on-failure rule could never fire for a windows-host VM."""
+    from tests.qemu.cli import killvm
+
+    monkeypatch.setattr(killvm.be, "kill_by_uid", lambda uid: left)
+    info = {"qemu_pid": 7, "arch": "i386", "cmd": ["qemu.exe", "-name", "vibeos-1-2"]}
+    assert killvm.kill_one(info).startswith(prefix)
+
+
+def test_windows_orphans_are_only_dead_harness_launches_nobody_holds(monkeypatch):
+    """The nine VMs found on 2026-10-11 had no lockfile at all, so only the Windows
+    process list can show them. A kept VM (re-locked under a live debugging session),
+    a gdb-start VM, a hand-launched QEMU and a live launch must all be left alone."""
+    from tests.qemu.cli import killvm
+
+    monkeypatch.setattr(killvm, "_pid_alive", lambda pid: pid in {500, 900})
+    procs = [
+        {"pid": 1, "name": "qemu-system-x86_64.exe", "cmd": "q -name vibeos-111-40000 -m 2G"},
+        {"pid": 2, "name": "qemu-system-i386.exe", "cmd": "q -name vibeos-222-40001 -m 2G"},
+        {"pid": 3, "name": "qemu-system-x86_64.exe", "cmd": "q -name vibeos-dbg-333-40002"},
+        {"pid": 4, "name": "qemu-system-x86_64.exe", "cmd": "q -m 8G -hda win.img"},
+        {"pid": 5, "name": "qemu-system-x86_64.exe", "cmd": "q -name vibeos-500-40003"},
+    ]
+    kept = {"owner_alive": True, "cmd": ["q", "-name", "vibeos-222-40001"]}
+    dead_lock = {"owner_alive": False, "cmd": ["q", "-name", "vibeos-111-40000"]}
+    got = killvm.windows_orphans([kept, dead_lock], procs)
+    assert [o["win_pid"] for o in got] == [1]
+    assert killvm.win_uid_of(got[0]) == "vibeos-111-40000" and got[0]["arch"] == "x86_64"
+
+
+def test_kill_stale_fails_loudly_when_windows_cannot_be_listed(tmp_path, monkeypatch):
+    """ "No orphans" from a sweep that could not look is a claim about processes
+    nobody saw."""
+    from . import killvm
+
+    monkeypatch.setattr(killvm, "running_vms", lambda: [])
+    monkeypatch.setattr(killvm, "untracked_windows_orphans", lambda: ([], "interop down"))
+
+    class _A:
+        pids: ClassVar[list[int]] = []
+        arch = None
+        stale = True
+
+    assert killvm.cmd_kill(_A(), tmp_path) != 0
 
 
 def test_zombie_check_is_false_where_proc_is_absent(tmp_path, monkeypatch):

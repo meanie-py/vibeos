@@ -14484,6 +14484,34 @@ VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced
 its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
 the box survives. Verify on the board.
 
+### A USB controller "starts", and usbhub waits for its root hub forever
+
+**Symptom.** `[DA] START` of a USB host controller returns `0x0`, its root hub starts, and then
+`[USBHUB] ... bus relations before enumeration is allowed (wait N)` climbs once a second on the
+PnP worker thread while nothing later in PnP starts. `[USBPORT] root hub ready` never prints
+for that controller. Seen on the OptiPlex's Renesas card on about half of cold boots.
+
+**Cause.** Two bugs, one after the other. usbxhci gave the controller 20 ms to halt
+(`[XHCI] start: controller did not halt (USBSTS 10)`; the firmware had left it running) and
+returned `MP_STATUS_HW_ERROR`. usbport's `USBPORT_StartDevice` then returned `Status`, which
+upstream's C also returns, and which still held `STATUS_SUCCESS` from an earlier call. So PnP saw a
+started controller with no miniport behind it: interrupts never enabled, so the worker never
+ran the root-hub callback usbhub waits for.
+
+**Fix.** usbport fails the START with `STATUS_UNSUCCESSFUL` and logs `miniport StartController
+failed`. usbxhci waits 200 ms for the halt and then resets the controller anyway (HCRST is the
+only recovery left). Look for the miniport's own start line (`[XHCI] controller running`)
+before trusting a `START -> 0x0`.
+
+**Failing the START exposed two more upstream bugs** (found by forcing `XHCI_StartController`
+to fail under `smoke --arch amd64 --xhci`). usbport *cleared* `USBPORT_FLAG_INT_CONNECTED` right
+after `IoConnectInterrupt`, so its failure path never disconnected: the HAL got the message
+vector back with the dead FDO's KINTERRUPT still in the IDT, and the next device handed that
+vector (the IDE channel) failed `IoConnectInterrupt` with `0xC000000D`. scsiport then ignored
+`FdoCallHWInitialize`'s failure and bugchecked `0xA` on the missing interrupt object. Both are
+fixed: usbport sets the flag (and cancels its timer on the later failure path), and scsiport
+fails the adapter. A rarely taken failure path is worth one forced-failure boot.
+
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
   N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
@@ -14819,6 +14847,34 @@ worktree or kill a running build to propagate this fix.
    reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
+
+### `L:no-guest-serial`: the guest never ran, and a "killed" VM may still be running
+**Symptom:** a conformance round's serial log holds only the harness's `#` header, the
+summary says `launched=0`, and `<arch>_launch.json` shows `handshake_seconds` 15.00x.
+`<arch>_qemu.stderr.log` is one line: `WSL ... UtilAcceptVsock:281: accept4 failed 110`.
+Smoke files the same failure as `LAUNCH_FAIL`. It is a host-side launch failure, not a guest
+bug: WSL interop did not get `qemu-system-*.exe` running, so nothing ever connected.
+**What is known.** Handshakes are bimodal: of 3,326 windows-host launches, successes took
+under 2.5s (p99.9, two outliers near 10s) and all 31 failures ran to the 15s limit, so a
+longer timeout would save none of them. Failures are not host-wide: launches from other runs,
+and even from the same gate's process tree, succeed in the same minute. Yet the three
+`launch_with_retry` attempts of a failing round all fail. That stickiness is UNEXPLAINED.
+(Conformance's pytest capture hides a launch that recovered on attempt 2, so "conformance
+never recovers" cannot be read from its logs; smoke recovered 86 of 95.)
+**Two causes found and fixed while looking:**
+- Retries shared one Windows staging dir, and attempt 1's qemu.exe releases its files
+  asynchronously after the kill, so attempt 2 died writing `tempdisk.qcow2` over a file
+  still open (2 of 6 rounds). Each launch now stages into its own dir.
+- `kill_by_uid` was best-effort and returned nothing, so `stop()`, `kill_one` and the reaper
+  all treated an unconfirmed kill as done and dropped the VM's lock. When `powershell.exe`
+  itself failed to launch (the same interop failure), qemu.exe ran on with no lock: invisible
+  to `ps`, `kill` and the lifetime cap. Nine were found on 2026-10-11, two of them having
+  used a full core each for eight days. Now `kill_by_uid` returns how many matches survive
+  (None if PowerShell gave no answer), every caller keeps the lock unless that is 0, and
+  `vibeos-cli ps` / `kill --stale` also list Windows-side `vibeos-<pid>-<port>` QEMUs whose
+  launcher is dead and that no live lock claims.
+**Check:** `vibeos-cli ps` prints an "untracked Windows QEMUs" block when any exist;
+`vibeos-cli kill --stale` stops them and fails if it could not confirm one.
 
 ### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
 **Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits
