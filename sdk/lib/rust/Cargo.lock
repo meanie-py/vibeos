@@ -136,22 +136,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "arm64vid-cargo"
-version = "0.1.0"
-dependencies = [
- "panic-common",
- "reactos-link",
-]
-
-[[package]]
-name = "arm64vid-rust"
-version = "0.1.0"
-dependencies = [
- "ntkrnl-sys",
- "panic-common",
-]
-
-[[package]]
 name = "arp-rust"
 version = "0.1.0"
 dependencies = [
@@ -3851,6 +3835,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "sysfb-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
+name = "sysfb-rust"
+version = "0.1.0"
+dependencies = [
+ "ntkrnl-sys",
+ "panic-common",
+]
+
+[[package]]
 name = "syssetup-rust"
 version = "0.1.0"
 dependencies = [
@@ -4376,6 +4376,17 @@ name = "w32time-rust"
 version = "0.1.0"
 dependencies = [
  "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "watchdog-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",

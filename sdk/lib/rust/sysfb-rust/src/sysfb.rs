@@ -1,5 +1,5 @@
-//! arm64vid.sys — standalone GOP/linear-framebuffer video device driver.
-//! Rust translation of `drivers/video/arm64vid/arm64vid.c`.
+//! sysfb.sys — standalone GOP/linear-framebuffer video device driver.
+//! Rust translation of `drivers/video/sysfb/sysfb.c`.
 //!
 //! See `lib.rs` for the cohabitation/role overview. One C file → one
 //! module. Built for all three arches (live UEFI framebuffer driver).
@@ -99,7 +99,7 @@ const VIDEO_MODE_LINEAR: u32 = 0x0100;
 const VIDEO_DEVICE_COLOR: u32 = 0x00000001;
 
 const FILE_DEVICE_VIDEO_TYPE: u32 = 0x00000023; // FILE_DEVICE_VIDEO for IoCreateDevice
-const TAG_AVID: u32 = u32::from_le_bytes(*b"AVid"); // 'diVA' multi-char → LE bytes
+const TAG_SYSFB: u32 = u32::from_le_bytes(*b"SyFb"); // 'bFyS' multi-char → LE bytes
 
 // CM_RESOURCE_TYPE values (sdk/include/xdk/cmtypes.h). Authoritative — NOT
 // guessed: DeviceSpecific=5 is the exact constant whose wrong value (0x81)
@@ -235,7 +235,7 @@ pub type PCM_FRAMEBUF_DEVICE_DATA = *mut CM_FRAMEBUF_DEVICE_DATA;
 // ---- device extension ----
 
 #[repr(C)]
-pub struct ARM64VID_DEVICE_EXTENSION {
+pub struct SYSFB_DEVICE_EXTENSION {
     pub FrameBufferPhysical: PHYSICAL_ADDRESS,
     pub FrameBufferSize: ULONG,
     pub ScreenWidth: ULONG,
@@ -251,10 +251,10 @@ pub struct ARM64VID_DEVICE_EXTENSION {
     pub PhysDisp: PVOID,
     pub Callout: PVOID,
     /// No framebuffer from firmware: FrameBufferMapped is nonpaged pool standing in
-    /// for one (see Arm64VidHeadless), never an I/O mapping.
+    /// for one (see SysFbHeadless), never an I/O mapping.
     pub Headless: BOOLEAN,
 }
-pub type PARM64VID_DEVICE_EXTENSION = *mut ARM64VID_DEVICE_EXTENSION;
+pub type PSYSFB_DEVICE_EXTENSION = *mut SYSFB_DEVICE_EXTENSION;
 
 // ---- registry helpers ----
 
@@ -342,23 +342,23 @@ pub unsafe extern "system" fn DriverEntry(
     let mut DeviceName: _UNICODE_STRING = core::mem::zeroed();
     let mut SymlinkName: _UNICODE_STRING = core::mem::zeroed();
 
-    DPRINT1!("[arm64vid] DriverEntry\n");
+    DPRINT1!("[sysfb] DriverEntry\n");
 
     // Dispatch routines
     let dev_name = wsz!(b"\\Device\\Video0");
     let sym_name = wsz!(b"\\??\\DISPLAY1");
 
     (*DriverObject).MajorFunction[IRP_MJ_CREATE as usize] =
-        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(Arm64VidCreateClose);
+        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbCreateClose);
     (*DriverObject).MajorFunction[IRP_MJ_CLOSE as usize] =
-        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(Arm64VidCreateClose);
+        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbCreateClose);
     (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL] =
-        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(Arm64VidDeviceControl);
+        core::mem::transmute::<DispatchFn, PDRIVER_DISPATCH>(SysFbDeviceControl);
 
     RtlInitUnicodeString(&mut DeviceName, dev_name.as_ptr());
     Status = IoCreateDevice(
         DriverObject,
-        core::mem::size_of::<ARM64VID_DEVICE_EXTENSION>() as ULONG,
+        core::mem::size_of::<SYSFB_DEVICE_EXTENSION>() as ULONG,
         &mut DeviceName,
         FILE_DEVICE_VIDEO_TYPE,
         0,
@@ -366,32 +366,29 @@ pub unsafe extern "system" fn DriverEntry(
         &mut DeviceObject,
     );
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] IoCreateDevice failed: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] IoCreateDevice failed: 0x%08lx\n", Status as u32);
         return Status;
     }
 
     RtlInitUnicodeString(&mut SymlinkName, sym_name.as_ptr());
     Status = IoCreateSymbolicLink(&mut SymlinkName, &mut DeviceName);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] IoCreateSymbolicLink failed: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] IoCreateSymbolicLink failed: 0x%08lx\n", Status as u32);
         // Non-fatal — continue
     }
 
-    let DevExt = (*DeviceObject).DeviceExtension as PARM64VID_DEVICE_EXTENSION;
-    core::ptr::write_bytes(DevExt as *mut u8, 0, core::mem::size_of::<ARM64VID_DEVICE_EXTENSION>());
+    let DevExt = (*DeviceObject).DeviceExtension as PSYSFB_DEVICE_EXTENSION;
+    core::ptr::write_bytes(DevExt as *mut u8, 0, core::mem::size_of::<SYSFB_DEVICE_EXTENSION>());
 
-    Status = Arm64VidDiscoverFramebuffer(DevExt);
-    #[cfg(target_arch = "aarch64")]
+    Status = SysFbDiscoverFramebuffer(DevExt);
     if !NT_SUCCESS(Status) {
-        Status = Arm64VidHeadless(DevExt);
+        Status = SysFbHeadless(DevExt);
     }
     if !NT_SUCCESS(Status) {
-        // No GOP/linear framebuffer in the ARC config tree — normal on a
-        // legacy-BIOS boot where the VGA miniport owns the display. We MUST
-        // bail rather than steal \Device\Video0 + point framebuf.dll at
-        // invalid memory. On UEFI the framebuffer is always present.
+        // Not even a frame in memory: there is nothing to hand win32k, which
+        // bugchecks 0xB4 without a display device.
         DPRINT1!(
-            "[arm64vid] No ARC framebuffer (BIOS/no-GOP boot): 0x%08lx - bailing, leaving display to VGA\n",
+            "[sysfb] No ARC framebuffer and no headless frame: 0x%08lx - bailing\n",
             Status as u32
         );
         IoDeleteSymbolicLink(&mut SymlinkName);
@@ -400,7 +397,7 @@ pub unsafe extern "system" fn DriverEntry(
     }
 
     DPRINT1!(
-        "[arm64vid] Framebuffer: %ldx%ld %ld BPP, size=0x%lx, stride=%ld\n",
+        "[sysfb] Framebuffer: %ldx%ld %ld BPP, size=0x%lx, stride=%ld\n",
         (*DevExt).ScreenWidth,
         (*DevExt).ScreenHeight,
         (*DevExt).BitsPerPixel,
@@ -408,32 +405,32 @@ pub unsafe extern "system" fn DriverEntry(
         (*DevExt).ScreenStride
     );
 
-    Status = Arm64VidWriteDeviceMap();
+    Status = SysFbWriteDeviceMap();
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Failed to write DEVICEMAP\\VIDEO: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Failed to write DEVICEMAP\\VIDEO: 0x%08lx\n", Status as u32);
         // Non-fatal
     }
 
-    Status = Arm64VidWriteServiceConfig(DevExt);
+    Status = SysFbWriteServiceConfig(DevExt);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Failed to write service config: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Failed to write service config: 0x%08lx\n", Status as u32);
     }
 
-    DPRINT1!("[arm64vid] DriverEntry SUCCESS\n");
+    DPRINT1!("[sysfb] DriverEntry SUCCESS\n");
     STATUS_SUCCESS
 }
 
-/// arm64 with no firmware framebuffer: a server (EC2 Graviton has no display). An
-/// arm64 machine has no VGA to fall back to, and win32k bugchecks (0xB4,
-/// VIDEO_DRIVER_INIT_FAILURE) without a display device, so the desktop runs on a
-/// frame in memory that nothing scans out. Everything above the driver works the
-/// same; the session is reached over the network or watched over serial.
-#[cfg(target_arch = "aarch64")]
-unsafe fn Arm64VidHeadless(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
+/// No firmware framebuffer: a server (EC2 Graviton has no display, nor does an x86 box
+/// booted without GOP). No arch has a VGA driver to fall back to any more (the miniports
+/// went in bdea86df186), and win32k bugchecks (0xB4, VIDEO_DRIVER_INIT_FAILURE) without
+/// a display device, so the desktop runs on a frame in memory that nothing scans out.
+/// Everything above the driver works the same; the session is reached over the network
+/// or watched over serial.
+unsafe fn SysFbHeadless(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS {
     const WIDTH: ULONG = 1024;
     const HEIGHT: ULONG = 768;
     let size = WIDTH * HEIGHT * 4;
-    let frame = ExAllocatePoolWithTag(NonPagedPool, size as _, TAG_AVID);
+    let frame = ExAllocatePoolWithTag(NonPagedPool, size as _, TAG_SYSFB);
     if frame.is_null() {
         return STATUS_INSUFFICIENT_RESOURCES;
     }
@@ -450,12 +447,12 @@ unsafe fn Arm64VidHeadless(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
     (*DevExt).FrameBufferMapped = frame;
     (*DevExt).FrameBufferMappedSize = size;
     (*DevExt).Headless = 1;
-    DPRINT1!("[arm64vid] no firmware framebuffer: headless, %lux%lu in memory\n", WIDTH, HEIGHT);
+    DPRINT1!("[sysfb] no firmware framebuffer: headless, %lux%lu in memory\n", WIDTH, HEIGHT);
     STATUS_SUCCESS
 }
 
 // IRP_MJ_CREATE / IRP_MJ_CLOSE — just succeed
-unsafe extern "system" fn Arm64VidCreateClose(_DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn SysFbCreateClose(_DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     (*Irp).IoStatus.__bindgen_anon_1.Status = STATUS_SUCCESS;
     (*Irp).IoStatus.Information = 0;
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
@@ -463,9 +460,9 @@ unsafe extern "system" fn Arm64VidCreateClose(_DeviceObject: PDEVICE_OBJECT, Irp
 }
 
 // IRP_MJ_DEVICE_CONTROL — handle video IOCTLs
-unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
+unsafe extern "system" fn SysFbDeviceControl(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS {
     let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-    let DevExt = (*DeviceObject).DeviceExtension as PARM64VID_DEVICE_EXTENSION;
+    let DevExt = (*DeviceObject).DeviceExtension as PSYSFB_DEVICE_EXTENSION;
     let IoControlCode = (*IrpSp).Parameters.DeviceIoControl.IoControlCode;
     let InputBuffer = (*Irp).AssociatedIrp.SystemBuffer;
     let OutputBuffer = (*Irp).AssociatedIrp.SystemBuffer;
@@ -476,7 +473,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
 
     match IoControlCode {
         IOCTL_VIDEO_INIT_WIN32K_CALLBACKS => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_INIT_WIN32K_CALLBACKS\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_INIT_WIN32K_CALLBACKS\n");
             if (InputLength as usize) < core::mem::size_of::<VIDEO_WIN32K_CALLBACKS>()
                 || (OutputLength as usize) < core::mem::size_of::<VIDEO_WIN32K_CALLBACKS>()
             {
@@ -493,7 +490,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         IOCTL_VIDEO_QUERY_NUM_AVAIL_MODES => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_QUERY_NUM_AVAIL_MODES\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_QUERY_NUM_AVAIL_MODES\n");
             if (OutputLength as usize) < core::mem::size_of::<VIDEO_NUM_MODES>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
@@ -505,7 +502,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         IOCTL_VIDEO_QUERY_AVAIL_MODES | IOCTL_VIDEO_QUERY_CURRENT_MODE => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_QUERY_AVAIL/CURRENT_MODE(S)\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_QUERY_AVAIL/CURRENT_MODE(S)\n");
             if (OutputLength as usize) < core::mem::size_of::<VIDEO_MODE_INFORMATION>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
@@ -536,13 +533,13 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         IOCTL_VIDEO_SET_CURRENT_MODE => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_SET_CURRENT_MODE\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_SET_CURRENT_MODE\n");
             // Mode already set by UEFI GOP — nothing to do
             Status = STATUS_SUCCESS;
         }
 
         IOCTL_VIDEO_MAP_VIDEO_MEMORY => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_MAP_VIDEO_MEMORY\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_MAP_VIDEO_MEMORY\n");
             if (InputLength as usize) < core::mem::size_of::<VIDEO_MEMORY>()
                 || (OutputLength as usize) < core::mem::size_of::<VIDEO_MEMORY_INFORMATION>()
             {
@@ -550,7 +547,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
             } else {
                 let pVideoMemoryInfo = OutputBuffer as *mut VIDEO_MEMORY_INFORMATION;
                 if (*DevExt).FrameBufferPhysical.QuadPart == 0 && (*DevExt).Headless == 0 {
-                    DPRINT1!("[arm64vid] No framebuffer physical address!\n");
+                    DPRINT1!("[sysfb] No framebuffer physical address!\n");
                     Status = STATUS_UNSUCCESSFUL;
                 } else {
                     if (*DevExt).FrameBufferMapped.is_null() {
@@ -558,13 +555,18 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
                         (*DevExt).FrameBufferMapped = MmMapIoSpace(
                             (*DevExt).FrameBufferPhysical,
                             (*DevExt).FrameBufferMappedSize as _,
-                            MmNonCached,
+                            // Write-combined, not uncached: GDI streams whole spans
+                            // into the frame, and UC makes every store a bus cycle
+                            // on x86. On arm64 MmNonCached I/O is Device memory,
+                            // where the unaligned stores compilers emit for merged
+                            // byte writes alignment-fault on real silicon.
+                            MmWriteCombined,
                         );
                         if (*DevExt).FrameBufferMapped.is_null() {
-                            DPRINT1!("[arm64vid] MmMapIoSpace failed\n");
+                            DPRINT1!("[sysfb] MmMapIoSpace failed\n");
                             Status = STATUS_UNSUCCESSFUL;
                         } else {
-                            DPRINT1!("[arm64vid] Framebuffer mapped at %p (size 0x%lx)\n",
+                            DPRINT1!("[sysfb] Framebuffer mapped at %p (size 0x%lx)\n",
                                 (*DevExt).FrameBufferMapped, (*DevExt).FrameBufferMappedSize);
                         }
                     }
@@ -580,7 +582,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         IOCTL_VIDEO_UNMAP_VIDEO_MEMORY => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_UNMAP_VIDEO_MEMORY\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_UNMAP_VIDEO_MEMORY\n");
             // A headless frame is pool, kept for the next MAP.
             if !(*DevExt).FrameBufferMapped.is_null() && (*DevExt).Headless == 0 {
                 MmUnmapIoSpace((*DevExt).FrameBufferMapped, (*DevExt).FrameBufferMappedSize as _);
@@ -590,17 +592,17 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         IOCTL_VIDEO_RESET_DEVICE => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_RESET_DEVICE\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_RESET_DEVICE\n");
             // No-op
         }
 
         IOCTL_VIDEO_SET_COLOR_REGISTERS => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_SET_COLOR_REGISTERS (no-op for 32bpp)\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_SET_COLOR_REGISTERS (no-op for 32bpp)\n");
             // No-op for 32bpp direct color
         }
 
         IOCTL_VIDEO_QUERY_COLOR_CAPABILITIES => {
-            DPRINT1!("[arm64vid] IOCTL_VIDEO_QUERY_COLOR_CAPABILITIES\n");
+            DPRINT1!("[sysfb] IOCTL_VIDEO_QUERY_COLOR_CAPABILITIES\n");
             if (OutputLength as usize) < core::mem::size_of::<VIDEO_COLOR_CAPABILITIES>() {
                 Status = STATUS_BUFFER_TOO_SMALL;
             } else {
@@ -625,7 +627,7 @@ unsafe extern "system" fn Arm64VidDeviceControl(DeviceObject: PDEVICE_OBJECT, Ir
         }
 
         _ => {
-            DPRINT1!("[arm64vid] Unhandled IOCTL 0x%08lx\n", IoControlCode);
+            DPRINT1!("[sysfb] Unhandled IOCTL 0x%08lx\n", IoControlCode);
             Status = STATUS_NOT_IMPLEMENTED;
         }
     }
@@ -659,7 +661,7 @@ fn push_decimal(buf: &mut [u16], mut at: usize, value: u32) -> usize {
     at
 }
 
-unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
+unsafe fn SysFbDiscoverFramebuffer(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut hDisplay: HANDLE = core::ptr::null_mut();
     let mut ObjectAttributes: OBJECT_ATTRIBUTES = core::mem::zeroed();
@@ -705,7 +707,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
             );
             Status = ZwOpenKey(&mut hDisplay, KEY_READ, &mut ObjectAttributes);
             if NT_SUCCESS(Status) {
-                DPRINT1!("[arm64vid] Found DisplayController at adapter %lu instance %lu\n",
+                DPRINT1!("[sysfb] Found DisplayController at adapter %lu instance %lu\n",
                     AdapterIdx, InstanceIdx);
                 Found = true;
                 break 'outer;
@@ -714,7 +716,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
     }
 
     if !Found {
-        DPRINT1!("[arm64vid] DisplayController not found in ARC config tree\n");
+        DPRINT1!("[sysfb] DisplayController not found in ARC config tree\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -730,13 +732,13 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
         &mut ResultLength,
     );
     if Status != STATUS_BUFFER_TOO_SMALL && Status != STATUS_BUFFER_OVERFLOW {
-        DPRINT1!("[arm64vid] No Configuration Data value: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] No Configuration Data value: 0x%08lx\n", Status as u32);
         ZwClose(hDisplay);
         return STATUS_NOT_FOUND;
     }
 
     let BufferSize = ResultLength;
-    let Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize as _, TAG_AVID) as *mut u8;
+    let Buffer = ExAllocatePoolWithTag(PagedPool, BufferSize as _, TAG_SYSFB) as *mut u8;
     if Buffer.is_null() {
         ZwClose(hDisplay);
         return STATUS_INSUFFICIENT_RESOURCES;
@@ -753,15 +755,15 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
     ZwClose(hDisplay);
 
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Failed to read Configuration Data: 0x%08lx\n", Status as u32);
-        ExFreePoolWithTag(Buffer as PVOID, TAG_AVID);
+        DPRINT1!("[sysfb] Failed to read Configuration Data: 0x%08lx\n", Status as u32);
+        ExFreePoolWithTag(Buffer as PVOID, TAG_SYSFB);
         return Status;
     }
 
     let ValueInfo = Buffer as PKEY_VALUE_PARTIAL_INFORMATION;
     if ((*ValueInfo).DataLength as usize) < core::mem::size_of::<CM_FULL_RESOURCE_DESCRIPTOR>() {
-        DPRINT1!("[arm64vid] Configuration Data too small: %lu bytes\n", (*ValueInfo).DataLength);
-        ExFreePoolWithTag(Buffer as PVOID, TAG_AVID);
+        DPRINT1!("[sysfb] Configuration Data too small: %lu bytes\n", (*ValueInfo).DataLength);
+        ExFreePoolWithTag(Buffer as PVOID, TAG_SYSFB);
         return STATUS_INVALID_PARAMETER;
     }
 
@@ -769,7 +771,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
     let PartialList = core::ptr::addr_of!((*FullResDesc).PartialResourceList) as *const CM_PARTIAL_RESOURCE_LIST;
     let count = (*PartialList).Count;
 
-    DPRINT1!("[arm64vid] Configuration Data: %lu partial descriptors\n", count);
+    DPRINT1!("[sysfb] Configuration Data: %lu partial descriptors\n", count);
 
     let mut i: u32 = 0;
     while i < count {
@@ -781,7 +783,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
         if (*PartialDesc).Type == CmResourceTypeMemory as u8 {
             (*DevExt).FrameBufferPhysical.QuadPart = (*PartialDesc).u.Memory.Start.QuadPart;
             (*DevExt).FrameBufferSize = (*PartialDesc).u.Memory.Length;
-            DPRINT1!("[arm64vid] Memory resource: size=0x%lx\n", (*DevExt).FrameBufferSize);
+            DPRINT1!("[sysfb] Memory resource: size=0x%lx\n", (*DevExt).FrameBufferSize);
         } else if (*PartialDesc).Type == CmResourceTypeDeviceSpecific as u8 {
             // The CM_FRAMEBUF_DEVICE_DATA follows immediately after this descriptor.
             let FramebufData = PartialDesc.add(1) as PCM_FRAMEBUF_DEVICE_DATA;
@@ -793,16 +795,16 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
             (*DevExt).GreenMask = (*FramebufData).PixelMasks.GreenMask;
             (*DevExt).BlueMask = (*FramebufData).PixelMasks.BlueMask;
             (*DevExt).ScreenStride = (*DevExt).PixelsPerScanLine * ((*DevExt).BitsPerPixel / 8);
-            DPRINT1!("[arm64vid] Display: %lux%lu, %lu BPP, stride=%lu\n",
+            DPRINT1!("[sysfb] Display: %lux%lu, %lu BPP, stride=%lu\n",
                 (*DevExt).ScreenWidth, (*DevExt).ScreenHeight, (*DevExt).BitsPerPixel, (*DevExt).ScreenStride);
         }
         i += 1;
     }
 
-    ExFreePoolWithTag(Buffer as PVOID, TAG_AVID);
+    ExFreePoolWithTag(Buffer as PVOID, TAG_SYSFB);
 
     if (*DevExt).FrameBufferPhysical.QuadPart == 0 || (*DevExt).ScreenWidth == 0 {
-        DPRINT1!("[arm64vid] Incomplete framebuffer info from ARC tree\n");
+        DPRINT1!("[sysfb] Incomplete framebuffer info from ARC tree\n");
         return STATUS_NOT_FOUND;
     }
 
@@ -815,7 +817,7 @@ unsafe fn Arm64VidDiscoverFramebuffer(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTS
 
 // ---- Write HARDWARE\DEVICEMAP\VIDEO ----
 
-unsafe fn Arm64VidWriteDeviceMap() -> NTSTATUS {
+unsafe fn SysFbWriteDeviceMap() -> NTSTATUS {
     let mut Status: NTSTATUS;
     let mut hDeviceMap: HANDLE = core::ptr::null_mut();
     let mut hVideo: HANDLE = core::ptr::null_mut();
@@ -823,45 +825,45 @@ unsafe fn Arm64VidWriteDeviceMap() -> NTSTATUS {
     let devicemap = wsz!(b"\\Registry\\Machine\\HARDWARE\\DEVICEMAP");
     let video = wsz!(b"VIDEO");
     let dev0_name = wsz!(b"\\Device\\Video0");
-    let dev0_path = wsz!(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\arm64vid\\Device0");
+    let dev0_path = wsz!(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\sysfb\\Device0");
     let max_obj = wsz!(b"MaxObjectNumber");
 
     Status = RegCreateKey(core::ptr::null_mut(), devicemap.as_ptr(), &mut hDeviceMap);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Cannot create DEVICEMAP key: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Cannot create DEVICEMAP key: 0x%08lx\n", Status as u32);
         return Status;
     }
 
     Status = RegCreateKey(hDeviceMap, video.as_ptr(), &mut hVideo);
     ZwClose(hDeviceMap);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Cannot create VIDEO key: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Cannot create VIDEO key: 0x%08lx\n", Status as u32);
         return Status;
     }
 
     Status = RegSetSz(hVideo, dev0_name.as_ptr(), dev0_path.as_ptr());
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Failed to write \\Device\\Video0 value: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Failed to write \\Device\\Video0 value: 0x%08lx\n", Status as u32);
     }
 
     Status = RegSetDword(hVideo, max_obj.as_ptr(), 0);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Failed to write MaxObjectNumber: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Failed to write MaxObjectNumber: 0x%08lx\n", Status as u32);
     }
 
     ZwClose(hVideo);
-    DPRINT1!("[arm64vid] DEVICEMAP\\VIDEO written\n");
+    DPRINT1!("[sysfb] DEVICEMAP\\VIDEO written\n");
     STATUS_SUCCESS
 }
 
 // ---- Write driver service config ----
 
-unsafe fn Arm64VidWriteServiceConfig(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTSTATUS {
+unsafe fn SysFbWriteServiceConfig(DevExt: PSYSFB_DEVICE_EXTENSION) -> NTSTATUS {
     let mut Status: NTSTATUS;
-    let mut hArm64vid: HANDLE = core::ptr::null_mut();
+    let mut hService: HANDLE = core::ptr::null_mut();
     let mut hDevice0: HANDLE = core::ptr::null_mut();
 
-    let svc = wsz!(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\arm64vid");
+    let svc = wsz!(b"\\Registry\\Machine\\System\\CurrentControlSet\\Services\\sysfb");
     let device0 = wsz!(b"Device0");
     let installed = wsz!(b"InstalledDisplayDrivers");
     let descr_name = wsz!(b"Device Description");
@@ -878,16 +880,16 @@ unsafe fn Arm64VidWriteServiceConfig(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTST
     let xpan_name = wsz!(b"DefaultSettings.XPanning");
     let ypan_name = wsz!(b"DefaultSettings.YPanning");
 
-    Status = RegCreateKey(core::ptr::null_mut(), svc.as_ptr(), &mut hArm64vid);
+    Status = RegCreateKey(core::ptr::null_mut(), svc.as_ptr(), &mut hService);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Cannot open/create arm64vid service key: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Cannot open/create sysfb service key: 0x%08lx\n", Status as u32);
         return Status;
     }
 
-    Status = RegCreateKey(hArm64vid, device0.as_ptr(), &mut hDevice0);
-    ZwClose(hArm64vid);
+    Status = RegCreateKey(hService, device0.as_ptr(), &mut hDevice0);
+    ZwClose(hService);
     if !NT_SUCCESS(Status) {
-        DPRINT1!("[arm64vid] Cannot create Device0 key: 0x%08lx\n", Status as u32);
+        DPRINT1!("[sysfb] Cannot create Device0 key: 0x%08lx\n", Status as u32);
         return Status;
     }
 
@@ -907,6 +909,6 @@ unsafe fn Arm64VidWriteServiceConfig(DevExt: PARM64VID_DEVICE_EXTENSION) -> NTST
     RegSetDword(hDevice0, ypan_name.as_ptr(), 0);
 
     ZwClose(hDevice0);
-    DPRINT1!("[arm64vid] Service config written\n");
+    DPRINT1!("[sysfb] Service config written\n");
     STATUS_SUCCESS
 }

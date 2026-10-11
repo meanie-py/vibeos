@@ -1,5 +1,5 @@
 //! Cargo-driven `i8042prt.sys` link (i386 + amd64 + arm64). Manifest for the
-//! shared `reactos-link` engine. Sibling of `null-cargo` / `arm64vid-cargo`.
+//! shared `reactos-link` engine. Sibling of `null-cargo` / `sysfb-cargo`.
 //!
 //! Mirrors the cmake `i8042prt.sys` link (set_module_type kernelmodedriver):
 //!   subsystem `native:5.01`, `-shared` (kerneldll), `--exclude-all-symbols`

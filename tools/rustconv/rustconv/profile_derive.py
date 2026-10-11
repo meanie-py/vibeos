@@ -1904,6 +1904,12 @@ def find_switch_constants(tus: list[Path], repo_root: Path) -> list[SwitchConst]
             inner = [value]
             while inner:
                 v = inner.pop()
+                if v.type in ("sizeof_expression", "alignof_expression"):
+                    # `case sizeof(VIDEO_HW_INITIALIZATION_DATA):` (videoprt) -- the operand
+                    # is a TYPE, which tree-sitter cannot tell from a variable inside the
+                    # parens. A size is a folded number, never a name an arm could bind,
+                    # so it carries no catch-all hazard.
+                    continue
                 inner.extend(v.children)
                 if v.type == "identifier":
                     # `case MAKEWPARAM(IDOK, BN_CLICKED):` -- the callee is a function-like

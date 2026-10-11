@@ -22,9 +22,9 @@ add_subdirectory(serial)
 add_subdirectory(setup)
 add_subdirectory(storage)
 add_subdirectory(usb)
-# drivers/video holds the standalone GOP/linear-framebuffer video driver
-# (arm64vid) used on UEFI boots. arm64 boots UEFI-only; i386/amd64 use it on
-# their UEFI path (it bails cleanly on legacy-BIOS boots, leaving VGA in charge).
+# drivers/video holds sysfb, the video driver over the framebuffer the firmware
+# hands over (UEFI GOP). It is the display on every arch: the VGA/VBE miniports
+# that legacy-BIOS boots used are gone (bdea86df186).
 if((ARCH STREQUAL "arm64") OR (ARCH STREQUAL "i386") OR (ARCH STREQUAL "amd64"))
     add_subdirectory(video)
 endif()

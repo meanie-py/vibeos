@@ -1293,7 +1293,7 @@ class Amd64UefiConfig(Amd64Config):
     Mirrors I386UefiConfig: i440fx (-M pc) + 64-bit OVMF, the ISO attached as an
     ide-cd with bootindex=0 (the CD is reachable over IDE, so uniata serves it
     and no AHCI driver is needed — q35 would put it on SATA). The uefildr.efi
-    (Rust EfiEntry) loader boots the same kernel; the GOP framebuffer (arm64vid
+    (Rust EfiEntry) loader boots the same kernel; the GOP framebuffer (sysfb
     + framebuf) and synthetic-RSDP ACPI path make the desktop render and PS/2
     input work, same as i386-uefi.
     """
