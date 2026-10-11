@@ -264,3 +264,19 @@ def test_an_unnamed_ellipsis_is_still_variadic():
     )
     assert "let mut args: va_list = *(ap_list as *mut va_list);" in out.text
     assert "pub fn PrintMessageStringV(dwMessage: DWORD, ...);" in out.text
+
+
+def test_the_parameter_itself_va_started_is_forwarded():
+    # mode's UnderlinedResPrintf: va_start!(args, uID) on the `...` parameter.
+    src = """\
+pub unsafe extern "C" fn Urp(Stream: PCON_STREAM, uID: UINT, mut args: ...) {
+    let mut Len: INT = 0;
+    va_start!(args, uID);
+    Len = ConResPrintfV(Stream, uID, args.as_va_list());
+    va_end!(args);
+}
+"""
+    r = v.rewrite(src)
+    assert r.names == ["Urp"] and not r.refused
+    assert "let mut args: va_list = *(ap_list as *mut va_list);" in r.text
+    assert "ConResPrintfV(Stream, uID, args);" in r.text and "va_start!" not in r.text

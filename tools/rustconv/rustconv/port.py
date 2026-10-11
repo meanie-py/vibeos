@@ -2030,6 +2030,16 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     prelude = crate / "src" / "prelude.rs"
     if prelude.is_file():
         twin_texts.append(prelude.read_text(errors="replace"))
+    # ...and the header crates the module depends on: label's ConFormatMessage takes a
+    # `PCON_STREAM`, which conutils-h (not the island) defines -- "no primitive C spelling".
+    for dep in re.findall(
+        r'^([\w-]+-h)\s*=\s*\{\s*path\s*=\s*"\.\./([\w-]+)"',
+        (crate / "Cargo.toml").read_text(errors="replace"),
+        re.M,
+    ):
+        lib = REPO / "sdk" / "lib" / "rust" / dep[1] / "src" / "lib.rs"
+        if lib.is_file():
+            twin_texts.append(lib.read_text(errors="replace"))
     maps = variadic_shim.alias_maps(
         [
             twin_texts
@@ -4358,6 +4368,10 @@ def _resolve_local_types(state: dict, prelude: Path, names: set[str]) -> set[str
         }
     names |= opaque
     names -= island - opaque
+    # ...nor one a shared header crate provides: replace's c2rust `PCON_STREAM = *mut
+    # _CON_STREAM` (its island's struct) shadowed conutils-h's, and every StdOut handed to
+    # ConFormatMessage was the other crate's type (E0308).
+    names -= set().union(*prelude_resolve.shared_provides(REPO / "sdk" / "lib" / "rust").values())
     # ...nor one the prelude's hand-written part defines: the scaffold's `size_t = usize`
     # got a second, c2rust `size_t = c_ulonglong` beside it (E0428, and amd64's width).
     hand = re.sub(
@@ -4803,6 +4817,9 @@ def stage_macros(
     _sdk_macros(state, crate, prelude, names - set(defs))
     wanted = called | local_macros.existing(prelude)
     hand = local_macros.hand_ported(prelude)
+    # An object-like `#define str_clone _wcsdup` that resolve already spells as
+    # `pub use _wcsdup as str_clone` is not a macro to port too (where: E0252).
+    hand |= set(re.findall(r"^pub use [\w:]+ as (\w+);", prelude.read_text(), re.M))
     macros = {n: m for n, m in local_macros.closure(wanted, defs).items() if n not in hand}
     skipped = sorted(names & ambiguous)
     if skipped:
