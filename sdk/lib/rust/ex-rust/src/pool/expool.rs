@@ -947,6 +947,13 @@ pub unsafe extern "system" fn ExQueryPoolUsage(
 
 #[no_mangle]
 pub unsafe extern "system" fn ExReturnPoolQuota(p: PVOID) {
+    // A special-pool block has no POOL_HEADER in front of it: it sits at the END of its
+    // page, so the page-aligned test below does not catch it and the read of `entry`
+    // faulted in IoFreeIrp (0xA at boot with SPECIALPOOL=*). This check is the C's.
+    if ExpPoolFlags & POOL_FLAG_SPECIAL_POOL != 0 && MmIsSpecialPoolAddress(p) != 0 {
+        return;
+    }
+    // Big pages have no header either, and are never quota-charged.
     if PAGE_ALIGN(p as usize) == p as usize {
         return;
     }
@@ -965,6 +972,15 @@ pub unsafe extern "system" fn ExReturnPoolQuota(p: PVOID) {
         let process_slot = (pool_next_block(entry) as *mut PVOID).sub(1);
         let process = *process_slot;
         if !process.is_null() {
+            if EprocessGetType(process as _) != ProcessObject {
+                KeBugCheckEx(
+                    BAD_POOL_CALLER,
+                    POOL_BILLED_PROCESS_INVALID as ULONG_PTR,
+                    p as ULONG_PTR,
+                    (*entry).PoolTag as ULONG_PTR,
+                    process as ULONG_PTR,
+                );
+            }
             *process_slot = null_mut();
             PsReturnPoolQuota(
                 process as _,

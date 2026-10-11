@@ -67,6 +67,16 @@ extern "system" {
     fn LoadStringW(hInstance: *mut c_void, uID: UINT, lpBuffer: *mut WCHAR, cchBufferMax: INT)
         -> INT;
     fn GetModuleHandleW(lpModuleName: LPCWSTR) -> *mut c_void;
+    fn WideCharToMultiByte(
+        CodePage: u32,
+        dwFlags: u32,
+        lpWideCharStr: *const WCHAR,
+        cchWideChar: INT,
+        lpMultiByteStr: *mut u8,
+        cbMultiByte: INT,
+        lpDefaultChar: *const u8,
+        lpUsedDefaultChar: *mut BOOL,
+    ) -> INT;
 }
 
 // ole32's COM task allocator, only for a module that enables the `com` feature: imported
@@ -92,6 +102,17 @@ static RESOURCE_INSTANCE: AtomicPtr<c_void> = AtomicPtr::new(core::ptr::null_mut
 /// `DllMain`), so `CStringW::LoadStringW` reads the DLL's string table, not the host EXE's.
 pub fn set_resource_instance(h: *mut c_void) {
     RESOURCE_INSTANCE.store(h, Ordering::Relaxed);
+}
+
+extern "C" {
+    /// The linker's symbol for the image that contains it -- the module's own, EXE or DLL.
+    static __ImageBase: u8;
+}
+
+/// `_AtlBaseModule.GetModuleInstance()`: CAtlBaseModule's constructor sets
+/// `m_hInst = reinterpret_cast<HINSTANCE>(&__ImageBase)`, the image this code is linked into.
+pub fn module_instance() -> *mut c_void {
+    unsafe { core::ptr::addr_of!(__ImageBase) as *mut c_void }
 }
 
 /// `_AtlBaseModule.GetResourceInstance()`: the instance set above, else the process image.
@@ -127,20 +148,78 @@ macro_rules! atl_format {
             [__a0 __a1 __a2 __a3 __a4 __a5 __a6 __a7 __a8 __a9 __a10 __a11 __a12 __a13 __a14
              __a15] $(, $a)*)
     };
+    // Every value is bound as a `match` SCRUTINEE, never a `let`: a temporary in a scrutinee
+    // lives until the end of the match, a temporary in a `let` initializer dies at its `;`.
+    // `atl_format!(s, CStringW::from_resource(IDS_X).GetString(), ..)` (mspaint's SetFileInfo)
+    // read a freed buffer through `let __fmt = ..` and set an empty window title.
     (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$n:ident $($names:ident)*], $a:expr
-        $(, $rest:expr)*) => {{
-        let $n = $a;
-        $crate::atl_format!(@bind $s, $fmt, [$($done)* $n], [$($names)*] $(, $rest)*)
-    }};
-    (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$($names:ident)*]) => {{
-        let __fmt: *const u16 = $fmt;
-        let __s: &mut $crate::CStringW = &mut $s;
-        let __need = $crate::_scwprintf(__fmt $(, $done)*);
-        let __buf = __s.format_begin_pub(__need);
-        if !__buf.is_null() {
-            $crate::swprintf(__buf, __fmt $(, $done)*);
-            __s.ReleaseBuffer();
+        $(, $rest:expr)*) => {
+        match $crate::VaPromote::va_promote($a) {
+            $n => $crate::atl_format!(@bind $s, $fmt, [$($done)* $n], [$($names)*] $(, $rest)*),
         }
+    };
+    (@bind $s:expr, $fmt:expr, [$($done:ident)*], [$($names:ident)*]) => {
+        match $fmt {
+            __fmt => {
+                let __fmt: *const u16 = __fmt;
+                let __s: &mut $crate::CStringW = &mut $s;
+                let __need = $crate::_scwprintf(__fmt $(, $done)*);
+                let __buf = __s.format_begin_pub(__need);
+                if !__buf.is_null() {
+                    $crate::swprintf(__buf, __fmt $(, $done)*);
+                    __s.ReleaseBuffer();
+                }
+            }
+        }
+    };
+}
+
+/// C's default argument promotions for a `...` argument: float becomes double, and the
+/// integer types narrower than `int` become `int`. `atl_format!` hands its arguments to a C
+/// variadic, where an `f32` does not compile (mspaint's `newWidth / g_xDpi`) and a narrow
+/// integer would be read back as an `int` the callee never got.
+pub trait VaPromote {
+    type Out;
+    fn va_promote(self) -> Self::Out;
+}
+macro_rules! va_promote_as {
+    ($($t:ty => $o:ty),* $(,)?) => {$(
+        impl VaPromote for $t {
+            type Out = $o;
+            #[inline(always)]
+            fn va_promote(self) -> $o { self as $o }
+        }
+    )*};
+}
+va_promote_as!(
+    f32 => f64, f64 => f64, i8 => i32, u8 => i32, i16 => i32, u16 => i32, i32 => i32,
+    u32 => u32, i64 => i64, u64 => u64, isize => isize, usize => usize,
+);
+impl<T> VaPromote for *const T {
+    type Out = *const T;
+    #[inline(always)]
+    fn va_promote(self) -> *const T {
+        self
+    }
+}
+impl<T> VaPromote for *mut T {
+    type Out = *mut T;
+    #[inline(always)]
+    fn va_promote(self) -> *mut T {
+        self
+    }
+}
+
+/// `CStringT::Format(UINT nFormatID, ...)` -- cstringt.h: the format is a string-table entry
+/// (`strSize.Format(IDS_FILESIZE, g_fileSize)`), loaded from the module's resources and then
+/// formatted as `atl_format!` does. ATL's ATLENSURE throws when the load fails; this formats
+/// the empty string instead, so the result is empty rather than an exception nobody catches.
+#[macro_export]
+macro_rules! atl_format_id {
+    ($s:expr, $id:expr $(, $a:expr)* $(,)?) => {{
+        let mut __f = $crate::CStringW::new();
+        __f.LoadStringW(($id) as u32);
+        $crate::atl_format!($s, __f.GetString() $(, $a)*);
     }};
 }
 
@@ -282,6 +361,17 @@ impl<T, A: CAllocator> CHeapPtr<T, A> {
     pub unsafe fn Reallocate(&mut self, nElements: usize) -> BOOL {
         let bytes = nElements.wrapping_mul(core::mem::size_of::<T>());
         let p = A::Reallocate(self.m_pData as *mut c_void, bytes) as *mut T;
+        if p.is_null() {
+            return 0;
+        }
+        self.m_pData = p;
+        1
+    }
+
+    /// ATL's `ReallocateBytes(nBytes)` (atlalloc.h): `Reallocate` by a byte count, for a
+    /// buffer whose size is not a whole number of `T` (mspaint's point list sizes in bytes).
+    pub unsafe fn ReallocateBytes(&mut self, nBytes: usize) -> BOOL {
+        let p = A::Reallocate(self.m_pData as *mut c_void, nBytes) as *mut T;
         if p.is_null() {
             return 0;
         }
@@ -1117,6 +1207,17 @@ impl CStringW {
         self.m_nLength = wide_len(self.m_pszData) as i32;
     }
 
+    /// `ReleaseBufferSetLength(int nNewLength)` — atlsimpstr.h; also `ReleaseBuffer(n)` with
+    /// an explicit length (CWindow::GetWindowText). The length is the caller's, not measured.
+    pub unsafe fn ReleaseBufferSetLength(&mut self, nNewLength: i32) {
+        if self.m_pszData.is_null() {
+            self.m_nLength = 0;
+            return;
+        }
+        self.m_nLength = nNewLength;
+        *self.m_pszData.add(nNewLength as usize) = 0;
+    }
+
     /// `Left(int nCount)` — cstringt.h:776. ATL clamps: negative yields empty, over-long
     /// yields the whole string.
     pub unsafe fn Left(&self, nCount: i32) -> Self {
@@ -1130,6 +1231,36 @@ impl CStringW {
         let mut s = Self::new();
         s.SetString(self.as_ptr(), n);
         s
+    }
+
+    /// `Mid(int iFirst)` — cstringt.h: from `iFirst` to the end (`Mid(iFirst, GetLength() -
+    /// iFirst)`). ATL clamps a negative `iFirst` to 0.
+    pub unsafe fn Mid(&self, iFirst: i32) -> Self {
+        self.Mid__1(iFirst, self.m_nLength - iFirst)
+    }
+
+    /// `Mid(int iFirst, int nCount)` — cstringt.h. ATL clamps: a negative `iFirst` or `nCount`
+    /// is 0, `iFirst` past the end is the end, and the count stops at the end of the string.
+    pub unsafe fn Mid__1(&self, iFirst: i32, nCount: i32) -> Self {
+        let first = iFirst.clamp(0, self.m_nLength);
+        let count = nCount.clamp(0, self.m_nLength - first);
+        let mut s = Self::new();
+        if count > 0 {
+            s.SetString(self.as_ptr().add(first as usize), count);
+        }
+        s
+    }
+
+    /// `ReverseFind(XCHAR ch)` — cstringt.h: the index of the LAST `ch`, or -1.
+    pub fn ReverseFind(&self, ch: WCHAR) -> i32 {
+        let mut i = self.m_nLength - 1;
+        while i >= 0 {
+            if unsafe { *self.as_ptr().add(i as usize) } == ch {
+                return i;
+            }
+            i -= 1;
+        }
+        -1
     }
 
     /// `operator+=(XCHAR ch)` — cstringt.h. Appends the character **even when it is NUL**,
@@ -1225,6 +1356,62 @@ impl CStringW {
             return core::ptr::null_mut();
         }
         self.GetBuffer(need)
+    }
+
+    /// `Replace(XCHAR chOld, XCHAR chNew)` -- cstringt.h:925, line for line. FindChar is
+    /// `wcschr`: it stops at the terminator, so a `|` -> NUL pass (mspaint's file filter
+    /// strings) works left to right and the length stays nLength, embedded NULs included.
+    pub unsafe fn Replace(&mut self, chOld: WCHAR, chNew: WCHAR) -> i32 {
+        unsafe fn find_char(mut p: *mut WCHAR, ch: WCHAR) -> *mut WCHAR {
+            loop {
+                if *p == ch {
+                    return p;
+                }
+                if *p == 0 {
+                    return core::ptr::null_mut();
+                }
+                p = p.add(1);
+            }
+        }
+        if self.m_pszData.is_null() {
+            return 0; // GetString() is L"": nothing to find
+        }
+        let pszString = self.m_pszData;
+        let mut pszFirst = find_char(pszString, chOld);
+        if pszFirst.is_null() {
+            return 0;
+        }
+        let nLength = self.m_nLength;
+        let mut nCount = 0;
+        let pszBuffer = self.GetBuffer(nLength);
+        pszFirst = pszBuffer.offset(pszFirst.offset_from(pszString));
+        loop {
+            *pszFirst = chNew;
+            nCount += 1;
+            pszFirst = find_char(pszFirst.add(1), chOld);
+            if pszFirst.is_null() {
+                break;
+            }
+        }
+        // ReleaseBufferSetLength(nLength)
+        self.m_nLength = nLength;
+        *self.m_pszData.add(nLength as usize) = 0;
+        nCount
+    }
+
+    /// `FormatV(PCXSTR pszFormat, va_list args)` -- cstringt.h:846: the length from
+    /// `_vscwprintf`, then `_vswprintf` into `GetBuffer(nLength)`, then
+    /// `ReleaseBufferSetLength(nLength)`. `args` is the caller's `va_list` VALUE (a single
+    /// pointer on all three Windows targets), as C passes it.
+    pub unsafe fn FormatV(&mut self, pszFormat: *const WCHAR, args: *mut c_void) {
+        let n_length = _vscwprintf(pszFormat, args);
+        let buf = self.GetBuffer(n_length);
+        _vswprintf(buf, pszFormat, args);
+        // ReleaseBufferSetLength(nLength): the length is the count, not a re-measure.
+        self.m_nLength = n_length.max(0);
+        if !buf.is_null() {
+            *buf.add(self.m_nLength as usize) = 0;
+        }
     }
 
     /// `Format(PCXSTR pszFormat, <one %s>)`.
@@ -1335,6 +1522,10 @@ extern "C" {
     /// arguments would produce, excluding the terminator. Negative on a bad format.
     #[doc(hidden)]
     pub fn _scwprintf(format: *const WCHAR, ...) -> INT;
+    /// msvcrt `_vscwprintf(format, va_list)` / `_vswprintf(dest, format, va_list)`: ATL's
+    /// wide StringTraits::FormatV pair.
+    fn _vscwprintf(format: *const WCHAR, args: *mut c_void) -> INT;
+    fn _vswprintf(dest: *mut WCHAR, format: *const WCHAR, args: *mut c_void) -> INT;
     /// msvcrt — case-insensitive wide compare, what ATL's W string traits use for
     /// `CompareNoCase`.
     fn _wcsicmp(left: *const WCHAR, right: *const WCHAR) -> INT;
@@ -1418,6 +1609,125 @@ impl Clone for CStringW {
             s.SetString(self.as_ptr(), self.m_nLength);
             s
         }
+    }
+}
+
+/// `CStringA` (`CStringT<char, ..>`), as far as modules use it: built from a WIDE string
+/// (cstringt.h's ChTraitsCRT<char>::ConvertToBaseType: WideCharToMultiByte with
+/// `_AtlGetConversionACP()`, CP_THREAD_ACP) and read back as an `LPCSTR`.
+pub struct CStringA {
+    m_pszData: *mut u8,
+    m_nLength: i32,
+}
+
+impl CStringA {
+    pub fn new() -> Self {
+        CStringA { m_pszData: core::ptr::null_mut(), m_nLength: 0 }
+    }
+
+    /// `CStringA(LPCWSTR)`. NULL is the empty string, as in ATL.
+    pub unsafe fn from_wide(pszSrc: *const WCHAR) -> Self {
+        let mut s = Self::new();
+        if pszSrc.is_null() {
+            return s;
+        }
+        // GetBaseTypeLength(LPCWSTR): the converted length, terminator excluded.
+        let n = WideCharToMultiByte(
+            CP_THREAD_ACP,
+            0,
+            pszSrc,
+            -1,
+            core::ptr::null_mut(),
+            0,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        ) - 1;
+        if n < 0 {
+            return s;
+        }
+        let p = <CLocalAllocator as CAllocator>::Reallocate(core::ptr::null_mut(), n as usize + 1)
+            as *mut u8;
+        if p.is_null() {
+            return s;
+        }
+        WideCharToMultiByte(
+            CP_THREAD_ACP,
+            0,
+            pszSrc,
+            wide_len(pszSrc) as INT + 1,
+            p,
+            n + 1,
+            core::ptr::null(),
+            core::ptr::null_mut(),
+        );
+        *p.add(n as usize) = 0;
+        s.m_pszData = p;
+        s.m_nLength = n;
+        s
+    }
+
+    /// `(LPCSTR)str` -- never NULL, like `CStringW::GetString`.
+    pub fn GetString(&self) -> *const u8 {
+        if self.m_pszData.is_null() {
+            b"\0".as_ptr()
+        } else {
+            self.m_pszData
+        }
+    }
+
+    pub fn GetLength(&self) -> i32 {
+        self.m_nLength
+    }
+}
+
+impl Default for CStringA {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Drop for CStringA {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.m_pszData.is_null() {
+                <CLocalAllocator as CAllocator>::Free(self.m_pszData as *mut c_void);
+            }
+        }
+    }
+}
+
+/// `CPath` (atlpath.h's `CPathT<CStringW>`), as far as modules use it.
+#[cfg(feature = "path")]
+pub struct CPath {
+    pub m_strPath: CStringW,
+}
+
+#[cfg(feature = "path")]
+extern "system" {
+    fn PathCompactPathExW(pszOut: *mut WCHAR, pszSrc: *const WCHAR, cchMax: UINT, dwFlags: u32)
+        -> BOOL;
+}
+
+#[cfg(feature = "path")]
+impl CPath {
+    /// `CPathT(PCXSTR pszPath)`.
+    pub unsafe fn from_ptr(pszPath: *const WCHAR) -> Self {
+        CPath { m_strPath: CStringW::from_ptr(pszPath) }
+    }
+
+    /// atlpath.h:180 `CompactPathEx(UINT nMaxChars, DWORD dwFlags = 0)`, line for line.
+    pub unsafe fn CompactPathEx(&mut self, nMaxChars: UINT, dwFlags: u32) -> BOOL {
+        let mut strTemp = CStringW::new();
+        let str = strTemp.GetBuffer(nMaxChars as i32);
+        let result = PathCompactPathExW(str, self.m_strPath.GetString(), nMaxChars, dwFlags);
+        strTemp.ReleaseBuffer();
+        self.m_strPath = strTemp;
+        result
+    }
+
+    /// `operator PCXSTR()`.
+    pub fn GetString(&self) -> *const WCHAR {
+        self.m_strPath.GetString()
     }
 }
 

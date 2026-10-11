@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use kmdf_sys::*;
 use ntkrnl_sys::ddk::{IRP, PIRP, IO_STACK_LOCATION, PIO_STACK_LOCATION, GUID, LPGUID, LPCGUID, DEVICE_OBJECT, PDEVICE_OBJECT, MDL, PMDL};
@@ -12,7 +13,6 @@ use core::ffi::c_void;
 extern "system" {
     fn DeviceGetExtension(Device: WDFDEVICE) -> *mut CDROM_DEVICE_EXTENSION;
     fn DeviceSendSrbSynchronously( Device: WDFDEVICE, Srb: *mut SCSI_REQUEST_BLOCK, Buffer: *mut core::ffi::c_void, BufferSize: u32, ForcePIO: i32, Unknown: *mut core::ffi::c_void, ) -> NTSTATUS;
-    fn NT_ASSERT(condition: i32);
 }
 
 // WPP tracing constants. These are C *compile-time* constants (`storswtr.h`), NOT linkable
@@ -113,8 +113,8 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
 
     PAGED_CODE!();
 
-    NT_ASSERT(((*mmcData).CapabilitiesBuffer.is_null()) as i32);
-    NT_ASSERT(((*mmcData).CapabilitiesBufferSize == 0) as i32);
+    NT_ASSERT!(((*mmcData).CapabilitiesBuffer.is_null()) as i32);
+    NT_ASSERT!(((*mmcData).CapabilitiesBufferSize == 0) as i32);
 
     status = DeviceGetConfigurationWithAlloc(
         Device,
@@ -125,13 +125,13 @@ pub unsafe extern "C" fn DeviceAllocateMmcResources(Device: WDFDEVICE) -> NTSTAT
     );
 
     if !NT_SUCCESS(status) {
-        NT_ASSERT(((*mmcData).CapabilitiesBuffer.is_null()) as i32);
-        NT_ASSERT(((*mmcData).CapabilitiesBufferSize == 0) as i32);
+        NT_ASSERT!(((*mmcData).CapabilitiesBuffer.is_null()) as i32);
+        NT_ASSERT!(((*mmcData).CapabilitiesBufferSize == 0) as i32);
         return status;
     }
 
-    NT_ASSERT((!(*mmcData).CapabilitiesBuffer.is_null()) as i32);
-    NT_ASSERT(((*mmcData).CapabilitiesBufferSize != 0) as i32);
+    NT_ASSERT!((!(*mmcData).CapabilitiesBuffer.is_null()) as i32);
+    NT_ASSERT!(((*mmcData).CapabilitiesBufferSize != 0) as i32);
 
     (*mmcData).CapabilitiesMdl = IoAllocateMdl(
         (*mmcData).CapabilitiesBuffer as *mut core::ffi::c_void,
@@ -459,7 +459,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
 ) -> NTSTATUS {
     // PAGED_CODE();
 
-    NT_ASSERT((!ValidBytes.is_null()) as i32);
+    NT_ASSERT!((!ValidBytes.is_null()) as i32);
 
     if Buffer.is_null() || BufferSize < core::mem::size_of::<GET_CONFIGURATION_HEADER>() as u32 {
         return STATUS_BUFFER_TOO_SMALL;
@@ -526,7 +526,7 @@ pub unsafe extern "C" fn DeviceGetConfiguration(
         if available < returned_val {
             returned_val = available;
         }
-        NT_ASSERT((returned_val <= BufferSize) as i32);
+        NT_ASSERT!((returned_val <= BufferSize) as i32);
         *ValidBytes = returned_val;
         status = STATUS_SUCCESS;
     } else {

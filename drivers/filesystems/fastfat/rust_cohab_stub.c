@@ -44,12 +44,9 @@
 #undef BlockAlignTruncate
 #undef NodeType
 #undef PAGED_CODE
-#undef ASSERT
-#undef NT_ASSERT
 #undef UNREFERENCED_PARAMETER
 #undef ARGUMENT_PRESENT
 #undef _Analysis_assume_
-#undef KdPrintEx
 #undef RtlRaiseStatus
 #undef RtlCheckBit
 #undef RtlConvertLongToLuid
@@ -359,13 +356,10 @@ ULONG NodeType(PVOID Node)              { return (ULONG)*((PUSHORT)Node); }
 VOID PAGED_CODE(VOID)                  { }
 VOID paged_code(VOID)                  { }
 VOID PagedCode(VOID)                   { }
-VOID ASSERT(BOOLEAN e)                 { (void)e; }
-VOID NT_ASSERT(BOOLEAN e)              { (void)e; }
 VOID UNREFERENCED_PARAMETER(PVOID p)   { (void)p; }
 VOID _Analysis_assume_(BOOLEAN b)      { (void)b; }
 BOOLEAN ARGUMENT_PRESENT(PVOID p)      { return p != NULL; }
 
-VOID KdPrintEx(ULONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
 
 VOID RtlRaiseStatus(NTSTATUS s)    { ExRaiseStatus(s); }
 

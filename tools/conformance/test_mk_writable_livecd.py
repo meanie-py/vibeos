@@ -48,3 +48,25 @@ def test_refuses_an_unexpected_system_path() -> None:
 def test_refuses_a_missing_entry() -> None:
     with pytest.raises(SystemExit):
         mk.rewrite_ini("[LiveCD_SMP]\r\nSystemPath=\\reactos\r\nOptions=/X\r\n")
+
+
+def test_stages_outside_the_build_dir(tmp_path, monkeypatch) -> None:
+    """The livecd tree copy must never appear inside build-<arch>: the amd64 WoW64 restage
+    walks build-i386 and died on a file the staging cleanup removed mid-walk."""
+    seen: dict[str, object] = {}
+
+    class Stop(Exception):
+        pass
+
+    def recorder(*args, **kwargs):
+        seen.update(kwargs)
+        raise Stop
+
+    monkeypatch.setattr(mk.shutil, "which", lambda _tool: "/bin/true")
+    monkeypatch.setattr(mk.tempfile, "TemporaryDirectory", recorder)
+    build_dir = tmp_path / "build-i386"
+    build_dir.mkdir()
+    with pytest.raises(Stop):
+        mk.build(build_dir / "livecd.iso", build_dir / mk.OUT_NAME)
+    staged = seen.get("dir")
+    assert staged is None or build_dir not in Path(str(staged)).resolve().parents, seen

@@ -78,7 +78,7 @@ def read_serial(path: Path) -> str:
 
 # base arch -> pytest arch (x86 boot the UEFI configs; arm64 is itself).
 _PYTEST_ARCH = {"i386": "i386-uefi", "amd64": "amd64-uefi"}
-WRITABLE_ROOT_ARCHES = {"amd64"}  # arm64 boots a writable ramdisk regardless
+WRITABLE_ROOT_ARCHES = {"amd64", "i386"}  # arm64 boots a writable ramdisk regardless
 
 
 def _load_parser(repo: Path):

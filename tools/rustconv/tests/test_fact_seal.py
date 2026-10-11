@@ -124,3 +124,25 @@ def test_a_dropped_sizeof_around_a_sealed_type_is_restored():
     assert out == "psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as DWORD;"
     kept = unseal_facts(f"psp.dwSize = core::mem::size_of::<{tok}>() as DWORD;", sealed)
     assert kept == "psp.dwSize = core::mem::size_of::<PROPSHEETPAGE>() as DWORD;"
+
+
+def test_island_constants_are_sealed_for_a_cppapp_unit(tmp_path):
+    """mspaint: `ATL_CImage_ExcludeFlags_excludeDefaultLoad` (a renamed nested enum) came back
+    as `1` for a value of 0 because neither matcher could see it."""
+    from rustconv.fact_seal import island_value_names, seal_facts
+
+    (tmp_path / "types_amd64.rs").write_text(
+        "pub const ATL_CImage_ExcludeFlags_excludeDefaultLoad: ATL_CImage_ExcludeFlags = 0;\n"
+        "pub const IDS_X: u32 = 5;\n"
+    )
+    names = island_value_names(tmp_path)
+    assert names == {"ATL_CImage_ExcludeFlags_excludeDefaultLoad"}
+    src = "{ int n = 0; f(s, ATL_CImage_ExcludeFlags_excludeDefaultLoad, IDS_X); }"
+    sealed = seal_facts(src, dialect="c", extra_values=names)
+    assert {f.original for f in sealed.facts} >= {
+        "ATL_CImage_ExcludeFlags_excludeDefaultLoad",
+        "IDS_X",
+    }
+    # Without the set the mixed-case constant is unprotected -- the shipped hole.
+    plain = seal_facts(src, dialect="c")
+    assert "ATL_CImage_ExcludeFlags_excludeDefaultLoad" not in {f.original for f in plain.facts}

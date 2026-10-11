@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use crate::glue::*;
 use ntkrnl_sys::globals::*;
@@ -52,8 +53,8 @@ pub unsafe extern "system" fn AhciPortInitialize(DeviceExtension: PVOID) -> BOOL
     abar = (*adapterExtension).ABAR_Address;
     portNumber = (*PortExtension).PortNumber;
 
-    NT_ASSERT((!abar.is_null()) as BOOLEAN);
-    NT_ASSERT((portNumber < (*adapterExtension).PortCount) as BOOLEAN);
+    NT_ASSERT!((!abar.is_null()) as BOOLEAN);
+    NT_ASSERT!((portNumber < (*adapterExtension).PortCount) as BOOLEAN);
 
     (*PortExtension).Port = core::ptr::addr_of_mut!((*abar).PortList[portNumber as usize]);
 
@@ -196,7 +197,7 @@ pub unsafe extern "C" fn AhciAllocateResourceForAdapter(
     portCount = 0;
     portImplemented = (*AdapterExtension).PortImplemented;
 
-    NT_ASSERT((portImplemented != 0) as BOOLEAN);
+    NT_ASSERT!((portImplemented != 0) as BOOLEAN);
     index = MAXIMUM_AHCI_PORT_COUNT - 1;
     while index > 0 {
         if (portImplemented & (1 << index)) != 0 {
@@ -341,7 +342,7 @@ pub unsafe extern "C" fn AhciStartPort(
     ));
     match ssts.DET() {
         0x3 => {
-            NT_ASSERT(cmd.ST() == 0);
+            NT_ASSERT!(cmd.ST() == 0);
 
             // make sure FIS Recieve is enabled (cmd.FRE)
             index = 0;
@@ -371,8 +372,8 @@ pub unsafe extern "C" fn AhciStartPort(
             // start port channel
             // set cmd.ST
 
-            NT_ASSERT(cmd.FRE() == 1);
-            NT_ASSERT(cmd.CR() == 0);
+            NT_ASSERT!(cmd.FRE() == 1);
+            NT_ASSERT!(cmd.CR() == 0);
 
             tfd.set_status(StorPortReadRegisterUlong(
                 AdapterExtension as PVOID,
@@ -661,7 +662,7 @@ pub unsafe extern "C" fn AhciInterruptHandler(PortExtension: PAHCI_PORT_EXTENSIO
     );
 
     AdapterExtension = (*PortExtension).AdapterExtension;
-    NT_ASSERT(IsPortValid(AdapterExtension, (*PortExtension).PortNumber));
+    NT_ASSERT!(IsPortValid(AdapterExtension, (*PortExtension).PortNumber));
 
     PxISMasked.set_status(0);
     PxIS.set_status(StorPortReadRegisterUlong(
@@ -754,7 +755,7 @@ pub unsafe extern "system" fn AhciHwInterrupt(DeviceExtension: PVOID) -> BOOLEAN
             continue;
         }
 
-        NT_ASSERT(IsPortValid(AdapterExtension, nextPort));
+        NT_ASSERT!(IsPortValid(AdapterExtension, nextPort));
 
         if (*AdapterExtension).PortExtension[nextPort as usize].DeviceParams.IsActive == 0 {
             i += 1;
@@ -853,7 +854,7 @@ pub unsafe extern "system" fn AhciHwStartIo(
                 );
                 (*Srb).SrbStatus = SRB_STATUS_BAD_FUNCTION;
             } else {
-                NT_ASSERT(!cdb.is_null());
+                NT_ASSERT!(!cdb.is_null());
 
                 match (*cdb).CDB10.as_ref().OperationCode {
                     SCSIOP_INQUIRY => {
@@ -1092,7 +1093,7 @@ pub unsafe extern "system" fn AhciHwFindAdapter(
 
     // allocate necessary resource for each port
     if AhciAllocateResourceForAdapter(adapterExtension, ConfigInfo) == 0 {
-        NT_ASSERT(FALSE);
+        NT_ASSERT!(FALSE);
         return SP_RETURN_ERROR;
     }
 
@@ -1155,7 +1156,7 @@ pub unsafe extern "system" fn DriverEntry(
         core::ptr::null_mut(),
     );
 
-    NT_ASSERT((status == STATUS_SUCCESS as _) as i32);
+    NT_ASSERT!((status == STATUS_SUCCESS as _) as i32);
     return status;
 }
 #[no_mangle]
@@ -1249,12 +1250,12 @@ pub unsafe extern "C" fn AhciBuild_PRDT(
     cmdTable = SrbExtension as PAHCI_COMMAND_TABLE;
     AdapterExtension = (*PortExtension).AdapterExtension;
 
-    NT_ASSERT((!sgl.is_null()) as BOOLEAN);
-    NT_ASSERT(((*sgl).NumberOfElements < MAXIMUM_AHCI_PRDT_ENTRIES) as BOOLEAN);
+    NT_ASSERT!((!sgl.is_null()) as BOOLEAN);
+    NT_ASSERT!(((*sgl).NumberOfElements < MAXIMUM_AHCI_PRDT_ENTRIES) as BOOLEAN);
 
     index = 0;
     while index < (*sgl).NumberOfElements {
-        NT_ASSERT(((*sgl).List[index as usize].Length <= MAXIMUM_TRANSFER_LENGTH) as BOOLEAN);
+        NT_ASSERT!(((*sgl).List[index as usize].Length <= MAXIMUM_TRANSFER_LENGTH) as BOOLEAN);
 
         (*cmdTable).PRDT[index as usize].DBA =
             (*sgl).List[index as usize].PhysicalAddress.__bindgen_anon_1.LowPart;
@@ -1291,13 +1292,13 @@ pub unsafe extern "C" fn AhciProcessSrb(
 
     AhciDebugPrint!(b"AhciProcessSrb()\n\0".as_ptr() as *const i8);
 
-    NT_ASSERT(((*Srb).PathId as ULONG == (*PortExtension).PortNumber) as i32);
+    NT_ASSERT!(((*Srb).PathId as ULONG == (*PortExtension).PortNumber) as i32);
 
     SrbExtension = GetSrbExtension(Srb);
     AdapterExtension = (*PortExtension).AdapterExtension;
 
-    NT_ASSERT((!SrbExtension.is_null()) as i32);
-    NT_ASSERT(((*SrbExtension).AtaFunction != 0) as i32);
+    NT_ASSERT!((!SrbExtension.is_null()) as i32);
+    NT_ASSERT!(((*SrbExtension).AtaFunction != 0) as i32);
 
     if ((*SrbExtension).AtaFunction == ATA_FUNCTION_ATA_IDENTIFY)
         && ((*SrbExtension).CommandReg == IDE_COMMAND_NOT_VALID as UCHAR)
@@ -1317,7 +1318,7 @@ pub unsafe extern "C" fn AhciProcessSrb(
         }
     }
 
-    NT_ASSERT((SlotIndex < AHCI_Global_Port_CAP_NCS((*AdapterExtension).CAP)) as i32);
+    NT_ASSERT!((SlotIndex < AHCI_Global_Port_CAP_NCS((*AdapterExtension).CAP)) as i32);
     (*SrbExtension).SlotIndex = SlotIndex;
 
     // program the CFIS in the CommandTable
@@ -1328,13 +1329,13 @@ pub unsafe extern "C" fn AhciProcessSrb(
     } else if IsAtaCommand((*SrbExtension).AtaFunction) != 0 {
         cfl = AhciATA_CFIS(PortExtension, SrbExtension);
     } else {
-        NT_ASSERT(0);
+        NT_ASSERT!(0);
         cfl = 0;
     }
 
     if IsDataTransferNeeded(SrbExtension) != 0 {
         prdtlen = AhciBuild_PRDT(PortExtension, SrbExtension);
-        NT_ASSERT((prdtlen != (-1i32 as ULONG)) as i32);
+        NT_ASSERT!((prdtlen != (-1i32 as ULONG)) as i32);
     } else {
         prdtlen = 0;
     }
@@ -1379,10 +1380,10 @@ pub unsafe extern "C" fn AhciProcessSrb(
         core::ptr::addr_of_mut!(length),
     );
 
-    NT_ASSERT((length != 0) as i32);
+    NT_ASSERT!((length != 0) as i32);
 
     // command table alignment
-    NT_ASSERT(((CommandTablePhysicalAddress.__bindgen_anon_1.LowPart % 128) == 0) as i32);
+    NT_ASSERT!(((CommandTablePhysicalAddress.__bindgen_anon_1.LowPart % 128) == 0) as i32);
 
     (*CommandHeader).CTBA = CommandTablePhysicalAddress.__bindgen_anon_1.LowPart;
 
@@ -1473,7 +1474,7 @@ pub unsafe extern "C" fn AhciProcessIO(
 
     PortExtension = core::ptr::addr_of_mut!((*AdapterExtension).PortExtension[PathId as usize]);
 
-    NT_ASSERT(((PathId as ULONG) < (*AdapterExtension).PortCount) as BOOLEAN);
+    NT_ASSERT!(((PathId as ULONG) < (*AdapterExtension).PortCount) as BOOLEAN);
 
     // Acquire Lock
     StorPortAcquireSpinLock(
@@ -1505,7 +1506,7 @@ pub unsafe extern "C" fn AhciProcessIO(
             if (commandSlotMask & (1 << slotIndex)) != 0 {
                 tmpSrb = RemoveQueue(core::ptr::addr_of_mut!((*PortExtension).SrbQueue)) as PSCSI_REQUEST_BLOCK;
                 if !tmpSrb.is_null() {
-                    NT_ASSERT(((*tmpSrb).PathId == PathId) as BOOLEAN);
+                    NT_ASSERT!(((*tmpSrb).PathId == PathId) as BOOLEAN);
                     AhciProcessSrb(PortExtension, tmpSrb, slotIndex);
                 } else {
                     break;
@@ -1537,8 +1538,8 @@ pub unsafe extern "C" fn AtapiInquiryCompletion(_Extension: PVOID, _Srb: PVOID) 
     PortExtension = _Extension as PAHCI_PORT_EXTENSION;
     Srb = _Srb as PSCSI_REQUEST_BLOCK;
 
-    NT_ASSERT((!Srb.is_null()) as BOOLEAN);
-    NT_ASSERT((!PortExtension.is_null()) as BOOLEAN);
+    NT_ASSERT!((!Srb.is_null()) as BOOLEAN);
+    NT_ASSERT!((!PortExtension.is_null()) as BOOLEAN);
 
     AdapterExtension = (*PortExtension).AdapterExtension;
 
@@ -1551,7 +1552,7 @@ pub unsafe extern "C" fn AtapiInquiryCompletion(_Extension: PVOID, _Srb: PVOID) 
         AHCI_Global_Port_CAP_NCS((*AdapterExtension).CAP),
     );
 
-    NT_ASSERT((status == 1) as BOOLEAN);
+    NT_ASSERT!((status == 1) as BOOLEAN);
     return;
 }
 
@@ -1589,8 +1590,8 @@ pub unsafe extern "C" fn InquiryCompletion(
     PortExtension = _Extension as PAHCI_PORT_EXTENSION;
     Srb = _Srb as PSCSI_REQUEST_BLOCK;
 
-    NT_ASSERT((!Srb.is_null()) as BOOLEAN);
-    NT_ASSERT((!PortExtension.is_null()) as BOOLEAN);
+    NT_ASSERT!((!Srb.is_null()) as BOOLEAN);
+    NT_ASSERT!((!PortExtension.is_null()) as BOOLEAN);
 
     InquiryData = (*Srb).DataBuffer as PINQUIRYDATA;
     SrbExtension = GetSrbExtension(Srb);
@@ -1604,8 +1605,8 @@ pub unsafe extern "C" fn InquiryCompletion(
         return;
     }
 
-    NT_ASSERT((!InquiryData.is_null()) as BOOLEAN);
-    NT_ASSERT(((*Srb).SrbStatus == SRB_STATUS_SUCCESS) as BOOLEAN);
+    NT_ASSERT!((!InquiryData.is_null()) as BOOLEAN);
+    NT_ASSERT!(((*Srb).SrbStatus == SRB_STATUS_SUCCESS) as BOOLEAN);
 
     // Device specific data
     (*PortExtension).DeviceParams.MaxLba.QuadPart = 0;
@@ -1642,7 +1643,7 @@ pub unsafe extern "C" fn InquiryCompletion(
             AhciDebugPrint!(
                 b"\tBytesPerLogicalSector != DEVICE_ATA_BLOCK_SIZE\n\0".as_ptr() as *const i8,
             );
-            NT_ASSERT(FALSE);
+            NT_ASSERT!(FALSE);
         }
 
         (*PortExtension).DeviceParams.BytesPerLogicalSector = DEVICE_ATA_BLOCK_SIZE;
@@ -1656,7 +1657,7 @@ pub unsafe extern "C" fn InquiryCompletion(
             AhciDebugPrint!(
                 b"\tBytesPerPhysicalSector != DEVICE_ATA_BLOCK_SIZE\n\0".as_ptr() as *const i8,
             );
-            NT_ASSERT(FALSE);
+            NT_ASSERT!(FALSE);
         }
 
         (*PortExtension).DeviceParams.BytesPerPhysicalSector = DEVICE_ATA_BLOCK_SIZE;
@@ -1699,7 +1700,7 @@ pub unsafe extern "C" fn InquiryCompletion(
             b"\tDataBufferLength < sizeof(INQUIRYDATA), Could crash the driver.\n\0".as_ptr()
                 as *const i8,
         );
-        NT_ASSERT(FALSE);
+        NT_ASSERT!(FALSE);
     }
 
     // update data transfer length
@@ -1749,7 +1750,7 @@ pub unsafe extern "C" fn InquiryCompletion(
         AHCI_Global_Port_CAP_NCS((*AdapterExtension).CAP),
     );
 
-    NT_ASSERT((status == TRUE) as BOOLEAN);
+    NT_ASSERT!((status == TRUE) as BOOLEAN);
     return;
 }
 
@@ -1867,8 +1868,8 @@ pub unsafe extern "C" fn DeviceRequestSense(
 
     AhciDebugPrint!(b"DeviceRequestSense()\n\0".as_ptr() as *const i8);
 
-    NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG) as i32);
-    NT_ASSERT(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_MODE_SENSE as u32) as i32);
+    NT_ASSERT!(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG) as i32);
+    NT_ASSERT!(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_MODE_SENSE as u32) as i32);
 
     PortExtension = core::ptr::addr_of_mut!((*AdapterExtension).PortExtension[(*Srb).PathId as usize]);
 
@@ -1878,7 +1879,7 @@ pub unsafe extern "C" fn DeviceRequestSense(
 
     ModeHeader = (*Srb).DataBuffer as PMODE_PARAMETER_HEADER;
 
-    NT_ASSERT((!ModeHeader.is_null()) as i32);
+    NT_ASSERT!((!ModeHeader.is_null()) as i32);
 
     AhciZeroMemory(ModeHeader as PCHAR, (*Srb).DataTransferLength);
 
@@ -1922,11 +1923,9 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
 
     AhciDebugPrint!(b"DeviceRequestReadWrite()\n\0".as_ptr() as *const i8);
 
-    NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
-    NT_ASSERT(
-        ((*Cdb).CDB10.as_ref().OperationCode == SCSIOP_READ)
-            || ((*Cdb).CDB10.as_ref().OperationCode == SCSIOP_WRITE),
-    );
+    NT_ASSERT!(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
+    NT_ASSERT!(((*Cdb).CDB10.as_ref().OperationCode == SCSIOP_READ)
+            || ((*Cdb).CDB10.as_ref().OperationCode == SCSIOP_WRITE));
 
     SrbExtension = GetSrbExtension(Srb);
     PortExtension = core::ptr::addr_of_mut!((*AdapterExtension).PortExtension[(*Srb).PathId as usize]);
@@ -1938,7 +1937,7 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
     DataTransferLength = (*Srb).DataTransferLength;
     BytesPerSector = (*PortExtension).DeviceParams.BytesPerLogicalSector;
 
-    NT_ASSERT(BytesPerSector > 0);
+    NT_ASSERT!(BytesPerSector > 0);
 
     //ROUND_UP(DataTransferLength, BytesPerSector);
 
@@ -1949,7 +1948,7 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
     StartOffset = AhciGetLba(Cdb, (*Srb).CdbLength as ULONG);
     IsReading = ((*Cdb).CDB10.as_ref().OperationCode == SCSIOP_READ) as BOOLEAN;
 
-    NT_ASSERT(SectorCount > 0);
+    NT_ASSERT!(SectorCount > 0);
 
     (*SrbExtension).AtaFunction = ATA_FUNCTION_ATA_READ;
     (*SrbExtension).Flags |= ATA_FLAGS_USE_DMA;
@@ -1983,14 +1982,14 @@ pub unsafe extern "C" fn DeviceRequestReadWrite(
         (*SrbExtension).LBA4 = ((StartOffset >> 32) & 0xFF) as UCHAR;
         (*SrbExtension).LBA5 = ((StartOffset >> 40) & 0xFF) as UCHAR;
     } else {
-        NT_ASSERT(0 != 0);
+        NT_ASSERT!(0 != 0);
     }
 
     (*SrbExtension).FeaturesHigh = 0;
     (*SrbExtension).SectorCountLow = ((SectorCount >> 0) & 0xFF) as UCHAR;
     (*SrbExtension).SectorCountHigh = ((SectorCount >> 8) & 0xFF) as UCHAR;
 
-    NT_ASSERT(SectorCount < 0x100);
+    NT_ASSERT!(SectorCount < 0x100);
 
     (*SrbExtension).pSgl = StorPortGetScatterGatherList(
         AdapterExtension,
@@ -2095,8 +2094,8 @@ pub unsafe extern "C" fn DeviceReportLuns(
         (*(*AdapterExtension).PortExtension.as_mut_ptr().offset((*Srb).PathId as isize))
     );
 
-    NT_ASSERT(((*Srb).DataTransferLength as usize >= core::mem::size_of::<LUN_LIST>()) as i32);
-    NT_ASSERT(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_REPORT_LUNS as u32) as i32);
+    NT_ASSERT!(((*Srb).DataTransferLength as usize >= core::mem::size_of::<LUN_LIST>()) as i32);
+    NT_ASSERT!(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_REPORT_LUNS as u32) as i32);
 
     if (*PortExtension).DeviceParams.DeviceType == AHCI_DEVICE_TYPE_ATAPI as UCHAR {
         return AhciATAPICommand(AdapterExtension, Srb, Cdb);
@@ -2104,7 +2103,7 @@ pub unsafe extern "C" fn DeviceReportLuns(
 
     LunList = (*Srb).DataBuffer as PLUN_LIST;
 
-    NT_ASSERT((!LunList.is_null()) as i32);
+    NT_ASSERT!((!LunList.is_null()) as i32);
 
     AhciZeroMemory(LunList as PCHAR, core::mem::size_of::<LUN_LIST>() as ULONG);
 
@@ -2144,8 +2143,8 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
 
     AhciDebugPrint!(b"DeviceInquiryRequest()\n\0".as_ptr() as *const i8);
 
-    NT_ASSERT(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_INQUIRY) as BOOLEAN);
-    NT_ASSERT(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
+    NT_ASSERT!(((*Cdb).CDB10.as_ref().OperationCode as u32 == SCSIOP_INQUIRY) as BOOLEAN);
+    NT_ASSERT!(IsPortValid(AdapterExtension, (*Srb).PathId as ULONG));
 
     SrbExtension = GetSrbExtension(Srb);
     PortExtension = core::ptr::addr_of_mut!((*AdapterExtension).PortExtension[(*Srb).PathId as usize]);
@@ -2160,7 +2159,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
         // 3.6.1
         // If the EVPD bit is set to zero, the device server shall return the standard INQUIRY data
         AhciDebugPrint!(b"\tEVPD Inquired\n\0".as_ptr() as *const i8);
-        NT_ASSERT((!SrbExtension.is_null()) as BOOLEAN);
+        NT_ASSERT!((!SrbExtension.is_null()) as BOOLEAN);
 
         (*SrbExtension).AtaFunction = ATA_FUNCTION_ATA_IDENTIFY;
         (*SrbExtension).Flags |= ATA_FLAGS_DATA_IN;
@@ -2228,7 +2227,7 @@ pub unsafe extern "C" fn DeviceInquiryRequest(
                 //VpdOutputBuffer->SupportedPageList[1] = VPD_SERIAL_NUMBER;
                 //VpdOutputBuffer->SupportedPageList[2] = VPD_DEVICE_IDENTIFIERS;
 
-                NT_ASSERT(((*VpdOutputBuffer).DeviceType() as u32 == DIRECT_ACCESS_DEVICE as u32) as BOOLEAN);
+                NT_ASSERT!(((*VpdOutputBuffer).DeviceType() as u32 == DIRECT_ACCESS_DEVICE as u32) as BOOLEAN);
             }
             VPD_SERIAL_NUMBER => {
                 AhciDebugPrint!(b"\tVPD_SERIAL_NUMBER\n\0".as_ptr() as *const i8);
@@ -2312,7 +2311,7 @@ pub unsafe extern "C" fn IsPortValid(
     AdapterExtension: PAHCI_ADAPTER_EXTENSION,
     pathId: ULONG,
 ) -> BOOLEAN {
-    NT_ASSERT(pathId < MAXIMUM_AHCI_PORT_COUNT);
+    NT_ASSERT!(pathId < MAXIMUM_AHCI_PORT_COUNT);
 
     if pathId >= (*AdapterExtension).PortCount {
         return 0;
@@ -2326,8 +2325,8 @@ pub unsafe extern "C" fn AddQueue(
     Queue: PAHCI_QUEUE,
     Srb: PVOID,
 ) -> BOOLEAN {
-    NT_ASSERT((*Queue).Head < MAXIMUM_QUEUE_BUFFER_SIZE);
-    NT_ASSERT((*Queue).Tail < MAXIMUM_QUEUE_BUFFER_SIZE);
+    NT_ASSERT!((*Queue).Head < MAXIMUM_QUEUE_BUFFER_SIZE);
+    NT_ASSERT!((*Queue).Tail < MAXIMUM_QUEUE_BUFFER_SIZE);
 
     if (*Queue).Tail == (((*Queue).Head + 1) % MAXIMUM_QUEUE_BUFFER_SIZE) {
         return 0;
@@ -2344,8 +2343,8 @@ pub unsafe extern "C" fn AddQueue(
 pub unsafe extern "C" fn RemoveQueue(Queue: PAHCI_QUEUE) -> PVOID {
     let mut Srb: PVOID;
 
-    NT_ASSERT(((*Queue).Head < MAXIMUM_QUEUE_BUFFER_SIZE) as i32);
-    NT_ASSERT(((*Queue).Tail < MAXIMUM_QUEUE_BUFFER_SIZE) as i32);
+    NT_ASSERT!(((*Queue).Head < MAXIMUM_QUEUE_BUFFER_SIZE) as i32);
+    NT_ASSERT!(((*Queue).Tail < MAXIMUM_QUEUE_BUFFER_SIZE) as i32);
 
     if (*Queue).Head == (*Queue).Tail {
         return core::ptr::null_mut();
@@ -2379,8 +2378,8 @@ pub unsafe extern "C" fn AhciGetLba(
 ) -> ULONG64 {
     let mut lba: ULONG64 = 0;
 
-    NT_ASSERT((Cdb != core::ptr::null_mut()) as i32);
-    NT_ASSERT((CdbLength != 0) as i32);
+    NT_ASSERT!((Cdb != core::ptr::null_mut()) as i32);
+    NT_ASSERT!((CdbLength != 0) as i32);
 
     if CdbLength == 0x10 {
         REVERSE_BYTES_QUAD(

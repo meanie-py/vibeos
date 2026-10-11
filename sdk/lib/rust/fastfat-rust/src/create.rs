@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TimerStart, TimerStop};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatNtTimeToFatTime};
@@ -67,7 +69,6 @@ extern "system" {
     fn FatLfnDirentExists( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Name: *mut _UNICODE_STRING, LfnBuffer: *mut _UNICODE_STRING, ) -> u8;
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, EventArgs: *mut c_void, ReplyArguments: *mut c_void, ReplyStatus: *mut NTSTATUS, ) -> NTSTATUS;
     fn DebugUnwind(name: *const i8);
-    fn NT_ASSERT(condition: i32);
     fn SetFlag(Flags: *mut u32, Flag: u32);
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
     fn ARGUMENT_PRESENT(x: *mut c_void) -> u8;
@@ -159,13 +160,11 @@ extern "system" {
     fn CollectCreateHitStatistics(Vcb: *mut VCB);
     fn CollectCreateStatistics(Vcb: *mut VCB, Status: NTSTATUS);
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
-    fn TimerStart(Dbg: *const u8);
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
     fn IoSetTopLevelIrp(Irp: PIRP) -> *mut core::ffi::c_void;
     fn FsRtlExitFileSystem();
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn TimerStop(Dbg: *const u8, Name: *const i8);
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -268,7 +267,7 @@ pub unsafe extern "system" fn FatFsdCreate(
         return STATUS_SUCCESS;
     }
 
-    TimerStart(core::ptr::null());
+    TimerStart!(core::ptr::null());
     DebugTrace(1, (Dbg) as i32, b"FatFsdCreate\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
@@ -303,7 +302,7 @@ pub unsafe extern "system" fn FatFsdCreate(
         FatCompleteRequest(IrpContext, Irp, Status);
     }
     DebugTrace(-1, (Dbg) as i32, b"FatFsdCreate -> %08lx\n\0".as_ptr() as *const i8, Status);
-    TimerStop(core::ptr::null(), b"FatFsdCreate\0".as_ptr() as *const i8);
+    TimerStop!(core::ptr::null(), b"FatFsdCreate\0".as_ptr() as *const i8);
     Status
 }
 #[no_mangle]
@@ -465,7 +464,7 @@ pub unsafe extern "system" fn FatCommonCreate(
         }
     }
 
-    NT_ASSERT(!(*IrpSp).Parameters.Create.SecurityContext.is_null() as i32);
+    NT_ASSERT!(!(*IrpSp).Parameters.Create.SecurityContext.is_null() as i32);
 
     let FileObject = (*IrpSp).FileObject;
     let RelatedFileObject = (*FileObject).RelatedFileObject;
@@ -637,7 +636,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 let mut DecodeVcb: *mut VCB = core::ptr::null_mut();
                 if RelatedFileObject.is_null() ||
                     FatDecodeFileObject(RelatedFileObject, &mut DecodeVcb, &mut Fcb, &mut core::ptr::null_mut()) == UserVolumeOpen {
-                    NT_ASSERT((RelatedFileObject.is_null() || Vcb == DecodeVcb) as i32);
+                    NT_ASSERT!((RelatedFileObject.is_null() || Vcb == DecodeVcb) as i32);
 
                     if DirectoryFile {
                         DebugTrace(0, 0, b"Cannot open volume as a directory\n\0".as_ptr() as *const i8);
@@ -671,7 +670,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
-                NT_ASSERT((Vcb == RelatedVcb) as i32);
+                NT_ASSERT!((Vcb == RelatedVcb) as i32);
                 (*FileObject).Vpb = (*RelatedFileObject).Vpb;
 
                 // FatVerifyFcb is VOID (raises on bad Fcb). See fix note above.
@@ -758,9 +757,9 @@ pub unsafe extern "system" fn FatCommonCreate(
                     if NextFcb.is_null() && !(*Fcb).Specific.Dcb.as_ref().RootUnicodeNode.is_null() {
                         FatEnsureStringBufferEnough(&mut UpcasedFinalName as *mut _ as *mut core::ffi::c_void, FinalName.Length);
                         Status = RtlDowncaseUnicodeString(&mut UpcasedFinalName, &FinalName as *const _ as *mut _, 0);
-                        NT_ASSERT((NT_SUCCESS(Status) != 0) as i32);
+                        NT_ASSERT!((NT_SUCCESS(Status) != 0) as i32);
                         Status = RtlUpcaseUnicodeString(&mut UpcasedFinalName, &UpcasedFinalName as *const _ as *mut _, 0);
-                        NT_ASSERT((NT_SUCCESS(Status) != 0) as i32);
+                        NT_ASSERT!((NT_SUCCESS(Status) != 0) as i32);
                         let dcb_ref2 = (*Fcb).Specific.Dcb.as_mut();
                         NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref2.RootUnicodeNode).cast(), &UpcasedFinalName as *const _ as *mut STRING, &mut FileNameOpenedDos);
                     }
@@ -814,7 +813,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 }
             }
 
-            NT_ASSERT(((*Fcb).FcbCondition == FcbGood as u32) as i32);
+            NT_ASSERT!(((*Fcb).FcbCondition == FcbGood as u32) as i32);
 
             if IsPagingFile {
                 if NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
@@ -1203,7 +1202,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 && (NodeType(LocalFcb as *const c_void) == FAT_NTC_FCB as u32
                     || IsListEmpty(core::ptr::addr_of!((*LocalFcb).Specific.Dcb.as_ref().ParentDcbQueue) as *const _))
             {
-                NT_ASSERT((NodeType(LocalFcb as *const c_void) != FAT_NTC_ROOT_DCB as u32) as i32);
+                NT_ASSERT!((NodeType(LocalFcb as *const c_void) != FAT_NTC_ROOT_DCB as u32) as i32);
 
                 if NodeType(LocalFcb as *const c_void) == FAT_NTC_DCB as u32
                     && !(*LocalFcb).Specific.Dcb.as_ref().DirectoryFile.is_null()
@@ -2165,7 +2164,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                         Iosb.__bindgen_anon_1.Status = OplockBreakStatus;
                         break 'try_scope_body;
                     } else {
-                        NT_ASSERT((OplockBreakStatus == 0) as i32);
+                        NT_ASSERT!((OplockBreakStatus == 0) as i32);
                         break 'try_scope_body;
                     }
                 } else {
@@ -2329,7 +2328,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                     core::ptr::addr_of!((*Fcb).ShareAccess) as *mut _,
                     1,
                 );
-                NT_ASSERT((Status == 0) as i32);
+                NT_ASSERT!((Status == 0) as i32);
             } else {
                 IoUpdateShareAccess(FileObject, core::ptr::addr_of!((*Fcb).ShareAccess) as *mut _);
             }
@@ -2682,7 +2681,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
             }
 
             if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                NT_ASSERT((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
+                NT_ASSERT!((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
                 FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
                 // unreachable
             }
@@ -2940,7 +2939,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
             &mut Iosb.__bindgen_anon_1.Status,
         );
 
-        NT_ASSERT((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !DirentBcb.is_null() && !Dirent.is_null()) as i32);
+        NT_ASSERT!((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !DirentBcb.is_null() && !Dirent.is_null()) as i32);
 
         if (DirentByteOffset / (PAGE_SIZE) as u32) !=
             ((DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as ULONG) / (PAGE_SIZE) as u32) {
@@ -2963,7 +2962,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
                 &mut Iosb.__bindgen_anon_1.Status,
             );
 
-            NT_ASSERT((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !SecondPageBcb.is_null() && !SecondPageDirent.is_null()) as i32);
+            NT_ASSERT!((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !SecondPageBcb.is_null() && !SecondPageDirent.is_null()) as i32);
 
             FirstPageDirent = Dirent;
 
@@ -2979,7 +2978,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         ShortDirent = Dirent.add((DirentsNeeded - 1) as usize);
         ShortDirentByteOffset = DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as ULONG;
 
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
 
         FatConstructDirent(
             IrpContext,
@@ -3128,14 +3127,12 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         }
 
         if Dcb.is_null() {
-            NT_ASSERT(
-                ((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xFFFFFFFF_u32 ||
+            NT_ASSERT!(((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xFFFFFFFF_u32 ||
                 RtlAreBitsSet(
                     core::ptr::addr_of!((*ParentDcb).Specific.Dcb.as_ref().FreeDirentBitmap) as *mut RTL_BITMAP,
                     DirentByteOffset / core::mem::size_of::<DIRENT>() as ULONG,
                     DirentsNeeded,
-                ) != 0) as i32,
-            );
+                ) != 0) as i32);
 
             RtlClearBits(
                 core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().FreeDirentBitmap) as *mut RTL_BITMAP,
@@ -3335,7 +3332,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         &mut TunneledDataSize,
         &mut TunneledCreationTime as *mut LARGE_INTEGER as *mut c_void,
     ) as i32;
-    NT_ASSERT((TunneledDataSize == core::mem::size_of::<LARGE_INTEGER>() as u32) as i32);
+    NT_ASSERT!((TunneledDataSize == core::mem::size_of::<LARGE_INTEGER>() as u32) as i32);
     FatSelectNames(
         IrpContext,
         ParentDcb,
@@ -3400,7 +3397,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
             1,
             &mut Iosb.__bindgen_anon_1.Status,
         );
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
         UnwindDirent = Dirent;
         if (DirentByteOffset / (PAGE_SIZE as u32)) !=
             ((DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as u32) / (PAGE_SIZE as u32))
@@ -3419,7 +3416,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 1,
                 &mut Iosb.__bindgen_anon_1.Status,
             );
-            NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+            NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
             FirstPageDirent = Dirent;
             Dirent = FsRtlAllocatePoolWithTag(
                 PagedPool,
@@ -3430,7 +3427,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         }
         ShortDirent = Dirent.add((DirentsNeeded as usize) - 1);
         ShortDirentByteOffset = DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as u32;
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
         FatConstructDirent(
             IrpContext,
             ShortDirent,
@@ -3594,14 +3591,12 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 }
             }
             if (*p_UnwindFcb).is_null() {
-                NT_ASSERT(
-                    (((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32) ||
+                NT_ASSERT!((((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32) ||
                      (RtlAreBitsSet(
                          core::ptr::addr_of!((*ParentDcb).Specific.Dcb.as_ref().FreeDirentBitmap) as *mut RTL_BITMAP,
                          DirentByteOffset / core::mem::size_of::<DIRENT>() as u32,
                          DirentsNeeded,
-                     ) != 0)) as i32,
-                );
+                     ) != 0)) as i32);
                 RtlClearBits(
                     core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().FreeDirentBitmap) as *mut RTL_BITMAP,
                     DirentByteOffset / core::mem::size_of::<DIRENT>() as u32,

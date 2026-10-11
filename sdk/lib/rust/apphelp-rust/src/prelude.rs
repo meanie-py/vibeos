@@ -306,38 +306,7 @@ impl FnName {
 }
 pub use crate::{SHIM_ERR, SHIM_WARN, SHIM_INFO, SHIMENG_MSG, SHIMENG_FAIL, SHIMENG_WARN, SHIMENG_INFO};
 
-// strsafe.h A-forms. `StringCchPrintfExA` and `StringCchVPrintfExA` are `static __inline` there
-// (no symbol), so they are macros over strsafe-rust's printf-ex worker with msvcrt's
-// `_snprintf` / `_vsnprintf` handed in -- same arguments, bounds and truncation contract.
-extern "C" {
-    pub fn _vsnprintf(buf: *mut c_char, n: usize, fmt: *const c_char, ap: *mut c_char) -> c_int;
-}
-#[macro_export] macro_rules! StringCchPrintfExA {
-    ($($arg:tt)*) => { strsafe_rust::RtlStringCchPrintfExA!($($arg)*) };
-}
-/// `va` is the C `va_list` VALUE (a `char*` on all three Windows targets).
-#[macro_export] macro_rules! StringCchVPrintfExA {
-    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
-     $pszFormat:expr, $va:expr $(,)?) => {{
-        let pszDest: *mut core::ffi::c_char = $pszDest as _;
-        let cchDest: usize = $cchDest as usize;
-        let va: *mut core::ffi::c_char = $va as _;
-        strsafe_rust::ntstrsafe::ntstrsafe_printf_ex_worker_a(
-            pszDest, cchDest, cchDest,
-            $ppszDestEnd as _, $pcchRemaining as _, $dwFlags as _, $pszFormat as _,
-            |d, n, f| $crate::prelude::_vsnprintf(d, n, f, va),
-        )
-    }};
-}
-#[macro_export] macro_rules! StringCchPrintfA {
-    ($d:expr, $cch:expr, $fmt:expr $(, $arg:expr)* $(,)?) => {
-        strsafe_rust::RtlStringCchPrintfExA!(
-            $d, $cch,
-            core::ptr::null_mut::<*mut core::ffi::c_char>(), core::ptr::null_mut::<usize>(),
-            0u32, $fmt $(, $arg)*)
-    };
-}
-pub use crate::{StringCchPrintfExA, StringCchVPrintfExA, StringCchPrintfA};
+pub use strsafe_rust::{StringCbCatNW, StringCchPrintfA, StringCchPrintfExA, StringCchVPrintfExA};
 
 // Sibling-TU symbol (apphelp.c); the module uses it everywhere.
 pub use crate::apphelp::apphelp::ShimDbgPrint;
@@ -403,18 +372,6 @@ pub unsafe fn InterlockedCompareExchangePointer(Destination: *mut PVOID, Exchang
     match a.compare_exchange(Comperand, Exchange, core::sync::atomic::Ordering::SeqCst, core::sync::atomic::Ordering::SeqCst) {
         Ok(v) | Err(v) => v,
     }
-}
-// strsafe.h StringCbCatNW(pszDest, cbDest, pszSrc, cbToAppend): the byte counts become
-// WCHAR counts exactly as the header does (cchDest = cbDest / sizeof(wchar), same for
-// cchToAppend), then it is StringCchCatNW.
-#[inline(always)]
-pub unsafe fn StringCbCatNW(pszDest: *mut WCHAR, cbDest: usize, pszSrc: *const WCHAR, cbToAppend: usize) -> HRESULT {
-    strsafe_rust::StringCchCatNW(
-        pszDest,
-        cbDest / core::mem::size_of::<WCHAR>(),
-        pszSrc,
-        cbToAppend / core::mem::size_of::<WCHAR>(),
-    )
 }
 // shimeng.c:1118-1119 #define SYSTEM32 L"\\system32" / WINSXS L"\\winsxs" (function-local there;
 // the Rust uses them as `*const WCHAR`).

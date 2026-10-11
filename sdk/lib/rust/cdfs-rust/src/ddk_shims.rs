@@ -416,8 +416,6 @@ use ntkrnl_sys::ddk::{KeBugCheckEx, ExFreePool, KeInitializeEvent, PFAST_MUTEX,
     PSINGLE_LIST_ENTRY, _EVENT_TYPE_SynchronizationEvent, ULONG_PTR};
 
 
-// wdm.h NT_ASSERT(exp) — retail no-op (the grind passes the predicate as i32).
-#[no_mangle] pub extern "C" fn NT_ASSERT(_Condition: BOOLEAN) {}
 
 
 // nodetype.h: CdBugCheck(A,B,C) = KeBugCheckEx(CDFS_FILE_SYSTEM, BugCheckFileId|__LINE__, A,B,C).

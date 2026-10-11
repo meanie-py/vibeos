@@ -52,6 +52,13 @@ extern "C" {
     /// msvcrt's `_vsnwprintf`. Variadic only in its `va_list` argument, so — unlike the `...`
     /// entry points — this IS expressible in stable Rust.
     fn _vsnwprintf(buf: *mut WCHAR, n: usize, fmt: *const WCHAR, ap: *mut c_void) -> c_int;
+    /// msvcrt's `_vsnprintf`, the narrow twin.
+    fn _vsnprintf(
+        buf: *mut core::ffi::c_char,
+        n: usize,
+        fmt: *const core::ffi::c_char,
+        ap: *mut c_void,
+    ) -> c_int;
     /// Imported, never hand-written: LLVM folds any byte-copy loop back into a call to the
     /// function itself, which is an infinite self-recursion (AGENTS.md).
     fn memset(dest: *mut c_void, ch: c_int, count: usize) -> *mut c_void;
@@ -916,6 +923,182 @@ pub unsafe extern "C" fn StringCchPrintfW_v(
     hr
 }
 
+/// strsafe.h `StringCchVPrintfA` (narrow `StringCchVPrintfW`): `ap` is the `va_list` BY VALUE,
+/// `char *` on every Windows target. Not exported: strsafe.h's is `static __inline`, so no
+/// module links against the symbol, and an unmangled one could collide with a local copy.
+pub unsafe fn StringCchVPrintfA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszFormat: *const core::ffi::c_char,
+    ap: *mut c_void,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH || cchDest == 0 {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    let iRet = _vsnprintf(pszDest, cchDest - 1, pszFormat, ap);
+    printf_worker_finish_a(pszDest, cchDest, iRet)
+}
+
+/// strsafe.h `StringVPrintfWorkerA` after its `_vsnprintf` call: `printf_worker_finish`'s
+/// narrow twin.
+#[doc(hidden)]
+pub unsafe fn printf_worker_finish_a(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    iRet: c_int,
+) -> HRESULT {
+    let cchMax = cchDest - 1;
+    if iRet < 0 || (iRet as usize) > cchMax {
+        *pszDest.add(cchMax) = 0;
+        STRSAFE_E_INSUFFICIENT_BUFFER
+    } else {
+        if (iRet as usize) == cchMax {
+            *pszDest.add(cchMax) = 0;
+        }
+        S_OK
+    }
+}
+
+/// strsafe.h `StringCchPrintfA(pszDest, cchDest, pszFormat, ...)` as a macro call, calling
+/// msvcrt's variadic `_snprintf` directly like `StringCchPrintfW!`. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfA {
+    ($pszDest:expr, $cchDest:expr, $pszFormat:expr $(, $arg:expr)* $(,)?) => {{
+        let pszDest: *mut core::ffi::c_char = $pszDest as _;
+        let cchDest: usize = $cchDest as usize;
+        if cchDest > $crate::STRSAFE_MAX_CCH || cchDest == 0 {
+            $crate::STRSAFE_E_INVALID_PARAMETER
+        } else {
+            let iRet = $crate::_snprintf(pszDest, cchDest - 1, $pszFormat as _ $(, $arg)*);
+            $crate::printf_worker_finish_a(pszDest, cchDest, iRet)
+        }
+    }};
+}
+
+/// strsafe.h `StringCopyWorkerA`.
+unsafe fn StringCopyWorkerA(
+    mut pszDest: *mut core::ffi::c_char,
+    mut cchDest: usize,
+    mut pszSrc: *const core::ffi::c_char,
+) -> HRESULT {
+    let mut hr: HRESULT = S_OK;
+    if cchDest == 0 {
+        hr = STRSAFE_E_INVALID_PARAMETER;
+    } else {
+        while cchDest != 0 && *pszSrc != 0 {
+            *pszDest = *pszSrc;
+            pszDest = pszDest.add(1);
+            pszSrc = pszSrc.add(1);
+            cchDest -= 1;
+        }
+        if cchDest == 0 {
+            pszDest = pszDest.sub(1);
+            hr = STRSAFE_E_INSUFFICIENT_BUFFER;
+        }
+        *pszDest = 0;
+    }
+    hr
+}
+
+/// strsafe.h:145 `StringCchCopyA` (winspool). `static __inline` there, so not exported.
+pub unsafe fn StringCchCopyA(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    pszSrc: *const core::ffi::c_char,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    StringCopyWorkerA(pszDest, cchDest, pszSrc)
+}
+
+/// strsafe.h `StringCbCatNW` (apphelp): the byte counts become WCHAR counts exactly as the
+/// header does, then it is `StringCchCatNW`.
+pub unsafe fn StringCbCatNW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszSrc: *const WCHAR,
+    cbToAppend: usize,
+) -> HRESULT {
+    StringCchCatNW(
+        pszDest,
+        cbDest / core::mem::size_of::<WCHAR>(),
+        pszSrc,
+        cbToAppend / core::mem::size_of::<WCHAR>(),
+    )
+}
+
+/// The narrow printf-ex worker in strsafe.h's HRESULT terms. ntstrsafe.h's
+/// `RtlStringVPrintfExWorkerA` is the same algorithm with NTSTATUS codes, so its three outcomes
+/// map one to one. apphelp first reached for `RtlStringCchPrintfExA!` directly, which handed its
+/// HRESULT `hr` a `STATUS_BUFFER_OVERFLOW` (0x80000005) where the C sees
+/// `STRSAFE_E_INSUFFICIENT_BUFFER` (0x8007007A) -- harmless under `SUCCEEDED`, wrong under `==`.
+#[doc(hidden)]
+#[allow(clippy::too_many_arguments)]
+pub unsafe fn printf_ex_worker_a(
+    pszDest: *mut core::ffi::c_char,
+    cchDest: usize,
+    ppszDestEnd: *mut *mut core::ffi::c_char,
+    pcchRemaining: *mut usize,
+    dwFlags: DWORD,
+    pszFormat: *const core::ffi::c_char,
+    vprint: impl FnOnce(*mut core::ffi::c_char, usize, *const core::ffi::c_char) -> c_int,
+) -> HRESULT {
+    if cchDest > STRSAFE_MAX_CCH {
+        if cchDest > 0 {
+            *pszDest = 0;
+        }
+        return STRSAFE_E_INVALID_PARAMETER;
+    }
+    match ntstrsafe::ntstrsafe_printf_ex_worker_a(
+        pszDest, cchDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags, pszFormat, vprint,
+    ) {
+        0 => S_OK, // STATUS_SUCCESS
+        ntstrsafe::STATUS_BUFFER_OVERFLOW => STRSAFE_E_INSUFFICIENT_BUFFER,
+        _ => STRSAFE_E_INVALID_PARAMETER,
+    }
+}
+
+/// msvcrt's `_vsnprintf`, for `StringCchVPrintfExA!`'s expansion in the caller's crate.
+#[doc(hidden)]
+pub unsafe fn vsnprintf_a(
+    buf: *mut core::ffi::c_char,
+    n: usize,
+    fmt: *const core::ffi::c_char,
+    ap: *mut c_void,
+) -> c_int {
+    _vsnprintf(buf, n, fmt, ap)
+}
+
+/// strsafe.h `StringCchPrintfExA(pszDest, cchDest, ppszDestEnd, pcchRemaining, dwFlags,
+/// pszFormat, ...)` over msvcrt's variadic `_snprintf`. Evaluates to the `HRESULT`.
+#[macro_export]
+macro_rules! StringCchPrintfExA {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr $(, $arg:expr)* $(,)?) => {
+        $crate::printf_ex_worker_a(
+            $pszDest as _, $cchDest as usize, $ppszDestEnd as _, $pcchRemaining as _,
+            $dwFlags as _, $pszFormat as _,
+            |d, n, f| $crate::_snprintf(d, n, f $(, $arg)*),
+        )
+    };
+}
+
+/// strsafe.h `StringCchVPrintfExA`; `$va` is the C `va_list` VALUE (`char *` on every Windows
+/// target).
+#[macro_export]
+macro_rules! StringCchVPrintfExA {
+    ($pszDest:expr, $cchDest:expr, $ppszDestEnd:expr, $pcchRemaining:expr, $dwFlags:expr,
+     $pszFormat:expr, $va:expr $(,)?) => {{
+        let va: *mut core::ffi::c_void = $va as _;
+        $crate::printf_ex_worker_a(
+            $pszDest as _, $cchDest as usize, $ppszDestEnd as _, $pcchRemaining as _,
+            $dwFlags as _, $pszFormat as _,
+            |d, n, f| $crate::vsnprintf_a(d, n, f, va),
+        )
+    }};
+}
+
 /// The byte-counted twin.
 #[no_mangle]
 pub unsafe extern "C" fn StringCbPrintfW_v(
@@ -952,6 +1135,17 @@ pub unsafe extern "system" fn StringCchVPrintfW(
     )
 }
 
+/// strsafe.h `StringCbVPrintfW`: the byte-counted `StringCchVPrintfW`, `va_list` by value.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbVPrintfW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszFormat: *const WCHAR,
+    ap: *mut c_void,
+) -> HRESULT {
+    StringCchVPrintfW(pszDest, cbDest / core::mem::size_of::<WCHAR>(), pszFormat, ap)
+}
+
 /// strsafe.h:623 `StringCbPrintfExW`, minus the `va_start` its trampoline does.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]
@@ -985,4 +1179,34 @@ pub unsafe extern "C" fn StringCbPrintfExW_v(
             cchRemaining * core::mem::size_of::<WCHAR>() + (cbDest % core::mem::size_of::<WCHAR>());
     }
     hr
+}
+
+#[cfg(test)]
+mod a_tests {
+    use super::*;
+    use core::ffi::c_char;
+
+    #[test]
+    fn printf_ex_a_speaks_hresult_not_ntstatus() {
+        let mut buf = [0x55 as c_char; 3];
+        let (mut end, mut rem) = (core::ptr::null_mut::<c_char>(), 0usize);
+        let ok = unsafe {
+            printf_ex_worker_a(buf.as_mut_ptr(), 3, &mut end, &mut rem, 0, c"x".as_ptr(), |_, _, _| 1)
+        };
+        let full = unsafe {
+            printf_ex_worker_a(buf.as_mut_ptr(), 3, &mut end, &mut rem, 0, c"x".as_ptr(), |_, _, _| -1)
+        };
+        let bad = unsafe {
+            printf_ex_worker_a(buf.as_mut_ptr(), 3, &mut end, &mut rem, 0xFFFF_0000, c"x".as_ptr(), |_, _, _| 1)
+        };
+        assert_eq!((ok, full, bad), (S_OK, STRSAFE_E_INSUFFICIENT_BUFFER, STRSAFE_E_INVALID_PARAMETER));
+    }
+
+    #[test]
+    fn cch_copy_a_truncates_and_terminates() {
+        let mut buf = [0x55 as c_char; 3];
+        assert_eq!(unsafe { StringCchCopyA(buf.as_mut_ptr(), 3, c"ab".as_ptr()) }, S_OK);
+        assert_eq!(unsafe { StringCchCopyA(buf.as_mut_ptr(), 3, c"abc".as_ptr()) }, STRSAFE_E_INSUFFICIENT_BUFFER);
+        assert_eq!(buf, [b'a' as c_char, b'b' as c_char, 0]);
+    }
 }

@@ -85,7 +85,12 @@ def build(iso: Path, out: Path) -> None:
     for tool in ("xorriso", "mformat", "mcopy"):
         if shutil.which(tool) is None:
             raise SystemExit(f"mk_writable_livecd: {tool} not found")
-    with tempfile.TemporaryDirectory(prefix="livecd-rw-", dir=out.parent) as td:
+    # Stage OUTSIDE the build dir. A copy of the livecd tree inside build-<arch> is visible to
+    # every tool that walks it, and it vanishes mid-walk: the amd64 WoW64 restage rglob()s
+    # build-i386, indexed this copy's url.dll and died with FileNotFoundError when the
+    # staging dir was removed (two merge-queue batches rejected CMAKE_CONFIGURE_FAIL). Only
+    # the single .partial ISO stays beside `out`, which the atomic replace needs.
+    with tempfile.TemporaryDirectory(prefix="livecd-rw-") as td:
         tree, img, ini = Path(td) / "tree", Path(td) / "ramdisk.img", Path(td) / "freeldr.ini"
         _run(["xorriso", "-osirrox", "on", "-indev", str(iso), "-extract", "/", str(tree)])
         # Extracted files keep the ISO's read-only mode; nothing here needs that.

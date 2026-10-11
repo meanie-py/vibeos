@@ -3,7 +3,6 @@ use core::ffi::c_void;
 
 extern "C" {
     fn cmsCloseProfile(hProfile: *mut core::ffi::c_void);
-    fn ERR(format: *const i8, ...);
     fn cmsDeleteTransform(htransform: *mut core::ffi::c_void);
 }
 unsafe extern "system" {
@@ -161,7 +160,7 @@ pub unsafe extern "C" fn close_profile(handle: HPROFILE) -> i32 {
                 || WriteFile((*profile).file, (*profile).data, (*profile).size, core::ptr::addr_of_mut!(written), core::ptr::null_mut()) == 0
                 || written != (*profile).size
             {
-                ERR(b"Unable to write color profile\n\0".as_ptr() as *const i8);
+                ERR!(b"Unable to write color profile\n\0".as_ptr() as *const i8);
             }
         }
         CloseHandle((*profile).file);

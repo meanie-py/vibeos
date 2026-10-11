@@ -91,6 +91,25 @@ class TestResolution:
         assert "use crate::owner::GetDefaultRecycleBin;" in new
         assert notes == []
 
+    def test_an_import_whose_definition_moved_to_the_prelude_is_dropped(self, tmp_path):
+        # regedit: error.rs's ErrorMessageBox became `ErrorMessageBox_v` + a prelude extern.
+        crate = _crate(
+            tmp_path,
+            {
+                "prelude.rs": 'extern "C" {\n    pub fn ErrorMessageBox(h: HWND, ...) -> i32;\n}\n',
+                "error.rs": 'pub unsafe extern "C" fn ErrorMessageBox_v(h: HWND) -> i32 { 0 }\n',
+                "keep.rs": 'pub unsafe extern "C" fn Kept() {}\n',
+            },
+        )
+        code = (
+            "use crate::error::ErrorMessageBox;\nuse crate::keep::Kept;\nuse crate::prelude::*;\n"
+            "pub unsafe fn f() { ErrorMessageBox(h); Kept(); }\n"
+        )
+        new, notes = resolve_in_crate_imports(code, crate)
+        assert "use crate::error::ErrorMessageBox;" not in new
+        assert "use crate::keep::Kept;" in new
+        assert any("ErrorMessageBox" in n for n in notes)
+
     def test_a_c2rust_anonymous_type_is_never_imported_from_a_sibling(self, tmp_path):
         # c2rust numbers C2RustUnnamed_N per transpile: svw_pata's _163 is a timing struct,
         # via's is a bridge-table struct. Importing one into the other gave 48 field errors.

@@ -42,11 +42,6 @@ extern "C" {
     fn wcslen(s: *const u16) -> usize;
     fn wcscmp(s1: *const u16, s2: *const u16) -> i32;
     fn debugstr_w(s: *const u16) -> *const u8;
-    // wine TRACE/WARN debug channels — the C++ side expands these to
-    // wine_dbg_log; here the release build dead-code-eliminates the calls
-    // (no symbol survives to link). Declared so the call sites compile.
-    fn TRACE(fmt: *const u8, ...);
-    fn WARN(fmt: *const u8, ...);
 }
 
 // ---- file-scope preamble (translated) ----

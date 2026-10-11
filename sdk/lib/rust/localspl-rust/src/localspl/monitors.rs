@@ -13,14 +13,14 @@ pub static mut PrintMonitorList: LIST_ENTRY = _LIST_ENTRY {
 };
 
 static mut dwMonitorInfo1Offsets: [DWORD; 2] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(MONITOR_INFO_1W, pName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwMonitorInfo2Offsets: [DWORD; 4] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(MONITOR_INFO_2W, pName) as DWORD,
+    core::mem::offset_of!(MONITOR_INFO_2W, pEnvironment) as DWORD,
+    core::mem::offset_of!(MONITOR_INFO_2W, pDLLName) as DWORD,
     MAXDWORD as DWORD,
 ];
 

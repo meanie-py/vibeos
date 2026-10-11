@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import variadic_shim
+
 # --------------------------------------------------------------------------------------
 # Regexes. Two of these encode bugs that cost real debugging time in the ole32 run — the
 # comments are load-bearing, do not "simplify" them away.
@@ -415,6 +417,21 @@ def _path_module_globs(f: Path) -> list[Path]:
     return out
 
 
+def own_reexports(crate: Path, module: str) -> set[str]:
+    """Names the prelude re-exports from the crate module `module` (`pub use crate::..::m::X;`)."""
+    prelude = Path(crate) / "src" / "prelude.rs"
+    if not module or not prelude.is_file():
+        return set()
+    stem = Path(module).stem
+    return set(
+        re.findall(
+            rf"^pub use crate::(?:\w+::)*{re.escape(stem)}::(\w+)\s*;",
+            prelude.read_text(errors="replace"),
+            re.M,
+        )
+    )
+
+
 def provided_names(crate: Path) -> set[str]:
     """Every name reachable in a module that does `use crate::prelude::*;`.
 
@@ -750,7 +767,13 @@ def _swap_substrate(src: str, report: Report) -> str:
 # parse error that hides every other error in the file -- so fold it to its value. Two to
 # four printable ASCII characters between quotes is never valid Rust, so nothing else matches.
 # Guarded both ways against lifetimes: `<'a, 'b>` would otherwise read `'a, '` as one.
-_MULTICHAR_RE = re.compile(r"(?<![<&\w])'([\x20-\x26\x28-\x5b\x5d-\x7e]{2,4})'(?![\w])")
+# A real one-char Rust literal is matched FIRST and kept, so the scan resumes after its closing
+# quote: in cmd's `[' ', '%', '%']` the `', '` BETWEEN two char literals read as a multi-char
+# constant and became `' 0x00002C20 /* ', ' */%'`, a parse error.
+_MULTICHAR_RE = re.compile(
+    r"'(?:\\(?:u\{[0-9a-fA-F]{1,6}\}|x[0-9a-fA-F]{2}|.)|[^'\\\n])'"
+    r"|(?<![<&\w])'([\x20-\x26\x28-\x5b\x5d-\x7e]{2,4})'(?![\w])"
+)
 
 
 def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
@@ -758,7 +781,10 @@ def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
     out: list[str] = []
     for line in src.splitlines(keepends=True):
         code, sep, comment = line.partition("//")
-        if '"' in code:  # a string could hold the pattern; leave the line to the model
+        # A string could hold the pattern; leave the line to the model. So could the body of
+        # a multi-line block comment, which a per-line scan cannot see the opener of (cmd's
+        # goto.rs `* any label containing '/?' in it.`).
+        if '"' in code or code.lstrip().startswith("*"):
             out.append(line)
             continue
 
@@ -767,7 +793,7 @@ def fold_multichar_literals(src: str) -> tuple[str, list[str]]:
         blocks = [b.span() for b in re.finditer(r"/\*.*?\*/", code)]
 
         def repl(m: re.Match, blocks: list[tuple[int, int]] = blocks) -> str:
-            if any(lo <= m.start() < hi for lo, hi in blocks):
+            if m.group(1) is None or any(lo <= m.start() < hi for lo, hi in blocks):
                 return m.group(0)
             value = 0
             for ch in m.group(1):
@@ -1098,9 +1124,14 @@ def integrate(
 
     if provided is None:
         provided = provided_names(crate)
+    # A name the prelude re-exports FROM THIS MODULE (resolve's `pub use crate::cmd::dir::X;`)
+    # is this module's own definition, not something provided to it: counting it dropped
+    # dir.rs's `_DirSwitchesFlags` the moment resolve wired it, and then nothing defined it.
+    provided = provided - own_reexports(crate, module)
 
     src = _swap_substrate(src, report)
     src, report.multichar_folded = fold_multichar_literals(src)
+    src, _ = variadic_shim.lower_va_list_types(src)
     src, report.dropped_bad_imports = drop_unknown_substrate_imports(src, crate.parent)
     src, report.indexed_offsets = route_indexed_offset_of(src)
     src, report.enums_lowered = lower_c_enums(src)
@@ -1376,6 +1407,43 @@ def _without_comments(code: str) -> str:
     return re.sub(r"//[^\n]*", "", code)
 
 
+def drop_stale_sibling_imports(
+    code: str,
+    crate: Path,
+    owners: dict[str, set[str]] | None = None,
+    provided: set[str] | None = None,
+) -> tuple[str, list[str]]:
+    """Drop a `use crate::<sibling>::NAME;` whose sibling no longer defines NAME, when the
+    prelude supplies it.
+
+    An import this module wrote earlier outlives the definition it pointed at: regedit's
+    `use crate::regedit::error::ErrorMessageBox;` was right until the variadic stage turned
+    the definition into `ErrorMessageBox_v` plus a prelude extern, and then named only the
+    prelude glob error.rs imports privately (E0603). Dropped only when the prelude supplies
+    the name, so the reference still resolves -- to the same symbol."""
+    crate_src = Path(crate) / "src"
+    if owners is None:
+        owners = index_crate_exports(crate_src)
+    if not owners:
+        return code, []
+    if provided is None:
+        provided = provided_names(crate) | island_names(crate_src)
+    modules = set().union(*owners.values())
+    notes: list[str] = []
+
+    def _stale(m: re.Match[str]) -> str:
+        path, name = m.group(1), m.group(2)
+        if path in modules and path not in owners.get(name, set()) and name in provided:
+            notes.append(f"{name}: no longer defined in {path}, the prelude provides it")
+            return ""
+        return m.group(0)
+
+    code = re.sub(
+        r"^use (crate::[A-Za-z0-9_:]+)::([A-Za-z_]\w*);[ \t]*\n", _stale, code, flags=re.M
+    )
+    return code, notes
+
+
 def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     """Emit `use crate::…::<name>;` for each name `code` references but does not define.
 
@@ -1409,6 +1477,8 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     if not owners:
         return code, []
 
+    provided = provided_names(crate) | island_names(crate_src)
+    code, stale_notes = drop_stale_sibling_imports(code, crate, owners, provided)
     local = defined_names(code)
     # A name this file EXTERN-DECLARES is already in scope, and importing it too is
     # `E0255: the name ... is defined multiple times`. `defined_names` deliberately skips
@@ -1417,7 +1487,6 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     # `extern "system"` block AND got `use crate::shell32::iconcache::ExtractIconExW;`.
     local |= extern_declared(code)
     already = set(re.findall(r"^\s*use\s+[A-Za-z0-9_:]+::([A-Za-z_][A-Za-z0-9_]*)\s*;", code, re.M))
-    provided = provided_names(crate) | island_names(crate_src)
     # COMMENTS ARE NOT CODE. Scanning the raw text meant a name that appears only in prose
     # got a `use` line generated for it — `enum_merged_folder.rs` mentions
     # "shellutils.h ShellObjectCreator<T>" in a comment explaining its activation, and the
@@ -1426,7 +1495,7 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     # generated, so it cannot be fixed in the file — only here.
     words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", _without_comments(code)))
 
-    notes: list[str] = []
+    notes: list[str] = stale_notes
     imports: list[str] = []
     for name in sorted(words & owners.keys()):
         if name in local or name in already or name in provided:

@@ -1238,6 +1238,22 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
 
+### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
+
+**Symptom:** a boot driver silently missing on i386 only — FreeLDR logs `Did not find export
+'RtlAssert@16'!` then `boot driver not loaded, dropped from the boot driver list`, and boot
+continues without it. Every gate is green unless the boot needed that driver.
+
+**Cause:** `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", ...)] extern "system" { fn F(..); }`
+makes rustc mint the import itself, and for a stdcall function on i386 it imports `F@N`; the
+`.spec`-built export is the undecorated `F`. raw-dylib invents its own import descriptor, so
+the link has nothing unresolved to fail on (pcix-rust's `RtlAssert`, 2026-10-10).
+
+**Fix:** raw-dylib is for DATA exports only (`HalDispatchTable`, `InitSafeBootMode`) — a
+function goes in a plain `extern "system"` block and resolves through the import library.
+`scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
+its exporter's export table, so any name the loader cannot bind fails the build.
+
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
   User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and
@@ -1455,6 +1471,19 @@ call, only when notepad saved a file to FAT. The tell in the disassembly is a cd
 no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
 definition: two answers to one question are already wrong).
 
+One of the two "declarations" need not be an `extern` block in the crate. A `use
+ntkrnl_sys::ddk::{.., IoCopyCurrentIrpStackLocationToNext, ..}` brings bindgen's cdecl one in,
+and rustc merges it with a local `"system"` copy just the same. That was fastfat's flush.rs,
+in the very block where the fileinfo fix had moved `IoGetCurrentIrpStackLocation` to `"C"`;
+pnp.rs imported the helper from the ddk. The call sat in `FatCommonFlushBuffers`' finally, whose
+epilogue is esp-based (`add esp; pop esi/edi/ebx/ebp; ret`), so the 4-byte leak popped every
+saved register one slot off and `ret` jumped INTO THE STACK. Each crash looked different (0x23
+"unexpected exception at a stack address", 0x50, 0x1E, 0x7F), and all of them came at the first
+`NtFlushBuffersFile` on a writable FAT root (eventlog opening AppEvent.Evt). With EIP on the stack, the
+word at the faulting esp names whatever was just pushed or returned through; disassemble the
+function it points into and look for a call with no stack cleanup. The scanner now counts
+named `-sys` imports and qualified `x_sys::..::F(` calls as declarations.
+
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
 
@@ -1529,6 +1558,15 @@ Rust fn of that name in any crate, a shim crate included. Expect the conversion 
 uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
 `EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
 `scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
+The same bug also comes as an `extern` DECLARATION, `extern "C" { fn TRACE(fmt: *const i8, ...); }`,
+bound at link time to whatever no-op some crate or cohab stub happens to export. That form has
+no body for the empty-fn check to see. By 2026-10-10 that had hidden about 386 NT_ASSERT calls in
+five storage/FS drivers, plus 93 declarations of Wine TRACE/ERR, DPRINT, KdPrintEx and similar.
+fastfat's NT_ASSERT evaluated an operand that faults (cachesup.rs). `scan_macro_fn_shadow` flags these declarations now too. Convert with
+`tools/fn_call_to_macro.py`. When you write the replacement macro, never name it after a std
+macro: a crate-root `macro_rules! assert` shadows `core::assert!` in every module declared
+after it. cabinet's compile-time `FDINOTIFICATION` layout asserts silently became no-ops that
+way, and they still compiled.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -4035,6 +4073,21 @@ of them were **ours**, not the model's:
   never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
   (statements are not safe to drop by pattern; hand-port them with `port hand`).
 
+  **Both arms kept, gated on something Rust never sets, so the DEAD arm compiles.** A
+  translation that carries `#ifdef __REACTOS__` / `#else` invents a gate: `cfg!(feature =
+  "reactos")`, `#[cfg(reactos)]`, a local `const REACTOS: bool = false`, even `#[cfg(any())]`
+  on the ReactOS arm. Every one is false, so Wine's arm is what ships: regedit's regproc.rs
+  called Wine's `swprintf(buf, count, fmt)` -- under regedit's `_CRT_NON_CONFORMING_SWPRINTFS`
+  that puts the count in the FORMAT slot -- plus `RegDeleteTreeW` and a process-ending
+  `error_exit` where ReactOS calls StringCchPrintfW, SHDeleteKey and `output_message; return`.
+  Batch A's mstsc lost its branch the same way. `port integrate` now settles every such gate to
+  the live arm (the `if <gate> {A} else {B}` form loses B outright, since an `if false` arm is
+  still type-checked); `#[cfg(any())]` is not a gate name, so that pairing stays a hand port --
+  the dead-region WARNING above names it. A landed sweep found cdfs (has a real `reactos`
+  feature, default on), comctl32 (`const REACTOS: bool = true`) and oleaut32 (gated arms
+  byte-identical) all behave as the C; fastfat's `#[cfg(not(reactos))]` only computes an unused
+  `IsAWrite`.
+
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
   `_lock(_TIME_LOCK)`, `memset(&tzi, 0, 3)` for `sizeof(tzi)`, `*tz == 3600` for `*tz == '-'`,
@@ -4684,6 +4737,12 @@ the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way:
 A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
 left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
 macro, compare member lists against the header, not just the name.
+A dropped guard can also be REPLACED by a plausible-looking one. `ExReturnPoolQuota` swapped
+the C's `MmIsSpecialPoolAddress` early-out for `PAGE_ALIGN(p) == p`, and dropped the C's
+`BAD_POOL_CALLER` check that the billed process really is one. A special-pool block sits at
+the END of its page, so it passed the alignment test, and the function read a POOL_HEADER that
+does not exist: 0xA in `IoFreeIrp` at boot, but only with `SPECIALPOOL=*`, which is what
+you arm to hunt a different corruption.
 
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 
@@ -6251,6 +6310,18 @@ it; `--apply` writes. It emits a `#[cfg(not(feature=...))]` twin carrying a **co
 attributes** (`#[no_mangle]` must survive with the feature off) whose body is the initializer
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
+
+**Variant: a module's OWN config header turns a feature off, and the dead arm is planned
+anyway.** cmd.exe's `config.h` carries `//#define FEATURE_UNIX_FILENAME_COMPLETION` beside
+`#define FEATURE_4NT_FILENAME_COMPLETION`, and filecomp.c defines `CompleteFilename` under
+each. The scanner only read toggles in the TU itself, so both arms were bought: two
+`CompleteFilename`s, the dead UNIX one `#[no_mangle]` with the wrong signature. This is a
+build choice the module makes for itself, not an optional backend, so there is no second arm
+to keep: the scanner now reads `//#define NAME` toggles in the module-directory headers a TU
+includes (`_header_off_switches`) and drops the arm, provided no `.c`/`.h` there defines NAME and
+its CMakeLists never passes `-DNAME`. Wine's `/* #undef HAVE_X */` form is untouched, so the
+rule above still governs it. Header ON switches are deliberately not read: a kept `#ifdef ON`
+arm translates correctly, and deciding them would re-key every banked function under one.
 
 **Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
 that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
@@ -12025,6 +12096,19 @@ port of an upstream fix that missed half of it) — a livelock no smoke boot had
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
 
+### An object linked into a shared list before it is initialized
+**Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in
+win32k `ProcessTimers`, on the raw input thread, after the desktop is up.
+**Cause:** `CreateTimer` linked a zeroed TIMER into `TimersListHead` and `IntSetTimer` filled it
+in afterwards, both without `TimerLock`, while the RIT walks that list under `TimerLock` every
+10 ms. On one CPU the walker can never run inside that window. On two it can: if the creating
+vCPU stalls for two ticks, one pass drives the zeroed countdown negative and the next reads
+`pti->TIF_flags` with `pti == NULL`. Upstream ReactOS has the identical code.
+**Fix:** link only after every field is set, under the lock the walker holds. The tell on a live
+VM: walk the list and look for an entry whose fields are all still zero except the ones the
+walker writes. When a C "create" helper links the object it returns, check whether anything
+walks that list on another thread.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
@@ -12955,6 +13039,19 @@ had it too. Fix: reborrow, `f(iColumn, &mut *sd)`. **Any `&` parameter crossing 
 or generated C shim is this hazard**, and it is invisible from the Rust side — the callee is
 correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
 an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
+
+### A temporary's `.GetString()` bound by a macro's `let` is a dangling pointer
+**Symptom.** A formatted string comes out empty or garbled although the format and arguments
+are right at the call site. Rust mspaint opened with an empty title bar; appstorm scored it
+PASS (`first=""`), so only the screenshot showed it.
+**Cause.** `atl_format!(s, CStringW::from_resource(IDS_WINDOWTITLE).GetString(), ..)`: the
+macro bound its format as `let __fmt: *const u16 = $fmt;`. A temporary in a `let`
+initializer is dropped at that `;`, so the pointer is to freed memory by the time
+`_scwprintf`/`swprintf` read it. Neither rustc nor any lint flags it: the value is a raw pointer.
+**Fix.** Bind macro arguments as `match` scrutinees (`match $fmt { __fmt => { .. } }`), whose
+temporaries live to the end of the match; atlclasses' `atl_format!` now does this for the
+format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
+taking `.GetString()`.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing

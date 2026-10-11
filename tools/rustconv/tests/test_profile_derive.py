@@ -1569,6 +1569,19 @@ class TestCargoKernelTarget:
         _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root)
         assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
 
+    def test_arch_genex_flipped_entry_is_restored_for_its_arch_only(self, tmp_path):
+        root = self._tree(tmp_path)
+        text = (
+            "list(APPEND SOURCE\n"
+            "    #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c>\n"
+            "    )\n"
+        )
+        out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "i386")
+        assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
+        assert "    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c" in out.splitlines()
+        _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "amd64")
+        assert restored == []
+
     def test_kernelexe_is_a_kernel_target_with_linked_interface_includes(self, tmp_path):
         root = self._tree(tmp_path)
         _interface_include_index.cache_clear()
@@ -1661,6 +1674,7 @@ def test_macro_kind_is_linear_on_an_unclosed_identifier_run():
     assert time.time() - t < 1
     assert _macro_kind("((unsigned long)(0x10) | (DWORD) 5)") == "literal"
 
+
 def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     from rustconv.profile_derive import xmacro_enumerators
 
@@ -1675,6 +1689,8 @@ def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     )
     got = xmacro_enumerators(tmp_path / "kbd.c", frozenset({"K_TAB", "K_ENTER", "VK_TAB"}))
     assert got == {"K_TAB": ("enum", "48"), "K_ENTER": ("enum", "50")}
+
+
 def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
     """cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on one line: every member after the
     first was reported UNOWNED, a false §9.112 alarm that blocked the module."""

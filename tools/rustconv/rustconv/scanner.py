@@ -1132,10 +1132,59 @@ def tu_switches(path: Path, raw: str) -> tuple[dict[str, str], frozenset[str]]:
                 pass
         for name in sorted(off):
             active = re.compile(rf"^[ \t]*#[ \t]*define[ \t]+{re.escape(name)}\b", re.M)
-            mention = re.compile(rf"\b{re.escape(name)}\b")
+            mention = re.compile(rf"(?:(?<!\w)|(?<=-D)){re.escape(name)}\b")  # and `-DNAME`
             if active.search(raw) or any(mention.search(t) for t in others):
                 off.discard(name)
-    return defined, frozenset(off)
+    return defined, frozenset(off | (_header_off_switches(path, raw) - defined.keys()))
+
+
+def _local_header_closure(path: Path, raw: str) -> list[Path]:
+    """The module-directory headers a TU `#include "..."`s, transitively."""
+    seen: list[Path] = []
+    todo = [raw]
+    while todo:
+        for inc in re.findall(r'^[ \t]*#[ \t]*include[ \t]+"([^"]+)"', todo.pop(), re.M):
+            h = (path.parent / inc).resolve()
+            if h.parent == path.parent.resolve() and h.is_file() and h not in seen:
+                seen.append(h)
+                todo.append(h.read_text(errors="replace"))
+    return seen
+
+
+def _header_off_switches(path: Path, raw: str) -> frozenset[str]:
+    """Switches a module's own configuration HEADER turns off (cmd.exe's config.h).
+
+    `//#define FEATURE_UNIX_FILENAME_COMPLETION` in config.h is as much a decision as the
+    same toggle in the TU, but `tu_switches` only read the TU, so filecomp.c's dead UNIX
+    arm was translated alongside the live 4NT one: two `CompleteFilename`s, the dead one
+    exported with the wrong signature. Positive evidence only, as for a TU toggle: the
+    header carries the commented-out toggle, and no `.c`/`.h` of the module defines the
+    name on an active line and its CMakeLists.txt never mentions it (`-DNAME`).
+
+    ON switches from headers are deliberately not read: a kept `#ifdef ON` arm translates
+    correctly, and deciding them would re-key every banked function under one.
+    """
+    toggles: set[str] = set()
+    for h in _local_header_closure(path, raw):
+        toggles |= set(_TU_OFF_SWITCH.findall(h.read_text(errors="replace")))
+    if not toggles:
+        return frozenset()
+    sources = [raw]
+    for f in (*sorted(path.parent.glob("*.[ch]")), path.parent / "CMakeLists.txt"):
+        try:
+            sources.append(f.read_text(errors="replace"))
+        except OSError:
+            pass
+    cmake = sources[-1] if (path.parent / "CMakeLists.txt").is_file() else ""
+    off = set()
+    for name in toggles:
+        active = re.compile(rf"^[ \t]*#[ \t]*(define|undef)[ \t]+{re.escape(name)}\b", re.M)
+        # `\b` alone misses `-DNAME`: D and N are both word characters.
+        if not any(active.search(t) for t in sources) and not re.search(
+            rf"(?:(?<!\w)|(?<=-D)){re.escape(name)}\b", cmake
+        ):
+            off.add(name)
+    return frozenset(off)
 
 
 def _eval_pp_cond(
@@ -1774,7 +1823,16 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
     # file that scans completely, and every body banked from it, keeps its exact text.
     # (Resolving it everywhere changed bodies in ~130 files, fastfat and user32 among them.)
     if "__REACTOS__" not in raw:
-        return result
+        # No arm to resolve, but a definition can still be lost (calc's theme.c: bare
+        # `GET_CB(x)` statement macros with no `;` swallow the next function).
+        from .c_defs import c_functions as _cf
+        from .dead_regions import never_compiled_lines as _ncl
+
+        text0 = _apply_local_renames(raw) if renames else raw
+        dead0 = _ncl(text0, *_scan_switches(path, raw))
+        live0 = "\n".join("" if n in dead0 else ln for n, ln in enumerate(text0.splitlines(), 1))
+        lost0 = _cf(live0) - {f.name for f in result.functions}
+        return _scan_live(path, live0, result, lost0)
     # The same split can leave every definition extracted and still be broken: listview.c
     # splits a SIGNATURE across the arms (LISTVIEW_NextIconPosTop), tree-sitter wraps the rest
     # of the file in one ERROR node, the walk still finds all 240 functions inside it -- and
@@ -1782,34 +1840,96 @@ def scan_file(path: Path, *, force_cpp: bool = False, _resolve_reactos: bool = F
     # characters of function bodies into every call's shared context. 160K-token prompts,
     # over Haiku 5.5's 100K tier on every call: listview alone cost more than the other 16
     # files of the run together. treeview.c's 108K preamble is the same shape.
-    if result.preamble_swallowed_functions:
-        retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
-        have = {f.name for f in result.functions}
-        if retry.preamble_swallowed_functions < result.preamble_swallowed_functions and have <= {
-            f.name for f in retry.functions
-        }:
-            return retry
-        return result
     from .c_defs import c_functions
     from .dead_regions import never_compiled_lines
 
-    if renames:
-        raw = _apply_local_renames(raw)
-    dead = never_compiled_lines(raw)
-    live = "\n".join("" if n in dead else ln for n, ln in enumerate(raw.splitlines(), 1))
+    live_raw = _apply_local_renames(raw) if renames else raw
+    dead = never_compiled_lines(live_raw, *_scan_switches(path, raw))
+    live = "\n".join("" if n in dead else ln for n, ln in enumerate(live_raw.splitlines(), 1))
     have = {f.name for f in result.functions}
     lost = c_functions(live) - have
+    if result.preamble_swallowed_functions:
+        retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
+        again = {f.name for f in retry.functions}
+        # Better on EITHER count, losing nothing: calc's winmain.c splits `_tWinMain`'s
+        # HEADER across `#if !defined(__REACTOS__)` arms, the resolved scan recovers the
+        # definition, but only a smaller swallowed count was accepted here, so the plan
+        # lacked _tWinMain and translate refused the TU.
+        fewer = retry.preamble_swallowed_functions < result.preamble_swallowed_functions
+        if (fewer or len(lost - again) < len(lost)) and have <= again:
+            return retry
+        return _scan_live(path, live, result, lost)
     if not lost:
         return result
     retry = _scan_file(path, force_cpp=False, _resolve_reactos=True, _local_renames=renames)
+    again = {f.name for f in retry.functions}
+    if len(lost - again) < len(lost) and have <= again:
+        return retry
+    return _scan_live(path, live, result, lost)
+
+
+def _pinned_ints(path: Path) -> dict[str, int]:
+    """The module's integer `-D`s (cmake_target_defines), so a dead-region decision here is
+    the one the scan itself already makes: mbcs.c's `#if _MSVCR_VER>=80` bodies are dead
+    at the pinned 0 and must not come back as "lost" definitions."""
+    out: dict[str, int] = {}
+    for k, v in cmake_target_defines(path).items():
+        try:
+            out[k] = int(v, 0)
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _scan_switches(path: Path, raw: str) -> tuple[dict[str, int], frozenset[str]]:
+    """The dead-line decision the scan itself makes: the module's pinned `-D` ints plus the
+    TU's own switches (tu_switches: file-scope `#define`s ON, `//#define` toggles OFF,
+    cmd.exe's config.h included). A "lost" definition is only lost if it is live by THESE --
+    filecomp.c's CompleteUnix sits under a config.h toggle that is off."""
+    pinned = _pinned_ints(path)
+    defined, off = tu_switches(path, raw)
+    for k, v in defined.items():
+        try:
+            pinned.setdefault(k, int(str(v).rstrip("uUlL") or "1", 0))
+        except ValueError:
+            pinned.setdefault(k, 1)
+    return pinned, off
+
+
+def _scan_live(path: Path, live: str, result: ScanResult, lost: set[str]) -> ScanResult:
+    """Last resort for a definition still lost: scan the LIVE text, every never-compiled line
+    blank (line numbers kept). The `__REACTOS__` resolution only decides plain
+    `#ifdef __REACTOS__` arms; calc's winmain.c splits `_tWinMain`'s header across
+    `#if defined(__GNUC__) && !defined(__REACTOS__)`, which dead_regions evaluates and the
+    resolver does not. Taken only when it recovers a lost definition and drops none."""
+    if not lost:
+        return result
+    # With the dead arm blank, its `#if`/`#else`/`#endif` lines only split the surviving
+    # header from its body for tree-sitter; blank them too (line numbers kept).
+    live = re.sub(r"(?m)^[ \t]*#[ \t]*(?:if|ifdef|ifndef|elif|else|endif)\b.*$", "", live)
+    # An indented statement macro written without its `;` (`GET_CB(OpenThemeData)` --
+    # the macro brings its own) makes tree-sitter fold the next definition into an ERROR.
+    live = re.sub(
+        r"(?m)^([ \t]+(?!(?:if|while|for|switch|return|sizeof|else)\b)"
+        r"[A-Za-z_]\w*\s*\([^;{}\n]*\))[ \t]*$",
+        r"\1;",
+        live,
+    )
+    retry = _scan_file(path, force_cpp=False, _resolve_reactos=False, _text=live)
+    have = {f.name for f in result.functions}
     again = {f.name for f in retry.functions}
     return retry if len(lost - again) < len(lost) and have <= again else result
 
 
 def _scan_file(
-    path: Path, *, force_cpp: bool, _resolve_reactos: bool, _local_renames: bool = False
+    path: Path,
+    *,
+    force_cpp: bool,
+    _resolve_reactos: bool,
+    _local_renames: bool = False,
+    _text: str | None = None,
 ) -> ScanResult:
-    raw = _expand_split_includes(path, path.read_text(errors="replace"))
+    raw = _expand_split_includes(path, path.read_text(errors="replace") if _text is None else _text)
     if _local_renames:
         raw = _apply_local_renames(raw)
     # portcls.h defines PORTCLASSAPI solely as DECLSPEC_IMPORT/DECLSPEC_EXPORT.

@@ -31,6 +31,7 @@ import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import variadic_shim
 from .crate_integrate import _LITERAL_OR_COMMENT as _LITERAL_OR_COMMENT_RE
 from .crate_integrate import extern_block_spans, split_decls
 
@@ -271,6 +272,7 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
         text=True,
     )
     found: dict[str, list[Item]] = {n: [] for n in names}
+    aliases: dict[Path, dict[str, str]] = {}
     for rel in proc.stdout.split():
         path = workspace / rel
         if exclude in path.parents or "/target/" in rel:
@@ -305,10 +307,62 @@ def workspace_items(names: set[str], workspace: Path, exclude: Path) -> dict[str
             for decl in split_decls(body):
                 m = re.search(r"\bfn\s+([A-Za-z_]\w*)\s*\(", decl)
                 if m and m.group(1) in present:
+                    decl = _inline_core_aliases(decl, workspace / top, aliases)
                     found[m.group(1)].append(Item("fn", _norm(decl), abi, rel))
+                    continue
+                # An extern DATA symbol (uuid's `static GUID_NULL: GUID;`).
+                m = re.search(r"\bstatic\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:[^;]+;", decl)
+                if m and m.group(1) in present:
+                    text = re.sub(r"^.*?\bstatic\b", "static", _norm(decl))
+                    found[m.group(1)].append(Item("static", text, abi, rel))
         for name, decl, abi in exported_definitions(src, present):
+            decl = _inline_core_aliases(decl, workspace / top, aliases)
             found[name].append(Item("fn", _norm(decl), abi, rel))
     return found
+
+
+# Spelled entirely in `core` terms, so an alias of this shape means the same in any crate.
+_CORE_ALIAS_RHS = re.compile(
+    r"(?:\s|[(),<>*\-]|->|::|Option|unsafe|extern|\"(?:C|system)\"|fn|const|mut|core|ffi|"
+    r"c_(?:void|char|schar|uchar|short|ushort|int|uint|long|ulong|longlong|ulonglong)|"
+    r"[iu](?:8|16|32|64|size))*"
+)
+
+
+_ALIAS_DEF = re.compile(r"^\s*(?:pub(?:\([^)]*\))?\s+)?type ([A-Za-z_]\w*)\s*=\s*([^;]+);", re.M)
+
+
+def _inline_core_aliases(decl: str, crate_dir: Path, cache: dict[Path, dict[str, str]]) -> str:
+    """A copied declaration names its source crate's private aliases: ucrt-rust's
+    `qsort(.., comp: Compare)` reached cmd and net with `Compare` undefined, because types
+    are never copied. Where the alias is spelled purely in `core` terms (`Option<unsafe
+    extern "C" fn(*const c_void, *const c_void) -> c_int>`) it means the same everywhere, so
+    it is substituted into the declaration; anything else is left for the island, as before.
+    """
+    if crate_dir not in cache:
+        found: dict[str, str] = {}
+        from tools.source_walk import source_files  # repo-root package: imported at use
+
+        for rs in source_files(crate_dir / "src", "*.rs"):
+            try:
+                text = rs.read_text(errors="replace")
+            except OSError:
+                continue
+            for m in _ALIAS_DEF.finditer(text):
+                rhs = " ".join(m.group(2).split())
+                if _CORE_ALIAS_RHS.fullmatch(rhs) and found.get(m.group(1), rhs) == rhs:
+                    found[m.group(1)] = rhs
+                else:
+                    found[m.group(1)] = ""  # disagreeing or not core-only: never inline
+        cache[crate_dir] = {k: v for k, v in found.items() if v}
+    table = cache[crate_dir]
+    if not table:
+        return decl
+    return re.sub(
+        r"(:\s*)([A-Za-z_]\w*)\b(?!\s*::)",
+        lambda m: m.group(1) + table.get(m.group(2), m.group(2)),
+        decl,
+    )
 
 
 _EXPORTED_FN = re.compile(
@@ -381,6 +435,70 @@ def _placeholder_decl(item: Item) -> bool:
     return bool(parts) and all(re.fullmatch(r"\s*_\s*:\s*usize\s*", p) for p in parts)
 
 
+_SIG_SKIP = frozenset(
+    {
+        "pub",
+        "fn",
+        "unsafe",
+        "extern",
+        "mut",
+        "const",
+        "Option",
+        "dyn",
+        "impl",
+        "self",
+        "c_void",
+        "c_char",
+        "c_schar",
+        "c_uchar",
+        "c_short",
+        "c_ushort",
+        "c_int",
+        "c_uint",
+        "c_long",
+        "c_ulong",
+        "c_longlong",
+        "c_ulonglong",
+        "c_float",
+        "c_double",
+        "i8",
+        "i16",
+        "i32",
+        "i64",
+        "i128",
+        "isize",
+        "u8",
+        "u16",
+        "u32",
+        "u64",
+        "u128",
+        "usize",
+        "f32",
+        "f64",
+        "bool",
+        "char",
+        "str",
+    }
+)
+
+
+def foreign_types(text: str, visible: set[str]) -> set[str]:
+    """Type names an extern fn's signature uses that `visible` does not have.
+
+    A copy is the OTHER crate's text: ucrt-rust declares `qsort(.., comp: Compare)` with its
+    own private `Compare`, and regedit got that line verbatim (E0412). Parameter names,
+    path segments (`core::ffi::c_void`) and primitives are not candidates."""
+    head = text.split("{", 1)[0]
+    head = re.sub(r'"[^"]*"', "", head)
+    head = re.sub(r"\bfn\s+[A-Za-z_]\w*", "fn", head, count=1)
+    out = set()
+    for m in re.finditer(r"(?<![\w:])([A-Za-z_]\w*)\b(?!\s*::)(?!\s*:(?!:))", head):
+        word = m.group(1)
+        if word not in _SIG_SKIP and word not in visible:
+            out.add(word)
+    return out
+
+
 def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     """The definition the tree agrees on, or (None, why not).
 
@@ -392,6 +510,15 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
     """
     consts = [i for i in items if i.kind == "const"]
     fns = [i for i in items if i.kind == "fn" and not _placeholder_decl(i)]
+    statics = [i for i in items if i.kind == "static"]
+    if statics and not fns:
+        # An extern DATA symbol: the island's declaration is the header's own transcript. It
+        # outranks a crate's `const GUID_NULL: GUID = ..` copy, which is not the symbol.
+        voters = [i for i in statics if _is_bindgen(i.path)] or statics
+        types = {re.sub(r"\s+", "", i.text.split(":", 1)[1]) for i in voters}
+        if len(types) != 1:
+            return None, f"extern static type disagreement ({len(types)} types)"
+        return _most_common(voters), ""
     if consts and not fns:
         literal = [i for i in consts if const_value(i) is not None]
         values = {const_value(i) for i in literal}
@@ -669,7 +796,9 @@ SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
 SIBLING_END = "// ==== end cross-TU definitions ===="
 _DEF = re.compile(
     r"^(?P<pub>pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
-    r"(?P<kind>fn|static(?:\s+mut)?|const)\s+(?P<name>[A-Za-z_]\w*)\b",
+    # Types too: a local-type alias resolve hoists into the prelude (cmd's LPDIRSWITCHFLAGS =
+    # *mut _DirSwitchesFlags) names a struct one module defines, and was "defined nowhere".
+    r"(?P<kind>fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+(?P<name>[A-Za-z_]\w*)\b",
     re.M,
 )
 
@@ -709,9 +838,8 @@ def promote_pub(path: Path, name: str) -> bool:
     """Make a top-level definition of `name` in `path` `pub`. True if it changed."""
     text = path.read_text()
     pat = re.compile(
-        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?(?:fn|static(?:\s+mut)?|const)\s+"
-        + re.escape(name)
-        + r"\b)",
+        r"^(?!pub)((?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
+        r"(?:fn|static(?:\s+mut)?|const|struct|union|enum|type)\s+" + re.escape(name) + r"\b)",
         re.M,
     )
     new, n = pat.subn(r"pub \1", text, count=1)
@@ -1070,9 +1198,44 @@ def module_exports(module_dir: Path, repo: Path) -> set[str] | None:
         specs += [repo / f for f in found]
     per_arch = [
         set().union(*(parse_spec(spec, arch).keys() for spec in specs))
+        | _static_lib_symbols(cmake.read_text(), repo, arch)
         for arch in ("i386", "amd64", "arm64")
     ]
     return set.intersection(*per_arch) if per_arch else None
+
+
+_LINKLIBS = re.compile(r"target_link_libraries\(\s*\S+\s+([^)]*)\)")
+
+
+def _static_lib_symbols(cmake_text: str, repo: Path, arch: str) -> set[str]:
+    """What the module's STATIC libraries define (`target_link_libraries(mspaint uuid ..)`):
+    uuid's GUID_NULL is a data symbol no .spec exports, yet it links. Read off THIS tree's
+    built archive with llvm-nm, never guessed; an archive not built yet contributes nothing
+    (the name then stays unresolved, loudly)."""
+    nm = repo / ".build-tools" / "llvm-mingw" / "bin" / "llvm-nm"
+    if not nm.is_file():
+        return set()
+    out: set[str] = set()
+    for m in _LINKLIBS.finditer(cmake_text):
+        for lib in m.group(1).split():
+            if not re.fullmatch(r"[\w-]+", lib):
+                continue
+            hits = sorted((repo / f"build-{arch}" / "sdk" / "lib").glob(f"**/lib{lib}.a"))
+            if not hits:
+                continue
+            res = subprocess.run(
+                [str(nm), "--defined-only", "--extern-only", str(hits[0])],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            for line in res.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 3:
+                    sym = parts[2]
+                    # i386 decorates C symbols with one leading underscore.
+                    out.add(sym[1:] if arch == "i386" and sym.startswith("_") else sym)
+    return out
 
 
 def called_names(modules_dir: Path) -> set[str]:
@@ -1242,7 +1405,7 @@ def write_substrate(prelude: Path, block: str) -> bool:
     return True
 
 
-_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW])\b")
+_LONG_PTR_ALIAS = re.compile(r"\bfn ((?:Get|Set)(?:Window|Class)Long)Ptr([AW]?)\b")
 
 
 def _x86_alias(sig: str) -> str:
@@ -1251,16 +1414,20 @@ def _x86_alias(sig: str) -> str:
     from another crate loses that crate's `link_name`, and comctl32's i386 link failed on all
     four. The attribute line, indented for an extern block, or "" when none applies."""
     m = _LONG_PTR_ALIAS.search(sig)
-    if m is None or "link_name" in sig:
+    if m is None or re.search(
+        r'target_arch\s*=\s*"x86"[^\]]*link_name|^\s*#\[link_name', sig, re.M
+    ):
         return ""
-    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2)}")]\n'
+    # The bare TCHAR spelling (`GetWindowLongPtr`, copied with only 64-bit link_names, as
+    # mspaint's prelude got from shell32) is the W function in this tree's UNICODE modules.
+    return f'    #[cfg_attr(target_arch = "x86", link_name = "{m.group(1)}{m.group(2) or "W"}")]\n'
 
 
 def render(copied: dict[str, Item]) -> str:
     consts = [i for i in copied.values() if i.kind in ("const", "type")]
     fns: dict[str, list[Item]] = {}
     for i in copied.values():
-        if i.kind == "fn":
+        if i.kind in ("fn", "static"):
             fns.setdefault(i.abi or '"C"', []).append(i)
     out = [BEGIN]
     for i in sorted(consts, key=lambda i: i.text):
@@ -1268,7 +1435,11 @@ def render(copied: dict[str, Item]) -> str:
     for abi, items in sorted(fns.items()):
         out.append(f"extern {abi} {{")
         for i in sorted(items, key=lambda i: i.text):
-            text = i.text if i.text.startswith("fn") else re.sub(r"^.*?\bfn\b", "fn", i.text)
+            text = (
+                i.text
+                if i.text.startswith(("fn", "static"))
+                else re.sub(r"^.*?\bfn\b", "fn", i.text)
+            )
             out.append(f"{_x86_alias(text)}    pub {text} // {i.path}")
         out.append("}")
     out.append(END)
@@ -1304,7 +1475,7 @@ def existing_block(prelude: Path) -> dict[str, Item]:
             continue
         body, _, src = s.partition(" // ")
         body = re.sub(r"^pub\s+", "", body)
-        n = re.search(r"\b(?:const|type|fn)\s+([A-Za-z_]\w*)", body)
+        n = re.search(r"\b(?:const|type|fn|static(?:\s+mut)?)\s+([A-Za-z_]\w*)", body)
         if n:
             kind = "fn" if body.startswith("fn") else body.split()[0]
             out[n.group(1)] = Item(kind, body, abi, src)
@@ -1369,16 +1540,27 @@ def fact_rust_type(
     return "u32" if value < 2**32 else "u64"
 
 
-def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
+_UNSIGNED_BITS = {"u8": 8, "u16": 16, "u32": 32, "u64": 64}
+
+
+def render_facts(facts: dict[str, tuple[str, int | str, str]]) -> str:
     """name -> (rust type, value, source TU)."""
     out = [FACTS_BEGIN]
     for name, (ty, value, src) in sorted(facts.items()):
         literal = str(value)
+        if ty in ("f32", "f64"):
+            out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
+            continue
+        assert isinstance(value, int)  # only a floating fact carries its literal text
         if ty.startswith("*"):
             ty = ty[1:]
             literal = f"0x{value & 0xFFFFFFFFFFFFFFFF:X}usize as {ty}"
         elif value < 0 and ty in ("i32", "NTSTATUS", "LONG", "HRESULT"):
             literal = f"0x{value & 0xFFFFFFFF:08X}_u32 as {ty}"
+        elif value < 0 and ty in _UNSIGNED_BITS:
+            # clang's evaluator answers in a signed 64-bit: calc's `_UI64_MAX`
+            # (0xffffffffffffffffui64) came back -1, and `u64 = -1` does not compile.
+            literal = f"0x{value & ((1 << _UNSIGNED_BITS[ty]) - 1):X}"
         elif value >= 10:
             literal = f"0x{value:X}"
         out.append(f"pub const {name}: {ty} = {literal}; // clang, {src}")
@@ -1386,13 +1568,17 @@ def render_facts(facts: dict[str, tuple[str, int, str]]) -> str:
     return "\n".join(out) + "\n"
 
 
-def existing_facts(prelude: Path) -> dict[str, tuple[str, int, str]]:
+def existing_facts(prelude: Path) -> dict[str, tuple[str, int | str, str]]:
     text = prelude.read_text()
     m = re.search(re.escape(FACTS_BEGIN) + r"(.*?)" + re.escape(FACTS_END), text, re.S)
     if not m:
         return {}
-    out = {}
+    out: dict = {}
     for line in m.group(1).splitlines():
+        fl = re.match(r"^pub const (\w+): (f32|f64) = ([-+0-9.eE]+); // clang, (\S+)", line.strip())
+        if fl:
+            out[fl.group(1)] = (fl.group(2), fl.group(3), fl.group(4))
+            continue
         f = re.match(
             r"^pub const (\w+): (\w+) = (0x[0-9A-F]+)?(?:_u32 as \w+|usize as \w+)?(-?\d+)?;"
             r" // clang, (\S+)",
@@ -1435,10 +1621,23 @@ def existing_local_types(prelude: Path) -> set[str]:
 
 def write_local_types(prelude: Path, items: dict[str, tuple[str, str]]) -> bool:
     """name -> (rust text, source TU)."""
+    from .crate_repair import _BINDGEN_KEYWORDS
+
     out = [LOCAL_TYPES_BEGIN]
     for name, (text, src) in sorted(items.items()):
         out.append(f"// {name}: c2rust, {src}")
-        out.append(text)
+        # c2rust escapes a keyword-named C field as `type_0`, bindgen and crate-repair as
+        # `type_`: reg.exe's `data_type` came out `type_0` while its body read `.type_`.
+        text = re.sub(
+            r"(\bpub\s+)(\w+)_0(\s*:)",
+            lambda m: (
+                m.group(1) + m.group(2) + "_" + m.group(3)
+                if m.group(2) in _BINDGEN_KEYWORDS
+                else m.group(0)
+            ),
+            text,
+        )
+        out.append(variadic_shim.lower_va_list_types(text)[0])
     out.append(LOCAL_TYPES_END)
     block = "\n".join(out) + "\n"
     text = prelude.read_text()

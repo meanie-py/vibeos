@@ -724,6 +724,18 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
+/// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()`. The C makes
+/// reaching it undefined behaviour; this stops loudly instead (`unreachable!()`), because
+/// `unreachable_unchecked` licenses LLVM to delete the very check that would have caught a
+/// broken assumption (scan_assert_to_ub). Same meaning when the C is right; a crash, not
+/// silent corruption, when it is not.
+#[macro_export]
+macro_rules! UNREACHABLE {
+    () => {
+        unreachable!()
+    };
+}
+
 /// `debug.h` — `ASSERT(exp)`. Inert, matching the release (`!DBG`) build where the header
 /// defines it to `((VOID)0)`: the expression is TYPE-CHECKED but never evaluated, so a body
 /// that asserts on a name it never defines still fails to compile, and no side effect of the

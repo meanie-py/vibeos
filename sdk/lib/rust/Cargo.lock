@@ -116,6 +116,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -313,10 +314,22 @@ dependencies = [
  "libz-rs-sys",
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
 name = "cacls-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "calc-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",
@@ -404,6 +417,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "clb-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "clipbrd-rust"
 version = "0.1.0"
 dependencies = [
@@ -419,6 +443,19 @@ name = "cmboot-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "cmd-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "wcwidth-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1872,6 +1909,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mspaint-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mstsc-rust"
 version = "0.1.0"
 dependencies = [
@@ -1994,6 +2043,18 @@ dependencies = [
  "ntkrnl-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "net-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
  "win32macros-rust",
 ]
 
@@ -2568,6 +2629,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "reg-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "regedit-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2981,6 +3066,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "servman-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "setjmp-rt"
 version = "0.1.0"
 
@@ -3293,6 +3390,17 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "va-slots-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "taskmgr-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
  "win32macros-rust",
 ]
 
@@ -3761,6 +3869,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "wcwidth-rust"
+version = "0.1.0"
+
+[[package]]
 name = "win32k-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3914,6 +4026,7 @@ dependencies = [
  "concfg-rust",
  "ntdll-sys",
  "panic-common",
+ "wcwidth-rust",
  "winsrv-sys",
 ]
 

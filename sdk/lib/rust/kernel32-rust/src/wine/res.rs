@@ -1,3 +1,4 @@
+use winedebug_rust::{ERR, TRACE};
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 

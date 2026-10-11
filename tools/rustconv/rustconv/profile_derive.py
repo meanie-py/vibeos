@@ -89,6 +89,11 @@ class ProfileDeriveError(RuntimeError):
     """
 
 
+class NoSourceOwner(ProfileDeriveError):
+    """No CMake target compiles this TU on the requested arch (a per-arch query is allowed to
+    get "none here" as its answer; every other derive failure stays fatal)."""
+
+
 @dataclass(frozen=True)
 class Finding:
     """One reviewable observation. ``severity`` ∈ {error, warn, info}."""
@@ -686,6 +691,15 @@ _SOURCE_LIST_OPEN = re.compile(
 _COMMENTED_ENTRY = re.compile(
     r"^[ \t]*#[ \t]*((?:\$\{REACTOS_SOURCE_DIR\}/)?[\w./+-]+\.(?:c|cpp|cc))(?:[ \t].*)?$"
 )
+#: The same entry inside an ARCH generator expression, the shape ntos.cmake gave the pnpmgr
+#: sources while they were cohab-flipped one arch at a time:
+#:     `#$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/io/pnpmgr/arb/arbbus.c>`
+#: Unmatched, all 17 of them were invisible, and `translate` refused the five root arbiters
+#: with "no proven CMake source owner". Restored only for the arch the genex names.
+_COMMENTED_GENEX_ENTRY = re.compile(
+    r"^[ \t]*#[ \t]*\$<\$<STREQUAL:\$\{ARCH\},(\w+)>:"
+    r"((?:\$\{REACTOS_SOURCE_DIR\}/)?[\w./+-]+\.(?:c|cpp|cc))>(?:[ \t].*)?$"
+)
 
 #: `# list(APPEND SOURCE` / `# set(SOURCE` — what a cohab flip leaves behind.
 _COMMENTED_LIST_OPEN = re.compile(r"^[ \t]*#[ \t]?(list\s*\(\s*APPEND\s+\w+|set\s*\(\s*\w+)")
@@ -693,7 +707,10 @@ _SOURCE_ARG = re.compile(r"^(?:\$\{[^}]+\}|[\w./+-]+\.(?:c|cpp|cc|h|hpp|idl|rc))
 
 
 def uncomment_flipped_source_lists(
-    text: str, module_dir: Path | None = None, repo_root: Path | None = None
+    text: str,
+    module_dir: Path | None = None,
+    repo_root: Path | None = None,
+    arch: str | None = None,
 ) -> tuple[str, list[str]]:
     """Restore the source list a cohab flip commented out. Returns `(text, restored files)`.
 
@@ -753,13 +770,16 @@ def uncomment_flipped_source_lists(
         # for the rest of the file — wsock32 then restored a PROSE comment
         # (`#   stubs.c  → wsock32-rust`) sitting outside every list.
         entry = _COMMENTED_ENTRY.match(line) if depth > 0 else None
+        rel = entry.group(1) if entry is not None else None
+        genex = _COMMENTED_GENEX_ENTRY.match(line) if depth > 0 and rel is None else None
+        if genex is not None and (arch is None or genex.group(1) == arch):
+            rel = genex.group(2)
         # An entry names a file that is STILL THERE — a flip comments sources out, it never
         # deletes them (the never-delete rule). That is what separates an entry from the
         # heading shell32 writes above each flipped block, which names the same file in prose.
         # Deduped for the same reason, and because rtl legitimately lists `byteswap.c` in two
         # different `if(ARCH)` arms.
-        if entry is not None and module_dir is not None:
-            rel = entry.group(1)
+        if rel is not None and module_dir is not None:
             if rel.startswith("${REACTOS_SOURCE_DIR}/"):
                 on_disk = (
                     repo_root is not None
@@ -768,11 +788,11 @@ def uncomment_flipped_source_lists(
             else:
                 on_disk = (module_dir / rel).is_file()
             if not on_disk:
-                entry = None
-        if entry is not None:
-            final.append("    " + entry.group(1))
-            if entry.group(1) not in restored:
-                restored.append(entry.group(1))
+                rel = None
+        if rel is not None:
+            final.append("    " + rel)
+            if rel not in restored:
+                restored.append(rel)
             continue
         code = line.split("#", 1)[0]
         depth = max(depth + code.count("(") - code.count(")"), 0)
@@ -943,7 +963,9 @@ def parse_cmakelists(
     raw_text = _read_with_includes(cmake)
     restored_sources: list[str] = []
     if flipped_sources:
-        raw_text, restored_sources = uncomment_flipped_source_lists(raw_text, module_dir, repo_root)
+        raw_text, restored_sources = uncomment_flipped_source_lists(
+            raw_text, module_dir, repo_root, arch
+        )
     text = _unroll_target_foreach(_strip_cmake_comments(raw_text))
     vars_: dict[str, list[str]] = {
         "CMAKE_CURRENT_SOURCE_DIR": [str(module_dir)],
@@ -2979,8 +3001,8 @@ def derive_source(
             )
         if directory == repo_root.resolve():
             break
-    raise ProfileDeriveError(
-        f"{source}: no proven CMake source owner, including retained flipped sources"
+    raise NoSourceOwner(
+        f"{source}: no proven CMake source owner on {arch}, including retained flipped sources"
     )
 
 
@@ -4291,24 +4313,30 @@ def scaffold_crate(
     if is_cpp:
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
-        com = any(
-            re.search(r"\bCComHeapPtr\b", tu.read_text(errors="replace"))
-            for tu in m.compiled_tus
-            if tu.is_file()
-        )
-        # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
+        texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
+        com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
+        path = any(re.search(r"\bCPath\b", t) for t in texts)
+        # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
+        # PathCompactPathExW: only a module that uses one imports its DLL.
+        feats = [f for f, on in (("com", com), ("path", path)) if on]
         deps += (
-            'atlclasses-rust = { path = "../atlclasses-rust", features = ["com"] }\n'
-            if com
+            'atlclasses-rust = { path = "../atlclasses-rust", features = ['
+            + ", ".join(f'"{f}"' for f in feats)
+            + "] }\n"
+            if feats
             else 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
         )
         atl_block = (
             "\n// ================= ATL =========================================================="
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
-            "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
-            "CSimpleMap, CStringW, POSITION};\n"
+            "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, "
+            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
+            # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
+            # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
+            "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+            + ("pub use atl_rust::CPath;\n" if path else "")
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases

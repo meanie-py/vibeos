@@ -3,7 +3,6 @@ use core::ffi::{c_void, c_char};
 use crate::types::*;
 
 extern "C" {
-    fn FIXME(format: *const i8, ...);
 }
 
 // ---- file-scope type preamble (translated) ----
@@ -208,7 +207,6 @@ extern "C" {
     fn deflateEnd(strm: *mut z_stream) -> i32;
     fn zlibVersion() -> *const core::ffi::c_char;
     fn list_add_before(pos: *mut list, entry: *mut list);
-    fn assert(cond: i32);
     fn memcpy(dst: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     fn memset(ptr: *mut core::ffi::c_void, val: i32, n: usize) -> *mut core::ffi::c_void;
     fn strcpy(dst: *mut i8, src: *const i8) -> *mut i8;
@@ -1266,7 +1264,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
     let header_size: u32 = get_header_size(fci);
     let total_size: u32 = header_size + (*fci).folders_size + (*fci).placed_files_size + (*fci).folders_data_size;
 
-    assert((header_size as usize <= core::mem::size_of_val(&(*fci).data_out)) as i32);
+    debug_assert!(header_size as usize <= core::mem::size_of_val(&(*fci).data_out));
     memset(cfheader as *mut core::ffi::c_void, 0, header_size as usize);
 
     if (*fci).fPrevCab != 0 { flags |= cfheadPREV_CABINET as u16; }
@@ -1314,7 +1312,7 @@ unsafe fn write_cabinet(fci: *mut FCI_Int, status_callback: PFNFCISTATUS) -> i32
         ptr = ptr.offset(strlen(ptr) as isize + 1);
     }
 
-    assert((ptr as isize - cfheader as isize == header_size as isize) as i32);
+    debug_assert!(ptr as isize - cfheader as isize == header_size as isize);
 
     strcpy(filename.as_mut_ptr(), (*fci).ccab.szCabPath.as_ptr() as *const i8);
     strcat(filename.as_mut_ptr(), (*fci).ccab.szCab.as_ptr() as *const i8);
@@ -1752,8 +1750,7 @@ pub unsafe extern "C" fn FCIAddFile(
                 (*p_fci_internal).compress = Some(compress_MSZIP);
             }
             _ => {
-                let fmt = b"compression %x not supported, defaulting to none\n\0".as_ptr() as *const i8;
-                FIXME(fmt, typeCompress as u32);
+                winedebug_rust::FIXME!("compression %x not supported, defaulting to none\n", typeCompress as u32);
                 (*p_fci_internal).compression = tcompTYPE_NONE as TCOMP;
                 (*p_fci_internal).compress = Some(compress_NONE);
             }

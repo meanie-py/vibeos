@@ -250,10 +250,6 @@ pub unsafe fn REVERSE_BYTES<D, S>(dest: *mut D, src: *const S) {
     *d.add(0) = *s.add(3);
 }
 
-/// `NT_ASSERT(c)` — debug-build assertion; a no-op in free builds (DUMMY_PSEH / NDEBUG).
-/// Generic so the translation's `BOOLEAN`/`i32` argument forms both type-check.
-#[inline]
-pub unsafe fn NT_ASSERT<T>(_condition: T) {}
 
 // ---------------------------------------------------------------------------
 // StorPort FORCEINLINE wrappers and macro stubs

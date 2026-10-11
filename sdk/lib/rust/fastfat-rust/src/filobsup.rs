@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -13,7 +14,6 @@ use crate::types::{DCB};
 
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...); } extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn FatFspClose(vcb: *mut VCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
     fn FlagOn(flags: u32, flag: u32) -> i32;
@@ -95,7 +95,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         // Complex type-of-open assertion
@@ -127,7 +127,7 @@ pub unsafe extern "system" fn FatSetFileObject(
                         || (NodeType(VcbOrFcbOrDcb) == FAT_NTC_ROOT_DCB))
                     && Ccb.is_null());
 
-            NT_ASSERT(if cond { 1 } else { 0 });
+            NT_ASSERT!(if cond { 1 } else { 0 });
         }
 
         // UNREFERENCED_PARAMETER( TypeOfOpen );
@@ -140,7 +140,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         if !VcbOrFcbOrDcb.is_null() {
@@ -168,7 +168,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         // Set FsContext fields if FileObject present
@@ -184,7 +184,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         DebugTrace(-1, Dbg, b"FatSetFileObject -> VOID\n\0".as_ptr() as *const i8, 0);
@@ -324,7 +324,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
         Fcb,
     );
 
-    NT_ASSERT(FlagOn(
+    NT_ASSERT!(FlagOn(
         (*IrpContext).Flags,
         IRP_CONTEXT_FLAG_WAIT,
     ) as i32);
@@ -375,7 +375,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
     //
 
     let vcb_assert = (*Fcb).Vcb;
-    NT_ASSERT((FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
+    NT_ASSERT!((FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
         || FlagOn((*vcb_assert).VcbState, VCB_STATE_FLAG_LOCKED) != 0) as i32);
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {

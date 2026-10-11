@@ -6,6 +6,16 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, dead_code)]
 #![allow(unused_imports, unused_variables, unused_assignments, unused_mut, unused_unsafe)]
 
+// NT_ASSERT is a checked-build assertion (wdm.h): its operand is never evaluated in a free
+// build. It was an extern `fn`, so every call evaluated its argument out of line (cachesup.rs
+// documents a fault that caused). `debug_assert!` type-checks it and evaluates nothing here.
+#[macro_export]
+macro_rules! NT_ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
+// ASSERT is an alias for NT_ASSERT, available from translated code that expected the name.
+#[macro_export]
+macro_rules! ASSERT { ($($t:tt)*) => { ntkrnl_sys::nt_assert!($($t)*) }; }
+
 // UNREFERENCED_PARAMETER is a macro in the DDK headers; an out-of-line no-op fn is an
 // optimization barrier that can uncloak an ABI mismatch.
 #[allow(unused_macros)]
@@ -18,6 +28,22 @@ macro_rules! UNREFERENCED_PARAMETER {
 // optimization barrier, and an `extern` one resolved by whichever crate happened to export it.
 macro_rules! PAGED_CODE {
     () => {};
+}
+
+// Debug timing macros — discarded in free builds. Macros, never out-of-line functions.
+#[macro_export]
+macro_rules! TimerStart {
+    ($($arg:tt)*) => {};
+}
+#[macro_export]
+macro_rules! TimerStop {
+    ($($arg:tt)*) => {};
+}
+
+// KdPrintEx — debug print macro discarded in free builds. A macro, never an out-of-line fn.
+#[macro_export]
+macro_rules! KdPrintEx {
+    ($($arg:tt)*) => {};
 }
 
 // crate-type = staticlib (cohab) → this PE module needs its own panic handler /

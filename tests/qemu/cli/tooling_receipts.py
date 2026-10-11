@@ -81,6 +81,8 @@ _AUDITED_PYTEST = {
     "pytest:tools/test_scan_self_recursive.py",
     "pytest:tools/test_scan_export_thunks.py",
     "pytest:tools/test_scan_xchg_ebx_deref.py",
+    "pytest:tools/test_scan_unresolved_imports.py",
+    "pytest:tools/test_scan_assert_polarity.py",
     "pytest:tools/test_scan_wide_literals.py",
     "pytest:tools/test_scanner_controls.py",
     "pytest:tools/test_source_walk.py",

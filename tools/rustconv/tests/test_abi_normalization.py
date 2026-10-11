@@ -192,13 +192,11 @@ def test_alias_chain_is_followed_to_the_type_that_carries_the_abi():
     # amd64 forwards the pointer alias to a named type; the ABI lives on the target, so a
     # witness keyed on the forwarder must reach it.
     amd64 = (
-        'pub type KIPI_BROADCAST_WORKER =\n'
+        "pub type KIPI_BROADCAST_WORKER =\n"
         '    ::core::option::Option<unsafe extern "C" fn(Argument: u32) -> u32>;\n'
         "pub type PKIPI_BROADCAST_WORKER = KIPI_BROADCAST_WORKER;\n"
     )
-    assert normalize.alias_chains(amd64) == {
-        "PKIPI_BROADCAST_WORKER": "KIPI_BROADCAST_WORKER"
-    }
+    assert normalize.alias_chains(amd64) == {"PKIPI_BROADCAST_WORKER": "KIPI_BROADCAST_WORKER"}
     new, n = normalize.rewrite(amd64, {"PKIPI_BROADCAST_WORKER", "KIPI_BROADCAST_WORKER"}, "C")
     assert n == 1
     assert 'extern "system" fn(Argument: u32)' in new
