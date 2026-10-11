@@ -215,7 +215,7 @@ unsafe fn CreateTimer_impl() -> PTIMER {
 
     if !Ret.is_null() {
         UserHMSetHandle(Ret as *mut core::ffi::c_void, Handle);
-        InsertTailList(core::ptr::addr_of_mut!(TimersListHead) as _, core::ptr::addr_of_mut!((*Ret).ptmrList) as _);
+        // NOT linked here, unlike the C: IntSetTimer links it once it is initialized.
     }
 
     Ret
@@ -451,6 +451,20 @@ unsafe fn IntSetTimer_impl(
         (*pTmr).pfn = TimerFunc;
         (*pTmr).nID = IDEvent;
         (*pTmr).flags = (Type | TMRF_INIT as INT) as _;
+
+        // Divergence from the C, which links the timer in CreateTimer, before any field is
+        // set, and without TimerLock. ProcessTimers walks the list on the raw input thread
+        // under TimerLock, so on two CPUs it can meet a zeroed timer: one pass drives the
+        // countdown negative, the next dereferences its NULL pti (BUGCHECK 0x1E at
+        // ProcessTimers, amd64-bios -smp 2 gates 2026-10-09/10; the live list showed the
+        // timer with pti/rate/flags/pfn all zero and countdown -16). Link it initialized,
+        // under the lock every other list user takes.
+        TimerEnterExclusive();
+        InsertTailList(
+            core::ptr::addr_of_mut!(TimersListHead) as _,
+            core::ptr::addr_of_mut!((*pTmr).ptmrList) as _,
+        );
+        TimerLeave();
     } else {
         (*pTmr).cmsCountdown = Elapse as INT;
         (*pTmr).cmsRate = Elapse as INT;

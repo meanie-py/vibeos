@@ -79,8 +79,6 @@ unsafe fn COMPUTE_HASH_CHAR(key: ULONG, ch: WCHAR) -> ULONG {
     key.wrapping_mul(37).wrapping_add(ntkrnl_sys::ddk::RtlUpcaseUnicodeChar(ch) as ULONG)
 }
 
-#[inline(always)]
-unsafe fn NT_ASSERT(_expr: u8) {}
 extern "system" {
     fn HvAllocateCell( Hive: PHHIVE, Size: u32, StorageType: u32, Flink: HCELL_INDEX, ) -> HCELL_INDEX;
     fn HvFreeCell(Hive: PHHIVE, Cell: HCELL_INDEX);
@@ -1571,7 +1569,7 @@ pub unsafe extern "system" fn CmpBuildHashStackAndLookupCache(
             RemainingSubkeysInTotal,
             MatchRemainingSubkeys,
         );
-        NT_ASSERT(if (*LockedKcbs).is_null() { 0u8 } else { 1u8 });
+        ntkrnl_sys::nt_assert!(!(*LockedKcbs).is_null());
     }
 
     *TotalRemainingSubkeys = RemainingSubkeysInTotal;

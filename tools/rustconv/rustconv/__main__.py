@@ -57,6 +57,7 @@ from .batch_runner import TranslationResult, submit_batch, submit_single
 from .body_audit import main as body_audit_main
 from .c2rust_anchor import C2RustError, CompiledOut, build_anchor_map, build_preamble
 from .c_body_checks import body_findings, control_flow_findings, parse_findings
+from .c_defs import c_functions
 from .call_seal import (
     CallSealError,
     call_contract,
@@ -3004,7 +3005,20 @@ def cmd_translate(args):
                 "" if line_no in original_dead else line
                 for line_no, line in enumerate(original_source.splitlines(), 1)
             )
-            require_c_plan(live_source, (dep.name for dep in sorted_deps))
+            # A --skip-fn name the SCANNER never saw still satisfies this inventory: it is the
+            # same hand-writing request. The arbiter library defines ArbiterLibTestAllocation
+            # and five more with `#if NTDDI_VERSION` between the convention and the name, so
+            # tree-sitter finds no function there and the run refused to start; --skip-fn was
+            # the documented way out, and it could not reach a body that never entered the plan.
+            planned = {dep.name for dep in sorted_deps}
+            unscanned_skips = (skip_fn_requested & c_functions(live_source)) - planned
+            if unscanned_skips:
+                skip_fn_matched |= unscanned_skips
+                audit_findings.setdefault("--skip-fn BODIES LEFT TO HAND-WRITING", []).extend(
+                    f"{c_file.name}: '{name}' (the scanner could not parse it; write it by hand)"
+                    for name in sorted(unscanned_skips)
+                )
+            require_c_plan(live_source, planned | unscanned_skips)
         cpp_com_wide_statics = ""
 
         if cpp_class_target and free_functions:

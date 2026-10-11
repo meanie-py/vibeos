@@ -2384,6 +2384,7 @@ _BINDGEN_KEYWORDS = frozenset(
     }
 )
 _RE_NO_FIELD_NAME = re.compile(r"no field `(?P<field>\w+)` on type")
+_RE_NO_FIELD_NAMED = re.compile(r"has no field named `(?P<field>\w+)`")
 
 
 _RE_C2RUST_ANON = re.compile(r"c2rust_unnamed(?:_\d+)?")
@@ -2752,9 +2753,13 @@ def _keyword_field_rule(
     `Self_`; the model spelled the C name (26 sites) or c2rust's (5). Only a keyword is renamed,
     and to bindgen's one spelling, so a field that really is missing stays an error.
     """
-    if (diagnostic.get("code") or {}).get("code") != "E0609":
+    # E0609 is a field ACCESS (`.type_0`); E0560 the same name in a struct LITERAL
+    # (`reg_type_rels { type_0: REG_SZ, .. }`, reg.exe's type table).
+    code = (diagnostic.get("code") or {}).get("code")
+    if code not in ("E0609", "E0560"):
         return [], [], False
-    m = _RE_NO_FIELD_NAME.search(str(diagnostic.get("message") or ""))
+    msg = str(diagnostic.get("message") or "")
+    m = _RE_NO_FIELD_NAME.search(msg) or _RE_NO_FIELD_NAMED.search(msg)
     if m is None:
         return [], [], False
     field_name = m.group("field")
@@ -5622,7 +5627,7 @@ def _file_reader(root: Path) -> FileReader:
 
 #: `fn NAME(params) [-> ret]` — extern-block decls and plain definitions alike. Bodies are
 #: irrelevant here; only the parameter list is read.
-_RE_FN_DECL = re.compile(rb"\bfn\s+(\w+)\s*(?:<[^>]*>)?\s*\(", re.S)
+_RE_FN_DECL = re.compile(rb"\bfn\s+(\w+)\s*(?:<([^>]*)>)?\s*\(", re.S)
 _RE_TRY_INTO_UNWRAP = re.compile(rb"\.try_into\(\)\s*\.unwrap\(\)")
 
 
@@ -5714,6 +5719,13 @@ def harvest_signatures(sources: Mapping[str, bytes]) -> dict[str, list[str]]:
                     params.append("")
                     continue
                 params.append(part.split(":", 1)[1].strip())
+            # A generic parameter is no type NAME to cast to: `fn min<T>(a: T, b: T)` once got
+            # `(MAXLONG) as T` written into two pnpmgr arbiters. Unknown, so no authority.
+            generics = {
+                g.split(":", 1)[0].strip()
+                for g in (match.group(2) or b"").decode("utf-8", "replace").split(",")
+            }
+            params = ["" if p in generics else p for p in params]
             if name in found and found[name] != params:
                 found[name] = None
             else:

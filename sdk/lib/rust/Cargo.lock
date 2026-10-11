@@ -116,6 +116,7 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -313,6 +314,7 @@ dependencies = [
  "libz-rs-sys",
  "ntdll-sys",
  "panic-common",
+ "winedebug-rust",
 ]
 
 [[package]]
@@ -2012,6 +2014,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "net-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "netapi32-rust"
 version = "0.1.0"
 dependencies = [
@@ -2582,6 +2596,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "reg-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "regex-automata"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2992,6 +3018,18 @@ dependencies = [
  "panic-common",
  "win32macros-rust",
  "winsrv-sys",
+]
+
+[[package]]
+name = "servman-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]

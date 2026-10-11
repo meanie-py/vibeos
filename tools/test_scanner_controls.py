@@ -3562,6 +3562,35 @@ def test_cc_mismatch_flags_one_undefined_symbol_declared_two_ways(tmp_path: Path
     assert any("cachesup.rs" in h for h in split) and any("fileinfo.rs" in h for h in split), hits
 
 
+def test_cc_mismatch_counts_a_sys_crate_import_as_a_declaration(tmp_path: Path, monkeypatch):
+    """[DECL_CC_SPLIT] where one side is not an extern block at all: pnp.rs imported the cdecl
+    IoCopyCurrentIrpStackLocationToNext from ntkrnl_sys::ddk, flush.rs declared it "system".
+    rustc merged them; FatCommonFlushBuffers' finally returned into its own stack on i386.
+    The import must count, and a crate that only imports must stay quiet."""
+    cc = _cc_mod()
+    lib = _materialize(
+        tmp_path,
+        {
+            "demo-sys/src/bindgen_i386.rs": (
+                'extern "C" {\n    pub fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "fat-rust/src/pnp.rs": (
+                "use demo_sys::ddk::{KeX, IoCopyCurrentIrpStackLocationToNext};\n"
+            ),
+            "fat-rust/src/flush.rs": (
+                'extern "system" {\n    fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "clean-rust/src/pnp.rs": "use demo_sys::ddk::IoCopyCurrentIrpStackLocationToNext;\n",
+        },
+    )
+    monkeypatch.setattr(cc, "BASE", str(lib))
+    monkeypatch.setattr(cc, "_SYS_CACHE", {})
+    hits = cc.scan_crate(str(lib / "fat-rust/src"))
+    split = [h for h in hits if "DECL_CC_SPLIT" in h]
+    assert any("pnp.rs" in h for h in split) and any("flush.rs" in h for h in split), hits
+    assert not cc.scan_crate(str(lib / "clean-rust/src"))
+
+
 def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
     """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
     next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""

@@ -23,26 +23,6 @@ use ntkrnl_sys::ddk::{DISPATCHER_HEADER, KEY_FULL_INFORMATION, PCSTR, PCUNICODE_
 use ntkrnl_sys::ke::{DbgBreakPoint};
 use ntkrnl_sys::ddk::LARGE_INTEGER;
 
-// w! — NUL-terminated UTF-16 array from an ASCII literal (2-aligned 'static;
-// a b"...\0" byte string cast to *const u16 is both ANSI-not-wide and
-// potentially odd-aligned — see field manual / basesrv init.rs CSDVersion).
-macro_rules! w {
-    ($s:literal) => {{
-        const __W: &[u16] = &{
-            const BYTES: &[u8] = $s.as_bytes();
-            let mut out = [0u16; { BYTES.len() + 1 }];
-            let mut i = 0;
-            while i < BYTES.len() {
-                out[i] = BYTES[i] as u16;
-                i += 1;
-            }
-            out
-        };
-        __W
-    }};
-}
-
-
 // ---- ACPI private types (from sdk/include/reactos/drivers/acpi/acpi.h) ----
 // gen_driver_types did not bind these (acpi.h not in pcix bindgen allowlist);
 // defined here faithfully so c2rust's references resolve. Layout matches the C.

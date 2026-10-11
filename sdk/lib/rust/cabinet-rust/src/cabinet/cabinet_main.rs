@@ -2,11 +2,6 @@ use ntdll_sys::nt::*;
 use core::ffi::{c_void, c_char};
 use crate::types::*;
 
-extern "C" {
-    fn TRACE(format: *const i8, ...);
-    fn WARN(format: *const i8, ...);
-}
-
 // ---- consts / statics / type aliases (deduped) ----
 const E_INVALIDARG: i32 = 0x80070057u32 as i32;
 const EXTRACT_FILLFILELIST: u32 = 0x00000001;
@@ -52,7 +47,7 @@ unsafe extern "C" {
 
 #[no_mangle]
 pub unsafe extern "system" fn DllGetVersion(pdvi: *mut DLLVERSIONINFO) -> i32 {
-    WARN(b"hmmm... not right version number \"5.1.1106.1\"?\n\0".as_ptr() as *const i8);
+    winedebug_rust::WARN!("hmmm... not right version number \"5.1.1106.1\"?\n");
     if (*pdvi).cbSize as usize != core::mem::size_of::<DLLVERSIONINFO>() {
         return E_INVALIDARG;
     }
@@ -235,7 +230,7 @@ pub unsafe extern "system" fn Extract(dest: *mut SESSION, szCabName: *const i8) 
     let mut path: *mut i8 = core::ptr::null_mut();
     let mut name: *mut i8 = core::ptr::null_mut();
 
-    TRACE(b"(%p, %s)\n\0".as_ptr() as *const i8, dest, debugstr_a(szCabName));
+    winedebug_rust::TRACE!("(%p, %s)\n", dest, debugstr_a(szCabName));
 
     hfdi = FDICreate(
         mem_alloc,

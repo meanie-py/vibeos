@@ -67,8 +67,6 @@ unsafe extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: u32, Message: *mut i8);
 }
 unsafe extern "C" {
-    fn DPRINT1(format: *const i8, ...);
-    fn DPRINT(format: *const u8, ...);
     #[cfg(not(feature = "bldr"))]
     static mut CmiVolatileHive: *mut CMHIVE;
 }

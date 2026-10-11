@@ -197,9 +197,15 @@ def _derived_kernel_entry(repo_root: Path, arch: str, source: Path) -> list[str]
         return None
     from . import profile_derive  # local: profile_derive is heavy and only needed here
 
-    derived = profile_derive.derive_source(
-        source, repo_root, arch=arch, preferred_target="ntoskrnl", usermode=False
-    )
+    # Every caller asks per arch. ntos.cmake keeps some flipped kernel TUs under an ARCH genex
+    # (the pnpmgr arbiters are i386-only there), so "no owner on this arch" means no command
+    # HERE -- the same answer as a missing compile-db entry -- not a failed translation.
+    try:
+        derived = profile_derive.derive_source(
+            source, repo_root, arch=arch, preferred_target="ntoskrnl", usermode=False
+        )
+    except profile_derive.NoSourceOwner:
+        return None
     kept: list[str] = []
     skip_next = False
     for arg in base[1:]:

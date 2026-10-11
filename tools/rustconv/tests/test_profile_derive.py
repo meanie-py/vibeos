@@ -1569,6 +1569,19 @@ class TestCargoKernelTarget:
         _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root)
         assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
 
+    def test_arch_genex_flipped_entry_is_restored_for_its_arch_only(self, tmp_path):
+        root = self._tree(tmp_path)
+        text = (
+            "list(APPEND SOURCE\n"
+            "    #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c>\n"
+            "    )\n"
+        )
+        out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "i386")
+        assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
+        assert "    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c" in out.splitlines()
+        _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "amd64")
+        assert restored == []
+
     def test_kernelexe_is_a_kernel_target_with_linked_interface_includes(self, tmp_path):
         root = self._tree(tmp_path)
         _interface_include_index.cache_clear()

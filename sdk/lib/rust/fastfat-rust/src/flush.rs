@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -24,6 +25,11 @@ extern "system" {
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
     // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
     // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
+    // IoCopyCurrentIrpStackLocationToNext sat in the "system" block below after the line
+    // above was fixed: pnp.rs imports the cdecl one from ntkrnl_sys::ddk, so the merged
+    // symbol was the bare thunk and FatCommonFlushBuffers' finally returned into its own
+    // stack after passing every flush down (i386 0x23/0x50/0x1E at the first NtFlushBuffersFile).
+    fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
 }
@@ -38,7 +44,6 @@ extern "system" {
     fn FatTruncateFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, file_size: i32, );
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
-    fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(p: *mut FCB) -> u32;
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -57,7 +62,6 @@ extern "system" {
     fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN;
     fn PsGetCurrentThread() -> PETHREAD;
@@ -422,7 +426,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
 
     PAGED_CODE!();
 
-    NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
+    NT_ASSERT!(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
 
     DebugTrace(
         1,

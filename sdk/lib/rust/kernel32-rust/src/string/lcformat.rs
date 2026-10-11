@@ -1,3 +1,4 @@
+use winedebug_rust::{ERR, TRACE, WARN};
 use ntdll_sys::nt::*;
 use core::ffi::c_void;
 // NLS substrate: winnls.h types/constants + Wine unicode helpers not in ntdll-sys.
@@ -37,10 +38,7 @@ extern "C" {
     fn memcpy(dest: *mut core::ffi::c_void, src: *const core::ffi::c_void, n: usize) -> *mut core::ffi::c_void;
     // Wine debug macros — variadic, no-op. Local decls shadow the fixed-arg
     // nls_subst #[no_mangle] bodies for the printf-style call sites here.
-    fn TRACE(fmt: *const i8, ...);
     fn FIXME(fmt: *const i8, ...);
-    fn WARN(fmt: *const i8, ...);
-    fn ERR(fmt: *const i8, ...);
     fn debugstr_w(s: *const WCHAR) -> *const u8;
     fn debugstr_a(s: *const i8) -> *const i8;
     // snprintfW == _snwprintf (msvcrt). Variadic; resolves to the real ntdll export.
@@ -351,7 +349,7 @@ unsafe fn NLS_GetFormats(lcid: LCID, mut dwFlags: DWORD) -> *const NLS_FORMAT_NO
 
     dwFlags &= LOCALE_NOUSEROVERRIDE;
 
-    TRACE(b"(0x%04x,0x%08x)\n\0".as_ptr() as *const i8, lcid, dwFlags);
+    TRACE!("(0x%04x,0x%08x)\n", lcid, dwFlags);
 
     while !node.is_null() && ((*node).lcid != lcid || (*node).dwFlags != dwFlags) && !(*node).next.is_null() {
         node = (*node).next;
@@ -361,7 +359,7 @@ unsafe fn NLS_GetFormats(lcid: LCID, mut dwFlags: DWORD) -> *const NLS_FORMAT_NO
         let new_node: *mut NLS_FORMAT_NODE;
         let mut i: DWORD;
 
-        TRACE(b"Creating new cache entry\n\0".as_ptr() as *const i8);
+        TRACE!("Creating new cache entry\n");
 
         new_node = HeapAlloc(GetProcessHeap(), 0, core::mem::size_of::<NLS_FORMAT_NODE>()) as *mut NLS_FORMAT_NODE;
         if new_node.is_null() {
@@ -380,7 +378,7 @@ unsafe fn NLS_GetFormats(lcid: LCID, mut dwFlags: DWORD) -> *const NLS_FORMAT_NO
 
         GET_LOCALE_NUMBER!((*new_node).fmt.Grouping, LOCALE_SGROUPING, lcid, dwFlags);
         if (*new_node).fmt.Grouping > 9 && (*new_node).fmt.Grouping != 32 {
-            WARN(b"LOCALE_SGROUPING (%d) unhandled, please report!\n\0".as_ptr() as *const i8, (*new_node).fmt.Grouping);
+            WARN!("LOCALE_SGROUPING (%d) unhandled, please report!\n", (*new_node).fmt.Grouping);
             (*new_node).fmt.Grouping = 0;
         }
 
@@ -393,18 +391,18 @@ unsafe fn NLS_GetFormats(lcid: LCID, mut dwFlags: DWORD) -> *const NLS_FORMAT_NO
         GET_LOCALE_NUMBER!((*new_node).cyfmt.Grouping, LOCALE_SGROUPING, lcid, dwFlags);
 
         if (*new_node).cyfmt.Grouping > 9 {
-            WARN(b"LOCALE_SMONGROUPING (%d) unhandled, please report!\n\0".as_ptr() as *const i8, (*new_node).cyfmt.Grouping);
+            WARN!("LOCALE_SMONGROUPING (%d) unhandled, please report!\n", (*new_node).cyfmt.Grouping);
             (*new_node).cyfmt.Grouping = 0;
         }
 
         GET_LOCALE_NUMBER!((*new_node).cyfmt.NegativeOrder, LOCALE_INEGCURR, lcid, dwFlags);
         if (*new_node).cyfmt.NegativeOrder > 15 {
-            WARN(b"LOCALE_INEGCURR (%d) unhandled, please report!\n\0".as_ptr() as *const i8, (*new_node).cyfmt.NegativeOrder);
+            WARN!("LOCALE_INEGCURR (%d) unhandled, please report!\n", (*new_node).cyfmt.NegativeOrder);
             (*new_node).cyfmt.NegativeOrder = 0;
         }
         GET_LOCALE_NUMBER!((*new_node).cyfmt.PositiveOrder, LOCALE_ICURRENCY, lcid, dwFlags);
         if (*new_node).cyfmt.PositiveOrder > 3 {
-            WARN(b"LOCALE_IPOSCURR (%d) unhandled,please report!\n\0".as_ptr() as *const i8, (*new_node).cyfmt.PositiveOrder);
+            WARN!("LOCALE_IPOSCURR (%d) unhandled,please report!\n", (*new_node).cyfmt.PositiveOrder);
             (*new_node).cyfmt.PositiveOrder = 0;
         }
         GET_LOCALE_STRING!((*new_node).cyfmt.lpDecimalSep, LOCALE_SMONDECIMALSEP, lcid, dwFlags);
@@ -483,11 +481,7 @@ pub unsafe extern "C" fn NLS_IsUnicodeOnlyLcid(mut lcid: LCID) -> BOOL {
     match (lcid as u16 as u32) & 0x3ff {
         LANG_ARMENIAN | LANG_DIVEHI | LANG_GEORGIAN | LANG_GUJARATI | LANG_HINDI | LANG_KANNADA
         | LANG_KONKANI | LANG_MARATHI | LANG_PUNJABI | LANG_SANSKRIT => {
-            TRACE(
-                b"lcid 0x%08x: langid 0x%4x is Unicode Only\n\0".as_ptr() as LPCSTR,
-                lcid,
-                (lcid as u16 as i32) & 0x3ff,
-            );
+            TRACE!("lcid 0x%08x: langid 0x%4x is Unicode Only\n", lcid, (lcid as u16 as i32) & 0x3ff);
             return 1;
         }
         _ => return 0,
@@ -930,7 +924,7 @@ unsafe fn NLS_GetDateTimeFormatW(
     }
     cchWritten += 1; /* Include terminating NUL */
 
-    TRACE(b"returning length=%d, output=%s\n\0".as_ptr() as *const i8, cchWritten, debugstr_w(lpStr));
+    TRACE!("returning length=%d, output=%s\n", cchWritten, debugstr_w(lpStr));
     cchWritten
 }
 unsafe fn NLS_GetDateTimeFormatA(
@@ -946,15 +940,7 @@ unsafe fn NLS_GetDateTimeFormatA(
     let mut szOut: [WCHAR; 128] = [0; 128];
     let mut iRet: INT;
 
-    TRACE(
-        b"(0x%04x,0x%08x,%p,%s,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        lpTime,
-        debugstr_a(lpFormat),
-        lpStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime, debugstr_a(lpFormat), lpStr, cchOut);
 
     if NLS_IsUnicodeOnlyLcid(lcid) != 0 {
         SetLastError(ERROR_INVALID_PARAMETER as DWORD);
@@ -1033,15 +1019,7 @@ pub unsafe extern "system" fn GetDateFormatA(
     lpDateStr: LPSTR,
     cchOut: INT,
 ) -> INT {
-    TRACE(
-        b"(0x%04x,0x%08x,%p,%s,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        lpTime,
-        debugstr_a(lpFormat),
-        lpDateStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime, debugstr_a(lpFormat), lpDateStr, cchOut);
     return NLS_GetDateTimeFormatA(
         lcid,
         dwFlags | DATE_DATEVARSONLY,
@@ -1062,16 +1040,7 @@ pub unsafe extern "system" fn GetDateFormatEx(
     bufsize: INT,
     calendar: LPCWSTR,
 ) -> INT {
-    TRACE(
-        b"(%s,0x%08x,%p,%s,%p,%d,%s)\0".as_ptr() as *const i8,
-        debugstr_w(localename),
-        flags,
-        date,
-        debugstr_w(format),
-        outbuf,
-        bufsize,
-        debugstr_w(calendar),
-    );
+    TRACE!("(%s,0x%08x,%p,%s,%p,%d,%s)", debugstr_w(localename), flags, date, debugstr_w(format), outbuf, bufsize, debugstr_w(calendar));
 
     if calendar != core::ptr::null_mut() {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -1096,15 +1065,7 @@ pub unsafe extern "system" fn GetDateFormatW(
     lpDateStr: LPWSTR,
     cchOut: INT,
 ) -> INT {
-    TRACE(
-        b"(0x%04x,0x%08x,%p,%s,%p,%d)\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        lpTime,
-        debugstr_w(lpFormat),
-        lpDateStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%p,%s,%p,%d)", lcid, dwFlags, lpTime, debugstr_w(lpFormat), lpDateStr, cchOut);
 
     return NLS_GetDateTimeFormatW(
         lcid,
@@ -1125,15 +1086,7 @@ pub unsafe extern "system" fn GetTimeFormatA(
     lpTimeStr: LPSTR,
     cchOut: INT,
 ) -> INT {
-    TRACE(
-        b"(0x%04x,0x%08x,%p,%s,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        lpTime,
-        debugstr_a(lpFormat),
-        lpTimeStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime, debugstr_a(lpFormat), lpTimeStr, cchOut);
     return NLS_GetDateTimeFormatA(
         lcid,
         dwFlags | TIME_TIMEVARSONLY,
@@ -1153,15 +1106,7 @@ pub unsafe extern "system" fn GetTimeFormatEx(
     outbuf: LPWSTR,
     bufsize: INT,
 ) -> INT {
-    TRACE(
-        b"(%s,0x%08x,%p,%s,%p,%d)\n\0".as_ptr() as *const i8,
-        debugstr_w(localename),
-        flags,
-        time,
-        debugstr_w(format),
-        outbuf,
-        bufsize,
-    );
+    TRACE!("(%s,0x%08x,%p,%s,%p,%d)\n", debugstr_w(localename), flags, time, debugstr_w(format), outbuf, bufsize);
 
     return NLS_GetDateTimeFormatW(
         LocaleNameToLCID(localename, 0),
@@ -1182,15 +1127,7 @@ pub unsafe extern "system" fn GetTimeFormatW(
     lpTimeStr: LPWSTR,
     cchOut: INT,
 ) -> INT {
-    TRACE(
-        b"(0x%04x,0x%08x,%p,%s,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        lpTime,
-        debugstr_w(lpFormat),
-        lpTimeStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%p,%s,%p,%d)\n", lcid, dwFlags, lpTime, debugstr_w(lpFormat), lpTimeStr, cchOut);
 
     return NLS_GetDateTimeFormatW(
         lcid,
@@ -1220,15 +1157,7 @@ pub unsafe extern "system" fn GetNumberFormatA(
     let mut pfmt: *const NUMBERFMTW = core::ptr::null();
     let mut iRet: i32 = 0;
 
-    TRACE(
-        b"(0x%04x,0x%08x,%s,%p,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        debugstr_a(lpszValue),
-        lpFormat,
-        lpNumberStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue), lpFormat, lpNumberStr, cchOut);
 
     if NLS_IsUnicodeOnlyLcid(lcid) != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -1348,15 +1277,7 @@ pub unsafe extern "system" fn GetNumberFormatW(
     let mut dwCurrentGroupCount: DWORD = 0;
     let mut iRet: INT;
 
-    TRACE(
-        b"(0x%04x,0x%08x,%s,%p,%p,%d)\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        debugstr_w(lpszValue),
-        lpFormat,
-        lpNumberStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%s,%p,%p,%d)", lcid, dwFlags, debugstr_w(lpszValue), lpFormat, lpNumberStr, cchOut);
 
     if lpszValue.is_null()
         || cchOut < 0
@@ -1662,15 +1583,7 @@ pub unsafe extern "system" fn GetNumberFormatEx(
     numout: i32,
 ) -> i32 {
     let lcid: LCID;
-    TRACE(
-        b"(%s,0x%08x,%s,%p,%p,%d)\0".as_ptr() as *const i8,
-        debugstr_w(name),
-        flags,
-        debugstr_w(value),
-        format,
-        number,
-        numout,
-    );
+    TRACE!("(%s,0x%08x,%s,%p,%p,%d)", debugstr_w(name), flags, debugstr_w(value), format, number, numout);
     lcid = LocaleNameToLCID(name, 0);
     if lcid == 0 {
         return 0i32;
@@ -1697,15 +1610,7 @@ pub unsafe extern "system" fn GetCurrencyFormatA(
     let mut pfmt: *const CURRENCYFMTW = core::ptr::null();
     let mut iRet: i32 = 0;
 
-    TRACE(
-        b"(0x%04x,0x%08x,%s,%p,%p,%d)\n\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        debugstr_a(lpszValue),
-        lpFormat,
-        lpCurrencyStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%s,%p,%p,%d)\n", lcid, dwFlags, debugstr_a(lpszValue), lpFormat, lpCurrencyStr, cchOut);
 
     if NLS_IsUnicodeOnlyLcid(lcid) != 0 {
         SetLastError(ERROR_INVALID_PARAMETER);
@@ -1861,15 +1766,7 @@ pub unsafe extern "system" fn GetCurrencyFormatW(
     let mut dwFmt: DWORD = 0;
     let mut iRet: INT = 0;
 
-    TRACE(
-        b"(0x%04x,0x%08x,%s,%p,%p,%d)\0".as_ptr() as LPCSTR,
-        lcid,
-        dwFlags,
-        debugstr_w(lpszValue),
-        lpFormat,
-        lpCurrencyStr,
-        cchOut,
-    );
+    TRACE!("(0x%04x,0x%08x,%s,%p,%p,%d)", lcid, dwFlags, debugstr_w(lpszValue), lpFormat, lpCurrencyStr, cchOut);
 
     if lpszValue.is_null()
         || cchOut < 0
@@ -2210,15 +2107,7 @@ pub unsafe extern "system" fn GetCurrencyFormatEx(
     str: LPWSTR,
     len: i32,
 ) -> i32 {
-    TRACE(
-        b"(%s,0x%08x,%s,%p,%p,%d)\0".as_ptr() as *const i8,
-        debugstr_w(localename),
-        flags,
-        debugstr_w(value),
-        format,
-        str,
-        len,
-    );
+    TRACE!("(%s,0x%08x,%s,%p,%p,%d)", debugstr_w(localename), flags, debugstr_w(value), format, str, len);
     return GetCurrencyFormatW(LocaleNameToLCID(localename, 0), flags, value, format, str, len);
 }
 unsafe fn NLS_EnumDateFormats(ctxt: *const enumdateformats_context) -> BOOL {
@@ -2772,13 +2661,13 @@ unsafe fn NLS_EnumCalendarInfo(ctxt: *const enumcalendar_context) -> BOOL {
                     }
 
                     if bufSz >= newSz {
-                        ERR(b"Buffer resizing disorder: was %d, requested %d.\n\0".as_ptr() as *const i8, bufSz, newSz);
+                        ERR!("Buffer resizing disorder: was %d, requested %d.\n", bufSz, newSz);
                         current_block = 10312952625476487722;
                         continue;
                     }
 
                     bufSz = newSz;
-                    WARN(b"Buffer too small; resizing to %d bytes.\n\0".as_ptr() as *const i8, bufSz);
+                    WARN!("Buffer too small; resizing to %d bytes.\n", bufSz);
                     buf = HeapReAlloc(GetProcessHeap(), 0, buf as PVOID, bufSz as SIZE_T) as *mut WCHAR;
                     if buf.is_null() {
                         current_block = 10312952625476487722;
@@ -2889,13 +2778,7 @@ pub unsafe extern "system" fn EnumCalendarInfoExA(
     caltype: CALTYPE,
 ) -> BOOL {
     let mut ctxt: enumcalendar_context = core::mem::zeroed();
-    TRACE(
-        b"(%p,0x%08x,0x%08x,0x%08x)\n\0".as_ptr() as LPCSTR,
-        calinfoproc,
-        locale,
-        calendar,
-        caltype,
-    );
+    TRACE!("(%p,0x%08x,0x%08x,0x%08x)\n", calinfoproc, locale, calendar, caltype);
     ctxt.type_ = CALLBACK_ENUMPROCEX;
     ctxt.u.callbackex = core::mem::transmute::<CALINFO_ENUMPROCEXA, CALINFO_ENUMPROCEXW>(calinfoproc);
     ctxt.lcid = locale;
@@ -2940,15 +2823,7 @@ pub unsafe extern "system" fn EnumCalendarInfoExEx(
 ) -> BOOL {
     let mut ctxt: enumcalendar_context = core::mem::zeroed();
 
-    TRACE(
-        b"(%p,%s,0x%08x,%p,0x%08x,0x%ld)\0".as_ptr() as *const i8,
-        calinfoproc,
-        debugstr_w(locale),
-        calendar,
-        reserved,
-        caltype,
-        lParam,
-    );
+    TRACE!("(%p,%s,0x%08x,%p,0x%08x,0x%ld)", calinfoproc, debugstr_w(locale), calendar, reserved, caltype, lParam);
 
     ctxt.type_ = CALLBACK_ENUMPROCEXEX;
     ctxt.u.callbackexex = calinfoproc;
@@ -3113,14 +2988,14 @@ pub unsafe extern "system" fn GetCalendarInfoW(
             return 0;
         }
         if !lpCalData.is_null() {
-            WARN(b"lpCalData not NULL (%p) when it should!\n\0".as_ptr() as *const i8, lpCalData);
+            WARN!("lpCalData not NULL (%p) when it should!\n", lpCalData);
         }
         if cchData != 0 {
-            WARN(b"cchData not 0 (%d) when it should!\n\0".as_ptr() as *const i8, cchData);
+            WARN!("cchData not 0 (%d) when it should!\n", cchData);
         }
     } else {
         if !lpValue.is_null() {
-            WARN(b"lpValue not NULL (%p) when it should!\n\0".as_ptr() as *const i8, lpValue);
+            WARN!("lpValue not NULL (%p) when it should!\n", lpValue);
         }
     }
 

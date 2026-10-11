@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -30,7 +31,6 @@ extern "system" {
 extern "system" {
     } extern "C" { fn DebugTrace(level: u32, component: u32, format: *const i8, ...); } extern "system" {
     fn DebugDump(str: *const i8, level: u32, p: *mut core::ffi::c_void);
-    fn NT_ASSERT(condition: i32);
     fn FatCompleteRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP, ExceptionCode: NTSTATUS);
     fn FatResetExceptionState(IrpContext: *mut IRP_CONTEXT);
     fn FatUnpinRepinnedBcbs(IrpContext: *mut IRP_CONTEXT);
@@ -205,6 +205,42 @@ pub unsafe extern "system" fn FatBugCheckExceptionFilter(
     // Satisfy the return type in the unreachable path
     1
 }
+/// Diagnostic (i386 writable-root hunt): the exception FatExceptionFilter is about to
+/// bugcheck on. Twice it was raised AT A STACK ADDRESS, i.e. something called or
+/// returned into the stack; on i386 the words at the faulting Esp then hold the return
+/// address of that call, and the Ebp chain names the frames above it.
+unsafe fn diag_unexpected_exception(ExceptionPointer: *mut EXCEPTION_POINTERS, HaveIrpContext: bool) {
+    extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
+    let Record = (*ExceptionPointer).ExceptionRecord;
+    DbgPrint(
+        c"[FASTFAT] unexpected exception %08lx at %p (IrpContext=%d), p0=%p p1=%p\n".as_ptr(),
+        (*Record).ExceptionCode,
+        (*Record).ExceptionAddress,
+        HaveIrpContext as i32,
+        (*Record).ExceptionInformation[0] as *mut core::ffi::c_void,
+        (*Record).ExceptionInformation[1] as *mut core::ffi::c_void,
+    );
+    #[cfg(target_arch = "x86")]
+    {
+        let Ctx = (*ExceptionPointer).ContextRecord as *const ntkrnl_sys::ddk::CONTEXT;
+        let Ebp = (*Ctx).Ebp as usize;
+        let Eip = (*Ctx).Eip as usize;
+        let Esp = (*Ctx).Esp as usize;
+        DbgPrint(c"[FASTFAT]   eip=%p esp=%p ebp=%p\n".as_ptr(), Eip, Esp, Ebp);
+        for i in 0..16usize {
+            DbgPrint(c"[FASTFAT]   [esp+%02x] %p\n".as_ptr(), i * 4, *((Esp + i * 4) as *const usize));
+        }
+        let mut Frame = Ebp;
+        for _ in 0..12 {
+            if Frame < Esp || Frame >= Esp + 0x3000 || Frame & 3 != 0 {
+                break;
+            }
+            DbgPrint(c"[FASTFAT]   ebp=%p ret=%p\n".as_ptr(), Frame, *((Frame + 4) as *const usize));
+            Frame = *(Frame as *const usize);
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn FatExceptionFilter(
     IrpContext: *mut IRP_CONTEXT,
@@ -261,14 +297,7 @@ pub unsafe extern "system" fn FatExceptionFilter(
         if FsRtlIsNtstatusExpected(ExceptionCode as i32) == 0 {
             // Diagnostic: the code and PC of the exception this is about to bugcheck on
             // (i386 writable-root boot: FatFsdFlushBuffers, IrpContext still NULL).
-            extern "C" { fn DbgPrint(fmt: *const i8, ...) -> u32; }
-            DbgPrint(
-                c"[FASTFAT] unexpected exception %08lx at %p (no IrpContext), p0=%p p1=%p\n".as_ptr(),
-                ExceptionCode,
-                (*ExceptionRecord).ExceptionAddress,
-                (*ExceptionRecord).ExceptionInformation[0] as *mut core::ffi::c_void,
-                (*ExceptionRecord).ExceptionInformation[1] as *mut core::ffi::c_void,
-            );
+            diag_unexpected_exception(ExceptionPointer, false);
             FatBugCheck(
                 ExceptionRecord as usize,
                 (*ExceptionPointer).ContextRecord as usize,
@@ -298,6 +327,7 @@ pub unsafe extern "system" fn FatExceptionFilter(
             (*IrpContext).ExceptionStatus = (ExceptionCode) as i32;
             return EXCEPTION_EXECUTE_HANDLER;
         } else {
+            diag_unexpected_exception(ExceptionPointer, true);
             FatBugCheck(
                 ExceptionRecord as usize,
                 (*ExceptionPointer).ContextRecord as usize,
@@ -305,12 +335,8 @@ pub unsafe extern "system" fn FatExceptionFilter(
             );
         }
     } else {
-        NT_ASSERT(
-            ((*IrpContext).ExceptionStatus == (ExceptionCode) as i32) as i32,
-        );
-        NT_ASSERT(
-            (FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0) as i32,
-        );
+        NT_ASSERT!(((*IrpContext).ExceptionStatus == (ExceptionCode) as i32) as i32);
+        NT_ASSERT!((FsRtlIsNtstatusExpected(ExceptionCode as i32) != 0) as i32);
     }
 
     EXCEPTION_EXECUTE_HANDLER

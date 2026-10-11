@@ -619,27 +619,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
   hand; (1) is why the payload uses the e1000.
 
-- **x86 conformance never runs the kmtests that write a file** (amd64 FIXED 2026-10-10;
-  i386 OPEN; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+- **x86 conformance never runs the kmtests that write a file** (FIXED 2026-10-10, amd64 and
+  i386; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
   kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
-  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` now derives
-  `livecd-rw.iso` (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`)
-  and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
-  on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
-  i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
-  **i386 still boots the CD.** Its writable-root boot found two loader bugs, fixed
-  2026-10-10: (1) any i386 UEFI boot with >= 1G RAM sized the kernel's boot image from the
-  firmware's top-of-RAM regions, so the reservation covered session space and the 0x1A in
-  `MmDeleteRmap` followed (it hit the CD boot at 1G too); (2) the 300MB ramdisk, loaded
-  bottom-up, pushed the boot drivers above it (456MB boot image, 0x7F). Field manual: "x86
-  UEFI boot bring-up", item 4. **Still open:** with those fixed, the writable root dies in
-  a different place each run: 0x23 -> 0xA in fastfat's `NtFlushBuffersFile`
-  (`FatExceptionFilter` with no IrpContext, then `FatProcessException` reading NULL+0x14),
-  or 0x50 at an unmapped kernel address. That looks like corruption rather than one bad
-  path; nothing else in the fleet writes a FAT volume on i386. A diagnostic in
-  `FatExceptionFilter` prints the exception code and PC. Repro:
-  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; once it sweeps, add i386 to
-  `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` derives `livecd-rw.iso`
+  (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`) and
+  conformance boots it on both x86 arches (`WRITABLE_ROOT_ARCHES`). Both now match arm64 on
+  the section tests; IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's i386
+  `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot), two i386 loader bugs (any
+  i386 UEFI boot with >= 1G RAM reserved session space as boot image; the ramdisk pushed the
+  boot drivers above it), fastfat's flush (a stdcall view of a cdecl helper returned
+  `FatCommonFlushBuffers`' finally into its own stack at the first `NtFlushBuffersFile`, the
+  "corruption" that died in a different place each run), and `ExReturnPoolQuota` on special
+  pool. Field manual: "x86 UEFI boot bring-up" item 4, "The i386 driver-fleet ud2-bomb class",
+  "A dropped validation check fails OPEN".
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
@@ -1272,7 +1265,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     vCPU. **Still owed:** the kernel-VA broadcasts (system-PTE reserve ~25%, zero-space wrap
     ~18%) need batching rather than scoping, and i386's packet transport has no scoping yet.
     Runs 20261009-212808-1of2ir0n (before), 20261009-214354-tejagsx_ (after).
-  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN,
+  - **amd64 `-smp 2`: BUGCHECK 0x1E in win32k `ProcessTimers`** (FIXED 2026-10-10). The fault is
+    `win32k.sys+0x60BCD`, reading `pTmr->pti->TIF_flags` with `pti == NULL`, on the raw
+    input thread. It hit a 10-09 queue gate (20261009-224122) and 1 of 4 boots of
+    20261010-174440-21ri_15w. Seen on the live VM: the timer list held a timer with
+    pti/rate/flags/pfn/nID all zero and countdown -16. Cause: `CreateTimer` linked the
+    zeroed timer into `TimersListHead` before `IntSetTimer` set any field, and without
+    `TimerLock`. Upstream ReactOS has the same code, so the race is invisible on one CPU.
+    When the creating vCPU stalls for two 10 ms ticks, `ProcessTimers` on the other CPU
+    decrements the zeroed countdown, then dereferences the NULL pti. Fix
+    (`win32k-rust/src/timer.rs`): link the timer only once it is initialized, under
+    `TimerLock`.
+  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN, now a FAMILY -- see the last paragraph;
     seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
     services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
     dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
@@ -1288,6 +1292,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     0/20, so the run says nothing about whether that fix touches this hang -- and the
     signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
     hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
+    2026-10-10, later: a contributor in THIS run was the cdrom-rust MCN sync IRP (fixed in
+    f3e634bb8cf, 10-09 00:19). The hung run predates that fix, and its tree had the bug
+    live. Observed: `unknown ioctl code: 0x7C0C8` -- the driver's own sync IRP sent to
+    scsiport every timer tick -- appears 942 times across klr7vs60's 10 boots (709 in the
+    hung one) and 242 times across ep79fjwh's 10 (same day, pre-fix). It appears 0 times
+    across q7k3yfgl's 20 post-fix boots. While the bug was live, that one IRP was completed
+    at DISPATCH_LEVEL on either CPU, racing its reuse on the next tick, inside the cdrom
+    stack that serves the boot volume (cdfs on the isohybrid USB stick). Inferred, not
+    shown: a request lost there stalls the image read `CreateProcessW` waits on, and that
+    matches this hang (no fault, both CPUs idle). The census's `WrFreePage=1` is NOT a
+    lead: it is the zero-page thread's normal idle wait (`ARM3/zeropage.rs`).
+    **The same silent wedge recurs WITHOUT the chatter, so the MCN bug does not explain the
+    family.** Two gates after the fix: queue gate 20261010-030035 (services.exe stops after
+    `ScmStartUserModeService(SamSs)`), and 20261010-170505 (smp-bringup afd1d37f2524: csrss
+    stops after `LoadServerDll 'winsrv'`, kernel32 attached). Both show 0 `0x7C0C8` lines,
+    both CPUs in `KiIdleLoop`, no fault, and the census shows the same `Suspended=1`. The
+    common shape is a user-mode image load or a service start that never completes, at a
+    different point each time. Next step: the stuck thread's stack, from
+    `smoke --smp 2 --attach-on-fail` and `vibeos-cli gdb inspect <run> list-threads` /
+    `dump-thread` (the `raw` verb with `--timeout 300` works when the default 60 s does not).
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED
@@ -1411,9 +1435,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     user-mode crates with DUMMY_PSEH-dropped handlers (non-RPC) are not yet audited.
   - **Safe boot is missing from the Rust kernel on every arch**: ex-rust neither parses
     `SAFEBOOT:` nor creates `CONTROL\SAFEBOOT\Option` (init.c Phase1InitializationDiscard).
-  - **pcix-rust predates upstream's arbiters** (#9502, 023d8af5566): five arbiter bodies are
-    still `UNIMPLEMENTED; loop {}`, baselined in scan_ud2's KNOWN_DRIVER_UD2. arm64 binds
-    pci.sys, so they are unreached there.
+  - **The arbiter stack is ported but nothing drives it yet** (2026-10-10). arbiter-rust is
+    upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
+    arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
+    (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. pcix.sys
+    is only copied to the CD (txtsetup) -- every arch binds pci.sys -- so its arbiters are
+    link-verified, never booted. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
+    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
+    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
+    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
+    were picked by hand in 22 places.
   - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
     2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
     assigns them, so a legacy detector that runs first sees free ports: legide's
@@ -1422,7 +1453,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     PIIX ch1 then failed IoConnectInterrupt with 0xc000000d). Windows reserves
     boot configs through its arbiters at enumeration. Not a one-line fix: the map check
     cannot tell the requesting device from the owner, so writing a PDO's boot config there
-    makes its own later assignment conflict. Belongs with the arbiter work above.
+    makes its own later assignment conflict. Needs the PnP manager to reserve boot configs
+    through the (now real) root arbiters, which upstream has not done either.
   - Remaining arm64 divergences: winlogon still creates `\Windows\WindowStations` and csrsrv
     skips CsrConnectToUser on arm64; the csrss stack-commit patch in mkramdisk's overlay;
     shell32 CDefView skips SHChangeNotifyRegister on arm64; winlogon's arm64-only notepad and

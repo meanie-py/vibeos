@@ -11,6 +11,13 @@ base/applications/clipbrd/CMakeLists.txt	1	# cliputils.c # replaced by Rust (sdk
 base/applications/clipbrd/CMakeLists.txt	1	# fileutils.c # replaced by Rust (sdk/lib/rust/clipbrd-rust/src/clipbrd/fileutils.rs)
 base/applications/clipbrd/CMakeLists.txt	1	# scrollutils.c # replaced by Rust (sdk/lib/rust/clipbrd-rust/src/clipbrd/scrollutils.rs)
 base/applications/clipbrd/CMakeLists.txt	1	# winutils.c # replaced by Rust (sdk/lib/rust/clipbrd-rust/src/clipbrd/winutils.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# add.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/add.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# copy.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/copy.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# delete.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/delete.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# export.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/export.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# import.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/import.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# query.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/query.rs)
+base/applications/cmdutils/reg/CMakeLists.txt	1	# reg.c # replaced by Rust (sdk/lib/rust/reg-rust/src/reg/reg.rs)
 base/applications/control/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/control-rust/src/control/control.rs)
 base/applications/dxdiag/CMakeLists.txt	1	# d3dtest.c # replaced by Rust (sdk/lib/rust/dxdiag-rust/src/dxdiag/d3dtest.rs)
 base/applications/dxdiag/CMakeLists.txt	1	# d3dtest7.c # replaced by Rust (sdk/lib/rust/dxdiag-rust/src/dxdiag/d3dtest7.rs)
@@ -52,6 +59,26 @@ base/applications/msconfig/CMakeLists.txt	1	# startuppage.c # replaced by Rust (
 base/applications/msconfig/CMakeLists.txt	1	# systempage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/systempage.rs)
 base/applications/msconfig/CMakeLists.txt	1	# toolspage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/toolspage.rs)
 base/applications/msconfig_new/CMakeLists.txt	1	# startuppage.c
+base/applications/mscutils/servman/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/control.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# create.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/create.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# delete.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/delete.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# dependencies_tv1.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/dependencies_tv1.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# dependencies_tv2.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/dependencies_tv2.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# export.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/export.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# listview.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/listview.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# mainwnd.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/mainwnd.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# misc.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/misc.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# progress.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/progress.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# propsheet.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/propsheet.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# propsheet_depends.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/propsheet_depends.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# propsheet_general.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/propsheet_general.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# propsheet_logon.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/propsheet_logon.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# propsheet_recovery.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/propsheet_recovery.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# query.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/query.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# servman.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/servman.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# start.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/start.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# stop.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/stop.rs)
+base/applications/mscutils/servman/CMakeLists.txt	1	# stop_dependencies.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/stop_dependencies.rs)
 base/applications/mspaint/CMakeLists.txt	1	# canvas.cpp # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/canvas_cpp_h.rs)
 base/applications/mspaint/CMakeLists.txt	1	# dialogs.cpp # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/dialogs_cpp_h.rs)
 base/applications/mspaint/CMakeLists.txt	1	# dib.cpp # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/dib_cpp_h.rs)
@@ -72,6 +99,23 @@ base/applications/mspaint/CMakeLists.txt	1	# toolsettings.cpp # replaced by Rust
 base/applications/mspaint/CMakeLists.txt	1	# toolsmodel.cpp # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/toolsmodel_cpp_h.rs)
 base/applications/mstsc/CMakeLists.txt	1	# connectdialog.c # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/connectdialog.rs)
 base/applications/mstsc/CMakeLists.txt	1	# settings.c # replaced by Rust (sdk/lib/rust/mstsc-rust/src/mstsc/settings.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdAccounts.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdAccounts.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdComputer.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdComputer.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdConfig.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdConfig.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdContinue.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdContinue.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdGroup.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdGroup.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdHelp.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdHelp.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdHelpMsg.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdHelpMsg.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdLocalGroup.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdLocalGroup.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdPause.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdPause.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdSession.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdSession.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdShare.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdShare.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdStart.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdStart.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdStatistics.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdStatistics.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdStop.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdStop.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdUse.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdUse.rs)
+base/applications/network/net/CMakeLists.txt	1	# cmdUser.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/cmdUser.rs)
+base/applications/network/net/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/net-rust/src/net/main.rs)
 base/applications/network/tracert/CMakeLists.txt	1	# tracert.cpp is replaced by Rust (sdk/lib/rust/tracert-rust/src/tracert/tracert.rs, `rustconv
 base/applications/notepad/CMakeLists.txt	1	# dialog.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/dialog.rs)
 base/applications/notepad/CMakeLists.txt	1	# main.c # replaced by Rust (sdk/lib/rust/notepad-rust/src/notepad/main.rs)
@@ -2145,9 +2189,14 @@ sdk/lib/delayimp/CMakeLists.txt	1	# pfnDliNotifyHook2.c and pfnDliFailureHook2.c
 sdk/lib/dnslib/CMakeLists.txt	1	# addr.c dnsaddr.c flatbuf.c hostent.c memory.c sablob.c straddr.c string.c
 sdk/lib/dnslib/CMakeLists.txt	1	# debug.c dnsutil.c ip6.c name.c print.c record.c rrprint.c table.c utf8.c
 sdk/lib/dnslib/CMakeLists.txt	1	# disk per the never-delete rule. dnslib_rust_stub.c is the anchor TU
-sdk/lib/drivers/arbiter/CMakeLists.txt	1	# add_library(arbiter arbiter.c) # body replaced by Rust; kept on disk
 sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter (PnP resource arbiter) — Rust cohabitation flip (arbiter.c -> arbiter-rust)
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter.c
 sdk/lib/drivers/arbiter/CMakeLists.txt	1	# arbiter.c is translated to Rust (arbiter-rust, kept on disk per the never-delete
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# entry.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# handler.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# ordering.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# range.c
+sdk/lib/drivers/arbiter/CMakeLists.txt	1	# transaction.c
 sdk/lib/drivers/csq/CMakeLists.txt	1	# add_library(csq csq.c) # body replaced by Rust; kept on disk
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq (Cancel-Safe IRP Queue) — Rust cohabitation flip (csq.c -> csq-rust)
 sdk/lib/drivers/csq/CMakeLists.txt	1	# csq.c (the 6 IoCsq* exports) is translated to Rust (csq-rust, kept on disk per

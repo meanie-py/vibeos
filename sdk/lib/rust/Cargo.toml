@@ -494,6 +494,9 @@ members = [
     "cmd-rust",
     "kbdlayouts-rust",
     "mspaint-rust",
+    "servman-rust",
+    "net-rust",
+    "reg-rust",
 ]
 resolver = "2"
 

@@ -1,3 +1,4 @@
+use winedebug_rust::{TRACE, WARN};
 use ntdll_sys::nt::*;
 use crate::prelude::*;
 use crate::k32_externs::{InitializeObjectAttributes, SearchPathW};

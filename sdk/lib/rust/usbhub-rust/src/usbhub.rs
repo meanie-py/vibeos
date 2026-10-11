@@ -40,7 +40,6 @@ use core::ffi::c_void;
 extern "C" {
     fn IoSizeOfIrp(StackSize: i8) -> u16;
     fn DbgPrint(Format: *const i8, ...) -> u32;
-    fn DPRINT(fmt: *const i8, ...);
     fn RtlStringCbPrintfW(pszDest: *mut u16, cbDest: usize, pszFormat: *const u16, ...) -> NTSTATUS;
 }
 unsafe extern "system" {

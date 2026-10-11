@@ -11,7 +11,6 @@ pub const BM_KYMCQUADS: u32 = 773;
 
 extern "C" {
     fn FIXME(format: *const i8, ...);
-    fn TRACE(format: *const i8, ...);
     fn cmsCreate_sRGBProfile() -> cmsHPROFILE;
     fn cmsCreateProofingTransform( Input: cmsHPROFILE, InputFormat: DWORD, Output: cmsHPROFILE, OutputFormat: DWORD, Proofing: cmsHPROFILE, Intent: i32, ProofingIntent: i32, dwFlags: DWORD, ) -> cmsHPROFILE;
     fn create_transform(transform: *mut transform) -> HTRANSFORM;
@@ -54,7 +53,6 @@ const TYPE_CMYK_16: u32 = 0;
 
 unsafe extern "C" {
     fn FIXME(format: *const i8, ...);
-    fn TRACE(format: *const i8, ...);
 }
 
 const CP_ACP: u32 = 0;
@@ -76,7 +74,7 @@ unsafe fn from_bmformat(format: BMFORMAT) -> DWORD {
             ret = TYPE_RGB_8;
         }
     }
-    TRACE(b"color space: %08x -> %08x\n\0".as_ptr() as *const i8, format, ret);
+    TRACE!(b"color space: %08x -> %08x\n\0".as_ptr() as *const i8, format, ret);
     ret
 }
 
@@ -96,7 +94,7 @@ unsafe fn from_type(type_: COLORTYPE) -> u32 {
         }
     }
 
-    TRACE(b"color type: %08x -> %08x\n\0".as_ptr() as *const i8, type_, ret);
+    TRACE!(b"color type: %08x -> %08x\n\0".as_ptr() as *const i8, type_, ret);
     return ret;
 }
 
@@ -166,13 +164,7 @@ pub unsafe extern "system" fn CreateColorTransformW(
         let mut proofing: DWORD = 0;
         let mut intent: i32;
 
-        TRACE(
-            b"( %p, %p, %p, 0x%08x )\n\0".as_ptr() as *const i8,
-            space,
-            dest,
-            target,
-            flags,
-        );
+        TRACE!(b"( %p, %p, %p, 0x%08x )\n\0".as_ptr() as *const i8, space, dest, target, flags);
 
         if space.is_null() {
             return core::ptr::null_mut();
@@ -196,18 +188,9 @@ pub unsafe extern "system" fn CreateColorTransformW(
             (*space).lcsIntent as i32
         };
 
-        TRACE(
-            b"lcsIntent:   %x\n\0".as_ptr() as *const i8,
-            (*space).lcsIntent,
-        );
-        TRACE(
-            b"lcsCSType:   %s\n\0".as_ptr() as *const i8,
-            dbgstr_tag((*space).lcsCSType),
-        );
-        TRACE(
-            b"lcsFilename: %s\n\0".as_ptr() as *const i8,
-            debugstr_w((*space).lcsFilename.as_ptr()),
-        );
+        TRACE!(b"lcsIntent:   %x\n\0".as_ptr() as *const i8, (*space).lcsIntent);
+        TRACE!(b"lcsCSType:   %s\n\0".as_ptr() as *const i8, dbgstr_tag((*space).lcsCSType));
+        TRACE!(b"lcsFilename: %s\n\0".as_ptr() as *const i8, debugstr_w((*space).lcsFilename.as_ptr()));
 
         cmsinput = cmsCreate_sRGBProfile(); /* FIXME: create from supplied color space */
         if !target.is_null() {
@@ -260,13 +243,7 @@ pub unsafe extern "system" fn CreateMultiProfileTransform(
     let profile0: *mut profile;
     let profile1: *mut profile;
 
-    TRACE(b"( %p, 0x%08x, %p, 0x%08x, 0x%08x, 0x%08x )\n".as_ptr() as *const i8,
-         profiles as *mut core::ffi::c_void,
-         nprofiles,
-         intents as *mut core::ffi::c_void,
-         nintents,
-         flags,
-         cmm);
+    TRACE!(b"( %p, 0x%08x, %p, 0x%08x, 0x%08x, 0x%08x )\n".as_ptr() as *const i8, profiles as *mut core::ffi::c_void, nprofiles, intents as *mut core::ffi::c_void, nintents, flags, cmm);
 
     if profiles.is_null() || nprofiles == 0 || intents.is_null() {
         return 0;
@@ -302,7 +279,7 @@ pub unsafe extern "system" fn DeleteColorTransform(handle: HTRANSFORM) -> BOOL {
     let mut ret: BOOL = 0;
     #[cfg(feature = "lcms2")]
     {
-        TRACE(b"( %p )\n\0".as_ptr() as *const i8, handle);
+        TRACE!(b"( %p )\n\0".as_ptr() as *const i8, handle);
         ret = close_transform(handle);
     }
     ret

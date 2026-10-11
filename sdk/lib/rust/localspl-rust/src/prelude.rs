@@ -319,26 +319,4 @@ pub use crate::types::_LOCAL_HANDLE_HandleType_Printer as HandleType_Printer;
 pub use crate::types::_LOCAL_HANDLE_HandleType_PrintServer as HandleType_PrintServer;
 pub use crate::types::_LOCAL_HANDLE_HandleType_Xcv as HandleType_Xcv;
 
-/// strsafe.h `StringCbCopyExW` -- absent from the shared `strsafe-rust` (only the `N` variant is
-/// there), so it is expressed through `StringCbCopyNExW` with `cbToCopy` = the source's own byte
-/// length: copying the whole source string is exactly what the non-N variant does, and the
-/// worker still NUL-terminates / truncates against `cbDest` identically.
-#[inline]
-pub unsafe fn StringCbCopyExW(
-    pszDest: *mut WCHAR,
-    cbDest: usize,
-    pszSrc: *const WCHAR,
-    ppszDestEnd: *mut *mut WCHAR,
-    pcbRemaining: *mut usize,
-    dwFlags: DWORD,
-) -> HRESULT {
-    StringCbCopyNExW(
-        pszDest,
-        cbDest,
-        pszSrc,
-        wcslen(pszSrc) * core::mem::size_of::<WCHAR>(),
-        ppszDestEnd,
-        pcbRemaining,
-        dwFlags,
-    )
-}
+pub use strsafe_rust::StringCbCopyExW;
