@@ -2384,6 +2384,20 @@ def _drop_stale_variadic_imports(files: list[Path], names: set[str]) -> None:
             path.write_text(new)
 
 
+def _hand_replaced_twins(hand_dir: Path) -> set[str]:
+    """Hand-banked `F_v` entries whose text no longer defines the twin `F_v(.., ap_list)`."""
+    replaced = set()
+    for entry in hand_dir.glob("*.json"):
+        try:
+            banked = json.loads(entry.read_text())
+            name, text = banked["name"], banked["text"]
+        except (OSError, ValueError, KeyError):
+            continue
+        if name.endswith("_v") and name[:-2] not in variadic_shim.twins(text):
+            replaced.add(name)
+    return replaced
+
+
 def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dict[str, str]]:
     """C-variadic definitions -> a Rust `_v` twin + a generated C trampoline (variadic_shim).
 
@@ -2426,12 +2440,11 @@ def _variadic_twins(state: dict, crate: Path, stem: str) -> tuple[list[str], dic
     # A twin a hand-banked function replaces gets no trampoline: the hand version defines the
     # C name itself (ndis's NdisWriteErrorLogEntry reads only its fixed arguments, so it is a
     # plain fixed-arity `extern "C"` fn), and a trampoline would define it a second time.
-    replaced = set()
-    for entry in _hand_dir(stem).glob("*.json"):
-        try:
-            replaced.add(json.loads(entry.read_text())["name"])
-        except (OSError, ValueError, KeyError):
-            continue
+    # Judged by the banked TEXT, not its name: ndis banked that plain fn as
+    # `NdisWriteErrorLogEntry_v`, while a hand-fixed body that is still `F_v(.., ap_list)`
+    # (netsh's PrintMessage_v, arp's PrintMessageV_v) is a twin and needs its trampoline --
+    # dropping it left every caller of the C name unresolved after a replay.
+    replaced = _hand_replaced_twins(_hand_dir(stem))
     all_twins = {n: v for n, v in all_twins.items() if f"{n}_v" not in replaced}
     if not all_twins:
         return done, refused

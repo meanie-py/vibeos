@@ -1028,3 +1028,14 @@ def test_replay_leaves_one_trailing_newline(tmp_path):
     (tmp_path / "b.rs").write_text("fn b() {}\n")
     assert port._one_trailing_newline(tmp_path) == 1
     assert (tmp_path / "a.rs").read_text() == "fn a() {}\n"
+
+
+def test_a_hand_fixed_twin_keeps_its_trampoline(tmp_path):
+    # netsh's banked PrintMessage_v is still `F_v(.., ap_list)`: dropping its trampoline left
+    # every caller of PrintMessage unresolved after a replay. ndis banked a plain fixed-arity
+    # NdisWriteErrorLogEntry under the twin's name, which replaces it.
+    twin = 'pub unsafe extern "C" fn PrintMessage_v(f: LPCWSTR, ap_list: *mut c_void) -> DWORD {}'
+    plain = 'pub unsafe extern "C" fn NdisWriteErrorLogEntry(h: PVOID, c: ULONG) {}'
+    (tmp_path / "a.json").write_text(json.dumps({"name": "PrintMessage_v", "text": twin}))
+    (tmp_path / "b.json").write_text(json.dumps({"name": "NdisWriteErrorLogEntry_v", "text": plain}))
+    assert port._hand_replaced_twins(tmp_path) == {"NdisWriteErrorLogEntry_v"}
