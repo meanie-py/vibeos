@@ -1,8 +1,8 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 #[no_mangle]
-pub unsafe extern "C" fn _tmain(argc: i32, argv: *mut *mut TCHAR) -> i32 {
+pub unsafe extern "C" fn main(argc: i32, argv: *mut *mut TCHAR) -> i32 {
     let mut buf: *mut TCHAR = core::ptr::null_mut();
     let mut bufsize: usize;
     let mut i: i32;
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn _tmain(argc: i32, argv: *mut *mut TCHAR) -> i32 {
             GetProcessHeap(),
             0 as u32,
             ((bufsize + (1 as usize))
-                * core::mem::size_of::<TCHAR>()) as usize,
+                * core::mem::size_of::<TCHAR>()) as SIZE_T,
         ) as *mut TCHAR;
         if buf.is_null() {
             return -(1 as i32);
@@ -157,10 +157,10 @@ pub unsafe extern "C" fn _tmain(argc: i32, argv: *mut *mut TCHAR) -> i32 {
             );
             offset += length;
             if (i + (1 as i32)) < argc {
-                *buf.add(offset) = _T(' ');
+                *buf.add(offset) = _T!(' ') as TCHAR;
             } else {
-                *buf.add(offset) = _T('\n');
-                *buf.add(offset + (1 as usize)) = _T('\0');
+                *buf.add(offset) = _T!('\n') as TCHAR;
+                *buf.add(offset + (1 as usize)) = _T!('\0') as TCHAR;
             }
             offset += 1;
             i += 1;

@@ -2,7 +2,7 @@ use crate::fsutil::common::FindHandler;
 use crate::fsutil::common::OpenVolume;
 use crate::fsutil::common::PrintDefaultUsage;
 use crate::fsutil::common::PrintErrorMessage;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -56,8 +56,6 @@ pub struct HandlerItem {
 
 unsafe impl Sync for HandlerItem {}
 
-pub type HandlerProc = unsafe extern "C" fn(argc: i32, argv: *mut *mut TCHAR) -> i32;
-
 pub static DISMOUNT_NAME_STR: [TCHAR; 9] = [
     'd' as TCHAR, 'i' as TCHAR, 's' as TCHAR, 'm' as TCHAR,
     'o' as TCHAR, 'u' as TCHAR, 'n' as TCHAR, 't' as TCHAR,
@@ -106,7 +104,7 @@ unsafe extern "C" fn LockOrUnlockVolume(mut Volume: HANDLE, mut Lock: BOOLEAN) -
         0 as DWORD,
         core::ptr::addr_of_mut!(BytesRead),
         core::ptr::null_mut(),
-    ) == FALSE
+    ) == (FALSE as i32)
     {
         PrintErrorMessage(GetLastError());
         return 1;
@@ -121,50 +119,50 @@ unsafe extern "C" fn DismountMain(argc: ::core::ffi::c_int, argv: *mut *const TC
 
     /* We need a volume (letter or GUID) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil volume dismount <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil volume dismount d:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0064, 0x0069, 0x0073, 0x006d, 0x006f, 0x0075, 0x006e, 0x0074, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil volume dismount <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0064, 0x0069, 0x0073, 0x006d, 0x006f, 0x0075, 0x006e, 0x0074, 0x0020, 0x0064, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil volume dismount d:\n" */);
         return 1;
     }
 
     /* Get a handle for the volume */
-    Volume = OpenVolume(*argv.offset(1 as isize), FALSE, FALSE);
+    Volume = OpenVolume(*argv.offset(1 as isize), (FALSE) as BOOLEAN, (FALSE) as BOOLEAN);
     if Volume == INVALID_HANDLE_VALUE {
         return 1;
     }
 
     /* Attempt to lock the volume */
-    if LockOrUnlockVolume(Volume, TRUE) != 0 {
+    if LockOrUnlockVolume(Volume, (TRUE) as BOOLEAN) != 0 {
         CloseHandle(Volume);
         return 1;
     }
 
     /* Issue the dismount command */
     if DeviceIoControl(Volume, FSCTL_DISMOUNT_VOLUME as DWORD, core::ptr::null_mut(), 0 as DWORD, core::ptr::null_mut(),
-                        0 as DWORD, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == FALSE {
+                        0 as DWORD, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == (FALSE as i32) {
         PrintErrorMessage(GetLastError());
-        LockOrUnlockVolume(Volume, FALSE);
+        LockOrUnlockVolume(Volume, (FALSE) as BOOLEAN);
         CloseHandle(Volume);
         return 1;
     }
 
     /* Unlock and quit */
-    LockOrUnlockVolume(Volume, FALSE);
+    LockOrUnlockVolume(Volume, (FALSE) as BOOLEAN);
     CloseHandle(Volume);
 
-    _ftprintf(stdout, _T("The %s volume has been dismounted\n"), *argv.offset(1 as isize));
+    _ftprintf(__iob_func().add(1), (&[0x0054, 0x0068, 0x0065, 0x0020, 0x0025, 0x0073, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0068, 0x0061, 0x0073, 0x0020, 0x0062, 0x0065, 0x0065, 0x006e, 0x0020, 0x0064, 0x0069, 0x0073, 0x006d, 0x006f, 0x0075, 0x006e, 0x0074, 0x0065, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "The %s volume has been dismounted\n" */, *argv.offset(1 as isize));
 
     return 0;
 }
 
-unsafe extern "C" fn DiskFreeMain(argc: ::core::ffi::c_int, argv: *const *const TCHAR) -> ::core::ffi::c_int {
+unsafe extern "C" fn DiskFreeMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     let mut FreeAvail: ULARGE_INTEGER = core::mem::zeroed();
     let mut TotalNumber: ULARGE_INTEGER = core::mem::zeroed();
     let mut TotalNumberFree: ULARGE_INTEGER = core::mem::zeroed();
 
     /* We need a path */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil volume diskfree <volume path>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil volume diskfree c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0064, 0x0069, 0x0073, 0x006b, 0x0066, 0x0072, 0x0065, 0x0065, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0070, 0x0061, 0x0074, 0x0068, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil volume diskfree <volume path>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0064, 0x0069, 0x0073, 0x006b, 0x0066, 0x0072, 0x0065, 0x0065, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil volume diskfree c:\n" */);
         return 1;
     }
 
@@ -179,9 +177,9 @@ unsafe extern "C" fn DiskFreeMain(argc: ::core::ffi::c_int, argv: *const *const 
         return 1;
     }
 
-    _ftprintf(stdout, _T("Total free bytes\t\t: %I64i\n"), TotalNumberFree.QuadPart);
-    _ftprintf(stdout, _T("Total bytes\t\t\t: %I64i\n"), TotalNumber.QuadPart);
-    _ftprintf(stdout, _T("Total free available bytes\t: %I64i\n"), FreeAvail.QuadPart);
+    _ftprintf(__iob_func().add(1), (&[0x0054, 0x006f, 0x0074, 0x0061, 0x006c, 0x0020, 0x0066, 0x0072, 0x0065, 0x0065, 0x0020, 0x0062, 0x0079, 0x0074, 0x0065, 0x0073, 0x0009, 0x0009, 0x003a, 0x0020, 0x0025, 0x0049, 0x0036, 0x0034, 0x0069, 0x000a, 0x0000u16]).as_ptr() /* _T "Total free bytes\t\t: %I64i\n" */, TotalNumberFree.QuadPart);
+    _ftprintf(__iob_func().add(1), (&[0x0054, 0x006f, 0x0074, 0x0061, 0x006c, 0x0020, 0x0062, 0x0079, 0x0074, 0x0065, 0x0073, 0x0009, 0x0009, 0x0009, 0x003a, 0x0020, 0x0025, 0x0049, 0x0036, 0x0034, 0x0069, 0x000a, 0x0000u16]).as_ptr() /* _T "Total bytes\t\t\t: %I64i\n" */, TotalNumber.QuadPart);
+    _ftprintf(__iob_func().add(1), (&[0x0054, 0x006f, 0x0074, 0x0061, 0x006c, 0x0020, 0x0066, 0x0072, 0x0065, 0x0065, 0x0020, 0x0061, 0x0076, 0x0061, 0x0069, 0x006c, 0x0061, 0x0062, 0x006c, 0x0065, 0x0020, 0x0062, 0x0079, 0x0074, 0x0065, 0x0073, 0x0009, 0x003a, 0x0020, 0x0025, 0x0049, 0x0036, 0x0034, 0x0069, 0x000a, 0x0000u16]).as_ptr() /* _T "Total free available bytes\t: %I64i\n" */, FreeAvail.QuadPart);
 
     return 0;
 }
@@ -196,7 +194,7 @@ unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn VolumeMain(argc: i32, argv: *mut *const TCHAR) -> i32 {
+pub unsafe extern "C" fn VolumeMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     return FindHandler(
         argc,
         argv,

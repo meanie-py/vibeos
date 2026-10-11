@@ -2,6 +2,7 @@ use crate::netsh::context::CleanupContext;
 use crate::netsh::context::CreateRootContext;
 use crate::netsh::helper::CreateRootHelper;
 use crate::netsh::alias::DestroyAliases;
+use crate::netsh::wmi::GetWmiVersionInfo;
 use crate::netsh::alias::InitAliases;
 use crate::netsh::interpreter::InterpretInteractive;
 use crate::netsh::interpreter::InterpretLine;
@@ -9,7 +10,7 @@ use crate::netsh::helper::LoadHelpers;
 use crate::netsh::helper::UnloadHelpers;
 use crate::netsh::context::g_pszMachine;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_1B9E0FE7B740: [u16; 2] = [0x003Fu16, 0x0000];
 pub static RUSTCONV_WSTR_2876443B278F: [u16; 3] = [0x002Fu16, 0x0066, 0x0000];
 pub static RUSTCONV_WSTR_4B12B7AA973F: [u16; 3] = [0x002Du16, 0x0066, 0x0000];
@@ -39,19 +40,19 @@ use core::ffi::c_void;
 pub static mut g_hModule: HMODULE = ::core::ptr::null::<HINSTANCE__>() as *mut HINSTANCE__;
 #[no_mangle]
 pub unsafe extern "C" fn RunScript(filename: LPCWSTR) -> DWORD {
-    let mut tmp_string: [WCHAR; MAX_STRING_SIZE] = [0; MAX_STRING_SIZE];
+    let mut tmp_string: [WCHAR; (MAX_STRING_SIZE) as _] = [0; (MAX_STRING_SIZE) as _];
     let mut script: *mut FILE = core::ptr::null_mut::<FILE>();
     let mut dwError: DWORD = ERROR_SUCCESS;
 
     /* Open the file for processing */
-    script = _wfopen(filename as *const wchar_t, RUSTCONV_WSTR_D877BF4E5023.as_ptr() as *const wchar_t);
+    script = (_wfopen(filename as *const wchar_t, RUSTCONV_WSTR_D877BF4E5023.as_ptr() as *const wchar_t)).cast();
     if script.is_null() {
         ConResPrintf(&raw mut csStdErr, IDS_OPEN_FAILED as UINT, filename);
         return ERROR_FILE_NOT_FOUND;
     }
 
     /* Read and process the script */
-    while !fgetws(&raw mut tmp_string as *mut wchar_t, MAX_STRING_SIZE, script).is_null() {
+    while !fgetws(&raw mut tmp_string as *mut wchar_t, (MAX_STRING_SIZE as i32), script).is_null() {
         dwError = InterpretLine(&raw mut tmp_string as LPWSTR);
         if dwError != ERROR_SUCCESS {
             break;
@@ -215,7 +216,7 @@ pub unsafe extern "C" fn wmain(
                     if g_pszMachine.is_null()
                     {
                         dwError = ERROR_NOT_ENOUGH_MEMORY;
-                        PrintError(g_hModule, dwError);
+                        PrintError((g_hModule).cast(), dwError);
                         break 'done;
                     }
 
@@ -240,12 +241,12 @@ pub unsafe extern "C" fn wmain(
                 {
                     pszCommand = MergeStrings(
                         argv.offset(index as isize) as *mut LPWSTR,
-                        argc - index,
+                        (argc - index) as UINT,
                     );
                     if pszCommand.is_null()
                     {
                         dwError = ERROR_NOT_ENOUGH_MEMORY;
-                        PrintError(g_hModule, dwError);
+                        PrintError((g_hModule).cast(), dwError);
                         break 'done;
                     }
 
@@ -293,12 +294,12 @@ pub unsafe extern "C" fn wmain(
     /* FIXME: Cleanup code goes here */
     if !g_pszMachine.is_null()
     {
-        HeapFree(GetProcessHeap(), 0, g_pszMachine);
+        HeapFree(GetProcessHeap(), 0, (g_pszMachine).cast());
     }
 
     if !pszCommand.is_null()
     {
-        HeapFree(GetProcessHeap(), 0, pszCommand);
+        HeapFree(GetProcessHeap(), 0, (pszCommand).cast());
     }
 
     CleanupContext();
@@ -306,9 +307,9 @@ pub unsafe extern "C" fn wmain(
     DestroyAliases();
 
     return if dwError == ERROR_SUCCESS {
-        EXIT_SUCCESS
+        (EXIT_SUCCESS as i32)
     } else {
-        EXIT_FAILURE
+        (EXIT_FAILURE as i32)
     };
 }
 
@@ -321,7 +322,7 @@ pub unsafe extern "system" fn FreeQuotedString(pszQuotedString: LPWSTR) {
 #[no_mangle]
 pub unsafe extern "system" fn FreeString(pszString: LPWSTR) {
     // DPRINT("FreeString(%S)\n", pszString);
-    LocalFree(pszString);
+    LocalFree((pszString).cast());
 }
 
 #[no_mangle]
@@ -330,7 +331,7 @@ pub unsafe extern "system" fn MakeQuotedString(pszString: LPWSTR) -> LPWSTR {
 
     DPRINT!("MakeQuotedString(%S)\n", pszString);
 
-    pszQuotedString = HeapAlloc(GetProcessHeap(), 0, (wcslen(pszString) + 3) * core::mem::size_of::<WCHAR>()) as LPWSTR;
+    pszQuotedString = HeapAlloc(GetProcessHeap(), 0, ((wcslen(pszString) + 3) * core::mem::size_of::<WCHAR>()) as SIZE_T) as LPWSTR;
     if pszQuotedString.is_null() {
         return core::ptr::null_mut();
     }
@@ -341,7 +342,7 @@ pub unsafe extern "system" fn MakeQuotedString(pszString: LPWSTR) -> LPWSTR {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn MakeString(mut hModule: HANDLE, mut dwMsgId: DWORD, mut args: ...) -> LPWSTR {
+pub unsafe extern "C" fn MakeString_v(mut hModule: HANDLE, mut dwMsgId: DWORD, ap_list: *mut ::core::ffi::c_void) -> LPWSTR {
     let mut pszStr: LPCWSTR = core::ptr::null();
     let mut pszInBuffer: LPWSTR = core::ptr::null_mut();
     let mut pszOutBuffer: LPWSTR = core::ptr::null_mut();
@@ -351,7 +352,7 @@ pub unsafe extern "C" fn MakeString(mut hModule: HANDLE, mut dwMsgId: DWORD, mut
     DPRINT!("MakeString(%p %lu ...)\n", hModule, dwMsgId);
 
     dwLength = LoadStringW(
-        hModule as HMODULE,
+        (hModule as HMODULE).cast(),
         dwMsgId as UINT,
         core::ptr::addr_of_mut!(pszStr) as LPWSTR,
         0,
@@ -370,14 +371,14 @@ pub unsafe extern "C" fn MakeString(mut hModule: HANDLE, mut dwMsgId: DWORD, mut
     if pszInBuffer.is_null() {
         return core::ptr::null_mut();
     }
-    CopyMemory(
+    CopyMemory!(
         pszInBuffer as *mut core::ffi::c_void,
         pszStr as *const core::ffi::c_void,
         (dwLength as usize).wrapping_mul(core::mem::size_of::<WCHAR>()),
     );
     *pszInBuffer.offset(dwLength as isize) = UNICODE_NULL;
 
-    va_start(ap, dwMsgId);
+    ap = *(ap_list as *mut va_list);
     FormatMessageW(
         FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_STRING,
         pszInBuffer as LPCVOID,
@@ -387,12 +388,13 @@ pub unsafe extern "C" fn MakeString(mut hModule: HANDLE, mut dwMsgId: DWORD, mut
         0,
         core::ptr::addr_of_mut!(ap),
     );
-    va_end(ap);
 
     HeapFree(GetProcessHeap(), 0, pszInBuffer as PVOID);
 
     return pszOutBuffer;
 }
+
+
 
 #[no_mangle]
 pub unsafe extern "system" fn MatchEnumTag(
@@ -468,7 +470,7 @@ pub unsafe extern "system" fn MatchTagsInCmdLine(
                             dwTagLength as usize) == 0)
                 {
                     DPRINT!("Found tag %S\n", (*pttTags.offset(j as isize)).pwszTag);
-                    (*pttTags.offset(j as isize)).bPresent = TRUE;
+                    (*pttTags.offset(j as isize)).bPresent = (TRUE as i32);
                     *pdwTagType.offset(i.wrapping_sub(dwCurrentIndex) as isize) = j;
 
                     /* Remove the tag name from the argument */
@@ -491,9 +493,9 @@ pub unsafe extern "system" fn MatchTagsInCmdLine(
             j = 0;
             while j < dwTagCount {
                 DPRINT!("Test tag %S\n", (*pttTags.offset(j as isize)).pwszTag);
-                if (*pttTags.offset(j as isize)).bPresent == FALSE {
+                if (*pttTags.offset(j as isize)).bPresent == (FALSE as i32) {
                     DPRINT!("Found tag %S\n", (*pttTags.offset(j as isize)).pwszTag);
-                    (*pttTags.offset(j as isize)).bPresent = TRUE;
+                    (*pttTags.offset(j as isize)).bPresent = (TRUE as i32);
                     *pdwTagType.offset(i.wrapping_sub(dwCurrentIndex) as isize) = j;
                     break;
                 } else {
@@ -512,13 +514,13 @@ pub unsafe extern "system" fn MatchToken(pwszUserToken: LPCWSTR, pwszCmdToken: L
     DPRINT!("MatchToken(%S %S)\n", pwszUserToken, pwszCmdToken);
 
     if pwszUserToken.is_null() || pwszCmdToken.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     return if _wcsnicmp(pwszUserToken, pwszCmdToken, wcslen(pwszUserToken)) == 0 {
-        TRUE
+        (TRUE as i32)
     } else {
-        FALSE
+        (FALSE as i32)
     };
 }
 
@@ -547,7 +549,7 @@ pub unsafe extern "system" fn NsGetFriendlyNameFromIfName(
         core::ptr::addr_of_mut!(UnicodeIfName),
         core::ptr::addr_of_mut!(InterfaceGuid),
     );
-    if !NT_SUCCESS(Status) {
+    if !NT_SUCCESS!(Status) {
         DPRINT1!("RtlGUIDFromString failed 0x%08lx\n", Status);
         return RtlNtStatusToDosError(Status) as DWORD;
     }
@@ -602,13 +604,13 @@ pub unsafe extern "system" fn NsGetIfNameFromFriendlyName(
         core::ptr::addr_of_mut!(InterfaceGuid),
         core::ptr::addr_of_mut!(UnicodeIfName),
     );
-    if !NT_SUCCESS(Status) {
+    if !NT_SUCCESS!(Status) {
         DPRINT1!("RtlStringFromGUID failed 0x%08lx\n", Status);
         ret = RtlNtStatusToDosError(Status) as DWORD;
     }
 
     if *pdwIfName >= UnicodeIfName.MaximumLength as DWORD {
-        CopyMemory(
+        CopyMemory!(
             pszIfName as *mut core::ffi::c_void,
             UnicodeIfName.Buffer as *const core::ffi::c_void,
             UnicodeIfName.MaximumLength as usize,
@@ -684,10 +686,10 @@ pub unsafe extern "system" fn PreprocessCommand(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn PrintError(mut hModule: HANDLE, mut dwErrId: DWORD, mut args: ...) -> DWORD {
+pub unsafe extern "C" fn PrintError_v(mut hModule: HANDLE, mut dwErrId: DWORD, ap_list: *mut ::core::ffi::c_void) -> DWORD {
     let mut Length: INT = 0;
-    let mut ap: ::core::ffi::VaListImpl;
-    ap = args.clone();
+    let mut ap: va_list = *(ap_list as *mut va_list);
+
     if !hModule.is_null() {
         Length = ConResMsgPrintfExV(
             &raw mut csStdErr,
@@ -721,31 +723,32 @@ pub unsafe extern "C" fn PrintError(mut hModule: HANDLE, mut dwErrId: DWORD, mut
     return Length as DWORD;
 }
 
+
+
 #[no_mangle]
-pub unsafe extern "C" fn PrintMessageFromModule(
+pub unsafe extern "C" fn PrintMessageFromModule_v(
     hModule: HANDLE,
     dwMsgId: DWORD,
-    mut args: ...
+    ap_list: *mut ::core::ffi::c_void,
 ) -> DWORD {
     let mut Length: INT;
-    let mut ap: va_list;
-
-    va_start(ap, dwMsgId);
+    let mut ap: va_list = *(ap_list as *mut va_list);
     Length = ConResMsgPrintfExV(StdOut, hModule, 0, dwMsgId,
                                 LANG_USER_DEFAULT, core::ptr::addr_of_mut!(ap));
-    va_end(ap);
 
     return Length as DWORD;
 }
 
+
+
 #[no_mangle]
-pub unsafe extern "C" fn PrintMessage(pwszFormat: LPCWSTR, mut args: ...) -> DWORD {
+pub unsafe extern "C" fn PrintMessage_v(pwszFormat: LPCWSTR, ap_list: *mut ::core::ffi::c_void) -> DWORD {
     let mut Length: INT;
     let mut ap: va_list;
 
-    ap = va_start(args.clone(), pwszFormat);
-    Length = ConPrintfV(StdOut, pwszFormat, ap.as_va_list());
-    va_end(ap);
+    ap = va_start!(varargs_rust::VaArgs::from_ptr(ap_list), pwszFormat);
+    Length = ConPrintfV(StdOut, pwszFormat, ap);
+    va_end!(ap);
 
     return Length as DWORD;
 }

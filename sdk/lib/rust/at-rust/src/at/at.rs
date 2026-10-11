@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_0E18B58FA673: [u16; 3] = [0x0061u16, 0x006D, 0x0000];
 pub static RUSTCONV_WSTR_4437D105C3C0: [u16; 4] = [0x0020u16, 0x0025, 0x0064, 0x0000];
 pub static RUSTCONV_WSTR_4BA5D7E4F16E: [u16; 4] = [0x0025u16, 0x0073, 0x000A, 0x0000];
@@ -93,7 +93,7 @@ unsafe extern "C" fn ParseTime(
     let mut nLength: UINT;
 
     if pszTime.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     startPtr = pszTime;
@@ -102,7 +102,7 @@ unsafe extern "C" fn ParseTime(
     nLength = 0;
     while *startPtr != 0x0000u16 && iswdigit(*startPtr) != 0 {
         if nLength >= 2 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         szHour[nLength as usize] = *startPtr;
@@ -114,7 +114,7 @@ unsafe extern "C" fn ParseTime(
 
     /* Check for a valid time separator */
     if *startPtr != 0x003Au16 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Skip the time separator */
@@ -124,7 +124,7 @@ unsafe extern "C" fn ParseTime(
     nLength = 0;
     while *startPtr != 0x0000u16 && iswdigit(*startPtr) != 0 {
         if nLength >= 2 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         szMinute[nLength as usize] = *startPtr;
@@ -138,7 +138,7 @@ unsafe extern "C" fn ParseTime(
     nLength = 0;
     while *startPtr != 0x0000u16 {
         if nLength >= 4 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         if iswspace(*startPtr) == 0 {
@@ -157,7 +157,7 @@ unsafe extern "C" fn ParseTime(
         10,
     ) as ULONG;
     if ulHour == 0 && *endPtr != UNICODE_NULL {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Convert the minute string */
@@ -167,7 +167,7 @@ unsafe extern "C" fn ParseTime(
         10,
     ) as ULONG;
     if ulMinute == 0 && *endPtr != UNICODE_NULL {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Check for valid AM/PM indicator */
@@ -177,12 +177,12 @@ unsafe extern "C" fn ParseTime(
         && _wcsicmp(szAmPm.as_ptr(), RUSTCONV_WSTR_D3FE97979D0F.as_ptr()) != 0
         && _wcsicmp(szAmPm.as_ptr(), RUSTCONV_WSTR_C0A3A6D4344E.as_ptr()) != 0
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Check for the valid minute range [0-59] */
     if ulMinute > 59 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     if wcslen(szAmPm.as_ptr()) > 0 {
@@ -190,7 +190,7 @@ unsafe extern "C" fn ParseTime(
 
         /* Check for the valid hour range [1-12] */
         if ulHour == 0 || ulHour > 12 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         /* Convert 12 hour format to 24 hour format */
@@ -210,7 +210,7 @@ unsafe extern "C" fn ParseTime(
 
         /* Check for the valid hour range [0-23] */
         if ulHour > 23 {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
 
@@ -222,7 +222,7 @@ unsafe extern "C" fn ParseTime(
         *pulJobMinute = ulMinute;
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn ParseId(pszId: PWSTR, pulId: PULONG) -> BOOL {
@@ -250,7 +250,7 @@ unsafe extern "C" fn ParseDaysOfMonth(mut pszBuffer: PWSTR, mut pulDaysOfMonth: 
     let mut endPtr: PWSTR = ::core::ptr::null_mut::<WCHAR>();
     let mut ulValue: ULONG = 0;
     if wcslen(pszBuffer as *const wchar_t) == 0 as _ {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
     startPtr = pszBuffer;
     endPtr = ::core::ptr::null_mut::<WCHAR>();
@@ -261,20 +261,20 @@ unsafe extern "C" fn ParseDaysOfMonth(mut pszBuffer: PWSTR, mut pulDaysOfMonth: 
             10 as ::core::ffi::c_int,
         ) as ULONG;
         if ulValue == 0 as ULONG {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         if ulValue > 0 as ULONG && ulValue <= 31 as ULONG {
             *pulDaysOfMonth |=
                 ((1 as ::core::ffi::c_int) << (ulValue - 1 as ULONG)) as ULONG;
         }
         if !endPtr.is_null() && *endPtr as ::core::ffi::c_int == UNICODE_NULL as ::core::ffi::c_int {
-            return TRUE;
+            return (TRUE) as BOOL;
         }
         startPtr = endPtr.offset(1 as isize);
         endPtr = ::core::ptr::null_mut::<WCHAR>();
     }
 
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 
 unsafe extern "C" fn ParseDaysOfWeek(mut pszBuffer: PWSTR, mut pucDaysOfWeek: PUCHAR) -> BOOL {
@@ -283,7 +283,7 @@ unsafe extern "C" fn ParseDaysOfWeek(mut pszBuffer: PWSTR, mut pucDaysOfWeek: PU
     let mut nLength: size_t = 0;
     let mut i: WORD = 0;
     if wcslen(pszBuffer as *const WCHAR) == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
     startPtr = pszBuffer;
     endPtr = ::core::ptr::null_mut::<WCHAR>();
@@ -311,20 +311,20 @@ unsafe extern "C" fn ParseDaysOfWeek(mut pszBuffer: PWSTR, mut pucDaysOfWeek: PU
             }
         }
         if endPtr.is_null() {
-            return TRUE;
+            return (TRUE) as BOOL;
         }
         startPtr = endPtr.offset(1);
         endPtr = ::core::ptr::null_mut::<WCHAR>();
     }
     #[allow(unreachable_code)]
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 }
 
 unsafe extern "C" fn PrintErrorMessage(dwError: DWORD) {
     ConMsgPuts(
-        core::ptr::addr_of_mut!(StdErr),
+        StdErr,
         FORMAT_MESSAGE_FROM_SYSTEM as DWORD,
         core::ptr::null_mut(),
         dwError,
@@ -351,23 +351,23 @@ unsafe extern "C" fn Confirm() -> BOOL {
     let mut szInput: [WCHAR; 80] = [0; 80];
     let mut dwOldMode: DWORD = 0;
     let mut dwRead: DWORD = 0;
-    let mut ret: BOOL = FALSE;
+    let mut ret: BOOL = (FALSE as i32);
     let mut hFile: HANDLE = core::ptr::null_mut();
 
     LoadStringW(
         core::ptr::null_mut(),
         IDS_CONFIRM_YES,
         szYesBuffer.as_mut_ptr(),
-        _countof(szYesBuffer),
+        (_countof!(szYesBuffer)) as i32,
     );
     LoadStringW(
         core::ptr::null_mut(),
         IDS_CONFIRM_NO,
         szNoBuffer.as_mut_ptr(),
-        _countof(szNoBuffer),
+        (_countof!(szNoBuffer)) as i32,
     );
 
-    ZeroMemory(
+    ZeroMemory!(
         szInput.as_mut_ptr() as *mut core::ffi::c_void,
         core::mem::size_of::<[WCHAR; 80]>(),
     );
@@ -382,22 +382,22 @@ unsafe extern "C" fn Confirm() -> BOOL {
 
         ReadConsoleW(
             hFile,
-            szInput.as_mut_ptr(),
-            _countof(szInput),
+            (szInput.as_mut_ptr()).cast(),
+            _countof!(szInput),
             core::ptr::addr_of_mut!(dwRead),
             core::ptr::null_mut(),
         );
 
         szInput[0 as usize] =
-            towupper(szInput[0 as usize]) as WCHAR;
+            towupper((szInput[0 as usize]) as _) as WCHAR;
         if szInput[0 as usize] == szYesBuffer[0 as usize]
         {
-            ret = TRUE;
+            ret = (TRUE as i32);
             break;
         } else if szInput[0 as usize] == 13
             || szInput[0 as usize] == szNoBuffer[0 as usize]
         {
-            ret = FALSE;
+            ret = (FALSE as i32);
             break;
         }
 
@@ -478,36 +478,36 @@ unsafe extern "C" fn PrintJobDetails(pszComputerName: PWSTR, ulJobId: ULONG) -> 
         return 1;
     }
 
-    if ((*pBuffer).Flags & JOB_EXEC_ERROR) != 0 {
+    if ((*pBuffer).Flags & (JOB_EXEC_ERROR as u8)) != 0 {
         LoadStringW(
             core::ptr::null_mut(),
             IDS_ERROR,
             core::ptr::addr_of_mut!(szStatusBuffer) as LPWSTR,
-            _countof(szStatusBuffer) as INT,
+            _countof!(szStatusBuffer) as INT,
         );
     } else {
         LoadStringW(
             core::ptr::null_mut(),
             IDS_OK,
             core::ptr::addr_of_mut!(szStatusBuffer) as LPWSTR,
-            _countof(szStatusBuffer) as INT,
+            _countof!(szStatusBuffer) as INT,
         );
     }
 
     if (*pBuffer).DaysOfMonth != 0 {
-        if ((*pBuffer).Flags & JOB_RUN_PERIODICALLY) != 0 {
+        if ((*pBuffer).Flags & (JOB_RUN_PERIODICALLY as u8)) != 0 {
             LoadStringW(
                 core::ptr::null_mut(),
                 IDS_EVERY,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         } else {
             LoadStringW(
                 core::ptr::null_mut(),
                 IDS_NEXT,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         }
 
@@ -538,26 +538,26 @@ unsafe extern "C" fn PrintJobDetails(pszComputerName: PWSTR, ulJobId: ULONG) -> 
             i = i.wrapping_add(1);
         }
     } else if (*pBuffer).DaysOfWeek != 0 {
-        if ((*pBuffer).Flags & JOB_RUN_PERIODICALLY) != 0 {
+        if ((*pBuffer).Flags & (JOB_RUN_PERIODICALLY as u8)) != 0 {
             LoadStringW(
                 core::ptr::null_mut(),
                 IDS_EVERY,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         } else {
             LoadStringW(
                 core::ptr::null_mut(),
                 IDS_NEXT,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         }
 
         nScheduleLength = wcslen(core::ptr::addr_of_mut!(szScheduleBuffer) as *mut WCHAR) as size_t;
         i = 0;
         while i < 7 {
-            if ((*pBuffer).DaysOfWeek & ((1 as DWORD) << i)) != 0 {
+            if (((*pBuffer).DaysOfWeek as DWORD) & ((1 as DWORD) << i)) != 0 {
                 _swprintf(
                     core::ptr::addr_of_mut!(szDateBuffer) as *mut WCHAR,
                     RUSTCONV_WSTR_DEEFE3BC3DD3.as_ptr(),
@@ -587,38 +587,38 @@ unsafe extern "C" fn PrintJobDetails(pszComputerName: PWSTR, ulJobId: ULONG) -> 
                 core::ptr::null_mut(),
                 IDS_TOMORROW,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         } else {
             LoadStringW(
                 core::ptr::null_mut(),
                 IDS_TODAY,
                 core::ptr::addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                _countof(szScheduleBuffer) as INT,
+                _countof!(szScheduleBuffer) as INT,
             );
         }
     }
 
     JobTimeToTimeString(
         core::ptr::addr_of_mut!(szTimeBuffer) as PWSTR,
-        _countof(szTimeBuffer) as INT,
+        _countof!(szTimeBuffer) as INT,
         ((*pBuffer).JobTime / 3600000) as WORD,
         (((*pBuffer).JobTime % 3600000) / 60000) as WORD,
     );
 
-    if ((*pBuffer).Flags & JOB_NONINTERACTIVE) != 0 {
+    if ((*pBuffer).Flags & (JOB_NONINTERACTIVE as u8)) != 0 {
         LoadStringW(
             core::ptr::null_mut(),
             IDS_NO,
             core::ptr::addr_of_mut!(szInteractiveBuffer) as LPWSTR,
-            _countof(szInteractiveBuffer) as INT,
+            _countof!(szInteractiveBuffer) as INT,
         );
     } else {
         LoadStringW(
             core::ptr::null_mut(),
             IDS_YES,
             core::ptr::addr_of_mut!(szInteractiveBuffer) as LPWSTR,
-            _countof(szInteractiveBuffer) as INT,
+            _countof!(szInteractiveBuffer) as INT,
         );
     }
 
@@ -702,14 +702,14 @@ unsafe extern "C" fn PrintAllJobs(pszComputerName: PWSTR) -> INT {
                     core::ptr::null_mut(),
                     IDS_EVERY as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             } else {
                 LoadStringW(
                     core::ptr::null_mut(),
                     IDS_NEXT as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             }
 
@@ -748,14 +748,14 @@ unsafe extern "C" fn PrintAllJobs(pszComputerName: PWSTR) -> INT {
                     core::ptr::null_mut(),
                     IDS_EVERY as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             } else {
                 LoadStringW(
                     core::ptr::null_mut(),
                     IDS_NEXT as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             }
 
@@ -795,21 +795,21 @@ unsafe extern "C" fn PrintAllJobs(pszComputerName: PWSTR) -> INT {
                     core::ptr::null_mut(),
                     IDS_TOMORROW as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             } else {
                 LoadStringW(
                     core::ptr::null_mut(),
                     IDS_TODAY as UINT,
                     addr_of_mut!(szScheduleBuffer) as LPWSTR,
-                    _countof(szScheduleBuffer),
+                    (_countof!(szScheduleBuffer)) as i32,
                 );
             }
         }
 
         JobTimeToTimeString(
             addr_of_mut!(szTimeBuffer) as PWSTR,
-            _countof(szTimeBuffer),
+            (_countof!(szTimeBuffer)) as INT,
             ((*pBuffer.add(i as usize)).JobTime / (3600000 as DWORD)) as WORD,
             (((*pBuffer.add(i as usize)).JobTime % (3600000 as DWORD))
                 / (60000 as DWORD)) as WORD,
@@ -885,7 +885,7 @@ unsafe extern "C" fn DeleteJob(
 ) -> INT {
     let mut Status: NET_API_STATUS;
 
-    if ulJobId == (-1) as ULONG && bForceDelete == FALSE {
+    if ulJobId == (1 as u32).wrapping_neg() as ULONG && bForceDelete == (FALSE as i32) {
         ConResPrintf(StdOut, IDS_DELETE_ALL);
         if Confirm() == 0 {
             return 0;
@@ -894,13 +894,13 @@ unsafe extern "C" fn DeleteJob(
 
     Status = NetScheduleJobDel(
         pszComputerName,
-        if ulJobId == (-1) as ULONG {
+        if ulJobId == (1 as u32).wrapping_neg() as ULONG {
             0
         } else {
             ulJobId
         },
-        if ulJobId == (-1) as ULONG {
-            (-1) as ULONG
+        if ulJobId == (1 as u32).wrapping_neg() as ULONG {
+            (1 as u32).wrapping_neg() as ULONG
         } else {
             ulJobId
         },
@@ -920,11 +920,11 @@ pub unsafe extern "C" fn wmain(argc: INT, argv: *mut *mut WCHAR) -> INT {
     let mut ulJobId: ULONG = (-(1 as i32)) as ULONG;
     let mut ulJobHour: ULONG = (-(1 as i32)) as ULONG;
     let mut ulJobMinute: ULONG = (-(1 as i32)) as ULONG;
-    let mut bDeleteJob: BOOL = FALSE;
-    let mut bForceDelete: BOOL = FALSE;
-    let mut bInteractiveJob: BOOL = FALSE;
-    let mut bPeriodicJob: BOOL = FALSE;
-    let mut bPrintUsage: BOOL = FALSE;
+    let mut bDeleteJob: BOOL = (FALSE as i32);
+    let mut bForceDelete: BOOL = (FALSE as i32);
+    let mut bInteractiveJob: BOOL = (FALSE as i32);
+    let mut bPeriodicJob: BOOL = (FALSE as i32);
+    let mut bPrintUsage: BOOL = (FALSE as i32);
     let mut ulDaysOfMonth: ULONG = 0;
     let mut ucDaysOfWeek: UCHAR = 0;
     let mut nResult: INT = 0;
@@ -967,135 +967,137 @@ pub unsafe extern "C" fn wmain(argc: INT, argv: *mut *mut WCHAR) -> INT {
         }
     }
 
-    /* Parse the options */
-    while i < argc {
-        if *(*argv.offset(i as isize)).offset(0 as isize) == 0x002Fu16 {
-            if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_5462AED96D21.as_ptr()) == 0 {
-                bPrintUsage = TRUE;
-                break 'done;
-            } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_7E7219CF4FF7.as_ptr()) == 0 {
-                bDeleteJob = TRUE;
-            } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_E61F882486BE.as_ptr()) == 0 {
-                bForceDelete = TRUE;
-            } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_B437F67EB717.as_ptr()) == 0 {
-                bInteractiveJob = TRUE;
-            } else if _wcsnicmp(
-                *argv.offset(i as isize),
-                RUSTCONV_WSTR_BACA8E3CF044.as_ptr(),
-                7,
-            ) == 0
-            {
-                bPeriodicJob = TRUE;
-                if ParseDaysOfMonth(
-                    (*argv.offset(i as isize)).offset(7 as isize),
-                    core::ptr::addr_of_mut!(ulDaysOfMonth),
-                ) == FALSE
+    'done: {
+        /* Parse the options */
+        while i < argc {
+            if *(*argv.offset(i as isize)).offset(0 as isize) == 0x002Fu16 {
+                if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_5462AED96D21.as_ptr()) == 0 {
+                    bPrintUsage = (TRUE as i32);
+                    break 'done;
+                } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_7E7219CF4FF7.as_ptr()) == 0 {
+                    bDeleteJob = (TRUE as i32);
+                } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_E61F882486BE.as_ptr()) == 0 {
+                    bForceDelete = (TRUE as i32);
+                } else if _wcsicmp(*argv.offset(i as isize), RUSTCONV_WSTR_B437F67EB717.as_ptr()) == 0 {
+                    bInteractiveJob = (TRUE as i32);
+                } else if _wcsnicmp(
+                    *argv.offset(i as isize),
+                    RUSTCONV_WSTR_BACA8E3CF044.as_ptr(),
+                    7,
+                ) == 0
                 {
-                    if ParseDaysOfWeek(
+                    bPeriodicJob = (TRUE as i32);
+                    if ParseDaysOfMonth(
                         (*argv.offset(i as isize)).offset(7 as isize),
-                        core::ptr::addr_of_mut!(ucDaysOfWeek),
-                    ) == FALSE
+                        core::ptr::addr_of_mut!(ulDaysOfMonth),
+                    ) == (FALSE as i32)
                     {
-                        ulDaysOfMonth = GetCurrentDayOfMonth();
+                        if ParseDaysOfWeek(
+                            (*argv.offset(i as isize)).offset(7 as isize),
+                            core::ptr::addr_of_mut!(ucDaysOfWeek),
+                        ) == (FALSE as i32)
+                        {
+                            ulDaysOfMonth = GetCurrentDayOfMonth();
+                        }
                     }
-                }
-            } else if _wcsnicmp(
-                *argv.offset(i as isize),
-                RUSTCONV_WSTR_E29263B3FB5F.as_ptr(),
-                6,
-            ) == 0
-            {
-                bPeriodicJob = FALSE;
-                if ParseDaysOfMonth(
-                    (*argv.offset(i as isize)).offset(6 as isize),
-                    core::ptr::addr_of_mut!(ulDaysOfMonth),
-                ) == FALSE
+                } else if _wcsnicmp(
+                    *argv.offset(i as isize),
+                    RUSTCONV_WSTR_E29263B3FB5F.as_ptr(),
+                    6,
+                ) == 0
                 {
-                    if ParseDaysOfWeek(
+                    bPeriodicJob = (FALSE as i32);
+                    if ParseDaysOfMonth(
                         (*argv.offset(i as isize)).offset(6 as isize),
-                        core::ptr::addr_of_mut!(ucDaysOfWeek),
-                    ) == FALSE
+                        core::ptr::addr_of_mut!(ulDaysOfMonth),
+                    ) == (FALSE as i32)
                     {
-                        ulDaysOfMonth = GetCurrentDayOfMonth();
+                        if ParseDaysOfWeek(
+                            (*argv.offset(i as isize)).offset(6 as isize),
+                            core::ptr::addr_of_mut!(ucDaysOfWeek),
+                        ) == (FALSE as i32)
+                        {
+                            ulDaysOfMonth = GetCurrentDayOfMonth();
+                        }
                     }
+                } else {
+                    bPrintUsage = (TRUE as i32);
+                    nResult = 1;
+                    break 'done;
                 }
-            } else {
-                bPrintUsage = TRUE;
-                nResult = 1;
-                break 'done;
             }
-        }
-        i += 1;
-    }
-
-    /* Parse the command */
-    if argc > minIdx
-        && *(*argv.offset((argc - 1) as isize)).offset(0 as isize)
-            != 0x002Fu16
-    {
-        pszCommand = *argv.offset((argc - 1) as isize);
-    }
-
-    if bDeleteJob == TRUE {
-        /* Check for invalid options or arguments */
-        if bInteractiveJob == TRUE
-            || ulJobHour != (-(1 as i32)) as ULONG
-            || ulJobMinute != (-(1 as i32)) as ULONG
-            || ulDaysOfMonth != 0
-            || ucDaysOfWeek != 0
-            || !pszCommand.is_null()
-        {
-            bPrintUsage = TRUE;
-            nResult = 1;
-            break 'done;
+            i += 1;
         }
 
-        nResult = DeleteJob(pszComputerName, ulJobId, bForceDelete);
-    } else {
-        if ulJobHour != (-(1 as i32)) as ULONG
-            && ulJobMinute != (-(1 as i32)) as ULONG
+        /* Parse the command */
+        if argc > minIdx
+            && *(*argv.offset((argc - 1) as isize)).offset(0 as isize)
+                != 0x002Fu16
         {
-            /* Check for invalid options or arguments */
-            if bForceDelete == TRUE || pszCommand.is_null() {
-                bPrintUsage = TRUE;
-                nResult = 1;
-                break 'done;
-            }
+            pszCommand = *argv.offset((argc - 1) as isize);
+        }
 
-            nResult = AddJob(
-                pszComputerName,
-                ulJobHour,
-                ulJobMinute,
-                ulDaysOfMonth,
-                ucDaysOfWeek,
-                bInteractiveJob,
-                bPeriodicJob,
-                pszCommand,
-            );
-        } else {
+        if bDeleteJob == (TRUE as i32) {
             /* Check for invalid options or arguments */
-            if bForceDelete == TRUE
-                || bInteractiveJob == TRUE
+            if bInteractiveJob == (TRUE as i32)
+                || ulJobHour != (-(1 as i32)) as ULONG
+                || ulJobMinute != (-(1 as i32)) as ULONG
                 || ulDaysOfMonth != 0
                 || ucDaysOfWeek != 0
                 || !pszCommand.is_null()
             {
-                bPrintUsage = TRUE;
+                bPrintUsage = (TRUE as i32);
                 nResult = 1;
                 break 'done;
             }
 
-            if ulJobId == (-(1 as i32)) as ULONG {
-                nResult = PrintAllJobs(pszComputerName);
+            nResult = DeleteJob(pszComputerName, ulJobId, bForceDelete);
+        } else {
+            if ulJobHour != (-(1 as i32)) as ULONG
+                && ulJobMinute != (-(1 as i32)) as ULONG
+            {
+                /* Check for invalid options or arguments */
+                if bForceDelete == (TRUE as i32) || pszCommand.is_null() {
+                    bPrintUsage = (TRUE as i32);
+                    nResult = 1;
+                    break 'done;
+                }
+
+                nResult = AddJob(
+                    pszComputerName,
+                    ulJobHour,
+                    ulJobMinute,
+                    ulDaysOfMonth,
+                    ucDaysOfWeek,
+                    bInteractiveJob,
+                    bPeriodicJob,
+                    pszCommand,
+                );
             } else {
-                nResult = PrintJobDetails(pszComputerName, ulJobId);
+                /* Check for invalid options or arguments */
+                if bForceDelete == (TRUE as i32)
+                    || bInteractiveJob == (TRUE as i32)
+                    || ulDaysOfMonth != 0
+                    || ucDaysOfWeek != 0
+                    || !pszCommand.is_null()
+                {
+                    bPrintUsage = (TRUE as i32);
+                    nResult = 1;
+                    break 'done;
+                }
+
+                if ulJobId == (-(1 as i32)) as ULONG {
+                    nResult = PrintAllJobs(pszComputerName);
+                } else {
+                    nResult = PrintJobDetails(pszComputerName, ulJobId);
+                }
             }
         }
     }
 
     FreeDaysOfWeekArray();
 
-    if bPrintUsage == TRUE {
+    if bPrintUsage == (TRUE as i32) {
         ConResPuts(StdOut, IDS_USAGE);
     }
 

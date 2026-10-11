@@ -956,7 +956,9 @@ def test_conutils_streams_are_values_not_places(tmp_path):
 def test_an_ansi_t_literal_gets_its_nul_too(tmp_path):
     # arp (ANSI): `_T!("%s").as_ptr()` -- printf read on through rodata.
     rs = tmp_path / "arp.rs"
-    rs.write_text('fn f() { printf(_T!("%s").as_ptr(), s); sprintf(b, _T!(" %02X").as_ptr(), c); }\n')
+    rs.write_text(
+        'fn f() { printf(_T!("%s").as_ptr(), s); sprintf(b, _T!(" %02X").as_ptr(), c); }\n'
+    )
     assert port._c_str_literals(rs) == ["%s", " %02X"]
     assert 'printf(b"%s\\0".as_ptr(), s); sprintf(b, b" %02X\\0".as_ptr(), c);' in rs.read_text()
 
@@ -984,4 +986,36 @@ def test_an_extern_iob_declaration_goes_with_its_uses(tmp_path):
     )
     assert port._crt_data_globals(rs) == ["_iob x1"]
     out = rs.read_text()
-    assert "static mut _iob" not in out and "fprintf((__iob_func()).offset(2) as *mut FILE, s)" in out
+    assert (
+        "static mut _iob" not in out and "fprintf((__iob_func()).offset(2) as *mut FILE, s)" in out
+    )
+
+
+def test_translate_sees_a_placeholder_island(tmp_path, monkeypatch):
+    # wscript's IArguments2Vtbl lives only in its own island; translating before `port
+    # island` bought every body and then refused at stitching.
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    src = tmp_path / "sdk/lib/rust/x-rust/src"
+    src.mkdir(parents=True)
+    (src / "types_amd64.rs").write_text('compile_error!("types_amd64.rs is a placeholder: run x");')
+    assert port._island_is_placeholder({"crate": "x-rust"})
+    (src / "types_amd64.rs").write_text("pub struct IArguments2Vtbl {}")
+    assert not port._island_is_placeholder({"crate": "x-rust"})
+
+
+def test_a_bare_ansi_t_literal_gets_a_nul_terminated_pointer(tmp_path):
+    # nslookup (ANSI): `_tprintf(_T!("..."))` with no `.as_ptr()` -- 50 E0308s whose
+    # obvious hand fix ships the string NUL-less.
+    crate = tmp_path / "x-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "src/prelude.rs").write_text(
+        "#[macro_export] macro_rules! _T { ($p0:expr $(,)?) => { $p0 }; }\n"
+    )
+    assert port._ansi_t_identity(crate)
+    rs = tmp_path / "n.rs"
+    src = 'fn f() { _tprintf(_T!("len %d\\n"), n); _tprintf(_T!("ok\\0").as_ptr()); }\n'
+    rs.write_text(src)
+    assert port._c_str_literals(rs, ansi_t=True) == ["len %d\\n"]
+    assert '_tprintf(b"len %d\\n\\0".as_ptr() as *const ::core::ffi::c_char, n)' in rs.read_text()
+    rs.write_text(src)
+    assert port._c_str_literals(rs) == []  # a UNICODE module's `_T!` is left to fail loudly

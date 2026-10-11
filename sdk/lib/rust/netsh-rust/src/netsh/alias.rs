@@ -1,5 +1,6 @@
+use crate::netsh::netsh::MergeStrings;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_4BA5D7E4F16E: [u16; 4] = [0x0025u16, 0x0073, 0x000A, 0x0000];
 pub static RUSTCONV_WSTR_7CDC108434B2: [u16; 10] = [0x0025u16, 0x0073, 0x0020, 0x003A, 0x0020, 0x0020, 0x0025, 0x0073, 0x000A, 0x0000];
 
@@ -100,15 +101,7 @@ pub unsafe extern "C" fn DestroyAliases() {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AliasCommand(
-    pwszMachine: LPCWSTR,
-    argv: *mut LPWSTR,
-    dwCurrentIndex: DWORD,
-    dwArgCount: DWORD,
-    dwFlags: DWORD,
-    pvData: LPCVOID,
-    pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn AliasCommand(pwszMachine: LPCWSTR, argv: *mut LPWSTR, dwCurrentIndex: DWORD, dwArgCount: DWORD, dwFlags: DWORD, pvData: LPCVOID, pbDone: *mut BOOL) -> DWORD {
     let mut pAliasEntry: PALIAS_ENTRY = core::ptr::null_mut();
     let mut pszAlias: PWSTR;
 
@@ -222,15 +215,7 @@ pub unsafe extern "system" fn AliasCommand(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ShowAliasCommand(
-    pwszMachine: LPCWSTR,
-    argv: *mut LPWSTR,
-    dwCurrentIndex: DWORD,
-    dwArgCount: DWORD,
-    dwFlags: DWORD,
-    pvData: LPCVOID,
-    pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn ShowAliasCommand(pwszMachine: LPCWSTR, argv: *mut LPWSTR, dwCurrentIndex: DWORD, dwArgCount: DWORD, dwFlags: DWORD, pvData: LPCVOID, pbDone: *mut BOOL) -> DWORD {
     DPRINT!("ShowAliasCommand()\n");
 
     ShowAliases();
@@ -238,15 +223,7 @@ pub unsafe extern "system" fn ShowAliasCommand(
     return ERROR_SUCCESS;
 }
 #[no_mangle]
-pub unsafe extern "system" fn UnaliasCommand(
-    mut pwszMachine: LPCWSTR,
-    mut argv: *mut LPWSTR,
-    mut dwCurrentIndex: DWORD,
-    mut dwArgCount: DWORD,
-    mut dwFlags: DWORD,
-    mut pvData: LPCVOID,
-    mut pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn UnaliasCommand(mut pwszMachine: LPCWSTR, mut argv: *mut LPWSTR, mut dwCurrentIndex: DWORD, mut dwArgCount: DWORD, mut dwFlags: DWORD, mut pvData: LPCVOID, mut pbDone: *mut BOOL) -> DWORD {
     let mut pAliasEntry: PALIAS_ENTRY = core::ptr::null_mut::<_ALIAS_ENTRY>();
 
     DPRINT!("UnaliasCommand()\n");

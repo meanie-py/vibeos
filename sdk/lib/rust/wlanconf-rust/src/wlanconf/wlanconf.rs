@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];
 pub static RUSTCONV_WSTR_22DCFAF0828D: [u16; 10] = [0x0053u16, 0x0053, 0x0049, 0x0044, 0x003A, 0x0020, 0x0025, 0x0053, 0x000A, 0x0000];
 pub static RUSTCONV_WSTR_4D70F4A881C7: [u16; 2] = [0x003Au16, 0x0000];
@@ -27,16 +27,16 @@ pub const NDISUIO_DEVICE_NAME: [::core::ffi::c_ushort; 13] = unsafe {
 };
 
 #[no_mangle]
-pub static mut bScan: BOOL = FALSE;
+pub static mut bScan: BOOL = (FALSE as i32);
 
 #[no_mangle]
-pub static mut bDisconnect: BOOL = FALSE;
+pub static mut bDisconnect: BOOL = (FALSE as i32);
 
 #[no_mangle]
-pub static mut bConnect: BOOL = FALSE;
+pub static mut bConnect: BOOL = (FALSE as i32);
 
 #[no_mangle]
-pub static mut bAdhoc: BOOL = FALSE;
+pub static mut bAdhoc: BOOL = (FALSE as i32);
 
 #[no_mangle]
 pub static mut sSsid: PCWSTR = ::core::ptr::null::<WCHAR>();
@@ -63,7 +63,7 @@ pub unsafe extern "C" fn OpenDriverHandle() -> HANDLE {
     let mut bSuccess: BOOL = 0;
 
     /* Open a handle to the NDISUIO driver */
-    hDriver = CreateFileW(NDISUIO_DEVICE_NAME,
+    hDriver = CreateFileW((NDISUIO_DEVICE_NAME).as_ptr(),
                           GENERIC_READ | GENERIC_WRITE,
                           0,
                           core::ptr::null_mut(),
@@ -76,7 +76,7 @@ pub unsafe extern "C" fn OpenDriverHandle() -> HANDLE {
 
     /* Wait for binds */
     bSuccess = DeviceIoControl(hDriver,
-                               IOCTL_NDISUIO_BIND_WAIT,
+                               (IOCTL_NDISUIO_BIND_WAIT as u32),
                                core::ptr::null_mut(),
                                0,
                                core::ptr::null_mut(),
@@ -114,10 +114,10 @@ pub unsafe extern "C" fn IsWlanAdapter(mut hAdapter: HANDLE) -> BOOL {
         || *(&raw mut QueryOid.Data as *mut UCHAR as PULONG)
             != NdisPhysicalMediumWirelessLan as ::core::ffi::c_int as ULONG
     {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn OpenAdapterHandle(
@@ -139,7 +139,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
     /* Open the driver handle */
     hDriver = OpenDriverHandle();
     if hDriver == INVALID_HANDLE_VALUE {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Allocate the binding struct */
@@ -150,7 +150,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
     ) as PNDISUIO_QUERY_BINDING;
     if QueryBinding.is_null() {
         CloseHandle(hDriver);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Query the adapter binding information */
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, QueryBinding as PVOID);
         CloseHandle(hDriver);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Bind to the adapter */
@@ -187,7 +187,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, QueryBinding as PVOID);
         CloseHandle(hDriver);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Get interface info from the IP helper */
@@ -204,7 +204,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
         if InterfaceInfo.is_null() {
             HeapFree(GetProcessHeap(), 0, QueryBinding as PVOID);
             CloseHandle(hDriver);
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         dwStatus = GetInterfaceInfo(InterfaceInfo, core::ptr::addr_of_mut!(dwSize));
         if !(dwStatus == ERROR_INSUFFICIENT_BUFFER) {
@@ -216,7 +216,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
         HeapFree(GetProcessHeap(), 0, QueryBinding as PVOID);
         HeapFree(GetProcessHeap(), 0, InterfaceInfo as PVOID);
         CloseHandle(hDriver);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     i = 0 as LONG;
@@ -245,7 +245,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
             HeapFree(GetProcessHeap(), 0, QueryBinding as PVOID);
             HeapFree(GetProcessHeap(), 0, InterfaceInfo as PVOID);
 
-            return TRUE;
+            return (TRUE) as BOOL;
         }
         i += 1;
     }
@@ -254,7 +254,7 @@ pub unsafe extern "C" fn OpenAdapterHandle(
     HeapFree(GetProcessHeap(), 0, InterfaceInfo as PVOID);
     CloseHandle(hDriver);
 
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn OpenWlanAdapter(hAdapter: *mut HANDLE, IpInfo: *mut IP_ADAPTER_INDEX_MAP) -> BOOL {
@@ -265,14 +265,14 @@ pub unsafe extern "C" fn OpenWlanAdapter(hAdapter: *mut HANDLE, IpInfo: *mut IP_
         }
 
         if IsWlanAdapter(*hAdapter) != 0 {
-            return TRUE;
+            return (TRUE) as BOOL;
         } else {
             CloseHandle(*hAdapter);
         }
         dwCurrentIndex = dwCurrentIndex.wrapping_add(1);
     }
 
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn WlanDisconnect(hAdapter: HANDLE, IpInfo: PIP_ADAPTER_INDEX_MAP) -> BOOL {
@@ -289,18 +289,18 @@ pub unsafe extern "C" fn WlanDisconnect(hAdapter: HANDLE, IpInfo: PIP_ADAPTER_IN
         hAdapter,
         IOCTL_NDISUIO_SET_OID_VALUE as DWORD,
         &raw mut SetOid as LPVOID,
-        FIELD_OFFSET(NDISUIO_SET_OID, Data) as DWORD,
+        FIELD_OFFSET!(NDISUIO_SET_OID, Data) as DWORD,
         core::ptr::null_mut(),
         0 as DWORD,
         &raw mut dwBytesReturned,
         core::ptr::null_mut(),
     );
     if bSuccess == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     ConResPuts(&raw mut csStdOut, IDS_SUCCESS as UINT);
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn CharToHex(Char: WCHAR) -> UCHAR {
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize as SIZE_T)
         as PNDISUIO_QUERY_OID;
     if QueryOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     (*QueryOid).Oid = OID_802_11_SSID;
@@ -344,7 +344,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -354,11 +354,11 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, QueryOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Copy the SSID to our internal buffer and terminate it */
-    RtlCopyMemory(
+    RtlCopyMemory!(
         core::ptr::addr_of_mut!(SsidBuffer) as *mut CHAR as *mut core::ffi::c_void,
         core::ptr::addr_of_mut!((*SsidInfo).Ssid) as *const core::ffi::c_void,
         (*SsidInfo).SsidLength as usize,
@@ -371,14 +371,14 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize as SIZE_T)
         as PNDISUIO_QUERY_OID;
     if QueryOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     (*QueryOid).Oid = OID_802_11_BSSID;
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -389,7 +389,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     if (*SsidInfo).SsidLength == 0 || bSuccess == 0 {
         ConResPuts(StdOut, IDS_WLAN_DISCONNECT);
         HeapFree(GetProcessHeap(), 0, QueryOid as PVOID);
-        return TRUE;
+        return (TRUE) as BOOL;
     } else {
         ConResPuts(StdOut, IDS_MSG_CURRENT_WIRELESS);
     }
@@ -421,14 +421,14 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     QueryOid = HeapAlloc(GetProcessHeap(), 0, QueryOidSize as SIZE_T)
         as PNDISUIO_QUERY_OID;
     if QueryOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     (*QueryOid).Oid = OID_802_11_INFRASTRUCTURE_MODE;
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -438,7 +438,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, QueryOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     LoadStringW(
@@ -449,7 +449,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
             IDS_INFRASTRUCTURE
         }),
         core::ptr::addr_of_mut!(szMsgBuf) as *mut WCHAR,
-        ARRAYSIZE(szMsgBuf),
+        (ARRAYSIZE!(szMsgBuf)) as i32,
     );
     ConResPrintf(StdOut, IDS_MSG_NETWORK_MODE, core::ptr::addr_of_mut!(szMsgBuf) as *mut WCHAR);
 
@@ -457,7 +457,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -467,7 +467,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, QueryOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     LoadStringW(
@@ -478,7 +478,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
             IDS_NO
         }),
         core::ptr::addr_of_mut!(szMsgBuf) as *mut WCHAR,
-        ARRAYSIZE(szMsgBuf),
+        (ARRAYSIZE!(szMsgBuf)) as i32,
     );
     ConResPrintf(StdOut, IDS_MSG_WEP_ENABLED, core::ptr::addr_of_mut!(szMsgBuf) as *mut WCHAR);
 
@@ -487,7 +487,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -508,7 +508,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -531,7 +531,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -552,7 +552,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -574,7 +574,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -598,7 +598,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -619,7 +619,7 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_QUERY_OID_VALUE,
+        (IOCTL_NDISUIO_QUERY_OID_VALUE as u32),
         QueryOid as LPVOID,
         QueryOidSize,
         QueryOid as LPVOID,
@@ -639,13 +639,13 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     HeapFree(GetProcessHeap(), 0, QueryOid as PVOID);
 
     ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     let mut bSuccess: BOOL;
-    let mut dwBytesReturned: DWORD;
+    let mut dwBytesReturned: DWORD = core::mem::zeroed();
     let mut SetOidSize: DWORD;
     let mut SetOid: PNDISUIO_SET_OID;
     let mut Ssid: PNDIS_802_11_SSID;
@@ -661,7 +661,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
         SetOidSize as SIZE_T,
     ) as PNDISUIO_SET_OID;
     if SetOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Set the network mode */
@@ -674,7 +674,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_SET_OID_VALUE,
+        (IOCTL_NDISUIO_SET_OID_VALUE as u32),
         SetOid as LPVOID,
         SetOidSize,
         core::ptr::null_mut(),
@@ -684,7 +684,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Set the authentication mode */
@@ -697,7 +697,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_SET_OID_VALUE,
+        (IOCTL_NDISUIO_SET_OID_VALUE as u32),
         SetOid as LPVOID,
         SetOidSize,
         core::ptr::null_mut(),
@@ -707,7 +707,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     if !sWepKey.is_null() {
@@ -725,7 +725,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
             SetOidSize as SIZE_T,
         ) as PNDISUIO_SET_OID;
         if SetOid.is_null() {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         /* Add the WEP key */
@@ -753,7 +753,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
         bSuccess = DeviceIoControl(
             hAdapter,
-            IOCTL_NDISUIO_SET_OID_VALUE,
+            (IOCTL_NDISUIO_SET_OID_VALUE as u32),
             SetOid as LPVOID,
             SetOidSize,
             core::ptr::null_mut(),
@@ -763,7 +763,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
         );
         if bSuccess == 0 {
             HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
 
@@ -777,7 +777,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_SET_OID_VALUE,
+        (IOCTL_NDISUIO_SET_OID_VALUE as u32),
         SetOid as LPVOID,
         SetOidSize,
         core::ptr::null_mut(),
@@ -787,7 +787,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
@@ -799,7 +799,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
         SetOidSize as SIZE_T,
     ) as PNDISUIO_SET_OID;
     if SetOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Set the BSSID */
@@ -812,7 +812,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_SET_OID_VALUE,
+        (IOCTL_NDISUIO_SET_OID_VALUE as u32),
         SetOid as LPVOID,
         SetOidSize,
         core::ptr::null_mut(),
@@ -822,7 +822,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     );
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
@@ -834,7 +834,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
         SetOidSize as SIZE_T,
     ) as PNDISUIO_SET_OID;
     if SetOid.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Finally, set the SSID */
@@ -857,7 +857,7 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
 
     bSuccess = DeviceIoControl(
         hAdapter,
-        IOCTL_NDISUIO_SET_OID_VALUE,
+        (IOCTL_NDISUIO_SET_OID_VALUE as u32),
         SetOid as LPVOID,
         SetOidSize,
         core::ptr::null_mut(),
@@ -869,16 +869,16 @@ pub unsafe extern "C" fn WlanConnect(hAdapter: HANDLE) -> BOOL {
     HeapFree(GetProcessHeap(), 0, SetOid as PVOID);
 
     if bSuccess == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     ConResPuts(StdOut, IDS_SUCCESS);
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
     let mut bSuccess: BOOL;
-    let mut dwBytesReturned: DWORD;
+    let mut dwBytesReturned: DWORD = core::mem::zeroed();
     let mut SetOid: NDISUIO_SET_OID = core::mem::zeroed();
     let mut QueryOid: PNDISUIO_QUERY_OID;
     let mut QueryOidSize: DWORD;
@@ -895,14 +895,14 @@ pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
         hAdapter,
         IOCTL_NDISUIO_SET_OID_VALUE as DWORD,
         core::ptr::addr_of_mut!(SetOid) as LPVOID,
-        FIELD_OFFSET(NDISUIO_SET_OID, Data) as DWORD,
+        FIELD_OFFSET!(NDISUIO_SET_OID, Data) as DWORD,
         core::ptr::null_mut(),
         0 as DWORD,
         core::ptr::addr_of_mut!(dwBytesReturned),
         core::ptr::null_mut(),
     );
     if bSuccess == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Wait 2 seconds for the scan to return some results */
@@ -925,7 +925,7 @@ pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
             QueryOidSize as SIZE_T,
         ) as PNDISUIO_QUERY_OID;
         if QueryOid.is_null() {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         (*QueryOid).Oid = OID_802_11_BSSID_LIST as NDIS_OID;
@@ -950,7 +950,7 @@ pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
 
     if bSuccess == 0 {
         HeapFree(GetProcessHeap(), 0 as DWORD, QueryOid as PVOID);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     if (*BssidList).NumberOfItems == 0 as ULONG {
@@ -994,7 +994,7 @@ pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
                     IDS_YES
                 } as UINT,
                 szMsgBuf.as_mut_ptr(),
-                ARRAYSIZE(szMsgBuf),
+                (ARRAYSIZE!(szMsgBuf)) as i32,
             );
             ConResPrintf(StdOut, IDS_MSG_ENCRYPTED as UINT, szMsgBuf.as_mut_ptr());
             LoadStringW(
@@ -1005,7 +1005,7 @@ pub unsafe extern "C" fn WlanScan(hAdapter: HANDLE) -> BOOL {
                     IDS_INFRASTRUCTURE
                 } as UINT,
                 szMsgBuf.as_mut_ptr(),
-                ARRAYSIZE(szMsgBuf),
+                (ARRAYSIZE!(szMsgBuf)) as i32,
             );
             ConResPrintf(StdOut, IDS_MSG_NETWORK_TYPE as UINT, szMsgBuf.as_mut_ptr());
             ConResPrintf(StdOut, IDS_MSG_RSSI as UINT, Rssi as core::ffi::c_int);
@@ -1048,43 +1048,43 @@ pub unsafe extern "C" fn ParseCmdline(argc: ::core::ffi::c_int, argv: *mut *mut 
         if *(*argv.offset(i as isize)).offset(0 as isize) == 0x002Du16 {
             match *(*argv.offset(i as isize)).offset(1 as isize) {
                 0x0073u16 => {
-                    bScan = TRUE;
+                    bScan = (TRUE as i32);
                 }
                 0x0064u16 => {
-                    bDisconnect = TRUE;
+                    bDisconnect = (TRUE as i32);
                 }
                 0x0063u16 => {
                     if i == argc - 1 {
                         ConResPuts(StdOut, IDS_USAGE);
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
-                    bConnect = TRUE;
+                    bConnect = (TRUE as i32);
                     i += 1;
                     sSsid = *argv.offset(i as isize) as PCWSTR;
                 }
                 0x0077u16 => {
                     if i == argc - 1 {
                         ConResPuts(StdOut, IDS_USAGE);
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
                     i += 1;
                     sWepKey = *argv.offset(i as isize) as PCWSTR;
                 }
                 0x0061u16 => {
-                    bAdhoc = TRUE;
+                    bAdhoc = (TRUE as i32);
                 }
                 _ => {
                     ConResPuts(StdOut, IDS_USAGE);
-                    return FALSE;
+                    return (FALSE) as BOOL;
                 }
             }
         } else {
             ConResPuts(StdOut, IDS_USAGE);
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         i += 1;
     }
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 #[no_mangle]
@@ -1100,7 +1100,7 @@ pub unsafe extern "C" fn wmain(mut argc: i32, mut argv: *mut *mut WCHAR) -> i32 
     }
 
     if !(OpenWlanAdapter(core::ptr::addr_of_mut!(hAdapter), core::ptr::addr_of_mut!(IpInfo)) != 0) {
-        ConResPuts(core::ptr::addr_of_mut!(StdOut), IDS_NO_WLAN_ADAPTER);
+        ConResPuts(StdOut, IDS_NO_WLAN_ADAPTER);
         return -1;
     }
 

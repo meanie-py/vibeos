@@ -2,7 +2,7 @@ use crate::fsutil::common::FindHandler;
 use crate::fsutil::common::OpenVolume;
 use crate::fsutil::common::PrintDefaultUsage;
 use crate::fsutil::common::PrintErrorMessage;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -50,15 +50,15 @@ static mut HandlersList: [HandlerItem; 2] = unsafe {
 
 // Raw pointers are not Sync, so the table must be `static mut`.
 
-unsafe extern "C" fn QueryMain(mut argc: c_int, mut argv: *mut *const TCHAR) -> c_int {
+unsafe extern "C" fn QueryMain(mut argc: ::core::ffi::c_int, mut argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     let mut Volume: HANDLE = core::ptr::null_mut();
     let mut VolumeStatus: ULONG = 0;
     let mut BytesRead: ULONG = 0;
 
     /* We need a volume (letter or GUID) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil dirty query <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil dirty query c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x0020, 0x0071, 0x0075, 0x0065, 0x0072, 0x0079, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil dirty query <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x0020, 0x0071, 0x0075, 0x0065, 0x0072, 0x0079, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil dirty query c:\n" */);
         return 1;
     }
 
@@ -82,7 +82,7 @@ unsafe extern "C" fn QueryMain(mut argc: c_int, mut argv: *mut *const TCHAR) -> 
         core::mem::size_of::<ULONG>() as DWORD,
         core::ptr::addr_of_mut!(BytesRead),
         core::ptr::null_mut(),
-    ) == FALSE
+    ) == (FALSE as i32)
     {
         PrintErrorMessage(GetLastError());
         CloseHandle(Volume);
@@ -93,13 +93,13 @@ unsafe extern "C" fn QueryMain(mut argc: c_int, mut argv: *mut *const TCHAR) -> 
 
     /* Print the status */
     _ftprintf(
-        stdout,
-        _T("The %s volume is %s\n"),
+        __iob_func().add(1),
+        (&[0x0054, 0x0068, 0x0065, 0x0020, 0x0025, 0x0073, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0069, 0x0073, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "The %s volume is %s\n" */,
         *argv.offset(1 as isize),
         if (VolumeStatus & VOLUME_IS_DIRTY as ULONG) != 0 {
-            _T("dirty")
+            (&[0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x0000u16]).as_ptr() /* _T "dirty" */
         } else {
-            _T("clean")
+            (&[0x0063, 0x006c, 0x0065, 0x0061, 0x006e, 0x0000u16]).as_ptr() /* _T "clean" */
         },
     );
 
@@ -112,8 +112,8 @@ unsafe extern "C" fn SetMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) 
 
     /* We need a volume (letter or GUID) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil dirty set <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil dirty set c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x0020, 0x0073, 0x0065, 0x0074, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil dirty set <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x0020, 0x0073, 0x0065, 0x0074, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil dirty set c:\n" */);
         return 1;
     }
 
@@ -137,7 +137,7 @@ unsafe extern "C" fn SetMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) 
         (0) as DWORD,
         core::ptr::addr_of_mut!(BytesRead),
         core::ptr::null_mut(),
-    ) == FALSE
+    ) == (FALSE as i32)
     {
         PrintErrorMessage(GetLastError());
         CloseHandle(Volume);
@@ -148,8 +148,8 @@ unsafe extern "C" fn SetMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) 
 
     /* Print the status */
     _ftprintf(
-        stdout,
-        _T("The %s volume is now marked as dirty\n"),
+        __iob_func().add(1),
+        (&[0x0054, 0x0068, 0x0065, 0x0020, 0x0025, 0x0073, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0069, 0x0073, 0x0020, 0x006e, 0x006f, 0x0077, 0x0020, 0x006d, 0x0061, 0x0072, 0x006b, 0x0065, 0x0064, 0x0020, 0x0061, 0x0073, 0x0020, 0x0064, 0x0069, 0x0072, 0x0074, 0x0079, 0x000a, 0x0000u16]).as_ptr() /* _T "The %s volume is now marked as dirty\n" */,
         *argv.offset(1 as isize),
     );
 
@@ -168,7 +168,7 @@ unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn DirtyMain(argc: ::core::ffi::c_int, argv: *const *const TCHAR) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn DirtyMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     return FindHandler(
         argc,
         argv,
@@ -176,6 +176,6 @@ pub unsafe extern "C" fn DirtyMain(argc: ::core::ffi::c_int, argv: *const *const
         (core::mem::size_of_val(&*core::ptr::addr_of!(HandlersList))
             / core::mem::size_of_val(&(*core::ptr::addr_of!(HandlersList))[0]))
             as ::core::ffi::c_int,
-        PrintUsage,
+        Some(PrintUsage),
     );
 }

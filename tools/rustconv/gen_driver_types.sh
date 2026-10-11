@@ -6438,7 +6438,13 @@ case "$DRIVER" in
     WRAPPER_INC=$'#include <stdlib.h>\n#include <stdio.h>\n#include <windef.h>\n#include <winbase.h>\n#include <wincon.h>\n#include <winnls.h>\n#include <lm.h>\n#include <conutils.h>\n#include "resource.h"'
     ALLOW_FILES=( --allowlist-file '.*[/\\]conutils\.h' --allowlist-file '.*[/\\]lm\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
-                  --allowlist-file '.*at[/\\].*\.h' )
+                  --allowlist-file '.*at[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]lmaccess\.h'
+                  --allowlist-file '.*[/\\]lmat\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]winnt\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/at" -I"${SRC}/build-i386/base/applications/cmdutils/at" )
@@ -6461,7 +6467,10 @@ case "$DRIVER" in
     WRAPPER_INC=$'#include <stdio.h>\n#include <stdlib.h> // EXIT_SUCCESS, EXIT_FAILURE\n#include <windef.h>\n#include <winbase.h>\n#include <winreg.h>\n#include <conutils.h>\n#include <strsafe.h>\n#include "resource.h"'
     ALLOW_FILES=( --allowlist-file '.*[/\\]conutils\.h' --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*eventcreate[/\\].*\.h' )
+                  --allowlist-file '.*eventcreate[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]winnt\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/eventcreate" -I"${SRC}/build-i386/base/applications/cmdutils/eventcreate" )
@@ -6482,7 +6491,12 @@ case "$DRIVER" in
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/applications/cmdutils/fsutil"
     WRAPPER_INC=$'#include "fsutil.h"\n#include <winioctl.h>'
-    ALLOW_FILES=( --allowlist-file '.*[/\\]winioctl\.h' --allowlist-file '.*fsutil[/\\].*\.h' )
+    ALLOW_FILES=( --allowlist-file '.*[/\\]winioctl\.h' --allowlist-file '.*fsutil[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]winbase\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/fsutil" -I"${SRC}/build-i386/base/applications/cmdutils/fsutil" )
@@ -6504,7 +6518,13 @@ case "$DRIVER" in
     DRIVER_DIR="${SRC}/base/applications/cmdutils/schtasks"
     WRAPPER_INC=$'#define COBJMACROS\n#include "initguid.h"\n#include "taskschd.h"\n#include "wine/debug.h"\n#include "wine/unicode.h"'
     ALLOW_FILES=( --allowlist-file '.*[/\\]initguid\.h' --allowlist-file '.*[/\\]taskschd\.h'
-                  --allowlist-file '.*schtasks[/\\].*\.h' )
+                  --allowlist-file '.*schtasks[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]guiddef\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]winnt\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/schtasks" -I"${SRC}/build-i386/base/applications/cmdutils/schtasks" )
@@ -6528,7 +6548,12 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file '.*[/\\]initguid\.h' --allowlist-file '.*[/\\]objidl\.h'
                   --allowlist-file '.*[/\\]ocidl\.h'
                   --allowlist-file '.*[/\\]wbemcli\.h'
-                  --allowlist-file '.*wmic[/\\].*\.h' )
+                  --allowlist-file '.*wmic[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/wmic" -I"${SRC}/build-i386/base/applications/cmdutils/wmic" -I"${SRC}/sdk/include/wine" )
@@ -6549,7 +6574,10 @@ case "$DRIVER" in
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/applications/cmdutils/xcopy"
     WRAPPER_INC=$'#include <stdio.h>\n#include <stdlib.h>\n#include <windows.h>\n#include <wine/debug.h>\n#include <wine/unicode.h>\n#include "xcopy.h"'
-    ALLOW_FILES=( --allowlist-file '.*xcopy[/\\].*\.h' )
+    ALLOW_FILES=( --allowlist-file '.*xcopy[/\\].*\.h' --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/xcopy" -I"${SRC}/build-i386/base/applications/cmdutils/xcopy" -I"${SRC}/sdk/include/wine" )
@@ -6631,7 +6659,11 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]wbemcli\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*netsh[/\\].*\.h' )
+                  --allowlist-file '.*netsh[/\\].*\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]precomp\.h'
+                  --allowlist-file '.*[/\\]winnt\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/network/netsh" -I"${SRC}/build-i386/base/applications/network/netsh" )
@@ -6653,7 +6685,11 @@ case "$DRIVER" in
     DRIVER_DIR="${SRC}/base/applications/network/nslookup"
     WRAPPER_INC=$'#include "nslookup.h"\n#include <assert.h>\n#include <winbase.h>\n#include <iphlpapi.h>'
     ALLOW_FILES=( --allowlist-file '.*[/\\]iphlpapi\.h' --allowlist-file '.*[/\\]winsock2\.h'
-                  --allowlist-file '.*nslookup[/\\].*\.h' )
+                  --allowlist-file '.*nslookup[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]nslookup\.h'
+                  --allowlist-file '.*[/\\]winnt\.h' )
     EXTRA_INC=( -I"${SRC}/base/applications/network/nslookup" -I"${SRC}/build-i386/base/applications/network/nslookup" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.
@@ -6676,14 +6712,16 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]dhcpcsdk\.h'
                   --allowlist-file '.*[/\\]inaddr\.h'
                   --allowlist-file '.*[/\\]iphlpapi\.h'
-                  --allowlist-file '.*[/\\]ipifcons\.h'
-                  --allowlist-file '.*[/\\]iptypes\.h'
                   --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]windns\.h'
                   --allowlist-file '.*[/\\]windns_undoc\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*ipconfig[/\\].*\.h' )
+                  --allowlist-file '.*ipconfig[/\\].*\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]winbase\.h'
+                  --allowlist-file '.*[/\\]winnt\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/network/ipconfig" -I"${SRC}/build-i386/base/applications/network/ipconfig" )
@@ -6708,7 +6746,10 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]iphlpapi\.h'
                   --allowlist-file '.*[/\\]ntddndis\.h'
                   --allowlist-file '.*[/\\]nuiouser\.h'
-                  --allowlist-file '.*wlanconf[/\\].*\.h' )
+                  --allowlist-file '.*wlanconf[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]minwinbase\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/network/wlanconf" -I"${SRC}/build-i386/base/applications/network/wlanconf" -I"${SRC}/sdk/include/reactos/drivers/ndisuio" )
@@ -6732,7 +6773,10 @@ case "$DRIVER" in
     ALLOW_FILES=( --allowlist-file '.*[/\\]conutils\.h' --allowlist-file '.*[/\\]strsafe\.h'
                   --allowlist-file '.*[/\\]urlmon\.h'
                   --allowlist-file '.*[/\\]wininet\.h'
-                  --allowlist-file '.*dwnl[/\\].*\.h' )
+                  --allowlist-file '.*dwnl[/\\].*\.h'
+                  --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]bcrypt\.h'
+                  --allowlist-file '.*[/\\]wincon\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/network/dwnl" -I"${SRC}/build-i386/base/applications/network/dwnl" )
@@ -6753,7 +6797,9 @@ case "$DRIVER" in
     BLOCKLIST_FUNCS=1
     DRIVER_DIR="${SRC}/base/applications/cmdutils/dbgprint"
     WRAPPER_INC=$'#include <stdarg.h>\n#include <windef.h>\n#include <winbase.h>\n#include <tchar.h>\n#include <stdio.h>'
-    ALLOW_FILES=( --allowlist-file '.*dbgprint[/\\].*\.h' )
+    ALLOW_FILES=( --allowlist-file '.*dbgprint[/\\].*\.h' --allowlist-file '.*[/\\]basetsd\.h'
+                  --allowlist-file '.*[/\\]minwindef\.h'
+                  --allowlist-file '.*[/\\]winnt\.h' )
     EXTRA_INC=( -I"${SRC}/base/applications/cmdutils/dbgprint" -I"${SRC}/build-i386/base/applications/cmdutils/dbgprint" )
     # LOWER priority than the standard SDK dirs -- the real compile lists these
     # after them, and hoisting one ahead swaps which header an include resolves to.

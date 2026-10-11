@@ -1,8 +1,10 @@
 use crate::fsutil::dirty::DirtyMain;
 use crate::fsutil::common::FindHandler;
 use crate::fsutil::fsinfo::FsInfoMain;
+use crate::fsutil::hardlink::HardLinkMain;
 use crate::fsutil::common::PrintDefaultUsage;
-use ntdll_sys::nt::*;
+use crate::fsutil::volume::VolumeMain;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -91,7 +93,7 @@ pub static mut VOLUME_HELP: [TCHAR; 16] = [b'M' as TCHAR, b'a' as TCHAR, b'n' as
 
 unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
     PrintDefaultUsage(
-        _T(" "),
+        (&[0x0020, 0x0000u16]).as_ptr() /* _T " " */,
         Command,
         core::ptr::addr_of!(HandlersList) as *mut HandlerItem,
         (core::mem::size_of_val(&*core::ptr::addr_of!(HandlersList))
@@ -101,7 +103,7 @@ unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn _tmain(argc: i32, argv: *mut *const TCHAR) -> i32 {
+pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *const TCHAR) -> i32 {
     return FindHandler(
         argc,
         argv,

@@ -1,9 +1,10 @@
+use crate::netsh::wmi::CheckOsVersion;
 use crate::netsh::context::g_bOnline;
 use crate::netsh::context::g_pszMachine;
 use crate::netsh::context::pCurrentContext;
 use crate::netsh::context::pRootContext;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];
 pub static RUSTCONV_WSTR_447438009695: [u16; 6] = [0x0025u16, 0x0073, 0x0020, 0x0025, 0x0073, 0x0000];
 pub static RUSTCONV_WSTR_62F97C5A1C97: [u16; 38] = [
@@ -81,7 +82,7 @@ unsafe extern "C" fn PrintCurrentContextHeader(mut pContext: PCONTEXT_ENTRY) {
         GetContextFullName(
             pContext,
             szBuffer.as_mut_ptr() as LPWSTR,
-            _countof(szBuffer) as DWORD,
+            _countof!(szBuffer) as DWORD,
         );
         ConResPrintf(
             &raw mut csStdOut,
@@ -108,7 +109,7 @@ unsafe extern "C" fn PrintShortGroupCommands(
             }
 
             if ((((*pCommand).dwFlags & CMD_FLAG_LOCAL) != 0 && !g_pszMachine.is_null())
-                || (((*pCommand).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == FALSE)
+                || (((*pCommand).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == (FALSE as i32))
                 || ((*pCommand).dwFlags & CMD_FLAG_HIDDEN) != 0)
             {
                 break 'next;
@@ -121,10 +122,10 @@ unsafe extern "C" fn PrintShortGroupCommands(
                 (*pCommand).pwszCmdToken,
             );
             LoadStringW(
-                (*pContext).hModule,
+                ((*pContext).hModule).cast(),
                 (*pCommand).dwShortCmdHelpToken,
                 core::ptr::addr_of_mut!(szBuffer2) as LPWSTR,
-                _countof(szBuffer2) as INT,
+                _countof!(szBuffer2) as INT,
             );
 
             ConPrintf(
@@ -138,10 +139,7 @@ unsafe extern "C" fn PrintShortGroupCommands(
     }
 }
 
-unsafe extern "C" fn HelpCompare(
-    p1: *const core::ffi::c_void,
-    p2: *const core::ffi::c_void,
-) -> core::ffi::c_int {
+unsafe extern "C" fn HelpCompare(p1: *const ::core::ffi::c_void, p2: *const ::core::ffi::c_void) -> ::core::ffi::c_int {
     return _wcsicmp(
         (*(p1 as PHELP_ENTRY)).pszCommand as *const wchar_t,
         (*(p2 as PHELP_ENTRY)).pszCommand as *const wchar_t,
@@ -276,10 +274,10 @@ unsafe extern "C" fn PrintContext(mut pContext: PCONTEXT_ENTRY) {
         match (*pHelpArray.offset(dwIndex as isize)).Type as ::core::ffi::c_uint {
             0 => {
                 if LoadStringW(
-                    (*pContext).hModule as HINSTANCE,
+                    ((*pContext).hModule as HINSTANCE).cast(),
                     (*pHelpArray.offset(dwIndex as isize)).dwHelpId as UINT,
                     &raw mut szBuffer as LPWSTR,
-                    _countof(szBuffer) as INT,
+                    _countof!(szBuffer) as INT,
                 ) == 0 as INT
                 {
                     szBuffer[0 as usize] = UNICODE_NULL as WCHAR;
@@ -293,10 +291,10 @@ unsafe extern "C" fn PrintContext(mut pContext: PCONTEXT_ENTRY) {
             }
             1 => {
                 if LoadStringW(
-                    (*pContext).hModule as HINSTANCE,
+                    ((*pContext).hModule as HINSTANCE).cast(),
                     (*pHelpArray.offset(dwIndex as isize)).dwHelpId as UINT,
                     &raw mut szBuffer as LPWSTR,
-                    _countof(szBuffer) as INT,
+                    _countof!(szBuffer) as INT,
                 ) == 0 as INT
                 {
                     szBuffer[0 as usize] = UNICODE_NULL as WCHAR;
@@ -312,7 +310,7 @@ unsafe extern "C" fn PrintContext(mut pContext: PCONTEXT_ENTRY) {
                 GetContextFullName(
                     (*pHelpArray.offset(dwIndex as isize)).Pointer.pSubContext,
                     &raw mut szBuffer as LPWSTR,
-                    _countof(szBuffer) as DWORD,
+                    _countof!(szBuffer) as DWORD,
                 );
                 ConPrintf(
                     &raw mut csStdOut,
@@ -334,10 +332,7 @@ unsafe extern "C" fn PrintContext(mut pContext: PCONTEXT_ENTRY) {
     }
 }
 
-unsafe extern "C" fn SubContextCompare(
-    p1: *const core::ffi::c_void,
-    p2: *const core::ffi::c_void,
-) -> core::ffi::c_int {
+unsafe extern "C" fn SubContextCompare(p1: *const ::core::ffi::c_void, p2: *const ::core::ffi::c_void) -> ::core::ffi::c_int {
     return _wcsicmp(
         (*(p1 as *mut PCONTEXT_ENTRY)).read().pszContextName as *const u16,
         (*(p2 as *mut PCONTEXT_ENTRY)).read().pszContextName as *const u16,
@@ -359,7 +354,7 @@ unsafe extern "C" fn PrintSubcontexts(pContext: PCONTEXT_ENTRY) {
     while !pSubContext.is_null() {
         if CheckOsVersion((*pSubContext).pfnOsVersionCheck) != 0 {
             if !(((*pSubContext).dwFlags & CMD_FLAG_LOCAL) != 0 && !g_pszMachine.is_null()
-                || ((*pSubContext).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == FALSE
+                || ((*pSubContext).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == (FALSE as i32)
                 || ((*pSubContext).dwFlags & CMD_FLAG_HIDDEN) != 0)
             {
                 dwCount = dwCount.wrapping_add(1);
@@ -382,7 +377,7 @@ unsafe extern "C" fn PrintSubcontexts(pContext: PCONTEXT_ENTRY) {
     while !pSubContext.is_null() {
         if CheckOsVersion((*pSubContext).pfnOsVersionCheck) != 0 {
             if !(((*pSubContext).dwFlags & CMD_FLAG_LOCAL) != 0 && !g_pszMachine.is_null()
-                || ((*pSubContext).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == FALSE
+                || ((*pSubContext).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == (FALSE as i32)
                 || ((*pSubContext).dwFlags & CMD_FLAG_HIDDEN) != 0)
             {
                 *pSubContextArray.offset(dwIndex as isize) = pSubContext;
@@ -405,17 +400,17 @@ unsafe extern "C" fn PrintSubcontexts(pContext: PCONTEXT_ENTRY) {
         ),
     );
 
-    ConResPrintf(core::ptr::addr_of_mut!(StdOut), IDS_SUBCONTEXT_HEADER);
+    ConResPrintf(StdOut, IDS_SUBCONTEXT_HEADER);
     dwIndex = 0;
     while dwIndex < dwCount {
         ConPrintf(
-            core::ptr::addr_of_mut!(StdOut),
+            StdOut,
             RUSTCONV_WSTR_DEEFE3BC3DD3.as_ptr(),
             (*(*pSubContextArray.offset(dwIndex as isize))).pszContextName,
         );
         dwIndex = dwIndex.wrapping_add(1);
     }
-    ConPuts(core::ptr::addr_of_mut!(StdOut), RUSTCONV_WSTR_075DE2B906DB.as_ptr());
+    ConPuts(StdOut, RUSTCONV_WSTR_075DE2B906DB.as_ptr());
 
     HeapFree(
         GetProcessHeap(),
@@ -424,11 +419,7 @@ unsafe extern "C" fn PrintSubcontexts(pContext: PCONTEXT_ENTRY) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn PrintCommandHelp(
-    pContext: PCONTEXT_ENTRY,
-    pGroup: PCOMMAND_GROUP,
-    pCommand: PCOMMAND_ENTRY,
-) {
+pub unsafe extern "C" fn PrintCommandHelp(pContext: PCONTEXT_ENTRY, pGroup: PCOMMAND_GROUP, pCommand: PCOMMAND_ENTRY) {
     let mut pszCommandBuffer: LPWSTR = core::ptr::null_mut();
     let mut Args: [DWORD_PTR; 2] = [0; 2];
     let mut dwLength: DWORD = 1;
@@ -440,7 +431,7 @@ pub unsafe extern "C" fn PrintCommandHelp(
     }
 
     if (((*pCommand).dwFlags & CMD_FLAG_LOCAL) != 0 && !g_pszMachine.is_null())
-        || (((*pCommand).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == FALSE)
+        || (((*pCommand).dwFlags & CMD_FLAG_ONLINE) != 0 && g_bOnline == (FALSE as i32))
         || ((*pCommand).dwFlags & CMD_FLAG_HIDDEN) != 0
     {
         return;
@@ -501,11 +492,7 @@ pub unsafe extern "C" fn PrintCommandHelp(
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn PrintGroupHelp(
-    pContext: PCONTEXT_ENTRY,
-    pszGroupName: LPWSTR,
-    bRecurse: BOOL,
-) {
+pub unsafe extern "C" fn PrintGroupHelp(pContext: PCONTEXT_ENTRY, pszGroupName: LPWSTR, bRecurse: BOOL) {
     let mut pGroup: PCOMMAND_GROUP = core::ptr::null_mut();
 
     if bRecurse != 0 {

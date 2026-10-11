@@ -1,3 +1,6 @@
+use crate::netsh::wmi::CheckOsVersion;
+use crate::netsh::netsh::MatchToken;
+use crate::netsh::netsh::MergeStrings;
 use crate::netsh::help::PrintCommandHelp;
 use crate::netsh::help::PrintContextHelp;
 use crate::netsh::help::PrintGroupHelp;
@@ -6,7 +9,7 @@ use crate::netsh::context::g_pszMachine;
 use crate::netsh::context::pCurrentContext;
 use crate::netsh::context::pRootContext;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];
 pub static RUSTCONV_WSTR_1ABD7BB80B8B: [u16; 6] = [0x005Bu16, 0x0025, 0x0073, 0x005D, 0x0020, 0x0000];
 pub static RUSTCONV_WSTR_1B9E0FE7B740: [u16; 2] = [0x003Fu16, 0x0000];
@@ -20,16 +23,13 @@ use core::ffi::c_void;
 // ---- file-scope preamble (translated) ----
 // NDEBUG is a build-time define with no runtime constant to emit.
 
-#[repr(C)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum INTERPRETER_STATE {
-    STATE_ANALYZE = 0,
-    STATE_COMMAND = 1,
-    STATE_GROUP = 2,
-    STATE_CONTEXT = 3,
-    STATE_PARENT_CONTEXT = 4,
-    STATE_DONE = 5,
-}
+pub type INTERPRETER_STATE = ::core::ffi::c_uint;
+pub const STATE_ANALYZE: INTERPRETER_STATE = 0;
+pub const STATE_COMMAND: INTERPRETER_STATE = 1;
+pub const STATE_GROUP: INTERPRETER_STATE = 2;
+pub const STATE_CONTEXT: INTERPRETER_STATE = 3;
+pub const STATE_PARENT_CONTEXT: INTERPRETER_STATE = 4;
+pub const STATE_DONE: INTERPRETER_STATE = 5;
 
 pub const STATE_ANALYZE: i32 = 0;
 pub const STATE_COMMAND: i32 = 1;
@@ -221,7 +221,7 @@ unsafe extern "C" fn InterpretCommand(
                     if (((*pCommand).dwFlags & CMD_FLAG_LOCAL) != 0
                         && !g_pszMachine.is_null())
                         || (((*pCommand).dwFlags & CMD_FLAG_ONLINE) != 0
-                            && g_bOnline == FALSE)
+                            && g_bOnline == (FALSE as i32))
                     {
                         dwError = ERROR_CMD_NOT_FOUND;
                         State = STATE_DONE;
@@ -252,7 +252,7 @@ unsafe extern "C" fn InterpretCommand(
                         dwArgIndex = dwArgIndex.wrapping_add(1);
                         dwError = (*pCommand)
                             .pfnCmdHandler
-                            .expect("non-null function pointer")(
+                            .unwrap_unchecked()(
                             g_pszMachine as LPCWSTR,
                             argv,
                             dwArgIndex,
@@ -298,7 +298,7 @@ unsafe extern "C" fn InterpretCommand(
                     if (((*pGroup).dwFlags & CMD_FLAG_LOCAL) != 0
                         && !g_pszMachine.is_null())
                         || (((*pGroup).dwFlags & CMD_FLAG_ONLINE) != 0
-                            && g_bOnline == FALSE)
+                            && g_bOnline == (FALSE as i32))
                     {
                         dwError = ERROR_CMD_NOT_FOUND;
                         State = STATE_DONE;
@@ -310,7 +310,7 @@ unsafe extern "C" fn InterpretCommand(
                         PrintGroupHelp(
                             pTempContext,
                             (*pGroup).pwszCmdGroupToken as LPWSTR,
-                            TRUE,
+                            (TRUE) as BOOL,
                         );
                         State = STATE_DONE;
                         break 'arm;
@@ -334,7 +334,7 @@ unsafe extern "C" fn InterpretCommand(
                         PrintGroupHelp(
                             pTempContext,
                             (*pGroup).pwszCmdGroupToken as LPWSTR,
-                            TRUE,
+                            (TRUE) as BOOL,
                         );
                         State = STATE_DONE;
                         break 'arm;
@@ -369,7 +369,7 @@ unsafe extern "C" fn InterpretCommand(
                     if (((*pTempSubContext).dwFlags & CMD_FLAG_LOCAL) != 0
                         && !g_pszMachine.is_null())
                         || (((*pTempSubContext).dwFlags & CMD_FLAG_ONLINE) != 0
-                            && g_bOnline == FALSE)
+                            && g_bOnline == (FALSE as i32))
                     {
                         dwError = ERROR_CMD_NOT_FOUND;
                         State = STATE_DONE;
@@ -390,7 +390,7 @@ unsafe extern "C" fn InterpretCommand(
                         if (*pCurrentContext).pfnConnectFn.is_some() {
                             dwError = (*pCurrentContext)
                                 .pfnConnectFn
-                                .expect("non-null function pointer")(
+                                .unwrap_unchecked()(
                                 g_pszMachine as LPCWSTR
                             );
                         }
@@ -456,13 +456,13 @@ unsafe extern "C" fn InterpretCommand(
 }
 #[no_mangle]
 pub unsafe extern "C" fn InterpretLine(mut pszInputLine: LPWSTR) -> DWORD {
-    let mut args_vector: [LPWSTR; MAX_ARGS_COUNT] = [core::ptr::null_mut::<WCHAR>(); MAX_ARGS_COUNT];
+    let mut args_vector: [LPWSTR; (MAX_ARGS_COUNT) as _] = [core::ptr::null_mut::<WCHAR>(); (MAX_ARGS_COUNT) as _];
     let mut dwArgCount: DWORD = 0;
     let mut i: DWORD = 0;
     let mut len: DWORD = 0;
-    let mut bWhiteSpace: BOOL = TRUE;
-    let mut bDone: BOOL = FALSE;
-    let mut bInQuotes: BOOL = FALSE;
+    let mut bWhiteSpace: BOOL = (TRUE as i32);
+    let mut bDone: BOOL = (FALSE as i32);
+    let mut bInQuotes: BOOL = (FALSE as i32);
     let mut ptr: LPWSTR = core::ptr::null_mut::<WCHAR>();
     let mut pStartQuote: LPWSTR = core::ptr::null_mut::<WCHAR>();
     let mut pEndQuote: LPWSTR = core::ptr::null_mut::<WCHAR>();
@@ -470,25 +470,25 @@ pub unsafe extern "C" fn InterpretLine(mut pszInputLine: LPWSTR) -> DWORD {
     memset(
         &raw mut args_vector as *mut LPWSTR as *mut ::core::ffi::c_void,
         0,
-        core::mem::size_of::<[LPWSTR; MAX_ARGS_COUNT]>(),
+        core::mem::size_of::<[LPWSTR; (MAX_ARGS_COUNT) as _]>(),
     );
 
     ptr = pszInputLine;
     while *ptr != 0 {
         if *ptr == 0x0022u16 {
-            bInQuotes = if bInQuotes != 0 { FALSE } else { TRUE };
+            bInQuotes = if bInQuotes != 0 { (FALSE as i32) } else { (TRUE as i32) };
         }
 
-        if (iswspace(*ptr) != 0 && bInQuotes == FALSE) || *ptr == 0x000Au16 {
+        if (iswspace(*ptr) != 0 && bInQuotes == (FALSE as i32)) || *ptr == 0x000Au16 {
             *ptr = 0;
-            bWhiteSpace = TRUE;
+            bWhiteSpace = (TRUE as i32);
         } else {
-            if bWhiteSpace != FALSE && dwArgCount < MAX_ARGS_COUNT {
+            if bWhiteSpace != (FALSE as i32) && dwArgCount < MAX_ARGS_COUNT {
                 args_vector[dwArgCount as usize] = ptr;
                 dwArgCount = dwArgCount.wrapping_add(1);
             }
 
-            bWhiteSpace = FALSE;
+            bWhiteSpace = (FALSE as i32);
         }
 
         ptr = ptr.offset(1);
@@ -534,14 +534,14 @@ pub unsafe extern "C" fn PrintPrompt(pContext: PCONTEXT_ENTRY) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn InterpretInteractive() {
-    let mut input_line: [WCHAR; MAX_STRING_SIZE] = [0; MAX_STRING_SIZE];
-    let mut args_vector: [LPWSTR; MAX_ARGS_COUNT] = [core::ptr::null_mut(); MAX_ARGS_COUNT];
+    let mut input_line: [WCHAR; (MAX_STRING_SIZE) as _] = [0; (MAX_STRING_SIZE) as _];
+    let mut args_vector: [LPWSTR; (MAX_ARGS_COUNT) as _] = [core::ptr::null_mut(); (MAX_ARGS_COUNT) as _];
     let mut dwArgCount: DWORD = 0;
     let mut i: DWORD = 0;
     let mut len: DWORD = 0;
-    let mut bWhiteSpace: BOOL = TRUE;
-    let mut bDone: BOOL = FALSE;
-    let mut bInQuotes: BOOL = FALSE;
+    let mut bWhiteSpace: BOOL = (TRUE as i32);
+    let mut bDone: BOOL = (FALSE as i32);
+    let mut bInQuotes: BOOL = (FALSE as i32);
     let mut ptr: LPWSTR = core::ptr::null_mut();
     let mut pStartQuote: LPWSTR = core::ptr::null_mut();
     let mut pEndQuote: LPWSTR = core::ptr::null_mut();
@@ -552,7 +552,7 @@ pub unsafe extern "C" fn InterpretInteractive() {
         memset(
             core::ptr::addr_of_mut!(args_vector) as *mut ::core::ffi::c_void,
             0,
-            core::mem::size_of::<[LPWSTR; MAX_ARGS_COUNT]>(),
+            core::mem::size_of::<[LPWSTR; (MAX_ARGS_COUNT) as _]>(),
         );
 
         /* Shown just before the input where the user places commands */
@@ -565,31 +565,31 @@ pub unsafe extern "C" fn InterpretInteractive() {
         /* Get input from the user. */
         fgetws(
             core::ptr::addr_of_mut!(input_line) as *mut WCHAR,
-            MAX_STRING_SIZE,
-            stdin,
+            (MAX_STRING_SIZE as i32),
+            __iob_func().add(0),
         );
 
         ptr = core::ptr::addr_of_mut!(input_line) as *mut WCHAR as LPWSTR;
         while *ptr != 0 {
             if *ptr == 0x0022u16 {
                 bInQuotes = if bInQuotes != 0 {
-                    FALSE
+                    (FALSE as i32)
                 } else {
-                    TRUE
+                    (TRUE as i32)
                 };
             }
 
-            if (iswspace(*ptr as u32) != 0 && bInQuotes == FALSE)
+            if (iswspace((*ptr as u32) as u16) != 0 && bInQuotes == (FALSE as i32))
                 || *ptr == 0x000Au16
             {
                 *ptr = UNICODE_NULL;
-                bWhiteSpace = TRUE;
+                bWhiteSpace = (TRUE as i32);
             } else {
-                if (bWhiteSpace != FALSE) && (dwArgCount < MAX_ARGS_COUNT) {
+                if (bWhiteSpace != (FALSE as i32)) && (dwArgCount < MAX_ARGS_COUNT) {
                     args_vector[dwArgCount as usize] = ptr;
                     dwArgCount = dwArgCount.wrapping_add(1);
                 }
-                bWhiteSpace = FALSE;
+                bWhiteSpace = (FALSE as i32);
             }
             ptr = ptr.offset(1);
         }

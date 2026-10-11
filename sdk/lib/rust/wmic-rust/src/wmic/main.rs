@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -307,8 +307,8 @@ unsafe impl Sync for AliasMapEntry {}
 unsafe extern "C" fn find_class(alias: *const WCHAR) -> *const WCHAR {
     let mut i: ::core::ffi::c_uint;
     i = 0;
-    while i < ARRAY_SIZE(alias_map) as ::core::ffi::c_uint {
-        if strcmpiW(alias, alias_map[i as usize].alias) == 0 {
+    while i < ARRAY_SIZE!(alias_map) as ::core::ffi::c_uint {
+        if strcmpiW!(alias, alias_map[i as usize].alias) == 0 {
             return alias_map[i as usize].class;
         }
         i = i.wrapping_add(1);
@@ -324,12 +324,12 @@ unsafe extern "C" fn strdupW(src: *const WCHAR) -> *mut WCHAR {
     dst = HeapAlloc(
         GetProcessHeap(),
         0,
-        (strlenW(src) + 1) * core::mem::size_of::<WCHAR>(),
+        ((strlenW!(src) + 1) * core::mem::size_of::<WCHAR>()) as SIZE_T,
     ) as *mut WCHAR;
     if dst.is_null() {
         return core::ptr::null_mut();
     }
-    strcpyW(dst, src);
+    strcpyW!(dst, src);
     return dst;
 }
 
@@ -338,12 +338,12 @@ unsafe extern "C" fn find_prop(class: *mut IWbemClassObject, prop: *const WCHAR)
     let mut ret: *mut WCHAR = core::ptr::null_mut();
     let mut i: LONG;
     let mut last_index: LONG = 0;
-    let mut str: BSTR;
+    let mut str: BSTR = core::mem::zeroed();
 
     if IWbemClassObject_GetNames(
         class,
         core::ptr::null(),
-        WBEM_FLAG_ALWAYS,
+        (WBEM_FLAG_ALWAYS) as LONG,
         core::ptr::null_mut(),
         core::ptr::addr_of_mut!(sa),
     ) != S_OK
@@ -359,7 +359,7 @@ unsafe extern "C" fn find_prop(class: *mut IWbemClassObject, prop: *const WCHAR)
             core::ptr::addr_of_mut!(i),
             core::ptr::addr_of_mut!(str) as *mut ::core::ffi::c_void,
         );
-        if strcmpiW(str, prop) == 0 {
+        if strcmpiW!(str, prop) == 0 {
             ret = strdupW(str);
             break;
         }
@@ -369,15 +369,15 @@ unsafe extern "C" fn find_prop(class: *mut IWbemClassObject, prop: *const WCHAR)
     ret
 }
 
-unsafe extern "C" fn output_string(mut handle: HANDLE, mut msg: *const WCHAR, mut args: ...) -> ::core::ffi::c_int {
+#[no_mangle]
+unsafe extern "C" fn output_string_v(mut handle: HANDLE, mut msg: *const WCHAR, ap_list: *mut ::core::ffi::c_void) -> ::core::ffi::c_int {
     let mut va_args: va_list;
     let mut len: ::core::ffi::c_int = 0;
     let mut count: DWORD = 0;
     let mut buffer: [WCHAR; 8192] = [0; 8192];
 
-    va_start(va_args, msg);
-    len = vsnprintfW(buffer.as_mut_ptr(), ARRAY_SIZE(buffer), msg, va_args);
-    va_end(va_args);
+    va_args = *(ap_list as *mut va_list);
+    len = vsnprintfW(buffer.as_mut_ptr(), ARRAY_SIZE!(buffer), msg, va_args);
 
     if WriteConsoleW(
         handle,
@@ -392,12 +392,14 @@ unsafe extern "C" fn output_string(mut handle: HANDLE, mut msg: *const WCHAR, mu
             buffer.as_mut_ptr() as LPCVOID,
             (len as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) as DWORD,
             core::ptr::addr_of_mut!(count),
-            FALSE,
+            core::ptr::null_mut(),
         );
     }
 
     return count as ::core::ffi::c_int;
 }
+
+
 
 unsafe extern "C" fn output_error(mut msg: ::core::ffi::c_int) -> ::core::ffi::c_int {
     static mut fmtW: [WCHAR; 3] = [0x0025u16, 0x0073, 0x0000];
@@ -407,7 +409,7 @@ unsafe extern "C" fn output_error(mut msg: ::core::ffi::c_int) -> ::core::ffi::c
         GetModuleHandleW(core::ptr::null_mut::<WCHAR>()) as HINSTANCE,
         msg as UINT,
         core::ptr::addr_of_mut!(buffer) as LPWSTR,
-        ARRAY_SIZE(buffer) as ::core::ffi::c_int,
+        ARRAY_SIZE!(buffer) as ::core::ffi::c_int,
     );
     return output_string(
         GetStdHandle(STD_ERROR_HANDLE),
@@ -434,7 +436,7 @@ unsafe extern "C" fn output_header(prop: *const WCHAR, column_width: ULONG) -> :
     count = 0;
     len = snprintfW(
         core::ptr::addr_of_mut!(buffer) as *mut WCHAR,
-        ARRAY_SIZE(buffer),
+        (ARRAY_SIZE!(buffer)) as _,
         core::ptr::addr_of!(fmtW) as *const WCHAR,
         column_width,
         prop,
@@ -453,14 +455,14 @@ unsafe extern "C" fn output_header(prop: *const WCHAR, column_width: ULONG) -> :
             core::ptr::addr_of!(bomW) as *const WCHAR as LPCVOID,
             core::mem::size_of::<[WCHAR; 1]>() as DWORD,
             core::ptr::addr_of_mut!(count),
-            FALSE,
+            core::ptr::null_mut(),
         );
         WriteFile(
             GetStdHandle(STD_OUTPUT_HANDLE),
             core::ptr::addr_of_mut!(buffer) as *const WCHAR as LPCVOID,
             (len as usize).wrapping_mul(core::mem::size_of::<WCHAR>()) as DWORD,
             core::ptr::addr_of_mut!(count),
-            FALSE,
+            core::ptr::null_mut(),
         );
         count = count.wrapping_add(core::mem::size_of::<[WCHAR; 1]>() as DWORD);
     }
@@ -500,7 +502,7 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
     let mut width: ULONG = 0 as ULONG;
     let mut v: VARIANT = core::mem::zeroed();
 
-    WINE_TRACE(
+    WINE_TRACE!(
         b"%s, %s\n\0".as_ptr() as *const ::core::ffi::c_char,
         debugstr_w(class),
         debugstr_w(propname),
@@ -522,7 +524,7 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
     'done: {
         hr = CoCreateInstance(
             &raw const CLSID_WbemLocator,
-            core::ptr::null_mut::<IUnknown>(),
+            (core::ptr::null_mut::<IUnknown>()).cast(),
             (CLSCTX_INPROC_SERVER) as DWORD,
             &raw const IID_IWbemLocator,
             &raw mut locator as *mut LPVOID,
@@ -550,14 +552,14 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
             break 'done;
         }
 
-        len = (strlenW(class) as usize).wrapping_add(ARRAY_SIZE(select_allW))
+        len = (strlenW!(class) as usize).wrapping_add((ARRAY_SIZE!(select_allW)) as _)
             as ::core::ffi::c_int;
         query = SysAllocStringLen(core::ptr::null(), len as UINT);
         if query.is_null() {
             break 'done;
         }
-        strcpyW(query, &raw const select_allW as *const WCHAR);
-        strcatW(query, class);
+        strcpyW!(query, &raw const select_allW as *const WCHAR);
+        strcatW!(query, class);
 
         wql = SysAllocString(&raw const wqlW as *const OLECHAR);
         if wql.is_null() {
@@ -591,18 +593,18 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
             if prop.is_null() {
                 prop = find_prop(obj, propname);
                 if prop.is_null() {
-                    output_error(STRING_INVALID_QUERY);
+                    output_error((STRING_INVALID_QUERY as i32));
                     break 'done;
                 }
             }
-            if IWbemClassObject_Get(
+            if (IWbemClassObject_Get(
                 obj,
                 prop as LPCWSTR,
                 0 as LONG,
                 &raw mut v,
                 core::ptr::null_mut::<CIMTYPE>(),
                 core::ptr::null_mut::<LONG>(),
-            ) == WBEM_S_NO_ERROR
+            )) as u32 == WBEM_S_NO_ERROR
             {
                 VariantChangeType(
                     &raw mut v,
@@ -610,7 +612,7 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
                     0 as USHORT,
                     VT_BSTR as VARTYPE,
                 );
-                width = max(strlenW(V_BSTR(&raw mut v)) as ULONG, width);
+                width = max!(strlenW!(V_BSTR!(&raw mut v)) as ULONG, width);
                 VariantClear(&raw mut v);
             }
             IWbemClassObject_Release(obj);
@@ -634,14 +636,14 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
                 output_header(prop, width);
                 first = FALSE as BOOL;
             }
-            if IWbemClassObject_Get(
+            if (IWbemClassObject_Get(
                 obj,
                 prop as LPCWSTR,
                 0 as LONG,
                 &raw mut v,
                 core::ptr::null_mut::<CIMTYPE>(),
                 core::ptr::null_mut::<LONG>(),
-            ) == WBEM_S_NO_ERROR
+            )) as u32 == WBEM_S_NO_ERROR
             {
                 VariantChangeType(
                     &raw mut v,
@@ -649,7 +651,7 @@ unsafe extern "C" fn query_prop(class: *const WCHAR, propname: *const WCHAR) -> 
                     0 as USHORT,
                     VT_BSTR as VARTYPE,
                 );
-                output_line(V_BSTR(&raw mut v), width);
+                output_line(V_BSTR!(&raw mut v), width);
                 VariantClear(&raw mut v);
             }
             IWbemClassObject_Release(obj);
@@ -691,7 +693,7 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
     let mut i: c_int;
     i = 1;
     while i < argc && *(*argv.offset(i as isize)).offset(0 as isize) == '/' as WCHAR {
-        WINE_FIXME("command line switch %s not supported\n", debugstr_w(*argv.offset(i as isize)));
+        WINE_FIXME!("command line switch %s not supported\n", debugstr_w(*argv.offset(i as isize)));
         i += 1;
     }
 
@@ -700,30 +702,30 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
             break 'not_supported;
         }
 
-        if strcmpiW(*argv.offset(i as isize), quitW.as_ptr()) == 0
-            || strcmpiW(*argv.offset(i as isize), exitW.as_ptr()) == 0
+        if strcmpiW!(*argv.offset(i as isize), quitW.as_ptr()) == 0
+            || strcmpiW!(*argv.offset(i as isize), exitW.as_ptr()) == 0
         {
             return 0;
         }
 
-        if strcmpiW(*argv.offset(i as isize), classW.as_ptr()) == 0
-            || strcmpiW(*argv.offset(i as isize), contextW.as_ptr()) == 0
+        if strcmpiW!(*argv.offset(i as isize), classW.as_ptr()) == 0
+            || strcmpiW!(*argv.offset(i as isize), contextW.as_ptr()) == 0
         {
-            WINE_FIXME("command %s not supported\n", debugstr_w(*argv.offset(i as isize)));
+            WINE_FIXME!("command %s not supported\n", debugstr_w(*argv.offset(i as isize)));
             break 'not_supported;
         }
 
-        if strcmpiW(*argv.offset(i as isize), pathW.as_ptr()) == 0 {
+        if strcmpiW!(*argv.offset(i as isize), pathW.as_ptr()) == 0 {
             i += 1;
             if i >= argc {
-                output_error(STRING_INVALID_PATH);
+                output_error((STRING_INVALID_PATH as i32));
                 return 1;
             }
             class = *argv.offset(i as isize);
         } else {
             class = find_class(*argv.offset(i as isize));
             if class.is_null() {
-                output_error(STRING_ALIAS_NOT_FOUND);
+                output_error((STRING_ALIAS_NOT_FOUND as i32));
                 return 1;
             }
         }
@@ -733,7 +735,7 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
             break 'not_supported;
         }
 
-        if strcmpiW(*argv.offset(i as isize), getW.as_ptr()) == 0 {
+        if strcmpiW!(*argv.offset(i as isize), getW.as_ptr()) == 0 {
             i += 1;
             if i >= argc {
                 break 'not_supported;
@@ -743,6 +745,6 @@ pub unsafe extern "C" fn wmain(argc: c_int, argv: *mut *mut WCHAR) -> c_int {
         }
     }
 
-    output_error(STRING_CMDLINE_NOT_SUPPORTED);
+    output_error((STRING_CMDLINE_NOT_SUPPORTED as i32));
     return 1;
 }

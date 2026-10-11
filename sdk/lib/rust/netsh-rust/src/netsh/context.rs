@@ -1,8 +1,15 @@
+use crate::netsh::helper::AddHelperCommand;
 use crate::netsh::alias::AliasCommand;
+use crate::netsh::helper::DeleteHelperCommand;
+use crate::netsh::helper::FindHelper;
+use crate::netsh::netsh::RunScript;
 use crate::netsh::alias::ShowAliasCommand;
+use crate::netsh::helper::ShowHelperCommand;
 use crate::netsh::alias::UnaliasCommand;
+use crate::netsh::netsh::g_hModule;
+use crate::netsh::helper::pHelperListHead;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_08F79C40983C: [u16; 7] = [0x0064u16, 0x0065, 0x006C, 0x0065, 0x0074, 0x0065, 0x0000];
 pub static RUSTCONV_WSTR_09C488271038: [u16; 4] = [0x0061u16, 0x0064, 0x0064, 0x0000];
 pub static RUSTCONV_WSTR_0EA8BD6F19AB: [u16; 5] = [0x0073u16, 0x0068, 0x006F, 0x0077, 0x0000];
@@ -54,14 +61,8 @@ pub static mut pContextStackTail: PCONTEXT_STACK_ENTRY =
 pub static mut g_pszMachine: PWSTR = ::core::ptr::null::<WCHAR>() as *mut WCHAR;
 
 #[no_mangle]
-pub static mut g_bOnline: BOOL = TRUE;
+pub static mut g_bOnline: BOOL = (TRUE as i32);
 
-#[repr(C)]
-pub struct CONTEXT_STACK_ENTRY {
-    pub pPrev: *mut CONTEXT_STACK_ENTRY,
-    pub pNext: *mut CONTEXT_STACK_ENTRY,
-    pub pContext: PCONTEXT_ENTRY,
-}
 pub type PCONTEXT_STACK_ENTRY = *mut CONTEXT_STACK_ENTRY;
 
 #[no_mangle]
@@ -115,7 +116,7 @@ pub unsafe extern "C" fn AddContext(
 
     (*pEntry).pParentContext = pParentContext;
     if !pGuid.is_null() {
-        CopyMemory(
+        CopyMemory!(
             core::ptr::addr_of_mut!((*pEntry).Guid) as *mut core::ffi::c_void,
             pGuid as *const core::ffi::c_void,
             core::mem::size_of::<GUID>(),
@@ -372,7 +373,7 @@ unsafe extern "C" fn DumpContext(
     DPRINT!("DumpContext()\n");
 
     if (*pContext).pfnDumpFn.is_some() {
-        dwError = (*pContext).pfnDumpFn.expect("non-null function pointer")(
+        dwError = (*pContext).pfnDumpFn.unwrap_unchecked()(
             pwszMachine,
             ppwcArguments,
             dwArgCount,
@@ -463,7 +464,7 @@ unsafe extern "C" fn CommitContext(mut pContext: PCONTEXT_ENTRY, mut dwAction: D
     DPRINT1!("CommitContext(%p %lu)\n", pContext, dwAction);
 
     if (*pContext).pfnCommitFn.is_some() {
-        dwError = (*pContext).pfnCommitFn.expect("non-null function pointer")(dwAction);
+        dwError = (*pContext).pfnCommitFn.unwrap_unchecked()(dwAction);
         if dwError != ERROR_SUCCESS {
             DPRINT1!("Commit function failed (Error %lu)\n", dwError);
             return dwError;
@@ -632,11 +633,11 @@ pub unsafe extern "system" fn ExitCommand(
     pvData: LPCVOID,
     pbDone: *mut BOOL,
 ) -> DWORD {
-    if g_bOnline == FALSE {
+    if g_bOnline == (FALSE as i32) {
         CommitContext(pRootContext, NETSH_FLUSH);
     }
 
-    *pbDone = TRUE;
+    *pbDone = (TRUE as i32);
     return ERROR_SUCCESS;
 }
 
@@ -665,7 +666,7 @@ pub unsafe extern "system" fn OfflineCommand(
 ) -> DWORD {
     DPRINT!("OfflineCommand()\n");
     CommitContext(pRootContext, NETSH_UNCOMMIT);
-    g_bOnline = FALSE;
+    g_bOnline = (FALSE as i32);
     return ERROR_SUCCESS;
 }
 
@@ -791,8 +792,8 @@ pub unsafe extern "system" fn SetMachineCommand(
         g_pszMachine = HeapAlloc(
             GetProcessHeap(),
             0 as DWORD,
-            (core::mem::size_of::<LPWSTR>() + 1 as usize)
-                * core::mem::size_of::<WCHAR>(),
+            ((core::mem::size_of::<WCHAR>() + 1 as usize)
+                * core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as PWSTR;
         if g_pszMachine.is_null() {
             return ERROR_NOT_ENOUGH_MEMORY as DWORD;
@@ -828,12 +829,12 @@ pub unsafe extern "system" fn SetModeCommand(
     if _wcsicmp(*argv.add(dwCurrentIndex as usize) as *const u16, RUSTCONV_WSTR_12394F0C4911.as_ptr()) == 0
     {
         CommitContext(pRootContext, NETSH_UNCOMMIT);
-        g_bOnline = FALSE;
+        g_bOnline = (FALSE as i32);
     }
     else if _wcsicmp(*argv.add(dwCurrentIndex as usize) as *const u16, RUSTCONV_WSTR_7D01DF642FC6.as_ptr()) == 0
     {
         CommitContext(pRootContext, NETSH_COMMIT);
-        g_bOnline = TRUE;
+        g_bOnline = (TRUE as i32);
     }
     else
     {
@@ -854,7 +855,7 @@ pub unsafe extern "system" fn ShowModeCommand(
 ) -> DWORD {
     DPRINT!("ShowModeCommand()\n");
     ConPuts(
-        core::ptr::addr_of_mut!(StdOut),
+        StdOut,
         if g_bOnline != 0 {
             RUSTCONV_WSTR_74778EFB9831.as_ptr()
         } else {
@@ -869,12 +870,12 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
 
     pRootContext = AddContext(
         core::ptr::null_mut(),
-        RUSTCONV_WSTR_2867187D1E54.as_ptr(),
+        RUSTCONV_WSTR_2867187D1E54.as_ptr().cast_mut(),
         core::ptr::null_mut(),
     );
     DPRINT!("pRootContext: %p\n", pRootContext);
     if pRootContext.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     (*pRootContext).hModule = g_hModule;
@@ -882,7 +883,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_77ECA80E282A.as_ptr(),
-        Some(UpCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(UpCommand),
         IDS_HLP_UP,
         IDS_HLP_UP_EX,
         0,
@@ -900,7 +901,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_6A44AE14AF92.as_ptr(),
-        Some(AbortCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(AbortCommand),
         IDS_HLP_ABORT,
         IDS_HLP_ABORT_EX,
         0,
@@ -909,7 +910,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_A0E70D05E916.as_ptr(),
-        Some(AliasCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(AliasCommand),
         IDS_HLP_ALIAS,
         IDS_HLP_ALIAS_EX,
         0,
@@ -918,7 +919,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_991B57736ED8.as_ptr(),
-        Some(ExitCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(ExitCommand),
         IDS_HLP_EXIT,
         IDS_HLP_EXIT_EX,
         0,
@@ -927,7 +928,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_64FA0E9EA73C.as_ptr(),
-        Some(CommitCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(CommitCommand),
         IDS_HLP_COMMIT,
         IDS_HLP_COMMIT_EX,
         0,
@@ -936,7 +937,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_E9D05A71AD4A.as_ptr(),
-        Some(DumpCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(DumpCommand),
         IDS_HLP_DUMP,
         IDS_HLP_DUMP_EX,
         0,
@@ -945,7 +946,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_AB3681E84239.as_ptr(),
-        Some(ExecCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(ExecCommand),
         IDS_HLP_EXEC,
         IDS_HLP_EXEC_EX,
         0,
@@ -954,7 +955,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_5C9738DE6AF0.as_ptr(),
-        Some(ExitCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(ExitCommand),
         IDS_HLP_EXIT,
         IDS_HLP_EXIT_EX,
         0,
@@ -972,7 +973,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_12394F0C4911.as_ptr(),
-        Some(OfflineCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(OfflineCommand),
         IDS_HLP_OFFLINE,
         IDS_HLP_OFFLINE_EX,
         0,
@@ -981,7 +982,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_7D01DF642FC6.as_ptr(),
-        Some(OnlineCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(OnlineCommand),
         IDS_HLP_ONLINE,
         IDS_HLP_ONLINE_EX,
         0,
@@ -990,7 +991,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_9BE6D558E725.as_ptr(),
-        Some(PopdCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(PopdCommand),
         IDS_HLP_POPD,
         IDS_HLP_POPD_EX,
         0,
@@ -999,7 +1000,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_EAFD7A71F5E7.as_ptr(),
-        Some(PushdCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(PushdCommand),
         IDS_HLP_PUSHD,
         IDS_HLP_PUSHD_EX,
         0,
@@ -1008,7 +1009,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_56F6C4E7F7D5.as_ptr(),
-        Some(ExitCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(ExitCommand),
         IDS_HLP_EXIT,
         IDS_HLP_EXIT_EX,
         0,
@@ -1017,7 +1018,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
     AddContextCommand(
         pRootContext,
         RUSTCONV_WSTR_31DF522FC4C4.as_ptr(),
-        Some(UnaliasCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+        Some(UnaliasCommand),
         IDS_HLP_UNALIAS,
         IDS_HLP_UNALIAS_EX,
         0,
@@ -1035,7 +1036,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_B94677D1EF59.as_ptr(),
-            Some(AddHelperCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(AddHelperCommand),
             IDS_HLP_ADD_HELPER,
             IDS_HLP_ADD_HELPER_EX,
             CMD_FLAG_LOCAL,
@@ -1054,7 +1055,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_B94677D1EF59.as_ptr(),
-            Some(DeleteHelperCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(DeleteHelperCommand),
             IDS_HLP_DEL_HELPER,
             IDS_HLP_DEL_HELPER_EX,
             CMD_FLAG_LOCAL,
@@ -1073,7 +1074,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_65A415E58FC2.as_ptr(),
-            Some(SetMachineCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(SetMachineCommand),
             IDS_HLP_SET_MACHINE,
             IDS_HLP_SET_MACHINE_EX,
             CMD_FLAG_ONLINE,
@@ -1082,7 +1083,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_433DA8124B16.as_ptr(),
-            Some(SetModeCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(SetModeCommand),
             IDS_HLP_SET_MODE,
             IDS_HLP_SET_MODE_EX,
             0,
@@ -1101,7 +1102,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_A0E70D05E916.as_ptr(),
-            Some(ShowAliasCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(ShowAliasCommand),
             IDS_HLP_SHOW_ALIAS,
             IDS_HLP_SHOW_ALIAS_EX,
             0,
@@ -1110,7 +1111,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_B94677D1EF59.as_ptr(),
-            Some(ShowHelperCommand as unsafe extern "C" fn(LPCWSTR, *mut PWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(ShowHelperCommand),
             IDS_HLP_SHOW_HELPER,
             IDS_HLP_SHOW_HELPER_EX,
             0,
@@ -1119,7 +1120,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
         AddGroupCommand(
             pGroup,
             RUSTCONV_WSTR_433DA8124B16.as_ptr(),
-            Some(ShowModeCommand as unsafe extern "C" fn(LPCWSTR, *mut LPWSTR, DWORD, DWORD, DWORD, LPCVOID, *mut BOOL) -> DWORD),
+            Some(ShowModeCommand),
             IDS_HLP_SHOW_MODE,
             IDS_HLP_SHOW_MODE_EX,
             0,
@@ -1129,7 +1130,7 @@ pub unsafe extern "C" fn CreateRootContext() -> BOOL {
 
     pCurrentContext = pRootContext;
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
 unsafe extern "C" fn FindSubContextByGuid(
@@ -1140,7 +1141,7 @@ unsafe extern "C" fn FindSubContextByGuid(
     let mut pSubContext: PCONTEXT_ENTRY = core::ptr::null_mut();
     DPRINT!("FindSubContextByGuid(%p)\n", pContext);
     DPRINT!("%lx <--> %lx\n", (*pContext).Guid.Data1, (*pGuid).Data1);
-    if IsEqualGUID(&raw mut (*pContext).Guid, pGuid) != 0 {
+    if IsEqualGUID!(&raw mut (*pContext).Guid, pGuid) != false {
         DPRINT!("Found!\n");
         return pContext;
     }

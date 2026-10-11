@@ -1,7 +1,7 @@
 use crate::fsutil::common::FindHandler;
 use crate::fsutil::common::PrintDefaultUsage;
 use crate::fsutil::common::PrintErrorMessage;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -38,14 +38,14 @@ static CREATE_HELP: [TCHAR; 23] = [
     b'l' as TCHAR, b'i' as TCHAR, b'n' as TCHAR, b'k' as TCHAR, 0 as TCHAR,
 ];
 
-unsafe extern "C" fn CreateMain(argc: ::core::ffi::c_int, argv: *const *const TCHAR) -> ::core::ffi::c_int {
-    let mut Source: [TCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut Target: [TCHAR; MAX_PATH] = [0; MAX_PATH];
+unsafe extern "C" fn CreateMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
+    let mut Source: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut Target: [TCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     /* We need a source and a destination */
     if argc < 3 {
-        _ftprintf(stderr, _T("Usage: fsutil hardlink create <new> <existing>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil hardlink create c:\\target.txt c:\\source.txt\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0068, 0x0061, 0x0072, 0x0064, 0x006c, 0x0069, 0x006e, 0x006b, 0x0020, 0x0063, 0x0072, 0x0065, 0x0061, 0x0074, 0x0065, 0x0020, 0x003c, 0x006e, 0x0065, 0x0077, 0x003e, 0x0020, 0x003c, 0x0065, 0x0078, 0x0069, 0x0073, 0x0074, 0x0069, 0x006e, 0x0067, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil hardlink create <new> <existing>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0068, 0x0061, 0x0072, 0x0064, 0x006c, 0x0069, 0x006e, 0x006b, 0x0020, 0x0063, 0x0072, 0x0065, 0x0061, 0x0074, 0x0065, 0x0020, 0x0063, 0x003a, 0x005c, 0x0074, 0x0061, 0x0072, 0x0067, 0x0065, 0x0074, 0x002e, 0x0074, 0x0078, 0x0074, 0x0020, 0x0063, 0x003a, 0x005c, 0x0073, 0x006f, 0x0075, 0x0072, 0x0063, 0x0065, 0x002e, 0x0074, 0x0078, 0x0074, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil hardlink create c:\\target.txt c:\\sou" */);
         return 1;
     }
 
@@ -67,7 +67,7 @@ unsafe extern "C" fn CreateMain(argc: ::core::ffi::c_int, argv: *const *const TC
     }
 
     /* Print the status */
-    _ftprintf(stdout, _T("Hard link created for %s <=> %s\n"), core::ptr::addr_of_mut!(Target) as *mut TCHAR, core::ptr::addr_of_mut!(Source) as *mut TCHAR);
+    _ftprintf(__iob_func().add(1), (&[0x0048, 0x0061, 0x0072, 0x0064, 0x0020, 0x006c, 0x0069, 0x006e, 0x006b, 0x0020, 0x0063, 0x0072, 0x0065, 0x0061, 0x0074, 0x0065, 0x0064, 0x0020, 0x0066, 0x006f, 0x0072, 0x0020, 0x0025, 0x0073, 0x0020, 0x003c, 0x003d, 0x003e, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Hard link created for %s <=> %s\n" */, core::ptr::addr_of_mut!(Target) as *mut TCHAR, core::ptr::addr_of_mut!(Source) as *mut TCHAR);
 
     return 0;
 }
@@ -87,10 +87,7 @@ unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn HardLinkMain(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *const TCHAR,
-) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn HardLinkMain(mut argc: ::core::ffi::c_int, mut argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     return FindHandler(
         argc,
         argv,

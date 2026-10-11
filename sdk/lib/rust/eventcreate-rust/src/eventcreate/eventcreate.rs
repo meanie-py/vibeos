@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_0009EA1DF10E: [u16; 2] = [0x0055u16, 0x0000];
 pub static RUSTCONV_WSTR_041F8C928EFC: [u16; 2] = [0x007Cu16, 0x0000];
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];
@@ -92,7 +92,7 @@ use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-pub const APPLICATION_NAME: [::core::ffi::c_ushort; 12] = unsafe {
+pub static mut APPLICATION_NAME: [::core::ffi::c_ushort; 12] = unsafe {
     ::core::mem::transmute::<[u8; 24], [::core::ffi::c_ushort; 12]>(
         *b"E\0v\0e\0n\0t\0C\0r\0e\0a\0t\0e\0\0\0",
     )
@@ -174,7 +174,7 @@ pub unsafe extern "C" fn PrintError(dwError: DWORD) {
 }
 
 unsafe extern "C" fn GetUserToken(ppUserToken: *mut PTOKEN_USER) -> BOOL {
-    let mut Success: BOOL = FALSE;
+    let mut Success_local: BOOL = (FALSE as i32);
     let mut dwError: DWORD = 0;
     let mut hToken: HANDLE = core::ptr::null_mut();
     let mut cbTokenBuffer: DWORD = 0;
@@ -184,7 +184,7 @@ unsafe extern "C" fn GetUserToken(ppUserToken: *mut PTOKEN_USER) -> BOOL {
 
     /* Get the process token */
     if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, core::ptr::addr_of_mut!(hToken)) == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     'quit: {
@@ -207,13 +207,13 @@ unsafe extern "C" fn GetUserToken(ppUserToken: *mut PTOKEN_USER) -> BOOL {
             break 'quit;
         }
 
-        Success = TRUE;
+        Success_local = (TRUE as i32);
         dwError = ERROR_SUCCESS;
         *ppUserToken = pUserToken;
     }
 
     /* Quit: */
-    if Success == FALSE {
+    if Success_local == (FALSE as i32) {
         if !pUserToken.is_null() {
             HeapFree(GetProcessHeap(), 0, pUserToken as PVOID);
         }
@@ -223,7 +223,7 @@ unsafe extern "C" fn GetUserToken(ppUserToken: *mut PTOKEN_USER) -> BOOL {
 
     SetLastError(dwError);
 
-    return Success;
+    return Success_local;
 }
 
 unsafe extern "C" fn InstallEventSource(
@@ -271,7 +271,7 @@ unsafe extern "C" fn InstallEventSource(
         PathSize = GetModuleFileNameW(
             core::ptr::null_mut::<HINSTANCE__>(),
             core::ptr::addr_of_mut!(ExePath) as *mut WCHAR as LPWSTR,
-            ARRAYSIZE(ExePath) as DWORD,
+            ARRAYSIZE!(ExePath) as DWORD,
         );
         if (PathSize == 0 as DWORD)
             || (GetLastError() == ERROR_INSUFFICIENT_BUFFER as DWORD)
@@ -279,7 +279,7 @@ unsafe extern "C" fn InstallEventSource(
             /* We failed, copy the default value */
             StringCchCopyW(
                 addr_of_mut!(ExePath) as *mut WCHAR as LPWSTR,
-                ARRAYSIZE(ExePath) as usize,
+                ARRAYSIZE!(ExePath) as usize,
                 RUSTCONV_WSTR_E00673CFE80F.as_ptr(),
             );
         } else {
@@ -287,7 +287,7 @@ unsafe extern "C" fn InstallEventSource(
             let mut TmpDir: [WCHAR; MAX_PATH as usize] = [0; MAX_PATH as usize];
             PathSize = GetSystemWindowsDirectoryW(
                 core::ptr::addr_of_mut!(TmpDir) as *mut WCHAR as LPWSTR,
-                ARRAYSIZE(TmpDir) as UINT,
+                ARRAYSIZE!(TmpDir) as UINT,
             ) as DWORD;
             if (PathSize > 0 as DWORD)
                 && (_wcsnicmp(
@@ -298,17 +298,17 @@ unsafe extern "C" fn InstallEventSource(
             {
                 StringCchCopyW(
                     core::ptr::addr_of_mut!(TmpDir) as *mut WCHAR as LPWSTR,
-                    ARRAYSIZE(TmpDir) as usize,
+                    ARRAYSIZE!(TmpDir) as usize,
                     RUSTCONV_WSTR_2B585AE3D008.as_ptr(),
                 );
                 StringCchCatW(
                     core::ptr::addr_of_mut!(TmpDir) as *mut WCHAR as LPWSTR,
-                    ARRAYSIZE(TmpDir) as usize,
+                    ARRAYSIZE!(TmpDir) as usize,
                     (core::ptr::addr_of_mut!(ExePath) as *mut WCHAR).offset(PathSize as isize) as LPCWSTR,
                 );
                 StringCchCopyW(
                     core::ptr::addr_of_mut!(ExePath) as *mut WCHAR as LPWSTR,
-                    ARRAYSIZE(ExePath) as usize,
+                    ARRAYSIZE!(ExePath) as usize,
                     core::ptr::addr_of_mut!(TmpDir) as *mut WCHAR as LPCWSTR,
                 );
             }
@@ -371,7 +371,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
     EventLogSource: PCWSTR,
     AllowAppSources: BOOL,
 ) -> BOOL {
-    let mut Success: BOOL = FALSE;
+    let mut Success_local: BOOL = (FALSE as i32);
     let mut lRet: LONG = 0;
     let mut hEventLogKey: HKEY = core::ptr::null_mut();
     let mut hLogKey: HKEY = core::ptr::null_mut();
@@ -380,22 +380,22 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
 
     let mut LogNameValid: BOOL = 0;
     let mut LogSourceValid: BOOL = 0;
-    let mut FoundLog: BOOL = FALSE;
-    let mut FoundSource: BOOL = FALSE;
-    let mut SourceAlreadyExists: BOOL = FALSE;
-    let mut SourceCreated: BOOL = FALSE;
-    let mut IsCustomSource: BOOL = FALSE;
+    let mut FoundLog: BOOL = (FALSE as i32);
+    let mut FoundSource: BOOL = (FALSE as i32);
+    let mut SourceAlreadyExists: BOOL = (FALSE as i32);
+    let mut SourceCreated: BOOL = (FALSE as i32);
+    let mut IsCustomSource: BOOL = (FALSE as i32);
 
-    let mut LogName: [WCHAR; MAX_KEY_LENGTH] = [0; MAX_KEY_LENGTH];
-    let mut LogNameErr: [WCHAR; MAX_KEY_LENGTH] = [0; MAX_KEY_LENGTH];
+    let mut LogName: [WCHAR; (MAX_KEY_LENGTH as _)] = [0; (MAX_KEY_LENGTH as _)];
+    let mut LogNameErr: [WCHAR; (MAX_KEY_LENGTH as _)] = [0; (MAX_KEY_LENGTH as _)];
 
-    UNREFERENCED_PARAMETER(UNCServerName);
+    UNREFERENCED_PARAMETER!(UNCServerName);
 
     LogNameValid = (!EventLogName.is_null() && *EventLogName != 0) as BOOL;
     LogSourceValid = (!EventLogSource.is_null() && *EventLogSource != 0) as BOOL;
 
     if LogNameValid == 0 && LogSourceValid == 0 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     'quit: {
@@ -407,7 +407,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                 KEY_ENUMERATE_SUB_KEYS,
                 core::ptr::addr_of_mut!(hEventLogKey),
             );
-            if lRet != ERROR_SUCCESS {
+            if lRet != (ERROR_SUCCESS as i32) {
                 break 'quit;
             }
 
@@ -420,18 +420,18 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     core::ptr::addr_of_mut!(hLogKey),
                 );
                 RegCloseKey(hLogKey);
-                FoundLog = (lRet == ERROR_SUCCESS) as BOOL;
+                FoundLog = (lRet == (ERROR_SUCCESS as i32)) as BOOL;
 
                 if FoundLog != 0 {
-                    SourceCreated = TRUE;
-                    IsCustomSource = TRUE;
+                    SourceCreated = (TRUE as i32);
+                    IsCustomSource = (TRUE as i32);
                 }
                 break 'finalize;
             }
 
             dwIndex = 0;
             loop {
-                NameLen = ARRAYSIZE(LogName) as DWORD;
+                NameLen = ARRAYSIZE!(LogName) as DWORD;
                 LogName[0] = 0x0000u16;
 
                 lRet = RegEnumKeyExW(
@@ -445,11 +445,11 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     core::ptr::null_mut(),
                 );
                 if dwIndex > 0 {
-                    if lRet == ERROR_NO_MORE_ITEMS {
+                    if lRet == (ERROR_NO_MORE_ITEMS as i32) {
                         break;
                     }
                 }
-                if lRet != ERROR_SUCCESS {
+                if lRet != (ERROR_SUCCESS as i32) {
                     break 'quit;
                 }
 
@@ -461,7 +461,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                         EventLogName,
                     ) == 0
                 {
-                    FoundLog = TRUE;
+                    FoundLog = (TRUE as i32);
                 }
 
                 if FoundLog != 0 {
@@ -480,7 +480,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                         KEY_READ,
                         core::ptr::addr_of_mut!(hLogKey),
                     );
-                    if lRet != ERROR_SUCCESS {
+                    if lRet != (ERROR_SUCCESS as i32) {
                         break 'quit;
                     }
 
@@ -495,10 +495,10 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     RegCloseKey(hLogKey);
                     hLogKey = core::ptr::null_mut();
 
-                    if lRet == ERROR_SUCCESS {
-                        FoundSource = TRUE;
-                    } else if lRet == ERROR_FILE_NOT_FOUND {
-                        lRet = ERROR_SUCCESS;
+                    if lRet == (ERROR_SUCCESS as i32) {
+                        FoundSource = (TRUE as i32);
+                    } else if lRet == (ERROR_FILE_NOT_FOUND as i32) {
+                        lRet = (ERROR_SUCCESS as i32);
                         hKeySource = core::ptr::null_mut();
                     } else {
                         hKeySource = core::ptr::null_mut();
@@ -518,19 +518,19 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                         RegCloseKey(hKeySource);
                         hKeySource = core::ptr::null_mut();
 
-                        SourceAlreadyExists = TRUE;
+                        SourceAlreadyExists = (TRUE as i32);
 
-                        RtlCopyMemory(
+                        RtlCopyMemory!(
                             core::ptr::addr_of_mut!(LogNameErr) as *mut WCHAR as *mut core::ffi::c_void,
                             core::ptr::addr_of_mut!(LogName) as *const WCHAR as *const core::ffi::c_void,
-                            core::mem::size_of::<[WCHAR; MAX_KEY_LENGTH]>(),
+                            core::mem::size_of::<[WCHAR; (MAX_KEY_LENGTH as _)]>(),
                         );
 
                         continue;
                     }
 
-                    SourceCreated = TRUE;
-                    IsCustomSource = FALSE;
+                    SourceCreated = (TRUE as i32);
+                    IsCustomSource = (FALSE as i32);
 
                     lRet = RegQueryValueExW(
                         hKeySource,
@@ -544,9 +544,9 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     RegCloseKey(hKeySource);
                     hKeySource = core::ptr::null_mut();
 
-                    if lRet == ERROR_SUCCESS {
-                        IsCustomSource = TRUE;
-                    } else if lRet == ERROR_FILE_NOT_FOUND {
+                    if lRet == (ERROR_SUCCESS as i32) {
+                        IsCustomSource = (TRUE as i32);
+                    } else if lRet == (ERROR_FILE_NOT_FOUND as i32) {
                         // IsCustomSource = FALSE;
                     } else {
                         break 'quit;
@@ -558,9 +558,9 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
         }
 
         // Finalize:
-        lRet = ERROR_SUCCESS;
+        lRet = (ERROR_SUCCESS as i32);
 
-        UNREFERENCED_PARAMETER(SourceCreated);
+        UNREFERENCED_PARAMETER!(SourceCreated);
 
         if LogNameValid != 0 && FoundLog == 0 {
             ConResPrintf(StdErr, IDS_LOG_NOT_FOUND, EventLogName);
@@ -568,7 +568,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
         }
 
         if LogNameValid != 0 && LogSourceValid == 0 {
-            Success = TRUE;
+            Success_local = (TRUE as i32);
             break 'quit;
         }
 
@@ -583,7 +583,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
 
         if FoundSource != 0 && SourceAlreadyExists == 0 {
             if IsCustomSource != 0 || AllowAppSources != 0 {
-                Success = TRUE;
+                Success_local = (TRUE as i32);
                 break 'quit;
             } else {
                 ConResPuts(StdErr, IDS_SOURCE_NOT_CUSTOM);
@@ -603,7 +603,7 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     KEY_CREATE_SUB_KEY,
                     core::ptr::addr_of_mut!(hLogKey),
                 );
-                if lRet != ERROR_SUCCESS {
+                if lRet != (ERROR_SUCCESS as i32) {
                     break 'quit;
                 }
 
@@ -611,8 +611,8 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
 
                 RegCloseKey(hLogKey);
 
-                if lRet != ERROR_SUCCESS {
-                    PrintError(lRet);
+                if lRet != (ERROR_SUCCESS as i32) {
+                    PrintError((lRet) as DWORD);
                     ConPrintf(
                         StdErr,
                         RUSTCONV_WSTR_D2D10514D703.as_ptr(),
@@ -622,8 +622,8 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
                     break 'quit;
                 }
 
-                SourceCreated = TRUE;
-                Success = TRUE;
+                SourceCreated = (TRUE as i32);
+                Success_local = (TRUE as i32);
             }
         }
     }
@@ -633,22 +633,22 @@ unsafe extern "C" fn CheckLogOrSourceExistence(
         RegCloseKey(hEventLogKey);
     }
 
-    SetLastError(lRet);
+    SetLastError((lRet) as DWORD);
 
-    return Success;
+    return Success_local;
 }
 
 unsafe extern "C" fn TrimLeftRightWhitespace(mut String: PWSTR) -> PWSTR {
     let mut pStr: PWSTR = core::ptr::null_mut();
 
     /* Trim whitespace on left (just advance the pointer) */
-    while *String != 0 && iswspace(*String as u32) != 0 {
+    while *String != 0 && iswspace((*String as u32) as u16) != 0 {
         String = String.offset(1);
     }
 
     /* Trim whitespace on right (NULL-terminate) */
     pStr = String.offset(wcslen(String as *const u16) as isize - 1 as isize);
-    while pStr >= String && iswspace(*pStr as u32) != 0 {
+    while pStr >= String && iswspace((*pStr as u32) as u16) != 0 {
         pStr = pStr.offset(-1);
     }
     pStr = pStr.offset(1);
@@ -665,7 +665,7 @@ pub unsafe extern "C" fn DoParse(
     mut NumOptions: ULONG,
     mut PrintErrorFunc: PRINT_ERROR_FUNC,
 ) -> BOOL {
-    let mut ExclusiveOptionPresent: BOOL = FALSE;
+    let mut ExclusiveOptionPresent: BOOL = (FALSE as i32);
     let mut OptionStr: PWSTR = core::ptr::null_mut::<WCHAR>();
     let mut i: UINT = 0;
 
@@ -690,7 +690,7 @@ pub unsafe extern "C" fn DoParse(
                 if PrintErrorFunc.is_some() {
                     PrintErrorFunc(ValueRequired, OptionStr);
                 }
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             /*
@@ -720,7 +720,7 @@ pub unsafe extern "C" fn DoParse(
                 if PrintErrorFunc.is_some() {
                     PrintErrorFunc(InvalidOption, OptionStr);
                 }
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             /* An option is being set */
@@ -736,7 +736,7 @@ pub unsafe extern "C" fn DoParse(
                         (*Options.offset(Option as isize)).MaxOfInstances,
                     );
                 }
-                return FALSE;
+                return (FALSE) as BOOL;
             }
             (*Options.offset(Option as isize)).Instances =
                 (*Options.offset(Option as isize)).Instances.wrapping_add(1);
@@ -750,7 +750,7 @@ pub unsafe extern "C" fn DoParse(
              * on the command-line.
              */
             if ((*Options.offset(Option as isize)).Flags & OPTION_EXCLUSIVE) != 0 {
-                ExclusiveOptionPresent = TRUE;
+                ExclusiveOptionPresent = (TRUE as i32);
             }
 
             /* Preprocess the option before setting its value */
@@ -758,7 +758,7 @@ pub unsafe extern "C" fn DoParse(
                 0 => {
                     /* Set the associated boolean */
                     let mut pBool: *mut BOOL = (*Options.offset(Option as isize)).Value as *mut BOOL;
-                    *pBool = TRUE;
+                    *pBool = (TRUE as i32);
 
                     /* No associated value, so reset the index */
                     Option = NumOptions as UINT;
@@ -784,7 +784,7 @@ pub unsafe extern "C" fn DoParse(
                     if PrintErrorFunc.is_some() {
                         PrintErrorFunc(ValueNotAllowed, OptionStr);
                     }
-                    return FALSE;
+                    return (FALSE) as BOOL;
                 }
 
                 1 => {
@@ -806,7 +806,7 @@ pub unsafe extern "C" fn DoParse(
                         if PrintErrorFunc.is_some() {
                             PrintErrorFunc(ValueIsEmpty, OptionStr);
                         }
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
 
                     /* Check whether the value is part of the allowed list of values */
@@ -821,7 +821,7 @@ pub unsafe extern "C" fn DoParse(
                             if PrintErrorFunc.is_some() {
                                 PrintErrorFunc(InvalidValue, *pStr, OptionStr);
                             }
-                            return FALSE;
+                            return (FALSE) as BOOL;
                         }
 
                         Scan = AllowedValues;
@@ -833,7 +833,7 @@ pub unsafe extern "C" fn DoParse(
                             ) as SIZE_T;
 
                             /* Check whether this is an allowed value */
-                            if (wcslen(*pStr as *const WCHAR) == Length)
+                            if (wcslen(*pStr as *const WCHAR) == (Length) as _)
                                 && (_wcsnicmp(
                                     *pStr as *const WCHAR,
                                     Scan as *const WCHAR,
@@ -856,7 +856,7 @@ pub unsafe extern "C" fn DoParse(
                             if PrintErrorFunc.is_some() {
                                 PrintErrorFunc(InvalidValue, *pStr, OptionStr);
                             }
-                            return FALSE;
+                            return (FALSE) as BOOL;
                         }
                     }
                 }
@@ -881,7 +881,7 @@ pub unsafe extern "C" fn DoParse(
                                 OptionStr,
                             );
                         }
-                        return FALSE;
+                        return (FALSE) as BOOL;
                     }
                 }
 
@@ -904,7 +904,7 @@ pub unsafe extern "C" fn DoParse(
         if PrintErrorFunc.is_some() {
             PrintErrorFunc(ValueRequired, OptionStr);
         }
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Finalize options validity checks */
@@ -923,13 +923,13 @@ pub unsafe extern "C" fn DoParse(
                 if PrintErrorFunc.is_some() {
                     PrintErrorFunc(InvalidSyntax);
                 }
-                return FALSE;
+                return (FALSE) as BOOL;
             }
             i = i.wrapping_add(1);
         }
 
         /* No other checks needed, we are done */
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* Check whether the required options were specified */
@@ -945,16 +945,17 @@ pub unsafe extern "C" fn DoParse(
                     (*Options.offset(i as isize)).OptionName,
                 );
             }
-            return FALSE;
+            return (FALSE) as BOOL;
         }
         i = i.wrapping_add(1);
     }
 
     /* All checks are done */
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 
-unsafe extern "C" fn PrintParserError(Error: PARSER_ERROR, mut args: ...) {
+#[no_mangle]
+unsafe extern "C" fn PrintParserError_v(Error: PARSER_ERROR, ap_list: *mut ::core::ffi::c_void) {
     static mut ErrorIDs: [UINT; 9] = [
         0,
         IDS_BADSYNTAX_0,
@@ -969,10 +970,9 @@ unsafe extern "C" fn PrintParserError(Error: PARSER_ERROR, mut args: ...) {
 
     let mut args_va: va_list;
 
-    if (Error as u32) < ARRAYSIZE(ErrorIDs) {
-        va_start(args_va, Error);
+    if (Error as u32) < ARRAYSIZE!(ErrorIDs) {
+        args_va = *(ap_list as *mut va_list);
         ConResPrintfV(&raw mut csStdErr, ErrorIDs[Error as usize], args_va);
-        va_end(args_va);
 
         if Error != Success {
             ConResPuts(&raw mut csStdErr, IDS_USAGE);
@@ -982,9 +982,11 @@ unsafe extern "C" fn PrintParserError(Error: PARSER_ERROR, mut args: ...) {
     }
 }
 
+
+
 #[no_mangle]
 pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) -> ::core::ffi::c_int {
-    let mut Success: BOOL = FALSE as BOOL;
+    let mut Success_local: BOOL = FALSE as BOOL;
     let mut hEventLog: HANDLE = core::ptr::null_mut();
     let mut pUserToken: PTOKEN_USER = core::ptr::null_mut();
 
@@ -1031,7 +1033,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szSystem) as PVOID,
         },
         OPTION {
@@ -1042,7 +1044,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szDomainUser) as PVOID,
         },
         OPTION {
@@ -1053,7 +1055,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szPassword) as PVOID,
         },
         OPTION {
@@ -1064,7 +1066,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szLogName) as PVOID,
         },
         OPTION {
@@ -1075,7 +1077,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szEventSource) as PVOID,
         },
         OPTION {
@@ -1086,7 +1088,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: RUSTCONV_WSTR_1F5144477077.as_ptr() as PWSTR,
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szEventType) as PVOID,
         },
         OPTION {
@@ -1119,7 +1121,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             AllowedValues: core::ptr::null_mut(),
             OptionStr: core::ptr::null_mut(),
             Instances: 0,
-            ValueSize: core::mem::size_of::<PWSTR>() as ULONG,
+            ValueSize: core::mem::size_of::<WCHAR>() as ULONG,
             Value: core::ptr::addr_of_mut!(szDescription) as PVOID,
         },
     ];
@@ -1128,7 +1130,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
     ConInitStdStreams();
 
     /* Parse command line for options */
-    if DoParse(argc as INT, argv, core::ptr::addr_of_mut!(Options) as POPTION, ARRAYSIZE(Options) as ULONG, Some(PrintParserError as unsafe extern "C" fn(PARSER_ERROR, ...) -> ())) == 0 {
+    if DoParse(argc as INT, argv, core::ptr::addr_of_mut!(Options) as POPTION, ARRAYSIZE!(Options) as ULONG, (PrintParserError as unsafe extern "C" fn(PARSER_ERROR, ...) -> ()) as PVOID) == 0 {
         return EXIT_FAILURE as ::core::ffi::c_int;
     }
 
@@ -1198,7 +1200,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
         }
 
         if _wcsicmp(szLogName as *const WCHAR, RUSTCONV_WSTR_0C7319B93B0B.as_ptr()) == 0 as ::core::ffi::c_int {
-            szEventSource = APPLICATION_NAME as PWSTR;
+            szEventSource = (APPLICATION_NAME).as_mut_ptr() as PWSTR;
         }
     }
 
@@ -1241,7 +1243,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
 
     /* Retrieve the current user token and report the event */
     if GetUserToken(core::ptr::addr_of_mut!(pUserToken)) != 0 {
-        Success = ReportEventW(
+        Success_local = ReportEventW(
             hEventLog,
             ulEventType as WORD,
             ulEventCategory as WORD,
@@ -1252,7 +1254,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
             core::ptr::addr_of_mut!(szDescription) as *mut LPCWSTR,
             core::ptr::null_mut(), // No raw data
         );
-        if Success == 0 {
+        if Success_local == 0 {
             PrintError(GetLastError());
             ConPuts(core::ptr::addr_of_mut!(csStdErr), RUSTCONV_WSTR_D26DACB912F6.as_ptr());
         } else {
@@ -1280,7 +1282,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argv: *mut *mut WCHAR) 
         CloseEventLog(hEventLog);
     }
 
-    return if Success != 0 {
+    return if Success_local != 0 {
         EXIT_SUCCESS as ::core::ffi::c_int
     } else {
         EXIT_FAILURE as ::core::ffi::c_int

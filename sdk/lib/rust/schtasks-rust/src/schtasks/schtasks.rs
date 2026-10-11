@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -124,7 +124,7 @@ unsafe extern "C" fn get_tasks_root_folder() -> *mut ITaskFolder {
 
     hres = CoCreateInstance(
         &raw const CLSID_TaskScheduler,
-        core::ptr::null_mut::<IUnknown>(),
+        (core::ptr::null_mut::<IUnknown>()).cast(),
         CLSCTX_INPROC_SERVER as DWORD,
         &raw const IID_ITaskService,
         &raw mut service as *mut LPVOID,
@@ -133,7 +133,7 @@ unsafe extern "C" fn get_tasks_root_folder() -> *mut ITaskFolder {
         return core::ptr::null_mut::<ITaskFolder>();
     }
 
-    *V_VT(&raw mut empty) = VT_EMPTY as VARTYPE;
+    V_VT!(&raw mut empty) = VT_EMPTY as VARTYPE;
     hres = ITaskService_Connect(service, empty, empty, empty, empty);
     if hres < 0 as HRESULT {
         if (*__wine_dbch___default).flags as core::ffi::c_int
@@ -143,7 +143,7 @@ unsafe extern "C" fn get_tasks_root_folder() -> *mut ITaskFolder {
             let __dbch: *mut __wine_debug_channel = __wine_dbch___default;
             let __dbcl: __wine_debug_class = __WINE_DBCL_FIXME;
             ros_dbg_log(
-                __dbcl,
+                (__dbcl) as u32,
                 __dbch,
                 b"base/applications/cmdutils/schtasks/schtasks.c\0"
                     as *const u8 as *const core::ffi::c_char,
@@ -166,7 +166,7 @@ unsafe extern "C" fn get_tasks_root_folder() -> *mut ITaskFolder {
             let __dbch_0: *mut __wine_debug_channel = __wine_dbch___default;
             let __dbcl_0: __wine_debug_class = __WINE_DBCL_FIXME;
             ros_dbg_log(
-                __dbcl_0,
+                (__dbcl_0) as u32,
                 __dbch_0,
                 b"base/applications/cmdutils/schtasks/schtasks.c\0"
                     as *const u8 as *const core::ffi::c_char,
@@ -268,8 +268,8 @@ unsafe extern "C" fn read_file_to_bstr(file_name: *const WCHAR) -> BSTR {
     {
         ret = SysAllocStringLen(
             data.offset(2 as isize) as *const WCHAR,
-            ((read_size - 2 as DWORD) as usize)
-                / ::core::mem::size_of::<WCHAR>(),
+            (((read_size - 2 as DWORD) as usize)
+                / ::core::mem::size_of::<WCHAR>()) as UINT,
         );
     } else {
         size = MultiByteToWideChar(
@@ -302,14 +302,14 @@ unsafe extern "C" fn read_file_to_bstr(file_name: *const WCHAR) -> BSTR {
 }
 
 unsafe extern "C" fn change_command(mut argc: i32, mut argv: *mut *mut WCHAR) -> i32 {
-    let mut have_option: BOOL = FALSE;
-    let mut enable: BOOL = FALSE;
+    let mut have_option: BOOL = (FALSE as i32);
+    let mut enable: BOOL = (FALSE as i32);
     let mut task_name: *const WCHAR = core::ptr::null();
     let mut task: *mut IRegisteredTask = core::ptr::null_mut();
     let mut hres: HRESULT = 0;
 
     while argc != 0 {
-        if strcmpiW(
+        if strcmpiW!(
             *argv.add(0 as usize),
             core::ptr::addr_of!(tn_optW) as *const WCHAR,
         ) == 0
@@ -325,16 +325,16 @@ unsafe extern "C" fn change_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
             task_name = *argv.add(1 as usize);
             argc -= 2;
             argv = argv.add(2 as usize);
-        } else if strcmpiW(
+        } else if strcmpiW!(
             *argv.add(0 as usize),
             core::ptr::addr_of!(enable_optW) as *const WCHAR,
         ) == 0
         {
-            enable = TRUE;
-            have_option = TRUE;
+            enable = (TRUE as i32);
+            have_option = (TRUE as i32);
             argc -= 1;
             argv = argv.add(1);
-        } else if strcmpiW(
+        } else if strcmpiW!(
             *argv.add(0 as usize),
             core::ptr::addr_of!(tr_optW) as *const WCHAR,
         ) == 0
@@ -343,7 +343,7 @@ unsafe extern "C" fn change_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
                 return 1;
             }
 
-            have_option = TRUE;
+            have_option = (TRUE as i32);
             argc -= 2;
             argv = argv.add(2 as usize);
         } else {
@@ -380,7 +380,7 @@ unsafe extern "C" fn create_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
     let mut task_name: *const WCHAR = core::ptr::null();
     let mut xml_file: *const WCHAR = core::ptr::null();
     let mut root: *mut ITaskFolder = core::ptr::null_mut();
-    let mut flags: LONG = TASK_CREATE;
+    let mut flags: LONG = (TASK_CREATE) as i32;
     let mut task: *mut IRegisteredTask = core::ptr::null_mut();
     let mut empty: VARIANT = core::mem::zeroed();
     let mut str: BSTR;
@@ -388,7 +388,7 @@ unsafe extern "C" fn create_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
     let mut hres: HRESULT;
 
     while argc != 0 {
-        if strcmpiW(*argv.offset(0 as isize), xml_optW.as_ptr()) == 0 {
+        if strcmpiW!(*argv.offset(0 as isize), xml_optW.as_ptr()) == 0 {
             if argc < 2 {
                 return 1;
             }
@@ -400,7 +400,7 @@ unsafe extern "C" fn create_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
             xml_file = *argv.offset(1 as isize);
             argc -= 2;
             argv = argv.offset(2 as isize);
-        } else if strcmpiW(*argv.offset(0 as isize), tn_optW.as_ptr()) == 0 {
+        } else if strcmpiW!(*argv.offset(0 as isize), tn_optW.as_ptr()) == 0 {
             if argc < 2 {
                 return 1;
             }
@@ -412,11 +412,11 @@ unsafe extern "C" fn create_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
             task_name = *argv.offset(1 as isize);
             argc -= 2;
             argv = argv.offset(2 as isize);
-        } else if strcmpiW(*argv.offset(0 as isize), f_optW.as_ptr()) == 0 {
-            flags = TASK_CREATE_OR_UPDATE;
+        } else if strcmpiW!(*argv.offset(0 as isize), f_optW.as_ptr()) == 0 {
+            flags = (TASK_CREATE_OR_UPDATE) as i32;
             argc -= 1;
             argv = argv.offset(1);
-        } else if strcmpiW(*argv.offset(0 as isize), ru_optW.as_ptr()) == 0 {
+        } else if strcmpiW!(*argv.offset(0 as isize), ru_optW.as_ptr()) == 0 {
             if argc < 2 {
                 return 1;
             }
@@ -447,7 +447,7 @@ unsafe extern "C" fn create_command(mut argc: i32, mut argv: *mut *mut WCHAR) ->
         return 1;
     }
 
-    *V_VT(core::ptr::addr_of_mut!(empty)) = VT_EMPTY;
+    V_VT!(core::ptr::addr_of_mut!(empty)) = VT_EMPTY;
     str = SysAllocString(task_name);
     hres = ITaskFolder_RegisterTask(
         root,
@@ -481,14 +481,14 @@ unsafe extern "C" fn delete_command(
     let mut hres: HRESULT = 0;
 
     while argc != 0 {
-        if strcmpiW(
+        if strcmpiW!(
             *argv.offset(0 as isize),
             core::ptr::addr_of!(f_optW) as *const WCHAR,
         ) == 0
         {
             argc -= 1;
             argv = argv.offset(1);
-        } else if strcmpiW(
+        } else if strcmpiW!(
             *argv.offset(0 as isize),
             core::ptr::addr_of!(tn_optW) as *const WCHAR,
         ) == 0
@@ -543,11 +543,11 @@ pub unsafe extern "C" fn wmain(mut argc: core::ffi::c_int, mut argv: *mut *mut W
 
     if argc < 2 {
         FIXME!("Print current tasks state\n");
-    } else if strcmpiW(*argv.offset(1 as isize), core::ptr::addr_of!(change_optW) as *const WCHAR) == 0 {
+    } else if strcmpiW!(*argv.offset(1 as isize), core::ptr::addr_of!(change_optW) as *const WCHAR) == 0 {
         ret = change_command(argc - 2, argv.offset(2 as isize));
-    } else if strcmpiW(*argv.offset(1 as isize), core::ptr::addr_of!(create_optW) as *const WCHAR) == 0 {
+    } else if strcmpiW!(*argv.offset(1 as isize), core::ptr::addr_of!(create_optW) as *const WCHAR) == 0 {
         ret = create_command(argc - 2, argv.offset(2 as isize));
-    } else if strcmpiW(*argv.offset(1 as isize), core::ptr::addr_of!(delete_optW) as *const WCHAR) == 0 {
+    } else if strcmpiW!(*argv.offset(1 as isize), core::ptr::addr_of!(delete_optW) as *const WCHAR) == 0 {
         ret = delete_command(argc - 2, argv.offset(2 as isize));
     } else {
         FIXME!("Unsupported command %s\n", debugstr_w(*argv.offset(1 as isize)));

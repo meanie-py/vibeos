@@ -1,7 +1,7 @@
 use crate::netsh::context::FindContextByGuid;
 use crate::netsh::context::pRootContext;
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_4B83808CDCBA: [u16; 67] = [
     0x0048u16, 0x0065, 0x006C, 0x0070, 0x0065, 0x0072, 0x0020, 0x0047, 0x0055, 0x0049,
     0x0044, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020, 0x0020,
@@ -54,7 +54,7 @@ pub static mut pHelperListTail: PHELPER_ENTRY =
 pub static mut pCurrentDll: PDLL_LIST_ENTRY =
     ::core::ptr::null::<_DLL_LIST_ENTRY>() as *mut _DLL_LIST_ENTRY;
 
-pub const REG_NETSH_PATH: [::core::ffi::c_ushort; 25] = unsafe {
+pub static REG_NETSH_PATH: [::core::ffi::c_ushort; 25] = unsafe {
     ::core::mem::transmute::<[u8; 50], [::core::ffi::c_ushort; 25]>(
         *b"S\0o\0f\0t\0w\0a\0r\0e\0\\\0M\0i\0c\0r\0o\0s\0o\0f\0t\0\\\0N\0e\0t\0S\0h\0\0\0",
     )
@@ -71,7 +71,7 @@ unsafe extern "C" fn StartHelpers(mut pHelper: PHELPER_ENTRY) {
                 dwError = (*pHelper)
                     .Attributes
                     .pfnStart
-                    .expect("non-null function pointer")(
+                    .unwrap_unchecked()(
                     core::ptr::null::<GUID>(),
                     0 as DWORD,
                 );
@@ -98,7 +98,7 @@ unsafe extern "C" fn RegisterHelperDll(pEntry: PDLL_LIST_ENTRY) {
 
     dwError = RegCreateKeyExW(
         HKEY_LOCAL_MACHINE,
-        REG_NETSH_PATH,
+        (REG_NETSH_PATH).as_ptr(),
         0,
         core::ptr::null_mut(),
         REG_OPTION_NON_VOLATILE,
@@ -154,13 +154,13 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
     let mut pEntry: PDLL_LIST_ENTRY = core::ptr::null_mut();
     let mut pszStart: PWSTR = core::ptr::null_mut();
     let mut pszEnd: PWSTR = core::ptr::null_mut();
-    let mut bInserted: BOOL = FALSE;
+    let mut bInserted: BOOL = (FALSE as i32);
     let mut dwError: DWORD = 0;
 
     pEntry = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY as DWORD,
-        core::mem::size_of::<DLL_LIST_ENTRY>() as usize,
+        (core::mem::size_of::<DLL_LIST_ENTRY>()) as SIZE_T,
     ) as PDLL_LIST_ENTRY;
     if pEntry.is_null() {
         return ERROR_OUTOFMEMORY as DWORD;
@@ -169,8 +169,8 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
     (*pEntry).pszDllName = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY as DWORD,
-        (wcslen(pszDllName as *const u16) as usize + 1 as usize)
-            * core::mem::size_of::<u16>(),
+        ((wcslen(pszDllName as *const u16) as usize + 1 as usize)
+            * core::mem::size_of::<u16>()) as SIZE_T,
     ) as PWSTR;
     'done: {
         if (*pEntry).pszDllName.is_null() {
@@ -191,8 +191,8 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
         (*pEntry).pszShortName = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY as DWORD,
-            (wcslen(pszStart as *const u16) as usize + 1 as usize)
-                * core::mem::size_of::<u16>(),
+            ((wcslen(pszStart as *const u16) as usize + 1 as usize)
+                * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         if (*pEntry).pszShortName.is_null() {
             dwError = ERROR_OUTOFMEMORY as DWORD;
@@ -207,9 +207,9 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
         (*pEntry).pszValueName = HeapAlloc(
             GetProcessHeap(),
             HEAP_ZERO_MEMORY as DWORD,
-            (wcslen((*pEntry).pszShortName as *const u16) as usize
+            ((wcslen((*pEntry).pszShortName as *const u16) as usize
                 + 1 as usize)
-                * core::mem::size_of::<u16>(),
+                * core::mem::size_of::<u16>()) as SIZE_T,
         ) as PWSTR;
         if (*pEntry).pszValueName.is_null() {
             dwError = ERROR_OUTOFMEMORY as DWORD;
@@ -238,7 +238,7 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
             pDllListHead = pEntry;
         }
 
-        bInserted = TRUE;
+        bInserted = (TRUE as i32);
 
         (*pEntry).hModule = LoadLibraryW((*pEntry).pszDllName as *const u16) as HMODULE;
         if (*pEntry).hModule.is_null() {
@@ -262,7 +262,7 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
         }
 
         pCurrentDll = pEntry;
-        let pInitHelperDll = pInitHelperDll.expect("non-null function pointer");
+        let pInitHelperDll = pInitHelperDll.unwrap_unchecked();
         dwError = pInitHelperDll(5 as DWORD, core::ptr::null_mut());
         pCurrentDll = core::ptr::null_mut();
 
@@ -305,7 +305,7 @@ unsafe extern "C" fn LoadHelperDll(mut pszDllName: PWSTR, mut bRegister: BOOL) -
 pub unsafe extern "C" fn CreateRootHelper() -> DWORD {
     let mut pHelper: PHELPER_ENTRY;
 
-    pHelper = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, core::mem::size_of::<HELPER_ENTRY>()) as PHELPER_ENTRY;
+    pHelper = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, (core::mem::size_of::<HELPER_ENTRY>()) as SIZE_T) as PHELPER_ENTRY;
     if pHelper.is_null() {
         return ERROR_OUTOFMEMORY as DWORD;
     }
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn LoadHelpers() {
 
     dwError = RegOpenKeyExW(
         HKEY_LOCAL_MACHINE,
-        REG_NETSH_PATH,
+        (REG_NETSH_PATH).as_ptr(),
         0 as DWORD,
         KEY_READ as REGSAM,
         core::ptr::addr_of_mut!(hKey),
@@ -438,13 +438,10 @@ pub unsafe extern "C" fn UnloadHelpers() {
     pDllListTail = core::ptr::null_mut::<_DLL_LIST_ENTRY>() as PDLL_LIST_ENTRY;
 }
 #[no_mangle]
-pub unsafe extern "C" fn FindHelper(
-    pguidHelper: *const GUID,
-    mut pHelper: PHELPER_ENTRY,
-) -> PHELPER_ENTRY {
+pub unsafe extern "C" fn FindHelper(pguidHelper: *const GUID, mut pHelper: PHELPER_ENTRY) -> PHELPER_ENTRY {
     let mut pFoundHelper: PHELPER_ENTRY;
     while !pHelper.is_null() {
-        if IsEqualGUID(pguidHelper, core::ptr::addr_of!((*pHelper).Attributes.guidHelper)) != 0 {
+        if IsEqualGUID!(pguidHelper, core::ptr::addr_of!((*pHelper).Attributes.guidHelper)) != false {
             return pHelper;
         }
         pFoundHelper = FindHelper(pguidHelper, (*pHelper).pSubHelperHead);
@@ -476,7 +473,7 @@ pub unsafe extern "system" fn RegisterHelper(
     pHelper = HeapAlloc(
         GetProcessHeap(),
         HEAP_ZERO_MEMORY,
-        core::mem::size_of::<HELPER_ENTRY>(),
+        (core::mem::size_of::<HELPER_ENTRY>()) as SIZE_T,
     ) as PHELPER_ENTRY;
     if pHelper.is_null()
     {
@@ -490,7 +487,7 @@ pub unsafe extern "system" fn RegisterHelper(
     DPRINT!("pfnStart: %p\n", (*pHelperAttributes).pfnStart);
     DPRINT!("pfnStop: %p\n", (*pHelperAttributes).pfnStop);
 
-    CopyMemory(
+    CopyMemory!(
         core::ptr::addr_of_mut!((*pHelper).Attributes) as *mut core::ffi::c_void,
         pHelperAttributes as *const core::ffi::c_void,
         core::mem::size_of::<NS_HELPER_ATTRIBUTES>(),
@@ -514,7 +511,7 @@ pub unsafe extern "system" fn RegisterHelper(
     }
     else
     {
-        CopyMemory(
+        CopyMemory!(
             core::ptr::addr_of_mut!((*pHelper).ParentHelperGuid) as *mut core::ffi::c_void,
             pguidParentHelper as *const core::ffi::c_void,
             core::mem::size_of::<GUID>(),
@@ -543,15 +540,7 @@ pub unsafe extern "system" fn RegisterHelper(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn AddHelperCommand(
-    pwszMachine: LPCWSTR,
-    ppwcArguments: *mut LPWSTR,
-    dwCurrentIndex: DWORD,
-    dwArgCount: DWORD,
-    dwFlags: DWORD,
-    pvData: LPCVOID,
-    pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn AddHelperCommand(pwszMachine: LPCWSTR, ppwcArguments: *mut LPWSTR, dwCurrentIndex: DWORD, dwArgCount: DWORD, dwFlags: DWORD, pvData: LPCVOID, pbDone: *mut BOOL) -> DWORD {
     let mut dwError: DWORD = ERROR_SUCCESS as DWORD;
 
     DPRINT!("AddHelperCommand()\n");
@@ -574,15 +563,7 @@ pub unsafe extern "system" fn AddHelperCommand(
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn DeleteHelperCommand(
-    pwszMachine: LPCWSTR,
-    ppwcArguments: *mut LPWSTR,
-    dwCurrentIndex: DWORD,
-    dwArgCount: DWORD,
-    dwFlags: DWORD,
-    pvData: LPCVOID,
-    pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn DeleteHelperCommand(pwszMachine: LPCWSTR, ppwcArguments: *mut LPWSTR, dwCurrentIndex: DWORD, dwArgCount: DWORD, dwFlags: DWORD, pvData: LPCVOID, pbDone: *mut BOOL) -> DWORD {
     let mut pEntry: PDLL_LIST_ENTRY = core::ptr::null_mut();
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut dwError: DWORD = 0;
@@ -621,7 +602,7 @@ pub unsafe extern "system" fn DeleteHelperCommand(
 
             dwError = RegOpenKeyExW(
                 HKEY_LOCAL_MACHINE,
-                REG_NETSH_PATH,
+                (REG_NETSH_PATH).as_ptr(),
                 0,
                 KEY_WRITE,
                 &raw mut hKey,
@@ -642,7 +623,7 @@ pub unsafe extern "system" fn DeleteHelperCommand(
     return ERROR_SUCCESS;
 }
 
-unsafe extern "C" fn PrintHelpers(pHelperListHead: PHELPER_ENTRY, mut dwLevel: DWORD) {
+unsafe extern "C" fn PrintHelpers(pHelperList: PHELPER_ENTRY, mut dwLevel: DWORD) {
     let mut pHelper: PHELPER_ENTRY;
     let mut pContext: PCONTEXT_ENTRY;
     let mut szIndent: [WCHAR; 22] = [0; 22];
@@ -650,20 +631,20 @@ unsafe extern "C" fn PrintHelpers(pHelperListHead: PHELPER_ENTRY, mut dwLevel: D
     let mut RootGuid: GUID = NETSH_ROOT_GUID;
 
     i = 0 as DWORD;
-    while i < min(dwLevel, 10 as DWORD).wrapping_mul(2 as DWORD) {
+    while i < min!(dwLevel, 10 as DWORD).wrapping_mul(2 as DWORD) {
         szIndent[i as usize] = 0x0020u16;
         i = i.wrapping_add(1);
     }
     szIndent[dwLevel.wrapping_mul(2 as DWORD) as usize] = UNICODE_NULL as WCHAR;
 
-    pHelper = pHelperListHead;
+    pHelper = pHelperList;
     while !pHelper.is_null() {
         DPRINT!("Helper GUID: %lx\n", (*pHelper).Attributes.guidHelper.Data1);
 
-        if IsEqualGUID(
+        if IsEqualGUID!(
             core::ptr::addr_of_mut!((*pHelper).Attributes.guidHelper),
             core::ptr::addr_of_mut!(RootGuid),
-        ) == 0
+        ) == false
         {
             pContext = FindContextByGuid(core::ptr::addr_of_mut!((*pHelper).Attributes.guidHelper));
             DPRINT!("pContext: %p\n", pContext);
@@ -672,16 +653,16 @@ unsafe extern "C" fn PrintHelpers(pHelperListHead: PHELPER_ENTRY, mut dwLevel: D
                     StdOut,
                     RUSTCONV_WSTR_8BEBC22EE0C1.as_ptr(),
                     (*pHelper).Attributes.guidHelper.Data1,
-                    (*pHelper).Attributes.guidHelper.Data2,
-                    (*pHelper).Attributes.guidHelper.Data3,
-                    (*pHelper).Attributes.guidHelper.Data4[0 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[1 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[2 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[3 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[4 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[5 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[6 as usize],
-                    (*pHelper).Attributes.guidHelper.Data4[7 as usize],
+                    (*pHelper).Attributes.guidHelper.Data2 as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data3 as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[0 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[1 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[2 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[3 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[4 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[5 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[6 as usize] as core::ffi::c_uint,
+                    (*pHelper).Attributes.guidHelper.Data4[7 as usize] as core::ffi::c_uint,
                     (*(*pHelper).pDllEntry).pszShortName,
                     core::ptr::addr_of_mut!(szIndent) as *mut WCHAR,
                     (*pContext).pszContextName,
@@ -698,15 +679,7 @@ unsafe extern "C" fn PrintHelpers(pHelperListHead: PHELPER_ENTRY, mut dwLevel: D
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn ShowHelperCommand(
-    pwszMachine: LPCWSTR,
-    ppwcArguments: *mut LPWSTR,
-    dwCurrentIndex: DWORD,
-    dwArgCount: DWORD,
-    dwFlags: DWORD,
-    pvData: LPCVOID,
-    pbDone: *mut BOOL,
-) -> DWORD {
+pub unsafe extern "system" fn ShowHelperCommand(pwszMachine: LPCWSTR, ppwcArguments: *mut PWSTR, dwCurrentIndex: DWORD, dwArgCount: DWORD, dwFlags: DWORD, pvData: LPCVOID, pbDone: *mut BOOL) -> DWORD {
     DPRINT!("ShowHelperCommand()\n");
 
     ConPrintf(StdOut, RUSTCONV_WSTR_4B83808CDCBA.as_ptr());

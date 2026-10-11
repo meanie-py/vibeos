@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_075DE2B906DB: [u16; 2] = [0x000Au16, 0x0000];
 pub static RUSTCONV_WSTR_5B4354824105: [u16; 10] = [0x0061u16, 0x006E, 0x006F, 0x006E, 0x0079, 0x006D, 0x006F, 0x0075, 0x0073, 0x0000];
 pub static RUSTCONV_WSTR_80823D0FA1FA: [u16; 43] = [
@@ -37,20 +37,22 @@ pub type PCBindStatusCallback = *mut CBindStatusCallback;
 
 unsafe extern "C" fn CBindStatusCallback_Destroy(This: *mut CBindStatusCallback) {}
 
-unsafe extern "C" fn write_status(lpFmt: LPCWSTR, mut args: ...) {
+#[no_mangle]
+unsafe extern "C" fn write_status_v(lpFmt: LPCWSTR, ap_list: *mut ::core::ffi::c_void) {
+    let mut args: va_list = *(ap_list as *mut va_list);
     let mut szTxt: [WCHAR; 128] = [0; 128];
     let mut csbi: CONSOLE_SCREEN_BUFFER_INFO = core::mem::zeroed();
-    let mut args_0: ::core::ffi::VaListImpl;
+    let mut args_0: va_list = *(ap_list as *mut va_list);
 
-    va_start(args, lpFmt);
-    args_0 = args.clone();
+
+
     StringCbVPrintfW(
         core::ptr::addr_of_mut!(szTxt) as *mut WCHAR,
         core::mem::size_of::<[WCHAR; 128]>() as size_t,
         lpFmt,
-        args_0.as_va_list(),
+        (args_0).cast(),
     );
-    va_end(args);
+
 
     if GetConsoleScreenBufferInfo(
         GetStdHandle(STD_OUTPUT_HANDLE),
@@ -72,8 +74,10 @@ unsafe extern "C" fn write_status(lpFmt: LPCWSTR, mut args: ...) {
     }
 }
 
+
+
 unsafe extern "C" fn CBindStatusCallback_UpdateProgress(This: *mut CBindStatusCallback) {
-    let mut szMessage: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szMessage: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
 
     /* FIXME: better output */
     if (*This).Size != 0 {
@@ -92,7 +96,7 @@ unsafe extern "C" fn CBindStatusCallback_UpdateProgress(This: *mut CBindStatusCa
             core::ptr::null_mut(),
             IDS_BYTES_DOWNLOADED_FULL,
             core::ptr::addr_of_mut!(szMessage) as LPWSTR,
-            _countof(szMessage),
+            (_countof!(szMessage)) as i32,
         );
 
         write_status(
@@ -105,7 +109,7 @@ unsafe extern "C" fn CBindStatusCallback_UpdateProgress(This: *mut CBindStatusCa
             core::ptr::null_mut(),
             IDS_BYTES_DOWNLOADED,
             core::ptr::addr_of_mut!(szMessage) as LPWSTR,
-            _countof(szMessage),
+            (_countof!(szMessage)) as i32,
         );
 
         /* Unknown size */
@@ -125,7 +129,7 @@ unsafe extern "system" fn CBindStatusCallback_AddRef(iface: *mut IBindStatusCall
 }
 
 unsafe extern "system" fn CBindStatusCallback_Release(iface: *mut IBindStatusCallback) -> ULONG {
-    let This: *mut CBindStatusCallback = interface_to_impl(iface, IBindStatusCallback);
+    let This: *mut CBindStatusCallback = interface_to_impl(iface, core::mem::size_of::<IBindStatusCallback>());
     let mut ret: ULONG;
 
     ret = InterlockedDecrement(core::ptr::addr_of_mut!((*This).ref_) as PLONG) as ULONG;
@@ -146,14 +150,14 @@ unsafe extern "system" fn CBindStatusCallback_QueryInterface(
     iid: REFIID,
     pvObject: *mut PVOID,
 ) -> HRESULT {
-    let This: *mut CBindStatusCallback = interface_to_impl(iface, IBindStatusCallback);
+    let This: *mut CBindStatusCallback = interface_to_impl(iface, core::mem::size_of::<IBindStatusCallback>());
 
     *pvObject = core::ptr::null_mut();
 
-    if IsEqualIID(iid, core::ptr::addr_of!(IID_IBindStatusCallback)) != 0
-        || IsEqualIID(iid, core::ptr::addr_of!(IID_IUnknown)) != 0
+    if IsEqualIID!(iid, core::ptr::addr_of!(IID_IBindStatusCallback)) != 0
+        || IsEqualIID!(iid, core::ptr::addr_of!(IID_IUnknown)) != 0
     {
-        *pvObject = impl_to_interface(This, IBindStatusCallback) as PVOID;
+        *pvObject = impl_to_interface(This, core::mem::size_of::<IBindStatusCallback>()) as PVOID;
     } else {
         return E_NOINTERFACE;
     }
@@ -370,13 +374,13 @@ unsafe extern "C" fn get_display_url(
 }
 
 unsafe extern "C" fn download_file(mut pszUrl: LPCWSTR, mut pszFile: LPCWSTR) -> ::core::ffi::c_int {
-    let mut szScheme: [WCHAR; INTERNET_MAX_SCHEME_LENGTH + 1] = [0; INTERNET_MAX_SCHEME_LENGTH + 1];
-    let mut szHostName: [WCHAR; INTERNET_MAX_HOST_NAME_LENGTH + 1] = [0; INTERNET_MAX_HOST_NAME_LENGTH + 1];
-    let mut szUserName: [WCHAR; INTERNET_MAX_USER_NAME_LENGTH + 1] = [0; INTERNET_MAX_USER_NAME_LENGTH + 1];
-    let mut szPassword: [WCHAR; INTERNET_MAX_PASSWORD_LENGTH + 1] = [0; INTERNET_MAX_PASSWORD_LENGTH + 1];
-    let mut szUrlPath: [WCHAR; INTERNET_MAX_PATH_LENGTH + 1] = [0; INTERNET_MAX_PATH_LENGTH + 1];
-    let mut szExtraInfo: [WCHAR; INTERNET_MAX_PATH_LENGTH + 1] = [0; INTERNET_MAX_PATH_LENGTH + 1];
-    let mut szUrl: [WCHAR; INTERNET_MAX_URL_LENGTH + 1] = [0; INTERNET_MAX_URL_LENGTH + 1];
+    let mut szScheme: [WCHAR; (INTERNET_MAX_SCHEME_LENGTH + 1) as _] = [0; (INTERNET_MAX_SCHEME_LENGTH + 1) as _];
+    let mut szHostName: [WCHAR; (INTERNET_MAX_HOST_NAME_LENGTH + 1) as _] = [0; (INTERNET_MAX_HOST_NAME_LENGTH + 1) as _];
+    let mut szUserName: [WCHAR; (INTERNET_MAX_USER_NAME_LENGTH + 1) as _] = [0; (INTERNET_MAX_USER_NAME_LENGTH + 1) as _];
+    let mut szPassword: [WCHAR; (INTERNET_MAX_PASSWORD_LENGTH + 1) as _] = [0; (INTERNET_MAX_PASSWORD_LENGTH + 1) as _];
+    let mut szUrlPath: [WCHAR; (INTERNET_MAX_PATH_LENGTH + 1) as _] = [0; (INTERNET_MAX_PATH_LENGTH + 1) as _];
+    let mut szExtraInfo: [WCHAR; (INTERNET_MAX_PATH_LENGTH + 1) as _] = [0; (INTERNET_MAX_PATH_LENGTH + 1) as _];
+    let mut szUrl: [WCHAR; (INTERNET_MAX_URL_LENGTH + 1) as _] = [0; (INTERNET_MAX_URL_LENGTH + 1) as _];
     let mut dwUrlLen: DWORD = 0;
     let mut pszFilePart: LPTSTR = ::core::ptr::null_mut::<WCHAR>();
     let mut urlc: URL_COMPONENTS = core::mem::zeroed();
@@ -390,17 +394,17 @@ unsafe extern "C" fn download_file(mut pszUrl: LPCWSTR, mut pszFile: LPCWSTR) ->
 
     urlc.dwStructSize = ::core::mem::size_of::<URL_COMPONENTS>() as DWORD;
     urlc.lpszScheme = ::core::ptr::addr_of_mut!(szScheme) as *mut WCHAR as LPWSTR;
-    urlc.dwSchemeLength = _countof(szScheme) as DWORD;
+    urlc.dwSchemeLength = _countof!(szScheme) as DWORD;
     urlc.lpszHostName = ::core::ptr::addr_of_mut!(szHostName) as *mut WCHAR as LPWSTR;
-    urlc.dwHostNameLength = _countof(szHostName) as DWORD;
+    urlc.dwHostNameLength = _countof!(szHostName) as DWORD;
     urlc.lpszUserName = ::core::ptr::addr_of_mut!(szUserName) as *mut WCHAR as LPWSTR;
-    urlc.dwUserNameLength = _countof(szUserName) as DWORD;
+    urlc.dwUserNameLength = _countof!(szUserName) as DWORD;
     urlc.lpszPassword = ::core::ptr::addr_of_mut!(szPassword) as *mut WCHAR as LPWSTR;
-    urlc.dwPasswordLength = _countof(szPassword) as DWORD;
+    urlc.dwPasswordLength = _countof!(szPassword) as DWORD;
     urlc.lpszUrlPath = ::core::ptr::addr_of_mut!(szUrlPath) as *mut WCHAR as LPWSTR;
-    urlc.dwUrlPathLength = _countof(szUrlPath) as DWORD;
+    urlc.dwUrlPathLength = _countof!(szUrlPath) as DWORD;
     urlc.lpszExtraInfo = ::core::ptr::addr_of_mut!(szExtraInfo) as *mut WCHAR as LPWSTR;
-    urlc.dwExtraInfoLength = _countof(szExtraInfo) as DWORD;
+    urlc.dwExtraInfoLength = _countof!(szExtraInfo) as DWORD;
     if InternetCrackUrl(
         pszUrl,
         wcslen(pszUrl) as DWORD,
@@ -460,7 +464,7 @@ unsafe extern "C" fn download_file(mut pszUrl: LPCWSTR, mut pszFile: LPCWSTR) ->
     }
 
     /* Generate the URL to be displayed (without a password) */
-    dwUrlLen = _countof(szUrl) as DWORD;
+    dwUrlLen = _countof!(szUrl) as DWORD;
     iRet = get_display_url(
         ::core::ptr::addr_of_mut!(urlc),
         ::core::ptr::addr_of_mut!(szUrl) as *mut WCHAR,
@@ -486,7 +490,7 @@ unsafe extern "C" fn download_file(mut pszUrl: LPCWSTR, mut pszFile: LPCWSTR) ->
     );
 
     /* Generate the URL to download */
-    dwUrlLen = _countof(szUrl) as DWORD;
+    dwUrlLen = _countof!(szUrl) as DWORD;
     if InternetCreateUrl(
         ::core::ptr::addr_of_mut!(urlc),
         ICU_ESCAPE,

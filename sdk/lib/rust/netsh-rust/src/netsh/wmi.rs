@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_15D33A6D42D7: [u16; 15] = [
     0x004Fu16, 0x0053, 0x0050, 0x0072, 0x006F, 0x0064, 0x0075, 0x0063, 0x0074, 0x0053,
     0x0075, 0x0069, 0x0074, 0x0065, 0x0000,
@@ -105,10 +105,10 @@ pub unsafe extern "C" fn CheckOsVersion(mut pfnOsVersionCheck: PNS_OSVERSIONCHEC
     DPRINT!("CheckOsVersion(%p)\n", pfnOsVersionCheck);
 
     if pfnOsVersionCheck.is_none() {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
-    return pfnOsVersionCheck(
+    return (pfnOsVersionCheck.unwrap_unchecked())(
         VersionInfoOsType,
         VersionInfoOsProductSuite,
         core::ptr::addr_of_mut!(VersionInfoVersion) as *mut WCHAR as LPCWSTR,
@@ -185,38 +185,38 @@ unsafe extern "C" fn QueryOperatingSystemInfo(Services: *mut IWbemServices) -> H
         {
             DPRINT!("Name: %S\n", Name);
             if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_2A663D6AB2F2.as_ptr()) == 0 {
-                DPRINT!("BuildNumber %S\n", V_BSTR(&raw mut Value));
+                DPRINT!("BuildNumber %S\n", V_BSTR!(&raw mut Value));
                 StringCbCopyW(
                     &raw mut VersionInfoBuildNumber as *mut WCHAR,
-                    core::mem::size_of::<[WCHAR; MAX_PATH]>() as size_t,
-                    V_BSTR(&raw mut Value),
+                    core::mem::size_of::<[WCHAR; (MAX_PATH) as _]>() as size_t,
+                    V_BSTR!(&raw mut Value),
                 );
             } else if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_15D33A6D42D7.as_ptr()) == 0 {
-                DPRINT!("OSProductSuite 0x%x\n", V_UINT(&raw mut Value));
-                VersionInfoOsProductSuite = V_UINT(&raw mut Value);
+                DPRINT!("OSProductSuite 0x%x\n", V_UINT!(&raw mut Value));
+                VersionInfoOsProductSuite = V_UINT!(&raw mut Value);
             } else if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_9A3C13E25FF3.as_ptr()) == 0 {
-                DPRINT!("OSType %u\n", V_UINT(&raw mut Value));
-                VersionInfoOsType = V_UINT(&raw mut Value);
+                DPRINT!("OSType %u\n", V_UINT!(&raw mut Value));
+                VersionInfoOsType = V_UINT!(&raw mut Value);
             } else if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_D26E7C09CBD9.as_ptr()) == 0 {
-                DPRINT!("ServicePackMajorVersion %hu\n", V_UINT(&raw mut Value));
+                DPRINT!("ServicePackMajorVersion %hu\n", V_UINT!(&raw mut Value));
                 _swprintf(
                     &raw mut VersionInfoServicePackMajorVersion as *mut WCHAR,
                     RUSTCONV_WSTR_925254771579.as_ptr(),
-                    V_UINT(&raw mut Value),
+                    V_UINT!(&raw mut Value),
                 );
             } else if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_B1DB089221CB.as_ptr()) == 0 {
-                DPRINT!("ServicePackMinorVersion %hu\n", V_UINT(&raw mut Value));
+                DPRINT!("ServicePackMinorVersion %hu\n", V_UINT!(&raw mut Value));
                 _swprintf(
                     &raw mut VersionInfoServicePackMinorVersion as *mut WCHAR,
                     RUSTCONV_WSTR_925254771579.as_ptr(),
-                    V_UINT(&raw mut Value),
+                    V_UINT!(&raw mut Value),
                 );
             } else if _wcsicmp(Name as *const u16, RUSTCONV_WSTR_1F7A38F3D6FA.as_ptr()) == 0 {
-                DPRINT!("Version %S\n", V_BSTR(&raw mut Value));
+                DPRINT!("Version %S\n", V_BSTR!(&raw mut Value));
                 StringCbCopyW(
                     &raw mut VersionInfoVersion as *mut WCHAR,
-                    core::mem::size_of::<[WCHAR; MAX_PATH]>() as size_t,
-                    V_BSTR(&raw mut Value),
+                    core::mem::size_of::<[WCHAR; (MAX_PATH) as _]>() as size_t,
+                    V_BSTR!(&raw mut Value),
                 );
             }
 
@@ -315,8 +315,8 @@ unsafe extern "C" fn QueryProcessorInfo(Services: *mut IWbemServices) -> HRESULT
         {
             DPRINT!("Name: %S\n", Name);
             if _wcsicmp(Name, RUSTCONV_WSTR_216E1EFDB8A1.as_ptr()) == 0 {
-                DPRINT!("Architecture %u\n", V_UINT(core::ptr::addr_of_mut!(Value)));
-                VersionInfoArchitecture = V_UINT(core::ptr::addr_of_mut!(Value));
+                DPRINT!("Architecture %u\n", V_UINT!(core::ptr::addr_of_mut!(Value)));
+                VersionInfoArchitecture = V_UINT!(core::ptr::addr_of_mut!(Value));
             }
 
             SysFreeString(Name);

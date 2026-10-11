@@ -1,81 +1,75 @@
 use crate::nslookup::nslookup::RequestID;
-use crate::nslookup::nslookup::State;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)
-pub const TypeA: [::core::ffi::c_char; 2] =
+pub static TypeA: [::core::ffi::c_char; 2] =
     unsafe { ::core::mem::transmute::<[u8; 2], [::core::ffi::c_char; 2]>(*b"A\0") };
 
-pub const TypeAny: [::core::ffi::c_char; 4] =
+pub static TypeAny: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"ANY\0") };
 
-pub const TypeCNAME: [::core::ffi::c_char; 6] =
+pub static TypeCNAME: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"CNAME\0") };
 
-pub const TypeMX: [::core::ffi::c_char; 3] =
+pub static TypeMX: [::core::ffi::c_char; 3] =
     unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"MX\0") };
 
-pub const TypeNS: [::core::ffi::c_char; 3] =
+pub static TypeNS: [::core::ffi::c_char; 3] =
     unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"NS\0") };
 
-pub const TypePTR: [::core::ffi::c_char; 4] =
+pub static TypePTR: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"PTR\0") };
 
-pub const TypeSOA: [::core::ffi::c_char; 4] =
+pub static TypeSOA: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"SOA\0") };
 
-pub const TypeSRV: [::core::ffi::c_char; 4] =
+pub static TypeSRV: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"SRV\0") };
 
-pub const ClassIN: [::core::ffi::c_char; 3] =
+pub static ClassIN: [::core::ffi::c_char; 3] =
     unsafe { ::core::mem::transmute::<[u8; 3], [::core::ffi::c_char; 3]>(*b"IN\0") };
 
-pub const ClassAny: [::core::ffi::c_char; 4] =
+pub static ClassAny: [::core::ffi::c_char; 4] =
     unsafe { ::core::mem::transmute::<[u8; 4], [::core::ffi::c_char; 4]>(*b"ANY\0") };
 
-pub const OpcodeQuery: [::core::ffi::c_char; 6] =
+pub static OpcodeQuery: [::core::ffi::c_char; 6] =
     unsafe { ::core::mem::transmute::<[u8; 6], [::core::ffi::c_char; 6]>(*b"QUERY\0") };
 
-pub const OpcodeIQuery: [::core::ffi::c_char; 7] =
+pub static OpcodeIQuery: [::core::ffi::c_char; 7] =
     unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"IQUERY\0") };
 
-pub const OpcodeStatus: [::core::ffi::c_char; 7] =
+pub static OpcodeStatus: [::core::ffi::c_char; 7] =
     unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"STATUS\0") };
 
-pub const OpcodeReserved: [::core::ffi::c_char; 9] =
+pub static OpcodeReserved: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"RESERVED\0") };
 
-pub const RCodeNOERROR: [::core::ffi::c_char; 8] =
+pub static RCodeNOERROR: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"NOERROR\0") };
 
-pub const RCodeFORMERR: [::core::ffi::c_char; 8] =
+pub static RCodeFORMERR: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"FORMERR\0") };
 
-pub const RCodeFAILURE: [::core::ffi::c_char; 8] =
+pub static RCodeFAILURE: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"FAILURE\0") };
 
-pub const RCodeNXDOMAIN: [::core::ffi::c_char; 9] =
+pub static RCodeNXDOMAIN: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"NXDOMAIN\0") };
 
-pub const RCodeNOTIMP: [::core::ffi::c_char; 7] =
+pub static RCodeNOTIMP: [::core::ffi::c_char; 7] =
     unsafe { ::core::mem::transmute::<[u8; 7], [::core::ffi::c_char; 7]>(*b"NOTIMP\0") };
 
-pub const RCodeREFUSED: [::core::ffi::c_char; 8] =
+pub static RCodeREFUSED: [::core::ffi::c_char; 8] =
     unsafe { ::core::mem::transmute::<[u8; 8], [::core::ffi::c_char; 8]>(*b"REFUSED\0") };
 
-pub const RCodeReserved: [::core::ffi::c_char; 9] =
+pub static RCodeReserved: [::core::ffi::c_char; 9] =
     unsafe { ::core::mem::transmute::<[u8; 9], [::core::ffi::c_char; 9]>(*b"RESERVED\0") };
 #[no_mangle]
-pub unsafe extern "C" fn SendRequest(
-    mut pInBuffer: PCHAR,
-    mut InBufferLength: ULONG,
-    mut pOutBuffer: PCHAR,
-    mut pOutBufferLength: PULONG,
-) -> BOOL {
+pub unsafe extern "C" fn SendRequest(mut pInBuffer: PCHAR, mut InBufferLength: ULONG, mut pOutBuffer: PCHAR, mut pOutBufferLength: PULONG) -> BOOL {
     let mut j: ::core::ffi::c_int = 0;
-    let mut RequestID: USHORT = 0;
+    let mut RequestID_local: USHORT = 0;
     let mut ResponseID: USHORT = 0;
     let mut bWait: BOOL = 0;
     let mut s: SOCKET = 0;
@@ -85,23 +79,23 @@ pub unsafe extern "C" fn SendRequest(
     let mut SendAddrLen: ::core::ffi::c_int =
         ::core::mem::size_of::<SOCKADDR_IN>() as ::core::ffi::c_int;
 
-    RtlZeroMemory(
+    RtlZeroMemory!(
         core::ptr::addr_of_mut!(RecAddr) as *mut ::core::ffi::c_void,
         (core::mem::size_of::<SOCKADDR_IN>()) as usize,
     );
-    RtlZeroMemory(
+    RtlZeroMemory!(
         core::ptr::addr_of_mut!(RecAddr2) as *mut ::core::ffi::c_void,
         (core::mem::size_of::<SOCKADDR_IN>()) as usize,
     );
-    RtlZeroMemory(
+    RtlZeroMemory!(
         core::ptr::addr_of_mut!(SendAddr) as *mut ::core::ffi::c_void,
         (core::mem::size_of::<SOCKADDR_IN>()) as usize,
     );
 
     /* Pull the request ID from the buffer. */
-    RequestID = ntohs(
-        *(pInBuffer.add(0 as usize) as PSHORT)
-            .add(0 as usize),
+    RequestID_local = ntohs(
+        (*(pInBuffer.add(0 as usize) as PSHORT)
+            .add(0 as usize)) as u16,
     );
 
     /* If D2 flags is enabled, then display D2 information. */
@@ -111,22 +105,22 @@ pub unsafe extern "C" fn SendRequest(
 
     /* Create the sockets for both send and receive. */
     s = socket(
-        AF_INET,
-        SOCK_DGRAM,
+        (AF_INET as i32),
+        (SOCK_DGRAM as i32),
         IPPROTO_UDP,
     );
 
     if s == INVALID_SOCKET {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* Set up the structure to tell it where we are going. */
-    RecAddr.sin_family = AF_INET;
+    RecAddr.sin_family = (AF_INET as i16);
     RecAddr.sin_port = htons(State.port);
-    RecAddr.sin_addr.S_un.S_addr = inet_addr(State.DefaultServerAddress);
+    RecAddr.sin_addr.S_un.S_addr = inet_addr((State.DefaultServerAddress).as_ptr());
 
     /* Set up the structure to tell it what port to listen on. */
-    RecAddr2.sin_family = AF_INET;
+    RecAddr2.sin_family = (AF_INET as i16);
     RecAddr2.sin_port = htons(State.port);
     RecAddr2.sin_addr.S_un.S_addr = htonl(INADDR_ANY);
 
@@ -149,84 +143,84 @@ pub unsafe extern "C" fn SendRequest(
     if j == SOCKET_ERROR {
         match WSAGetLastError() {
             WSANOTINITIALISED => {
-                _tprintf(_T(b"sendto() failed with WSANOTINITIALIZED\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSANOTINITIALIZED\n\0".as_ptr() as *const i8));
             }
             WSAENETDOWN => {
-                _tprintf(_T(b"sendto() failed with WSAENETDOWN\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENETDOWN\n\0".as_ptr() as *const i8));
             }
             WSAEACCES => {
-                _tprintf(_T(b"sendto() failed with WSAEACCES\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEACCES\n\0".as_ptr() as *const i8));
             }
             WSAEINVAL => {
-                _tprintf(_T(b"sendto() failed with WSAEINVAL\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEINVAL\n\0".as_ptr() as *const i8));
             }
             WSAEINTR => {
-                _tprintf(_T(b"sendto() failed with WSAEINTR\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEINTR\n\0".as_ptr() as *const i8));
             }
             WSAEINPROGRESS => {
-                _tprintf(_T(b"sendto() failed with WSAEINPROGRESS\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEINPROGRESS\n\0".as_ptr() as *const i8));
             }
             WSAEFAULT => {
-                _tprintf(_T(b"sendto() failed with WSAEFAULT\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEFAULT\n\0".as_ptr() as *const i8));
             }
             WSAENETRESET => {
-                _tprintf(_T(b"sendto() failed with WSAENETRESET\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENETRESET\n\0".as_ptr() as *const i8));
             }
             WSAENOBUFS => {
-                _tprintf(_T(b"sendto() failed with WSAENOBUFS\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENOBUFS\n\0".as_ptr() as *const i8));
             }
             WSAENOTCONN => {
-                _tprintf(_T(b"sendto() failed with WSAENOTCONN\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENOTCONN\n\0".as_ptr() as *const i8));
             }
             WSAENOTSOCK => {
-                _tprintf(_T(b"sendto() failed with WSAENOTSOCK\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENOTSOCK\n\0".as_ptr() as *const i8));
             }
             WSAEOPNOTSUPP => {
-                _tprintf(_T(b"sendto() failed with WSAEOPNOTSUPP\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEOPNOTSUPP\n\0".as_ptr() as *const i8));
             }
             WSAESHUTDOWN => {
-                _tprintf(_T(b"sendto() failed with WSAESHUTDOWN\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAESHUTDOWN\n\0".as_ptr() as *const i8));
             }
             WSAEWOULDBLOCK => {
-                _tprintf(_T(b"sendto() failed with WSAEWOULDBLOCK\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEWOULDBLOCK\n\0".as_ptr() as *const i8));
             }
             WSAEMSGSIZE => {
-                _tprintf(_T(b"sendto() failed with WSAEMSGSIZE\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEMSGSIZE\n\0".as_ptr() as *const i8));
             }
             WSAEHOSTUNREACH => {
-                _tprintf(_T(b"sendto() failed with WSAEHOSTUNREACH\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEHOSTUNREACH\n\0".as_ptr() as *const i8));
             }
             WSAECONNABORTED => {
-                _tprintf(_T(b"sendto() failed with WSAECONNABORTED\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAECONNABORTED\n\0".as_ptr() as *const i8));
             }
             WSAECONNRESET => {
-                _tprintf(_T(b"sendto() failed with WSAECONNRESET\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAECONNRESET\n\0".as_ptr() as *const i8));
             }
             WSAEADDRNOTAVAIL => {
-                _tprintf(_T(b"sendto() failed with WSAEADDRNOTAVAIL\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEADDRNOTAVAIL\n\0".as_ptr() as *const i8));
             }
             WSAEAFNOSUPPORT => {
-                _tprintf(_T(b"sendto() failed with WSAEAFNOSUPPORT\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEAFNOSUPPORT\n\0".as_ptr() as *const i8));
             }
             WSAEDESTADDRREQ => {
-                _tprintf(_T(b"sendto() failed with WSAEDESTADDRREQ\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAEDESTADDRREQ\n\0".as_ptr() as *const i8));
             }
             WSAENETUNREACH => {
-                _tprintf(_T(b"sendto() failed with WSAENETUNREACH\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAENETUNREACH\n\0".as_ptr() as *const i8));
             }
             WSAETIMEDOUT => {
-                _tprintf(_T(b"sendto() failed with WSAETIMEDOUT\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with WSAETIMEDOUT\n\0".as_ptr() as *const i8));
             }
             _ => {
-                _tprintf(_T(b"sendto() failed with unknown error\n\0".as_ptr() as *const i8));
+                _tprintf(_T!(b"sendto() failed with unknown error\n\0".as_ptr() as *const i8));
             }
         }
 
         closesocket(s);
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
-    bWait = TRUE;
+    bWait = (TRUE as i32);
 
     while bWait != 0 {
         /* Wait for the DNS reply. */
@@ -241,90 +235,90 @@ pub unsafe extern "C" fn SendRequest(
         if j == SOCKET_ERROR {
             match WSAGetLastError() {
                 WSANOTINITIALISED => {
-                    _tprintf(_T(b"recvfrom() failed with WSANOTINITIALIZED\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSANOTINITIALIZED\n\0".as_ptr() as *const i8));
                 }
                 WSAENETDOWN => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENETDOWN\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENETDOWN\n\0".as_ptr() as *const i8));
                 }
                 WSAEACCES => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEACCES\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEACCES\n\0".as_ptr() as *const i8));
                 }
                 WSAEINVAL => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEINVAL\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEINVAL\n\0".as_ptr() as *const i8));
                 }
                 WSAEINTR => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEINTR\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEINTR\n\0".as_ptr() as *const i8));
                 }
                 WSAEINPROGRESS => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEINPROGRESS\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEINPROGRESS\n\0".as_ptr() as *const i8));
                 }
                 WSAEFAULT => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEFAULT\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEFAULT\n\0".as_ptr() as *const i8));
                 }
                 WSAENETRESET => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENETRESET\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENETRESET\n\0".as_ptr() as *const i8));
                 }
                 WSAENOBUFS => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENOBUFS\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENOBUFS\n\0".as_ptr() as *const i8));
                 }
                 WSAENOTCONN => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENOTCONN\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENOTCONN\n\0".as_ptr() as *const i8));
                 }
                 WSAENOTSOCK => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENOTSOCK\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENOTSOCK\n\0".as_ptr() as *const i8));
                 }
                 WSAEOPNOTSUPP => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEOPNOTSUPP\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEOPNOTSUPP\n\0".as_ptr() as *const i8));
                 }
                 WSAESHUTDOWN => {
-                    _tprintf(_T(b"recvfrom() failed with WSAESHUTDOWN\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAESHUTDOWN\n\0".as_ptr() as *const i8));
                 }
                 WSAEWOULDBLOCK => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEWOULDBLOCK\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEWOULDBLOCK\n\0".as_ptr() as *const i8));
                 }
                 WSAEMSGSIZE => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEMSGSIZE\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEMSGSIZE\n\0".as_ptr() as *const i8));
                 }
                 WSAEHOSTUNREACH => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEHOSTUNREACH\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEHOSTUNREACH\n\0".as_ptr() as *const i8));
                 }
                 WSAECONNABORTED => {
-                    _tprintf(_T(b"recvfrom() failed with WSAECONNABORTED\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAECONNABORTED\n\0".as_ptr() as *const i8));
                 }
                 WSAECONNRESET => {
-                    _tprintf(_T(b"recvfrom() failed with WSAECONNRESET\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAECONNRESET\n\0".as_ptr() as *const i8));
                 }
                 WSAEADDRNOTAVAIL => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEADDRNOTAVAIL\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEADDRNOTAVAIL\n\0".as_ptr() as *const i8));
                 }
                 WSAEAFNOSUPPORT => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEAFNOSUPPORT\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEAFNOSUPPORT\n\0".as_ptr() as *const i8));
                 }
                 WSAEDESTADDRREQ => {
-                    _tprintf(_T(b"recvfrom() failed with WSAEDESTADDRREQ\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAEDESTADDRREQ\n\0".as_ptr() as *const i8));
                 }
                 WSAENETUNREACH => {
-                    _tprintf(_T(b"recvfrom() failed with WSAENETUNREACH\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAENETUNREACH\n\0".as_ptr() as *const i8));
                 }
                 WSAETIMEDOUT => {
-                    _tprintf(_T(b"recvfrom() failed with WSAETIMEDOUT\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with WSAETIMEDOUT\n\0".as_ptr() as *const i8));
                 }
                 _ => {
-                    _tprintf(_T(b"recvfrom() failed with unknown error\n\0".as_ptr() as *const i8));
+                    _tprintf(_T!(b"recvfrom() failed with unknown error\n\0".as_ptr() as *const i8));
                 }
             }
 
             closesocket(s);
-            return FALSE;
+            return (FALSE) as BOOL;
         }
 
         ResponseID = ntohs(
-            *(pOutBuffer.add(0 as usize) as PSHORT)
-                .add(0 as usize),
+            (*(pOutBuffer.add(0 as usize) as PSHORT)
+                .add(0 as usize)) as u16,
         );
 
-        if ResponseID as ::core::ffi::c_int == RequestID as ::core::ffi::c_int {
-            bWait = FALSE;
+        if ResponseID as ::core::ffi::c_int == RequestID_local as ::core::ffi::c_int {
+            bWait = (FALSE as i32);
         }
     }
 
@@ -339,7 +333,7 @@ pub unsafe extern "C" fn SendRequest(
     /* Return the real output buffer length. */
     *pOutBufferLength = j as ULONG;
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
@@ -347,7 +341,7 @@ pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
     let mut j: i32;
     let mut k: i32 = 0;
 
-    assert(pReturn != pIP);
+    assert!(pReturn != pIP);
 
     j = strlen(pIP as *const i8) as i32 - 1;
     i = j;
@@ -365,8 +359,8 @@ pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
 
     if j != i {
         strncpy(
-            pReturn.offset(k as isize) as *mut i8,
-            pIP.offset((i + 1) as isize) as *mut i8,
+            (pReturn.offset(k as isize) as *mut i8).cast(),
+            pIP.offset((i + 1) as isize) as *const u8,
             (j - i) as usize,
         );
     }
@@ -388,8 +382,8 @@ pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
 
     if j != i {
         strncpy(
-            pReturn.offset(k as isize) as *mut i8,
-            pIP.offset((i + 1) as isize) as *mut i8,
+            (pReturn.offset(k as isize) as *mut i8).cast(),
+            pIP.offset((i + 1) as isize) as *const u8,
             (j - i) as usize,
         );
     }
@@ -411,8 +405,8 @@ pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
 
     if j != i {
         strncpy(
-            pReturn.offset(k as isize) as *mut i8,
-            pIP.offset((i + 1) as isize) as *mut i8,
+            (pReturn.offset(k as isize) as *mut i8).cast(),
+            pIP.offset((i + 1) as isize) as *const u8,
             (j - i) as usize,
         );
     }
@@ -430,8 +424,8 @@ pub unsafe extern "C" fn ReverseIP(pIP: PCHAR, pReturn: PCHAR) {
     }
 
     strncpy(
-        pReturn.offset(k as isize) as *mut i8,
-        pIP.offset(i as isize) as *mut i8,
+        (pReturn.offset(k as isize) as *mut i8).cast(),
+        pIP.offset(i as isize) as *const u8,
         ((j - i) + 1) as usize,
     );
     k += (j - i) + 1;
@@ -448,7 +442,7 @@ pub unsafe extern "C" fn IsValidIP(pInput: PCHAR) -> BOOL {
     /* Max length of an IP, e.g. 255.255.255.255, is 15 characters. */
     l = strlen(pInput as *const i8) as i32;
     if l > 15 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* 'b' is the count of the current segment. It gets reset after seeing a
@@ -456,10 +450,10 @@ pub unsafe extern "C" fn IsValidIP(pInput: PCHAR) -> BOOL {
     while i < l {
         if '.' as i32 == *pInput.offset(i as isize) as i32 {
             if b == 0 {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
             if b > 3 {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
 
             b = 0;
@@ -470,31 +464,26 @@ pub unsafe extern "C" fn IsValidIP(pInput: PCHAR) -> BOOL {
             if (*pInput.offset(i as isize) as i32 ) < '0' as i32
                 || (*pInput.offset(i as isize) as i32) > '9' as i32
             {
-                return FALSE;
+                return (FALSE) as BOOL;
             }
         }
         i += 1;
     }
 
     if b > 3 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     /* 'c' is the number of segments seen. If it's less than 4, then it's not
        a valid IP. */
     if c < 4 {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ExtractName(
-    mut pBuffer: PCHAR,
-    mut pOutput: PCHAR,
-    mut Offset: USHORT,
-    mut Limit: UCHAR,
-) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn ExtractName(mut pBuffer: PCHAR, mut pOutput: PCHAR, mut Offset: USHORT, mut Limit: UCHAR) -> ::core::ffi::c_int {
     let mut c: ::core::ffi::c_int = 0;
     let mut d: ::core::ffi::c_int = 0;
     let mut i: ::core::ffi::c_int = 0;
@@ -549,7 +538,7 @@ pub unsafe extern "C" fn ExtractName(
     return c;
 }
 #[no_mangle]
-pub unsafe extern "C" fn ExtractIP(pBuffer: PCHAR, pOutput: PCHAR, Offset: USHORT) -> i32 {
+pub unsafe extern "C" fn ExtractIP(pBuffer: PCHAR, pOutput: PCHAR, Offset: USHORT) -> ::core::ffi::c_int {
     let mut c: i32 = 0;
     let mut l: i32 = 0;
     let mut i: i32 = 0;
@@ -607,7 +596,7 @@ pub unsafe extern "C" fn ExtractIP(pBuffer: PCHAR, pOutput: PCHAR, Offset: USHOR
 }
 #[no_mangle]
 pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
-    let mut RequestID: USHORT = 0;
+    let mut RequestID_local: USHORT = 0;
     let mut Header1: UCHAR = 0;
     let mut Header2: UCHAR = 0;
     let mut NumQuestions: USHORT = 0;
@@ -620,7 +609,7 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
     let mut i: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
     let mut k: ::core::ffi::c_int = 0 as ::core::ffi::c_int;
 
-    RequestID = ntohs(
+    RequestID_local = ntohs(
         *(pBuffer.offset(i as isize) as PUSHORT).offset(0 as isize) as u_short,
     ) as USHORT;
     i += 2 as ::core::ffi::c_int;
@@ -651,29 +640,29 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
     ) as USHORT;
     i += 2 as ::core::ffi::c_int;
 
-    _tprintf(_T("------------\n"));
-    _tprintf(_T("SendRequest(), len %d\n"), BufferLength as ::core::ffi::c_int);
-    _tprintf(_T("    HEADER:\n"));
+    _tprintf(b"------------\n\0".as_ptr() as *const ::core::ffi::c_char);
+    _tprintf(b"SendRequest(), len %d\n\0".as_ptr() as *const ::core::ffi::c_char, BufferLength as ::core::ffi::c_int);
+    _tprintf(b"    HEADER:\n\0".as_ptr() as *const ::core::ffi::c_char);
     _tprintf(
-        _T("        opcode = %s, id = %d, rcode = %s\n"),
+        b"        opcode = %s, id = %d, rcode = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
         OpcodeIDtoOpcodeName(
             ((Header1 as ::core::ffi::c_int & 0x78 as ::core::ffi::c_int)
                 >> 3 as ::core::ffi::c_int) as UCHAR,
         ),
-        RequestID as ::core::ffi::c_int,
+        RequestID_local as ::core::ffi::c_int,
         RCodeIDtoRCodeName(
             (Header2 as ::core::ffi::c_int & 0x0F as ::core::ffi::c_int) as UCHAR,
         ),
     );
 
-    _tprintf(_T("        header flags:  query"));
+    _tprintf(b"        header flags:  query\0".as_ptr() as *const ::core::ffi::c_char);
     if Header1 as ::core::ffi::c_int & 0x01 as ::core::ffi::c_int != 0 {
-        _tprintf(_T(", want recursion"));
+        _tprintf(b", want recursion\0".as_ptr() as *const ::core::ffi::c_char);
     }
-    _tprintf(_T("\n"));
+    _tprintf(b"\n\0".as_ptr() as *const ::core::ffi::c_char);
 
     _tprintf(
-        _T("        questions = %d,  answers = %d,  authority records = %d,  additional = %d\n\n"),
+        b"        questions = %d,  answers = %d,  authority records = %d,  additional = %d\n\n\0".as_ptr() as *const ::core::ffi::c_char,
         NumQuestions as ::core::ffi::c_int,
         NumAnswers as ::core::ffi::c_int,
         NumAuthority as ::core::ffi::c_int,
@@ -681,7 +670,7 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
     );
 
     if NumQuestions != 0 {
-        _tprintf(_T("    QUESTIONS:\n"));
+        _tprintf(b"    QUESTIONS:\n\0".as_ptr() as *const ::core::ffi::c_char);
 
         k = 0 as ::core::ffi::c_int;
         while k < NumQuestions as ::core::ffi::c_int {
@@ -692,7 +681,7 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
                 0 as UCHAR,
             );
 
-            _tprintf(_T("        %s"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+            _tprintf(b"        %s\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
             Type = ntohs(
                 *(pBuffer.offset(i as isize) as PUSHORT).offset(0 as isize) as u_short,
@@ -705,7 +694,7 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
             i += 2 as ::core::ffi::c_int;
 
             _tprintf(
-                _T(", type = %s, class = %s\n"),
+                b", type = %s, class = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                 TypeIDtoTypeName(Type),
                 ClassIDtoClassName(Class),
             );
@@ -714,7 +703,7 @@ pub unsafe extern "C" fn PrintD2(mut pBuffer: PCHAR, mut BufferLength: DWORD) {
         }
     }
 
-    _tprintf(_T("\n------------\n"));
+    _tprintf(b"\n------------\n\0".as_ptr() as *const ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
@@ -745,12 +734,12 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
     i += 1;
 
     NumQuestions = ntohs(
-        *(pBuffer.offset(i as isize) as PSHORT).offset(0 as isize),
+        (*(pBuffer.offset(i as isize) as PSHORT).offset(0 as isize)) as u16,
     );
     i += 2;
 
     NumAnswers = ntohs(
-        *(pBuffer.offset(i as isize) as PSHORT).offset(0 as isize),
+        (*(pBuffer.offset(i as isize) as PSHORT).offset(0 as isize)) as u16,
     );
     i += 2;
 
@@ -764,27 +753,27 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
     );
     i += 2;
 
-    _tprintf(_T("------------\n"));
-    _tprintf(_T("Got answer (%d bytes):\n"), BufferLength as ::core::ffi::c_int);
-    _tprintf(_T("    HEADER:\n"));
+    _tprintf(b"------------\n\0".as_ptr() as *const ::core::ffi::c_char);
+    _tprintf(b"Got answer (%d bytes):\n\0".as_ptr() as *const ::core::ffi::c_char, BufferLength as ::core::ffi::c_int);
+    _tprintf(b"    HEADER:\n\0".as_ptr() as *const ::core::ffi::c_char);
     _tprintf(
-        _T("        opcode = %s, id = %d, rcode = %s\n"),
+        b"        opcode = %s, id = %d, rcode = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
         OpcodeIDtoOpcodeName(((Header1 & 0x78) >> 3) as UCHAR),
         ResponseID as ::core::ffi::c_int,
         RCodeIDtoRCodeName((Header2 & 0x0F) as UCHAR),
     );
 
-    _tprintf(_T("        header flags:  response"));
+    _tprintf(b"        header flags:  response\0".as_ptr() as *const ::core::ffi::c_char);
     if (Header1 & 0x01) != 0 {
-        _tprintf(_T(", want recursion"));
+        _tprintf(b", want recursion\0".as_ptr() as *const ::core::ffi::c_char);
     }
     if (Header2 & 0x80) != 0 {
-        _tprintf(_T(", recursion avail."));
+        _tprintf(b", recursion avail.\0".as_ptr() as *const ::core::ffi::c_char);
     }
-    _tprintf(_T("\n"));
+    _tprintf(b"\n\0".as_ptr() as *const ::core::ffi::c_char);
 
     _tprintf(
-        _T("        questions = %d,  answers = %d,  authority records = %d,  additional = %d\n\n"),
+        b"        questions = %d,  answers = %d,  authority records = %d,  additional = %d\n\n\0".as_ptr() as *const ::core::ffi::c_char,
         NumQuestions as ::core::ffi::c_int,
         NumAnswers as ::core::ffi::c_int,
         NumAuthority as ::core::ffi::c_int,
@@ -792,7 +781,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
     );
 
     if NumQuestions != 0 {
-        _tprintf(_T("    QUESTIONS:\n"));
+        _tprintf(b"    QUESTIONS:\n\0".as_ptr() as *const ::core::ffi::c_char);
 
         k = 0;
         while k < NumQuestions as ::core::ffi::c_int {
@@ -803,7 +792,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 0 as UCHAR,
             );
 
-            _tprintf(_T("        %s"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+            _tprintf(b"        %s\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
             Type = ntohs(
                 *(pBuffer.offset(i as isize) as PUSHORT).offset(0 as isize),
@@ -816,7 +805,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
             i += 2;
 
             _tprintf(
-                _T(", type = %s, class = %s\n"),
+                b", type = %s, class = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                 TypeIDtoTypeName(Type),
                 ClassIDtoClassName(Class),
             );
@@ -826,11 +815,11 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
     }
 
     if NumAnswers != 0 {
-        _tprintf(_T("    ANSWERS:\n"));
+        _tprintf(b"    ANSWERS:\n\0".as_ptr() as *const ::core::ffi::c_char);
 
         k = 0;
         while k < NumAnswers as ::core::ffi::c_int {
-            _tprintf(_T("    ->  "));
+            _tprintf(b"    ->  \0".as_ptr() as *const ::core::ffi::c_char);
 
             /* Print out the name. */
             i += ExtractName(
@@ -840,7 +829,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 0 as UCHAR,
             );
 
-            _tprintf(_T("%s\n"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+            _tprintf(b"%s\n\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
             /* Print out the type, class and data length. */
             Type = ntohs(
@@ -864,18 +853,18 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
             i += 2;
 
             _tprintf(
-                _T("        type = %s, class = %s, dlen = %d\n"),
+                b"        type = %s, class = %s, dlen = %d\n\0".as_ptr() as *const ::core::ffi::c_char,
                 TypeIDtoTypeName(Type),
                 ClassIDtoClassName(Class),
                 d,
             );
 
             /* Print out the answer. */
-            if TYPE_A == Type as ::core::ffi::c_int {
+            if TYPE_A == (Type as ::core::ffi::c_int) as u32 {
                 i += ExtractIP(pBuffer, core::ptr::addr_of_mut!(pName) as PCHAR, i as USHORT);
 
                 _tprintf(
-                    _T("        internet address = %s\n"),
+                    b"        internet address = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                     core::ptr::addr_of_mut!(pName) as *mut CHAR,
                 );
             } else {
@@ -886,17 +875,17 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                     d as UCHAR,
                 );
 
-                _tprintf(_T("        name = %s\n"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+                _tprintf(b"        name = %s\n\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
             }
 
-            _tprintf(_T("        ttl = %d ()\n"), TTL as ::core::ffi::c_int);
+            _tprintf(b"        ttl = %d ()\n\0".as_ptr() as *const ::core::ffi::c_char, TTL as ::core::ffi::c_int);
 
             k += 1;
         }
     }
 
     if NumAuthority != 0 {
-        _tprintf(_T("    AUTHORITY RECORDS:\n"));
+        _tprintf(b"    AUTHORITY RECORDS:\n\0".as_ptr() as *const ::core::ffi::c_char);
 
         k = 0;
         while k < NumAuthority as ::core::ffi::c_int {
@@ -908,7 +897,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 0 as UCHAR,
             );
 
-            _tprintf(_T("    ->  %s\n"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+            _tprintf(b"    ->  %s\n\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
             /* Print out the type, class, data length and TTL. */
             Type = ntohs(
@@ -932,14 +921,14 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
             i += 2;
 
             _tprintf(
-                _T("        type = %s, class = %s, dlen = %d\n"),
+                b"        type = %s, class = %s, dlen = %d\n\0".as_ptr() as *const ::core::ffi::c_char,
                 TypeIDtoTypeName(Type),
                 ClassIDtoClassName(Class),
                 d,
             );
 
             /* TODO: There might be more types? */
-            if TYPE_NS == Type as ::core::ffi::c_int {
+            if TYPE_NS == (Type as ::core::ffi::c_int) as u32 {
                 /* Print out the NS. */
                 i += ExtractName(
                     pBuffer,
@@ -948,11 +937,11 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                     d as UCHAR,
                 );
 
-                _tprintf(_T("        nameserver = %s\n"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+                _tprintf(b"        nameserver = %s\n\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
-                _tprintf(_T("        ttl = %d ()\n"), TTL as ::core::ffi::c_int);
-            } else if TYPE_SOA == Type as ::core::ffi::c_int {
-                _tprintf(_T("        ttl = %d ()\n"), TTL as ::core::ffi::c_int);
+                _tprintf(b"        ttl = %d ()\n\0".as_ptr() as *const ::core::ffi::c_char, TTL as ::core::ffi::c_int);
+            } else if TYPE_SOA == (Type as ::core::ffi::c_int) as u32 {
+                _tprintf(b"        ttl = %d ()\n\0".as_ptr() as *const ::core::ffi::c_char, TTL as ::core::ffi::c_int);
 
                 /* Print out the primary NS. */
                 i += ExtractName(
@@ -963,7 +952,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 );
 
                 _tprintf(
-                    _T("        primary name server = %s\n"),
+                    b"        primary name server = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                     core::ptr::addr_of_mut!(pName) as *mut CHAR,
                 );
 
@@ -976,16 +965,16 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 );
 
                 _tprintf(
-                    _T("        responsible mail addr = %s\n"),
+                    b"        responsible mail addr = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                     core::ptr::addr_of_mut!(pName) as *mut CHAR,
                 );
 
                 /* Print out the serial, refresh, retry, expire and default TTL. */
-                _tprintf(_T("        serial = ()\n"));
-                _tprintf(_T("        refresh = ()\n"));
-                _tprintf(_T("        retry = ()\n"));
-                _tprintf(_T("        expire = ()\n"));
-                _tprintf(_T("        default TTL = ()\n"));
+                _tprintf(b"        serial = ()\n\0".as_ptr() as *const ::core::ffi::c_char);
+                _tprintf(b"        refresh = ()\n\0".as_ptr() as *const ::core::ffi::c_char);
+                _tprintf(b"        retry = ()\n\0".as_ptr() as *const ::core::ffi::c_char);
+                _tprintf(b"        expire = ()\n\0".as_ptr() as *const ::core::ffi::c_char);
+                _tprintf(b"        default TTL = ()\n\0".as_ptr() as *const ::core::ffi::c_char);
                 i += 20;
             }
 
@@ -994,7 +983,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
     }
 
     if NumAdditional != 0 {
-        _tprintf(_T("    ADDITIONAL:\n"));
+        _tprintf(b"    ADDITIONAL:\n\0".as_ptr() as *const ::core::ffi::c_char);
 
         k = 0;
         while k < NumAdditional as ::core::ffi::c_int {
@@ -1006,7 +995,7 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
                 0 as UCHAR,
             );
 
-            _tprintf(_T("    ->  %s\n"), core::ptr::addr_of_mut!(pName) as *mut CHAR);
+            _tprintf(b"    ->  %s\n\0".as_ptr() as *const ::core::ffi::c_char, core::ptr::addr_of_mut!(pName) as *mut CHAR);
 
             /* Print out the type, class, data length and TTL. */
             Type = ntohs(
@@ -1030,34 +1019,34 @@ pub unsafe extern "C" fn PrintDebug(pBuffer: PCHAR, BufferLength: DWORD) {
             i += 2;
 
             _tprintf(
-                _T("        type = %s, class = %s, dlen = %d\n"),
+                b"        type = %s, class = %s, dlen = %d\n\0".as_ptr() as *const ::core::ffi::c_char,
                 TypeIDtoTypeName(Type),
                 ClassIDtoClassName(Class),
                 d,
             );
 
             /* TODO: There might be more types? */
-            if TYPE_A == Type as ::core::ffi::c_int {
+            if TYPE_A == (Type as ::core::ffi::c_int) as u32 {
                 /* Print out the NS. */
                 i += ExtractIP(pBuffer, core::ptr::addr_of_mut!(pName) as PCHAR, i as USHORT);
 
                 _tprintf(
-                    _T("        internet address = %s\n"),
+                    b"        internet address = %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                     core::ptr::addr_of_mut!(pName) as *mut CHAR,
                 );
 
-                _tprintf(_T("        ttl = %d ()\n"), TTL as ::core::ffi::c_int);
+                _tprintf(b"        ttl = %d ()\n\0".as_ptr() as *const ::core::ffi::c_char, TTL as ::core::ffi::c_int);
             }
 
             k += 1;
         }
     }
 
-    _tprintf(_T("\n------------\n"));
+    _tprintf(b"\n------------\n\0".as_ptr() as *const ::core::ffi::c_char);
 }
 #[no_mangle]
 pub unsafe extern "C" fn OpcodeIDtoOpcodeName(mut Opcode: UCHAR) -> PCHAR {
-    match (Opcode as ::core::ffi::c_int) & 0x0F {
+    match ((Opcode as ::core::ffi::c_int) & 0x0F) as u32 {
         OPCODE_QUERY => {
             return OpcodeQuery.as_ptr() as PCHAR;
         }
@@ -1075,7 +1064,7 @@ pub unsafe extern "C" fn OpcodeIDtoOpcodeName(mut Opcode: UCHAR) -> PCHAR {
 
 #[no_mangle]
 pub unsafe extern "C" fn RCodeIDtoRCodeName(RCode: UCHAR) -> PCHAR {
-    match RCode as ::core::ffi::c_int & 0x0F as ::core::ffi::c_int {
+    match (RCode as ::core::ffi::c_int & 0x0F as ::core::ffi::c_int) as u32 {
         RCODE_NOERROR => {
             return RCodeNOERROR.as_ptr() as PCHAR;
         }
@@ -1101,28 +1090,28 @@ pub unsafe extern "C" fn RCodeIDtoRCodeName(RCode: UCHAR) -> PCHAR {
 }
 #[no_mangle]
 pub unsafe extern "C" fn TypeIDtoTypeName(TypeID: USHORT) -> PCHAR {
-    if TypeID == TYPE_A {
+    if TypeID == (TYPE_A as u16) {
         return TypeA.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_NS {
+    if TypeID == (TYPE_NS as u16) {
         return TypeNS.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_CNAME {
+    if TypeID == (TYPE_CNAME as u16) {
         return TypeCNAME.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_SOA {
+    if TypeID == (TYPE_SOA as u16) {
         return TypeSOA.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_WKS {
+    if TypeID == (TYPE_WKS as u16) {
         return TypeSRV.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_PTR {
+    if TypeID == (TYPE_PTR as u16) {
         return TypePTR.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_MX {
+    if TypeID == (TYPE_MX as u16) {
         return TypeMX.as_ptr() as PCHAR;
     }
-    if TypeID == TYPE_ANY {
+    if TypeID == (TYPE_ANY as u16) {
         return TypeAny.as_ptr() as PCHAR;
     }
     return b"Unknown\0" as *const u8 as *const ::core::ffi::c_char as PCHAR;
@@ -1142,7 +1131,7 @@ pub unsafe extern "C" fn TypeNametoTypeID(TypeName: PCHAR) -> USHORT {
 }
 #[no_mangle]
 pub unsafe extern "C" fn ClassIDtoClassName(ClassID: USHORT) -> PCHAR {
-    match ClassID {
+    match (ClassID) as u32 {
         CLASS_IN => return ClassIN.as_ptr() as PCHAR,
         CLASS_ANY => return ClassAny.as_ptr() as PCHAR,
         _ => return b"Unknown\0".as_ptr() as PCHAR,
@@ -1156,7 +1145,7 @@ pub unsafe extern "C" fn ClassNametoClassID(mut ClassName: PCHAR) -> USHORT {
         strlen(ClassIN.as_ptr()),
     ) == 0
     {
-        return CLASS_IN;
+        return (CLASS_IN) as USHORT;
     }
     if strncmp(
         ClassName as *const ::core::ffi::c_char,
@@ -1164,7 +1153,7 @@ pub unsafe extern "C" fn ClassNametoClassID(mut ClassName: PCHAR) -> USHORT {
         strlen(ClassAny.as_ptr()),
     ) == 0
     {
-        return CLASS_ANY;
+        return (CLASS_ANY) as USHORT;
     }
 
     return 0;

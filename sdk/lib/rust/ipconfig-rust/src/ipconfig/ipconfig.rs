@@ -1,5 +1,5 @@
 // Deterministic UTF-16 literals, generated from the C by rustconv (--seal-wide); the model never saw the bytes.
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 pub static RUSTCONV_WSTR_05F9D79DDD82: [u16; 65] = [
     0x0053u16, 0x0079, 0x0073, 0x0074, 0x0065, 0x006D, 0x005C, 0x0043, 0x0075, 0x0072,
     0x0072, 0x0065, 0x006E, 0x0074, 0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F,
@@ -501,7 +501,7 @@ pub unsafe extern "C" fn DoFormatMessage(mut ErrorCode: LONG) {
         ErrorCode = GetLastError() as LONG;
     }
     ConMsgPuts(
-        core::ptr::addr_of_mut!(StdOut),
+        StdOut,
         FORMAT_MESSAGE_FROM_SYSTEM as DWORD,
         core::ptr::null::<core::ffi::c_void>(),
         ErrorCode as DWORD,
@@ -552,7 +552,7 @@ pub unsafe extern "C" fn GetAdapterFriendlyName(
         .wrapping_add(strlen(lpClass as *const i8))
         .wrapping_add(strlen(PostPath as *const i8))
         .wrapping_add(1 as usize);
-    if PathSize > _countof(Path) {
+    if PathSize > _countof!(Path) as usize {
         return;
     }
 
@@ -570,7 +570,7 @@ pub unsafe extern "C" fn GetAdapterFriendlyName(
         0,
         KEY_READ,
         core::ptr::addr_of_mut!(hKey),
-    ) == ERROR_SUCCESS
+    ) == (ERROR_SUCCESS as i32)
     {
         dwDataSize = cchFriendlyNameLength.wrapping_mul(core::mem::size_of::<WCHAR>() as DWORD);
         RegQueryValueExW(
@@ -611,7 +611,7 @@ pub unsafe extern "C" fn GetInterfaceFriendlyName(
         .wrapping_sub(dwPrefixLength as usize)
         .wrapping_add(wcslen(PostPath as *const wchar_t))
         .wrapping_add(1 as usize) as size_t;
-    if PathSize > _countof(Path) {
+    if PathSize > _countof!(Path) {
         return;
     }
 
@@ -674,7 +674,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
         0,
         KEY_READ,
         core::ptr::addr_of_mut!(hBaseKey),
-    ) != ERROR_SUCCESS
+    ) != (ERROR_SUCCESS as i32)
     {
         return;
     }
@@ -703,8 +703,8 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                     core::ptr::null_mut(),
                                     core::ptr::null_mut(),
                                 );
-                                if Status != ERROR_SUCCESS {
-                                    if Status == ERROR_NO_MORE_ITEMS {
+                                if Status != (ERROR_SUCCESS as i32) {
+                                    if Status == (ERROR_NO_MORE_ITEMS as i32) {
                                         DoFormatMessage(Status);
                                         lpConDesc = core::ptr::null_mut();
                                         break 'CLEANUP;
@@ -719,7 +719,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                 lpPath = HeapAlloc(
                                     ProcessHeap,
                                     0,
-                                    PathSize.wrapping_mul(core::mem::size_of::<u16>()),
+                                    (PathSize.wrapping_mul(core::mem::size_of::<u16>())) as SIZE_T,
                                 ) as PWSTR;
                                 if lpPath.is_null() {
                                     break 'CLEANUP;
@@ -740,12 +740,12 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                     0,
                                     KEY_READ,
                                     core::ptr::addr_of_mut!(hClassKey),
-                                ) != ERROR_SUCCESS
+                                ) != (ERROR_SUCCESS as i32)
                                 {
                                     break 'CLEANUP;
                                 }
 
-                                HeapFree(ProcessHeap, 0, lpPath);
+                                HeapFree(ProcessHeap, 0, (lpPath).cast());
                                 lpPath = core::ptr::null_mut();
 
                                 if RegQueryValueExA(
@@ -755,7 +755,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                     core::ptr::addr_of_mut!(dwType),
                                     core::ptr::null_mut(),
                                     core::ptr::addr_of_mut!(dwDataSize),
-                                ) == ERROR_SUCCESS
+                                ) == (ERROR_SUCCESS as i32)
                                 {
                                     lpKeyClass = HeapAlloc(
                                         ProcessHeap,
@@ -773,12 +773,12 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                         core::ptr::addr_of_mut!(dwType),
                                         lpKeyClass as PBYTE,
                                         core::ptr::addr_of_mut!(dwDataSize),
-                                    ) != ERROR_SUCCESS
+                                    ) != (ERROR_SUCCESS as i32)
                                     {
                                         HeapFree(
                                             ProcessHeap,
                                             0,
-                                            lpKeyClass,
+                                            (lpKeyClass).cast(),
                                         );
                                         lpKeyClass = core::ptr::null_mut();
                                         break '__body;
@@ -791,7 +791,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                     HeapFree(
                                         ProcessHeap,
                                         0,
-                                        lpKeyClass,
+                                        (lpKeyClass).cast(),
                                     );
                                     lpKeyClass = core::ptr::null_mut();
 
@@ -802,7 +802,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                         core::ptr::addr_of_mut!(dwType),
                                         core::ptr::null_mut(),
                                         core::ptr::addr_of_mut!(dwDataSize),
-                                    ) == ERROR_SUCCESS
+                                    ) == (ERROR_SUCCESS as i32)
                                     {
                                         lpConDesc = HeapAlloc(
                                             ProcessHeap,
@@ -817,7 +817,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                                 core::ptr::addr_of_mut!(dwType),
                                                 lpConDesc as PBYTE,
                                                 core::ptr::addr_of_mut!(dwDataSize),
-                                            ) == ERROR_SUCCESS
+                                            ) == (ERROR_SUCCESS as i32)
                                             {
                                                 printf(
                                                     b"%s\0".as_ptr() as *const i8,
@@ -828,7 +828,7 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
                                             HeapFree(
                                                 ProcessHeap,
                                                 0,
-                                                lpConDesc,
+                                                (lpConDesc).cast(),
                                             );
                                             lpConDesc = core::ptr::null_mut();
                                         }
@@ -852,15 +852,15 @@ unsafe extern "C" fn PrintAdapterDescription(lpClass: PSTR) {
         RegCloseKey(hClassKey);
     }
     if !lpPath.is_null() {
-        HeapFree(ProcessHeap, 0, lpPath);
+        HeapFree(ProcessHeap, 0, (lpPath).cast());
     }
     if !lpKeyClass.is_null() {
-        HeapFree(ProcessHeap, 0, lpKeyClass);
+        HeapFree(ProcessHeap, 0, (lpKeyClass).cast());
     }
 }
 
 unsafe extern "C" fn PrintNodeType(NodeType: UINT) {
-    match NodeType {
+    match (NodeType) as i32 {
         BROADCAST_NODETYPE => {
             ConResPrintf(&raw mut csStdOut, IDS_NODETYPEBCAST as UINT);
         }
@@ -880,13 +880,13 @@ unsafe extern "C" fn PrintNodeType(NodeType: UINT) {
 }
 
 unsafe extern "C" fn PrintAdapterTypeAndName(mut pAdapterInfo: PIP_ADAPTER_INFO) {
-    let mut szFriendlyName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFriendlyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     GetAdapterFriendlyName(
         &raw mut (*pAdapterInfo).AdapterName as PSTR,
         MAX_PATH as DWORD,
         &raw mut szFriendlyName as PWSTR,
     );
-    match (*pAdapterInfo).Type {
+    match ((*pAdapterInfo).Type) as i32 {
         MIB_IF_TYPE_OTHER => {
             ConResPrintf(
                 &raw mut csStdOut,
@@ -1085,7 +1085,7 @@ pub unsafe extern "C" fn ShowInfo(bShowHeader: BOOL, bAll: BOOL) {
         }
 
         while !pAdapter.is_null() {
-            let mut bConnected: BOOLEAN = TRUE;
+            let mut bConnected: BOOLEAN = (TRUE as u8);
 
             mibEntry.dwIndex = (*pAdapter).Index;
             GetIfEntry(core::ptr::addr_of_mut!(mibEntry));
@@ -1113,8 +1113,8 @@ pub unsafe extern "C" fn ShowInfo(bShowHeader: BOOL, bAll: BOOL) {
             }
 
             /* check if the adapter is connected to the media */
-            if mibEntry.dwOperStatus != MIB_IF_OPER_STATUS_CONNECTED && mibEntry.dwOperStatus != MIB_IF_OPER_STATUS_OPERATIONAL {
-                bConnected = FALSE;
+            if mibEntry.dwOperStatus != (MIB_IF_OPER_STATUS_CONNECTED as u32) && mibEntry.dwOperStatus != (MIB_IF_OPER_STATUS_OPERATIONAL as u32) {
+                bConnected = (FALSE as u8);
                 ConResPrintf(StdOut, IDS_MEDIADISCONNECTED);
             } else {
                 ConResPrintf(
@@ -1162,23 +1162,23 @@ pub unsafe extern "C" fn ShowInfo(bShowHeader: BOOL, bAll: BOOL) {
             ConResPrintf(
                 StdOut,
                 IDS_IPADDRESS,
-                core::ptr::addr_of_mut!((*pAdapter).IpAddressList.IpAddress.String_0) as PSTR,
+                core::ptr::addr_of_mut!((*pAdapter).IpAddressList.IpAddress.String) as PSTR,
             );
             ConResPrintf(
                 StdOut,
                 IDS_SUBNETMASK,
-                core::ptr::addr_of_mut!((*pAdapter).IpAddressList.IpMask.String_0) as PSTR,
+                core::ptr::addr_of_mut!((*pAdapter).IpAddressList.IpMask.String) as PSTR,
             );
 
             if strcmp(
-                core::ptr::addr_of_mut!((*pAdapter).GatewayList.IpAddress.String_0) as PSTR,
+                core::ptr::addr_of_mut!((*pAdapter).GatewayList.IpAddress.String) as PSTR,
                 b"0.0.0.0\0".as_ptr() as PCSTR,
             ) != 0
             {
                 ConResPrintf(
                     StdOut,
                     IDS_DEFAULTGATEWAY,
-                    core::ptr::addr_of_mut!((*pAdapter).GatewayList.IpAddress.String_0) as PSTR,
+                    core::ptr::addr_of_mut!((*pAdapter).GatewayList.IpAddress.String) as PSTR,
                 );
             } else {
                 ConResPrintf(StdOut, IDS_DEFAULTGATEWAY, b"\0".as_ptr() as PCSTR);
@@ -1191,21 +1191,21 @@ pub unsafe extern "C" fn ShowInfo(bShowHeader: BOOL, bAll: BOOL) {
                     ConResPrintf(
                         StdOut,
                         IDS_DHCPSERVER,
-                        core::ptr::addr_of_mut!((*pAdapter).DhcpServer.IpAddress.String_0) as PSTR,
+                        core::ptr::addr_of_mut!((*pAdapter).DhcpServer.IpAddress.String) as PSTR,
                     );
                 }
 
                 ConResPrintf(
                     StdOut,
                     IDS_DNSSERVERS,
-                    core::ptr::addr_of_mut!((*pFixedInfo).DnsServerList.IpAddress.String_0) as PSTR,
+                    core::ptr::addr_of_mut!((*pFixedInfo).DnsServerList.IpAddress.String) as PSTR,
                 );
                 pIPAddr = (*pFixedInfo).DnsServerList.Next as PIP_ADDR_STRING;
                 while !pIPAddr.is_null() {
                     ConResPrintf(
                         StdOut,
                         IDS_EMPTYLINE,
-                        core::ptr::addr_of_mut!((*pIPAddr).IpAddress.String_0) as PSTR,
+                        core::ptr::addr_of_mut!((*pIPAddr).IpAddress.String) as PSTR,
                     );
                     pIPAddr = (*pIPAddr).Next as PIP_ADDR_STRING;
                 }
@@ -1214,18 +1214,18 @@ pub unsafe extern "C" fn ShowInfo(bShowHeader: BOOL, bAll: BOOL) {
                     ConResPrintf(
                         StdOut,
                         IDS_PRIMARYWINSSERVER,
-                        core::ptr::addr_of_mut!((*pAdapter).PrimaryWinsServer.IpAddress.String_0) as PSTR,
+                        core::ptr::addr_of_mut!((*pAdapter).PrimaryWinsServer.IpAddress.String) as PSTR,
                     );
                     ConResPrintf(
                         StdOut,
                         IDS_SECONDARYWINSSERVER,
-                        core::ptr::addr_of_mut!((*pAdapter).SecondaryWinsServer.IpAddress.String_0) as PSTR,
+                        core::ptr::addr_of_mut!((*pAdapter).SecondaryWinsServer.IpAddress.String) as PSTR,
                     );
                 }
 
                 if (*pAdapter).DhcpEnabled != 0
                     && strcmp(
-                        core::ptr::addr_of_mut!((*pAdapter).DhcpServer.IpAddress.String_0) as PSTR,
+                        core::ptr::addr_of_mut!((*pAdapter).DhcpServer.IpAddress.String) as PSTR,
                         b"255.255.255.255\0".as_ptr() as PCSTR,
                     ) != 0
                 {
@@ -1285,11 +1285,11 @@ unsafe extern "C" fn MatchWildcard(pszExpression: PWSTR, pszName: PWSTR) -> BOOL
     let mut charN: WCHAR = 0;
 
     if pszExpression.is_null() {
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     if pszName.is_null() {
-        return FALSE;
+        return (FALSE) as BOOL;
     }
 
     pCharE = pszExpression as *mut WCHAR;
@@ -1311,11 +1311,11 @@ unsafe extern "C" fn MatchWildcard(pszExpression: PWSTR, pszName: PWSTR) -> BOOL
             pCharE = pCharE.offset(1);
             pCharN = pCharN.offset(1);
         } else {
-            return FALSE;
+            return (FALSE) as BOOL;
         }
     }
 
-    return TRUE;
+    return (TRUE) as BOOL;
 }
 #[no_mangle]
 pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
@@ -1323,11 +1323,11 @@ pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
     let mut pAdapter: PIP_ADAPTER_INFO = core::ptr::null_mut();
     let mut adaptOutBufLen: ULONG = 0;
     let mut ret: ULONG = 0;
-    let mut szFriendlyName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szUnicodeAdapterName: [WCHAR; MAX_ADAPTER_NAME_LENGTH + 4] =
-        [0; MAX_ADAPTER_NAME_LENGTH + 4];
+    let mut szFriendlyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szUnicodeAdapterName: [WCHAR; (MAX_ADAPTER_NAME_LENGTH + 4) as _] =
+        [0; (MAX_ADAPTER_NAME_LENGTH + 4) as _];
     let mut mibEntry: MIB_IFROW = core::mem::zeroed();
-    let mut bFoundAdapter: BOOL = FALSE;
+    let mut bFoundAdapter: BOOL = (FALSE as i32);
     let mut dwVersion: DWORD = 0;
 
     ConResPrintf(StdOut, IDS_HEADER);
@@ -1342,7 +1342,7 @@ pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
     pAdapterInfo = HeapAlloc(ProcessHeap, 0, adaptOutBufLen as SIZE_T)
         as *mut IP_ADAPTER_INFO;
     if pAdapterInfo.is_null() {
-        DoFormatMessage(ERROR_NOT_ENOUGH_MEMORY);
+        DoFormatMessage((ERROR_NOT_ENOUGH_MEMORY) as LONG);
         return;
     }
 
@@ -1367,13 +1367,13 @@ pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
             if pszAdapterName.is_null()
                 || MatchWildcard(pszAdapterName, core::ptr::addr_of_mut!(szFriendlyName) as PWSTR) != 0
             {
-                bFoundAdapter = TRUE;
+                bFoundAdapter = (TRUE as i32);
 
                 mibEntry.dwIndex = (*pAdapter).Index;
                 GetIfEntry(core::ptr::addr_of_mut!(mibEntry));
 
-                if mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_CONNECTED
-                    || mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL
+                if mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_CONNECTED as u32)
+                    || mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_OPERATIONAL as u32)
                 {
                     if (*pAdapter).DhcpEnabled != 0 {
                         if strcmp(
@@ -1383,7 +1383,7 @@ pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
                         {
                             mbstowcs(
                                 core::ptr::addr_of_mut!(szUnicodeAdapterName) as *mut WCHAR,
-                                core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *const i8,
+                                (core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *const i8).cast(),
                                 strlen(core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *const i8)
                                     + 1,
                             );
@@ -1423,10 +1423,10 @@ pub unsafe extern "C" fn Release(pszAdapterName: PWSTR) {
 
         DhcpCApiCleanup();
 
-        if bFoundAdapter == FALSE {
+        if bFoundAdapter == (FALSE as i32) {
             ConResPrintf(StdOut, IDS_DHCPNOADAPTER);
         } else {
-            ShowInfo(FALSE, FALSE);
+            ShowInfo((FALSE) as BOOL, (FALSE) as BOOL);
         }
     }
 
@@ -1441,11 +1441,11 @@ pub unsafe extern "C" fn Renew(pszAdapterName: PWSTR) {
     let mut pAdapter: PIP_ADAPTER_INFO = core::ptr::null_mut();
     let mut adaptOutBufLen: ULONG = 0;
     let mut ret: ULONG = 0;
-    let mut szFriendlyName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut szUnicodeAdapterName: [WCHAR; MAX_ADAPTER_NAME_LENGTH + 4] =
-        [0; MAX_ADAPTER_NAME_LENGTH + 4];
+    let mut szFriendlyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut szUnicodeAdapterName: [WCHAR; (MAX_ADAPTER_NAME_LENGTH + 4) as _] =
+        [0; (MAX_ADAPTER_NAME_LENGTH + 4) as _];
     let mut mibEntry: MIB_IFROW = core::mem::zeroed();
-    let mut bFoundAdapter: BOOL = FALSE;
+    let mut bFoundAdapter: BOOL = (FALSE as i32);
     let mut dwVersion: DWORD = 0;
 
     ConResPrintf(StdOut, IDS_HEADER);
@@ -1464,77 +1464,79 @@ pub unsafe extern "C" fn Renew(pszAdapterName: PWSTR) {
         return;
     }
 
-    ret = GetAdaptersInfo(pAdapterInfo, core::ptr::addr_of_mut!(adaptOutBufLen)) as ULONG;
-    if ret != NO_ERROR {
-        DoFormatMessage(0 as LONG);
-        break 'done;
-    }
+    'done: {
+        ret = GetAdaptersInfo(pAdapterInfo, core::ptr::addr_of_mut!(adaptOutBufLen)) as ULONG;
+        if ret != NO_ERROR {
+            DoFormatMessage(0 as LONG);
+            break 'done;
+        }
 
-    DhcpCApiInitialize(core::ptr::addr_of_mut!(dwVersion));
+        DhcpCApiInitialize(core::ptr::addr_of_mut!(dwVersion));
 
-    pAdapter = pAdapterInfo;
+        pAdapter = pAdapterInfo;
 
-    while !pAdapter.is_null() {
-        GetAdapterFriendlyName(
-            core::ptr::addr_of_mut!((*pAdapter).AdapterName) as PSTR,
-            MAX_PATH as DWORD,
-            core::ptr::addr_of_mut!(szFriendlyName) as PWSTR,
-        );
+        while !pAdapter.is_null() {
+            GetAdapterFriendlyName(
+                core::ptr::addr_of_mut!((*pAdapter).AdapterName) as PSTR,
+                MAX_PATH as DWORD,
+                core::ptr::addr_of_mut!(szFriendlyName) as PWSTR,
+            );
 
-        if (pszAdapterName.is_null())
-            || MatchWildcard(pszAdapterName, core::ptr::addr_of_mut!(szFriendlyName) as PWSTR) != 0
-        {
-            bFoundAdapter = TRUE;
-
-            mibEntry.dwIndex = (*pAdapter).Index;
-            GetIfEntry(core::ptr::addr_of_mut!(mibEntry));
-
-            if mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_CONNECTED
-                || mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL
+            if (pszAdapterName.is_null())
+                || MatchWildcard(pszAdapterName, core::ptr::addr_of_mut!(szFriendlyName) as PWSTR) != 0
             {
-                if (*pAdapter).DhcpEnabled != 0 {
-                    mbstowcs(
-                        core::ptr::addr_of_mut!(szUnicodeAdapterName) as *mut wchar_t,
-                        core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *mut core::ffi::c_char,
-                        strlen(core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *mut core::ffi::c_char)
-                            .wrapping_add(1 as size_t),
-                    );
+                bFoundAdapter = (TRUE as i32);
 
-                    /* Call DhcpAcquireParameters to renew the IP address on the specified adapter. */
-                    ret = DhcpAcquireParameters(core::ptr::addr_of_mut!(szUnicodeAdapterName) as PWSTR) as ULONG;
-                    if ret != NO_ERROR {
+                mibEntry.dwIndex = (*pAdapter).Index;
+                GetIfEntry(core::ptr::addr_of_mut!(mibEntry));
+
+                if mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_CONNECTED as u32)
+                    || mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_OPERATIONAL as u32)
+                {
+                    if (*pAdapter).DhcpEnabled != 0 {
+                        mbstowcs(
+                            core::ptr::addr_of_mut!(szUnicodeAdapterName) as *mut wchar_t,
+                            core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *const u8,
+                            strlen(core::ptr::addr_of_mut!((*pAdapter).AdapterName) as *mut core::ffi::c_char)
+                                .wrapping_add(1 as size_t),
+                        );
+
+                        /* Call DhcpAcquireParameters to renew the IP address on the specified adapter. */
+                        ret = DhcpAcquireParameters(core::ptr::addr_of_mut!(szUnicodeAdapterName) as PWSTR) as ULONG;
+                        if ret != NO_ERROR {
+                            ConResPrintf(
+                                StdOut,
+                                IDS_DHCPRENEWERROR,
+                                core::ptr::addr_of_mut!(szFriendlyName) as *mut WCHAR,
+                            );
+                            DoFormatMessage(ret as LONG);
+                        }
+                    } else {
                         ConResPrintf(
                             StdOut,
-                            IDS_DHCPRENEWERROR,
+                            IDS_DHCPNOTENABLED,
                             core::ptr::addr_of_mut!(szFriendlyName) as *mut WCHAR,
                         );
-                        DoFormatMessage(ret as LONG);
                     }
                 } else {
                     ConResPrintf(
                         StdOut,
-                        IDS_DHCPNOTENABLED,
+                        IDS_DHCPNOTCONNECTED,
                         core::ptr::addr_of_mut!(szFriendlyName) as *mut WCHAR,
                     );
                 }
-            } else {
-                ConResPrintf(
-                    StdOut,
-                    IDS_DHCPNOTCONNECTED,
-                    core::ptr::addr_of_mut!(szFriendlyName) as *mut WCHAR,
-                );
             }
+
+            pAdapter = (*pAdapter).Next as PIP_ADAPTER_INFO;
         }
 
-        pAdapter = (*pAdapter).Next as PIP_ADAPTER_INFO;
-    }
+        DhcpCApiCleanup();
 
-    DhcpCApiCleanup();
-
-    if bFoundAdapter == FALSE {
-        ConResPrintf(StdOut, IDS_DHCPNOADAPTER);
-    } else {
-        ShowInfo(FALSE, FALSE);
+        if bFoundAdapter == (FALSE as i32) {
+            ConResPrintf(StdOut, IDS_DHCPNOADAPTER);
+        } else {
+            ShowInfo((FALSE) as BOOL, (FALSE) as BOOL);
+        }
     }
 
     if !pAdapterInfo.is_null() {
@@ -1593,7 +1595,7 @@ unsafe extern "C" fn DisplayDnsRecord(mut pszName: PWSTR, mut wType: WORD) {
         ConResPrintf(StdOut, IDS_DNSRECORDTTL, (*pThisRecord).dwTtl);
         ConResPrintf(StdOut, IDS_DNSRECORDLENGTH, (*pThisRecord).wDataLength as ::core::ffi::c_int);
 
-        match (*pThisRecord).Flags.S.Section() as ::core::ffi::c_int {
+        match ((*pThisRecord).Flags.S.Section() as ::core::ffi::c_int) as u32 {
             DnsSectionQuestion => {
                 ConResPrintf(StdOut, IDS_DNSSECTIONQUESTION);
             }
@@ -1609,7 +1611,7 @@ unsafe extern "C" fn DisplayDnsRecord(mut pszName: PWSTR, mut wType: WORD) {
             _ => {}
         }
 
-        match (*pThisRecord).wType as ::core::ffi::c_int {
+        match ((*pThisRecord).wType as ::core::ffi::c_int) as u32 {
             DNS_TYPE_A => {
                 Addr4.S_un.S_addr = (*pThisRecord).Data.A.IpAddress as ULONG;
                 RtlIpv4AddressToStringW(core::ptr::addr_of_mut!(Addr4), szBuffer.as_mut_ptr());
@@ -1642,7 +1644,7 @@ unsafe extern "C" fn DisplayDnsRecord(mut pszName: PWSTR, mut wType: WORD) {
                              (*pThisRecord).Data.MX.Pad as ::core::ffi::c_int);
             }
             DNS_TYPE_AAAA => {
-                RtlCopyMemory(core::ptr::addr_of_mut!(Addr6) as *mut ::core::ffi::c_void,
+                RtlCopyMemory!(core::ptr::addr_of_mut!(Addr6) as *mut ::core::ffi::c_void,
                               core::ptr::addr_of!((*pThisRecord).Data.AAAA.Ip6Address) as *const ::core::ffi::c_void,
                               core::mem::size_of::<IN6_ADDR>() as size_t);
                 RtlIpv6AddressToStringW(core::ptr::addr_of_mut!(Addr6), szBuffer.as_mut_ptr());
@@ -1665,7 +1667,7 @@ unsafe extern "C" fn DisplayDnsRecord(mut pszName: PWSTR, mut wType: WORD) {
         pThisRecord = pNextRecord;
     }
 
-    DnsRecordListFree(pQueryResults as PDNS_RECORD, DnsFreeRecordList);
+    DnsRecordListFree(pQueryResults as PDNS_RECORD, ((DnsFreeRecordList) as i32) as u32);
 }
 #[no_mangle]
 pub unsafe extern "C" fn DisplayDns() {
@@ -1688,11 +1690,11 @@ pub unsafe extern "C" fn DisplayDns() {
     while !pThisEntry.is_null() {
         pNextEntry = (*pThisEntry).pNext as PDNS_CACHE_ENTRY;
 
-        if (*pThisEntry).wType1 as ::core::ffi::c_int != DNS_TYPE_ZERO {
+        if (*pThisEntry).wType1 as ::core::ffi::c_int != (DNS_TYPE_ZERO as i32) {
             DisplayDnsRecord((*pThisEntry).pszName, (*pThisEntry).wType1 as WORD);
         }
 
-        if (*pThisEntry).wType2 as ::core::ffi::c_int != DNS_TYPE_ZERO {
+        if (*pThisEntry).wType2 as ::core::ffi::c_int != (DNS_TYPE_ZERO as i32) {
             DisplayDnsRecord((*pThisEntry).pszName, (*pThisEntry).wType2 as WORD);
         }
 
@@ -1715,10 +1717,10 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
     let mut pFoundAdapter: PIP_ADAPTER_INFO = core::ptr::null_mut();
     let mut adaptOutBufLen: ULONG = 0;
     let mut ret: ULONG = 0;
-    let mut szFriendlyName: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut szFriendlyName: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut szKeyName: [WCHAR; 256] = [0; 256];
-    let mut szUnicodeAdapterName: [WCHAR; MAX_ADAPTER_NAME_LENGTH + 4] =
-        [0; MAX_ADAPTER_NAME_LENGTH + 4];
+    let mut szUnicodeAdapterName: [WCHAR; (MAX_ADAPTER_NAME_LENGTH + 4) as _] =
+        [0; (MAX_ADAPTER_NAME_LENGTH + 4) as _];
     let mut mibEntry: MIB_IFROW = core::mem::zeroed();
     let mut hKey: HKEY = core::ptr::null_mut();
     let mut PnpEvent: DHCP_PNP_EVENT = core::mem::zeroed();
@@ -1732,10 +1734,10 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
         return;
     }
 
-    pAdapterInfo = HeapAlloc(ProcessHeap, 0, adaptOutBufLen)
+    pAdapterInfo = HeapAlloc(ProcessHeap, 0, (adaptOutBufLen) as SIZE_T)
         as *mut IP_ADAPTER_INFO as PIP_ADAPTER_INFO;
     if pAdapterInfo.is_null() {
-        DoFormatMessage(ERROR_NOT_ENOUGH_MEMORY);
+        DoFormatMessage((ERROR_NOT_ENOUGH_MEMORY) as LONG);
         return;
     }
 
@@ -1762,8 +1764,8 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
                 mibEntry.dwIndex = (*pAdapter).Index;
                 GetIfEntry(core::ptr::addr_of_mut!(mibEntry));
 
-                if mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_CONNECTED
-                    || mibEntry.dwOperStatus == MIB_IF_OPER_STATUS_OPERATIONAL
+                if mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_CONNECTED as u32)
+                    || mibEntry.dwOperStatus == (MIB_IF_OPER_STATUS_OPERATIONAL as u32)
                 {
                     pFoundAdapter = pAdapter;
                     break;
@@ -1823,13 +1825,13 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
 
             mbstowcs(
                 core::ptr::addr_of_mut!(szUnicodeAdapterName) as *mut wchar_t,
-                core::ptr::addr_of_mut!((*pFoundAdapter).AdapterName) as *const core::ffi::c_char,
+                (core::ptr::addr_of_mut!((*pFoundAdapter).AdapterName) as *const core::ffi::c_char).cast(),
                 strlen(
                     core::ptr::addr_of_mut!((*pFoundAdapter).AdapterName) as *const core::ffi::c_char,
                 ) + 1,
             );
 
-            ZeroMemory(
+            ZeroMemory!(
                 core::ptr::addr_of_mut!(PnpEvent) as *mut core::ffi::c_void,
                 core::mem::size_of::<DHCP_PNP_EVENT>(),
             );
@@ -1839,7 +1841,7 @@ pub unsafe extern "C" fn SetClassId(mut pszAdapterName: PWSTR, mut pszClassId: P
                 0,
                 1,
                 core::ptr::addr_of_mut!(szUnicodeAdapterName) as PWSTR,
-                core::ptr::addr_of_mut!(PnpEvent),
+                core::ptr::addr_of_mut!(PnpEvent) as DWORD,
                 0,
             ) as ULONG;
             if ret != ERROR_SUCCESS {
@@ -1879,15 +1881,15 @@ pub unsafe extern "C" fn Usage(mut Error: BOOL) {
 }
 #[no_mangle]
 pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
-    let mut DoUsage: BOOL = FALSE;
-    let mut DoAll: BOOL = FALSE;
-    let mut DoRelease: BOOL = FALSE;
-    let mut DoRenew: BOOL = FALSE;
-    let mut DoFlushdns: BOOL = FALSE;
-    let mut DoRegisterdns: BOOL = FALSE;
-    let mut DoDisplaydns: BOOL = FALSE;
-    let mut DoShowclassid: BOOL = FALSE;
-    let mut DoSetclassid: BOOL = FALSE;
+    let mut DoUsage: BOOL = (FALSE as i32);
+    let mut DoAll: BOOL = (FALSE as i32);
+    let mut DoRelease: BOOL = (FALSE as i32);
+    let mut DoRenew: BOOL = (FALSE as i32);
+    let mut DoFlushdns: BOOL = (FALSE as i32);
+    let mut DoRegisterdns: BOOL = (FALSE as i32);
+    let mut DoDisplaydns: BOOL = (FALSE as i32);
+    let mut DoShowclassid: BOOL = (FALSE as i32);
+    let mut DoSetclassid: BOOL = (FALSE as i32);
 
     /* Initialize the Console Standard Streams */
     ConInitStdStreams();
@@ -1905,7 +1907,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             RUSTCONV_WSTR_1B9E0FE7B740.as_ptr(),
         ) == 0
         {
-            DoUsage = TRUE;
+            DoUsage = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1913,7 +1915,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoAll = TRUE;
+            DoAll = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1921,7 +1923,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoRelease = TRUE;
+            DoRelease = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1929,7 +1931,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoRenew = TRUE;
+            DoRenew = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1937,7 +1939,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoFlushdns = TRUE;
+            DoFlushdns = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1945,7 +1947,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoRegisterdns = TRUE;
+            DoRegisterdns = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1953,7 +1955,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoDisplaydns = TRUE;
+            DoDisplaydns = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1961,7 +1963,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoShowclassid = TRUE;
+            DoShowclassid = (TRUE as i32);
         }
         else if _wcsnicmp(
             (*argv.offset(1 as isize)).offset(1 as isize),
@@ -1969,21 +1971,21 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             wcslen((*argv.offset(1 as isize)).offset(1 as isize)) as usize,
         ) == 0
         {
-            DoSetclassid = TRUE;
+            DoSetclassid = (TRUE as i32);
         }
     }
 
     if argc == 1 {
         /* Default behaviour if no options are given*/
-        ShowInfo(TRUE, FALSE);
+        ShowInfo((TRUE) as BOOL, (FALSE) as BOOL);
     }
     else if argc == 2 {
         /* Process all the options that take no parameters */
         if DoUsage != 0 {
-            Usage(FALSE);
+            Usage((FALSE) as BOOL);
         }
         else if DoAll != 0 {
-            ShowInfo(TRUE, TRUE);
+            ShowInfo((TRUE) as BOOL, (TRUE) as BOOL);
         }
         else if DoRelease != 0 {
             Release(core::ptr::null_mut());
@@ -2001,7 +2003,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             DisplayDns();
         }
         else {
-            Usage(TRUE);
+            Usage((TRUE) as BOOL);
         }
     }
     else if argc == 3 {
@@ -2019,7 +2021,7 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             SetClassId(*argv.offset(2 as isize), core::ptr::null_mut());
         }
         else {
-            Usage(TRUE);
+            Usage((TRUE) as BOOL);
         }
     }
     else if argc == 4 {
@@ -2028,11 +2030,11 @@ pub unsafe extern "C" fn wmain(argc: i32, argv: *mut *mut wchar_t) -> i32 {
             SetClassId(*argv.offset(2 as isize), *argv.offset(3 as isize));
         }
         else {
-            Usage(TRUE);
+            Usage((TRUE) as BOOL);
         }
     }
     else {
-        Usage(TRUE);
+        Usage((TRUE) as BOOL);
     }
 
     return 0;

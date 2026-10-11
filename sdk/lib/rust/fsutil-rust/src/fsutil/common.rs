@@ -1,13 +1,7 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 #[no_mangle]
-pub unsafe extern "C" fn FindHandler(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *const TCHAR,
-    mut HandlersList: *mut HandlerItem,
-    mut HandlerListCount: ::core::ffi::c_int,
-    mut UsageHelper: Option<unsafe extern "C" fn(*const TCHAR) -> ()>,
-) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn FindHandler(mut argc: ::core::ffi::c_int, mut argv: *mut *const TCHAR, mut HandlersList: *mut HandlerItem, mut HandlerListCount: ::core::ffi::c_int, mut UsageHelper: Option<unsafe extern "C" fn(*const TCHAR) -> ()>) -> ::core::ffi::c_int {
     let mut i: ::core::ffi::c_int = 0;
     let mut ret: ::core::ffi::c_int = 0;
     let mut Command: *const TCHAR = ::core::ptr::null::<TCHAR>();
@@ -23,12 +17,12 @@ pub unsafe extern "C" fn FindHandler(
         while i < HandlerListCount {
             if _tcsicmp(
                 Command,
-                (*HandlersList.offset(i as isize)).Command,
+                (*HandlersList.offset(i as isize)).name,
             ) == 0
             {
                 ret = (*HandlersList.offset(i as isize))
-                    .Handler
-                    .expect("non-null function pointer")(
+                    .Proc
+                    .unwrap_unchecked()(
                     argc - 1,
                     argv.offset(1 as isize) as *mut *const TCHAR,
                 );
@@ -41,38 +35,34 @@ pub unsafe extern "C" fn FindHandler(
 
     /* We failed finding someone to handle the caller's needs, print out */
     if i == HandlerListCount {
-        UsageHelper(Command);
+        (UsageHelper.unwrap_unchecked())(Command);
     }
 
     return ret;
 }
 #[no_mangle]
-pub unsafe extern "C" fn OpenVolume(
-    Volume: *const TCHAR,
-    AllowRemote: BOOLEAN,
-    NtfsOnly: BOOLEAN,
-) -> HANDLE {
+pub unsafe extern "C" fn OpenVolume(Volume: *const TCHAR, AllowRemote: BOOLEAN, NtfsOnly: BOOLEAN) -> HANDLE {
     let mut Type: UINT = 0;
     let mut hVolume: HANDLE = core::ptr::null_mut();
-    let mut VolumeID: [TCHAR; PATH_MAX] = [0; PATH_MAX];
+    let mut VolumeID: [TCHAR; (PATH_MAX) as _] = [0; (PATH_MAX) as _];
 
     /* Get volume type */
     if AllowRemote == 0 && *Volume.add(1 as usize) == 0x003Au16 {
         Type = GetDriveType(Volume);
         if Type == DRIVE_REMOTE {
-            _ftprintf(stderr, _T("FSUTIL needs a local device\n"));
+            _ftprintf(__iob_func().add(2), (&[0x0046, 0x0053, 0x0055, 0x0054, 0x0049, 0x004c, 0x0020, 0x006e, 0x0065, 0x0065, 0x0064, 0x0073, 0x0020, 0x0061, 0x0020, 0x006c, 0x006f, 0x0063, 0x0061, 0x006c, 0x0020, 0x0064, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "FSUTIL needs a local device\n" */);
             return INVALID_HANDLE_VALUE;
         }
     }
 
     /* Get filesystem type */
     if NtfsOnly != 0 {
-        let mut FileSystem: [TCHAR; MAX_PATH + 1] =
-            [0; MAX_PATH + 1];
+        let mut FileSystem: [TCHAR; (MAX_PATH + 1) as _] =
+            [0; (MAX_PATH + 1) as _];
 
         _stprintf(
             core::ptr::addr_of_mut!(VolumeID) as *mut TCHAR,
-            _T("\\\\.\\%s\\"),
+            (&[0x005c, 0x005c, 0x002e, 0x005c, 0x0025, 0x0073, 0x005c, 0x0000u16]).as_ptr() /* _T "\\\\.\\%s\\" */,
             Volume,
         );
         if GetVolumeInformation(
@@ -92,10 +82,10 @@ pub unsafe extern "C" fn OpenVolume(
 
         if _tcscmp(
             core::ptr::addr_of_mut!(FileSystem) as *mut TCHAR,
-            _T("NTFS"),
+            (&[0x004e, 0x0054, 0x0046, 0x0053, 0x0000u16]).as_ptr() /* _T "NTFS" */,
         ) != 0
         {
-            _ftprintf(stderr, _T("FSUTIL needs a NTFS device\n"));
+            _ftprintf(__iob_func().add(2), (&[0x0046, 0x0053, 0x0055, 0x0054, 0x0049, 0x004c, 0x0020, 0x006e, 0x0065, 0x0065, 0x0064, 0x0073, 0x0020, 0x0061, 0x0020, 0x004e, 0x0054, 0x0046, 0x0053, 0x0020, 0x0064, 0x0065, 0x0076, 0x0069, 0x0063, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "FSUTIL needs a NTFS device\n" */);
             return INVALID_HANDLE_VALUE;
         }
     }
@@ -103,7 +93,7 @@ pub unsafe extern "C" fn OpenVolume(
     /* Create full name */
     _stprintf(
         core::ptr::addr_of_mut!(VolumeID) as *mut TCHAR,
-        _T("\\\\.\\%s"),
+        (&[0x005c, 0x005c, 0x002e, 0x005c, 0x0025, 0x0073, 0x0000u16]).as_ptr() /* _T "\\\\.\\%s" */,
         Volume,
     );
 
@@ -125,12 +115,7 @@ pub unsafe extern "C" fn OpenVolume(
     return hVolume;
 }
 #[no_mangle]
-pub unsafe extern "C" fn PrintDefaultUsage(
-    mut Command: *const TCHAR,
-    mut SubCommand: *const TCHAR,
-    mut HandlersList: *mut HandlerItem,
-    mut HandlerListCount: ::core::ffi::c_int,
-) {
+pub unsafe extern "C" fn PrintDefaultUsage(mut Command: *const TCHAR, mut SubCommand: *const TCHAR, mut HandlersList: *mut HandlerItem, mut HandlerListCount: ::core::ffi::c_int) {
     static UNHANDLED_FMT: [u16; 24] = [
         'U' as u16, 'n' as u16, 'h' as u16, 'a' as u16, 'n' as u16, 'd' as u16,
         'l' as u16, 'e' as u16, 'd' as u16, '%' as u16, 's' as u16, 'c' as u16,
@@ -151,24 +136,24 @@ pub unsafe extern "C" fn PrintDefaultUsage(
     let mut i: ::core::ffi::c_int = 0;
     if !SubCommand.is_null() {
         _ftprintf(
-            (&raw mut _iob as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
-            _T(UNHANDLED_FMT.as_ptr()),
+            (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
+            (UNHANDLED_FMT.as_ptr()),
             Command,
             SubCommand,
         );
     }
     _ftprintf(
-        (&raw mut _iob as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
-        _T(HANDLED_FMT.as_ptr()),
+        (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
+        (HANDLED_FMT.as_ptr()),
         Command,
     );
     i = 0;
     while i < HandlerListCount {
         _ftprintf(
-            (&raw mut _iob as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
-            _T(ITEM_FMT.as_ptr()),
-            (*HandlersList.offset(i as isize)).Command,
-            (*HandlersList.offset(i as isize)).Desc,
+            (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
+            (ITEM_FMT.as_ptr()),
+            (*HandlersList.offset(i as isize)).name,
+            (*HandlersList.offset(i as isize)).help,
         );
         i += 1;
     }
@@ -184,7 +169,7 @@ pub unsafe extern "C" fn PrintErrorMessage(mut Error: DWORD) -> ::core::ffi::c_i
         0 as DWORD,
         &raw mut String as LPWSTR,
         0 as DWORD,
-        ::core::ptr::null_mut::<::core::ffi::VaListImpl>(),
+        (::core::ptr::null_mut::<::core::ffi::VaListImpl>()).cast(),
     ) != 0 as DWORD
     {
         /* And print it */
@@ -193,7 +178,7 @@ pub unsafe extern "C" fn PrintErrorMessage(mut Error: DWORD) -> ::core::ffi::c_i
             ' ' as u16, '%' as u16, 's' as u16, '\n' as u16, 0,
         ];
         _ftprintf(
-            (&raw mut _iob as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
+            (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
             fmt.as_ptr(),
             String,
         );
@@ -205,7 +190,7 @@ pub unsafe extern "C" fn PrintErrorMessage(mut Error: DWORD) -> ::core::ffi::c_i
             ' ' as u16, '%' as u16, 'd' as u16, '\n' as u16, 0,
         ];
         _ftprintf(
-            (&raw mut _iob as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
+            (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
             fmt.as_ptr(),
             Error,
         );

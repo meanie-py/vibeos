@@ -1352,6 +1352,14 @@ def _bank_predates_kept_diagnostics(target: str, tu: str) -> bool:
     return (responses / base).is_dir() and not (responses / f"{base}__diag_v1").is_dir()
 
 
+def _island_is_placeholder(state: dict) -> bool:
+    """A scaffolded crate's `types_<arch>.rs` until `port island` has run."""
+    src = _crate_dir(state) / "src"
+    return any(
+        "is a placeholder: run" in p.read_text(errors="replace") for p in src.glob("types_*.rs")
+    )
+
+
 def stage_translate(
     stem: str,
     *,
@@ -1372,6 +1380,13 @@ def stage_translate(
 ) -> tuple[float, list[str]]:
     """Run translate per TU; return (USD spent, file names of the TUs it ran)."""
     state = load_state(stem)
+    # The stitcher reads COM vtable slot order from the module's island (an interface from
+    # the module's own IDL is in no other source). wscript's IArguments2Vtbl was bought,
+    # then refused at stitching because the island was still the scaffold placeholder.
+    if not dry_run and _island_is_placeholder(state):
+        print(f"translate: {stem}: island is the scaffold placeholder -- generating it first")
+        stage_island(stem)
+        state = load_state(stem)
     recorded_headers = state.get("header_tus")
     if units_override is not None:  # a dry run of `port headers`: shown, never recorded
         state["header_tus"] = units_override
@@ -3252,7 +3267,22 @@ _STR_AS_PTR = re.compile(
 )
 
 
-def _c_str_literals(path: Path) -> list[str]:
+# A bare `_T!("...")` argument with no `.as_ptr()` at all: nslookup (ANSI) handed 50 of them
+# to `_tprintf`. Only rewritten where the crate's `_T!`/`TEXT!` is the identity macro, so
+# the result is the narrow pointer that call wants; adding `.as_ptr()` by hand instead
+# would compile and ship the same NUL-less string arp did.
+_BARE_T_STR = re.compile(r'(?<![\w"])(?:TEXT|_T)!\(\s*"((?:[^"\\\n]|\\.)*)"\s*\)(?!\s*\.as_ptr)')
+_IDENTITY_T = re.compile(
+    r"macro_rules!\s*(?:_T|TEXT)\s*\{\s*\(\$p0:expr \$\(,\)\?\)\s*=>\s*\{\s*\$p0\s*\}"
+)
+
+
+def _ansi_t_identity(crate: Path) -> bool:
+    prelude = crate / "src" / "prelude.rs"
+    return prelude.is_file() and bool(_IDENTITY_T.search(prelude.read_text(errors="replace")))
+
+
+def _c_str_literals(path: Path, ansi_t: bool = False) -> list[str]:
     """`"1".as_ptr()` -> `b"1\\0".as_ptr()`: a Rust `&str` has no NUL.
 
     magnify (an ANSI module, where `TEXT(x)` lowers to `x`) passed `"1".as_ptr()` to
@@ -3273,6 +3303,16 @@ def _c_str_literals(path: Path) -> list[str]:
         return f'b"{body}\\0".as_ptr()'
 
     new = _STR_AS_PTR.sub(one, text)
+    if ansi_t:
+
+        def bare(m: re.Match[str]) -> str:
+            body = m.group(1)
+            if body.endswith("\\0") or not body.isascii():
+                return m.group(0)
+            fixed.append(body[:24])
+            return f'b"{body}\\0".as_ptr() as *const ::core::ffi::c_char'
+
+        new = _BARE_T_STR.sub(bare, new)
     if new == text:
         return []
     path.write_text(new)
@@ -3409,7 +3449,7 @@ def stage_integrate(stem: str) -> None:
                 f"integrate: {path.stem}: c2rust anonymous members as bindgen's: "
                 + ", ".join(unnamed)
             )
-        cstr = _c_str_literals(path)
+        cstr = _c_str_literals(path, _ansi_t_identity(crate))
         if cstr:
             changed += 1
             print(

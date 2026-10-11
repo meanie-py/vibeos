@@ -2,7 +2,7 @@ use crate::fsutil::common::FindHandler;
 use crate::fsutil::common::OpenVolume;
 use crate::fsutil::common::PrintDefaultUsage;
 use crate::fsutil::common::PrintErrorMessage;
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 extern "C" {
@@ -118,7 +118,7 @@ static mut HandlersList: [HandlerItem; 5] = unsafe {
 
 // DUMP_VALUE, GET_NEXT and SUM_VALUE are function-like macros and are inlined by the functions that use them.
 
-unsafe extern "C" fn DrivesMain(argc: ::core::ffi::c_int, argv: *const *const TCHAR) -> ::core::ffi::c_int {
+unsafe extern "C" fn DrivesMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     let mut i: UINT;
     let mut Drives: DWORD;
 
@@ -130,26 +130,26 @@ unsafe extern "C" fn DrivesMain(argc: ::core::ffi::c_int, argv: *const *const TC
     }
 
     /* And output any found drive */
-    _ftprintf(stdout, _T("Drives:"));
+    _ftprintf(stdout, (&[0x0044, 0x0072, 0x0069, 0x0076, 0x0065, 0x0073, 0x003a, 0x0000u16]).as_ptr() /* _T "Drives:" */);
     i = 0;
     while i < 26 {
         if Drives & (1 << i) != 0 {
-            _ftprintf(stdout, _T(" %c:\\"), ('A' as UINT) + i);
+            _ftprintf(stdout, (&[0x0020, 0x0025, 0x0063, 0x003a, 0x005c, 0x0000u16]).as_ptr() /* _T " %c:\\" */, ('A' as UINT) + i);
         }
         i = i + 1;
     }
-    _ftprintf(stdout, _T("\n"));
+    _ftprintf(stdout, (&[0x000a, 0x0000u16]).as_ptr() /* _T "\n" */);
 
     return 0;
 }
 
-unsafe extern "C" fn DriveTypeMain(argc: ::core::ffi::c_int, argv: *const *const TCHAR) -> ::core::ffi::c_int {
+unsafe extern "C" fn DriveTypeMain(argc: ::core::ffi::c_int, argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     let mut Type: UINT;
 
     /* We need a volume (letter) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil fsinfo drivetype <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil fsinfo drivetype c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x0074, 0x0079, 0x0070, 0x0065, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil fsinfo drivetype <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x0074, 0x0079, 0x0070, 0x0065, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil fsinfo drivetype c:\n" */);
         return 1;
     }
 
@@ -157,31 +157,31 @@ unsafe extern "C" fn DriveTypeMain(argc: ::core::ffi::c_int, argv: *const *const
     Type = GetDriveType(*argv.offset(1 as isize));
     match Type {
         DRIVE_UNKNOWN => {
-            _ftprintf(stdout, _T("%s - unknown drive type\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0075, 0x006e, 0x006b, 0x006e, 0x006f, 0x0077, 0x006e, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x0020, 0x0074, 0x0079, 0x0070, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - unknown drive type\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_NO_ROOT_DIR => {
-            _ftprintf(stdout, _T("%s - not a root directory\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x006e, 0x006f, 0x0074, 0x0020, 0x0061, 0x0020, 0x0072, 0x006f, 0x006f, 0x0074, 0x0020, 0x0064, 0x0069, 0x0072, 0x0065, 0x0063, 0x0074, 0x006f, 0x0072, 0x0079, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - not a root directory\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_REMOVABLE => {
-            _ftprintf(stdout, _T("%s - removable drive\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0072, 0x0065, 0x006d, 0x006f, 0x0076, 0x0061, 0x0062, 0x006c, 0x0065, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - removable drive\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_FIXED => {
-            _ftprintf(stdout, _T("%s - fixed drive\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0066, 0x0069, 0x0078, 0x0065, 0x0064, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - fixed drive\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_REMOTE => {
-            _ftprintf(stdout, _T("%s - remote or network drive\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0072, 0x0065, 0x006d, 0x006f, 0x0074, 0x0065, 0x0020, 0x006f, 0x0072, 0x0020, 0x006e, 0x0065, 0x0074, 0x0077, 0x006f, 0x0072, 0x006b, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - remote or network drive\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_CDROM => {
-            _ftprintf(stdout, _T("%s - CD-ROM drive\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0043, 0x0044, 0x002d, 0x0052, 0x004f, 0x004d, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - CD-ROM drive\n" */, *argv.offset(1 as isize));
         }
 
         DRIVE_RAMDISK => {
-            _ftprintf(stdout, _T("%s - RAM disk drive\n"), *argv.offset(1 as isize));
+            _ftprintf(stdout, (&[0x0025, 0x0073, 0x0020, 0x002d, 0x0020, 0x0052, 0x0041, 0x004d, 0x0020, 0x0064, 0x0069, 0x0073, 0x006b, 0x0020, 0x0064, 0x0072, 0x0069, 0x0076, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "%s - RAM disk drive\n" */, *argv.offset(1 as isize));
         }
 
         _ => {}
@@ -199,8 +199,8 @@ unsafe extern "C" fn VolumeInfoMain(mut argc: ::core::ffi::c_int, mut argv: *mut
 
     /* We need a volume (path) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil fsinfo volumeinfo <volume_path>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil fsinfo volumeinfo c:\\\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x005f, 0x0070, 0x0061, 0x0074, 0x0068, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil fsinfo volumeinfo <volume_path>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0063, 0x003a, 0x005c, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil fsinfo volumeinfo c:\\\n" */);
         return 1;
     }
 
@@ -221,71 +221,71 @@ unsafe extern "C" fn VolumeInfoMain(mut argc: ::core::ffi::c_int, mut argv: *mut
     }
 
     /* Display general information */
-    _ftprintf(stdout, _T("Volume name: %s\n"), core::ptr::addr_of_mut!(VolumeName) as *mut TCHAR);
-    _ftprintf(stdout, _T("Volume serial number: 0x%x\n"), Serial);
-    _ftprintf(stdout, _T("Maximum component length: %u\n"), MaxComponentLen);
-    _ftprintf(stdout, _T("File system name: %s\n"), core::ptr::addr_of_mut!(FileSystem) as *mut TCHAR);
+    _ftprintf(stdout, (&[0x0056, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x003a, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Volume name: %s\n" */, core::ptr::addr_of_mut!(VolumeName) as *mut TCHAR);
+    _ftprintf(stdout, (&[0x0056, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0073, 0x0065, 0x0072, 0x0069, 0x0061, 0x006c, 0x0020, 0x006e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x003a, 0x0020, 0x0030, 0x0078, 0x0025, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "Volume serial number: 0x%x\n" */, Serial);
+    _ftprintf(stdout, (&[0x004d, 0x0061, 0x0078, 0x0069, 0x006d, 0x0075, 0x006d, 0x0020, 0x0063, 0x006f, 0x006d, 0x0070, 0x006f, 0x006e, 0x0065, 0x006e, 0x0074, 0x0020, 0x006c, 0x0065, 0x006e, 0x0067, 0x0074, 0x0068, 0x003a, 0x0020, 0x0025, 0x0075, 0x000a, 0x0000u16]).as_ptr() /* _T "Maximum component length: %u\n" */, MaxComponentLen);
+    _ftprintf(stdout, (&[0x0046, 0x0069, 0x006c, 0x0065, 0x0020, 0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x003a, 0x0020, 0x0025, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "File system name: %s\n" */, core::ptr::addr_of_mut!(FileSystem) as *mut TCHAR);
 
     /* Display specific flags */
     if (Flags & FILE_CASE_SENSITIVE_SEARCH) != 0 {
-        _ftprintf(stdout, _T("Supports case-sensitive file names\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0063, 0x0061, 0x0073, 0x0065, 0x002d, 0x0073, 0x0065, 0x006e, 0x0073, 0x0069, 0x0074, 0x0069, 0x0076, 0x0065, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports case-sensitive file names\n" */);
     }
     if (Flags & FILE_CASE_PRESERVED_NAMES) != 0 {
-        _ftprintf(stdout, _T("Supports preserved case of file names\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0070, 0x0072, 0x0065, 0x0073, 0x0065, 0x0072, 0x0076, 0x0065, 0x0064, 0x0020, 0x0063, 0x0061, 0x0073, 0x0065, 0x0020, 0x006f, 0x0066, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports preserved case of file names\n" */);
     }
     if (Flags & FILE_UNICODE_ON_DISK) != 0 {
-        _ftprintf(stdout, _T("Supports unicode file names\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0075, 0x006e, 0x0069, 0x0063, 0x006f, 0x0064, 0x0065, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports unicode file names\n" */);
     }
     if (Flags & FILE_PERSISTENT_ACLS) != 0 {
-        _ftprintf(stdout, _T("Preserves and applies ACLs\n"));
+        _ftprintf(stdout, (&[0x0050, 0x0072, 0x0065, 0x0073, 0x0065, 0x0072, 0x0076, 0x0065, 0x0073, 0x0020, 0x0061, 0x006e, 0x0064, 0x0020, 0x0061, 0x0070, 0x0070, 0x006c, 0x0069, 0x0065, 0x0073, 0x0020, 0x0041, 0x0043, 0x004c, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Preserves and applies ACLs\n" */);
     }
     if (Flags & FILE_FILE_COMPRESSION) != 0 {
-        _ftprintf(stdout, _T("Supports compression per file\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0063, 0x006f, 0x006d, 0x0070, 0x0072, 0x0065, 0x0073, 0x0073, 0x0069, 0x006f, 0x006e, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports compression per file\n" */);
     }
     if (Flags & FILE_VOLUME_QUOTAS) != 0 {
-        _ftprintf(stdout, _T("Supports disk quotas\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0064, 0x0069, 0x0073, 0x006b, 0x0020, 0x0071, 0x0075, 0x006f, 0x0074, 0x0061, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports disk quotas\n" */);
     }
     if (Flags & FILE_SUPPORTS_SPARSE_FILES) != 0 {
-        _ftprintf(stdout, _T("Supports sparse files\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0073, 0x0070, 0x0061, 0x0072, 0x0073, 0x0065, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports sparse files\n" */);
     }
     if (Flags & FILE_SUPPORTS_REPARSE_POINTS) != 0 {
-        _ftprintf(stdout, _T("Supports reparse points\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0072, 0x0065, 0x0070, 0x0061, 0x0072, 0x0073, 0x0065, 0x0020, 0x0070, 0x006f, 0x0069, 0x006e, 0x0074, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports reparse points\n" */);
     }
     if (Flags & FILE_VOLUME_IS_COMPRESSED) != 0 {
-        _ftprintf(stdout, _T("Is a compressed volume\n"));
+        _ftprintf(stdout, (&[0x0049, 0x0073, 0x0020, 0x0061, 0x0020, 0x0063, 0x006f, 0x006d, 0x0070, 0x0072, 0x0065, 0x0073, 0x0073, 0x0065, 0x0064, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "Is a compressed volume\n" */);
     }
     if (Flags & FILE_SUPPORTS_OBJECT_IDS) != 0 {
-        _ftprintf(stdout, _T("Supports object identifiers\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x006f, 0x0062, 0x006a, 0x0065, 0x0063, 0x0074, 0x0020, 0x0069, 0x0064, 0x0065, 0x006e, 0x0074, 0x0069, 0x0066, 0x0069, 0x0065, 0x0072, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports object identifiers\n" */);
     }
     if (Flags & FILE_SUPPORTS_ENCRYPTION) != 0 {
-        _ftprintf(stdout, _T("Supports the Encrypted File System (EFS)\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0074, 0x0068, 0x0065, 0x0020, 0x0045, 0x006e, 0x0063, 0x0072, 0x0079, 0x0070, 0x0074, 0x0065, 0x0064, 0x0020, 0x0046, 0x0069, 0x006c, 0x0065, 0x0020, 0x0053, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0020, 0x0028, 0x0045, 0x0046, 0x0053, 0x0029, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports the Encrypted File System (EFS)\n" */);
     }
     if (Flags & FILE_NAMED_STREAMS) != 0 {
-        _ftprintf(stdout, _T("Supports named streams\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x006e, 0x0061, 0x006d, 0x0065, 0x0064, 0x0020, 0x0073, 0x0074, 0x0072, 0x0065, 0x0061, 0x006d, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports named streams\n" */);
     }
     if (Flags & FILE_READ_ONLY_VOLUME) != 0 {
-        _ftprintf(stdout, _T("Is a read-only volume\n"));
+        _ftprintf(stdout, (&[0x0049, 0x0073, 0x0020, 0x0061, 0x0020, 0x0072, 0x0065, 0x0061, 0x0064, 0x002d, 0x006f, 0x006e, 0x006c, 0x0079, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "Is a read-only volume\n" */);
     }
     if (Flags & FILE_SEQUENTIAL_WRITE_ONCE) != 0 {
-        _ftprintf(stdout, _T("Supports a single sequential write\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0061, 0x0020, 0x0073, 0x0069, 0x006e, 0x0067, 0x006c, 0x0065, 0x0020, 0x0073, 0x0065, 0x0071, 0x0075, 0x0065, 0x006e, 0x0074, 0x0069, 0x0061, 0x006c, 0x0020, 0x0077, 0x0072, 0x0069, 0x0074, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports a single sequential write\n" */);
     }
     if (Flags & FILE_SUPPORTS_TRANSACTIONS) != 0 {
-        _ftprintf(stdout, _T("Supports transactions\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0074, 0x0072, 0x0061, 0x006e, 0x0073, 0x0061, 0x0063, 0x0074, 0x0069, 0x006f, 0x006e, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports transactions\n" */);
     }
     if (Flags & FILE_SUPPORTS_HARD_LINKS) != 0 {
-        _ftprintf(stdout, _T("Supports hard links\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0068, 0x0061, 0x0072, 0x0064, 0x0020, 0x006c, 0x0069, 0x006e, 0x006b, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports hard links\n" */);
     }
     if (Flags & FILE_SUPPORTS_EXTENDED_ATTRIBUTES) != 0 {
-        _ftprintf(stdout, _T("Supports extended attributes\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0065, 0x0078, 0x0074, 0x0065, 0x006e, 0x0064, 0x0065, 0x0064, 0x0020, 0x0061, 0x0074, 0x0074, 0x0072, 0x0069, 0x0062, 0x0075, 0x0074, 0x0065, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports extended attributes\n" */);
     }
     if (Flags & FILE_SUPPORTS_OPEN_BY_FILE_ID) != 0 {
-        _ftprintf(stdout, _T("Supports opening files per file identifier\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x006f, 0x0070, 0x0065, 0x006e, 0x0069, 0x006e, 0x0067, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0073, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x0069, 0x0064, 0x0065, 0x006e, 0x0074, 0x0069, 0x0066, 0x0069, 0x0065, 0x0072, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports opening files per file identifier\n" */);
     }
     if (Flags & FILE_SUPPORTS_USN_JOURNAL) != 0 {
-        _ftprintf(stdout, _T("Supports Update Sequence Number (USN) journals\n"));
+        _ftprintf(stdout, (&[0x0053, 0x0075, 0x0070, 0x0070, 0x006f, 0x0072, 0x0074, 0x0073, 0x0020, 0x0055, 0x0070, 0x0064, 0x0061, 0x0074, 0x0065, 0x0020, 0x0053, 0x0065, 0x0071, 0x0075, 0x0065, 0x006e, 0x0063, 0x0065, 0x0020, 0x004e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x0020, 0x0028, 0x0055, 0x0053, 0x004e, 0x0029, 0x0020, 0x006a, 0x006f, 0x0075, 0x0072, 0x006e, 0x0061, 0x006c, 0x0073, 0x000a, 0x0000u16]).as_ptr() /* _T "Supports Update Sequence Number (USN) journals\n" */);
     }
     if (Flags & FILE_DAX_VOLUME) != 0 {
-        _ftprintf(stdout, _T("Is a direct access volume\n"));
+        _ftprintf(stdout, (&[0x0049, 0x0073, 0x0020, 0x0061, 0x0020, 0x0064, 0x0069, 0x0072, 0x0065, 0x0063, 0x0074, 0x0020, 0x0061, 0x0063, 0x0063, 0x0065, 0x0073, 0x0073, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x000a, 0x0000u16]).as_ptr() /* _T "Is a direct access volume\n" */);
     }
 
     return 0;
@@ -295,17 +295,17 @@ unsafe extern "C" fn NtfsInfoMain(argc: ::core::ffi::c_int, argv: *mut *const TC
     let mut Volume: HANDLE = core::ptr::null_mut();
     let mut BytesRead: DWORD = 0;
     let mut Data: C2RustUnnamed_11 = core::mem::zeroed();
-    let _ = (NTFS_VOLUME_DATA_BUFFER, NTFS_EXTENDED_VOLUME_DATA);
+    let _ = (core::mem::size_of::<NTFS_VOLUME_DATA_BUFFER>(), core::mem::size_of::<NTFS_EXTENDED_VOLUME_DATA>());
 
     /* We need a volume (letter or GUID) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil fsinfo ntfsinfo <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil fsinfo ntfsinfo c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x006e, 0x0074, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil fsinfo ntfsinfo <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x006e, 0x0074, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil fsinfo ntfsinfo c:\n" */);
         return 1;
     }
 
     /* Get a handle for the volume */
-    Volume = OpenVolume(*argv.add(1), FALSE, TRUE);
+    Volume = OpenVolume(*argv.add(1), (FALSE) as BOOLEAN, (TRUE) as BOOLEAN);
     if Volume == INVALID_HANDLE_VALUE {
         return 1;
     }
@@ -313,14 +313,14 @@ unsafe extern "C" fn NtfsInfoMain(argc: ::core::ffi::c_int, argv: *mut *const TC
     /* And query the NTFS data */
     if DeviceIoControl(
         Volume,
-        FSCTL_GET_NTFS_VOLUME_DATA,
+        (FSCTL_GET_NTFS_VOLUME_DATA as u32),
         core::ptr::null_mut(),
         0,
         &mut Data as *mut _ as LPVOID,
         core::mem::size_of::<C2RustUnnamed_11>() as DWORD,
         &mut BytesRead,
         core::ptr::null_mut(),
-    ) == FALSE
+    ) == (FALSE as i32)
     {
         PrintErrorMessage(GetLastError());
         CloseHandle(Volume);
@@ -331,47 +331,47 @@ unsafe extern "C" fn NtfsInfoMain(argc: ::core::ffi::c_int, argv: *mut *const TC
     CloseHandle(Volume);
 
     /* Dump data */
-    _ftprintf(stdout, _T("NTFS volume serial number:\t\t0x%0.16I64x\n"), Data.VolumeSerialNumber.QuadPart);
+    _ftprintf(stdout, (&[0x004e, 0x0054, 0x0046, 0x0053, 0x0020, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x0020, 0x0073, 0x0065, 0x0072, 0x0069, 0x0061, 0x006c, 0x0020, 0x006e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x003a, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "NTFS volume serial number:\t\t0x%0.16I64x\n" */, Data.VolumeSerialNumber.QuadPart);
     /* Only print version if extended structure was returned */
     if BytesRead as usize > core::mem::size_of::<NTFS_VOLUME_DATA_BUFFER>() {
-        _ftprintf(stdout, _T("Version:\t\t\t\t%u.%u\n"), Data.MajorVersion, Data.MinorVersion);
+        _ftprintf(stdout, (&[0x0056, 0x0065, 0x0072, 0x0073, 0x0069, 0x006f, 0x006e, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0025, 0x0075, 0x002e, 0x0025, 0x0075, 0x000a, 0x0000u16]).as_ptr() /* _T "Version:\t\t\t\t%u.%u\n" */, Data.MajorVersion, Data.MinorVersion);
     }
-    _ftprintf(stdout, _T("Number of sectors:\t\t\t0x%0.16I64x\n"), Data.NumberSectors.QuadPart);
-    _ftprintf(stdout, _T("Total number of clusters:\t\t0x%0.16I64x\n"), Data.TotalClusters.QuadPart);
-    _ftprintf(stdout, _T("Free clusters:\t\t\t\t0x%0.16I64x\n"), Data.FreeClusters.QuadPart);
-    _ftprintf(stdout, _T("Total number of reserved clusters:\t0x%0.16I64x\n"), Data.TotalReserved.QuadPart);
-    _ftprintf(stdout, _T("Bytes per sector:\t\t\t%d\n"), Data.BytesPerSector);
-    _ftprintf(stdout, _T("Bytes per cluster:\t\t\t%d\n"), Data.BytesPerCluster);
-    _ftprintf(stdout, _T("Bytes per file record segment:\t\t%d\n"), Data.BytesPerFileRecordSegment);
-    _ftprintf(stdout, _T("Clusters per file record segment:\t%d\n"), Data.ClustersPerFileRecordSegment);
-    _ftprintf(stdout, _T("MFT valid data length:\t\t\t0x%0.16I64x\n"), Data.MftValidDataLength.QuadPart);
-    _ftprintf(stdout, _T("MFT start LCN:\t\t\t\t0x%0.16I64x\n"), Data.MftStartLcn.QuadPart);
-    _ftprintf(stdout, _T("MFT2 start LCN:\t\t\t\t0x%0.16I64x\n"), Data.Mft2StartLcn.QuadPart);
-    _ftprintf(stdout, _T("MFT zone start:\t\t\t\t0x%0.16I64x\n"), Data.MftZoneStart.QuadPart);
-    _ftprintf(stdout, _T("MFT zone end:\t\t\t\t0x%0.16I64x\n"), Data.MftZoneEnd.QuadPart);
+    _ftprintf(stdout, (&[0x004e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x0020, 0x006f, 0x0066, 0x0020, 0x0073, 0x0065, 0x0063, 0x0074, 0x006f, 0x0072, 0x0073, 0x003a, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "Number of sectors:\t\t\t0x%0.16I64x\n" */, Data.NumberSectors.QuadPart);
+    _ftprintf(stdout, (&[0x0054, 0x006f, 0x0074, 0x0061, 0x006c, 0x0020, 0x006e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x0020, 0x006f, 0x0066, 0x0020, 0x0063, 0x006c, 0x0075, 0x0073, 0x0074, 0x0065, 0x0072, 0x0073, 0x003a, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "Total number of clusters:\t\t0x%0.16I64x\n" */, Data.TotalClusters.QuadPart);
+    _ftprintf(stdout, (&[0x0046, 0x0072, 0x0065, 0x0065, 0x0020, 0x0063, 0x006c, 0x0075, 0x0073, 0x0074, 0x0065, 0x0072, 0x0073, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "Free clusters:\t\t\t\t0x%0.16I64x\n" */, Data.FreeClusters.QuadPart);
+    _ftprintf(stdout, (&[0x0054, 0x006f, 0x0074, 0x0061, 0x006c, 0x0020, 0x006e, 0x0075, 0x006d, 0x0062, 0x0065, 0x0072, 0x0020, 0x006f, 0x0066, 0x0020, 0x0072, 0x0065, 0x0073, 0x0065, 0x0072, 0x0076, 0x0065, 0x0064, 0x0020, 0x0063, 0x006c, 0x0075, 0x0073, 0x0074, 0x0065, 0x0072, 0x0073, 0x003a, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "Total number of reserved clusters:\t0x%0.16I64x\n" */, Data.TotalReserved.QuadPart);
+    _ftprintf(stdout, (&[0x0042, 0x0079, 0x0074, 0x0065, 0x0073, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0073, 0x0065, 0x0063, 0x0074, 0x006f, 0x0072, 0x003a, 0x0009, 0x0009, 0x0009, 0x0025, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "Bytes per sector:\t\t\t%d\n" */, Data.BytesPerSector);
+    _ftprintf(stdout, (&[0x0042, 0x0079, 0x0074, 0x0065, 0x0073, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0063, 0x006c, 0x0075, 0x0073, 0x0074, 0x0065, 0x0072, 0x003a, 0x0009, 0x0009, 0x0009, 0x0025, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "Bytes per cluster:\t\t\t%d\n" */, Data.BytesPerCluster);
+    _ftprintf(stdout, (&[0x0042, 0x0079, 0x0074, 0x0065, 0x0073, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x0072, 0x0065, 0x0063, 0x006f, 0x0072, 0x0064, 0x0020, 0x0073, 0x0065, 0x0067, 0x006d, 0x0065, 0x006e, 0x0074, 0x003a, 0x0009, 0x0009, 0x0025, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "Bytes per file record segment:\t\t%d\n" */, Data.BytesPerFileRecordSegment);
+    _ftprintf(stdout, (&[0x0043, 0x006c, 0x0075, 0x0073, 0x0074, 0x0065, 0x0072, 0x0073, 0x0020, 0x0070, 0x0065, 0x0072, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x0072, 0x0065, 0x0063, 0x006f, 0x0072, 0x0064, 0x0020, 0x0073, 0x0065, 0x0067, 0x006d, 0x0065, 0x006e, 0x0074, 0x003a, 0x0009, 0x0025, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "Clusters per file record segment:\t%d\n" */, Data.ClustersPerFileRecordSegment);
+    _ftprintf(stdout, (&[0x004d, 0x0046, 0x0054, 0x0020, 0x0076, 0x0061, 0x006c, 0x0069, 0x0064, 0x0020, 0x0064, 0x0061, 0x0074, 0x0061, 0x0020, 0x006c, 0x0065, 0x006e, 0x0067, 0x0074, 0x0068, 0x003a, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "MFT valid data length:\t\t\t0x%0.16I64x\n" */, Data.MftValidDataLength.QuadPart);
+    _ftprintf(stdout, (&[0x004d, 0x0046, 0x0054, 0x0020, 0x0073, 0x0074, 0x0061, 0x0072, 0x0074, 0x0020, 0x004c, 0x0043, 0x004e, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "MFT start LCN:\t\t\t\t0x%0.16I64x\n" */, Data.MftStartLcn.QuadPart);
+    _ftprintf(stdout, (&[0x004d, 0x0046, 0x0054, 0x0032, 0x0020, 0x0073, 0x0074, 0x0061, 0x0072, 0x0074, 0x0020, 0x004c, 0x0043, 0x004e, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "MFT2 start LCN:\t\t\t\t0x%0.16I64x\n" */, Data.Mft2StartLcn.QuadPart);
+    _ftprintf(stdout, (&[0x004d, 0x0046, 0x0054, 0x0020, 0x007a, 0x006f, 0x006e, 0x0065, 0x0020, 0x0073, 0x0074, 0x0061, 0x0072, 0x0074, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "MFT zone start:\t\t\t\t0x%0.16I64x\n" */, Data.MftZoneStart.QuadPart);
+    _ftprintf(stdout, (&[0x004d, 0x0046, 0x0054, 0x0020, 0x007a, 0x006f, 0x006e, 0x0065, 0x0020, 0x0065, 0x006e, 0x0064, 0x003a, 0x0009, 0x0009, 0x0009, 0x0009, 0x0030, 0x0078, 0x0025, 0x0030, 0x002e, 0x0031, 0x0036, 0x0049, 0x0036, 0x0034, 0x0078, 0x000a, 0x0000u16]).as_ptr() /* _T "MFT zone end:\t\t\t\t0x%0.16I64x\n" */, Data.MftZoneEnd.QuadPart);
 
     return 0;
 }
 
 unsafe extern "C" fn DumpBase(Base: PFILESYSTEM_STATISTICS, Name: *mut TCHAR) {
     /* Print FS name */
-    _ftprintf(stdout, _T("File system type: %s\n\n"), Name);
+    _ftprintf(stdout, (&[0x0046, 0x0069, 0x006c, 0x0065, 0x0020, 0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0020, 0x0074, 0x0079, 0x0070, 0x0065, 0x003a, 0x0020, 0x0025, 0x0073, 0x000a, 0x000a, 0x0000u16]).as_ptr() /* _T "File system type: %s\n\n" */, Name);
 
     /* And then, dump any base stat */
-    DUMP_VALUE(Base, UserFileReads);
-    DUMP_VALUE(Base, UserFileReadBytes);
-    DUMP_VALUE(Base, UserDiskReads);
-    DUMP_VALUE(Base, UserFileWrites);
-    DUMP_VALUE(Base, UserFileWriteBytes);
-    DUMP_VALUE(Base, UserDiskWrites);
-    DUMP_VALUE(Base, MetaDataReads);
-    DUMP_VALUE(Base, MetaDataReadBytes);
-    DUMP_VALUE(Base, MetaDataDiskReads);
-    DUMP_VALUE(Base, MetaDataWrites);
-    DUMP_VALUE(Base, MetaDataWriteBytes);
-    DUMP_VALUE(Base, MetaDataDiskWrites);
+    DUMP_VALUE!(Base, UserFileReads);
+    DUMP_VALUE!(Base, UserFileReadBytes);
+    DUMP_VALUE!(Base, UserDiskReads);
+    DUMP_VALUE!(Base, UserFileWrites);
+    DUMP_VALUE!(Base, UserFileWriteBytes);
+    DUMP_VALUE!(Base, UserDiskWrites);
+    DUMP_VALUE!(Base, MetaDataReads);
+    DUMP_VALUE!(Base, MetaDataReadBytes);
+    DUMP_VALUE!(Base, MetaDataDiskReads);
+    DUMP_VALUE!(Base, MetaDataWrites);
+    DUMP_VALUE!(Base, MetaDataWriteBytes);
+    DUMP_VALUE!(Base, MetaDataDiskWrites);
 
-    _ftprintf(stdout, _T("\n"));
+    _ftprintf(stdout, (&[0x000a, 0x0000u16]).as_ptr() /* _T "\n" */);
 }
 
 unsafe extern "C" fn DumpExFat(Statistics: PVOID, Specific: PVOID) {
@@ -638,8 +638,8 @@ unsafe extern "C" fn ValidateSizes(
     /* Check whether we could read our base length for every processor */
     if (Length as DWORD).wrapping_mul(ProcCount) > BytesRead {
         _ftprintf(
-            stderr,
-            _T("Only performed a partial read: %lu (expected: %lu)\n"),
+            __iob_func().add(2),
+            (&[0x004f, 0x006e, 0x006c, 0x0079, 0x0020, 0x0070, 0x0065, 0x0072, 0x0066, 0x006f, 0x0072, 0x006d, 0x0065, 0x0064, 0x0020, 0x0061, 0x0020, 0x0070, 0x0061, 0x0072, 0x0074, 0x0069, 0x0061, 0x006c, 0x0020, 0x0072, 0x0065, 0x0061, 0x0064, 0x003a, 0x0020, 0x0025, 0x006c, 0x0075, 0x0020, 0x0028, 0x0065, 0x0078, 0x0070, 0x0065, 0x0063, 0x0074, 0x0065, 0x0064, 0x003a, 0x0020, 0x0025, 0x006c, 0x0075, 0x0029, 0x000a, 0x0000u16]).as_ptr() /* _T "Only performed a partial read: %lu (expected: %lu)\n" */,
             BytesRead,
             (Length as DWORD).wrapping_mul(ProcCount),
         );
@@ -653,8 +653,8 @@ unsafe extern "C" fn ValidateSizes(
         > BytesRead as usize
     {
         _ftprintf(
-            stderr,
-            _T("Only performed a partial read: %lu (expected: %Iu)\n"),
+            __iob_func().add(2),
+            (&[0x004f, 0x006e, 0x006c, 0x0079, 0x0020, 0x0070, 0x0065, 0x0072, 0x0066, 0x006f, 0x0072, 0x006d, 0x0065, 0x0064, 0x0020, 0x0061, 0x0020, 0x0070, 0x0061, 0x0072, 0x0074, 0x0069, 0x0061, 0x006c, 0x0020, 0x0072, 0x0065, 0x0061, 0x0064, 0x003a, 0x0020, 0x0025, 0x006c, 0x0075, 0x0020, 0x0028, 0x0065, 0x0078, 0x0070, 0x0065, 0x0063, 0x0074, 0x0065, 0x0064, 0x003a, 0x0020, 0x0025, 0x0049, 0x0075, 0x0029, 0x000a, 0x0000u16]).as_ptr() /* _T "Only performed a partial read: %lu (expected: %Iu)\n" */,
             BytesRead,
             (::core::mem::size_of::<FILESYSTEM_STATISTICS>() as usize)
                 .wrapping_add(SpecificSize as usize),
@@ -667,27 +667,21 @@ unsafe extern "C" fn ValidateSizes(
 
 unsafe extern "C" fn SumBase(Base: PFILESYSTEM_STATISTICS, NextBase: PFILESYSTEM_STATISTICS) {
     /* Sum any entry in the generic structures */
-    SUM_VALUE(Base, NextBase, UserFileReads);
-    SUM_VALUE(Base, NextBase, UserFileReadBytes);
-    SUM_VALUE(Base, NextBase, UserDiskReads);
-    SUM_VALUE(Base, NextBase, UserFileWrites);
-    SUM_VALUE(Base, NextBase, UserFileWriteBytes);
-    SUM_VALUE(Base, NextBase, UserDiskWrites);
-    SUM_VALUE(Base, NextBase, MetaDataReads);
-    SUM_VALUE(Base, NextBase, MetaDataReadBytes);
-    SUM_VALUE(Base, NextBase, MetaDataDiskReads);
-    SUM_VALUE(Base, NextBase, MetaDataWrites);
-    SUM_VALUE(Base, NextBase, MetaDataWriteBytes);
-    SUM_VALUE(Base, NextBase, MetaDataDiskWrites);
+    SUM_VALUE!(Base, NextBase, UserFileReads);
+    SUM_VALUE!(Base, NextBase, UserFileReadBytes);
+    SUM_VALUE!(Base, NextBase, UserDiskReads);
+    SUM_VALUE!(Base, NextBase, UserFileWrites);
+    SUM_VALUE!(Base, NextBase, UserFileWriteBytes);
+    SUM_VALUE!(Base, NextBase, UserDiskWrites);
+    SUM_VALUE!(Base, NextBase, MetaDataReads);
+    SUM_VALUE!(Base, NextBase, MetaDataReadBytes);
+    SUM_VALUE!(Base, NextBase, MetaDataDiskReads);
+    SUM_VALUE!(Base, NextBase, MetaDataWrites);
+    SUM_VALUE!(Base, NextBase, MetaDataWriteBytes);
+    SUM_VALUE!(Base, NextBase, MetaDataDiskWrites);
 }
 
-unsafe extern "C" fn SumExFat(
-    mut Statistics: PVOID,
-    mut Specific: PVOID,
-    mut Length: ULONG,
-    mut ProcCount: DWORD,
-    mut BytesRead: DWORD,
-) -> ::core::ffi::c_int {
+unsafe extern "C" fn SumExFat(mut Statistics: PVOID, mut Specific: PVOID, mut Length: ULONG, mut ProcCount: DWORD, mut BytesRead: DWORD) -> ::core::ffi::c_int {
     let mut i: DWORD = 0;
     let mut ExFat: PEXFAT_STATISTICS = ::core::ptr::null_mut::<_EXFAT_STATISTICS>();
     let mut Base: PFILESYSTEM_STATISTICS = ::core::ptr::null_mut::<_FILESYSTEM_STATISTICS>();
@@ -743,13 +737,7 @@ unsafe extern "C" fn SumExFat(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn SumFat(
-    mut Statistics: PVOID,
-    mut Specific: PVOID,
-    mut Length: ULONG,
-    mut ProcCount: DWORD,
-    mut BytesRead: DWORD,
-) -> ::core::ffi::c_int {
+unsafe extern "C" fn SumFat(mut Statistics: PVOID, mut Specific: PVOID, mut Length: ULONG, mut ProcCount: DWORD, mut BytesRead: DWORD) -> ::core::ffi::c_int {
     let mut i: DWORD = 0;
     let mut Fat: PFAT_STATISTICS = ::core::ptr::null_mut::<_FAT_STATISTICS>();
     let mut Base: PFILESYSTEM_STATISTICS = ::core::ptr::null_mut::<_FILESYSTEM_STATISTICS>();
@@ -816,13 +804,7 @@ unsafe extern "C" fn SumFat(
     return 0 as ::core::ffi::c_int;
 }
 
-unsafe extern "C" fn SumNtfs(
-    mut Statistics: PVOID,
-    mut Specific: PVOID,
-    mut Length: ULONG,
-    mut ProcCount: DWORD,
-    mut BytesRead: DWORD,
-) -> ::core::ffi::c_int {
+unsafe extern "C" fn SumNtfs(mut Statistics: PVOID, mut Specific: PVOID, mut Length: ULONG, mut ProcCount: DWORD, mut BytesRead: DWORD) -> ::core::ffi::c_int {
     let mut i: DWORD = 0;
     let mut Ntfs: PNTFS_STATISTICS = ::core::ptr::null_mut::<_NTFS_STATISTICS>();
     let mut Base: PFILESYSTEM_STATISTICS = ::core::ptr::null_mut::<_FILESYSTEM_STATISTICS>();
@@ -925,18 +907,18 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
     let mut Length: DWORD = 0;
     let mut ProcCount: DWORD = 0;
     /* +1 because 0 isn't assigned to a filesystem */
-    let mut DumpFct: [Option<unsafe extern "C" fn(PVOID, PVOID)>; FILESYSTEM_STATISTICS_TYPE_EXFAT + 1] = [None, Some(DumpNtfs), Some(DumpFat), Some(DumpExFat)];
-    let mut SumFct: [Option<unsafe extern "C" fn(PVOID, PVOID, ULONG, DWORD, DWORD) -> ::core::ffi::c_int>; FILESYSTEM_STATISTICS_TYPE_EXFAT + 1] = [None, Some(SumNtfs), Some(SumFat), Some(SumExFat)];
+    let mut DumpFct: [Option<unsafe extern "C" fn(PVOID, PVOID)>; (FILESYSTEM_STATISTICS_TYPE_EXFAT + 1) as _] = [None, Some(DumpNtfs), Some(DumpFat), Some(DumpExFat)];
+    let mut SumFct: [Option<unsafe extern "C" fn(PVOID, PVOID, ULONG, DWORD, DWORD) -> ::core::ffi::c_int>; (FILESYSTEM_STATISTICS_TYPE_EXFAT + 1) as _] = [None, Some(SumNtfs), Some(SumFat), Some(SumExFat)];
 
     /* We need a volume (letter or GUID) */
     if argc < 2 {
-        _ftprintf(stderr, _T("Usage: fsutil fsinfo statistics <volume>\n"));
-        _ftprintf(stderr, _T("\tFor example: fsutil fsinfo statistics c:\n"));
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x0073, 0x0061, 0x0067, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0073, 0x0074, 0x0061, 0x0074, 0x0069, 0x0073, 0x0074, 0x0069, 0x0063, 0x0073, 0x0020, 0x003c, 0x0076, 0x006f, 0x006c, 0x0075, 0x006d, 0x0065, 0x003e, 0x000a, 0x0000u16]).as_ptr() /* _T "Usage: fsutil fsinfo statistics <volume>\n" */);
+        _ftprintf(__iob_func().add(2), (&[0x0009, 0x0046, 0x006f, 0x0072, 0x0020, 0x0065, 0x0078, 0x0061, 0x006d, 0x0070, 0x006c, 0x0065, 0x003a, 0x0020, 0x0066, 0x0073, 0x0075, 0x0074, 0x0069, 0x006c, 0x0020, 0x0066, 0x0073, 0x0069, 0x006e, 0x0066, 0x006f, 0x0020, 0x0073, 0x0074, 0x0061, 0x0074, 0x0069, 0x0073, 0x0074, 0x0069, 0x0063, 0x0073, 0x0020, 0x0063, 0x003a, 0x000a, 0x0000u16]).as_ptr() /* _T "\tFor example: fsutil fsinfo statistics c:\n" */);
         return 1;
     }
 
     /* Get a handle for the volume */
-    Volume = OpenVolume(*argv.offset(1 as isize), FALSE, FALSE);
+    Volume = OpenVolume(*argv.offset(1 as isize), (FALSE) as BOOLEAN, (FALSE) as BOOLEAN);
     if Volume == INVALID_HANDLE_VALUE {
         return 1;
     }
@@ -946,8 +928,8 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
     Length = core::mem::size_of::<FILESYSTEM_STATISTICS>() as DWORD;
     /* Assume we have a single proc for now */
     ProcCount = 1;
-    if DeviceIoControl(Volume, FSCTL_FILESYSTEM_GET_STATISTICS, core::ptr::null_mut(), 0, Statistics as LPVOID,
-                        Length, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == FALSE
+    if DeviceIoControl(Volume, (FSCTL_FILESYSTEM_GET_STATISTICS as u32), core::ptr::null_mut(), 0, Statistics as LPVOID,
+                        Length, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == (FALSE as i32)
     {
         let mut Error: DWORD;
 
@@ -962,14 +944,14 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
 
             Statistics = LocalAlloc(LPTR, Length as SIZE_T) as PFILESYSTEM_STATISTICS;
             if Statistics.is_null() {
-                _ftprintf(stderr, _T("Failed to allocate memory!\n"));
+                _ftprintf(__iob_func().add(2), (&[0x0046, 0x0061, 0x0069, 0x006c, 0x0065, 0x0064, 0x0020, 0x0074, 0x006f, 0x0020, 0x0061, 0x006c, 0x006c, 0x006f, 0x0063, 0x0061, 0x0074, 0x0065, 0x0020, 0x006d, 0x0065, 0x006d, 0x006f, 0x0072, 0x0079, 0x0021, 0x000a, 0x0000u16]).as_ptr() /* _T "Failed to allocate memory!\n" */);
                 CloseHandle(Volume);
                 return 1;
             }
 
             /* Reissue the FSCTL, it's supposed to succeed now! */
-            if DeviceIoControl(Volume, FSCTL_FILESYSTEM_GET_STATISTICS, core::ptr::null_mut(), 0, Statistics as LPVOID,
-                                Length, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == FALSE
+            if DeviceIoControl(Volume, (FSCTL_FILESYSTEM_GET_STATISTICS as u32), core::ptr::null_mut(), 0, Statistics as LPVOID,
+                                Length, core::ptr::addr_of_mut!(BytesRead), core::ptr::null_mut()) == (FALSE as i32)
             {
                 PrintErrorMessage(GetLastError());
                 LocalFree(Statistics as HLOCAL);
@@ -987,10 +969,10 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
     CloseHandle(Volume);
 
     /* We only support FAT, EXFAT and NTFS for now */
-    if (*Statistics).FileSystemType as ::core::ffi::c_int > FILESYSTEM_STATISTICS_TYPE_EXFAT
-        || ((*Statistics).FileSystemType as ::core::ffi::c_int) < FILESYSTEM_STATISTICS_TYPE_NTFS
+    if (*Statistics).FileSystemType as ::core::ffi::c_int > (FILESYSTEM_STATISTICS_TYPE_EXFAT as i32)
+        || ((*Statistics).FileSystemType as ::core::ffi::c_int) < (FILESYSTEM_STATISTICS_TYPE_NTFS as i32)
     {
-        _ftprintf(stderr, _T("Unrecognized file system type: %d\n"), (*Statistics).FileSystemType as ::core::ffi::c_int);
+        _ftprintf(__iob_func().add(2), (&[0x0055, 0x006e, 0x0072, 0x0065, 0x0063, 0x006f, 0x0067, 0x006e, 0x0069, 0x007a, 0x0065, 0x0064, 0x0020, 0x0066, 0x0069, 0x006c, 0x0065, 0x0020, 0x0073, 0x0079, 0x0073, 0x0074, 0x0065, 0x006d, 0x0020, 0x0074, 0x0079, 0x0070, 0x0065, 0x003a, 0x0020, 0x0025, 0x0064, 0x000a, 0x0000u16]).as_ptr() /* _T "Unrecognized file system type: %d\n" */, (*Statistics).FileSystemType as ::core::ffi::c_int);
         if Statistics != core::ptr::addr_of_mut!(Buffer) {
             LocalFree(Statistics as HLOCAL);
         }
@@ -999,7 +981,7 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
     }
 
     /* Sum all the statistics (both generic and specific) from all the processors in the first entry */
-    if SumFct[(*Statistics).FileSystemType as usize].expect("non-null function pointer")(
+    if SumFct[(*Statistics).FileSystemType as usize].unwrap_unchecked()(
         Statistics as PVOID,
         (Statistics as usize).wrapping_add(core::mem::size_of::<FILESYSTEM_STATISTICS>() as usize) as PVOID,
         (*Statistics).SizeOfCompleteStructure,
@@ -1015,7 +997,7 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
     }
 
     /* And finally, display the statistics (both generic and specific) */
-    DumpFct[(*Statistics).FileSystemType as usize].expect("non-null function pointer")(
+    DumpFct[(*Statistics).FileSystemType as usize].unwrap_unchecked()(
         Statistics as PVOID,
         (Statistics as usize).wrapping_add(core::mem::size_of::<FILESYSTEM_STATISTICS>() as usize) as PVOID,
     );
@@ -1030,18 +1012,15 @@ unsafe extern "C" fn StatisticsMain(argc: ::core::ffi::c_int, argv: *mut *const 
 
 unsafe extern "C" fn PrintUsage(Command: *const TCHAR) {
     PrintDefaultUsage(
-        _T(" FSINFO "),
+        (&[0x0020, 0x0046, 0x0053, 0x0049, 0x004e, 0x0046, 0x004f, 0x0020, 0x0000u16]).as_ptr() /* _T " FSINFO " */,
         Command,
         core::ptr::addr_of_mut!(HandlersList) as *mut HandlerItem,
-        (core::mem::size_of_val(&*core::ptr::addr_of!(HandlersList))
-            / core::mem::size_of_val(&(*core::ptr::addr_of!(HandlersList))[0]))
+        ((core::mem::size_of_val(&*core::ptr::addr_of!(HandlersList))
+            / core::mem::size_of_val(&(*core::ptr::addr_of!(HandlersList))[0]))) as i32
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn FsInfoMain(
-    mut argc: ::core::ffi::c_int,
-    mut argv: *mut *const TCHAR,
-) -> ::core::ffi::c_int {
+pub unsafe extern "C" fn FsInfoMain(mut argc: ::core::ffi::c_int, mut argv: *mut *const TCHAR) -> ::core::ffi::c_int {
     return FindHandler(
         argc,
         argv,

@@ -1,4 +1,4 @@
-use ntdll_sys::nt::*;
+use crate::prelude::*;
 use core::ffi::c_void;
 
 // ---- file-scope preamble (translated) ----
@@ -38,17 +38,17 @@ pub struct _EXCLUDELIST {
 
 pub type EXCLUDELIST = _EXCLUDELIST;
 unsafe extern "C" fn XCOPY_LoadMessage(id: UINT) -> *mut WCHAR {
-    static mut msg: [WCHAR; MAXSTRING] = [0; MAXSTRING];
+    static mut msg: [WCHAR; (MAXSTRING) as _] = [0; (MAXSTRING) as _];
     let failedMsg: [WCHAR; 8] = [0x0046u16, 0x0061, 0x0069, 0x006C, 0x0065, 0x0064, 0x0021, 0x0000];
 
     if LoadStringW(
         GetModuleHandleW(core::ptr::null_mut()) as HINSTANCE,
         id,
         core::ptr::addr_of_mut!(msg) as LPWSTR,
-        ARRAY_SIZE(msg) as i32,
+        ARRAY_SIZE!(msg) as i32,
     ) == 0
     {
-        WINE_FIXME(
+        WINE_FIXME!(
             b"LoadString failed with %d\n\0".as_ptr() as *const i8,
             GetLastError(),
         );
@@ -60,13 +60,14 @@ unsafe extern "C" fn XCOPY_LoadMessage(id: UINT) -> *mut WCHAR {
     return core::ptr::addr_of_mut!(msg) as *mut WCHAR;
 }
 
-unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i32 {
+#[no_mangle]
+unsafe extern "C" fn XCOPY_wprintf_v(mut format: *const WCHAR, ap_list: *mut ::core::ffi::c_void) -> i32 {
     static mut output_bufW: *mut WCHAR = core::ptr::null_mut();
     static mut output_bufA: *mut c_char = core::ptr::null_mut();
-    static mut toConsole: BOOL = TRUE;
-    static mut traceOutput: BOOL = FALSE;
+    static mut toConsole: BOOL = (TRUE as i32);
+    static mut traceOutput: BOOL = (FALSE as i32);
 
-    let mut parms: __ms_va_list;
+    let mut parms: __gnuc_va_list;
     let mut nOut: DWORD = 0;
     let mut len: i32 = 0;
     let mut res: DWORD = 0;
@@ -81,11 +82,11 @@ unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i
         output_bufW = HeapAlloc(
             GetProcessHeap(),
             0,
-            (MAX_WRITECONSOLE_SIZE as usize) * core::mem::size_of::<WCHAR>(),
+            ((MAX_WRITECONSOLE_SIZE as usize) * core::mem::size_of::<WCHAR>()) as SIZE_T,
         ) as *mut WCHAR;
     }
     if output_bufW.is_null() {
-        WINE_FIXME(b"Out of memory - could not allocate 2 x 64K buffers\n\0".as_ptr() as *const i8);
+        WINE_FIXME!(b"Out of memory - could not allocate 2 x 64K buffers\n\0".as_ptr() as *const i8);
         return 0;
     }
 
@@ -98,11 +99,11 @@ unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i
         0,
         output_bufW as LPWSTR,
         (MAX_WRITECONSOLE_SIZE as usize / core::mem::size_of::<WCHAR>()) as DWORD,
-        core::ptr::addr_of_mut!(parms) as *mut c_void,
+        (core::ptr::addr_of_mut!(parms) as *mut c_void).cast(),
     ) as i32;
     __ms_va_end(parms);
     if len == 0 && GetLastError() != NO_ERROR {
-        WINE_FIXME(
+        WINE_FIXME!(
             b"Could not format string: le=%u, fmt=%s\n\0".as_ptr() as *const i8,
             GetLastError(),
             wine_dbgstr_w(format),
@@ -124,10 +125,10 @@ unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i
     /* If writing to console has failed (ever) we assume it's file
        i/o so convert to OEM codepage and output                  */
     if res == 0 {
-        let mut usedDefaultChar: BOOL = FALSE;
+        let mut usedDefaultChar: BOOL = (FALSE as i32);
         let mut convertedChars: DWORD;
 
-        toConsole = FALSE;
+        toConsole = (FALSE as i32);
 
         /*
          * Allocate buffer to use when writing to file. Not freed, as above
@@ -136,11 +137,11 @@ unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i
             output_bufA = HeapAlloc(
                 GetProcessHeap(),
                 0,
-                MAX_WRITECONSOLE_SIZE,
+                (MAX_WRITECONSOLE_SIZE) as SIZE_T,
             ) as *mut c_char;
         }
         if output_bufA.is_null() {
-            WINE_FIXME(b"Out of memory - could not allocate 2 x 64K buffers\n\0".as_ptr() as *const i8);
+            WINE_FIXME!(b"Out of memory - could not allocate 2 x 64K buffers\n\0".as_ptr() as *const i8);
             return 0;
         }
 
@@ -160,17 +161,19 @@ unsafe extern "C" fn XCOPY_wprintf(mut format: *const WCHAR, mut args: ...) -> i
             output_bufA as LPCVOID,
             convertedChars,
             core::ptr::addr_of_mut!(nOut),
-            FALSE,
+            core::ptr::null_mut(),
         );
     }
 
     /* Trace whether screen or console */
     if traceOutput == 0 {
-        WINE_TRACE(b"Writing to console? (%d)\n\0".as_ptr() as *const i8, toConsole);
-        traceOutput = TRUE;
+        WINE_TRACE!(b"Writing to console? (%d)\n\0".as_ptr() as *const i8, toConsole);
+        traceOutput = (TRUE as i32);
     }
     return nOut as i32;
 }
+
+
 
 unsafe extern "C" fn XCOPY_FailMessage(err: DWORD) {
     let mut lpMsgBuf: LPWSTR = core::ptr::null_mut();
@@ -185,7 +188,7 @@ unsafe extern "C" fn XCOPY_FailMessage(err: DWORD) {
         core::ptr::null_mut(),
     ) as i32;
     if status == 0 {
-        WINE_FIXME(
+        WINE_FIXME!(
             b"FIXME: Cannot display message for error %d, status %d\n\0".as_ptr() as *const i8,
             err,
             GetLastError(),
@@ -200,7 +203,7 @@ unsafe extern "C" fn XCOPY_FailMessage(err: DWORD) {
 unsafe extern "C" fn XCOPY_CreateDirectory(mut path: *const WCHAR) -> BOOL {
     let mut len: ::core::ffi::c_int = 0;
     let mut new_path: *mut WCHAR = ::core::ptr::null_mut::<WCHAR>();
-    let mut ret: BOOL = TRUE;
+    let mut ret: BOOL = (TRUE as i32);
     new_path = HeapAlloc(
         GetProcessHeap(),
         0,
@@ -229,7 +232,7 @@ unsafe extern "C" fn XCOPY_CreateDirectory(mut path: *const WCHAR) -> BOOL {
             break;
         }
         if last_error != ERROR_PATH_NOT_FOUND {
-            ret = FALSE;
+            ret = (FALSE as i32);
             break;
         } else {
             slash = wcsrchr(new_path, '\\' as i32 as wchar_t) as *mut WCHAR;
@@ -237,13 +240,13 @@ unsafe extern "C" fn XCOPY_CreateDirectory(mut path: *const WCHAR) -> BOOL {
                 slash = wcsrchr(new_path, '/' as i32 as wchar_t) as *mut WCHAR;
                 slash.is_null()
             } {
-                ret = FALSE;
+                ret = (FALSE as i32);
                 break;
             } else {
                 len = slash.offset_from(new_path) as ::core::ffi::c_longlong as ::core::ffi::c_int;
                 *new_path.offset(len as isize) = 0;
                 if XCOPY_CreateDirectory(new_path) == 0 {
-                    ret = FALSE;
+                    ret = (FALSE as i32);
                     break;
                 } else {
                     *new_path.offset(len as isize) = '\\' as i32 as WCHAR;
@@ -261,26 +264,26 @@ unsafe extern "C" fn XCOPY_CreateDirectory(mut path: *const WCHAR) -> BOOL {
 
 unsafe extern "C" fn XCOPY_ProcessExcludeFile(mut filename: *mut WCHAR, mut endOfName: *mut WCHAR) -> BOOL {
     let mut endChar: WCHAR = *endOfName;
-    let mut buffer: [WCHAR; MAXSTRING] = [0; MAXSTRING];
+    let mut buffer: [WCHAR; (MAXSTRING) as _] = [0; (MAXSTRING) as _];
     let mut inFile: *mut FILE = core::ptr::null_mut::<FILE>();
-    const readTextMode: [WCHAR; 3] = [0x0072u16, 0x0074, 0x0000];
+    let readTextMode: [WCHAR; 3] = [0x0072u16, 0x0074, 0x0000];
 
     /* Null terminate the filename (temporarily updates the filename hence
          parms not const)                                                 */
     *endOfName = 0x00;
 
     /* Open the file */
-    inFile = _wfopen(filename, &raw const readTextMode as *const WCHAR);
+    inFile = (_wfopen(filename, &raw const readTextMode as *const WCHAR)).cast();
     if inFile.is_null() {
         XCOPY_wprintf(XCOPY_LoadMessage(STRING_OPENFAIL), filename);
         *endOfName = endChar;
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* Process line by line */
     while !fgetws(
         &raw mut buffer as *mut WCHAR,
-        ARRAY_SIZE(buffer) as core::ffi::c_int,
+        ARRAY_SIZE!(buffer) as core::ffi::c_int,
         inFile,
     )
     .is_null()
@@ -311,7 +314,7 @@ unsafe extern "C" fn XCOPY_ProcessExcludeFile(mut filename: *mut WCHAR, mut endO
                 &raw mut buffer as *mut WCHAR as LPCWSTR,
             );
             CharUpperBuffW((*thisEntry).name as LPWSTR, length as DWORD);
-            WINE_TRACE(
+            WINE_TRACE!(
                 b"Read line : '%s'\n\0".as_ptr() as *const core::ffi::c_char,
                 wine_dbgstr_w((*thisEntry).name),
             );
@@ -323,19 +326,19 @@ unsafe extern "C" fn XCOPY_ProcessExcludeFile(mut filename: *mut WCHAR, mut endO
         XCOPY_wprintf(XCOPY_LoadMessage(STRING_READFAIL), filename);
         *endOfName = endChar;
         fclose(inFile);
-        return TRUE;
+        return (TRUE) as BOOL;
     }
 
     /* Revert the input string to original form, and cleanup + return */
     *endOfName = endChar;
     fclose(inFile);
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 
 unsafe extern "C" fn XCOPY_ProcessExcludeList(mut parms: *mut WCHAR) -> BOOL {
     let mut filenameStart: *mut WCHAR = parms;
 
-    WINE_TRACE(
+    WINE_TRACE!(
         b"/EXCLUDE parms: '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(parms),
     );
@@ -345,7 +348,7 @@ unsafe extern "C" fn XCOPY_ProcessExcludeList(mut parms: *mut WCHAR) -> BOOL {
         /* If found '+' then process the file found so far */
         if *parms == '+' as WCHAR {
             if XCOPY_ProcessExcludeFile(filenameStart, parms) != 0 {
-                return TRUE;
+                return (TRUE) as BOOL;
             }
             filenameStart = parms.offset(1 as isize);
         }
@@ -354,11 +357,11 @@ unsafe extern "C" fn XCOPY_ProcessExcludeList(mut parms: *mut WCHAR) -> BOOL {
 
     if filenameStart != parms {
         if XCOPY_ProcessExcludeFile(filenameStart, parms) != 0 {
-            return TRUE;
+            return (TRUE) as BOOL;
         }
     }
 
-    return FALSE;
+    return (FALSE) as BOOL;
 }
 
 unsafe extern "C" fn XCOPY_DoCopy(
@@ -370,10 +373,10 @@ unsafe extern "C" fn XCOPY_DoCopy(
 ) -> ::core::ffi::c_int {
     let mut finddata: *mut WIN32_FIND_DATAW = ::core::ptr::null_mut();
     let mut h: HANDLE = ::core::ptr::null_mut();
-    let mut findres: BOOL = TRUE;
+    let mut findres: BOOL = (TRUE as i32);
     let mut inputpath: *mut WCHAR = ::core::ptr::null_mut();
     let mut outputpath: *mut WCHAR = ::core::ptr::null_mut();
-    let mut copiedFile: BOOL = FALSE;
+    let mut copiedFile: BOOL = (FALSE as i32);
     let mut destAttribs: DWORD = 0;
     let mut srcAttribs: DWORD = 0;
     let mut skipFile: BOOL = 0;
@@ -404,7 +407,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
         /* Search 1 - Look for matching files */
         h = FindFirstFileW(inputpath as LPCWSTR, finddata as LPWIN32_FIND_DATAW);
         while h != INVALID_HANDLE_VALUE && findres != 0 {
-            skipFile = FALSE;
+            skipFile = (FALSE as i32);
 
             /* Ignore . and .. */
             if lstrcmpW(
@@ -417,7 +420,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                 ) == 0
                 || ((*finddata).dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0
             {
-                WINE_TRACE(
+                WINE_TRACE!(
                     b"Skipping directory, . or .. (%s)\n\0".as_ptr() as *const ::core::ffi::c_char,
                     wine_dbgstr_w(&raw mut (*finddata).cFileName as *mut WCHAR),
                 );
@@ -454,7 +457,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                 }
 
                 /* Do the copy */
-                WINE_TRACE(
+                WINE_TRACE!(
                     b"ACTION: Copy '%s' -> '%s'\n\0".as_ptr() as *const ::core::ffi::c_char,
                     wine_dbgstr_w(&raw mut copyFrom as *mut WCHAR),
                     wine_dbgstr_w(&raw mut copyTo as *mut WCHAR),
@@ -465,7 +468,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
 
                 /* See if allowed to copy it */
                 srcAttribs = GetFileAttributesW(&raw mut copyFrom as *mut WCHAR as LPCWSTR);
-                WINE_TRACE(
+                WINE_TRACE!(
                     b"Source attribs: %d\n\0".as_ptr() as *const ::core::ffi::c_char,
                     srcAttribs,
                 );
@@ -474,19 +477,19 @@ unsafe extern "C" fn XCOPY_DoCopy(
                     || (srcAttribs & FILE_ATTRIBUTE_SYSTEM) != 0
                 {
                     if (flags & OPT_COPYHIDSYS) == 0 {
-                        skipFile = TRUE;
+                        skipFile = (TRUE as i32);
                     }
                 }
 
                 if (srcAttribs & FILE_ATTRIBUTE_ARCHIVE) == 0
                     && (flags & OPT_ARCHIVEONLY) != 0
                 {
-                    skipFile = TRUE;
+                    skipFile = (TRUE as i32);
                 }
 
                 /* See if file exists */
                 destAttribs = GetFileAttributesW(&raw mut copyTo as *mut WCHAR as LPCWSTR);
-                WINE_TRACE(
+                WINE_TRACE!(
                     b"Dest attribs: %d\n\0".as_ptr() as *const ::core::ffi::c_char,
                     srcAttribs,
                 );
@@ -499,11 +502,11 @@ unsafe extern "C" fn XCOPY_DoCopy(
                         &raw mut dateRange,
                     ) < 0)
                 {
-                    WINE_TRACE(
+                    WINE_TRACE!(
                         b"Skipping file as modified date too old\n\0".as_ptr()
                             as *const ::core::ffi::c_char,
                     );
-                    skipFile = TRUE;
+                    skipFile = (TRUE as i32);
                 }
 
                 /* If just /D supplied, only overwrite if src newer than dest */
@@ -537,11 +540,11 @@ unsafe extern "C" fn XCOPY_DoCopy(
                             &raw mut writeTime,
                         ) <= 0
                         {
-                            WINE_TRACE(
+                            WINE_TRACE!(
                                 b"Skipping file as dest newer or same date\n\0".as_ptr()
                                     as *const ::core::ffi::c_char,
                             );
-                            skipFile = TRUE;
+                            skipFile = (TRUE as i32);
                         }
                         CloseHandle(h);
                     }
@@ -552,8 +555,8 @@ unsafe extern "C" fn XCOPY_DoCopy(
                    strstr                                                     */
                 if skipFile == 0 && (flags & OPT_EXCLUDELIST) != 0 {
                     let mut pos: *mut EXCLUDELIST = excludeList;
-                    let mut copyFromUpper: [WCHAR; MAX_PATH] =
-                        [0; MAX_PATH];
+                    let mut copyFromUpper: [WCHAR; (MAX_PATH) as _] =
+                        [0; (MAX_PATH) as _];
 
                     /* Uppercase source filename */
                     lstrcpyW(
@@ -574,12 +577,12 @@ unsafe extern "C" fn XCOPY_DoCopy(
                         )
                         .is_null()
                         {
-                            WINE_TRACE(
+                            WINE_TRACE!(
                                 b"Skipping file as matches exclude '%s'\n\0".as_ptr()
                                     as *const ::core::ffi::c_char,
                                 wine_dbgstr_w((*pos).name),
                             );
-                            skipFile = TRUE;
+                            skipFile = (TRUE as i32);
                             pos = ::core::ptr::null_mut();
                         } else {
                             pos = (*pos).next as *mut EXCLUDELIST;
@@ -592,7 +595,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                     let mut count: DWORD = 0;
                     let mut answer: [::core::ffi::c_char; 10] =
                         [0; 10];
-                    let mut answered: BOOL = FALSE;
+                    let mut answered: BOOL = (FALSE as i32);
                     let mut yesChar: [WCHAR; 2] = [0; 2];
                     let mut noChar: [WCHAR; 2] = [0; 2];
 
@@ -620,17 +623,17 @@ unsafe extern "C" fn XCOPY_DoCopy(
                             ::core::ptr::null_mut(),
                         );
 
-                        answered = TRUE;
+                        answered = (TRUE as i32);
                         if toupper(
                             answer[0 as usize] as ::core::ffi::c_int,
                         ) == noChar[0 as usize] as ::core::ffi::c_int
                         {
-                            skipFile = TRUE;
+                            skipFile = (TRUE as i32);
                         } else if toupper(
                             answer[0 as usize] as ::core::ffi::c_int,
                         ) != yesChar[0 as usize] as ::core::ffi::c_int
                         {
-                            answered = FALSE;
+                            answered = (FALSE as i32);
                         }
                     }
                 }
@@ -642,7 +645,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                     let mut count_0: DWORD = 0;
                     let mut answer_0: [::core::ffi::c_char; 10] =
                         [0; 10];
-                    let mut answered_0: BOOL = FALSE;
+                    let mut answered_0: BOOL = (FALSE as i32);
                     let mut yesChar_0: [WCHAR; 2] = [0; 2];
                     let mut allChar: [WCHAR; 2] = [0; 2];
                     let mut noChar_0: [WCHAR; 2] = [0; 2];
@@ -675,7 +678,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                             ::core::ptr::null_mut(),
                         );
 
-                        answered_0 = TRUE;
+                        answered_0 = (TRUE as i32);
                         if toupper(
                             answer_0[0 as usize] as ::core::ffi::c_int,
                         ) == allChar[0 as usize] as ::core::ffi::c_int
@@ -685,19 +688,19 @@ unsafe extern "C" fn XCOPY_DoCopy(
                             answer_0[0 as usize] as ::core::ffi::c_int,
                         ) == noChar_0[0 as usize] as ::core::ffi::c_int
                         {
-                            skipFile = TRUE;
+                            skipFile = (TRUE as i32);
                         } else if toupper(
                             answer_0[0 as usize] as ::core::ffi::c_int,
                         ) != yesChar_0[0 as usize] as ::core::ffi::c_int
                         {
-                            answered_0 = FALSE;
+                            answered_0 = (FALSE as i32);
                         }
                     }
                 }
 
                 /* See if it has to exist! */
                 if destAttribs == INVALID_FILE_ATTRIBUTES && (flags & OPT_MUSTEXIST) != 0 {
-                    skipFile = TRUE;
+                    skipFile = (TRUE as i32);
                 }
 
                 /* Output a status message */
@@ -731,14 +734,14 @@ unsafe extern "C" fn XCOPY_DoCopy(
                         );
                     }
 
-                    copiedFile = TRUE;
+                    copiedFile = (TRUE as i32);
                     if (flags & OPT_SIMULATE) != 0 || (flags & OPT_NOCOPY) != 0
                     {
                         /* Skip copy */
                     } else if CopyFileW(
                         &raw mut copyFrom as *mut WCHAR as LPCWSTR,
                         &raw mut copyTo as *mut WCHAR as LPCWSTR,
-                        FALSE,
+                        (FALSE) as BOOL,
                     ) == 0
                     {
                         let mut error: DWORD = GetLastError();
@@ -751,9 +754,9 @@ unsafe extern "C" fn XCOPY_DoCopy(
                         XCOPY_FailMessage(error);
 
                         if (flags & OPT_IGNOREERRORS) != 0 {
-                            skipFile = TRUE;
+                            skipFile = (TRUE as i32);
                         } else {
-                            ret = RC_WRITEERROR;
+                            ret = (RC_WRITEERROR as i32);
                             break 'cleanup;
                         }
                     } else {
@@ -803,8 +806,8 @@ unsafe extern "C" fn XCOPY_DoCopy(
 
             lstrcpyW(inputpath as LPWSTR, srcstem as LPCWSTR);
             lstrcatW(inputpath as LPWSTR, &raw const wchr_star as LPCWSTR);
-            findres = TRUE;
-            WINE_TRACE(
+            findres = (TRUE as i32);
+            WINE_TRACE!(
                 b"Processing subdirs with spec: %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                 wine_dbgstr_w(inputpath as *mut WCHAR),
             );
@@ -822,7 +825,7 @@ unsafe extern "C" fn XCOPY_DoCopy(
                         &raw const wchr_dotdot as LPCWSTR,
                     ) != 0)
                 {
-                    WINE_TRACE(
+                    WINE_TRACE!(
                         b"Handling subdir: %s\n\0".as_ptr() as *const ::core::ffi::c_char,
                         wine_dbgstr_w(&raw mut (*finddata).cFileName as *mut WCHAR),
                     );
@@ -881,7 +884,7 @@ unsafe extern "C" fn find_end_of_word(
     word: *const WCHAR,
     end: *mut *mut WCHAR,
 ) -> ::core::ffi::c_int {
-    let mut in_quotes: BOOL = FALSE;
+    let mut in_quotes: BOOL = (FALSE as i32);
     let mut ptr: *const WCHAR = word;
     loop {
         while *ptr != '\0' as WCHAR
@@ -896,14 +899,14 @@ unsafe extern "C" fn find_end_of_word(
         }
         /* Odd number of double quotes is illegal for XCOPY */
         if in_quotes != 0 && *ptr == '\0' as WCHAR {
-            return RC_INITERROR;
+            return (RC_INITERROR as i32);
         }
         if *ptr == '\0' as WCHAR || (in_quotes == 0 && is_whitespace(*ptr) != 0) {
             break;
         }
     }
     *end = ptr as *mut WCHAR;
-    return RC_OK;
+    return (RC_OK as i32);
 }
 
 unsafe extern "C" fn strip_quotes(word: *mut WCHAR, end: *mut *mut WCHAR) {
@@ -957,7 +960,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
             first = *word.offset(0 as isize);
             *end = '\0' as WCHAR;
             strip_quotes(word, ::core::ptr::addr_of_mut!(end));
-            WINE_TRACE(b"Processing Arg: '%s'\n\0".as_ptr() as *const i8, wine_dbgstr_w(word));
+            WINE_TRACE!(b"Processing Arg: '%s'\n\0".as_ptr() as *const i8, wine_dbgstr_w(word));
 
             /* First non-switch parameter is source, second is destination */
             if first != '/' as WCHAR {
@@ -980,7 +983,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                 while *word.offset(0 as isize) != 0 {
                     rest = ::core::ptr::null_mut::<WCHAR>();
 
-                    match toupper(*word.offset(1 as isize)) {
+                    match toupper((*word.offset(1 as isize)) as _) {
                         73 /* 'I' */ => {
                             flags |= OPT_ASSUMEDIR as DWORD;
                         }
@@ -1137,7 +1140,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                                         ::core::ptr::addr_of_mut!(st),
                                         ::core::ptr::null::<WCHAR>(),
                                         ::core::ptr::addr_of_mut!(datestring) as LPWSTR,
-                                        ARRAY_SIZE(datestring) as ::core::ffi::c_int,
+                                        ARRAY_SIZE!(datestring) as ::core::ffi::c_int,
                                     );
                                     GetTimeFormatW(
                                         0 as LCID,
@@ -1145,10 +1148,10 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                                         ::core::ptr::addr_of_mut!(st),
                                         ::core::ptr::null::<WCHAR>(),
                                         ::core::ptr::addr_of_mut!(timestring) as LPWSTR,
-                                        ARRAY_SIZE(timestring) as ::core::ffi::c_int,
+                                        ARRAY_SIZE!(timestring) as ::core::ffi::c_int,
                                     );
 
-                                    WINE_TRACE(
+                                    WINE_TRACE!(
                                         b"Date being used is: %s %s\n\0".as_ptr() as *const i8,
                                         wine_dbgstr_w(::core::ptr::addr_of_mut!(datestring) as *mut WCHAR),
                                         wine_dbgstr_w(::core::ptr::addr_of_mut!(timestring) as *mut WCHAR),
@@ -1163,7 +1166,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                         }
 
                         45 /* '-' */ => {
-                            if toupper(*word.offset(2 as isize)) == 'Y' as ::core::ffi::c_int {
+                            if toupper((*word.offset(2 as isize)) as _) == 'Y' as ::core::ffi::c_int {
                                 flags &= !(OPT_NOPROMPT as DWORD);
                                 rest = word.offset(3 as isize);
                             }
@@ -1174,10 +1177,10 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                             break 'out;
                         }
                         86 /* 'V' */ => {
-                            WINE_FIXME(b"ignoring /V\n\0".as_ptr() as *const i8);
+                            WINE_FIXME!(b"ignoring /V\n\0".as_ptr() as *const i8);
                         }
                         _ => {
-                            WINE_TRACE(
+                            WINE_TRACE!(
                                 b"Unhandled parameter '%s'\n\0".as_ptr() as *const i8,
                                 wine_dbgstr_w(word),
                             );
@@ -1195,7 +1198,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
                        switch, or the beginning of the next switch if there
                        was no whitespace between them                          */
                     if skip == 0 && *rest != 0 && *rest != '/' as WCHAR {
-                        WINE_FIXME(
+                        WINE_FIXME!(
                             b"Unexpected characters found and ignored '%s'\n\0".as_ptr() as *const i8,
                             wine_dbgstr_w(rest),
                         );
@@ -1225,7 +1228,7 @@ unsafe extern "C" fn XCOPY_ParseCommandLine(suppliedsource: *mut WCHAR, supplied
 }
 
 unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *mut WCHAR, spec: *mut WCHAR, flags: DWORD) -> ::core::ffi::c_int {
-    let mut actualsource: [WCHAR; MAX_PATH] = [0; MAX_PATH];
+    let mut actualsource: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
     let mut starPos: *mut WCHAR;
     let mut questPos: *mut WCHAR;
     let mut attribs: DWORD;
@@ -1234,8 +1237,8 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
      * Validate the source, expanding to full path ensuring it exists
      */
     if GetFullPathNameW(suppliedsource as LPCWSTR, MAX_PATH as DWORD, core::ptr::addr_of_mut!(actualsource) as *mut WCHAR as LPWSTR, core::ptr::null_mut()) == 0 as DWORD {
-        WINE_FIXME(b"Unexpected failure expanding source path (%d)\n\0".as_ptr() as *const i8, GetLastError());
-        return RC_INITERROR;
+        WINE_FIXME!(b"Unexpected failure expanding source path (%d)\n\0".as_ptr() as *const i8, GetLastError());
+        return (RC_INITERROR as i32);
     }
 
     /* If full names required, convert to using the full path */
@@ -1266,7 +1269,7 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
 
     if attribs == INVALID_FILE_ATTRIBUTES as DWORD {
         XCOPY_FailMessage(GetLastError());
-        return RC_INITERROR;
+        return (RC_INITERROR as i32);
 
     /* Directory:
          stem should be exactly as supplied plus a '\', unless it was
@@ -1274,7 +1277,7 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
     } else if attribs & FILE_ATTRIBUTE_DIRECTORY as DWORD != 0 {
         let mut lastChar: WCHAR = 0;
 
-        WINE_TRACE(b"Directory supplied\n\0".as_ptr() as *const i8);
+        WINE_TRACE!(b"Directory supplied\n\0".as_ptr() as *const i8);
         lstrcpyW(stem as LPWSTR, suppliedsource as LPCWSTR);
         lastChar = *stem.offset((lstrlenW(stem as LPCWSTR) - 1 as i32) as isize);
         if lastChar != '\\' as WCHAR && lastChar != ':' as WCHAR {
@@ -1290,7 +1293,7 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
     } else {
         let mut lastDir: *mut WCHAR;
 
-        WINE_TRACE(b"Filename supplied\n\0".as_ptr() as *const i8);
+        WINE_TRACE!(b"Filename supplied\n\0".as_ptr() as *const i8);
         lastDir = wcsrchr(suppliedsource, '\\' as WCHAR) as *mut WCHAR;
 
         if !lastDir.is_null() {
@@ -1302,8 +1305,8 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
             *stem.offset(2 as isize) = 0x00 as WCHAR;
             lstrcpyW(spec as LPWSTR, suppliedsource.offset(2 as isize) as LPCWSTR);
         } else {
-            let mut curdir: [WCHAR; MAXSTRING] = [0; MAXSTRING];
-            GetCurrentDirectoryW(ARRAY_SIZE(curdir) as DWORD, core::ptr::addr_of_mut!(curdir) as *mut WCHAR as LPWSTR);
+            let mut curdir: [WCHAR; (MAXSTRING) as _] = [0; (MAXSTRING) as _];
+            GetCurrentDirectoryW(ARRAY_SIZE!(curdir) as DWORD, core::ptr::addr_of_mut!(curdir) as *mut WCHAR as LPWSTR);
             *stem.offset(0 as isize) = curdir[0 as usize];
             *stem.offset(1 as isize) = curdir[1 as usize];
             *stem.offset(2 as isize) = 0x00 as WCHAR;
@@ -1311,7 +1314,7 @@ unsafe extern "C" fn XCOPY_ProcessSourceParm(suppliedsource: *mut WCHAR, stem: *
         }
     }
 
-    return RC_OK;
+    return (RC_OK as i32);
 }
 
 unsafe extern "C" fn XCOPY_ProcessDestParm(mut supplieddestination: *mut WCHAR, mut stem: *mut WCHAR, mut spec: *mut WCHAR, mut srcspec: *mut WCHAR, mut flags: DWORD) -> ::core::ffi::c_int {
@@ -1320,7 +1323,7 @@ unsafe extern "C" fn XCOPY_ProcessDestParm(mut supplieddestination: *mut WCHAR, 
     let mut isDir: BOOL = FALSE as BOOL;
 
     if GetFullPathNameW(supplieddestination as LPCWSTR, MAX_PATH as DWORD, core::ptr::addr_of_mut!(actualdestination) as LPWSTR, core::ptr::null_mut()) == 0 as DWORD {
-        WINE_FIXME(b"Unexpected failure expanding source path (%d)\n\0".as_ptr() as *const ::core::ffi::c_char, GetLastError());
+        WINE_FIXME!(b"Unexpected failure expanding source path (%d)\n\0".as_ptr() as *const ::core::ffi::c_char, GetLastError());
         return RC_INITERROR as ::core::ffi::c_int;
     }
 
@@ -1348,7 +1351,7 @@ unsafe extern "C" fn XCOPY_ProcessDestParm(mut supplieddestination: *mut WCHAR, 
                 XCOPY_wprintf(XCOPY_LoadMessage(STRING_QISDIR as UINT), supplieddestination);
 
                 ReadFile(GetStdHandle(STD_INPUT_HANDLE as DWORD), core::ptr::addr_of_mut!(answer) as PVOID, core::mem::size_of::<[::core::ffi::c_char; 10 as usize]>() as DWORD, core::ptr::addr_of_mut!(count), core::ptr::null_mut());
-                WINE_TRACE(b"User answer %c\n\0".as_ptr() as *const ::core::ffi::c_char, answer[0 as usize] as ::core::ffi::c_int);
+                WINE_TRACE!(b"User answer %c\n\0".as_ptr() as *const ::core::ffi::c_char, answer[0 as usize] as ::core::ffi::c_int);
 
                 answer[0 as usize] = toupper(answer[0 as usize] as ::core::ffi::c_int) as ::core::ffi::c_char;
             }
@@ -1387,13 +1390,13 @@ unsafe extern "C" fn XCOPY_ProcessDestParm(mut supplieddestination: *mut WCHAR, 
 #[no_mangle]
 pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argvW: *mut *mut WCHAR) -> ::core::ffi::c_int {
     let mut rc: ::core::ffi::c_int = 0;
-    let mut suppliedsource: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut supplieddestination: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut sourcestem: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut sourcespec: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut destinationstem: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut destinationspec: [WCHAR; MAX_PATH] = [0; MAX_PATH];
-    let mut copyCmd: [WCHAR; MAXSTRING] = [0; MAXSTRING];
+    let mut suppliedsource: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut supplieddestination: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut sourcestem: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut sourcespec: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut destinationstem: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut destinationspec: [WCHAR; (MAX_PATH) as _] = [0; (MAX_PATH) as _];
+    let mut copyCmd: [WCHAR; (MAXSTRING) as _] = [0; (MAXSTRING) as _];
     let mut flags: DWORD = 0 as DWORD;
     let PROMPTSTR1: [WCHAR; 3] = [0x002Fu16, 0x0059, 0x0000];
     let PROMPTSTR2: [WCHAR; 3] = [0x002Fu16, 0x0079, 0x0000];
@@ -1401,18 +1404,18 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argvW: *mut *mut WCHAR)
 
     /* Preinitialize flags based on COPYCMD */
     if GetEnvironmentVariableW(
-        COPYCMD as LPCWSTR,
+        (COPYCMD).as_ptr() as LPCWSTR,
         &raw mut copyCmd as LPWSTR,
         MAXSTRING as DWORD,
     ) != 0
     {
         if wcsstr(
             &raw mut copyCmd as *mut WCHAR,
-            PROMPTSTR1 as *const WCHAR,
+            (PROMPTSTR1).as_ptr() as *const WCHAR,
         ) != core::ptr::null_mut()
             || wcsstr(
                 &raw mut copyCmd as *mut WCHAR,
-                PROMPTSTR2 as *const WCHAR,
+                (PROMPTSTR2).as_ptr() as *const WCHAR,
             ) != core::ptr::null_mut()
         {
             flags |= OPT_NOPROMPT as DWORD;
@@ -1434,21 +1437,21 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argvW: *mut *mut WCHAR)
         &raw mut supplieddestination as *mut WCHAR,
         &raw mut flags,
     );
-    if rc != RC_OK {
-        if rc == RC_HELP {
-            return RC_OK;
+    if rc != (RC_OK as i32) {
+        if rc == (RC_HELP as i32) {
+            return (RC_OK as i32);
         } else {
             return rc;
         }
     }
 
     /* Trace out the supplied information */
-    WINE_TRACE(b"Supplied parameters:\n\0".as_ptr() as *const i8);
-    WINE_TRACE(
+    WINE_TRACE!(b"Supplied parameters:\n\0".as_ptr() as *const i8);
+    WINE_TRACE!(
         b"Source      : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut suppliedsource as *mut WCHAR),
     );
-    WINE_TRACE(
+    WINE_TRACE!(
         b"Destination : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut supplieddestination as *mut WCHAR),
     );
@@ -1460,7 +1463,7 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argvW: *mut *mut WCHAR)
         &raw mut sourcespec as *mut WCHAR,
         flags,
     );
-    if rc != RC_OK {
+    if rc != (RC_OK as i32) {
         return rc;
     }
 
@@ -1472,25 +1475,25 @@ pub unsafe extern "C" fn wmain(argc: ::core::ffi::c_int, argvW: *mut *mut WCHAR)
         &raw mut sourcespec as *mut WCHAR,
         flags,
     );
-    if rc != RC_OK {
+    if rc != (RC_OK as i32) {
         return rc;
     }
 
     /* Trace out the resulting information */
-    WINE_TRACE(b"Resolved parameters:\n\0".as_ptr() as *const i8);
-    WINE_TRACE(
+    WINE_TRACE!(b"Resolved parameters:\n\0".as_ptr() as *const i8);
+    WINE_TRACE!(
         b"Source Stem : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut sourcestem as *mut WCHAR),
     );
-    WINE_TRACE(
+    WINE_TRACE!(
         b"Source Spec : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut sourcespec as *mut WCHAR),
     );
-    WINE_TRACE(
+    WINE_TRACE!(
         b"Dest   Stem : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut destinationstem as *mut WCHAR),
     );
-    WINE_TRACE(
+    WINE_TRACE!(
         b"Dest   Spec : '%s'\n\0".as_ptr() as *const i8,
         wine_dbgstr_w(&raw mut destinationspec as *mut WCHAR),
     );
