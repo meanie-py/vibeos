@@ -199,12 +199,38 @@ def recorded_mode(module_dir: Path, target: str | None) -> bool | None:
     return found.pop() if len(found) == 1 else None
 
 
+def _renamed_stem(module_dir: Path, target: str | None) -> str | None:
+    """The `derive --stem` a module was given, found by its module_dir and target.
+
+    Later stages re-derive from module_dir alone, and without this they would fall back to
+    the target's name -- the very crate the rename exists to avoid."""
+    rel = str(module_dir.resolve().relative_to(REPO))
+    for p in sorted(STATE_ROOT.glob("*/state.json")):
+        try:
+            st = json.loads(p.read_text())
+        except (OSError, ValueError):
+            continue
+        if (
+            st.get("renamed")
+            and st.get("module_dir") == rel
+            and (target is None or st.get("target") == target)
+        ):
+            return st["stem"]
+    return None
+
+
 def derive(
-    module_dir: Path, target: str | None, arch: str = "i386", usermode: bool | None = None
+    module_dir: Path,
+    target: str | None,
+    arch: str = "i386",
+    usermode: bool | None = None,
+    stem: str | None = None,
 ) -> pd.DerivedProfile:
     require_built(module_dir)
     if usermode is None:
         usermode = recorded_mode(module_dir, target)
+    if stem is None:
+        stem = _renamed_stem(module_dir, target)
     # A module whose CMakeLists carries the flip's own `# x.c  # replaced by Rust` lines is
     # flipped even when real C still compiles beside the stub: mstsc keeps its 18 vendored
     # rdesktop TUs, so the "already flipped" refusal never fired and a re-derive recorded
@@ -218,6 +244,7 @@ def derive(
             target=target,
             usermode=usermode,
             flipped_sources=True,
+            stem=stem,
         )
         blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
         if blocking:
@@ -225,7 +252,9 @@ def derive(
             raise PortError(f"profile_derive reports BLOCKING errors -- fix these first:\n{lines}")
         return dp
     try:
-        dp = pd.derive(module_dir.resolve(), REPO, arch=arch, target=target, usermode=usermode)
+        dp = pd.derive(
+            module_dir.resolve(), REPO, arch=arch, target=target, usermode=usermode, stem=stem
+        )
     except pd.ProfileDeriveError as e:
         # After the cohab flip the module compiles only its rust_*.c scaffolding; the C the
         # crate translates is still listed, commented out. Re-deriving (a new island rule,
@@ -239,6 +268,7 @@ def derive(
             target=target,
             usermode=usermode,
             flipped_sources=True,
+            stem=stem,
         )
     blocking = [f for f in dp.errors if f.code != "SWITCH_CONST_IN_BASE_HEADER"]
     if blocking:
@@ -329,9 +359,11 @@ def stage_derive(
     usermode: bool | None = None,
     functions: str | None = None,
     block: list[str] | None = None,
+    stem: str | None = None,
 ) -> pd.DerivedProfile:
     started = time.time()
-    dp = derive(module_dir, target, usermode=usermode)
+    dp = derive(module_dir, target, usermode=usermode, stem=stem)
+    renamed = stem is not None or bool(load_state(dp.module.crate_stem).get("renamed"))
     stem = dp.module.crate_stem
     _add_island_headers(dp, load_state(stem).get("island_headers", {}))
     arm = pd.emit_profile(dp)
@@ -383,7 +415,7 @@ def stage_derive(
     if crate_dir.is_dir() and load_state(stem).get("crate") != dp.crate_name:
         raise SystemExit(
             f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
-            f"({crate_dir.relative_to(REPO)}); port it under another stem/target name"
+            f"({crate_dir.relative_to(REPO)}); give it its own name with `port derive --stem`"
         )
     arm_changed = _write_gen_arm(arm, stem)
     state = load_state(stem)
@@ -420,6 +452,7 @@ def stage_derive(
         real_unions=prior["real_unions"],
         **({"functions": prior["functions"]} if "functions" in prior else {}),
         **({"island_block": prior["island_block"]} if "island_block" in prior else {}),
+        **({"renamed": True} if renamed else {}),
     )
     if usermode is not None:
         state["mode_override"] = usermode
@@ -6355,7 +6388,8 @@ def _hold(name: str):
 def main(args) -> int:
     if args.port_stage == "status":  # read-only: never waits on, or blocks, a running stage
         return _main(args)
-    stem = getattr(args, "stem", None)
+    # derive's --stem NAMES a new port; every other stage's stem must already exist.
+    stem = getattr(args, "stem", None) if args.port_stage != "derive" else None
     if stem and not _state_path(stem).is_file():
         # A stem derive never wrote: `port replay help` for the module derive named after
         # its CMake target (`cmd_help`) made an empty state and died on KeyError: 'tus'.
@@ -6385,7 +6419,12 @@ def _main(args) -> int:
     try:
         if args.port_stage == "derive":
             stage_derive(
-                _module(args.module), args.target, args.usermode, args.functions, args.block
+                _module(args.module),
+                args.target,
+                args.usermode,
+                args.functions,
+                args.block,
+                args.stem,
             )
         elif args.port_stage == "island":
             stage_island(args.stem)
@@ -6522,6 +6561,12 @@ def add_parser(sub) -> None:
         default=[],
         metavar="NAME",
         help="island items to blocklist (EXTRA_BL_ITEMS); remembered",
+    )
+    stages.choices["derive"].add_argument(
+        "--stem",
+        default=None,
+        help="name the port (state, crate <stem>-rust, gen arm) other than the CMake target, "
+        "when that crate already belongs to another module; remembered",
     )
     for name in ("island", "integrate", "resolve", "check", "status", "flip"):
         stages.add_parser(name).add_argument("stem")

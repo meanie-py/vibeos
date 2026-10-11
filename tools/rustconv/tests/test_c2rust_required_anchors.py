@@ -286,3 +286,40 @@ def test_a_second_definition_is_anchored_through_its_export_name(monkeypatch):
         Path("pilot.c"), strict=True, required_names={"Internal_Add", "ImageList_Add"}
     )
     assert "wrapper" in got["ImageList_Add"] and "internal" in got["Internal_Add"]
+
+
+@pytest.mark.parametrize(
+    ("target", "erased"),
+    [
+        ("x86_64-pc-windows-gnu", True),
+        ("aarch64-pc-windows-gnu", True),
+        ("i686-pc-windows-gnu", False),
+    ],
+)
+def test_calling_conventions_erased_only_off_i386(monkeypatch, target, erased):
+    # eventcreate.c: a pointer to a `__cdecl` function panics c2rust on every db; on a
+    # 64-bit target the keyword is a no-op, on i386 it is real ABI.
+    seen = []
+    monkeypatch.setattr(anchor, "_extract_clang_flags", lambda entry: [f"--target={target}"])
+    monkeypatch.setattr(
+        anchor, "_transpile_attempt", lambda c, b, flags, extra, *a: seen.append(extra)
+    )
+    anchor._transpile_one(Path("x.c"), {}, Path("b"), 1, [], False)
+    assert all(("-D__cdecl=" in extra) is erased for extra in seen)
+    assert all(("-D__thiscall=" in extra) is erased for extra in seen)
+
+
+def test_an_exported_global_folds_through_its_no_mangle():
+    # ftp's cmdtab.c: `int NCMDS = sizeof(cmdtab)/sizeof(cmdtab[0]) - 1;` is a global, so
+    # c2rust writes `#[no_mangle]` above the static it then fills at startup.
+    text = (
+        "#[no_mangle]\npub static mut NCMDS: ::core::ffi::c_int = 0;\n"
+        'unsafe extern "C" fn run_static_initializers() {\n'
+        "    NCMDS = (::core::mem::size_of::<[cmd; 73]>() as usize)\n"
+        "        .wrapping_div(::core::mem::size_of::<cmd>() as usize)\n"
+        "        .wrapping_sub(1 as usize) as ::core::ffi::c_int;\n}\n"
+    )
+    blocks = ["#[no_mangle]\npub static mut NCMDS: ::core::ffi::c_int = 0;"]
+    out = anchor.fold_static_initializers(text, blocks)
+    assert out[0].startswith("#[no_mangle]\npub static mut NCMDS")
+    assert "wrapping_div" in out[0] and "= 0;" not in out[0]

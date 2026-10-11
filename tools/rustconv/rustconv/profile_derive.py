@@ -3017,6 +3017,7 @@ def derive(
     usermode: bool | None = None,
     flipped_sources: bool = False,
     sources: tuple[Path, ...] = (),
+    stem: str | None = None,
 ) -> DerivedProfile:
     """Derive a full profile for the module at *module_dir*.
 
@@ -3035,6 +3036,10 @@ def derive(
         flipped_sources=flipped_sources,
     )
     module.usermode_override = usermode
+    if stem:
+        # Set before anything reads crate_stem: the prelude probe below would otherwise read
+        # the colliding crate's prelude (cmdutils' dbgprint vs the kernel's dbgprint-rust).
+        module.stem = stem
     full_tus = set(module.compiled_tus)
     if sources:
         selected = {(p if p.is_absolute() else repo_root / p).resolve() for p in sources}
