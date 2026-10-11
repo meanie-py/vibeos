@@ -64,6 +64,18 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
+// Hand port: `port macros` emits the C's narrow literals as Rust `&str` (no NUL); fprintf
+// needs a NUL-terminated char pointer for both the format and `#value`.
+// base/applications/cmdutils/fsutil/fsinfo.c:225: #define DUMP_VALUE(stats, value) fprintf(stdout, "%s: %lu\n", #value, stats->value)
+#[allow(unused_macros)]
+macro_rules! DUMP_VALUE {
+    ($stats:expr, $value:ident $(,)?) => {
+        (fprintf(stdout, b"%s: %lu\n\0".as_ptr() as *const i8, concat!(stringify!($value), "\0").as_ptr() as *const i8, (*$stats).$value))
+    };
+}
+#[allow(unused_imports)]
+pub(crate) use DUMP_VALUE;
+
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const FSCTL_DISMOUNT_VOLUME: ULONG = 0x00090020; // diskpart-rust/src/prelude.rs
 pub const FSCTL_LOCK_VOLUME: ULONG = 0x00090018; // diskpart-rust/src/prelude.rs
@@ -164,15 +176,6 @@ pub use crate::fsutil::volume::HandlerItem;
 // ==== end cross-TU definitions ====
 
 // ==== port macros: the module's own C macros (generated -- `rustconv port macros`) ====
-// base/applications/cmdutils/fsutil/fsinfo.c:225: #define DUMP_VALUE(stats, value) fprintf(stdout, "%s: %lu\n", #value, stats->value)
-#[allow(unused_macros)]
-macro_rules! DUMP_VALUE {
-    ($stats:expr, $value:ident $(,)?) => {
-        (fprintf(stdout, "%s: %lu\n", stringify!($value), (*$stats).$value))
-    };
-}
-#[allow(unused_imports)]
-pub(crate) use DUMP_VALUE;
 // base/applications/cmdutils/fsutil/fsinfo.c:340: #define SUM_VALUE(stats, new, value) stats->value += new->value
 #[allow(unused_macros)]
 macro_rules! SUM_VALUE {

@@ -65,6 +65,24 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
+// ================= hand ports (above the generated blocks: they survive replays) ==============
+// objbase.h's struct: CoInitializeSecurity's array element. The island does not carry it; layout is
+// the psdk definition, per-arch via OLECHAR*.
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct tagSOLE_AUTHENTICATION_SERVICE {
+    pub dwAuthnSvc: DWORD,
+    pub dwAuthzSvc: DWORD,
+    pub pPrincipalName: *mut OLECHAR,
+    pub hr: HRESULT,
+}
+pub type SOLE_AUTHENTICATION_SERVICE = tagSOLE_AUTHENTICATION_SERVICE;
+// C: wine/unicode.h `#define vsnprintfW _vsnwprintf`. va_list is the caller's copy, as in the C.
+extern "C" {
+    pub fn _vsnwprintf(buffer: *mut WCHAR, count: usize, format: *const WCHAR, argptr: va_list) -> c_int;
+}
+pub use crate::prelude::_vsnwprintf as vsnprintfW; // sdk alias
+
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // cleanmgr-rust/src/prelude.rs
 pub const EOAC_NONE: DWORD = 0; // netsh-rust/src/prelude.rs

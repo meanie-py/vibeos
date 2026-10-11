@@ -49,9 +49,9 @@ static mut HandlersList: [HandlerItem; 2] = unsafe {
 #[allow(non_snake_case)]
 #[repr(C)]
 pub struct HandlerItem {
-    pub Proc: HandlerProc,
-    pub name: *const TCHAR,
-    pub help: *const TCHAR,
+    pub Handler: HandlerProc,
+    pub Command: *const TCHAR,
+    pub Desc: *const TCHAR,
 }
 
 unsafe impl Sync for HandlerItem {}

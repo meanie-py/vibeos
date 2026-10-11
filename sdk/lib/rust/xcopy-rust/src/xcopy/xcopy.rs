@@ -67,7 +67,9 @@ unsafe extern "C" fn XCOPY_wprintf_v(mut format: *const WCHAR, ap_list: *mut ::c
     static mut toConsole: BOOL = (TRUE as i32);
     static mut traceOutput: BOOL = (FALSE as i32);
 
-    let mut parms: __gnuc_va_list;
+    // The C trampoline (rust_varargs_shim.c) already va_start'd; take the copy the Rust twin
+    // receives, as the C did with its own __ms_va_list.
+    let mut parms: va_list = *(ap_list as *mut va_list);
     let mut nOut: DWORD = 0;
     let mut len: i32 = 0;
     let mut res: DWORD = 0;
@@ -90,7 +92,6 @@ unsafe extern "C" fn XCOPY_wprintf_v(mut format: *const WCHAR, ap_list: *mut ::c
         return 0;
     }
 
-    __ms_va_start(parms, format);
     SetLastError(NO_ERROR);
     len = FormatMessageW(
         FORMAT_MESSAGE_FROM_STRING,
@@ -101,7 +102,7 @@ unsafe extern "C" fn XCOPY_wprintf_v(mut format: *const WCHAR, ap_list: *mut ::c
         (MAX_WRITECONSOLE_SIZE as usize / core::mem::size_of::<WCHAR>()) as DWORD,
         (core::ptr::addr_of_mut!(parms) as *mut c_void).cast(),
     ) as i32;
-    __ms_va_end(parms);
+    // va_end is the trampoline's job.
     if len == 0 && GetLastError() != NO_ERROR {
         WINE_FIXME!(
             b"Could not format string: le=%u, fmt=%s\n\0".as_ptr() as *const i8,

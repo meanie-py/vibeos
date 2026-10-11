@@ -611,7 +611,7 @@ pub unsafe extern "C" fn GetInterfaceFriendlyName(
         .wrapping_sub(dwPrefixLength as usize)
         .wrapping_add(wcslen(PostPath as *const wchar_t))
         .wrapping_add(1 as usize) as size_t;
-    if PathSize > _countof!(Path) {
+    if PathSize > _countof!(Path) as usize {
         return;
     }
 

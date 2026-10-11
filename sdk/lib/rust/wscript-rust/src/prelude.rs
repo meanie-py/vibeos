@@ -65,6 +65,298 @@ pub use win32macros_rust::{ALIGN_UP, ARRAYSIZE, ARRAY_SIZE, ASSERT, C_ASSERT, Co
 
 // The island re-exports the base NT identity: pub use ntdll_sys::nt::*;
 
+// ================= hand ports (above the generated blocks: they survive replays) ==============
+// ---- msxml2.h vtables (the C reaches these through COBJMACROS, `->lpVtbl->slot`). The island does not
+// carry them, so the layout is transcribed from the build's generated msxml2.h in slot order. Only the
+// slots this module calls are typed; the others are placeholders of the same width (every slot is a
+// function pointer), so the used slots sit at the right offsets.
+// IXMLDOMNodeVtbl: 43 slots, layout from msxml2.h (generated build header)
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct IXMLDOMNodeVtbl {
+    pub QueryInterface: *const c_void, // not called by this module
+    pub AddRef: *const c_void, // not called by this module
+    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode) -> ULONG>,
+    pub GetTypeInfoCount: *const c_void, // not called by this module
+    pub GetTypeInfo: *const c_void, // not called by this module
+    pub GetIDsOfNames: *const c_void, // not called by this module
+    pub Invoke: *const c_void, // not called by this module
+    pub get_nodeName: *const c_void, // not called by this module
+    pub get_nodeValue: *const c_void, // not called by this module
+    pub put_nodeValue: *const c_void, // not called by this module
+    pub get_nodeType: *const c_void, // not called by this module
+    pub get_parentNode: *const c_void, // not called by this module
+    pub get_childNodes: *const c_void, // not called by this module
+    pub get_firstChild: *const c_void, // not called by this module
+    pub get_lastChild: *const c_void, // not called by this module
+    pub get_previousSibling: *const c_void, // not called by this module
+    pub get_nextSibling: *const c_void, // not called by this module
+    pub get_attributes: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT>,
+    pub insertBefore: *const c_void, // not called by this module
+    pub replaceChild: *const c_void, // not called by this module
+    pub removeChild: *const c_void, // not called by this module
+    pub appendChild: *const c_void, // not called by this module
+    pub hasChildNodes: *const c_void, // not called by this module
+    pub get_ownerDocument: *const c_void, // not called by this module
+    pub cloneNode: *const c_void, // not called by this module
+    pub get_nodeTypeString: *const c_void, // not called by this module
+    pub get_text: Option<unsafe extern "system" fn(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT>,
+    pub put_text: *const c_void, // not called by this module
+    pub get_specified: *const c_void, // not called by this module
+    pub get_definition: *const c_void, // not called by this module
+    pub get_nodeTypedValue: *const c_void, // not called by this module
+    pub put_nodeTypedValue: *const c_void, // not called by this module
+    pub get_dataType: *const c_void, // not called by this module
+    pub put_dataType: *const c_void, // not called by this module
+    pub get_xml: *const c_void, // not called by this module
+    pub transformNode: *const c_void, // not called by this module
+    pub selectNodes: *const c_void, // not called by this module
+    pub selectSingleNode: *const c_void, // not called by this module
+    pub get_parsed: *const c_void, // not called by this module
+    pub get_namespaceURI: *const c_void, // not called by this module
+    pub get_prefix: *const c_void, // not called by this module
+    pub get_baseName: *const c_void, // not called by this module
+    pub transformNodeToObject: *const c_void, // not called by this module
+}
+
+// IXMLDOMDocumentVtbl: 76 slots, layout from msxml2.h (generated build header)
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct IXMLDOMDocumentVtbl {
+    pub QueryInterface: *const c_void, // not called by this module
+    pub AddRef: *const c_void, // not called by this module
+    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument) -> ULONG>,
+    pub GetTypeInfoCount: *const c_void, // not called by this module
+    pub GetTypeInfo: *const c_void, // not called by this module
+    pub GetIDsOfNames: *const c_void, // not called by this module
+    pub Invoke: *const c_void, // not called by this module
+    pub get_nodeName: *const c_void, // not called by this module
+    pub get_nodeValue: *const c_void, // not called by this module
+    pub put_nodeValue: *const c_void, // not called by this module
+    pub get_nodeType: *const c_void, // not called by this module
+    pub get_parentNode: *const c_void, // not called by this module
+    pub get_childNodes: *const c_void, // not called by this module
+    pub get_firstChild: *const c_void, // not called by this module
+    pub get_lastChild: *const c_void, // not called by this module
+    pub get_previousSibling: *const c_void, // not called by this module
+    pub get_nextSibling: *const c_void, // not called by this module
+    pub get_attributes: *const c_void, // not called by this module
+    pub insertBefore: *const c_void, // not called by this module
+    pub replaceChild: *const c_void, // not called by this module
+    pub removeChild: *const c_void, // not called by this module
+    pub appendChild: *const c_void, // not called by this module
+    pub hasChildNodes: *const c_void, // not called by this module
+    pub get_ownerDocument: *const c_void, // not called by this module
+    pub cloneNode: *const c_void, // not called by this module
+    pub get_nodeTypeString: *const c_void, // not called by this module
+    pub get_text: *const c_void, // not called by this module
+    pub put_text: *const c_void, // not called by this module
+    pub get_specified: *const c_void, // not called by this module
+    pub get_definition: *const c_void, // not called by this module
+    pub get_nodeTypedValue: *const c_void, // not called by this module
+    pub put_nodeTypedValue: *const c_void, // not called by this module
+    pub get_dataType: *const c_void, // not called by this module
+    pub put_dataType: *const c_void, // not called by this module
+    pub get_xml: *const c_void, // not called by this module
+    pub transformNode: *const c_void, // not called by this module
+    pub selectNodes: *const c_void, // not called by this module
+    pub selectSingleNode: *const c_void, // not called by this module
+    pub get_parsed: *const c_void, // not called by this module
+    pub get_namespaceURI: *const c_void, // not called by this module
+    pub get_prefix: *const c_void, // not called by this module
+    pub get_baseName: *const c_void, // not called by this module
+    pub transformNodeToObject: *const c_void, // not called by this module
+    pub get_doctype: *const c_void, // not called by this module
+    pub get_implementation: *const c_void, // not called by this module
+    pub get_documentElement: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT>,
+    pub putref_documentElement: *const c_void, // not called by this module
+    pub createElement: *const c_void, // not called by this module
+    pub createDocumentFragment: *const c_void, // not called by this module
+    pub createTextNode: *const c_void, // not called by this module
+    pub createComment: *const c_void, // not called by this module
+    pub createCDATASection: *const c_void, // not called by this module
+    pub createProcessingInstruction: *const c_void, // not called by this module
+    pub createAttribute: *const c_void, // not called by this module
+    pub createEntityReference: *const c_void, // not called by this module
+    pub getElementsByTagName: *const c_void, // not called by this module
+    pub createNode: *const c_void, // not called by this module
+    pub nodeFromID: *const c_void, // not called by this module
+    pub load: Option<unsafe extern "system" fn(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT>,
+    pub get_readyState: *const c_void, // not called by this module
+    pub get_parseError: *const c_void, // not called by this module
+    pub get_url: *const c_void, // not called by this module
+    pub get_async: *const c_void, // not called by this module
+    pub put_async: *const c_void, // not called by this module
+    pub abort: *const c_void, // not called by this module
+    pub loadXML: *const c_void, // not called by this module
+    pub save: *const c_void, // not called by this module
+    pub get_validateOnParse: *const c_void, // not called by this module
+    pub put_validateOnParse: *const c_void, // not called by this module
+    pub get_resolveExternals: *const c_void, // not called by this module
+    pub put_resolveExternals: *const c_void, // not called by this module
+    pub get_preserveWhiteSpace: *const c_void, // not called by this module
+    pub put_preserveWhiteSpace: *const c_void, // not called by this module
+    pub put_onreadystatechange: *const c_void, // not called by this module
+    pub put_ondataavailable: *const c_void, // not called by this module
+    pub put_ontransformnode: *const c_void, // not called by this module
+}
+
+// IXMLDOMElementVtbl: 52 slots, layout from msxml2.h (generated build header)
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct IXMLDOMElementVtbl {
+    pub QueryInterface: *const c_void, // not called by this module
+    pub AddRef: *const c_void, // not called by this module
+    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement) -> ULONG>,
+    pub GetTypeInfoCount: *const c_void, // not called by this module
+    pub GetTypeInfo: *const c_void, // not called by this module
+    pub GetIDsOfNames: *const c_void, // not called by this module
+    pub Invoke: *const c_void, // not called by this module
+    pub get_nodeName: *const c_void, // not called by this module
+    pub get_nodeValue: *const c_void, // not called by this module
+    pub put_nodeValue: *const c_void, // not called by this module
+    pub get_nodeType: *const c_void, // not called by this module
+    pub get_parentNode: *const c_void, // not called by this module
+    pub get_childNodes: *const c_void, // not called by this module
+    pub get_firstChild: *const c_void, // not called by this module
+    pub get_lastChild: *const c_void, // not called by this module
+    pub get_previousSibling: *const c_void, // not called by this module
+    pub get_nextSibling: *const c_void, // not called by this module
+    pub get_attributes: *const c_void, // not called by this module
+    pub insertBefore: *const c_void, // not called by this module
+    pub replaceChild: *const c_void, // not called by this module
+    pub removeChild: *const c_void, // not called by this module
+    pub appendChild: *const c_void, // not called by this module
+    pub hasChildNodes: *const c_void, // not called by this module
+    pub get_ownerDocument: *const c_void, // not called by this module
+    pub cloneNode: *const c_void, // not called by this module
+    pub get_nodeTypeString: *const c_void, // not called by this module
+    pub get_text: *const c_void, // not called by this module
+    pub put_text: *const c_void, // not called by this module
+    pub get_specified: *const c_void, // not called by this module
+    pub get_definition: *const c_void, // not called by this module
+    pub get_nodeTypedValue: *const c_void, // not called by this module
+    pub put_nodeTypedValue: *const c_void, // not called by this module
+    pub get_dataType: *const c_void, // not called by this module
+    pub put_dataType: *const c_void, // not called by this module
+    pub get_xml: *const c_void, // not called by this module
+    pub transformNode: *const c_void, // not called by this module
+    pub selectNodes: *const c_void, // not called by this module
+    pub selectSingleNode: *const c_void, // not called by this module
+    pub get_parsed: *const c_void, // not called by this module
+    pub get_namespaceURI: *const c_void, // not called by this module
+    pub get_prefix: *const c_void, // not called by this module
+    pub get_baseName: *const c_void, // not called by this module
+    pub transformNodeToObject: *const c_void, // not called by this module
+    pub get_tagName: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT>,
+    pub getAttribute: *const c_void, // not called by this module
+    pub setAttribute: *const c_void, // not called by this module
+    pub removeAttribute: *const c_void, // not called by this module
+    pub getAttributeNode: *const c_void, // not called by this module
+    pub setAttributeNode: *const c_void, // not called by this module
+    pub removeAttributeNode: *const c_void, // not called by this module
+    pub getElementsByTagName: Option<unsafe extern "system" fn(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT>,
+    pub normalize: *const c_void, // not called by this module
+}
+
+// IXMLDOMNamedNodeMapVtbl: 17 slots, layout from msxml2.h (generated build header)
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct IXMLDOMNamedNodeMapVtbl {
+    pub QueryInterface: *const c_void, // not called by this module
+    pub AddRef: *const c_void, // not called by this module
+    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap) -> ULONG>,
+    pub GetTypeInfoCount: *const c_void, // not called by this module
+    pub GetTypeInfo: *const c_void, // not called by this module
+    pub GetIDsOfNames: *const c_void, // not called by this module
+    pub Invoke: *const c_void, // not called by this module
+    pub getNamedItem: Option<unsafe extern "system" fn(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT>,
+    pub setNamedItem: *const c_void, // not called by this module
+    pub removeNamedItem: *const c_void, // not called by this module
+    pub get_item: *const c_void, // not called by this module
+    pub get_length: *const c_void, // not called by this module
+    pub getQualifiedItem: *const c_void, // not called by this module
+    pub removeQualifiedItem: *const c_void, // not called by this module
+    pub nextNode: *const c_void, // not called by this module
+    pub reset: *const c_void, // not called by this module
+    pub get__newEnum: *const c_void, // not called by this module
+}
+
+// IXMLDOMNodeListVtbl: 12 slots, layout from msxml2.h (generated build header)
+#[allow(non_snake_case)]
+#[repr(C)]
+pub struct IXMLDOMNodeListVtbl {
+    pub QueryInterface: *const c_void, // not called by this module
+    pub AddRef: *const c_void, // not called by this module
+    pub Release: Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList) -> ULONG>,
+    pub GetTypeInfoCount: *const c_void, // not called by this module
+    pub GetTypeInfo: *const c_void, // not called by this module
+    pub GetIDsOfNames: *const c_void, // not called by this module
+    pub Invoke: *const c_void, // not called by this module
+    pub get_item: Option<unsafe extern "system" fn(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT>,
+    pub get_length: *const c_void, // not called by this module
+    pub nextNode: *const c_void, // not called by this module
+    pub reset: *const c_void, // not called by this module
+    pub get__newEnum: *const c_void, // not called by this module
+}
+
+
+// ---- COBJMACROS shims: `IXMLDOMNode_get_text(This,p)` == `(This)->lpVtbl->get_text(This,p)`. Each
+// dispatches through the slot above; a null slot is the same crash the C would take.
+pub unsafe fn IXMLDOMNode_Release(This: *mut IXMLDOMNode) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
+pub unsafe fn IXMLDOMNode_get_attributes(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT { ((*(*This).lpVtbl).get_attributes.unwrap())(This, attributeMap) }
+pub unsafe fn IXMLDOMNode_get_text(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_text.unwrap())(This, p) }
+pub unsafe fn IXMLDOMNamedNodeMap_Release(This: *mut IXMLDOMNamedNodeMap) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
+pub unsafe fn IXMLDOMNamedNodeMap_getNamedItem(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).getNamedItem.unwrap())(This, p, outNode) }
+pub unsafe fn IXMLDOMNodeList_get_item(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).get_item.unwrap())(This, lIndex, outNode) }
+pub unsafe fn IXMLDOMDocument_load(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT { ((*(*This).lpVtbl).load.unwrap())(This, var1, pbool) }
+pub unsafe fn IXMLDOMDocument_get_documentElement(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT { ((*(*This).lpVtbl).get_documentElement.unwrap())(This, domElement) }
+pub unsafe fn IXMLDOMElement_get_tagName(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_tagName.unwrap())(This, p) }
+pub unsafe fn IXMLDOMElement_getElementsByTagName(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT { ((*(*This).lpVtbl).getElementsByTagName.unwrap())(This, p, resultList) }
+
+// C: activscp.h `#define IActiveScriptParse IActiveScriptParse64` (or 32) on _WIN64 / otherwise.
+#[cfg(target_pointer_width = "64")]
+pub type IActiveScriptParse = IActiveScriptParse64;
+#[cfg(not(target_pointer_width = "64"))]
+pub type IActiveScriptParse = IActiveScriptParse32;
+
+// ---- activscp.h: IActiveScriptParse is the 64 interface on _WIN64 and the 32 one otherwise (the C's
+// IActiveScriptParse_* macros pick the same by _WIN64). The island carries both vtables.
+macro_rules! activscript_parse_shims {
+    ($I:ident, $Cookie:ty) => {
+        pub unsafe fn IActiveScriptParse_Release(This: *mut $I) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
+        pub unsafe fn IActiveScriptParse_InitNew(This: *mut $I) -> HRESULT { ((*(*This).lpVtbl).InitNew.unwrap())(This) }
+        pub unsafe fn IActiveScriptParse_ParseScriptText(This: *mut $I, pstrCode: LPCOLESTR, pstrItemName: LPCOLESTR, punkContext: *mut IUnknown, pstrDelimiter: LPCOLESTR, dwSourceContextCookie: $Cookie, ulStartingLineNumber: ULONG, dwFlags: DWORD, pvarResult: *mut VARIANT, pexcepinfo: *mut EXCEPINFO) -> HRESULT {
+            ((*(*This).lpVtbl).ParseScriptText.unwrap())(This, pstrCode, pstrItemName, punkContext, pstrDelimiter, dwSourceContextCookie, ulStartingLineNumber, dwFlags, pvarResult, pexcepinfo)
+        }
+    };
+}
+#[cfg(target_pointer_width = "64")]
+activscript_parse_shims!(IActiveScriptParse64, DWORDLONG);
+#[cfg(not(target_pointer_width = "64"))]
+activscript_parse_shims!(IActiveScriptParse32, DWORD);
+#[cfg(target_pointer_width = "64")]
+pub use crate::types::IID_IActiveScriptParse64 as IID_IActiveScriptParse;
+#[cfg(not(target_pointer_width = "64"))]
+pub use crate::types::IID_IActiveScriptParse32 as IID_IActiveScriptParse;
+
+// ---- CRT and shlwapi externs the C calls through wine/ReactOS macros
+extern "C" {
+    pub fn _wcsicmp(s1: *const WCHAR, s2: *const WCHAR) -> c_int;
+    pub fn _wcsnicmp(s1: *const WCHAR, s2: *const WCHAR, n: usize) -> c_int;
+}
+pub use crate::prelude::_wcsicmp as wcsicmp; // sdk alias (C: wcsicmp -> msvcrt _wcsicmp)
+pub use crate::prelude::_wcsnicmp as wcsnicmp; // sdk alias
+extern "system" {
+    pub fn UrlCreateFromPathW(pszPath: LPCWSTR, pszUrl: LPWSTR, pcchUrl: LPDWORD, dwReserved: DWORD) -> HRESULT; // shlwapi.h
+}
+
+// ---- wine/debug.h `debugstr_variant` is a static inline that formats the VARIANT for WARN only.
+// Same placeholder as oleaut32-rust's debug_shims: the string is diagnostic text, never program logic.
+pub fn debugstr_variant(_p: *const VARIANT) -> *const c_char {
+    b"?\0".as_ptr() as *const c_char
+}
+
 // ==== port resolve: tree consensus (generated -- re-run `rustconv port resolve`) ====
 pub const CLSCTX_INPROC_HANDLER: DWORD = 0x2; // ole32-rust/src/compobj/com.rs
 pub const CLSCTX_INPROC_SERVER: DWORD = 0x1; // cleanmgr-rust/src/prelude.rs

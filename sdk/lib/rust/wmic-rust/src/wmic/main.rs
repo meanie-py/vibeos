@@ -377,7 +377,7 @@ unsafe extern "C" fn output_string_v(mut handle: HANDLE, mut msg: *const WCHAR, 
     let mut buffer: [WCHAR; 8192] = [0; 8192];
 
     va_args = *(ap_list as *mut va_list);
-    len = vsnprintfW(buffer.as_mut_ptr(), ARRAY_SIZE!(buffer), msg, va_args);
+    len = vsnprintfW(buffer.as_mut_ptr(), ARRAY_SIZE!(buffer) as usize, msg, va_args);
 
     if WriteConsoleW(
         handle,

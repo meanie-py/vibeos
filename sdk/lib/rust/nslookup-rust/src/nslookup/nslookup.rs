@@ -755,7 +755,7 @@ pub unsafe extern "C" fn ParseCommandLine(argc: core::ffi::c_int, argv: *mut *mu
                     PrintState();
                 } else if strncmp(b"-type=\0".as_ptr() as *const core::ffi::c_char, *argv.offset(i as isize), 6 as usize) == 0 {
                     if strncmp((TypeA).as_ptr(), (*argv.offset(i as isize)).offset(6 as isize), strlen((TypeA).as_ptr())) == 0 {
-                        State.type_ = (TypeA).as_mut_ptr();
+                        State.type_ = TypeA.as_ptr() as PCHAR;
                     } else if strncmp(TypeAAAA.as_ptr(), (*argv.offset(i as isize)).offset(6 as isize), strlen(TypeAAAA.as_ptr())) == 0 {
                         State.type_ = TypeAAAA.as_ptr() as PCHAR;
                     } else if strncmp(TypeBoth.as_ptr(), (*argv.offset(i as isize)).offset(6 as isize), strlen(TypeBoth.as_ptr())) == 0 {
@@ -796,7 +796,7 @@ pub unsafe extern "C" fn ParseCommandLine(argc: core::ffi::c_int, argv: *mut *mu
                     }
                 } else if strncmp(b"-querytype=\0".as_ptr() as *const core::ffi::c_char, *argv.offset(i as isize), 11 as usize) == 0 {
                     if strncmp((TypeA).as_ptr(), (*argv.offset(i as isize)).offset(11 as isize), strlen((TypeA).as_ptr())) == 0 {
-                        State.type_ = (TypeA).as_mut_ptr();
+                        State.type_ = TypeA.as_ptr() as PCHAR;
                     } else if strncmp(TypeAAAA.as_ptr(), (*argv.offset(i as isize)).offset(11 as isize), strlen(TypeAAAA.as_ptr())) == 0 {
                         State.type_ = TypeAAAA.as_ptr() as PCHAR;
                     } else if strncmp(TypeBoth.as_ptr(), (*argv.offset(i as isize)).offset(11 as isize), strlen(TypeBoth.as_ptr())) == 0 {
@@ -1265,8 +1265,8 @@ pub unsafe extern "C" fn main(argc: core::ffi::c_int, argv: *mut *mut core::ffi:
     State.vc = (FALSE as i32);
     State.ignoretc = (FALSE as i32);
     State.port = 53;
-    State.type_ = (TypeBoth).as_mut_ptr();
-    State.Class = (ClassIN).as_mut_ptr();
+    State.type_ = TypeBoth.as_ptr() as PCHAR;
+    State.Class = ClassIN.as_ptr() as PCHAR;
     State.timeout = 2;
     State.retry = 1;
     State.MSxfr = (TRUE as i32);
@@ -1284,7 +1284,7 @@ pub unsafe extern "C" fn main(argc: core::ffi::c_int, argv: *mut *mut core::ffi:
 
     memcpy(
         (core::ptr::addr_of_mut!(State.root) as *mut core::ffi::c_char).cast(),
-        DEFAULT_ROOT,
+        DEFAULT_ROOT.as_ptr() as *const core::ffi::c_void,
         core::mem::size_of_val(&DEFAULT_ROOT),
     );
 

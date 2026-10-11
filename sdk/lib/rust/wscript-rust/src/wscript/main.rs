@@ -697,12 +697,13 @@ unsafe extern "C" fn print_banner() {
     if REACTOS_BUILD {
         header = RUSTCONV_WSTR_F33E130878FF.as_ptr();
     } else {
-        let mut wine_get_version: *mut core::ffi::c_void = (GetProcAddress(
+        // C: `const char * (CDECL *wine_get_version)(void)` taken from GetProcAddress.
+        let wine_get_version: Option<unsafe extern "C" fn() -> *const c_char> = GetProcAddress(
             GetModuleHandleW(RUSTCONV_WSTR_80073828D8A0.as_ptr()),
             b"wine_get_version\0".as_ptr() as *const i8,
-        )).map_or(core::ptr::null_mut(), |f| f as *mut core::ffi::c_void);
+        ).map(|f| core::mem::transmute::<_, unsafe extern "C" fn() -> *const c_char>(f));
         header = header_buf.as_ptr();
-        if !wine_get_version.is_null() {
+        if let Some(wine_get_version) = wine_get_version {
             swprintf(
                 header_buf.as_mut_ptr(),
                 (ARRAY_SIZE!(header_buf)) as _,
@@ -915,7 +916,7 @@ unsafe extern "C" fn get_engine_clsid(ext: *const WCHAR, clsid: *mut CLSID) -> B
     return (hres >= 0) as BOOL;
 }
 
-unsafe extern "C" fn create_engine(clsid: *mut CLSID, script_ret: *mut *mut IActiveScript, parser: *mut *mut PIActiveScriptParse) -> BOOL {
+unsafe extern "C" fn create_engine(clsid: *mut CLSID, script_ret: *mut *mut IActiveScript, parser: *mut PIActiveScriptParse) -> BOOL {
     let mut script: *mut IActiveScript = core::ptr::null_mut();
     let mut unk: *mut IUnknown = core::ptr::null_mut();
     let mut hres: HRESULT = 0;
@@ -955,7 +956,7 @@ unsafe extern "C" fn create_engine(clsid: *mut CLSID, script_ret: *mut *mut IAct
     return (TRUE) as BOOL;
 }
 
-unsafe extern "C" fn init_engine(script: *mut IActiveScript, parser: PIActiveScriptParse) -> BOOL {
+unsafe extern "C" fn init_engine(script: *mut IActiveScript, parser: *mut IActiveScriptParse) -> BOOL {
     let mut hres: HRESULT = 0;
 
     if load_typelib() == 0 {
@@ -1090,7 +1091,7 @@ unsafe extern "C" fn run_script(text: BSTR, script: *mut IActiveScript, parser: 
         core::ptr::null::<OLECHAR>(),
         core::ptr::null_mut::<IUnknown>(),
         core::ptr::null::<OLECHAR>(),
-        1 as DWORDLONG,
+        1 as _, // DWORD_PTR: DWORDLONG on 64-bit, DWORD on 32-bit
         0 as ULONG,
         (SCRIPTTEXT_HOSTMANAGESSOURCE | SCRIPTITEM_ISVISIBLE) as DWORD,
         core::ptr::null_mut::<VARIANT>(),
@@ -1208,7 +1209,7 @@ unsafe extern "C" fn run_wsfjob(mut jobtag: *mut IXMLDOMElement) -> HRESULT {
     if (xmldomelem_getelembytag(jobtag, RUSTCONV_WSTR_36FE6B739493.as_ptr(), 0, &raw mut scripttag)) >= 0
     {
         let mut clsid: CLSID = core::mem::zeroed::<CLSID>();
-        let mut parser: *mut PIActiveScriptParse = core::ptr::null_mut::<PIActiveScriptParse>();
+        let mut parser: PIActiveScriptParse = core::ptr::null_mut();
         let mut lang: BSTR = core::ptr::null_mut::<OLECHAR>();
         let mut code: BSTR = core::ptr::null_mut::<OLECHAR>();
         if xmldomnode_getattributevalue(scripttag, RUSTCONV_WSTR_F140A88FAB51.as_ptr(), &raw mut lang) < 0
@@ -1230,7 +1231,7 @@ unsafe extern "C" fn run_wsfjob(mut jobtag: *mut IXMLDOMElement) -> HRESULT {
             hr = E_FAIL;
             if create_engine(&raw mut clsid, &raw mut script, &raw mut parser) != 0
             {
-                if init_engine(script, (parser).cast()) != 0
+                if init_engine(script, parser) != 0
                 {
                     let mut index: ::core::ffi::c_long = 0;
                     index = 0 as ::core::ffi::c_long;
@@ -1255,7 +1256,7 @@ unsafe extern "C" fn run_wsfjob(mut jobtag: *mut IXMLDOMElement) -> HRESULT {
                             core::ptr::null::<OLECHAR>(),
                             core::ptr::null_mut::<IUnknown>(),
                             core::ptr::null::<OLECHAR>(),
-                            1 as DWORDLONG,
+                            1 as _, // DWORD_PTR: DWORDLONG on 64-bit, DWORD on 32-bit
                             1 as ULONG,
                             (SCRIPTTEXT_HOSTMANAGESSOURCE | SCRIPTITEM_ISVISIBLE) as DWORD,
                             core::ptr::null_mut::<VARIANT>(),
@@ -1280,7 +1281,9 @@ unsafe extern "C" fn run_wsfjob(mut jobtag: *mut IXMLDOMElement) -> HRESULT {
 }
 
 unsafe extern "C" fn run_wsf(xmlpath: LPCWSTR) -> HRESULT {
-    let mut url: [WCHAR; unsafe { (ARRAY_SIZE!("file://") + max!(ARRAY_SIZE!(scriptFullName), MAX_PATH)) as _ }] = [0; unsafe { (ARRAY_SIZE!("file://") + max!(ARRAY_SIZE!(scriptFullName), MAX_PATH)) as _ }];
+    // C: WCHAR url[ARRAY_SIZE(L"file://") + max(ARRAY_SIZE(scriptFullName), MAX_PATH)]; scriptFullName is WCHAR[MAX_PATH]
+    // (a static mut, so its length is taken from the declaration rather than from the static).
+    let mut url: [WCHAR; (ARRAY_SIZE!("file://") + MAX_PATH) as _] = [0; (ARRAY_SIZE!("file://") + MAX_PATH) as _];
     let mut cch: DWORD = ARRAY_SIZE!(url) as DWORD;
     let mut pdoc: *mut IXMLDOMDocument = core::ptr::null_mut();
     let mut hr: HRESULT = UrlCreateFromPathW(xmlpath, url.as_mut_ptr(), core::ptr::addr_of_mut!(cch), 0);
@@ -1417,7 +1420,7 @@ pub unsafe extern "system" fn wWinMain(
     let mut ext: *mut WCHAR = core::ptr::null_mut();
     let mut filepart: *mut WCHAR = core::ptr::null_mut();
     let mut filename: *mut WCHAR = core::ptr::null_mut();
-    let mut parser: PIActiveScriptParse = core::ptr::null_mut();
+    let mut parser: *mut IActiveScriptParse = core::ptr::null_mut();
     let mut script: *mut IActiveScript = core::ptr::null_mut();
     let mut script_text: BSTR = core::ptr::null_mut();
     let mut argv: *mut *mut WCHAR = core::ptr::null_mut();
@@ -1523,7 +1526,7 @@ pub unsafe extern "system" fn wWinMain(
         core::ptr::addr_of_mut!(scriptFullName) as LPWSTR,
         core::ptr::addr_of_mut!(filepart),
     );
-    if res == 0 || res as usize > ARRAY_SIZE!(scriptFullName) as usize {
+    if res == 0 || res as usize > MAX_PATH as usize { // ARRAY_SIZE(scriptFullName), scriptFullName is WCHAR[MAX_PATH]
         return 1;
     }
 
@@ -1596,7 +1599,7 @@ pub unsafe extern "system" fn wWinMain(
     if create_engine(
         core::ptr::addr_of_mut!(clsid),
         core::ptr::addr_of_mut!(script),
-        (core::ptr::addr_of_mut!(parser)).cast(),
+        core::ptr::addr_of_mut!(parser),
     ) == 0
     {
         WINE_FIXME!(b"Could not create script engine\n\0".as_ptr() as *const i8);

@@ -17,11 +17,11 @@ pub unsafe extern "C" fn FindHandler(mut argc: ::core::ffi::c_int, mut argv: *mu
         while i < HandlerListCount {
             if _tcsicmp(
                 Command,
-                (*HandlersList.offset(i as isize)).name,
+                (*HandlersList.offset(i as isize)).Command,
             ) == 0
             {
                 ret = (*HandlersList.offset(i as isize))
-                    .Proc
+                    .Handler
                     .unwrap_unchecked()(
                     argc - 1,
                     argv.offset(1 as isize) as *mut *const TCHAR,
@@ -152,8 +152,8 @@ pub unsafe extern "C" fn PrintDefaultUsage(mut Command: *const TCHAR, mut SubCom
         _ftprintf(
             (__iob_func() as *mut FILE).offset(2 as ::core::ffi::c_int as isize) as *mut FILE,
             (ITEM_FMT.as_ptr()),
-            (*HandlersList.offset(i as isize)).name,
-            (*HandlersList.offset(i as isize)).help,
+            (*HandlersList.offset(i as isize)).Command,
+            (*HandlersList.offset(i as isize)).Desc,
         );
         i += 1;
     }
@@ -169,7 +169,7 @@ pub unsafe extern "C" fn PrintErrorMessage(mut Error: DWORD) -> ::core::ffi::c_i
         0 as DWORD,
         &raw mut String as LPWSTR,
         0 as DWORD,
-        (::core::ptr::null_mut::<::core::ffi::VaListImpl>()).cast(),
+        core::ptr::null_mut(),
     ) != 0 as DWORD
     {
         /* And print it */
