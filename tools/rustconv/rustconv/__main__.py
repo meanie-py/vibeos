@@ -5,6 +5,8 @@ import collections
 import difflib
 import json
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import threading
@@ -125,6 +127,7 @@ from .fact_seal import (
     FactSealError,
     canonicalize_hresult_predicates,
     fact_contract,
+    island_value_names,
     prepare_sealed_source,
     unseal_facts,
 )
@@ -181,6 +184,7 @@ from .response_cache import (
     claim_bank,
     require_no_namespace_rebuy,
 )
+from .response_cache import _hash as _response_body_hash
 from .scanner import print_scan_result, scan_file
 from .seh_classifier import classify_directory, classify_file, print_classification, to_json
 from .shim_generator import check_shims, generate_shims
@@ -2430,6 +2434,24 @@ def _class_declaration_scope(cls) -> str:
     return text[m.start() : i]
 
 
+def _rust_parse_error(code: str) -> str | None:
+    """rustfmt's first parse error for `code`, or None if it parses. A parse check, not a
+    style check: rustfmt reformats what it can parse and fails only on what it cannot."""
+    exe = shutil.which("rustfmt")
+    if exe is None:
+        raise RuntimeError("rustfmt not found: the preamble parse gate cannot run")
+    res = subprocess.run(
+        [exe, "--edition", "2021", "--emit", "stdout"],
+        input=code,
+        capture_output=True,
+        text=True,
+    )
+    if res.returncode == 0:
+        return None
+    first = next((ln for ln in res.stderr.splitlines() if ln.startswith("error")), "")
+    return first or f"rustfmt exit {res.returncode}"
+
+
 def cmd_translate(args):
     """Function-by-function translation pipeline."""
     # `--fn` names that matched in SOME file. A name missing from one file of a multi-file run is
@@ -3108,9 +3130,18 @@ def cmd_translate(args):
                 name: wide_seals[name].text if name in wide_seals else body
                 for name, body in model_bodies.items()
             }
+        # A cppapp synthetic unit (--via) names nested enum constants by their island
+        # spelling, which only the crate's own islands can say are constants.
+        island_values = (
+            island_value_names(rustconv_target.output_crate / "src")
+            if getattr(args, "via", None) and rustconv_target is not None
+            else frozenset()
+        )
         fact_seals = (
             {
-                dep.name: prepare_sealed_source(model_bodies[dep.name], dialect=seal_dialect)
+                dep.name: prepare_sealed_source(
+                    model_bodies[dep.name], dialect=seal_dialect, extra_values=island_values
+                )
                 for dep in sorted_deps
             }
             if fact_seal_enabled
@@ -3509,6 +3540,22 @@ def cmd_translate(args):
                 f"   [{dry_cache.dir.name}]",
                 file=sys.stderr,
             )
+            # By name, and why: a body banked for a different CONTRACT (the class context
+            # moved under it) needs `--rebuy-fn <names>`, and the live run refuses at the
+            # first such name -- so a count alone sent you hunting one name per run.
+            held = set(banked) | set(preview)
+            for dep in sorted_deps:
+                if dep.name in held:
+                    continue
+                entry = dry_cache._manifest.get(dep.name)
+                why = (
+                    "new"
+                    if entry is None
+                    else "C body changed"
+                    if entry.get("hash") != _response_body_hash(dep.body_text)
+                    else "banked for another contract/seal: needs --rebuy-fn"
+                )
+                print(f"    to buy: {dep.name} ({why})", file=sys.stderr)
 
             # Show estimated tokens for first function
             if sorted_deps:
@@ -4540,7 +4587,7 @@ def cmd_translate(args):
             )
             pre_sink = None
             if not no_resume:
-                cache.refuse_repurchase(PREAMBLE_KEY)
+                cache.refuse_repurchase(PREAMBLE_KEY, explicit=_rebuy_requested(PREAMBLE_KEY))
             if getattr(args, "replay_only", False):
                 raise ValueError("--replay-only: no accepted cached preamble")
             if archive is not None:
@@ -4570,6 +4617,15 @@ def cmd_translate(args):
                     # hold `__RUSTCONV_WIDE_nnnn__`.
                     pre_res.rust_code = unseal_wide_literals(
                         scrub_comment_token_echoes(pre_res.rust_code), preamble_wide_seal
+                    )
+                bad = _rust_parse_error(pre_res.rust_code)
+                if bad is not None:
+                    # Never banked: mspaint's main.cpp preamble came back with the model's
+                    # commentary ("Wait -- the rules require ...") between two conflicting
+                    # definitions, was banked, and every replay re-served it as a parse error.
+                    raise ValueError(
+                        f"{c_file.name}: the preamble reply does not parse as Rust ({bad}); "
+                        "not banked -- re-run to buy it again"
                     )
                 preamble_rust = pre_res.rust_code
                 cache.put(PREAMBLE_KEY, preamble_src, pre_res.rust_code)

@@ -313,11 +313,31 @@ def _signature_array_bound_spans(masked: str) -> list[tuple[int, int]]:
     return [(opening, closing + 1)]
 
 
-def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
+_ISLAND_CONST_RE = re.compile(r"^\s*pub const ([A-Za-z_]\w*)\s*:", re.M)
+
+
+def island_value_names(crate_src) -> frozenset[str]:
+    """The MIXED-case constants of a crate's bindgen islands (`types_<arch>.rs`), for
+    `seal_facts(extra_values=...)`. A cppapp lowering renames a nested enum constant to its
+    island name, `CImage::excludeDefaultLoad` -> `ATL_CImage_ExcludeFlags_excludeDefaultLoad`,
+    which neither the ALL_CAPS matcher nor the DDK CamelCase list can see: mspaint's main.cpp
+    came back with `1 /* ..excludeDefaultLoad */` for a value of 0, and ShouldExcludeFormat
+    with all eight flags permuted. A `pub const` shares the value namespace with fns and
+    statics, so the name is unambiguously a constant in that crate."""
+    names: set[str] = set()
+    for path in sorted(crate_src.glob("types_*.rs")):
+        names.update(_ISLAND_CONST_RE.findall(path.read_text(errors="replace")))
+    return frozenset(n for n in names if any(c.islower() for c in n))
+
+
+def seal_facts(
+    text: str, *, dialect: str = "cpp", extra_values: frozenset[str] = frozenset()
+) -> SealedSource:
     """Replace each value occurrence with a unique opaque identifier.
 
     `dialect` selects the protected value families; see the module docstring.
-    ``"cpp"`` is frozen for response-cache compatibility.
+    ``"cpp"`` is frozen for response-cache compatibility. `extra_values` (the ``"c"``
+    dialect only) are further names known to be constants: `island_value_names`.
     """
     if dialect not in ("c", "cpp"):
         # Fail loud: a typo'd dialect must not silently fall back to weaker sealing.
@@ -385,6 +405,22 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
                 continue
             spans.append((match.start(), match.end(), "enum"))
 
+    if dialect == "c" and extra_values:
+        taken = {(a, b) for a, b, _ in spans}
+        for match in re.finditer(r"\b[A-Za-z_]\w*\b", masked):
+            word = match.group(0)
+            if word not in extra_values or word in declared:
+                continue
+            if (match.start(), match.end()) in taken:
+                continue
+            tail = masked[match.end() :]
+            if tail.lstrip().startswith("("):
+                continue
+            before = masked[: match.start()].rstrip()
+            if before.endswith(".") or before.endswith("->") or before.endswith("::"):
+                continue
+            spans.append((match.start(), match.end(), "enum"))
+
     # No token can match both patterns (the generated set excludes ALL_CAPS names),
     # but sorting also makes numbering stable.
     spans = [s for s in spans if not any(directive[i] for i in range(s[0], s[1]))]
@@ -408,9 +444,13 @@ def seal_facts(text: str, *, dialect: str = "cpp") -> SealedSource:
     return SealedSource(result, tuple(facts))
 
 
-def prepare_sealed_source(text: str, *, dialect: str = "cpp") -> SealedSource:
+def prepare_sealed_source(
+    text: str, *, dialect: str = "cpp", extra_values: frozenset[str] = frozenset()
+) -> SealedSource:
     """Canonicalize deterministic macros, then seal the resulting facts."""
-    return seal_facts(canonicalize_hresult_predicates(text), dialect=dialect)
+    return seal_facts(
+        canonicalize_hresult_predicates(text), dialect=dialect, extra_values=extra_values
+    )
 
 
 def fact_contract(sealed: SealedSource) -> str:

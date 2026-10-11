@@ -4031,7 +4031,7 @@ case "$DRIVER" in
     # that exact sequence is bindgen-able). Review the WHY notes in the report.
     USERMODE=1
     REAL_UNIONS=1
-    # BLOCKLIST_FUNCS, MEASURED: 219 external prototype(s) declared by the include closure, 49 called but declared nowhere in it.
+    # BLOCKLIST_FUNCS, MEASURED: 219 external prototype(s) declared by the include closure, 48 called but declared nowhere in it.
     # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
     BLOCKLIST_FUNCS=0
     BLOCKLIST_FUNCS_FROM_CRATE=1
@@ -4050,7 +4050,18 @@ case "$DRIVER" in
                   --allowlist-file '.*[/\\]wingdi\.h'
                   --allowlist-file '.*[/\\]winnls\.h'
                   --allowlist-file '.*[/\\]winreg\.h'
-                  --allowlist-file '.*mspaint[/\\].*\.h' )
+                  --allowlist-file '.*mspaint[/\\].*\.h'
+                  --allowlist-file '.*[/\\]atlbase\.h'
+                  --allowlist-file '.*[/\\]atlimage\.h'
+                  --allowlist-file '.*[/\\]atlimagedx\.h'
+                  --allowlist-file '.*[/\\]atlpath\.h'
+                  --allowlist-file '.*[/\\]atlsimpstr\.h'
+                  --allowlist-file '.*[/\\]atlstr\.h'
+                  --allowlist-file '.*[/\\]gdiplusbrush\.h'
+                  --allowlist-file '.*[/\\]gdipluscolor\.h'
+                  --allowlist-file '.*[/\\]gdiplusimaging\.h'
+                  --allowlist-file '.*[/\\]gdiplustypes\.h'
+                  --allowlist-file '.*[/\\]registry\.h' )
     # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
     UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
     EXTRA_INC=( -I"${SRC}/base/applications/mspaint" -I"${SRC}/build-i386/base/applications/mspaint" )

@@ -74,13 +74,13 @@ def test_malformed_anchor_raises_rather_than_falling_back(tmp_path):
 
 
 def test_anchor_without_project_table_raises(tmp_path):
-    _anchor(tmp_path, '[other]\nkey = 1\n')
+    _anchor(tmp_path, "[other]\nkey = 1\n")
     with pytest.raises(project.ProjectError, match=r"\[project\]"):
         project.load(tmp_path)
 
 
 def test_anchor_without_name_raises(tmp_path):
-    _anchor(tmp_path, "[project]\nresponses = \".responses\"\n")
+    _anchor(tmp_path, '[project]\nresponses = ".responses"\n')
     with pytest.raises(project.ProjectError, match="name"):
         project.load(tmp_path)
 

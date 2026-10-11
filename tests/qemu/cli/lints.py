@@ -1420,6 +1420,17 @@ def source_lint_specs(repo: Path) -> list[tuple]:
             "stdout",
         )
     )
+    # A translated ASSERT whose guard IS the asserted condition: it fires on every
+    # legitimate path and never on the one it guards. pcix's PciBuildHackTable printed
+    # `ASSERT FAILED: !NT_SUCCESS(Status)` on every boot. Baseline is EMPTY.
+    sap = repo / "tools" / "scan_assert_polarity.py"
+    specs.append(
+        (
+            "scan_assert_polarity",
+            [py, str(sap)] if sap.is_file() else ["MISSING"],
+            "stdout",
+        )
+    )
     # A C octal literal that became a Rust DECIMAL one. `0444` is octal 292 in C and four
     # hundred and forty-four in Rust, which has no C-style octal at all — so the mistake
     # compiles, links, produces a plausible value, and no rustc lint has an opinion about
@@ -1865,7 +1876,8 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
     """Need a built binary (run after `build`).
 
     scan_ud2 + sacred primitives + scan_self_recursive + scan_flex_array_panic +
-    scan_export_thunks + scan_xchg_ebx_deref. All six are POST-LINK detectors:
+    scan_export_thunks + scan_xchg_ebx_deref + scan_unresolved_imports. All are
+    POST-LINK detectors:
     they read the emitted code, because the defects they catch are invisible in
     the source (an ABI mismatch that LLVM turned into a `ud2`; a Rust `memcpy`
     that LLVM lowered into a call to itself; a bindgen `[T; 1]` whose bounds
@@ -1893,6 +1905,7 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         run.add(Stage("scan_flex_array_panic", status="skip", detail="no binary"))
         run.add(Stage("scan_export_thunks", status="skip", detail="no binary"))
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="no binary"))
+        run.add(Stage("scan_unresolved_imports", status="skip", detail="no binary"))
         run.add(Stage("freeldr_size", status="skip", detail="no binary"))
         return
     # The BIOS loader runs in real-mode memory and bug-checks itself at boot when its PE
@@ -1993,3 +2006,17 @@ def run_binary_lints(run: Run, repo: Path, arch: str, *, strict: bool) -> None:
         )
     else:
         run.add(Stage("scan_xchg_ebx_deref", status="skip", detail="i386-only scan"))
+    # A shipped image importing a name its exporter does not export. The loader drops a
+    # boot driver that does this and keeps booting, so smoke stays green unless the boot
+    # needed that driver: pcix.sys's raw-dylib RtlAssert imported `RtlAssert@16` on i386
+    # and was never loaded. Graded on every arch -- decoration is i386's, but a missing
+    # export is not. See tools/scan_unresolved_imports.py.
+    sui = repo / "tools" / "scan_unresolved_imports.py"
+    _lint_stage(
+        run,
+        repo,
+        "scan_unresolved_imports",
+        [py, str(sui), "--check", str(build_dir)] if sui.is_file() else ["MISSING"],
+        strict=strict,
+        by_exit_code=True,
+    )

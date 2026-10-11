@@ -2101,6 +2101,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "mspaint-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "mstsc-rust"
 version = "0.1.0"
 dependencies = [

@@ -29,6 +29,11 @@ from . import c_data_port as cdp
 from . import cpp_lower
 
 
+def _anon_field(anon: ClassModel) -> str:
+    """`CTextEventSink__anon0` -> its member name in the class, `__anon0`."""
+    return "__" + anon.name.rsplit("__", 1)[1]
+
+
 class CppModelError(RuntimeError):
     pass
 
@@ -62,6 +67,8 @@ class Method:
     lowered: str | None = None  # the body after cpp_lower, what a worker translates
     lowered_inits: list[tuple[str, str]] = field(default_factory=list)
     unplaced: list[str] = field(default_factory=list)
+    # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
+    calls: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def signature_key(self) -> str:
@@ -144,6 +151,8 @@ class FreeFunc:
     lowered: str
     static: bool = False
     unplaced: list[str] = field(default_factory=list)
+    # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
+    calls: list[tuple[str, str]] = field(default_factory=list)
 
 
 @dataclass
@@ -152,6 +161,15 @@ class ModuleModel:
     globals: list[GlobalVar] = field(default_factory=list)
     functions: list[FreeFunc] = field(default_factory=list)
     enums: list[EnumModel] = field(default_factory=list)
+    # User-declared global allocation operators (cicbase.h's LocalAlloc pair), by role --
+    # "new", "new[]", "delete", "delete[]", "new:<Tag>", "new[]:<Tag>" -- to their i386
+    # Itanium name without the C decoration underscore (`_ZnwjRK10CicNoThrow`). The
+    # generated cpp_alloc/cpp_free call THESE, so a C++ half and a Rust half of one heap
+    # never cross allocators mid-flip.
+    allocators: dict[str, str] = field(default_factory=dict)
+    # File-scope typedefs of the module's .cpp files, as (file, text): main.cpp's
+    # `typedef HWND (WINAPI *FN_HtmlHelpW)(..)`. A header's are the island's.
+    typedefs: list[tuple[str, str]] = field(default_factory=list)
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), indent=1, sort_keys=True)
@@ -181,7 +199,29 @@ class ModuleModel:
             EnumModel(e["name"], e["underlying"], [tuple(m) for m in e["members"]], e["file"])
             for e in raw.get("enums", [])
         ]
+        out.allocators = raw.get("allocators", {})
+        out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         return out
+
+
+_ALLOC_ROLE = [
+    (re.compile(r"void \*\(size_t\)"), "{op}"),
+    (re.compile(r"void \*\(size_t, const (\w+) &\) noexcept"), "{op}:{tag}"),
+    (re.compile(r"void \(void \*\)(?: noexcept)?"), "{op}"),
+]
+
+
+def allocator_role(name: str, qual_type: str) -> str | None:
+    """`operator new` + `void *(size_t, const CicNoThrow &) noexcept` -> "new:CicNoThrow".
+    None for a shape nothing calls by role (sized delete, placement into a buffer)."""
+    op = name.removeprefix("operator ").replace(" ", "")
+    if op not in ("new", "new[]", "delete", "delete[]"):
+        return None
+    for pat, role in _ALLOC_ROLE:
+        m = pat.fullmatch(qual_type)
+        if m and (op.startswith("new") == ("size_t" in qual_type)):
+            return role.format(op=op, tag=m.group(1) if m.groups() else "")
+    return None
 
 
 # ---------------------------------------------------------------------------------------
@@ -210,6 +250,55 @@ def _span(node: dict) -> tuple[str, int, int] | None:
 class _Sources:
     def __init__(self) -> None:
         self._cache: dict[str, bytes] = {}
+
+    def typedef_text(self, span: tuple[str, int, int] | None) -> str | None:
+        """A typedef through its `;`: clang's range for a function-pointer typedef ENDS at
+        the name (`typedef HWND (WINAPI *FN_HtmlHelpW`), short of its parameter list."""
+        if span is None or self.text(span) is None:
+            return None
+        f, b, _e = span
+        data = self._cache[f]
+        depth, i = 0, b
+        while i < len(data):
+            c = data[i : i + 1]
+            depth += (c == b"(") - (c == b")")
+            if c == b";" and depth == 0:
+                return data[b : i + 1].decode("utf-8", errors="replace")
+            i += 1
+        return None
+
+    def node_text(self, node: dict) -> str | None:
+        span = self.node_span(node)
+        return None if span is None else self.text(span)
+
+    def node_span(self, node: dict) -> tuple[str, int, int] | None:
+        """A node's source span. A function-like MACRO call (`RGB(255, 255, 255)` as an
+        initializer) has its expansion END reported at the macro NAME by clang's JSON, so
+        the span is just `RGB`: extend it through the call's balanced parentheses. The
+        lowering needs this as much as the text does: a ctor init lowered over the short
+        span came out as `m_rgbBack = RGB;`."""
+        span = _span(node)
+        text = self.text(span)
+        if span is None or text is None:
+            return span
+        end = (node.get("range") or {}).get("end", {})
+        if "expansionLoc" not in end or not re.fullmatch(r"[\s\S]*\b\w+", text):
+            return span
+        f, b, e = span
+        data = self._cache[f]
+        i = e
+        while i < len(data) and data[i : i + 1] in (b" ", b"\t"):
+            i += 1
+        if data[i : i + 1] != b"(":
+            return span
+        depth = 0
+        while i < len(data):
+            c = data[i : i + 1]
+            depth += (c == b"(") - (c == b")")
+            i += 1
+            if depth == 0:
+                return f, b, i
+        return span
 
     def text(self, span: tuple[str, int, int] | None) -> str | None:
         if span is None:
@@ -271,7 +360,22 @@ def _split_top(text: str) -> list[str]:
 
 
 # Classes outside the module a module class derives from, by the header that defines them.
-EXTERNAL_CLASSES = {"CWindow": "sdk/lib/atl/atlwin.h"}
+EXTERNAL_CLASSES = {
+    "CWindow": "sdk/lib/atl/atlwin.h",
+    # atltypes.h: value types over the SDK structs (CRect : tagRECT), used by value.
+    "CRect": "sdk/lib/atl/atltypes.h",
+    "CPoint": "sdk/lib/atl/atltypes.h",
+    "CSize": "sdk/lib/atl/atltypes.h",
+    # atlbase.h: CRegKey holds an HKEY, which is island-NOMINAL: translated per module, it
+    # uses that module's own HKEY rather than a shared crate's guess at it.
+    "CRegKey": "sdk/lib/atl/atlbase.h",
+    # ReactOS's RAII wait cursor: its ctor/dtor swap the cursor, so it must be modeled, not
+    # stubbed. Its static members are DECLSPEC_SELECTANY zero/NULL.
+    "CWaitCursor": "sdk/include/reactos/ui/CWaitCursor.h",
+    # atlimage.h: mspaint calls CImage's STATIC GetImporterFilterString/
+    # GetExporterFilterString (GDI+ codec lists); only what is reached is translated.
+    "CImage": "sdk/lib/atl/atlimage.h",
+}
 # ATL's window templates are, for layout and member lookup, their CWindow: the template's own
 # machinery (thunk, Create, DefWindowProc, message routing) is atl_rust::win plus the per-class
 # glue cpp_app generates, never a translated body.
@@ -325,7 +429,13 @@ def _assign_names(cls: ClassModel) -> None:
         elif m.kind == "dtor":
             m.rust_name = "__dtor"
         elif m.kind == "operator":
-            m.rust_name = _OPERATOR_NAMES.get(m.name[len("operator") :].strip(), "op_unknown")
+            op = m.name[len("operator") :].strip()
+            # A conversion operator (`operator HWND`) is `op_to_HWND`; cpp_lower calls it
+            # where C++ converts implicitly.
+            conv = "op_to_" + re.sub(r"\W+", "_", op).strip("_")
+            m.rust_name = _OPERATOR_NAMES.get(
+                op, conv if re.match(r"[A-Za-z_]", op) else "op_unknown"
+            )
         elif counts[m.name] > 1:
             m.rust_name = f"{m.name}__{seen.get(m.name, 0)}"
         else:
@@ -387,7 +497,7 @@ def _method_kind(node: dict) -> str:
     return "method"
 
 
-_METHOD_KINDS = ("CXXMethodDecl", "CXXConstructorDecl", "CXXDestructorDecl")
+_METHOD_KINDS = ("CXXMethodDecl", "CXXConstructorDecl", "CXXDestructorDecl", "CXXConversionDecl")
 
 
 class _Extractor:
@@ -396,9 +506,14 @@ class _Extractor:
         self.module_dir = str(module_dir.resolve())
         self.src = _Sources()
         self.model = ModuleModel()
+        self.unicode = False  # the TU compiles with -DUNICODE: TEXT("x") is L"x"
         # Per TU: decl ids mean nothing outside the AST that produced them.
         self.by_id: dict[str, str] = {}  # record decl id -> qualified class name
         self.decls: dict[str, cpp_lower.DeclInfo] = {}
+        self._anon_seen: set[str] = set()
+        self._anon_registered: set[str] = set()
+        self._fn_defaults: dict[str, list[str | None]] = {}
+        self._overloads: dict[str, list[str]] = {}
         self.method_by_id: dict[str, Method] = {}
         # (Method | FreeFunc, CompoundStmt node, this class) to lower once the TU is walked:
         # a body can name a member of a class defined LATER in the same TU.
@@ -429,8 +544,33 @@ class _Extractor:
                     self.record(n, scope, record)
             elif kind in _METHOD_KINDS and record is None:
                 self.out_of_line(n)
+            elif (
+                kind == "FunctionDecl"
+                and record is None
+                and n.get("name", "").startswith("operator ")
+                and not n.get("isImplicit")
+                and ".build-tools" not in (_file_of(n) or "/.build-tools/")
+            ):
+                role = allocator_role(n["name"], n.get("type", {}).get("qualType", ""))
+                if role and n.get("mangledName"):
+                    # i386 adds the C decoration underscore; rustc adds it itself.
+                    self.model.allocators[role] = "_" + n["mangledName"].lstrip("_")
+                if self.mine(_file_of(n)):
+                    self.free_function(n)
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
+                self._register_function(n)
                 self.free_function(n)
+            elif (
+                kind == "TypedefDecl"
+                and record is None
+                and self.mine(_file_of(n))
+                and (_file_of(n) or "").endswith((".cpp", ".cxx", ".cc"))
+            ):
+                text = self.src.typedef_text(_span(n))
+                src_file = _file_of(n)
+                entry = (self.rel(src_file), text) if text and src_file else None
+                if entry and entry not in self.model.typedefs:
+                    self.model.typedefs.append(entry)
             elif kind == "EnumDecl" and self.mine(_file_of(n)) and n.get("name"):
                 self.enum(n)
             elif kind == "VarDecl" and record is None and self.mine(_file_of(n)):
@@ -475,10 +615,14 @@ class _Extractor:
             k = c.get("kind")
             if k == "AccessSpecDecl":
                 access = c["access"]
+            elif k == "FieldDecl" and not c.get("name"):
+                anon = self._anon_record(n, c, cls)
+                if anon is not None:
+                    cls.fields.append(Field(_anon_field(anon), anon.name, access, False, None))
             elif k == "FieldDecl":
                 init = None
                 if c.get("hasInClassInitializer") and c.get("inner"):
-                    init = self.src.text(_span(c["inner"][-1]))
+                    init = self.src.node_text(c["inner"][-1])
                 cls.fields.append(Field(c["name"], c["type"]["qualType"], access, False, init))
             elif k == "EnumDecl" and not c.get("name"):
                 for e in c.get("inner", []):
@@ -497,15 +641,103 @@ class _Extractor:
         _assign_names(cls)
         self._register(n, cls, scope, first=True)
 
+    def _anon_record(self, n: dict, fdecl: dict, cls: ClassModel) -> ClassModel | None:
+        """An anonymous `union { UINT m_uFlags; FN_LAYOUTCHANGE m_fnLayoutChange; };` member
+        (msctfime's CTextEventSink) as a generated `{Class}__anonK` union, embedded where C++
+        puts it. Skipping it would shift every later field. Its members are reached as
+        `this->m_uFlags` in C++, so _register maps them to `__anonK.m_uFlags`."""
+        rec = next(
+            (
+                r
+                for r in n.get("inner", [])
+                if r.get("kind") == "CXXRecordDecl"
+                and not r.get("name")
+                and r.get("completeDefinition")
+                and f"anonymous {r.get('tagUsed', '?')}" in fdecl["type"]["qualType"]
+                and r["id"] not in self._anon_seen
+            ),
+            None,
+        )
+        if rec is None:
+            raise CppModelError(
+                f"{cls.qualified}: an unnamed field whose record cannot be found "
+                f"({fdecl['type']['qualType']}); its layout cannot be skipped"
+            )
+        self._anon_seen.add(rec["id"])
+        k = sum(1 for f in cls.fields if f.name.startswith("__anon"))
+        anon = ClassModel(
+            name=f"{cls.name}__anon{k}",
+            qualified=f"{cls.qualified}__anon{k}",
+            tag=rec.get("tagUsed", "union"),
+            file=cls.file,
+        )
+        for f in rec.get("inner", []):
+            if f.get("kind") == "FieldDecl":
+                if not f.get("name"):
+                    raise CppModelError(f"{cls.qualified}: nested anonymous member")
+                anon.fields.append(Field(f["name"], f["type"]["qualType"]))
+        self.model.classes[anon.qualified] = anon
+        return anon
+
     def _register(self, n: dict, cls: ClassModel, scope: str, first: bool = False) -> None:
         """Map this AST's member decl ids to the class model, and queue inline bodies."""
         methods = iter(cls.methods)
         fields = {f.name for f in cls.fields}
+        anon_fields = iter(f for f in cls.fields if f.name.startswith("__anon"))
         for c in n.get("inner", []):
             k = c.get("kind")
+            if k == "FunctionTemplateDecl":
+                # A static member TEMPLATE (atlimagedx.h's get_fn<FN_T>): never generated --
+                # it is hand-ported once -- but a bare call inside the class still means
+                # `Class::get_fn(..)`. Calls reference the INSTANTIATION's decl id, and clang
+                # lists each instantiation under the template, so all of them are mapped.
+                for d in c.get("inner", []):
+                    if d.get("kind") == "CXXMethodDecl" and d.get("storageClass") == "static":
+                        self.decls[d["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "method", d["name"], d["name"], static=True
+                        )
+                        if first and not any(m.name == d["name"] for m in cls.methods):
+                            # Known to the model (so integrate can qualify a bare call), but
+                            # body-less: nothing is generated or translated for a template.
+                            cls.methods.append(Method(d["name"], "method", [], "void", static=True))
+                            cls.methods[-1].rust_name = d["name"]
+                continue
+            if k == "EnumDecl" and c.get("name"):
+                # A NAMED enum nested in the class: bindgen spells its constants
+                # Outer_Enum_CONST (`RegistrySettings_WallpaperStyle_TILED`), and C++ writes
+                # them `RegistrySettings::TILED` or, inside the class, bare `TILED`.
+                prefix = cls.qualified.replace("::", "_") + "_" + c["name"]
+                for e in c.get("inner", []):
+                    if e.get("kind") == "EnumConstantDecl":
+                        self.decls[e["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "enumconst", e["name"], f"{prefix}_{e['name']}"
+                        )
+                continue
+            if k == "FieldDecl" and not c.get("name"):
+                af = next(anon_fields, None)
+                rec = next(
+                    (
+                        r
+                        for r in n.get("inner", [])
+                        if r.get("kind") == "CXXRecordDecl"
+                        and not r.get("name")
+                        and r.get("completeDefinition")
+                        and r.get("id") not in self._anon_registered
+                    ),
+                    None,
+                )
+                if af is None or rec is None:
+                    continue
+                self._anon_registered.add(rec["id"])
+                for f in rec.get("inner", []):
+                    if f.get("kind") == "FieldDecl" and f.get("name"):
+                        self.decls[f["id"]] = cpp_lower.DeclInfo(
+                            cls.qualified, "field", f["name"], f"{af.name}.{f['name']}"
+                        )
+                continue
             if k in ("FieldDecl", "VarDecl") and c.get("name") in fields:
                 self.decls[c["id"]] = cpp_lower.DeclInfo(
-                    cls.qualified, "field", c["name"], c["name"]
+                    cls.qualified, "field", c["name"], c["name"], static=k == "VarDecl"
                 )
             elif k in _METHOD_KINDS and not c.get("isImplicit"):
                 if self.method(c, "public", probe=True, external=cls.external) is None:
@@ -513,7 +745,12 @@ class _Extractor:
                 m = next(methods)
                 self.method_by_id[c["id"]] = m
                 self.decls[c["id"]] = cpp_lower.DeclInfo(
-                    cls.qualified, m.kind, m.name, m.rust_name, [p.default for p in m.params]
+                    cls.qualified,
+                    m.kind,
+                    m.name,
+                    m.rust_name,
+                    [p.default for p in m.params],
+                    m.static,
                 )
                 if first and m.body is not None:
                     self._queue(m, c, cls.qualified)
@@ -543,10 +780,19 @@ class _Extractor:
         # the map, never translated as text. Not for an EXTERNAL class: CWindow's
         # `SendMessage` is spelled through winuser.h's TCHAR macro, and that filter dropped
         # SendMessage, MessageBox and every other TCHAR-named member mspaint calls.
+        # Macro-GENERATED means the whole declaration came from the macro: its name AND its
+        # first token are spelled outside the module. A TCHAR-renamed method,
+        # `BOOL GetOpenFileName(..)` in mspaint's main.h, has only its NAME spelled in
+        # commdlg.h (`#define GetOpenFileName GetOpenFileNameW`): the name-only test dropped
+        # CMainWindow's GetOpenFileName/GetSaveFileName/ChooseColor entirely. STDMETHOD(Foo)
+        # is the converse (begin in objbase.h, name the module's own) and is kept too.
+        begin = (c.get("range") or {}).get("begin", {})
         if (
             not external
             and "spellingLoc" in c.get("loc", {})
             and not self.mine(c["loc"]["spellingLoc"].get("_file"))
+            and "spellingLoc" in begin
+            and not self.mine(begin["spellingLoc"].get("_file"))
         ):
             return None
         if probe:
@@ -556,7 +802,7 @@ class _Extractor:
             Param(
                 p.get("name", f"arg{i}"),
                 p["type"]["qualType"],
-                self.src.text(_span(p["inner"][0])) if p.get("init") and p.get("inner") else None,
+                self.src.node_text(p["inner"][0]) if p.get("init") and p.get("inner") else None,
             )
             for i, p in enumerate(x for x in c.get("inner", []) if x["kind"] == "ParmVarDecl")
         ]
@@ -571,7 +817,7 @@ class _Extractor:
                     "qualType", "?"
                 )
                 if x.get("inner") and not x["inner"][0].get("isImplicit"):
-                    text = _ctor_args(self.src.text(_span(x["inner"][0])), (target, c["name"]))
+                    text = _ctor_args(self.src.node_text(x["inner"][0]), (target, c["name"]))
                     if text is not None:
                         inits.append((target, text))
         return Method(
@@ -614,7 +860,7 @@ class _Extractor:
                 # A call AFTER this definition names the definition's own decl id (clang
                 # refers to the most recent redeclaration), so it resolves too.
                 self.decls[n["id"]] = cpp_lower.DeclInfo(
-                    owner, m.kind, m.name, m.rust_name, [p.default for p in m.params]
+                    owner, m.kind, m.name, m.rust_name, [p.default for p in m.params], m.static
                 )
                 self._queue(m, n, owner)
                 return
@@ -646,16 +892,61 @@ class _Extractor:
             )
         )
 
+    def scan_overloads(self, nodes: list) -> None:
+        """Every module free function's distinct signatures, in first-seen order: drawing.h
+        declares `Fill(.., COLORREF)` AND `Fill(.., HBRUSH)`, and keeping one name dropped
+        the other overload, so every call went to whichever came first."""
+        for n in nodes:
+            if n.get("kind") == "FunctionDecl" and self.mine(_file_of(n)):
+                sigs = self._overloads.setdefault(n["name"], [])
+                qt = n.get("type", {}).get("qualType", "")
+                if qt not in sigs:
+                    sigs.append(qt)
+            elif n.get("kind") in ("NamespaceDecl", "LinkageSpecDecl"):
+                self.scan_overloads(n.get("inner", []))
+
+    def fn_rust_name(self, n: dict) -> str:
+        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it."""
+        sigs = self._overloads.get(n["name"], [])
+        if len(sigs) < 2:
+            return n["name"]
+        qt = n.get("type", {}).get("qualType", "")
+        return f"{n['name']}__{sigs.index(qt) if qt in sigs else len(sigs)}"
+
+    def _register_function(self, n: dict) -> None:
+        """A module free function's declaration (a prototype in dib.h counts), for its
+        default arguments: `CopyDIBImage(hbm, cx, cy)` must be called with dib.h's
+        `stretchMode = STRETCH_HALFTONE` written out, as for a member call."""
+        params = [x for x in n.get("inner", []) if x.get("kind") == "ParmVarDecl"]
+        defaults = [
+            self.src.node_text(p["inner"][0]) if p.get("init") and p.get("inner") else None
+            for p in params
+        ]
+        # A redeclaration (the definition in dib.cpp) repeats no defaults, but a call may
+        # reference it: it carries the prototype's.
+        rust = self.fn_rust_name(n)
+        key = rust  # an overload's defaults are its own
+        if any(d is not None for d in defaults):
+            self._fn_defaults[key] = defaults
+        known = self._fn_defaults.get(key)
+        if known is not None and len(known) == len(defaults):
+            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], rust, known)
+        elif rust != n["name"]:
+            self.decls[n["id"]] = cpp_lower.DeclInfo("", "function", n["name"], rust)
+
     def free_function(self, n: dict) -> None:
         body = next((x for x in n.get("inner", []) if x["kind"] == "CompoundStmt"), None)
-        if body is None or any(f.name == n["name"] for f in self.model.functions):
+        rust = self.fn_rust_name(n)
+        if body is None or any(f.name == rust for f in self.model.functions):
             return
         whole, bspan = _span(n), _span(body)
         if whole is None or bspan is None:
             return
         sig = self.src.text((whole[0], whole[1], bspan[1])) or ""
+        if rust != n["name"]:
+            sig = re.sub(rf"\b{re.escape(n['name'])}(?=\s*\()", rust, sig, count=1)
         ff = FreeFunc(
-            n["name"],
+            rust,
             " ".join(sig.split()),
             self.rel(whole[0]),
             "",
@@ -701,17 +992,20 @@ class _Extractor:
     def lower_pending(self) -> None:
         low = cpp_lower.Lowerer(self.decls, self.model.classes, self.base_path)
         for target, node, owner in self.pending:
-            span = _span(node)
+            span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            target.lowered = out.text
+            target.lowered = cpp_lower.unicode_text_macros(out.text) if self.unicode else out.text
             target.unplaced = out.unplaced
+            target.calls = [(a, b) for a, b in out.calls]
         for m, member, node, owner in self.pending_inits:
-            span = _span(node)
+            span = self.src.node_span(node)
             if span is None:
                 continue
             out = low.lower(node, span, owner)
+            # `calls` round-trips through JSON as lists: back to (class, method) pairs.
+            m.calls = sorted({*((a, b) for a, b in m.calls), *out.calls})
             text = _ctor_args(out.text, (member, owner.split("::")[-1]))
             if text is not None:
                 m.lowered_inits.append((member, text))
@@ -724,7 +1018,7 @@ class _Extractor:
         name = n["name"]
         init = None
         if n.get("inner"):
-            init = _ctor_args(self.src.text(_span(n["inner"][0])), (name,))
+            init = _ctor_args(self.src.node_text(n["inner"][0]), (name,))
         if any(g.name == name for g in self.model.globals):
             return
         self.model.globals.append(
@@ -759,8 +1053,11 @@ def extract(
                 f"no compile command for {tu}\nfix: ./vibeos-cli build --arch {arch}"
             )
         ast = cdp.clang_ast(repo, arch, tu)
+        ex.unicode = any(a in ("-DUNICODE", "-D_UNICODE") for a in argv)
         # ids are per-AST; record() re-registers them on each TU
         ex.by_id, ex.decls, ex.method_by_id = {}, {}, {}
+        ex._anon_seen, ex._anon_registered = set(), set()
+        ex.scan_overloads(ast.get("inner", []))
         ex.walk(ast.get("inner", []))
         ex.lower_pending()
         del ast

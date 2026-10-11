@@ -1238,6 +1238,22 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
 
+### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
+
+**Symptom:** a boot driver silently missing on i386 only — FreeLDR logs `Did not find export
+'RtlAssert@16'!` then `boot driver not loaded, dropped from the boot driver list`, and boot
+continues without it. Every gate is green unless the boot needed that driver.
+
+**Cause:** `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", ...)] extern "system" { fn F(..); }`
+makes rustc mint the import itself, and for a stdcall function on i386 it imports `F@N`; the
+`.spec`-built export is the undecorated `F`. raw-dylib invents its own import descriptor, so
+the link has nothing unresolved to fail on (pcix-rust's `RtlAssert`, 2026-10-10).
+
+**Fix:** raw-dylib is for DATA exports only (`HalDispatchTable`, `InitSafeBootMode`) — a
+function goes in a plain `extern "system"` block and resolves through the import library.
+`scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
+its exporter's export table, so any name the loader cannot bind fails the build.
+
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
   User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and
@@ -1454,6 +1470,19 @@ garbage pointer: i386 BUGCHECK 0x50, P1 nonsense, in a closure body right after 
 call, only when notepad saved a file to FAT. The tell in the disassembly is a cdecl call with
 no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
 definition: two answers to one question are already wrong).
+
+One of the two "declarations" need not be an `extern` block in the crate. A `use
+ntkrnl_sys::ddk::{.., IoCopyCurrentIrpStackLocationToNext, ..}` brings bindgen's cdecl one in,
+and rustc merges it with a local `"system"` copy just the same. That was fastfat's flush.rs,
+in the very block where the fileinfo fix had moved `IoGetCurrentIrpStackLocation` to `"C"`;
+pnp.rs imported the helper from the ddk. The call sat in `FatCommonFlushBuffers`' finally, whose
+epilogue is esp-based (`add esp; pop esi/edi/ebx/ebp; ret`), so the 4-byte leak popped every
+saved register one slot off and `ret` jumped INTO THE STACK. Each crash looked different (0x23
+"unexpected exception at a stack address", 0x50, 0x1E, 0x7F), and all of them came at the first
+`NtFlushBuffersFile` on a writable FAT root (eventlog opening AppEvent.Evt). With EIP on the stack, the
+word at the faulting esp names whatever was just pushed or returned through; disassemble the
+function it points into and look for a call with no stack cleanup. The scanner now counts
+named `-sys` imports and qualified `x_sys::..::F(` calls as declarations.
 
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
@@ -4693,6 +4722,12 @@ the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way:
 A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
 left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
 macro, compare member lists against the header, not just the name.
+A dropped guard can also be REPLACED by a plausible-looking one. `ExReturnPoolQuota` swapped
+the C's `MmIsSpecialPoolAddress` early-out for `PAGE_ALIGN(p) == p`, and dropped the C's
+`BAD_POOL_CALLER` check that the billed process really is one. A special-pool block sits at
+the END of its page, so it passed the alignment test, and the function read a POOL_HEADER that
+does not exist: 0xA in `IoFreeIrp` at boot, but only with `SPECIALPOOL=*`, which is what
+you arm to hunt a different corruption.
 
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 
@@ -11902,6 +11937,31 @@ a whole private SSE encoding as well (swap bit inverted, share count at bit 2), 
 against the macro on sample entries. Read the printed `sse` value against the bit layout
 before trusting a predicate's verdict about it.
 
+### RAM above 4 GiB: a loader cap was hiding four bugs, none in the loader
+**Symptom.** amd64 with more than 4 GiB described (freeldr `MM_MAX_PAGE`): BAD_POOL_HEADER
+(0x19, P1=5) from `IopCreateArcNamesCd`'s 2 KB CD buffer, then INACCESSIBLE_BOOT_DEVICE with
+the CD reading as zeros, a hang in the q35 AHCI bus scan, and on BIOS boots MEMORY_MANAGEMENT
+from `[MMGUARD] rmap.MmInsertRmap PFN MISMATCH` at the first user mapping in System. The
+"physical memory" line (`[MM] physical memory: N MiB`) also over-counted: 4095 MiB on a box
+with 2 GiB below 4 GiB, 17407 MiB on a 4 GiB BIOS guest.
+**Cause.** Each was its own bug; the 4 GiB cap only kept every buffer and table low.
+1. `MiIsMemoryTypeInvisible` (ntkrnl-sys `inline/mm.rs`) was ported as `>= LoaderMaximum`, so
+   firmware-reserved ranges (PCI hole, VGA hole, a 1 TB reserved run on BIOS) counted as RAM.
+2. uniata's 32-bit bounce (`DB_IO`) copied back to `AtaReq->DataBuffer` after completion had
+   advanced it (overrun of the next pool block), and copied even when the transfer had fallen
+   back to PIO (zeros over good data). Upstream marks the path `ASSERT(FALSE)`.
+3. uniata stored a 64-bit HBA's first DATA page address as the AHCI command-table address
+   (`ahci_base64`), and dropped the table's own high half. Upstream has both.
+4. The HAL's AP-trampoline identity map (PML4[0], scratch pages typed `LoaderHALCachedMemory`)
+   was never removed, so System's first low user mapping was built inside HAL tables that the
+   PFN database (correctly, after 1) no longer tracks.
+**Fix.** In place in each; see the commit for the list. The general lesson: when raising a
+cap that "keeps things working", expect the bugs it was masking to be in everything that
+touches addresses, and boot several sizes (QEMU BIOS at 4/12/32 GiB, `VIBEOS_QEMU_HOSTILE=mem`
+and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registers for 32-bit
+scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
+`IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
@@ -12945,6 +13005,19 @@ had it too. Fix: reborrow, `f(iColumn, &mut *sd)`. **Any `&` parameter crossing 
 or generated C shim is this hazard**, and it is invisible from the Rust side — the callee is
 correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
 an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
+
+### A temporary's `.GetString()` bound by a macro's `let` is a dangling pointer
+**Symptom.** A formatted string comes out empty or garbled although the format and arguments
+are right at the call site. Rust mspaint opened with an empty title bar; appstorm scored it
+PASS (`first=""`), so only the screenshot showed it.
+**Cause.** `atl_format!(s, CStringW::from_resource(IDS_WINDOWTITLE).GetString(), ..)`: the
+macro bound its format as `let __fmt: *const u16 = $fmt;`. A temporary in a `let`
+initializer is dropped at that `;`, so the pointer is to freed memory by the time
+`_scwprintf`/`swprintf` read it. Neither rustc nor any lint flags it: the value is a raw pointer.
+**Fix.** Bind macro arguments as `match` scrutinees (`match $fmt { __fmt => { .. } }`), whose
+temporaries live to the end of the match; atlclasses' `atl_format!` now does this for the
+format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
+taking `.GetString()`.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing

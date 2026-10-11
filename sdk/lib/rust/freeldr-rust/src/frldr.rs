@@ -90,12 +90,13 @@ pub const MM_PAGE_SHIFT: ULONG = 12;
 // kernel's descriptor list stopped at 4 GiB, and MM init faulted (6 GiB QEMU).
 #[cfg(target_arch = "x86")]
 pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF; /* 20 bits for the PFN */
-// mm.h says 0x1FFFFF (8 GiB, its own "can't handle the full memory range yet" cap,
-// CORE-20265). Ours stays at 4 GiB for now: with 6 GiB described the amd64 kernel
-// bugchecks 0x19 and q35's AHCI path hangs - see the roadmap's known-bugs entry
-// "amd64 RAM above 4 GiB". Raise this when that is fixed; hostile `mem` tests it.
+// mm.h caps amd64 at 0x1FFFFF (8 GiB, "can't handle the full memory range yet",
+// CORE-20265). We describe all of it, like arm64. What 4 GiB had been hiding was
+// in the kernel and uniata, not here: MM counted firmware-reserved ranges as RAM
+// (MiIsMemoryTypeInvisible), and uniata's above-4 GiB bounce buffer copied over
+// PIO data and past the end of the caller's buffer. Hostile `mem` (6 GiB) boots it.
 #[cfg(target_arch = "x86_64")]
-pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFF;
+pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFFFFFF; /* 36 bits for the PFN */
 #[cfg(target_arch = "aarch64")]
 pub const MM_MAX_PAGE: PFN_NUMBER = 0xFFFFFFFFF; /* 36 bits for the PFN */
 pub const TEMP_HEAP_SIZE: SIZE_T = 32 * 1024 * 1024;

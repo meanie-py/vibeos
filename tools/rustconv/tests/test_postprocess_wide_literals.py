@@ -60,7 +60,10 @@ def test_unterminated_wide_string_is_left_alone():
 
 def test_odd_byte_count_is_not_whole_u16_units_but_may_still_be_narrow():
     """`b"A\\0B"` has no terminator either way -- neither reading applies."""
-    assert fix_wide_byte_string_literals('b"A\\0B".as_ptr() as PCWSTR') == 'b"A\\0B".as_ptr() as PCWSTR'
+    assert (
+        fix_wide_byte_string_literals('b"A\\0B".as_ptr() as PCWSTR')
+        == 'b"A\\0B".as_ptr() as PCWSTR'
+    )
     # ...whereas an odd length that IS NUL-terminated is an ordinary narrow string
     assert fix_wide_byte_string_literals('b"AB\\0".as_ptr() as PCWSTR') == 'w!("AB") as PCWSTR'
 

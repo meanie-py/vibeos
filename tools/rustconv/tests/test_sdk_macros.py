@@ -225,6 +225,25 @@ def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
     assert got == {"StringCchCopy": "StringCchCopyW"}
 
 
+def test_a_cpp_global_scope_qualifier_is_dropped():
+    """windowsx.h's Edit_SetModify, expanded in a C++ TU: `::SendMessageW(..)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion("((void)::SendMessageW((h),185,(WPARAM)(UINT)(m),0))", {"WPARAM", "UINT"})
+    assert "SendMessageW(" in out and "::SendMessageW" not in out
+
+
+def test_a_parenthesized_callee_is_a_call_not_a_cast():
+    """windowsx.h's SetWindowFont in a C++ TU: `(void)(::SendMessageW)((h),48,(WPARAM)(f),0)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion(
+        "(void)(::SendMessageW)(((h)),48,(WPARAM)(HFONT)((f)),(LPARAM)(BOOL)((r)))",
+        {"WPARAM", "LPARAM", "HFONT", "BOOL"},
+    )
+    assert "SendMessageW(" in out and "as SendMessageW" not in out, out
+
+
 def test_a_vtable_call_goes_through_the_option_slot():
     out = low("(__rcv_p0__)->lpVtbl->Release(__rcv_p0__)")
     assert ".lpVtbl).Release.unwrap_unchecked()(" in out

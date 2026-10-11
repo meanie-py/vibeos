@@ -619,27 +619,20 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   that window finds an adapter that never initialized. Fix with the arm64 rtl8139 repro in
   hand; (1) is why the payload uses the e1000.
 
-- **x86 conformance never runs the kmtests that write a file** (amd64 FIXED 2026-10-10;
-  i386 OPEN; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
+- **x86 conformance never runs the kmtests that write a file** (FIXED 2026-10-10, amd64 and
+  i386; conformance lane). The plain livecd puts `\SystemRoot` on read-only CDFS, so every
   kmtest that creates a file there failed setup with `0xc0000022` and bailed (ZwCreateSection
-  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` now derives
-  `livecd-rw.iso` (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`)
-  and `VIBEOS_WRITABLE_ROOT=1` boots it; conformance sets it for amd64. amd64 now matches arm64
-  on the section tests and IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's
-  i386 `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot).
-  **i386 still boots the CD.** Its writable-root boot found two loader bugs, fixed
-  2026-10-10: (1) any i386 UEFI boot with >= 1G RAM sized the kernel's boot image from the
-  firmware's top-of-RAM regions, so the reservation covered session space and the 0x1A in
-  `MmDeleteRmap` followed (it hit the CD boot at 1G too); (2) the 300MB ramdisk, loaded
-  bottom-up, pushed the boot drivers above it (456MB boot image, 0x7F). Field manual: "x86
-  UEFI boot bring-up", item 4. **Still open:** with those fixed, the writable root dies in
-  a different place each run: 0x23 -> 0xA in fastfat's `NtFlushBuffersFile`
-  (`FatExceptionFilter` with no IrpContext, then `FatProcessException` reading NULL+0x14),
-  or 0x50 at an unmapped kernel address. That looks like corruption rather than one bad
-  path; nothing else in the fleet writes a FAT volume on i386. A diagnostic in
-  `FatExceptionFilter` prints the exception code and PC. Repro:
-  `VIBEOS_WRITABLE_ROOT=1 ./vibeos-cli conformance --arch i386`; once it sweeps, add i386 to
-  `WRITABLE_ROOT_ARCHES` in `tests/qemu/cli/conformance.py` and re-seed its rows.
+  ran 9 of 330 assertions). `tools/conformance/mk_writable_livecd.py` derives `livecd-rw.iso`
+  (the livecd's tree in a FAT32 `ramdisk.img`, entries pointed at `ramdisk(0)`) and
+  conformance boots it on both x86 arches (`WRITABLE_ROOT_ARCHES`). Both now match arm64 on
+  the section tests; IoFilesystem went 162/142 -> 358/3. Getting there fixed iomgr's i386
+  `RAMDISK_CREATE_INPUT` layout (0xF8 on every x86 ramdisk boot), two i386 loader bugs (any
+  i386 UEFI boot with >= 1G RAM reserved session space as boot image; the ramdisk pushed the
+  boot drivers above it), fastfat's flush (a stdcall view of a cdecl helper returned
+  `FatCommonFlushBuffers`' finally into its own stack at the first `NtFlushBuffersFile`, the
+  "corruption" that died in a different place each run), and `ExReturnPoolQuota` on special
+  pool. Field manual: "x86 UEFI boot bring-up" item 4, "The i386 driver-fleet ud2-bomb class",
+  "A dropped validation check fails OPEN".
 
 - **Unattended install from the bootcd (`vibeos-cli install-smoke --arch amd64-bios`)**
   (PASSING 2026-10-09, ~10 min: CD -> text setup -> reboot -> GUI setup -> reboot -> Explorer). New gate: `bootcdregtest.iso` installs onto a blank disk, then
@@ -904,13 +897,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it because every smoke boot has QEMU's default NIC. **Still owed:** loopback with no NIC fails
   rather than WORKS (Windows always has a loopback interface). That wants a smoltcp loopback
   device in the engine, worth doing alongside the Pi's GENET driver.
-- **amd64 RAM above 4 GiB: the kernel cannot use it yet** (OPEN, 2026-10-04). The loader's
-  `MM_MAX_PAGE` (freeldr-rust `frldr.rs`) cuts amd64's memory map at 4 GiB, as the Rust has
-  always done; mm.h's 8 GiB would expose the rest. With it raised, `VIBEOS_QEMU_HOSTILE=mem`
-  (6 GiB) bugchecks 0x19 (pool header, P1=5) and hostile `all` hangs in uniata's AHCI
-  start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
-  graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
-  pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
+- **amd64 RAM above 4 GiB** (FIXED 2026-10-10; was "the kernel cannot use it yet"). The loader
+  now describes all RAM on amd64, as on arm64. Raising the cap exposed four bugs, each fixed in
+  place: MM counted firmware-reserved ranges as RAM (`MiIsMemoryTypeInvisible`), uniata's
+  32-bit bounce overran and zeroed buffers, uniata gave a 64-bit AHCI HBA a data page as its
+  command table (the q35 hang), and the HAL's AP identity map stayed in System's user half
+  (BIOS MEMORY_MANAGEMENT). Verified: QEMU BIOS 4/12/32 GiB, UEFI `mem` and `q35,mem`, and the
+  OptiPlex at 32 GB (`[MM] physical memory: 32686 MiB`). Field manual: "RAM above 4 GiB".
 - **amd64: a user-mode debug print with a bad buffer bugchecked the kernel** (FIXED 2026-10-06;
   was "a user-mode Rust panic report can bugcheck the kernel"). Not `KdIoPrintf`, as first
   logged: against the run's own kernel the PC is `KdpStub` (kd64-rust `kdtrap.rs`). With no
@@ -1445,9 +1438,17 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   - **The arbiter stack is ported but nothing drives it yet** (2026-10-10). arbiter-rust is
     upstream's #9484 engine, pnpmgr-rust/arb the five root arbiters, pcix-rust #9502's bus
     arbiters. As upstream does (ffa4164e70d), the root arbiters are not initialized
-    (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. pcix.sys
-    is only copied to the CD (txtsetup) -- every arch binds pci.sys -- so its arbiters are
-    link-verified, never booted. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
+    (`ROOT_ARBITERS_ENABLED`), and IopAssignDeviceResources never asks an arbiter. Every arch
+    still binds pci.sys. A boot with pcix.sys bound instead (2026-10-10, Pci `ImagePath`)
+    works on **i386 only**: there the legacy HAL has a PCI bus handler, and pcix
+    enumerated the bus (host bridge, PIIX ISA/IDE, VGA, NIC), started the IDE controller and
+    initialized its bus arbiters, smoke green. On amd64 and arm64 the root AddDevice fails
+    in PciGetConfigHandlers: nothing below the root PDO (ACPI's PNP0A03/08 on amd64, the
+    root-enumerated PDO on arm64) answers GUID_PCI_BUS_INTERFACE_STANDARD, and neither HAL
+    has a PCI bus handler to fall back on, so pcix unloads and PnP enumerates no PCI devices.
+    Upstream is the same: only the legacy HAL's root PDO provides that interface. **Owed for
+    pcix on ACPI arches:** a PCI_BUS_INTERFACE_STANDARD provider for root buses (ReadConfig/
+    WriteConfig over HalGet/SetBusDataByOffset; RootBusCapability from _OSC). Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
     hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
     kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
     still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms

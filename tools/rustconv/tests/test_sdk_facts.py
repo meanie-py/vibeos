@@ -109,3 +109,13 @@ def test_c_probe_reads_value_and_typedef_from_clang_text():
     assert vals == {"STATUS_PARTITION_FAILURE": -1073741454, "ERROR_LAST_ERROR_CODE": 44}
     t = next(sdk_facts._C_TYPE_RE.finditer(stderr))
     assert (t.group(2), t.group(3)) == ("NTSTATUS", "long")
+
+
+def test_a_float_literal_needs_a_point_or_an_exponent():
+    """Plain digits are an INTEGER macro; reading `900` as a float would retype every fact."""
+    from rustconv import sdk_facts
+
+    for text in ("3.14159265358979323846", "1e5", "(0.5f)", ".5"):
+        assert sdk_facts._FLOAT_LIT.fullmatch(text), text
+    for text in ("900", "0x10", "(1024)"):
+        assert not sdk_facts._FLOAT_LIT.fullmatch(text), text

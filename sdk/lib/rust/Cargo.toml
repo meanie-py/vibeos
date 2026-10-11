@@ -493,6 +493,7 @@ members = [
     "svchost-rust",
     "cmd-rust",
     "kbdlayouts-rust",
+    "mspaint-rust",
     "calc-rust",
     "taskmgr-rust",
     "regedit-rust",

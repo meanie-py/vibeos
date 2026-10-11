@@ -243,6 +243,11 @@ class _Parser:
             # name KNOWN to be a type makes it a cast -- or a `*` inside the parens, which
             # no expression can end with (`(LVITEMW *)&_ms_lvi`).
             return tok in _INT or j > 2
+        if after == "(" and j == 2 and not re.fullmatch(r"[A-Z][A-Z0-9_]*", tok):
+            # `(SendMessageW)(h, ..)` -- windowsx.h's SetWindowFont, a PARENTHESIZED CALLEE.
+            # Win32 type names are ALL CAPS (WPARAM, HWND, DWORD_PTR); a mixed-case one with
+            # no `*` before `)` followed by `(` is a function.
+            return False
         return after is not None and (
             after in ("(", "~", "!") or re.fullmatch(r"\w+", after) is not None
         )
@@ -698,6 +703,9 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
+    # A C++ TU expands windowsx.h's macros to `::SendMessageW(..)`: the global-scope
+    # qualifier names the same function, and Rust has no use for it.
+    expansion = re.sub(r"(?<![\w:>])::(?=[A-Za-z_])", "", expansion)
     # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
     # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
     # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup

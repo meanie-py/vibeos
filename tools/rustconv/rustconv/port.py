@@ -29,6 +29,7 @@ deliberate step once `check` is green on every arch.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -45,6 +46,7 @@ from . import (
     local_macros,
     logical_not,
     loop_step,
+    offset_restore,
     pointer_depth,
     prelude_resolve,
     sizeof_restore,
@@ -612,6 +614,49 @@ def stage_island(stem: str) -> None:
             f"gen_driver_types.sh {stem} failed (rc {proc.returncode}); log {log}\n{tail}"
         )
     print(f"island: {', '.join(islands)}")
+    generated = _crate_dir(state) / "src" / stem / "cpp_classes.rs"
+    if state.get("cppapp") and generated.is_file():
+        # A re-island (resolve widening the allowlist does one) brings bindgen's copies of
+        # the module's classes back; cpp_classes.rs stays their one definition.
+        deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated.read_text())
+        print(f"island: {len(deferred)} class(es) deferred to cpp_classes.rs")
+    for island in sorted((_crate_dir(state) / "src").glob("types_*.rs")):
+        text = island.read_text()
+        fixed = drop_impossible_copy(text)
+        if fixed != text:
+            island.write_text(fixed)
+
+
+_STRUCT_ITEM = re.compile(
+    r"(?P<attrs>(?:#\[[^\]]*\]\s*)*)pub struct (?P<name>\w+)(?:<[^>]*>)?\s*\{(?P<body>[^{}]*)\}"
+)
+
+
+def drop_impossible_copy(island: str) -> str:
+    """bindgen derives `Copy, Clone` for ATL's CAtlStringMgr while its base IAtlStringMgr
+    (a vtable class) is `Debug` only, and the island does not compile (E0204). A struct
+    holding a non-Copy struct BY VALUE cannot be Copy; drop the derive, to a fixpoint (the
+    holder of a holder). Pointers to such a struct are Copy and are left alone."""
+    while True:
+        structs = {m.group("name"): m for m in _STRUCT_ITEM.finditer(island)}
+        non_copy = {n for n, m in structs.items() if not re.search(r"\bCopy\b", m.group("attrs"))}
+        bad = [
+            m
+            for n, m in structs.items()
+            if n not in non_copy
+            and any(
+                re.search(rf":\s*{re.escape(t)}\s*(?:,|$)", line.strip())
+                for line in m.group("body").splitlines()
+                for t in non_copy
+            )
+        ]
+        if not bad:
+            return island
+        for m in sorted(bad, key=lambda m: m.start(), reverse=True):
+            attrs = re.sub(r"\bCopy,\s*Clone\b|\bClone,\s*Copy\b", "", m.group("attrs"))
+            attrs = re.sub(r"#\[derive\(\s*,?\s*\)\]\s*", "", attrs)
+            attrs = re.sub(r"\(\s*,\s*", "(", attrs).replace(", )", ")")
+            island = island[: m.start("attrs")] + attrs + island[m.end("attrs") :]
 
 
 def stage_scaffold(module_dir: Path, target: str | None) -> None:
@@ -735,6 +780,104 @@ def _unit_files(crate: Path, stem: str) -> list[Path]:
     ]
 
 
+def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
+    """Replace the island's bindgen copy of each class cpp_classes.rs renders with a
+    re-export of it. Two definitions of one class can disagree, and bindgen's cannot even
+    compile: mspaint's `CFullscreenWindow { _base: ATL_CWindowImpl<ATL_CWindow> }` derives
+    Copy over a template base that has none (28 errors). The class model is the authority
+    on a C++ class; the island keeps only what it alone describes (plain C structs, which
+    cpp_classes leaves to it). Island items that name a class (`IMAGE_PART { m_rcPart:
+    CRect }`, `extern static mainWindow: CMainWindow`) then resolve to the one definition."""
+    names = set(re.findall(r"^pub (?:struct|union) (\w+)", generated, re.M))
+    done: set[str] = set()
+    for island in sorted(src.glob("types_*.rs")):
+        lines = island.read_text().split("\n")
+        out: list[str] = []
+        i = 0
+        while i < len(lines):
+            m = re.match(r"pub (?:struct|union) (\w+)\s*\{", lines[i])
+            if not m or m.group(1) not in names:
+                out.append(lines[i])
+                i += 1
+                continue
+            while out and re.match(r"\s*(#\[|///)", out[-1]):
+                out.pop()  # its #[derive]/#[repr]/doc lines
+            depth = 0
+            while i < len(lines):
+                depth += lines[i].count("{") - lines[i].count("}")
+                i += 1
+                if depth <= 0:
+                    break
+            out.append(f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it")
+            done.add(m.group(1))
+        island.write_text("\n".join(out))
+    return sorted(done)
+
+
+# Bump when what translate SEALS in a cppapp unit changes (2: the island's mixed-case
+# constants, fact_seal.island_value_names). The unit text is unchanged, so without this the
+# stricter contract never reaches a unit that already has output; with it every unit is
+# revisited once, banked bodies with an unchanged contract replay for $0, and only the
+# bodies the new seal covers are bought.
+CPPAPP_SEAL_REVISION = 2
+
+
+def _unit_hash(tu: str) -> str:
+    data = (REPO / tu).read_bytes() + f"\0seal-rev={CPPAPP_SEAL_REVISION}".encode()
+    return hashlib.sha256(data).hexdigest()[:16]
+
+
+def _unit_stale(state: dict, tu: str) -> bool:
+    """A cppapp unit whose text changed since it was translated: cppapp re-lowers bodies
+    (a CRect overload now spelled InflateRect__0, a bare `_shared()` now qualified), and a
+    unit with output was never revisited, so 49 mspaint bodies kept the old spelling. The
+    re-run buys only the changed bodies; the rest replay from the bank for $0. A unit with
+    no recorded hash counts as changed (its replay is free)."""
+    if not state.get("cppapp") or tu not in state.get("header_tus", {}):
+        return False
+    return state.get("unit_hash", {}).get(tu) != _unit_hash(tu)
+
+
+def _cppapp_assemble_all(state: dict) -> list[str]:
+    """Move every cppapp unit's `Class__m` functions into their classes. Idempotent, and run
+    by integrate because translate's own hook runs once per subprocess: a reject-retry pass
+    rewrote mspaint's CWindow unit afterwards, and 54 methods stayed free functions."""
+    if not state.get("cppapp"):
+        return []
+    from . import cpp_app, cpp_model
+
+    app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+    gen_rs = _crate_dir(state) / "src" / state["stem"] / "cpp_classes.rs"
+    generated = (
+        set(re.findall(r"^pub static (?:mut )?(\w+)", gen_rs.read_text(), re.M))
+        if gen_rs.is_file()
+        else set()
+    )
+    done = []
+    for unit in state.get("header_tus", {}):
+        out = _tu_output(state, unit)
+        if not out.is_file():
+            continue
+        text = out.read_text()
+        new = cpp_app.drop_global_qualifier(
+            cpp_app.static_paths(
+                cpp_app.qualify_static_calls(
+                    cpp_app.unthis_globals(
+                        cpp_app.drop_generated_statics(cpp_app.assemble(text, app), generated), app
+                    ),
+                    app,
+                ),
+                app,
+            )
+        )
+        if unit.endswith("_h.hpp"):
+            new = cpp_app.publish_header_statics(new)
+        if new != text:
+            out.write_text(new)
+            done.append(out.stem)
+    return done
+
+
 def _cppapp_dir(stem: str) -> Path:
     return STATE_ROOT / stem / "cppapp"
 
@@ -774,9 +917,11 @@ def stage_cppapp(stem: str) -> None:
     island_structs = frozenset(re.findall(r"^pub (?:struct|union) (\w+)", island, re.M))
     island_i386 = _crate_dir(state) / "src" / "types_i386.rs"
     island_text = island_i386.read_text(errors="replace") if island_i386.is_file() else ""
-    (crate_src / "cpp_classes.rs").write_text(
-        cpp_app.render_classes(model, island_structs, island_text)
-    )
+    generated = cpp_app.render_classes(model, island_structs, island_text)
+    (crate_src / "cpp_classes.rs").write_text(generated)
+    deferred = _defer_island_classes(_crate_dir(state) / "src", stem, generated)
+    if deferred:
+        print(f"cppapp: island defers {len(deferred)} class(es) to cpp_classes.rs")
     units: dict[str, str] = {}
     for body_file, text in cpp_app.synthetic_tus(model, island_text).items():
         name = Path(body_file).name.replace(".", "_") + ".hpp"
@@ -832,11 +977,38 @@ def _cppapp_wire_crate(state: dict) -> None:
     lib.write_text(text[: block.start(1)] + "\n".join(kept) + "\n" + text[block.end(1) :])
     prelude = crate / "src" / "prelude.rs"
     ptext = prelude.read_text()
-    line = f"pub use crate::{stem}::cpp_classes::*;"
-    if line not in ptext:
-        prelude.write_text(
-            ptext.rstrip("\n") + "\n\n// The module's C++ classes (port cppapp).\n" + line + "\n"
+    # By NAME as well as by glob: the island renders the module's own non-template classes
+    # and declares its globals `extern` (mspaint's CCanvasWindow, toolsModel), so two globs
+    # made every one of them E0659-ambiguous -- 600 errors. An explicit `use` outranks a glob.
+    generated = (crate / "src" / stem / "cpp_classes.rs").read_text(errors="replace")
+    names = sorted(
+        set(
+            re.findall(
+                r"^pub (?:unsafe fn|fn|struct|static mut|static|type|const) (\w+)", generated, re.M
+            )
         )
+    )
+    block = (
+        f"{_CPPAPP_BEGIN}\npub use crate::{stem}::cpp_classes::*;\n"
+        + (f"pub use crate::{stem}::cpp_classes::{{{', '.join(names)}}};\n" if names else "")
+        + f"{_CPPAPP_END}\n"
+    )
+    old = re.search(re.escape(_CPPAPP_BEGIN) + r".*?" + re.escape(_CPPAPP_END) + r"\n", ptext, re.S)
+    if old:
+        ptext = ptext[: old.start()] + block + ptext[old.end() :]
+    else:
+        legacy = (
+            "\n\n// The module's C++ classes (port cppapp).\n"
+            f"pub use crate::{stem}::cpp_classes::*;\n"
+        )
+        ptext = ptext.replace(legacy, "\n").rstrip("\n") + "\n\n" + block
+    prelude.write_text(ptext)
+
+
+_CPPAPP_BEGIN = (
+    "// ==== port cppapp: the module's C++ classes (generated -- `rustconv port cppapp`) ===="
+)
+_CPPAPP_END = "// ==== end port cppapp ===="
 
 
 # --------------------------------------------------------------------------------------
@@ -1081,7 +1253,9 @@ def stage_translate(
         else [
             t
             for t in picked
-            if not _has_body(_tu_output(state, t)) or Path(t).name in (revisit or [])
+            if not _has_body(_tu_output(state, t))
+            or Path(t).name in (revisit or [])
+            or _unit_stale(state, t)
         ]
     )
     spent = 0.0
@@ -1173,7 +1347,9 @@ def stage_translate(
         mine = [
             n
             for n in rebuy_fn or []
-            if re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
+            # `__preamble__` is no function definition, but every TU has one.
+            if n == "__preamble__"
+            or re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
         ]
         skipped = [
             n for n in state.get("skip_fn", []) if re.search(rf"\b{re.escape(n)}\s*\(", c_text)
@@ -1221,6 +1397,14 @@ def stage_translate(
             )
             cost += _run_cost(proc.stdout + proc.stderr)
         spent += cost
+        if tu in vias and state.get("cppapp") and not (dry_run or replay_only):
+            if proc.returncode == 0:
+                state.setdefault("unit_hash", {})[tu] = _unit_hash(tu)
+            if out.is_file():  # the retry rewrote the output after the hook above
+                from . import cpp_app, cpp_model
+
+                app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+                out.write_text(cpp_app.assemble(out.read_text(), app))
         fns, tok_in, tok_out = _tokens(log.read_text())
         done.append(
             {
@@ -1237,7 +1421,16 @@ def stage_translate(
         to_buy = _to_buy(log.read_text())
         done[-1]["to_buy"] = to_buy
         status = (
-            f"would buy {to_buy} fn(s)" if dry_run else ("body" if _has_body(out) else "NO BODY")
+            f"would buy {to_buy} fn(s)"
+            if dry_run
+            else (
+                "body"
+                if _has_body(out)
+                # A header unit whose functions are all class members: nothing was owed.
+                else "nothing to translate"
+                if "found no classless function" in log.read_text()
+                else "NO BODY"
+            )
         )
         if dry_run and proc.returncode:
             status = f"REFUSED (see {log})"
@@ -2975,6 +3168,9 @@ def stage_integrate(stem: str) -> None:
     unprovided: dict[str, list[str]] = {}
     dead_used: dict[str, list[str]] = {}
     changed = 0
+    assembled = _cppapp_assemble_all(state)
+    if assembled:
+        print(f"integrate: assembled {', '.join(assembled)} into their classes")
     ptr_types, decls = _pointer_decls(state)
     ptr_targets = pointer_depth.pointer_targets(_island_texts(crate))
     depth_fixed: list[str] = []
@@ -3142,6 +3338,14 @@ def stage_integrate(stem: str) -> None:
                 path.write_text(new)
                 changed += 1
                 print(f"integrate: {path.stem}: dropped sizeof put back: {'; '.join(restored)}")
+            offsets, refused = offset_restore.restore_file(path, c_file)
+            if offsets:
+                changed += 1
+                print(f"integrate: {path.stem}: FIELD_OFFSET tables per-arch: {', '.join(offsets)}")
+            for why in refused:
+                print(
+                    f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
+                )
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
@@ -3563,6 +3767,14 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     prelude = crate / "src" / "prelude.rs"
     workspace = REPO / "sdk" / "lib" / "rust"
     pending = _c_defined_names([REPO / t for t in state["tus"]])
+    if state.get("cppapp"):
+        # C++: a text scan of the TUs reads class members (`HDC GetDC()` inside a class) as
+        # module functions, and then refused to import user32's GetDC. The class model knows
+        # which definitions are FREE functions.
+        from . import cpp_model
+
+        app = cpp_model.ModuleModel.from_json(Path(state["cppapp"]["model"]).read_text())
+        pending = {f.name for f in app.functions}
     shared = set().union(*prelude_resolve.shared_provides(workspace).values())
     # A name that is a function-like MACRO to this module's own preprocessor is never an
     # extern fn, whatever another crate declared: winsrv's `fn RTL_FIELD_SIZE(t: usize, f:
@@ -4627,6 +4839,19 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             f"resolve: {len(stale)} fact(s) dropped, the island or a module defines them now: "
             + ", ".join(stale)
         )
+    # An integer fact whose macro is a FLOAT literal was truncated by the old value probe
+    # (mspaint's `M_PI: u32 = 3`): replace it from the preprocessor's own definition.
+    by_src: dict[str, list[str]] = {}
+    for name, (ty, _, src) in facts.items():
+        if ty not in ("f32", "f64"):
+            by_src.setdefault(src, []).append(name)
+    for src, names in sorted(by_src.items()):
+        tu = next((t for t in state["tus"] if Path(t).name == src), None)
+        if tu is None:
+            continue
+        for name, lit in sdk_facts.float_macro_literals(REPO, REPO / tu, names).items():
+            print(f"resolve: {name} was truncated to {facts[name][1]}; it is {lit}")
+            facts[name] = ("f64", lit, src)
     wanted = sorted(
         n
         for n in undefined
@@ -4653,6 +4878,11 @@ def _resolve_facts(state: dict, prelude: Path, undefined: list[str]) -> list[str
             unresolved.update({n: "probe failed" for n in names})
             continue
         for f in r.facts:
+            if f.literal is not None:  # a floating constant: its literal, never (long long)
+                canonical = (f.c_type or "").partition("|")[2] or f.c_type or ""
+                ty = "f32" if canonical.removeprefix("const ").strip() == "float" else "f64"
+                facts[f.name] = (ty, f.literal, Path(tu).name)
+                continue
             ty = prelude_resolve.fact_rust_type(
                 f.c_type, f.value, known_types, bare_int_unsigned=not state.get("usermode", True)
             )
@@ -5061,6 +5291,8 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     edit lasts until the next replay and is then gone, silently. `file.rs:Name` captures the
     function `Name` from `src/<stem>/file.rs` and puts it back over `Name` on replay;
     `file.rs:New=Old` captures `New` and puts it over the BOUGHT function `Old`.
+    `file.rs:+Name` banks an ADDED item -- one with no C/C++ origin, such as a hand-ported
+    member template (CImageDx::get_fn) -- which a replay appends when the file lacks it.
     """
 
     state = load_state(stem)
@@ -5070,7 +5302,8 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
     hand.mkdir(parents=True, exist_ok=True)
     for spec in specs:
         fname, _, names = spec.partition(":")
-        name, _, replaces = names.partition("=")
+        added = names.startswith("+")
+        name, _, replaces = names.removeprefix("+").partition("=")
         replaces = replaces or name
         entry = hand / f"{Path(fname).stem}.{replaces}.json"
         if drop:
@@ -5080,7 +5313,9 @@ def stage_hand(stem: str, specs: list[str], drop: bool = False) -> None:
         text = (modules / fname).read_text()
         lo, hi = hand_span(text, name, where=f"hand: {spec}")
         body = text[lo:hi]
-        entry.write_text(json.dumps({"file": fname, "name": replaces, "text": body}, indent=1))
+        entry.write_text(
+            json.dumps({"file": fname, "name": replaces, "text": body, "added": added}, indent=1)
+        )
         print(f"hand: banked {spec} ({len(body.splitlines())} lines)")
     _record(state, "hand", started, specs=specs, drop=drop)
 
@@ -5161,6 +5396,28 @@ def hand_span(text: str, name: str, *, where: str) -> tuple[int, int]:
     only; anything else between them is refused rather than captured or dropped."""
     from . import crate_fix as cf
 
+    if "::" in name:
+        # `Class::method`: one method inside an assembled `impl Class { .. }` (cppapp), e.g.
+        # a hand-repaired CInitGDIPlus::Init -- the impl holds the class's other methods too.
+        cls, meth = name.split("::", 1)
+        for m in re.finditer(rf"(?m)^impl\s+{re.escape(cls)}\s*\{{", text):
+            close = cf._matching_brace(text, m.end() - 1)
+            if close is None:
+                continue
+            fm = re.search(
+                rf"(?m)^[ \t]*(?:pub[ \t]+)?(?:unsafe[ \t]+)?fn[ \t]+{re.escape(meth)}\s*[<(]",
+                text[m.end() : close],
+            )
+            if fm is None:
+                continue
+            start = m.end() + fm.start()
+            brace = text.index("{", start)
+            end = cf._matching_brace(text, brace)
+            if end is None:
+                continue
+            return _with_leading_comments(text, start), end + 1
+        raise PortError(f"{where} 0 items named {name} -- re-capture or drop it")
+
     spans = list(item_spans(text, name))
     for m in _EXTERN_BLOCK.finditer(text):
         close = cf._matching_brace(text, m.end() - 1)
@@ -5177,6 +5434,15 @@ def hand_span(text: str, name: str, *, where: str) -> tuple[int, int]:
             continue
         body = text[m.end() : close]
         if m.group(1) == f"{name}_export" or name in _VA_ENTRY.findall(body):
+            spans.append((m.start(), close + 1))
+    # A hand-written method in its OWN `impl Class { fn name .. }` block (a cppapp class's
+    # member template, CImageDx::get_fn): the block is the item, when it holds only `name`.
+    for m in re.finditer(r"(?m)^impl\s+\w+\s*\{", text):
+        close = cf._matching_brace(text, m.end() - 1)
+        if close is None:
+            continue
+        fns = re.findall(r"\bfn\s+(\w+)", text[m.end() : close])
+        if fns == [name]:
             spans.append((m.start(), close + 1))
     # Drop an item nested inside another (item_spans also matches an indented
     # `static NAME` inside the extern block it belongs to).
@@ -5219,6 +5485,18 @@ def apply_hand(stem: str) -> int:
         path = modules / h["file"]
         text = path.read_text()
         if h["text"] in text:  # already applied (replay runs this before and after fix)
+            applied += 1
+            continue
+        if h.get("added"):
+            try:
+                lo, hi = hand_span(text, h["name"], where="")
+            except PortError:
+                # An added item has nothing of its own in a replayed file: append it.
+                path.write_text(text.rstrip("\n") + "\n\n" + h["text"] + "\n")
+                applied += 1
+                continue
+            if text[lo:hi] != h["text"]:
+                path.write_text(text[:lo] + h["text"] + text[hi:])
             applied += 1
             continue
         # Loud: the function moved or was renamed upstream of the bank; never skip quietly.

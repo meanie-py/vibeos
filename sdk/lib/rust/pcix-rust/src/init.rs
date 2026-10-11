@@ -650,6 +650,14 @@ pub unsafe extern "system" fn PciGetIrqRoutingTableFromRegistry(
 
     Status
 }
+/// The value buffer PciBuildHackTable enumerates into. The C sizes it as
+/// `sizeof(KEY_VALUE_FULL_INFORMATION) + PCI_HACK_ENTRY_FULL_SIZE`, which leaves no room
+/// for the 8-byte flags or for the 8-byte data alignment of 64-bit targets, so every
+/// 16-character (subsystem) entry came back STATUS_BUFFER_OVERFLOW and was dropped there.
+const VALUE_INFO_SIZE: usize = core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>()
+    + PCI_HACK_ENTRY_FULL_SIZE
+    + 2 * core::mem::size_of::<u64>();
+
 #[no_mangle]
 pub unsafe extern "system" fn PciBuildHackTable(KeyHandle: HANDLE) -> NTSTATUS {
     let mut FullInfo: *mut KEY_FULL_INFORMATION = core::ptr::null_mut();
@@ -723,7 +731,7 @@ pub unsafe extern "system" fn PciBuildHackTable(KeyHandle: HANDLE) -> NTSTATUS {
 
         ValueInfo = ExAllocatePoolWithTag(
             NonPagedPool,
-            core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + PCI_HACK_ENTRY_FULL_SIZE,
+            VALUE_INFO_SIZE,
             PCI_POOL_TAG,
         ) as *mut KEY_VALUE_FULL_INFORMATION;
         if ValueInfo.is_null() {
@@ -739,14 +747,16 @@ pub unsafe extern "system" fn PciBuildHackTable(KeyHandle: HANDLE) -> NTSTATUS {
                 i,
                 KeyValueFullInformation,
                 ValueInfo as PVOID,
-                (core::mem::size_of::<KEY_VALUE_FULL_INFORMATION>() + PCI_HACK_ENTRY_FULL_SIZE)
-                    as u32,
+                VALUE_INFO_SIZE as u32,
                 &mut ResultLength,
             );
             if !NT_SUCCESS(Status) {
                 if Status != STATUS_BUFFER_OVERFLOW && Status != STATUS_BUFFER_TOO_SMALL {
                     break;
                 }
+                // A skipped entry must not leave its status behind: in the C, an
+                // oversized LAST value fails the whole table (the check after the loop).
+                Status = STATUS_SUCCESS;
                 continue;
             }
 
@@ -841,7 +851,13 @@ pub unsafe extern "system" fn PciBuildHackTable(KeyHandle: HANDLE) -> NTSTATUS {
         return STATUS_SUCCESS;
     }
 
-    if !NT_SUCCESS(Status) {
+    // Not in the C, which fails here silently and leaves every errata flag unset.
+    DbgPrint(
+        b"PCI: errata table not built (status 0x%08lx, ResultLength %lu)\n\0".as_ptr() as PCSTR,
+        Status,
+        ResultLength,
+    );
+    if NT_SUCCESS(Status) {
         RtlAssert(
             b"!NT_SUCCESS(Status)\0".as_ptr() as PVOID,
             b"\\init.c\0".as_ptr() as PVOID,
@@ -857,6 +873,10 @@ pub unsafe extern "system" fn PciBuildHackTable(KeyHandle: HANDLE) -> NTSTATUS {
     }
     if !PciHackTable.is_null() {
         ExFreePool(PciHackTable as PVOID);
+        // The C leaves the global pointing at the freed table: every later hack-flag
+        // lookup reads freed pool, and PciDriverUnload freed it a second time (arm64
+        // then failed to map ntdll on the corrupted pool).
+        PciHackTable = core::ptr::null_mut();
     }
 
     Status
@@ -877,14 +897,24 @@ pub unsafe extern "system" fn PciGetDebugPorts(DebugKey: HANDLE) -> NTSTATUS {
 
 #[no_mangle]
 pub unsafe extern "system" fn PciDriverUnload(DriverObject: PDRIVER_OBJECT) {
-    DbgPrint(
-        b"ERROR:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"PciDriverUnload\0".as_ptr() as PCSTR,
-        b"drivers/bus/pcix/init.c\0".as_ptr() as PCSTR,
-        695 as i32,
-    );
+    // Divergence from the C, whose body is UNIMPLEMENTED_DBGBREAK. The I/O manager unloads
+    // pcix when its last device goes, which happens as soon as the root AddDevice fails,
+    // so everything DriverEntry pointed at this image has to be taken back: the HAL hook
+    // above all, which otherwise leaves the kernel calling into freed code.
+    let _ = DriverObject;
     DbgPrint(b"PCI: Unload\n\0".as_ptr() as PCSTR);
-    DbgBreakPoint();
+    crate::hookhal::PciUnhookHal();
+    crate::pcivrify::PciVerifierUnload();
+    ntkrnl_sys::ddk::RtlFreeRangeList(core::ptr::addr_of_mut!(crate::utils::PciIsaBitExclusionList));
+    ntkrnl_sys::ddk::RtlFreeRangeList(core::ptr::addr_of_mut!(crate::utils::PciVgaAndIsaBitExclusionList));
+    if !PciIrqRoutingTable.is_null() {
+        ExFreePoolWithTag(PciIrqRoutingTable as PVOID, 0);
+        PciIrqRoutingTable = core::ptr::null_mut();
+    }
+    if !PciHackTable.is_null() {
+        ExFreePoolWithTag(PciHackTable as PVOID, 0);
+        PciHackTable = core::ptr::null_mut();
+    }
 }
 
 #[no_mangle]

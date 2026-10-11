@@ -210,7 +210,10 @@ def com_diag(method, iface, file, line, s, e):
     return diag(
         "E0599",
         f"no method named `{method}` found for struct `shellcom::{iface}`",
-        file, line, s, e,
+        file,
+        line,
+        s,
+        e,
     )
 
 
@@ -234,7 +237,8 @@ def test_com_call_with_arguments_keeps_them_after_the_this_pointer():
     src = "    let hr = (*ei).GetIconLocation(flags, buf, cch);\n"
     s, e = at(src, "GetIconLocation")
     edits, refused = IA.propose(
-        [com_diag("GetIconLocation", "IExtractIconW", "a.rs", 1, s, e)], reader(src),
+        [com_diag("GetIconLocation", "IExtractIconW", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     assert refused == []
@@ -304,7 +308,8 @@ def test_multiline_argument_list_does_not_get_trailing_whitespace():
     src = "    let hr = (*psf).BindToObject(\n        pidl,\n        ctx,\n    );\n"
     s, e = at(src, "BindToObject")
     edits, refused = IA.propose(
-        [com_diag("BindToObject", "IShellFolder", "a.rs", 1, s, e)], reader(src),
+        [com_diag("BindToObject", "IShellFolder", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     assert refused == []
@@ -323,7 +328,8 @@ def test_call_through_a_written_out_vtbl_becomes_a_dispatch():
     src = "    (*(*psf).lpVtbl).GetAttributesOf(cidl, apidl, rgf);\n"
     s, e = at(src, "GetAttributesOf")
     edits, refused = IA.propose(
-        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     assert refused == []
@@ -385,7 +391,8 @@ def test_written_out_vtbl_multiline_args_get_no_trailing_whitespace():
     src = "    (*(*psf).lpVtbl).GetUIObjectOf(\n        cidl,\n    );\n"
     s, e = at(src, "GetUIObjectOf")
     edits, refused = IA.propose(
-        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     assert refused == []
@@ -410,7 +417,8 @@ def test_written_out_vtbl_with_this_plus_more_args_keeps_the_rest():
     src = "    (*(*psf).lpVtbl).GetAttributesOf(psf, cidl, apidl);\n"
     s, e = at(src, "GetAttributesOf")
     edits, refused = IA.propose(
-        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        [com_diag("GetAttributesOf", "IShellFolderVtbl", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     assert refused == []
@@ -433,7 +441,8 @@ def test_first_arg_stops_at_a_top_level_comma_not_one_inside_a_nested_call():
     src = "    (*(*psf).lpVtbl).GetUIObjectOf(f(a, b), c);\n"
     s, e = at(src, "GetUIObjectOf")
     edits, _ = IA.propose(
-        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)], reader(src),
+        [com_diag("GetUIObjectOf", "IShellFolderVtbl", "a.rs", 1, s, e)],
+        reader(src),
         interfaces=IFACES,
     )
     out = src[: edits[0].start] + edits[0].replacement + src[edits[0].end :]

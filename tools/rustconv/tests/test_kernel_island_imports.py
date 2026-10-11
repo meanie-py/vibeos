@@ -18,7 +18,11 @@ def test_kernel_private_island_paths_agree_in_prompt_and_assembly():
 
 def test_irp_inline_bodies_outrank_foreign_declarations():
     catalog = build_catalog("amd64", TARGETS["sysaudio"])
-    for name in ("IoGetCurrentIrpStackLocation", "IoSkipCurrentIrpStackLocation", "IoGetNextIrpStackLocation"):
+    for name in (
+        "IoGetCurrentIrpStackLocation",
+        "IoSkipCurrentIrpStackLocation",
+        "IoGetNextIrpStackLocation",
+    ):
         symbol = catalog.lookup(name)
         assert symbol is not None
         assert symbol.module == "inline::tier1"

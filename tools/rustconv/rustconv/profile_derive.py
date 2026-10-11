@@ -4303,24 +4303,30 @@ def scaffold_crate(
     if is_cpp:
         # The ATL types a C++ worker is told are in scope (atl_contract.py). Named, not a
         # glob: atl-rust's primitive aliases (WCHAR, BOOL) would collide with the island's.
-        com = any(
-            re.search(r"\bCComHeapPtr\b", tu.read_text(errors="replace"))
-            for tu in m.compiled_tus
-            if tu.is_file()
-        )
-        # CComHeapPtr is the COM task allocator (ole32): only a module that uses it imports it.
+        texts = [tu.read_text(errors="replace") for tu in m.compiled_tus if tu.is_file()]
+        com = any(re.search(r"\bCComHeapPtr\b", t) for t in texts)
+        path = any(re.search(r"\bCPath\b", t) for t in texts)
+        # CComHeapPtr is the COM task allocator (ole32), CPath is shlwapi's
+        # PathCompactPathExW: only a module that uses one imports its DLL.
+        feats = [f for f, on in (("com", com), ("path", path)) if on]
         deps += (
-            'atlclasses-rust = { path = "../atlclasses-rust", features = ["com"] }\n'
-            if com
+            'atlclasses-rust = { path = "../atlclasses-rust", features = ['
+            + ", ".join(f'"{f}"' for f in feats)
+            + "] }\n"
+            if feats
             else 'atlclasses-rust = { path = "../atlclasses-rust" }\n'
         )
         atl_block = (
             "\n// ================= ATL =========================================================="
             "==============\n"
             "// ATL's CStringW/CComPtr/containers, ported once in atlclasses-rust.\n"
-            "pub use atl_rust::{atl_format, CAtlList, CComPtr, CHeapPtr, CSimpleArray, "
-            "CSimpleMap, CStringW, POSITION};\n"
+            "pub use atl_rust::{atl_format, atl_format_id, CAtlList, CComPtr, CHeapPtr, "
+            "CSimpleArray, CLocalAllocator, CSimpleMap, CStringA, CStringW, POSITION};\n"
+            # atlsimpstr.h's CSimpleStringT<WCHAR> is CStringW's base: every `CSimpleString&`
+            # parameter (CWindow::GetWindowText) is handed a CStringW in a UNICODE module.
+            "pub use atl_rust::CStringW as CSimpleString;\n"
             + ("pub use atl_rust::CComHeapPtr;\n" if com else "")
+            + ("pub use atl_rust::CPath;\n" if path else "")
         )
     win32_reexport = ""
     # The MACROS only, by name: a glob would also pull win32macros' type aliases
