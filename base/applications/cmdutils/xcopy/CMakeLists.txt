@@ -14,3 +14,5 @@ set_module_type(xcopy win32cui UNICODE)
 add_importlibs(xcopy shell32 user32 msvcrt kernel32 ntdll)
 add_cd_file(TARGET xcopy DESTINATION reactos/system32 FOR all)
 set_wine_module_FIXME(xcopy) # CORE-5743: No ARRAY_SIZE macro
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

@@ -15,3 +15,5 @@ set_module_type(nslookup win32cui)
 add_importlibs(nslookup user32 ws2_32 snmpapi iphlpapi msvcrt kernel32)
 add_pch(nslookup nslookup.h SOURCE)
 add_cd_file(TARGET nslookup DESTINATION reactos/system32 FOR all)
+
+include(c_oracle.cmake)  # the pre-flip C as <target>_c: python -m rustconv.c_oracle

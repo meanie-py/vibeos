@@ -71,3 +71,44 @@ def test_write_includes_once_and_check_sees_staleness(tmp_path):
         (tmp_path / "CMakeLists.txt").read_text().replace("conutils", "conutils2")
     )
     assert co.write(tmp_path, check=True) is False
+
+
+def test_an_inline_flipped_executable_gets_its_oracle():
+    # `port flip` writes a single-list module's TUs inside add_executable (find, and every
+    # batch C/D1 tool); only list(APPEND ..) was understood, so none could be oracled.
+    cml = (
+        'rust_staticlib_variant(find_rust find-rust "" TRUE)\n'
+        "add_executable(find\n"
+        "    # find.c  # replaced by Rust (sdk/lib/rust/find-rust/src/find/find.rs)\n"
+        "    rust_cohab_stub.c\n"
+        "    find.rc)\n"
+        "add_dependencies(find rust_find_rust)\n"
+        "target_link_libraries(find ${find_rust_LIB})\n"
+        "set_module_type(find win32cui UNICODE)\n"
+        "add_importlibs(find msvcrt kernel32)\n"
+    )
+    out = co.generate(cml)
+    assert "add_executable(find_c EXCLUDE_FROM_ALL find.c find.rc)" in out
+    assert "rust" not in out.split("never shipped.")[1].lower()
+
+
+def test_the_varargs_shim_stays_out_of_the_oracle():
+    # netsh: the flip's rust_varargs_shim.c defines PrintError etc. as trampolines into the
+    # Rust; in the C oracle they collide with netsh.c's own definitions.
+    cml = (
+        "list(APPEND SOURCE\n"
+        "    # netsh.c  # replaced by Rust (x)\n"
+        "    rust_varargs_shim.c\n"
+        "    rust_cohab_stub.c)\n"
+        "add_executable(netsh ${SOURCE})\n"
+    )
+    assert "rust_" not in co.generate(cml)
+
+
+def test_an_oracle_output_name_is_suffixed_too():
+    # cmd_help's OUTPUT_NAME "help": the copied property made two rules for help.exe.
+    cml = (
+        "add_executable(cmd_help\n    # help.c  # replaced by Rust (x)\n    rust_cohab_stub.c)\n"
+        'set_target_properties(cmd_help PROPERTIES OUTPUT_NAME "help")\n'
+    )
+    assert 'set_target_properties(cmd_help_c PROPERTIES OUTPUT_NAME "help_c")' in co.generate(cml)

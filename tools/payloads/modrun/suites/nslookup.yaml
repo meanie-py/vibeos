@@ -1,0 +1,16 @@
+# nslookup (base/applications/network/nslookup -> nslookup-rust, batch D1). The shipped Rust diffed
+# against the pre-flip C (`python -m rustconv.c_oracle`); inputs from modrun/data.
+module: nslookup
+variants:
+  c: '%SystemRoot%\bin\modrun\nslookup_c.exe'
+  rust: '%SystemRoot%\system32\nslookup.exe'
+ninja:
+- nslookup_c
+stage:
+- src: build-{arch}/base/applications/network/nslookup/nslookup_c.exe
+  dest: bin/modrun/nslookup_c.exe
+cases:
+- id: localhost
+  args: localhost
+- id: usage
+  args: -?
