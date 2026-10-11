@@ -38,6 +38,7 @@
 
 pub mod base;
 pub mod cm_control;
+pub mod cmres;
 pub mod constants;
 pub mod dbgassert;
 pub mod driver_ddk;
