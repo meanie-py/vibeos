@@ -217,6 +217,14 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
             continue
         if "CMakeFiles" in p.parts or "stripped" in p.parts:
             continue
+        # tools/conformance/mk_writable_livecd.py unpacks a TEMPORARY copy of the whole
+        # image under the build dir (`livecd-rw-XXXX/tree/...`) while a conformance lane
+        # boots. Indexed, its kernel32_vista.dll won setdefault() over the real one and was
+        # deleted before it was read: the amd64 WoW64 restage then died with
+        # FileNotFoundError (CMAKE_CONFIGURE_FAIL), rejecting three lanes' merge-queue
+        # batches on 2026-10-10 while the base re-gated green by luck of timing.
+        if any(part.startswith("livecd-rw-") for part in p.relative_to(build_dir).parts):
+            continue
         # A module's BUILD DIRECTORY carries the module's full name, suffix and
         # all -- dll/win32/hhctrl.ocx/ is a directory, and the real 670K
         # hhctrl.ocx lives inside it. rglob yields the directory before its

@@ -276,3 +276,17 @@ def test_emit_roots_stages_the_programs_with_their_closure(tmp_path, monkeypatch
     assert rc == 0
     staged = {ln.split("\t")[0] for ln in cap.out.splitlines() if "\t" in ln}
     assert {"guest.exe", "ws2_32.dll", "msafd.dll"} <= staged
+
+
+def test_a_temporary_livecd_rw_tree_is_never_indexed(tmp_path):
+    """mk_writable_livecd unpacks `livecd-rw-XXXX/tree/` under the build dir while a
+    conformance lane boots; indexed first, its copy of a DLL vanished before it was read and
+    the amd64 WoW64 restage failed CMAKE_CONFIGURE (three merge-queue batches, 2026-10-10)."""
+    tmp_tree = tmp_path / "livecd-rw-6lje7efj" / "tree" / "reactos" / "system32"
+    tmp_tree.mkdir(parents=True)
+    (tmp_tree / "kernel32_vista.dll").write_bytes(b"MZ")
+    real = tmp_path / "dll" / "win32" / "kernel32" / "kernel32_vista"
+    real.mkdir(parents=True)
+    (real / "kernel32_vista.dll").write_bytes(b"MZ")
+    index = w.index_build(tmp_path, no_strip=True)
+    assert index["kernel32_vista.dll"] == real / "kernel32_vista.dll"
