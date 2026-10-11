@@ -224,6 +224,7 @@ def _boot(
     timeout: float,
     press_keys: float,
     args,
+    finish: str | None = None,
 ) -> tuple[str, list[str]]:
     """Boot, wait for QEMU to exit (the guest powers itself off), return (outcome, lines).
 
@@ -264,7 +265,25 @@ def _boot(
             time.sleep(0.5)
         deadline = time.monotonic() + timeout
         next_shot = 0.0
+        finished_at: float | None = None
+        powered_down = False
         while proc.poll() is None and time.monotonic() < deadline:
+            # The guest asking to power off is not enough: a shutdown requested from
+            # FirstLogonCommands came back as a RESTART, and the VM sat at the desktop
+            # until the timeout. Once the guest says it is done, press the power button.
+            if (
+                finish
+                and finished_at is None
+                and any(ln.startswith(finish) for ln in console.lines)
+            ):
+                finished_at = time.monotonic()
+            if finished_at is not None and not powered_down and time.monotonic() > finished_at + 60:
+                try:
+                    qmp.execute("system_powerdown")
+                except Exception:
+                    pass
+                powered_down = True
+                deadline = min(deadline, time.monotonic() + 600)
             # The last screen is the only evidence of a crash QEMU does not survive (a
             # triple fault ends the process, and a dead VM cannot be screendumped).
             if time.monotonic() >= next_shot:
@@ -287,8 +306,10 @@ def _boot(
 def cmd_install(args, repo: Path) -> int:
     run = artifacts.Run("winref-install", "x64")
     p = _paths()
-    iso = Path(args.iso)
-    if not iso.is_file():
+    if args.adopt:
+        return _adopt(run, Path(args.adopt), repo)
+    iso = Path(args.iso or "")
+    if not args.iso or not iso.is_file():
         run.add(artifacts.Stage("iso", status="fail", detail=f"no ISO at {iso}"))
         return run.finalize(repo)
     disk = WINREF_DIR / "install.qcow2"
@@ -339,6 +360,7 @@ def cmd_install(args, repo: Path) -> int:
         # TCG reaches the prompt far later than WHPX: give it a wider window.
         press_keys=0 if resume else (90 if args.accel == "tcg" else 40),
         args=args,
+        finish="WINREF-SETUP: done",
     )
     setup = [ln for ln in lines if ln.startswith("WINREF-SETUP:")]
     done = next((ln for ln in setup if ln.startswith("WINREF-SETUP: done")), None)
@@ -354,26 +376,80 @@ def cmd_install(args, repo: Path) -> int:
             )
         )
         return run.finalize(repo)
+    _promote(run, disk, work_vars, done, str(iso), args.cpu)
+    return run.finalize(repo)
+
+
+def _promote(run: artifacts.Run, disk: Path, vars_fd: Path, done: str, iso: str, cpu: str) -> None:
+    """Make a finished install the base image, record it, and keep a pristine copy."""
+    p = _paths()
     os.replace(disk, p["base"])
-    os.replace(work_vars, p["vars"])
+    os.replace(vars_fd, p["vars"])
     state = {
         "installed": time.strftime("%Y-%m-%d %H:%M:%S"),
-        "iso": str(iso),
+        "iso": iso,
         "setup": done.removeprefix("WINREF-SETUP: done ").strip(),
-        "cpu": args.cpu,
+        "cpu": cpu,
     }
     p["state"].write_text(json.dumps(state, indent=2))
     run.extra["winref"] = state
-    run.add(artifacts.Stage("install", detail=state["setup"], salient=setup))
+    run.add(artifacts.Stage("install", detail=state["setup"]))
     # An install costs ~2 h under TCG; keep the pristine result apart from the live base,
     # which a later `install --force` or a deliberate base change would overwrite.
     snap = _snapshot(POST_INSTALL)
     run.add(artifacts.Stage("snapshot", detail=str(snap)))
+
+
+def _adopt(run: artifacts.Run, install_run: Path, repo: Path) -> int:
+    """Promote install.qcow2 from an install run whose setup finished but whose VM never
+    exited on its own (the guest's shutdown came back as a restart). The evidence that
+    setup completed is that run's console, not anyone's say-so."""
+    console = install_run / "guest-console.log"
+    lines = console.read_text(errors="replace").splitlines() if console.is_file() else []
+    done = next((ln for ln in lines if ln.startswith("WINREF-SETUP: done")), None)
+    disk = WINREF_DIR / "install.qcow2"
+    vars_fd = WINREF_DIR / "install-vars.fd"
+    if not done or not disk.is_file() or not vars_fd.is_file():
+        run.add(
+            artifacts.Stage(
+                "adopt",
+                status="fail",
+                detail=f"need `WINREF-SETUP: done` in {console} and an install disk",
+            )
+        )
+        return run.finalize(repo)
+    _promote(run, disk, vars_fd, done, f"adopted from {install_run.name}", DEFAULT_CPU)
     return run.finalize(repo)
 
 
 POST_INSTALL = "post-install"
 SNAPSHOT_FILES = ("base", "vars", "state")
+
+
+def _copy(src: Path, dst: Path) -> None:
+    """Copy a (large) file, on the Windows side when both ends are Windows paths.
+
+    shutil over DrvFS failed the first post-install snapshot with ENOMEM from sendfile on a
+    20 GB qcow2: the same failure backend.stage_file works around with small writes. A
+    native same-drive Copy-Item never crosses the WSL boundary at all.
+    """
+    try:
+        ws, wd = be.win_path(src), be.win_path(dst)
+    except ValueError:
+        shutil.copyfile(src, dst)
+        return
+    cp = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-Command",
+            f"Copy-Item -LiteralPath '{ws}' -Destination '{wd}' -Force -ErrorAction Stop",
+        ],
+        capture_output=True,
+        text=True,
+    )
+    if cp.returncode != 0 or not dst.is_file() or dst.stat().st_size != src.stat().st_size:
+        raise OSError(f"copy {src} -> {dst} failed: {cp.stderr.strip()[-300:]}")
 
 
 def _snapshot(name: str, *, overwrite: bool = False) -> Path:
@@ -391,7 +467,7 @@ def _snapshot(name: str, *, overwrite: bool = False) -> Path:
     tmp.mkdir(parents=True)
     for key in SNAPSHOT_FILES:
         if p[key].is_file():
-            shutil.copyfile(p[key], tmp / p[key].name)
+            _copy(p[key], tmp / p[key].name)
     if dst.exists():
         shutil.rmtree(dst)
     os.replace(tmp, dst)
@@ -423,7 +499,7 @@ def cmd_restore(args, repo: Path) -> int:
         f = src / p[key].name
         if f.is_file():
             tmp = p[key].with_name(p[key].name + ".restoring")
-            shutil.copyfile(f, tmp)
+            _copy(f, tmp)
             os.replace(tmp, p[key])
     print(f"winref restore: base <- {src}")
     return 0
@@ -471,6 +547,7 @@ def cmd_run(args, repo: Path) -> int:
             timeout=args.timeout,
             press_keys=0,
             args=args,
+            finish="WINREF: poweroff",
         )
     finally:
         if not args.keep:
@@ -651,7 +728,12 @@ def add_parser(sub) -> None:
         )
 
     i = verbs.add_parser("install", help="unattended install into the base image")
-    i.add_argument("--iso", required=True, help="Windows 11 x64 ISO (a /mnt/<drive> path)")
+    i.add_argument("--iso", help="Windows 11 x64 ISO (a /mnt/<drive> path)")
+    i.add_argument(
+        "--adopt",
+        metavar="RUN_DIR",
+        help="promote an install whose setup finished (per RUN_DIR's console) but never exited",
+    )
     i.add_argument("--disk-size", default="80G")
     i.add_argument("--timeout", type=float, default=INSTALL_TIMEOUT)
     i.add_argument("--force", action="store_true", help="reinstall over an existing base")

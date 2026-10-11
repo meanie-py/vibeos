@@ -3,9 +3,17 @@
 # directory, streams every output line to COM1, reports the exit code, and powers off.
 # The launcher reads COM1; the protocol is the WINREF: lines below and nothing else.
 $ErrorActionPreference = 'Continue'
-$port = New-Object System.IO.Ports.SerialPort COM1, 115200, None, 8, One
-$port.Open()
-function Say([string]$m) { $port.WriteLine($m) }
+# Also to C:\winref\boot.log, so `vibeos-cli winref logs` can say what a silent run did.
+$log = 'C:\winref\boot.log'
+$port = $null
+try {
+    $port = New-Object System.IO.Ports.SerialPort COM1, 115200, None, 8, One
+    $port.Open()
+} catch { $port = $null }
+function Say([string]$m) {
+    Add-Content -Path $log -Value "$(Get-Date -Format o) $m"
+    if ($port) { try { $port.WriteLine($m) } catch {} }
+}
 
 $v = Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
 Say "WINREF: ready build=$($v.CurrentBuild).$($v.UBR) edition=$($v.EditionID)"
@@ -27,5 +35,5 @@ if (-not $run) {
     Say "WINREF: exit=$code"
 }
 Say 'WINREF: poweroff'
-$port.Close()
+if ($port) { $port.Close() }
 Stop-Computer -Force
