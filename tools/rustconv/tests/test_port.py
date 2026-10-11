@@ -1019,3 +1019,12 @@ def test_a_bare_ansi_t_literal_gets_a_nul_terminated_pointer(tmp_path):
     assert '_tprintf(b"len %d\\n\\0".as_ptr() as *const ::core::ffi::c_char, n)' in rs.read_text()
     rs.write_text(src)
     assert port._c_str_literals(rs) == []  # a UNICODE module's `_T!` is left to fail loudly
+
+
+def test_replay_leaves_one_trailing_newline(tmp_path):
+    # fsutil's prelude and netsh.rs ended in a blank line after every replay, which
+    # `git diff --check` refuses.
+    (tmp_path / "a.rs").write_text("fn a() {}\n\n")
+    (tmp_path / "b.rs").write_text("fn b() {}\n")
+    assert port._one_trailing_newline(tmp_path) == 1
+    assert (tmp_path / "a.rs").read_text() == "fn a() {}\n"

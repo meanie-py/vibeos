@@ -5675,8 +5675,23 @@ def stage_replay(
     # of it halts the check, so the fixes above can UNCOVER names (main's WHEEL_PAGESCROLL,
     # clang-evaluable all along, surfaced only after fix round 2).
     stage_resolve(stem)
+    _one_trailing_newline(_crate_dir(load_state(stem)) / "src")
     stage_check(stem)
     print(f"replay: {(time.time() - started) / 60:.1f} min")
+
+
+def _one_trailing_newline(src: Path) -> int:
+    """End every crate file in exactly one newline. A pass that drops the last item of a
+    file (an extern copy, a stale import) leaves the blank line before it, and
+    `git diff --check` then refuses the commit: fsutil's prelude and netsh.rs, every replay."""
+    n = 0
+    for p in src.rglob("*.rs"):
+        text = p.read_text()
+        fixed = text.rstrip("\n") + "\n"
+        if text and fixed != text:
+            p.write_text(fixed)
+            n += 1
+    return n
 
 
 # --------------------------------------------------------------------------------------
