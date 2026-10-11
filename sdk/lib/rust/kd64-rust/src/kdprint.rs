@@ -382,7 +382,7 @@ pub unsafe extern "system" fn KdpPrompt(
         }
         let prompt_string_local = captured_prompt.as_mut_ptr();
 
-        if ntkrnl_sys::probe::probe_user_buffer(
+        if ntkrnl_sys::probe::probe_user_buffer_write(
             ResponseString as *const core::ffi::c_void,
             maximum_response_length as usize,
             1,

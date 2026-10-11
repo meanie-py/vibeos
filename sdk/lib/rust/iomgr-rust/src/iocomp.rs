@@ -290,7 +290,7 @@ pub unsafe extern "system" fn NtCreateIoCompletion(
 
     if PreviousMode != 0i8 {
         Status = 'seh: {
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
                 IoCompletionHandle as *const core::ffi::c_void,
                 core::mem::size_of::<HANDLE>(),
                 core::mem::align_of::<HANDLE>(),
@@ -357,7 +357,7 @@ pub unsafe extern "system" fn NtOpenIoCompletion(
 
     if PreviousMode != 0i8 {
         Status = 'seh: {
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
                 IoCompletionHandle as *const core::ffi::c_void,
                 core::mem::size_of::<HANDLE>(),
                 core::mem::align_of::<HANDLE>(),
@@ -490,7 +490,7 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
 
     if PreviousMode != 0i8 {
         Status = 'seh: {
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
                 KeyContext as *const core::ffi::c_void,
                 core::mem::size_of::<PVOID>(),
                 core::mem::align_of::<PVOID>(),
@@ -498,7 +498,7 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
             ) {
                 break 'seh e;
             }
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
                 ApcContext as *const core::ffi::c_void,
                 core::mem::size_of::<PVOID>(),
                 core::mem::align_of::<PVOID>(),
@@ -506,7 +506,7 @@ pub unsafe extern "system" fn NtRemoveIoCompletion(
             ) {
                 break 'seh e;
             }
-            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
                 IoStatusBlock as *const core::ffi::c_void,
                 core::mem::size_of::<_IO_STATUS_BLOCK>(),
                 core::mem::align_of::<_IO_STATUS_BLOCK>(),

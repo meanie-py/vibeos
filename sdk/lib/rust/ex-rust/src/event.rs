@@ -146,7 +146,7 @@ pub unsafe extern "system" fn NtCreateEvent(
     }
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             EventHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -204,7 +204,7 @@ pub unsafe extern "system" fn NtOpenEvent(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             EventHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -244,7 +244,7 @@ pub unsafe extern "system" fn NtPulseEvent(
     let PreviousMode = ExGetPreviousMode();
 
     if !PreviousState.is_null() && PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             PreviousState as *const core::ffi::c_void,
             core::mem::size_of::<LONG>(),
             core::mem::align_of::<LONG>(),
@@ -359,7 +359,7 @@ pub unsafe extern "system" fn NtResetEvent(
     let PreviousMode = ExGetPreviousMode();
 
     if !PreviousState.is_null() && PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             PreviousState as *const core::ffi::c_void,
             core::mem::size_of::<LONG>(),
             core::mem::align_of::<LONG>(),
@@ -403,7 +403,7 @@ pub unsafe extern "system" fn NtSetEvent(
     let PreviousMode = ExGetPreviousMode();
 
     if !PreviousState.is_null() && PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             PreviousState as *const core::ffi::c_void,
             core::mem::size_of::<LONG>(),
             core::mem::align_of::<LONG>(),

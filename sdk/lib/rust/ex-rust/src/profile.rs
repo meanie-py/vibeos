@@ -191,7 +191,7 @@ pub unsafe extern "system" fn NtCreateProfile(
     }
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             ProfileHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -200,7 +200,7 @@ pub unsafe extern "system" fn NtCreateProfile(
             return status;
         }
 
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             Buffer,
             BufferSize as usize,
             core::mem::align_of::<ULONG>(),
@@ -305,7 +305,7 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
     let mut PerfFrequency: LARGE_INTEGER = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             PerformanceCounter as *const core::ffi::c_void,
             core::mem::size_of::<LARGE_INTEGER>(),
             core::mem::align_of::<LARGE_INTEGER>(),
@@ -314,7 +314,7 @@ pub unsafe extern "system" fn NtQueryPerformanceCounter(
             return status;
         }
         if !PerformanceFrequency.is_null() {
-            if let Err(status) = probe_user_buffer(
+            if let Err(status) = probe_user_buffer_write(
                 PerformanceFrequency as *const core::ffi::c_void,
                 core::mem::size_of::<LARGE_INTEGER>(),
                 core::mem::align_of::<LARGE_INTEGER>(),
@@ -477,7 +477,7 @@ pub unsafe extern "system" fn NtQueryIntervalProfile(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             Interval as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::align_of::<ULONG>(),

@@ -1316,7 +1316,7 @@ def _build_locked(args, repo: Path, run, arch: str, cfg, build_dir: Path, cold: 
     #   1. Batching (`ninja a b c`): ninja rejects the WHOLE command on the first
     #      unknown target, so one absent target silently skipped the present
     #      ones. kmtest_all only exists under -DENABLE_ROSTESTS(_KMTESTS)=ON
-    #      (both default OFF), so a kmtests-off dir took arm64input/arm64vid —
+    #      (both default OFF), so a kmtests-off dir took arm64input/sysfb —
     #      and ntkrnlmp — down with it.
     #   2. Discarding the result: a target that EXISTS but FAILS TO COMPILE was
     #      swallowed whole. arm64input could stop building entirely and the build

@@ -1,5 +1,5 @@
-//! Empty bin shell. `arm64vid.sys`'s real entry point is `DriverEntry`,
-//! provided by `libarm64vid_rust.a` (linked by build.rs via reactos-link with
+//! Empty bin shell. `sysfb.sys`'s real entry point is `DriverEntry`,
+//! provided by `libsysfb_rust.a` (linked by build.rs via reactos-link with
 //! `-Wl,-e,DriverEntry`). `ModuleKind::KernelDll` links `-shared` and does NOT
 //! `--gc-sections`, so `DriverEntry` is retained. This `main` is never run.
 

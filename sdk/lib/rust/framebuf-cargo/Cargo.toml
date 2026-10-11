@@ -1,6 +1,6 @@
 # Cargo-driven `framebuf.dll` link (i386 + amd64 + arm64). The GDI framebuffer
 # display driver (loaded by win32k on every UEFI GOP/linear-framebuffer boot).
-# Sibling of `arm64vid-cargo`, but a `kerneldll` whose PE entry is
+# Sibling of `sysfb-cargo`, but a `kerneldll` whose PE entry is
 # DrvEnableDriver@12 and which imports win32k (not ntoskrnl/hal). The Rust body
 # is the `framebuf-rust` staticlib.
 

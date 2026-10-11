@@ -184,7 +184,7 @@ members = [
     "null-cargo",
     "nmidebug-rust",
     "nmidebug-cargo",
-    "arm64vid-cargo",
+    "sysfb-cargo",
     "arm64input-cargo",
     "i8042prt-cargo",
     "kbdclass-cargo",
@@ -237,7 +237,7 @@ members = [
     "inflib-rust",
     "freeldr-rust",
     "arm64input-rust",
-    "arm64vid-rust",
+    "sysfb-rust",
     "framebuf-rust",
     "kbdclass-rust",
     "mouclass-rust",
@@ -569,6 +569,7 @@ members = [
     "wordpad-rust",
     "winhlp32-rust",
     "eventvwr-rust",
+    "watchdog-rust",
 ]
 resolver = "2"
 

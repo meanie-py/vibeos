@@ -261,7 +261,7 @@ pub unsafe extern "system" fn NtAdjustPrivilegesToken(
         }
 
         if !PreviousState.is_null() {
-            if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            if let Err(s) = probe_user_buffer_write(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
                 return s;
             }
             if let Err(s) = probe_write_user(ReturnLength, 0u32, PreviousMode) {
@@ -430,7 +430,7 @@ pub unsafe extern "system" fn NtAdjustGroupsToken(
         }
 
         if !PreviousState.is_null() {
-            if let Err(s) = probe_user_buffer(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+            if let Err(s) = probe_user_buffer_write(PreviousState as _, BufferLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
                 return s;
             }
             if let Err(s) = probe_write_user(ReturnLength, 0u32, PreviousMode) {

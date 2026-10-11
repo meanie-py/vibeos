@@ -550,7 +550,7 @@ The float ABI of the empty cargo bin **shell** is irrelevant — only the body `
 
 ## Translating a standalone kernel `.sys` driver
 
-Translating a whole standalone driver (kbdclass, i8042prt, classpnp, cdrom, cdfs, arm64vid, framebuf, pci) is a different job from swapping one `.c` inside an existing DLL: the driver's types come from headers the shared `ntkrnl-sys` bindgen never sees, and an LLM pass leaves thousands of mechanical compile errors that collapse to ~15 systemic roots. This section is the front-to-back workflow for the **body crate** — get it to compile clean ×3 arches — which then feeds the cohab link (`### Device drivers — kernelmodedriver = KernelDll` and the trap catalog above).
+Translating a whole standalone driver (kbdclass, i8042prt, classpnp, cdrom, cdfs, sysfb, framebuf, pci) is a different job from swapping one `.c` inside an existing DLL: the driver's types come from headers the shared `ntkrnl-sys` bindgen never sees, and an LLM pass leaves thousands of mechanical compile errors that collapse to ~15 systemic roots. This section is the front-to-back workflow for the **body crate** — get it to compile clean ×3 arches — which then feeds the cohab link (`### Device drivers — kernelmodedriver = KernelDll` and the trap catalog above).
 
 ### Where every driver symbol comes from — the three substrate layers
 
@@ -645,7 +645,7 @@ typedef struct _PCI_COMMON_CONFIG {
 
 ### Standalone cohab crate (staticlib template)
 
-For a driver built as its own `.sys` (vs a `.c`-in-DLL swap), the lightweight mechanism — proven on `arm64vid.sys`, template `sdk/lib/rust/arm64input-rust/` — is a **staticlib crate + a placeholder C stub**, independent of `add_cargo_module`:
+For a driver built as its own `.sys` (vs a `.c`-in-DLL swap), the lightweight mechanism — proven on `sysfb.sys` (then `arm64vid.sys`), template `sdk/lib/rust/arm64input-rust/` — is a **staticlib crate + a placeholder C stub**, independent of `add_cargo_module`:
 
 - New crate `<drv>-rust/`, `crate-type = ["staticlib"]`. Dep `ntkrnl-sys` (or `win32k-sys` for a GDI display driver — and *only* win32k-sys; a second direct ntkrnl-sys path builds it twice → E0432). Own `#[panic_handler]` + `rust_eh_personality` stub. Add to workspace `members`; no `extern crate` in the umbrella needed.
 - Cohab CMake mirrors `arm64input/CMakeLists.txt`: cargo-build custom command → copy `.a`; `add_library(<drv> MODULE rust_cohab_stub.c)`; comment `.c` sources `# replaced by Rust`; `target_link_libraries`. `rust_cohab_stub.c` is a one-liner `typedef int <drv>_cohab_placeholder;` (a MODULE needs ≥1 source). Keep the `.c` on disk.

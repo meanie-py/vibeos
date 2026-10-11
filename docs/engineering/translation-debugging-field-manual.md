@@ -7425,7 +7425,15 @@ appear *after* a validate-first conversion that was supposed to be a pure safety
   * **A read probe standing in for a write probe.** Only a write touch proves the page is
     writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
     than just comparing. Substituting a read probe passes a read-only user page and moves
-    the fault to the later store.
+    the fault to the later store. The commoner stand-in was the range-only
+    `probe_user_buffer`, which touches nothing: 119 kernel call sites translated
+    `ProbeForWrite*` to it. `NtReadFile` then built an IRP for a NULL buffer with a non-zero
+    length, and the driver answered with its own status where Windows fails the probe with
+    `STATUS_ACCESS_VIOLATION` (151 IoReadWrite kmtest assertions, all three arches). A bad
+    OUT pointer to `NtCreateEvent` and friends was likewise found only after the object
+    existed. Use `probe_user_buffer_write`, which does ProbeForWrite's one-byte-per-page
+    read-and-write-back through the fault-protected copy. `scan_dropped_probes` reports the
+    range-only form as `WEAK` wherever the file's commented C write-probes the same pointer.
 
   And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
   `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
