@@ -686,8 +686,8 @@ pub unsafe extern "C" fn DoParse(
             /// FIXME: This test is problematic if this concerns the last option in the command-line!
             /// A hack-fix is to repeat this check after the 'for'-loop.
             if (Option as ULONG) != NumOptions {
-                if PrintErrorFunc.is_some() {
-                    PrintErrorFunc.unwrap()(ValueRequired, OptionStr);
+                if let Some(PrintErrorFunc) = PrintErrorFunc {
+                    PrintErrorFunc(ValueRequired, OptionStr);
                 }
                 return (FALSE) as BOOL;
             }
@@ -716,8 +716,8 @@ pub unsafe extern "C" fn DoParse(
             }
 
             if (Option as ULONG) >= NumOptions {
-                if PrintErrorFunc.is_some() {
-                    PrintErrorFunc.unwrap()(InvalidOption, OptionStr);
+                if let Some(PrintErrorFunc) = PrintErrorFunc {
+                    PrintErrorFunc(InvalidOption, OptionStr);
                 }
                 return (FALSE) as BOOL;
             }
@@ -728,8 +728,8 @@ pub unsafe extern "C" fn DoParse(
                 && (*Options.offset(Option as isize)).Instances
                     >= (*Options.offset(Option as isize)).MaxOfInstances
             {
-                if PrintErrorFunc.is_some() {
-                    PrintErrorFunc.unwrap()(
+                if let Some(PrintErrorFunc) = PrintErrorFunc {
+                    PrintErrorFunc(
                         TooManySameOption,
                         OptionStr,
                         (*Options.offset(Option as isize)).MaxOfInstances,
@@ -780,8 +780,8 @@ pub unsafe extern "C" fn DoParse(
             match (*Options.offset(Option as isize)).Type {
                 0 => {
                     /* There must be no associated value */
-                    if PrintErrorFunc.is_some() {
-                        PrintErrorFunc.unwrap()(ValueNotAllowed, OptionStr);
+                    if let Some(PrintErrorFunc) = PrintErrorFunc {
+                        PrintErrorFunc(ValueNotAllowed, OptionStr);
                     }
                     return (FALSE) as BOOL;
                 }
@@ -802,8 +802,8 @@ pub unsafe extern "C" fn DoParse(
                         && **pStr == 0
                     {
                         /* Value cannot be empty */
-                        if PrintErrorFunc.is_some() {
-                            PrintErrorFunc.unwrap()(ValueIsEmpty, OptionStr);
+                        if let Some(PrintErrorFunc) = PrintErrorFunc {
+                            PrintErrorFunc(ValueIsEmpty, OptionStr);
                         }
                         return (FALSE) as BOOL;
                     }
@@ -817,8 +817,8 @@ pub unsafe extern "C" fn DoParse(
                         AllowedValues = (*Options.offset(Option as isize)).AllowedValues;
                         if AllowedValues.is_null() {
                             /* The array is empty, no allowed values */
-                            if PrintErrorFunc.is_some() {
-                                PrintErrorFunc.unwrap()(InvalidValue, *pStr, OptionStr);
+                            if let Some(PrintErrorFunc) = PrintErrorFunc {
+                                PrintErrorFunc(InvalidValue, *pStr, OptionStr);
                             }
                             return (FALSE) as BOOL;
                         }
@@ -852,8 +852,8 @@ pub unsafe extern "C" fn DoParse(
 
                         if *Scan == 0 {
                             /* The value is not allowed */
-                            if PrintErrorFunc.is_some() {
-                                PrintErrorFunc.unwrap()(InvalidValue, *pStr, OptionStr);
+                            if let Some(PrintErrorFunc) = PrintErrorFunc {
+                                PrintErrorFunc(InvalidValue, *pStr, OptionStr);
                             }
                             return (FALSE) as BOOL;
                         }
@@ -873,8 +873,8 @@ pub unsafe extern "C" fn DoParse(
                         ) as ULONG;
                     if *pszNext != 0 {
                         /* The value is not a valid numeric value and is not allowed */
-                        if PrintErrorFunc.is_some() {
-                            PrintErrorFunc.unwrap()(
+                        if let Some(PrintErrorFunc) = PrintErrorFunc {
+                            PrintErrorFunc(
                                 InvalidValue,
                                 *argv.offset(i as isize),
                                 OptionStr,
@@ -900,8 +900,8 @@ pub unsafe extern "C" fn DoParse(
 
     /// HACK-fix for the check done inside the 'for'-loop.
     if (Option as ULONG) != NumOptions {
-        if PrintErrorFunc.is_some() {
-            PrintErrorFunc.unwrap()(ValueRequired, OptionStr);
+        if let Some(PrintErrorFunc) = PrintErrorFunc {
+            PrintErrorFunc(ValueRequired, OptionStr);
         }
         return (FALSE) as BOOL;
     }
@@ -919,8 +919,8 @@ pub unsafe extern "C" fn DoParse(
                 && ((*Options.offset(i as isize)).Instances != 0)
             {
                 /* A non-exclusive option is present on the command-line, fail */
-                if PrintErrorFunc.is_some() {
-                    PrintErrorFunc.unwrap()(InvalidSyntax);
+                if let Some(PrintErrorFunc) = PrintErrorFunc {
+                    PrintErrorFunc(InvalidSyntax);
                 }
                 return (FALSE) as BOOL;
             }
@@ -938,8 +938,8 @@ pub unsafe extern "C" fn DoParse(
         if ((*Options.offset(i as isize)).Flags & OPTION_MANDATORY) != 0
             && ((*Options.offset(i as isize)).Instances == 0)
         {
-            if PrintErrorFunc.is_some() {
-                PrintErrorFunc.unwrap()(
+            if let Some(PrintErrorFunc) = PrintErrorFunc {
+                PrintErrorFunc(
                     MandatoryOptionAbsent,
                     (*Options.offset(i as isize)).OptionName,
                 );

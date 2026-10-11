@@ -61,7 +61,7 @@ unsafe extern "C" fn CreateMain(argc: ::core::ffi::c_int, argv: *mut *const TCHA
     }
 
     /* Simply delegate to kernel32 */
-    if !CreateHardLink(core::ptr::addr_of_mut!(Target) as *mut TCHAR, core::ptr::addr_of_mut!(Source) as *mut TCHAR, core::ptr::null_mut()) != 0 {
+    if CreateHardLink(core::ptr::addr_of_mut!(Target) as *mut TCHAR, core::ptr::addr_of_mut!(Source) as *mut TCHAR, core::ptr::null_mut()) == 0 {
         PrintErrorMessage(GetLastError());
         return 1;
     }

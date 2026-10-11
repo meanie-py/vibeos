@@ -403,7 +403,9 @@ pub unsafe extern "C" fn WlanPrintCurrentStatus(hAdapter: HANDLE) -> BOOL {
     ConPuts(StdOut, RUSTCONV_WSTR_6F0DA0ADD46E.as_ptr());
     i = 0;
     while (i as usize) < core::mem::size_of::<NDIS_802_11_MAC_ADDRESS>() {
-        let mut BssidData: UINT = (*QueryOid).Data[i as usize] as UINT;
+        // Data is the C struct-hack trailer: the buffer is FIELD_OFFSET(Data) + 6 bytes, the
+        // declared `[UCHAR; 4]` is shorter than the MAC this reads, and indexing panicked at 4.
+        let mut BssidData: UINT = *core::ptr::addr_of!((*QueryOid).Data).cast::<UCHAR>().add(i as usize) as UINT;
 
         ConPrintf(StdOut, RUSTCONV_WSTR_5D8BC069E4F5.as_ptr(), BssidData);
 

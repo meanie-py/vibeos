@@ -303,16 +303,16 @@ pub struct IXMLDOMNodeListVtbl {
 
 // ---- COBJMACROS shims: `IXMLDOMNode_get_text(This,p)` == `(This)->lpVtbl->get_text(This,p)`. Each
 // dispatches through the slot above; a null slot is the same crash the C would take.
-pub unsafe fn IXMLDOMNode_Release(This: *mut IXMLDOMNode) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
-pub unsafe fn IXMLDOMNode_get_attributes(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT { ((*(*This).lpVtbl).get_attributes.unwrap())(This, attributeMap) }
-pub unsafe fn IXMLDOMNode_get_text(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_text.unwrap())(This, p) }
-pub unsafe fn IXMLDOMNamedNodeMap_Release(This: *mut IXMLDOMNamedNodeMap) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
-pub unsafe fn IXMLDOMNamedNodeMap_getNamedItem(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).getNamedItem.unwrap())(This, p, outNode) }
-pub unsafe fn IXMLDOMNodeList_get_item(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).get_item.unwrap())(This, lIndex, outNode) }
-pub unsafe fn IXMLDOMDocument_load(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT { ((*(*This).lpVtbl).load.unwrap())(This, var1, pbool) }
-pub unsafe fn IXMLDOMDocument_get_documentElement(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT { ((*(*This).lpVtbl).get_documentElement.unwrap())(This, domElement) }
-pub unsafe fn IXMLDOMElement_get_tagName(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_tagName.unwrap())(This, p) }
-pub unsafe fn IXMLDOMElement_getElementsByTagName(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT { ((*(*This).lpVtbl).getElementsByTagName.unwrap())(This, p, resultList) }
+pub unsafe fn IXMLDOMNode_Release(This: *mut IXMLDOMNode) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }
+pub unsafe fn IXMLDOMNode_get_attributes(This: *mut IXMLDOMNode, attributeMap: *mut *mut IXMLDOMNamedNodeMap) -> HRESULT { ((*(*This).lpVtbl).get_attributes.unwrap_unchecked())(This, attributeMap) }
+pub unsafe fn IXMLDOMNode_get_text(This: *mut IXMLDOMNode, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_text.unwrap_unchecked())(This, p) }
+pub unsafe fn IXMLDOMNamedNodeMap_Release(This: *mut IXMLDOMNamedNodeMap) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }
+pub unsafe fn IXMLDOMNamedNodeMap_getNamedItem(This: *mut IXMLDOMNamedNodeMap, p: BSTR, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).getNamedItem.unwrap_unchecked())(This, p, outNode) }
+pub unsafe fn IXMLDOMNodeList_get_item(This: *mut IXMLDOMNodeList, lIndex: LONG, outNode: *mut *mut IXMLDOMNode) -> HRESULT { ((*(*This).lpVtbl).get_item.unwrap_unchecked())(This, lIndex, outNode) }
+pub unsafe fn IXMLDOMDocument_load(This: *mut IXMLDOMDocument, var1: VARIANT, pbool: *mut VARIANT_BOOL) -> HRESULT { ((*(*This).lpVtbl).load.unwrap_unchecked())(This, var1, pbool) }
+pub unsafe fn IXMLDOMDocument_get_documentElement(This: *mut IXMLDOMDocument, domElement: *mut *mut IXMLDOMElement) -> HRESULT { ((*(*This).lpVtbl).get_documentElement.unwrap_unchecked())(This, domElement) }
+pub unsafe fn IXMLDOMElement_get_tagName(This: *mut IXMLDOMElement, p: *mut BSTR) -> HRESULT { ((*(*This).lpVtbl).get_tagName.unwrap_unchecked())(This, p) }
+pub unsafe fn IXMLDOMElement_getElementsByTagName(This: *mut IXMLDOMElement, p: BSTR, resultList: *mut *mut IXMLDOMNodeList) -> HRESULT { ((*(*This).lpVtbl).getElementsByTagName.unwrap_unchecked())(This, p, resultList) }
 
 // C: activscp.h `#define IActiveScriptParse IActiveScriptParse64` (or 32) on _WIN64 / otherwise.
 #[cfg(target_pointer_width = "64")]
@@ -324,10 +324,10 @@ pub type IActiveScriptParse = IActiveScriptParse32;
 // IActiveScriptParse_* macros pick the same by _WIN64). The island carries both vtables.
 macro_rules! activscript_parse_shims {
     ($I:ident, $Cookie:ty) => {
-        pub unsafe fn IActiveScriptParse_Release(This: *mut $I) -> ULONG { ((*(*This).lpVtbl).Release.unwrap())(This) }
-        pub unsafe fn IActiveScriptParse_InitNew(This: *mut $I) -> HRESULT { ((*(*This).lpVtbl).InitNew.unwrap())(This) }
+        pub unsafe fn IActiveScriptParse_Release(This: *mut $I) -> ULONG { ((*(*This).lpVtbl).Release.unwrap_unchecked())(This) }
+        pub unsafe fn IActiveScriptParse_InitNew(This: *mut $I) -> HRESULT { ((*(*This).lpVtbl).InitNew.unwrap_unchecked())(This) }
         pub unsafe fn IActiveScriptParse_ParseScriptText(This: *mut $I, pstrCode: LPCOLESTR, pstrItemName: LPCOLESTR, punkContext: *mut IUnknown, pstrDelimiter: LPCOLESTR, dwSourceContextCookie: $Cookie, ulStartingLineNumber: ULONG, dwFlags: DWORD, pvarResult: *mut VARIANT, pexcepinfo: *mut EXCEPINFO) -> HRESULT {
-            ((*(*This).lpVtbl).ParseScriptText.unwrap())(This, pstrCode, pstrItemName, punkContext, pstrDelimiter, dwSourceContextCookie, ulStartingLineNumber, dwFlags, pvarResult, pexcepinfo)
+            ((*(*This).lpVtbl).ParseScriptText.unwrap_unchecked())(This, pstrCode, pstrItemName, punkContext, pstrDelimiter, dwSourceContextCookie, ulStartingLineNumber, dwFlags, pvarResult, pexcepinfo)
         }
     };
 }

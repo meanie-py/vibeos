@@ -2968,9 +2968,7 @@ def _crt_data_globals(path: Path) -> list[str]:
     # An `extern { static mut _iob: FILE; }` is the same import misspelled, not a module of
     # its own (finger's net.rs): it goes, and its uses take the accessor.
     # To the line's end, not the first `;`: fsutil declared it `[u8; 0]`.
-    undeclared = re.sub(
-        r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:[^=\n]*;[ \t]*\n", "", text
-    )
+    undeclared = re.sub(r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:[^=\n]*;[ \t]*\n", "", text)
     if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", undeclared):
         new, n = re.subn(
             r"(?:&raw\s+(?:mut|const)\s+_iob\b|(?:core::ptr::)?addr_of(?:_mut)?!\(\s*_iob\s*\)"
@@ -5706,8 +5704,10 @@ def _one_trailing_newline(src: Path) -> int:
     """End every crate file in exactly one newline. A pass that drops the last item of a
     file (an extern copy, a stale import) leaves the blank line before it, and
     `git diff --check` then refuses the commit: fsutil's prelude and netsh.rs, every replay."""
+    from tools.source_walk import source_files
+
     n = 0
-    for p in src.rglob("*.rs"):
+    for p in source_files(src):
         text = p.read_text()
         fixed = text.rstrip("\n") + "\n"
         if text and fixed != text:
