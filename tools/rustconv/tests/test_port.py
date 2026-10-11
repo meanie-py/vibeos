@@ -741,6 +741,25 @@ def test_flip_links_with_the_targets_own_link_signature():
     assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out
 
 
+def test_flipping_a_cpp_module_drops_the_cpp_standard_library():
+    """drwtsn32: cppstl pulled libmingwex in beside the Rust CRT startup (duplicate symbol)."""
+    state = {
+        "stem": "drwtsn32",
+        "crate": "drwtsn32-rust",
+        "target": "drwtsn32",
+        "module_dir": "base/applications/drwtsn32",
+        "tus": [],
+        "cpp_tus": ["base/applications/drwtsn32/main.cpp"],
+    }
+    cml = (
+        "add_executable(drwtsn32 ${CPP_SOURCE} drwtsn32.rc)\n"
+        "target_link_libraries(drwtsn32 udmihelp cppstl atl_classes)\n"
+    )
+    out = port.flip_cmake(cml, state)
+    assert "target_link_libraries(drwtsn32 udmihelp atl_classes)" in out
+    assert "cppstl" not in out
+
+
 def test_a_cpp_module_gets_a_cpp_stub_tu():
     """The stub is the module's last compile command once every TU flips; a C stub of a C++
     module lacks the C++-only include directories the tools borrow (msutb's ATL)."""
@@ -924,3 +943,76 @@ def test_resolve_wires_a_dependencys_pub_definitions_once(tmp_path):
     text = prelude.read_text()
     assert text.count(port._DEP_BEGIN) == 1
     assert "pub use cicero_rust::cicero::cicbase::{cicMemFree};" in text
+
+
+def test_a_cxx_overload_of_a_crt_name_is_not_exported(tmp_path):
+    """drwtsn32's `int abort(FILE*, int)`: an unmangled Rust `abort` would replace the CRT's."""
+    from rustconv import port
+
+    f = tmp_path / "main_cpp_h.rs"
+    f.write_text(
+        '#[no_mangle]\npub unsafe extern "C" fn abort(output: *mut FILE, err: i32) -> i32 { err }\n'
+        '#[no_mangle]\npub unsafe extern "C" fn PrintBugreport(output: *mut FILE) {}\n'
+    )
+    assert port._cxx_unexport_crt_overloads(f) == ["abort"]
+    text = f.read_text()
+    assert "#[no_mangle]\npub unsafe extern \"C\" fn abort" not in text
+    assert "#[no_mangle]\npub unsafe extern \"C\" fn PrintBugreport" in text
+
+
+def test_iob_stream_indexing_becomes_the_crt_accessor(tmp_path):
+    """drwtsn32's `stdout`: `addr_of_mut!(_iob[1])` on a `[FILE; 0]` is an unconditional panic."""
+    from rustconv import port
+
+    f = tmp_path / "main_cpp_h.rs"
+    f.write_text(
+        "if output != (core::ptr::addr_of_mut!(_iob[1]) as *mut FILE) {}\n"
+        "fputs(s, &mut _iob[2 as usize]);\n"
+    )
+    assert port._iob_streams(f) == 2
+    assert f.read_text() == (
+        "if output != (__iob_func().add(1)) {}\nfputs(s, __iob_func().add(2));\n"
+    )
+
+
+def test_a_translated_fn_pointer_typedef_becomes_nullable(tmp_path):
+    """msctf's LPFNCONSTRUCTOR as a bare `fn`: zeroing its holder is invalid_value UB."""
+    from rustconv import port
+
+    f = tmp_path / "msctf_cpp_h.rs"
+    f.write_text(
+        "pub type LPFNCONSTRUCTOR =\n"
+        '    unsafe extern "C" fn(pUnkOuter: *mut IUnknown, ppvOut: *mut *mut IUnknown) -> HRESULT;\n'
+        "pub struct E { pub constructor: Option<LPFNCONSTRUCTOR>, }\n"
+        "pub type PAtsEntry = *mut AtsEntry;\n"
+    )
+    assert port._option_fn_aliases(f) == ["LPFNCONSTRUCTOR"]
+    text = f.read_text()
+    assert 'pub type LPFNCONSTRUCTOR =\n    Option<unsafe extern "C" fn(' in text
+    assert "-> HRESULT>;" in text
+    assert "pub constructor: LPFNCONSTRUCTOR," in text
+    assert "pub type PAtsEntry = *mut AtsEntry;" in text
+    assert port._option_fn_aliases(f) == []  # idempotent: Option<..> no longer matches
+
+
+def test_an_sdk_aliased_import_links_the_real_symbol(tmp_path, monkeypatch):
+    """mmc_new declared `DefMDIChildProc`, which only exists as DefMDIChildProcW."""
+    from rustconv import macro_authority, port
+
+    monkeypatch.setattr(
+        macro_authority, "identifier_aliases", lambda repo, src: {"DefMDIChildProc": "DefMDIChildProcW"}
+    )
+    f = tmp_path / "CConsoleWnd_cpp_h.rs"
+    f.write_text(
+        'extern "system" {\n'
+        "    fn DefMDIChildProc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT;\n"
+        "    fn GetTickCount() -> DWORD;\n"
+        "}\n"
+    )
+    assert port._aw_extern_link_names(f, tmp_path / "CConsoleWnd.cpp") == [
+        "DefMDIChildProc -> DefMDIChildProcW"
+    ]
+    text = f.read_text()
+    assert '    #[link_name = "DefMDIChildProcW"]\n    fn DefMDIChildProc(' in text
+    assert "    fn GetTickCount() -> DWORD;" in text
+    assert port._aw_extern_link_names(f, tmp_path / "CConsoleWnd.cpp") == []  # idempotent

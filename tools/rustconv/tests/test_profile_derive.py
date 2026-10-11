@@ -602,6 +602,14 @@ def test_header_symbols_owns_a_cxx_const(tmp_path):
     assert header_symbols(h)["gViewsCommandID"][0] == "cxx-const"
 
 
+def test_header_symbols_owns_a_cxx_scoped_enum(tmp_path):
+    # certmgr's `case StoreType::User:` reaches the case scan as `StoreType`; the header's
+    # `enum class StoreType` owns it, so it is not a blocking SWITCH_CONST_UNOWNED.
+    h = _write(tmp_path / "CStoreList.hpp", "enum class StoreType\n{\n    User,\n};\n")
+    assert header_symbols(h, frozenset({"StoreType"}))["StoreType"][0] == "cxx-scoped-enum"
+    assert header_symbols(h)["StoreType"][0] == "cxx-scoped-enum"
+
+
 def test_targeted_scan_is_not_fooled_by_a_prefix_identifier(tmp_path):
     """Regression, found on the real afd/tdihelpers closure: alternation is first-match-wins,
     so `TDI_ADDRESS_TYPE_IP` swallowed the `#define TDI_ADDRESS_TYPE_IPX` line and IPX was

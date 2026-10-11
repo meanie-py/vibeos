@@ -73,6 +73,49 @@ def unicode_text_macros(text: str) -> str:
     return _TEXT_MACRO.sub(lambda m: "L" + m.group(1), text)
 
 
+_STR_LIT = re.compile(r'(?:\bL)?"(?:[^"\\\n]|\\.)*"')
+_STRING_DEFINE = re.compile(r'^[ \t]*#[ \t]*define[ \t]+(\w+)[ \t]+((?:L)?"(?:[^"\\\n]|\\.)*")[ \t]*$', re.M)
+
+
+def string_macros(sources: list[str]) -> dict[str, str]:
+    """A module's own object-like macros whose whole expansion is one string literal
+    (drwtsn32.h `#define NEWLINE "\\r\\n"`)."""
+    out: dict[str, str] = {}
+    for text in sources:
+        for m in _STRING_DEFINE.finditer(text):
+            out.setdefault(m.group(1), m.group(2))
+    return out
+
+
+def concat_string_macros(text: str, macros: dict[str, str]) -> str:
+    """`"%5d: %ls" NEWLINE` -> `"%5d: %ls\\r\\n"`: what translation phases 4 and 6 do. Left as
+    written, the model dropped the literal and kept the macro -- every drwtsn32 report line
+    came back as `xfprintf(output, NEWLINE, ...)`, which compiles and prints nothing useful.
+    Only a macro NEXT TO a string literal is folded; a standalone use stays a name (it
+    translates fine, and leaving it keeps every such body's response-cache key unchanged)."""
+    if not macros:
+        return text
+    names = "|".join(map(re.escape, sorted(macros, key=len, reverse=True)))
+    lit = _STR_LIT.pattern
+    unit = re.compile(rf"(?:{lit}|\b(?:{names})\b)(?:\s*(?:{lit}|\b(?:{names})\b))+")
+
+    def fold(m: re.Match) -> str:
+        parts: list[str] = [
+            p.group(0) for p in re.finditer(rf"{lit}|\b(?:{names})\b", m.group(0))
+        ]
+        if not any(p.endswith('"') for p in parts):
+            return m.group(0)  # macro beside macro with no literal: not this hazard
+        lits: list[str] = [macros[p] if p in macros else p for p in parts]
+        wide = any(x.startswith("L") for x in lits)
+        bodies = [x[x.index('"') + 1 : -1] for x in lits]
+        for left in bodies[:-1]:
+            if re.search(r"\\(?:x[0-9A-Fa-f]*|[0-7]{1,2})$", left):
+                return m.group(0)  # a hex/octal escape would absorb the next chars
+        return ("L" if wide else "") + '"' + "".join(bodies) + '"'
+
+    return unit.sub(fold, text)
+
+
 _PPV_ARG = re.compile(r"\b(IID_PPV_ARG|IID_NULL_PPV_ARG)\s*\(")
 
 

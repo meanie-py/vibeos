@@ -29,6 +29,7 @@ deliberate step once `check` is green on every arch.
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import json
 import os
@@ -1810,6 +1811,17 @@ def flip_cmake(cml: str, state: dict) -> str:
             f"${{{variant}_LIB}})\n"
         )
         text = text[: add.start()] + head + text[add.start() : end] + tail + text[end:]
+        if state.get("cpp_tus"):
+            # No C++ is compiled any more (the stub declares nothing), so the C++ standard
+            # library goes too: drwtsn32's `cppstl` pulled libmingwex in beside the Rust CRT
+            # startup, two `_MINGW_INSTALL_DEBUG_MATHERR`s, and the link guard refused it.
+            # Its std::string/vector/map are atl_rust::stl now.
+            text = re.sub(
+                rf"^(target_link_libraries\(\s*{re.escape(target)}\b[^)\n]*?)\s+cppstl\b",
+                r"\1",
+                text,
+                flags=re.M,
+            )
     return text
 
 
@@ -3146,6 +3158,132 @@ def _c_str_literals(path: Path) -> list[str]:
     return fixed
 
 
+_BARE_FN_ALIAS = re.compile(
+    r"^(pub\s+type\s+(\w+)\s*=\s*)((?:unsafe\s+)?extern\s+\"[^\"]+\"\s+fn\s*\([^;]*?\)(?:\s*->\s*[^;]+?)?)\s*;",
+    re.M | re.S,
+)
+
+
+def _option_fn_aliases(path: Path) -> list[str]:
+    """`typedef HRESULT (*LPFNCONSTRUCTOR)(...)` translated as a bare `fn` type: a C function
+    pointer may be NULL, a Rust `fn` may not, so every object holding one is invalid when
+    zero-initialized -- msctf's `CClassFactory__zeroed()` was rustc's `invalid_value` and a
+    runtime panic waiting (attrib.exe hit the same class: exit 0xe0525354). bindgen spells it
+    `Option<fn>`; so does this. Uses already written `Option<ALIAS>` are unwrapped, and call
+    sites are crate-repair's `option_fn_call` / `some_fn_item`."""
+    text = path.read_text()
+    names = [m.group(2) for m in _BARE_FN_ALIAS.finditer(text)]
+    if not names:
+        return []
+    text = _BARE_FN_ALIAS.sub(lambda m: f"{m.group(1)}Option<{m.group(3).strip()}>;", text)
+    for n in names:
+        text = re.sub(rf"\bOption\s*<\s*{n}\s*>", n, text)
+    path.write_text(text)
+    return names
+
+
+_IOB_INDEX = re.compile(
+    r"(?:core::ptr::addr_of_mut!\(\s*_iob\s*\[\s*(\d+)(?:\s+as\s+usize)?\s*\]\s*\)"
+    r"|&mut\s+_iob\s*\[\s*(\d+)(?:\s+as\s+usize)?\s*\])(?:\s+as\s+\*mut\s+FILE)?"
+)
+
+
+def _iob_streams(path: Path) -> int:
+    """`stdout` is `(&_iob[1])` in the CRT headers, and bindgen declares `_iob` as `[FILE; 0]`
+    (an extern array of unknown size): `addr_of_mut!(_iob[1])` is a compile-time
+    unconditional_panic, and a data import besides. The tree's spelling is the CRT accessor,
+    `__iob_func().add(1)` (resolve copies its declaration from tree consensus)."""
+    text = path.read_text()
+    new, n = _IOB_INDEX.subn(lambda m: f"__iob_func().add({m.group(1) or m.group(2)})", text)
+    if n:
+        path.write_text(new)
+    return n
+
+
+@functools.cache
+def _crt_exports() -> frozenset[str]:
+    """msvcrt.dll's export names, from its .spec (the C library every user-mode C++ app imports)."""
+    spec = REPO / "dll" / "win32" / "msvcrt" / "msvcrt.spec"
+    names = re.findall(r"^@\s+\w+(?:\s+-[^\s]+)*\s+([A-Za-z_]\w*)\(", spec.read_text(), re.M)
+    return frozenset(names)
+
+
+def _cxx_unexport_crt_overloads(path: Path) -> list[str]:
+    """Drop `#[no_mangle]` from a C++ free function that shares a CRT export's name.
+
+    drwtsn32 defines `int abort(FILE*, int)`: a C++ OVERLOAD, so its symbol is mangled and
+    the CRT's `abort()` is untouched. The assembler gives every non-static free function
+    `#[no_mangle]`, and an unmangled Rust `abort` takes over the CRT's for the whole image --
+    every panic and every C `abort()` would call drwtsn32's report writer. Calls inside the
+    crate resolve by Rust path, so nothing needs the bare symbol."""
+    text = path.read_text()
+    crt = _crt_exports()
+    done = []
+    for m in re.finditer(
+        r"#\[no_mangle\]\n((?:#\[[^\]]*\]\n)*pub\s+(?:unsafe\s+)?extern\s+\"\w+\"\s+fn\s+(\w+)\b)",
+        text,
+    ):
+        if m.group(2) in crt:
+            done.append(m.group(2))
+    for name in done:
+        text = re.sub(
+            rf"#\[no_mangle\]\n((?:#\[[^\]]*\]\n)*pub\s+(?:unsafe\s+)?extern\s+\"\w+\"\s+fn\s+{name}\b)",
+            "// A C++ overload of the CRT's name: mangled in C++, so not exported here.\n\\1",
+            text,
+            count=1,
+        )
+    if done:
+        path.write_text(text)
+    return done
+
+
+def _aw_extern_link_names(path: Path, source: Path) -> list[str]:
+    """`extern "system" { fn DefMDIChildProc(..); }` -> `#[link_name = "DefMDIChildProcW"]`.
+
+    The DECLARATION side of `_aw_export_names`: winuser.h makes `DefMDIChildProc` the W
+    function under UNICODE, so no import library exports the bare name. mmc_new's worker
+    declared it as the C++ spells it, and every arch failed the link on that one symbol.
+    Only aliases every built arch agrees on; an existing `#[link_name]` is left alone."""
+    from . import crate_fix as cf
+    from .macro_authority import MacroAuthorityError, identifier_aliases
+
+    text = path.read_text()
+    if "extern" not in text:
+        return []
+    try:
+        aliases = identifier_aliases(REPO, source.resolve())
+    except MacroAuthorityError:
+        return []
+    done: list[str] = []
+    out, pos = [], 0
+    for m in _EXTERN_BLOCK.finditer(text):
+        close = cf._matching_brace(text, m.end() - 1)
+        if close is None:
+            continue
+        body = text[m.end() : close]
+
+        def link(fm: re.Match) -> str:
+            attrs, lead, name = fm.group(1), fm.group(2), fm.group(3)
+            target = aliases.get(name)
+            if not target or target == name or "link_name" in attrs:
+                return fm.group(0)
+            done.append(f"{name} -> {target}")
+            return f'{attrs}{lead}#[link_name = "{target}"]\n{lead}fn {name}'
+
+        new_body = re.sub(
+            r"((?:[ \t]*#\[[^\]]*\]\n)*)([ \t]*)(?:pub(?:\([^)]*\))?\s+)?fn\s+(\w+)",
+            link,
+            body,
+        )
+        out.append(text[pos : m.end()] + new_body)
+        pos = close
+    if not done:
+        return []
+    out.append(text[pos:])
+    path.write_text("".join(out))
+    return done
+
+
 def _aw_export_names(path: Path, c_file: Path) -> list[str]:
     """`#[no_mangle] fn _tWinMain` -> `#[export_name = "wWinMain"]`.
 
@@ -3329,7 +3467,39 @@ def stage_integrate(stem: str) -> None:
         if report.kept_unprovided:
             unprovided[path.stem] = report.kept_unprovided
         print(f"integrate: {report.summary()}")
+        aliases = _option_fn_aliases(path)
+        if aliases:
+            changed += 1
+            print(f"integrate: {path.stem}: nullable fn-pointer typedef(s) as Option: {', '.join(aliases)}")
+        iob = _iob_streams(path)
+        if iob:
+            changed += 1
+            print(f"integrate: {path.stem}: {iob} `&_iob[N]` stream(s) -> __iob_func().add(N)")
+        if state.get("cppapp"):
+            unexported = _cxx_unexport_crt_overloads(path)
+            if unexported:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: C++ overload(s) of a CRT name kept module-private: "
+                    f"{', '.join(unexported)}"
+                )
         c_file = REPO / state["module_dir"] / f"{path.stem}.c"
+        source = c_file if c_file.is_file() else next(
+            (
+                REPO / t
+                for t in state.get("cpp_tus") or []
+                if Path(t).name.replace(".", "_") + "_h" == path.stem
+            ),
+            None,
+        )
+        if source is not None:
+            linked = _aw_extern_link_names(path, source)
+            if linked:
+                changed += 1
+                print(
+                    f"integrate: {path.stem}: SDK-aliased import(s) link the real name: "
+                    f"{', '.join(linked)}"
+                )
         if c_file.is_file():
             exported = _aw_export_names(path, c_file)
             if exported:
