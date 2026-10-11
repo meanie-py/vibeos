@@ -193,3 +193,16 @@ def test_a_split_signature_does_not_dump_bodies_into_the_preamble(tmp_path):
     assert {"Top", "Left", "After"} <= {f.name for f in scan.functions}
     assert "return a + 1" not in scan.preamble_text
     assert scan.preamble_swallowed_functions == 0
+
+
+def test_a_template_argument_keeps_its_own_pointer():
+    """cleanmgr: `CAtlList<CCleanupHandler *>` is a list of pointers; counting every `*` in the
+    string made it `*mut CAtlList<CCleanupHandler >`, a pointer to a list of objects."""
+    from rustconv.cpp_core import c_type_to_rust
+
+    assert c_type_to_rust("CAtlList<CCleanupHandler *>") == "CAtlList<*mut CCleanupHandler>"
+    assert c_type_to_rust("CSimpleArray<int *> *") == "*mut CSimpleArray<*mut i32>"
+    assert c_type_to_rust("const CComPtr<IFoo> &") == "&CComPtr<IFoo>"
+    assert c_type_to_rust("CSimpleMap<UINT, const WCHAR *>") == "CSimpleMap<UINT, *const WCHAR>"
+    assert c_type_to_rust("ATL::CAtlList<ns::X*>") == "CAtlList<*mut X>"
+    assert c_type_to_rust("CFoo<3>") == "CFoo<3>"

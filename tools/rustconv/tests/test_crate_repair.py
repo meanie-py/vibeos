@@ -3052,3 +3052,119 @@ def test_an_uninferable_constant_cast_takes_the_siblings_type():
         constants={"MK_LBUTTON": 1},
     )
     assert [e.replacement for e in plan.edits] == ["WPARAM"]
+
+
+def test_a_guid_comparison_is_is_equal_guid():
+    """cleanmgr: `*riid == IID_IUnknown` -- C++'s guiddef.h operator==, i.e. IsEqualGUID."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"if *riid == IID_IUnknown || *riid != IID_X { }\n"
+    diags = []
+    for op, rhs in ((b"==", b"IID_IUnknown"), (b"!=", b"IID_X")):
+        o = src.index(op)
+        lhs_at = src.rindex(b"*riid", 0, o)
+        r = src.index(rhs, o)
+        diags.append(
+            _diag(
+                f"binary operation `{op.decode()}` cannot be applied to type `_GUID`",
+                code="E0369",
+                spans=[
+                    _span("src/a.rs", lhs_at, lhs_at + 5, label="_GUID"),
+                    _span("src/a.rs", r, r + len(rhs), label="_GUID"),
+                    _span("src/a.rs", o, o + 2, is_primary=True),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "!IsEqualGUID!(&(*riid), &(IID_X))",
+        "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
+    ]
+
+
+def test_a_heap_ptr_where_a_pointer_is_wanted_is_its_held_pointer():
+    """cleanmgr: `SetWindowTextW((*h).wszBtnText)` on a CComHeapPtr<WCHAR> field."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"w.SetWindowTextW((*h).wszBtnText);\n"
+    a = src.index(b"(*h)")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b");"),
+                is_primary=True,
+                label="expected `*const u16`, found `CHeapPtr<u16, CComAllocator>`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*h).wszBtnText.m_pData"]
+
+
+def test_a_resource_id_format_is_found_through_the_macro_expansion():
+    """cleanmgr: rustc reports `atl_format!(s, IDS_X, ..)`'s mismatch at the macro's own `$fmt`
+    use inside atlclasses-rust; the edit belongs at the outermost invocation in the module."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    atl_format!(Caption, IDS_CALCULATING, s.GetString());\n"
+    at = src.index(b"atl_format!")
+    call = _span("src/a.rs", at, src.index(b";"))
+    inner = _span(
+        "/x/atlclasses-rust/src/lib.rs",
+        7798,
+        7803,
+        is_primary=True,
+        label="expected `*const u16`, found `u32`",
+    )
+    inner["expansion"] = {"span": {**_span("/x/lib.rs", 6821, 6983), "expansion": {"span": call}}}
+    d = _diag("mismatched types", spans=[inner])
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [(e.replacement, e.file_name, e.byte_start) for e in plan.edits] == [
+        ("atl_format_id!", "src/a.rs", at)
+    ]
+
+
+def test_an_interface_method_on_a_com_ptr_goes_through_the_pointer():
+    """cleanmgr: `self.m_spProgress.SetTitle(t)` -- C++'s `m_spProgress->SetTitle(t)`."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_spProgress.SetTitle(t);\n"
+    at = src.index(b"SetTitle")
+    d = _diag(
+        "no method named `SetTitle` found for struct `atl_rust::CComPtr<types_arch::"
+        "IProgressDialog>` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"SetTitle"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*(*this_).m_spProgress.p)"]
+
+
+def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
+    """cleanmgr: `m_HandlerListControl = GetDlgItem(IDC_HANDLERLIST)` -- CWindow's
+    operator=(HWND)."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_ctl = (*this_).__base0.GetDlgItem(7);\n"
+    a = src.index(b"(*this_).__base0")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b";"),
+                is_primary=True,
+                label="expected `CWindow`, found `*mut HWND__`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == [
+        "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
+    ]

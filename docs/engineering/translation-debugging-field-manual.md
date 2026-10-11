@@ -14080,6 +14080,19 @@ win32k is the largest single flip surface and its failures are stereotyped:
 - **arm64 0xF4 winlogon death right after `[WIN32K] shell ready`** — a distinct, historical
   shape worth recognising.
 
+### A dialog procedure's WM_NOTIFY answer is lost unless it goes to DWLP_MSGRESULT
+**Symptom:** a property page's `PSN_APPLY` handler returns `PSNRET_INVALID` (the user said
+"No") and the sheet applies anyway. More generally, any `WM_NOTIFY` result a dialog returns,
+such as `LVN_*` vetoes or `PSN_*` answers, has no effect.
+**Cause:** user32's `DefDlgProc` uses a dialog procedure's own return value only for
+`WM_COMPAREITEM`, `WM_VKEYTOITEM`, `WM_CHARTOITEM`, `WM_QUERYDRAGICON` and `WM_INITDIALOG`
+(`DEFDLG_Proc`). For every other message the answer is `GetWindowLongPtr(DWLP_MSGRESULT)`.
+atlclasses-rust's dialog procedure had a misremembered "return directly" list that included
+WM_NOTIFY (0x4E), so it never stored the result.
+**Fix:** do what ReactOS ATL's `CDialogImplBaseT::DialogProc` does for a handled message:
+`SetWindowLongPtr(DWLP_MSGRESULT, result)` and also return it (`atlclasses-rust/src/win.rs`
+`dialog_message`). A hand-written dialog procedure anywhere in the tree has the same trap.
+
 ### Driver settle delays are pure loss in a VM `[§9.22]`
 Hardware drivers inherited from real-metal code are full of fixed settle delays. A boot phase
 that is "slow" with zero serial and no CPU is the shape. Gate them on the driver's **own** VM

@@ -299,6 +299,8 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
         "pcwszStatus: LPCWSTR) -> HRESULT" in rs
     )
     assert "AddRef: Some(CCallBack__IEmptyVolumeCacheCallBack_AddRef)" in rs
+    # REFIID is a reference in the C++ method and a pointer in the slot: reborrowed.
+    assert ".QueryInterface(&*riid, ppvObject) }" in rs
     assert "(*this).__base0.lpVtbl = &CCallBack__IEmptyVolumeCacheCallBack_VTBL" in rs
     # the bodies are plain methods (the COM vtable is their dispatch)
     text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
@@ -703,6 +705,37 @@ def test_an_object_macro_over_a_callers_local_is_inlined(tmp_path):
 
 
 @pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_token_pasted_local_is_left_to_the_macro(tmp_path):
+    """cleanmgr: a `##`-pasted name is spelled in clang's `<scratch space>`, which is no
+    file and no `#define` line; the inliner must leave it alone, not open it."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define V(n) v##n\nclass P { public: int Go(int v1); };\n"
+        "int P::Go(int v1) { return V(1); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ return V(1); }"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
 def test_a_ctor_init_through_a_macro_call_keeps_its_arguments(tmp_path):
     """selectionmodel.cpp's `m_rgbBack(RGB(255, 255, 255))` was lowered as `RGB`."""
     import json
@@ -814,3 +847,85 @@ def test_a_field_of_a_plain_struct_base_goes_through_the_base(tmp_path):
     ex.lower_pending()
     (go,) = [m.lowered for m in ex.model.classes["S"].methods if m.name == "Go"]
     assert go == "{ return this_->m_rc.__base0.left + this_->m_rc.Width(); }"
+
+
+def _atl_model(*classes):
+    cwnd = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    cwnd.fields = [Field("m_hWnd", "HWND")]
+    for c in (cwnd, *classes):
+        _assign_names(c)
+    m = ModuleModel()
+    m.classes = {c.qualified: c for c in (cwnd, *classes)}
+    return m
+
+
+def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
+    """cleanmgr's CCleanMgrProperties : CPropertyPageImpl<T>: Create builds the page, the
+    class's OnApply overrides the trait default, and CHAIN_MSG_MAP reaches the base's map."""
+    page = ClassModel("P", "P", "struct", "p.cpp")
+    page.bases = [Base("CPropertyPageImpl<P>", "public")]
+    page.constants = [("IDD", 101)]
+    page.methods = [_m("OnApply", ret="int", body=("p.cpp", 0, 1), lowered="{ return 0; }")]
+    page.msg_map = parse_msg_map(
+        "BEGIN_MSG_MAP(P)\n CHAIN_MSG_MAP(CPropertyPageImpl<P>)\nEND_MSG_MAP()"
+    )
+    rs = cpp_app.render_classes(_atl_model(page))
+    assert "pub __base0: CWindow," in rs
+    assert "atl_rust::win::create_property_page(self as *mut Self, 101 as u16" in rs
+    assert "impl atl_rust::win::PropertyPage for P {" in rs
+    assert "unsafe fn on_apply(&mut self) -> i32 { self.OnApply() as i32 }" in rs
+    # A hook the class does not declare keeps the C++ base's default (the trait's).
+    assert "on_set_active" not in rs
+    assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
+
+
+def test_an_exe_module_gets_win_main_and_its_overrides(tmp_path, monkeypatch):
+    """cleanmgr's CCleanMgrModule : CAtlExeModuleT<T> overrides ParseCommandLine and Run;
+    the rest (InitializeCom, the message loop) stay ATL's."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("class M : public CAtlExeModuleT<M> {};\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    mod.methods = [
+        _m("ParseCommandLine", params=[("l", "LPCTSTR"), ("hr", "HRESULT *")], ret="bool"),
+        _m("Run", params=[("n", "int")], ret="HRESULT"),
+    ]
+    rs = cpp_app.render_classes(_atl_model(mod))
+    assert "pub __base0: atl_rust::exe::CAtlExeModule," in rs
+    assert "atl_rust::exe::win_main(self as *mut Self, show as i32)" in rs
+    assert "impl atl_rust::exe::ExeModule for M {" in rs
+    assert (
+        "unsafe fn parse_command_line(&mut self, cmd_line: *const u16, ret_code: *mut i32) "
+        "-> bool { (self.ParseCommandLine(cmd_line as _, ret_code as _)) as i32 != 0 }"
+    ) in rs
+    assert "unsafe fn run(&mut self, show: i32) -> i32 { self.Run(show as _) as i32 }" in rs
+    assert "initialize_com" not in rs
+
+
+def test_an_exe_module_with_a_com_object_map_is_refused(tmp_path, monkeypatch):
+    """atl_rust registers no class objects: a module that declares some must not get glue
+    that silently skips them."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("OBJECT_ENTRY_AUTO(CLSID_X, CX)\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    with pytest.raises(cpp_app.CppAppError, match="COM object map"):
+        cpp_app.render_classes(_atl_model(mod))
+
+
+def test_a_callback_static_member_keeps_the_system_abi():
+    """cleanmgr: `static BOOL CALLBACK EnumSingleInstanceCallback(HWND, LPARAM)` is handed to
+    EnumWindows; assembling it as a plain Rust fn made the call site a type error."""
+    c = ClassModel("M", "M", "class", "m.cpp")
+    c.methods = [
+        _m("Cb", params=[("h", "HWND"), ("l", "LPARAM")], ret="BOOL", static=True, abi="system"),
+        _m("Plain", static=True),
+    ]
+    _assign_names(c)
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    out = cpp_app.assemble(
+        "unsafe fn M__Cb(h: HWND, l: LPARAM) -> BOOL { 1 }\nunsafe fn M__Plain() {}\n", m
+    )
+    assert 'pub unsafe extern "system" fn Cb(h: HWND, l: LPARAM) -> BOOL' in out
+    assert "pub unsafe fn Plain()" in out

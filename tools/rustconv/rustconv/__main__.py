@@ -20,6 +20,7 @@ from . import (
     atl_contract,
     callout_annotate,
     candidate_oracle,
+    com_vtables,
     cpp_app,
     cpp_com,
     cpp_core,
@@ -3296,9 +3297,13 @@ def cmd_translate(args):
         if cpp_class_target:
             # Shared ATL types (CStringW, CComPtr, ...) from atl-rust: the API only, per
             # worker that names one. A --local-raii lowering of the same name wins.
+            crate = getattr(rustconv_target, "output_crate", None)
+            com_methods = crate is not None and com_vtables.island_has_methods(crate / "src")
             for dep in sorted_deps:
                 if not any(re.search(rf"\b{n}\b", dep.body_text) for n in local_raii_impls):
-                    deterministic_contracts[dep.name] += atl_contract.contract(dep.body_text)
+                    deterministic_contracts[dep.name] += atl_contract.contract(
+                        dep.body_text, com_methods=com_methods
+                    )
         if cpp_com_cls is not None:
             container_fields = [
                 state

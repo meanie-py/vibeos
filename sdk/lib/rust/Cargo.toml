@@ -502,6 +502,7 @@ members = [
     "servman-rust",
     "net-rust",
     "reg-rust",
+    "cleanmgr-rust",
     "rpcss-rust",
     "srvsvc-rust",
     "netlogon-rust",

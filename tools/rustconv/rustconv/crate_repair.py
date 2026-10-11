@@ -2467,6 +2467,83 @@ def _object_deref_rule(
     )
 
 
+def _guid_eq_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0369 `riid == IID_IUnknown` on a GUID: C++ compares with guiddef.h's
+    `operator==(REFGUID, REFGUID)`, which is `IsEqualGUID` -- 16 bytes, memcmp. rustc names
+    both operands (secondary spans) around the operator (primary)."""
+    if (diagnostic.get("code") or {}).get("code") != "E0369":
+        return [], [], False
+    m = re.search(
+        r"binary operation `(==|!=)` cannot be applied to type `(?:_GUID|GUID|IID|CLSID)`",
+        str(diagnostic.get("message") or ""),
+    )
+    if m is None:
+        return [], [], False
+    spans = diagnostic.get("spans") or []
+    ops = sorted(
+        (s for s in spans if not s.get("is_primary")), key=lambda s: int(s.get("byte_start") or 0)
+    )
+    if len(ops) != 2 or ops[0].get("file_name") != ops[1].get("file_name"):
+        return [], [], False
+    file_name = str(ops[0].get("file_name") or "")
+    data = load(file_name)
+    if data is None:
+        return [], [], False
+    a0, a1 = int(ops[0]["byte_start"]), int(ops[0]["byte_end"])
+    b0, b1 = int(ops[1]["byte_start"]), int(ops[1]["byte_end"])
+    between = data[a1:b0].decode("utf-8", "replace").strip()
+    if between != m.group(1):
+        return [], [], False
+    lhs = data[a0:a1].decode("utf-8", "replace")
+    rhs = data[b0:b1].decode("utf-8", "replace")
+    neg = "!" if m.group(1) == "!=" else ""
+    note = "rustc E0369: C++ compares GUIDs with guiddef.h's operator==, i.e. IsEqualGUID"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF,
+                file_name,
+                data,
+                a0,
+                b1,
+                f"{neg}IsEqualGUID!(&({lhs}), &({rhs}))",
+                note,
+                ops[0],
+                ctx,
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _heap_ptr_conversion_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`SetWindowTextW((*h).wszBtnText)` where the field is a `CComHeapPtr<WCHAR>`: ATL's
+    `operator T*()` converts it implicitly; in Rust that is the held pointer, `m_pData`."""
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    label = str(span.get("label") or "")
+    if not re.fullmatch(r"expected `\*(?:const|mut) [\w:]+`, found `CHeapPtr<[^`]*>`", label):
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    if not re.fullmatch(r"[\w.()*\[\]]+", text):
+        return [], [], False
+    simple = re.fullmatch(r"[\w.]+|\([^()]*\)(?:\.\w+)*", text) is not None
+    repl = f"{text}.m_pData" if simple else f"({text}).m_pData"
+    note = "rustc: a CHeapPtr where a pointer is expected; ATL converts with operator T*()"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, repl, note, span, ctx)],
+        [],
+        True,
+    )
+
+
 def _atl_format_id_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -2478,6 +2555,33 @@ def _atl_format_id_rule(
     edits: list[Edit] = []
     for span, expected, found in _mismatch_sites(diagnostic):
         if expected.replace(" ", "") != "*constu16" or found not in INT_PRIMITIVES | {"integer"}:
+            continue
+        outer = span
+        while isinstance(outer.get("expansion"), Mapping):
+            outer = outer["expansion"].get("span") or {}
+        if outer is not span:
+            # atl_format! binds each argument through a `match`, so rustc reports the
+            # mismatch at the macro's own `$fmt` use, inside atlclasses-rust. The site to
+            # edit is the outermost invocation in the module: `atl_format!(s, IDS_X, ..)`.
+            file_name = str(outer.get("file_name") or "")
+            data = load(file_name)
+            name_at = int(outer.get("byte_start") or 0)
+            if data is None or not data[name_at:].startswith(b"atl_format!("):
+                continue
+            edits.append(
+                _simple_edit(
+                    RULE_OBJECT_DEREF,
+                    file_name,
+                    data,
+                    name_at,
+                    name_at + len(b"atl_format!"),
+                    "atl_format_id!",
+                    "the format argument is a string-table id: "
+                    "CString::Format(UINT nFormatID, ...)",
+                    dict(outer),
+                    ctx,
+                )
+            )
             continue
         file_name = str(span.get("file_name") or "")
         data = load(file_name)
@@ -2688,6 +2792,67 @@ def _raw_receiver_rule(
         [
             _simple_edit(
                 RULE_OBJECT_DEREF, file_name, data, recv, dot, f"(*{text})", note, span, ctx
+            )
+        ],
+        [],
+        True,
+    )
+
+
+def _hwnd_to_cwindow_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`m_ctl = GetDlgItem(id)` / `CWindow w = GetDlgItem(id)`: C++ converts the HWND with
+    `CWindow(HWND)` / `operator=(HWND)`, both of which only set `m_hWnd`. cppapp generates
+    that constructor as `CWindow__make_0`."""
+    got = _primary_bytes(diagnostic, load)
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    if str(span.get("label") or "") != "expected `CWindow`, found `*mut HWND__`":
+        return [], [], False
+    text = data[start:end].decode("utf-8", "replace")
+    note = "rustc: an HWND where a CWindow is expected; C++ converts with CWindow(HWND)"
+    repl = f"CWindow__make_0({text})"
+    return (
+        [_simple_edit(RULE_OBJECT_DEREF, file_name, data, start, end, repl, note, span, ctx)],
+        [],
+        True,
+    )
+
+
+def _com_ptr_receiver_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """E0599 an interface method called on a `CComPtr<IFoo>`: C++'s `sp->SetTitle(..)` goes
+    through `operator->` to the interface, whose methods (one per vtable slot, generated by
+    rustconv.com_vtables) are on `IFoo`. CComPtr deliberately has no Deref to the interface,
+    so the call is written out: `(*sp.p).SetTitle(..)`."""
+    if (diagnostic.get("code") or {}).get("code") != "E0599":
+        return [], [], False
+    m = re.search(
+        r"no method named `(\w+)` found for struct `(?:atl_rust::)?CComPtr<",
+        str(diagnostic.get("message") or ""),
+    )
+    got = _primary_bytes(diagnostic, load) if m else None
+    if got is None:
+        return [], [], False
+    span, file_name, data, _masked, start, end = got
+    assert m is not None  # `got` is None without it
+    if data[start:end].decode("utf-8", "replace") != m.group(1):
+        return [], [], False
+    dot = data.rfind(b".", 0, start)
+    if dot < 0 or data[dot + 1 : start].strip():
+        return [], [], False
+    recv = _receiver_start(data, dot)
+    if recv is None:
+        return [], [], False
+    text = data[recv:dot].decode("utf-8", "replace").strip()
+    note = "rustc E0599: CComPtr's operator-> yields the interface, whose method this is"
+    return (
+        [
+            _simple_edit(
+                RULE_OBJECT_DEREF, file_name, data, recv, dot, f"(*{text}.p)", note, span, ctx
             )
         ],
         [],
@@ -5069,6 +5234,10 @@ _RULE_TABLE: dict[
         _ref_compound_assign_rule,
         _zero_constant_pointer_rule,
         _int_float_arith_rule,
+        _guid_eq_rule,
+        _heap_ptr_conversion_rule,
+        _com_ptr_receiver_rule,
+        _hwnd_to_cwindow_rule,
     ),
     RULE_CONST_OPERAND: _constant_operand_rule,
 }
