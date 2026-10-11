@@ -292,10 +292,6 @@ unsafe extern "C" fn GetDirection(x0: LONG, y0: LONG, x1: LONG, y1: LONG) -> DIR
 
 unsafe extern "C" fn RestrictDrawDirection(dir: DIRECTION, x0: LONG, y0: LONG, x1: *mut LONG, y1: *mut LONG) {
     match dir {
-        NO_DIRECTION | _ => {
-            return;
-        }
-
         DIRECTION_HORIZONTAL => {
             *y1 = y0;
         }
@@ -310,6 +306,10 @@ unsafe extern "C" fn RestrictDrawDirection(dir: DIRECTION, x0: LONG, y0: LONG, x
 
         DIRECTION_DIAGONAL_RIGHT_UP => {
             *x1 = x0 - (*y1 - y0);
+        }
+
+        NO_DIRECTION | _ => {
+            return;
         }
     }
 }

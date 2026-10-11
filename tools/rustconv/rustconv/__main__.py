@@ -4883,7 +4883,18 @@ def cmd_translate(args):
             rust_sources=_islands,
             c_headers=sorted(c_file.parent.glob("*.h")),
         )
-        new_vtbls = [t for t in vtbls if not re.search(rf"\b{re.escape(t.name)}\s*:", stitched)]
+        # A real `static` item only: the preamble's own `// static IShellPropSheetExtVtbl
+        # efvtIShellPropSheetExt: skipped` note matched a bare `NAME:` and deskadp shipped all
+        # three of its COM vtables missing.
+        new_vtbls = [
+            t
+            for t in vtbls
+            if not re.search(
+                rf"^\s*(?:pub(?:\([^)]*\))?\s+)?static\s+(?:mut\s+)?{re.escape(t.name)}\s*:",
+                stitched,
+                re.M,
+            )
+        ]
         if new_vtbls:
             body = "\n\n".join(t.render(c_name=c_file.name) for t in new_vtbls)
             stitched += f"\n\n// COM vtable tables — generated from {c_file.name} by vtbl_gen.py\n"

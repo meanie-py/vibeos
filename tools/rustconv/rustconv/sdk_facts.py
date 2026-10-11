@@ -123,6 +123,11 @@ class Resolution:
 _C_SHOW_RE = re.compile(
     r"probe\.c:(\d+):\d+: error: duplicate case value(?: '(-?\d+)'|: .*? both equal '(-?\d+)')"
 )
+# Any other error on a name's CASE line means clang recovered rather than evaluated. rpcss's
+# `#define IROT_PROTSEQ {'n','c','a','l','r','p','c',0}` (an array initializer) parsed as
+# `({...})` with "expected ';' after expression", and the recovery's comma value came back as
+# a duplicate case value of 0: `IROT_PROTSEQ: i32 = 0` in the facts, read as a protseq.
+_C_ANY_ERROR_RE = re.compile(r"probe\.c:(\d+):\d+: error: (.*)")
 _C_TYPE_RE = re.compile(
     r"probe\.c:(\d+):\d+: error: initializing 'struct rcv_t' with an expression of "
     r"incompatible type '([^']+)'(?: \(aka '([^']+)'\))?"
@@ -220,6 +225,14 @@ def _resolve_one_arch(
                 if odd and 0 <= index < len(names):
                     sugar, canon = match.group(2).strip(), (match.group(3) or "").strip()
                     types.setdefault(names[index], f"{sugar}|{canon}" if canon else sugar)
+        for match in _C_ANY_ERROR_RE.finditer(proc.stderr):
+            index, odd = divmod(int(match.group(1)) - _C_FIRST_NAME_LINE, 2)
+            if (
+                not odd
+                and 0 <= index < len(names)
+                and not match.group(2).startswith("duplicate case value")
+            ):
+                values.pop(names[index], None)
         rejected = {n: "not an integer constant expression" for n in names if n not in values}
         return values, rejected
     for match in _SHOW_RE.finditer(proc.stderr):

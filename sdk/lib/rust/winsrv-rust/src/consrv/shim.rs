@@ -8,7 +8,7 @@
 //!
 //! Nothing here is novel logic; it is a faithful transliteration of the C shim:
 //! interlocked ops (atomics), CONTAINING_RECORD (pointer-minus-offset),
-//! InitializeObjectAttributes (struct init), IS_FULL_WIDTH (calls the still-C
+//! InitializeObjectAttributes (struct init), IS_FULL_WIDTH (calls the shared wcwidth-rust
 //! `mk_wcwidth_cjk`), IsListEmpty, and the IShellLinkW / IPersistFile COBJMACRO
 //! dispatchers (call through the COM object's vtbl).
 
@@ -95,10 +95,7 @@ pub unsafe extern "system" fn InitializeObjectAttributes(
     (*oa).security_quality_of_service = core::ptr::null_mut();
 }
 
-// `mk_wcwidth_cjk` is still C (consrv/frontends/wcwidth.c, cdecl).
-extern "C" {
-    fn mk_wcwidth_cjk(ucs: WCHAR) -> i32;
-}
+use wcwidth_rust::mk_wcwidth_cjk;
 
 /// `IS_FULL_WIDTH(wch)` — wide iff >= 0x0080 and CJK width 2.
 /// i386 `_IS_FULL_WIDTH@4` / amd64 `IS_FULL_WIDTH`.

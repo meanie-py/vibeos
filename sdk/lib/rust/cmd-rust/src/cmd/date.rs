@@ -40,14 +40,14 @@ static mut awMonths: [[WORD; 13]; 2] = [
 
 unsafe extern "C" fn PromptDateString() {
     match nDateFormat {
-        0 | _ => {
-            ConOutResPrintf!(STRING_DATE_HELP1, cDateSeparator as core::ffi::c_uint, cDateSeparator as core::ffi::c_uint);
-        }
         1 => {
             ConOutResPrintf!(STRING_DATE_HELP2, cDateSeparator as core::ffi::c_uint, cDateSeparator as core::ffi::c_uint);
         }
         2 => {
             ConOutResPrintf!(STRING_DATE_HELP3, cDateSeparator as core::ffi::c_uint, cDateSeparator as core::ffi::c_uint);
+        }
+        0 | _ => {
+            ConOutResPrintf!(STRING_DATE_HELP1, cDateSeparator as core::ffi::c_uint, cDateSeparator as core::ffi::c_uint);
         }
     }
 }
