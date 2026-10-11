@@ -97,7 +97,7 @@ pub unsafe extern "system" fn NtCreateEventPair(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             EventPairHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -153,7 +153,7 @@ pub unsafe extern "system" fn NtOpenEventPair(
     let PreviousMode: KPROCESSOR_MODE = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             EventPairHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),

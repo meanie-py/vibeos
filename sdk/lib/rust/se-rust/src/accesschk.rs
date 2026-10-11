@@ -927,7 +927,7 @@ unsafe fn SepAccessCheck(
         Ok(l) => l,
         Err(s) => return s,
     };
-    if let Err(s) = probe_user_buffer(PrivilegeSet as *const core::ffi::c_void, CapturedPrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+    if let Err(s) = probe_user_buffer_write(PrivilegeSet as *const core::ffi::c_void, CapturedPrivilegeSetLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
         return s;
     }
 
@@ -936,17 +936,17 @@ unsafe fn SepAccessCheck(
             return STATUS_INVALID_PARAMETER;
         }
 
-        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
-        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>() * ObjectTypeListLength as usize, core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
     } else {
-        if let Err(s) = probe_user_buffer(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(GrantedAccess as *const core::ffi::c_void, core::mem::size_of::<ACCESS_MASK>(), core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
-        if let Err(s) = probe_user_buffer(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>(), core::mem::size_of::<ULONG>(), PreviousMode) {
+        if let Err(s) = probe_user_buffer_write(AccessStatus as *const core::ffi::c_void, core::mem::size_of::<NTSTATUS>(), core::mem::size_of::<ULONG>(), PreviousMode) {
             return s;
         }
     }

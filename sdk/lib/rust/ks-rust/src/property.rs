@@ -289,7 +289,7 @@ pub unsafe extern "C" fn KspPropertyHandler(
         }
 
         if (*IoStack).Parameters.DeviceIoControl.OutputBufferLength != 0 {
-            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
                 (*Irp).UserBuffer,
                 (*IoStack).Parameters.DeviceIoControl.OutputBufferLength as usize,
                 1,
