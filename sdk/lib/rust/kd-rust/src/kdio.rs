@@ -668,8 +668,20 @@ pub unsafe extern "system" fn KdpDebugLogInit(
 // ============================================================================
 
 unsafe extern "system" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
+    // rtl-diag's port lock as well as our own: kernel-mode DebugPrint writes the same
+    // UART directly, and without one lock shared by both paths a user-mode print and a
+    // kernel print came out interleaved byte by byte (the OptiPlex's late-boot logs).
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    extern "C" {
+        fn RtlpAcquireDebugPort(Flags: *mut usize) -> u8;
+        fn RtlpReleaseDebugPort(Flags: usize, Held: u8);
+    }
     let mut pch: PCCH = String;
     let OldIrql: KIRQL = KdbpAcquireLock(core::ptr::addr_of_mut!(KdpSerialSpinLock));
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let mut port_flags = 0usize;
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    let port_held = RtlpAcquireDebugPort(&mut port_flags);
 
     while pch < String.add(Length as usize) && *pch != 0 {
         if *pch == b'\n' as CHAR {
@@ -679,6 +691,8 @@ unsafe extern "system" fn KdpSerialPrint(String: PCCH, Length: ULONG) {
         pch = pch.add(1);
     }
 
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    RtlpReleaseDebugPort(port_flags, port_held);
     KdbpReleaseLock(core::ptr::addr_of_mut!(KdpSerialSpinLock), OldIrql);
 }
 

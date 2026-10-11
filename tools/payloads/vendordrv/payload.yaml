@@ -1,0 +1,19 @@
+# vendordrv — a vendor's Windows driver package, installed by our PnP the way Windows would:
+# its INF and the files it copies go into reactos/inf/, where newdev finds a matching INF
+# and copies from beside it. The .sys and .dll are also pre-placed in system32\drivers and
+# system32, since the live image's system volume is read-only and the copy itself fails. Vendor binaries are not ours to commit, so the files come
+# from a host directory named at build time:
+#   VIBEOS_VENDOR_DRIVERS=<dir with the .inf, .sys, ...> \
+#   VIBEOS_PAYLOAD=ndisprobe,vendordrv ./vibeos-cli build --arch amd64
+# An `ndisprobe.txt` in that directory ("arp <target ip> <sender ip>") goes to
+# reactos/bin/, pointing ndisprobe's ARP at a real LAN instead of QEMU's slirp.
+name: vendordrv
+description: stage a vendor driver package (INF + files) from VIBEOS_VENDOR_DRIVERS
+
+binaries: []
+binaries_from: tools/payloads/vendordrv/stage.py
+
+test:
+  launch_marker: "[NDISPROBE] done"
+  pass_marker: "[NDISPROBE] done VERDICT=PASS"
+  launch_drain_secs: 600

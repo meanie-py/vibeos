@@ -51,6 +51,56 @@ unsafe fn _DbgPortWrite(Port: USHORT, Value: UCHAR) {
 #[no_mangle]
 pub static mut RtlpDebugConsolePort: u16 = 0x3F8;
 
+/// One writer at a time on the debug UART. Kernel-mode DebugPrint below writes the port
+/// itself, and kd's serial print (kd-rust `KdpSerialPrint`, which takes this too) writes
+/// it for user-mode prints; with no shared lock a print preempted mid-string came out
+/// interleaved byte by byte with the other path. QEMU drains its UART instantly, so the
+/// window is tiny there; the OptiPlex's real 16550 at 115200 made late-boot logs
+/// unreadable. Taken with interrupts off; the spin is bounded, so a holder parked by a
+/// bugcheck's freeze (or an NMI print on the holder's own CPU) costs garbled output,
+/// never a hang.
+#[no_mangle]
+pub static RtlpDebugPortLock: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+/// Interrupts off, then the port lock (bounded). Stores the flags to restore in `*Flags`
+/// and returns whether the lock was taken; pass both to RtlpReleaseDebugPort.
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn RtlpAcquireDebugPort(Flags: *mut usize) -> u8 {
+    use core::sync::atomic::Ordering;
+    let flags: usize;
+    #[cfg(target_arch = "x86_64")]
+    core::arch::asm!("pushfq", "pop {0}", "cli", out(reg) flags);
+    #[cfg(target_arch = "x86")]
+    core::arch::asm!("pushfd", "pop {0}", "cli", out(reg) flags);
+    let mut spins = 0u32;
+    while RtlpDebugPortLock
+        .compare_exchange_weak(0, 1, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        spins += 1;
+        // ~ a few hundred ms: far longer than any one print takes at 115200.
+        if spins > 50_000_000 {
+            *Flags = flags;
+            return 0;
+        }
+        core::hint::spin_loop();
+    }
+    *Flags = flags;
+    1
+}
+
+#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[no_mangle]
+pub unsafe extern "C" fn RtlpReleaseDebugPort(flags: usize, held: u8) {
+    if held != 0 {
+        RtlpDebugPortLock.store(0, core::sync::atomic::Ordering::Release);
+    }
+    if flags & 0x200 != 0 {
+        core::arch::asm!("sti");
+    }
+}
+
 #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
 unsafe fn console_port() -> USHORT {
     core::ptr::read_volatile(core::ptr::addr_of!(RtlpDebugConsolePort))
@@ -68,6 +118,8 @@ pub unsafe extern "system" fn DebugPrint(
         core::arch::asm!("mov {0:x}, cs", out(reg) cs);
         if (cs & 3) == 0 {
             let port = console_port();
+            let mut flags = 0usize;
+            let held = RtlpAcquireDebugPort(&mut flags);
             let lcr = _DbgPortRead(port + 3);
             if lcr & 0x80 != 0 {
                 _DbgPortWrite(port + 3, lcr & 0x7F);
@@ -78,6 +130,7 @@ pub unsafe extern "system" fn DebugPrint(
                 _DbgPortWrite(port, *(*DebugString).Buffer.offset(i as isize) as UCHAR);
                 i += 1;
             }
+            RtlpReleaseDebugPort(flags, held);
             return STATUS_SUCCESS as ULONG;
         }
     }
