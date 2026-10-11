@@ -103,6 +103,8 @@ class Fact:
     #: the C type clang reports, typedef name kept: `NTSTATUS|long` (sugar|canonical) or
     #: `int` when there is no sugar. None if not probed.
     c_type: str | None = None
+    #: a FLOATING constant's literal, from the preprocessor (value is then meaningless).
+    literal: str | None = None
 
 
 @dataclass
@@ -121,6 +123,11 @@ class Resolution:
 _C_SHOW_RE = re.compile(
     r"probe\.c:(\d+):\d+: error: duplicate case value(?: '(-?\d+)'|: .*? both equal '(-?\d+)')"
 )
+# Any other error on a name's CASE line means clang recovered rather than evaluated. rpcss's
+# `#define IROT_PROTSEQ {'n','c','a','l','r','p','c',0}` (an array initializer) parsed as
+# `({...})` with "expected ';' after expression", and the recovery's comma value came back as
+# a duplicate case value of 0: `IROT_PROTSEQ: i32 = 0` in the facts, read as a protseq.
+_C_ANY_ERROR_RE = re.compile(r"probe\.c:(\d+):\d+: error: (.*)")
 _C_TYPE_RE = re.compile(
     r"probe\.c:(\d+):\d+: error: initializing 'struct rcv_t' with an expression of "
     r"incompatible type '([^']+)'(?: \(aka '([^']+)'\))?"
@@ -218,6 +225,14 @@ def _resolve_one_arch(
                 if odd and 0 <= index < len(names):
                     sugar, canon = match.group(2).strip(), (match.group(3) or "").strip()
                     types.setdefault(names[index], f"{sugar}|{canon}" if canon else sugar)
+        for match in _C_ANY_ERROR_RE.finditer(proc.stderr):
+            index, odd = divmod(int(match.group(1)) - _C_FIRST_NAME_LINE, 2)
+            if (
+                not odd
+                and 0 <= index < len(names)
+                and not match.group(2).startswith("duplicate case value")
+            ):
+                values.pop(names[index], None)
         rejected = {n: "not an integer constant expression" for n in names if n not in values}
         return values, rejected
     for match in _SHOW_RE.finditer(proc.stderr):
@@ -267,8 +282,50 @@ def resolve(
                 f"{a}={v}" for a, v in sorted(seen.items())
             )
             continue
-        facts.append(Fact(name, distinct.pop(), types.get(name)))
+        c_type = types.get(name)
+        if c_type and _FLOATING.fullmatch(c_type.partition("|")[2] or c_type):
+            # The value probe is `(long long)(X)`: a double truncates silently, and mspaint
+            # shipped `M_PI: u32 = 3`. A float takes its literal from the preprocessor.
+            lit = float_macro_literals(repo_root, tu, [name]).get(name)
+            if lit is None:
+                unresolved[name] = f"floating constant ({c_type}) that is not a plain literal"
+                continue
+            facts.append(Fact(name, 0, c_type, literal=lit))
+            continue
+        facts.append(Fact(name, distinct.pop(), c_type))
     return Resolution(facts, unresolved)
+
+
+_FLOATING = re.compile(r"(?:const )?(?:float|double|long double)")
+# A FLOAT literal: a decimal point or an exponent is required. Plain digits are an integer
+# macro (`IDS_PROGRAMNAME 900`), and reading one as 900.0 would turn every int fact float.
+_FLOAT_LIT = re.compile(
+    r"\(?\s*([-+]?(?:(?:\d+\.\d*|\.\d+)(?:[eE][-+]?\d+)?|\d+[eE][-+]?\d+))[fFlL]?\s*\)?"
+)
+
+
+def float_macro_literals(repo_root: Path, tu: Path, names: list[str]) -> dict[str, str]:
+    """`#define M_PI 3.14159265358979323846` -> {"M_PI": "3.14159265358979323846"}, read
+    from the TU's own `-E -dM` (so the include closure is the compile's). A body that is
+    not a plain float literal is left out: the caller reports it, it is never guessed."""
+    argv = None
+    for arch in _ARCHES:
+        argv = _probe_entry(repo_root, arch, tu)
+        if argv is not None:
+            break
+    if argv is None:
+        return {}
+    src = flags_source(tu)
+    cmd = [a for a in _syntax_argv(argv, src) if a != "-fsyntax-only"] + ["-E", "-dM"]
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
+    found: dict[str, str] = {}
+    for line in out.splitlines():
+        m = re.match(r"#define (\w+) (.+)$", line)
+        if m and m.group(1) in names:
+            lit = _FLOAT_LIT.fullmatch(m.group(2).strip())
+            if lit:
+                found[m.group(1)] = lit.group(1)
+    return found
 
 
 def rust_type(value: int) -> str:

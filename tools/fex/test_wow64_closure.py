@@ -276,3 +276,18 @@ def test_emit_roots_stages_the_programs_with_their_closure(tmp_path, monkeypatch
     assert rc == 0
     staged = {ln.split("\t")[0] for ln in cap.out.splitlines() if "\t" in ln}
     assert {"guest.exe", "ws2_32.dll", "msafd.dll"} <= staged
+
+
+def test_index_never_reads_a_livecd_rw_staging_copy(tmp_path):
+    # mk_writable_livecd.py stages the livecd tree in build-i386/livecd-rw-*/ and deletes it;
+    # the gate's amd64 restage indexed the copy's url.dll and died when it vanished.
+    real = tmp_path / "dll" / "win32" / "url"
+    real.mkdir(parents=True)
+    (real / "url.dll").write_bytes(b"MZ")
+    copy = tmp_path / "livecd-rw-abc123" / "tree" / "reactos" / "system32"
+    copy.mkdir(parents=True)
+    (copy / "url.dll").write_bytes(b"MZ")
+    (copy / "only_in_copy.dll").write_bytes(b"MZ")
+    index = w.index_build(tmp_path, no_strip=True)
+    assert index["url.dll"] == real / "url.dll"
+    assert "only_in_copy.dll" not in index

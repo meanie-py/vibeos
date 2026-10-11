@@ -1616,10 +1616,10 @@ pub unsafe extern "system" fn MmArmInitSystem(
     }
 
     // vibeos tripwire channel: read per-boot debug knobs (special pool arming)
-    // from QEMU fw_cfg BEFORE system-PTE sizing and MiInitializeSpecialPool so
-    // an armed MmSpecialPoolTag influences both. No-op without -fw_cfg.
+    // from QEMU fw_cfg, or a /TRIPWIRE= boot option, BEFORE system-PTE sizing and
+    // MiInitializeSpecialPool so an armed MmSpecialPoolTag influences both.
     if phase == 0 {
-        crate::tripwire::vibe_tripwire_init();
+        crate::tripwire::vibe_tripwire_init((*KeLoaderBlock).LoadOptions as *const u8);
     }
 
     for i in 0..LoaderMaximum {
@@ -1636,6 +1636,15 @@ pub unsafe extern "system" fn MmArmInitSystem(
         MiScanMemoryDescriptors(loader_block);
         #[cfg(target_arch = "aarch64")]
         _A3_TRACE!(b"[MM] MiScanMemoryDescriptors done\r\n");
+        // One line per boot: on real hardware, how much of the board's RAM the
+        // loader handed over is otherwise invisible until a GUI is up to ask.
+        ntkrnl_sys::driver_ddk::DbgPrint(
+            b"[MM] physical memory: %lu MiB (%lu pages, %lu descriptors, highest PFN %#lx)\n\0".as_ptr() as *const i8,
+            (MmNumberOfPhysicalPages >> (20 - PAGE_SHIFT)) as ULONG,
+            MmNumberOfPhysicalPages as ULONG,
+            MiNumberDescriptors as ULONG,
+            MmHighestPhysicalPage as ULONG,
+        );
 
         KeInitializeEvent(
             core::ptr::addr_of_mut!(MiTempEvent),

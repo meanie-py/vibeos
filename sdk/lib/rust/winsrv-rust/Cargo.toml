@@ -29,6 +29,7 @@ panic-common = { path = "../panic-common", features = ["user"] }
 # through winsrv_sys.
 ntdll-sys = { path = "../ntdll-sys" }
 winsrv-sys = { path = "../winsrv-sys" }
+wcwidth-rust = { path = "../wcwidth-rust" }
 # concfg (font + console settings) is a SHARED leaf lib (winsrv + Console CPL),
 # extracted to its own crate so the concfg static lib can serve both consumers.
 # consrv calls it via `use crate::concfg::...` (re-exported in lib.rs).

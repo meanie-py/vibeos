@@ -116,6 +116,16 @@ unsafe fn MiCreateArm3StaticMemoryArea(BaseAddress: PVOID, Size: usize, Executab
         0,
         PAGE_SIZE as ULONG,
     );
+    // C: ASSERT(Status == STATUS_SUCCESS). A reservation that fails silently leaves its
+    // range free for the ROS gap finder, which then hands it out as a system view.
+    if Status < 0 {
+        mm_guard_trip!(
+            "mminit.MiCreateArm3StaticMemoryArea FAILED", 16,
+            "Status" => Status as u32 as usize,
+            "BaseAddress" => BaseAddress as usize,
+            "Size" => Size,
+        );
+    }
 }
 
 // CODE_SEG("INIT")
@@ -175,6 +185,16 @@ unsafe fn MiInitSystemMemoryAreas() {
         MmSessionBase,
         (MiSessionSpaceEnd as usize) - (MmSessionBase as usize),
         0u8,
+    );
+    // Diagnostic (i386 writable-root boot): a ROS system view landed at 0xbf7f0000, which
+    // should be inside this reserved session range.
+    mm_guard_trip!(
+        "mminit.MiInitSystemMemoryAreas session-and-view-ranges", 1,
+        "SessionBase" => MmSessionBase as usize,
+        "SessionEnd" => MiSessionSpaceEnd as usize,
+        "SystemViewStart" => MiSystemViewStart as usize,
+        "SystemViewSize" => MmSystemViewSize as usize,
+        "BootImageSize" => MmBootImageSize as usize,
     );
 
     MiCreateArm3StaticMemoryArea(

@@ -1,66 +1,73 @@
 
 list(APPEND SOURCE
-    alias.c
-    assoc.c
-    batch.c
-    beep.c
-    call.c
-    choice.c
-    cls.c
-    cmd.c
-    cmddbg.c
-    cmdinput.c
-    cmdtable.c
-    color.c
-    console.c
-    copy.c
-    ctty.c
-    date.c
-    del.c
-    delay.c
-    dir.c
-    dirstack.c
-    echo.c
-    error.c
-    filecomp.c
-    for.c
-    free.c
-    goto.c
-    history.c
-    if.c
-    internal.c
-    locale.c
-    memory.c
-    misc.c
-    mklink.c
-    move.c
-    msgbox.c
-    parser.c
-    path.c
-    pause.c
-    prompt.c
-    redir.c
-    ren.c
-    screen.c
-    set.c
-    setlocal.c
-    shift.c
-    start.c
-    strtoclr.c
-    time.c
-    timer.c
-    title.c
-    trace.c
-    type.c
-    ver.c
-    verify.c
-    vol.c
-    where.c
-    window.c
+    # alias.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/alias.rs)
+    # assoc.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/assoc.rs)
+    # batch.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/batch.rs)
+    # beep.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/beep.rs)
+    # call.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/call.rs)
+    # choice.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/choice.rs)
+    # cls.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/cls.rs)
+    # cmd.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/cmd.rs)
+    # cmddbg.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/cmddbg.rs)
+    # cmdinput.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/cmdinput.rs)
+    # cmdtable.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/cmdtable.rs)
+    # color.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/color.rs)
+    # console.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/console.rs)
+    # copy.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/copy.rs)
+    # ctty.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/ctty.rs)
+    # date.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/date.rs)
+    # del.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/del.rs)
+    # delay.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/delay.rs)
+    # dir.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/dir.rs)
+    # dirstack.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/dirstack.rs)
+    # echo.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/echo.rs)
+    # error.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/error.rs)
+    # filecomp.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/filecomp.rs)
+    # for.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/for.rs)
+    # free.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/free.rs)
+    # goto.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/goto.rs)
+    # history.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/history.rs)
+    # if.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/if.rs)
+    # internal.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/internal.rs)
+    # locale.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/locale.rs)
+    # memory.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/memory.rs)
+    # misc.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/misc.rs)
+    # mklink.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/mklink.rs)
+    # move.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/move.rs)
+    # msgbox.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/msgbox.rs)
+    # parser.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/parser.rs)
+    # path.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/path.rs)
+    # pause.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/pause.rs)
+    # prompt.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/prompt.rs)
+    # redir.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/redir.rs)
+    # ren.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/ren.rs)
+    # screen.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/screen.rs)
+    # set.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/set.rs)
+    # setlocal.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/setlocal.rs)
+    # shift.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/shift.rs)
+    # start.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/start.rs)
+    # strtoclr.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/strtoclr.rs)
+    # time.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/time.rs)
+    # timer.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/timer.rs)
+    # title.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/title.rs)
+    # trace.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/trace.rs)
+    # type.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/type.rs)
+    # ver.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/ver.rs)
+    # verify.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/verify.rs)
+    # vol.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/vol.rs)
+    # where.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/where.rs)
+    # window.c  # replaced by Rust (sdk/lib/rust/cmd-rust/src/cmd/window.rs)
+    rust_cohab_stub.c
+    rust_varargs_shim.c
     precomp.h)
 
 add_rc_deps(cmd.rc ${CMAKE_CURRENT_SOURCE_DIR}/res/terminal.ico)
+# Every translation unit is Rust now (cmd-rust, `rustconv port`); the C stays on
+# disk. The target keeps a stub TU and links the Rust archive.
+rust_staticlib_variant(cmd_rust cmd-rust "" TRUE)
 add_executable(cmd ${SOURCE} cmd.rc)
+add_dependencies(cmd rust_cmd_rust)
+target_link_libraries(cmd ${cmd_rust_LIB})
 add_pch(cmd precomp.h SOURCE)
 set_module_type(cmd win32cui UNICODE)
 target_link_libraries(cmd conutils wine)

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::base::{NTSTATUS, BOOLEAN, ULONG, PULONG, LONGLONG, STATUS_SUCCESS};
 use ntkrnl_sys::constants::{STATUS_INVALID_PARAMETER, STATUS_BUFFER_OVERFLOW, STATUS_OBJECT_NAME_NOT_FOUND};
 use ntkrnl_sys::rtl::RtlCopyMemory;
@@ -136,7 +137,6 @@ extern "C" {
     fn CdQueryFidDirentOffset(FileId: FILE_ID) -> ULONG;
 }
 extern "C" {
-    fn NT_ASSERT(cond: i32);
 }
 
 // ---- file-scope preamble (translated) ----
@@ -192,7 +192,7 @@ pub unsafe extern "C" fn CdCommonQueryInfo(
                             // Make sure directory sizes are correct
                             if FlagOn((*Fcb).FcbState, FCB_STATE_INITIALIZED) == 0 {
                                 // NT_ASSERT macro
-                                NT_ASSERT((TypeOfOpen == UserDirectoryOpen) as i32);
+                                NT_ASSERT!((TypeOfOpen == UserDirectoryOpen) as i32);
                                 CdVerifyOrCreateDirStreamFile(IrpContext, Fcb);
                             }
 

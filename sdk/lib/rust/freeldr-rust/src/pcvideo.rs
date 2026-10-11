@@ -905,7 +905,8 @@ pub struct PcVbeFramebuffer {
 static mut VbeFramebuffer: Option<PcVbeFramebuffer> = None;
 
 /// Mode preference: 1024x768, then 800x600, then the largest mode that fits
-/// 1920x1200. Anything below 640x480 is not a desktop.
+/// 1920x1200. Anything below 640x480 is not a desktop. (Overridden when all
+/// modes share a pitch; see PcVideoSelectVbeFramebuffer.)
 fn VbeModeScore(Width: u32, Height: u32) -> u64 {
     if Width < 640 || Height < 480 || Width > 1920 || Height > 1200 {
         return 0;
@@ -950,6 +951,10 @@ pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFr
     }
 
     let mut best: Option<(u64, PcVbeFramebuffer)> = None;
+    // The usable modes' common pitch (None once two differ) and the largest
+    // usable mode whose rows fill it: see the choice after the loop.
+    let mut shared_pitch: Option<Option<u32>> = None;
+    let mut native: Option<PcVbeFramebuffer> = None;
     for &mode in &modes[..count] {
         let mut mi: SVGA_MODE_INFORMATION = core::mem::zeroed();
         if PcVideoVesaGetSVGAModeInformation(mode, &mut mi) == 0 {
@@ -1014,11 +1019,27 @@ pub unsafe fn PcVideoSelectVbeFramebuffer(VesaVersion: USHORT) -> Option<PcVbeFr
             Size: (pitch * h + 0xFFF) & !0xFFF,
             Data: data,
         };
+        shared_pitch = match shared_pitch {
+            None => Some(Some(pitch)),
+            Some(Some(p)) if p == pitch => Some(Some(p)),
+            _ => Some(None),
+        };
+        if pitch == w * 4 && native.map_or(true, |n| w * h > n.Data.ScreenWidth * n.Data.ScreenHeight) {
+            native = Some(candidate);
+        }
         if best.map_or(true, |(s, _)| score > s) {
             best = Some((score, candidate));
         }
     }
-    let chosen = best.map(|(_, fb)| fb);
+    // When every mode has the same pitch they are windows onto one fixed
+    // scanout, not real mode switches: SeaBIOS over coreboot's framebuffer
+    // (libgfxinit on the OptiPlex 9020) lists 16 of them at the panel's 7680-byte
+    // pitch, and 1024x768 there draws in the corner of a 1080p screen. Take the
+    // mode that fills the scanout instead.
+    let chosen = match (shared_pitch, native) {
+        (Some(Some(_)), Some(fb)) => Some(fb),
+        _ => best.map(|(_, fb)| fb),
+    };
     match chosen {
         Some(fb) => DbgPrint(
             b"[FLDR] VBE framebuffer: mode 0x%x %ux%u at 0x%x\n\0".as_ptr() as *const i8,

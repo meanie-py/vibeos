@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{TimerStart, TimerStop};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatNtTimeToFatTime};
@@ -43,7 +45,6 @@ type Bcb = BCB;
 
 extern "system" {
     fn NodeType(ptr: *const core::ffi::c_void) -> u32;
-    fn FlagOn(Value: u32, Flags: u32) -> i32; // returns BOOL (0 = FALSE, non-zero = TRUE)
     fn FatSelectNames( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, OemName: *mut OEM_STRING, UnicodeName: *mut _UNICODE_STRING, ShortName: *mut OEM_STRING, TunneledShortName: *mut _UNICODE_STRING, AllLowerComponent: *mut BOOLEAN, AllLowerExtension: *mut BOOLEAN, CreateLfn: *mut BOOLEAN, );
     fn FatCreateNewDirent( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, DirentsNeeded: u32, BypassHint: i32, ) -> u32;
     fn FatPrepareWriteDirectoryFile(IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Dirent: *mut *mut DIRENT, Wait: u8, Flush: u8, Status: *mut NTSTATUS);
@@ -67,8 +68,6 @@ extern "system" {
     fn FatLfnDirentExists( IrpContext: *mut IRP_CONTEXT, ParentDcb: *mut DCB, Name: *mut _UNICODE_STRING, LfnBuffer: *mut _UNICODE_STRING, ) -> u8;
     fn FsRtlCheckOplockEx( Oplock: *mut OPLOCK, Irp: *mut IRP, Flags: u32, EventArgs: *mut c_void, ReplyArguments: *mut c_void, ReplyStatus: *mut NTSTATUS, ) -> NTSTATUS;
     fn DebugUnwind(name: *const i8);
-    fn NT_ASSERT(condition: i32);
-    fn SetFlag(Flags: *mut u32, Flag: u32);
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
     fn ARGUMENT_PRESENT(x: *mut c_void) -> u8;
     fn ExFreePool(P: *mut c_void);
@@ -87,7 +86,6 @@ extern "system" {
     fn FatPrePostIrp(Context: *mut c_void, Irp: *mut IRP);
 }
 extern "system" {
-    fn ClearFlag(Flags: *mut u32, Flag: u32);
     // SIZE_T and BOOLEAN, as rust_cohab_fat.c defines it: a u32 Size left the upper half of
     // the 64-bit argument register undefined on amd64/arm64.
     fn KeExpandKernelStackAndCalloutEx( Callout: extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), Context: *mut FAT_CALLOUT_PARAMETERS, StackSize: SIZE_T, Wait: BOOLEAN, Reserved: *mut core::ffi::c_void, ) -> NTSTATUS;
@@ -116,7 +114,6 @@ extern "system" {
     fn FatSyncUninitializeCacheMap( IrpContext: PIRP_CONTEXT, FileObject: PFILE_OBJECT, );
     fn FatUnpinRepinnedBcbs(IrpContext: PIRP_CONTEXT);
     fn ObDereferenceObject(Object: PVOID);
-    fn BooleanFlagOn(value: u8, flag: u8) -> u8;
     fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn FatGetNeedEaCount(IrpContext: PIRP_CONTEXT, Vcb: PVCB, Dirent: *mut DIRENT, NeedEaCount: *mut u32);
     fn FatLookupFileAllocationSize(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
@@ -159,13 +156,11 @@ extern "system" {
     fn CollectCreateHitStatistics(Vcb: *mut VCB);
     fn CollectCreateStatistics(Vcb: *mut VCB, Status: NTSTATUS);
     fn FatDeviceIsFatFsdo(VolumeDeviceObject: PDEVICE_OBJECT) -> BOOLEAN;
-    fn TimerStart(Dbg: *const u8);
     fn FatIsIrpTopLevel(Irp: PIRP) -> BOOLEAN;
     fn FatCreateIrpContext(Irp: PIRP, CanWait: u32) -> PIRP_CONTEXT;
     fn IoSetTopLevelIrp(Irp: PIRP) -> *mut core::ffi::c_void;
     fn FsRtlExitFileSystem();
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn TimerStop(Dbg: *const u8, Name: *const i8);
 }
 extern "C" {
     // wdm FORCEINLINE helper: cdecl body, bindgen class — was "system" (§9.99).
@@ -268,7 +263,7 @@ pub unsafe extern "system" fn FatFsdCreate(
         return STATUS_SUCCESS;
     }
 
-    TimerStart(core::ptr::null());
+    TimerStart!(core::ptr::null());
     DebugTrace(1, (Dbg) as i32, b"FatFsdCreate\n\0".as_ptr() as *const i8, 0);
 
     FsRtlEnterFileSystem();
@@ -303,7 +298,7 @@ pub unsafe extern "system" fn FatFsdCreate(
         FatCompleteRequest(IrpContext, Irp, Status);
     }
     DebugTrace(-1, (Dbg) as i32, b"FatFsdCreate -> %08lx\n\0".as_ptr() as *const i8, Status);
-    TimerStop(core::ptr::null(), b"FatFsdCreate\0".as_ptr() as *const i8);
+    TimerStop!(core::ptr::null(), b"FatFsdCreate\0".as_ptr() as *const i8);
     Status
 }
 #[no_mangle]
@@ -327,10 +322,7 @@ pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     CalloutParameters.ExceptionStatus = STATUS_SUCCESS;
     CalloutParameters.IrpStatus = STATUS_SUCCESS;
 
-    SetFlag(
-        &mut (*IrpContext).Flags,
-        IRP_CONTEXT_FLAG_SWAPPED_STACK,
-    );
+    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_SWAPPED_STACK);
 
     status = KeExpandKernelStackAndCalloutEx(
         core::mem::transmute::<unsafe extern "system" fn(*mut FAT_CALLOUT_PARAMETERS), extern "system" fn(*mut FAT_CALLOUT_PARAMETERS)>(FatCommonCreateCallout),
@@ -341,10 +333,7 @@ pub unsafe extern "system" fn FatCommonCreateOnNewStack(
     );
 
     if status != STATUS_PENDING {
-        ClearFlag(
-            &mut (*IrpContext).Flags,
-            IRP_CONTEXT_FLAG_SWAPPED_STACK as u32,
-        );
+        ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_SWAPPED_STACK as u32);
     }
 
     if CalloutParameters.ExceptionStatus < 0 {
@@ -465,7 +454,7 @@ pub unsafe extern "system" fn FatCommonCreate(
         }
     }
 
-    NT_ASSERT(!(*IrpSp).Parameters.Create.SecurityContext.is_null() as i32);
+    NT_ASSERT!(!(*IrpSp).Parameters.Create.SecurityContext.is_null() as i32);
 
     let FileObject = (*IrpSp).FileObject;
     let RelatedFileObject = (*FileObject).RelatedFileObject;
@@ -624,7 +613,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             if DeleteOnClose && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
                 IoSetHardErrorOrVerifyDevice((*IrpContext).OriginatingIrp, (*(*Vcb).Vpb).RealDevice);
-                SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
+                SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                 FatRaiseStatus(IrpContext, STATUS_MEDIA_WRITE_PROTECTED);
             }
 
@@ -637,7 +626,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 let mut DecodeVcb: *mut VCB = core::ptr::null_mut();
                 if RelatedFileObject.is_null() ||
                     FatDecodeFileObject(RelatedFileObject, &mut DecodeVcb, &mut Fcb, &mut core::ptr::null_mut()) == UserVolumeOpen {
-                    NT_ASSERT((RelatedFileObject.is_null() || Vcb == DecodeVcb) as i32);
+                    NT_ASSERT!((RelatedFileObject.is_null() || Vcb == DecodeVcb) as i32);
 
                     if DirectoryFile {
                         DebugTrace(0, 0, b"Cannot open volume as a directory\n\0".as_ptr() as *const i8);
@@ -671,7 +660,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                     Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_INVALID;
                     break 'main_try;
                 }
-                NT_ASSERT((Vcb == RelatedVcb) as i32);
+                NT_ASSERT!((Vcb == RelatedVcb) as i32);
                 (*FileObject).Vpb = (*RelatedFileObject).Vpb;
 
                 // FatVerifyFcb is VOID (raises on bad Fcb). See fix note above.
@@ -758,9 +747,9 @@ pub unsafe extern "system" fn FatCommonCreate(
                     if NextFcb.is_null() && !(*Fcb).Specific.Dcb.as_ref().RootUnicodeNode.is_null() {
                         FatEnsureStringBufferEnough(&mut UpcasedFinalName as *mut _ as *mut core::ffi::c_void, FinalName.Length);
                         Status = RtlDowncaseUnicodeString(&mut UpcasedFinalName, &FinalName as *const _ as *mut _, 0);
-                        NT_ASSERT((NT_SUCCESS(Status) != 0) as i32);
+                        NT_ASSERT!((NT_SUCCESS(Status) != 0) as i32);
                         Status = RtlUpcaseUnicodeString(&mut UpcasedFinalName, &UpcasedFinalName as *const _ as *mut _, 0);
-                        NT_ASSERT((NT_SUCCESS(Status) != 0) as i32);
+                        NT_ASSERT!((NT_SUCCESS(Status) != 0) as i32);
                         let dcb_ref2 = (*Fcb).Specific.Dcb.as_mut();
                         NextFcb = FatFindFcb(IrpContext, core::ptr::addr_of_mut!(dcb_ref2.RootUnicodeNode).cast(), &UpcasedFinalName as *const _ as *mut STRING, &mut FileNameOpenedDos);
                     }
@@ -814,7 +803,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 }
             }
 
-            NT_ASSERT(((*Fcb).FcbCondition == FcbGood as u32) as i32);
+            NT_ASSERT!(((*Fcb).FcbCondition == FcbGood as u32) as i32);
 
             if IsPagingFile {
                 if NodeType(Fcb as *const c_void) == (FAT_NTC_FCB) as u32 && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0 {
@@ -1063,7 +1052,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
                 if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
                     IoSetHardErrorOrVerifyDevice((*IrpContext).OriginatingIrp, (*(*Vcb).Vpb).RealDevice);
-                    SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
+                    SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                     FatRaiseStatus(IrpContext, STATUS_MEDIA_WRITE_PROTECTED);
                 }
 
@@ -1087,7 +1076,7 @@ pub unsafe extern "system" fn FatCommonCreate(
 
             if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_WRITE_PROTECTED) != 0 {
                 IoSetHardErrorOrVerifyDevice((*IrpContext).OriginatingIrp, (*(*Vcb).Vpb).RealDevice);
-                SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
+                SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                 FatRaiseStatus(IrpContext, STATUS_MEDIA_WRITE_PROTECTED);
             }
 
@@ -1127,8 +1116,7 @@ pub unsafe extern "system" fn FatCommonCreate(
             //  Before doing the uninitialize, unpin anything repinned, but disable
             //  writethrough first (we are already failing, so disable raise from unpin).
             let SavedFlags = (*IrpContext).Flags;
-            SetFlag(&mut (*IrpContext).Flags,
-                    IRP_CONTEXT_FLAG_DISABLE_RAISE | IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH);
+            SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_RAISE | IRP_CONTEXT_FLAG_DISABLE_WRITE_THROUGH);
             FatUnpinRepinnedBcbs(IrpContext);
 
             let FinalDcb = *p_final_dcb;
@@ -1203,7 +1191,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                 && (NodeType(LocalFcb as *const c_void) == FAT_NTC_FCB as u32
                     || IsListEmpty(core::ptr::addr_of!((*LocalFcb).Specific.Dcb.as_ref().ParentDcbQueue) as *const _))
             {
-                NT_ASSERT((NodeType(LocalFcb as *const c_void) != FAT_NTC_ROOT_DCB as u32) as i32);
+                NT_ASSERT!((NodeType(LocalFcb as *const c_void) != FAT_NTC_ROOT_DCB as u32) as i32);
 
                 if NodeType(LocalFcb as *const c_void) == FAT_NTC_DCB as u32
                     && !(*LocalFcb).Specific.Dcb.as_ref().DirectoryFile.is_null()
@@ -1230,7 +1218,7 @@ pub unsafe extern "system" fn FatCommonCreate(
             if !*p_post_irp {
                 //  NT_ASSERT(SecurityContext != NULL): retail no-op.
                 if FlagOn(*DesiredAccess, FILE_EXECUTE) != 0 {
-                    SetFlag(&mut (*FileObject).Flags, FO_FILE_FAST_IO_READ);
+                    SetFlag!((*FileObject).Flags, FO_FILE_FAST_IO_READ);
                 }
 
                 //  Lock volume in drive if we opened a paging file, allocating a reserve MDL
@@ -1256,7 +1244,7 @@ pub unsafe extern "system" fn FatCommonCreate(
                         }
                     }
 
-                    SetFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE);
+                    SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE);
 
                     if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 {
                         FatToggleMediaEjectDisable(IrpContext, Vcb, 1);
@@ -1573,14 +1561,14 @@ pub unsafe extern "system" fn FatOpenExistingDcb(
         {
             let Ccb: *mut CCB = (*FileObject).FsContext2 as *mut CCB;
             if DeleteOnClose != 0 {
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             }
             if FileNameOpenedDos != 0 {
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
             }
         }
 
-        ClearFlag(&mut (*Dcb).FcbState, FCB_STATE_DELAY_CLOSE);
+        ClearFlag!((*Dcb).FcbState, FCB_STATE_DELAY_CLOSE);
 
         Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
         Iosb.Information = FILE_OPENED as _;
@@ -1753,7 +1741,7 @@ pub unsafe extern "system" fn FatOpenVolume(
             KeRemoveQueueDpc(core::ptr::addr_of_mut!((*Vcb).CleanVolumeDpc));
 
             FatMarkVolume(IrpContext, Vcb, VolumeClean);
-            ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
+            ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DIRTY);
 
             // Unlock the volume if it is removable.
             if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0
@@ -1822,7 +1810,7 @@ pub unsafe extern "system" fn FatOpenVolume(
         );
 
         if NT_SUCCESS(Status) != 0 {
-            SetFlag(core::ptr::addr_of_mut!((*UnwindCcb).Flags), CCB_FLAG_MANAGE_VOLUME_ACCESS);
+            SetFlag!((*UnwindCcb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
         }
 
         // The access-granted probe above is advisory: the C overwrites its status
@@ -1976,7 +1964,7 @@ pub unsafe extern "system" fn FatOpenExistingDirectory(
         {
             let Ccb: *mut CCB = (*FileObject).FsContext2 as *mut CCB;
             if FileNameOpenedDos != 0 {
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
             }
         }
     }, |_, abnormal| {
@@ -2096,16 +2084,10 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                 Iosb.__bindgen_anon_1.Status = 0xC0000035_u32 as i32 /* STATUS_OBJECT_NAME_COLLISION */;
                 break 'try_scope_body;
             } else if CreateDisposition == FILE_SUPERSEDE {
-                SetFlag(
-                    &mut AddedAccess,
-                    0x00010000 /* DELETE */ & !(*DesiredAccess) ,
-                );
+                SetFlag!(AddedAccess, 0x00010000 /* DELETE */ & !(*DesiredAccess));
                 *DesiredAccess |= 0x00010000;
             } else if CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF {
-                SetFlag(
-                    &mut AddedAccess,
-                    (0x00000002 /* FILE_WRITE_DATA */ | 0x00000010 /* FILE_WRITE_EA */ | 0x00000100 /* FILE_WRITE_ATTRIBUTES */) & !(*DesiredAccess),
-                );
+                SetFlag!(AddedAccess, (0x00000002 /* FILE_WRITE_DATA */ | 0x00000010 /* FILE_WRITE_EA */ | 0x00000100 /* FILE_WRITE_ATTRIBUTES */) & !(*DesiredAccess));
                 *DesiredAccess |= 0x00000002 | 0x00000010 | 0x00000100;
             }
 
@@ -2125,8 +2107,8 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             if CreateDisposition == FILE_SUPERSEDE || CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF {
                 let Hidden = BooleanFlagOn((*Fcb).DirentFatFlags, FAT_DIRENT_ATTR_HIDDEN);
                 let System = BooleanFlagOn((*Fcb).DirentFatFlags, FAT_DIRENT_ATTR_SYSTEM);
-                if (Hidden != 0 && FlagOn((FileAttributes as u8) as u32, 0x00000002 /* FILE_ATTRIBUTE_HIDDEN */) == 0)
-                    || (System != 0 && FlagOn((FileAttributes as u8) as u32, 0x00000004 /* FILE_ATTRIBUTE_SYSTEM */) == 0)
+                if (Hidden != 0 && FlagOn(FileAttributes as u32, 0x00000002 /* FILE_ATTRIBUTE_HIDDEN */) == 0)
+                    || (System != 0 && FlagOn(FileAttributes as u32, 0x00000004 /* FILE_ATTRIBUTE_SYSTEM */) == 0)
                 {
                     DebugTrace(0, (Dbg) as i32, b"The hidden and/or system bits do not match\n\0".as_ptr() as *const i8);
                     Iosb.__bindgen_anon_1.Status = 0xC0000022_u32 as i32;
@@ -2137,7 +2119,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                         (*IrpContext).OriginatingIrp,
                         (*(*Vcb).Vpb).RealDevice,
                     );
-                    SetFlag(&mut (*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
+                    SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                     FatRaiseStatus(IrpContext, 0xC00000A2_u32 as i32 /* STATUS_MEDIA_WRITE_PROTECTED */);
                 }
             }
@@ -2165,7 +2147,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                         Iosb.__bindgen_anon_1.Status = OplockBreakStatus;
                         break 'try_scope_body;
                     } else {
-                        NT_ASSERT((OplockBreakStatus == 0) as i32);
+                        NT_ASSERT!((OplockBreakStatus == 0) as i32);
                         break 'try_scope_body;
                     }
                 } else {
@@ -2223,10 +2205,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                 && (*(*Fcb).NonPaged).SectionObjectPointers.DataSectionObject != core::ptr::null_mut()
                 && FlagOn((*Fcb).FcbState, FCB_STATE_PAGING_FILE) == 0
             {
-                SetFlag(
-                    &mut (*((*Fcb).Vcb)).VcbState,
-                    VCB_STATE_FLAG_CREATE_IN_PROGRESS,
-                );
+                SetFlag!((*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_CREATE_IN_PROGRESS);
                 CcFlushCache(
                     core::ptr::addr_of_mut!((*(*Fcb).NonPaged).SectionObjectPointers),
                     core::ptr::null_mut(),
@@ -2241,7 +2220,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                     0,
                     0,
                 );
-                ClearFlag(&mut (*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_CREATE_IN_PROGRESS);
+                ClearFlag!((*((*Fcb).Vcb)).VcbState, VCB_STATE_FLAG_CREATE_IN_PROGRESS);
             }
 
             // Open or Open-If
@@ -2321,7 +2300,7 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
         if Iosb.__bindgen_anon_1.Status != 0x103 && NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 {
             if AddedAccess != 0 {
                 let Status: i32;
-                ClearFlag(DesiredAccess, AddedAccess);
+                ClearFlag!(*DesiredAccess, AddedAccess);
                 Status = IoCheckShareAccess(
                     *DesiredAccess,
                     ShareAccess as u32,
@@ -2329,12 +2308,12 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
                     core::ptr::addr_of!((*Fcb).ShareAccess) as *mut _,
                     1,
                 );
-                NT_ASSERT((Status == 0) as i32);
+                NT_ASSERT!((Status == 0) as i32);
             } else {
                 IoUpdateShareAccess(FileObject, core::ptr::addr_of!((*Fcb).ShareAccess) as *mut _);
             }
             UnwindShareAccess = 1;
-            ClearFlag(&mut (*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
+            ClearFlag!((*Fcb).FcbState, FCB_STATE_DELAY_CLOSE);
             (*Fcb).UncleanCount += 1;
             (*Fcb).OpenCount += 1;
             if FlagOn((*FileObject).Flags, FO_NO_INTERMEDIATE_BUFFERING) != 0 {
@@ -2347,22 +2326,22 @@ pub unsafe extern "system" fn FatOpenExistingFcb(
             {
                 let Ccb: *mut CCB = (*FileObject).FsContext2 as *mut CCB;
                 if DeleteOnClose != 0 {
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
                 }
                 if FileNameOpenedDos != 0 {
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
                 }
                 if FatCheckManageVolumeAccess(
                     IrpContext,
                     (*(*IrpSp).Parameters.Create.SecurityContext).AccessState,
-                    if FlagOn((((*IrpSp).Flags) as u8) as u32, 0x00000001 /* SL_FORCE_ACCESS_CHECK */) != 0 {
+                    if FlagOn(((*IrpSp).Flags) as u32, 0x00000001 /* SL_FORCE_ACCESS_CHECK */) != 0 {
                         (1u8) as i8
                     } else {
                         (*(*IrpContext).OriginatingIrp).RequestorMode
                     },
                 ) != 0
                 {
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
                 }
             }
         }
@@ -2514,7 +2493,7 @@ pub unsafe extern "system" fn FatOpenTargetDirectory(
             let Ccb: *mut CCB = (*FileObject).FsContext2 as *mut CCB;
             if FileNameOpenedDos != 0 {
                 // SetFlag(Ccb->Flags, CCB_FLAG_OPENED_BY_SHORTNAME); expand inline
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
             }
         }
 
@@ -2587,18 +2566,12 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                 Iosb.__bindgen_anon_1.Status = STATUS_OBJECT_NAME_COLLISION;
                 break 'try_block;
             } else if CreateDisposition == FILE_SUPERSEDE && IsPagingFile == 0 {
-                SetFlag(
-                    core::ptr::addr_of_mut!(AddedAccess),
-                    DELETE & !(*DesiredAccess),
-                );
+                SetFlag!(AddedAccess, DELETE & !(*DesiredAccess));
                 *DesiredAccess |= DELETE;
             } else if (CreateDisposition == FILE_OVERWRITE || CreateDisposition == FILE_OVERWRITE_IF)
                 && IsPagingFile == 0
             {
-                SetFlag(
-                    core::ptr::addr_of_mut!(AddedAccess),
-                    (FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES) & !(*DesiredAccess),
-                );
+                SetFlag!(AddedAccess, (FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES) & !(*DesiredAccess));
                 *DesiredAccess |= FILE_WRITE_DATA | FILE_WRITE_EA | FILE_WRITE_ATTRIBUTES;
             }
 
@@ -2636,10 +2609,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                         (*IrpContext).OriginatingIrp,
                         (*(*Vcb).Vpb).RealDevice,
                     );
-                    SetFlag(
-                        core::ptr::addr_of_mut!((*(*(*Vcb).Vpb).RealDevice).Flags),
-                        DO_VERIFY_VOLUME,
-                    );
+                    SetFlag!((*(*(*Vcb).Vpb).RealDevice).Flags, DO_VERIFY_VOLUME);
                     FatRaiseStatus(IrpContext, STATUS_MEDIA_WRITE_PROTECTED);
                     // unreachable
                 }
@@ -2682,7 +2652,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
             }
 
             if Iosb.__bindgen_anon_1.Status != STATUS_SUCCESS {
-                NT_ASSERT((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
+                NT_ASSERT!((Iosb.__bindgen_anon_1.Status != STATUS_PENDING) as i32);
                 FatRaiseStatus(IrpContext, Iosb.__bindgen_anon_1.Status);
                 // unreachable
             }
@@ -2746,7 +2716,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
 
         // try_exit code
         if Iosb.__bindgen_anon_1.Status != STATUS_PENDING && NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 {
-            ClearFlag(DesiredAccess, AddedAccess);
+            ClearFlag!(*DesiredAccess, AddedAccess);
 
             IoSetShareAccess(
                 *DesiredAccess,
@@ -2771,10 +2741,10 @@ pub unsafe extern "system" fn FatOpenExistingFile(
             let Ccb = (*FileObject).FsContext2 as PCCB;
             if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 {
                 if DeleteOnClose != 0 {
-                    SetFlag(core::ptr::addr_of_mut!((*Ccb).Flags), CCB_FLAG_DELETE_ON_CLOSE);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
                 }
                 if FileNameOpenedDos != 0 {
-                    SetFlag(core::ptr::addr_of_mut!((*Ccb).Flags), CCB_FLAG_OPENED_BY_SHORTNAME);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
                 }
                 if FatCheckManageVolumeAccess(
                     IrpContext,
@@ -2786,7 +2756,7 @@ pub unsafe extern "system" fn FatOpenExistingFile(
                     } as KPROCESSOR_MODE,
                 ) != 0
                 {
-                    SetFlag(core::ptr::addr_of_mut!((*Ccb).Flags), CCB_FLAG_MANAGE_VOLUME_ACCESS);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
                 }
             }
         }
@@ -2940,7 +2910,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
             &mut Iosb.__bindgen_anon_1.Status,
         );
 
-        NT_ASSERT((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !DirentBcb.is_null() && !Dirent.is_null()) as i32);
+        NT_ASSERT!((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !DirentBcb.is_null() && !Dirent.is_null()) as i32);
 
         if (DirentByteOffset / (PAGE_SIZE) as u32) !=
             ((DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as ULONG) / (PAGE_SIZE) as u32) {
@@ -2963,7 +2933,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
                 &mut Iosb.__bindgen_anon_1.Status,
             );
 
-            NT_ASSERT((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !SecondPageBcb.is_null() && !SecondPageDirent.is_null()) as i32);
+            NT_ASSERT!((NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 && !SecondPageBcb.is_null() && !SecondPageDirent.is_null()) as i32);
 
             FirstPageDirent = Dirent;
 
@@ -2979,7 +2949,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         ShortDirent = Dirent.add((DirentsNeeded - 1) as usize);
         ShortDirentByteOffset = DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as ULONG;
 
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
 
         FatConstructDirent(
             IrpContext,
@@ -3109,10 +3079,7 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         }
 
         if DeleteOnClose != 0 {
-            SetFlag(
-                &mut (*Ccb).Flags,
-                CCB_FLAG_DELETE_ON_CLOSE,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
         }
 
         Iosb.__bindgen_anon_1.Status = STATUS_SUCCESS;
@@ -3128,14 +3095,12 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
         }
 
         if Dcb.is_null() {
-            NT_ASSERT(
-                ((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xFFFFFFFF_u32 ||
+            NT_ASSERT!(((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xFFFFFFFF_u32 ||
                 RtlAreBitsSet(
                     core::ptr::addr_of!((*ParentDcb).Specific.Dcb.as_ref().FreeDirentBitmap) as *mut RTL_BITMAP,
                     DirentByteOffset / core::mem::size_of::<DIRENT>() as ULONG,
                     DirentsNeeded,
-                ) != 0) as i32,
-            );
+                ) != 0) as i32);
 
             RtlClearBits(
                 core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().FreeDirentBitmap) as *mut RTL_BITMAP,
@@ -3176,15 +3141,9 @@ pub unsafe extern "system" fn FatCreateNewDirectory(
 
             DirectoryFileObject = (*Dcb).Specific.Dcb.as_ref().DirectoryFile;
 
-            SetFlag(
-                &mut (*IrpContext).Flags,
-                IRP_CONTEXT_FLAG_DISABLE_RAISE,
-            );
+            SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_RAISE);
             FatUnpinRepinnedBcbs(IrpContext);
-            ClearFlag(
-                &mut (*IrpContext).Flags,
-                IRP_CONTEXT_FLAG_DISABLE_RAISE,
-            );
+            ClearFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_DISABLE_RAISE);
 
             if (*Dcb).FirstClusterOfFile != 0 {
                 // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter( IrpContext, ... )) { }
@@ -3322,7 +3281,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         DebugTrace(-1, (Dbg) as i32, b"FatCreateNewFile -> Iosb.__bindgen_anon_1.Status = %08lx\n\0".as_ptr() as *const i8, Iosb.__bindgen_anon_1.Status);
         return Iosb;
     }
-    if DeleteOnClose != 0 && FlagOn((FileAttributes as u8) as u32, FAT_DIRENT_ATTR_READ_ONLY as u32) != 0 {
+    if DeleteOnClose != 0 && FlagOn(FileAttributes as u32, FAT_DIRENT_ATTR_READ_ONLY as u32) != 0 {
         Iosb.__bindgen_anon_1.Status = STATUS_CANNOT_DELETE;
         return Iosb;
     }
@@ -3335,7 +3294,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         &mut TunneledDataSize,
         &mut TunneledCreationTime as *mut LARGE_INTEGER as *mut c_void,
     ) as i32;
-    NT_ASSERT((TunneledDataSize == core::mem::size_of::<LARGE_INTEGER>() as u32) as i32);
+    NT_ASSERT!((TunneledDataSize == core::mem::size_of::<LARGE_INTEGER>() as u32) as i32);
     FatSelectNames(
         IrpContext,
         ParentDcb,
@@ -3400,7 +3359,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
             1,
             &mut Iosb.__bindgen_anon_1.Status,
         );
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
         UnwindDirent = Dirent;
         if (DirentByteOffset / (PAGE_SIZE as u32)) !=
             ((DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as u32) / (PAGE_SIZE as u32))
@@ -3419,7 +3378,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 1,
                 &mut Iosb.__bindgen_anon_1.Status,
             );
-            NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+            NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
             FirstPageDirent = Dirent;
             Dirent = FsRtlAllocatePoolWithTag(
                 PagedPool,
@@ -3430,7 +3389,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         }
         ShortDirent = Dirent.add((DirentsNeeded as usize) - 1);
         ShortDirentByteOffset = DirentByteOffset + (DirentsNeeded - 1) * core::mem::size_of::<DIRENT>() as u32;
-        NT_ASSERT(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
+        NT_ASSERT!(NT_SUCCESS(Iosb.__bindgen_anon_1.Status) as i32);
         FatConstructDirent(
             IrpContext,
             ShortDirent,
@@ -3506,7 +3465,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         }
         }
         if TemporaryFile != 0 {
-            SetFlag(&mut (*Fcb).FcbState, FCB_STATE_TEMPORARY);
+            SetFlag!((*Fcb).FcbState, FCB_STATE_TEMPORARY);
         }
         FatAddFileAllocation(IrpContext, Fcb, FileObject, AllocationSize);
         UnwindAllocation = 1;
@@ -3545,7 +3504,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
         );
         (*Fcb).UncleanCount += 1;
         (*Fcb).OpenCount += 1;
-        if FlagOn(((*FileObject).Flags as u8) as u32, FO_NO_INTERMEDIATE_BUFFERING as u32) != 0 {
+        if FlagOn((*FileObject).Flags as u32, FO_NO_INTERMEDIATE_BUFFERING as u32) != 0 {
             (*Fcb).NonCachedUncleanCount += 1;
         }
         (*Vcb).OpenFileCount += 1;
@@ -3557,10 +3516,10 @@ pub unsafe extern "system" fn FatCreateNewFile(
         Iosb.Information = FILE_CREATED as _;
         if NT_SUCCESS(Iosb.__bindgen_anon_1.Status) != 0 {
             if DeleteOnClose != 0 {
-                SetFlag(&mut (*UnwindCcb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
+                SetFlag!((*UnwindCcb).Flags, CCB_FLAG_DELETE_ON_CLOSE);
             }
             if CreateLfn == 0 && UsingTunneledLfn == 0 {
-                SetFlag(&mut (*UnwindCcb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
+                SetFlag!((*UnwindCcb).Flags, CCB_FLAG_OPENED_BY_SHORTNAME);
             }
             if FatCheckManageVolumeAccess(
                 IrpContext,
@@ -3572,7 +3531,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 },
             ) != 0
             {
-                SetFlag(&mut (*UnwindCcb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
+                SetFlag!((*UnwindCcb).Flags, CCB_FLAG_MANAGE_VOLUME_ACCESS);
             }
         }
     }, |_, abnormal| {
@@ -3585,7 +3544,7 @@ pub unsafe extern "system" fn FatCreateNewFile(
             if *p_CountsIncremented != 0 {
                 (**p_Fcb).UncleanCount -= 1;
                 (**p_Fcb).OpenCount -= 1;
-                if FlagOn(((*FileObject).Flags as u8) as u32, FO_NO_INTERMEDIATE_BUFFERING as u32) != 0 {
+                if FlagOn((*FileObject).Flags as u32, FO_NO_INTERMEDIATE_BUFFERING as u32) != 0 {
                     (**p_Fcb).NonCachedUncleanCount -= 1;
                 }
                 (*Vcb).OpenFileCount -= 1;
@@ -3594,14 +3553,12 @@ pub unsafe extern "system" fn FatCreateNewFile(
                 }
             }
             if (*p_UnwindFcb).is_null() {
-                NT_ASSERT(
-                    (((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32) ||
+                NT_ASSERT!((((*ParentDcb).Specific.Dcb.as_ref().UnusedDirentVbo == 0xffffffff_u32) ||
                      (RtlAreBitsSet(
                          core::ptr::addr_of!((*ParentDcb).Specific.Dcb.as_ref().FreeDirentBitmap) as *mut RTL_BITMAP,
                          DirentByteOffset / core::mem::size_of::<DIRENT>() as u32,
                          DirentsNeeded,
-                     ) != 0)) as i32,
-                );
+                     ) != 0)) as i32);
                 RtlClearBits(
                     core::ptr::addr_of_mut!((*ParentDcb).Specific.Dcb.as_mut().FreeDirentBitmap) as *mut RTL_BITMAP,
                     DirentByteOffset / core::mem::size_of::<DIRENT>() as u32,
@@ -3755,10 +3712,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
             &(*(*fcb).NonPaged).SectionObjectPointers as *const _ as *mut _;
 
         // Purge section so that mappers will see zeros
-        SetFlag(
-            &mut (*(*fcb).Vcb).VcbState,
-            VCB_STATE_FLAG_CREATE_IN_PROGRESS,
-        );
+        SetFlag!((*(*fcb).Vcb).VcbState, VCB_STATE_FLAG_CREATE_IN_PROGRESS);
 
         CcPurgeCacheSection(
             core::ptr::addr_of_mut!((*(*fcb).NonPaged).SectionObjectPointers),
@@ -3942,10 +3896,7 @@ pub unsafe extern "system" fn FatSupersedeOrOverwriteFile(
 
         FatUnpinBcb(irp_context, core::ptr::addr_of_mut!(*p_dirent_bcb) as *mut *mut core::ffi::c_void);
 
-        ClearFlag(
-            &mut (*(*fcb).Vcb).VcbState,
-            VCB_STATE_FLAG_CREATE_IN_PROGRESS,
-        );
+        ClearFlag!((*(*fcb).Vcb).VcbState, VCB_STATE_FLAG_CREATE_IN_PROGRESS);
 
         DebugTrace(
             -1,
@@ -4071,9 +4022,9 @@ pub unsafe extern "system" fn FatCheckShareAccess(
 
     // NTDDI_VERSION >= NTDDI_VISTA block (unconditionally included; in practice always true for modern targets)
     if NodeType(FcbOrDcb as *const c_void) == FAT_NTC_FCB
-        && FlagOn((ShareAccess as u8) as u32, FILE_SHARE_WRITE) == 0
+        && FlagOn(ShareAccess as u32, FILE_SHARE_WRITE) == 0
         && FlagOn(
-            (*DesiredAccess as u8) as u32,
+            *DesiredAccess as u32,
             FILE_EXECUTE | FILE_READ_DATA | FILE_WRITE_DATA | FILE_APPEND_DATA | DELETE | MAXIMUM_ALLOWED,
         ) != 0
         && MmDoesFileHaveUserWritableReferences(
@@ -11087,3 +11038,15 @@ pub unsafe extern "system" fn FatCallSelfCompletionRoutine(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Value: u32, Flags: u32) -> i32 {
+    (Value as u64 & Flags as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(value: u8, flag: u8) -> u8 {
+    ((value as u64 & flag as u64) != 0) as u8
+}

@@ -23,16 +23,17 @@ type PCSTR = *const i8;
 #[allow(non_camel_case_types)]
 type c_char = i8;
 
-// HalDispatchTable is an ntoskrnl data export (cross-DLL data → raw-dylib).
-#[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
+// RtlAssert is an ntoskrnl FUNCTION: the import library resolves it. Never raw-dylib a
+// stdcall function: on i386 raw-dylib imports the decorated name `RtlAssert@16`, the kernel
+// exports `RtlAssert`, and freeldr refuses to load the driver.
 extern "system" {
     fn RtlAssert(FailedAssertion: PVOID, FileName: PVOID, LineNumber: ULONG, Message: PVOID);
 }
+// HalDispatchTable is an ntoskrnl data export (cross-DLL data → raw-dylib).
 #[link(name = "ntoskrnl.exe", kind = "raw-dylib", modifiers = "+verbatim")]
 extern "C" {
     pub static mut HalDispatchTable: HAL_DISPATCH;
 }
-// RtlAssert is NTAPI (stdcall on i386, _RtlAssert@16).
 
 // ---- file-scope preamble (translated) ----
 // @c2rust file-scope data (compiler-exact tables/statics)

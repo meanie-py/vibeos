@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -21,7 +22,6 @@ extern "system" {
 extern "system" {
     fn FsRtlIsDbcsInExpression(Expression: *const OEM_STRING, Name: *const OEM_STRING) -> BOOLEAN;
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn NT_ASSERT(cond: i32);
     fn FsRtlIsLeadDbcsCharacter(character: u8) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: NTSTATUS);
     fn FatIsNameShortOemValid( irp: *mut core::ffi::c_void, oem: ntkrnl_sys::ddk::OEM_STRING, arg1: u8, arg2: u8, arg3: u8, ) -> u8;
@@ -101,7 +101,7 @@ pub unsafe extern "system" fn FatStringTo8dot3(
     DebugTrace(1, Dbg, b"FatStringTo8dot3\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, Dbg, b"InputString = %Z\n\0".as_ptr() as *const i8, &InputString as *const OEM_STRING);
 
-    NT_ASSERT((InputString.Length <= 12) as i32);
+    NT_ASSERT!((InputString.Length <= 12) as i32);
 
     // Make the output name all blanks
     core::ptr::write_bytes(Output8dot3 as *mut u8, UCHAR_SP, 11);
@@ -117,8 +117,8 @@ pub unsafe extern "system" fn FatStringTo8dot3(
     // Check if we need to process an extension
     if i < InputString.Length as u32 {
         // Make sure we have a dot and then skip over it.
-        NT_ASSERT(((InputString.Length as u32) - i <= 4) as i32);
-        NT_ASSERT((*InputString.Buffer.add(i as usize) == (b'.') as i8) as i32);
+        NT_ASSERT!(((InputString.Length as u32) - i <= 4) as i32);
+        NT_ASSERT!((*InputString.Buffer.add(i as usize) == (b'.') as i8) as i32);
 
         i += 1;
 
@@ -272,10 +272,8 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
 
     PAGED_CODE!();
 
-    NT_ASSERT(
-        (((MAX_LFN_CHARACTERS as u16) * (core::mem::size_of::<u16>() as u16))
-            == (*Lfn).MaximumLength) as i32,
-    );
+    NT_ASSERT!((((MAX_LFN_CHARACTERS as u16) * (core::mem::size_of::<u16>() as u16))
+            == (*Lfn).MaximumLength) as i32);
 
     // We'll start by locating the dirent for the name.
     FatStringTo8dot3(
@@ -318,7 +316,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
 
             // If we thought that there was an LFN here and didn't find one,
             // we're as dead.
-            NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory) as i32);
+            NT_ASSERT!(((*Fcb).LfnOffsetWithinDirectory == (*Fcb).DirentOffsetWithinDirectory) as i32);
 
             if (*Fcb).LfnOffsetWithinDirectory != (*Fcb).DirentOffsetWithinDirectory {
                 FatRaiseStatus(IrpContext, STATUS_FILE_INVALID);
@@ -343,7 +341,7 @@ pub unsafe extern "system" fn FatGetUnicodeNameFromFcb(
                 0, // FALSE
             );
 
-            NT_ASSERT((status == STATUS_SUCCESS) as i32);
+            NT_ASSERT!((status == STATUS_SUCCESS) as i32);
         }
     }, |_, _abnormal| {
         // _SEH2_FINALLY
@@ -547,7 +545,7 @@ pub unsafe extern "system" fn FatSelectNames(
                     0u8,
                 );
 
-                NT_ASSERT(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
+                NT_ASSERT!(((Status == ntkrnl_sys::base::STATUS_SUCCESS) as u8) as i32);
 
                 FatLocateSimpleOemDirent(
                     IrpContext,
@@ -683,7 +681,7 @@ pub unsafe extern "system" fn FatUnicodeRestoreShortNameCase(
     // PAGED_CODE(); omitted
     unsafe {
         let length = (*ShortNameWithCase).Length;
-        NT_ASSERT((length <= 24) as i32);
+        NT_ASSERT!((length <= 24) as i32);
 
         let buffer = (*ShortNameWithCase).Buffer;
         let length_bytes = length as usize;

@@ -52,6 +52,7 @@ from .dead_regions import dummy_pseh_except_spans, never_compiled_lines
 from .export_audit import _repo_root_of, module_rust_crates
 from .lex_mask import directive_spans, mask_code
 from .profile_derive import ProfileDeriveError
+from .version_macros import version_defines
 
 try:
     import tomllib  # type: ignore[import-not-found]  # stdlib on 3.11+; tomli backport on 3.10
@@ -360,40 +361,12 @@ def _abnormal_only_spans(masked: str) -> list[tuple[int, int]]:
 # fastfat's FatMountVolume "dropped" IoVolumeDeviceToGuid, compiled out at our profile. The
 # tree pins `-D_WIN32_WINNT=0x502` (top-level CMakeLists), which sdkddkver.h turns into
 # NTDDI_WS03SP1; a module's own `-D_WIN32_WINNT=`/`-DNTDDI_VERSION=` overrides it.
-_VERSION_ALIAS_RE = re.compile(
-    r"^[ \t]*#[ \t]*define[ \t]+((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]+"
-    r"((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]*(?://.*)?$",
-    re.M,
-)
-_VERSION_DEFINE_RE = re.compile(
-    r"^[ \t]*#[ \t]*define[ \t]+((?:NTDDI|_WIN32_WINNT|_WIN32_IE)_\w+)[ \t]+(0[xX][0-9a-fA-F]+)",
-    re.M,
-)
 _COND_LINE_RE = re.compile(r"^([ \t]*#[ \t]*(?:if|elif))\b(.*)$")
 
 
 def version_pins(module_dir: Path, repo: Path) -> dict[str, int]:
-    pins: dict[str, int] = {}
-    ddk = repo / "sdk" / "include" / "psdk" / "sdkddkver.h"
-    if ddk.is_file():
-        text = ddk.read_text(errors="replace")
-        for name, value in _VERSION_DEFINE_RE.findall(text):
-            pins.setdefault(name, int(value, 16))
-        # `#define NTDDI_VISTA NTDDI_WIN6`: an alias guards fastfat's FatOpenVolume Vista block.
-        for name, target in _VERSION_ALIAS_RE.findall(text):
-            if target in pins:
-                pins.setdefault(name, pins[target])
+    pins = version_defines(module_dir, repo)
     cml = (module_dir / "CMakeLists.txt").read_text(errors="replace")
-    winnt = re.search(r"-D_WIN32_WINNT=(0[xX][0-9a-fA-F]+)", cml)
-    ntddi = re.search(r"-DNTDDI_VERSION=(0[xX][0-9a-fA-F]+)", cml)
-    pins["_WIN32_WINNT"] = int(winnt.group(1), 16) if winnt else 0x502
-    pins["WINVER"] = pins["_WIN32_WINNT"]
-    if ntddi:
-        pins["NTDDI_VERSION"] = int(ntddi.group(1), 16)
-    elif pins["_WIN32_WINNT"] == 0x502:
-        pins["NTDDI_VERSION"] = pins.get("NTDDI_WS03SP1", 0x05020100)  # sdkddkver.h:153
-    else:
-        pins["NTDDI_VERSION"] = pins["_WIN32_WINNT"] << 16
     pins.update(disabled_switches(module_dir, cml))
     return pins
 

@@ -98,3 +98,32 @@ def test_nvme_read_and_write_from_the_desktop(vm: QemuVM) -> None:
     vm.screendump(vm.work_dir / "nvme-copy.ppm")
     assert copied == USB_STICK_TEXT, f"{_COPY} on the namespace: {copied!r}\n{serial[-6000:]}"
     assert vm.qmp.execute("query-status")["return"]["status"] == "running"
+
+
+def test_reg_and_net_from_the_desktop(vm: QemuVM) -> None:
+    """reg.exe and net.exe (both Rust) on the same rig: `reg add` then `reg query`, and
+    `net help`, each redirected to a file the host reads back. Redirected, neither tool
+    has a console, so this is their WriteFile fallback, not WriteConsoleW."""
+    image = vm.scratch_path.parent / "nvmedisk.qcow2"
+    serial = vm._boot_output + vm.serial_output(timeout=1)
+    _tap(vm, ["meta_l", "r"])
+    time.sleep(3)
+    _type(
+        vm,
+        "cmd /c reg add HKCU\\VT /v P /d vibe42 /f & "
+        + " & ".join(
+            f"reg query HKCU\\VT /v P > {d}:\\REG.TXT & net help > {d}:\\NET.TXT" for d in _LETTERS
+        ),
+    )
+    _tap(vm, ["ret"])
+    reg = net = None
+    deadline = time.monotonic() + 120
+    while time.monotonic() < deadline and (reg is None or net is None):
+        serial += vm.serial_output(timeout=2)
+        assert not any(marker in serial for marker in _FATAL_MARKERS), serial[-4000:]
+        reg = reg or _stick_file(image, "REG.TXT")
+        net = net or _stick_file(image, "NET.TXT")
+    vm.screendump(vm.work_dir / "nvme-reg-net.ppm")
+    assert reg and b"vibe42" in reg and b"REG_SZ" in reg, f"REG.TXT: {reg!r}\n{serial[-6000:]}"
+    assert net and b"NET" in net.upper(), f"NET.TXT: {net!r}\n{serial[-6000:]}"
+    assert vm.qmp.execute("query-status")["return"]["status"] == "running"

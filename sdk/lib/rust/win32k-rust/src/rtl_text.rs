@@ -29,7 +29,6 @@ extern "C" {
     // call the existing cdecl re-export shim (freetype_rust_shims.c, in residue).
     #[link_name = "w32r_RtlStringCchCopyNW"]
     fn RtlStringCchCopyNW( pszDest: LPWSTR, cchDest: usize, pszSrc: LPCWSTR, cchToCopy: usize, ) -> NTSTATUS;
-    fn ERR(fmt: *const i8, ...);
 }
 unsafe extern "system" {
     fn SafeProbeForRead(address: *const core::ffi::c_void, length: usize, alignment: u32) -> i32;

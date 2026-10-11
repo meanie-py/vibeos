@@ -339,10 +339,10 @@ pub(super) static mut keypad_numbers: [VK_TO_WCHARS4; 11] = [
 ];
 
 pub(super) static mut vk_to_wchar_master_table: [VK_TO_WCHAR_TABLE; 5] = [
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_6mod as PVK_TO_WCHARS1, nModifications: 6 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS6>() as BYTE /* 14 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_8mod as PVK_TO_WCHARS1, nModifications: 8 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS8>() as BYTE /* 18 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_4mod as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const keypad_numbers as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_6mod as PVK_TO_WCHARS1, nModifications: 6 as BYTE /* vk_master(6, key_to_chars_6mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS6>() as BYTE /* 14 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_8mod as PVK_TO_WCHARS1, nModifications: 8 as BYTE /* vk_master(8, key_to_chars_8mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS8>() as BYTE /* 18 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_4mod as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master(4, key_to_chars_4mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const keypad_numbers as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master(4, keypad_numbers) */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
     VK_TO_WCHAR_TABLE { pVkToWchars: core::ptr::null_mut(), nModifications: 0, cbSize: 0 },
 ];
 
@@ -542,11 +542,11 @@ pub(super) static mut vk_to_f: [VK_F; 6] = [
 pub(super) static mut mouse_vk: [USHORT; 16] = [12 as USHORT /* VK_CLEAR */, 33 as USHORT /* VK_PRIOR */, 34 as USHORT /* VK_NEXT */, 35 as USHORT /* VK_END */, 36 as USHORT /* VK_HOME */, 37 as USHORT /* VK_LEFT */, 38 as USHORT /* VK_UP */, 39 as USHORT /* VK_RIGHT */, 40 as USHORT /* VK_DOWN */, 45 as USHORT /* VK_INSERT */, 46 as USHORT /* VK_DELETE */, 106 as USHORT /* VK_MULTIPLY */, 107 as USHORT /* VK_ADD */, 109 as USHORT /* VK_SUBTRACT */, 367 as USHORT /* VK_DIVIDE | KBDEXT */, 292 as USHORT /* VK_HOME | KBDEXT */];
 
 pub(super) static mut nls_tables: [KBDNLSTABLES; 2] = [
-    KBDNLSTABLES { OEMIdentifier: 0x0000 as USHORT, LayoutInformation: 2, NumOfVkToF: 6 as ULONG /* RTL_NUMBER_OF */, pVkToF: &raw const vk_to_f as PVK_F, NumOfMouseVKey: 16 as INT /* RTL_NUMBER_OF */, pusMouseVKey: &raw const mouse_vk as PUSHORT },
-    KBDNLSTABLES { OEMIdentifier: 0x000d as USHORT, LayoutInformation: 2, NumOfVkToF: 6 as ULONG /* RTL_NUMBER_OF */, pVkToF: &raw const vk_to_f as PVK_F, NumOfMouseVKey: 16 as INT /* RTL_NUMBER_OF */, pusMouseVKey: &raw const mouse_vk as PUSHORT },
+    KBDNLSTABLES { OEMIdentifier: 0x0000 as USHORT, LayoutInformation: 2, NumOfVkToF: 6 as ULONG /* RTL_NUMBER_OF(vk_to_f) */, pVkToF: &raw const vk_to_f as PVK_F, NumOfMouseVKey: 16 as INT /* RTL_NUMBER_OF(mouse_vk) */, pusMouseVKey: &raw const mouse_vk as PUSHORT },
+    KBDNLSTABLES { OEMIdentifier: 0x000d as USHORT, LayoutInformation: 2, NumOfVkToF: 6 as ULONG /* RTL_NUMBER_OF(vk_to_f) */, pVkToF: &raw const vk_to_f as PVK_F, NumOfMouseVKey: 16 as INT /* RTL_NUMBER_OF(mouse_vk) */, pusMouseVKey: &raw const mouse_vk as PUSHORT },
 ];
 
-pub(super) static mut keyboard_layout_table: KBDTABLES_FE = KBDTABLES_FE { Base: KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: core::ptr::null_mut(), pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: core::ptr::null_mut(), pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 128 as BYTE /* RTL_NUMBER_OF */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 0, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() }, dwType: 7, dwSubType: 0x0d02 as DWORD };
+pub(super) static mut keyboard_layout_table: KBDTABLES_FE = KBDTABLES_FE { Base: KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: core::ptr::null_mut(), pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: core::ptr::null_mut(), pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 128 as BYTE /* RTL_NUMBER_OF(scancode_to_vk) */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 0, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() }, dwType: 7, dwSubType: 0x0d02 as DWORD };
 
 /// `kbdnec.dll` export `KbdLayerDescriptor`: the layout's tables. The name is per layout so that
 /// every layout can live in one staticlib; its .spec maps it onto the real name.

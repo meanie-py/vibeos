@@ -118,6 +118,9 @@ class Node:
     text: str = ""
     kids: tuple = ()
     ctype: tuple = ()  # cast: (rust type, is_pointer)
+    # cast: a pointer to volatile (`(volatile ULONG *)p`), whose dereference must stay a
+    # volatile access -- ndis.h's NdisReadRegisterUlong reads a device register that way.
+    volatile: bool = False
 
 
 _BIN_PREC = [
@@ -139,6 +142,7 @@ class _Parser:
         self.t = toks
         self.i = 0
         self.types = types
+        self.last_volatile = False  # set by type_name
 
     def peek(self, k: int = 0) -> str | None:
         j = self.i + k
@@ -243,6 +247,11 @@ class _Parser:
             # name KNOWN to be a type makes it a cast -- or a `*` inside the parens, which
             # no expression can end with (`(LVITEMW *)&_ms_lvi`).
             return tok in _INT or j > 2
+        if after == "(" and j == 2 and not re.fullmatch(r"[A-Z][A-Z0-9_]*", tok):
+            # `(SendMessageW)(h, ..)` -- windowsx.h's SetWindowFont, a PARENTHESIZED CALLEE.
+            # Win32 type names are ALL CAPS (WPARAM, HWND, DWORD_PTR); a mixed-case one with
+            # no `*` before `)` followed by `(` is a function.
+            return False
         return after is not None and (
             after in ("(", "~", "!") or re.fullmatch(r"\w+", after) is not None
         )
@@ -250,10 +259,12 @@ class _Parser:
     def type_name(self) -> tuple[str, bool]:
         words: list[str] = []
         const = False
+        self.last_volatile = False
         while self.peek() not in (None, "*", ")"):
             w = self.take()
             if w in ("const", "volatile"):
                 const = const or w == "const"
+                self.last_volatile = self.last_volatile or w == "volatile"
                 continue
             if w in ("struct", "union", "enum"):
                 continue
@@ -264,6 +275,8 @@ class _Parser:
             stars += 1
             while self.peek() in ("const", "volatile"):
                 self.take()
+        # Only the POINTEE's qualifier makes the access volatile (`volatile T *`).
+        self.last_volatile = self.last_volatile and stars == 1
         base = _C_PRIM.get(tuple(words))
         if base is None:
             if len(words) != 1:
@@ -281,8 +294,9 @@ class _Parser:
         if tok == "(" and self._is_type_start():
             self.take("(")
             ty = self.type_name()
+            vol = self.last_volatile
             self.take(")")
-            return Node("cast", kids=(self.unary(),), ctype=ty)
+            return Node("cast", kids=(self.unary(),), ctype=ty, volatile=vol)
         if tok in ("-", "~", "!", "*", "&", "+"):
             self.take()
             return Node("unary", tok, (self.unary(),))
@@ -542,6 +556,17 @@ def _emit(node: Node) -> tuple[str, str | None]:
             inner = inner.kids[0]
         if ty == "()":
             return f"{{ let _ = {_emit(inner)[0]}; }}", None
+        # A cast TO a callback typedef (`Option<fn>`) is a coercion in Rust -- `as` cannot
+        # convert `Some(CompareFunc)` -- and a callback cast on to an integer goes through its
+        # bits: taskmgr's ListView_SortItems is `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Option<fn>`
+        # is pointer-sized with None at 0, the C pointer's own representation.
+        if ty in _OPTION_TYPES and not _ptr:
+            return f"({{ let __cb: {ty} = {_emit(inner)[0]}; __cb }})", ty
+        itext, ity = _emit(inner)
+        if ity in _OPTION_TYPES and ty not in _OPTION_TYPES:
+            return f"((core::mem::transmute::<{ity}, usize>({itext})) as {ty})", (
+                _PTR if _ptr else ty
+            )
         if inner.kind == "num":
             # Give the literal its C type: Rust infers it from the cast TARGET, so
             # `0x80000001 as LONG` is an out-of-range i32 literal (HKEY_CURRENT_USER), where C
@@ -559,6 +584,14 @@ def _emit(node: Node) -> tuple[str, str | None]:
             text = _emit(a)[0]
             callback = i < len(params) and params[i] in _OPTION_TYPES
             rendered.append(text if a.kind == "cast" or callback else f"(({text}) as _)")
+        # A call through a struct member (`(*Block->StatusHandler)(..)`, ndis.h's
+        # NdisMIndicateStatus; a WIDL `This->lpVtbl->Release(This)`): bindgen types every
+        # function-pointer field Option<fn>, and C calling a NULL one is undefined, so
+        # unwrap_unchecked -- never `*` (E0614), never a bare `.Release(` method lookup
+        # (E0599), never unwrap().
+        target = fn.kids[0] if fn.kind == "unary" and fn.text == "*" else fn
+        if target.kind == "member":
+            return f"({_emit(target)[0]}).unwrap_unchecked()({', '.join(rendered)})", None
         return f"{_emit(fn)[0]}({', '.join(rendered)})", None
     if k == "member":
         base, field = node.kids
@@ -578,6 +611,8 @@ def _emit(node: Node) -> tuple[str, str | None]:
         if op == "&":
             return f"core::ptr::addr_of_mut!({text})", None
         if op == "*":
+            if x.kind == "cast" and x.volatile:
+                return f"core::ptr::read_volatile({text})", None
             return f"(*{text})", None
         if ty is None and x.kind == "num":
             # A C integer literal is an `int` when it fits, else `unsigned int`: `-0x10000`
@@ -636,6 +671,14 @@ def _emit(node: Node) -> tuple[str, str | None]:
         return "{ " + "".join(f"{_emit(x)[0]}; " for x in first) + _emit(last)[0] + " }", None
     if k == "assign":
         lhs, rhs = node.kids
+        if (
+            lhs.kind == "unary"
+            and lhs.text == "*"
+            and lhs.kids[0].kind == "cast"
+            and lhs.kids[0].volatile
+        ):
+            ptr = _emit(lhs.kids[0])[0]
+            return f"core::ptr::write_volatile({ptr}, (({_emit(rhs)[0]}) as _));", None
         return f"{{ {_emit(lhs)[0]} = (({_emit(rhs)[0]}) as _); }}", None
     raise LowerError(f"node {k}")
 
@@ -687,6 +730,11 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
+    # A C++ TU expands windowsx.h's macros to `::SendMessageW(..)`: the global-scope
+    # qualifier names the same function, and Rust has no use for it.
+    expansion = re.sub(r"(?<![\w:>])::(?=[A-Za-z_])", "", expansion)
+    # A call through a struct member -- a WIDL vtable slot (`(This)->lpVtbl->Release(This)`,
+    # dxdiag's IDirectSound8_Release) or an NDIS handler -- unwraps its Option<fn> in _emit.
     return emit(_Parser(tokenize(expansion), types).parse())
 
 
@@ -769,14 +817,27 @@ def expansions(repo: Path, source: Path, names: set[str]) -> dict[str, tuple[int
     return {n: (arity[n], ex) for n, ex in per_arch.items() if len(ex) == len(_ARCHES)}
 
 
+_TYPE_ITEM = re.compile(r"^pub (?:type|struct|union|enum) (\w+)", re.M)
+_SYS_GLOB = re.compile(r"^pub use (\w+)_sys(?:::\w+)*::\*;", re.M)
+
+
 def island_types(crate_src: Path) -> set[str]:
+    """Type names the crate's island sees: its own, plus every `-sys` crate it glob-imports.
+
+    A user-mode island takes `LPWSTR` from `pub use ntdll_sys::nt::*;`. Without those, a cast
+    to it is not a cast to the parser: commctrl's `LPSTR_TEXTCALLBACKW ((LPWSTR)-1L)` read
+    as `(LPWSTR) - 1L`, a subtraction, and taskmgr/regedit got no constant at all."""
     out: set[str] = set()
+    sys_crates: set[str] = set()
     for p in crate_src.glob("types_*.rs"):
-        out |= set(
-            re.findall(
-                r"^pub (?:type|struct|union|enum) (\w+)", p.read_text(errors="replace"), re.M
-            )
-        )
+        text = p.read_text(errors="replace")
+        out |= set(_TYPE_ITEM.findall(text))
+        sys_crates |= set(_SYS_GLOB.findall(text))
+    for name in sorted(sys_crates):
+        src = crate_src.parents[1] / f"{name.replace('_', '-')}-sys" / "src"
+        for p in (src / "bindgen_amd64.rs", src / "bindgen_common.rs"):
+            if p.is_file():
+                out |= set(_TYPE_ITEM.findall(p.read_text(errors="replace")))
     return out
 
 
@@ -1119,31 +1180,31 @@ def widening_macros(repo: Path, tus: list[Path], names: set[str]) -> set[str]:
         return set()
     # Per NAME, across TUs: `_T` exists only in the TU that includes <tchar.h> (main's
     # mouse.c), and stopping at the first TU that preprocesses at all missed it.
+    # One probe PER NAME: a candidate of another arity (cmd's two-argument
+    # `__WINE_IS_DEBUG_ON`) makes `NAME("rcv")` a preprocessor error, and in a shared probe
+    # that error failed every TU for every name -- `_T` was never widened (725 call sites).
     widening: set[str] = set()
-    left = set(names)
-    for tu in tus:
-        if not left:
-            break
-        found: dict[str, set[str]] = {}
-        ok = True
-        for arch in _ARCHES:
-            argv = compile_argv(repo, arch, tu)
-            if argv is None:
-                ok = False
+    for n in sorted(names):
+        for tu in tus:
+            seen: set[str] = set()
+            ok = True
+            for arch in _ARCHES:
+                argv = compile_argv(repo, arch, tu)
+                if argv is None:
+                    ok = False
+                    break
+                try:
+                    text = _preprocess(argv, tu, f'__RCV_BEGIN__ {n}("rcv") __RCV_END__')
+                except LowerError:
+                    ok = False
+                    break
+                m = re.search(r"__RCV_BEGIN__(.*?)__RCV_END__", text, re.S)
+                seen.add(m.group(1).strip() if m else "")
+            # Keep looking past a TU where NAME is simply undefined (`_T` exists only where
+            # <tchar.h> is included -- main's mouse.c).
+            if ok and seen == {'L"rcv"'}:
+                widening.add(n)
                 break
-            probe = "\n".join(f'__RCV_BEGIN_{n}__ {n}("rcv") __RCV_END__' for n in sorted(left))
-            try:
-                text = _preprocess(argv, tu, probe)
-            except LowerError:
-                ok = False
-                break
-            for n in left:
-                m = re.search(rf"__RCV_BEGIN_{n}__(.*?)__RCV_END__", text, re.S)
-                found.setdefault(n, set()).add(m.group(1).strip() if m else "")
-        if ok:
-            hit = {n for n, ex in found.items() if ex == {'L"rcv"'}}
-            widening |= hit
-            left -= hit
     return widening
 
 
@@ -1165,7 +1226,10 @@ def widen_call_sites(rust: str, names: set[str]) -> tuple[str, int]:
                 return m.group(0)
             count += 1
             body = ", ".join(f"0x{u:04x}" for u in units)
-            return f'(&[{body}u16]).as_ptr() /* {n} "{m.group(1)[:60]}" */'
+            # The note is a block comment: a literal holding `*/` (cmd's set.c
+            # `_T("*/%+-&^|")`) closed it early and left the rest as an unterminated string.
+            note = m.group(1)[:60].replace("*/", "*\\/").replace("/*", "/\\*")
+            return f'(&[{body}u16]).as_ptr() /* {n} "{note}" */'
 
         rust = re.sub(rf"\b{re.escape(n)}!?\(\s*{_STR_CALL}\s*\)", repl_s, rust)
 

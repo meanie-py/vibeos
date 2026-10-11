@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{KdPrintEx};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
@@ -50,23 +52,20 @@ use ntkrnl_sys::ddk::{RTL_SPLAY_LINKS};
 
 extern "system" {
     fn RtlAssert( FailedAssertion: *const u8, FileName: *const u8, LineNumber: u32, Message: *const u8, );
-    fn NT_ASSERT(cond: i32);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn NodeType(Fcb: *mut FCB) -> u32;
     fn FatGetFirstChild(Fcb: *mut FCB) -> *mut FCB;
     fn FatGetNextSibling(Fcb: *mut FCB) -> *mut FCB;
     } extern "C" { fn DebugTrace(level: i32, component: u32, message: *const i8, ...); } extern "system" {
     fn DebugUnwind(name: *const i8);
-    fn ClearFlag(flags: *mut u32, bits: u32);
-    fn SetFlag(flags: *mut u32, bits: u32);
     fn FatGetFcbOplock(Fcb: *mut FCB) -> *mut OPLOCK;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
     fn FsRtlSetupAdvancedHeader( Header: *mut FSRTL_ADVANCED_FCB_HEADER, Mutex: *mut FAST_MUTEX, );
     static mut FatData: FAT_DATA;
     static FatJanOne1980: LARGE_INTEGER;
     fn FatFspClose(Vcb: *mut VCB);
-    } extern "C" { fn KdPrintEx(Filter: u32, Level: u32, Format: *const i8, ...); } extern "system" {
+}
+extern "system" {
 }
 extern "system" {
     fn ExFreeToNPagedLookasideList( lookaside: *mut NPAGED_LOOKASIDE_LIST, entry: *mut core::ffi::c_void, );
@@ -82,7 +81,6 @@ extern "system" {
     fn ExInterlockedPushEntrySList( ListHead: *mut core::ffi::c_void, ListEntry: *mut core::ffi::c_void, Lock: *mut u32, ) -> *mut core::ffi::c_void;
     fn DbgDoit(val: i32);
     fn FatPerformDevIoCtrl( IrpContext: *mut IRP_CONTEXT, IoctlCode: u32, TargetDeviceObject: *mut DEVICE_OBJECT, InputBuffer: *mut core::ffi::c_void, InputBufferLength: u32, OutputBuffer: *mut core::ffi::c_void, OutputBufferLength: u32, InternalDeviceIoControl: i32, RemapStatus: i32, Iosb: *mut _IO_STATUS_BLOCK, ) -> i32;
-    fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8;
     fn DebugDump(format: *const u8, arg: i32, fcb: *mut FCB);
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FatRemoveNames(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -716,7 +714,7 @@ pub unsafe extern "system" fn FatDeleteVcb(
 
     ObDereferenceObject((*Vcb).TargetDeviceObject as *mut core::ffi::c_void);
 
-    NT_ASSERT(if (*Vcb).CloseContextCount <= 1 { 1 } else { 0 });
+    NT_ASSERT!(if (*Vcb).CloseContextCount <= 1 { 1 } else { 0 });
 
     core::ptr::write_bytes(Vcb as *mut u8, 0, core::mem::size_of::<VCB>());
 
@@ -978,10 +976,7 @@ pub unsafe extern "system" fn FatCreateFcb(
 
         // If paging file, set flags
         if IsPagingFile != 0 {
-            SetFlag(
-                core::ptr::addr_of_mut!((**p_fcb).FcbState),
-                FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE,
-            );
+            SetFlag!((**p_fcb).FcbState, FCB_STATE_PAGING_FILE | FCB_STATE_SYSTEM_FILE);
         }
 
         // Allocate main resource
@@ -1368,9 +1363,9 @@ pub unsafe extern "system" fn FatDeleteFcb(IrpContext: *mut IRP_CONTEXT, FcbPtr:
         #[cfg(ntddi_ge_ntddi_win8)]
         FsRtlUninitializeOplock(FatGetFcbOplock(Fcb));
 
-        NT_ASSERT(((*dcb_inner).DirectoryFileOpenCount == 0) as i32);
-        NT_ASSERT(IsListEmpty(core::ptr::addr_of!((*dcb_inner).ParentDcbQueue) as *mut LIST_ENTRY) as i32);
-        NT_ASSERT((core::ptr::null_mut::<FILE_OBJECT>() == (*dcb_inner).DirectoryFile) as i32);
+        NT_ASSERT!(((*dcb_inner).DirectoryFileOpenCount == 0) as i32);
+        NT_ASSERT!(IsListEmpty(core::ptr::addr_of!((*dcb_inner).ParentDcbQueue) as *mut LIST_ENTRY) as i32);
+        NT_ASSERT!((core::ptr::null_mut::<FILE_OBJECT>() == (*dcb_inner).DirectoryFile) as i32);
     } else {
         // Uninitialize the byte range file locks and opportunistic locks
         let fcb_inner = (*Fcb).Specific.Fcb.as_ref() as *const _FCB__bindgen_ty_1__bindgen_ty_2;
@@ -1479,14 +1474,14 @@ pub unsafe extern "system" fn FatDeallocateCcbStrings(Ccb: *mut CCB) {
     PAGED_CODE!();
     if ((*Ccb).Flags & CCB_FLAG_FREE_UNICODE) != 0 {
         let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
-        NT_ASSERT(if (*ccb_inner).UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
-        NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
+        NT_ASSERT!(if (*ccb_inner).UnicodeQueryTemplate.Buffer.is_null() { 0 } else { 1 });
+        NT_ASSERT!(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
         RtlFreeUnicodeString(core::ptr::addr_of_mut!((*ccb_inner).UnicodeQueryTemplate));
     }
     if ((*Ccb).Flags & CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
         let ccb_inner = (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut() as *mut _CCB__bindgen_ty_1__bindgen_ty_1;
-        NT_ASSERT(if (*ccb_inner).OemQueryTemplate.Wild.as_ref().Buffer.is_null() { 0 } else { 1 });
-        NT_ASSERT(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
+        NT_ASSERT!(if (*ccb_inner).OemQueryTemplate.Wild.as_ref().Buffer.is_null() { 0 } else { 1 });
+        NT_ASSERT!(if ((*Ccb).Flags & CCB_FLAG_CLOSE_CONTEXT) != 0 { 0 } else { 1 });
         RtlFreeOemString((*ccb_inner).OemQueryTemplate.Wild.as_mut() as *mut OEM_STRING);
     }
     (*Ccb).Flags &= !(CCB_FLAG_FREE_OEM_BEST_FIT | CCB_FLAG_FREE_UNICODE);
@@ -1577,16 +1572,14 @@ pub unsafe extern "system" fn FatCreateIrpContext(
             ExRaiseStatus(STATUS_INVALID_DEVICE_REQUEST);
         }
 
-        NT_ASSERT(
-            (((*irp_sp).FileObject.is_null() == false)
+        NT_ASSERT!((((*irp_sp).FileObject.is_null() == false)
                 || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
                     && (*irp_sp).MinorFunction == IRP_MN_USER_FS_REQUEST as u8
                     && (*irp_sp).Parameters.FileSystemControl.FsControlCode == FSCTL_INVALIDATE_VOLUMES)
                 || ((*irp_sp).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8
                     && (*irp_sp).MinorFunction == (IRP_MN_MOUNT_VOLUME) as u8)
                 || (*irp_sp).MajorFunction == (IRP_MJ_SHUTDOWN
-                as i32) as u8) as i32,
-        );
+                as i32) as u8) as i32);
     }
 
     //
@@ -1641,7 +1634,7 @@ pub unsafe extern "system" fn FatCreateIrpContext(
                 && BooleanFlagOn((*irp).Flags, IRP_NOCACHE) != 0
                 && BooleanFlagOn(((*irp_sp).Flags) as u32, SL_WRITE_THROUGH) != 0)
         {
-            SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
+            SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
         }
     } else if (*irp_context).MajorFunction == (IRP_MJ_FILE_SYSTEM_CONTROL) as u8 {
         (*irp_context).RealDevice = (*(*irp_sp).Parameters.MountVolume.Vpb).RealDevice;
@@ -1651,14 +1644,14 @@ pub unsafe extern "system" fn FatCreateIrpContext(
     //  Set the wait parameter
     //
     if wait != 0 {
-        SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT);
+        SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     //
     //  Set the recursive file system call parameter.
     //
     if IoGetTopLevelIrp() != irp {
-        SetFlag(&mut (*irp_context).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL);
+        SetFlag!((*irp_context).Flags, IRP_CONTEXT_FLAG_RECURSIVE_CALL);
     }
 
     //
@@ -1674,8 +1667,8 @@ pub unsafe extern "system" fn FatDeleteIrpContext_Real(IrpContext: *mut IRP_CONT
 
     DebugTrace(1, Dbg, b"FatDeleteIrpContext, IrpContext = %p\n\0".as_ptr() as *const i8, IrpContext);
 
-    NT_ASSERT(((*IrpContext).NodeTypeCode == (FAT_NTC_IRP_CONTEXT) as u16) as i32);
-    NT_ASSERT(((*IrpContext).PinCount == 0) as i32);
+    NT_ASSERT!(((*IrpContext).NodeTypeCode == (FAT_NTC_IRP_CONTEXT) as u16) as i32);
+    NT_ASSERT!(((*IrpContext).PinCount == 0) as i32);
 
     if !(*IrpContext).FatIoContext.is_null() {
         if ((*IrpContext).Flags & IRP_CONTEXT_STACK_IO_CONTEXT) == 0 {
@@ -1704,11 +1697,9 @@ pub unsafe extern "system" fn FatGetNextFcbBottomUp(
     PAGED_CODE!();
     UNREFERENCED_PARAMETER!(IrpContext as *mut core::ffi::c_void);
 
-    NT_ASSERT(
-        ((FatVcbAcquiredExclusive(IrpContext, (*TerminationFcb).Vcb) != 0)
+    NT_ASSERT!(((FatVcbAcquiredExclusive(IrpContext, (*TerminationFcb).Vcb) != 0)
             || (FlagOn((*(*TerminationFcb).Vcb).VcbState, VCB_STATE_FLAG_LOCKED) != 0))
-            as i32,
-    );
+            as i32);
 
     if !Fcb.is_null() {
         if Fcb == TerminationFcb {
@@ -1746,7 +1737,7 @@ pub unsafe extern "system" fn FatGetNextFcbTopDown(
     } else {
         0
     };
-    NT_ASSERT(valid);
+    NT_ASSERT!(valid);
 
     if (NodeType(Fcb) == (FAT_NTC_DCB) as u32 || NodeType(Fcb) == (FAT_NTC_ROOT_DCB) as u32)
         && !IsListEmpty({
@@ -1802,7 +1793,7 @@ pub unsafe extern "system" fn FatSwapVpb(
             // then swap out the Vpb.  We must preserve the REMOVE_PENDING flag
             // so that the device is not remounted in the middle of a PnP remove
             // operation.
-            NT_ASSERT( ((*Vcb).SwapVpb != core::ptr::null_mut()) as i32 );
+            NT_ASSERT!(((*Vcb).SwapVpb != core::ptr::null_mut()) as i32);
 
             let swap_vpb = (*Vcb).SwapVpb;
 
@@ -1820,7 +1811,7 @@ pub unsafe extern "system" fn FatSwapVpb(
                 // Get the IRP stack.
                 IrpSp = IoGetCurrentIrpStackLocation((*IrpContext).OriginatingIrp);
 
-                NT_ASSERT( ((*IrpSp).FileObject).is_null() as i32 );
+                NT_ASSERT!(((*IrpSp).FileObject).is_null() as i32);
 
                 // Check the VPB in the IRP to see if it is the one we are swapping.
                 if (*IrpSp).Parameters.MountVolume.Vpb == OldVpb {
@@ -1834,10 +1825,7 @@ pub unsafe extern "system" fn FatSwapVpb(
             // the swap.
             (*Vcb).SwapVpb = core::ptr::null_mut();
             FatSetVcbCondition(Vcb, VcbBad);
-            SetFlag(
-                core::ptr::addr_of_mut!((*Vcb).VcbState),
-                VCB_STATE_FLAG_VPB_MUST_BE_FREED,
-            );
+            SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_VPB_MUST_BE_FREED);
 
             Result = 1; // TRUE
         }
@@ -1873,37 +1861,26 @@ pub unsafe extern "system" fn FatCheckForDismount(
             VolumeLabel.MaximumLength = MAXIMUM_VOLUME_LABEL_LENGTH;
             VolumeLabel.Buffer = &mut (*Vpb).VolumeLabel[0] as *mut u16;
 
-            KdPrintEx(
-                DPFLTR_FASTFAT_ID,
-                DPFLTR_INFO_LEVEL,
-                b"FASTFAT: Dismounting Volume %Z\n\0".as_ptr() as *const i8,
-                &VolumeLabel as *const _UNICODE_STRING,
-            );
+            KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, b"FASTFAT: Dismounting Volume %Z\n\0".as_ptr() as *const i8, &VolumeLabel as *const _UNICODE_STRING);
         }
 
         // Swap this VCB's VPB.
         FatSwapVpb(IrpContext, Vcb);
 
         // Clear the VPB_MOUNTED bit.
-        ClearFlag((&mut (*Vpb).Flags as *mut u16) as *mut u32, VPB_MOUNTED);
+        ClearFlag!((*Vpb).Flags, VPB_MOUNTED);
 
         // Clear VPB_LOCKED and VPB_DIRECT_WRITES_ALLOWED.
-        ClearFlag(
-            (&mut (*Vpb).Flags as *mut u16) as *mut u32,
-            VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED,
-        );
+        ClearFlag!((*Vpb).Flags, VPB_LOCKED | VPB_DIRECT_WRITES_ALLOWED);
 
         IoReleaseVpbSpinLock(SavedIrql);
 
         // Mark dismount in progress.
-        NT_ASSERT(((FlagOn(
-            ((*Vcb).VcbState as u8) as u32,
+        NT_ASSERT!(((FlagOn(
+            (*Vcb).VcbState as u32,
             VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
         ) == 0) as BOOLEAN) as i32);
-        SetFlag(
-            core::ptr::addr_of_mut!((*Vcb).VcbState),
-            VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-        );
+        SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS);
 
         // Close down internal opens.
         FatTearDownVcb(IrpContext, Vcb);
@@ -1929,14 +1906,11 @@ pub unsafe extern "system" fn FatCheckForDismount(
         } else {
             IoReleaseVpbSpinLock(SavedIrql);
 
-            NT_ASSERT((FlagOn(
-                ((*Vcb).VcbState as u8) as u32,
+            NT_ASSERT!(((FlagOn(
+                (*Vcb).VcbState as u32,
                 VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-            ) as BOOLEAN) as i32);
-            ClearFlag(
-                &mut (*Vcb).VcbState as *mut u32,
-                VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS,
-            );
+            ) != 0) as BOOLEAN) as i32);
+            ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DISMOUNT_IN_PROGRESS);
         }
     } else if Force != 0 {
         // Forcing the dismount; swap the VPB.
@@ -1969,7 +1943,7 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
 
     PAGED_CODE!();
 
-    NT_ASSERT((((*ShortName).Buffer).is_null() as u8) as i32);
+    NT_ASSERT!((((*ShortName).Buffer).is_null() as u8) as i32);
 
     // _SEH2_TRY / _SEH2_FINALLY
     crate::seh::try_finally(&mut (), |_| {
@@ -1993,7 +1967,7 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
 
         (*Fcb).ShortName.FileNameDos = 1;
 
-        NT_ASSERT((((*Fcb).ExactCaseLongName.Buffer).is_null() as u8) as i32);
+        NT_ASSERT!((((*Fcb).ExactCaseLongName.Buffer).is_null() as u8) as i32);
 
         if Lfn.is_null() || (*Lfn).Length == 0 {
             let size = RtlOemStringToCountedUnicodeSize(ShortName) as usize;
@@ -2003,7 +1977,7 @@ pub unsafe extern "system" fn FatConstructNamesInFcb(
             return; // try_return( NOTHING )
         }
 
-        NT_ASSERT((((*Fcb).FullFileName.Buffer).is_null() as u8) as i32);
+        NT_ASSERT!((((*Fcb).FullFileName.Buffer).is_null() as u8) as i32);
 
         (*Fcb).FinalNameLength = (*Lfn).Length;
         (*Fcb).ExactCaseLongName.Length = (*Lfn).Length;
@@ -6393,3 +6367,15 @@ pub unsafe extern "system" fn FatScanForDataTrack(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Mask: u32) -> i32 {
+    (Flags as u64 & Mask as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Bit: u32) -> u8 {
+    ((Flags as u64 & Bit as u64) != 0) as u8
+}

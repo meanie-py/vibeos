@@ -704,6 +704,59 @@ strsafe-rust gained `StringCchCatNW`. Review fixes beyond the C: a UTF-16BE save
 stack bytes past its buffer (`&buffer[dwPos]`, a WCHAR index into a BYTE array), a
 command-line check that read before the string, and `unwrap_unchecked` on a NULL edit proc.
 
+**Batch A: twenty applications, one gate (2026-10-10).** ~$1.45 of Haiku for 20 modules
+(~420 functions). The residue was almost entirely $0 tooling, each a class:
+- **Shared crates over per-module copies:** `conutils-h` (conutils' header surface: streams,
+  `StdOut`, `ConInitStdStreams`, Puts/Printf -- turned cacls/logoff/runas/shutdown green at
+  $0); win32macros-rust gained wine's `WINE_*!`/`TRACE_ON!`, `HRESULT_FROM_WIN32!`, and the
+  CRT's dllimport data (`__argc`, `__wargv`, `_environ`) through their `__imp_` slots.
+- **integrate passes:** a bare `__argc`/`stdin` becomes the header's own accessor
+  expansion; `TRACE_ON(ch)` names the channel static; an all-zero array field becomes
+  `zeroed()` (c2rust froze amd64's 6-byte TBBUTTON padding into i386's 2); c2rust's
+  `c2rust_unnamed` members take bindgen's `__bindgen_anon_N`; a Rust `"x".as_ptr()` handed to
+  C gets its NUL; `NAME!(` is dropped back to a call when the prelude's NAME is a function.
+- **The variadic stage declares the trampolines** it generates, so a replay no longer loses
+  the `extern "C" { fn ErrorMsgBox(.., ...) }` a translation carried by hand.
+- **derive:** vendored TUs (vendor.yaml) stay C -- mstsc's 18 `vendor/rdesktop` files were
+  scaffolded as modules and `port check` reported "0 errors (+18 not translated)", which a
+  script reading only the error count calls green; one-line enum members are owned; a module
+  header that redefines `_WIN32_WINNT` gets sdkddkver's NTDDI; two headers defining a type
+  under ONE `#ifndef X_DEFINED` guard are not a conflict (dxdiag's D3DVECTOR).
+- **c2rust_anchor:** an anonymous type no arch matched was "agreed" as the string
+  `0 candidates` and written into mmc's source.
+- **sdk_macros:** a WIDL vtable call lowers to `.Method.unwrap_unchecked()(..)`.
+
+Two read-only reviews then found eleven translation bugs the compiler could not (see
+rust-port-status.md); `verify_translation_literals` now pairs every port module and caught sc's
+hand-encoded `_T("..")` columns. Owed: seal `_T()`/`TEXT()` literals in UNICODE modules the way
+`L"..."` is, so the model never hand-encodes them.
+
+**Batch B: calc, taskmgr, regedit, clb (2026-10-10).** ~$1.46 of Haiku. Again the residue was
+classes, each now a pass with a test:
+- **scanner:** a definition tree-sitter loses (calc's `_tWinMain`, its header split across
+  `#if defined(__GNUC__) && !defined(__REACTOS__)` / `#else`; `Theme_Stop` after bare
+  `GET_CB(x)` statement macros) is recovered from the LIVE text, with the module's pinned `-D`
+  ints deciding the dead lines (msvcrt's `_MSVCR_VER>=80` bodies stay out).
+- **integrate:** `c_longdouble`/`f128` -> `f64` (gcc.cmake's `-mlong-double-64`; exact);
+  c2rust's `.Option_0` -> `.Option`; `__FILE__`/`__LINE__` -> `file!()`/`line!()`; a module
+  const named after an SDK object macro the C never defines is dropped for the header's own
+  expansion (regedit's ZERO-extended `HKEY_*`); invented `__REACTOS__` gates settled to the live
+  arm (field manual, "Compiled is not executed"); a sibling import whose definition moved to
+  the prelude is dropped (E0603).
+- **variadic:** the forwarding shapes -- a `va_start`ed local, or a cloned list only handed on
+  -- become `let ap: va_list = *(ap_list as *mut va_list)` (a `char *` on every Windows target).
+- **resolve/macros:** clang facts never take compiler builtins (`__LINE__ = 7`) and wrap a
+  negative unsigned (`_UI64_MAX: u64 = -1`); a copied extern naming its source crate's private
+  types (`Compare`, `super::super::CntCmpFn`) is refused; a copy of a name the crate now defines
+  goes; a UNICODE module reads only its W arm of a local A/W `#define`; the SDK lowerer sees the
+  `-sys` glob's types (`(LPWSTR)-1L` was a subtraction) and casts callbacks by coercion/bits.
+- **island:** a typedef and a struct tag sharing a name keep the tag (C's two namespaces).
+- strsafe-rust: `StringCchPrintfExW!`, `StringCbCopyNW`, `StringCbVPrintfW`.
+
+Owed: an `#ifdef X` where X is defined by nothing the TU sees (calc's `USE_KEYBOARD_HOOK`,
+`DISABLE_HTMLHELP_SUPPORT`) is still sent to the model; the preprocessor's own `-dM` table
+can decide it.
+
 ### `port data`: a C data TU as Rust statics, $0 (2026-10-07)
 
     rustconv port data <stem> <tu.c>        # or: python -m rustconv.c_data_port <tu.c> --crate X --out DIR

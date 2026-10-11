@@ -73,12 +73,47 @@ tools/optiplex/power.sh cycle 10     # boot it; watch COM7 (serial.sh)
 freeldr reads but the kernel cannot see, so the livecd loads its kernel and then has no
 boot volume. The staged image holds the loader and `livecd/livecd.iso`, and its only
 `freeldr.ini` entry loads that into a RAM disk exported as a CD (`/RDPATH ...
-/RDEXPORTASCD`, the SMP kernel pair, debug on COM1). It reached the desktop on
-2026-10-10: ~6.5 min pulling the 400 MB image at ~1 MB/s, then ~1 min to `shell ready`.
+/RDEXPORTASCD`, the SMP kernel pair, debug on COM1). `netboot.sh` also writes
+`optiplex.ipxe`; it `imgfree`s first, because the board's embedded script re-chains it on
+failure and a failed attempt's images stay registered (each retry leaked 400 MB until every
+download failed with ENOSPC, hiding the first error).
+
+`OPTIPLEX_TRIPWIRE='SPECIALPOOL=*' tools/optiplex/netboot.sh` arms the kernel's tripwire for
+the staged image (a `/TRIPWIRE=` boot option; commas between tokens), as `smoke --tripwire`
+does in QEMU. The copy into the payload dir is `dd` in 16 KB blocks: under host memory
+pressure drvfs fails larger writes, and reads, with ENOMEM.
+
+Timing (2026-10-10): ~3.5 min pulling the image, then ~1 min to `shell ready`. freeldr
+reads it 62 KB at a time (its INT 13h buffer sits below 1 MB), so a `sanboot` is ~6,500
+HTTP range requests; `serve_http.py` speaks HTTP/1.1 keep-alive for that, which took the
+pull from ~1 MB/s (a new TCP connection per request) to ~2 MB/s.
+
+Tried and dropped: iPXE `kernel memdisk iso raw` + `initrd` (one GET, then INT 13h from
+RAM; boots in QEMU). On the board, GRUB's iPXE fails the 400 MB `initrd` with ENOSPC
+although its heap has 2 GB (a chained second iPXE downloads it fine; not run down), and
+memdisk's CD emulation leaves the NVMe at drive 80h, where `isoboot.bin` finds an MBR and
+offers "Press any key to boot from the ReactOS medium", then boots the NVMe. `isobtrt.bin`
+is no way round that: without the prompt it boots the hard disk at once.
+
+## What VibeOS sees (2026-10-10)
+
+| Hardware | Status |
+|---|---|
+| CPU, i7-4770 (4C/8T) | 8 processors started (MADT) |
+| RAM, 32 GB | All of it: `[MM] physical memory: 32686 MiB` |
+| HD 4600 iGPU | VBE linear framebuffer at the panel's native 1920x1080; no native driver |
+| Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. It reports 85 ports (should be 21) |
+| Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports). Since 2026-10-11 a USB-C hub sits on it with a Wi-Fi/Bluetooth stick: its USB 2 side enumerates (`214b:7250` hub, VIA `2109:2815` hub, the Realtek RTL8821CU `0bda:c820` and the hub's RTL8153 gigabit Ethernet `0bda:8153`, neither with a driver). Its SuperSpeed side (`2109:0815`) fails START: usbhub has no USB 3 hub support (it asks for a 0x29 hub descriptor, which a SuperSpeed hub stalls). On some cold boots the hub is not seen at all and PnP re-enumerates the card's root hub in a loop (not yet run down; usbxhci logs each port change and root-hub change report) |
+| Crucial P310 NVMe | nvme.sys, disk and three partitions |
+| SATA AHCI, TSSTcorp DVD | UniATA; the DVD is `cdrom.sys` |
+| I217-LM Ethernet (8086:153A) | **Works** (2026-10-11): netstack-rust's e1000 backend drives it (`pch.rs`: PCH reset, PHY wake, MAC from RAR0), DHCP leases an address from the router and the stack's ICMP self-test pings the gateway. No interrupt yet: the Interrupt Line register reads 128, `HalGetInterruptVector` refuses it, and the worker polls. Link autonegotiation takes over 5 s after reset. The MAC (`a6:ee:e0:c0:50:12`) is locally administered, as Libreboot's GbE region ships |
+| HD Audio (8C20) | **Starts** (2026-10-11): the controller needed more than hdaudbus's 1 ms to leave reset (now 100 ms, as Linux). Codec 0 is a Realtek ALC280 with an audio function group; its `HDAUDIO\FUNC_01&VEN_10EC&DEV_0280` device has **no function driver** (none in the tree). The Haswell HDMI/DP audio controller (0C0C) starts, but its codec verbs time out |
+| PCI INTx | All routed by ACPI `_PRT` (GSI 16-23, level, active-low) |
 
 ## Known gaps
 
-- The RAM-disk pull is ~1 MB/s (iPXE serving freeldr's INT 13h reads over HTTP).
-- 1024x768 in the corner of the 1080p panel. libgfxinit sets 1920x1080 and SeaBIOS's
-  coreboot-framebuffer VGA offers 16 "modes" that are all windows onto it (same 7680-byte
-  pitch); freeldr prefers 1024x768. Prefer the native mode when every mode shares a pitch.
+- Audio: an HD Audio codec function driver for the ALC280, and the HDMI audio verb timeouts.
+- The NIC's interrupt (it polls).
+- USB: no SuperSpeed hub support in usbhub, and the intermittent root-hub stall on the USB 3
+  card (table above).
+- The netboot pull is still ~2 MB/s; the next step is bigger INT 13h reads in freeldr.

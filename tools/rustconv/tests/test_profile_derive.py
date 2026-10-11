@@ -801,7 +801,7 @@ def test_cpp_module_scaffold_wires_atl_rust(tmp_path):
     scaffold_crate(derive(_mod(tmp_path), root), out)
     assert 'atlclasses-rust = { path = "../atlclasses-rust" }' in (out / "Cargo.toml").read_text()
     prelude = (out / "src/prelude.rs").read_text()
-    assert "pub use atl_rust::{atl_format," in prelude and "CStringW, POSITION}" in prelude
+    assert "pub use atl_rust::{atl_format," in prelude and "CStringW, POSITION, _AtlBaseModule}" in prelude
 
 
 def test_scaffold_refuses_to_clobber(tmp_path):
@@ -1569,6 +1569,19 @@ class TestCargoKernelTarget:
         _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root)
         assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
 
+    def test_arch_genex_flipped_entry_is_restored_for_its_arch_only(self, tmp_path):
+        root = self._tree(tmp_path)
+        text = (
+            "list(APPEND SOURCE\n"
+            "    #$<$<STREQUAL:${ARCH},i386>:${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c>\n"
+            "    )\n"
+        )
+        out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "i386")
+        assert restored == ["${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c"]
+        assert "    ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/job.c" in out.splitlines()
+        _out, restored = uncomment_flipped_source_lists(text, root / "ntoskrnl", root, "amd64")
+        assert restored == []
+
     def test_kernelexe_is_a_kernel_target_with_linked_interface_includes(self, tmp_path):
         root = self._tree(tmp_path)
         _interface_include_index.cache_clear()
@@ -1618,6 +1631,50 @@ def test_dummyunionname1_is_an_anonymous_member_not_a_type(tmp_path):
     assert header_type_defs(h) == {"_S", "S"}
 
 
+def test_one_line_enum_members_are_owned(tmp_path):
+    """extrac32: `enum {OUTSIDE_ARG, INSIDE_ARG, INSIDE_QUOTED_ARG} state;` inside a function."""
+    from rustconv.profile_derive import header_symbols
+
+    c = tmp_path / "x.c"
+    c.write_text(
+        "void f(void)\n{\n    enum {OUTSIDE_ARG, INSIDE_ARG, INSIDE_QUOTED_ARG} state;\n}\n"
+    )
+    got = header_symbols(c, frozenset({"INSIDE_ARG", "INSIDE_QUOTED_ARG", "NOPE"}))
+    assert set(got) == {"INSIDE_ARG", "INSIDE_QUOTED_ARG"}
+
+
+def test_a_shared_definition_guard_is_not_a_conflict(tmp_path):
+    """dxdiag: d3d9types.h and dsound.h both define _D3DVECTOR inside #ifndef D3DVECTOR_DEFINED."""
+    from rustconv.profile_derive import definition_guards
+
+    body = "#ifndef D3DVECTOR_DEFINED\ntypedef struct _D3DVECTOR {\n float x;\n} D3DVECTOR;\n#define D3DVECTOR_DEFINED\n#endif\n"
+    a = tmp_path / "a.h"
+    a.write_text(body)
+    b = tmp_path / "b.h"
+    b.write_text("/* other */\n" + body)
+    c = tmp_path / "c.h"
+    c.write_text("typedef struct _D3DVECTOR { int y; } D3DVECTOR;\n")
+    assert definition_guards(a, "_D3DVECTOR") & definition_guards(b, "_D3DVECTOR") == {
+        "D3DVECTOR_DEFINED"
+    }
+    assert not definition_guards(c, "_D3DVECTOR")
+
+
+def test_macro_kind_is_linear_on_an_unclosed_identifier_run():
+    """sndvol32: a long `(IDENT | ...` with no `)` after the identifiers backtracked
+    exponentially in the cast-stripping regex (16-33 minutes per TU)."""
+    import time
+
+    from rustconv.profile_derive import _macro_kind
+
+    t = time.time()
+    assert (
+        _macro_kind("(MIXERCONTROL_CONTROLTYPE_BOOLEANMETER_WITH_A_LONG_NAME | 3") == "expression"
+    )
+    assert time.time() - t < 1
+    assert _macro_kind("((unsigned long)(0x10) | (DWORD) 5)") == "literal"
+
+
 def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     from rustconv.profile_derive import xmacro_enumerators
 
@@ -1632,6 +1689,8 @@ def test_xmacro_enumerators_own_their_generated_members(tmp_path):
     )
     got = xmacro_enumerators(tmp_path / "kbd.c", frozenset({"K_TAB", "K_ENTER", "VK_TAB"}))
     assert got == {"K_TAB": ("enum", "48"), "K_ENTER": ("enum", "50")}
+
+
 def test_enum_members_after_the_first_on_a_line_are_owned(tmp_path):
     """cmd.h packs `C_MULTI, C_OR, C_AND, C_PIPE,` on one line: every member after the
     first was reported UNOWNED, a false §9.112 alarm that blocked the module."""

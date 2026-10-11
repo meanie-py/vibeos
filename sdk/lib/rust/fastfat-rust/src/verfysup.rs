@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{KdPrintEx};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -23,14 +25,10 @@ use crate::ddk_shims::FsRtlIsNtstatusExpected;
 
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatNormalizeAndRaiseStatus(IrpContext: *const IRP_CONTEXT, Status: i32);
 }
 extern "system" {
-    fn ClearFlag(state: *mut u32, flag: u32);
     fn DbgDoit(condition: i32);
-    fn SetFlag(value: *mut u8, flag: u8);
-    fn FlagOn(value: u32, flag: u32) -> i32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatSetFatEntry(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, Index: u32, Value: u32);
@@ -38,7 +36,6 @@ extern "system" {
     fn FatIsBootSectorFat(Sector: *mut PACKED_BOOT_SECTOR) -> u8;
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
     fn FatIsFat32(Vcb: *mut VCB) -> u8;
-    fn NT_ASSERT(condition: i32);
     fn KeInitializeEvent(Event: *mut KEVENT, Type: u32, State: u8);
     // Param 4 is `Flags: ULONG` (PIN_WAIT/PIN_EXCLUSIVE/PIN_NO_READ/PIN_IF_BCB), NOT
     // the NT4-era `BOOLEAN Wait`. Declared as u8 the callee read 32 bits where the
@@ -54,7 +51,6 @@ extern "system" {
     fn FatReadVolumeFile( IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB, ByteOffset: u32, Length: u32, Bcb: *mut *mut BCB, Buffer: *mut *mut core::ffi::c_void, ); // VBO = u32 (was i64: i386 stdcall stack imbalance)
     // IsBpbFat32 defined below in Rust (was a C stub reading the WRONG offset)
     } extern "C" {
-    fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const u8, ...);
     // wdm FORCEINLINE helpers: cdecl bodies (`_IoSetCompletionRoutine`), bindgen
     // class — the "system" decls here were §9.99 folds.
     fn IoSetCompletionRoutine( Irp: *mut IRP, Routine: extern "system" fn(*mut DEVICE_OBJECT, *mut IRP, *mut c_void) -> NTSTATUS, Context: *mut c_void, InvokeOnSuccess: u8, InvokeOnError: u8, InvokeOnCancel: u8, );
@@ -114,8 +110,8 @@ pub unsafe extern "system" fn FatResetFcb(
     PAGED_CODE!();
     let _ = IrpContext;
 
-    if FlagOn(((*(*Fcb).Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) == 0 &&
-        FlagOn(((*Fcb).FcbState as u8) as u32, FCB_STATE_PAGING_FILE) != 0
+    if FlagOn((*(*Fcb).Vcb).VcbState as u32, VCB_STATE_FLAG_REMOVABLE_MEDIA) == 0 &&
+        FlagOn((*Fcb).FcbState as u32, FCB_STATE_PAGING_FILE) != 0
     {
         IsRealPagingFile = 1; // TRUE
     } else {
@@ -631,10 +627,7 @@ pub unsafe extern "system" fn FatCleanVolumeDpc(
         (*Packet).Vcb = Vcb;
         (*Packet).Irp = core::ptr::null_mut();
 
-        ClearFlag(
-            core::ptr::addr_of_mut!((*(*Packet).Vcb).VcbState),
-            VCB_STATE_FLAG_VOLUME_DIRTY,
-        );
+        ClearFlag!((*(*Packet).Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DIRTY);
 
         ExInitializeWorkItem(
             core::ptr::addr_of_mut!((*Packet).Item),
@@ -740,26 +733,13 @@ pub unsafe extern "system" fn FatCheckDirtyBit(
                 && (*IrpContext).MinorFunction == IRP_MN_VERIFY_VOLUME
                 && FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_BOOT_OR_PAGING_FILE) != 0)
             {
-                KdPrintEx(
-                    DPFLTR_FASTFAT_ID,
-                    DPFLTR_INFO_LEVEL,
-                    (b"FASTFAT: WARNING! Mounting Dirty Volume %Z\0".as_ptr() as *const i8).cast(),
-                    &VolumeLabel as *const _UNICODE_STRING,
-                );
-                SetFlag(
-                    (&mut (*Vcb).VcbState) as *mut u32 as *mut u8,
-                    VCB_STATE_FLAG_MOUNTED_DIRTY as u8,
-                );
+                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: WARNING! Mounting Dirty Volume %Z\0".as_ptr() as *const i8).cast(), &VolumeLabel as *const _UNICODE_STRING);
+                SetFlag!((*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY);
             }
         } else {
-            if FlagOn(((*Vcb).VcbState as u8) as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) != 0 {
-                KdPrintEx(
-                    DPFLTR_FASTFAT_ID,
-                    DPFLTR_INFO_LEVEL,
-                    (b"FASTFAT: Volume %Z has been cleaned.\n\0".as_ptr() as *const i8).cast(),
-                    &VolumeLabel as *const _UNICODE_STRING,
-                );
-                ClearFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY as u32);
+            if FlagOn((*Vcb).VcbState as u32, VCB_STATE_FLAG_MOUNTED_DIRTY) != 0 {
+                KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, (b"FASTFAT: Volume %Z has been cleaned.\n\0".as_ptr() as *const i8).cast(), &VolumeLabel as *const _UNICODE_STRING);
+                ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_MOUNTED_DIRTY as u32);
             } else {
                 let _ = FsRtlBalanceReads((*Vcb).TargetDeviceObject);
             }
@@ -978,7 +958,7 @@ pub unsafe extern "system" fn FatPerformVerify(
                 IoSetHardErrorOrVerifyDevice(*p_irp, Device);
             }
 
-            NT_ASSERT((STATUS_VERIFY_REQUIRED != *p_status) as i32);
+            NT_ASSERT!((STATUS_VERIFY_REQUIRED != *p_status) as i32);
 
             FatNormalizeAndRaiseStatus(IrpContext, *p_status);
         }
@@ -1040,7 +1020,7 @@ pub unsafe extern "system" fn FatMarkFcbCondition(
     );
 
     // Assert that if we are not verifying, we hold the Vcb exclusive
-    NT_ASSERT(if FcbCondition != FcbNeedsToBeVerified {
+    NT_ASSERT!(if FcbCondition != FcbNeedsToBeVerified {
         1
     } else {
         FatVcbAcquiredExclusive(IrpContext, (*Fcb).Vcb) as i32
@@ -1183,7 +1163,7 @@ pub unsafe extern "system" fn FatMarkVolume(
                 PinLength = WriteLength;
                 if FatIsFat32(Vcb) != 0 && VolumeState == VolumeClean {
                     if (*Vcb).Bpb.FsInfoSector == 1 {
-                        NT_ASSERT((this_pass == 0) as i32);
+                        NT_ASSERT!((this_pass == 0) as i32);
                         *p_fs_info_update = 1;
                         *p_fs_info_offset = (*Vcb).Bpb.BytesPerSector as u32;
                         WriteLength = (*Vcb).Bpb.BytesPerSector as u32 * 2;
@@ -3359,3 +3339,15 @@ pub unsafe extern "system" fn FatMarkVolume(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}
+
+#[inline(always)]
+unsafe fn FlagOn(value: u32, flag: u32) -> i32 {
+    (value as u64 & flag as u64) as i32
+}

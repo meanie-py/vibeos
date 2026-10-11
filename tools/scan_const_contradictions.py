@@ -176,7 +176,17 @@ def collect(any_case: bool = False) -> dict[str, list[tuple[str, int, str]]]:
             continue
         rel = str(path.relative_to(REPO))
         lines = text.splitlines()
+        impl_of: str | None = None
         for idx, line in enumerate(lines):
+            # An ASSOCIATED const is the type's, not the crate's: cppapp gives every ATL dialog
+            # class `impl CAttributesDialog { pub const IDD: i32 = 700; }`, and three dialogs'
+            # IDDs are not a contradiction. Keyed `Type::NAME`, so two values inside ONE impl
+            # still are. (Top-level `impl X {` .. `}` at column 0, as rustfmt and cppapp write.)
+            im = re.match(r"^impl(?:<[^>]*>)?\s+(?:[\w:]+\s+for\s+)?([\w:]+)[^{;]*\{\s*$", line)
+            if im:
+                impl_of = im.group(1).split("::")[-1]
+            elif line.startswith("}"):
+                impl_of = None
             if NOLINT_RE.search(line):
                 continue
             m = const_re.match(line)
@@ -202,7 +212,8 @@ def collect(any_case: bool = False) -> dict[str, list[tuple[str, int, str]]]:
             val = parse_value(m.group(2))
             if val is None:
                 continue
-            decls[m.group(1)].append((rel, val, arch_of(rel)))
+            key = f"{impl_of}::{m.group(1)}" if impl_of else m.group(1)
+            decls[key].append((rel, val, arch_of(rel)))
     return decls
 
 
@@ -279,9 +290,17 @@ ISLAND_CONST_RE = re.compile(
 )
 
 
+# Names every in-tree consumer zeroes under `#ifdef __REACTOS__` (NX is NT6.2), so the island's
+# Windows value is one no TU here compiles. Same table as verify_constants.REACTOS_DOWNGRADED;
+# test_scan_const_vs_island keeps the two equal.
+REACTOS_DOWNGRADED = {"POOL_NX_ALLOCATION": 0, "MdlMappingNoExecute": 0}
+
+
 def island_values() -> dict[str, set[int]]:
     """name -> every value the bindgen islands give it (all crates, all arches)."""
     out: dict[str, set[int]] = defaultdict(set)
+    for name, val in REACTOS_DOWNGRADED.items():
+        out[name].add(val)
     for path in sorted(source_files(RUST_ROOT)):
         if "/target/" in str(path) or not ISLAND_FILE_RE.search(str(path)):
             continue

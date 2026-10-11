@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -35,13 +36,10 @@ extern "system" {
     fn PagedCode();
     fn SizeOfFullEa(ea: *mut FILE_FULL_EA_INFORMATION) -> u32;
     fn FatUpcaseEaName( IrpContext: *mut IRP_CONTEXT, Source: *mut OEM_STRING, Destination: *mut OEM_STRING, ) -> ();
-    fn FlagOn(flags: u8, bit: u32) -> i32;
     fn FsRtlIsAnsiCharacterLegalFat(Character: u8, WildCardsPermissible: i32) -> u8;
     fn FsRtlIsLeadDbcsCharacter(Character: u8) -> u8;
-    fn NT_ASSERT(Expression: i32);
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, ErrorStatus: NTSTATUS);
     fn Add2Ptr(Ptr: *mut core::ffi::c_void, Bytes: u32) -> *mut core::ffi::c_void;
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn DebugUnwind(fn_name: usize);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatAcquireSharedFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
@@ -890,7 +888,7 @@ pub unsafe extern "system" fn FatGetEaFile(
                     core::ptr::addr_of_mut!(Status),
                 );
 
-                NT_ASSERT(NT_SUCCESS(Status) as i32);
+                NT_ASSERT!(NT_SUCCESS(Status) as i32);
 
                 *p_UnwindEaDirentCreated = 1;
 
@@ -1331,7 +1329,7 @@ pub unsafe extern "system" fn FatDeleteEaSet(
                     core::ptr::addr_of_mut!(Iosb),
                 );
 
-                NT_ASSERT((Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS) as i32);
+                NT_ASSERT!((Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS) as i32);
 
                 if CcPurgeCacheSection(
                     (*VirtualEaFile).SectionObjectPointer,
@@ -1779,7 +1777,7 @@ pub unsafe extern "system" fn FatAddEaSet(
                     0,
                     core::ptr::addr_of_mut!(Iosb),
                 );
-                NT_ASSERT((Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS as i32) as i32);
+                NT_ASSERT!((Iosb.__bindgen_anon_1.Status == STATUS_SUCCESS as i32) as i32);
 
                 if CcPurgeCacheSection(
                     (*VirtualEaFile).SectionObjectPointer,
@@ -2344,7 +2342,7 @@ pub unsafe extern "system" fn FatIsEaNameValid(
         Char = (*Name.Buffer.offset(Index as isize)) as u8;
 
         if FsRtlIsLeadDbcsCharacter(Char) != 0 {
-            NT_ASSERT((Index != (Name.Length as u32 - 1)) as i32);
+            NT_ASSERT!((Index != (Name.Length as u32 - 1)) as i32);
             Index += 2;
             continue;
         }
@@ -2400,7 +2398,7 @@ pub unsafe extern "system" fn FatPinEaRange(
         (*EaRange).AuxilaryBuffer = 1; // TRUE
         destination_buffer = (*EaRange).Data as *mut i8;
     } else {
-        NT_ASSERT(((*EaRange).AuxilaryBuffer == 0) as i32);
+        NT_ASSERT!(((*EaRange).AuxilaryBuffer == 0) as i32);
     }
 
     //
@@ -6444,3 +6442,15 @@ pub unsafe extern "system" fn FatUnpinEaRange(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u8, bit: u32) -> i32 {
+    (flags as u64 & bit as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}

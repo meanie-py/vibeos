@@ -864,6 +864,14 @@ reverting one buslogic definition to `extern "C"` now fails with `expected "syst
 i386 callback slots are genuinely cdecl and that promotion is the same bug pointing the other
 way.
 
+**A half-normalized island: i386 still `stdcall`, amd64 `system`.** `shsvcs` failed only on
+i386 with `expected "stdcall" fn, found "system" fn` and `deskmon` left 440 slots literal. Their
+`island.log` ended `gen_driver_types.sh: line 5684: i686-pc-windows-gnu: command not found`:
+bash reads a script AS IT RUNS, and parallel `port derive`/`resolve` of other modules were
+appending arms to it, so the run resumed mid-line after i386 and never reached amd64/arm64 or
+the normalization. `port island` now runs a snapshot copy. Never cast the callback to paper over
+it -- re-island, and `normalize_island_abi.py --stem types <crate>` dry-runs the count.
+
 Census of the remaining exposure, so it is not re-derived: ~500 transmute-shaped callback
 installs survive, led by dxg-rust (92), win32k-rust `ntddraw_dxeng` (42), cdfs `cdinit` (33),
 winsrv's console frontends (~90 across tui/gui/serial), hal `bussupp`/`dma` (42), cdrom (20),
@@ -1238,6 +1246,22 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`git core.ignorecase`**: a `Lib.c` → `Lib.rs` module that case-folds onto `lib.rs` blocks
   `git add` ("will not add file alias"). Rename the module.
 
+### `raw-dylib` on a stdcall FUNCTION imports the decorated name on i386
+
+**Symptom:** a boot driver silently missing on i386 only — FreeLDR logs `Did not find export
+'RtlAssert@16'!` then `boot driver not loaded, dropped from the boot driver list`, and boot
+continues without it. Every gate is green unless the boot needed that driver.
+
+**Cause:** `#[link(name = "ntoskrnl.exe", kind = "raw-dylib", ...)] extern "system" { fn F(..); }`
+makes rustc mint the import itself, and for a stdcall function on i386 it imports `F@N`; the
+`.spec`-built export is the undecorated `F`. raw-dylib invents its own import descriptor, so
+the link has nothing unresolved to fail on (pcix-rust's `RtlAssert`, 2026-10-10).
+
+**Fix:** raw-dylib is for DATA exports only (`HalDispatchTable`, `InitSafeBootMode`) — a
+function goes in a plain `extern "system"` block and resolves through the import library.
+`scan_unresolved_imports` (binary lint, every arch) checks every livecd PE's imports against
+its exporter's export table, so any name the loader cannot bind fails the build.
+
 ### Assorted ABI-adjacent traps
 - **A trap handler that never sets the return register returns the caller's own argument.**
   User-mode `DbgPrint` returns what the kernel leaves in eax/rax/x0 after `int 0x2d`, and
@@ -1455,6 +1479,19 @@ call, only when notepad saved a file to FAT. The tell in the disassembly is a cd
 no stack cleanup. `scan_cc_mismatch` reports it as `[DECL_CC_SPLIT]` (it needs no in-crate
 definition: two answers to one question are already wrong).
 
+One of the two "declarations" need not be an `extern` block in the crate. A `use
+ntkrnl_sys::ddk::{.., IoCopyCurrentIrpStackLocationToNext, ..}` brings bindgen's cdecl one in,
+and rustc merges it with a local `"system"` copy just the same. That was fastfat's flush.rs,
+in the very block where the fileinfo fix had moved `IoGetCurrentIrpStackLocation` to `"C"`;
+pnp.rs imported the helper from the ddk. The call sat in `FatCommonFlushBuffers`' finally, whose
+epilogue is esp-based (`add esp; pop esi/edi/ebx/ebp; ret`), so the 4-byte leak popped every
+saved register one slot off and `ret` jumped INTO THE STACK. Each crash looked different (0x23
+"unexpected exception at a stack address", 0x50, 0x1E, 0x7F), and all of them came at the first
+`NtFlushBuffersFile` on a writable FAT root (eventlog opening AppEvent.Evt). With EIP on the stack, the
+word at the faulting esp names whatever was just pushed or returned through; disassemble the
+function it points into and look for a call with no stack cleanup. The scanner now counts
+named `-sys` imports and qualified `x_sys::..::F(` calls as declarations.
+
 **Not every unexpected `ud2` is this class — `scan_ud2` reports all of them under it. Read the
 instruction BEFORE the trap first; it names the cause in one look.**
 
@@ -1529,6 +1566,15 @@ Rust fn of that name in any crate, a shim crate included. Expect the conversion 
 uncloak something: with the opaque call gone, usbehci's `EHCI_AllocTd` inlined into
 `EHCI_OpenInterruptEndpoint`, whose unchecked deref of its NULL return (a C bug) became a
 `scan_ud2` failure. Fix the uncloaked bug; don't restore the barrier.
+The same bug also comes as an `extern` DECLARATION, `extern "C" { fn TRACE(fmt: *const i8, ...); }`,
+bound at link time to whatever no-op some crate or cohab stub happens to export. That form has
+no body for the empty-fn check to see. By 2026-10-10 that had hidden about 386 NT_ASSERT calls in
+five storage/FS drivers, plus 93 declarations of Wine TRACE/ERR, DPRINT, KdPrintEx and similar.
+fastfat's NT_ASSERT evaluated an operand that faults (cachesup.rs). `scan_macro_fn_shadow` flags these declarations now too. Convert with
+`tools/fn_call_to_macro.py`. When you write the replacement macro, never name it after a std
+macro: a crate-root `macro_rules! assert` shadows `core::assert!` in every module declared
+after it. cabinet's compile-time `FDINOTIFICATION` layout asserts silently became no-ops that
+way, and they still compiled.
 
 ### A C macro that NULLS its argument, translated as a by-value `fn`, silently double-frees
 Symptom: 0x19 BAD_POOL_HEADER "at the next free" (special pool escalates it to 0x1E in a pool
@@ -1560,7 +1606,8 @@ stripping, and assignable lvalues, to fix zero live bugs. Audit per site; don't 
 
 ### NEVER hand-write `memcpy`/`memset`/`memmove`/`memcmp` in Rust `[§9.65]`
 **It cannot be done correctly.** LLVM folds any byte-copy loop back into a call to the function
-itself → **infinite self-recursion**. The PC parks on a literal `jmp .` and the serial log is
+itself → **infinite self-recursion**. (The one place the tree does implement them, cnt-rust's
+exports, does it in inline asm for exactly this reason: `cabi/memops.rs`.) The PC parks on a literal `jmp .` and the serial log is
 empty. `ntoskrnl.exe` exports all of them on every arch — **import them, don't define them.**
 
 This is the other **cloak** bug: `-Z build-std-features=compiler-builtins-mem` had been linking
@@ -2269,6 +2316,11 @@ baseline empty) refuses the cast; `--fix` rewrites it.
   consts; the `STR_*` bind-context keys are all `L"..."` in shobjidl.idl, so this one is a
   proven instance of a class, not a one-off. Worth a scanner: for each `&[u8; N]` const in an
   island, grep the header for the same name with an `L` prefix.
+  **And a Rust `&str` handed to C has no NUL at all.** magnify (an ANSI module, where
+  `TEXT("1")` lowers to `"1"`) passed `"1".as_ptr()` to CB_ADDSTRING: the control read on
+  through rodata, and picking an item copied that run-on into a 2-char stack buffer. `port
+  integrate` now rewrites `"x".as_ptr()` (and `TEXT!("x").as_ptr()`) to `b"x\0".as_ptr()`; in a
+  UNICODE module the same spelling is a u8/u16 type error, which is the loud outcome.
   **The A/W switch narrows too, one hop removed.** commdlg.h's `#define FINDMSGSTRING
   FINDMSGSTRINGW` (under UNICODE) reaches `L"commdlg_FindReplace"` and bindgen drops the `L`
   just the same, but the name itself is never `#define`d as `L"..."`, so the direct widening
@@ -2911,6 +2963,21 @@ boot ramdisk could never be created (BUGCHECK 0xF8, P1=3 RD_FSCTL_FAILED). Nothi
 x86 ramdisk until conformance's writable root did. **Fix:** declare the union as C does, and
 assert the size per target against C's own `sizeof` (the pinned clang compiles a two-line
 `_Static_assert` for each triple in a second).
+
+### A union with a pointer member is 4 bytes bigger on 64-bit than its widest data member
+
+**Symptom.** Special pool `BUGCHECK 0xC1` (P4 `0x24`, the first bad byte just past a 36-byte
+block) at `OutputBounce::finish` in `NtQueryInformationProcess`; the OptiPlex hit it a minute
+after boot, from `GetLogicalDrives`. Without special pool nothing notices: pool rounds 36 to 48.
+
+**Cause.** `PROCESS_DEVICEMAP_INFORMATION` is a union of `Set { HANDLE }` and
+`Query { ULONG DriveMap; UCHAR DriveType[32]; }`. On 32-bit both arms fit 36 bytes; on 64-bit
+the HANDLE's 8-byte alignment pads the union to 40. Callers pass `sizeof(Query)` (36), and
+`NtQueryInformationProcess` checks exactly that, but `ObQueryDeviceMapInformation` (C and Rust
+alike) copied `sizeof(PROCESS_DEVICEMAP_INFORMATION)` out: 4 bytes past the buffer, 64-bit only.
+
+**Fix.** Copy the member the caller sized (`Query`), not the union. When a buffer's length is
+checked against one arm of a union, any copy into it must be bounded by that arm.
 
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
@@ -3728,6 +3795,22 @@ rustc labels the culprit "matches SOME of the same values", so a pattern name de
 the crate can see is taken from that label too. **`port check` now counts a catch-all arm as an
 error** (`CATCH-ALL -- match arm(s) binding an undefined constant`), so "0 errors" means it.
 
+**The same swallow with every name defined: C's `default:` sitting ABOVE other cases.**
+`case 0: default:` translates to `0 | _ => ..` in the position it had, and a Rust match tries
+arms in order where C tries every `case` before `default`. net's ParseDate, cmd's `date` and
+`dir` read every locale's LOCALE_IDATE as month-first; mspaint's `RestrictDrawDirection`
+returned before any Shift-constrained direction. rustc only warns. `port integrate` now runs
+`default_arm.py`, which moves a guard-free arm with a bare `_` alternative to the end of its
+match -- exact, because a match arm never falls through.
+
+**A "clang-evaluated" constant can be clang's ERROR RECOVERY.** rpcss's facts said
+`IROT_PROTSEQ: i32 = 0`: irot.idl's `#define IROT_PROTSEQ {'n','c','a','l','r','p','c',0}` is an
+array initializer, the probe's `case 0 + (long long)(IROT_PROTSEQ):` failed to parse, and clang
+recovered with the comma value 0 -- reported as a duplicate case value like any real one. The
+probe now rejects a name whose case line carries any other error, and `port resolve` re-probes
+every carried fact (four rpcss facts dropped). Consensus had the same hole for
+`SECURITY_NT_AUTHORITY` (`{0,0,0,0,0,5}`), copied from imm32 as `i32 = 5`.
+
 **Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
 facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
 `PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair
@@ -4014,6 +4097,21 @@ of them were **ours**, not the model's:
   integrate` now drops a `match` arm whose pattern names only identifiers the C spells solely on
   never-compiled lines, and WARNS by name for any other such identifier the Rust still uses
   (statements are not safe to drop by pattern; hand-port them with `port hand`).
+
+  **Both arms kept, gated on something Rust never sets, so the DEAD arm compiles.** A
+  translation that carries `#ifdef __REACTOS__` / `#else` invents a gate: `cfg!(feature =
+  "reactos")`, `#[cfg(reactos)]`, a local `const REACTOS: bool = false`, even `#[cfg(any())]`
+  on the ReactOS arm. Every one is false, so Wine's arm is what ships: regedit's regproc.rs
+  called Wine's `swprintf(buf, count, fmt)` -- under regedit's `_CRT_NON_CONFORMING_SWPRINTFS`
+  that puts the count in the FORMAT slot -- plus `RegDeleteTreeW` and a process-ending
+  `error_exit` where ReactOS calls StringCchPrintfW, SHDeleteKey and `output_message; return`.
+  Batch A's mstsc lost its branch the same way. `port integrate` now settles every such gate to
+  the live arm (the `if <gate> {A} else {B}` form loses B outright, since an `if false` arm is
+  still type-checked); `#[cfg(any())]` is not a gate name, so that pairing stays a hand port --
+  the dead-region WARNING above names it. A landed sweep found cdfs (has a real `reactos`
+  feature, default on), comctl32 (`const REACTOS: bool = true`) and oleaut32 (gated arms
+  byte-identical) all behave as the C; fastfat's `#[cfg(not(reactos))]` only computes an unused
+  `IsAWrite`.
 
   **And the sharper form of the same blind spot: a body that ignores the envelope ENTIRELY.**
   msvcrt's `_tzset` came back with all 35 sealed constants in the wrong slots — `_lock(0)` for
@@ -4664,6 +4762,12 @@ the `mm.h` mask (`PAGE_NOCACHE | PAGE_WRITECOMBINE`), which fails the other way:
 A status the C returns that the Rust only DECLARES as a `const` is the tell; the dropped checks
 left `STATUS_SECTION_PROTECTION` defined and unused in `mm/section.rs`. For a re-declared mask
 macro, compare member lists against the header, not just the name.
+A dropped guard can also be REPLACED by a plausible-looking one. `ExReturnPoolQuota` swapped
+the C's `MmIsSpecialPoolAddress` early-out for `PAGE_ALIGN(p) == p`, and dropped the C's
+`BAD_POOL_CALLER` check that the billed process really is one. A special-pool block sits at
+the END of its page, so it passed the alignment test, and the function read a POOL_HEADER that
+does not exist: 0xA in `IoFreeIrp` at boot, but only with `SPECIALPOOL=*`, which is what
+you arm to hunt a different corruption.
 
 ### A `goto CompleteIrp` dropped at the end of a `case` falls into the forward path
 
@@ -5477,6 +5581,25 @@ both sides and diff the argument lists as a table. Here that is three rows and t
 immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
 differ.
 
+### A lowered SDK macro lost its `volatile`, its `Option<fn>`, or a field it never had
+
+Three classes `rustconv port macros` / `postprocess` shipped into e1000-rust's first pass
+(2026-10-11), each fixed in the tool rather than the site:
+
+- **`volatile` dropped.** ndis.h's `NdisReadRegisterUlong` is `*(Data) = *((volatile ULONG *
+  const)(Register))`; `sdk_macros` parsed the cast and discarded the qualifier, so a device
+  register read became a plain load LLVM may merge or hoist out of a poll loop. A dereference of
+  a cast to `volatile T *` now lowers to `core::ptr::read_volatile`, an assignment through one to
+  `write_volatile`.
+- **A call through a struct member.** `(*Block->StatusHandler)(...)` (NdisMIndicateStatus and
+  friends) lowered to `(*(..).StatusHandler)(..)`, E0614 on bindgen's `Option<fn>`. Any call whose
+  callee is a member now lowers to `.unwrap_unchecked()(..)`; this subsumes the old WIDL
+  `lpVtbl->Method(` regex.
+- **`.Status` rewritten blindly.** `postprocess` turned every `.Status` into
+  `.__bindgen_anon_1.Status` for IO_STATUS_BLOCK, breaking e1000's descriptor `Status` byte
+  (9 x E0609). The rewrite is gone; crate-repair's `anon_union_field` routes the real union
+  accesses from the island's own types.
+
 ### An unexpanded Win32 macro silently shrinks the translation plan `[§9.128]`
 `EXTERN_C` is `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows neither, so it
 parses the macro as the return type and the real return type becomes a second type-identifier.
@@ -5771,6 +5894,11 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
 - **`table_audit.py`** compares every file-scope C data table against the Rust; **`vtbl_gen.py`**
   generates COM vtbls from the C initializer plus bindgen; **`export_audit.py`** requires every
   `.spec` export to exist as a correctly-decorated `#[no_mangle]`. Use them; don't ask an LLM.
+- **A tool's "already present" check can be satisfied by a COMMENT.** deskadp shipped with
+  none of its three COM vtables: the preamble wrote `// static IShellPropSheetExtVtbl
+  efvtIShellPropSheetExt: skipped (COM vtable, generated by vtbl_gen.py)`, and the stitcher's
+  presence test was a bare `NAME:` regex. It now requires a `static` item. deskmon, same code,
+  worded its note differently and got its vtables.
 
 ### The failure path survived; the sentence explaining it did not
 
@@ -6212,6 +6340,18 @@ it; `--apply` writes. It emits a `#[cfg(not(feature=...))]` twin carrying a **co
 attributes** (`#[no_mangle]` must survive with the feature off) whose body is the initializer
 *lifted from the translated Rust*, never re-derived from the C constant. **Never delete the
 guarded arm** — it is paid artifact, and it is the half that a future `HAVE_X=1` build needs.
+
+**Variant: a module's OWN config header turns a feature off, and the dead arm is planned
+anyway.** cmd.exe's `config.h` carries `//#define FEATURE_UNIX_FILENAME_COMPLETION` beside
+`#define FEATURE_4NT_FILENAME_COMPLETION`, and filecomp.c defines `CompleteFilename` under
+each. The scanner only read toggles in the TU itself, so both arms were bought: two
+`CompleteFilename`s, the dead UNIX one `#[no_mangle]` with the wrong signature. This is a
+build choice the module makes for itself, not an optional backend, so there is no second arm
+to keep: the scanner now reads `//#define NAME` toggles in the module-directory headers a TU
+includes (`_header_off_switches`) and drops the arm, provided no `.c`/`.h` there defines NAME and
+its CMakeLists never passes `-DNAME`. Wine's `/* #undef HAVE_X */` form is untouched, so the
+rule above still governs it. Header ON switches are deliberately not read: a kept `#ifdef ON`
+arm translates correctly, and deciding them would re-key every banked function under one.
 
 **Variant: the `#ifdef` is a WORKAROUND for a bug elsewhere, so resolving it away reinstates
 that bug on one arch only.** Not every carried `#ifdef` gates an optional feature; some record
@@ -11861,6 +12001,31 @@ a whole private SSE encoding as well (swap bit inverted, share count at bit 2), 
 against the macro on sample entries. Read the printed `sse` value against the bit layout
 before trusting a predicate's verdict about it.
 
+### RAM above 4 GiB: a loader cap was hiding four bugs, none in the loader
+**Symptom.** amd64 with more than 4 GiB described (freeldr `MM_MAX_PAGE`): BAD_POOL_HEADER
+(0x19, P1=5) from `IopCreateArcNamesCd`'s 2 KB CD buffer, then INACCESSIBLE_BOOT_DEVICE with
+the CD reading as zeros, a hang in the q35 AHCI bus scan, and on BIOS boots MEMORY_MANAGEMENT
+from `[MMGUARD] rmap.MmInsertRmap PFN MISMATCH` at the first user mapping in System. The
+"physical memory" line (`[MM] physical memory: N MiB`) also over-counted: 4095 MiB on a box
+with 2 GiB below 4 GiB, 17407 MiB on a 4 GiB BIOS guest.
+**Cause.** Each was its own bug; the 4 GiB cap only kept every buffer and table low.
+1. `MiIsMemoryTypeInvisible` (ntkrnl-sys `inline/mm.rs`) was ported as `>= LoaderMaximum`, so
+   firmware-reserved ranges (PCI hole, VGA hole, a 1 TB reserved run on BIOS) counted as RAM.
+2. uniata's 32-bit bounce (`DB_IO`) copied back to `AtaReq->DataBuffer` after completion had
+   advanced it (overrun of the next pool block), and copied even when the transfer had fallen
+   back to PIO (zeros over good data). Upstream marks the path `ASSERT(FALSE)`.
+3. uniata stored a 64-bit HBA's first DATA page address as the AHCI command-table address
+   (`ahci_base64`), and dropped the table's own high half. Upstream has both.
+4. The HAL's AP-trampoline identity map (PML4[0], scratch pages typed `LoaderHALCachedMemory`)
+   was never removed, so System's first low user mapping was built inside HAL tables that the
+   PFN database (correctly, after 1) no longer tracks.
+**Fix.** In place in each; see the commit for the list. The general lesson: when raising a
+cap that "keeps things working", expect the bugs it was masking to be in everything that
+touches addresses, and boot several sizes (QEMU BIOS at 4/12/32 GiB, `VIBEOS_QEMU_HOSTILE=mem`
+and `q35,mem` for UEFI) before blaming the cap. A HAL bounce through map registers for 32-bit
+scsiport masters looked right and broke uniata, which does its own bouncing: scsiport's
+`IoFlushAdapterBuffers` then copies an untouched map buffer over the data.
+
 ### Other Mm one-offs
 - **A registry/hive addition that "shouldn't matter" trips an early 0x50** `[§9.10]` — the
   config manager loads the hive early and growing it shifts everything. **Don't ship the hive
@@ -11960,6 +12125,57 @@ struct's lock fields with no acquirer is a cheap sweep for more of these.
 port of an upstream fix that missed half of it) — a livelock no smoke boot had shown except as
 an unexplained HANG_TIMEOUT. A new hot lock exercises the lock primitive's slow paths far more
 than boot ever did.
+
+### An object linked into a shared list before it is initialized
+**Symptom:** amd64 `-smp 2`, about 1 boot in 5 at worst: BUGCHECK 0x1E reading NULL+0x90 in
+win32k `ProcessTimers`, on the raw input thread, after the desktop is up.
+**Cause:** `CreateTimer` linked a zeroed TIMER into `TimersListHead` and `IntSetTimer` filled it
+in afterwards, both without `TimerLock`, while the RIT walks that list under `TimerLock` every
+10 ms. On one CPU the walker can never run inside that window. On two it can: if the creating
+vCPU stalls for two ticks, one pass drives the zeroed countdown negative and the next reads
+`pti->TIF_flags` with `pti == NULL`. Upstream ReactOS has the identical code.
+**Fix:** link only after every field is set, under the lock the walker holds. The tell on a live
+VM: walk the list and look for an entry whose fields are all still zero except the ones the
+walker writes. When a C "create" helper links the object it returns, check whether anything
+walks that list on another thread.
+
+### A busy check that drops the request instead of handing it to the CPU that is busy
+**Symptom:** amd64 `-smp 2`, ~7% of gate boots and ~0% solo: the boot goes silent at a
+different place each time (services START, `CreateProcessW`, csrss `LoadServerDll`), both CPUs
+idle in `KiIdleLoop`, no fault. Every stuck thread is waiting for an I/O on the boot volume
+(cdfs on the USB stick): a page-in at APC_LEVEL, or a create whose check-verify IOCTL is
+pending in disk.sys/classpnp. The xHCI controller is idle with nothing on its event ring.
+**Cause:** two copies of one bug, both in upstream ReactOS C, faithfully translated. A path
+finds the work "already being done" and returns, while the CPU doing it has already passed the
+point where it would have noticed the new work.
+- usbport `USBPORT_FlushPendingTransfers`: `FlushPendingLock` was a try-lock (CAS 0 -> 1, else
+  return). A transfer queued while another CPU was finishing a flush of the same endpoint was
+  never flushed. Live state: one transfer on the bulk endpoint's `PendingTransferList`,
+  `TransferList` empty, lock 0, endpoint idle, `WorkerList` empty (2 of 3 kept VMs).
+- usbstor `USBSTOR_QueueNextRequest`: returned early when `ActiveSrb` was set. A request arriving
+  between the finishing request's `QueueTerminateRequest` and that check claims `ActiveSrb` and
+  `IoStartPacket`s behind the StartIo slot the finished request still holds, and nobody calls
+  `IoStartNextPacket`. Live state: FDO `CurrentIrp` a freed (recycled) IRP, device queue `Busy`
+  with one IRP whose SRB is `ActiveSrb`, `IrpPendingCount` = 1 + the `IrpList` (1 of 3).
+
+On one CPU neither window opens: the finishing side runs at DISPATCH_LEVEL start to end.
+**Fix:** hand the work over instead of dropping it. The flush lock is now a request count: a
+caller that finds it held increments it and leaves, and the holder makes another pass unless
+the count is still exactly its own. `QueueNextRequest` releases the slot
+(`IoStartNextPacket`) when its caller retired the slot owner, so the claimant starts. The
+cancel routines retired requests that never held the slot and keep the C behaviour, because
+releasing it there would start a second command beside the running one. Sweep for the shape:
+`if (InterlockedCompareExchange(&X, 1, 0)) return;` or "if busy, return" with no re-check
+after the holder releases.
+**Finding it** took the IRPs, not the census. The census's `Suspended=1` was usbport's worker
+thread, which waits with `Suspended` as a generic wait reason (so do kbdclass, mouclass, atapi
+and iomgr), and it was in 42 of 44 hang histograms only because passing boots end before the
+census prints a histogram. Do this instead on a kept VM: stuck thread -> `ETHREAD.IrpList` ->
+the IRP's current stack location names the device holding it -> that driver's queue state.
+`[KRNLBASE]` gives the kernel base; an attach-on-fail manifest now records it, because without
+it every `gdb inspect` runs find-kbase's page scan and times out over the windows-host stub.
+For a driver-private struct offset, compile `const _: [(); 0] = [(); 1_000_000 +
+offset_of!(T, f)];` against the crate's `types_<arch>.rs`: the error message prints it.
 
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
@@ -12891,6 +13107,19 @@ had it too. Fix: reborrow, `f(iColumn, &mut *sd)`. **Any `&` parameter crossing 
 or generated C shim is this hazard**, and it is invisible from the Rust side — the callee is
 correct and the caller compiles, so only reading the C++ prototype tells you the parameter was
 an OUT. `grep -n '(\*[a-z]' over a module's bridge block finds them.
+
+### A temporary's `.GetString()` bound by a macro's `let` is a dangling pointer
+**Symptom.** A formatted string comes out empty or garbled although the format and arguments
+are right at the call site. Rust mspaint opened with an empty title bar; appstorm scored it
+PASS (`first=""`), so only the screenshot showed it.
+**Cause.** `atl_format!(s, CStringW::from_resource(IDS_WINDOWTITLE).GetString(), ..)`: the
+macro bound its format as `let __fmt: *const u16 = $fmt;`. A temporary in a `let`
+initializer is dropped at that `;`, so the pointer is to freed memory by the time
+`_scwprintf`/`swprintf` read it. Neither rustc nor any lint flags it: the value is a raw pointer.
+**Fix.** Bind macro arguments as `match` scrutinees (`match $fmt { __fmt => { .. } }`), whose
+temporaries live to the end of the match; atlclasses' `atl_format!` now does this for the
+format and every argument. In ordinary code, keep the owning `CStringW` in a named local before
+taking `.GetString()`.
 
 ### An OUT-cell for a pointer-sized value overruns the 32-bit caller's variable
 **Symptom.** A 32-bit guest corrupts a local, or the field next to a handle, with no failing
@@ -13851,6 +14080,19 @@ win32k is the largest single flip surface and its failures are stereotyped:
 - **arm64 0xF4 winlogon death right after `[WIN32K] shell ready`** — a distinct, historical
   shape worth recognising.
 
+### A dialog procedure's WM_NOTIFY answer is lost unless it goes to DWLP_MSGRESULT
+**Symptom:** a property page's `PSN_APPLY` handler returns `PSNRET_INVALID` (the user said
+"No") and the sheet applies anyway. More generally, any `WM_NOTIFY` result a dialog returns,
+such as `LVN_*` vetoes or `PSN_*` answers, has no effect.
+**Cause:** user32's `DefDlgProc` uses a dialog procedure's own return value only for
+`WM_COMPAREITEM`, `WM_VKEYTOITEM`, `WM_CHARTOITEM`, `WM_QUERYDRAGICON` and `WM_INITDIALOG`
+(`DEFDLG_Proc`). For every other message the answer is `GetWindowLongPtr(DWLP_MSGRESULT)`.
+atlclasses-rust's dialog procedure had a misremembered "return directly" list that included
+WM_NOTIFY (0x4E), so it never stored the result.
+**Fix:** do what ReactOS ATL's `CDialogImplBaseT::DialogProc` does for a handled message:
+`SetWindowLongPtr(DWLP_MSGRESULT, result)` and also return it (`atlclasses-rust/src/win.rs`
+`dialog_message`). A hand-written dialog procedure anywhere in the tree has the same trap.
+
 ### Driver settle delays are pure loss in a VM `[§9.22]`
 Hardware drivers inherited from real-metal code are full of fixed settle delays. A boot phase
 that is "slow" with zero serial and no CPU is the shape. Gate them on the driver's **own** VM
@@ -13922,6 +14164,19 @@ with the culprit PC symbolicated, instead of an innocent-victim BUGCHECK minutes
 per-boot over the fw_cfg channel — **no media rebuild**:
 `./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"` (or `SPECIALPOOL=*`). For a rare
 flake use `farm` + `farm-report`, never a hand-rolled boot loop.
+
+**On real hardware**, which has no fw_cfg, the same config rides a `/TRIPWIRE=` boot option, tokens
+separated by commas (`/TRIPWIRE=SPECIALPOOL=*,QUIET`): the OptiPlex bench takes it as
+`OPTIPLEX_TRIPWIRE='SPECIALPOOL=*' tools/optiplex/netboot.sh`. The key matches in either case;
+the loader may upper-case options, so prefer `*` to a mixed-case tag. That is how the USB-hub
+use-after-free below was caught on the board after two unarmed crashes had pointed at
+`ObfReferenceObject` on garbage.
+
+**`ExReturnPoolQuota` must skip special-pool blocks.** An overrun-mode special-pool block has fill
+pattern in front of it, not a pool header; read as a header it could claim quota, and the
+quota-pointer read then ran past the block onto the guard page: `0x50` in `ExReturnPoolQuota`
+from `IoFreeIrp` on any `SPECIALPOOL=*` boot that freed a quota-charged IRP. It now returns early
+for `MmIsSpecialPoolAddress`, as `ExFreePoolWithTag` already did.
 
 **Require `special pool ACTIVE (routing verified)` on serial — `ACTIVE` alone used to be a lie.**
 Symptom: special pool armed, initialized, announced ACTIVE, and caught nothing; the stop code
@@ -14144,6 +14399,38 @@ introduced at any heap exit — it is an external stray write.**
 - **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
   crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
 
+### A driver that failed START bugchecks 0xA in its own ISR, at device IRQL, minutes later
+
+**Symptom.** `BUGCHECK 0xA` with P2 = a device IRQL (0xb) and P4 in the driver's interrupt
+routine, reading an address that is no longer mapped; the driver itself had failed START long
+before (the OptiPlex's `hdaudbus`, "unable to exit reset").
+
+**Cause.** The remove path unmapped the registers and only then disconnected the interrupt. On a
+shared level-triggered line any sibling's interrupt in that window calls the ISR, which reads
+its status register through the stale mapping.
+
+**Fix.** Disconnect first, then unmap, and null both. Check every remove/stop path that tears
+down an ISR's data in this order; a device that never starts is exactly the one that runs it.
+
+### A USB device fails START, and a moment later the box bugchecks in PnP (0x50 / 0x1E)
+
+**Symptom.** A device's `[DA] START ... -> 0xc000009a` (any failure), then on the next
+enumeration of its parent `BUGCHECK 0x1E` in `ObfReferenceObject` from `PiDevNodeStateMachine`,
+or, with special pool armed, `0x50` reading freed memory in `IopQueueTargetDeviceEvent`. Seen on
+the OptiPlex with a USB 3 hub whose SuperSpeed half usbhub cannot start.
+
+**Cause.** A device node that fails START is removed while still present: PnP sends REMOVE and
+`IopSendRemoveDevice` drops the node's reference on its PDO, while the bus driver keeps the PDO.
+usbhub then re-enumerates the port with a NEW PDO, so the old node is "gone" and gets a second
+REMOVE. The bus driver deletes the PDO, and `IopSendRemoveDevice` drops the node's reference a
+SECOND time; that frees the PDO and its device node inside `IopRemoveDevice`, whose next line
+reads the freed `InstancePath`. Upstream's C has the same double drop.
+
+**Fix.** The node owns one reference and drops it once: `DNF_PDO_REFERENCE_DROPPED` (a
+VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced it, because
+its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
+the box survives. Verify on the board.
+
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
   N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
@@ -14361,6 +14648,21 @@ Three gotchas latent in the C, which surface only once you actually boot UEFI:
 2. **Synthetic ACPI 2.0 RSDP is required**, else no PS/2 input. Tell: zero `[[I8K]]` lines and
    `Tables: [XSDT]` (vs BIOS `[RSDT]`) plus `Unable to AcpiInitializeTables`.
 3. **freeldr-loaded DLLs must not use raw-dylib** (see the cohab section).
+4. **i386 UEFI with >= 1G RAM: the kernel's boot-image reservation swallows session space.**
+   Symptom: BUGCHECK 0x1A in `MmDeleteRmap` ("mapping-not-in-list", Process NULL) when a
+   ROS system view is unmapped, here win32k's font view at `0xbf7f0000`; at 512M nothing
+   happens, which is why only a bigger guest found it. Cause: `uefimem.rs` counted the
+   firmware's own `LoaderLoadedProgram` regions, which OVMF keeps at the top of RAM, into
+   `LoaderPagesSpanned`. The kernel sizes `MmBootImageSize` from that span, so a 1G guest
+   got 0x3F400000 and a KSEG0 reservation running to `0xBF400000`. That covered the
+   system-view and session reservations, so the ROS gap finder handed out session VAs that
+   ARM3 already had mapped. Fix (i386 only): leave identity-only types out of the span, and
+   let `MempSetupPagingForRegion` map them without the span gate. 1G CD boot: 0x3F400000 ->
+   0x4400000, and the sweep completes. Related, same span: a 300MB ramdisk loaded bottom-up
+   pushed every boot driver above it (456MB boot image, 0x7F), so the i386 ramdisk now comes
+   from the top of memory and `LoaderXIPRom` stays out of the span (ramdisk.sys maps it
+   physically). Tool: the kernel VAD-tree dump in `MmMapViewOfSegment` (fires when a fresh
+   kernel view finds a present PTE) showed the oversized first node at once.
 
 **Recipe:** i386 = `qemu/OVMF32_CODE.fd` + `OVMF32_VARS.fd`; amd64 = the system `OVMF_CODE_4M.fd`.
 **`-device ide-cd,drive=cd0,bootindex=0`** — a bare `-cdrom` drops to the UEFI shell. The
@@ -14787,6 +15089,30 @@ design, so it is correct only as long as no two threads race a failure through i
 - **The pre-existing ~33% i386 flake** where `winlogon` unconditionally spawns `nettest.exe`,
   racing explorer's csrss/win32k handoff, HANGs **even host-quiet**; the tail shows
   `[WINLOGON] nettest.exe created` with no `_tWinMain`. Distinct from contention.
+
+### Everything is several times slower than it should be: the cnt CRT core is UNOPTIMISED
+**Symptom.** Costs that make no sense against the work done: an x86-64 guest's cheapest syscall
+at 10x native, all of it spent in wowx64 "outside the kernel"; native `GetPixel` at ~90 us under
+TCG. Profiling (wowx64's exit-time `syscall profile`, the `sysbench` payload) points at code that
+is a handful of instructions in the source.
+
+**Cause.** cnt-rust (the `memset`/`memcpy`/`memmove`/`str*` that ntoskrnl and ntdll export on
+every arch) is built with `-C no-prepopulate-passes` (`libcntpr.cmake`, a guard against an
+old per-cgu miscompile), so LLVM runs NO optimisation passes over it: no mem2reg, no
+vectorising, no inlining. Its `memset` was additionally a volatile byte loop (the guard against
+dead-store elimination). Result: ~10 instructions per BYTE for every RtlZeroMemory and
+RtlCopyMemory in the system. wowx64 zeroing a 1 KB stack buffer on each guest syscall was 45 us
+of a 50 us call.
+
+**Fix.** The bulk loops are inline asm in `cnt-rust/src/cabi/memops.rs` (`rep movsb`/`rep stosb`
+on x86; aligned `ldp`/`stp` on arm64 when source and destination agree mod 8, bytes otherwise,
+so device memory never sees an unaligned access). asm is fast at any optimisation level and
+opaque to LLVM, so it can neither be deleted nor folded into a self-call (the
+`memcpy`-in-Rust trap above). Graded in the guest by `sysbench`'s memops check (every offset
+pair x length to 300, both overlap directions, native arm64 and amd64-under-FEX), and on the host
+by cnt-difftest. Measured: guest NtGetCurrentProcessorNumber 48-79 us -> 4.3-7.8 us, native
+GetPixel 94 -> 8.3 us. **Owed:** the rest of cnt-rust (`strlen`, `wcslen`, `strcmp`, ...) is
+still unoptimised byte-at-a-time code; every `RtlInitUnicodeString` pays `wcslen`.
 
 ### CRT / cnt runtime one-offs
 - **cnt `swprintf` writes nothing → 0x1E** — a signed/unsigned `_cnt` compare.

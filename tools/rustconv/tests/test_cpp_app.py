@@ -1,8 +1,13 @@
+import shutil
+
+import pytest
+
 from rustconv import cpp_app, cpp_lower
 from rustconv.cpp_model import (
     Base,
     ClassModel,
     Field,
+    FreeFunc,
     GlobalVar,
     Method,
     ModuleModel,
@@ -232,52 +237,6 @@ def test_an_sdk_struct_base_is_embedded_by_value():
     assert "pub __base0: BITMAPINFO,\n    pub bmiColorsExtra: [RGBQUAD; 255 as usize]," in rs
 
 
-def test_assemble_files_a_nested_class_method_under_the_nested_class():
-    """msctfime's `CTextEventSink__anon0____ctor_0` belongs to the union, not CTextEventSink."""
-    m = ModuleModel()
-    for n in ("CTextEventSink", "CTextEventSink__anon0"):
-        m.classes[n] = ClassModel(n, n, "struct", "s.h")
-    rs = cpp_app.assemble(
-        "pub unsafe fn CTextEventSink__anon0____ctor_0(this_: *mut CTextEventSink__anon0) {}\n", m
-    )
-    assert "impl CTextEventSink__anon0 {" in rs
-    assert "pub unsafe fn __ctor_0(&mut self" in rs
-
-
-def test_a_type_nested_in_a_class_is_reachable_by_its_bare_name():
-    """msctfime's sinks.h: `typedef INT (CALLBACK *FN_COMPARE)(..)` inside a class."""
-    m = ModuleModel()
-    for n in ("CActiveLanguageProfileNotifySink", "CicProfile"):
-        m.classes[n] = ClassModel(n, n, "class", "s.h")
-    island = (
-        "pub type CActiveLanguageProfileNotifySink_FN_COMPARE = Option<fn()>;\n"
-        "pub struct CicProfile_tagLANG_PROF_ENUM_ARG {\n    pub a: u32,\n}\n"
-        "pub type CicProfile_LANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;\n"
-        "pub type LANG_PROF_ENUM_ARG = u32;\n"
-    )
-    glue = cpp_app._render_island_glue(m, island)
-    assert "pub type FN_COMPARE = CActiveLanguageProfileNotifySink_FN_COMPARE;" in glue
-    assert "pub type tagLANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;" in glue
-    assert "pub type LANG_PROF_ENUM_ARG =" not in glue  # the island already has one
-    m.classes["tagLANG_PROF_ENUM_ARG"] = ClassModel(
-        "tagLANG_PROF_ENUM_ARG", "tagLANG_PROF_ENUM_ARG", "struct", "p.h"
-    )
-    glue = cpp_app._render_island_glue(m, island)
-    assert "pub type tagLANG_PROF_ENUM_ARG =" not in glue  # cppapp renders that class
-
-
-def test_island_glue_gives_a_packed_interface_no_deref():
-    """shlobj.h's `#pragma pack`: `&self._base` of a packed field is E0793."""
-    island = (
-        "#[repr(C, packed)]\n#[derive(Debug, Copy, Clone)]\n"
-        "pub struct IShellFolder {\n    pub _base: IUnknown,\n}\n"
-        "#[repr(C)]\npub struct ITfLangBarMgr_P {\n    pub _base: ITfLangBarMgr,\n}\n"
-    )
-    glue = cpp_app._render_island_glue(ModuleModel(), island)
-    assert "Deref for IShellFolder" not in glue
-    assert "Deref for ITfLangBarMgr_P" in glue
-
-
 _ISLAND_VTBL = """
 #[repr(C)]
 pub struct IEmptyVolumeCacheCallBackVtbl {
@@ -340,113 +299,679 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
         "pcwszStatus: LPCWSTR) -> HRESULT" in rs
     )
     assert "AddRef: Some(CCallBack__IEmptyVolumeCacheCallBack_AddRef)" in rs
+    # REFIID is a reference in the C++ method and a pointer in the slot: reborrowed.
+    assert ".QueryInterface(&*riid, ppvObject) }" in rs
     assert "(*this).__base0.lpVtbl = &CCallBack__IEmptyVolumeCacheCallBack_VTBL" in rs
     # the bodies are plain methods (the COM vtable is their dispatch)
     text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
     assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
 
 
-def _com_sink(
-    name="CSink", vdtor=True, impls=("QueryInterface", "AddRef", "Release", "ScanProgress")
-):
-    cb = ClassModel(name, name, "class", "c.hpp", polymorphic=True)
-    cb.bases = [Base("IEmptyVolumeCacheCallBack", "public")]
-    cb.fields = [Field("m_cRef", "LONG")]
-    sigs = {
-        "QueryInterface": ([("riid", "REFIID"), ("ppv", "void **")], "HRESULT"),
-        "AddRef": ([], "ULONG"),
-        "Release": ([], "ULONG"),
-        "ScanProgress": ([("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")], "HRESULT"),
-    }
-    for n in impls:
-        params, ret = sigs[n]
-        cb.methods.append(
-            _m(
-                n,
-                params=params,
-                ret=ret,
-                virtual=True,
-                body=("c.hpp", 0, 1),
-                lowered="{ return 0; }",
-            )
-        )
-    if vdtor:
-        cb.methods.append(_m(f"~{name}", "dtor", virtual=True, body=("c.hpp", 0, 1), lowered="{}"))
-    _assign_names(cb)
-    return cb
+def test_a_struct_table_is_zipped_with_its_declared_fields():
+    """mspaint's CommandToToolMapping: the model guessed `nCommand`/`nTool` for `id`/`tool`."""
+    from rustconv.cpp_model import GlobalVar
 
-
-def test_a_com_class_with_a_virtual_destructor_extends_the_interfaces_table():
-    """msctfime's CCompartmentEventSink : ITfCompartmentEventSink, `virtual ~...()`. Itanium
-    appends the destructor to the primary interface's table behind its one lpVtbl; a `__vtbl`
-    of our own put the interface at offset 4 and handed COM callers the wrong pointer."""
+    c = ClassModel("COMMAND_TO_TOOL", "COMMAND_TO_TOOL", "struct", "t.cpp")
+    c.fields = [Field("id", "UINT"), Field("tool", "TOOLTYPE")]
     m = ModuleModel()
-    cb = _com_sink()
-    m.classes[cb.qualified] = cb
-    rs = cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
-    assert "pub __vtbl" not in rs
-    assert "pub struct CSink {\n    pub __base0: IEmptyVolumeCacheCallBack," in rs
-    assert (
-        "pub struct CSink__vtbl {\n    pub __com: IEmptyVolumeCacheCallBackVtbl,\n    pub __delete:"
-        in rs
-    )
-    assert "CSink__vtbl { __com: IEmptyVolumeCacheCallBackVtbl { QueryInterface: Some(" in rs
-    assert (
-        "(*this).__base0.lpVtbl = &CSink__VTBL_own as *const CSink__vtbl "
-        "as *mut IEmptyVolumeCacheCallBackVtbl;" in rs
-    )
-    assert "((*((*sub).__base0.lpVtbl as *const CSink__vtbl)).__delete)(sub)" in rs
-    # one table, not a second static the constructor would also install
-    assert "CSink__IEmptyVolumeCacheCallBack_VTBL" not in rs
-
-
-def test_an_interface_slot_left_to_a_derived_class_is_a_pure_virtual():
-    """msctfime's CFunctionProviderBase leaves GetFunction to CFunctionProvider."""
-    m = ModuleModel()
-    base = _com_sink("CBase", impls=("QueryInterface", "AddRef", "Release"))
-    der = ClassModel("CDerived", "CDerived", "class", "c.hpp", polymorphic=True)
-    der.bases = [Base("CBase", "public")]
-    der.methods = [
-        _m(
-            "ScanProgress",
-            params=[("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")],
-            ret="HRESULT",
-            virtual=True,
-            body=("c.hpp", 0, 1),
-            lowered="{ return 0; }",
+    m.classes[c.qualified] = c
+    m.globals = [
+        GlobalVar(
+            "CommandToToolMapping",
+            "const COMMAND_TO_TOOL[2]",
+            "t.cpp",
+            "{\n    { ID_FREESEL, TOOL_FREESEL },\n    { ID_RECTSEL, TOOL_RECTSEL },\n}",
         )
     ]
-    _assign_names(der)
-    m.classes["CBase"] = base
-    m.classes["CDerived"] = der
-    rs = cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
-    assert 'cpp_pure_virtual_call("CBase::ScanProgress")' in rs
-    # the derived table reaches its own implementation through the base's subobject
-    assert "CDerived__b0b0_IEmptyVolumeCacheCallBack_ScanProgress" in rs
+    rs = cpp_app.render_classes(m)
+    assert "pub static CommandToToolMapping: [COMMAND_TO_TOOL; 2] = [" in rs
+    assert "COMMAND_TO_TOOL { id: (ID_FREESEL) as _, tool: (TOOL_FREESEL) as _ }" in rs
+    assert "CommandToToolMapping" not in "".join(cpp_app.synthetic_tus(m).values())
 
 
-def test_an_interface_slot_nobody_implements_stays_an_error():
+def test_a_translated_copy_of_a_generated_static_is_dropped():
+    rs = "pub static T: [X; 2] = [\n    X { a: 1 },\n    X { a: 2 },\n];\nfn f() { T[0]; }\n"
+    assert cpp_app.drop_generated_statics(rs, {"T"}) == "fn f() { T[0]; }\n"
+    assert cpp_app.drop_generated_statics(rs, {"U"}) == rs
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_anonymous_union_member_keeps_its_slot(tmp_path):
+    """msctfime's CTextEventSink: `union { UINT m_uFlags; FN m_fn; };` between two fields.
+    Skipping it would shift every later field; its members are reached through `__anon0`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef unsigned int UINT; typedef int (*FN)(int);\n"
+        "class Sink { long m_cRefs; union { UINT m_uFlags; FN m_fn; }; void *m_after;\n"
+        "public: void Set(UINT f); };\n"
+        "void Sink::Set(UINT f) { m_uFlags = f; Sink *o = this; o->m_fn = 0; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    sink = ex.model.classes["Sink"]
+    assert [f.name for f in sink.fields] == ["m_cRefs", "__anon0", "m_after"]
+    assert ex.model.classes["Sink__anon0"].tag == "union"
+    (body,) = [m.lowered for m in sink.methods if m.name == "Set"]
+    assert "this_->__anon0.m_uFlags = f" in body and "o->__anon0.m_fn = 0" in body
+    assert "pub union Sink__anon0 {" in cpp_app.render_classes(ex.model)
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_nothrow_tag_new_lowers_like_new_and_a_buffer_placement_does_not(tmp_path):
+    """CTF's `new(cicNoThrow) T(args)` (~130 audit rejects across msutb/cicuif/msctf)."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef __SIZE_TYPE__ size_t; struct CicNoThrow { };\n"
+        "#define cicNoThrow CicNoThrow{}\n"
+        "void* operator new(size_t size, const CicNoThrow&) noexcept;\n"
+        "void* operator new(size_t, void* p) noexcept { return p; }\n"
+        "class Item { public: int v; Item(int x) : v(x) {} };\n"
+        "Item* make(int a) { Item *p = new(cicNoThrow) Item(a); return p; }\n"
+        "Item* inplace(void *buf) { return new(buf) Item(1); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            [
+                "clang",
+                "--target=i686-w64-mingw32",
+                "-x",
+                "c++",
+                "-fsyntax-only",
+                "-Xclang",
+                "-ast-dump=json",
+                str(src),
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    by = {f.name: f.lowered for f in ex.model.functions}
+    # The tag's allocator, by its mangled name, so a C++ half and a Rust half share a heap.
+    assert "Item *p = Item__new_in_0(cpp_alloc_CicNoThrow::<Item>(), a);" in by["make"]
+    assert "new(buf) Item(1)" in by["inplace"]
+    assert ex.model.allocators["new:CicNoThrow"] == "_ZnwjRK10CicNoThrow"
+    rs = cpp_app.render_classes(ex.model)
+    assert "if __p.is_null() { return __p; } (*__p).__ctor_0(x)" in rs
+    assert 'link_name = "_ZnwyRK10CicNoThrow"' in rs
+    assert "pub unsafe fn cpp_alloc_CicNoThrow<T>()" in rs
+
+
+def test_an_override_two_levels_below_its_virtual_is_still_a_body():
+    """RubberTool : SmoothDrawTool : ToolBase, OnSpecialTweak declared only in ToolBase."""
+    from rustconv.cpp_model import Base, Method
+
+    def cls(name, base=None, methods=()):
+        c = ClassModel(name, name, "struct", "t.cpp")
+        c.bases = [Base(base, "public", False)] if base else []
+        c.methods = list(methods)
+        c.polymorphic = True
+        return c
+
+    tweak = Method("OnSpecialTweak", "method", [], "void", virtual=True)
+    over = Method("OnSpecialTweak", "method", [], "void")
     m = ModuleModel()
-    cb = _com_sink(impls=("QueryInterface", "AddRef", "Release"))
-    m.classes[cb.qualified] = cb
-    try:
-        cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
-    except cpp_app.CppAppError as e:
-        assert "defines no ScanProgress" in str(e)
-    else:
-        raise AssertionError("a missing implementation must not become a pure-virtual trap")
+    for c in (
+        cls("ToolBase", methods=[tweak]),
+        cls("SmoothDrawTool", "ToolBase"),
+        cls("RubberTool", "SmoothDrawTool", [over]),
+    ):
+        m.classes[c.qualified] = c
+    h = cpp_app.Hierarchy(m)
+    assert h.is_virtual(m.classes["RubberTool"], over)
 
 
-def test_a_com_call_written_as_cpp_dispatches_through_lpvtbl():
-    """`pSource->Release()` on WIDL's C interface: one inherent method per slot."""
-    island = _ISLAND_VTBL + (
-        "#[repr(C)]\npub struct IEmptyVolumeCacheCallBack {\n"
-        "    pub lpVtbl: *mut IEmptyVolumeCacheCallBackVtbl,\n}\n"
-    )
-    rs = cpp_app.render_classes(ModuleModel(), frozenset(), island)
-    assert "impl IEmptyVolumeCacheCallBack {" in rs
+def test_an_invented_this_member_for_a_global_is_dropped():
+    from rustconv.cpp_model import GlobalVar
+
+    c = ClassModel("CMainWindow", "CMainWindow", "class", "t.cpp")
+    c.fields = [Field("m_hMenu", "HMENU")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    m.globals = [GlobalVar("selectionModel", "SelectionModel", "t.cpp", None)]
+    rs = "(*this_).selectionModel.moveSelection(-1, 0); (*this_).m_hMenu = x;"
     assert (
-        "pub unsafe fn ScanProgress(&mut self, dwlSpaceUsed: DWORDLONG, dwFlags: DWORD, "
-        "pcwszStatus: LPCWSTR) -> HRESULT { ((*self.lpVtbl).ScanProgress.unwrap_unchecked())"
-        "(self, dwlSpaceUsed, dwFlags, pcwszStatus) }" in rs
+        cpp_app.unthis_globals(rs, m)
+        == "selectionModel.moveSelection(-1, 0); (*this_).m_hMenu = x;"
     )
+
+
+def test_a_bare_call_to_a_unique_static_method_is_qualified():
+    c = ClassModel("CImageDx", "CImageDx", "class", "t.cpp")
+    c.methods = [_m("_shared", ret="SHARED *", static=True), _m("Attach")]
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = "get((*_shared()).x); CImageDx::_shared(); o._shared(); fn _shared() {}"
+    out = cpp_app.qualify_static_calls(rs, m)
+    assert out.startswith("get((*CImageDx::_shared()).x); CImageDx::_shared(); o._shared();")
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_implicit_conversion_operator_is_an_explicit_call(tmp_path):
+    """mspaint's `IsWindowVisible(textEditWindow)` through CWindow::operator HWND()."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef struct HWND__ *HWND; int IsWindowVisible(HWND);\n"
+        "class CWindow { public: HWND m_hWnd; operator HWND() const { return m_hWnd; } };\n"
+        "class CEdit : public CWindow { public: void Go(); };\n"
+        "CEdit textEditWindow;\n"
+        "void CEdit::Go() { IsWindowVisible(textEditWindow); IsWindowVisible(*this); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["CEdit"].methods if m.name == "Go"]
+    assert go == (
+        "{ IsWindowVisible((textEditWindow).op_to_HWND()); "
+        "IsWindowVisible((*this_).op_to_HWND()); }"
+    )
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_static_method_called_through_an_object_is_an_associated_call(tmp_path):
+    """mspaint's `toolsModel.CreateBrush(..)`, a static method: Rust needs `ToolsModel::`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "class TM { public: static int CreateBrush(int a); int x; };\nTM toolsModel;\n"
+        "class P { public: TM m; void Go(); };\n"
+        "void P::Go() { toolsModel.CreateBrush(1); m.CreateBrush(toolsModel.x); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ TM::CreateBrush(1); TM::CreateBrush(toolsModel.x); }"
+
+
+def test_a_cpp_global_qualifier_is_not_a_crate_path():
+    rs = "if ::IsWindow(h) != 0 { ::core::ptr::null::<u8>(); x.f(::GetDC(h)); }"
+    assert cpp_app.drop_global_qualifier(rs) == (
+        "if IsWindow(h) != 0 { ::core::ptr::null::<u8>(); x.f(GetDC(h)); }"
+    )
+
+
+def test_a_function_scope_using_namespace_maps_bare_names_to_the_island():
+    from rustconv.cpp_app import _apply_using
+
+    chunk = "void f(){\n    using namespace Gdiplus;\n    GpBitmap *p = NULL; x.GpBitmap;\n}"
+    out = _apply_using(chunk, frozenset({"Gdiplus_GpBitmap"}))
+    assert out == "void f(){\n    Gdiplus_GpBitmap *p = NULL; x.GpBitmap;\n}"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_overloaded_free_functions_keep_both_and_calls_pick_the_resolved_one(tmp_path):
+    """mspaint's drawing.h: Fill(.., COLORREF) and Fill(.., HBRUSH). One name dropped one."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef unsigned long COLORREF; typedef struct HBRUSH__ *HBRUSH; typedef void* HDC;\n"
+        "void Fill(HDC hdc, long x, COLORREF color);\nvoid Fill(HDC hdc, long x, HBRUSH b);\n"
+        "void Fill(HDC hdc, long x, COLORREF color) { }\n"
+        "void Fill(HDC hdc, long x, HBRUSH b) { Fill(hdc, x, (COLORREF)0); }\n"
+        "void Use(HDC h, HBRUSH b) { Fill(h, 1, b); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.scan_overloads(ast["inner"])
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    by = {f.name: f for f in ex.model.functions}
+    assert set(by) == {"Fill__0", "Fill__1", "Use"}
+    assert by["Fill__1"].signature.startswith("void Fill__1(")
+    assert by["Fill__1"].lowered == "{ Fill__0(hdc, x, (COLORREF)0); }"
+    assert by["Use"].lowered == "{ Fill__1(h, 1, b); }"
+
+
+def test_assemble_leaves_extern_declarations_alone():
+    """atlimage: a worker's `extern "C" { fn CImage__s_x(..) -> i32; }` was moved into impl."""
+    c = ClassModel("CImage", "CImage", "class", "t.cpp")
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    rs = (
+        'extern "C" {\n    fn CImage__s_x(n: u32) -> i32;\n}\n'
+        "pub unsafe fn CImage__Go(this_: *mut CImage) {\n    CImage__s_x(1);\n}\n"
+    )
+    out = cpp_app.assemble(rs, m)
+    assert 'extern "C" {\n    fn CImage__s_x(n: u32) -> i32;\n}\n' in out
+    assert "impl CImage {" in out and "pub unsafe fn Go(&mut self)" in out
+
+
+def test_external_reach_follows_resolved_calls_and_the_dtor():
+    """mspaint: a static `CImage::GetImporterFilterString` reaches the helper it calls, not
+    the CImage methods the module never calls; and CImage's dtor (always translated, Drop
+    calls it) reaches `Destroy`."""
+    img = ClassModel("CImage", "ATL::CImage", "class", "atlimage.h", external=True)
+    img.methods = [
+        _m("CImage", "ctor", rust_name="__ctor_0"),
+        _m("~CImage", "dtor", rust_name="__dtor", calls=[("CImage", "Destroy")]),
+        _m("Destroy", rust_name="Destroy"),
+        _m(
+            "GetImporterFilterString",
+            static=True,
+            rust_name="GetImporterFilterString",
+            calls=[("CImage", "BuildCodecFilterString")],
+        ),
+        _m("BuildCodecFilterString", static=True, rust_name="BuildCodecFilterString"),
+        _m("Attach", rust_name="Attach"),
+    ]
+    model = ModuleModel(classes={"ATL::CImage": img})
+    model.functions = [
+        FreeFunc("f", "void f()", "m.cpp", "{}", calls=[("CImage", "GetImporterFilterString")])
+    ]
+    reached = cpp_app._reached_by_calls(model, [img])
+    assert reached == {
+        ("CImage", "GetImporterFilterString"),
+        ("CImage", "BuildCodecFilterString"),
+        ("CImage", "Destroy"),
+    }
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_functional_cast_to_a_scalar_is_a_c_cast(tmp_path):
+    """dib.cpp's `INT(cx * eTan)`: left as written, the model called `INT(..)` like a fn."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "typedef int INT;\nclass P { public: void Go(double e); int d; };\n"
+        "void P::Go(double e) { d = INT(3 * e) + 1; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ this_->d = ((INT)(3 * e)) + 1; }"
+
+
+def test_text_macros_are_wide_literals_in_a_unicode_tu():
+    out = cpp_lower.unicode_text_macros(
+        's += TEXT(\';\'); s += _T(" (" ); f(TEXT("a\\"b"), TEXTX(1));'
+    )
+    assert out == 's += L\';\'; s += L" ("; f(L"a\\"b", TEXTX(1));'
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_an_object_macro_over_a_callers_local_is_inlined(tmp_path):
+    """palette.cpp's `#define Y_MARGIN ((rcClient.bottom / 2) - CXY_COLORBOX)`: it names
+    the caller's local, which no Rust item can, so it is inlined where it was expanded."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define CXY 5\n#define Y_MARGIN ((rc.bottom / 2) - CXY) /* centre */\n"
+        "struct R { int bottom; };\nclass P { public: int Go(R rc); };\n"
+        "int P::Go(R rc) { int dy = 3 - Y_MARGIN; return CXY + dy; }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ int dy = 3 - (((rc.bottom / 2) - CXY)); return CXY + dy; }"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_token_pasted_local_is_left_to_the_macro(tmp_path):
+    """cleanmgr: a `##`-pasted name is spelled in clang's `<scratch space>`, which is no
+    file and no `#define` line; the inliner must leave it alone, not open it."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define V(n) v##n\nclass P { public: int Go(int v1); };\n"
+        "int P::Go(int v1) { return V(1); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["P"].methods if m.name == "Go"]
+    assert go == "{ return V(1); }"
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_ctor_init_through_a_macro_call_keeps_its_arguments(tmp_path):
+    """selectionmodel.cpp's `m_rgbBack(RGB(255, 255, 255))` was lowered as `RGB`."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "#define RGB(r, g, b) ((r) | ((g) << 8) | ((b) << 16))\n"
+        "class S { public: S(); int m_rgb; };\nS::S() : m_rgb(RGB(255, 255, 255)) {}\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (ctor,) = [m for m in ex.model.classes["S"].methods if m.kind == "ctor"]
+    assert ctor.lowered_inits == [("m_rgb", "RGB(255, 255, 255)")]
+
+
+def test_a_header_static_function_is_visible_to_the_crate():
+    rs = (
+        'unsafe extern "C" fn Zoomed__0(x: i32) -> i32 {\n    fn inner() {}\n    x\n}\n'
+        "pub fn Keep() {}\nfn Plain() {}\n"
+    )
+    out = cpp_app.publish_header_statics(rs)
+    assert out.startswith('pub unsafe extern "C" fn Zoomed__0')
+    assert "    fn inner() {}" in out and "pub fn Keep()" in out and "pub fn Plain()" in out
+    assert cpp_app.publish_header_statics(out) == out
+
+
+def test_a_nested_module_class_field_is_the_rendered_class_not_bindgens():
+    tm = ClassModel("ToolsModel", "ToolsModel", "class", "t.h")
+    island = frozenset({"ToolsModel_VirtualBrush", "ToolsModel_FN_X"})
+    out = cpp_app._nested_names("VirtualBrush", tm, island, frozenset({"VirtualBrush"}))
+    assert out == "VirtualBrush"
+    assert (
+        cpp_app._nested_names("FN_X", tm, island, frozenset({"VirtualBrush"})) == "ToolsModel_FN_X"
+    )
+
+
+def test_a_nested_type_in_a_unit_signature_and_body_is_the_islands():
+    """registry.cpp's `SetWallpaper(LPCWSTR, WallpaperStyle style)` and atlimagedx's
+    `FN_Startup Startup = ..` reached the model bare; the island spells them Outer_Inner."""
+    rs = ClassModel("RegistrySettings", "RegistrySettings", "class", "r.h")
+    rs.methods = [
+        _m(
+            "SetWallpaper",
+            params=[
+                ("szFileName", "LPCWSTR"),
+                ("style", "WallpaperStyle"),
+                ("s", "CSimpleString &"),
+            ],
+            static=True,
+            rust_name="SetWallpaper",
+            body=("r.cpp", 0, 1),
+            lowered="{ FN_Startup f; }",
+        )
+    ]
+    model = ModuleModel(classes={"RegistrySettings": rs})
+    island = (
+        "pub type RegistrySettings_WallpaperStyle = u32;\n"
+        "pub type RegistrySettings_FN_Startup = u32;\n"
+        "pub type RegistrySettings_CSimpleString = u32;\n"
+    )
+    unit = cpp_app.synthetic_tus(model, island)["r.cpp"]
+    # An atl_rust type keeps its bare name even where the island has an Outer_ spelling.
+    assert "LPCWSTR szFileName, RegistrySettings_WallpaperStyle style, CSimpleString & s)" in unit
+    assert "{ RegistrySettings_FN_Startup f; }" in unit
+
+
+@pytest.mark.skipif(shutil.which("clang") is None, reason="needs clang for a JSON AST")
+def test_a_field_of_a_plain_struct_base_goes_through_the_base(tmp_path):
+    """CRect derives from RECT: `m_rcOld.left` is the base subobject's field. Without the
+    path Rust reached it through the generated Deref (dangerous_implicit_autorefs)."""
+    import json
+    import subprocess
+
+    from rustconv import c_data_port as cdp
+    from rustconv import cpp_model
+
+    src = tmp_path / "t.cpp"
+    src.write_text(
+        "struct tagRECT { int left; int top; };\n"
+        "class CRect : public tagRECT { public: int Width(); };\n"
+        "class S { public: CRect m_rc; int Go(); };\n"
+        "int S::Go() { return m_rc.left + m_rc.Width(); }\n"
+    )
+    ast = json.loads(
+        subprocess.run(
+            ["clang", "-x", "c++", "-fsyntax-only", "-Xclang", "-ast-dump=json", str(src)],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    cdp._attach_files(ast)
+    ex = cpp_model._Extractor(tmp_path, tmp_path)
+    ex.walk(ast["inner"])
+    ex.lower_pending()
+    (go,) = [m.lowered for m in ex.model.classes["S"].methods if m.name == "Go"]
+    assert go == "{ return this_->m_rc.__base0.left + this_->m_rc.Width(); }"
+
+
+def _atl_model(*classes):
+    cwnd = ClassModel("CWindow", "ATL::CWindow", "class", "atlwin.h", external=True)
+    cwnd.fields = [Field("m_hWnd", "HWND")]
+    for c in (cwnd, *classes):
+        _assign_names(c)
+    m = ModuleModel()
+    m.classes = {c.qualified: c for c in (cwnd, *classes)}
+    return m
+
+
+def test_a_property_page_gets_rosdlgs_glue_and_its_overrides():
+    """cleanmgr's CCleanMgrProperties : CPropertyPageImpl<T>: Create builds the page, the
+    class's OnApply overrides the trait default, and CHAIN_MSG_MAP reaches the base's map."""
+    page = ClassModel("P", "P", "struct", "p.cpp")
+    page.bases = [Base("CPropertyPageImpl<P>", "public")]
+    page.constants = [("IDD", 101)]
+    page.methods = [_m("OnApply", ret="int", body=("p.cpp", 0, 1), lowered="{ return 0; }")]
+    page.msg_map = parse_msg_map(
+        "BEGIN_MSG_MAP(P)\n CHAIN_MSG_MAP(CPropertyPageImpl<P>)\nEND_MSG_MAP()"
+    )
+    rs = cpp_app.render_classes(_atl_model(page))
+    assert "pub __base0: CWindow," in rs
+    assert "atl_rust::win::create_property_page(self as *mut Self, 101 as u16" in rs
+    assert "impl atl_rust::win::PropertyPage for P {" in rs
+    assert "unsafe fn on_apply(&mut self) -> i32 { self.OnApply() as i32 }" in rs
+    # A hook the class does not declare keeps the C++ base's default (the trait's).
+    assert "on_set_active" not in rs
+    assert "atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, result)" in rs
+
+
+def test_an_exe_module_gets_win_main_and_its_overrides(tmp_path, monkeypatch):
+    """cleanmgr's CCleanMgrModule : CAtlExeModuleT<T> overrides ParseCommandLine and Run;
+    the rest (InitializeCom, the message loop) stay ATL's."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("class M : public CAtlExeModuleT<M> {};\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    mod.methods = [
+        _m("ParseCommandLine", params=[("l", "LPCTSTR"), ("hr", "HRESULT *")], ret="bool"),
+        _m("Run", params=[("n", "int")], ret="HRESULT"),
+    ]
+    rs = cpp_app.render_classes(_atl_model(mod))
+    assert "pub __base0: atl_rust::exe::CAtlExeModule," in rs
+    assert "atl_rust::exe::win_main(self as *mut Self, show as i32)" in rs
+    assert "impl atl_rust::exe::ExeModule for M {" in rs
+    assert (
+        "unsafe fn parse_command_line(&mut self, cmd_line: *const u16, ret_code: *mut i32) "
+        "-> bool { (self.ParseCommandLine(cmd_line as _, ret_code as _)) as i32 != 0 }"
+    ) in rs
+    assert "unsafe fn run(&mut self, show: i32) -> i32 { self.Run(show as _) as i32 }" in rs
+    assert "initialize_com" not in rs
+
+
+def test_an_exe_module_with_a_com_object_map_is_refused(tmp_path, monkeypatch):
+    """atl_rust registers no class objects: a module that declares some must not get glue
+    that silently skips them."""
+    monkeypatch.setattr(cpp_app, "_REPO", tmp_path)
+    (tmp_path / "m.cpp").write_text("OBJECT_ENTRY_AUTO(CLSID_X, CX)\n")
+    mod = ClassModel("M", "M", "class", "m.cpp")
+    mod.bases = [Base("ATL::CAtlExeModuleT<M>", "public")]
+    with pytest.raises(cpp_app.CppAppError, match="COM object map"):
+        cpp_app.render_classes(_atl_model(mod))
+
+
+def test_a_callback_static_member_keeps_the_system_abi():
+    """cleanmgr: `static BOOL CALLBACK EnumSingleInstanceCallback(HWND, LPARAM)` is handed to
+    EnumWindows; assembling it as a plain Rust fn made the call site a type error."""
+    c = ClassModel("M", "M", "class", "m.cpp")
+    c.methods = [
+        _m("Cb", params=[("h", "HWND"), ("l", "LPARAM")], ret="BOOL", static=True, abi="system"),
+        _m("Plain", static=True),
+    ]
+    _assign_names(c)
+    m = ModuleModel()
+    m.classes[c.qualified] = c
+    out = cpp_app.assemble(
+        "unsafe fn M__Cb(h: HWND, l: LPARAM) -> BOOL { 1 }\nunsafe fn M__Plain() {}\n", m
+    )
+    assert 'pub unsafe extern "system" fn Cb(h: HWND, l: LPARAM) -> BOOL' in out
+    assert "pub unsafe fn Plain()" in out
+
+
+def test_assemble_files_a_nested_class_method_under_the_nested_class():
+    """msctfime's `CTextEventSink__anon0____ctor_0` belongs to the union, not CTextEventSink."""
+    m = ModuleModel()
+    for n in ("CTextEventSink", "CTextEventSink__anon0"):
+        m.classes[n] = ClassModel(n, n, "struct", "s.h")
+    rs = cpp_app.assemble(
+        "pub unsafe fn CTextEventSink__anon0____ctor_0(this_: *mut CTextEventSink__anon0) {}\n", m
+    )
+    assert "impl CTextEventSink__anon0 {" in rs
+    assert "pub unsafe fn __ctor_0(&mut self" in rs
+
+
+def test_a_type_nested_in_a_class_is_reachable_by_its_bare_name():
+    """msctfime's sinks.h: `typedef INT (CALLBACK *FN_COMPARE)(..)` inside a class."""
+    m = ModuleModel()
+    for n in ("CActiveLanguageProfileNotifySink", "CicProfile"):
+        m.classes[n] = ClassModel(n, n, "class", "s.h")
+    island = (
+        "pub type CActiveLanguageProfileNotifySink_FN_COMPARE = Option<fn()>;\n"
+        "pub struct CicProfile_tagLANG_PROF_ENUM_ARG {\n    pub a: u32,\n}\n"
+        "pub type CicProfile_LANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;\n"
+        "pub type LANG_PROF_ENUM_ARG = u32;\n"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type FN_COMPARE = CActiveLanguageProfileNotifySink_FN_COMPARE;" in glue
+    assert "pub type tagLANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;" in glue
+    assert "pub type LANG_PROF_ENUM_ARG =" not in glue  # the island already has one
+    m.classes["tagLANG_PROF_ENUM_ARG"] = ClassModel(
+        "tagLANG_PROF_ENUM_ARG", "tagLANG_PROF_ENUM_ARG", "struct", "p.h"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type tagLANG_PROF_ENUM_ARG =" not in glue  # cppapp renders that class
+
+
+def test_island_glue_gives_a_packed_interface_no_deref():
+    """shlobj.h's `#pragma pack`: `&self._base` of a packed field is E0793."""
+    island = (
+        "#[repr(C, packed)]\n#[derive(Debug, Copy, Clone)]\n"
+        "pub struct IShellFolder {\n    pub _base: IUnknown,\n}\n"
+        "#[repr(C)]\npub struct ITfLangBarMgr_P {\n    pub _base: ITfLangBarMgr,\n}\n"
+    )
+    glue = cpp_app._render_island_glue(ModuleModel(), island)
+    assert "Deref for IShellFolder" not in glue
+    assert "Deref for ITfLangBarMgr_P" in glue

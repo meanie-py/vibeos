@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use crate::types::*;
 use crate::glue::*;
 use core::ffi::{c_char, c_int, c_long, c_uchar, c_uint, c_ushort};
@@ -62,7 +63,6 @@ extern "C" {
 extern "C" {
     fn REVERSE_BYTES(Dst: *mut u8, Src: *const u8);
     fn FREE_POOL(ptr: *mut core::ffi::c_void);
-    fn NT_ASSERT(expression: i32);
     fn TEST_FLAG(value: u8, flag: u8) -> bool;
     fn SET_FLAG(var: &mut u32, flag: u32);
     fn CLEAR_FLAG(var: &mut u32, flag: u32);
@@ -1180,7 +1180,7 @@ pub unsafe extern "system" fn DiskEnableInfoExceptions(
     );
 
     if !NT_SUCCESS(status) || pageData.is_null() {
-        NT_ASSERT(((NT_SUCCESS(status) as i32) != 0 && !pageData.is_null()) as i32);
+        NT_ASSERT!(((NT_SUCCESS(status) as i32) != 0 && !pageData.is_null()) as i32);
         FREE_POOL(modeData as *mut core::ffi::c_void);
         return STATUS_NOT_SUPPORTED;
     }
@@ -1883,7 +1883,7 @@ pub unsafe extern "system" fn DiskInfoExceptionComplete(
                 Irp,
             );
 
-            NT_ASSERT((dataBuffer == ((*(*Irp).MdlAddress).StartVa as *mut u8).add((*(*Irp).MdlAddress).ByteOffset as usize) as PVOID) as i32);
+            NT_ASSERT!((dataBuffer == ((*(*Irp).MdlAddress).StartVa as *mut u8).add((*(*Irp).MdlAddress).ByteOffset as usize) as PVOID) as i32);
 
             if (*srb).Function as i32 == SRB_FUNCTION_STORAGE_REQUEST_BLOCK {
                 (*srbEx).DataTransferLength = (*(*Irp).MdlAddress).ByteCount;

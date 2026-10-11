@@ -1,3 +1,5 @@
+#[allow(unused_imports)] use crate::{KdPrintEx};
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatNtTimeToFatTime};
@@ -53,8 +55,6 @@ extern "system" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "system" {
     static mut FatJanOne1980: LARGE_INTEGER;
-    fn FlagOn(flags: u32, flag: u32) -> i32;
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn NodeType(fcb: *mut FCB) -> u16;
     fn FatLookupFileAllocationSize(IrpContext: *mut IRP_CONTEXT, fcb: *mut FCB);
     fn PagedCode();
@@ -141,8 +141,6 @@ extern "system" {
 }
 extern "system" {
     fn KeGetCurrentIrql() -> u8;
-    fn NT_ASSERT(condition: i32);
-    fn ClearFlag(flags: *mut u32, flag: u32);
     fn FatSetDirtyBcb( irp_ctx: *mut IRP_CONTEXT, bcb: *mut BCB, vcb: *mut VCB, flag: u8, );
     fn FatReservedBytes(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
     fn FatBytesPerFat(bpb: *const BIOS_PARAMETER_BLOCK) -> u32;
@@ -179,7 +177,7 @@ extern "system" {
     fn FatVerifyFcb(IrpContext: PIRP_CONTEXT, Fcb: PFCB);
     fn FatReleaseVcb(IrpContext: PIRP_CONTEXT, Vcb: PVCB);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    } extern "C" { fn KdPrintEx(ComponentId: u32, Level: u32, Format: *const i8, ...); }
+}
 extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
@@ -243,8 +241,8 @@ pub unsafe extern "system" fn FatQueryBasicInfo(
 
     (*Buffer).FileAttributes = (*Fcb).DirentFatFlags as u32;
 
-    if FlagOn(((*Fcb).FcbState as u8) as u32, FCB_STATE_TEMPORARY) != 0 {
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes), FILE_ATTRIBUTE_TEMPORARY);
+    if FlagOn((*Fcb).FcbState as u32, FCB_STATE_TEMPORARY) != 0 {
+        SetFlag!((*Buffer).FileAttributes, FILE_ATTRIBUTE_TEMPORARY);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -531,7 +529,7 @@ unsafe extern "system" fn FatQueryShortNameInfo(
         0,
     );
 
-    NT_ASSERT((status == STATUS_SUCCESS) as i32);
+    NT_ASSERT!((status == STATUS_SUCCESS) as i32);
 
     if (*Length as u32) < (short_name.Length as u32) {
         bytes_to_copy = *Length as u32;
@@ -599,7 +597,7 @@ pub unsafe extern "system" fn FatQueryNetworkInfo(
 
     if FlagOn((*Fcb).FcbState, FCB_STATE_TEMPORARY) != 0 {
         let attr_ptr = core::ptr::addr_of_mut!((*Buffer).FileAttributes);
-        SetFlag(core::ptr::addr_of_mut!((*Buffer).FileAttributes), 0x100u32);
+        SetFlag!((*Buffer).FileAttributes, 0x100u32);
     }
 
     if (*Buffer).FileAttributes == 0 {
@@ -677,26 +675,17 @@ unsafe extern "system" fn FatSetBasicInfo(
     let mut NotifyFilter: u32 = 0;
 
     if (*Buffer).LastWriteTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_LAST_WRITE,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_WRITE);
         (*Buffer).LastWriteTime.QuadPart = 0;
     }
 
     if (*Buffer).LastAccessTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_LAST_ACCESS,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_ACCESS);
         (*Buffer).LastAccessTime.QuadPart = 0;
     }
 
     if (*Buffer).CreationTime.QuadPart == -1i64 {
-        SetFlag(
-            core::ptr::addr_of_mut!((*Ccb).Flags),
-            CCB_FLAG_USER_SET_CREATION,
-        );
+        SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_CREATION);
         (*Buffer).CreationTime.QuadPart = 0;
     }
 
@@ -844,19 +833,13 @@ unsafe extern "system" fn FatSetBasicInfo(
                     *p_status = STATUS_INVALID_PARAMETER;
                     return; // try_return
                 }
-                SetFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TEMPORARY);
+                SetFlag!((*Fcb).FcbState, FCB_STATE_TEMPORARY);
                 let stack = IoGetCurrentIrpStackLocation(Irp);
-                SetFlag(
-                    core::ptr::addr_of_mut!((*(*stack).FileObject).Flags),
-                    FO_TEMPORARY_FILE,
-                );
+                SetFlag!((*(*stack).FileObject).Flags, FO_TEMPORARY_FILE);
             } else {
-                ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TEMPORARY);
+                ClearFlag!((*Fcb).FcbState, FCB_STATE_TEMPORARY);
                 let stack = IoGetCurrentIrpStackLocation(Irp);
-                ClearFlag(
-                    core::ptr::addr_of_mut!((*(*stack).FileObject).Flags),
-                    FO_TEMPORARY_FILE,
-                );
+                ClearFlag!((*(*stack).FileObject).Flags, FO_TEMPORARY_FILE);
             }
 
             if (*Dirent).Attributes != Attributes {
@@ -878,10 +861,7 @@ unsafe extern "system" fn FatSetBasicInfo(
             (*Fcb).CreationTime.QuadPart =
                 (((*Fcb).CreationTime.QuadPart + ALMOST_TEN_MSEC) / TEN_MSEC) * TEN_MSEC;
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_CREATION,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_CREATION);
         }
 
         if ModifyLastAccess {
@@ -901,10 +881,7 @@ unsafe extern "system" fn FatSetBasicInfo(
                 core::ptr::addr_of_mut!((*Fcb).LastAccessTime),
             );
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_LAST_ACCESS,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_ACCESS);
         }
 
         if ModifyLastWrite {
@@ -916,10 +893,7 @@ unsafe extern "system" fn FatSetBasicInfo(
             (*Fcb).LastWriteTime.QuadPart =
                 (((*Fcb).LastWriteTime.QuadPart + ALMOST_TWO_SECONDS) / TWO_SECONDS) * TWO_SECONDS;
 
-            SetFlag(
-                core::ptr::addr_of_mut!((*Ccb).Flags),
-                CCB_FLAG_USER_SET_LAST_WRITE,
-            );
+            SetFlag!((*Ccb).Flags, CCB_FLAG_USER_SET_LAST_WRITE);
         }
 
         if NotifyFilter != 0 {
@@ -1272,7 +1246,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
         && (*(*FileObject).SectionObjectPointer).SharedCacheMap == core::ptr::null_mut()
         && FlagOn((*Irp).Flags, IRP_PAGING_IO) == 0
     {
-        NT_ASSERT((FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0) as i32);
+        NT_ASSERT!((FlagOn((*FileObject).Flags, FO_CLEANUP_COMPLETE) == 0) as i32);
 
         // Now initialize the cache map.
         FatInitializeCacheMap(
@@ -1290,7 +1264,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
     (*Fcb).FcbState |= FCB_STATE_TRUNCATE_ON_CLOSE;
 
     // Now mark that the time on the dirent needs to be updated on close.
-    SetFlag(&mut (*FileObject).Flags, FO_FILE_MODIFIED);
+    SetFlag!((*FileObject).Flags, FO_FILE_MODIFIED);
 
     // _SEH2_TRY / _SEH2_FINALLY
     let p_status = core::ptr::addr_of_mut!(Status);
@@ -1376,7 +1350,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
                     crate::fatdata::FatBugCheckExceptionFilter(pointers as *mut EXCEPTION_POINTERS) as i32
                 });
 
-                NT_ASSERT(((*FileObject).DeleteAccess != 0 || (*FileObject).WriteAccess != 0) as i32);
+                NT_ASSERT!(((*FileObject).DeleteAccess != 0 || (*FileObject).WriteAccess != 0) as i32);
 
                 // There is no going back from this. If we run into problems updating
                 // the dirent we will have to live with the consequences.
@@ -1405,9 +1379,7 @@ pub unsafe extern "system" fn FatSetAllocationInfo(
                 *CcGetFileSizePointer(FileObject) = (*Fcb).Header.FileSize;
             }
 
-            NT_ASSERT(
-                ((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32,
-            );
+            NT_ASSERT!(((*Fcb).Header.FileSize.__bindgen_anon_1.LowPart <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
         }
 
         if CacheMapInitialized != 0 {
@@ -2589,7 +2561,7 @@ pub unsafe extern "system" fn FatSetEndOfFileInfo(
                         *p_new_file_size = (*Fcb).Header.FileSize.__bindgen_anon_1.LowPart;
                     }
 
-                    NT_ASSERT((*p_new_file_size <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
+                    NT_ASSERT!((*p_new_file_size <= (*Fcb).Header.AllocationSize.__bindgen_anon_1.LowPart) as i32);
 
                     FatGetDirentFromFcbOrDcb(
                         IrpContext,
@@ -2681,7 +2653,7 @@ pub unsafe extern "system" fn FatSetEndOfFileInfo(
                     FILE_ACTION_MODIFIED,
                 );
 
-                SetFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_TRUNCATE_ON_CLOSE);
+                SetFlag!((*Fcb).FcbState, FCB_STATE_TRUNCATE_ON_CLOSE);
             }
 
             (*FileObject).Flags |= FO_FILE_MODIFIED;
@@ -3012,12 +2984,7 @@ pub unsafe extern "system" fn FatCommonQueryInformation(
                 }
             }
         } else {
-            KdPrintEx(
-                DPFLTR_FASTFAT_ID,
-                DPFLTR_INFO_LEVEL,
-                b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8,
-                TypeOfOpen as u32,
-            );
+            KdPrintEx!(DPFLTR_FASTFAT_ID, DPFLTR_INFO_LEVEL, b"FATQueryFile, Illegal TypeOfOpen = %08lx\n\0".as_ptr() as *const i8, TypeOfOpen as u32);
             *p_status = STATUS_INVALID_PARAMETER;
         }
 
@@ -3308,7 +3275,6 @@ unsafe extern "system" fn FatDeleteFile(
             Fcb: *mut FCB,
             offset: u32,
         );
-        fn NT_ASSERT(condition: u32);
         fn NodeType(Fcb: *mut FCB) -> u32;
     }
 
@@ -3329,8 +3295,8 @@ unsafe extern "system" fn FatDeleteFile(
         if ((*Fcb).FcbState & FCB_STATE_NAMES_IN_SPLAY_TREE) != 0
             && (*Fcb).DirentOffsetWithinDirectory == DirentOffset
         {
-            NT_ASSERT((NodeType(Fcb) == FAT_NTC_FCB) as u32);
-            NT_ASSERT(((*Fcb).LfnOffsetWithinDirectory == LfnOffset) as u32);
+            NT_ASSERT!((NodeType(Fcb) == FAT_NTC_FCB) as u32);
+            NT_ASSERT!(((*Fcb).LfnOffsetWithinDirectory == LfnOffset) as u32);
 
             if (*Fcb).UncleanCount != 0 {
                 FatBugCheck(0, 0, 0);
@@ -8566,4 +8532,11 @@ pub unsafe extern "system" fn FatFsdQueryInformation(
     FsRtlExitFileSystem();
     DebugTrace(-1, Dbg, b"FatFsdQueryInformation -> %08lx\n\0".as_ptr() as *const i8, Status as u32);
     Status
+}
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, flag: u32) -> i32 {
+    (flags as u64 & flag as u64) as i32
 }

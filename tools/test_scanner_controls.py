@@ -56,6 +56,21 @@ REPO = Path(__file__).resolve().parent.parent
 # shipped for months (`ntoskrnl.dll`, a file that does not exist); the second is
 # what the FIRST repair shipped, because rustc appends `.dll` even to a name that
 # already has an extension (`ntoskrnl.exe.dll`).
+# pcix PciBuildHackTable: ASSERT(!NT_SUCCESS(Status)) lowered with the condition as guard.
+_ASSERT_POLARITY_BAD = """
+unsafe fn f(Status: NTSTATUS) {
+    if !NT_SUCCESS(Status) {
+        RtlAssert(
+            b"!NT_SUCCESS(Status)\\0".as_ptr() as PVOID,
+            b"init.c\\0".as_ptr() as PVOID,
+            670,
+            null_mut(),
+        );
+    }
+}
+"""
+_ASSERT_POLARITY_GOOD = _ASSERT_POLARITY_BAD.replace("if !NT_SUCCESS", "if NT_SUCCESS")
+
 _RAWDYLIB_BAD = """\
 #[link(name = "ntoskrnl", kind = "raw-dylib")]
 extern "C" {
@@ -2555,6 +2570,13 @@ CONTROLS: list[Control] = [
         good={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_GOOD},
     ),
     Control(
+        name="scan_assert_polarity",
+        script="tools/scan_assert_polarity.py",
+        argv=["--root"],
+        bad={"src/init.rs": _ASSERT_POLARITY_BAD},
+        good={"src/init.rs": _ASSERT_POLARITY_GOOD},
+    ),
+    Control(
         name="scan_rawdylib_linkname",
         script="tools/scan_rawdylib_linkname.py",
         argv=["--root"],
@@ -3562,6 +3584,35 @@ def test_cc_mismatch_flags_one_undefined_symbol_declared_two_ways(tmp_path: Path
     assert any("cachesup.rs" in h for h in split) and any("fileinfo.rs" in h for h in split), hits
 
 
+def test_cc_mismatch_counts_a_sys_crate_import_as_a_declaration(tmp_path: Path, monkeypatch):
+    """[DECL_CC_SPLIT] where one side is not an extern block at all: pnp.rs imported the cdecl
+    IoCopyCurrentIrpStackLocationToNext from ntkrnl_sys::ddk, flush.rs declared it "system".
+    rustc merged them; FatCommonFlushBuffers' finally returned into its own stack on i386.
+    The import must count, and a crate that only imports must stay quiet."""
+    cc = _cc_mod()
+    lib = _materialize(
+        tmp_path,
+        {
+            "demo-sys/src/bindgen_i386.rs": (
+                'extern "C" {\n    pub fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "fat-rust/src/pnp.rs": (
+                "use demo_sys::ddk::{KeX, IoCopyCurrentIrpStackLocationToNext};\n"
+            ),
+            "fat-rust/src/flush.rs": (
+                'extern "system" {\n    fn IoCopyCurrentIrpStackLocationToNext(Irp: *mut u8);\n}\n'
+            ),
+            "clean-rust/src/pnp.rs": "use demo_sys::ddk::IoCopyCurrentIrpStackLocationToNext;\n",
+        },
+    )
+    monkeypatch.setattr(cc, "BASE", str(lib))
+    monkeypatch.setattr(cc, "_SYS_CACHE", {})
+    hits = cc.scan_crate(str(lib / "fat-rust/src"))
+    split = [h for h in hits if "DECL_CC_SPLIT" in h]
+    assert any("pnp.rs" in h for h in split) and any("flush.rs" in h for h in split), hits
+    assert not cc.scan_crate(str(lib / "clean-rust/src"))
+
+
 def test_cc_mismatch_ignores_a_commented_out_declaration(tmp_path: Path):
     """section.rs keeps `// DUPLICATE: fn KeRaiseIrql(..)` inside an extern "system" block
     next to a live extern "C" one. A comment is not a declaration: no split, no mismatch."""
@@ -3818,3 +3869,24 @@ def test_inline_flag_literal_is_paired_within_its_own_field(tmp_path):
     catalog = {"VK_MEDIA_PREV_TRACK": 0xB1, "VK_HOME": 0x24}
     hits = module.scan_file(rs, catalog)
     assert [(h[1], h[2]) for h in hits] == [(0x25, "VK_HOME")]
+
+
+def test_formatless_printf_name_needs_a_real_printf(tmp_path):
+    """apphelp's `SeiPrintFunctionName(lpProcName, szOrdProcFmt)` ends in a `...Fmt`
+    parameter and its name contains Print+F(unctionName); it is not a printf, and the old
+    case-insensitive `printf` match flagged it. A real one must still flag."""
+    spec = importlib.util.spec_from_file_location(
+        "formatless_name_control", REPO / "tools/scan_formatless_printf.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    rs = tmp_path / "x.rs"
+    rs.write_text(
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn SeiPrintFunctionName(p: LPCSTR, szOrdProcFmt: *mut i8)'
+        " -> LPCSTR { p }\n"
+        "#[no_mangle]\n"
+        'pub unsafe extern "C" fn DbgPrintfEx(Format: PCSTR) -> u32 { 0 }\n'
+    )
+    assert [f[2] for f in module.scan([rs])] == ["DbgPrintfEx"]

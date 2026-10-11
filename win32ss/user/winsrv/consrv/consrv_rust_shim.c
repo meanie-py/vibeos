@@ -28,7 +28,7 @@ typedef void            *PVOID;
 typedef void            *LPVOID;
 typedef const void      *LPCVOID;
 
-/* mk_wcwidth_cjk lives in frontends/wcwidth.c (still C, cdecl). */
+/* mk_wcwidth_cjk is Rust (sdk/lib/rust/wcwidth-rust, exported cdecl). */
 extern int mk_wcwidth_cjk(WCHAR ucs);
 
 /*

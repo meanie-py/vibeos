@@ -24,10 +24,10 @@ from rustconv.crate_repair import (
     RULE_ANON_UNION,
     RULE_CPP_BASE_FIELD,
     RULE_FLEX_ARRAY,
-    RULE_GUID_EQ,
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
     RULE_MACRO_PLACE_DEREF,
+    RULE_MATCH_ARM_GUARD,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
@@ -1343,44 +1343,6 @@ def _packed_diag(place: bytes, src: bytes = _PACKED_SRC) -> dict:
     )
 
 
-def _guid_diag(src: bytes, lhs: bytes, op: bytes, rhs: bytes) -> dict:
-    a = src.index(lhs)
-    o = src.index(op, a + len(lhs))
-    b = src.index(rhs, o + len(op))
-    return _diag(
-        f"binary operation `{op.decode()}` cannot be applied to type `_GUID`",
-        code="E0369",
-        spans=[
-            _span("src/a.rs", a, a + len(lhs), label="_GUID"),
-            _span("src/a.rs", o, o + len(op), is_primary=True),
-            _span("src/a.rs", b, b + len(rhs), label="_GUID"),
-        ],
-    )
-
-
-def test_guid_operator_eq_becomes_is_equal_guid():
-    """msctf's `*riid == IID_IUnknown`: C++'s guiddef.h operator, 74 sites."""
-    src = b"if *riid == IID_IUnknown || a != b { }"
-    plan = propose_edits(
-        [_guid_diag(src, b"*riid", b"==", b"IID_IUnknown"), _guid_diag(src, b"a", b"!=", b"b")],
-        _reader({"src/a.rs": src}),
-        target="i386",
-        rules=[RULE_GUID_EQ],
-    )
-    assert sorted(e.replacement for e in plan.edits) == [
-        "!IsEqualGUID!(&(a), &(b))",
-        "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
-    ]
-
-
-def test_guid_operator_eq_needs_both_operands_to_be_guids():
-    src = b"if g == 0 { }"
-    d = _guid_diag(src, b"g", b"==", b"0")
-    d["spans"][2]["label"] = "{integer}"
-    plan = propose_edits([d], _reader({"src/a.rs": src}), target="i386", rules=[RULE_GUID_EQ])
-    assert not plan.edits
-
-
 def _base_field_diag(src: bytes, field: bytes, paths: list[str]) -> dict:
     at = src.index(b"." + field) + 1
     return _diag(
@@ -1859,6 +1821,23 @@ def test_keyword_named_fields_take_bindgens_spelling():
     ]
 
 
+def test_a_keyword_field_in_a_struct_literal_takes_bindgens_spelling():
+    # reg.exe's type table: `reg_type_rels { type_0: REG_SZ, .. }` against bindgen's `type_`.
+    from rustconv.crate_repair import RULE_KEYWORD_FIELD
+
+    src = b"static T: [R; 1] = [R { type_0: 1, name: N }];\n"
+    at = src.index(b"type_0")
+    diag = _diag(
+        "struct `types_arch::reg_type_rels` has no field named `type_0`",
+        code="E0560",
+        spans=[_span("src/a.rs", at, at + 6, is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_KEYWORD_FIELD]
+    )
+    assert [(e.original, e.replacement) for e in plan.edits] == [("type_0", "type_")]
+
+
 def test_a_c2rust_anonymous_member_hop_is_dropped_where_rustc_says_it_is_absent():
     from rustconv.crate_repair import RULE_C2RUST_HOP
 
@@ -2124,6 +2103,34 @@ def test_truthiness_fixes_our_macro_body_and_never_stacks():
     assert [e.replacement for e in plan.edits] == ["((isalnum($c)) != 0)"]
 
 
+def test_truthiness_converts_at_the_call_when_the_macro_body_is_the_whole_value():
+    # cmd's `_istspace!` is `iswctype(..)`: an int used as a number at most sites and as a
+    # condition at one. `!= 0` written into the body broke the numeric uses (+45 errors).
+    from rustconv.crate_repair import RULE_C_TRUTHINESS
+
+    src = b"macro_rules! S { ($c:expr) => { iswctype($c, 8) }; }\nfn f() {\n    if S!(x) {}\n}\n"
+    body_at = src.index(b"iswctype($c, 8)")
+    body = _span(
+        "src/a.rs",
+        body_at,
+        body_at + len(b"iswctype($c, 8)"),
+        is_primary=True,
+        label="expected `bool`, found `i32`",
+    )
+    call_at = src.index(b"S!(x)")
+    body["expansion"] = {
+        "span": _span("src/a.rs", call_at, call_at + len(b"S!(x)")),
+        "macro_decl_name": "S!",
+    }
+    plan = propose_edits(
+        [_diag("mismatched types", code="E0308", spans=[body])],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_C_TRUTHINESS],
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(call_at, "((S!(x)) != 0)")]
+
+
 def test_an_edit_outside_the_repaired_crate_is_refused(tmp_path):
     # rustc points INTO a shared crate's macro body when the misuse is at the call site; the
     # truthiness rule once rewrote win32macros-rust to suit setuplib.
@@ -2178,6 +2185,18 @@ def test_a_local_shadowing_a_constant_is_renamed_for_its_block():
     assert "(*p).AdapterType = AdapterType_local;" in out
     assert "S { AdapterType: AdapterType_local, b: E::AdapterType }" in out
     assert "g(AdapterType_local);" in out and "h(AdapterType);" in out
+
+
+def test_a_local_shadowing_a_glob_static_is_renamed_too():
+    # taskmgr's PerfDataGetSessionId: `ULONG SessionId;` vs ntdll-sys's `static mut SessionId`.
+    src = (
+        "fn f(i: u32) -> u32 {\n    let mut SessionId: ULONG = 0;\n"
+        "    SessionId = (*p.add(i as usize)).SessionId;\n    return SessionId;\n}\n"
+    )
+    _, out = _one_site(src, "SessionId", "let bindings cannot shadow statics", "E0530", nth=0)
+    assert "let mut SessionId_local: ULONG = 0;" in out
+    assert "SessionId_local = (*p.add(i as usize)).SessionId;" in out
+    assert "return SessionId_local;" in out
 
 
 def test_sizeof_of_a_constant_is_the_size_of_its_value():
@@ -2781,4 +2800,519 @@ def test_a_zero_argument_reported_in_a_child_note_becomes_null():
     edits, _, handled = _pointer_cast_rule(diag, lambda f: src, _Ctx(target="amd64", width=64))
     assert handled and [(e.byte_start, e.replacement) for e in edits] == [
         (11, "core::ptr::null_mut()")
+    ]
+
+
+def test_a_cpp_reference_argument_is_borrowed():
+    """mspaint: `ImageToCanvas(POINT& pt)` called with the POINT itself; a `&mut` wants a
+    place, a const reference also binds a temporary, and a call result stays red for `&mut`."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"f(pt); g(rc.__base0); h(make());"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+
+    e = _cpp_reference_arg(_span("a.rs", 2, 4), "&mut tagPOINT", "tagPOINT", load, ctx)
+    assert e is not None and e.replacement == "&mut pt"
+    e = _cpp_reference_arg(_span("a.rs", 9, 19), "*const tagRECT", "tagRECT", load, ctx)
+    assert e is not None and e.replacement == "&rc.__base0"
+    assert _cpp_reference_arg(_span("a.rs", 24, 30), "&mut X", "X", load, ctx) is None
+    e = _cpp_reference_arg(_span("a.rs", 24, 30), "&X", "X", load, ctx)
+    assert e is not None and e.replacement == "&(make())"
+    assert _cpp_reference_arg(_span("a.rs", 2, 4), "&mut tagPOINT", "tagRECT", load, ctx) is None
+
+
+def test_a_method_receiver_is_not_an_argument_position():
+    from rustconv.crate_repair import harvest_signatures
+
+    src = b"impl W { pub unsafe fn DefWindowProc(&mut self, msg: UINT, w: WPARAM, l: LPARAM) {} }"
+    assert harvest_signatures({"a.rs": src})["DefWindowProc"] == ["UINT", "WPARAM", "LPARAM"]
+
+
+_WIDE_MATCH_SRC = b"""pub unsafe fn f(wParam: WPARAM) -> i32 {
+    match wParam {
+        VK_ESCAPE => 1,
+        WMSZ_TOP | WMSZ_BOTTOM => 2,
+        _ => 0,
+    }
+}
+"""
+
+
+def test_match_scrutinee_wider_than_arms_converts_the_labels_not_the_scrutinee():
+    """mspaint's `match wParam` (u64 on amd64) against u32 VK_*: `wParam as u32` would match
+    VK_ESCAPE for 0x1_0000_001B. C converts each label, so each arm becomes a guard with
+    `as _`, which needs no cross-target agreement (i386's u32 WPARAM reports nothing)."""
+    src = _WIDE_MATCH_SRC
+    diags = [
+        _arm_diag(arm, "u64", "u32", src=src) for arm in (b"VK_ESCAPE", b"WMSZ_TOP", b"WMSZ_BOTTOM")
+    ]
+    plan = propose_edits(
+        diags,
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_MATCH_SCRUTINEE, RULE_MATCH_ARM_GUARD],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "__c if __c == VK_ESCAPE as _",
+        "__c if __c == WMSZ_TOP as _ || __c == WMSZ_BOTTOM as _",
+    ]
+    assert not any(e.requires_target_agreement for e in plan.edits)
+    assert len(merge_plans({"amd64": plan}).edits) == 2
+
+
+def test_a_parenthesised_negative_literal_wraps_too():
+    src = "fn f() { x.nPosition = (-(1)) as ULONG; }\n"
+    at = src.index("-(1)")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("a.rs", at, at + 4, is_primary=True)],
+    )
+    assert "x.nPosition = ((1 as u32).wrapping_neg()) as ULONG;" in _apply_plan(src, diag)
+
+
+def test_a_negated_int_macro_stays_signed():
+    """mspaint `(-GRIP_SIZE / 2) as i32`: C's `#define GRIP_SIZE 3` is an int, so the quotient
+    is -1. Wrapping in bindgen's u32 would make it 0x7FFF_FFFE."""
+    from rustconv.crate_repair import RULE_UNSIGNED_NEGATE
+
+    src = b"fn f() { g((-GRIP_SIZE / 2) as i32); }\n"
+    at = src.index(b"-GRIP_SIZE")
+    diag = _diag(
+        "cannot apply unary operator `-` to type `u32`",
+        code="E0600",
+        spans=[_span("src/a.rs", at, at + len(b"-GRIP_SIZE"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_UNSIGNED_NEGATE],
+        constants={"GRIP_SIZE": 3},
+    )
+    assert [e.replacement for e in plan.edits] == ["(-(GRIP_SIZE as i32))"]
+
+
+def test_a_constant_argument_of_a_compared_call_is_not_a_comparison_operand():
+    """`GetKeyState(VK_SHIFT) < 0`: the comparison is the CALL's; VK_SHIFT mismatches the
+    parameter. The comparison rule claimed it and declined, so nothing answered."""
+    from rustconv.crate_repair import RULE_COMPARISON, RULE_CONST_OPERAND
+
+    src = b"fn f() -> bool {\n    GetKeyState(VK_SHIFT) < 0\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"VK_SHIFT", "i32", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_COMPARISON, RULE_CONST_OPERAND],
+        constants={"VK_SHIFT": 0x10},
+    )
+    assert [e.replacement for e in plan.edits] == ["(VK_SHIFT as i32)"]
+
+
+def test_crate_constants_follow_the_public_ntdll_sys_glob(tmp_path):
+    from rustconv.crate_repair import local_constants
+
+    crate = tmp_path / "app-rust"
+    (crate / "src").mkdir(parents=True)
+    (crate / "src" / "types_amd64.rs").write_text(
+        "pub use ntdll_sys::nt::*;\npub const OWN: u32 = 1;\n"
+    )
+    sys_src = tmp_path / "ntdll-sys" / "src"
+    sys_src.mkdir(parents=True)
+    (sys_src / "bindgen_amd64.rs").write_text(
+        "pub const VK_SHIFT: u32 = 16;\npub const OWN: u32 = 9;\npub const W: u32 = 4;\n"
+    )
+    (sys_src / "bindgen_i386.rs").write_text(
+        "pub const VK_SHIFT: u32 = 16;\npub const W: u32 = 8;\n"
+    )
+    assert local_constants(crate) == {"OWN": 1, "VK_SHIFT": 16}
+
+
+def test_an_option_fn_cast_to_an_integer_maps_none_to_zero():
+    src = 'fn f() { let a = GetProcAddress(h, b"X\\0".as_ptr() as *const i8) as usize; }\n'
+    at = src.index("GetProcAddress")
+    end = src.index("; }")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn() -> i64>` as `usize`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    out = _apply_plan(src, diag)
+    assert (
+        '(GetProcAddress(h, b"X\\0".as_ptr() as *const i8)).map_or(0, |f| f as usize) as usize'
+        in out
+    )
+
+
+def test_logical_not_of_a_pointer_is_a_null_test():
+    src = "fn f() { if !w.DoCreate() { g(); } }\n"
+    at = src.index("!w")
+    end = src.index(" {", at)
+    diag = _diag(
+        "cannot apply unary operator `!` to type `*mut HWND__`",
+        code="E0600",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "if (w.DoCreate()).is_null() { g(); }" in _apply_plan(src, diag)
+
+
+def test_an_integer_literal_where_a_float_is_wanted_is_a_float_literal():
+    from rustconv.crate_repair import RULE_FLOAT_LITERAL
+
+    src = b"fn f() { let mut x: f32 = 0; let e = M_PI * 2.0 / 180; }\n"
+    at = src.index(b"0;")
+    lit = _diag(
+        "mismatched types",
+        spans=[
+            _span("src/a.rs", at, at + 1, is_primary=True, label="expected `f32`, found integer")
+        ],
+    )
+    op = src.index(b"/ 180")
+    div = _diag(
+        "cannot divide `f64` by `{integer}`",
+        code="E0277",
+        spans=[_span("src/a.rs", op, op + 1, is_primary=True)],
+    )
+    plan = propose_edits(
+        [lit, div], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_FLOAT_LITERAL]
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["0.0", "180.0"]
+
+
+def test_an_address_of_a_place_for_a_cpp_reference_is_the_reference():
+    """mspaint: `canvasWindow.GetImageRect(core::ptr::addr_of_mut!(rcImage.__base0))` where
+    GetImageRect takes `RECT&`."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"f(core::ptr::addr_of_mut!(rc.__base0)); g(addr_of!(pt)); h(p);"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+    a = src.index(b"core::ptr::addr_of_mut!")
+    e = _cpp_reference_arg(
+        _span("a.rs", a, src.index(b"); g")), "&mut tagRECT", "*mut tagRECT", load, ctx
+    )
+    assert e is not None and e.replacement == "&mut rc.__base0"
+    b = src.index(b"addr_of!(pt)")
+    e = _cpp_reference_arg(_span("a.rs", b, b + 12), "&tagPOINT", "*const tagPOINT", load, ctx)
+    assert e is not None and e.replacement == "&pt"
+    # A const address is not a mutable reference, and a bare pointer is not a place.
+    assert (
+        _cpp_reference_arg(_span("a.rs", b, b + 12), "&mut tagPOINT", "*const tagPOINT", load, ctx)
+        is None
+    )
+    c = src.index(b"p);")
+    assert _cpp_reference_arg(_span("a.rs", c, c + 1), "&mut X", "*mut X", load, ctx) is None
+
+
+def test_a_deref_of_a_class_object_drops_the_star():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { g((*toolsModel).GetBgBrush()); }\n"
+    at = src.index(b"*toolsModel")
+    diag = _diag(
+        "type `cpp_classes::ToolsModel` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, at + len(b"*toolsModel"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["toolsModel"]
+
+
+def test_a_generic_reference_parameter_binds_any_place():
+    """precomp.h's `Swap(T& a, T& b)` with two HBITMAP places (a pointer type)."""
+    from rustconv.crate_repair import _cpp_reference_arg, _Ctx
+
+    src = b"Swap((*this_).m_hbmMaster, (*part).m_hbmImage); Swap(f(), x);"
+    ctx = _Ctx(target="amd64", width=64)
+    load = lambda f: src  # noqa: E731
+    a = src.index(b"(*this_)")
+    e = _cpp_reference_arg(
+        _span("a.rs", a, a + len(b"(*this_).m_hbmMaster")), "&mut _", "*mut HBITMAP__", load, ctx
+    )
+    assert e is not None and e.replacement == "&mut (*this_).m_hbmMaster"
+    c = src.index(b"f()")
+    assert _cpp_reference_arg(_span("a.rs", c, c + 3), "&mut _", "i32", load, ctx) is None
+
+
+def test_a_method_on_a_raw_pointer_to_a_class_goes_through_the_pointee():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { CImageDx::_shared().Release(); }\n"
+    at = src.index(b"Release")
+    diag = _diag(
+        "no method named `Release` found for raw pointer `*mut cpp_classes::SHARED` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"Release"), is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["(*CImageDx::_shared())"]
+
+
+def test_atl_format_with_a_string_table_id_is_atl_format_id():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { atl_format!(strSize, IDS_FILESIZE, g_fileSize); }\n"
+    plan = propose_edits(
+        [_mismatch(src, b"IDS_FILESIZE", "*const u16", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == ["atl_format_id!"]
+
+
+def test_cstringw_implicit_conversions_are_written_out():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"fn f() { g(registrySettings.strFontName); s.strFontName = szText.as_ptr(); }\n"
+    plan = propose_edits(
+        [
+            _mismatch(src, b"registrySettings.strFontName", "*const u16", "CStringW"),
+            _mismatch(src, b"szText.as_ptr()", "CStringW", "*const u16"),
+        ],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "CStringW::from_ptr(szText.as_ptr())",
+        "registrySettings.strFontName.GetString()",
+    ]
+
+
+def test_compound_assign_through_a_reference_zero_pointer_and_int_float():
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = (
+        b"fn f(strFilter: &mut CStringW) {\n    strFilter += p;\n"
+        b"    k.Create(h, REG_NONE);\n    g((*this_).newWidth / g_xDpi);\n}\n"
+    )
+    a = src.index(b"strFilter +=")
+    assign = _diag(
+        "binary assignment operation `+=` cannot be applied to type `&mut atl_rust::CStringW`",
+        code="E0368",
+        spans=[
+            _span("src/a.rs", a, a + 9, label="cannot use `+=` on type `&mut CStringW`"),
+            _span("src/a.rs", a, a + 14, is_primary=True),
+        ],
+    )
+    op = src.index(b"/ g_xDpi")
+    div = _diag(
+        "cannot divide `i32` by `f32`",
+        code="E0277",
+        spans=[_span("src/a.rs", op, op + 1, is_primary=True)],
+    )
+    plan = propose_edits(
+        [assign, _mismatch(src, b"REG_NONE", "*mut u16", "u32"), div],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_OBJECT_DEREF],
+        constants={"REG_NONE": 0},
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "((*this_).newWidth as f32)",
+        "*strFilter",
+        "core::ptr::null_mut()",
+    ]
+
+
+def test_an_option_fn_integer_cast_inside_its_own_parentheses():
+    src = "fn f() { if ((*this_).m_Shutdown as usize) == 0 {} }\n"
+    at = src.index("((*this_)")
+    end = src.index(" == 0")
+    diag = _diag(
+        'non-primitive cast: `Option<unsafe extern "system" fn(u64)>` as `usize`',
+        code="E0605",
+        spans=[_span("a.rs", at, end, is_primary=True)],
+    )
+    assert "if ((*this_).m_Shutdown).map_or(0, |f| f as usize) as usize == 0 {}" in _apply_plan(
+        src, diag
+    )
+
+
+def test_a_constant_operand_for_a_64bit_want_infers_its_width():
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(wParam: WPARAM) -> bool {\n    wParam == VK_ESCAPE\n}\n"
+    plan = propose_edits(
+        [_mismatch(src, b"VK_ESCAPE", "u64", "u32")],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"VK_ESCAPE": 0x1B},
+    )
+    assert [e.replacement for e in plan.edits] == ["(VK_ESCAPE as _)"]
+
+
+def test_a_baked_constant_width_and_a_bitwise_sibling_use_portable_types():
+    from rustconv.crate_repair import RULE_CONST_OPERAND, _cpp_reference_arg, _Ctx
+
+    src = (
+        b"fn f(wParam: WPARAM) {\n    if wParam == (IDD_X as u64) {}\n"
+        b"    if wParam & MK_LBUTTON != 0 {}\n}\n"
+    )
+    plan = propose_edits(
+        [
+            _mismatch(src, b"(IDD_X as u64)", "u32", "u64"),
+            _mismatch(src, b"MK_LBUTTON", "u64", "u32"),
+        ],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CONST_OPERAND],
+        constants={"IDD_X": 5, "MK_LBUTTON": 1},
+    )
+    assert sorted(e.replacement for e in plan.edits) == ["(IDD_X as _)", "(MK_LBUTTON as WPARAM)"]
+    # `original` must be the span's own text, or apply_edits declines it as stale.
+    assert sorted(e.original for e in plan.edits) == ["(IDD_X as u64)", "MK_LBUTTON"]
+    # Parenthesised places bind to a C++ reference too.
+    ref = b"g((rc).__base0); h((*core::ptr::addr_of_mut!(rcImage)).__base0);"
+    ctx = _Ctx(target="amd64", width=64)
+    a = ref.index(b"(rc)")
+    e = _cpp_reference_arg(_span("a.rs", a, a + 12), "&mut tagRECT", "tagRECT", lambda f: ref, ctx)
+    assert e is not None and e.replacement == "&mut (rc).__base0"
+    b = ref.index(b"(*core")
+    e = _cpp_reference_arg(
+        _span("a.rs", b, ref.index(b");", b)), "*mut tagRECT", "tagRECT", lambda f: ref, ctx
+    )
+    assert e is not None and e.replacement == "&mut (*core::ptr::addr_of_mut!(rcImage)).__base0"
+
+
+def test_an_uninferable_constant_cast_takes_the_siblings_type():
+    from rustconv.crate_repair import RULE_CONST_OPERAND
+
+    src = b"fn f(wParam: WPARAM) {\n    if wParam & (MK_LBUTTON as _) != 0 {}\n}\n"
+    at = src.index(b"_)")
+    diag = _diag(
+        "type annotations needed",
+        code="E0282",
+        spans=[_span("src/a.rs", at, at + 1, is_primary=True, label="cannot infer type")],
+    )
+    plan = propose_edits(
+        [diag],
+        _reader({"src/a.rs": src}),
+        target="amd64",
+        rules=[RULE_CONST_OPERAND],
+        constants={"MK_LBUTTON": 1},
+    )
+    assert [e.replacement for e in plan.edits] == ["WPARAM"]
+
+
+def test_a_guid_comparison_is_is_equal_guid():
+    """cleanmgr: `*riid == IID_IUnknown` -- C++'s guiddef.h operator==, i.e. IsEqualGUID."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"if *riid == IID_IUnknown || *riid != IID_X { }\n"
+    diags = []
+    for op, rhs in ((b"==", b"IID_IUnknown"), (b"!=", b"IID_X")):
+        o = src.index(op)
+        lhs_at = src.rindex(b"*riid", 0, o)
+        r = src.index(rhs, o)
+        diags.append(
+            _diag(
+                f"binary operation `{op.decode()}` cannot be applied to type `_GUID`",
+                code="E0369",
+                spans=[
+                    _span("src/a.rs", lhs_at, lhs_at + 5, label="_GUID"),
+                    _span("src/a.rs", r, r + len(rhs), label="_GUID"),
+                    _span("src/a.rs", o, o + 2, is_primary=True),
+                ],
+            )
+        )
+    plan = propose_edits(
+        diags, _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF]
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "!IsEqualGUID!(&(*riid), &(IID_X))",
+        "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
+    ]
+
+
+def test_a_heap_ptr_where_a_pointer_is_wanted_is_its_held_pointer():
+    """cleanmgr: `SetWindowTextW((*h).wszBtnText)` on a CComHeapPtr<WCHAR> field."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"w.SetWindowTextW((*h).wszBtnText);\n"
+    a = src.index(b"(*h)")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b");"),
+                is_primary=True,
+                label="expected `*const u16`, found `CHeapPtr<u16, CComAllocator>`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*h).wszBtnText.m_pData"]
+
+
+def test_a_resource_id_format_is_found_through_the_macro_expansion():
+    """cleanmgr: rustc reports `atl_format!(s, IDS_X, ..)`'s mismatch at the macro's own `$fmt`
+    use inside atlclasses-rust; the edit belongs at the outermost invocation in the module."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    atl_format!(Caption, IDS_CALCULATING, s.GetString());\n"
+    at = src.index(b"atl_format!")
+    call = _span("src/a.rs", at, src.index(b";"))
+    inner = _span(
+        "/x/atlclasses-rust/src/lib.rs",
+        7798,
+        7803,
+        is_primary=True,
+        label="expected `*const u16`, found `u32`",
+    )
+    inner["expansion"] = {"span": {**_span("/x/lib.rs", 6821, 6983), "expansion": {"span": call}}}
+    d = _diag("mismatched types", spans=[inner])
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [(e.replacement, e.file_name, e.byte_start) for e in plan.edits] == [
+        ("atl_format_id!", "src/a.rs", at)
+    ]
+
+
+def test_an_interface_method_on_a_com_ptr_goes_through_the_pointer():
+    """cleanmgr: `self.m_spProgress.SetTitle(t)` -- C++'s `m_spProgress->SetTitle(t)`."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_spProgress.SetTitle(t);\n"
+    at = src.index(b"SetTitle")
+    d = _diag(
+        "no method named `SetTitle` found for struct `atl_rust::CComPtr<types_arch::"
+        "IProgressDialog>` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + len(b"SetTitle"), is_primary=True)],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == ["(*(*this_).m_spProgress.p)"]
+
+
+def test_an_hwnd_where_a_cwindow_is_wanted_is_constructed():
+    """cleanmgr: `m_HandlerListControl = GetDlgItem(IDC_HANDLERLIST)` -- CWindow's
+    operator=(HWND)."""
+    from rustconv.crate_repair import RULE_OBJECT_DEREF
+
+    src = b"    (*this_).m_ctl = (*this_).__base0.GetDlgItem(7);\n"
+    a = src.index(b"(*this_).__base0")
+    d = _diag(
+        "mismatched types",
+        spans=[
+            _span(
+                "src/a.rs",
+                a,
+                src.index(b";"),
+                is_primary=True,
+                label="expected `CWindow`, found `*mut HWND__`",
+            )
+        ],
+    )
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="amd64", rules=[RULE_OBJECT_DEREF])
+    assert [e.replacement for e in plan.edits] == [
+        "CWindow__make_0((*this_).__base0.GetDlgItem(7))"
     ]

@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -17,7 +18,6 @@ use crate::ddk_shims::{FsRtlAllocatePoolWithTag};
 extern "system" {
     static mut FatDisableParentCheck: i32;
     } extern "C" { fn DebugTrace(level: i32, flag: u32, msg: *const i8, ...); } extern "system" {
-    fn BooleanFlagOn(flags: u32, flag: u32) -> u8;
     fn FatRaiseStatus(IrpContext: PIRP_CONTEXT, Status: NTSTATUS) -> !;
     static mut FatData: FAT_DATA;
     fn FatAcquireDirectoryFileMutex(Vcb: *mut VCB);
@@ -26,7 +26,6 @@ extern "system" {
     fn FatPreallocateCloseContext(Vcb: *mut VCB);
     fn FatReleaseDirectoryFileMutex(Vcb: *mut VCB);
     fn FatSetFileObject(FileObject: *mut FILE_OBJECT, Type: u32, VcbOrFcbOrDcb: *mut c_void, Ccb: *mut CCB);
-    fn NT_ASSERT(condition: i32);
     fn NodeType(Dcb: *mut DCB) -> u32;
     fn CcSetDirtyPinnedData(Bcb: *mut core::ffi::c_void, Lba: *mut core::ffi::c_void);
     fn FatIsFat12(Vcb: *mut VCB) -> u8;
@@ -43,7 +42,6 @@ extern "system" {
     static FatDiskAccountingEnabled: BOOLEAN;
     fn CcSetAdditionalCacheAttributesEx(FileObject: PFILE_OBJECT, Flags: u32);
     fn FatRootDirectoryLbo(bpb: *const BIOS_PARAMETER_BLOCK) -> i64; // LBO
-    fn FlagOn(flags: u32, mask: u32) -> i32;
     fn DbgDoit(pin: u32);
     fn PagedCode();
     fn ExIsResourceAcquiredSharedLite(resource: *const ERESOURCE) -> u8;
@@ -160,7 +158,7 @@ pub unsafe extern "system" fn FatReadVolumeFile(
         let condition = (StartingVbo == 0) ||
             (StartingVbo.wrapping_add(ByteCount) as i64 <=
                 (FatRootDirectoryLbo(&raw const (*Vcb).Bpb as *const _) + PAGE_SIZE as i64));
-        NT_ASSERT(condition as i32);
+        NT_ASSERT!(condition as i32);
 
         DebugTrace(1, Dbg as u32, b"FatReadVolumeFile\n\0".as_ptr() as *const i8, (0u32) as usize);
         DebugTrace(0, Dbg as u32, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as usize);
@@ -180,7 +178,7 @@ pub unsafe extern "system" fn FatReadVolumeFile(
         ) == 0
         {
             let flag_on_result = FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT as u32);
-            NT_ASSERT((flag_on_result == 0) as i32);
+            NT_ASSERT!((flag_on_result == 0) as i32);
 
             FatRaiseStatus(IrpContext, STATUS_CANT_WAIT as i32);
         }
@@ -210,9 +208,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
     let mut Vbo: LARGE_INTEGER = core::mem::zeroed();
     Vbo.QuadPart = StartingVbo as i64;
 
-    NT_ASSERT(
-        (((StartingVbo as u64) + (ByteCount as u64)) <= FatRootDirectoryLbo(&raw const (*Vcb).Bpb) as u64) as i32,
-    );
+    NT_ASSERT!((((StartingVbo as u64) + (ByteCount as u64)) <= FatRootDirectoryLbo(&raw const (*Vcb).Bpb) as u64) as i32);
 
     DebugTrace(1, 0, b"FatPrepareWriteVolumeFile\n\0".as_ptr() as *const i8, 0);
     DebugTrace(0, 0, b"Vcb         = %p\n\0".as_ptr() as *const i8, Vcb as usize);
@@ -234,7 +230,7 @@ pub unsafe extern "system" fn FatPrepareWriteVolumeFile(
         Buffer,
     ) == 0
     {
-        NT_ASSERT((FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) as i32);
+        NT_ASSERT!((FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0) as i32);
         FatRaiseStatus(IrpContext, STATUS_CANT_WAIT);
     }
 
@@ -312,7 +308,7 @@ pub unsafe extern "system" fn FatReadDirectoryFile(
         ByteCount = ByteCount;
     }
 
-    NT_ASSERT((ByteCount != 0) as i32);
+    NT_ASSERT!((ByteCount != 0) as i32);
 
     Vbo.QuadPart = StartingVbo as i64;
 
@@ -588,7 +584,7 @@ pub unsafe extern "system" fn FatIsCurrentOperationSynchedForDcbTeardown(
 
     // Accept this assertion at face value.  It comes from GetDirentForFcbOrDcb,
     // and is reliable.
-    if FlagOn(((*irp_context).Flags as u8) as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
+    if FlagOn((*irp_context).Flags as u32, IRP_CONTEXT_FLAG_PARENT_BY_CHILD as u32) != 0 {
         return 1;
     }
 
@@ -642,8 +638,9 @@ pub unsafe extern "system" fn FatOpenDirectoryFile(
 
     // C: NT_ASSERT( FatIsCurrentOperationSynchedForDcbTeardown( IrpContext, Dcb )).
     // NT_ASSERT does NOT evaluate its argument in release/DUMMY_PSEH builds (it is a
-    // checked-build-only invariant), but the Rust extern-fn NT_ASSERT evaluates its
-    // argument eagerly. FatIsCurrentOperationSynchedForDcbTeardown reads the create
+    // checked-build-only invariant). The Rust NT_ASSERT used to be an extern fn that
+    // evaluated it eagerly, and NT_ASSERT! still would under debug-assertions.
+    // FatIsCurrentOperationSynchedForDcbTeardown reads the create
     // IRP's current stack location, which faults when that location has been consumed
     // during a nested directory-file open (e.g. FatCreateNewFile). The result is
     // discarded by the assert, so match C release semantics and do not evaluate it.
@@ -822,7 +819,7 @@ pub unsafe extern "system" fn FatCloseEaFile(
 
     // NT_ASSERT( FatVcbAcquiredExclusive(IrpContext, Vcb) );
     let cond: i32 = FatVcbAcquiredExclusive(IrpContext, Vcb) as i32;
-    NT_ASSERT(cond);
+    NT_ASSERT!(cond);
 
     // PFILE_OBJECT EaFileObject = Vcb->VirtualEaFile;
     let mut EaFileObject: *mut FILE_OBJECT = (*Vcb).VirtualEaFile;
@@ -923,7 +920,6 @@ const STATUS_VERIFY_REQUIRED: i32 = 0x80000016_u32 as i32;
 const FAT_NTC_FCB: u32 = 0x0502; // placeholder, must be correct value
 
 unsafe extern "system" {
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn FatNormalizeAndRaiseStatus(irp_context: *mut IRP_CONTEXT, status: i32);
 }
 
@@ -1051,10 +1047,7 @@ pub unsafe extern "system" fn FatUnpinRepinnedBcbs(irp_context: *mut IRP_CONTEXT
 
     if !NT_SUCCESS(raise_iosb.__bindgen_anon_1.Status) {
         if force_verify != 0 && !file_object.is_null() {
-            SetFlag(
-                &mut (*(*file_object).DeviceObject).Flags,
-                DO_VERIFY_VOLUME,
-            );
+            SetFlag!((*(*file_object).DeviceObject).Flags, DO_VERIFY_VOLUME);
             IoSetHardErrorOrVerifyDevice(
                 (*irp_context).OriginatingIrp,
                 (*file_object).DeviceObject,
@@ -1149,7 +1142,7 @@ pub unsafe extern "system" fn FatCompleteMdl(
         },
         IRP_MJ_WRITE => {
             let IrpSp = IoGetCurrentIrpStackLocation(Irp);
-            NT_ASSERT(FlagOn(((*IrpContext).Flags as u8) as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
+            NT_ASSERT!(FlagOn((*IrpContext).Flags as u32, 0x2 /* IRP_CONTEXT_FLAG_WAIT */) as i32);
             CcMdlWriteComplete(
                 FileObject,
                 core::ptr::addr_of_mut!((*IrpSp).Parameters.Write.ByteOffset),
@@ -1209,7 +1202,7 @@ pub unsafe extern "system" fn FatSyncUninitializeCacheMap(
         core::ptr::null_mut(), // NULL
     );
 
-    NT_ASSERT((wait_status == (STATUS_SUCCESS) as i32) as i32);
+    NT_ASSERT!((wait_status == (STATUS_SUCCESS) as i32) as i32);
 }
 
 #[no_mangle]
@@ -3527,3 +3520,15 @@ pub unsafe extern "system" fn FatSetDirtyBcb(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn BooleanFlagOn(flags: u32, flag: u32) -> u8 {
+    ((flags as u64 & flag as u64) != 0) as u8
+}
+
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, mask: u32) -> i32 {
+    (flags as u64 & mask as u64) as i32
+}

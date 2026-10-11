@@ -184,6 +184,15 @@ def test_pointer_typedef_arithmetic_steps_elements(monkeypatch):
     assert " + (*$p0)" not in out
 
 
+def test_a_callback_cast_coerces_and_reaches_an_integer_through_its_bits(monkeypatch):
+    """taskmgr's ListView_SortItems: `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Some(F) as PFNLVCOMPARE`
+    and `Option<fn> as LPARAM` are both E0605; a coercion and a transmute are not."""
+    monkeypatch.setattr(sdk_macros, "_OPTION_TYPES", {"PFNLVCOMPARE"})
+    out = lower_expansion("(LPARAM)(PFNLVCOMPARE)(__rcv_p0__)", {"PFNLVCOMPARE", "LPARAM"})
+    assert "let __cb: PFNLVCOMPARE = $p0; __cb" in out
+    assert "core::mem::transmute::<PFNLVCOMPARE, usize>(" in out and " as PFNLVCOMPARE" not in out
+
+
 def test_pointer_minus_pointer_is_refused(monkeypatch):
     monkeypatch.setattr(sdk_macros, "_POINTER_TYPES", {"PUCHAR"})
     with pytest.raises(LowerError):
@@ -214,3 +223,68 @@ def test_object_expansion_needs_the_macro_on_every_arch(monkeypatch, tmp_path):
         tmp_path, tmp_path / "x.c", {"SetWindowLongPtrW", "StringCchCopy"}
     )
     assert got == {"StringCchCopy": "StringCchCopyW"}
+
+
+def test_a_cpp_global_scope_qualifier_is_dropped():
+    """windowsx.h's Edit_SetModify, expanded in a C++ TU: `::SendMessageW(..)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion("((void)::SendMessageW((h),185,(WPARAM)(UINT)(m),0))", {"WPARAM", "UINT"})
+    assert "SendMessageW(" in out and "::SendMessageW" not in out
+
+
+def test_a_parenthesized_callee_is_a_call_not_a_cast():
+    """windowsx.h's SetWindowFont in a C++ TU: `(void)(::SendMessageW)((h),48,(WPARAM)(f),0)`."""
+    from rustconv.sdk_macros import lower_expansion
+
+    out = lower_expansion(
+        "(void)(::SendMessageW)(((h)),48,(WPARAM)(HFONT)((f)),(LPARAM)(BOOL)((r)))",
+        {"WPARAM", "LPARAM", "HFONT", "BOOL"},
+    )
+    assert "SendMessageW(" in out and "as SendMessageW" not in out, out
+
+
+def test_a_vtable_call_goes_through_the_option_slot():
+    out = low("(__rcv_p0__)->lpVtbl->Release(__rcv_p0__)")
+    assert ".lpVtbl).Release).unwrap_unchecked()(" in out
+
+
+def test_a_read_through_a_volatile_pointer_stays_volatile():
+    """ndis.h's NdisReadRegisterUlong reads a device register through `volatile ULONG *`;
+    a plain `*` is a load LLVM may merge or hoist out of a poll loop."""
+    out = low("*(__rcv_p1__) = *((volatile ULONG * const) (__rcv_p0__))")
+    assert out == "{ (*$p1) = ((core::ptr::read_volatile((($p0) as *mut ULONG))) as _); }"
+
+
+def test_a_write_through_a_volatile_pointer_stays_volatile():
+    out = low("*((volatile ULONG *)(__rcv_p0__)) = (__rcv_p1__)")
+    assert out == "core::ptr::write_volatile((($p0) as *mut ULONG), (($p1) as _));"
+
+
+def test_a_volatile_pointer_to_pointer_is_not_a_volatile_access():
+    """`volatile T **`: the outer load reads an ordinary pointer."""
+    assert "read_volatile" not in low("*((volatile ULONG **)(__rcv_p0__))")
+
+
+def test_a_call_through_a_member_function_pointer_unwraps_the_option():
+    """ndis.h's NdisMIndicateStatus calls `(*Block->StatusHandler)(..)`; bindgen types the
+    field Option<fn>, which `*` cannot call."""
+    out = low("(*((PNDIS_MINIPORT_BLOCK)(__rcv_p0__))->StatusHandler)(__rcv_p0__, __rcv_p1__)")
+    assert out.startswith("((*(($p0) as PNDIS_MINIPORT_BLOCK)).StatusHandler).unwrap_unchecked()(")
+
+
+def test_island_types_include_the_sys_crate_the_island_globs(tmp_path):
+    """taskmgr: `LPWSTR` comes from `pub use ntdll_sys::nt::*;`, and without it
+    `((LPWSTR)-1L)` parsed as a subtraction and LPSTR_TEXTCALLBACK was never lowered."""
+    crate = tmp_path / "rust" / "x-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate / "types_amd64.rs").write_text("pub use ntdll_sys::nt::*;\npub struct LOCAL { }\n")
+    sys_src = tmp_path / "rust" / "ntdll-sys" / "src"
+    sys_src.mkdir(parents=True)
+    (sys_src / "bindgen_amd64.rs").write_text("pub type LPWSTR = *mut WCHAR;\n")
+    types = sdk_macros.island_types(crate)
+    assert {"LOCAL", "LPWSTR"} <= types
+    node = sdk_macros._Parser(sdk_macros.tokenize("((LPWSTR)-1L)"), types).parse()
+    while node.kind == "comma" and len(node.kids) == 1:
+        node = node.kids[0]
+    assert node.kind == "cast"

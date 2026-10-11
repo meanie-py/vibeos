@@ -212,11 +212,57 @@ explorer opening a folder and My Computer). Getting there fixed:
 
 In isolation that took the fifteen from 4 passes to 9-10 per run, the misses all timing. A full
 sweep on a host saturated by integration builds (`20261008-114135-_w0p3rum-smoke-arm64`, mspaint
-164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host; per-syscall cost under
-FEX, which is what every slow applet is paying; memory (a 1 GB VM leaves ~30 MB before the sweep,
-so the payload asks for 2 GB; ~1 MB per x86-64 app is kept; exhaustion bugchecks 0x7A instead of
-failing the allocation); the guest user32 reading native procs from `gpsi` (pfnclient.rs); and
-remote `NtSetContextThread` on a guest thread.
+164 s vs 23 s) measured mostly the host. **Owed:** a full sweep on a quiet host (per-syscall cost
+under FEX, also owed here, was measured and cut on 2026-10-11, below); memory (a 1 GB VM leaves ~30 MB before the sweep,
+so the payload asks for 2 GB; ~1 MB per x86-64 app is kept); the guest user32 reading native procs
+from `gpsi` (pfnclient.rs); and remote `NtSetContextThread` on a guest thread.
+
+Memory exhaustion (2026-10-10). The 0x7A was `MiMakeSystemAddressValid` bugchecking on the
+`STATUS_NO_MEMORY` its page-table fault returned (P1=1, P2=C0000017, ~8 MB free;
+`20261008-003644-ghnmlian`, `-005837-s33duoyg`). It now waits for the balancer and retries, and so
+does `MiMakeSystemAddressValidPfn`. User faults still fail on `STATUS_NO_MEMORY` instead of
+retrying as the C does: retrying every fault turned exhaustion into a whole-machine stall, because
+nothing frees pages until a process exits. Failing the fault kills only the starving app. Measured
+at 768 MB (`20261010-075717-s6lsafno`): no bugcheck; rapps and iexplore died `c0000005` at ~18 MB
+free; the sweep ran on past them. Owed:
+- **explorer wedged afterwards** on a win32k-space gate whose holder never signalled (also in
+  `20261010-054207-p5m0hi2a`). Something died or failed holding it. The 2 s user-lock hold trace
+  cannot see it, because it reports at RELEASE.
+- **The real fix is commit accounting.** `MmTotalCommittedPages` is never updated (as upstream) and
+  `MmTotalCommitLimit` is never checked, so user commits can exhaust physical memory outright instead
+  of failing at allocation. Not started: it touches every commit site on every arch.
+- Census `STUCK` lines now carry a kernel backtrace (`[CENSUS]   bt`). On arm64 the frame-pointer
+  walk past the first two frames is unreliable through Rust code. `ETHREAD.StartAddress` reads back
+  garbage there (a wait-path return address, `0x7ff00000000`); that layout is owed a check.
+
+Per-syscall cost (2026-10-11). Measured with the `sysbench` payload (a ladder of operations timed
+natively, then by its own amd64 build under FEX, minutes apart on the same VM) and a profile
+wowx64 now prints at every x86-64 process exit (`[WOWX64] pid N syscall profile`: kernel,
+wowx64, and "before" -- guest code plus FEX's exit from and re-entry into its JIT -- in total
+and, past 1000 calls, for the five costliest services). A guest syscall cost 10x native, and
+the profile put it on our side: NtGetCurrentProcessorNumber was kernel 5.7 us, **wowx64
+45 us**, FEX 1.3 us. wowx64's `Dispatch` zeroed its 1 KB path-redirect buffer on every call, and
+ntdll's memset was an unoptimised volatile byte loop (the whole cnt CRT builds with
+`-C no-prepopulate-passes`; field manual, "Everything is several times slower..."). memset /
+memcpy / memmove are now asm (`cnt-rust/src/cabi/memops.rs`) and the buffer is written only by
+the path services. Native / guest per operation (after: `20261011-033055-rtqc8wpb` with the asm
+CRT, `20261011-034606-yhfa1enn` with the buffer fix too; a loaded host, so ranges):
+
+| op | before (4 runs) | after (2 runs) |
+|---|---|---|
+| NtGetCurrentProcessorNumber | 4.2-7.7 / 48-79 us | 3.9-5.3 / 4.3-7.8 us |
+| NtQueryInformationProcess | 14-41 / 54-143 us | 16-20 / 10.5-19.6 us |
+| NtAllocate + NtFreeVirtualMemory | 29-61 / 183-296 us | 21-38 / 28-31 us |
+| GetPixel (memory DC) | 68-109 / 99-209 us | 8.3-16.4 / 11.0-21.8 us |
+| CreateWindowEx + DestroyWindow | 1.2-3.8 / 4.7-9.2 ms | 0.57-0.85 / 1.24-1.53 ms |
+
+A plain guest syscall now costs what a native one does, within the noise: FEX's transition is
+~1.7 us and wowx64's share under 2 us. What is left is win32k callbacks (about 2x native) and the
+CPU layer's Notify brackets on memory calls. Native got faster too: win32k was bound on
+byte-at-a-time copies. An empty `PeekMessage` takes ~50 ms on both sides; that is upstream's
+`ZwYieldExecution` without `PM_NOYIELD`, giving a quantum to any ready thread, not a defect.
+Owed: the rest of the cnt CRT (`wcslen`, `strlen`, ...) is still unoptimised byte loops; the
+applet sweep on a quiet host, re-timed against these numbers.
 
 **Then (2026-10-08, evening): taskmgr.** Two bugs in taskmgr itself, both upstream, both visible
 only when the guest is slow:

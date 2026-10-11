@@ -98,9 +98,19 @@ _COND_ANY_RE = re.compile(r"^[ \t]*#[ \t]*(ifdef|ifndef|if|elif|else|endif)\b(.*
 
 # One `MACRO <op> <int>` comparison. The literal may be decimal or hex, with an
 # optional L/U suffix, because a version macro is routinely spelled `0x0601` or `100L`.
+# The right side may also be a pinned macro: `NTDDI_VERSION >= NTDDI_VISTA` names one on
+# each side, and while it was undecidable the arbiter library's Vista-only definitions
+# read as live, "lost", and sent the scanner to a fallback that parsed the Vista arms.
 _INT_CMP_RE = re.compile(
-    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*(0[xX][0-9a-fA-F]+|\d+)[uUlL]*\s*\)*$"
+    r"^\(*\s*([A-Za-z_]\w*)\s*(==|!=|<=|>=|<|>)\s*"
+    r"(0[xX][0-9a-fA-F]+[uUlL]*|\d+[uUlL]*|[A-Za-z_]\w*)\s*\)*$"
 )
+
+
+def _int_operand(token: str, pinned: dict[str, int]) -> int | None:
+    if token[0].isdigit():
+        return int(token.rstrip("uUlL"), 0)
+    return pinned.get(token)
 
 
 def pinned_int_macros(definitions: object) -> dict[str, int]:
@@ -145,8 +155,9 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
     for term in terms:
         term = term.strip()
         m = _INT_CMP_RE.match(term)
-        if m is not None and m.group(1) in pinned:
-            lhs, op, rhs = pinned[m.group(1)], m.group(2), int(m.group(3), 0)
+        rhs = _int_operand(m.group(3), pinned) if m is not None else None
+        if m is not None and m.group(1) in pinned and rhs is not None:
+            lhs, op = pinned[m.group(1)], m.group(2)
             verdicts.append(
                 {
                     "==": lhs == rhs,
@@ -157,6 +168,13 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
                     ">": lhs > rhs,
                 }[op]
             )
+            continue
+        # A `defined(X)` the tree fixes (KNOWN_DEFINED: every compile has -D__REACTOS__).
+        # calc's winmain.c: `#if defined(__GNUC__) && !defined(__REACTOS__)` is false however
+        # __GNUC__ stands, and its arm holds a second header for the `_tWinMain` body.
+        d = re.fullmatch(r"(!)?\s*defined\s*\(?\s*(\w+)\s*\)?", term)
+        if d is not None and d.group(2) in KNOWN_DEFINED:
+            verdicts.append(d.group(1) is None)
             continue
         # A bare `DBG` / `!DBG` is C's truth test on the macro's value.
         b = re.fullmatch(r"(!)?\s*\(?\s*([A-Za-z_]\w*)\s*\)?", term)
@@ -176,7 +194,10 @@ def eval_int_guard(expr: str, pinned: dict[str, int]) -> bool | None:
 
 
 def cond_truth(
-    line: str, pinned: dict[str, int] | None = None, local: frozenset[str] = frozenset()
+    line: str,
+    pinned: dict[str, int] | None = None,
+    local: frozenset[str] = frozenset(),
+    off: frozenset[str] = frozenset(),
 ) -> bool | None:
     """``True``/``False`` when a preprocessor condition is FIXED for this tree, else ``None``.
 
@@ -198,6 +219,8 @@ def cond_truth(
         sym = rest.split()[0] if rest.split() else ""
         if sym in KNOWN_DEFINED or sym in local or (pinned and sym in pinned):
             return kind == "ifdef"
+        if sym in off:
+            return kind == "ifndef"
         return None
     if re.fullmatch(r"\(?\s*0+\s*\)?", rest):
         return False
@@ -208,15 +231,17 @@ def cond_truth(
         m2.group(2) in KNOWN_DEFINED or m2.group(2) in local or (pinned and m2.group(2) in pinned)
     ):
         return m2.group(1) is None
-    if pinned:
-        return eval_int_guard(rest, pinned)
-    return None
+    if m2 and m2.group(2) in off:
+        return m2.group(1) is not None
+    return eval_int_guard(rest, pinned or {})
 
 
 _LOCAL_DEFINE_RE = re.compile(r"^[ \t]*#[ \t]*(define|undef)[ \t]+([A-Za-z_]\w*)\b(?!\()")
 
 
-def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set[int]:
+def never_compiled_lines(
+    text: str, pinned: dict[str, int] | None = None, off: frozenset[str] = frozenset()
+) -> set[int]:
     """The 1-based line numbers this tree's compiler never sees.
 
     A function whose definition starts on one of these lines does not exist in any object
@@ -257,7 +282,7 @@ def never_compiled_lines(text: str, pinned: dict[str, int] | None = None) -> set
             continue
         directive = m.group(1)
         if directive in ("if", "ifdef", "ifndef"):
-            truth = cond_truth(line, pinned, frozenset(local))
+            truth = cond_truth(line, pinned, frozenset(local), off - local)
             stack.append((truth is False, truth is not None, truth is True))
         elif directive in ("else", "elif") and stack:
             _, known, taken = stack[-1]

@@ -2,6 +2,7 @@
 //! (its `AfdRegisterEventHandlers` is called from nowhere). Translated and kept
 //! per the never-delete rule; see drivers/network/afd/CMakeLists.txt.
 //!
+#[allow(unused_imports)] use crate::{AFD_DbgPrint};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -14,7 +15,6 @@ use ntkrnl_sys::ddk::{PIRP, PMDL};
 use core::ffi::c_void;
 
 extern "C" {
-    fn AFD_DbgPrint(Level: u32, Format: PCHAR, ...);
     fn TdiSetEventHandler( Handle: PVOID, EventType: ULONG, EventHandler: PVOID, EventContext: PVOID, ) -> NTSTATUS;
 }
 #[no_mangle]
@@ -23,7 +23,7 @@ pub unsafe extern "C" fn AfdEventError(
     Status: NTSTATUS,
 ) -> NTSTATUS {
 
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }
@@ -38,7 +38,7 @@ pub unsafe extern "C" fn AfdEventDisconnect(
     DisconnectFlags: ULONG,
 ) -> NTSTATUS {
 
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }
@@ -58,13 +58,9 @@ pub unsafe extern "C" fn AfdEventReceive(
     let mut Buffer: PAFD_BUFFER;
     let mut OldIrql: KIRQL = 0;
 
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
 
-    AFD_DbgPrint(
-        MID_TRACE,
-        b"Receiving (%d) bytes on socket\n\0".as_ptr() as PCHAR,
-        BytesAvailable,
-    );
+    AFD_DbgPrint!(MID_TRACE, b"Receiving (%d) bytes on socket\n\0".as_ptr() as PCHAR, BytesAvailable);
 
     ReceiveBuffer = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -110,7 +106,7 @@ pub unsafe extern "C" fn AfdEventReceive(
 
     *BytesTaken = BytesAvailable;
 
-    AFD_DbgPrint(MAX_TRACE, b"Leaving.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Leaving.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }
@@ -125,7 +121,7 @@ pub unsafe extern "C" fn ClientEventReceiveExpedited(
     Tsdu: PVOID,
     IoRequestPacket: *mut PIRP,
 ) -> TDI_STATUS {
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }
@@ -139,7 +135,7 @@ pub unsafe extern "C" fn ClientEventChainedReceive(
     Tsdu: PMDL,
     TsduDescriptor: PVOID,
 ) -> NTSTATUS {
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
     STATUS_SUCCESS
 }
 #[no_mangle]
@@ -166,14 +162,9 @@ pub unsafe extern "C" fn AfdEventReceiveDatagramHandler(
     let mut Count: ULONG = 0;
     let CompleteIrp: BOOLEAN;
 
-    AFD_DbgPrint(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Called.\n\0".as_ptr() as PCHAR);
 
-    AFD_DbgPrint(
-        MID_TRACE,
-        b"Receiving (%d) bytes from (0x%X).\n\0".as_ptr() as PCHAR,
-        BytesAvailable,
-        *(SourceAddress as PULONG),
-    );
+    AFD_DbgPrint!(MID_TRACE, b"Receiving (%d) bytes from (0x%X).\n\0".as_ptr() as PCHAR, BytesAvailable, *(SourceAddress as PULONG));
 
     ReceiveBuffer = ExAllocatePoolWithTag(
         NonPagedPool,
@@ -214,7 +205,7 @@ pub unsafe extern "C" fn AfdEventReceiveDatagramHandler(
     );
 
     CompleteIrp = if IsListEmpty(core::ptr::addr_of_mut!((*FCB).ReadRequestQueue)) == 0 {
-        AFD_DbgPrint(MAX_TRACE, b"Satisfying read request.\n\0".as_ptr() as PCHAR);
+        AFD_DbgPrint!(MAX_TRACE, b"Satisfying read request.\n\0".as_ptr() as PCHAR);
 
         Entry = RemoveHeadList(core::ptr::addr_of_mut!((*FCB).ReceiveQueue));
         ReadRequest = (Entry as *mut u8).offset(-(core::mem::offset_of!(AFD_READ_REQUEST, ListEntry) as isize)) as PAFD_READ_REQUEST;
@@ -240,16 +231,12 @@ pub unsafe extern "C" fn AfdEventReceiveDatagramHandler(
     KeReleaseSpinLock(core::ptr::addr_of_mut!((*FCB).ReceiveQueueLock), OldIrql);
 
     if CompleteIrp != 0 {
-        AFD_DbgPrint(
-            MAX_TRACE,
-            b"Completing IRP at (0x%X).\n\0".as_ptr() as PCHAR,
-            (*ReadRequest).Irp,
-        );
+        AFD_DbgPrint!(MAX_TRACE, b"Completing IRP at (0x%X).\n\0".as_ptr() as PCHAR, (*ReadRequest).Irp);
         IoCompleteRequest((*ReadRequest).Irp, IO_NETWORK_INCREMENT as CCHAR);
         *BytesTaken = BytesAvailable;
     }
 
-    AFD_DbgPrint(MAX_TRACE, b"Leaving.\n\0".as_ptr() as PCHAR);
+    AFD_DbgPrint!(MAX_TRACE, b"Leaving.\n\0".as_ptr() as PCHAR);
 
     STATUS_SUCCESS
 }

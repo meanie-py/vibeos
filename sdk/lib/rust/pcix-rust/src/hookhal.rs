@@ -420,3 +420,18 @@ pub unsafe extern "system" fn PciHookHal() {
             ) -> BOOLEAN,
     ));
 }
+
+/// Undo PciHookHal. Not in the C, whose PciDriverUnload is an UNIMPLEMENTED stub: there an
+/// unloaded pcix (its root AddDevice failed on amd64) left HalPciTranslateBusAddress
+/// pointing into the freed image, and the next translation double-faulted the kernel.
+/// Restores only what pcix installed, so a HAL entry someone else owns is left alone.
+#[no_mangle]
+pub unsafe extern "system" fn PciUnhookHal() {
+    let table = core::ptr::addr_of_mut!(HalPrivateDispatchTable) as PHAL_PRIVATE_DISPATCH;
+    let ours = PciTranslateBusAddress as usize;
+    if (*table).HalPciTranslateBusAddress.map(|f| f as usize) == Some(ours) {
+        (*table).HalPciTranslateBusAddress = PcipSavedTranslateBusAddress;
+    }
+    PcipSavedTranslateBusAddress = None;
+    PcipSavedAssignSlotResources = None;
+}

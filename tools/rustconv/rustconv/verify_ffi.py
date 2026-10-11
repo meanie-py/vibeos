@@ -330,6 +330,9 @@ def extern_facts(path: str, text: str, spec: dict, bindgen: dict, local_defs) ->
     )
 
     extern_re = re.compile(r'^\s*(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{')
+    rejoin_re = re.compile(
+        r'^\}\s*(?:pub\s+)?(?:unsafe\s+)?extern\s+"(C|system|stdcall|cdecl)"\s*\{\s*$'
+    )
     fn_re = re.compile(r"^\s*(?:pub\s+)?fn\s+(\w+)\s*\(")
     link_name_re = re.compile(r'#\[link_name\s*=\s*"(\w+)"\]')
     static_re = re.compile(r"^\s*(?:pub\s+)?(?:static\s+(?:mut\s+)?)\w+")
@@ -436,6 +439,17 @@ def extern_facts(path: str, text: str, spec: dict, bindgen: dict, local_defs) ->
                 continue
             if stripped and not stripped.startswith("//") and not stripped.startswith("#["):
                 pending_cfg = None
+            continue
+
+        # `} extern "system" {` closes one block and opens the next on one line. Its braces
+        # net to zero, so without this the parser stayed "inside" the first block and gave
+        # every later decl the FIRST block's convention (fastfat verfysup.rs, 2026-10-10:
+        # correct only because the stale convention happened to match).
+        jm = rejoin_re.match(stripped) if brace_depth == 1 else None
+        if jm:
+            current_conv = jm.group(1)
+            pending_link_name = None
+            fn_buf = None
             continue
 
         brace_depth += stripped.count("{") - stripped.count("}")

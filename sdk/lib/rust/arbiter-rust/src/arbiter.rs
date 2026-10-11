@@ -1,637 +1,56 @@
-use ntkrnl_sys::base::*;
-use ntkrnl_sys::ex::*;
-use ntkrnl_sys::mm::*;
-use ntkrnl_sys::ddk::{CM_RESOURCE_TYPE, KEVENT, PKEVENT, PRKEVENT, KeInitializeEvent, PARBITER_ALLOCATION_STATE, PARBITER_INSTANCE, ARBITER_ORDERING_LIST, PARBITER_ORDERING_LIST, PARB_TRANSLATE_ORDERING, PDEVICE_OBJECT, RTL_RANGE_LIST, PRTL_RANGE_LIST, RtlInitializeRangeList, _EVENT_TYPE_SynchronizationEvent, UINT64, PLIST_ENTRY};
+#[allow(unused_imports)]
+use crate::prelude::*;
+// Rust translation of sdk/lib/drivers/arbiter/arbiter.c (upstream #9484). The built arm is
+// pre-Vista (NTDDI 0x502): no OrderingName, TransactionEvent or InitializeRangeList.
+use crate::range::ArbiterLibAddAllocation;
+use crate::entry::ArbiterLibAllocateEntry;
+use crate::range::ArbiterLibBacktrackAllocation;
+use crate::ordering::ArbiterLibDefaultAssignmentOrdering;
+use crate::range::ArbiterLibFindSuitableRange;
+use crate::ordering::ArbiterLibFreeOrderingList;
+use crate::range::ArbiterLibGetNextAllocationRange;
+use crate::range::ArbiterLibOverrideConflict;
+use crate::entry::ArbiterLibPreprocessEntry;
+use crate::handler::{ArbiterLibAddReserved, ArbiterLibQueryArbitrate, ArbiterLibStartArbiter};
+use crate::transaction::{ArbiterLibBootAllocation, ArbiterLibCommitAllocation, ArbiterLibQueryConflict,
+    ArbiterLibRetestAllocation, ArbiterLibRollbackAllocation, ArbiterLibTestAllocation};
+use ntkrnl_sys::ddk::{CM_RESOURCE_TYPE, KEVENT, KeInitializeEvent, PARBITER_INSTANCE, PARB_TRANSLATE_ORDERING, PDEVICE_OBJECT, RTL_RANGE_LIST, RtlFreeRangeList, RtlInitializeRangeList, _EVENT_TYPE_SynchronizationEvent};
+use core::ffi::c_void;
 
-extern "C" {
-    fn DbgPrint(Format: *const i8, ...) -> u32;
-}
-
-extern "system" {
-    fn KeGetCurrentIrql() -> u8;
-    fn RtlAssert( VoidExpression: *mut core::ffi::c_void, VoidFileName: *mut core::ffi::c_void, LineNumber: u32, VoidMessage: *mut core::ffi::c_char, );
-}
-
-// Default-callback installer: the PARB_* vtable fields are NTAPI fn-pointer
-// Options (extern "stdcall" on i386, "C" on 64-bit). Our Arb* defaults are
-// extern "system" (= same ABI per arch) but a nominally-distinct fn-pointer type
-// on i386, so bridge via the function address (usize). Mirrors the C
-// `if (!Arbiter->X) Arbiter->X = ArbX;` defaulting.
-macro_rules! arb_default {
-    ($arb:expr, $field:ident, $f:expr) => {
-        if (*$arb).$field.is_none() {
-            (*$arb).$field = ::core::mem::transmute::<usize, _>($f as usize);
-        }
-    };
-}
-
-// Forward declarations for external symbols used in this function
-const APC_LEVEL: i32 = 1;
-type PCSTR = *const i8;
-type CHAR = i8;
-const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as i32;
-
-// arbiter.h: 4-char tags (little-endian u32 of the C char-literal).
-const ARBITER_SIGNATURE: u32 = 0x73627241; // 'sbrA'
-const TAG_ARBITER: u32 = 0x4D627241; // 'MbrA'
-const TAG_ARB_ALLOCATION: u32 = 0x41627241; // 'AbrA'
-const TAG_ARB_RANGE: u32 = 0x52627241; // 'RbrA'
-
+// ---- file-scope preamble (translated) ----
+pub const ARBITER_SIG: u32 = 0x73627241;
 #[no_mangle]
-pub unsafe extern "system" fn ArbTestAllocation(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbitrationList: PLIST_ENTRY,
-) -> NTSTATUS {
-    // PAGED_CODE() macro expansion
-    if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        // The original C code's debug assertion (always true condition retained)
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
-                    as *mut core::ffi::c_void,
-                30u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
+pub unsafe extern "system" fn ArbiterLibDeleteInstance(Arbiter: PARBITER_INSTANCE) {
+    PAGED_CODE!();
+
+    if !(*Arbiter).PossibleAllocation.is_null() {
+        RtlFreeRangeList((*Arbiter).PossibleAllocation);
+        ExFreePoolWithTag((*Arbiter).PossibleAllocation as PVOID, TAG_ARBITER);
+        (*Arbiter).PossibleAllocation = core::ptr::null_mut();
     }
 
-    // UNIMPLEMENTED macro expansion
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbTestAllocation\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
-            as *const i8,
-        32i32,
-    );
-
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbRetestAllocation(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbitrationList: PLIST_ENTRY,
-) -> NTSTATUS {
-    const APC_LEVEL: i32 = 1;
-
-    if (KeGetCurrentIrql() as i32) > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0i32 {
-            RtlAssert(
-                b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                43u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"ArbRetestAllocation\0" as *const u8 as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0" as *const u8 as *const i8,
-        45i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbCommitAllocation(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    if KeGetCurrentIrql() as ::core::ffi::c_int > APC_LEVEL as ::core::ffi::c_int {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as ::core::ffi::c_int,
-        );
-        if 0 as ::core::ffi::c_int == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                55u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        };
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbCommitAllocation\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr() as *const i8,
-        57i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbRollbackAllocation(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    const APC_LEVEL: i32 = 1;
-
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                67u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        };
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbRollbackAllocation\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr() as *const i8,
-        69i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbAddReserved(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as PCSTR,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as PVOID,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as PVOID,
-                80u32,
-                core::ptr::null_mut(),
-            );
-        } else {
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as PCSTR,
-        b"ArbAddReserved\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        82i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbPreprocessEntry(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) > (APC_LEVEL as i32) {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0i32 {
-            RtlAssert(
-                b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
-                    as *mut core::ffi::c_void,
-                93,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    return STATUS_SUCCESS;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbAllocateEntry(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0"
-                .as_ptr() as *const i8 as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if (0 as i32) == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *const i8 as *mut core::ffi::c_void,
-                105u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0"
-            .as_ptr() as *const i8 as *const i8,
-        b"ArbAllocateEntry\0".as_ptr() as *const i8 as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr() as *const i8 as *const i8,
-        107i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbGetNextAllocationRange(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) -> i32 {
-    unsafe {
-        if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
-            DbgPrint(
-                b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
-                KeGetCurrentIrql() as i32,
-            );
-            if 0 as i32 == 0 {
-                RtlAssert(
-                    b"0\0" as *const u8 as *mut ::core::ffi::c_void,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *mut ::core::ffi::c_void,
-                    118,
-                    core::ptr::null_mut::<i8>(),
-                );
-            } else {
-            }
-        }
-        DbgPrint(
-            b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
-            b"ArbGetNextAllocationRange\0" as *const u8 as *const i8,
-            b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                as *const u8 as *const i8,
-            120 as i32,
-        );
-        return 0;
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbFindSuitableRange(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) -> BOOLEAN {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 as i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                131 as u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-            // empty else
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbFindSuitableRange\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        133 as i32,
-    );
-    return 0 as BOOLEAN;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbAddAllocation(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8 ,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                (b"0\0".as_ptr() as *const i8) as *mut core::ffi::c_void, // PVOID from string
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *mut core::ffi::c_void,
-                144u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8 ,
-        b"ArbAddAllocation\0".as_ptr() as *const i8 ,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 ,
-        146i32,
-    );
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbBacktrackAllocation(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbState: PARBITER_ALLOCATION_STATE,
-) {
-    let irql = KeGetCurrentIrql() as i32;
-    if irql > APC_LEVEL as i32 {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            irql,
-        );
-        if 0 as i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                156 as u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbBacktrackAllocation\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        158 as i32,
-    );
-}
-#[no_mangle]
- pub unsafe extern "system" fn ArbOverrideConflict(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    const APC_LEVEL: i32 = 1;
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 as i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                168 as u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"ArbOverrideConflict\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        170 as i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbBootAllocation(
-    _Arbiter: PARBITER_INSTANCE,
-    _ArbitrationList: PLIST_ENTRY,
-) -> NTSTATUS {
-    if (KeGetCurrentIrql() as i32) > (APC_LEVEL as i32) {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                (b"0\0".as_ptr() as *const i8) as *mut core::ffi::c_void,
-                (b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8) as *mut core::ffi::c_void,
-                181u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbBootAllocation\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        183i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbQueryConflict(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    const APC_LEVEL: u8 = 1;
-    if KeGetCurrentIrql() > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8 as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 as i32 == 0 {
-            RtlAssert(
-                b"0\0" as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const core::ffi::c_char as *mut core::ffi::c_void,
-                194 as u32,
-                core::ptr::null_mut::<core::ffi::c_char>(),
-            );
-        } else {
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0" as *const u8 as *const i8,
-        b"ArbQueryConflict\0" as *const u8 as *const core::ffi::c_char,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            as *const u8 as *const core::ffi::c_char,
-        196 as i32,
-    );
-    return ntkrnl_sys::base::STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbStartArbiter(_Arbiter: PARBITER_INSTANCE) -> NTSTATUS {
-    if KeGetCurrentIrql() as core::ffi::c_int > APC_LEVEL as core::ffi::c_int {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as core::ffi::c_int,
-        );
-        if 0 as core::ffi::c_int == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                207 as u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbStartArbiter\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr() as *const i8,
-        209 as core::ffi::c_int,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbAddOrdering(
-    _OrderList: PARBITER_ORDERING_LIST,
-    _MinimumAddress: u64,
-    _MaximumAddress: u64,
-) -> i32 {
-    const APC_LEVEL: i32 = 1;
-
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
-                    as *const i8 as *mut core::ffi::c_void,
-                221u32,
-                core::ptr::null_mut::<core::ffi::c_char>(),
-            );
-        } else {
-        };
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbAddOrdering\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr()
-            as *const i8,
-        223i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbPruneOrdering(
-    _OrderingList: PARBITER_ORDERING_LIST,
-    _MinimumAddress: UINT64,
-    _MaximumAddress: UINT64,
-) -> NTSTATUS {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                235u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        }
-    }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbPruneOrdering\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr() as *const i8,
-        237i32,
-    );
-    return STATUS_NOT_IMPLEMENTED;
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbInitializeOrderingList(
-    _OrderList: *mut ARBITER_ORDERING_LIST,
-) -> NTSTATUS {
-    // PAGED_CODE() macro expansion
-    if (KeGetCurrentIrql() as i32) > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr() as *const i8 as *mut core::ffi::c_void,
-                247,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
+    if !(*Arbiter).Allocation.is_null() {
+        RtlFreeRangeList((*Arbiter).Allocation);
+        ExFreePoolWithTag((*Arbiter).Allocation as PVOID, TAG_ARBITER);
+        (*Arbiter).Allocation = core::ptr::null_mut();
     }
 
-    // UNIMPLEMENTED macro expansion
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbInitializeOrderingList\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        249i32,
-    );
-
-    STATUS_NOT_IMPLEMENTED
-}
-
-#[no_mangle]
-pub unsafe extern "system" fn ArbFreeOrderingList(
-    _OrderList: *mut core::ffi::c_void,
-) {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL as i32 {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    .as_ptr()
-                    as *mut core::ffi::c_void,
-                259u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        } else {
-        };
+    if !(*Arbiter).AllocationStack.is_null() {
+        ExFreePoolWithTag((*Arbiter).AllocationStack as PVOID, TAG_ARBITER);
+        (*Arbiter).AllocationStack = core::ptr::null_mut();
+        (*Arbiter).AllocationStackMaxSize = 0;
     }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbFreeOrderingList\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0"
-            .as_ptr()
-            as *const i8,
-        261i32,
-    );
-}
 
-#[no_mangle]
-pub unsafe extern "system" fn ArbBuildAssignmentOrdering(
-    _ArbInstance: PARBITER_INSTANCE,
-    _OrderName: PCWSTR,
-    _ReservedOrderName: PCWSTR,
-    _TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
-) -> NTSTATUS {
-    if KeGetCurrentIrql() as i32 > APC_LEVEL {
-        DbgPrint(
-            b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0".as_ptr() as *const i8,
-            KeGetCurrentIrql() as i32,
-        );
-        if 0i32 == 0 {
-            RtlAssert(
-                b"0\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8 as *mut core::ffi::c_void,
-                273u32,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
+    ArbiterLibFreeOrderingList(core::ptr::addr_of_mut!((*Arbiter).OrderingList));
+    ArbiterLibFreeOrderingList(core::ptr::addr_of_mut!((*Arbiter).ReservedList));
+
+    if !(*Arbiter).MutexEvent.is_null() {
+        ExFreePoolWithTag((*Arbiter).MutexEvent as PVOID, TAG_ARBITER);
+        (*Arbiter).MutexEvent = core::ptr::null_mut();
     }
-    DbgPrint(
-        b"WARNING:  %s at %s:%d is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"ArbBuildAssignmentOrdering\0".as_ptr() as *const i8,
-        b"sdk/lib/drivers/arbiter/arbiter.c\0".as_ptr() as *const i8,
-        275i32,
-    );
-    return STATUS_SUCCESS;
 }
-
 #[no_mangle]
-pub unsafe extern "system" fn ArbInitializeArbiterInstance(
+pub unsafe extern "system" fn ArbiterLibInitializeInstance(
     Arbiter: PARBITER_INSTANCE,
     BusDeviceObject: PDEVICE_OBJECT,
     ResourceType: CM_RESOURCE_TYPE,
@@ -639,685 +58,135 @@ pub unsafe extern "system" fn ArbInitializeArbiterInstance(
     OrderName: PCWSTR,
     TranslateOrderingFunction: PARB_TRANSLATE_ORDERING,
 ) -> NTSTATUS {
-    let Status: NTSTATUS;
+    let mut Status: NTSTATUS = STATUS_SUCCESS;
 
-    unsafe {
-        // PAGED_CODE
-        if KeGetCurrentIrql() as i32 > 1 /* APC_LEVEL */ {
-            DbgPrint(
-                b"NTDDK: Pageable code called at IRQL > APC_LEVEL (%d)\n\0" as *const u8
-                    as *const i8,
-                KeGetCurrentIrql() as i32,
-            );
-            if 0 == 0 {
-                RtlAssert(
-                    b"0\0" as *const u8 as *const i8 as *mut core::ffi::c_void,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *const i8 as *mut core::ffi::c_void,
-                    292,
-                    core::ptr::null_mut::<i8>(),
-                );
-            }
-        }
+    PAGED_CODE!();
 
-        // ASSERTs
-        if (*Arbiter).UnpackRequirement.is_none() {
-            RtlAssert(
-                b"Arbiter->UnpackRequirement != NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                296,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if (*Arbiter).PackResource.is_none() {
-            RtlAssert(
-                b"Arbiter->PackResource != NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                297,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if (*Arbiter).UnpackResource.is_none() {
-            RtlAssert(
-                b"Arbiter->UnpackResource != NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                298,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if !(*Arbiter).MutexEvent.is_null() {
-            RtlAssert(
-                b"Arbiter->MutexEvent == NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                299,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if !(*Arbiter).Allocation.is_null() {
-            RtlAssert(
-                b"Arbiter->Allocation == NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                300,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if !(*Arbiter).PossibleAllocation.is_null() {
-            RtlAssert(
-                b"Arbiter->PossibleAllocation == NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                301,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
-        if !(*Arbiter).AllocationStack.is_null() {
-            RtlAssert(
-                b"Arbiter->AllocationStack == NULL\0" as *const u8 as *const i8
-                    as *mut core::ffi::c_void,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8 as *mut core::ffi::c_void,
-                302,
-                core::ptr::null_mut::<i8>(),
-            );
-        }
+    ntkrnl_sys::ASSERT!((*Arbiter).UnpackRequirement.is_some());
+    ntkrnl_sys::ASSERT!((*Arbiter).PackResource.is_some());
+    ntkrnl_sys::ASSERT!((*Arbiter).UnpackResource.is_some());
+    ntkrnl_sys::ASSERT!((*Arbiter).MutexEvent.is_null());
+    ntkrnl_sys::ASSERT!((*Arbiter).Allocation.is_null());
+    ntkrnl_sys::ASSERT!((*Arbiter).PossibleAllocation.is_null());
+    ntkrnl_sys::ASSERT!((*Arbiter).AllocationStack.is_null());
 
-        (*Arbiter).Signature = ARBITER_SIGNATURE;
-        (*Arbiter).BusDeviceObject = BusDeviceObject;
+    (*Arbiter).Signature = ARBITER_SIG;
+    (*Arbiter).BusDeviceObject = BusDeviceObject;
+    (*Arbiter).Name = ArbiterName;
+    (*Arbiter).ResourceType = ResourceType;
+    (*Arbiter).TransactionInProgress = FALSE;
 
+    'failure: {
         (*Arbiter).MutexEvent = ExAllocatePoolWithTag(
             NonPagedPool,
-            core::mem::size_of::<KEVENT>() as SIZE_T,
-            TAG_ARBITER as u32,
+            ::core::mem::size_of::<KEVENT>() as SIZE_T,
+            TAG_ARBITER,
         ) as PKEVENT;
         if (*Arbiter).MutexEvent.is_null() {
-            if DbgPrint(
-                b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
-                    as *const u8 as *const i8,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8,
-                310,
-            ) != 0
-            {
-                DbgPrint(
-                    b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *const i8,
-                    310,
-                );
-            }
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'failure;
         }
-
         KeInitializeEvent(
             (*Arbiter).MutexEvent as PRKEVENT,
             _EVENT_TYPE_SynchronizationEvent,
-            1, // TRUE
+            TRUE,
         );
 
         (*Arbiter).AllocationStack = ExAllocatePoolWithTag(
             PagedPool,
-            PAGE_SIZE as SIZE_T,
-            TAG_ARB_ALLOCATION as u32,
+            (PAGE_SIZE) as _,
+            TAG_ARBITER,
         ) as PARBITER_ALLOCATION_STATE;
         if (*Arbiter).AllocationStack.is_null() {
-            if DbgPrint(
-                b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
-                    as *const u8 as *const i8,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8,
-                319,
-            ) != 0
-            {
-                DbgPrint(
-                    b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *const i8,
-                    319,
-                );
-            }
-            ExFreePoolWithTag((*Arbiter).MutexEvent as *mut core::ffi::c_void, TAG_ARBITER as u32);
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'failure;
         }
-
-        (*Arbiter).AllocationStackMaxSize = PAGE_SIZE as u32;
+        (*Arbiter).AllocationStackMaxSize = (PAGE_SIZE) as _;
 
         (*Arbiter).Allocation = ExAllocatePoolWithTag(
             PagedPool,
-            core::mem::size_of::<RTL_RANGE_LIST>() as SIZE_T,
-            TAG_ARB_RANGE as u32,
+            ::core::mem::size_of::<RTL_RANGE_LIST>() as SIZE_T,
+            TAG_ARBITER,
         ) as PRTL_RANGE_LIST;
         if (*Arbiter).Allocation.is_null() {
-            if DbgPrint(
-                b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
-                    as *const u8 as *const i8,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8,
-                329,
-            ) != 0
-            {
-                DbgPrint(
-                    b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *const i8,
-                    329,
-                );
-            }
-            ExFreePoolWithTag(
-                (*Arbiter).AllocationStack as *mut core::ffi::c_void,
-                TAG_ARB_ALLOCATION as u32,
-            );
-            ExFreePoolWithTag((*Arbiter).MutexEvent as *mut core::ffi::c_void, TAG_ARBITER as u32);
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'failure;
         }
+        RtlInitializeRangeList((*Arbiter).Allocation);
 
         (*Arbiter).PossibleAllocation = ExAllocatePoolWithTag(
             PagedPool,
-            core::mem::size_of::<RTL_RANGE_LIST>() as SIZE_T,
-            TAG_ARB_RANGE as u32,
+            ::core::mem::size_of::<RTL_RANGE_LIST>() as SIZE_T,
+            TAG_ARBITER,
         ) as PRTL_RANGE_LIST;
         if (*Arbiter).PossibleAllocation.is_null() {
-            if DbgPrint(
-                b"(%s:%d) ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n\0"
-                    as *const u8 as *const i8,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8,
-                338,
-            ) != 0
-            {
-                DbgPrint(
-                    b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                    b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                        as *const u8 as *const i8,
-                    338,
-                );
-            }
-            ExFreePoolWithTag(
-                (*Arbiter).Allocation as *mut core::ffi::c_void,
-                TAG_ARB_RANGE as u32,
-            );
-            ExFreePoolWithTag(
-                (*Arbiter).AllocationStack as *mut core::ffi::c_void,
-                TAG_ARB_ALLOCATION as u32,
-            );
-            ExFreePoolWithTag((*Arbiter).MutexEvent as *mut core::ffi::c_void, TAG_ARBITER as u32);
-            return STATUS_INSUFFICIENT_RESOURCES;
+            Status = STATUS_INSUFFICIENT_RESOURCES;
+            break 'failure;
         }
-
-        RtlInitializeRangeList((*Arbiter).Allocation);
         RtlInitializeRangeList((*Arbiter).PossibleAllocation);
 
-        (*Arbiter).Name = ArbiterName;
-        (*Arbiter).ResourceType = ResourceType;
-        (*Arbiter).TransactionInProgress = 0; // FALSE as BOOLEAN
-
-        arb_default!(Arbiter, TestAllocation, ArbTestAllocation);
-        arb_default!(Arbiter, RetestAllocation, ArbRetestAllocation);
-        arb_default!(Arbiter, CommitAllocation, ArbCommitAllocation);
-        arb_default!(Arbiter, RollbackAllocation, ArbRollbackAllocation);
-        arb_default!(Arbiter, AddReserved, ArbAddReserved);
-        arb_default!(Arbiter, PreprocessEntry, ArbPreprocessEntry);
-        arb_default!(Arbiter, AllocateEntry, ArbAllocateEntry);
-        arb_default!(Arbiter, GetNextAllocationRange, ArbGetNextAllocationRange);
-        arb_default!(Arbiter, FindSuitableRange, ArbFindSuitableRange);
-        arb_default!(Arbiter, AddAllocation, ArbAddAllocation);
-        arb_default!(Arbiter, BacktrackAllocation, ArbBacktrackAllocation);
-        arb_default!(Arbiter, OverrideConflict, ArbOverrideConflict);
-        arb_default!(Arbiter, BootAllocation, ArbBootAllocation);
-        arb_default!(Arbiter, QueryConflict, ArbQueryConflict);
-        arb_default!(Arbiter, StartArbiter, ArbStartArbiter);
-
-        Status = ArbBuildAssignmentOrdering(
-            Arbiter,
-            OrderName,
-            OrderName,
-            TranslateOrderingFunction,
-        );
-        if NT_SUCCESS(Status) {
-            return STATUS_SUCCESS;
+        if (*Arbiter).TestAllocation.is_none() {
+            (*Arbiter).TestAllocation = Some(ArbiterLibTestAllocation);
+        }
+        if (*Arbiter).RetestAllocation.is_none() {
+            (*Arbiter).RetestAllocation = Some(ArbiterLibRetestAllocation);
+        }
+        if (*Arbiter).CommitAllocation.is_none() {
+            (*Arbiter).CommitAllocation = Some(ArbiterLibCommitAllocation);
+        }
+        if (*Arbiter).RollbackAllocation.is_none() {
+            (*Arbiter).RollbackAllocation = Some(ArbiterLibRollbackAllocation);
+        }
+        if (*Arbiter).BootAllocation.is_none() {
+            (*Arbiter).BootAllocation = Some(ArbiterLibBootAllocation);
+        }
+        if (*Arbiter).AddReserved.is_none() {
+            (*Arbiter).AddReserved = Some(ArbiterLibAddReserved);
+        }
+        if (*Arbiter).QueryConflict.is_none() {
+            (*Arbiter).QueryConflict = Some(ArbiterLibQueryConflict);
+        }
+        if (*Arbiter).QueryArbitrate.is_none() {
+            (*Arbiter).QueryArbitrate = Some(ArbiterLibQueryArbitrate);
+        }
+        if (*Arbiter).StartArbiter.is_none() {
+            (*Arbiter).StartArbiter = Some(ArbiterLibStartArbiter);
+        }
+        if (*Arbiter).PreprocessEntry.is_none() {
+            (*Arbiter).PreprocessEntry = Some(ArbiterLibPreprocessEntry);
+        }
+        if (*Arbiter).AllocateEntry.is_none() {
+            (*Arbiter).AllocateEntry = Some(ArbiterLibAllocateEntry);
+        }
+        if (*Arbiter).GetNextAllocationRange.is_none() {
+            (*Arbiter).GetNextAllocationRange = Some(ArbiterLibGetNextAllocationRange);
+        }
+        if (*Arbiter).FindSuitableRange.is_none() {
+            (*Arbiter).FindSuitableRange = Some(ArbiterLibFindSuitableRange);
+        }
+        if (*Arbiter).AddAllocation.is_none() {
+            (*Arbiter).AddAllocation = Some(ArbiterLibAddAllocation);
+        }
+        if (*Arbiter).BacktrackAllocation.is_none() {
+            (*Arbiter).BacktrackAllocation = Some(ArbiterLibBacktrackAllocation);
+        }
+        if (*Arbiter).OverrideConflict.is_none() {
+            (*Arbiter).OverrideConflict = Some(ArbiterLibOverrideConflict);
         }
 
-        if DbgPrint(
-            b"(%s:%d) ArbInitializeArbiterInstance: Status %X\n\0" as *const u8 as *const i8,
-            b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                as *const u8 as *const i8,
-            403,
-            Status,
-        ) != 0
-        {
-            DbgPrint(
-                b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as *const i8,
-                b"sdk/lib/drivers/arbiter/arbiter.c\0"
-                    as *const u8 as *const i8,
-                403,
+        Status = ArbiterLibDefaultAssignmentOrdering(Arbiter, OrderName, OrderName, TranslateOrderingFunction);
+        if !NT_SUCCESS(Status) {
+            DPRINT1!(
+                "ArbiterLibInitializeInstance: ArbiterLibDefaultAssignmentOrdering failed, Status %X\n",
+                Status,
             );
+            break 'failure;
         }
-        Status
+
+        return STATUS_SUCCESS;
     }
+
+    DPRINT1!("ArbiterLibInitializeInstance: '%S' failed, Status %X\n", ArbiterName, Status);
+    ArbiterLibDeleteInstance(Arbiter);
+    return Status;
 }
-
-
-// ============================================================================
-// ORIGINAL C SOURCE
-// ============================================================================
-//
-// /*
-//  * PROJECT:     ReactOS Kernel&Driver SDK
-//  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
-//  * PURPOSE:     Hardware Resources Arbiter Library
-//  * COPYRIGHT:   Copyright 2020 Vadim Galyant <vgal@rambler.ru>
-//  */
-//
-// /* INCLUDES *******************************************************************/
-//
-// #include <ntifs.h>
-// #include <ndk/rtlfuncs.h>
-// #include "arbiter.h"
-//
-// #define NDEBUG
-// #include <debug.h>
-//
-// /* GLOBALS ********************************************************************/
-//
-// /* DATA **********************************************************************/
-//
-// /* FUNCTIONS ******************************************************************/
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbTestAllocation(
-//      PARBITER_INSTANCE Arbiter,
-//      PLIST_ENTRY ArbitrationList)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbRetestAllocation(
-//      PARBITER_INSTANCE Arbiter,
-//      PLIST_ENTRY ArbitrationList)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbCommitAllocation(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbRollbackAllocation(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// /* FIXME: the prototype is not correct yet. */
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbAddReserved(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbPreprocessEntry(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     return STATUS_SUCCESS;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbAllocateEntry(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// BOOLEAN
-// NTAPI
-// ArbGetNextAllocationRange(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return FALSE;
-// }
-//
-// CODE_SEG("PAGE")
-// BOOLEAN
-// NTAPI
-// ArbFindSuitableRange(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return FALSE;
-// }
-//
-// CODE_SEG("PAGE")
-// VOID
-// NTAPI
-// ArbAddAllocation(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// VOID
-// NTAPI
-// ArbBacktrackAllocation(
-//      PARBITER_INSTANCE Arbiter,
-//      PARBITER_ALLOCATION_STATE ArbState)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-// }
-//
-// /* FIXME: the prototype is not correct yet. */
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbOverrideConflict(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbBootAllocation(
-//      PARBITER_INSTANCE Arbiter,
-//      PLIST_ENTRY ArbitrationList)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// /* FIXME: the prototype is not correct yet. */
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbQueryConflict(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// /* FIXME: the prototype is not correct yet. */
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbStartArbiter(
-//      PARBITER_INSTANCE Arbiter)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbAddOrdering(
-//      PARBITER_ORDERING_LIST OrderList,
-//      UINT64 MinimumAddress,
-//      UINT64 MaximumAddress)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbPruneOrdering(
-//      PARBITER_ORDERING_LIST OrderingList,
-//      UINT64 MinimumAddress,
-//      UINT64 MaximumAddress)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbInitializeOrderingList(
-//      PARBITER_ORDERING_LIST OrderList)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_NOT_IMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// VOID
-// NTAPI
-// ArbFreeOrderingList(
-//      PARBITER_ORDERING_LIST OrderList)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbBuildAssignmentOrdering(
-//      PARBITER_INSTANCE ArbInstance,
-//      PCWSTR OrderName,
-//      PCWSTR ReservedOrderName,
-//      PARB_TRANSLATE_ORDERING TranslateOrderingFunction)
-// {
-//     PAGED_CODE();
-//
-//     UNIMPLEMENTED;
-//     return STATUS_SUCCESS;
-// }
-//
-// CODE_SEG("PAGE")
-// NTSTATUS
-// NTAPI
-// ArbInitializeArbiterInstance(
-//      PARBITER_INSTANCE Arbiter,
-//      PDEVICE_OBJECT BusDeviceObject,
-//      CM_RESOURCE_TYPE ResourceType,
-//      PCWSTR ArbiterName,
-//      PCWSTR OrderName,
-//      PARB_TRANSLATE_ORDERING TranslateOrderingFunction)
-// {
-//     NTSTATUS Status;
-//
-//     PAGED_CODE();
-//
-//     DPRINT("ArbInitializeArbiterInstance: '%S'\n", ArbiterName);
-//
-//     ASSERT(Arbiter->UnpackRequirement != NULL);
-//     ASSERT(Arbiter->PackResource != NULL);
-//     ASSERT(Arbiter->UnpackResource != NULL);
-//     ASSERT(Arbiter->MutexEvent == NULL);
-//     ASSERT(Arbiter->Allocation == NULL);
-//     ASSERT(Arbiter->PossibleAllocation == NULL);
-//     ASSERT(Arbiter->AllocationStack == NULL);
-//
-//     Arbiter->Signature = ARBITER_SIGNATURE;
-//     Arbiter->BusDeviceObject = BusDeviceObject;
-//
-//     Arbiter->MutexEvent = ExAllocatePoolWithTag(NonPagedPool, sizeof(KEVENT), TAG_ARBITER);
-//     if (!Arbiter->MutexEvent)
-//     {
-//         DPRINT1("ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n");
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//
-//     KeInitializeEvent(Arbiter->MutexEvent, SynchronizationEvent, TRUE);
-//
-//     Arbiter->AllocationStack = ExAllocatePoolWithTag(PagedPool, PAGE_SIZE, TAG_ARB_ALLOCATION);
-//     if (!Arbiter->AllocationStack)
-//     {
-//         DPRINT1("ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n");
-//         ExFreePoolWithTag(Arbiter->MutexEvent, TAG_ARBITER);
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//
-//     Arbiter->AllocationStackMaxSize = PAGE_SIZE;
-//
-//     Arbiter->Allocation = ExAllocatePoolWithTag(PagedPool, sizeof(RTL_RANGE_LIST), TAG_ARB_RANGE);
-//     if (!Arbiter->Allocation)
-//     {
-//         DPRINT1("ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n");
-//         ExFreePoolWithTag(Arbiter->AllocationStack, TAG_ARB_ALLOCATION);
-//         ExFreePoolWithTag(Arbiter->MutexEvent, TAG_ARBITER);
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//
-//     Arbiter->PossibleAllocation = ExAllocatePoolWithTag(PagedPool, sizeof(RTL_RANGE_LIST), TAG_ARB_RANGE);
-//     if (!Arbiter->PossibleAllocation)
-//     {
-//         DPRINT1("ArbInitializeArbiterInstance: STATUS_INSUFFICIENT_RESOURCES\n");
-//         ExFreePoolWithTag(Arbiter->Allocation, TAG_ARB_RANGE);
-//         ExFreePoolWithTag(Arbiter->AllocationStack, TAG_ARB_ALLOCATION);
-//         ExFreePoolWithTag(Arbiter->MutexEvent, TAG_ARBITER);
-//         return STATUS_INSUFFICIENT_RESOURCES;
-//     }
-//
-//     RtlInitializeRangeList(Arbiter->Allocation);
-//     RtlInitializeRangeList(Arbiter->PossibleAllocation);
-//
-//     Arbiter->Name = ArbiterName;
-//     Arbiter->ResourceType = ResourceType;
-//     Arbiter->TransactionInProgress = FALSE;
-//
-//     if (!Arbiter->TestAllocation)
-//         Arbiter->TestAllocation = ArbTestAllocation;
-//
-//     if (!Arbiter->RetestAllocation)
-//         Arbiter->RetestAllocation = ArbRetestAllocation;
-//
-//     if (!Arbiter->CommitAllocation)
-//         Arbiter->CommitAllocation = ArbCommitAllocation;
-//
-//     if (!Arbiter->RollbackAllocation)
-//         Arbiter->RollbackAllocation = ArbRollbackAllocation;
-//
-//     if (!Arbiter->AddReserved)
-//         Arbiter->AddReserved = ArbAddReserved;
-//
-//     if (!Arbiter->PreprocessEntry)
-//         Arbiter->PreprocessEntry = ArbPreprocessEntry;
-//
-//     if (!Arbiter->AllocateEntry)
-//         Arbiter->AllocateEntry = ArbAllocateEntry;
-//
-//     if (!Arbiter->GetNextAllocationRange)
-//         Arbiter->GetNextAllocationRange = ArbGetNextAllocationRange;
-//
-//     if (!Arbiter->FindSuitableRange)
-//         Arbiter->FindSuitableRange = ArbFindSuitableRange;
-//
-//     if (!Arbiter->AddAllocation)
-//         Arbiter->AddAllocation = ArbAddAllocation;
-//
-//     if (!Arbiter->BacktrackAllocation)
-//         Arbiter->BacktrackAllocation = ArbBacktrackAllocation;
-//
-//     if (!Arbiter->OverrideConflict)
-//         Arbiter->OverrideConflict = ArbOverrideConflict;
-//
-//     if (!Arbiter->BootAllocation)
-//         Arbiter->BootAllocation = ArbBootAllocation;
-//
-//     if (!Arbiter->QueryConflict)
-//         Arbiter->QueryConflict = ArbQueryConflict;
-//
-//     if (!Arbiter->StartArbiter)
-//         Arbiter->StartArbiter = ArbStartArbiter;
-//
-//     Status = ArbBuildAssignmentOrdering(Arbiter, OrderName, OrderName, TranslateOrderingFunction);
-//     if (NT_SUCCESS(Status))
-//     {
-//         return STATUS_SUCCESS;
-//     }
-//
-//     DPRINT1("ArbInitializeArbiterInstance: Status %X\n", Status);
-//
-//     return Status;
-// }
-//
-// ============================================================================
-// END ORIGINAL C SOURCE
-// ============================================================================

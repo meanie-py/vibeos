@@ -217,6 +217,14 @@ def index_build(build_dir: Path, no_strip: bool = False) -> dict:
             continue
         if "CMakeFiles" in p.parts or "stripped" in p.parts:
             continue
+        # tools/conformance/mk_writable_livecd.py stages a COPY of the livecd tree in a
+        # `livecd-rw-*` temp dir inside this build dir, and deletes it when the ISO is done.
+        # A copy is never the module's authority, and it can vanish between this index and
+        # the read: the merge-queue gate builds i386 conformance media while the amd64
+        # restage runs this, and the closure died on FileNotFoundError for the copy's
+        # url.dll (two batches rejected CMAKE_CONFIGURE_FAIL, 2026-10-10).
+        if any(part.startswith("livecd-rw-") for part in p.relative_to(build_dir).parts):
+            continue
         # A module's BUILD DIRECTORY carries the module's full name, suffix and
         # all -- dll/win32/hhctrl.ocx/ is a directory, and the real 670K
         # hhctrl.ocx lives inside it. rglob yields the directory before its

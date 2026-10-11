@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -17,19 +18,21 @@ use crate::ddk_shims::{FsRtlEnterFileSystem, FsRtlExitFileSystem};
 use crate::types::{_IRP_CONTEXT};
 
 extern "system" {
-    fn FlagOn(Flags: u32, Mask: u32) -> i32;
     fn FatVerifyVcb(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB);
     } extern "C" { fn DebugTrace(level: i32, component: u32, format: *const i8, ...); } extern "C" {
     // wdm FORCEINLINE helpers: cdecl bodies (`_Io...`, rust_cohab_forceinline.c), and the
     // rest of the crate declares them "C". One "system" view of the same symbol is a §9.99
     // fold: the call keeps stdcall's callee-pops bookkeeping against the cdecl thunk, esp
     // comes back 4 off, and the next esp-relative load is garbage (i386 0x50 saving a file).
+    // IoCopyCurrentIrpStackLocationToNext sat in the "system" block below after the line
+    // above was fixed: pnp.rs imports the cdecl one from ntkrnl_sys::ddk, so the merged
+    // symbol was the bare thunk and FatCommonFlushBuffers' finally returned into its own
+    // stack after passing every flush down (i386 0x23/0x50/0x1E at the first NtFlushBuffersFile).
+    fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
     fn IoGetCurrentIrpStackLocation(Irp: PIRP) -> PIO_STACK_LOCATION;
     fn IoSetCompletionRoutine( Irp: PIRP, Routine: PIO_COMPLETION_ROUTINE, Context: *mut core::ffi::c_void, InvokeOnSuccess: BOOLEAN, InvokeOnError: BOOLEAN, InvokeOnCancel: BOOLEAN, );
 }
 extern "system" {
-    fn ClearFlag(flags: *mut u32, flag: u32);
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn FatGetDirentFromFcbOrDcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, flag: u32, dirent: *mut PDIRENT, dirent_bcb: *mut PBCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, Dcb: *mut DCB, ) -> *mut FCB;
@@ -38,7 +41,6 @@ extern "system" {
     fn FatTruncateFileAllocation( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, file_size: i32, );
     fn FatUnpinBcb(IrpContext: *mut IRP_CONTEXT, bcb: *mut *mut core::ffi::c_void);
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> BOOLEAN;
-    fn NT_ASSERT(condition: BOOLEAN);
     fn NodeType(p: *mut FCB) -> u32;
     fn IsFileDeleted(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> BOOLEAN;
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
@@ -57,7 +59,6 @@ extern "system" {
     fn FatBugCheck(p1: usize, p2: usize, p3: usize) -> !;
     fn DebugUnwind(name: *const i8);
     fn FatCompleteRequest(IrpContext: PIRP_CONTEXT, Irp: PIRP, Status: NTSTATUS);
-    fn IoCopyCurrentIrpStackLocationToNext(Irp: PIRP);
     fn IoCallDriver(DeviceObject: PDEVICE_OBJECT, Irp: PIRP) -> NTSTATUS;
     fn IoIsSystemThread(Thread: PETHREAD) -> BOOLEAN;
     fn PsGetCurrentThread() -> PETHREAD;
@@ -125,7 +126,7 @@ const FO_FILE_SIZE_CHANGED: u32 = 0x2000;
 const STATUS_INVALID_DEVICE_REQUEST: i32 = 0xC0000010_u32 as i32;
 const STATUS_PENDING: i32 = 0x00000103;
 const Flush: FAT_FLUSH_TYPE = 1;
-const VolumeClean: VOLUME_CONDITION = 2;
+const VolumeClean: VOLUME_CONDITION = 0; // fatprocs.h FAT_VOLUME_STATE: 2 is VolumeDirtyWithSurfaceTest
 // TYPE_OF_OPEN — values MUST match the C enum (bindgen: types_arch::_TYPE_OF_OPEN_*).
 // The old hand-rolled 0-based values mis-dispatched the flush switch: a real
 // UserFileOpen (2) landed in the DirectoryFile "flush does nothing" arm.
@@ -221,7 +222,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
     TypeOfOpen = FatDecodeFileObject(FileObject, core::ptr::addr_of_mut!(Vcb), core::ptr::addr_of_mut!(Fcb), core::ptr::addr_of_mut!(Ccb));
 
 
-    if FlagOn(((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32, IRP_CONTEXT_FLAG_WAIT) == 0 {
+    if FlagOn((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u32, IRP_CONTEXT_FLAG_WAIT) == 0 {
         Status = FatFsdPostRequest(IrpContext, Irp);
         DebugTrace(-1, Dbg, b"FatCommonFlushBuffers -> %08lx\n\0".as_ptr() as *const i8, Status);
         return Status;
@@ -270,7 +271,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
                     *p_status = FatFlushFile(IrpContext, Fcb, Flush as u32);
 
                     if NT_SUCCESS(*p_status) {
-                        SetFlag((core::ptr::addr_of_mut!((*FileObject).Flags) as *mut u8).cast(), FO_FILE_SIZE_CHANGED);
+                        SetFlag!((*FileObject).Flags, FO_FILE_SIZE_CHANGED);
                         FatUpdateDirentFromFcb(IrpContext, FileObject, Fcb, Ccb);
 
                         if ((*Fcb).FcbState & FCB_STATE_FLUSH_FAT) != 0 {
@@ -310,10 +311,10 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
 
                         if *p_flush_required != 0u8 {
                             *p_status = FatFlushFat(IrpContext, Vcb);
-                            ClearFlag(core::ptr::addr_of_mut!((*Fcb).FcbState), FCB_STATE_FLUSH_FAT);
+                            ClearFlag!((*Fcb).FcbState, FCB_STATE_FLUSH_FAT);
                         }
 
-                        SetFlag(core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags), IRP_CONTEXT_FLAG_WRITE_THROUGH);
+                        SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
                     }
                 }
                 UserDirectoryOpen => {
@@ -349,7 +350,7 @@ pub unsafe extern "system" fn FatCommonFlushBuffers(
 
                     if ((*Vcb).VcbState & VCB_STATE_FLAG_MOUNTED_DIRTY) == 0 {
                         FatMarkVolume(IrpContext, Vcb, ((VolumeClean as u32) as i32) as _);
-                        ClearFlag(core::ptr::addr_of_mut!((*Vcb).VcbState), VCB_STATE_FLAG_VOLUME_DIRTY);
+                        ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_VOLUME_DIRTY);
                     }
 
                     if ((*Vcb).VcbState & VCB_STATE_FLAG_REMOVABLE_MEDIA) != 0 &&
@@ -422,7 +423,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
 
     PAGED_CODE!();
 
-    NT_ASSERT(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
+    NT_ASSERT!(FatVcbAcquiredExclusive(IrpContext, (*Dcb).Vcb));
 
     DebugTrace(
         1,
@@ -432,27 +433,21 @@ pub unsafe extern "system" fn FatFlushDirectory(
     );
 
     if FlagOn(
-        ((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32,
+        (*(IrpContext as *mut _IRP_CONTEXT)).Flags as u32,
         IRP_CONTEXT_FLAG_WRITE_THROUGH as u32,
     ) == 0
     {
         ClearWriteThroughOnExit = 1;
-        SetFlag(
-            core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags),
-            IRP_CONTEXT_FLAG_WRITE_THROUGH,
-        );
+        SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH);
     }
 
     if FlagOn(
-        ((*(IrpContext as *mut _IRP_CONTEXT)).Flags as u8) as u32,
+        (*(IrpContext as *mut _IRP_CONTEXT)).Flags as u32,
         IRP_CONTEXT_FLAG_WAIT as u32,
     ) == 0
     {
         ClearWaitOnExit = 1;
-        SetFlag(
-            core::ptr::addr_of_mut!((*(IrpContext as *mut _IRP_CONTEXT)).Flags),
-            IRP_CONTEXT_FLAG_WAIT,
-        );
+        SetFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT);
     }
 
     Vcb = (*Dcb).Vcb;
@@ -467,10 +462,7 @@ pub unsafe extern "system" fn FatFlushDirectory(
         {
             FatAcquireExclusiveFcb(IrpContext, Fcb);
 
-            ClearFlag(
-                (&mut (*Vcb).VcbState) as *mut u32,
-                VCB_STATE_FLAG_DELETED_FCB,
-            );
+            ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB);
 
             // Exception handler to catch and commute errors encountered doing the
             // flush dance: _SEH2_TRY { _SEH2_TRY { .. } _SEH2_FINALLY { .. } }
@@ -604,17 +596,11 @@ pub unsafe extern "system" fn FatFlushDirectory(
     }
 
     if ClearWriteThroughOnExit != 0 {
-        ClearFlag(
-            (&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags) as *mut u32,
-            IRP_CONTEXT_FLAG_WRITE_THROUGH as u32,
-        );
+        ClearFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WRITE_THROUGH as u32);
     }
 
     if ClearWaitOnExit != 0 {
-        ClearFlag(
-            (&mut (*(IrpContext as *mut _IRP_CONTEXT)).Flags) as *mut u32,
-            IRP_CONTEXT_FLAG_WAIT as u32,
-        );
+        ClearFlag!((*(IrpContext as *mut _IRP_CONTEXT)).Flags, IRP_CONTEXT_FLAG_WAIT as u32);
     }
 
     DebugTrace(
@@ -2354,3 +2340,10 @@ pub unsafe extern "system" fn FatHijackCompletionRoutine(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Mask: u32) -> i32 {
+    (Flags as u64 & Mask as u64) as i32
+}

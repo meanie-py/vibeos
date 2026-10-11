@@ -1464,6 +1464,16 @@ def test_kernel_relocation_prefers_latest_boot_and_preserves_legacy_behavior():
     assert triage.kernel_relocation("arm64", serial) == "0xfffff80041e90000"
 
 
+def test_kernel_runtime_base_is_the_last_reported_base_or_empty():
+    # Recorded in an attach-on-fail manifest; "" sends gdbengine back to find-kbase.
+    assert triage.kernel_runtime_base("") == ""
+    serial = (
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "[KRNLBASE] ntoskrnl runtime base=fffff80000400000\n"
+    )
+    assert triage.kernel_runtime_base(serial) == "0xfffff80000400000"
+
+
 def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
     # wait_for_boot samples the instant the boot times out. Re-sampling later
     # would agree on a true hang but disagree on a merely-slow boot, which by
@@ -11884,3 +11894,31 @@ def test_payload_crash_is_triaged_with_the_booted_kernel(tmp_path, monkeypatch):
     assert crash["salient"][-1] == "MmCreatePeb+0x1"
     (tmp_path / "amd64-uefi_serial.log").write_text("[MODRUN] exit x rust rc=0x0 ms=1 records=0\n")
     assert smoke_mod._payload_crash(Path("."), "amd64", tmp_path) is None
+
+
+def test_scan_const_contradictions_keys_associated_consts_by_their_type(tmp_path, monkeypatch):
+    """cppapp gives each ATL dialog class `impl CXDialog { pub const IDD: i32 = .. }`: three
+    dialogs' IDDs are three constants, not a contradiction. Two values in ONE impl still are."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "scc", Path(__file__).resolve().parents[3] / "tools" / "scan_const_contradictions.py"
+    )
+    assert spec is not None and spec.loader is not None
+    scc = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(scc)
+    crate = tmp_path / "sdk" / "lib" / "rust" / "x-rust" / "src"
+    crate.mkdir(parents=True)
+    (crate / "a.rs").write_text(
+        "impl CAttributesDialog {\n    pub const IDD: i32 = 700;\n}\n"
+        "impl CFontsDialog {\n    pub const IDD: i32 = 710;\n}\n"
+        "pub const IDD: i32 = 5;\n"
+    )
+    monkeypatch.setattr(scc, "RUST_ROOT", tmp_path / "sdk" / "lib" / "rust")
+    monkeypatch.setattr(scc, "REPO", tmp_path)
+    decls = scc.collect()
+    assert {k: [v for _, v, _ in vs] for k, vs in decls.items()} == {
+        "CAttributesDialog::IDD": [700],
+        "CFontsDialog::IDD": [710],
+        "IDD": [5],
+    }

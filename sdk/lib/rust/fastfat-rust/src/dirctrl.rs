@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 // The real definitions, so the compiler checks every call against them.
 use crate::timesup::{FatFatDateToNtTime, FatFatTimeToNtTime};
@@ -27,9 +28,6 @@ extern "system" {
 }
 extern "system" {
     fn DebugUnwind(name: *const i8) -> ();
-    fn FlagOn(Flags: u32, Flag: u32) -> i32;
-    fn SetFlag(Flags: *mut u32, Flag: u32) -> ();
-    fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8;
     fn FatDecodeFileObject(FileObject: PFILE_OBJECT, Vcb: *mut *mut VCB, Dcb: *mut *mut DCB, Ccb: *mut *mut CCB) -> u32;
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> u8;
     fn FatFsdPostRequest(IrpContext: *mut IRP_CONTEXT, Irp: *mut IRP) -> NTSTATUS;
@@ -40,7 +38,6 @@ extern "system" {
     fn FatSetFullFileNameInFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
     fn FatVerifyFcb(IrpContext: *mut IRP_CONTEXT, Dcb: *mut DCB) -> ();
     fn FsRtlNotifyFullChangeDirectory( NotifySync: PNOTIFY_SYNC, NotifyList: PLIST_ENTRY, FsContext: *mut c_void, FullDirectoryName: PSTRING, WatchTree: BOOLEAN, IgnoreBuffer: BOOLEAN, CompletionFilter: ULONG, NotifyIrp: *mut IRP, TraverseCallback: PVOID, SubjectContext: *mut c_void, ) -> ();
-    fn ClearFlag(Flags: *mut u32, Flag: u32);
     fn Fat8dot3ToString( IrpContext: *mut core::ffi::c_void, Dirent: *mut core::ffi::c_void, Upcase: u8, String: *mut OEM_STRING, );
     fn FatAcquireSharedFcb( IrpContext: *mut core::ffi::c_void, Dcb: *mut core::ffi::c_void, ) -> u8;
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize);
@@ -51,7 +48,6 @@ extern "system" {
     fn FatMapUserBuffer( IrpContext: *mut core::ffi::c_void, Irp: *mut core::ffi::c_void, ) -> *mut u8;
     fn FatStringTo8dot3( IrpContext: *mut core::ffi::c_void, LocalBestFit: OEM_STRING, Constant: *mut OEM_STRING, );
     fn FatResetExceptionState(IrpContext: *mut core::ffi::c_void);
-    fn NT_ASSERT(condition: u8);
     fn RtlEqualMemory(s1: *const core::ffi::c_void, s2: *const core::ffi::c_void, length: u32) -> u8;
     fn RtlOemStringToCountedUnicodeSize(OemString: *const OEM_STRING) -> u32;
     fn QuadAlign(x: u32) -> u32;
@@ -86,7 +82,7 @@ const CCB_FLAG_SKIP_SHORT_NAME_COMPARE: u32 = 0x02;
 const CCB_FLAG_QUERY_TEMPLATE_MIXED: u32 = 0x1000;
 const TAG_FILENAME_BUFFER: u32 = 0x6E746146; // 'NamB'
 const FAT_CREATE_INITIAL_NAME_BUF_SIZE: u32 = 0x20; // example
-const DOS_QM: u16 = b'?' as u16;
+const DOS_QM: u16 = b'>' as u16; // iotypes.h DOS_QM is L'>', not '?'
 const FAT_BUG_CHECK_DIRCTRL: u32 = 0x00090000;
 const DEBUG_TRACE_DIRCTRL: u32 = 0x80;
 const SL_RESTART_SCAN: u32 = 0x00000001;
@@ -345,7 +341,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 if !(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer.is_null() {
                     if FlagOn((*Ccb).Flags, CCB_FLAG_FREE_UNICODE) != 0 {
                         ExFreePoolWithTag((*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().UnicodeQueryTemplate.Buffer as *mut core::ffi::c_void, TAG_FILENAME_BUFFER);
-                        ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
+                        ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
                     }
                     (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate.Buffer = core::ptr::null_mut();
                     (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().UnicodeQueryTemplate.Length = 0;
@@ -354,17 +350,17 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 if !(*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_ref().OemQueryTemplate.Wild.as_ref().Buffer.is_null() {
                     if FlagOn((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
                         RtlFreeOemString((*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Wild.as_mut() as *mut OEM_STRING);
-                        ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
+                        ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
                     }
                     (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Wild.as_mut().Buffer = core::ptr::null_mut();
                     (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Wild.as_mut().Length = 0;
                     (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Wild.as_mut().MaximumLength = 0;
                 }
                 (*Ccb).ContainsWildCards = 0;
-                ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_MATCH_ALL);
-                ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
-                ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
-                ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_QUERY_TEMPLATE_MIXED);
+                ClearFlag!((*Ccb).Flags, CCB_FLAG_MATCH_ALL);
+                ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
+                ClearFlag!((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
+                ClearFlag!((*Ccb).Flags, CCB_FLAG_QUERY_TEMPLATE_MIXED);
             }
 
             if UniArgFileName.is_null()
@@ -380,7 +376,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     ) != 0)
             {
                 (*Ccb).ContainsWildCards = 1;
-                SetFlag(&mut (*Ccb).Flags, CCB_FLAG_MATCH_ALL);
+                SetFlag!((*Ccb).Flags, CCB_FLAG_MATCH_ALL);
             } else {
                 let mut ExtendedName: u8 = 0;
                 let mut LocalBestFit: OEM_STRING = core::mem::zeroed();
@@ -399,17 +395,17 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     if (*p_Status) < 0 {
                         return; // try_returnStatus
                     }
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
 
                     *p_Status = RtlUpcaseUnicodeStringToCountedOemString(&mut LocalBestFit, UniArgFileName, 1);
                     if (*p_Status) < 0 {
                         if (*p_Status) == STATUS_UNMAPPABLE_CHARACTER {
-                            SetFlag(&mut (*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
+                            SetFlag!((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
                         } else {
                             return; // try_returnStatus
                         }
                     } else {
-                        SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
+                        SetFlag!((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
                     }
                 } else {
                     let Buffers: *mut core::ffi::c_void;
@@ -427,7 +423,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     LocalBestFit.Length = ((*UniArgFileName).Length as u32 / core::mem::size_of::<u16>() as u32) as u16;
                     LocalBestFit.MaximumLength = LocalBestFit.Length;
 
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_FREE_UNICODE);
 
                     for i in 0..(*UniArgFileName).Length as usize / core::mem::size_of::<u16>() {
                         let c: u16 = *(*UniArgFileName).Buffer.add(i);
@@ -447,9 +443,9 @@ pub unsafe extern "system" fn FatQueryDirectory(
                 {
                     if ExtendedName != 0 {
                         RtlFreeOemString(&mut LocalBestFit);
-                        ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
+                        ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
                     }
-                    SetFlag(&mut (*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
+                    SetFlag!((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE);
                 }
 
                 if FlagOn((*Ccb).Flags, CCB_FLAG_SKIP_SHORT_NAME_COMPARE) == 0 {
@@ -459,7 +455,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         FatStringTo8dot3(IrpContext, LocalBestFit, (*Ccb).__bindgen_anon_1.__bindgen_anon_1.as_mut().OemQueryTemplate.Constant.as_mut() as *mut _ as *mut OEM_STRING);
                         if FlagOn((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT) != 0 {
                             RtlFreeOemString(&mut LocalBestFit);
-                            ClearFlag(&mut (*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
+                            ClearFlag!((*Ccb).Flags, CCB_FLAG_FREE_OEM_BEST_FIT);
                         }
                     }
                 }
@@ -588,7 +584,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|2|6|3 -> 1: every dir-info class
@@ -655,7 +651,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                     );
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                     }
 
@@ -686,7 +682,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         return;
                     }
 
-                    NT_ASSERT((BytesRemainingInBuffer >= BaseLength) as u8);
+                    NT_ASSERT!((BytesRemainingInBuffer >= BaseLength) as u8);
                     core::ptr::write_bytes(Buffer.add(NextEntry as usize), 0, BaseLength as usize);
 
                     // C switch FALLS THROUGH 5|6 -> 2|3 -> 1 (see the short-name
@@ -700,7 +696,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                             if FileInformationClass == FIC_BOTH_DIRECTORY || FileInformationClass == FIC_ID_BOTH_DIRECTORY {
                                 BothDirInfo = &mut *(Buffer.add(NextEntry as usize) as *mut FILE_BOTH_DIR_INFORMATION);
                                 Fat8dot3ToString(IrpContext, Dirent as *mut c_void, 0, &mut Fat8Dot3String);
-                                NT_ASSERT((Fat8Dot3String.Length <= 12) as u8);
+                                NT_ASSERT!((Fat8Dot3String.Length <= 12) as u8);
                                 *p_Status = RtlOemToUnicodeN(
                                     &mut (*BothDirInfo).ShortName[0],
                                     12 * core::mem::size_of::<u16>() as u32,
@@ -708,8 +704,8 @@ pub unsafe extern "system" fn FatQueryDirectory(
                                     Fat8Dot3String.Buffer,
                                     (Fat8Dot3String.Length) as u32,
                                 );
-                                NT_ASSERT(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
-                                NT_ASSERT((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
+                                NT_ASSERT!(((*p_Status) != STATUS_BUFFER_OVERFLOW) as u8);
+                                NT_ASSERT!((ShortNameLength <= 12 * core::mem::size_of::<u16>() as u32) as u8);
                                 (*BothDirInfo).ShortNameLength = (ShortNameLength as u8) as i8;
 
                                 if (*p_Status) < 0 {
@@ -781,7 +777,7 @@ pub unsafe extern "system" fn FatQueryDirectory(
                         .wrapping_add(BaseLength as usize).wrapping_add(BytesConverted as usize) as _;
 
                     if BytesConverted < FileNameLength {
-                        NT_ASSERT((NextEntry == 0) as u8);
+                        NT_ASSERT!((NextEntry == 0) as u8);
                         // try_return(Status = STATUS_BUFFER_OVERFLOW) — inner closure: flag + break loop
                         *p_Status = STATUS_BUFFER_OVERFLOW;
                         do_return = true;
@@ -961,7 +957,7 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
     DebugTrace(0, Dbg, b" Irp                = %p\n\0".as_ptr() as *const i8, Irp as u32);
     DebugTrace(0, Dbg, b" ->CompletionFilter = %08lx\n\0".as_ptr() as *const i8, (*IrpSp).Parameters.NotifyDirectory.CompletionFilter);
 
-    SetFlag(&mut (*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
+    SetFlag!((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT);
 
     CompleteRequest = 0; // FALSE
 
@@ -2642,3 +2638,15 @@ pub unsafe extern "system" fn FatNotifyChangeDirectory(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> i32 {
+    (Flags as u64 & Flag as u64) as i32
+}
+
+#[inline(always)]
+unsafe fn BooleanFlagOn(Flags: u32, Flag: u32) -> u8 {
+    ((Flags as u64 & Flag as u64) != 0) as u8
+}

@@ -359,52 +359,52 @@ pub(super) static mut keypad_numbers: [VK_TO_WCHARS1; 13] = [
 ];
 
 pub(super) static mut vk_to_wchar_master_table: [VK_TO_WCHAR_TABLE; 6] = [
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const keypad_numbers as PVK_TO_WCHARS1, nModifications: 1 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS1>() as BYTE /* 4 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_2mod as PVK_TO_WCHARS1, nModifications: 2 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS2>() as BYTE /* 6 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_3mod as PVK_TO_WCHARS1, nModifications: 3 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS3>() as BYTE /* 8 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_4mod as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
-    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_5mod as PVK_TO_WCHARS1, nModifications: 5 as BYTE /* vk_master */, cbSize: core::mem::size_of::<VK_TO_WCHARS5>() as BYTE /* 12 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const keypad_numbers as PVK_TO_WCHARS1, nModifications: 1 as BYTE /* vk_master(1,keypad_numbers) */, cbSize: core::mem::size_of::<VK_TO_WCHARS1>() as BYTE /* 4 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_2mod as PVK_TO_WCHARS1, nModifications: 2 as BYTE /* vk_master(2,key_to_chars_2mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS2>() as BYTE /* 6 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_3mod as PVK_TO_WCHARS1, nModifications: 3 as BYTE /* vk_master(3,key_to_chars_3mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS3>() as BYTE /* 8 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_4mod as PVK_TO_WCHARS1, nModifications: 4 as BYTE /* vk_master(4,key_to_chars_4mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS4>() as BYTE /* 10 */ },
+    VK_TO_WCHAR_TABLE { pVkToWchars: &raw const key_to_chars_5mod as PVK_TO_WCHARS1, nModifications: 5 as BYTE /* vk_master(5,key_to_chars_5mod) */, cbSize: core::mem::size_of::<VK_TO_WCHARS5>() as BYTE /* 12 */ },
     VK_TO_WCHAR_TABLE { pVkToWchars: core::ptr::null_mut(), nModifications: 0, cbSize: 0 },
 ];
 
 pub(super) static mut deadkey: [DEADKEY; 38] = [
-    DEADKEY { dwBoth: 6291553 as DWORD /* DEADTRANS */, wchComposed: 224 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291521 as DWORD /* DEADTRANS */, wchComposed: 192 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291557 as DWORD /* DEADTRANS */, wchComposed: 232 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291525 as DWORD /* DEADTRANS */, wchComposed: 200 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291561 as DWORD /* DEADTRANS */, wchComposed: 236 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291529 as DWORD /* DEADTRANS */, wchComposed: 204 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291567 as DWORD /* DEADTRANS */, wchComposed: 242 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291535 as DWORD /* DEADTRANS */, wchComposed: 210 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291573 as DWORD /* DEADTRANS */, wchComposed: 249 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6291541 as DWORD /* DEADTRANS */, wchComposed: 217 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160481 as DWORD /* DEADTRANS */, wchComposed: 226 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160449 as DWORD /* DEADTRANS */, wchComposed: 210 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160485 as DWORD /* DEADTRANS */, wchComposed: 234 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160453 as DWORD /* DEADTRANS */, wchComposed: 202 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160489 as DWORD /* DEADTRANS */, wchComposed: 238 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160457 as DWORD /* DEADTRANS */, wchComposed: 206 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160495 as DWORD /* DEADTRANS */, wchComposed: 244 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160463 as DWORD /* DEADTRANS */, wchComposed: 212 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160501 as DWORD /* DEADTRANS */, wchComposed: 251 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 6160469 as DWORD /* DEADTRANS */, wchComposed: 219 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010145 as DWORD /* DEADTRANS */, wchComposed: 228 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010113 as DWORD /* DEADTRANS */, wchComposed: 196 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010149 as DWORD /* DEADTRANS */, wchComposed: 235 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010117 as DWORD /* DEADTRANS */, wchComposed: 203 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010153 as DWORD /* DEADTRANS */, wchComposed: 239 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010121 as DWORD /* DEADTRANS */, wchComposed: 207 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010159 as DWORD /* DEADTRANS */, wchComposed: 246 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010127 as DWORD /* DEADTRANS */, wchComposed: 214 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010165 as DWORD /* DEADTRANS */, wchComposed: 252 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010133 as DWORD /* DEADTRANS */, wchComposed: 220 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 11010169 as DWORD /* DEADTRANS */, wchComposed: 255 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257633 as DWORD /* DEADTRANS */, wchComposed: 227 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257601 as DWORD /* DEADTRANS */, wchComposed: 195 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257646 as DWORD /* DEADTRANS */, wchComposed: 241 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257614 as DWORD /* DEADTRANS */, wchComposed: 209 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257647 as DWORD /* DEADTRANS */, wchComposed: 245 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
-    DEADKEY { dwBoth: 8257615 as DWORD /* DEADTRANS */, wchComposed: 213 as WCHAR /* DEADTRANS */, uFlags: 0 as USHORT /* DEADTRANS */ },
+    DEADKEY { dwBoth: 6291553 as DWORD /* DEADTRANS(L'a', 0x60, 0xe0, 0x00) */, wchComposed: 224 as WCHAR /* DEADTRANS(L'a', 0x60, 0xe0, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'a', 0x60, 0xe0, 0x00) */ },
+    DEADKEY { dwBoth: 6291521 as DWORD /* DEADTRANS(L'A', 0x60, 0xc0, 0x00) */, wchComposed: 192 as WCHAR /* DEADTRANS(L'A', 0x60, 0xc0, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'A', 0x60, 0xc0, 0x00) */ },
+    DEADKEY { dwBoth: 6291557 as DWORD /* DEADTRANS(L'e', 0x60, 0xe8, 0x00) */, wchComposed: 232 as WCHAR /* DEADTRANS(L'e', 0x60, 0xe8, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'e', 0x60, 0xe8, 0x00) */ },
+    DEADKEY { dwBoth: 6291525 as DWORD /* DEADTRANS(L'E', 0x60, 0xc8, 0x00) */, wchComposed: 200 as WCHAR /* DEADTRANS(L'E', 0x60, 0xc8, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'E', 0x60, 0xc8, 0x00) */ },
+    DEADKEY { dwBoth: 6291561 as DWORD /* DEADTRANS(L'i', 0x60, 0xec, 0x00) */, wchComposed: 236 as WCHAR /* DEADTRANS(L'i', 0x60, 0xec, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'i', 0x60, 0xec, 0x00) */ },
+    DEADKEY { dwBoth: 6291529 as DWORD /* DEADTRANS(L'I', 0x60, 0xcc, 0x00) */, wchComposed: 204 as WCHAR /* DEADTRANS(L'I', 0x60, 0xcc, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'I', 0x60, 0xcc, 0x00) */ },
+    DEADKEY { dwBoth: 6291567 as DWORD /* DEADTRANS(L'o', 0x60, 0xf2, 0x00) */, wchComposed: 242 as WCHAR /* DEADTRANS(L'o', 0x60, 0xf2, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'o', 0x60, 0xf2, 0x00) */ },
+    DEADKEY { dwBoth: 6291535 as DWORD /* DEADTRANS(L'O', 0x60, 0xd2, 0x00) */, wchComposed: 210 as WCHAR /* DEADTRANS(L'O', 0x60, 0xd2, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'O', 0x60, 0xd2, 0x00) */ },
+    DEADKEY { dwBoth: 6291573 as DWORD /* DEADTRANS(L'u', 0x60, 0xf9, 0x00) */, wchComposed: 249 as WCHAR /* DEADTRANS(L'u', 0x60, 0xf9, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'u', 0x60, 0xf9, 0x00) */ },
+    DEADKEY { dwBoth: 6291541 as DWORD /* DEADTRANS(L'U', 0x60, 0xd9, 0x00) */, wchComposed: 217 as WCHAR /* DEADTRANS(L'U', 0x60, 0xd9, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'U', 0x60, 0xd9, 0x00) */ },
+    DEADKEY { dwBoth: 6160481 as DWORD /* DEADTRANS(L'a', 0x5e, 0xe2, 0x00) */, wchComposed: 226 as WCHAR /* DEADTRANS(L'a', 0x5e, 0xe2, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'a', 0x5e, 0xe2, 0x00) */ },
+    DEADKEY { dwBoth: 6160449 as DWORD /* DEADTRANS(L'A', 0x5e, 0xd2, 0x00) */, wchComposed: 210 as WCHAR /* DEADTRANS(L'A', 0x5e, 0xd2, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'A', 0x5e, 0xd2, 0x00) */ },
+    DEADKEY { dwBoth: 6160485 as DWORD /* DEADTRANS(L'e', 0x5e, 0xea, 0x00) */, wchComposed: 234 as WCHAR /* DEADTRANS(L'e', 0x5e, 0xea, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'e', 0x5e, 0xea, 0x00) */ },
+    DEADKEY { dwBoth: 6160453 as DWORD /* DEADTRANS(L'E', 0x5e, 0xca, 0x00) */, wchComposed: 202 as WCHAR /* DEADTRANS(L'E', 0x5e, 0xca, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'E', 0x5e, 0xca, 0x00) */ },
+    DEADKEY { dwBoth: 6160489 as DWORD /* DEADTRANS(L'i', 0x5e, 0xee, 0x00) */, wchComposed: 238 as WCHAR /* DEADTRANS(L'i', 0x5e, 0xee, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'i', 0x5e, 0xee, 0x00) */ },
+    DEADKEY { dwBoth: 6160457 as DWORD /* DEADTRANS(L'I', 0x5e, 0xce, 0x00) */, wchComposed: 206 as WCHAR /* DEADTRANS(L'I', 0x5e, 0xce, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'I', 0x5e, 0xce, 0x00) */ },
+    DEADKEY { dwBoth: 6160495 as DWORD /* DEADTRANS(L'o', 0x5e, 0xf4, 0x00) */, wchComposed: 244 as WCHAR /* DEADTRANS(L'o', 0x5e, 0xf4, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'o', 0x5e, 0xf4, 0x00) */ },
+    DEADKEY { dwBoth: 6160463 as DWORD /* DEADTRANS(L'O', 0x5e, 0xd4, 0x00) */, wchComposed: 212 as WCHAR /* DEADTRANS(L'O', 0x5e, 0xd4, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'O', 0x5e, 0xd4, 0x00) */ },
+    DEADKEY { dwBoth: 6160501 as DWORD /* DEADTRANS(L'u', 0x5e, 0xfb, 0x00) */, wchComposed: 251 as WCHAR /* DEADTRANS(L'u', 0x5e, 0xfb, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'u', 0x5e, 0xfb, 0x00) */ },
+    DEADKEY { dwBoth: 6160469 as DWORD /* DEADTRANS(L'U', 0x5e, 0xdb, 0x00) */, wchComposed: 219 as WCHAR /* DEADTRANS(L'U', 0x5e, 0xdb, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'U', 0x5e, 0xdb, 0x00) */ },
+    DEADKEY { dwBoth: 11010145 as DWORD /* DEADTRANS(L'a', 0xa8, 0xe4, 0x00) */, wchComposed: 228 as WCHAR /* DEADTRANS(L'a', 0xa8, 0xe4, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'a', 0xa8, 0xe4, 0x00) */ },
+    DEADKEY { dwBoth: 11010113 as DWORD /* DEADTRANS(L'A', 0xa8, 0xc4, 0x00) */, wchComposed: 196 as WCHAR /* DEADTRANS(L'A', 0xa8, 0xc4, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'A', 0xa8, 0xc4, 0x00) */ },
+    DEADKEY { dwBoth: 11010149 as DWORD /* DEADTRANS(L'e', 0xa8, 0xeb, 0x00) */, wchComposed: 235 as WCHAR /* DEADTRANS(L'e', 0xa8, 0xeb, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'e', 0xa8, 0xeb, 0x00) */ },
+    DEADKEY { dwBoth: 11010117 as DWORD /* DEADTRANS(L'E', 0xa8, 0xcb, 0x00) */, wchComposed: 203 as WCHAR /* DEADTRANS(L'E', 0xa8, 0xcb, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'E', 0xa8, 0xcb, 0x00) */ },
+    DEADKEY { dwBoth: 11010153 as DWORD /* DEADTRANS(L'i', 0xa8, 0xef, 0x00) */, wchComposed: 239 as WCHAR /* DEADTRANS(L'i', 0xa8, 0xef, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'i', 0xa8, 0xef, 0x00) */ },
+    DEADKEY { dwBoth: 11010121 as DWORD /* DEADTRANS(L'I', 0xa8, 0xcf, 0x00) */, wchComposed: 207 as WCHAR /* DEADTRANS(L'I', 0xa8, 0xcf, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'I', 0xa8, 0xcf, 0x00) */ },
+    DEADKEY { dwBoth: 11010159 as DWORD /* DEADTRANS(L'o', 0xa8, 0xf6, 0x00) */, wchComposed: 246 as WCHAR /* DEADTRANS(L'o', 0xa8, 0xf6, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'o', 0xa8, 0xf6, 0x00) */ },
+    DEADKEY { dwBoth: 11010127 as DWORD /* DEADTRANS(L'O', 0xa8, 0xd6, 0x00) */, wchComposed: 214 as WCHAR /* DEADTRANS(L'O', 0xa8, 0xd6, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'O', 0xa8, 0xd6, 0x00) */ },
+    DEADKEY { dwBoth: 11010165 as DWORD /* DEADTRANS(L'u', 0xa8, 0xfc, 0x00) */, wchComposed: 252 as WCHAR /* DEADTRANS(L'u', 0xa8, 0xfc, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'u', 0xa8, 0xfc, 0x00) */ },
+    DEADKEY { dwBoth: 11010133 as DWORD /* DEADTRANS(L'U', 0xa8, 0xdc, 0x00) */, wchComposed: 220 as WCHAR /* DEADTRANS(L'U', 0xa8, 0xdc, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'U', 0xa8, 0xdc, 0x00) */ },
+    DEADKEY { dwBoth: 11010169 as DWORD /* DEADTRANS(L'y', 0xa8, 0xff, 0x00) */, wchComposed: 255 as WCHAR /* DEADTRANS(L'y', 0xa8, 0xff, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'y', 0xa8, 0xff, 0x00) */ },
+    DEADKEY { dwBoth: 8257633 as DWORD /* DEADTRANS(L'a', 0x7e, 0xe3, 0x00) */, wchComposed: 227 as WCHAR /* DEADTRANS(L'a', 0x7e, 0xe3, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'a', 0x7e, 0xe3, 0x00) */ },
+    DEADKEY { dwBoth: 8257601 as DWORD /* DEADTRANS(L'A', 0x7e, 0xc3, 0x00) */, wchComposed: 195 as WCHAR /* DEADTRANS(L'A', 0x7e, 0xc3, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'A', 0x7e, 0xc3, 0x00) */ },
+    DEADKEY { dwBoth: 8257646 as DWORD /* DEADTRANS(L'n', 0x7e, 0xf1, 0x00) */, wchComposed: 241 as WCHAR /* DEADTRANS(L'n', 0x7e, 0xf1, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'n', 0x7e, 0xf1, 0x00) */ },
+    DEADKEY { dwBoth: 8257614 as DWORD /* DEADTRANS(L'N', 0x7e, 0xd1, 0x00) */, wchComposed: 209 as WCHAR /* DEADTRANS(L'N', 0x7e, 0xd1, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'N', 0x7e, 0xd1, 0x00) */ },
+    DEADKEY { dwBoth: 8257647 as DWORD /* DEADTRANS(L'o', 0x7e, 0xf5, 0x00) */, wchComposed: 245 as WCHAR /* DEADTRANS(L'o', 0x7e, 0xf5, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'o', 0x7e, 0xf5, 0x00) */ },
+    DEADKEY { dwBoth: 8257615 as DWORD /* DEADTRANS(L'O', 0x7e, 0xd5, 0x00) */, wchComposed: 213 as WCHAR /* DEADTRANS(L'O', 0x7e, 0xd5, 0x00) */, uFlags: 0 as USHORT /* DEADTRANS(L'O', 0x7e, 0xd5, 0x00) */ },
     DEADKEY { dwBoth: 0, wchComposed: 0, uFlags: 0 },
 ];
 
@@ -498,10 +498,10 @@ pub(super) static mut dead_key_names: [DEADKEY_LPWSTR; 5] = [
     core::ptr::null_mut(),
 ];
 
-pub(super) static mut keyboard_layout_table: KBDTABLES = KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: &raw const deadkey as PDEADKEY, pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: &raw const dead_key_names as *mut LPWSTR, pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 127 as BYTE /* RTL_NUMBER_OF */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 65537 as DWORD /* MAKELONG */, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() };
+pub(super) static mut keyboard_layout_table: KBDTABLES = KBDTABLES { pCharModifiers: &raw const modifier_bits as PMODIFIERS, pVkToWcharTable: &raw const vk_to_wchar_master_table as PVK_TO_WCHAR_TABLE, pDeadKey: &raw const deadkey as PDEADKEY, pKeyNames: &raw const key_names as *mut VSC_LPWSTR, pKeyNamesExt: &raw const extended_key_names as *mut VSC_LPWSTR, pKeyNamesDead: &raw const dead_key_names as *mut LPWSTR, pusVSCtoVK: &raw const scancode_to_vk as *mut USHORT, bMaxVSCtoVK: 127 as BYTE /* RTL_NUMBER_OF(scancode_to_vk) */, pVSCtoVK_E0: &raw const extcode0_to_vk as PVSC_VK, pVSCtoVK_E1: &raw const extcode1_to_vk as PVSC_VK, fLocaleFlags: 65537 as DWORD /* MAKELONG(KLLF_ALTGR, 1) */, nLgMaxd: 0, cbLgEntry: 0, pLigature: core::ptr::null_mut() };
 
-/// `kbdfr.dll`'s only export: the layout's tables. The name is per layout so that
-/// every layout can live in one staticlib; its .spec maps it onto `KbdLayerDescriptor`.
+/// `kbdfr.dll` export `KbdLayerDescriptor`: the layout's tables. The name is per layout so that
+/// every layout can live in one staticlib; its .spec maps it onto the real name.
 #[export_name = "kbdfr_KbdLayerDescriptor"]
 pub unsafe extern "system" fn KbdLayerDescriptor() -> PKBDTABLES {
     addr_of_mut!(keyboard_layout_table) as PKBDTABLES

@@ -251,7 +251,8 @@ a fix on the test it was aimed at.
   transaction (bring-up marker, unconditional); under the whpx ich9-ahci CD path the
   serial spam grinds the guest so hard that SCM auto-start never completes in 10 min
   (sweep gate correctly stayed shut). Needs gating by the owning lane (or a one-line
-  rate-limit) before whpx is usable for long-running in-guest suites. Sweep boots use
+  rate-limit) before whpx is usable for long-running in-guest suites. (Removed
+  2026-10-10: on the OptiPlex it logged every DVD media poll, 190k lines in a day.) Sweep boots use
   windows-host TCG (fleet default) until then.
 - 2026-07-10: Harness moved to windows-host WHPX for sweep boots
   (`VIBEOS_QEMU_WINDOWS_ACCEL=whpx ./vibeos-cli smoke --arch amd64 --payload kmtest`;

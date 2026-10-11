@@ -35,21 +35,14 @@
 #undef FsRtlCurrentOplockH
 #undef FsRtlOplockIsSharedRequest
 #undef FsRtlGetSectorSizeInformation
-#undef FlagOn
-#undef SetFlag
-#undef ClearFlag
-#undef BooleanFlagOn
 #undef Add2Ptr
 #undef QuadAlign
 #undef BlockAlignTruncate
 #undef NodeType
 #undef PAGED_CODE
-#undef ASSERT
-#undef NT_ASSERT
 #undef UNREFERENCED_PARAMETER
 #undef ARGUMENT_PRESENT
 #undef _Analysis_assume_
-#undef KdPrintEx
 #undef RtlRaiseStatus
 #undef RtlCheckBit
 #undef RtlConvertLongToLuid
@@ -340,10 +333,6 @@ VOID __cdecl FatDisableParentCheck(PIRP_CONTEXT IrpContext)  { (void)IrpContext;
  * 2. FAT helper macros → real symbols
  * ====================================================================== */
 
-ULONG_PTR FlagOn(ULONG_PTR x, ULONG_PTR f)        { return x & f; }
-VOID      SetFlag(PULONG_PTR x, ULONG_PTR f)       { *x |= f; }
-VOID      ClearFlag(PULONG_PTR x, ULONG_PTR f)     { *x &= ~f; }
-BOOLEAN   BooleanFlagOn(ULONG_PTR x, ULONG_PTR f)  { return !!(x & f); }
 PVOID     Add2Ptr(PVOID p, ULONG_PTR n)             { return (PUCHAR)p + n; }
 ULONG_PTR QuadAlign(ULONG_PTR v)                    { return (v + 7) & ~(ULONG_PTR)7; }
 ULONG_PTR BlockAlignTruncate(ULONG_PTR v, ULONG_PTR a) { return v & ~(a - 1); }
@@ -359,13 +348,10 @@ ULONG NodeType(PVOID Node)              { return (ULONG)*((PUSHORT)Node); }
 VOID PAGED_CODE(VOID)                  { }
 VOID paged_code(VOID)                  { }
 VOID PagedCode(VOID)                   { }
-VOID ASSERT(BOOLEAN e)                 { (void)e; }
-VOID NT_ASSERT(BOOLEAN e)              { (void)e; }
 VOID UNREFERENCED_PARAMETER(PVOID p)   { (void)p; }
 VOID _Analysis_assume_(BOOLEAN b)      { (void)b; }
 BOOLEAN ARGUMENT_PRESENT(PVOID p)      { return p != NULL; }
 
-VOID KdPrintEx(ULONG a, ULONG b, PCHAR c, ...) { (void)a;(void)b;(void)c; }
 
 VOID RtlRaiseStatus(NTSTATUS s)    { ExRaiseStatus(s); }
 

@@ -82,6 +82,7 @@ def test_unknown_sys_crate_raises():
 
 def test_umbrella_detection_both_shapes(tmp_path):
     """Both in-tree substrate shapes must be recognized, and neither guessed."""
+
     def sys_crate(body: str):
         d = tmp_path / f"x{abs(hash(body))}-sys"
         (d / "src").mkdir(parents=True)
@@ -91,11 +92,12 @@ def test_umbrella_detection_both_shapes(tmp_path):
     # ntdll-sys shape: one umbrella module.
     assert _detect_sys_umbrella(sys_crate("mod bindgen_amd64;\npub mod nt {\n}\n"), "x") == "nt"
     # msvcrt-sys shape: flat root re-export.
-    assert _detect_sys_umbrella(sys_crate("mod bindgen_amd64;\npub use bindgen_amd64::*;\n"), "x") == ""
+    assert (
+        _detect_sys_umbrella(sys_crate("mod bindgen_amd64;\npub use bindgen_amd64::*;\n"), "x")
+        == ""
+    )
     # Ambiguous / neither: raise rather than pick.
     with pytest.raises(TargetResolveError):
         _detect_sys_umbrella(sys_crate("mod bindgen_amd64;\n"), "x")
     with pytest.raises(TargetResolveError):
-        _detect_sys_umbrella(
-            sys_crate("pub use bindgen_amd64::*;\npub mod nt {\n}\n"), "x"
-        )
+        _detect_sys_umbrella(sys_crate("pub use bindgen_amd64::*;\npub mod nt {\n}\n"), "x")

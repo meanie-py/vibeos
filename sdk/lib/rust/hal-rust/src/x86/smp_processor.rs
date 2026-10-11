@@ -401,6 +401,50 @@ pub unsafe extern "system" fn ApicStartApplicationProcessor(
 // ===========================================================================
 static NEXT_PROCESSOR: AtomicU32 = AtomicU32::new(1); // 0 == BSP, already up
 
+// What identity_map_stub put in the System address space, for the teardown
+// once every AP is up: the self-map address of the highest table entry it
+// installed (0 if it only wrote a PTE into tables that were already there),
+// and the PTE it wrote.
+static mut STUB_TOP_ENTRY: usize = 0;
+static mut STUB_PTE: usize = 0;
+
+unsafe extern "system" {
+    fn KeFlushEntireTb(Invalidate: u8, AllProcessors: u8);
+}
+
+/// Unmap the AP trampoline's VA==PA chain. It lives in the user half of the
+/// System address space (VA < 1 MB), which MM cleared at init and expects to
+/// own: left in place, the System process's first low user mapping (a view
+/// at 0x40000) was built inside the HAL's scratch tables, pages MM does not
+/// track, and MmGetPfnForProcess read it back as unmapped (MEMORY_MANAGEMENT
+/// on every BIOS boot with RAM above 4 GiB, where those pages are reported as
+/// firmware memory). Every AP has left the trampoline by the time the kernel
+/// asks for one more processor and is told there is none.
+unsafe fn identity_unmap_stub() {
+    let top = STUB_TOP_ENTRY;
+    let pte = STUB_PTE;
+    if pte == 0 {
+        return; // never mapped (UP, or no AP started)
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        (pte as *mut u64).write_volatile(0);
+        if top != 0 {
+            (top as *mut u64).write_volatile(0);
+        }
+    }
+    #[cfg(target_arch = "x86")]
+    {
+        (pte as *mut u32).write_volatile(0);
+        if top != 0 {
+            (top as *mut u32).write_volatile(0);
+        }
+    }
+    STUB_TOP_ENTRY = 0;
+    STUB_PTE = 0;
+    KeFlushEntireTb(1, 1);
+}
+
 // ---------------------------------------------------------------------------
 // identity_map_stub — make VA==stub_pa valid in the current (System) address
 // space via the recursive self-map. For a <1MB VA every table index but the
@@ -460,6 +504,9 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
             // as soon as this entry is written (TLB: fresh entry, no stale).
             core::ptr::write_bytes(scratch_va.add(*va_off), 0, 0x1000);
             entry.write_volatile(*table_pa | PTE_VALID_WRITE);
+            if STUB_TOP_ENTRY == 0 {
+                STUB_TOP_ENTRY = *entry as usize;
+            }
         }
     }
 
@@ -474,6 +521,7 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
         return false; // foreign mapping at our VA — refuse to clobber
     }
     pte.write_volatile(want);
+    STUB_PTE = pte as usize;
     core::arch::asm!("invlpg [{}]", in(reg) stub_pa, options(nostack, preserves_flags));
     true
 }
@@ -508,6 +556,7 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
         // as soon as this write lands.
         core::ptr::write_bytes(scratch_va, 0, 0x1000);
         pde0.write_volatile(scratch_pa | PTE_VALID_WRITE_I386);
+        STUB_TOP_ENTRY = pde0 as usize;
     }
 
     let want = stub_pa32 | PTE_VALID_WRITE_I386;
@@ -519,6 +568,7 @@ unsafe fn identity_map_stub(_stub_va: *mut u8, stub_pa: u64) -> bool {
         return false; // foreign mapping at our VA — refuse to clobber
     }
     pte.write_volatile(want);
+    STUB_PTE = pte as usize;
     core::arch::asm!("invlpg [{}]", in(reg) stub_pa32, options(nostack, preserves_flags));
     true
 }
@@ -539,6 +589,7 @@ pub unsafe extern "system" fn HalStartNextProcessor(
             next,
             count,
         );
+        identity_unmap_stub();
         return 0; // FALSE
     }
 
@@ -566,7 +617,7 @@ pub unsafe extern "system" fn HalStartNextProcessor(
     // identity map is gone by Phase 1 (probed live, staging NOTES.md 14) —
     // install a VA==PA chain for page 0 through the recursive self-map,
     // using pages 1-3 as the PDPT/PD/PT. One-shot; stays mapped across all
-    // AP starts (teardown is owed hardening — System has no user threads).
+    // AP starts and is removed once none is left (identity_unmap_stub).
     if !identity_map_stub(stub_va, stub_pa) {
         DbgPrint(
             b"[HAL-SMP] StartNext: identity map refused (foreign PTE at %I64x)\n\0".as_ptr()

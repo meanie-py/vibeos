@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::base::*;
 use ntkrnl_sys::constants::*;
@@ -62,9 +63,6 @@ extern "system" {
     fn FatProcessException(context: *mut core::ffi::c_void, Irp: *mut IRP, ExceptionCode: i32) -> i32;
     fn FsRtlCheckOplockEx( Oplock: *mut core::ffi::c_void, Irp: *mut IRP, Flags: u32, CompletionRoutine: *mut core::ffi::c_void, PostIrpRoutine: *mut core::ffi::c_void, Context: *mut core::ffi::c_void, );
     fn IsFileObjectReadOnly(FileObject: *mut FILE_OBJECT) -> u8;
-    fn NT_ASSERT(condition: u8);
-    fn SetFlag(Flags: *mut u32, Flag: u32);
-    fn FlagOn(Flags: u32, Flag: u32) -> u32;
 }
 
 // ---- file-scope preamble (translated) ----
@@ -130,7 +128,7 @@ pub unsafe extern "system" fn FatFsdClose(
     TypeOfOpen = FatDecodeFileObject(FileObject, &mut Vcb, &mut Fcb, &mut Ccb);
 
     if !Ccb.is_null() && IsFileObjectReadOnly(FileObject) != 0 {
-        SetFlag(&mut (*Ccb).Flags, CCB_FLAG_READ_ONLY);
+        SetFlag!((*Ccb).Flags, CCB_FLAG_READ_ONLY);
     }
 
     // _SEH2_TRY { ... } _SEH2_EXCEPT(FatExceptionFilter( NULL, ... ))
@@ -166,7 +164,7 @@ pub unsafe extern "system" fn FatFsdClose(
             || TypeOfOpen == (EaFile) as u32
         {
             CloseContext = FatAllocateCloseContext(Vcb);
-            NT_ASSERT(((CloseContext.is_null() as i32 == 0) as i32) as u8);
+            NT_ASSERT!(((CloseContext.is_null() as i32 == 0) as i32) as u8);
             (*CloseContext).Free = 1;
         }
 
@@ -205,7 +203,7 @@ pub unsafe extern "system" fn FatFsdClose(
                 CloseContext = (*Ccb).__bindgen_anon_1.CloseContext.as_mut() as *mut CLOSE_CONTEXT;
                 (*CloseContext).Free = 0;
                 // C: CCB_FLAG_CLOSE_CONTEXT (0x8000) — was CCB_FLAG_READ_ONLY (0x80)
-                SetFlag(&mut (*Ccb).Flags, crate::types::CCB_FLAG_CLOSE_CONTEXT);
+                SetFlag!((*Ccb).Flags, crate::types::CCB_FLAG_CLOSE_CONTEXT);
             }
             (*CloseContext).Vcb = Vcb;
             (*CloseContext).Fcb = Fcb;
@@ -2083,3 +2081,10 @@ pub unsafe extern "system" fn FatCommonClose(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(Flags: u32, Flag: u32) -> u32 {
+    (Flags as u64 & Flag as u64) as u32
+}

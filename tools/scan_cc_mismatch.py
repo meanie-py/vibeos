@@ -244,6 +244,54 @@ def convention_facts(src: str):
     return definitions, declarations
 
 
+# A `-sys` crate's declaration reaches this crate's LLVM module the moment the crate calls it,
+# and rustc then merges it with any local declaration of the same symbol exactly as it merges
+# two local ones. fastfat's pnp.rs imported the cdecl IoCopyCurrentIrpStackLocationToNext from
+# ntkrnl_sys::ddk while flush.rs declared it "system"; the stdcall call linked to the cdecl
+# thunk and FatCommonFlushBuffers' finally returned into its own stack on every flush it
+# passed down (i386 0x23/0x50/0x1E). Only local extern blocks were indexed, so it was invisible.
+SYS_USE_RE = re.compile(
+    r"\buse\s+(?P<crate>\w+_sys)(?P<path>(?:::\w+)*)::(?P<tail>\{[^;]*\}|\w+)\s*;"
+)
+SYS_PATH_CALL_RE = re.compile(r"\b(?P<crate>\w+_sys)(?:::\w+)*::(?P<name>\w+)\s*\(")
+
+
+def sys_crate_decls(crate_ident: str) -> dict[str, str]:
+    """symbol -> i386 convention, for every extern fn the `-sys` crate declares on i386."""
+    if crate_ident not in _SYS_CACHE:
+        src_dir = os.path.join(BASE, crate_ident.replace("_", "-"), "src")
+        out: dict[str, str] = {}
+        if os.path.isdir(src_dir):
+            for _path, src in walk_i386_sources(src_dir):
+                for name, cc, _line, _text in convention_facts(src)[1]:
+                    out.setdefault(name, cc)
+        _SYS_CACHE[crate_ident] = out
+    return _SYS_CACHE[crate_ident]
+
+
+_SYS_CACHE: dict[str, dict[str, str]] = {}
+
+
+def sys_imports(src: str) -> list[tuple[str, str, int]]:
+    """(symbol, convention, line) for each extern fn this file pulls in from a `-sys` crate,
+    by a named `use` or a qualified call. Glob imports are not followed: a local declaration
+    shadows the glob in its own file, and which other file calls the glob's copy cannot be
+    told from the text."""
+    out = []
+    for m in SYS_USE_RE.finditer(src):
+        tail = m.group("tail")
+        names = re.findall(r"\b(\w+)\b(?:\s+as\s+\w+)?", tail.strip("{}"))
+        for name in names:
+            cc = sys_crate_decls(m.group("crate")).get(name)
+            if cc:
+                out.append((name, cc, src.count("\n", 0, m.start()) + 1))
+    for m in SYS_PATH_CALL_RE.finditer(src):
+        cc = sys_crate_decls(m.group("crate")).get(m.group("name"))
+        if cc:
+            out.append((m.group("name"), cc, src.count("\n", 0, m.start()) + 1))
+    return out
+
+
 def scan_crate(crate_src: str) -> list[str]:
     defs: dict[str, list[tuple[str, bool]]] = defaultdict(list)
     decls: dict[str, list[tuple[str, str, int]]] = defaultdict(list)
@@ -253,6 +301,10 @@ def scan_crate(crate_src: str) -> list[str]:
             defs[name].append((cc, excluded))
         for name, cc, line, text in declarations:
             if not NOLINT_RE.search(text):
+                decls[name].append((cc, path, line))
+        lines = src.splitlines()
+        for name, cc, line in sys_imports(src):
+            if not NOLINT_RE.search(lines[line - 1] if line - 1 < len(lines) else ""):
                 decls[name].append((cc, path, line))
     out = []
     for name, dd in decls.items():

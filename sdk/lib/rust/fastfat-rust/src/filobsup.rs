@@ -1,3 +1,4 @@
+#[allow(unused_imports)] use crate::{NT_ASSERT};
 use ntkrnl_sys::globals::*;
 use ntkrnl_sys::constants::*;
 use ntkrnl_sys::base::*;
@@ -13,19 +14,15 @@ use crate::types::{DCB};
 
 extern "system" {
     } extern "C" { fn DebugTrace(level: i32, dbg: u32, fmt: *const i8, ...); } extern "system" {
-    fn NT_ASSERT(condition: i32);
     fn FatFspClose(vcb: *mut VCB);
     fn FatGetNextFcbTopDown( IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB, OriginalFcb: *mut FCB, ) -> *mut FCB;
-    fn FlagOn(flags: u32, flag: u32) -> i32;
 }
 extern "system" {
     fn NodeType(ptr: *mut core::ffi::c_void) -> u32;
-    fn SetFlag(flags: *mut u32, flag: u32);
     fn ARGUMENT_PRESENT(p: *mut core::ffi::c_void) -> u8;
     fn FatBugCheck(arg1: usize, arg2: usize, arg3: usize) -> !;
     fn FatVcbAcquiredExclusive(IrpContext: *mut IRP_CONTEXT, Vcb: *mut VCB) -> u8;
     fn FatRaiseStatus(IrpContext: *mut IRP_CONTEXT, Status: i32);
-    fn ClearFlag(State: *mut u32, Bit: u32);
     fn FatAcquireExclusiveFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB) -> u8;
     fn FatReleaseFcb(IrpContext: *mut IRP_CONTEXT, Fcb: *mut FCB);
     fn CcPurgeCacheSection( Section: *mut SECTION_OBJECT_POINTERS, FileOffset: *mut LARGE_INTEGER, Length: u32, UninitializeCacheMaps: i32, ) -> u8;
@@ -95,7 +92,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         // Complex type-of-open assertion
@@ -127,7 +124,7 @@ pub unsafe extern "system" fn FatSetFileObject(
                         || (NodeType(VcbOrFcbOrDcb) == FAT_NTC_ROOT_DCB))
                     && Ccb.is_null());
 
-            NT_ASSERT(if cond { 1 } else { 0 });
+            NT_ASSERT!(if cond { 1 } else { 0 });
         }
 
         // UNREFERENCED_PARAMETER( TypeOfOpen );
@@ -140,7 +137,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         if !VcbOrFcbOrDcb.is_null() {
@@ -153,10 +150,7 @@ pub unsafe extern "system" fn FatSetFileObject(
                 // Check temporary file flag
                 let fcb_state = (*(VcbOrFcbOrDcb as *mut FCB)).FcbState;
                 if FlagOn(fcb_state, FCB_STATE_TEMPORARY) != 0 {
-                    SetFlag(
-                        &raw mut (*FileObject).Flags,
-                        FO_TEMPORARY_FILE,
-                    );
+                    SetFlag!((*FileObject).Flags, FO_TEMPORARY_FILE);
                 }
             }
         }
@@ -168,7 +162,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         // Set FsContext fields if FileObject present
@@ -184,7 +178,7 @@ pub unsafe extern "system" fn FatSetFileObject(
             } else {
                 0
             };
-            NT_ASSERT(cond_ccb);
+            NT_ASSERT!(cond_ccb);
         }
 
         DebugTrace(-1, Dbg, b"FatSetFileObject -> VOID\n\0".as_ptr() as *const i8, 0);
@@ -324,7 +318,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
         Fcb,
     );
 
-    NT_ASSERT(FlagOn(
+    NT_ASSERT!(FlagOn(
         (*IrpContext).Flags,
         IRP_CONTEXT_FLAG_WAIT,
     ) as i32);
@@ -340,7 +334,7 @@ pub unsafe extern "system" fn FatPurgeReferencedFileObjects(
 
         // Check for the EA file fcb
         if FlagOn(
-            (((*Fcb).DirentFatFlags) as u8) as u32,
+            ((*Fcb).DirentFatFlags) as u32,
             FAT_DIRENT_ATTR_VOLUME_ID,
         ) == 0 {
             FatForceCacheMiss(IrpContext, Fcb, Flags);
@@ -375,7 +369,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
     //
 
     let vcb_assert = (*Fcb).Vcb;
-    NT_ASSERT((FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
+    NT_ASSERT!((FatVcbAcquiredExclusive(IrpContext, vcb_assert) != 0
         || FlagOn((*vcb_assert).VcbState, VCB_STATE_FLAG_LOCKED) != 0) as i32);
 
     if FlagOn((*IrpContext).Flags, IRP_CONTEXT_FLAG_WAIT) == 0 {
@@ -423,9 +417,9 @@ pub unsafe extern "system" fn FatForceCacheMiss(
 
     Vcb = (*Fcb).Vcb;
 
-    SetFlag(&mut (*Fcb).FcbState, FCB_STATE_FORCE_MISS_IN_PROGRESS);
+    SetFlag!((*Fcb).FcbState, FCB_STATE_FORCE_MISS_IN_PROGRESS);
 
-    ClearFlag(&mut (*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB);
+    ClearFlag!((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB);
 
     // _SEH2_TRY { ... } _SEH2_FINALLY { ... }
     crate::seh::try_finally(&mut (), |_| {
@@ -503,10 +497,7 @@ pub unsafe extern "system" fn FatForceCacheMiss(
         //
 
         if FlagOn((*Vcb).VcbState, VCB_STATE_FLAG_DELETED_FCB) == 0 {
-            ClearFlag(
-                &mut (*Fcb).FcbState,
-                FCB_STATE_FORCE_MISS_IN_PROGRESS,
-            );
+            ClearFlag!((*Fcb).FcbState, FCB_STATE_FORCE_MISS_IN_PROGRESS);
 
             FatReleaseFcb(IrpContext, Fcb);
         }
@@ -1114,3 +1105,10 @@ pub unsafe extern "system" fn FatForceCacheMiss(
 // ============================================================================
 // END ORIGINAL C SOURCE
 // ============================================================================
+
+// fatprocs.h flag macros, inline at the declared widths (were C stubs taking
+// ULONG_PTR, which read garbage upper bits from a narrower argument).
+#[inline(always)]
+unsafe fn FlagOn(flags: u32, flag: u32) -> i32 {
+    (flags as u64 & flag as u64) as i32
+}

@@ -1,10 +1,6 @@
 use crate::prelude::*;
 use core::ffi::c_void;
 
-extern "C" {
-    fn TRACE(fmt: LPCSTR, ...);
-}
-
 // ---- file-scope preamble (translated) ----
 pub const NEGO_MAX_TOKEN: u32 = 12000;
 
