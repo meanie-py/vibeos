@@ -34,5 +34,7 @@ def test_walk_from_head_next_is_clean():
 
 
 def test_nolint_and_comments():
-    assert scan_text(BAD.replace("    while core", "    while core // nolint: list-walk-from-head (x)", 1)) == []
-    assert scan_text("// e = CONTAINING_RECORD!(addr_of_mut!(H), T, f);\nwhile e != addr_of_mut!(H) {}") == []
+    nolint = "    while core // nolint: list-walk-from-head (x)"
+    assert scan_text(BAD.replace("    while core", nolint, 1)) == []
+    commented = "// e = CONTAINING_RECORD!(addr_of_mut!(H), T, f);\nwhile e != addr_of_mut!(H) {}"
+    assert scan_text(commented) == []

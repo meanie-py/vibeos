@@ -520,6 +520,9 @@ members = [
     "deskadp-rust",
     "deskmon-rust",
     "netplwiz-rust",
+    "wordpad-rust",
+    "winhlp32-rust",
+    "eventvwr-rust",
 ]
 resolver = "2"
 

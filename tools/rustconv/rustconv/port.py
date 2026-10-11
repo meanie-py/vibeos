@@ -612,7 +612,9 @@ def stage_island(stem: str) -> None:
         # A shared crate the island re-exports (`pub use winelist_rust::*;`, the profile's
         # EXTRA_RAW_LINES) is a dependency of the crate, or the island does not compile.
         for dep in re.findall(r"^pub use (\w+_rust)::", fixed, re.M):
-            prelude_resolve._ensure_dependency(_crate_dir(state) / "Cargo.toml", dep.replace("_", "-"))
+            prelude_resolve._ensure_dependency(
+                _crate_dir(state) / "Cargo.toml", dep.replace("_", "-")
+            )
 
 
 _STRUCT_ITEM = re.compile(
@@ -1923,9 +1925,15 @@ def stage_data(stem: str, tu_arg: str) -> None:
     rel = str(tu.resolve().relative_to(module.resolve()))
     rs = (out / "mod.rs").relative_to(REPO)
     old_cml = cml.read_text()
+    # The `)` closing the source list can ride on the TU's line (winhlp32's `string.c)`):
+    # commenting it out too left `list(APPEND ..` open, swallowing add_executable. Kept live
+    # on its own line, as `port flip` does.
     new_cml = re.sub(
-        rf"(?m)^(\s*){re.escape(rel)}\b[^\n]*$",
-        lambda m: f"{m.group(1)}# {rel}  # replaced by Rust ({rs}, generated: port data)",
+        rf"(?m)^(\s*){re.escape(rel)}\b(\s*\))?[^\n]*$",
+        lambda m: (
+            f"{m.group(1)}# {rel}  # replaced by Rust ({rs}, generated: port data)"
+            + (f"\n{m.group(1)})" if m.group(2) else "")
+        ),
         old_cml,
     )
     if new_cml != old_cml:
@@ -3980,14 +3988,17 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # island declares as externs. They resolve, so the unresolved list never asks for them --
     # the link does. Offered to the substrate alongside the unresolved names.
     exported = prelude_resolve.module_exports(REPO / state["module_dir"], REPO)
+    exported_anywhere = prelude_resolve.module_exports(
+        REPO / state["module_dir"], REPO, every_arch=False
+    )
     link_wanted: set[str] = set()
     if kernel_sys is not None and exported is not None:
         link_wanted = prelude_resolve.called_names(modules_dir) - exported
     # A user-mode extern copy an earlier run made is held to the same rule as a new one (the
     # consensus pass below): exported by an import library this module links, or dropped.
     unlinkable: set[str] = set()
-    if kernel_sys is None and exported is not None:
-        unlinkable = {k for k, v in copied.items() if v.kind == "fn" and k not in exported}
+    if kernel_sys is None and exported_anywhere is not None:
+        unlinkable = {k for k, v in copied.items() if v.kind == "fn" and k not in exported_anywhere}
     if unlinkable:
         for name in unlinkable:
             del copied[name]
@@ -4129,15 +4140,15 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
                 res.conflicting[name] = why
                 continue
             # A user-mode extern must be something the module's import libraries (or the
-            # static libraries it links) export. rpcss got `list_add_tail`/`list_remove` as
-            # externs from cabinet-rust's crate-internal #[no_mangle] copies: it compiled on
-            # every arch and failed to link on i386. (Kernel crates are judged by the
-            # substrate's link check below.)
+            # static libraries it links) export, on at least one arch. rpcss got
+            # `list_add_tail`/`list_remove` as externs from cabinet-rust's crate-internal
+            # #[no_mangle] copies: it compiled on every arch and failed to link on i386.
+            # (Kernel crates are judged by the substrate's link check below.)
             if (
                 pick.kind == "fn"
                 and kernel_sys is None
-                and exported is not None
-                and name not in exported
+                and exported_anywhere is not None
+                and name not in exported_anywhere
             ):
                 res.conflicting[name] = (
                     "no import library this module links exports it -- a header inline "
@@ -4460,6 +4471,13 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             deep = {}
         for name in pending:
             target = known.get(name) or deep.get(name)
+            # Follow the chain to its end: commctrl.h's `#define SNDMSG SendMessage` names
+            # another alias (`SendMessage` -> `SendMessageW`), and eventvwr was handed an
+            # extern `SendMessage` that no DLL exports.
+            seen = {name}
+            while target in known and target not in seen:
+                seen.add(target)
+                target = known[target]
             if (
                 target
                 and re.fullmatch(r"[A-Za-z_]\w*", target)

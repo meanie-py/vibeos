@@ -2146,7 +2146,8 @@ pub const TYPE_E_CANTLOADLIBRARY: HRESULT = 0x8002_9C4Au32 as HRESULT;
 # started at the list head it stops at, so the walk ran zero times.
 _LISTWALK_BAD = """\
 unsafe fn find(data: u32) -> i32 {
-    e = (core::ptr::addr_of_mut!(Table) as *mut u8).sub(core::mem::offset_of!(item, entry)) as *mut item;
+    e = (core::ptr::addr_of_mut!(Table) as *mut u8)
+        .sub(core::mem::offset_of!(item, entry)) as *mut item;
     while core::ptr::addr_of_mut!((*e).entry) != core::ptr::addr_of_mut!(Table) {
         e = ((*e).entry.next as *mut u8).sub(core::mem::offset_of!(item, entry)) as *mut item;
     }

@@ -70,6 +70,8 @@ base/applications/msconfig/CMakeLists.txt	1	# startuppage.c # replaced by Rust (
 base/applications/msconfig/CMakeLists.txt	1	# systempage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/systempage.rs)
 base/applications/msconfig/CMakeLists.txt	1	# toolspage.c # replaced by Rust (sdk/lib/rust/msconfig-rust/src/msconfig/toolspage.rs)
 base/applications/msconfig_new/CMakeLists.txt	1	# startuppage.c
+base/applications/mscutils/eventvwr/CMakeLists.txt	1	# eventvwr.c # replaced by Rust (sdk/lib/rust/eventvwr-rust/src/eventvwr/eventvwr.rs)
+base/applications/mscutils/eventvwr/CMakeLists.txt	1	# evtdetctl.c # replaced by Rust (sdk/lib/rust/eventvwr-rust/src/eventvwr/evtdetctl.rs)
 base/applications/mscutils/servman/CMakeLists.txt	1	# control.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/control.rs)
 base/applications/mscutils/servman/CMakeLists.txt	1	# create.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/create.rs)
 base/applications/mscutils/servman/CMakeLists.txt	1	# delete.c # replaced by Rust (sdk/lib/rust/servman-rust/src/servman/delete.rs)
@@ -205,8 +207,17 @@ base/applications/taskmgr/CMakeLists.txt	1	# run.c # replaced by Rust (sdk/lib/r
 base/applications/taskmgr/CMakeLists.txt	1	# shutdown.c # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/shutdown.rs)
 base/applications/taskmgr/CMakeLists.txt	1	# taskmgr.c # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/taskmgr.rs)
 base/applications/taskmgr/CMakeLists.txt	1	# trayicon.c # replaced by Rust (sdk/lib/rust/taskmgr-rust/src/taskmgr/trayicon.rs)
+base/applications/winhlp32/CMakeLists.txt	1	# callback.c # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/callback.rs)
+base/applications/winhlp32/CMakeLists.txt	1	# hlpfile.c # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/hlpfile.rs)
+base/applications/winhlp32/CMakeLists.txt	1	# macro.c # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/macro.rs)
+base/applications/winhlp32/CMakeLists.txt	1	# string.c # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/string/mod.rs, generated: port data)
+base/applications/winhlp32/CMakeLists.txt	1	# winhelp.c # replaced by Rust (sdk/lib/rust/winhlp32-rust/src/winhlp32/winhelp.rs)
 base/applications/winver/CMakeLists.txt	1	# osinfo.c # replaced by Rust (sdk/lib/rust/winver-rust/src/winver/osinfo.rs)
 base/applications/winver/CMakeLists.txt	1	# winver.c # replaced by Rust (sdk/lib/rust/winver-rust/src/winver/winver.rs)
+base/applications/wordpad/CMakeLists.txt	1	# olecallback.c # replaced by Rust (sdk/lib/rust/wordpad-rust/src/wordpad/olecallback.rs)
+base/applications/wordpad/CMakeLists.txt	1	# print.c # replaced by Rust (sdk/lib/rust/wordpad-rust/src/wordpad/print.rs)
+base/applications/wordpad/CMakeLists.txt	1	# registry.c # replaced by Rust (sdk/lib/rust/wordpad-rust/src/wordpad/registry.rs)
+base/applications/wordpad/CMakeLists.txt	1	# wordpad.c # replaced by Rust (sdk/lib/rust/wordpad-rust/src/wordpad/wordpad.rs)
 base/ctf/cicero/CMakeLists.txt	1	# cicarray.cpp # replaced by Rust (sdk/lib/rust/cicero-rust/src/cicero/cicarray_cpp_h.rs)
 base/ctf/cicero/CMakeLists.txt	1	# cicbase.cpp # replaced by Rust (sdk/lib/rust/cicero-rust/src/cicero/cicbase_cpp_h.rs)
 base/ctf/cicero/CMakeLists.txt	1	# ciccaret.cpp # replaced by Rust (sdk/lib/rust/cicero-rust/src/cicero/ciccaret_cpp_h.rs)
@@ -1043,7 +1054,7 @@ dll/win32/lsasrv/CMakeLists.txt	1	# service.c — replaced by Rust (lsasrv-rust/
 dll/win32/lsasrv/CMakeLists.txt	1	# session.c — replaced by Rust (lsasrv-rust/src/lsasrv/session.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# srm.c — replaced by Rust (lsasrv-rust/src/lsasrv/srm.rs)
 dll/win32/lsasrv/CMakeLists.txt	1	# utils.c — replaced by Rust (lsasrv-rust/src/lsasrv/utils.rs)
-dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min/list_* + vtbl
+dll/win32/mlang/CMakeLists.txt	1	# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
 dll/win32/mlang/CMakeLists.txt	1	# mlang.c is translated to Rust (sdk/lib/rust/mlang-rust, kept on disk per the
 dll/win32/mlang/CMakeLists.txt	1	# spec2def-generated mlang_stubs.c for the `stub`-only entries), compiles the
 dll/win32/mprapi/CMakeLists.txt	1	# functions deterministically for $0. mprapi.c is commented out below and kept on disk per

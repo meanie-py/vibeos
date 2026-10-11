@@ -82,6 +82,18 @@ def test_rendered_block_round_trips(tmp_path):
     assert set(back) == {"X", "_wcsicmp"} and back["_wcsicmp"].abi == '"C"'
 
 
+def test_a_struct_nested_anonymous_enumerator_is_aliased(tmp_path):
+    # winhlp32: `struct tagHlpFileLink { enum {hlp_link_link, ..} cookie; .. }`.
+    for arch in ("i386", "amd64", "arm64"):
+        (tmp_path / f"types_{arch}.rs").write_text(
+            "pub const tagHlpFileLink_hlp_link_popup: tagHlpFileLink__bindgen_ty_1 = 1;\n"
+        )
+    got = pr.island_enum_aliases({"hlp_link_popup"}, tmp_path)
+    assert got["hlp_link_popup"].text == (
+        "const hlp_link_popup: tagHlpFileLink__bindgen_ty_1 = tagHlpFileLink_hlp_link_popup;"
+    )
+
+
 def test_bare_enumerator_aliases_the_island_constant(tmp_path):
     for arch in ("i386", "amd64", "arm64"):
         (tmp_path / f"types_{arch}.rs").write_text(
@@ -190,7 +202,10 @@ def test_winelist_is_taken_only_by_a_crate_that_calls_it(tmp_path):
     (ws / "winelist-rust" / "src" / "lib.rs").write_text(
         "pub struct list {}\npub unsafe fn list_init() {}\npub unsafe fn list_add_tail() {}\n"
     )
-    for name, body in (("quiet-rust", "fn f() {}\n"), ("walker-rust", "fn f() { list_init(h); }\n")):
+    for name, body in (
+        ("quiet-rust", "fn f() {}\n"),
+        ("walker-rust", "fn f() { list_init(h); }\n"),
+    ):
         crate = ws / name
         (crate / "src").mkdir(parents=True)
         (crate / "Cargo.toml").write_text('[package]\nname = "x"\n\n[dependencies]\n')
