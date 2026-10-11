@@ -69,6 +69,9 @@ class Method:
     unplaced: list[str] = field(default_factory=list)
     # The member calls its lowered body resolved (cpp_lower.Lowered.calls): external reach.
     calls: list[tuple[str, str]] = field(default_factory=list)
+    # "system" for a WINAPI/CALLBACK (stdcall) member: a static one is handed to the OS as a
+    # callback (`EnumWindows(EnumSingleInstanceCallback, ..)`), so its Rust ABI must match.
+    abi: str = ""
 
     @property
     def signature_key(self) -> str:
@@ -384,6 +387,10 @@ ATL_BASE_ALIASES = {
     "CDialogImpl": "CWindow",
     "CWindowImplBaseT": "CWindow",
     "CDialogImplBaseT": "CWindow",
+    # ReactOS rosdlgs.h: `CPropertyPageImpl<T> : CDialogImplBaseT<CWindow>`. Its `m_psp` is not
+    # a field here -- comctl32 copies the page at CreatePropertySheetPage, so the glue builds it
+    # on the stack (atl_rust::win::create_property_page).
+    "CPropertyPageImpl": "CWindow",
 }
 # Their methods a subclass calls through an implicit `this`: they stay on the object, where the
 # generated glue answers them, instead of resolving to CWindow (whose `Create` takes a class
@@ -832,7 +839,20 @@ class _Extractor:
             access=access,
             body=body,
             inits=inits,
+            abi=self._abi(c, qt),
         )
+
+    _STDCALL_WORDS = re.compile(r"\b(?:CALLBACK|WINAPI|APIENTRY|__stdcall|PASCAL|NTAPI)\b")
+
+    def _abi(self, c: dict, qt: str) -> str:
+        """`system` when the member is stdcall: clang spells it in the type on i386, and on
+        64-bit (where it is ignored) the declaration still SAYS so -- the same Rust either
+        way, `extern "system"` being stdcall on i386 and the C ABI elsewhere."""
+        if "stdcall" in qt:
+            return "system"
+        text = self.src.node_text(c) or ""
+        head = text.split(c.get("name", "\0"), 1)[0]
+        return "system" if self._STDCALL_WORDS.search(head) else ""
 
     def out_of_line(self, n: dict) -> None:
         """`void CCanvasWindow::OnPaint(...) { ... }` in a .cpp: attach the body."""
@@ -996,7 +1016,8 @@ class _Extractor:
             if span is None:
                 continue
             out = low.lower(node, span, owner)
-            target.lowered = cpp_lower.unicode_text_macros(out.text) if self.unicode else out.text
+            text = cpp_lower.ppv_arg_macros(out.text)
+            target.lowered = cpp_lower.unicode_text_macros(text) if self.unicode else text
             target.unplaced = out.unplaced
             target.calls = [(a, b) for a, b in out.calls]
         for m, member, node, owner in self.pending_inits:

@@ -5062,6 +5062,37 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_CRT_NON_CONFORMING_SWPRINTFS -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  cleanmgr)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/applications/cleanmgr/cleanmgr/CMakeLists.txt
+    # (4 compiled TU(s), 221 headers in the include closure, 0 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 27 external prototype(s) declared by the include closure, 10 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/base/applications/cleanmgr/cleanmgr"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "cleanmgr.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]emptyvc\.h' --allowlist-file '.*[/\\]reactos[/\\]shellutils\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]ui[/\\]rosdlgs\.h'
+                  --allowlist-file '.*cleanmgr[/\\].*\.h'
+                  --allowlist-file '.*[/\\]commctrl\.h'
+                  --allowlist-file '.*[/\\]oaidl\.h'
+                  --allowlist-file '.*[/\\]prsht\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/applications/cleanmgr/cleanmgr" -I"${SRC}/build-i386/base/applications/cleanmgr/cleanmgr" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -5173,6 +5204,13 @@ run_arch() {
   if [ "${REAL_UNIONS:-0}" = 1 ] && ! grep -rqw uCLSSPEC "${DRIVER_DIR:-/nonexistent}" 2>/dev/null; then
     EXTRA_BL_ITEMS+=( '__WIDL_wtypes_generated_name_0000000[89].*' uCLSSPEC )
   fi
+  # rosdlgs.h's `CPropertyPageImpl<T>` names T in no field, so bindgen emits it CONCRETE and
+  # derives Copy over its non-Copy CDialogImplBaseT base -- an island that does not compile.
+  # cppapp lays a page out itself (base CWindow; comctl32 copies the PROPSHEETPAGE), so the
+  # island's copy has no reader.
+  if printf '%s\n' "${LANG_ARGS[@]-}" | grep -q 'c++'; then
+    EXTRA_BL_ITEMS+=( 'ATL::CPropertyPageImpl.*' )
+  fi
   for _it in "${EXTRA_BL_ITEMS[@]-}"; do [ -n "$_it" ] && ITEM_BL+=( --blocklist-item "$_it" ); done
   local FN_BL=()
   if [ "${BLOCKLIST_FUNCS:-0}" = 1 ]; then FN_BL=( --blocklist-function '.*' ); fi
@@ -5224,6 +5262,20 @@ run_arch() {
   local MACRO_ARGS=()
   if [ "${MACRO_SIGNED:-0}" = 1 ]; then MACRO_ARGS=( --default-macro-constant-type signed ); fi
 
+  # The include search order, shared by the island pass and the COM vtable pass below.
+  local CLANG_INC=(
+    -I"${DRIVER_DIR}" "${EXTRA_INC[@]}"
+    -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk"
+    -I"${SRC}/sdk/include/psdk" -I"${SRC}/sdk/include/xdk" -I"${SRC}/sdk/include/reactos"
+    -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/reactos/drivers"
+    -I"${SRC}/sdk/include/vcruntime" -I"${BUILD_DIR}/sdk/include" -I"${BUILD_DIR}/sdk/include/psdk"
+    -I"${BUILD_DIR}/sdk/include/ddk" -I"${BUILD_DIR}/sdk/include/reactos"
+    -I"${BUILD_DIR}/sdk/include/reactos/mc" -I"${BUILD_DIR}/sdk/include/dxsdk"
+    -I"${SRC}/sdk/include/dxsdk"
+    -I"${SRC}/sdk/lib/pseh/include" "${LATE_INC[@]}"
+    -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include"
+  )
+
   bindgen "$WRAPPER" \
     --use-core --no-layout-tests --no-doc-comments \
     "${MACRO_ARGS[@]}" \
@@ -5239,16 +5291,7 @@ run_arch() {
     -- -ferror-limit=0 -Wno-everything \
     -fms-extensions "${LANG_ARGS[@]}" \
     $ARCHDEF -D__REACTOS__ -D_USE_DUMMY_PSEH=1 -DDBG=1 "${VER_DEFS[@]}" \
-    -I"${DRIVER_DIR}" "${EXTRA_INC[@]}" \
-    -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk" \
-    -I"${SRC}/sdk/include/psdk" -I"${SRC}/sdk/include/xdk" -I"${SRC}/sdk/include/reactos" \
-    -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/reactos/drivers" \
-    -I"${SRC}/sdk/include/vcruntime" -I"${BUILD_DIR}/sdk/include" -I"${BUILD_DIR}/sdk/include/psdk" \
-    -I"${BUILD_DIR}/sdk/include/ddk" -I"${BUILD_DIR}/sdk/include/reactos" \
-    -I"${BUILD_DIR}/sdk/include/reactos/mc" -I"${BUILD_DIR}/sdk/include/dxsdk" \
-    -I"${SRC}/sdk/include/dxsdk" \
-    -I"${SRC}/sdk/lib/pseh/include" "${LATE_INC[@]}" \
-    -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
+    "${CLANG_INC[@]}" \
     --target="${TARGET}"
 
   # Strip bindgen's `pub use self::_X as Y;` re-exports of BLOCKLISTED enum typedefs:
@@ -5300,6 +5343,37 @@ PYEOF
     # translation defines them), which leaves the wrappers calling nothing. Bitfield-accessor
     # impls are kept — see the tool.
     python3 "$(dirname "$0")/strip_cpp_method_impls.py" "$FINAL" >/dev/null
+    # COM interfaces come out as C++ classes -- one opaque vptr nothing can call through or
+    # implement. Bind their header's C section (`IFooVtbl`, the same layout) in a second, C-mode
+    # pass and splice it in. rustconv/com_vtables.py has the why.
+    local IFACES; IFACES="$(PYTHONPATH="$(dirname "$0")" python3 -m rustconv.com_vtables names "$FINAL")"
+    if [ -n "$IFACES" ]; then
+      local CWRAP="/tmp/${DRIVER}_${STEM}_com_${ARCH}.h" CRAW="/tmp/${DRIVER}_${STEM}_com_${ARCH}.rs"
+      local ALT; ALT="$(printf '%s|' $IFACES)"; ALT="${ALT%|}"
+      # IUnknown's C shape comes with ole2.h below; searching for it also finds psdk's
+      # kernel-mode unknown.h, whose DECLARE_INTERFACE(IUnknown) redefines it.
+      local HALT; HALT="$(printf '%s|' $IFACES | sed 's/\bIUnknown|//')"; HALT="${HALT%|}"
+      # WIDL's `typedef struct IFooVtbl`, or shlobj.h-style `DECLARE_INTERFACE_(IFoo, IBase)`,
+      # which expands to the same lpVtbl layout in C.
+      local HDRS; HDRS="$(grep -rlE "^typedef struct (${HALT})Vtbl\b|^DECLARE_INTERFACE_?\(\s*(${HALT})\s*[,)]" \
+        "${SRC}/sdk/include/psdk" "${SRC}/sdk/include/reactos" "${BUILD_DIR}/sdk/include/psdk" \
+        "${BUILD_DIR}/sdk/include/reactos" 2>/dev/null | sort -u)"
+      { echo '#include <windows.h>'; echo '#include <ole2.h>'
+        for h in $HDRS; do echo "#include \"$h\""; done; } > "$CWRAP"
+      local CBL=()
+      while IFS= read -r t; do CBL+=( --blocklist-type "$t" ); done \
+        < <(PYTHONPATH="$(dirname "$0")" python3 -m rustconv.com_vtables defined "$FINAL")
+      bindgen "$CWRAP" \
+        --use-core --no-layout-tests --no-doc-comments \
+        --allowlist-type "(${ALT})(Vtbl)?" \
+        "${BL[@]}" "${CBL[@]}" \
+        -o "$CRAW" \
+        -- -ferror-limit=0 -Wno-everything -fms-extensions -x c \
+        $ARCHDEF -D__REACTOS__ -D_USE_DUMMY_PSEH=1 -DDBG=1 "${VER_DEFS[@]}" \
+        "${CLANG_INC[@]}" \
+        --target="${TARGET}"
+      PYTHONPATH="$(dirname "$0")" python3 -m rustconv.com_vtables merge "$FINAL" "$CRAW"
+    fi
   fi
   if [ "${REAL_UNIONS:-0}" = 1 ]; then
     # See REAL_UNIONS at the top. The tool hard-fails if the rewrite would lose a

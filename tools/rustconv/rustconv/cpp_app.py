@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
 from .cpp_core import c_type_to_rust
 from .cpp_model import ATL_BASE_ALIASES, ATL_IMPL_METHODS, ClassModel, Method, ModuleModel
@@ -52,10 +53,10 @@ def short(name: str) -> str:
 
 
 def atl_template(cls: ClassModel) -> str | None:
-    """`CWindowImpl` / `CDialogImpl` when the class derives from one (its first base)."""
+    """`CWindowImpl` / `CDialogImpl` / `CPropertyPageImpl` when the class derives from one."""
     for b in cls.bases:
         t = b.name.split("<")[0].split("::")[-1].strip()
-        if t in ("CWindowImpl", "CDialogImpl"):
+        if t in ("CWindowImpl", "CDialogImpl", "CPropertyPageImpl"):
             return t
     return None
 
@@ -568,6 +569,8 @@ def _render_class(
     lines.append("")
     if atl_template(cls):
         lines.append(_render_atl_glue(cls, h, model))
+    elif _exe_module_base(cls) is not None:
+        lines.append(_render_exe_module_glue(cls, model))
     elif cls.bases and short(cls.bases[0].name) not in h.by_short and not h.com_bases(cls):
         # An SDK struct base (CRect : tagRECT): C++ reaches its fields as the class's own
         # (`rc.top`), so the class derefs to it.
@@ -696,7 +699,9 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
         via = h_path(h, cls, owner).rstrip(".")
         target = f"(*{_down(n, f'__base{k}.', 'This')})" + (f".{via}" if via else "")
         sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
-        args = ", ".join(a for a, _ in slot.params)
+        args = ", ".join(
+            _ref_arg(a, p) for (a, _), p in zip(slot.params, _pad(impl.params, slot), strict=True)
+        )
         ret = f" -> {slot.ret}" if slot.ret else ""
         name = f"{n}__{iface}_{slot.name}"
         thunks.append(
@@ -707,6 +712,21 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
         *thunks,
         f"pub static {n}__{iface}_VTBL: {iface}Vtbl = {iface}Vtbl {{ {', '.join(entries)} }};",
     ]
+
+
+def _pad(params: list, slot) -> list:
+    return [*params, *([None] * (len(slot.params) - len(params)))]
+
+
+def _ref_arg(arg: str, param) -> str:
+    """The slot hands a POINTER where the C++ implementation takes a REFERENCE (`REFIID riid`,
+    `const T&`): reborrow it. `&*p` also coerces back to `*const T`, so the thunk is right
+    whichever spelling the implementation's Rust signature uses."""
+    c = " ".join((param.c_type if param is not None else "").split())
+    if c.endswith("&") or re.fullmatch(r"REF[A-Z]+", c):
+        mutable = c.endswith("&") and not c.startswith("const ")
+        return f"&mut *{arg}" if mutable else f"&*{arg}"
+    return arg
 
 
 def _slot_home(h: Hierarchy, cls: ClassModel, m: Method) -> tuple[str, ClassModel, ClassModel]:
@@ -839,6 +859,14 @@ def _render_msg_map(cls: ClassModel, h: Hierarchy) -> list[str]:
             )
             out.append("            if handled != 0 { return true; }")
             out.append("        }")
+        elif e.macro == "CHAIN_MSG_MAP" and _template_name(e.args[0]) == "CPropertyPageImpl":
+            # The base's own map: MESSAGE_HANDLER(WM_NOTIFY, OnNotify), dispatching PSN_* to
+            # the class's overridables through its `PropertyPage` impl.
+            out.append(f"        // CHAIN_MSG_MAP({e.args[0]})")
+            out.append(
+                "        if atl_rust::win::property_page_map(self as *mut Self, hwnd, msg, l, "
+                "result) { return true; }"
+            )
         elif e.macro == "CHAIN_MSG_MAP":
             base = short(e.args[0])
             out.append(f"        // CHAIN_MSG_MAP({e.args[0]})")
@@ -864,6 +892,161 @@ def _render_msg_map(cls: ClassModel, h: Hierarchy) -> list[str]:
     out.append("        let _ = (hwnd, map_id, &mut handled);")
     out.append("        false")
     return out
+
+
+def _template_name(name: str) -> str:
+    return name.split("<")[0].split("::")[-1].strip()
+
+
+# rosdlgs.h `CPropertyPageImpl<T>` overridable -> (atl_rust::win::PropertyPage method, its
+# parameters, the arguments passed on, the return cast or None for a `void`).
+_PROPERTY_PAGE_HOOKS = {
+    "OnPageCreate": ("on_page_create", "", "", "i32"),
+    "OnPageAddRef": ("on_page_add_ref", "", "", None),
+    "OnPageRelease": ("on_page_release", "", "", None),
+    "OnSetActive": ("on_set_active", "", "", "i32"),
+    "OnKillActive": ("on_kill_active", "", "", "i32"),
+    "OnApply": ("on_apply", "", "", "i32"),
+    "OnReset": ("on_reset", "", "", None),
+    "OnHelp": ("on_help", "", "", None),
+    "OnWizardBack": ("on_wizard_back", "", "", "i32"),
+    "OnWizardNext": ("on_wizard_next", "", "", "i32"),
+    "OnWizardFinish": ("on_wizard_finish", "", "", "i32"),
+    "OnQueryCancel": ("on_query_cancel", "", "", "i32"),
+    "OnGetObject": ("on_get_object", ", notify: atl_rust::win::LPARAM", "notify as _", "i32"),
+    "OnTranslateAccelerator": (
+        "on_translate_accelerator",
+        ", msg: atl_rust::win::LPARAM",
+        "msg as _",
+        "i32",
+    ),
+    "OnQueryInitialFocus": (
+        "on_query_initial_focus",
+        ", focus: atl_rust::win::HWND",
+        "focus as _",
+        "atl_rust::win::HWND",
+    ),
+}
+
+
+def _property_page_glue(cls: ClassModel, idd: str, base: str) -> list[str]:
+    """`CPropertyPageImpl<T>`'s members, and the class's overrides of its overridables: the
+    C++ base calls them through `static_cast<T*>(this)`, i.e. the derived class's own when it
+    declares one -- exactly a trait default and its override."""
+    lines = [
+        "    /// rosdlgs.h `CPropertyPageImpl::Create`: this page's HPROPSHEETPAGE.",
+        "    pub unsafe fn Create(&mut self) -> HPROPSHEETPAGE {",
+        "        atl_rust::win::create_property_page(self as *mut Self, "
+        f"{idd} as u16, core::ptr::null()) as HPROPSHEETPAGE",
+        "    }",
+        "    /// A page is not a modal dialog: the C++ `EndDialog` is `return FALSE`.",
+        "    pub unsafe fn EndDialog(&mut self, code: INT_PTR) -> BOOL {",
+        "        let _ = code; 0",
+        "    }",
+        "    pub unsafe fn SetModified(&mut self, changed: BOOL) {",
+        f"        atl_rust::win::property_page_set_modified(self.{base}.m_hWnd as _, changed != 0)",
+        "    }",
+        "    pub unsafe fn SetWizardButtons(&mut self, flags: DWORD) {",
+        "        // PSM_SETWIZBUTTONS",
+        f"        PostMessageW(GetParent(self.{base}.m_hWnd), 0x0470, 0, flags as _);",
+        "    }",
+        "}",
+        f"impl atl_rust::win::PropertyPage for {cls.name} {{",
+    ]
+    for name, (hook, params, args, ret) in _PROPERTY_PAGE_HOOKS.items():
+        if not cls.method(name):
+            continue
+        sig = f"    unsafe fn {hook}(&mut self{params})"
+        call = f"self.{_handler(cls, name, 1 if args else 0)}({args})"
+        if ret is None:
+            lines.append(f"{sig} {{ {call}; }}")
+        else:
+            lines.append(f"{sig} -> {ret} {{ {call} as {ret} }}")
+    return lines
+
+
+# An external ATL template base whose data atl_rust lays out.
+_ATL_RUST_BASES = {"CAtlExeModuleT": "atl_rust::exe::CAtlExeModule"}
+
+_REPO = Path(__file__).resolve().parents[3]
+
+
+def _exe_module_base(cls: ClassModel) -> int | None:
+    """The index of a `CAtlExeModuleT<T>` base, if the class derives from one."""
+    for i, b in enumerate(cls.bases):
+        if _template_name(b.name) == "CAtlExeModuleT":
+            return i
+    return None
+
+
+# atlbase.h `CAtlExeModuleT<T>` overridable -> (atl_rust::exe::ExeModule method, parameters,
+# arguments, the call's rendering of its result). `{}` is the call.
+_EXE_MODULE_HOOKS = {
+    "ParseCommandLine": (
+        "parse_command_line",
+        "&mut self, cmd_line: *const u16, ret_code: *mut i32",
+        "cmd_line as _, ret_code as _",
+        "-> bool { ({}) as i32 != 0 }",
+    ),
+    "Run": ("run", "&mut self, show: i32", "show as _", "-> i32 { {} as i32 }"),
+    "PreMessageLoop": (
+        "pre_message_loop",
+        "&mut self, show: i32",
+        "show as _",
+        "-> i32 { {} as i32 }",
+    ),
+    "RunMessageLoop": ("run_message_loop", "&mut self", "", "{ {}; }"),
+    "PostMessageLoop": ("post_message_loop", "&mut self", "", "-> i32 { {} as i32 }"),
+    "InitializeCom": ("initialize_com", "", "", "-> i32 where Self: Sized { {} as i32 }"),
+    "UninitializeCom": ("uninitialize_com", "", "", "where Self: Sized { {}; }"),
+}
+
+
+def _render_exe_module_glue(cls: ClassModel, model: ModuleModel) -> str:
+    """`CAtlExeModuleT<T>`: its `WinMain` and class-object members on the class, and the
+    class's overrides as an `ExeModule` impl. atl_rust has no COM object map, so a module that
+    declares one cannot take this glue: its class objects would silently never register."""
+    files = {c.file for c in model.classes.values() if not c.external}
+    for f in sorted(files):
+        p = _REPO / f
+        text = p.read_text("latin-1") if p.is_file() else ""
+        if re.search(r"\b(OBJECT_ENTRY\w*|BEGIN_OBJECT_MAP)\b", text):
+            raise CppAppError(
+                f"{cls.qualified}: {f} declares a COM object map, which atl_rust::exe does not "
+                "register; port the object map first"
+            )
+    n, base = cls.name, f"__base{_exe_module_base(cls)}"
+    lines = [
+        f"impl {n} {{",
+        "    /// `CAtlExeModuleT::WinMain(nShowCmd)`.",
+        "    pub unsafe fn WinMain(&mut self, show: c_int) -> c_int {",
+        f"        if self.{base}.m_dwMainThreadID == 0 {{",
+        "            // The C++ base constructor's GetCurrentThreadId(): a global module is built",
+        "            // on the thread that then runs WinMain, so this is the same thread.",
+        f"            self.{base} = atl_rust::exe::CAtlExeModule::new();",
+        "        }",
+        "        atl_rust::exe::win_main(self as *mut Self, show as i32) as c_int",
+        "    }",
+        "    pub unsafe fn RegisterClassObjects(&mut self, ctx: DWORD, flags: DWORD) -> HRESULT {",
+        "        let _ = (ctx, flags); atl_rust::exe::register_class_objects() as HRESULT",
+        "    }",
+        "    pub unsafe fn RevokeClassObjects(&mut self) -> HRESULT {",
+        "        atl_rust::exe::revoke_class_objects() as HRESULT",
+        "    }",
+        "}",
+        f"impl atl_rust::exe::ExeModule for {n} {{",
+    ]
+    own = {m.rust_name for m in cls.methods if m.kind == "method"}
+    lines[1:-2] = _drop_hidden_glue(lines[1:-2], own)
+    for name, (hook, params, args, body) in _EXE_MODULE_HOOKS.items():
+        ms = cls.method(name)
+        if not ms:
+            continue
+        recv = "Self::" if ms[0].static else "self."
+        call = f"{recv}{_handler(cls, name, args.count(' as _'))}({args})"
+        lines.append(f"    unsafe fn {hook}({params}) {body.replace('{}', call)}")
+    lines.append("}")
+    return "\n".join(lines)
 
 
 def _wnd_class_info(cls: ClassModel) -> list[str]:
@@ -994,6 +1177,13 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
         lines.append("    pub unsafe fn SubclassWindow(&mut self, hwnd: HWND) -> BOOL {")
         lines.append("        atl_rust::win::subclass_window(self as *mut Self, hwnd as _) as BOOL")
         lines.append("    }")
+    elif t == "CPropertyPageImpl":
+        idd = dict(cls.constants).get("IDD")
+        if idd is None:
+            raise CppAppError(
+                f"{cls.qualified}: a CPropertyPageImpl without `enum {{ IDD = ... }}`"
+            )
+        lines.extend(_property_page_glue(cls, str(idd), base))
     else:
         idd = dict(cls.constants).get("IDD")
         if idd is None:
@@ -1031,6 +1221,8 @@ def _external_base(name: str) -> str:
     alias to the module's CWindow); what does is a plain C struct from the SDK --
     `BITMAPINFOEX : BITMAPINFO` -- which is embedded by value as the island lays it out. A
     zero-size placeholder here would shift every field after it, silently."""
+    if _template_name(name) in _ATL_RUST_BASES:
+        return _ATL_RUST_BASES[_template_name(name)]
     if "<" in name:
         raise CppAppError(f"external template base {name} has no Rust layout; port it first")
     return name.split("::")[-1].strip()
@@ -1592,7 +1784,17 @@ def assemble(rust: str, model: ModuleModel) -> str:
             brace = rest.index("{")
             rest = rest[: brace + 1] + "\n    let this_: *mut Self = self;" + rest[brace + 1 :]
         else:
-            sig = f"    pub unsafe fn {method}("
+            # A stdcall static member is a callback the OS calls: keep its ABI (the model's
+            # own `extern "system"`, or the model's record of the C++ declaration).
+            target = next((c for c in model.classes.values() if c.name == cls), None)
+            decl = next(
+                (x for x in (target.methods if target else []) if x.rust_name == method), None
+            )
+            system = (decl is not None and decl.abi == "system") or (
+                'extern "system"' in rust[m.start() : m.end()]
+            )
+            abi = 'extern "system" ' if system else ""
+            sig = f"    pub unsafe {abi}fn {method}("
         impls.setdefault(cls, []).append(sig + rest.replace("\n", "\n    "))
         pos = end
     out.append(rust[pos:])
@@ -1807,8 +2009,12 @@ def worker_contract(model: ModuleModel, worker: str, body: str) -> str:
         if static:
             # A STATIC member has no object: told to take `this_`, the model turned
             # audio_wavein::recording_procedure (a CreateThread routine) into a method.
+            system = any(
+                m.static and m.rust_name == member and m.abi == "system" for m in own.methods
+            )
+            abi = 'extern "system" ' if system else ""
             parts.append(
-                f"\nRequired signature: `unsafe fn {worker}(...)` with exactly the C's "
+                f"\nRequired signature: `unsafe {abi}fn {worker}(...)` with exactly the C's "
                 "parameters -- a STATIC member function: there is no `this_`.\n"
             )
         else:

@@ -724,6 +724,37 @@ macro_rules! InitializeObjectAttributes {
 
 // ================= ntdef.h / debug.h — assertions, strings, pointer and page helpers ==========
 
+/// shellutils.h:88 `FAILED_UNEXPECTEDLY(hr)` -- `_ROS_FAILED_HELPER`, i.e. `FAILED(hr)` plus a
+/// debug trace of the failing expression. The VALUE is `FAILED`; the trace is not carried.
+#[macro_export]
+macro_rules! FAILED_UNEXPECTEDLY {
+    ($hr:expr $(,)?) => {
+        (($hr) as i32) < 0
+    };
+}
+
+/// debug.h `UNIMPLEMENTED_DBGBREAK(...)`: an ERROR notice, then `DbgBreakPoint()`. Unconditional
+/// in the header (not under DBG), so it is ported as written -- without a debugger attached the
+/// break is an unhandled STATUS_BREAKPOINT, exactly as the C. The optional printf message is
+/// not carried.
+#[macro_export]
+macro_rules! UNIMPLEMENTED_DBGBREAK {
+    ($($t:tt)*) => {{
+        extern "C" {
+            fn DbgPrint(format: *const u8, ...) -> u32;
+        }
+        extern "system" {
+            fn DbgBreakPoint();
+        }
+        DbgPrint(
+            "(%s:%d) ERROR is UNIMPLEMENTED!\n\0".as_ptr(),
+            concat!(file!(), "\0").as_ptr(),
+            line!() as i32,
+        );
+        DbgBreakPoint();
+    }};
+}
+
 /// `UNREACHABLE` — ntbasedef.h:815 `#define UNREACHABLE __builtin_unreachable()`. The C makes
 /// reaching it undefined behaviour; this stops loudly instead (`unreachable!()`), because
 /// `unreachable_unchecked` licenses LLVM to delete the very check that would have caught a
