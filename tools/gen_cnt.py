@@ -794,8 +794,7 @@ def shim(name: str, m: dict) -> str:
         for p in ptrs:
             body.append(f"    let {p}_s = raw_slice({p} as *const u8, {szp});")
     elif sp == "set_raw":
-        d = ptrs[0]
-        body.append(f"    let {d}_s = raw_mut_slice({d} as *mut u8, {szp});")
+        pass  # raw_fill inline below
     elif sp == "nul_endptr_base":
         np = next(n for t, n in params if rs_ty(t) == "*const u8")
         body.append(f"    let {np}_s = cstr_slice({np});")
@@ -835,23 +834,20 @@ def shim(name: str, m: dict) -> str:
             body.append(f"    {d}")
         elif sp == "set_raw":
             d = ptrs[0]
-            # memset: write_volatile fill, NOT a `core_rs::mem::set` call.
-            # memset is a #[no_mangle] C-ABI symbol whose only observable
-            # effect is storing through a pointer param — the exact
-            # captures(none)/writeonly shape LLVM's dead-store eliminator
-            # targets. Compiled from a plain `*x = b` loop it is DCE'd to a
-            # guard-only infinite spin in some cgu partitions (observed on
-            # the amd64 cmake freeldr link after the per-fn cgu-split: boot
-            # hangs at RtlZeroMemory(MachVtbl, 0xf0) right after the UEFI
-            # banner; a black_box hint only turned the spin into infinite
-            # recursion). A volatile store is guaranteed to happen and is
-            # never elided, so the fill survives every cgu partition. The
-            # `set` core stays the plain loop for the difftest + Kani model
-            # (core_rs forbids unsafe); only the shipping shim is volatile.
-            body.append(f"    let __b = {scal[0]} as u8;")
-            body.append(f"    for __x in {d}_s.iter_mut() {{")
-            body.append("        core::ptr::write_volatile(__x as *mut u8, __b);")
-            body.append("    }")
+            # memset: an asm fill (raw_fill -> memops.rs), NOT a
+            # `core_rs::mem::set` call. memset is a #[no_mangle] C-ABI symbol
+            # whose only observable effect is storing through a pointer param
+            # — the exact captures(none)/writeonly shape LLVM's dead-store
+            # eliminator targets. Compiled from a plain `*x = b` loop it was
+            # DCE'd to a guard-only infinite spin in some cgu partitions
+            # (observed on the amd64 cmake freeldr link after the per-fn
+            # cgu-split: boot hung at RtlZeroMemory(MachVtbl, 0xf0) right after
+            # the UEFI banner; a black_box hint only turned the spin into
+            # infinite recursion). A volatile byte loop fixed that and cost
+            # ~10 instructions a byte; asm stores are as undeletable and run
+            # 16 bytes a store. The `set` core stays the plain loop for the
+            # difftest + Kani model (core_rs forbids unsafe).
+            body.append(f"    raw_fill({d} as *mut u8, {scal[0]} as u8, {szp});")
             body.append(f"    {d}")
         elif sp == "mem_raw":
             d, s, nn = pnames
@@ -1054,23 +1050,27 @@ pub(crate) unsafe fn raw_mut_slice<'a>(p: *mut u8, n: usize) -> &'a mut [u8] {
 }
 
 /// Overlap-safe raw byte move — the ReactOS `memcpy`/`memmove`
-/// algorithm verbatim (memcpy.c): forward if disjoint or dst<=src,
-/// else backward. This is the one shim that IS the implementation
-/// (aliasing raw pointers can't be a safe-slice core).
+/// algorithm (memcpy.c): forward if disjoint or dst<=src, else
+/// backward. This is the one shim that IS the implementation
+/// (aliasing raw pointers can't be a safe-slice core); the loops are
+/// asm in memops.rs, for the reasons it gives.
 #[inline]
 pub(crate) unsafe fn raw_move(dst: *mut u8, src: *const u8, n: usize) {
     if dst as usize <= src as usize || dst as usize >= src as usize + n {
-        let mut i = 0;
-        while i < n {
-            *dst.add(i) = *src.add(i);
-            i += 1;
-        }
+        mem_copy_forward(dst, src, n);
     } else {
-        let mut i = n;
-        while i > 0 {
-            i -= 1;
-            *dst.add(i) = *src.add(i);
-        }
+        mem_copy_backward(dst, src, n);
+    }
+}
+
+/// `memset`'s fill: `n` bytes of `val` at `dst` (memops.rs). Not a
+/// `core_rs::mem::set` call: memset's only effect is the stores, the
+/// shape LLVM's dead-store elimination deletes (see gen_cnt.py's
+/// set_raw); asm stores cannot be.
+#[inline]
+pub(crate) unsafe fn raw_fill(dst: *mut u8, val: u8, n: usize) {
+    if n != 0 {
+        mem_fill(dst, val, n);
     }
 }
 
@@ -1170,7 +1170,7 @@ pub(crate) unsafe fn qsort_rs(
         let mut pc = a.add((n - 1) * es);
         let mut pd = pc;
         loop {
-            let mut r: i32 = 0;
+            let mut r: i32;
             while pb <= pc && {
                 r = cmp(pb as _, a as _);
                 r <= 0
@@ -1256,7 +1256,7 @@ def main() -> int:
     # references locally and imports the rest, exactly like the C version.
     helper_use = (
         "    #[allow(unused_imports)]\n"
-        "    use super::super::{cstr_slice, cstr_slice_bounded, raw_move, "
+        "    use super::super::{cstr_slice, cstr_slice_bounded, raw_fill, raw_move, "
         "raw_mut_slice, raw_slice, wcstr_slice, wcstr_slice_bounded, "
         "wraw_mut_slice};\n"
     )
@@ -1291,6 +1291,8 @@ def main() -> int:
         # which would collide with msvcrt-crt-rust's own wrappers in the same
         # staticlib. (The kernel + cnt-difftest builds pass `cabi`, under
         # which all of this is exactly what it always was.)
+        # hand-written asm loops under raw_move / raw_fill (memops.rs).
+        + "mod memops;\nuse memops::*;\n"
         + '#[cfg(feature = "cabi")]\nmod generated;\n'
         + '#[cfg(feature = "cabi")]\npub use generated::*;\n'
         # hand-written, no differential target (see manual.rs)
