@@ -501,6 +501,17 @@ members = [
     "servman-rust",
     "net-rust",
     "reg-rust",
+    "rpcss-rust",
+    "srvsvc-rust",
+    "netlogon-rust",
+    "seclogon-rust",
+    "shsvcs-rust",
+    "dcomlaunch-rust",
+    "wmisvc-rust",
+    "msiexec-rust",
+    "deskadp-rust",
+    "deskmon-rust",
+    "netplwiz-rust",
 ]
 resolver = "2"
 

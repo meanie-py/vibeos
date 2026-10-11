@@ -172,3 +172,23 @@ def test_a_continue_past_the_trailing_step_is_flagged():
 
 def test_a_step_in_an_enclosing_block_or_a_nested_loop_continue_is_clean():
     assert scan_while_steps(STEP_COVERED) == []
+
+
+def test_a_quote_char_literal_does_not_open_a_string():
+    # msiexec: `'"' as WCHAR` read as a string opening swallowed the loop's `}` and the scan
+    # took `p = p.add(1)` inside an `if` for the loop's trailing update.
+    src = """fn f() {
+    while !list.is_null() {
+        if v.is_null() {
+            list = (*list).next;
+            continue;
+        }
+        if q != 0 {
+            *p = '"' as WCHAR;
+            p = p.add(1);
+        }
+        list = (*list).next;
+    }
+}
+"""
+    assert scan_while_steps(src) == []

@@ -140,7 +140,7 @@ unsafe extern "C" fn DirReadParam(Line: LPTSTR, params: *mut LPTSTR, entries: LP
 
     bOrderByNoPar = (FALSE) as i32;
 
-    while *Line != 0 {
+    while *Line != 0 { // nolint: dowhile-continue (dir.c is a `while (*Line)` with the same continues)
         cCurChar = *Line;
         cCurUChar = _totupper(*Line);
 
