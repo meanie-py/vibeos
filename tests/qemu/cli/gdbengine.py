@@ -659,7 +659,15 @@ def stop(run: DebugRun) -> None:
     if run.backend == "windows-host" and run.win_uid:
         from .. import backend as be
 
-        be.kill_by_uid(run.win_uid)
+        # Unconfirmed, leave the staging and lock in place: they are what lets a later
+        # `gdb stop`, `kill --stale` or the reaper find this qemu.exe again.
+        left = be.kill_by_uid(run.win_uid)
+        if left != 0:
+            raise RuntimeError(
+                f"could not confirm {run.win_uid} stopped "
+                f"({'PowerShell gave no answer' if left is None else f'{left} still running'}); "
+                f"run left registered -- retry `vibeos-cli gdb stop {run.run_id}`"
+            )
     # Serial lives inside staging on windows-host. Preserve the experiment's
     # evidence before deleting that directory; a stopped run must stay readable.
     serial = Path(run.serial_log)
@@ -754,7 +762,11 @@ def cmd_inspect(args, repo: Path) -> int:
 
 def cmd_stop(args, repo: Path) -> int:
     run = DebugRun.load(args.run_id)
-    stop(run)
+    try:
+        stop(run)
+    except RuntimeError as e:
+        print(f"NOT stopped {run.run_id}: {e}")
+        return 1
     print(f"stopped {run.run_id} (uid={run.win_uid})")
     return 0
 

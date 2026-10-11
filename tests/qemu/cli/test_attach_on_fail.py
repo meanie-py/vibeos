@@ -106,6 +106,45 @@ def test_after_detach_stop_cannot_kill_the_kept_vm(tmp_path, monkeypatch):
     assert v._proc is None and v._win_uid == "" and v._win_staging is None
 
 
+@pytest.mark.parametrize("left", [None, 1])
+def test_stop_keeps_the_lock_when_the_windows_kill_is_unconfirmed(tmp_path, monkeypatch, left):
+    """stop() dropped the lock after a kill that PowerShell never confirmed. When the
+    interop launch of powershell.exe failed, qemu.exe kept running with no record
+    anywhere; nine such VMs were found on 2026-10-11, two running for eight days."""
+    from tests.qemu import backend as be
+
+    unregistered: list[object] = []
+    monkeypatch.setattr(vm_mod.atexit, "unregister", unregistered.append)
+    monkeypatch.setattr(be, "kill_by_uid", lambda uid: left)
+    vm = _bare_vm(tmp_path, monkeypatch, alive=False)
+    v = cast("Any", vm)
+    v._backend = "windows-host"
+    v._win_uid = "vibeos-1-2"
+    v._proc = None
+    v._sock_dir = tmp_path / "socks"
+    v._release_slot = lambda: None
+    lock, hook = v._lock_path, v._lock_atexit
+    vm.stop()
+    assert lock.exists(), "the lock is the reaper's only record of the qemu.exe"
+    assert unregistered == [hook], "its atexit unlink must not fire either"
+
+
+def test_stop_drops_the_lock_once_the_windows_kill_is_confirmed(tmp_path, monkeypatch):
+    from tests.qemu import backend as be
+
+    monkeypatch.setattr(be, "kill_by_uid", lambda uid: 0)
+    vm = _bare_vm(tmp_path, monkeypatch, alive=False)
+    v = cast("Any", vm)
+    v._backend = "windows-host"
+    v._win_uid = "vibeos-1-2"
+    v._proc = None
+    v._sock_dir = tmp_path / "socks"
+    v._release_slot = lambda: None
+    lock = v._lock_path
+    vm.stop()
+    assert not lock.exists()
+
+
 def test_a_dead_qemu_is_not_kept(tmp_path, monkeypatch):
     vm = _bare_vm(tmp_path, monkeypatch, alive=False)
     with pytest.raises(RuntimeError, match="already exited"):

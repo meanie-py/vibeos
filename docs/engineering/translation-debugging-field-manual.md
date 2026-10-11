@@ -14848,6 +14848,34 @@ worktree or kill a running build to propagate this fix.
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
 
+### `L:no-guest-serial`: the guest never ran, and a "killed" VM may still be running
+**Symptom:** a conformance round's serial log holds only the harness's `#` header, the
+summary says `launched=0`, and `<arch>_launch.json` shows `handshake_seconds` 15.00x.
+`<arch>_qemu.stderr.log` is one line: `WSL ... UtilAcceptVsock:281: accept4 failed 110`.
+Smoke files the same failure as `LAUNCH_FAIL`. It is a host-side launch failure, not a guest
+bug: WSL interop did not get `qemu-system-*.exe` running, so nothing ever connected.
+**What is known.** Handshakes are bimodal: of 3,326 windows-host launches, successes took
+under 2.5s (p99.9, two outliers near 10s) and all 31 failures ran to the 15s limit, so a
+longer timeout would save none of them. Failures are not host-wide: launches from other runs,
+and even from the same gate's process tree, succeed in the same minute. Yet the three
+`launch_with_retry` attempts of a failing round all fail. That stickiness is UNEXPLAINED.
+(Conformance's pytest capture hides a launch that recovered on attempt 2, so "conformance
+never recovers" cannot be read from its logs; smoke recovered 86 of 95.)
+**Two causes found and fixed while looking:**
+- Retries shared one Windows staging dir, and attempt 1's qemu.exe releases its files
+  asynchronously after the kill, so attempt 2 died writing `tempdisk.qcow2` over a file
+  still open (2 of 6 rounds). Each launch now stages into its own dir.
+- `kill_by_uid` was best-effort and returned nothing, so `stop()`, `kill_one` and the reaper
+  all treated an unconfirmed kill as done and dropped the VM's lock. When `powershell.exe`
+  itself failed to launch (the same interop failure), qemu.exe ran on with no lock: invisible
+  to `ps`, `kill` and the lifetime cap. Nine were found on 2026-10-11, two of them having
+  used a full core each for eight days. Now `kill_by_uid` returns how many matches survive
+  (None if PowerShell gave no answer), every caller keeps the lock unless that is 0, and
+  `vibeos-cli ps` / `kill --stale` also list Windows-side `vibeos-<pid>-<port>` QEMUs whose
+  launcher is dead and that no live lock claims.
+**Check:** `vibeos-cli ps` prints an "untracked Windows QEMUs" block when any exist;
+`vibeos-cli kill --stale` stops them and fails if it could not confirm one.
+
 ### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
 **Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits
 100 ms for a worker thread (`NpfsReadWrite`, `KeEvent.c:207` reading `STATUS_TIMEOUT`), at a

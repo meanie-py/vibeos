@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import fcntl
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -399,19 +400,60 @@ def rewrite_netdev_for_windows(
     return out, ids
 
 
-def kill_by_uid(uid: str) -> None:
+def kill_by_uid(uid: str) -> int | None:
     """Kill the Windows QEMU process(es) whose command line carries our unique `-name <uid>`
-    tag — precise, so a concurrent agent's QEMU is never touched. Best-effort."""
+    tag — precise, so a concurrent agent's QEMU is never touched.
+
+    Returns how many such processes are still running afterwards, or None when PowerShell
+    could not answer. It returned nothing for years, and every caller then dropped the VM's
+    lock as if the kill had worked. When `powershell.exe` itself failed to launch (the same
+    WSL interop failure that fails QEMU launches under load), the qemu.exe kept running with
+    no lock: invisible to `ps`, `kill` and the lifetime cap. Nine were found that way on
+    2026-10-11, two of them having burned a full core each for eight days. 0 is the only
+    answer that means the VM is gone."""
     ps = (
-        "Get-CimInstance Win32_Process -Filter \"Name like 'qemu-system-%'\" "
-        f"| Where-Object {{ $_.CommandLine -like '*{uid}*' }} "
-        "| ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"
+        "$ErrorActionPreference='Stop';"
+        "$m = { @(Get-CimInstance Win32_Process -Filter \"Name like 'qemu-system-%'\" "
+        f"| Where-Object {{ $_.CommandLine -like '*{uid}*' }}) }};"
+        "& $m | ForEach-Object "
+        "{ Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue };"
+        "$left = (& $m).Count; for ($i = 0; $i -lt 20 -and $left -gt 0; $i++) "
+        "{ Start-Sleep -Milliseconds 250; $left = (& $m).Count };"
+        'Write-Output "left=$left"'
     )
     try:
-        subprocess.run(
+        cp = subprocess.run(
             ["powershell.exe", "-NoProfile", "-Command", ps],
             capture_output=True,
+            text=True,
             timeout=30,
         )
     except (OSError, subprocess.SubprocessError):
-        pass
+        return None
+    m = re.search(r"left=(\d+)", cp.stdout or "")
+    return int(m.group(1)) if m else None
+
+
+def windows_qemus() -> list[dict]:
+    """Every Windows-side QEMU as {pid, name, cmd, created}. Raises when PowerShell cannot
+    answer: an empty list must mean "none", never "could not look"."""
+    ps = (
+        "$ErrorActionPreference='Stop';"
+        "ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process "
+        "-Filter \"Name like 'qemu-system-%'\" | ForEach-Object { [pscustomobject]@{ "
+        "pid = $_.ProcessId; name = $_.Name; cmd = [string]$_.CommandLine; "
+        "created = $_.CreationDate.ToString('s') } })"
+    )
+    cp = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-Command", ps],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    value = json.loads(cp.stdout) if cp.stdout.strip() else []
+    if isinstance(value, dict):
+        value = [value]
+    if not isinstance(value, list):
+        raise ValueError(f"unexpected Windows process listing: {cp.stdout[:120]!r}")
+    return value
