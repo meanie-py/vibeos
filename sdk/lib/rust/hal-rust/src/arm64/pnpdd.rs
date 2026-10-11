@@ -26,11 +26,13 @@
 //! function, and the ACPI table names its config window (the _INI
 //! OperationRegion), so the child PDO answers those from the real registers.
 //!
-//! And a PCI root bus for each PCI segment other than 0 the MCFG lists, as
-//! ACPI\PNP0A08 (compatible *PNP0A03, which binds pci.sys), its bus range as a
-//! bus-number resource whose numbers carry the segment above the bus
-//! (PCI_SEGMENT_BUS_NUMBER, what the HAL's bus-data calls take). Segment 0's root
-//! is the one the hive seeds (Root\*PNP0A03), so it is not published twice.
+//! And a PCI root bus for each PCI segment the MCFG lists, as ACPI\PNP0A08
+//! (compatible *PNP0A03, which binds pci.sys), its bus range as a bus-number
+//! resource whose numbers carry the segment above the bus (PCI_SEGMENT_BUS_NUMBER,
+//! what the HAL's bus-data calls take). The root PDO also answers
+//! GUID_PCI_BUS_INTERFACE_STANDARD, which pcix.sys needs for config access. Segment
+//! 0's root used to be seeded in the hive (Root\*PNP0A03), a root-enumerated PDO
+//! that could answer nothing; a board with no MCFG now has no PCI root at all.
 //!
 //! On a machine with no such node, the FDO simply has no children.
 
@@ -74,6 +76,7 @@ const CM_RESOURCE_INTERRUPT_LATCHED: u16 = 1;
 const SHARE_DEVICE_EXCLUSIVE: u8 = 1;
 const SHARE_SHARED: u8 = 3;
 const PCI_WHICHSPACE_CONFIG: ULONG = 0;
+const PCI_CONFIGURATION: ddk::BUS_DATA_TYPE = ddk::_BUS_DATA_TYPE_PCIConfiguration;
 const PCI_CONFIG_SIZE: usize = 256;
 const PCI_COMMAND: usize = 4;
 /// Memory space + bus master (what _INI writes), plus INTx disable: firmware
@@ -100,6 +103,8 @@ const fn guid(d1: u32, d2: u16, d3: u16, d4: [u8; 8]) -> GUID {
 // wdmguid.h
 static GUID_BUS_INTERFACE_STANDARD: GUID =
     guid(0x496b8280, 0x6f25, 0x11d0, [0xbe, 0xaf, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f]);
+static GUID_PCI_BUS_INTERFACE_STANDARD: GUID =
+    guid(0x496b8281, 0x6f25, 0x11d0, [0xbe, 0xaf, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f]);
 static GUID_BUS_TYPE_PCI: GUID =
     guid(0xc8ebdfb0, 0xb510, 0x11d0, [0x80, 0xe5, 0x00, 0xa0, 0xc9, 0x25, 0x42, 0xe3]);
 
@@ -314,6 +319,46 @@ unsafe fn query_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTS
     (*bi).GetDmaAdapter = Some(BusGetDmaAdapter);
     (*bi).SetBusData = Some(BusSetData);
     (*bi).GetBusData = Some(BusGetData);
+    STATUS_SUCCESS
+}
+
+// ---------------------------------------------------------------------------
+// A root bus's GUID_PCI_BUS_INTERFACE_STANDARD: config access for the NT PCI bus
+// driver (pcix.sys asks the PDO below its root FDO for it, as Windows' pci.sys asks
+// acpi.sys). pcix passes the bus number alone; the segment comes from the PDO.
+// ---------------------------------------------------------------------------
+
+unsafe fn root_bus(ctx: PVOID, bus: ULONG) -> ULONG {
+    let segment = match &(*(ctx as *mut PdoExtension)).window {
+        Some(w) => w.segment as ULONG,
+        None => 0,
+    };
+    segment << 8 | (bus & 0xFF)
+}
+unsafe extern "system" fn PciReadConfig(ctx: PVOID, bus: ULONG, slot: ULONG, buf: PVOID, offset: ULONG, len: ULONG) -> ULONG {
+    super::halstubs::HalGetBusDataByOffset(PCI_CONFIGURATION, root_bus(ctx, bus), slot, buf, offset, len)
+}
+unsafe extern "system" fn PciWriteConfig(ctx: PVOID, bus: ULONG, slot: ULONG, buf: PVOID, offset: ULONG, len: ULONG) -> ULONG {
+    super::halstubs::HalSetBusDataByOffset(PCI_CONFIGURATION, root_bus(ctx, bus), slot, buf, offset, len)
+}
+
+unsafe fn query_pci_bus_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTSTATUS {
+    let q = &(*io).Parameters.QueryInterface;
+    if !guid_eq(&*q.InterfaceType, &GUID_PCI_BUS_INTERFACE_STANDARD) {
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (q.Size as usize) < core::mem::size_of::<ddk::PCI_BUS_INTERFACE_STANDARD>() {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    let pi = q.Interface as *mut ddk::PCI_BUS_INTERFACE_STANDARD;
+    core::ptr::write_bytes(pi, 0, 1);
+    (*pi).Size = core::mem::size_of::<ddk::PCI_BUS_INTERFACE_STANDARD>() as USHORT;
+    (*pi).Version = 1;
+    (*pi).Context = pdo as PVOID;
+    (*pi).InterfaceReference = Some(BusReference);
+    (*pi).InterfaceDereference = Some(BusReference);
+    (*pi).ReadConfig = Some(PciReadConfig);
+    (*pi).WriteConfig = Some(PciWriteConfig);
     STATUS_SUCCESS
 }
 
@@ -581,6 +626,7 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
         }
         // Only the xHCI child has a PCI face (usbport asks for one).
         IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::Xhci => query_interface(pdo, io),
+        IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::PciRoot => query_pci_bus_interface(pdo, io),
         IRP_MN_QUERY_CAPABILITIES => query_capabilities(io),
         IRP_MN_QUERY_RESOURCES => match &(*pdo).window {
             Some(w) => query_bus_resources(w, info),
@@ -769,7 +815,7 @@ unsafe extern "system" fn AddDevice(driver: PDRIVER_OBJECT, pdo: PDEVICE_OBJECT)
             add(Child::VirtioBlk, x, None);
         }
     });
-    for w in super::ecam::all().filter(|w| w.segment != 0) {
+    for w in super::ecam::all() {
         add(Child::PciRoot, AcpiDevice { uid: w.segment as u32, ..Default::default() }, Some(w));
     }
     (*dev).Flags &= !DO_DEVICE_INITIALIZING;

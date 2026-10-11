@@ -339,6 +339,113 @@ unsafe fn IopFindInterruptResource(
     0u8
 }
 
+/// Does an assigned descriptor satisfy a requirement of the same type? (The test
+/// IopFixupResourceListWithRequirements uses to keep a boot-config descriptor.)
+unsafe fn cm_satisfies(IoDesc: PIO_RESOURCE_DESCRIPTOR, CmDesc: PCM_PARTIAL_RESOURCE_DESCRIPTOR) -> bool {
+    if (*IoDesc).Type != (*CmDesc).Type {
+        return false;
+    }
+    let mut Matched: BOOLEAN = 0u8;
+    match (*IoDesc).Type as u32 {
+        2 => { // CmResourceTypeInterrupt
+            if (*CmDesc).u.Interrupt.Vector >= (*IoDesc).u.Interrupt.MinimumVector
+                && (*CmDesc).u.Interrupt.Vector <= (*IoDesc).u.Interrupt.MaximumVector
+            {
+                Matched = 1u8;
+            }
+        }
+        3 | 1 => { // CmResourceTypeMemory | CmResourceTypePort
+            if (*CmDesc).u.Memory.Length == (*IoDesc).u.Memory.Length
+                && (*CmDesc).u.Memory.Start.QuadPart as ULONGLONG
+                    >= (*IoDesc).u.Memory.MinimumAddress.QuadPart as ULONGLONG
+                && ((*CmDesc).u.Memory.Start.QuadPart as ULONGLONG
+                    + (*CmDesc).u.Memory.Length as ULONGLONG
+                    - 1)
+                    <= (*IoDesc).u.Memory.MaximumAddress.QuadPart as ULONGLONG
+            {
+                Matched = 1u8;
+            }
+        }
+        6 => { // CmResourceTypeBusNumber
+            if (*CmDesc).u.BusNumber.Length == (*IoDesc).u.BusNumber.Length
+                && (*CmDesc).u.BusNumber.Start >= (*IoDesc).u.BusNumber.MinBusNumber
+                && (*CmDesc).u.BusNumber.Start + (*CmDesc).u.BusNumber.Length - 1
+                    <= (*IoDesc).u.BusNumber.MaxBusNumber
+            {
+                Matched = 1u8;
+            }
+        }
+        4 => { // CmResourceTypeDma
+            if (*CmDesc).u.Dma.Channel >= (*IoDesc).u.Dma.MinimumChannel
+                && (*CmDesc).u.Dma.Channel <= (*IoDesc).u.Dma.MaximumChannel
+            {
+                Matched = 1u8;
+            }
+        }
+        _ => {
+            Matched = 1u8;
+        }
+    }
+    Matched != 0
+}
+
+/// Divergence from ReactOS: put the assigned list in the order of the requirement list
+/// it satisfies, each descriptor carrying its requirement's share disposition. The fixup above starts from the boot configuration and appends each
+/// requirement it had to satisfy afresh, so a function whose boot config lacked its I/O
+/// BAR came back as (memory, memory, interrupt, port). Windows returns requirements
+/// order, and pcix maps assigned descriptors onto BARs by that order: it zeroed both
+/// memory BARs of arm64's virtio disk under the running driver. Descriptors no
+/// requirement claims (device-private data) keep their relative order at the end.
+unsafe fn IopOrderLikeRequirements(ResList: PIO_RESOURCE_LIST, ResourceList: PCM_RESOURCE_LIST) {
+    const MAX_DESCRIPTORS: usize = 64;
+    if ResourceList.is_null() {
+        return;
+    }
+    let partial = core::ptr::addr_of_mut!((*ResourceList).List[0].PartialResourceList);
+    let n = (*partial).Count as usize;
+    if n == 0 || n > MAX_DESCRIPTORS {
+        return;
+    }
+    let descs = core::ptr::addr_of_mut!((*partial).PartialDescriptors[0]);
+    let mut used = [false; MAX_DESCRIPTORS];
+    let mut order = [0usize; MAX_DESCRIPTORS];
+    let mut k = 0usize;
+    for ii in 0..(*ResList).Count as usize {
+        let IoDesc = core::ptr::addr_of_mut!((*ResList).Descriptors[0]).add(ii);
+        for c in 0..n {
+            if !used[c] && cm_satisfies(IoDesc, descs.add(c)) {
+                used[c] = true;
+                // What an arbiter hands back carries the requirement's disposition; a
+                // kept boot-config descriptor carried whatever the bus driver reported.
+                (*descs.add(c)).ShareDisposition = (*IoDesc).ShareDisposition;
+                order[k] = c;
+                k += 1;
+                break;
+            }
+        }
+    }
+    for c in 0..n {
+        if !used[c] {
+            order[k] = c;
+            k += 1;
+        }
+    }
+    if order[..n].iter().enumerate().all(|(i, &c)| i == c) {
+        return;
+    }
+    // (The dispositions above are already written; only the order is left.)
+    let bytes = n * core::mem::size_of::<CM_PARTIAL_RESOURCE_DESCRIPTOR>();
+    let copy = ExAllocatePool(PagedPool, bytes as _) as PCM_PARTIAL_RESOURCE_DESCRIPTOR;
+    if copy.is_null() {
+        return;
+    }
+    core::ptr::copy_nonoverlapping(descs, copy, n);
+    for (i, &c) in order[..n].iter().enumerate() {
+        *descs.add(i) = *copy.add(c);
+    }
+    ExFreePool(copy as PVOID);
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
     RequirementsList: PIO_RESOURCE_REQUIREMENTS_LIST,
@@ -419,45 +526,8 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
                     continue;
                 }
 
-                match (*IoDesc).Type as u32 {
-                    2 => { // CmResourceTypeInterrupt
-                        if (*CmDesc).u.Interrupt.Vector >= (*IoDesc).u.Interrupt.MinimumVector
-                            && (*CmDesc).u.Interrupt.Vector <= (*IoDesc).u.Interrupt.MaximumVector
-                        {
-                            Matched = 1u8;
-                        }
-                    }
-                    3 | 1 => { // CmResourceTypeMemory | CmResourceTypePort
-                        if (*CmDesc).u.Memory.Length == (*IoDesc).u.Memory.Length
-                            && (*CmDesc).u.Memory.Start.QuadPart as ULONGLONG
-                                >= (*IoDesc).u.Memory.MinimumAddress.QuadPart as ULONGLONG
-                            && ((*CmDesc).u.Memory.Start.QuadPart as ULONGLONG
-                                + (*CmDesc).u.Memory.Length as ULONGLONG
-                                - 1)
-                                <= (*IoDesc).u.Memory.MaximumAddress.QuadPart as ULONGLONG
-                        {
-                            Matched = 1u8;
-                        }
-                    }
-                    6 => { // CmResourceTypeBusNumber
-                        if (*CmDesc).u.BusNumber.Length == (*IoDesc).u.BusNumber.Length
-                            && (*CmDesc).u.BusNumber.Start >= (*IoDesc).u.BusNumber.MinBusNumber
-                            && (*CmDesc).u.BusNumber.Start + (*CmDesc).u.BusNumber.Length - 1
-                                <= (*IoDesc).u.BusNumber.MaxBusNumber
-                        {
-                            Matched = 1u8;
-                        }
-                    }
-                    4 => { // CmResourceTypeDma
-                        if (*CmDesc).u.Dma.Channel >= (*IoDesc).u.Dma.MinimumChannel
-                            && (*CmDesc).u.Dma.Channel <= (*IoDesc).u.Dma.MaximumChannel
-                        {
-                            Matched = 1u8;
-                        }
-                    }
-                    _ => {
-                        Matched = 1u8;
-                    }
+                if cm_satisfies(IoDesc, CmDesc) {
+                    Matched = 1u8;
                 }
                 iii += 1;
             }
@@ -570,6 +640,7 @@ pub unsafe extern "system" fn IopFixupResourceListWithRequirements(
             continue;
         }
 
+        IopOrderLikeRequirements(ResList, *ResourceList);
         return STATUS_SUCCESS;
     }
 
