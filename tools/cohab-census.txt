@@ -1587,6 +1587,12 @@ drivers/ksfilter/swenum/CMakeLists.txt	1	# swenum.c (the KS software bus enumera
 drivers/network/afd/CMakeLists.txt	1	# afd/lock.c afd/main.c afd/read.c afd/select.c afd/write.c)
 drivers/network/afd/CMakeLists.txt	1	# and resolve as extern "C". event.c is NOT in this build (dead in upstream: its
 drivers/network/afd/CMakeLists.txt	1	# list(APPEND SOURCE afd/bind.c afd/connect.c afd/context.c afd/info.c afd/listen.c
+drivers/network/dd/e1000/CMakeLists.txt	1	# debug.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/debug.rs)
+drivers/network/dd/e1000/CMakeLists.txt	1	# hardware.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/hardware.rs)
+drivers/network/dd/e1000/CMakeLists.txt	1	# info.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/info.rs)
+drivers/network/dd/e1000/CMakeLists.txt	1	# interrupt.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/interrupt.rs)
+drivers/network/dd/e1000/CMakeLists.txt	1	# ndis.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/ndis.rs)
+drivers/network/dd/e1000/CMakeLists.txt	1	# send.c # replaced by Rust (sdk/lib/rust/e1000-rust/src/e1000/send.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/30stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/30stubs.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/40stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/40stubs.rs)
 drivers/network/ndis/CMakeLists.txt	1	# ndis/50stubs.c # replaced by Rust (sdk/lib/rust/ndis-rust/src/ndis/50stubs.rs)

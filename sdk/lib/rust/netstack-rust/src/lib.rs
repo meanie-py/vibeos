@@ -20,6 +20,7 @@ pub mod hal;
 pub mod pci;
 pub mod device;
 pub mod e1000;
+pub mod pch;
 // A NIC only ACPI describes (the Pi 4's GENET): netstack binds to it as its PnP
 // function driver (pnp.rs) and drives it directly (genet.rs).
 pub mod pnp;

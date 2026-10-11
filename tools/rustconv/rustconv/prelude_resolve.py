@@ -820,6 +820,20 @@ def sibling_definitions(names: set[str], modules_dir: Path) -> dict[str, list[tu
     return out
 
 
+def defined_outside_siblings(prelude: Path) -> set[str]:
+    """Names the prelude itself defines at top level, outside the cross-TU import block.
+
+    A sibling import of such a name collides with it (E0255). It happens when resolve runs
+    before a stage that defines the name in the prelude: e1000's replay resolved nic.h's
+    inline helpers to the `port headers` module, then `port macros` defined the same names.
+    """
+    text = prelude.read_text()
+    m = re.search(re.escape(SIBLING_BEGIN) + r".*?" + re.escape(SIBLING_END), text, re.S)
+    if m:
+        text = text[: m.start()] + text[m.end() :]
+    return {d.group("name") for d in _DEF.finditer(text)}
+
+
 def promote_pub(path: Path, name: str) -> bool:
     """Make a top-level definition of `name` in `path` `pub`. True if it changed."""
     text = path.read_text()

@@ -603,6 +603,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   passed in 128 other gate boots. A lost wakeup between `KeAlertThread`/APC insertion and the
   wait's alertable check is the first place to look.
 
+- **OptiPlex USB 3 card: root hub sometimes never enumerates, and the boot stalls (OPEN,
+  2026-10-11).** With the USB-C hub on the Renesas uPD720201 card, some cold boots never see
+  the hub: usbport's root-hub-ready callback does not run for that controller, so usbhub's
+  bus-relations handler retries once a second on the PnP worker thread forever (387 times in
+  one boot) and nothing later in PnP starts, netstack included. Other boots enumerate the hub
+  and reach the desktop. `[USBPORT] root hub ready` and `[USBHUB] ... before enumeration is
+  allowed` now say which side is missing. Also open: usbhub has no SuperSpeed hub support
+  (the hub's USB 3 half fails START asking for a 0x29 descriptor), and netstack's I217 has
+  no interrupt (Interrupt Line 128; it polls). See `docs/engineering/optiplex-bench.md`.
+
+- **ntkrnl-sys `PCI_COMMON_CONFIG` has no header fields (OPEN, owed).** bindgen dropped the
+  `PCI_COMMON_HEADER DUMMYSTRUCTNAME;` member, leaving a 192-byte `{ DeviceSpecific }` and a
+  `size_of == 192` assertion that checks the wrong layout. Every user works around it
+  (pci-rust's own struct, hal-rust's alias, e1000-rust reads the header type, atapi-legacy,
+  acpi). The fix is running `bindgen_ms_anon_members.py` in ntkrnl-sys's own generation and
+  deleting the workarounds.
+
 - **NDIS through a real miniport (`--payload ndisprobe`)** (PASSING x3 2026-10-09, first on
   the C ndis.sys, then on the **Rust ndis.sys** after the flip the same day). The baseline for
   translating ndis: nothing else on our media reaches NDIS

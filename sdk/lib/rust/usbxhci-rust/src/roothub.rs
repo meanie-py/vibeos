@@ -132,6 +132,14 @@ pub unsafe extern "system" fn XHCI_RH_GetPortStatus(
     if v & (PORTSC_PRC | PORTSC_WRC) != 0 {
         s |= PC_RESET;
     }
+    // A change bit usbhub keeps seeing is a re-enumeration loop; the first few
+    // reports of a boot, with the raw PORTSC, say which port and which bit.
+    if s >> 16 != 0 || v & (PORTSC_PLC | PORTSC_CEC) != 0 {
+        static LOGGED: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+        if LOGGED.fetch_add(1, core::sync::atomic::Ordering::Relaxed) < 64 {
+            crate::xlog!("rh port %u (hw %u): status %x, PORTSC %x (op %p)", Port as u32, hw_port(x, Port), s, v, x.op);
+        }
+    }
     core::ptr::write_unaligned(PortStatus as *mut u32, s);
     MP_STATUS_SUCCESS
 }

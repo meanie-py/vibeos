@@ -7,7 +7,7 @@ NOTE: Most union field access fixes (.__bindgen_anon_N) are context-dependent
 and handled by the system prompt.  However, a few well-known unions are
 universal enough to fix mechanically:
   - LARGE_INTEGER/ULARGE_INTEGER: .LowPart/.HighPart → .__bindgen_anon_1.LowPart/HighPart
-  - IO_STATUS_BLOCK: .Status → .__bindgen_anon_1.Status
+  - (IO_STATUS_BLOCK .Status: crate-repair's anon_union_field, from the island)
 """
 
 from __future__ import annotations
@@ -696,9 +696,8 @@ def fix_bindgen_anon_field_access(code: str) -> str:
       .HighPart → .__bindgen_anon_1.HighPart
       (.QuadPart is a direct field on the union — NOT changed)
 
-    IO_STATUS_BLOCK:
-      .Status → .__bindgen_anon_1.Status
-      (.Information is a direct field — NOT changed)
+    (IO_STATUS_BLOCK's .Status is left to crate-repair's anon_union_field, which
+    knows from the island which `.Status` is the union member.)
 
     The regex matches field access preceded by ')' or a word char (i.e. a
     real expression, not the start of a line or a comment).  Comment lines
@@ -725,14 +724,10 @@ def fix_bindgen_anon_field_access(code: str) -> str:
             line,
         )
 
-        # IO_STATUS_BLOCK: .Status
-        # Match: .Status that is NOT .StatusBlock, .StatusPointer, etc.
-        # and NOT already inside __bindgen_anon_1.Status
-        line = re.sub(
-            r"(?<!__bindgen_anon_1)(?<=[)\w])\.Status(?![A-Za-z0-9_])",
-            ".__bindgen_anon_1.Status",
-            line,
-        )
+        # IO_STATUS_BLOCK's `.Status` is NOT rewritten here: a bare `.Status` is just as
+        # often a plain field (e1000's descriptor `Status` byte, NTSTATUS members), and the
+        # blind rewrite broke every one. crate-repair's anon_union_field routes the real
+        # union accesses from the island's own types instead.
 
         result.append(line)
     return "\n".join(result)

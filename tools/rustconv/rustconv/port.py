@@ -3754,6 +3754,8 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     # glob import of F -- E0603 "private function import" -- and nothing else revisits it.
     live = prelude_resolve.sibling_definitions(set(siblings), modules_dir)
     stale = {n for n, mod in siblings.items() if mod not in {m for m, _ in live.get(n, [])}}
+    # ...and an import of a name the prelude now defines itself (a later stage's port).
+    stale |= set(siblings) & prelude_resolve.defined_outside_siblings(prelude)
     if stale:
         siblings = {n: m for n, m in siblings.items() if n not in stale}
         prelude_resolve.write_siblings(prelude, prelude_resolve.render_siblings(siblings, stem))
