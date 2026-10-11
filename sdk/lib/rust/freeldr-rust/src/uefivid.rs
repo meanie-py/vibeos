@@ -65,7 +65,42 @@ extern "C" {
     static mut GlobalSystemTable: *mut EFI_SYSTEM_TABLE;
 }
 
-const LOWEST_SUPPORTED_RES: UINT32 = 1;
+/// The GOP mode the OS runs in. The loader cannot change it after ExitBootServices and
+/// sysfb.sys has no way to, so this IS the desktop resolution.
+///
+/// The C asked for mode 1 ("we don't need high resolutions for freeldr"), which is a
+/// firmware-defined index, not a size: 640x480 on QEMU, anything or nothing elsewhere, and
+/// on a real panel never its native mode. Firmware already put the panel in a mode it can
+/// show (it drew the logo in it), so that one is kept. Only a mode the OS cannot draw into
+/// (PixelBltOnly: no linear framebuffer) sends us looking, for the largest one it can.
+unsafe fn UefiSelectGopMode(gop: *mut EFI_GRAPHICS_OUTPUT_PROTOCOL) {
+    let mode = (*gop).Mode;
+    if (*(*mode).Info).PixelFormat != PixelBltOnly {
+        return;
+    }
+    // A firmware that leaves a GOP slot null keeps its current mode.
+    let (Some(query), Some(set)) = ((*gop).QueryMode, (*gop).SetMode) else {
+        return;
+    };
+    let mut best: Option<(UINT32, u64)> = None;
+    for n in 0..(*mode).MaxMode {
+        let mut size: UINTN = 0;
+        let mut info: *mut EFI_GRAPHICS_OUTPUT_MODE_INFORMATION = core::ptr::null_mut();
+        if query(gop, n, &mut size, &mut info) != EFI_SUCCESS
+            || info.is_null()
+            || (*info).PixelFormat == PixelBltOnly
+        {
+            continue;
+        }
+        let area = (*info).HorizontalResolution as u64 * (*info).VerticalResolution as u64;
+        if best.map_or(true, |(_, a)| area > a) {
+            best = Some((n, area));
+        }
+    }
+    if let Some((n, _)) = best {
+        set(gop, n);
+    }
+}
 
 // ntbasedef.h RTL_BITS_OF(x) == sizeof(x) * 8.
 macro_rules! RTL_BITS_OF {
@@ -110,7 +145,7 @@ pub unsafe extern "C" fn UefiInitializeVideo() -> EFI_STATUS {
         return Status;
     }
 
-    ((*gop).SetMode).unwrap()(gop, LOWEST_SUPPORTED_RES);
+    UefiSelectGopMode(gop);
 
     PixelFormat = (*(*(*gop).Mode).Info).PixelFormat;
     match PixelFormat {

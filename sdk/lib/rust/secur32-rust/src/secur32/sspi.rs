@@ -24,8 +24,6 @@ extern "system" {
     fn EnterCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn LeaveCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
     fn DeleteCriticalSection(lpCriticalSection: *mut CRITICAL_SECTION);
-    fn list_init(list: *mut list);
-    fn list_add_tail(list: *mut list, elem: *mut list);
 }
 
 // The SecurityFunctionTable members below resolve to the per-package SSPI

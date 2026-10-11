@@ -155,11 +155,11 @@ extern "C" {
 
 static mut MTA: *mut APARTMENT = null_mut(); // protected by csApartment
 static mut MainApartment: *mut APARTMENT = null_mut(); // the first STA apartment
-static mut apts: list = list::zeroed(); // protected by csApartment; LIST_INIT in attach
+static mut apts: list = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() }; // protected by csApartment; LIST_INIT in attach
 
 static mut csApartment: CRITICAL_SECTION = CRITICAL_SECTION_STATIC_INIT;
 
-static mut registered_psclsid_list: list = list::zeroed(); // LIST_INIT in attach
+static mut registered_psclsid_list: list = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() }; // LIST_INIT in attach
 static mut cs_registered_psclsid_list: CRITICAL_SECTION = CRITICAL_SECTION_STATIC_INIT;
 
 /// Lock count of CoInitialize calls; COM libraries freed when it hits 0.
@@ -167,10 +167,10 @@ static mut s_COMLockCount: LONG = 0;
 /// Reference count used by CoAddRefServerProcess/CoReleaseServerProcess.
 static mut s_COMServerProcessReferences: LONG = 0;
 
-static mut RegisteredClassList: list = list::zeroed(); // LIST_INIT in attach
+static mut RegisteredClassList: list = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() }; // LIST_INIT in attach
 static mut csRegisteredClassList: CRITICAL_SECTION = CRITICAL_SECTION_STATIC_INIT;
 
-static mut openDllList: list = list::zeroed(); // LIST_INIT in attach
+static mut openDllList: list = list { next: core::ptr::null_mut(), prev: core::ptr::null_mut() }; // LIST_INIT in attach
 static mut csOpenDllList: CRITICAL_SECTION = CRITICAL_SECTION_STATIC_INIT;
 
 static mut classes_root_hkey: HKEY = null_mut();
@@ -1285,7 +1285,7 @@ pub unsafe extern "C" fn apartment_release(apt: *mut apartment) -> DWORD {
         /* if this assert fires, then another thread took a reference to a
          * stub manager without taking a reference to the containing
          * apartment, which it must do. */
-        c_assert!(list_empty(&raw const (*apt).stubmgrs), "list_empty(&apt->stubmgrs)");
+        c_assert!(list_empty(&raw const (*apt).stubmgrs) != 0, "list_empty(&apt->stubmgrs)");
 
         if !(*apt).filter.is_null() {
             let f = (*apt).filter;

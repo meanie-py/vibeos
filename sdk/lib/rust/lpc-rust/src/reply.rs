@@ -529,7 +529,7 @@ pub unsafe extern "system" fn NtReplyWaitReceivePortEx(
         // frame along into the raw dereferences below. Each site returns the
         // same way the shared C handler did: propagate the status, no cleanup.
         if !PortContext.is_null() {
-            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(st) = ntkrnl_sys::probe::probe_user_buffer_write(
                 PortContext as *const core::ffi::c_void,
                 core::mem::size_of::<PVOID>(),
                 core::mem::align_of::<PVOID>(),

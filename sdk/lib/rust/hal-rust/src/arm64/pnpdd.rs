@@ -91,6 +91,7 @@ const STATUS_NOT_SUPPORTED: NTSTATUS = 0xC00000BBu32 as NTSTATUS;
 const STATUS_INSUFFICIENT_RESOURCES: NTSTATUS = 0xC000009Au32 as NTSTATUS;
 const STATUS_NO_SUCH_DEVICE: NTSTATUS = 0xC000000Eu32 as NTSTATUS;
 const STATUS_BUFFER_TOO_SMALL: NTSTATUS = 0xC0000023u32 as NTSTATUS;
+const STATUS_INVALID_PARAMETER: NTSTATUS = 0xC000000Du32 as NTSTATUS;
 
 const TAG_HAL: u32 = u32::from_le_bytes(*b"Hal ");
 
@@ -105,6 +106,9 @@ static GUID_BUS_INTERFACE_STANDARD: GUID =
     guid(0x496b8280, 0x6f25, 0x11d0, [0xbe, 0xaf, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f]);
 static GUID_PCI_BUS_INTERFACE_STANDARD: GUID =
     guid(0x496b8281, 0x6f25, 0x11d0, [0xbe, 0xaf, 0x08, 0x00, 0x2b, 0xe2, 0x09, 0x2f]);
+/// `{9c5c2f4e-6d0b-4a8e-b0f1-5e7d3a2c8b41}`, acpi-rust's `GUID_VIBEOS_PCI_IRQ_ROUTING`.
+static GUID_VIBEOS_PCI_IRQ_ROUTING: GUID =
+    guid(0x9c5c2f4e, 0x6d0b, 0x4a8e, [0xb0, 0xf1, 0x5e, 0x7d, 0x3a, 0x2c, 0x8b, 0x41]);
 static GUID_BUS_TYPE_PCI: GUID =
     guid(0xc8ebdfb0, 0xb510, 0x11d0, [0x80, 0xe5, 0x00, 0xa0, 0xc9, 0x25, 0x42, 0xe3]);
 
@@ -360,6 +364,81 @@ unsafe fn query_pci_bus_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION
     (*pi).ReadConfig = Some(PciReadConfig);
     (*pi).WriteConfig = Some(PciWriteConfig);
     STATUS_SUCCESS
+}
+
+// ---------------------------------------------------------------------------
+// A root bus's INTx routing, the private interface acpi.sys offers on x86
+// (acpi-rust pciroute.rs owns the layout; change both together). The PCI bus driver
+// asks for it so a function's interrupt is the SPI its pin is wired to, not its
+// Interrupt Line, which ArmVirt's firmware never writes.
+//
+// Only QEMU's virt board is known: its GPEX wires INTA-INTD of the root bus's
+// device d to SPIs 3-6 (INTIDs 35-38) rotated by d, the standard swizzle, level-
+// triggered and active-high as every GIC SPI from it. Elsewhere the tables that say
+// (the DSDT's _PRT) would need an AML interpreter, so no routing is offered.
+// ---------------------------------------------------------------------------
+
+#[repr(C)]
+struct IrqRoute {
+    gsi: ULONG,
+    level_sensitive: u8,
+    active_low: u8,
+}
+
+#[repr(C)]
+struct IrqRoutingInterface {
+    size: USHORT,
+    version: USHORT,
+    context: PVOID,
+    reference: Option<unsafe extern "system" fn(PVOID)>,
+    dereference: Option<unsafe extern "system" fn(PVOID)>,
+    route: Option<unsafe extern "system" fn(PVOID, *const u8, ULONG, ULONG, *mut IrqRoute) -> NTSTATUS>,
+}
+
+/// GPEX's first INTx INTID on QEMU virt (SPI 3).
+const VIRT_INTX_BASE: ULONG = 35;
+
+/// `path`: each hop's `dev << 3 | fn` from the root bus down, the function last.
+unsafe extern "system" fn VirtRouteInterrupt(_ctx: PVOID, path: *const u8, depth: ULONG, pin: ULONG, route: *mut IrqRoute) -> NTSTATUS {
+    if path.is_null() || route.is_null() || depth == 0 || depth > 16 || !(1..=4).contains(&pin) {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let path = core::slice::from_raw_parts(path, depth as usize);
+    // Up through each bridge (PCI-to-PCI bridge spec 9.1), then the root's own map.
+    let mut pin = pin - 1;
+    for hop in path[1..].iter().rev() {
+        pin = (pin + (hop >> 3) as ULONG) % 4;
+    }
+    (*route).gsi = VIRT_INTX_BASE + ((path[0] >> 3) as ULONG + pin) % 4;
+    (*route).level_sensitive = 1;
+    (*route).active_low = 0;
+    STATUS_SUCCESS
+}
+
+unsafe fn query_irq_routing(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTSTATUS {
+    let q = &(*io).Parameters.QueryInterface;
+    if !super::ecam::on_qemu() {
+        return STATUS_NOT_SUPPORTED;
+    }
+    if (q.Size as usize) < core::mem::size_of::<IrqRoutingInterface>() {
+        return STATUS_BUFFER_TOO_SMALL;
+    }
+    let out = q.Interface as *mut IrqRoutingInterface;
+    (*out).size = core::mem::size_of::<IrqRoutingInterface>() as USHORT;
+    (*out).version = 1;
+    (*out).context = pdo as PVOID;
+    (*out).reference = Some(BusReference);
+    (*out).dereference = Some(BusReference);
+    (*out).route = Some(VirtRouteInterrupt);
+    STATUS_SUCCESS
+}
+
+unsafe fn query_root_interface(pdo: *mut PdoExtension, io: PIO_STACK_LOCATION) -> NTSTATUS {
+    if guid_eq(&*(*io).Parameters.QueryInterface.InterfaceType, &GUID_VIBEOS_PCI_IRQ_ROUTING) {
+        query_irq_routing(pdo, io)
+    } else {
+        query_pci_bus_interface(pdo, io)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -626,7 +705,7 @@ unsafe extern "system" fn DispatchPnp(device: PDEVICE_OBJECT, irp: PIRP) -> NTST
         }
         // Only the xHCI child has a PCI face (usbport asks for one).
         IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::Xhci => query_interface(pdo, io),
-        IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::PciRoot => query_pci_bus_interface(pdo, io),
+        IRP_MN_QUERY_INTERFACE if (*pdo).child == Child::PciRoot => query_root_interface(pdo, io),
         IRP_MN_QUERY_CAPABILITIES => query_capabilities(io),
         IRP_MN_QUERY_RESOURCES => match &(*pdo).window {
             Some(w) => query_bus_resources(w, info),

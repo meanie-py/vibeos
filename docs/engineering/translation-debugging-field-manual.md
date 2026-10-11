@@ -1179,6 +1179,17 @@ float math inside a body (x87), float pointers, float struct fields. Two fixes:
 - **`_tWinMain` / `_tmain` are tchar.h MACROS.** The CRT startup calls the real name
   (`wWinMain`/`wmain` in a UNICODE build), so a translated `#[no_mangle] fn _tWinMain` (sol,
   spider) is an `undefined symbol: wWinMain` at link. `port integrate` renames them.
+- **A tree-consensus extern that no import library exports links to nothing, or to the
+  wrong thing.** rpcss got `list_add_tail`/`list_remove` as externs copied from cabinet-rust's
+  crate-internal `#[no_mangle]` copies of wine/list.h's inlines; i386 failed to link.
+  `port resolve` now refuses a user-mode consensus `fn` that the module's import libraries
+  (and the static libraries it links) export on NO arch, and drops such copies from an earlier
+  run. On SOME arch is enough: i386's `GetWindowLongPtrW` is a user32.h macro for
+  `GetWindowLongW`, and the prelude's per-arch `link_name` settles it. An SDK alias is followed
+  to the end of its chain: commctrl.h's `#define SNDMSG SendMessage` names another alias, and
+  eventvwr was declared an extern `SendMessage` that no DLL exports. wine/list.h itself is `winelist-rust`: `profile_derive` blocklists `struct list` in the
+  island and re-exports the shared crate, and resolve imports the `list_*` helpers a crate
+  calls.
 - **A unit's global that the module's own header declares `extern`** (`extern CARDWINDOW
   *SolWnd;`) reaches every other unit through the ISLAND's extern declaration, so the defining
   unit must export it `#[no_mangle]` under its C name, or the other units' references are
@@ -1386,6 +1397,25 @@ subtraction.
 cursors. To triage, grep `\.(next|prev|Flink|Blink)\)? as \*mut <Struct>` and check the field's
 offset. The 2026-09-30 sweep found 22 hits; all but this one were offset-0 (secur32's
 `entry`) or were casting to a byte or void pointer.
+
+### A list walk that starts at the head it stops at
+
+**Symptom:** a lookup in a wine/list.h list never finds anything, or a count is always 0.
+Nothing crashes. rpcss's IrotIsRunning and IrotGetObject never found a registered object.
+
+**Cause:** `LIST_FOR_EACH_ENTRY` lowered with the cursor set to the container of `&head`
+itself instead of `head->next`. The `while cursor->field != &head` test then fails before the
+first iteration.
+
+**Fix:** start at `head.next`. `scan_list_walk_from_head` (`vibeos-cli check`) flags the shape.
+
+The opposite end matters too. In C, a walk that runs to the end leaves the cursor on the
+HEAD's container, and code relies on it: `list_add_before(&ent->entry, new)` after a search
+loop means "before the head", i.e. append. A macro whose cursor stops on the last node
+inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
+loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
+`LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
+container, as C does. Its tests pin the append shape.
 
 ### A list walk that reads `Flink` after freeing the entry
 
@@ -3835,6 +3865,12 @@ probe now rejects a name whose case line carries any other error, and `port reso
 every carried fact (four rpcss facts dropped). Consensus had the same hole for
 `SECURITY_NT_AUTHORITY` (`{0,0,0,0,0,5}`), copied from imm32 as `i32 = 5`.
 
+**The fact seal split float literals into integers.** wordpad's `0.0138` was sealed as `0` and
+`0138` (`1.5e10f` as `1` and `.5e10f`): the values round-tripped, but the placement audit read
+`0138` as an octal and crashed the whole TU's translation. A digit run beside a `.` is now part
+of the float, never an integer token. Changing the seal changes the cache key of every body
+holding a float, so the first re-run re-buys those (wordpad: four functions, $0.04).
+
 **Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
 facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
 `PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair
@@ -4730,6 +4766,13 @@ invisible unless you read stderr. Doing it on the un-underscored `InterlockedCom
 instead cannot work either: `sdk/include/xdk/winnt_old.h:8` redefines it function-like, last
 and unguarded, and `#ifndef`-guarding THAT would leave the earlier object-like definition
 from winnt.h:2257 standing in the real build. Not worth it for two bodies.
+
+**A function too big for the model's OUTPUT is c2rust's to keep.** winhlp32's
+`HLPFILE_BrowseParagraph` (475 C lines) has a 1,569-line c2rust anchor; Haiku spent all 32,768
+output tokens on every sample (twice with no text at all), so raising the cap buys more of the
+same. `--skip-fn` it, take `c2rust_anchor.build_anchor_map(tu)[name]`, fold its expanded wine
+`TRACE`/`WARN` blocks back to `WINE_*!` with `rustconv.c2rust_debug_fold` (26 blocks, 1,569 ->
+1,044 lines), append it to the module and `port hand` it.
 
 Rebuilding c2rust against a matching LLVM (`ldd $(command -v c2rust-transpile)` shows
 `libLLVM-14.so.1` against our pinned clang 19.1.7) is **not needed for any of these
@@ -5946,6 +5989,10 @@ model's hands — worth checking, because the guards are exactly what a C++ tran
   efvtIShellPropSheetExt: skipped (COM vtable, generated by vtbl_gen.py)`, and the stitcher's
   presence test was a bare `NAME:` regex. It now requires a `static` item. deskmon, same code,
   worded its note differently and got its vtables.
+  The finder had the matching hole on the C side: wordpad's
+  `struct IRichEditOleCallbackVtbl olecallbackVtbl = {..}` spells the struct tag, its type node
+  read `struct X`, and `^\w+Vtbl$` never matched. The `MISSING COM VTABLE` audit line fired;
+  the table did not appear until `vtbl_gen` stripped the tag.
 
 ### The failure path survived; the sentence explaining it did not
 
@@ -7425,7 +7472,15 @@ appear *after* a validate-first conversion that was supposed to be a pure safety
   * **A read probe standing in for a write probe.** Only a write touch proves the page is
     writable — that is why the C macro stores `*(volatile T*)p = *(volatile T*)p` rather
     than just comparing. Substituting a read probe passes a read-only user page and moves
-    the fault to the later store.
+    the fault to the later store. The commoner stand-in was the range-only
+    `probe_user_buffer`, which touches nothing: 119 kernel call sites translated
+    `ProbeForWrite*` to it. `NtReadFile` then built an IRP for a NULL buffer with a non-zero
+    length, and the driver answered with its own status where Windows fails the probe with
+    `STATUS_ACCESS_VIOLATION` (151 IoReadWrite kmtest assertions, all three arches). A bad
+    OUT pointer to `NtCreateEvent` and friends was likewise found only after the object
+    existed. Use `probe_user_buffer_write`, which does ProbeForWrite's one-byte-per-page
+    read-and-write-back through the fault-protected copy. `scan_dropped_probes` reports the
+    range-only form as `WEAK` wherever the file's commented C write-probes the same pointer.
 
   And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
   `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
@@ -12230,7 +12285,13 @@ the count is still exactly its own. `QueueNextRequest` releases the slot
 cancel routines retired requests that never held the slot and keep the C behaviour, because
 releasing it there would start a second command beside the running one. Sweep for the shape:
 `if (InterlockedCompareExchange(&X, 1, 0)) return;` or "if busy, return" with no re-check
-after the holder releases.
+after the holder releases. Also the counter form, `if (InterlockedIncrement(&X) != 0) {
+InterlockedDecrement(&X); return; }` with `X` starting at -1, which a CAS grep misses. A skip is
+only a bug when nothing retries it: usbport's `EndpointWorker` returns TRUE when busy and its
+callers put the endpoint back on `WorkerList`, and `DpcHandler`'s skip of a busy endpoint is
+re-polled by the 500 ms `USBPORT_TimerDpc`. The repo-wide sweep (2026-10-11: CAS and counter
+try-locks, busy-flag early returns, every `IoStartPacket` driver, usbxhci's ISR-to-DPC latches)
+found no third instance.
 **Finding it** took the IRPs, not the census. The census's `Suspended=1` was usbport's worker
 thread, which waits with `Suspended` as a generic wait reason (so do kbdclass, mouclass, atapi
 and iomgr), and it was in 42 of 44 hang histograms only because passing boots end before the
@@ -14495,6 +14556,34 @@ VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced
 its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
 the box survives. Verify on the board.
 
+### A USB controller "starts", and usbhub waits for its root hub forever
+
+**Symptom.** `[DA] START` of a USB host controller returns `0x0`, its root hub starts, and then
+`[USBHUB] ... bus relations before enumeration is allowed (wait N)` climbs once a second on the
+PnP worker thread while nothing later in PnP starts. `[USBPORT] root hub ready` never prints
+for that controller. Seen on the OptiPlex's Renesas card on about half of cold boots.
+
+**Cause.** Two bugs, one after the other. usbxhci gave the controller 20 ms to halt
+(`[XHCI] start: controller did not halt (USBSTS 10)`; the firmware had left it running) and
+returned `MP_STATUS_HW_ERROR`. usbport's `USBPORT_StartDevice` then returned `Status`, which
+upstream's C also returns, and which still held `STATUS_SUCCESS` from an earlier call. So PnP saw a
+started controller with no miniport behind it: interrupts never enabled, so the worker never
+ran the root-hub callback usbhub waits for.
+
+**Fix.** usbport fails the START with `STATUS_UNSUCCESSFUL` and logs `miniport StartController
+failed`. usbxhci waits 200 ms for the halt and then resets the controller anyway (HCRST is the
+only recovery left). Look for the miniport's own start line (`[XHCI] controller running`)
+before trusting a `START -> 0x0`.
+
+**Failing the START exposed two more upstream bugs** (found by forcing `XHCI_StartController`
+to fail under `smoke --arch amd64 --xhci`). usbport *cleared* `USBPORT_FLAG_INT_CONNECTED` right
+after `IoConnectInterrupt`, so its failure path never disconnected: the HAL got the message
+vector back with the dead FDO's KINTERRUPT still in the IDT, and the next device handed that
+vector (the IDE channel) failed `IoConnectInterrupt` with `0xC000000D`. scsiport then ignored
+`FdoCallHWInitialize`'s failure and bugchecked `0xA` on the missing interrupt object. Both are
+fixed: usbport sets the flag (and cancels its timer on the later failure path), and scsiport
+fails the adapter. A rarely taken failure path is worth one forced-failure boot.
+
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing
   N *active*, then serial silence. `hang-cpustate` shows EL1 with `PSTATE.I` set and the
@@ -14830,6 +14919,34 @@ worktree or kill a running build to propagate this fix.
    reads `4.0K` and exits 0.** Builds bind-mount the worktree at that canonical path inside a
    private namespace (`canon-run.sh`, `unshare --map-root-user --mount`), so any host-side
    sizing of the canonical path silently measures an empty directory rather than failing.
+
+### `L:no-guest-serial`: the guest never ran, and a "killed" VM may still be running
+**Symptom:** a conformance round's serial log holds only the harness's `#` header, the
+summary says `launched=0`, and `<arch>_launch.json` shows `handshake_seconds` 15.00x.
+`<arch>_qemu.stderr.log` is one line: `WSL ... UtilAcceptVsock:281: accept4 failed 110`.
+Smoke files the same failure as `LAUNCH_FAIL`. It is a host-side launch failure, not a guest
+bug: WSL interop did not get `qemu-system-*.exe` running, so nothing ever connected.
+**What is known.** Handshakes are bimodal: of 3,326 windows-host launches, successes took
+under 2.5s (p99.9, two outliers near 10s) and all 31 failures ran to the 15s limit, so a
+longer timeout would save none of them. Failures are not host-wide: launches from other runs,
+and even from the same gate's process tree, succeed in the same minute. Yet the three
+`launch_with_retry` attempts of a failing round all fail. That stickiness is UNEXPLAINED.
+(Conformance's pytest capture hides a launch that recovered on attempt 2, so "conformance
+never recovers" cannot be read from its logs; smoke recovered 86 of 95.)
+**Two causes found and fixed while looking:**
+- Retries shared one Windows staging dir, and attempt 1's qemu.exe releases its files
+  asynchronously after the kill, so attempt 2 died writing `tempdisk.qcow2` over a file
+  still open (2 of 6 rounds). Each launch now stages into its own dir.
+- `kill_by_uid` was best-effort and returned nothing, so `stop()`, `kill_one` and the reaper
+  all treated an unconfirmed kill as done and dropped the VM's lock. When `powershell.exe`
+  itself failed to launch (the same interop failure), qemu.exe ran on with no lock: invisible
+  to `ps`, `kill` and the lifetime cap. Nine were found on 2026-10-11, two of them having
+  used a full core each for eight days. Now `kill_by_uid` returns how many matches survive
+  (None if PowerShell gave no answer), every caller keeps the lock unless that is 0, and
+  `vibeos-cli ps` / `kill --stale` also list Windows-side `vibeos-<pid>-<port>` QEMUs whose
+  launcher is dead and that no live lock claims.
+**Check:** `vibeos-cli ps` prints an "untracked Windows QEMUs" block when any exist;
+`vibeos-cli kill --stale` stops them and fails if it could not confirm one.
 
 ### A kmtest count drift on a UP guest is the boot-time ladder, not the scheduler
 **Symptom.** amd64/i386 conformance drops one or a few passes in a timing test that waits

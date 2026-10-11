@@ -1440,6 +1440,8 @@ pub unsafe extern "system" fn MmMapViewInSystemSpaceEx(
     Status
 }
 
+// nolint: constant-placement (the C's no-FileObject exit is `Status = INVALID_FILE_FOR_SECTION;
+// goto Exit` where this returns, so the positional pairing shifts; each status is on its C path)
 #[no_mangle]
 pub unsafe extern "system" fn MmCreateSection(
     Section: *mut PVOID,
@@ -1457,8 +1459,9 @@ pub unsafe extern "system" fn MmCreateSection(
     let FileHandle = opaque_ptr(FileHandle);
     let FileObject = opaque_ptr(FileObject);
     if AllocationAttributes & SEC_LARGE_PAGES != 0 {
-        return 0xC000000D_u32 as i32;
+        return STATUS_INVALID_PARAMETER_6;
     }
+
 
     if AllocationAttributes & SEC_IMAGE == 0 {
         if FileObject.is_null() && FileHandle.is_null() {
@@ -1486,7 +1489,7 @@ pub unsafe extern "system" fn MmCreateSection(
 
     if !FileHandle.is_null() || !FileObject.is_null() {
         if AllocationAttributes & SEC_LARGE_PAGES != 0 {
-            return 0xC000000D_u32 as i32;
+            return STATUS_INVALID_PARAMETER_6;
         }
 
         if !FileObject.is_null() {
@@ -1528,6 +1531,15 @@ pub unsafe extern "system" fn MmCreateSection(
         return STATUS_INVALID_FILE_FOR_SECTION;
     }
 
+    // A caller-supplied FileObject always gets a DATA section, as on Server 2003 (the version
+    // we report): MmSection.c expects SEC_FILE alone, and a map at the requested base, for
+    // SEC_IMAGE with FileObject1 or FileObject2. ReactOS built an image section here and
+    // only fell back to data when the image was invalid; Win8+ rejects the combination with
+    // STATUS_INVALID_PARAMETER_6. No in-tree caller passes SEC_IMAGE with a FileObject.
+    if HaveFileObject != 0 {
+        AllocationAttributes &= !SEC_IMAGE;
+    }
+
     let mut Status = if AllocationAttributes & SEC_IMAGE != 0 {
         MmCreateImageSection(
             Section as *mut PSECTION,
@@ -1541,10 +1553,6 @@ pub unsafe extern "system" fn MmCreateSection(
     } else {
         STATUS_NOT_IMPLEMENTED
     };
-
-    if !NT_SUCCESS(Status) && HaveFileObject != 0 {
-        AllocationAttributes &= !SEC_IMAGE;
-    }
 
     if AllocationAttributes & SEC_IMAGE == 0 {
         Status = MmCreateDataFileSection(
@@ -3514,7 +3522,7 @@ pub unsafe extern "system" fn NtQuerySection(
     if PreviousMode != 0i8 {
         // C: inside _SEH2_TRY; the handler returns the exception code. (The old
         // raising extern also truncated the SIZE_T length to ULONG.)
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             SectionInformation,
             SectionInformationLength as usize,
             core::mem::align_of::<ULONG>(),
@@ -3523,7 +3531,7 @@ pub unsafe extern "system" fn NtQuerySection(
             return status;
         }
         if !ResultLength.is_null() {
-            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+            if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
                 ResultLength as PVOID,
                 core::mem::size_of::<SIZE_T>(),
                 core::mem::align_of::<SIZE_T>(),
@@ -3802,9 +3810,20 @@ pub unsafe extern "system" fn MmMapViewOfSection(
             return STATUS_SECTION_PROTECTION;
         }
 
+        // Round the caller's offset down to a page IN PLACE, as the C does (MmSection reads
+        // the aligned offset back after an unaligned \Device\PhysicalMemory view), and grow
+        // a non-zero ViewSize by the bytes rounded off, as the ARM3 path does at 64K: the
+        // view must still reach the END the caller asked for, or the bounds check below
+        // passes a request that runs past the section (ZwMapViewOfSection.c:301 maps one
+        // byte at the section's unaligned end and expects STATUS_INVALID_VIEW_SIZE).
         let mut ViewOffset: i64 = if SectionOffset.is_null() {
             0
         } else {
+            let rem = (*SectionOffset).QuadPart & (PAGE_SIZE as i64 - 1);
+            (*SectionOffset).QuadPart -= rem;
+            if core::ptr::read_volatile(ViewSize) != 0 {
+                core::ptr::write_volatile(ViewSize, core::ptr::read_volatile(ViewSize) + rem as SIZE_T);
+            }
             (*SectionOffset).QuadPart
         };
 

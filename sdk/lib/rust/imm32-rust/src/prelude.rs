@@ -358,7 +358,6 @@ pub const MAX_SYSTEM_IMM_IME_ID: i32 = 0xE0FF; // clang, install.c
 pub const MAX_USER_IMM_IME_ID: i32 = 0xE0FF; // clang, install.c
 pub const MIN_SYSTEM_IMM_IME_ID: i32 = 0xE000; // clang, install.c
 pub const MIN_USER_IMM_IME_ID: i32 = 0xE020; // clang, install.c
-pub const SECURITY_NT_AUTHORITY: i32 = 5; // clang, ctf.c
 pub const T1K_A: i32 = 0x1A; // clang, softkbd.c
 pub const T1K_BACKSPACE: i32 = 0x2F; // clang, softkbd.c
 pub const T1K_CAPS: i32 = 0x31; // clang, softkbd.c

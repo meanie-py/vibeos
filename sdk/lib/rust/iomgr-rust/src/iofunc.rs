@@ -561,7 +561,7 @@ unsafe fn IopDeviceFsIoControl(
                 core::mem::align_of::<_IO_STATUS_BLOCK>(),
             )
         };
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             IosbSize,
             IosbAlign,
@@ -569,7 +569,7 @@ unsafe fn IopDeviceFsIoControl(
         ) { return e; }
         if AccessType == METHOD_BUFFERED {
             if !OutputBuffer.is_null() {
-                if let Err(e) = probe_user_buffer(
+                if let Err(e) = probe_user_buffer_write(
                     OutputBuffer,
                     OutputBufferLength as usize,
                     core::mem::size_of::<CHAR>(),
@@ -668,7 +668,7 @@ unsafe fn IopDeviceFsIoControl(
                         return e;
                     }
                 } else if AccessType == METHOD_OUT_DIRECT {
-                    if let Err(e) = probe_user_buffer(
+                    if let Err(e) = probe_user_buffer_write(
                         OutputBuffer,
                         OutputBufferLength as usize,
                         core::mem::size_of::<CHAR>(),
@@ -1640,7 +1640,7 @@ pub unsafe extern "system" fn NtFlushBuffersFile(
     let mut KernelIosb: _IO_STATUS_BLOCK = core::mem::zeroed();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
@@ -1766,14 +1766,14 @@ pub unsafe extern "system" fn NtNotifyChangeDirectoryFile(
     let mut LockedForSync: BOOLEAN = 0u8;
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
         ) { return e; }
         if BufferSize != 0 {
-            if let Err(e) = probe_user_buffer(
+            if let Err(e) = probe_user_buffer_write(
                 Buffer,
                 BufferSize as usize,
                 core::mem::size_of::<ULONG>(),
@@ -1921,7 +1921,7 @@ pub unsafe extern "system" fn NtLockFile(
             ObDereferenceObject(FileObject as PVOID);
             return STATUS_ACCESS_DENIED;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
@@ -2096,7 +2096,7 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
     let SearchPattern: PUNICODE_STRING;
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
@@ -2105,7 +2105,7 @@ pub unsafe extern "system" fn NtQueryDirectoryFile(
             if !AuxBuffer.is_null() { ExFreePoolWithTag(AuxBuffer, TAG_IOBUF); }
             return e;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             FileInformation,
             Length as usize,
             core::mem::size_of::<ULONG>(),
@@ -2440,13 +2440,13 @@ pub unsafe extern "system" fn NtQueryInformationFile(
     }
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             core::mem::align_of::<_IO_STATUS_BLOCK>(),
             PreviousMode,
         ) { return e; }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             FileInformation,
             Length as usize,
             core::mem::size_of::<ULONG>(),
@@ -2775,7 +2775,7 @@ pub unsafe extern "system" fn NtReadFile(
                 core::mem::align_of::<_IO_STATUS_BLOCK>(),
             )
         };
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             IosbSize,
             IosbAlign,
@@ -2784,7 +2784,7 @@ pub unsafe extern "system" fn NtReadFile(
             ObDereferenceObject(FileObject as PVOID);
             return e;
         }
-        if let Err(e) = probe_user_buffer(Buffer, Length as usize, 1, PreviousMode) {
+        if let Err(e) = probe_user_buffer_write(Buffer, Length as usize, 1, PreviousMode) {
             ObDereferenceObject(FileObject as PVOID);
             return e;
         }
@@ -3093,7 +3093,7 @@ pub unsafe extern "system" fn NtSetInformationFile(
 
     if PreviousMode != 0i8 {
         // C: under _SEH2_TRY, whose handler returns the exception code.
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             1,
@@ -3618,7 +3618,7 @@ pub unsafe extern "system" fn NtWriteFile(
 
     if PreviousMode != 0i8 {
         if Iosb32 {
-            if let Err(e) = probe_user_buffer(
+            if let Err(e) = probe_user_buffer_write(
                 IoStatusBlock as *const core::ffi::c_void,
                 core::mem::size_of::<IoStatusBlock32>(),
                 core::mem::align_of::<IoStatusBlock32>(),
@@ -3627,7 +3627,7 @@ pub unsafe extern "system" fn NtWriteFile(
                 ObDereferenceObject(FileObject as PVOID);
                 return e;
             }
-        } else if let Err(status) = probe_user_buffer(
+        } else if let Err(status) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             1,
@@ -3949,7 +3949,7 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
         }
 
         // C: under _SEH2_TRY, whose handler returns the exception code.
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             1,
@@ -3957,7 +3957,7 @@ pub unsafe extern "system" fn NtQueryVolumeInformationFile(
         ) {
             return status;
         }
-        if let Err(status) = probe_user_buffer(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
+        if let Err(status) = probe_user_buffer_write(FsInformation as *const core::ffi::c_void, Length as usize, 4, PreviousMode) {
             return status;
         }
     }
@@ -4176,7 +4176,7 @@ pub unsafe extern "system" fn NtSetVolumeInformationFile(
         }
 
         // C: under _SEH2_TRY, whose handler returns the exception code.
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             IoStatusBlock as *const core::ffi::c_void,
             core::mem::size_of::<_IO_STATUS_BLOCK>(),
             1,

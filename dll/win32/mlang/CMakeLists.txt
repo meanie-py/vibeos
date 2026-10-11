@@ -7,7 +7,7 @@ spec2def(mlang.dll mlang.spec ADD_IMPORTLIB)
 # mlang.c is translated to Rust (sdk/lib/rust/mlang-rust, kept on disk per the
 # never-delete rule). Replaces the win32dll MODULE link + rust_mlang
 # custom_command. mlang-cargo's build.rs (reactos-link, ModuleKind::Win32Dll)
-# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min/list_* + vtbl
+# compiles rust_cohab_stub.c (wine debug no-ops + IsEqualGUID/min + vtbl
 # dispatch) via c_shims, EXPORTS via spec2def(mlang.spec) + spec_stubs (the
 # spec2def-generated mlang_stubs.c for the `stub`-only entries), compiles the
 # CRT startup in-cargo (.msvcrtex_crt), and imports oleaut32 (was a cmake delay

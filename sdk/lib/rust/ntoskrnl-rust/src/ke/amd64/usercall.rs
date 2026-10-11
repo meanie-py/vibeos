@@ -112,7 +112,7 @@ pub unsafe extern "system" fn KiInitializeUserApc(
     let mut exception_status: NTSTATUS = 0;
 
     'try_: {
-        if let Err(e) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(e) = ntkrnl_sys::probe::probe_user_buffer_write(
             ApcFrame as *const core::ffi::c_void,
             core::mem::size_of::<UAPC_FRAME>(),
             16,
@@ -122,8 +122,9 @@ pub unsafe extern "system" fn KiInitializeUserApc(
             break 'try_;
         }
 
-        // probe_user_buffer is validate-ONLY (range + alignment, no touch test),
-        // but the C's `__try` also covered the WRITES below — KeTrapFrameToContext
+        // probe_user_buffer_write touch-tests each page as ProbeForWrite does; this
+        // pre-fault predates it and is now belt-and-braces. The C's `__try` also covered the
+        // WRITES below — KeTrapFrameToContext
         // and the P*Home/MachineFrame stores all land in user memory, and under
         // DUMMY_PSEH a page fault there is just as unhandled as the probe raise
         // was. Pre-fault each page, same pattern (and same reasoning) as
@@ -331,7 +332,7 @@ pub unsafe extern "system" fn KeUserModeCallback(
         // C: inside the _SEH2_TRY whose handler returns the exception code. No SEH
         // here: Result probe + fault-tolerant copy onto the user stack. (The C
         // probes sizeof(PUCALLOUT_FRAME) — a pointer — the port the whole frame.)
-        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer(
+        if let Err(status) = ntkrnl_sys::probe::probe_user_buffer_write(
             CalloutFrame as PVOID,
             core::mem::size_of::<UCALLOUT_FRAME>() + ArgumentLength as usize,
             core::mem::size_of::<PVOID>(),

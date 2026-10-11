@@ -103,7 +103,7 @@ is no way round that: without the prompt it boots the hard disk at once.
 | RAM, 32 GB | All of it: `[MM] physical memory: 32686 MiB` |
 | HD 4600 iGPU | VBE linear framebuffer at the panel's native 1920x1080; no native driver |
 | Lynx Point xHCI, 2x EHCI | Started. On the xHCI: the Pico, a Razer 1532:0099 and a 413d:2114 HID device, all bound to HID class drivers. It reports 85 ports (should be 21) |
-| Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports). Since 2026-10-11 a USB-C hub sits on it with a Wi-Fi/Bluetooth stick: its USB 2 side enumerates (`214b:7250` hub, VIA `2109:2815` hub, the Realtek RTL8821CU `0bda:c820` and the hub's RTL8153 gigabit Ethernet `0bda:8153`, neither with a driver). Its SuperSpeed side (`2109:0815`) fails START: usbhub has no USB 3 hub support (it asks for a 0x29 hub descriptor, which a SuperSpeed hub stalls). On some cold boots the hub is not seen at all and PnP re-enumerates the card's root hub in a loop (not yet run down; usbxhci logs each port change and root-hub change report) |
+| Renesas uPD720201 USB 3 card (1912:0014) | usbxhci starts it (8 ports). Since 2026-10-11 a USB-C hub sits on it with a Wi-Fi/Bluetooth stick: its USB 2 side enumerates (`214b:7250` hub, VIA `2109:2815` hub, the Realtek RTL8821CU `0bda:c820` and the hub's RTL8153 gigabit Ethernet `0bda:8153`, neither with a driver). Its SuperSpeed side (`2109:0815`) fails START: usbhub has no USB 3 hub support (it asks for a 0x29 hub descriptor, which a SuperSpeed hub stalls). A cold boot that once never saw the hub was the card missing usbxhci's 20 ms halt deadline, a failure usbport then reported as success; fixed 2026-10-11 (roadmap bug registry) |
 | Crucial P310 NVMe | nvme.sys, disk and three partitions |
 | SATA AHCI, TSSTcorp DVD | UniATA; the DVD is `cdrom.sys` |
 | I217-LM Ethernet (8086:153A) | **Works** (2026-10-11): netstack-rust's e1000 backend drives it (`pch.rs`: PCH reset, PHY wake, MAC from RAR0), DHCP leases an address from the router and the stack's ICMP self-test pings the gateway. No interrupt yet: the Interrupt Line register reads 128, `HalGetInterruptVector` refuses it, and the worker polls. Link autonegotiation takes over 5 s after reset. The MAC (`a6:ee:e0:c0:50:12`) is locally administered, as Libreboot's GbE region ships |
@@ -114,6 +114,7 @@ is no way round that: without the prompt it boots the hard disk at once.
 
 - Audio: an HD Audio codec function driver for the ALC280, and the HDMI audio verb timeouts.
 - The NIC's interrupt (it polls).
-- USB: no SuperSpeed hub support in usbhub, and the intermittent root-hub stall on the USB 3
-  card (table above).
+- USB: no SuperSpeed hub support in usbhub.
+- A ~3 minute serial silence after `[SYSDRV] loading` the network drivers, with the box still
+  answering ping.
 - The netboot pull is still ~2 MB/s; the next step is bigger INT 13h reads in freeldr.

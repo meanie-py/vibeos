@@ -93,7 +93,7 @@ _CFGS = {
             "drivers/storage/class/ramdisk/ramdisk.sys",
             "drivers/serial/pl011/pl011.sys",
             "drivers/input/arm64input/arm64input.sys",
-            "drivers/video/arm64vid/arm64vid.sys",
+            "drivers/video/sysfb/sysfb.sys",
             "drivers/network/netstack/netstack.sys",
             "drivers/network/afd/afd.sys",
             "dll/win32/msafd/msafd.dll",

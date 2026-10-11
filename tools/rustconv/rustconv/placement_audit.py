@@ -110,7 +110,8 @@ def _int_value(spelling: str) -> int | None:
     if s[:2] in ("0o", "0O"):
         return int(s[2:], 8)
     if len(s) > 1 and s[0] == "0":
-        return int(s, 8)
+        # `0138` is not a C integer (8 is no octal digit): never a value to match by.
+        return int(s, 8) if s.isdigit() and not set(s) & {"8", "9"} else None
     return int(s)
 
 

@@ -65,6 +65,7 @@ pub mod enumr;
 pub mod fdo;
 pub mod hookhal;
 pub mod init;
+pub mod irqroute;
 pub mod pcivrify;
 pub mod pdo;
 pub mod power;

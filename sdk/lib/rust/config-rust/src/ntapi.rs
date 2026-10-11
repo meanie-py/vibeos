@@ -8,7 +8,7 @@ use ntkrnl_sys::rtl::*;
 use ntkrnl_sys::ddk::{ACCESS_MASK, CM_PARSE_CONTEXT, CmDeleteKey, CmDeleteValueKey, CmFlushKey, CmSaveKey, CmSaveMergedKeys, CmiCallRegisteredCallbacks, CmpCmdInit, CmpLazyFlush, CmpLockRegistry, CmpLockRegistryExclusive, CmpReleaseKcbLock, CmpSaveBootControlSet, CmpSetVersionData, CmpUnlockRegistry, ExGetPreviousMode, KPROCESSOR_MODE, KeEnterCriticalRegion, KeLeaveCriticalRegion, _OBJECT_ATTRIBUTES, _OBJECT_HANDLE_INFORMATION, ObCloseHandle, ObOpenObjectByName, ObOpenObjectByPointer, ObReferenceObjectByHandle, ObpValidateAttributes, PCM_KEY_BODY, PHANDLE, PIO_APC_ROUTINE, PIO_STATUS_BLOCK, PKEY_VALUE_ENTRY, POBJECT_ATTRIBUTES, POBJECT_TYPE, PSECURITY_DESCRIPTOR, PUNICODE_STRING, REG_DELETE_KEY_INFORMATION, REG_DELETE_VALUE_KEY_INFORMATION, REG_ENUMERATE_KEY_INFORMATION, REG_ENUMERATE_VALUE_KEY_INFORMATION, REG_POST_OPERATION_INFORMATION, REG_QUERY_KEY_INFORMATION, REG_QUERY_VALUE_KEY_INFORMATION, REG_SET_VALUE_KEY_INFORMATION, RtlInitEmptyUnicodeString, SeCaptureSecurityDescriptor, SeReleaseSecurityDescriptor, SeSinglePrivilegeCheck, ZwInitializeRegistry};
 use ntkrnl_sys::ddk::{KEY_INFORMATION_CLASS, KEY_VALUE_INFORMATION_CLASS, KEY_SET_INFORMATION_CLASS, _UNICODE_STRING, LUID, _GENERIC_MAPPING};
 use ntkrnl_sys::opaque_ptr;
-use ntkrnl_sys::probe::{probe_user_buffer, probe_write_user, write_user};
+use ntkrnl_sys::probe::{probe_user_buffer, probe_user_buffer_write, probe_write_user, write_user};
 // `_KPROCESSOR_MODE_KernelMode` and `_MODE_KernelMode` aren't usable from ddk for
 // our comparisons (KPROCESSOR_MODE = i8; the bindgen enum variants are u32). Define
 // local i8 constants — KernelMode == 0.
@@ -656,7 +656,7 @@ pub unsafe extern "system" fn NtEnumerateKey(
         // against a size and so rejects only the first few bytes of the address space.
         // Both pointers are written by CmEnumerateKey below, so a kernel address here
         // was an arbitrary kernel write reachable from any caller that can open a key.
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             ResultLength as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::size_of::<ULONG>(),
@@ -665,7 +665,7 @@ pub unsafe extern "system" fn NtEnumerateKey(
             ObDereferenceObject(KeyObject as *mut core::ffi::c_void);
             return e;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             KeyInformation as *const core::ffi::c_void,
             Length as usize,
             core::mem::size_of::<ULONG>(),
@@ -753,8 +753,9 @@ pub unsafe extern "system" fn NtEnumerateValueKey(
         // `write_bytes(KeyValueInformation, 0, Length)` ZEROES the caller's whole output
         // buffer, where ProbeForWrite touches one byte per page and preserves contents.
         //
-        // probe_user_buffer is range plus alignment, no touch — correct under DUMMY_PSEH.
-        if let Err(e) = probe_user_buffer(
+        // probe_user_buffer_write is range plus alignment plus ProbeForWrite's one-byte-per-
+        // page touch, done through the fault-protected copy, so it is safe under DUMMY_PSEH.
+        if let Err(e) = probe_user_buffer_write(
             ResultLength as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::size_of::<ULONG>(),
@@ -763,7 +764,7 @@ pub unsafe extern "system" fn NtEnumerateValueKey(
             ObDereferenceObject(KeyObject as PVOID);
             return e;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             KeyValueInformation as *const core::ffi::c_void,
             Length as usize,
             core::mem::size_of::<ULONG>(),
@@ -886,7 +887,7 @@ pub unsafe extern "system" fn NtQueryKey(
         //
         // probe_user_buffer is range plus alignment and never touches the page, which is
         // what DUMMY_PSEH requires — a touch that faults here has no handler to reach.
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             ResultLength as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::size_of::<ULONG>(),
@@ -895,7 +896,7 @@ pub unsafe extern "system" fn NtQueryKey(
             ObDereferenceObject(KeyObject as PVOID);
             return e;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             KeyInformation as *const core::ffi::c_void,
             Length as usize,
             core::mem::size_of::<ULONG>(),
@@ -981,7 +982,7 @@ pub unsafe extern "system" fn NtQueryValueKey(
         // the code. What stood here touch-tested both pointers with raw stores and NO
         // range check: a kernel address passed as KeyValueInformation had a byte
         // zeroed and then received the whole value from CmQueryValueKey.
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             ResultLength as *const core::ffi::c_void,
             core::mem::size_of::<ULONG>(),
             core::mem::size_of::<ULONG>(),
@@ -990,7 +991,7 @@ pub unsafe extern "system" fn NtQueryValueKey(
             ObDereferenceObject(KeyObject as PVOID);
             return e;
         }
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             KeyValueInformation as *const core::ffi::c_void,
             Length as usize,
             core::mem::size_of::<ULONG>(),

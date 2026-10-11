@@ -132,7 +132,7 @@ pub unsafe extern "system" fn NtCreateSemaphore(
     let mut hSemaphore: HANDLE = core::ptr::null_mut();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             SemaphoreHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -196,7 +196,7 @@ pub unsafe extern "system" fn NtOpenSemaphore(
     let mut hSemaphore: HANDLE = core::ptr::null_mut();
 
     if PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             SemaphoreHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -312,7 +312,7 @@ pub unsafe extern "system" fn NtReleaseSemaphore(
     let mut Semaphore: PVOID = core::ptr::null_mut();
 
     if !PreviousCount.is_null() && PreviousMode != 0i8 {
-        if let Err(e) = probe_user_buffer(
+        if let Err(e) = probe_user_buffer_write(
             PreviousCount as *const core::ffi::c_void,
             core::mem::size_of::<LONG>(),
             core::mem::align_of::<LONG>(),

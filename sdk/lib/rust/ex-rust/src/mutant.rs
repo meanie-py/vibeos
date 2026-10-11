@@ -119,7 +119,7 @@ pub unsafe extern "system" fn NtCreateMutant(
     let mut Mutant: PKMUTANT = core::ptr::null_mut();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             MutantHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -176,7 +176,7 @@ pub unsafe extern "system" fn NtOpenMutant(
     let PreviousMode = ExGetPreviousMode();
 
     if PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             MutantHandle as *const core::ffi::c_void,
             core::mem::size_of::<HANDLE>(),
             core::mem::align_of::<HANDLE>(),
@@ -300,7 +300,7 @@ pub unsafe extern "system" fn NtReleaseMutant(
     let PreviousMode = ExGetPreviousMode();
 
     if !PreviousCount.is_null() && PreviousMode != 0i8 {
-        if let Err(status) = probe_user_buffer(
+        if let Err(status) = probe_user_buffer_write(
             PreviousCount as *const core::ffi::c_void,
             core::mem::size_of::<LONG>(),
             core::mem::align_of::<LONG>(),

@@ -11,6 +11,7 @@ path = "src/lib.rs"
 crate-type = ["staticlib"]
 
 [dependencies]
+winelist-rust = { path = "../winelist-rust" }
 conutils-h = { path = "../conutils-h" }
 strsafe-rust = { path = "../strsafe-rust" }
 panic-common = { path = "../panic-common", features = ["user"] }
