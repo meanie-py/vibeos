@@ -829,3 +829,30 @@ def test_a_derived_arm_keeps_the_old_arms_hand_section():
     assert "BLOCKLIST_FUNCS=1\n    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n" in out
     assert "BLOCKLIST_FUNCS=0" not in out and out.count("# >>> hand") == 1
     assert port.upsert_profile_arm(out, new_arm, "cmd") == out  # stable on re-derive
+
+
+def test_gen_arm_write_is_locked_and_atomic(tmp_path, monkeypatch):
+    # Three integration agents re-derived concurrently; a running bash read a half-rewritten
+    # gen_driver_types.sh. The writer re-reads under a lock and swaps the inode.
+    gen = tmp_path / "gen_driver_types.sh"
+    gen.write_text('case "$1" in\n  a)\n    X=1\n    ;;\n  *) echo "unknown driver $1"; exit 1 ;;\nesac\n')
+    monkeypatch.setattr(port, "GEN", gen)
+    ino = gen.stat().st_ino
+    port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")
+    text = gen.read_text()
+    assert "  a)\n    X=1" in text and "  b)\n    Y=2" in text
+    assert gen.stat().st_ino != ino  # replaced, not rewritten in place
+    port._write_gen_arm("  b)\n    Y=2\n    ;;\n", "b")  # idempotent
+    assert gen.read_text() == text
+
+
+def test_conutils_streams_are_values_not_places(tmp_path):
+    rs = tmp_path / "n.rs"
+    rs.write_text(
+        "fn f() { ConPuts((addr_of_mut!(StdOut)).cast(), s); ConPrintf(&raw mut StdErr, f); "
+        "ConPuts(StdOut, s); let csStdOut_p = addr_of_mut!(csStdOut); }\n"
+    )
+    assert port._con_stream_values(rs) == 2
+    out = rs.read_text()
+    assert "ConPuts(StdOut, s); ConPrintf(StdErr, f); ConPuts(StdOut, s);" in out
+    assert "addr_of_mut!(csStdOut)" in out

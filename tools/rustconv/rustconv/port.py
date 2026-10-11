@@ -381,9 +381,7 @@ def stage_derive(
             f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
             f"({crate_dir.relative_to(REPO)}); port it under another stem/target name"
         )
-    updated = upsert_profile_arm(script, arm, stem)
-    if updated != script:
-        GEN.write_text(updated)
+    arm_changed = _write_gen_arm(arm, stem)
     state = load_state(stem)
     # A VENDORED source (vendor.yaml) is not a translation target: it stays C, in the CMake
     # source list, beside the module's own Rust. mstsc's target compiles 18 vendor/rdesktop
@@ -421,12 +419,10 @@ def stage_derive(
     )
     if usermode is not None:
         state["mode_override"] = usermode
-    _record(
-        state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=updated != script
-    )
+    _record(state, "derive", started, tus=len(dp.module.compiled_tus), arm_changed=arm_changed)
     print(
         f"derive: {stem} — {len(dp.module.compiled_tus)} TU(s), crate {dp.crate_name}"
-        f"{' (arm written)' if updated != script else ' (arm unchanged)'}"
+        f"{' (arm written)' if arm_changed else ' (arm unchanged)'}"
     )
     return dp
 
@@ -496,6 +492,36 @@ def _target_args(state: dict) -> list[str]:
 
 def _crate_dir(state: dict) -> Path:
     return REPO / "sdk" / "lib" / "rust" / state["crate"]
+
+
+def _write_gen_arm(arm: str, stem: str) -> bool:
+    """Upsert one arm into gen_driver_types.sh: under a lock, re-read, atomic replace.
+
+    Concurrent replays (three integration agents) each re-derive when resolve widens an
+    island allowlist. A plain read-modify-write loses another run's arm, and an in-place
+    rewrite while a sibling's `bash gen_driver_types.sh` is executing it hands bash a file
+    that changed under its read offset: `syntax error near unexpected token ')'` at a line
+    that is fine on disk a second later. os.replace swaps the inode, so a running bash keeps
+    reading the script it started with."""
+    import fcntl
+    import tempfile
+
+    with open(GEN.with_suffix(".sh.lock"), "a+") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        current = GEN.read_text()
+        updated = upsert_profile_arm(current, arm, stem)
+        if updated == current:
+            return False
+        fd, tmp = tempfile.mkstemp(dir=GEN.parent, prefix=".gen_driver_types.", suffix=".sh")
+        try:
+            with os.fdopen(fd, "w") as f:
+                f.write(updated)
+            os.chmod(tmp, GEN.stat().st_mode & 0o7777)
+            os.replace(tmp, GEN)
+        except BaseException:
+            Path(tmp).unlink(missing_ok=True)
+            raise
+    return True
 
 
 def _add_island_headers(dp: pd.DerivedProfile, extra: dict[str, str]) -> None:
@@ -2751,6 +2777,28 @@ def _extern_only_statics(path: Path, c_file: Path) -> list[str]:
 _C2RUST_PRELUDE_FIELD = re.compile(r"\.(Option|Some|None|Ok|Err|Result|Box|Vec|String)_0\b")
 
 
+_CON_ADDR = (
+    r"(?:(?:core::ptr::)?addr_of(?:_mut)?!\(\s*(?P<{g}>StdIn|StdOut|StdErr)\s*\)"
+    r"|&raw\s+(?:mut|const)\s+(?P<{h}>StdIn|StdOut|StdErr)\b)"
+)
+_CON_STREAM_ADDR = re.compile(
+    r"\(\s*" + _CON_ADDR.format(g="a", h="b") + r"\s*\)(?:\s*\.cast\(\))?"
+    r"|" + _CON_ADDR.format(g="c", h="d") + r"(?:\s*\.cast\(\))?"
+)
+
+
+def _con_stream_values(path: Path) -> int:
+    """`addr_of_mut!(StdOut)` -> `StdOut`: conutils' stream.h says `#define StdOut
+    (&csStdOut)`, so the name is ALREADY the `PCON_STREAM` (conutils-h's `pub const`), and the
+    model's address-of is of a constant (E0745) -- or, cast, a pointer to the pointer.
+    netstat, route and timeout each had it."""
+    text = path.read_text()
+    new, n = _CON_STREAM_ADDR.subn(lambda m: m["a"] or m["b"] or m["c"] or m["d"], text)
+    if n:
+        path.write_text(new)
+    return n
+
+
 def _c2rust_prelude_fields(path: Path) -> int:
     """`.Option_0` -> `.Option`: c2rust renames a C member that collides with a Rust prelude
     name, bindgen keeps it. regedit's IO_RESOURCE_DESCRIPTOR reads came back as
@@ -2933,6 +2981,10 @@ def stage_integrate(stem: str) -> None:
         if rx:
             changed += 1
             print(f"integrate: {path.stem}: {rx} __REACTOS__ gate(s) settled to the live arm")
+        cs = _con_stream_values(path)
+        if cs:
+            changed += 1
+            print(f"integrate: {path.stem}: {cs} conutils stream address-of(s) -> the stream")
         pf = _c2rust_prelude_fields(path)
         if pf:
             changed += 1
