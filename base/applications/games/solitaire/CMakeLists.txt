@@ -4,7 +4,7 @@ list(APPEND SOURCE
     # solgame.cpp  # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solgame.rs)
     # solundo.cpp  # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solundo.rs)
     # solitaire.cpp  # replaced by Rust (sdk/lib/rust/sol-rust/src/sol/solitaire.rs)
-    rust_cohab_stub.c
+    rust_cohab_stub.cpp
     solitaire.h)
 
 add_rc_deps(rsrc.rc ${CMAKE_CURRENT_SOURCE_DIR}/solitaire.ico)

@@ -26,7 +26,7 @@ list(APPEND SOURCE
     # toolsettings.cpp  # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/toolsettings_cpp_h.rs)
     # toolsmodel.cpp  # replaced by Rust (sdk/lib/rust/mspaint-rust/src/mspaint/toolsmodel_cpp_h.rs)
     rust_varargs_shim.c
-    rust_cohab_stub.c
+    rust_cohab_stub.cpp
     precomp.h)
 
 file(GLOB mspaint_rc_deps img/*.*)

@@ -13,7 +13,7 @@ add_executable(cleanmgr
     # CCleanupHandler.cpp  # replaced by Rust (sdk/lib/rust/cleanmgr-rust/src/cleanmgr/CCleanupHandler_cpp_h.rs)
     CCleanupHandler.hpp
     # CCleanupHandlerList.cpp  # replaced by Rust (sdk/lib/rust/cleanmgr-rust/src/cleanmgr/CCleanupHandlerList_cpp_h.rs)
-    rust_cohab_stub.c
+    rust_cohab_stub.cpp
     CCleanupHandlerList.hpp
 )
 add_dependencies(cleanmgr rust_cleanmgr_rust)

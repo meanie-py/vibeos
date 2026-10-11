@@ -8,7 +8,7 @@ list(APPEND SOURCE
     # audio_wavein.cpp  # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_wavein_cpp_h.rs)
     # audio_waveout.cpp  # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/audio_waveout_cpp_h.rs)
     # sndrec32.cpp  # replaced by Rust (sdk/lib/rust/sndrec32-rust/src/sndrec32/sndrec32_cpp_h.rs)
-    rust_cohab_stub.c
+    rust_cohab_stub.cpp
     stdafx.h)
 
 file(GLOB sndrec32_rc_deps resources/*.*)
