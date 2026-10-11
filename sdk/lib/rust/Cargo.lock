@@ -339,6 +339,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -1016,6 +1017,17 @@ dependencies = [
 name = "eventlog-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "eventvwr-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
@@ -2019,6 +2031,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3091,6 +3104,7 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "win32macros-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3449,6 +3463,7 @@ dependencies = [
  "panic-common",
  "secur32-sys",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -4497,6 +4512,17 @@ name = "winetrace-shim"
 version = "0.1.0"
 
 [[package]]
+name = "winhlp32-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "winlogon-cargo"
 version = "0.1.0"
 dependencies = [
@@ -4635,6 +4661,17 @@ dependencies = [
 
 [[package]]
 name = "wmisvc-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "wordpad-rust"
 version = "0.1.0"
 dependencies = [
  "conutils-h",

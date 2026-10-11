@@ -1770,11 +1770,9 @@ pub struct MIMECSETINFO {
     pub uiInternetEncoding: u32,
     pub wszCharset: [u16; 50],
 }
-#[repr(C)]
-pub struct list {
-    pub Flink: *mut list,
-    pub Blink: *mut list,
-}
+// wine/list.h: `struct list` and its inline helpers, from the shared port. The font cache
+// is declared a LIST_ENTRY here (Flink/Blink); both are two pointers, next then prev.
+use winelist_rust::{list, list_add_tail, list_remove};
 
 // File-scope statics
 pub static mut instance: HINSTANCE = 0 as *mut c_void;
@@ -1813,10 +1811,8 @@ extern "system" {
     fn GetTextCharset(hdc: HDC) -> i32;
     fn GetProcessHeap() -> HANDLE;
     fn HeapAlloc(hHeap: HANDLE, dwFlags: u32, dwBytes: usize) -> *mut core::ffi::c_void;
-    fn list_add_tail(head: *mut LIST_ENTRY, item: *mut LIST_ENTRY);
     fn DeleteObject(hObject: *mut core::ffi::c_void) -> i32;
     fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
-    fn list_remove(entry: *mut list);
     fn IsEqualGUID(rguid1: *const GUID, rguid2: *const GUID) -> u8;
     fn InterlockedIncrement(Addend: *mut i32) -> i32;
     fn InterlockedDecrement(Addend: *mut i32) -> i32;
@@ -2199,8 +2195,8 @@ unsafe extern "C" fn map_font(hdc: HDC, codepages: u32, src_font: HFONT, dst_fon
                 (*font_list_entry).charset = charset as u32;
 
                 EnterCriticalSection(core::ptr::addr_of_mut!(font_cache_critical));
-                list_add_tail(core::ptr::addr_of_mut!(font_cache),
-                              core::ptr::addr_of_mut!((*font_list_entry).list_entry));
+                list_add_tail(core::ptr::addr_of_mut!(font_cache) as *mut list,
+                              core::ptr::addr_of_mut!((*font_list_entry).list_entry) as *mut list);
                 LeaveCriticalSection(core::ptr::addr_of_mut!(font_cache_critical));
 
                 if !dst_font.is_null() {
@@ -2222,7 +2218,6 @@ unsafe extern "C" fn release_font(font: HFONT) -> HRESULT {
         fn GetProcessHeap() -> *mut core::ffi::c_void;
         fn HeapFree(hHeap: *mut core::ffi::c_void, dwFlags: u32, lpMem: *mut core::ffi::c_void) -> i32;
         fn DeleteObject(ho: HGDIOBJ) -> i32;
-        fn list_remove(entry: *mut list);
     }
 
     // Constants
@@ -2243,7 +2238,7 @@ unsafe extern "C" fn release_font(font: HFONT) -> HRESULT {
             hr = S_OK;
             break;
         }
-        entry = (*entry).Flink;
+        entry = (*entry).next;
     }
 
     LeaveCriticalSection(core::ptr::addr_of_mut!(font_cache_critical));

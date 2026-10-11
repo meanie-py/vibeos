@@ -14,7 +14,7 @@
 //! mlang-rust builds with the STANDARD user target (Win32Dll → kernel_rust=false);
 //! the engine restates the i386 no-SSE baseline (matching cmake's
 //! MLANG_RUST_RUSTFLAGS -sse,-sse2). rust_cohab_stub.c (wine TRACE/WARN/FIXME +
-//! IsEqualGUID/IsEqualIID + min + the wine list_* helpers + vtbl dispatch that
+//! IsEqualGUID/IsEqualIID + min + vtbl dispatch that
 //! mlang-rust calls) is header-free → compiled in-cargo via c_shims.
 //!
 //! oleaut32 was a cmake DELAY import; delay-imports collapse to regular imports
@@ -38,7 +38,7 @@ fn main() {
 
     Linker::new(target_json)
         .rust_staticlib("mlang-rust")
-        // wine debug no-ops + IsEqualGUID/min/list_*/vtbl helpers mlang-rust calls.
+        // wine debug no-ops + IsEqualGUID/min/vtbl helpers mlang-rust calls.
         .c_shims(&["dll/win32/mlang/rust_cohab_stub.c"])
         .spec2def("dll/win32/mlang/mlang.spec", "mlang.dll")
         // mlang.spec has `stub`-only entries → compile + link mlang_stubs.c.
