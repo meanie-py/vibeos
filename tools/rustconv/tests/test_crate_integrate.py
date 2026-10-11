@@ -331,3 +331,23 @@ def test_rewrapped_fn_pointer_expect_becomes_unchecked():
     src = 'Some(\n  (*d).ISRHandler\n    .expect("non-null function pointer"),\n)\n.unwrap_unchecked()(a);'
     out, n = unchecked_fn_pointer_calls(src)
     assert n == 1 and "expect" not in out
+
+
+def test_a_type_the_prelude_reexports_from_this_module_is_kept(tmp_path):
+    """resolve wires `pub use crate::m::unit::LPFNCONSTRUCTOR;`; integrating `unit` must not
+    then drop LPFNCONSTRUCTOR as prelude-provided -- that deleted msctf's two typedefs."""
+    crate = make_crate(tmp_path)
+    prelude = crate / "src" / "prelude.rs"
+    prelude.write_text(
+        prelude.read_text() + "pub use crate::m::unit::LPFNCONSTRUCTOR;\n"
+        "pub use crate::m::other::Elsewhere;\n"
+    )
+    _PROVIDED_CACHE.clear()
+    src = (
+        "use crate::prelude::*;\n"
+        'pub type LPFNCONSTRUCTOR = unsafe extern "C" fn() -> i32;\n'
+        "pub type Elsewhere = u32;\n"
+    )
+    out, _ = integrate(src, crate, module="unit")
+    assert "pub type LPFNCONSTRUCTOR" in out
+    assert "pub type Elsewhere" not in out  # another module's: still the prelude's to supply

@@ -929,3 +929,49 @@ def test_a_callback_static_member_keeps_the_system_abi():
     )
     assert 'pub unsafe extern "system" fn Cb(h: HWND, l: LPARAM) -> BOOL' in out
     assert "pub unsafe fn Plain()" in out
+
+
+def test_assemble_files_a_nested_class_method_under_the_nested_class():
+    """msctfime's `CTextEventSink__anon0____ctor_0` belongs to the union, not CTextEventSink."""
+    m = ModuleModel()
+    for n in ("CTextEventSink", "CTextEventSink__anon0"):
+        m.classes[n] = ClassModel(n, n, "struct", "s.h")
+    rs = cpp_app.assemble(
+        "pub unsafe fn CTextEventSink__anon0____ctor_0(this_: *mut CTextEventSink__anon0) {}\n", m
+    )
+    assert "impl CTextEventSink__anon0 {" in rs
+    assert "pub unsafe fn __ctor_0(&mut self" in rs
+
+
+def test_a_type_nested_in_a_class_is_reachable_by_its_bare_name():
+    """msctfime's sinks.h: `typedef INT (CALLBACK *FN_COMPARE)(..)` inside a class."""
+    m = ModuleModel()
+    for n in ("CActiveLanguageProfileNotifySink", "CicProfile"):
+        m.classes[n] = ClassModel(n, n, "class", "s.h")
+    island = (
+        "pub type CActiveLanguageProfileNotifySink_FN_COMPARE = Option<fn()>;\n"
+        "pub struct CicProfile_tagLANG_PROF_ENUM_ARG {\n    pub a: u32,\n}\n"
+        "pub type CicProfile_LANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;\n"
+        "pub type LANG_PROF_ENUM_ARG = u32;\n"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type FN_COMPARE = CActiveLanguageProfileNotifySink_FN_COMPARE;" in glue
+    assert "pub type tagLANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;" in glue
+    assert "pub type LANG_PROF_ENUM_ARG =" not in glue  # the island already has one
+    m.classes["tagLANG_PROF_ENUM_ARG"] = ClassModel(
+        "tagLANG_PROF_ENUM_ARG", "tagLANG_PROF_ENUM_ARG", "struct", "p.h"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type tagLANG_PROF_ENUM_ARG =" not in glue  # cppapp renders that class
+
+
+def test_island_glue_gives_a_packed_interface_no_deref():
+    """shlobj.h's `#pragma pack`: `&self._base` of a packed field is E0793."""
+    island = (
+        "#[repr(C, packed)]\n#[derive(Debug, Copy, Clone)]\n"
+        "pub struct IShellFolder {\n    pub _base: IUnknown,\n}\n"
+        "#[repr(C)]\npub struct ITfLangBarMgr_P {\n    pub _base: ITfLangBarMgr,\n}\n"
+    )
+    glue = cpp_app._render_island_glue(ModuleModel(), island)
+    assert "Deref for IShellFolder" not in glue
+    assert "Deref for ITfLangBarMgr_P" in glue

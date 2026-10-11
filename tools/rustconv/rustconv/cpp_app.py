@@ -29,6 +29,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from . import cpp_templates
 from .cpp_core import c_type_to_rust
 from .cpp_model import ATL_BASE_ALIASES, ATL_IMPL_METHODS, ClassModel, Method, ModuleModel
 
@@ -86,6 +87,11 @@ def rust_type(c: str, model: ModuleModel, *, field: bool = False) -> str:
         return "f32"
     if c in ("double",):
         return "f64"
+    if "<" in c:
+        # A field or global of a registered template type (`CicArray<GUID> m_array`).
+        tb = cpp_templates.template_base(c, lambda a: rust_type(a, model))
+        if tb is not None:
+            return tb.rust_type
     t = c_type_to_rust(c)
     if field and t.startswith("&"):
         t = (
@@ -410,7 +416,65 @@ def render_classes(
     for cls in model.classes.values():
         out.append(_render_class(cls, h, model, cls.name in island_structs and _plain(cls)))
     out.append(_render_globals(model, h))
+    out.append(_render_island_glue(model, island))
     return "\n".join(out) + "\n"
+
+
+def _render_island_glue(model: ModuleModel, island: str) -> str:
+    """Two C++ spellings bindgen's island has no name for.
+
+    A class-scoped anonymous enum (`class CUIFWindow { enum { USER_TIMER_ID = 0x5461 }; }`)
+    is `CUIFWindow_USER_TIMER_ID` in the island, but the class's own methods say
+    `USER_TIMER_ID`: re-export it bare when exactly one class has that member and nothing
+    else owns the name. And a C++ struct base (`struct INPUTCONTEXTDX : INPUTCONTEXT`) is a
+    `_base` field, while C++ reaches its members as the struct's own (`pIC->hCandInfo`):
+    the struct derefs to it, as a class with an SDK base already does.
+    """
+    island_names = frozenset(re.findall(r"^\s*pub (?:type|struct|union|enum) (\w+)", island, re.M))
+    lines: list[str] = []
+    owners: dict[str, list[tuple[str, str]]] = {}
+    for cls in model.classes:
+        for m in re.finditer(rf"^pub const {re.escape(cls)}_(\w+): (\w+) = ", island, re.M):
+            owners.setdefault(m.group(1), []).append((cls, m.group(2)))
+    for name, found in sorted(owners.items()):
+        if (
+            len(found) == 1
+            and name not in island_names
+            and not re.search(rf"^pub const {re.escape(name)}\b", island, re.M)
+        ):
+            cls, ty = found[0]
+            lines.append(f"pub const {name}: {ty} = {cls}_{name};")
+    # The same for a TYPE nested in a class: member code names `FN_COMPARE`, bindgen emits
+    # `CActiveLanguageProfileNotifySink_FN_COMPARE`. Aliased only when one class owns it.
+    types: dict[str, list[str]] = {}
+    for cls in model.classes:
+        pat = rf"^pub (?:type|struct|union|enum) {re.escape(cls)}_(\w+)\b"
+        for m in re.finditer(pat, island, re.M):
+            types.setdefault(m.group(1), []).append(cls)
+    rendered = {c.name for c in model.classes.values()}  # cppapp lays these out itself
+    for name, found in sorted(types.items()):
+        if len(found) == 1 and name not in island_names and name not in rendered:
+            lines.append(f"pub type {name} = {found[0]}_{name};")
+    for m in re.finditer(
+        r"((?:^#\[[^\n]*\]\n)*)^pub struct (\w+) \{\n\s*pub _base: (\w+),", island, re.M
+    ):
+        attrs, name, base = m.groups()
+        if name in model.classes:
+            continue
+        if "packed" in attrs:
+            # A struct under `#pragma pack` (shlobj.h's IShellFolder & co): a reference to its
+            # `_base` field is unaligned (E0793), so it gets no Deref -- the 36 such impls
+            # were msctf's entire E0793 count.
+            continue
+        lines.append(
+            f"impl core::ops::Deref for {name} {{ type Target = {base}; "
+            f"fn deref(&self) -> &{base} {{ &self._base }} }}"
+        )
+        lines.append(
+            f"impl core::ops::DerefMut for {name} {{ "
+            f"fn deref_mut(&mut self) -> &mut {base} {{ &mut self._base }} }}"
+        )
+    return "\n".join(lines) + "\n" if lines else ""
 
 
 def _plain(cls: ClassModel) -> bool:
@@ -434,7 +498,7 @@ def _render_class(
         if bn in h.by_short:
             lines.append(f"    pub __base{i}: {bn},")
         else:
-            lines.append(f"    pub __base{i}: {_external_base(b.name)},")
+            lines.append(f"    pub __base{i}: {_external_base(b.name, model)},")
     for f in cls.fields:
         if f.static:
             continue
@@ -574,7 +638,7 @@ def _render_class(
     elif cls.bases and short(cls.bases[0].name) not in h.by_short and not h.com_bases(cls):
         # An SDK struct base (CRect : tagRECT): C++ reaches its fields as the class's own
         # (`rc.top`), so the class derefs to it.
-        base = _external_base(cls.bases[0].name)
+        base = _external_base(cls.bases[0].name, model)
         lines.append(
             f"impl core::ops::Deref for {n} {{ type Target = {base}; "
             f"fn deref(&self) -> &{base} {{ &self.__base0 }} }}"
@@ -1216,7 +1280,7 @@ def _render_atl_glue(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
     return "\n".join(lines)
 
 
-def _external_base(name: str) -> str:
+def _external_base(name: str, model: ModuleModel | None = None) -> str:
     """A base class the module does not define. ATL's window templates never get here (they
     alias to the module's CWindow); what does is a plain C struct from the SDK --
     `BITMAPINFOEX : BITMAPINFO` -- which is embedded by value as the island lays it out. A
@@ -1224,6 +1288,9 @@ def _external_base(name: str) -> str:
     if _template_name(name) in _ATL_RUST_BASES:
         return _ATL_RUST_BASES[_template_name(name)]
     if "<" in name:
+        tb = cpp_templates.template_base(name, lambda a: rust_type(a, model) if model else a)
+        if tb is not None:
+            return tb.rust_type
         raise CppAppError(f"external template base {name} has no Rust layout; port it first")
     return name.split("::")[-1].strip()
 
@@ -1760,7 +1827,10 @@ def assemble(rust: str, model: ModuleModel) -> str:
     externs = _extern_block_spans(rust)
     for m in _FN_HEAD_RE.finditer(rust):
         name = m.group("name")
-        cls = next((c for c in classes if name.startswith(c + "__")), None)
+        # The LONGEST class the name starts with: a nested class's name contains its outer
+        # class's and `__` (`CTextEventSink__anon0____ctor_0`), and the first match out of a
+        # set put the union's constructor on CTextEventSink as `anon0____ctor_0`.
+        cls = max((c for c in classes if name.startswith(c + "__")), key=len, default=None)
         if cls is None or m.start() < pos:
             continue
         # A DECLARATION is not a method: inside an `extern {}` block, or a head whose `;`
@@ -2033,7 +2103,9 @@ def _class_api(cls: ClassModel, h: Hierarchy, model: ModuleModel) -> str:
         lines.append(f"    pub __vtbl: *const {cls.name}__vtbl,")
     for i, b in enumerate(cls.bases):
         bn = short(b.name)
-        lines.append(f"    pub __base{i}: {bn if bn in h.by_short else _external_base(b.name)},")
+        lines.append(
+            f"    pub __base{i}: {bn if bn in h.by_short else _external_base(b.name, model)},"
+        )
     for f in cls.fields:
         if not f.static:
             lines.append(f"    pub {_ident(f.name)}: {rust_type(f.c_type, model, field=True)},")

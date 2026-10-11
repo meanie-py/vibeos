@@ -741,6 +741,15 @@ def test_flip_links_with_the_targets_own_link_signature():
     assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out
 
 
+def test_a_cpp_module_gets_a_cpp_stub_tu():
+    """The stub is the module's last compile command once every TU flips; a C stub of a C++
+    module lacks the C++-only include directories the tools borrow (msutb's ATL)."""
+    from rustconv.port import _stub_name
+
+    assert _stub_name({"cpp_tus": ["base/ctf/msutb/msutb.cpp"]}) == "rust_cohab_stub.cpp"
+    assert _stub_name({"tus": ["dll/win32/x/x.c"]}) == "rust_cohab_stub.c"
+
+
 def test_a_copy_naming_its_source_crates_private_type_is_refused(tmp_path, monkeypatch):
     # regedit got ucrt-rust's `qsort(.., comp: Compare)`; `Compare` is ucrt's own alias.
     rust = tmp_path / "sdk" / "lib" / "rust"
@@ -749,17 +758,26 @@ def test_a_copy_naming_its_source_crates_private_type_is_refused(tmp_path, monke
     monkeypatch.setattr(port, "REPO", tmp_path)
     from rustconv.prelude_resolve import Item
 
-    priv = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: Compare);", None, "ucrt-rust/src/q.rs")
-    ok = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: PFN);", None, "ucrt-rust/src/q.rs")
+    priv = Item(
+        "fn", "pub fn qsort(b: *mut c_void, n: usize, comp: Compare);", None, "ucrt-rust/src/q.rs"
+    )
+    ok = Item(
+        "fn", "pub fn qsort(b: *mut c_void, n: usize, comp: PFN);", None, "ucrt-rust/src/q.rs"
+    )
     assert port._private_types(priv, {"PFN"}) == {"Compare"}
     assert port._private_types(ok, {"PFN"}) == set()
-    rel = Item("fn", "pub fn qsort(b: *mut c_void, cmp: super::super::CntCmpFn);", None, "cnt-rust/src/g.rs")
+    rel = Item(
+        "fn",
+        "pub fn qsort(b: *mut c_void, cmp: super::super::CntCmpFn);",
+        None,
+        "cnt-rust/src/g.rs",
+    )
     assert port._private_types(rel, set()) == {"super::super::CntCmpFn"}
 
 
 def test_a_negative_fact_of_an_unsigned_type_is_its_bit_pattern():
     # calc: clang evaluated _UI64_MAX to -1; `pub const _UI64_MAX: u64 = -1;` is E0600.
-    from rustconv.prelude_resolve import existing_facts, render_facts
+    from rustconv.prelude_resolve import render_facts
 
     out = render_facts({"_UI64_MAX": ("u64", -1, "fun_ieee.c")})
     assert "pub const _UI64_MAX: u64 = 0xFFFFFFFFFFFFFFFF; // clang, fun_ieee.c" in out
@@ -790,8 +808,8 @@ def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
     # regedit's regproc.rs: both arms, gated on things Rust never sets -> Wine's arm compiled.
     rs = tmp_path / "regproc.rs"
     rs.write_text(
-        "fn a() {\n    if cfg!(feature = \"reactos\") {\n        live1();\n    } else {\n        wine1(x, 1);\n    }\n}\n"
-        "fn b() {\n    #[cfg(feature = \"reactos\")]\n    live2();\n    #[cfg(not(feature = \"reactos\"))]\n    wine2();\n}\n"
+        'fn a() {\n    if cfg!(feature = "reactos") {\n        live1();\n    } else {\n        wine1(x, 1);\n    }\n}\n'
+        'fn b() {\n    #[cfg(feature = "reactos")]\n    live2();\n    #[cfg(not(feature = "reactos"))]\n    wine2();\n}\n'
         "fn c() {\n    const REACTOS: bool = false;\n    if REACTOS {\n        live3();\n    } else {\n        wine3();\n    }\n}\n"
         "fn d() {\n    #[cfg(not(reactos))]\n    {\n        wine4();\n    }\n    if true { keep(); }\n}\n"
     )
@@ -801,7 +819,7 @@ def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
         assert live in out
     assert "wine1" not in out and "wine3" not in out
     assert "#[cfg(any())]\n    wine2();" in out and "#[cfg(any())]\n    {\n        wine4();" in out
-    assert "feature = \"reactos\"" not in out
+    assert 'feature = "reactos"' not in out
 
 
 def test_file_and_line_are_rusts_own(tmp_path):
@@ -810,7 +828,10 @@ def test_file_and_line_are_rusts_own(tmp_path):
     rs.write_text('fn f() { DbgPrint(b"%s:%d\\0".as_ptr(), __FILE__, __LINE__); } // __FILE__\n')
     assert port._builtin_location_macros(rs) == 3
     out = rs.read_text()
-    assert 'DbgPrint(b"%s:%d\\0".as_ptr(), concat!(file!(), "\\0").as_ptr(), (line!() as ::core::ffi::c_int))' in out
+    assert (
+        'DbgPrint(b"%s:%d\\0".as_ptr(), concat!(file!(), "\\0").as_ptr(), (line!() as ::core::ffi::c_int))'
+        in out
+    )
     assert "__LINE__" in port._COMPILER_BUILTIN_MACROS
 
 

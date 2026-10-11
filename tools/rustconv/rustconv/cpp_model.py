@@ -800,6 +800,11 @@ class _Extractor:
             and not self.mine(c["loc"]["spellingLoc"].get("_file"))
             and "spellingLoc" in begin
             and not self.mine(begin["spellingLoc"].get("_file"))
+            # ...unless the name is a macro ARGUMENT, i.e. the module's own method renamed by
+            # a TCHAR macro inside STDMETHOD_: cicero's `STDMETHOD_(LPCTSTR, GetClassName)()`
+            # begins in objbase.h AND spells `GetClassNameW` in winuser.h, and dropping it left
+            # CUIFWindow's vtable a slot short of the C++ one.
+            and not c["loc"].get("expansionLoc", {}).get("isMacroArgExpansion")
         ):
             return None
         if probe:
