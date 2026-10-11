@@ -56,8 +56,12 @@ try {
         -Argument '-NoProfile -ExecutionPolicy Bypass -File C:\winref\boot.ps1'
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User 'winref'
     $principal = New-ScheduledTaskPrincipal -UserId 'winref' -LogonType Interactive -RunLevel Highest
+    # The cmdlet's default settings refuse to start "on batteries", and a QEMU VM has no AC
+    # adapter for Windows to see; and its 72 h limit would kill a long soak.
+    $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
     Register-ScheduledTask -TaskName 'winref-boot' -Action $action -Trigger $trigger `
-        -Principal $principal -Force -ErrorAction Stop | Out-Null
+        -Principal $principal -Settings $settings -Force -ErrorAction Stop | Out-Null
     Say 'runner task: registered'
 } catch { Say "runner task: FAILED: $_" }
 

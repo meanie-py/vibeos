@@ -33,6 +33,7 @@ import subprocess
 import tempfile
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 from .. import backend as be
@@ -225,6 +226,7 @@ def _boot(
     press_keys: float,
     args,
     finish: str | None = None,
+    actions: list[tuple[float, Callable[[QmpClient], None]]] | None = None,
 ) -> tuple[str, list[str]]:
     """Boot, wait for QEMU to exit (the guest powers itself off), return (outcome, lines).
 
@@ -264,6 +266,8 @@ def _boot(
                 break
             time.sleep(0.5)
         deadline = time.monotonic() + timeout
+        booted = time.monotonic()
+        pending = sorted(actions or [], key=lambda a: a[0])
         next_shot = 0.0
         finished_at: float | None = None
         powered_down = False
@@ -271,6 +275,12 @@ def _boot(
             # The guest asking to power off is not enough: a shutdown requested from
             # FirstLogonCommands came back as a RESTART, and the VM sat at the desktop
             # until the timeout. Once the guest says it is done, press the power button.
+            while pending and time.monotonic() - booted >= pending[0][0]:
+                _, act = pending.pop(0)
+                try:
+                    act(qmp)
+                except Exception as e:
+                    run.log(f"action failed: {e}", header="winref action")
             if (
                 finish
                 and finished_at is None
@@ -592,7 +602,12 @@ SEVEN_ZIP = Path(os.environ.get("VIBEOS_WINREF_7Z", "/mnt/c/Program Files/7-Zip/
 # What `logs` pulls off the Windows partition: Setup's own record of every unattend pass
 # (which is where "FirstLogonCommands never ran" turned out to be an account that was never
 # made an administrator), and the runner's working tree.
-LOG_PATHS = ["Windows/Panther/UnattendGC/setupact.log", "Windows/Panther/setupact.log", "winref"]
+LOG_PATHS = [
+    "Windows/Panther/UnattendGC/setupact.log",
+    "Windows/Panther/setupact.log",
+    "Windows/System32/Tasks/winref-boot",  # the runner task as Task Scheduler stored it
+    "winref",
+]
 
 
 def largest_ntfs(listing: str) -> tuple[int, int]:
@@ -691,6 +706,107 @@ def cmd_logs(args, repo: Path) -> int:
     return 0 if got else 1
 
 
+_QCODE_PLAIN = {
+    " ": "spc",
+    "-": "minus",
+    "\\": "backslash",
+    ".": "dot",
+    "/": "slash",
+    "=": "equal",
+    ";": "semicolon",
+    "'": "apostrophe",
+    ",": "comma",
+}
+_QCODE_SHIFT = {":": "semicolon", "_": "minus", '"': "apostrophe", "+": "equal", "?": "slash"}
+
+
+def keys_for(text: str) -> list[list[str]]:
+    """QMP send-key chords that type `text` on a US layout: one chord per character."""
+    out: list[list[str]] = []
+    for ch in text:
+        if ch.isascii() and (ch.islower() or ch.isdigit()):
+            out.append([ch])
+        elif ch.isascii() and ch.isupper():
+            out.append(["shift", ch.lower()])
+        elif ch in _QCODE_PLAIN:
+            out.append([_QCODE_PLAIN[ch]])
+        elif ch in _QCODE_SHIFT:
+            out.append(["shift", _QCODE_SHIFT[ch]])
+        else:
+            raise ValueError(f"cannot type {ch!r}")
+    return out
+
+
+def _press(qmp: QmpClient, *chords: list[str], gap: float = 0.15) -> None:
+    for chord in chords:
+        qmp.execute("send-key", keys=[{"type": "qcode", "data": k} for k in chord])
+        time.sleep(gap)
+
+
+MAINT_COMMAND = "powershell -ExecutionPolicy Bypass -File D:\\maint.ps1"
+
+
+def cmd_maint(args, repo: Path) -> int:
+    """Run a PowerShell script ELEVATED inside the BASE image, then power off.
+
+    The base cannot be edited offline (7-Zip reads NTFS, nothing here writes it) and a
+    reinstall costs ~2 h, so this is the way to change it: boot the base itself with the
+    script on a CD, wait for the autologon desktop, and type it into Win+R as an elevated
+    command (Ctrl+Shift+Enter, then Alt+Y at the consent prompt) over QMP. It writes the
+    base: snapshot first, which is why `post-install` exists.
+    """
+    run = artifacts.Run("winref-maint", "x64")
+    p = _paths()
+    script = Path(args.script)
+    if not p["base"].is_file() or not script.is_file():
+        run.add(artifacts.Stage("inputs", status="fail", detail="need a base image and a script"))
+        return run.finalize(repo)
+    with tempfile.TemporaryDirectory() as td:
+        cd = Path(td) / "cd"
+        cd.mkdir()
+        shutil.copy(script, cd / "maint.ps1")
+        shutil.copy(ASSETS / "boot.ps1", cd / "boot.ps1")
+        _make_iso(cd, WINREF_DIR / "maint.iso", "MAINT")
+    settle = args.settle if args.settle is not None else (1800 if args.accel == "tcg" else 300)
+
+    def type_command(qmp: QmpClient) -> None:
+        _press(qmp, ["meta_l", "r"])
+        time.sleep(3)
+        _press(qmp, *keys_for(MAINT_COMMAND))
+        _press(qmp, ["ctrl", "shift", "ret"])
+
+    def consent(qmp: QmpClient) -> None:
+        _press(qmp, ["alt", "y"])
+
+    outcome, lines = _boot(
+        run,
+        p["base"],
+        p["vars"],
+        [be.win_path(WINREF_DIR / "maint.iso")],
+        timeout=args.timeout,
+        press_keys=0,
+        args=args,
+        finish="WINREF: poweroff",
+        actions=[(settle, type_command), (settle + 30, consent)],
+    )
+    maint = [ln for ln in lines if ln.startswith(("WINREF-MAINT:", "WINREF:"))]
+    run.extra["maint_lines"] = maint
+    ok = (
+        outcome == "exited"
+        and not any("FAILED" in ln for ln in maint)
+        and any(ln.startswith("WINREF: ") for ln in maint)
+    )
+    run.add(
+        artifacts.Stage(
+            "maint",
+            status="ok" if ok else "fail",
+            detail=f"{outcome}; {maint[-1] if maint else 'no maintenance output'}",
+            salient=maint[-10:],
+        )
+    )
+    return run.finalize(repo)
+
+
 def cmd_status(args, repo: Path) -> int:
     p = _paths()
     if not p["base"].is_file():
@@ -747,6 +863,11 @@ def add_parser(sub) -> None:
     r.add_argument("--keep", action="store_true", help="keep the overlay for inspection")
     vm_opts(r)
     verbs.add_parser("status", help="installed base image and its Windows build")
+    mt = verbs.add_parser("maint", help="run a script elevated inside the BASE image (writes it)")
+    mt.add_argument("script", help="PowerShell script, typed into Win+R as D:\\maint.ps1")
+    mt.add_argument("--settle", type=float, help="seconds to the autologon desktop")
+    mt.add_argument("--timeout", type=float, default=RUN_TIMEOUT * 2)
+    vm_opts(mt)
     sn = verbs.add_parser("snapshot", help="full copy of the base image into snapshots/<name>")
     sn.add_argument("name", nargs="?", default=POST_INSTALL)
     sn.add_argument("--force", action="store_true", help="replace an existing snapshot")
@@ -764,5 +885,6 @@ def command(args, repo: Path) -> int:
         "status": cmd_status,
         "logs": cmd_logs,
         "snapshot": cmd_snapshot,
+        "maint": cmd_maint,
         "restore": cmd_restore,
     }[args.winref_cmd](args, repo)

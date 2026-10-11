@@ -90,3 +90,18 @@ def test_snapshot_never_overwrites_silently(tmp_path, monkeypatch):
     assert (tmp_path / "snapshots" / "x" / "base.qcow2").read_bytes() == b"one"
     winref._snapshot("x", overwrite=True)
     assert (tmp_path / "snapshots" / "x" / "base.qcow2").read_bytes() == b"two"
+
+
+def test_types_the_maint_command_exactly():
+    """A wrong chord types a different path into Win+R and the maintenance silently never
+    runs, so the drive colon and backslash are pinned."""
+    chords = winref.keys_for(winref.MAINT_COMMAND)
+    assert len(chords) == len(winref.MAINT_COMMAND)
+    assert chords[winref.MAINT_COMMAND.index(":")] == ["shift", "semicolon"]
+    assert chords[winref.MAINT_COMMAND.index("\\")] == ["backslash"]
+    assert chords[winref.MAINT_COMMAND.index("E")] == ["shift", "e"]
+
+
+def test_refuses_to_type_what_it_cannot():
+    with pytest.raises(ValueError):
+        winref.keys_for("é")
