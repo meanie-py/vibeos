@@ -28,7 +28,8 @@ _OFFSET = re.compile(r"^(?:FIELD_OFFSET|offsetof)\s*\(\s*([A-Za-z_]\w*)\s*,\s*([
 _RUST_TABLE = re.compile(
     r"\bstatic\s+(?:mut\s+)?([A-Za-z_]\w*)\s*:\s*\[\s*([A-Za-z_][\w:]*)\s*;[^\]]*\]\s*=\s*\["
 )
-# A number c2rust folded, under any chain of casts: `8 as ::core::ffi::c_ulonglong as LONG as DWORD`.
+# A number c2rust folded, under any chain of casts:
+# `8 as ::core::ffi::c_ulonglong as LONG as DWORD`.
 _BAKED = re.compile(r"^\(?\s*\d+\s*\)?(?:\s+as\s+[\w:]+)*$")
 _KEYWORDS = {"type", "match", "fn", "self", "Self", "ref", "move", "loop", "box", "use", "mod"}
 
@@ -59,7 +60,9 @@ def c_offset_tables(c_text: str) -> dict[str, list[tuple[str, str] | None]]:
     out: dict[str, list[tuple[str, str] | None]] = {}
     for m in _C_TABLE.finditer(_strip_c_comments(c_text)):
         entries = [e.strip() for e in _split_top(m.group(2)) if e.strip()]
-        parsed = [(lambda o: (o.group(1), o.group(2)) if o else None)(_OFFSET.match(e)) for e in entries]
+        parsed = [
+            (lambda o: (o.group(1), o.group(2)) if o else None)(_OFFSET.match(e)) for e in entries
+        ]
         if any(parsed):
             out[m.group(1)] = parsed
     return out
@@ -96,7 +99,7 @@ def restore(rust: str, c_text: str) -> tuple[str, list[str], list[str]]:
             refused.append(f"{name} ({len(entries)} Rust entries, {len(want)} in the C)")
             continue
         new_entries, changed = [], False
-        for raw, w in zip(entries, want):
+        for raw, w in zip(entries, want, strict=True):  # lengths checked above
             if w is None:
                 new_entries.append(raw)
                 continue

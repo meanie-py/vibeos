@@ -2760,9 +2760,13 @@ def stage_integrate(stem: str) -> None:
             offsets, refused = offset_restore.restore_file(path, c_file)
             if offsets:
                 changed += 1
-                print(f"integrate: {path.stem}: FIELD_OFFSET tables per-arch again: {', '.join(offsets)}")
+                print(
+                    f"integrate: {path.stem}: FIELD_OFFSET tables per-arch again: {', '.join(offsets)}"
+                )
             for why in refused:
-                print(f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}")
+                print(
+                    f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
+                )
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
