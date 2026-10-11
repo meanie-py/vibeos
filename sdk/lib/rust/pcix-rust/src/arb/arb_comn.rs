@@ -178,7 +178,9 @@ pub unsafe extern "system" fn PciInitializeArbiters(FdoExtension: PPCI_FDO_EXTEN
         win32macros_rust::DPRINT1!(
             "PCI - FDO ext 0x%p %S arbiter initialized (context 0x%p).\n",
             FdoExtension,
-            w!("ARBITER HEADER MISSING").as_ptr(),
+            // The C prints a placeholder ("ARBITER HEADER MISSING") from before the
+            // arbiter header carried a name; the initializer has just set it.
+            (*ArbiterInterface).CommonInstance.Name,
             ArbiterInterface,
         );
         Status = STATUS_SUCCESS;

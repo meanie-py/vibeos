@@ -142,3 +142,12 @@ pub unsafe extern "system" fn PciVerifierInit(DriverObject: PDRIVER_OBJECT) {
         }
     }
 }
+
+/// Undo PciVerifierInit's notification registration (pcix's unload; not in the C).
+pub unsafe fn PciVerifierUnload() {
+    if PciVerifierRegistered != 0 {
+        ntkrnl_sys::ddk::IoUnregisterPlugPlayNotification(PciVerifierNotificationHandle);
+        PciVerifierNotificationHandle = core::ptr::null_mut();
+        PciVerifierRegistered = 0;
+    }
+}

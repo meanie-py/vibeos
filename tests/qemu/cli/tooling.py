@@ -203,6 +203,8 @@ _PYTEST_SUITES = [
     (".", ".", "tools/test_scan_self_recursive.py"),
     (".", ".", "tools/test_scan_export_thunks.py"),
     (".", ".", "tools/test_scan_xchg_ebx_deref.py"),
+    (".", ".", "tools/test_scan_unresolved_imports.py"),
+    (".", ".", "tools/test_scan_assert_polarity.py"),
     (".", ".", "tools/test_scan_dropped_asserts.py"),
     (".", ".", "tools/test_scan_byte_step_one.py"),
     (".", ".", "tools/test_scan_call_literal_vs_c.py"),

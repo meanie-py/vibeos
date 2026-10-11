@@ -56,6 +56,21 @@ REPO = Path(__file__).resolve().parent.parent
 # shipped for months (`ntoskrnl.dll`, a file that does not exist); the second is
 # what the FIRST repair shipped, because rustc appends `.dll` even to a name that
 # already has an extension (`ntoskrnl.exe.dll`).
+# pcix PciBuildHackTable: ASSERT(!NT_SUCCESS(Status)) lowered with the condition as guard.
+_ASSERT_POLARITY_BAD = """
+unsafe fn f(Status: NTSTATUS) {
+    if !NT_SUCCESS(Status) {
+        RtlAssert(
+            b"!NT_SUCCESS(Status)\\0".as_ptr() as PVOID,
+            b"init.c\\0".as_ptr() as PVOID,
+            670,
+            null_mut(),
+        );
+    }
+}
+"""
+_ASSERT_POLARITY_GOOD = _ASSERT_POLARITY_BAD.replace("if !NT_SUCCESS", "if NT_SUCCESS")
+
 _RAWDYLIB_BAD = """\
 #[link(name = "ntoskrnl", kind = "raw-dylib")]
 extern "C" {
@@ -2553,6 +2568,13 @@ CONTROLS: list[Control] = [
         argv=["--root"],
         bad={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_BAD},
         good={"miarm.h": _DROPPED_ASSERT_H, "bridge.rs": _DROPPED_ASSERT_GOOD},
+    ),
+    Control(
+        name="scan_assert_polarity",
+        script="tools/scan_assert_polarity.py",
+        argv=["--root"],
+        bad={"src/init.rs": _ASSERT_POLARITY_BAD},
+        good={"src/init.rs": _ASSERT_POLARITY_GOOD},
     ),
     Control(
         name="scan_rawdylib_linkname",
