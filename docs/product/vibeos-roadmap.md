@@ -897,13 +897,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it because every smoke boot has QEMU's default NIC. **Still owed:** loopback with no NIC fails
   rather than WORKS (Windows always has a loopback interface). That wants a smoltcp loopback
   device in the engine, worth doing alongside the Pi's GENET driver.
-- **amd64 RAM above 4 GiB: the kernel cannot use it yet** (OPEN, 2026-10-04). The loader's
-  `MM_MAX_PAGE` (freeldr-rust `frldr.rs`) cuts amd64's memory map at 4 GiB, as the Rust has
-  always done; mm.h's 8 GiB would expose the rest. With it raised, `VIBEOS_QEMU_HOSTILE=mem`
-  (6 GiB) bugchecks 0x19 (pool header, P1=5) and hostile `all` hangs in uniata's AHCI
-  start. Repro: runs `20261004-194815-lrtpx0w2` and `20261004-194452-8j2swl96` (smoke-amd64,
-  graviton lane). Raise the cap once both are green. arm64 already describes all RAM: its
-  pool-sizing underflow was the 4 GiB Pi 5's silent hang (fixed in `arm/init.rs`).
+- **amd64 RAM above 4 GiB** (FIXED 2026-10-10; was "the kernel cannot use it yet"). The loader
+  now describes all RAM on amd64, as on arm64. Raising the cap exposed four bugs, each fixed in
+  place: MM counted firmware-reserved ranges as RAM (`MiIsMemoryTypeInvisible`), uniata's
+  32-bit bounce overran and zeroed buffers, uniata gave a 64-bit AHCI HBA a data page as its
+  command table (the q35 hang), and the HAL's AP identity map stayed in System's user half
+  (BIOS MEMORY_MANAGEMENT). Verified: QEMU BIOS 4/12/32 GiB, UEFI `mem` and `q35,mem`, and the
+  OptiPlex at 32 GB (`[MM] physical memory: 32686 MiB`). Field manual: "RAM above 4 GiB".
 - **amd64: a user-mode debug print with a bad buffer bugchecked the kernel** (FIXED 2026-10-06;
   was "a user-mode Rust panic report can bugcheck the kernel"). Not `KdIoPrintf`, as first
   logged: against the run's own kernel the PC is `KdpStub` (kd64-rust `kdtrap.rs`). With no
