@@ -881,3 +881,46 @@ def test_a_derived_arm_keeps_the_old_arms_hand_section():
     assert "BLOCKLIST_FUNCS=1\n    # >>> hand\n    EXTRA_BL_ITEMS=( _CON_STREAM )\n" in out
     assert "BLOCKLIST_FUNCS=0" not in out and out.count("# >>> hand") == 1
     assert port.upsert_profile_arm(out, new_arm, "cmd") == out  # stable on re-derive
+
+
+def _dep_tree(tmp_path):
+    """msutb-rust depending on cicero-rust, whose cppapp rendered CUIFWindow."""
+    dep = tmp_path / "cicero-rust"
+    (dep / "src" / "cicero").mkdir(parents=True)
+    (dep / "src" / "cicero" / "cpp_classes.rs").write_text(
+        "#[repr(C)]\npub struct CUIFWindow {\n    pub m_hWnd: HWND,\n}\n"
+    )
+    (dep / "src" / "cicero" / "cicbase.rs").write_text(
+        "pub unsafe fn cicMemFree(p: *mut c_void) {}\nfn private_one() {}\n"
+    )
+    crate = tmp_path / "msutb-rust"
+    (crate / "src" / "msutb").mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[dependencies]\ncicero-rust = { path = "../cicero-rust" }\n')
+    return crate
+
+
+def test_an_island_copy_of_a_dependencys_class_becomes_its_re_export(tmp_path):
+    crate = _dep_tree(tmp_path)
+    island = crate / "src" / "types_msutb.rs"
+    island.write_text(
+        "#[repr(C)]\n#[derive(Copy, Clone)]\npub struct CUIFWindow {\n"
+        "    pub vtable_: *const CUIFWindow__bindgen_vtable,\n}\npub struct KEEP { pub x: i32 }\n"
+    )
+    done = port._defer_island_classes(crate / "src", "msutb", "")
+    assert done == ["CUIFWindow"]
+    text = island.read_text()
+    assert "pub use cicero_rust::cicero::cpp_classes::CUIFWindow;" in text
+    assert "vtable_" not in text and "#[derive" not in text and "KEEP" in text
+
+
+def test_resolve_wires_a_dependencys_pub_definitions_once(tmp_path):
+    crate = _dep_tree(tmp_path)
+    found = port._dep_definitions({"cicMemFree", "private_one", "Nowhere"}, crate)
+    assert found == {"cicMemFree": "cicero_rust::cicero::cicbase"}
+    prelude = crate / "src" / "prelude.rs"
+    prelude.write_text("use core::ffi::c_void;\n")
+    port._write_dep_block(prelude, found)
+    port._write_dep_block(prelude, found)  # a later pass rewrites the block in place
+    text = prelude.read_text()
+    assert text.count(port._DEP_BEGIN) == 1
+    assert "pub use cicero_rust::cicero::cicbase::{cicMemFree};" in text
