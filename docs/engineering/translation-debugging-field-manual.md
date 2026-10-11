@@ -3771,6 +3771,14 @@ rustc labels the culprit "matches SOME of the same values", so a pattern name de
 the crate can see is taken from that label too. **`port check` now counts a catch-all arm as an
 error** (`CATCH-ALL -- match arm(s) binding an undefined constant`), so "0 errors" means it.
 
+**The same swallow with every name defined: C's `default:` sitting ABOVE other cases.**
+`case 0: default:` translates to `0 | _ => ..` in the position it had, and a Rust match tries
+arms in order where C tries every `case` before `default`. net's ParseDate, cmd's `date` and
+`dir` read every locale's LOCALE_IDATE as month-first; mspaint's `RestrictDrawDirection`
+returned before any Shift-constrained direction. rustc only warns. `port integrate` now runs
+`default_arm.py`, which moves a guard-free arm with a bare `_` alternative to the end of its
+match -- exact, because a match arm never falls through.
+
 **Mixed-type `case` labels: C converts each label to the scrutinee's type.** clang-evaluated
 facts type `TVN_SELCHANGED` `unsigned` (C: `TVN_FIRST` is `0U-400U`) while bindgen types
 `PSN_APPLY` `i32` by its VALUE; one `match` over both has no single scrutinee type. crate-repair

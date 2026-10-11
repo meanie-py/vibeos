@@ -978,11 +978,15 @@ unsafe extern "C" fn ParseDate(s: PWSTR, pSeconds: PULONG) -> BOOL {
         return (FALSE) as BOOL;
     }
 
+    // Divergence from the C: it asks for LOCALE_IDATE without LOCALE_RETURN_NUMBER, so it gets
+    // the STRING L"0"/L"1"/L"2" (nDateFormat = 0x30..) and every locale fell to the mmddyy
+    // default; and it passes sizeof(INT) as cchData, which counts WCHARs (8 bytes into a 4-byte
+    // INT). Ask for the number, sized in WCHARs.
     GetLocaleInfoW(
         LOCALE_USER_DEFAULT,
-        LOCALE_IDATE,
+        LOCALE_IDATE | LOCALE_RETURN_NUMBER,
         core::ptr::addr_of_mut!(nDateFormat) as PWSTR,
-        core::mem::size_of::<INT>() as i32,
+        (core::mem::size_of::<INT>() / core::mem::size_of::<WCHAR>()) as i32,
     );
 
     match nDateFormat {

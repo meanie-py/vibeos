@@ -519,19 +519,6 @@ pub unsafe extern "C" fn FormatDate(lpDate: *mut TCHAR, dt: LPSYSTEMTIME, b4Digi
         (*dt).wYear % (100 as WORD)
     };
     match nDateFormat {
-        0 | _ => {
-            /* mmddyy */
-            return _stprintf(
-                lpDate,
-                (&[0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x002a, 0x0064, 0x0000u16]).as_ptr() /* _T "%02d%c%02d%c%0*d" */,
-                (*dt).wMonth as INT,
-                cDateSeparator as INT,
-                (*dt).wDay as INT,
-                cDateSeparator as INT,
-                (if b4Digit != 0 { 4 } else { 2 }) as INT,
-                wYear as INT,
-            );
-        }
         1 => {
             /* ddmmyy */
             return _stprintf(
@@ -556,6 +543,19 @@ pub unsafe extern "C" fn FormatDate(lpDate: *mut TCHAR, dt: LPSYSTEMTIME, b4Digi
                 (*dt).wMonth as INT,
                 cDateSeparator as INT,
                 (*dt).wDay as INT,
+            );
+        }
+        0 | _ => {
+            /* mmddyy */
+            return _stprintf(
+                lpDate,
+                (&[0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x0032, 0x0064, 0x0025, 0x0063, 0x0025, 0x0030, 0x002a, 0x0064, 0x0000u16]).as_ptr() /* _T "%02d%c%02d%c%0*d" */,
+                (*dt).wMonth as INT,
+                cDateSeparator as INT,
+                (*dt).wDay as INT,
+                cDateSeparator as INT,
+                (if b4Digit != 0 { 4 } else { 2 }) as INT,
+                wYear as INT,
             );
         }
     }

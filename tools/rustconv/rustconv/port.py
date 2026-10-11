@@ -41,6 +41,7 @@ from pathlib import Path
 from . import (
     crate_integrate,
     dead_regions,
+    default_arm,
     flex_index,
     goto_arm,
     local_macros,
@@ -3235,6 +3236,10 @@ def stage_integrate(stem: str) -> None:
                 print(
                     f"integrate: {path.stem}: WARNING: offset table left as c2rust folded it: {why}"
                 )
+        defaults = default_arm.rewrite_file(path)
+        if defaults:
+            changed += 1
+            print(f"integrate: {path.stem}: C `default:` arm(s) moved last in a match: {defaults}")
         text = path.read_text()
         new, fixes = pointer_depth.repair(text, decls, ptr_types, ptr_targets)
         new, not_fixed, not_refused = logical_not.repair(new, decls)
