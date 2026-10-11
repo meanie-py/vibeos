@@ -1460,11 +1460,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     disposition (pcix maps assignments onto BARs by that order, and had zeroed arm64's
     virtio-disk BARs under the running driver). Before pcix can be the default: it does not
     use VibeOS's `_PRT` routing interface (`acpi-rust/pciroute.rs`, which pci.sys uses on
-    real Intel boards), and RootBusCapability (_OSC) is not provided. Still owed: the HAL legacy PIR arbiter (cf89458d9e2,
-    hal/halx86/legacy/pir, not built at all); `CmResourceType*`/`CM_RESOURCE_*` in the
-    kernel island on arm64 (pnpmgr's arb prelude names them by hand until then); rustconv
-    still shows the model both arms of an undecidable `#if NTDDI_VERSION` — the 0x502 arms
-    were picked by hand in 22 places.
+    real Intel boards), and RootBusCapability (_OSC) is not provided. The HAL legacy PIR arbiter (cf89458d9e2) is
+    **blocked, not owed work**: it serves only the legacy (non-ACPI) x86 HAL's root PDO, and
+    vibeos builds no legacy HAL flavor (`legacy_halpnpdd` is `#[cfg(any())]`; every arch boots
+    the ACPI HAL with acpi.sys as root bus), so a port would be dead code. Port it with the
+    legacy HAL if that flavor ever returns. Resolved 2026-10-11: cmtypes.h's resource
+    constants are `ntkrnl_sys::cmres` on every arch (the arbiter prelude imports them), and
+    rustconv decides `#if NTDDI_VERSION >= NTDDI_VISTA` at the module's profile, so the dead
+    arm never reaches the model (the arbiter port had 22 hand fixes for it).
   - **Boot configs are not reserved at enumeration** (upstream ReactOS behaviour, found
     2026-10-09). The resource map gets a device's resources only when IopAssignDeviceResources
     assigns them, so a legacy detector that runs first sees free ports: legide's
