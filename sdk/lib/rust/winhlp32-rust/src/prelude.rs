@@ -76,13 +76,6 @@ pub const hlp_link_macro: tagHlpFileLink__bindgen_ty_1 = tagHlpFileLink_hlp_link
 pub const hlp_link_popup: tagHlpFileLink__bindgen_ty_1 = tagHlpFileLink_hlp_link_popup; // island enum
 extern "C" {
     pub fn ros_dbg_log( cls: ::core::ffi::c_uint, ch: *mut __wine_debug_channel, file: *const ::core::ffi::c_char, func: *const ::core::ffi::c_char, line: ::core::ffi::c_int, format: *const ::core::ffi::c_char, ... ) -> ::core::ffi::c_int; // winegdi-rust/src/types_i386.rs
-    pub fn sprintf(buf: *mut c_char, format: *const c_char, ...) -> c_int; // crt-shared-rust/src/prelude.rs
-    pub fn strcat(dst: *mut c_char, src: *const c_char) -> *mut c_char; // crt-shared-rust/src/prelude.rs
-    pub fn strchr(s: *const i8, c: i32) -> *mut i8; // acgenral-rust/src/prelude.rs
-    pub fn strcmp(a: *const c_char, b: *const c_char) -> c_int; // browser-rust/src/prelude.rs
-    pub fn strcpy(dst: *mut c_char, src: *const c_char) -> *mut c_char; // crt-shared-rust/src/prelude.rs
-    pub fn strlen(s: *const c_char) -> usize; // browser-rust/src/prelude.rs
-    pub fn strrchr(s: *const u8, c: c_int) -> *mut u8; // ucrt-rust/src/cvt/format.rs
     pub fn wsprintfA(arg1: LPSTR, arg2: LPCSTR, ...) -> ::core::ffi::c_int; // aclui-rust/src/types_i386.rs
 }
 extern "system" {
@@ -134,7 +127,7 @@ extern "system" {
     #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongA")]
     pub fn GetWindowLongPtrA(hWnd: HWND, nIndex: i32) -> LONG_PTR; // shell32-rust/src/wine/shellole.rs
     #[cfg_attr(target_arch = "x86", link_name = "GetWindowLongW")]
-    pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: i32) -> LONG_PTR; // shell32-rust/src/copy_to_menu.rs
+    pub fn GetWindowLongPtrW(hWnd: HWND, nIndex: INT) -> LONG_PTR; // charmap-rust/src/prelude.rs
     pub fn GetWindowLongW(arg1: HWND, arg2: ::core::ffi::c_int) -> LONG; // aclui-rust/src/types_i386.rs
     pub fn GetWindowRect(arg1: HWND, arg2: LPRECT) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn HeapAlloc(arg1: HANDLE, arg2: DWORD, arg3: SIZE_T) -> PVOID; // aclui-rust/src/types_i386.rs
@@ -176,7 +169,7 @@ extern "system" {
     #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongA")]
     pub fn SetWindowLongPtrA(hWnd: HWND, nIndex: i32, dwNewLong: isize) -> LONG_PTR; // shell32-rust/src/wine/shellole.rs
     #[cfg_attr(target_arch = "x86", link_name = "SetWindowLongW")]
-    pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: i32, dwNewLong: isize) -> LONG_PTR; // shell32-rust/src/copy_to_menu.rs
+    pub fn SetWindowLongPtrW(hWnd: HWND, nIndex: INT, dwNewLong: LONG_PTR) -> LONG_PTR; // charmap-rust/src/prelude.rs
     pub fn SetWindowPos( arg1: HWND, arg2: HWND, arg3: ::core::ffi::c_int, arg4: ::core::ffi::c_int, arg5: ::core::ffi::c_int, arg6: ::core::ffi::c_int, arg7: UINT, ) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn SetWindowTextA(arg1: HWND, arg2: LPCSTR) -> BOOL; // aclui-rust/src/types_i386.rs
     pub fn ShellAboutW( hWnd: HWND, szApp: LPCWSTR, szOtherStuff: LPCWSTR, hIcon: HICON, ) -> ::core::ffi::c_int; // ctfmon-rust/src/types_i386.rs
@@ -212,7 +205,7 @@ pub use crate::winhlp32::string::STRING_BUTTON;
 // ==== end cross-TU definitions ====
 pub use strsafe_rust::{RtlStringCbPrintfA, RtlStringCbPrintfW, RtlStringCchPrintfA, RtlStringCchPrintfExA, RtlStringCchPrintfExW, RtlStringCchPrintfW, StringCbCatNW, StringCbCatW, StringCbCopyExW, StringCbCopyNExW, StringCbCopyNW, StringCbCopyW, StringCbPrintfExW, StringCbPrintfW, StringCbVPrintfW, StringCchCatNW, StringCchCatW, StringCchCopyA, StringCchCopyExW, StringCchCopyNExW, StringCchCopyNW, StringCchCopyW, StringCchLengthA, StringCchLengthW, StringCchPrintfA, StringCchPrintfExA, StringCchPrintfExW, StringCchPrintfW, StringCchVPrintfA, StringCchVPrintfExA, StringCchVPrintfW};
 pub use strsafe_rust::ntstrsafe::{RtlStringCatNWorkerW, RtlStringCatWorkerW, RtlStringCbCatNW, RtlStringCbCatW, RtlStringCbCopyNA, RtlStringCbCopyNW, RtlStringCbCopyW, RtlStringCchCatNW, RtlStringCchCatW, RtlStringCchCopyA, RtlStringCchCopyNW, RtlStringCchCopyW, RtlStringCopyNWorkerW, RtlStringCopyWorkerA, RtlStringCopyWorkerW, RtlStringLengthWorkerW};
-pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FUNC, ConInitStdStreams, ConInitStdStreamsAndMode, ConMsgPrintf, ConMsgPuts, ConPrintf, ConPuts, ConResMsgPrintf, ConResMsgPrintfEx, ConResPrintf, ConResPrintfEx, ConResPuts, ConResPutsEx, ConSetThreadUILanguage, ConStdStreamsSetCacheCodePage, ConStreamGetOSHandle, ConStreamInit, ConStreamInitEx, ConStreamSetCacheCodePage, ConStreamSetMode, ConStreamSetOSHandle, ConStreamWrite, ConWrite, INVALID_CP, K32LoadStringW, PCON_STREAM, StdErr, StdIn, StdOut, UTF16Text, UTF8Text, WideText, csStdErr, csStdIn, csStdOut};
+pub use conutils_h::{AnsiText, Binary, CON_STREAM, CON_STREAM_MODE, CON_WRITE_FUNC, ConInitStdStreams, ConInitStdStreamsAndMode, ConMsgPrintf, ConMsgPuts, ConPrintf, ConPrintfV, ConPuts, ConResMsgPrintf, ConResMsgPrintfEx, ConResPrintf, ConResPrintfEx, ConResPrintfV, ConResPuts, ConResPutsEx, ConSetThreadUILanguage, ConStdStreamsSetCacheCodePage, ConStreamGetOSHandle, ConStreamInit, ConStreamInitEx, ConStreamSetCacheCodePage, ConStreamSetMode, ConStreamSetOSHandle, ConStreamWrite, ConWrite, INVALID_CP, K32LoadStringW, PCON_STREAM, StdErr, StdIn, StdOut, UTF16Text, UTF8Text, WideText, csStdErr, csStdIn, csStdOut};
 
 // ==== port facts: constants evaluated by clang from the C headers (generated -- `rustconv port resolve`) ====
 // ==== end port facts ====
@@ -264,6 +257,32 @@ extern "C" {
         _Str1: *const ::core::ffi::c_char,
         _Str2: *const ::core::ffi::c_char,
     ) -> ::core::ffi::c_int; // macro.c
+    pub fn sprintf(
+        _Dest: *mut ::core::ffi::c_char,
+        _Format: *const ::core::ffi::c_char,
+        ...
+    ) -> ::core::ffi::c_int; // hlpfile.c
+    pub fn strcat(
+        _Dest: *mut ::core::ffi::c_char,
+        _Source: *const ::core::ffi::c_char,
+    ) -> *mut ::core::ffi::c_char; // winhelp.c
+    pub fn strchr(
+        _Str: *const ::core::ffi::c_char,
+        _Val: ::core::ffi::c_int,
+    ) -> *mut ::core::ffi::c_char; // hlpfile.c
+    pub fn strcmp(
+        _Str1: *const ::core::ffi::c_char,
+        _Str2: *const ::core::ffi::c_char,
+    ) -> ::core::ffi::c_int; // hlpfile.c
+    pub fn strcpy(
+        _Dest: *mut ::core::ffi::c_char,
+        _Source: *const ::core::ffi::c_char,
+    ) -> *mut ::core::ffi::c_char; // hlpfile.c
+    pub fn strlen(_Str: *const ::core::ffi::c_char) -> size_t; // hlpfile.c
+    pub fn strrchr(
+        _Str: *const ::core::ffi::c_char,
+        _Ch: ::core::ffi::c_int,
+    ) -> *mut ::core::ffi::c_char; // winhelp.c
 }
 pub use crate::prelude::_snprintf as snprintf; // sdk alias
 pub use crate::prelude::_stricmp as strcasecmp; // sdk alias

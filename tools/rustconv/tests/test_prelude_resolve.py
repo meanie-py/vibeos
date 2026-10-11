@@ -346,6 +346,24 @@ def test_a_zero_argument_function_is_not_a_placeholder():
     assert consensus("NtClose", [stub])[0] is None
 
 
+def test_char_pointee_split_is_not_consensus():
+    # winhlp32 got ucrt-rust's `*const u8` strrchr by count; `i8` vs `u8` vs `c_char` differ
+    # on some target, so the prototype route decides.
+    u8s = [
+        F("pub fn strrchr(s: *const u8, c: c_int) -> *mut u8;", '"C"', f"u{n}.rs") for n in range(3)
+    ]
+    i8s = [F("pub fn strrchr(s: *const i8, c: i32) -> *mut i8;", '"C"', "i.rs")]
+    pick, why = consensus("strrchr", u8s + i8s)
+    assert pick is None and why.startswith("signature disagreement")
+    # The PSTR family is c_char, and agrees with an explicit c_char.
+    a = F("pub fn strchr(s: PCSTR, c: i32) -> PSTR;", '"C"', "a.rs")
+    b = F("pub fn strchr(s: *const c_char, c: c_int) -> *mut c_char;", '"C"', "b.rs")
+    assert consensus("strchr", [a, b])[0] is not None
+    # A BYTE* beside a char* in one agreed declaration is not a split.
+    m = F("pub fn mix(b: *const u8, s: *const c_char);", '"C"', "m.rs")
+    assert consensus("mix", [m, m])[0] is not None
+
+
 def test_same_name_different_arity_is_not_consensus():
     # diskpart's command handler and setuplib's partlist function share a name and an ABI;
     # the shorter text used to win and usetup called setuplib's with diskpart's signature.

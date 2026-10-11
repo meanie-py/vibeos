@@ -1215,7 +1215,17 @@ pub unsafe extern "system" fn ScsiPortInitialize(
                     }
                 }
 
-                FdoCallHWInitialize(DeviceExtension);
+                // The C ignores this status. When an interrupt does not connect, the
+                // adapter carries on without one and the next KeSynchronizeExecution
+                // takes a NULL interrupt (0xA): fail it like a failed StartAdapter.
+                Status = FdoCallHWInitialize(DeviceExtension);
+                if Status < 0 {
+                    DbgPrint(
+                        (b"Failed to initialize the legacy adapter. Status 0x%x\n\0".as_ptr() as *const u8).cast(),
+                        Status,
+                    );
+                    break 'outer;
+                }
                 Status = FdoStartAdapter(DeviceExtension);
                 DbgPrint((b"[SCSIPORT] FdoStartAdapter st=%08x\n\0".as_ptr() as *const u8).cast(),
                     Status as u32); // ahci marker

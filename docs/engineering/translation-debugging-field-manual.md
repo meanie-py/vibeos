@@ -1409,6 +1409,14 @@ first iteration.
 
 **Fix:** start at `head.next`. `scan_list_walk_from_head` (`vibeos-cli check`) flags the shape.
 
+The opposite end matters too. In C, a walk that runs to the end leaves the cursor on the
+HEAD's container, and code relies on it: `list_add_before(&ent->entry, new)` after a search
+loop means "before the head", i.e. append. A macro whose cursor stops on the last node
+inserts one place too early. One that rebinds the cursor per iteration (`let $elem` in the
+loop, as ole32's does) leaves the caller's variable stale. winelist-rust's
+`LIST_FOR_EACH_ENTRY{,_SAFE}` assign the caller's variable and finish on the head's
+container, as C does. Its tests pin the append shape.
+
 ### A list walk that reads `Flink` after freeing the entry
 
 **Symptom:** an intermittent access violation inside a list walk, at a load like
@@ -14475,6 +14483,34 @@ reads the freed `InstancePath`. Upstream's C has the same double drop.
 VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced it, because
 its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
 the box survives. Verify on the board.
+
+### A USB controller "starts", and usbhub waits for its root hub forever
+
+**Symptom.** `[DA] START` of a USB host controller returns `0x0`, its root hub starts, and then
+`[USBHUB] ... bus relations before enumeration is allowed (wait N)` climbs once a second on the
+PnP worker thread while nothing later in PnP starts. `[USBPORT] root hub ready` never prints
+for that controller. Seen on the OptiPlex's Renesas card on about half of cold boots.
+
+**Cause.** Two bugs, one after the other. usbxhci gave the controller 20 ms to halt
+(`[XHCI] start: controller did not halt (USBSTS 10)`; the firmware had left it running) and
+returned `MP_STATUS_HW_ERROR`. usbport's `USBPORT_StartDevice` then returned `Status`, which
+upstream's C also returns, and which still held `STATUS_SUCCESS` from an earlier call. So PnP saw a
+started controller with no miniport behind it: interrupts never enabled, so the worker never
+ran the root-hub callback usbhub waits for.
+
+**Fix.** usbport fails the START with `STATUS_UNSUCCESSFUL` and logs `miniport StartController
+failed`. usbxhci waits 200 ms for the halt and then resets the controller anyway (HCRST is the
+only recovery left). Look for the miniport's own start line (`[XHCI] controller running`)
+before trusting a `START -> 0x0`.
+
+**Failing the START exposed two more upstream bugs** (found by forcing `XHCI_StartController`
+to fail under `smoke --arch amd64 --xhci`). usbport *cleared* `USBPORT_FLAG_INT_CONNECTED` right
+after `IoConnectInterrupt`, so its failure path never disconnected: the HAL got the message
+vector back with the dead FDO's KINTERRUPT still in the IDT, and the next device handed that
+vector (the IDE channel) failed `IoConnectInterrupt` with `0xC000000D`. scsiport then ignored
+`FdoCallHWInitialize`'s failure and bugchecked `0xA` on the missing interrupt object. Both are
+fixed: usbport sets the flag (and cancels its timer on the later failure path), and scsiport
+fails the adapter. A rarely taken failure path is worth one forced-failure boot.
 
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing

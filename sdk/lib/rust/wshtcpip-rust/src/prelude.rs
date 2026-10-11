@@ -123,32 +123,5 @@ pub unsafe fn RtlZeroMemory(dst: *mut c_void, len: usize) {
     core::ptr::write_bytes(dst as *mut u8, 0, len);
 }
 
-// ---- 3c. wine's intrusive doubly-linked `struct list` (wine/list.h) — `static inline`
-// helpers with no linkable symbol, reimplemented with identical semantics. Layout is two
-// self-pointers, identical to NT LIST_ENTRY; the translation names the field type `list`
-// and the fn param type `list_entry`, so alias them to one struct. ----
-#[repr(C)]
-pub struct list {
-    pub next: *mut list,
-    pub prev: *mut list,
-}
-pub type list_entry = list;
-
-#[inline(always)]
-pub unsafe fn list_init(l: *mut list_entry) {
-    (*l).next = l;
-    (*l).prev = l;
-}
-#[inline(always)]
-pub unsafe fn list_add_head(head: *mut list_entry, elem: *mut list_entry) {
-    // wine/list.h list_add_head: insert elem right after head.
-    (*elem).next = (*head).next;
-    (*elem).prev = head;
-    (*(*head).next).prev = elem;
-    (*head).next = elem;
-}
-#[inline(always)]
-pub unsafe fn list_remove(elem: *mut list_entry) {
-    (*(*elem).next).prev = (*elem).prev;
-    (*(*elem).prev).next = (*elem).next;
-}
+// ---- 3c. wine's intrusive doubly-linked `struct list` (wine/list.h): the shared port. ----
+pub use winelist_rust::{list, list_add_head, list_init, list_remove};

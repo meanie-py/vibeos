@@ -148,6 +148,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "at-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "atan2-rust"
 version = "0.1.0"
 dependencies = [
@@ -574,6 +585,7 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -773,6 +785,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "dbgprint_app-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dcomlaunch-rust"
 version = "0.1.0"
 dependencies = [
@@ -952,6 +975,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dwnl-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "dxdiag-rust"
 version = "0.1.0"
 dependencies = [
@@ -995,6 +1030,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "eventcreate-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1198,6 +1245,17 @@ version = "0.1.0"
 dependencies = [
  "dbgprint-rust",
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "fsutil-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1503,6 +1561,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "ipconfig-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "iphlpapi-rust"
 version = "0.1.0"
 dependencies = [
@@ -1708,6 +1777,7 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
  "winetrace-shim",
  "winsrv-sys",
 ]
@@ -2425,6 +2495,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "netsh-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "netstack-cargo"
 version = "0.1.0"
 dependencies = [
@@ -2489,6 +2571,17 @@ version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
  "panic-common",
+]
+
+[[package]]
+name = "nslookup-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -2647,6 +2740,7 @@ dependencies = [
  "com-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -2656,6 +2750,7 @@ dependencies = [
  "com-sys",
  "panic-common",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3264,6 +3359,7 @@ dependencies = [
  "ntkrnl-sys",
  "win32macros-rust",
  "winedebug-rust",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -3367,6 +3463,17 @@ dependencies = [
 name = "schedsvc-rust"
 version = "0.1.0"
 dependencies = [
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "schtasks-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
@@ -4638,6 +4745,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "wlanconf-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "wlansvc-rust"
 version = "0.1.0"
 dependencies = [
@@ -4661,6 +4779,18 @@ name = "wmi-rust"
 version = "0.1.0"
 dependencies = [
  "ntkrnl-sys",
+]
+
+[[package]]
+name = "wmic-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -4737,6 +4867,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "wscript-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "wshirda-rust"
 version = "0.1.0"
 dependencies = [
@@ -4749,6 +4891,7 @@ version = "0.1.0"
 dependencies = [
  "ntdll-sys",
  "panic-common",
+ "winelist-rust",
 ]
 
 [[package]]
@@ -4767,6 +4910,18 @@ dependencies = [
  "ntdll-sys",
  "panic-common",
  "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
+name = "xcopy-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "varargs-rust",
  "win32macros-rust",
 ]
 
