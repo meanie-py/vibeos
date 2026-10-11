@@ -1183,18 +1183,14 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
-  - **amd64-bios `-smp 2`: boot wedges at a service START, `RQRUNNING` warnings first** (OPEN,
-    seen 2026-10-10). `flake-report --days 3` grades the signature `HANG_TIMEOUT wedged |
-    [CENSUS] WrLpcReceive=#` FLAKE: 6 of 157 `smoke:amd64-bios` runs (3.8%), absent at the
-    same commit elsewhere. It is not the fixed `C0000006` bug below: the log has no in-page
-    status. services.exe sends START (Spooler, SamSs, EventLog in different runs) and the boot
-    goes quiet with ~57 threads parked >20 s, after several `[RQRUNNING] queuing a RUNNING
-    thread ... state=7 runningOnCPU=0|1` warnings from the dispatcher. It rejected an
-    innocent lane at the merge queue (research `22f22594238a`, export-surface stubs proven
-    byte-identical at the shipping version), so it costs gates. Runs:
-    `fails/auto/20261010-234505-spgv3441-smoke-amd64-bios-HANG_TIMEOUT` (Spooler, 7 warnings),
-    `20261010-031022-mwjaap28` (SamSs, 16), `20261008-213019-klr7vs60` (EventLog, 7).
-    Unconfirmed lead: what queues a thread the dispatcher still has as running.
+  - **amd64-bios `-smp 2`: boot wedges at a service START, `RQRUNNING` warnings first** (FIXED
+    2026-10-11: the same silent wedge as the EventLog/services entry below, whose root cause
+    is two lost-handoff races in usbport and usbstor). `flake-report` had graded it 6 of 157
+    `smoke:amd64-bios` runs (3.8%); it rejected an innocent lane at the merge queue (research
+    `22f22594238a`). Runs: `fails/auto/20261010-234505-spgv3441-smoke-amd64-bios-HANG_TIMEOUT`
+    (Spooler), `20261010-031022-mwjaap28` (SamSs), `20261008-213019-klr7vs60` (EventLog). The
+    `RQRUNNING` lead was not one: those warnings fire on 136 of 148 PASSING amd64-bios boots
+    (all smoke summaries under /tmp/vibeos-cli since 10-07).
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-08, root cause;
     the 10-07 fix below was real but not this bug). It came back: 35 of 65 amd64-bios boots on
     10-08 failed, 19 of 33 merge-queue gates retried the lane (a HANG_TIMEOUT costs ~13 min)
@@ -1288,42 +1284,34 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     decrements the zeroed countdown, then dereferences the NULL pti. Fix
     (`win32k-rust/src/timer.rs`): link the timer only once it is initialized, under
     `TimerLock`.
-  - **amd64-bios `-smp 2`: services.exe hangs inside `CreateProcessW(EventLog)`** (OPEN, now a FAMILY -- see the last paragraph;
-    seen once 2026-10-08, 1 of 20 boots, run 20261008-213019-klr7vs60 boot5). The last
-    services line is `SUMS(EventLog): before CreateProcessW` and no `returned` follows; LSASS's
-    dispatcher thread then exits `0x427` (ERROR_FAILED_SERVICE_CONTROLLER_CONNECT) and winlogon
-    sits after `calling GinaInit` until HANG_TIMEOUT, both CPUs idle in `hlt`. No in-page error,
-    no fault, no bugcheck. That signature appears in no other log under /tmp/vibeos-cli (every
-    10-08 gate failure is the in-page bug above), so whether it is new or merely rare is not
-    established. Next occurrence: rerun with `smoke --arch amd64-bios --smp 2
-    --attach-on-fail` (works since 2026-10-09: the failed VM stays up with a gdbstub) and
-    read the services thread's stack with `vibeos-cli gdb inspect <run-id>`.
-    2026-10-10: not reproduced, 0 of 20 (run 20261010-025624-q7k3yfgl, master a00de43d681,
-    every boot `[SMP] processor 1 online` and EventLog `CreateProcessW returned`). That
-    master carries 1dde7e8f09a's self-swap fix, but its `[SMP] self-swap` breadcrumb fired
-    0/20, so the run says nothing about whether that fix touches this hang -- and the
-    signatures differ anyway (a self-swap in progress spins at .SwapBusySet with IF on; this
-    hang had both CPUs in `hlt`). 20 clean at a 1-in-20 rate is ~36% by luck: still OPEN.
-    2026-10-10, later: a contributor in THIS run was the cdrom-rust MCN sync IRP (fixed in
-    f3e634bb8cf, 10-09 00:19). The hung run predates that fix, and its tree had the bug
-    live. Observed: `unknown ioctl code: 0x7C0C8` -- the driver's own sync IRP sent to
-    scsiport every timer tick -- appears 942 times across klr7vs60's 10 boots (709 in the
-    hung one) and 242 times across ep79fjwh's 10 (same day, pre-fix). It appears 0 times
-    across q7k3yfgl's 20 post-fix boots. While the bug was live, that one IRP was completed
-    at DISPATCH_LEVEL on either CPU, racing its reuse on the next tick, inside the cdrom
-    stack that serves the boot volume (cdfs on the isohybrid USB stick). Inferred, not
-    shown: a request lost there stalls the image read `CreateProcessW` waits on, and that
-    matches this hang (no fault, both CPUs idle). The census's `WrFreePage=1` is NOT a
-    lead: it is the zero-page thread's normal idle wait (`ARM3/zeropage.rs`).
-    **The same silent wedge recurs WITHOUT the chatter, so the MCN bug does not explain the
-    family.** Two gates after the fix: queue gate 20261010-030035 (services.exe stops after
-    `ScmStartUserModeService(SamSs)`), and 20261010-170505 (smp-bringup afd1d37f2524: csrss
-    stops after `LoadServerDll 'winsrv'`, kernel32 attached). Both show 0 `0x7C0C8` lines,
-    both CPUs in `KiIdleLoop`, no fault, and the census shows the same `Suspended=1`. The
-    common shape is a user-mode image load or a service start that never completes, at a
-    different point each time. Next step: the stuck thread's stack, from
-    `smoke --smp 2 --attach-on-fail` and `vibeos-cli gdb inspect <run> list-threads` /
-    `dump-thread` (the `raw` verb with `--timeout 300` works when the default 60 s does not).
+  - **amd64-bios `-smp 2`: the boot goes silent at a service start or image load** (FIXED
+    2026-10-11; first seen 2026-10-08 as services.exe stuck in `CreateProcessW(EventLog)`).
+    Rate: about 7% of gate boots on 10-09/10-10 (2/34, 3/37), about 0% solo, because it needs
+    the host load of a gate's parallel boots to widen the window. It stopped at a different
+    place each time (EventLog `CreateProcessW`, SamSs/Spooler START, csrss `LoadServerDll
+    'winsrv'`), both CPUs in `KiIdleLoop`, no fault. Root cause, read off three kept VMs
+    (`smoke --smp 2 --attach-on-fail`, 4x10 in parallel: 3 wedges in 17 boots): **every stuck
+    thread waits for a read from the boot volume** (cdfs on the USB stick): page-ins at
+    APC_LEVEL, and creates whose `IOCTL_CDROM_CHECK_VERIFY` is pending in disk.sys. The xHCI
+    controller was idle with an empty event ring. Two upstream ReactOS races, each a busy check
+    that drops the request instead of handing it to the CPU that is busy:
+    - usbport `USBPORT_FlushPendingTransfers` (2 VMs): its try-lock returned when another CPU
+      held it, after that CPU had already found the pending list empty, so usbstor's CBW sat on
+      the bulk endpoint's `PendingTransferList` forever (pending=1, active=0, lock 0).
+    - usbstor `USBSTOR_QueueNextRequest` (1 VM): returned on `ActiveSrb != NULL` without
+      `IoStartNextPacket`, when a request on the other CPU had claimed `ActiveSrb` between the
+      finished request's terminate and that check; the claimant waited behind a StartIo slot
+      no one released (`CurrentIrp` a recycled IRP, device queue Busy holding the claimant).
+    Fixes: the flush lock is a request count, and the holder makes another pass if anyone asked
+    while it ran (`usbport-rust/src/queue.rs`). `QueueNextRequest` releases the slot when its
+    caller retired the slot owner (`usbstor-rust/src/queue.rs`). After: 40/40 under heavier
+    load than a gate (4x10 in parallel during two builds, load average 80-93; runs
+    20261011-025249-0qf6e8t_, -025252-x0hlm2yj, -025255-w5frwzbg, -025258-nfmt1cgl).
+    Two earlier readings were wrong. The cdrom MCN IRP (fixed f3e634bb8cf) was not the cause,
+    since the wedge recurred without it. The census's `Suspended=1` was usbport's worker
+    thread, which uses `Suspended` as a generic wait reason: passing boots end before the
+    census prints a histogram, which made it look like a discriminator (field manual, "A busy
+    check that drops the request instead of handing it to the CPU that is busy").
   - **arm64 kmtest `ExFastMutex` bounced the merge queue** (FIXED 2026-10-08, deterministic
     part). `conformance:arm64` reported `ExFastMutex: pass 204 -> 202/203` on 72 of 255 gate
     runs (i386: 3 of 250; amd64 skips the test), rejecting innocent lanes as CONFORMANCE_RED

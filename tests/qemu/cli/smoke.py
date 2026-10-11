@@ -599,6 +599,13 @@ def _keep_for_debug(
         qemu_pid=handles["qemu_pid"],
         staging=handles["staging"],
         start_time=time.strftime("%Y-%m-%dT%H:%M:%S"),
+        # Without it every `gdb inspect` runs find-kbase's page-by-page MZ scan, and
+        # over the windows-host stub that alone outlasts a 300s hard timeout.
+        kernel_runtime_base=triage.kernel_runtime_base(
+            (work / "serial.log").read_text(errors="replace")
+            if (work / "serial.log").is_file()
+            else ""
+        ),
     )
     manifest = {
         **dataclasses.asdict(debug_run),

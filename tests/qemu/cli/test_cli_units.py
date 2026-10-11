@@ -1464,6 +1464,16 @@ def test_kernel_relocation_prefers_latest_boot_and_preserves_legacy_behavior():
     assert triage.kernel_relocation("arm64", serial) == "0xfffff80041e90000"
 
 
+def test_kernel_runtime_base_is_the_last_reported_base_or_empty():
+    # Recorded in an attach-on-fail manifest; "" sends gdbengine back to find-kbase.
+    assert triage.kernel_runtime_base("") == ""
+    serial = (
+        "[KRNLBASE] ntoskrnl runtime base=0xFFFFF80042190000\n"
+        "[KRNLBASE] ntoskrnl runtime base=fffff80000400000\n"
+    )
+    assert triage.kernel_runtime_base(serial) == "0xfffff80000400000"
+
+
 def test_cpu_state_prefers_the_capture_taken_at_the_deadline(tmp_path):
     # wait_for_boot samples the instant the boot times out. Re-sampling later
     # would agree on a true hang but disagree on a merely-slow boot, which by

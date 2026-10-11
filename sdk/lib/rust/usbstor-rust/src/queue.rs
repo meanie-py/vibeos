@@ -92,7 +92,9 @@ pub unsafe extern "system" fn USBSTOR_CancelIo(
     USBSTOR_QueueTerminateRequest(DeviceObject, Irp);
     IoCompleteRequest(Irp, IO_NO_INCREMENT as CCHAR);
 
-    USBSTOR_QueueNextRequest(DeviceObject);
+    // USBSTOR_StartIo clears this cancel routine on entry, so the request was still
+    // waiting in the device queue: it never held the StartIo slot.
+    queue_next_request(DeviceObject, false);
 }
 
 #[no_mangle]
@@ -113,7 +115,8 @@ pub unsafe extern "system" fn USBSTOR_Cancel(DeviceObject: PDEVICE_OBJECT, Irp: 
     USBSTOR_QueueTerminateRequest(DeviceObject, Irp);
     IoCompleteRequest(Irp, IO_NO_INCREMENT as i8);
 
-    USBSTOR_QueueNextRequest(DeviceObject);
+    // This request was waiting on the IrpList, never in the StartIo slot.
+    queue_next_request(DeviceObject, false);
 }
 #[no_mangle]
 pub unsafe extern "C" fn USBSTOR_QueueAddIrp(
@@ -280,8 +283,16 @@ pub unsafe extern "C" fn USBSTOR_QueueTerminateRequest(
         OldLevel,
     );
 }
+/// Called by every path that has just retired the request holding the StartIo slot
+/// (DeviceObject->CurrentIrp): the CSW completion, StartIo's cancelled/resetting
+/// exits and the reset work item. The two cancel routines retire requests that never
+/// held it and use `queue_next_request(.., false)`.
 #[no_mangle]
 pub unsafe extern "C" fn USBSTOR_QueueNextRequest(DeviceObject: PDEVICE_OBJECT) {
+    queue_next_request(DeviceObject, true)
+}
+
+unsafe fn queue_next_request(DeviceObject: PDEVICE_OBJECT, retired_slot_owner: bool) {
     let mut FDODeviceExtension: PFDO_DEVICE_EXTENSION;
     let Irp: PIRP;
     let IoStack: PIO_STACK_LOCATION;
@@ -290,11 +301,28 @@ pub unsafe extern "C" fn USBSTOR_QueueNextRequest(DeviceObject: PDEVICE_OBJECT) 
     FDODeviceExtension = (*DeviceObject).DeviceExtension as PFDO_DEVICE_EXTENSION;
     // ASSERT(FDODeviceExtension->Common.IsFDO);
 
-    // check first if there's already a request pending or the queue is frozen
-    if !(*FDODeviceExtension).ActiveSrb.is_null()
-        || BooleanFlagOn((*FDODeviceExtension).Flags, USBSTOR_FDO_FLAGS_IRP_LIST_FREEZE) != 0
-    {
+    if BooleanFlagOn((*FDODeviceExtension).Flags, USBSTOR_FDO_FLAGS_IRP_LIST_FREEZE) != 0 {
         // no work to do yet
+        return;
+    }
+
+    // Diverges from the C, which returns here without releasing the StartIo slot.
+    // On SMP a request arriving on another CPU between our caller's
+    // USBSTOR_QueueTerminateRequest (IrpPendingCount 1 -> 0, ActiveSrb cleared) and
+    // this check sees an idle queue in USBSTOR_QueueAddIrp, claims ActiveSrb and
+    // IoStartPacket()s -- behind the slot the retired request still holds. The C then
+    // never calls IoStartNextPacket, so that request waits in the device queue forever
+    // and every later one piles up behind it: all USB storage I/O stops, silently.
+    // Caught live on amd64 -smp 2: CurrentIrp a freed IRP, device queue Busy holding
+    // the IRP whose SRB is ActiveSrb, IrpPendingCount = 1 + the IrpList. Releasing the
+    // slot starts the claimant if it is already queued; if it has not reached
+    // IoStartPacket yet, that call now finds the queue idle and starts it itself.
+    if !(*FDODeviceExtension).ActiveSrb.is_null() {
+        // A cancel routine retires a request that never held the slot, and ActiveSrb
+        // may be RUNNING in it: releasing the slot there would start a second command.
+        if retired_slot_owner {
+            IoStartNextPacket(DeviceObject, TRUE as BOOLEAN);
+        }
         return;
     }
 
