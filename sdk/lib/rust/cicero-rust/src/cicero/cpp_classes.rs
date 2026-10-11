@@ -4106,131 +4106,131 @@ impl core::ops::DerefMut for INPUTCONTEXTDX { fn deref_mut(&mut self) -> &mut IN
 impl core::ops::Deref for IQueryAssociations { type Target = IUnknown; fn deref(&self) -> &IUnknown { &self._base } }
 impl core::ops::DerefMut for IQueryAssociations { fn deref_mut(&mut self) -> &mut IUnknown { &mut self._base } }
 impl IBindCtx {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RegisterObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectBound.unwrap())(self, punk) }
-    pub unsafe fn RevokeObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RevokeObjectBound.unwrap())(self, punk) }
-    pub unsafe fn ReleaseBoundObjects(&mut self) -> HRESULT { ((*self.lpVtbl).ReleaseBoundObjects.unwrap())(self) }
-    pub unsafe fn SetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).SetBindOptions.unwrap())(self, pbindopts) }
-    pub unsafe fn GetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).GetBindOptions.unwrap())(self, pbindopts) }
-    pub unsafe fn GetRunningObjectTable(&mut self, pprot: *mut *mut IRunningObjectTable) -> HRESULT { ((*self.lpVtbl).GetRunningObjectTable.unwrap())(self, pprot) }
-    pub unsafe fn RegisterObjectParam(&mut self, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectParam.unwrap())(self, pszKey, punk) }
-    pub unsafe fn GetObjectParam(&mut self, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectParam.unwrap())(self, pszKey, ppunk) }
-    pub unsafe fn EnumObjectParam(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).EnumObjectParam.unwrap())(self, ppenum) }
-    pub unsafe fn RevokeObjectParam(&mut self, pszKey: LPOLESTR) -> HRESULT { ((*self.lpVtbl).RevokeObjectParam.unwrap())(self, pszKey) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RegisterObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectBound.unwrap_unchecked())(self, punk) }
+    pub unsafe fn RevokeObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RevokeObjectBound.unwrap_unchecked())(self, punk) }
+    pub unsafe fn ReleaseBoundObjects(&mut self) -> HRESULT { ((*self.lpVtbl).ReleaseBoundObjects.unwrap_unchecked())(self) }
+    pub unsafe fn SetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).SetBindOptions.unwrap_unchecked())(self, pbindopts) }
+    pub unsafe fn GetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).GetBindOptions.unwrap_unchecked())(self, pbindopts) }
+    pub unsafe fn GetRunningObjectTable(&mut self, pprot: *mut *mut IRunningObjectTable) -> HRESULT { ((*self.lpVtbl).GetRunningObjectTable.unwrap_unchecked())(self, pprot) }
+    pub unsafe fn RegisterObjectParam(&mut self, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectParam.unwrap_unchecked())(self, pszKey, punk) }
+    pub unsafe fn GetObjectParam(&mut self, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectParam.unwrap_unchecked())(self, pszKey, ppunk) }
+    pub unsafe fn EnumObjectParam(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).EnumObjectParam.unwrap_unchecked())(self, ppenum) }
+    pub unsafe fn RevokeObjectParam(&mut self, pszKey: LPOLESTR) -> HRESULT { ((*self.lpVtbl).RevokeObjectParam.unwrap_unchecked())(self, pszKey) }
 }
 impl IClassFactory {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).CreateInstance.unwrap())(self, pUnkOuter, riid, ppvObject) }
-    pub unsafe fn LockServer(&mut self, fLock: BOOL) -> HRESULT { ((*self.lpVtbl).LockServer.unwrap())(self, fLock) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).CreateInstance.unwrap_unchecked())(self, pUnkOuter, riid, ppvObject) }
+    pub unsafe fn LockServer(&mut self, fLock: BOOL) -> HRESULT { ((*self.lpVtbl).LockServer.unwrap_unchecked())(self, fLock) }
 }
 impl IEnumMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut *mut IMoniker, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut *mut IMoniker, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumString {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap())(self, pcbSize) }
-    pub unsafe fn BindToObject(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riidResult: *const IID, ppvResult: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToObject.unwrap())(self, pbc, pmkToLeft, riidResult, ppvResult) }
-    pub unsafe fn BindToStorage(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToStorage.unwrap())(self, pbc, pmkToLeft, riid, ppvObj) }
-    pub unsafe fn Reduce(&mut self, pbc: *mut IBindCtx, dwReduceHowFar: DWORD, ppmkToLeft: *mut *mut IMoniker, ppmkReduced: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Reduce.unwrap())(self, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced) }
-    pub unsafe fn ComposeWith(&mut self, pmkRight: *mut IMoniker, fOnlyIfNotGeneric: BOOL, ppmkComposite: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ComposeWith.unwrap())(self, pmkRight, fOnlyIfNotGeneric, ppmkComposite) }
-    pub unsafe fn Enum(&mut self, fForward: BOOL, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Enum.unwrap())(self, fForward, ppenumMoniker) }
-    pub unsafe fn IsEqual(&mut self, pmkOtherMoniker: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap())(self, pmkOtherMoniker) }
-    pub unsafe fn Hash(&mut self, pdwHash: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Hash.unwrap())(self, pdwHash) }
-    pub unsafe fn IsRunning(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pmkNewlyRunning: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap())(self, pbc, pmkToLeft, pmkNewlyRunning) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pFileTime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap())(self, pbc, pmkToLeft, pFileTime) }
-    pub unsafe fn Inverse(&mut self, ppmk: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Inverse.unwrap())(self, ppmk) }
-    pub unsafe fn CommonPrefixWith(&mut self, pmkOther: *mut IMoniker, ppmkPrefix: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).CommonPrefixWith.unwrap())(self, pmkOther, ppmkPrefix) }
-    pub unsafe fn RelativePathTo(&mut self, pmkOther: *mut IMoniker, ppmkRelPath: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).RelativePathTo.unwrap())(self, pmkOther, ppmkRelPath) }
-    pub unsafe fn GetDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, ppszDisplayName: *mut LPOLESTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap())(self, pbc, pmkToLeft, ppszDisplayName) }
-    pub unsafe fn ParseDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppmkOut: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ParseDisplayName.unwrap())(self, pbc, pmkToLeft, pszDisplayName, pchEaten, ppmkOut) }
-    pub unsafe fn IsSystemMoniker(&mut self, pdwMksys: *mut DWORD) -> HRESULT { ((*self.lpVtbl).IsSystemMoniker.unwrap())(self, pdwMksys) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
+    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
+    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
+    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
+    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
+    pub unsafe fn BindToObject(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riidResult: *const IID, ppvResult: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToObject.unwrap_unchecked())(self, pbc, pmkToLeft, riidResult, ppvResult) }
+    pub unsafe fn BindToStorage(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToStorage.unwrap_unchecked())(self, pbc, pmkToLeft, riid, ppvObj) }
+    pub unsafe fn Reduce(&mut self, pbc: *mut IBindCtx, dwReduceHowFar: DWORD, ppmkToLeft: *mut *mut IMoniker, ppmkReduced: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Reduce.unwrap_unchecked())(self, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced) }
+    pub unsafe fn ComposeWith(&mut self, pmkRight: *mut IMoniker, fOnlyIfNotGeneric: BOOL, ppmkComposite: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ComposeWith.unwrap_unchecked())(self, pmkRight, fOnlyIfNotGeneric, ppmkComposite) }
+    pub unsafe fn Enum(&mut self, fForward: BOOL, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Enum.unwrap_unchecked())(self, fForward, ppenumMoniker) }
+    pub unsafe fn IsEqual(&mut self, pmkOtherMoniker: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap_unchecked())(self, pmkOtherMoniker) }
+    pub unsafe fn Hash(&mut self, pdwHash: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Hash.unwrap_unchecked())(self, pdwHash) }
+    pub unsafe fn IsRunning(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pmkNewlyRunning: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pbc, pmkToLeft, pmkNewlyRunning) }
+    pub unsafe fn GetTimeOfLastChange(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pFileTime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pbc, pmkToLeft, pFileTime) }
+    pub unsafe fn Inverse(&mut self, ppmk: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Inverse.unwrap_unchecked())(self, ppmk) }
+    pub unsafe fn CommonPrefixWith(&mut self, pmkOther: *mut IMoniker, ppmkPrefix: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).CommonPrefixWith.unwrap_unchecked())(self, pmkOther, ppmkPrefix) }
+    pub unsafe fn RelativePathTo(&mut self, pmkOther: *mut IMoniker, ppmkRelPath: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).RelativePathTo.unwrap_unchecked())(self, pmkOther, ppmkRelPath) }
+    pub unsafe fn GetDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, ppszDisplayName: *mut LPOLESTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, ppszDisplayName) }
+    pub unsafe fn ParseDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppmkOut: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ParseDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, pszDisplayName, pchEaten, ppmkOut) }
+    pub unsafe fn IsSystemMoniker(&mut self, pdwMksys: *mut DWORD) -> HRESULT { ((*self.lpVtbl).IsSystemMoniker.unwrap_unchecked())(self, pdwMksys) }
 }
 impl IPersist {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
 }
 impl IPersistStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap())(self, pcbSize) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
+    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
+    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
+    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
+    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
 }
 impl IRpcChannelBuffer {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE, riid: *const IID) -> HRESULT { ((*self.lpVtbl).GetBuffer.unwrap())(self, pMessage, riid) }
-    pub unsafe fn SendReceive(&mut self, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG) -> HRESULT { ((*self.lpVtbl).SendReceive.unwrap())(self, pMessage, pStatus) }
-    pub unsafe fn FreeBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE) -> HRESULT { ((*self.lpVtbl).FreeBuffer.unwrap())(self, pMessage) }
-    pub unsafe fn GetDestCtx(&mut self, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).GetDestCtx.unwrap())(self, pdwDestContext, ppvDestContext) }
-    pub unsafe fn IsConnected(&mut self) -> HRESULT { ((*self.lpVtbl).IsConnected.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE, riid: *const IID) -> HRESULT { ((*self.lpVtbl).GetBuffer.unwrap_unchecked())(self, pMessage, riid) }
+    pub unsafe fn SendReceive(&mut self, pMessage: *mut RPCOLEMESSAGE, pStatus: *mut ULONG) -> HRESULT { ((*self.lpVtbl).SendReceive.unwrap_unchecked())(self, pMessage, pStatus) }
+    pub unsafe fn FreeBuffer(&mut self, pMessage: *mut RPCOLEMESSAGE) -> HRESULT { ((*self.lpVtbl).FreeBuffer.unwrap_unchecked())(self, pMessage) }
+    pub unsafe fn GetDestCtx(&mut self, pdwDestContext: *mut DWORD, ppvDestContext: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).GetDestCtx.unwrap_unchecked())(self, pdwDestContext, ppvDestContext) }
+    pub unsafe fn IsConnected(&mut self) -> HRESULT { ((*self.lpVtbl).IsConnected.unwrap_unchecked())(self) }
 }
 impl IRpcStubBuffer {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Connect(&mut self, pUnkServer: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).Connect.unwrap())(self, pUnkServer) }
-    pub unsafe fn Disconnect(&mut self) { ((*self.lpVtbl).Disconnect.unwrap())(self) }
-    pub unsafe fn Invoke(&mut self, _prpcmsg: *mut RPCOLEMESSAGE, _pRpcChannelBuffer: *mut IRpcChannelBuffer) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap())(self, _prpcmsg, _pRpcChannelBuffer) }
-    pub unsafe fn IsIIDSupported(&mut self, riid: *const IID) -> *mut IRpcStubBuffer { ((*self.lpVtbl).IsIIDSupported.unwrap())(self, riid) }
-    pub unsafe fn CountRefs(&mut self) -> ULONG { ((*self.lpVtbl).CountRefs.unwrap())(self) }
-    pub unsafe fn DebugServerQueryInterface(&mut self, ppv: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).DebugServerQueryInterface.unwrap())(self, ppv) }
-    pub unsafe fn DebugServerRelease(&mut self, pv: *mut ::core::ffi::c_void) { ((*self.lpVtbl).DebugServerRelease.unwrap())(self, pv) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Connect(&mut self, pUnkServer: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).Connect.unwrap_unchecked())(self, pUnkServer) }
+    pub unsafe fn Disconnect(&mut self) { ((*self.lpVtbl).Disconnect.unwrap_unchecked())(self) }
+    pub unsafe fn Invoke(&mut self, _prpcmsg: *mut RPCOLEMESSAGE, _pRpcChannelBuffer: *mut IRpcChannelBuffer) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap_unchecked())(self, _prpcmsg, _pRpcChannelBuffer) }
+    pub unsafe fn IsIIDSupported(&mut self, riid: *const IID) -> *mut IRpcStubBuffer { ((*self.lpVtbl).IsIIDSupported.unwrap_unchecked())(self, riid) }
+    pub unsafe fn CountRefs(&mut self) -> ULONG { ((*self.lpVtbl).CountRefs.unwrap_unchecked())(self) }
+    pub unsafe fn DebugServerQueryInterface(&mut self, ppv: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).DebugServerQueryInterface.unwrap_unchecked())(self, ppv) }
+    pub unsafe fn DebugServerRelease(&mut self, pv: *mut ::core::ffi::c_void) { ((*self.lpVtbl).DebugServerRelease.unwrap_unchecked())(self, pv) }
 }
 impl IRunningObjectTable {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Register(&mut self, grfFlags: DWORD, punkObject: *mut IUnknown, pmkObjectName: *mut IMoniker, pdwRegister: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Register.unwrap())(self, grfFlags, punkObject, pmkObjectName, pdwRegister) }
-    pub unsafe fn Revoke(&mut self, dwRegister: DWORD) -> HRESULT { ((*self.lpVtbl).Revoke.unwrap())(self, dwRegister) }
-    pub unsafe fn IsRunning(&mut self, pmkObjectName: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap())(self, pmkObjectName) }
-    pub unsafe fn GetObjectW(&mut self, pmkObjectName: *mut IMoniker, ppunkObject: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectW.unwrap())(self, pmkObjectName, ppunkObject) }
-    pub unsafe fn NoteChangeTime(&mut self, dwRegister: DWORD, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).NoteChangeTime.unwrap())(self, dwRegister, pfiletime) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pmkObjectName: *mut IMoniker, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap())(self, pmkObjectName, pfiletime) }
-    pub unsafe fn EnumRunning(&mut self, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).EnumRunning.unwrap())(self, ppenumMoniker) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Register(&mut self, grfFlags: DWORD, punkObject: *mut IUnknown, pmkObjectName: *mut IMoniker, pdwRegister: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Register.unwrap_unchecked())(self, grfFlags, punkObject, pmkObjectName, pdwRegister) }
+    pub unsafe fn Revoke(&mut self, dwRegister: DWORD) -> HRESULT { ((*self.lpVtbl).Revoke.unwrap_unchecked())(self, dwRegister) }
+    pub unsafe fn IsRunning(&mut self, pmkObjectName: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pmkObjectName) }
+    pub unsafe fn GetObjectW(&mut self, pmkObjectName: *mut IMoniker, ppunkObject: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectW.unwrap_unchecked())(self, pmkObjectName, ppunkObject) }
+    pub unsafe fn NoteChangeTime(&mut self, dwRegister: DWORD, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).NoteChangeTime.unwrap_unchecked())(self, dwRegister, pfiletime) }
+    pub unsafe fn GetTimeOfLastChange(&mut self, pmkObjectName: *mut IMoniker, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pmkObjectName, pfiletime) }
+    pub unsafe fn EnumRunning(&mut self, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).EnumRunning.unwrap_unchecked())(self, ppenumMoniker) }
 }
 impl ISequentialStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Read(&mut self, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Read.unwrap())(self, pv, cb, pcbRead) }
-    pub unsafe fn Write(&mut self, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Write.unwrap())(self, pv, cb, pcbWritten) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Read(&mut self, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Read.unwrap_unchecked())(self, pv, cb, pcbRead) }
+    pub unsafe fn Write(&mut self, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Write.unwrap_unchecked())(self, pv, cb, pcbWritten) }
 }
 impl IUnknown {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
 }
 
 

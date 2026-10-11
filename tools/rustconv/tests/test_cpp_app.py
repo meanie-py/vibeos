@@ -447,6 +447,6 @@ def test_a_com_call_written_as_cpp_dispatches_through_lpvtbl():
     assert "impl IEmptyVolumeCacheCallBack {" in rs
     assert (
         "pub unsafe fn ScanProgress(&mut self, dwlSpaceUsed: DWORDLONG, dwFlags: DWORD, "
-        "pcwszStatus: LPCWSTR) -> HRESULT { ((*self.lpVtbl).ScanProgress.unwrap())"
+        "pcwszStatus: LPCWSTR) -> HRESULT { ((*self.lpVtbl).ScanProgress.unwrap_unchecked())"
         "(self, dwlSpaceUsed, dwFlags, pcwszStatus) }" in rs
     )

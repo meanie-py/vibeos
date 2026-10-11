@@ -1192,1179 +1192,1179 @@ impl core::ops::DerefMut for ITfLangBarMgr_P { fn deref_mut(&mut self) -> &mut I
 impl core::ops::Deref for ITfLangBarEventSink_P { type Target = IUnknown; fn deref(&self) -> &IUnknown { &self._base } }
 impl core::ops::DerefMut for ITfLangBarEventSink_P { fn deref_mut(&mut self) -> &mut IUnknown { &mut self._base } }
 impl IAdviseSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnDataChange(&mut self, pFormatetc: *mut FORMATETC, pStgmed: *mut STGMEDIUM) { ((*self.lpVtbl).OnDataChange.unwrap())(self, pFormatetc, pStgmed) }
-    pub unsafe fn OnViewChange(&mut self, dwAspect: DWORD, lindex: LONG) { ((*self.lpVtbl).OnViewChange.unwrap())(self, dwAspect, lindex) }
-    pub unsafe fn OnRename(&mut self, pmk: *mut IMoniker) { ((*self.lpVtbl).OnRename.unwrap())(self, pmk) }
-    pub unsafe fn OnSave(&mut self) { ((*self.lpVtbl).OnSave.unwrap())(self) }
-    pub unsafe fn OnClose(&mut self) { ((*self.lpVtbl).OnClose.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnDataChange(&mut self, pFormatetc: *mut FORMATETC, pStgmed: *mut STGMEDIUM) { ((*self.lpVtbl).OnDataChange.unwrap_unchecked())(self, pFormatetc, pStgmed) }
+    pub unsafe fn OnViewChange(&mut self, dwAspect: DWORD, lindex: LONG) { ((*self.lpVtbl).OnViewChange.unwrap_unchecked())(self, dwAspect, lindex) }
+    pub unsafe fn OnRename(&mut self, pmk: *mut IMoniker) { ((*self.lpVtbl).OnRename.unwrap_unchecked())(self, pmk) }
+    pub unsafe fn OnSave(&mut self) { ((*self.lpVtbl).OnSave.unwrap_unchecked())(self) }
+    pub unsafe fn OnClose(&mut self) { ((*self.lpVtbl).OnClose.unwrap_unchecked())(self) }
 }
 impl IAnchor {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn SetGravity(&mut self, gravity: TsGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap())(self, gravity) }
-    pub unsafe fn GetGravity(&mut self, pgravity: *mut TsGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap())(self, pgravity) }
-    pub unsafe fn IsEqual(&mut self, paWith: *mut IAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap())(self, paWith, pfEqual) }
-    pub unsafe fn Compare(&mut self, paWith: *mut IAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).Compare.unwrap())(self, paWith, plResult) }
-    pub unsafe fn Shift(&mut self, dwFlags: DWORD, cchReq: LONG, pcch: *mut LONG, paHaltAnchor: *mut IAnchor) -> HRESULT { ((*self.lpVtbl).Shift.unwrap())(self, dwFlags, cchReq, pcch, paHaltAnchor) }
-    pub unsafe fn ShiftTo(&mut self, paSite: *mut IAnchor) -> HRESULT { ((*self.lpVtbl).ShiftTo.unwrap())(self, paSite) }
-    pub unsafe fn ShiftRegion(&mut self, dwFlags: DWORD, dir: TsShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftRegion.unwrap())(self, dwFlags, dir, pfNoRegion) }
-    pub unsafe fn SetChangeHistoryMask(&mut self, dwMask: DWORD) -> HRESULT { ((*self.lpVtbl).SetChangeHistoryMask.unwrap())(self, dwMask) }
-    pub unsafe fn GetChangeHistory(&mut self, pdwHistory: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetChangeHistory.unwrap())(self, pdwHistory) }
-    pub unsafe fn ClearChangeHistory(&mut self) -> HRESULT { ((*self.lpVtbl).ClearChangeHistory.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppaClone: *mut *mut IAnchor) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppaClone) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn SetGravity(&mut self, gravity: TsGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap_unchecked())(self, gravity) }
+    pub unsafe fn GetGravity(&mut self, pgravity: *mut TsGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap_unchecked())(self, pgravity) }
+    pub unsafe fn IsEqual(&mut self, paWith: *mut IAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap_unchecked())(self, paWith, pfEqual) }
+    pub unsafe fn Compare(&mut self, paWith: *mut IAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).Compare.unwrap_unchecked())(self, paWith, plResult) }
+    pub unsafe fn Shift(&mut self, dwFlags: DWORD, cchReq: LONG, pcch: *mut LONG, paHaltAnchor: *mut IAnchor) -> HRESULT { ((*self.lpVtbl).Shift.unwrap_unchecked())(self, dwFlags, cchReq, pcch, paHaltAnchor) }
+    pub unsafe fn ShiftTo(&mut self, paSite: *mut IAnchor) -> HRESULT { ((*self.lpVtbl).ShiftTo.unwrap_unchecked())(self, paSite) }
+    pub unsafe fn ShiftRegion(&mut self, dwFlags: DWORD, dir: TsShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftRegion.unwrap_unchecked())(self, dwFlags, dir, pfNoRegion) }
+    pub unsafe fn SetChangeHistoryMask(&mut self, dwMask: DWORD) -> HRESULT { ((*self.lpVtbl).SetChangeHistoryMask.unwrap_unchecked())(self, dwMask) }
+    pub unsafe fn GetChangeHistory(&mut self, pdwHistory: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetChangeHistory.unwrap_unchecked())(self, pdwHistory) }
+    pub unsafe fn ClearChangeHistory(&mut self) -> HRESULT { ((*self.lpVtbl).ClearChangeHistory.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppaClone: *mut *mut IAnchor) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppaClone) }
 }
 impl IBindCtx {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RegisterObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectBound.unwrap())(self, punk) }
-    pub unsafe fn RevokeObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RevokeObjectBound.unwrap())(self, punk) }
-    pub unsafe fn ReleaseBoundObjects(&mut self) -> HRESULT { ((*self.lpVtbl).ReleaseBoundObjects.unwrap())(self) }
-    pub unsafe fn SetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).SetBindOptions.unwrap())(self, pbindopts) }
-    pub unsafe fn GetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).GetBindOptions.unwrap())(self, pbindopts) }
-    pub unsafe fn GetRunningObjectTable(&mut self, pprot: *mut *mut IRunningObjectTable) -> HRESULT { ((*self.lpVtbl).GetRunningObjectTable.unwrap())(self, pprot) }
-    pub unsafe fn RegisterObjectParam(&mut self, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectParam.unwrap())(self, pszKey, punk) }
-    pub unsafe fn GetObjectParam(&mut self, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectParam.unwrap())(self, pszKey, ppunk) }
-    pub unsafe fn EnumObjectParam(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).EnumObjectParam.unwrap())(self, ppenum) }
-    pub unsafe fn RevokeObjectParam(&mut self, pszKey: LPOLESTR) -> HRESULT { ((*self.lpVtbl).RevokeObjectParam.unwrap())(self, pszKey) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RegisterObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectBound.unwrap_unchecked())(self, punk) }
+    pub unsafe fn RevokeObjectBound(&mut self, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RevokeObjectBound.unwrap_unchecked())(self, punk) }
+    pub unsafe fn ReleaseBoundObjects(&mut self) -> HRESULT { ((*self.lpVtbl).ReleaseBoundObjects.unwrap_unchecked())(self) }
+    pub unsafe fn SetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).SetBindOptions.unwrap_unchecked())(self, pbindopts) }
+    pub unsafe fn GetBindOptions(&mut self, pbindopts: *mut BIND_OPTS) -> HRESULT { ((*self.lpVtbl).GetBindOptions.unwrap_unchecked())(self, pbindopts) }
+    pub unsafe fn GetRunningObjectTable(&mut self, pprot: *mut *mut IRunningObjectTable) -> HRESULT { ((*self.lpVtbl).GetRunningObjectTable.unwrap_unchecked())(self, pprot) }
+    pub unsafe fn RegisterObjectParam(&mut self, pszKey: LPOLESTR, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).RegisterObjectParam.unwrap_unchecked())(self, pszKey, punk) }
+    pub unsafe fn GetObjectParam(&mut self, pszKey: LPOLESTR, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectParam.unwrap_unchecked())(self, pszKey, ppunk) }
+    pub unsafe fn EnumObjectParam(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).EnumObjectParam.unwrap_unchecked())(self, ppenum) }
+    pub unsafe fn RevokeObjectParam(&mut self, pszKey: LPOLESTR) -> HRESULT { ((*self.lpVtbl).RevokeObjectParam.unwrap_unchecked())(self, pszKey) }
 }
 impl IDataObject {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetData(&mut self, pformatetcIn: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT { ((*self.lpVtbl).GetData.unwrap())(self, pformatetcIn, pmedium) }
-    pub unsafe fn GetDataHere(&mut self, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT { ((*self.lpVtbl).GetDataHere.unwrap())(self, pformatetc, pmedium) }
-    pub unsafe fn QueryGetData(&mut self, pformatetc: *mut FORMATETC) -> HRESULT { ((*self.lpVtbl).QueryGetData.unwrap())(self, pformatetc) }
-    pub unsafe fn GetCanonicalFormatEtc(&mut self, pformatectIn: *mut FORMATETC, pformatetcOut: *mut FORMATETC) -> HRESULT { ((*self.lpVtbl).GetCanonicalFormatEtc.unwrap())(self, pformatectIn, pformatetcOut) }
-    pub unsafe fn SetData(&mut self, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM, fRelease: BOOL) -> HRESULT { ((*self.lpVtbl).SetData.unwrap())(self, pformatetc, pmedium, fRelease) }
-    pub unsafe fn EnumFormatEtc(&mut self, dwDirection: DWORD, ppenumFormatEtc: *mut *mut IEnumFORMATETC) -> HRESULT { ((*self.lpVtbl).EnumFormatEtc.unwrap())(self, dwDirection, ppenumFormatEtc) }
-    pub unsafe fn DAdvise(&mut self, pformatetc: *mut FORMATETC, advf: DWORD, pAdvSink: *mut IAdviseSink, pdwConnection: *mut DWORD) -> HRESULT { ((*self.lpVtbl).DAdvise.unwrap())(self, pformatetc, advf, pAdvSink, pdwConnection) }
-    pub unsafe fn DUnadvise(&mut self, dwConnection: DWORD) -> HRESULT { ((*self.lpVtbl).DUnadvise.unwrap())(self, dwConnection) }
-    pub unsafe fn EnumDAdvise(&mut self, ppenumAdvise: *mut *mut IEnumSTATDATA) -> HRESULT { ((*self.lpVtbl).EnumDAdvise.unwrap())(self, ppenumAdvise) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetData(&mut self, pformatetcIn: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT { ((*self.lpVtbl).GetData.unwrap_unchecked())(self, pformatetcIn, pmedium) }
+    pub unsafe fn GetDataHere(&mut self, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM) -> HRESULT { ((*self.lpVtbl).GetDataHere.unwrap_unchecked())(self, pformatetc, pmedium) }
+    pub unsafe fn QueryGetData(&mut self, pformatetc: *mut FORMATETC) -> HRESULT { ((*self.lpVtbl).QueryGetData.unwrap_unchecked())(self, pformatetc) }
+    pub unsafe fn GetCanonicalFormatEtc(&mut self, pformatectIn: *mut FORMATETC, pformatetcOut: *mut FORMATETC) -> HRESULT { ((*self.lpVtbl).GetCanonicalFormatEtc.unwrap_unchecked())(self, pformatectIn, pformatetcOut) }
+    pub unsafe fn SetData(&mut self, pformatetc: *mut FORMATETC, pmedium: *mut STGMEDIUM, fRelease: BOOL) -> HRESULT { ((*self.lpVtbl).SetData.unwrap_unchecked())(self, pformatetc, pmedium, fRelease) }
+    pub unsafe fn EnumFormatEtc(&mut self, dwDirection: DWORD, ppenumFormatEtc: *mut *mut IEnumFORMATETC) -> HRESULT { ((*self.lpVtbl).EnumFormatEtc.unwrap_unchecked())(self, dwDirection, ppenumFormatEtc) }
+    pub unsafe fn DAdvise(&mut self, pformatetc: *mut FORMATETC, advf: DWORD, pAdvSink: *mut IAdviseSink, pdwConnection: *mut DWORD) -> HRESULT { ((*self.lpVtbl).DAdvise.unwrap_unchecked())(self, pformatetc, advf, pAdvSink, pdwConnection) }
+    pub unsafe fn DUnadvise(&mut self, dwConnection: DWORD) -> HRESULT { ((*self.lpVtbl).DUnadvise.unwrap_unchecked())(self, dwConnection) }
+    pub unsafe fn EnumDAdvise(&mut self, ppenumAdvise: *mut *mut IEnumSTATDATA) -> HRESULT { ((*self.lpVtbl).EnumDAdvise.unwrap_unchecked())(self, ppenumAdvise) }
 }
 impl IDispatch {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetTypeInfoCount(&mut self, pctinfo: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetTypeInfoCount.unwrap())(self, pctinfo) }
-    pub unsafe fn GetTypeInfo(&mut self, iTInfo: UINT, lcid: LCID, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap())(self, iTInfo, lcid, ppTInfo) }
-    pub unsafe fn GetIDsOfNames(&mut self, riid: *const IID, rgszNames: *mut LPOLESTR, cNames: UINT, lcid: LCID, rgDispId: *mut DISPID) -> HRESULT { ((*self.lpVtbl).GetIDsOfNames.unwrap())(self, riid, rgszNames, cNames, lcid, rgDispId) }
-    pub unsafe fn Invoke(&mut self, dispIdMember: DISPID, riid: *const IID, lcid: LCID, wFlags: WORD, pDispParams: *mut DISPPARAMS, pVarResult: *mut VARIANT, pExcepInfo: *mut EXCEPINFO, puArgErr: *mut UINT) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap())(self, dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetTypeInfoCount(&mut self, pctinfo: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetTypeInfoCount.unwrap_unchecked())(self, pctinfo) }
+    pub unsafe fn GetTypeInfo(&mut self, iTInfo: UINT, lcid: LCID, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap_unchecked())(self, iTInfo, lcid, ppTInfo) }
+    pub unsafe fn GetIDsOfNames(&mut self, riid: *const IID, rgszNames: *mut LPOLESTR, cNames: UINT, lcid: LCID, rgDispId: *mut DISPID) -> HRESULT { ((*self.lpVtbl).GetIDsOfNames.unwrap_unchecked())(self, riid, rgszNames, cNames, lcid, rgDispId) }
+    pub unsafe fn Invoke(&mut self, dispIdMember: DISPID, riid: *const IID, lcid: LCID, wFlags: WORD, pDispParams: *mut DISPPARAMS, pVarResult: *mut VARIANT, pExcepInfo: *mut EXCEPINFO, puArgErr: *mut UINT) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap_unchecked())(self, dispIdMember, riid, lcid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr) }
 }
 impl IEnumFORMATETC {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut FORMATETC, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumFORMATETC) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut FORMATETC, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumFORMATETC) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumGUID {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut GUID, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut GUID, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumITfCompositionView {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, rgCompositionView: *mut *mut ITfCompositionView, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, rgCompositionView, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, rgCompositionView: *mut *mut ITfCompositionView, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, rgCompositionView, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut *mut IMoniker, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut *mut IMoniker, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumSTATDATA {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut STATDATA, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumSTATDATA) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut STATDATA, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumSTATDATA) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumSTATSTG {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut STATSTG, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut STATSTG, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumString {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, celt, rgelt, pceltFetched) }
-    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, celt) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppenum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Next(&mut self, celt: ULONG, rgelt: *mut LPOLESTR, pceltFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, celt, rgelt, pceltFetched) }
+    pub unsafe fn Skip(&mut self, celt: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, celt) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppenum: *mut *mut IEnumString) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppenum) }
 }
 impl IEnumTfCandidates {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfCandidates) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, ppCand: *mut *mut ITfCandidateString, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, ppCand, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfCandidates) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, ppCand: *mut *mut ITfCandidateString, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, ppCand, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfContextViews {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfContextViews) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ret) }
-    pub unsafe fn Next(&mut self, count: ULONG, views: *mut *mut ITfContextView, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, count, views, fetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, count) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfContextViews) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ret) }
+    pub unsafe fn Next(&mut self, count: ULONG, views: *mut *mut ITfContextView, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, count, views, fetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, count) }
 }
 impl IEnumTfContexts {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfContexts) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, rgContext: *mut *mut ITfContext, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, rgContext, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfContexts) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, rgContext: *mut *mut ITfContext, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, rgContext, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfDisplayAttributeInfo {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfDisplayAttributeInfo) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, rgInfo: *mut *mut ITfDisplayAttributeInfo, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, rgInfo, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfDisplayAttributeInfo) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, rgInfo: *mut *mut ITfDisplayAttributeInfo, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, rgInfo, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfDocumentMgrs {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, rgDocumentMgr: *mut *mut ITfDocumentMgr, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, rgDocumentMgr, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, rgDocumentMgr: *mut *mut ITfDocumentMgr, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, rgDocumentMgr, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfFunctionProviders {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ret) }
-    pub unsafe fn Next(&mut self, count: ULONG, prov: *mut *mut ITfFunctionProvider, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, count, prov, fetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, count) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ret) }
+    pub unsafe fn Next(&mut self, count: ULONG, prov: *mut *mut ITfFunctionProvider, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, count, prov, fetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, count) }
 }
 impl IEnumTfInputProcessorProfiles {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfInputProcessorProfiles) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, pProfile: *mut TF_INPUTPROCESSORPROFILE, pcFetch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, pProfile, pcFetch) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfInputProcessorProfiles) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, pProfile: *mut TF_INPUTPROCESSORPROFILE, pcFetch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, pProfile, pcFetch) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfLangBarItems {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLangBarItems) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, ppItem: *mut *mut ITfLangBarItem, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, ppItem, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLangBarItems) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, ppItem: *mut *mut ITfLangBarItem, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, ppItem, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfLanguageProfiles {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLanguageProfiles) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, pProfile: *mut TF_LANGUAGEPROFILE, pcFetch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, pProfile, pcFetch) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLanguageProfiles) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, pProfile: *mut TF_LANGUAGEPROFILE, pcFetch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, pProfile, pcFetch) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfLatticeElements {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLatticeElements) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, rgsElements: *mut TF_LMLATTELEMENT, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, rgsElements, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfLatticeElements) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, rgsElements: *mut TF_LMLATTELEMENT, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, rgsElements, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfProperties {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfProperties) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ret) }
-    pub unsafe fn Next(&mut self, count: ULONG, props: *mut *mut ITfProperty, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, count, props, fetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, count) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ret: *mut *mut IEnumTfProperties) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ret) }
+    pub unsafe fn Next(&mut self, count: ULONG, props: *mut *mut ITfProperty, fetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, count, props, fetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, count) }
 }
 impl IEnumTfRanges {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfRanges) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppEnum) }
-    pub unsafe fn Next(&mut self, ulCount: ULONG, ppRange: *mut *mut ITfRange, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, ulCount, ppRange, pcFetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, ulCount) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, ppEnum: *mut *mut IEnumTfRanges) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn Next(&mut self, ulCount: ULONG, ppRange: *mut *mut ITfRange, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, ulCount, ppRange, pcFetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, ulCount) }
 }
 impl IEnumTfUIElements {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Clone(&mut self, enum_elements: *mut *mut IEnumTfUIElements) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, enum_elements) }
-    pub unsafe fn Next(&mut self, count: ULONG, element: *mut *mut ITfUIElement, fetched: ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap())(self, count, element, fetched) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
-    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap())(self, count) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Clone(&mut self, enum_elements: *mut *mut IEnumTfUIElements) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, enum_elements) }
+    pub unsafe fn Next(&mut self, count: ULONG, element: *mut *mut ITfUIElement, fetched: ULONG) -> HRESULT { ((*self.lpVtbl).Next.unwrap_unchecked())(self, count, element, fetched) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
+    pub unsafe fn Skip(&mut self, count: ULONG) -> HRESULT { ((*self.lpVtbl).Skip.unwrap_unchecked())(self, count) }
 }
 impl IMoniker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap())(self, pcbSize) }
-    pub unsafe fn BindToObject(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riidResult: *const IID, ppvResult: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToObject.unwrap())(self, pbc, pmkToLeft, riidResult, ppvResult) }
-    pub unsafe fn BindToStorage(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToStorage.unwrap())(self, pbc, pmkToLeft, riid, ppvObj) }
-    pub unsafe fn Reduce(&mut self, pbc: *mut IBindCtx, dwReduceHowFar: DWORD, ppmkToLeft: *mut *mut IMoniker, ppmkReduced: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Reduce.unwrap())(self, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced) }
-    pub unsafe fn ComposeWith(&mut self, pmkRight: *mut IMoniker, fOnlyIfNotGeneric: BOOL, ppmkComposite: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ComposeWith.unwrap())(self, pmkRight, fOnlyIfNotGeneric, ppmkComposite) }
-    pub unsafe fn Enum(&mut self, fForward: BOOL, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Enum.unwrap())(self, fForward, ppenumMoniker) }
-    pub unsafe fn IsEqual(&mut self, pmkOtherMoniker: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap())(self, pmkOtherMoniker) }
-    pub unsafe fn Hash(&mut self, pdwHash: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Hash.unwrap())(self, pdwHash) }
-    pub unsafe fn IsRunning(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pmkNewlyRunning: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap())(self, pbc, pmkToLeft, pmkNewlyRunning) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pFileTime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap())(self, pbc, pmkToLeft, pFileTime) }
-    pub unsafe fn Inverse(&mut self, ppmk: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Inverse.unwrap())(self, ppmk) }
-    pub unsafe fn CommonPrefixWith(&mut self, pmkOther: *mut IMoniker, ppmkPrefix: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).CommonPrefixWith.unwrap())(self, pmkOther, ppmkPrefix) }
-    pub unsafe fn RelativePathTo(&mut self, pmkOther: *mut IMoniker, ppmkRelPath: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).RelativePathTo.unwrap())(self, pmkOther, ppmkRelPath) }
-    pub unsafe fn GetDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, ppszDisplayName: *mut LPOLESTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap())(self, pbc, pmkToLeft, ppszDisplayName) }
-    pub unsafe fn ParseDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppmkOut: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ParseDisplayName.unwrap())(self, pbc, pmkToLeft, pszDisplayName, pchEaten, ppmkOut) }
-    pub unsafe fn IsSystemMoniker(&mut self, pdwMksys: *mut DWORD) -> HRESULT { ((*self.lpVtbl).IsSystemMoniker.unwrap())(self, pdwMksys) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
+    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
+    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
+    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
+    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
+    pub unsafe fn BindToObject(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riidResult: *const IID, ppvResult: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToObject.unwrap_unchecked())(self, pbc, pmkToLeft, riidResult, ppvResult) }
+    pub unsafe fn BindToStorage(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, riid: *const IID, ppvObj: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).BindToStorage.unwrap_unchecked())(self, pbc, pmkToLeft, riid, ppvObj) }
+    pub unsafe fn Reduce(&mut self, pbc: *mut IBindCtx, dwReduceHowFar: DWORD, ppmkToLeft: *mut *mut IMoniker, ppmkReduced: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Reduce.unwrap_unchecked())(self, pbc, dwReduceHowFar, ppmkToLeft, ppmkReduced) }
+    pub unsafe fn ComposeWith(&mut self, pmkRight: *mut IMoniker, fOnlyIfNotGeneric: BOOL, ppmkComposite: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ComposeWith.unwrap_unchecked())(self, pmkRight, fOnlyIfNotGeneric, ppmkComposite) }
+    pub unsafe fn Enum(&mut self, fForward: BOOL, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).Enum.unwrap_unchecked())(self, fForward, ppenumMoniker) }
+    pub unsafe fn IsEqual(&mut self, pmkOtherMoniker: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsEqual.unwrap_unchecked())(self, pmkOtherMoniker) }
+    pub unsafe fn Hash(&mut self, pdwHash: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Hash.unwrap_unchecked())(self, pdwHash) }
+    pub unsafe fn IsRunning(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pmkNewlyRunning: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pbc, pmkToLeft, pmkNewlyRunning) }
+    pub unsafe fn GetTimeOfLastChange(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pFileTime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pbc, pmkToLeft, pFileTime) }
+    pub unsafe fn Inverse(&mut self, ppmk: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).Inverse.unwrap_unchecked())(self, ppmk) }
+    pub unsafe fn CommonPrefixWith(&mut self, pmkOther: *mut IMoniker, ppmkPrefix: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).CommonPrefixWith.unwrap_unchecked())(self, pmkOther, ppmkPrefix) }
+    pub unsafe fn RelativePathTo(&mut self, pmkOther: *mut IMoniker, ppmkRelPath: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).RelativePathTo.unwrap_unchecked())(self, pmkOther, ppmkRelPath) }
+    pub unsafe fn GetDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, ppszDisplayName: *mut LPOLESTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, ppszDisplayName) }
+    pub unsafe fn ParseDisplayName(&mut self, pbc: *mut IBindCtx, pmkToLeft: *mut IMoniker, pszDisplayName: LPOLESTR, pchEaten: *mut ULONG, ppmkOut: *mut *mut IMoniker) -> HRESULT { ((*self.lpVtbl).ParseDisplayName.unwrap_unchecked())(self, pbc, pmkToLeft, pszDisplayName, pchEaten, ppmkOut) }
+    pub unsafe fn IsSystemMoniker(&mut self, pdwMksys: *mut DWORD) -> HRESULT { ((*self.lpVtbl).IsSystemMoniker.unwrap_unchecked())(self, pdwMksys) }
 }
 impl IPersist {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
 }
 impl IPersistStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap())(self, pClassID) }
-    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap())(self) }
-    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap())(self, pStm) }
-    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap())(self, pStm, fClearDirty) }
-    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap())(self, pcbSize) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClassID(&mut self, pClassID: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetClassID.unwrap_unchecked())(self, pClassID) }
+    pub unsafe fn IsDirty(&mut self) -> HRESULT { ((*self.lpVtbl).IsDirty.unwrap_unchecked())(self) }
+    pub unsafe fn Load(&mut self, pStm: *mut IStream) -> HRESULT { ((*self.lpVtbl).Load.unwrap_unchecked())(self, pStm) }
+    pub unsafe fn Save(&mut self, pStm: *mut IStream, fClearDirty: BOOL) -> HRESULT { ((*self.lpVtbl).Save.unwrap_unchecked())(self, pStm, fClearDirty) }
+    pub unsafe fn GetSizeMax(&mut self, pcbSize: *mut ULARGE_INTEGER) -> HRESULT { ((*self.lpVtbl).GetSizeMax.unwrap_unchecked())(self, pcbSize) }
 }
 impl IRecordInfo {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RecordInit(&mut self, pvNew: PVOID) -> HRESULT { ((*self.lpVtbl).RecordInit.unwrap())(self, pvNew) }
-    pub unsafe fn RecordClear(&mut self, pvExisting: PVOID) -> HRESULT { ((*self.lpVtbl).RecordClear.unwrap())(self, pvExisting) }
-    pub unsafe fn RecordCopy(&mut self, pvExisting: PVOID, pvNew: PVOID) -> HRESULT { ((*self.lpVtbl).RecordCopy.unwrap())(self, pvExisting, pvNew) }
-    pub unsafe fn GetGuid(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGuid.unwrap())(self, pguid) }
-    pub unsafe fn GetName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetName.unwrap())(self, pbstrName) }
-    pub unsafe fn GetSize(&mut self, pcbSize: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetSize.unwrap())(self, pcbSize) }
-    pub unsafe fn GetTypeInfo(&mut self, ppTypeInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap())(self, ppTypeInfo) }
-    pub unsafe fn GetField(&mut self, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetField.unwrap())(self, pvData, szFieldName, pvarField) }
-    pub unsafe fn GetFieldNoCopy(&mut self, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT, ppvDataCArray: *mut PVOID) -> HRESULT { ((*self.lpVtbl).GetFieldNoCopy.unwrap())(self, pvData, szFieldName, pvarField, ppvDataCArray) }
-    pub unsafe fn PutField(&mut self, wFlags: ULONG, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).PutField.unwrap())(self, wFlags, pvData, szFieldName, pvarField) }
-    pub unsafe fn PutFieldNoCopy(&mut self, wFlags: ULONG, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).PutFieldNoCopy.unwrap())(self, wFlags, pvData, szFieldName, pvarField) }
-    pub unsafe fn GetFieldNames(&mut self, pcNames: *mut ULONG, rgBstrNames: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetFieldNames.unwrap())(self, pcNames, rgBstrNames) }
-    pub unsafe fn IsMatchingType(&mut self, pRecordInfo: *mut IRecordInfo) -> BOOL { ((*self.lpVtbl).IsMatchingType.unwrap())(self, pRecordInfo) }
-    pub unsafe fn RecordCreate(&mut self) -> PVOID { ((*self.lpVtbl).RecordCreate.unwrap())(self) }
-    pub unsafe fn RecordCreateCopy(&mut self, pvSource: PVOID, ppvDest: *mut PVOID) -> HRESULT { ((*self.lpVtbl).RecordCreateCopy.unwrap())(self, pvSource, ppvDest) }
-    pub unsafe fn RecordDestroy(&mut self, pvRecord: PVOID) -> HRESULT { ((*self.lpVtbl).RecordDestroy.unwrap())(self, pvRecord) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RecordInit(&mut self, pvNew: PVOID) -> HRESULT { ((*self.lpVtbl).RecordInit.unwrap_unchecked())(self, pvNew) }
+    pub unsafe fn RecordClear(&mut self, pvExisting: PVOID) -> HRESULT { ((*self.lpVtbl).RecordClear.unwrap_unchecked())(self, pvExisting) }
+    pub unsafe fn RecordCopy(&mut self, pvExisting: PVOID, pvNew: PVOID) -> HRESULT { ((*self.lpVtbl).RecordCopy.unwrap_unchecked())(self, pvExisting, pvNew) }
+    pub unsafe fn GetGuid(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGuid.unwrap_unchecked())(self, pguid) }
+    pub unsafe fn GetName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetName.unwrap_unchecked())(self, pbstrName) }
+    pub unsafe fn GetSize(&mut self, pcbSize: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetSize.unwrap_unchecked())(self, pcbSize) }
+    pub unsafe fn GetTypeInfo(&mut self, ppTypeInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap_unchecked())(self, ppTypeInfo) }
+    pub unsafe fn GetField(&mut self, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetField.unwrap_unchecked())(self, pvData, szFieldName, pvarField) }
+    pub unsafe fn GetFieldNoCopy(&mut self, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT, ppvDataCArray: *mut PVOID) -> HRESULT { ((*self.lpVtbl).GetFieldNoCopy.unwrap_unchecked())(self, pvData, szFieldName, pvarField, ppvDataCArray) }
+    pub unsafe fn PutField(&mut self, wFlags: ULONG, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).PutField.unwrap_unchecked())(self, wFlags, pvData, szFieldName, pvarField) }
+    pub unsafe fn PutFieldNoCopy(&mut self, wFlags: ULONG, pvData: PVOID, szFieldName: LPCOLESTR, pvarField: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).PutFieldNoCopy.unwrap_unchecked())(self, wFlags, pvData, szFieldName, pvarField) }
+    pub unsafe fn GetFieldNames(&mut self, pcNames: *mut ULONG, rgBstrNames: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetFieldNames.unwrap_unchecked())(self, pcNames, rgBstrNames) }
+    pub unsafe fn IsMatchingType(&mut self, pRecordInfo: *mut IRecordInfo) -> BOOL { ((*self.lpVtbl).IsMatchingType.unwrap_unchecked())(self, pRecordInfo) }
+    pub unsafe fn RecordCreate(&mut self) -> PVOID { ((*self.lpVtbl).RecordCreate.unwrap_unchecked())(self) }
+    pub unsafe fn RecordCreateCopy(&mut self, pvSource: PVOID, ppvDest: *mut PVOID) -> HRESULT { ((*self.lpVtbl).RecordCreateCopy.unwrap_unchecked())(self, pvSource, ppvDest) }
+    pub unsafe fn RecordDestroy(&mut self, pvRecord: PVOID) -> HRESULT { ((*self.lpVtbl).RecordDestroy.unwrap_unchecked())(self, pvRecord) }
 }
 impl IRunningObjectTable {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Register(&mut self, grfFlags: DWORD, punkObject: *mut IUnknown, pmkObjectName: *mut IMoniker, pdwRegister: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Register.unwrap())(self, grfFlags, punkObject, pmkObjectName, pdwRegister) }
-    pub unsafe fn Revoke(&mut self, dwRegister: DWORD) -> HRESULT { ((*self.lpVtbl).Revoke.unwrap())(self, dwRegister) }
-    pub unsafe fn IsRunning(&mut self, pmkObjectName: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap())(self, pmkObjectName) }
-    pub unsafe fn GetObjectW(&mut self, pmkObjectName: *mut IMoniker, ppunkObject: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectW.unwrap())(self, pmkObjectName, ppunkObject) }
-    pub unsafe fn NoteChangeTime(&mut self, dwRegister: DWORD, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).NoteChangeTime.unwrap())(self, dwRegister, pfiletime) }
-    pub unsafe fn GetTimeOfLastChange(&mut self, pmkObjectName: *mut IMoniker, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap())(self, pmkObjectName, pfiletime) }
-    pub unsafe fn EnumRunning(&mut self, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).EnumRunning.unwrap())(self, ppenumMoniker) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Register(&mut self, grfFlags: DWORD, punkObject: *mut IUnknown, pmkObjectName: *mut IMoniker, pdwRegister: *mut DWORD) -> HRESULT { ((*self.lpVtbl).Register.unwrap_unchecked())(self, grfFlags, punkObject, pmkObjectName, pdwRegister) }
+    pub unsafe fn Revoke(&mut self, dwRegister: DWORD) -> HRESULT { ((*self.lpVtbl).Revoke.unwrap_unchecked())(self, dwRegister) }
+    pub unsafe fn IsRunning(&mut self, pmkObjectName: *mut IMoniker) -> HRESULT { ((*self.lpVtbl).IsRunning.unwrap_unchecked())(self, pmkObjectName) }
+    pub unsafe fn GetObjectW(&mut self, pmkObjectName: *mut IMoniker, ppunkObject: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetObjectW.unwrap_unchecked())(self, pmkObjectName, ppunkObject) }
+    pub unsafe fn NoteChangeTime(&mut self, dwRegister: DWORD, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).NoteChangeTime.unwrap_unchecked())(self, dwRegister, pfiletime) }
+    pub unsafe fn GetTimeOfLastChange(&mut self, pmkObjectName: *mut IMoniker, pfiletime: *mut FILETIME) -> HRESULT { ((*self.lpVtbl).GetTimeOfLastChange.unwrap_unchecked())(self, pmkObjectName, pfiletime) }
+    pub unsafe fn EnumRunning(&mut self, ppenumMoniker: *mut *mut IEnumMoniker) -> HRESULT { ((*self.lpVtbl).EnumRunning.unwrap_unchecked())(self, ppenumMoniker) }
 }
 impl ISequentialStream {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Read(&mut self, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Read.unwrap())(self, pv, cb, pcbRead) }
-    pub unsafe fn Write(&mut self, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Write.unwrap())(self, pv, cb, pcbWritten) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Read(&mut self, pv: *mut ::core::ffi::c_void, cb: ULONG, pcbRead: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Read.unwrap_unchecked())(self, pv, cb, pcbRead) }
+    pub unsafe fn Write(&mut self, pv: *const ::core::ffi::c_void, cb: ULONG, pcbWritten: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Write.unwrap_unchecked())(self, pv, cb, pcbWritten) }
 }
 impl IStorage {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn CreateStream(&mut self, pwcsName: LPCOLESTR, grfMode: DWORD, reserved1: DWORD, reserved2: DWORD, ppstm: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).CreateStream.unwrap())(self, pwcsName, grfMode, reserved1, reserved2, ppstm) }
-    pub unsafe fn OpenStream(&mut self, pwcsName: LPCOLESTR, reserved1: *mut ::core::ffi::c_void, grfMode: DWORD, reserved2: DWORD, ppstm: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).OpenStream.unwrap())(self, pwcsName, reserved1, grfMode, reserved2, ppstm) }
-    pub unsafe fn CreateStorage(&mut self, pwcsName: LPCOLESTR, grfMode: DWORD, dwStgFmt: DWORD, reserved2: DWORD, ppstg: *mut *mut IStorage) -> HRESULT { ((*self.lpVtbl).CreateStorage.unwrap())(self, pwcsName, grfMode, dwStgFmt, reserved2, ppstg) }
-    pub unsafe fn OpenStorage(&mut self, pwcsName: LPCOLESTR, pstgPriority: *mut IStorage, grfMode: DWORD, snbExclude: SNB, reserved: DWORD, ppstg: *mut *mut IStorage) -> HRESULT { ((*self.lpVtbl).OpenStorage.unwrap())(self, pwcsName, pstgPriority, grfMode, snbExclude, reserved, ppstg) }
-    pub unsafe fn CopyTo(&mut self, ciidExclude: DWORD, rgiidExclude: *const IID, snbExclude: SNB, pstgDest: *mut IStorage) -> HRESULT { ((*self.lpVtbl).CopyTo.unwrap())(self, ciidExclude, rgiidExclude, snbExclude, pstgDest) }
-    pub unsafe fn MoveElementTo(&mut self, pwcsName: LPCOLESTR, pstgDest: *mut IStorage, pwcsNewName: LPCOLESTR, grfFlags: DWORD) -> HRESULT { ((*self.lpVtbl).MoveElementTo.unwrap())(self, pwcsName, pstgDest, pwcsNewName, grfFlags) }
-    pub unsafe fn Commit(&mut self, grfCommitFlags: DWORD) -> HRESULT { ((*self.lpVtbl).Commit.unwrap())(self, grfCommitFlags) }
-    pub unsafe fn Revert(&mut self) -> HRESULT { ((*self.lpVtbl).Revert.unwrap())(self) }
-    pub unsafe fn EnumElements(&mut self, reserved1: DWORD, reserved2: *mut ::core::ffi::c_void, reserved3: DWORD, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT { ((*self.lpVtbl).EnumElements.unwrap())(self, reserved1, reserved2, reserved3, ppenum) }
-    pub unsafe fn DestroyElement(&mut self, pwcsName: LPCOLESTR) -> HRESULT { ((*self.lpVtbl).DestroyElement.unwrap())(self, pwcsName) }
-    pub unsafe fn RenameElement(&mut self, pwcsOldName: LPCOLESTR, pwcsNewName: LPCOLESTR) -> HRESULT { ((*self.lpVtbl).RenameElement.unwrap())(self, pwcsOldName, pwcsNewName) }
-    pub unsafe fn SetElementTimes(&mut self, pwcsName: LPCOLESTR, pctime: *const FILETIME, patime: *const FILETIME, pmtime: *const FILETIME) -> HRESULT { ((*self.lpVtbl).SetElementTimes.unwrap())(self, pwcsName, pctime, patime, pmtime) }
-    pub unsafe fn SetClass(&mut self, clsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).SetClass.unwrap())(self, clsid) }
-    pub unsafe fn SetStateBits(&mut self, grfStateBits: DWORD, grfMask: DWORD) -> HRESULT { ((*self.lpVtbl).SetStateBits.unwrap())(self, grfStateBits, grfMask) }
-    pub unsafe fn Stat(&mut self, pstatstg: *mut STATSTG, grfStatFlag: DWORD) -> HRESULT { ((*self.lpVtbl).Stat.unwrap())(self, pstatstg, grfStatFlag) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn CreateStream(&mut self, pwcsName: LPCOLESTR, grfMode: DWORD, reserved1: DWORD, reserved2: DWORD, ppstm: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).CreateStream.unwrap_unchecked())(self, pwcsName, grfMode, reserved1, reserved2, ppstm) }
+    pub unsafe fn OpenStream(&mut self, pwcsName: LPCOLESTR, reserved1: *mut ::core::ffi::c_void, grfMode: DWORD, reserved2: DWORD, ppstm: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).OpenStream.unwrap_unchecked())(self, pwcsName, reserved1, grfMode, reserved2, ppstm) }
+    pub unsafe fn CreateStorage(&mut self, pwcsName: LPCOLESTR, grfMode: DWORD, dwStgFmt: DWORD, reserved2: DWORD, ppstg: *mut *mut IStorage) -> HRESULT { ((*self.lpVtbl).CreateStorage.unwrap_unchecked())(self, pwcsName, grfMode, dwStgFmt, reserved2, ppstg) }
+    pub unsafe fn OpenStorage(&mut self, pwcsName: LPCOLESTR, pstgPriority: *mut IStorage, grfMode: DWORD, snbExclude: SNB, reserved: DWORD, ppstg: *mut *mut IStorage) -> HRESULT { ((*self.lpVtbl).OpenStorage.unwrap_unchecked())(self, pwcsName, pstgPriority, grfMode, snbExclude, reserved, ppstg) }
+    pub unsafe fn CopyTo(&mut self, ciidExclude: DWORD, rgiidExclude: *const IID, snbExclude: SNB, pstgDest: *mut IStorage) -> HRESULT { ((*self.lpVtbl).CopyTo.unwrap_unchecked())(self, ciidExclude, rgiidExclude, snbExclude, pstgDest) }
+    pub unsafe fn MoveElementTo(&mut self, pwcsName: LPCOLESTR, pstgDest: *mut IStorage, pwcsNewName: LPCOLESTR, grfFlags: DWORD) -> HRESULT { ((*self.lpVtbl).MoveElementTo.unwrap_unchecked())(self, pwcsName, pstgDest, pwcsNewName, grfFlags) }
+    pub unsafe fn Commit(&mut self, grfCommitFlags: DWORD) -> HRESULT { ((*self.lpVtbl).Commit.unwrap_unchecked())(self, grfCommitFlags) }
+    pub unsafe fn Revert(&mut self) -> HRESULT { ((*self.lpVtbl).Revert.unwrap_unchecked())(self) }
+    pub unsafe fn EnumElements(&mut self, reserved1: DWORD, reserved2: *mut ::core::ffi::c_void, reserved3: DWORD, ppenum: *mut *mut IEnumSTATSTG) -> HRESULT { ((*self.lpVtbl).EnumElements.unwrap_unchecked())(self, reserved1, reserved2, reserved3, ppenum) }
+    pub unsafe fn DestroyElement(&mut self, pwcsName: LPCOLESTR) -> HRESULT { ((*self.lpVtbl).DestroyElement.unwrap_unchecked())(self, pwcsName) }
+    pub unsafe fn RenameElement(&mut self, pwcsOldName: LPCOLESTR, pwcsNewName: LPCOLESTR) -> HRESULT { ((*self.lpVtbl).RenameElement.unwrap_unchecked())(self, pwcsOldName, pwcsNewName) }
+    pub unsafe fn SetElementTimes(&mut self, pwcsName: LPCOLESTR, pctime: *const FILETIME, patime: *const FILETIME, pmtime: *const FILETIME) -> HRESULT { ((*self.lpVtbl).SetElementTimes.unwrap_unchecked())(self, pwcsName, pctime, patime, pmtime) }
+    pub unsafe fn SetClass(&mut self, clsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).SetClass.unwrap_unchecked())(self, clsid) }
+    pub unsafe fn SetStateBits(&mut self, grfStateBits: DWORD, grfMask: DWORD) -> HRESULT { ((*self.lpVtbl).SetStateBits.unwrap_unchecked())(self, grfStateBits, grfMask) }
+    pub unsafe fn Stat(&mut self, pstatstg: *mut STATSTG, grfStatFlag: DWORD) -> HRESULT { ((*self.lpVtbl).Stat.unwrap_unchecked())(self, pstatstg, grfStatFlag) }
 }
 impl ITextStoreACPServices {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Serialize(&mut self, prop: *mut ITfProperty, range: *mut ITfRange, header: *mut TF_PERSISTENT_PROPERTY_HEADER_ACP, stream: *mut IStream) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap())(self, prop, range, header, stream) }
-    pub unsafe fn Unserialize(&mut self, prop: *mut ITfProperty, header: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, stream: *mut IStream, loader: *mut ITfPersistentPropertyLoaderACP) -> HRESULT { ((*self.lpVtbl).Unserialize.unwrap())(self, prop, header, stream, loader) }
-    pub unsafe fn ForceLoadProperty(&mut self, prop: *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).ForceLoadProperty.unwrap())(self, prop) }
-    pub unsafe fn CreateRange(&mut self, start: LONG, end: LONG, range: *mut *mut ITfRangeACP) -> HRESULT { ((*self.lpVtbl).CreateRange.unwrap())(self, start, end, range) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Serialize(&mut self, prop: *mut ITfProperty, range: *mut ITfRange, header: *mut TF_PERSISTENT_PROPERTY_HEADER_ACP, stream: *mut IStream) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap_unchecked())(self, prop, range, header, stream) }
+    pub unsafe fn Unserialize(&mut self, prop: *mut ITfProperty, header: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, stream: *mut IStream, loader: *mut ITfPersistentPropertyLoaderACP) -> HRESULT { ((*self.lpVtbl).Unserialize.unwrap_unchecked())(self, prop, header, stream, loader) }
+    pub unsafe fn ForceLoadProperty(&mut self, prop: *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).ForceLoadProperty.unwrap_unchecked())(self, prop) }
+    pub unsafe fn CreateRange(&mut self, start: LONG, end: LONG, range: *mut *mut ITfRangeACP) -> HRESULT { ((*self.lpVtbl).CreateRange.unwrap_unchecked())(self, start, end, range) }
 }
 impl ITfActiveLanguageProfileNotifySink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnActivated(&mut self, clsid: *const CLSID, guidProfile: *const GUID, fActivated: BOOL) -> HRESULT { ((*self.lpVtbl).OnActivated.unwrap())(self, clsid, guidProfile, fActivated) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnActivated(&mut self, clsid: *const CLSID, guidProfile: *const GUID, fActivated: BOOL) -> HRESULT { ((*self.lpVtbl).OnActivated.unwrap_unchecked())(self, clsid, guidProfile, fActivated) }
 }
 impl ITfCandidateList {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn EnumCandidates(&mut self, ppEnum: *mut *mut IEnumTfCandidates) -> HRESULT { ((*self.lpVtbl).EnumCandidates.unwrap())(self, ppEnum) }
-    pub unsafe fn GetCandidate(&mut self, nIndex: ULONG, ppCand: *mut *mut ITfCandidateString) -> HRESULT { ((*self.lpVtbl).GetCandidate.unwrap())(self, nIndex, ppCand) }
-    pub unsafe fn GetCandidateNum(&mut self, pnCnt: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetCandidateNum.unwrap())(self, pnCnt) }
-    pub unsafe fn SetResult(&mut self, nIndex: ULONG, imcr: TfCandidateResult) -> HRESULT { ((*self.lpVtbl).SetResult.unwrap())(self, nIndex, imcr) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn EnumCandidates(&mut self, ppEnum: *mut *mut IEnumTfCandidates) -> HRESULT { ((*self.lpVtbl).EnumCandidates.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetCandidate(&mut self, nIndex: ULONG, ppCand: *mut *mut ITfCandidateString) -> HRESULT { ((*self.lpVtbl).GetCandidate.unwrap_unchecked())(self, nIndex, ppCand) }
+    pub unsafe fn GetCandidateNum(&mut self, pnCnt: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetCandidateNum.unwrap_unchecked())(self, pnCnt) }
+    pub unsafe fn SetResult(&mut self, nIndex: ULONG, imcr: TfCandidateResult) -> HRESULT { ((*self.lpVtbl).SetResult.unwrap_unchecked())(self, nIndex, imcr) }
 }
 impl ITfCandidateString {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetString(&mut self, pbstr: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetString.unwrap())(self, pbstr) }
-    pub unsafe fn GetIndex(&mut self, pnIndex: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetIndex.unwrap())(self, pnIndex) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetString(&mut self, pbstr: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetString.unwrap_unchecked())(self, pbstr) }
+    pub unsafe fn GetIndex(&mut self, pnIndex: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetIndex.unwrap_unchecked())(self, pnIndex) }
 }
 impl ITfCategoryMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RegisterCategory(&mut self, rclsid: *const CLSID, rcatid: *const GUID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).RegisterCategory.unwrap())(self, rclsid, rcatid, rguid) }
-    pub unsafe fn UnregisterCategory(&mut self, rclsid: *const CLSID, rcatid: *const GUID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterCategory.unwrap())(self, rclsid, rcatid, rguid) }
-    pub unsafe fn EnumCategoriesInItem(&mut self, rguid: *const GUID, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumCategoriesInItem.unwrap())(self, rguid, ppEnum) }
-    pub unsafe fn EnumItemsInCategory(&mut self, rcatid: *const GUID, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumItemsInCategory.unwrap())(self, rcatid, ppEnum) }
-    pub unsafe fn FindClosestCategory(&mut self, rguid: *const GUID, pcatid: *mut GUID, ppcatidList: *mut *const GUID, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).FindClosestCategory.unwrap())(self, rguid, pcatid, ppcatidList, ulCount) }
-    pub unsafe fn RegisterGUIDDescription(&mut self, rclsid: *const CLSID, rguid: *const GUID, pchDesc: *const WCHAR, cch: ULONG) -> HRESULT { ((*self.lpVtbl).RegisterGUIDDescription.unwrap())(self, rclsid, rguid, pchDesc, cch) }
-    pub unsafe fn UnregisterGUIDDescription(&mut self, rclsid: *const CLSID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterGUIDDescription.unwrap())(self, rclsid, rguid) }
-    pub unsafe fn GetGUIDDescription(&mut self, rguid: *const GUID, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetGUIDDescription.unwrap())(self, rguid, pbstrDesc) }
-    pub unsafe fn RegisterGUIDDWORD(&mut self, rclsid: *const CLSID, rguid: *const GUID, dw: DWORD) -> HRESULT { ((*self.lpVtbl).RegisterGUIDDWORD.unwrap())(self, rclsid, rguid, dw) }
-    pub unsafe fn UnregisterGUIDDWORD(&mut self, rclsid: *const CLSID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterGUIDDWORD.unwrap())(self, rclsid, rguid) }
-    pub unsafe fn GetGUIDDWORD(&mut self, rguid: *const GUID, pdw: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetGUIDDWORD.unwrap())(self, rguid, pdw) }
-    pub unsafe fn RegisterGUID(&mut self, rguid: *const GUID, pguidatom: *mut TfGuidAtom) -> HRESULT { ((*self.lpVtbl).RegisterGUID.unwrap())(self, rguid, pguidatom) }
-    pub unsafe fn GetGUID(&mut self, guidatom: TfGuidAtom, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap())(self, guidatom, pguid) }
-    pub unsafe fn IsEqualTfGuidAtom(&mut self, guidatom: TfGuidAtom, rguid: *const GUID, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualTfGuidAtom.unwrap())(self, guidatom, rguid, pfEqual) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RegisterCategory(&mut self, rclsid: *const CLSID, rcatid: *const GUID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).RegisterCategory.unwrap_unchecked())(self, rclsid, rcatid, rguid) }
+    pub unsafe fn UnregisterCategory(&mut self, rclsid: *const CLSID, rcatid: *const GUID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterCategory.unwrap_unchecked())(self, rclsid, rcatid, rguid) }
+    pub unsafe fn EnumCategoriesInItem(&mut self, rguid: *const GUID, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumCategoriesInItem.unwrap_unchecked())(self, rguid, ppEnum) }
+    pub unsafe fn EnumItemsInCategory(&mut self, rcatid: *const GUID, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumItemsInCategory.unwrap_unchecked())(self, rcatid, ppEnum) }
+    pub unsafe fn FindClosestCategory(&mut self, rguid: *const GUID, pcatid: *mut GUID, ppcatidList: *mut *const GUID, ulCount: ULONG) -> HRESULT { ((*self.lpVtbl).FindClosestCategory.unwrap_unchecked())(self, rguid, pcatid, ppcatidList, ulCount) }
+    pub unsafe fn RegisterGUIDDescription(&mut self, rclsid: *const CLSID, rguid: *const GUID, pchDesc: *const WCHAR, cch: ULONG) -> HRESULT { ((*self.lpVtbl).RegisterGUIDDescription.unwrap_unchecked())(self, rclsid, rguid, pchDesc, cch) }
+    pub unsafe fn UnregisterGUIDDescription(&mut self, rclsid: *const CLSID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterGUIDDescription.unwrap_unchecked())(self, rclsid, rguid) }
+    pub unsafe fn GetGUIDDescription(&mut self, rguid: *const GUID, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetGUIDDescription.unwrap_unchecked())(self, rguid, pbstrDesc) }
+    pub unsafe fn RegisterGUIDDWORD(&mut self, rclsid: *const CLSID, rguid: *const GUID, dw: DWORD) -> HRESULT { ((*self.lpVtbl).RegisterGUIDDWORD.unwrap_unchecked())(self, rclsid, rguid, dw) }
+    pub unsafe fn UnregisterGUIDDWORD(&mut self, rclsid: *const CLSID, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).UnregisterGUIDDWORD.unwrap_unchecked())(self, rclsid, rguid) }
+    pub unsafe fn GetGUIDDWORD(&mut self, rguid: *const GUID, pdw: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetGUIDDWORD.unwrap_unchecked())(self, rguid, pdw) }
+    pub unsafe fn RegisterGUID(&mut self, rguid: *const GUID, pguidatom: *mut TfGuidAtom) -> HRESULT { ((*self.lpVtbl).RegisterGUID.unwrap_unchecked())(self, rguid, pguidatom) }
+    pub unsafe fn GetGUID(&mut self, guidatom: TfGuidAtom, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap_unchecked())(self, guidatom, pguid) }
+    pub unsafe fn IsEqualTfGuidAtom(&mut self, guidatom: TfGuidAtom, rguid: *const GUID, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualTfGuidAtom.unwrap_unchecked())(self, guidatom, rguid, pfEqual) }
 }
 impl ITfCleanupContextSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnCleanupContext(&mut self, ecWrite: TfEditCookie, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnCleanupContext.unwrap())(self, ecWrite, pic) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnCleanupContext(&mut self, ecWrite: TfEditCookie, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnCleanupContext.unwrap_unchecked())(self, ecWrite, pic) }
 }
 impl ITfClientId {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetClientId(&mut self, rclsid: *const CLSID, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).GetClientId.unwrap())(self, rclsid, ptid) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetClientId(&mut self, rclsid: *const CLSID, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).GetClientId.unwrap_unchecked())(self, rclsid, ptid) }
 }
 impl ITfCompartment {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn SetValue(&mut self, tid: TfClientId, pvarValue: *const VARIANT) -> HRESULT { ((*self.lpVtbl).SetValue.unwrap())(self, tid, pvarValue) }
-    pub unsafe fn GetValue(&mut self, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap())(self, pvarValue) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn SetValue(&mut self, tid: TfClientId, pvarValue: *const VARIANT) -> HRESULT { ((*self.lpVtbl).SetValue.unwrap_unchecked())(self, tid, pvarValue) }
+    pub unsafe fn GetValue(&mut self, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap_unchecked())(self, pvarValue) }
 }
 impl ITfCompartmentEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnChange(&mut self, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).OnChange.unwrap())(self, rguid) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnChange(&mut self, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).OnChange.unwrap_unchecked())(self, rguid) }
 }
 impl ITfCompartmentMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetCompartment(&mut self, rguid: *const GUID, ppcomp: *mut *mut ITfCompartment) -> HRESULT { ((*self.lpVtbl).GetCompartment.unwrap())(self, rguid, ppcomp) }
-    pub unsafe fn ClearCompartment(&mut self, tid: TfClientId, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).ClearCompartment.unwrap())(self, tid, rguid) }
-    pub unsafe fn EnumCompartments(&mut self, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumCompartments.unwrap())(self, ppEnum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetCompartment(&mut self, rguid: *const GUID, ppcomp: *mut *mut ITfCompartment) -> HRESULT { ((*self.lpVtbl).GetCompartment.unwrap_unchecked())(self, rguid, ppcomp) }
+    pub unsafe fn ClearCompartment(&mut self, tid: TfClientId, rguid: *const GUID) -> HRESULT { ((*self.lpVtbl).ClearCompartment.unwrap_unchecked())(self, tid, rguid) }
+    pub unsafe fn EnumCompartments(&mut self, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumCompartments.unwrap_unchecked())(self, ppEnum) }
 }
 impl ITfComposition {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetRange(&mut self, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRange.unwrap())(self, ppRange) }
-    pub unsafe fn ShiftStart(&mut self, ecWrite: TfEditCookie, pNewStart: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap())(self, ecWrite, pNewStart) }
-    pub unsafe fn ShiftEnd(&mut self, ecWrite: TfEditCookie, pNewEnd: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap())(self, ecWrite, pNewEnd) }
-    pub unsafe fn EndComposition(&mut self, ecWrite: TfEditCookie) -> HRESULT { ((*self.lpVtbl).EndComposition.unwrap())(self, ecWrite) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetRange(&mut self, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRange.unwrap_unchecked())(self, ppRange) }
+    pub unsafe fn ShiftStart(&mut self, ecWrite: TfEditCookie, pNewStart: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap_unchecked())(self, ecWrite, pNewStart) }
+    pub unsafe fn ShiftEnd(&mut self, ecWrite: TfEditCookie, pNewEnd: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap_unchecked())(self, ecWrite, pNewEnd) }
+    pub unsafe fn EndComposition(&mut self, ecWrite: TfEditCookie) -> HRESULT { ((*self.lpVtbl).EndComposition.unwrap_unchecked())(self, ecWrite) }
 }
 impl ITfCompositionSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnCompositionTerminated(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).OnCompositionTerminated.unwrap())(self, ecWrite, pComposition) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnCompositionTerminated(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).OnCompositionTerminated.unwrap_unchecked())(self, ecWrite, pComposition) }
 }
 impl ITfCompositionView {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetOwnerClsid(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetOwnerClsid.unwrap())(self, pclsid) }
-    pub unsafe fn GetRange(&mut self, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRange.unwrap())(self, ppRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetOwnerClsid(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetOwnerClsid.unwrap_unchecked())(self, pclsid) }
+    pub unsafe fn GetRange(&mut self, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRange.unwrap_unchecked())(self, ppRange) }
 }
 impl ITfContext {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RequestEditSession(&mut self, tid: TfClientId, pes: *mut ITfEditSession, dwFlags: DWORD, phrSession: *mut HRESULT) -> HRESULT { ((*self.lpVtbl).RequestEditSession.unwrap())(self, tid, pes, dwFlags, phrSession) }
-    pub unsafe fn InWriteSession(&mut self, tid: TfClientId, pfWriteSession: *mut BOOL) -> HRESULT { ((*self.lpVtbl).InWriteSession.unwrap())(self, tid, pfWriteSession) }
-    pub unsafe fn GetSelection(&mut self, ec: TfEditCookie, ulIndex: ULONG, ulCount: ULONG, pSelection: *mut TF_SELECTION, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetSelection.unwrap())(self, ec, ulIndex, ulCount, pSelection, pcFetched) }
-    pub unsafe fn SetSelection(&mut self, ec: TfEditCookie, ulCount: ULONG, pSelection: *const TF_SELECTION) -> HRESULT { ((*self.lpVtbl).SetSelection.unwrap())(self, ec, ulCount, pSelection) }
-    pub unsafe fn GetStart(&mut self, ec: TfEditCookie, ppStart: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetStart.unwrap())(self, ec, ppStart) }
-    pub unsafe fn GetEnd(&mut self, ec: TfEditCookie, ppEnd: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetEnd.unwrap())(self, ec, ppEnd) }
-    pub unsafe fn GetActiveView(&mut self, ppView: *mut *mut ITfContextView) -> HRESULT { ((*self.lpVtbl).GetActiveView.unwrap())(self, ppView) }
-    pub unsafe fn EnumViews(&mut self, ppEnum: *mut *mut IEnumTfContextViews) -> HRESULT { ((*self.lpVtbl).EnumViews.unwrap())(self, ppEnum) }
-    pub unsafe fn GetStatus(&mut self, pdcs: *mut TF_STATUS) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap())(self, pdcs) }
-    pub unsafe fn GetProperty(&mut self, guidProp: *const GUID, ppProp: *mut *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).GetProperty.unwrap())(self, guidProp, ppProp) }
-    pub unsafe fn GetAppProperty(&mut self, guidProp: *const GUID, ppProp: *mut *mut ITfReadOnlyProperty) -> HRESULT { ((*self.lpVtbl).GetAppProperty.unwrap())(self, guidProp, ppProp) }
-    pub unsafe fn TrackProperties(&mut self, prgProp: *mut *const GUID, cProp: ULONG, prgAppProp: *mut *const GUID, cAppProp: ULONG, ppProperty: *mut *mut ITfReadOnlyProperty) -> HRESULT { ((*self.lpVtbl).TrackProperties.unwrap())(self, prgProp, cProp, prgAppProp, cAppProp, ppProperty) }
-    pub unsafe fn EnumProperties(&mut self, ppEnum: *mut *mut IEnumTfProperties) -> HRESULT { ((*self.lpVtbl).EnumProperties.unwrap())(self, ppEnum) }
-    pub unsafe fn GetDocumentMgr(&mut self, ppDm: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetDocumentMgr.unwrap())(self, ppDm) }
-    pub unsafe fn CreateRangeBackup(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, ppBackup: *mut *mut ITfRangeBackup) -> HRESULT { ((*self.lpVtbl).CreateRangeBackup.unwrap())(self, ec, pRange, ppBackup) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RequestEditSession(&mut self, tid: TfClientId, pes: *mut ITfEditSession, dwFlags: DWORD, phrSession: *mut HRESULT) -> HRESULT { ((*self.lpVtbl).RequestEditSession.unwrap_unchecked())(self, tid, pes, dwFlags, phrSession) }
+    pub unsafe fn InWriteSession(&mut self, tid: TfClientId, pfWriteSession: *mut BOOL) -> HRESULT { ((*self.lpVtbl).InWriteSession.unwrap_unchecked())(self, tid, pfWriteSession) }
+    pub unsafe fn GetSelection(&mut self, ec: TfEditCookie, ulIndex: ULONG, ulCount: ULONG, pSelection: *mut TF_SELECTION, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetSelection.unwrap_unchecked())(self, ec, ulIndex, ulCount, pSelection, pcFetched) }
+    pub unsafe fn SetSelection(&mut self, ec: TfEditCookie, ulCount: ULONG, pSelection: *const TF_SELECTION) -> HRESULT { ((*self.lpVtbl).SetSelection.unwrap_unchecked())(self, ec, ulCount, pSelection) }
+    pub unsafe fn GetStart(&mut self, ec: TfEditCookie, ppStart: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetStart.unwrap_unchecked())(self, ec, ppStart) }
+    pub unsafe fn GetEnd(&mut self, ec: TfEditCookie, ppEnd: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetEnd.unwrap_unchecked())(self, ec, ppEnd) }
+    pub unsafe fn GetActiveView(&mut self, ppView: *mut *mut ITfContextView) -> HRESULT { ((*self.lpVtbl).GetActiveView.unwrap_unchecked())(self, ppView) }
+    pub unsafe fn EnumViews(&mut self, ppEnum: *mut *mut IEnumTfContextViews) -> HRESULT { ((*self.lpVtbl).EnumViews.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetStatus(&mut self, pdcs: *mut TF_STATUS) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap_unchecked())(self, pdcs) }
+    pub unsafe fn GetProperty(&mut self, guidProp: *const GUID, ppProp: *mut *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).GetProperty.unwrap_unchecked())(self, guidProp, ppProp) }
+    pub unsafe fn GetAppProperty(&mut self, guidProp: *const GUID, ppProp: *mut *mut ITfReadOnlyProperty) -> HRESULT { ((*self.lpVtbl).GetAppProperty.unwrap_unchecked())(self, guidProp, ppProp) }
+    pub unsafe fn TrackProperties(&mut self, prgProp: *mut *const GUID, cProp: ULONG, prgAppProp: *mut *const GUID, cAppProp: ULONG, ppProperty: *mut *mut ITfReadOnlyProperty) -> HRESULT { ((*self.lpVtbl).TrackProperties.unwrap_unchecked())(self, prgProp, cProp, prgAppProp, cAppProp, ppProperty) }
+    pub unsafe fn EnumProperties(&mut self, ppEnum: *mut *mut IEnumTfProperties) -> HRESULT { ((*self.lpVtbl).EnumProperties.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetDocumentMgr(&mut self, ppDm: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetDocumentMgr.unwrap_unchecked())(self, ppDm) }
+    pub unsafe fn CreateRangeBackup(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, ppBackup: *mut *mut ITfRangeBackup) -> HRESULT { ((*self.lpVtbl).CreateRangeBackup.unwrap_unchecked())(self, ec, pRange, ppBackup) }
 }
 impl ITfContextComposition {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn StartComposition(&mut self, ecWrite: TfEditCookie, pCompositionRange: *mut ITfRange, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).StartComposition.unwrap())(self, ecWrite, pCompositionRange, pSink, ppComposition) }
-    pub unsafe fn EnumCompositions(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).EnumCompositions.unwrap())(self, ppEnum) }
-    pub unsafe fn FindComposition(&mut self, ecRead: TfEditCookie, pTestRange: *mut ITfRange, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).FindComposition.unwrap())(self, ecRead, pTestRange, ppEnum) }
-    pub unsafe fn TakeOwnership(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfCompositionView, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).TakeOwnership.unwrap())(self, ecWrite, pComposition, pSink, ppComposition) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn StartComposition(&mut self, ecWrite: TfEditCookie, pCompositionRange: *mut ITfRange, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).StartComposition.unwrap_unchecked())(self, ecWrite, pCompositionRange, pSink, ppComposition) }
+    pub unsafe fn EnumCompositions(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).EnumCompositions.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn FindComposition(&mut self, ecRead: TfEditCookie, pTestRange: *mut ITfRange, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).FindComposition.unwrap_unchecked())(self, ecRead, pTestRange, ppEnum) }
+    pub unsafe fn TakeOwnership(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfCompositionView, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).TakeOwnership.unwrap_unchecked())(self, ecWrite, pComposition, pSink, ppComposition) }
 }
 impl ITfContextOwner {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetACPFromPoint(&mut self, ptScreen: *const POINT, dwFlags: DWORD, pacp: *mut LONG) -> HRESULT { ((*self.lpVtbl).GetACPFromPoint.unwrap())(self, ptScreen, dwFlags, pacp) }
-    pub unsafe fn GetTextExt(&mut self, acpStart: LONG, acpEnd: LONG, prc: *mut RECT, pfClipped: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetTextExt.unwrap())(self, acpStart, acpEnd, prc, pfClipped) }
-    pub unsafe fn GetScreenExt(&mut self, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetScreenExt.unwrap())(self, prc) }
-    pub unsafe fn GetStatus(&mut self, pdcs: *mut TF_STATUS) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap())(self, pdcs) }
-    pub unsafe fn GetWnd(&mut self, phwnd: *mut HWND) -> HRESULT { ((*self.lpVtbl).GetWnd.unwrap())(self, phwnd) }
-    pub unsafe fn GetAttribute(&mut self, rguidAttribute: *const GUID, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetAttribute.unwrap())(self, rguidAttribute, pvarValue) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetACPFromPoint(&mut self, ptScreen: *const POINT, dwFlags: DWORD, pacp: *mut LONG) -> HRESULT { ((*self.lpVtbl).GetACPFromPoint.unwrap_unchecked())(self, ptScreen, dwFlags, pacp) }
+    pub unsafe fn GetTextExt(&mut self, acpStart: LONG, acpEnd: LONG, prc: *mut RECT, pfClipped: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetTextExt.unwrap_unchecked())(self, acpStart, acpEnd, prc, pfClipped) }
+    pub unsafe fn GetScreenExt(&mut self, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetScreenExt.unwrap_unchecked())(self, prc) }
+    pub unsafe fn GetStatus(&mut self, pdcs: *mut TF_STATUS) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap_unchecked())(self, pdcs) }
+    pub unsafe fn GetWnd(&mut self, phwnd: *mut HWND) -> HRESULT { ((*self.lpVtbl).GetWnd.unwrap_unchecked())(self, phwnd) }
+    pub unsafe fn GetAttribute(&mut self, rguidAttribute: *const GUID, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetAttribute.unwrap_unchecked())(self, rguidAttribute, pvarValue) }
 }
 impl ITfContextOwnerCompositionServices {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn StartComposition(&mut self, ecWrite: TfEditCookie, pCompositionRange: *mut ITfRange, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).StartComposition.unwrap())(self, ecWrite, pCompositionRange, pSink, ppComposition) }
-    pub unsafe fn EnumCompositions(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).EnumCompositions.unwrap())(self, ppEnum) }
-    pub unsafe fn FindComposition(&mut self, ecRead: TfEditCookie, pTestRange: *mut ITfRange, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).FindComposition.unwrap())(self, ecRead, pTestRange, ppEnum) }
-    pub unsafe fn TakeOwnership(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfCompositionView, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).TakeOwnership.unwrap())(self, ecWrite, pComposition, pSink, ppComposition) }
-    pub unsafe fn TerminateComposition(&mut self, pComposition: *mut ITfCompositionView) -> HRESULT { ((*self.lpVtbl).TerminateComposition.unwrap())(self, pComposition) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn StartComposition(&mut self, ecWrite: TfEditCookie, pCompositionRange: *mut ITfRange, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).StartComposition.unwrap_unchecked())(self, ecWrite, pCompositionRange, pSink, ppComposition) }
+    pub unsafe fn EnumCompositions(&mut self, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).EnumCompositions.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn FindComposition(&mut self, ecRead: TfEditCookie, pTestRange: *mut ITfRange, ppEnum: *mut *mut IEnumITfCompositionView) -> HRESULT { ((*self.lpVtbl).FindComposition.unwrap_unchecked())(self, ecRead, pTestRange, ppEnum) }
+    pub unsafe fn TakeOwnership(&mut self, ecWrite: TfEditCookie, pComposition: *mut ITfCompositionView, pSink: *mut ITfCompositionSink, ppComposition: *mut *mut ITfComposition) -> HRESULT { ((*self.lpVtbl).TakeOwnership.unwrap_unchecked())(self, ecWrite, pComposition, pSink, ppComposition) }
+    pub unsafe fn TerminateComposition(&mut self, pComposition: *mut ITfCompositionView) -> HRESULT { ((*self.lpVtbl).TerminateComposition.unwrap_unchecked())(self, pComposition) }
 }
 impl ITfContextOwnerCompositionSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnStartComposition(&mut self, pComposition: *mut ITfCompositionView, pfOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnStartComposition.unwrap())(self, pComposition, pfOk) }
-    pub unsafe fn OnUpdateComposition(&mut self, pComposition: *mut ITfCompositionView, pRangeNew: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).OnUpdateComposition.unwrap())(self, pComposition, pRangeNew) }
-    pub unsafe fn OnEndComposition(&mut self, pComposition: *mut ITfCompositionView) -> HRESULT { ((*self.lpVtbl).OnEndComposition.unwrap())(self, pComposition) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnStartComposition(&mut self, pComposition: *mut ITfCompositionView, pfOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnStartComposition.unwrap_unchecked())(self, pComposition, pfOk) }
+    pub unsafe fn OnUpdateComposition(&mut self, pComposition: *mut ITfCompositionView, pRangeNew: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).OnUpdateComposition.unwrap_unchecked())(self, pComposition, pRangeNew) }
+    pub unsafe fn OnEndComposition(&mut self, pComposition: *mut ITfCompositionView) -> HRESULT { ((*self.lpVtbl).OnEndComposition.unwrap_unchecked())(self, pComposition) }
 }
 impl ITfContextOwnerServices {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnLayoutChange(&mut self) -> HRESULT { ((*self.lpVtbl).OnLayoutChange.unwrap())(self) }
-    pub unsafe fn OnStatusChange(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnStatusChange.unwrap())(self, dwFlags) }
-    pub unsafe fn OnAttributeChange(&mut self, rguidAttribute: *const GUID) -> HRESULT { ((*self.lpVtbl).OnAttributeChange.unwrap())(self, rguidAttribute) }
-    pub unsafe fn Serialize(&mut self, pProp: *mut ITfProperty, pRange: *mut ITfRange, pHdr: *mut TF_PERSISTENT_PROPERTY_HEADER_ACP, pStream: *mut IStream) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap())(self, pProp, pRange, pHdr, pStream) }
-    pub unsafe fn Unserialize(&mut self, pProp: *mut ITfProperty, pHdr: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, pStream: *mut IStream, pLoader: *mut ITfPersistentPropertyLoaderACP) -> HRESULT { ((*self.lpVtbl).Unserialize.unwrap())(self, pProp, pHdr, pStream, pLoader) }
-    pub unsafe fn ForceLoadProperty(&mut self, pProp: *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).ForceLoadProperty.unwrap())(self, pProp) }
-    pub unsafe fn CreateRange(&mut self, acpStart: LONG, acpEnd: LONG, ppRange: *mut *mut ITfRangeACP) -> HRESULT { ((*self.lpVtbl).CreateRange.unwrap())(self, acpStart, acpEnd, ppRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnLayoutChange(&mut self) -> HRESULT { ((*self.lpVtbl).OnLayoutChange.unwrap_unchecked())(self) }
+    pub unsafe fn OnStatusChange(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnStatusChange.unwrap_unchecked())(self, dwFlags) }
+    pub unsafe fn OnAttributeChange(&mut self, rguidAttribute: *const GUID) -> HRESULT { ((*self.lpVtbl).OnAttributeChange.unwrap_unchecked())(self, rguidAttribute) }
+    pub unsafe fn Serialize(&mut self, pProp: *mut ITfProperty, pRange: *mut ITfRange, pHdr: *mut TF_PERSISTENT_PROPERTY_HEADER_ACP, pStream: *mut IStream) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap_unchecked())(self, pProp, pRange, pHdr, pStream) }
+    pub unsafe fn Unserialize(&mut self, pProp: *mut ITfProperty, pHdr: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, pStream: *mut IStream, pLoader: *mut ITfPersistentPropertyLoaderACP) -> HRESULT { ((*self.lpVtbl).Unserialize.unwrap_unchecked())(self, pProp, pHdr, pStream, pLoader) }
+    pub unsafe fn ForceLoadProperty(&mut self, pProp: *mut ITfProperty) -> HRESULT { ((*self.lpVtbl).ForceLoadProperty.unwrap_unchecked())(self, pProp) }
+    pub unsafe fn CreateRange(&mut self, acpStart: LONG, acpEnd: LONG, ppRange: *mut *mut ITfRangeACP) -> HRESULT { ((*self.lpVtbl).CreateRange.unwrap_unchecked())(self, acpStart, acpEnd, ppRange) }
 }
 impl ITfContextView {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetRangeFromPoint(&mut self, cookie: TfEditCookie, pt: *const POINT, flags: DWORD, range: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRangeFromPoint.unwrap())(self, cookie, pt, flags, range) }
-    pub unsafe fn GetTextExt(&mut self, cookie: TfEditCookie, range: *mut ITfRange, rect: *mut RECT, clipped: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetTextExt.unwrap())(self, cookie, range, rect, clipped) }
-    pub unsafe fn GetScreenExt(&mut self, rect: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetScreenExt.unwrap())(self, rect) }
-    pub unsafe fn GetWnd(&mut self, hwnd: *mut HWND) -> HRESULT { ((*self.lpVtbl).GetWnd.unwrap())(self, hwnd) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetRangeFromPoint(&mut self, cookie: TfEditCookie, pt: *const POINT, flags: DWORD, range: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).GetRangeFromPoint.unwrap_unchecked())(self, cookie, pt, flags, range) }
+    pub unsafe fn GetTextExt(&mut self, cookie: TfEditCookie, range: *mut ITfRange, rect: *mut RECT, clipped: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetTextExt.unwrap_unchecked())(self, cookie, range, rect, clipped) }
+    pub unsafe fn GetScreenExt(&mut self, rect: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetScreenExt.unwrap_unchecked())(self, rect) }
+    pub unsafe fn GetWnd(&mut self, hwnd: *mut HWND) -> HRESULT { ((*self.lpVtbl).GetWnd.unwrap_unchecked())(self, hwnd) }
 }
 impl ITfDisplayAttributeInfo {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetGUID(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap())(self, pguid) }
-    pub unsafe fn GetDescription(&mut self, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap())(self, pbstrDesc) }
-    pub unsafe fn GetAttributeInfo(&mut self, pda: *mut TF_DISPLAYATTRIBUTE) -> HRESULT { ((*self.lpVtbl).GetAttributeInfo.unwrap())(self, pda) }
-    pub unsafe fn SetAttributeInfo(&mut self, pda: *const TF_DISPLAYATTRIBUTE) -> HRESULT { ((*self.lpVtbl).SetAttributeInfo.unwrap())(self, pda) }
-    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetGUID(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap_unchecked())(self, pguid) }
+    pub unsafe fn GetDescription(&mut self, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap_unchecked())(self, pbstrDesc) }
+    pub unsafe fn GetAttributeInfo(&mut self, pda: *mut TF_DISPLAYATTRIBUTE) -> HRESULT { ((*self.lpVtbl).GetAttributeInfo.unwrap_unchecked())(self, pda) }
+    pub unsafe fn SetAttributeInfo(&mut self, pda: *const TF_DISPLAYATTRIBUTE) -> HRESULT { ((*self.lpVtbl).SetAttributeInfo.unwrap_unchecked())(self, pda) }
+    pub unsafe fn Reset(&mut self) -> HRESULT { ((*self.lpVtbl).Reset.unwrap_unchecked())(self) }
 }
 impl ITfDisplayAttributeMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnUpdateInfo(&mut self) -> HRESULT { ((*self.lpVtbl).OnUpdateInfo.unwrap())(self) }
-    pub unsafe fn EnumDisplayAttributeInfo(&mut self, ppEnum: *mut *mut IEnumTfDisplayAttributeInfo) -> HRESULT { ((*self.lpVtbl).EnumDisplayAttributeInfo.unwrap())(self, ppEnum) }
-    pub unsafe fn GetDisplayAttributeInfo(&mut self, guid: *const GUID, ppInfo: *mut *mut ITfDisplayAttributeInfo, pclsidOwner: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetDisplayAttributeInfo.unwrap())(self, guid, ppInfo, pclsidOwner) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnUpdateInfo(&mut self) -> HRESULT { ((*self.lpVtbl).OnUpdateInfo.unwrap_unchecked())(self) }
+    pub unsafe fn EnumDisplayAttributeInfo(&mut self, ppEnum: *mut *mut IEnumTfDisplayAttributeInfo) -> HRESULT { ((*self.lpVtbl).EnumDisplayAttributeInfo.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetDisplayAttributeInfo(&mut self, guid: *const GUID, ppInfo: *mut *mut ITfDisplayAttributeInfo, pclsidOwner: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetDisplayAttributeInfo.unwrap_unchecked())(self, guid, ppInfo, pclsidOwner) }
 }
 impl ITfDocumentMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn CreateContext(&mut self, tidOwner: TfClientId, dwFlags: DWORD, punk: *mut IUnknown, ppic: *mut *mut ITfContext, pecTextStore: *mut TfEditCookie) -> HRESULT { ((*self.lpVtbl).CreateContext.unwrap())(self, tidOwner, dwFlags, punk, ppic, pecTextStore) }
-    pub unsafe fn Push(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).Push.unwrap())(self, pic) }
-    pub unsafe fn Pop(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).Pop.unwrap())(self, dwFlags) }
-    pub unsafe fn GetTop(&mut self, ppic: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetTop.unwrap())(self, ppic) }
-    pub unsafe fn GetBase(&mut self, ppic: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetBase.unwrap())(self, ppic) }
-    pub unsafe fn EnumContexts(&mut self, ppEnum: *mut *mut IEnumTfContexts) -> HRESULT { ((*self.lpVtbl).EnumContexts.unwrap())(self, ppEnum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn CreateContext(&mut self, tidOwner: TfClientId, dwFlags: DWORD, punk: *mut IUnknown, ppic: *mut *mut ITfContext, pecTextStore: *mut TfEditCookie) -> HRESULT { ((*self.lpVtbl).CreateContext.unwrap_unchecked())(self, tidOwner, dwFlags, punk, ppic, pecTextStore) }
+    pub unsafe fn Push(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).Push.unwrap_unchecked())(self, pic) }
+    pub unsafe fn Pop(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).Pop.unwrap_unchecked())(self, dwFlags) }
+    pub unsafe fn GetTop(&mut self, ppic: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetTop.unwrap_unchecked())(self, ppic) }
+    pub unsafe fn GetBase(&mut self, ppic: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetBase.unwrap_unchecked())(self, ppic) }
+    pub unsafe fn EnumContexts(&mut self, ppEnum: *mut *mut IEnumTfContexts) -> HRESULT { ((*self.lpVtbl).EnumContexts.unwrap_unchecked())(self, ppEnum) }
 }
 impl ITfEditRecord {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetSelectionStatus(&mut self, changed: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetSelectionStatus.unwrap())(self, changed) }
-    pub unsafe fn GetTextAndPropertyUpdates(&mut self, flags: DWORD, props: *mut *const GUID, count: ULONG, ret: *mut *mut IEnumTfRanges) -> HRESULT { ((*self.lpVtbl).GetTextAndPropertyUpdates.unwrap())(self, flags, props, count, ret) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetSelectionStatus(&mut self, changed: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetSelectionStatus.unwrap_unchecked())(self, changed) }
+    pub unsafe fn GetTextAndPropertyUpdates(&mut self, flags: DWORD, props: *mut *const GUID, count: ULONG, ret: *mut *mut IEnumTfRanges) -> HRESULT { ((*self.lpVtbl).GetTextAndPropertyUpdates.unwrap_unchecked())(self, flags, props, count, ret) }
 }
 impl ITfEditSession {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn DoEditSession(&mut self, ec: TfEditCookie) -> HRESULT { ((*self.lpVtbl).DoEditSession.unwrap())(self, ec) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn DoEditSession(&mut self, ec: TfEditCookie) -> HRESULT { ((*self.lpVtbl).DoEditSession.unwrap_unchecked())(self, ec) }
 }
 impl ITfFnAdviseText {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnTextUpdate(&mut self, pRange: *mut ITfRange, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).OnTextUpdate.unwrap())(self, pRange, pchText, cch) }
-    pub unsafe fn OnLatticeUpdate(&mut self, pRange: *mut ITfRange, pLattice: *mut ITfLMLattice) -> HRESULT { ((*self.lpVtbl).OnLatticeUpdate.unwrap())(self, pRange, pLattice) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnTextUpdate(&mut self, pRange: *mut ITfRange, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).OnTextUpdate.unwrap_unchecked())(self, pRange, pchText, cch) }
+    pub unsafe fn OnLatticeUpdate(&mut self, pRange: *mut ITfRange, pLattice: *mut ITfLMLattice) -> HRESULT { ((*self.lpVtbl).OnLatticeUpdate.unwrap_unchecked())(self, pRange, pLattice) }
 }
 impl ITfFnBalloon {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn UpdateBalloon(&mut self, style: TfLBBalloonStyle, pch: *const WCHAR, cch: ULONG) -> HRESULT { ((*self.lpVtbl).UpdateBalloon.unwrap())(self, style, pch, cch) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn UpdateBalloon(&mut self, style: TfLBBalloonStyle, pch: *const WCHAR, cch: ULONG) -> HRESULT { ((*self.lpVtbl).UpdateBalloon.unwrap_unchecked())(self, style, pch, cch) }
 }
 impl ITfFnConfigure {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, hwndParent, langid, rguidProfile) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, hwndParent, langid, rguidProfile) }
 }
 impl ITfFnConfigureRegisterEudc {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID, bstrRegistered: BSTR) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, hwndParent, langid, rguidProfile, bstrRegistered) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID, bstrRegistered: BSTR) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, hwndParent, langid, rguidProfile, bstrRegistered) }
 }
 impl ITfFnConfigureRegisterWord {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID, bstrRegistered: BSTR) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, hwndParent, langid, rguidProfile, bstrRegistered) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Show(&mut self, hwndParent: HWND, langid: LANGID, rguidProfile: *const GUID, bstrRegistered: BSTR) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, hwndParent, langid, rguidProfile, bstrRegistered) }
 }
 impl ITfFnGetLinguisticAlternates {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap())(self, pbstrName) }
-    pub unsafe fn GetAlternates(&mut self, pRange: *mut ITfRange, ppCandidateList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetAlternates.unwrap())(self, pRange, ppCandidateList) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbstrName) }
+    pub unsafe fn GetAlternates(&mut self, pRange: *mut ITfRange, ppCandidateList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetAlternates.unwrap_unchecked())(self, pRange, ppCandidateList) }
 }
 impl ITfFnGetPreferredTouchKeyboardLayout {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap())(self, pbstrName) }
-    pub unsafe fn GetLayout(&mut self, pTKBLayoutType: *mut TKBLayoutType, pwPreferredLayoutId: *mut WORD) -> HRESULT { ((*self.lpVtbl).GetLayout.unwrap())(self, pTKBLayoutType, pwPreferredLayoutId) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbstrName) }
+    pub unsafe fn GetLayout(&mut self, pTKBLayoutType: *mut TKBLayoutType, pwPreferredLayoutId: *mut WORD) -> HRESULT { ((*self.lpVtbl).GetLayout.unwrap_unchecked())(self, pTKBLayoutType, pwPreferredLayoutId) }
 }
 impl ITfFnGetSAPIObject {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Get(&mut self, sObj: TfSapiObject, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).Get.unwrap())(self, sObj, ppunk) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Get(&mut self, sObj: TfSapiObject, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).Get.unwrap_unchecked())(self, sObj, ppunk) }
 }
 impl ITfFnLMInternal {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn ProcessLattice(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ProcessLattice.unwrap())(self, pRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn ProcessLattice(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).ProcessLattice.unwrap_unchecked())(self, pRange) }
 }
 impl ITfFnLMProcessor {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfAccepted: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap())(self, pRange, ppNewRange, pfAccepted) }
-    pub unsafe fn QueryLangID(&mut self, langid: LANGID, pfAccepted: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryLangID.unwrap())(self, langid, pfAccepted) }
-    pub unsafe fn GetReconversion(&mut self, pRange: *mut ITfRange, ppCandList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetReconversion.unwrap())(self, pRange, ppCandList) }
-    pub unsafe fn Reconvert(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Reconvert.unwrap())(self, pRange) }
-    pub unsafe fn QueryKey(&mut self, fUp: BOOL, vKey: WPARAM, lparamKeydata: LPARAM, pfInterested: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryKey.unwrap())(self, fUp, vKey, lparamKeydata, pfInterested) }
-    pub unsafe fn InvokeKey(&mut self, fUp: BOOL, vKey: WPARAM, lparamKeyData: LPARAM) -> HRESULT { ((*self.lpVtbl).InvokeKey.unwrap())(self, fUp, vKey, lparamKeyData) }
-    pub unsafe fn InvokeFunc(&mut self, pic: *mut ITfContext, refguidFunc: *const GUID) -> HRESULT { ((*self.lpVtbl).InvokeFunc.unwrap())(self, pic, refguidFunc) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfAccepted: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap_unchecked())(self, pRange, ppNewRange, pfAccepted) }
+    pub unsafe fn QueryLangID(&mut self, langid: LANGID, pfAccepted: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryLangID.unwrap_unchecked())(self, langid, pfAccepted) }
+    pub unsafe fn GetReconversion(&mut self, pRange: *mut ITfRange, ppCandList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetReconversion.unwrap_unchecked())(self, pRange, ppCandList) }
+    pub unsafe fn Reconvert(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Reconvert.unwrap_unchecked())(self, pRange) }
+    pub unsafe fn QueryKey(&mut self, fUp: BOOL, vKey: WPARAM, lparamKeydata: LPARAM, pfInterested: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryKey.unwrap_unchecked())(self, fUp, vKey, lparamKeydata, pfInterested) }
+    pub unsafe fn InvokeKey(&mut self, fUp: BOOL, vKey: WPARAM, lparamKeyData: LPARAM) -> HRESULT { ((*self.lpVtbl).InvokeKey.unwrap_unchecked())(self, fUp, vKey, lparamKeyData) }
+    pub unsafe fn InvokeFunc(&mut self, pic: *mut ITfContext, refguidFunc: *const GUID) -> HRESULT { ((*self.lpVtbl).InvokeFunc.unwrap_unchecked())(self, pic, refguidFunc) }
 }
 impl ITfFnLangProfileUtil {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn RegisterActiveProfiles(&mut self) -> HRESULT { ((*self.lpVtbl).RegisterActiveProfiles.unwrap())(self) }
-    pub unsafe fn IsProfileAvailableForLang(&mut self, langid: LANGID, pfAvailable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsProfileAvailableForLang.unwrap())(self, langid, pfAvailable) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn RegisterActiveProfiles(&mut self) -> HRESULT { ((*self.lpVtbl).RegisterActiveProfiles.unwrap_unchecked())(self) }
+    pub unsafe fn IsProfileAvailableForLang(&mut self, langid: LANGID, pfAvailable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsProfileAvailableForLang.unwrap_unchecked())(self, langid, pfAvailable) }
 }
 impl ITfFnPlayBack {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfPlayable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap())(self, pRange, ppNewRange, pfPlayable) }
-    pub unsafe fn Play(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Play.unwrap())(self, pRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfPlayable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap_unchecked())(self, pRange, ppNewRange, pfPlayable) }
+    pub unsafe fn Play(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Play.unwrap_unchecked())(self, pRange) }
 }
 impl ITfFnPropertyUIStatus {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetStatus(&mut self, refguidProp: *const GUID, pdw: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap())(self, refguidProp, pdw) }
-    pub unsafe fn SetStatus(&mut self, refguidProp: *const GUID, dw: DWORD) -> HRESULT { ((*self.lpVtbl).SetStatus.unwrap())(self, refguidProp, dw) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetStatus(&mut self, refguidProp: *const GUID, pdw: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap_unchecked())(self, refguidProp, pdw) }
+    pub unsafe fn SetStatus(&mut self, refguidProp: *const GUID, dw: DWORD) -> HRESULT { ((*self.lpVtbl).SetStatus.unwrap_unchecked())(self, refguidProp, dw) }
 }
 impl ITfFnReconversion {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfConvertable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap())(self, pRange, ppNewRange, pfConvertable) }
-    pub unsafe fn GetReconversion(&mut self, pRange: *mut ITfRange, ppCandList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetReconversion.unwrap())(self, pRange, ppCandList) }
-    pub unsafe fn Reconvert(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Reconvert.unwrap())(self, pRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn QueryRange(&mut self, pRange: *mut ITfRange, ppNewRange: *mut *mut ITfRange, pfConvertable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryRange.unwrap_unchecked())(self, pRange, ppNewRange, pfConvertable) }
+    pub unsafe fn GetReconversion(&mut self, pRange: *mut ITfRange, ppCandList: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetReconversion.unwrap_unchecked())(self, pRange, ppCandList) }
+    pub unsafe fn Reconvert(&mut self, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Reconvert.unwrap_unchecked())(self, pRange) }
 }
 impl ITfFnSearchCandidateProvider {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetSearchCandidates(&mut self, bstrQuery: BSTR, bstrApplicationId: BSTR, pplist: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetSearchCandidates.unwrap())(self, bstrQuery, bstrApplicationId, pplist) }
-    pub unsafe fn SetResult(&mut self, bstrQuery: BSTR, bstrApplicationID: BSTR, bstrResult: BSTR) -> HRESULT { ((*self.lpVtbl).SetResult.unwrap())(self, bstrQuery, bstrApplicationID, bstrResult) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetSearchCandidates(&mut self, bstrQuery: BSTR, bstrApplicationId: BSTR, pplist: *mut *mut ITfCandidateList) -> HRESULT { ((*self.lpVtbl).GetSearchCandidates.unwrap_unchecked())(self, bstrQuery, bstrApplicationId, pplist) }
+    pub unsafe fn SetResult(&mut self, bstrQuery: BSTR, bstrApplicationID: BSTR, bstrResult: BSTR) -> HRESULT { ((*self.lpVtbl).SetResult.unwrap_unchecked())(self, bstrQuery, bstrApplicationID, bstrResult) }
 }
 impl ITfFnShowHelp {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Show(&mut self, hwndParent: HWND) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, hwndParent) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Show(&mut self, hwndParent: HWND) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, hwndParent) }
 }
 impl ITfFunction {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap())(self, pbstrName) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetDisplayName(&mut self, pbstrName: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDisplayName.unwrap_unchecked())(self, pbstrName) }
 }
 impl ITfFunctionProvider {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetType(&mut self, guid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap())(self, guid) }
-    pub unsafe fn GetDescription(&mut self, desc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap())(self, desc) }
-    pub unsafe fn GetFunction(&mut self, guid: *const GUID, riid: *const IID, func: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetFunction.unwrap())(self, guid, riid, func) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetType(&mut self, guid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap_unchecked())(self, guid) }
+    pub unsafe fn GetDescription(&mut self, desc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap_unchecked())(self, desc) }
+    pub unsafe fn GetFunction(&mut self, guid: *const GUID, riid: *const IID, func: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetFunction.unwrap_unchecked())(self, guid, riid, func) }
 }
 impl ITfInputProcessorProfileActivationSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnActivated(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, catid: *const GUID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnActivated.unwrap())(self, dwProfileType, langid, clsid, catid, guidProfile, hkl, dwFlags) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnActivated(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, catid: *const GUID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnActivated.unwrap_unchecked())(self, dwProfileType, langid, clsid, catid, guidProfile, hkl, dwFlags) }
 }
 impl ITfInputProcessorProfileMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn ActivateProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ActivateProfile.unwrap())(self, dwProfileType, langid, clsid, guidProfile, hkl, dwFlags) }
-    pub unsafe fn DeactivateProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).DeactivateProfile.unwrap())(self, dwProfileType, langid, clsid, guidProfile, hkl, dwFlags) }
-    pub unsafe fn GetProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, pProfile: *mut TF_INPUTPROCESSORPROFILE) -> HRESULT { ((*self.lpVtbl).GetProfile.unwrap())(self, dwProfileType, langid, clsid, guidProfile, hkl, pProfile) }
-    pub unsafe fn EnumProfiles(&mut self, langid: LANGID, ppEnum: *mut *mut IEnumTfInputProcessorProfiles) -> HRESULT { ((*self.lpVtbl).EnumProfiles.unwrap())(self, langid, ppEnum) }
-    pub unsafe fn ReleaseInputProcessor(&mut self, rclsid: *const CLSID, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ReleaseInputProcessor.unwrap())(self, rclsid, dwFlags) }
-    pub unsafe fn RegisterProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG, pchIconFile: *const WCHAR, cchFile: ULONG, uIconIndex: ULONG, hklsubstitute: HKL, dwPreferredLayout: DWORD, bEnabledByDefault: BOOL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).RegisterProfile.unwrap())(self, rclsid, langid, guidProfile, pchDesc, cchDesc, pchIconFile, cchFile, uIconIndex, hklsubstitute, dwPreferredLayout, bEnabledByDefault, dwFlags) }
-    pub unsafe fn UnregisterProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).UnregisterProfile.unwrap())(self, rclsid, langid, guidProfile, dwFlags) }
-    pub unsafe fn GetActiveProfile(&mut self, catid: *const GUID, pProfile: *mut TF_INPUTPROCESSORPROFILE) -> HRESULT { ((*self.lpVtbl).GetActiveProfile.unwrap())(self, catid, pProfile) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn ActivateProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ActivateProfile.unwrap_unchecked())(self, dwProfileType, langid, clsid, guidProfile, hkl, dwFlags) }
+    pub unsafe fn DeactivateProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).DeactivateProfile.unwrap_unchecked())(self, dwProfileType, langid, clsid, guidProfile, hkl, dwFlags) }
+    pub unsafe fn GetProfile(&mut self, dwProfileType: DWORD, langid: LANGID, clsid: *const CLSID, guidProfile: *const GUID, hkl: HKL, pProfile: *mut TF_INPUTPROCESSORPROFILE) -> HRESULT { ((*self.lpVtbl).GetProfile.unwrap_unchecked())(self, dwProfileType, langid, clsid, guidProfile, hkl, pProfile) }
+    pub unsafe fn EnumProfiles(&mut self, langid: LANGID, ppEnum: *mut *mut IEnumTfInputProcessorProfiles) -> HRESULT { ((*self.lpVtbl).EnumProfiles.unwrap_unchecked())(self, langid, ppEnum) }
+    pub unsafe fn ReleaseInputProcessor(&mut self, rclsid: *const CLSID, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ReleaseInputProcessor.unwrap_unchecked())(self, rclsid, dwFlags) }
+    pub unsafe fn RegisterProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG, pchIconFile: *const WCHAR, cchFile: ULONG, uIconIndex: ULONG, hklsubstitute: HKL, dwPreferredLayout: DWORD, bEnabledByDefault: BOOL, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).RegisterProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile, pchDesc, cchDesc, pchIconFile, cchFile, uIconIndex, hklsubstitute, dwPreferredLayout, bEnabledByDefault, dwFlags) }
+    pub unsafe fn UnregisterProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).UnregisterProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile, dwFlags) }
+    pub unsafe fn GetActiveProfile(&mut self, catid: *const GUID, pProfile: *mut TF_INPUTPROCESSORPROFILE) -> HRESULT { ((*self.lpVtbl).GetActiveProfile.unwrap_unchecked())(self, catid, pProfile) }
 }
 impl ITfInputProcessorProfiles {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Register(&mut self, rclsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).Register.unwrap())(self, rclsid) }
-    pub unsafe fn Unregister(&mut self, rclsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).Unregister.unwrap())(self, rclsid) }
-    pub unsafe fn AddLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG, pchIconFile: *const WCHAR, cchFile: ULONG, uIconIndex: ULONG) -> HRESULT { ((*self.lpVtbl).AddLanguageProfile.unwrap())(self, rclsid, langid, guidProfile, pchDesc, cchDesc, pchIconFile, cchFile, uIconIndex) }
-    pub unsafe fn RemoveLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID) -> HRESULT { ((*self.lpVtbl).RemoveLanguageProfile.unwrap())(self, rclsid, langid, guidProfile) }
-    pub unsafe fn EnumInputProcessorInfo(&mut self, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumInputProcessorInfo.unwrap())(self, ppEnum) }
-    pub unsafe fn GetDefaultLanguageProfile(&mut self, langid: LANGID, catid: *const GUID, pclsid: *mut CLSID, pguidProfile: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetDefaultLanguageProfile.unwrap())(self, langid, catid, pclsid, pguidProfile) }
-    pub unsafe fn SetDefaultLanguageProfile(&mut self, langid: LANGID, rclsid: *const CLSID, guidProfiles: *const GUID) -> HRESULT { ((*self.lpVtbl).SetDefaultLanguageProfile.unwrap())(self, langid, rclsid, guidProfiles) }
-    pub unsafe fn ActivateLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfiles: *const GUID) -> HRESULT { ((*self.lpVtbl).ActivateLanguageProfile.unwrap())(self, rclsid, langid, guidProfiles) }
-    pub unsafe fn GetActiveLanguageProfile(&mut self, rclsid: *const CLSID, plangid: *mut LANGID, pguidProfile: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetActiveLanguageProfile.unwrap())(self, rclsid, plangid, pguidProfile) }
-    pub unsafe fn GetLanguageProfileDescription(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pbstrProfile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetLanguageProfileDescription.unwrap())(self, rclsid, langid, guidProfile, pbstrProfile) }
-    pub unsafe fn GetCurrentLanguage(&mut self, plangid: *mut LANGID) -> HRESULT { ((*self.lpVtbl).GetCurrentLanguage.unwrap())(self, plangid) }
-    pub unsafe fn ChangeCurrentLanguage(&mut self, langid: LANGID) -> HRESULT { ((*self.lpVtbl).ChangeCurrentLanguage.unwrap())(self, langid) }
-    pub unsafe fn GetLanguageList(&mut self, ppLangId: *mut *mut LANGID, pulCount: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetLanguageList.unwrap())(self, ppLangId, pulCount) }
-    pub unsafe fn EnumLanguageProfiles(&mut self, langid: LANGID, ppEnum: *mut *mut IEnumTfLanguageProfiles) -> HRESULT { ((*self.lpVtbl).EnumLanguageProfiles.unwrap())(self, langid, ppEnum) }
-    pub unsafe fn EnableLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, fEnable: BOOL) -> HRESULT { ((*self.lpVtbl).EnableLanguageProfile.unwrap())(self, rclsid, langid, guidProfile, fEnable) }
-    pub unsafe fn IsEnabledLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pfEnable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEnabledLanguageProfile.unwrap())(self, rclsid, langid, guidProfile, pfEnable) }
-    pub unsafe fn EnableLanguageProfileByDefault(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, fEnable: BOOL) -> HRESULT { ((*self.lpVtbl).EnableLanguageProfileByDefault.unwrap())(self, rclsid, langid, guidProfile, fEnable) }
-    pub unsafe fn SubstituteKeyboardLayout(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, hKL: HKL) -> HRESULT { ((*self.lpVtbl).SubstituteKeyboardLayout.unwrap())(self, rclsid, langid, guidProfile, hKL) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Register(&mut self, rclsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).Register.unwrap_unchecked())(self, rclsid) }
+    pub unsafe fn Unregister(&mut self, rclsid: *const CLSID) -> HRESULT { ((*self.lpVtbl).Unregister.unwrap_unchecked())(self, rclsid) }
+    pub unsafe fn AddLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG, pchIconFile: *const WCHAR, cchFile: ULONG, uIconIndex: ULONG) -> HRESULT { ((*self.lpVtbl).AddLanguageProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile, pchDesc, cchDesc, pchIconFile, cchFile, uIconIndex) }
+    pub unsafe fn RemoveLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID) -> HRESULT { ((*self.lpVtbl).RemoveLanguageProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile) }
+    pub unsafe fn EnumInputProcessorInfo(&mut self, ppEnum: *mut *mut IEnumGUID) -> HRESULT { ((*self.lpVtbl).EnumInputProcessorInfo.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetDefaultLanguageProfile(&mut self, langid: LANGID, catid: *const GUID, pclsid: *mut CLSID, pguidProfile: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetDefaultLanguageProfile.unwrap_unchecked())(self, langid, catid, pclsid, pguidProfile) }
+    pub unsafe fn SetDefaultLanguageProfile(&mut self, langid: LANGID, rclsid: *const CLSID, guidProfiles: *const GUID) -> HRESULT { ((*self.lpVtbl).SetDefaultLanguageProfile.unwrap_unchecked())(self, langid, rclsid, guidProfiles) }
+    pub unsafe fn ActivateLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfiles: *const GUID) -> HRESULT { ((*self.lpVtbl).ActivateLanguageProfile.unwrap_unchecked())(self, rclsid, langid, guidProfiles) }
+    pub unsafe fn GetActiveLanguageProfile(&mut self, rclsid: *const CLSID, plangid: *mut LANGID, pguidProfile: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetActiveLanguageProfile.unwrap_unchecked())(self, rclsid, plangid, pguidProfile) }
+    pub unsafe fn GetLanguageProfileDescription(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pbstrProfile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetLanguageProfileDescription.unwrap_unchecked())(self, rclsid, langid, guidProfile, pbstrProfile) }
+    pub unsafe fn GetCurrentLanguage(&mut self, plangid: *mut LANGID) -> HRESULT { ((*self.lpVtbl).GetCurrentLanguage.unwrap_unchecked())(self, plangid) }
+    pub unsafe fn ChangeCurrentLanguage(&mut self, langid: LANGID) -> HRESULT { ((*self.lpVtbl).ChangeCurrentLanguage.unwrap_unchecked())(self, langid) }
+    pub unsafe fn GetLanguageList(&mut self, ppLangId: *mut *mut LANGID, pulCount: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetLanguageList.unwrap_unchecked())(self, ppLangId, pulCount) }
+    pub unsafe fn EnumLanguageProfiles(&mut self, langid: LANGID, ppEnum: *mut *mut IEnumTfLanguageProfiles) -> HRESULT { ((*self.lpVtbl).EnumLanguageProfiles.unwrap_unchecked())(self, langid, ppEnum) }
+    pub unsafe fn EnableLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, fEnable: BOOL) -> HRESULT { ((*self.lpVtbl).EnableLanguageProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile, fEnable) }
+    pub unsafe fn IsEnabledLanguageProfile(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, pfEnable: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEnabledLanguageProfile.unwrap_unchecked())(self, rclsid, langid, guidProfile, pfEnable) }
+    pub unsafe fn EnableLanguageProfileByDefault(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, fEnable: BOOL) -> HRESULT { ((*self.lpVtbl).EnableLanguageProfileByDefault.unwrap_unchecked())(self, rclsid, langid, guidProfile, fEnable) }
+    pub unsafe fn SubstituteKeyboardLayout(&mut self, rclsid: *const CLSID, langid: LANGID, guidProfile: *const GUID, hKL: HKL) -> HRESULT { ((*self.lpVtbl).SubstituteKeyboardLayout.unwrap_unchecked())(self, rclsid, langid, guidProfile, hKL) }
 }
 impl ITfInsertAtSelection {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn InsertTextAtSelection(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).InsertTextAtSelection.unwrap())(self, ec, dwFlags, pchText, cch, ppRange) }
-    pub unsafe fn InsertEmbeddedAtSelection(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).InsertEmbeddedAtSelection.unwrap())(self, ec, dwFlags, pDataObject, ppRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn InsertTextAtSelection(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).InsertTextAtSelection.unwrap_unchecked())(self, ec, dwFlags, pchText, cch, ppRange) }
+    pub unsafe fn InsertEmbeddedAtSelection(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject, ppRange: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).InsertEmbeddedAtSelection.unwrap_unchecked())(self, ec, dwFlags, pDataObject, ppRange) }
 }
 impl ITfIntegratableCandidateListUIElement {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn SetIntegrationStyle(&mut self, guidIntegrationStyle: GUID) -> HRESULT { ((*self.lpVtbl).SetIntegrationStyle.unwrap())(self, guidIntegrationStyle) }
-    pub unsafe fn GetSelectionStyle(&mut self, ptfSelectionStyle: *mut TfIntegratableCandidateListSelectionStyle) -> HRESULT { ((*self.lpVtbl).GetSelectionStyle.unwrap())(self, ptfSelectionStyle) }
-    pub unsafe fn OnKeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyDown.unwrap())(self, wParam, lParam, pfEaten) }
-    pub unsafe fn ShowCandidateNumbers(&mut self, pfShow: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShowCandidateNumbers.unwrap())(self, pfShow) }
-    pub unsafe fn FinalizeExactCompositionString(&mut self) -> HRESULT { ((*self.lpVtbl).FinalizeExactCompositionString.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn SetIntegrationStyle(&mut self, guidIntegrationStyle: GUID) -> HRESULT { ((*self.lpVtbl).SetIntegrationStyle.unwrap_unchecked())(self, guidIntegrationStyle) }
+    pub unsafe fn GetSelectionStyle(&mut self, ptfSelectionStyle: *mut TfIntegratableCandidateListSelectionStyle) -> HRESULT { ((*self.lpVtbl).GetSelectionStyle.unwrap_unchecked())(self, ptfSelectionStyle) }
+    pub unsafe fn OnKeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyDown.unwrap_unchecked())(self, wParam, lParam, pfEaten) }
+    pub unsafe fn ShowCandidateNumbers(&mut self, pfShow: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShowCandidateNumbers.unwrap_unchecked())(self, pfShow) }
+    pub unsafe fn FinalizeExactCompositionString(&mut self) -> HRESULT { ((*self.lpVtbl).FinalizeExactCompositionString.unwrap_unchecked())(self) }
 }
 impl ITfKeyEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnSetFocus(&mut self, fForeground: BOOL) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap())(self, fForeground) }
-    pub unsafe fn OnTestKeyDown(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTestKeyDown.unwrap())(self, pic, wParam, lParam, pfEaten) }
-    pub unsafe fn OnTestKeyUp(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTestKeyUp.unwrap())(self, pic, wParam, lParam, pfEaten) }
-    pub unsafe fn OnKeyDown(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyDown.unwrap())(self, pic, wParam, lParam, pfEaten) }
-    pub unsafe fn OnKeyUp(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyUp.unwrap())(self, pic, wParam, lParam, pfEaten) }
-    pub unsafe fn OnPreservedKey(&mut self, pic: *mut ITfContext, rguid: *const GUID, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnPreservedKey.unwrap())(self, pic, rguid, pfEaten) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnSetFocus(&mut self, fForeground: BOOL) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap_unchecked())(self, fForeground) }
+    pub unsafe fn OnTestKeyDown(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTestKeyDown.unwrap_unchecked())(self, pic, wParam, lParam, pfEaten) }
+    pub unsafe fn OnTestKeyUp(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTestKeyUp.unwrap_unchecked())(self, pic, wParam, lParam, pfEaten) }
+    pub unsafe fn OnKeyDown(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyDown.unwrap_unchecked())(self, pic, wParam, lParam, pfEaten) }
+    pub unsafe fn OnKeyUp(&mut self, pic: *mut ITfContext, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnKeyUp.unwrap_unchecked())(self, pic, wParam, lParam, pfEaten) }
+    pub unsafe fn OnPreservedKey(&mut self, pic: *mut ITfContext, rguid: *const GUID, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnPreservedKey.unwrap_unchecked())(self, pic, rguid, pfEaten) }
 }
 impl ITfKeyTraceEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnKeyTraceDown(&mut self, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnKeyTraceDown.unwrap())(self, wParam, lParam) }
-    pub unsafe fn OnKeyTraceUp(&mut self, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnKeyTraceUp.unwrap())(self, wParam, lParam) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnKeyTraceDown(&mut self, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnKeyTraceDown.unwrap_unchecked())(self, wParam, lParam) }
+    pub unsafe fn OnKeyTraceUp(&mut self, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnKeyTraceUp.unwrap_unchecked())(self, wParam, lParam) }
 }
 impl ITfKeystrokeMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseKeyEventSink(&mut self, tid: TfClientId, pSink: *mut ITfKeyEventSink, fForeground: BOOL) -> HRESULT { ((*self.lpVtbl).AdviseKeyEventSink.unwrap())(self, tid, pSink, fForeground) }
-    pub unsafe fn UnadviseKeyEventSink(&mut self, tid: TfClientId) -> HRESULT { ((*self.lpVtbl).UnadviseKeyEventSink.unwrap())(self, tid) }
-    pub unsafe fn GetForeground(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetForeground.unwrap())(self, pclsid) }
-    pub unsafe fn TestKeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).TestKeyDown.unwrap())(self, wParam, lParam, pfEaten) }
-    pub unsafe fn TestKeyUp(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).TestKeyUp.unwrap())(self, wParam, lParam, pfEaten) }
-    pub unsafe fn KeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).KeyDown.unwrap())(self, wParam, lParam, pfEaten) }
-    pub unsafe fn KeyUp(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).KeyUp.unwrap())(self, wParam, lParam, pfEaten) }
-    pub unsafe fn GetPreservedKey(&mut self, pic: *mut ITfContext, pprekey: *const TF_PRESERVEDKEY, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetPreservedKey.unwrap())(self, pic, pprekey, pguid) }
-    pub unsafe fn IsPreservedKey(&mut self, rguid: *const GUID, pprekey: *const TF_PRESERVEDKEY, pfRegistered: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsPreservedKey.unwrap())(self, rguid, pprekey, pfRegistered) }
-    pub unsafe fn PreserveKey(&mut self, tid: TfClientId, rguid: *const GUID, prekey: *const TF_PRESERVEDKEY, pchDesc: *const WCHAR, cchDesc: ULONG) -> HRESULT { ((*self.lpVtbl).PreserveKey.unwrap())(self, tid, rguid, prekey, pchDesc, cchDesc) }
-    pub unsafe fn UnpreserveKey(&mut self, rguid: *const GUID, pprekey: *const TF_PRESERVEDKEY) -> HRESULT { ((*self.lpVtbl).UnpreserveKey.unwrap())(self, rguid, pprekey) }
-    pub unsafe fn SetPreservedKeyDescription(&mut self, rguid: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG) -> HRESULT { ((*self.lpVtbl).SetPreservedKeyDescription.unwrap())(self, rguid, pchDesc, cchDesc) }
-    pub unsafe fn GetPreservedKeyDescription(&mut self, rguid: *const GUID, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetPreservedKeyDescription.unwrap())(self, rguid, pbstrDesc) }
-    pub unsafe fn SimulatePreservedKey(&mut self, pic: *mut ITfContext, rguid: *const GUID, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).SimulatePreservedKey.unwrap())(self, pic, rguid, pfEaten) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseKeyEventSink(&mut self, tid: TfClientId, pSink: *mut ITfKeyEventSink, fForeground: BOOL) -> HRESULT { ((*self.lpVtbl).AdviseKeyEventSink.unwrap_unchecked())(self, tid, pSink, fForeground) }
+    pub unsafe fn UnadviseKeyEventSink(&mut self, tid: TfClientId) -> HRESULT { ((*self.lpVtbl).UnadviseKeyEventSink.unwrap_unchecked())(self, tid) }
+    pub unsafe fn GetForeground(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetForeground.unwrap_unchecked())(self, pclsid) }
+    pub unsafe fn TestKeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).TestKeyDown.unwrap_unchecked())(self, wParam, lParam, pfEaten) }
+    pub unsafe fn TestKeyUp(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).TestKeyUp.unwrap_unchecked())(self, wParam, lParam, pfEaten) }
+    pub unsafe fn KeyDown(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).KeyDown.unwrap_unchecked())(self, wParam, lParam, pfEaten) }
+    pub unsafe fn KeyUp(&mut self, wParam: WPARAM, lParam: LPARAM, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).KeyUp.unwrap_unchecked())(self, wParam, lParam, pfEaten) }
+    pub unsafe fn GetPreservedKey(&mut self, pic: *mut ITfContext, pprekey: *const TF_PRESERVEDKEY, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetPreservedKey.unwrap_unchecked())(self, pic, pprekey, pguid) }
+    pub unsafe fn IsPreservedKey(&mut self, rguid: *const GUID, pprekey: *const TF_PRESERVEDKEY, pfRegistered: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsPreservedKey.unwrap_unchecked())(self, rguid, pprekey, pfRegistered) }
+    pub unsafe fn PreserveKey(&mut self, tid: TfClientId, rguid: *const GUID, prekey: *const TF_PRESERVEDKEY, pchDesc: *const WCHAR, cchDesc: ULONG) -> HRESULT { ((*self.lpVtbl).PreserveKey.unwrap_unchecked())(self, tid, rguid, prekey, pchDesc, cchDesc) }
+    pub unsafe fn UnpreserveKey(&mut self, rguid: *const GUID, pprekey: *const TF_PRESERVEDKEY) -> HRESULT { ((*self.lpVtbl).UnpreserveKey.unwrap_unchecked())(self, rguid, pprekey) }
+    pub unsafe fn SetPreservedKeyDescription(&mut self, rguid: *const GUID, pchDesc: *const WCHAR, cchDesc: ULONG) -> HRESULT { ((*self.lpVtbl).SetPreservedKeyDescription.unwrap_unchecked())(self, rguid, pchDesc, cchDesc) }
+    pub unsafe fn GetPreservedKeyDescription(&mut self, rguid: *const GUID, pbstrDesc: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetPreservedKeyDescription.unwrap_unchecked())(self, rguid, pbstrDesc) }
+    pub unsafe fn SimulatePreservedKey(&mut self, pic: *mut ITfContext, rguid: *const GUID, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).SimulatePreservedKey.unwrap_unchecked())(self, pic, rguid, pfEaten) }
 }
 impl ITfLMLattice {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn QueryType(&mut self, rguidType: *const GUID, pfSupported: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryType.unwrap())(self, rguidType, pfSupported) }
-    pub unsafe fn EnumLatticeElements(&mut self, dwFrameStart: DWORD, rguidType: *const GUID, ppEnum: *mut *mut IEnumTfLatticeElements) -> HRESULT { ((*self.lpVtbl).EnumLatticeElements.unwrap())(self, dwFrameStart, rguidType, ppEnum) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn QueryType(&mut self, rguidType: *const GUID, pfSupported: *mut BOOL) -> HRESULT { ((*self.lpVtbl).QueryType.unwrap_unchecked())(self, rguidType, pfSupported) }
+    pub unsafe fn EnumLatticeElements(&mut self, dwFrameStart: DWORD, rguidType: *const GUID, ppEnum: *mut *mut IEnumTfLatticeElements) -> HRESULT { ((*self.lpVtbl).EnumLatticeElements.unwrap_unchecked())(self, dwFrameStart, rguidType, ppEnum) }
 }
 impl ITfLangBarEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnSetFocus(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap())(self, dwThreadId) }
-    pub unsafe fn OnThreadTerminate(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnThreadTerminate.unwrap())(self, dwThreadId) }
-    pub unsafe fn OnThreadItemChange(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnThreadItemChange.unwrap())(self, dwThreadId) }
-    pub unsafe fn OnModalInput(&mut self, dwThreadId: DWORD, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnModalInput.unwrap())(self, dwThreadId, uMsg, wParam, lParam) }
-    pub unsafe fn ShowFloating(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ShowFloating.unwrap())(self, dwFlags) }
-    pub unsafe fn GetItemFloatingRect(&mut self, dwThreadId: DWORD, rguid: *const GUID, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetItemFloatingRect.unwrap())(self, dwThreadId, rguid, prc) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnSetFocus(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap_unchecked())(self, dwThreadId) }
+    pub unsafe fn OnThreadTerminate(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnThreadTerminate.unwrap_unchecked())(self, dwThreadId) }
+    pub unsafe fn OnThreadItemChange(&mut self, dwThreadId: DWORD) -> HRESULT { ((*self.lpVtbl).OnThreadItemChange.unwrap_unchecked())(self, dwThreadId) }
+    pub unsafe fn OnModalInput(&mut self, dwThreadId: DWORD, uMsg: UINT, wParam: WPARAM, lParam: LPARAM) -> HRESULT { ((*self.lpVtbl).OnModalInput.unwrap_unchecked())(self, dwThreadId, uMsg, wParam, lParam) }
+    pub unsafe fn ShowFloating(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ShowFloating.unwrap_unchecked())(self, dwFlags) }
+    pub unsafe fn GetItemFloatingRect(&mut self, dwThreadId: DWORD, rguid: *const GUID, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetItemFloatingRect.unwrap_unchecked())(self, dwThreadId, rguid, prc) }
 }
 impl ITfLangBarItem {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetInfo(&mut self, pInfo: *mut TF_LANGBARITEMINFO) -> HRESULT { ((*self.lpVtbl).GetInfo.unwrap())(self, pInfo) }
-    pub unsafe fn GetStatus(&mut self, pdwStatus: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap())(self, pdwStatus) }
-    pub unsafe fn Show(&mut self, fShow: BOOL) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, fShow) }
-    pub unsafe fn GetTooltipString(&mut self, pbstrToolTip: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetTooltipString.unwrap())(self, pbstrToolTip) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetInfo(&mut self, pInfo: *mut TF_LANGBARITEMINFO) -> HRESULT { ((*self.lpVtbl).GetInfo.unwrap_unchecked())(self, pInfo) }
+    pub unsafe fn GetStatus(&mut self, pdwStatus: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetStatus.unwrap_unchecked())(self, pdwStatus) }
+    pub unsafe fn Show(&mut self, fShow: BOOL) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, fShow) }
+    pub unsafe fn GetTooltipString(&mut self, pbstrToolTip: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetTooltipString.unwrap_unchecked())(self, pbstrToolTip) }
 }
 impl ITfLangBarItemMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn EnumItems(&mut self, ppEnum: *mut *mut IEnumTfLangBarItems) -> HRESULT { ((*self.lpVtbl).EnumItems.unwrap())(self, ppEnum) }
-    pub unsafe fn GetItem(&mut self, rguid: *const GUID, ppItem: *mut *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).GetItem.unwrap())(self, rguid, ppItem) }
-    pub unsafe fn AddItem(&mut self, punk: *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).AddItem.unwrap())(self, punk) }
-    pub unsafe fn RemoveItem(&mut self, punk: *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).RemoveItem.unwrap())(self, punk) }
-    pub unsafe fn AdviseItemSink(&mut self, punk: *mut ITfLangBarItemSink, pdwCookie: *mut DWORD, rguidItem: *const GUID) -> HRESULT { ((*self.lpVtbl).AdviseItemSink.unwrap())(self, punk, pdwCookie, rguidItem) }
-    pub unsafe fn UnadviseItemSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseItemSink.unwrap())(self, dwCookie) }
-    pub unsafe fn GetItemFloatingRect(&mut self, dwThreadId: DWORD, rguid: *const GUID, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetItemFloatingRect.unwrap())(self, dwThreadId, rguid, prc) }
-    pub unsafe fn GetItemsStatus(&mut self, ulCount: ULONG, prgguid: *const GUID, pdwStatus: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetItemsStatus.unwrap())(self, ulCount, prgguid, pdwStatus) }
-    pub unsafe fn GetItemNum(&mut self, pulCount: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetItemNum.unwrap())(self, pulCount) }
-    pub unsafe fn GetItems(&mut self, ulCount: ULONG, ppItem: *mut *mut ITfLangBarItem, pInfo: *mut TF_LANGBARITEMINFO, pdwStatus: *mut DWORD, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetItems.unwrap())(self, ulCount, ppItem, pInfo, pdwStatus, pcFetched) }
-    pub unsafe fn AdviseItemsSink(&mut self, ulCount: ULONG, ppunk: *mut *mut ITfLangBarItemSink, pguidItem: *const GUID, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseItemsSink.unwrap())(self, ulCount, ppunk, pguidItem, pdwCookie) }
-    pub unsafe fn UnadviseItemsSink(&mut self, ulCount: ULONG, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseItemsSink.unwrap())(self, ulCount, pdwCookie) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn EnumItems(&mut self, ppEnum: *mut *mut IEnumTfLangBarItems) -> HRESULT { ((*self.lpVtbl).EnumItems.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetItem(&mut self, rguid: *const GUID, ppItem: *mut *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).GetItem.unwrap_unchecked())(self, rguid, ppItem) }
+    pub unsafe fn AddItem(&mut self, punk: *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).AddItem.unwrap_unchecked())(self, punk) }
+    pub unsafe fn RemoveItem(&mut self, punk: *mut ITfLangBarItem) -> HRESULT { ((*self.lpVtbl).RemoveItem.unwrap_unchecked())(self, punk) }
+    pub unsafe fn AdviseItemSink(&mut self, punk: *mut ITfLangBarItemSink, pdwCookie: *mut DWORD, rguidItem: *const GUID) -> HRESULT { ((*self.lpVtbl).AdviseItemSink.unwrap_unchecked())(self, punk, pdwCookie, rguidItem) }
+    pub unsafe fn UnadviseItemSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseItemSink.unwrap_unchecked())(self, dwCookie) }
+    pub unsafe fn GetItemFloatingRect(&mut self, dwThreadId: DWORD, rguid: *const GUID, prc: *mut RECT) -> HRESULT { ((*self.lpVtbl).GetItemFloatingRect.unwrap_unchecked())(self, dwThreadId, rguid, prc) }
+    pub unsafe fn GetItemsStatus(&mut self, ulCount: ULONG, prgguid: *const GUID, pdwStatus: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetItemsStatus.unwrap_unchecked())(self, ulCount, prgguid, pdwStatus) }
+    pub unsafe fn GetItemNum(&mut self, pulCount: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetItemNum.unwrap_unchecked())(self, pulCount) }
+    pub unsafe fn GetItems(&mut self, ulCount: ULONG, ppItem: *mut *mut ITfLangBarItem, pInfo: *mut TF_LANGBARITEMINFO, pdwStatus: *mut DWORD, pcFetched: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetItems.unwrap_unchecked())(self, ulCount, ppItem, pInfo, pdwStatus, pcFetched) }
+    pub unsafe fn AdviseItemsSink(&mut self, ulCount: ULONG, ppunk: *mut *mut ITfLangBarItemSink, pguidItem: *const GUID, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseItemsSink.unwrap_unchecked())(self, ulCount, ppunk, pguidItem, pdwCookie) }
+    pub unsafe fn UnadviseItemsSink(&mut self, ulCount: ULONG, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseItemsSink.unwrap_unchecked())(self, ulCount, pdwCookie) }
 }
 impl ITfLangBarItemSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnUpdate(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnUpdate.unwrap())(self, dwFlags) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnUpdate(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).OnUpdate.unwrap_unchecked())(self, dwFlags) }
 }
 impl ITfLangBarMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseEventSink(&mut self, pSink: *mut ITfLangBarEventSink, hwnd: HWND, dwflags: DWORD, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseEventSink.unwrap())(self, pSink, hwnd, dwflags, pdwCookie) }
-    pub unsafe fn UnAdviseEventSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnAdviseEventSink.unwrap())(self, dwCookie) }
-    pub unsafe fn GetThreadMarshalInterface(&mut self, dwThreadId: DWORD, dwType: DWORD, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetThreadMarshalInterface.unwrap())(self, dwThreadId, dwType, riid, ppunk) }
-    pub unsafe fn GetThreadLangBarItemMgr(&mut self, dwThreadId: DWORD, pplbie: *mut *mut ITfLangBarItemMgr, pdwThreadid: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetThreadLangBarItemMgr.unwrap())(self, dwThreadId, pplbie, pdwThreadid) }
-    pub unsafe fn GetInputProcessorProfiles(&mut self, dwThreadId: DWORD, ppaip: *mut *mut ITfInputProcessorProfiles, pdwThreadid: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetInputProcessorProfiles.unwrap())(self, dwThreadId, ppaip, pdwThreadid) }
-    pub unsafe fn RestoreLastFocus(&mut self, dwThreadId: *mut DWORD, fPrev: BOOL) -> HRESULT { ((*self.lpVtbl).RestoreLastFocus.unwrap())(self, dwThreadId, fPrev) }
-    pub unsafe fn SetModalInput(&mut self, pSink: *mut ITfLangBarEventSink, dwThreadId: DWORD, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).SetModalInput.unwrap())(self, pSink, dwThreadId, dwFlags) }
-    pub unsafe fn ShowFloating(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ShowFloating.unwrap())(self, dwFlags) }
-    pub unsafe fn GetShowFloatingStatus(&mut self, pdwFlags: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetShowFloatingStatus.unwrap())(self, pdwFlags) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseEventSink(&mut self, pSink: *mut ITfLangBarEventSink, hwnd: HWND, dwflags: DWORD, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseEventSink.unwrap_unchecked())(self, pSink, hwnd, dwflags, pdwCookie) }
+    pub unsafe fn UnAdviseEventSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnAdviseEventSink.unwrap_unchecked())(self, dwCookie) }
+    pub unsafe fn GetThreadMarshalInterface(&mut self, dwThreadId: DWORD, dwType: DWORD, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetThreadMarshalInterface.unwrap_unchecked())(self, dwThreadId, dwType, riid, ppunk) }
+    pub unsafe fn GetThreadLangBarItemMgr(&mut self, dwThreadId: DWORD, pplbie: *mut *mut ITfLangBarItemMgr, pdwThreadid: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetThreadLangBarItemMgr.unwrap_unchecked())(self, dwThreadId, pplbie, pdwThreadid) }
+    pub unsafe fn GetInputProcessorProfiles(&mut self, dwThreadId: DWORD, ppaip: *mut *mut ITfInputProcessorProfiles, pdwThreadid: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetInputProcessorProfiles.unwrap_unchecked())(self, dwThreadId, ppaip, pdwThreadid) }
+    pub unsafe fn RestoreLastFocus(&mut self, dwThreadId: *mut DWORD, fPrev: BOOL) -> HRESULT { ((*self.lpVtbl).RestoreLastFocus.unwrap_unchecked())(self, dwThreadId, fPrev) }
+    pub unsafe fn SetModalInput(&mut self, pSink: *mut ITfLangBarEventSink, dwThreadId: DWORD, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).SetModalInput.unwrap_unchecked())(self, pSink, dwThreadId, dwFlags) }
+    pub unsafe fn ShowFloating(&mut self, dwFlags: DWORD) -> HRESULT { ((*self.lpVtbl).ShowFloating.unwrap_unchecked())(self, dwFlags) }
+    pub unsafe fn GetShowFloatingStatus(&mut self, pdwFlags: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetShowFloatingStatus.unwrap_unchecked())(self, pdwFlags) }
 }
 impl ITfLanguageProfileNotifySink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnLanguageChange(&mut self, langid: LANGID, pfAccept: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnLanguageChange.unwrap())(self, langid, pfAccept) }
-    pub unsafe fn OnLanguageChanged(&mut self) -> HRESULT { ((*self.lpVtbl).OnLanguageChanged.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnLanguageChange(&mut self, langid: LANGID, pfAccept: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnLanguageChange.unwrap_unchecked())(self, langid, pfAccept) }
+    pub unsafe fn OnLanguageChanged(&mut self) -> HRESULT { ((*self.lpVtbl).OnLanguageChanged.unwrap_unchecked())(self) }
 }
 impl ITfMessagePump {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn PeekMessageA(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, wRemoveMsg: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).PeekMessageA.unwrap())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, pfResult) }
-    pub unsafe fn GetMessageA(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetMessageA.unwrap())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, pfResult) }
-    pub unsafe fn PeekMessageW(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, wRemoveMsg: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).PeekMessageW.unwrap())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, pfResult) }
-    pub unsafe fn GetMessageW(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetMessageW.unwrap())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, pfResult) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn PeekMessageA(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, wRemoveMsg: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).PeekMessageA.unwrap_unchecked())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, pfResult) }
+    pub unsafe fn GetMessageA(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetMessageA.unwrap_unchecked())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, pfResult) }
+    pub unsafe fn PeekMessageW(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, wRemoveMsg: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).PeekMessageW.unwrap_unchecked())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, wRemoveMsg, pfResult) }
+    pub unsafe fn GetMessageW(&mut self, pMsg: LPMSG, hwnd: HWND, wMsgFilterMin: UINT, wMsgFilterMax: UINT, pfResult: *mut BOOL) -> HRESULT { ((*self.lpVtbl).GetMessageW.unwrap_unchecked())(self, pMsg, hwnd, wMsgFilterMin, wMsgFilterMax, pfResult) }
 }
 impl ITfMouseSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnMouseEvent(&mut self, uEdge: ULONG, uQuadrant: ULONG, dwBtnStatus: DWORD, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnMouseEvent.unwrap())(self, uEdge, uQuadrant, dwBtnStatus, pfEaten) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnMouseEvent(&mut self, uEdge: ULONG, uQuadrant: ULONG, dwBtnStatus: DWORD, pfEaten: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnMouseEvent.unwrap_unchecked())(self, uEdge, uQuadrant, dwBtnStatus, pfEaten) }
 }
 impl ITfMouseTracker {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseMouseSink(&mut self, range: *mut ITfRange, pSink: *mut ITfMouseSink, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseMouseSink.unwrap())(self, range, pSink, pdwCookie) }
-    pub unsafe fn UnadviseMouseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseMouseSink.unwrap())(self, dwCookie) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseMouseSink(&mut self, range: *mut ITfRange, pSink: *mut ITfMouseSink, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseMouseSink.unwrap_unchecked())(self, range, pSink, pdwCookie) }
+    pub unsafe fn UnadviseMouseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseMouseSink.unwrap_unchecked())(self, dwCookie) }
 }
 impl ITfMouseTrackerACP {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseMouseSink(&mut self, range: *mut ITfRangeACP, pSink: *mut ITfMouseSink, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseMouseSink.unwrap())(self, range, pSink, pdwCookie) }
-    pub unsafe fn UnadviseMouseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseMouseSink.unwrap())(self, dwCookie) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseMouseSink(&mut self, range: *mut ITfRangeACP, pSink: *mut ITfMouseSink, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseMouseSink.unwrap_unchecked())(self, range, pSink, pdwCookie) }
+    pub unsafe fn UnadviseMouseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseMouseSink.unwrap_unchecked())(self, dwCookie) }
 }
 impl ITfPersistentPropertyLoaderACP {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn LoadProperty(&mut self, pHdr: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, ppStream: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).LoadProperty.unwrap())(self, pHdr, ppStream) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn LoadProperty(&mut self, pHdr: *const TF_PERSISTENT_PROPERTY_HEADER_ACP, ppStream: *mut *mut IStream) -> HRESULT { ((*self.lpVtbl).LoadProperty.unwrap_unchecked())(self, pHdr, ppStream) }
 }
 impl ITfProperty {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap())(self, pguid) }
-    pub unsafe fn EnumRanges(&mut self, ec: TfEditCookie, ppEnum: *mut *mut IEnumTfRanges, pTargetRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).EnumRanges.unwrap())(self, ec, ppEnum, pTargetRange) }
-    pub unsafe fn GetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap())(self, ec, pRange, pvarValue) }
-    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap())(self, ppContext) }
-    pub unsafe fn FindRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, ppRange: *mut *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).FindRange.unwrap())(self, ec, pRange, ppRange, aPos) }
-    pub unsafe fn SetValueStore(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pPropStore: *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).SetValueStore.unwrap())(self, ec, pRange, pPropStore) }
-    pub unsafe fn SetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *const VARIANT) -> HRESULT { ((*self.lpVtbl).SetValue.unwrap())(self, ec, pRange, pvarValue) }
-    pub unsafe fn Clear(&mut self, ec: TfEditCookie, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clear.unwrap())(self, ec, pRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap_unchecked())(self, pguid) }
+    pub unsafe fn EnumRanges(&mut self, ec: TfEditCookie, ppEnum: *mut *mut IEnumTfRanges, pTargetRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).EnumRanges.unwrap_unchecked())(self, ec, ppEnum, pTargetRange) }
+    pub unsafe fn GetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap_unchecked())(self, ec, pRange, pvarValue) }
+    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap_unchecked())(self, ppContext) }
+    pub unsafe fn FindRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, ppRange: *mut *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).FindRange.unwrap_unchecked())(self, ec, pRange, ppRange, aPos) }
+    pub unsafe fn SetValueStore(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pPropStore: *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).SetValueStore.unwrap_unchecked())(self, ec, pRange, pPropStore) }
+    pub unsafe fn SetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *const VARIANT) -> HRESULT { ((*self.lpVtbl).SetValue.unwrap_unchecked())(self, ec, pRange, pvarValue) }
+    pub unsafe fn Clear(&mut self, ec: TfEditCookie, pRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clear.unwrap_unchecked())(self, ec, pRange) }
 }
 impl ITfPropertyStore {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap())(self, pguid) }
-    pub unsafe fn GetDataType(&mut self, pdwReserved: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetDataType.unwrap())(self, pdwReserved) }
-    pub unsafe fn GetData(&mut self, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetData.unwrap())(self, pvarValue) }
-    pub unsafe fn OnTextUpdated(&mut self, dwFlags: DWORD, pRangeNew: *mut ITfRange, pfAccept: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTextUpdated.unwrap())(self, dwFlags, pRangeNew, pfAccept) }
-    pub unsafe fn Shrink(&mut self, pRangeNew: *mut ITfRange, pfFree: *mut BOOL) -> HRESULT { ((*self.lpVtbl).Shrink.unwrap())(self, pRangeNew, pfFree) }
-    pub unsafe fn Divide(&mut self, pRangeThis: *mut ITfRange, pRangeNew: *mut ITfRange, ppPropStore: *mut *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).Divide.unwrap())(self, pRangeThis, pRangeNew, ppPropStore) }
-    pub unsafe fn Clone(&mut self, pPropStore: *mut *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, pPropStore) }
-    pub unsafe fn GetPropertyRangeCreator(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetPropertyRangeCreator.unwrap())(self, pclsid) }
-    pub unsafe fn Serialize(&mut self, pStream: *mut IStream, pcb: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap())(self, pStream, pcb) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap_unchecked())(self, pguid) }
+    pub unsafe fn GetDataType(&mut self, pdwReserved: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetDataType.unwrap_unchecked())(self, pdwReserved) }
+    pub unsafe fn GetData(&mut self, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetData.unwrap_unchecked())(self, pvarValue) }
+    pub unsafe fn OnTextUpdated(&mut self, dwFlags: DWORD, pRangeNew: *mut ITfRange, pfAccept: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTextUpdated.unwrap_unchecked())(self, dwFlags, pRangeNew, pfAccept) }
+    pub unsafe fn Shrink(&mut self, pRangeNew: *mut ITfRange, pfFree: *mut BOOL) -> HRESULT { ((*self.lpVtbl).Shrink.unwrap_unchecked())(self, pRangeNew, pfFree) }
+    pub unsafe fn Divide(&mut self, pRangeThis: *mut ITfRange, pRangeNew: *mut ITfRange, ppPropStore: *mut *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).Divide.unwrap_unchecked())(self, pRangeThis, pRangeNew, ppPropStore) }
+    pub unsafe fn Clone(&mut self, pPropStore: *mut *mut ITfPropertyStore) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, pPropStore) }
+    pub unsafe fn GetPropertyRangeCreator(&mut self, pclsid: *mut CLSID) -> HRESULT { ((*self.lpVtbl).GetPropertyRangeCreator.unwrap_unchecked())(self, pclsid) }
+    pub unsafe fn Serialize(&mut self, pStream: *mut IStream, pcb: *mut ULONG) -> HRESULT { ((*self.lpVtbl).Serialize.unwrap_unchecked())(self, pStream, pcb) }
 }
 impl ITfRange {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *mut WCHAR, cchMax: ULONG, pcch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetText.unwrap())(self, ec, dwFlags, pchText, cchMax, pcch) }
-    pub unsafe fn SetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetText.unwrap())(self, ec, dwFlags, pchText, cch) }
-    pub unsafe fn GetFormattedText(&mut self, ec: TfEditCookie, ppDataObject: *mut *mut IDataObject) -> HRESULT { ((*self.lpVtbl).GetFormattedText.unwrap())(self, ec, ppDataObject) }
-    pub unsafe fn GetEmbedded(&mut self, ec: TfEditCookie, rguidService: *const GUID, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetEmbedded.unwrap())(self, ec, rguidService, riid, ppunk) }
-    pub unsafe fn InsertEmbedded(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject) -> HRESULT { ((*self.lpVtbl).InsertEmbedded.unwrap())(self, ec, dwFlags, pDataObject) }
-    pub unsafe fn ShiftStart(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap())(self, ec, cchReq, pcch, pHalt) }
-    pub unsafe fn ShiftEnd(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap())(self, ec, cchReq, pcch, pHalt) }
-    pub unsafe fn ShiftStartToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftStartToRange.unwrap())(self, ec, pRange, aPos) }
-    pub unsafe fn ShiftEndToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftEndToRange.unwrap())(self, ec, pRange, aPos) }
-    pub unsafe fn ShiftStartRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftStartRegion.unwrap())(self, ec, dir, pfNoRegion) }
-    pub unsafe fn ShiftEndRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftEndRegion.unwrap())(self, ec, dir, pfNoRegion) }
-    pub unsafe fn IsEmpty(&mut self, ec: TfEditCookie, pfEmpty: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEmpty.unwrap())(self, ec, pfEmpty) }
-    pub unsafe fn Collapse(&mut self, ec: TfEditCookie, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).Collapse.unwrap())(self, ec, aPos) }
-    pub unsafe fn IsEqualStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualStart.unwrap())(self, ec, pWith, aPos, pfEqual) }
-    pub unsafe fn IsEqualEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualEnd.unwrap())(self, ec, pWith, aPos, pfEqual) }
-    pub unsafe fn CompareStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareStart.unwrap())(self, ec, pWith, aPos, plResult) }
-    pub unsafe fn CompareEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareEnd.unwrap())(self, ec, pWith, aPos, plResult) }
-    pub unsafe fn AdjustForInsert(&mut self, ec: TfEditCookie, cchInsert: ULONG, pfInsertOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).AdjustForInsert.unwrap())(self, ec, cchInsert, pfInsertOk) }
-    pub unsafe fn GetGravity(&mut self, pgStart: *mut TfGravity, pgEnd: *mut TfGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap())(self, pgStart, pgEnd) }
-    pub unsafe fn SetGravity(&mut self, ec: TfEditCookie, gStart: TfGravity, gEnd: TfGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap())(self, ec, gStart, gEnd) }
-    pub unsafe fn Clone(&mut self, ppClone: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppClone) }
-    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap())(self, ppContext) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *mut WCHAR, cchMax: ULONG, pcch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetText.unwrap_unchecked())(self, ec, dwFlags, pchText, cchMax, pcch) }
+    pub unsafe fn SetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetText.unwrap_unchecked())(self, ec, dwFlags, pchText, cch) }
+    pub unsafe fn GetFormattedText(&mut self, ec: TfEditCookie, ppDataObject: *mut *mut IDataObject) -> HRESULT { ((*self.lpVtbl).GetFormattedText.unwrap_unchecked())(self, ec, ppDataObject) }
+    pub unsafe fn GetEmbedded(&mut self, ec: TfEditCookie, rguidService: *const GUID, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetEmbedded.unwrap_unchecked())(self, ec, rguidService, riid, ppunk) }
+    pub unsafe fn InsertEmbedded(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject) -> HRESULT { ((*self.lpVtbl).InsertEmbedded.unwrap_unchecked())(self, ec, dwFlags, pDataObject) }
+    pub unsafe fn ShiftStart(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap_unchecked())(self, ec, cchReq, pcch, pHalt) }
+    pub unsafe fn ShiftEnd(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap_unchecked())(self, ec, cchReq, pcch, pHalt) }
+    pub unsafe fn ShiftStartToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftStartToRange.unwrap_unchecked())(self, ec, pRange, aPos) }
+    pub unsafe fn ShiftEndToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftEndToRange.unwrap_unchecked())(self, ec, pRange, aPos) }
+    pub unsafe fn ShiftStartRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftStartRegion.unwrap_unchecked())(self, ec, dir, pfNoRegion) }
+    pub unsafe fn ShiftEndRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftEndRegion.unwrap_unchecked())(self, ec, dir, pfNoRegion) }
+    pub unsafe fn IsEmpty(&mut self, ec: TfEditCookie, pfEmpty: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEmpty.unwrap_unchecked())(self, ec, pfEmpty) }
+    pub unsafe fn Collapse(&mut self, ec: TfEditCookie, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).Collapse.unwrap_unchecked())(self, ec, aPos) }
+    pub unsafe fn IsEqualStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualStart.unwrap_unchecked())(self, ec, pWith, aPos, pfEqual) }
+    pub unsafe fn IsEqualEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualEnd.unwrap_unchecked())(self, ec, pWith, aPos, pfEqual) }
+    pub unsafe fn CompareStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareStart.unwrap_unchecked())(self, ec, pWith, aPos, plResult) }
+    pub unsafe fn CompareEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareEnd.unwrap_unchecked())(self, ec, pWith, aPos, plResult) }
+    pub unsafe fn AdjustForInsert(&mut self, ec: TfEditCookie, cchInsert: ULONG, pfInsertOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).AdjustForInsert.unwrap_unchecked())(self, ec, cchInsert, pfInsertOk) }
+    pub unsafe fn GetGravity(&mut self, pgStart: *mut TfGravity, pgEnd: *mut TfGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap_unchecked())(self, pgStart, pgEnd) }
+    pub unsafe fn SetGravity(&mut self, ec: TfEditCookie, gStart: TfGravity, gEnd: TfGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap_unchecked())(self, ec, gStart, gEnd) }
+    pub unsafe fn Clone(&mut self, ppClone: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppClone) }
+    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap_unchecked())(self, ppContext) }
 }
 impl ITfRangeACP {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *mut WCHAR, cchMax: ULONG, pcch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetText.unwrap())(self, ec, dwFlags, pchText, cchMax, pcch) }
-    pub unsafe fn SetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetText.unwrap())(self, ec, dwFlags, pchText, cch) }
-    pub unsafe fn GetFormattedText(&mut self, ec: TfEditCookie, ppDataObject: *mut *mut IDataObject) -> HRESULT { ((*self.lpVtbl).GetFormattedText.unwrap())(self, ec, ppDataObject) }
-    pub unsafe fn GetEmbedded(&mut self, ec: TfEditCookie, rguidService: *const GUID, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetEmbedded.unwrap())(self, ec, rguidService, riid, ppunk) }
-    pub unsafe fn InsertEmbedded(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject) -> HRESULT { ((*self.lpVtbl).InsertEmbedded.unwrap())(self, ec, dwFlags, pDataObject) }
-    pub unsafe fn ShiftStart(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap())(self, ec, cchReq, pcch, pHalt) }
-    pub unsafe fn ShiftEnd(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap())(self, ec, cchReq, pcch, pHalt) }
-    pub unsafe fn ShiftStartToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftStartToRange.unwrap())(self, ec, pRange, aPos) }
-    pub unsafe fn ShiftEndToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftEndToRange.unwrap())(self, ec, pRange, aPos) }
-    pub unsafe fn ShiftStartRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftStartRegion.unwrap())(self, ec, dir, pfNoRegion) }
-    pub unsafe fn ShiftEndRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftEndRegion.unwrap())(self, ec, dir, pfNoRegion) }
-    pub unsafe fn IsEmpty(&mut self, ec: TfEditCookie, pfEmpty: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEmpty.unwrap())(self, ec, pfEmpty) }
-    pub unsafe fn Collapse(&mut self, ec: TfEditCookie, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).Collapse.unwrap())(self, ec, aPos) }
-    pub unsafe fn IsEqualStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualStart.unwrap())(self, ec, pWith, aPos, pfEqual) }
-    pub unsafe fn IsEqualEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualEnd.unwrap())(self, ec, pWith, aPos, pfEqual) }
-    pub unsafe fn CompareStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareStart.unwrap())(self, ec, pWith, aPos, plResult) }
-    pub unsafe fn CompareEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareEnd.unwrap())(self, ec, pWith, aPos, plResult) }
-    pub unsafe fn AdjustForInsert(&mut self, ec: TfEditCookie, cchInsert: ULONG, pfInsertOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).AdjustForInsert.unwrap())(self, ec, cchInsert, pfInsertOk) }
-    pub unsafe fn GetGravity(&mut self, pgStart: *mut TfGravity, pgEnd: *mut TfGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap())(self, pgStart, pgEnd) }
-    pub unsafe fn SetGravity(&mut self, ec: TfEditCookie, gStart: TfGravity, gEnd: TfGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap())(self, ec, gStart, gEnd) }
-    pub unsafe fn Clone(&mut self, ppClone: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clone.unwrap())(self, ppClone) }
-    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap())(self, ppContext) }
-    pub unsafe fn GetExtent(&mut self, pacpAnchor: *mut LONG, pcch: *mut LONG) -> HRESULT { ((*self.lpVtbl).GetExtent.unwrap())(self, pacpAnchor, pcch) }
-    pub unsafe fn SetExtent(&mut self, acpAnchor: LONG, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetExtent.unwrap())(self, acpAnchor, cch) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *mut WCHAR, cchMax: ULONG, pcch: *mut ULONG) -> HRESULT { ((*self.lpVtbl).GetText.unwrap_unchecked())(self, ec, dwFlags, pchText, cchMax, pcch) }
+    pub unsafe fn SetText(&mut self, ec: TfEditCookie, dwFlags: DWORD, pchText: *const WCHAR, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetText.unwrap_unchecked())(self, ec, dwFlags, pchText, cch) }
+    pub unsafe fn GetFormattedText(&mut self, ec: TfEditCookie, ppDataObject: *mut *mut IDataObject) -> HRESULT { ((*self.lpVtbl).GetFormattedText.unwrap_unchecked())(self, ec, ppDataObject) }
+    pub unsafe fn GetEmbedded(&mut self, ec: TfEditCookie, rguidService: *const GUID, riid: *const IID, ppunk: *mut *mut IUnknown) -> HRESULT { ((*self.lpVtbl).GetEmbedded.unwrap_unchecked())(self, ec, rguidService, riid, ppunk) }
+    pub unsafe fn InsertEmbedded(&mut self, ec: TfEditCookie, dwFlags: DWORD, pDataObject: *mut IDataObject) -> HRESULT { ((*self.lpVtbl).InsertEmbedded.unwrap_unchecked())(self, ec, dwFlags, pDataObject) }
+    pub unsafe fn ShiftStart(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftStart.unwrap_unchecked())(self, ec, cchReq, pcch, pHalt) }
+    pub unsafe fn ShiftEnd(&mut self, ec: TfEditCookie, cchReq: LONG, pcch: *mut LONG, pHalt: *const TF_HALTCOND) -> HRESULT { ((*self.lpVtbl).ShiftEnd.unwrap_unchecked())(self, ec, cchReq, pcch, pHalt) }
+    pub unsafe fn ShiftStartToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftStartToRange.unwrap_unchecked())(self, ec, pRange, aPos) }
+    pub unsafe fn ShiftEndToRange(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).ShiftEndToRange.unwrap_unchecked())(self, ec, pRange, aPos) }
+    pub unsafe fn ShiftStartRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftStartRegion.unwrap_unchecked())(self, ec, dir, pfNoRegion) }
+    pub unsafe fn ShiftEndRegion(&mut self, ec: TfEditCookie, dir: TfShiftDir, pfNoRegion: *mut BOOL) -> HRESULT { ((*self.lpVtbl).ShiftEndRegion.unwrap_unchecked())(self, ec, dir, pfNoRegion) }
+    pub unsafe fn IsEmpty(&mut self, ec: TfEditCookie, pfEmpty: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEmpty.unwrap_unchecked())(self, ec, pfEmpty) }
+    pub unsafe fn Collapse(&mut self, ec: TfEditCookie, aPos: TfAnchor) -> HRESULT { ((*self.lpVtbl).Collapse.unwrap_unchecked())(self, ec, aPos) }
+    pub unsafe fn IsEqualStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualStart.unwrap_unchecked())(self, ec, pWith, aPos, pfEqual) }
+    pub unsafe fn IsEqualEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, pfEqual: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsEqualEnd.unwrap_unchecked())(self, ec, pWith, aPos, pfEqual) }
+    pub unsafe fn CompareStart(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareStart.unwrap_unchecked())(self, ec, pWith, aPos, plResult) }
+    pub unsafe fn CompareEnd(&mut self, ec: TfEditCookie, pWith: *mut ITfRange, aPos: TfAnchor, plResult: *mut LONG) -> HRESULT { ((*self.lpVtbl).CompareEnd.unwrap_unchecked())(self, ec, pWith, aPos, plResult) }
+    pub unsafe fn AdjustForInsert(&mut self, ec: TfEditCookie, cchInsert: ULONG, pfInsertOk: *mut BOOL) -> HRESULT { ((*self.lpVtbl).AdjustForInsert.unwrap_unchecked())(self, ec, cchInsert, pfInsertOk) }
+    pub unsafe fn GetGravity(&mut self, pgStart: *mut TfGravity, pgEnd: *mut TfGravity) -> HRESULT { ((*self.lpVtbl).GetGravity.unwrap_unchecked())(self, pgStart, pgEnd) }
+    pub unsafe fn SetGravity(&mut self, ec: TfEditCookie, gStart: TfGravity, gEnd: TfGravity) -> HRESULT { ((*self.lpVtbl).SetGravity.unwrap_unchecked())(self, ec, gStart, gEnd) }
+    pub unsafe fn Clone(&mut self, ppClone: *mut *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Clone.unwrap_unchecked())(self, ppClone) }
+    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap_unchecked())(self, ppContext) }
+    pub unsafe fn GetExtent(&mut self, pacpAnchor: *mut LONG, pcch: *mut LONG) -> HRESULT { ((*self.lpVtbl).GetExtent.unwrap_unchecked())(self, pacpAnchor, pcch) }
+    pub unsafe fn SetExtent(&mut self, acpAnchor: LONG, cch: LONG) -> HRESULT { ((*self.lpVtbl).SetExtent.unwrap_unchecked())(self, acpAnchor, cch) }
 }
 impl ITfRangeBackup {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Restore(&mut self, cookie: TfEditCookie, range: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Restore.unwrap())(self, cookie, range) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Restore(&mut self, cookie: TfEditCookie, range: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).Restore.unwrap_unchecked())(self, cookie, range) }
 }
 impl ITfReadOnlyProperty {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap())(self, pguid) }
-    pub unsafe fn EnumRanges(&mut self, ec: TfEditCookie, ppEnum: *mut *mut IEnumTfRanges, pTargetRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).EnumRanges.unwrap())(self, ec, ppEnum, pTargetRange) }
-    pub unsafe fn GetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap())(self, ec, pRange, pvarValue) }
-    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap())(self, ppContext) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetType(&mut self, pguid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetType.unwrap_unchecked())(self, pguid) }
+    pub unsafe fn EnumRanges(&mut self, ec: TfEditCookie, ppEnum: *mut *mut IEnumTfRanges, pTargetRange: *mut ITfRange) -> HRESULT { ((*self.lpVtbl).EnumRanges.unwrap_unchecked())(self, ec, ppEnum, pTargetRange) }
+    pub unsafe fn GetValue(&mut self, ec: TfEditCookie, pRange: *mut ITfRange, pvarValue: *mut VARIANT) -> HRESULT { ((*self.lpVtbl).GetValue.unwrap_unchecked())(self, ec, pRange, pvarValue) }
+    pub unsafe fn GetContext(&mut self, ppContext: *mut *mut ITfContext) -> HRESULT { ((*self.lpVtbl).GetContext.unwrap_unchecked())(self, ppContext) }
 }
 impl ITfSource {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseSink(&mut self, riid: *const IID, punk: *mut IUnknown, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseSink.unwrap())(self, riid, punk, pdwCookie) }
-    pub unsafe fn UnadviseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseSink.unwrap())(self, dwCookie) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseSink(&mut self, riid: *const IID, punk: *mut IUnknown, pdwCookie: *mut DWORD) -> HRESULT { ((*self.lpVtbl).AdviseSink.unwrap_unchecked())(self, riid, punk, pdwCookie) }
+    pub unsafe fn UnadviseSink(&mut self, dwCookie: DWORD) -> HRESULT { ((*self.lpVtbl).UnadviseSink.unwrap_unchecked())(self, dwCookie) }
 }
 impl ITfSourceSingle {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn AdviseSingleSink(&mut self, tid: TfClientId, riid: *const IID, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).AdviseSingleSink.unwrap())(self, tid, riid, punk) }
-    pub unsafe fn UnadviseSingleSink(&mut self, tid: TfClientId, riid: *const IID) -> HRESULT { ((*self.lpVtbl).UnadviseSingleSink.unwrap())(self, tid, riid) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn AdviseSingleSink(&mut self, tid: TfClientId, riid: *const IID, punk: *mut IUnknown) -> HRESULT { ((*self.lpVtbl).AdviseSingleSink.unwrap_unchecked())(self, tid, riid, punk) }
+    pub unsafe fn UnadviseSingleSink(&mut self, tid: TfClientId, riid: *const IID) -> HRESULT { ((*self.lpVtbl).UnadviseSingleSink.unwrap_unchecked())(self, tid, riid) }
 }
 impl ITfTextEditSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnEndEdit(&mut self, pic: *mut ITfContext, ecReadOnly: TfEditCookie, pEditRecord: *mut ITfEditRecord) -> HRESULT { ((*self.lpVtbl).OnEndEdit.unwrap())(self, pic, ecReadOnly, pEditRecord) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnEndEdit(&mut self, pic: *mut ITfContext, ecReadOnly: TfEditCookie, pEditRecord: *mut ITfEditRecord) -> HRESULT { ((*self.lpVtbl).OnEndEdit.unwrap_unchecked())(self, pic, ecReadOnly, pEditRecord) }
 }
 impl ITfTextInputProcessor {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Activate(&mut self, ptim: *mut ITfThreadMgr, tid: TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap())(self, ptim, tid) }
-    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Activate(&mut self, ptim: *mut ITfThreadMgr, tid: TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap_unchecked())(self, ptim, tid) }
+    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap_unchecked())(self) }
 }
 impl ITfTextLayoutSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnLayoutChange(&mut self, pic: *mut ITfContext, lcode: TfLayoutCode, pView: *mut ITfContextView) -> HRESULT { ((*self.lpVtbl).OnLayoutChange.unwrap())(self, pic, lcode, pView) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnLayoutChange(&mut self, pic: *mut ITfContext, lcode: TfLayoutCode, pView: *mut ITfContextView) -> HRESULT { ((*self.lpVtbl).OnLayoutChange.unwrap_unchecked())(self, pic, lcode, pView) }
 }
 impl ITfThreadFocusSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnSetThreadFocus(&mut self) -> HRESULT { ((*self.lpVtbl).OnSetThreadFocus.unwrap())(self) }
-    pub unsafe fn OnKillThreadFocus(&mut self) -> HRESULT { ((*self.lpVtbl).OnKillThreadFocus.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnSetThreadFocus(&mut self) -> HRESULT { ((*self.lpVtbl).OnSetThreadFocus.unwrap_unchecked())(self) }
+    pub unsafe fn OnKillThreadFocus(&mut self) -> HRESULT { ((*self.lpVtbl).OnKillThreadFocus.unwrap_unchecked())(self) }
 }
 impl ITfThreadMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Activate(&mut self, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap())(self, ptid) }
-    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap())(self) }
-    pub unsafe fn CreateDocumentMgr(&mut self, ppdim: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).CreateDocumentMgr.unwrap())(self, ppdim) }
-    pub unsafe fn EnumDocumentMgrs(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).EnumDocumentMgrs.unwrap())(self, ppEnum) }
-    pub unsafe fn GetFocus(&mut self, ppdimFocus: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetFocus.unwrap())(self, ppdimFocus) }
-    pub unsafe fn SetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).SetFocus.unwrap())(self, pdimFocus) }
-    pub unsafe fn AssociateFocus(&mut self, hwnd: HWND, pdimNew: *mut ITfDocumentMgr, ppdimPrev: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).AssociateFocus.unwrap())(self, hwnd, pdimNew, ppdimPrev) }
-    pub unsafe fn IsThreadFocus(&mut self, pfThreadFocus: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsThreadFocus.unwrap())(self, pfThreadFocus) }
-    pub unsafe fn GetFunctionProvider(&mut self, clsid: *const CLSID, ppFuncProv: *mut *mut ITfFunctionProvider) -> HRESULT { ((*self.lpVtbl).GetFunctionProvider.unwrap())(self, clsid, ppFuncProv) }
-    pub unsafe fn EnumFunctionProviders(&mut self, ppEnum: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).EnumFunctionProviders.unwrap())(self, ppEnum) }
-    pub unsafe fn GetGlobalCompartment(&mut self, ppCompMgr: *mut *mut ITfCompartmentMgr) -> HRESULT { ((*self.lpVtbl).GetGlobalCompartment.unwrap())(self, ppCompMgr) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Activate(&mut self, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap_unchecked())(self, ptid) }
+    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap_unchecked())(self) }
+    pub unsafe fn CreateDocumentMgr(&mut self, ppdim: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).CreateDocumentMgr.unwrap_unchecked())(self, ppdim) }
+    pub unsafe fn EnumDocumentMgrs(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).EnumDocumentMgrs.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetFocus(&mut self, ppdimFocus: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetFocus.unwrap_unchecked())(self, ppdimFocus) }
+    pub unsafe fn SetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).SetFocus.unwrap_unchecked())(self, pdimFocus) }
+    pub unsafe fn AssociateFocus(&mut self, hwnd: HWND, pdimNew: *mut ITfDocumentMgr, ppdimPrev: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).AssociateFocus.unwrap_unchecked())(self, hwnd, pdimNew, ppdimPrev) }
+    pub unsafe fn IsThreadFocus(&mut self, pfThreadFocus: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsThreadFocus.unwrap_unchecked())(self, pfThreadFocus) }
+    pub unsafe fn GetFunctionProvider(&mut self, clsid: *const CLSID, ppFuncProv: *mut *mut ITfFunctionProvider) -> HRESULT { ((*self.lpVtbl).GetFunctionProvider.unwrap_unchecked())(self, clsid, ppFuncProv) }
+    pub unsafe fn EnumFunctionProviders(&mut self, ppEnum: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).EnumFunctionProviders.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetGlobalCompartment(&mut self, ppCompMgr: *mut *mut ITfCompartmentMgr) -> HRESULT { ((*self.lpVtbl).GetGlobalCompartment.unwrap_unchecked())(self, ppCompMgr) }
 }
 impl ITfThreadMgrEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnInitDocumentMgr(&mut self, pdim: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnInitDocumentMgr.unwrap())(self, pdim) }
-    pub unsafe fn OnUninitDocumentMgr(&mut self, pdim: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnUninitDocumentMgr.unwrap())(self, pdim) }
-    pub unsafe fn OnSetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr, pdimPrevFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap())(self, pdimFocus, pdimPrevFocus) }
-    pub unsafe fn OnPushContext(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnPushContext.unwrap())(self, pic) }
-    pub unsafe fn OnPopContext(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnPopContext.unwrap())(self, pic) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnInitDocumentMgr(&mut self, pdim: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnInitDocumentMgr.unwrap_unchecked())(self, pdim) }
+    pub unsafe fn OnUninitDocumentMgr(&mut self, pdim: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnUninitDocumentMgr.unwrap_unchecked())(self, pdim) }
+    pub unsafe fn OnSetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr, pdimPrevFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).OnSetFocus.unwrap_unchecked())(self, pdimFocus, pdimPrevFocus) }
+    pub unsafe fn OnPushContext(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnPushContext.unwrap_unchecked())(self, pic) }
+    pub unsafe fn OnPopContext(&mut self, pic: *mut ITfContext) -> HRESULT { ((*self.lpVtbl).OnPopContext.unwrap_unchecked())(self, pic) }
 }
 impl ITfThreadMgrEx {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Activate(&mut self, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap())(self, ptid) }
-    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap())(self) }
-    pub unsafe fn CreateDocumentMgr(&mut self, ppdim: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).CreateDocumentMgr.unwrap())(self, ppdim) }
-    pub unsafe fn EnumDocumentMgrs(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).EnumDocumentMgrs.unwrap())(self, ppEnum) }
-    pub unsafe fn GetFocus(&mut self, ppdimFocus: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetFocus.unwrap())(self, ppdimFocus) }
-    pub unsafe fn SetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).SetFocus.unwrap())(self, pdimFocus) }
-    pub unsafe fn AssociateFocus(&mut self, hwnd: HWND, pdimNew: *mut ITfDocumentMgr, ppdimPrev: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).AssociateFocus.unwrap())(self, hwnd, pdimNew, ppdimPrev) }
-    pub unsafe fn IsThreadFocus(&mut self, pfThreadFocus: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsThreadFocus.unwrap())(self, pfThreadFocus) }
-    pub unsafe fn GetFunctionProvider(&mut self, clsid: *const CLSID, ppFuncProv: *mut *mut ITfFunctionProvider) -> HRESULT { ((*self.lpVtbl).GetFunctionProvider.unwrap())(self, clsid, ppFuncProv) }
-    pub unsafe fn EnumFunctionProviders(&mut self, ppEnum: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).EnumFunctionProviders.unwrap())(self, ppEnum) }
-    pub unsafe fn GetGlobalCompartment(&mut self, ppCompMgr: *mut *mut ITfCompartmentMgr) -> HRESULT { ((*self.lpVtbl).GetGlobalCompartment.unwrap())(self, ppCompMgr) }
-    pub unsafe fn ActivateEx(&mut self, id: *mut TfClientId, flags: DWORD) -> HRESULT { ((*self.lpVtbl).ActivateEx.unwrap())(self, id, flags) }
-    pub unsafe fn GetActiveFlags(&mut self, flags: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetActiveFlags.unwrap())(self, flags) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Activate(&mut self, ptid: *mut TfClientId) -> HRESULT { ((*self.lpVtbl).Activate.unwrap_unchecked())(self, ptid) }
+    pub unsafe fn Deactivate(&mut self) -> HRESULT { ((*self.lpVtbl).Deactivate.unwrap_unchecked())(self) }
+    pub unsafe fn CreateDocumentMgr(&mut self, ppdim: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).CreateDocumentMgr.unwrap_unchecked())(self, ppdim) }
+    pub unsafe fn EnumDocumentMgrs(&mut self, ppEnum: *mut *mut IEnumTfDocumentMgrs) -> HRESULT { ((*self.lpVtbl).EnumDocumentMgrs.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetFocus(&mut self, ppdimFocus: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).GetFocus.unwrap_unchecked())(self, ppdimFocus) }
+    pub unsafe fn SetFocus(&mut self, pdimFocus: *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).SetFocus.unwrap_unchecked())(self, pdimFocus) }
+    pub unsafe fn AssociateFocus(&mut self, hwnd: HWND, pdimNew: *mut ITfDocumentMgr, ppdimPrev: *mut *mut ITfDocumentMgr) -> HRESULT { ((*self.lpVtbl).AssociateFocus.unwrap_unchecked())(self, hwnd, pdimNew, ppdimPrev) }
+    pub unsafe fn IsThreadFocus(&mut self, pfThreadFocus: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsThreadFocus.unwrap_unchecked())(self, pfThreadFocus) }
+    pub unsafe fn GetFunctionProvider(&mut self, clsid: *const CLSID, ppFuncProv: *mut *mut ITfFunctionProvider) -> HRESULT { ((*self.lpVtbl).GetFunctionProvider.unwrap_unchecked())(self, clsid, ppFuncProv) }
+    pub unsafe fn EnumFunctionProviders(&mut self, ppEnum: *mut *mut IEnumTfFunctionProviders) -> HRESULT { ((*self.lpVtbl).EnumFunctionProviders.unwrap_unchecked())(self, ppEnum) }
+    pub unsafe fn GetGlobalCompartment(&mut self, ppCompMgr: *mut *mut ITfCompartmentMgr) -> HRESULT { ((*self.lpVtbl).GetGlobalCompartment.unwrap_unchecked())(self, ppCompMgr) }
+    pub unsafe fn ActivateEx(&mut self, id: *mut TfClientId, flags: DWORD) -> HRESULT { ((*self.lpVtbl).ActivateEx.unwrap_unchecked())(self, id, flags) }
+    pub unsafe fn GetActiveFlags(&mut self, flags: *mut DWORD) -> HRESULT { ((*self.lpVtbl).GetActiveFlags.unwrap_unchecked())(self, flags) }
 }
 impl ITfTransitoryExtensionSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnTransitoryExtensionUpdated(&mut self, pic: *mut ITfContext, ecReadOnly: TfEditCookie, pResultRange: *mut ITfRange, pCompositionRange: *mut ITfRange, pfDeleteResultRange: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTransitoryExtensionUpdated.unwrap())(self, pic, ecReadOnly, pResultRange, pCompositionRange, pfDeleteResultRange) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnTransitoryExtensionUpdated(&mut self, pic: *mut ITfContext, ecReadOnly: TfEditCookie, pResultRange: *mut ITfRange, pCompositionRange: *mut ITfRange, pfDeleteResultRange: *mut BOOL) -> HRESULT { ((*self.lpVtbl).OnTransitoryExtensionUpdated.unwrap_unchecked())(self, pic, ecReadOnly, pResultRange, pCompositionRange, pfDeleteResultRange) }
 }
 impl ITfUIElement {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetDescription(&mut self, description: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap())(self, description) }
-    pub unsafe fn GetGUID(&mut self, guid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap())(self, guid) }
-    pub unsafe fn Show(&mut self, show: BOOL) -> HRESULT { ((*self.lpVtbl).Show.unwrap())(self, show) }
-    pub unsafe fn IsShown(&mut self, show: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsShown.unwrap())(self, show) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetDescription(&mut self, description: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDescription.unwrap_unchecked())(self, description) }
+    pub unsafe fn GetGUID(&mut self, guid: *mut GUID) -> HRESULT { ((*self.lpVtbl).GetGUID.unwrap_unchecked())(self, guid) }
+    pub unsafe fn Show(&mut self, show: BOOL) -> HRESULT { ((*self.lpVtbl).Show.unwrap_unchecked())(self, show) }
+    pub unsafe fn IsShown(&mut self, show: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsShown.unwrap_unchecked())(self, show) }
 }
 impl ITfUIElementMgr {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn BeginUIElement(&mut self, element: *mut ITfUIElement, show: *mut BOOL, id: *mut DWORD) -> HRESULT { ((*self.lpVtbl).BeginUIElement.unwrap())(self, element, show, id) }
-    pub unsafe fn UpdateUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).UpdateUIElement.unwrap())(self, id) }
-    pub unsafe fn EndUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).EndUIElement.unwrap())(self, id) }
-    pub unsafe fn GetUIElement(&mut self, id: DWORD, element: *mut *mut ITfUIElement) -> HRESULT { ((*self.lpVtbl).GetUIElement.unwrap())(self, id, element) }
-    pub unsafe fn EnumUIElements(&mut self, enum_elements: *mut *mut IEnumTfUIElements) -> HRESULT { ((*self.lpVtbl).EnumUIElements.unwrap())(self, enum_elements) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn BeginUIElement(&mut self, element: *mut ITfUIElement, show: *mut BOOL, id: *mut DWORD) -> HRESULT { ((*self.lpVtbl).BeginUIElement.unwrap_unchecked())(self, element, show, id) }
+    pub unsafe fn UpdateUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).UpdateUIElement.unwrap_unchecked())(self, id) }
+    pub unsafe fn EndUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).EndUIElement.unwrap_unchecked())(self, id) }
+    pub unsafe fn GetUIElement(&mut self, id: DWORD, element: *mut *mut ITfUIElement) -> HRESULT { ((*self.lpVtbl).GetUIElement.unwrap_unchecked())(self, id, element) }
+    pub unsafe fn EnumUIElements(&mut self, enum_elements: *mut *mut IEnumTfUIElements) -> HRESULT { ((*self.lpVtbl).EnumUIElements.unwrap_unchecked())(self, enum_elements) }
 }
 impl ITfUIElementSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn BeginUIElement(&mut self, id: DWORD, show: *mut BOOL) -> HRESULT { ((*self.lpVtbl).BeginUIElement.unwrap())(self, id, show) }
-    pub unsafe fn UpdateUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).UpdateUIElement.unwrap())(self, id) }
-    pub unsafe fn EndUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).EndUIElement.unwrap())(self, id) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn BeginUIElement(&mut self, id: DWORD, show: *mut BOOL) -> HRESULT { ((*self.lpVtbl).BeginUIElement.unwrap_unchecked())(self, id, show) }
+    pub unsafe fn UpdateUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).UpdateUIElement.unwrap_unchecked())(self, id) }
+    pub unsafe fn EndUIElement(&mut self, id: DWORD) -> HRESULT { ((*self.lpVtbl).EndUIElement.unwrap_unchecked())(self, id) }
 }
 impl ITypeComp {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn Bind(&mut self, szName: LPOLESTR, lHashVal: ULONG, wFlags: WORD, ppTInfo: *mut *mut ITypeInfo, pDescKind: *mut DESCKIND, pBindPtr: *mut BINDPTR) -> HRESULT { ((*self.lpVtbl).Bind.unwrap())(self, szName, lHashVal, wFlags, ppTInfo, pDescKind, pBindPtr) }
-    pub unsafe fn BindType(&mut self, szName: LPOLESTR, lHashVal: ULONG, ppTInfo: *mut *mut ITypeInfo, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).BindType.unwrap())(self, szName, lHashVal, ppTInfo, ppTComp) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn Bind(&mut self, szName: LPOLESTR, lHashVal: ULONG, wFlags: WORD, ppTInfo: *mut *mut ITypeInfo, pDescKind: *mut DESCKIND, pBindPtr: *mut BINDPTR) -> HRESULT { ((*self.lpVtbl).Bind.unwrap_unchecked())(self, szName, lHashVal, wFlags, ppTInfo, pDescKind, pBindPtr) }
+    pub unsafe fn BindType(&mut self, szName: LPOLESTR, lHashVal: ULONG, ppTInfo: *mut *mut ITypeInfo, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).BindType.unwrap_unchecked())(self, szName, lHashVal, ppTInfo, ppTComp) }
 }
 impl ITypeInfo {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetTypeAttr(&mut self, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT { ((*self.lpVtbl).GetTypeAttr.unwrap())(self, ppTypeAttr) }
-    pub unsafe fn GetTypeComp(&mut self, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).GetTypeComp.unwrap())(self, ppTComp) }
-    pub unsafe fn GetFuncDesc(&mut self, index: UINT, ppFuncDesc: *mut *mut FUNCDESC) -> HRESULT { ((*self.lpVtbl).GetFuncDesc.unwrap())(self, index, ppFuncDesc) }
-    pub unsafe fn GetVarDesc(&mut self, index: UINT, ppVarDesc: *mut *mut VARDESC) -> HRESULT { ((*self.lpVtbl).GetVarDesc.unwrap())(self, index, ppVarDesc) }
-    pub unsafe fn GetNames(&mut self, memid: MEMBERID, rgBstrNames: *mut BSTR, cMaxNames: UINT, pcNames: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetNames.unwrap())(self, memid, rgBstrNames, cMaxNames, pcNames) }
-    pub unsafe fn GetRefTypeOfImplType(&mut self, index: UINT, pRefType: *mut HREFTYPE) -> HRESULT { ((*self.lpVtbl).GetRefTypeOfImplType.unwrap())(self, index, pRefType) }
-    pub unsafe fn GetImplTypeFlags(&mut self, index: UINT, pImplTypeFlags: *mut INT) -> HRESULT { ((*self.lpVtbl).GetImplTypeFlags.unwrap())(self, index, pImplTypeFlags) }
-    pub unsafe fn GetIDsOfNames(&mut self, rgszNames: *mut LPOLESTR, cNames: UINT, pMemId: *mut MEMBERID) -> HRESULT { ((*self.lpVtbl).GetIDsOfNames.unwrap())(self, rgszNames, cNames, pMemId) }
-    pub unsafe fn Invoke(&mut self, pvInstance: PVOID, memid: MEMBERID, wFlags: WORD, pDispParams: *mut DISPPARAMS, pVarResult: *mut VARIANT, pExcepInfo: *mut EXCEPINFO, puArgErr: *mut UINT) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap())(self, pvInstance, memid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr) }
-    pub unsafe fn GetDocumentation(&mut self, memid: MEMBERID, pBstrName: *mut BSTR, pBstrDocString: *mut BSTR, pdwHelpContext: *mut DWORD, pBstrHelpFile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDocumentation.unwrap())(self, memid, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile) }
-    pub unsafe fn GetDllEntry(&mut self, memid: MEMBERID, invKind: INVOKEKIND, pBstrDllName: *mut BSTR, pBstrName: *mut BSTR, pwOrdinal: *mut WORD) -> HRESULT { ((*self.lpVtbl).GetDllEntry.unwrap())(self, memid, invKind, pBstrDllName, pBstrName, pwOrdinal) }
-    pub unsafe fn GetRefTypeInfo(&mut self, hRefType: HREFTYPE, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetRefTypeInfo.unwrap())(self, hRefType, ppTInfo) }
-    pub unsafe fn AddressOfMember(&mut self, memid: MEMBERID, invKind: INVOKEKIND, ppv: *mut PVOID) -> HRESULT { ((*self.lpVtbl).AddressOfMember.unwrap())(self, memid, invKind, ppv) }
-    pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObj: *mut PVOID) -> HRESULT { ((*self.lpVtbl).CreateInstance.unwrap())(self, pUnkOuter, riid, ppvObj) }
-    pub unsafe fn GetMops(&mut self, memid: MEMBERID, pBstrMops: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetMops.unwrap())(self, memid, pBstrMops) }
-    pub unsafe fn GetContainingTypeLib(&mut self, ppTLib: *mut *mut ITypeLib, pIndex: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetContainingTypeLib.unwrap())(self, ppTLib, pIndex) }
-    pub unsafe fn ReleaseTypeAttr(&mut self, pTypeAttr: *mut TYPEATTR) { ((*self.lpVtbl).ReleaseTypeAttr.unwrap())(self, pTypeAttr) }
-    pub unsafe fn ReleaseFuncDesc(&mut self, pFuncDesc: *mut FUNCDESC) { ((*self.lpVtbl).ReleaseFuncDesc.unwrap())(self, pFuncDesc) }
-    pub unsafe fn ReleaseVarDesc(&mut self, pVarDesc: *mut VARDESC) { ((*self.lpVtbl).ReleaseVarDesc.unwrap())(self, pVarDesc) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetTypeAttr(&mut self, ppTypeAttr: *mut *mut TYPEATTR) -> HRESULT { ((*self.lpVtbl).GetTypeAttr.unwrap_unchecked())(self, ppTypeAttr) }
+    pub unsafe fn GetTypeComp(&mut self, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).GetTypeComp.unwrap_unchecked())(self, ppTComp) }
+    pub unsafe fn GetFuncDesc(&mut self, index: UINT, ppFuncDesc: *mut *mut FUNCDESC) -> HRESULT { ((*self.lpVtbl).GetFuncDesc.unwrap_unchecked())(self, index, ppFuncDesc) }
+    pub unsafe fn GetVarDesc(&mut self, index: UINT, ppVarDesc: *mut *mut VARDESC) -> HRESULT { ((*self.lpVtbl).GetVarDesc.unwrap_unchecked())(self, index, ppVarDesc) }
+    pub unsafe fn GetNames(&mut self, memid: MEMBERID, rgBstrNames: *mut BSTR, cMaxNames: UINT, pcNames: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetNames.unwrap_unchecked())(self, memid, rgBstrNames, cMaxNames, pcNames) }
+    pub unsafe fn GetRefTypeOfImplType(&mut self, index: UINT, pRefType: *mut HREFTYPE) -> HRESULT { ((*self.lpVtbl).GetRefTypeOfImplType.unwrap_unchecked())(self, index, pRefType) }
+    pub unsafe fn GetImplTypeFlags(&mut self, index: UINT, pImplTypeFlags: *mut INT) -> HRESULT { ((*self.lpVtbl).GetImplTypeFlags.unwrap_unchecked())(self, index, pImplTypeFlags) }
+    pub unsafe fn GetIDsOfNames(&mut self, rgszNames: *mut LPOLESTR, cNames: UINT, pMemId: *mut MEMBERID) -> HRESULT { ((*self.lpVtbl).GetIDsOfNames.unwrap_unchecked())(self, rgszNames, cNames, pMemId) }
+    pub unsafe fn Invoke(&mut self, pvInstance: PVOID, memid: MEMBERID, wFlags: WORD, pDispParams: *mut DISPPARAMS, pVarResult: *mut VARIANT, pExcepInfo: *mut EXCEPINFO, puArgErr: *mut UINT) -> HRESULT { ((*self.lpVtbl).Invoke.unwrap_unchecked())(self, pvInstance, memid, wFlags, pDispParams, pVarResult, pExcepInfo, puArgErr) }
+    pub unsafe fn GetDocumentation(&mut self, memid: MEMBERID, pBstrName: *mut BSTR, pBstrDocString: *mut BSTR, pdwHelpContext: *mut DWORD, pBstrHelpFile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDocumentation.unwrap_unchecked())(self, memid, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile) }
+    pub unsafe fn GetDllEntry(&mut self, memid: MEMBERID, invKind: INVOKEKIND, pBstrDllName: *mut BSTR, pBstrName: *mut BSTR, pwOrdinal: *mut WORD) -> HRESULT { ((*self.lpVtbl).GetDllEntry.unwrap_unchecked())(self, memid, invKind, pBstrDllName, pBstrName, pwOrdinal) }
+    pub unsafe fn GetRefTypeInfo(&mut self, hRefType: HREFTYPE, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetRefTypeInfo.unwrap_unchecked())(self, hRefType, ppTInfo) }
+    pub unsafe fn AddressOfMember(&mut self, memid: MEMBERID, invKind: INVOKEKIND, ppv: *mut PVOID) -> HRESULT { ((*self.lpVtbl).AddressOfMember.unwrap_unchecked())(self, memid, invKind, ppv) }
+    pub unsafe fn CreateInstance(&mut self, pUnkOuter: *mut IUnknown, riid: *const IID, ppvObj: *mut PVOID) -> HRESULT { ((*self.lpVtbl).CreateInstance.unwrap_unchecked())(self, pUnkOuter, riid, ppvObj) }
+    pub unsafe fn GetMops(&mut self, memid: MEMBERID, pBstrMops: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetMops.unwrap_unchecked())(self, memid, pBstrMops) }
+    pub unsafe fn GetContainingTypeLib(&mut self, ppTLib: *mut *mut ITypeLib, pIndex: *mut UINT) -> HRESULT { ((*self.lpVtbl).GetContainingTypeLib.unwrap_unchecked())(self, ppTLib, pIndex) }
+    pub unsafe fn ReleaseTypeAttr(&mut self, pTypeAttr: *mut TYPEATTR) { ((*self.lpVtbl).ReleaseTypeAttr.unwrap_unchecked())(self, pTypeAttr) }
+    pub unsafe fn ReleaseFuncDesc(&mut self, pFuncDesc: *mut FUNCDESC) { ((*self.lpVtbl).ReleaseFuncDesc.unwrap_unchecked())(self, pFuncDesc) }
+    pub unsafe fn ReleaseVarDesc(&mut self, pVarDesc: *mut VARDESC) { ((*self.lpVtbl).ReleaseVarDesc.unwrap_unchecked())(self, pVarDesc) }
 }
 impl ITypeLib {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn GetTypeInfoCount(&mut self) -> UINT { ((*self.lpVtbl).GetTypeInfoCount.unwrap())(self) }
-    pub unsafe fn GetTypeInfo(&mut self, index: UINT, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap())(self, index, ppTInfo) }
-    pub unsafe fn GetTypeInfoType(&mut self, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT { ((*self.lpVtbl).GetTypeInfoType.unwrap())(self, index, pTKind) }
-    pub unsafe fn GetTypeInfoOfGuid(&mut self, guid: *const GUID, ppTinfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfoOfGuid.unwrap())(self, guid, ppTinfo) }
-    pub unsafe fn GetLibAttr(&mut self, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT { ((*self.lpVtbl).GetLibAttr.unwrap())(self, ppTLibAttr) }
-    pub unsafe fn GetTypeComp(&mut self, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).GetTypeComp.unwrap())(self, ppTComp) }
-    pub unsafe fn GetDocumentation(&mut self, index: INT, pBstrName: *mut BSTR, pBstrDocString: *mut BSTR, pdwHelpContext: *mut DWORD, pBstrHelpFile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDocumentation.unwrap())(self, index, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile) }
-    pub unsafe fn IsName(&mut self, szNameBuf: LPOLESTR, lHashVal: ULONG, pfName: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsName.unwrap())(self, szNameBuf, lHashVal, pfName) }
-    pub unsafe fn FindName(&mut self, szNameBuf: LPOLESTR, lHashVal: ULONG, ppTInfo: *mut *mut ITypeInfo, rgMemId: *mut MEMBERID, pcFound: *mut USHORT) -> HRESULT { ((*self.lpVtbl).FindName.unwrap())(self, szNameBuf, lHashVal, ppTInfo, rgMemId, pcFound) }
-    pub unsafe fn ReleaseTLibAttr(&mut self, pTLibAttr: *mut TLIBATTR) { ((*self.lpVtbl).ReleaseTLibAttr.unwrap())(self, pTLibAttr) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn GetTypeInfoCount(&mut self) -> UINT { ((*self.lpVtbl).GetTypeInfoCount.unwrap_unchecked())(self) }
+    pub unsafe fn GetTypeInfo(&mut self, index: UINT, ppTInfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfo.unwrap_unchecked())(self, index, ppTInfo) }
+    pub unsafe fn GetTypeInfoType(&mut self, index: UINT, pTKind: *mut TYPEKIND) -> HRESULT { ((*self.lpVtbl).GetTypeInfoType.unwrap_unchecked())(self, index, pTKind) }
+    pub unsafe fn GetTypeInfoOfGuid(&mut self, guid: *const GUID, ppTinfo: *mut *mut ITypeInfo) -> HRESULT { ((*self.lpVtbl).GetTypeInfoOfGuid.unwrap_unchecked())(self, guid, ppTinfo) }
+    pub unsafe fn GetLibAttr(&mut self, ppTLibAttr: *mut *mut TLIBATTR) -> HRESULT { ((*self.lpVtbl).GetLibAttr.unwrap_unchecked())(self, ppTLibAttr) }
+    pub unsafe fn GetTypeComp(&mut self, ppTComp: *mut *mut ITypeComp) -> HRESULT { ((*self.lpVtbl).GetTypeComp.unwrap_unchecked())(self, ppTComp) }
+    pub unsafe fn GetDocumentation(&mut self, index: INT, pBstrName: *mut BSTR, pBstrDocString: *mut BSTR, pdwHelpContext: *mut DWORD, pBstrHelpFile: *mut BSTR) -> HRESULT { ((*self.lpVtbl).GetDocumentation.unwrap_unchecked())(self, index, pBstrName, pBstrDocString, pdwHelpContext, pBstrHelpFile) }
+    pub unsafe fn IsName(&mut self, szNameBuf: LPOLESTR, lHashVal: ULONG, pfName: *mut BOOL) -> HRESULT { ((*self.lpVtbl).IsName.unwrap_unchecked())(self, szNameBuf, lHashVal, pfName) }
+    pub unsafe fn FindName(&mut self, szNameBuf: LPOLESTR, lHashVal: ULONG, ppTInfo: *mut *mut ITypeInfo, rgMemId: *mut MEMBERID, pcFound: *mut USHORT) -> HRESULT { ((*self.lpVtbl).FindName.unwrap_unchecked())(self, szNameBuf, lHashVal, ppTInfo, rgMemId, pcFound) }
+    pub unsafe fn ReleaseTLibAttr(&mut self, pTLibAttr: *mut TLIBATTR) { ((*self.lpVtbl).ReleaseTLibAttr.unwrap_unchecked())(self, pTLibAttr) }
 }
 impl IUIManagerEventSink {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
-    pub unsafe fn OnWindowOpening(&mut self, prcBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowOpening.unwrap())(self, prcBounds) }
-    pub unsafe fn OnWindowOpened(&mut self, prcBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowOpened.unwrap())(self, prcBounds) }
-    pub unsafe fn OnWindowUpdating(&mut self, prcUpdatedBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowUpdating.unwrap())(self, prcUpdatedBounds) }
-    pub unsafe fn OnWindowUpdated(&mut self, prcUpdatedBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowUpdated.unwrap())(self, prcUpdatedBounds) }
-    pub unsafe fn OnWindowClosing(&mut self) -> HRESULT { ((*self.lpVtbl).OnWindowClosing.unwrap())(self) }
-    pub unsafe fn OnWindowClosed(&mut self) -> HRESULT { ((*self.lpVtbl).OnWindowClosed.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
+    pub unsafe fn OnWindowOpening(&mut self, prcBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowOpening.unwrap_unchecked())(self, prcBounds) }
+    pub unsafe fn OnWindowOpened(&mut self, prcBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowOpened.unwrap_unchecked())(self, prcBounds) }
+    pub unsafe fn OnWindowUpdating(&mut self, prcUpdatedBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowUpdating.unwrap_unchecked())(self, prcUpdatedBounds) }
+    pub unsafe fn OnWindowUpdated(&mut self, prcUpdatedBounds: *mut RECT) -> HRESULT { ((*self.lpVtbl).OnWindowUpdated.unwrap_unchecked())(self, prcUpdatedBounds) }
+    pub unsafe fn OnWindowClosing(&mut self) -> HRESULT { ((*self.lpVtbl).OnWindowClosing.unwrap_unchecked())(self) }
+    pub unsafe fn OnWindowClosed(&mut self) -> HRESULT { ((*self.lpVtbl).OnWindowClosed.unwrap_unchecked())(self) }
 }
 impl IUnknown {
-    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap())(self, riid, ppvObject) }
-    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap())(self) }
-    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap())(self) }
+    pub unsafe fn QueryInterface(&mut self, riid: *const IID, ppvObject: *mut *mut ::core::ffi::c_void) -> HRESULT { ((*self.lpVtbl).QueryInterface.unwrap_unchecked())(self, riid, ppvObject) }
+    pub unsafe fn AddRef(&mut self) -> ULONG { ((*self.lpVtbl).AddRef.unwrap_unchecked())(self) }
+    pub unsafe fn Release(&mut self) -> ULONG { ((*self.lpVtbl).Release.unwrap_unchecked())(self) }
 }
 
 pub static mut g_ModeBiasMap: [MODEBIAS; 5] = [

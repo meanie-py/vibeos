@@ -14,9 +14,10 @@ pub use core::ptr::{addr_of, addr_of_mut};
 // out-of-line fns: an out-of-line no-op is an optimization barrier that uncloaks latent
 // ABI mismatches into ud2 (field manual §9.65).
 #[macro_export] macro_rules! TRACE { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => {{}}; }
+// ERR/FIXME print in this DBG=1 tree, as every other wine crate's do (legide, ole32).
+#[macro_export] macro_rules! ERR   { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
 #[macro_export] macro_rules! WARN  { ($($arg:tt)*) => {{}}; }
-#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => {{}}; }
+#[macro_export] macro_rules! FIXME { ($($arg:tt)*) => { ::win32macros_rust::DPRINT1!($($arg)*) }; }
 pub use crate::{ERR, FIXME, TRACE, WARN};
 
 // ================= ATL ========================================================================

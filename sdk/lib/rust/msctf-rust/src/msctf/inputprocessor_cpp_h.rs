@@ -644,7 +644,9 @@ impl CProfilesEnumGuid {
         }
     
         if !(*this_).m_key.is_null() {
-            while fetched < celt {
+            // nolint: dowhile-continue -- as in the C++: a key that is no CLSID is skipped and the
+            // next one is read into the same rgelt slot.
+            while fetched < celt { // nolint: dowhile-continue
                 let mut error: LSTATUS;
                 let mut hr: HRESULT;
                 let mut catid: [u16; 39] = [0; 39];

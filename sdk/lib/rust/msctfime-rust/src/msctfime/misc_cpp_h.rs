@@ -57,7 +57,7 @@ pub unsafe extern "C" fn DllShutdownInProgress() -> BOOLEAN {
     let mut hNTDLL: HMODULE;
 
     if s_fnDllShutdownInProgress.is_some() {
-        return s_fnDllShutdownInProgress.unwrap()();
+        return s_fnDllShutdownInProgress.unwrap_unchecked()();
     }
 
     hNTDLL = cicGetSystemModuleHandle(CPP_COM_WSTR_80073828D8A0.as_ptr(), (FALSE) as BOOL);
@@ -68,7 +68,7 @@ pub unsafe extern "C" fn DllShutdownInProgress() -> BOOLEAN {
         return (FALSE) as BOOLEAN;
     }
 
-    return s_fnDllShutdownInProgress.unwrap()();
+    return s_fnDllShutdownInProgress.unwrap_unchecked()();
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsInteractiveUserLogon() -> BOOL {
@@ -113,7 +113,7 @@ pub unsafe extern "C" fn MsimtfIsGuidMapEnable(hIMC: HIMC, pbValue: LPBOOL) -> B
     if cicGetFN(core::ptr::addr_of_mut!(g_hMSIMTF), core::ptr::addr_of_mut!(s_fn), CPP_COM_WSTR_97C62B2764B1.as_ptr(), b"MsimtfIsGuidMapEnable\0".as_ptr() as *const i8) == 0 {
         return (FALSE) as BOOL;
     }
-    return s_fn.unwrap()(hIMC, pbValue);
+    return s_fn.unwrap_unchecked()(hIMC, pbValue); // cicGetFN just checked it
 }
 #[no_mangle]
 pub unsafe extern "C" fn IsVKDBEKey(uVirtKey: UINT) -> BOOL {

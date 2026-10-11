@@ -500,7 +500,9 @@ def _com_call_methods(island: str) -> list[str]:
             sig = ", ".join(["&mut self", *(f"{a}: {t}" for a, t in slot.params)])
             args = ", ".join(["self", *(a for a, _ in slot.params)])
             ret = f" -> {slot.ret}" if slot.ret else ""
-            fp = f"(*self.lpVtbl).{slot.name}" + (".unwrap()" if slot.optional else "")
+            # A null slot is the C++ call through a null pointer: undefined there too, so
+            # `unwrap_unchecked` (the tree's idiom), never a panic path C++ never had.
+            fp = f"(*self.lpVtbl).{slot.name}" + (".unwrap_unchecked()" if slot.optional else "")
             out.append(f"    pub unsafe fn {slot.name}({sig}){ret} {{ ({fp})({args}) }}")
         out.append("}")
     return out

@@ -17,7 +17,9 @@ impl CLoaderWnd {
     
         // Register a window class
         let mut wc: WNDCLASSEX = core::mem::zeroed();
-        core::ptr::write_bytes(core::ptr::addr_of_mut!(wc), 0, core::mem::size_of::<WNDCLASSEX>());
+        // ZeroMemory(&wc, sizeof(wc)): a BYTE count, so the pointer is a byte pointer (a
+        // *mut WNDCLASSEX would zero sizeof(WNDCLASSEX) ELEMENTS -- 80x the struct, on the stack).
+        core::ptr::write_bytes(core::ptr::addr_of_mut!(wc) as *mut u8, 0, core::mem::size_of::<WNDCLASSEX>());
         wc.cbSize = core::mem::size_of::<WNDCLASSEX>() as u32;
         wc.style = CS_HREDRAW | CS_VREDRAW;
         wc.hInstance = g_hInst;
