@@ -927,7 +927,11 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
         return Status;
     }
 
-    (*FdoExtension).Flags &= !USBPORT_FLAG_INT_CONNECTED;
+    // The C clears the flag here, so nothing ever disconnects the interrupt: a
+    // controller whose START fails below leaves its KINTERRUPT in the IDT after
+    // the HAL has given the vector back, and the next device handed that vector
+    // cannot connect to it (seen as scsiport's IDE line failing, then 0xA).
+    (*FdoExtension).Flags |= USBPORT_FLAG_INT_CONNECTED;
 
     if (*Packet).MiniPortExtensionSize != 0 {
         RtlZeroMemory(
@@ -986,9 +990,17 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
             (*FdoExtension).MiniPortCommonBuffer = core::ptr::null_mut();
         }
 
+        // The C returns Status here, which is still STATUS_SUCCESS, so PnP
+        // treats a controller whose miniport refused to start as started, and
+        // usbhub then waits forever for a root hub that never comes up. Fail
+        // the START instead.
+        DbgPrint(
+            b"[USBPORT] FDO start: miniport StartController failed (%x)\n\0".as_ptr() as PCSTR,
+            MiniPortStatus,
+        );
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
-        return Status;
+        return STATUS_UNSUCCESSFUL;
     } else {
         (*FdoExtension).MiniPortFlags |= USBPORT_MPFLAG_INTERRUPTS_ENABLED;
         USBPORT_MiniportInterrupts(FdoDevice, 1);
@@ -1005,6 +1017,13 @@ pub unsafe extern "system" fn USBPORT_StartDevice(
     );
 
     if !NT_SUCCESS(Status) {
+        // The timer and the interrupt both point into this FDO, which PnP
+        // deletes once the START fails.
+        ntkrnl_sys::ddk::KeCancelTimer(core::ptr::addr_of_mut!((*FdoExtension).TimerObject) as _);
+        USBPORT_MiniportInterrupts(FdoDevice, 0);
+        (*FdoExtension).MiniPortFlags &= !USBPORT_MPFLAG_INTERRUPTS_ENABLED;
+        IoDisconnectInterrupt((*FdoExtension).InterruptObject);
+        (*FdoExtension).Flags &= !USBPORT_FLAG_INT_CONNECTED;
         USBPORT_StopWorkerThread(FdoDevice);
         USBPORT_StopDevice(FdoDevice);
         return Status;
