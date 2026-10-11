@@ -491,6 +491,7 @@ members = [
     "progman-rust",
     "svchost-rust",
     "kbdlayouts-rust",
+    "e1000-rust",
 ]
 resolver = "2"
 

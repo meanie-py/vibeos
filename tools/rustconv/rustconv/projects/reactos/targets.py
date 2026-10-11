@@ -560,6 +560,22 @@ TARGETS = {
         cmake_source_files=[],
         arches=("i386", "amd64", "arm64"),
     ),
+    # e1000.sys — the Intel PRO/1000 NDIS 5 miniport (drivers/network/dd/e1000, ~1.9K LOC,
+    # 6 .c). Imports ndis/ntoskrnl/hal only. Runtime: `--payload ndisprobe` (QEMU e1000
+    # 82544GC); the OptiPlex bench's I217-LM is the reason it is being ported. No spec.
+    "e1000": Target(
+        name="e1000",
+        source_dir=REACTOS_ROOT / "drivers" / "network" / "dd" / "e1000",
+        output_crate=RUST_DIR / "e1000-rust",
+        bindgen_files=BINDGEN_FILES,
+        hal_bindgen_files={},
+        spec_file=None,
+        system_prompt=TEMPLATES_DIR / "system_prompt.md",
+        src_subdir=Path("src"),
+        cmake_deps_file=None,
+        cmake_source_files=[],
+        arches=("i386", "amd64", "arm64"),
+    ),
     # legide.sys — upstream's legacy (ISA-port) PATA bus enumerator, i386 only
     # (drivers/storage/ide/legide, 1 .c). A pciidex client like pciide; part of the same
     # new ATA stack as pciidex/atapi. No spec.

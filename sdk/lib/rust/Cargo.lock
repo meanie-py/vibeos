@@ -803,6 +803,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "e1000-rust"
+version = "0.1.0"
+dependencies = [
+ "conutils-h",
+ "ntkrnl-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "encode"
 version = "0.1.0"
 

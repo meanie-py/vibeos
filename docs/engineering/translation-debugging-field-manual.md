@@ -2917,6 +2917,21 @@ x86 ramdisk until conformance's writable root did. **Fix:** declare the union as
 assert the size per target against C's own `sizeof` (the pinned clang compiles a two-line
 `_Static_assert` for each triple in a second).
 
+### A union with a pointer member is 4 bytes bigger on 64-bit than its widest data member
+
+**Symptom.** Special pool `BUGCHECK 0xC1` (P4 `0x24`, the first bad byte just past a 36-byte
+block) at `OutputBounce::finish` in `NtQueryInformationProcess`; the OptiPlex hit it a minute
+after boot, from `GetLogicalDrives`. Without special pool nothing notices: pool rounds 36 to 48.
+
+**Cause.** `PROCESS_DEVICEMAP_INFORMATION` is a union of `Set { HANDLE }` and
+`Query { ULONG DriveMap; UCHAR DriveType[32]; }`. On 32-bit both arms fit 36 bytes; on 64-bit
+the HANDLE's 8-byte alignment pads the union to 40. Callers pass `sizeof(Query)` (36), and
+`NtQueryInformationProcess` checks exactly that, but `ObQueryDeviceMapInformation` (C and Rust
+alike) copied `sizeof(PROCESS_DEVICEMAP_INFORMATION)` out: 4 bytes past the buffer, 64-bit only.
+
+**Fix.** Copy the member the caller sized (`Query`), not the union. When a buffer's length is
+checked against one arm of a union, any copy into it must be bounded by that arm.
+
 ### `size_of` on an aliased import measures the alias, not the C type
 **Symptom.** pci.sys asked the x86 HAL for a device's whole 256-byte config space to walk
 its capability list, and got 64 bytes back, so every capability looked absent. Nothing
@@ -5481,6 +5496,25 @@ is the one §9.117 already prescribes for shared helpers: enumerate every call t
 both sides and diff the argument lists as a table. Here that is three rows and the odd one out is
 immediate — `grep -c GetKeyState` gives 3 in the C and 3 live in the Rust, but the ARGUMENTS
 differ.
+
+### A lowered SDK macro lost its `volatile`, its `Option<fn>`, or a field it never had
+
+Three classes `rustconv port macros` / `postprocess` shipped into e1000-rust's first pass
+(2026-10-11), each fixed in the tool rather than the site:
+
+- **`volatile` dropped.** ndis.h's `NdisReadRegisterUlong` is `*(Data) = *((volatile ULONG *
+  const)(Register))`; `sdk_macros` parsed the cast and discarded the qualifier, so a device
+  register read became a plain load LLVM may merge or hoist out of a poll loop. A dereference of
+  a cast to `volatile T *` now lowers to `core::ptr::read_volatile`, an assignment through one to
+  `write_volatile`.
+- **A call through a struct member.** `(*Block->StatusHandler)(...)` (NdisMIndicateStatus and
+  friends) lowered to `(*(..).StatusHandler)(..)`, E0614 on bindgen's `Option<fn>`. Any call whose
+  callee is a member now lowers to `.unwrap_unchecked()(..)`; this subsumes the old WIDL
+  `lpVtbl->Method(` regex.
+- **`.Status` rewritten blindly.** `postprocess` turned every `.Status` into
+  `.__bindgen_anon_1.Status` for IO_STATUS_BLOCK, breaking e1000's descriptor `Status` byte
+  (9 x E0609). The rewrite is gone; crate-repair's `anon_union_field` routes the real union
+  accesses from the island's own types.
 
 ### An unexpanded Win32 macro silently shrinks the translation plan `[§9.128]`
 `EXTERN_C` is `#define EXTERN_C extern "C"` (C++) / `extern` (C). tree-sitter knows neither, so it
@@ -13953,6 +13987,19 @@ per-boot over the fw_cfg channel — **no media rebuild**:
 `./vibeos-cli smoke --arch amd64 --tripwire "SPECIALPOOL=Gla5"` (or `SPECIALPOOL=*`). For a rare
 flake use `farm` + `farm-report`, never a hand-rolled boot loop.
 
+**On real hardware**, which has no fw_cfg, the same config rides a `/TRIPWIRE=` boot option, tokens
+separated by commas (`/TRIPWIRE=SPECIALPOOL=*,QUIET`): the OptiPlex bench takes it as
+`OPTIPLEX_TRIPWIRE='SPECIALPOOL=*' tools/optiplex/netboot.sh`. The key matches in either case;
+the loader may upper-case options, so prefer `*` to a mixed-case tag. That is how the USB-hub
+use-after-free below was caught on the board after two unarmed crashes had pointed at
+`ObfReferenceObject` on garbage.
+
+**`ExReturnPoolQuota` must skip special-pool blocks.** An overrun-mode special-pool block has fill
+pattern in front of it, not a pool header; read as a header it could claim quota, and the
+quota-pointer read then ran past the block onto the guard page: `0x50` in `ExReturnPoolQuota`
+from `IoFreeIrp` on any `SPECIALPOOL=*` boot that freed a quota-charged IRP. It now returns early
+for `MmIsSpecialPoolAddress`, as `ExFreePoolWithTag` already did.
+
 **Require `special pool ACTIVE (routing verified)` on serial — `ACTIVE` alone used to be a lie.**
 Symptom: special pool armed, initialized, announced ACTIVE, and caught nothing; the stop code
 came back bit-identical to the un-armed run and the `[POOL]` page walk showed ordinary pool
@@ -14173,6 +14220,38 @@ introduced at any heap exit — it is an external stray write.**
   kbdclass, mouclass, hidclass, fastfat, afd and others use the same copy.
 - **Fix:** the flag check, matching `inline::mm`. **Two ports of one header inline in one
   crate drift; when a Rust file reimplements a WDK inline, diff it against the header.**
+
+### A driver that failed START bugchecks 0xA in its own ISR, at device IRQL, minutes later
+
+**Symptom.** `BUGCHECK 0xA` with P2 = a device IRQL (0xb) and P4 in the driver's interrupt
+routine, reading an address that is no longer mapped; the driver itself had failed START long
+before (the OptiPlex's `hdaudbus`, "unable to exit reset").
+
+**Cause.** The remove path unmapped the registers and only then disconnected the interrupt. On a
+shared level-triggered line any sibling's interrupt in that window calls the ISR, which reads
+its status register through the stale mapping.
+
+**Fix.** Disconnect first, then unmap, and null both. Check every remove/stop path that tears
+down an ISR's data in this order; a device that never starts is exactly the one that runs it.
+
+### A USB device fails START, and a moment later the box bugchecks in PnP (0x50 / 0x1E)
+
+**Symptom.** A device's `[DA] START ... -> 0xc000009a` (any failure), then on the next
+enumeration of its parent `BUGCHECK 0x1E` in `ObfReferenceObject` from `PiDevNodeStateMachine`,
+or, with special pool armed, `0x50` reading freed memory in `IopQueueTargetDeviceEvent`. Seen on
+the OptiPlex with a USB 3 hub whose SuperSpeed half usbhub cannot start.
+
+**Cause.** A device node that fails START is removed while still present: PnP sends REMOVE and
+`IopSendRemoveDevice` drops the node's reference on its PDO, while the bus driver keeps the PDO.
+usbhub then re-enumerates the port with a NEW PDO, so the old node is "gone" and gets a second
+REMOVE. The bus driver deletes the PDO, and `IopSendRemoveDevice` drops the node's reference a
+SECOND time; that frees the PDO and its device node inside `IopRemoveDevice`, whose next line
+reads the freed `InstancePath`. Upstream's C has the same double drop.
+
+**Fix.** The node owns one reference and drops it once: `DNF_PDO_REFERENCE_DROPPED` (a
+VibeOS-private top bit) in `pnpmgr-rust/src/devaction.rs`. QEMU never reproduced it, because
+its usb-hub path does not re-create the PDO after a failed start: inject the failure there and
+the box survives. Verify on the board.
 
 ### A device driver's start hangs the box right after `[GIC] unhandled INTID N`
 - **Symptom:** one `[GIC] unhandled INTID N fired, no ISR claimed it` with a GIC dump showing

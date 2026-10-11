@@ -3,8 +3,9 @@
 //! The harness passes `-fw_cfg name=opt/org.vibeos.tripwire,string=<cfg>` and the
 //! kernel reads it during MmArmInitSystem Phase 0, *before* system-PTE sizing and
 //! MiInitializeSpecialPool. No boot media rebuild, works on every backend
-//! (native / windows-host TCG / WHPX). On real hardware or a QEMU run without the
-//! knob this is a no-op (fw_cfg signature probe fails / file absent).
+//! (native / windows-host TCG / WHPX). Real hardware has no fw_cfg; there the same
+//! config comes from a `/TRIPWIRE=` boot option (`from_load_options`). Without
+//! either this is a no-op.
 //!
 //! Config grammar (space/semicolon-separated KEY=VAL tokens, no commas — QEMU's
 //! -fw_cfg parser owns the comma):
@@ -382,13 +383,21 @@ static mut TRIPWIRE_COPY: TripwireCopy = TripwireCopy { len: 0, bytes: [0; CFG_M
 
 /// Called at the top of MmArmInitSystem Phase 0 — before system-PTE sizing and
 /// MiInitializeSpecialPool, so an armed MmSpecialPoolTag influences both.
-pub unsafe fn vibe_tripwire_init() {
+pub unsafe fn vibe_tripwire_init(load_options: *const u8) {
     let mut cfg = [0u8; CFG_MAX];
-    let Some(n) = fwcfg::read_file(TRIPWIRE_FILE, &mut cfg) else {
-        return; // no fw_cfg / no tripwire file — normal boot
+    let n = match fwcfg::read_file(TRIPWIRE_FILE, &mut cfg) {
+        Some(n) => {
+            DbgPrint(b"[TRIPWIRE] config received (%lu bytes)\n\0".as_ptr(), n as u32);
+            n
+        }
+        None => match from_load_options(load_options, &mut cfg) {
+            Some(n) => {
+                DbgPrint(b"[TRIPWIRE] config from the boot options (%lu bytes)\n\0".as_ptr(), n as u32);
+                n
+            }
+            None => return, // no tripwire — normal boot
+        },
     };
-
-    DbgPrint(b"[TRIPWIRE] config received (%lu bytes)\n\0".as_ptr(), n as u32);
     let copy = core::ptr::addr_of_mut!(TRIPWIRE_COPY);
     core::ptr::copy_nonoverlapping(cfg.as_ptr(), (*copy).bytes.as_mut_ptr(), n);
     (*copy).len = n;
@@ -398,6 +407,34 @@ pub unsafe fn vibe_tripwire_init() {
             apply_token(tok);
         }
     }
+}
+
+/// The tripwire on real hardware, which has no fw_cfg: a `/TRIPWIRE=<cfg>` boot
+/// option (freeldr.ini `Options=`), tokens separated by commas, since the load
+/// options are themselves space-separated (`/TRIPWIRE=SPECIALPOOL=*,QUIET`).
+/// The key is matched in either case; a pool tag is taken as written.
+unsafe fn from_load_options(opts: *const u8, out: &mut [u8; CFG_MAX]) -> Option<usize> {
+    if opts.is_null() {
+        return None;
+    }
+    let mut len = 0usize;
+    while *opts.add(len) != 0 && len < 4096 {
+        len += 1;
+    }
+    let opts = core::slice::from_raw_parts(opts, len);
+    const KEY: &[u8] = b"TRIPWIRE=";
+    for word in opts.split(|&c| c == b' ' || c == b'\t') {
+        let word = word.strip_prefix(b"/").unwrap_or(word);
+        if word.len() > KEY.len() && word[..KEY.len()].eq_ignore_ascii_case(KEY) {
+            let val = &word[KEY.len()..];
+            let n = val.len().min(CFG_MAX);
+            for (o, &c) in out.iter_mut().zip(&val[..n]) {
+                *o = if c == b',' { b' ' } else { c };
+            }
+            return Some(n);
+        }
+    }
+    None
 }
 
 /// FFI lookup for OTHER kernel crates (crash-value: kd64-rust's `KD=COM2`
@@ -411,9 +448,14 @@ pub unsafe extern "system" fn VibeTripwireHasToken(needle: *const u8, len: usize
         return 0;
     }
     let mut cfg = [0u8; CFG_MAX];
-    let Some(n) = fwcfg::read_file(TRIPWIRE_FILE, &mut cfg) else {
-        return 0;
+    let n = match fwcfg::read_file(TRIPWIRE_FILE, &mut cfg) {
+        Some(n) => n,
+        // Real hardware: the boot-option copy, once vibe_tripwire_init has run.
+        None => VibeTripwireRead(cfg.as_mut_ptr(), CFG_MAX),
     };
+    if n == 0 {
+        return 0;
+    }
     let needle = core::slice::from_raw_parts(needle, len);
     for tok in cfg[..n].split(|&c| c == b' ' || c == b';' || c == b'\n' || c == b'\0') {
         if tok == needle {

@@ -118,6 +118,9 @@ class Node:
     text: str = ""
     kids: tuple = ()
     ctype: tuple = ()  # cast: (rust type, is_pointer)
+    # cast: a pointer to volatile (`(volatile ULONG *)p`), whose dereference must stay a
+    # volatile access -- ndis.h's NdisReadRegisterUlong reads a device register that way.
+    volatile: bool = False
 
 
 _BIN_PREC = [
@@ -139,6 +142,7 @@ class _Parser:
         self.t = toks
         self.i = 0
         self.types = types
+        self.last_volatile = False  # set by type_name
 
     def peek(self, k: int = 0) -> str | None:
         j = self.i + k
@@ -250,10 +254,12 @@ class _Parser:
     def type_name(self) -> tuple[str, bool]:
         words: list[str] = []
         const = False
+        self.last_volatile = False
         while self.peek() not in (None, "*", ")"):
             w = self.take()
             if w in ("const", "volatile"):
                 const = const or w == "const"
+                self.last_volatile = self.last_volatile or w == "volatile"
                 continue
             if w in ("struct", "union", "enum"):
                 continue
@@ -264,6 +270,8 @@ class _Parser:
             stars += 1
             while self.peek() in ("const", "volatile"):
                 self.take()
+        # Only the POINTEE's qualifier makes the access volatile (`volatile T *`).
+        self.last_volatile = self.last_volatile and stars == 1
         base = _C_PRIM.get(tuple(words))
         if base is None:
             if len(words) != 1:
@@ -281,8 +289,9 @@ class _Parser:
         if tok == "(" and self._is_type_start():
             self.take("(")
             ty = self.type_name()
+            vol = self.last_volatile
             self.take(")")
-            return Node("cast", kids=(self.unary(),), ctype=ty)
+            return Node("cast", kids=(self.unary(),), ctype=ty, volatile=vol)
         if tok in ("-", "~", "!", "*", "&", "+"):
             self.take()
             return Node("unary", tok, (self.unary(),))
@@ -559,6 +568,14 @@ def _emit(node: Node) -> tuple[str, str | None]:
             text = _emit(a)[0]
             callback = i < len(params) and params[i] in _OPTION_TYPES
             rendered.append(text if a.kind == "cast" or callback else f"(({text}) as _)")
+        # A call through a struct member (`(*Block->StatusHandler)(..)`, ndis.h's
+        # NdisMIndicateStatus; a WIDL `This->lpVtbl->Release(This)`): bindgen types every
+        # function-pointer field Option<fn>, and C calling a NULL one is undefined, so
+        # unwrap_unchecked -- never `*` (E0614), never a bare `.Release(` method lookup
+        # (E0599), never unwrap().
+        target = fn.kids[0] if fn.kind == "unary" and fn.text == "*" else fn
+        if target.kind == "member":
+            return f"({_emit(target)[0]}).unwrap_unchecked()({', '.join(rendered)})", None
         return f"{_emit(fn)[0]}({', '.join(rendered)})", None
     if k == "member":
         base, field = node.kids
@@ -578,6 +595,8 @@ def _emit(node: Node) -> tuple[str, str | None]:
         if op == "&":
             return f"core::ptr::addr_of_mut!({text})", None
         if op == "*":
+            if x.kind == "cast" and x.volatile:
+                return f"core::ptr::read_volatile({text})", None
             return f"(*{text})", None
         if ty is None and x.kind == "num":
             # A C integer literal is an `int` when it fits, else `unsigned int`: `-0x10000`
@@ -636,6 +655,14 @@ def _emit(node: Node) -> tuple[str, str | None]:
         return "{ " + "".join(f"{_emit(x)[0]}; " for x in first) + _emit(last)[0] + " }", None
     if k == "assign":
         lhs, rhs = node.kids
+        if (
+            lhs.kind == "unary"
+            and lhs.text == "*"
+            and lhs.kids[0].kind == "cast"
+            and lhs.kids[0].volatile
+        ):
+            ptr = _emit(lhs.kids[0])[0]
+            return f"core::ptr::write_volatile({ptr}, (({_emit(rhs)[0]}) as _));", None
         return f"{{ {_emit(lhs)[0]} = (({_emit(rhs)[0]}) as _); }}", None
     raise LowerError(f"node {k}")
 
@@ -687,15 +714,9 @@ def load_signatures(crate_src: Path) -> None:
 
 
 def lower_expansion(expansion: str, types: set[str]) -> str:
-    # A WIDL C macro calls through the vtable: `(This)->lpVtbl->Release(This)`. The slot is
-    # bindgen's `Option<unsafe extern fn>`, so the call is `.Release.unwrap_unchecked()(..)`
-    # (calling NULL is undefined in both languages); a bare `.Release(` is a method lookup
-    # that does not exist (dxdiag's IDirectSound8_Release, E0599).
-    return re.sub(
-        r"\.lpVtbl\)\.([A-Za-z_]\w*)\(",
-        r".lpVtbl).\1.unwrap_unchecked()(",
-        emit(_Parser(tokenize(expansion), types).parse()),
-    )
+    # A call through a struct member -- a WIDL vtable slot (`(This)->lpVtbl->Release(This)`,
+    # dxdiag's IDirectSound8_Release) or an NDIS handler -- unwraps its Option<fn> in _emit.
+    return emit(_Parser(tokenize(expansion), types).parse())
 
 
 _DEFINE = re.compile(r"^#define ([A-Za-z_]\w*)\(([^)]*)\)", re.M)
