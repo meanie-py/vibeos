@@ -1183,6 +1183,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     request but not yet recorded its token and chunk. `KiDispatchInterruptArm64` called ISRs
     without `Interrupt->ActualLock`, which `KeSynchronizeExecution` takes; it now holds it, as
     i386 and amd64 do. Run 20261006-225733-kmwzj46r payload3.
+  - **amd64-bios `-smp 2`: boot wedges at a service START, `RQRUNNING` warnings first** (OPEN,
+    seen 2026-10-10). `flake-report --days 3` grades the signature `HANG_TIMEOUT wedged |
+    [CENSUS] WrLpcReceive=#` FLAKE: 6 of 157 `smoke:amd64-bios` runs (3.8%), absent at the
+    same commit elsewhere. It is not the fixed `C0000006` bug below: the log has no in-page
+    status. services.exe sends START (Spooler, SamSs, EventLog in different runs) and the boot
+    goes quiet with ~57 threads parked >20 s, after several `[RQRUNNING] queuing a RUNNING
+    thread ... state=7 runningOnCPU=0|1` warnings from the dispatcher. It rejected an
+    innocent lane at the merge queue (research `22f22594238a`, export-surface stubs proven
+    byte-identical at the shipping version), so it costs gates. Runs:
+    `fails/auto/20261010-234505-spgv3441-smoke-amd64-bios-HANG_TIMEOUT` (Spooler, 7 warnings),
+    `20261010-031022-mwjaap28` (SamSs, 16), `20261008-213019-klr7vs60` (EventLog, 7).
+    Unconfirmed lead: what queues a thread the dispatcher still has as running.
   - **amd64-bios `-smp 2`: paging reads fail with `C0000006`** (FIXED 2026-10-08, root cause;
     the 10-07 fix below was real but not this bug). It came back: 35 of 65 amd64-bios boots on
     10-08 failed, 19 of 33 merge-queue gates retried the lane (a HANG_TIMEOUT costs ~13 min)
