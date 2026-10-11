@@ -30,14 +30,14 @@ static mut cchNonspooledPrefix: DWORD = (::core::mem::size_of::<[WCHAR; 12]>() a
         .wrapping_sub(1 as usize) as DWORD;
 
 static mut dwPortInfo1Offsets: [DWORD; 2] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PORT_INFO_1W, pName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwPortInfo2Offsets: [DWORD; 4] = [
-    0 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    16 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(PORT_INFO_2W, pPortName) as DWORD,
+    core::mem::offset_of!(PORT_INFO_2W, pMonitorName) as DWORD,
+    core::mem::offset_of!(PORT_INFO_2W, pDescription) as DWORD,
     MAXDWORD as DWORD,
 ];
 

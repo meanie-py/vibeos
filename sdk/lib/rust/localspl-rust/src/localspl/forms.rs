@@ -21,15 +21,15 @@ pub static mut FormList: LIST_ENTRY = _LIST_ENTRY {
 static mut _dwLastForm: DWORD = 0;
 
 static mut dwFormInfo1Offsets: [DWORD; 2] = [
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(FORM_INFO_1W, pName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
 static mut dwFormInfo2Offsets: [DWORD; 5] = [
-    8 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    40 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    56 as ::core::ffi::c_ulonglong as LONG as DWORD,
-    72 as ::core::ffi::c_ulonglong as LONG as DWORD,
+    core::mem::offset_of!(FORM_INFO_2W, pName) as DWORD,
+    core::mem::offset_of!(FORM_INFO_2W, pKeyword) as DWORD,
+    core::mem::offset_of!(FORM_INFO_2W, pMuiDll) as DWORD,
+    core::mem::offset_of!(FORM_INFO_2W, pDisplayName) as DWORD,
     MAXDWORD as DWORD,
 ];
 
