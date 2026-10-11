@@ -330,6 +330,7 @@ pub unsafe extern "system" fn AtapiDmaSetup(
     let mut dma_baseu: ULONG = 0;
     let mut dma_count0: ULONG;
     let mut dma_base0: ULONG;
+    let mut dma_baseu0: ULONG;
     let mut i: ULONG = 0;
     let chan: PHW_CHANNEL = (*deviceExtension).chan.add(lChannel as usize);
     let AtaReq = (*Srb).SrbExtension as PATA_REQ;
@@ -385,7 +386,16 @@ pub unsafe extern "system" fn AtapiDmaSetup(
     } else if dma_base == 0 || i == 0 || (dma_base as LONG) == -1 {
         return FALSE as BOOLEAN;
     }
-    (*dma_req_ata(AtaReq)).dma_base = dma_base; // aliased to ahci.ahci_base64
+    if use_AHCI != 0 {
+        // The command table's full address: AHCI_CL->cmd_table_phys is 64-bit.
+        // Upstream stores only the low half (ata.dma_base aliases ahci_base64's
+        // low dword), which loses a table above 4 GiB on a 64-bit HBA. A table
+        // moved to DB_PRD sits below 4 GiB.
+        let high = if (*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_DMA_DBUF_PRD != 0 { 0 } else { dma_baseu };
+        (*dma_req_ahci(AtaReq)).ahci_base64 = (dma_base as ULONGLONG) | ((high as ULONGLONG) << 32);
+    } else {
+        (*dma_req_ata(AtaReq)).dma_base = dma_base; // aliased to ahci.ahci_base64
+    }
 
     dma_base = AtapiVirtToPhysAddr_(HwDeviceExtension, Srb, data, &mut dma_count, &mut dma_baseu);
     if dma_baseu != 0 && dma_count != 0 {
@@ -394,10 +404,12 @@ pub unsafe extern "system" fn AtapiDmaSetup(
             use_DB_IO = TRUE as BOOLEAN;
             dma_base = (*chan).DB_IO_PhAddr;
             data = (*chan).DB_IO as PUCHAR;
-        } else {
-            (*dma_req_ahci(AtaReq)).ahci_base64 =
-                (dma_base as ULONGLONG) | ((dma_baseu as ULONGLONG) << 32);
+            dma_baseu = 0; // DB_IO is below 4 GiB
         }
+        // A 64-bit HBA takes the page as is: each PRD entry below carries its
+        // high half. Upstream stored this DATA address in ahci_base64 here,
+        // i.e. as the command table's address, and the HBA then fetched its
+        // command from the data buffer (q35 with 6 GiB hung in the bus scan).
     } else if dma_count == 0 || (dma_base as LONG) == -1 {
         (*dma_req_ahci(AtaReq)).ahci_base64 = 0;
         return FALSE as BOOLEAN;
@@ -410,10 +422,11 @@ pub unsafe extern "system" fn AtapiDmaSetup(
 
     dma_count0 = dma_count;
     dma_base0 = dma_base;
+    dma_baseu0 = dma_baseu;
 
     'retry_db_io: loop {
         while count != 0 {
-            if dma_base0 + dma_count0 == dma_base && dma_count0 + dma_count <= max_frag {
+            if dma_baseu0 == dma_baseu && dma_base0 + dma_count0 == dma_base && dma_count0 + dma_count <= max_frag {
                 // 'i' should always be > 0 here; for BM we can't cross 64k boundary
                 if dma_base & seg_align != 0 {
                     // ASSERT(i)
@@ -436,6 +449,7 @@ pub unsafe extern "system" fn AtapiDmaSetup(
             }
             dma_count0 = dma_count;
             dma_base0 = dma_base;
+            dma_baseu0 = dma_baseu;
             i += 1;
             if i >= max_entries {
                 (*dma_req_ahci(AtaReq)).ahci_base64 = 0;
@@ -452,12 +466,14 @@ pub unsafe extern "system" fn AtapiDmaSetup(
                     use_DB_IO = TRUE as BOOLEAN;
                     dma_base = (*chan).DB_IO_PhAddr;
                     data = (*chan).DB_IO as PUCHAR;
+                    dma_baseu = 0; // DB_IO is below 4 GiB
                     dma_count = min_u32(count, PAGE_SIZE - ((data as ULONG_PTR & PAGE_MASK as ULONG_PTR) as ULONG));
                     data = data.add(dma_count as usize);
                     count -= dma_count;
                     i = 0;
                     dma_count0 = dma_count;
                     dma_base0 = dma_base;
+                    dma_baseu0 = dma_baseu;
                     continue 'retry_db_io;
                 }
             } else if dma_count == 0 || dma_base == 0 || (dma_base as LONG) == -1 {
@@ -473,7 +489,7 @@ pub unsafe extern "system" fn AtapiDmaSetup(
     }
 
     // set TERM
-    if dma_base0 + dma_count0 == dma_base && dma_count0 + dma_count <= max_frag {
+    if dma_baseu0 == dma_baseu && dma_base0 + dma_count0 == dma_base && dma_count0 + dma_count <= max_frag {
         if dma_base & seg_align != 0 {
             // ASSERT(i)
             i -= 1;
@@ -528,12 +544,23 @@ pub unsafe extern "system" fn AtapiDmaDBSync(
     Srb: PSCSI_REQUEST_BLOCK,
 ) -> BOOLEAN {
     let AtaReq = (*Srb).SrbExtension as PATA_REQ;
+    // Only when the transfer really ran as DMA: AtapiDmaSetup sets DMA_DBUF
+    // with DMA_OPERATION, but the PIO fallbacks clear only DMA_OPERATION, and
+    // a PIO transfer has already put its data in the SRB's buffer. Copying the
+    // untouched bounce buffer over it returned zeros for every CD sector.
     if ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN) != 0
         && ((*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_DMA_DBUF) != 0
+        && ((*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_DMA_OPERATION) != 0
     {
-        // DBUF (Read)
+        // DBUF (Read). Into the SRB's buffer, which DataTransferLength is
+        // measured from. Upstream copies to AtaReq->DataBuffer, but by now
+        // completion has advanced that past the transfer (the PIO progress
+        // pointer), so the copy landed DataTransferLength bytes beyond the
+        // buffer: the pool block after a 2 KB CD read on a 6 GiB amd64 boot.
+        // Only buffers above 4 GiB on a 32-bit controller take this path, and
+        // upstream marks it ASSERT(FALSE): an unexercised path.
         RtlCopyMemory(
-            (*dma_req_core(AtaReq)).DataBuffer as PVOID,
+            (*Srb).DataBuffer,
             (*chan).DB_IO as PVOID,
             (*Srb).DataTransferLength as usize,
         );
@@ -573,11 +600,12 @@ pub unsafe extern "system" fn AtapiDmaDBPreSync(
     }
     if ((*Srb).SrbFlags & SRB_FLAGS_DATA_IN) == 0
         && ((*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_DMA_DBUF) != 0
+        && ((*dma_req_core(AtaReq)).Flags as ULONG & REQ_FLAG_DMA_OPERATION) != 0
     {
-        // DBUF (Write)
+        // DBUF (Write): from the SRB's buffer, as AtapiDmaDBSync reads into it.
         RtlCopyMemory(
             (*chan).DB_IO,
-            (*dma_req_core(AtaReq)).DataBuffer as PVOID,
+            (*Srb).DataBuffer,
             (*Srb).DataTransferLength as usize,
         );
     }
