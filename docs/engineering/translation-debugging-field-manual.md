@@ -12109,6 +12109,44 @@ VM: walk the list and look for an entry whose fields are all still zero except t
 walker writes. When a C "create" helper links the object it returns, check whether anything
 walks that list on another thread.
 
+### A busy check that drops the request instead of handing it to the CPU that is busy
+**Symptom:** amd64 `-smp 2`, ~7% of gate boots and ~0% solo: the boot goes silent at a
+different place each time (services START, `CreateProcessW`, csrss `LoadServerDll`), both CPUs
+idle in `KiIdleLoop`, no fault. Every stuck thread is waiting for an I/O on the boot volume
+(cdfs on the USB stick): a page-in at APC_LEVEL, or a create whose check-verify IOCTL is
+pending in disk.sys/classpnp. The xHCI controller is idle with nothing on its event ring.
+**Cause:** two copies of one bug, both in upstream ReactOS C, faithfully translated. A path
+finds the work "already being done" and returns, while the CPU doing it has already passed the
+point where it would have noticed the new work.
+- usbport `USBPORT_FlushPendingTransfers`: `FlushPendingLock` was a try-lock (CAS 0 -> 1, else
+  return). A transfer queued while another CPU was finishing a flush of the same endpoint was
+  never flushed. Live state: one transfer on the bulk endpoint's `PendingTransferList`,
+  `TransferList` empty, lock 0, endpoint idle, `WorkerList` empty (2 of 3 kept VMs).
+- usbstor `USBSTOR_QueueNextRequest`: returned early when `ActiveSrb` was set. A request arriving
+  between the finishing request's `QueueTerminateRequest` and that check claims `ActiveSrb` and
+  `IoStartPacket`s behind the StartIo slot the finished request still holds, and nobody calls
+  `IoStartNextPacket`. Live state: FDO `CurrentIrp` a freed (recycled) IRP, device queue `Busy`
+  with one IRP whose SRB is `ActiveSrb`, `IrpPendingCount` = 1 + the `IrpList` (1 of 3).
+
+On one CPU neither window opens: the finishing side runs at DISPATCH_LEVEL start to end.
+**Fix:** hand the work over instead of dropping it. The flush lock is now a request count: a
+caller that finds it held increments it and leaves, and the holder makes another pass unless
+the count is still exactly its own. `QueueNextRequest` releases the slot
+(`IoStartNextPacket`) when its caller retired the slot owner, so the claimant starts. The
+cancel routines retired requests that never held the slot and keep the C behaviour, because
+releasing it there would start a second command beside the running one. Sweep for the shape:
+`if (InterlockedCompareExchange(&X, 1, 0)) return;` or "if busy, return" with no re-check
+after the holder releases.
+**Finding it** took the IRPs, not the census. The census's `Suspended=1` was usbport's worker
+thread, which waits with `Suspended` as a generic wait reason (so do kbdclass, mouclass, atapi
+and iomgr), and it was in 42 of 44 hang histograms only because passing boots end before the
+census prints a histogram. Do this instead on a kept VM: stuck thread -> `ETHREAD.IrpList` ->
+the IRP's current stack location names the device holding it -> that driver's queue state.
+`[KRNLBASE]` gives the kernel base; an attach-on-fail manifest now records it, because without
+it every `gdb inspect` runs find-kbase's page scan and times out over the windows-host stub.
+For a driver-private struct offset, compile `const _: [(); 0] = [(); 1_000_000 +
+offset_of!(T, f)];` against the crate's `types_<arch>.rs`: the error message prints it.
+
 ### A UP-tuned boot timeout reads an `-smp N` boot as a wedge
 **Symptom:** an `-smp N` run fails the boot fixture with a plain `TimeoutError` while the serial
 log shows the boot still *talking* — arm64 `-smp 2` conformance reached
