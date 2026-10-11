@@ -1407,6 +1407,43 @@ def _without_comments(code: str) -> str:
     return re.sub(r"//[^\n]*", "", code)
 
 
+def drop_stale_sibling_imports(
+    code: str,
+    crate: Path,
+    owners: dict[str, set[str]] | None = None,
+    provided: set[str] | None = None,
+) -> tuple[str, list[str]]:
+    """Drop a `use crate::<sibling>::NAME;` whose sibling no longer defines NAME, when the
+    prelude supplies it.
+
+    An import this module wrote earlier outlives the definition it pointed at: regedit's
+    `use crate::regedit::error::ErrorMessageBox;` was right until the variadic stage turned
+    the definition into `ErrorMessageBox_v` plus a prelude extern, and then named only the
+    prelude glob error.rs imports privately (E0603). Dropped only when the prelude supplies
+    the name, so the reference still resolves -- to the same symbol."""
+    crate_src = Path(crate) / "src"
+    if owners is None:
+        owners = index_crate_exports(crate_src)
+    if not owners:
+        return code, []
+    if provided is None:
+        provided = provided_names(crate) | island_names(crate_src)
+    modules = set().union(*owners.values())
+    notes: list[str] = []
+
+    def _stale(m: re.Match[str]) -> str:
+        path, name = m.group(1), m.group(2)
+        if path in modules and path not in owners.get(name, set()) and name in provided:
+            notes.append(f"{name}: no longer defined in {path}, the prelude provides it")
+            return ""
+        return m.group(0)
+
+    code = re.sub(
+        r"^use (crate::[A-Za-z0-9_:]+)::([A-Za-z_]\w*);[ \t]*\n", _stale, code, flags=re.M
+    )
+    return code, notes
+
+
 def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     """Emit `use crate::…::<name>;` for each name `code` references but does not define.
 
@@ -1440,6 +1477,8 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     if not owners:
         return code, []
 
+    provided = provided_names(crate) | island_names(crate_src)
+    code, stale_notes = drop_stale_sibling_imports(code, crate, owners, provided)
     local = defined_names(code)
     # A name this file EXTERN-DECLARES is already in scope, and importing it too is
     # `E0255: the name ... is defined multiple times`. `defined_names` deliberately skips
@@ -1448,7 +1487,6 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     # `extern "system"` block AND got `use crate::shell32::iconcache::ExtractIconExW;`.
     local |= extern_declared(code)
     already = set(re.findall(r"^\s*use\s+[A-Za-z0-9_:]+::([A-Za-z_][A-Za-z0-9_]*)\s*;", code, re.M))
-    provided = provided_names(crate) | island_names(crate_src)
     # COMMENTS ARE NOT CODE. Scanning the raw text meant a name that appears only in prose
     # got a `use` line generated for it — `enum_merged_folder.rs` mentions
     # "shellutils.h ShellObjectCreator<T>" in a comment explaining its activation, and the
@@ -1457,7 +1495,7 @@ def resolve_in_crate_imports(code: str, crate: Path) -> tuple[str, list[str]]:
     # generated, so it cannot be fixed in the file — only here.
     words = set(re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", _without_comments(code)))
 
-    notes: list[str] = []
+    notes: list[str] = stale_notes
     imports: list[str] = []
     for name in sorted(words & owners.keys()):
         if name in local or name in already or name in provided:

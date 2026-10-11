@@ -586,6 +586,25 @@ def test_an_all_zero_array_field_takes_its_length_from_the_type(tmp_path):
     assert "bReserved: unsafe { ::core::mem::zeroed() }" in out and "c: [1, 0]" in out
 
 
+def test_c2rust_prelude_field_renames_are_undone(tmp_path):
+    rs = tmp_path / "e.rs"
+    rs.write_text("fn f(d: *mut D) { if (*d).Option_0 == 1 { Option_0(); } }\n")
+    assert port._c2rust_prelude_fields(rs) == 1
+    assert "(*d).Option == 1 { Option_0(); }" in rs.read_text()
+
+
+def test_long_double_is_f64_on_every_reactos_target(tmp_path):
+    # calc: c2rust's c_longdouble, an invented placeholder and an f128 crate; -mlong-double-64.
+    rs = tmp_path / "r.rs"
+    rs.write_text(
+        "fn f() { a = (x & y) as core::ffi::c_longdouble; b = z as core::ffi::c_longdouble_placeholder;\n"
+        "  c = ::f128::f128::new(!n.i).to_f64().unwrap(); }\n"
+    )
+    assert port._long_double_f64(rs) == 3
+    out = rs.read_text()
+    assert "(x & y) as f64" in out and "z as f64" in out and "((!n.i) as f64)" in out
+
+
 def test_c2rust_anonymous_members_take_bindgen_names(tmp_path):
     island = (
         "pub struct _NID {\n    pub cbSize: u32,\n    pub __bindgen_anon_1: _NID__bindgen_ty_1,\n}\n"
@@ -689,6 +708,99 @@ def test_flip_links_with_the_targets_own_link_signature():
     cml = "add_library(winegdi STATIC ${SOURCE})\ntarget_link_libraries(winegdi PRIVATE pseh)\n"
     out = port.flip_cmake(cml, state)
     assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out
+
+
+def test_a_copy_naming_its_source_crates_private_type_is_refused(tmp_path, monkeypatch):
+    # regedit got ucrt-rust's `qsort(.., comp: Compare)`; `Compare` is ucrt's own alias.
+    rust = tmp_path / "sdk" / "lib" / "rust"
+    (rust / "ucrt-rust" / "src").mkdir(parents=True)
+    (rust / "ucrt-rust" / "src" / "q.rs").write_text("type Compare = Option<fn()>;\n")
+    monkeypatch.setattr(port, "REPO", tmp_path)
+    from rustconv.prelude_resolve import Item
+
+    priv = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: Compare);", None, "ucrt-rust/src/q.rs")
+    ok = Item("fn", "pub fn qsort(b: *mut c_void, n: usize, comp: PFN);", None, "ucrt-rust/src/q.rs")
+    assert port._private_types(priv, {"PFN"}) == {"Compare"}
+    assert port._private_types(ok, {"PFN"}) == set()
+    rel = Item("fn", "pub fn qsort(b: *mut c_void, cmp: super::super::CntCmpFn);", None, "cnt-rust/src/g.rs")
+    assert port._private_types(rel, set()) == {"super::super::CntCmpFn"}
+
+
+def test_a_negative_fact_of_an_unsigned_type_is_its_bit_pattern():
+    # calc: clang evaluated _UI64_MAX to -1; `pub const _UI64_MAX: u64 = -1;` is E0600.
+    from rustconv.prelude_resolve import existing_facts, render_facts
+
+    out = render_facts({"_UI64_MAX": ("u64", -1, "fun_ieee.c")})
+    assert "pub const _UI64_MAX: u64 = 0xFFFFFFFFFFFFFFFF; // clang, fun_ieee.c" in out
+
+
+def test_a_const_rewriting_an_sdk_macro_from_memory_is_dropped(tmp_path, monkeypatch):
+    # regedit's regproc.rs: `HKEY_CLASSES_ROOT = 0x80000000usize as HKEY` zero-extends what
+    # winreg.h sign-extends. The module's own #define (MAX_X) is not the header's.
+    from rustconv import sdk_macros
+
+    rs, c = tmp_path / "regproc.rs", tmp_path / "regproc.c"
+    rs.write_text(
+        "pub const HKEY_CLASSES_ROOT: HKEY = 0x80000000usize as HKEY;\n"
+        "pub const MAX_X: u32 = 4;\nconst LOCAL: u32 = 1;\nfn f() {}\n"
+    )
+    c.write_text("#define MAX_X 4\n")
+    monkeypatch.setattr(
+        sdk_macros,
+        "object_expansions",
+        lambda repo, src, names: {n: "x" for n in names if n.startswith("HKEY_") or n == "MAX_X"},
+    )
+    assert port._drop_sdk_macro_shadows(rs, c) == ["HKEY_CLASSES_ROOT"]
+    out = rs.read_text()
+    assert "HKEY_CLASSES_ROOT" not in out and "MAX_X" in out and "LOCAL" in out
+
+
+def test_reactos_gates_are_settled_to_the_live_arm(tmp_path):
+    # regedit's regproc.rs: both arms, gated on things Rust never sets -> Wine's arm compiled.
+    rs = tmp_path / "regproc.rs"
+    rs.write_text(
+        "fn a() {\n    if cfg!(feature = \"reactos\") {\n        live1();\n    } else {\n        wine1(x, 1);\n    }\n}\n"
+        "fn b() {\n    #[cfg(feature = \"reactos\")]\n    live2();\n    #[cfg(not(feature = \"reactos\"))]\n    wine2();\n}\n"
+        "fn c() {\n    const REACTOS: bool = false;\n    if REACTOS {\n        live3();\n    } else {\n        wine3();\n    }\n}\n"
+        "fn d() {\n    #[cfg(not(reactos))]\n    {\n        wine4();\n    }\n    if true { keep(); }\n}\n"
+    )
+    assert port._reactos_gates(rs) > 0
+    out = rs.read_text()
+    for live in ("live1()", "live2()", "live3()", "keep()"):
+        assert live in out
+    assert "wine1" not in out and "wine3" not in out
+    assert "#[cfg(any())]\n    wine2();" in out and "#[cfg(any())]\n    {\n        wine4();" in out
+    assert "feature = \"reactos\"" not in out
+
+
+def test_file_and_line_are_rusts_own(tmp_path):
+    # regedit: `pub const __LINE__: i32 = 7` came from the clang facts probe.
+    rs = tmp_path / "s.rs"
+    rs.write_text('fn f() { DbgPrint(b"%s:%d\\0".as_ptr(), __FILE__, __LINE__); } // __FILE__\n')
+    assert port._builtin_location_macros(rs) == 3
+    out = rs.read_text()
+    assert 'DbgPrint(b"%s:%d\\0".as_ptr(), concat!(file!(), "\\0").as_ptr(), (line!() as ::core::ffi::c_int))' in out
+    assert "__LINE__" in port._COMPILER_BUILTIN_MACROS
+
+
+def test_the_iob_array_is_reached_through_its_accessor(tmp_path):
+    # regedit: `(&raw mut _iob as *mut FILE).offset(1)` -> undefined `_iob` at link.
+    rs = tmp_path / "r.rs"
+    rs.write_text("fn f() { file = (&raw mut _iob as *mut FILE).offset(1) as *mut FILE; }\n")
+    assert port._crt_data_globals(rs) == ["_iob x1"]
+    assert "(__iob_func() as *mut FILE).offset(1)" in rs.read_text()
+
+
+def test_a_static_the_c_only_declares_extern_is_not_a_second_definition(tmp_path):
+    # regedit's framewnd.c: `extern WCHAR Suggestions[256];` -- childwnd.c defines it.
+    rs, c = tmp_path / "framewnd.rs", tmp_path / "framewnd.c"
+    rs.write_text(
+        "pub static mut Suggestions: [WCHAR; 256] = [0; 256];\n"
+        "static mut hMenuFrame: HMENU = core::ptr::null_mut();\nfn f() {}\n"
+    )
+    c.write_text("extern WCHAR Suggestions[256];\nHMENU hMenuFrame;\n")
+    assert port._extern_only_statics(rs, c) == ["Suggestions"]
+    assert "Suggestions" not in rs.read_text() and "hMenuFrame" in rs.read_text()
 
 
 def test_a_stale_import_of_a_variadic_entry_is_dropped(tmp_path):

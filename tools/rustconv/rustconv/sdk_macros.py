@@ -542,6 +542,17 @@ def _emit(node: Node) -> tuple[str, str | None]:
             inner = inner.kids[0]
         if ty == "()":
             return f"{{ let _ = {_emit(inner)[0]}; }}", None
+        # A cast TO a callback typedef (`Option<fn>`) is a coercion in Rust -- `as` cannot
+        # convert `Some(CompareFunc)` -- and a callback cast on to an integer goes through its
+        # bits: taskmgr's ListView_SortItems is `(LPARAM)(PFNLVCOMPARE)(pfn)`. `Option<fn>`
+        # is pointer-sized with None at 0, the C pointer's own representation.
+        if ty in _OPTION_TYPES and not _ptr:
+            return f"({{ let __cb: {ty} = {_emit(inner)[0]}; __cb }})", ty
+        itext, ity = _emit(inner)
+        if ity in _OPTION_TYPES and ty not in _OPTION_TYPES:
+            return f"((core::mem::transmute::<{ity}, usize>({itext})) as {ty})", (
+                _PTR if _ptr else ty
+            )
         if inner.kind == "num":
             # Give the literal its C type: Rust infers it from the cast TARGET, so
             # `0x80000001 as LONG` is an out-of-range i32 literal (HKEY_CURRENT_USER), where C
@@ -777,14 +788,27 @@ def expansions(repo: Path, source: Path, names: set[str]) -> dict[str, tuple[int
     return {n: (arity[n], ex) for n, ex in per_arch.items() if len(ex) == len(_ARCHES)}
 
 
+_TYPE_ITEM = re.compile(r"^pub (?:type|struct|union|enum) (\w+)", re.M)
+_SYS_GLOB = re.compile(r"^pub use (\w+)_sys(?:::\w+)*::\*;", re.M)
+
+
 def island_types(crate_src: Path) -> set[str]:
+    """Type names the crate's island sees: its own, plus every `-sys` crate it glob-imports.
+
+    A user-mode island takes `LPWSTR` from `pub use ntdll_sys::nt::*;`. Without those, a cast
+    to it is not a cast to the parser: commctrl's `LPSTR_TEXTCALLBACKW ((LPWSTR)-1L)` read
+    as `(LPWSTR) - 1L`, a subtraction, and taskmgr/regedit got no constant at all."""
     out: set[str] = set()
+    sys_crates: set[str] = set()
     for p in crate_src.glob("types_*.rs"):
-        out |= set(
-            re.findall(
-                r"^pub (?:type|struct|union|enum) (\w+)", p.read_text(errors="replace"), re.M
-            )
-        )
+        text = p.read_text(errors="replace")
+        out |= set(_TYPE_ITEM.findall(text))
+        sys_crates |= set(_SYS_GLOB.findall(text))
+    for name in sorted(sys_crates):
+        src = crate_src.parents[1] / f"{name.replace('_', '-')}-sys" / "src"
+        for p in (src / "bindgen_amd64.rs", src / "bindgen_common.rs"):
+            if p.is_file():
+                out |= set(_TYPE_ITEM.findall(p.read_text(errors="replace")))
     return out
 
 

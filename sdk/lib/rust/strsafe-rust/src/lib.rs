@@ -1135,6 +1135,17 @@ pub unsafe extern "system" fn StringCchVPrintfW(
     )
 }
 
+/// strsafe.h `StringCbVPrintfW`: the byte-counted `StringCchVPrintfW`, `va_list` by value.
+#[no_mangle]
+pub unsafe extern "system" fn StringCbVPrintfW(
+    pszDest: *mut WCHAR,
+    cbDest: usize,
+    pszFormat: *const WCHAR,
+    ap: *mut c_void,
+) -> HRESULT {
+    StringCchVPrintfW(pszDest, cbDest / core::mem::size_of::<WCHAR>(), pszFormat, ap)
+}
+
 /// strsafe.h:623 `StringCbPrintfExW`, minus the `va_start` its trampoline does.
 #[allow(clippy::too_many_arguments)]
 #[no_mangle]

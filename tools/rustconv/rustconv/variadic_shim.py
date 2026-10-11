@@ -184,7 +184,8 @@ def rewrite(text: str) -> Rewrite:
         body = re.sub(
             rf"\b{arg}\s*\.\s*clone\s*\(\s*\)", "varargs_rust::VaArgs::from_ptr(ap_list)", body
         )
-        if re.search(rf"\b{arg}\b", body):
+        body, forwarded = _forwarding_locals(body)
+        if re.search(rf"\b{arg}\b", body) and arg not in forwarded:
             out.refused[name] = (
                 f"`{arg}` is passed on, not walked (forwarding a va_list): write this one by hand"
             )
@@ -217,6 +218,64 @@ def rewrite(text: str) -> Rewrite:
         out.text = out.text[: m.start()] + twin + decl + out.text[body_close + 1 :]
         out.names.append(name)
         pos = m.start() + len(twin) + len(decl)
+
+
+_VA_LOCAL = re.compile(
+    r"let\s+mut\s+(?P<v>[A-Za-z_]\w*)\s*:\s*"
+    r"(?:va_list|__builtin_va_list|__gnuc_va_list|varargs_rust::VaArgs)\s*(?:=\s*[^;]+)?;"
+)
+
+
+_VA_WRAP = re.compile(
+    r"let\s+(?:mut\s+)?(?P<v>[A-Za-z_]\w*)\s*:\s*varargs_rust::VaArgs\s*=\s*"
+    r"varargs_rust::VaArgs::from_ptr\(ap_list\)\s*;"
+)
+
+
+def _forwarding_locals(body: str) -> tuple[str, set[str]]:
+    """The PUSH flavour C writes by hand: `va_list args; va_start(args, last); vfoo(.., args);
+    va_end(args);`. Every Windows target here has `va_list` = `char *`, so in the twin the
+    local IS the caller's list, read through the trampoline's pointer, and va_start/va_end
+    have nothing left to do. regedit's InfoMessageBox hands it to _vscwprintf and then
+    _vsnwprintf -- by value, so each callee walks its own copy, as in the C.
+    Only a local that a `va_start!` opens is taken; anything else stays as written."""
+    names: set[str] = set()
+    # C's `FormatMessage(.., &args)` hands on a `va_list *`, which IS `ap_list`. Wrapped as
+    # `let args_0: VaArgs = VaArgs::from_ptr(ap_list)` and passed as `&raw mut args_0`, it is
+    # a `va_list **` (regedit's ErrorMessageBox, error.c:24).
+    for m in list(_VA_WRAP.finditer(body)):
+        v = m.group("v")
+        addr = re.compile(
+            rf"(?:&raw\s+mut\s+{v}\b|(?:core::ptr::)?addr_of_mut!\(\s*{v}\s*\)|&mut\s+{v}\b)"
+        )
+        if not addr.search(body) or re.search(rf"\b{v}\s*\.\s*arg\b", body):
+            continue
+        body = body.replace(m.group(0), "", 1)
+        body = addr.sub("(ap_list as *mut va_list)", body)
+        body = re.sub(rf"\bdrop\(\s*{v}\s*\)\s*;", "", body)
+        names.add(v)
+    for m in list(_VA_LOCAL.finditer(body)):
+        v = m.group("v")
+        start = re.compile(rf"\bva_start!?\s*\(\s*{v}\s*,[^;]*\)\s*;")
+        # ...or `ap = args.clone()` (already `VaArgs::from_ptr(ap_list)` here) on a list that
+        # is only ever handed on, never walked: regedit's edit.c warning().
+        cloned = re.compile(rf"\b{v}\s*=\s*varargs_rust::VaArgs::from_ptr\(ap_list\)\s*;")
+        if not start.search(body):
+            if not cloned.search(body) or re.search(rf"\b{v}\s*\.\s*arg\b", body):
+                continue
+            start = cloned
+        body = body.replace(m.group(0), f"let mut {v}: va_list = *(ap_list as *mut va_list);", 1)
+        body = start.sub("", body)
+        body = cloned.sub("", body)  # a body may carry both spellings
+        body = re.sub(rf"\bva_end!?\s*\(\s*{v}\s*\)\s*;", "", body)
+        # c2rust's VaListImpl spelling hands the list on as `ap.as_va_list()`; the local is
+        # the va_list itself now.
+        body = re.sub(rf"\b{v}\s*\.\s*as_va_list\s*\(\s*\)", v, body)
+        names.add(v)
+    if names:
+        # A deleted `va_start!(..);` leaves its indentation behind.
+        body = re.sub(r"(?m)[ \t]+$", "", body)
+    return body, names
 
 
 def c_variadic_arity(c_text: str, name: str) -> int | None:
