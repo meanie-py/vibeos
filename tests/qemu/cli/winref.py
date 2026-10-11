@@ -51,6 +51,11 @@ OVMF_VARS = Path("/usr/share/OVMF/OVMF_VARS_4M.fd")
 # host, twice; EPYC reaches the desktop (2026-10-11).
 DEFAULT_CPU = "EPYC"
 DEFAULT_IRQCHIP = "on"
+# TCG by default: under WHPX on the AMD Ryzen 9 7950X3D host, six Windows 11 installs died
+# with `WHPX: Unexpected VP exit code 4` (after `Ignoring request for interrupt vector 0`)
+# or hung (kernel-irqchip=off), at a different Setup phase each time. QEMU's own interpreter
+# never touches the hypervisor, the same reason the smokes use it.
+DEFAULT_ACCEL = "tcg"
 INSTALL_TIMEOUT = 3 * 3600.0
 RUN_TIMEOUT = 1800.0
 SHOT_INTERVAL = float(os.environ.get("VIBEOS_WINREF_SHOT", "30"))
@@ -136,6 +141,7 @@ def _launch(
     mem: str,
     cpu: str,
     irqchip: str,
+    accel: str,
     show: bool,
 ) -> subprocess.Popen:
     p = _paths()
@@ -146,7 +152,7 @@ def _launch(
         "-machine",
         "q35",
         "-accel",
-        f"whpx,kernel-irqchip={irqchip}",
+        f"whpx,kernel-irqchip={irqchip}" if accel == "whpx" else "tcg,thread=multi",
         "-cpu",
         cpu,
         "-smp",
@@ -238,6 +244,7 @@ def _boot(
         mem=args.mem,
         cpu=args.cpu,
         irqchip=args.irqchip,
+        accel=args.accel,
         show=args.show,
     )
     try:
@@ -328,7 +335,8 @@ def cmd_install(args, repo: Path) -> int:
         timeout=args.timeout,
         # Only the FIRST boot must take the CD; a resumed install boots its disk, which
         # is what letting the "press any key" prompt time out does.
-        press_keys=0 if resume else 40,
+        # TCG reaches the prompt far later than WHPX: give it a wider window.
+        press_keys=0 if resume else (90 if args.accel == "tcg" else 40),
         args=args,
     )
     setup = [ln for ln in lines if ln.startswith("WINREF-SETUP:")]
@@ -441,6 +449,109 @@ def cmd_run(args, repo: Path) -> int:
     return run.finalize(repo)
 
 
+SEVEN_ZIP = Path(os.environ.get("VIBEOS_WINREF_7Z", "/mnt/c/Program Files/7-Zip/7z.exe"))
+# What `logs` pulls off the Windows partition: Setup's own record of every unattend pass
+# (which is where "FirstLogonCommands never ran" turned out to be an account that was never
+# made an administrator), and the runner's working tree.
+LOG_PATHS = ["Windows/Panther/UnattendGC/setupact.log", "Windows/Panther/setupact.log", "winref"]
+
+
+def largest_ntfs(listing: str) -> tuple[int, int]:
+    """(offset, size) in bytes of the largest NTFS partition in a `7z l -slt` listing."""
+    best: tuple[int, int] = (0, 0)
+    entry: dict[str, str] = {}
+    for line in [*listing.replace("\r", "").splitlines(), ""]:
+        if " = " in line:
+            k, v = line.split(" = ", 1)
+            entry[k] = v
+            continue
+        if entry.get("Path", "").endswith(".ntfs") and "Offset" in entry:
+            off, size = int(entry["Offset"]), int(entry["Size"])
+            if size > best[1]:
+                best = (off, size)
+        entry = {}
+    return best
+
+
+def dd_window(offset: int, size: int) -> tuple[int, int]:
+    """(skip, count) in MiB for `qemu-img dd bs=1M` to copy exactly one partition.
+
+    qemu-img's dd counts the SKIPPED blocks in `count` (unlike coreutils dd): a count of the
+    partition's length alone copied 317 MiB short, dropped NTFS's backup boot sector off the
+    end, and 7-Zip refused the result as "not an archive".
+    """
+    mib = 1 << 20
+    if offset % mib:
+        raise ValueError(f"partition at {offset} is not MiB-aligned")
+    skip = offset // mib
+    return skip, skip + -(-size // mib)
+
+
+def _ntfs_partition(image: Path) -> tuple[int, int]:
+    cp = subprocess.run(
+        [str(SEVEN_ZIP), "l", "-slt", be.win_path(image)], capture_output=True, text=True
+    )
+    best = largest_ntfs(cp.stdout)
+    if not best[1]:
+        raise RuntimeError(f"no NTFS partition in {image}: {cp.stdout[-300:]} {cp.stderr[-300:]}")
+    return best
+
+
+def cmd_logs(args, repo: Path) -> int:
+    """Copy Setup's logs and C:\\winref out of a STOPPED VM's disk, without booting it.
+
+    No nbd in WSL and no admin to mount a VHD, so: 7-Zip reads the qcow2's GPT, qemu-img
+    copies the Windows partition out raw, and 7-Zip reads NTFS from that. 7-Zip's CLI cannot
+    open an image nested in another, hence the copy (~80 GB on the image's drive, deleted
+    after).
+    """
+    p = _paths()
+    image = Path(args.image) if args.image else WINREF_DIR / "install.qcow2"
+    if not image.is_file():
+        image = p["base"]
+    out = Path(args.out) if args.out else WINREF_DIR / "logs" / time.strftime("%Y%m%d-%H%M%S")
+    skip, count = dd_window(*_ntfs_partition(image))
+    raw = WINREF_DIR / "logs-partition.ntfs"
+    try:
+        cp = _qemu_img(
+            "dd",
+            "-f",
+            "qcow2",
+            "-O",
+            "raw",
+            "bs=1M",
+            f"skip={skip}",
+            f"count={count}",
+            f"if={be.win_path(image)}",
+            f"of={be.win_path(raw)}",
+        )
+        if cp.returncode != 0:
+            raise RuntimeError(f"qemu-img dd: {cp.stderr.strip()}")
+        out.mkdir(parents=True, exist_ok=True)
+        subprocess.run(
+            [
+                str(SEVEN_ZIP),
+                "x",
+                "-tntfs",
+                be.win_path(raw),
+                f"-o{be.win_path(out)}",
+                *LOG_PATHS,
+                "-y",
+            ],
+            capture_output=True,
+            text=True,
+        )
+    finally:
+        raw.unlink(missing_ok=True)
+    got = sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file())
+    print(f"winref logs: {image.name} -> {out}")
+    for f in got:
+        print(f"  {f}")
+    if not got:
+        print("  (nothing extracted)")
+    return 0 if got else 1
+
+
 def cmd_status(args, repo: Path) -> int:
     p = _paths()
     if not p["base"].is_file():
@@ -465,6 +576,12 @@ def add_parser(sub) -> None:
         v.add_argument("--cpu", default=DEFAULT_CPU, help="QEMU -cpu model")
         v.add_argument("--show", action="store_true", help="open a window on the host")
         v.add_argument(
+            "--accel",
+            default=DEFAULT_ACCEL,
+            choices=["tcg", "whpx"],
+            help="tcg (default: slow, but WHPX dies mid-Setup on this host) or whpx",
+        )
+        v.add_argument(
             "--irqchip",
             default=DEFAULT_IRQCHIP,
             choices=["on", "off"],
@@ -486,9 +603,15 @@ def add_parser(sub) -> None:
     r.add_argument("--keep", action="store_true", help="keep the overlay for inspection")
     vm_opts(r)
     verbs.add_parser("status", help="installed base image and its Windows build")
+    lg = verbs.add_parser("logs", help="copy Setup logs + C:\\winref off a stopped VM's disk")
+    lg.add_argument("--image", help="qcow2 to read (default: install.qcow2, else base)")
+    lg.add_argument("--out", help="destination directory (a /mnt/<drive> path)")
 
 
 def command(args, repo: Path) -> int:
-    return {"install": cmd_install, "run": cmd_run, "status": cmd_status}[args.winref_cmd](
-        args, repo
-    )
+    return {
+        "install": cmd_install,
+        "run": cmd_run,
+        "status": cmd_status,
+        "logs": cmd_logs,
+    }[args.winref_cmd](args, repo)

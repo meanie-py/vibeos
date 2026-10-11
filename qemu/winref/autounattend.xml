@@ -12,6 +12,9 @@
     * the generic Windows 11 Pro INSTALL key selects the edition and does not activate.
       The VM runs unactivated (a watermark, no personalization), which changes nothing a
       conformance test can observe.
+  The computer name must differ from the account name: with both `winref`, Setup resolved
+  the account as the MACHINE when adding it to Administrators (0x8007056b, no such member),
+  so `winref` was not an admin and the elevated FirstLogonCommands never ran.
   Everything after first logon (test signing, the runner task) is in winref/setup.ps1 on
   the same answer-file CD. No SkipMachineOOBE / SkipUserOOBE: they are deprecated, and on
   this 24H2-era build they let OOBE finish and log on but FirstLogonCommands never ran.
@@ -113,7 +116,7 @@
   </settings>
   <settings pass="specialize">
     <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
-      <ComputerName>WINREF</ComputerName>
+      <ComputerName>WINREF-VM</ComputerName>
       <TimeZone>UTC</TimeZone>
     </component>
     <component name="Microsoft-Windows-Deployment" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
