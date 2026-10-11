@@ -371,6 +371,16 @@ def stage_derive(
             count=1,
             flags=re.M,
         )
+    # A crate directory that exists and is not THIS module's is someone else's crate:
+    # cmdutils' dbgprint.exe derived `dbgprint-rust`, the kernel's debug-print crate, and
+    # scaffold refusing to overwrite it was the only thing between a paid translation and
+    # the kernel's sources. Checked before anything is written.
+    crate_dir = REPO / "sdk" / "lib" / "rust" / dp.crate_name
+    if crate_dir.is_dir() and load_state(stem).get("crate") != dp.crate_name:
+        raise SystemExit(
+            f"derive: {stem}: crate {dp.crate_name} already exists and is not this module's "
+            f"({crate_dir.relative_to(REPO)}); port it under another stem/target name"
+        )
     updated = upsert_profile_arm(script, arm, stem)
     if updated != script:
         GEN.write_text(updated)
