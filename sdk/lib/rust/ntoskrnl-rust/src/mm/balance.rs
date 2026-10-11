@@ -134,7 +134,7 @@ pub unsafe extern "system" fn MmReleasePageMemoryConsumer(
     InterlockedDecrementUL(
         core::ptr::addr_of_mut!(MiMemoryConsumers[Consumer as usize].PagesUsed)
     );
-    UpdateTotalCommittedPages(-1);
+    // MmTotalCommittedPages is the commit charge (ARM3/commit.rs), not pages in use: upstream's UpdateTotalCommittedPages(-1) here is dropped.
 
     // [guard] let old_irql = MiAcquirePfnLock();
     let pfn_guard = unsafe { crate::ARM3::helpers::PfnLockGuard::acquire() };
@@ -386,7 +386,7 @@ pub unsafe extern "system" fn MmRequestPageMemoryConsumer(
     InterlockedIncrementUL(
         core::ptr::addr_of_mut!(MiMemoryConsumers[Consumer as usize].PagesUsed)
     );
-    UpdateTotalCommittedPages(1);
+    // MmTotalCommittedPages is the commit charge (ARM3/commit.rs), not pages in use: upstream's UpdateTotalCommittedPages(1) here is dropped.
 
     STATUS_SUCCESS
 }

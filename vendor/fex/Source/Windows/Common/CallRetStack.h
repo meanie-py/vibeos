@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <algorithm>
+
 #include <FEXCore/Core/Context.h>
 #include <FEXCore/Utils/Allocator.h>
 #include <FEXCore/Utils/LogManager.h>
@@ -31,7 +33,9 @@ void InitializeThread(FEXCore::Core::InternalThreadState* Thread) {
                                         FEXCore::Allocator::THPControl::Disable);
 
   Thread->CallRetStackBase = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(CallRetStackAlloc) + FEXCore::Utils::FEX_PAGE_SIZE);
-  ::VirtualAlloc(Thread->CallRetStackBase, FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE, MEM_COMMIT, PAGE_READWRITE);
+  // VIBEOS PATCH (commit on touch): left reserved; HandleAccessViolation commits each page
+  // the stack reaches. 4 MB a thread committed up front, and recommitted at every zeroing,
+  // was most of what a FEX process charged against vibeos's pagefile-less commit limit.
 
   Thread->CurrentFrame->State.callret_sp = GetInfoThread(Thread).DefaultLocation;
 }
@@ -43,6 +47,22 @@ void DestroyThread(FEXCore::Core::InternalThreadState* Thread) {
 
 bool HandleAccessViolation(FEXCore::Core::InternalThreadState* Thread, uint64_t Address, uint64_t& CallRetSPReg) {
   auto CallRetStackInfo = GetInfoThread(Thread);
+  // VIBEOS PATCH (commit on touch): a page of the stack proper that is only reserved (never
+  // touched, or zeroed since) is committed and the access retried. The guard pages either
+  // side stay reserved, so a run off either end is still an imbalance below.
+  const uint64_t StackBase = reinterpret_cast<uint64_t>(Thread->CallRetStackBase);
+  const uint64_t StackEnd = StackBase + FEXCore::Core::InternalThreadState::CALLRET_STACK_SIZE;
+  if (Address >= StackBase && Address < StackEnd) {
+    void* Page = reinterpret_cast<void*>(Address & FEXCore::Utils::FEX_PAGE_MASK);
+    MEMORY_BASIC_INFORMATION Info;
+    if (::VirtualQuery(Page, &Info, sizeof(Info)) && Info.State == MEM_RESERVE) {
+      static constexpr uint64_t MaxFaultCommitSize = 1024 * 64;
+      const uint64_t Size = std::min({MaxFaultCommitSize, StackEnd - reinterpret_cast<uint64_t>(Page), static_cast<uint64_t>(Info.RegionSize)});
+      if (::VirtualAlloc(Page, Size, MEM_COMMIT, PAGE_READWRITE)) {
+        return true;
+      }
+    }
+  }
   if (Address >= CallRetStackInfo.AllocationBase && Address < CallRetStackInfo.AllocationEnd) {
     LogMan::Msg::DFmt("Call-ret stack inbalance: {:X}", Address);
     CallRetSPReg = CallRetStackInfo.DefaultLocation;

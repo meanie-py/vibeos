@@ -2,6 +2,7 @@
 #pragma once
 
 #include <FEXCore/Utils/IntervalList.h>
+#include <algorithm>
 #include <thread>
 #include <shared_mutex>
 
@@ -43,7 +44,20 @@ public:
       } else {
         static constexpr size_t MaxFaultCommitSize = 1024 * 64;
         const auto AlignedFaultAddress = reinterpret_cast<void*>(FaultAddress & FEXCore::Utils::FEX_PAGE_MASK);
-        VirtualAlloc(AlignedFaultAddress, std::min(Query.Size, MaxFaultCommitSize), MEM_COMMIT, PAGE_READWRITE);
+        // VIBEOS PATCH (commit on touch): commit only pages still merely RESERVED, never
+        // past the end of that run, and with the protection the range was reserved with.
+        // A fault on a committed page is someone else's (a JIT guard page, an RWX write
+        // trap), and committing over it would reset its protection; code buffers are
+        // reserved RWX and must come up executable. A refused commit (the system is at its
+        // commit limit) is not handled: the fault stands.
+        MEMORY_BASIC_INFORMATION Info;
+        if (NtQueryVirtualMemory(NtCurrentProcess(), AlignedFaultAddress, MemoryBasicInformation, &Info, sizeof(Info), nullptr) ||
+            Info.State != MEM_RESERVE) {
+          return false;
+        }
+        const size_t CommitSize = std::min({static_cast<size_t>(Query.Size), MaxFaultCommitSize, static_cast<size_t>(Info.RegionSize)});
+        return VirtualAlloc(AlignedFaultAddress, CommitSize, MEM_COMMIT, Info.AllocationProtect ? Info.AllocationProtect : PAGE_READWRITE) !=
+               nullptr;
       }
       return true;
     }

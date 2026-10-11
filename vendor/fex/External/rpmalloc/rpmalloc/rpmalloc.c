@@ -1043,6 +1043,30 @@ page_get_local_free_block(page_t* page) {
 	return block;
 }
 
+// VIBEOS PATCH (commit per block): on Windows with decommit enabled, medium (4 MB) and large
+// (64 MB) pages are committed one block at a time as blocks are first handed out, not whole.
+// The vibeos kernel charges commit against a limit with no pagefile behind it, and a single
+// medium malloc committing 4 MB (a large one 64 MB) put FEX's guests over it. Small (64 KB)
+// pages keep upstream's whole-page commit. Memory handed out is always committed: the kernel
+// reads and writes malloc'd buffers in syscalls, and cannot take a commit-on-touch fault.
+#if PLATFORM_WINDOWS && ENABLE_DECOMMIT
+#define RPMALLOC_COMMIT_PER_BLOCK 1
+#else
+#define RPMALLOC_COMMIT_PER_BLOCK 0
+#endif
+
+static inline int
+page_type_commits_per_block(uint32_t page_type) {
+	return RPMALLOC_COMMIT_PER_BLOCK && !global_config.disable_decommit &&
+	       ((page_type == PAGE_MEDIUM) || (page_type == PAGE_LARGE));
+}
+
+//! Commit what a whole-page commit used to: everything for a small page, the header page otherwise
+static inline size_t
+page_initial_commit_size(uint32_t page_type, size_t page_size) {
+	return page_type_commits_per_block(page_type) ? global_config.page_size : page_size;
+}
+
 static inline void
 page_decommit_memory_pages(page_t* page) {
 	if (page->is_decommitted)
@@ -1059,7 +1083,8 @@ page_commit_memory_pages(page_t* page) {
 		return;
 	void* extra_page = pointer_offset(page, global_config.page_size);
 	size_t extra_page_size = page_get_size(page) - global_config.page_size;
-	global_memory_interface->memory_commit(extra_page, extra_page_size);
+	if (!page_type_commits_per_block(page->page_type)) // VIBEOS PATCH: per-block pages commit as blocks are handed out
+		global_memory_interface->memory_commit(extra_page, extra_page_size);
 	page->is_decommitted = 0;
 #if ENABLE_DECOMMIT
 #if !defined(__APPLE__)
@@ -1207,6 +1232,17 @@ static NOINLINE void*
 page_initialize_blocks(page_t* page) {
 	rpmalloc_assert(page->block_initialized < page->block_count, "Block initialization internal failure");
 	block_t* block = page_block(page, page->block_initialized);
+#if RPMALLOC_COMMIT_PER_BLOCK
+	// VIBEOS PATCH (commit per block): the OS pages under this block, before any bookkeeping, so
+	// a refused commit (the system is at its commit limit) leaves the page as it was and malloc
+	// returns NULL. Committing a page already committed costs nothing more.
+	if (page_type_commits_per_block(page->page_type)) {
+		uintptr_t start = (uintptr_t)block & ~(uintptr_t)(global_config.page_size - 1);
+		uintptr_t end = ((uintptr_t)block + page->block_size + global_config.page_size - 1) & ~(uintptr_t)(global_config.page_size - 1);
+		if (!VirtualAlloc((void*)start, end - start, MEM_COMMIT, PAGE_READWRITE))
+			return 0;
+	}
+#endif
 	++page->block_initialized;
 	++page->block_used;
 
@@ -1247,6 +1283,8 @@ page_allocate_block(page_t* page, unsigned int zero) {
 		}
 		if (block == 0) {
 			block = page_initialize_blocks(page);
+			if (UNEXPECTED(block == 0)) // VIBEOS PATCH: commit refused (commit per block)
+				return 0;
 			is_zero = page->is_zero;
 		}
 	}
@@ -1307,7 +1345,7 @@ span_allocate_page(span_t* span) {
 #if ENABLE_DECOMMIT
 	// The first page is always committed on initial span map of memory
 	if (span->page_initialized)
-		global_memory_interface->memory_commit(page, span->page_size);
+		global_memory_interface->memory_commit(page, page_initial_commit_size(span->page_type, span->page_size)); // VIBEOS PATCH
 #endif
 	++span->page_initialized;
 
@@ -1559,7 +1597,7 @@ heap_get_span(heap_t* heap, page_type_t page_type) {
 			page_address_mask = LARGE_PAGE_MASK;
 		}
 #if ENABLE_DECOMMIT
-		global_memory_interface->memory_commit(span, page_size);
+		global_memory_interface->memory_commit(span, page_initial_commit_size(page_type, page_size)); // VIBEOS PATCH
 #endif
 		span->heap = heap;
 		span->page_type = page_type;

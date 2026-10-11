@@ -83,6 +83,7 @@ guest_sets:
       - base/applications/msconfig/msconfig.exe
       - base/applications/dxdiag/dxdiag.exe
       - base/applications/rapps/rapps.exe
+      - base/applications/cleanmgr/cleanmgr/cleanmgr.exe
       - base/applications/mplay32/mplay32.exe
       - base/applications/sndrec32/sndrec32.exe
       - base/shell/explorer/explorer.exe

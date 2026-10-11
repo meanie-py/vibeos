@@ -46,6 +46,15 @@ FEX_DEFAULT_VISIBILITY void SetupHooks(size_t PageSize, HookPtrs Ptrs);
 FEX_DEFAULT_VISIBILITY void ClearHooks();
 
 #ifdef _WIN32
+// VIBEOS PATCH (commit on touch): when a frontend installs this, an allocation asked for
+// committed is only RESERVED and handed to the frontend's OvercommitTracker, which commits
+// each page when it is first touched. A host whose commit is charged against a limit with no
+// pagefile behind it (vibeos's livecd) cannot afford FEX committing 16 MB code buffers and
+// 4 MB pools per process up front: six guests at boot exhausted it. Mark = true on
+// allocation, false on free. Null (the default, and upstream's behaviour): commit eagerly.
+using LazyCommitPtr = void (*)(void* Base, size_t Size, bool Mark);
+FEX_DEFAULT_VISIBILITY extern LazyCommitPtr LazyCommitTrack;
+
 inline void* VirtualAlloc(void* Base, size_t Size, bool Execute = false, bool Commit = true) {
   // Allocate top-down to avoid polluting the lower VA space, as even on 64-bit some programs (i.e. LuaJIT) require allocations below 4GB.
   DWORD Flags = (Commit ? MEM_COMMIT : 0) | MEM_RESERVE | MEM_TOP_DOWN;
@@ -58,7 +67,15 @@ inline void* VirtualAlloc(void* Base, size_t Size, bool Execute = false, bool Co
   return ::VirtualAlloc2(nullptr, Base, Size, Flags, Execute ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE, Execute ? &Parameter : nullptr,
                          Execute ? 1 : 0);
 #else
-  return ::VirtualAlloc(Base, Size, Flags, Execute ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+  const bool Lazy = Commit && LazyCommitTrack; // VIBEOS PATCH
+  if (Lazy) {
+    Flags &= ~MEM_COMMIT;
+  }
+  void* Ptr = ::VirtualAlloc(Base, Size, Flags, Execute ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE);
+  if (Ptr && Lazy) {
+    LazyCommitTrack(Ptr, Size, true);
+  }
+  return Ptr;
 #endif
 }
 
@@ -67,6 +84,9 @@ inline void* VirtualAlloc(size_t Size, bool Execute = false, bool Commit = true)
 }
 
 inline void VirtualFree(void* Ptr, size_t Size) {
+  if (LazyCommitTrack) { // VIBEOS PATCH: the range is no longer the tracker's to commit
+    LazyCommitTrack(Ptr, Size, false);
+  }
   ::VirtualFree(Ptr, 0, MEM_RELEASE);
 }
 

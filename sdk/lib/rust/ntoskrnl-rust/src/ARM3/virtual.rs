@@ -2446,12 +2446,29 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
             StartingAddress = PBaseAddress as ULONG_PTR;
         }
 
+        /* Commit charge for a reserve-and-commit: the whole new VAD, taken before
+         * anything is built so running out fails here (commit.rs). */
+        let mut CommitPages: usize = 0;
+        if (AllocationType & MEM_COMMIT) != 0 {
+            CommitPages = (PRegionSize as usize) >> PAGE_SHIFT;
+            if !super::commit::MiChargeCommitment(CommitPages, Process) {
+                if Attached != 0 {
+                    KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
+                }
+                if ProcessHandle != NtCurrentProcess() as HANDLE {
+                    ObDereferenceObject(Process as PVOID);
+                }
+                return super::commit::STATUS_COMMITMENT_LIMIT;
+            }
+        }
+
         /* Charge quotas for the VAD */
         Status = PsChargeProcessNonPagedPoolQuota(
             Process,
             core::mem::size_of::<MMVAD_LONG>() as _,
         );
         if Status < 0 {
+            super::commit::MiReturnCommitment(CommitPages, Process);
             if Attached != 0 {
                 KeUnstackDetachProcess(core::ptr::addr_of_mut!(ApcState));
             }
@@ -2471,6 +2488,7 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         ) as PMMVAD;
         if Vad.is_null() {
             Status = STATUS_INSUFFICIENT_RESOURCES;
+            super::commit::MiReturnCommitment(CommitPages, Process);
             if QuotaCharged != 0 {
                 PsReturnProcessNonPagedPoolQuota(
                     Process,
@@ -2505,6 +2523,7 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         );
         if Status < 0 {
             ExFreePoolWithTag(Vad as PVOID, u32::from_le_bytes(*b"VadS"));
+            super::commit::MiReturnCommitment(CommitPages, Process);
             if QuotaCharged != 0 {
                 PsReturnProcessNonPagedPoolQuota(
                     Process,
@@ -2518,6 +2537,21 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
                 ObDereferenceObject(Process as PVOID);
             }
             return Status;
+        }
+
+        /* The charge was for the size asked; the VAD is what was placed. Settle the
+         * difference so a later release returns exactly what is held. */
+        if CommitPages != 0 {
+            let Placed = ((*Vad).EndingVpn as usize) - ((*Vad).StartingVpn as usize) + 1;
+            if Placed < CommitPages {
+                super::commit::MiReturnCommitment(CommitPages - Placed, Process);
+                CommitPages = Placed;
+            } else if Placed > CommitPages
+                && super::commit::MiChargeCommitment(Placed - CommitPages, Process)
+            {
+                CommitPages = Placed;
+            }
+            (*Vad).u.VadFlags.set_CommitCharge(CommitPages as _);
         }
 
         // ARM64: clear stale bootloader identity-mapping PTEs over the newly
@@ -2726,6 +2760,11 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         LastPte =
             MI_GET_PROTOTYPE_PTE_FOR_VPN(FoundVad, EndingAddress >> PAGE_SHIFT);
         QuotaCharge = (LastPte.offset_from(PointerPte) + 1) as ULONG;
+        /* The section's charge (no process: it outlives any one mapper), taken for
+         * the whole range and settled after the walk, like the private path. */
+        if !super::commit::MiChargeCommitment(QuotaCharge as usize, core::ptr::null_mut()) {
+            fail_path!(super::commit::STATUS_COMMITMENT_LIMIT);
+        }
         KeAcquireGuardedMutexUnsafe(core::ptr::addr_of_mut!(MmSectionCommitMutex));
 
         /* Get the segment template PTE and walk pages */
@@ -2745,6 +2784,7 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         QuotaCharge -= QuotaFree;
         (*(*(*FoundVad).ControlArea).Segment).NumberOfCommittedPages += QuotaCharge;
         KeReleaseGuardedMutexUnsafe(core::ptr::addr_of_mut!(MmSectionCommitMutex));
+        super::commit::MiReturnCommitment(QuotaFree as usize, core::ptr::null_mut());
 
         Status = STATUS_SUCCESS;
         MmUnlockAddressSpace(AddressSpace as PVOID);
@@ -2780,15 +2820,17 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
     PointerPte = MiAddressToPte(StartingAddress as PVOID);
     LastPte = MiAddressToPte(EndingAddress as PVOID);
 
-    /* Update commit charges */
+    /* Commit charge: the whole range up front, so a commit past the limit fails
+     * before any PTE changes; the walk below counts the pages that really go from
+     * uncommitted to committed and the rest is handed back (commit.rs). Upstream
+     * added the full range to the process count whether or not it was already
+     * committed, and never charged the system. */
     let pages = LastPte.offset_from(PointerPte) as ULONG_PTR + 1;
-    let new_commit_charge =
-        (*FoundVad).u.VadFlags.CommitCharge() as ULONG_PTR + pages;
-    (*FoundVad).u.VadFlags.set_CommitCharge(new_commit_charge as _);
-    (*Process).CommitCharge += pages as ntkrnl_sys::ddk::SIZE_T;
-    if (*Process).CommitCharge > (*Process).CommitChargePeak {
-        (*Process).CommitChargePeak = (*Process).CommitCharge;
+    if !super::commit::MiChargeCommitment(pages as usize, Process) {
+        fail_path!(super::commit::STATUS_COMMITMENT_LIMIT);
     }
+    let MemCommitVad = (*FoundVad).u.VadFlags.MemCommit() != 0;
+    let mut NewlyCommitted: ULONG_PTR = 0;
 
     /* Lock the working set */
     MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
@@ -2802,9 +2844,14 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
         }
 
         if (*PointerPte).Long == 0 {
+            /* A blank PTE is already committed in a reserve-and-commit VAD. */
+            if !MemCommitVad {
+                NewlyCommitted += 1;
+            }
             MiIncrementPageTableReferences(MiPteToAddress(PointerPte));
             MI_WRITE_INVALID_PTE(PointerPte, TempPte);
         } else if (*PointerPte).Long == MmDecommittedPte.Long {
+            NewlyCommitted += 1;
             MI_WRITE_INVALID_PTE(PointerPte, TempPte);
         } else if ChangeProtection == 0 && Protect != MiGetPageProtection(PointerPte) {
             ChangeProtection = 1;
@@ -2815,6 +2862,11 @@ pub unsafe extern "system" fn NtAllocateVirtualMemory(
 
     MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
     Status = STATUS_SUCCESS;
+
+    super::commit::MiReturnCommitment((pages - NewlyCommitted) as usize, Process);
+    let new_commit_charge =
+        (*FoundVad).u.VadFlags.CommitCharge() as ULONG_PTR + NewlyCommitted;
+    (*FoundVad).u.VadFlags.set_CommitCharge(new_commit_charge as _);
 
     MmUnlockAddressSpace(AddressSpace as PVOID);
 
@@ -3011,6 +3063,10 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
                 | (PAGE_SIZE - 1) as ULONG_PTR;
 
             MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+            /* What the whole VAD holds committed goes back (upstream returned
+             * nothing here, so every whole-VAD release leaked its charge). */
+            CommitReduction =
+                MiCalculatePageCommitment(StartingAddress, EndingAddress, Vad, Process) as LONG_PTR;
             MiRemoveNode(
                 Vad as PMMADDRESS_NODE,
                 core::ptr::addr_of_mut!((*Process).VadRoot),
@@ -3027,6 +3083,12 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
                 if ending_vpn == (*Vad).EndingVpn as ULONG_PTR {
                     /* Case D — whole VAD */
                     MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+                    CommitReduction = MiCalculatePageCommitment(
+                        StartingAddress,
+                        EndingAddress,
+                        Vad,
+                        Process,
+                    ) as LONG_PTR;
                     MiRemoveNode(
                         Vad as PMMADDRESS_NODE,
                         core::ptr::addr_of_mut!((*Process).VadRoot),
@@ -3122,8 +3184,7 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
 
         // FinalPath: update process counters, unlock, optional free VAD, detach, write back
         PRegionSize = (EndingAddress - StartingAddress + 1) as SIZE_T;
-        let cr_unsigned: ntkrnl_sys::ddk::SIZE_T = CommitReduction as ntkrnl_sys::ddk::SIZE_T;
-        (*Process).CommitCharge -= cr_unsigned;
+        super::commit::MiReturnCommitment(CommitReduction as usize, Process);
         if (FreeType & MEM_RELEASE) != 0 {
             (*Process).VirtualSize -= PRegionSize as ntkrnl_sys::ddk::SIZE_T;
         }
@@ -3158,16 +3219,21 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
             (((*Vad).EndingVpn as ULONG_PTR) << PAGE_SHIFT) | (PAGE_SIZE - 1) as ULONG_PTR;
     }
 
+    /* What is committed in the range is what the decommit gives back, counted the
+     * way every other charge and return counts it (MiCalculatePageCommitment), so
+     * the ledger balances; MiDecommitPages's own count of already-decommitted PTEs
+     * does not know a blank PTE in a reserve-only VAD was never committed. */
+    MiLockProcessWorkingSetUnsafe(Process, CurrentThread);
+    CommitReduction =
+        MiCalculatePageCommitment(StartingAddress, EndingAddress, Vad, Process) as LONG_PTR;
+    MiUnlockProcessWorkingSetUnsafe(Process, CurrentThread);
     AlreadyDecommitted = MiDecommitPages(
         StartingAddress as PVOID,
         MiAddressToPte(EndingAddress as PVOID),
         Process,
         Vad,
     ) as LONG_PTR;
-    let pte_count = MiAddressToPte(EndingAddress as PVOID)
-        .offset_from(MiAddressToPte(StartingAddress as PVOID)) as LONG_PTR
-        + 1;
-    CommitReduction = pte_count - AlreadyDecommitted;
+    let _ = AlreadyDecommitted;
     let new_cc = (*Vad).u.VadFlags.CommitCharge() as LONG_PTR - CommitReduction;
     (*Vad).u.VadFlags.set_CommitCharge(new_cc as _);
 
@@ -3175,8 +3241,7 @@ pub unsafe extern "system" fn NtFreeVirtualMemory(
     let _ = Vad; // keep Vad alive — decommit must not free the VAD
     Status = STATUS_SUCCESS;
     PRegionSize = (EndingAddress - StartingAddress + 1) as SIZE_T;
-    let cr_unsigned: ntkrnl_sys::ddk::SIZE_T = CommitReduction as ntkrnl_sys::ddk::SIZE_T;
-    (*Process).CommitCharge -= cr_unsigned;
+    super::commit::MiReturnCommitment(CommitReduction as usize, Process);
     if (FreeType & MEM_RELEASE) != 0 {
         (*Process).VirtualSize -= PRegionSize as ntkrnl_sys::ddk::SIZE_T;
     }
