@@ -227,8 +227,10 @@ def _resolve_one_arch(
                     types.setdefault(names[index], f"{sugar}|{canon}" if canon else sugar)
         for match in _C_ANY_ERROR_RE.finditer(proc.stderr):
             index, odd = divmod(int(match.group(1)) - _C_FIRST_NAME_LINE, 2)
-            if not odd and 0 <= index < len(names) and not match.group(2).startswith(
-                "duplicate case value"
+            if (
+                not odd
+                and 0 <= index < len(names)
+                and not match.group(2).startswith("duplicate case value")
             ):
                 values.pop(names[index], None)
         rejected = {n: "not an integer constant expression" for n in names if n not in values}
