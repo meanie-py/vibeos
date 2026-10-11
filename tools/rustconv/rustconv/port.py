@@ -2530,12 +2530,17 @@ def _crt_data_globals(path: Path) -> list[str]:
     # The stream ARRAY itself, by address: regedit's regproc.c reads `&_iob[1]` (stdout) for
     # `-` as a file name. msvcrt exports `_iob` as DATA, a dllimport only `__imp__iob`
     # reaches; `__iob_func()` is the same array's address (undefined `_iob` at link before).
-    if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", text):
+    # An `extern { static mut _iob: FILE; }` is the same import misspelled, not a module of
+    # its own (finger's net.rs): it goes, and its uses take the accessor.
+    undeclared = re.sub(
+        r"(?m)^[ \t]*(?:pub\s+)?static\s+mut\s+_iob\s*:\s*[^;=]+;[ \t]*\n", "", text
+    )
+    if not re.search(r"\b(?:let(?:\s+mut)?|static(?:\s+mut)?|fn)\s+_iob\b|\b_iob\s*:", undeclared):
         new, n = re.subn(
             r"(?:&raw\s+(?:mut|const)\s+_iob\b|(?:core::ptr::)?addr_of(?:_mut)?!\(\s*_iob\s*\)"
             r"|\b_iob\.as_mut_ptr\(\))",
             "__iob_func()",
-            text,
+            undeclared,
         )
         if n:
             text = new
@@ -2668,6 +2673,40 @@ def _builtin_location_macros(path: Path) -> int:
     if new != text:
         path.write_text(new)
     return a + b
+
+
+_CONST_ARRAY = re.compile(
+    r"(?m)^(?P<vis>pub(?:\([^)]*\))?\s+)?const\s+(?P<name>[A-Za-z_]\w*)\s*:\s*\["
+)
+
+
+def _pointed_const_arrays(path: Path) -> list[str]:
+    """A module `const NAME: [T; N]` whose POINTER is taken becomes a `static`.
+
+    A const is inlined at each use, so `NAME.as_ptr()` points into a temporary that dies
+    at the end of the statement. attrib kept `pszFileName = ALL_FILES_PATTERN.as_mut_ptr()`
+    and handed the dangling "*.*" to AttribEnumFiles; the C's string literal is static
+    storage. `as_mut_ptr` needs a `static mut` (the crate allows its references)."""
+    text = path.read_text()
+    code = _strip_rust_comments(text)
+    changed: list[str] = []
+
+    def one(m: re.Match[str]) -> str:
+        name = m.group("name")
+        mut = re.search(rf"\b{name}\s*\)?\s*\.\s*as_mut_ptr\s*\(", code)
+        ptr = mut or re.search(
+            rf"\b{name}\s*\)?\s*\.\s*as_ptr\s*\(|addr_of(?:_mut)?!\(\s*{name}\s*\)|&raw\s+(?:const|mut)\s+{name}\b",
+            code,
+        )
+        if not ptr:
+            return m.group(0)
+        changed.append(name)
+        return f"{m.group('vis') or ''}static {'mut ' if mut else ''}{name}: ["
+
+    new = _CONST_ARRAY.sub(one, text)
+    if new != text:
+        path.write_text(new)
+    return changed
 
 
 _RX_GATE = r'(?:feature\s*=\s*"(?:reactos|__REACTOS__)"|reactos|__REACTOS__)'
@@ -2821,7 +2860,9 @@ def _c2rust_prelude_fields(path: Path) -> int:
     return n
 
 
-_STR_AS_PTR = re.compile(r'(?<![\w"])(?:TEXT!\(\s*)?"((?:[^"\\\n]|\\.)*)"(\s*\))?\.as_ptr\(\)')
+_STR_AS_PTR = re.compile(
+    r'(?<![\w"])(?:(?:TEXT|_T)!\(\s*)?"((?:[^"\\\n]|\\.)*)"(\s*\))?\.as_ptr\(\)'
+)
 
 
 def _c_str_literals(path: Path) -> list[str]:
@@ -2836,7 +2877,8 @@ def _c_str_literals(path: Path) -> list[str]:
 
     def one(m: re.Match[str]) -> str:
         body = m.group(1)
-        if m.group(0).startswith("TEXT!") != bool(m.group(2)):
+        # arp (ANSI) spells it `_T!("%s").as_ptr()`: the identity macro, NUL-less too.
+        if m.group(0).startswith(("TEXT!", "_T!")) != bool(m.group(2)):
             return m.group(0)  # unbalanced TEXT!( ... ) -- not this shape
         if body.endswith("\\0") or not body.isascii():
             return m.group(0)
@@ -2987,6 +3029,13 @@ def stage_integrate(stem: str) -> None:
         if loc:
             changed += 1
             print(f"integrate: {path.stem}: {loc} __FILE__/__LINE__ as file!()/line!()")
+        pc = _pointed_const_arrays(path)
+        if pc:
+            changed += 1
+            print(
+                f"integrate: {path.stem}: const array(s) whose pointer escapes -> static: "
+                + ", ".join(pc)
+            )
         rx = _reactos_gates(path)
         if rx:
             changed += 1

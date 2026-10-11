@@ -856,3 +856,37 @@ def test_conutils_streams_are_values_not_places(tmp_path):
     out = rs.read_text()
     assert "ConPuts(StdOut, s); ConPrintf(StdErr, f); ConPuts(StdOut, s);" in out
     assert "addr_of_mut!(csStdOut)" in out
+
+
+def test_an_ansi_t_literal_gets_its_nul_too(tmp_path):
+    # arp (ANSI): `_T!("%s").as_ptr()` -- printf read on through rodata.
+    rs = tmp_path / "arp.rs"
+    rs.write_text('fn f() { printf(_T!("%s").as_ptr(), s); sprintf(b, _T!(" %02X").as_ptr(), c); }\n')
+    assert port._c_str_literals(rs) == ["%s", " %02X"]
+    assert 'printf(b"%s\\0".as_ptr(), s); sprintf(b, b" %02X\\0".as_ptr(), c);' in rs.read_text()
+
+
+def test_a_const_array_whose_pointer_escapes_becomes_static(tmp_path):
+    # attrib: `pszFileName = (ALL_FILES_PATTERN).as_mut_ptr();` -- a dangling temporary.
+    rs = tmp_path / "attrib.rs"
+    rs.write_text(
+        "pub const ALL_FILES_PATTERN: [u16; 4] = [42, 46, 42, 0];\n"
+        "const RO: [u16; 2] = [1, 0];\nconst SIZES: [u32; 2] = [1, 2];\n"
+        "fn f() { p = (ALL_FILES_PATTERN).as_mut_ptr(); q = RO.as_ptr(); n = SIZES[1]; }\n"
+    )
+    assert port._pointed_const_arrays(rs) == ["ALL_FILES_PATTERN", "RO"]
+    out = rs.read_text()
+    assert "pub static mut ALL_FILES_PATTERN: [u16; 4]" in out and "static RO: [u16; 2]" in out
+    assert "const SIZES: [u32; 2]" in out
+
+
+def test_an_extern_iob_declaration_goes_with_its_uses(tmp_path):
+    # finger's net.rs: `extern { static mut _iob: FILE; }` + addr_of_mut!(_iob).offset(2).
+    rs = tmp_path / "net.rs"
+    rs.write_text(
+        'extern "C" {\n    static mut _iob: FILE;\n}\n'
+        "fn f() { fprintf((core::ptr::addr_of_mut!(_iob)).offset(2) as *mut FILE, s); }\n"
+    )
+    assert port._crt_data_globals(rs) == ["_iob x1"]
+    out = rs.read_text()
+    assert "static mut _iob" not in out and "fprintf((__iob_func()).offset(2) as *mut FILE, s)" in out
