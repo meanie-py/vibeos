@@ -773,6 +773,8 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
     cpp_classes leaves to it). Island items that name a class (`IMAGE_PART { m_rcPart:
     CRect }`, `extern static mainWindow: CMainWindow`) then resolve to the one definition."""
     names = set(re.findall(r"^pub (?:struct|union) (\w+)", generated, re.M))
+    # ...and a path DEPENDENCY's classes the same way (see _dep_classes).
+    deps = {k: v for k, v in _dep_classes(src.parent).items() if k not in names}
     done: set[str] = set()
     for island in sorted(src.glob("types_*.rs")):
         lines = island.read_text().split("\n")
@@ -780,7 +782,8 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
         i = 0
         while i < len(lines):
             m = re.match(r"pub (?:struct|union) (\w+)\s*\{", lines[i])
-            if not m or m.group(1) not in names:
+            dep = deps.get(m.group(1)) if m else None
+            if not m or (m.group(1) not in names and dep is None):
                 out.append(lines[i])
                 i += 1
                 continue
@@ -792,10 +795,76 @@ def _defer_island_classes(src: Path, stem: str, generated: str) -> list[str]:
                 i += 1
                 if depth <= 0:
                     break
-            out.append(f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it")
+            out.append(
+                dep or f"pub use crate::{stem}::cpp_classes::{m.group(1)}; // port cppapp owns it"
+            )
             done.add(m.group(1))
         island.write_text("\n".join(out))
     return sorted(done)
+
+
+def _dep_classes(crate_dir: Path) -> dict[str, str]:
+    """Classes a path DEPENDENCY's cppapp renders, as the island line that re-exports them.
+
+    msutb's `CTipbarWnd : CUIFWindow` builds on cicero's classes, and msutb's island carries
+    bindgen's copy of each: an opaque vptr, no methods (`QueryDword` x32, `m_hWnd` x26 against
+    msutb). The class model of the crate that owns the header is the authority, as it is for
+    the module's own classes; one definition, so a `*mut CUIFWindow` means the same type on
+    both sides of the crate boundary."""
+    cargo = crate_dir / "Cargo.toml"
+    if not cargo.is_file():
+        return {}
+    out: dict[str, str] = {}
+    for dep, rel in re.findall(
+        r'^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', cargo.read_text(), re.M
+    ):
+        for gen in sorted((crate_dir / rel).resolve().glob("src/*/cpp_classes.rs")):
+            mod = gen.parent.name
+            ident = dep.replace("-", "_")
+            for name in re.findall(r"^pub (?:struct|union) (\w+)", gen.read_text(), re.M):
+                out.setdefault(
+                    name, f"pub use {ident}::{mod}::cpp_classes::{name}; // {dep} owns it"
+                )
+    return out
+
+
+_DEP_BEGIN = "// ==== port resolve: path-dependency definitions (generated) ===="
+_DEP_END = "// ==== end path-dependency definitions ===="
+
+
+def _dep_definitions(names: set[str], crate: Path) -> dict[str, str]:
+    """`{name: "dep_ident::module::file"}` for each name exactly one module of a path
+    dependency defines `pub` at column 0. Ambiguous or private ones are left to report."""
+    cargo = crate / "Cargo.toml"
+    if not names or not cargo.is_file():
+        return {}
+    hits: dict[str, set[str]] = {}
+    for dep, rel in re.findall(
+        r'^([\w-]+)\s*=\s*\{\s*path\s*=\s*"([^"]+)"', cargo.read_text(), re.M
+    ):
+        root = (crate / rel).resolve() / "src"
+        ident = dep.replace("-", "_")
+        for rs in sorted(root.glob("*/*.rs")):
+            for m in prelude_resolve._DEF.finditer(rs.read_text(errors="replace")):
+                if m.group("name") in names and m.group("pub"):
+                    hits.setdefault(m.group("name"), set()).add(
+                        f"{ident}::{rs.parent.name}::{rs.stem}"
+                    )
+    return {k: next(iter(v)) for k, v in hits.items() if len(v) == 1}
+
+
+def _write_dep_block(prelude: Path, wired: dict[str, str]) -> None:
+    by_path: dict[str, list[str]] = {}
+    for name, path in wired.items():
+        by_path.setdefault(path, []).append(name)
+    body = "\n".join(
+        f"pub use {p}::{{{', '.join(sorted(ns))}}};" for p, ns in sorted(by_path.items())
+    )
+    block = f"{_DEP_BEGIN}\n{body}\n{_DEP_END}\n"
+    text = prelude.read_text()
+    m = re.search(rf"{re.escape(_DEP_BEGIN)}.*?{re.escape(_DEP_END)}\n?", text, re.S)
+    text = text[: m.start()] + block + text[m.end() :] if m else text.rstrip("\n") + "\n" + block
+    prelude.write_text(text)
 
 
 # Bump when what translate SEALS in a cppapp unit changes (2: the island's mixed-case
@@ -3914,6 +3983,7 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
     ambiguous: dict[str, list[str]] = {}
     types_only: set[str] = set()
     seen_names: set[str] = set()
+    dep_wired: dict[str, str] = {}
     for n in range(1, max_passes + 1):
         wanted = prelude_resolve.unresolved(
             state["crate"], RUST_TARGETS["amd64"], workspace, STATE_ROOT / stem / "target-amd64"
@@ -3949,6 +4019,16 @@ def _stage_resolve_once(stem: str, max_passes: int = 4, extra: set[str] | None =
         # E0255. regedit kept access-rust's HKEY_* copies after regproc.rs came to define them.
         for name in set(copied) & set(siblings):
             del copied[name]
+        # ...then a path DEPENDENCY's: msctf calls cicero's header inlines (cicMemFree x28,
+        # cicIsNullPtr x12), which cicero-rust translated and exports. `headers` leaves a
+        # header outside the module dir alone, so nothing else would ever import them.
+        found_dep = _dep_definitions(names - set(dep_wired), crate)
+        if found_dep:
+            dep_wired.update(found_dep)
+            wired += len(found_dep)
+        if dep_wired:
+            _write_dep_block(prelude, dep_wired)
+        names -= set(dep_wired)
         # A header helper the kernel -sys crate implements in Rust is imported from it, before
         # tree consensus is asked -- C macros included, since the substrate's port IS the
         # macro's Rust form. atapi's InsertTailList (16 copies, two ABIs), KeQuerySystemTime

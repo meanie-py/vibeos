@@ -975,3 +975,75 @@ def test_island_glue_gives_a_packed_interface_no_deref():
     glue = cpp_app._render_island_glue(ModuleModel(), island)
     assert "Deref for IShellFolder" not in glue
     assert "Deref for ITfLangBarMgr_P" in glue
+
+
+def test_a_module_operator_is_named_translatably_and_exported_under_its_symbol():
+    from types import SimpleNamespace
+
+    from rustconv.cpp_model import _Extractor
+
+    ex = SimpleNamespace(_overloads={})
+    assert _Extractor.fn_rust_name(ex, {"name": "operator new"}) == "cxx_operator_new"  # type: ignore[arg-type]
+    assert _Extractor.fn_rust_name(ex, {"name": "operator delete[]"}) == (  # type: ignore[arg-type]
+        "cxx_operator_delete_array"
+    )
+    m = ModuleModel()
+    m.allocators = {"new:CicNoThrow": "_ZnwjRK10CicNoThrow", "delete": "_ZdlPv"}
+    m.allocator_fns = {"new:CicNoThrow": "cxx_operator_new__0", "delete": "cxx_operator_delete"}
+    rs = cpp_app._allocator_exports(m)
+    assert 'export_name = "_ZnwjRK10CicNoThrow"' in rs
+    assert 'export_name = "_ZnwyRK10CicNoThrow"' in rs  # size_t is `y` on 64-bit
+    assert "cxx_operator_new__0(n as _, core::mem::transmute(tag))" in rs
+    assert 'export_name = "_ZdlPv")]' in rs and "cxx_operator_delete(p as _)" in rs
+    assert ModuleModel.from_json(m.to_json()).allocator_fns == m.allocator_fns
+    assert cpp_app._allocator_exports(ModuleModel()) == ""
+
+
+def _pair():
+    """msctfime's shape: CCompFrameWindow : CUIFWindow, both the module's."""
+    m = ModuleModel()
+    base = ClassModel("CUIFWindow", "CUIFWindow", "class", "w.h")
+    base.fields = [Field("m_hWnd", "HWND")]
+    derived = ClassModel("CCompFrameWindow", "CCompFrameWindow", "class", "c.h")
+    derived.bases = [Base("CUIFWindow", "public")]
+    for c in (base, derived):
+        m.classes[c.qualified] = c
+    return m
+
+
+def test_a_class_derefs_to_its_own_modules_primary_base():
+    rs = cpp_app.render_classes(_pair())
+    assert "impl core::ops::Deref for CCompFrameWindow { type Target = CUIFWindow;" in rs
+    assert "impl core::ops::DerefMut for CCompFrameWindow {" in rs
+
+
+def test_a_class_over_a_dependencys_class_does_not_derive_copy():
+    m = ModuleModel()
+    grip = ClassModel("CDefCompFrameGripper", "CDefCompFrameGripper", "class", "g.h")
+    grip.bases = [Base("CUIFGripper", "public")]
+    held = ClassModel("CHolder", "CHolder", "class", "h.h")
+    held.fields = [Field("m_grip", "const CUIFGripper")]
+    plain = ClassModel("CPlain", "CPlain", "class", "p.h")
+    plain.fields = [Field("x", "int")]
+    for c in (grip, held, plain):
+        m.classes[c.qualified] = c
+    island = "pub use cicero_rust::cicero::cpp_classes::CUIFGripper; // cicero-rust owns it\n"
+    rs = cpp_app.render_classes(m, frozenset(), island)
+    for name in ("CDefCompFrameGripper", "CHolder"):
+        assert f"#[repr(C)]\npub struct {name} {{" in rs
+        assert f"Copy)]\n#[repr(C)]\npub struct {name} {{" not in rs
+    assert "#[derive(Clone, Copy)]\n#[repr(C)]\npub struct CPlain {" in rs
+
+
+def test_a_reference_member_of_an_aggregate_static_takes_the_address():
+    assert cpp_app._is_reference("REFGUID") and cpp_app._is_reference("const GUID &")
+    assert not cpp_app._is_reference("GUID") and not cpp_app._is_reference("REFERENCE_TIME_x")
+    m = ModuleModel()
+    mb = ClassModel("MODEBIAS", "MODEBIAS", "struct", "m.cpp")
+    mb.fields = [Field("m_guid", "REFGUID"), Field("m_dwBias", "DWORD")]
+    m.classes[mb.qualified] = mb
+    g = GlobalVar("g_ModeBias", "const MODEBIAS [1]", "m.cpp", "{ { GUID_MODEBIAS_NONE, 0 } }")
+    rs = cpp_app.aggregate_static(g, cpp_app.Hierarchy(m), m)
+    assert rs is not None
+    assert "m_guid: core::ptr::addr_of!(GUID_MODEBIAS_NONE) as _" in rs
+    assert "m_dwBias: (0) as _" in rs

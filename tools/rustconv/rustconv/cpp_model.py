@@ -170,6 +170,10 @@ class ModuleModel:
     # generated cpp_alloc/cpp_free call THESE, so a C++ half and a Rust half of one heap
     # never cross allocators mid-flip.
     allocators: dict[str, str] = field(default_factory=dict)
+    # role -> the translatable name of the module's OWN definition of that operator
+    # (`cxx_operator_new`): cpp_classes exports it under the mangled symbol, so the operator
+    # is Rust too and no C++ half has to stay behind to provide it (cicero's cicbase.cpp).
+    allocator_fns: dict[str, str] = field(default_factory=dict)
     # File-scope typedefs of the module's .cpp files, as (file, text): main.cpp's
     # `typedef HWND (WINAPI *FN_HtmlHelpW)(..)`. A header's are the island's.
     typedefs: list[tuple[str, str]] = field(default_factory=list)
@@ -203,6 +207,7 @@ class ModuleModel:
             for e in raw.get("enums", [])
         ]
         out.allocators = raw.get("allocators", {})
+        out.allocator_fns = raw.get("allocator_fns", {})
         out.typedefs = [tuple(t) for t in raw.get("typedefs", [])]
         return out
 
@@ -264,7 +269,7 @@ class _Sources:
         depth, i = 0, b
         while i < len(data):
             c = data[i : i + 1]
-            depth += (c == b"(") - (c == b")")
+            depth += (c in (b"(", b"{")) - (c in (b")", b"}"))
             if c == b";" and depth == 0:
                 return data[b : i + 1].decode("utf-8", errors="replace")
             i += 1
@@ -564,6 +569,8 @@ class _Extractor:
                     self.model.allocators[role] = "_" + n["mangledName"].lstrip("_")
                 if self.mine(_file_of(n)):
                     self.free_function(n)
+                    if role:
+                        self.model.allocator_fns[role] = self.fn_rust_name(n)
             elif kind == "FunctionDecl" and record is None and self.mine(_file_of(n)):
                 self._register_function(n)
                 self.free_function(n)
@@ -931,12 +938,17 @@ class _Extractor:
                 self.scan_overloads(n.get("inner", []))
 
     def fn_rust_name(self, n: dict) -> str:
-        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it."""
+        """`Fill` alone, or `Fill__0`/`Fill__1` when the module overloads it. An operator is
+        `cxx_operator_new[_array]`: `operator new` is no name a C function can have, and
+        translate could not extract the body (cicbase.cpp went unbought three times)."""
         sigs = self._overloads.get(n["name"], [])
+        base = n["name"]
+        if base.startswith("operator "):
+            base = "cxx_" + base.replace("operator ", "operator_").replace("[]", "_array")
         if len(sigs) < 2:
-            return n["name"]
+            return base
         qt = n.get("type", {}).get("qualType", "")
-        return f"{n['name']}__{sigs.index(qt) if qt in sigs else len(sigs)}"
+        return f"{base}__{sigs.index(qt) if qt in sigs else len(sigs)}"
 
     def _register_function(self, n: dict) -> None:
         """A module free function's declaration (a prototype in dib.h counts), for its
