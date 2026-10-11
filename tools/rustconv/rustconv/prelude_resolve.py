@@ -658,7 +658,9 @@ SIBLING_BEGIN = "// ==== port resolve: cross-TU definitions (generated) ===="
 SIBLING_END = "// ==== end cross-TU definitions ===="
 _DEF = re.compile(
     r"^(?P<pub>pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?(?:extern\s+\"[^\"]+\"\s+)?"
-    r"(?P<kind>fn|static(?:\s+mut)?|const)\s+(?P<name>[A-Za-z_]\w*)\b",
+    # TYPES too: msctf's `LPFNCONSTRUCTOR` and `CompartmentValue` are file-scope typedefs in
+    # one unit that cppapp's classes name -- C's typedef is as cross-TU as its functions.
+    r"(?P<kind>fn|static(?:\s+mut)?|const|type|struct|union|enum)\s+(?P<name>[A-Za-z_]\w*)\b",
     re.M,
 )
 

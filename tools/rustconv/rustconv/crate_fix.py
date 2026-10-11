@@ -153,6 +153,46 @@ def function_spans(text: str) -> list[FnSpan]:
             else:
                 break
         out.append(FnSpan(m.group(1), start, close + 1))
+    out.extend(_method_spans(text))
+    return sorted(out, key=lambda s: s.start)
+
+
+_IMPL = re.compile(r"(?m)^impl(?:<[^>{]*>)?\s+([A-Za-z_]\w*)(?:<[^>{]*>)?\s*\{")
+_METHOD_FN = re.compile(
+    r"(?m)^    (?:pub(?:\([^)]*\))?\s+)?(?:const\s+)?(?:unsafe\s+)?"
+    r"(?:extern\s+\"[^\"]+\"\s+)?fn\s+([A-Za-z_]\w*)"
+)
+
+
+def _method_spans(text: str) -> list[FnSpan]:
+    """Methods of an inherent `impl Cls { .. }`, named `Cls__method`: a C++ module's bodies
+    are assembled there (cppapp), and the synthetic C names them that way. Without these,
+    cicero's 76 errors inside methods were all "outside functions", so fix had nothing to
+    send. `impl Trait for X` is skipped (its methods are the trait's, not translated)."""
+    out: list[FnSpan] = []
+    for im in _IMPL.finditer(text):
+        open_idx = im.end() - 1
+        close = _matching_brace(text, open_idx)
+        if close is None:
+            continue
+        for m in _METHOD_FN.finditer(text, open_idx, close):
+            if out and m.start() < out[-1].end:
+                continue
+            body = _body_open(text, m.end())
+            if body is None or body > close:
+                continue
+            end = _matching_brace(text, body)
+            if end is None or end > close:
+                continue
+            start = m.start()
+            while start > open_idx + 1:
+                prev_end = start - 1
+                prev_start = text.rfind("\n", 0, prev_end) + 1
+                if _ATTR_OR_DOC.match(text[prev_start:prev_end].lstrip()):
+                    start = prev_start
+                else:
+                    break
+            out.append(FnSpan(f"{im.group(1)}__{m.group(1)}", start, end + 1))
     return out
 
 

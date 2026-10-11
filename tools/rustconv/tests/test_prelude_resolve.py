@@ -368,3 +368,18 @@ def test_long_ptr_aliases_are_winapi_even_when_clang_saw_a_macro():
     )
     assert 'extern "system" {' in block and 'extern "C"' not in block
     assert 'link_name = "GetWindowLongW"' in block
+
+
+def test_sibling_definitions_finds_a_type_a_module_defines(tmp_path):
+    """msctf: `LPFNCONSTRUCTOR` is a typedef in msctf.cpp's unit that cpp_classes.rs names."""
+    from rustconv.prelude_resolve import sibling_definitions
+
+    (tmp_path / "msctf_cpp_h.rs").write_text(
+        'pub type LPFNCONSTRUCTOR = unsafe extern "C" fn() -> i32;\n'
+        "pub struct ClassesTableEntry {\n    pub clsid: u32,\n}\n"
+    )
+    found = sibling_definitions({"LPFNCONSTRUCTOR", "ClassesTableEntry", "Nope"}, tmp_path)
+    assert found == {
+        "LPFNCONSTRUCTOR": [("msctf_cpp_h", True)],
+        "ClassesTableEntry": [("msctf_cpp_h", True)],
+    }

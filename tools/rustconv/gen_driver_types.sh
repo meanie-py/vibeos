@@ -42,6 +42,10 @@ LATE_INC=()
 # HEADERS use C++ (default args, bool, anon unions — e.g. uniata) set `-x c++` so the
 # parse succeeds; bindgen still emits the plain structs.
 LANG_ARGS=()
+# COM_INC: `#include` lines of the WIDL headers whose interfaces a C++ module implements or
+# calls. A second bindgen reads them in C with CINTERFACE and bindgen_com_cinterface.py gives
+# the island's opaque C++ interfaces their `lpVtbl`/`IFooVtbl` shape (see the tool).
+COM_INC=""
 # REAL_UNIONS: rewrite bindgen's `__BindgenUnionField<T>` emulation into real Rust
 # `union`s (bindgen_unions_to_real.py). Without it a C anonymous union member reads
 # `p.__bindgen_anon_1.Field.as_mut()`; with it, `p.__bindgen_anon_1.Field` — which is
@@ -4268,6 +4272,215 @@ case "$DRIVER" in
     LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/vendor/mesa" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
     VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -D_GDI32_ -DBUILD_GL32 -D_GLAPI_NO_EXPORTS -DOPENGL32_USE_TLS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D__USE_CRTIMP -D_CRT_NO_POSIX_ERROR_CODES )
     ;;
+  msctf)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/ctf/msctf/CMakeLists.txt
+    # (12 compiled TU(s), 194 headers in the include closure, 2 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 91 external prototype(s) declared by the include closure, 37 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    EXTRA_BL_ITEMS=( list )
+    COM_INC=$'#include <msctf.h>\n#include <ctffunc.h>'
+    EXTRA_RAW_LINES=( 'pub use winelist_rust::*;' )
+    DRIVER_DIR="${SRC}/base/ctf/msctf"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.h"\n#include <sddl.h>\n#include "range.h"\n#include <shellapi.h>\n#include <imm.h>\n#include <ctffunc.h>\n#include <imm32_undoc.h>\n#include <shlobj.h>\n#include <shlwapi.h>\n#include <cicmutex.h>\n#include <cicfmap.h>\n#include <shlwapi_undoc.h>\n#include <strsafe.h>\n#include <assert.h>\n#include "mlng.h"\n#include "documentmgr.h"\n#include "displayattributemgr.h"\n#include <wine/debug.h>'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cguid\.h' --allowlist-file '.*[/\\]cicarray\.h'
+                  --allowlist-file '.*[/\\]cicbase\.h'
+                  --allowlist-file '.*[/\\]cicfmap\.h'
+                  --allowlist-file '.*[/\\]cicmutex\.h'
+                  --allowlist-file '.*[/\\]cicreg\.h'
+                  --allowlist-file '.*[/\\]cicutb\.h'
+                  --allowlist-file '.*[/\\]ctffunc\.h'
+                  --allowlist-file '.*[/\\]imm32_undoc\.h'
+                  --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]initguid\.h'
+                  --allowlist-file '.*[/\\]msctf\.h'
+                  --allowlist-file '.*[/\\]msctf_undoc\.h'
+                  --allowlist-file '.*[/\\]oleauto\.h'
+                  --allowlist-file '.*[/\\]olectl\.h'
+                  --allowlist-file '.*[/\\]sddl\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlobj\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi_undoc\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*msctf[/\\].*\.h'
+                  --allowlist-file '.*[/\\]comcat\.h'
+                  --allowlist-file '.*[/\\]psdk[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]textstor\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/ctf/msctf" -I"${SRC}/build-i386/base/ctf/msctf" -I"${SRC}/sdk/include/wine" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/base/ctf/cicero" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x600 -DNTDDI_VERSION=0x06000000 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -D__WINESRC__ -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  msutb)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/ctf/msutb/CMakeLists.txt
+    # (1 compiled TU(s), 185 headers in the include closure, 44 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 116 external prototype(s) declared by the include closure, 27 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    COM_INC=$'#include <msctf.h>\n#include <ctffunc.h>\n#include <oleacc.h>'
+    DRIVER_DIR="${SRC}/base/ctf/msutb"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cguid\.h' --allowlist-file '.*[/\\]cicreg\.h'
+                  --allowlist-file '.*[/\\]cicuif\.h'
+                  --allowlist-file '.*[/\\]cicutb\.h'
+                  --allowlist-file '.*[/\\]cjkcode\.h'
+                  --allowlist-file '.*[/\\]ctffunc\.h'
+                  --allowlist-file '.*[/\\]ctfutb\.h'
+                  --allowlist-file '.*[/\\]imm32_undoc\.h'
+                  --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]msctf\.h'
+                  --allowlist-file '.*[/\\]msctf_undoc\.h'
+                  --allowlist-file '.*[/\\]oleacc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*msutb[/\\].*\.h'
+                  --allowlist-file '.*[/\\]atlbase\.h'
+                  --allowlist-file '.*[/\\]comcat\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/ctf/msutb" -I"${SRC}/build-i386/base/ctf/msutb" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/base/ctf/cicero" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_ATL_NO_EXCEPTIONS -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  msctfime)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-11 from base/ctf/msctfime/CMakeLists.txt
+    # (8 compiled TU(s), 183 headers in the include closure, 43 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 108 external prototype(s) declared by the include closure, 35 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    COM_INC=$'#include <msctf.h>\n#include <ctffunc.h>'
+    DRIVER_DIR="${SRC}/base/ctf/msctfime"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "msctfime.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cguid\.h' --allowlist-file '.*[/\\]cicarray\.h'
+                  --allowlist-file '.*[/\\]cicbase\.h'
+                  --allowlist-file '.*[/\\]ciccaret\.h'
+                  --allowlist-file '.*[/\\]ciciface\.h'
+                  --allowlist-file '.*[/\\]cicimc\.h'
+                  --allowlist-file '.*[/\\]cicreg\.h'
+                  --allowlist-file '.*[/\\]cictf\.h'
+                  --allowlist-file '.*[/\\]cicuif\.h'
+                  --allowlist-file '.*[/\\]cicutb\.h'
+                  --allowlist-file '.*[/\\]cjkcode\.h'
+                  --allowlist-file '.*[/\\]ctffunc\.h'
+                  --allowlist-file '.*[/\\]imm32_undoc\.h'
+                  --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]immdev\.h'
+                  --allowlist-file '.*[/\\]msctf\.h'
+                  --allowlist-file '.*[/\\]msctf_undoc\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*msctfime[/\\].*\.h'
+                  --allowlist-file '.*[/\\]profile\.h'
+                  --allowlist-file '.*[/\\]sinks\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winnls\.h'
+                  --allowlist-file '.*[/\\]winuser\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/ctf/msctfime" -I"${SRC}/build-i386/base/ctf/msctfime" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/base/ctf/cicero" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  ctfmon)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/ctf/ctfmon/CMakeLists.txt
+    # (3 compiled TU(s), 164 headers in the include closure, 19 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 28 external prototype(s) declared by the include closure, 6 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    DRIVER_DIR="${SRC}/base/ctf/ctfmon"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.h"\n#include "CRegWatcher.h"\n#include <ime/indicml.h>\n#include "CLoaderWnd.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]cicbase\.h' --allowlist-file '.*[/\\]cicutb\.h'
+                  --allowlist-file '.*[/\\]ctffunc\.h'
+                  --allowlist-file '.*[/\\]ctfutb\.h'
+                  --allowlist-file '.*[/\\]ime[/\\]indicml\.h'
+                  --allowlist-file '.*[/\\]msctf\.h'
+                  --allowlist-file '.*[/\\]msctf_undoc\.h'
+                  --allowlist-file '.*[/\\]shellapi\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*ctfmon[/\\].*\.h' )
+    # UNICODE module: the TCHAR family from THIS -DUNICODE compile, not ntdll-sys's.
+    UNBLOCK="TCHAR PTCHAR TBYTE PTBYTE LPTSTR LPCTSTR PTSTR PCTSTR LPTCH PTCH"
+    EXTRA_INC=( -I"${SRC}/base/ctf/ctfmon" -I"${SRC}/build-i386/base/ctf/ctfmon" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/base/ctf/cicero" -I"${SRC}/sdk/lib/tdilib" -I"${SRC}/vendor/zlib/include" -I"${SRC}/vendor/libtiff/include" -I"${SRC}/sdk/lib/atl" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    COM_INC=$'#include <msctf.h>\n#include <ctffunc.h>'
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_CRT_DECLARE_NONSTDC_NAMES=1 -D_CRT_NONSTDC_NO_DEPRECATE -D_DLL -D_UNICODE -D__USE_CRTIMP -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
+  cicero)
+    # AUTO-DERIVED by rustconv.profile_derive on 2026-10-10 from base/ctf/cicero/CMakeLists.txt
+    # (7 compiled TU(s), 164 headers in the include closure, 51 switch constant(s)).
+    # WRAPPER_INC mirrors the TUs' real include prologues verbatim (§9.108: if the .c compiles,
+    # that exact sequence is bindgen-able). Review the WHY notes in the report.
+    USERMODE=1
+    REAL_UNIONS=1
+    # BLOCKLIST_FUNCS, MEASURED: 127 external prototype(s) declared by the include closure, 44 called but declared nowhere in it.
+    # The count does NOT settle the flag — island it both ways and run one cargo check each. See the report.
+    BLOCKLIST_FUNCS=0
+    BLOCKLIST_FUNCS_FROM_CRATE=1
+    COM_INC=$'#include <msctf.h>\n#include <ctffunc.h>'
+    DRIVER_DIR="${SRC}/base/ctf/cicero"
+    LANG_ARGS=( -x c++ -std=gnu++17 )
+    WRAPPER_INC=$'#include "precomp.h"\n#include "cicuif.h"\n#include <cicreg.h>\n#include <imm.h>\n#include <immdev.h>\n#include <imm32_undoc.h>\n#include "cicimc.h"\n#include "cicfmap.h"\n#include "ciccaret.h"\n#include "cicbase.h"\n#include <shlwapi.h>\n#include <stdlib.h>\n#include <string.h>\n#include <tchar.h>\n#include <strsafe.h>\n#include "cicarray.h"'
+    ALLOW_FILES=( --allowlist-file '.*[/\\]imm32_undoc\.h' --allowlist-file '.*[/\\]imm\.h'
+                  --allowlist-file '.*[/\\]immdev\.h'
+                  --allowlist-file '.*[/\\]shlwapi\.h'
+                  --allowlist-file '.*[/\\]strsafe\.h'
+                  --allowlist-file '.*[/\\]unknwn\.h'
+                  --allowlist-file '.*[/\\]uxtheme\.h'
+                  --allowlist-file '.*[/\\]vsstyle\.h'
+                  --allowlist-file '.*cicero[/\\].*\.h'
+                  --allowlist-file '.*[/\\]wingdi\.h'
+                  --allowlist-file '.*[/\\]winuser\.h'
+                  --allowlist-file '.*[/\\]wtypes\.h' )
+    EXTRA_INC=( -I"${SRC}/base/ctf/cicero" -I"${SRC}/build-i386/base/ctf/cicero" )
+    # LOWER priority than the standard SDK dirs -- the real compile lists these
+    # after them, and hoisting one ahead swaps which header an include resolves to.
+    LATE_INC=( -I"${SRC}/sdk/include/winrt" -I"${SRC}/vendor/opengl-headers/include" -I"${SRC}/vendor/libdxg/include" -I"${SRC}/.build-tools/llvm-mingw/i686-w64-mingw32/include/c++/v1" -I"${SRC}/.build-tools/llvm-mingw/lib/clang/19/include" )
+    VER_DEFS=( -DWINVER=0x502 -D_WIN32_WINNT=0x502 -DNTDDI_VERSION=0x05020400 -D_WIN32_WINDOWS=0x502 -D_WIN32_IE=0x603 -DD3D_UMD_INTERFACE_VERSION=0x000C -DDXGKDDI_INTERFACE_VERSION=0x1052 -DUNICODE -D_UNICODE -D_CRT_NO_POSIX_ERROR_CODES )
+    ;;
   *) echo "unknown driver: $DRIVER" >&2; exit 2 ;;
 esac
 
@@ -4493,6 +4706,23 @@ open(final, "w").write("".join(out))
     # translation defines them), which leaves the wrappers calling nothing. Bitfield-accessor
     # impls are kept — see the tool.
     python3 "$(dirname "$0")/strip_cpp_method_impls.py" "$FINAL" >/dev/null
+  fi
+  if [ -n "$COM_INC" ]; then
+    local COM_WRAP="/tmp/${DRIVER}_${STEM}_com.h" COM_RAW="/tmp/${DRIVER}_${STEM}_com.rs"
+    printf '#define CINTERFACE\n#include <windows.h>\n#include <ole2.h>\n%s\n' "$COM_INC" > "$COM_WRAP"
+    bindgen "$COM_WRAP" --use-core --no-layout-tests --no-doc-comments \
+      --allowlist-type 'I[A-Z][A-Za-z0-9_]*' -o "$COM_RAW" \
+      -- -ferror-limit=0 -Wno-everything -fms-extensions \
+      $ARCHDEF -D__REACTOS__ -DDBG=1 "${VER_DEFS[@]}" \
+      -I"${SRC}/sdk/include" -I"${SRC}/sdk/include/ddk" -I"${SRC}/sdk/include/ndk" \
+      -I"${SRC}/sdk/include/psdk" -I"${SRC}/sdk/include/xdk" -I"${SRC}/sdk/include/reactos" \
+      -I"${SRC}/sdk/include/reactos/libs" -I"${SRC}/sdk/include/vcruntime" \
+      -I"${BUILD_DIR}/sdk/include" -I"${BUILD_DIR}/sdk/include/psdk" \
+      -I"${BUILD_DIR}/sdk/include/ddk" -I"${BUILD_DIR}/sdk/include/reactos" \
+      -I"${SRC}/sdk/lib/pseh/include" "${LATE_INC[@]}" \
+      -isystem "${SRC}/sdk/include/crt" -isystem "${TOOLCHAIN}/lib/clang/19/include" \
+      --target="${TARGET}"
+    python3 "$(dirname "$0")/bindgen_com_cinterface.py" "$FINAL" "$COM_RAW"
   fi
   if [ "${REAL_UNIONS:-0}" = 1 ]; then
     # See REAL_UNIONS at the top. The tool hard-fails if the rewrite would lose a

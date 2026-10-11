@@ -22,16 +22,20 @@ import pytest
 
 from rustconv.crate_repair import (
     RULE_ANON_UNION,
+    RULE_CPP_BASE_FIELD,
     RULE_FLEX_ARRAY,
+    RULE_GUID_EQ,
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
+    RULE_MACRO_PLACE_DEREF,
     RULE_MATCH_SCRUTINEE,
     RULE_NO_STD_PATH,
     RULE_NUMERIC_CAST,
     RULE_PACKED_FIELD_PTR,
     RULE_POINTER_CAST,
-    RULE_VARIADIC_PROMOTION,
+    RULE_REFGUID_DEREF,
     RULE_SIZEOF_TYPE,
+    RULE_VARIADIC_PROMOTION,
     CargoCheckRun,
     Edit,
     RepairError,
@@ -1337,6 +1341,189 @@ def _packed_diag(place: bytes, src: bytes = _PACKED_SRC) -> dict:
         code="E0793",
         spans=[_span("src/a.rs", at, at + len(place), is_primary=True, line=2)],
     )
+
+
+def _guid_diag(src: bytes, lhs: bytes, op: bytes, rhs: bytes) -> dict:
+    a = src.index(lhs)
+    o = src.index(op, a + len(lhs))
+    b = src.index(rhs, o + len(op))
+    return _diag(
+        f"binary operation `{op.decode()}` cannot be applied to type `_GUID`",
+        code="E0369",
+        spans=[
+            _span("src/a.rs", a, a + len(lhs), label="_GUID"),
+            _span("src/a.rs", o, o + len(op), is_primary=True),
+            _span("src/a.rs", b, b + len(rhs), label="_GUID"),
+        ],
+    )
+
+
+def test_guid_operator_eq_becomes_is_equal_guid():
+    """msctf's `*riid == IID_IUnknown`: C++'s guiddef.h operator, 74 sites."""
+    src = b"if *riid == IID_IUnknown || a != b { }"
+    plan = propose_edits(
+        [_guid_diag(src, b"*riid", b"==", b"IID_IUnknown"), _guid_diag(src, b"a", b"!=", b"b")],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_GUID_EQ],
+    )
+    assert sorted(e.replacement for e in plan.edits) == [
+        "!IsEqualGUID!(&(a), &(b))",
+        "IsEqualGUID!(&(*riid), &(IID_IUnknown))",
+    ]
+
+
+def test_guid_operator_eq_needs_both_operands_to_be_guids():
+    src = b"if g == 0 { }"
+    d = _guid_diag(src, b"g", b"==", b"0")
+    d["spans"][2]["label"] = "{integer}"
+    plan = propose_edits([d], _reader({"src/a.rs": src}), target="i386", rules=[RULE_GUID_EQ])
+    assert not plan.edits
+
+
+def _base_field_diag(src: bytes, field: bytes, paths: list[str]) -> dict:
+    at = src.index(b"." + field) + 1
+    return _diag(
+        f"no field `{field.decode()}` on type `CicIMCLock`",
+        code="E0609",
+        spans=[_span("src/a.rs", at, at + len(field), is_primary=True)],
+        children=[
+            _diag(
+                "one of the expressions' fields has a field of the same name",
+                code=None,
+                level="help",
+                spans=[_span("src/a.rs", at, at, replacement=p) for p in paths],
+            )
+        ],
+    )
+
+
+def test_cpp_base_field_goes_through_the_base_subobject():
+    """msctfime's `imcLock.m_hr`: `m_hr` is CIC_IMCC_LOCK's, two bases up."""
+    src = b"if imcLock.m_hr < 0 { }"
+    plan = propose_edits(
+        [_base_field_diag(src, b"m_hr", ["__base0.__base0."])],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_CPP_BASE_FIELD],
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(11, "__base0.__base0.")]
+
+
+def test_cpp_base_method_goes_through_a_secondary_base():
+    """msutb's CUTBMenuItem : CTipbarAccItem, CUIFMenuItem -- `Check` is the second base's."""
+    src = b"(*p).Check(TRUE);"
+    at = src.index(b"Check")
+    diag = _diag(
+        "no method named `Check` found for struct `CUTBMenuItem` in the current scope",
+        code="E0599",
+        spans=[_span("src/a.rs", at, at + 5, is_primary=True)],
+        children=[
+            _diag(
+                "one of the expressions' fields has a method of the same name",
+                code=None,
+                level="help",
+                spans=[_span("src/a.rs", at, at, replacement="__base1.")],
+            )
+        ],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_CPP_BASE_FIELD]
+    )
+    assert [(e.byte_start, e.replacement) for e in plan.edits] == [(at, "__base1.")]
+
+
+def test_cpp_base_field_refuses_a_non_base_path_or_two_candidates():
+    src = b"if imcLock.m_hr < 0 { }"
+    for paths in (["anon."], ["__base0.", "__base1."]):
+        plan = propose_edits(
+            [_base_field_diag(src, b"m_hr", paths)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_CPP_BASE_FIELD],
+        )
+        assert not plan.edits, paths
+
+
+def _refguid_diag(src: bytes, arg: bytes, label: str) -> dict:
+    at = src.index(arg)
+    return _diag(
+        "mismatched types",
+        spans=[_span("src/a.rs", at, at + len(arg), is_primary=True, label=label)],
+    )
+
+
+def test_refguid_pointer_binds_as_a_reference():
+    """msctfime's QueryInterface thunks: C++ `REFIID riid` is `const IID &`."""
+    src = b"(*o).QueryInterface(riid, ppv)"
+    plan = propose_edits(
+        [_refguid_diag(src, b"riid", "expected `&_GUID`, found `*const _GUID`")],
+        _reader({"src/a.rs": src}),
+        target="i386",
+        rules=[RULE_REFGUID_DEREF],
+    )
+    assert [e.replacement for e in plan.edits] == ["&*(riid)"]
+
+
+def test_refguid_pointer_binds_as_a_reference_among_several_arguments():
+    """The multi-argument shape: each mismatched argument is a child, its label the message."""
+    src = b"(*o).QueryInterface(riid, ppv)"
+    at = src.index(b"riid")
+    diag = _diag(
+        "arguments to this method are incorrect",
+        spans=[_span("src/a.rs", 5, 19, is_primary=True)],
+        children=[
+            _diag(
+                "expected `&_GUID`, found `*const _GUID`",
+                code=None,
+                level="note",
+                spans=[_span("src/a.rs", at, at + 4, is_primary=True)],
+            )
+        ],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_REFGUID_DEREF]
+    )
+    assert [e.replacement for e in plan.edits] == ["&*(riid)"]
+
+
+def test_refguid_rule_leaves_other_pointers_and_const_to_mut_alone():
+    src = b"f(p)"
+    for label in (
+        "expected `&u32`, found `*const u32`",
+        "expected `&mut _GUID`, found `*const _GUID`",
+    ):
+        plan = propose_edits(
+            [_refguid_diag(src, b"p", label)],
+            _reader({"src/a.rs": src}),
+            target="i386",
+            rules=[RULE_REFGUID_DEREF],
+        )
+        assert not plan.edits, label
+
+
+def test_deref_of_a_macro_that_yields_a_scalar_place_is_dropped():
+    """`*V_VT!(&v) = VT_I4`: V_VT is the C lvalue `(p)->n1.n2.vt`, already a u16 place."""
+    src = b"    *V_VT!(core::ptr::addr_of_mut!(v)) = VT_I4;"
+    at = src.index(b"*V_VT")
+    end = src.index(b" = ")
+    diag = _diag(
+        "type `u16` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, end, is_primary=True)],
+    )
+    plan = propose_edits(
+        [diag], _reader({"src/a.rs": src}), target="i386", rules=[RULE_MACRO_PLACE_DEREF]
+    )
+    assert [(e.byte_start, e.byte_end, e.replacement) for e in plan.edits] == [(at, at + 1, "")]
+    ptr = _diag(
+        "type `*mut u16` cannot be dereferenced",
+        code="E0614",
+        spans=[_span("src/a.rs", at, end, is_primary=True)],
+    )
+    assert not propose_edits(
+        [ptr], _reader({"src/a.rs": src}), target="i386", rules=[RULE_MACRO_PLACE_DEREF]
+    ).edits
 
 
 def test_packed_field_as_ptr_becomes_addr_of():

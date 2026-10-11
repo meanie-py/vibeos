@@ -353,6 +353,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9330f8b2ff13f34540b44e946ef35111825727b38d33286ef986142615121801"
 
 [[package]]
+name = "cicero-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "classpnp-cargo"
 version = "0.1.0"
 dependencies = [
@@ -570,6 +581,18 @@ version = "0.1.0"
 dependencies = [
  "panic-common",
  "reactos-link",
+]
+
+[[package]]
+name = "ctfmon-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "cicero-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -1653,6 +1676,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "msctf-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "cicero-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+ "winelist-rust",
+]
+
+[[package]]
+name = "msctfime-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "cicero-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
+]
+
+[[package]]
 name = "msfs-rust"
 version = "0.1.0"
 dependencies = [
@@ -1668,6 +1716,18 @@ dependencies = [
  "panic-common",
  "strsafe-rust",
  "winlogon-sys",
+]
+
+[[package]]
+name = "msutb-rust"
+version = "0.1.0"
+dependencies = [
+ "atlclasses-rust",
+ "cicero-rust",
+ "ntdll-sys",
+ "panic-common",
+ "strsafe-rust",
+ "win32macros-rust",
 ]
 
 [[package]]
@@ -3527,6 +3587,10 @@ dependencies = [
  "strsafe-rust",
  "win32macros-rust",
 ]
+
+[[package]]
+name = "winelist-rust"
+version = "0.1.0"
 
 [[package]]
 name = "winetrace-shim"

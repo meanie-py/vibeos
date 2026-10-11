@@ -32,6 +32,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
@@ -52,9 +53,10 @@ from . import (
     variadic_shim,
 )
 from . import profile_derive as pd
+from .config import REACTOS_ROOT
 from .profile_derive import CPP_SUFFIXES
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = REACTOS_ROOT  # the invoked tree, not this file's checkout
 GEN = REPO / "tools" / "rustconv" / "gen_driver_types.sh"
 STATE_ROOT = Path(
     os.environ.get("RUSTCONV_PORT_STATE", Path.home() / "vibeos-rust-staging" / "port")
@@ -515,8 +517,19 @@ def stage_island(stem: str) -> None:
     state = load_state(stem)
     started = time.time()
     env = dict(os.environ, OUT_CRATE_DIR=str(_crate_dir(state) / "src"))
+    # A SNAPSHOT of the script, not the file: bash reads a script as it runs, and resolve
+    # widens a module's allowlist by editing this one shared file -- two replays in parallel
+    # had one island run die mid-file (`rd-failed: command not found`, a syntax error at a
+    # line that was fine) while the other's resolve rewrote it. The text goes in on stdin and
+    # is eval'd whole (an argv string is capped at 128 KiB; the script is ~370), and
+    # BASH_ARGV0 keeps $0, so the script still finds its helpers beside itself.
     proc = subprocess.run(
-        ["bash", str(GEN), stem], cwd=REPO, env=env, capture_output=True, text=True
+        ["bash", "-c", f'BASH_ARGV0={shlex.quote(str(GEN))}; eval "$(cat)"', "_", stem],
+        input=GEN.read_text(),
+        cwd=REPO,
+        env=env,
+        capture_output=True,
+        text=True,
     )
     log = STATE_ROOT / stem / "island.log"
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -835,16 +848,55 @@ def initguid_storage(state: dict, crate: Path, modules_dir: Path) -> tuple[str, 
     body = "\n".join(p.read_text(errors="replace") for p in sorted(modules_dir.glob("*.rs")))
     own = set(re.findall(r"\bstatic\s+(?:mut\s+)?(\w+)\s*:", body))
     want = {n for n in declared if re.search(rf"\b{n}\b", body)} - own
+    # A GUID uuid.lib already defines is that library's, when the target links it: the C's
+    # INITGUID copy is DECLSPEC_SELECTANY and folds into uuid's at link, but a Rust
+    # `#[no_mangle]` static is a strong second definition (msctfime: GUID_TFCAT_TIP_KEYBOARD,
+    # also in sdk/lib/uuid/msctf_g.c -- link-guard's duplicate symbol on all three arches).
+    cml = module_dir / "CMakeLists.txt"
+    if cml.is_file() and re.search(
+        r"target_link_libraries\([^)]*\buuid\b", cml.read_text(errors="replace")
+    ):
+        # Both its checked-in sources and the `*_i.c` it generates from the SDK's IDLs (msctf.idl
+        # gives IID_ITfSource & co): the latter exist only in this worktree's build tree.
+        uuid_dirs = [str(d) for d in sorted(REPO.glob("build-*/sdk/lib/uuid"))[:1]]
+
+        def _uuid_defines(n: str) -> bool:
+            if not subprocess.run(
+                ["git", "grep", "-q", "-w", n, "--", "sdk/lib/uuid/*.c"], cwd=REPO, check=False
+            ).returncode:
+                return True
+            return any(
+                not subprocess.run(["grep", "-rqw", "--include=*.c", n, d], check=False).returncode
+                for d in uuid_dirs
+            )
+
+        want = {n for n in want if not _uuid_defines(n)}
     out: dict[str, str] = {}
     refused: list[str] = []
     for name in sorted(want):
+        # By the NAME, not `DEFINE_GUID(name,` on one line: cicero's cicutb.h wraps after the
+        # parenthesis, so GUID_TFCAT_DISPLAYATTRIBUTEPROPERTY got no storage and msctfime failed
+        # to link. _DEFINE_GUID_RE (whitespace-tolerant) then reads the value.
         files = subprocess.run(
-            ["git", "grep", "-l", f"DEFINE_GUID({name},", "--", "*.h"],
+            ["git", "grep", "-l", "-w", name, "--", "*.h"],
             cwd=REPO,
             capture_output=True,
             text=True,
             check=False,
         ).stdout.split()
+        if not files:
+            # A MIDL-generated header (msctf_undoc.h from msctf_undoc.idl: IID_ITfRangeAnchor)
+            # exists only in this worktree's build tree; precomp.h's <initguid.h> gave the C
+            # storage for its IIDs too. One build dir is enough -- the IDL is not per-arch.
+            for build in sorted(REPO.glob("build-*/sdk/include")):
+                files = subprocess.run(
+                    ["grep", "-rlw", "--include=*.h", name, str(build)],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                ).stdout.split()
+                if files:
+                    break
         values = set()
         for f in files:
             for m in _DEFINE_GUID_RE.finditer((REPO / f).read_text(errors="replace")):
@@ -1078,7 +1130,9 @@ def stage_translate(
         mine = [
             n
             for n in rebuy_fn or []
-            if re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
+            # every TU has a file-scope preamble, so `__preamble__` is always this TU's
+            if n == "__preamble__"
+            or re.search(rf"^[\w\s\*&:<>,]*?\b{re.escape(n)}\s*\(", c_text, re.M)
         ]
         skipped = [
             n for n in state.get("skip_fn", []) if re.search(rf"\b{re.escape(n)}\s*\(", c_text)
@@ -1179,6 +1233,39 @@ def stage_translate(
         applied = apply_hand_bodies(_crate_dir(state), state["stem"])
         if applied:
             print(f"translate: {len(applied)} hand-ported body(ies) applied: {', '.join(applied)}")
+    if replay_only:
+        # Loud: a unit the bank cannot reassemble keeps whatever its file held before, and the
+        # replay went on to report error counts for THAT. msutb's unit gained bodies nobody had
+        # bought (its COM classes changed), so every "rebuild from the banks" for hours kept a
+        # stale file -- with a subagent's unbanked edits still in it. Keyed on rc, not on one
+        # refusal message: msctfime's bridge unit refused through a second one (a banked
+        # preamble that no longer replays) and went just as quietly. The one rc=2 that rebuilt
+        # nothing because nothing was owed is a header unit with no classless function.
+        why = []
+        for d in done:
+            log = (
+                STATE_ROOT
+                / state["stem"]
+                / f"translate-{_module_name(d['tu'])}-thinking-{thinking}.log"
+            )
+            text = log.read_text() if log.is_file() else ""
+            refused = [
+                ln.strip()
+                for ln in text.splitlines()
+                if ln.startswith("--replay-only:") or "did not replay" in ln
+            ]
+            # A refused PREAMBLE does not even fail the unit (msutb: rc=0, written without its
+            # 40 file-scope globals), so the refusal line counts whatever the rc says.
+            if not refused and (not d["rc"] or "found no classless function" in text):
+                continue
+            reason = refused[-1] if refused else f"rc={d['rc']}"
+            why.append(f"{Path(d['tu']).name}: {reason}")
+        if why:
+            raise PortError(
+                "replay: unit(s) the bank cannot fully reassemble -- each file is stale, or "
+                "rebuilt without its refused preamble. Buy the missing bodies first "
+                "(`port translate <stem> -m <model> --cost-cap X`):\n  " + "\n  ".join(why)
+            )
     return spent, [Path(d["tu"]).name for d in done]
 
 
@@ -1259,7 +1346,7 @@ def _list_has_stub(lines: list[str], at: int) -> bool:
         depth += lines[end].count("(") - lines[end].count(")")
         if depth <= 0 and end >= at:
             break
-    return any(re.match(r"^\s*rust_cohab_stub\.c\b", ln) for ln in lines[start : end + 1])
+    return any(re.match(r"^\s*rust_cohab_stub\.c(?:pp)?\b", ln) for ln in lines[start : end + 1])
 
 
 def _explode_inline_sources(cml: str, target: str) -> str:
@@ -1330,7 +1417,7 @@ def flip_cmake(cml: str, state: dict) -> str:
         indent = re.match(r"^(\s*)", lines[last]).group(1)  # type: ignore[union-attr]
         extra = []
         if not _list_has_stub(lines, last):
-            extra.append("rust_cohab_stub.c")
+            extra.append(_stub_name(state))
         # integrate's C trampolines for the module's variadic entry points (ftfd's sprintf,
         # FT_Message): without them in a source list the variadic symbols do not exist.
         if (module / "rust_varargs_shim.c").is_file() and "rust_varargs_shim.c" not in text:
@@ -1400,13 +1487,23 @@ def _crate_uses_float(crate: str) -> bool:
     )
 
 
+def _stub_name(state: dict) -> str:
+    """The stub TU in the MODULE'S language. Once every TU is flipped, the stub is the only
+    compile command left in the directory, and the tools borrow its flags to preprocess the
+    flipped sources (macro_authority's sibling fallback). A C stub of a C++ module carries no
+    C++-only include directories -- ATL's arrive as `$<COMPILE_LANGUAGE:CXX>` -- so after
+    msutb's flip every re-run of `port replay` failed to preprocess, and a resolve emptied
+    the prelude's extern block without a word."""
+    return "rust_cohab_stub.cpp" if state.get("cpp_tus") else "rust_cohab_stub.c"
+
+
 def stage_flip(stem: str) -> None:
     started = time.time()
     state = load_state(stem)
     module = REPO / state["module_dir"]
     cml = module / "CMakeLists.txt"
     new = flip_cmake(cml.read_text(), state)
-    stub = module / "rust_cohab_stub.c"
+    stub = module / _stub_name(state)
     if not stub.exists():
         stub.write_text(
             f"/* {stem} is Rust (sdk/lib/rust/{state['crate']}); a CMake target needs one TU. */\n"
@@ -3341,6 +3438,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     todo = (todo - set(sdk_alias) - set(sigs)) | {
         t for t in sdk_alias.values() if t not in declared
     }
+    failed: list[str] = []
     for tu in state["tus"]:
         if not todo:
             break
@@ -3349,7 +3447,7 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
             found = c2rust_anchor.extern_signatures(c_file, todo)
             abis = sdk_facts.function_abis(REPO, c_file, sorted(found)) if found else {}
         except (c2rust_anchor.C2RustError, MacroAuthorityError) as e:
-            print(f"resolve: externs of {tu}: {str(e).splitlines()[0][:120]}")
+            failed.append(f"{tu}: {str(e).splitlines()[0][:160]}")
             continue
         for name, sig in found.items():
             if name not in abis:
@@ -3387,6 +3485,15 @@ def _resolve_externs(state: dict, prelude: Path, names: set[str]) -> set[str]:
     lost = sorted(f"{n} -> {t}" for n, t in sdk_alias.items() if n not in sigs)
     if lost:
         print(f"resolve: SDK alias target declared nowhere, hand-declare it: {', '.join(lost)}")
+    if failed:
+        # Loud: writing the block from the TUs that DID preprocess drops every declaration the
+        # others owed. After msutb's flip left only a C stub to borrow flags from, this wrote
+        # an empty block and 20 externs (RegOpenKeyEx, CreateWindowEx, ...) vanished silently.
+        raise PortError(
+            "resolve: could not derive the extern declarations of "
+            + "; ".join(failed)
+            + " -- the prelude's extern block is left as it was"
+        )
     prelude_resolve.write_externs(prelude, prelude_resolve.render_externs(sigs))
     if sigs:
         print(f"resolve: {len(sigs)} extern/alias declaration(s): {', '.join(sorted(sigs))}")
@@ -3972,6 +4079,23 @@ def _sdk_macros(state: dict, crate: Path, prelude: Path, unresolved: set[str]) -
     )
     items.update(com)
     refused.update(item_refused)
+    # A lowered body calls what the C expansion calls; when that callee is itself a MACRO
+    # here (msctfime's IsEqualIID -> `IsEqualGUID(a, b)`, and win32macros-rust ports
+    # IsEqualGUID as `macro_rules!`), the call needs its `!` -- crate-repair's macro_call_bang
+    # deliberately leaves macro bodies alone.
+    shared = REPO / "sdk" / "lib" / "rust" / "win32macros-rust" / "src"
+    macro_names = set(lowered) | set(re.findall(r"macro_rules!\s+(\w+)", prelude.read_text()))
+    for rs in shared.glob("*.rs") if shared.is_dir() else ():
+        macro_names |= set(re.findall(r"macro_rules!\s+(\w+)", rs.read_text(errors="replace")))
+    if macro_names:
+        call = re.compile(rf"(?<![\w!:])({'|'.join(map(re.escape, sorted(macro_names)))})\(")
+        for name, text in lowered.items():
+            head, sep, body = text.partition("=> {")
+            if sep and call.search(body):
+                # The C callee took typed parameters, so the lowering cast each argument
+                # `as _`; handed to a macro, those casts have nothing to infer from (E0282).
+                body = re.sub(r"\(\(\$p(\d+)\) as _\)", r"($p\1)", call.sub(r"\1!(", body))
+            lowered[name] = head + sep + body if sep else text
     if sdk_macros.write_block(prelude, sdk_macros.render_block(lowered, items)):
         print(
             f"macros: {len(lowered)} SDK header macro(s) and {len(items)} type/pointer "
@@ -4401,9 +4525,9 @@ def apply_hand(stem: str) -> int:
         h = json.loads(entry.read_text())
         path = modules / h["file"]
         text = path.read_text()
-        if h["text"] in text:  # already applied (replay runs this before and after fix)
-            applied += 1
-            continue
+        # Applied-ness is judged at the item's OWN span below, never `h["text"] in text`
+        # anywhere: cicero's CUIFColorTableSys::DoneBrush passed as applied because
+        # CUIFColorTableOff10's identical, already-fixed body was in the file.
         # Loud: the function moved or was renamed upstream of the bank; never skip quietly.
         lo, hi = hand_span(
             text,

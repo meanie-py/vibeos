@@ -60,6 +60,10 @@ RULE_C2RUST_HOP = "c2rust_anon_hop"
 RULE_MATCH_SCRUTINEE = "match_scrutinee_cast"
 RULE_MATCH_ARM_GUARD = "match_arm_c_conversion"
 RULE_PACKED_FIELD_PTR = "packed_field_ptr"
+RULE_GUID_EQ = "guid_operator_eq"
+RULE_CPP_BASE_FIELD = "cpp_base_field"
+RULE_REFGUID_DEREF = "refguid_deref"
+RULE_MACRO_PLACE_DEREF = "macro_place_deref"
 RULE_INDEX_USIZE = "index_usize"
 RULE_MACRO_CALL = "macro_call_bang"
 RULE_SIZEOF_TYPE = "sizeof_type_name"
@@ -112,6 +116,10 @@ DIAGNOSTIC_RULES: tuple[str, ...] = (
     RULE_POINTER_CAST,
     RULE_ANON_UNION,
     RULE_PACKED_FIELD_PTR,
+    RULE_GUID_EQ,
+    RULE_CPP_BASE_FIELD,
+    RULE_REFGUID_DEREF,
+    RULE_MACRO_PLACE_DEREF,
     RULE_INDEX_USIZE,
     RULE_MACRO_CALL,
     RULE_SIZEOF_TYPE,
@@ -3151,6 +3159,233 @@ def _anon_union_rule(
 _RE_AS_PTR = re.compile(r"\.as_(?P<mut>mut_)?ptr\(\)")
 
 
+_GUID_OP = re.compile(
+    r"binary operation `(==|!=)` cannot be applied to type `(?:_GUID|GUID|IID|CLSID)`"
+)
+
+
+def _guid_eq_rule(diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx):
+    """`riid == IID_IUnknown` on two GUIDs: C++'s `operator==(REFGUID, REFGUID)` from
+    guiddef.h, which is `IsEqualGUID`. `_GUID` is ntdll-sys's, so no crate can give it
+    `PartialEq` (orphan rule); the comparison becomes the shared `IsEqualGUID!` (all 16 bytes).
+    Both operands must be labelled GUIDs by rustc -- that is the proof of the overload."""
+    if (diagnostic.get("code") or {}).get("code") != "E0369":
+        return [], [], False
+    m = _GUID_OP.search(str(diagnostic.get("message") or ""))
+    if not m:
+        return [], [], False
+    spans = diagnostic.get("spans") or []
+    op = next((sp for sp in spans if sp.get("is_primary")), None)
+    sides = sorted(
+        (sp for sp in spans if not sp.get("is_primary") and sp.get("label") in ("_GUID", "GUID")),
+        key=lambda sp: int(sp.get("byte_start") or 0),
+    )
+    if (
+        op is None
+        or len(sides) != 2
+        or op.get("expansion")
+        or any(sp.get("expansion") for sp in sides)
+    ):
+        return [], [], False
+    file_name = str(op.get("file_name") or "")
+    if any(str(sp.get("file_name") or "") != file_name for sp in sides):
+        return [], [], False
+    lhs, rhs = sides
+    lo, hi = int(lhs["byte_start"]), int(rhs["byte_end"])
+    if not (
+        int(lhs["byte_end"]) <= int(op["byte_start"])
+        and int(op["byte_end"]) <= int(rhs["byte_start"])
+    ):
+        return [], [], False
+    data = load(file_name)
+    if data is None or (file_name, lo, hi) in ctx.claimed:
+        return [], [], False
+    ctx.claimed.add((file_name, lo, hi))
+    a = data[int(lhs["byte_start"]) : int(lhs["byte_end"])].decode()
+    b = data[int(rhs["byte_start"]) : int(rhs["byte_end"])].decode()
+    neg = "!" if m.group(1) == "!=" else ""
+    edit = Edit(
+        file_name=file_name,
+        byte_start=lo,
+        byte_end=hi,
+        replacement=f"{neg}IsEqualGUID!(&({a}), &({b}))",
+        original=data[lo:hi].decode(),
+        rule=RULE_GUID_EQ,
+        authority="guiddef.h: C++ `operator==(REFGUID, REFGUID)` is IsEqualGUID",
+        line=int(op.get("line_start") or 0),
+        column=int(lhs.get("column_start") or 0),
+        requires_target_agreement=False,
+        targets=(ctx.target,),
+    )
+    return [edit], [], True
+
+
+_CPP_BASE_PATH = re.compile(r"(?:__base\d+\.)+")
+
+
+def _cpp_base_field_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`lock.m_hr` where `m_hr` is a C++ BASE class's member -> `lock.__base0.m_hr`.
+
+    C++ name lookup finds inherited members; cppapp lays a class out with each base as a
+    `__baseN` field, so the Rust spelling goes through it. rustc names the one path that
+    reaches the field ("one of the expressions' fields has a field of the same name"), and the
+    rule takes it only when that path is made of `__baseN.` hops and nothing else -- a base
+    subobject is exactly what C++ lookup walks, so this is the C++ meaning, not a guess. Two
+    candidate paths (a member reachable through two bases, ambiguous in C++ too) stay red.
+    """
+    if (diagnostic.get("code") or {}).get("code") not in ("E0609", "E0599"):
+        return [], [], False
+    # E0599 is the same lookup for a METHOD: msutb's CUTBMenuItem : CTipbarAccItem,
+    # CUIFMenuItem calls `Check` -- CUIFMenuItem's, behind `__base1`, which Deref (primary
+    # base only) cannot reach.
+    sugg = [
+        sp
+        for ch in diagnostic.get("children") or []
+        if re.search(r"has a (?:field|method) of the same name", str(ch.get("message") or ""))
+        for sp in ch.get("spans") or []
+    ]
+    if len(sugg) != 1:
+        return [], [], False
+    sp = sugg[0]
+    path = str(sp.get("suggested_replacement") or "")
+    start, end = int(sp.get("byte_start") or 0), int(sp.get("byte_end") or 0)
+    if not _CPP_BASE_PATH.fullmatch(path) or start != end or sp.get("expansion"):
+        return [], [], False
+    file_name = str(sp.get("file_name") or "")
+    data = load(file_name)
+    if data is None or (file_name, start, end) in ctx.claimed:
+        return [], [], False
+    ctx.claimed.add((file_name, start, end))
+    edit = Edit(
+        file_name=file_name,
+        byte_start=start,
+        byte_end=end,
+        replacement=path,
+        original="",
+        rule=RULE_CPP_BASE_FIELD,
+        authority="C++ name lookup finds a base class's member; cppapp lays bases out as __baseN",
+        line=int(sp.get("line_start") or 0),
+        column=int(sp.get("column_start") or 0),
+        requires_target_agreement=False,
+        targets=(ctx.target,),
+    )
+    return [edit], [], True
+
+
+_GUID_NAMES = r"(?:_GUID|GUID|IID|CLSID)"
+_REFGUID_LABEL = re.compile(
+    rf"expected `&(?P<mut>mut )?{_GUID_NAMES}`, found `\*(?P<ptr>const|mut) {_GUID_NAMES}`"
+)
+
+
+def _refguid_deref_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """A GUID pointer where a GUID reference is wanted -> `&*(p)`.
+
+    C++'s REFIID/REFGUID/REFCLSID are `const GUID &`, so a translated method rightly takes
+    `riid: &IID`; the COM ABI (and C's REFIID) passes the same thing as `*const GUID`, which is
+    what a vtable thunk or a C caller holds. `&*` is exactly the reference binding C++ does,
+    and REFIID is never null by contract. Only GUID types: a general pointer-to-reference
+    conversion would hide a null the C allowed.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0308":
+        return [], [], False
+    # One mismatched argument labels the primary span; several ("arguments to this method
+    # are incorrect") give each its own child, whose message is the label.
+    found: list[tuple[Mapping[str, Any], re.Match[str]]] = []
+    for sp in diagnostic.get("spans") or []:
+        m = _REFGUID_LABEL.fullmatch(str(sp.get("label") or ""))
+        if sp.get("is_primary") and m:
+            found.append((sp, m))
+    for ch in diagnostic.get("children") or []:
+        m = _REFGUID_LABEL.fullmatch(str(ch.get("message") or ""))
+        sp = next((s for s in ch.get("spans") or [] if s.get("is_primary")), None)
+        if m and sp is not None:
+            found.append((sp, m))
+    edits: list[Edit] = []
+    for sp, m in found:
+        if sp.get("expansion") or (m.group("mut") and m.group("ptr") != "mut"):
+            continue
+        file_name = str(sp.get("file_name") or "")
+        start, end = int(sp.get("byte_start") or 0), int(sp.get("byte_end") or 0)
+        data = load(file_name)
+        if data is None or start == end or (file_name, start, end) in ctx.claimed:
+            continue
+        ctx.claimed.add((file_name, start, end))
+        expr = data[start:end].decode()
+        amp = "&mut *" if m.group("mut") else "&*"
+        edits.append(
+            Edit(
+                file_name=file_name,
+                byte_start=start,
+                byte_end=end,
+                replacement=f"{amp}({expr})",
+                original=expr,
+                rule=RULE_REFGUID_DEREF,
+                authority="C++ REFIID is `const IID &`; the COM ABI passes it as a pointer",
+                line=int(sp.get("line_start") or 0),
+                column=int(sp.get("column_start") or 0),
+                requires_target_agreement=False,
+                targets=(ctx.target,),
+            )
+        )
+    return edits, [], bool(edits)
+
+
+_DEREF_MACRO = re.compile(rb"\*\s*[A-Za-z_]\w*!\(")
+_NOT_DEREFABLE = re.compile(
+    r"type `(?:[iu](?:8|16|32|64|128|size)|f32|f64|bool)` cannot be dereferenced"
+)
+
+
+def _macro_place_deref_rule(
+    diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
+) -> tuple[list[Edit], list[Skipped], bool]:
+    """`*V_VT!(&v) = VT_I4` -> `V_VT!(&v) = VT_I4`: a deref of a macro that already yields
+    the scalar place.
+
+    The VARIANT accessors are C lvalues (`V_VT(p)` is `(p)->n1.n2.vt`), and `port macros`
+    lowers them to exactly that place; the translation then added a `*` as if the macro
+    returned a pointer. rustc names the macro's type, and a scalar cannot be dereferenced,
+    so the `*` has no meaning to keep. ctfmon, msctfime and msutb (30 sites) all wrote it.
+    """
+    if (diagnostic.get("code") or {}).get("code") != "E0614":
+        return [], [], False
+    if not _NOT_DEREFABLE.search(str(diagnostic.get("message") or "")):
+        return [], [], False
+    sp = next((s for s in diagnostic.get("spans") or [] if s.get("is_primary")), None)
+    if sp is None or sp.get("expansion"):
+        return [], [], False
+    file_name = str(sp.get("file_name") or "")
+    start, end = int(sp.get("byte_start") or 0), int(sp.get("byte_end") or 0)
+    data = load(file_name)
+    if data is None or not _DEREF_MACRO.match(data[start:end]):
+        return [], [], False
+    star_end = start + 1
+    while data[star_end : star_end + 1] in (b" ", b"\t"):
+        star_end += 1
+    if (file_name, start, star_end) in ctx.claimed:
+        return [], [], False
+    ctx.claimed.add((file_name, start, star_end))
+    edit = Edit(
+        file_name=file_name,
+        byte_start=start,
+        byte_end=star_end,
+        replacement="",
+        original=data[start:star_end].decode(),
+        rule=RULE_MACRO_PLACE_DEREF,
+        authority="rustc: the macro yields a scalar, which cannot be dereferenced",
+        line=int(sp.get("line_start") or 0),
+        column=int(sp.get("column_start") or 0),
+        requires_target_agreement=False,
+        targets=(ctx.target,),
+    )
+    return [edit], [], True
+
+
 def _packed_field_ptr_rule(
     diagnostic: Mapping[str, Any], load: FileReader, ctx: _Ctx
 ) -> tuple[list[Edit], list[Skipped], bool]:
@@ -4399,6 +4634,10 @@ _RULE_TABLE: dict[
     RULE_POINTER_CAST: _pointer_cast_rule,
     RULE_ANON_UNION: _anon_union_rule,
     RULE_PACKED_FIELD_PTR: _packed_field_ptr_rule,
+    RULE_GUID_EQ: _guid_eq_rule,
+    RULE_CPP_BASE_FIELD: _cpp_base_field_rule,
+    RULE_REFGUID_DEREF: _refguid_deref_rule,
+    RULE_MACRO_PLACE_DEREF: _macro_place_deref_rule,
     RULE_INDEX_USIZE: _index_usize_rule,
     RULE_MACRO_CALL: _macro_call_rule,
     RULE_SIZEOF_TYPE: _sizeof_type_rule,

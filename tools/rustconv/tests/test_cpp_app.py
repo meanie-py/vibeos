@@ -232,6 +232,52 @@ def test_an_sdk_struct_base_is_embedded_by_value():
     assert "pub __base0: BITMAPINFO,\n    pub bmiColorsExtra: [RGBQUAD; 255 as usize]," in rs
 
 
+def test_assemble_files_a_nested_class_method_under_the_nested_class():
+    """msctfime's `CTextEventSink__anon0____ctor_0` belongs to the union, not CTextEventSink."""
+    m = ModuleModel()
+    for n in ("CTextEventSink", "CTextEventSink__anon0"):
+        m.classes[n] = ClassModel(n, n, "struct", "s.h")
+    rs = cpp_app.assemble(
+        "pub unsafe fn CTextEventSink__anon0____ctor_0(this_: *mut CTextEventSink__anon0) {}\n", m
+    )
+    assert "impl CTextEventSink__anon0 {" in rs
+    assert "pub unsafe fn __ctor_0(&mut self" in rs
+
+
+def test_a_type_nested_in_a_class_is_reachable_by_its_bare_name():
+    """msctfime's sinks.h: `typedef INT (CALLBACK *FN_COMPARE)(..)` inside a class."""
+    m = ModuleModel()
+    for n in ("CActiveLanguageProfileNotifySink", "CicProfile"):
+        m.classes[n] = ClassModel(n, n, "class", "s.h")
+    island = (
+        "pub type CActiveLanguageProfileNotifySink_FN_COMPARE = Option<fn()>;\n"
+        "pub struct CicProfile_tagLANG_PROF_ENUM_ARG {\n    pub a: u32,\n}\n"
+        "pub type CicProfile_LANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;\n"
+        "pub type LANG_PROF_ENUM_ARG = u32;\n"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type FN_COMPARE = CActiveLanguageProfileNotifySink_FN_COMPARE;" in glue
+    assert "pub type tagLANG_PROF_ENUM_ARG = CicProfile_tagLANG_PROF_ENUM_ARG;" in glue
+    assert "pub type LANG_PROF_ENUM_ARG =" not in glue  # the island already has one
+    m.classes["tagLANG_PROF_ENUM_ARG"] = ClassModel(
+        "tagLANG_PROF_ENUM_ARG", "tagLANG_PROF_ENUM_ARG", "struct", "p.h"
+    )
+    glue = cpp_app._render_island_glue(m, island)
+    assert "pub type tagLANG_PROF_ENUM_ARG =" not in glue  # cppapp renders that class
+
+
+def test_island_glue_gives_a_packed_interface_no_deref():
+    """shlobj.h's `#pragma pack`: `&self._base` of a packed field is E0793."""
+    island = (
+        "#[repr(C, packed)]\n#[derive(Debug, Copy, Clone)]\n"
+        "pub struct IShellFolder {\n    pub _base: IUnknown,\n}\n"
+        "#[repr(C)]\npub struct ITfLangBarMgr_P {\n    pub _base: ITfLangBarMgr,\n}\n"
+    )
+    glue = cpp_app._render_island_glue(ModuleModel(), island)
+    assert "Deref for IShellFolder" not in glue
+    assert "Deref for ITfLangBarMgr_P" in glue
+
+
 _ISLAND_VTBL = """
 #[repr(C)]
 pub struct IEmptyVolumeCacheCallBackVtbl {
@@ -271,8 +317,16 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
         ("Release", [], "ULONG"),
         ("ScanProgress", [("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")], "HRESULT"),
     ):
-        cb.methods.append(_m(name, params=params, ret=ret, virtual=True, body=("c.hpp", 0, 1),
-                             lowered="{ return 0; }"))
+        cb.methods.append(
+            _m(
+                name,
+                params=params,
+                ret=ret,
+                virtual=True,
+                body=("c.hpp", 0, 1),
+                lowered="{ return 0; }",
+            )
+        )
     _assign_names(cb)
     m = ModuleModel()
     m.classes[cb.qualified] = cb
@@ -290,3 +344,109 @@ def test_a_class_implementing_a_com_interface_fills_the_islands_vtable():
     # the bodies are plain methods (the COM vtable is their dispatch)
     text = cpp_app.synthetic_tus(m, _ISLAND_VTBL)["c.hpp"]
     assert "HRESULT CCallBack__ScanProgress(CCallBack *this_" in text
+
+
+def _com_sink(
+    name="CSink", vdtor=True, impls=("QueryInterface", "AddRef", "Release", "ScanProgress")
+):
+    cb = ClassModel(name, name, "class", "c.hpp", polymorphic=True)
+    cb.bases = [Base("IEmptyVolumeCacheCallBack", "public")]
+    cb.fields = [Field("m_cRef", "LONG")]
+    sigs = {
+        "QueryInterface": ([("riid", "REFIID"), ("ppv", "void **")], "HRESULT"),
+        "AddRef": ([], "ULONG"),
+        "Release": ([], "ULONG"),
+        "ScanProgress": ([("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")], "HRESULT"),
+    }
+    for n in impls:
+        params, ret = sigs[n]
+        cb.methods.append(
+            _m(
+                n,
+                params=params,
+                ret=ret,
+                virtual=True,
+                body=("c.hpp", 0, 1),
+                lowered="{ return 0; }",
+            )
+        )
+    if vdtor:
+        cb.methods.append(_m(f"~{name}", "dtor", virtual=True, body=("c.hpp", 0, 1), lowered="{}"))
+    _assign_names(cb)
+    return cb
+
+
+def test_a_com_class_with_a_virtual_destructor_extends_the_interfaces_table():
+    """msctfime's CCompartmentEventSink : ITfCompartmentEventSink, `virtual ~...()`. Itanium
+    appends the destructor to the primary interface's table behind its one lpVtbl; a `__vtbl`
+    of our own put the interface at offset 4 and handed COM callers the wrong pointer."""
+    m = ModuleModel()
+    cb = _com_sink()
+    m.classes[cb.qualified] = cb
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
+    assert "pub __vtbl" not in rs
+    assert "pub struct CSink {\n    pub __base0: IEmptyVolumeCacheCallBack," in rs
+    assert (
+        "pub struct CSink__vtbl {\n    pub __com: IEmptyVolumeCacheCallBackVtbl,\n    pub __delete:"
+        in rs
+    )
+    assert "CSink__vtbl { __com: IEmptyVolumeCacheCallBackVtbl { QueryInterface: Some(" in rs
+    assert (
+        "(*this).__base0.lpVtbl = &CSink__VTBL_own as *const CSink__vtbl "
+        "as *mut IEmptyVolumeCacheCallBackVtbl;" in rs
+    )
+    assert "((*((*sub).__base0.lpVtbl as *const CSink__vtbl)).__delete)(sub)" in rs
+    # one table, not a second static the constructor would also install
+    assert "CSink__IEmptyVolumeCacheCallBack_VTBL" not in rs
+
+
+def test_an_interface_slot_left_to_a_derived_class_is_a_pure_virtual():
+    """msctfime's CFunctionProviderBase leaves GetFunction to CFunctionProvider."""
+    m = ModuleModel()
+    base = _com_sink("CBase", impls=("QueryInterface", "AddRef", "Release"))
+    der = ClassModel("CDerived", "CDerived", "class", "c.hpp", polymorphic=True)
+    der.bases = [Base("CBase", "public")]
+    der.methods = [
+        _m(
+            "ScanProgress",
+            params=[("a", "DWORDLONG"), ("b", "DWORD"), ("c", "LPCWSTR")],
+            ret="HRESULT",
+            virtual=True,
+            body=("c.hpp", 0, 1),
+            lowered="{ return 0; }",
+        )
+    ]
+    _assign_names(der)
+    m.classes["CBase"] = base
+    m.classes["CDerived"] = der
+    rs = cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
+    assert 'cpp_pure_virtual_call("CBase::ScanProgress")' in rs
+    # the derived table reaches its own implementation through the base's subobject
+    assert "CDerived__b0b0_IEmptyVolumeCacheCallBack_ScanProgress" in rs
+
+
+def test_an_interface_slot_nobody_implements_stays_an_error():
+    m = ModuleModel()
+    cb = _com_sink(impls=("QueryInterface", "AddRef", "Release"))
+    m.classes[cb.qualified] = cb
+    try:
+        cpp_app.render_classes(m, frozenset(), _ISLAND_VTBL)
+    except cpp_app.CppAppError as e:
+        assert "defines no ScanProgress" in str(e)
+    else:
+        raise AssertionError("a missing implementation must not become a pure-virtual trap")
+
+
+def test_a_com_call_written_as_cpp_dispatches_through_lpvtbl():
+    """`pSource->Release()` on WIDL's C interface: one inherent method per slot."""
+    island = _ISLAND_VTBL + (
+        "#[repr(C)]\npub struct IEmptyVolumeCacheCallBack {\n"
+        "    pub lpVtbl: *mut IEmptyVolumeCacheCallBackVtbl,\n}\n"
+    )
+    rs = cpp_app.render_classes(ModuleModel(), frozenset(), island)
+    assert "impl IEmptyVolumeCacheCallBack {" in rs
+    assert (
+        "pub unsafe fn ScanProgress(&mut self, dwlSpaceUsed: DWORDLONG, dwFlags: DWORD, "
+        "pcwszStatus: LPCWSTR) -> HRESULT { ((*self.lpVtbl).ScanProgress.unwrap())"
+        "(self, dwlSpaceUsed, dwFlags, pcwszStatus) }" in rs
+    )

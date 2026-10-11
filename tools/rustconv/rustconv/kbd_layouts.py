@@ -25,8 +25,9 @@ from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
 from . import c_data_port as cdp
+from .config import REACTOS_ROOT
 
-REPO = Path(__file__).resolve().parents[3]
+REPO = REACTOS_ROOT  # the invoked tree, not this file's checkout
 KEYBOARD = REPO / "dll" / "keyboard"
 CRATE = REPO / "sdk" / "lib" / "rust" / "kbdlayouts-rust" / "src"
 BEGIN = "// BEGIN GENERATED: layouts (python -m rustconv.kbd_layouts)"

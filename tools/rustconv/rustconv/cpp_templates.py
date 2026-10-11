@@ -29,17 +29,38 @@ class TemplateBase:
     rust_type: str
     #: The crate that defines the generic (a consumer's dependency), e.g. `cicero-rust`.
     crate: str
+    #: The template carries a vptr (CicArrayBase's virtual destructor), which a class
+    #: deriving from it shares instead of growing a second one.
+    polymorphic: bool = False
+    #: The template's destructor does work (frees `m_pb`), so the Rust generic implements
+    #: Drop and nothing embedding it may derive Copy.
+    drops: bool = False
 
 
 @dataclass(frozen=True)
 class _Entry:
     crate: str
     header: str
+    #: The module in `crate` holding the hand-written generic.
+    module: str
+    polymorphic: bool = False
+    drops: bool = False
 
 
 #: Template name -> where its argument-independent generic layout lives.
 REGISTRY: dict[str, _Entry] = {
-    "CicArray": _Entry("cicero-rust", "base/ctf/cicero/cicarray.h"),
+    "CicArray": _Entry(
+        "cicero-rust",
+        "base/ctf/cicero/cicarray.h",
+        "cicero::cicarray_t",
+        polymorphic=True,
+        drops=True,
+    ),
+    # `T_DATA *m_pIMCC` is the only T-dependent member: a pointer, the same for every T.
+    "CIC_IMCC_LOCK": _Entry("cicero-rust", "base/ctf/cicero/cicimc.h", "cicero::cicimc_t"),
+    "CicIMCCLock": _Entry(
+        "cicero-rust", "base/ctf/cicero/cicimc.h", "cicero::cicimc_t", drops=True
+    ),
 }
 
 _TEMPLATE_RE = re.compile(r"^(?:(?:class|struct)\s+)?(?:\w+::)*(\w+)\s*<(.*)>$")
@@ -73,4 +94,45 @@ def template_base(name: str, map_type: Callable[[str], str]) -> TemplateBase | N
     if entry is None:
         return None
     args = ", ".join(map_type(a) for a in _split_args(m.group(2)))
-    return TemplateBase(f"{m.group(1)}<{args}>", entry.crate)
+    return TemplateBase(f"{m.group(1)}<{args}>", entry.crate, entry.polymorphic, entry.drops)
+
+
+def drops(name: str) -> bool:
+    """Whether a registered template instantiation `name` has a destructor that does work."""
+    tb = template_base(name, lambda a: a)
+    return tb is not None and tb.drops
+
+
+def island_reexport(name: str, crate: str) -> str | None:
+    """The `pub use` that replaces bindgen's copy of registered template `name` in `crate`'s
+    island, or None if unregistered. Bindgen can only spell one non-generic `struct CicArray`;
+    left in place, integrate strips the hand-written generic as a duplicate of it."""
+    entry = REGISTRY.get(name)
+    if entry is None:
+        return None
+    root = "crate" if crate == entry.crate else entry.crate.replace("-", "_")
+    return f"pub use {root}::{entry.module}::{name}; // cpp_templates owns the generic"
+
+
+_TYPEDEF_RE = re.compile(r"\btypedef\s+((\w+)\s*<[^;]*>)\s+(\w+)\s*;")
+
+
+def retype_aliases(island: str, sources: str, map_type: Callable[[str], str]) -> str:
+    """`pub type CDispAttrPropCache = CicArray;` -> `... = CicArray<GUID>;`.
+
+    Bindgen spells a typedef of a template instantiation with the bare template name, which
+    against the generic is a missing-argument error. The arguments come from the C++
+    `typedef CicArray<GUID> CDispAttrPropCache;` in the module's own headers."""
+    for m in _TYPEDEF_RE.finditer(sources):
+        if m.group(2) not in REGISTRY:
+            continue
+        tb = template_base(m.group(1), map_type)
+        if tb is None:
+            continue
+        island = re.sub(
+            rf"^(pub type {m.group(3)} = ){m.group(2)};$",
+            rf"\g<1>{tb.rust_type};",
+            island,
+            flags=re.M,
+        )
+    return island

@@ -1098,6 +1098,18 @@ def integrate(
 
     if provided is None:
         provided = provided_names(crate)
+    if module:
+        # A name the prelude re-exports FROM THIS MODULE (resolve's sibling wiring:
+        # `pub use crate::msctf::msctf_cpp_h::LPFNCONSTRUCTOR;`) is this file's own
+        # definition, not something the prelude supplies: dropping it as "provided" deleted
+        # the very item the re-export points at, and the next resolve dropped the now-stale
+        # import -- msctf's two cross-unit typedefs vanished that way.
+        prelude_text = (crate / "src" / "prelude.rs").read_text(errors="replace")
+        provided = provided - set(
+            re.findall(
+                rf"^pub use crate::\w+::(?:r#)?{re.escape(module)}::(\w+);", prelude_text, re.M
+            )
+        )
 
     src = _swap_substrate(src, report)
     src, report.multichar_folded = fold_multichar_literals(src)

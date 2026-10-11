@@ -28,7 +28,9 @@ import sys
 from functools import cache
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
+from .config import REACTOS_ROOT
+
+REPO = REACTOS_ROOT  # the invoked tree, not this file's checkout
 RUST = REPO / "sdk" / "lib" / "rust"
 _STRUCT = re.compile(r"pub struct (\w+)\s*\{(.*?)\n\}", re.S)
 _FIELD = re.compile(r"pub (\w+)\s*:\s*([^,\n]+),")

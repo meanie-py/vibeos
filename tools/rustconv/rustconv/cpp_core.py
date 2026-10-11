@@ -374,7 +374,7 @@ def c_type_to_rust(c_type: str) -> str:
     Handles both `const T *` and `T const *` spellings, references, pointer depth,
     explicit `struct`/`enum`/`union` tag keywords, and qualified nested type names.
     """
-    text = " ".join(c_type.replace("CONST", "const").split())
+    text = " ".join(re.sub(r"\bCONST\b", "const", c_type).split())
     # Headers use both ``const T *`` and ``T const *``.  A qualifier left in
     # the base spelling becomes invalid Rust (``*mut T const``), so normalize
     # either C spelling before building the pointer declarator.
@@ -744,7 +744,7 @@ def _abi_c_type_key(c_type: str) -> str:
     # A C++ `T&` parameter binds an LVALUE of type T, so for BINDING the reference is
     # not part of the type. (It very much is for codegen, which is why this collapse is
     # scoped to overload keys — the caller still emits the reference.)
-    text = " ".join(c_type.replace("CONST", "const").split()).rstrip("&").strip()
+    text = " ".join(re.sub(r"\bCONST\b", "const", c_type).split()).rstrip("&").strip()
     aliases = {
         "int": "INT",
         "unsigned int": "UINT",

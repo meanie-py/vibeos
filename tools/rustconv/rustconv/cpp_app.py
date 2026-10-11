@@ -208,12 +208,56 @@ class Hierarchy:
         already carry a vtable pointer it can share."""
         if not cls.polymorphic:
             return False
+        if self.com_root(cls):
+            return True
         if self.com_bases(cls) and not self.new_slots(cls):
             # Every virtual is an interface method: the interface's lpVtbl IS the vptr.
             return False
         if cls.bases and short(cls.bases[0].name) in self.by_short:
             return not self.by_short[short(cls.bases[0].name)].polymorphic
+        if cls.bases:
+            tb = cpp_templates.template_base(cls.bases[0].name, lambda a: a)
+            if tb is not None and tb.polymorphic:
+                # The vptr lives inside the template base (CUIFObjectArray : CicArray<T>), so
+                # a second one here would shift the whole layout by a pointer. Sharing it
+                # with the base's table is only right while the class adds nothing that table
+                # would have to describe: no slots of its own and no fields to destroy.
+                if self.new_slots(cls) or any(not f.static for f in cls.fields):
+                    raise CppAppError(
+                        f"{cls.name} extends polymorphic template {cls.bases[0].name} with "
+                        "virtuals or fields; its vtable would need the template's slots"
+                    )
+                return False
         return not cls.bases or short(cls.bases[0].name) not in self.by_short
+
+    def com_root(self, cls: ClassModel) -> str | None:
+        """The interface at `cls`'s PRIMARY base, when `cls` adds virtuals of its own -- a
+        virtual destructor, nearly always (24 of msctf/msctfime's 27 COM classes). The
+        Itanium layout appends them to that interface's table, behind its one `lpVtbl`: so
+        the class's vtable struct begins with the whole `IFooVtbl`, and the vptr it installs
+        and dispatches through is `__base0.lpVtbl`. A separate `__vtbl` would put the
+        interface at offset 4 and hand COM callers the wrong pointer."""
+        com = dict(self.com_bases(cls))
+        if 0 not in com:
+            return None
+        if self.new_slots(cls) or any(m.kind == "dtor" and m.virtual for m in cls.methods):
+            return com[0]
+        return None
+
+    def vptr(self, root: ClassModel) -> str:
+        """The field a vtable root's vptr is, relative to the root."""
+        return "__base0.lpVtbl" if self.com_root(root) else "__vtbl"
+
+    def com_subobjects(self, cls: ClassModel, path: str = "") -> list[tuple[str, str]]:
+        """Every COM interface subobject that needs a table of its own, as (path, interface):
+        all but a com_root's primary, which its class's own vtable carries."""
+        out = []
+        for k, iface in self.com_bases(cls):
+            if not (k == 0 and self.com_root(cls)):
+                out.append((f"{path}__base{k}.", iface))
+        for i, b in self.module_bases(cls):
+            out.extend(self.com_subobjects(b, f"{path}__base{i}."))
+        return out
 
     def vtbl_root(self, cls: ClassModel) -> ClassModel:
         """The class whose `__vtbl` field this class's primary vtable pointer is."""
@@ -379,8 +423,87 @@ def render_classes(
         out.append("")
     for cls in model.classes.values():
         out.append(_render_class(cls, h, model, cls.name in island_structs and _plain(cls)))
+    out.append(_render_island_glue(model, island))
     out.append(_render_globals(model, h))
     return "\n".join(out) + "\n"
+
+
+def _render_island_glue(model: ModuleModel, island: str) -> str:
+    """Two C++ spellings bindgen's island has no name for.
+
+    A class-scoped anonymous enum (`class CUIFWindow { enum { USER_TIMER_ID = 0x5461 }; }`)
+    is `CUIFWindow_USER_TIMER_ID` in the island, but the class's own methods say
+    `USER_TIMER_ID`: re-export it bare when exactly one class has that member and nothing
+    else owns the name. And a C++ struct base (`struct INPUTCONTEXTDX : INPUTCONTEXT`) is a
+    `_base` field, while C++ reaches its members as the struct's own (`pIC->hCandInfo`):
+    the struct derefs to it, as a class with an SDK base already does.
+
+    And a COM call written as C++ (`pSource->Release()`, `(*p).AdviseSink(..)`) has no
+    method to resolve to on WIDL's C interface: each interface gets one inherent method per
+    vtable slot, dispatching through `lpVtbl`. That IS the C++ virtual call, so a module
+    class that derefs to its interface reaches its own slot the same way."""
+    island_names = frozenset(re.findall(r"^\s*pub (?:type|struct|union|enum) (\w+)", island, re.M))
+    lines: list[str] = []
+    owners: dict[str, list[tuple[str, str]]] = {}
+    for cls in model.classes:
+        for m in re.finditer(rf"^pub const {re.escape(cls)}_(\w+): (\w+) = ", island, re.M):
+            owners.setdefault(m.group(1), []).append((cls, m.group(2)))
+    for name, found in sorted(owners.items()):
+        if (
+            len(found) == 1
+            and name not in island_names
+            and not re.search(rf"^pub const {re.escape(name)}\b", island, re.M)
+        ):
+            cls, ty = found[0]
+            lines.append(f"pub const {name}: {ty} = {cls}_{name};")
+    # The same for a TYPE nested in a class: member code names `FN_COMPARE`, bindgen emits
+    # `CActiveLanguageProfileNotifySink_FN_COMPARE`. Aliased only when one class owns it.
+    types: dict[str, list[str]] = {}
+    for cls in model.classes:
+        pat = rf"^pub (?:type|struct|union|enum) {re.escape(cls)}_(\w+)\b"
+        for m in re.finditer(pat, island, re.M):
+            types.setdefault(m.group(1), []).append(cls)
+    rendered = {c.name for c in model.classes.values()}  # cppapp lays these out itself
+    for name, found in sorted(types.items()):
+        if len(found) == 1 and name not in island_names and name not in rendered:
+            lines.append(f"pub type {name} = {found[0]}_{name};")
+    for m in re.finditer(
+        r"((?:^#\[[^\n]*\]\n)*)^pub struct (\w+) \{\n\s*pub _base: (\w+),", island, re.M
+    ):
+        attrs, name, base = m.groups()
+        if name in model.classes:
+            continue
+        if "packed" in attrs:
+            # A struct under `#pragma pack` (shlobj.h's IShellFolder & co): a reference to its
+            # `_base` field is unaligned (E0793), so it gets no Deref -- the 36 such impls
+            # were msctf's entire E0793 count.
+            continue
+        lines.append(
+            f"impl core::ops::Deref for {name} {{ type Target = {base}; "
+            f"fn deref(&self) -> &{base} {{ &self._base }} }}"
+        )
+        lines.append(
+            f"impl core::ops::DerefMut for {name} {{ "
+            f"fn deref_mut(&mut self) -> &mut {base} {{ &mut self._base }} }}"
+        )
+    lines.extend(_com_call_methods(island))
+    return "\n".join(lines) + "\n" if lines else ""
+
+
+def _com_call_methods(island: str) -> list[str]:
+    out: list[str] = []
+    for iface, slots in sorted(parse_com_vtbls(island).items()):
+        if not re.search(rf"^pub struct {re.escape(iface)} \{{\n\s*pub lpVtbl: ", island, re.M):
+            continue
+        out.append(f"impl {iface} {{")
+        for slot in slots:
+            sig = ", ".join(["&mut self", *(f"{a}: {t}" for a, t in slot.params)])
+            args = ", ".join(["self", *(a for a, _ in slot.params)])
+            ret = f" -> {slot.ret}" if slot.ret else ""
+            fp = f"(*self.lpVtbl).{slot.name}" + (".unwrap()" if slot.optional else "")
+            out.append(f"    pub unsafe fn {slot.name}({sig}){ret} {{ ({fp})({args}) }}")
+        out.append("}")
+    return out
 
 
 def _plain(cls: ClassModel) -> bool:
@@ -396,7 +519,7 @@ def _render_class(
     # copy rather than a move out of a static.
     derive = "" if has_drop(cls, h) else "#[derive(Clone, Copy)]\n"
     lines = [f"// ---- {cls.qualified} ({cls.file})", f"{derive}#[repr(C)]", f"pub struct {n} {{"]
-    if h.has_own_vtbl(cls):
+    if h.has_own_vtbl(cls) and not h.com_root(cls):
         lines.append(f"    pub __vtbl: *const {n}__vtbl,")
     for i, b in enumerate(cls.bases):
         bn = short(b.name)
@@ -418,6 +541,8 @@ def _render_class(
         lines.append("#[repr(C)]")
         lines.append(f"pub struct {n}__vtbl {{")
         if h.has_own_vtbl(cls):
+            if h.com_root(cls):
+                lines.append(f"    pub __com: {h.com_root(cls)}Vtbl,")
             lines.append(f"    pub __delete: unsafe fn(*mut {n}),")
             lines.append(f"    pub __drop: unsafe fn(*mut {n}),")
         else:
@@ -428,9 +553,13 @@ def _render_class(
             lines.append(f"    pub {m.rust_name}: unsafe fn({args}){_ret(m, model)},")
         lines.append("}")
         lines.append("")
-    # static members
+    # static members: only those with no out-of-class definition. `WATCHENTRY
+    # CRegWatcher::s_WatchEntries[] = {...}` is a model GLOBAL, translated with its
+    # initializer; a zeroed copy here would be a second definition, and the one that won
+    # would hold no data.
+    defined = {g.name for g in model.globals}
     for f in cls.fields:
-        if f.static:
+        if f.static and f.name not in defined:
             lines.append(
                 f"pub static mut {n}__{f.name}: {rust_type(f.c_type, model, field=True)} = "
                 "unsafe { core::mem::zeroed() };"
@@ -473,15 +602,23 @@ def _render_class(
                     opath = h_path(h, cls, owner)
                     via = "." + opath.rstrip(".") if opath else ""
                     body = f"(*{_down(n, rp, 'p')}){via}.{om.rust_name}__body({args})"
-                thunks.append(
-                    f"unsafe fn {n}__vt_{tag}_{m.rust_name}({sig}){_ret(m, model)} {{ {body} }}"
-                )
-                out.append(f"{m.rust_name}: {n}__vt_{tag}_{m.rust_name}")
+                thunk = f"{n}__vt_{tag}_{m.rust_name}"
+                if any(t.startswith(f"unsafe fn {thunk}(") for t in thunks):
+                    # an overload a derived table adds under a base slot's name (cicero's
+                    # CUIFObject::OnTimer() and CUIFWindow::OnTimer(WPARAM)): E0428 otherwise
+                    thunk += f"__{x.name}"
+                thunks.append(f"unsafe fn {thunk}({sig}){_ret(m, model)} {{ {body} }}")
+                out.append(f"{m.rust_name}: {thunk}")
             return out
 
-        def literal(x: ClassModel, tag: str = tag) -> str:
+        def literal(x: ClassModel, tag: str = tag, rp: str = rp, thunks: list[str] = thunks) -> str:
             if h.has_own_vtbl(x):
                 fields = [f"__delete: {n}__vt_delete_{tag}", f"__drop: {n}__vt_drop_{tag}"]
+                iface = h.com_root(x)
+                if iface:
+                    com_thunks, com_lit = _com_vtable_parts(cls, f"{rp}__base0.", iface, h)
+                    thunks.extend(com_thunks)
+                    fields.insert(0, f"__com: {com_lit}")
                 return f"{x.name}__vtbl {{ {', '.join(fields + slot_entries(x))} }}"
             inner = literal(h.primary(x))  # type: ignore[arg-type]
             if not h.owns_vt_type(x):
@@ -493,15 +630,16 @@ def _render_class(
         vt = h.vt_type(top).name
         lines.extend(thunks)
         lines.append(f"pub static {n}__VTBL_{tag}: {vt}__vtbl = {lit};")
+        root_iface = h.com_root(root)
+        cast = f"*mut {root_iface}Vtbl" if root_iface else f"*const {rn}__vtbl"
         vt_install.append(
-            f"        (*this).{rp}__vtbl = "
-            f"&{n}__VTBL_{tag} as *const {vt}__vtbl as *const {rn}__vtbl;"
+            f"        (*this).{rp}{h.vptr(root)} = &{n}__VTBL_{tag} as *const {vt}__vtbl as {cast};"
         )
-    for k, iface in h.com_bases(cls):
-        lines.extend(_com_vtable(cls, k, iface, h))
+    for path, iface in h.com_subobjects(cls):
+        lines.extend(_com_vtable(cls, path, iface, h))
         vt_install.append(
-            f"        (*this).__base{k}.lpVtbl = "
-            f"&{n}__{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
+            f"        (*this).{path}lpVtbl = "
+            f"&{n}__{_com_tag(path)}{iface}_VTBL as *const {iface}Vtbl as *mut {iface}Vtbl;"
         )
     impl.append(
         "    /// Point every vtable this object contains at this class's tables: what a C++"
@@ -511,6 +649,13 @@ def _render_class(
     impl.append("        let this: *mut Self = self;")
     impl.extend(vt_install or ["        let _ = this;"])
     impl.append("    }")
+    for m in cls.methods:
+        if _empty_ctor(cls, m, h, model):
+            # `CUIFSystemInfo() { }` on a class with no vtable and no member initializers:
+            # the synthetic body is empty, translate drops an empty function, and make_0 /
+            # new_in_0 then call a method nobody defined. It does nothing; say so here.
+            ps = "".join(f", {_ident(a)}: {t}" for a, t in _params(m, model))
+            impl.append(f"    pub unsafe fn {m.rust_name}(&mut self{ps}) {{}}")
     # dispatchers
     for m in cls.methods:
         if m.kind in ("ctor", "dtor") or m.static:
@@ -518,8 +663,9 @@ def _render_class(
         if h.is_virtual(cls, m):
             rp, root, decl = _slot_home(h, cls, m)
             params = _params(m, model)
-            sig = ", ".join(["&mut self", *(f"{a}: {t}" for a, t in params)])
-            args = ", ".join(a for a, _ in params)
+            # escaped: a C++ parameter may be a Rust keyword (cicero's DrawWndFrame `type`)
+            sig = ", ".join(["&mut self", *(f"{_ident(a)}: {t}" for a, t in params)])
+            args = ", ".join(_ident(a) for a, _ in params)
             sub = f"core::ptr::addr_of_mut!((*this).{rp.rstrip('.')})" if rp else "this"
             impl.append(
                 f"    /// virtual `{m.name}`: dispatch through the vtable to the final overrider."
@@ -527,7 +673,7 @@ def _render_class(
             impl.append(f"    pub unsafe fn {m.rust_name}({sig}){_ret(m, model)} {{")
             impl.append("        let this: *mut Self = self;")
             impl.append(f"        let sub = {sub} as *mut {root.name};")
-            impl.append(f"        let vt = (*sub).__vtbl as *const {decl.name}__vtbl;")
+            impl.append(f"        let vt = (*sub).{h.vptr(root)} as *const {decl.name}__vtbl;")
             impl.append(f"        ((*vt).{m.rust_name})(sub{', ' + args if args else ''})")
             impl.append("    }")
     impl.append("}")
@@ -564,7 +710,8 @@ def _render_class(
         sub = f"core::ptr::addr_of_mut!((*p).{field})" if field else "p"
         lines.append(
             f"pub unsafe fn {n}__delete(p: *mut {n}) {{ if p.is_null() {{ return; }} "
-            f"let sub = {sub} as *mut {root.name}; ((*(*sub).__vtbl).__delete)(sub); }}"
+            f"let sub = {sub} as *mut {root.name}; "
+            f"((*((*sub).{h.vptr(root)} as *const {root.name}__vtbl)).__delete)(sub); }}"
         )
     else:
         lines.append(
@@ -579,6 +726,18 @@ def _render_class(
     return "\n".join(lines)
 
 
+def _empty_ctor(cls: ClassModel, m: Method, h: Hierarchy, model: ModuleModel) -> bool:
+    """A constructor whose SYNTHETIC body is empty: the raw body alone is not enough, since
+    the unit also carries member initializers (CicMutex's `{ }` sets two fields) and the
+    vtable install a polymorphic class's constructor begins with."""
+    if m.kind != "ctor" or m.body is None or m.lowered is None:
+        return False
+    text = _synthetic_method(cls, m, h, model)
+    body = text[text.index("{") :] if "{" in text else ""
+    body = re.sub(r"//[^\n]*|/\*.*?\*/", "", body, flags=re.S)
+    return not body.replace("{", "").replace("}", "").strip()
+
+
 def _empty_body(m: Method) -> bool:
     text = re.sub(r"//[^\n]*|/\*.*?\*/", "", m.lowered or "", flags=re.S)
     return not text.replace("{", "").replace("}", "").strip()
@@ -589,6 +748,10 @@ def has_drop(cls: ClassModel, h: Hierarchy) -> bool:
     if any(m.kind == "dtor" and m.body and not _empty_body(m) for m in cls.methods):
         return True
     if any(has_drop(b, h) for _, b in h.module_bases(cls)):
+        return True
+    if any(cpp_templates.drops(b.name) for b in cls.bases):
+        return True
+    if any(not f.static and cpp_templates.drops(f.c_type) for f in cls.fields):
         return True
     return any(
         has_drop(h.by_short[t], h)
@@ -609,9 +772,18 @@ def h_path(h: Hierarchy, frm: ClassModel, to: ClassModel) -> str:
     return ""
 
 
-def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
+def _com_tag(path: str) -> str:
+    """`` for an interface that is the class's own base (`__base1.`, the historical names),
+    else the path (`b0b2_`): a base class's interface is a separate table per subobject."""
+    return "" if path.count("__base") == 1 else path.replace(".", "").replace("__base", "b") + "_"
+
+
+def _com_vtable_parts(
+    cls: ClassModel, path: str, iface: str, h: Hierarchy
+) -> tuple[list[str], str]:
     """The island's IFooVtbl filled with this class's implementations, each behind a thunk
-    that turns `This` (the interface subobject) back into the object -- C++'s adjustor."""
+    that turns `This` (the interface subobject at `path`) back into the object -- C++'s
+    adjustor. Returns (thunks, the struct literal)."""
     n = cls.name
     entries, thunks = [], []
     for slot in h.com[iface]:
@@ -623,22 +795,46 @@ def _com_vtable(cls: ClassModel, k: int, iface: str, h: Hierarchy) -> list[str]:
                 if impl is not None:
                     owner = b
                     break
-        if impl is None:
-            raise CppAppError(f"{cls.qualified} implements {iface} but defines no {slot.name}")
-        via = h_path(h, cls, owner).rstrip(".")
-        target = f"(*{_down(n, f'__base{k}.', 'This')})" + (f".{via}" if via else "")
         sig = ", ".join([f"This: *mut {iface}", *(f"{a}: {t}" for a, t in slot.params)])
         args = ", ".join(a for a, _ in slot.params)
         ret = f" -> {slot.ret}" if slot.ret else ""
-        name = f"{n}__{iface}_{slot.name}"
+        name = f"{n}__{_com_tag(path)}{iface}_{slot.name}"
+        if impl is None or impl.pure:
+            # Left to a derived class (msctfime's CFunctionProviderBase leaves GetFunction to
+            # CFunctionProvider): the class is abstract, its table is live only while a
+            # derived constructor runs, and C++ fills the slot with __cxa_pure_virtual. Only
+            # when the module really has that derived implementation -- a method the model
+            # failed to see must stay an error, not become a trap.
+            if not _derived_defines(h, cls, slot.name):
+                raise CppAppError(f"{cls.qualified} implements {iface} but defines no {slot.name}")
+            body = f'cpp_pure_virtual_call("{cls.qualified}::{slot.name}")'
+            thunks.append(f'unsafe extern "system" fn {name}({sig}){ret} {{ {body} }}')
+            entries.append(
+                f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}"
+            )
+            continue
+        via = h_path(h, cls, owner).rstrip(".")
+        target = f"(*{_down(n, path, 'This')})" + (f".{via}" if via else "")
         thunks.append(
             f'unsafe extern "system" fn {name}({sig}){ret} {{ {target}.{impl.rust_name}({args}) }}'
         )
         entries.append(f"{slot.name}: Some({name})" if slot.optional else f"{slot.name}: {name}")
-    return [
-        *thunks,
-        f"pub static {n}__{iface}_VTBL: {iface}Vtbl = {iface}Vtbl {{ {', '.join(entries)} }};",
-    ]
+    return thunks, f"{iface}Vtbl {{ {', '.join(entries)} }}"
+
+
+def _derived_defines(h: Hierarchy, cls: ClassModel, name: str) -> bool:
+    for d in h.model.classes.values():
+        if any(short(b.name) == cls.name for b in d.bases):
+            if any(m.name == name and not m.pure for m in d.methods):
+                return True
+            if _derived_defines(h, d, name):
+                return True
+    return False
+
+
+def _com_vtable(cls: ClassModel, path: str, iface: str, h: Hierarchy) -> list[str]:
+    thunks, lit = _com_vtable_parts(cls, path, iface, h)
+    return [*thunks, f"pub static {cls.name}__{_com_tag(path)}{iface}_VTBL: {iface}Vtbl = {lit};"]
 
 
 def _slot_home(h: Hierarchy, cls: ClassModel, m: Method) -> tuple[str, ClassModel, ClassModel]:
@@ -992,6 +1188,8 @@ def synthetic_tus(model: ModuleModel, island: str = "") -> dict[str, str]:
                 continue
             if m.kind == "dtor" and _empty_body(m):
                 continue  # no Drop is rendered for it (has_drop)
+            if _empty_ctor(cls, m, h, model):
+                continue  # rendered in cpp_classes.rs (_render_class)
             if cls.external and m.kind != "ctor" and (cls.name, m.rust_name) not in reached:
                 continue  # an ATL method the module never calls: never translated
             by_file.setdefault(m.body[0], []).append(_synthetic_method(cls, m, h, model))
@@ -1189,7 +1387,10 @@ def assemble(rust: str, model: ModuleModel) -> str:
     pos = 0
     for m in _FN_HEAD_RE.finditer(rust):
         name = m.group("name")
-        cls = next((c for c in classes if name.startswith(c + "__")), None)
+        # The LONGEST class the name starts with: a nested class's name contains its outer
+        # class's and `__` (`CTextEventSink__anon0____ctor_0`), and the first match out of a
+        # set put the union's constructor on CTextEventSink as `anon0____ctor_0`.
+        cls = max((c for c in classes if name.startswith(c + "__")), key=len, default=None)
         if cls is None:
             continue
         end = _fn_end(rust, m.end())
@@ -1205,13 +1406,37 @@ def assemble(rust: str, model: ModuleModel) -> str:
             brace = rest.index("{")
             rest = rest[: brace + 1] + "\n    let this_: *mut Self = self;" + rest[brace + 1 :]
         else:
-            sig = f"    pub unsafe fn {method}("
+            abi = 'extern "system" ' if _callconv(model, cls, method) == "system" else ""
+            sig = f"    pub unsafe {abi}fn {method}("
         impls.setdefault(cls, []).append(sig + rest.replace("\n", "\n    "))
         pos = end
     out.append(rust[pos:])
     for cls, fns in impls.items():
         out.append(f"\nimpl {cls} {{\n" + "\n".join(fns) + "\n}\n")
-    return "".join(out)
+    return _qualify_static_methods("".join(out), model)
+
+
+def _callconv(model: ModuleModel, cls: str, rust_name: str) -> str:
+    c = model.classes.get(cls) or next((x for x in model.classes.values() if x.name == cls), None)
+    m = next((x for x in c.methods if (x.rust_name or x.name) == rust_name), None) if c else None
+    return m.callconv if m else ""
+
+
+def _qualify_static_methods(rust: str, model: ModuleModel) -> str:
+    """`CUIFWindow__WindowProcedure` -> `CUIFWindow::WindowProcedure`: the lowered C names a
+    static method as a free function, which assemble has just moved into its class, so
+    every call and every address-of (`wcx.lpfnWndProc = ..`) must follow it. A Win32
+    callback type (WNDPROC, TIMERPROC, ...) is bindgen's `Option<fn>`, so a cast to one is
+    `Some(..)`."""
+    for c in model.classes.values():
+        for m in c.methods:
+            if not m.static:
+                continue
+            name = m.rust_name or m.name
+            q = f"{c.name}::{name}"
+            rust = re.sub(rf"\b{re.escape(c.name)}__{re.escape(name)}\b", q, rust)
+            rust = re.sub(rf"\b{re.escape(q)} as [A-Z][A-Z0-9_]*PROC\b", f"Some({q})", rust)
+    return rust
 
 
 def _fn_end(text: str, start: int) -> int:

@@ -601,3 +601,12 @@ def test_flip_links_with_the_targets_own_link_signature():
     cml = "add_library(winegdi STATIC ${SOURCE})\ntarget_link_libraries(winegdi PRIVATE pseh)\n"
     out = port.flip_cmake(cml, state)
     assert "target_link_libraries(winegdi PRIVATE ${winegdi_rust_LIB})" in out
+
+
+def test_a_cpp_module_gets_a_cpp_stub_tu():
+    """The stub is the module's last compile command once every TU flips; a C stub of a C++
+    module lacks the C++-only include directories the tools borrow (msutb's ATL)."""
+    from rustconv.port import _stub_name
+
+    assert _stub_name({"cpp_tus": ["base/ctf/msutb/msutb.cpp"]}) == "rust_cohab_stub.cpp"
+    assert _stub_name({"tus": ["dll/win32/x/x.c"]}) == "rust_cohab_stub.c"

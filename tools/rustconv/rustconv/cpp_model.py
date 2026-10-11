@@ -62,6 +62,9 @@ class Method:
     lowered: str | None = None  # the body after cpp_lower, what a worker translates
     lowered_inits: list[tuple[str, str]] = field(default_factory=list)
     unplaced: list[str] = field(default_factory=list)
+    # "system" for a CALLBACK/WINAPI (stdcall) method: a static one is handed to Win32 as a
+    # WNDPROC/TIMERPROC, which a Rust-ABI fn cannot be.
+    callconv: str = ""
 
     @property
     def signature_key(self) -> str:
@@ -543,10 +546,15 @@ class _Extractor:
         # the map, never translated as text. Not for an EXTERNAL class: CWindow's
         # `SendMessage` is spelled through winuser.h's TCHAR macro, and that filter dropped
         # SendMessage, MessageBox and every other TCHAR-named member mspaint calls.
+        # A NAME that is only a macro ARGUMENT is the module's own method, renamed: cicero's
+        # `STDMETHOD_(LPCTSTR, GetClassName)()` is `GetClassNameW` spelled in winuser.h, and
+        # dropping it left CUIFWindow's vtable a slot short of the C++ one.
+        loc = c.get("loc", {})
         if (
             not external
-            and "spellingLoc" in c.get("loc", {})
-            and not self.mine(c["loc"]["spellingLoc"].get("_file"))
+            and "spellingLoc" in loc
+            and not self.mine(loc["spellingLoc"].get("_file"))
+            and not loc.get("expansionLoc", {}).get("isMacroArgExpansion")
         ):
             return None
         if probe:
@@ -586,6 +594,7 @@ class _Extractor:
             access=access,
             body=body,
             inits=inits,
+            callconv="system" if "stdcall" in qt else "",
         )
 
     def out_of_line(self, n: dict) -> None:
